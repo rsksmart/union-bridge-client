@@ -1357,6 +1357,7 @@ name = "host"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "check_fork",
  "clap",
  "hex",
  "json",

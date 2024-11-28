@@ -26,11 +26,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         block_list: blocks,
     };
 
-    prove_stark(1, "stark-proof.bin");
+    prove_stark(args, "stark-proof.bin");
 
-    // let result = check_fork(args)?;
-
-    println!("All good!");
+    println!("STARK proof generated!");
 
     Ok(())
 }
