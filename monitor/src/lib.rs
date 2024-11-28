@@ -75,13 +75,6 @@ pub async fn get_blocks(
             );
         } else if result.is_some() {
             let block: RskBlock = serde_json::from_str(&result.unwrap().to_string())?;
-
-            let pow_dec =
-                U256::from_str_radix(&block.pow, 16).map_err(|_| "Failed to parse block PoW")?;
-            let effort = U256::MAX / pow_dec;
-
-            log_if_superblock(&block, effort);
-
             blocks.push(block);
         }
     }
@@ -105,22 +98,6 @@ pub async fn get_blocks(
     println!("get_blocks done, total blocks '{}'", result.len());
 
     Ok(result)
-}
-
-fn log_if_superblock(block: &RskBlock, effort: U256) {
-    let superblock_difficulty = block.difficulty * 20;
-    let superblock_effort = U256::MAX / superblock_difficulty;
-    if effort >= superblock_difficulty {
-        println!(
-            "SuperBlock: {}, pow: {}, effort: {:064x}, time: {}",
-            block.number,
-            &block.pow,
-            superblock_effort,
-            chrono::DateTime::from_timestamp(block.timestamp as i64, 0)
-                .unwrap()
-                .format("%Y-%m-%d %H:%M:%S")
-        );
-    }
 }
 
 fn hex_to_u32<'de, D>(deserializer: D) -> Result<u32, D::Error>

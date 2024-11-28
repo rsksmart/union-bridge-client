@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     prove_stark(args, "stark-proof.bin");
 
-    println!("STARK proof generated!");
+    println!("\"Monitor\" done!");
 
     Ok(())
 }
