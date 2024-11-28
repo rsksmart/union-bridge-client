@@ -14,4 +14,4 @@ hex = "0.4.3"
 chrono = "0.4.38"
 check_fork = { path = "../../union-bridge-check-fork/check_fork", version = "0.1.0" }
 primitive-types = { version = "0.13.1", features = ["std", "serde"] }
-# zkvm = { package = "host", path = "../utils/risc0_check_fork/host", version = "0.1.0" }
+zkvm = { package = "host", path = "../../rust-bitvmx-union-bridge/zkp/host", version = "0.1.0" }

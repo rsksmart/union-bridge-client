@@ -1,7 +1,8 @@
-use check_fork::{check_fork, CheckForkArgs};
+use check_fork::CheckForkArgs;
 use monitor::get_blocks;
 use primitive_types::U256;
 use std::error::Error;
+use zkvm::prove_stark;
 
 // Testing parameters, change for different behaviors
 const START_BLOCK_NUMBER: u32 = 6883222;
@@ -25,11 +26,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         block_list: blocks,
     };
 
-    let result = check_fork(args)?;
+    prove_stark(1, "stark-proof.bin");
 
-    // TODO: call zkp
+    // let result = check_fork(args)?;
 
-    println!("All good! Effort: {}", result);
+    println!("All good!");
 
     Ok(())
 }
