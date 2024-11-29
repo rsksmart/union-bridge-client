@@ -618,6 +618,7 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 [[package]]
 name = "check_fork"
 version = "0.1.0"
+source = "git+ssh://git@github.com/rsksmart/union-bridge-check-fork.git?tag=0.1.0#6d36b88f9f00a814bcac92a72bbe2e5db4d8f72f"
 dependencies = [
  "primitive-types",
  "serde",
