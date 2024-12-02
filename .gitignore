@@ -2,5 +2,3 @@
 **/target
 .idea
 **/stark-proof.bin
-# "zkp" is a symlink, check README.md::Setup for more context
-zkp

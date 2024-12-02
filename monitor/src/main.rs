@@ -26,7 +26,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         block_list: blocks,
     };
 
-    prove_stark(args, "stark-proof.bin");
+    prove_stark(args, "../stark-proof.bin");
 
     println!("\"Monitor\" done!");
 

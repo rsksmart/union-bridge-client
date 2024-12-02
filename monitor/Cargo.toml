@@ -14,4 +14,4 @@ hex = "0.4.3"
 chrono = "0.4.38"
 check_fork = { git = "ssh://git@github.com/rsksmart/union-bridge-check-fork.git", tag = "0.1.0" }
 primitive-types = { version = "0.13.1", features = ["std", "serde"] }
-zkvm = { package = "host", path = "../zkp/host", version = "0.1.0" } # "../zkp" is a symlink, check README.md::Setup for more context
+zkvm = { package = 'host', path = "../zkvm_host/host" }

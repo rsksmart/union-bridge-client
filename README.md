@@ -6,9 +6,23 @@ The `monitor` checks the state of Rootstock and feeds the `zkp` with `CheckForkA
 
 TODO: Add more details about the Monitor when clear.
 
+# How to run the Monitor?
+
+We need to specify to the `zkvm_host` the path to the `zkvm_guest`. To do so we need to set the environment variable `GUEST_CODE` with the full path to the zkvm_guest. Then, we just need to do `cargo run`.
+```bash
+GUEST_CODE=<base_path>/zkvm_guest cargo run
+```
+
 # Setup
 
-In order to be able to run the monitor in your local, follow the steps below:
+This repository has [rust-bitvmx-zk-proof](https://github.com/FairgateLabs/rust-bitvmx-zk-proof) as submodule for ZK execution of `check_fork`.
 
-1. Create a `zkp` symlink to the `FairgateLabs/rust-bitvmx-zk-proof` crate in your local. It will be used as the ZKVM
-   for the Monitor. Note that this is a temporary approach until the projects structure and collaboration is defined.
+Clone the repository with the `--recurse-submodules` option to automatically initialize and update the submodules:
+```bash
+git clone --recurse-submodules git@github.com:rsksmart/union-bridge-monitor.git
+```
+
+Alternatively, if the repository was already cloned, initialize and update the submodules with:
+```bash
+git submodule update --init --recursive
+```
