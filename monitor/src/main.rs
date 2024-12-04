@@ -2,7 +2,8 @@ use check_fork::CheckForkArgs;
 use monitor::get_blocks;
 use primitive_types::U256;
 use std::error::Error;
-use zkvm::prove_stark;
+use zkvm_host::prove_stark;
+use zkvm_guest::CHECK_FORK_GUEST_ELF;
 
 // Testing parameters, change for different behaviors
 const START_BLOCK_NUMBER: u32 = 6883222;
@@ -26,7 +27,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         block_list: blocks,
     };
 
-    prove_stark(args, "../stark-proof.bin");
+    prove_stark(args, CHECK_FORK_GUEST_ELF, "../stark-proof.bin");
 
     println!("\"Monitor\" done!");
 
