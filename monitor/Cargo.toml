@@ -13,5 +13,6 @@ tokio = { version = "1", features = ["full"] }
 hex = "0.4.3"
 check_fork = { git = "ssh://git@github.com/rsksmart/union-bridge-check-fork.git", tag = "0.1.0" }
 primitive-types = { version = "0.13.1", features = ["std", "serde"] }
-zkvm_host = { package = 'host', path = "../zkvm_host/host" }
 zkvm_guest = { path = "../zkvm_guest" }
+zkvm_cli_serde = { package = "cli_serde", path = "../zkvm_host/cli_serde" }
+# zkvm_host = {package = "host", path = "../zkvm_host/host"} # TODO remove when done with tests
