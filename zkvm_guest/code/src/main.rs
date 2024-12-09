@@ -10,12 +10,13 @@ fn main() {
     let result = match output {
         Ok(effort) => {
             println!("Guest output: ACCEPT, check_fork effort: {}", effort);
-            "ACCEPT"
+            0
         }
         Err(e) => {
             println!("Guest output: REJECT, check_fork error: {}", e);
-            "REJECT"
+            1
         }
+        // TODO competing fork, should return 2 when implemented
     };
 
     env::commit(&result);
