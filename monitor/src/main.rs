@@ -2,7 +2,9 @@ use check_fork::CheckForkArgs;
 use monitor::get_blocks;
 use primitive_types::U256;
 use std::error::Error;
-use zkvm::prove_stark;
+use zkvm_cli_serde::serialize_guest_input;
+use zkvm_guest::{CHECK_FORK_GUEST_ID, CHECK_FORK_GUEST_PATH};
+// use zkvm_host::prove_stark_no_cli;
 
 // Testing parameters, change for different behaviors
 const START_BLOCK_NUMBER: u32 = 6883222;
@@ -26,9 +28,25 @@ async fn main() -> Result<(), Box<dyn Error>> {
         block_list: blocks,
     };
 
-    prove_stark(args, "../stark-proof.bin");
+    // prove_stark_no_cli(&args, CHECK_FORK_GUEST_PATH, "CheckForkArgs.bin");
 
-    println!("\"Monitor\" done!");
+    let check_fork_args_path = std::env::current_dir()?.join("check_fork_args.bin");
+    let check_fork_args_path_str = check_fork_args_path.to_str().ok_or("Invalid path")?;
+
+    let start = std::time::Instant::now();
+
+    serialize_guest_input(&args, check_fork_args_path_str)?;
+
+    let duration = start.elapsed();
+    println!("CheckForkArgs serialized to file: {}. Total time: {:?}", check_fork_args_path_str, duration);
+
+    println!("GetBlocks executed and CheckForkArgs generated. Relevant parameters for the interaction with the ZKVM CLI:");
+    println!("    - input: {}", check_fork_args_path_str);
+    println!("    - elf: {}", CHECK_FORK_GUEST_PATH);
+    println!(
+        "    - image_id: {}",
+        zkvm_cli_serde::serialize_image_id(CHECK_FORK_GUEST_ID)
+    );
 
     Ok(())
 }
