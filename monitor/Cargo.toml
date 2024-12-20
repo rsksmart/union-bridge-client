@@ -8,7 +8,6 @@ resolver = "2"
 bitcoin = "0.32.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-tokio = { version = "1.42.0", features = ["full"] }
 hex = "0.4.3"
 primitive-types = { version = "0.13.1", features = ["std", "serde"] }
 # check_fork = { git = "ssh://git@github.com/rsksmart/union-bridge-check-fork.git", tag = "0.1.0" }
@@ -22,5 +21,4 @@ storage_backend = { package = "rust-bitvmx-storage-backend", path = "../../rust-
 alloy-provider = { version = "0.8.1", features = ["ws"] }
 alloy-rpc-types = "0.8.1"
 alloy-pubsub = { version = "0.8.1" }
-futures-util = "0.3.31"
-async-trait = "0.1.83"
+ctrlc = "3.4"
