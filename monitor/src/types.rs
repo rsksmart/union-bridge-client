@@ -128,3 +128,7 @@ impl From<RskRpcBlock> for RskBlock {
         }
     }
 }
+
+pub struct RskLog {
+    // TODO implement
+}

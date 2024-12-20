@@ -1,0 +1,33 @@
+use anyhow::{anyhow, Result};
+use std::error::Error;
+use std::future::Future;
+use tokio::runtime::Runtime;
+
+/**
+ * This struct is a wrapper around tokio::runtime::Runtime that allows for
+ * synchronous execution of async functions. Note: it is discouraged to start
+ * several runtimes, so use with caution.
+ */
+pub struct RuntimeSync {
+    rt: Runtime,
+}
+
+impl RuntimeSync {
+    pub fn new() -> Result<Self> {
+        let rt = Runtime::new()?;
+        Ok(RuntimeSync { rt })
+    }
+
+    pub fn run<Fut, RetType, Err>(&self, future: Fut) -> Result<RetType>
+    where
+        Fut: Future<Output = Result<RetType, Err>>,
+        RetType: Send + 'static,
+        Err: Error + Send + 'static,
+    {
+        self.rt.block_on(async {
+            future
+                .await
+                .map_err(|e| anyhow!("Error awaiting in RuntimeSync: {:?}", e))
+        })
+    }
+}
