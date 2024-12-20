@@ -17,6 +17,24 @@ pub struct RskBlock {
 }
 
 impl RskBlock {
+    pub fn new(
+        number: u64,
+        hash: String,
+        parent: String,
+        difficulty: U256,
+        timestamp: u64,
+        pow: String,
+    ) -> Self {
+        RskBlock {
+            number,
+            hash,
+            parent,
+            difficulty,
+            timestamp,
+            pow,
+        }
+    }
+
     pub fn number(&self) -> u64 {
         self.number
     }

@@ -1,8 +1,8 @@
 use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy_pubsub::{PubSubFrontend, SubscriptionItem};
 use anyhow::{anyhow, bail, Ok, Result};
-use futures_util::StreamExt;
 use log::{debug, error, info, trace, warn};
+use monitor::provider::{AlloyRskWsProvider, RskBlockSubscription, RskWsProvider};
 use monitor::store::CachedKeyValueStore;
 use monitor::types::{RskBlock, RskRpcBlock};
 use serde_json::{json, Value};
@@ -36,14 +36,20 @@ impl ShutdownFlag {
     }
 }
 
+// TODO convert to sync code, apparently it is safer
 #[tokio::main]
 async fn main() -> Result<()> {
     env_logger::init();
 
+    // dos opciones:
+    //     - pensar si convertir en sync para evitar problemas de traits
+    //     - o si cambiar como implemento los traits para que uno no retorne otro (basicamente tener solo uno que haga ambas cosas)
+
     let shutdown_flag = Arc::new(ShutdownFlag::init());
     let shutdown_flag_clone = Arc::clone(&shutdown_flag);
 
-    let store = CachedKeyValueStore::new("/Users/illuque/tmp/").expect("Failed to create CachedKeyValueStore");
+    let store = CachedKeyValueStore::new("/Users/illuque/tmp/")
+        .expect("Failed to create CachedKeyValueStore");
 
     let main_task = tokio::spawn(async move {
         // after boot, we do a backward_sync to catch up with the latest block
@@ -93,15 +99,12 @@ async fn subscribe_blocks_loop(
     // 3) add reconnect
     // 4) add backup servers
     // 5) everything configurable
-    // Replace with your WebSocket provider URL
 
-    let rpc_url = "wss://public-node.testnet.rsk.co/websocket";
-    let ws = WsConnect::new(rpc_url);
-    let provider = ProviderBuilder::new().on_ws(ws).await?;
-    let sub = provider.subscribe_blocks().await?;
-    let mut stream = sub.into_any_stream();
+    let rsk_ws_provider: AlloyRskWsProvider =
+        AlloyRskWsProvider::new("wss://public-node.testnet.rsk.co/websocket").await?;
+    let mut rsk_block_subscription = rsk_ws_provider.subscribe_blocks().await?;
 
-    println!("Subscribed to new block headers");
+    info!("Subscribed to new block headers");
 
     // some last second gap backward_sync in case while this task was starting we missed some block
     backward_sync(shutdown_flag, store).await?;
@@ -112,28 +115,8 @@ async fn subscribe_blocks_loop(
         let mut last_received_block_opt: Option<RskBlock> = None;
 
         while !shutdown_flag.is_requested() {
-            let header = match stream.next().await {
-                Some(header) => header,
-                None => {
-                    error!("eth_subscribe stream ended, stopping subscribe_blocks");
-                    break;
-                }
-            };
+            let new_block = rsk_block_subscription.next().await?;
 
-            let new_block_header_raw = match header {
-                SubscriptionItem::Other(raw_json) => raw_json.get().to_string(),
-                _ => {
-                    bail!("Unexpected SubscriptionItem: {:?}", header);
-                }
-            };
-
-            let new_block_header: Value = serde_json::from_str(&*new_block_header_raw)?;
-            let new_block_hash = new_block_header["hash"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Missing hash field"))?;
-
-            // TODO extract to web3 connector abstraction class
-            let new_block = fetch_block_data(&provider, Some(&new_block_hash), None).await?;
             info!(
                 "Processing block {} ({}) on subscription",
                 new_block.number(),
@@ -167,7 +150,7 @@ async fn subscribe_blocks_loop(
     // TODO run eth_unsubscribe with subscription id
     // TODO handle reconnect on error
 
-    drop(provider);
+    rsk_block_subscription.unsubscribe().await?;
 
     subscription_result
 }
