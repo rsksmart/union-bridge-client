@@ -2448,6 +2448,7 @@ dependencies = [
  "rust-bitvmx-storage-backend",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
