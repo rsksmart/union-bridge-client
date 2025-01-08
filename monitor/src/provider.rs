@@ -6,6 +6,7 @@ use alloy_rpc_types::Header;
 use anyhow::{anyhow, bail, Ok, Result};
 use log::debug;
 use serde_json::{json, Value};
+use std::sync::Arc;
 
 pub trait RskWsProvider {
     type BlockSub: RskSubscription<String>;
@@ -24,13 +25,12 @@ pub trait RskSubscription<T> {
 
 pub struct AlloyRskWsProvider {
     provider: RootProvider<PubSubFrontend>,
-    rt_sync: RuntimeSync,
+    rt_sync: Arc<RuntimeSync>,
 }
 
 impl AlloyRskWsProvider {
     // TODO call this logic from a "dependency injection" file
-    pub fn new(url: &str) -> Result<AlloyRskWsProvider> {
-        let rt_sync = RuntimeSync::new()?;
+    pub fn new(url: &str, rt_sync: Arc<RuntimeSync>) -> Result<Self> {
         let ws = WsConnect::new(url);
         let provider_setup = ProviderBuilder::new().on_ws(ws);
         let provider = rt_sync.run(provider_setup)?;
@@ -45,7 +45,7 @@ impl RskWsProvider for AlloyRskWsProvider {
     fn subscribe_blocks(&self) -> Result<Self::BlockSub> {
         let subscription_request = self.provider.subscribe_blocks();
         let sub = self.rt_sync.run(subscription_request)?;
-        Ok(AlloyBlockSubscription::new(sub))
+        Ok(AlloyBlockSubscription::new(sub, self.rt_sync.clone()))
     }
 
     fn subscribe_logs(&self) -> Result<Self::LogsSub> {
@@ -76,13 +76,12 @@ impl RskWsProvider for AlloyRskWsProvider {
 
 pub struct AlloyBlockSubscription {
     sub: Subscription<Header>,
-    rt_sync: RuntimeSync,
+    rt_sync: Arc<RuntimeSync>,
 }
 
 impl AlloyBlockSubscription {
-    pub fn new(sub: Subscription<Header>) -> Self {
-        let rt_sync = RuntimeSync::new().expect("Failed to create RuntimeSync");
-        AlloyBlockSubscription { sub, rt_sync }
+    pub fn new(sub: Subscription<Header>, rt_sync: Arc<RuntimeSync>) -> Self {
+        Self { sub, rt_sync }
     }
 }
 

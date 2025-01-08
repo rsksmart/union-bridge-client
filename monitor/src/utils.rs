@@ -14,7 +14,7 @@ pub struct RuntimeSync {
 
 impl RuntimeSync {
     pub fn new() -> Result<Self> {
-        let rt = Runtime::new()?;
+        let rt = Runtime::new().expect("Failed to create Tokio runtime");
         Ok(RuntimeSync { rt })
     }
 
