@@ -14,7 +14,9 @@ pub trait RskWsProvider {
 
     fn subscribe_blocks(&self) -> Result<Self::BlockSub>;
     fn subscribe_logs(&self) -> Result<Self::LogsSub>;
-    fn get_block_by_hash(&self, block_hash: &str) -> Result<RskBlock>;
+    fn get_block_by_hash(&self, hash: &str) -> Result<RskBlock>;
+    fn get_block_by_number(&self, num: u64) -> Result<RskBlock>;
+    fn get_best_block(&self) -> Result<RskBlock>;
     fn disconnect(self) -> Result<()>;
 }
 
@@ -66,6 +68,32 @@ impl RskWsProvider for AlloyRskWsProvider {
         let rsk_block: RskBlock = RskBlock::from(rpc_block);
 
         Ok(rsk_block)
+    }
+
+    fn get_block_by_number(&self, num: u64) -> Result<RskBlock> {
+        let num_hex = format!("0x{:x}", num);
+
+        let rpc_call = self
+            .provider
+            .client()
+            .request("eth_getBlockByNumber", vec![json!(num_hex), json!(false)]);
+
+        let response: Value = self.rt_sync.run(rpc_call)?;
+
+        // TODO resilience when response is not a block (ie not found)
+
+        let rpc_block: RskRpcBlock = serde_json::from_value(response)?;
+        let rsk_block: RskBlock = RskBlock::from(rpc_block);
+
+        Ok(rsk_block)
+    }
+
+    fn get_best_block(&self) -> Result<RskBlock> {
+        let rpc_call = self.provider.client().request_noparams("eth_blockNumber");
+        let response: Value = self.rt_sync.run(rpc_call)?;
+        let number_hex: String = serde_json::from_value(response)?;
+        let number_dec = u64::from_str_radix(&number_hex.trim_start_matches("0x"), 16)?;
+        self.get_block_by_number(number_dec)
     }
 
     fn disconnect(self) -> Result<()> {

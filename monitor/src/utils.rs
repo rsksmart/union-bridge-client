@@ -27,7 +27,7 @@ impl RuntimeSync {
         self.rt.block_on(async {
             future
                 .await
-                .map_err(|e| anyhow!("Error awaiting in RuntimeSync: {:?}", e))
+                .map_err(|e| anyhow!("Error on RuntimeSync: {:?}", e))
         })
     }
 }

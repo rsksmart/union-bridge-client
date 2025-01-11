@@ -1145,11 +1145,9 @@ name = "check_gaps"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "env_logger",
  "log",
  "monitor",
- "rust-bitvmx-storage-backend",
- "serde",
- "serde_json",
 ]
 
 [[package]]

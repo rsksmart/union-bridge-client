@@ -188,7 +188,7 @@ fn subscribe_blocks(
 //     Ok(())
 // }
 
-// TODO remove
+// TODO move to provider
 fn fetch_block_data(
     provider: &RootProvider<PubSubFrontend>,
     rt_sync: Arc<RuntimeSync>,
@@ -330,12 +330,12 @@ fn initialize_db_if_required(
     store: &CachedKeyValueStore,
     provider: &RootProvider<PubSubFrontend>,
 ) -> Result<()> {
-    let genesis_block: Option<RskBlock> = store.get_block_by_hash(INITIAL_BLOCK_HASH_ENV)?.or(None);
+    let initial_block: Option<RskBlock> = store.get_block_by_hash(INITIAL_BLOCK_HASH_ENV)?.or(None);
 
-    match genesis_block {
+    match initial_block {
         Some(_) => Ok(()),
         None => {
-            let monitor_genesis_block = fetch_block_data(
+            let initial_block = fetch_block_data(
                 &provider,
                 rt_sync.clone(),
                 Some(INITIAL_BLOCK_HASH_ENV),
@@ -343,18 +343,18 @@ fn initialize_db_if_required(
             )?; // TODO resilient to not found
 
             info!(
-                "First backward sync, setting last_connected_block to genesis from env {} ({})",
-                monitor_genesis_block.number(),
-                monitor_genesis_block.hash()
+                "First backward sync, setting last_connected_block to initial block {} ({})",
+                initial_block.number(),
+                initial_block.hash()
             );
 
             // TODO think about transactionality
-            // initialize the store with the genesis block info
-            store.set_canonical_block(&monitor_genesis_block)?;
-            store.set_best_block(&monitor_genesis_block)?;
-            store.set_last_connected_block(&monitor_genesis_block)?;
+            // initialize the store with the initial block info
+            store.set_canonical_block(&initial_block)?;
+            store.set_best_block(&initial_block)?;
+            store.set_last_connected_block(&initial_block)?;
             // should go last, as it will be used to determine if the DB is initialized
-            store.save_block(&monitor_genesis_block)?;
+            store.save_block(&initial_block)?;
 
             Ok(())
         }
