@@ -1,6 +1,6 @@
 use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy_pubsub::PubSubFrontend;
-use anyhow::{bail, Ok, Result};
+use anyhow::{anyhow, bail, Ok, Result};
 use log::{debug, error, info, warn};
 use monitor::provider::{
     AlloyBlockSubscription, AlloyLogsSubscription, AlloyRskWsProvider, RskSubscription,
@@ -10,15 +10,14 @@ use monitor::store::CachedKeyValueStore;
 use monitor::types::{RskBlock, RskRpcBlock};
 use monitor::utils::RuntimeSync;
 use serde_json::{json, Value};
+use std::hash::Hash;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::{env, thread, time::Duration};
 
-// TODO use keys enum
-const BLOCK_TO_CONNECT: &'static str = "BLOCK_TO_CONNECT";
-const INITIAL_BLOCK_ENV: &'static str = "INITIAL_BLOCK";
+const INITIAL_BLOCK_HASH_ENV: &str =
+    "0x5609fff226ca052d12eca7bfdb45edca1c8252ac08b492420990fc8fb82c2868"; // TODO move to .env
 
-// TODO convert to sync code, apparently it is safer
 fn main() -> Result<()> {
     env_logger::init();
 
@@ -28,6 +27,7 @@ fn main() -> Result<()> {
         warn!("No .env file found");
     }
 
+    // TODO move its creation to the Provider file
     let rt_sync = Arc::new(RuntimeSync::new()?);
 
     let shutdown_flag_control = Arc::new(ShutdownFlag::init());
@@ -45,31 +45,42 @@ fn main() -> Result<()> {
     let worker_thread = thread::spawn(move || {
         // after boot, we do a backward_sync to catch up with the latest block
         if let Err(e) = backward_sync(&shutdown_flag_worker, rt_sync.clone(), &store) {
-            error!("Unrecoverable error in test_backward: {:?}", e);
+            error!("Unrecoverable error in backward_sync: {:?}", e);
+            return;
         }
 
-        if let Err(e) = subscribe_blocks_loop(&shutdown_flag_worker, &store, rt_sync.clone()) {
-            error!("Unrecoverable error in test_subscribe: {:?}", e);
+        if shutdown_flag_worker.is_on() {
+            return;
+        }
+
+        if let Err(e) = subscribe_blocks(&shutdown_flag_worker, &store, rt_sync.clone()) {
+            error!("Unrecoverable error in subscribe_blocks: {:?}", e);
+            return;
         }
     });
 
     worker_thread.join().unwrap_or_else(|e| {
         if let Some(err) = e.downcast_ref::<&str>() {
             error!("The worker_thread has errored with message: {}", err);
+            return;
         } else if let Some(err) = e.downcast_ref::<String>() {
             error!("The worker_thread has errored with message: {}", err);
+            return;
         } else {
             error!("The worker_thread has errored with an unknown type");
+            return;
         }
     });
+
+    info!("Worker threads completed, shutting down now.");
 
     log::logger().flush();
 
     Ok(())
 }
 
-fn subscribe_blocks_loop(
-    shutdown_flag: &ShutdownFlag, // TODO instead of receiving this, try to receive the ws subscription and close it on ctrl+c, that should stop the loop also
+fn subscribe_blocks(
+    shutdown_flag: &ShutdownFlag,
     store: &CachedKeyValueStore,
     rt_sync: Arc<RuntimeSync>,
 ) -> Result<()> {
@@ -89,40 +100,46 @@ fn subscribe_blocks_loop(
 
     let mut rsk_block_subscription = rsk_ws_provider.subscribe_blocks()?;
 
-    info!("Subscribed to new block headers");
+    info!("Start subscribe_blocks...");
 
-    // some last second gap backward_sync in case while this task was starting we missed some block
-    if let Err(e) = backward_sync(&shutdown_flag, rt_sync.clone(), &store) {
-        error!("Unrecoverable error in test_backward: {:?}", e);
-    }
+    let mut parent_block_hash = store
+        .get_best_block()?
+        .map(|b| b.hash().to_string())
+        .ok_or_else(|| anyhow!("Failed to get best_block from store"))?;
 
-    info!("Start receiving blocks from eth_subscribe...");
-
-    loop {
+    while !shutdown_flag.is_on() {
         let new_block_hash = rsk_block_subscription.next()?;
         if new_block_hash.is_none() {
             thread::sleep(Duration::from_secs(1));
             continue;
         }
 
-        let new_block = rsk_ws_provider.get_block_by_hash(&new_block_hash.unwrap())?;
-        debug!("Fetched Rsk block on subscription: {:?}", new_block);
+        let recv_block = rsk_ws_provider.get_block_by_hash(&new_block_hash.unwrap())?;
         info!(
             "Processing block {} ({}) on subscription",
-            new_block.number(),
-            new_block.hash()
+            recv_block.number(),
+            recv_block.hash()
         );
 
-        // TODO move to store abstraction class
-        // TODO create keys enum
-        let block_key = &format!("block_{}", new_block.number());
-        store.save_block(block_key, &new_block)?;
+        debug!("Fetched RSK block on subscription: {:?}", recv_block);
 
-        if shutdown_flag.is_on() {
-            info!("Shutdown requested, stopping subscribe_blocks and changing BLOCK_TO_CONNECT to {} ({})...", new_block.number(), new_block.hash());
-            store.save_block(BLOCK_TO_CONNECT, &new_block)?;
-            break;
+        if recv_block.parent() == parent_block_hash {
+            // TODO take care of transactionality here. Is it needed here, or a new iter/run will retroactively fix it?
+            store.save_block(&recv_block)?;
+            store.set_canonical_block(&recv_block)?;
+            store.set_best_block(&recv_block)?;
+            store.set_last_connected_block(&recv_block)?;
+        } else {
+            warn!(
+                "Reorg or gap detected on block {} ({} -> {})",
+                recv_block.number(),
+                parent_block_hash,
+                recv_block.parent()
+            );
+            backward_sync(&shutdown_flag, rt_sync.clone(), &store)?;
         }
+
+        parent_block_hash = recv_block.hash().to_string();
     }
 
     // TODO do this close outside if reused by http calls
@@ -135,6 +152,42 @@ fn subscribe_blocks_loop(
     Ok(())
 }
 
+// fn apply_reorg(store: &CachedKeyValueStore, hash_for_reorg: &str) -> Result<()> {
+//     let mut next_canonical_hash = hash_for_reorg.to_string();
+//
+//     loop {
+//         let new_block = store
+//             .get_block_by_hash(&next_canonical_hash)?
+//             .ok_or_else(|| anyhow!("Could not find new_block by hash {}", next_canonical_hash))?;
+//
+//         let old_block = store
+//             .get_block_by_number(new_block.number())?
+//             .ok_or_else(|| anyhow!("Could not find old_block by number {}", new_block.number()))?;
+//
+//         if new_block.hash() == old_block.hash() {
+//             info!(
+//                 "Reorg fixed on block {} ({})",
+//                 new_block.number(),
+//                 new_block.hash()
+//             );
+//             break;
+//         }
+//
+//         info!(
+//             "Fixing reorg on block {} ({} -> {})",
+//             new_block.number(),
+//             old_block.hash(),
+//             new_block.hash()
+//         );
+//
+//         store.set_canonical_block(&new_block)?;
+//
+//         next_canonical_hash = new_block.parent().to_string();
+//     }
+//
+//     Ok(())
+// }
+
 // TODO remove
 fn fetch_block_data(
     provider: &RootProvider<PubSubFrontend>,
@@ -143,11 +196,11 @@ fn fetch_block_data(
     block_number: Option<&u64>,
 ) -> Result<RskBlock> {
     if block_hash.is_none() && block_number.is_none() {
-        bail!("Either block_hash or block_number_or_ref must be provided");
+        bail!("Either block_hash or block_number must be provided");
     }
 
     if block_hash.is_some() && block_number.is_some() {
-        bail!("Only one of block_hash or block_number_or_ref must be provided");
+        bail!("Only one of block_hash or block_number must be provided");
     }
 
     let (method, block_id) = if block_hash.is_some() {
@@ -178,39 +231,21 @@ fn backward_sync(
     rt_sync: Arc<RuntimeSync>,
     store: &CachedKeyValueStore,
 ) -> Result<()> {
-    // TODO improve this logic passing BLOCK_TO_CONNECT as parameter
-    let block_to_connect_db: Option<RskBlock> = store.get_block(BLOCK_TO_CONNECT)?.or(None);
-
     // TODO reuse connection
-    let rpc_url = "wss://public-node.testnet.rsk.co/websocket";
+    let rpc_url = "wss://public-node.testnet.rsk.co/websocket"; // TODO move to .env
     let ws = WsConnect::new(rpc_url);
     let provider = rt_sync.run(ProviderBuilder::new().on_ws(ws))?;
 
-    let block_to_connect = match block_to_connect_db {
-        Some(block) => block,
-        None => {
-            let monitor_genesis_hash =
-                "0x1e84101802a707d1c9fb135a6557bd3849a0feb4ac8ace6bcf6329dbcbaeeed2"; // TODO get from env
-            let monitor_genesis_block =
-                fetch_block_data(&provider, rt_sync.clone(), Some(monitor_genesis_hash), None)?; // TODO resilient to not found
+    initialize_db_if_required(&rt_sync, store, &provider)?;
 
-            info!(
-                "First backward sync, setting BLOCK_TO_CONNECT to genesis from env {} ({})",
-                monitor_genesis_block.number(),
-                monitor_genesis_block.hash()
-            );
-
-            let block_key = &format!("block_{}", monitor_genesis_block.number());
-            store.save_block(block_key, &monitor_genesis_block)?;
-
-            monitor_genesis_block
-        }
-    };
+    let last_connected_block = store
+        .get_last_connected_block()?
+        .ok_or_else(|| anyhow!("Failed to get last_connected_block from store"))?;
 
     let best_block_num = rt_sync.run(provider.get_block_number())?;
     let best_block = fetch_block_data(&provider, rt_sync.clone(), None, Some(&best_block_num))?; // TODO resilient to not found
 
-    if best_block.hash() == block_to_connect.hash() {
+    if best_block.hash() == last_connected_block.hash() {
         info!(
             "No backward sync needed, already at block {} ({})",
             best_block_num,
@@ -220,87 +255,65 @@ fn backward_sync(
     }
 
     info!(
-        "Running backward_sync from block {} ({}) until {} ({})",
+        "Running backward_sync from block {} ({}) to {} ({})",
         best_block_num,
         best_block.hash(),
-        block_to_connect.number(),
-        block_to_connect.hash(),
+        last_connected_block.number(),
+        last_connected_block.hash(),
     );
 
-    let mut target_hash = block_to_connect.hash().to_string();
-    let mut parent_hash: String = best_block.hash().to_string();
+    store.set_best_block(&best_block)?;
 
-    while !shutdown_flag.is_on() {
-        let recv_block: RskBlock =
-            fetch_block_data(&provider, rt_sync.clone(), Some(&parent_hash), None)?;
+    let mut target_block_num = last_connected_block.number();
+    let mut connection_point_reached = false;
 
-        parent_hash = recv_block.parent().to_string();
+    let mut node_block: RskBlock = best_block.clone();
+    let mut store_block_opt = store.get_block_by_number(node_block.number())?;
 
-        debug!(
-            "Processing block {} ({}) on backward_sync",
-            recv_block.number(),
-            recv_block.hash()
-        );
+    while !shutdown_flag.is_on() && !connection_point_reached {
+        let is_reorg = store_block_opt
+            .as_ref()
+            .map(|sb| sb.hash() != node_block.hash())
+            .unwrap_or(false);
 
-        // TODO abstract the key building
-        let block_key = &format!("block_{}", recv_block.number());
-        let store_block_opt: Option<RskBlock> = store.get_block(block_key)?;
+        if store_block_opt.is_none() || is_reorg {
+            info!(
+                "Creating or updating block {} ({})...",
+                node_block.number(),
+                node_block.hash()
+            );
 
-        match store_block_opt {
-            None => {
-                debug!(
-                    "Storing missing block {} ({})",
-                    recv_block.number(),
-                    recv_block.hash()
-                );
-                store.save_block(block_key, &recv_block)?;
-            }
-            Some(store_block) => {
-                let is_reorg = store_block.hash() != recv_block.hash();
-                if is_reorg {
-                    // we need to retarget if reorg detected on block_to_connect
-                    if store_block.number() <= block_to_connect.number() {
-                        warn!(
-                            "Reorg detected on connection point, retargeting to {} ({})",
-                            recv_block.number() - 1,
-                            recv_block.parent()
-                        );
-                        target_hash = recv_block.parent().to_string();
-                    } else {
-                        warn!(
-                            "Reorg detected, replacing block {} ({}) by {}",
-                            store_block.number(),
-                            store_block.hash(),
-                            recv_block.hash(),
-                        );
-                    }
+            // TODO take care of transactionality here. Is it needed here, or a new iter/run will retroactively fix it?
+            store.save_block(&node_block)?;
+            store.set_canonical_block(&node_block)?;
+        } else {
+            debug!(
+                "Already stored block {} ({}) while trying to reach connection_hash, nothing to do",
+                node_block.number(),
+                node_block.hash()
+            );
+        }
 
-                    // TODO abstract the key building
-                    let block_key = &format!("block_{}", recv_block.number());
-                    store.save_block(block_key, &recv_block)?;
+        // TODO request and persist uncles, like in eth_subscribe, we need them for check_fork
 
-                    continue;
-                }
+        let parent_block_num = node_block.number() - 1;
+        node_block = fetch_block_data(&provider, rt_sync.clone(), None, Some(&parent_block_num))?;
+        store_block_opt = store.get_block_by_number(parent_block_num)?;
 
-                let target_found = !is_reorg && store_block.hash() == target_hash;
-                if target_found {
-                    store.save_block(BLOCK_TO_CONNECT, &best_block)?;
+        let is_target_num_reached = store_block_opt
+            .as_ref()
+            .map(|sb| sb.number() <= target_block_num)
+            .unwrap_or(false);
 
-                    info!(
-                        "Finished backward_sync on block {} ({})",
-                        recv_block.number(),
-                        recv_block.hash()
-                    );
-
-                    break;
-                }
-
-                // this may happen when the backward_sync is stopped before finishing
-                debug!(
-                    "Skipping already stored block {} ({}) while trying to reach connection point",
-                    recv_block.number(),
-                    recv_block.hash()
-                );
+        if is_target_num_reached {
+            let store_block = store_block_opt.as_ref().unwrap();
+            if store_block.hash() == node_block.hash() {
+                connection_point_reached = true;
+                store.set_last_connected_block(&best_block)?;
+                debug!("backward_sync completed!");
+            } else {
+                debug!("target_block_num changed to {}", store_block.number(),);
+                target_block_num -= 1;
             }
         }
     }
@@ -310,6 +323,42 @@ fn backward_sync(
     drop(provider);
 
     Ok(())
+}
+
+fn initialize_db_if_required(
+    rt_sync: &Arc<RuntimeSync>,
+    store: &CachedKeyValueStore,
+    provider: &RootProvider<PubSubFrontend>,
+) -> Result<()> {
+    let genesis_block: Option<RskBlock> = store.get_block_by_hash(INITIAL_BLOCK_HASH_ENV)?.or(None);
+
+    match genesis_block {
+        Some(_) => Ok(()),
+        None => {
+            let monitor_genesis_block = fetch_block_data(
+                &provider,
+                rt_sync.clone(),
+                Some(INITIAL_BLOCK_HASH_ENV),
+                None,
+            )?; // TODO resilient to not found
+
+            info!(
+                "First backward sync, setting last_connected_block to genesis from env {} ({})",
+                monitor_genesis_block.number(),
+                monitor_genesis_block.hash()
+            );
+
+            // TODO think about transactionality
+            // initialize the store with the genesis block info
+            store.set_canonical_block(&monitor_genesis_block)?;
+            store.set_best_block(&monitor_genesis_block)?;
+            store.set_last_connected_block(&monitor_genesis_block)?;
+            // should go last, as it will be used to determine if the DB is initialized
+            store.save_block(&monitor_genesis_block)?;
+
+            Ok(())
+        }
+    }
 }
 
 #[derive(Clone)]

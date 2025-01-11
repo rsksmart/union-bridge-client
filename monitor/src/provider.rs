@@ -3,8 +3,8 @@ use crate::utils::RuntimeSync;
 use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy_pubsub::{PubSubFrontend, Subscription, SubscriptionItem};
 use alloy_rpc_types::Header;
-use anyhow::{anyhow, bail, Ok, Result};
-use log::debug;
+use anyhow::{anyhow, bail, Result};
+use log::{debug, trace};
 use serde_json::{json, Value};
 use std::sync::Arc;
 
@@ -87,8 +87,15 @@ impl AlloyBlockSubscription {
 
 impl RskSubscription<String> for AlloyBlockSubscription {
     fn next(&mut self) -> Result<Option<String>> {
-        let header = self.rt_sync.run(self.sub.recv_any())?;
-        debug!("Received header: {:?}", header);
+        let header = match self.sub.try_recv_any() {
+            Ok(header) => header,
+            Err(_) => {
+                trace!("No new block yet");
+                return Ok(None);
+            }
+        };
+
+        trace!("Received header: {:?}", header);
 
         let new_block_header_raw = match header {
             SubscriptionItem::Other(raw_json) => raw_json.get().to_string(),

@@ -9,6 +9,26 @@ pub struct CachedKeyValueStore {
     block_cache: Cache<RskBlock>,
 }
 
+pub enum StoreKey {
+    BlockByHash(String),
+    BlockByNumber(u64),
+    BestBlock,
+    LastConnectedBlock,
+}
+
+impl StoreKey {
+    pub fn value(&self) -> String {
+        match self {
+            StoreKey::BlockByHash(block_hash) => format!("block/hash/{}", block_hash),
+            StoreKey::BlockByNumber(block_height) => format!("block/height/{}", block_height),
+            StoreKey::BestBlock => "meta/best_block_height".to_string(),
+            StoreKey::LastConnectedBlock => "meta/last_connected_block".to_string(),
+        }
+    }
+}
+
+// TODO extract interface of this store
+
 impl CachedKeyValueStore {
     pub fn new(path: &str) -> Result<Self> {
         let db = Storage::new_with_path(&PathBuf::from(format!("{}/.rootstock_monitor", path)))?;
@@ -18,38 +38,76 @@ impl CachedKeyValueStore {
         })
     }
 
-    fn save_to_cache<T: Clone>(&self, key: &str, value: &T, cache: &Cache<T>) -> Result<()>
-    where
-        T: serde::Serialize,
-    {
-        cache.insert(key, value)?;
+    fn save_to_block_cache(&self, key: &str, value: &RskBlock) -> Result<()> {
+        self.block_cache.insert(key, value)?;
         Ok(())
     }
 
-    fn get_from_cache<T: Clone>(&self, key: &str, cache: &Cache<T>) -> Result<Option<T>>
-    where
-        T: serde::de::DeserializeOwned,
-    {
-        if let Some(cached_value) = cache.get(key)? {
+    fn get_from_block_cache(&self, key: &str) -> Result<Option<RskBlock>> {
+        if let Some(cached_value) = self.block_cache.get(key)? {
             return Ok(Some(cached_value));
         }
 
         Ok(None)
     }
 
-    pub fn save_block(&self, key: &str, value: &RskBlock) -> Result<()> {
-        self.save_to_cache(key, value, &self.block_cache)?;
+    pub fn get_best_block(&self) -> Result<Option<RskBlock>> {
+        let key = &StoreKey::BestBlock.value();
+        let cached_block = self.get_from_block_cache(key)?;
+        Ok(cached_block.or(self.db.get(key)?))
+    }
+
+    pub fn set_best_block(&self, value: &RskBlock) -> Result<()> {
+        let key = &StoreKey::BestBlock.value();
+        self.save_to_block_cache(key, value)?;
         self.db.set(key, value)?;
         Ok(())
     }
 
-    pub fn get_block(&self, key: &str) -> Result<Option<RskBlock>> {
-        let cached_block = self.get_from_cache(key, &self.block_cache)?;
-        if let Some(block) = cached_block {
-            Ok(Some(block))
-        } else {
-            let block: Option<RskBlock> = self.db.get(key)?;
-            Ok(block)
+    pub fn get_last_connected_block(&self) -> Result<Option<RskBlock>> {
+        let key = &StoreKey::LastConnectedBlock.value();
+        let cached_block = self.get_from_block_cache(key)?;
+        Ok(cached_block.or(self.db.get(key)?))
+    }
+
+    pub fn set_last_connected_block(&self, value: &RskBlock) -> Result<()> {
+        let key = &StoreKey::LastConnectedBlock.value();
+        self.save_to_block_cache(key, value)?;
+        self.db.set(key, value)?;
+        Ok(())
+    }
+
+    pub fn get_block_by_hash(&self, block_hash: &str) -> Result<Option<RskBlock>> {
+        let key = &StoreKey::BlockByHash(block_hash.to_string()).value();
+        let cached_block = self.get_from_block_cache(key)?;
+        Ok(cached_block.or(self.db.get(key)?))
+    }
+
+    pub fn save_block(&self, value: &RskBlock) -> Result<()> {
+        let key = &StoreKey::BlockByHash(value.hash().to_string()).value();
+        self.save_to_block_cache(key, value)?;
+        self.db.set(key, value)?;
+        Ok(())
+    }
+
+    pub fn get_block_by_number(&self, block_height: u64) -> Result<Option<RskBlock>> {
+        let key = &StoreKey::BlockByNumber(block_height).value();
+        let cached_block_opt = self.get_from_block_cache(key)?;
+        if cached_block_opt.is_some() {
+            return Ok(cached_block_opt);
         }
+
+        let block_hash: Option<String> = self.db.get(key)?;
+        match block_hash {
+            Some(block_hash) => Ok(self.get_block_by_hash(&block_hash)?),
+            None => Ok(None),
+        }
+    }
+
+    pub fn set_canonical_block(&self, block: &RskBlock) -> Result<()> {
+        let key = &StoreKey::BlockByNumber(block.number()).value();
+        self.save_to_block_cache(key, block)?;
+        self.db.set(key, block.hash())?;
+        Ok(())
     }
 }
