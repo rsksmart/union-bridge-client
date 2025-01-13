@@ -8,7 +8,8 @@ use monitor::types::RskBlock;
 use monitor::utils::RuntimeSync;
 use std::sync::Arc;
 
-const INITIAL_BLOCK: &str = "0x5609fff226ca052d12eca7bfdb45edca1c8252ac08b492420990fc8fb82c2868"; // TODO change if changed INITIAL_BLOCK_ENV
+// TODO(Jira) from .env: https://rsklabs.atlassian.net/browse/UB-14
+const INITIAL_BLOCK: &str = "0x5609fff226ca052d12eca7bfdb45edca1c8252ac08b492420990fc8fb82c2868";
 const FINALITY_FOR_CHECK: u8 = 10;
 
 fn main() -> Result<()> {

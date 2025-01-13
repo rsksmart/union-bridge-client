@@ -10,10 +10,6 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 hex = "0.4.3"
 primitive-types = { version = "0.13.1", features = ["std", "serde"] }
-# check_fork = { git = "ssh://git@github.com/rsksmart/union-bridge-check-fork.git", tag = "0.1.0" }
-# zkvm_guest = { path = "../zkvm_guest" }
-# zkvm_cli_serde = { package = "cli_serde", path = "../zkvm_host/cli_serde" }
-# zkvm_host = {package = "host", path = "../zkvm_host/host"} # TODO remove when done with tests
 log = "0.4.22"
 anyhow = "1.0.94"
 env_logger = "0.11.5"

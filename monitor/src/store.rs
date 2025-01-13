@@ -27,7 +27,7 @@ impl StoreKey {
     }
 }
 
-// TODO extract interface of this store
+// TODO(iago) extract interface of this store
 
 impl CachedKeyValueStore {
     pub fn new(path: &str) -> Result<Self> {

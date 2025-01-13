@@ -16,7 +16,6 @@ fn main() {
             println!("Guest output: REJECT, check_fork error: {}", e);
             1
         }
-        // TODO competing fork, should return 2 when implemented
     };
 
     env::commit(&result);

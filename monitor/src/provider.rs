@@ -31,7 +31,7 @@ pub struct AlloyRskWsProvider {
 }
 
 impl AlloyRskWsProvider {
-    // TODO call this logic from a "dependency injection" file
+    // TODO(iago) call this logic from a "dependency injection" file
     pub fn new(url: &str, rt_sync: Arc<RuntimeSync>) -> Result<Self> {
         let ws = WsConnect::new(url);
         let provider_setup = ProviderBuilder::new().on_ws(ws);
@@ -62,7 +62,7 @@ impl RskWsProvider for AlloyRskWsProvider {
 
         let response: Value = self.rt_sync.run(rpc_call)?;
 
-        // TODO resilience when response is not a block (ie not found)
+        // TODO(iago) resilience when response is not a block (ie not found)
 
         let rpc_block: RskRpcBlock = serde_json::from_value(response)?;
         let rsk_block: RskBlock = RskBlock::from(rpc_block);
@@ -80,7 +80,7 @@ impl RskWsProvider for AlloyRskWsProvider {
 
         let response: Value = self.rt_sync.run(rpc_call)?;
 
-        // TODO resilience when response is not a block (ie not found)
+        // TODO(iago) resilience when response is not a block (ie not found)
 
         let rpc_block: RskRpcBlock = serde_json::from_value(response)?;
         let rsk_block: RskBlock = RskBlock::from(rpc_block);

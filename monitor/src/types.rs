@@ -12,8 +12,7 @@ pub struct RskBlock {
     difficulty: U256,
     timestamp: u64,
     pow: String,
-    // bridge_event: Option<BridgeEvent>, // TODO implement
-    // uncles: Vec<Block>, // TODO test with some
+    // bridge_event: Option<BridgeEvent>, // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-10
 }
 
 impl RskBlock {
@@ -76,8 +75,6 @@ pub struct RskRpcBlock {
         deserialize_with = "parse_bitcoin_header_to_pow"
     )]
     pow: String,
-    // bridge_event: Option<BridgeEvent>, // TODO implement
-    // uncles: Vec<Block>, // TODO test with some
 }
 
 fn parse_hex_to_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
@@ -130,5 +127,5 @@ impl From<RskRpcBlock> for RskBlock {
 }
 
 pub struct RskLog {
-    // TODO implement
+    // TODO(Jira) implement: https://rsklabs.atlassian.net/browse/UB-10
 }

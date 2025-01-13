@@ -15,8 +15,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::{env, thread, time::Duration};
 
+// TODO(Jira) move to .env: https://rsklabs.atlassian.net/browse/UB-14
 const INITIAL_BLOCK_HASH_ENV: &str =
-    "0x5609fff226ca052d12eca7bfdb45edca1c8252ac08b492420990fc8fb82c2868"; // TODO move to .env
+    "0x5609fff226ca052d12eca7bfdb45edca1c8252ac08b492420990fc8fb82c2868";
 
 fn main() -> Result<()> {
     env_logger::init();
@@ -27,7 +28,7 @@ fn main() -> Result<()> {
         warn!("No .env file found");
     }
 
-    // TODO move its creation to the Provider file
+    // TODO(iago) move its creation to the Provider file
     let rt_sync = Arc::new(RuntimeSync::new()?);
 
     let shutdown_flag_control = Arc::new(ShutdownFlag::init());
@@ -84,12 +85,7 @@ fn subscribe_blocks(
     store: &CachedKeyValueStore,
     rt_sync: Arc<RuntimeSync>,
 ) -> Result<()> {
-    // TODO (make resilient, see list below)
-    // 1) add last_ping to check if connection is still alive
-    // 2) add exponential backoff
-    // 3) add reconnect
-    // 4) add backup servers
-    // 5) everything configurable
+    // TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15
 
     let rsk_ws_provider: Box<
         dyn RskWsProvider<BlockSub = AlloyBlockSubscription, LogsSub = AlloyLogsSubscription>,
@@ -124,7 +120,7 @@ fn subscribe_blocks(
         debug!("Fetched RSK block on subscription: {:?}", recv_block);
 
         if recv_block.parent() == parent_block_hash {
-            // TODO take care of transactionality here. Is it needed here, or a new iter/run will retroactively fix it?
+            // TODO(Jira) take care of transactionality: https://rsklabs.atlassian.net/browse/UB-11
             store.save_block(&recv_block)?;
             store.set_canonical_block(&recv_block)?;
             store.set_best_block(&recv_block)?;
@@ -142,10 +138,7 @@ fn subscribe_blocks(
         parent_block_hash = recv_block.hash().to_string();
     }
 
-    // TODO do this close outside if reused by http calls
-    // TODO check why sometimes I get "WS connection error: Closed" (probably still being reused by some task)
-    // TODO run eth_unsubscribe with subscription id
-    // TODO handle reconnect on error
+    // TODO(iago) do this close outside if reused by http calls
 
     rsk_block_subscription.unsubscribe()?;
 
@@ -188,7 +181,7 @@ fn subscribe_blocks(
 //     Ok(())
 // }
 
-// TODO move to provider
+// TODO(iago) move to provider
 fn fetch_block_data(
     provider: &RootProvider<PubSubFrontend>,
     rt_sync: Arc<RuntimeSync>,
@@ -218,7 +211,7 @@ fn fetch_block_data(
 
     let response = rt_sync.run(rpc_call)?;
 
-    // TODO resilience when response is not a block (ie not found)
+    // TODO(iago) resilience when response is not a block (ie not found)
 
     let rpc_block: RskRpcBlock = serde_json::from_value(response)?;
     let rsk_block: RskBlock = RskBlock::from(rpc_block);
@@ -231,8 +224,9 @@ fn backward_sync(
     rt_sync: Arc<RuntimeSync>,
     store: &CachedKeyValueStore,
 ) -> Result<()> {
-    // TODO reuse connection
-    let rpc_url = "wss://public-node.testnet.rsk.co/websocket"; // TODO move to .env
+    // TODO(iago) reuse connection
+    // TODO(Jira) move to .env: https://rsklabs.atlassian.net/browse/UB-14
+    let rpc_url = "wss://public-node.testnet.rsk.co/websocket";
     let ws = WsConnect::new(rpc_url);
     let provider = rt_sync.run(ProviderBuilder::new().on_ws(ws))?;
 
@@ -243,7 +237,7 @@ fn backward_sync(
         .ok_or_else(|| anyhow!("Failed to get last_connected_block from store"))?;
 
     let best_block_num = rt_sync.run(provider.get_block_number())?;
-    let best_block = fetch_block_data(&provider, rt_sync.clone(), None, Some(&best_block_num))?; // TODO resilient to not found
+    let best_block = fetch_block_data(&provider, rt_sync.clone(), None, Some(&best_block_num))?; // TODO(iago) resilient to not found
 
     if best_block.hash() == last_connected_block.hash() {
         info!(
@@ -283,7 +277,7 @@ fn backward_sync(
                 node_block.hash()
             );
 
-            // TODO take care of transactionality here. Is it needed here, or a new iter/run will retroactively fix it?
+            // TODO(Jira) take care of transactionality: https://rsklabs.atlassian.net/browse/UB-11
             store.save_block(&node_block)?;
             store.set_canonical_block(&node_block)?;
         } else {
@@ -294,7 +288,7 @@ fn backward_sync(
             );
         }
 
-        // TODO request and persist uncles, like in eth_subscribe, we need them for check_fork
+        // TODO(Jira) request and persist uncles: https://rsklabs.atlassian.net/browse/UB-16
 
         let parent_block_num = node_block.number() - 1;
         node_block = fetch_block_data(&provider, rt_sync.clone(), None, Some(&parent_block_num))?;
@@ -318,8 +312,7 @@ fn backward_sync(
         }
     }
 
-    // TODO try to reuse and therefore close in a unified place
-    // TODO check why sometimes I get "WS connection error: Closed" (probably still being reused by some task)
+    // TODO(iago) try to reuse and therefore close in a unified place
     drop(provider);
 
     Ok(())
@@ -340,7 +333,7 @@ fn initialize_db_if_required(
                 rt_sync.clone(),
                 Some(INITIAL_BLOCK_HASH_ENV),
                 None,
-            )?; // TODO resilient to not found
+            )?; // TODO(iago) resilient to not found
 
             info!(
                 "First backward sync, setting last_connected_block to initial block {} ({})",
@@ -348,7 +341,7 @@ fn initialize_db_if_required(
                 initial_block.hash()
             );
 
-            // TODO think about transactionality
+            // TODO(Jira) take care of transactionality: https://rsklabs.atlassian.net/browse/UB-11
             // initialize the store with the initial block info
             store.set_canonical_block(&initial_block)?;
             store.set_best_block(&initial_block)?;
