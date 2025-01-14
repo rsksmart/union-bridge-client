@@ -2,63 +2,73 @@ use crate::types::{RskBlock, RskLog, RskRpcBlock};
 use crate::utils::RuntimeSync;
 use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy_pubsub::{PubSubFrontend, Subscription, SubscriptionItem};
-use alloy_rpc_types::Header;
+use alloy_rpc_types::{Header, Log};
 use anyhow::{anyhow, bail, Result};
-use log::{debug, trace};
+use log::trace;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
-pub trait RskWsProvider {
-    type BlockSub: RskSubscription<String>;
-    type LogsSub: RskSubscription<RskLog>;
-
-    fn subscribe_blocks(&self) -> Result<Self::BlockSub>;
-    fn subscribe_logs(&self) -> Result<Self::LogsSub>;
+pub trait RskProviderApi {
     fn get_block_by_hash(&self, hash: &str) -> Result<RskBlock>;
     fn get_block_by_number(&self, num: u64) -> Result<RskBlock>;
     fn get_best_block(&self) -> Result<RskBlock>;
     fn disconnect(self) -> Result<()>;
 }
 
-pub trait RskSubscription<T> {
-    fn next(&mut self) -> Result<Option<T>>;
-    fn unsubscribe(self) -> Result<()>;
+#[derive(Clone)]
+pub struct RskProvider<P>
+where
+    P: RskProviderApi,
+{
+    inner: P,
 }
 
-pub struct AlloyRskWsProvider {
+impl RskProvider<AlloyProvider> {
+    pub fn new(url: &str) -> Self {
+        let provider = AlloyProvider::new(url)
+            .unwrap_or_else(|e| panic!("Failed to create provider: {:?}", e));
+        Self { inner: provider }
+    }
+
+    pub fn get_block_by_hash(&self, hash: &str) -> Result<RskBlock> {
+        self.inner.get_block_by_hash(hash)
+    }
+
+    pub fn get_block_by_number(&self, num: u64) -> Result<RskBlock> {
+        self.inner.get_block_by_number(num)
+    }
+
+    pub fn get_best_block(&self) -> Result<RskBlock> {
+        self.inner.get_best_block()
+    }
+
+    pub fn disconnect(self) -> Result<()> {
+        self.inner.disconnect()?;
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
+pub struct AlloyProvider {
     provider: RootProvider<PubSubFrontend>,
     rt_sync: Arc<RuntimeSync>,
 }
 
-impl AlloyRskWsProvider {
-    // TODO(iago) call this logic from a "dependency injection" file
-    pub fn new(url: &str, rt_sync: Arc<RuntimeSync>) -> Result<Self> {
+impl AlloyProvider {
+    fn new(url: &str) -> Result<Self> {
         let ws = WsConnect::new(url);
-        let provider_setup = ProviderBuilder::new().on_ws(ws);
-        let provider = rt_sync.run(provider_setup)?;
-        Ok(AlloyRskWsProvider { provider, rt_sync })
+        let rt_sync = Arc::new(RuntimeSync::new()?);
+        let provider = rt_sync.run(ProviderBuilder::new().on_ws(ws))?;
+        Ok(AlloyProvider { provider, rt_sync })
     }
 }
 
-impl RskWsProvider for AlloyRskWsProvider {
-    type BlockSub = AlloyBlockSubscription;
-    type LogsSub = AlloyLogsSubscription;
-
-    fn subscribe_blocks(&self) -> Result<Self::BlockSub> {
-        let subscription_request = self.provider.subscribe_blocks();
-        let sub = self.rt_sync.run(subscription_request)?;
-        Ok(AlloyBlockSubscription::new(sub, self.rt_sync.clone()))
-    }
-
-    fn subscribe_logs(&self) -> Result<Self::LogsSub> {
-        todo!()
-    }
-
-    fn get_block_by_hash(&self, block_hash: &str) -> Result<RskBlock> {
+impl RskProviderApi for AlloyProvider {
+    fn get_block_by_hash(&self, hash: &str) -> Result<RskBlock> {
         let rpc_call = self
             .provider
             .client()
-            .request("eth_getBlockByHash", vec![json!(block_hash), json!(false)]);
+            .request("eth_getBlockByHash", vec![json!(hash), json!(false)]);
 
         let response: Value = self.rt_sync.run(rpc_call)?;
 
@@ -102,19 +112,85 @@ impl RskWsProvider for AlloyRskWsProvider {
     }
 }
 
-pub struct AlloyBlockSubscription {
-    sub: Subscription<Header>,
-    rt_sync: Arc<RuntimeSync>,
+pub trait RskSubscriptionApi<T> {
+    fn try_next(&mut self) -> Result<Option<T>>;
+    fn unsubscribe(self) -> Result<()>;
 }
 
-impl AlloyBlockSubscription {
-    pub fn new(sub: Subscription<Header>, rt_sync: Arc<RuntimeSync>) -> Self {
-        Self { sub, rt_sync }
+pub struct RskBlockSubscription<P>
+where
+    P: RskSubscriptionApi<RskBlock>,
+{
+    inner: P,
+}
+
+pub struct RskLogSubscription<P>
+where
+    P: RskSubscriptionApi<RskLog>,
+{
+    inner: P,
+}
+
+impl RskBlockSubscription<AlloySubscription<Header>> {
+    pub fn new(provider: RskProvider<AlloyProvider>) -> Self {
+        let subscription: AlloySubscription<Header> =
+            <AlloySubscription<Header>>::new(provider.inner)
+                .unwrap_or_else(|e| panic!("Failed to create block subscription: {:?}", e));
+        Self {
+            inner: subscription,
+        }
+    }
+
+    pub fn next(&mut self) -> Result<Option<RskBlock>> {
+        self.inner.try_next()
+    }
+
+    pub fn unsubscribe(self) -> Result<()> {
+        self.inner.unsubscribe()?;
+        Ok(())
     }
 }
 
-impl RskSubscription<String> for AlloyBlockSubscription {
-    fn next(&mut self) -> Result<Option<String>> {
+impl RskLogSubscription<AlloySubscription<Log>> {
+    pub fn new(provider: RskProvider<AlloyProvider>) -> Self {
+        let subscription: AlloySubscription<Log> = <AlloySubscription<Log>>::new(provider.inner)
+            .unwrap_or_else(|e| panic!("Failed to create block subscription: {:?}", e));
+        Self {
+            inner: subscription,
+        }
+    }
+
+    fn next(&mut self) -> Result<Option<RskLog>> {
+        self.inner.try_next()
+    }
+
+    fn unsubscribe(self) -> Result<()> {
+        self.inner.unsubscribe()?;
+        Ok(())
+    }
+}
+
+pub struct AlloySubscription<T> {
+    sub: Subscription<T>,
+    provider: AlloyProvider,
+}
+
+impl AlloySubscription<Header> {
+    fn new(provider: AlloyProvider) -> Result<Self> {
+        let subscription_request = provider.provider.subscribe_blocks();
+        let sub = provider.rt_sync.run(subscription_request)?;
+        Ok(Self { sub, provider })
+    }
+}
+
+impl AlloySubscription<Log> {
+    fn new(provider: AlloyProvider) -> Result<Self> {
+        todo!("Implement me!")
+    }
+}
+
+impl RskSubscriptionApi<RskBlock> for AlloySubscription<Header> {
+    fn try_next(&mut self) -> Result<Option<RskBlock>> {
         let header = match self.sub.try_recv_any() {
             Ok(header) => header,
             Err(_) => {
@@ -137,23 +213,23 @@ impl RskSubscription<String> for AlloyBlockSubscription {
             .as_str()
             .ok_or_else(|| anyhow!("Missing hash field"))?;
 
-        Ok(Some(new_block_hash.to_string()))
+        // TODO(iago) resilience when block is not found
+        Ok(Some(self.provider.get_block_by_hash(&new_block_hash)?))
     }
 
     fn unsubscribe(self) -> Result<()> {
-        // Nothing to do apparently for this provider
+        // TODO(iago) nothing to do apparently for this provider? confirm
         Ok(())
     }
 }
 
-pub struct AlloyLogsSubscription {}
-
-impl RskSubscription<RskLog> for AlloyLogsSubscription {
-    fn next(&mut self) -> Result<Option<RskLog>> {
-        todo!()
+impl RskSubscriptionApi<RskLog> for AlloySubscription<Log> {
+    fn try_next(&mut self) -> Result<Option<RskLog>> {
+        todo!("Implement me!")
     }
 
     fn unsubscribe(self) -> Result<()> {
-        todo!()
+        // TODO(iago) nothing to do apparently for this provider? confirm
+        Ok(())
     }
 }

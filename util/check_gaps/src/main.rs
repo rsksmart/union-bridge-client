@@ -1,12 +1,8 @@
 use anyhow::{bail, Context, Ok, Result};
 use log::{debug, info};
-use monitor::provider::{
-    AlloyBlockSubscription, AlloyLogsSubscription, AlloyRskWsProvider, RskWsProvider,
-};
-use monitor::store::{CachedKeyValueStore, StoreKey};
+use monitor::provider::RskProvider;
+use monitor::store::CachedKeyValueStore;
 use monitor::types::RskBlock;
-use monitor::utils::RuntimeSync;
-use std::sync::Arc;
 
 // TODO(Jira) from .env: https://rsklabs.atlassian.net/browse/UB-14
 const INITIAL_BLOCK: &str = "0x5609fff226ca052d12eca7bfdb45edca1c8252ac08b492420990fc8fb82c2868";
@@ -82,12 +78,7 @@ fn main() -> Result<()> {
 }
 
 fn find_connection_point(store_block: &RskBlock, attempts: u8) -> Result<bool> {
-    let rsk_ws_provider: Box<
-        dyn RskWsProvider<BlockSub = AlloyBlockSubscription, LogsSub = AlloyLogsSubscription>,
-    > = Box::new(AlloyRskWsProvider::new(
-        "wss://public-node.testnet.rsk.co/websocket",
-        Arc::new(RuntimeSync::new()?),
-    )?);
+    let rsk_ws_provider = RskProvider::new("wss://public-node.testnet.rsk.co/websocket");
 
     let mut connection_found = false;
     for i in 0..attempts {

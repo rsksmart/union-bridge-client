@@ -2,18 +2,15 @@ use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy_pubsub::PubSubFrontend;
 use anyhow::{anyhow, bail, Ok, Result};
 use log::{debug, error, info, warn};
-use monitor::provider::{
-    AlloyBlockSubscription, AlloyLogsSubscription, AlloyRskWsProvider, RskSubscription,
-    RskWsProvider,
-};
+use monitor::provider::{AlloyProvider, RskBlockSubscription, RskProvider, RskProviderApi};
 use monitor::store::CachedKeyValueStore;
-use monitor::types::{RskBlock, RskRpcBlock};
-use monitor::utils::RuntimeSync;
-use serde_json::{json, Value};
-use std::hash::Hash;
+use monitor::types::RskBlock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::{env, thread, time::Duration};
+use std::{thread, time::Duration};
+
+// TODO(Jira) move to .env: https://rsklabs.atlassian.net/browse/UB-14
+const WS_URL: &'static str = "wss://public-node.testnet.rsk.co/websocket";
 
 // TODO(Jira) move to .env: https://rsklabs.atlassian.net/browse/UB-14
 const INITIAL_BLOCK_HASH_ENV: &str =
@@ -28,9 +25,6 @@ fn main() -> Result<()> {
         warn!("No .env file found");
     }
 
-    // TODO(iago) move its creation to the Provider file
-    let rt_sync = Arc::new(RuntimeSync::new()?);
-
     let shutdown_flag_control = Arc::new(ShutdownFlag::init());
     let shutdown_flag_worker = Arc::clone(&shutdown_flag_control);
 
@@ -43,9 +37,12 @@ fn main() -> Result<()> {
     let store = CachedKeyValueStore::new("/Users/illuque/tmp/")
         .expect("Failed to create CachedKeyValueStore");
 
+    // TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15
+    let rsk_provider = RskProvider::new(WS_URL);
+
     let worker_thread = thread::spawn(move || {
         // after boot, we do a backward_sync to catch up with the latest block
-        if let Err(e) = backward_sync(&shutdown_flag_worker, rt_sync.clone(), &store) {
+        if let Err(e) = backward_sync(&shutdown_flag_worker, &rsk_provider, &store) {
             error!("Unrecoverable error in backward_sync: {:?}", e);
             return;
         }
@@ -54,7 +51,7 @@ fn main() -> Result<()> {
             return;
         }
 
-        if let Err(e) = subscribe_blocks(&shutdown_flag_worker, &store, rt_sync.clone()) {
+        if let Err(e) = subscribe_blocks(&shutdown_flag_worker, &store, rsk_provider) {
             error!("Unrecoverable error in subscribe_blocks: {:?}", e);
             return;
         }
@@ -83,20 +80,11 @@ fn main() -> Result<()> {
 fn subscribe_blocks(
     shutdown_flag: &ShutdownFlag,
     store: &CachedKeyValueStore,
-    rt_sync: Arc<RuntimeSync>,
+    provider: RskProvider<AlloyProvider>,
 ) -> Result<()> {
-    // TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15
-
-    let rsk_ws_provider: Box<
-        dyn RskWsProvider<BlockSub = AlloyBlockSubscription, LogsSub = AlloyLogsSubscription>,
-    > = Box::new(AlloyRskWsProvider::new(
-        "wss://public-node.testnet.rsk.co/websocket",
-        rt_sync.clone(),
-    )?);
-
-    let mut rsk_block_subscription = rsk_ws_provider.subscribe_blocks()?;
-
     info!("Start subscribe_blocks...");
+
+    let mut rsk_block_subscription = RskBlockSubscription::new(provider.clone());
 
     let mut parent_block_hash = store
         .get_best_block()?
@@ -104,38 +92,39 @@ fn subscribe_blocks(
         .ok_or_else(|| anyhow!("Failed to get best_block from store"))?;
 
     while !shutdown_flag.is_on() {
-        let new_block_hash = rsk_block_subscription.next()?;
-        if new_block_hash.is_none() {
+        let new_block = rsk_block_subscription.next()?;
+        if new_block.is_none() {
             thread::sleep(Duration::from_secs(1));
             continue;
         }
 
-        let recv_block = rsk_ws_provider.get_block_by_hash(&new_block_hash.unwrap())?;
+        let new_block = new_block.unwrap();
+
         info!(
             "Processing block {} ({}) on subscription",
-            recv_block.number(),
-            recv_block.hash()
+            new_block.number(),
+            new_block.hash()
         );
 
-        debug!("Fetched RSK block on subscription: {:?}", recv_block);
+        debug!("Fetched RSK block on subscription: {:?}", new_block);
 
-        if recv_block.parent() == parent_block_hash {
+        if new_block.parent() == parent_block_hash {
             // TODO(Jira) take care of transactionality: https://rsklabs.atlassian.net/browse/UB-11
-            store.save_block(&recv_block)?;
-            store.set_canonical_block(&recv_block)?;
-            store.set_best_block(&recv_block)?;
-            store.set_last_connected_block(&recv_block)?;
+            store.save_block(&new_block)?;
+            store.set_canonical_block(&new_block)?;
+            store.set_best_block(&new_block)?;
+            store.set_last_connected_block(&new_block)?;
         } else {
             warn!(
                 "Reorg or gap detected on block {} ({} -> {})",
-                recv_block.number(),
+                new_block.number(),
                 parent_block_hash,
-                recv_block.parent()
+                new_block.parent()
             );
-            backward_sync(&shutdown_flag, rt_sync.clone(), &store)?;
+            backward_sync(&shutdown_flag, &provider, &store)?;
         }
 
-        parent_block_hash = recv_block.hash().to_string();
+        parent_block_hash = new_block.hash().to_string();
     }
 
     // TODO(iago) do this close outside if reused by http calls
@@ -145,104 +134,27 @@ fn subscribe_blocks(
     Ok(())
 }
 
-// fn apply_reorg(store: &CachedKeyValueStore, hash_for_reorg: &str) -> Result<()> {
-//     let mut next_canonical_hash = hash_for_reorg.to_string();
-//
-//     loop {
-//         let new_block = store
-//             .get_block_by_hash(&next_canonical_hash)?
-//             .ok_or_else(|| anyhow!("Could not find new_block by hash {}", next_canonical_hash))?;
-//
-//         let old_block = store
-//             .get_block_by_number(new_block.number())?
-//             .ok_or_else(|| anyhow!("Could not find old_block by number {}", new_block.number()))?;
-//
-//         if new_block.hash() == old_block.hash() {
-//             info!(
-//                 "Reorg fixed on block {} ({})",
-//                 new_block.number(),
-//                 new_block.hash()
-//             );
-//             break;
-//         }
-//
-//         info!(
-//             "Fixing reorg on block {} ({} -> {})",
-//             new_block.number(),
-//             old_block.hash(),
-//             new_block.hash()
-//         );
-//
-//         store.set_canonical_block(&new_block)?;
-//
-//         next_canonical_hash = new_block.parent().to_string();
-//     }
-//
-//     Ok(())
-// }
-
-// TODO(iago) move to provider
-fn fetch_block_data(
-    provider: &RootProvider<PubSubFrontend>,
-    rt_sync: Arc<RuntimeSync>,
-    block_hash: Option<&str>,
-    block_number: Option<&u64>,
-) -> Result<RskBlock> {
-    if block_hash.is_none() && block_number.is_none() {
-        bail!("Either block_hash or block_number must be provided");
-    }
-
-    if block_hash.is_some() && block_number.is_some() {
-        bail!("Only one of block_hash or block_number must be provided");
-    }
-
-    let (method, block_id) = if block_hash.is_some() {
-        ("eth_getBlockByHash", block_hash.unwrap().to_string())
-    } else {
-        (
-            "eth_getBlockByNumber",
-            format!("0x{:x}", block_number.unwrap()),
-        )
-    };
-
-    let rpc_call = provider
-        .client()
-        .request(method, vec![json!(block_id), json!(false)]);
-
-    let response = rt_sync.run(rpc_call)?;
-
-    // TODO(iago) resilience when response is not a block (ie not found)
-
-    let rpc_block: RskRpcBlock = serde_json::from_value(response)?;
-    let rsk_block: RskBlock = RskBlock::from(rpc_block);
-
-    Ok(rsk_block)
-}
-
 fn backward_sync(
     shutdown_flag: &ShutdownFlag,
-    rt_sync: Arc<RuntimeSync>,
+    rsk_provider: &RskProvider<AlloyProvider>,
     store: &CachedKeyValueStore,
 ) -> Result<()> {
     // TODO(iago) reuse connection
     // TODO(Jira) move to .env: https://rsklabs.atlassian.net/browse/UB-14
     let rpc_url = "wss://public-node.testnet.rsk.co/websocket";
-    let ws = WsConnect::new(rpc_url);
-    let provider = rt_sync.run(ProviderBuilder::new().on_ws(ws))?;
 
-    initialize_db_if_required(&rt_sync, store, &provider)?;
+    initialize_db_if_required(store, rsk_provider)?;
 
     let last_connected_block = store
         .get_last_connected_block()?
         .ok_or_else(|| anyhow!("Failed to get last_connected_block from store"))?;
 
-    let best_block_num = rt_sync.run(provider.get_block_number())?;
-    let best_block = fetch_block_data(&provider, rt_sync.clone(), None, Some(&best_block_num))?; // TODO(iago) resilient to not found
+    let best_block = rsk_provider.get_best_block()?; // TODO(iago) resilient to not found
 
     if best_block.hash() == last_connected_block.hash() {
         info!(
             "No backward sync needed, already at block {} ({})",
-            best_block_num,
+            best_block.number(),
             best_block.hash()
         );
         return Ok(());
@@ -250,7 +162,7 @@ fn backward_sync(
 
     info!(
         "Running backward_sync from block {} ({}) to {} ({})",
-        best_block_num,
+        best_block.number(),
         best_block.hash(),
         last_connected_block.number(),
         last_connected_block.hash(),
@@ -291,7 +203,7 @@ fn backward_sync(
         // TODO(Jira) request and persist uncles: https://rsklabs.atlassian.net/browse/UB-16
 
         let parent_block_num = node_block.number() - 1;
-        node_block = fetch_block_data(&provider, rt_sync.clone(), None, Some(&parent_block_num))?;
+        node_block = rsk_provider.get_block_by_number(parent_block_num)?;
         store_block_opt = store.get_block_by_number(parent_block_num)?;
 
         let is_target_num_reached = store_block_opt
@@ -313,27 +225,21 @@ fn backward_sync(
     }
 
     // TODO(iago) try to reuse and therefore close in a unified place
-    drop(provider);
+    drop(rsk_provider);
 
     Ok(())
 }
 
 fn initialize_db_if_required(
-    rt_sync: &Arc<RuntimeSync>,
     store: &CachedKeyValueStore,
-    provider: &RootProvider<PubSubFrontend>,
+    provider: &RskProvider<AlloyProvider>,
 ) -> Result<()> {
     let initial_block: Option<RskBlock> = store.get_block_by_hash(INITIAL_BLOCK_HASH_ENV)?.or(None);
 
     match initial_block {
         Some(_) => Ok(()),
         None => {
-            let initial_block = fetch_block_data(
-                &provider,
-                rt_sync.clone(),
-                Some(INITIAL_BLOCK_HASH_ENV),
-                None,
-            )?; // TODO(iago) resilient to not found
+            let initial_block = provider.get_block_by_hash(INITIAL_BLOCK_HASH_ENV)?; // TODO(iago) resilient to not found
 
             info!(
                 "First backward sync, setting last_connected_block to initial block {} ({})",
