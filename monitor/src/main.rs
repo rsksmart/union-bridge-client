@@ -2,7 +2,7 @@ use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy_pubsub::PubSubFrontend;
 use anyhow::{anyhow, bail, Ok, Result};
 use log::{debug, error, info, warn};
-use monitor::provider::{AlloyProvider, RskBlockSubscription, RskProvider, RskProviderApi};
+use monitor::provider::{AlloyProvider, RskBlockSubscription, RskApi, RskProvider, RskBlockSubscriptionApi};
 use monitor::store::CachedKeyValueStore;
 use monitor::types::RskBlock;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -38,7 +38,7 @@ fn main() -> Result<()> {
         .expect("Failed to create CachedKeyValueStore");
 
     // TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15
-    let rsk_provider = RskProvider::new(WS_URL);
+    let rsk_provider = RskApi::new(WS_URL);
 
     let worker_thread = thread::spawn(move || {
         // after boot, we do a backward_sync to catch up with the latest block
@@ -80,11 +80,11 @@ fn main() -> Result<()> {
 fn subscribe_blocks(
     shutdown_flag: &ShutdownFlag,
     store: &CachedKeyValueStore,
-    provider: RskProvider<AlloyProvider>,
+    provider: RskApi<AlloyProvider>,
 ) -> Result<()> {
     info!("Start subscribe_blocks...");
 
-    let mut rsk_block_subscription = RskBlockSubscription::new(provider.clone());
+    let mut rsk_block_subscription = RskBlockSubscriptionApi::new(&provider);
 
     let mut parent_block_hash = store
         .get_best_block()?
@@ -92,7 +92,7 @@ fn subscribe_blocks(
         .ok_or_else(|| anyhow!("Failed to get best_block from store"))?;
 
     while !shutdown_flag.is_on() {
-        let new_block = rsk_block_subscription.next()?;
+        let new_block = rsk_block_subscription.try_next()?;
         if new_block.is_none() {
             thread::sleep(Duration::from_secs(1));
             continue;
@@ -136,7 +136,7 @@ fn subscribe_blocks(
 
 fn backward_sync(
     shutdown_flag: &ShutdownFlag,
-    rsk_provider: &RskProvider<AlloyProvider>,
+    rsk_provider: &RskApi<AlloyProvider>,
     store: &CachedKeyValueStore,
 ) -> Result<()> {
     // TODO(iago) reuse connection
@@ -232,7 +232,7 @@ fn backward_sync(
 
 fn initialize_db_if_required(
     store: &CachedKeyValueStore,
-    provider: &RskProvider<AlloyProvider>,
+    provider: &RskApi<AlloyProvider>,
 ) -> Result<()> {
     let initial_block: Option<RskBlock> = store.get_block_by_hash(INITIAL_BLOCK_HASH_ENV)?.or(None);
 

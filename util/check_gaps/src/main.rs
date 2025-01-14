@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Ok, Result};
 use log::{debug, info};
-use monitor::provider::RskProvider;
+use monitor::provider::{RskApi, RskProvider};
 use monitor::store::CachedKeyValueStore;
 use monitor::types::RskBlock;
 
@@ -78,7 +78,7 @@ fn main() -> Result<()> {
 }
 
 fn find_connection_point(store_block: &RskBlock, attempts: u8) -> Result<bool> {
-    let rsk_ws_provider = RskProvider::new("wss://public-node.testnet.rsk.co/websocket");
+    let rsk_ws_provider = RskApi::new("wss://public-node.testnet.rsk.co/websocket");
 
     let mut connection_found = false;
     for i in 0..attempts {
