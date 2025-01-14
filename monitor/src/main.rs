@@ -1,8 +1,10 @@
 use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy_pubsub::PubSubFrontend;
-use anyhow::{anyhow, bail, Ok, Result};
+use anyhow::{anyhow, bail, Context, Ok, Result};
 use log::{debug, error, info, warn};
-use monitor::provider::{AlloyProvider, RskBlockSubscription, RskApi, RskProvider, RskBlockSubscriptionApi};
+use monitor::provider::{
+    AlloyProvider, RskApi, RskBlockSubscription, RskBlockSubscriptionApi, RskProvider,
+};
 use monitor::store::CachedKeyValueStore;
 use monitor::types::RskBlock;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -37,23 +39,16 @@ fn main() -> Result<()> {
     let store = CachedKeyValueStore::new("/Users/illuque/tmp/")
         .expect("Failed to create CachedKeyValueStore");
 
-    // TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15
-    let rsk_provider = RskApi::new(WS_URL);
-
     let worker_thread = thread::spawn(move || {
-        // after boot, we do a backward_sync to catch up with the latest block
-        if let Err(e) = backward_sync(&shutdown_flag_worker, &rsk_provider, &store) {
-            error!("Unrecoverable error in backward_sync: {:?}", e);
-            return;
+        // TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15
+        let rsk_provider = RskApi::new(WS_URL);
+
+        if let Err(e) = run_monitor(&shutdown_flag_worker, &store, &rsk_provider) {
+            error!("Unrecoverable error running monitor: {:?}", e);
         }
 
-        if shutdown_flag_worker.is_on() {
-            return;
-        }
-
-        if let Err(e) = subscribe_blocks(&shutdown_flag_worker, &store, rsk_provider) {
-            error!("Unrecoverable error in subscribe_blocks: {:?}", e);
-            return;
+        if let Err(e) = rsk_provider.disconnect() {
+            error!("Failed to close provider: {:?}", e);
         }
     });
 
@@ -77,10 +72,27 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+fn run_monitor(
+    shutdown_flag: &Arc<ShutdownFlag>,
+    store: &CachedKeyValueStore,
+    rsk_provider: &RskApi<AlloyProvider>,
+) -> Result<()> {
+    // After boot, we do a backward_sync to catch up with the latest block
+    backward_sync(&shutdown_flag, &rsk_provider, &store)?;
+
+    if shutdown_flag.is_on() {
+        return Ok(());
+    }
+
+    subscribe_blocks(&shutdown_flag, &store, &rsk_provider)?;
+
+    Ok(())
+}
+
 fn subscribe_blocks(
     shutdown_flag: &ShutdownFlag,
     store: &CachedKeyValueStore,
-    provider: RskApi<AlloyProvider>,
+    provider: &RskApi<AlloyProvider>,
 ) -> Result<()> {
     info!("Start subscribe_blocks...");
 
@@ -139,10 +151,6 @@ fn backward_sync(
     rsk_provider: &RskApi<AlloyProvider>,
     store: &CachedKeyValueStore,
 ) -> Result<()> {
-    // TODO(iago) reuse connection
-    // TODO(Jira) move to .env: https://rsklabs.atlassian.net/browse/UB-14
-    let rpc_url = "wss://public-node.testnet.rsk.co/websocket";
-
     initialize_db_if_required(store, rsk_provider)?;
 
     let last_connected_block = store
@@ -223,9 +231,6 @@ fn backward_sync(
             }
         }
     }
-
-    // TODO(iago) try to reuse and therefore close in a unified place
-    drop(rsk_provider);
 
     Ok(())
 }
