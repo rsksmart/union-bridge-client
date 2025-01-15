@@ -1,6 +1,4 @@
-use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
-use alloy_pubsub::PubSubFrontend;
-use anyhow::{anyhow, bail, Context, Ok, Result};
+use anyhow::{anyhow, Ok, Result};
 use log::{debug, error, info, warn};
 use monitor::provider::{
     AlloyProvider, RskApi, RskBlockSubscription, RskBlockSubscriptionApi, RskProvider,
@@ -16,7 +14,9 @@ const WS_URL: &'static str = "wss://public-node.testnet.rsk.co/websocket";
 
 // TODO(Jira) move to .env: https://rsklabs.atlassian.net/browse/UB-14
 const INITIAL_BLOCK_HASH_ENV: &str =
-    "0x5609fff226ca052d12eca7bfdb45edca1c8252ac08b492420990fc8fb82c2868";
+    "0xd608130f2caf657d11ec5bc2cbe7c17415813cb906714d1f2b4c6079dcf4c39a";
+
+// TODO(Jira) move to .env: https://rsklabs.atlassian.net/browse/UB-14
 
 fn main() -> Result<()> {
     env_logger::init();
@@ -43,6 +43,7 @@ fn main() -> Result<()> {
         // TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15
         let rsk_provider = RskApi::new(WS_URL);
 
+        // TODO(iago) extract monitor to its own class
         if let Err(e) = run_monitor(&shutdown_flag_worker, &store, &rsk_provider) {
             error!("Unrecoverable error running monitor: {:?}", e);
         }
@@ -98,9 +99,8 @@ fn subscribe_blocks(
 
     let mut rsk_block_subscription = RskBlockSubscriptionApi::new(&provider);
 
-    let mut parent_block_hash = store
+    let mut tip_block = store
         .get_best_block()?
-        .map(|b| b.hash().to_string())
         .ok_or_else(|| anyhow!("Failed to get best_block from store"))?;
 
     while !shutdown_flag.is_on() {
@@ -112,35 +112,50 @@ fn subscribe_blocks(
 
         let new_block = new_block.unwrap();
 
-        info!(
-            "Processing block {} ({}) on subscription",
-            new_block.number(),
-            new_block.hash()
-        );
-
         debug!("Fetched RSK block on subscription: {:?}", new_block);
 
-        if new_block.parent() == parent_block_hash {
-            // TODO(Jira) take care of transactionality: https://rsklabs.atlassian.net/browse/UB-11
-            store.save_block(&new_block)?;
-            store.set_canonical_block(&new_block)?;
-            store.set_best_block(&new_block)?;
-            store.set_last_connected_block(&new_block)?;
-        } else {
-            warn!(
-                "Reorg or gap detected on block {} ({} -> {})",
-                new_block.number(),
-                parent_block_hash,
-                new_block.parent()
-            );
-            backward_sync(&shutdown_flag, &provider, &store)?;
-        }
+        // TODO(iago) pensar cuando hay que poner como best_block, si con el hash enganchado sirve o debería comprobar num consecutivo tb
+        // TODO(Jira) take care of transactionality: https://rsklabs.atlassian.net/browse/UB-11
 
-        parent_block_hash = new_block.hash().to_string();
+        // we always save the block by hash
+        store.save_block(&new_block)?;
+
+        let extends_canonical = new_block.parent() == tip_block.hash();
+        let requires_local_reorg =
+            !extends_canonical && new_block.total_difficulty() > tip_block.total_difficulty();
+
+        if extends_canonical {
+            // set canonical fields
+            store.set_best_block(&new_block)?;
+            store.set_canonical_block(&new_block)?;
+            // set last connected block to this new best block
+            store.set_last_connected_block(&new_block)?;
+
+            info!(
+                "Processed block {} ({}): new tip",
+                new_block.number(),
+                new_block.hash()
+            );
+
+            tip_block = new_block;
+        } else if requires_local_reorg {
+            info!(
+                "Processed block {} ({}): local reorg, run backward sync",
+                new_block.number(),
+                new_block.hash()
+            );
+            // backward_sync fixes reorgs internally (if any)
+            tip_block = backward_sync(&shutdown_flag, &provider, &store)?;
+        } else {
+            info!(
+                "Processing block {} ({}): non extending, non competing",
+                new_block.number(),
+                new_block.hash()
+            );
+        }
     }
 
-    // TODO(iago) do this close outside if reused by http calls
-
+    // TODO(iago) ensure closed even on errors above
     rsk_block_subscription.unsubscribe()?;
 
     Ok(())
@@ -150,7 +165,7 @@ fn backward_sync(
     shutdown_flag: &ShutdownFlag,
     rsk_provider: &RskApi<AlloyProvider>,
     store: &CachedKeyValueStore,
-) -> Result<()> {
+) -> Result<RskBlock> {
     initialize_db_if_required(store, rsk_provider)?;
 
     let last_connected_block = store
@@ -165,7 +180,7 @@ fn backward_sync(
             best_block.number(),
             best_block.hash()
         );
-        return Ok(());
+        return Ok(best_block);
     }
 
     info!(
@@ -224,15 +239,15 @@ fn backward_sync(
             if store_block.hash() == node_block.hash() {
                 connection_point_reached = true;
                 store.set_last_connected_block(&best_block)?;
-                debug!("backward_sync completed!");
+                info!("backward_sync completed!");
             } else {
-                debug!("target_block_num changed to {}", store_block.number(),);
                 target_block_num -= 1;
+                debug!("decrementing target block: {}", target_block_num);
             }
         }
     }
 
-    Ok(())
+    Ok(best_block)
 }
 
 fn initialize_db_if_required(

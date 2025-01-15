@@ -12,6 +12,7 @@ where
 {
     pub fn new() -> Self {
         Cache {
+            // TODO(iago) define max size
             inner: Arc::new(RwLock::new(HashMap::new())),
         }
     }
