@@ -4,6 +4,9 @@ use anyhow::Result;
 use std::path::PathBuf;
 use storage_backend::storage::{KeyValueStore, Storage};
 
+// TODO(Jira) move to .env: https://rsklabs.atlassian.net/browse/UB-14
+const BLOCK_CACHE_SIZE: usize = 100;
+
 pub struct CachedKeyValueStore {
     db: Storage,
     block_cache: Cache<RskBlock>,
@@ -34,7 +37,7 @@ impl CachedKeyValueStore {
         let db = Storage::new_with_path(&PathBuf::from(format!("{}/.rootstock_monitor", path)))?;
         Ok(Self {
             db,
-            block_cache: Cache::new(),
+            block_cache: Cache::new(BLOCK_CACHE_SIZE),
         })
     }
 

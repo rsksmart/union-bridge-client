@@ -20,3 +20,4 @@ alloy-pubsub = { version = "0.8.1" }
 ctrlc = "3.4"
 tokio = { version = "1.41.1", features = ["rt-multi-thread"] }
 dotenv = "0.15"
+lru = "0.12.5"

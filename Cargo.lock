@@ -2598,6 +2598,7 @@ dependencies = [
  "env_logger",
  "hex",
  "log",
+ "lru",
  "primitive-types 0.13.1",
  "rust-bitvmx-storage-backend",
  "serde",

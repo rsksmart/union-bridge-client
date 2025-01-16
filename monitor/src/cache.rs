@@ -1,44 +1,46 @@
 use anyhow::{anyhow, Result};
-use std::collections::HashMap;
+use lru::LruCache;
+use std::num::NonZeroUsize;
 use std::sync::{Arc, RwLock};
 
 pub struct Cache<V> {
-    inner: Arc<RwLock<HashMap<String, V>>>,
+    inner: Arc<RwLock<LruCache<String, V>>>,
 }
 
 impl<V> Cache<V>
 where
     V: Clone,
 {
-    pub fn new() -> Self {
+    pub fn new(max_size: usize) -> Self {
         Cache {
-            // TODO(iago) define max size
-            inner: Arc::new(RwLock::new(HashMap::new())),
+            inner: Arc::new(RwLock::new(LruCache::new(
+                NonZeroUsize::new(max_size).unwrap(),
+            ))),
         }
     }
 
     pub fn get(&self, key: &str) -> Result<Option<V>> {
-        let read_guard = self
-            .inner
-            .read()
-            .map_err(|e| anyhow!("Failed to acquire read lock on cache: {:?}", e))?;
-        Ok(read_guard.get(key).cloned())
-    }
-
-    pub fn insert(&self, key: &str, value: &V) -> Result<()> {
-        let mut write_guard = self
+        let mut cache = self
             .inner
             .write()
             .map_err(|e| anyhow!("Failed to acquire write lock on cache: {:?}", e))?;
-        write_guard.insert(key.to_string(), value.to_owned());
+        Ok(cache.get(key).cloned())
+    }
+
+    pub fn insert(&self, key: &str, value: &V) -> Result<()> {
+        let mut cache = self
+            .inner
+            .write()
+            .map_err(|e| anyhow!("Failed to acquire write lock on cache: {:?}", e))?;
+        cache.put(key.to_string(), value.to_owned());
         Ok(())
     }
 
     pub fn remove(&self, key: &str) -> Result<Option<V>> {
-        let mut write_guard = self
+        let mut cache = self
             .inner
             .write()
             .map_err(|e| anyhow!("Failed to acquire write lock on cache: {:?}", e))?;
-        Ok(write_guard.remove(key))
+        Ok(cache.pop(key))
     }
 }
