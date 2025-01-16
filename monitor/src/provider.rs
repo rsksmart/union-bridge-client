@@ -110,14 +110,13 @@ impl RskProvider for AlloyProvider {
     }
 
     fn disconnect(self) -> Result<()> {
-        drop(self.provider);
-        Ok(())
+        Ok(drop(self.provider))
     }
 }
 
 pub trait RskBlockSubscription {
     fn try_next(&mut self) -> Result<Option<RskBlock>>;
-    fn unsubscribe(&self) -> Result<()>;
+    fn unsubscribe(self) -> Result<()>;
 }
 
 pub struct RskBlockSubscriptionApi<S>
@@ -144,9 +143,8 @@ where
         self.subscription.try_next()
     }
 
-    fn unsubscribe(&self) -> Result<()> {
-        self.subscription.unsubscribe()?;
-        Ok(())
+    fn unsubscribe(self) -> Result<()> {
+        self.subscription.unsubscribe()
     }
 }
 
@@ -194,9 +192,8 @@ impl RskBlockSubscription for AlloyBlockSubscription {
         Ok(Some(self.provider.get_block_by_hash(&new_block_hash)?))
     }
 
-    fn unsubscribe(&self) -> Result<()> {
-        // TODO(iago) nothing to do apparently for this provider? confirm
-        Ok(())
+    fn unsubscribe(self) -> Result<()> {
+        Ok(drop(self.subscription))
     }
 }
 
@@ -227,8 +224,7 @@ where
     }
 
     fn unsubscribe(&self) -> Result<()> {
-        self.subscription.unsubscribe()?;
-        Ok(())
+        Ok(self.subscription.unsubscribe()?)
     }
 }
 

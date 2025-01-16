@@ -41,9 +41,8 @@ impl CachedKeyValueStore {
         })
     }
 
-    fn save_to_block_cache(&self, key: &str, value: &RskBlock) -> Result<()> {
-        self.block_cache.insert(key, value)?;
-        Ok(())
+    fn save_to_block_cache(&self, key: &str, value: &RskBlock) -> Result<Option<RskBlock>> {
+        self.block_cache.insert(key, value)
     }
 
     fn get_from_block_cache(&self, key: &str) -> Result<Option<RskBlock>> {
@@ -63,8 +62,7 @@ impl CachedKeyValueStore {
     pub fn set_best_block(&self, value: &RskBlock) -> Result<()> {
         let key = &StoreKey::BestBlock.value();
         self.save_to_block_cache(key, value)?;
-        self.db.set(key, value)?;
-        Ok(())
+        Ok(self.db.set(key, value)?)
     }
 
     pub fn get_last_connected_block(&self) -> Result<Option<RskBlock>> {
@@ -76,8 +74,7 @@ impl CachedKeyValueStore {
     pub fn set_last_connected_block(&self, value: &RskBlock) -> Result<()> {
         let key = &StoreKey::LastConnectedBlock.value();
         self.save_to_block_cache(key, value)?;
-        self.db.set(key, value)?;
-        Ok(())
+        Ok(self.db.set(key, value)?)
     }
 
     pub fn get_block_by_hash(&self, block_hash: &str) -> Result<Option<RskBlock>> {
@@ -110,7 +107,6 @@ impl CachedKeyValueStore {
     pub fn set_canonical_block(&self, block: &RskBlock) -> Result<()> {
         let key = &StoreKey::BlockByNumber(block.number()).value();
         self.save_to_block_cache(key, block)?;
-        self.db.set(key, block.hash())?;
-        Ok(())
+        Ok(self.db.set(key, block.hash())?)
     }
 }

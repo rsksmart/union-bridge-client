@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Ok, Result};
+use anyhow::{anyhow, Result};
 use log::{debug, error, info, warn};
 use monitor::provider::{
     AlloyProvider, RskApi, RskBlockSubscription, RskBlockSubscriptionApi, RskProvider,
@@ -85,9 +85,7 @@ fn run_monitor(
         return Ok(());
     }
 
-    subscribe_blocks(&shutdown_flag, &store, &rsk_provider)?;
-
-    Ok(())
+    subscribe_blocks(&shutdown_flag, &store, &rsk_provider)
 }
 
 fn subscribe_blocks(
@@ -103,62 +101,67 @@ fn subscribe_blocks(
         .get_best_block()?
         .ok_or_else(|| anyhow!("Failed to get best_block from store"))?;
 
-    while !shutdown_flag.is_on() {
-        let new_block = rsk_block_subscription.try_next()?;
-        if new_block.is_none() {
-            thread::sleep(Duration::from_secs(1));
-            continue;
+    let loop_result = (|| {
+        while !shutdown_flag.is_on() {
+            let new_block = rsk_block_subscription.try_next()?;
+            if new_block.is_none() {
+                thread::sleep(Duration::from_secs(1));
+                continue;
+            }
+
+            let new_block = new_block.unwrap();
+
+            debug!("Fetched RSK block on subscription: {:?}", new_block);
+
+            // TODO(Jira) take care of transactionality: https://rsklabs.atlassian.net/browse/UB-11
+
+            // we always save the block by hash
+            store.save_block(&new_block)?;
+
+            let extends_canonical = new_block.parent() == tip_block.hash();
+            let requires_local_reorg =
+                !extends_canonical && new_block.total_difficulty() > tip_block.total_difficulty();
+
+            if extends_canonical {
+                // set canonical fields
+                store.set_best_block(&new_block)?;
+                store.set_canonical_block(&new_block)?;
+                // set last connected block to this new best block
+                store.set_last_connected_block(&new_block)?;
+
+                info!(
+                    "Processed block {} ({}): new tip",
+                    new_block.number(),
+                    new_block.hash()
+                );
+
+                tip_block = new_block;
+            } else if requires_local_reorg {
+                info!(
+                    "Processed block {} ({}): local reorg, run backward sync",
+                    new_block.number(),
+                    new_block.hash()
+                );
+                // backward_sync fixes reorgs internally (if any)
+                tip_block = backward_sync(&shutdown_flag, &provider, &store)?;
+            } else {
+                info!(
+                    "Processing block {} ({}): non extending, non competing",
+                    new_block.number(),
+                    new_block.hash()
+                );
+            }
         }
 
-        let new_block = new_block.unwrap();
+        Ok(())
+    })();
 
-        debug!("Fetched RSK block on subscription: {:?}", new_block);
-
-        // TODO(iago) pensar cuando hay que poner como best_block, si con el hash enganchado sirve o debería comprobar num consecutivo tb
-        // TODO(Jira) take care of transactionality: https://rsklabs.atlassian.net/browse/UB-11
-
-        // we always save the block by hash
-        store.save_block(&new_block)?;
-
-        let extends_canonical = new_block.parent() == tip_block.hash();
-        let requires_local_reorg =
-            !extends_canonical && new_block.total_difficulty() > tip_block.total_difficulty();
-
-        if extends_canonical {
-            // set canonical fields
-            store.set_best_block(&new_block)?;
-            store.set_canonical_block(&new_block)?;
-            // set last connected block to this new best block
-            store.set_last_connected_block(&new_block)?;
-
-            info!(
-                "Processed block {} ({}): new tip",
-                new_block.number(),
-                new_block.hash()
-            );
-
-            tip_block = new_block;
-        } else if requires_local_reorg {
-            info!(
-                "Processed block {} ({}): local reorg, run backward sync",
-                new_block.number(),
-                new_block.hash()
-            );
-            // backward_sync fixes reorgs internally (if any)
-            tip_block = backward_sync(&shutdown_flag, &provider, &store)?;
-        } else {
-            info!(
-                "Processing block {} ({}): non extending, non competing",
-                new_block.number(),
-                new_block.hash()
-            );
-        }
+    match rsk_block_subscription.unsubscribe() {
+        Ok(_) => (),
+        Err(e) => error!("Failed to unsubscribe from rsk_block_subscription: {:?}", e),
     }
 
-    // TODO(iago) ensure closed even on errors above
-    rsk_block_subscription.unsubscribe()?;
-
-    Ok(())
+    loop_result
 }
 
 fn backward_sync(
@@ -273,9 +276,7 @@ fn initialize_db_if_required(
             store.set_best_block(&initial_block)?;
             store.set_last_connected_block(&initial_block)?;
             // should go last, as it will be used to determine if the DB is initialized
-            store.save_block(&initial_block)?;
-
-            Ok(())
+            store.save_block(&initial_block)
         }
     }
 }

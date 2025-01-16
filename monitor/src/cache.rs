@@ -27,13 +27,12 @@ where
         Ok(cache.get(key).cloned())
     }
 
-    pub fn insert(&self, key: &str, value: &V) -> Result<()> {
+    pub fn insert(&self, key: &str, value: &V) -> Result<Option<V>> {
         let mut cache = self
             .inner
             .write()
             .map_err(|e| anyhow!("Failed to acquire write lock on cache: {:?}", e))?;
-        cache.put(key.to_string(), value.to_owned());
-        Ok(())
+        Ok(cache.put(key.to_string(), value.to_owned()))
     }
 
     pub fn remove(&self, key: &str) -> Result<Option<V>> {

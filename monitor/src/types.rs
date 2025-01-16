@@ -11,7 +11,6 @@ pub struct RskBlock {
     parent: String,
     difficulty: U256,
     timestamp: u64,
-    #[serde(default)] // TODO(iago) remove when done with tests with the db without this field
     total_difficulty: U256,
     pow: String,
     // bridge_event: Option<BridgeEvent>, // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-10
