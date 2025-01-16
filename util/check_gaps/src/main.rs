@@ -21,7 +21,7 @@ fn main() -> Result<()> {
         .get_best_block()?
         .context("Failed to get best block")?;
 
-    if !find_connection_point(&store_best_block, FINALITY_FOR_CHECK, &store)? {
+    if !find_canonical_connection(&store_best_block, FINALITY_FOR_CHECK, &store)? {
         bail!(
             "Could not find canonical block for best block {} ({}) after {} attempts",
             store_best_block.number(),
@@ -61,7 +61,7 @@ fn main() -> Result<()> {
         };
     }
 
-    if !find_connection_point(&next_block, 1, &store)? {
+    if !find_canonical_connection(&next_block, 1, &store)? {
         bail!(
             "Could not find canonical block for initial block {} ({})",
             next_block.number(),
@@ -79,28 +79,32 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn find_connection_point(
+fn find_canonical_connection(
     block_ref: &RskBlock,
-    attempts: u8,
+    block_margin: u8,
     store: &CachedKeyValueStore,
 ) -> Result<bool> {
     let rsk_ws_provider = RskApi::new("wss://public-node.testnet.rsk.co/websocket");
 
+    info!(
+        "Finding connection point for block {} ({})",
+        block_ref.number(),
+        block_ref.hash()
+    );
+
     let mut store_block = block_ref.clone();
+    let mut node_block = rsk_ws_provider
+        .get_block_by_number(store_block.number())
+        .context("Failed to get store_best_block block from node")?;
 
     let mut connection_found = false;
-    for i in 0..attempts {
-        let node_block = rsk_ws_provider
-            .get_block_by_number(store_block.number() - i as u64)
-            .context("Failed to get store_best_block block from node")?;
-
-        info!(
-            "Attempt {} - Node block: {} ({}) - Store block: {} ({})",
-            i,
+    for i in 1..=block_margin {
+        debug!(
+            "Checking local block {} ({}) against node block {} ({})",
+            store_block.number(),
+            store_block.hash(),
             node_block.number(),
             node_block.hash(),
-            store_block.number(),
-            store_block.hash()
         );
 
         connection_found = node_block.hash() == store_block.hash();
@@ -108,18 +112,13 @@ fn find_connection_point(
             break;
         }
 
-        let store_block_opt = store.get_block_by_hash(store_block.parent())?;
-        match store_block_opt {
-            Some(block) => store_block = block,
-            None => {
-                error!(
-                    "Disconnection found on store block {} ({})",
-                    store_block.number() - 1,
-                    store_block.parent()
-                );
-                return Ok(false);
-            }
-        }
+        node_block = rsk_ws_provider
+            .get_block_by_number(store_block.number() - i as u64)
+            .context("Failed to get block's parent from node")?;
+
+        store_block = store
+            .get_block_by_hash(store_block.parent())?
+            .expect("Failed to get block's parent from store");
     }
 
     Ok(connection_found)
