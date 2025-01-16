@@ -33,6 +33,7 @@ impl Indexer {
 
         // after boot, we do a backward_sync to catch up with the node
         self.backward_sync(&shutdown_flag)?;
+        info!("Initial backward sync completed!");
 
         if shutdown_flag.is_on() {
             return Ok(());
@@ -65,7 +66,7 @@ impl Indexer {
 
                 // TODO(Jira) take care of transactionality: https://rsklabs.atlassian.net/browse/UB-11
 
-                // we always save the block by hash
+                // we always save the block by hash for potential future connection
                 self.store.save_block(&new_block)?;
 
                 let extends_canonical = new_block.parent() == tip_block.hash();
@@ -73,30 +74,31 @@ impl Indexer {
                     && new_block.total_difficulty() > tip_block.total_difficulty();
 
                 if extends_canonical {
+                    info!(
+                        "Processing block {} ({}): setting new tip",
+                        new_block.number(),
+                        new_block.hash()
+                    );
+
                     // set canonical fields
                     self.store.set_best_block(&new_block)?;
                     self.store.set_canonical_block(&new_block)?;
                     // set last connected block to this new best block
                     self.store.set_last_connected_block(&new_block)?;
 
-                    info!(
-                        "Processed block {} ({}): new tip",
-                        new_block.number(),
-                        new_block.hash()
-                    );
-
                     tip_block = new_block;
                 } else if requires_local_reorg {
                     info!(
-                        "Processed block {} ({}): local reorg, run backward sync",
+                        "Processing block {} ({}): fixing local reorg",
                         new_block.number(),
                         new_block.hash()
                     );
                     // backward_sync fixes reorgs internally (if any)
                     tip_block = self.backward_sync(&shutdown_flag)?;
+                    debug!("Local reorg fixed!");
                 } else {
                     info!(
-                        "Processing block {} ({}): non extending, non competing",
+                        "Processing block {} ({}): neither extending, nor competing",
                         new_block.number(),
                         new_block.hash()
                     );
@@ -185,8 +187,6 @@ impl Indexer {
                 if store_block.hash() == node_block.hash() {
                     connection_point_reached = true;
                     self.store.set_last_connected_block(&best_block)?;
-                    // TODO(iago) improve this log for the usage within subscription
-                    info!("backward_sync completed!");
                 } else {
                     target_block_num -= 1;
                     debug!("decrementing target block: {}", target_block_num);
