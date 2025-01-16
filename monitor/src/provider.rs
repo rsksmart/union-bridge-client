@@ -12,7 +12,7 @@ pub trait RskProvider {
     fn get_block_by_hash(&self, hash: &str) -> Result<RskBlock>;
     fn get_block_by_number(&self, num: u64) -> Result<RskBlock>;
     fn get_best_block(&self) -> Result<RskBlock>;
-    fn disconnect(self) -> Result<()>;
+    fn disconnect(&self) -> Result<()>;
 }
 
 pub struct RskApi<P>
@@ -46,7 +46,7 @@ where
         self.provider.get_best_block()
     }
 
-    fn disconnect(self) -> Result<()> {
+    fn disconnect(&self) -> Result<()> {
         self.provider.disconnect()
     }
 }
@@ -109,8 +109,9 @@ impl RskProvider for AlloyProvider {
         self.get_block_by_number(number_dec)
     }
 
-    fn disconnect(self) -> Result<()> {
-        Ok(drop(self.provider))
+    fn disconnect(&self) -> Result<()> {
+        // nothing to do for this provider
+        Ok(())
     }
 }
 
@@ -209,8 +210,9 @@ where
     subscription: S,
 }
 
+#[allow(dead_code)]
 impl RskLogSubscriptionApi<AlloyLogSubscription> {
-    pub fn new(provider: &RskApi<AlloyProvider>) -> Self {
+    pub fn new(_provider: &RskApi<AlloyProvider>) -> Self {
         todo!("Implement RskLogSubscriptionApi::new")
     }
 }
@@ -228,13 +230,15 @@ where
     }
 }
 
+#[allow(dead_code)]
 pub struct AlloyLogSubscription {
     subscription: Subscription<Log>,
     provider: AlloyProvider,
 }
 
+#[allow(dead_code)]
 impl AlloyLogSubscription {
-    fn new(provider: &AlloyProvider) -> Result<Self> {
+    fn new(_provider: &AlloyProvider) -> Result<Self> {
         todo!("Implement AlloyLogSubscription::new")
     }
 }

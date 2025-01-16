@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Ok, Result};
-use log::{debug, error, info};
+use log::{debug, info};
 use monitor::provider::{RskApi, RskProvider};
 use monitor::store::CachedKeyValueStore;
 use monitor::types::RskBlock;
