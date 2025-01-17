@@ -38,7 +38,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     serialize_guest_input(&args, check_fork_args_path_str)?;
 
     let duration = start.elapsed();
-    println!("CheckForkArgs serialized to file: {}. Total time: {:?}", check_fork_args_path_str, duration);
+    println!(
+        "CheckForkArgs serialized to file: {}. Total time: {:?}",
+        check_fork_args_path_str, duration
+    );
 
     println!("GetBlocks executed and CheckForkArgs generated. Relevant parameters for the interaction with the ZKVM CLI:");
     println!("    - input: {}", check_fork_args_path_str);

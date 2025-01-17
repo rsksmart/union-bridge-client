@@ -65,6 +65,7 @@ impl Indexer {
                 debug!("Fetched RSK block on subscription: {:?}", new_block);
 
                 // TODO(Jira) take care of transactionality: https://rsklabs.atlassian.net/browse/UB-11
+                // TODO(Jira) do batched writes in backward sync: https://rsklabs.atlassian.net/browse/UB-24
 
                 // we always save the block by hash for potential future connection
                 self.store.save_block(&new_block)?;
@@ -142,22 +143,23 @@ impl Indexer {
         );
 
         let mut target_block_num = last_connected_block.number();
-        let mut connection_point_reached = false;
-
         let mut node_block: RskBlock = best_block.clone();
         let mut store_block_opt = self.store.get_block_by_number(node_block.number())?;
 
-        while !shutdown_flag.is_on() && !connection_point_reached {
-            let is_reorg = store_block_opt
-                .as_ref()
-                .map(|sb| sb.hash() != node_block.hash())
-                .unwrap_or(false);
+        // TODO(Jira) request and persist uncles during this process: https://rsklabs.atlassian.net/browse/UB-16
 
-            if store_block_opt.is_none() || is_reorg {
+        while !shutdown_flag.is_on() {
+            let (is_missing_block, is_reorg) = match store_block_opt {
+                None => (true, false),
+                Some(sb) => (false, sb.hash() != node_block.hash()),
+            };
+
+            if is_missing_block || is_reorg {
                 info!(
-                    "Creating or updating block {} ({})...",
+                    "{} block {} ({})...",
+                    if is_reorg { "Replacing" } else { "Creating" },
                     node_block.number(),
-                    node_block.hash()
+                    node_block.hash(),
                 );
 
                 // TODO(Jira) take care of transactionality: https://rsklabs.atlassian.net/browse/UB-11
@@ -165,33 +167,33 @@ impl Indexer {
                 self.store.set_canonical_block(&node_block)?;
             } else {
                 debug!(
-                "Already stored block {} ({}) while trying to reach connection_hash, nothing to do",
-                node_block.number(),
-                node_block.hash()
-            );
+                    "No need to store existing block {} ({}) (while trying to reach connection point)",
+                    node_block.number(),
+                    node_block.hash()
+                );
             }
 
-            // TODO(Jira) request and persist uncles: https://rsklabs.atlassian.net/browse/UB-16
+            // at this point, we have stored the same block provided by the node, reassigning for clarity
+            let store_block = node_block;
 
-            let parent_block_num = node_block.number() - 1;
+            let target_num_reached = store_block.number() == target_block_num;
+            let connection_found = target_num_reached && !is_reorg;
+            if connection_found {
+                // connection point found, done, setting last_connected_block to best_block
+                self.store.set_last_connected_block(&best_block)?;
+                break;
+            }
+
+            Self::safety_bound_check(target_block_num, &self.initial_block_hash, &store_block);
+
+            if target_num_reached {
+                target_block_num -= 1;
+                debug!("decrementing target block num to {}", target_block_num);
+            }
+
+            let parent_block_num = store_block.number() - 1;
             node_block = self.rsk_provider.get_block_by_number(parent_block_num)?;
             store_block_opt = self.store.get_block_by_number(parent_block_num)?;
-
-            let is_target_num_reached = store_block_opt
-                .as_ref()
-                .map(|sb| sb.number() <= target_block_num)
-                .unwrap_or(false);
-
-            if is_target_num_reached {
-                let store_block = store_block_opt.as_ref().unwrap();
-                if store_block.hash() == node_block.hash() {
-                    connection_point_reached = true;
-                    self.store.set_last_connected_block(&best_block)?;
-                } else {
-                    target_block_num -= 1;
-                    debug!("decrementing target block: {}", target_block_num);
-                }
-            }
         }
 
         // set the best block now that we are done
@@ -201,32 +203,46 @@ impl Indexer {
     }
 
     fn initialize_db_if_required(&self) -> Result<()> {
-        let initial_block: Option<RskBlock> = self
+        let initial_block_store_opt: Option<RskBlock> = self
             .store
             .get_block_by_hash(self.initial_block_hash.deref())?
             .or(None);
 
-        match initial_block {
-            Some(_) => Ok(()),
-            None => {
-                let initial_block = self
-                    .rsk_provider
-                    .get_block_by_hash(self.initial_block_hash.deref())?; // TODO(iago) resilient to not found
+        if initial_block_store_opt.is_some() {
+            return Ok(());
+        }
 
-                info!(
-                    "First backward sync, setting last_connected_block to initial block {} ({})",
-                    initial_block.number(),
-                    initial_block.hash()
-                );
+        let initial_block_node = self
+            .rsk_provider
+            .get_block_by_hash(self.initial_block_hash.deref())?; // TODO(iago) resilient to not found
 
-                // TODO(Jira) take care of transactionality: https://rsklabs.atlassian.net/browse/UB-11
-                // initialize the store with the initial block info
-                self.store.set_canonical_block(&initial_block)?;
-                self.store.set_best_block(&initial_block)?;
-                self.store.set_last_connected_block(&initial_block)?;
-                // should go last, as it will be used to determine if the DB is initialized
-                self.store.save_block(&initial_block)
-            }
+        info!(
+            "First backward sync, setting last_connected_block to initial block {} ({})",
+            initial_block_node.number(),
+            initial_block_node.hash()
+        );
+
+        // TODO(Jira) take care of transactionality: https://rsklabs.atlassian.net/browse/UB-11
+        // initialize the store with the initial block info
+        self.store.set_canonical_block(&initial_block_node)?;
+        self.store.set_best_block(&initial_block_node)?;
+        self.store.set_last_connected_block(&initial_block_node)?;
+        // should go last, as it will be used to determine if the DB is initialized
+        self.store.save_block(&initial_block_node)
+    }
+
+    fn safety_bound_check(target_block_num: u64, initial_block_hash: &str, store_block: &RskBlock) {
+        // TODO decide what to do with this safety checks: now it panics, which will turn the monitor off
+
+        if store_block.hash() == initial_block_hash {
+            panic!(
+                "Reached initial block {} without connection point",
+                store_block.hash()
+            );
+        }
+
+        if store_block.number() == 0 || target_block_num == 0 {
+            panic!("Reached block 0 without finding connection point");
         }
     }
 }

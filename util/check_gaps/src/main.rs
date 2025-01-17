@@ -5,7 +5,7 @@ use monitor::store::CachedKeyValueStore;
 use monitor::types::RskBlock;
 
 // TODO(Jira) from .env: https://rsklabs.atlassian.net/browse/UB-14
-const INITIAL_BLOCK: &str = "0xd608130f2caf657d11ec5bc2cbe7c17415813cb906714d1f2b4c6079dcf4c39a";
+const INITIAL_BLOCK: &str = "0x9f671f86e4e8f9ee802ba7224d99caa7771f5f4a723db53590f2b693d66eb621";
 const FINALITY_FOR_CHECK: u8 = 10;
 
 fn main() -> Result<()> {

@@ -10,7 +10,7 @@ const WS_URL: &str = "wss://public-node.testnet.rsk.co/websocket";
 
 // TODO(Jira) move to .env: https://rsklabs.atlassian.net/browse/UB-14
 const INITIAL_BLOCK_HASH_ENV: &str =
-    "0xd608130f2caf657d11ec5bc2cbe7c17415813cb906714d1f2b4c6079dcf4c39a";
+    "0x9f671f86e4e8f9ee802ba7224d99caa7771f5f4a723db53590f2b693d66eb621";
 
 fn main() -> Result<()> {
     env_logger::init();
