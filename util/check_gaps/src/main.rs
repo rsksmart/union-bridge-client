@@ -1,6 +1,7 @@
 use anyhow::{bail, Context, Ok, Result};
 use log::{debug, info};
-use monitor::provider::{RskApi, RskProvider};
+use monitor::rsk_provider::alloy::AlloyProvider;
+use monitor::rsk_provider::provider::RskProvider;
 use monitor::store::CachedKeyValueStore;
 use monitor::types::RskBlock;
 
@@ -84,7 +85,8 @@ fn find_canonical_connection(
     block_margin: u8,
     store: &CachedKeyValueStore,
 ) -> Result<bool> {
-    let rsk_ws_provider = RskApi::new("wss://public-node.testnet.rsk.co/websocket");
+    let rsk_ws_provider = AlloyProvider::new("wss://public-node.testnet.rsk.co/websocket")
+        .expect("Failed to create AlloyProvider");
 
     info!(
         "Finding connection point for block {} ({})",

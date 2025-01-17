@@ -1,6 +1,6 @@
-pub mod cache;
+mod cache;
 pub mod indexer;
-pub mod provider;
+pub mod rsk_provider;
 pub mod store;
 pub mod types;
 pub mod utils;

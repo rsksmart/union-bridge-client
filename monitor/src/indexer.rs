@@ -1,6 +1,4 @@
-use crate::provider::{
-    AlloyProvider, RskApi, RskBlockSubscription, RskBlockSubscriptionApi, RskProvider,
-};
+use crate::rsk_provider::provider::{RskBlockSubscription, RskProvider};
 use crate::store::CachedKeyValueStore;
 use crate::types::RskBlock;
 use crate::utils::ShutdownFlag;
@@ -10,20 +8,18 @@ use std::ops::Deref;
 use std::thread;
 use std::time::Duration;
 
-pub struct Indexer {
+pub struct Indexer<P: RskProvider> {
     store: CachedKeyValueStore,
-    rsk_provider: RskApi<AlloyProvider>,
+    rsk_provider: P,
     initial_block_hash: String,
 }
 
-impl Indexer {
-    pub fn new(store: CachedKeyValueStore, ws_url: &str, initial_block_hash: &str) -> Self {
+impl<P: RskProvider> Indexer<P> {
+    pub fn new(store: CachedKeyValueStore, provider: P, initial_block_hash: &str) -> Self {
         // TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15
-        let rsk_provider = RskApi::new(ws_url);
-
         Self {
             store,
-            rsk_provider,
+            rsk_provider: provider,
             initial_block_hash: initial_block_hash.to_string(),
         }
     }
@@ -45,7 +41,11 @@ impl Indexer {
     fn subscribe_blocks(&self, shutdown_flag: ShutdownFlag) -> Result<()> {
         info!("Start subscribe_blocks...");
 
-        let mut rsk_block_subscription = RskBlockSubscriptionApi::new(&self.rsk_provider);
+        // TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15
+        let mut rsk_block_subscription = self
+            .rsk_provider
+            .subscribe_blocks()
+            .expect("Failed to subscribe to blocks");
 
         let mut tip_block = self
             .store
@@ -54,7 +54,7 @@ impl Indexer {
 
         let loop_result = (|| {
             while !shutdown_flag.is_on() {
-                let new_block = rsk_block_subscription.try_next()?;
+                let new_block = rsk_block_subscription.next()?;
                 if new_block.is_none() {
                     thread::sleep(Duration::from_secs(1));
                     continue;
@@ -247,10 +247,10 @@ impl Indexer {
     }
 }
 
-impl Drop for Indexer {
+impl<P: RskProvider> Drop for Indexer<P> {
     fn drop(&mut self) {
         if let Err(e) = self.rsk_provider.disconnect() {
-            error!("Failed to disconnect provider: {:?}", e);
+            error!("Failed to disconnect rsk_provider: {:?}", e);
         }
     }
 }

@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use log::warn;
 use monitor::indexer::Indexer;
+use monitor::rsk_provider::alloy::AlloyProvider;
 use monitor::store::CachedKeyValueStore;
 use monitor::utils::ShutdownFlag;
 use std::thread;
@@ -28,7 +29,12 @@ fn main() -> Result<()> {
 
     let store = CachedKeyValueStore::new("/Users/illuque/tmp/")
         .expect("Failed to create CachedKeyValueStore");
-    let indexer = Indexer::new(store, WS_URL, INITIAL_BLOCK_HASH_ENV);
+
+    // TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15
+
+    let alloy_provider = AlloyProvider::new(WS_URL).expect("Failed to create AlloyProvider");
+
+    let indexer = Indexer::new(store, alloy_provider, INITIAL_BLOCK_HASH_ENV);
 
     run_indexer(indexer, shutdown_flag_indexer)?;
 
@@ -37,7 +43,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn run_indexer(indexer: Indexer, shutdown_flag: ShutdownFlag) -> Result<()> {
+fn run_indexer(indexer: Indexer<AlloyProvider>, shutdown_flag: ShutdownFlag) -> Result<()> {
     let worker_thread = thread::spawn(move || indexer.run(shutdown_flag));
 
     worker_thread.join().map_err(|e| {

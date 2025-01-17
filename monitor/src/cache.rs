@@ -34,12 +34,4 @@ where
             .map_err(|e| anyhow!("Failed to acquire write lock on cache: {:?}", e))?;
         Ok(cache.put(key.to_string(), value.to_owned()))
     }
-
-    pub fn remove(&self, key: &str) -> Result<Option<V>> {
-        let mut cache = self
-            .inner
-            .write()
-            .map_err(|e| anyhow!("Failed to acquire write lock on cache: {:?}", e))?;
-        Ok(cache.pop(key))
-    }
 }
