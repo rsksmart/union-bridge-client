@@ -1,4 +1,4 @@
-use crate::rsk_provider::provider::{RskBlockSubscription, RskProvider};
+use crate::rsk_provider::provider::{RskSubscription, RskProvider};
 use crate::store::CachedKeyValueStore;
 use crate::types::RskBlock;
 use crate::utils::ShutdownFlag;

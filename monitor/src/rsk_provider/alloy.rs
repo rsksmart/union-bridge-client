@@ -1,5 +1,5 @@
-use crate::rsk_provider::provider::{RskBlockSubscription, RskProvider};
-use crate::types::{RskBlock, RskRpcBlock};
+use crate::rsk_provider::provider::{RskProvider, RskSubscription};
+use crate::types::{RskBlock, RskLog, RskRpcBlock};
 use crate::utils::RuntimeSync;
 use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy_pubsub::{PubSubFrontend, Subscription, SubscriptionItem};
@@ -26,7 +26,7 @@ impl AlloyBlockSubscription {
     }
 }
 
-impl RskBlockSubscription for AlloyBlockSubscription {
+impl RskSubscription<RskBlock> for AlloyBlockSubscription {
     fn next(&mut self) -> Result<Option<RskBlock>> {
         let header = match self.subscription.try_recv_any() {
             Ok(header) => header,
@@ -60,6 +60,24 @@ impl RskBlockSubscription for AlloyBlockSubscription {
     }
 }
 
+struct AlloyLogSubscription {}
+
+impl AlloyLogSubscription {
+    fn new() -> Result<Self> {
+        todo!("Implement AlloyLogSubscription::new")
+    }
+}
+
+impl RskSubscription<RskLog> for AlloyLogSubscription {
+    fn next(&mut self) -> Result<Option<RskLog>> {
+        todo!("Implement AlloyLogSubscription::next")
+    }
+
+    fn unsubscribe(&self) -> Result<()> {
+        todo!("Implement AlloyLogSubscription::unsubscribe")
+    }
+}
+
 #[derive(Clone)]
 pub struct AlloyProvider {
     pub provider: RootProvider<PubSubFrontend>,
@@ -79,8 +97,12 @@ impl AlloyProvider {
 }
 
 impl RskProvider for AlloyProvider {
-    fn subscribe_blocks(&self) -> Result<impl RskBlockSubscription> {
+    fn subscribe_blocks(&self) -> Result<impl RskSubscription<RskBlock>> {
         AlloyBlockSubscription::new(self.clone())
+    }
+
+    fn subscribe_logs(&self) -> Result<impl RskSubscription<RskLog>> {
+        AlloyLogSubscription::new()
     }
 
     fn get_block_by_hash(&self, hash: &str) -> Result<RskBlock> {
