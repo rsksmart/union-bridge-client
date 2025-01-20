@@ -6,7 +6,7 @@ use monitor::store::CachedKeyValueStore;
 use monitor::types::RskBlock;
 
 // TODO(Jira) from .env: https://rsklabs.atlassian.net/browse/UB-14
-const INITIAL_BLOCK: &str = "0x9f671f86e4e8f9ee802ba7224d99caa7771f5f4a723db53590f2b693d66eb621";
+const INITIAL_BLOCK: &str = "0x551c09b6d4e35008a83016a16922676059eab39ba1c72d2c634c1c9119158a4a";
 const FINALITY_FOR_CHECK: u8 = 10;
 
 fn main() -> Result<()> {
@@ -54,7 +54,7 @@ fn main() -> Result<()> {
         expected_hash = next_block.parent().to_string();
 
         let next_block_num = &next_block.number() - 1;
-        next_block = match store.get_block_by_number(next_block_num)? {
+        next_block = match store.get_canonical_block(next_block_num)? {
             Some(block) => block,
             None => {
                 bail!("Missing block at: {}", next_block_num);

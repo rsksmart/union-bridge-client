@@ -16,7 +16,7 @@ pub enum StoreKey {
     BlockByHash(String),
     BlockByNumber(u64),
     BestBlock,
-    LastConnectedBlock,
+    BackSyncCheckpoint,
 }
 
 impl StoreKey {
@@ -25,7 +25,7 @@ impl StoreKey {
             StoreKey::BlockByHash(block_hash) => format!("block/hash/{}", block_hash),
             StoreKey::BlockByNumber(block_height) => format!("block/height/{}", block_height),
             StoreKey::BestBlock => "meta/best_block_height".to_string(),
-            StoreKey::LastConnectedBlock => "meta/last_connected_block".to_string(),
+            StoreKey::BackSyncCheckpoint => "meta/tmp_back_sync_checkpoint".to_string(),
         }
     }
 }
@@ -65,16 +65,22 @@ impl CachedKeyValueStore {
         Ok(self.db.set(key, value)?)
     }
 
-    pub fn get_last_connected_block(&self) -> Result<Option<RskBlock>> {
-        let key = &StoreKey::LastConnectedBlock.value();
+    pub fn get_back_sync_checkpoint(&self) -> Result<Option<RskBlock>> {
+        let key = &StoreKey::BackSyncCheckpoint.value();
         let cached_block = self.get_from_block_cache(key)?;
         Ok(cached_block.or(self.db.get(key)?))
     }
 
-    pub fn set_last_connected_block(&self, value: &RskBlock) -> Result<()> {
-        let key = &StoreKey::LastConnectedBlock.value();
+    pub fn set_back_sync_checkpoint(&self, value: &RskBlock) -> Result<()> {
+        let key = &StoreKey::BackSyncCheckpoint.value();
         self.save_to_block_cache(key, value)?;
         Ok(self.db.set(key, value)?)
+    }
+
+    pub fn reset_back_sync_checkpoint(&self) -> Result<()> {
+        let key = &StoreKey::BackSyncCheckpoint.value();
+        self.block_cache.remove(key)?;
+        Ok(self.db.delete(key)?)
     }
 
     pub fn get_block_by_hash(&self, block_hash: &str) -> Result<Option<RskBlock>> {
@@ -90,7 +96,7 @@ impl CachedKeyValueStore {
         Ok(())
     }
 
-    pub fn get_block_by_number(&self, block_height: u64) -> Result<Option<RskBlock>> {
+    pub fn get_canonical_block(&self, block_height: u64) -> Result<Option<RskBlock>> {
         let key = &StoreKey::BlockByNumber(block_height).value();
         let cached_block_opt = self.get_from_block_cache(key)?;
         if cached_block_opt.is_some() {
