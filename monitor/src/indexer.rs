@@ -3,7 +3,7 @@ use crate::store::BlockStore;
 use crate::types::RskBlock;
 use crate::utils::ShutdownFlag;
 use anyhow::{anyhow, Result};
-use log::{debug, error, info, warn};
+use log::{error, info, warn};
 use std::ops::Deref;
 use std::thread;
 use std::time::Duration;
@@ -30,7 +30,7 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
         self.initialize_db_if_required()?;
 
         if !shutdown_flag.is_on() {
-            self.boot_backward_sync(&shutdown_flag)?;
+            self.startup_backward_sync(&shutdown_flag)?;
         }
 
         if !shutdown_flag.is_on() {
@@ -40,7 +40,7 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
         Ok(())
     }
 
-    fn boot_backward_sync(&self, shutdown_flag: &ShutdownFlag) -> Result<()> {
+    fn startup_backward_sync(&self, shutdown_flag: &ShutdownFlag) -> Result<()> {
         // if a partial/interrupted backward_sync is found a back_sync_checkpoint will exist, so we:
         //      1. finish connecting that checkpoint (backward_sync from checkpoint)
         //      2. complete the full connection by connecting the provider best block (backward_sync from provider best block)
@@ -51,7 +51,7 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
         if back_sync_checkpoint.is_some() {
             let back_sync_checkpoint = back_sync_checkpoint.unwrap();
             info!(
-                "[backward_sync] Resuming backward_sync from checkpoint {} ({}) on boot",
+                "[startup_backward_sync] Resuming backward_sync from checkpoint {} ({})",
                 back_sync_checkpoint.number(),
                 back_sync_checkpoint.hash()
             );
@@ -59,7 +59,8 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
             let checkpoint_parent = self
                 .rsk_provider
                 .get_block_by_hash(back_sync_checkpoint.parent())
-                .expect("Failed to get checkpoint_parent");
+                .expect("Provider errored getting checkpoint_parent (startup -> quit)")
+                .expect("checkpoint_parent not found on provider (startup -> quit)");
             self.backward_sync(&checkpoint_parent, &shutdown_flag)?;
         }
 
@@ -68,8 +69,9 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
         }
 
         let provider_best_block = self.rsk_provider.get_best_block()?;
+
         info!(
-            "[backward_sync] Running backward_sync from tip {} ({}) on boot",
+            "[backward_sync] Running backward_sync from tip {} ({})",
             provider_best_block.number(),
             provider_best_block.hash()
         );
@@ -94,21 +96,27 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
             return Ok(None);
         }
 
-        let disconnected_block = back_sync_checkpoint.unwrap();
+        let back_sync_checkpoint = back_sync_checkpoint.unwrap();
         let canonical_block = self
             .rsk_provider
-            .get_block_by_number(disconnected_block.number())?;
+            .get_block_by_number(back_sync_checkpoint.number())
+            .expect("Provider errored getting back_sync_checkpoint (startup -> quit)");
 
-        if canonical_block.hash() != disconnected_block.hash() {
+        if canonical_block.is_none() {
+            return Ok(None);
+        }
+
+        let canonical_block = canonical_block.unwrap();
+        if canonical_block.hash() != back_sync_checkpoint.hash() {
             warn!(
                     "[backward_sync] Partial backward_sync found with invalid non canonical checkpoint {} ({})",
-                    disconnected_block.number(),
-                    disconnected_block.hash(),
+                    back_sync_checkpoint.number(),
+                    back_sync_checkpoint.hash(),
                 );
             return Ok(None);
         }
 
-        Ok(Some(disconnected_block))
+        Ok(Some(back_sync_checkpoint))
     }
 
     fn initialize_db_if_required(&self) -> Result<()> {
@@ -119,7 +127,9 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
 
         let initial_block_node = self
             .rsk_provider
-            .get_block_by_hash(self.initial_block_hash.deref())?; // TODO(iago) resilient to not found
+            .get_block_by_hash(self.initial_block_hash.deref())
+            .expect("Provider errored getting initial_block_node (startup -> quit)")
+            .expect("initial_block_node not found on provider (startup -> quit)");
 
         info!(
             "[initialize_db_if_required] New instance: initializing DB with {} ({})",
@@ -138,7 +148,7 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
         let mut rsk_block_subscription = self
             .rsk_provider
             .subscribe_blocks()
-            .expect("Failed to subscribe to blocks");
+            .expect("Failed to subscribe to blocks (unrecoverable)"); // TODO retry mechanism in scope of UB-15
 
         let loop_result = (|| {
             while !shutdown_flag.is_on() {
@@ -149,11 +159,6 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
                 }
 
                 let new_block = new_block.unwrap();
-
-                debug!(
-                    "[subscribe_blocks] Fetched RSK block on subscription: {:?}",
-                    new_block
-                );
 
                 // TODO(Jira) do batched writes in backward sync: https://rsklabs.atlassian.net/browse/UB-24
 
@@ -221,7 +226,7 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
         let store_best_block = self
             .store
             .get_best_block()?
-            .expect("Failed to get best block from store");
+            .expect("Could not get best block from store (unrecoverable)");
 
         info!(
             "[backward_sync] Connecting blocks {} ({}) and {} ({})",
@@ -234,7 +239,7 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
         let initial_block = self
             .store
             .get_block_by_hash(&self.initial_block_hash)?
-            .expect("Failed to get initial block");
+            .expect("initial_block_hash does not exist on provider (unrecoverable)");
 
         let mut canonical_block: RskBlock = from_block.clone();
         let mut store_block_opt = self.store.get_canonical_block(from_block.number())?;
@@ -259,28 +264,29 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
                 self.save_as_canonical(&canonical_block)?;
                 self.store.set_back_sync_checkpoint(&canonical_block)?;
 
-                let parent_block_num = canonical_block.number() - 1;
-                canonical_block = self.rsk_provider.get_block_by_number(parent_block_num)?;
-                store_block_opt = self.store.get_canonical_block(parent_block_num)?;
+                canonical_block = match self
+                    .rsk_provider
+                    .get_block_by_number(canonical_block.number() - 1)?
+                {
+                    Some(block) => block,
+                    None => {
+                        // edge case of last minute reorg that makes such block to not exist, retry with best block
+                        self.rsk_provider.get_best_block()?
+                    }
+                };
+                store_block_opt = self.store.get_canonical_block(canonical_block.number())?;
             } else {
                 connection_point_reached = true;
             }
         }
 
         if connection_point_reached {
-            if store_best_block.number() < canonical_block.number() {
-                info!(
-                    "[backward_sync] Completed early at block {} ({})",
-                    canonical_block.number(),
-                    canonical_block.hash()
-                );
-            } else {
-                info!(
-                    "[backward_sync] Completed at block {} ({})",
-                    store_best_block.number(),
-                    store_best_block.hash()
-                );
-            }
+            info!(
+                "[backward_sync] Completed at block {} ({}), early={}",
+                store_best_block.number(),
+                store_best_block.hash(),
+                store_best_block.number() < canonical_block.number()
+            );
 
             self.store.reset_back_sync_checkpoint()?;
             self.store.set_best_block(&from_block)?;

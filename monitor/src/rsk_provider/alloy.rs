@@ -5,10 +5,14 @@ use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy_pubsub::{PubSubFrontend, Subscription, SubscriptionItem};
 use alloy_rpc_types::Header;
 use anyhow::{anyhow, bail, Result};
-use log::trace;
+use log::{debug, trace};
 use serde_json::{json, Value};
 use std::sync::Arc;
-// TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15
+use std::thread;
+use std::time::Duration;
+
+// TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15. Review these methods accordingly.
+// TODO(Jira) error resilience: https://rsklabs.atlassian.net/browse/UB-28
 
 struct AlloyBlockSubscription {
     subscription: Subscription<Header>,
@@ -36,7 +40,7 @@ impl RskSubscription<RskBlock> for AlloyBlockSubscription {
             }
         };
 
-        trace!("Received header: {:?}", header);
+        debug!("Received header: {:?}", header);
 
         let new_block_header_raw = match header {
             SubscriptionItem::Other(raw_json) => raw_json.get().to_string(),
@@ -50,8 +54,11 @@ impl RskSubscription<RskBlock> for AlloyBlockSubscription {
             .as_str()
             .ok_or_else(|| anyhow!("Missing hash field"))?;
 
-        // TODO(iago) resilience when block is not found
-        Ok(Some(self.provider.get_block_by_hash(&new_block_hash)?))
+        let new_block = self
+            .provider
+            .get_block_by_hash(&new_block_hash)
+            .expect("hash informed by Provider does not exist (unrecoverable)");
+        Ok(new_block)
     }
 
     fn unsubscribe(&self) -> Result<()> {
@@ -94,6 +101,15 @@ impl AlloyProvider {
             rt_sync,
         })
     }
+
+    fn parse_provider_response(response: Value) -> Result<Option<RskBlock>> {
+        if response.is_null() || !response.is_object() {
+            return Ok(None);
+        }
+        let rpc_block: RskRpcBlock = serde_json::from_value(response)?;
+        let rsk_block: RskBlock = RskBlock::from(rpc_block);
+        Ok(Some(rsk_block))
+    }
 }
 
 impl RskProvider for AlloyProvider {
@@ -105,23 +121,17 @@ impl RskProvider for AlloyProvider {
         AlloyLogSubscription::new()
     }
 
-    fn get_block_by_hash(&self, hash: &str) -> Result<RskBlock> {
+    fn get_block_by_hash(&self, hash: &str) -> Result<Option<RskBlock>> {
         let rpc_call = self
             .provider
             .client()
             .request("eth_getBlockByHash", vec![json!(hash), json!(false)]);
 
         let response: Value = self.rt_sync.run(rpc_call)?;
-
-        // TODO(iago) resilience when response is not a block (ie not found)
-
-        let rpc_block: RskRpcBlock = serde_json::from_value(response)?;
-        let rsk_block: RskBlock = RskBlock::from(rpc_block);
-
-        Ok(rsk_block)
+        Self::parse_provider_response(response)
     }
 
-    fn get_block_by_number(&self, num: u64) -> Result<RskBlock> {
+    fn get_block_by_number(&self, num: u64) -> Result<Option<RskBlock>> {
         let num_hex = format!("0x{:x}", num);
 
         let rpc_call = self
@@ -130,21 +140,28 @@ impl RskProvider for AlloyProvider {
             .request("eth_getBlockByNumber", vec![json!(num_hex), json!(false)]);
 
         let response: Value = self.rt_sync.run(rpc_call)?;
-
-        // TODO(iago) resilience when response is not a block (ie not found)
-
-        let rpc_block: RskRpcBlock = serde_json::from_value(response)?;
-        let rsk_block: RskBlock = RskBlock::from(rpc_block);
-
-        Ok(rsk_block)
+        Self::parse_provider_response(response)
     }
 
     fn get_best_block(&self) -> Result<RskBlock> {
-        let rpc_call = self.provider.client().request_noparams("eth_blockNumber");
-        let response: Value = self.rt_sync.run(rpc_call)?;
-        let number_hex: String = serde_json::from_value(response)?;
-        let number_dec = u64::from_str_radix(&number_hex.trim_start_matches("0x"), 16)?;
-        self.get_block_by_number(number_dec)
+        let mut best_block = None;
+
+        // this loop covers the edge case when the block_num returned by eth_blockNumber does not exist for eth_getBlockByNumber
+        for _ in 0..10 {
+            let rpc_call = self.provider.client().request_noparams("eth_blockNumber");
+            let response: Value = self.rt_sync.run(rpc_call)?;
+            let number_hex: String = serde_json::from_value(response)?;
+            let number_dec = u64::from_str_radix(&number_hex.trim_start_matches("0x"), 16)?;
+            best_block = self.get_block_by_number(number_dec)?;
+
+            if best_block.is_some() {
+                break;
+            }
+
+            thread::sleep(Duration::from_secs(1));
+        }
+
+        Ok(best_block.expect("Failed to get best block after 10 attempts (unrecoverable)"))
     }
 
     fn disconnect(&self) -> Result<()> {

@@ -27,12 +27,12 @@ fn main() -> Result<()> {
     })
     .expect("Error setting Ctrl+C handler");
 
-    let store =
-        CachedBlockStore::new("/Users/illuque/tmp/").expect("Failed to create CachedKeyValueStore");
+    let store = CachedBlockStore::new("/Users/illuque/tmp/")
+        .expect("Failed to create CachedKeyValueStore (unrecoverable)");
 
     // TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15
-
-    let alloy_provider = AlloyProvider::new(WS_URL).expect("Failed to create AlloyProvider");
+    let alloy_provider =
+        AlloyProvider::new(WS_URL).expect("Failed to create AlloyProvider (unrecoverable)");
 
     let indexer = Indexer::new(store, alloy_provider, INITIAL_BLOCK_HASH_ENV);
 

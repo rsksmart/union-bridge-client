@@ -97,7 +97,13 @@ fn find_canonical_connection(
     let mut store_block = block_ref.clone();
     let mut node_block = rsk_ws_provider
         .get_block_by_number(store_block.number())
-        .context("Failed to get store_best_block block from node")?;
+        .with_context(|| {
+            format!(
+                "Provider error getting block by num: {}",
+                store_block.number()
+            )
+        })?
+        .with_context(|| format!("Block not found by num: {}", store_block.number()))?;
 
     let mut connection_found = false;
     for i in 1..=block_margin {
@@ -116,7 +122,18 @@ fn find_canonical_connection(
 
         node_block = rsk_ws_provider
             .get_block_by_number(store_block.number() - i as u64)
-            .context("Failed to get block's parent from node")?;
+            .with_context(|| {
+                format!(
+                    "Provider error getting block by num: {}",
+                    store_block.number() - i as u64
+                )
+            })?
+            .with_context(|| {
+                format!(
+                    "Failed to get block by num: {}",
+                    store_block.number() - i as u64
+                )
+            })?;
 
         store_block = store
             .get_block_by_hash(store_block.parent())?
