@@ -1,0 +1,11 @@
+[package]
+name = "check_gaps"
+version = "0.1.0"
+edition = "2021"
+resolver = "2"
+
+[dependencies]
+anyhow = "1.0.94"
+monitor = { path = "../../monitor" }
+log = "0.4.22"
+env_logger = "0.11.5"

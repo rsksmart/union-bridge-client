@@ -1,52 +1,61 @@
-use check_fork::CheckForkArgs;
-use monitor::get_blocks;
-use primitive_types::U256;
-use std::error::Error;
-use zkvm_cli_serde::serialize_guest_input;
-use zkvm_guest::{CHECK_FORK_GUEST_ID, CHECK_FORK_GUEST_PATH};
-// use zkvm_host::prove_stark_no_cli;
+use anyhow::{anyhow, Result};
+use log::warn;
+use monitor::indexer::Indexer;
+use monitor::rsk_provider::alloy::AlloyProvider;
+use monitor::store::CachedBlockStore;
+use monitor::utils::ShutdownFlag;
+use std::thread;
 
-// Testing parameters, change for different behaviors
-const START_BLOCK_NUMBER: u32 = 6883222;
-const NUM_OF_BLOCKS: u16 = 100;
-const REQUIRED_EFFORT: u32 = 100;
-const INIT_BLOCK_NUMBER: u32 = START_BLOCK_NUMBER - 1;
-const INIT_TIMESTAMP: u64 = 1701129600;
-const REQUIRED_NUM_BLOCKS: u16 = NUM_OF_BLOCKS;
+// TODO(Jira) move to .env: https://rsklabs.atlassian.net/browse/UB-14
+const WS_URL: &str = "wss://public-node.testnet.rsk.co/websocket";
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    let blocks = get_blocks(START_BLOCK_NUMBER, NUM_OF_BLOCKS).await?;
+// TODO(Jira) move to .env: https://rsklabs.atlassian.net/browse/UB-14
+const INITIAL_BLOCK_HASH_ENV: &str =
+    "0x551c09b6d4e35008a83016a16922676059eab39ba1c72d2c634c1c9119158a4a";
 
-    let args = CheckForkArgs {
-        utxo_id: "FAKE_UTXO_ID".to_string(),         // tmp
-        operator_id: "FAKE_OPERATOR_ID".to_string(), // tmp
-        init_block_time: INIT_TIMESTAMP,
-        init_block_number: INIT_BLOCK_NUMBER,
-        required_effort: U256::from(REQUIRED_EFFORT),
-        required_num_blocks: REQUIRED_NUM_BLOCKS,
-        block_list: blocks,
-    };
+fn main() -> Result<()> {
+    env_logger::init();
 
-    // prove_stark_no_cli(&args, CHECK_FORK_GUEST_PATH, "CheckForkArgs.bin");
+    let _envs = dotenv::dotenv().expect("Failed to load .env file");
 
-    let check_fork_args_path = std::env::current_dir()?.join("check_fork_args.bin");
-    let check_fork_args_path_str = check_fork_args_path.to_str().ok_or("Invalid path")?;
+    let shutdown_flag_control = ShutdownFlag::init();
+    let shutdown_flag_indexer = shutdown_flag_control.clone();
 
-    let start = std::time::Instant::now();
+    ctrlc::set_handler(move || {
+        warn!("Ctrl+C received! Signaling worker to stop...");
+        shutdown_flag_control.set_on();
+    })
+    .expect("Error setting Ctrl+C handler");
 
-    serialize_guest_input(&args, check_fork_args_path_str)?;
+    let store = CachedBlockStore::new("/Users/illuque/tmp/")
+        .expect("Failed to create CachedKeyValueStore (unrecoverable)");
 
-    let duration = start.elapsed();
-    println!("CheckForkArgs serialized to file: {}. Total time: {:?}", check_fork_args_path_str, duration);
+    // TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15
+    let alloy_provider =
+        AlloyProvider::new(WS_URL).expect("Failed to create AlloyProvider (unrecoverable)");
 
-    println!("GetBlocks executed and CheckForkArgs generated. Relevant parameters for the interaction with the ZKVM CLI:");
-    println!("    - input: {}", check_fork_args_path_str);
-    println!("    - elf: {}", CHECK_FORK_GUEST_PATH);
-    println!(
-        "    - image_id: {}",
-        zkvm_cli_serde::serialize_image_id(CHECK_FORK_GUEST_ID)
-    );
+    let indexer = Indexer::new(store, alloy_provider, INITIAL_BLOCK_HASH_ENV);
+
+    run_indexer(indexer, shutdown_flag_indexer)?;
+
+    log::logger().flush();
+
+    Ok(())
+}
+
+fn run_indexer(
+    indexer: Indexer<AlloyProvider, CachedBlockStore>,
+    shutdown_flag: ShutdownFlag,
+) -> Result<()> {
+    let worker_thread = thread::spawn(move || indexer.run(shutdown_flag));
+
+    worker_thread.join().map_err(|e| {
+        anyhow!(
+            "The worker_thread has errored with message: {:?}",
+            e.downcast_ref::<String>()
+                .unwrap_or(&"Unknown error".to_string())
+        )
+    })??;
 
     Ok(())
 }
