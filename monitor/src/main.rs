@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use log::warn;
 use monitor::indexer::Indexer;
 use monitor::rsk_provider::alloy::AlloyProvider;
-use monitor::store::CachedKeyValueStore;
+use monitor::store::CachedBlockStore;
 use monitor::utils::ShutdownFlag;
 use std::thread;
 
@@ -27,8 +27,8 @@ fn main() -> Result<()> {
     })
     .expect("Error setting Ctrl+C handler");
 
-    let store = CachedKeyValueStore::new("/Users/illuque/tmp/")
-        .expect("Failed to create CachedKeyValueStore");
+    let store =
+        CachedBlockStore::new("/Users/illuque/tmp/").expect("Failed to create CachedKeyValueStore");
 
     // TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15
 
@@ -43,7 +43,10 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn run_indexer(indexer: Indexer<AlloyProvider>, shutdown_flag: ShutdownFlag) -> Result<()> {
+fn run_indexer(
+    indexer: Indexer<AlloyProvider, CachedBlockStore>,
+    shutdown_flag: ShutdownFlag,
+) -> Result<()> {
     let worker_thread = thread::spawn(move || indexer.run(shutdown_flag));
 
     worker_thread.join().map_err(|e| {

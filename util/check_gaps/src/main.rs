@@ -2,7 +2,7 @@ use anyhow::{bail, Context, Ok, Result};
 use log::{debug, info};
 use monitor::rsk_provider::alloy::AlloyProvider;
 use monitor::rsk_provider::provider::RskProvider;
-use monitor::store::CachedKeyValueStore;
+use monitor::store::{BlockStore, CachedBlockStore};
 use monitor::types::RskBlock;
 
 // TODO(Jira) from .env: https://rsklabs.atlassian.net/browse/UB-14
@@ -12,8 +12,8 @@ const FINALITY_FOR_CHECK: u8 = 10;
 fn main() -> Result<()> {
     env_logger::init();
 
-    let store = CachedKeyValueStore::new("/Users/illuque/tmp/")
-        .expect("Failed to create CachedKeyValueStore");
+    let store =
+        CachedBlockStore::new("/Users/illuque/tmp/").expect("Failed to create CachedKeyValueStore");
 
     let initial_block = store
         .get_block_by_hash(INITIAL_BLOCK)?
@@ -83,7 +83,7 @@ fn main() -> Result<()> {
 fn find_canonical_connection(
     block_ref: &RskBlock,
     block_margin: u8,
-    store: &CachedKeyValueStore,
+    store: &CachedBlockStore,
 ) -> Result<bool> {
     let rsk_ws_provider = AlloyProvider::new("wss://public-node.testnet.rsk.co/websocket")
         .expect("Failed to create AlloyProvider");

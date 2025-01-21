@@ -1,5 +1,5 @@
 use crate::rsk_provider::provider::{RskProvider, RskSubscription};
-use crate::store::CachedKeyValueStore;
+use crate::store::BlockStore;
 use crate::types::RskBlock;
 use crate::utils::ShutdownFlag;
 use anyhow::{anyhow, Result};
@@ -8,16 +8,16 @@ use std::ops::Deref;
 use std::thread;
 use std::time::Duration;
 
-pub struct Indexer<P: RskProvider> {
-    store: CachedKeyValueStore,
+pub struct Indexer<P: RskProvider, S: BlockStore> {
+    store: S,
     rsk_provider: P,
     initial_block_hash: String,
 }
 
 // TODO(Jira) review this file and take care of transactionality on storage saving: https://rsklabs.atlassian.net/browse/UB-11
 
-impl<P: RskProvider> Indexer<P> {
-    pub fn new(store: CachedKeyValueStore, provider: P, initial_block_hash: &str) -> Self {
+impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
+    pub fn new(store: S, provider: P, initial_block_hash: &str) -> Self {
         // TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15
         Self {
             store,
@@ -28,8 +28,16 @@ impl<P: RskProvider> Indexer<P> {
 
     pub fn run(&self, shutdown_flag: ShutdownFlag) -> Result<()> {
         self.initialize_db_if_required()?;
-        self.boot_backward_sync(&shutdown_flag)?;
-        self.subscribe_blocks(shutdown_flag)
+
+        if !shutdown_flag.is_on() {
+            self.boot_backward_sync(&shutdown_flag)?;
+        }
+
+        if !shutdown_flag.is_on() {
+            self.subscribe_blocks(shutdown_flag)?;
+        }
+
+        Ok(())
     }
 
     fn boot_backward_sync(&self, shutdown_flag: &ShutdownFlag) -> Result<()> {
@@ -284,7 +292,7 @@ impl<P: RskProvider> Indexer<P> {
     }
 }
 
-impl<P: RskProvider> Drop for Indexer<P> {
+impl<P: RskProvider, S: BlockStore> Drop for Indexer<P, S> {
     fn drop(&mut self) {
         if let Err(e) = self.rsk_provider.disconnect() {
             error!("Failed to disconnect rsk_provider: {:?}", e);

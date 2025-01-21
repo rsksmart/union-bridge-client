@@ -7,7 +7,7 @@ use storage_backend::storage::{KeyValueStore, Storage};
 // TODO(Jira) move to .env: https://rsklabs.atlassian.net/browse/UB-14
 const BLOCK_CACHE_SIZE: usize = 100;
 
-pub struct CachedKeyValueStore {
+pub struct CachedBlockStore {
     db: Storage,
     block_cache: Cache<RskBlock>,
 }
@@ -30,9 +30,22 @@ impl StoreKey {
     }
 }
 
-// TODO(iago) extract interface of this store
+pub trait BlockStore {
+    fn get_best_block(&self) -> Result<Option<RskBlock>>;
+    fn set_best_block(&self, value: &RskBlock) -> Result<()>;
 
-impl CachedKeyValueStore {
+    fn get_back_sync_checkpoint(&self) -> Result<Option<RskBlock>>;
+    fn set_back_sync_checkpoint(&self, value: &RskBlock) -> Result<()>;
+    fn reset_back_sync_checkpoint(&self) -> Result<()>;
+
+    fn get_block_by_hash(&self, block_hash: &str) -> Result<Option<RskBlock>>;
+    fn save_block(&self, value: &RskBlock) -> Result<()>;
+
+    fn get_canonical_block(&self, block_height: u64) -> Result<Option<RskBlock>>;
+    fn set_canonical_block(&self, block: &RskBlock) -> Result<()>;
+}
+
+impl CachedBlockStore {
     pub fn new(path: &str) -> Result<Self> {
         let db = Storage::new_with_path(&PathBuf::from(format!("{}/.rootstock_monitor", path)))?;
         Ok(Self {
@@ -52,51 +65,53 @@ impl CachedKeyValueStore {
 
         Ok(None)
     }
+}
 
-    pub fn get_best_block(&self) -> Result<Option<RskBlock>> {
+impl BlockStore for CachedBlockStore {
+    fn get_best_block(&self) -> Result<Option<RskBlock>> {
         let key = &StoreKey::BestBlock.value();
         let cached_block = self.get_from_block_cache(key)?;
         Ok(cached_block.or(self.db.get(key)?))
     }
 
-    pub fn set_best_block(&self, value: &RskBlock) -> Result<()> {
+    fn set_best_block(&self, value: &RskBlock) -> Result<()> {
         let key = &StoreKey::BestBlock.value();
         self.save_to_block_cache(key, value)?;
         Ok(self.db.set(key, value)?)
     }
 
-    pub fn get_back_sync_checkpoint(&self) -> Result<Option<RskBlock>> {
+    fn get_back_sync_checkpoint(&self) -> Result<Option<RskBlock>> {
         let key = &StoreKey::BackSyncCheckpoint.value();
         let cached_block = self.get_from_block_cache(key)?;
         Ok(cached_block.or(self.db.get(key)?))
     }
 
-    pub fn set_back_sync_checkpoint(&self, value: &RskBlock) -> Result<()> {
+    fn set_back_sync_checkpoint(&self, value: &RskBlock) -> Result<()> {
         let key = &StoreKey::BackSyncCheckpoint.value();
         self.save_to_block_cache(key, value)?;
         Ok(self.db.set(key, value)?)
     }
 
-    pub fn reset_back_sync_checkpoint(&self) -> Result<()> {
+    fn reset_back_sync_checkpoint(&self) -> Result<()> {
         let key = &StoreKey::BackSyncCheckpoint.value();
         self.block_cache.remove(key)?;
         Ok(self.db.delete(key)?)
     }
 
-    pub fn get_block_by_hash(&self, block_hash: &str) -> Result<Option<RskBlock>> {
+    fn get_block_by_hash(&self, block_hash: &str) -> Result<Option<RskBlock>> {
         let key = &StoreKey::BlockByHash(block_hash.to_string()).value();
         let cached_block = self.get_from_block_cache(key)?;
         Ok(cached_block.or(self.db.get(key)?))
     }
 
-    pub fn save_block(&self, value: &RskBlock) -> Result<()> {
+    fn save_block(&self, value: &RskBlock) -> Result<()> {
         let key = &StoreKey::BlockByHash(value.hash().to_string()).value();
         self.save_to_block_cache(key, value)?;
         self.db.set(key, value)?;
         Ok(())
     }
 
-    pub fn get_canonical_block(&self, block_height: u64) -> Result<Option<RskBlock>> {
+    fn get_canonical_block(&self, block_height: u64) -> Result<Option<RskBlock>> {
         let key = &StoreKey::BlockByNumber(block_height).value();
         let cached_block_opt = self.get_from_block_cache(key)?;
         if cached_block_opt.is_some() {
@@ -110,7 +125,7 @@ impl CachedKeyValueStore {
         }
     }
 
-    pub fn set_canonical_block(&self, block: &RskBlock) -> Result<()> {
+    fn set_canonical_block(&self, block: &RskBlock) -> Result<()> {
         let key = &StoreKey::BlockByNumber(block.number()).value();
         self.save_to_block_cache(key, block)?;
         Ok(self.db.set(key, block.hash())?)
