@@ -4,19 +4,24 @@ use monitor::rsk_provider::alloy::AlloyProvider;
 use monitor::rsk_provider::provider::RskProvider;
 use monitor::store::{BlockStore, CachedBlockStore};
 use monitor::types::RskBlock;
+use std::env;
+use dotenv::dotenv;
 
-// TODO(Jira) from .env: https://rsklabs.atlassian.net/browse/UB-14
-const INITIAL_BLOCK: &str = "0x551c09b6d4e35008a83016a16922676059eab39ba1c72d2c634c1c9119158a4a";
 const FINALITY_FOR_CHECK: u8 = 10;
 
 fn main() -> Result<()> {
     env_logger::init();
 
-    let store =
-        CachedBlockStore::new("/Users/illuque/tmp/").expect("Failed to create CachedKeyValueStore");
+    dotenv().expect("Failed to load .env file");
+
+    let store_path = env::var("STORE_PATH").expect("STORE_PATH not set in env");
+    let store = CachedBlockStore::new(&store_path).expect("Failed to create CachedKeyValueStore");
+
+    let initial_block_hash =
+        env::var("INITIAL_BLOCK_HASH").expect("INITIAL_BLOCK_HASH not set in env");
 
     let initial_block = store
-        .get_block_by_hash(INITIAL_BLOCK)?
+        .get_block_by_hash(&initial_block_hash)?
         .context("Failed to get initial block")?;
     let store_best_block = store
         .get_best_block()?

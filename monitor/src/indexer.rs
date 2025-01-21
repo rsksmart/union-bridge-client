@@ -18,7 +18,6 @@ pub struct Indexer<P: RskProvider, S: BlockStore> {
 
 impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
     pub fn new(store: S, provider: P, initial_block_hash: &str) -> Self {
-        // TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15
         Self {
             store,
             rsk_provider: provider,

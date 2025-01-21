@@ -3,5 +3,4 @@
 .idea
 **/stark-proof.bin
 **/check_fork_args.bin
-# local db
-**/.rootstock_monitor
+**/.env

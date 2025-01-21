@@ -1,11 +1,9 @@
 use crate::cache::Cache;
 use crate::types::RskBlock;
 use anyhow::Result;
+use std::env;
 use std::path::PathBuf;
 use storage_backend::storage::{KeyValueStore, Storage};
-
-// TODO(Jira) move to .env: https://rsklabs.atlassian.net/browse/UB-14
-const BLOCK_CACHE_SIZE: usize = 100;
 
 pub struct CachedBlockStore {
     db: Storage,
@@ -48,9 +46,13 @@ pub trait BlockStore {
 impl CachedBlockStore {
     pub fn new(path: &str) -> Result<Self> {
         let db = Storage::new_with_path(&PathBuf::from(format!("{}/.rootstock_monitor", path)))?;
+        let block_cache_size = env::var("BLOCK_CACHE_SIZE")
+            .expect("BLOCK_CACHE_SIZE not set in env")
+            .parse::<usize>()
+            .expect("BLOCK_CACHE_SIZE in env must be a number");
         Ok(Self {
             db,
-            block_cache: Cache::new(BLOCK_CACHE_SIZE),
+            block_cache: Cache::new(block_cache_size),
         })
     }
 
