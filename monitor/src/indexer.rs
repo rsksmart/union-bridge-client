@@ -2,7 +2,7 @@ use crate::rsk_provider::provider::{RskProvider, RskSubscription};
 use crate::store::BlockStore;
 use crate::types::RskBlock;
 use crate::utils::ShutdownFlag;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use log::{error, info, warn};
 use std::ops::Deref;
 use std::thread;
@@ -15,6 +15,7 @@ pub struct Indexer<P: RskProvider, S: BlockStore> {
 }
 
 // TODO(Jira) review this file and take care of transactionality on storage saving: https://rsklabs.atlassian.net/browse/UB-11
+// TODO(Jira) allow changing the initial_block_hash on a running instance: https://rsklabs.atlassian.net/browse/UB-32
 
 impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
     pub fn new(store: S, provider: P, initial_block_hash: &str) -> Self {
@@ -39,85 +40,6 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
         Ok(())
     }
 
-    fn startup_backward_sync(&self, shutdown_flag: &ShutdownFlag) -> Result<()> {
-        // if a partial/interrupted backward_sync is found a back_sync_checkpoint will exist, so we:
-        //      1. finish connecting that checkpoint (backward_sync from checkpoint)
-        //      2. complete the full connection by connecting the provider best block (backward_sync from provider best block)
-        //      (this way we save some time by not re-processing blocks we already know/have)
-        // otherwise we simply run a backward sync from the provider best block
-
-        let back_sync_checkpoint = self.get_back_sync_checkpoint()?;
-        if back_sync_checkpoint.is_some() {
-            let back_sync_checkpoint = back_sync_checkpoint.unwrap();
-            info!(
-                "[startup_backward_sync] Resuming backward_sync from checkpoint {} ({})",
-                back_sync_checkpoint.number(),
-                back_sync_checkpoint.hash()
-            );
-
-            let checkpoint_parent = self
-                .rsk_provider
-                .get_block_by_hash(back_sync_checkpoint.parent())
-                .expect("Provider errored getting checkpoint_parent (startup -> quit)")
-                .expect("checkpoint_parent not found on provider (startup -> quit)");
-            self.backward_sync(&checkpoint_parent, &shutdown_flag)?;
-        }
-
-        if shutdown_flag.is_on() {
-            return Ok(());
-        }
-
-        let provider_best_block = self.rsk_provider.get_best_block()?;
-
-        info!(
-            "[backward_sync] Running backward_sync from tip {} ({})",
-            provider_best_block.number(),
-            provider_best_block.hash()
-        );
-        // connect provider best block
-        self.backward_sync(&provider_best_block, &shutdown_flag)?;
-
-        Ok(())
-    }
-
-    /**
-     * Retrieves the last block processed by a previously interrupted backward_sync operation,
-     * if such a block exists and is still part of the canonical chain.
-     *
-     * Returns:
-     * - The last block processed by such interrupted sync if the block remains canonical.
-     * - `None` in all other scenarios.
-     */
-    fn get_back_sync_checkpoint(&self) -> Result<Option<RskBlock>> {
-        // back_sync_checkpoint will exist only if a backward_sync was interrupted and store its last processed block
-        let back_sync_checkpoint = self.store.get_back_sync_checkpoint()?;
-        if back_sync_checkpoint.is_none() {
-            return Ok(None);
-        }
-
-        let back_sync_checkpoint = back_sync_checkpoint.unwrap();
-        let canonical_block = self
-            .rsk_provider
-            .get_block_by_number(back_sync_checkpoint.number())
-            .expect("Provider errored getting back_sync_checkpoint (startup -> quit)");
-
-        if canonical_block.is_none() {
-            return Ok(None);
-        }
-
-        let canonical_block = canonical_block.unwrap();
-        if canonical_block.hash() != back_sync_checkpoint.hash() {
-            warn!(
-                    "[backward_sync] Partial backward_sync found with invalid non canonical checkpoint {} ({})",
-                    back_sync_checkpoint.number(),
-                    back_sync_checkpoint.hash(),
-                );
-            return Ok(None);
-        }
-
-        Ok(Some(back_sync_checkpoint))
-    }
-
     fn initialize_db_if_required(&self) -> Result<()> {
         let best_block: Option<RskBlock> = self.store.get_best_block()?;
         if best_block.is_some() {
@@ -138,6 +60,27 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
 
         // initialize the store with the initial block info
         self.save_as_best_block(&initial_block_node)
+    }
+
+    fn startup_backward_sync(&self, shutdown_flag: &ShutdownFlag) -> Result<()> {
+        // In case of an interrupted backward_sync, a back_sync_checkpoint will be created.
+        // If it is still canonical when we restart the application, we will run:
+        //     1. a backward_sync to finish connecting such checkpoint, that becomes the new connection point
+        //     2. another backward_sync to connect the provider best block and achieve the full sync
+        // We do this in order to save some time by not re-processing blocks we already know/have.
+        // If the checkpoint does not exist, or it is not canonical anymore, we will just start a
+        // new backward_sync from the provider best block.
+        self.resume_pending_backward_sync(&shutdown_flag)?;
+
+        if shutdown_flag.is_on() {
+            return Ok(());
+        }
+
+        // In case of a long backward_sync, we may be far from the tip when it completes to rely on
+        // eth_subscribe for catch up. So we run many backward_syncs until we get close to the tip.
+        self.full_sync_backward_syncs(&shutdown_flag)?;
+
+        Ok(())
     }
 
     fn subscribe_blocks(&self, shutdown_flag: ShutdownFlag) -> Result<()> {
@@ -168,7 +111,7 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
                     .ok_or_else(|| anyhow!("Failed to get local_best_block from store"))?;
 
                 let extends_canonical = new_block.parent() == local_best_block.hash();
-                let requires_local_reorg = !extends_canonical
+                let is_reorg = !extends_canonical
                     && new_block.total_difficulty() > local_best_block.total_difficulty();
 
                 if extends_canonical {
@@ -178,7 +121,7 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
                         new_block.hash()
                     );
                     self.save_as_best_block(&new_block)?;
-                } else if requires_local_reorg {
+                } else if is_reorg {
                     info!(
                         "[subscribe_blocks] Processing block {} ({}): fixing local reorg",
                         new_block.number(),
@@ -192,7 +135,8 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
                         new_block.number(),
                         new_block.hash()
                     );
-                    self.save_as_not_canonical(&new_block)?;
+                    // just save the block as it is not part of the main chain (at least yet)
+                    self.store.save_block(&new_block)?;
                 }
             }
 
@@ -204,22 +148,7 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
             .and_then(|_| loop_result)
     }
 
-    fn save_as_not_canonical(&self, new_block: &RskBlock) -> Result<()> {
-        self.store.save_block(&new_block)
-    }
-
-    fn save_as_canonical(&self, canonical_block: &RskBlock) -> Result<()> {
-        self.store.save_block(&canonical_block)?;
-        self.store.set_canonical_block(&canonical_block)?;
-        Ok(())
-    }
-
-    fn save_as_best_block(&self, new_block: &RskBlock) -> Result<()> {
-        self.save_as_canonical(&new_block)?;
-        self.store.set_best_block(&new_block)
-    }
-
-    fn backward_sync(&self, from_block: &RskBlock, shutdown_flag: &ShutdownFlag) -> Result<()> {
+    fn backward_sync(&self, starting_block: &RskBlock, shutdown_flag: &ShutdownFlag) -> Result<()> {
         // TODO(Jira) request and persist uncles during this process: https://rsklabs.atlassian.net/browse/UB-16
 
         let store_best_block = self
@@ -229,71 +158,146 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
 
         info!(
             "[backward_sync] Connecting blocks {} ({}) and {} ({})",
-            from_block.number(),
-            from_block.hash(),
+            starting_block.number(),
+            starting_block.hash(),
             store_best_block.number(),
             store_best_block.hash(),
         );
 
-        let initial_block = self
-            .store
-            .get_block_by_hash(&self.initial_block_hash)?
-            .expect("initial_block_hash does not exist on provider (unrecoverable)");
+        let mut new_block = starting_block.clone();
+        loop {
+            let store_block = self.store.get_canonical_block(new_block.number())?;
 
-        let mut canonical_block: RskBlock = from_block.clone();
-        let mut store_block_opt = self.store.get_canonical_block(from_block.number())?;
-        let mut connection_point_reached = false;
+            let is_missing = store_block.is_none();
+            let is_reorg = !is_missing && store_block.as_ref().unwrap().hash() != new_block.hash();
 
-        while !shutdown_flag.is_on()
-            && !connection_point_reached
-            && initial_block.number() <= canonical_block.number()
-        {
-            let is_missing_block = store_block_opt.is_none();
-            let is_reorg = !is_missing_block
-                && store_block_opt.as_ref().unwrap().hash() != canonical_block.hash();
-
-            if is_missing_block || is_reorg {
+            if is_missing || is_reorg {
                 info!(
                     "[backward_sync] {} block {} ({})...",
                     if is_reorg { "Replacing" } else { "Creating" },
-                    canonical_block.number(),
-                    canonical_block.hash(),
+                    new_block.number(),
+                    new_block.hash(),
                 );
-
-                self.save_as_canonical(&canonical_block)?;
-                self.store.set_back_sync_checkpoint(&canonical_block)?;
-
-                canonical_block = match self
-                    .rsk_provider
-                    .get_block_by_number(canonical_block.number() - 1)?
-                {
-                    Some(block) => block,
-                    None => {
-                        // edge case of last minute reorg that makes such block to not exist, retry with best block
-                        self.rsk_provider.get_best_block()?
-                    }
-                };
-                store_block_opt = self.store.get_canonical_block(canonical_block.number())?;
+                self.save_as_canonical(&new_block)?;
             } else {
-                connection_point_reached = true;
+                info!(
+                    "[backward_sync] Completed at block {} ({}), early={}",
+                    new_block.number(),
+                    new_block.hash(),
+                    store_best_block.number() < new_block.number()
+                );
+                self.mark_as_complete(&starting_block)?;
+                break;
             }
+
+            if shutdown_flag.is_on() {
+                self.save_checkpoint_block(new_block)?;
+                break;
+            }
+
+            if self.initial_block_hash == new_block.hash() || new_block.number() == 0 {
+                error!("[backward_sync] Reached genesis or starting block, aborting backward_sync");
+                break;
+            }
+
+            new_block = self.get_next_backward_sync_block(new_block.number() - 1)?;
         }
 
-        if connection_point_reached {
-            info!(
-                "[backward_sync] Completed at block {} ({}), early={}",
-                store_best_block.number(),
-                store_best_block.hash(),
-                store_best_block.number() < canonical_block.number()
-            );
-
-            self.store.reset_back_sync_checkpoint()?;
-            self.store.set_best_block(&from_block)?;
-        } else {
-            warn!("[backward_sync] Finished before completing!");
-        }
+        // TODO(iago) if the initial backward_sync took too long, the chain may have grown a lot and we could be far from the tip
+        // we can try to do a recursive call until the number of missing blocks compared to the node is small enough
 
         Ok(())
+    }
+
+    fn resume_pending_backward_sync(&self, shutdown_flag: &ShutdownFlag) -> Result<()> {
+        if let Some(checkpoint) = self.store.get_back_sync_checkpoint()? {
+            match self.rsk_provider.get_block_by_hash(checkpoint.parent())? {
+                Some(checkpoint_parent) => {
+                    info!("[startup_backward_sync] Resuming previous backward_sync");
+                    self.backward_sync(&checkpoint_parent, &shutdown_flag)?;
+                }
+                None => {
+                    warn!(
+                        "[startup_backward_sync] Cannot resume backward_sync from non canonical checkpoint {} ({})",
+                        checkpoint.number(),
+                        checkpoint.hash(),
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn full_sync_backward_syncs(&self, shutdown_flag: &ShutdownFlag) -> Result<()> {
+        let max_attempts = 10;
+        for i in 1..max_attempts {
+            let provider_best_block = self.rsk_provider.get_best_block()?;
+            if let Some(store_best_block) = self.store.get_best_block()? {
+                let provider_best_block = self.rsk_provider.get_best_block()?;
+                let is_full_sync = provider_best_block.hash() == store_best_block.hash();
+                if is_full_sync {
+                    info!("[startup_backward_sync] No backward_sync needed",);
+                    return Ok(());
+                } else if shutdown_flag.is_on() {
+                    return Ok(());
+                } else {
+                    info!("[startup_backward_sync] Running tip backward_sync-{}", i);
+                }
+            }
+            // connect provider best block
+            self.backward_sync(&provider_best_block, &shutdown_flag)?;
+        }
+
+        bail!(
+            "Could not catch up to the tip after {} backward_sync attempts",
+            max_attempts
+        )
+    }
+
+    fn save_as_canonical(&self, canonical_block: &RskBlock) -> Result<()> {
+        self.store.save_block(&canonical_block)?;
+        // last, to avoid requiring db transactionality, as it is used to distinguish new block from reorgs
+        self.store.set_canonical_block(&canonical_block)
+    }
+
+    fn save_as_best_block(&self, new_block: &RskBlock) -> Result<()> {
+        self.save_as_canonical(&new_block)?;
+        // last is preferred to not mark as best a block that was not yet stored
+        // furthermore, if this line is fails for any reason (or app quits on error right before
+        // running), soon a new block will become best (either one extending or reorg)
+        self.store.set_best_block(&new_block)
+    }
+
+    fn mark_as_complete(&self, starting_block: &RskBlock) -> Result<()> {
+        // no longer a backward_sync to resume
+        self.store.reset_back_sync_checkpoint()?;
+        // last, to avoid requiring db transactionality, as it is used to determine the connection point when not fully synchronised
+        self.store.set_best_block(&starting_block)?;
+        Ok(())
+    }
+
+    fn save_checkpoint_block(&self, new_block: RskBlock) -> Result<()> {
+        warn!("[backward_sync] Interrupted before completing, setting back_sync_checkpoint to {} ({})",
+            new_block.number(),
+            new_block.hash()
+        );
+
+        // define backward_sync checkpoint to resume from
+        self.store.set_back_sync_checkpoint(&new_block)
+    }
+
+    fn get_next_backward_sync_block(&self, block_num: u64) -> Result<RskBlock> {
+        match self.rsk_provider.get_block_by_number(block_num)? {
+            Some(block) => Ok(block),
+            None => {
+                // this means a reorg just have happened to a lower block num, so we start again from the best block
+                warn!(
+                    "[backward_sync] Could not get block {} from provider, retrying from best block",
+                    block_num,
+                );
+                self.rsk_provider.get_best_block()
+            }
+        }
     }
 }
 

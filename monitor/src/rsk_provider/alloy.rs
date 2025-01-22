@@ -146,7 +146,7 @@ impl RskProvider for AlloyProvider {
     fn get_best_block(&self) -> Result<RskBlock> {
         let mut best_block = None;
 
-        // this loop covers the edge case when the block_num returned by eth_blockNumber does not exist for eth_getBlockByNumber
+        // covers the edge case of a reorg to a lower block num: eth_blockNumber result does not exist for eth_getBlockByNumber
         for _ in 0..10 {
             let rpc_call = self.provider.client().request_noparams("eth_blockNumber");
             let response: Value = self.rt_sync.run(rpc_call)?;
