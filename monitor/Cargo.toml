@@ -13,7 +13,7 @@ primitive-types = { version = "0.13.1", features = ["std", "serde"] }
 log = "0.4.22"
 anyhow = "1.0.94"
 env_logger = "0.11.5"
-storage_backend = { package = "rust-bitvmx-storage-backend", path = "../../rust-bitvmx-storage-backend" }
+storage_backend = { package = "rust-bitvmx-storage-backend", git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-storage-backend.git", rev = "7f40d056f86295e3fd2a4f268f923ca3b4e70fbf" }
 alloy-provider = { version = "0.9.2", features = ["ws"] }
 alloy-rpc-types = "0.9.2"
 alloy-pubsub = { version = "0.9.2" }
