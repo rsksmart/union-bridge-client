@@ -79,7 +79,7 @@ impl BlockStore for CachedBlockStore {
     fn set_best_block(&self, value: &RskBlock) -> Result<()> {
         let key = &StoreKey::BestBlock.value();
         self.save_to_block_cache(key, value)?;
-        Ok(self.db.set(key, value)?)
+        Ok(self.db.set(key, value, None)?)
     }
 
     fn get_back_sync_checkpoint(&self) -> Result<Option<RskBlock>> {
@@ -91,7 +91,7 @@ impl BlockStore for CachedBlockStore {
     fn set_back_sync_checkpoint(&self, value: &RskBlock) -> Result<()> {
         let key = &StoreKey::BackSyncCheckpoint.value();
         self.save_to_block_cache(key, value)?;
-        Ok(self.db.set(key, value)?)
+        Ok(self.db.set(key, value, None)?)
     }
 
     fn reset_back_sync_checkpoint(&self) -> Result<()> {
@@ -109,7 +109,7 @@ impl BlockStore for CachedBlockStore {
     fn save_block(&self, value: &RskBlock) -> Result<()> {
         let key = &StoreKey::BlockByHash(value.hash().to_string()).value();
         self.save_to_block_cache(key, value)?;
-        self.db.set(key, value)?;
+        self.db.set(key, value, None)?;
         Ok(())
     }
 
@@ -130,6 +130,6 @@ impl BlockStore for CachedBlockStore {
     fn set_canonical_block(&self, block: &RskBlock) -> Result<()> {
         let key = &StoreKey::BlockByNumber(block.number()).value();
         self.save_to_block_cache(key, block)?;
-        Ok(self.db.set(key, block.hash())?)
+        Ok(self.db.set(key, block.hash(), None)?)
     }
 }
