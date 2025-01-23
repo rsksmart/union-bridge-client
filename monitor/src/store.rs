@@ -84,13 +84,11 @@ impl BlockStore for CachedBlockStore {
 
     fn get_back_sync_checkpoint(&self) -> Result<Option<RskBlock>> {
         let key = &StoreKey::BackSyncCheckpoint.value();
-        let cached_block = self.get_from_block_cache(key)?;
-        Ok(cached_block.or(self.db.get(key)?))
+        Ok(self.db.get(key)?)
     }
 
     fn set_back_sync_checkpoint(&self, value: &RskBlock) -> Result<()> {
         let key = &StoreKey::BackSyncCheckpoint.value();
-        self.save_to_block_cache(key, value)?;
         Ok(self.db.set(key, value, None)?)
     }
 

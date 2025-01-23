@@ -1,11 +1,11 @@
 use anyhow::{bail, Context, Ok, Result};
-use log::{debug, info};
+use dotenv::dotenv;
+use log::{debug, info, warn};
 use monitor::rsk_provider::alloy::AlloyProvider;
 use monitor::rsk_provider::provider::RskProvider;
 use monitor::store::{BlockStore, CachedBlockStore};
 use monitor::types::RskBlock;
 use std::env;
-use dotenv::dotenv;
 
 const FINALITY_FOR_CHECK: u8 = 10;
 
@@ -26,6 +26,12 @@ fn main() -> Result<()> {
     let store_best_block = store
         .get_best_block()?
         .context("Failed to get best block")?;
+    let back_sync_checkpoint = store.get_back_sync_checkpoint()?;
+
+    if back_sync_checkpoint.is_some() {
+        warn!("Found partial backward sync. Check if this is expected. Quiting.");
+        return Ok(());
+    }
 
     if !find_canonical_connection(&store_best_block, FINALITY_FOR_CHECK, &store)? {
         bail!(
