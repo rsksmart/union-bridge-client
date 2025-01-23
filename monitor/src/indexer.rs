@@ -181,10 +181,9 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
                 self.save_as_canonical(&new_block)?;
             } else {
                 info!(
-                    "[backward_sync] Completed at block {} ({}), early={}",
+                    "[backward_sync] Completed at block {} ({})",
                     new_block.number(),
-                    new_block.hash(),
-                    store_best_block.number() < new_block.number()
+                    new_block.hash()
                 );
                 self.mark_as_complete(&starting_block)?;
                 break;

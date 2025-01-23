@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use dotenv::dotenv;
-use log::warn;
+use log::{info, warn};
 use monitor::indexer::Indexer;
 use monitor::rsk_provider::alloy::AlloyProvider;
 use monitor::store::CachedBlockStore;
@@ -8,9 +8,9 @@ use monitor::utils::ShutdownFlag;
 use std::{env, thread};
 
 fn main() -> Result<()> {
-    env_logger::init();
-
     dotenv().expect("Failed to load .env file");
+
+    log4rs::init_file("log4rs.yml", Default::default()).expect("Failed to load log4rs config");
 
     let shutdown_flag_control = ShutdownFlag::init();
     let shutdown_flag_indexer = shutdown_flag_control.clone();
@@ -34,6 +34,8 @@ fn main() -> Result<()> {
     let indexer = Indexer::new(store, alloy_provider, &initial_block_hash);
 
     run_indexer(indexer, shutdown_flag_indexer)?;
+
+    info!("Quiting now...");
 
     log::logger().flush();
 
