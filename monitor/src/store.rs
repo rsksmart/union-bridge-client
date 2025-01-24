@@ -31,14 +31,11 @@ impl StoreKey {
 pub trait BlockStore {
     fn get_best_block(&self) -> Result<Option<RskBlock>>;
     fn set_best_block(&self, value: &RskBlock) -> Result<()>;
-
     fn get_back_sync_checkpoint(&self) -> Result<Option<RskBlock>>;
     fn set_back_sync_checkpoint(&self, value: &RskBlock) -> Result<()>;
     fn reset_back_sync_checkpoint(&self) -> Result<()>;
-
     fn get_block_by_hash(&self, block_hash: &str) -> Result<Option<RskBlock>>;
     fn save_block(&self, value: &RskBlock) -> Result<()>;
-
     fn get_canonical_block(&self, block_height: u64) -> Result<Option<RskBlock>>;
     fn set_canonical_block(&self, block: &RskBlock) -> Result<()>;
 }

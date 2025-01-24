@@ -5,6 +5,8 @@ use monitor::indexer::Indexer;
 use monitor::rsk_provider::alloy::AlloyProvider;
 use monitor::store::CachedBlockStore;
 use monitor::utils::ShutdownFlag;
+use signal_hook::consts::{SIGINT, SIGTERM};
+use signal_hook::iterator::Signals;
 use std::{env, thread};
 
 fn main() -> Result<()> {
@@ -15,11 +17,18 @@ fn main() -> Result<()> {
     let shutdown_flag_control = ShutdownFlag::init();
     let shutdown_flag_indexer = shutdown_flag_control.clone();
 
-    ctrlc::set_handler(move || {
-        warn!("Ctrl+C received! Signaling worker to stop...");
-        shutdown_flag_control.set_on();
-    })
-    .expect("Error setting Ctrl+C handler");
+    let mut signals = Signals::new(&[SIGINT, SIGTERM]).expect("Failed to set up signal handlers");
+    thread::spawn(move || {
+        for signal in signals.forever() {
+            match signal {
+                SIGINT => warn!("Received Ctrl+C!"),
+                SIGTERM => warn!("Received SIGTERM!"),
+                _ => unreachable!(),
+            }
+            shutdown_flag_control.set_on();
+            break;
+        }
+    });
 
     let store_path = env::var("STORE_PATH").expect("STORE_PATH not set in env");
     let store = CachedBlockStore::new(&store_path)
