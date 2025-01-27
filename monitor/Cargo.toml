@@ -17,7 +17,7 @@ storage_backend = { package = "rust-bitvmx-storage-backend", git = "ssh://git@gi
 alloy-provider = { version = "0.9.2", features = ["ws"] }
 alloy-rpc-types = "0.9.2"
 alloy-pubsub = { version = "0.9.2" }
-ctrlc = "3.4"
+signal-hook = "0.3"
 tokio = { version = "1.41.1", features = ["rt-multi-thread"] }
 dotenv = "0.15"
 lru = "0.12.5"

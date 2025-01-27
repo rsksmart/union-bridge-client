@@ -17,6 +17,6 @@ appenders:
         pattern: "logs/app.{}.log"
 
 root:
-  level: info
+  level: debug
   appenders:
     - rolling_file

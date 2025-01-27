@@ -3,7 +3,7 @@ use crate::store::BlockStore;
 use crate::types::RskBlock;
 use crate::utils::ShutdownFlag;
 use anyhow::{anyhow, bail, Result};
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use std::ops::Deref;
 use std::thread;
 use std::time::Duration;
@@ -169,7 +169,8 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
             let store_block = self.store.get_canonical_block(new_block.number())?;
 
             let is_missing = store_block.is_none();
-            let is_reorg = !is_missing && store_block.as_ref().unwrap().hash() != new_block.hash();
+            let is_reorg = store_block.map_or(false, |sb| sb.hash() != new_block.hash());
+            let reached_connection_height = new_block.number() <= store_best_block.number();
 
             if is_missing || is_reorg {
                 info!(
@@ -179,18 +180,36 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
                     new_block.hash(),
                 );
                 self.save_as_canonical(&new_block)?;
+            } else if !reached_connection_height {
+                debug!(
+                    "[backward_sync] Skipping known block {} ({}) while checking if fully connected",
+                    new_block.number(),
+                    new_block.hash()
+                );
             } else {
                 info!(
                     "[backward_sync] Completed at block {} ({})",
                     new_block.number(),
                     new_block.hash()
                 );
-                self.mark_as_complete(&starting_block)?;
+
+                // we are complete, so we remove the checkpoint if any
+                self.store.reset_back_sync_checkpoint()?;
+                // it represents also the connection point to achieve full sync
+                self.store.set_best_block(&starting_block)?;
+
                 break;
             }
 
             if shutdown_flag.is_on() {
-                self.save_checkpoint_block(new_block)?;
+                warn!("[backward_sync] Interrupted before completing, setting back_sync_checkpoint to {} ({})",
+                    new_block.number(),
+                    new_block.hash()
+                );
+
+                // define backward_sync checkpoint to resume from
+                self.store.set_back_sync_checkpoint(&new_block)?;
+
                 break;
             }
 
@@ -199,11 +218,9 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
                 break;
             }
 
+            // no exit condition met, keep searching backwards
             new_block = self.get_next_backward_sync_block(new_block.number() - 1)?;
         }
-
-        // TODO(iago) if the initial backward_sync took too long, the chain may have grown a lot and we could be far from the tip
-        // we can try to do a recursive call until the number of missing blocks compared to the node is small enough
 
         Ok(())
     }
@@ -235,7 +252,7 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
                 let provider_best_block = self.rsk_provider.get_best_block()?;
                 let is_full_sync = provider_best_block.hash() == store_best_block.hash();
                 if is_full_sync {
-                    info!("[startup_backward_sync] No backward_sync needed",);
+                    debug!("[startup_backward_sync] No more backward_sync needed",);
                     return Ok(());
                 } else if shutdown_flag.is_on() {
                     return Ok(());
@@ -243,7 +260,7 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
                     info!("[startup_backward_sync] Running tip backward_sync-{}", i);
                 }
             }
-            // connect provider best block
+
             self.backward_sync(&provider_best_block, &shutdown_flag)?;
         }
 
@@ -265,24 +282,6 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
         // furthermore, if this line is fails for any reason (or app quits on error right before
         // running), soon a new block will become best (either one extending or reorg)
         self.store.set_best_block(&new_block)
-    }
-
-    fn mark_as_complete(&self, starting_block: &RskBlock) -> Result<()> {
-        // no longer a backward_sync to resume
-        self.store.reset_back_sync_checkpoint()?;
-        // last, to avoid requiring db transactionality, as it is used to determine the connection point when not fully synchronised
-        self.store.set_best_block(&starting_block)?;
-        Ok(())
-    }
-
-    fn save_checkpoint_block(&self, new_block: RskBlock) -> Result<()> {
-        warn!("[backward_sync] Interrupted before completing, setting back_sync_checkpoint to {} ({})",
-            new_block.number(),
-            new_block.hash()
-        );
-
-        // define backward_sync checkpoint to resume from
-        self.store.set_back_sync_checkpoint(&new_block)
     }
 
     fn get_next_backward_sync_block(&self, block_num: u64) -> Result<RskBlock> {
