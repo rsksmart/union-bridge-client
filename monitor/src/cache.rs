@@ -1,10 +1,10 @@
 use anyhow::{anyhow, Result};
 use lru::LruCache;
 use std::num::NonZeroUsize;
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 
 pub struct Cache<V> {
-    inner: Arc<RwLock<LruCache<String, V>>>,
+    inner: RwLock<LruCache<String, V>>,
 }
 
 impl<V> Cache<V>
@@ -13,9 +13,8 @@ where
 {
     pub fn new(max_size: usize) -> Self {
         Cache {
-            inner: Arc::new(RwLock::new(LruCache::new(
-                NonZeroUsize::new(max_size).unwrap(),
-            ))),
+            // RwLock needed because LruCache requires mut access, which we don't want for our methods
+            inner: RwLock::new(LruCache::new(NonZeroUsize::new(max_size).unwrap())),
         }
     }
 

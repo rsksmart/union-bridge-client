@@ -2,7 +2,7 @@ use crate::types::{RskBlock, RskLog};
 use anyhow::Result;
 
 pub trait RskSubscription<T> {
-    fn next(&mut self) -> Result<Option<T>>;
+    fn next(&mut self) -> Result<T>;
     fn unsubscribe(&self) -> Result<()>;
 }
 
