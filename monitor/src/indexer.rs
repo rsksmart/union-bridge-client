@@ -1,43 +1,49 @@
 use crate::rsk_provider::provider::{RskProvider, RskSubscription};
 use crate::store::BlockStore;
 use crate::types::RskBlock;
-use crate::utils::ShutdownFlag;
 use anyhow::{anyhow, bail, Result};
 use log::{debug, error, info, warn};
 use std::ops::Deref;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
 pub struct Indexer<P: RskProvider, S: BlockStore> {
-    store: S,
+    // TODO Arc<S> needed because of this piece in storage_backend/src/storage.rs: "transactions: RefCell<HashMap<usize, Box<rocksdb::Transaction<'static, TransactionDB>>>>"
+    store: Arc<S>,
     rsk_provider: P,
     initial_block_hash: String,
+    is_running: Arc<AtomicBool>,
 }
 
 // TODO(Jira) review this file and take care of transactionality on storage saving: https://rsklabs.atlassian.net/browse/UB-11
 // TODO(Jira) allow changing the initial_block_hash on a running instance: https://rsklabs.atlassian.net/browse/UB-32
 
 impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
-    pub fn new(store: S, provider: P, initial_block_hash: &str) -> Self {
+    pub fn new(store: Arc<S>, provider: P, initial_block_hash: &str) -> Self {
         Self {
             store,
             rsk_provider: provider,
             initial_block_hash: initial_block_hash.to_string(),
+            is_running: Arc::new(AtomicBool::new(true)),
         }
     }
 
-    pub fn run(&self, shutdown_flag: ShutdownFlag) -> Result<()> {
+    pub fn run(&self) -> Result<()> {
         self.initialize_db_if_required()?;
 
-        if !shutdown_flag.is_on() {
-            self.startup_backward_sync(&shutdown_flag)?;
-        }
+        self.startup_backward_sync()?;
 
-        if !shutdown_flag.is_on() {
-            self.subscribe_blocks(shutdown_flag)?;
-        }
+        self.subscribe_blocks()
+    }
 
-        Ok(())
+    pub fn stop(&self) {
+        self.is_running.store(false, Ordering::SeqCst);
+    }
+
+    fn is_running(&self) -> bool {
+        self.is_running.load(Ordering::SeqCst)
     }
 
     fn initialize_db_if_required(&self) -> Result<()> {
@@ -62,7 +68,7 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
         self.save_as_best_block(&initial_block_node)
     }
 
-    fn startup_backward_sync(&self, shutdown_flag: &ShutdownFlag) -> Result<()> {
+    fn startup_backward_sync(&self) -> Result<()> {
         // In case of an interrupted backward_sync, a back_sync_checkpoint will be created.
         // If it is still canonical when we restart the application, we will run:
         //     1. a backward_sync to finish connecting such checkpoint, that becomes the new connection point
@@ -70,20 +76,21 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
         // We do this in order to save some time by not re-processing blocks we already know/have.
         // If the checkpoint does not exist, or it is not canonical anymore, we will just start a
         // new backward_sync from the provider best block.
-        self.resume_pending_backward_sync(&shutdown_flag)?;
-
-        if shutdown_flag.is_on() {
-            return Ok(());
-        }
+        self.resume_pending_backward_sync()?;
 
         // In case of a long backward_sync, we may be far from the tip when it completes to rely on
         // eth_subscribe for catch up. So we run many backward_syncs until we get close to the tip.
-        self.full_sync_backward_syncs(&shutdown_flag)?;
+        self.full_sync_backward_syncs()?;
 
         Ok(())
     }
 
-    fn subscribe_blocks(&self, shutdown_flag: ShutdownFlag) -> Result<()> {
+    fn subscribe_blocks(&self) -> Result<()> {
+        if !self.is_running() {
+            info!("[subscribe_blocks] Shutdown requested, skipping subscribe_blocks");
+            return Ok(());
+        }
+
         info!("[subscribe_blocks] Start subscribe_blocks...");
 
         // TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15
@@ -93,7 +100,7 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
             .expect("Failed to subscribe to blocks (unrecoverable)"); // TODO retry mechanism in scope of UB-15
 
         let loop_result = (|| {
-            while !shutdown_flag.is_on() {
+            while self.is_running() {
                 let new_block = rsk_block_subscription.next()?;
                 if new_block.is_none() {
                     thread::sleep(Duration::from_secs(1));
@@ -128,7 +135,7 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
                         new_block.hash()
                     );
                     let provider_best_block = self.rsk_provider.get_best_block()?;
-                    self.backward_sync(&provider_best_block, &shutdown_flag)?;
+                    self.backward_sync(&provider_best_block)?;
                 } else {
                     info!(
                         "[subscribe_blocks] Processing block {} ({}): neither extending, nor competing",
@@ -148,8 +155,11 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
             .and_then(|_| loop_result)
     }
 
-    fn backward_sync(&self, starting_block: &RskBlock, shutdown_flag: &ShutdownFlag) -> Result<()> {
-        // TODO(Jira) request and persist uncles during this process: https://rsklabs.atlassian.net/browse/UB-16
+    fn backward_sync(&self, starting_block: &RskBlock) -> Result<()> {
+        if !self.is_running() {
+            info!("[backward_sync] Shutdown requested, skipping backward_sync");
+            return Ok(());
+        }
 
         let store_best_block = self
             .store
@@ -163,6 +173,8 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
             store_best_block.number(),
             store_best_block.hash(),
         );
+
+        // TODO(Jira) request and persist uncles during this process: https://rsklabs.atlassian.net/browse/UB-16
 
         let mut new_block = starting_block.clone();
         loop {
@@ -201,8 +213,9 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
                 break;
             }
 
-            if shutdown_flag.is_on() {
-                warn!("[backward_sync] Interrupted before completing, setting back_sync_checkpoint to {} ({})",
+            if !self.is_running() {
+                warn!(
+                    "[backward_sync] Shutdown requested, setting back_sync_checkpoint to {} ({})",
                     new_block.number(),
                     new_block.hash()
                 );
@@ -225,12 +238,12 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
         Ok(())
     }
 
-    fn resume_pending_backward_sync(&self, shutdown_flag: &ShutdownFlag) -> Result<()> {
+    fn resume_pending_backward_sync(&self) -> Result<()> {
         if let Some(checkpoint) = self.store.get_back_sync_checkpoint()? {
             match self.rsk_provider.get_block_by_hash(checkpoint.parent())? {
                 Some(checkpoint_parent) => {
                     info!("[startup_backward_sync] Resuming previous backward_sync");
-                    self.backward_sync(&checkpoint_parent, &shutdown_flag)?;
+                    self.backward_sync(&checkpoint_parent)?;
                 }
                 None => {
                     warn!(
@@ -244,24 +257,22 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
         Ok(())
     }
 
-    fn full_sync_backward_syncs(&self, shutdown_flag: &ShutdownFlag) -> Result<()> {
+    fn full_sync_backward_syncs(&self) -> Result<()> {
         let max_attempts = 10;
         for i in 1..max_attempts {
             let provider_best_block = self.rsk_provider.get_best_block()?;
             if let Some(store_best_block) = self.store.get_best_block()? {
-                let provider_best_block = self.rsk_provider.get_best_block()?;
                 let is_full_sync = provider_best_block.hash() == store_best_block.hash();
                 if is_full_sync {
                     debug!("[startup_backward_sync] No more backward_sync needed",);
                     return Ok(());
-                } else if shutdown_flag.is_on() {
+                } else if !self.is_running() {
                     return Ok(());
                 } else {
                     info!("[startup_backward_sync] Running tip backward_sync-{}", i);
+                    self.backward_sync(&provider_best_block)?;
                 }
             }
-
-            self.backward_sync(&provider_best_block, &shutdown_flag)?;
         }
 
         bail!(
