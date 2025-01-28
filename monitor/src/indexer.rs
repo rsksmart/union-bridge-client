@@ -6,8 +6,6 @@ use log::{debug, error, info, warn};
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::thread;
-use std::time::Duration;
 
 pub struct Indexer<P: RskProvider, S: BlockStore> {
     // TODO Arc<S> needed because of this piece in storage_backend/src/storage.rs: "transactions: RefCell<HashMap<usize, Box<rocksdb::Transaction<'static, TransactionDB>>>>"
@@ -102,12 +100,6 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
         let loop_result = (|| {
             while self.is_running() {
                 let new_block = rsk_block_subscription.next()?;
-                if new_block.is_none() {
-                    thread::sleep(Duration::from_secs(1));
-                    continue;
-                }
-
-                let new_block = new_block.unwrap();
 
                 // TODO(Jira) do batched writes in backward sync: https://rsklabs.atlassian.net/browse/UB-24
 

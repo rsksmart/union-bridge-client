@@ -5,7 +5,7 @@ use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy_pubsub::{PubSubFrontend, Subscription, SubscriptionItem};
 use alloy_rpc_types::Header;
 use anyhow::{anyhow, bail, Result};
-use log::{debug, trace, warn};
+use log::debug;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
@@ -29,14 +29,9 @@ impl AlloyBlockSubscription {
 }
 
 impl RskSubscription<RskBlock> for AlloyBlockSubscription {
-    fn next(&mut self) -> Result<Option<RskBlock>> {
-        let header = match self.subscription.try_recv_any() {
-            Ok(header) => header,
-            Err(_) => {
-                trace!("No new block yet");
-                return Ok(None);
-            }
-        };
+    fn next(&mut self) -> Result<RskBlock> {
+        // TODO(iago) try to close the subscription on shutdown to avoid waiting on a next block
+        let header = self.subscription.blocking_recv_any()?;
 
         debug!("Received header: {:?}", header);
 
@@ -52,17 +47,22 @@ impl RskSubscription<RskBlock> for AlloyBlockSubscription {
             .as_str()
             .ok_or_else(|| anyhow!("Missing hash field"))?;
 
+        // TODO(Jira) tmp approach, try to get the required block data from the subscription itself (check Rsk and Alloy impl): https://rsklabs.atlassian.net/browse/UB-36
         let new_block = self.provider.get_block_by_hash(&new_block_hash)?;
-
         if new_block.is_none() {
-            warn!("hash informed by Provider does not exist");
+            bail!(
+                "hash informed by Provider {} does not exist",
+                new_block_hash
+            );
         }
 
-        Ok(new_block)
+        Ok(new_block.unwrap())
     }
 
     fn unsubscribe(&self) -> Result<()> {
-        // nothing to do for this library
+        self.provider
+            .provider
+            .unsubscribe(*self.subscription.local_id())?;
         Ok(())
     }
 }
@@ -76,7 +76,7 @@ impl AlloyLogSubscription {
 }
 
 impl RskSubscription<RskLog> for AlloyLogSubscription {
-    fn next(&mut self) -> Result<Option<RskLog>> {
+    fn next(&mut self) -> Result<RskLog> {
         todo!("Implement AlloyLogSubscription::next")
     }
 
