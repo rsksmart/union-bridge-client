@@ -1,30 +1,33 @@
 use crate::rsk_provider::provider::{RskProvider, RskSubscription};
 use crate::store::BlockStore;
 use crate::types::RskBlock;
+use crate::utils::ShutdownFlag;
 use anyhow::{anyhow, bail, Result};
 use log::{debug, error, info, warn};
 use std::ops::Deref;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
 pub struct Indexer<P: RskProvider, S: BlockStore> {
-    // TODO Arc<S> needed because of this piece in storage_backend/src/storage.rs: "transactions: RefCell<HashMap<usize, Box<rocksdb::Transaction<'static, TransactionDB>>>>"
-    store: Arc<S>,
+    store: S,
     rsk_provider: P,
     initial_block_hash: String,
-    is_running: Arc<AtomicBool>,
+    shutdown_flag: ShutdownFlag,
 }
 
 // TODO(Jira) review this file and take care of transactionality on storage saving: https://rsklabs.atlassian.net/browse/UB-11
 // TODO(Jira) allow changing the initial_block_hash on a running instance: https://rsklabs.atlassian.net/browse/UB-32
 
 impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
-    pub fn new(store: Arc<S>, provider: P, initial_block_hash: &str) -> Self {
+    pub fn new(
+        store: S,
+        provider: P,
+        initial_block_hash: &str,
+        shutdown_flag: ShutdownFlag,
+    ) -> Self {
         Self {
             store,
             rsk_provider: provider,
             initial_block_hash: initial_block_hash.to_string(),
-            is_running: Arc::new(AtomicBool::new(true)),
+            shutdown_flag,
         }
     }
 
@@ -36,12 +39,8 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
         self.subscribe_blocks()
     }
 
-    pub fn stop(&self) {
-        self.is_running.store(false, Ordering::SeqCst);
-    }
-
     fn is_running(&self) -> bool {
-        self.is_running.load(Ordering::SeqCst)
+        !self.shutdown_flag.is_on()
     }
 
     fn initialize_db_if_required(&self) -> Result<()> {

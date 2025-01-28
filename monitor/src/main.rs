@@ -4,9 +4,9 @@ use log::{info, warn};
 use monitor::indexer::Indexer;
 use monitor::rsk_provider::alloy::AlloyProvider;
 use monitor::store::CachedBlockStore;
+use monitor::utils::ShutdownFlag;
 use signal_hook::consts::{SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
-use std::sync::Arc;
 use std::{env, thread};
 
 fn main() -> Result<()> {
@@ -15,7 +15,7 @@ fn main() -> Result<()> {
     log4rs::init_file("log4rs.yml", Default::default()).expect("Failed to load log4rs config");
 
     let store_path = env::var("STORE_PATH").expect("STORE_PATH not set in env");
-    let store = Arc::new(CachedBlockStore::new(&store_path)?);
+    let store = CachedBlockStore::new(&store_path)?;
 
     let rsk_url = env::var("RSK_PROVIDER_URL").expect("RSK_PROVIDER_URL not set in env");
     let alloy_provider =
@@ -24,12 +24,13 @@ fn main() -> Result<()> {
     let initial_block_hash =
         env::var("INITIAL_BLOCK_HASH").expect("INITIAL_BLOCK_HASH not set in env");
 
-    let indexer = Arc::new(Indexer::new(
-        store.clone(),
+    let shutdown_flag = ShutdownFlag::init();
+    let indexer = Indexer::new(
+        store,
         alloy_provider,
         &initial_block_hash,
-    ));
-    let indexer_clone = Arc::clone(&indexer);
+        shutdown_flag.clone(),
+    );
 
     let mut signals = Signals::new(&[SIGINT, SIGTERM]).expect("Failed to set up signal handlers");
     thread::spawn(move || {
@@ -39,7 +40,7 @@ fn main() -> Result<()> {
                 SIGTERM => warn!("Received SIGTERM!"),
                 _ => unreachable!(),
             }
-            indexer_clone.stop();
+            shutdown_flag.set_on();
             break;
         }
     });

@@ -1,14 +1,12 @@
 use crate::cache::Cache;
 use crate::types::RskBlock;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use std::env;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, MutexGuard};
 use storage_backend::storage::{KeyValueStore, Storage};
 
 pub struct CachedBlockStore {
-    // TODO Arc<Mutex<Storage>> needed because of this piece in storage_backend/src/storage.rs: "transactions: RefCell<HashMap<usize, Box<rocksdb::Transaction<'static, TransactionDB>>>>"
-    db: Arc<Mutex<Storage>>,
+    db: Storage,
     block_cache: Cache<RskBlock>,
 }
 
@@ -50,7 +48,7 @@ impl CachedBlockStore {
             .parse::<usize>()
             .expect("BLOCK_CACHE_SIZE in env must be a number");
         Ok(Self {
-            db: Arc::new(Mutex::new(db)),
+            db,
             block_cache: Cache::new(block_cache_size),
         })
     }
@@ -66,55 +64,47 @@ impl CachedBlockStore {
 
         Ok(None)
     }
-
-    fn db_lock(&self) -> Result<MutexGuard<Storage>> {
-        let db = self
-            .db
-            .lock()
-            .map_err(|e| anyhow!("Failed to acquire DB lock: {}", e))?;
-        Ok(db)
-    }
 }
 
 impl BlockStore for CachedBlockStore {
     fn get_best_block(&self) -> Result<Option<RskBlock>> {
         let key = &StoreKey::BestBlock.value();
         let cached_block = self.get_from_block_cache(key)?;
-        Ok(cached_block.or(self.db_lock()?.get(key)?))
+        Ok(cached_block.or(self.db.get(key)?))
     }
 
     fn set_best_block(&self, value: &RskBlock) -> Result<()> {
         let key = &StoreKey::BestBlock.value();
         self.save_to_block_cache(key, value)?;
-        Ok(self.db_lock()?.set(key, value, None)?)
+        Ok(self.db.set(key, value, None)?)
     }
 
     fn get_back_sync_checkpoint(&self) -> Result<Option<RskBlock>> {
         let key = &StoreKey::BackSyncCheckpoint.value();
-        Ok(self.db_lock()?.get(key)?)
+        Ok(self.db.get(key)?)
     }
 
     fn set_back_sync_checkpoint(&self, value: &RskBlock) -> Result<()> {
         let key = &StoreKey::BackSyncCheckpoint.value();
-        Ok(self.db_lock()?.set(key, value, None)?)
+        Ok(self.db.set(key, value, None)?)
     }
 
     fn reset_back_sync_checkpoint(&self) -> Result<()> {
         let key = &StoreKey::BackSyncCheckpoint.value();
         self.block_cache.remove(key)?;
-        Ok(self.db_lock()?.delete(key)?)
+        Ok(self.db.delete(key)?)
     }
 
     fn get_block_by_hash(&self, block_hash: &str) -> Result<Option<RskBlock>> {
         let key = &StoreKey::BlockByHash(block_hash.to_string()).value();
         let cached_block = self.get_from_block_cache(key)?;
-        Ok(cached_block.or(self.db_lock()?.get(key)?))
+        Ok(cached_block.or(self.db.get(key)?))
     }
 
     fn save_block(&self, value: &RskBlock) -> Result<()> {
         let key = &StoreKey::BlockByHash(value.hash().to_string()).value();
         self.save_to_block_cache(key, value)?;
-        self.db_lock()?.set(key, value, None)?;
+        self.db.set(key, value, None)?;
         Ok(())
     }
 
@@ -125,7 +115,7 @@ impl BlockStore for CachedBlockStore {
             return Ok(cached_block_opt);
         }
 
-        let block_hash: Option<String> = self.db_lock()?.get(key)?;
+        let block_hash: Option<String> = self.db.get(key)?;
         match block_hash {
             Some(block_hash) => Ok(self.get_block_by_hash(&block_hash)?),
             None => Ok(None),
@@ -135,6 +125,6 @@ impl BlockStore for CachedBlockStore {
     fn set_canonical_block(&self, block: &RskBlock) -> Result<()> {
         let key = &StoreKey::BlockByNumber(block.number()).value();
         self.save_to_block_cache(key, block)?;
-        Ok(self.db_lock()?.set(key, block.hash(), None)?)
+        Ok(self.db.set(key, block.hash(), None)?)
     }
 }
