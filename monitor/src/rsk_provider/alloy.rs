@@ -1,14 +1,15 @@
 use crate::rsk_provider::provider::{RskProvider, RskSubscription};
 use crate::types::{RskBlock, RskLog, RskRpcBlock};
-use crate::utils::RuntimeSync;
 use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy_pubsub::{PubSubFrontend, Subscription, SubscriptionItem};
 use alloy_rpc_types::Header;
 use anyhow::{anyhow, bail, Result};
 use log::debug;
 use serde_json::{json, Value};
+use std::error::Error;
+use std::future::Future;
 use std::sync::Arc;
-
+use tokio::runtime::Runtime;
 // TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15. Review these methods accordingly.
 // TODO(Jira) error resilience: https://rsklabs.atlassian.net/browse/UB-28
 
@@ -87,14 +88,14 @@ impl RskSubscription<RskLog> for AlloyLogSubscription {
 
 #[derive(Clone)]
 pub struct AlloyProvider {
-    pub provider: RootProvider<PubSubFrontend>,
-    pub rt_sync: Arc<RuntimeSync>,
+    provider: RootProvider<PubSubFrontend>,
+    rt_sync: RuntimeSync,
 }
 
 impl AlloyProvider {
     pub fn new(url: &str) -> Result<Self> {
         let ws = WsConnect::new(url);
-        let rt_sync = Arc::new(RuntimeSync::new()?);
+        let rt_sync = RuntimeSync::new()?;
         let alloy_provider = rt_sync.run(ProviderBuilder::new().on_ws(ws))?;
         Ok(AlloyProvider {
             provider: alloy_provider,
@@ -156,5 +157,34 @@ impl RskProvider for AlloyProvider {
     fn disconnect(&self) -> Result<()> {
         // nothing to do for this rsk_provider
         Ok(())
+    }
+}
+
+// This struct is a wrapper around tokio::runtime::Runtime that allows for synchronous execution of
+// async functions.
+// Note 1: it is discouraged to start several runtimes, so use with caution.
+// Note 2: we need Tokio because Alloy requires a Tokio Reactor to work
+#[derive(Clone)]
+struct RuntimeSync {
+    rt: Arc<Runtime>,
+}
+
+impl RuntimeSync {
+    pub fn new() -> Result<Self> {
+        // Note: we cannot use Builder::new_current_thread() because Alloy needs multiple to work
+        let rt = Runtime::new().expect("Failed to create Tokio runtime (unrecoverable)");
+        Ok(RuntimeSync { rt: Arc::new(rt) })
+    }
+
+    pub fn run<Fut, RetType, Err>(&self, future: Fut) -> Result<RetType>
+    where
+        Fut: Future<Output = Result<RetType, Err>>,
+        Err: Error + Send + 'static,
+    {
+        self.rt.block_on(async {
+            future
+                .await
+                .map_err(|e| anyhow!("Error on RuntimeSync: {:?}", e))
+        })
     }
 }
