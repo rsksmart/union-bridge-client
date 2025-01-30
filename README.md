@@ -6,6 +6,8 @@ TODO: Add more details about the Monitor.
 
 # How to run the Monitor?
 
+User as referece `.env.sample` and place a version named `.env` in the `monitor` folder.
+
 ```bash
 cd monitor
 RUST_BACKTRACE=1 RUST_LOG=debug cargo run
