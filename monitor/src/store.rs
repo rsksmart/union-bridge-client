@@ -22,6 +22,7 @@ impl StoreKey {
         match self {
             StoreKey::BlockByHash(block_hash) => format!("block/hash/{}", block_hash),
             StoreKey::BlockByNumber(block_height) => format!("block/height/{}", block_height),
+            // TODO(iago) check if the name is accurate
             StoreKey::BestBlock => "meta/best_block_height".to_string(),
             StoreKey::BackSyncCheckpoint => "meta/tmp_back_sync_checkpoint".to_string(),
         }
@@ -96,6 +97,9 @@ impl BlockStore for CachedBlockStore {
     }
 
     fn get_block_by_hash(&self, block_hash: &str) -> Result<Option<RskBlock>> {
+
+        // TODO(iago) - think if we want to cache this one, most probably yes
+
         let key = &StoreKey::BlockByHash(block_hash.to_string()).value();
         let cached_block = self.get_from_block_cache(key)?;
         Ok(cached_block.or(self.db.get(key)?))

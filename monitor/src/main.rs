@@ -4,10 +4,10 @@ use log::info;
 use monitor::indexer::Indexer;
 use monitor::rsk_provider::alloy::AlloyProvider;
 use monitor::store::CachedBlockStore;
-use monitor::utils::ShutdownFlag;
 use signal_hook::consts::{SIGINT, SIGTERM};
 use signal_hook::flag;
 use std::env;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 fn main() -> Result<()> {
@@ -25,7 +25,7 @@ fn main() -> Result<()> {
     let initial_block_hash =
         env::var("INITIAL_BLOCK_HASH").expect("INITIAL_BLOCK_HASH not set in env");
 
-    let shutdown_flag = ShutdownFlag::init();
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
     let indexer = Indexer::new(
         store,
         alloy_provider,
@@ -33,10 +33,8 @@ fn main() -> Result<()> {
         shutdown_flag.clone(),
     );
 
-
-    flag::register(SIGINT, Arc::clone(&shutdown_flag.flag)).expect("Failed to set SIGINT handler");
-    flag::register(SIGTERM, Arc::clone(&shutdown_flag.flag))
-        .expect("Failed to set SIGTERM handler");
+    flag::register(SIGINT, Arc::clone(&shutdown_flag)).expect("Failed to set SIGINT handler");
+    flag::register(SIGTERM, Arc::clone(&shutdown_flag)).expect("Failed to set SIGTERM handler");
 
     indexer.run()?;
 
