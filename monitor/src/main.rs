@@ -1,13 +1,14 @@
 use anyhow::Result;
 use dotenv::dotenv;
-use log::{info, warn};
+use log::info;
 use monitor::indexer::Indexer;
 use monitor::rsk_provider::alloy::AlloyProvider;
 use monitor::store::CachedBlockStore;
 use monitor::utils::ShutdownFlag;
 use signal_hook::consts::{SIGINT, SIGTERM};
-use signal_hook::iterator::Signals;
-use std::{env, thread};
+use signal_hook::flag;
+use std::env;
+use std::sync::Arc;
 
 fn main() -> Result<()> {
     dotenv().expect("Failed to load .env file");
@@ -32,18 +33,10 @@ fn main() -> Result<()> {
         shutdown_flag.clone(),
     );
 
-    let mut signals = Signals::new(&[SIGINT, SIGTERM]).expect("Failed to set up signal handlers");
-    thread::spawn(move || {
-        for signal in signals.forever() {
-            match signal {
-                SIGINT => warn!("Received Ctrl+C!"),
-                SIGTERM => warn!("Received SIGTERM!"),
-                _ => unreachable!(),
-            }
-            shutdown_flag.set_on();
-            break;
-        }
-    });
+
+    flag::register(SIGINT, Arc::clone(&shutdown_flag.flag)).expect("Failed to set SIGINT handler");
+    flag::register(SIGTERM, Arc::clone(&shutdown_flag.flag))
+        .expect("Failed to set SIGTERM handler");
 
     indexer.run()?;
 

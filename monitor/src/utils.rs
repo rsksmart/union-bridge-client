@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct ShutdownFlag {
-    flag: Arc<AtomicBool>,
+    pub flag: Arc<AtomicBool>,
 }
 
 impl ShutdownFlag {
