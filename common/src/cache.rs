@@ -1,20 +1,26 @@
 use anyhow::{anyhow, Result};
-use lru::LruCache;
+use lru::LruCache as InnerLruCache;
 use std::num::NonZeroUsize;
 use std::sync::RwLock;
 
-pub struct Cache<V> {
-    inner: RwLock<LruCache<String, V>>,
+pub trait Cache<V> {
+    fn get(&self, key: &str) -> Result<Option<V>>;
+    fn insert(&self, key: &str, value: &V) -> Result<Option<V>>;
+    fn remove(&self, key: &str) -> Result<Option<V>>;
 }
 
-impl<V> Cache<V>
+pub struct LruCache<V> {
+    inner: RwLock<InnerLruCache<String, V>>,
+}
+
+impl<V> LruCache<V>
 where
     V: Clone,
 {
     pub fn new(max_size: usize) -> Self {
-        Cache {
-            // RwLock needed because LruCache requires mut access, which we don't want for our methods
-            inner: RwLock::new(LruCache::new(NonZeroUsize::new(max_size).unwrap())),
+        LruCache {
+            // RwLock needed because LruCacheCrate requires mut access, which we don't want for our methods
+            inner: RwLock::new(InnerLruCache::new(NonZeroUsize::new(max_size).unwrap())),
         }
     }
 
@@ -40,5 +46,22 @@ where
             .write()
             .map_err(|e| anyhow!("Failed to acquire write lock on cache: {:?}", e))?;
         Ok(write_guard.pop(key))
+    }
+}
+
+impl<V> Cache<V> for LruCache<V>
+where
+    V: Clone,
+{
+    fn get(&self, key: &str) -> Result<Option<V>> {
+        self.get(key)
+    }
+
+    fn insert(&self, key: &str, value: &V) -> Result<Option<V>> {
+        self.insert(key, value)
+    }
+
+    fn remove(&self, key: &str) -> Result<Option<V>> {
+        self.remove(key)
     }
 }

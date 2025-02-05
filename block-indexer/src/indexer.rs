@@ -1,13 +1,14 @@
-use crate::rsk_provider::provider::{RskProvider, RskSubscription};
 use crate::store::BlockStore;
-use crate::types::RskBlock;
 use anyhow::{anyhow, bail, Result};
+use definitions::rsk_indexer::RskIndexer;
+use definitions::rsk_provider::{RskProvider, RskSubscription};
+use definitions::types::RskBlock;
 use log::{debug, error, info, warn};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-pub struct Indexer<P: RskProvider, S: BlockStore> {
+pub struct BlockIndexer<P: RskProvider, S: BlockStore> {
     store: S,
     rsk_provider: P,
     initial_block_hash: String,
@@ -17,7 +18,7 @@ pub struct Indexer<P: RskProvider, S: BlockStore> {
 // TODO(Jira) review this file and take care of transactionality on storage saving: https://rsklabs.atlassian.net/browse/UB-11
 // TODO(Jira) allow changing the initial_block_hash on a running instance: https://rsklabs.atlassian.net/browse/UB-32
 
-impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
+impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
     pub fn new(
         store: S,
         provider: P,
@@ -30,14 +31,6 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
             initial_block_hash: initial_block_hash.to_string(),
             shutdown_flag,
         }
-    }
-
-    pub fn run(&self) -> Result<()> {
-        self.initialize_db_if_required()?;
-
-        self.startup_backward_sync()?;
-
-        self.subscribe_blocks()
     }
 
     fn is_running(&self) -> bool {
@@ -212,6 +205,9 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
                     new_block.hash()
                 );
 
+                // [...100] --- 200
+                // 100 ... 150 ... 175 <---200 --- 225
+
                 // define backward_sync checkpoint to resume from
                 self.store.set_back_sync_checkpoint(&new_block)?;
 
@@ -302,10 +298,10 @@ impl<P: RskProvider, S: BlockStore> Indexer<P, S> {
     }
 }
 
-impl<P: RskProvider, S: BlockStore> Drop for Indexer<P, S> {
-    fn drop(&mut self) {
-        if let Err(e) = self.rsk_provider.disconnect() {
-            error!("Failed to disconnect rsk_provider: {:?}", e);
-        }
+impl<P: RskProvider, S: BlockStore> RskIndexer<P, S> for BlockIndexer<P, S> {
+    fn run(&self) -> Result<()> {
+        self.initialize_db_if_required()?;
+        self.startup_backward_sync()?;
+        self.subscribe_blocks()
     }
 }

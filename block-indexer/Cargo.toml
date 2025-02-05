@@ -1,16 +1,16 @@
 [package]
-name = "monitor"
+name = "block-indexer"
 version = "0.1.0"
 edition = "2021"
-resolver = "2"
 
 [dependencies]
 log = { workspace = true }
-anyhow = { workspace = true }
 log4rs = { workspace = true }
 signal-hook = { workspace = true }
 dotenv = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+storage-backend = { workspace = true }
 definitions = { path = "../definitions" }
+common = { path = "../common" }
 alloy-rsk-provider = { path = "../alloy-rsk-provider" }
-block-indexer = { path = "../block-indexer" }
-log-indexer = { path = "../log-indexer" }

@@ -5,8 +5,11 @@ edition = "2021"
 resolver = "2"
 
 [dependencies]
-anyhow = "1.0.94"
-monitor = { path = "../../monitor" }
-log = "0.4.22"
+anyhow = { workspace = true }
+log = { workspace = true }
+dotenv = { workspace = true }
 env_logger = "0.11.5"
-dotenv = "0.15"
+definitions = { path = "../../definitions" }
+common = { path = "../../common" }
+block-indexer = { path = "../../block-indexer" }
+alloy-rsk-provider = { path = "../../alloy-rsk-provider" }

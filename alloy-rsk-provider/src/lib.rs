@@ -1,9 +1,9 @@
-use crate::rsk_provider::provider::{RskProvider, RskSubscription};
-use crate::types::{RskBlock, RskLog, RskRpcBlock};
 use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy_pubsub::{PubSubFrontend, Subscription, SubscriptionItem};
 use alloy_rpc_types::Header;
 use anyhow::{anyhow, bail, Result};
+use definitions::rsk_provider::{RskProvider, RskSubscription};
+use definitions::types::{RskBlock, RskLog, RskRpcBlock};
 use log::debug;
 use serde_json::{json, Value};
 use std::error::Error;

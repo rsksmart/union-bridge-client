@@ -1,0 +1,11 @@
+[package]
+name = "definitions"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { workspace = true }
+hex = { workspace = true }
+anyhow = { workspace = true }
+primitive-types = { workspace = true }
+bitcoin = "0.32.4"
