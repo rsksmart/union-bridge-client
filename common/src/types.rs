@@ -4,7 +4,7 @@ use primitive_types::U256;
 use serde::{de, Deserialize, Deserializer, Serialize};
 use std::string::ToString;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct RskBlock {
     number: u64,
     hash: String,

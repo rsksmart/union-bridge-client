@@ -206,3 +206,54 @@ impl<C: Cache<RskBlock>> BlockStore for CachedBlockStore<C> {
         self.set_canonical_block(block)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use anyhow::Result;
+    use std::env;
+    use tempfile::tempdir;
+    use crate::store::{BlockStore, CachedBlockStore};
+    use definitions::types::RskBlock;
+
+    fn dummy_block(number: u64, hash: &str, parent: &str) -> RskBlock {
+        RskBlock::new(
+            number,
+            hash.to_string(),
+            parent.to_string(),
+            Default::default(), // dummy difficulty
+            0,                  // dummy timestamp
+            "".to_string(),     // dummy pow
+            Default::default()  // dummy total_difficulty
+        )
+    }
+
+    // This function can be called to set up common environment variables for tests.
+    fn setup_env() {
+        // Set a default block cache size if not already set.
+        env::set_var("BLOCK_CACHE_SIZE", "100");
+    }
+
+    #[test]
+    fn test_set_get_best_block() -> Result<()> {
+        setup_env();
+
+        let temp_dir = tempdir()?;
+        let store_path = temp_dir.path().to_str().unwrap();
+
+        let store = CachedBlockStore::new(store_path)
+            .expect("Failed to create CachedBlockStore");
+
+        let expected_block = dummy_block(100, "hash100", "hash99");
+
+        store.set_best_block(&expected_block)?;
+
+        let best_block = store.get_best_block()?
+            .expect("Best block should be present");
+
+        assert_eq!(best_block, expected_block, "El bloque almacenado no coincide con el esperado");
+    
+        temp_dir.close()?;
+
+        Ok(())
+    }
+}
