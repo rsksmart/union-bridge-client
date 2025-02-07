@@ -1,6 +1,4 @@
 use anyhow::Result;
-use block_indexer::indexer::BlockIndexer;
-use block_indexer::store::CachedBlockStore;
 use common::rsk_indexer::RskIndexer;
 use dotenv::dotenv;
 use log::info;
@@ -19,6 +17,7 @@ fn main() -> Result<()> {
     log4rs::init_file("../log4rs.yml", Default::default()).expect("Failed to load log4rs config");
 
     let store_path = env::var("STORE_PATH").expect("STORE_PATH not set in env");
+    let store = RawLogStore::new(&format!("{}/logs", store_path))?;
 
     let rsk_url = env::var("RSK_PROVIDER_URL").expect("RSK_PROVIDER_URL not set in env");
     let alloy_provider =
@@ -28,38 +27,17 @@ fn main() -> Result<()> {
         env::var("INITIAL_BLOCK_HASH").expect("INITIAL_BLOCK_HASH not set in env");
 
     let shutdown_flag = Arc::new(AtomicBool::new(false));
-    flag::register(SIGINT, Arc::clone(&shutdown_flag)).expect("Failed to set SIGINT handler");
-    flag::register(SIGTERM, Arc::clone(&shutdown_flag)).expect("Failed to set SIGTERM handler");
-
-    // TODO(iago) try to add prefix on logs for each indexer
-
-    let block_store = CachedBlockStore::new(&format!("{}/blocks", store_path))?;
-    let block_indexer = BlockIndexer::new(
-        block_store,
-        alloy_provider.clone(), // TODO(iago) try to use Rc instead of cloning
-        &initial_block_hash,
-        shutdown_flag.clone(),
-    );
-
-    let log_store = RawLogStore::new(&format!("{}/logs", store_path))?;
-    let log_indexer = LogIndexer::new(
-        log_store,
+    let indexer = LogIndexer::new(
+        store,
         alloy_provider,
         &initial_block_hash,
         shutdown_flag.clone(),
     );
 
-    let log_indexer_thread = std::thread::spawn(move || {
-        // TODO(iago) properly handle errors
-        log_indexer.run().expect("Log indexer failed");
-    });
+    flag::register(SIGINT, Arc::clone(&shutdown_flag)).expect("Failed to set SIGINT handler");
+    flag::register(SIGTERM, Arc::clone(&shutdown_flag)).expect("Failed to set SIGTERM handler");
 
-    block_indexer.run()?;
-
-    // TODO(iago) properly handle errors
-    log_indexer_thread
-        .join()
-        .expect("Log indexer thread failed");
+    indexer.run()?;
 
     info!("Quitting now...");
     log::logger().flush();

@@ -1,10 +1,11 @@
 use anyhow::{bail, Context, Ok, Result};
+use block_indexer::store::{BlockStore, CachedBlockStore};
+use common::cache::LruCache;
+use common::rsk_provider::RskProvider;
+use common::types::RskBlock;
 use dotenv::dotenv;
 use log::{debug, info, warn};
-use monitor::rsk_provider::alloy::AlloyProvider;
-use monitor::rsk_provider::provider::RskProvider;
-use monitor::store::{BlockStore, CachedBlockStore};
-use monitor::types::RskBlock;
+use rsk_provider::alloy::AlloyProvider;
 use std::env;
 
 const FINALITY_FOR_CHECK: u8 = 10;
@@ -94,7 +95,7 @@ fn main() -> Result<()> {
 fn find_canonical_connection(
     block_ref: &RskBlock,
     block_margin: u8,
-    store: &CachedBlockStore,
+    store: &CachedBlockStore<LruCache<RskBlock>>,
 ) -> Result<bool> {
     let rsk_ws_provider = AlloyProvider::new("wss://public-node.testnet.rsk.co/websocket")
         .expect("Failed to create AlloyProvider");

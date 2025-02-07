@@ -37,6 +37,8 @@ impl RskBlock {
         }
     }
 
+    // TODO(iago) remove this, by default fields are immutable
+
     pub fn number(&self) -> u64 {
         self.number
     }
@@ -136,6 +138,10 @@ impl From<RskRpcBlock> for RskBlock {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RskLog {
-    // TODO(Jira) implement: https://rsklabs.atlassian.net/browse/UB-10
+    pub address: String,
+    pub transaction_hash: String,
+    pub log_index: u16,
+    pub data: String, // TODO(iago) think of a better type
 }
