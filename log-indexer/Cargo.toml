@@ -12,4 +12,4 @@ anyhow = { workspace = true }
 serde = { workspace = true }
 storage-backend = { workspace = true }
 common = { path = "../common" }
-alloy-rsk-provider = { path = "../alloy-rsk-provider" }
+rsk-provider = { path = "../rsk-provider" }

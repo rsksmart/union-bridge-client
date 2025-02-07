@@ -11,6 +11,6 @@ log4rs = { workspace = true }
 signal-hook = { workspace = true }
 dotenv = { workspace = true }
 common = { path = "../common" }
-alloy-rsk-provider = { path = "../alloy-rsk-provider" }
+rsk-provider = { path = "../rsk-provider" }
 block-indexer = { path = "../block-indexer" }
 log-indexer = { path = "../log-indexer" }

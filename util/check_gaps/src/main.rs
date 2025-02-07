@@ -1,4 +1,3 @@
-use alloy_rsk_provider::AlloyProvider;
 use anyhow::{bail, Context, Ok, Result};
 use block_indexer::store::{BlockStore, CachedBlockStore};
 use common::cache::LruCache;
@@ -6,6 +5,7 @@ use common::rsk_provider::RskProvider;
 use common::types::RskBlock;
 use dotenv::dotenv;
 use log::{debug, info, warn};
+use rsk_provider::alloy::AlloyProvider;
 use std::env;
 
 const FINALITY_FOR_CHECK: u8 = 10;

@@ -1,4 +1,3 @@
-use alloy_rsk_provider::AlloyProvider;
 use anyhow::Result;
 use block_indexer::store::CachedBlockStore;
 use block_indexer::indexer::BlockIndexer;
@@ -10,6 +9,7 @@ use signal_hook::flag;
 use std::env;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use rsk_provider::alloy::AlloyProvider;
 
 fn main() -> Result<()> {
     dotenv().expect("Failed to load .env file");

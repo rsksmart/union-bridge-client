@@ -1,10 +1,10 @@
-use alloy_rsk_provider::AlloyProvider;
 use anyhow::Result;
 use common::rsk_indexer::RskIndexer;
 use dotenv::dotenv;
 use log::info;
 use log_indexer::indexer::LogIndexer;
 use log_indexer::store::RawLogStore;
+use rsk_provider::alloy::AlloyProvider;
 use signal_hook::consts::{SIGINT, SIGTERM};
 use signal_hook::flag;
 use std::env;
