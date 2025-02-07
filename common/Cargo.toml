@@ -8,5 +8,8 @@ serde = { workspace = true }
 hex = { workspace = true }
 anyhow = { workspace = true }
 primitive-types = { workspace = true }
+thiserror = { workspace = true }
+serde_json = { workspace = true }
 bitcoin = "0.32.4"
 lru = "0.13.0"
+signal-hook = "0.3"

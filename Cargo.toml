@@ -9,7 +9,7 @@ hex = "0.4.3"
 log = "0.4.22"
 anyhow = "1.0.94"
 log4rs = "1.3.0"
-signal-hook = "0.3"
 dotenv = "0.15"
 primitive-types = { version = "0.13.1", features = ["std", "serde"] }
 storage-backend = { package = "rust-bitvmx-storage-backend", git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-storage-backend.git", rev = "7f40d056f86295e3fd2a4f268f923ca3b4e70fbf" }
+thiserror = "2.0.11"

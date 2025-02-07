@@ -1,15 +1,12 @@
 use anyhow::Result;
 use common::rsk_indexer::RskIndexer;
+use common::shutdown_flag::ShutdownFlag;
 use dotenv::dotenv;
 use log::info;
 use log_indexer::indexer::LogIndexer;
 use log_indexer::store::RawLogStore;
 use rsk_provider::alloy::AlloyProvider;
-use signal_hook::consts::{SIGINT, SIGTERM};
-use signal_hook::flag;
 use std::env;
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 
 fn main() -> Result<()> {
     dotenv().expect("Failed to load .env file");
@@ -26,16 +23,8 @@ fn main() -> Result<()> {
     let initial_block_hash =
         env::var("INITIAL_BLOCK_HASH").expect("INITIAL_BLOCK_HASH not set in env");
 
-    let shutdown_flag = Arc::new(AtomicBool::new(false));
-    let indexer = LogIndexer::new(
-        store,
-        alloy_provider,
-        &initial_block_hash,
-        shutdown_flag.clone(),
-    );
-
-    flag::register(SIGINT, Arc::clone(&shutdown_flag)).expect("Failed to set SIGINT handler");
-    flag::register(SIGTERM, Arc::clone(&shutdown_flag)).expect("Failed to set SIGTERM handler");
+    let shutdown_flag = ShutdownFlag::init();
+    let indexer = LogIndexer::new(store, alloy_provider, &initial_block_hash, shutdown_flag);
 
     indexer.run()?;
 
