@@ -1,6 +1,6 @@
 use anyhow::Result;
 use common::cache::{Cache, LruCache};
-use definitions::types::RskBlock;
+use common::types::RskBlock;
 use std::env;
 use std::path::PathBuf;
 use storage_backend::storage::{KeyValueStore, Storage};
@@ -129,7 +129,6 @@ impl<C: Cache<RskBlock>> CachedBlockStore<C> {
 
     fn get_canonical_block(&self, block_height: u64) -> Result<Option<RskBlock>> {
         let key = StoreKey::BlockByNumber(block_height).value();
-
         if let Some(cached_block) = self.get_from_cache(&key)? {
             return Ok(Some(cached_block));
         }
@@ -152,7 +151,7 @@ impl<C: Cache<RskBlock>> CachedBlockStore<C> {
     fn set_canonical_block(&self, block: &RskBlock) -> Result<()> {
         let key = &StoreKey::BlockByNumber(block.number()).value();
         self.save_to_cache(key, block)?;
-        Ok(self.set_on_db(key, block)?)
+        Ok(self.set_on_db(key, &block.hash().to_string())?)
     }
 }
 

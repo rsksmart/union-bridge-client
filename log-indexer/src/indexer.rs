@@ -1,7 +1,7 @@
 use crate::store::LogStore;
 use anyhow::Result;
-use definitions::rsk_indexer::RskIndexer;
-use definitions::rsk_provider::RskProvider;
+use common::rsk_indexer::RskIndexer;
+use common::rsk_provider::RskProvider;
 use log::debug;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;

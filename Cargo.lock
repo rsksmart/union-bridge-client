@@ -382,7 +382,7 @@ dependencies = [
  "alloy-pubsub",
  "alloy-rpc-types",
  "anyhow",
- "definitions",
+ "common",
  "log",
  "serde",
  "serde_json",
@@ -990,7 +990,6 @@ dependencies = [
  "alloy-rsk-provider",
  "anyhow",
  "common",
- "definitions",
  "dotenv",
  "log",
  "log4rs",
@@ -1098,7 +1097,6 @@ dependencies = [
  "anyhow",
  "block-indexer",
  "common",
- "definitions",
  "dotenv",
  "env_logger",
  "log",
@@ -1177,16 +1175,12 @@ checksum = "5b63caa9aa9397e2d9480a9b13673856c78d8ac123288526c37d7839f2a86990"
 name = "common"
 version = "0.1.0"
 dependencies = [
- "alloy-provider",
- "alloy-pubsub",
- "alloy-rpc-types",
  "anyhow",
- "definitions",
- "log",
+ "bitcoin",
+ "hex",
  "lru 0.13.0",
+ "primitive-types 0.13.1",
  "serde",
- "serde_json",
- "tokio",
 ]
 
 [[package]]
@@ -1286,17 +1280,6 @@ name = "data-encoding"
 version = "2.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e60eed09d8c01d3cee5b7d30acb059b76614c918fa0f992e0dd6eeb10daad6f"
-
-[[package]]
-name = "definitions"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bitcoin",
- "hex",
- "primitive-types 0.13.1",
- "serde",
-]
 
 [[package]]
 name = "der"
@@ -2303,7 +2286,6 @@ dependencies = [
  "alloy-rsk-provider",
  "anyhow",
  "common",
- "definitions",
  "dotenv",
  "log",
  "log4rs",
@@ -2419,7 +2401,7 @@ dependencies = [
  "alloy-rsk-provider",
  "anyhow",
  "block-indexer",
- "definitions",
+ "common",
  "dotenv",
  "log",
  "log-indexer",

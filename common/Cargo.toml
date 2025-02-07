@@ -4,13 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-lru = "0.13.0"
 serde = { workspace = true }
-serde_json = { workspace = true }
-log = { workspace = true }
+hex = { workspace = true }
 anyhow = { workspace = true }
-definitions = { path = "../definitions" }
-tokio = { version = "1.41.1", features = ["rt-multi-thread"] }
-alloy-provider = { version = "0.9.2", features = ["ws"] }
-alloy-rpc-types = "0.9.2"
-alloy-pubsub = { version = "0.9.2" }
+primitive-types = { workspace = true }
+bitcoin = "0.32.4"
+lru = "0.13.0"

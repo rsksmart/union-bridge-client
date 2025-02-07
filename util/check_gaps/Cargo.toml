@@ -9,7 +9,6 @@ anyhow = { workspace = true }
 log = { workspace = true }
 dotenv = { workspace = true }
 env_logger = "0.11.5"
-definitions = { path = "../../definitions" }
 common = { path = "../../common" }
 block-indexer = { path = "../../block-indexer" }
 alloy-rsk-provider = { path = "../../alloy-rsk-provider" }

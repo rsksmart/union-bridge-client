@@ -1,4 +1,4 @@
-use definitions::types::RskLog;
+use common::types::RskLog;
 use std::path::PathBuf;
 use storage_backend::storage::{KeyValueStore, Storage};
 

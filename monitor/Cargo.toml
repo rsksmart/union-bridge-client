@@ -10,7 +10,7 @@ anyhow = { workspace = true }
 log4rs = { workspace = true }
 signal-hook = { workspace = true }
 dotenv = { workspace = true }
-definitions = { path = "../definitions" }
+common = { path = "../common" }
 alloy-rsk-provider = { path = "../alloy-rsk-provider" }
 block-indexer = { path = "../block-indexer" }
 log-indexer = { path = "../log-indexer" }

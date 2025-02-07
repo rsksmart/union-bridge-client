@@ -8,7 +8,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
 anyhow = { workspace = true }
-definitions = { path = "../definitions" }
+common = { path = "../common" }
 tokio = { version = "1.41.1", features = ["rt-multi-thread"] }
 alloy-provider = { version = "0.9.2", features = ["ws"] }
 alloy-rpc-types = "0.9.2"

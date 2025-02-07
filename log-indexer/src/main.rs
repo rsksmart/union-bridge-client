@@ -1,6 +1,6 @@
 use alloy_rsk_provider::AlloyProvider;
 use anyhow::Result;
-use definitions::rsk_indexer::RskIndexer;
+use common::rsk_indexer::RskIndexer;
 use dotenv::dotenv;
 use log::info;
 use log_indexer::indexer::LogIndexer;

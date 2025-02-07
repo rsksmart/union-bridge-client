@@ -1,8 +1,8 @@
 use crate::store::BlockStore;
 use anyhow::{anyhow, bail, Result};
-use definitions::rsk_indexer::RskIndexer;
-use definitions::rsk_provider::{RskProvider, RskSubscription};
-use definitions::types::RskBlock;
+use common::rsk_indexer::RskIndexer;
+use common::rsk_provider::{RskProvider, RskSubscription};
+use common::types::RskBlock;
 use log::{debug, error, info, warn};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
@@ -204,9 +204,6 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                     new_block.number(),
                     new_block.hash()
                 );
-
-                // [...100] --- 200
-                // 100 ... 150 ... 175 <---200 --- 225
 
                 // define backward_sync checkpoint to resume from
                 self.store.set_back_sync_checkpoint(&new_block)?;

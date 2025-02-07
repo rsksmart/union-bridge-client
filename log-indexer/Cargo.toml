@@ -11,6 +11,5 @@ dotenv = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
 storage-backend = { workspace = true }
-definitions = { path = "../definitions" }
 common = { path = "../common" }
 alloy-rsk-provider = { path = "../alloy-rsk-provider" }
