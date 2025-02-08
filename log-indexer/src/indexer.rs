@@ -1,14 +1,18 @@
+use crate::contracts::ContractInfo;
 use crate::store::LogStore;
-use anyhow::Result;
+use anyhow::{anyhow, bail, Result};
 use common::rsk_indexer::RskIndexer;
-use common::rsk_provider::RskProvider;
+use common::rsk_provider::{RskProvider, RskProviderError};
+use common::rsk_provider::{RskSubscription, RskSubscriptionFilter};
 use common::shutdown_flag::ShutdownFlag;
-use log::debug;
+use common::types::RskLog;
+use log::{debug, error, info};
 
 pub struct LogIndexer<P: RskProvider, S: LogStore> {
     _store: S,
-    _rsk_provider: P,
+    rsk_provider: P,
     _initial_block_hash: String,
+    managed_contracts: Vec<ContractInfo>,
     shutdown_flag: ShutdownFlag,
 }
 
@@ -18,12 +22,14 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         store: S,
         provider: P,
         initial_block_hash: &str,
+        managed_contracts: Vec<ContractInfo>,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
         Self {
             _store: store,
-            _rsk_provider: provider,
+            rsk_provider: provider,
             _initial_block_hash: initial_block_hash.to_string(),
+            managed_contracts,
             shutdown_flag,
         }
     }
@@ -35,10 +41,74 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 
 impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
     fn run(&self) -> Result<()> {
-        while self.is_running() {
-            debug!("New log received...");
-            std::thread::sleep(std::time::Duration::from_secs(10));
+        if !self.is_running() {
+            info!("[subscribe_logs] Shutdown requested, skipping...");
+            return Ok(());
         }
+
+        info!("[subscribe_logs] Start subscribe_logs...");
+
+        let contract_addresses = self
+            .managed_contracts
+            .iter()
+            .map(|c| c.address.clone())
+            .collect();
+
+        let filter = RskSubscriptionFilter::new_logs_by_address(contract_addresses);
+
+        let mut rsk_log_subscription = self
+            .rsk_provider
+            .subscribe_logs(filter)
+            .expect("Failed to subscribe to logs (unrecoverable)"); // TODO retry mechanism in scope of UB-15
+
+        let loop_result = self.listen_logs(&mut rsk_log_subscription);
+
+        rsk_log_subscription
+            .unsubscribe()
+            .and_then(|_| loop_result)?;
+
+        Ok(())
+    }
+}
+
+impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
+    fn listen_logs(&self, rsk_log_subscription: &mut impl RskSubscription<RskLog>) -> Result<()> {
+        while self.is_running() {
+            let new_log = match rsk_log_subscription.next() {
+                Ok(log) => log,
+                Err(RskProviderError::Closed) => {
+                    if self.is_running() {
+                        bail!("[subscribe_logs] Provider closed unexpectedly");
+                    } else {
+                        // TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15
+                        info!("[subscribe_logs] Shutdown requested, quitting...");
+                        break;
+                    }
+                }
+                Err(e) => {
+                    return Err(anyhow!("Failed to get next log from subscription: {:?}", e));
+                }
+            };
+
+            debug!("Managed contracts: {:?}", self.managed_contracts);
+
+            let managed_contract = self
+                .managed_contracts
+                .iter()
+                .find(|c| c.address.to_lowercase() == new_log.address.to_lowercase());
+
+            if managed_contract.is_none() {
+                error!("[subscribe_logs] Received unmanaged log: {:?}", new_log);
+                continue;
+            }
+
+            info!("[subscribe_logs] Processed log: {:?}", new_log);
+
+            // TODO(iago) here handle the ABI? no, probably on the provider
+            // self.rsk_provider.parse_ABI(managed_contract.unwrap().abi.clone())?;
+            // usar el ABI para tiparlos, convertir a BSON y guardarlo en BBDD (sin crear struct)
+        }
+
         Ok(())
     }
 }

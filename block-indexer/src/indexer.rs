@@ -35,7 +35,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         !self.shutdown_flag.is_on()
     }
 
-    fn initialize_db_if_required(&self) -> Result<()> {
+    fn init_db_if_required(&self) -> Result<()> {
         let best_block: Option<RskBlock> = self.store.get_best_block()?;
         if best_block.is_some() {
             return Ok(());
@@ -74,9 +74,9 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         Ok(())
     }
 
-    fn subscribe_blocks(&self) -> Result<()> {
+    fn start_block_subscription(&self) -> Result<()> {
         if !self.is_running() {
-            info!("[subscribe_blocks] Shutdown requested, skipping subscribe_blocks");
+            info!("[subscribe_blocks] Shutdown requested, skipping...");
             return Ok(());
         }
 
@@ -85,75 +85,80 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         // TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15
         let mut rsk_block_subscription = self
             .rsk_provider
-            .subscribe_blocks(self.shutdown_flag.clone())
+            .subscribe_blocks()
             .expect("Failed to subscribe to blocks (unrecoverable)"); // TODO retry mechanism in scope of UB-15
 
-        let loop_result = (|| {
-            while self.is_running() {
-                let new_block = match rsk_block_subscription.next() {
-                    Ok(block) => block,
-                    Err(RskProviderError::Closed) => {
-                        if self.is_running() {
-                            bail!("[subscribe_blocks] Provider closed unexpectedly");
-                        } else {
-                            info!("[subscribe_blocks] Shutdown requested, quitting block subscription...");
-                            break;
-                        }
-                    }
-                    _ => {
-                        return Err(anyhow!("Failed to get next block from subscription"));
-                    }
-                };
-
-                // TODO(Jira) do batched writes in backward sync: https://rsklabs.atlassian.net/browse/UB-24
-
-                // no need to keep track of it between iters as it is cached and can be re-fetched
-                let local_best_block = self
-                    .store
-                    .get_best_block()?
-                    .ok_or_else(|| anyhow!("Failed to get local_best_block from store"))?;
-
-                let extends_canonical = new_block.parent() == local_best_block.hash();
-                let is_reorg = !extends_canonical
-                    && new_block.total_difficulty() > local_best_block.total_difficulty();
-
-                if extends_canonical {
-                    info!(
-                        "[subscribe_blocks] Processing block {} ({}): setting new best",
-                        new_block.number(),
-                        new_block.hash()
-                    );
-                    self.save_as_best_block(&new_block)?;
-                } else if is_reorg {
-                    info!(
-                        "[subscribe_blocks] Processing block {} ({}): fixing local reorg",
-                        new_block.number(),
-                        new_block.hash()
-                    );
-                    let provider_best_block = self.rsk_provider.get_best_block()?;
-                    self.backward_sync(&provider_best_block)?;
-                } else {
-                    info!(
-                        "[subscribe_blocks] Processing block {} ({}): neither extending, nor competing",
-                        new_block.number(),
-                        new_block.hash()
-                    );
-                    // just save the block as it is not part of the main chain (at least yet)
-                    self.store.save_block(&new_block)?;
-                }
-            }
-
-            Ok(())
-        })();
+        let loop_result = self.listen_blocks(&mut rsk_block_subscription);
 
         rsk_block_subscription
             .unsubscribe()
             .and_then(|_| loop_result)
     }
 
+    fn listen_blocks(
+        &self,
+        rsk_block_subscription: &mut impl RskSubscription<RskBlock>,
+    ) -> Result<()> {
+        while self.is_running() {
+            let new_block = match rsk_block_subscription.next() {
+                Ok(block) => block,
+                Err(RskProviderError::Closed) => {
+                    if self.is_running() {
+                        bail!("[subscribe_blocks] Provider closed unexpectedly");
+                    } else {
+                        info!("[subscribe_blocks] Shutdown requested, quitting...");
+                        break;
+                    }
+                }
+                _ => {
+                    return Err(anyhow!("Failed to get next block from subscription"));
+                }
+            };
+
+            // TODO(Jira) do batched writes in backward sync: https://rsklabs.atlassian.net/browse/UB-24
+
+            // no need to keep track of it between iters as it is cached and can be re-fetched
+            let local_best_block = self
+                .store
+                .get_best_block()?
+                .ok_or_else(|| anyhow!("Failed to get local_best_block from store"))?;
+
+            let extends_canonical = new_block.parent() == local_best_block.hash();
+            let is_reorg = !extends_canonical
+                && new_block.total_difficulty() > local_best_block.total_difficulty();
+
+            if extends_canonical {
+                info!(
+                    "[subscribe_blocks] Processing block {} ({}): setting new best",
+                    new_block.number(),
+                    new_block.hash()
+                );
+                self.save_as_best_block(&new_block)?;
+            } else if is_reorg {
+                info!(
+                    "[subscribe_blocks] Processing block {} ({}): fixing local reorg",
+                    new_block.number(),
+                    new_block.hash()
+                );
+                let provider_best_block = self.rsk_provider.get_best_block()?;
+                self.backward_sync(&provider_best_block)?;
+            } else {
+                info!(
+                    "[subscribe_blocks] Processing block {} ({}): neither extending, nor competing",
+                    new_block.number(),
+                    new_block.hash()
+                );
+                // just save the block as it is not part of the main chain (at least yet)
+                self.store.save_block(&new_block)?;
+            }
+        }
+
+        Ok(())
+    }
+
     fn backward_sync(&self, starting_block: &RskBlock) -> Result<()> {
         if !self.is_running() {
-            info!("[backward_sync] Shutdown requested, skipping backward_sync");
+            info!("[block_backward_sync] Shutdown requested, skipping...");
             return Ok(());
         }
 
@@ -163,7 +168,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
             .expect("Could not get best block from store (unrecoverable)");
 
         info!(
-            "[backward_sync] Connecting blocks {} ({}) and {} ({})",
+            "[block_backward_sync] Connecting blocks {} ({}) and {} ({})",
             starting_block.number(),
             starting_block.hash(),
             store_best_block.number(),
@@ -182,7 +187,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 
             if is_missing || is_reorg {
                 info!(
-                    "[backward_sync] {} block {} ({})...",
+                    "[block_backward_sync] {} block {} ({})...",
                     if is_reorg { "Replacing" } else { "Creating" },
                     new_block.number(),
                     new_block.hash(),
@@ -190,13 +195,13 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 self.save_as_canonical(&new_block)?;
             } else if !reached_connection_height {
                 debug!(
-                    "[backward_sync] Skipping known block {} ({}) while checking if fully connected",
+                    "[block_backward_sync] Skipping known block {} ({}) while checking if fully connected",
                     new_block.number(),
                     new_block.hash()
                 );
             } else {
                 info!(
-                    "[backward_sync] Completed at block {} ({})",
+                    "[block_backward_sync] Completed at block {} ({})",
                     new_block.number(),
                     new_block.hash()
                 );
@@ -211,7 +216,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 
             if !self.is_running() {
                 warn!(
-                    "[backward_sync] Shutdown requested, setting back_sync_checkpoint to {} ({})",
+                    "[block_backward_sync] Shutdown requested, setting back_sync_checkpoint to {} ({})",
                     new_block.number(),
                     new_block.hash()
                 );
@@ -223,7 +228,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
             }
 
             if self.initial_block_hash == new_block.hash() || new_block.number() == 0 {
-                error!("[backward_sync] Reached genesis or starting block, aborting backward_sync");
+                error!("[block_backward_sync] Reached genesis or starting block, aborting...");
                 break;
             }
 
@@ -238,12 +243,12 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         if let Some(checkpoint) = self.store.get_back_sync_checkpoint()? {
             match self.rsk_provider.get_block_by_hash(checkpoint.parent())? {
                 Some(checkpoint_parent) => {
-                    info!("[startup_backward_sync] Resuming previous backward_sync");
+                    info!("[startup_backward_sync] Resuming previous...");
                     self.backward_sync(&checkpoint_parent)?;
                 }
                 None => {
                     warn!(
-                        "[startup_backward_sync] Cannot resume backward_sync from non canonical checkpoint {} ({})",
+                        "[startup_backward_sync] Cannot resume from non canonical checkpoint {} ({})",
                         checkpoint.number(),
                         checkpoint.hash(),
                     );
@@ -260,19 +265,19 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
             if let Some(store_best_block) = self.store.get_best_block()? {
                 let is_full_sync = provider_best_block.hash() == store_best_block.hash();
                 if is_full_sync {
-                    debug!("[startup_backward_sync] No more backward_sync needed",);
+                    debug!("[startup_backward_sync] No more rounds needed",);
                     return Ok(());
                 } else if !self.is_running() {
                     return Ok(());
                 } else {
-                    info!("[startup_backward_sync] Running tip backward_sync-{}", i);
+                    info!("[startup_backward_sync] Running from tip round-{}", i);
                     self.backward_sync(&provider_best_block)?;
                 }
             }
         }
 
         bail!(
-            "Could not catch up to the tip after {} backward_sync attempts",
+            "Could not catch up to the tip after {} rounds",
             max_attempts
         )
     }
@@ -297,7 +302,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
             None => {
                 // this means a reorg just have happened to a lower block num, so we start again from the best block
                 warn!(
-                    "[backward_sync] Could not get block {} from provider, retrying from best block",
+                    "[block_backward_sync] Could not get block {} from provider, retrying from best block",
                     block_num,
                 );
                 self.rsk_provider.get_best_block()
@@ -308,8 +313,8 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 
 impl<P: RskProvider, S: BlockStore> RskIndexer<P, S> for BlockIndexer<P, S> {
     fn run(&self) -> Result<()> {
-        self.initialize_db_if_required()?;
+        self.init_db_if_required()?;
         self.startup_backward_sync()?;
-        self.subscribe_blocks()
+        self.start_block_subscription()
     }
 }

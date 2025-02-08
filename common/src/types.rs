@@ -141,7 +141,9 @@ impl From<RskRpcBlock> for RskBlock {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RskLog {
     pub address: String,
+    pub block_hash: String,
+    pub block_number: u64,
     pub transaction_hash: String,
-    pub log_index: u16,
+    pub log_index: u64,
     pub data: String, // TODO(iago) think of a better type
 }

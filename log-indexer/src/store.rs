@@ -7,12 +7,12 @@ pub trait LogStore {
     fn save_log(&self, value: &RskLog) -> Result<()>;
 }
 
-pub enum StoreKey {
-    LogId(String, String, u16),
+pub(super) enum StoreKey {
+    LogId(String, String, u64),
 }
 
 impl StoreKey {
-    pub fn value(&self) -> String {
+    pub(super) fn value(&self) -> String {
         match self {
             // TODO(iago) think of access patterns and prefix and indexing
             StoreKey::LogId(address, tx_hash, log_index) => {

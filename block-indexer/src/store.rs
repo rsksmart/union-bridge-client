@@ -21,7 +21,7 @@ pub struct CachedBlockStore<C: Cache<RskBlock>> {
     block_cache: C,
 }
 
-pub enum StoreKey {
+pub(super) enum StoreKey {
     BlockByHash(String),
     BlockByNumber(u64),
     BestBlock,
@@ -29,7 +29,7 @@ pub enum StoreKey {
 }
 
 impl StoreKey {
-    pub fn value(&self) -> String {
+    pub(super) fn value(&self) -> String {
         match self {
             StoreKey::BlockByHash(block_hash) => format!("block/hash/{}", block_hash),
             StoreKey::BlockByNumber(block_height) => format!("block/height/{}", block_height),

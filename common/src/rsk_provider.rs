@@ -14,6 +14,38 @@ pub trait RskSubscription<T> {
     fn unsubscribe(&self) -> Result<()>;
 }
 
+pub struct RskSubscriptionFilter {
+    pub addresses: Vec<String>, // TODO(iago) create new type for this
+    pub from_block: Option<u64>,
+    pub to_block: Option<u64>,
+    pub topics: Vec<String>, // TODO(iago) create new type for this
+}
+
+impl RskSubscriptionFilter {
+    pub fn new_logs_by_address(addresses: Vec<String>) -> Self {
+        Self {
+            addresses,
+            from_block: None,
+            to_block: None,
+            topics: vec![],
+        }
+    }
+
+    pub fn new_custom(
+        addresses: Vec<String>,
+        from_block: Option<u64>,
+        to_block: Option<u64>,
+        topics: Vec<String>,
+    ) -> Self {
+        Self {
+            addresses,
+            from_block,
+            to_block,
+            topics,
+        }
+    }
+}
+
 #[cfg_attr(feature = "generate-mocks", automock(
     type BlockSubscription = MockRskSubscription<RskBlock>;
     type LogSubscription = MockRskSubscription<RskLog>;
@@ -21,8 +53,9 @@ pub trait RskSubscription<T> {
 pub trait RskProvider {
     type BlockSubscription: RskSubscription<RskBlock>;
     type LogSubscription: RskSubscription<RskLog>;
-    fn subscribe_blocks(&self, shutdown_flag: ShutdownFlag) -> Result<Self::BlockSubscription>;
-    fn subscribe_logs(&self, shutdown_flag: ShutdownFlag) -> Result<Self::LogSubscription>;
+
+    fn subscribe_blocks(&self) -> Result<Self::BlockSubscription>;
+    fn subscribe_logs(&self, filter: RskSubscriptionFilter) -> Result<Self::LogSubscription>;
     fn get_block_by_hash(&self, hash: &str) -> Result<Option<RskBlock>>;
     fn get_block_by_number(&self, num: u64) -> Result<Option<RskBlock>>;
     fn get_best_block(&self) -> Result<RskBlock>;
