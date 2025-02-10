@@ -212,48 +212,139 @@ mod tests {
     use anyhow::Result;
     use std::env;
     use tempfile::tempdir;
-    use crate::store::{BlockStore, CachedBlockStore};
-    use definitions::types::RskBlock;
+    use crate::store::CachedBlockStore;
+    use common::{cache::LruCache, types::RskBlock};
 
     fn dummy_block(number: u64, hash: &str, parent: &str) -> RskBlock {
         RskBlock::new(
             number,
             hash.to_string(),
             parent.to_string(),
-            Default::default(), // dummy difficulty
-            0,                  // dummy timestamp
-            "".to_string(),     // dummy pow
-            Default::default()  // dummy total_difficulty
+            Default::default(),
+            0,
+            "".to_string(),
+            Default::default()
         )
     }
 
-    // This function can be called to set up common environment variables for tests.
     fn setup_env() {
-        // Set a default block cache size if not already set.
         env::set_var("BLOCK_CACHE_SIZE", "100");
+    }
+
+    fn create_test_store() -> Result<(CachedBlockStore<LruCache<RskBlock>>, tempfile::TempDir)> {
+        setup_env();
+        let temp_dir = tempdir()?;
+        let store_path = temp_dir.path().to_str().unwrap();
+        let store = CachedBlockStore::new(store_path)
+            .expect("Failed to create CachedBlockStore");
+        Ok((store, temp_dir))
     }
 
     #[test]
     fn test_set_get_best_block() -> Result<()> {
-        setup_env();
-
-        let temp_dir = tempdir()?;
-        let store_path = temp_dir.path().to_str().unwrap();
-
-        let store = CachedBlockStore::new(store_path)
-            .expect("Failed to create CachedBlockStore");
-
+        let (store, temp_dir) = create_test_store()?;
         let expected_block = dummy_block(100, "hash100", "hash99");
-
         store.set_best_block(&expected_block)?;
-
-        let best_block = store.get_best_block()?
+        let actual_block = store.get_best_block()?
             .expect("Best block should be present");
-
-        assert_eq!(best_block, expected_block, "El bloque almacenado no coincide con el esperado");
-    
+        assert_eq!(actual_block, expected_block);
         temp_dir.close()?;
-
         Ok(())
     }
+
+    #[test]
+    fn test_save_get_block_by_hash() -> Result<()> {
+        let (store, temp_dir) = create_test_store()?;
+        let expected_block = dummy_block(100, "hash100", "hash99");
+        store.save_block(&expected_block)?;
+        let actual_block = store.get_block_by_hash("hash100")?.unwrap();
+        assert_eq!(actual_block, expected_block);
+        temp_dir.close()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_lookup_non_existent_block() -> Result<()> {
+        let (store, temp_dir) = create_test_store()?;
+        let block = dummy_block(100, "hash100", "hash99");
+        store.save_block(&block)?;
+        let lookup = store.get_block_by_hash("hash999")?;
+        assert!(lookup.is_none(), "Lookup for a non-existent block should return None");
+        temp_dir.close()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_set_back_sync_checkpoint() -> Result<()> {
+        let (store, temp_dir) = create_test_store()?;
+        let expected_checkpoint = dummy_block(100, "hash100", "hash99");
+        store.set_back_sync_checkpoint(&expected_checkpoint)?;
+        let actual_checkpoint = store.get_back_sync_checkpoint()?;
+        assert_eq!(actual_checkpoint, Some(expected_checkpoint.clone()));
+        temp_dir.close()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_reset_back_sync_checkpoint() -> Result<()> {
+        let (store, temp_dir) = create_test_store()?;
+        let checkpoint = dummy_block(100, "hash100", "hash99");
+        store.set_back_sync_checkpoint(&checkpoint)?;
+        store.reset_back_sync_checkpoint()?;
+        let actual_checkpoint = store.get_back_sync_checkpoint()?;
+        assert!(actual_checkpoint.is_none(), "Checkpoint should be reset");
+        temp_dir.close()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_set_get_canonical_block() -> Result<()> {
+        let (store, temp_dir) = create_test_store()?;
+        let expected_canonical_block = dummy_block(100, "hash100", "hash99");
+        store.set_canonical_block(&expected_canonical_block)?;
+        let actual_canonical_block = store.get_canonical_block(expected_canonical_block.number())?
+            .expect("Canonical block should be present");
+        assert_eq!(actual_canonical_block, expected_canonical_block);
+        temp_dir.close()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_canonical_block_missing() -> Result<()> {
+        let (store, temp_dir) = create_test_store()?;
+        let canonical_block = dummy_block(100, "hash100", "hash99");
+        store.set_canonical_block(&canonical_block)?;
+        let missing_canonical_block = store.get_canonical_block(999)?;
+        assert!(missing_canonical_block.is_none(), "Should return None for a missing canonical block");
+        temp_dir.close()?;
+        Ok(())
+    }
+    
+    #[test]
+    fn test_save_block_remove_cache() -> Result<()> {
+        let (store, temp_dir) = create_test_store()?;
+        let expected_block = dummy_block(100, "hash100", "hash99");
+        store.save_block(&expected_block)?;
+        store.block_cache.remove("block/hash/hash100")?;
+        let actual_block = store.get_block_by_hash("hash100")?.unwrap();
+        assert_eq!(actual_block, expected_block);
+        let cache_key = "block/hash/hash100";
+        let cached_value = store.block_cache.get(cache_key)?;
+        assert!(cached_value.is_some(), "The block should be re-cached after calling get_block_by_hash");
+        temp_dir.close()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_save_block_delete_db() -> Result<()> {
+        let (store, temp_dir) = create_test_store()?;
+        let expected_block = dummy_block(100, "hash100", "hash99");
+        store.save_block(&expected_block)?;
+        store.delete_from_db("block/hash/hash100")?;
+        let actual_block = store.get_block_by_hash("hash100")?.unwrap();
+        assert_eq!(actual_block, expected_block);
+        temp_dir.close()?;
+        Ok(())
+    }
+
 }
