@@ -9,6 +9,7 @@ pub struct ContractInfo {
     pub abi: String,
 }
 
+// TODO(iago) think if still needed
 pub fn get_managed_contracts_from_config_yaml(file_path: &str) -> Result<Vec<ContractInfo>> {
     let file_contents = fs::read_to_string(file_path).expect("Failed to read file content");
     let docs = YamlLoader::load_from_str(&file_contents).expect("Failed to parse YAML");
@@ -32,6 +33,8 @@ pub fn get_managed_contracts_from_config_yaml(file_path: &str) -> Result<Vec<Con
             }
         }
     }
+
+    println!("{:?}", contracts);
 
     Ok(contracts)
 }

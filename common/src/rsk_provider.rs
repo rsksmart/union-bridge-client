@@ -2,7 +2,7 @@ use crate::shutdown_flag::ShutdownFlag;
 use crate::types::{RskBlock, RskLog};
 use anyhow::Error as AnyhowError;
 use anyhow::Result;
-
+use serde_json::json;
 use thiserror::Error;
 
 #[cfg(feature = "generate-mocks")]
@@ -14,6 +14,8 @@ pub trait RskSubscription<T> {
     fn unsubscribe(&self) -> Result<()>;
 }
 
+
+#[derive(Debug)]
 pub struct RskSubscriptionFilter {
     pub addresses: Vec<String>, // TODO(iago) create new type for this
     pub from_block: Option<u64>,
@@ -66,8 +68,10 @@ pub trait RskProvider {
 pub enum RskProviderError {
     #[error("Connection with provider closed")]
     Closed,
-    #[error("Unexpected response from provider: {0}")]
+    #[error("Unexpected format from provider: {0}")]
     Format(#[from] serde_json::Error),
+    #[error("Unexpected log from: {0}")]
+    UnexpectedLog(String),
     #[error("Unknown error: {0}")]
     Other(String),
 }

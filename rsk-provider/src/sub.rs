@@ -162,6 +162,12 @@ impl RskSubscription<RskLog> for AlloySubscription<Log> {
             transaction_hash: tx_hash,
             log_index,
             data: new_log.data().data.to_string(),
+            topics: new_log
+                .data()
+                .topics()
+                .iter()
+                .map(|t| t.to_string())
+                .collect(),
         })
     }
 

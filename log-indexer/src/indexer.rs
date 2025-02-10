@@ -1,6 +1,12 @@
-use crate::contracts::ContractInfo;
+use crate::events::parse_event_to_json;
 use crate::store::LogStore;
+use alloy_dyn_abi::JsonAbiExt;
+use alloy_json_abi::JsonAbi;
+use alloy_primitives::bytes::Bytes;
+use alloy_primitives::{LogData, B256};
+use alloy_sol_types::{sol, SolEvent, SolType};
 use anyhow::{anyhow, bail, Result};
+use common::contracts::ContractInfo;
 use common::rsk_indexer::RskIndexer;
 use common::rsk_provider::{RskProvider, RskProviderError};
 use common::rsk_provider::{RskSubscription, RskSubscriptionFilter};
@@ -46,15 +52,19 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
             return Ok(());
         }
 
-        info!("[subscribe_logs] Start subscribe_logs...");
-
         let contract_addresses = self
             .managed_contracts
             .iter()
             .map(|c| c.address.clone())
             .collect();
 
+        // TODO(iago) pass a range and filter out already known, otherwise on restart we receive bunch (not sure how the node decides which ones to provide us)
         let filter = RskSubscriptionFilter::new_logs_by_address(contract_addresses);
+
+        info!(
+            "[subscribe_logs] Start subscribe_logs with filter {:?}...",
+            filter
+        );
 
         let mut rsk_log_subscription = self
             .rsk_provider
@@ -90,8 +100,9 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                 }
             };
 
-            debug!("Managed contracts: {:?}", self.managed_contracts);
+            info!("[subscribe_logs] Processed log: {:?}", new_log);
 
+            // TODO(iago) if we go for the sol! approach, we don't need this
             let managed_contract = self
                 .managed_contracts
                 .iter()
@@ -102,11 +113,9 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                 continue;
             }
 
-            info!("[subscribe_logs] Processed log: {:?}", new_log);
+            let test = parse_event_to_json(new_log.topics, new_log.data)?;
 
-            // TODO(iago) here handle the ABI? no, probably on the provider
-            // self.rsk_provider.parse_ABI(managed_contract.unwrap().abi.clone())?;
-            // usar el ABI para tiparlos, convertir a BSON y guardarlo en BBDD (sin crear struct)
+            debug!("{:?}", test);
         }
 
         Ok(())

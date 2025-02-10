@@ -9,7 +9,12 @@ log4rs = { workspace = true }
 dotenv = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 storage-backend = { workspace = true }
 common = { path = "../common" }
 rsk-provider = { path = "../rsk-provider" }
-yaml-rust = "0.4.5"
+alloy-json-abi = "0.8.21"
+alloy-sol-type-parser = "0.8.21"
+alloy-sol-types = "0.8.21"
+alloy-dyn-abi="0.8.21"
+alloy-primitives = "0.8.21" # TODO(iago) workspace

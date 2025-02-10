@@ -14,4 +14,3 @@ alloy-provider = { version = "0.9.2", features = ["ws"] }
 alloy-rpc-types = "0.9.2"
 alloy-pubsub = { version = "0.9.2" }
 alloy-primitives = "0.8.21"
-alloy-json-abi = "0.8.21"

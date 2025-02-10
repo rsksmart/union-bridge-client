@@ -5,7 +5,7 @@ use common::rsk_indexer::RskIndexer;
 use common::shutdown_flag::ShutdownFlag;
 use dotenv;
 use log::info;
-use log_indexer::contracts::get_managed_contracts_from_config_yaml;
+use common::contracts::get_managed_contracts_from_config_yaml;
 use log_indexer::indexer::LogIndexer;
 use log_indexer::store::RawLogStore;
 use rsk_provider::rpc::AlloyProvider;

@@ -146,4 +146,5 @@ pub struct RskLog {
     pub transaction_hash: String,
     pub log_index: u64,
     pub data: String, // TODO(iago) think of a better type
+    pub topics: Vec<String>,
 }
