@@ -2,7 +2,6 @@ use crate::shutdown_flag::ShutdownFlag;
 use crate::types::{RskBlock, RskLog};
 use anyhow::Error as AnyhowError;
 use anyhow::Result;
-use serde_json::json;
 use thiserror::Error;
 
 #[cfg(feature = "generate-mocks")]

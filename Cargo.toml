@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["util/check_gaps", "monitor", "common", "rsk-provider", "block-indexer", "log-indexer", "util/abi_parser"]
+members = ["util/check_gaps", "monitor", "common", "rsk-provider", "block-indexer", "log-indexer"]
 
 [workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }

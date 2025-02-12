@@ -1,24 +1,21 @@
-use crate::events::parse_event_to_json;
+use crate::event_processor::managed_contracts::ContractInfo;
+use crate::event_processor::{event_processor_abi, event_processor_typed};
 use crate::store::LogStore;
-use alloy_dyn_abi::JsonAbiExt;
-use alloy_json_abi::JsonAbi;
-use alloy_primitives::bytes::Bytes;
-use alloy_primitives::{LogData, B256};
-use alloy_sol_types::{sol, SolEvent, SolType};
 use anyhow::{anyhow, bail, Result};
-use common::contracts::ContractInfo;
 use common::rsk_indexer::RskIndexer;
 use common::rsk_provider::{RskProvider, RskProviderError};
 use common::rsk_provider::{RskSubscription, RskSubscriptionFilter};
 use common::shutdown_flag::ShutdownFlag;
 use common::types::RskLog;
 use log::{debug, error, info};
+use serde::Serialize;
+use std::collections::HashMap;
 
 pub struct LogIndexer<P: RskProvider, S: LogStore> {
     _store: S,
     rsk_provider: P,
     _initial_block_hash: String,
-    managed_contracts: Vec<ContractInfo>,
+    managed_contracts: HashMap<String, ContractInfo>,
     shutdown_flag: ShutdownFlag,
 }
 
@@ -28,7 +25,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         store: S,
         provider: P,
         initial_block_hash: &str,
-        managed_contracts: Vec<ContractInfo>,
+        managed_contracts: HashMap<String, ContractInfo>,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
         Self {
@@ -52,11 +49,7 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
             return Ok(());
         }
 
-        let contract_addresses = self
-            .managed_contracts
-            .iter()
-            .map(|c| c.address.clone())
-            .collect();
+        let contract_addresses: Vec<String> = self.managed_contracts.keys().cloned().collect();
 
         // TODO(iago) pass a range and filter out already known, otherwise on restart we receive bunch (not sure how the node decides which ones to provide us)
         let filter = RskSubscriptionFilter::new_logs_by_address(contract_addresses);
@@ -102,22 +95,42 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 
             info!("[subscribe_logs] Processed log: {:?}", new_log);
 
-            // TODO(iago) if we go for the sol! approach, we don't need this
-            let managed_contract = self
-                .managed_contracts
-                .iter()
-                .find(|c| c.address.to_lowercase() == new_log.address.to_lowercase());
-
+            let managed_contract = self.managed_contracts.get(&new_log.address);
             if managed_contract.is_none() {
-                error!("[subscribe_logs] Received unmanaged log: {:?}", new_log);
+                error!(
+                    "[subscribe_logs] Received unmanaged contract log: {:?}",
+                    new_log
+                );
                 continue;
             }
 
-            let test = parse_event_to_json(new_log.topics, new_log.data)?;
+            let log_as_json = Self::process_log(&new_log, managed_contract.unwrap())?;
 
-            debug!("{:?}", test);
+            debug!(
+                "Processed log, event: {}",
+                serde_json::to_string(&log_as_json)?
+            );
         }
 
         Ok(())
+    }
+
+    fn process_log(
+        new_log: &RskLog,
+        managed_contract: &ContractInfo,
+    ) -> Result<Option<impl Serialize>> {
+        // TODO(iago) get from env
+        let dynamic_processing = true;
+        if dynamic_processing {
+            match event_processor_abi::process(&new_log, managed_contract)? {
+                Some(e) => Ok(Some(serde_json::to_value(e)?)),
+                None => Ok(None),
+            }
+        } else {
+            match event_processor_typed::process(&new_log)? {
+                Some(e) => Ok(Some(serde_json::to_value(e)?)),
+                None => Ok(None),
+            }
+        }
     }
 }

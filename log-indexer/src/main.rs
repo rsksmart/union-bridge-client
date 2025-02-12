@@ -3,7 +3,7 @@ use common::rsk_indexer::RskIndexer;
 use common::shutdown_flag::ShutdownFlag;
 use dotenv::dotenv;
 use log::info;
-use common::contracts::get_managed_contracts_from_config_yaml;
+use log_indexer::event_processor::managed_contracts;
 use log_indexer::indexer::LogIndexer;
 use log_indexer::store::RawLogStore;
 use rsk_provider::rpc::AlloyProvider;
@@ -26,9 +26,8 @@ fn main() -> Result<()> {
     let initial_block_hash =
         env::var("INITIAL_BLOCK_HASH").expect("INITIAL_BLOCK_HASH not set in env");
 
-    let managed_contracts =
-        get_managed_contracts_from_config_yaml("./config/managed_contracts.yaml")
-            .expect("Failed to load managed contracts");
+    let managed_contracts = managed_contracts::load_managed_contracts_from_config("./config")
+        .expect("Failed to load managed contracts");
 
     let indexer = LogIndexer::new(
         store,

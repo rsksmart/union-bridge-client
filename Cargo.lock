@@ -3,22 +3,6 @@
 version = 4
 
 [[package]]
-name = "abi_parser"
-version = "0.1.0"
-dependencies = [
- "alloy-json-abi",
- "alloy-primitives",
- "alloy-sol-type-parser",
- "alloy-sol-types",
- "anyhow",
- "hex",
- "log",
- "primitive-types 0.13.1",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "addr2line"
 version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1229,7 +1213,6 @@ dependencies = [
  "sha2",
  "signal-hook",
  "thiserror 2.0.11",
- "yaml-rust",
 ]
 
 [[package]]
@@ -2358,12 +2341,14 @@ dependencies = [
  "anyhow",
  "common",
  "dotenv",
+ "hex",
  "log",
  "log4rs",
  "rsk-provider",
  "rust-bitvmx-storage-backend",
  "serde",
  "serde_json",
+ "yaml-rust",
 ]
 
 [[package]]

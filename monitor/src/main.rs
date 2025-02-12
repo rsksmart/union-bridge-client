@@ -5,7 +5,7 @@ use common::rsk_indexer::RskIndexer;
 use common::shutdown_flag::ShutdownFlag;
 use dotenv;
 use log::info;
-use common::contracts::get_managed_contracts_from_config_yaml;
+use log_indexer::event_processor::managed_contracts;
 use log_indexer::indexer::LogIndexer;
 use log_indexer::store::RawLogStore;
 use rsk_provider::rpc::AlloyProvider;
@@ -43,7 +43,7 @@ fn main() -> Result<()> {
     );
 
     let managed_contracts =
-        get_managed_contracts_from_config_yaml("../log-indexer/config/managed_contracts.yaml")
+        managed_contracts::load_managed_contracts_from_config("../log-indexer/config")
             .expect("Failed to load managed contracts");
 
     let log_store = RawLogStore::new(&format!("{}/logs", store_path))?;

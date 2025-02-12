@@ -1,4 +1,3 @@
-TestContract1:
-    address: 0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761
-    topics:
-      - []
+RootstockTestnetMultiFeedAdapterWithoutRoundsV1:
+  address: "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761"
+  abi: "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761.json"
