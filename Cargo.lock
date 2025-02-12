@@ -980,7 +980,6 @@ dependencies = [
  "rsk-provider",
  "rust-bitvmx-storage-backend",
  "serde",
- "signal-hook",
 ]
 
 [[package]]
@@ -1166,6 +1165,9 @@ dependencies = [
  "lru 0.13.0",
  "primitive-types 0.13.1",
  "serde",
+ "serde_json",
+ "signal-hook",
+ "thiserror 2.0.11",
 ]
 
 [[package]]
@@ -2276,7 +2278,6 @@ dependencies = [
  "rsk-provider",
  "rust-bitvmx-storage-backend",
  "serde",
- "signal-hook",
 ]
 
 [[package]]
@@ -2391,7 +2392,6 @@ dependencies = [
  "log-indexer",
  "log4rs",
  "rsk-provider",
- "signal-hook",
 ]
 
 [[package]]

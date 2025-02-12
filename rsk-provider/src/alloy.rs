@@ -1,45 +1,69 @@
 use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy_pubsub::{PubSubFrontend, Subscription, SubscriptionItem};
-use alloy_rpc_types::Header;
-use anyhow::{anyhow, bail, Result};
-use common::rsk_provider::{RskProvider, RskSubscription};
+use alloy_rpc_types::{Header, Log};
+use anyhow::{anyhow, Result};
+use common::rsk_provider::{RskProvider, RskProviderError, RskSubscription};
+use common::shutdown_flag::ShutdownFlag;
 use common::types::{RskBlock, RskLog, RskRpcBlock};
 use log::debug;
 use serde_json::{json, Value};
-use std::error::Error;
 use std::future::Future;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
+use tokio::sync::broadcast::error::RecvError;
 // TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15. Review these methods accordingly.
 // TODO(Jira) error resilience: https://rsklabs.atlassian.net/browse/UB-28
 
-struct AlloyBlockSubscription {
-    subscription: Subscription<Header>,
+struct AlloySubscription<T> {
+    subscription: Subscription<T>,
     provider: AlloyProvider,
 }
 
-impl AlloyBlockSubscription {
-    fn new(provider: AlloyProvider) -> Result<Self> {
-        let subscription_request = provider.provider.subscribe_blocks();
+impl<T: serde::de::DeserializeOwned> AlloySubscription<T> {
+    fn next(&mut self) -> Result<SubscriptionItem<T>, RskProviderError> {
+        match self.subscription.blocking_recv_any() {
+            Ok(header) => Ok(header),
+            Err(RecvError::Closed) => Err(RskProviderError::Closed),
+            Err(e) => Err(RskProviderError::Other(format!("{:?}", e))),
+        }
+    }
+}
+
+impl AlloySubscription<Header> {
+    fn new(provider: AlloyProvider, shutdown_flag: ShutdownFlag) -> Result<Self> {
+        let subscription_request = provider.inner.subscribe_blocks();
         let subscription = provider.rt_sync.run(subscription_request)?;
-        Ok(AlloyBlockSubscription {
+
+        let subscription_id = *subscription.local_id();
+        let provider_clone = provider.clone();
+        let unsubscribe_fn = move || {
+            debug!("Unsubscribing from blocks on shutdown!");
+            provider_clone.inner.unsubscribe(subscription_id).unwrap();
+        };
+
+        shutdown_flag.spawn_shutdown_handler(unsubscribe_fn);
+
+        Ok(Self {
             subscription,
             provider,
         })
     }
 }
 
-impl RskSubscription<RskBlock> for AlloyBlockSubscription {
-    fn next(&mut self) -> Result<RskBlock> {
+impl RskSubscription<RskBlock> for AlloySubscription<Header> {
+    fn next(&mut self) -> Result<RskBlock, RskProviderError> {
         // TODO(iago) try to close the subscription on shutdown to avoid waiting on a next block
-        let header = self.subscription.blocking_recv_any()?;
+        let header = self.next()?;
 
         debug!("Received header: {:?}", header);
 
         let new_block_header_raw = match header {
             SubscriptionItem::Other(raw_json) => raw_json.get().to_string(),
             _ => {
-                bail!("Unexpected SubscriptionItem: {:?}", header);
+                return Err(RskProviderError::Other(format!(
+                    "Unexpected SubscriptionItem: {:?}",
+                    header
+                )));
             }
         };
 
@@ -51,10 +75,10 @@ impl RskSubscription<RskBlock> for AlloyBlockSubscription {
         // TODO(Jira) tmp approach, try to get the required block data from the subscription itself (check Rsk and Alloy impl): https://rsklabs.atlassian.net/browse/UB-36
         let new_block = self.provider.get_block_by_hash(&new_block_hash)?;
         if new_block.is_none() {
-            bail!(
+            return Err(RskProviderError::Other(format!(
                 "hash informed by Provider {} does not exist",
                 new_block_hash
-            );
+            )));
         }
 
         Ok(new_block.unwrap())
@@ -62,22 +86,20 @@ impl RskSubscription<RskBlock> for AlloyBlockSubscription {
 
     fn unsubscribe(&self) -> Result<()> {
         self.provider
-            .provider
+            .inner
             .unsubscribe(*self.subscription.local_id())?;
         Ok(())
     }
 }
 
-struct AlloyLogSubscription {}
-
-impl AlloyLogSubscription {
-    fn new() -> Result<Self> {
-        todo!("Implement AlloyLogSubscription::new")
+impl AlloySubscription<Log> {
+    fn new(_provider: AlloyProvider, _shutdown_flag: ShutdownFlag) -> Result<Self> {
+        unimplemented!()
     }
 }
 
-impl RskSubscription<RskLog> for AlloyLogSubscription {
-    fn next(&mut self) -> Result<RskLog> {
+impl RskSubscription<RskLog> for AlloySubscription<Log> {
+    fn next(&mut self) -> Result<RskLog, RskProviderError> {
         todo!("Implement AlloyLogSubscription::next")
     }
 
@@ -88,7 +110,7 @@ impl RskSubscription<RskLog> for AlloyLogSubscription {
 
 #[derive(Clone)]
 pub struct AlloyProvider {
-    provider: RootProvider<PubSubFrontend>,
+    inner: RootProvider<PubSubFrontend>,
     rt_sync: RuntimeSync,
 }
 
@@ -98,7 +120,7 @@ impl AlloyProvider {
         let rt_sync = RuntimeSync::new()?;
         let alloy_provider = rt_sync.run(ProviderBuilder::new().on_ws(ws))?;
         Ok(AlloyProvider {
-            provider: alloy_provider,
+            inner: alloy_provider,
             rt_sync,
         })
     }
@@ -114,17 +136,20 @@ impl AlloyProvider {
 }
 
 impl RskProvider for AlloyProvider {
-    fn subscribe_blocks(&self) -> Result<impl RskSubscription<RskBlock>> {
-        AlloyBlockSubscription::new(self.clone())
+    fn subscribe_blocks(
+        &self,
+        shutdown_flag: ShutdownFlag,
+    ) -> Result<impl RskSubscription<RskBlock>> {
+        AlloySubscription::<Header>::new(self.clone(), shutdown_flag)
     }
 
-    fn subscribe_logs(&self) -> Result<impl RskSubscription<RskLog>> {
-        AlloyLogSubscription::new()
+    fn subscribe_logs(&self, shutdown_flag: ShutdownFlag) -> Result<impl RskSubscription<RskLog>> {
+        AlloySubscription::<Log>::new(self.clone(), shutdown_flag)
     }
 
     fn get_block_by_hash(&self, hash: &str) -> Result<Option<RskBlock>> {
         let rpc_call = self
-            .provider
+            .inner
             .client()
             .request("eth_getBlockByHash", vec![json!(hash), json!(false)]);
 
@@ -136,7 +161,7 @@ impl RskProvider for AlloyProvider {
         let num_hex = format!("0x{:x}", num);
 
         let rpc_call = self
-            .provider
+            .inner
             .client()
             .request("eth_getBlockByNumber", vec![json!(num_hex), json!(false)]);
 
@@ -146,7 +171,7 @@ impl RskProvider for AlloyProvider {
 
     fn get_best_block(&self) -> Result<RskBlock> {
         let rpc_call = self
-            .provider
+            .inner
             .client()
             .request("eth_getBlockByNumber", vec![json!("latest"), json!(false)]);
 
@@ -179,7 +204,7 @@ impl RuntimeSync {
     pub fn run<Fut, RetType, Err>(&self, future: Fut) -> Result<RetType>
     where
         Fut: Future<Output = Result<RetType, Err>>,
-        Err: Error + Send + 'static,
+        Err: std::error::Error + Send + 'static,
     {
         self.rt.block_on(async {
             future

@@ -8,7 +8,6 @@ resolver = "2"
 log = { workspace = true }
 anyhow = { workspace = true }
 log4rs = { workspace = true }
-signal-hook = { workspace = true }
 dotenv = { workspace = true }
 common = { path = "../common" }
 rsk-provider = { path = "../rsk-provider" }

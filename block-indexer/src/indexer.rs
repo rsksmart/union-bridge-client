@@ -1,18 +1,16 @@
 use crate::store::BlockStore;
 use anyhow::{anyhow, bail, Result};
 use common::rsk_indexer::RskIndexer;
-use common::rsk_provider::{RskProvider, RskSubscription};
+use common::rsk_provider::{RskProvider, RskProviderError, RskSubscription};
+use common::shutdown_flag::ShutdownFlag;
 use common::types::RskBlock;
 use log::{debug, error, info, warn};
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
 
 pub struct BlockIndexer<P: RskProvider, S: BlockStore> {
     store: S,
     rsk_provider: P,
     initial_block_hash: String,
-    shutdown_flag: Arc<AtomicBool>,
+    shutdown_flag: ShutdownFlag,
 }
 
 // TODO(Jira) review this file and take care of transactionality on storage saving: https://rsklabs.atlassian.net/browse/UB-11
@@ -23,7 +21,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         store: S,
         provider: P,
         initial_block_hash: &str,
-        shutdown_flag: Arc<AtomicBool>,
+        shutdown_flag: ShutdownFlag,
     ) -> Self {
         Self {
             store,
@@ -34,7 +32,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
     }
 
     fn is_running(&self) -> bool {
-        !self.shutdown_flag.load(Ordering::SeqCst)
+        !self.shutdown_flag.is_on()
     }
 
     fn initialize_db_if_required(&self) -> Result<()> {
@@ -87,12 +85,25 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         // TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15
         let mut rsk_block_subscription = self
             .rsk_provider
-            .subscribe_blocks()
+            .subscribe_blocks(self.shutdown_flag.clone())
             .expect("Failed to subscribe to blocks (unrecoverable)"); // TODO retry mechanism in scope of UB-15
 
         let loop_result = (|| {
             while self.is_running() {
-                let new_block = rsk_block_subscription.next()?;
+                let new_block = match rsk_block_subscription.next() {
+                    Ok(block) => block,
+                    Err(RskProviderError::Closed) => {
+                        if self.is_running() {
+                            bail!("[subscribe_blocks] Provider closed unexpectedly");
+                        } else {
+                            info!("[subscribe_blocks] Shutdown requested, quitting block subscription...");
+                            break;
+                        }
+                    }
+                    _ => {
+                        return Err(anyhow!("Failed to get next block from subscription"));
+                    }
+                };
 
                 // TODO(Jira) do batched writes in backward sync: https://rsklabs.atlassian.net/browse/UB-24
 
