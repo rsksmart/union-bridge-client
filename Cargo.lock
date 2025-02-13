@@ -982,6 +982,7 @@ dependencies = [
  "serde",
  "serial_test",
  "tempfile",
+ "test_util",
 ]
 
 [[package]]
@@ -3641,7 +3642,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "tests"
+name = "test_util"
 version = "0.1.0"
 dependencies = [
  "common",
