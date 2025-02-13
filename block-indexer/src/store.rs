@@ -209,12 +209,12 @@ impl<C: Cache<RskBlock>> BlockStore for CachedBlockStore<C> {
 
 #[cfg(test)]
 mod tests {
-    use serial_test::serial;
+    use crate::store::CachedBlockStore;
     use anyhow::Result;
+    use common::{cache::LruCache, types::RskBlock};
+    use serial_test::serial;
     use std::env;
     use tempfile::tempdir;
-    use crate::store::CachedBlockStore;
-    use common::{cache::LruCache, types::RskBlock};
 
     // TODO: use real block data, also maybe use a fixture or some type of abstraction
     fn dummy_block(block_height: u64, block_hash: &str, parent_block_hash: &str) -> RskBlock {
@@ -225,7 +225,7 @@ mod tests {
             Default::default(),
             0,
             "".to_string(),
-            Default::default()
+            Default::default(),
         )
     }
 
@@ -237,8 +237,7 @@ mod tests {
         setup_env();
         let temp_dir = tempdir()?;
         let store_path = temp_dir.path().to_str().unwrap();
-        let store = CachedBlockStore::new(store_path)
-            .expect("Failed to create CachedBlockStore");
+        let store = CachedBlockStore::new(store_path).expect("Failed to create CachedBlockStore");
         Ok(store)
     }
 
@@ -248,8 +247,7 @@ mod tests {
         env::set_var("BLOCK_CACHE_SIZE", "2");
         let temp_dir = tempdir()?;
         let store_path = temp_dir.path().to_str().unwrap();
-        let store = CachedBlockStore::new(store_path)
-            .expect("Failed to create CachedBlockStore");
+        let store = CachedBlockStore::new(store_path).expect("Failed to create CachedBlockStore");
 
         let block1 = dummy_block(1, "hash1", "hash0");
         let block2 = dummy_block(2, "hash2", "hash1");
@@ -264,7 +262,10 @@ mod tests {
         let cached_block2 = store.block_cache.get(&key2)?;
         let cached_block3 = store.block_cache.get(&key3)?;
 
-        assert!(cached_block1.is_none(), "Block1 should have been evicted from the cache");
+        assert!(
+            cached_block1.is_none(),
+            "Block1 should have been evicted from the cache"
+        );
         assert!(cached_block2.is_some(), "Block2 should be in the cache");
         assert!(cached_block3.is_some(), "Block3 should be in the cache");
         Ok(())
@@ -274,10 +275,10 @@ mod tests {
     fn test_when_set_block_should_get_same_block() -> Result<()> {
         let store = create_test_store()?;
         let expected_block = dummy_block(100, "hash100", "hash99");
-        
+
         store.set_best_block(&expected_block)?;
         let actual_block = store.get_best_block()?.unwrap();
-        
+
         assert_eq!(expected_block, actual_block);
         Ok(())
     }
@@ -302,7 +303,10 @@ mod tests {
         store.save_block(&block)?;
         let lookup = store.get_block_by_hash("hash999")?;
 
-        assert!(lookup.is_none(), "Lookup for a non-existent block should return None");
+        assert!(
+            lookup.is_none(),
+            "Lookup for a non-existent block should return None"
+        );
         Ok(())
     }
 
@@ -310,7 +314,7 @@ mod tests {
     fn test_when_set_checkpoint_should_get_same_checkpoint() -> Result<()> {
         let store = create_test_store()?;
         let expected_checkpoint = dummy_block(100, "hash100", "hash99");
-        
+
         store.set_back_sync_checkpoint(&expected_checkpoint)?;
         let actual_checkpoint = store.get_back_sync_checkpoint()?.unwrap();
 
@@ -337,7 +341,9 @@ mod tests {
         let expected_canonical_block = dummy_block(100, "hash100", "hash99");
 
         store.set_canonical_block(&expected_canonical_block)?;
-        let actual_canonical_block = store.get_canonical_block(expected_canonical_block.number())?.unwrap();
+        let actual_canonical_block = store
+            .get_canonical_block(expected_canonical_block.number())?
+            .unwrap();
 
         assert_eq!(expected_canonical_block, actual_canonical_block);
         Ok(())
@@ -350,11 +356,14 @@ mod tests {
 
         store.set_canonical_block(&canonical_block)?;
         let missing_canonical_block = store.get_canonical_block(999)?;
-        
-        assert!(missing_canonical_block.is_none(), "Should return None for a missing canonical block");
+
+        assert!(
+            missing_canonical_block.is_none(),
+            "Should return None for a missing canonical block"
+        );
         Ok(())
     }
-    
+
     #[test]
     fn test_when_get_block_by_hash_should_be_recached() -> Result<()> {
         let store = create_test_store()?;
@@ -376,7 +385,7 @@ mod tests {
         let store = create_test_store()?;
         let expected_block = dummy_block(100, "hash100", "hash99");
         let cache_key = "block/height/100";
-        
+
         store.set_canonical_block(&expected_block)?;
         store.save_block(&expected_block)?;
         store.block_cache.remove(cache_key)?;
@@ -400,5 +409,5 @@ mod tests {
         assert_eq!(expected_block, actual_block);
         Ok(())
     }
-
 }
+
