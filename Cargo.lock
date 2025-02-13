@@ -2333,15 +2333,9 @@ dependencies = [
 name = "log-indexer"
 version = "0.1.0"
 dependencies = [
- "alloy-dyn-abi",
- "alloy-json-abi",
- "alloy-primitives",
- "alloy-sol-type-parser",
- "alloy-sol-types",
  "anyhow",
  "common",
  "dotenv",
- "hex",
  "log",
  "log4rs",
  "rsk-provider",
@@ -2475,20 +2469,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.98",
-]
-
-[[package]]
-name = "monitor"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "block-indexer",
- "common",
- "dotenv",
- "log",
- "log-indexer",
- "log4rs",
- "rsk-provider",
 ]
 
 [[package]]
@@ -3114,12 +3094,16 @@ dependencies = [
 name = "rsk-provider"
 version = "0.1.0"
 dependencies = [
+ "alloy-dyn-abi",
+ "alloy-json-abi",
  "alloy-primitives",
  "alloy-provider",
  "alloy-pubsub",
  "alloy-rpc-types",
+ "alloy-sol-types",
  "anyhow",
  "common",
+ "hex",
  "log",
  "serde",
  "serde_json",

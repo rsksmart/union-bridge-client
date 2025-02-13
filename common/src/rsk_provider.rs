@@ -1,7 +1,7 @@
-use crate::shutdown_flag::ShutdownFlag;
-use crate::types::{RskBlock, RskLog};
+use crate::types::{ContractInfo, RskBlock, RskLog};
 use anyhow::Error as AnyhowError;
 use anyhow::Result;
+use serde_json::Value;
 use thiserror::Error;
 
 #[cfg(feature = "generate-mocks")]
@@ -13,13 +13,12 @@ pub trait RskSubscription<T> {
     fn unsubscribe(&self) -> Result<()>;
 }
 
-
 #[derive(Debug)]
 pub struct RskSubscriptionFilter {
-    pub addresses: Vec<String>, // TODO(iago) create new type for this
+    pub addresses: Vec<String>, // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-43
     pub from_block: Option<u64>,
     pub to_block: Option<u64>,
-    pub topics: Vec<String>, // TODO(iago) create new type for this
+    pub topics: Vec<String>, // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-43
 }
 
 impl RskSubscriptionFilter {
@@ -60,6 +59,7 @@ pub trait RskProvider {
     fn get_block_by_hash(&self, hash: &str) -> Result<Option<RskBlock>>;
     fn get_block_by_number(&self, num: u64) -> Result<Option<RskBlock>>;
     fn get_best_block(&self) -> Result<RskBlock>;
+    fn decode_log(&self, new_log: &RskLog, contract_info: &ContractInfo) -> Result<Option<Value>>;
     fn disconnect(&self) -> Result<()>;
 }
 
@@ -69,8 +69,6 @@ pub enum RskProviderError {
     Closed,
     #[error("Unexpected format from provider: {0}")]
     Format(#[from] serde_json::Error),
-    #[error("Unexpected log from: {0}")]
-    UnexpectedLog(String),
     #[error("Unknown error: {0}")]
     Other(String),
 }

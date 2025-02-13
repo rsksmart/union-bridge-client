@@ -46,7 +46,6 @@ impl RskSubscription<RskBlock> for AlloySubscription<Header> {
         debug!("Received header: {:?}", header);
 
         let new_block_header_raw = match header {
-            // TODO(iago) try using Item (instead of Other) again, but probably it will fail
             SubscriptionItem::Other(raw_json) => raw_json.get().to_string(),
             _ => {
                 return Err(RskProviderError::Other(format!(

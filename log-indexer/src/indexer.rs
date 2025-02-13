@@ -1,14 +1,11 @@
-use crate::event_processor::managed_contracts::ContractInfo;
-use crate::event_processor::{event_processor_abi, event_processor_typed};
 use crate::store::LogStore;
 use anyhow::{anyhow, bail, Result};
 use common::rsk_indexer::RskIndexer;
 use common::rsk_provider::{RskProvider, RskProviderError};
 use common::rsk_provider::{RskSubscription, RskSubscriptionFilter};
 use common::shutdown_flag::ShutdownFlag;
-use common::types::RskLog;
+use common::types::{ContractInfo, RskLog};
 use log::{debug, error, info};
-use serde::Serialize;
 use std::collections::HashMap;
 
 pub struct LogIndexer<P: RskProvider, S: LogStore> {
@@ -93,7 +90,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                 }
             };
 
-            info!("[subscribe_logs] Processed log: {:?}", new_log);
+            debug!("[subscribe_logs] Processed log: {:?}", new_log);
 
             let managed_contract = self.managed_contracts.get(&new_log.address);
             if managed_contract.is_none() {
@@ -104,33 +101,21 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                 continue;
             }
 
-            let log_as_json = Self::process_log(&new_log, managed_contract.unwrap())?;
+            let json_event = &self
+                .rsk_provider
+                .decode_log(&new_log, managed_contract.unwrap())?;
 
-            debug!(
-                "Processed log, event: {}",
-                serde_json::to_string(&log_as_json)?
+            if json_event.is_none() {
+                error!("[subscribe_logs] Unmanaged log received: {:?}", new_log);
+                continue;
+            }
+
+            info!(
+                "Decoded event: {}",
+                serde_json::to_string(&json_event)?
             );
         }
 
         Ok(())
-    }
-
-    fn process_log(
-        new_log: &RskLog,
-        managed_contract: &ContractInfo,
-    ) -> Result<Option<impl Serialize>> {
-        // TODO(iago) get from env
-        let dynamic_processing = true;
-        if dynamic_processing {
-            match event_processor_abi::process(&new_log, managed_contract)? {
-                Some(e) => Ok(Some(serde_json::to_value(e)?)),
-                None => Ok(None),
-            }
-        } else {
-            match event_processor_typed::process(&new_log)? {
-                Some(e) => Ok(Some(serde_json::to_value(e)?)),
-                None => Ok(None),
-            }
-        }
     }
 }

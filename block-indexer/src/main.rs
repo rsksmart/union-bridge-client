@@ -10,6 +10,7 @@ use std::env;
 
 fn main() -> Result<()> {
     dotenv().expect("Failed to load .env file");
+    dotenv::from_filename("../.env").expect("Failed to load global .env file");
 
     log4rs::init_file("../log4rs.yml", Default::default()).expect("Failed to load log4rs config");
 

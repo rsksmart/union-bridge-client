@@ -1,18 +1,9 @@
-use alloy_json_abi::JsonAbi;
 use anyhow::Result;
+use common::types::ContractInfo;
 use log::debug;
 use std::collections::HashMap;
 use std::fs;
-use std::fs::File;
-use std::io::BufReader;
 use yaml_rust::{Yaml, YamlLoader};
-
-#[derive(Debug)]
-pub struct ContractInfo {
-    pub address: String,
-    pub name: String,
-    pub abi: JsonAbi,
-}
 
 pub fn load_managed_contracts_from_config(
     file_path: &str,
@@ -30,23 +21,18 @@ pub fn load_managed_contracts_from_config(
                     if let Some(Yaml::String(address)) =
                         fields.get(&Yaml::String("address".to_string()))
                     {
-                        if let Some(Yaml::String(abi)) =
-                            fields.get(&Yaml::String("abi".to_string()))
-                        {
-                            let abi_path = format!("{}/abi/{}", file_path, abi);
-                            let file = File::open(abi_path)?;
-                            let reader = BufReader::new(file);
-                            let json_abi: JsonAbi = serde_json::from_reader(reader)?;
-
-                            contracts.insert(
-                                address.to_string(),
-                                ContractInfo {
-                                    address: address.to_string(),
-                                    name: name.to_string(),
-                                    abi: json_abi,
-                                },
-                            );
-                        }
+                        let abi = fields
+                            .get(&Yaml::String("abi".to_string()))
+                            .and_then(|v| v.as_str())
+                            .map(|abi| format!("{}/abi/{}", file_path, abi));
+                        contracts.insert(
+                            address.to_string(),
+                            ContractInfo {
+                                address: address.to_string(),
+                                name: name.to_string(),
+                                abi_file: abi,
+                            },
+                        );
                     }
                 }
             }

@@ -1,52 +1,69 @@
-use crate::event_processor::managed_contracts::ContractInfo;
+use crate::event_processor::build_event_json;
 use alloy_dyn_abi::{DynSolType, DynSolValue};
-use alloy_json_abi::{Event, EventParam};
+use alloy_json_abi::{Event, EventParam, JsonAbi};
 use anyhow::{bail, Result};
+use common::cache::LruCache;
 use common::types::RskLog;
 use hex;
-use log::error;
-use serde::Serialize;
+use log::{debug, error};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::fs::File;
+use std::io::BufReader;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
-pub fn process(log: &RskLog, contract: &ContractInfo) -> Result<Option<impl Serialize>> {
-    if contract.address != log.address {
+static ABI_CACHE: OnceLock<LruCache<JsonAbi>> = OnceLock::new();
+
+fn get_abi_cache() -> &'static LruCache<JsonAbi> {
+    ABI_CACHE.get_or_init(|| LruCache::new(1000))
+}
+
+pub fn process(contract_address: &str, log: &RskLog, abi_path: &str) -> Result<Option<Value>> {
+    if contract_address != log.address {
         error!(
             "Log address {} does not match expected contract address {}",
-            log.address, contract.address
+            log.address, contract_address
         );
         return Ok(None);
     }
 
-    let event = contract.abi.events.values().flatten().find(|e| {
+    let json_abi = match get_abi_cache().get(&contract_address)? {
+        Some(abi) => abi,
+        None => {
+            debug!("Adding ABI to cache: {}", abi_path);
+            let abi_file = File::open(&abi_path)?;
+            let abi_from_file = serde_json::from_reader(BufReader::new(abi_file))?;
+            get_abi_cache().insert(&contract_address, &abi_from_file)?;
+            abi_from_file
+        }
+    };
+
+    let event = json_abi.events.values().flatten().find(|e| {
         e.selector()
             .to_string()
-            .eq_ignore_ascii_case(&log.topics[0]) // TODO(iago) due to this, I think it's better to have a custom type for Address
+            .eq_ignore_ascii_case(&log.topics[0]) // TODO(Jira) another reason for https://rsklabs.atlassian.net/browse/UB-43
     });
     let event = event.unwrap();
 
-    let mut decoded_log: HashMap<String, Value> = HashMap::new();
-
-    decoded_log.insert("name".to_string(), json!(event.name));
-    decoded_log.insert("address".to_string(), json!(log.address));
+    let mut decoded_log_input = serde_json::Map::new();
 
     let topic_params: Vec<&EventParam> = event.inputs.iter().filter(|i| i.indexed).collect();
     for (i, input) in topic_params.iter().enumerate() {
         let sol_type = DynSolType::from_str(input.ty.as_str())?;
         let sol_value = sol_type.abi_decode_params((&log.topics[i]).as_ref())?;
-        decoded_log.insert(input.name.to_string(), dyn_value_to_json(&sol_value)?);
+        decoded_log_input.insert(input.name.to_string(), dyn_value_to_json(&sol_value)?);
     }
 
     let data_tuple = build_data_tuple(event, &log.data)?;
     let names_in_data: Vec<&EventParam> = event.inputs.iter().filter(|i| !i.indexed).collect();
     if let DynSolValue::Tuple(values) = data_tuple {
         for (i, input) in names_in_data.iter().enumerate() {
-            decoded_log.insert(input.name.to_string(), dyn_value_to_json(&values[i])?);
+            decoded_log_input.insert(input.name.to_string(), dyn_value_to_json(&values[i])?);
         }
     }
 
-    Ok(Some(decoded_log))
+    let event_json = build_event_json(&event.name, &log.address, decoded_log_input.into());
+    Ok(Some(event_json))
 }
 
 #[allow(unexpected_cfgs)]
@@ -86,7 +103,7 @@ fn build_data_tuple(event: &Event, data: &String) -> Result<DynSolValue> {
         .flat_map(|i| DynSolType::from_str(i.ty.as_str()))
         .collect();
 
-    // TODO(iago) probably it makes no sense to make data a string on the provider to then undo the mapping
+    // TODO(Jira) create custom types for topics, data... https://rsklabs.atlassian.net/browse/UB-43
     let data_as_hex = &hex::decode(&data.trim_start_matches("0x"))?;
     let type_data_tuple = DynSolType::Tuple(data_types);
     let data_as_tuple = type_data_tuple.abi_decode_params(data_as_hex)?;

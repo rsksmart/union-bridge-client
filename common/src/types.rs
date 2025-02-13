@@ -13,7 +13,6 @@ pub struct RskBlock {
     timestamp: u64,
     total_difficulty: U256,
     pow: String,
-    // bridge_event: Option<BridgeEvent>, // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-10
 }
 
 impl RskBlock {
@@ -36,8 +35,6 @@ impl RskBlock {
             total_difficulty,
         }
     }
-
-    // TODO(iago) remove this, by default fields are immutable
 
     pub fn number(&self) -> u64 {
         self.number
@@ -147,4 +144,11 @@ pub struct RskLog {
     pub log_index: u64,
     pub data: String, // TODO(iago) think of a better type
     pub topics: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ContractInfo {
+    pub address: String,
+    pub name: String,
+    pub abi_file: Option<String>,
 }

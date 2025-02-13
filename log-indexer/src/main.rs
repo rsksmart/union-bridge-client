@@ -3,7 +3,7 @@ use common::rsk_indexer::RskIndexer;
 use common::shutdown_flag::ShutdownFlag;
 use dotenv::dotenv;
 use log::info;
-use log_indexer::event_processor::managed_contracts;
+use log_indexer::managed_contracts;
 use log_indexer::indexer::LogIndexer;
 use log_indexer::store::RawLogStore;
 use rsk_provider::rpc::AlloyProvider;
@@ -11,6 +11,7 @@ use std::env;
 
 fn main() -> Result<()> {
     dotenv().expect("Failed to load .env file");
+    dotenv::from_filename("../.env").expect("Failed to load global .env file");
 
     log4rs::init_file("../log4rs.yml", Default::default()).expect("Failed to load log4rs config");
 
