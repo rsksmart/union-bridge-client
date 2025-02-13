@@ -257,7 +257,10 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         let max_attempts = 10;
         for i in 1..max_attempts {
             let provider_best_block = self.rsk_provider.get_best_block()?;
+            // we already set best block in initialized, why checking if there is best_block here?
             if let Some(store_best_block) = self.store.get_best_block()? {
+                // relaying only on hash is enough? what if the node is completely rogue and 
+                // reorgs while returning the same hash as best_block?
                 let is_full_sync = provider_best_block.hash() == store_best_block.hash();
                 if is_full_sync {
                     debug!("[startup_backward_sync] No more backward_sync needed",);

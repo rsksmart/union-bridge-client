@@ -12,7 +12,9 @@ serde = { workspace = true }
 storage-backend = { workspace = true }
 common = { path = "../common" }
 rsk-provider = { path = "../rsk-provider" }
+nix = { version = "0.29", features = ["signal"] }
 
 [dev-dependencies]
 tempfile = "3.16.0"
 serial_test = "3.2.0"
+mockall = "0.13.1"
