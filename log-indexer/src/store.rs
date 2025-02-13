@@ -14,7 +14,6 @@ pub(super) enum StoreKey {
 impl StoreKey {
     pub(super) fn value(&self) -> String {
         match self {
-            // TODO(iago) think of access patterns and prefix and indexing
             StoreKey::LogId(address, tx_hash, log_index) => {
                 format!("logs/{}/{}/{}", address, tx_hash, log_index)
             }
@@ -46,14 +45,14 @@ impl RawLogStore {
 }
 
 impl LogStore for RawLogStore {
-    fn save_log(&self, value: &RskLog) -> Result<()> {
+    fn save_log(&self, log: &RskLog) -> Result<()> {
         let key = StoreKey::LogId(
-            value.address.to_string(),
-            value.transaction_hash.to_string(),
-            value.log_index,
+            log.data().address().to_string(),
+            log.data().tx_hash().to_string(),
+            log.data().log_index(),
         )
         .value();
-        self.set_on_db(&key, value)?;
+        self.set_on_db(&key, log)?;
         Ok(())
     }
 }

@@ -1,12 +1,13 @@
 use crate::rpc::AlloyProvider;
 use alloy_primitives::{Address, B256};
 use alloy_pubsub::{Subscription, SubscriptionItem};
-use alloy_rpc_types::{BlockNumberOrTag, FilterBlockOption, Header, Log, Topic};
+use alloy_rpc_types::{FilterBlockOption, Header, Log, Topic};
 use anyhow::anyhow;
 use anyhow::Result;
 use common::rsk_provider::{RskProvider, RskProviderError, RskSubscription, RskSubscriptionFilter};
-use common::types::{RskBlock, RskLog};
+use common::types::{LogEvent, LogInfo, RskBlock, RskLog};
 use log::debug;
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 use tokio::sync::broadcast::error::RecvError;
 
@@ -15,12 +16,12 @@ pub struct AlloySubscription<T> {
     provider: AlloyProvider,
 }
 
-impl<T: serde::de::DeserializeOwned> AlloySubscription<T> {
+impl<T: DeserializeOwned> AlloySubscription<T> {
     pub(super) fn next(&mut self) -> Result<SubscriptionItem<T>, RskProviderError> {
         match self.subscription.blocking_recv_any() {
             Ok(item) => Ok(item),
             Err(RecvError::Closed) => Err(RskProviderError::Closed),
-            // TODO(iago) handle RecvError::Lagged
+            // TODO(Jira) address in scope of https://rsklabs.atlassian.net/browse/UB-15
             Err(e) => Err(RskProviderError::Other(format!("{:?}", e))),
         }
     }
@@ -96,17 +97,10 @@ impl AlloySubscription<Log> {
     }
 
     pub(super) fn build_block_option(filter: &RskSubscriptionFilter) -> FilterBlockOption {
-        let block_option = FilterBlockOption::Range {
-            from_block: filter
-                .from_block
-                .map(|b| BlockNumberOrTag::Number(b))
-                .or(None),
-            to_block: filter
-                .to_block
-                .map(|b| BlockNumberOrTag::Number(b))
-                .or(None),
-        };
-        block_option
+        FilterBlockOption::Range {
+            from_block: filter.from_block.map(|n| n.into()),
+            to_block: None,
+        }
     }
 
     pub(super) fn build_topics(filter: &RskSubscriptionFilter) -> Result<[Topic; 4]> {
@@ -154,20 +148,26 @@ impl RskSubscription<RskLog> for AlloySubscription<Log> {
             .log_index
             .ok_or_else(|| RskProviderError::Other("Missing log index".to_string()))?;
 
-        Ok(RskLog {
-            address: new_log.address().to_string(),
+        let log_info = LogInfo::new(
+            new_log.address().to_string(),
+            block_hash.clone(),
             block_number,
-            block_hash,
-            transaction_hash: tx_hash,
+            tx_hash.clone(),
             log_index,
-            data: new_log.data().data.to_string(),
-            topics: new_log
+            new_log.removed,
+        );
+
+        let event_data = LogEvent::new(
+            new_log.data().data.to_string(),
+            new_log
                 .data()
                 .topics()
                 .iter()
                 .map(|t| t.to_string())
                 .collect(),
-        })
+        );
+
+        Ok(RskLog::new(log_info, event_data))
     }
 
     fn unsubscribe(&self) -> Result<()> {

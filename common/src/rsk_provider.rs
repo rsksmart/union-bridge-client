@@ -14,34 +14,25 @@ pub trait RskSubscription<T> {
 }
 
 #[derive(Debug)]
+// TODO(Jira) https://rsklabs.atlassian.net/browse/UB-43
 pub struct RskSubscriptionFilter {
-    pub addresses: Vec<String>, // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-43
+    pub addresses: Vec<String>,
     pub from_block: Option<u64>,
-    pub to_block: Option<u64>,
-    pub topics: Vec<String>, // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-43
+    pub topics: Vec<String>,
+}
+
+#[derive(Debug)]
+pub enum BlockNumRef {
+    Latest,
+    Number(u64),
 }
 
 impl RskSubscriptionFilter {
-    pub fn new_logs_by_address(addresses: Vec<String>) -> Self {
+    pub fn new(addresses: Vec<String>, topics: Vec<String>, from_block: Option<u64>) -> Self {
         Self {
             addresses,
-            from_block: None,
-            to_block: None,
-            topics: vec![],
-        }
-    }
-
-    pub fn new_custom(
-        addresses: Vec<String>,
-        from_block: Option<u64>,
-        to_block: Option<u64>,
-        topics: Vec<String>,
-    ) -> Self {
-        Self {
-            addresses,
-            from_block,
-            to_block,
             topics,
+            from_block,
         }
     }
 }

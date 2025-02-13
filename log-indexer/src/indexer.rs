@@ -5,18 +5,17 @@ use common::rsk_provider::{RskProvider, RskProviderError};
 use common::rsk_provider::{RskSubscription, RskSubscriptionFilter};
 use common::shutdown_flag::ShutdownFlag;
 use common::types::{ContractInfo, RskLog};
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use std::collections::HashMap;
 
 pub struct LogIndexer<P: RskProvider, S: LogStore> {
-    _store: S,
+    store: S,
     rsk_provider: P,
-    _initial_block_hash: String,
+    initial_block_number: u64,
     managed_contracts: HashMap<String, ContractInfo>,
     shutdown_flag: ShutdownFlag,
 }
 
-// TODO(iago) Important! Reorgs!
 impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
     pub fn new(
         store: S,
@@ -25,10 +24,16 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         managed_contracts: HashMap<String, ContractInfo>,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
+        let initial_block_number = provider
+            .get_block_by_hash(initial_block_hash)
+            .expect("Failed to get initial block by hash")
+            .expect("Initial block not found on provider")
+            .number();
+
         Self {
-            _store: store,
+            store,
             rsk_provider: provider,
-            _initial_block_hash: initial_block_hash.to_string(),
+            initial_block_number,
             managed_contracts,
             shutdown_flag,
         }
@@ -48,8 +53,10 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
 
         let contract_addresses: Vec<String> = self.managed_contracts.keys().cloned().collect();
 
-        // TODO(iago) pass a range and filter out already known, otherwise on restart we receive bunch (not sure how the node decides which ones to provide us)
-        let filter = RskSubscriptionFilter::new_logs_by_address(contract_addresses);
+        let best_block = self.rsk_provider.get_best_block()?;
+
+        let filter =
+            RskSubscriptionFilter::new(contract_addresses, vec![], Some(best_block.number() - 10));
 
         info!(
             "[subscribe_logs] Start subscribe_logs with filter {:?}...",
@@ -59,9 +66,11 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
         let mut rsk_log_subscription = self
             .rsk_provider
             .subscribe_logs(filter)
-            .expect("Failed to subscribe to logs (unrecoverable)"); // TODO retry mechanism in scope of UB-15
+            .expect("Failed to subscribe to logs (unrecoverable)"); // TODO(Jira) retry mechanism in scope of UB-15
 
         let loop_result = self.listen_logs(&mut rsk_log_subscription);
+
+        // TODO(Jira) Implement shutdown/restart resilience (catch up) https://rsklabs.atlassian.net/browse/UB-45
 
         rsk_log_subscription
             .unsubscribe()
@@ -90,9 +99,20 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                 }
             };
 
+            if new_log.data().block_number() < self.initial_block_number {
+                warn!(
+                    "[subscribe_logs] Log block {} is lower than initial {}",
+                    new_log.data().block_number(),
+                    self.initial_block_number
+                );
+                continue;
+            }
+
             debug!("[subscribe_logs] Processed log: {:?}", new_log);
 
-            let managed_contract = self.managed_contracts.get(&new_log.address);
+            let managed_contract = self
+                .managed_contracts
+                .get(&new_log.data().address().to_string());
             if managed_contract.is_none() {
                 error!(
                     "[subscribe_logs] Received unmanaged contract log: {:?}",
@@ -110,10 +130,11 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                 continue;
             }
 
-            info!(
-                "Decoded event: {}",
-                serde_json::to_string(&json_event)?
-            );
+            self.store.save_log(&new_log)?;
+
+            // TODO(Jira) send via broker after some configurable finality is achieved and taking into account `removed` field https://rsklabs.atlassian.net/browse/UB-46
+
+            info!("Decoded event: {}", serde_json::to_string(&json_event)?);
         }
 
         Ok(())

@@ -18,11 +18,12 @@ fn get_abi_cache() -> &'static LruCache<JsonAbi> {
     ABI_CACHE.get_or_init(|| LruCache::new(1000))
 }
 
-pub fn process(contract_address: &str, log: &RskLog, abi_path: &str) -> Result<Option<Value>> {
-    if contract_address != log.address {
+pub fn process(contract_address: &str, rsk_log: &RskLog, abi_path: &str) -> Result<Option<Value>> {
+    if contract_address != rsk_log.data().address() {
         error!(
             "Log address {} does not match expected contract address {}",
-            log.address, contract_address
+            rsk_log.data().address(),
+            contract_address
         );
         return Ok(None);
     }
@@ -41,7 +42,7 @@ pub fn process(contract_address: &str, log: &RskLog, abi_path: &str) -> Result<O
     let event = json_abi.events.values().flatten().find(|e| {
         e.selector()
             .to_string()
-            .eq_ignore_ascii_case(&log.topics[0]) // TODO(Jira) another reason for https://rsklabs.atlassian.net/browse/UB-43
+            .eq_ignore_ascii_case(&rsk_log.event().topics()[0]) // TODO(Jira) another reason for https://rsklabs.atlassian.net/browse/UB-43
     });
     let event = event.unwrap();
 
@@ -50,11 +51,11 @@ pub fn process(contract_address: &str, log: &RskLog, abi_path: &str) -> Result<O
     let topic_params: Vec<&EventParam> = event.inputs.iter().filter(|i| i.indexed).collect();
     for (i, input) in topic_params.iter().enumerate() {
         let sol_type = DynSolType::from_str(input.ty.as_str())?;
-        let sol_value = sol_type.abi_decode_params((&log.topics[i]).as_ref())?;
+        let sol_value = sol_type.abi_decode_params((&rsk_log.event().topics()[i]).as_ref())?;
         decoded_log_input.insert(input.name.to_string(), dyn_value_to_json(&sol_value)?);
     }
 
-    let data_tuple = build_data_tuple(event, &log.data)?;
+    let data_tuple = build_data_tuple(event, &rsk_log.event().data().to_string())?;
     let names_in_data: Vec<&EventParam> = event.inputs.iter().filter(|i| !i.indexed).collect();
     if let DynSolValue::Tuple(values) = data_tuple {
         for (i, input) in names_in_data.iter().enumerate() {
@@ -62,7 +63,7 @@ pub fn process(contract_address: &str, log: &RskLog, abi_path: &str) -> Result<O
         }
     }
 
-    let event_json = build_event_json(&event.name, &log.address, decoded_log_input.into());
+    let event_json = build_event_json(&event.name, &rsk_log, decoded_log_input.into())?;
     Ok(Some(event_json))
 }
 

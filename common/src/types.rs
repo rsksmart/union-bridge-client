@@ -135,15 +135,99 @@ impl From<RskRpcBlock> for RskBlock {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug)]
+// TODO(Jira) https://rsklabs.atlassian.net/browse/UB-43
 pub struct RskLog {
-    pub address: String,
-    pub block_hash: String,
-    pub block_number: u64,
-    pub transaction_hash: String,
-    pub log_index: u64,
-    pub data: String, // TODO(iago) think of a better type
-    pub topics: Vec<String>,
+    info: LogInfo,
+    event: LogEvent,
+}
+
+impl RskLog {
+    pub fn new(data: LogInfo, event: LogEvent) -> Self {
+        Self { info: data, event }
+    }
+
+    pub fn data(&self) -> &LogInfo {
+        &self.info
+    }
+
+    pub fn event(&self) -> &LogEvent {
+        &self.event
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct LogInfo {
+    address: String,
+    block_hash: String,
+    block_number: u64,
+    tx_hash: String,
+    log_index: u64,
+    removed: bool,
+}
+
+impl LogInfo {
+    pub fn new(
+        address: String,
+        block_hash: String,
+        block_number: u64,
+        tx_hash: String,
+        log_index: u64,
+        removed: bool,
+    ) -> Self {
+        LogInfo {
+            address,
+            block_hash,
+            block_number,
+            tx_hash,
+            log_index,
+            removed,
+        }
+    }
+
+    pub fn address(&self) -> &str {
+        &self.address
+    }
+
+    pub fn block_hash(&self) -> &str {
+        &self.block_hash
+    }
+
+    pub fn block_number(&self) -> u64 {
+        self.block_number
+    }
+
+    pub fn tx_hash(&self) -> &str {
+        &self.tx_hash
+    }
+
+    pub fn log_index(&self) -> u64 {
+        self.log_index
+    }
+
+    pub fn removed(&self) -> bool {
+        self.removed
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct LogEvent {
+    data: String,
+    topics: Vec<String>,
+}
+
+impl LogEvent {
+    pub fn new(data: String, topics: Vec<String>) -> Self {
+        LogEvent { data, topics }
+    }
+
+    pub fn data(&self) -> &str {
+        &self.data
+    }
+
+    pub fn topics(&self) -> &Vec<String> {
+        &self.topics
+    }
 }
 
 #[derive(Debug, Clone)]

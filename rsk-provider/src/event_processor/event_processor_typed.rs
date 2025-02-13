@@ -24,12 +24,13 @@ sol! {
 
 pub fn process(rsk_log: &RskLog) -> Result<Option<Value>> {
     let parsed_topics: Vec<B256> = rsk_log
-        .topics
+        .event()
+        .topics()
         .iter()
         .filter_map(|topic| topic.parse::<B256>().ok())
         .collect();
 
-    let log_data = LogData::new(parsed_topics, hex::decode(&rsk_log.data)?.into());
+    let log_data = LogData::new(parsed_topics, hex::decode(&rsk_log.event().data())?.into());
     if log_data.is_none() {
         error!("Failed to parse log data: {:?}", log_data);
     }
@@ -51,7 +52,7 @@ pub fn process(rsk_log: &RskLog) -> Result<Option<Value>> {
 
     let (name, decoded_log_input) = event_name_and_input.unwrap();
 
-    let event_json = build_event_json(&name, &rsk_log.address, decoded_log_input.into());
+    let event_json = build_event_json(&name, &rsk_log, decoded_log_input.into())?;
     Ok(Some(event_json))
 }
 
