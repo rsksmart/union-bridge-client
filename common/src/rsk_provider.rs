@@ -10,11 +10,13 @@ pub trait RskSubscription<T> {
 }
 
 pub trait RskProvider {
+    type BlockSubscription: RskSubscription<RskBlock>;
+    type LogSubscription: RskSubscription<RskLog>;
     fn subscribe_blocks(
         &self,
         shutdown_flag: ShutdownFlag,
-    ) -> Result<impl RskSubscription<RskBlock>>;
-    fn subscribe_logs(&self, shutdown_flag: ShutdownFlag) -> Result<impl RskSubscription<RskLog>>;
+    ) -> Result<Self::BlockSubscription>;
+    fn subscribe_logs(&self, shutdown_flag: ShutdownFlag) -> Result<Self::LogSubscription>;
     fn get_block_by_hash(&self, hash: &str) -> Result<Option<RskBlock>>;
     fn get_block_by_number(&self, num: u64) -> Result<Option<RskBlock>>;
     fn get_best_block(&self) -> Result<RskBlock>;

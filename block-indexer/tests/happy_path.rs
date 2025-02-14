@@ -69,11 +69,11 @@ impl RskSubscription<RskLog> for DummyLogSubscription {
 struct ManualRskProvider;
 
 impl RskProvider for ManualRskProvider {
-    fn subscribe_blocks(&self, _shutdown_flag: ShutdownFlag) -> Result<impl RskSubscription<RskBlock>> {
+    fn subscribe_blocks(&self, _shutdown_flag: ShutdownFlag) -> Result<Self::BlockSubscription> {
         Ok(FiniteDummySubscription::new())
     }
 
-    fn subscribe_logs(&self, _shutdown_flag: ShutdownFlag) -> Result<impl RskSubscription<RskLog>> {
+    fn subscribe_logs(&self, _shutdown_flag: ShutdownFlag) -> Result<Self::LogSubscription> {
         Ok(DummyLogSubscription)
     }
 
@@ -100,6 +100,10 @@ impl RskProvider for ManualRskProvider {
     fn disconnect(&self) -> Result<()> {
         Ok(())
     }
+    
+    type BlockSubscription = FiniteDummySubscription;
+    
+    type LogSubscription = DummyLogSubscription;
 }
 
 #[test]
