@@ -34,8 +34,7 @@ impl StoreKey {
         match self {
             StoreKey::BlockByHash(block_hash) => format!("block/hash/{}", block_hash),
             StoreKey::BlockByNumber(block_height) => format!("block/height/{}", block_height),
-            // TODO(iago) check if the name is accurate
-            StoreKey::BestBlock => "meta/best_block_height".to_string(),
+            StoreKey::BestBlock => "meta/best_block".to_string(),
             StoreKey::BackSyncCheckpoint => "meta/tmp_back_sync_checkpoint".to_string(),
         }
     }
