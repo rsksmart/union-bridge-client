@@ -1,26 +1,28 @@
-
-use anyhow::{Result, anyhow};
-#[cfg(test)]
-use common::rsk_provider::MockRskProvider;
+use anyhow::{anyhow, Result};
+use common::rsk_provider::{MockRskProvider, MockRskSubscription};
+use log::info;
 use std::env;
 use std::fs;
 use std::thread;
 use std::time::Duration;
 use tempfile::tempdir;
-use log::info;
 
-use common::types::RskBlock;
+use block_indexer::indexer::BlockIndexer;
+use block_indexer::store::{BlockStore, CachedBlockStore};
+use common::cache::LruCache;
 use common::rsk_indexer::RskIndexer;
 use common::shutdown_flag::ShutdownFlag;
-use common::cache::LruCache;
-use block_indexer::indexer::BlockIndexer;
-use block_indexer::store::{CachedBlockStore, BlockStore};
+use common::types::RskBlock;
 
 fn create_dummy_block(num: u64) -> RskBlock {
     RskBlock::new(
         num,
         num.to_string(),
-        if num > 0 { (num - 1).to_string() } else { "".to_string() },
+        if num > 0 {
+            (num - 1).to_string()
+        } else {
+            "".to_string()
+        },
         Default::default(),
         0,
         "".to_string(),
@@ -49,8 +51,8 @@ fn test_when_monitor_runs() -> Result<()> {
             .returning(|_hash| Ok(Some(create_dummy_block(2))));
 
         mock_rsk_provider
-        .expect_get_best_block()
-        .returning(|| Ok(create_dummy_block(6)));
+            .expect_get_best_block()
+            .returning(|| Ok(create_dummy_block(6)));
 
         mock_rsk_provider
             .expect_get_block_by_number()
@@ -68,9 +70,9 @@ fn test_when_monitor_runs() -> Result<()> {
             .returning(|_shutdown_flag| {
                 let counter = Arc::new(Mutex::new(6));
                 let counter_clone = counter.clone();
-                let mut mock_sub = common::rsk_provider::MockRskSubscription::<RskBlock>::new();
+                let mut mock_sub = MockRskSubscription::<RskBlock>::new();
                 mock_sub.expect_next().returning(move || {
-                    std::thread::sleep(std::time::Duration::from_millis(20));
+                    thread::sleep(Duration::from_millis(20));
                     let mut count = counter_clone.lock().unwrap();
                     let block = create_dummy_block(*count);
                     *count += 1;
@@ -94,9 +96,14 @@ fn test_when_monitor_runs() -> Result<()> {
     }
 
     let store_after: CachedBlockStore<LruCache<RskBlock>> = CachedBlockStore::new(store_path_str)?;
-    let best_block = store_after.get_best_block()?
+    let best_block = store_after
+        .get_best_block()?
         .ok_or_else(|| anyhow!("No best block found after indexer run"))?;
 
-    assert!(best_block.number() > 2, "Expected best block number > 2, got {}", best_block.number());
+    assert!(
+        best_block.number() > 2,
+        "Expected best block number > 2, got {}",
+        best_block.number()
+    );
     Ok(())
 }
