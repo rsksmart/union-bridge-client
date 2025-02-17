@@ -1,5 +1,6 @@
 
 use anyhow::{Result, anyhow};
+#[cfg(test)]
 use common::rsk_provider::MockRskProvider;
 use std::env;
 use std::fs;

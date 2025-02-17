@@ -13,7 +13,7 @@ serde_json = { workspace = true }
 bitcoin = "0.32.4"
 lru = "0.13.0"
 signal-hook = "0.3"
-mockall = { workspace = true , optional = true }
+mockall = { workspace = true, optional = true }
 
 [features]
 generate-mocks = ["mockall"]
