@@ -99,10 +99,10 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                 }
             };
 
-            if new_log.data().block_number() < self.initial_block_number {
+            if new_log.info().block_number() < self.initial_block_number {
                 warn!(
                     "[subscribe_logs] Log block {} is lower than initial {}",
-                    new_log.data().block_number(),
+                    new_log.info().block_number(),
                     self.initial_block_number
                 );
                 continue;
@@ -112,7 +112,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 
             let managed_contract = self
                 .managed_contracts
-                .get(&new_log.data().address().to_string());
+                .get(&new_log.info().address().to_string());
             if managed_contract.is_none() {
                 error!(
                     "[subscribe_logs] Received unmanaged contract log: {:?}",
@@ -121,11 +121,11 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                 continue;
             }
 
-            let json_event = &self
+            let rsk_event = &self
                 .rsk_provider
-                .decode_log(&new_log, managed_contract.unwrap())?;
+                .decode_log(new_log.clone(), managed_contract.unwrap())?;
 
-            if json_event.is_none() {
+            if rsk_event.is_none() {
                 error!("[subscribe_logs] Unmanaged log received: {:?}", new_log);
                 continue;
             }
@@ -134,7 +134,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 
             // TODO(Jira) send via broker after some configurable finality is achieved and taking into account `removed` field https://rsklabs.atlassian.net/browse/UB-46
 
-            info!("Decoded event: {}", serde_json::to_string(&json_event)?);
+            info!("Decoded event: {}", serde_json::to_string(&rsk_event)?);
         }
 
         Ok(())

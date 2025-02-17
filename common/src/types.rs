@@ -2,6 +2,7 @@ use bitcoin::blockdata::block::Header;
 use bitcoin::consensus::encode::deserialize as btc_deserialize;
 use primitive_types::U256;
 use serde::{de, Deserialize, Deserializer, Serialize};
+use serde_json::Value;
 use std::string::ToString;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
@@ -135,7 +136,7 @@ impl From<RskRpcBlock> for RskBlock {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-43
 pub struct RskLog {
     info: LogInfo,
@@ -147,7 +148,7 @@ impl RskLog {
         Self { info: data, event }
     }
 
-    pub fn data(&self) -> &LogInfo {
+    pub fn info(&self) -> &LogInfo {
         &self.info
     }
 
@@ -156,7 +157,32 @@ impl RskLog {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize)]
+pub struct RskEvent {
+    name: String,
+    info: LogInfo,
+    input: Value,
+}
+
+impl RskEvent {
+    pub fn new(name: String, info: LogInfo, input: Value) -> Self {
+        Self { name, info, input }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn info(&self) -> &LogInfo {
+        &self.info
+    }
+
+    pub fn input(&self) -> &Value {
+        &self.input
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LogInfo {
     address: String,
     block_hash: String,
@@ -210,7 +236,7 @@ impl LogInfo {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LogEvent {
     data: String,
     topics: Vec<String>,

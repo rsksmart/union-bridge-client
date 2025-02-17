@@ -1,7 +1,6 @@
-use crate::types::{ContractInfo, RskBlock, RskLog};
+use crate::types::{ContractInfo, RskBlock, RskEvent, RskLog};
 use anyhow::Error as AnyhowError;
 use anyhow::Result;
-use serde_json::Value;
 use thiserror::Error;
 
 #[cfg(feature = "generate-mocks")]
@@ -50,7 +49,8 @@ pub trait RskProvider {
     fn get_block_by_hash(&self, hash: &str) -> Result<Option<RskBlock>>;
     fn get_block_by_number(&self, num: u64) -> Result<Option<RskBlock>>;
     fn get_best_block(&self) -> Result<RskBlock>;
-    fn decode_log(&self, new_log: &RskLog, contract_info: &ContractInfo) -> Result<Option<Value>>;
+    fn decode_log(&self, new_log: RskLog, contract_info: &ContractInfo)
+        -> Result<Option<RskEvent>>;
     fn disconnect(&self) -> Result<()>;
 }
 

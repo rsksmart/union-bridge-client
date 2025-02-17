@@ -1,9 +1,8 @@
-use crate::event_processor::build_event_json;
 use alloy_dyn_abi::{DynSolType, DynSolValue};
 use alloy_json_abi::{Event, EventParam, JsonAbi};
 use anyhow::{bail, Result};
 use common::cache::LruCache;
-use common::types::RskLog;
+use common::types::{RskEvent, RskLog};
 use hex;
 use log::{debug, error};
 use serde_json::{json, Value};
@@ -18,11 +17,15 @@ fn get_abi_cache() -> &'static LruCache<JsonAbi> {
     ABI_CACHE.get_or_init(|| LruCache::new(1000))
 }
 
-pub fn process(contract_address: &str, rsk_log: &RskLog, abi_path: &str) -> Result<Option<Value>> {
-    if contract_address != rsk_log.data().address() {
+pub fn process(
+    contract_address: &str,
+    rsk_log: RskLog,
+    abi_path: &str,
+) -> Result<Option<RskEvent>> {
+    if contract_address != rsk_log.info().address() {
         error!(
             "Log address {} does not match expected contract address {}",
-            rsk_log.data().address(),
+            rsk_log.info().address(),
             contract_address
         );
         return Ok(None);
@@ -63,7 +66,12 @@ pub fn process(contract_address: &str, rsk_log: &RskLog, abi_path: &str) -> Resu
         }
     }
 
-    let event_json = build_event_json(&event.name, &rsk_log, decoded_log_input.into())?;
+    let event_json = RskEvent::new(
+        event.name.to_string(),
+        rsk_log.info().clone(),
+        serde_json::to_value(event)?,
+    );
+
     Ok(Some(event_json))
 }
 

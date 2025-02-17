@@ -47,9 +47,9 @@ impl RawLogStore {
 impl LogStore for RawLogStore {
     fn save_log(&self, log: &RskLog) -> Result<()> {
         let key = StoreKey::LogId(
-            log.data().address().to_string(),
-            log.data().tx_hash().to_string(),
-            log.data().log_index(),
+            log.info().address().to_string(),
+            log.info().tx_hash().to_string(),
+            log.info().log_index(),
         )
         .value();
         self.set_on_db(&key, log)?;

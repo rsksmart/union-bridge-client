@@ -1,9 +1,8 @@
-use crate::event_processor::build_event_json;
 use alloy_primitives::{hex, LogData};
 use alloy_sol_types::private::B256;
 use alloy_sol_types::{sol, SolEvent};
 use anyhow::{bail, Result};
-use common::types::RskLog;
+use common::types::{RskEvent, RskLog};
 use log::error;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -22,7 +21,7 @@ sol! {
     event LogValue(bytes32 val);
 }
 
-pub fn process(rsk_log: &RskLog) -> Result<Option<Value>> {
+pub fn process(rsk_log: RskLog) -> Result<Option<RskEvent>> {
     let parsed_topics: Vec<B256> = rsk_log
         .event()
         .topics()
@@ -52,7 +51,7 @@ pub fn process(rsk_log: &RskLog) -> Result<Option<Value>> {
 
     let (name, decoded_log_input) = event_name_and_input.unwrap();
 
-    let event_json = build_event_json(&name, &rsk_log, decoded_log_input.into())?;
+    let event_json = RskEvent::new(name.to_string(), rsk_log.info().clone(), decoded_log_input);
     Ok(Some(event_json))
 }
 

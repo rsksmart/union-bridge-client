@@ -7,7 +7,7 @@ use alloy_rpc_types::{Filter, FilterSet, Header, Log};
 use anyhow::{anyhow, Result};
 use common::rsk_provider::{RskProvider, RskSubscriptionFilter};
 use common::shutdown_flag::ShutdownFlag;
-use common::types::{ContractInfo, RskBlock, RskLog, RskRpcBlock};
+use common::types::{ContractInfo, RskBlock, RskEvent, RskLog, RskRpcBlock};
 use log::debug;
 use serde_json::{json, Value};
 use std::future::Future;
@@ -119,29 +119,27 @@ impl RskProvider for AlloyProvider {
         Self::parse_provider_response(response)?.ok_or(anyhow!("Could not get best block"))
     }
 
-    fn decode_log(&self, new_log: &RskLog, contract_info: &ContractInfo) -> Result<Option<Value>> {
+    fn decode_log(
+        &self,
+        new_log: RskLog,
+        contract_info: &ContractInfo,
+    ) -> Result<Option<RskEvent>> {
         if contract_info.abi_file.is_some() {
             debug!(
                 "ABI based event processing for contract {}",
                 contract_info.address
             );
-            match event_processor_abi::process(
+            event_processor_abi::process(
                 &contract_info.address,
-                &new_log,
+                new_log,
                 contract_info.abi_file.as_deref().unwrap(),
-            )? {
-                Some(ev) => Ok(Some(serde_json::to_value(ev)?)),
-                None => Ok(None),
-            }
+            )
         } else {
             debug!(
                 "Static event processing for contract {}",
                 contract_info.address
             );
-            match event_processor_typed::process(&new_log)? {
-                Some(ev) => Ok(Some(serde_json::to_value(ev)?)),
-                None => Ok(None),
-            }
+            event_processor_typed::process(new_log)
         }
     }
 
