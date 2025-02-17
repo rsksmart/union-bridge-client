@@ -138,11 +138,8 @@ impl AlloyProvider {
 impl RskProvider for AlloyProvider {
     type BlockSubscription = AlloySubscription<Header>;
     type LogSubscription = AlloySubscription<Log>;
-    
-    fn subscribe_blocks(
-        &self,
-        shutdown_flag: ShutdownFlag,
-    ) -> Result<Self::BlockSubscription> {
+
+    fn subscribe_blocks(&self, shutdown_flag: ShutdownFlag) -> Result<Self::BlockSubscription> {
         AlloySubscription::<Header>::new(self.clone(), shutdown_flag)
     }
 

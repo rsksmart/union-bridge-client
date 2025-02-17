@@ -1170,6 +1170,7 @@ dependencies = [
  "primitive-types 0.13.1",
  "serde",
  "serde_json",
+ "sha2",
  "signal-hook",
  "thiserror 2.0.11",
 ]
