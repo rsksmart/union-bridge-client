@@ -39,4 +39,9 @@ impl ShutdownFlag {
             shutdown_handler();
         });
     }
+
+    /// Ideally, this method should be used only for testing purposes
+    pub fn set(&self, value: bool) {
+        self.flag.store(value, Ordering::SeqCst);
+    }
 }

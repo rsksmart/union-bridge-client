@@ -1,4 +1,3 @@
-#![cfg(test)]
 
 use anyhow::{Result, anyhow};
 use common::rsk_provider::MockRskProvider;
@@ -8,8 +7,6 @@ use std::thread;
 use std::time::Duration;
 use tempfile::tempdir;
 use log::info;
-use nix::sys::signal::{kill, Signal};
-use nix::unistd::Pid;
 
 use common::types::RskBlock;
 use common::rsk_indexer::RskIndexer;
@@ -85,9 +82,10 @@ fn test_when_monitor_runs() -> Result<()> {
         let shutdown_flag = ShutdownFlag::init();
         let indexer = BlockIndexer::new(store, mock_rsk_provider, "2", shutdown_flag.clone());
         {
+            let shutdown_flag_clone = shutdown_flag.clone();
             thread::spawn(move || {
                 thread::sleep(Duration::from_millis(300));
-                kill(Pid::this(), Signal::SIGINT).expect("Failed to send SIGINT");
+                shutdown_flag_clone.set(true);
             });
         }
         indexer.run()?;

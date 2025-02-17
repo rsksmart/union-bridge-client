@@ -2,20 +2,22 @@ use crate::shutdown_flag::ShutdownFlag;
 use crate::types::{RskBlock, RskLog};
 use anyhow::Error as AnyhowError;
 use anyhow::Result;
+
 use thiserror::Error;
 
-use mockall::*;
-use mockall::predicate::*;
-#[automock]
+#[cfg(any(test, feature = "generate-mocks"))]
+use mockall::automock;
+
+#[cfg_attr(any(test, feature = "generate-mocks"), automock)]
 pub trait RskSubscription<T> {
     fn next(&mut self) -> Result<T, RskProviderError>;
     fn unsubscribe(&self) -> Result<()>;
 }
 
-#[automock(
-    type BlockSubscription=MockRskSubscription<RskBlock>;
-    type LogSubscription=MockRskSubscription<RskLog>;
-)]
+#[cfg_attr(any(test, feature = "generate-mocks"), automock(
+    type BlockSubscription = MockRskSubscription<RskBlock>;
+    type LogSubscription = MockRskSubscription<RskLog>;
+))]
 pub trait RskProvider {
     type BlockSubscription: RskSubscription<RskBlock>;
     type LogSubscription: RskSubscription<RskLog>;
