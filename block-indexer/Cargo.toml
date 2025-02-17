@@ -10,10 +10,11 @@ dotenv = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
 storage-backend = { workspace = true }
-common = { path = "../common", features = ["generate-mocks"] }
+common = { path = "../common" }
 rsk-provider = { path = "../rsk-provider" }
 
 [dev-dependencies]
 tempfile = "3.16.0"
 serial_test = "3.2.0"
 mockall = { workspace = true }
+common = { path = "../common", features = ["generate-mocks"] }

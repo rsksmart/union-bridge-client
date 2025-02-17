@@ -5,16 +5,16 @@ use anyhow::Result;
 
 use thiserror::Error;
 
-#[cfg(any(test, feature = "generate-mocks"))]
+#[cfg(feature = "generate-mocks")]
 use mockall::automock;
 
-#[cfg_attr(any(test, feature = "generate-mocks"), automock)]
+#[cfg_attr(feature = "generate-mocks", automock)]
 pub trait RskSubscription<T> {
     fn next(&mut self) -> Result<T, RskProviderError>;
     fn unsubscribe(&self) -> Result<()>;
 }
 
-#[cfg_attr(any(test, feature = "generate-mocks"), automock(
+#[cfg_attr(feature = "generate-mocks", automock(
     type BlockSubscription = MockRskSubscription<RskBlock>;
     type LogSubscription = MockRskSubscription<RskLog>;
 ))]
