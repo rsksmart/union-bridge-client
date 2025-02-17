@@ -982,7 +982,6 @@ dependencies = [
  "serde",
  "serial_test",
  "tempfile",
- "test_util",
 ]
 
 [[package]]
@@ -3639,14 +3638,6 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "test_util"
-version = "0.1.0"
-dependencies = [
- "common",
- "primitive-types 0.13.1",
 ]
 
 [[package]]

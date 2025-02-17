@@ -209,13 +209,13 @@ impl<C: Cache<RskBlock>> BlockStore for CachedBlockStore<C> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::store::CachedBlockStore;
+    use crate::store::StoreKey;
     use anyhow::Result;
-    use common::{cache::LruCache, types::RskBlock};
+    use common::{cache::LruCache, test_utils::rsk, types::RskBlock};
     use serial_test::serial;
     use std::env;
     use tempfile::tempdir;
-    use test_util;
 
     const BLOCK_CACHE_SIZE: &str = "BLOCK_CACHE_SIZE";
 
@@ -239,7 +239,7 @@ mod tests {
         let store_path = temp_dir.path().to_str().unwrap();
         let store = CachedBlockStore::new(store_path)?;
 
-        let [block1, block2, block3] = test_util::get_default_rsk_blocks().try_into().unwrap();
+        let [block1, block2, block3] = rsk::get_default_rsk_blocks().try_into().unwrap();
         store.save_block(&block1)?;
         store.save_block(&block2)?;
         store.save_block(&block3)?;
@@ -262,7 +262,7 @@ mod tests {
     #[test]
     fn test_when_set_block_should_get_same_block() -> Result<()> {
         let store = create_test_store()?;
-        let expected_block = test_util::get_first_default_rsk_block();
+        let expected_block = rsk::get_first_default_rsk_block();
 
         store.set_best_block(&expected_block)?;
         let actual_block = store.get_best_block()?.unwrap();
@@ -274,7 +274,7 @@ mod tests {
     #[test]
     fn test_when_save_block_should_get_by_hash_same_block() -> Result<()> {
         let store = create_test_store()?;
-        let expected_block = test_util::get_first_default_rsk_block();
+        let expected_block = rsk::get_first_default_rsk_block();
         let block_hash = expected_block.hash();
 
         store.save_block(&expected_block)?;
@@ -287,7 +287,7 @@ mod tests {
     #[test]
     fn test_when_get_missing_hash_should_be_none() -> Result<()> {
         let store = create_test_store()?;
-        let [block1, block2, _] = test_util::get_default_rsk_blocks().try_into().unwrap();
+        let [block1, block2, _] = rsk::get_default_rsk_blocks().try_into().unwrap();
 
         store.save_block(&block1)?;
         let lookup = store.get_block_by_hash(block2.hash())?;
@@ -302,7 +302,7 @@ mod tests {
     #[test]
     fn test_when_set_checkpoint_should_get_same_checkpoint() -> Result<()> {
         let store = create_test_store()?;
-        let expected_checkpoint = test_util::get_first_default_rsk_block();
+        let expected_checkpoint = rsk::get_first_default_rsk_block();
 
         store.set_back_sync_checkpoint(&expected_checkpoint)?;
         let actual_checkpoint = store.get_back_sync_checkpoint()?.unwrap();
@@ -314,7 +314,7 @@ mod tests {
     #[test]
     fn test_when_reset_checkpoint_should_be_none() -> Result<()> {
         let store = create_test_store()?;
-        let checkpoint = test_util::get_first_default_rsk_block();
+        let checkpoint = rsk::get_first_default_rsk_block();
 
         store.set_back_sync_checkpoint(&checkpoint)?;
         store.reset_back_sync_checkpoint()?;
@@ -327,7 +327,7 @@ mod tests {
     #[test]
     fn test_when_set_canonical_block_should_get_same_block() -> Result<()> {
         let store = create_test_store()?;
-        let expected_canonical_block = test_util::get_first_default_rsk_block();
+        let expected_canonical_block = rsk::get_first_default_rsk_block();
 
         store.set_canonical_block(&expected_canonical_block)?;
         let actual_canonical_block = store
@@ -341,7 +341,7 @@ mod tests {
     #[test]
     fn test_when_get_missing_canonical_block_should_return_none() -> Result<()> {
         let store = create_test_store()?;
-        let [canonical_block, other_block, _] = test_util::get_default_rsk_blocks().try_into().unwrap();
+        let [canonical_block, other_block, _] = rsk::get_default_rsk_blocks().try_into().unwrap();
 
         store.set_canonical_block(&canonical_block)?;
         let missing_canonical_block = store.get_canonical_block(other_block.number())?;
@@ -356,7 +356,7 @@ mod tests {
     #[test]
     fn test_when_get_block_by_hash_should_be_recached() -> Result<()> {
         let store = create_test_store()?;
-        let expected_block = test_util::get_first_default_rsk_block();
+        let expected_block = rsk::get_first_default_rsk_block();
         let block_hash = expected_block.hash();
         let cache_key = format!("block/hash/{}", block_hash);
 
@@ -373,7 +373,7 @@ mod tests {
     #[test]
     fn test_when_get_canonical_should_be_recached() -> Result<()> {
         let store = create_test_store()?;
-        let expected_block = test_util::get_first_default_rsk_block();
+        let expected_block = rsk::get_first_default_rsk_block();
         let block_number = expected_block.number();
         let cache_key = format!("block/height/{}", block_number);
 
@@ -391,7 +391,7 @@ mod tests {
     #[test]
     fn test_when_delete_block_from_db_should_be_still_in_cache() -> Result<()> {
         let store = create_test_store()?;
-        let expected_block = test_util::get_first_default_rsk_block();
+        let expected_block = rsk::get_first_default_rsk_block();
         let block_hash = expected_block.hash();
         let cache_key = format!("block/hash/{}", block_hash);
 

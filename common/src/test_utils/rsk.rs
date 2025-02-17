@@ -1,4 +1,4 @@
-use common::types::RskBlock;
+use crate::types::RskBlock;
 use primitive_types::U256;
 
 /// Returns a list of default RSK test blocks.
@@ -9,7 +9,7 @@ use primitive_types::U256;
 /// # Example
 ///
 /// ```
-/// use test_util::get_default_rsk_blocks;
+/// use common::test_utils::rsk::get_default_rsk_blocks;
 ///
 /// let blocks = get_default_rsk_blocks();
 ///
@@ -35,7 +35,7 @@ pub fn get_default_rsk_blocks() -> Vec<RskBlock> {
 /// # Example
 ///
 /// ```
-/// use test_util::get_first_default_rsk_block;
+/// use common::test_utils::rsk::get_first_default_rsk_block;
 ///
 /// let block = get_first_default_rsk_block();
 /// assert_eq!(block.number(), 7_234_706);
@@ -61,7 +61,7 @@ pub fn get_first_default_rsk_block() -> RskBlock {
 /// # Example
 /// 
 /// ```
-/// use test_util::get_second_default_rsk_block;
+/// use common::test_utils::rsk::get_second_default_rsk_block;
 ///
 /// let block = get_second_default_rsk_block();
 /// assert_eq!(block.number(), 7_234_707);
@@ -87,7 +87,7 @@ pub fn get_second_default_rsk_block() -> RskBlock {
 /// # Example
 /// 
 /// ```
-/// use test_util::get_third_default_rsk_block;
+/// use common::test_utils::rsk::get_third_default_rsk_block;
 ///
 /// let block = get_third_default_rsk_block();
 /// assert_eq!(block.number(), 7_234_708);

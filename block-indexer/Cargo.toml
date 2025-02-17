@@ -16,4 +16,3 @@ rsk-provider = { path = "../rsk-provider" }
 [dev-dependencies]
 serial_test = "3.2.0"
 tempfile = "3.16.0"
-test_util = { path = "../util/tests" }
