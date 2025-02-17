@@ -16,7 +16,7 @@ pub(crate) fn build_event_json(
     decoded_log.insert("log".to_string(), log_info);
 
     decoded_log.insert("name".to_string(), json!(name));
-    decoded_log.insert("input".to_string(), decoded_input.into());
+    decoded_log.insert("event".to_string(), decoded_input.into());
 
     Ok(decoded_log.into())
 }
