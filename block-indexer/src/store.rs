@@ -34,8 +34,7 @@ impl StoreKey {
         match self {
             StoreKey::BlockByHash(block_hash) => format!("block/hash/{}", block_hash),
             StoreKey::BlockByNumber(block_height) => format!("block/height/{}", block_height),
-            // TODO(iago) check if the name is accurate
-            StoreKey::BestBlock => "meta/best_block_height".to_string(),
+            StoreKey::BestBlock => "meta/best_block".to_string(),
             StoreKey::BackSyncCheckpoint => "meta/tmp_back_sync_checkpoint".to_string(),
         }
     }
@@ -209,62 +208,51 @@ impl<C: Cache<RskBlock>> BlockStore for CachedBlockStore<C> {
 
 #[cfg(test)]
 mod tests {
-    use serial_test::serial;
+    use crate::store::CachedBlockStore;
+    use crate::store::StoreKey;
     use anyhow::Result;
+    use common::{cache::LruCache, test_utils::rsk, types::RskBlock};
+    use serial_test::serial;
     use std::env;
     use tempfile::tempdir;
-    use crate::store::CachedBlockStore;
-    use common::{cache::LruCache, types::RskBlock};
 
-    // TODO: use real block data, also maybe use a fixture or some type of abstraction
-    fn dummy_block(block_height: u64, block_hash: &str, parent_block_hash: &str) -> RskBlock {
-        RskBlock::new(
-            block_height,
-            block_hash.to_string(),
-            parent_block_hash.to_string(),
-            Default::default(),
-            0,
-            "".to_string(),
-            Default::default()
-        )
-    }
+    const BLOCK_CACHE_SIZE: &str = "BLOCK_CACHE_SIZE";
 
     fn setup_env() {
-        env::set_var("BLOCK_CACHE_SIZE", "20");
+        env::set_var(BLOCK_CACHE_SIZE, "20");
     }
 
     fn create_test_store() -> Result<CachedBlockStore<LruCache<RskBlock>>> {
         setup_env();
         let temp_dir = tempdir()?;
         let store_path = temp_dir.path().to_str().unwrap();
-        let store = CachedBlockStore::new(store_path)
-            .expect("Failed to create CachedBlockStore");
+        let store = CachedBlockStore::new(store_path)?;
         Ok(store)
     }
 
     #[test]
     #[serial]
     fn test_when_cache_size_exceeded_should_evict_old_entries() -> Result<()> {
-        env::set_var("BLOCK_CACHE_SIZE", "2");
+        env::set_var(BLOCK_CACHE_SIZE, "2");
         let temp_dir = tempdir()?;
         let store_path = temp_dir.path().to_str().unwrap();
-        let store = CachedBlockStore::new(store_path)
-            .expect("Failed to create CachedBlockStore");
+        let store = CachedBlockStore::new(store_path)?;
 
-        let block1 = dummy_block(1, "hash1", "hash0");
-        let block2 = dummy_block(2, "hash2", "hash1");
-        let block3 = dummy_block(3, "hash3", "hash2");
+        let [block1, block2, block3] = rsk::get_default_rsk_blocks().try_into().unwrap();
         store.save_block(&block1)?;
         store.save_block(&block2)?;
         store.save_block(&block3)?;
-        let key1 = crate::store::StoreKey::BlockByHash("hash1".to_string()).value();
-        let key2 = crate::store::StoreKey::BlockByHash("hash2".to_string()).value();
-        let key3 = crate::store::StoreKey::BlockByHash("hash3".to_string()).value();
+        let key1 = StoreKey::BlockByHash(block1.hash().to_string()).value();
+        let key2 = StoreKey::BlockByHash(block2.hash().to_string()).value();
+        let key3 = StoreKey::BlockByHash(block3.hash().to_string()).value();
         let cached_block1 = store.block_cache.get(&key1)?;
         let cached_block2 = store.block_cache.get(&key2)?;
         let cached_block3 = store.block_cache.get(&key3)?;
 
-        assert!(cached_block1.is_none(), "Block1 should have been evicted from the cache");
+        assert!(
+            cached_block1.is_none(),
+            "Block1 should have been evicted from the cache"
+        );
         assert!(cached_block2.is_some(), "Block2 should be in the cache");
         assert!(cached_block3.is_some(), "Block3 should be in the cache");
         Ok(())
@@ -273,11 +261,11 @@ mod tests {
     #[test]
     fn test_when_set_block_should_get_same_block() -> Result<()> {
         let store = create_test_store()?;
-        let expected_block = dummy_block(100, "hash100", "hash99");
-        
+        let expected_block = rsk::get_first_default_rsk_block();
+
         store.set_best_block(&expected_block)?;
         let actual_block = store.get_best_block()?.unwrap();
-        
+
         assert_eq!(expected_block, actual_block);
         Ok(())
     }
@@ -285,10 +273,11 @@ mod tests {
     #[test]
     fn test_when_save_block_should_get_by_hash_same_block() -> Result<()> {
         let store = create_test_store()?;
-        let expected_block = dummy_block(100, "hash100", "hash99");
+        let expected_block = rsk::get_first_default_rsk_block();
+        let block_hash = expected_block.hash();
 
         store.save_block(&expected_block)?;
-        let actual_block = store.get_block_by_hash("hash100")?.unwrap();
+        let actual_block = store.get_block_by_hash(block_hash)?.unwrap();
 
         assert_eq!(expected_block, actual_block);
         Ok(())
@@ -297,20 +286,23 @@ mod tests {
     #[test]
     fn test_when_get_missing_hash_should_be_none() -> Result<()> {
         let store = create_test_store()?;
-        let block = dummy_block(100, "hash100", "hash99");
+        let [block1, block2, _] = rsk::get_default_rsk_blocks().try_into().unwrap();
 
-        store.save_block(&block)?;
-        let lookup = store.get_block_by_hash("hash999")?;
+        store.save_block(&block1)?;
+        let lookup = store.get_block_by_hash(block2.hash())?;
 
-        assert!(lookup.is_none(), "Lookup for a non-existent block should return None");
+        assert!(
+            lookup.is_none(),
+            "Lookup for a non-existent block should return None"
+        );
         Ok(())
     }
 
     #[test]
     fn test_when_set_checkpoint_should_get_same_checkpoint() -> Result<()> {
         let store = create_test_store()?;
-        let expected_checkpoint = dummy_block(100, "hash100", "hash99");
-        
+        let expected_checkpoint = rsk::get_first_default_rsk_block();
+
         store.set_back_sync_checkpoint(&expected_checkpoint)?;
         let actual_checkpoint = store.get_back_sync_checkpoint()?.unwrap();
 
@@ -321,7 +313,7 @@ mod tests {
     #[test]
     fn test_when_reset_checkpoint_should_be_none() -> Result<()> {
         let store = create_test_store()?;
-        let checkpoint = dummy_block(100, "hash100", "hash99");
+        let checkpoint = rsk::get_first_default_rsk_block();
 
         store.set_back_sync_checkpoint(&checkpoint)?;
         store.reset_back_sync_checkpoint()?;
@@ -334,10 +326,12 @@ mod tests {
     #[test]
     fn test_when_set_canonical_block_should_get_same_block() -> Result<()> {
         let store = create_test_store()?;
-        let expected_canonical_block = dummy_block(100, "hash100", "hash99");
+        let expected_canonical_block = rsk::get_first_default_rsk_block();
 
         store.set_canonical_block(&expected_canonical_block)?;
-        let actual_canonical_block = store.get_canonical_block(expected_canonical_block.number())?.unwrap();
+        let actual_canonical_block = store
+            .get_canonical_block(expected_canonical_block.number())?
+            .unwrap();
 
         assert_eq!(expected_canonical_block, actual_canonical_block);
         Ok(())
@@ -346,25 +340,29 @@ mod tests {
     #[test]
     fn test_when_get_missing_canonical_block_should_return_none() -> Result<()> {
         let store = create_test_store()?;
-        let canonical_block = dummy_block(100, "hash100", "hash99");
+        let [canonical_block, other_block, _] = rsk::get_default_rsk_blocks().try_into().unwrap();
 
         store.set_canonical_block(&canonical_block)?;
-        let missing_canonical_block = store.get_canonical_block(999)?;
-        
-        assert!(missing_canonical_block.is_none(), "Should return None for a missing canonical block");
+        let missing_canonical_block = store.get_canonical_block(other_block.number())?;
+
+        assert!(
+            missing_canonical_block.is_none(),
+            "Should return None for a missing canonical block"
+        );
         Ok(())
     }
-    
+
     #[test]
     fn test_when_get_block_by_hash_should_be_recached() -> Result<()> {
         let store = create_test_store()?;
-        let expected_block = dummy_block(100, "hash100", "hash99");
-        let cache_key = "block/hash/hash100";
+        let expected_block = rsk::get_first_default_rsk_block();
+        let block_hash = expected_block.hash();
+        let cache_key = format!("block/hash/{}", block_hash);
 
         store.save_block(&expected_block)?;
-        store.block_cache.remove(cache_key)?;
-        let actual_block = store.get_block_by_hash("hash100")?.unwrap();
-        let cached_block = store.block_cache.get(cache_key)?.unwrap();
+        store.block_cache.remove(&cache_key)?;
+        let actual_block = store.get_block_by_hash(block_hash)?.unwrap();
+        let cached_block = store.block_cache.get(&cache_key)?.unwrap();
 
         assert_eq!(expected_block, actual_block);
         assert_eq!(expected_block, cached_block);
@@ -374,14 +372,15 @@ mod tests {
     #[test]
     fn test_when_get_canonical_should_be_recached() -> Result<()> {
         let store = create_test_store()?;
-        let expected_block = dummy_block(100, "hash100", "hash99");
-        let cache_key = "block/height/100";
-        
+        let expected_block = rsk::get_first_default_rsk_block();
+        let block_number = expected_block.number();
+        let cache_key = format!("block/height/{}", block_number);
+
         store.set_canonical_block(&expected_block)?;
         store.save_block(&expected_block)?;
-        store.block_cache.remove(cache_key)?;
-        let actual_block = store.get_canonical_block(expected_block.number())?.unwrap();
-        let cached_block = store.block_cache.get(cache_key)?.unwrap();
+        store.block_cache.remove(&cache_key)?;
+        let actual_block = store.get_canonical_block(block_number)?.unwrap();
+        let cached_block = store.block_cache.get(&cache_key)?.unwrap();
 
         assert_eq!(expected_block, actual_block);
         assert_eq!(expected_block, cached_block);
@@ -391,14 +390,15 @@ mod tests {
     #[test]
     fn test_when_delete_block_from_db_should_be_still_in_cache() -> Result<()> {
         let store = create_test_store()?;
-        let expected_block = dummy_block(100, "hash100", "hash99");
+        let expected_block = rsk::get_first_default_rsk_block();
+        let block_hash = expected_block.hash();
+        let cache_key = format!("block/hash/{}", block_hash);
 
         store.save_block(&expected_block)?;
-        store.delete_from_db("block/hash/hash100")?;
-        let actual_block = store.get_block_by_hash("hash100")?.unwrap();
+        store.delete_from_db(&cache_key)?;
+        let actual_block = store.get_block_by_hash(&block_hash)?.unwrap();
 
         assert_eq!(expected_block, actual_block);
         Ok(())
     }
-
 }
