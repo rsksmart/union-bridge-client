@@ -4,11 +4,18 @@ use anyhow::Error as AnyhowError;
 use anyhow::Result;
 use thiserror::Error;
 
+use mockall::*;
+use mockall::predicate::*;
+#[automock]
 pub trait RskSubscription<T> {
     fn next(&mut self) -> Result<T, RskProviderError>;
     fn unsubscribe(&self) -> Result<()>;
 }
 
+#[automock(
+    type BlockSubscription=MockRskSubscription<RskBlock>;
+    type LogSubscription=MockRskSubscription<RskLog>;
+)]
 pub trait RskProvider {
     type BlockSubscription: RskSubscription<RskBlock>;
     type LogSubscription: RskSubscription<RskLog>;
