@@ -174,7 +174,7 @@ impl FakeBlockGenerator {
     /// // diff should be greater than the base difficulty
     /// assert!(diff > U256::from_dec_str("10000000000000000000000").unwrap());
     /// ```
-    fn difficulty(&self, num: u64) -> U256 {
+    pub fn difficulty(&self, num: u64) -> U256 {
         self.base_difficulty + U256::from(num) * self.difficulty_increment
     }
 
@@ -190,7 +190,7 @@ impl FakeBlockGenerator {
     /// // Should increase by approximately 30 seconds per block.
     /// assert!(ts > 1514980800);
     /// ```
-    fn timestamp(&self, num: u64) -> i64 {
+    pub fn timestamp(&self, num: u64) -> i64 {
         self.base_timestamp + (num as i64) * self.avg_block_time
     }
 
@@ -209,7 +209,7 @@ impl FakeBlockGenerator {
     /// // The total difficulty should be greater than the base difficulty.
     /// assert!(tot_diff > U256::from_dec_str("10000000000000000000000").unwrap());
     /// ```
-    fn total_difficulty(&self, num: u64) -> U256 {
+    pub fn total_difficulty(&self, num: u64) -> U256 {
         let n = U256::from(num);
         let sum_n = n * (n + U256::one()) / U256::from(2u32);
         n * self.base_difficulty + self.difficulty_increment * sum_n
@@ -228,7 +228,7 @@ impl FakeBlockGenerator {
     /// let hash0 = generator.generate_hash(0);
     /// assert_eq!(hash0, "0x0000000000000000000000000000000000000000000000000000000000000000");
     /// ```
-    fn generate_hash(&self, num: u64) -> String {
+    pub fn generate_hash(&self, num: u64) -> String {
         if num == 0 {
             return "0x0000000000000000000000000000000000000000000000000000000000000000"
                 .to_string();
@@ -256,7 +256,7 @@ impl FakeBlockGenerator {
     /// let expected_parent = generator.generate_hash(99);
     /// assert_eq!(block.parent(), expected_parent);
     /// ```
-    pub fn generate_block(&mut self, num: u64) -> RskBlock {
+    pub fn generate_block(&self, num: u64) -> RskBlock {
         let parent_hash = self.generate_hash(num - 1);
         let new_hash = self.generate_hash(num);
         let diff = self.difficulty(num);

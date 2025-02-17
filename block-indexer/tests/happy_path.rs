@@ -3,7 +3,6 @@ use common::rsk_provider::{MockRskProvider, MockRskSubscription};
 use log::info;
 use std::env;
 use std::fs;
-use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use tempfile::tempdir;
@@ -21,66 +20,55 @@ fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription
     const INITIAL_BLOCK_HASH: &str = "INITIAL_BLOCK_HASH";
     const STORE_PATH: &str = "STORE_PATH";
     const BLOCK_CACHE_SIZE: &str = "BLOCK_CACHE_SIZE";
+    const INITIAL_STORE_BEST_BLOCK: &str =
+        "0xd86e8112f3c4c4442126f8e9f44f16867da487f29052bf91b810457db34209a4";
 
     let temp_dir = tempdir()?;
     let store_path = temp_dir.path().join("blocks");
     fs::create_dir_all(&store_path)?;
     let store_path: &str = store_path.to_str().unwrap();
-    env::set_var(INITIAL_BLOCK_HASH, "1");
+    env::set_var(INITIAL_BLOCK_HASH, "0x7c9fa136d4413fa6173637e883b6998d32e1d675f88cddff9dcbcf331820f4b8");
     env::set_var(STORE_PATH, store_path);
     env::set_var(BLOCK_CACHE_SIZE, "20");
 
     {
         let store: CachedBlockStore<LruCache<RskBlock>> = CachedBlockStore::new(store_path)?;
         let mut mock_rsk_provider = MockRskProvider::new();
-        let generator = Arc::new(Mutex::new(rsk::FakeBlockGenerator::new()));
+        let generator = rsk::FakeBlockGenerator::new();
 
+        let generator_clone = generator.clone();
         mock_rsk_provider
             .expect_get_block_by_hash()
-            .with(mockall::predicate::eq("2"))
-            .returning({
-                let generator = Arc::clone(&generator);
-                move |_hash| {
-                    let mut gen = generator.lock().unwrap();
-                    Ok(Some(gen.generate_block(2)))
-                }
-            });
+            .with(mockall::predicate::eq(INITIAL_STORE_BEST_BLOCK))
+            .returning(move |_hash| Ok(Some(generator_clone.generate_block(2))));
 
-        mock_rsk_provider.expect_get_best_block().returning({
-            let generator = Arc::clone(&generator);
-            move || {
-                let mut gen = generator.lock().unwrap();
-                Ok(gen.generate_block(6))
-            }
-        });
+        let generator_clone = generator.clone();
+        mock_rsk_provider
+            .expect_get_best_block()
+            .returning(move || Ok(generator_clone.generate_block(6)));
 
+        let generator_clone = generator.clone();
         mock_rsk_provider.expect_get_block_by_number().returning({
-            let generator = Arc::clone(&generator);
             move |num| {
-                let mut gen = generator.lock().unwrap();
                 if (2..=5).contains(&num) {
-                    Ok(Some(gen.generate_block(num)))
+                    Ok(Some(generator_clone.generate_block(num)))
                 } else {
                     Ok(None)
                 }
             }
         });
 
+        let mut counter = 6;
+        let generator_clone = generator.clone();
         mock_rsk_provider.expect_subscribe_blocks().returning({
-            let generator = Arc::clone(&generator);
             move |_shutdown_flag| {
-                let counter = Arc::new(Mutex::new(6));
-                let counter_clone = Arc::clone(&counter);
                 let mut mock_sub = MockRskSubscription::<RskBlock>::new();
+                let generator_clone = generator_clone.clone();
                 mock_sub.expect_next().returning({
-                    let generator = Arc::clone(&generator);
-                    let counter_clone = Arc::clone(&counter_clone);
                     move || {
                         thread::sleep(Duration::from_millis(20));
-                        let mut count = counter_clone.lock().unwrap();
-                        let mut gen = generator.lock().unwrap();
-                        let block = gen.generate_block(*count);
-                        *count += 1;
+                        let block = generator_clone.generate_block(counter);
+                        counter += 1;
                         Ok(block)
                     }
                 });
@@ -90,7 +78,12 @@ fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription
         });
 
         let shutdown_flag = ShutdownFlag::init();
-        let indexer = BlockIndexer::new(store, mock_rsk_provider, "2", shutdown_flag.clone());
+        let indexer = BlockIndexer::new(
+            store,
+            mock_rsk_provider,
+            INITIAL_STORE_BEST_BLOCK,
+            shutdown_flag.clone(),
+        );
         {
             let shutdown_flag_clone = shutdown_flag.clone();
             thread::spawn(move || {
