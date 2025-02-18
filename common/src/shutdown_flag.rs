@@ -39,4 +39,10 @@ impl ShutdownFlag {
             shutdown_handler();
         });
     }
+
+    /// Ideally, this method should be used only for testing purposes
+    #[cfg(feature = "generate-mocks")]
+    pub fn set(&self, value: bool) {
+        self.flag.store(value, Ordering::SeqCst);
+    }
 }

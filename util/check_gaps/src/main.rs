@@ -16,7 +16,13 @@ fn main() -> Result<()> {
     dotenv().expect("Failed to load .env file");
 
     let store_path = env::var("STORE_PATH").expect("STORE_PATH not set in env");
-    let store = CachedBlockStore::new(&store_path).expect("Failed to create CachedKeyValueStore");
+    let block_cache_size = env::var("BLOCK_CACHE_SIZE")
+        .expect("BLOCK_CACHE_SIZE not set in env")
+        .parse::<usize>()
+        .expect("BLOCK_CACHE_SIZE in env must be a number");
+
+    let store = CachedBlockStore::new(&store_path, block_cache_size)
+        .expect("Failed to create CachedKeyValueStore");
 
     let initial_block_hash =
         env::var("INITIAL_BLOCK_HASH").expect("INITIAL_BLOCK_HASH not set in env");

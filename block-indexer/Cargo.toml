@@ -14,5 +14,6 @@ common = { path = "../common" }
 rsk-provider = { path = "../rsk-provider" }
 
 [dev-dependencies]
-serial_test = "3.2.0"
 tempfile = "3.16.0"
+mockall = { workspace = true }
+common = { path = "../common", features = ["generate-mocks"] }

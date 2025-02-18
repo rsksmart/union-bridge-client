@@ -14,7 +14,7 @@ use tokio::sync::broadcast::error::RecvError;
 // TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15. Review these methods accordingly.
 // TODO(Jira) error resilience: https://rsklabs.atlassian.net/browse/UB-28
 
-struct AlloySubscription<T> {
+pub struct AlloySubscription<T> {
     subscription: Subscription<T>,
     provider: AlloyProvider,
 }
@@ -136,14 +136,14 @@ impl AlloyProvider {
 }
 
 impl RskProvider for AlloyProvider {
-    fn subscribe_blocks(
-        &self,
-        shutdown_flag: ShutdownFlag,
-    ) -> Result<impl RskSubscription<RskBlock>> {
+    type BlockSubscription = AlloySubscription<Header>;
+    type LogSubscription = AlloySubscription<Log>;
+
+    fn subscribe_blocks(&self, shutdown_flag: ShutdownFlag) -> Result<Self::BlockSubscription> {
         AlloySubscription::<Header>::new(self.clone(), shutdown_flag)
     }
 
-    fn subscribe_logs(&self, shutdown_flag: ShutdownFlag) -> Result<impl RskSubscription<RskLog>> {
+    fn subscribe_logs(&self, shutdown_flag: ShutdownFlag) -> Result<Self::LogSubscription> {
         AlloySubscription::<Log>::new(self.clone(), shutdown_flag)
     }
 

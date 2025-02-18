@@ -13,3 +13,4 @@ dotenv = "0.15"
 primitive-types = { version = "0.13.1", features = ["std", "serde"] }
 storage-backend = { package = "rust-bitvmx-storage-backend", git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-storage-backend.git", rev = "7f40d056f86295e3fd2a4f268f923ca3b4e70fbf" }
 thiserror = "2.0.11"
+mockall = "0.13.1"

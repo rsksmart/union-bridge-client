@@ -1,7 +1,6 @@
 use anyhow::Result;
 use common::cache::{Cache, LruCache};
 use common::types::RskBlock;
-use std::env;
 use std::path::PathBuf;
 use storage_backend::storage::{KeyValueStore, Storage};
 
@@ -155,15 +154,11 @@ impl<C: Cache<RskBlock>> CachedBlockStore<C> {
 }
 
 impl CachedBlockStore<LruCache<RskBlock>> {
-    pub fn new(path: &str) -> Result<Self> {
+    pub fn new(path: &str, cache_size: usize) -> Result<Self> {
         let db = Storage::new_with_path(&PathBuf::from(path))?;
-        let block_cache_size = env::var("BLOCK_CACHE_SIZE")
-            .expect("BLOCK_CACHE_SIZE not set in env")
-            .parse::<usize>()
-            .expect("BLOCK_CACHE_SIZE in env must be a number");
         Ok(Self {
             db,
-            block_cache: LruCache::new(block_cache_size),
+            block_cache: LruCache::new(cache_size),
         })
     }
 }
@@ -212,31 +207,20 @@ mod tests {
     use crate::store::StoreKey;
     use anyhow::Result;
     use common::{cache::LruCache, test_utils::rsk, types::RskBlock};
-    use serial_test::serial;
-    use std::env;
     use tempfile::tempdir;
 
-    const BLOCK_CACHE_SIZE: &str = "BLOCK_CACHE_SIZE";
-
-    fn setup_env() {
-        env::set_var(BLOCK_CACHE_SIZE, "20");
-    }
-
     fn create_test_store() -> Result<CachedBlockStore<LruCache<RskBlock>>> {
-        setup_env();
         let temp_dir = tempdir()?;
         let store_path = temp_dir.path().to_str().unwrap();
-        let store = CachedBlockStore::new(store_path)?;
+        let store = CachedBlockStore::new(store_path, 20)?;
         Ok(store)
     }
 
     #[test]
-    #[serial]
     fn test_when_cache_size_exceeded_should_evict_old_entries() -> Result<()> {
-        env::set_var(BLOCK_CACHE_SIZE, "2");
         let temp_dir = tempdir()?;
         let store_path = temp_dir.path().to_str().unwrap();
-        let store = CachedBlockStore::new(store_path)?;
+        let store = CachedBlockStore::new(store_path, 2)?;
 
         let [block1, block2, block3] = rsk::get_default_rsk_blocks().try_into().unwrap();
         store.save_block(&block1)?;
