@@ -16,8 +16,12 @@ args = ["test", "serial", "--", "--test-threads", "1"]
 
 [tasks.prep-commit]
 dependencies = [
+    "format"
+]
+
+[tasks.prep-push]
+dependencies = [
     "format",
     "test-non-serial",
     "test-serial"
 ]
-

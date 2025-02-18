@@ -111,3 +111,10 @@ The proof was executed, and the receipt saved to the file: stark-proof.bin. Tota
 
 Please check the [ZKVM CLI documentation](https://github.com/FairgateLabs/rust-bitvmx-zk-proof/tree/poc-generalise-host)
 for the remaining steps. Note that this doc is pointing to a WIP branch.
+
+# Developer setup
+
+Before contributing to the project, please run the following commands to set up the project:
+1. Install _rust_ and _cargo_
+2. Install _cargo-make_: `cargo install cargo-make`
+3. Setup git hooks: `git config core.hooksPath .githooks`
