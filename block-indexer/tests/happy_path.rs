@@ -64,7 +64,7 @@ fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription
         let mut counter = 6;
         let generator_clone = generator.clone();
         mock_rsk_provider.expect_subscribe_blocks().returning({
-            move |_shutdown_flag| {
+            move || {
                 let mut mock_sub = MockRskSubscription::<RskBlock>::new();
                 let generator_clone = generator_clone.clone();
                 mock_sub.expect_next().returning({
