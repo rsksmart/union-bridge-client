@@ -21,7 +21,7 @@ pub struct CachedBlockStore<C: Cache<RskBlock>> {
     block_cache: C,
 }
 
-pub(super) enum StoreKey {
+enum StoreKey {
     BlockByHash(String),
     BlockByNumber(u64),
     BestBlock,

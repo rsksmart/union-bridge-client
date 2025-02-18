@@ -7,7 +7,7 @@ pub trait LogStore {
     fn save_log(&self, value: &RskLog) -> Result<()>;
 }
 
-pub(super) enum StoreKey {
+enum StoreKey {
     LogId(String, String, u64),
 }
 
@@ -51,7 +51,7 @@ impl LogStore for RawLogStore {
             log.info().tx_hash().to_string(),
             log.info().log_index(),
         )
-        .value();
+            .value();
         self.set_on_db(&key, log)?;
         Ok(())
     }

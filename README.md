@@ -61,7 +61,7 @@ The Union Bridge Monitor is not just a simple block indexer. It:
 
 Both `log-indexer` and `block-indexer` need to be run. TBD if we create an orchestrator to run both at the same time.
 Both crates are configurable, please check `.env.sample` as a reference and place your ouwn version named `.env` in the
-`monitor` folder.
+`monitor` directory.
 
 ```bash
 cd log-indexer
@@ -139,6 +139,7 @@ for the remaining steps. Note that this doc is pointing to a WIP branch.
 # Developer setup
 
 Before contributing to the project, please run the following commands to set up the project:
+
 1. Install _rust_ and _cargo_
 2. Install _cargo-make_: `cargo install cargo-make`
 3. Setup git hooks: `git config core.hooksPath .githooks`
