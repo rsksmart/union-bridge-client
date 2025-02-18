@@ -19,7 +19,7 @@ use common::types::RskBlock;
 fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription() -> Result<()> {
     const INITIAL_BLOCK_HASH: &str = "INITIAL_BLOCK_HASH";
     const STORE_PATH: &str = "STORE_PATH";
-    const BLOCK_CACHE_SIZE: &str = "BLOCK_CACHE_SIZE";
+    const BLOCK_CACHE_SIZE: usize = 20;
     const INITIAL_STORE_BEST_BLOCK: &str =
         "0xd86e8112f3c4c4442126f8e9f44f16867da487f29052bf91b810457db34209a4";
 
@@ -32,10 +32,10 @@ fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription
         "0x7c9fa136d4413fa6173637e883b6998d32e1d675f88cddff9dcbcf331820f4b8",
     );
     env::set_var(STORE_PATH, store_path);
-    env::set_var(BLOCK_CACHE_SIZE, "20");
 
     {
-        let store: CachedBlockStore<LruCache<RskBlock>> = CachedBlockStore::new(store_path)?;
+        let store: CachedBlockStore<LruCache<RskBlock>> =
+            CachedBlockStore::new(store_path, BLOCK_CACHE_SIZE)?;
         let mut mock_rsk_provider = MockRskProvider::new();
         let generator = rsk::FakeBlockGenerator::new();
 
@@ -98,7 +98,8 @@ fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription
         info!("Indexer run completed successfully.");
     }
 
-    let store_after: CachedBlockStore<LruCache<RskBlock>> = CachedBlockStore::new(store_path)?;
+    let store_after: CachedBlockStore<LruCache<RskBlock>> =
+        CachedBlockStore::new(store_path, BLOCK_CACHE_SIZE)?;
     let best_block = store_after
         .get_best_block()?
         .ok_or_else(|| anyhow!("No best block found after indexer run"))?;

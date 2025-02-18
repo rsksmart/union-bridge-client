@@ -14,7 +14,11 @@ fn main() -> Result<()> {
     log4rs::init_file("../log4rs.yml", Default::default()).expect("Failed to load log4rs config");
 
     let store_path = env::var("STORE_PATH").expect("STORE_PATH not set in env");
-    let store = CachedBlockStore::new(&format!("{}/blocks", store_path))?;
+    let block_cache_size = env::var("BLOCK_CACHE_SIZE")
+        .expect("BLOCK_CACHE_SIZE not set in env")
+        .parse::<usize>()
+        .expect("BLOCK_CACHE_SIZE in env must be a number");
+    let store = CachedBlockStore::new(&format!("{}/blocks", store_path), block_cache_size)?;
 
     let rsk_url = env::var("RSK_PROVIDER_URL").expect("RSK_PROVIDER_URL not set in env");
     let alloy_provider =

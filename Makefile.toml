@@ -6,13 +6,9 @@ install_crate = "rustfmt"
 command = "cargo"
 args = ["fmt"]
 
-[tasks.test-non-serial]
+[tasks.test]
 command = "cargo"
-args = ["test", "--", "--skip", "serial"]
-
-[tasks.test-serial]
-command = "cargo"
-args = ["test", "serial", "--", "--test-threads", "1"]
+args = ["test"]
 
 [tasks.prep-commit]
 dependencies = [
@@ -22,6 +18,5 @@ dependencies = [
 [tasks.prep-push]
 dependencies = [
     "format",
-    "test-non-serial",
-    "test-serial"
+    "test"
 ]
