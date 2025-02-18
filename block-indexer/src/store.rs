@@ -212,7 +212,6 @@ mod tests {
     use crate::store::StoreKey;
     use anyhow::Result;
     use common::{cache::LruCache, test_utils::rsk, types::RskBlock};
-    use serial_test::serial;
     use std::env;
     use tempfile::tempdir;
 
@@ -231,8 +230,7 @@ mod tests {
     }
 
     #[test]
-    #[serial]
-    fn test_when_cache_size_exceeded_should_evict_old_entries() -> Result<()> {
+    fn test_serial_when_cache_size_exceeded_should_evict_old_entries() -> Result<()> {
         env::set_var(BLOCK_CACHE_SIZE, "2");
         let temp_dir = tempdir()?;
         let store_path = temp_dir.path().to_str().unwrap();

@@ -27,7 +27,10 @@ fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription
     let store_path = temp_dir.path().join("blocks");
     fs::create_dir_all(&store_path)?;
     let store_path: &str = store_path.to_str().unwrap();
-    env::set_var(INITIAL_BLOCK_HASH, "0x7c9fa136d4413fa6173637e883b6998d32e1d675f88cddff9dcbcf331820f4b8");
+    env::set_var(
+        INITIAL_BLOCK_HASH,
+        "0x7c9fa136d4413fa6173637e883b6998d32e1d675f88cddff9dcbcf331820f4b8",
+    );
     env::set_var(STORE_PATH, store_path);
     env::set_var(BLOCK_CACHE_SIZE, "20");
 

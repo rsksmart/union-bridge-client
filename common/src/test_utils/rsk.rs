@@ -109,9 +109,9 @@ pub fn get_third_default_rsk_block() -> RskBlock {
     )
 }
 
-/// A generator for fake RSK blocks that computes dynamic values (difficulty, timestamp,
-/// and total difficulty) based on the block number. This generator is stateless regarding the
-/// parent hash; it calculates the parent hash as `generate_hash(num-1)`.
+/// A stateless generator for fake RSK blocks that computes dynamic values (difficulty, timestamp,
+/// and total difficulty) based on the block number. Regarding the
+/// parent hash, it calculates the parent hash as `generate_hash(num-1)`.
 ///
 /// # Example
 ///
@@ -170,11 +170,11 @@ impl FakeBlockGenerator {
     /// use primitive_types::U256;
     ///
     /// let generator = FakeBlockGenerator::new();
-    /// let diff = generator.difficulty(100);
+    /// let diff = generator.generate_difficulty(100);
     /// // diff should be greater than the base difficulty
     /// assert!(diff > U256::from_dec_str("10000000000000000000000").unwrap());
     /// ```
-    pub fn difficulty(&self, num: u64) -> U256 {
+    pub fn generate_difficulty(&self, num: u64) -> U256 {
         self.base_difficulty + U256::from(num) * self.difficulty_increment
     }
 
@@ -186,11 +186,11 @@ impl FakeBlockGenerator {
     /// use common::test_utils::rsk::FakeBlockGenerator;
     ///
     /// let generator = FakeBlockGenerator::new();
-    /// let ts = generator.timestamp(10);
+    /// let ts = generator.generate_timestamp(10);
     /// // Should increase by approximately 30 seconds per block.
     /// assert!(ts > 1514980800);
     /// ```
-    pub fn timestamp(&self, num: u64) -> i64 {
+    pub fn generate_timestamp(&self, num: u64) -> i64 {
         self.base_timestamp + (num as i64) * self.avg_block_time
     }
 
@@ -205,11 +205,11 @@ impl FakeBlockGenerator {
     /// use primitive_types::U256;
     ///
     /// let generator = FakeBlockGenerator::new();
-    /// let tot_diff = generator.total_difficulty(10);
+    /// let tot_diff = generator.generate_total_difficulty(10);
     /// // The total difficulty should be greater than the base difficulty.
     /// assert!(tot_diff > U256::from_dec_str("10000000000000000000000").unwrap());
     /// ```
-    pub fn total_difficulty(&self, num: u64) -> U256 {
+    pub fn generate_total_difficulty(&self, num: u64) -> U256 {
         let n = U256::from(num);
         let sum_n = n * (n + U256::one()) / U256::from(2u32);
         n * self.base_difficulty + self.difficulty_increment * sum_n
@@ -259,9 +259,9 @@ impl FakeBlockGenerator {
     pub fn generate_block(&self, num: u64) -> RskBlock {
         let parent_hash = self.generate_hash(num - 1);
         let new_hash = self.generate_hash(num);
-        let diff = self.difficulty(num);
-        let tot_diff = self.total_difficulty(num);
-        let ts = self.timestamp(num);
+        let diff = self.generate_difficulty(num);
+        let tot_diff = self.generate_total_difficulty(num);
+        let ts = self.generate_timestamp(num);
         RskBlock::new(
             num,
             new_hash,

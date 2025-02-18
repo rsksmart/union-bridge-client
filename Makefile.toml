@@ -1,0 +1,23 @@
+[env]
+CARGO_MAKE_EXTEND_WORKSPACE_MAKEFILE = true
+
+[tasks.format]
+install_crate = "rustfmt"
+command = "cargo"
+args = ["fmt"]
+
+[tasks.test-non-serial]
+command = "cargo"
+args = ["test", "--", "--skip", "serial"]
+
+[tasks.test-serial]
+command = "cargo"
+args = ["test", "serial", "--", "--test-threads", "1"]
+
+[tasks.prep-commit]
+dependencies = [
+    "format",
+    "test-non-serial",
+    "test-serial"
+]
+
