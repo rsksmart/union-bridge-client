@@ -179,3 +179,92 @@ impl RuntimeSync {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::rpc::AlloyProvider;
+    use serde_json::json;
+    use serde_json::Value;
+    use std::fs;
+
+    const RESPONSE_FILE_PATH: &str = "tests/resources/response.json";
+
+    #[test]
+    fn test_parse_provider_response_when_given_valid_data_should_parse_block_succesfully() {
+        let data = fs::read_to_string(RESPONSE_FILE_PATH).expect("JSON data should be present");
+        let response: Value = serde_json::from_str(&data).expect("Failed to parse JSON");
+        let result: Value = response["result"].clone();
+
+        let block = AlloyProvider::parse_provider_response(result)
+            .expect("JSON data should be valid")
+            .expect("JSON data should map to RSK block");
+
+        assert_eq!(6086082, block.number());
+        assert_eq!(
+            "0x2dbb8027f72a9fc147f165646e67db08c130ca698ff2d9fd02058c455b1a1c76",
+            block.hash()
+        );
+        assert_eq!(
+            "0x9e1898cf54b4fc263c0025b108f824fa703ed51fb74bdcae6da6e1b8cf728afb",
+            block.parent()
+        );
+    }
+
+    #[test]
+    fn test_parse_provider_response_when_given_null_json_should_return_none() {
+        let response = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": null
+        });
+        let result: Value = response["result"].clone();
+
+        let block =
+            AlloyProvider::parse_provider_response(result).expect("JSON data should be valid");
+
+        assert!(block.is_none());
+    }
+
+    #[test]
+    fn test_parse_provider_response_when_given_invalid_type_in_data_should_return_error() {
+        let data = fs::read_to_string(RESPONSE_FILE_PATH).expect("JSON data should be present");
+        let mut response: Value = serde_json::from_str(&data).expect("Failed to parse JSON");
+        response["result"]["hash"] = json!(2);
+        let result: Value = response["result"].clone();
+
+        let block = AlloyProvider::parse_provider_response(result);
+
+        assert!(block.is_err());
+    }
+
+    #[test]
+    fn test_parse_provider_response_when_given_missing_data_should_return_error() {
+        let response = json!({
+         "jsonrpc": "2.0",
+         "id": 1,
+         "result": {
+           "parent": "0x9e1898cf54b4fc263c0025b108f824fa703ed51fb74bdcae6da6e1b8cf728afb"
+         }
+        });
+        let result: Value = response["result"].clone();
+
+        let block = AlloyProvider::parse_provider_response(result);
+
+        assert!(block.is_err());
+    }
+
+    #[test]
+    fn test_parse_provider_response_when_given_null_json_should_not_parse_block_succesfully() {
+        let response = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": null
+        });
+        let result: Value = response["result"].clone();
+
+        let block =
+            AlloyProvider::parse_provider_response(result).expect("JSON data should be valid");
+
+        assert!(block.is_none());
+    }
+}
