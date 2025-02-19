@@ -2,7 +2,6 @@ use crate::event_processor::{event_processor_abi, event_processor_typed};
 use crate::sub::AlloySubscription;
 use alloy_primitives::B256;
 use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
-use alloy_pubsub::PubSubFrontend;
 use alloy_rpc_types::{Filter, FilterSet, Header, Log};
 use anyhow::{anyhow, Result};
 use common::rsk_provider::{RskProvider, RskSubscriptionFilter};
@@ -17,8 +16,11 @@ use tokio::runtime::Runtime;
 // TODO(Jira) error resilience: https://rsklabs.atlassian.net/browse/UB-28
 
 #[derive(Clone)]
-pub struct AlloyProvider {
-    inner: RootProvider<PubSubFrontend>,
+pub struct AlloyProvider<T = RootProvider>
+where
+    T: Provider,
+{
+    inner: T,
     rt_sync: RuntimeSync,
     shutdown_flag: ShutdownFlag,
 }
@@ -27,7 +29,7 @@ impl AlloyProvider {
     pub fn new(url: &str, shutdown_flag: ShutdownFlag) -> Result<Self> {
         let ws = WsConnect::new(url);
         let rt_sync = RuntimeSync::new()?;
-        let root_provider = rt_sync.run(ProviderBuilder::new().on_ws(ws))?;
+        let root_provider = rt_sync.run(ProviderBuilder::default().on_ws(ws))?;
 
         Ok(AlloyProvider {
             inner: root_provider,
