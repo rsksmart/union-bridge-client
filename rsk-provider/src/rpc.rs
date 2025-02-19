@@ -211,7 +211,34 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_provider_response_when_given_invalid_data_should_not_parse_block_succesfully() {
+    fn test_parse_provider_response_when_given_null_json_should_return_none() {
+        let response = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": null
+        });
+        let result: Value = response["result"].clone();
+
+        let block =
+            AlloyProvider::parse_provider_response(result).expect("JSON data should be valid");
+
+        assert!(block.is_none());
+    }
+
+    #[test]
+    fn test_parse_provider_response_when_given_invalid_type_in_data_should_return_error() {
+        let data = fs::read_to_string(RESPONSE_FILE_PATH).expect("JSON data should be present");
+        let mut response: Value = serde_json::from_str(&data).expect("Failed to parse JSON");
+        response["result"]["hash"] = json!(2);
+        let result: Value = response["result"].clone();
+
+        let block = AlloyProvider::parse_provider_response(result);
+
+        assert!(block.is_err());
+    }
+
+    #[test]
+    fn test_parse_provider_response_when_given_missing_data_should_return_error() {
         let response = json!({
          "jsonrpc": "2.0",
          "id": 1,
