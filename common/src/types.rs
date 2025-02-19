@@ -131,8 +131,6 @@ where
         .map(|h: Header| h.block_hash().to_string())
         .map_err(de::Error::custom)?;
 
-    // dbg!((header_hex, header_hash));
-
     Ok(header_hash)
 }
 
