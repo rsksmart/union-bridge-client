@@ -21,7 +21,7 @@ pub struct CachedBlockStore<C: Cache<RskBlock>> {
     block_cache: C,
 }
 
-pub enum StoreKey {
+enum StoreKey {
     BlockByHash(String),
     BlockByNumber(u64),
     BestBlock,
@@ -29,7 +29,7 @@ pub enum StoreKey {
 }
 
 impl StoreKey {
-    pub fn value(&self) -> String {
+    pub(super) fn value(&self) -> String {
         match self {
             StoreKey::BlockByHash(block_hash) => format!("block/hash/{}", block_hash),
             StoreKey::BlockByNumber(block_height) => format!("block/height/{}", block_height),
@@ -45,11 +45,7 @@ impl<C: Cache<RskBlock>> CachedBlockStore<C> {
     }
 
     fn get_from_cache(&self, key: &str) -> Result<Option<RskBlock>> {
-        if let Some(cached_value) = self.block_cache.get(key)? {
-            return Ok(Some(cached_value));
-        }
-
-        Ok(None)
+        Ok(self.block_cache.get(key)?)
     }
 
     fn get_from_db<T: serde::de::DeserializeOwned>(&self, key: &str) -> Result<Option<T>> {
@@ -98,7 +94,6 @@ impl<C: Cache<RskBlock>> CachedBlockStore<C> {
 
     fn reset_back_sync_checkpoint(&self) -> Result<()> {
         let key = &StoreKey::BackSyncCheckpoint.value();
-        self.block_cache.remove(key)?;
         Ok(self.delete_from_db(key)?)
     }
 

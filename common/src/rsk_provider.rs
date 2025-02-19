@@ -1,8 +1,6 @@
-use crate::shutdown_flag::ShutdownFlag;
-use crate::types::{RskBlock, RskLog};
+use crate::types::{ContractInfo, RskBlock, RskEvent, RskLog};
 use anyhow::Error as AnyhowError;
 use anyhow::Result;
-
 use thiserror::Error;
 
 #[cfg(feature = "generate-mocks")]
@@ -14,6 +12,30 @@ pub trait RskSubscription<T> {
     fn unsubscribe(&self) -> Result<()>;
 }
 
+#[derive(Debug)]
+// TODO(Jira) https://rsklabs.atlassian.net/browse/UB-43
+pub struct RskSubscriptionFilter {
+    pub addresses: Vec<String>,
+    pub from_block: Option<u64>,
+    pub topics: Vec<String>,
+}
+
+#[derive(Debug)]
+pub enum BlockNumRef {
+    Latest,
+    Number(u64),
+}
+
+impl RskSubscriptionFilter {
+    pub fn new(addresses: Vec<String>, topics: Vec<String>, from_block: Option<u64>) -> Self {
+        Self {
+            addresses,
+            topics,
+            from_block,
+        }
+    }
+}
+
 #[cfg_attr(feature = "generate-mocks", automock(
     type BlockSubscription = MockRskSubscription<RskBlock>;
     type LogSubscription = MockRskSubscription<RskLog>;
@@ -21,11 +43,14 @@ pub trait RskSubscription<T> {
 pub trait RskProvider {
     type BlockSubscription: RskSubscription<RskBlock>;
     type LogSubscription: RskSubscription<RskLog>;
-    fn subscribe_blocks(&self, shutdown_flag: ShutdownFlag) -> Result<Self::BlockSubscription>;
-    fn subscribe_logs(&self, shutdown_flag: ShutdownFlag) -> Result<Self::LogSubscription>;
+
+    fn subscribe_blocks(&self) -> Result<Self::BlockSubscription>;
+    fn subscribe_logs(&self, filter: RskSubscriptionFilter) -> Result<Self::LogSubscription>;
     fn get_block_by_hash(&self, hash: &str) -> Result<Option<RskBlock>>;
     fn get_block_by_number(&self, num: u64) -> Result<Option<RskBlock>>;
     fn get_best_block(&self) -> Result<RskBlock>;
+    fn decode_log(&self, new_log: RskLog, contract_info: &ContractInfo)
+        -> Result<Option<RskEvent>>;
     fn disconnect(&self) -> Result<()>;
 }
 
@@ -33,7 +58,7 @@ pub trait RskProvider {
 pub enum RskProviderError {
     #[error("Connection with provider closed")]
     Closed,
-    #[error("Unexpected response from provider: {0}")]
+    #[error("Unexpected format from provider: {0}")]
     Format(#[from] serde_json::Error),
     #[error("Unknown error: {0}")]
     Other(String),

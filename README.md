@@ -1,51 +1,75 @@
 # Union Bridge - Monitor
 
-The Union Bridge Monitor is a key part of the Union Bridge Protocol. It helps connect Bitcoin and Rootstock in a trust‑minimized way. In simple terms, it watches for important events on Rootstock and then triggers the next steps in the protocol to handle peg‑ins and peg‑outs.
+The Union Bridge Monitor is a key part of the Union Bridge Protocol. It helps connect Bitcoin and Rootstock, together
+with BitVMX (through the BitVMX Client) in a trust‑minimized way. In simple terms, it watches for important events on
+Rootstock and then triggers the next steps in the protocol to handle peg‑ins and peg‑outs.
 
 ## What the Monitor Does
 
 ### Event Observer
-The monitor constantly scans the Rootstock blockchain for peg‑in and peg‑out requests. It uses **JSON‑RPC endpoints** to subscribe to new block headers and smart contract logs. Then, it extracts only the relevant events, such as peg‑in requests and peg‑out requests.
 
-### State Keeper
-The monitor keeps an internal record of the protocol’s state — for example, which peg‑slots are active. This state is stored using a storage backend (either cached or persisted). When new blocks or transaction confirmations are detected, the monitor updates its state. If an interruption occurs (such as a network issue), the monitor uses its saved state to resume processing.
+The monitor constantly scans the Rootstock blockchain for different events required for the various Union Bridge flows.
+It uses **JSON‑RPC endpoints** to subscribe to new block headers and smart contract logs. Then, it extracts only the
+relevant events, such as peg‑in requests and peg‑out requests. This logic is implemented under `log-indexer`
+crate.
 
-The monitor listens for termination signals (like **SIGINT** or **SIGTERM**) and shuts down gracefully while ensuring that its current state is saved. It also has retry and fallback mechanisms to handle temporary connectivity problems or blockchain reorganizations.
+It also listens every new block produced by Rootstock, storing just the minimal required data that will also be used as
+part of the different Union Bridge flows. This logic is implemented under `block-indexer` crate.
+
+If an interruption occurs (such as a network issue), the monitor uses its saved state to resume processing. The monitor
+listens for termination signals (like **SIGINT** or **SIGTERM**) and shuts down gracefully while ensuring that its
+current state is saved. It also implements retry and fallback mechanisms to handle temporary connectivity problems or
+blockchain reorganizations.
 
 ### Transaction Dispatcher
-Based on the events it sees and its current state, the monitor triggers the next step in the Union Bridge protocol. For example, it might collect signatures and send a peg‑out kick‑off transaction.
 
-When a peg‑out needs to be validated, the monitor gathers all the necessary information and passes it to the **check_fork module** via the **Union Client**. **(TBD: final architecture of the Union Client vs. Monitor integration is still under discussion.)**
+Based on the received events and its current state, the monitor triggers the next step in the Union Bridge protocol.
+
+Example: When a peg‑out needs to be validated, the monitor gathers all the necessary information and passes it to the *
+*check_fork module** via the **Union Client**. **(TBD: final architecture of the Union Client vs. Monitor integration is
+still under discussion.)**
 
 ## Interfaces
 
 - **Blockchain Nodes and Smart Contracts:**  
-  The monitor interacts with Rootstock nodes via **JSON-RPC**, enabling it to retrieve the latest blocks, get events emitted by the Union Bridge contracts, verify transaction inclusion, and broadcast transactions as needed. In the long term, an open peer-to-peer (P2P) system could be introduced to enhance resilience against individual node failures.
+  The monitor interacts with Rootstock nodes via **JSON-RPC**, enabling it to retrieve the latest blocks, get events
+  emitted by the Union Bridge contracts, verify transaction inclusion, and broadcast transactions as needed. In the long
+  term, an open peer-to-peer (P2P) system could be introduced to enhance resilience against individual node failures.
 
 - **Union Client:**  
-  The Union Client is a command‑line tool (or library) that connects the monitor with other subsystems, including the check_fork module. **(TBD: final details of this integration and the possibility to include it in the monitor are under discussion.)**
+  The Union Client is a command‑line tool (or library) that connects the monitor with other subsystems, including the
+  check_fork module. **(TBD: final details of this integration and the possibility to include it in the monitor are
+  under discussion.)**
 
 - **Utilities:**  
   The repository also includes extra tools such as:
-  - **Check Gaps:** A tool to verify that there are no missing blocks in the monitor’s index.
-  - **Generate ELF Demo:** A utility that shows how to create the input for the check_fork function and how to produce Stark proofs. This demo helps illustrate how the monitor integrates with the ZKVM pipeline.
+    - **Check Gaps:** A tool to verify that there are no missing blocks in the monitor’s index.
+    - **Generate ELF Demo:** A utility that shows how to create the input for the check_fork function and how to produce
+      Stark proofs. This demo helps illustrate how the monitor integrates with the ZKVM pipeline.
 
 ## Summary
 
 The Union Bridge Monitor is not just a simple block indexer. It:
+
 - **Monitors blockchain events** on Rootstock.
-- **Keeps track of the current protocol state.**
+- **Keeps track of relevant aspects of the current protocol state.**
 - **Dispatches protocol transactions** when needed.
 - **Integrates with a zero‑knowledge proof pipeline** for fork validation.
 - **Interfaces with the Union Bridge contracts and the Union Client** for full protocol orchestration.
 
-
 # How to run the Monitor?
 
-User as referece `.env.sample` and place a version named `.env` in the `monitor` folder.
+Both `log-indexer` and `block-indexer` need to be run. TBD if we create an orchestrator to run both at the same time.
+Both crates are configurable, please check `.env.sample` as a reference and place your ouwn version named `.env` in the
+`monitor` directory.
 
 ```bash
-cd monitor
+cd log-indexer
+RUST_BACKTRACE=1 RUST_LOG=debug cargo run
+```
+
+```bash
+cd block-indexer
 RUST_BACKTRACE=1 RUST_LOG=debug cargo run
 ```
 
@@ -115,6 +139,7 @@ for the remaining steps. Note that this doc is pointing to a WIP branch.
 # Developer setup
 
 Before contributing to the project, please run the following commands to set up the project:
+
 1. Install _rust_ and _cargo_
 2. Install _cargo-make_: `cargo install cargo-make`
 3. Setup git hooks: `git config core.hooksPath .githooks`
