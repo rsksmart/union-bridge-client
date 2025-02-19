@@ -16,6 +16,20 @@ pub struct RskBlock {
     pow: String,
 }
 
+impl From<RskRpcBlock> for RskBlock {
+    fn from(rpc_block: RskRpcBlock) -> Self {
+        Self::new(
+            rpc_block.number,
+            rpc_block.hash,
+            rpc_block.parent,
+            rpc_block.difficulty,
+            rpc_block.timestamp,
+            rpc_block.pow,
+            rpc_block.total_difficulty,
+        )
+    }
+}
+
 impl RskBlock {
     pub fn new(
         number: u64,
@@ -120,20 +134,6 @@ where
     // dbg!((header_hex, header_hash));
 
     Ok(header_hash)
-}
-
-impl From<RskRpcBlock> for RskBlock {
-    fn from(rpc_block: RskRpcBlock) -> Self {
-        RskBlock {
-            number: rpc_block.number,
-            hash: rpc_block.hash,
-            parent: rpc_block.parent,
-            difficulty: rpc_block.difficulty,
-            timestamp: rpc_block.timestamp,
-            pow: rpc_block.pow,
-            total_difficulty: rpc_block.total_difficulty,
-        }
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
