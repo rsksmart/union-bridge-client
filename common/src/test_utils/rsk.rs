@@ -1,4 +1,10 @@
-use crate::types::RskBlock;
+use std::{thread, time::Duration};
+
+use crate::{
+    rsk_provider::{MockRskProvider, MockRskSubscription},
+    shutdown_flag::ShutdownFlag,
+    types::RskBlock,
+};
 use primitive_types::U256;
 use sha2::{Digest, Sha256};
 
@@ -272,4 +278,106 @@ impl FakeBlockGenerator {
             tot_diff,
         )
     }
+}
+
+pub fn set_provider_expect_get_block_by_hash(
+    mock: &mut MockRskProvider,
+    expected_hash_string: String,
+    generator: &FakeBlockGenerator,
+    block_number: u64,
+) {
+    // Clone the generator so it can be moved into the closure.
+    let generator_clone = generator.clone();
+    mock.expect_get_block_by_hash()
+        .with(mockall::predicate::eq(expected_hash_string))
+        .returning(move |_hash| Ok(Some(generator_clone.generate_block(block_number))));
+}
+
+pub fn set_provider_expect_get_best_block(
+    mock: &mut MockRskProvider,
+    generator: &FakeBlockGenerator,
+    block_number: u64,
+) {
+    let generator_clone = generator.clone();
+    mock.expect_get_best_block()
+        .returning(move || Ok(generator_clone.generate_block(block_number)));
+}
+
+pub fn set_provider_expect_get_block_by_number(
+    mock: &mut MockRskProvider,
+    generator: &FakeBlockGenerator,
+    valid_range: std::ops::RangeInclusive<u64>,
+) {
+    set_provider_expect_get_block_by_number_generic(mock, generator, valid_range, |_| {});
+}
+
+pub fn set_provider_expect_get_block_by_number_with_shutdown_at_block(
+    mock: &mut MockRskProvider,
+    generator: &FakeBlockGenerator,
+    shutdown_flag: &ShutdownFlag,
+    valid_range: std::ops::RangeInclusive<u64>,
+    block_number_at_shutdown: u64,
+) {
+    let shutdown_flag_clone = shutdown_flag.clone();
+    set_provider_expect_get_block_by_number_generic(mock, generator, valid_range, move |num| {
+        if num == block_number_at_shutdown {
+            shutdown_flag_clone.set(true);
+        }
+    });
+}
+
+pub fn set_provider_expect_get_block_by_number_generic<F>(
+    mock: &mut MockRskProvider,
+    generator: &FakeBlockGenerator,
+    valid_range: std::ops::RangeInclusive<u64>,
+    callback: F,
+) where
+    F: Fn(u64) + Send + Sync + 'static,
+{
+    let generator_clone = generator.clone();
+    mock.expect_get_block_by_number().returning(move |num| {
+        if valid_range.contains(&num) {
+            callback(num);
+            Ok(Some(generator_clone.generate_block(num)))
+        } else {
+            Ok(None)
+        }
+    });
+}
+
+pub fn set_provider_expect_subscribe_blocks(
+    mock: &mut MockRskProvider,
+    generator: &FakeBlockGenerator,
+    shutdown_flag: &ShutdownFlag,
+    block_number_subscription_init: u64,
+    block_number_subscription_max: u64,
+    delay_between_blocks_subscription: u64,
+) {
+    let generator_clone = generator.clone();
+    let shutdown_flag_clone = shutdown_flag.clone();
+    let mut counter = block_number_subscription_init;
+    mock.expect_subscribe_blocks().returning({
+        move |_shutdown_flag| {
+            let mut mock_sub = MockRskSubscription::<RskBlock>::new();
+            let generator_clone = generator_clone.clone();
+            let shutdown_flag_clone = shutdown_flag_clone.clone();
+            mock_sub.expect_next().returning({
+                move || {
+                    thread::sleep(Duration::from_millis(delay_between_blocks_subscription));
+                    let block = generator_clone.generate_block(counter);
+                    counter += 1;
+                    if counter <= block_number_subscription_max {
+                        Ok(block)
+                    } else {
+                        while !shutdown_flag_clone.is_on() {
+                            thread::sleep(Duration::from_millis(20));
+                        }
+                        Ok(block)
+                    }
+                }
+            });
+            mock_sub.expect_unsubscribe().returning(|| Ok(()));
+            Ok(mock_sub)
+        }
+    });
 }
