@@ -1,0 +1,10 @@
+indexer:
+  initial_block_hash: "<FIRST_BLOCK_TO_INDEX_HASH>"
+  storage:
+    path: "<PATH_TO_YOUR_DB>"
+  cache:
+    size: "<BLOCK_CACHE_SIZE>"
+
+provider:
+  rootstock:
+    url: "wss://public-node.testnet.rsk.co/websocket"
