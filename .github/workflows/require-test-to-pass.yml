@@ -1,0 +1,66 @@
+name: Automated Tests
+
+on:
+  pull_request:
+    types: [ opened, synchronize, reopened, ready_for_review ]
+    branches:
+      - main
+
+jobs:
+  automated-tests:
+    name: 'Automated Tests'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      pull-requests: write
+      statuses: write
+
+    steps:
+
+      ########################################
+      ### Needed for local tests with act ###
+      ########################################
+      #      - name: Set up Rust
+      #        uses: actions-rust-lang/setup-rust-toolchain@v1
+      #
+      #      - name: Cache Rust installation
+      #        uses: actions/cache@v3
+      #        with:
+      #          path: |
+      #            ~/.rustup
+      #          key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.lock') }}
+      #          restore-keys: |
+      #            ${{ runner.os }}-rust-
+      #
+      #      - name: Install RocksDB Dependencies
+      #        run: |
+      #          sudo apt-get update
+      #          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libclang-dev clang
+      ########################################
+
+      - name: Fix Fairgate Git access
+        run: |
+          git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/".insteadOf "ssh://git@github.com/"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-rust-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-rust-cargo-
+
+      - name: Run tests
+        run: cargo test --all-features
+        env:
+          BLOCK_CACHE_SIZE: 1000
+          STORE_PATH: ".rootstock_monitor"
+          RSK_PROVIDER_URL: "wss://public-node.testnet.rsk.co/websocket"
+          INITIAL_BLOCK_HASH: "0x3ad0e3c0080972139dfec6ba6fcb779715781bba95976c707ca9edd68ff733ed"
