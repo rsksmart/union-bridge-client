@@ -1,9 +1,12 @@
 indexer:
-  initial_block_hash: "<FIRST_BLOCK_TO_INDEX_HASH>"
+  # initial block hash to start index
+  initial_block_hash: "0x0"
   storage:
-    path: "<PATH_TO_YOUR_DB>"
+    # path to db
+    path: "/foo/bar"
   cache:
-    size: "<BLOCK_CACHE_SIZE>"
+    # block cache size
+    size: 10
 
 provider:
   rootstock:
