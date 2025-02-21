@@ -115,3 +115,28 @@ impl Config {
         ))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::config::Config;
+    use std::env;
+
+    #[test]
+    fn test_config_load_when_dev_config_set_should_load_config_successfully() {
+        let config_path = format!("{}/../config/dev", env!("CARGO_MANIFEST_DIR"));
+        let config = Config::load(&config_path).expect("Failed to load config");
+
+        // Check config exists
+        assert!(!config.indexer.initial_block_hash.is_empty());
+        assert!(!config.indexer.storage.path.is_empty());
+        assert!(config.indexer.cache.size > 0);
+        assert!(!config.provider.rootstock.url.is_empty());
+
+        // Check contracts config exists
+        assert!(!config.contracts.is_empty());
+        for (_, contract) in &config.contracts {
+            assert!(!contract.name.is_empty());
+            assert!(!contract.address.is_empty());
+        }
+    }
+}
