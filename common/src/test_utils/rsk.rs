@@ -1,3 +1,8 @@
+use log::{debug, error, info, warn};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::{thread, time::Duration};
 
 use crate::{
@@ -116,8 +121,8 @@ pub fn get_third_default_rsk_block() -> RskBlock {
 }
 
 /// A stateless generator for fake RSK blocks that computes dynamic values (difficulty, timestamp,
-/// and total difficulty) based on the block number. Regarding the
-/// parent hash, it calculates the parent hash as `generate_hash(num-1)`.
+/// total difficulty and average block time) based on the block number. It has a built-in mechanism
+/// to handle generation of alternative blocks (to simulate reorganizations).`.
 ///
 /// # Example
 ///
@@ -126,13 +131,9 @@ pub fn get_third_default_rsk_block() -> RskBlock {
 /// use primitive_types::U256;
 ///
 /// let mut generator = FakeBlockGenerator::new();
-/// let block1 = generator.generate_block(1);
-/// let block2 = generator.generate_block(2);
-/// let block3 = generator.generate_block(3);
+/// let block = generator.generate_block(5, 0, false);
 ///
-/// assert_eq!(block1.number(), 1);
-/// assert_eq!(block2.number(), 2);
-/// assert_eq!(block3.number(), 3);
+/// assert_eq!(block.number(), 5);
 /// ```
 ///
 
@@ -167,87 +168,40 @@ impl FakeBlockGenerator {
         }
     }
 
-    /// Computes the difficulty for a given block number.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use common::test_utils::rsk::FakeBlockGenerator;
-    /// use primitive_types::U256;
-    ///
-    /// let generator = FakeBlockGenerator::new();
-    /// let diff = generator.generate_difficulty(100);
-    /// // diff should be greater than the base difficulty
-    /// assert!(diff > U256::from_dec_str("10000000000000000000000").unwrap());
-    /// ```
-    pub fn generate_difficulty(&self, num: u64) -> U256 {
-        self.base_difficulty + U256::from(num) * self.difficulty_increment
+    fn generate_difficulty(&self, height: u64) -> U256 {
+        self.base_difficulty + U256::from(height) * self.difficulty_increment
     }
 
-    /// Computes the timestamp for a given block number.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use common::test_utils::rsk::FakeBlockGenerator;
-    ///
-    /// let generator = FakeBlockGenerator::new();
-    /// let ts = generator.generate_timestamp(10);
-    /// // Should increase by approximately 30 seconds per block.
-    /// assert!(ts > 1514980800);
-    /// ```
-    pub fn generate_timestamp(&self, num: u64) -> i64 {
-        self.base_timestamp + (num as i64) * self.avg_block_time
+    fn generate_timestamp(&self, height: u64) -> i64 {
+        self.base_timestamp + (height as i64) * self.avg_block_time
     }
 
-    /// Computes the total difficulty up to and including the given block number.
-    ///
-    /// Uses the formula: T(n) = n * base_difficulty + difficulty_increment * (n*(n+1)/2)
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use common::test_utils::rsk::FakeBlockGenerator;
-    /// use primitive_types::U256;
-    ///
-    /// let generator = FakeBlockGenerator::new();
-    /// let tot_diff = generator.generate_total_difficulty(10);
-    /// // The total difficulty should be greater than the base difficulty.
-    /// assert!(tot_diff > U256::from_dec_str("10000000000000000000000").unwrap());
-    /// ```
-    pub fn generate_total_difficulty(&self, num: u64) -> U256 {
-        let n = U256::from(num);
+    fn generate_total_difficulty(&self, height: u64) -> U256 {
+        let n = U256::from(height);
         let sum_n = n * (n + U256::one()) / U256::from(2u32);
         n * self.base_difficulty + self.difficulty_increment * sum_n
     }
 
-    /// Generates a realistic fake hash based on the block number.
-    ///
-    /// If `num` is 0, returns the genesis hash.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use common::test_utils::rsk::FakeBlockGenerator;
-    ///
-    /// let generator = FakeBlockGenerator::new();
-    /// let hash0 = generator.generate_hash(0);
-    /// assert_eq!(hash0, "0x0000000000000000000000000000000000000000000000000000000000000000");
-    /// ```
-    pub fn generate_hash(&self, num: u64) -> String {
-        if num == 0 {
-            return "0x0000000000000000000000000000000000000000000000000000000000000000"
-                .to_string();
-        }
+    fn generate_hash(&self, height: u64, flavor: &str) -> String {
         let mut hasher = Sha256::new();
-        hasher.update(num.to_le_bytes());
+        let bytes = if flavor.is_empty() {
+            height.to_le_bytes().to_vec()
+        } else {
+            height
+                .to_le_bytes()
+                .iter()
+                .chain(flavor.as_bytes())
+                .copied()
+                .collect()
+        };
+        hasher.update(&bytes);
         let result = hasher.finalize();
         format!("0x{:064x}", result)
     }
 
-    /// Generates a fake RSK block for the given block number.
+    /// Generates a fake RSK block for the given block height.
     ///
-    /// The block's parent hash is calculated as `generate_hash(num-1)`.
+    /// The block's parent hash is calculated as `generate_hash(height-1)`.
     ///
     /// # Example
     ///
@@ -255,22 +209,44 @@ impl FakeBlockGenerator {
     /// use common::test_utils::rsk::FakeBlockGenerator;
     ///
     /// let mut generator = FakeBlockGenerator::new();
-    /// let block = generator.generate_block(100);
-    /// // The block number should be set as provided.
+    /// let block = generator.generate_block(100, 0, true);
+    /// // The block height should be set as provided.
     /// assert_eq!(block.number(), 100);
     /// // The parent hash should equal the hash for block 99.
-    /// let expected_parent = generator.generate_hash(99);
-    /// assert_eq!(block.parent(), expected_parent);
+    /// let expected_parent_hash = "0xef2310cd0c172059feb3c382c56acfbc8127222d4d2cc51b78db3019ce1a83f6";
+    /// assert_eq!(expected_parent_hash, block.parent());
     /// ```
-    pub fn generate_block(&self, num: u64) -> RskBlock {
-        let parent_hash = self.generate_hash(num - 1);
-        let new_hash = self.generate_hash(num);
-        let diff = self.generate_difficulty(num);
-        let tot_diff = self.generate_total_difficulty(num);
-        let ts = self.generate_timestamp(num);
+    pub fn generate_block(&self, height: u64, reorg_block_height: u64, is_reorg: bool) -> RskBlock {
+        let parent_hash = if height == 0 {
+            "0x0000000000000000000000000000000000000000000000000000000000000000".to_string()
+        } else {
+            self.generate_hash(
+                height - 1,
+                if (height > reorg_block_height) && is_reorg {
+                    "alt"
+                } else {
+                    ""
+                },
+            )
+        };
+        let block_hash = self.generate_hash(
+            height,
+            if (height >= reorg_block_height) && is_reorg {
+                "alt"
+            } else {
+                ""
+            },
+        );
+        debug!(
+            "Generating block {} with hash: {} -- parent hash: {} -- is_reorg: {}",
+            height, block_hash, parent_hash, is_reorg
+        );
+        let diff = self.generate_difficulty(height);
+        let tot_diff = self.generate_total_difficulty(height);
+        let ts = self.generate_timestamp(height);
         RskBlock::new(
-            num,
-            new_hash,
+            height,
+            block_hash,
             parent_hash,
             diff,
             ts as u64,
@@ -282,25 +258,47 @@ impl FakeBlockGenerator {
 
 pub fn set_provider_expect_get_block_by_hash(
     mock: &mut MockRskProvider,
+    is_reorg: Arc<AtomicBool>,
     expected_hash_string: String,
     generator: &FakeBlockGenerator,
-    block_number: u64,
+    block_height: u64,
+    block_height_reorg_from: u64,
 ) {
-    // Clone the generator so it can be moved into the closure.
     let generator_clone = generator.clone();
     mock.expect_get_block_by_hash()
         .with(mockall::predicate::eq(expected_hash_string))
-        .returning(move |_hash| Ok(Some(generator_clone.generate_block(block_number))));
+        .returning(move |_hash| {
+            let reorg_active = is_reorg.load(Ordering::SeqCst);
+            let reorg_from = if reorg_active {
+                block_height_reorg_from
+            } else {
+                0
+            };
+            Ok(Some(generator_clone.generate_block(
+                block_height,
+                reorg_from,
+                reorg_active,
+            )))
+        });
 }
 
 pub fn set_provider_expect_get_best_block(
     mock: &mut MockRskProvider,
+    is_reorg: Arc<AtomicBool>,
     generator: &FakeBlockGenerator,
-    block_number: u64,
+    block_height: u64,
+    block_height_reorg_from: u64,
 ) {
     let generator_clone = generator.clone();
-    mock.expect_get_best_block()
-        .returning(move || Ok(generator_clone.generate_block(block_number)));
+    mock.expect_get_best_block().returning(move || {
+        let reorg_active = is_reorg.load(Ordering::SeqCst);
+        let reorg_from = if reorg_active {
+            block_height_reorg_from
+        } else {
+            0
+        };
+        Ok(generator_clone.generate_block(block_height, reorg_from, reorg_active))
+    });
 }
 
 pub fn set_provider_expect_get_block_by_number(
@@ -316,11 +314,11 @@ pub fn set_provider_expect_get_block_by_number_with_shutdown_at_block(
     generator: &FakeBlockGenerator,
     shutdown_flag: &ShutdownFlag,
     valid_range: std::ops::RangeInclusive<u64>,
-    block_number_at_shutdown: u64,
+    block_height_at_shutdown: u64,
 ) {
     let shutdown_flag_clone = shutdown_flag.clone();
-    set_provider_expect_get_block_by_number_generic(mock, generator, valid_range, move |num| {
-        if num == block_number_at_shutdown {
+    set_provider_expect_get_block_by_number_generic(mock, generator, valid_range, move |height| {
+        if height == block_height_at_shutdown {
             shutdown_flag_clone.set(true);
         }
     });
@@ -335,10 +333,46 @@ pub fn set_provider_expect_get_block_by_number_generic<F>(
     F: Fn(u64) + Send + Sync + 'static,
 {
     let generator_clone = generator.clone();
-    mock.expect_get_block_by_number().returning(move |num| {
-        if valid_range.contains(&num) {
-            callback(num);
-            Ok(Some(generator_clone.generate_block(num)))
+    mock.expect_get_block_by_number().returning(move |height| {
+        if valid_range.contains(&height) {
+            callback(height);
+            Ok(Some(generator_clone.generate_block(height, 0, false)))
+        } else {
+            Ok(None)
+        }
+    });
+}
+
+pub fn set_provider_expect_get_block_by_number_with_reorg(
+    mock: &mut MockRskProvider,
+    is_reorg: Arc<AtomicBool>,
+    generator: &FakeBlockGenerator,
+    valid_range: std::ops::RangeInclusive<u64>,
+    block_height_reorg_happens_at: u64,
+    block_height_reorg_from: u64,
+) {
+    let generator_clone = generator.clone();
+    mock.expect_get_block_by_number().returning(move |height| {
+        if valid_range.contains(&height) {
+            if height == block_height_reorg_happens_at {
+                is_reorg.store(true, Ordering::SeqCst);
+                info!(
+                    "Reorg initiated at block height {} with hash {}",
+                    height,
+                    generator_clone.generate_hash(height, "alt")
+                );
+            }
+            let reorg_active = is_reorg.load(Ordering::SeqCst);
+            let reorg_from = if reorg_active {
+                block_height_reorg_from
+            } else {
+                0
+            };
+            Ok(Some(generator_clone.generate_block(
+                height,
+                reorg_from,
+                reorg_active,
+            )))
         } else {
             Ok(None)
         }
@@ -347,26 +381,38 @@ pub fn set_provider_expect_get_block_by_number_generic<F>(
 
 pub fn set_provider_expect_subscribe_blocks(
     mock: &mut MockRskProvider,
+    is_reorg: Arc<AtomicBool>,
     generator: &FakeBlockGenerator,
     shutdown_flag: &ShutdownFlag,
-    block_number_subscription_init: u64,
-    block_number_subscription_max: u64,
+    block_height_reorg_from: u64,
+    block_height_subscription_init: u64,
+    block_height_subscription_max: u64,
     delay_between_blocks_subscription: u64,
 ) {
     let generator_clone = generator.clone();
     let shutdown_flag_clone = shutdown_flag.clone();
-    let mut counter = block_number_subscription_init;
+    let mut height_subscr_counter = block_height_subscription_init;
     mock.expect_subscribe_blocks().returning({
         move |_shutdown_flag| {
             let mut mock_sub = MockRskSubscription::<RskBlock>::new();
             let generator_clone = generator_clone.clone();
+            let is_reorg_clone = is_reorg.clone();
             let shutdown_flag_clone = shutdown_flag_clone.clone();
             mock_sub.expect_next().returning({
                 move || {
+                    let reorg_active = is_reorg_clone.clone().load(Ordering::SeqCst);
                     thread::sleep(Duration::from_millis(delay_between_blocks_subscription));
-                    let block = generator_clone.generate_block(counter);
-                    counter += 1;
-                    if counter <= block_number_subscription_max {
+                    let block = if reorg_active {
+                        generator_clone.generate_block(
+                            height_subscr_counter,
+                            block_height_reorg_from,
+                            reorg_active,
+                        )
+                    } else {
+                        generator_clone.generate_block(height_subscr_counter, 0, reorg_active)
+                    };
+                    height_subscr_counter += 1;
+                    if height_subscr_counter <= block_height_subscription_max {
                         Ok(block)
                     } else {
                         while !shutdown_flag_clone.is_on() {

@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+log = { workspace = true }
 serde = { workspace = true }
 hex = { workspace = true }
 anyhow = { workspace = true }
