@@ -1,12 +1,9 @@
 use crate::{errors::ConfigError, types::ContractInfo};
 use config;
-use log::{info, warn};
+use log::info;
 use serde::Deserialize;
-use std::{collections::HashMap, env, fs};
+use std::{collections::HashMap, fs};
 use yaml_rust::{yaml::Hash, Yaml, YamlLoader};
-
-const DEFAULT_ENV: &str = "dev";
-const CONFIG_PATH: &str = "config";
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -20,7 +17,7 @@ pub struct Config {
 #[derive(Debug, Deserialize)]
 pub struct IndexerConfig {
     pub initial_block_hash: String,
-    pub store: StorageConfig,
+    pub storage: StorageConfig,
     pub cache: CacheConfig,
 }
 
@@ -45,30 +42,17 @@ pub struct RootstockConfig {
 }
 
 impl Config {
-    pub fn load() -> Result<Self, ConfigError> {
-        let env = Self::get_env();
+    pub fn load(config_path: &str) -> Result<Self, ConfigError> {
+        let mut config = Self::parse_config(&config_path)?;
 
-        let mut config = Self::parse_config(&env)?;
-
-        let contracts = Self::parse_contracts(&env)?;
+        let contracts = Self::parse_contracts(&config_path)?;
         config.contracts = contracts;
 
         Ok(config)
     }
 
-    fn get_env() -> String {
-        env::var("UNION_BRIDGE_MONITOR_ENV").unwrap_or_else(|_| {
-            let default_env = DEFAULT_ENV.to_string();
-            warn!(
-                "UNION_BRIDGE_MONITOR_ENV not set. Using default environment: {}",
-                default_env
-            );
-            default_env
-        })
-    }
-
-    fn parse_config(env: &str) -> Result<Self, ConfigError> {
-        let config_path = format!("{}/{}/union-bridge-monitor.yaml", CONFIG_PATH, env);
+    fn parse_config(config_path: &str) -> Result<Self, ConfigError> {
+        let config_path = format!("{}/union-bridge-monitor.yaml", config_path);
 
         let config = config::Config::builder()
             .add_source(config::File::with_name(&config_path))
@@ -80,11 +64,11 @@ impl Config {
             .map_err(ConfigError::ConfigFileError)
     }
 
-    fn parse_contracts(env: &str) -> Result<HashMap<String, ContractInfo>, ConfigError> {
-        let contracts_path = format!("{}/{}/contracts/contracts.yaml", CONFIG_PATH, env);
-        let abi_path = format!("{}/{}/contracts", CONFIG_PATH, env);
+    fn parse_contracts(config_path: &str) -> Result<HashMap<String, ContractInfo>, ConfigError> {
+        let contracts_path = format!("{}/contracts/contracts.yaml", config_path);
+        let abi_path = format!("{}/contracts", config_path);
 
-        let data = fs::read_to_string(&contracts_path).expect("Failed to read file dat");
+        let data = fs::read_to_string(&contracts_path).expect("Failed to read file data");
         let yaml_data = YamlLoader::load_from_str(&data).expect("Failed to parse YAML");
 
         let contracts = yaml_data
