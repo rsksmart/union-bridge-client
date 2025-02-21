@@ -1036,7 +1036,6 @@ name = "block-indexer"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "clap",
  "common",
  "log",
  "log4rs",
@@ -1144,8 +1143,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "block-indexer",
- "clap",
  "common",
+ "dotenv",
  "log",
  "rsk-provider",
 ]
@@ -1223,7 +1222,6 @@ checksum = "5b63caa9aa9397e2d9480a9b13673856c78d8ac123288526c37d7839f2a86990"
 name = "common"
 version = "0.1.0"
 dependencies = [
- "alloy-json-abi",
  "anyhow",
  "bitcoin",
  "config",
@@ -1237,7 +1235,9 @@ dependencies = [
  "serde_json",
  "sha2",
  "signal-hook",
+ "tempfile",
  "thiserror 2.0.11",
+ "yaml-rust",
 ]
 
 [[package]]
@@ -1498,6 +1498,12 @@ checksum = "442039f5147480ba31067cb00ada1adae6892028e40e45fc5de7b7df6dcc1b5f"
 dependencies = [
  "const-random",
 ]
+
+[[package]]
+name = "dotenv"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77c90badedccf4105eca100756a0b1289e191f6fcbdadd3cee1d2f614f97da8f"
 
 [[package]]
 name = "downcast"
@@ -2387,6 +2393,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "linked-hash-map"
+version = "0.5.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0717cef1bc8b636c6e1c1bbdefc09e6322da8a9321966e8928ef80d20f7f770f"
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2422,7 +2434,6 @@ name = "log-indexer"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "clap",
  "common",
  "log",
  "log4rs",
@@ -4700,6 +4711,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05f360fc0b24296329c78fda852a1e9ae82de9cf7b27dae4b7f62f118f77b9ed"
 dependencies = [
  "tap",
+]
+
+[[package]]
+name = "yaml-rust"
+version = "0.4.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "56c1936c4cc7a1c9ab21a1ebb602eb942ba868cbd44a99cb7cdc5892335e1c85"
+dependencies = [
+ "linked-hash-map",
 ]
 
 [[package]]

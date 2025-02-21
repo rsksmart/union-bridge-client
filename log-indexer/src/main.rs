@@ -1,40 +1,27 @@
 use anyhow::{Context, Result};
-use common::rsk_indexer::RskIndexer;
-use common::shutdown_flag::ShutdownFlag;
-use dotenv::dotenv;
+use common::{config::Config, rsk_indexer::RskIndexer, shutdown_flag::ShutdownFlag};
 use log::{error, info};
-use log_indexer::indexer::LogIndexer;
-use log_indexer::managed_contracts;
-use log_indexer::store::RawLogStore;
+use log_indexer::{indexer::LogIndexer, store::RawLogStore};
 use rsk_provider::rpc::AlloyProvider;
-use std::env;
 
 fn main() -> Result<()> {
-    dotenv().expect("Failed to load .env file");
-    dotenv::from_filename("../.env").expect("Failed to load global .env file");
+    log4rs::init_file("config/log4rs.yaml", Default::default())
+        .expect("Failed to load log4rs config");
 
-    log4rs::init_file("../log4rs.yml", Default::default()).expect("Failed to load log4rs config");
+    let config = Config::load("config/dev").expect("Failed to load config");
 
-    let store_path = env::var("STORE_PATH").expect("STORE_PATH not set in env");
-    let store = RawLogStore::new(&format!("{}/logs", store_path))?;
+    let store = RawLogStore::new(&format!("{}/logs", config.indexer.storage.path))?;
 
     let shutdown_flag = ShutdownFlag::init();
 
-    let rsk_url = env::var("RSK_PROVIDER_URL").expect("RSK_PROVIDER_URL not set in env");
-    let alloy_provider = AlloyProvider::new(&rsk_url, shutdown_flag.clone())
-        .expect("Failed to create AlloyProvider");
-
-    let initial_block_hash =
-        env::var("INITIAL_BLOCK_HASH").expect("INITIAL_BLOCK_HASH not set in env");
-
-    let managed_contracts = managed_contracts::load_managed_contracts_from_config("./config")
-        .expect("Failed to load managed contracts");
+    let alloy_provider = AlloyProvider::new(&config.provider.rootstock.url, shutdown_flag.clone())
+        .expect("Failed to create AlloyProvider (unrecoverable)");
 
     let indexer = LogIndexer::new(
         store,
         alloy_provider,
-        &initial_block_hash,
-        managed_contracts,
+        &config.indexer.initial_block_hash,
+        config.contracts,
         shutdown_flag,
     )
     .context("Failed to create LogIndexer")?;
