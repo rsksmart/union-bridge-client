@@ -43,9 +43,9 @@ pub struct RootstockConfig {
 
 impl Config {
     pub fn load(config_path: &str) -> Result<Self, ConfigError> {
-        let mut config = Self::parse_config(&config_path)?;
+        let mut config = Self::parse_config(config_path)?;
 
-        let contracts = Self::parse_contracts(&config_path)?;
+        let contracts = Self::parse_contracts(config_path)?;
         config.contracts = contracts;
 
         Ok(config)
