@@ -12,8 +12,6 @@ use std::env;
 const FINALITY_FOR_CHECK: u8 = 10;
 
 fn main() -> Result<()> {
-    env_logger::init();
-
     dotenv().expect("Failed to load .env file");
 
     let store_path = env::var("STORE_PATH").expect("STORE_PATH not set in env");

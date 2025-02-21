@@ -31,16 +31,8 @@ impl RawLogStore {
         Ok(Self { db })
     }
 
-    fn get_from_db<T: serde::de::DeserializeOwned>(&self, key: &str) -> Result<Option<T>> {
-        Ok(self.db.get(key)?)
-    }
-
     fn set_on_db<T: serde::ser::Serialize>(&self, key: &str, value: &T) -> Result<()> {
         Ok(self.db.set(key, value, None)?)
-    }
-
-    fn delete_from_db(&self, key: &str) -> Result<()> {
-        Ok(self.db.delete(key)?)
     }
 }
 
@@ -51,7 +43,7 @@ impl LogStore for RawLogStore {
             log.info().tx_hash().to_string(),
             log.info().log_index(),
         )
-            .value();
+        .value();
         self.set_on_db(&key, log)?;
         Ok(())
     }
