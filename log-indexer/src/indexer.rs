@@ -57,8 +57,7 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
 
         // TODO(Jira) Address this hardcoding in scope of https://rsklabs.atlassian.net/browse/UB-45
         let block_from = best_block.number() - 10;
-        let filter =
-            RskSubscriptionFilter::new(contract_addresses, vec![], Some(block_from));
+        let filter = RskSubscriptionFilter::new(contract_addresses, vec![], Some(block_from));
 
         info!(
             "[subscribe_logs] Start subscribe_logs with filter {:?}...",
