@@ -1,7 +1,8 @@
-.DS_Store
-**/target
-.idea
-**/stark-proof.bin
-**/check_fork_args.bin
 **/.env
 **/app.log*
+**/check_fork_args.bin
+**/stark-proof.bin
+**/target
+.DS_Store
+.idea
+config/dev/config.yaml
