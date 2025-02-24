@@ -52,7 +52,7 @@ impl Config {
     }
 
     fn parse_config(config_path: &str) -> Result<Self, ConfigError> {
-        let config_path = format!("{}/union-bridge-monitor.yaml", config_path);
+        let config_path = format!("{}/config.yaml", config_path);
 
         let config = config::Config::builder()
             .add_source(config::File::with_name(&config_path))
