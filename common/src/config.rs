@@ -127,10 +127,10 @@ mod tests {
         let config = Config::load(&config_path).expect("Failed to load config");
 
         // Check config exists
-        assert!(!config.indexer.initial_block_hash.is_empty());
-        assert!(!config.indexer.storage.path.is_empty());
-        assert!(config.indexer.cache.size > 0);
-        assert!(!config.provider.rootstock.url.is_empty());
+        assert_eq!("<YOUR_INITIAL_BLOCK_HASH_HERE>", config.indexer.initial_block_hash);
+        assert_eq!("<YOUR_PATH_HERE>", config.indexer.storage.path);
+        assert_eq!(1000, config.indexer.cache.size);
+        assert_eq!("wss://public-node.testnet.rsk.co/websocket", config.provider.rootstock.url);
 
         // Check contracts config exists
         assert!(!config.contracts.is_empty());
