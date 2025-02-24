@@ -21,7 +21,7 @@ fn main() -> Result<()> {
         store,
         alloy_provider,
         &config.indexer.initial_block_hash,
-        config.contracts,
+        config.get_contracts_map(),
         shutdown_flag,
     )
     .context("Failed to create LogIndexer")?;
