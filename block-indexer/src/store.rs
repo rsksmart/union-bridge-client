@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use common::cache::{Cache, LruCache};
 use common::types::RskBlock;
 use std::path::PathBuf;
@@ -161,38 +161,51 @@ impl CachedBlockStore<LruCache<RskBlock>> {
 impl<C: Cache<RskBlock>> BlockStore for CachedBlockStore<C> {
     fn get_best_block(&self) -> Result<Option<RskBlock>> {
         self.get_best_block()
+            .context("Error getting best block from store")
     }
 
     fn set_best_block(&self, value: &RskBlock) -> Result<()> {
         self.set_best_block(value)
+            .context(format!("Error setting best block in store: {value:?}"))
     }
 
     fn get_back_sync_checkpoint(&self) -> Result<Option<RskBlock>> {
         self.get_back_sync_checkpoint()
+            .context("Error getting back sync checkpoint from store")
     }
 
     fn set_back_sync_checkpoint(&self, value: &RskBlock) -> Result<()> {
-        self.set_back_sync_checkpoint(value)
+        self.set_back_sync_checkpoint(value).context(format!(
+            "Error setting back sync checkpoint in store: {value:?}"
+        ))
     }
 
     fn reset_back_sync_checkpoint(&self) -> Result<()> {
         self.reset_back_sync_checkpoint()
+            .context("Error resetting back sync checkpoint")
     }
 
     fn get_block_by_hash(&self, block_hash: &str) -> Result<Option<RskBlock>> {
         self.get_block_by_hash(block_hash)
+            .context(format!("Error getting getting block {block_hash}"))
     }
 
     fn save_block(&self, value: &RskBlock) -> Result<()> {
         self.save_block(value)
+            .context(format!("Error saving block to store: {value:?}"))
     }
 
     fn get_canonical_block(&self, block_height: u64) -> Result<Option<RskBlock>> {
-        self.get_canonical_block(block_height)
+        self.get_canonical_block(block_height).context(format!(
+            "Error getting canonical block for height: {block_height}",
+        ))
     }
 
     fn set_canonical_block(&self, block: &RskBlock) -> Result<()> {
-        self.set_canonical_block(block)
+        let block_num = block.number();
+        self.set_canonical_block(block).context(format!(
+            "Error setting canonical block for height: {block_num}"
+        ))
     }
 }
 
