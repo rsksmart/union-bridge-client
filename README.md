@@ -60,17 +60,14 @@ The Union Bridge Monitor is not just a simple block indexer. It:
 # How to run the Monitor?
 
 Both `log-indexer` and `block-indexer` need to be run. TBD if we create an orchestrator to run both at the same time.
-Both crates are configurable, please check `.env.sample` as a reference and place your ouwn version named `.env` in the
-`monitor` directory.
+Both crates are configurable, please check `config/dev` as a reference to create your own config. 
 
 ```bash
-cd log-indexer
-RUST_BACKTRACE=1 RUST_LOG=debug cargo run
+RUST_BACKTRACE=1 RUST_LOG=debug cargo run --bin log-indexer -- --config-path "/path/to/config/dir"
 ```
 
 ```bash
-cd block-indexer
-RUST_BACKTRACE=1 RUST_LOG=debug cargo run
+RUST_BACKTRACE=1 RUST_LOG=debug cargo run --bin block-indexer -- --config-path "/path/to/config/dir"
 ```
 
 # Utils/Check Gaps
