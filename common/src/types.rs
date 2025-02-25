@@ -258,5 +258,5 @@ impl LogEvent {
 pub struct ContractInfo {
     pub address: String,
     pub name: String,
-    pub abi_file: Option<String>,
+    pub abi: Option<String>,
 }

@@ -1,7 +1,8 @@
 use crate::{errors::ConfigError, types::ContractInfo};
+use anyhow::bail;
 use config;
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::{collections::HashMap, fs, path::Path};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -61,16 +62,30 @@ impl Config {
         Ok(config)
     }
 
-    pub fn get_contracts_map(&self) -> HashMap<String, ContractInfo> {
+    pub fn load_contracts(&self) -> HashMap<String, ContractInfo> {
         self.contracts
             .iter()
             .map(|c| {
+                let abi_content = match &c.abi_file {
+                    Some(path) => {
+                        if Path::new(path).exists() {
+                            Some(
+                                fs::read_to_string(path)
+                                    .expect(&format!("Failed to read ABI file: {}", path)),
+                            )
+                        } else {
+                            panic!("ABI file path '{}' is specified but does not exist", path);
+                        }
+                    }
+                    None => None,
+                };
+
                 (
-                    c.name.to_owned(),
+                    c.address.to_owned(),
                     ContractInfo {
                         name: c.name.to_owned(),
                         address: c.address.to_owned(),
-                        abi_file: c.abi_file.to_owned(),
+                        abi: abi_content,
                     },
                 )
             })
