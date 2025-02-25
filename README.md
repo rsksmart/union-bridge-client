@@ -77,8 +77,7 @@ This tool checks if there are any gaps in the blocks indexed by the monitor.
 To run it:
 
 ```bash
-cd utils/check_gaps
-RUST_BACKTRACE=1 RUST_LOG=debug cargo run
+RUST_BACKTRACE=1 RUST_LOG=debug cargo run --bin check_gaps -- --config-path "/path/to/config/dir"
 ```
 
 # Utils/Generate ELF Demo
