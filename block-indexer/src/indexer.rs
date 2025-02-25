@@ -112,11 +112,11 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                         break;
                     }
                 }
-                Err(RskSubscriptionError::Item(err)) => {
+                Err(RskSubscriptionError::Transient(err)) => {
                     error!("[subscribe_blocks] Ignoring problematic block: {err:?}");
                     continue;
                 }
-                Err(RskSubscriptionError::General(err)) => {
+                Err(RskSubscriptionError::Unexpected(err)) => {
                     bail!("[subscribe_blocks] Unknown error on block subs, quiting: {err:?}");
                 }
             };

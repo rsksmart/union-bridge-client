@@ -95,11 +95,11 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                         break;
                     }
                 }
-                Err(RskSubscriptionError::Item(err)) => {
+                Err(RskSubscriptionError::Transient(err)) => {
                     error!("[subscribe_logs] Ignoring problematic log: {err:?}");
                     continue;
                 }
-                Err(RskSubscriptionError::General(err)) => {
+                Err(RskSubscriptionError::Unexpected(err)) => {
                     bail!("[subscribe_logs] Unknown error on log subs: {err:?}");
                 }
             };

@@ -24,7 +24,7 @@ impl<T: DeserializeOwned> AlloySubscription<T> {
             Ok(item) => Ok(item),
             Err(RecvError::Closed) => Err(RskSubscriptionError::ClosedConnection),
             // TODO(Jira) address in scope of https://rsklabs.atlassian.net/browse/UB-15
-            Err(e) => Err(RskSubscriptionError::General(e.into())),
+            Err(e) => Err(RskSubscriptionError::Unexpected(e.into())),
         }
     }
 
@@ -52,7 +52,7 @@ impl RskSubscription<RskBlock> for AlloySubscription<Header> {
         let new_block_header_raw = match header {
             SubscriptionItem::Other(raw_json) => raw_json.get().to_string(),
             _ => {
-                return Err(RskSubscriptionError::General(anyhow!(
+                return Err(RskSubscriptionError::Unexpected(anyhow!(
                     "Wrong Header: {:?}",
                     header
                 )));
@@ -61,9 +61,9 @@ impl RskSubscription<RskBlock> for AlloySubscription<Header> {
 
         let new_block_header: Value = serde_json::from_str(&*new_block_header_raw)
             .context(format!("Error parsing header json: {new_block_header_raw}",))
-            .map_err(RskSubscriptionError::General)?;
+            .map_err(RskSubscriptionError::Unexpected)?;
         let new_block_hash = new_block_header["hash"].as_str().ok_or_else(|| {
-            RskSubscriptionError::General(anyhow!(
+            RskSubscriptionError::Unexpected(anyhow!(
                 "Missing hash on header {:?}",
                 new_block_header.to_string()
             ))
@@ -76,10 +76,10 @@ impl RskSubscription<RskBlock> for AlloySubscription<Header> {
             .context(format!(
                 "Error getting block {new_block_hash} from Provider"
             ))
-            .map_err(RskSubscriptionError::General)?;
+            .map_err(RskSubscriptionError::Unexpected)?;
 
         if new_block.is_none() {
-            return Err(RskSubscriptionError::General(anyhow!(
+            return Err(RskSubscriptionError::Unexpected(anyhow!(
                 "hash {new_block_hash} informed by Provider does not exist"
             )));
         }
@@ -127,7 +127,7 @@ impl AlloySubscription<Log> {
             let topic: Topic = Topic::from(
                 t.parse::<B256>()
                     .context("Could not parse topic")
-                    .map_err(RskSubscriptionError::General)?,
+                    .map_err(RskSubscriptionError::Unexpected)?,
             );
             topics[i] = topic;
         }
@@ -144,7 +144,7 @@ impl RskSubscription<RskLog> for AlloySubscription<Log> {
         let new_log = match log {
             SubscriptionItem::Item(log) => log,
             _ => {
-                return Err(RskSubscriptionError::General(anyhow!(
+                return Err(RskSubscriptionError::Unexpected(anyhow!(
                     "Wrong Log: {:?}",
                     log
                 )));
@@ -154,20 +154,20 @@ impl RskSubscription<RskLog> for AlloySubscription<Log> {
         let tx_hash = new_log
             .transaction_hash
             .map(|h| h.to_string())
-            .ok_or_else(|| RskSubscriptionError::Item("Missing transaction_hash"))?;
+            .ok_or_else(|| RskSubscriptionError::Transient("Missing transaction_hash"))?;
 
         let block_hash = new_log
             .block_hash
             .map(|h| h.to_string())
-            .ok_or_else(|| RskSubscriptionError::Item("Missing block_hash"))?;
+            .ok_or_else(|| RskSubscriptionError::Transient("Missing block_hash"))?;
 
         let block_number = new_log
             .block_number
-            .ok_or_else(|| RskSubscriptionError::Item("Missing transaction_hash"))?;
+            .ok_or_else(|| RskSubscriptionError::Transient("Missing transaction_hash"))?;
 
         let log_index = new_log
             .log_index
-            .ok_or_else(|| RskSubscriptionError::Item("Missing log index"))?;
+            .ok_or_else(|| RskSubscriptionError::Transient("Missing log index"))?;
 
         let log_info = LogInfo::new(
             new_log.address().to_string(),
