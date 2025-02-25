@@ -140,6 +140,15 @@ for the remaining steps. Note that this doc is pointing to a WIP branch.
 
 Before contributing to the project, please run the following commands to set up the project:
 
-1. Install _rust_ and _cargo_
-2. Install _cargo-make_: `cargo install cargo-make`
-3. Setup git hooks: `git config core.hooksPath .githooks`
+## 1. Install _rust_ and _cargo_
+https://www.rust-lang.org/tools/install
+
+## 2. Install _rusty-hook_
+
+This crate is used for commit hooks management.
+Run the following commands to install and initialize _rusty-hook_:
+```
+cargo install rusty-hook
+rusty-hook init
+```
+The file [rusty-hook.toml](rusty-hook.toml) will be used for hook configuration.

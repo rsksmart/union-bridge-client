@@ -169,7 +169,7 @@ impl RuntimeSync {
 
     pub(super) fn run<Fut, RetType, Err>(&self, future: Fut) -> Result<RetType>
     where
-        Fut: Future<Output=Result<RetType, Err>>,
+        Fut: Future<Output = Result<RetType, Err>>,
         Err: std::error::Error + Send + 'static,
     {
         self.rt.block_on(async {
