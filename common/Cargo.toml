@@ -18,7 +18,6 @@ serde_json = { workspace = true }
 sha2 = "0.10"
 signal-hook = "0.3"
 thiserror = { workspace = true }
-yaml-rust = "0.4.5"
 
 [features]
 generate-mocks = ["mockall"]
