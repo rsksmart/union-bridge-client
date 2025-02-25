@@ -1,14 +1,27 @@
 use anyhow::{Context, Result};
+use clap::{Arg, Command};
 use common::{config::Config, rsk_indexer::RskIndexer, shutdown_flag::ShutdownFlag};
 use log::{error, info};
 use log_indexer::{indexer::LogIndexer, store::RawLogStore};
 use rsk_provider::rpc::AlloyProvider;
 
 fn main() -> Result<()> {
-    log4rs::init_file("config/log4rs.yaml", Default::default())
+    let matches = Command::new("Union Bridge Log Indexer")
+        .arg(
+            Arg::new("config-path")
+                .short('c')
+                .long("config-path")
+                .value_name("PATH")
+                .help("Sets the path to the configuration directory")
+        )
+        .get_matches();
+
+    let config_path: &String = matches.get_one("config-path").unwrap();
+
+    log4rs::init_file(format!("{}/log4rs.yaml", config_path), Default::default())
         .expect("Failed to load log4rs config");
 
-    let config = Config::load("config/dev").expect("Failed to load config");
+    let config = Config::load(config_path).expect("Failed to load config");
 
     let store = RawLogStore::new(&format!("{}/logs", config.indexer.storage.path))?;
 
@@ -21,7 +34,7 @@ fn main() -> Result<()> {
         store,
         alloy_provider,
         &config.indexer.initial_block_hash,
-        config.get_contracts_map(),
+        config.load_contracts(),
         shutdown_flag,
     )
     .context("Failed to create LogIndexer")?;
