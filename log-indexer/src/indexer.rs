@@ -67,7 +67,7 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
         let mut rsk_log_subscription = self
             .rsk_provider
             .subscribe_logs(filter)
-            .context("Failed to subscribe to logs")?; // TODO(Jira) retry mechanism in scope of UB-15
+            .context("Failed to subscribe to logs")?; // do not retry, this is the application startup
 
         let loop_result = self.listen_logs(&mut rsk_log_subscription);
 
@@ -90,13 +90,17 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                     if self.is_running() {
                         bail!("Provider closed unexpectedly!");
                     } else {
-                        // TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15
                         info!("[subscribe_logs] Shutdown requested, quitting...");
                         break;
                     }
                 }
                 Err(RskSubscriptionError::Transient(err)) => {
                     error!("[subscribe_logs] Ignoring problematic log: {err:?}");
+                    continue;
+                }
+                Err(RskSubscriptionError::Lagged(err)) => {
+                    // TODO(Jira) trigger backward sync in scope of https://rsklabs.atlassian.net/browse/UB-45
+                    error!("[subscribe_logs] Subscription lagged, a backward_sync will be needed: {err:?}");
                     continue;
                 }
                 Err(RskSubscriptionError::Unexpected(err)) => {

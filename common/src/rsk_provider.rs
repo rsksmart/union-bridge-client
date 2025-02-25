@@ -57,6 +57,8 @@ pub trait RskProvider {
 pub enum RskSubscriptionError {
     #[error("Connection with provider closed")]
     ClosedConnection,
+    #[error("Subscription lagged {0} messages behind node")]
+    Lagged(u64),
     #[error("Transient error on subscription: {0}")]
     Transient(&'static str), // TODO in the future we could consider discarding related item (ie. log for address) after N errors
     #[error("Unexpected error on subscription: {0}")]

@@ -23,8 +23,7 @@ impl<T: DeserializeOwned> AlloySubscription<T> {
         match self.subscription.blocking_recv_any() {
             Ok(item) => Ok(item),
             Err(RecvError::Closed) => Err(RskSubscriptionError::ClosedConnection),
-            // TODO(Jira) address in scope of https://rsklabs.atlassian.net/browse/UB-15
-            Err(e) => Err(RskSubscriptionError::Unexpected(e.into())),
+            Err(RecvError::Lagged(n)) => Err(RskSubscriptionError::Lagged(n)),
         }
     }
 
