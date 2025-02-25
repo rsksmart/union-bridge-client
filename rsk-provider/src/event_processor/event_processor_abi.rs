@@ -1,27 +1,13 @@
 use alloy_dyn_abi::{DynSolType, DynSolValue};
 use alloy_json_abi::{Event, EventParam, JsonAbi};
 use anyhow::{bail, Context, Result};
-use common::cache::LruCache;
 use common::types::{RskEvent, RskLog};
 use hex;
-use log::{debug, error};
+use log::error;
 use serde_json::{json, Value};
-use std::fs::File;
-use std::io::BufReader;
 use std::str::FromStr;
-use std::sync::OnceLock;
 
-static ABI_CACHE: OnceLock<LruCache<JsonAbi>> = OnceLock::new();
-
-fn get_abi_cache() -> &'static LruCache<JsonAbi> {
-    ABI_CACHE.get_or_init(|| LruCache::new(1000))
-}
-
-pub fn process(
-    contract_address: &str,
-    rsk_log: RskLog,
-    abi_path: &str,
-) -> Result<Option<RskEvent>> {
+pub fn process(contract_address: &str, rsk_log: RskLog, abi: &str) -> Result<Option<RskEvent>> {
     if contract_address != rsk_log.info().address() {
         error!(
             "Log address {} does not match expected contract address {}",
@@ -31,16 +17,7 @@ pub fn process(
         return Ok(None);
     }
 
-    let json_abi = match get_abi_cache().get(&contract_address)? {
-        Some(abi) => abi,
-        None => {
-            debug!("Adding ABI to cache: {}", abi_path);
-            let abi_file = File::open(&abi_path)?;
-            let abi_from_file = serde_json::from_reader(BufReader::new(abi_file))?;
-            get_abi_cache().insert(&contract_address, &abi_from_file)?;
-            abi_from_file
-        }
-    };
+    let json_abi: JsonAbi = serde_json::from_str(abi)?;
 
     let event = json_abi.events.values().flatten().find(|e| {
         e.selector()

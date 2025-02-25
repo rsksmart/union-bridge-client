@@ -1,5 +1,4 @@
 use crate::{errors::ConfigError, types::ContractInfo};
-use anyhow::bail;
 use config;
 use serde::Deserialize;
 use std::{collections::HashMap, fs, path::Path};
@@ -10,6 +9,8 @@ pub struct Config {
     pub indexer: IndexerConfig,
     pub provider: ProviderConfig,
     pub contracts: Vec<ContractConfig>,
+    #[serde(skip)]
+    path: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -43,41 +44,38 @@ pub struct RootstockConfig {
 pub struct ContractConfig {
     pub name: String,
     pub address: String,
-    pub abi_file: Option<String>,
 }
 
 impl Config {
-    pub fn load(config_path: &str) -> Result<Self, ConfigError> {
-        let config_path = format!("{}/config.yaml", config_path);
+    pub fn load(path: &str) -> Result<Self, ConfigError> {
+        let config_path = format!("{}/config.yaml", path);
 
-        let config = config::Config::builder()
+        let raw_config = config::Config::builder()
             .add_source(config::File::with_name(&config_path))
             .build()
             .map_err(ConfigError::ConfigFileError)?;
 
-        let config = config
+        let mut parsed_config = raw_config
             .try_deserialize::<Config>()
             .map_err(ConfigError::ConfigFileError)?;
 
-        Ok(config)
+        parsed_config.path = path.to_owned();
+
+        Ok(parsed_config)
     }
 
     pub fn load_contracts(&self) -> HashMap<String, ContractInfo> {
         self.contracts
             .iter()
             .map(|c| {
-                let abi_content = match &c.abi_file {
-                    Some(path) => {
-                        if Path::new(path).exists() {
-                            Some(
-                                fs::read_to_string(path)
-                                    .expect(&format!("Failed to read ABI file: {}", path)),
-                            )
-                        } else {
-                            panic!("ABI file path '{}' is specified but does not exist", path);
-                        }
-                    }
-                    None => None,
+                let abi_path = format!("{}/contracts/{}.json", self.path, c.address);
+                let abi_data = if Path::new(&abi_path).exists() {
+                    Some(
+                        fs::read_to_string(&abi_path)
+                            .expect(&format!("Failed to read ABI file: {}", abi_path)),
+                    )
+                } else {
+                    None
                 };
 
                 (
@@ -85,7 +83,7 @@ impl Config {
                     ContractInfo {
                         name: c.name.to_owned(),
                         address: c.address.to_owned(),
-                        abi: abi_content,
+                        abi: abi_data,
                     },
                 )
             })
@@ -127,15 +125,10 @@ mod tests {
             "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761",
             config.contracts[0].address
         );
-        assert_eq!(
-            Some("0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761.json".to_owned()),
-            config.contracts[0].abi_file
-        );
         assert_eq!("MoCMedianizer", config.contracts[1].name);
         assert_eq!(
             "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc",
             config.contracts[1].address
         );
-        assert!(config.contracts[1].abi_file.is_none());
     }
 }
