@@ -25,7 +25,7 @@ fn main() -> Result<()> {
 
     let store = CachedBlockStore::new(
         &format!("{}/blocks", config.indexer.storage.path),
-        config.indexer.cache.size.try_into().unwrap(),
+        config.indexer.cache.size,
     )?;
 
     let shutdown_flag = ShutdownFlag::init();

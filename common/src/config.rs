@@ -27,7 +27,7 @@ pub struct StorageConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct CacheConfig {
-    pub size: u32,
+    pub size: usize,
 }
 
 #[derive(Debug, Deserialize)]
