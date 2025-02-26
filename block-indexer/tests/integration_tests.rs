@@ -29,6 +29,7 @@ const BLOCK_CACHE_SIZE: usize = 100;
 */
 #[test]
 fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription() -> Result<()> {
+    let _ = env_logger::builder().is_test(true).try_init();
     const INIT_BLOCK_HEIGHT: u64 = 1;
     const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
     const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
@@ -143,6 +144,7 @@ fn test_when_shutdown_happens_during_backwards_sync_should_set_checkpoint() -> R
 #[test]
 fn test_when_shutdown_happens_during_backwards_sync_and_indexer_restarts_should_complete_sync(
 ) -> Result<()> {
+    let _ = env_logger::builder().is_test(true).try_init();
     const INIT_BLOCK_HEIGHT: u64 = 1;
     const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
     const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
@@ -247,6 +249,7 @@ fn test_when_shutdown_happens_during_backwards_sync_and_indexer_restarts_should_
 #[test]
 fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complete_sync(
 ) -> Result<()> {
+    let _ = env_logger::builder().is_test(true).try_init();
     const INIT_BLOCK_HEIGHT: u64 = 1;
     const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
     const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
@@ -305,6 +308,7 @@ fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complet
 #[test]
 fn test_when_monitor_runs_and_reorg_happens_during_subscription_should_complete_sync() -> Result<()>
 {
+    let _ = env_logger::builder().is_test(true).try_init();
     const INIT_BLOCK_HEIGHT: u64 = 1;
     const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
     const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
@@ -361,8 +365,9 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_should_complete_
 # And the storage should reflect the expected canonical chain containing blocks from B to Z
 */
 #[test]
-fn test_when_monitor_runs_and_reorg_happens_during_subscription_from_early_block_should_complete_sync() -> Result<()>
-{
+fn test_when_monitor_runs_and_reorg_happens_during_subscription_from_early_block_should_complete_sync(
+) -> Result<()> {
+    let _ = env_logger::builder().is_test(true).try_init();
     const INIT_BLOCK_HEIGHT: u64 = 1;
     const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
     const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
@@ -392,8 +397,8 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_from_early_block
     let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH)?;
     mock_rsk_provider_handler.set_provider_expect_get_block_by_hash(block_hash, INIT_BLOCK_HEIGHT.into());
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
-    mock_rsk_provider_handler.set_provider_expect_get_block_by_number(Some(REORG_BLOCK_HEIGHT.into()), None);
-    mock_rsk_provider_handler.set_provider_expect_subscribe_blocks(Some(REORG_BLOCK_HEIGHT.into()));
+    mock_rsk_provider_handler.set_provider_expect_get_block_by_number(Some(REORG_HAPPENS_AT_HEIGHT.into()), None);
+    mock_rsk_provider_handler.set_provider_expect_subscribe_blocks(Some(REORG_HAPPENS_AT_HEIGHT.into()));
     drop(mock_rsk_provider_handler);
     cycle_indexer(store, mock_rsk_provider, shutting_down, None);
     let store_after: CachedBlockStore<LruCache<RskBlock>> =
