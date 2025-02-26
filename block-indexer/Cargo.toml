@@ -17,3 +17,4 @@ rsk-provider = { path = "../rsk-provider" }
 tempfile = "3.16.0"
 mockall = { workspace = true }
 common = { path = "../common", features = ["generate-mocks"] }
+env_logger = { workspace = true }
