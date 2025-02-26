@@ -1,9 +1,8 @@
 use alloy_primitives::{hex, LogData};
 use alloy_sol_types::private::B256;
 use alloy_sol_types::{sol, SolEvent};
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use common::types::{RskEvent, RskLog};
-use log::error;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt::Debug;
@@ -29,9 +28,12 @@ pub fn process(rsk_log: RskLog) -> Result<Option<RskEvent>> {
         .filter_map(|topic| topic.parse::<B256>().ok())
         .collect();
 
-    let log_data = LogData::new(parsed_topics, hex::decode(&rsk_log.event().data())?.into());
+    let hex_data =
+        hex::decode(&rsk_log.event().data()).context("Failed to decode hex data from rsk_log")?;
+
+    let log_data = LogData::new(parsed_topics, hex_data.into());
     if log_data.is_none() {
-        error!("Failed to parse log data: {:?}", log_data);
+        bail!("Failed to create Alloy LogData from rsk_log")
     }
     let log_data = log_data.unwrap();
 
@@ -58,22 +60,13 @@ pub fn process(rsk_log: RskLog) -> Result<Option<RskEvent>> {
 fn decode_event_input<T: SolEvent + Serialize + Debug>(
     log_data: &LogData,
 ) -> Result<(&str, Value)> {
-    let decoded_log = T::decode_log_data(&log_data, true);
+    let name = std::any::type_name::<T>()
+        .rsplit("::")
+        .next()
+        .unwrap_or_default();
 
-    match decoded_log {
-        Ok(input) => {
-            let name = std::any::type_name::<T>()
-                .rsplit("::")
-                .next()
-                .unwrap_or_default();
-            Ok((name, serde_json::to_value(input)?))
-        }
-        Err(e) => {
-            bail!(
-                "Error decoding log for topic {}: {}",
-                log_data.topics()[0],
-                e
-            );
-        }
-    }
+    let decoded_event = T::decode_log_data(&log_data, true)?;
+    let event_json = serde_json::to_value(&decoded_event)
+        .context(format!("Failed to serialize {name:?} to json"))?;
+    Ok((name, event_json))
 }

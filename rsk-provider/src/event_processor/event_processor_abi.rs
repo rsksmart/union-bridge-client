@@ -1,6 +1,6 @@
 use alloy_dyn_abi::{DynSolType, DynSolValue};
 use alloy_json_abi::{Event, EventParam, JsonAbi};
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use common::cache::LruCache;
 use common::types::{RskEvent, RskLog};
 use hex;
@@ -58,21 +58,21 @@ pub fn process(
         decoded_log_input.insert(input.name.to_string(), dyn_value_to_json(&sol_value)?);
     }
 
-    let data_tuple = build_data_tuple(event, &rsk_log.event().data().to_string())?;
+    let data_tuple = build_data_tuple(event, &rsk_log)?;
+
     let names_in_data: Vec<&EventParam> = event.inputs.iter().filter(|i| !i.indexed).collect();
     if let DynSolValue::Tuple(values) = data_tuple {
         for (i, input) in names_in_data.iter().enumerate() {
-            decoded_log_input.insert(input.name.to_string(), dyn_value_to_json(&values[i])?);
+            let value = dyn_value_to_json(&values[i])?;
+            decoded_log_input.insert(input.name.to_string(), value);
         }
     }
 
-    let event_json = RskEvent::new(
-        event.name.to_string(),
-        rsk_log.info().clone(),
-        serde_json::to_value(event)?,
-    );
+    let event_json = serde_json::to_value(event).context("Converting Alloy event to json")?;
 
-    Ok(Some(event_json))
+    let rsk_event = RskEvent::new(event.name.to_string(), rsk_log.info().clone(), event_json);
+
+    Ok(Some(rsk_event))
 }
 
 #[allow(unexpected_cfgs)]
@@ -104,7 +104,7 @@ fn dyn_value_to_json(value: &DynSolValue) -> Result<Value> {
     Ok(parsed)
 }
 
-fn build_data_tuple(event: &Event, data: &String) -> Result<DynSolValue> {
+fn build_data_tuple(event: &Event, rsk_log: &RskLog) -> Result<DynSolValue> {
     let data_types = event
         .inputs
         .iter()
@@ -112,9 +112,14 @@ fn build_data_tuple(event: &Event, data: &String) -> Result<DynSolValue> {
         .flat_map(|i| DynSolType::from_str(i.ty.as_str()))
         .collect();
 
-    // TODO(Jira) create custom types for topics, data... https://rsklabs.atlassian.net/browse/UB-43
-    let data_as_hex = &hex::decode(&data.trim_start_matches("0x"))?;
     let type_data_tuple = DynSolType::Tuple(data_types);
-    let data_as_tuple = type_data_tuple.abi_decode_params(data_as_hex)?;
+
+    // TODO(Jira) create custom types for topics, data... https://rsklabs.atlassian.net/browse/UB-43
+    let data = &rsk_log.event().data().to_string();
+    let data_as_hex =
+        &hex::decode(&data.trim_start_matches("0x")).context("Decoding hex data tuple")?;
+    let data_as_tuple = type_data_tuple
+        .abi_decode_params(data_as_hex)
+        .context(format!("Decoding tuple {type_data_tuple:?}"))?;
     Ok(data_as_tuple)
 }

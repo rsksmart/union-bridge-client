@@ -1,5 +1,4 @@
 use crate::types::{ContractInfo, RskBlock, RskEvent, RskLog};
-use anyhow::Error as AnyhowError;
 use anyhow::Result;
 use thiserror::Error;
 
@@ -8,7 +7,7 @@ use mockall::automock;
 
 #[cfg_attr(feature = "generate-mocks", automock)]
 pub trait RskSubscription<T> {
-    fn next(&mut self) -> Result<T, RskProviderError>;
+    fn next(&mut self) -> Result<T, RskSubscriptionError>;
     fn unsubscribe(&self) -> Result<()>;
 }
 
@@ -55,19 +54,11 @@ pub trait RskProvider {
 }
 
 #[derive(Error, Debug)]
-pub enum RskProviderError {
+pub enum RskSubscriptionError {
     #[error("Connection with provider closed")]
-    Closed,
-    #[error("Unexpected format from provider: {0}")]
-    Format(#[from] serde_json::Error),
-    #[error("Unknown error: {0}")]
-    Other(String),
-}
-
-// TODO(Jira) think if this should be removed in scope of https://rsklabs.atlassian.net/browse/UB-28
-impl From<AnyhowError> for RskProviderError {
-    fn from(error: AnyhowError) -> Self {
-        let message = format!("{:?}", error);
-        RskProviderError::Other(message)
-    }
+    ClosedConnection,
+    #[error("Transient error on subscription: {0}")]
+    Transient(&'static str), // TODO in the future we could consider discarding related item (ie. log for address) after N errors
+    #[error("Unexpected error on subscription: {0}")]
+    Unexpected(anyhow::Error),
 }

@@ -1,11 +1,11 @@
 use crate::store::LogStore;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Context, Result};
 use common::rsk_indexer::RskIndexer;
-use common::rsk_provider::{RskProvider, RskProviderError};
+use common::rsk_provider::{RskProvider, RskSubscriptionError};
 use common::rsk_provider::{RskSubscription, RskSubscriptionFilter};
 use common::shutdown_flag::ShutdownFlag;
 use common::types::{ContractInfo, RskLog};
-use log::{debug, error, info, warn};
+use log::{error, info, warn};
 use std::collections::HashMap;
 
 pub struct LogIndexer<P: RskProvider, S: LogStore> {
@@ -23,20 +23,20 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         initial_block_hash: &str,
         managed_contracts: HashMap<String, ContractInfo>,
         shutdown_flag: ShutdownFlag,
-    ) -> Self {
+    ) -> Result<Self> {
         let initial_block_number = provider
             .get_block_by_hash(initial_block_hash)
-            .expect("Failed to get initial block by hash")
-            .expect("Initial block not found on provider")
+            .context("Failed to get initial block by hash")?
+            .context("Initial block not found on provider")?
             .number();
 
-        Self {
+        Ok(Self {
             store,
             rsk_provider: provider,
             initial_block_number,
             managed_contracts,
             shutdown_flag,
-        }
+        })
     }
 
     fn is_running(&self) -> bool {
@@ -67,7 +67,7 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
         let mut rsk_log_subscription = self
             .rsk_provider
             .subscribe_logs(filter)
-            .expect("Failed to subscribe to logs (unrecoverable)"); // TODO(Jira) retry mechanism in scope of UB-15
+            .context("Failed to subscribe to logs")?; // TODO(Jira) retry mechanism in scope of UB-15
 
         let loop_result = self.listen_logs(&mut rsk_log_subscription);
 
@@ -86,17 +86,21 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         while self.is_running() {
             let new_log = match rsk_log_subscription.next() {
                 Ok(log) => log,
-                Err(RskProviderError::Closed) => {
+                Err(RskSubscriptionError::ClosedConnection) => {
                     if self.is_running() {
-                        bail!("[subscribe_logs] Provider closed unexpectedly");
+                        bail!("Provider closed unexpectedly!");
                     } else {
                         // TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15
                         info!("[subscribe_logs] Shutdown requested, quitting...");
                         break;
                     }
                 }
-                Err(e) => {
-                    return Err(anyhow!("Failed to get next log from subscription: {:?}", e));
+                Err(RskSubscriptionError::Transient(err)) => {
+                    error!("[subscribe_logs] Ignoring problematic log: {err:?}");
+                    continue;
+                }
+                Err(RskSubscriptionError::Unexpected(err)) => {
+                    bail!("[subscribe_logs] Unknown error on log subs: {err:?}");
                 }
             };
 
@@ -109,7 +113,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                 continue;
             }
 
-            debug!("[subscribe_logs] Processed log: {:?}", new_log);
+            info!("[subscribe_logs] Processed log: {:?}", new_log);
 
             let managed_contract = self
                 .managed_contracts
@@ -121,21 +125,29 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                 );
                 continue;
             }
+            let managed_contract = managed_contract.unwrap();
 
-            let rsk_event = &self
+            let rsk_event_result = &self
                 .rsk_provider
-                .decode_log(new_log.clone(), managed_contract.unwrap())?;
+                .decode_log(new_log.clone(), managed_contract);
 
-            if rsk_event.is_none() {
-                error!("[subscribe_logs] Unmanaged log received: {:?}", new_log);
-                continue;
-            }
+            let rsk_event = match rsk_event_result {
+                Ok(Some(e)) => e,
+                Ok(None) => {
+                    error!("[subscribe_logs] Unmanaged log received: {:?}", new_log);
+                    continue;
+                }
+                Err(e) => {
+                    error!("[subscribe_logs] Ignoring malformed event: {:?}", e);
+                    continue;
+                }
+            };
 
-            self.store.save_log(&new_log)?;
+            self.store.save_log(&new_log).context("Saving new log")?;
 
             // TODO(Jira) send via broker after some configurable finality is achieved and taking into account `removed` field https://rsklabs.atlassian.net/browse/UB-46
 
-            info!("Decoded event: {}", serde_json::to_string(&rsk_event)?);
+            info!("Decoded event: {rsk_event:?}");
         }
 
         Ok(())
