@@ -8,21 +8,22 @@ use common::{
 use log::{debug, info, warn};
 use rsk_provider::rpc::AlloyProvider;
 
+const CONFIG_CLI_FLAG: &str = "config-path";
 const FINALITY_FOR_CHECK: u8 = 10;
 
 fn main() -> Result<()> {
     let matches = Command::new("Check Fork Tool")
         .arg(
-            Arg::new("config-path")
+            Arg::new(CONFIG_CLI_FLAG)
                 .short('c')
-                .long("config-path")
+                .long(CONFIG_CLI_FLAG)
                 .value_name("PATH")
-                .help("Sets the path to the configuration directory"),
+                .help("Sets the path to the configuration directory")
+                .default_value("../config/dev/config.yaml"),
         )
         .get_matches();
 
-    let config_path: &String = matches.get_one("config-path").unwrap();
-
+    let config_path: &String = matches.get_one(CONFIG_CLI_FLAG).unwrap();
     let config = Config::load(config_path).expect("Failed to load config");
 
     let store = CachedBlockStore::new(&config.indexer.storage.path, config.indexer.cache.size)
