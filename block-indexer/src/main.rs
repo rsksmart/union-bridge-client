@@ -8,6 +8,13 @@ use rsk_provider::rpc::AlloyProvider;
 fn main() -> Result<()> {
     let matches = Command::new("Union Bridge Block Indexer")
         .arg(
+            Arg::new("logger-path")
+                .short('l')
+                .long("logger-path")
+                .value_name("PATH")
+                .help("Sets the path to the log4rs configuration file"),
+        )
+        .arg(
             Arg::new("config-path")
                 .short('c')
                 .long("config-path")
@@ -16,11 +23,12 @@ fn main() -> Result<()> {
         )
         .get_matches();
 
-    let config_path: &String = matches.get_one("config-path").unwrap();
 
-    log4rs::init_file(format!("{}/log4rs.yaml", config_path), Default::default())
+    let logger_path: &String = matches.get_one("logger-path").unwrap();
+    log4rs::init_file(logger_path, Default::default())
         .expect("Failed to load log4rs config");
 
+    let config_path: &String = matches.get_one("config-path").unwrap();
     let config = Config::load(config_path).expect("Failed to load config");
 
     let store = CachedBlockStore::new(
