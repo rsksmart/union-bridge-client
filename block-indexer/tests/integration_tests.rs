@@ -113,6 +113,7 @@ fn assert_canonical_chain(
 */
 #[test]
 fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription() -> Result<()> {
+    let _ = env_logger::builder().is_test(true).try_init();
     const INIT_BLOCK_HEIGHT: u64 = 1;
     const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
     const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
@@ -134,14 +135,13 @@ fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription
         INIT_BLOCK_HEIGHT,
         MAX_BLOCK_HEIGHT_BACKWARDS_SYNC,
         MAX_BLOCK_HEIGHT_SUBSCRIPTION,
-        0,
         DELAY_BETWEEN_BLOCKS_SUBSCRIPTION,
     );
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_hash("".to_string(), INIT_BLOCK_HEIGHT);
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
-    mock_rsk_provider_handler.set_provider_expect_get_block_by_number(false, None);
-    mock_rsk_provider_handler.set_provider_expect_subscribe_blocks(false);
+    mock_rsk_provider_handler.set_provider_expect_get_block_by_number(None, None);
+    mock_rsk_provider_handler.set_provider_expect_subscribe_blocks(None);
     drop(mock_rsk_provider_handler);
     cycle_indexer(store, mock_rsk_provider, shutting_down, None);
     let store_after: CachedBlockStore<LruCache<RskBlock>> =
@@ -190,13 +190,12 @@ fn test_when_shutdown_happens_during_backwards_sync_should_set_checkpoint() -> R
         MAX_BLOCK_HEIGHT_BACKWARDS_SYNC,
         0,
         0,
-        0,
     );
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_hash("".to_string(), INIT_BLOCK_HEIGHT);
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
     mock_rsk_provider_handler
-        .set_provider_expect_get_block_by_number(false, Some(BLOCK_HEIGHT_SHUTDOWN_HAPPENS_AT));
+        .set_provider_expect_get_block_by_number(None, Some(BLOCK_HEIGHT_SHUTDOWN_HAPPENS_AT));
     drop(mock_rsk_provider_handler);
     cycle_indexer(store, mock_rsk_provider, shutting_down, None);
     let store_after: CachedBlockStore<LruCache<RskBlock>> =
@@ -227,6 +226,7 @@ fn test_when_shutdown_happens_during_backwards_sync_should_set_checkpoint() -> R
 #[test]
 fn test_when_shutdown_happens_during_backwards_sync_and_indexer_restarts_should_complete_sync(
 ) -> Result<()> {
+    let _ = env_logger::builder().is_test(true).try_init();
     const INIT_BLOCK_HEIGHT: u64 = 1;
     const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
     const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
@@ -251,14 +251,13 @@ fn test_when_shutdown_happens_during_backwards_sync_and_indexer_restarts_should_
         INIT_BLOCK_HEIGHT,
         MAX_BLOCK_HEIGHT_BACKWARDS_SYNC,
         MAX_BLOCK_HEIGHT_SUBSCRIPTION,
-        0,
         DELAY_BETWEEN_BLOCKS_SUBSCRIPTION,
     );
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_hash("".to_string(), INIT_BLOCK_HEIGHT);
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
     mock_rsk_provider_handler
-        .set_provider_expect_get_block_by_number(false, Some(BLOCK_HEIGHT_SHUTDOWN_HAPPENS_AT));
+        .set_provider_expect_get_block_by_number(None, Some(BLOCK_HEIGHT_SHUTDOWN_HAPPENS_AT));
     drop(mock_rsk_provider_handler);
     cycle_indexer(
         store,
@@ -285,14 +284,13 @@ fn test_when_shutdown_happens_during_backwards_sync_and_indexer_restarts_should_
         INIT_BLOCK_HEIGHT,
         MAX_BLOCK_HEIGHT_BACKWARDS_SYNC,
         MAX_BLOCK_HEIGHT_SUBSCRIPTION,
-        0,
         DELAY_BETWEEN_BLOCKS_SUBSCRIPTION,
     );
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_hash(checkpoint_parent_hash_string, INIT_BLOCK_HEIGHT);
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
-    mock_rsk_provider_handler.set_provider_expect_get_block_by_number(false, None);
-    mock_rsk_provider_handler.set_provider_expect_subscribe_blocks(false);
+    mock_rsk_provider_handler.set_provider_expect_get_block_by_number(None, None);
+    mock_rsk_provider_handler.set_provider_expect_subscribe_blocks(None);
     drop(mock_rsk_provider_handler);
     cycle_indexer(
         store,
@@ -331,6 +329,7 @@ fn test_when_shutdown_happens_during_backwards_sync_and_indexer_restarts_should_
 #[test]
 fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complete_sync(
 ) -> Result<()> {
+    let _ = env_logger::builder().is_test(true).try_init();
     const INIT_BLOCK_HEIGHT: u64 = 1;
     const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
     const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
@@ -355,14 +354,14 @@ fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complet
         INIT_BLOCK_HEIGHT,
         MAX_BLOCK_HEIGHT_BACKWARDS_SYNC,
         MAX_BLOCK_HEIGHT_SUBSCRIPTION,
-        REORG_HAPPENS_AT_HEIGHT,
         DELAY_BETWEEN_BLOCKS_SUBSCRIPTION,
     );
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_hash("".to_string(), INIT_BLOCK_HEIGHT);
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
-    mock_rsk_provider_handler.set_provider_expect_get_block_by_number(true, None);
-    mock_rsk_provider_handler.set_provider_expect_subscribe_blocks(false);
+    mock_rsk_provider_handler
+        .set_provider_expect_get_block_by_number(Some(REORG_HAPPENS_AT_HEIGHT), None);
+    mock_rsk_provider_handler.set_provider_expect_subscribe_blocks(None);
     drop(mock_rsk_provider_handler);
     cycle_indexer(store, mock_rsk_provider, shutting_down, None);
     let store_after: CachedBlockStore<LruCache<RskBlock>> =
@@ -390,6 +389,7 @@ fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complet
 #[test]
 fn test_when_monitor_runs_and_reorg_happens_during_subscription_should_complete_sync() -> Result<()>
 {
+    let _ = env_logger::builder().is_test(true).try_init();
     const INIT_BLOCK_HEIGHT: u64 = 1;
     const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
     const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
@@ -414,14 +414,14 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_should_complete_
         INIT_BLOCK_HEIGHT,
         MAX_BLOCK_HEIGHT_BACKWARDS_SYNC,
         MAX_BLOCK_HEIGHT_SUBSCRIPTION,
-        REORG_HAPPENS_AT_HEIGHT,
         DELAY_BETWEEN_BLOCKS_SUBSCRIPTION,
     );
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_hash("".to_string(), INIT_BLOCK_HEIGHT);
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
-    mock_rsk_provider_handler.set_provider_expect_get_block_by_number(true, None);
-    mock_rsk_provider_handler.set_provider_expect_subscribe_blocks(true);
+    mock_rsk_provider_handler
+        .set_provider_expect_get_block_by_number(Some(REORG_HAPPENS_AT_HEIGHT), None);
+    mock_rsk_provider_handler.set_provider_expect_subscribe_blocks(Some(REORG_HAPPENS_AT_HEIGHT));
     drop(mock_rsk_provider_handler);
     cycle_indexer(store, mock_rsk_provider, shutting_down, None);
     let store_after: CachedBlockStore<LruCache<RskBlock>> =
@@ -447,8 +447,9 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_should_complete_
 # And the storage should reflect the expected canonical chain containing blocks from B to Z
 */
 #[test]
-fn test_when_monitor_runs_and_reorg_happens_during_subscription_from_early_block_should_complete_sync() -> Result<()>
-{
+fn test_when_monitor_runs_and_reorg_happens_during_subscription_from_early_block_should_complete_sync(
+) -> Result<()> {
+    let _ = env_logger::builder().is_test(true).try_init();
     const INIT_BLOCK_HEIGHT: u64 = 1;
     const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
     const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
@@ -473,14 +474,14 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_from_early_block
         INIT_BLOCK_HEIGHT,
         MAX_BLOCK_HEIGHT_BACKWARDS_SYNC,
         MAX_BLOCK_HEIGHT_SUBSCRIPTION,
-        REORG_HAPPENS_AT_HEIGHT,
         DELAY_BETWEEN_BLOCKS_SUBSCRIPTION,
     );
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_hash("".to_string(), INIT_BLOCK_HEIGHT);
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
-    mock_rsk_provider_handler.set_provider_expect_get_block_by_number(true, None);
-    mock_rsk_provider_handler.set_provider_expect_subscribe_blocks(true);
+    mock_rsk_provider_handler
+        .set_provider_expect_get_block_by_number(Some(REORG_HAPPENS_AT_HEIGHT), None);
+    mock_rsk_provider_handler.set_provider_expect_subscribe_blocks(Some(REORG_HAPPENS_AT_HEIGHT));
     drop(mock_rsk_provider_handler);
     cycle_indexer(store, mock_rsk_provider, shutting_down, None);
     let store_after: CachedBlockStore<LruCache<RskBlock>> =
