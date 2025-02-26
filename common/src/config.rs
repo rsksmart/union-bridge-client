@@ -98,15 +98,12 @@ mod tests {
 
     #[test]
     fn test_config_load_when_dev_config_set_should_load_config_successfully() {
-        let config_path = format!("{}/../config/testnet", env!("CARGO_MANIFEST_DIR"));
+        let config_path = format!("{}/../config/stage", env!("CARGO_MANIFEST_DIR"));
         let config = Config::load(&config_path).expect("Failed to load config");
 
         // indexer
-        assert_eq!(
-            "<YOUR_INITIAL_BLOCK_HASH_HERE>",
-            config.indexer.initial_block_hash
-        );
-        assert_eq!("<YOUR_DB_PATH_HERE>", config.indexer.storage.path);
+        assert_eq!("0xabc", config.indexer.initial_block_hash);
+        assert_eq!("/foo/bar", config.indexer.storage.path);
         assert_eq!(1000, config.indexer.cache.size);
 
         // provider
@@ -134,7 +131,7 @@ mod tests {
 
     #[test]
     fn test_load_contracts_when_dev_config_set_should_load_contracts_successfully() {
-        let config_path = format!("{}/../config/testnet", env!("CARGO_MANIFEST_DIR"));
+        let config_path = format!("{}/../config/stage", env!("CARGO_MANIFEST_DIR"));
         let config = Config::load(&config_path).expect("Failed to load config");
         let contracts = config.load_contracts();
 

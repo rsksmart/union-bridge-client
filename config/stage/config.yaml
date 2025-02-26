@@ -1,7 +1,7 @@
 indexer:
-  initial_block_hash: "<YOUR_INITIAL_BLOCK_HASH_HERE>"
+  initial_block_hash: "0xabc"
   storage:
-    path: "<YOUR_DB_PATH_HERE>"
+    path: "/foo/bar"
   cache:
     size: 1000
 
