@@ -350,6 +350,64 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_should_complete_
     Ok(())
 }
 
+/*
+# Given the initial best block is B
+# And the storage is empty
+# And the provider has blocks B to N (B < N)
+# And the provider retrieves blocks N+1 to Z under subscription (N < Z)
+# When the indexer is started
+# And a reorg happens at block X, from block H (B < H < N < X < Z)
+# Then the best block in the storage should be Z
+# And the storage should reflect the expected canonical chain containing blocks from B to Z
+*/
+#[test]
+fn test_when_monitor_runs_and_reorg_happens_during_subscription_from_early_block_should_complete_sync() -> Result<()>
+{
+    const INIT_BLOCK_HEIGHT: u64 = 1;
+    const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
+    const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
+    const REORG_BLOCK_HEIGHT: u64 = 10;
+    const REORG_HAPPENS_AT_HEIGHT: u64 = 30;
+    const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
+    let temp_dir = tempdir()?;
+    let store_path = temp_dir.path().join("blocks");
+    fs::create_dir_all(&store_path)?;
+    let store_path: &str = store_path.to_str().unwrap();
+    let store: CachedBlockStore<LruCache<RskBlock>> =
+        CachedBlockStore::new(store_path, BLOCK_CACHE_SIZE)?;
+    let shutting_down = ShutdownFlag::init();
+    let is_reorg = Arc::new(AtomicBool::new(false));
+    let mock_rsk_provider = Arc::new(Mutex::new(MockRskProvider::new()));
+    let generator = FakeBlockGenerator::new(REORG_BLOCK_HEIGHT.into(), is_reorg.clone());
+    let mut mock_rsk_provider_handler = MockRskProviderHandler::new(
+        Arc::clone(&mock_rsk_provider),
+        &generator,
+        is_reorg.clone(),
+        shutting_down.clone(),
+        INIT_BLOCK_HEIGHT.into(),
+        MAX_BLOCK_HEIGHT_BACKWARDS_SYNC.into(),
+        MAX_BLOCK_HEIGHT_SUBSCRIPTION.into(),
+        DELAY_BETWEEN_BLOCKS_SUBSCRIPTION,
+    );
+    let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH)?;
+    mock_rsk_provider_handler.set_provider_expect_get_block_by_hash(block_hash, INIT_BLOCK_HEIGHT.into());
+    mock_rsk_provider_handler.set_provider_expect_get_best_block();
+    mock_rsk_provider_handler.set_provider_expect_get_block_by_number(Some(REORG_BLOCK_HEIGHT.into()), None);
+    mock_rsk_provider_handler.set_provider_expect_subscribe_blocks(Some(REORG_BLOCK_HEIGHT.into()));
+    drop(mock_rsk_provider_handler);
+    cycle_indexer(store, mock_rsk_provider, shutting_down, None);
+    let store_after: CachedBlockStore<LruCache<RskBlock>> =
+        CachedBlockStore::new(store_path, BLOCK_CACHE_SIZE)?;
+    assert_best_block(&generator, &store_after, MAX_BLOCK_HEIGHT_SUBSCRIPTION);
+    assert_canonical_chain(
+        &generator,
+        &store_after,
+        INIT_BLOCK_HEIGHT,
+        MAX_BLOCK_HEIGHT_SUBSCRIPTION,
+    );
+    Ok(())
+}
+
 fn cycle_indexer(
     store: CachedBlockStore<LruCache<RskBlock>>,
     mock_rsk_provider: Arc<Mutex<MockRskProvider>>,
