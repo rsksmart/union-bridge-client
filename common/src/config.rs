@@ -68,7 +68,7 @@ impl Config {
         self.contracts
             .iter()
             .map(|c| {
-                let abi_path = format!("{}/contracts/{}.json", self.path, c.address);
+                let abi_path = format!("{}/abi/{}.json", self.path, c.address);
                 let abi_data = if Path::new(&abi_path).exists() {
                     Some(
                         fs::read_to_string(&abi_path)
