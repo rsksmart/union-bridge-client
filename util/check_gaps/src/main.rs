@@ -2,17 +2,16 @@ use anyhow::{bail, Context, Ok, Result};
 use block_indexer::store::{BlockStore, CachedBlockStore};
 use common::cache::LruCache;
 use common::rsk_provider::RskProvider;
+use common::shutdown_flag::ShutdownFlag;
 use common::types::RskBlock;
 use dotenv::dotenv;
 use log::{debug, info, warn};
-use rsk_provider::alloy::AlloyProvider;
+use rsk_provider::rpc::AlloyProvider;
 use std::env;
 
 const FINALITY_FOR_CHECK: u8 = 10;
 
 fn main() -> Result<()> {
-    env_logger::init();
-
     dotenv().expect("Failed to load .env file");
 
     let store_path = env::var("STORE_PATH").expect("STORE_PATH not set in env");
@@ -103,8 +102,11 @@ fn find_canonical_connection(
     block_margin: u8,
     store: &CachedBlockStore<LruCache<RskBlock>>,
 ) -> Result<bool> {
-    let rsk_ws_provider = AlloyProvider::new("wss://public-node.testnet.rsk.co/websocket")
-        .expect("Failed to create AlloyProvider");
+    let rsk_ws_provider = AlloyProvider::new(
+        "wss://public-node.testnet.rsk.co/websocket",
+        ShutdownFlag::init(),
+    )
+    .expect("Failed to create AlloyProvider");
 
     info!(
         "Finding connection point for block {} ({})",

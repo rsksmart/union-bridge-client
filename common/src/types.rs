@@ -2,6 +2,7 @@ use bitcoin::blockdata::block::Header;
 use bitcoin::consensus::encode::deserialize as btc_deserialize;
 use primitive_types::U256;
 use serde::{de, Deserialize, Deserializer, Serialize};
+use serde_json::Value;
 use std::string::ToString;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
@@ -13,7 +14,20 @@ pub struct RskBlock {
     timestamp: u64,
     total_difficulty: U256,
     pow: String,
-    // bridge_event: Option<BridgeEvent>, // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-10
+}
+
+impl From<RskRpcBlock> for RskBlock {
+    fn from(rpc_block: RskRpcBlock) -> Self {
+        Self::new(
+            rpc_block.number,
+            rpc_block.hash,
+            rpc_block.parent,
+            rpc_block.difficulty,
+            rpc_block.timestamp,
+            rpc_block.pow,
+            rpc_block.total_difficulty,
+        )
+    }
 }
 
 impl RskBlock {
@@ -36,8 +50,6 @@ impl RskBlock {
             total_difficulty,
         }
     }
-
-    // TODO(iago) remove this, by default fields are immutable
 
     pub fn number(&self) -> u64 {
         self.number
@@ -119,29 +131,132 @@ where
         .map(|h: Header| h.block_hash().to_string())
         .map_err(de::Error::custom)?;
 
-    // dbg!((header_hex, header_hash));
-
     Ok(header_hash)
 }
 
-impl From<RskRpcBlock> for RskBlock {
-    fn from(rpc_block: RskRpcBlock) -> Self {
-        RskBlock {
-            number: rpc_block.number,
-            hash: rpc_block.hash,
-            parent: rpc_block.parent,
-            difficulty: rpc_block.difficulty,
-            timestamp: rpc_block.timestamp,
-            pow: rpc_block.pow,
-            total_difficulty: rpc_block.total_difficulty,
-        }
+#[derive(Serialize, Deserialize, Debug, Clone)]
+// TODO(Jira) https://rsklabs.atlassian.net/browse/UB-43
+pub struct RskLog {
+    info: LogInfo,
+    event: LogEvent,
+}
+
+impl RskLog {
+    pub fn new(data: LogInfo, event: LogEvent) -> Self {
+        Self { info: data, event }
+    }
+
+    pub fn info(&self) -> &LogInfo {
+        &self.info
+    }
+
+    pub fn event(&self) -> &LogEvent {
+        &self.event
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct RskEvent {
+    name: String,
+    info: LogInfo,
+    input: Value,
+}
+
+impl RskEvent {
+    pub fn new(name: String, info: LogInfo, input: Value) -> Self {
+        Self { name, info, input }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn info(&self) -> &LogInfo {
+        &self.info
+    }
+
+    pub fn input(&self) -> &Value {
+        &self.input
     }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct RskLog {
+pub struct LogInfo {
+    address: String,
+    block_hash: String,
+    block_number: u64,
+    tx_hash: String,
+    log_index: u64,
+    removed: bool,
+}
+
+impl LogInfo {
+    pub fn new(
+        address: String,
+        block_hash: String,
+        block_number: u64,
+        tx_hash: String,
+        log_index: u64,
+        removed: bool,
+    ) -> Self {
+        LogInfo {
+            address,
+            block_hash,
+            block_number,
+            tx_hash,
+            log_index,
+            removed,
+        }
+    }
+
+    pub fn address(&self) -> &str {
+        &self.address
+    }
+
+    pub fn block_hash(&self) -> &str {
+        &self.block_hash
+    }
+
+    pub fn block_number(&self) -> u64 {
+        self.block_number
+    }
+
+    pub fn tx_hash(&self) -> &str {
+        &self.tx_hash
+    }
+
+    pub fn log_index(&self) -> u64 {
+        self.log_index
+    }
+
+    pub fn removed(&self) -> bool {
+        self.removed
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LogEvent {
+    data: String,
+    topics: Vec<String>,
+}
+
+impl LogEvent {
+    pub fn new(data: String, topics: Vec<String>) -> Self {
+        LogEvent { data, topics }
+    }
+
+    pub fn data(&self) -> &str {
+        &self.data
+    }
+
+    pub fn topics(&self) -> &Vec<String> {
+        &self.topics
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ContractInfo {
     pub address: String,
-    pub transaction_hash: String,
-    pub log_index: u16,
-    pub data: String, // TODO(iago) think of a better type
+    pub name: String,
+    pub abi_file: Option<String>,
 }
