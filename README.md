@@ -63,11 +63,11 @@ Both `log-indexer` and `block-indexer` need to be run. TBD if we create an orche
 Both crates are configurable, please check `config/dev` as a reference to create your own config. 
 
 ```bash
-RUST_BACKTRACE=1 RUST_LOG=debug cargo run --bin log-indexer -- --config-path "/path/to/config/dir"
+RUST_BACKTRACE=1 RUST_LOG=debug cargo run --bin log-indexer -- --logger-path "/path/to/log4rs" --config-path "/path/to/config/dir"
 ```
 
 ```bash
-RUST_BACKTRACE=1 RUST_LOG=debug cargo run --bin block-indexer -- --config-path "/path/to/config/dir"
+RUST_BACKTRACE=1 RUST_LOG=debug cargo run --bin block-indexer -- --logger-path "/path/to/log4rs" --config-path "/path/to/config/dir"
 ```
 
 # Utils/Check Gaps
