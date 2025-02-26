@@ -1,23 +1,27 @@
 use anyhow::Result;
 use common::rsk_provider::MockRskProvider;
 
-use log::info;
-use std::fs;
-use std::sync::Mutex;
-use std::sync::{atomic::AtomicBool, Arc};
-use tempfile::tempdir;
-
 use block_indexer::indexer::BlockIndexer;
 use block_indexer::store::{BlockStore, CachedBlockStore};
 use common::cache::LruCache;
 use common::rsk_indexer::RskIndexer;
 use common::shutdown_flag::ShutdownFlag;
-use common::test_utils::rsk::{FakeBlockGenerator, MockRskProviderHandler};
+use common::test_utils::mock_rsk_provider_handler::MockRskProviderHandler;
+use common::test_utils::rsk::FakeBlockGenerator;
 use common::types::RskBlock;
-
+use log::info;
+use std::fs;
+use std::sync::Mutex;
+use std::sync::{atomic::AtomicBool, Arc};
+use tempfile::tempdir;
 const BLOCK_CACHE_SIZE: usize = 100;
 
-fn cycle_indexer(store: CachedBlockStore<LruCache<RskBlock>>, mock_rsk_provider: Arc<Mutex<MockRskProvider>>, shutting_down: ShutdownFlag, msg: Option<&str>) -> () {
+fn cycle_indexer(
+    store: CachedBlockStore<LruCache<RskBlock>>,
+    mock_rsk_provider: Arc<Mutex<MockRskProvider>>,
+    shutting_down: ShutdownFlag,
+    msg: Option<&str>,
+) -> () {
     let mock_rsk_provider = Arc::try_unwrap(mock_rsk_provider)
         .unwrap()
         .into_inner()
@@ -82,12 +86,13 @@ fn assert_canonical_chain(
 ) -> () {
     for height in begin_height..=end_height {
         let block_expected = generator.clone().generate_block(height);
-        let block_actual = store_after.get_canonical_block(height)
-        .unwrap_or_else(|err| panic!("Failed to retrieve canonical block: {}", err))
-        .expect(&format!(
-            "No canonical block at height {} found after indexer run",
-            height
-        ));
+        let block_actual = store_after
+            .get_canonical_block(height)
+            .unwrap_or_else(|err| panic!("Failed to retrieve canonical block: {}", err))
+            .expect(&format!(
+                "No canonical block at height {} found after indexer run",
+                height
+            ));
         assert_eq!(
             block_expected.hash(),
             block_actual.hash(),
@@ -255,7 +260,12 @@ fn test_when_shutdown_happens_during_backwards_sync_and_indexer_restarts_should_
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_number(false, Some(BLOCK_HEIGHT_SHUTDOWN_HAPPENS_AT));
     drop(mock_rsk_provider_handler);
-    cycle_indexer(store, mock_rsk_provider, shutting_down, Some("Phase 1 (backward sync up to checkpoint) completed successfully."));
+    cycle_indexer(
+        store,
+        mock_rsk_provider,
+        shutting_down,
+        Some("Phase 1 (backward sync up to checkpoint) completed successfully."),
+    );
 
     // Phase 2: Recovery and subscription
     let store: CachedBlockStore<LruCache<RskBlock>> =
@@ -284,7 +294,12 @@ fn test_when_shutdown_happens_during_backwards_sync_and_indexer_restarts_should_
     mock_rsk_provider_handler.set_provider_expect_get_block_by_number(false, None);
     mock_rsk_provider_handler.set_provider_expect_subscribe_blocks(false);
     drop(mock_rsk_provider_handler);
-    cycle_indexer(store, mock_rsk_provider, shutting_down, Some("Phase 2 (checkpoint recovery and subscription) completed successfully."));
+    cycle_indexer(
+        store,
+        mock_rsk_provider,
+        shutting_down,
+        Some("Phase 2 (checkpoint recovery and subscription) completed successfully."),
+    );
 
     let store_after: CachedBlockStore<LruCache<RskBlock>> =
         CachedBlockStore::new(store_path, BLOCK_CACHE_SIZE)?;
