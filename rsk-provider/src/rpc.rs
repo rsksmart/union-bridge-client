@@ -3,7 +3,7 @@ use crate::sub::AlloySubscription;
 use alloy_primitives::B256;
 use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy_rpc_types::{Filter, FilterSet, Header, Log};
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use common::rsk_provider::{RskProvider, RskSubscriptionFilter};
 use common::shutdown_flag::ShutdownFlag;
 use common::types::{ContractInfo, RskBlock, RskEvent, RskLog, RskRpcBlock};
@@ -28,8 +28,10 @@ where
 impl AlloyProvider {
     pub fn new(url: &str, shutdown_flag: ShutdownFlag) -> Result<Self> {
         let ws = WsConnect::new(url);
-        let rt_sync = RuntimeSync::new()?;
-        let root_provider = rt_sync.run(ProviderBuilder::default().on_ws(ws))?;
+        let rt_sync = RuntimeSync::new().context("On AlloyProvider")?;
+        let root_provider = rt_sync
+            .run(ProviderBuilder::default().on_ws(ws))
+            .context("Failed to create AlloyProvider")?;
 
         Ok(AlloyProvider {
             inner: root_provider,
@@ -38,15 +40,16 @@ impl AlloyProvider {
         })
     }
 
-    pub(super) fn unsubscribe(&self, subscription_id: B256) -> Result<()> {
-        self.inner.unsubscribe(subscription_id)?;
-        Ok(())
+    pub(super) fn unsubscribe(&self, name: &str, subscription_id: B256) -> Result<()> {
+        self.inner
+            .unsubscribe(subscription_id)
+            .context(format!("Failed to unsubscribe {subscription_id} @ {name}"))
     }
 
     fn monitor_shutdown(&self, subscription_id: B256, name: String) {
         let provider_clone = self.inner.clone();
         let unsubscribe_fn = move || {
-            debug!("Unsubscribing from {} on shutdown!", name);
+            debug!("Unsubscribing from {name} for {subscription_id} on shutdown!",);
             provider_clone.unsubscribe(subscription_id).unwrap();
         };
 
@@ -55,11 +58,13 @@ impl AlloyProvider {
             .spawn_shutdown_handler(unsubscribe_fn);
     }
 
-    fn parse_provider_response(response: Value) -> Result<Option<RskBlock>> {
+    fn parse_block_provider_response(response: Value) -> Result<Option<RskBlock>> {
         if response.is_null() || !response.is_object() {
             return Ok(None);
         }
-        let rpc_block: RskRpcBlock = serde_json::from_value(response)?;
+        let rpc_block: RskRpcBlock =
+            serde_json::from_value(response).context("Deserializing block")?;
+
         let rsk_block: RskBlock = RskBlock::from(rpc_block);
         Ok(Some(rsk_block))
     }
@@ -71,20 +76,30 @@ impl RskProvider for AlloyProvider {
 
     fn subscribe_blocks(&self) -> Result<Self::BlockSubscription> {
         let subscription_request = self.inner.subscribe_blocks();
-        let subscription = self.rt_sync.run(subscription_request)?;
+        let subscription = self
+            .rt_sync
+            .run(subscription_request)
+            .context("Failed to subscribe to blocks")?;
         self.monitor_shutdown(*subscription.local_id(), "Blocks".to_string());
         Ok(AlloySubscription::<Header>::new(subscription, self.clone()))
     }
 
     fn subscribe_logs(&self, filter: RskSubscriptionFilter) -> Result<Self::LogSubscription> {
+        let addresses = AlloySubscription::<Log>::build_addresses(&filter)
+            .context("Failed to parse filter addresses")?;
+
         let filter = Filter {
             block_option: AlloySubscription::<Log>::build_block_option(&filter),
-            address: FilterSet::from_iter(AlloySubscription::<Log>::build_addresses(&filter)?),
+            address: FilterSet::from_iter(addresses),
             topics: AlloySubscription::<Log>::build_topics(&filter)?,
         };
 
         let subscription_request = self.inner.subscribe_logs(&filter);
-        let subscription = self.rt_sync.run(subscription_request)?;
+        let subscription = self
+            .rt_sync
+            .run(subscription_request)
+            .context("Failed to subscribe to logs")?;
+
         self.monitor_shutdown(*subscription.local_id(), "Logs".to_string());
         Ok(AlloySubscription::<Log>::new(subscription, self.clone()))
     }
@@ -95,8 +110,12 @@ impl RskProvider for AlloyProvider {
             .client()
             .request("eth_getBlockByHash", vec![json!(hash), json!(false)]);
 
-        let response: Value = self.rt_sync.run(rpc_call)?;
-        Self::parse_provider_response(response)
+        let response: Value = self
+            .rt_sync
+            .run(rpc_call)
+            .context(format!("Getting block {hash} from provider"))?;
+
+        Self::parse_block_provider_response(response)
     }
 
     fn get_block_by_number(&self, num: u64) -> Result<Option<RskBlock>> {
@@ -107,8 +126,12 @@ impl RskProvider for AlloyProvider {
             .client()
             .request("eth_getBlockByNumber", vec![json!(num_hex), json!(false)]);
 
-        let response: Value = self.rt_sync.run(rpc_call)?;
-        Self::parse_provider_response(response)
+        let response: Value = self
+            .rt_sync
+            .run(rpc_call)
+            .context(format!("Getting block {num} from provider"))?;
+
+        Self::parse_block_provider_response(response)
     }
 
     fn get_best_block(&self) -> Result<RskBlock> {
@@ -117,8 +140,14 @@ impl RskProvider for AlloyProvider {
             .client()
             .request("eth_getBlockByNumber", vec![json!("latest"), json!(false)]);
 
-        let response: Value = self.rt_sync.run(rpc_call)?;
-        Self::parse_provider_response(response)?.ok_or(anyhow!("Could not get best block"))
+        let response: Value = self
+            .rt_sync
+            .run(rpc_call)
+            .context("Getting best block from provider")?;
+
+        Self::parse_block_provider_response(response)
+            .context("Getting best block from provider")?
+            .context("None best block")
     }
 
     fn decode_log(
@@ -126,23 +155,24 @@ impl RskProvider for AlloyProvider {
         new_log: RskLog,
         contract_info: &ContractInfo,
     ) -> Result<Option<RskEvent>> {
-        if contract_info.abi_file.is_some() {
+        let rsk_event_result;
+
+        if let Some(abi_file) = &contract_info.abi_file {
             debug!(
-                "ABI based event processing for contract {}",
+                "Dynamic event processing for contract {}",
                 contract_info.address
             );
-            event_processor_abi::process(
-                &contract_info.address,
-                new_log,
-                contract_info.abi_file.as_deref().unwrap(),
-            )
+            rsk_event_result =
+                event_processor_abi::process(&contract_info.address, new_log, abi_file);
         } else {
             debug!(
                 "Static event processing for contract {}",
                 contract_info.address
             );
-            event_processor_typed::process(new_log)
+            rsk_event_result = event_processor_typed::process(new_log);
         }
+
+        rsk_event_result.context("Decoding log")
     }
 
     fn disconnect(&self) -> Result<()> {
@@ -163,7 +193,7 @@ struct RuntimeSync {
 impl RuntimeSync {
     pub(super) fn new() -> Result<Self> {
         // Note: we cannot use Builder::new_current_thread() because Alloy needs multiple to work
-        let rt = Runtime::new().expect("Failed to create Tokio runtime (unrecoverable)");
+        let rt = Runtime::new().context("Failed to create Tokio runtime")?;
         Ok(RuntimeSync { rt: Arc::new(rt) })
     }
 
@@ -176,6 +206,7 @@ impl RuntimeSync {
             future
                 .await
                 .map_err(|e| anyhow!("Error on RuntimeSync: {:?}", e))
+                .context("Async operation failed")
         })
     }
 }
@@ -195,7 +226,7 @@ mod tests {
         let response: Value = serde_json::from_str(&data).expect("Failed to parse JSON");
         let result: Value = response["result"].clone();
 
-        let block = AlloyProvider::parse_provider_response(result)
+        let block = AlloyProvider::parse_block_provider_response(result)
             .expect("JSON data should be valid")
             .expect("JSON data should map to RSK block");
 
@@ -219,8 +250,8 @@ mod tests {
         });
         let result: Value = response["result"].clone();
 
-        let block =
-            AlloyProvider::parse_provider_response(result).expect("JSON data should be valid");
+        let block = AlloyProvider::parse_block_provider_response(result)
+            .expect("JSON data should be valid");
 
         assert!(block.is_none());
     }
@@ -232,7 +263,7 @@ mod tests {
         response["result"]["hash"] = json!(2);
         let result: Value = response["result"].clone();
 
-        let block = AlloyProvider::parse_provider_response(result);
+        let block = AlloyProvider::parse_block_provider_response(result);
 
         assert!(block.is_err());
     }
@@ -248,7 +279,7 @@ mod tests {
         });
         let result: Value = response["result"].clone();
 
-        let block = AlloyProvider::parse_provider_response(result);
+        let block = AlloyProvider::parse_block_provider_response(result);
 
         assert!(block.is_err());
     }
@@ -262,8 +293,8 @@ mod tests {
         });
         let result: Value = response["result"].clone();
 
-        let block =
-            AlloyProvider::parse_provider_response(result).expect("JSON data should be valid");
+        let block = AlloyProvider::parse_block_provider_response(result)
+            .expect("JSON data should be valid");
 
         assert!(block.is_none());
     }

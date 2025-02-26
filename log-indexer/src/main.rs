@@ -1,8 +1,8 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use common::rsk_indexer::RskIndexer;
 use common::shutdown_flag::ShutdownFlag;
 use dotenv::dotenv;
-use log::info;
+use log::{error, info};
 use log_indexer::indexer::LogIndexer;
 use log_indexer::managed_contracts;
 use log_indexer::store::RawLogStore;
@@ -22,7 +22,7 @@ fn main() -> Result<()> {
 
     let rsk_url = env::var("RSK_PROVIDER_URL").expect("RSK_PROVIDER_URL not set in env");
     let alloy_provider = AlloyProvider::new(&rsk_url, shutdown_flag.clone())
-        .expect("Failed to create AlloyProvider (unrecoverable)");
+        .expect("Failed to create AlloyProvider");
 
     let initial_block_hash =
         env::var("INITIAL_BLOCK_HASH").expect("INITIAL_BLOCK_HASH not set in env");
@@ -36,9 +36,12 @@ fn main() -> Result<()> {
         &initial_block_hash,
         managed_contracts,
         shutdown_flag,
-    );
+    )
+    .context("Failed to create LogIndexer")?;
 
-    indexer.run()?;
+    indexer.run().inspect_err(|e| {
+        error!("Unrecoverable error running log indexer: {:?}", e);
+    })?;
 
     info!("Quitting now...");
     log::logger().flush();

@@ -1,7 +1,7 @@
 use crate::store::BlockStore;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Context, Result};
 use common::rsk_indexer::RskIndexer;
-use common::rsk_provider::{RskProvider, RskProviderError, RskSubscription};
+use common::rsk_provider::{RskProvider, RskSubscription, RskSubscriptionError};
 use common::shutdown_flag::ShutdownFlag;
 use common::types::RskBlock;
 use log::{debug, error, info, warn};
@@ -36,7 +36,8 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
     }
 
     fn init_db_if_required(&self) -> Result<()> {
-        let best_block: Option<RskBlock> = self.store.get_best_block()?;
+        let best_block: Option<RskBlock> =
+            self.store.get_best_block().context("Initialising DB")?;
         if best_block.is_some() {
             return Ok(());
         }
@@ -44,8 +45,8 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         let initial_block_node = self
             .rsk_provider
             .get_block_by_hash(&self.initial_block_hash)
-            .expect("Provider errored getting initial_block_node (startup -> quit)")
-            .expect("initial_block_node not found on provider (startup -> quit)");
+            .context("Initialising DB")?
+            .context("Initial block hash not found on provider while initialising DB")?;
 
         info!(
             "[initialize_db_if_required] New instance: initializing DB with {} ({})",
@@ -55,6 +56,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 
         // initialize the store with the initial block info
         self.save_as_best_block(&initial_block_node)
+            .context("Initialising DB")
     }
 
     fn startup_backward_sync(&self) -> Result<()> {
@@ -86,7 +88,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         let mut rsk_block_subscription = self
             .rsk_provider
             .subscribe_blocks()
-            .expect("Failed to subscribe to blocks (unrecoverable)"); // TODO retry mechanism in scope of UB-15
+            .context("Failed to subscribe to blocks")?; // TODO retry mechanism in scope of UB-15
 
         let loop_result = self.listen_blocks(&mut rsk_block_subscription);
 
@@ -102,16 +104,20 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         while self.is_running() {
             let new_block = match rsk_block_subscription.next() {
                 Ok(block) => block,
-                Err(RskProviderError::Closed) => {
+                Err(RskSubscriptionError::ClosedConnection) => {
                     if self.is_running() {
-                        bail!("[subscribe_blocks] Provider closed unexpectedly");
+                        bail!("Provider closed unexpectedly!");
                     } else {
                         info!("[subscribe_blocks] Shutdown requested, quitting...");
                         break;
                     }
                 }
-                _ => {
-                    return Err(anyhow!("Failed to get next block from subscription"));
+                Err(RskSubscriptionError::Transient(err)) => {
+                    error!("[subscribe_blocks] Ignoring problematic block: {err:?}");
+                    continue;
+                }
+                Err(RskSubscriptionError::Unexpected(err)) => {
+                    bail!("[subscribe_blocks] Unknown error on block subs, quiting: {err:?}");
                 }
             };
 
@@ -120,8 +126,9 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
             // no need to keep track of it between iters as it is cached and can be re-fetched
             let local_best_block = self
                 .store
-                .get_best_block()?
-                .ok_or_else(|| anyhow!("Failed to get local_best_block from store"))?;
+                .get_best_block()
+                .context("On Block subscription")?
+                .context("Best block not found while listening blocks")?;
 
             let extends_canonical = new_block.parent() == local_best_block.hash();
             let is_reorg = !extends_canonical
@@ -133,15 +140,20 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                     new_block.number(),
                     new_block.hash()
                 );
-                self.save_as_best_block(&new_block)?;
+                self.save_as_best_block(&new_block)
+                    .context("On Block subscription")?;
             } else if is_reorg {
                 info!(
                     "[subscribe_blocks] Processing block {} ({}): fixing local reorg",
                     new_block.number(),
                     new_block.hash()
                 );
-                let provider_best_block = self.rsk_provider.get_best_block()?;
-                self.backward_sync(&provider_best_block)?;
+                let provider_best_block = self
+                    .rsk_provider
+                    .get_best_block()
+                    .context("On Block subscription")?;
+                self.backward_sync(&provider_best_block)
+                    .context("On Block subscription")?;
             } else {
                 info!(
                     "[subscribe_blocks] Processing block {} ({}): neither extending, nor competing",
@@ -149,7 +161,9 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                     new_block.hash()
                 );
                 // just save the block as it is not part of the main chain (at least yet)
-                self.store.save_block(&new_block)?;
+                self.store
+                    .save_block(&new_block)
+                    .context("On Block subscription")?;
             }
         }
 
@@ -164,8 +178,9 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 
         let store_best_block = self
             .store
-            .get_best_block()?
-            .expect("Could not get best block from store (unrecoverable)");
+            .get_best_block()
+            .context("On Backward Sync")?
+            .context("Best block not found in store during backward sync")?;
 
         info!(
             "[block_backward_sync] Connecting blocks {} ({}) and {} ({})",
@@ -179,7 +194,10 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 
         let mut new_block = starting_block.clone();
         loop {
-            let store_block = self.store.get_canonical_block(new_block.number())?;
+            let store_block = self
+                .store
+                .get_canonical_block(new_block.number())
+                .context("On Backward Sync")?;
 
             let is_missing = store_block.is_none();
             let is_reorg = store_block.map_or(false, |sb| sb.hash() != new_block.hash());
@@ -192,7 +210,8 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                     new_block.number(),
                     new_block.hash(),
                 );
-                self.save_as_canonical(&new_block)?;
+                self.save_as_canonical(&new_block)
+                    .context("On Backward Sync")?;
             } else if !reached_connection_height {
                 debug!(
                     "[block_backward_sync] Skipping known block {} ({}) while checking if fully connected",
@@ -207,9 +226,13 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 );
 
                 // we are complete, so we remove the checkpoint if any
-                self.store.reset_back_sync_checkpoint()?;
+                self.store
+                    .reset_back_sync_checkpoint()
+                    .context("On Backward Sync")?;
                 // it represents also the connection point to achieve full sync
-                self.store.set_best_block(&starting_block)?;
+                self.store
+                    .set_best_block(&starting_block)
+                    .context("On Backward Sync")?;
 
                 break;
             }
@@ -222,7 +245,9 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 );
 
                 // define backward_sync checkpoint to resume from
-                self.store.set_back_sync_checkpoint(&new_block)?;
+                self.store
+                    .set_back_sync_checkpoint(&new_block)
+                    .context("On Backward Sync")?;
 
                 break;
             }
@@ -233,15 +258,25 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
             }
 
             // no exit condition met, keep searching backwards
-            new_block = self.get_next_backward_sync_block(new_block.number() - 1)?;
+            new_block = self
+                .get_next_backward_sync_block(new_block.number() - 1)
+                .context("On Backward Sync")?;
         }
 
         Ok(())
     }
 
     fn resume_pending_backward_sync(&self) -> Result<()> {
-        if let Some(checkpoint) = self.store.get_back_sync_checkpoint()? {
-            match self.rsk_provider.get_block_by_hash(checkpoint.parent())? {
+        if let Some(checkpoint) = self
+            .store
+            .get_back_sync_checkpoint()
+            .context("Resuming Pending Backward Sync")?
+        {
+            match self
+                .rsk_provider
+                .get_block_by_hash(checkpoint.parent())
+                .context("Resuming Backward Sync")?
+            {
                 Some(checkpoint_parent) => {
                     info!("[startup_backward_sync] Resuming previous...");
                     self.backward_sync(&checkpoint_parent)?;
@@ -261,8 +296,15 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
     fn full_sync_backward_syncs(&self) -> Result<()> {
         let max_attempts = 10;
         for i in 1..max_attempts {
-            let provider_best_block = self.rsk_provider.get_best_block()?;
-            if let Some(store_best_block) = self.store.get_best_block()? {
+            let provider_best_block = self
+                .rsk_provider
+                .get_best_block()
+                .context("On Full Sync Backward Sync rounds")?;
+            if let Some(store_best_block) = self
+                .store
+                .get_best_block()
+                .context("On Full Sync Backward Sync rounds")?
+            {
                 let is_full_sync = provider_best_block.hash() == store_best_block.hash();
                 if is_full_sync {
                     debug!("[startup_backward_sync] No more rounds needed",);
@@ -271,7 +313,8 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                     return Ok(());
                 } else {
                     info!("[startup_backward_sync] Running from tip round-{}", i);
-                    self.backward_sync(&provider_best_block)?;
+                    self.backward_sync(&provider_best_block)
+                        .context("On Full Sync Backward Sync rounds")?;
                 }
             }
         }
@@ -283,17 +326,24 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
     }
 
     fn save_as_canonical(&self, canonical_block: &RskBlock) -> Result<()> {
-        self.store.save_block(&canonical_block)?;
+        self.store
+            .save_block(&canonical_block)
+            .context("Storing canonical block")?;
         // last, to avoid requiring db transactionality, as it is used to distinguish new block from reorgs
-        self.store.set_canonical_block(&canonical_block)
+        self.store
+            .set_canonical_block(&canonical_block)
+            .context("Setting canonical block")
     }
 
     fn save_as_best_block(&self, new_block: &RskBlock) -> Result<()> {
-        self.save_as_canonical(&new_block)?;
+        self.save_as_canonical(&new_block)
+            .context("Saving canonical")?;
         // last is preferred to not mark as best a block that was not yet stored
         // furthermore, if this line is fails for any reason (or app quits on error right before
         // running), soon a new block will become best (either one extending or reorg)
-        self.store.set_best_block(&new_block)
+        self.store
+            .set_best_block(&new_block)
+            .context("Saving as best block")
     }
 
     fn get_next_backward_sync_block(&self, block_num: u64) -> Result<RskBlock> {

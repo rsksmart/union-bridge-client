@@ -155,7 +155,7 @@ impl RskLog {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct RskEvent {
     name: String,
     info: LogInfo,
