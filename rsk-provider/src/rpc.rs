@@ -163,7 +163,7 @@ impl RskProvider for AlloyProvider {
             event_processor_abi::process(
                 &contract_info.address,
                 new_log,
-                contract_info.abi.as_deref().unwrap(),
+                contract_info.abi.as_ref().unwrap(),
             )
         } else {
             debug!(

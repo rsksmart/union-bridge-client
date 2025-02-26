@@ -1,4 +1,5 @@
 use crate::{errors::ConfigError, types::ContractInfo};
+use alloy_json_abi::JsonAbi;
 use config;
 use serde::Deserialize;
 use std::{collections::HashMap, fs, path::Path};
@@ -69,10 +70,13 @@ impl Config {
             .iter()
             .map(|c| {
                 let abi_path = format!("{}/abi/{}.json", self.path, c.address);
-                let abi_data = if Path::new(&abi_path).exists() {
+                let abi = if Path::new(&abi_path).exists() {
+                    let abi_data = fs::read_to_string(&abi_path)
+                        .expect(&format!("Failed to read ABI file: {}", abi_path));
+
                     Some(
-                        fs::read_to_string(&abi_path)
-                            .expect(&format!("Failed to read ABI file: {}", abi_path)),
+                        serde_json::from_str::<JsonAbi>(&abi_data)
+                            .expect(&format!("Failed to parse ABI file: {}", abi_path)),
                     )
                 } else {
                     None
@@ -83,7 +87,7 @@ impl Config {
                     ContractInfo {
                         name: c.name.to_owned(),
                         address: c.address.to_owned(),
-                        abi: abi_data,
+                        abi,
                     },
                 )
             })

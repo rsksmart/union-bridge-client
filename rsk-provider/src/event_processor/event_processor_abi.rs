@@ -7,7 +7,7 @@ use log::error;
 use serde_json::{json, Value};
 use std::str::FromStr;
 
-pub fn process(contract_address: &str, rsk_log: RskLog, abi: &str) -> Result<Option<RskEvent>> {
+pub fn process(contract_address: &str, rsk_log: RskLog, abi: &JsonAbi) -> Result<Option<RskEvent>> {
     if contract_address != rsk_log.info().address() {
         error!(
             "Log address {} does not match expected contract address {}",
@@ -17,9 +17,7 @@ pub fn process(contract_address: &str, rsk_log: RskLog, abi: &str) -> Result<Opt
         return Ok(None);
     }
 
-    let json_abi: JsonAbi = serde_json::from_str(abi)?;
-
-    let event = json_abi.events.values().flatten().find(|e| {
+    let event = abi.events.values().flatten().find(|e| {
         e.selector()
             .to_string()
             .eq_ignore_ascii_case(&rsk_log.event().topics()[0]) // TODO(Jira) another reason for https://rsklabs.atlassian.net/browse/UB-43
