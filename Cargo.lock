@@ -1045,6 +1045,7 @@ dependencies = [
  "rust-bitvmx-storage-backend",
  "serde",
  "tempfile",
+ "test-utils",
 ]
 
 [[package]]
@@ -1228,14 +1229,11 @@ dependencies = [
  "bitcoin",
  "config",
  "hex",
- "log",
- "log4rs",
  "lru",
  "mockall",
  "primitive-types 0.13.1",
  "serde",
  "serde_json",
- "sha2",
  "signal-hook",
  "thiserror 2.0.11",
 ]
@@ -3914,6 +3912,17 @@ name = "termtree"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f50febec83f5ee1df3015341d8bd429f2d1cc62bcba7ea2076759d315084683"
+
+[[package]]
+name = "test-utils"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "log",
+ "mockall",
+ "primitive-types 0.13.1",
+ "sha2",
+]
 
 [[package]]
 name = "thiserror"
