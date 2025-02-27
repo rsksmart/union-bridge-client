@@ -2450,7 +2450,6 @@ dependencies = [
  "rsk-provider",
  "rust-bitvmx-storage-backend",
  "serde",
- "serde_json",
 ]
 
 [[package]]
