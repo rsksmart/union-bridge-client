@@ -17,7 +17,5 @@ storage-backend = { workspace = true }
 [dev-dependencies]
 common = { path = "../common", features = ["generate-mocks"] }
 
-mockall = { workspace = true }
-
 tempfile = "3.16.0"
 env_logger = "0.11.6"

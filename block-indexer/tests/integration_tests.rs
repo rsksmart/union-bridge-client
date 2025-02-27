@@ -1,12 +1,12 @@
 use anyhow::Result;
-use common::rsk_provider::MockRskProvider;
 use block_indexer::indexer::BlockIndexer;
 use block_indexer::store::{BlockStore, CachedBlockStore};
 use common::cache::LruCache;
 use common::rsk_indexer::RskIndexer;
+use common::rsk_provider::MockRskProvider;
 use common::shutdown_flag::ShutdownFlag;
 use common::test_utils::mock_rsk_provider_handler::MockRskProviderHandler;
-use common::test_utils::rsk::FakeBlockGenerator;
+use common::test_utils::rsk_entity_generator::FakeBlockGenerator;
 use common::types::RskBlock;
 use log::info;
 use std::fs;

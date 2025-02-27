@@ -1,7 +1,7 @@
 use crate::{
     rsk_provider::{MockRskProvider, MockRskSubscription},
     shutdown_flag::ShutdownFlag,
-    test_utils::rsk::FakeBlockGenerator,
+    test_utils::rsk_entity_generator::FakeBlockGenerator,
     types::RskBlock,
 };
 use log::info;

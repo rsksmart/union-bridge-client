@@ -1041,7 +1041,6 @@ dependencies = [
  "env_logger",
  "log",
  "log4rs",
- "mockall",
  "rsk-provider",
  "rust-bitvmx-storage-backend",
  "serde",
