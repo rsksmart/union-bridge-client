@@ -2,7 +2,7 @@ use anyhow::Result;
 use block_indexer::{indexer::BlockIndexer, store::CachedBlockStore};
 use clap::{Arg, Command};
 use common::{config::Config, rsk_indexer::RskIndexer, shutdown_flag::ShutdownFlag};
-use log::info;
+use log::{error, info};
 use rsk_provider::rpc::AlloyProvider;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";

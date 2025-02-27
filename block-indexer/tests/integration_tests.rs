@@ -1,6 +1,5 @@
 use anyhow::Result;
 use common::rsk_provider::MockRskProvider;
-
 use block_indexer::indexer::BlockIndexer;
 use block_indexer::store::{BlockStore, CachedBlockStore};
 use common::cache::LruCache;
@@ -14,93 +13,8 @@ use std::fs;
 use std::sync::Mutex;
 use std::sync::{atomic::AtomicBool, Arc};
 use tempfile::tempdir;
+
 const BLOCK_CACHE_SIZE: usize = 100;
-
-fn cycle_indexer(
-    store: CachedBlockStore<LruCache<RskBlock>>,
-    mock_rsk_provider: Arc<Mutex<MockRskProvider>>,
-    shutting_down: ShutdownFlag,
-    msg: Option<&str>,
-) -> () {
-    let mock_rsk_provider = Arc::try_unwrap(mock_rsk_provider)
-        .unwrap()
-        .into_inner()
-        .unwrap();
-    let indexer = BlockIndexer::new(store, mock_rsk_provider, "", shutting_down.clone());
-    let _ = indexer.run();
-    info!("{}", msg.unwrap_or("Indexer run completed successfully."));
-    drop(indexer);
-}
-
-fn assert_best_block(
-    generator: &FakeBlockGenerator,
-    store_after: &CachedBlockStore<LruCache<RskBlock>>,
-    best_block_height: u64,
-) -> () {
-    let best_block = store_after
-        .get_best_block()
-        .unwrap_or_else(|err| panic!("Failed to retrieve best block: {}", err))
-        .expect("No best block found after indexer run");
-    let block_expected = generator.generate_block(best_block_height);
-    assert_eq!(
-        block_expected.hash(),
-        best_block.hash(),
-        "Hash of best block in storage does not match the hash of the expected block (height {})",
-        best_block_height
-    );
-    assert_eq!(
-        block_expected.number(),
-        best_block.number(),
-        "Height of best block in storage does not match the height of the expected block ({})",
-        best_block_height
-    );
-}
-
-fn assert_checkpoint(
-    generator: &FakeBlockGenerator,
-    store_after: &CachedBlockStore<LruCache<RskBlock>>,
-    checkpoint_block_height: u64,
-) -> () {
-    let checkpoint_block = store_after
-        .get_back_sync_checkpoint()
-        .unwrap_or_else(|err| panic!("Failed to retrieve checkpoint block: {}", err))
-        .expect("No checkpoint block found after indexer run");
-    let block_expected = generator.generate_block(checkpoint_block_height);
-    assert_eq!(
-        block_expected.hash(),
-        checkpoint_block.hash(),
-        "Hash of checkpoint block in storage does not match the hash of the expected block (height {})", checkpoint_block_height
-    );
-    assert_eq!(
-        block_expected.number(),
-        checkpoint_block.number(),
-        "Height of checkpoint block in storage does not match the height of the expected block ({})", checkpoint_block_height
-    );
-}
-
-fn assert_canonical_chain(
-    generator: &FakeBlockGenerator,
-    store_after: &CachedBlockStore<LruCache<RskBlock>>,
-    begin_height: u64,
-    end_height: u64,
-) -> () {
-    for height in begin_height..=end_height {
-        let block_expected = generator.clone().generate_block(height);
-        let block_actual = store_after
-            .get_canonical_block(height)
-            .unwrap_or_else(|err| panic!("Failed to retrieve canonical block: {}", err))
-            .expect(&format!(
-                "No canonical block at height {} found after indexer run",
-                height
-            ));
-        assert_eq!(
-            block_expected.hash(),
-            block_actual.hash(),
-            "Hash of canonical block in storage at height {} does not match the hash of the expected block",
-            height
-        );
-    }
-}
 
 /*
 # Given the initial best block is B
@@ -494,4 +408,90 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_from_early_block
         MAX_BLOCK_HEIGHT_SUBSCRIPTION,
     );
     Ok(())
+}
+
+fn cycle_indexer(
+    store: CachedBlockStore<LruCache<RskBlock>>,
+    mock_rsk_provider: Arc<Mutex<MockRskProvider>>,
+    shutting_down: ShutdownFlag,
+    msg: Option<&str>,
+) -> () {
+    let mock_rsk_provider = Arc::try_unwrap(mock_rsk_provider)
+        .unwrap()
+        .into_inner()
+        .unwrap();
+    let indexer = BlockIndexer::new(store, mock_rsk_provider, "", shutting_down.clone());
+    let _ = indexer.run();
+    info!("{}", msg.unwrap_or("Indexer run completed successfully."));
+    drop(indexer);
+}
+
+fn assert_best_block(
+    generator: &FakeBlockGenerator,
+    store_after: &CachedBlockStore<LruCache<RskBlock>>,
+    best_block_height: u64,
+) -> () {
+    let best_block = store_after
+        .get_best_block()
+        .unwrap_or_else(|err| panic!("Failed to retrieve best block: {}", err))
+        .expect("No best block found after indexer run");
+    let block_expected = generator.generate_block(best_block_height);
+    assert_eq!(
+        block_expected.hash(),
+        best_block.hash(),
+        "Hash of best block in storage does not match the hash of the expected block (height {})",
+        best_block_height
+    );
+    assert_eq!(
+        block_expected.number(),
+        best_block.number(),
+        "Height of best block in storage does not match the height of the expected block ({})",
+        best_block_height
+    );
+}
+
+fn assert_checkpoint(
+    generator: &FakeBlockGenerator,
+    store_after: &CachedBlockStore<LruCache<RskBlock>>,
+    checkpoint_block_height: u64,
+) -> () {
+    let checkpoint_block = store_after
+        .get_back_sync_checkpoint()
+        .unwrap_or_else(|err| panic!("Failed to retrieve checkpoint block: {}", err))
+        .expect("No checkpoint block found after indexer run");
+    let block_expected = generator.generate_block(checkpoint_block_height);
+    assert_eq!(
+        block_expected.hash(),
+        checkpoint_block.hash(),
+        "Hash of checkpoint block in storage does not match the hash of the expected block (height {})", checkpoint_block_height
+    );
+    assert_eq!(
+        block_expected.number(),
+        checkpoint_block.number(),
+        "Height of checkpoint block in storage does not match the height of the expected block ({})", checkpoint_block_height
+    );
+}
+
+fn assert_canonical_chain(
+    generator: &FakeBlockGenerator,
+    store_after: &CachedBlockStore<LruCache<RskBlock>>,
+    begin_height: u64,
+    end_height: u64,
+) -> () {
+    for height in begin_height..=end_height {
+        let block_expected = generator.clone().generate_block(height);
+        let block_actual = store_after
+            .get_canonical_block(height)
+            .unwrap_or_else(|err| panic!("Failed to retrieve canonical block: {}", err))
+            .expect(&format!(
+                "No canonical block at height {} found after indexer run",
+                height
+            ));
+        assert_eq!(
+            block_expected.hash(),
+            block_actual.hash(),
+            "Hash of canonical block in storage at height {} does not match the hash of the expected block",
+            height
+        );
+    }
 }

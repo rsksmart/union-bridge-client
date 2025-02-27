@@ -1,16 +1,15 @@
+use crate::{
+    rsk_provider::{MockRskProvider, MockRskSubscription},
+    shutdown_flag::ShutdownFlag,
+    test_utils::rsk::FakeBlockGenerator,
+    types::RskBlock,
+};
 use log::info;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
 };
 use std::{thread, time::Duration};
-
-use crate::test_utils::rsk::FakeBlockGenerator;
-use crate::{
-    rsk_provider::{MockRskProvider, MockRskSubscription},
-    shutdown_flag::ShutdownFlag,
-    types::RskBlock,
-};
 
 #[derive(Clone)]
 pub struct MockRskProviderHandler {
