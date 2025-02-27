@@ -1,15 +1,17 @@
 use common::types::{BlockHash, BlockNumber, BlockTimestamp, RskBlock};
 use log::debug;
 use primitive_types::U256;
-use sha2::{Digest, Sha256};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
 
+use common::types::{LogEvent, LogInfo, RskBlock, RskLog};
+use primitive_types::U256;
+use sha3::{Digest, Keccak256};
+
 pub const DEFAULT_BLOCK_HASH: &str =
     "0x5d164d93bf09ee215cc67420f24d31b8d86c46ced6e770e8abf69c16bea3a67c";
-
 /// Returns a list of default RSK test blocks.
 ///
 /// This function provides a collection of predefined RSK test blocks, which can be used
@@ -129,6 +131,50 @@ pub fn get_third_default_rsk_block() -> RskBlock {
     )
 }
 
+pub fn get_fake_address(address_num: u64, nonce: Option<&str>) -> String {
+    let mut hasher = Keccak256::new();
+    let mut data = address_num.to_le_bytes().to_vec();
+    // Append nonce bytes if provided
+    if let Some(n) = nonce {
+        data.extend_from_slice(n.as_bytes());
+    }
+    hasher.update(data);
+    let hash = hasher.finalize();
+    // Ethereum addresses are the last 20 bytes of the 32-byte hash
+    let address_bytes = &hash[12..];
+    format!("0x{}", hex::encode(address_bytes))
+}
+
+pub fn get_fake_tx_hash(tx_id: u64, from: &str) -> String {
+    let mut hasher = Keccak256::new();
+    let mut data = Vec::new();
+    data.extend_from_slice(&tx_id.to_le_bytes());
+    data.extend_from_slice(from.as_bytes());
+    // data.extend_from_slice(to.as_bytes());
+    // data.extend_from_slice(&value.to_le_bytes());
+    hasher.update(data);
+    let hash = hasher.finalize();
+    format!("0x{}", hex::encode(hash))
+}
+
+pub fn address_to_topic(address: &str) -> String {
+    let addr = address.strip_prefix("0x").unwrap_or(address);
+    if addr.len() != 40 {
+        panic!(
+            "Invalid Ethereum address length: expected 40 hex digits, got {}",
+            addr.len()
+        );
+    }
+    format!("0x{}{}", "0".repeat(24), addr)
+}
+
+pub fn event_signature_to_topic(event_signature: &str) -> String {
+    let mut hasher = Keccak256::new();
+    hasher.update(event_signature.as_bytes());
+    let hash = hasher.finalize();
+    format!("0x{}", hex::encode(hash))
+}
+
 /// A stateless generator for fake RSK blocks that computes dynamic values (difficulty, timestamp,
 /// total difficulty and average block time) based on the block number. It has a built-in mechanism
 /// to handle generation of alternative blocks (to simulate reorganizations).`.
@@ -155,7 +201,7 @@ impl FakeBlockGenerator {
     }
 
     pub fn generate_hash(&self, height: BlockNumber, flavor: &str) -> String {
-        let mut hasher = Sha256::new();
+        let mut hasher = Keccak256::new();
         let bytes = if flavor.is_empty() {
             height.value().to_le_bytes().to_vec()
         } else {
@@ -234,4 +280,45 @@ impl FakeBlockGenerator {
 
 fn from_hex_to_block_hash(hex: &str) -> BlockHash {
     BlockHash::try_from(hex).expect(&format!("Invalid hex string: {}", hex))
+}
+
+/// A stateless generator for fake RSK logs.
+#[derive(Clone)]
+pub struct FakeLogGenerator {
+    event_signature: String,
+}
+
+impl FakeLogGenerator {
+    pub fn new(event_signature: &str) -> Self {
+        Self {
+            event_signature: event_signature.to_string(),
+        }
+    }
+
+    pub fn generate_log(
+        &self,
+        block: RskBlock,
+        tx_id: u64,
+        address_num: u64,
+        log_index: u64,
+    ) -> RskLog {
+        let address_from = get_fake_address(address_num, None);
+        let address_to = get_fake_address(address_num, Some("destinatary"));
+        let tx_hash = get_fake_tx_hash(tx_id, &address_from);
+        let info: LogInfo = LogInfo::new(
+            address_from.clone(),
+            block.hash().to_string(),
+            block.number(),
+            tx_hash,
+            log_index,
+            false,
+        );
+        let topics = vec![
+            address_to_topic(&address_from),
+            address_to_topic(&address_to),
+        ];
+        let event: LogEvent =
+            LogEvent::new(event_signature_to_topic(&self.event_signature), topics);
+        RskLog::new(info, event)
+    }
 }

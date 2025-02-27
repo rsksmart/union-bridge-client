@@ -1,10 +1,9 @@
 use anyhow::Result;
-use common::rsk_provider::MockRskProvider;
-
 use block_indexer::indexer::BlockIndexer;
 use block_indexer::store::{BlockStore, CachedBlockStore};
 use common::cache::LruCache;
 use common::rsk_indexer::RskIndexer;
+use common::rsk_provider::MockRskProvider;
 use common::shutdown_flag::ShutdownFlag;
 use common::types::{BlockHash, BlockNumber, RskBlock};
 use log::info;

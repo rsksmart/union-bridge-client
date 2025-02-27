@@ -2451,6 +2451,8 @@ dependencies = [
  "rsk-provider",
  "rust-bitvmx-storage-backend",
  "serde",
+ "tempfile",
+ "test-utils",
 ]
 
 [[package]]
@@ -3922,7 +3924,7 @@ dependencies = [
  "log",
  "mockall",
  "primitive-types 0.13.1",
- "sha2",
+ "sha3",
 ]
 
 [[package]]
