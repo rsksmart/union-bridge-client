@@ -1,0 +1,163 @@
+use crate::{errors::ConfigError, types::ContractInfo};
+use alloy_json_abi::JsonAbi;
+use config;
+use serde::Deserialize;
+use std::{collections::HashMap, fs, path::Path};
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Config {
+    pub indexer: IndexerConfig,
+    pub provider: ProviderConfig,
+    pub contracts: Vec<ContractConfig>,
+    #[serde(skip)]
+    path: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct IndexerConfig {
+    pub initial_block_hash: String,
+    pub storage: StorageConfig,
+    pub cache: CacheConfig,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct StorageConfig {
+    pub path: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CacheConfig {
+    pub size: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ProviderConfig {
+    pub rootstock: RootstockConfig,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RootstockConfig {
+    pub url: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ContractConfig {
+    pub name: String,
+    pub address: String,
+}
+
+impl Config {
+    pub fn load(path: &str) -> Result<Self, ConfigError> {
+        let config_path = format!("{}/config.yaml", path);
+
+        let raw_config = config::Config::builder()
+            .add_source(config::File::with_name(&config_path))
+            .build()
+            .map_err(ConfigError::ConfigFileError)?;
+
+        let mut parsed_config = raw_config
+            .try_deserialize::<Config>()
+            .map_err(ConfigError::ConfigFileError)?;
+
+        parsed_config.path = path.to_owned();
+
+        Ok(parsed_config)
+    }
+
+    pub fn load_contracts(&self) -> HashMap<String, ContractInfo> {
+        self.contracts
+            .iter()
+            .map(|c| {
+                let abi_path = format!("{}/abi/{}.json", self.path, c.address);
+                let abi = if Path::new(&abi_path).exists() {
+                    let abi_data = fs::read_to_string(&abi_path)
+                        .expect(&format!("Failed to read ABI file: {}", abi_path));
+
+                    Some(
+                        serde_json::from_str::<JsonAbi>(&abi_data)
+                            .expect(&format!("Failed to parse ABI file: {}", abi_path)),
+                    )
+                } else {
+                    None
+                };
+
+                (
+                    c.address.to_owned(),
+                    ContractInfo {
+                        name: c.name.to_owned(),
+                        address: c.address.to_owned(),
+                        abi,
+                    },
+                )
+            })
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::config::Config;
+    use std::env;
+
+    #[test]
+    fn test_config_load_when_dev_config_set_should_load_config_successfully() {
+        let config_path = format!("{}/../config/stage", env!("CARGO_MANIFEST_DIR"));
+        let config = Config::load(&config_path).expect("Failed to load config");
+
+        // indexer
+        assert_eq!("0xabc", config.indexer.initial_block_hash);
+        assert_eq!("/foo/bar", config.indexer.storage.path);
+        assert_eq!(1000, config.indexer.cache.size);
+
+        // provider
+        assert_eq!(
+            "wss://public-node.testnet.rsk.co/websocket",
+            config.provider.rootstock.url
+        );
+
+        // contracts
+        assert_eq!(2, config.contracts.len());
+        assert_eq!(
+            "RootstockTestnetMultiFeedAdapterWithoutRoundsV1",
+            config.contracts[0].name
+        );
+        assert_eq!(
+            "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761",
+            config.contracts[0].address
+        );
+        assert_eq!("MoCMedianizer", config.contracts[1].name);
+        assert_eq!(
+            "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc",
+            config.contracts[1].address
+        );
+    }
+
+    #[test]
+    fn test_load_contracts_when_dev_config_set_should_load_contracts_successfully() {
+        let config_path = format!("{}/../config/stage", env!("CARGO_MANIFEST_DIR"));
+        let config = Config::load(&config_path).expect("Failed to load config");
+        let contracts = config.load_contracts();
+
+        assert_eq!(2, contracts.len());
+
+        // first contract
+        let key = "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761";
+        let contract_info = contracts.get(key).unwrap();
+
+        assert_eq!(
+            "RootstockTestnetMultiFeedAdapterWithoutRoundsV1",
+            contract_info.name
+        );
+        assert_eq!(key, contract_info.address);
+        assert!(!contract_info.abi.as_ref().unwrap().is_empty());
+
+        // second contract
+        let key = "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc";
+        let contract_info = contracts.get(key).unwrap();
+
+        assert_eq!("MoCMedianizer", contract_info.name);
+        assert_eq!(key, contract_info.address);
+        assert!(contract_info.abi.is_none());
+    }
+}

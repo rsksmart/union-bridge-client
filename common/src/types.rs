@@ -1,5 +1,5 @@
-use bitcoin::blockdata::block::Header;
-use bitcoin::consensus::encode::deserialize as btc_deserialize;
+use alloy_json_abi::JsonAbi;
+use bitcoin::{blockdata::block::Header, consensus::encode::deserialize as btc_deserialize};
 use primitive_types::U256;
 use serde::{de, Deserialize, Deserializer, Serialize};
 use serde_json::Value;
@@ -258,5 +258,5 @@ impl LogEvent {
 pub struct ContractInfo {
     pub address: String,
     pub name: String,
-    pub abi_file: Option<String>,
+    pub abi: Option<JsonAbi>,
 }

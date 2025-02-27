@@ -4,19 +4,22 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-log = { workspace = true }
-serde = { workspace = true }
-hex = { workspace = true }
 anyhow = { workspace = true }
-primitive-types = { workspace = true }
-thiserror = { workspace = true }
-serde_json = { workspace = true }
-bitcoin = "0.32.4"
-lru = "0.13.0"
-signal-hook = "0.3"
-
+hex = { workspace = true }
+log = { workspace = true }
+log4rs = { workspace = true }
 mockall = { workspace = true, optional = true }
+primitive-types = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+alloy-json-abi = "0.8.21"
+lru = "0.13.0"
+bitcoin = "0.32.4"
+config = "0.15.8"
 sha2 = "0.10"
+signal-hook = "0.3"
 
 [features]
 generate-mocks = ["mockall"]

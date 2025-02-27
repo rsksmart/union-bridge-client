@@ -4,13 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+common = { path = "../common" }
+rsk-provider = { path = "../rsk-provider" }
+
+anyhow = { workspace = true }
+clap = { workspace = true }
 log = { workspace = true }
 log4rs = { workspace = true }
-dotenv = { workspace = true }
-anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 storage-backend = { workspace = true }
-common = { path = "../common" }
-rsk-provider = { path = "../rsk-provider" }
-yaml-rust = "0.4.5"

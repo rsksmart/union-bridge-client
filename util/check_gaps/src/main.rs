@@ -1,30 +1,35 @@
 use anyhow::{bail, Context, Ok, Result};
 use block_indexer::store::{BlockStore, CachedBlockStore};
-use common::cache::LruCache;
-use common::rsk_provider::RskProvider;
-use common::shutdown_flag::ShutdownFlag;
-use common::types::RskBlock;
-use dotenv::dotenv;
+use clap::{Arg, Command};
+use common::{
+    cache::LruCache, config::Config, rsk_provider::RskProvider, shutdown_flag::ShutdownFlag,
+    types::RskBlock,
+};
 use log::{debug, info, warn};
 use rsk_provider::rpc::AlloyProvider;
-use std::env;
 
+const CONFIG_CLI_FLAG: &str = "config-path";
 const FINALITY_FOR_CHECK: u8 = 10;
 
 fn main() -> Result<()> {
-    dotenv().expect("Failed to load .env file");
+    let matches = Command::new("Check Fork Tool")
+        .arg(
+            Arg::new(CONFIG_CLI_FLAG)
+                .short('c')
+                .long(CONFIG_CLI_FLAG)
+                .value_name("PATH")
+                .help("Sets the path to the configuration directory")
+                .default_value("../config/dev"),
+        )
+        .get_matches();
 
-    let store_path = env::var("STORE_PATH").expect("STORE_PATH not set in env");
-    let block_cache_size = env::var("BLOCK_CACHE_SIZE")
-        .expect("BLOCK_CACHE_SIZE not set in env")
-        .parse::<usize>()
-        .expect("BLOCK_CACHE_SIZE in env must be a number");
+    let config_path: &String = matches.get_one(CONFIG_CLI_FLAG).unwrap();
+    let config = Config::load(config_path).expect("Failed to load config");
 
-    let store = CachedBlockStore::new(&store_path, block_cache_size)
+    let store = CachedBlockStore::new(&config.indexer.storage.path, config.indexer.cache.size)
         .expect("Failed to create CachedKeyValueStore");
 
-    let initial_block_hash =
-        env::var("INITIAL_BLOCK_HASH").expect("INITIAL_BLOCK_HASH not set in env");
+    let initial_block_hash = config.indexer.initial_block_hash;
 
     let initial_block = store
         .get_block_by_hash(&initial_block_hash)?

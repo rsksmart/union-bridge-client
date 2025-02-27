@@ -60,17 +60,14 @@ The Union Bridge Monitor is not just a simple block indexer. It:
 # How to run the Monitor?
 
 Both `log-indexer` and `block-indexer` need to be run. TBD if we create an orchestrator to run both at the same time.
-Both crates are configurable, please check `.env.sample` as a reference and place your ouwn version named `.env` in the
-`monitor` directory.
+Both crates are configurable, please check `config/dev` as a reference to create your own config. 
 
 ```bash
-cd log-indexer
-RUST_BACKTRACE=1 RUST_LOG=debug cargo run
+RUST_BACKTRACE=1 RUST_LOG=debug cargo run --bin log-indexer -- --logger-path "/path/to/log4rs" --config-path "/path/to/config/dir"
 ```
 
 ```bash
-cd block-indexer
-RUST_BACKTRACE=1 RUST_LOG=debug cargo run
+RUST_BACKTRACE=1 RUST_LOG=debug cargo run --bin block-indexer -- --logger-path "/path/to/log4rs" --config-path "/path/to/config/dir"
 ```
 
 # Utils/Check Gaps
@@ -80,8 +77,7 @@ This tool checks if there are any gaps in the blocks indexed by the monitor.
 To run it:
 
 ```bash
-cd utils/check_gaps
-RUST_BACKTRACE=1 RUST_LOG=debug cargo run
+RUST_BACKTRACE=1 RUST_LOG=debug cargo run --bin check_gaps -- --config-path "/path/to/config/dir"
 ```
 
 # Utils/Generate ELF Demo

@@ -5,9 +5,10 @@ edition = "2021"
 resolver = "2"
 
 [dependencies]
-anyhow = { workspace = true }
-log = { workspace = true }
-dotenv = { workspace = true }
-common = { path = "../../common" }
 block-indexer = { path = "../../block-indexer" }
 rsk-provider = { path = "../../rsk-provider" }
+common = { path = "../../common" }
+
+anyhow = { workspace = true }
+clap = { workspace = true }
+log = { workspace = true }

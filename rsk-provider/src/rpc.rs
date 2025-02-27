@@ -157,13 +157,13 @@ impl RskProvider for AlloyProvider {
     ) -> Result<Option<RskEvent>> {
         let rsk_event_result;
 
-        if let Some(abi_file) = &contract_info.abi_file {
+        if let Some(abi) = &contract_info.abi {
             debug!(
                 "Dynamic event processing for contract {}",
                 contract_info.address
             );
             rsk_event_result =
-                event_processor_abi::process(&contract_info.address, new_log, abi_file);
+                event_processor_abi::process(&contract_info.address, new_log, &abi);
         } else {
             debug!(
                 "Static event processing for contract {}",
