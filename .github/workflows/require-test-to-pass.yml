@@ -63,8 +63,3 @@ jobs:
 
       - name: Run tests
         run: cargo test --all-features
-        env:
-          BLOCK_CACHE_SIZE: 1000
-          STORE_PATH: ".rootstock_monitor"
-          RSK_PROVIDER_URL: "wss://public-node.testnet.rsk.co/websocket"
-          INITIAL_BLOCK_HASH: "0x3ad0e3c0080972139dfec6ba6fcb779715781bba95976c707ca9edd68ff733ed"
