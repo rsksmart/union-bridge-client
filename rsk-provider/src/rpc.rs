@@ -92,7 +92,7 @@ impl AlloyProvider {
                     "Failed to get best block from provider. Attempt {attempt}. Retry in: {wait_time}: {:?}",
                     result.as_ref().err()
                 );
-                std::thread::sleep(std::time::Duration::from_secs(wait_time as u64));
+                std::thread::sleep(std::time::Duration::from_secs(wait_time));
             }
         }
 
