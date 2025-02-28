@@ -56,9 +56,10 @@ mod tests {
     use super::RawLogStore;
     use crate::store::{LogStore, StoreKey};
     use anyhow::Result;
-    use test_utils::rsk_entity_generator::{FakeBlockGenerator, FakeLogGenerator};
     use storage_backend::storage::KeyValueStore;
     use tempfile::tempdir;
+    use test_utils::rsk_block_generator::FakeBlockGenerator;
+    use test_utils::rsk_log_generator::FakeLogGenerator;
 
     fn create_test_store() -> Result<RawLogStore> {
         let temp_dir = tempdir()?;
