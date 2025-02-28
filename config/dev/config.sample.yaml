@@ -15,3 +15,6 @@ contracts:
 
   - name: "MoCMedianizer"
     address: "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc"
+
+  - name: "PegManager"
+    address: "<ADDRESS_HERE>"
