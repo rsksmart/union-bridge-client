@@ -84,11 +84,10 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 
         info!("[subscribe_blocks] Start subscribe_blocks...");
 
-        // TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15
         let mut rsk_block_subscription = self
             .rsk_provider
             .subscribe_blocks()
-            .context("Failed to subscribe to blocks")?; // TODO retry mechanism in scope of UB-15
+            .context("Failed to subscribe to blocks")?; // do not retry, this is the application startup
 
         let loop_result = self.listen_blocks(&mut rsk_block_subscription);
 
@@ -114,6 +113,10 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 }
                 Err(RskSubscriptionError::Transient(err)) => {
                     error!("[subscribe_blocks] Ignoring problematic block: {err:?}");
+                    continue;
+                }
+                Err(RskSubscriptionError::Lagged(err)) => {
+                    error!("[subscribe_blocks] Subscription lagged, a backward_sync will be needed: {err:?}");
                     continue;
                 }
                 Err(RskSubscriptionError::Unexpected(err)) => {
