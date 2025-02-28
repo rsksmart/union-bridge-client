@@ -4,7 +4,7 @@ use std::sync::{
     Arc,
 };
 
-use crate::types::RskBlock;
+use common::types::RskBlock;
 use primitive_types::U256;
 use sha2::{Digest, Sha256};
 
@@ -16,7 +16,7 @@ use sha2::{Digest, Sha256};
 /// # Example
 ///
 /// ```
-/// use common::test_utils::rsk::get_default_rsk_blocks;
+/// use test_utils::rsk_entity_generator::get_default_rsk_blocks;
 ///
 /// let blocks = get_default_rsk_blocks();
 ///
@@ -42,7 +42,7 @@ pub fn get_default_rsk_blocks() -> Vec<RskBlock> {
 /// # Example
 ///
 /// ```
-/// use common::test_utils::rsk::get_first_default_rsk_block;
+/// use test_utils::rsk_entity_generator::get_first_default_rsk_block;
 ///
 /// let block = get_first_default_rsk_block();
 /// assert_eq!(block.number(), 7_234_706);
@@ -68,7 +68,7 @@ pub fn get_first_default_rsk_block() -> RskBlock {
 /// # Example
 ///
 /// ```
-/// use common::test_utils::rsk::get_second_default_rsk_block;
+/// use test_utils::rsk_entity_generator::get_second_default_rsk_block;
 ///
 /// let block = get_second_default_rsk_block();
 /// assert_eq!(block.number(), 7_234_707);
@@ -94,7 +94,7 @@ pub fn get_second_default_rsk_block() -> RskBlock {
 /// # Example
 ///
 /// ```
-/// use common::test_utils::rsk::get_third_default_rsk_block;
+/// use test_utils::rsk_entity_generator::get_third_default_rsk_block;
 ///
 /// let block = get_third_default_rsk_block();
 /// assert_eq!(block.number(), 7_234_708);
@@ -135,8 +135,8 @@ impl FakeBlockGenerator {
             difficulty_increment: U256::from_dec_str("10000000000000000").unwrap(),
             base_timestamp: 1514980800,
             avg_block_time: 30,
-            reorg_block_height: reorg_block_height,
-            is_reorg: is_reorg,
+            reorg_block_height,
+            is_reorg,
         }
     }
 

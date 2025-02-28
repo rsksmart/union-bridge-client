@@ -1,9 +1,7 @@
-use crate::{
-    rsk_provider::{MockRskProvider, MockRskSubscription},
-    shutdown_flag::ShutdownFlag,
-    test_utils::rsk::FakeBlockGenerator,
-    types::RskBlock,
-};
+use crate::rsk_entity_generator::FakeBlockGenerator;
+use common::rsk_provider::{MockRskProvider, MockRskSubscription};
+use common::shutdown_flag::ShutdownFlag;
+use common::types::RskBlock;
 use log::info;
 use std::sync::{
     atomic::{AtomicBool, Ordering},

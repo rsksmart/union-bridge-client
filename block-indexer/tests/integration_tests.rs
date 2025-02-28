@@ -1,18 +1,18 @@
 use anyhow::Result;
-use common::rsk_provider::MockRskProvider;
 use block_indexer::indexer::BlockIndexer;
 use block_indexer::store::{BlockStore, CachedBlockStore};
 use common::cache::LruCache;
 use common::rsk_indexer::RskIndexer;
+use common::rsk_provider::MockRskProvider;
 use common::shutdown_flag::ShutdownFlag;
-use common::test_utils::mock_rsk_provider_handler::MockRskProviderHandler;
-use common::test_utils::rsk::FakeBlockGenerator;
 use common::types::RskBlock;
 use log::info;
 use std::fs;
 use std::sync::Mutex;
 use std::sync::{atomic::AtomicBool, Arc};
 use tempfile::tempdir;
+use test_utils::mock_rsk_provider_handler::MockRskProviderHandler;
+use test_utils::rsk_entity_generator::FakeBlockGenerator;
 
 const BLOCK_CACHE_SIZE: usize = 100;
 

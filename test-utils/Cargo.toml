@@ -1,0 +1,11 @@
+[package]
+name = "test-utils"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+common = { path = "../common", features = ["generate-mocks"]}
+log = { workspace = true }
+mockall = { workspace = true}
+primitive-types = { workspace = true }
+sha2 = "0.10"
