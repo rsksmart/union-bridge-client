@@ -3917,6 +3917,7 @@ name = "test-utils"
 version = "0.1.0"
 dependencies = [
  "common",
+ "hex",
  "log",
  "mockall",
  "primitive-types 0.13.1",
