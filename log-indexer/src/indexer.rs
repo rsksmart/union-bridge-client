@@ -4,7 +4,7 @@ use common::rsk_indexer::RskIndexer;
 use common::rsk_provider::{RskProvider, RskSubscriptionError};
 use common::rsk_provider::{RskSubscription, RskSubscriptionFilter};
 use common::shutdown_flag::ShutdownFlag;
-use common::types::{ContractInfo, RskLog};
+use common::types::{BlockHash, ContractInfo, RskLog};
 use log::{error, info, warn};
 use std::collections::HashMap;
 
@@ -20,7 +20,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
     pub fn new(
         store: S,
         provider: P,
-        initial_block_hash: &str,
+        initial_block_hash: BlockHash,
         managed_contracts: HashMap<String, ContractInfo>,
         shutdown_flag: ShutdownFlag,
     ) -> Result<Self> {

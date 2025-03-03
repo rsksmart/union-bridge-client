@@ -1,30 +1,38 @@
+use crate::errors;
 use alloy_json_abi::JsonAbi;
 use bitcoin::{blockdata::block::Header, consensus::encode::deserialize as btc_deserialize};
 use primitive_types::{H256, U256};
 use serde::{de, Deserialize, Deserializer, Serialize};
 use serde_json::Value;
-use std::string::ToString;
+use std::{fmt, string::ToString};
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy)]
-pub struct Keccak256(H256);
+/// A block hash
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub struct BlockHash(H256);
 
-impl Keccak256 {
-    pub fn new(value: H256) -> Self {
-        Keccak256(value)
+impl fmt::Display for BlockHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "0x{}", hex::encode(self.0))
     }
 }
 
-impl std::fmt::Display for Keccak256 {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "0x{}", hex::encode(self.0.as_bytes()))
+impl TryFrom<&str> for BlockHash {
+    type Error = errors::BlockHashError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let value = value.trim_start_matches("0x");
+        let bytes = hex::decode(value)?;
+        let h256 = H256::from_slice(&bytes);
+
+        Ok(BlockHash(h256))
     }
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct RskBlock {
     number: u64,
-    hash: Keccak256,
-    parent_hash: Keccak256,
+    hash: BlockHash,
+    parent_hash: BlockHash,
     difficulty: U256,
     timestamp: u64,
     total_difficulty: U256,
@@ -48,8 +56,8 @@ impl From<RskRpcBlock> for RskBlock {
 impl RskBlock {
     pub fn new(
         number: u64,
-        hash: Keccak256,
-        parent_hash: Keccak256,
+        hash: BlockHash,
+        parent_hash: BlockHash,
         difficulty: U256,
         timestamp: u64,
         pow: String,
@@ -70,12 +78,12 @@ impl RskBlock {
         self.number
     }
 
-    pub fn hash(&self) -> Keccak256 {
-        self.hash
+    pub fn hash(&self) -> BlockHash {
+        self.hash.clone()
     }
 
-    pub fn parent(&self) -> Keccak256 {
-        self.parent_hash
+    pub fn parent(&self) -> BlockHash {
+        self.parent_hash.clone()
     }
 
     pub fn difficulty(&self) -> U256 {
@@ -99,10 +107,10 @@ impl RskBlock {
 pub struct RskRpcBlock {
     #[serde(deserialize_with = "parse_hex_to_u64")]
     number: u64,
-    #[serde(deserialize_with = "parse_hex_to_keccak256")]
-    hash: Keccak256,
-    #[serde(rename = "parentHash", deserialize_with = "parse_hex_to_keccak256")]
-    parent_hash: Keccak256,
+    #[serde(deserialize_with = "parse_hex_to_block_hash")]
+    hash: BlockHash,
+    #[serde(rename = "parentHash", deserialize_with = "parse_hex_to_block_hash")]
+    parent_hash: BlockHash,
     #[serde(deserialize_with = "parse_rsk_difficulty")]
     difficulty: U256,
     #[serde(deserialize_with = "parse_hex_to_u64")]
@@ -124,16 +132,18 @@ where
     u64::from_str_radix(hex.trim_start_matches("0x"), 16).map_err(de::Error::custom)
 }
 
-fn parse_hex_to_keccak256<'de, D>(deserializer: D) -> Result<Keccak256, D::Error>
+fn parse_hex_to_block_hash<'de, D>(deserializer: D) -> Result<BlockHash, D::Error>
 where
     D: Deserializer<'de>,
 {
     let hex: String = Deserialize::deserialize(deserializer)?;
-    let hex = hex.trim_start_matches("0x");
-    let bytes = hex::decode(hex).expect(&format!("Invalid hex string {}", hex));
-    let h256 = H256::from_slice(&bytes);
 
-    Ok(Keccak256::new(h256))
+    BlockHash::try_from(hex.as_str()).map_err(|err| {
+        de::Error::custom(format!(
+            "Failed to parse hex to block hash: {} - {}",
+            hex, err
+        ))
+    })
 }
 
 fn parse_rsk_difficulty<'de, D>(deserializer: D) -> Result<U256, D::Error>

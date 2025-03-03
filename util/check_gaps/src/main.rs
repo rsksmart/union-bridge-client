@@ -3,7 +3,7 @@ use block_indexer::store::{BlockStore, CachedBlockStore};
 use clap::{Arg, Command};
 use common::{
     cache::LruCache, config::Config, rsk_provider::RskProvider, shutdown_flag::ShutdownFlag,
-    types::RskBlock,
+    types::{BlockHash, RskBlock},
 };
 use log::{debug, info, warn};
 use rsk_provider::rpc::AlloyProvider;
@@ -29,10 +29,14 @@ fn main() -> Result<()> {
     let store = CachedBlockStore::new(&config.indexer.storage.path, config.indexer.cache.size)
         .expect("Failed to create CachedKeyValueStore");
 
-    let initial_block_hash = config.indexer.initial_block_hash;
+    let initial_block_hash = BlockHash::try_from(config.indexer.initial_block_hash.as_str())
+        .expect(&format!(
+            "Invalid initial block hash: {}",
+            config.indexer.initial_block_hash
+        ));
 
     let initial_block = store
-        .get_block_by_hash(&initial_block_hash)?
+        .get_block_by_hash(initial_block_hash)?
         .context("Failed to get initial block")?;
     let store_best_block = store
         .get_best_block()?
@@ -54,7 +58,7 @@ fn main() -> Result<()> {
     }
 
     let mut next_block = store_best_block;
-    let mut expected_hash = next_block.hash().to_string();
+    let mut expected_hash = next_block.hash();
 
     while next_block.number() > initial_block.number() {
         debug!(
@@ -73,7 +77,7 @@ fn main() -> Result<()> {
             );
         }
 
-        expected_hash = next_block.parent().to_string();
+        expected_hash = next_block.parent();
 
         let next_block_num = &next_block.number() - 1;
         next_block = match store.get_canonical_block(next_block_num)? {

@@ -6,7 +6,7 @@ use alloy_rpc_types::{Filter, FilterSet, Header, Log};
 use anyhow::{anyhow, Context, Result};
 use common::rsk_provider::{RskProvider, RskSubscriptionFilter};
 use common::shutdown_flag::ShutdownFlag;
-use common::types::{ContractInfo, RskBlock, RskEvent, RskLog, RskRpcBlock};
+use common::types::{BlockHash, ContractInfo, RskBlock, RskEvent, RskLog, RskRpcBlock};
 use log::debug;
 use serde_json::{json, Value};
 use std::future::Future;
@@ -104,7 +104,7 @@ impl RskProvider for AlloyProvider {
         Ok(AlloySubscription::<Log>::new(subscription, self.clone()))
     }
 
-    fn get_block_by_hash(&self, hash: &str) -> Result<Option<RskBlock>> {
+    fn get_block_by_hash(&self, hash: BlockHash) -> Result<Option<RskBlock>> {
         let rpc_call = self
             .inner
             .client()

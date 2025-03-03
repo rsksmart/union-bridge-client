@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use common::cache::{Cache, LruCache};
-use common::types::RskBlock;
+use common::types::{BlockHash, RskBlock};
 use std::path::PathBuf;
 use storage_backend::storage::{KeyValueStore, Storage};
 
@@ -10,7 +10,7 @@ pub trait BlockStore {
     fn get_back_sync_checkpoint(&self) -> Result<Option<RskBlock>>;
     fn set_back_sync_checkpoint(&self, value: &RskBlock) -> Result<()>;
     fn reset_back_sync_checkpoint(&self) -> Result<()>;
-    fn get_block_by_hash(&self, block_hash: &str) -> Result<Option<RskBlock>>;
+    fn get_block_by_hash(&self, hash: BlockHash) -> Result<Option<RskBlock>>;
     fn save_block(&self, value: &RskBlock) -> Result<()>;
     fn get_canonical_block(&self, block_height: u64) -> Result<Option<RskBlock>>;
     fn set_canonical_block(&self, block: &RskBlock) -> Result<()>;
@@ -22,7 +22,7 @@ pub struct CachedBlockStore<C: Cache<RskBlock>> {
 }
 
 enum StoreKey {
-    BlockByHash(String),
+    BlockByHash(BlockHash),
     BlockByNumber(u64),
     BestBlock,
     BackSyncCheckpoint,
@@ -97,8 +97,8 @@ impl<C: Cache<RskBlock>> CachedBlockStore<C> {
         Ok(self.delete_from_db(key)?)
     }
 
-    fn get_block_by_hash(&self, block_hash: &str) -> Result<Option<RskBlock>> {
-        let key = StoreKey::BlockByHash(block_hash.to_string()).value();
+    fn get_block_by_hash(&self, hash: BlockHash) -> Result<Option<RskBlock>> {
+        let key = StoreKey::BlockByHash(hash).value();
 
         if let Some(cached_block) = self.get_from_cache(&key)? {
             return Ok(Some(cached_block));
@@ -114,7 +114,7 @@ impl<C: Cache<RskBlock>> CachedBlockStore<C> {
     }
 
     fn save_block(&self, value: &RskBlock) -> Result<()> {
-        let key = &StoreKey::BlockByHash(value.hash().to_string()).value();
+        let key = &StoreKey::BlockByHash(value.hash()).value();
         self.save_to_cache(key, value)?;
         self.set_on_db(key, value)?;
         Ok(())
@@ -126,12 +126,12 @@ impl<C: Cache<RskBlock>> CachedBlockStore<C> {
             return Ok(Some(cached_block));
         }
 
-        let block_hash: String = match self.get_from_db(&key)? {
+        let block_hash: BlockHash = match self.get_from_db(&key)? {
             Some(hash) => hash,
             None => return Ok(None),
         };
 
-        let db_block = match self.get_block_by_hash(&block_hash)? {
+        let db_block = match self.get_block_by_hash(block_hash)? {
             Some(block) => block,
             None => return Ok(None),
         };
@@ -185,9 +185,9 @@ impl<C: Cache<RskBlock>> BlockStore for CachedBlockStore<C> {
             .context("Error resetting back sync checkpoint")
     }
 
-    fn get_block_by_hash(&self, block_hash: &str) -> Result<Option<RskBlock>> {
-        self.get_block_by_hash(block_hash)
-            .context(format!("Error getting getting block {block_hash}"))
+    fn get_block_by_hash(&self, hash: BlockHash) -> Result<Option<RskBlock>> {
+        self.get_block_by_hash(hash.clone())
+            .context(format!("Error getting getting block {hash}"))
     }
 
     fn save_block(&self, value: &RskBlock) -> Result<()> {
@@ -237,9 +237,9 @@ mod tests {
         store.save_block(&block1)?;
         store.save_block(&block2)?;
         store.save_block(&block3)?;
-        let key1 = StoreKey::BlockByHash(block1.hash().to_string()).value();
-        let key2 = StoreKey::BlockByHash(block2.hash().to_string()).value();
-        let key3 = StoreKey::BlockByHash(block3.hash().to_string()).value();
+        let key1 = StoreKey::BlockByHash(block1.hash()).value();
+        let key2 = StoreKey::BlockByHash(block2.hash()).value();
+        let key3 = StoreKey::BlockByHash(block3.hash()).value();
         let cached_block1 = store.block_cache.get(&key1)?;
         let cached_block2 = store.block_cache.get(&key2)?;
         let cached_block3 = store.block_cache.get(&key3)?;
@@ -395,7 +395,7 @@ mod tests {
 
         store.save_block(&expected_block)?;
         store.delete_from_db(&cache_key)?;
-        let actual_block = store.get_block_by_hash(&block_hash)?.unwrap();
+        let actual_block = store.get_block_by_hash(block_hash)?.unwrap();
 
         assert_eq!(expected_block, actual_block);
         Ok(())

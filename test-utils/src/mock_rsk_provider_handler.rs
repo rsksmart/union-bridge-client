@@ -1,7 +1,7 @@
 use crate::rsk_entity_generator::FakeBlockGenerator;
 use common::rsk_provider::{MockRskProvider, MockRskSubscription};
 use common::shutdown_flag::ShutdownFlag;
-use common::types::RskBlock;
+use common::types::{BlockHash, RskBlock};
 use log::info;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -48,7 +48,7 @@ impl MockRskProviderHandler {
 
     pub fn set_provider_expect_get_block_by_hash(
         &mut self,
-        expected_hash_string: String,
+        expected_block_hash: BlockHash,
         block_height: u64,
     ) {
         let generator = self.generator.clone();
@@ -56,7 +56,7 @@ impl MockRskProviderHandler {
             .lock()
             .unwrap()
             .expect_get_block_by_hash()
-            .with(mockall::predicate::eq(expected_hash_string))
+            .with(mockall::predicate::eq(expected_block_hash))
             .returning(move |_hash| Ok(Some(generator.generate_block(block_height))));
     }
 
