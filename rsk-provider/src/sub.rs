@@ -7,7 +7,7 @@ use anyhow::{anyhow, Context};
 use common::rsk_provider::{
     RskProvider, RskSubscription, RskSubscriptionError, RskSubscriptionFilter,
 };
-use common::types::{BlockHash, LogEvent, LogInfo, RskBlock, RskLog};
+use common::types::{BlockHash, BlockNumber, LogEvent, LogInfo, RskBlock, RskLog};
 use log::debug;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -23,8 +23,7 @@ impl<T: DeserializeOwned> AlloySubscription<T> {
         match self.subscription.blocking_recv_any() {
             Ok(item) => Ok(item),
             Err(RecvError::Closed) => Err(RskSubscriptionError::ClosedConnection),
-            // TODO(Jira) address in scope of https://rsklabs.atlassian.net/browse/UB-15
-            Err(e) => Err(RskSubscriptionError::Unexpected(e.into())),
+            Err(RecvError::Lagged(n)) => Err(RskSubscriptionError::Lagged(n)),
         }
     }
 
@@ -115,7 +114,7 @@ impl AlloySubscription<Log> {
 
     pub(super) fn build_block_option(filter: &RskSubscriptionFilter) -> FilterBlockOption {
         FilterBlockOption::Range {
-            from_block: filter.from_block.map(|n| n.into()),
+            from_block: filter.from_block.map(|n| n.value().into()),
             to_block: None,
         }
     }
@@ -165,6 +164,7 @@ impl RskSubscription<RskLog> for AlloySubscription<Log> {
 
         let block_number = new_log
             .block_number
+            .map(BlockNumber::from)
             .ok_or_else(|| RskSubscriptionError::Transient("Missing transaction_hash"))?;
 
         let log_index = new_log

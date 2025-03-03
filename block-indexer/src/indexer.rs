@@ -3,7 +3,7 @@ use anyhow::{bail, Context, Result};
 use common::rsk_indexer::RskIndexer;
 use common::rsk_provider::{RskProvider, RskSubscription, RskSubscriptionError};
 use common::shutdown_flag::ShutdownFlag;
-use common::types::{BlockHash, RskBlock};
+use common::types::{BlockHash, BlockNumber, RskBlock};
 use log::{debug, error, info, warn};
 
 pub struct BlockIndexer<P: RskProvider, S: BlockStore> {
@@ -84,11 +84,10 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 
         info!("[subscribe_blocks] Start subscribe_blocks...");
 
-        // TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15
         let mut rsk_block_subscription = self
             .rsk_provider
             .subscribe_blocks()
-            .context("Failed to subscribe to blocks")?; // TODO retry mechanism in scope of UB-15
+            .context("Failed to subscribe to blocks")?; // do not retry, this is the application startup
 
         let loop_result = self.listen_blocks(&mut rsk_block_subscription);
 
@@ -114,6 +113,10 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 }
                 Err(RskSubscriptionError::Transient(err)) => {
                     error!("[subscribe_blocks] Ignoring problematic block: {err:?}");
+                    continue;
+                }
+                Err(RskSubscriptionError::Lagged(err)) => {
+                    error!("[subscribe_blocks] Subscription lagged, a backward_sync will be needed: {err:?}");
                     continue;
                 }
                 Err(RskSubscriptionError::Unexpected(err)) => {
@@ -346,7 +349,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
             .context("Saving as best block")
     }
 
-    fn get_next_backward_sync_block(&self, block_num: u64) -> Result<RskBlock> {
+    fn get_next_backward_sync_block(&self, block_num: BlockNumber) -> Result<RskBlock> {
         match self.rsk_provider.get_block_by_number(block_num)? {
             Some(block) => Ok(block),
             None => {

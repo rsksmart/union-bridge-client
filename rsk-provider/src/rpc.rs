@@ -6,14 +6,14 @@ use alloy_rpc_types::{Filter, FilterSet, Header, Log};
 use anyhow::{anyhow, Context, Result};
 use common::rsk_provider::{RskProvider, RskSubscriptionFilter};
 use common::shutdown_flag::ShutdownFlag;
-use common::types::{BlockHash, ContractInfo, RskBlock, RskEvent, RskLog, RskRpcBlock};
-use log::debug;
+use common::types::{
+    BlockHash, BlockNumber, ContractInfo, RskBlock, RskEvent, RskLog, RskRpcBlock,
+};
+use log::{debug, warn};
 use serde_json::{json, Value};
 use std::future::Future;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
-// TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15. Review these methods accordingly.
-// TODO(Jira) error resilience: https://rsklabs.atlassian.net/browse/UB-28
 
 #[derive(Clone)]
 pub struct AlloyProvider<T = RootProvider>
@@ -24,6 +24,9 @@ where
     rt_sync: RuntimeSync,
     shutdown_flag: ShutdownFlag,
 }
+
+// wait time for retry is 2^attempt, so: 1s + 2s + 4s + 8s = 15s max <=> half a block time
+const PROVIDER_RETRIES: i8 = 4;
 
 impl AlloyProvider {
     pub fn new(url: &str, shutdown_flag: ShutdownFlag) -> Result<Self> {
@@ -68,6 +71,35 @@ impl AlloyProvider {
         let rsk_block: RskBlock = RskBlock::from(rpc_block);
         Ok(Some(rsk_block))
     }
+
+    fn run_with_retries<Fut, Err>(&self, rpc_call: Fut) -> Result<Value>
+    where
+        Fut: Future<Output = Result<Value, Err>> + Clone,
+        Err: std::error::Error + Send + 'static,
+    {
+        let mut result = Err(anyhow!("Invalid configuration on run_with_retries"));
+
+        for attempt in 0..PROVIDER_RETRIES {
+            let response = self
+                .rt_sync
+                .run(rpc_call.clone())
+                .context("Getting best block from provider");
+
+            result = response;
+            if result.is_ok() {
+                break;
+            } else {
+                let wait_time = 1 << attempt; // 2^attempt, check configured max retries to know the max time
+                warn!(
+                    "Failed to get best block from provider. Attempt {attempt}. Retry in: {wait_time}: {:?}",
+                    result.as_ref().err()
+                );
+                std::thread::sleep(std::time::Duration::from_secs(wait_time));
+            }
+        }
+
+        result
+    }
 }
 
 impl RskProvider for AlloyProvider {
@@ -110,28 +142,22 @@ impl RskProvider for AlloyProvider {
             .client()
             .request("eth_getBlockByHash", vec![json!(hash), json!(false)]);
 
-        let response: Value = self
-            .rt_sync
-            .run(rpc_call)
-            .context(format!("Getting block {hash} from provider"))?;
-
-        Self::parse_block_provider_response(response)
+        self.run_with_retries(rpc_call)
+            .context(format!("Getting block {hash} from provider"))
+            .and_then(|response| Self::parse_block_provider_response(response))
     }
 
-    fn get_block_by_number(&self, num: u64) -> Result<Option<RskBlock>> {
-        let num_hex = format!("0x{:x}", num);
+    fn get_block_by_number(&self, num: BlockNumber) -> Result<Option<RskBlock>> {
+        let num_hex = format!("0x{:x}", num.value());
 
         let rpc_call = self
             .inner
             .client()
             .request("eth_getBlockByNumber", vec![json!(num_hex), json!(false)]);
 
-        let response: Value = self
-            .rt_sync
-            .run(rpc_call)
-            .context(format!("Getting block {num} from provider"))?;
-
-        Self::parse_block_provider_response(response)
+        self.run_with_retries(rpc_call)
+            .context(format!("Getting block {num} from provider"))
+            .and_then(|response| Self::parse_block_provider_response(response))
     }
 
     fn get_best_block(&self) -> Result<RskBlock> {
@@ -140,12 +166,9 @@ impl RskProvider for AlloyProvider {
             .client()
             .request("eth_getBlockByNumber", vec![json!("latest"), json!(false)]);
 
-        let response: Value = self
-            .rt_sync
-            .run(rpc_call)
-            .context("Getting best block from provider")?;
-
-        Self::parse_block_provider_response(response)
+        self.run_with_retries(rpc_call)
+            .context("Getting block latest from provider")
+            .and_then(|response| Self::parse_block_provider_response(response))
             .context("Getting best block from provider")?
             .context("None best block")
     }
@@ -214,6 +237,7 @@ impl RuntimeSync {
 mod tests {
     use crate::rpc::AlloyProvider;
     use common::types::BlockHash;
+    use common::types::BlockNumber;
     use serde_json::{json, Value};
     use std::fs;
 
@@ -237,7 +261,7 @@ mod tests {
             "0x9e1898cf54b4fc263c0025b108f824fa703ed51fb74bdcae6da6e1b8cf728afb",
         )
         .expect("Invalid hex string");
-        assert_eq!(6086082, block.number());
+        assert_eq!(BlockNumber::from(6086082), block.number());
         assert_eq!(expected_hash, block.hash());
         assert_eq!(expected_parent, block.parent());
     }

@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use common::cache::{Cache, LruCache};
-use common::types::{BlockHash, RskBlock};
+use common::types::{BlockHash, BlockNumber, RskBlock};
 use std::path::PathBuf;
 use storage_backend::storage::{KeyValueStore, Storage};
 
@@ -12,7 +12,7 @@ pub trait BlockStore {
     fn reset_back_sync_checkpoint(&self) -> Result<()>;
     fn get_block_by_hash(&self, hash: BlockHash) -> Result<Option<RskBlock>>;
     fn save_block(&self, value: &RskBlock) -> Result<()>;
-    fn get_canonical_block(&self, block_height: u64) -> Result<Option<RskBlock>>;
+    fn get_canonical_block(&self, block_height: BlockNumber) -> Result<Option<RskBlock>>;
     fn set_canonical_block(&self, block: &RskBlock) -> Result<()>;
 }
 
@@ -23,7 +23,7 @@ pub struct CachedBlockStore<C: Cache<RskBlock>> {
 
 enum StoreKey {
     BlockByHash(BlockHash),
-    BlockByNumber(u64),
+    BlockByNumber(BlockNumber),
     BestBlock,
     BackSyncCheckpoint,
 }
@@ -120,7 +120,7 @@ impl<C: Cache<RskBlock>> CachedBlockStore<C> {
         Ok(())
     }
 
-    fn get_canonical_block(&self, block_height: u64) -> Result<Option<RskBlock>> {
+    fn get_canonical_block(&self, block_height: BlockNumber) -> Result<Option<RskBlock>> {
         let key = StoreKey::BlockByNumber(block_height).value();
         if let Some(cached_block) = self.get_from_cache(&key)? {
             return Ok(Some(cached_block));
@@ -195,7 +195,7 @@ impl<C: Cache<RskBlock>> BlockStore for CachedBlockStore<C> {
             .context(format!("Error saving block to store: {value:?}"))
     }
 
-    fn get_canonical_block(&self, block_height: u64) -> Result<Option<RskBlock>> {
+    fn get_canonical_block(&self, block_height: BlockNumber) -> Result<Option<RskBlock>> {
         self.get_canonical_block(block_height).context(format!(
             "Error getting canonical block for height: {block_height}",
         ))

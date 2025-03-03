@@ -1,13 +1,18 @@
 use crate::rsk_entity_generator::FakeBlockGenerator;
-use common::rsk_provider::{MockRskProvider, MockRskSubscription};
-use common::shutdown_flag::ShutdownFlag;
-use common::types::{BlockHash, RskBlock};
-use log::info;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
+use common::{
+    rsk_provider::{MockRskProvider, MockRskSubscription},
+    shutdown_flag::ShutdownFlag,
+    types::{BlockHash, BlockNumber, RskBlock},
 };
-use std::{thread, time::Duration};
+use log::info;
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
+    thread,
+    time::Duration,
+};
 
 #[derive(Clone)]
 pub struct MockRskProviderHandler {
@@ -16,9 +21,9 @@ pub struct MockRskProviderHandler {
     is_reorg: Arc<AtomicBool>,
     has_subscribed: Arc<AtomicBool>,
     shutting_down: ShutdownFlag,
-    block_height_backward_sync_init: u64,
-    block_height_backward_sync_max: u64,
-    block_height_subscription_max: u64,
+    block_height_backward_sync_init: BlockNumber,
+    block_height_backward_sync_max: BlockNumber,
+    block_height_subscription_max: BlockNumber,
     delay_between_blocks_subscription: u64,
 }
 
@@ -28,9 +33,9 @@ impl MockRskProviderHandler {
         generator: &FakeBlockGenerator,
         is_reorg: Arc<AtomicBool>,
         shutting_down: ShutdownFlag,
-        block_height_backward_sync_init: u64,
-        block_height_backward_sync_max: u64,
-        block_height_subscription_max: u64,
+        block_height_backward_sync_init: BlockNumber,
+        block_height_backward_sync_max: BlockNumber,
+        block_height_subscription_max: BlockNumber,
         delay_between_blocks_subscription: u64,
     ) -> Self {
         Self {
@@ -49,7 +54,7 @@ impl MockRskProviderHandler {
     pub fn set_provider_expect_get_block_by_hash(
         &mut self,
         expected_block_hash: BlockHash,
-        block_height: u64,
+        block_height: BlockNumber,
     ) {
         let generator = self.generator.clone();
         self.provider
@@ -82,8 +87,8 @@ impl MockRskProviderHandler {
 
     pub fn set_provider_expect_get_block_by_number(
         &mut self,
-        simul_reorg_happens_at_height: Option<u64>,
-        simul_shutdown_height: Option<u64>,
+        simul_reorg_happens_at_height: Option<BlockNumber>,
+        simul_shutdown_height: Option<BlockNumber>,
     ) {
         let generator = self.generator.clone();
         let block_height_backward_sync_init = self.block_height_backward_sync_init;
@@ -131,7 +136,7 @@ impl MockRskProviderHandler {
 
     pub fn set_provider_expect_subscribe_blocks(
         &mut self,
-        simul_reorg_happens_at_height: Option<u64>,
+        simul_reorg_happens_at_height: Option<BlockNumber>,
     ) {
         let is_reorg = self.is_reorg.clone();
         let generator = self.generator.clone();
@@ -164,7 +169,7 @@ impl MockRskProviderHandler {
                     }
                     thread::sleep(Duration::from_millis(delay_between_blocks_subscription));
                     let block = generator.generate_block(height_subscr_counter);
-                    height_subscr_counter += 1;
+                    height_subscr_counter = height_subscr_counter + 1;
                     // if the block height passes the subscription max, start shutting down
                     if height_subscr_counter <= block_height_subscription_max {
                         Ok(block)

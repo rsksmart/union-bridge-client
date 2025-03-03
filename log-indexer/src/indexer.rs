@@ -1,17 +1,18 @@
 use crate::store::LogStore;
 use anyhow::{bail, Context, Result};
-use common::rsk_indexer::RskIndexer;
-use common::rsk_provider::{RskProvider, RskSubscriptionError};
-use common::rsk_provider::{RskSubscription, RskSubscriptionFilter};
-use common::shutdown_flag::ShutdownFlag;
-use common::types::{BlockHash, ContractInfo, RskLog};
+use common::{
+    rsk_indexer::RskIndexer,
+    rsk_provider::{RskProvider, RskSubscription, RskSubscriptionError, RskSubscriptionFilter},
+    shutdown_flag::ShutdownFlag,
+    types::{BlockHash, BlockNumber, ContractInfo, RskLog},
+};
 use log::{error, info, warn};
 use std::collections::HashMap;
 
 pub struct LogIndexer<P: RskProvider, S: LogStore> {
     store: S,
     rsk_provider: P,
-    initial_block_number: u64,
+    initial_block_number: BlockNumber,
     managed_contracts: HashMap<String, ContractInfo>,
     shutdown_flag: ShutdownFlag,
 }
@@ -67,7 +68,7 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
         let mut rsk_log_subscription = self
             .rsk_provider
             .subscribe_logs(filter)
-            .context("Failed to subscribe to logs")?; // TODO(Jira) retry mechanism in scope of UB-15
+            .context("Failed to subscribe to logs")?; // do not retry, this is the application startup
 
         let loop_result = self.listen_logs(&mut rsk_log_subscription);
 
@@ -90,7 +91,6 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                     if self.is_running() {
                         bail!("Provider closed unexpectedly!");
                     } else {
-                        // TODO(Jira) WS resilience: https://rsklabs.atlassian.net/browse/UB-15
                         info!("[subscribe_logs] Shutdown requested, quitting...");
                         break;
                     }
@@ -99,15 +99,20 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                     error!("[subscribe_logs] Ignoring problematic log: {err:?}");
                     continue;
                 }
+                Err(RskSubscriptionError::Lagged(err)) => {
+                    // TODO(Jira) trigger backward sync in scope of https://rsklabs.atlassian.net/browse/UB-45
+                    error!("[subscribe_logs] Subscription lagged, a backward_sync will be needed: {err:?}");
+                    continue;
+                }
                 Err(RskSubscriptionError::Unexpected(err)) => {
                     bail!("[subscribe_logs] Unknown error on log subs: {err:?}");
                 }
             };
 
-            if new_log.info().block_number() < self.initial_block_number {
+            if new_log.info().number() < self.initial_block_number {
                 warn!(
                     "[subscribe_logs] Log block {} is lower than initial {}",
-                    new_log.info().block_number(),
+                    new_log.info().number(),
                     self.initial_block_number
                 );
                 continue;
