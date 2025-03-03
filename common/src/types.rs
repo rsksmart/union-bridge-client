@@ -298,3 +298,43 @@ pub struct ContractInfo {
     pub name: String,
     pub abi: Option<JsonAbi>,
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::errors::BlockHashError;
+    use crate::types::BlockHash;
+    use test_utils::rsk_entity_generator::DEFAULT_BLOCK_HASH;
+
+    #[test]
+    fn test_valid_block_hash_when_valid_hash_is_provided_should_return_ok() {
+        let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH);
+
+        assert!(block_hash.is_ok());
+    }
+
+    #[test]
+    fn test_invalid_block_hash_when_invalid_hash_is_provided_should_return_error() {
+        let invalid_hash = "0xinvalidhex";
+        let block_hash = BlockHash::try_from(invalid_hash);
+
+        assert!(block_hash.is_err());
+
+        if let Err(BlockHashError::InvalidHex(_)) = block_hash {
+            // The error was expected due to invalid hex input
+        } else {
+            panic!(
+                "Expected BlockHashError::InvalidHex, but got: {:?}",
+                block_hash
+            );
+        }
+    }
+
+    #[test]
+    fn test_missing_prefix_when_hash_without_prefix_is_provided_should_return_ok() {
+        let valid_hash_without_prefix =
+            "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
+        let block_hash = BlockHash::try_from(valid_hash_without_prefix);
+
+        assert!(block_hash.is_ok());
+    }
+}

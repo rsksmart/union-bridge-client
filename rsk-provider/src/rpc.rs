@@ -213,8 +213,8 @@ impl RuntimeSync {
 #[cfg(test)]
 mod tests {
     use crate::rpc::AlloyProvider;
-    use serde_json::json;
-    use serde_json::Value;
+    use common::types::BlockHash;
+    use serde_json::{json, Value};
     use std::fs;
 
     const RESPONSE_FILE_PATH: &str = "tests/resources/response.json";
@@ -229,15 +229,17 @@ mod tests {
             .expect("JSON data should be valid")
             .expect("JSON data should map to RSK block");
 
-        assert_eq!(6086082, block.number());
-        assert_eq!(
+        let expected_hash = BlockHash::try_from(
             "0x2dbb8027f72a9fc147f165646e67db08c130ca698ff2d9fd02058c455b1a1c76",
-            block.hash()
-        );
-        assert_eq!(
+        )
+        .expect("Invalid hex string");
+        let expected_parent = BlockHash::try_from(
             "0x9e1898cf54b4fc263c0025b108f824fa703ed51fb74bdcae6da6e1b8cf728afb",
-            block.parent()
-        );
+        )
+        .expect("Invalid hex string");
+        assert_eq!(6086082, block.number());
+        assert_eq!(expected_hash, block.hash());
+        assert_eq!(expected_parent, block.parent());
     }
 
     #[test]

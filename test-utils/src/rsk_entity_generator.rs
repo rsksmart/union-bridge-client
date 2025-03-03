@@ -7,6 +7,9 @@ use std::sync::{
     Arc,
 };
 
+pub const DEFAULT_BLOCK_HASH: &str =
+    "0x5d164d93bf09ee215cc67420f24d31b8d86c46ced6e770e8abf69c16bea3a67c";
+
 /// Returns a list of default RSK test blocks.
 ///
 /// This function provides a collection of predefined RSK test blocks, which can be used
