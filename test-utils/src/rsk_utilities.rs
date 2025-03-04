@@ -109,6 +109,29 @@ pub fn get_third_default_rsk_block() -> RskBlock {
     )
 }
 
+/// Generates a fake Rootstock address based on a given number and an optional nonce.
+///
+/// This function computes a Keccak256 hash of the little-endian byte representation
+/// of `address_num` appended with the optional nonce (if provided). The last 20 bytes
+/// of the hash are then formatted as a hexadecimal string to simulate a Rootstock address.
+///
+/// # Parameters
+///
+/// - `address_num`: A numeric identifier used as part of the address generation.
+/// - `nonce`: An optional string slice to differentiate addresses.
+///
+/// # Returns
+///
+/// A `String` representing the fake Rootstock address.
+///
+/// # Example
+///
+/// ```
+/// use test_utils::rsk_utilities::get_fake_address;
+///
+/// let address = get_fake_address(1, Some("nonce"));
+/// assert!(address.starts_with("0x"));
+/// ```
 pub fn get_fake_address(address_num: u64, nonce: Option<&str>) -> String {
     let mut hasher = Keccak256::new();
     let mut data = address_num.to_le_bytes().to_vec();
@@ -123,6 +146,29 @@ pub fn get_fake_address(address_num: u64, nonce: Option<&str>) -> String {
     format!("0x{}", hex::encode(address_bytes))
 }
 
+/// Generates a fake transaction hash using a transaction ID and a sender address.
+///
+/// This function concatenates the little-endian byte representation of `tx_id` with the
+/// bytes of the `from` string, computes the Keccak256 hash of the result, and returns
+/// the hash formatted as a hexadecimal string.
+///
+/// # Parameters
+///
+/// - `tx_id`: The transaction identifier used in the hash generation.
+/// - `from`: A string slice representing the sender's address.
+///
+/// # Returns
+///
+/// A `String` containing the fake transaction hash.
+///
+/// # Example
+///
+/// ```
+/// use test_utils::rsk_utilities::get_fake_tx_hash;
+///
+/// let tx_hash = get_fake_tx_hash(1, "0xabc123...");
+/// assert!(tx_hash.starts_with("0x"));
+/// ```
 pub fn get_fake_tx_hash(tx_id: u64, from: &str) -> String {
     let mut hasher = Keccak256::new();
     let mut data = Vec::new();
@@ -133,6 +179,34 @@ pub fn get_fake_tx_hash(tx_id: u64, from: &str) -> String {
     format!("0x{}", hex::encode(hash))
 }
 
+/// Converts a Rootstock address into a topic by left-padding it with zeros.
+///
+/// This function takes a hexadecimal address string (with or without the "0x" prefix),
+/// verifies that it consists of 40 hexadecimal digits after stripping the prefix, and
+/// then returns a topic string by prepending 24 zeros (to make up 64 hex digits in total
+/// after the "0x").
+///
+/// # Panics
+///
+/// This function will panic if the provided address does not have exactly 40 hexadecimal
+/// digits after removing the "0x" prefix.
+///
+/// # Parameters
+///
+/// - `address`: A string slice representing the Rootstock address.
+///
+/// # Returns
+///
+/// A `String` containing the topic derived from the address.
+///
+/// # Example
+///
+/// ```
+/// use test_utils::rsk_utilities::address_to_topic;
+///
+/// let topic = address_to_topic("0x1234567890abcdef1234567890abcdef12345678");
+/// assert!(topic.starts_with("0x"));
+/// ```
 pub fn address_to_topic(address: &str) -> String {
     let addr = address.strip_prefix("0x").unwrap_or(address);
     if addr.len() != 40 {
@@ -144,6 +218,28 @@ pub fn address_to_topic(address: &str) -> String {
     format!("0x{}{}", "0".repeat(24), addr)
 }
 
+/// Converts an event signature to a topic hash using Keccak256.
+///
+/// This function takes an event signature (for example, `"Transfer(address,address,uint256)"`),
+/// computes its Keccak256 hash, and returns the hash formatted as a hexadecimal string
+/// prefixed with "0x".
+///
+/// # Parameters
+///
+/// - `event_signature`: A string slice representing the event signature.
+///
+/// # Returns
+///
+/// A `String` containing the topic hash derived from the event signature.
+///
+/// # Example
+///
+/// ```
+/// use test_utils::rsk_utilities::event_signature_to_topic;
+///
+/// let topic = event_signature_to_topic("Transfer(address,address,uint256)");
+/// assert!(topic.starts_with("0x"));
+/// ```
 pub fn event_signature_to_topic(event_signature: &str) -> String {
     let mut hasher = Keccak256::new();
     hasher.update(event_signature.as_bytes());

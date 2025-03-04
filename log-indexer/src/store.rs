@@ -69,7 +69,7 @@ mod tests {
     }
 
     #[test]
-    fn test_when_save_log_should_get_same_log() -> Result<()> {
+    fn test_save_log() -> Result<()> {
         let store = create_test_store()?;
         let block_generator: FakeBlockGenerator =
             FakeBlockGenerator::new(0, Arc::new(AtomicBool::new(false)));
@@ -83,14 +83,16 @@ mod tests {
             expected_log.info().log_index(),
         )
         .value();
+
         store.save_log(&expected_log)?;
         let actual_log = store.db.get(log_key)?.unwrap();
+        
         assert_eq!(expected_log, actual_log);
         Ok(())
     }
 
     #[test]
-    fn test_when_save_log_should_not_get_different_logs() -> Result<()> {
+    fn test_save_log_no_different_log() -> Result<()> {
         let store = create_test_store()?;
         let block_generator: FakeBlockGenerator =
             FakeBlockGenerator::new(0, Arc::new(AtomicBool::new(false)));
@@ -104,14 +106,16 @@ mod tests {
             saved_log.info().log_index(),
         )
         .value();
+        let different_log = log_generator.generate_log(block.clone(), 1, 2, 1);
+        let different_log2 = log_generator.generate_log(block.clone(), 1, 1, 2);
+        let different_log3 = log_generator.generate_log(block.clone(), 2, 1, 1);
+        
         store.save_log(&saved_log)?;
         let actual_log = store.db.get(log_key)?.unwrap();
-        let different_log = log_generator.generate_log(block.clone(), 1, 2, 1);
+        
         assert_ne!(different_log, actual_log);
-        let different_log2 = log_generator.generate_log(block.clone(), 1, 1, 2);
         assert_ne!(different_log2, actual_log);
-        let different_log2 = log_generator.generate_log(block.clone(), 2, 1, 1);
-        assert_ne!(different_log2, actual_log);
+        assert_ne!(different_log3, actual_log);
         Ok(())
     }
 }
