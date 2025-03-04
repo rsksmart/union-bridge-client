@@ -142,7 +142,7 @@ impl<C: Cache<RskBlock>> CachedBlockStore<C> {
     }
 
     fn set_canonical_block(&self, block: &RskBlock) -> Result<()> {
-        let key = &StoreKey::BlockByNumber(block.number()).value();
+        let key = &StoreKey::BlockByNumber(block.block_number()).value();
         self.save_to_cache(key, block)?;
         Ok(self.set_on_db(key, &block.hash().to_string())?)
     }
@@ -202,7 +202,7 @@ impl<C: Cache<RskBlock>> BlockStore for CachedBlockStore<C> {
     }
 
     fn set_canonical_block(&self, block: &RskBlock) -> Result<()> {
-        let block_num = block.number();
+        let block_num = block.block_number();
         self.set_canonical_block(block).context(format!(
             "Error setting canonical block for height: {block_num}"
         ))
@@ -327,7 +327,7 @@ mod tests {
 
         store.set_canonical_block(&expected_canonical_block)?;
         let actual_canonical_block = store
-            .get_canonical_block(expected_canonical_block.number())?
+            .get_canonical_block(expected_canonical_block.block_number())?
             .unwrap();
 
         assert_eq!(expected_canonical_block, actual_canonical_block);
@@ -342,7 +342,7 @@ mod tests {
             .unwrap();
 
         store.set_canonical_block(&canonical_block)?;
-        let missing_canonical_block = store.get_canonical_block(other_block.number())?;
+        let missing_canonical_block = store.get_canonical_block(other_block.block_number())?;
 
         assert!(
             missing_canonical_block.is_none(),
@@ -372,7 +372,7 @@ mod tests {
     fn test_when_get_canonical_should_be_recached() -> Result<()> {
         let store = create_test_store()?;
         let expected_block = rsk_entity_generator::get_first_default_rsk_block();
-        let block_number = expected_block.number();
+        let block_number = expected_block.block_number();
         let cache_key = format!("block/height/{}", block_number);
 
         store.set_canonical_block(&expected_block)?;

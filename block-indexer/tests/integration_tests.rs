@@ -443,8 +443,8 @@ fn assert_best_block(
         best_block_height
     );
     assert_eq!(
-        block_expected.number(),
-        best_block.number(),
+        block_expected.block_number(),
+        best_block.block_number(),
         "Height of best block in storage does not match the height of the expected block ({})",
         best_block_height
     );
@@ -466,8 +466,8 @@ fn assert_checkpoint(
         "Hash of checkpoint block in storage does not match the hash of the expected block (height {})", checkpoint_block_height
     );
     assert_eq!(
-        block_expected.number(),
-        checkpoint_block.number(),
+        block_expected.block_number(),
+        checkpoint_block.block_number(),
         "Height of checkpoint block in storage does not match the height of the expected block ({})", checkpoint_block_height
     );
 }

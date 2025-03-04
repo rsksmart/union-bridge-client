@@ -28,7 +28,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
             .get_block_by_hash(initial_block_hash)
             .context("Failed to get initial block by hash")?
             .context("Initial block not found on provider")?
-            .number();
+            .block_number();
 
         Ok(Self {
             store,
@@ -56,7 +56,7 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
         let best_block = self.rsk_provider.get_best_block()?;
 
         // TODO(Jira) Address this hardcoding in scope of https://rsklabs.atlassian.net/browse/UB-45
-        let block_from = best_block.number() - 10;
+        let block_from = best_block.block_number() - 10;
         let filter = RskSubscriptionFilter::new(contract_addresses, vec![], Some(block_from));
 
         info!(

@@ -5,9 +5,14 @@ use serde::{de, Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::string::ToString;
 
+/// Represents a block number in the blockchain.
+///
+/// This is an alias for `u64`, as block numbers are typically 64-bit unsigned integers.
+pub type BlockNumber = u64;
+
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct RskBlock {
-    number: u64,
+    block_number: BlockNumber,
     hash: String,
     parent: String,
     difficulty: U256,
@@ -19,7 +24,7 @@ pub struct RskBlock {
 impl From<RskRpcBlock> for RskBlock {
     fn from(rpc_block: RskRpcBlock) -> Self {
         Self::new(
-            rpc_block.number,
+            rpc_block.block_number,
             rpc_block.hash,
             rpc_block.parent,
             rpc_block.difficulty,
@@ -32,7 +37,7 @@ impl From<RskRpcBlock> for RskBlock {
 
 impl RskBlock {
     pub fn new(
-        number: u64,
+        block_number: BlockNumber,
         hash: String,
         parent: String,
         difficulty: U256,
@@ -41,7 +46,7 @@ impl RskBlock {
         total_difficulty: U256,
     ) -> Self {
         RskBlock {
-            number,
+            block_number,
             hash,
             parent,
             difficulty,
@@ -51,8 +56,8 @@ impl RskBlock {
         }
     }
 
-    pub fn number(&self) -> u64 {
-        self.number
+    pub fn block_number(&self) -> BlockNumber {
+        self.block_number
     }
 
     pub fn hash(&self) -> &str {
@@ -82,8 +87,8 @@ impl RskBlock {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RskRpcBlock {
-    #[serde(deserialize_with = "parse_hex_to_u64")]
-    number: u64,
+    #[serde(rename = "number", deserialize_with = "parse_hex_to_u64")]
+    block_number: BlockNumber,
     hash: String,
     #[serde(rename = "parentHash")]
     parent: String,
@@ -184,7 +189,7 @@ impl RskEvent {
 pub struct LogInfo {
     address: String,
     block_hash: String,
-    block_number: u64,
+    block_number: BlockNumber,
     tx_hash: String,
     log_index: u64,
     removed: bool,
@@ -194,7 +199,7 @@ impl LogInfo {
     pub fn new(
         address: String,
         block_hash: String,
-        block_number: u64,
+        block_number: BlockNumber,
         tx_hash: String,
         log_index: u64,
         removed: bool,
@@ -217,7 +222,7 @@ impl LogInfo {
         &self.block_hash
     }
 
-    pub fn block_number(&self) -> u64 {
+    pub fn block_number(&self) -> BlockNumber {
         self.block_number
     }
 
