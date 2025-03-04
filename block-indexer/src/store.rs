@@ -114,7 +114,7 @@ impl<C: Cache<RskBlock>> CachedBlockStore<C> {
     }
 
     fn save_block(&self, value: &RskBlock) -> Result<()> {
-        let key = &StoreKey::BlockByHash(value.hash()).value();
+        let key = &StoreKey::BlockByHash(value.block_hash()).value();
         self.save_to_cache(key, value)?;
         self.set_on_db(key, value)?;
         Ok(())
@@ -144,7 +144,7 @@ impl<C: Cache<RskBlock>> CachedBlockStore<C> {
     fn set_canonical_block(&self, block: &RskBlock) -> Result<()> {
         let key = &StoreKey::BlockByNumber(block.number()).value();
         self.save_to_cache(key, block)?;
-        Ok(self.set_on_db(key, &block.hash().to_string())?)
+        Ok(self.set_on_db(key, &block.block_hash().to_string())?)
     }
 }
 
@@ -237,9 +237,9 @@ mod tests {
         store.save_block(&block1)?;
         store.save_block(&block2)?;
         store.save_block(&block3)?;
-        let key1 = StoreKey::BlockByHash(block1.hash()).value();
-        let key2 = StoreKey::BlockByHash(block2.hash()).value();
-        let key3 = StoreKey::BlockByHash(block3.hash()).value();
+        let key1 = StoreKey::BlockByHash(block1.block_hash()).value();
+        let key2 = StoreKey::BlockByHash(block2.block_hash()).value();
+        let key3 = StoreKey::BlockByHash(block3.block_hash()).value();
         let cached_block1 = store.block_cache.get(&key1)?;
         let cached_block2 = store.block_cache.get(&key2)?;
         let cached_block3 = store.block_cache.get(&key3)?;
@@ -269,7 +269,7 @@ mod tests {
     fn test_when_save_block_should_get_by_hash_same_block() -> Result<()> {
         let store = create_test_store()?;
         let expected_block = rsk_entity_generator::get_first_default_rsk_block();
-        let block_hash = expected_block.hash();
+        let block_hash = expected_block.block_hash();
 
         store.save_block(&expected_block)?;
         let actual_block = store.get_block_by_hash(block_hash)?.unwrap();
@@ -286,7 +286,7 @@ mod tests {
             .unwrap();
 
         store.save_block(&block1)?;
-        let lookup = store.get_block_by_hash(block2.hash())?;
+        let lookup = store.get_block_by_hash(block2.block_hash())?;
 
         assert!(
             lookup.is_none(),
@@ -355,7 +355,7 @@ mod tests {
     fn test_when_get_block_by_hash_should_be_recached() -> Result<()> {
         let store = create_test_store()?;
         let expected_block = rsk_entity_generator::get_first_default_rsk_block();
-        let block_hash = expected_block.hash();
+        let block_hash = expected_block.block_hash();
         let cache_key = format!("block/hash/{}", block_hash);
 
         store.save_block(&expected_block)?;
@@ -390,7 +390,7 @@ mod tests {
     fn test_when_delete_block_from_db_should_be_still_in_cache() -> Result<()> {
         let store = create_test_store()?;
         let expected_block = rsk_entity_generator::get_first_default_rsk_block();
-        let block_hash = expected_block.hash();
+        let block_hash = expected_block.block_hash();
         let cache_key = format!("block/hash/{}", block_hash);
 
         store.save_block(&expected_block)?;

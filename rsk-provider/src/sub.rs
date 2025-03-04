@@ -159,8 +159,9 @@ impl RskSubscription<RskLog> for AlloySubscription<Log> {
 
         let block_hash = new_log
             .block_hash
-            .map(|h| h.to_string())
-            .ok_or_else(|| RskSubscriptionError::Transient("Missing block_hash"))?;
+            .map(|h| BlockHash::try_from(h.to_string().as_str()))
+            .ok_or_else(|| RskSubscriptionError::Transient("Missing block_hash"))?
+            .map_err(|e| RskSubscriptionError::Unexpected(e.into()))?;
 
         let block_number = new_log
             .block_number
@@ -173,7 +174,7 @@ impl RskSubscription<RskLog> for AlloySubscription<Log> {
 
         let log_info = LogInfo::new(
             new_log.address().to_string(),
-            block_hash.clone(),
+            block_hash,
             block_number,
             tx_hash.clone(),
             log_index,

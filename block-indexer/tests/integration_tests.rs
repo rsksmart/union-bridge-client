@@ -445,8 +445,8 @@ fn assert_best_block(
         .expect("No best block found after indexer run");
     let block_expected = generator.generate_block(best_block_height.into());
     assert_eq!(
-        block_expected.hash(),
-        best_block.hash(),
+        block_expected.block_hash(),
+        best_block.block_hash(),
         "Hash of best block in storage does not match the hash of the expected block (height {})",
         best_block_height
     );
@@ -469,8 +469,8 @@ fn assert_checkpoint(
         .expect("No checkpoint block found after indexer run");
     let block_expected = generator.generate_block(checkpoint_block_height.into());
     assert_eq!(
-        block_expected.hash(),
-        checkpoint_block.hash(),
+        block_expected.block_hash(),
+        checkpoint_block.block_hash(),
         "Hash of checkpoint block in storage does not match the hash of the expected block (height {})", checkpoint_block_height
     );
     assert_eq!(
@@ -496,8 +496,8 @@ fn assert_canonical_chain(
                 height
             ));
         assert_eq!(
-            block_expected.hash(),
-            block_actual.hash(),
+            block_expected.block_hash(),
+            block_actual.block_hash(),
             "Hash of canonical block in storage at height {} does not match the hash of the expected block",
             height
         );

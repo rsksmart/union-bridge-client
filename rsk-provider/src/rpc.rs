@@ -261,6 +261,7 @@ mod tests {
             "0x9e1898cf54b4fc263c0025b108f824fa703ed51fb74bdcae6da6e1b8cf728afb",
         )
         .expect("Invalid hex string");
+
         assert_eq!(BlockNumber::from(6086082), block.number());
         assert_eq!(expected_hash, block.hash());
         assert_eq!(expected_parent, block.parent());
