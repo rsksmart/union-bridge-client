@@ -1,4 +1,4 @@
-use common::types::{BlockNumber, BlockTimestamp, RskBlock};
+use common::types::{BlockDifficulty, BlockNumber, BlockTimestamp, RskBlock};
 use log::debug;
 use primitive_types::U256;
 use sha3::{Digest, Keccak256};
@@ -61,10 +61,10 @@ pub fn get_first_default_rsk_block() -> RskBlock {
         from_hex_to_block_hash(
             "0x2dbe5baab546a1d1a6c443836810c89867efac727a0b58b24de1baeb15467752",
         ),
-        U256::from(10_000_000_000_000_000_000_000_u128), // difficulty (10 ZH)
         1739358639.into(),
-        "0x711101000000000000000000000000000000000000000000000000000000000000000000e626168ac092b54ce384ee9ab465aa869caa1260b61e5fd6330f861dea38cda73fb0c967ffff7f217b092fd7".to_string(),
-        U256::from(26_000_000_000_000_000_000_000_000_u128), // total difficulty (26,000 YH)
+        BlockDifficulty::from(U256::from(10_000_000_000_000_000_000_000_u128)), // difficulty (10 ZH)
+        BlockDifficulty::from(U256::from(26_000_000_000_000_000_000_000_000_u128)), // total difficulty (26,000 YH)
+        "0xcc018a4152524f57484541442d".to_string(),
     )
 }
 
@@ -91,10 +91,10 @@ pub fn get_second_default_rsk_block() -> RskBlock {
         from_hex_to_block_hash(
             "0x5d164d93bf09ee215cc67420f24d31b8d86c46ced6e770e8abf69c16bea3a67c",
         ),
-        U256::from(10_000_000_000_000_000_000_000_u128), // difficulty (10 ZH)
         1739358657.into(),
-        "0x711101000000000000000000000000000000000000000000000000000000000000000000e626168ac092b54ce384ee9ab465aa869caa1260b61e5fd6330f861dea38cda73fb0c967ffff7f217b092fd7".to_string(),
-        U256::from(26_000_000_000_000_000_000_000_000_u128), // total difficulty (26,000 YH)
+        BlockDifficulty::from(U256::from(10_000_000_000_000_000_000_000_u128)), // difficulty (10 ZH)
+        BlockDifficulty::from(U256::from(26_000_000_000_000_000_000_000_000_u128)), // total difficulty (26,000 YH)
+        "pow_string".to_string(),
     )
 }
 
@@ -121,10 +121,10 @@ pub fn get_third_default_rsk_block() -> RskBlock {
         from_hex_to_block_hash(
             "0xb1b77a1d9e6d18f6668a0db6bead24bea4c507fc6779ab211899c008484384ca",
         ),
-        U256::from(10_000_000_000_000_000_000_000_u128), // difficulty (10 ZH)
         1739358667.into(),
-        "0x711101000000000000000000000000000000000000000000000000000000000000000000e626168ac092b54ce384ee9ab465aa869caa1260b61e5fd6330f861dea38cda73fb0c967ffff7f217b092fd7".to_string(),
-        U256::from(26_000_000_000_000_000_000_000_000_u128), // total difficulty (26,000 YH)
+        BlockDifficulty::from(U256::from(10_000_000_000_000_000_000_000_u128)), // difficulty (10 ZH)
+        BlockDifficulty::from(U256::from(26_000_000_000_000_000_000_000_000_u128)), // total difficulty (26,000 YH)
+        "pow_string".to_string(),
     )
 }
 
@@ -133,8 +133,8 @@ pub fn get_third_default_rsk_block() -> RskBlock {
 /// to handle generation of alternative blocks (to simulate reorganizations).`.
 #[derive(Clone)]
 pub struct FakeBlockGenerator {
-    base_difficulty: U256,
-    difficulty_increment: U256,
+    base_difficulty: BlockDifficulty,
+    difficulty_increment: BlockDifficulty,
     base_timestamp: BlockTimestamp,
     avg_block_time: u64,
     reorg_block_height: BlockNumber,
@@ -144,8 +144,12 @@ pub struct FakeBlockGenerator {
 impl FakeBlockGenerator {
     pub fn new(reorg_block_height: BlockNumber, is_reorg: Arc<AtomicBool>) -> Self {
         Self {
-            base_difficulty: U256::from_dec_str("10000000000000000000000").unwrap(),
-            difficulty_increment: U256::from_dec_str("10000000000000000").unwrap(),
+            base_difficulty: BlockDifficulty::from(
+                U256::from_dec_str("10000000000000000000000").unwrap(),
+            ),
+            difficulty_increment: BlockDifficulty::from(
+                U256::from_dec_str("10000000000000000").unwrap(),
+            ),
             base_timestamp: 1514980800.into(),
             avg_block_time: 30,
             reorg_block_height,
@@ -209,24 +213,28 @@ impl FakeBlockGenerator {
             height.into(),
             block_hash,
             parent_hash,
-            diff,
             ts,
-            "pow_string".to_string(),
+            diff,
             tot_diff,
+            "pow_string".to_string(),
         )
     }
 
-    fn generate_difficulty(&self, height: BlockNumber) -> U256 {
-        self.base_difficulty + U256::from(height.value()) * self.difficulty_increment
+    fn generate_difficulty(&self, height: BlockNumber) -> BlockDifficulty {
+        let diff = self.base_difficulty.value()
+            + U256::from(height.value()) * self.difficulty_increment.value();
+        BlockDifficulty::from(diff)
     }
 
     fn generate_timestamp(&self, height: BlockNumber) -> BlockTimestamp {
         BlockTimestamp::from(self.base_timestamp.value() + height.value() * self.avg_block_time)
     }
 
-    fn generate_total_difficulty(&self, height: BlockNumber) -> U256 {
+    fn generate_total_difficulty(&self, height: BlockNumber) -> BlockDifficulty {
         let n = U256::from(height.value());
         let sum_n = n * (n + U256::one()) / U256::from(2u32);
-        n * self.base_difficulty + self.difficulty_increment * sum_n
+        let total_diff =
+            n * self.base_difficulty.value() + self.difficulty_increment.value() * sum_n;
+        BlockDifficulty::from(total_diff)
     }
 }
