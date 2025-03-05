@@ -103,26 +103,26 @@ impl MockRskProviderHandler {
                 if has_subscribed.load(Ordering::SeqCst) {
                     valid_range = block_height_backward_sync_init..block_height_subscription_max;
                 }
-                if valid_range.contains(&height) {
+                if valid_range.contains(&height.value()) {
                     // if a shutdown height is set, the provider will start shutting down at that height
                     if let Some(shutdown_height) = simul_shutdown_height {
-                        if height == shutdown_height {
+                        if height.value() == shutdown_height {
                             shutting_down.set(true);
                             info!("Shutdown initiated at block height {}", height);
                         }
                     }
                     // if a reorg has to happen and the height is the reorg height, activate the reorg
                     if let Some(reorg_happens_at_height) = simul_reorg_happens_at_height {
-                        if height == reorg_happens_at_height {
+                        if height.value() == reorg_happens_at_height {
                             is_reorg.store(true, Ordering::SeqCst);
                             info!(
                                 "Reorg initiated at block height {} with hash {}",
                                 height,
-                                generator.generate_hash(height, "alt")
+                                generator.generate_hash(height.value(), "alt")
                             );
                         }
                     }
-                    Ok(Some(generator.generate_block(height)))
+                    Ok(Some(generator.generate_block(height.value())))
                 } else {
                     Ok(None)
                 }

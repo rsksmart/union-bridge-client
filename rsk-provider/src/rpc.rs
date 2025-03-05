@@ -6,7 +6,7 @@ use alloy_rpc_types::{Filter, FilterSet, Header, Log};
 use anyhow::{anyhow, Context, Result};
 use common::rsk_provider::{RskProvider, RskSubscriptionFilter};
 use common::shutdown_flag::ShutdownFlag;
-use common::types::{ContractInfo, RskBlock, RskEvent, RskLog, RskRpcBlock};
+use common::types::{BlockNumber, ContractInfo, RskBlock, RskEvent, RskLog, RskRpcBlock};
 use log::{debug, warn};
 use serde_json::{json, Value};
 use std::future::Future;
@@ -145,8 +145,8 @@ impl RskProvider for AlloyProvider {
             .and_then(|response| Self::parse_block_provider_response(response))
     }
 
-    fn get_block_by_number(&self, num: u64) -> Result<Option<RskBlock>> {
-        let num_hex = format!("0x{:x}", num);
+    fn get_block_by_number(&self, num: BlockNumber) -> Result<Option<RskBlock>> {
+        let num_hex = format!("0x{:x}", num.value());
 
         let rpc_call = self
             .inner
@@ -234,6 +234,7 @@ impl RuntimeSync {
 #[cfg(test)]
 mod tests {
     use crate::rpc::AlloyProvider;
+    use common::types::BlockNumber;
     use serde_json::json;
     use serde_json::Value;
     use std::fs;
@@ -250,7 +251,7 @@ mod tests {
             .expect("JSON data should be valid")
             .expect("JSON data should map to RSK block");
 
-        assert_eq!(6086082, block.number());
+        assert_eq!(BlockNumber::from(6086082), block.number());
         assert_eq!(
             "0x2dbb8027f72a9fc147f165646e67db08c130ca698ff2d9fd02058c455b1a1c76",
             block.hash()

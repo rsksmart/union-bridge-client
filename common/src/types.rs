@@ -3,12 +3,51 @@ use bitcoin::{blockdata::block::Header, consensus::encode::deserialize as btc_de
 use primitive_types::U256;
 use serde::{de, Deserialize, Deserializer, Serialize};
 use serde_json::Value;
-use std::string::ToString;
+use std::{
+    fmt,
+    ops::{Add, Sub},
+    string::ToString,
+};
 
-/// Represents a block number in the blockchain.
+/// Represents a block number in the rootstock blockchain.
 ///
-/// This is an alias for `u64`, as block numbers are typically 64-bit unsigned integers.
-pub type BlockNumber = u64;
+/// Block numbers are typically represented as 64-bit unsigned integers (`u64`).
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+pub struct BlockNumber(u64);
+
+impl BlockNumber {
+    pub fn value(&self) -> u64 {
+        self.0
+    }
+}
+
+impl Add<u64> for BlockNumber {
+    type Output = BlockNumber;
+
+    fn add(self, rhs: u64) -> BlockNumber {
+        BlockNumber(self.0 + rhs)
+    }
+}
+
+impl Sub<u64> for BlockNumber {
+    type Output = BlockNumber;
+
+    fn sub(self, rhs: u64) -> BlockNumber {
+        BlockNumber(self.0 - rhs)
+    }
+}
+
+impl From<u64> for BlockNumber {
+    fn from(value: u64) -> Self {
+        BlockNumber(value)
+    }
+}
+
+impl fmt::Display for BlockNumber {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct RskBlock {
@@ -87,7 +126,7 @@ impl RskBlock {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RskRpcBlock {
-    #[serde(deserialize_with = "parse_hex_to_u64")]
+    #[serde(deserialize_with = "parse_hex_to_block_number")]
     number: BlockNumber,
     hash: String,
     #[serde(rename = "parentHash")]
@@ -103,6 +142,17 @@ pub struct RskRpcBlock {
     pow: String,
     #[serde(deserialize_with = "parse_rsk_difficulty", rename = "totalDifficulty")]
     total_difficulty: U256,
+}
+
+fn parse_hex_to_block_number<'de, D>(deserializer: D) -> Result<BlockNumber, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let hex: String = Deserialize::deserialize(deserializer)?;
+    let number =
+        u64::from_str_radix(hex.trim_start_matches("0x"), 16).map_err(de::Error::custom)?;
+
+    Ok(BlockNumber::from(number))
 }
 
 fn parse_hex_to_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>

@@ -1,4 +1,4 @@
-use crate::types::{ContractInfo, RskBlock, RskEvent, RskLog};
+use crate::types::{BlockNumber, ContractInfo, RskBlock, RskEvent, RskLog};
 use anyhow::Result;
 use thiserror::Error;
 
@@ -46,7 +46,7 @@ pub trait RskProvider {
     fn subscribe_blocks(&self) -> Result<Self::BlockSubscription>;
     fn subscribe_logs(&self, filter: RskSubscriptionFilter) -> Result<Self::LogSubscription>;
     fn get_block_by_hash(&self, hash: &str) -> Result<Option<RskBlock>>;
-    fn get_block_by_number(&self, num: u64) -> Result<Option<RskBlock>>;
+    fn get_block_by_number(&self, num: BlockNumber) -> Result<Option<RskBlock>>;
     fn get_best_block(&self) -> Result<RskBlock>;
     fn decode_log(&self, new_log: RskLog, contract_info: &ContractInfo)
         -> Result<Option<RskEvent>>;

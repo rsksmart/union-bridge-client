@@ -5,7 +5,7 @@ use common::cache::LruCache;
 use common::rsk_indexer::RskIndexer;
 use common::rsk_provider::MockRskProvider;
 use common::shutdown_flag::ShutdownFlag;
-use common::types::RskBlock;
+use common::types::{BlockNumber, RskBlock};
 use log::info;
 use std::fs;
 use std::sync::Mutex;
@@ -481,7 +481,7 @@ fn assert_canonical_chain(
     for height in begin_height..=end_height {
         let block_expected = generator.clone().generate_block(height);
         let block_actual = store_after
-            .get_canonical_block(height)
+            .get_canonical_block(BlockNumber::from(height))
             .unwrap_or_else(|err| panic!("Failed to retrieve canonical block: {}", err))
             .expect(&format!(
                 "No canonical block at height {} found after indexer run",

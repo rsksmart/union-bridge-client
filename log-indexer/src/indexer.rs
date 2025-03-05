@@ -4,14 +4,14 @@ use common::rsk_indexer::RskIndexer;
 use common::rsk_provider::{RskProvider, RskSubscriptionError};
 use common::rsk_provider::{RskSubscription, RskSubscriptionFilter};
 use common::shutdown_flag::ShutdownFlag;
-use common::types::{ContractInfo, RskLog};
+use common::types::{BlockNumber, ContractInfo, RskLog};
 use log::{error, info, warn};
 use std::collections::HashMap;
 
 pub struct LogIndexer<P: RskProvider, S: LogStore> {
     store: S,
     rsk_provider: P,
-    initial_block_number: u64,
+    initial_block_number: BlockNumber,
     managed_contracts: HashMap<String, ContractInfo>,
     shutdown_flag: ShutdownFlag,
 }
@@ -56,7 +56,7 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
         let best_block = self.rsk_provider.get_best_block()?;
 
         // TODO(Jira) Address this hardcoding in scope of https://rsklabs.atlassian.net/browse/UB-45
-        let block_from = best_block.number() - 10;
+        let block_from = best_block.number().value() - 10;
         let filter = RskSubscriptionFilter::new(contract_addresses, vec![], Some(block_from));
 
         info!(

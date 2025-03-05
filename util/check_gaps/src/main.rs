@@ -3,7 +3,7 @@ use block_indexer::store::{BlockStore, CachedBlockStore};
 use clap::{Arg, Command};
 use common::{
     cache::LruCache, config::Config, rsk_provider::RskProvider, shutdown_flag::ShutdownFlag,
-    types::RskBlock,
+    types::{BlockNumber, RskBlock},
 };
 use log::{debug, info, warn};
 use rsk_provider::rpc::AlloyProvider;
@@ -75,7 +75,7 @@ fn main() -> Result<()> {
 
         expected_hash = next_block.parent().to_string();
 
-        let next_block_num = &next_block.number() - 1;
+        let next_block_num = BlockNumber::from(next_block.number().value() - 1);
         next_block = match store.get_canonical_block(next_block_num)? {
             Some(block) => block,
             None => {
