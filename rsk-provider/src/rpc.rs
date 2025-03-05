@@ -250,7 +250,7 @@ mod tests {
             .expect("JSON data should be valid")
             .expect("JSON data should map to RSK block");
 
-        assert_eq!(6086082, block.block_number());
+        assert_eq!(6086082, block.number());
         assert_eq!(
             "0x2dbb8027f72a9fc147f165646e67db08c130ca698ff2d9fd02058c455b1a1c76",
             block.hash()

@@ -12,7 +12,7 @@ pub type BlockNumber = u64;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct RskBlock {
-    block_number: BlockNumber,
+    number: BlockNumber,
     hash: String,
     parent: String,
     difficulty: U256,
@@ -24,7 +24,7 @@ pub struct RskBlock {
 impl From<RskRpcBlock> for RskBlock {
     fn from(rpc_block: RskRpcBlock) -> Self {
         Self::new(
-            rpc_block.block_number,
+            rpc_block.number,
             rpc_block.hash,
             rpc_block.parent,
             rpc_block.difficulty,
@@ -37,7 +37,7 @@ impl From<RskRpcBlock> for RskBlock {
 
 impl RskBlock {
     pub fn new(
-        block_number: BlockNumber,
+        number: BlockNumber,
         hash: String,
         parent: String,
         difficulty: U256,
@@ -46,7 +46,7 @@ impl RskBlock {
         total_difficulty: U256,
     ) -> Self {
         RskBlock {
-            block_number,
+            number,
             hash,
             parent,
             difficulty,
@@ -56,8 +56,8 @@ impl RskBlock {
         }
     }
 
-    pub fn block_number(&self) -> BlockNumber {
-        self.block_number
+    pub fn number(&self) -> BlockNumber {
+        self.number
     }
 
     pub fn hash(&self) -> &str {
@@ -87,8 +87,8 @@ impl RskBlock {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RskRpcBlock {
-    #[serde(rename = "number", deserialize_with = "parse_hex_to_u64")]
-    block_number: BlockNumber,
+    #[serde(deserialize_with = "parse_hex_to_u64")]
+    number: BlockNumber,
     hash: String,
     #[serde(rename = "parentHash")]
     parent: String,
@@ -189,7 +189,7 @@ impl RskEvent {
 pub struct LogInfo {
     address: String,
     block_hash: String,
-    block_number: BlockNumber,
+    number: BlockNumber,
     tx_hash: String,
     log_index: u64,
     removed: bool,
@@ -199,7 +199,7 @@ impl LogInfo {
     pub fn new(
         address: String,
         block_hash: String,
-        block_number: BlockNumber,
+        number: BlockNumber,
         tx_hash: String,
         log_index: u64,
         removed: bool,
@@ -207,7 +207,7 @@ impl LogInfo {
         LogInfo {
             address,
             block_hash,
-            block_number,
+            number,
             tx_hash,
             log_index,
             removed,
@@ -222,8 +222,8 @@ impl LogInfo {
         &self.block_hash
     }
 
-    pub fn block_number(&self) -> BlockNumber {
-        self.block_number
+    pub fn number(&self) -> BlockNumber {
+        self.number
     }
 
     pub fn tx_hash(&self) -> &str {

@@ -47,7 +47,7 @@ fn main() -> Result<()> {
     if !find_canonical_connection(&store_best_block, FINALITY_FOR_CHECK, &store)? {
         bail!(
             "Could not find canonical block for best block {} ({}) after {} attempts",
-            store_best_block.block_number(),
+            store_best_block.number(),
             store_best_block.hash(),
             FINALITY_FOR_CHECK
         );
@@ -56,10 +56,10 @@ fn main() -> Result<()> {
     let mut next_block = store_best_block;
     let mut expected_hash = next_block.hash().to_string();
 
-    while next_block.block_number() > initial_block.block_number() {
+    while next_block.number() > initial_block.number() {
         debug!(
             "Block {} ({}) with parent {}",
-            next_block.block_number(),
+            next_block.number(),
             next_block.hash(),
             next_block.parent()
         );
@@ -67,7 +67,7 @@ fn main() -> Result<()> {
         if next_block.hash() != expected_hash {
             bail!(
                 "Parent hash mismatch at block: {} ({}), expected {}",
-                next_block.block_number(),
+                next_block.number(),
                 next_block.hash(),
                 expected_hash
             );
@@ -75,7 +75,7 @@ fn main() -> Result<()> {
 
         expected_hash = next_block.parent().to_string();
 
-        let next_block_num = &next_block.block_number() - 1;
+        let next_block_num = &next_block.number() - 1;
         next_block = match store.get_canonical_block(next_block_num)? {
             Some(block) => block,
             None => {
@@ -87,14 +87,14 @@ fn main() -> Result<()> {
     if !find_canonical_connection(&next_block, 1, &store)? {
         bail!(
             "Could not find canonical block for initial block {} ({})",
-            next_block.block_number(),
+            next_block.number(),
             next_block.hash()
         );
     }
 
     info!(
         "Reached initial block {} ({}) with parent {} without gaps!!!",
-        next_block.block_number(),
+        next_block.number(),
         next_block.hash(),
         next_block.parent()
     );
@@ -115,28 +115,28 @@ fn find_canonical_connection(
 
     info!(
         "Finding connection point for block {} ({})",
-        block_ref.block_number(),
+        block_ref.number(),
         block_ref.hash()
     );
 
     let mut store_block = block_ref.clone();
     let mut node_block = rsk_ws_provider
-        .get_block_by_number(store_block.block_number())
+        .get_block_by_number(store_block.number())
         .with_context(|| {
             format!(
                 "Provider error getting block by num: {}",
-                store_block.block_number()
+                store_block.number()
             )
         })?
-        .with_context(|| format!("Block not found by num: {}", store_block.block_number()))?;
+        .with_context(|| format!("Block not found by num: {}", store_block.number()))?;
 
     let mut connection_found = false;
     for i in 1..=block_margin {
         debug!(
             "Checking local block {} ({}) against node block {} ({})",
-            store_block.block_number(),
+            store_block.number(),
             store_block.hash(),
-            node_block.block_number(),
+            node_block.number(),
             node_block.hash(),
         );
 
@@ -146,17 +146,17 @@ fn find_canonical_connection(
         }
 
         node_block = rsk_ws_provider
-            .get_block_by_number(store_block.block_number() - i as u64)
+            .get_block_by_number(store_block.number() - i as u64)
             .with_context(|| {
                 format!(
                     "Provider error getting block by num: {}",
-                    store_block.block_number() - i as u64
+                    store_block.number() - i as u64
                 )
             })?
             .with_context(|| {
                 format!(
                     "Failed to get block by num: {}",
-                    store_block.block_number() - i as u64
+                    store_block.number() - i as u64
                 )
             })?;
 

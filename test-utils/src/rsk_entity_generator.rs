@@ -1,12 +1,11 @@
+use common::types::RskBlock;
 use log::debug;
+use primitive_types::U256;
+use sha2::{Digest, Sha256};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
-
-use common::types::RskBlock;
-use primitive_types::U256;
-use sha2::{Digest, Sha256};
 
 /// Returns a list of default RSK test blocks.
 ///
@@ -21,9 +20,9 @@ use sha2::{Digest, Sha256};
 /// let blocks = get_default_rsk_blocks();
 ///
 /// assert_eq!(blocks.len(), 3);
-/// assert_eq!(blocks[0].block_number(), 7_234_706);
-/// assert_eq!(blocks[1].block_number(), 7_234_707);
-/// assert_eq!(blocks[2].block_number(), 7_234_708);
+/// assert_eq!(blocks[0].number(), 7_234_706);
+/// assert_eq!(blocks[1].number(), 7_234_707);
+/// assert_eq!(blocks[2].number(), 7_234_708);
 /// ```
 ///
 /// # Returns
@@ -45,7 +44,7 @@ pub fn get_default_rsk_blocks() -> Vec<RskBlock> {
 /// use test_utils::rsk_entity_generator::get_first_default_rsk_block;
 ///
 /// let block = get_first_default_rsk_block();
-/// assert_eq!(block.block_number(), 7_234_706);
+/// assert_eq!(block.number(), 7_234_706);
 /// ```
 ///
 /// # Links
@@ -71,7 +70,7 @@ pub fn get_first_default_rsk_block() -> RskBlock {
 /// use test_utils::rsk_entity_generator::get_second_default_rsk_block;
 ///
 /// let block = get_second_default_rsk_block();
-/// assert_eq!(block.block_number(), 7_234_707);
+/// assert_eq!(block.number(), 7_234_707);
 /// ```
 ///
 /// # Links
@@ -97,7 +96,7 @@ pub fn get_second_default_rsk_block() -> RskBlock {
 /// use test_utils::rsk_entity_generator::get_third_default_rsk_block;
 ///
 /// let block = get_third_default_rsk_block();
-/// assert_eq!(block.block_number(), 7_234_708);
+/// assert_eq!(block.number(), 7_234_708);
 /// ```
 ///
 /// # Links
