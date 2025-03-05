@@ -125,13 +125,19 @@ impl fmt::Display for BlockNumber {
     }
 }
 
+/// Represents a timestamp for a block in the blockchain.
+///
+/// This is an alias for `u64`, typically representing the number of seconds 
+/// since the Unix epoch.
+pub type BlockTimestamp = u64;
+
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct RskBlock {
     number: BlockNumber,
     hash: BlockHash,
     parent_hash: BlockHash,
     difficulty: U256,
-    timestamp: u64,
+    timestamp: BlockTimestamp,
     total_difficulty: U256,
     pow: String,
 }
@@ -156,7 +162,7 @@ impl RskBlock {
         hash: BlockHash,
         parent_hash: BlockHash,
         difficulty: U256,
-        timestamp: u64,
+        timestamp: BlockTimestamp,
         pow: String,
         total_difficulty: U256,
     ) -> Self {
@@ -187,7 +193,7 @@ impl RskBlock {
         self.difficulty
     }
 
-    pub fn timestamp(&self) -> u64 {
+    pub fn timestamp(&self) -> BlockTimestamp {
         self.timestamp
     }
 
@@ -211,7 +217,7 @@ pub struct RskRpcBlock {
     #[serde(deserialize_with = "parse_rsk_difficulty")]
     difficulty: U256,
     #[serde(deserialize_with = "parse_hex_to_u64")]
-    timestamp: u64,
+    timestamp: BlockTimestamp,
     #[serde(
         rename = "bitcoinMergedMiningHeader",
         deserialize_with = "parse_bitcoin_header_to_pow"
