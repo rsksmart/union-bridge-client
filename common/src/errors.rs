@@ -1,11 +1,11 @@
 use config;
-use hex::FromHexError;
+use hex;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum BlockHashError {
     #[error("Invalid hex string: {0}")]
-    InvalidHex(#[from] FromHexError),
+    InvalidHex(#[from] hex::FromHexError),
 }
 
 #[derive(Error, Debug)]

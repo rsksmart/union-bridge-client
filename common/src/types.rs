@@ -19,16 +19,16 @@ use std::{
 /// use common::types::BlockHash;
 ///
 /// let raw_hash = H256::random();
-/// let block_hash = BlockHash::new(raw_hash);
+/// let block_hash = BlockHash::from(raw_hash);
 ///
 /// println!("Block hash: {}", block_hash);
 /// ```
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct BlockHash(H256);
 
-impl BlockHash {
-    pub fn new(hash: H256) -> Self {
-        Self(hash)
+impl From<H256> for BlockHash {
+    fn from(h256: H256) -> Self {
+        Self(h256)
     }
 }
 
@@ -40,7 +40,15 @@ impl TryFrom<&str> for BlockHash {
         let bytes = hex::decode(value)?;
         let h256 = H256::from_slice(&bytes);
 
-        Ok(BlockHash(h256))
+        Ok(Self(h256))
+    }
+}
+
+impl fmt::Display for BlockHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "0x{}", hex::encode(self.0))
+    }
+}
 
 /// Represents a block number in the rootstock blockchain.
 ///
@@ -94,11 +102,6 @@ impl fmt::Display for BlockNumber {
     }
 }
 
-impl fmt::Display for BlockHash {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "0x{}", hex::encode(self.0))
-    }
-}
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct RskBlock {
@@ -115,8 +118,8 @@ impl From<RskRpcBlock> for RskBlock {
     fn from(rpc_block: RskRpcBlock) -> Self {
         Self::new(
             rpc_block.number,
-            rpc_block.block_hash,
-            rpc_block.parent_block_hash,
+            rpc_block.hash,
+            rpc_block.parent_hash,
             rpc_block.difficulty,
             rpc_block.timestamp,
             rpc_block.pow,
@@ -137,8 +140,8 @@ impl RskBlock {
     ) -> Self {
         RskBlock {
             number,
-            block_hash,
-            parent_block_hash: parent_hash,
+            hash,
+            parent_hash,
             difficulty,
             timestamp,
             pow,
@@ -150,12 +153,12 @@ impl RskBlock {
         self.number
     }
 
-    pub fn block_hash(&self) -> BlockHash {
-        self.block_hash.clone()
+    pub fn hash(&self) -> BlockHash {
+        self.hash.clone()
     }
 
-    pub fn parent_block_hash(&self) -> BlockHash {
-        self.parent_block_hash.clone()
+    pub fn parent_hash(&self) -> BlockHash {
+        self.parent_hash.clone()
     }
 
     pub fn difficulty(&self) -> U256 {
@@ -182,7 +185,7 @@ pub struct RskRpcBlock {
     #[serde(deserialize_with = "parse_hex_to_block_hash")]
     hash: BlockHash,
     #[serde(rename = "parentHash", deserialize_with = "parse_hex_to_block_hash")]
-    parent_block_hash: BlockHash,
+    parent_hash: BlockHash,
     #[serde(deserialize_with = "parse_rsk_difficulty")]
     difficulty: U256,
     #[serde(deserialize_with = "parse_hex_to_u64")]

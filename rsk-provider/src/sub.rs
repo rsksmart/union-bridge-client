@@ -73,7 +73,7 @@ impl RskSubscription<RskBlock> for AlloySubscription<Header> {
         // TODO(Jira) tmp approach, try to get the required block data from the subscription itself (check Rsk and Alloy impl): https://rsklabs.atlassian.net/browse/UB-36
         let new_block = self
             .provider
-            .get_block_by_hash(new_block_hash.clone())
+            .get_block_by_hash(&new_block_hash)
             .context(format!(
                 "Error getting block {new_block_hash} from Provider"
             ))

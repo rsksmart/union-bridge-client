@@ -44,14 +44,14 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 
         let initial_block_node = self
             .rsk_provider
-            .get_block_by_hash(self.initial_block_hash.clone())
+            .get_block_by_hash(&self.initial_block_hash)
             .context("Initialising DB")?
             .context("Initial block hash not found on provider while initialising DB")?;
 
         info!(
             "[initialize_db_if_required] New instance: initializing DB with {} ({})",
             initial_block_node.number(),
-            initial_block_node.block_hash()
+            initial_block_node.hash()
         );
 
         // initialize the store with the initial block info
@@ -133,7 +133,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 .context("On Block subscription")?
                 .context("Best block not found while listening blocks")?;
 
-            let extends_canonical = new_block.parent_block_hash() == local_best_block.block_hash();
+            let extends_canonical = new_block.parent_hash() == local_best_block.hash();
             let is_reorg = !extends_canonical
                 && new_block.total_difficulty() > local_best_block.total_difficulty();
 
@@ -141,7 +141,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 info!(
                     "[subscribe_blocks] Processing block {} ({}): setting new best",
                     new_block.number(),
-                    new_block.block_hash()
+                    new_block.hash()
                 );
                 self.save_as_best_block(&new_block)
                     .context("On Block subscription")?;
@@ -149,7 +149,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 info!(
                     "[subscribe_blocks] Processing block {} ({}): fixing local reorg",
                     new_block.number(),
-                    new_block.block_hash()
+                    new_block.hash()
                 );
                 let provider_best_block = self
                     .rsk_provider
@@ -161,7 +161,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 info!(
                     "[subscribe_blocks] Processing block {} ({}): neither extending, nor competing",
                     new_block.number(),
-                    new_block.block_hash()
+                    new_block.hash()
                 );
                 // just save the block as it is not part of the main chain (at least yet)
                 self.store
@@ -188,9 +188,9 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         info!(
             "[block_backward_sync] Connecting blocks {} ({}) and {} ({})",
             starting_block.number(),
-            starting_block.block_hash(),
+            starting_block.hash(),
             store_best_block.number(),
-            store_best_block.block_hash(),
+            store_best_block.hash(),
         );
 
         // TODO(Jira) request and persist uncles during this process: https://rsklabs.atlassian.net/browse/UB-16
@@ -203,7 +203,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 .context("On Backward Sync")?;
 
             let is_missing = store_block.is_none();
-            let is_reorg = store_block.map_or(false, |sb| sb.block_hash() != new_block.block_hash());
+            let is_reorg = store_block.map_or(false, |sb| sb.hash() != new_block.hash());
             let reached_connection_height = new_block.number() <= store_best_block.number();
 
             if is_missing || is_reorg {
@@ -211,7 +211,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                     "[block_backward_sync] {} block {} ({})...",
                     if is_reorg { "Replacing" } else { "Creating" },
                     new_block.number(),
-                    new_block.block_hash(),
+                    new_block.hash(),
                 );
                 self.save_as_canonical(&new_block)
                     .context("On Backward Sync")?;
@@ -219,13 +219,13 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 debug!(
                     "[block_backward_sync] Skipping known block {} ({}) while checking if fully connected",
                     new_block.number(),
-                    new_block.block_hash()
+                    new_block.hash()
                 );
             } else {
                 info!(
                     "[block_backward_sync] Completed at block {} ({})",
                     new_block.number(),
-                    new_block.block_hash()
+                    new_block.hash()
                 );
 
                 // we are complete, so we remove the checkpoint if any
@@ -244,7 +244,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 warn!(
                     "[block_backward_sync] Shutdown requested, setting back_sync_checkpoint to {} ({})",
                     new_block.number(),
-                    new_block.block_hash()
+                    new_block.hash()
                 );
 
                 // define backward_sync checkpoint to resume from
@@ -255,7 +255,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 break;
             }
 
-            if self.initial_block_hash == new_block.block_hash() || new_block.number() == 0 {
+            if self.initial_block_hash == new_block.hash() || new_block.number() == 0 {
                 error!("[block_backward_sync] Reached genesis or starting block, aborting...");
                 break;
             }
@@ -277,7 +277,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         {
             match self
                 .rsk_provider
-                .get_block_by_hash(checkpoint.parent_block_hash())
+                .get_block_by_hash(&checkpoint.parent_hash())
                 .context("Resuming Backward Sync")?
             {
                 Some(checkpoint_parent) => {
@@ -288,7 +288,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                     warn!(
                         "[startup_backward_sync] Cannot resume from non canonical checkpoint {} ({})",
                         checkpoint.number(),
-                        checkpoint.block_hash(),
+                        checkpoint.hash(),
                     );
                 }
             }
@@ -308,7 +308,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 .get_best_block()
                 .context("On Full Sync Backward Sync rounds")?
             {
-                let is_full_sync = provider_best_block.block_hash() == store_best_block.block_hash();
+                let is_full_sync = provider_best_block.hash() == store_best_block.hash();
                 if is_full_sync {
                     debug!("[startup_backward_sync] No more rounds needed",);
                     return Ok(());

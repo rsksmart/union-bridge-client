@@ -55,32 +55,32 @@ fn main() -> Result<()> {
         bail!(
             "Could not find canonical block for best block {} ({}) after {} attempts",
             store_best_block.number(),
-            store_best_block.block_hash(),
+            store_best_block.hash(),
             FINALITY_FOR_CHECK
         );
     }
 
     let mut next_block = store_best_block;
-    let mut expected_hash = next_block.block_hash();
+    let mut expected_hash = next_block.hash();
 
     while next_block.number() > initial_block.number() {
         debug!(
             "Block {} ({}) with parent {}",
             next_block.number(),
-            next_block.block_hash(),
-            next_block.parent_block_hash()
+            next_block.hash(),
+            next_block.parent_hash()
         );
 
-        if next_block.block_hash() != expected_hash {
+        if next_block.hash() != expected_hash {
             bail!(
                 "Parent hash mismatch at block: {} ({}), expected {}",
                 next_block.number(),
-                next_block.block_hash(),
+                next_block.hash(),
                 expected_hash
             );
         }
 
-        expected_hash = next_block.parent_block_hash();
+        expected_hash = next_block.parent_hash();
 
         let next_block_num = next_block.number() - 1;
         next_block = match store.get_canonical_block(next_block_num)? {
@@ -95,15 +95,15 @@ fn main() -> Result<()> {
         bail!(
             "Could not find canonical block for initial block {} ({})",
             next_block.number(),
-            next_block.block_hash()
+            next_block.hash()
         );
     }
 
     info!(
         "Reached initial block {} ({}) with parent {} without gaps!!!",
         next_block.number(),
-        next_block.block_hash(),
-        next_block.parent_block_hash()
+        next_block.hash(),
+        next_block.parent_hash()
     );
 
     Ok(())
@@ -123,7 +123,7 @@ fn find_canonical_connection(
     info!(
         "Finding connection point for block {} ({})",
         block_ref.number(),
-        block_ref.block_hash()
+        block_ref.hash()
     );
 
     let mut store_block = block_ref.clone();
@@ -142,12 +142,12 @@ fn find_canonical_connection(
         debug!(
             "Checking local block {} ({}) against node block {} ({})",
             store_block.number(),
-            store_block.block_hash(),
+            store_block.hash(),
             node_block.number(),
-            node_block.block_hash(),
+            node_block.hash(),
         );
 
-        connection_found = node_block.block_hash() == store_block.block_hash();
+        connection_found = node_block.hash() == store_block.hash();
         if connection_found {
             break;
         }
@@ -168,7 +168,7 @@ fn find_canonical_connection(
             })?;
 
         store_block = store
-            .get_block_by_hash(store_block.parent_block_hash())?
+            .get_block_by_hash(store_block.parent_hash())?
             .expect("Failed to get block's parent from store");
     }
 

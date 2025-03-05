@@ -136,7 +136,7 @@ impl RskProvider for AlloyProvider {
         Ok(AlloySubscription::<Log>::new(subscription, self.clone()))
     }
 
-    fn get_block_by_hash(&self, hash: BlockHash) -> Result<Option<RskBlock>> {
+    fn get_block_by_hash(&self, hash: &BlockHash) -> Result<Option<RskBlock>> {
         let rpc_call = self
             .inner
             .client()
@@ -264,7 +264,7 @@ mod tests {
 
         assert_eq!(BlockNumber::from(6086082), block.number());
         assert_eq!(expected_hash, block.hash());
-        assert_eq!(expected_parent, block.parent());
+        assert_eq!(expected_parent, block.parent_hash());
     }
 
     #[test]
