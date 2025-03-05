@@ -255,14 +255,14 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 break;
             }
 
-            if self.initial_block_hash == new_block.hash() || new_block.number().value() == 0 {
+            if self.initial_block_hash == new_block.hash() || new_block.number() == 0 {
                 error!("[block_backward_sync] Reached genesis or starting block, aborting...");
                 break;
             }
 
             // no exit condition met, keep searching backwards
             new_block = self
-                .get_next_backward_sync_block(BlockNumber::from(new_block.number().value() - 1))
+                .get_next_backward_sync_block(new_block.number() - 1)
                 .context("On Backward Sync")?;
         }
 

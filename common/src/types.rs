@@ -37,6 +37,12 @@ impl Sub<u64> for BlockNumber {
     }
 }
 
+impl PartialEq<u64> for BlockNumber {
+    fn eq(&self, other: &u64) -> bool {
+        self.0 == *other
+    }
+}
+
 impl From<u64> for BlockNumber {
     fn from(value: u64) -> Self {
         BlockNumber(value)

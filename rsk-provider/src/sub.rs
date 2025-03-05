@@ -112,7 +112,7 @@ impl AlloySubscription<Log> {
 
     pub(super) fn build_block_option(filter: &RskSubscriptionFilter) -> FilterBlockOption {
         FilterBlockOption::Range {
-            from_block: filter.from_block.map(|n| n.into()),
+            from_block: filter.from_block.map(|n| n.value().into()),
             to_block: None,
         }
     }

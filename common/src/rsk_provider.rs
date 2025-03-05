@@ -15,7 +15,7 @@ pub trait RskSubscription<T> {
 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-43
 pub struct RskSubscriptionFilter {
     pub addresses: Vec<String>,
-    pub from_block: Option<u64>,
+    pub from_block: Option<BlockNumber>,
     pub topics: Vec<String>,
 }
 
@@ -26,7 +26,7 @@ pub enum BlockNumRef {
 }
 
 impl RskSubscriptionFilter {
-    pub fn new(addresses: Vec<String>, topics: Vec<String>, from_block: Option<u64>) -> Self {
+    pub fn new(addresses: Vec<String>, topics: Vec<String>, from_block: Option<BlockNumber>) -> Self {
         Self {
             addresses,
             topics,
