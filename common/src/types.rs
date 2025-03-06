@@ -125,11 +125,23 @@ impl fmt::Display for BlockNumber {
     }
 }
 
-/// Represents a timestamp for a block in the blockchain.
+/// Represents a block timestamp in the rootstock blockchain.
 ///
-/// This is an alias for `u64`, typically representing the number of seconds 
-/// since the Unix epoch.
-pub type BlockTimestamp = u64;
+/// Block timestamps are typically represented as 64-bit unsigned integers (`u64`).
+#[derive(Serialize, Deserialize, Debug, PartialEq, Copy, Clone)]
+pub struct BlockTimestamp(u64);
+
+impl BlockTimestamp {
+    pub fn value(self) -> u64 {
+        self.0
+    }
+}
+
+impl From<u64> for BlockTimestamp {
+    fn from(timestamp: u64) -> Self {
+        Self(timestamp)
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct RskBlock {
