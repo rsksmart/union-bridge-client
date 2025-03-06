@@ -11,12 +11,12 @@ pub trait RskSubscription<T> {
     fn unsubscribe(&self) -> Result<()>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-43
 pub struct RskSubscriptionFilter {
     pub addresses: Vec<String>,
-    pub from_block: Option<BlockNumber>,
     pub topics: Vec<String>,
+    pub from_block: Option<BlockNumber>,
 }
 
 #[derive(Debug)]

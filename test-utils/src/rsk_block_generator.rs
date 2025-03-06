@@ -127,32 +127,6 @@ pub fn get_third_default_rsk_block() -> RskBlock {
     )
 }
 
-pub fn get_fake_address(address_num: u64, nonce: Option<&str>) -> String {
-    let mut hasher = Keccak256::new();
-    let mut data = address_num.to_le_bytes().to_vec();
-    // Append nonce bytes if provided
-    if let Some(n) = nonce {
-        data.extend_from_slice(n.as_bytes());
-    }
-    hasher.update(data);
-    let hash = hasher.finalize();
-    // Ethereum addresses are the last 20 bytes of the 32-byte hash
-    let address_bytes = &hash[12..];
-    format!("0x{}", hex::encode(address_bytes))
-}
-
-pub fn get_fake_tx_hash(tx_id: u64, from: &str) -> String {
-    let mut hasher = Keccak256::new();
-    let mut data = Vec::new();
-    data.extend_from_slice(&tx_id.to_le_bytes());
-    data.extend_from_slice(from.as_bytes());
-    // data.extend_from_slice(to.as_bytes());
-    // data.extend_from_slice(&value.to_le_bytes());
-    hasher.update(data);
-    let hash = hasher.finalize();
-    format!("0x{}", hex::encode(hash))
-}
-
 pub fn address_to_topic(address: &str) -> String {
     let addr = address.strip_prefix("0x").unwrap_or(address);
     if addr.len() != 40 {
@@ -279,46 +253,5 @@ impl FakeBlockGenerator {
         let total_diff =
             n * self.base_difficulty.value() + self.difficulty_increment.value() * sum_n;
         BlockDifficulty::from(total_diff)
-    }
-}
-
-/// A stateless generator for fake RSK logs.
-#[derive(Clone)]
-pub struct FakeLogGenerator {
-    event_signature: String,
-}
-
-impl FakeLogGenerator {
-    pub fn new(event_signature: &str) -> Self {
-        Self {
-            event_signature: event_signature.to_string(),
-        }
-    }
-
-    pub fn generate_log(
-        &self,
-        block: RskBlock,
-        tx_id: u64,
-        address_num: u64,
-        log_index: u64,
-    ) -> RskLog {
-        let address_from = get_fake_address(address_num, None);
-        let address_to = get_fake_address(address_num, Some("destinatary"));
-        let tx_hash = get_fake_tx_hash(tx_id, &address_from);
-        let info: LogInfo = LogInfo::new(
-            address_from.clone(),
-            block.hash().to_string(),
-            block.number(),
-            tx_hash,
-            log_index,
-            false,
-        );
-        let topics = vec![
-            address_to_topic(&address_from),
-            address_to_topic(&address_to),
-        ];
-        let event: LogEvent =
-            LogEvent::new(event_signature_to_topic(&self.event_signature), topics);
-        RskLog::new(info, event)
     }
 }

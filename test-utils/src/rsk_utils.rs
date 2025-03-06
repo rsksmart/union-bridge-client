@@ -1,4 +1,6 @@
-use common::types::{BlockHash, BlockPow};
+use std::collections::HashMap;
+
+use common::types::{BlockHash, ContractInfo, BlockPow};
 use sha3::{Digest, Keccak256};
 
 pub const DEFAULT_BLOCK_HASH: &str =
@@ -24,23 +26,44 @@ pub const DEFAULT_BITCOIN_MERGED_MINING_HEADER: &str =
 /// # Example
 ///
 /// ```
-/// use test_utils::rsk_utils::get_fake_address;
+/// use test_utils::rsk_utils::generate_fake_address;
 ///
-/// let address = get_fake_address(1, Some("nonce"));
+/// let address = generate_fake_address(1);
 /// assert!(address.starts_with("0x"));
 /// ```
-pub fn get_fake_address(address_num: u64, nonce: Option<&str>) -> String {
+pub fn generate_fake_address(address_num: u64) -> String {
     let mut hasher = Keccak256::new();
-    let mut data = address_num.to_le_bytes().to_vec();
+    let data = address_num.to_le_bytes().to_vec();
     // Append nonce bytes if provided
-    if let Some(n) = nonce {
-        data.extend_from_slice(n.as_bytes());
-    }
     hasher.update(data);
     let hash = hasher.finalize();
-    // Rootstock addresses are the last 20 bytes of the 32-byte hash
+    // Ethereum addresses are the last 20 bytes of the 32-byte hash
     let address_bytes = &hash[12..];
     format!("0x{}", hex::encode(address_bytes))
+}
+
+pub fn generate_fake_addresses(addresses_size: u64) -> Vec<String> {
+    (0..addresses_size)
+        .map(|i| generate_fake_address(i))
+        .collect()
+}
+
+pub fn generate_fake_managed_contracts(addresses: Vec<String>) -> HashMap<String, ContractInfo> {
+    addresses
+        .into_iter()
+        .map(|address| generate_fake_managed_contract(address))
+        .collect()
+}
+
+pub fn generate_fake_managed_contract(address: String) -> (String, ContractInfo) {
+    (
+        address.clone(),
+        ContractInfo {
+            name: format!("contract_{}", address),
+            address,
+            abi: None,
+        },
+    )
 }
 
 /// Generates a fake transaction hash using a transaction ID and a sender address.
@@ -61,12 +84,12 @@ pub fn get_fake_address(address_num: u64, nonce: Option<&str>) -> String {
 /// # Example
 ///
 /// ```
-/// use test_utils::rsk_utils::get_fake_tx_hash;
+/// use test_utils::rsk_utils::generate_fake_tx_hash;
 ///
-/// let tx_hash = get_fake_tx_hash(1, "0xabc123...");
+/// let tx_hash = generate_fake_tx_hash(1, "0xabc123...");
 /// assert!(tx_hash.starts_with("0x"));
 /// ```
-pub fn get_fake_tx_hash(tx_id: u64, from: &str) -> String {
+pub fn generate_fake_tx_hash(tx_id: u64, from: &str) -> String {
     let mut hasher = Keccak256::new();
     let mut data = Vec::new();
     data.extend_from_slice(&tx_id.to_le_bytes());
