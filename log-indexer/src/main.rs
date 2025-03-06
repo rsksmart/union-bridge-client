@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
-use common::{config::Config, rsk_indexer::RskIndexer, shutdown_flag::ShutdownFlag, types::BlockHash};
+use common::{
+    config::Config, rsk_indexer::RskIndexer, shutdown_flag::ShutdownFlag, types::BlockHash,
+};
 use log::{error, info};
 use log_indexer::{indexer::LogIndexer, store::RawLogStore};
 use rsk_provider::rpc::AlloyProvider;

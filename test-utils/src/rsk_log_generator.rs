@@ -28,7 +28,7 @@ impl FakeLogGenerator {
         let tx_hash = get_fake_tx_hash(tx_id, &address_from);
         let info: LogInfo = LogInfo::new(
             address_from.clone(),
-            block.hash().to_string(),
+            block.hash(),
             block.number(),
             tx_hash,
             log_index,

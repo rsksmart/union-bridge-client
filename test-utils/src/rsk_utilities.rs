@@ -1,4 +1,4 @@
-use common::types::RskBlock;
+use common::types::{BlockHash, RskBlock};
 use primitive_types::U256;
 use sha3::{Digest, Keccak256};
 
@@ -47,9 +47,13 @@ pub fn get_default_rsk_blocks() -> Vec<RskBlock> {
 /// [Rootstock Block 7,234,706](https://explorer.rootstock.io/block/7234706)
 pub fn get_first_default_rsk_block() -> RskBlock {
     RskBlock::new(
-        7_234_706,
-        "0x5d164d93bf09ee215cc67420f24d31b8d86c46ced6e770e8abf69c16bea3a67c".to_string(),
-        "0x2dbe5baab546a1d1a6c443836810c89867efac727a0b58b24de1baeb15467752".to_string(),
+        7_234_706.into(),
+        from_hex_to_block_hash(
+            "0x5d164d93bf09ee215cc67420f24d31b8d86c46ced6e770e8abf69c16bea3a67c",
+        ),
+        from_hex_to_block_hash(
+            "0x2dbe5baab546a1d1a6c443836810c89867efac727a0b58b24de1baeb15467752",
+        ),
         U256::from(10_000_000_000_000_000_000_000_u128), // difficulty (10 ZH)
         1739358639,
         "0xcc018a4152524f57484541442d".to_string(),
@@ -73,9 +77,13 @@ pub fn get_first_default_rsk_block() -> RskBlock {
 /// [Rootstock Block 7,234,707](https://explorer.rootstock.io/block/7234707)
 pub fn get_second_default_rsk_block() -> RskBlock {
     RskBlock::new(
-        7_234_707,
-        "0xb1b77a1d9e6d18f6668a0db6bead24bea4c507fc6779ab211899c008484384ca".to_string(),
-        "0x5d164d93bf09ee215cc67420f24d31b8d86c46ced6e770e8abf69c16bea3a67c".to_string(),
+        7_234_707.into(),
+        from_hex_to_block_hash(
+            "0xb1b77a1d9e6d18f6668a0db6bead24bea4c507fc6779ab211899c008484384ca",
+        ),
+        from_hex_to_block_hash(
+            "0x5d164d93bf09ee215cc67420f24d31b8d86c46ced6e770e8abf69c16bea3a67c",
+        ),
         U256::from(10_000_000_000_000_000_000_000_u128), // difficulty (10 ZH)
         1739358657,
         "pow_string".to_string(),
@@ -99,9 +107,13 @@ pub fn get_second_default_rsk_block() -> RskBlock {
 /// [Rootstock Block 7,234,708](https://explorer.rootstock.io/block/7234708)
 pub fn get_third_default_rsk_block() -> RskBlock {
     RskBlock::new(
-        7_234_708,
-        "0x9971862c7475888178eae1e2cd03dde72e3791ddd72853a8f781022a49a95228".to_string(),
-        "0xb1b77a1d9e6d18f6668a0db6bead24bea4c507fc6779ab211899c008484384ca".to_string(),
+        7_234_708.into(),
+        from_hex_to_block_hash(
+            "0x9971862c7475888178eae1e2cd03dde72e3791ddd72853a8f781022a49a95228",
+        ),
+        from_hex_to_block_hash(
+            "0xb1b77a1d9e6d18f6668a0db6bead24bea4c507fc6779ab211899c008484384ca",
+        ),
         U256::from(10_000_000_000_000_000_000_000_u128), // difficulty (10 ZH)
         1739358667,
         "pow_string".to_string(),
@@ -245,4 +257,31 @@ pub fn event_signature_to_topic(event_signature: &str) -> String {
     hasher.update(event_signature.as_bytes());
     let hash = hasher.finalize();
     format!("0x{}", hex::encode(hash))
+}
+
+/// Converts a hex string into a `BlockHash`.
+///
+/// # Panics
+///
+/// This function will panic if the string is not a valid hexadecimal.
+///
+/// # Examples
+///
+/// ```
+/// use common::types::BlockHash;
+/// use test_utils::rsk_utilities::from_hex_to_block_hash;
+///
+/// // Valid usage:
+/// let valid_hex = "0x5d164d93bf09ee215cc67420f24d31b8d86c46ced6e770e8abf69c16bea3a67c";
+/// let block_hash = from_hex_to_block_hash(valid_hex);
+/// assert_eq!(block_hash.to_string(), valid_hex);
+/// ```
+///
+/// ```should_panic
+/// // This will panic because it's invalid hexadecimal:
+/// use test_utils::rsk_utilities::from_hex_to_block_hash;
+/// from_hex_to_block_hash("not-valid-hex");
+/// ```
+pub fn from_hex_to_block_hash(hex: &str) -> BlockHash {
+    BlockHash::try_from(hex).expect(&format!("Invalid hex string: {}", hex))
 }

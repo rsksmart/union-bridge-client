@@ -59,6 +59,16 @@ impl fmt::Display for BlockHash {
     }
 }
 
+impl Default for BlockHash {
+    fn default() -> Self {
+        Self(H256([
+            0x5d, 0x16, 0x4d, 0x93, 0xbf, 0x09, 0xee, 0x21, 0x5c, 0xc6, 0x74, 0x20, 0xf2, 0x4d,
+            0x31, 0xb8, 0xd8, 0x6c, 0x46, 0xce, 0xd6, 0xe7, 0x70, 0xe8, 0xab, 0xf6, 0x9c, 0x16,
+            0xbe, 0xa3, 0xa6, 0x7c,
+        ]))
+    }
+}
+
 /// Represents a block number in the rootstock blockchain.
 ///
 /// Block numbers are typically represented as 64-bit unsigned integers (`u64`).
@@ -452,11 +462,10 @@ pub struct ContractInfo {
 mod tests {
     use crate::errors::BlockHashError;
     use crate::types::BlockHash;
-    use test_utils::rsk_entity_generator::DEFAULT_BLOCK_HASH;
 
     #[test]
     fn test_valid_block_hash_when_valid_hash_is_provided_should_return_ok() {
-        let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH);
+        let block_hash = BlockHash::try_from(BlockHash::default());
 
         assert!(block_hash.is_ok());
     }

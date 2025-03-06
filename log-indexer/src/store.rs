@@ -72,8 +72,8 @@ mod tests {
     fn test_save_log() -> Result<()> {
         let store = create_test_store()?;
         let block_generator: FakeBlockGenerator =
-            FakeBlockGenerator::new(0, Arc::new(AtomicBool::new(false)));
-        let block = block_generator.generate_block(1);
+            FakeBlockGenerator::new(0.into(), Arc::new(AtomicBool::new(false)));
+        let block = block_generator.generate_block(1.into());
         let log_generator: FakeLogGenerator =
             FakeLogGenerator::new("Transfer(address,address,uint256)");
         let expected_log = log_generator.generate_log(block, 1, 1, 1);
@@ -86,7 +86,7 @@ mod tests {
 
         store.save_log(&expected_log)?;
         let actual_log = store.db.get(log_key)?.unwrap();
-        
+
         assert_eq!(expected_log, actual_log);
         Ok(())
     }
@@ -95,8 +95,8 @@ mod tests {
     fn test_save_log_no_different_log() -> Result<()> {
         let store = create_test_store()?;
         let block_generator: FakeBlockGenerator =
-            FakeBlockGenerator::new(0, Arc::new(AtomicBool::new(false)));
-        let block = block_generator.generate_block(1);
+            FakeBlockGenerator::new(0.into(), Arc::new(AtomicBool::new(false)));
+        let block = block_generator.generate_block(1.into());
         let log_generator: FakeLogGenerator =
             FakeLogGenerator::new("Transfer(address,address,uint256)");
         let saved_log = log_generator.generate_log(block.clone(), 1, 1, 1);
@@ -109,10 +109,10 @@ mod tests {
         let different_log = log_generator.generate_log(block.clone(), 1, 2, 1);
         let different_log2 = log_generator.generate_log(block.clone(), 1, 1, 2);
         let different_log3 = log_generator.generate_log(block.clone(), 2, 1, 1);
-        
+
         store.save_log(&saved_log)?;
         let actual_log = store.db.get(log_key)?.unwrap();
-        
+
         assert_ne!(different_log, actual_log);
         assert_ne!(different_log2, actual_log);
         assert_ne!(different_log3, actual_log);
