@@ -1,16 +1,20 @@
+use alloy_provider::{ProviderBuilder, RootProvider, WsConnect};
+use anyhow::{Context, Result};
 use axum::http::StatusCode;
-use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::routing::post;
+use axum::{Extension, Json, Router};
 use clap::{Arg, Command};
 use common::config::Config;
-use transaction_dispatcher::rsk_connector;
+use log::info;
+use std::sync::Arc;
+use transaction_dispatcher::rsk_connector::RskContractsGateway;
 use transaction_dispatcher::types::{PeginAddressInput, PeginAddressOutput};
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const CONFIG_CLI_FLAG: &str = "config-path";
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     let matches = Command::new("Union Bridge Block Indexer")
         .arg(
             Arg::new(LOGGER_CLI_FLAG)
@@ -36,25 +40,43 @@ async fn main() {
     let config_path: &String = matches.get_one(CONFIG_CLI_FLAG).unwrap();
     let config = Config::load(config_path).expect("Failed to load config");
 
-    let app = Router::new()
-        .route("/", get(root))
-        .route("/pegin-address", post(create_pegin_address));
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-    axum::serve(listener, app).await.unwrap();
-}
+    let ws = WsConnect::new(&config.provider.rootstock.url);
+    let provider: RootProvider = ProviderBuilder::default().on_ws(ws).await?;
 
-// TODO temporary helper until we have Swagger/OpenAPI
-async fn root() -> &'static str {
-    "Use POST /pegin-address (rootstock_deposit_address, value, btc_reimbursement_pub_key) to get the temporary peg-in address\n"
+    info!(
+        "Connected to Rootstock at {}",
+        &config.provider.rootstock.url
+    );
+
+    let rsk_contract_gateway = Arc::new(
+        RskContractsGateway::new(&provider, &config)
+            .context("Could not instantiate RskContractsGateway")?,
+    );
+
+    let app = Router::new()
+        .route("/pegin-address", post(create_pegin_address))
+        .layer(Extension(rsk_contract_gateway.clone()));
+
+    let listener =
+        tokio::net::TcpListener::bind(&config.transaction_dispatcher.server_address).await?;
+
+    axum::serve(listener, app).await?;
+
+    // TODO(iago) move server logic to new file
+
+    // TODO(iago) graceful shutdown: https://github.com/tokio-rs/axum/blob/da3539cb0e5eed381361b2e688a776da77c52cd6/examples/graceful-shutdown/src/main.rs#L38
+
+    info!("Quitting now...");
+    log::logger().flush();
+
+    Ok(())
 }
 
 async fn create_pegin_address(
+    Extension(rsk_gateway): Extension<Arc<RskContractsGateway>>,
     Json(payload): Json<PeginAddressInput>,
 ) -> (StatusCode, Json<PeginAddressOutput>) {
-    // TODO(iago) validate input
-
-    // TODO(iago) map errors to status codes
-    match rsk_connector::get_temporary_pegin_address(payload).await {
+    match rsk_gateway.get_temporary_pegin_address(payload).await {
         Ok(address) => (StatusCode::CREATED, Json(address)),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
