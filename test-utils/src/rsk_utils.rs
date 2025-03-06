@@ -74,45 +74,6 @@ pub fn get_fake_tx_hash(tx_id: u64, from: &str) -> String {
     format!("0x{}", hex::encode(hash))
 }
 
-/// Converts a Rootstock address into a topic by left-padding it with zeros.
-///
-/// This function takes a hexadecimal address string (with or without the "0x" prefix),
-/// verifies that it consists of 40 hexadecimal digits after stripping the prefix, and
-/// then returns a topic string by prepending 24 zeros (to make up 64 hex digits in total
-/// after the "0x").
-///
-/// # Panics
-///
-/// This function will panic if the provided address does not have exactly 40 hexadecimal
-/// digits after removing the "0x" prefix.
-///
-/// # Parameters
-///
-/// - `address`: A string slice representing the Rootstock address.
-///
-/// # Returns
-///
-/// A `String` containing the topic derived from the address.
-///
-/// # Example
-///
-/// ```
-/// use test_utils::rsk_utils::address_to_topic;
-///
-/// let topic = address_to_topic("0x1234567890abcdef1234567890abcdef12345678");
-/// assert!(topic.starts_with("0x"));
-/// ```
-pub fn address_to_topic(address: &str) -> String {
-    let addr = address.strip_prefix("0x").unwrap_or(address);
-    if addr.len() != 40 {
-        panic!(
-            "Invalid Rootstock address length: expected 40 hex digits, got {}",
-            addr.len()
-        );
-    }
-    format!("0x{}{}", "0".repeat(24), addr)
-}
-
 /// Converts a hex string into a `BlockHash`.
 ///
 /// # Panics
