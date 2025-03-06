@@ -8,5 +8,5 @@ common = { path = "../common", features = ["generate-mocks"]}
 log = { workspace = true }
 mockall = { workspace = true}
 primitive-types = { workspace = true }
+hex = { workspace = true}
 sha3 = "0.10"
-hex = "0.4.3"

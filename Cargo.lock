@@ -1235,6 +1235,7 @@ dependencies = [
  "serde",
  "serde_json",
  "signal-hook",
+ "test-utils",
  "thiserror 2.0.11",
 ]
 

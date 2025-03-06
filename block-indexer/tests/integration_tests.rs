@@ -15,6 +15,7 @@ use test_utils::{
 };
 
 const BLOCK_CACHE_SIZE: usize = 100;
+use test_utils::rsk_utils::DEFAULT_BLOCK_HASH;
 
 /*
 # Given the initial best block is B
@@ -51,7 +52,7 @@ fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription
         MAX_BLOCK_HEIGHT_SUBSCRIPTION.into(),
         DELAY_BETWEEN_BLOCKS_SUBSCRIPTION,
     );
-    let block_hash = BlockHash::try_from(BlockHash::default())?;
+    let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH)?;
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_hash(block_hash, INIT_BLOCK_HEIGHT.into());
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
@@ -106,7 +107,7 @@ fn test_when_shutdown_happens_during_backwards_sync_should_set_checkpoint() -> R
         0.into(),
         0,
     );
-    let block_hash = BlockHash::try_from(BlockHash::default())?;
+    let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH)?;
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_hash(block_hash, INIT_BLOCK_HEIGHT.into());
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
@@ -171,7 +172,7 @@ fn test_when_shutdown_happens_during_backwards_sync_and_indexer_restarts_should_
         MAX_BLOCK_HEIGHT_SUBSCRIPTION.into(),
         DELAY_BETWEEN_BLOCKS_SUBSCRIPTION,
     );
-    let block_hash = BlockHash::try_from(BlockHash::default())?;
+    let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH)?;
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_hash(block_hash, INIT_BLOCK_HEIGHT.into());
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
@@ -278,7 +279,7 @@ fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complet
         MAX_BLOCK_HEIGHT_SUBSCRIPTION.into(),
         DELAY_BETWEEN_BLOCKS_SUBSCRIPTION,
     );
-    let block_hash = BlockHash::try_from(BlockHash::default())?;
+    let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH)?;
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_hash(block_hash, INIT_BLOCK_HEIGHT.into());
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
@@ -339,7 +340,7 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_should_complete_
         MAX_BLOCK_HEIGHT_SUBSCRIPTION.into(),
         DELAY_BETWEEN_BLOCKS_SUBSCRIPTION,
     );
-    let block_hash = BlockHash::try_from(BlockHash::default())?;
+    let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH)?;
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_hash(block_hash, INIT_BLOCK_HEIGHT.into());
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
@@ -401,7 +402,7 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_from_early_block
         MAX_BLOCK_HEIGHT_SUBSCRIPTION.into(),
         DELAY_BETWEEN_BLOCKS_SUBSCRIPTION,
     );
-    let block_hash = BlockHash::try_from(BlockHash::default())?;
+    let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH)?;
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_hash(block_hash, INIT_BLOCK_HEIGHT.into());
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
@@ -433,7 +434,7 @@ fn cycle_indexer(
         .unwrap()
         .into_inner()
         .unwrap();
-    let block_hash = BlockHash::try_from(BlockHash::default()).expect("Invalid hex string");
+    let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH).expect("Invalid hex string");
     let indexer = BlockIndexer::new(store, mock_rsk_provider, block_hash, shutting_down.clone());
     let _ = indexer.run();
     info!("{}", msg.unwrap_or("Indexer run completed successfully."));

@@ -1,4 +1,4 @@
-use common::types::{BlockNumber, RskBlock};
+use common::types::{BlockNumber, BlockTimestamp, RskBlock};
 use log::debug;
 use primitive_types::U256;
 use sha3::{Digest, Keccak256};
@@ -7,7 +7,126 @@ use std::sync::{
     Arc,
 };
 
-use crate::rsk_utilities::from_hex_to_block_hash;
+use crate::rsk_utils::from_hex_to_block_hash;
+
+/// Returns a list of default RSK test blocks.
+///
+/// This function provides a collection of predefined RSK test blocks, which can be used
+/// for testing or reference purposes.
+///
+/// # Example
+///
+/// ```
+/// use test_utils::rsk_block_generator::get_default_rsk_blocks;
+///
+/// let blocks = get_default_rsk_blocks();
+///
+/// assert_eq!(blocks.len(), 3);
+/// assert_eq!(blocks[0].number(), 7_234_706);
+/// assert_eq!(blocks[1].number(), 7_234_707);
+/// assert_eq!(blocks[2].number(), 7_234_708);
+/// ```
+///
+/// # Returns
+///
+/// A `Vec<RskBlock>` containing three default RSK blocks.
+pub fn get_default_rsk_blocks() -> Vec<RskBlock> {
+    vec![
+        get_first_default_rsk_block(),
+        get_second_default_rsk_block(),
+        get_third_default_rsk_block(),
+    ]
+}
+
+/// This function returns a first default RSK test block.
+///
+/// # Example
+///
+/// ```
+/// use test_utils::rsk_block_generator::get_first_default_rsk_block;
+///
+/// let block = get_first_default_rsk_block();
+/// assert_eq!(block.number(), 7_234_706);
+/// ```
+///
+/// # Links
+/// For more information about this block, see the Rootstock Explorer:
+/// [Rootstock Block 7,234,706](https://explorer.rootstock.io/block/7234706)
+pub fn get_first_default_rsk_block() -> RskBlock {
+    RskBlock::new(
+        7_234_706.into(),
+        from_hex_to_block_hash(
+            "0x5d164d93bf09ee215cc67420f24d31b8d86c46ced6e770e8abf69c16bea3a67c",
+        ),
+        from_hex_to_block_hash(
+            "0x2dbe5baab546a1d1a6c443836810c89867efac727a0b58b24de1baeb15467752",
+        ),
+        U256::from(10_000_000_000_000_000_000_000_u128), // difficulty (10 ZH)
+        1739358639.into(),
+        "0x711101000000000000000000000000000000000000000000000000000000000000000000e626168ac092b54ce384ee9ab465aa869caa1260b61e5fd6330f861dea38cda73fb0c967ffff7f217b092fd7".to_string(),
+        U256::from(26_000_000_000_000_000_000_000_000_u128), // total difficulty (26,000 YH)
+    )
+}
+
+/// This function returns a second default RSK test block.
+///
+/// # Example
+///
+/// ```
+/// use test_utils::rsk_block_generator::get_second_default_rsk_block;
+///
+/// let block = get_second_default_rsk_block();
+/// assert_eq!(block.number(), 7_234_707);
+/// ```
+///
+/// # Links
+/// For more information about this block, see the Rootstock Explorer:
+/// [Rootstock Block 7,234,707](https://explorer.rootstock.io/block/7234707)
+pub fn get_second_default_rsk_block() -> RskBlock {
+    RskBlock::new(
+        7_234_707.into(),
+        from_hex_to_block_hash(
+            "0xb1b77a1d9e6d18f6668a0db6bead24bea4c507fc6779ab211899c008484384ca",
+        ),
+        from_hex_to_block_hash(
+            "0x5d164d93bf09ee215cc67420f24d31b8d86c46ced6e770e8abf69c16bea3a67c",
+        ),
+        U256::from(10_000_000_000_000_000_000_000_u128), // difficulty (10 ZH)
+        1739358657.into(),
+        "0x711101000000000000000000000000000000000000000000000000000000000000000000e626168ac092b54ce384ee9ab465aa869caa1260b61e5fd6330f861dea38cda73fb0c967ffff7f217b092fd7".to_string(),
+        U256::from(26_000_000_000_000_000_000_000_000_u128), // total difficulty (26,000 YH)
+    )
+}
+
+/// This function returns a third default RSK test block.
+///
+/// # Example
+///
+/// ```
+/// use test_utils::rsk_block_generator::get_third_default_rsk_block;
+///
+/// let block = get_third_default_rsk_block();
+/// assert_eq!(block.number(), 7_234_708);
+/// ```
+///
+/// # Links
+/// For more information about this block, see the Rootstock Explorer:
+/// [Rootstock Block 7,234,708](https://explorer.rootstock.io/block/7234708)
+pub fn get_third_default_rsk_block() -> RskBlock {
+    RskBlock::new(
+        7_234_708.into(),
+        from_hex_to_block_hash(
+            "0x9971862c7475888178eae1e2cd03dde72e3791ddd72853a8f781022a49a95228",
+        ),
+        from_hex_to_block_hash(
+            "0xb1b77a1d9e6d18f6668a0db6bead24bea4c507fc6779ab211899c008484384ca",
+        ),
+        U256::from(10_000_000_000_000_000_000_000_u128), // difficulty (10 ZH)
+        1739358667.into(),
+        "0x711101000000000000000000000000000000000000000000000000000000000000000000e626168ac092b54ce384ee9ab465aa869caa1260b61e5fd6330f861dea38cda73fb0c967ffff7f217b092fd7".to_string(),
+        U256::from(26_000_000_000_000_000_000_000_000_u128), // total difficulty (26,000 YH)
+    )
+}
 
 /// A stateless generator for fake RSK blocks that computes dynamic values (difficulty, timestamp,
 /// total difficulty and average block time) based on the block number. It has a built-in mechanism
@@ -16,8 +135,8 @@ use crate::rsk_utilities::from_hex_to_block_hash;
 pub struct FakeBlockGenerator {
     base_difficulty: U256,
     difficulty_increment: U256,
-    base_timestamp: i64,
-    avg_block_time: i64,
+    base_timestamp: BlockTimestamp,
+    avg_block_time: u64,
     reorg_block_height: BlockNumber,
     is_reorg: Arc<AtomicBool>,
 }
@@ -27,7 +146,7 @@ impl FakeBlockGenerator {
         Self {
             base_difficulty: U256::from_dec_str("10000000000000000000000").unwrap(),
             difficulty_increment: U256::from_dec_str("10000000000000000").unwrap(),
-            base_timestamp: 1514980800,
+            base_timestamp: 1514980800.into(),
             avg_block_time: 30,
             reorg_block_height,
             is_reorg,
@@ -91,7 +210,7 @@ impl FakeBlockGenerator {
             block_hash,
             parent_hash,
             diff,
-            ts as u64,
+            ts,
             "pow_string".to_string(),
             tot_diff,
         )
@@ -101,8 +220,8 @@ impl FakeBlockGenerator {
         self.base_difficulty + U256::from(height.value()) * self.difficulty_increment
     }
 
-    fn generate_timestamp(&self, height: BlockNumber) -> i64 {
-        self.base_timestamp + (height.value() as i64) * self.avg_block_time
+    fn generate_timestamp(&self, height: BlockNumber) -> BlockTimestamp {
+        BlockTimestamp::from(self.base_timestamp.value() + height.value() * self.avg_block_time)
     }
 
     fn generate_total_difficulty(&self, height: BlockNumber) -> U256 {
