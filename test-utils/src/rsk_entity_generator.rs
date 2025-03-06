@@ -1,4 +1,4 @@
-use common::types::{BlockHash, BlockNumber, RskBlock};
+use common::types::{BlockHash, BlockNumber, BlockTimestamp, RskBlock};
 use log::debug;
 use primitive_types::U256;
 use sha2::{Digest, Sha256};
@@ -63,7 +63,7 @@ pub fn get_first_default_rsk_block() -> RskBlock {
             "0x2dbe5baab546a1d1a6c443836810c89867efac727a0b58b24de1baeb15467752",
         ),
         U256::from(10_000_000_000_000_000_000_000_u128), // difficulty (10 ZH)
-        1739358639,
+        1739358639.into(),
         "0xcc018a4152524f57484541442d".to_string(),
         U256::from(26_000_000_000_000_000_000_000_000_u128), // total difficulty (26,000 YH)
     )
@@ -93,7 +93,7 @@ pub fn get_second_default_rsk_block() -> RskBlock {
             "0x5d164d93bf09ee215cc67420f24d31b8d86c46ced6e770e8abf69c16bea3a67c",
         ),
         U256::from(10_000_000_000_000_000_000_000_u128), // difficulty (10 ZH)
-        1739358657,
+        1739358657.into(),
         "pow_string".to_string(),
         U256::from(26_000_000_000_000_000_000_000_000_u128), // total difficulty (26,000 YH)
     )
@@ -123,7 +123,7 @@ pub fn get_third_default_rsk_block() -> RskBlock {
             "0xb1b77a1d9e6d18f6668a0db6bead24bea4c507fc6779ab211899c008484384ca",
         ),
         U256::from(10_000_000_000_000_000_000_000_u128), // difficulty (10 ZH)
-        1739358667,
+        1739358667.into(),
         "pow_string".to_string(),
         U256::from(26_000_000_000_000_000_000_000_000_u128), // total difficulty (26,000 YH)
     )
@@ -136,8 +136,8 @@ pub fn get_third_default_rsk_block() -> RskBlock {
 pub struct FakeBlockGenerator {
     base_difficulty: U256,
     difficulty_increment: U256,
-    base_timestamp: i64,
-    avg_block_time: i64,
+    base_timestamp: BlockTimestamp,
+    avg_block_time: u64,
     reorg_block_height: BlockNumber,
     is_reorg: Arc<AtomicBool>,
 }
@@ -147,7 +147,7 @@ impl FakeBlockGenerator {
         Self {
             base_difficulty: U256::from_dec_str("10000000000000000000000").unwrap(),
             difficulty_increment: U256::from_dec_str("10000000000000000").unwrap(),
-            base_timestamp: 1514980800,
+            base_timestamp: 1514980800.into(),
             avg_block_time: 30,
             reorg_block_height,
             is_reorg,
@@ -211,7 +211,7 @@ impl FakeBlockGenerator {
             block_hash,
             parent_hash,
             diff,
-            ts as u64,
+            ts,
             "pow_string".to_string(),
             tot_diff,
         )
@@ -221,8 +221,8 @@ impl FakeBlockGenerator {
         self.base_difficulty + U256::from(height.value()) * self.difficulty_increment
     }
 
-    fn generate_timestamp(&self, height: BlockNumber) -> i64 {
-        self.base_timestamp + (height.value() as i64) * self.avg_block_time
+    fn generate_timestamp(&self, height: BlockNumber) -> BlockTimestamp {
+        BlockTimestamp::from(self.base_timestamp.value() + height.value() * self.avg_block_time)
     }
 
     fn generate_total_difficulty(&self, height: BlockNumber) -> U256 {

@@ -87,23 +87,23 @@ impl BlockNumber {
 
 impl From<u64> for BlockNumber {
     fn from(value: u64) -> Self {
-        BlockNumber(value)
+        Self(value)
     }
 }
 
 impl Add<u64> for BlockNumber {
-    type Output = BlockNumber;
+    type Output = Self;
 
-    fn add(self, rhs: u64) -> BlockNumber {
-        BlockNumber(self.0 + rhs)
+    fn add(self, rhs: u64) -> Self {
+        Self(self.0 + rhs)
     }
 }
 
 impl Sub<u64> for BlockNumber {
-    type Output = BlockNumber;
+    type Output = Self;
 
-    fn sub(self, rhs: u64) -> BlockNumber {
-        BlockNumber(self.0 - rhs)
+    fn sub(self, rhs: u64) -> Self {
+        Self(self.0 - rhs)
     }
 }
 
@@ -125,13 +125,51 @@ impl fmt::Display for BlockNumber {
     }
 }
 
+/// Represents a block timestamp in the rootstock blockchain.
+///
+/// Block timestamps are typically represented as 64-bit unsigned integers (`u64`).
+///
+/// This struct ensures type safety when working with block timestamps, preventing
+/// accidental misuse of raw `u64` values in places where a `BlockTimestamp` is expected.
+/// ```
+#[derive(Serialize, Deserialize, Debug, PartialEq, Copy, Clone)]
+pub struct BlockTimestamp(u64);
+
+impl BlockTimestamp {
+    pub fn value(self) -> u64 {
+        self.0
+    }
+}
+
+impl From<u64> for BlockTimestamp {
+    fn from(timestamp: u64) -> Self {
+        Self(timestamp)
+    }
+}
+
+impl Add<u64> for BlockTimestamp {
+    type Output = Self;
+
+    fn add(self, rhs: u64) -> Self {
+        Self(self.0 + rhs)
+    }
+}
+
+impl Sub<u64> for BlockTimestamp {
+    type Output = Self;
+
+    fn sub(self, rhs: u64) -> Self {
+        Self(self.0 - rhs)
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct RskBlock {
     number: BlockNumber,
     hash: BlockHash,
     parent_hash: BlockHash,
     difficulty: U256,
-    timestamp: u64,
+    timestamp: BlockTimestamp,
     total_difficulty: U256,
     pow: String,
 }
@@ -156,7 +194,7 @@ impl RskBlock {
         hash: BlockHash,
         parent_hash: BlockHash,
         difficulty: U256,
-        timestamp: u64,
+        timestamp: BlockTimestamp,
         pow: String,
         total_difficulty: U256,
     ) -> Self {
@@ -187,7 +225,7 @@ impl RskBlock {
         self.difficulty
     }
 
-    pub fn timestamp(&self) -> u64 {
+    pub fn timestamp(&self) -> BlockTimestamp {
         self.timestamp
     }
 
@@ -210,8 +248,8 @@ pub struct RskRpcBlock {
     parent_hash: BlockHash,
     #[serde(deserialize_with = "parse_rsk_difficulty")]
     difficulty: U256,
-    #[serde(deserialize_with = "parse_hex_to_u64")]
-    timestamp: u64,
+    #[serde(deserialize_with = "parse_hex_to_block_timestamp")]
+    timestamp: BlockTimestamp,
     #[serde(
         rename = "bitcoinMergedMiningHeader",
         deserialize_with = "parse_bitcoin_header_to_pow"
@@ -221,23 +259,26 @@ pub struct RskRpcBlock {
     total_difficulty: U256,
 }
 
-fn parse_hex_to_block_number<'de, D>(deserializer: D) -> Result<BlockNumber, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let hex: String = Deserialize::deserialize(deserializer)?;
-    let number =
-        u64::from_str_radix(hex.trim_start_matches("0x"), 16).map_err(de::Error::custom)?;
-
-    Ok(BlockNumber::from(number))
-}
-
 fn parse_hex_to_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
 where
     D: Deserializer<'de>,
 {
     let hex: String = Deserialize::deserialize(deserializer)?;
     u64::from_str_radix(hex.trim_start_matches("0x"), 16).map_err(de::Error::custom)
+}
+
+fn parse_hex_to_block_number<'de, D>(deserializer: D) -> Result<BlockNumber, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    parse_hex_to_u64(deserializer).map(BlockNumber::from)
+}
+
+fn parse_hex_to_block_timestamp<'de, D>(deserializer: D) -> Result<BlockTimestamp, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    parse_hex_to_u64(deserializer).map(BlockTimestamp::from)
 }
 
 fn parse_hex_to_block_hash<'de, D>(deserializer: D) -> Result<BlockHash, D::Error>
