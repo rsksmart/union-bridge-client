@@ -4,9 +4,7 @@ use primitive_types::U256;
 use serde::{de, Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::{
-    fmt,
-    ops::{Add, Sub},
-    string::ToString,
+    cmp::Ordering, fmt, ops::{Add, Sub}, string::ToString
 };
 
 /// Represents a block number in the rootstock blockchain.
@@ -40,6 +38,12 @@ impl Sub<u64> for BlockNumber {
 impl PartialEq<u64> for BlockNumber {
     fn eq(&self, other: &u64) -> bool {
         self.0 == *other
+    }
+}
+
+impl PartialOrd<u64> for BlockNumber {
+    fn partial_cmp(&self, other: &u64) -> Option<Ordering> {
+        Some(self.0.cmp(other))
     }
 }
 
