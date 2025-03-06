@@ -48,3 +48,74 @@ impl LogStore for RawLogStore {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{atomic::AtomicBool, Arc};
+
+    use super::RawLogStore;
+    use crate::store::{LogStore, StoreKey};
+    use anyhow::Result;
+    use storage_backend::storage::KeyValueStore;
+    use tempfile::tempdir;
+    use test_utils::rsk_block_generator::FakeBlockGenerator;
+    use test_utils::rsk_log_generator::FakeLogGenerator;
+
+    fn create_test_store() -> Result<RawLogStore> {
+        let temp_dir = tempdir()?;
+        let store_path = temp_dir.path().to_str().unwrap();
+        let store = RawLogStore::new(store_path)?;
+        Ok(store)
+    }
+
+    #[test]
+    fn test_save_log() -> Result<()> {
+        let store = create_test_store()?;
+        let block_generator: FakeBlockGenerator =
+            FakeBlockGenerator::new(0.into(), Arc::new(AtomicBool::new(false)));
+        let block = block_generator.generate_block(1.into());
+        let log_generator: FakeLogGenerator =
+            FakeLogGenerator::new("Transfer(address,address,uint256)");
+        let expected_log = log_generator.generate_log(block, 1, 1, 1);
+        let log_key = StoreKey::LogId(
+            expected_log.info().address().to_string(),
+            expected_log.info().tx_hash().to_string(),
+            expected_log.info().log_index(),
+        )
+        .value();
+
+        store.save_log(&expected_log)?;
+        let actual_log = store.db.get(log_key)?.unwrap();
+
+        assert_eq!(expected_log, actual_log);
+        Ok(())
+    }
+
+    #[test]
+    fn test_save_log_no_different_log() -> Result<()> {
+        let store = create_test_store()?;
+        let block_generator: FakeBlockGenerator =
+            FakeBlockGenerator::new(0.into(), Arc::new(AtomicBool::new(false)));
+        let block = block_generator.generate_block(1.into());
+        let log_generator: FakeLogGenerator =
+            FakeLogGenerator::new("Transfer(address,address,uint256)");
+        let saved_log = log_generator.generate_log(block.clone(), 1, 1, 1);
+        let log_key = StoreKey::LogId(
+            saved_log.info().address().to_string(),
+            saved_log.info().tx_hash().to_string(),
+            saved_log.info().log_index(),
+        )
+        .value();
+        let different_log = log_generator.generate_log(block.clone(), 1, 2, 1);
+        let different_log2 = log_generator.generate_log(block.clone(), 1, 1, 2);
+        let different_log3 = log_generator.generate_log(block.clone(), 2, 1, 1);
+
+        store.save_log(&saved_log)?;
+        let actual_log = store.db.get(log_key)?.unwrap();
+
+        assert_ne!(different_log, actual_log);
+        assert_ne!(different_log2, actual_log);
+        assert_ne!(different_log3, actual_log);
+        Ok(())
+    }
+}

@@ -5,8 +5,8 @@ edition = "2021"
 
 [dependencies]
 common = { path = "../common", features = ["generate-mocks"]}
-hex = { workspace = true }
 log = { workspace = true }
 mockall = { workspace = true}
 primitive-types = { workspace = true }
-sha2 = "0.10"
+hex = { workspace = true}
+sha3 = "0.10"

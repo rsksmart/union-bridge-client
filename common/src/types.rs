@@ -321,7 +321,7 @@ where
     Ok(header_hash)
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-43
 pub struct RskLog {
     info: LogInfo,
@@ -367,7 +367,7 @@ impl RskEvent {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct LogInfo {
     address: String,
     block_hash: BlockHash,
@@ -421,7 +421,7 @@ impl LogInfo {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct LogEvent {
     data: String,
     topics: Vec<String>,
@@ -452,7 +452,7 @@ pub struct ContractInfo {
 mod tests {
     use crate::errors::BlockHashError;
     use crate::types::BlockHash;
-    use test_utils::rsk_entity_generator::DEFAULT_BLOCK_HASH;
+    use test_utils::rsk_utils::DEFAULT_BLOCK_HASH;
 
     #[test]
     fn test_valid_block_hash_when_valid_hash_is_provided_should_return_ok() {

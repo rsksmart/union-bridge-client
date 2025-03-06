@@ -1,4 +1,4 @@
-use crate::rsk_entity_generator::FakeBlockGenerator;
+use crate::rsk_block_generator::FakeBlockGenerator;
 use common::{
     rsk_provider::{MockRskProvider, MockRskSubscription},
     shutdown_flag::ShutdownFlag,

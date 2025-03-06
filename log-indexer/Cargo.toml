@@ -13,3 +13,7 @@ log = { workspace = true }
 log4rs = { workspace = true }
 serde = { workspace = true }
 storage-backend = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+test-utils = { path = "../test-utils" }

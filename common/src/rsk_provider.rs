@@ -1,4 +1,4 @@
-use crate::types::{BlockNumber, BlockHash, ContractInfo, RskBlock, RskEvent, RskLog};
+use crate::types::{BlockHash, BlockNumber, ContractInfo, RskBlock, RskEvent, RskLog};
 use anyhow::Result;
 use thiserror::Error;
 
@@ -26,7 +26,11 @@ pub enum BlockNumRef {
 }
 
 impl RskSubscriptionFilter {
-    pub fn new(addresses: Vec<String>, topics: Vec<String>, from_block: Option<BlockNumber>) -> Self {
+    pub fn new(
+        addresses: Vec<String>,
+        topics: Vec<String>,
+        from_block: Option<BlockNumber>,
+    ) -> Self {
         Self {
             addresses,
             topics,
