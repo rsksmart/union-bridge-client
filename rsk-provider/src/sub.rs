@@ -7,7 +7,7 @@ use anyhow::{anyhow, Context};
 use common::rsk_provider::{
     RskProvider, RskSubscription, RskSubscriptionError, RskSubscriptionFilter,
 };
-use common::types::{LogEvent, LogInfo, RskBlock, RskLog};
+use common::types::{BlockNumber, LogEvent, LogInfo, RskBlock, RskLog};
 use log::debug;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -112,7 +112,7 @@ impl AlloySubscription<Log> {
 
     pub(super) fn build_block_option(filter: &RskSubscriptionFilter) -> FilterBlockOption {
         FilterBlockOption::Range {
-            from_block: filter.from_block.map(|n| n.into()),
+            from_block: filter.from_block.map(|n| n.value().into()),
             to_block: None,
         }
     }
@@ -162,6 +162,7 @@ impl RskSubscription<RskLog> for AlloySubscription<Log> {
 
         let block_number = new_log
             .block_number
+            .map(BlockNumber::from)
             .ok_or_else(|| RskSubscriptionError::Transient("Missing transaction_hash"))?;
 
         let log_index = new_log

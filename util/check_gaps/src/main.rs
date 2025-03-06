@@ -2,7 +2,10 @@ use anyhow::{bail, Context, Ok, Result};
 use block_indexer::store::{BlockStore, CachedBlockStore};
 use clap::{Arg, Command};
 use common::{
-    cache::LruCache, config::Config, rsk_provider::RskProvider, shutdown_flag::ShutdownFlag,
+    cache::LruCache,
+    config::Config,
+    rsk_provider::RskProvider,
+    shutdown_flag::ShutdownFlag,
     types::RskBlock,
 };
 use log::{debug, info, warn};
@@ -75,7 +78,7 @@ fn main() -> Result<()> {
 
         expected_hash = next_block.parent().to_string();
 
-        let next_block_num = &next_block.number() - 1;
+        let next_block_num = next_block.number() - 1;
         next_block = match store.get_canonical_block(next_block_num)? {
             Some(block) => block,
             None => {

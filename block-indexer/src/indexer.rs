@@ -3,7 +3,7 @@ use anyhow::{bail, Context, Result};
 use common::rsk_indexer::RskIndexer;
 use common::rsk_provider::{RskProvider, RskSubscription, RskSubscriptionError};
 use common::shutdown_flag::ShutdownFlag;
-use common::types::RskBlock;
+use common::types::{BlockNumber, RskBlock};
 use log::{debug, error, info, warn};
 
 pub struct BlockIndexer<P: RskProvider, S: BlockStore> {
@@ -349,7 +349,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
             .context("Saving as best block")
     }
 
-    fn get_next_backward_sync_block(&self, block_num: u64) -> Result<RskBlock> {
+    fn get_next_backward_sync_block(&self, block_num: BlockNumber) -> Result<RskBlock> {
         match self.rsk_provider.get_block_by_number(block_num)? {
             Some(block) => Ok(block),
             None => {

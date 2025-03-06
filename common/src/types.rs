@@ -3,11 +3,65 @@ use bitcoin::{blockdata::block::Header, consensus::encode::deserialize as btc_de
 use primitive_types::U256;
 use serde::{de, Deserialize, Deserializer, Serialize};
 use serde_json::Value;
-use std::string::ToString;
+use std::{
+    cmp::Ordering, fmt, ops::{Add, Sub}, string::ToString
+};
+
+/// Represents a block number in the rootstock blockchain.
+///
+/// Block numbers are typically represented as 64-bit unsigned integers (`u64`).
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+pub struct BlockNumber(u64);
+
+impl BlockNumber {
+    pub fn value(&self) -> u64 {
+        self.0
+    }
+}
+
+impl Add<u64> for BlockNumber {
+    type Output = BlockNumber;
+
+    fn add(self, rhs: u64) -> BlockNumber {
+        BlockNumber(self.0 + rhs)
+    }
+}
+
+impl Sub<u64> for BlockNumber {
+    type Output = BlockNumber;
+
+    fn sub(self, rhs: u64) -> BlockNumber {
+        BlockNumber(self.0 - rhs)
+    }
+}
+
+impl PartialEq<u64> for BlockNumber {
+    fn eq(&self, other: &u64) -> bool {
+        self.0 == *other
+    }
+}
+
+impl PartialOrd<u64> for BlockNumber {
+    fn partial_cmp(&self, other: &u64) -> Option<Ordering> {
+        Some(self.0.cmp(other))
+    }
+}
+
+impl From<u64> for BlockNumber {
+    fn from(value: u64) -> Self {
+        BlockNumber(value)
+    }
+}
+
+impl fmt::Display for BlockNumber {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct RskBlock {
-    number: u64,
+    number: BlockNumber,
     hash: String,
     parent: String,
     difficulty: U256,
@@ -32,7 +86,7 @@ impl From<RskRpcBlock> for RskBlock {
 
 impl RskBlock {
     pub fn new(
-        number: u64,
+        number: BlockNumber,
         hash: String,
         parent: String,
         difficulty: U256,
@@ -51,7 +105,7 @@ impl RskBlock {
         }
     }
 
-    pub fn number(&self) -> u64 {
+    pub fn number(&self) -> BlockNumber {
         self.number
     }
 
@@ -82,8 +136,8 @@ impl RskBlock {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RskRpcBlock {
-    #[serde(deserialize_with = "parse_hex_to_u64")]
-    number: u64,
+    #[serde(deserialize_with = "parse_hex_to_block_number")]
+    number: BlockNumber,
     hash: String,
     #[serde(rename = "parentHash")]
     parent: String,
@@ -98,6 +152,17 @@ pub struct RskRpcBlock {
     pow: String,
     #[serde(deserialize_with = "parse_rsk_difficulty", rename = "totalDifficulty")]
     total_difficulty: U256,
+}
+
+fn parse_hex_to_block_number<'de, D>(deserializer: D) -> Result<BlockNumber, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let hex: String = Deserialize::deserialize(deserializer)?;
+    let number =
+        u64::from_str_radix(hex.trim_start_matches("0x"), 16).map_err(de::Error::custom)?;
+
+    Ok(BlockNumber::from(number))
 }
 
 fn parse_hex_to_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
@@ -184,7 +249,7 @@ impl RskEvent {
 pub struct LogInfo {
     address: String,
     block_hash: String,
-    block_number: u64,
+    number: BlockNumber,
     tx_hash: String,
     log_index: u64,
     removed: bool,
@@ -194,7 +259,7 @@ impl LogInfo {
     pub fn new(
         address: String,
         block_hash: String,
-        block_number: u64,
+        number: BlockNumber,
         tx_hash: String,
         log_index: u64,
         removed: bool,
@@ -202,7 +267,7 @@ impl LogInfo {
         LogInfo {
             address,
             block_hash,
-            block_number,
+            number,
             tx_hash,
             log_index,
             removed,
@@ -217,8 +282,8 @@ impl LogInfo {
         &self.block_hash
     }
 
-    pub fn block_number(&self) -> u64 {
-        self.block_number
+    pub fn number(&self) -> BlockNumber {
+        self.number
     }
 
     pub fn tx_hash(&self) -> &str {

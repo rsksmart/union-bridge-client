@@ -4,14 +4,14 @@ use common::rsk_indexer::RskIndexer;
 use common::rsk_provider::{RskProvider, RskSubscriptionError};
 use common::rsk_provider::{RskSubscription, RskSubscriptionFilter};
 use common::shutdown_flag::ShutdownFlag;
-use common::types::{ContractInfo, RskLog};
+use common::types::{BlockNumber, ContractInfo, RskLog};
 use log::{error, info, warn};
 use std::collections::HashMap;
 
 pub struct LogIndexer<P: RskProvider, S: LogStore> {
     store: S,
     rsk_provider: P,
-    initial_block_number: u64,
+    initial_block_number: BlockNumber,
     managed_contracts: HashMap<String, ContractInfo>,
     shutdown_flag: ShutdownFlag,
 }
@@ -108,10 +108,10 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                 }
             };
 
-            if new_log.info().block_number() < self.initial_block_number {
+            if new_log.info().number() < self.initial_block_number {
                 warn!(
                     "[subscribe_logs] Log block {} is lower than initial {}",
-                    new_log.info().block_number(),
+                    new_log.info().number(),
                     self.initial_block_number
                 );
                 continue;
