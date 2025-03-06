@@ -20,7 +20,7 @@ pub struct AlloyProvider<T = RootProvider>
 where
     T: Provider,
 {
-    pub inner: T, // TODO(iago) not pub, just for initial tests
+    inner: T,
     rt_sync: RuntimeSync,
     shutdown_flag: ShutdownFlag,
 }

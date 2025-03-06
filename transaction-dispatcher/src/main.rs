@@ -1,149 +1,66 @@
-use crate::PegManager::PegManagerErrors;
-use alloy_contract::Error::TransportError;
-use alloy_primitives::{FixedBytes, address, fixed_bytes};
-use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
-use alloy_sol_types::SolInterface;
-use alloy_sol_types::sol;
-use anyhow::Result;
+use axum::http::StatusCode;
+use axum::routing::{get, post};
+use axum::{Json, Router};
+use clap::{Arg, Command};
+use common::config::Config;
+use transaction_dispatcher::rsk_connector;
+use transaction_dispatcher::types::{PeginAddressInput, PeginAddressOutput};
 
-sol!(
-    #[sol(rpc)]
-    PegManager,
-    "/Users/illuque/workspace/union-bridge/fairgate/bitvmx-union-bridge-contracts/out/PegManager.sol/PegManager.json"
-);
-
-// TODO(iago) dynamically get path from config
-// fn get_contract_path() -> String {
-//     let settings = Config::builder()
-//         .add_source(config::File::with_name("Settings"))
-//         .build()
-//         .unwrap();
-//     settings.get_string("contract_path").unwrap()
-// }
+const LOGGER_CLI_FLAG: &str = "logger-path";
+const CONFIG_CLI_FLAG: &str = "config-path";
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    let ws = WsConnect::new("ws://127.0.0.1:8545");
-    let provider: RootProvider = ProviderBuilder::default().on_ws(ws).await?;
-    println!("block_number: {:?}", provider.get_block_number().await?);
+async fn main() {
+    let matches = Command::new("Union Bridge Block Indexer")
+        .arg(
+            Arg::new(LOGGER_CLI_FLAG)
+                .short('l')
+                .long(LOGGER_CLI_FLAG)
+                .value_name("PATH")
+                .help("Sets the path to the log4rs configuration file")
+                .default_value("../log4rs.yaml"),
+        )
+        .arg(
+            Arg::new(CONFIG_CLI_FLAG)
+                .short('c')
+                .long(CONFIG_CLI_FLAG)
+                .value_name("PATH")
+                .help("Sets the path to the configuration directory")
+                .default_value("../config/dev"),
+        )
+        .get_matches();
 
-    let contract = PegManager::new(
-        address!("0x21df544947ba3e8b3c32561399e88b52dc8b2823"),
-        provider,
-    );
+    let logger_path: &String = matches.get_one(LOGGER_CLI_FLAG).unwrap();
+    log4rs::init_file(logger_path, Default::default()).expect("Failed to load log4rs config");
 
-    let rootstock_deposit_address = address!("0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
-    let value = 100_000_000;
-    let btc_reimbursement_pub_key: FixedBytes<32> =
-        fixed_bytes!("0xc72a9f6fc8e57f1de528a48b6c4ad7a6db30b24a7bbf8cdd74b0a3b248b6f7f1");
+    let config_path: &String = matches.get_one(CONFIG_CLI_FLAG).unwrap();
+    let config = Config::load(config_path).expect("Failed to load config");
 
-    let call = contract.getTemporaryPegInAddress(
-        rootstock_deposit_address,
-        value,
-        btc_reimbursement_pub_key,
-    );
-
-    let result = call.call().await;
-
-    match result {
-        Ok(data) => {
-            println!(
-                "Bitcoin Deposit Address for input [{} - {} - {}]: {}",
-                rootstock_deposit_address,
-                value,
-                btc_reimbursement_pub_key,
-                data.bitcoinDepositAddress
-            )
-        }
-        Err(TransportError(err)) => {
-            // TODO(iago) improve this line
-            let expected =
-                decode_contract_error(&err.as_error_resp().unwrap().as_revert_data().unwrap());
-            if !expected {
-                println!("Error: {:?}", err);
-            }
-        }
-        Err(e) => println!("Unknown error: {:?}", e),
-    }
-
-    Ok(())
+    let app = Router::new()
+        .route("/", get(root))
+        .route("/pegin-address", post(create_pegin_address));
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    axum::serve(listener, app).await.unwrap();
 }
 
-fn decode_contract_error(data: &[u8]) -> bool {
-    if let Ok(decoded_error) = PegManagerErrors::abi_decode(data, true) {
-        match decoded_error {
-            PegManagerErrors::AddressEmptyCode(e) => {
-                println!("Error: AddressEmptyCode {}", e.target);
-            }
-            PegManagerErrors::AlreadyRegisteredPegIn(e) => {
-                println!("Error: AlreadyRegisteredPegIn {}", e.btcTxHash);
-            }
-            PegManagerErrors::BridgeBtcBlockNotInBestChain(e) => {
-                println!("Error: BridgeBtcBlockNotInBestChain {}", e.blockHash);
-            }
-            PegManagerErrors::BridgeBtcBlockTooOld(e) => {
-                println!("Error: BridgeBtcBlockTooOld {}", e.maxDepth);
-            }
-            PegManagerErrors::BridgeBtcInconsistentBlock(e) => {
-                println!("Error: BridgeBtcInconsistentBlock {}", e.blockHash);
-            }
-            PegManagerErrors::BridgeBtcInexistantBlockHash(e) => {
-                println!("Error: BridgeBtcInexistantBlockHash {}", e.blockHash);
-            }
-            PegManagerErrors::BridgeBtcTxInvalidMerkleBranch(e) => {
-                println!(
-                    "Error: BridgeBtcTxInvalidMerkleBranch {} - {} - {:?}",
-                    e.txHash, e.merkleBranchPath, e.merkleBranchHashes
-                );
-            }
-            PegManagerErrors::BridgeBtcUnknownError(e) => {
-                println!("Error: BridgeBtcUnknownError {}", e.errorCode);
-            }
-            PegManagerErrors::ERC1967InvalidImplementation(e) => {
-                println!("Error: ERC1967InvalidImplementation {}", e.implementation);
-            }
-            PegManagerErrors::ERC1967NonPayable(_e) => {
-                println!("Error: ERC1967NonPayable");
-            }
-            PegManagerErrors::FailedCall(_e) => {
-                println!("Error: FailedCall");
-            }
-            PegManagerErrors::InvalidInitialization(_e) => {
-                println!("Error: InvalidInitialization");
-            }
-            PegManagerErrors::NoEmptySlot(e) => {
-                println!("Error: NoEmptySlot {} - {}", e.packetNumber, e.streamId);
-            }
-            PegManagerErrors::NotEnoughConfirmations(e) => {
-                println!(
-                    "Error: NotEnoughConfirmations {} - {}",
-                    e.expected, e.actual
-                );
-            }
-            PegManagerErrors::NotInitializing(_e) => {
-                println!("Error: NotInitializing");
-            }
-            PegManagerErrors::OwnableInvalidOwner(e) => {
-                println!("Error: OwnableInvalidOwner {}", e.owner);
-            }
-            PegManagerErrors::OwnableUnauthorizedAccount(e) => {
-                println!("Error: OwnableUnauthorizedAccount {}", e.account);
-            }
-            PegManagerErrors::PacketOutOfBound(e) => {
-                println!("Error: PacketOutOfBound {}", e.packetNumber);
-            }
-            PegManagerErrors::StreamNotFoundByDenomination(e) => {
-                println!("Error: StreamNotFoundByDenomination {}", e.denomination);
-            }
-            PegManagerErrors::UUPSUnauthorizedCallContext(_e) => {
-                println!("Error: UUPSUnauthorizedCallContext");
-            }
-            PegManagerErrors::UUPSUnsupportedProxiableUUID(e) => {
-                println!("Error: UUPSUnsupportedProxiableUUID {}", e.slot);
-            }
-        }
-        true
-    } else {
-        false
+// TODO temporary helper until we have Swagger/OpenAPI
+async fn root() -> &'static str {
+    "Use POST /pegin-address (rootstock_deposit_address, value, btc_reimbursement_pub_key) to get the temporary peg-in address\n"
+}
+
+async fn create_pegin_address(
+    Json(payload): Json<PeginAddressInput>,
+) -> (StatusCode, Json<PeginAddressOutput>) {
+    // TODO(iago) validate input
+
+    // TODO(iago) map errors to status codes
+    match rsk_connector::get_temporary_pegin_address(payload).await {
+        Ok(address) => (StatusCode::CREATED, Json(address)),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(PeginAddressOutput {
+                address: e.to_string(),
+            }),
+        ),
     }
 }

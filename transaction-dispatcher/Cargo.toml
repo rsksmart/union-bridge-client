@@ -5,15 +5,18 @@ edition = "2024"
 
 [dependencies]
 common = { path = "../common" }
-rsk-provider = { path = "../rsk-provider" }
 
 anyhow = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+log4rs = { workspace = true }
+clap = { workspace = true }
 
 # TODO(iago) move the ultimate ones to workspace
 alloy-primitives = "0.8.22"
+alloy-json-rpc = "0.11.1"
 alloy-contract = "0.11.1"
 alloy-sol-types = { version = "0.8.22", features = ["json"] }
 alloy-provider = { version = "0.11.1", features = ["ws"] }
-alloy-eip7702 = "0.5.1" # TODO(iago) check if really needed, I had compilation issues without it
-tokio = { version = "1.41.1", features = ["rt-multi-thread"] }
-hex = "0.4.3"
+tokio = { version = "1.41.1", features = ["rt-multi-thread", "macros"] }
+axum = "0.8.1"
+log = "0.4.25"
