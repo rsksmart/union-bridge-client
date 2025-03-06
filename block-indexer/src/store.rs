@@ -186,7 +186,7 @@ impl<C: Cache<RskBlock>> BlockStore for CachedBlockStore<C> {
     }
 
     fn get_block_by_hash(&self, hash: BlockHash) -> Result<Option<RskBlock>> {
-        self.get_block_by_hash(hash.clone())
+        self.get_block_by_hash(hash)
             .context(format!("Error getting getting block {hash}"))
     }
 

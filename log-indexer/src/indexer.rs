@@ -26,7 +26,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         shutdown_flag: ShutdownFlag,
     ) -> Result<Self> {
         let initial_block_number = provider
-            .get_block_by_hash(&initial_block_hash)
+            .get_block_by_hash(initial_block_hash)
             .context("Failed to get initial block by hash")?
             .context("Initial block not found on provider")?
             .number();

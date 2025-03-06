@@ -23,8 +23,14 @@ use std::{
 ///
 /// println!("Block hash: {}", block_hash);
 /// ```
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, Copy, Debug, PartialEq, Clone)]
 pub struct BlockHash(H256);
+
+impl BlockHash {
+    pub fn value(self) -> H256 {
+        self.0
+    }
+}
 
 impl From<H256> for BlockHash {
     fn from(h256: H256) -> Self {
@@ -154,11 +160,11 @@ impl RskBlock {
     }
 
     pub fn hash(&self) -> BlockHash {
-        self.hash.clone()
+        self.hash
     }
 
     pub fn parent_hash(&self) -> BlockHash {
-        self.parent_hash.clone()
+        self.parent_hash
     }
 
     pub fn difficulty(&self) -> U256 {
@@ -338,7 +344,7 @@ impl LogInfo {
     }
 
     pub fn block_hash(&self) -> BlockHash {
-        self.block_hash.clone()
+        self.block_hash
     }
 
     pub fn number(&self) -> BlockNumber {

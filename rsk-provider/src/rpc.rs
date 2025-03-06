@@ -136,7 +136,7 @@ impl RskProvider for AlloyProvider {
         Ok(AlloySubscription::<Log>::new(subscription, self.clone()))
     }
 
-    fn get_block_by_hash(&self, hash: &BlockHash) -> Result<Option<RskBlock>> {
+    fn get_block_by_hash(&self, hash: BlockHash) -> Result<Option<RskBlock>> {
         let rpc_call = self
             .inner
             .client()

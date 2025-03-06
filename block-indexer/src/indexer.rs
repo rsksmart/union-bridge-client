@@ -44,7 +44,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 
         let initial_block_node = self
             .rsk_provider
-            .get_block_by_hash(&self.initial_block_hash)
+            .get_block_by_hash(self.initial_block_hash)
             .context("Initialising DB")?
             .context("Initial block hash not found on provider while initialising DB")?;
 
@@ -277,7 +277,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         {
             match self
                 .rsk_provider
-                .get_block_by_hash(&checkpoint.parent_hash())
+                .get_block_by_hash(checkpoint.parent_hash())
                 .context("Resuming Backward Sync")?
             {
                 Some(checkpoint_parent) => {
