@@ -87,23 +87,23 @@ impl BlockNumber {
 
 impl From<u64> for BlockNumber {
     fn from(value: u64) -> Self {
-        BlockNumber(value)
+        Self(value)
     }
 }
 
 impl Add<u64> for BlockNumber {
-    type Output = BlockNumber;
+    type Output = Self;
 
-    fn add(self, rhs: u64) -> BlockNumber {
-        BlockNumber(self.0 + rhs)
+    fn add(self, rhs: u64) -> Self {
+        Self(self.0 + rhs)
     }
 }
 
 impl Sub<u64> for BlockNumber {
-    type Output = BlockNumber;
+    type Output = Self;
 
-    fn sub(self, rhs: u64) -> BlockNumber {
-        BlockNumber(self.0 - rhs)
+    fn sub(self, rhs: u64) -> Self {
+        Self(self.0 - rhs)
     }
 }
 
@@ -144,6 +144,22 @@ impl BlockTimestamp {
 impl From<u64> for BlockTimestamp {
     fn from(timestamp: u64) -> Self {
         Self(timestamp)
+    }
+}
+
+impl Add<u64> for BlockTimestamp {
+    type Output = Self;
+
+    fn add(self, rhs: u64) -> Self {
+        Self(self.0 + rhs)
+    }
+}
+
+impl Sub<u64> for BlockTimestamp {
+    type Output = Self;
+
+    fn sub(self, rhs: u64) -> Self {
+        Self(self.0 - rhs)
     }
 }
 
