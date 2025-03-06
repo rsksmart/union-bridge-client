@@ -6,17 +6,16 @@ edition = "2024"
 [dependencies]
 common = { path = "../common" }
 
-anyhow = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
-log4rs = { workspace = true }
+alloy-primitives = { workspace = true }
+alloy-provider = { workspace = true, features = ["ws"] }
+alloy-sol-types = { workspace = true, features = ["json"] }
 clap = { workspace = true }
+anyhow = { workspace = true }
+log4rs = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+log = { workspace = true }
 
-# TODO(iago) move the ultimate ones to workspace
-alloy-primitives = "0.8.22"
 alloy-json-rpc = "0.11.1"
 alloy-contract = "0.11.1"
-alloy-sol-types = { version = "0.8.22", features = ["json"] }
-alloy-provider = { version = "0.11.1", features = ["ws"] }
-tokio = { version = "1.41.1", features = ["rt-multi-thread", "macros"] }
 axum = "0.8.1"
-log = "0.4.25"
