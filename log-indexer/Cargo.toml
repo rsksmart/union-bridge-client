@@ -15,5 +15,5 @@ serde = { workspace = true }
 storage-backend = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3.16.0"
+tempfile = { workspace = true }
 test-utils = { path = "../test-utils" }
