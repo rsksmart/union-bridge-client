@@ -18,3 +18,6 @@ contracts:
 
   - name: "PegManager"
     address: "<ADDRESS_HERE>"
+
+transaction_dispatcher:
+  server_address: "0.0.0.0:3000"

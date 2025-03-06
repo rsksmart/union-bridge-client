@@ -10,6 +10,7 @@ pub struct Config {
     pub indexer: IndexerConfig,
     pub provider: ProviderConfig,
     pub contracts: Vec<ContractConfig>,
+    pub transaction_dispatcher: TransactionDispatcherConfig,
     #[serde(skip)]
     path: String,
 }
@@ -47,6 +48,11 @@ pub struct ContractConfig {
     pub address: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct TransactionDispatcherConfig {
+    pub server_address: String,
+}
+
 impl Config {
     pub fn load(path: &str) -> Result<Self, ConfigError> {
         let config_path = format!("{}/config.yaml", path);
@@ -65,22 +71,12 @@ impl Config {
         Ok(parsed_config)
     }
 
-    pub fn load_contracts(&self) -> HashMap<String, ContractInfo> {
+    pub fn load_contracts_by_address(&self) -> HashMap<String, ContractInfo> {
         self.contracts
             .iter()
             .map(|c| {
-                let abi_path = format!("{}/abi/{}.json", self.path, c.address);
-                let abi = if Path::new(&abi_path).exists() {
-                    let abi_data = fs::read_to_string(&abi_path)
-                        .expect(&format!("Failed to read ABI file: {}", abi_path));
-
-                    Some(
-                        serde_json::from_str::<JsonAbi>(&abi_data)
-                            .expect(&format!("Failed to parse ABI file: {}", abi_path)),
-                    )
-                } else {
-                    None
-                };
+                let abi_path = format!("{}/abi/{}.json", self.path, c.address); // TODO(iago) change to c.name for common use with transaction-dispatcher
+                let abi = Self::load_abi_from_path(&abi_path);
 
                 (
                     c.address.to_owned(),
@@ -92,6 +88,41 @@ impl Config {
                 )
             })
             .collect()
+    }
+
+    pub fn load_contracts_by_name(&self) -> HashMap<String, ContractInfo> {
+        self.contracts
+            .iter()
+            .map(|c| {
+                let abi_path = format!("{}/abi/{}.json", self.path, c.name);
+                let abi = Self::load_abi_from_path(&abi_path);
+
+                (
+                    c.name.to_owned(),
+                    ContractInfo {
+                        name: c.name.to_owned(),
+                        address: c.address.to_owned(),
+                        abi,
+                    },
+                )
+            })
+            .collect()
+    }
+
+    fn load_abi_from_path(abi_path: &String) -> Option<JsonAbi> {
+        let abi = if Path::new(&abi_path).exists() {
+            let abi_data = fs::read_to_string(&abi_path)
+                .expect(&format!("Failed to read ABI file: {}", abi_path));
+
+            Some(
+                serde_json::from_str::<JsonAbi>(&abi_data)
+                    .expect(&format!("Failed to parse ABI file: {}", abi_path)),
+            )
+        } else {
+            None
+        };
+
+        abi
     }
 }
 
@@ -137,7 +168,7 @@ mod tests {
     fn test_load_contracts_when_dev_config_set_should_load_contracts_successfully() {
         let config_path = format!("{}/../config/stage", env!("CARGO_MANIFEST_DIR"));
         let config = Config::load(&config_path).expect("Failed to load config");
-        let contracts = config.load_contracts();
+        let contracts = config.load_contracts_by_address();
 
         assert_eq!(2, contracts.len());
 
