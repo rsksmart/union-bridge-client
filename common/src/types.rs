@@ -5,7 +5,10 @@ use primitive_types::{H256, U256};
 use serde::{de, Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::{
-    cmp::Ordering, fmt, ops::{Add, Sub}, string::ToString
+    cmp::Ordering,
+    fmt,
+    ops::{Add, Sub},
+    string::ToString,
 };
 
 //// Represents a rootstock block hash.
@@ -59,12 +62,32 @@ impl fmt::Display for BlockHash {
 /// Represents a block number in the rootstock blockchain.
 ///
 /// Block numbers are typically represented as 64-bit unsigned integers (`u64`).
+///
+/// This struct ensures type safety when working with block numbers, preventing
+/// accidental misuse of raw `u64` values in places where a `BlockNumber` is expected.
+///
+/// # Example
+///
+/// ```
+/// use common::types::BlockNumber;
+///
+/// let block_100 = BlockNumber::from(100);
+/// let next_block = block_100 + 1;
+///
+/// assert_eq!(next_block, BlockNumber::from(101));
+/// ```
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub struct BlockNumber(u64);
 
 impl BlockNumber {
     pub fn value(&self) -> u64 {
         self.0
+    }
+}
+
+impl From<u64> for BlockNumber {
+    fn from(value: u64) -> Self {
+        BlockNumber(value)
     }
 }
 
@@ -96,18 +119,11 @@ impl PartialOrd<u64> for BlockNumber {
     }
 }
 
-impl From<u64> for BlockNumber {
-    fn from(value: u64) -> Self {
-        BlockNumber(value)
-    }
-}
-
 impl fmt::Display for BlockNumber {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
-
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct RskBlock {
