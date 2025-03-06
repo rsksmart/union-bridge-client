@@ -6,7 +6,7 @@ use common::{
     config::Config,
     rsk_provider::RskProvider,
     shutdown_flag::ShutdownFlag,
-    types::RskBlock,
+    types::{BlockHash, RskBlock},
 };
 use log::{debug, info, warn};
 use rsk_provider::rpc::AlloyProvider;
@@ -32,10 +32,14 @@ fn main() -> Result<()> {
     let store = CachedBlockStore::new(&config.indexer.storage.path, config.indexer.cache.size)
         .expect("Failed to create CachedKeyValueStore");
 
-    let initial_block_hash = config.indexer.initial_block_hash;
+    let initial_block_hash = BlockHash::try_from(config.indexer.initial_block_hash.as_str())
+        .expect(&format!(
+            "Invalid initial block hash: {}",
+            config.indexer.initial_block_hash
+        ));
 
     let initial_block = store
-        .get_block_by_hash(&initial_block_hash)?
+        .get_block_by_hash(initial_block_hash)?
         .context("Failed to get initial block")?;
     let store_best_block = store
         .get_best_block()?
@@ -57,14 +61,14 @@ fn main() -> Result<()> {
     }
 
     let mut next_block = store_best_block;
-    let mut expected_hash = next_block.hash().to_string();
+    let mut expected_hash = next_block.hash();
 
     while next_block.number() > initial_block.number() {
         debug!(
             "Block {} ({}) with parent {}",
             next_block.number(),
             next_block.hash(),
-            next_block.parent()
+            next_block.parent_hash()
         );
 
         if next_block.hash() != expected_hash {
@@ -76,7 +80,7 @@ fn main() -> Result<()> {
             );
         }
 
-        expected_hash = next_block.parent().to_string();
+        expected_hash = next_block.parent_hash();
 
         let next_block_num = next_block.number() - 1;
         next_block = match store.get_canonical_block(next_block_num)? {
@@ -99,7 +103,7 @@ fn main() -> Result<()> {
         "Reached initial block {} ({}) with parent {} without gaps!!!",
         next_block.number(),
         next_block.hash(),
-        next_block.parent()
+        next_block.parent_hash()
     );
 
     Ok(())
@@ -164,7 +168,7 @@ fn find_canonical_connection(
             })?;
 
         store_block = store
-            .get_block_by_hash(store_block.parent())?
+            .get_block_by_hash(store_block.parent_hash())?
             .expect("Failed to get block's parent from store");
     }
 

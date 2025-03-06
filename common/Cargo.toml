@@ -18,5 +18,9 @@ bitcoin = "0.32.4"
 config = "0.15.8"
 signal-hook = "0.3"
 
+[dev-dependencies]
+test-utils = { path = "../test-utils" }
+
 [features]
 generate-mocks = ["mockall"]
+

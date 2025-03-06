@@ -1,10 +1,11 @@
 use crate::store::LogStore;
 use anyhow::{bail, Context, Result};
-use common::rsk_indexer::RskIndexer;
-use common::rsk_provider::{RskProvider, RskSubscriptionError};
-use common::rsk_provider::{RskSubscription, RskSubscriptionFilter};
-use common::shutdown_flag::ShutdownFlag;
-use common::types::{BlockNumber, ContractInfo, RskLog};
+use common::{
+    rsk_indexer::RskIndexer,
+    rsk_provider::{RskProvider, RskSubscription, RskSubscriptionError, RskSubscriptionFilter},
+    shutdown_flag::ShutdownFlag,
+    types::{BlockHash, BlockNumber, ContractInfo, RskLog},
+};
 use log::{error, info, warn};
 use std::collections::HashMap;
 
@@ -20,7 +21,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
     pub fn new(
         store: S,
         provider: P,
-        initial_block_hash: &str,
+        initial_block_hash: BlockHash,
         managed_contracts: HashMap<String, ContractInfo>,
         shutdown_flag: ShutdownFlag,
     ) -> Result<Self> {

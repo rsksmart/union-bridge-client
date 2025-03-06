@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
-use common::{config::Config, rsk_indexer::RskIndexer, shutdown_flag::ShutdownFlag};
+use common::{config::Config, rsk_indexer::RskIndexer, shutdown_flag::ShutdownFlag, types::BlockHash};
 use log::{error, info};
 use log_indexer::{indexer::LogIndexer, store::RawLogStore};
 use rsk_provider::rpc::AlloyProvider;
@@ -41,10 +41,16 @@ fn main() -> Result<()> {
     let alloy_provider = AlloyProvider::new(&config.provider.rootstock.url, shutdown_flag.clone())
         .expect("Failed to create AlloyProvider (unrecoverable)");
 
+    let initial_block_hash = BlockHash::try_from(config.indexer.initial_block_hash.as_str())
+        .expect(&format!(
+            "Invalid initial block hash: {}",
+            config.indexer.initial_block_hash
+        ));
+
     let indexer = LogIndexer::new(
         store,
         alloy_provider,
-        &config.indexer.initial_block_hash,
+        initial_block_hash,
         config.load_contracts(),
         shutdown_flag,
     )

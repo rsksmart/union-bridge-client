@@ -1,7 +1,9 @@
 use anyhow::Result;
 use block_indexer::{indexer::BlockIndexer, store::CachedBlockStore};
 use clap::{Arg, Command};
-use common::{config::Config, rsk_indexer::RskIndexer, shutdown_flag::ShutdownFlag};
+use common::{
+    config::Config, rsk_indexer::RskIndexer, shutdown_flag::ShutdownFlag, types::BlockHash,
+};
 use log::{error, info};
 use rsk_provider::rpc::AlloyProvider;
 
@@ -44,12 +46,13 @@ fn main() -> Result<()> {
     let alloy_provider = AlloyProvider::new(&config.provider.rootstock.url, shutdown_flag.clone())
         .expect("Failed to create AlloyProvider (unrecoverable)");
 
-    let indexer = BlockIndexer::new(
-        store,
-        alloy_provider,
-        &config.indexer.initial_block_hash,
-        shutdown_flag,
-    );
+    let initial_block_hash = BlockHash::try_from(config.indexer.initial_block_hash.as_str())
+        .expect(&format!(
+            "Invalid initial block hash: {}",
+            config.indexer.initial_block_hash
+        ));
+
+    let indexer = BlockIndexer::new(store, alloy_provider, initial_block_hash, shutdown_flag);
 
     indexer.run().inspect_err(|e| {
         error!("Unrecoverable error running block indexer: {:?}", e);

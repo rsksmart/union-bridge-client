@@ -1235,6 +1235,7 @@ dependencies = [
  "serde",
  "serde_json",
  "signal-hook",
+ "test-utils",
  "thiserror 2.0.11",
 ]
 
@@ -3917,6 +3918,7 @@ name = "test-utils"
 version = "0.1.0"
 dependencies = [
  "common",
+ "hex",
  "log",
  "mockall",
  "primitive-types 0.13.1",

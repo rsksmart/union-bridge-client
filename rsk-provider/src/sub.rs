@@ -7,7 +7,7 @@ use anyhow::{anyhow, Context};
 use common::rsk_provider::{
     RskProvider, RskSubscription, RskSubscriptionError, RskSubscriptionFilter,
 };
-use common::types::{BlockNumber, LogEvent, LogInfo, RskBlock, RskLog};
+use common::types::{BlockHash, BlockNumber, LogEvent, LogInfo, RskBlock, RskLog};
 use log::debug;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -67,11 +67,13 @@ impl RskSubscription<RskBlock> for AlloySubscription<Header> {
                 new_block_header.to_string()
             ))
         })?;
+        let new_block_hash = BlockHash::try_from(new_block_hash)
+            .map_err(|err| RskSubscriptionError::Unexpected(anyhow!(err)))?;
 
         // TODO(Jira) tmp approach, try to get the required block data from the subscription itself (check Rsk and Alloy impl): https://rsklabs.atlassian.net/browse/UB-36
         let new_block = self
             .provider
-            .get_block_by_hash(&new_block_hash)
+            .get_block_by_hash(new_block_hash)
             .context(format!(
                 "Error getting block {new_block_hash} from Provider"
             ))
@@ -157,8 +159,9 @@ impl RskSubscription<RskLog> for AlloySubscription<Log> {
 
         let block_hash = new_log
             .block_hash
-            .map(|h| h.to_string())
-            .ok_or_else(|| RskSubscriptionError::Transient("Missing block_hash"))?;
+            .map(|h| BlockHash::try_from(h.to_string().as_str()))
+            .ok_or_else(|| RskSubscriptionError::Transient("Missing block_hash"))?
+            .map_err(|e| RskSubscriptionError::Unexpected(e.into()))?;
 
         let block_number = new_log
             .block_number
@@ -171,7 +174,7 @@ impl RskSubscription<RskLog> for AlloySubscription<Log> {
 
         let log_info = LogInfo::new(
             new_log.address().to_string(),
-            block_hash.clone(),
+            block_hash,
             block_number,
             tx_hash.clone(),
             log_index,

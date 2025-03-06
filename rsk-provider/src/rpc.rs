@@ -6,7 +6,9 @@ use alloy_rpc_types::{Filter, FilterSet, Header, Log};
 use anyhow::{anyhow, Context, Result};
 use common::rsk_provider::{RskProvider, RskSubscriptionFilter};
 use common::shutdown_flag::ShutdownFlag;
-use common::types::{BlockNumber, ContractInfo, RskBlock, RskEvent, RskLog, RskRpcBlock};
+use common::types::{
+    BlockHash, BlockNumber, ContractInfo, RskBlock, RskEvent, RskLog, RskRpcBlock,
+};
 use log::{debug, warn};
 use serde_json::{json, Value};
 use std::future::Future;
@@ -134,7 +136,7 @@ impl RskProvider for AlloyProvider {
         Ok(AlloySubscription::<Log>::new(subscription, self.clone()))
     }
 
-    fn get_block_by_hash(&self, hash: &str) -> Result<Option<RskBlock>> {
+    fn get_block_by_hash(&self, hash: BlockHash) -> Result<Option<RskBlock>> {
         let rpc_call = self
             .inner
             .client()
@@ -234,9 +236,9 @@ impl RuntimeSync {
 #[cfg(test)]
 mod tests {
     use crate::rpc::AlloyProvider;
+    use common::types::BlockHash;
     use common::types::BlockNumber;
-    use serde_json::json;
-    use serde_json::Value;
+    use serde_json::{json, Value};
     use std::fs;
 
     const RESPONSE_FILE_PATH: &str = "tests/resources/response.json";
@@ -251,15 +253,18 @@ mod tests {
             .expect("JSON data should be valid")
             .expect("JSON data should map to RSK block");
 
-        assert_eq!(BlockNumber::from(6086082), block.number());
-        assert_eq!(
+        let expected_hash = BlockHash::try_from(
             "0x2dbb8027f72a9fc147f165646e67db08c130ca698ff2d9fd02058c455b1a1c76",
-            block.hash()
-        );
-        assert_eq!(
+        )
+        .expect("Invalid hex string");
+        let expected_parent = BlockHash::try_from(
             "0x9e1898cf54b4fc263c0025b108f824fa703ed51fb74bdcae6da6e1b8cf728afb",
-            block.parent()
-        );
+        )
+        .expect("Invalid hex string");
+
+        assert_eq!(BlockNumber::from(6086082), block.number());
+        assert_eq!(expected_hash, block.hash());
+        assert_eq!(expected_parent, block.parent_hash());
     }
 
     #[test]

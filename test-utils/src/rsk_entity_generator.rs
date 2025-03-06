@@ -1,4 +1,4 @@
-use common::types::{BlockNumber, RskBlock};
+use common::types::{BlockHash, BlockNumber, RskBlock};
 use log::debug;
 use primitive_types::U256;
 use sha2::{Digest, Sha256};
@@ -6,6 +6,9 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
+
+pub const DEFAULT_BLOCK_HASH: &str =
+    "0x5d164d93bf09ee215cc67420f24d31b8d86c46ced6e770e8abf69c16bea3a67c";
 
 /// Returns a list of default RSK test blocks.
 ///
@@ -53,8 +56,12 @@ pub fn get_default_rsk_blocks() -> Vec<RskBlock> {
 pub fn get_first_default_rsk_block() -> RskBlock {
     RskBlock::new(
         7_234_706.into(),
-        "0x5d164d93bf09ee215cc67420f24d31b8d86c46ced6e770e8abf69c16bea3a67c".to_string(),
-        "0x2dbe5baab546a1d1a6c443836810c89867efac727a0b58b24de1baeb15467752".to_string(),
+        from_hex_to_block_hash(
+            "0x5d164d93bf09ee215cc67420f24d31b8d86c46ced6e770e8abf69c16bea3a67c",
+        ),
+        from_hex_to_block_hash(
+            "0x2dbe5baab546a1d1a6c443836810c89867efac727a0b58b24de1baeb15467752",
+        ),
         U256::from(10_000_000_000_000_000_000_000_u128), // difficulty (10 ZH)
         1739358639,
         "0xcc018a4152524f57484541442d".to_string(),
@@ -79,8 +86,12 @@ pub fn get_first_default_rsk_block() -> RskBlock {
 pub fn get_second_default_rsk_block() -> RskBlock {
     RskBlock::new(
         7_234_707.into(),
-        "0xb1b77a1d9e6d18f6668a0db6bead24bea4c507fc6779ab211899c008484384ca".to_string(),
-        "0x5d164d93bf09ee215cc67420f24d31b8d86c46ced6e770e8abf69c16bea3a67c".to_string(),
+        from_hex_to_block_hash(
+            "0xb1b77a1d9e6d18f6668a0db6bead24bea4c507fc6779ab211899c008484384ca",
+        ),
+        from_hex_to_block_hash(
+            "0x5d164d93bf09ee215cc67420f24d31b8d86c46ced6e770e8abf69c16bea3a67c",
+        ),
         U256::from(10_000_000_000_000_000_000_000_u128), // difficulty (10 ZH)
         1739358657,
         "pow_string".to_string(),
@@ -105,8 +116,12 @@ pub fn get_second_default_rsk_block() -> RskBlock {
 pub fn get_third_default_rsk_block() -> RskBlock {
     RskBlock::new(
         7_234_708.into(),
-        "0x9971862c7475888178eae1e2cd03dde72e3791ddd72853a8f781022a49a95228".to_string(),
-        "0xb1b77a1d9e6d18f6668a0db6bead24bea4c507fc6779ab211899c008484384ca".to_string(),
+        from_hex_to_block_hash(
+            "0x9971862c7475888178eae1e2cd03dde72e3791ddd72853a8f781022a49a95228",
+        ),
+        from_hex_to_block_hash(
+            "0xb1b77a1d9e6d18f6668a0db6bead24bea4c507fc6779ab211899c008484384ca",
+        ),
         U256::from(10_000_000_000_000_000_000_000_u128), // difficulty (10 ZH)
         1739358667,
         "pow_string".to_string(),
@@ -172,6 +187,8 @@ impl FakeBlockGenerator {
                 },
             )
         };
+        let parent_hash = from_hex_to_block_hash(&parent_hash);
+
         let block_hash = self.generate_hash(
             height,
             if (height >= self.reorg_block_height) && is_reorg {
@@ -180,6 +197,8 @@ impl FakeBlockGenerator {
                 ""
             },
         );
+        let block_hash = from_hex_to_block_hash(&block_hash);
+
         debug!(
             "Generating block {} with hash: {} -- parent hash: {} -- is_reorg: {}",
             height, block_hash, parent_hash, is_reorg
@@ -211,4 +230,8 @@ impl FakeBlockGenerator {
         let sum_n = n * (n + U256::one()) / U256::from(2u32);
         n * self.base_difficulty + self.difficulty_increment * sum_n
     }
+}
+
+fn from_hex_to_block_hash(hex: &str) -> BlockHash {
+    BlockHash::try_from(hex).expect(&format!("Invalid hex string: {}", hex))
 }

@@ -3,13 +3,13 @@ use anyhow::{bail, Context, Result};
 use common::rsk_indexer::RskIndexer;
 use common::rsk_provider::{RskProvider, RskSubscription, RskSubscriptionError};
 use common::shutdown_flag::ShutdownFlag;
-use common::types::{BlockNumber, RskBlock};
+use common::types::{BlockHash, BlockNumber, RskBlock};
 use log::{debug, error, info, warn};
 
 pub struct BlockIndexer<P: RskProvider, S: BlockStore> {
     store: S,
     rsk_provider: P,
-    initial_block_hash: String,
+    initial_block_hash: BlockHash,
     shutdown_flag: ShutdownFlag,
 }
 
@@ -20,13 +20,13 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
     pub fn new(
         store: S,
         provider: P,
-        initial_block_hash: &str,
+        initial_block_hash: BlockHash,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
         Self {
             store,
             rsk_provider: provider,
-            initial_block_hash: initial_block_hash.to_string(),
+            initial_block_hash,
             shutdown_flag,
         }
     }
@@ -44,7 +44,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 
         let initial_block_node = self
             .rsk_provider
-            .get_block_by_hash(&self.initial_block_hash)
+            .get_block_by_hash(self.initial_block_hash)
             .context("Initialising DB")?
             .context("Initial block hash not found on provider while initialising DB")?;
 
@@ -133,7 +133,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 .context("On Block subscription")?
                 .context("Best block not found while listening blocks")?;
 
-            let extends_canonical = new_block.parent() == local_best_block.hash();
+            let extends_canonical = new_block.parent_hash() == local_best_block.hash();
             let is_reorg = !extends_canonical
                 && new_block.total_difficulty() > local_best_block.total_difficulty();
 
@@ -277,7 +277,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         {
             match self
                 .rsk_provider
-                .get_block_by_hash(checkpoint.parent())
+                .get_block_by_hash(checkpoint.parent_hash())
                 .context("Resuming Backward Sync")?
             {
                 Some(checkpoint_parent) => {

@@ -1,21 +1,93 @@
+use crate::errors;
 use alloy_json_abi::JsonAbi;
 use bitcoin::{blockdata::block::Header, consensus::encode::deserialize as btc_deserialize};
-use primitive_types::U256;
+use primitive_types::{H256, U256};
 use serde::{de, Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::{
-    cmp::Ordering, fmt, ops::{Add, Sub}, string::ToString
+    cmp::Ordering,
+    fmt,
+    ops::{Add, Sub},
+    string::ToString,
 };
+
+//// Represents a rootstock block hash.
+///
+/// This is a wrapper around [`H256`] to enforce type safety.
+///
+/// # Examples
+///
+/// ```
+/// use primitive_types::H256;
+/// use common::types::BlockHash;
+///
+/// let raw_hash = H256::random();
+/// let block_hash = BlockHash::from(raw_hash);
+///
+/// println!("Block hash: {}", block_hash);
+/// ```
+#[derive(Serialize, Deserialize, Copy, Debug, PartialEq, Clone)]
+pub struct BlockHash(H256);
+
+impl BlockHash {
+    pub fn value(self) -> H256 {
+        self.0
+    }
+}
+
+impl From<H256> for BlockHash {
+    fn from(h256: H256) -> Self {
+        Self(h256)
+    }
+}
+
+impl TryFrom<&str> for BlockHash {
+    type Error = errors::BlockHashError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let value = value.trim_start_matches("0x");
+        let bytes = hex::decode(value)?;
+        let h256 = H256::from_slice(&bytes);
+
+        Ok(Self(h256))
+    }
+}
+
+impl fmt::Display for BlockHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "0x{}", hex::encode(self.0))
+    }
+}
 
 /// Represents a block number in the rootstock blockchain.
 ///
 /// Block numbers are typically represented as 64-bit unsigned integers (`u64`).
+///
+/// This struct ensures type safety when working with block numbers, preventing
+/// accidental misuse of raw `u64` values in places where a `BlockNumber` is expected.
+///
+/// # Example
+///
+/// ```
+/// use common::types::BlockNumber;
+///
+/// let block_100 = BlockNumber::from(100);
+/// let next_block = block_100 + 1;
+///
+/// assert_eq!(next_block, BlockNumber::from(101));
+/// ```
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub struct BlockNumber(u64);
 
 impl BlockNumber {
     pub fn value(&self) -> u64 {
         self.0
+    }
+}
+
+impl From<u64> for BlockNumber {
+    fn from(value: u64) -> Self {
+        BlockNumber(value)
     }
 }
 
@@ -47,12 +119,6 @@ impl PartialOrd<u64> for BlockNumber {
     }
 }
 
-impl From<u64> for BlockNumber {
-    fn from(value: u64) -> Self {
-        BlockNumber(value)
-    }
-}
-
 impl fmt::Display for BlockNumber {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -62,8 +128,8 @@ impl fmt::Display for BlockNumber {
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct RskBlock {
     number: BlockNumber,
-    hash: String,
-    parent: String,
+    hash: BlockHash,
+    parent_hash: BlockHash,
     difficulty: U256,
     timestamp: u64,
     total_difficulty: U256,
@@ -75,7 +141,7 @@ impl From<RskRpcBlock> for RskBlock {
         Self::new(
             rpc_block.number,
             rpc_block.hash,
-            rpc_block.parent,
+            rpc_block.parent_hash,
             rpc_block.difficulty,
             rpc_block.timestamp,
             rpc_block.pow,
@@ -87,8 +153,8 @@ impl From<RskRpcBlock> for RskBlock {
 impl RskBlock {
     pub fn new(
         number: BlockNumber,
-        hash: String,
-        parent: String,
+        hash: BlockHash,
+        parent_hash: BlockHash,
         difficulty: U256,
         timestamp: u64,
         pow: String,
@@ -97,7 +163,7 @@ impl RskBlock {
         RskBlock {
             number,
             hash,
-            parent,
+            parent_hash,
             difficulty,
             timestamp,
             pow,
@@ -109,12 +175,12 @@ impl RskBlock {
         self.number
     }
 
-    pub fn hash(&self) -> &str {
-        &self.hash
+    pub fn hash(&self) -> BlockHash {
+        self.hash
     }
 
-    pub fn parent(&self) -> &str {
-        &self.parent
+    pub fn parent_hash(&self) -> BlockHash {
+        self.parent_hash
     }
 
     pub fn difficulty(&self) -> U256 {
@@ -138,9 +204,10 @@ impl RskBlock {
 pub struct RskRpcBlock {
     #[serde(deserialize_with = "parse_hex_to_block_number")]
     number: BlockNumber,
-    hash: String,
-    #[serde(rename = "parentHash")]
-    parent: String,
+    #[serde(deserialize_with = "parse_hex_to_block_hash")]
+    hash: BlockHash,
+    #[serde(rename = "parentHash", deserialize_with = "parse_hex_to_block_hash")]
+    parent_hash: BlockHash,
     #[serde(deserialize_with = "parse_rsk_difficulty")]
     difficulty: U256,
     #[serde(deserialize_with = "parse_hex_to_u64")]
@@ -171,6 +238,20 @@ where
 {
     let hex: String = Deserialize::deserialize(deserializer)?;
     u64::from_str_radix(hex.trim_start_matches("0x"), 16).map_err(de::Error::custom)
+}
+
+fn parse_hex_to_block_hash<'de, D>(deserializer: D) -> Result<BlockHash, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let hex: String = Deserialize::deserialize(deserializer)?;
+
+    BlockHash::try_from(hex.as_str()).map_err(|err| {
+        de::Error::custom(format!(
+            "Failed to parse hex to block hash: {} - {}",
+            hex, err
+        ))
+    })
 }
 
 fn parse_rsk_difficulty<'de, D>(deserializer: D) -> Result<U256, D::Error>
@@ -248,7 +329,7 @@ impl RskEvent {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LogInfo {
     address: String,
-    block_hash: String,
+    block_hash: BlockHash,
     number: BlockNumber,
     tx_hash: String,
     log_index: u64,
@@ -258,7 +339,7 @@ pub struct LogInfo {
 impl LogInfo {
     pub fn new(
         address: String,
-        block_hash: String,
+        block_hash: BlockHash,
         number: BlockNumber,
         tx_hash: String,
         log_index: u64,
@@ -278,8 +359,8 @@ impl LogInfo {
         &self.address
     }
 
-    pub fn block_hash(&self) -> &str {
-        &self.block_hash
+    pub fn block_hash(&self) -> BlockHash {
+        self.block_hash
     }
 
     pub fn number(&self) -> BlockNumber {
@@ -324,4 +405,44 @@ pub struct ContractInfo {
     pub address: String,
     pub name: String,
     pub abi: Option<JsonAbi>,
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::errors::BlockHashError;
+    use crate::types::BlockHash;
+    use test_utils::rsk_entity_generator::DEFAULT_BLOCK_HASH;
+
+    #[test]
+    fn test_valid_block_hash_when_valid_hash_is_provided_should_return_ok() {
+        let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH);
+
+        assert!(block_hash.is_ok());
+    }
+
+    #[test]
+    fn test_invalid_block_hash_when_invalid_hash_is_provided_should_return_error() {
+        let invalid_hash = "0xinvalidhex";
+        let block_hash = BlockHash::try_from(invalid_hash);
+
+        assert!(block_hash.is_err());
+
+        if let Err(BlockHashError::InvalidHex(_)) = block_hash {
+            // The error was expected due to invalid hex input
+        } else {
+            panic!(
+                "Expected BlockHashError::InvalidHex, but got: {:?}",
+                block_hash
+            );
+        }
+    }
+
+    #[test]
+    fn test_missing_prefix_when_hash_without_prefix_is_provided_should_return_ok() {
+        let valid_hash_without_prefix =
+            "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
+        let block_hash = BlockHash::try_from(valid_hash_without_prefix);
+
+        assert!(block_hash.is_ok());
+    }
 }
