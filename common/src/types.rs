@@ -7,7 +7,7 @@ use serde_json::Value;
 use std::{
     cmp::Ordering,
     fmt,
-    ops::{Add, Sub},
+    ops::{Add, Mul, Sub},
     string::ToString,
 };
 
@@ -97,7 +97,7 @@ impl From<u64> for BlockNumber {
 impl Add<u64> for BlockNumber {
     type Output = Self;
 
-    fn add(self, rhs: u64) -> Self {
+    fn add(self, rhs: u64) -> Self::Output {
         Self(self.0 + rhs)
     }
 }
@@ -105,7 +105,7 @@ impl Add<u64> for BlockNumber {
 impl Sub<u64> for BlockNumber {
     type Output = Self;
 
-    fn sub(self, rhs: u64) -> Self {
+    fn sub(self, rhs: u64) -> Self::Output {
         Self(self.0 - rhs)
     }
 }
@@ -153,7 +153,7 @@ impl From<u64> for BlockTimestamp {
 impl Add<u64> for BlockTimestamp {
     type Output = Self;
 
-    fn add(self, rhs: u64) -> Self {
+    fn add(self, rhs: u64) -> Self::Output {
         Self(self.0 + rhs)
     }
 }
@@ -161,7 +161,7 @@ impl Add<u64> for BlockTimestamp {
 impl Sub<u64> for BlockTimestamp {
     type Output = Self;
 
-    fn sub(self, rhs: u64) -> Self {
+    fn sub(self, rhs: u64) -> Self::Output {
         Self(self.0 - rhs)
     }
 }
@@ -184,7 +184,7 @@ impl Sub<u64> for BlockTimestamp {
 ///
 /// println!("Block difficulty: {}", block_difficulty);
 /// ```
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, PartialOrd, Copy, Clone)]
 pub struct BlockDifficulty(U256);
 
 impl BlockDifficulty {
@@ -196,6 +196,30 @@ impl BlockDifficulty {
 impl From<U256> for BlockDifficulty {
     fn from(u256: U256) -> Self {
         Self(u256)
+    }
+}
+
+impl Add for BlockDifficulty {
+    type Output = BlockDifficulty;
+
+    fn add(self, rhs: BlockDifficulty) -> Self::Output {
+        BlockDifficulty(self.0 + rhs.0)
+    }
+}
+
+impl Sub for BlockDifficulty {
+    type Output = BlockDifficulty;
+
+    fn sub(self, rhs: BlockDifficulty) -> Self::Output {
+        BlockDifficulty(self.0 - rhs.0)
+    }
+}
+
+impl Mul for BlockDifficulty {
+    type Output = BlockDifficulty;
+
+    fn mul(self, rhs: BlockDifficulty) -> Self::Output {
+        BlockDifficulty(self.0 * rhs.0)
     }
 }
 
