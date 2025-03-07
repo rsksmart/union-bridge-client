@@ -7,11 +7,14 @@ use serde_json::Value;
 use std::{
     cmp::Ordering,
     fmt,
-    ops::{Add, Sub},
+    ops::{Add, Mul, Sub},
     string::ToString,
 };
 
 //// Represents a rootstock block hash.
+///
+/// This struct ensures type safety when working with block hashes, preventing
+/// accidental misuse of raw `H256` values in places where a `BlockHash` is expected.
 ///
 /// This is a wrapper around [`H256`] to enforce type safety.
 ///
@@ -94,7 +97,7 @@ impl From<u64> for BlockNumber {
 impl Add<u64> for BlockNumber {
     type Output = Self;
 
-    fn add(self, rhs: u64) -> Self {
+    fn add(self, rhs: u64) -> Self::Output {
         Self(self.0 + rhs)
     }
 }
@@ -102,7 +105,7 @@ impl Add<u64> for BlockNumber {
 impl Sub<u64> for BlockNumber {
     type Output = Self;
 
-    fn sub(self, rhs: u64) -> Self {
+    fn sub(self, rhs: u64) -> Self::Output {
         Self(self.0 - rhs)
     }
 }
@@ -150,7 +153,7 @@ impl From<u64> for BlockTimestamp {
 impl Add<u64> for BlockTimestamp {
     type Output = Self;
 
-    fn add(self, rhs: u64) -> Self {
+    fn add(self, rhs: u64) -> Self::Output {
         Self(self.0 + rhs)
     }
 }
@@ -158,8 +161,71 @@ impl Add<u64> for BlockTimestamp {
 impl Sub<u64> for BlockTimestamp {
     type Output = Self;
 
-    fn sub(self, rhs: u64) -> Self {
+    fn sub(self, rhs: u64) -> Self::Output {
         Self(self.0 - rhs)
+    }
+}
+
+/// Represents the block difficulty for a block in the rootstock blockchain.
+///
+/// This is a wrapper around [`U256`] to enforce type safety.
+///
+/// This struct ensures type safety when working with block difficulty, preventing
+/// accidental misuse of raw `U256` values in places where a `BlockDifficulty` is expected.
+///
+/// # Example
+///
+/// ```
+/// use primitive_types::U256;
+/// use common::types::BlockDifficulty;
+///
+/// let value = U256::from(10);
+/// let block_difficulty = BlockDifficulty::from(value);
+///
+/// println!("Block difficulty: {}", block_difficulty);
+/// ```
+#[derive(Serialize, Deserialize, Debug, PartialEq, PartialOrd, Copy, Clone)]
+pub struct BlockDifficulty(U256);
+
+impl BlockDifficulty {
+    pub fn value(self) -> U256 {
+        self.0
+    }
+}
+
+impl From<U256> for BlockDifficulty {
+    fn from(u256: U256) -> Self {
+        Self(u256)
+    }
+}
+
+impl Add for BlockDifficulty {
+    type Output = BlockDifficulty;
+
+    fn add(self, rhs: BlockDifficulty) -> Self::Output {
+        BlockDifficulty(self.0 + rhs.0)
+    }
+}
+
+impl Sub for BlockDifficulty {
+    type Output = BlockDifficulty;
+
+    fn sub(self, rhs: BlockDifficulty) -> Self::Output {
+        BlockDifficulty(self.0 - rhs.0)
+    }
+}
+
+impl Mul for BlockDifficulty {
+    type Output = BlockDifficulty;
+
+    fn mul(self, rhs: BlockDifficulty) -> Self::Output {
+        BlockDifficulty(self.0 * rhs.0)
+    }
+}
+
+impl fmt::Display for BlockDifficulty {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -168,9 +234,9 @@ pub struct RskBlock {
     number: BlockNumber,
     hash: BlockHash,
     parent_hash: BlockHash,
-    difficulty: U256,
     timestamp: BlockTimestamp,
-    total_difficulty: U256,
+    difficulty: BlockDifficulty,
+    total_difficulty: BlockDifficulty,
     pow: String,
 }
 
@@ -180,10 +246,10 @@ impl From<RskRpcBlock> for RskBlock {
             rpc_block.number,
             rpc_block.hash,
             rpc_block.parent_hash,
-            rpc_block.difficulty,
             rpc_block.timestamp,
-            rpc_block.pow,
+            rpc_block.difficulty,
             rpc_block.total_difficulty,
+            rpc_block.pow,
         )
     }
 }
@@ -193,19 +259,19 @@ impl RskBlock {
         number: BlockNumber,
         hash: BlockHash,
         parent_hash: BlockHash,
-        difficulty: U256,
         timestamp: BlockTimestamp,
+        difficulty: BlockDifficulty,
+        total_difficulty: BlockDifficulty,
         pow: String,
-        total_difficulty: U256,
     ) -> Self {
         RskBlock {
             number,
             hash,
             parent_hash,
-            difficulty,
             timestamp,
-            pow,
+            difficulty,
             total_difficulty,
+            pow,
         }
     }
 
@@ -221,20 +287,20 @@ impl RskBlock {
         self.parent_hash
     }
 
-    pub fn difficulty(&self) -> U256 {
-        self.difficulty
-    }
-
     pub fn timestamp(&self) -> BlockTimestamp {
         self.timestamp
     }
 
-    pub fn pow(&self) -> &str {
-        &self.pow
+    pub fn difficulty(&self) -> BlockDifficulty {
+        self.difficulty
     }
 
-    pub fn total_difficulty(&self) -> U256 {
+    pub fn total_difficulty(&self) -> BlockDifficulty {
         self.total_difficulty
+    }
+
+    pub fn pow(&self) -> &str {
+        &self.pow
     }
 }
 
@@ -246,17 +312,17 @@ pub struct RskRpcBlock {
     hash: BlockHash,
     #[serde(rename = "parentHash", deserialize_with = "parse_hex_to_block_hash")]
     parent_hash: BlockHash,
-    #[serde(deserialize_with = "parse_rsk_difficulty")]
-    difficulty: U256,
     #[serde(deserialize_with = "parse_hex_to_block_timestamp")]
     timestamp: BlockTimestamp,
+    #[serde(deserialize_with = "parse_rsk_difficulty")]
+    difficulty: BlockDifficulty,
+    #[serde(deserialize_with = "parse_rsk_difficulty", rename = "totalDifficulty")]
+    total_difficulty: BlockDifficulty,
     #[serde(
         rename = "bitcoinMergedMiningHeader",
         deserialize_with = "parse_bitcoin_header_to_pow"
     )]
     pow: String,
-    #[serde(deserialize_with = "parse_rsk_difficulty", rename = "totalDifficulty")]
-    total_difficulty: U256,
 }
 
 fn parse_hex_to_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
@@ -295,14 +361,14 @@ where
     })
 }
 
-fn parse_rsk_difficulty<'de, D>(deserializer: D) -> Result<U256, D::Error>
+fn parse_rsk_difficulty<'de, D>(deserializer: D) -> Result<BlockDifficulty, D::Error>
 where
     D: Deserializer<'de>,
 {
     let difficulty_hex: String = Deserialize::deserialize(deserializer)?;
     let difficulty_dec = U256::from_str_radix(&difficulty_hex, 16).map_err(de::Error::custom)?;
 
-    Ok(difficulty_dec)
+    Ok(BlockDifficulty::from(difficulty_dec))
 }
 
 fn parse_bitcoin_header_to_pow<'de, D>(deserializer: D) -> Result<String, D::Error>
