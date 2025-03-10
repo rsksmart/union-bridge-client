@@ -37,7 +37,7 @@ pub fn generate_fake_address(address_num: u64) -> String {
     // Append nonce bytes if provided
     hasher.update(data);
     let hash = hasher.finalize();
-    // Ethereum addresses are the last 20 bytes of the 32-byte hash
+    // Rootstock addresses are the last 20 bytes of the 32-byte hash
     let address_bytes = &hash[12..];
     format!("0x{}", hex::encode(address_bytes))
 }

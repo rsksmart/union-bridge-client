@@ -1,10 +1,9 @@
 use anyhow::Result;
-use common::rsk_provider::MockRskProvider;
-
 use block_indexer::indexer::BlockIndexer;
 use block_indexer::store::{BlockStore, CachedBlockStore};
 use common::cache::LruCache;
 use common::rsk_indexer::RskIndexer;
+use common::rsk_provider::MockRskProvider;
 use common::shutdown_flag::ShutdownFlag;
 use common::types::{BlockHash, BlockNumber, RskBlock};
 use log::info;
@@ -46,7 +45,6 @@ fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription
     let mut mock_rsk_provider_handler = MockRskProviderHandler::new(
         Arc::clone(&mock_rsk_provider),
         &generator,
-        None,
         Arc::new(AtomicBool::new(false)),
         shutting_down.clone(),
         INIT_BLOCK_HEIGHT.into(),
@@ -102,7 +100,6 @@ fn test_when_shutdown_happens_during_backwards_sync_should_set_checkpoint() -> R
     let mut mock_rsk_provider_handler = MockRskProviderHandler::new(
         Arc::clone(&mock_rsk_provider),
         &generator,
-        None,
         Arc::new(AtomicBool::new(false)),
         shutting_down.clone(),
         INIT_BLOCK_HEIGHT.into(),
@@ -168,7 +165,6 @@ fn test_when_shutdown_happens_during_backwards_sync_and_indexer_restarts_should_
     let mut mock_rsk_provider_handler = MockRskProviderHandler::new(
         Arc::clone(&mock_rsk_provider),
         &generator,
-        None,
         Arc::new(AtomicBool::new(false)),
         shutting_down.clone(),
         INIT_BLOCK_HEIGHT.into(),
@@ -205,7 +201,6 @@ fn test_when_shutdown_happens_during_backwards_sync_and_indexer_restarts_should_
     let mut mock_rsk_provider_handler = MockRskProviderHandler::new(
         Arc::clone(&mock_rsk_provider),
         &generator,
-        None,
         Arc::new(AtomicBool::new(false)),
         shutting_down.clone(),
         INIT_BLOCK_HEIGHT.into(),
@@ -277,7 +272,6 @@ fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complet
     let mut mock_rsk_provider_handler = MockRskProviderHandler::new(
         Arc::clone(&mock_rsk_provider),
         &generator,
-        None,
         is_reorg.clone(),
         shutting_down.clone(),
         INIT_BLOCK_HEIGHT.into(),
@@ -339,7 +333,6 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_should_complete_
     let mut mock_rsk_provider_handler = MockRskProviderHandler::new(
         Arc::clone(&mock_rsk_provider),
         &generator,
-        None,
         is_reorg.clone(),
         shutting_down.clone(),
         INIT_BLOCK_HEIGHT.into(),
@@ -402,7 +395,6 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_from_early_block
     let mut mock_rsk_provider_handler = MockRskProviderHandler::new(
         Arc::clone(&mock_rsk_provider),
         &generator,
-        None,
         is_reorg.clone(),
         shutting_down.clone(),
         INIT_BLOCK_HEIGHT.into(),

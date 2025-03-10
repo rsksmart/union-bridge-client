@@ -127,17 +127,6 @@ pub fn get_third_default_rsk_block() -> RskBlock {
     )
 }
 
-pub fn address_to_topic(address: &str) -> String {
-    let addr = address.strip_prefix("0x").unwrap_or(address);
-    if addr.len() != 40 {
-        panic!(
-            "Invalid Ethereum address length: expected 40 hex digits, got {}",
-            addr.len()
-        );
-    }
-    format!("0x{}{}", "0".repeat(24), addr)
-}
-
 pub fn event_signature_to_topic(event_signature: &str) -> String {
     let mut hasher = Keccak256::new();
     hasher.update(event_signature.as_bytes());

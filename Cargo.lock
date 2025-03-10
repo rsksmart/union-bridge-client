@@ -2449,6 +2449,7 @@ dependencies = [
  "env_logger",
  "log",
  "log4rs",
+ "primitive-types 0.13.1",
  "rand 0.9.0",
  "rsk-provider",
  "rust-bitvmx-storage-backend",

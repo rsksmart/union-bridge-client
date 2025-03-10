@@ -9,6 +9,7 @@ log = { workspace = true }
 mockall = { workspace = true}
 primitive-types = { workspace = true }
 hex = { workspace = true}
-sha3 = "0.10"
 serde_json = { workspace = true }
 anyhow = { workspace = true }
+
+sha3 = "0.10"

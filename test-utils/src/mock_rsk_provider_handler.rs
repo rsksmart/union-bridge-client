@@ -37,7 +37,6 @@ impl MockRskProviderHandler {
     pub fn new(
         provider: Arc<Mutex<MockRskProvider>>,
         block_generator: &FakeBlockGenerator,
-        log_generator: Option<&FakeLogGenerator>,
         is_reorg: Arc<AtomicBool>,
         shutting_down: ShutdownFlag,
         block_height_backward_sync_init: BlockNumber,
@@ -48,9 +47,7 @@ impl MockRskProviderHandler {
         Self {
             provider,
             block_generator: block_generator.clone(),
-            log_generator: log_generator
-                .cloned()
-                .unwrap_or_else(|| FakeLogGenerator::new("")),
+            log_generator: FakeLogGenerator::new(),
             is_reorg,
             has_subscribed: Arc::new(AtomicBool::new(false)),
             shutting_down,
@@ -191,49 +188,35 @@ impl MockRskProviderHandler {
     pub fn set_provider_expect_subscribe_logs(
         &mut self,
         filter: RskSubscriptionFilter,
-        log_tuples: Vec<(u64, u64, String, u64)>,
+        event_signature: String,
+        log_info_tuples: Vec<LogInfo>,
     ) {
         let log_generator = self.log_generator.clone();
-        let block_generator = self.block_generator.clone();
         let has_subscribed = self.has_subscribed.clone();
         let shutting_down = self.shutting_down.clone();
         let delay_between_blocks_subscription = self.delay_between_blocks_subscription;
-        let tuples = VecDeque::from(log_tuples);
         let mut provider = self.provider.lock().unwrap();
+        let tuples = VecDeque::from(log_info_tuples);
         provider
             .expect_subscribe_logs()
             .with(mockall::predicate::function(
-                move |f: &RskSubscriptionFilter| {
-                    let mut expected_addresses = filter.addresses.clone();
-                    expected_addresses.sort();
-                    let mut actual_addresses = f.addresses.clone();
-                    actual_addresses.sort();
-                    expected_addresses == actual_addresses
-                        && f.topics == filter.topics
-                        && f.from_block == filter.from_block
-                },
+                move |f: &RskSubscriptionFilter| matching_filters(filter.clone(), f),
             ))
             .returning(move |_| {
                 let mut mock_sub = MockRskSubscription::new();
                 let log_generator = log_generator.clone();
-                let block_generator = block_generator.clone();
                 let shutting_down = shutting_down.clone();
                 has_subscribed.store(true, Ordering::SeqCst);
                 let mut tuples = tuples.clone();
+                let event_signature = event_signature.clone();
                 mock_sub.expect_next().returning(move || {
-                    thread::sleep(Duration::from_millis(delay_between_blocks_subscription));
-                    if let Some((block_height, tx_id, address, log_id)) = tuples.pop_front() {
-                        let block = block_generator.generate_block(block_height.into());
-                        let log = log_generator.generate_log(block, tx_id, address, log_id);
-                        if tuples.is_empty() {
-                            shutting_down.set(true);
-                        }
-                        Ok(log)
-                    } else {
-                        Err(RskSubscriptionError::Unexpected(anyhow!(
-                            "No more logs to generate"
-                        )))
-                    }
+                    generate_next_rsk_log(
+                        delay_between_blocks_subscription,
+                        &log_generator,
+                        &shutting_down,
+                        &mut tuples,
+                        &event_signature,
+                    )
                 });
                 mock_sub.expect_unsubscribe().returning(|| Ok(()));
                 Ok(mock_sub)
@@ -260,4 +243,33 @@ impl MockRskProviderHandler {
                 )))
             });
     }
+}
+
+fn generate_next_rsk_log(
+    delay_between_blocks_subscription: u64,
+    log_generator: &FakeLogGenerator,
+    shutting_down: &ShutdownFlag,
+    tuples: &mut VecDeque<LogInfo>,
+    event_signature: &str,
+) -> Result<RskLog, RskSubscriptionError> {
+    thread::sleep(Duration::from_millis(delay_between_blocks_subscription));
+    if let Some(log_info) = tuples.pop_front() {
+        let log = log_generator.generate_log(event_signature, log_info);
+        if tuples.is_empty() {
+            shutting_down.set(true);
+        }
+        Ok(log)
+    } else {
+        Err(RskSubscriptionError::Unexpected(anyhow!(
+            "No more logs to generate"
+        )))
+    }
+}
+
+fn matching_filters(filter: RskSubscriptionFilter, f: &RskSubscriptionFilter) -> bool {
+    let mut expected = filter.addresses;
+    let mut actual = f.addresses.clone();
+    expected.sort();
+    actual.sort();
+    expected == actual && f.topics == filter.topics && f.from_block == filter.from_block
 }

@@ -1,31 +1,33 @@
+use anyhow::{Context, Result};
+use common::{
+    rsk_indexer::RskIndexer,
+    rsk_provider::{MockRskProvider, RskSubscriptionFilter},
+    shutdown_flag::ShutdownFlag,
+    types::{BlockHash, ContractInfo, LogInfo},
+};
+use log::info;
+use log_indexer::{indexer::LogIndexer, store::RawLogStore};
+use primitive_types::H256;
 use rand::Rng;
 use std::{
     collections::HashMap,
     ops::Range,
     sync::{atomic::AtomicBool, Arc, Mutex},
 };
-
-use anyhow::{Context, Result};
-use common::{
-    rsk_indexer::RskIndexer,
-    rsk_provider::{MockRskProvider, RskSubscriptionFilter},
-    shutdown_flag::ShutdownFlag,
-    types::{BlockHash, ContractInfo},
-};
-use log::info;
-use log_indexer::{indexer::LogIndexer, store::RawLogStore};
 use tempfile::tempdir;
 use test_utils::{
     mock_rsk_provider_handler::MockRskProviderHandler,
     rsk_block_generator::FakeBlockGenerator,
     rsk_log_generator::FakeLogGenerator,
-    rsk_utils::{generate_fake_addresses, generate_fake_managed_contracts, DEFAULT_BLOCK_HASH},
+    rsk_utils::{
+        generate_fake_addresses, generate_fake_managed_contracts, generate_fake_tx_hash,
+        DEFAULT_BLOCK_HASH,
+    },
 };
 
-const FILTER_BLOCK_FROM_DEPTH: u64 = 10;
 const TX_ID_RANGE: Range<u64> = 0..20;
-const ADDRESSES_SIZE: u64 = 10;
 const LOG_INDEX_RANGE: Range<u64> = 0..20;
+const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
 
 /*
 # Given the storage is empty
@@ -34,29 +36,25 @@ const LOG_INDEX_RANGE: Range<u64> = 0..20;
 # Then the storage should contain logs from B to L
 */
 #[test]
-fn test_when_log_indexer_runs_should_add_logs_from_subscription() -> Result<()> {
+fn test_when_log_indexer_runs_should_store_logs_from_subscription() -> Result<()> {
     let _ = env_logger::builder().is_test(true).try_init();
+    const LOG_INFO_TUPLE_SIZE: u64 = 10;
+    const EVENT_SIGNATURE: &str = "Transfer(address,address,uint256)";
     const INIT_BLOCK_HEIGHT: u64 = 1;
+    const FILTER_BLOCK_FROM_DEPTH: u64 = 10;
     const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 35;
     const LOG_BLOCK_HEIGHT_RANGE: Range<u64> =
         MAX_BLOCK_HEIGHT_SUBSCRIPTION - FILTER_BLOCK_FROM_DEPTH..MAX_BLOCK_HEIGHT_SUBSCRIPTION;
-    const LOG_VEC_TUPLE_SIZE: u64 = 10;
-    const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
-
     let temp_dir = tempdir()?;
     let store_path = temp_dir.path().to_str().unwrap();
     let store = RawLogStore::new(store_path)?;
-
-    let event_signature = "Transfer(address,address,uint256)";
     let block_generator = FakeBlockGenerator::new(0.into(), Arc::new(AtomicBool::new(false)));
-    let log_generator = FakeLogGenerator::new(event_signature);
+    let log_generator = FakeLogGenerator::new();
     let shutting_down = ShutdownFlag::init();
     let mock_rsk_provider = Arc::new(Mutex::new(MockRskProvider::new()));
-
     let mut mock_rsk_provider_handler = MockRskProviderHandler::new(
         Arc::clone(&mock_rsk_provider),
         &block_generator,
-        Some(&log_generator),
         Arc::new(AtomicBool::new(false)),
         shutting_down.clone(),
         INIT_BLOCK_HEIGHT.into(),
@@ -69,19 +67,22 @@ fn test_when_log_indexer_runs_should_add_logs_from_subscription() -> Result<()> 
         INIT_BLOCK_HEIGHT.into(),
     );
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
-    let addresses: Vec<String> = generate_fake_addresses(ADDRESSES_SIZE);
-    let log_vec_tuple: Vec<(u64, u64, String, u64)> = log_vec_tuple_generator(
+    let addresses: Vec<String> = generate_fake_addresses(LOG_INFO_TUPLE_SIZE);
+    let log_info_tuples: Vec<LogInfo> = log_info_tuple_generator(
         LOG_BLOCK_HEIGHT_RANGE,
-        LOG_VEC_TUPLE_SIZE,
+        LOG_INFO_TUPLE_SIZE,
         addresses.clone(),
     );
-
     let filter = RskSubscriptionFilter::new(
         addresses.clone(),
         vec![],
         Some((MAX_BLOCK_HEIGHT_SUBSCRIPTION - FILTER_BLOCK_FROM_DEPTH).into()),
     );
-    mock_rsk_provider_handler.set_provider_expect_subscribe_logs(filter, log_vec_tuple.clone());
+    mock_rsk_provider_handler.set_provider_expect_subscribe_logs(
+        filter,
+        EVENT_SIGNATURE.to_string(),
+        log_info_tuples.clone(),
+    );
     mock_rsk_provider_handler.set_provider_expect_decode_log();
     drop(mock_rsk_provider_handler);
     let managed_contracts = generate_fake_managed_contracts(addresses);
@@ -95,27 +96,36 @@ fn test_when_log_indexer_runs_should_add_logs_from_subscription() -> Result<()> 
     let store_after: RawLogStore = RawLogStore::new(store_path)?;
     assert_logs(
         &log_generator,
-        &block_generator,
         &store_after,
-        log_vec_tuple,
+        EVENT_SIGNATURE,
+        log_info_tuples,
     );
     Ok(())
 }
 
-fn log_vec_tuple_generator(
+fn log_info_tuple_generator(
     filter_from_block_height: Range<u64>,
-    log_vec_tuple_size: u64,
+    vec_size: u64,
     addresses: Vec<String>,
-) -> Vec<(u64, u64, String, u64)> {
-    let mut v = Vec::with_capacity(log_vec_tuple_size as usize);
+) -> Vec<LogInfo> {
+    let mut v = Vec::with_capacity(vec_size as usize);
     let mut rng = rand::rng();
     let block_num_range = filter_from_block_height.clone();
-    for i in 0..log_vec_tuple_size {
+    for i in 0..vec_size {
         let block_num = rng.random_range(block_num_range.clone());
         let tx_id = rng.random_range(TX_ID_RANGE);
         let address: String = addresses[i as usize].clone();
+        let block_hash = BlockHash::from(H256::random());
+        let tx_hash = generate_fake_tx_hash(tx_id, &address);
         let log_index = rng.random_range(LOG_INDEX_RANGE);
-        v.push((block_num, tx_id, address, log_index));
+        v.push(LogInfo::new(
+            address,
+            block_hash,
+            block_num.into(),
+            tx_hash,
+            log_index,
+            false,
+        ));
     }
     v
 }
@@ -140,7 +150,6 @@ fn cycle_indexer(
     )
     .context("Failed to create LogIndexer")
     .unwrap();
-
     let _ = indexer.run();
     info!("{}", msg.unwrap_or("Indexer run completed successfully."));
     drop(indexer);
@@ -148,13 +157,12 @@ fn cycle_indexer(
 
 fn assert_logs(
     log_generator: &FakeLogGenerator,
-    block_generator: &FakeBlockGenerator,
     store: &RawLogStore,
-    log_tuples: Vec<(u64, u64, String, u64)>,
+    event_signature: &str,
+    log_info_tuples: Vec<LogInfo>,
 ) -> () {
-    for (block_num, tx_id, address, log_index) in log_tuples {
-        let block = block_generator.generate_block(block_num.into());
-        let expected_log = log_generator.generate_log(block, tx_id, address, log_index);
+    for log_info in log_info_tuples {
+        let expected_log = log_generator.generate_log(event_signature, log_info);
         let expected_log_key = format!(
             "logs/{}/{}/{}",
             expected_log.info().address().to_string(),
