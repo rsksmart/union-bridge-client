@@ -1,8 +1,10 @@
-use common::types::BlockHash;
+use common::types::{BlockHash, BlockPow};
 use sha3::{Digest, Keccak256};
 
 pub const DEFAULT_BLOCK_HASH: &str =
     "0x5d164d93bf09ee215cc67420f24d31b8d86c46ced6e770e8abf69c16bea3a67c";
+pub const DEFAULT_BITCOIN_MERGED_MINING_HEADER: &str =
+"0x00000020538fb0d4d0cbdf0f3b88e02551018fcd6064cbe5cbed40d78b4c3709000000004feaeec0d7a118f6d1c0d8fec32936b9dfff3bea45b537027c6439ac5ea98ccd34b8b467908316194c8b4487";
 
 /// Generates a fake Rootstock address based on a given number and an optional nonce.
 ///
@@ -79,24 +81,17 @@ pub fn get_fake_tx_hash(tx_id: u64, from: &str) -> String {
 /// # Panics
 ///
 /// This function will panic if the string is not a valid hexadecimal.
-///
-/// # Examples
-///
-/// ```
-/// use common::types::BlockHash;
-/// use test_utils::rsk_utils::from_hex_to_block_hash;
-///
-/// // Valid usage:
-/// let valid_hex = "0x5d164d93bf09ee215cc67420f24d31b8d86c46ced6e770e8abf69c16bea3a67c";
-/// let block_hash = from_hex_to_block_hash(valid_hex);
-/// assert_eq!(block_hash.to_string(), valid_hex);
-/// ```
-///
-/// ```should_panic
-/// // This will panic because it's invalid hexadecimal:
-/// use test_utils::rsk_utils::from_hex_to_block_hash;
-/// from_hex_to_block_hash("not-valid-hex");
 /// ```
 pub fn from_hex_to_block_hash(hex: &str) -> BlockHash {
     BlockHash::try_from(hex).expect(&format!("Invalid hex string: {}", hex))
+}
+
+/// Converts a Bitcoin merged mining hex string into a `BlockPow`.
+///
+/// # Panics
+///
+/// This function will panic if the string is not a valid hexadecimal.
+/// ```
+pub fn from_hex_to_block_pow(hex: &str) -> BlockPow {
+    BlockPow::try_from(hex).expect(&format!("Invalid hex string: {}", hex))
 }

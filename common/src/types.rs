@@ -1,4 +1,3 @@
-use crate::errors;
 use alloy_json_abi::JsonAbi;
 use bitcoin::{blockdata::block::Header, consensus::encode::deserialize as btc_deserialize};
 use primitive_types::{H256, U256};
@@ -8,6 +7,7 @@ use std::{
     cmp::Ordering,
     fmt,
     ops::{Add, Mul, Sub},
+    str::FromStr,
     string::ToString,
 };
 
@@ -45,7 +45,7 @@ impl From<H256> for BlockHash {
 }
 
 impl TryFrom<&str> for BlockHash {
-    type Error = errors::BlockHashError;
+    type Error = hex::FromHexError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         let value = value.trim_start_matches("0x");
@@ -229,6 +229,61 @@ impl fmt::Display for BlockDifficulty {
     }
 }
 
+/// Represents the block hash of the Bitcoin merged mining header as
+/// proof of work for a given Rootstock block.
+///
+/// This struct ensures type safety, preventing accidental misuse of raw `H256`
+/// values in places where a `BlockPow` is expected.
+///
+/// This is a wrapper around [`H256`] to enforce type safety.
+///
+/// # Examples
+///
+/// ```
+/// use primitive_types::H256;
+/// use common::types::BlockPow;
+///
+/// let value = H256::random();
+/// let pow = BlockPow::from(value);
+///
+/// println!("Block PoW: {}", pow);
+/// ```
+#[derive(Serialize, Deserialize, Copy, Debug, PartialEq, Clone)]
+pub struct BlockPow(H256);
+
+impl BlockPow {
+    pub fn value(self) -> H256 {
+        self.0
+    }
+}
+
+impl From<H256> for BlockPow {
+    fn from(h256: H256) -> Self {
+        Self(h256)
+    }
+}
+
+impl TryFrom<&str> for BlockPow {
+    type Error = Box<dyn std::error::Error>;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let value = value.trim_start_matches("0x");
+        let header_bytes = hex::decode(value)?;
+        let header_hash = btc_deserialize::<Header>(&header_bytes)?
+            .block_hash()
+            .to_string();
+        let h256 = H256::from_str(header_hash.as_str())?;
+
+        Ok(Self(h256))
+    }
+}
+
+impl fmt::Display for BlockPow {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "0x{}", hex::encode(self.0))
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct RskBlock {
     number: BlockNumber,
@@ -237,7 +292,7 @@ pub struct RskBlock {
     timestamp: BlockTimestamp,
     difficulty: BlockDifficulty,
     total_difficulty: BlockDifficulty,
-    pow: String,
+    pow: BlockPow,
 }
 
 impl From<RskRpcBlock> for RskBlock {
@@ -262,7 +317,7 @@ impl RskBlock {
         timestamp: BlockTimestamp,
         difficulty: BlockDifficulty,
         total_difficulty: BlockDifficulty,
-        pow: String,
+        pow: BlockPow,
     ) -> Self {
         RskBlock {
             number,
@@ -299,92 +354,9 @@ impl RskBlock {
         self.total_difficulty
     }
 
-    pub fn pow(&self) -> &str {
-        &self.pow
+    pub fn pow(&self) -> BlockPow {
+        self.pow
     }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct RskRpcBlock {
-    #[serde(deserialize_with = "parse_hex_to_block_number")]
-    number: BlockNumber,
-    #[serde(deserialize_with = "parse_hex_to_block_hash")]
-    hash: BlockHash,
-    #[serde(rename = "parentHash", deserialize_with = "parse_hex_to_block_hash")]
-    parent_hash: BlockHash,
-    #[serde(deserialize_with = "parse_hex_to_block_timestamp")]
-    timestamp: BlockTimestamp,
-    #[serde(deserialize_with = "parse_rsk_difficulty")]
-    difficulty: BlockDifficulty,
-    #[serde(deserialize_with = "parse_rsk_difficulty", rename = "totalDifficulty")]
-    total_difficulty: BlockDifficulty,
-    #[serde(
-        rename = "bitcoinMergedMiningHeader",
-        deserialize_with = "parse_bitcoin_header_to_pow"
-    )]
-    pow: String,
-}
-
-fn parse_hex_to_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let hex: String = Deserialize::deserialize(deserializer)?;
-    u64::from_str_radix(hex.trim_start_matches("0x"), 16).map_err(de::Error::custom)
-}
-
-fn parse_hex_to_block_number<'de, D>(deserializer: D) -> Result<BlockNumber, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    parse_hex_to_u64(deserializer).map(BlockNumber::from)
-}
-
-fn parse_hex_to_block_timestamp<'de, D>(deserializer: D) -> Result<BlockTimestamp, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    parse_hex_to_u64(deserializer).map(BlockTimestamp::from)
-}
-
-fn parse_hex_to_block_hash<'de, D>(deserializer: D) -> Result<BlockHash, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let hex: String = Deserialize::deserialize(deserializer)?;
-
-    BlockHash::try_from(hex.as_str()).map_err(|err| {
-        de::Error::custom(format!(
-            "Failed to parse hex to block hash: {} - {}",
-            hex, err
-        ))
-    })
-}
-
-fn parse_rsk_difficulty<'de, D>(deserializer: D) -> Result<BlockDifficulty, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let difficulty_hex: String = Deserialize::deserialize(deserializer)?;
-    let difficulty_dec = U256::from_str_radix(&difficulty_hex, 16).map_err(de::Error::custom)?;
-
-    Ok(BlockDifficulty::from(difficulty_dec))
-}
-
-fn parse_bitcoin_header_to_pow<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let header_hex: String = Deserialize::deserialize(deserializer)?;
-    let header_bytes =
-        hex::decode(header_hex.trim_start_matches("0x")).map_err(de::Error::custom)?;
-
-    // deserialize the header bytes into a Bitcoin Header and extract the hash
-    let header_hash = btc_deserialize(&header_bytes)
-        .map(|h: Header| h.block_hash().to_string())
-        .map_err(de::Error::custom)?;
-
-    Ok(header_hash)
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
@@ -514,11 +486,81 @@ pub struct ContractInfo {
     pub abi: Option<JsonAbi>,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RskRpcBlock {
+    #[serde(deserialize_with = "parse_hex_to_block_number")]
+    number: BlockNumber,
+    #[serde(deserialize_with = "parse_hex_to_block_hash")]
+    hash: BlockHash,
+    #[serde(rename = "parentHash", deserialize_with = "parse_hex_to_block_hash")]
+    parent_hash: BlockHash,
+    #[serde(deserialize_with = "parse_hex_to_block_timestamp")]
+    timestamp: BlockTimestamp,
+    #[serde(deserialize_with = "parse_rsk_difficulty")]
+    difficulty: BlockDifficulty,
+    #[serde(deserialize_with = "parse_rsk_difficulty", rename = "totalDifficulty")]
+    total_difficulty: BlockDifficulty,
+    #[serde(
+        rename = "bitcoinMergedMiningHeader",
+        deserialize_with = "parse_bitcoin_header_to_pow"
+    )]
+    pow: BlockPow,
+}
+
+fn parse_hex_to_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let hex: String = Deserialize::deserialize(deserializer)?;
+    u64::from_str_radix(hex.trim_start_matches("0x"), 16).map_err(de::Error::custom)
+}
+
+fn parse_hex_to_block_number<'de, D>(deserializer: D) -> Result<BlockNumber, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    parse_hex_to_u64(deserializer).map(BlockNumber::from)
+}
+
+fn parse_hex_to_block_timestamp<'de, D>(deserializer: D) -> Result<BlockTimestamp, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    parse_hex_to_u64(deserializer).map(BlockTimestamp::from)
+}
+
+fn parse_hex_to_block_hash<'de, D>(deserializer: D) -> Result<BlockHash, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let hex: String = Deserialize::deserialize(deserializer)?;
+
+    BlockHash::try_from(hex.as_str()).map_err(de::Error::custom)
+}
+
+fn parse_rsk_difficulty<'de, D>(deserializer: D) -> Result<BlockDifficulty, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let difficulty_hex: String = Deserialize::deserialize(deserializer)?;
+    let difficulty_dec = U256::from_str_radix(&difficulty_hex, 16).map_err(de::Error::custom)?;
+
+    Ok(BlockDifficulty::from(difficulty_dec))
+}
+
+fn parse_bitcoin_header_to_pow<'de, D>(deserializer: D) -> Result<BlockPow, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let hex: String = Deserialize::deserialize(deserializer)?;
+
+    BlockPow::try_from(hex.as_str()).map_err(de::Error::custom)
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::errors::BlockHashError;
-    use crate::types::BlockHash;
-    use test_utils::rsk_utils::DEFAULT_BLOCK_HASH;
+    use crate::types::{BlockHash, BlockPow};
+    use test_utils::rsk_utils::{DEFAULT_BITCOIN_MERGED_MINING_HEADER, DEFAULT_BLOCK_HASH};
 
     #[test]
     fn test_valid_block_hash_when_valid_hash_is_provided_should_return_ok() {
@@ -534,22 +576,48 @@ mod tests {
 
         assert!(block_hash.is_err());
 
-        if let Err(BlockHashError::InvalidHex(_)) = block_hash {
+        if let Err(_) = block_hash {
             // The error was expected due to invalid hex input
         } else {
-            panic!(
-                "Expected BlockHashError::InvalidHex, but got: {:?}",
-                block_hash
-            );
+            panic!("Expected Error, but got: {:?}", block_hash);
         }
     }
 
     #[test]
     fn test_missing_prefix_when_hash_without_prefix_is_provided_should_return_ok() {
-        let valid_hash_without_prefix =
-            "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
+        let valid_hash_without_prefix = &DEFAULT_BLOCK_HASH[2..];
         let block_hash = BlockHash::try_from(valid_hash_without_prefix);
 
         assert!(block_hash.is_ok());
+    }
+
+    #[test]
+    fn test_valid_block_pow_when_valid_bitcoin_merged_mining_header_is_provided_should_return_ok() {
+        let pow = BlockPow::try_from(DEFAULT_BITCOIN_MERGED_MINING_HEADER);
+
+        assert!(pow.is_ok());
+    }
+
+    #[test]
+    fn test_invalid_block_pow_when_invalid_merged_mining_header_is_provided_should_return_error() {
+        let invalid_header = "0xinvalidheader";
+        let pow = BlockPow::try_from(invalid_header);
+
+        assert!(pow.is_err());
+
+        if let Err(_) = pow {
+            // The error was expected due to invalid hex input
+        } else {
+            panic!("Expected Error, but got: {:?}", pow);
+        }
+    }
+
+    #[test]
+    fn test_missing_prefix_when_bitcoin_merged_mining_header_without_prefix_is_provided_should_return_ok(
+    ) {
+        let valid_hash_without_prefix = &DEFAULT_BITCOIN_MERGED_MINING_HEADER[2..];
+        let pow = BlockPow::try_from(valid_hash_without_prefix);
+
+        assert!(pow.is_ok());
     }
 }
