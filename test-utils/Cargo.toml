@@ -4,12 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-common = { path = "../common", features = ["generate-mocks"]}
+common = { path = "../common" }
 log = { workspace = true }
-mockall = { workspace = true}
+mockall = { workspace = true }
 primitive-types = { workspace = true }
-hex = { workspace = true}
+hex = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 
 sha3 = "0.10"
+
+[features]
+customs = ["common/testing-customs"]
+mocks = ["common/testing-mocks"]

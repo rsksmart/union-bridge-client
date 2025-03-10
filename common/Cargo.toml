@@ -22,5 +22,5 @@ signal-hook = "0.3"
 test-utils = { path = "../test-utils" }
 
 [features]
-generate-mocks = ["mockall"]
-
+testing-customs = []
+testing-mocks = ["mockall"]
