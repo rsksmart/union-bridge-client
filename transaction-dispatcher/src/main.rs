@@ -1,21 +1,18 @@
 use alloy_provider::{ProviderBuilder, RootProvider, WsConnect};
 use anyhow::{Context, Result};
-use axum::http::StatusCode;
-use axum::routing::post;
-use axum::{Extension, Json, Router};
 use clap::{Arg, Command};
 use common::config::Config;
-use log::info;
+use log::{error, info};
 use std::sync::Arc;
 use transaction_dispatcher::rsk_connector::RskContractsGateway;
-use transaction_dispatcher::types::{PeginAddressInput, PeginAddressOutput};
+use transaction_dispatcher::server::Server;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const CONFIG_CLI_FLAG: &str = "config-path";
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let matches = Command::new("Union Bridge Block Indexer")
+    let matches = Command::new("Union Bridge Transaction Dispatcher")
         .arg(
             Arg::new(LOGGER_CLI_FLAG)
                 .short('l')
@@ -53,36 +50,23 @@ async fn main() -> Result<()> {
             .context("Could not instantiate RskContractsGateway")?,
     );
 
-    let app = Router::new()
-        .route("/pegin-address", post(create_pegin_address))
-        .layer(Extension(rsk_contract_gateway.clone()));
-
     let listener =
         tokio::net::TcpListener::bind(&config.transaction_dispatcher.server_address).await?;
 
-    axum::serve(listener, app).await?;
+    let server = Server::new(listener, rsk_contract_gateway).await;
 
-    // TODO(iago) move server logic to new file
+    let server_handle = tokio::spawn(async move {
+        if let Err(e) = server.start().await {
+            error!("Server error: {}", e);
+        }
+    });
 
     // TODO(iago) graceful shutdown: https://github.com/tokio-rs/axum/blob/da3539cb0e5eed381361b2e688a776da77c52cd6/examples/graceful-shutdown/src/main.rs#L38
+
+    server_handle.await?;
 
     info!("Quitting now...");
     log::logger().flush();
 
     Ok(())
-}
-
-async fn create_pegin_address(
-    Extension(rsk_gateway): Extension<Arc<RskContractsGateway>>,
-    Json(payload): Json<PeginAddressInput>,
-) -> (StatusCode, Json<PeginAddressOutput>) {
-    match rsk_gateway.get_temporary_pegin_address(payload).await {
-        Ok(address) => (StatusCode::CREATED, Json(address)),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(PeginAddressOutput {
-                address: e.to_string(),
-            }),
-        ),
-    }
 }
