@@ -12,7 +12,7 @@ use rand::Rng;
 use std::{
     collections::HashMap,
     ops::Range,
-    sync::{atomic::AtomicBool, Arc, Mutex},
+    sync::{atomic::AtomicBool, Arc},
 };
 use tempfile::tempdir;
 use test_utils::{
@@ -51,9 +51,9 @@ fn test_when_log_indexer_runs_should_store_logs_from_subscription() -> Result<()
     let block_generator = FakeBlockGenerator::new(0.into(), Arc::new(AtomicBool::new(false)));
     let log_generator = FakeLogGenerator::new();
     let shutting_down = ShutdownFlag::init();
-    let mock_rsk_provider = Arc::new(Mutex::new(MockRskProvider::new()));
+    let mut mock_rsk_provider = MockRskProvider::new();
     let mut mock_rsk_provider_handler = MockRskProviderHandler::new(
-        Arc::clone(&mock_rsk_provider),
+        &mut mock_rsk_provider,
         &block_generator,
         Arc::new(AtomicBool::new(false)),
         shutting_down.clone(),
@@ -84,7 +84,6 @@ fn test_when_log_indexer_runs_should_store_logs_from_subscription() -> Result<()
         log_info_tuples.clone(),
     );
     mock_rsk_provider_handler.set_provider_expect_decode_log();
-    drop(mock_rsk_provider_handler);
     let managed_contracts = generate_fake_managed_contracts(addresses);
     cycle_indexer(
         store,
@@ -132,15 +131,11 @@ fn log_info_tuple_generator(
 
 fn cycle_indexer(
     store: RawLogStore,
-    mock_rsk_provider: Arc<Mutex<MockRskProvider>>,
+    mock_rsk_provider: MockRskProvider,
     managed_contracts: HashMap<String, ContractInfo>,
     shutting_down: ShutdownFlag,
     msg: Option<&str>,
 ) -> () {
-    let mock_rsk_provider = Arc::try_unwrap(mock_rsk_provider)
-        .unwrap()
-        .into_inner()
-        .unwrap();
     let indexer = LogIndexer::new(
         store,
         mock_rsk_provider,
