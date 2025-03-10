@@ -2,6 +2,7 @@ use alloy_provider::{ProviderBuilder, RootProvider, WsConnect};
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
 use common::config::Config;
+use common::shutdown_flag::ShutdownFlag;
 use log::{error, info};
 use std::sync::Arc;
 use transaction_dispatcher::rsk_connector::RskContractsGateway;
@@ -37,6 +38,8 @@ async fn main() -> Result<()> {
     let config_path: &String = matches.get_one(CONFIG_CLI_FLAG).unwrap();
     let config = Config::load(config_path).expect("Failed to load config");
 
+    let shutdown_flag = ShutdownFlag::init();
+
     let ws = WsConnect::new(&config.provider.rootstock.url);
     let provider: RootProvider = ProviderBuilder::default().on_ws(ws).await?;
 
@@ -53,15 +56,13 @@ async fn main() -> Result<()> {
     let listener =
         tokio::net::TcpListener::bind(&config.transaction_dispatcher.server_address).await?;
 
-    let server = Server::new(listener, rsk_contract_gateway).await;
+    let server = Server::new(listener, rsk_contract_gateway, shutdown_flag).await;
 
     let server_handle = tokio::spawn(async move {
         if let Err(e) = server.start().await {
             error!("Server error: {}", e);
         }
     });
-
-    // TODO(iago) graceful shutdown: https://github.com/tokio-rs/axum/blob/da3539cb0e5eed381361b2e688a776da77c52cd6/examples/graceful-shutdown/src/main.rs#L38
 
     server_handle.await?;
 

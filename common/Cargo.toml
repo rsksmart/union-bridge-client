@@ -17,6 +17,7 @@ lru = "0.13.0"
 bitcoin = "0.32.4"
 config = "0.15.8"
 signal-hook = "0.3"
+tokio = { workspace = true }
 
 [dev-dependencies]
 test-utils = { path = "../test-utils" }
