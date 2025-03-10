@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use common::types::{BlockHash, ContractInfo, BlockPow};
+use common::types::{BlockHash, BlockPow, ContractInfo};
 use sha3::{Digest, Keccak256};
 
 pub const DEFAULT_BLOCK_HASH: &str =
