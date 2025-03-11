@@ -1,3 +1,5 @@
+#![cfg(feature = "testing")]
+
 use anyhow::Result;
 use block_indexer::indexer::BlockIndexer;
 use block_indexer::store::{BlockStore, CachedBlockStore};

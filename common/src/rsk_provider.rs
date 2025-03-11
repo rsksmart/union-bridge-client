@@ -2,10 +2,10 @@ use crate::types::{BlockHash, BlockNumber, ContractInfo, RskBlock, RskEvent, Rsk
 use anyhow::Result;
 use thiserror::Error;
 
-#[cfg(feature = "generate-mocks")]
+#[cfg(feature = "testing-mocks")]
 use mockall::automock;
 
-#[cfg_attr(feature = "generate-mocks", automock)]
+#[cfg_attr(feature = "testing-mocks", automock)]
 pub trait RskSubscription<T> {
     fn next(&mut self) -> Result<T, RskSubscriptionError>;
     fn unsubscribe(&self) -> Result<()>;
@@ -39,7 +39,7 @@ impl RskSubscriptionFilter {
     }
 }
 
-#[cfg_attr(feature = "generate-mocks", automock(
+#[cfg_attr(feature = "testing-mocks", automock(
     type BlockSubscription = MockRskSubscription<RskBlock>;
     type LogSubscription = MockRskSubscription<RskLog>;
 ))]

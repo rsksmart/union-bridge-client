@@ -36,7 +36,7 @@ impl RawLogStore {
     }
 
     /// Ideally, this method should be used only for testing purposes
-    #[cfg(feature = "generate-mocks")]
+    #[cfg(feature = "testing-customs")]
     pub fn get(&self, key: String) -> Result<Option<RskLog>> {
         Ok(self.db.get(key)?)
     }
