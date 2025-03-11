@@ -127,6 +127,13 @@ pub fn get_third_default_rsk_block() -> RskBlock {
     )
 }
 
+pub fn event_signature_to_topic(event_signature: &str) -> String {
+    let mut hasher = Keccak256::new();
+    hasher.update(event_signature.as_bytes());
+    let hash = hasher.finalize();
+    format!("0x{}", hex::encode(hash))
+}
+
 /// A stateless generator for fake RSK blocks that computes dynamic values (difficulty, timestamp,
 /// total difficulty and average block time) based on the block number. It has a built-in mechanism
 /// to handle generation of alternative blocks (to simulate reorganizations).`.

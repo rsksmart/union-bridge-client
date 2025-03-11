@@ -34,6 +34,12 @@ impl RawLogStore {
     fn set_on_db<T: serde::ser::Serialize>(&self, key: &str, value: &T) -> Result<()> {
         Ok(self.db.set(key, value, None)?)
     }
+
+    /// Ideally, this method should be used only for testing purposes
+    #[cfg(feature = "generate-mocks")]
+    pub fn get(&self, key: String) -> Result<Option<RskLog>> {
+        Ok(self.db.get(key)?)
+    }
 }
 
 impl LogStore for RawLogStore {
@@ -51,15 +57,15 @@ impl LogStore for RawLogStore {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{atomic::AtomicBool, Arc};
-
     use super::RawLogStore;
     use crate::store::{LogStore, StoreKey};
     use anyhow::Result;
+    use common::types::{BlockHash, LogInfo};
+    use primitive_types::H256;
     use storage_backend::storage::KeyValueStore;
     use tempfile::tempdir;
-    use test_utils::rsk_block_generator::FakeBlockGenerator;
     use test_utils::rsk_log_generator::FakeLogGenerator;
+    use test_utils::rsk_utils::generate_fake_address;
 
     fn create_test_store() -> Result<RawLogStore> {
         let temp_dir = tempdir()?;
@@ -71,12 +77,18 @@ mod tests {
     #[test]
     fn test_save_log() -> Result<()> {
         let store = create_test_store()?;
-        let block_generator: FakeBlockGenerator =
-            FakeBlockGenerator::new(0.into(), Arc::new(AtomicBool::new(false)));
-        let block = block_generator.generate_block(1.into());
-        let log_generator: FakeLogGenerator =
-            FakeLogGenerator::new("Transfer(address,address,uint256)");
-        let expected_log = log_generator.generate_log(block, 1, 1, 1);
+        let addr1 = generate_fake_address(1);
+        let signature = "Transfer(address,address,uint256)";
+        let log_generator: FakeLogGenerator = FakeLogGenerator::new();
+        let expected_log_info = LogInfo::new(
+            addr1.clone(),
+            BlockHash::from(H256::random()),
+            1.into(),
+            H256::random().to_string(),
+            1,
+            false,
+        );
+        let expected_log = log_generator.generate_log(signature, expected_log_info);
         let log_key = StoreKey::LogId(
             expected_log.info().address().to_string(),
             expected_log.info().tx_hash().to_string(),
@@ -85,7 +97,7 @@ mod tests {
         .value();
 
         store.save_log(&expected_log)?;
-        let actual_log = store.db.get(log_key)?.unwrap();
+        let actual_log = store.get(log_key)?.unwrap();
 
         assert_eq!(expected_log, actual_log);
         Ok(())
@@ -94,28 +106,58 @@ mod tests {
     #[test]
     fn test_save_log_no_different_log() -> Result<()> {
         let store = create_test_store()?;
-        let block_generator: FakeBlockGenerator =
-            FakeBlockGenerator::new(0.into(), Arc::new(AtomicBool::new(false)));
-        let block = block_generator.generate_block(1.into());
-        let log_generator: FakeLogGenerator =
-            FakeLogGenerator::new("Transfer(address,address,uint256)");
-        let saved_log = log_generator.generate_log(block.clone(), 1, 1, 1);
+        let addr = generate_fake_address(1);
+        let signature = "Transfer(address,address,uint256)";
+        let log_generator: FakeLogGenerator = FakeLogGenerator::new();
+        let expected_log_info1 = LogInfo::new(
+            addr.clone(),
+            BlockHash::from(H256::random()),
+            1.into(),
+            H256::random().to_string(),
+            1,
+            false,
+        );
+        let saved_log = log_generator.generate_log(signature, expected_log_info1);
         let log_key = StoreKey::LogId(
             saved_log.info().address().to_string(),
             saved_log.info().tx_hash().to_string(),
             saved_log.info().log_index(),
         )
         .value();
-        let different_log = log_generator.generate_log(block.clone(), 1, 2, 1);
-        let different_log2 = log_generator.generate_log(block.clone(), 1, 1, 2);
-        let different_log3 = log_generator.generate_log(block.clone(), 2, 1, 1);
+        let expected_log_info2 = LogInfo::new(
+            addr.clone(),
+            BlockHash::from(H256::random()),
+            2.into(),
+            H256::random().to_string(),
+            2,
+            false,
+        );
+        let expected_log_info3 = LogInfo::new(
+            addr.clone(),
+            BlockHash::from(H256::random()),
+            3.into(),
+            H256::random().to_string(),
+            3,
+            false,
+        );
+        let expected_log_info4 = LogInfo::new(
+            addr.clone(),
+            BlockHash::from(H256::random()),
+            4.into(),
+            H256::random().to_string(),
+            4,
+            false,
+        );
+        let different_log2 = log_generator.generate_log(signature, expected_log_info2);
+        let different_log3 = log_generator.generate_log(signature, expected_log_info3);
+        let different_log4 = log_generator.generate_log(signature, expected_log_info4);
 
         store.save_log(&saved_log)?;
         let actual_log = store.db.get(log_key)?.unwrap();
 
-        assert_ne!(different_log, actual_log);
         assert_ne!(different_log2, actual_log);
         assert_ne!(different_log3, actual_log);
+        assert_ne!(different_log4, actual_log);
         Ok(())
     }
 }

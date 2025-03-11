@@ -1,45 +1,19 @@
-use crate::rsk_utils::{get_fake_address, get_fake_tx_hash};
-use common::types::{LogEvent, LogInfo, RskBlock, RskLog};
+use common::types::{LogEvent, LogInfo, RskLog};
 use sha3::{Digest, Keccak256};
 
 /// A stateless generator for fake RSK logs.
 #[derive(Clone)]
-pub struct FakeLogGenerator {
-    event_signature: String,
-}
+pub struct FakeLogGenerator {}
 
 impl FakeLogGenerator {
-    pub fn new(event_signature: &str) -> Self {
-        Self {
-            event_signature: event_signature.to_string(),
-        }
+    pub fn new() -> Self {
+        FakeLogGenerator {}
     }
-
-    pub fn generate_log(
-        &self,
-        block: RskBlock,
-        tx_id: u64,
-        address_num: u64,
-        log_index: u64,
-    ) -> RskLog {
-        let address_from = get_fake_address(address_num, None);
-        let address_to = get_fake_address(address_num, Some("destinatary"));
-        let tx_hash = get_fake_tx_hash(tx_id, &address_from);
-        let info: LogInfo = LogInfo::new(
-            address_from.clone(),
-            block.hash(),
-            block.number(),
-            tx_hash,
-            log_index,
-            false,
-        );
-        let topics = vec![
-            address_to_topic(&address_from),
-            address_to_topic(&address_to),
-        ];
-        let event: LogEvent =
-            LogEvent::new(event_signature_to_topic(&self.event_signature), topics);
-        RskLog::new(info, event)
+    pub fn generate_log(&self, event_signature: &str, log_info: LogInfo) -> RskLog {
+        let address = log_info.address();
+        let topics = vec![address_to_topic(address)];
+        let event: LogEvent = LogEvent::new(event_signature_to_topic(event_signature), topics);
+        RskLog::new(log_info, event)
     }
 }
 
