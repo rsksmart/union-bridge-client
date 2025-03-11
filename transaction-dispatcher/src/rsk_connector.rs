@@ -1,4 +1,4 @@
-use crate::contracts::peg_manager::PegManagerContract;
+use crate::contracts::peg_manager::{PegManagerContract, PegManagerContractErrors};
 use crate::types::{BaseContract, PeginAddressInput, PeginAddressOutput};
 use alloy_provider::RootProvider;
 use anyhow::{Context, Result};
@@ -21,7 +21,7 @@ impl RskContractsGateway {
     pub async fn get_temporary_pegin_address(
         &self,
         input: PeginAddressInput,
-    ) -> Result<PeginAddressOutput> {
+    ) -> Result<PeginAddressOutput, PegManagerContractErrors> {
         self.peg_manager_contract
             .get_temporary_pegin_address(input)
             .await

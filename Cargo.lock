@@ -4375,9 +4375,12 @@ dependencies = [
  "axum",
  "clap",
  "common",
+ "hex",
  "log",
  "log4rs",
  "serde",
+ "serde_json",
+ "thiserror 2.0.11",
  "tokio",
  "tower-http",
 ]

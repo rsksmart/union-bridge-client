@@ -1,12 +1,16 @@
+use crate::contracts::peg_manager::PegManagerContractErrors;
 use crate::rsk_connector::RskContractsGateway;
 use crate::types::{PeginAddressInput, PeginAddressOutput};
 use anyhow::{Context, Result};
 use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Extension, Json, Router};
 use common::shutdown_flag::ShutdownFlag;
+use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
+use thiserror::Error;
 use tower_http::timeout::TimeoutLayer;
 
 pub struct Server {
@@ -46,15 +50,48 @@ impl Server {
     async fn create_pegin_address(
         Extension(rsk_gateway): Extension<Arc<RskContractsGateway>>,
         Json(payload): Json<PeginAddressInput>,
-    ) -> (StatusCode, Json<PeginAddressOutput>) {
+    ) -> Result<Json<PeginAddressOutput>, ApiError> {
         match rsk_gateway.get_temporary_pegin_address(payload).await {
-            Ok(address) => (StatusCode::CREATED, Json(address)),
-            Err(e) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(PeginAddressOutput {
-                    address: e.to_string(),
-                }),
-            ),
+            Ok(address) => Ok(Json(address)),
+            Err(e) => match e {
+                PegManagerContractErrors::InvalidPublicKey
+                | PegManagerContractErrors::InvalidAddress
+                | PegManagerContractErrors::InvalidValue => {
+                    Err(ApiError::BadRequest(e.to_string()))
+                }
+                PegManagerContractErrors::StreamNotFoundByDenomination => {
+                    Err(ApiError::NotFound(e.to_string()))
+                }
+                _ => Err(ApiError::BadRequest(e.to_string())),
+            },
         }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum ApiError {
+    #[error("Invalid request: {0}")]
+    BadRequest(String),
+
+    #[error("Resource not found: {0}")]
+    NotFound(String),
+
+    #[error("Internal server error")]
+    InternalServerError,
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        let (status, message) = match &self {
+            ApiError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.to_string()),
+            ApiError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.to_string()),
+            _ => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StatusCode::INTERNAL_SERVER_ERROR.to_string(),
+            ),
+        };
+
+        let body = Json(json!({ "error": message }));
+        (status, body).into_response()
     }
 }
