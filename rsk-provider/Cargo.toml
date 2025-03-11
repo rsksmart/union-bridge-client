@@ -18,5 +18,5 @@ hex = { workspace = true }
 alloy-dyn-abi = "0.8.21"
 alloy-json-abi = "0.8.21"
 alloy-pubsub = { version = "0.11.1" }
-alloy-rpc-types = "0.11.1"
+alloy-rpc-types = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }

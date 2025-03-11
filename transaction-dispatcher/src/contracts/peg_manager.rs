@@ -1,6 +1,8 @@
 use crate::contracts::bitcoin_manager::BitcoinManager::BitcoinManagerErrors;
-use crate::contracts::peg_manager::PegManager::{PegManagerErrors, PegManagerInstance};
-use crate::types::{BaseContract, PeginAddressInput, PeginAddressOutput};
+use crate::contracts::peg_manager::PegManagerAlloy::{
+    PegManagerAlloyErrors, PegManagerAlloyInstance, getTemporaryPegInAddressReturn,
+};
+use crate::types::{PeginAddressInput, PeginAddressOutput};
 use alloy_contract::Error::TransportError;
 use alloy_json_rpc::ErrorPayload;
 use alloy_primitives::{Address, FixedBytes};
@@ -12,35 +14,67 @@ use thiserror::Error;
 
 sol!(
     #[sol(rpc)]
-    PegManager,
-    "../config/dev/abi/PegManager.json"
+    PegManagerAlloy,
+    "../config/dev/abi/PegManager.json" // TODO we could also use bytecode here, automate deploys for testing, etc.
 );
 
-pub struct PegManagerContract {
-    address: Address,
-    instance: PegManagerInstance<(), RootProvider>,
+pub trait PegManagerInstance {
+    #[allow(non_snake_case)]
+    async fn getTemporaryPegInAddress(
+        &self,
+        rootstock_deposit_address: Address,
+        value: u64,
+        btc_reimbursement_pub_key: FixedBytes<32>,
+    ) -> alloy_contract::Result<getTemporaryPegInAddressReturn>;
 }
 
-impl BaseContract for PegManagerContract {
-    fn init(provider: &RootProvider, address: Address) -> Result<Self> {
-        let contract_instance = PegManager::new(address, provider.clone());
+// needed so we can create a PegManagerApi trait for tests mocking
+pub struct PegManagerAlloyWrapper {
+    inner: PegManagerAlloyInstance<(), RootProvider>,
+}
 
-        Ok(PegManagerContract {
+impl PegManagerInstance for PegManagerAlloyWrapper {
+    #[allow(non_snake_case)]
+    async fn getTemporaryPegInAddress(
+        &self,
+        rootstock_deposit_address: Address,
+        value: u64,
+        btc_reimbursement_pub_key: FixedBytes<32>,
+    ) -> alloy_contract::Result<getTemporaryPegInAddressReturn> {
+        self.inner
+            .getTemporaryPegInAddress(rootstock_deposit_address, value, btc_reimbursement_pub_key)
+            .call()
+            .await
+    }
+}
+
+pub struct PegManager<I>
+where
+    I: PegManagerInstance,
+{
+    address: Address,
+    instance: I,
+}
+
+impl PegManager<PegManagerAlloyWrapper> {
+    pub fn init(provider: &RootProvider, address: Address) -> Result<Self> {
+        let instance = PegManagerAlloy::new(address, provider.clone());
+
+        Ok(PegManager {
             address,
-            instance: contract_instance,
+            instance: PegManagerAlloyWrapper { inner: instance },
         })
     }
-
-    fn contract_name() -> String {
-        "PegManager".to_string()
-    }
 }
 
-impl PegManagerContract {
+impl<I> PegManager<I>
+where
+    I: PegManagerInstance,
+{
     pub(crate) async fn get_temporary_pegin_address(
         &self,
         input: PeginAddressInput,
-    ) -> Result<PeginAddressOutput, PegManagerContractErrors> {
+    ) -> Result<PeginAddressOutput, PegManagerErrors> {
         info!("Interacting with PegManager @ {}", self.address);
 
         let rootstock_deposit_address: Address = input
@@ -48,7 +82,7 @@ impl PegManagerContract {
             .parse::<Address>()
             .map_err(|e| {
                 error!("Failed to parse rootstock_deposit_address: {}", e);
-                PegManagerContractErrors::InvalidAddress
+                PegManagerErrors::InvalidAddress
             })?;
         let value = input.value;
         let btc_reimbursement_pub_key: FixedBytes<32> = input
@@ -56,16 +90,14 @@ impl PegManagerContract {
             .parse::<FixedBytes<32>>()
             .map_err(|e| {
                 error!("Failed to parse btc_reimbursement_pub_key: {}", e);
-                PegManagerContractErrors::InvalidPublicKey
+                PegManagerErrors::InvalidPublicKey
             })?;
 
-        let tmp_address_call = self.instance.getTemporaryPegInAddress(
-            rootstock_deposit_address,
-            value,
-            btc_reimbursement_pub_key,
-        );
+        let result = self
+            .instance
+            .getTemporaryPegInAddress(rootstock_deposit_address, value, btc_reimbursement_pub_key)
+            .await;
 
-        let result = tmp_address_call.call().await;
         match result {
             Ok(data) => {
                 debug!(
@@ -81,39 +113,37 @@ impl PegManagerContract {
                 Some(e) => Err(Self::decode_contract_error(e)),
                 None => {
                     error!("Missing ErrorPayload in PegManager error {:?}", err);
-                    Err(PegManagerContractErrors::InternalError)
+                    Err(PegManagerErrors::InternalError)
                 }
             },
             Err(e) => {
                 error!("Error calling PegManager: {:?}", e);
-                Err(PegManagerContractErrors::InternalError)
+                Err(PegManagerErrors::InternalError)
             }
         }
     }
-}
 
-impl PegManagerContract {
-    fn decode_contract_error(error_payload: &ErrorPayload) -> PegManagerContractErrors {
+    fn decode_contract_error(error_payload: &ErrorPayload) -> PegManagerErrors {
         let revert_data = error_payload.as_revert_data();
         if revert_data.is_none() {
             error!("No revert data found in PegManager error {error_payload}");
-            return PegManagerContractErrors::InternalError;
+            return PegManagerErrors::InternalError;
         }
 
         let revert_data = revert_data.unwrap();
 
-        let decoded_error = PegManagerErrors::abi_decode(&revert_data, true);
+        let decoded_error = PegManagerAlloyErrors::abi_decode(&revert_data, true);
         if decoded_error.is_ok() {
             let decoded_error = decoded_error.unwrap();
             return match decoded_error {
-                PegManagerErrors::StreamNotFoundByDenomination(e) => {
+                PegManagerAlloyErrors::StreamNotFoundByDenomination(e) => {
                     error!("StreamNotFoundByDenomination {}", e.denomination);
-                    PegManagerContractErrors::StreamNotFoundByDenomination
+                    PegManagerErrors::StreamNotFoundByDenomination
                 }
                 _ => {
                     // TODO properly handle other errors when the related flow is implemented
                     error!("Unhandled error: {:?}", error_payload);
-                    PegManagerContractErrors::InternalError
+                    PegManagerErrors::InternalError
                 }
             };
         }
@@ -123,31 +153,31 @@ impl PegManagerContract {
             return match decoded_error.unwrap() {
                 BitcoinManagerErrors::InvalidAddress(e) => {
                     error!("InvalidAddress {}", e._address);
-                    PegManagerContractErrors::InvalidAddress
+                    PegManagerErrors::InvalidAddress
                 }
                 BitcoinManagerErrors::InvalidPublicKey(e) => {
                     error!("InvalidPublicKey {}", e.publicKey);
-                    PegManagerContractErrors::InvalidPublicKey
+                    PegManagerErrors::InvalidPublicKey
                 }
                 BitcoinManagerErrors::InvalidValue(e) => {
                     error!("InvalidValue {}", e._value);
-                    PegManagerContractErrors::InvalidValue
+                    PegManagerErrors::InvalidValue
                 }
                 _ => {
                     // TODO properly handle other errors when the related flow is implemented
                     error!("Unhandled error on BitcoinManager: {:?}", error_payload);
-                    PegManagerContractErrors::InternalError
+                    PegManagerErrors::InternalError
                 }
             };
         }
 
         error!("Unknown error on BitcoinManager: {:?}", error_payload);
-        PegManagerContractErrors::InternalError
+        PegManagerErrors::InternalError
     }
 }
 
 #[derive(Debug, Error)]
-pub enum PegManagerContractErrors {
+pub enum PegManagerErrors {
     #[error("Internal Error")]
     InternalError,
     #[error("Stream not found by denomination")]

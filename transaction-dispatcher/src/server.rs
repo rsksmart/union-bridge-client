@@ -1,4 +1,4 @@
-use crate::contracts::peg_manager::PegManagerContractErrors;
+use crate::contracts::peg_manager::PegManagerErrors;
 use crate::rsk_connector::RskContractsGateway;
 use crate::types::{PeginAddressInput, PeginAddressOutput};
 use anyhow::{Context, Result};
@@ -54,12 +54,10 @@ impl Server {
         match rsk_gateway.get_temporary_pegin_address(payload).await {
             Ok(address) => Ok(Json(address)),
             Err(e) => match e {
-                PegManagerContractErrors::InvalidPublicKey
-                | PegManagerContractErrors::InvalidAddress
-                | PegManagerContractErrors::InvalidValue => {
-                    Err(ApiError::BadRequest(e.to_string()))
-                }
-                PegManagerContractErrors::StreamNotFoundByDenomination => {
+                PegManagerErrors::InvalidPublicKey
+                | PegManagerErrors::InvalidAddress
+                | PegManagerErrors::InvalidValue => Err(ApiError::BadRequest(e.to_string())),
+                PegManagerErrors::StreamNotFoundByDenomination => {
                     Err(ApiError::NotFound(e.to_string()))
                 }
                 _ => Err(ApiError::BadRequest(e.to_string())),
