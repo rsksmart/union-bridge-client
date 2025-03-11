@@ -5,7 +5,7 @@ use common::config::Config;
 use common::shutdown_flag::ShutdownFlag;
 use log::{error, info};
 use std::sync::Arc;
-use transaction_dispatcher::rsk_connector::RskContractsGateway;
+use transaction_dispatcher::rsk_connector::RskContractsGatewayAlloy;
 use transaction_dispatcher::server::Server;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
@@ -49,7 +49,7 @@ async fn main() -> Result<()> {
     );
 
     let rsk_contract_gateway = Arc::new(
-        RskContractsGateway::new(&provider, &config)
+        RskContractsGatewayAlloy::new(&provider, &config)
             .context("Could not instantiate RskContractsGateway")?,
     );
 

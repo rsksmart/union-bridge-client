@@ -1,5 +1,5 @@
 use crate::contracts::peg_manager::PegManagerErrors;
-use crate::rsk_connector::RskContractsGateway;
+use crate::rsk_connector::{RskContractsGateway, RskContractsGatewayAlloy};
 use crate::types::{PeginAddressInput, PeginAddressOutput};
 use anyhow::{Context, Result};
 use axum::http::StatusCode;
@@ -20,9 +20,9 @@ pub struct Server {
 }
 
 impl Server {
-    pub async fn new(
+    pub async fn new<T: RskContractsGateway + Send + Sync + 'static>(
         listener: tokio::net::TcpListener,
-        rsk_contract_gateway: Arc<RskContractsGateway>,
+        rsk_contract_gateway: Arc<T>,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
         let app = Router::new()
@@ -48,7 +48,7 @@ impl Server {
     }
 
     async fn create_pegin_address(
-        Extension(rsk_gateway): Extension<Arc<RskContractsGateway>>,
+        Extension(rsk_gateway): Extension<Arc<RskContractsGatewayAlloy>>,
         Json(payload): Json<PeginAddressInput>,
     ) -> Result<Json<PeginAddressOutput>, ApiError> {
         match rsk_gateway.get_temporary_pegin_address(payload).await {
