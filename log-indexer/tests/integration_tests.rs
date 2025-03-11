@@ -1,3 +1,5 @@
+#![cfg(feature = "testing")]
+
 use anyhow::{Context, Result};
 use common::{
     rsk_indexer::RskIndexer,
