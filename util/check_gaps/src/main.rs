@@ -22,16 +22,17 @@ fn main() -> Result<()> {
                 .long(CONFIG_CLI_FLAG)
                 .value_name("PATH")
                 .help("Sets the path to the configuration directory")
-                .default_value("../config/dev"),
+                .default_value("config/stage"),
         )
         .get_matches();
 
     let config_path: &String = matches.get_one(CONFIG_CLI_FLAG).unwrap();
     let config = Config::load(config_path).expect("Failed to load config");
 
-    let store = CachedBlockStore::new(&config.indexer.storage.path, config.indexer.cache.size)
-        .expect("Failed to create CachedKeyValueStore");
-
+    let store = CachedBlockStore::new(
+        &format!("{}/blocks", config.indexer.storage.path),
+        config.indexer.cache.size,
+    )?;
     let initial_block_hash = BlockHash::try_from(config.indexer.initial_block_hash.as_str())
         .expect(&format!(
             "Invalid initial block hash: {}",
@@ -115,7 +116,7 @@ fn find_canonical_connection(
     store: &CachedBlockStore<LruCache<RskBlock>>,
 ) -> Result<bool> {
     let rsk_ws_provider = AlloyProvider::new(
-        "wss://public-node.testnet.rsk.co/websocket",
+        "ws://rskj-01.testnet.ub.iovlabs.net:4445/websocket",
         ShutdownFlag::init(),
     )
     .expect("Failed to create AlloyProvider");
