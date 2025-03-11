@@ -11,7 +11,7 @@ pub struct RskContractsGateway {
 impl RskContractsGateway {
     pub fn new(provider: &RootProvider, config: &Config) -> Result<Self> {
         let peg_manager_contract =
-            PegManagerContract::new(&provider, config.load_contracts_by_name())
+            PegManagerContract::new(&provider, config.load_managed_contracts())
                 .context("Could not instantiate PegManagerContract")?;
         Ok(RskContractsGateway {
             peg_manager_contract,

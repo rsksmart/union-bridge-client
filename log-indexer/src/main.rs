@@ -53,7 +53,7 @@ fn main() -> Result<()> {
         store,
         alloy_provider,
         initial_block_hash,
-        config.load_contracts_by_address(),
+        config.load_managed_contracts(),
         shutdown_flag,
     )
     .context("Failed to create LogIndexer")?;
