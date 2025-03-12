@@ -32,4 +32,4 @@ env_logger = "0.11.7"
 alloy-rpc-types = { workspace = true }
 
 [features]
-generate-mocks = []
+testing-mocks = []

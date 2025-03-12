@@ -13,7 +13,7 @@ const PEG_MANAGER_CONTRACT_NAME: &'static str = "PegManager";
 
 pub trait RskContractsGateway {
     #[allow(async_fn_in_trait)]
-    fn get_temporary_pegin_address(
+    async fn get_temporary_pegin_address(
         &self,
         input: PeginAddressInput,
     ) -> impl Future<Output = Result<PeginAddressOutput, PegManagerErrors>> + Send;

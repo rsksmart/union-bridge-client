@@ -12,7 +12,7 @@ use anyhow::Result;
 use log::{debug, error, info};
 use thiserror::Error;
 
-#[cfg(feature = "generate-mocks")]
+#[cfg(feature = "testing-mocks")]
 use mockall::automock;
 
 sol!(
@@ -21,7 +21,7 @@ sol!(
     "../config/dev/abi/PegManager.json" // TODO we could also use bytecode here, automate deploys for testing, etc.
 );
 
-#[cfg_attr(feature = "generate-mocks", automock)]
+#[cfg_attr(feature = "testing-mocks", automock)]
 pub trait PegManagerInstance {
     #[allow(non_snake_case)]
     async fn getTemporaryPegInAddress(
@@ -194,7 +194,7 @@ pub enum PegManagerErrors {
     InvalidValue,
 }
 
-#[cfg(all(test, feature = "generate-mocks"))]
+#[cfg(all(test, feature = "testing-mocks"))]
 mod tests {
     use super::*;
     use crate::contracts::bitcoin_manager::BitcoinManager::{InvalidAddress, InvalidPublicKey};
