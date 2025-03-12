@@ -113,6 +113,7 @@ where
                 })
             }
             Err(TransportError(err)) => match err.as_error_resp() {
+                //TODO(iago) check this: https://github.com/alloy-rs/examples/blob/28bef7927dd52cdbf659dd268438af9103829759/examples/contracts/examples/revert_decoding.rs
                 Some(e) => Err(Self::decode_contract_error(e)),
                 None => {
                     error!("Missing ErrorPayload in PegManager error {:?}", err);
@@ -196,19 +197,29 @@ pub enum PegManagerErrors {
 #[cfg(all(test, feature = "generate-mocks"))]
 mod tests {
     use super::*;
-    use mockall::predicate::eq;
+    use crate::contracts::bitcoin_manager::BitcoinManager::{InvalidAddress, InvalidPublicKey};
+    use crate::contracts::peg_manager::PegManagerAlloy::{
+        AlreadyRegisteredPegIn, StreamNotFoundByDenomination,
+    };
+    use alloy_json_rpc::RpcError::ErrorResp;
+    use mockall::predicate::{always, eq};
 
     const CONTRACT_ADDRESS: &str = "0x8c86ead50dc378858163debca4b59b039943f05d";
     const VALID_ADDRESS: &str = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
     const VALID_PUB_KEY: &str =
         "0xc72a9f6fc8e57f1de528a48b6c4ad7a6db30b24a7bbf8cdd74b0a3b248b6f7f1";
+    const VALID_VALUE: u64 = 1000;
+
+    const ERROR_TEMPLATE: &str =
+        r#"{"code":3,"message":"execution reverted:","data":"<to_replace>"}"#;
 
     #[tokio::test]
     async fn test_get_temporary_pegin_address_success() {
         let mut mock_instance = MockPegManagerInstance::new();
+
         let input = PeginAddressInput {
             rootstock_deposit_address: VALID_ADDRESS.to_string(),
-            value: 1000,
+            value: VALID_VALUE,
             btc_reimbursement_pub_key: VALID_PUB_KEY.to_string(),
         };
         let expected_deposit_address = "0xfake0deposit0address".to_string();
@@ -220,10 +231,11 @@ mod tests {
             .expect_getTemporaryPegInAddress()
             .with(
                 eq(VALID_ADDRESS.parse::<Address>().unwrap()),
-                eq(1000),
+                eq(VALID_VALUE),
                 eq(VALID_PUB_KEY.parse::<FixedBytes<32>>().unwrap()),
             )
-            .returning(move |_, _, _| Ok(output.clone()));
+            .returning(move |_, _, _| Ok(output.clone()))
+            .times(1);
 
         let peg_manager = PegManager {
             address: CONTRACT_ADDRESS.parse::<Address>().unwrap(),
@@ -236,11 +248,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_temporary_pegin_address_invalid_address() {
+    async fn test_get_temporary_pegin_address_invalid_address_preliminary_validation() {
         let mock_instance = MockPegManagerInstance::new();
+
         let input = PeginAddressInput {
             rootstock_deposit_address: "0xinvalid_address".to_string(),
-            value: 1000,
+            value: VALID_VALUE,
             btc_reimbursement_pub_key: VALID_PUB_KEY.to_string(),
         };
 
@@ -255,11 +268,50 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_temporary_pegin_address_invalid_public_key() {
+    async fn test_get_temporary_pegin_address_invalid_address_smart_contract_raised() {
+        let mut mock_instance = MockPegManagerInstance::new();
+
+        let input = PeginAddressInput {
+            // it has to be valid here in order to pass the preliminary validation (non SC)
+            rootstock_deposit_address: VALID_ADDRESS.to_string(),
+            value: VALID_VALUE,
+            btc_reimbursement_pub_key: VALID_PUB_KEY.to_string(),
+        };
+
+        mock_instance
+            .expect_getTemporaryPegInAddress()
+            .with(
+                always(),
+                eq(VALID_VALUE),
+                eq(VALID_PUB_KEY.parse::<FixedBytes<32>>().unwrap()),
+            )
+            .returning(move |_, _, _| {
+                let expected_err = BitcoinManagerErrors::InvalidAddress(InvalidAddress {
+                    _address: Address::default(),
+                });
+                let expected_err_payload = generate_expected_error(expected_err);
+                Err(TransportError(ErrorResp(expected_err_payload)))
+            })
+            .times(1);
+
+        let peg_manager = PegManager {
+            address: CONTRACT_ADDRESS.parse::<Address>().unwrap(),
+            instance: mock_instance,
+        };
+
+        let result = peg_manager.get_temporary_pegin_address(input).await;
+
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap(), PegManagerErrors::InvalidAddress);
+    }
+
+    #[tokio::test]
+    async fn test_get_temporary_pegin_address_invalid_public_key_preliminary_validation() {
         let mock_instance = MockPegManagerInstance::new();
+
         let input = PeginAddressInput {
             rootstock_deposit_address: VALID_ADDRESS.to_string(),
-            value: 1000,
+            value: VALID_VALUE,
             btc_reimbursement_pub_key: "0xinvalid_pub_key".to_string(),
         };
 
@@ -273,40 +325,137 @@ mod tests {
         assert_eq!(result.err().unwrap(), PegManagerErrors::InvalidPublicKey);
     }
 
-    // #[tokio::test]
-    // async fn test_get_temporary_pegin_address_stream_not_found_by_denomination() {
-    //     let mut mock_instance = MockPegManagerInstance::new();
-    //     let input = PeginAddressInput {
-    //         rootstock_deposit_address: VALID_ADDRESS.to_string(),
-    //         value: 1000,
-    //         btc_reimbursement_pub_key: VALID_PUB_KEY.to_string(),
-    //     };
-    //
-    //     mock_instance
-    //         .expect_getTemporaryPegInAddress()
-    //         .with(
-    //             eq(VALID_ADDRESS.parse::<Address>().unwrap()),
-    //             eq(1000),
-    //             eq(VALID_PUB_KEY.parse::<FixedBytes<32>>().unwrap()),
-    //         )
-    //         .returning(|_, _, _| {
-    //             Err(alloy_contract::Error::TransportError(
-    //                 PegManagerAlloyErrors::StreamNotFoundByDenomination {
-    //                     denomination: "denomination".to_string(),
-    //                 }
-    //             ))
-    //         });
-    //
-    //     let peg_manager = PegManager {
-    //         address: CONTRACT_ADDRESS.parse::<Address>().unwrap(),
-    //         instance: mock_instance,
-    //     };
-    //
-    //     let result = peg_manager.get_temporary_pegin_address(input).await;
-    //     assert!(result.is_err());
-    //     assert_eq!(
-    //         result.err().unwrap(),
-    //         PegManagerErrors::StreamNotFoundByDenomination
-    //     );
-    // }
+    #[tokio::test]
+    async fn test_get_temporary_pegin_address_invalid_public_key_smart_contract_raised() {
+        let mut mock_instance = MockPegManagerInstance::new();
+
+        let input = PeginAddressInput {
+            rootstock_deposit_address: VALID_ADDRESS.to_string(),
+            value: VALID_VALUE,
+            // it has to be valid here in order to pass the preliminary validation (non SC)
+            btc_reimbursement_pub_key: VALID_PUB_KEY.to_string(),
+        };
+
+        mock_instance
+            .expect_getTemporaryPegInAddress()
+            .with(
+                eq(VALID_ADDRESS.parse::<Address>().unwrap()),
+                eq(VALID_VALUE),
+                always(),
+            )
+            .returning(move |_, _, _| {
+                let expected_err = BitcoinManagerErrors::InvalidPublicKey(InvalidPublicKey {
+                    publicKey: FixedBytes::<32>::default(),
+                });
+                let expected_err_payload = generate_expected_error(expected_err);
+                Err(TransportError(ErrorResp(expected_err_payload)))
+            })
+            .times(1);
+
+        let peg_manager = PegManager {
+            address: CONTRACT_ADDRESS.parse::<Address>().unwrap(),
+            instance: mock_instance,
+        };
+
+        let result = peg_manager.get_temporary_pegin_address(input).await;
+
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap(), PegManagerErrors::InvalidPublicKey);
+    }
+
+    #[tokio::test]
+    async fn test_get_temporary_pegin_address_internal_server_error() {
+        let mut mock_instance = MockPegManagerInstance::new();
+
+        let input = PeginAddressInput {
+            rootstock_deposit_address: VALID_ADDRESS.to_string(),
+            value: VALID_VALUE,
+            // it has to be valid here in order to pass the preliminary validation (non SC)
+            btc_reimbursement_pub_key: VALID_PUB_KEY.to_string(),
+        };
+
+        mock_instance
+            .expect_getTemporaryPegInAddress()
+            .with(
+                eq(VALID_ADDRESS.parse::<Address>().unwrap()),
+                eq(VALID_VALUE),
+                always(),
+            )
+            .returning(move |_, _, _| {
+                let expected_err =
+                    PegManagerAlloyErrors::AlreadyRegisteredPegIn(AlreadyRegisteredPegIn {
+                        btcTxHash: FixedBytes::<32>::default(),
+                    });
+                let expected_err_payload = generate_expected_error(expected_err);
+                Err(TransportError(ErrorResp(expected_err_payload)))
+            })
+            .times(1);
+
+        let peg_manager = PegManager {
+            address: CONTRACT_ADDRESS.parse::<Address>().unwrap(),
+            instance: mock_instance,
+        };
+
+        let result = peg_manager.get_temporary_pegin_address(input).await;
+
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap(), PegManagerErrors::InternalError);
+    }
+
+    #[tokio::test]
+    async fn test_get_temporary_pegin_address_stream_not_found_by_denomination_smart_contract_raised()
+     {
+        let mut mock_instance = MockPegManagerInstance::new();
+
+        // just to make it clear that is invalid, but we do not care about the value as we force the SC to error
+        let invalid_value = 2;
+
+        let input = PeginAddressInput {
+            rootstock_deposit_address: VALID_ADDRESS.to_string(),
+            value: invalid_value,
+            btc_reimbursement_pub_key: VALID_PUB_KEY.to_string(),
+        };
+
+        mock_instance
+            .expect_getTemporaryPegInAddress()
+            .with(
+                eq(VALID_ADDRESS.parse::<Address>().unwrap()),
+                eq(invalid_value),
+                eq(VALID_PUB_KEY.parse::<FixedBytes<32>>().unwrap()),
+            )
+            .returning(move |_, _, _| {
+                let expected_err = PegManagerAlloyErrors::StreamNotFoundByDenomination(
+                    StreamNotFoundByDenomination {
+                        denomination: alloy_primitives::Uint::from(invalid_value),
+                    },
+                );
+                let expected_err_payload = generate_expected_error(expected_err);
+                Err(TransportError(ErrorResp(expected_err_payload)))
+            })
+            .times(1);
+
+        let peg_manager = PegManager {
+            address: CONTRACT_ADDRESS.parse::<Address>().unwrap(),
+            instance: mock_instance,
+        };
+
+        let result = peg_manager.get_temporary_pegin_address(input).await;
+
+        assert!(result.is_err());
+        assert_eq!(
+            result.err().unwrap(),
+            PegManagerErrors::StreamNotFoundByDenomination
+        );
+    }
+
+    #[allow(unused)]
+    fn init_logger() {
+        env_logger::builder().is_test(true).try_init();
+    }
+
+    fn generate_expected_error<T: SolInterface>(test: T) -> ErrorPayload {
+        let encoded_error = format!("0x{}", hex::encode(test.abi_encode()));
+        let error = ERROR_TEMPLATE.replace("<to_replace>", &encoded_error);
+        serde_json::from_str::<ErrorPayload>(&error).unwrap()
+    }
 }
