@@ -2,7 +2,6 @@ use crate::contracts::bitcoin_manager::BitcoinManager::BitcoinManagerErrors;
 use crate::contracts::peg_manager::PegManagerAlloy::{
     PegManagerAlloyErrors, PegManagerAlloyInstance, getTemporaryPegInAddressReturn,
 };
-use crate::types::{PeginAddressInput, PeginAddressOutput};
 use alloy_contract::Error::TransportError;
 use alloy_json_rpc::ErrorPayload;
 use alloy_primitives::{Address, FixedBytes};
@@ -14,16 +13,12 @@ use thiserror::Error;
 
 #[cfg(feature = "testing-mocks")]
 use mockall::automock;
-
-sol!(
-    #[sol(rpc)]
-    PegManagerAlloy,
-    "../config/dev/abi/PegManager.json" // TODO we could also use bytecode here, automate deploys for testing, etc.
-);
+use serde::{Deserialize, Serialize};
 
 #[cfg_attr(feature = "testing-mocks", automock)]
 pub trait PegManagerInstance {
     #[allow(non_snake_case)]
+    #[allow(async_fn_in_trait)]
     async fn getTemporaryPegInAddress(
         &self,
         rootstock_deposit_address: Address,
@@ -31,6 +26,24 @@ pub trait PegManagerInstance {
         btc_reimbursement_pub_key: FixedBytes<32>,
     ) -> alloy_contract::Result<getTemporaryPegInAddressReturn>;
 }
+
+#[derive(Deserialize, Debug)]
+pub struct PeginAddressInput {
+    pub rootstock_deposit_address: String,
+    pub value: u64,
+    pub btc_reimbursement_pub_key: String,
+}
+
+#[derive(Serialize, Debug)]
+pub struct PeginAddressOutput {
+    pub address: String,
+}
+
+sol!(
+    #[sol(rpc)]
+    PegManagerAlloy,
+    "../config/dev/abi/PegManager.json" // TODO we could also use bytecode here, automate deploys for testing, etc.
+);
 
 // needed so we can create a PegManagerApi trait for tests mocking
 pub struct PegManagerAlloyWrapper {
@@ -113,7 +126,6 @@ where
                 })
             }
             Err(TransportError(err)) => match err.as_error_resp() {
-                //TODO(iago) check this: https://github.com/alloy-rs/examples/blob/28bef7927dd52cdbf659dd268438af9103829759/examples/contracts/examples/revert_decoding.rs
                 Some(e) => Err(Self::decode_contract_error(e)),
                 None => {
                     error!("Missing ErrorPayload in PegManager error {:?}", err);

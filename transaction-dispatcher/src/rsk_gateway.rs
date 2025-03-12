@@ -1,5 +1,4 @@
-use crate::contracts::peg_manager::{PegManager, PegManagerAlloyWrapper, PegManagerErrors};
-use crate::types::{PeginAddressInput, PeginAddressOutput};
+use crate::contracts::peg_manager::{PegManager, PegManagerAlloyWrapper, PegManagerInstance};
 use alloy_primitives::Address;
 use alloy_provider::RootProvider;
 use anyhow::{Context, Result};
@@ -7,16 +6,12 @@ use common::config::Config;
 use common::types::ContractInfo;
 use std::collections::HashMap;
 
-// TODO(iago) add a "managed_contracts" entry in transaction-dispatcher config and remove this hardcoding
 /// Must  match the contract name in the config file
 const PEG_MANAGER_CONTRACT_NAME: &'static str = "PegManager";
 
 pub trait RskContractsGateway {
-    #[allow(async_fn_in_trait)]
-    async fn get_temporary_pegin_address(
-        &self,
-        input: PeginAddressInput,
-    ) -> impl Future<Output = Result<PeginAddressOutput, PegManagerErrors>> + Send;
+    type Instance: PegManagerInstance;
+    fn get_peg_manager(&self) -> &PegManager<Self::Instance>;
 }
 
 pub struct RskContractsGatewayAlloy {
@@ -25,9 +20,9 @@ pub struct RskContractsGatewayAlloy {
 
 impl RskContractsGatewayAlloy {
     pub fn new(provider: &RootProvider, config: &Config) -> Result<Self> {
-        let contract =
+        let contract_address =
             Self::load_contract(PEG_MANAGER_CONTRACT_NAME, config.load_managed_contracts())?;
-        let peg_manager_contract = PegManager::init(&provider, contract)
+        let peg_manager_contract = PegManager::init(&provider, contract_address)
             .context("Could not instantiate PegManagerContract")?;
         Ok(RskContractsGatewayAlloy {
             peg_manager_contract,
@@ -45,12 +40,8 @@ impl RskContractsGatewayAlloy {
 }
 
 impl RskContractsGateway for RskContractsGatewayAlloy {
-    async fn get_temporary_pegin_address(
-        &self,
-        input: PeginAddressInput,
-    ) -> Result<PeginAddressOutput, PegManagerErrors> {
-        self.peg_manager_contract
-            .get_temporary_pegin_address(input)
-            .await
+    type Instance = PegManagerAlloyWrapper;
+    fn get_peg_manager(&self) -> &PegManager<Self::Instance> {
+        &self.peg_manager_contract
     }
 }

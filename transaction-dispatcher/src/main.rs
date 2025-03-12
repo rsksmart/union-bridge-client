@@ -5,7 +5,7 @@ use common::config::Config;
 use common::shutdown_flag::ShutdownFlag;
 use log::{error, info};
 use std::sync::Arc;
-use transaction_dispatcher::rsk_connector::RskContractsGatewayAlloy;
+use transaction_dispatcher::rsk_gateway::RskContractsGatewayAlloy;
 use transaction_dispatcher::server::Server;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";

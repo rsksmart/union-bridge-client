@@ -1,6 +1,5 @@
-pub mod rsk_connector;
+pub mod rsk_gateway;
 pub mod server;
-pub mod types;
 
 pub mod contracts {
     pub(crate) mod bitcoin_manager;

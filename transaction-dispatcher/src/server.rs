@@ -1,6 +1,5 @@
-use crate::contracts::peg_manager::PegManagerErrors;
-use crate::rsk_connector::{RskContractsGateway, RskContractsGatewayAlloy};
-use crate::types::{PeginAddressInput, PeginAddressOutput};
+use crate::contracts::peg_manager::{PegManagerErrors, PeginAddressInput, PeginAddressOutput};
+use crate::rsk_gateway::{RskContractsGateway, RskContractsGatewayAlloy};
 use anyhow::{Context, Result};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -51,7 +50,11 @@ impl Server {
         Extension(rsk_gateway): Extension<Arc<RskContractsGatewayAlloy>>,
         Json(payload): Json<PeginAddressInput>,
     ) -> Result<Json<PeginAddressOutput>, ApiError> {
-        match rsk_gateway.get_temporary_pegin_address(payload).await {
+        match rsk_gateway
+            .get_peg_manager()
+            .get_temporary_pegin_address(payload)
+            .await
+        {
             Ok(address) => Ok(Json(address)),
             Err(e) => match e {
                 PegManagerErrors::InvalidPublicKey
