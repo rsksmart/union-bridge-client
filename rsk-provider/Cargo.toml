@@ -6,6 +6,9 @@ edition = "2021"
 [dependencies]
 common = { path = "../common" }
 
+alloy-provider = { workspace = true, features = ["ws"] }
+alloy-primitives = { workspace = true }
+alloy-sol-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
@@ -14,9 +17,6 @@ hex = { workspace = true }
 
 alloy-dyn-abi = "0.8.21"
 alloy-json-abi = "0.8.21"
-alloy-primitives = "0.8.21"
-alloy-provider = { version = "0.11.1", features = ["ws"] }
 alloy-pubsub = { version = "0.11.1" }
-alloy-rpc-types = "0.11.1"
-alloy-sol-types = "0.8.21"
-tokio = { version = "1.41.1", features = ["rt-multi-thread"] }
+alloy-rpc-types = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread"] }

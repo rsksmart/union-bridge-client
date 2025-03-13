@@ -40,6 +40,13 @@ impl ShutdownFlag {
         });
     }
 
+    /// To be used only in async environments
+    pub async fn wait_for(self) {
+        while !self.is_on() {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+    }
+
     #[cfg(feature = "testing-customs")]
     pub fn set(&self, value: bool) {
         self.flag.store(value, Ordering::SeqCst);

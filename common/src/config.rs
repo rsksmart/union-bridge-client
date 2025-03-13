@@ -10,6 +10,7 @@ pub struct Config {
     pub indexer: IndexerConfig,
     pub provider: ProviderConfig,
     pub contracts: Vec<ContractConfig>,
+    pub transaction_dispatcher: TransactionDispatcherConfig,
     #[serde(skip)]
     path: String,
 }
@@ -47,6 +48,11 @@ pub struct ContractConfig {
     pub address: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct TransactionDispatcherConfig {
+    pub server_address: String,
+}
+
 impl Config {
     pub fn load(path: &str) -> Result<Self, ConfigError> {
         let config_path = format!("{}/config.yaml", path);
@@ -65,25 +71,15 @@ impl Config {
         Ok(parsed_config)
     }
 
-    pub fn load_contracts(&self) -> HashMap<String, ContractInfo> {
+    pub fn load_managed_contracts(&self) -> HashMap<String, ContractInfo> {
         self.contracts
             .iter()
             .map(|c| {
-                let abi_path = format!("{}/abi/{}.json", self.path, c.address);
-                let abi = if Path::new(&abi_path).exists() {
-                    let abi_data = fs::read_to_string(&abi_path)
-                        .expect(&format!("Failed to read ABI file: {}", abi_path));
-
-                    Some(
-                        serde_json::from_str::<JsonAbi>(&abi_data)
-                            .expect(&format!("Failed to parse ABI file: {}", abi_path)),
-                    )
-                } else {
-                    None
-                };
+                let abi_path = format!("{}/abi/{}.json", self.path, c.name);
+                let abi = Self::load_abi_from_path(&abi_path);
 
                 (
-                    c.address.to_owned(),
+                    c.name.to_owned(),
                     ContractInfo {
                         name: c.name.to_owned(),
                         address: c.address.to_owned(),
@@ -92,6 +88,19 @@ impl Config {
                 )
             })
             .collect()
+    }
+
+    fn load_abi_from_path(abi_path: &String) -> Option<JsonAbi> {
+        if Path::new(&abi_path).exists() {
+            let abi_data = fs::read_to_string(&abi_path)
+                .expect(&format!("Failed to read ABI file: {}", abi_path));
+            Some(
+                serde_json::from_str::<JsonAbi>(&abi_data)
+                    .expect(&format!("Failed to parse ABI file: {}", abi_path)),
+            )
+        } else {
+            None
+        }
     }
 }
 
@@ -118,15 +127,12 @@ mod tests {
 
         // contracts
         assert_eq!(2, config.contracts.len());
-        assert_eq!(
-            "RootstockTestnetMultiFeedAdapterWithoutRoundsV1",
-            config.contracts[0].name
-        );
+        assert_eq!("TestContractDyn", config.contracts[0].name);
         assert_eq!(
             "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761",
             config.contracts[0].address
         );
-        assert_eq!("MoCMedianizer", config.contracts[1].name);
+        assert_eq!("TestContractCompiled", config.contracts[1].name);
         assert_eq!(
             "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc",
             config.contracts[1].address
@@ -137,27 +143,30 @@ mod tests {
     fn test_load_contracts_when_dev_config_set_should_load_contracts_successfully() {
         let config_path = format!("{}/../config/stage", env!("CARGO_MANIFEST_DIR"));
         let config = Config::load(&config_path).expect("Failed to load config");
-        let contracts = config.load_contracts();
+        let contracts = config.load_managed_contracts();
 
         assert_eq!(2, contracts.len());
 
         // first contract
-        let key = "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761";
+        let key = "TestContractDyn";
         let contract_info = contracts.get(key).unwrap();
 
+        assert_eq!(key, contract_info.name);
         assert_eq!(
-            "RootstockTestnetMultiFeedAdapterWithoutRoundsV1",
-            contract_info.name
+            "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761",
+            contract_info.address
         );
-        assert_eq!(key, contract_info.address);
         assert!(!contract_info.abi.as_ref().unwrap().is_empty());
 
         // second contract
-        let key = "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc";
+        let key = "TestContractCompiled";
         let contract_info = contracts.get(key).unwrap();
 
-        assert_eq!("MoCMedianizer", contract_info.name);
-        assert_eq!(key, contract_info.address);
+        assert_eq!(key, contract_info.name);
+        assert_eq!(
+            "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc",
+            contract_info.address
+        );
         assert!(contract_info.abi.is_none());
     }
 }

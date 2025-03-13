@@ -10,8 +10,11 @@ provider:
     url: "wss://public-node.testnet.rsk.co/websocket"
 
 contracts:
-  - name: "RootstockTestnetMultiFeedAdapterWithoutRoundsV1"
+  - name: "TestContractDyn"
     address: "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761"
 
-  - name: "MoCMedianizer"
+  - name: "TestContractCompiled"
     address: "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc"
+
+transaction_dispatcher:
+  server_address: "0.0.0.0:3000"

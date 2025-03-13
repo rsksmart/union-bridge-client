@@ -55,7 +55,7 @@ impl LogStore for RawLogStore {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "testing-customs"))]
 mod tests {
     use super::RawLogStore;
     use crate::store::{LogStore, StoreKey};

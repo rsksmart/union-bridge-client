@@ -1,0 +1,30 @@
+[package]
+name = "transaction-dispatcher"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+common = { path = "../common" }
+
+alloy-primitives = { workspace = true }
+alloy-provider = { workspace = true, features = ["ws"] }
+alloy-sol-types = { workspace = true, features = ["json"] }
+mockall = { workspace = true }
+clap = { workspace = true }
+anyhow = { workspace = true }
+log4rs = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+log = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+hex = { workspace = true }
+env_logger = { workspace = true }
+
+alloy-json-rpc = "0.11.1"
+alloy-contract = "0.11.1"
+axum = "0.8.1"
+tower-http = { version = "0.6.1", features = ["timeout", "trace"] }
+
+[features]
+testing-mocks = []

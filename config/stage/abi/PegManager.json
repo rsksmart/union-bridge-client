@@ -157,6 +157,19 @@
   },
   {
     "type": "function",
+    "name": "debugPackets",
+    "inputs": [
+      {
+        "name": "streamId",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getImplementation",
     "inputs": [],
     "outputs": [

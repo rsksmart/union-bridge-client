@@ -1,17 +1,19 @@
+use alloy_provider::{ProviderBuilder, RootProvider, WsConnect};
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
-use common::{
-    config::Config, rsk_indexer::RskIndexer, shutdown_flag::ShutdownFlag, types::BlockHash,
-};
+use common::config::Config;
+use common::shutdown_flag::ShutdownFlag;
 use log::{error, info};
-use log_indexer::{indexer::LogIndexer, store::RawLogStore};
-use rsk_provider::rpc::AlloyProvider;
+use std::sync::Arc;
+use transaction_dispatcher::rsk_gateway::RskContractsGatewayAlloy;
+use transaction_dispatcher::server::Server;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const CONFIG_CLI_FLAG: &str = "config-path";
 
-fn main() -> Result<()> {
-    let matches = Command::new("Union Bridge Log Indexer")
+#[tokio::main]
+async fn main() -> Result<()> {
+    let matches = Command::new("Union Bridge Transaction Dispatcher")
         .arg(
             Arg::new(LOGGER_CLI_FLAG)
                 .short('l')
@@ -36,31 +38,33 @@ fn main() -> Result<()> {
     let config_path: &String = matches.get_one(CONFIG_CLI_FLAG).unwrap();
     let config = Config::load(config_path).expect("Failed to load config");
 
-    let store = RawLogStore::new(&format!("{}/logs", config.indexer.storage.path))?;
-
     let shutdown_flag = ShutdownFlag::init();
 
-    let alloy_provider = AlloyProvider::new(&config.provider.rootstock.url, shutdown_flag.clone())
-        .expect("Failed to create AlloyProvider (unrecoverable)");
+    let ws = WsConnect::new(&config.provider.rootstock.url);
+    let provider: RootProvider = ProviderBuilder::default().on_ws(ws).await?;
 
-    let initial_block_hash = BlockHash::try_from(config.indexer.initial_block_hash.as_str())
-        .expect(&format!(
-            "Invalid initial block hash: {}",
-            config.indexer.initial_block_hash
-        ));
+    info!(
+        "Connected to Rootstock at {}",
+        &config.provider.rootstock.url
+    );
 
-    let indexer = LogIndexer::new(
-        store,
-        alloy_provider,
-        initial_block_hash,
-        config.load_managed_contracts(),
-        shutdown_flag,
-    )
-    .context("Failed to create LogIndexer")?;
+    let rsk_contract_gateway = Arc::new(
+        RskContractsGatewayAlloy::new(&provider, &config)
+            .context("Could not instantiate RskContractsGateway")?,
+    );
 
-    indexer.run().inspect_err(|e| {
-        error!("Unrecoverable error running log indexer: {:?}", e);
-    })?;
+    let listener =
+        tokio::net::TcpListener::bind(&config.transaction_dispatcher.server_address).await?;
+
+    let server = Server::new(listener, rsk_contract_gateway, shutdown_flag).await;
+
+    let server_handle = tokio::spawn(async move {
+        if let Err(e) = server.start().await {
+            error!("Server error: {}", e);
+        }
+    });
+
+    server_handle.await?;
 
     info!("Quitting now...");
     log::logger().flush();

@@ -1,0 +1,98 @@
+use crate::contracts::peg_manager::{PegManagerErrors, PeginAddressInput, PeginAddressOutput};
+use crate::rsk_gateway::{RskContractsGateway, RskContractsGatewayAlloy};
+use anyhow::{Context, Result};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use axum::routing::post;
+use axum::{Extension, Json, Router};
+use common::shutdown_flag::ShutdownFlag;
+use serde_json::json;
+use std::sync::Arc;
+use std::time::Duration;
+use thiserror::Error;
+use tower_http::timeout::TimeoutLayer;
+
+pub struct Server {
+    listener: tokio::net::TcpListener,
+    app: Router,
+    shutdown_flag: ShutdownFlag,
+}
+
+impl Server {
+    pub async fn new<T: RskContractsGateway + Send + Sync + 'static>(
+        listener: tokio::net::TcpListener,
+        rsk_contract_gateway: Arc<T>,
+        shutdown_flag: ShutdownFlag,
+    ) -> Self {
+        let app = Router::new()
+            .route("/pegin-address", post(Self::create_pegin_address))
+            .layer((
+                // TraceLayer::new_for_http(), // TODO: enable when we change logging library to tracing
+                TimeoutLayer::new(Duration::from_secs(10)),
+                Extension(rsk_contract_gateway),
+            ));
+
+        Server {
+            listener,
+            app,
+            shutdown_flag,
+        }
+    }
+
+    pub async fn start(self) -> Result<()> {
+        axum::serve(self.listener, self.app)
+            .with_graceful_shutdown(self.shutdown_flag.wait_for())
+            .await
+            .context("Error starting server")
+    }
+
+    async fn create_pegin_address(
+        Extension(rsk_gateway): Extension<Arc<RskContractsGatewayAlloy>>,
+        Json(payload): Json<PeginAddressInput>,
+    ) -> Result<Json<PeginAddressOutput>, ApiError> {
+        match rsk_gateway
+            .get_peg_manager()
+            .get_temporary_pegin_address(payload)
+            .await
+        {
+            Ok(address) => Ok(Json(address)),
+            Err(e) => match e {
+                PegManagerErrors::InvalidPublicKey
+                | PegManagerErrors::InvalidAddress
+                | PegManagerErrors::InvalidValue => Err(ApiError::BadRequest(e.to_string())),
+                PegManagerErrors::StreamNotFoundByDenomination => {
+                    Err(ApiError::NotFound(e.to_string()))
+                }
+                _ => Err(ApiError::BadRequest(e.to_string())),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum ApiError {
+    #[error("Invalid request: {0}")]
+    BadRequest(String),
+
+    #[error("Resource not found: {0}")]
+    NotFound(String),
+
+    #[error("Internal server error")]
+    InternalServerError,
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        let (status, message) = match &self {
+            ApiError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.to_string()),
+            ApiError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.to_string()),
+            _ => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StatusCode::INTERNAL_SERVER_ERROR.to_string(),
+            ),
+        };
+
+        let body = Json(json!({ "error": message }));
+        (status, body).into_response()
+    }
+}
