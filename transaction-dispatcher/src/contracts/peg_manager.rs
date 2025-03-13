@@ -140,13 +140,12 @@ where
     }
 
     fn decode_contract_error(error_payload: &ErrorPayload) -> PegManagerErrors {
-        let revert_data = error_payload.as_revert_data();
-        if revert_data.is_none() {
+        let revert_data = if let Some(data) = error_payload.as_revert_data() {
+            data
+        } else {
             error!("No revert data found in PegManager error {error_payload}");
             return PegManagerErrors::InternalError;
-        }
-
-        let revert_data = revert_data.unwrap();
+        };
 
         let decoded_error = PegManagerAlloyErrors::abi_decode(&revert_data, true);
         if decoded_error.is_ok() {
@@ -208,12 +207,22 @@ pub enum PegManagerErrors {
 
 #[cfg(all(test, feature = "testing-mocks"))]
 mod tests {
-    use super::*;
-    use crate::contracts::bitcoin_manager::BitcoinManager::{InvalidAddress, InvalidPublicKey};
-    use crate::contracts::peg_manager::PegManagerAlloy::{
-        AlreadyRegisteredPegIn, StreamNotFoundByDenomination,
+    use crate::contracts::bitcoin_manager::BitcoinManager::{
+        BitcoinManagerErrors, InvalidAddress, InvalidPublicKey,
     };
+    use crate::contracts::peg_manager::PegManagerAlloy::{
+        AlreadyRegisteredPegIn, PegManagerAlloyErrors, StreamNotFoundByDenomination,
+        getTemporaryPegInAddressReturn,
+    };
+    use crate::contracts::peg_manager::{
+        MockPegManagerInstance, PegManager, PegManagerErrors, PeginAddressInput,
+    };
+    use alloy_contract::Error::TransportError;
+    use alloy_json_rpc::ErrorPayload;
     use alloy_json_rpc::RpcError::ErrorResp;
+    use alloy_primitives::Address;
+    use alloy_primitives::FixedBytes;
+    use alloy_sol_types::SolInterface;
     use mockall::predicate::{always, eq};
 
     const CONTRACT_ADDRESS: &str = "0x8c86ead50dc378858163debca4b59b039943f05d";

@@ -91,19 +91,16 @@ impl Config {
     }
 
     fn load_abi_from_path(abi_path: &String) -> Option<JsonAbi> {
-        let abi = if Path::new(&abi_path).exists() {
+        if Path::new(&abi_path).exists() {
             let abi_data = fs::read_to_string(&abi_path)
                 .expect(&format!("Failed to read ABI file: {}", abi_path));
-
             Some(
                 serde_json::from_str::<JsonAbi>(&abi_data)
                     .expect(&format!("Failed to parse ABI file: {}", abi_path)),
             )
         } else {
             None
-        };
-
-        abi
+        }
     }
 }
 
