@@ -254,17 +254,18 @@ mod tests {
             .expect("JSON data should map to RSK block");
 
         let expected_hash = BlockHash::try_from(
-            "0x2dbb8027f72a9fc147f165646e67db08c130ca698ff2d9fd02058c455b1a1c76",
+            "0xee07eb73cea6d5760448221c3644d42980445c4225748f5b877376b5eaa681ec",
         )
         .expect("Invalid hex string");
         let expected_parent = BlockHash::try_from(
-            "0x9e1898cf54b4fc263c0025b108f824fa703ed51fb74bdcae6da6e1b8cf728afb",
+            "0xe517438e0ca00e488e49fadd6e798b05e6f96ca3138945a05a893f98d7218024",
         )
         .expect("Invalid hex string");
 
-        assert_eq!(BlockNumber::from(6086082), block.number());
+        assert_eq!(BlockNumber::from(6161807), block.number());
         assert_eq!(expected_hash, block.hash());
         assert_eq!(expected_parent, block.parent_hash());
+        assert_eq!(1, block.uncles().len());
     }
 
     #[test]

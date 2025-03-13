@@ -293,6 +293,7 @@ pub struct RskBlock {
     difficulty: BlockDifficulty,
     total_difficulty: BlockDifficulty,
     pow: BlockPow,
+    uncles: Vec<BlockHash>,
 }
 
 impl From<RskRpcBlock> for RskBlock {
@@ -305,6 +306,7 @@ impl From<RskRpcBlock> for RskBlock {
             rpc_block.difficulty,
             rpc_block.total_difficulty,
             rpc_block.pow,
+            rpc_block.uncles,
         )
     }
 }
@@ -318,6 +320,7 @@ impl RskBlock {
         difficulty: BlockDifficulty,
         total_difficulty: BlockDifficulty,
         pow: BlockPow,
+        uncles: Vec<BlockHash>,
     ) -> Self {
         RskBlock {
             number,
@@ -327,6 +330,7 @@ impl RskBlock {
             difficulty,
             total_difficulty,
             pow,
+            uncles,
         }
     }
 
@@ -356,6 +360,10 @@ impl RskBlock {
 
     pub fn pow(&self) -> BlockPow {
         self.pow
+    }
+
+    pub fn uncles(&self) -> Vec<BlockHash> {
+        self.uncles.clone()
     }
 }
 
@@ -505,6 +513,8 @@ pub struct RskRpcBlock {
         deserialize_with = "parse_bitcoin_header_to_pow"
     )]
     pow: BlockPow,
+    #[serde(deserialize_with = "parse_uncles")]
+    uncles: Vec<BlockHash>,
 }
 
 fn parse_hex_to_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
@@ -555,6 +565,18 @@ where
     let hex: String = Deserialize::deserialize(deserializer)?;
 
     BlockPow::try_from(hex.as_str()).map_err(de::Error::custom)
+}
+
+fn parse_uncles<'de, D>(deserializer: D) -> Result<Vec<BlockHash>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let hex_strings: Vec<String> = Deserialize::deserialize(deserializer)?;
+
+    hex_strings
+        .into_iter()
+        .map(|hex| BlockHash::try_from(hex.as_str()).map_err(de::Error::custom))
+        .collect()
 }
 
 #[cfg(test)]
