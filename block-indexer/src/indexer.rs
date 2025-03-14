@@ -211,9 +211,9 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                     new_block.number(),
                     new_block.hash(),
                 );
-                self.save_as_canonical(&new_block)
-                    .context("On Backward Sync")?;
                 self.get_and_save_uncle_blocks(&new_block)
+                    .context("On Backward Sync")?;
+                self.save_as_canonical(&new_block)
                     .context("On Backward Sync")?;
             } else if !reached_connection_height {
                 debug!(
