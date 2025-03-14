@@ -53,9 +53,9 @@ jobs:
           path: |
             /usr/lib/x86_64-linux-gnu/librocksdb*
             /usr/include/rocksdb/
-          key: ${{ runner.os }}-rocksdb2
+          key: ${{ runner.os }}-rocksdb3
           restore-keys: |
-            ${{ runner.os }}-rocksdb2
+            ${{ runner.os }}-rocksdb3
 
       - name: Install RocksDB (if running in act)
         if: steps.check-act.outputs.flag == 'true'
@@ -64,11 +64,10 @@ jobs:
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libclang-dev clang
 
       - name: Install RocksDB (if running in GitHub)
-        if: steps.check-act.outputs.flag == 'false' && steps.cache-rocksdb.outputs.cache-hit == 'false'
+        if: steps.check-act.outputs.flag == 'false' || steps.cache-rocksdb.outputs.cache-hit == 'false'
         run: |
           sudo apt-get update
-          sudo apt install -y librocksdb-dev llvm-dev libclang-dev clang bzip2 liblz4-dev libzstd-dev libsnappy-dev zlib1g-dev
-
+          sudo apt install -y librocksdb-dev llvm-dev libclang-dev clang
 
       - name: Set RocksDB env vars (if running in GitHub)
         if: steps.check-act.outputs.flag == 'false' # do not use this approach in act, as it fails to build rocksdb due to available ubuntu packages for latest
