@@ -83,8 +83,7 @@ jobs:
         run: |
           
           echo "=====test"
-          ls -l /usr/local/lib/librocksdb.a
-          ls -l /usr/include/rocksdb/
+          find /usr/lib -name '*rocks*'
           
           git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/".insteadOf "ssh://git@github.com/"
 
