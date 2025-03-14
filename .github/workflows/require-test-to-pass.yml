@@ -83,7 +83,6 @@ jobs:
         run: |
           
           echo "=====test"
-          ls -l /usr/local/lib/librocksdb.so
           ls -l /usr/local/lib/librocksdb.a
           ls -l /usr/include/rocksdb/
           
