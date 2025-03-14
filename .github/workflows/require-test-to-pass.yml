@@ -51,8 +51,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            /usr/lib/librocksdb.so
-            /usr/lib/librocksdb.a
+            /usr/lib/x86_64-linux-gnu/librocksdb*
             /usr/include/rocksdb/
           key: ${{ runner.os }}-rocksdb2
           restore-keys: |
@@ -68,23 +67,22 @@ jobs:
         if: steps.check-act.outputs.flag == 'false'
         run: |
           sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y librocksdb-dev
+          sudo apt install -y librocksdb-dev llvm-dev libclang-dev clang bzip2 liblz4-dev libzstd-dev libsnappy-dev zlib1g-dev
+
 
       - name: Set RocksDB env vars (if running in GitHub)
         if: steps.check-act.outputs.flag == 'false' # do not use this approach in act, as it fails to build rocksdb due to available ubuntu packages for latest
         run: |
           echo "ROCKSDB_LIB_DIR=/usr/lib" >> $GITHUB_ENV
           echo "ROCKSDB_INCLUDE_DIR=/usr/include" >> $GITHUB_ENV
+          echo "LIBCLANG_PATH=/usr/lib/llvm-14/lib" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=/usr/lib/llvm-14/lib" >> $GITHUB_ENV
 
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Fix Fairgate Git access
         run: |
-          
-          echo "=====test"
-          find /usr/lib -name '*rocks*'
-          
           git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/".insteadOf "ssh://git@github.com/"
 
       - name: Cache dependencies
