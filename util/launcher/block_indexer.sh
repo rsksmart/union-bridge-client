@@ -1,32 +1,45 @@
 #!/bin/bash
 set -e
 
+# WS endpoint to get latest block info
+WEBSOCKET_ENDPOINT="ws://rskj-01.testnet.ub.iovlabs.net:4445/websocket"
+
 usage() {
-  echo "Usage: $0 -f <block_finality> [-a <cache_size>] [-s <storage_path>]"
+  echo "Usage: $0 -f <block_finality> [-a <cache_size>] [-s <storage_path>] [-e <env>]"
+  echo "       where <env> can be 'dev' or 'stage' (default: stage)"
   exit 1
 }
 
-# Parse command-line options.
-while getopts "f:a:s:" opt; do
-  case $opt in
+# Default configuration environment.
+config_env="stage"
+
+while getopts "f:a:s:e:" opt; do
+  case "$opt" in
     f) block_finality="$OPTARG" ;;
     a) cache_size="$OPTARG" ;;
     s) storage_path="$OPTARG" ;;
+    e) config_env="$OPTARG" ;;
     *) usage ;;
   esac
 done
 
-# Ensure the required parameter is provided.
 if [ -z "$block_finality" ]; then
   usage
 fi
 
+if [ "$config_env" == "dev" ]; then
+  CONFIG_PATH="config/dev"
+else
+  CONFIG_PATH="config/stage"
+fi
+
 echo "Using block finality: $block_finality"
+echo "Using config file: $CONFIG_PATH"
 [ -n "$cache_size" ] && echo "Using cache size: $cache_size"
 [ -n "$storage_path" ] && echo "Using storage path: $storage_path"
 
-# Query the websocket endpoint for the latest block number.
-LATEST_BLOCK_RESPONSE=$(wscat -c ws://rskj-01.testnet.ub.iovlabs.net:4445/websocket \
+# Query the endpoint for the latest block number.
+LATEST_BLOCK_RESPONSE=$(wscat -c "$WEBSOCKET_ENDPOINT" \
   -x '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' 2>/dev/null)
 
 # Extract the latest block number (hex string) from the JSON response.
@@ -52,7 +65,7 @@ echo "Target block (hex): $TARGET_BLOCK_HEX"
 
 # Build JSON payload for retrieving the block by number.
 GET_BLOCK_REQUEST=$(printf '{"jsonrpc":"2.0","id":2,"method":"eth_getBlockByNumber","params":["%s", false]}' "$TARGET_BLOCK_HEX")
-GET_BLOCK_RESPONSE=$(wscat -c ws://rskj-01.testnet.ub.iovlabs.net:4445/websocket -x "$GET_BLOCK_REQUEST" 2>/dev/null)
+GET_BLOCK_RESPONSE=$(wscat -c "$WEBSOCKET_ENDPOINT" -x "$GET_BLOCK_REQUEST" 2>/dev/null)
 
 # Extract the block hash from the response.
 BLOCK_HASH=$(echo "$GET_BLOCK_RESPONSE" | jq -r '.result.hash')
@@ -64,9 +77,8 @@ fi
 echo "Retrieved block hash: $BLOCK_HASH"
 
 # Build the command to launch the Rust block indexer,
-# passing the calculated block hash and the optional cache size and storage path.
-# Note the use of '--' to pass arguments to the binary.
-CMD="RUST_BACKTRACE=1 RUST_LOG=info cargo run --bin block-indexer -- -b $BLOCK_HASH"
+# passing the config file, calculated block hash, and the optional cache size and storage path.
+CMD="RUST_BACKTRACE=1 RUST_LOG=info cargo run --bin block-indexer -- -c $CONFIG_PATH -b $BLOCK_HASH"
 [ -n "$cache_size" ] && CMD="$CMD -a $cache_size"
 [ -n "$storage_path" ] && CMD="$CMD -s $storage_path"
 

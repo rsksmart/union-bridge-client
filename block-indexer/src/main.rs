@@ -29,7 +29,7 @@ fn main() -> Result<()> {
                 .long(CONFIG_CLI_FLAG)
                 .value_name("PATH")
                 .help("Sets the path to the configuration directory")
-                .default_value("config/stage"),
+                .default_value("config/dev"),
         )
         .arg(
             Arg::new(STORAGE_CLI_FLAG)

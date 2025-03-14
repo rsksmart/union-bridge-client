@@ -3,6 +3,7 @@
 **/check_fork_args.bin
 **/stark-proof.bin
 **/target
+.vscode/*
 .DS_Store
 .idea
 config/dev/config.yaml

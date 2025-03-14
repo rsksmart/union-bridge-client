@@ -22,7 +22,7 @@ fn main() -> Result<()> {
                 .long(CONFIG_CLI_FLAG)
                 .value_name("PATH")
                 .help("Sets the path to the configuration directory")
-                .default_value("config/stage"),
+                .default_value("config/dev"),
         )
         .get_matches();
 
@@ -52,7 +52,12 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    if !find_canonical_connection(&store_best_block, FINALITY_FOR_CHECK, &store)? {
+    if !find_canonical_connection(
+        &store_best_block,
+        FINALITY_FOR_CHECK,
+        &store,
+        &config.provider.rootstock.url,
+    )? {
         bail!(
             "Could not find canonical block for best block {} ({}) after {} attempts",
             store_best_block.number(),
@@ -92,7 +97,7 @@ fn main() -> Result<()> {
         };
     }
 
-    if !find_canonical_connection(&next_block, 1, &store)? {
+    if !find_canonical_connection(&next_block, 1, &store, &config.provider.rootstock.url)? {
         bail!(
             "Could not find canonical block for initial block {} ({})",
             next_block.number(),
@@ -114,12 +119,10 @@ fn find_canonical_connection(
     block_ref: &RskBlock,
     block_margin: u8,
     store: &CachedBlockStore<LruCache<RskBlock>>,
+    provider_url: &str,
 ) -> Result<bool> {
-    let rsk_ws_provider = AlloyProvider::new(
-        "ws://rskj-01.testnet.ub.iovlabs.net:4445/websocket",
-        ShutdownFlag::init(),
-    )
-    .expect("Failed to create AlloyProvider");
+    let rsk_ws_provider = AlloyProvider::new(provider_url, ShutdownFlag::init())
+        .expect("Failed to create AlloyProvider");
 
     info!(
         "Finding connection point for block {} ({})",
