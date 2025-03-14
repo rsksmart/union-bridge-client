@@ -6,4 +6,5 @@
 .DS_Store
 .idea
 config/dev/config.yaml
-dataMonitor/*
+dataMonitor*/*
+logs/*
