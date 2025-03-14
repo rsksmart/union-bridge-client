@@ -36,7 +36,7 @@ impl RawLogStore {
     }
 
     /// Ideally, this method should be used only for testing purposes
-    #[cfg(feature = "testing-customs")]
+    #[cfg(feature = "testing")]
     pub fn get(&self, key: String) -> Result<Option<RskLog>> {
         Ok(self.db.get(key)?)
     }
@@ -55,7 +55,7 @@ impl LogStore for RawLogStore {
     }
 }
 
-#[cfg(all(test, feature = "testing-customs"))]
+#[cfg(all(test, feature = "testing"))]
 mod tests {
     use super::RawLogStore;
     use crate::store::{LogStore, StoreKey};

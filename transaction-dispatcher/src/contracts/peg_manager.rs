@@ -11,11 +11,11 @@ use anyhow::Result;
 use log::{debug, error, info};
 use thiserror::Error;
 
-#[cfg(feature = "testing-mocks")]
+#[cfg(feature = "testing")]
 use mockall::automock;
 use serde::{Deserialize, Serialize};
 
-#[cfg_attr(feature = "testing-mocks", automock)]
+#[cfg_attr(feature = "testing", automock)]
 pub trait PegManagerInstance {
     #[allow(non_snake_case)]
     #[allow(async_fn_in_trait)]
@@ -205,7 +205,7 @@ pub enum PegManagerErrors {
     InvalidValue,
 }
 
-#[cfg(all(test, feature = "testing-mocks"))]
+#[cfg(all(test, feature = "testing"))]
 mod tests {
     use crate::contracts::bitcoin_manager::BitcoinManager::{
         BitcoinManagerErrors, InvalidAddress, InvalidPublicKey,

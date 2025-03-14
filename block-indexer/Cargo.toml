@@ -20,4 +20,4 @@ tempfile = { workspace = true }
 env_logger = { workspace = true }
 
 [features]
-testing = ["test-utils/customs", "test-utils/mocks"]
+testing = ["test-utils/testing"]

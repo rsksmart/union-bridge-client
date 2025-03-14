@@ -15,5 +15,4 @@ anyhow = { workspace = true }
 sha3 = "0.10"
 
 [features]
-customs = ["common/testing-customs"]
-mocks = ["common/testing-mocks"]
+testing = ["common/testing"]
