@@ -21,60 +21,77 @@ jobs:
       statuses: write
 
     steps:
-
-      ########################################
-      ### Needed for local tests with act ###
-      ########################################
-      #      - name: Set up Rust
-      #        uses: actions-rust-lang/setup-rust-toolchain@v1
-      #
-      #      - name: Cache Rust installation
-      #        uses: actions/cache@v4
-      #        with:
-      #          path: |
-      #            ~/.rustup
-      #          key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.lock') }}
-      #          restore-keys: |
-      #            ${{ runner.os }}-rust-
-      #
-      #      - name: Install RocksDB Dependencies
-      #        run: |
-      #          sudo apt-get update
-      #          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libclang-dev clang
-      ########################################
-
-      - name: Fix Fairgate Git access
+      - name: Detect environment
+        id: check-act
         run: |
-          git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/".insteadOf "ssh://git@github.com/"
+          if [ -n "$ACT" ]; then
+            echo "flag=true" >> $GITHUB_OUTPUT
+            echo "====ACT"
+          else
+            echo "flag=false" >> $GITHUB_OUTPUT
+            echo "====NOOOO"
+          fi
 
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Set up Rust (if running in act)
+        if: steps.check-act.outputs.flag == 'true'
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Cache Rust installation (if running in act)
+        if: steps.check-act.outputs.flag == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.rustup
+          key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-rust-
 
       - name: Cache RocksDB
         id: cache-rocksdb
         uses: actions/cache@v4
         with:
           path: |
+            /usr/local/lib/librocksdb.so
             /usr/local/lib/librocksdb.a
-          key: ${{ runner.os }}-rocksdb
+            /usr/include/rocksdb/
+          key: ${{ runner.os }}-rocksdb2
           restore-keys: |
-            ${{ runner.os }}-rocksdb
+            ${{ runner.os }}-rocksdb2
 
-      - name: Install RocksDB
-        id: install-rocksdb
-        continue-on-error: true # it will be built by cargo, useful for local tests where the version installed is not compatible
-        if: steps.cache-rocksdb.outputs.cache-hit != 'true'
+      - name: Install RocksDB (if running in act)
+        if: steps.check-act.outputs.flag == 'true'
         run: |
-          sudo apt update && sudo apt install -y librust-librocksdb-sys-dev
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libclang-dev clang
 
-      - name: Set RocksDB env vars if installed
-        if: steps.install-rocksdb.outcome == 'success'
+      - name: Install RocksDB (if running in GitHub)
+        if: steps.check-act.outputs.flag == 'false'
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y librocksdb-dev
+
+      - name: Set RocksDB env vars (if running in GitHub)
+        if: steps.check-act.outputs.flag == 'false' # do not use this approach in act, as it fails to build rocksdb due to available ubuntu packages for latest
         run: |
           echo "ROCKSDB_LIB_DIR=/usr/lib" >> $GITHUB_ENV
           echo "ROCKSDB_INCLUDE_DIR=/usr/include" >> $GITHUB_ENV
 
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Fix Fairgate Git access
+        run: |
+          
+          echo "=====test"
+          ls -l /usr/local/lib/librocksdb.so
+          ls -l /usr/local/lib/librocksdb.a
+          ls -l /usr/include/rocksdb/
+          
+          git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/".insteadOf "ssh://git@github.com/"
+
       - name: Cache dependencies
-        uses: actions/cache@v4
+        id: cache-deps
+        uses: actions/cache@v3
         with:
           path: |
             ~/.cargo/registry
@@ -83,6 +100,9 @@ jobs:
           key: ${{ runner.os }}-rust-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-rust-cargo-
+
+      - name: Build
+        run: cargo build --all-features
 
       - name: Run tests
         run: cargo test --all-features
