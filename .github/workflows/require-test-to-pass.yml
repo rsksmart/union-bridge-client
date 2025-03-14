@@ -51,8 +51,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            /usr/local/lib/librocksdb.so
-            /usr/local/lib/librocksdb.a
+            /usr/lib/librocksdb.so
+            /usr/lib/librocksdb.a
             /usr/include/rocksdb/
           key: ${{ runner.os }}-rocksdb2
           restore-keys: |
