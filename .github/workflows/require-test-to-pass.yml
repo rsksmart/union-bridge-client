@@ -75,8 +75,6 @@ jobs:
         run: |
           echo "ROCKSDB_LIB_DIR=/usr/lib" >> $GITHUB_ENV
           echo "ROCKSDB_INCLUDE_DIR=/usr/include" >> $GITHUB_ENV
-          echo "LIBCLANG_PATH=/usr/lib/llvm-14/lib" >> $GITHUB_ENV
-          echo "LD_LIBRARY_PATH=/usr/lib/llvm-14/lib" >> $GITHUB_ENV
 
       - name: Checkout repository
         uses: actions/checkout@v4
