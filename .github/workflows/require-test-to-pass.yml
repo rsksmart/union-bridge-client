@@ -64,7 +64,7 @@ jobs:
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libclang-dev clang
 
       - name: Install RocksDB (if running in GitHub)
-        if: steps.check-act.outputs.flag == 'false'
+        if: steps.check-act.outputs.flag == 'false' && steps.cache-rocksdb.outputs.cache-hit == 'false'
         run: |
           sudo apt-get update
           sudo apt install -y librocksdb-dev llvm-dev libclang-dev clang bzip2 liblz4-dev libzstd-dev libsnappy-dev zlib1g-dev
