@@ -1263,6 +1263,7 @@ dependencies = [
  "clap",
  "common",
  "log",
+ "log4rs",
  "rsk-provider",
 ]
 

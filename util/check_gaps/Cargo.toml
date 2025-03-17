@@ -12,3 +12,4 @@ common = { path = "../../common" }
 anyhow = { workspace = true }
 clap = { workspace = true }
 log = { workspace = true }
+log4rs = { workspace = true }
