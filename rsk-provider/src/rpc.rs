@@ -244,28 +244,41 @@ mod tests {
     const RESPONSE_FILE_PATH: &str = "tests/resources/response.json";
 
     #[test]
-    fn test_parse_provider_response_when_given_valid_data_should_parse_block_succesfully() {
+    fn test_parse_provider_response_when_given_valid_data_should_parse_block_successfully() {
         let data = fs::read_to_string(RESPONSE_FILE_PATH).expect("JSON data should be present");
         let response: Value = serde_json::from_str(&data).expect("Failed to parse JSON");
         let result: Value = response["result"].clone();
 
-        let block = AlloyProvider::parse_block_provider_response(result)
+        let block = AlloyProvider::parse_block_provider_response(result.clone())
             .expect("JSON data should be valid")
             .expect("JSON data should map to RSK block");
 
         let expected_hash = BlockHash::try_from(
-            "0xee07eb73cea6d5760448221c3644d42980445c4225748f5b877376b5eaa681ec",
+            result["hash"]
+                .as_str()
+                .expect("Block hash should be a string"),
         )
-        .expect("Invalid hex string");
+        .expect("Invalid hex string in JSON");
+
         let expected_parent = BlockHash::try_from(
-            "0xe517438e0ca00e488e49fadd6e798b05e6f96ca3138945a05a893f98d7218024",
+            result["parentHash"]
+                .as_str()
+                .expect("Parent hash should be a string"),
         )
-        .expect("Invalid hex string");
+        .expect("Invalid hex string in JSON");
+
+        let expected_uncle_hash = BlockHash::try_from(
+            result["uncles"][0]
+                .as_str()
+                .expect("Uncle hash should be a string"),
+        )
+        .expect("Invalid hex string in JSON");
 
         assert_eq!(BlockNumber::from(6161807), block.number());
         assert_eq!(expected_hash, block.hash());
         assert_eq!(expected_parent, block.parent_hash());
         assert_eq!(1, block.uncles().len());
+        assert_eq!(expected_uncle_hash, block.uncles()[0]);
     }
 
     #[test]
