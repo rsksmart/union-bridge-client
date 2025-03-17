@@ -1,4 +1,6 @@
-use crate::contracts::peg_manager::{PegManagerErrors, PeginAddressInput, PeginAddressOutput};
+use crate::contracts::peg_manager::{
+    PegManagerErrors, PeginAddressInput, PeginAddressOutput, RegisterPeginInput,
+};
 use crate::rsk_gateway::{RskContractsGateway, RskContractsGatewayAlloy};
 use anyhow::{Context, Result};
 use axum::http::StatusCode;
@@ -6,6 +8,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Extension, Json, Router};
 use common::shutdown_flag::ShutdownFlag;
+use log::error;
 use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
@@ -26,6 +29,7 @@ impl Server {
     ) -> Self {
         let app = Router::new()
             .route("/pegin-address", post(Self::create_pegin_address))
+            .route("/register-pegin", post(Self::register_pegin))
             .layer((
                 // TraceLayer::new_for_http(), // TODO: enable when we change logging library to tracing
                 TimeoutLayer::new(Duration::from_secs(10)),
@@ -65,6 +69,23 @@ impl Server {
                 }
                 _ => Err(ApiError::BadRequest(e.to_string())),
             },
+        }
+    }
+
+    async fn register_pegin(
+        Extension(rsk_gateway): Extension<Arc<RskContractsGatewayAlloy>>,
+        Json(payload): Json<RegisterPeginInput>,
+    ) -> Result<(), ApiError> {
+        match rsk_gateway
+            .get_peg_manager()
+            .register_peg_in_request(payload)
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(_) => {
+                // TODO(iago) properly map errors
+                Err(ApiError::InternalServerError)
+            }
         }
     }
 }

@@ -1,16 +1,19 @@
 use crate::contracts::bitcoin_manager::BitcoinManager::BitcoinManagerErrors;
 use crate::contracts::peg_manager::PegManagerAlloy::{
-    PegManagerAlloyErrors, PegManagerAlloyInstance, getTemporaryPegInAddressReturn,
+    BtcTransaction, PegInRequestTxSPVProof, PegManagerAlloyErrors, PegManagerAlloyInstance,
+    getTemporaryPegInAddressReturn, registerPegInRequestReturn,
 };
 use alloy_contract::Error::TransportError;
 use alloy_json_rpc::ErrorPayload;
-use alloy_primitives::{Address, FixedBytes};
+use alloy_primitives::hex::FromHex;
+use alloy_primitives::{Address, FixedBytes, U256};
 use alloy_provider::RootProvider;
 use alloy_sol_types::{SolInterface, sol};
 use anyhow::Result;
 use log::{debug, error, info};
 use thiserror::Error;
 
+use crate::contracts::bitcoin_manager::{BitcoinTransaction, ParseFieldError};
 #[cfg(feature = "testing")]
 use mockall::automock;
 use serde::{Deserialize, Serialize};
@@ -25,18 +28,65 @@ pub trait PegManagerInstance {
         value: u64,
         btc_reimbursement_pub_key: FixedBytes<32>,
     ) -> alloy_contract::Result<getTemporaryPegInAddressReturn>;
+
+    #[allow(non_snake_case)]
+    #[allow(async_fn_in_trait)]
+    async fn registerPeginRequest(
+        &self,
+        input: PegInRequestTxSPVProof,
+    ) -> alloy_contract::Result<registerPegInRequestReturn>;
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
+// TODO(iago) use alloy type, otherwise this will grow a lot (and this way it automatically reacts to abi changes)
 pub struct PeginAddressInput {
     pub rootstock_deposit_address: String,
     pub value: u64,
     pub btc_reimbursement_pub_key: String,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
+// TODO(iago) use alloy type, otherwise this will grow a lot (and this way it automatically reacts to abi changes)
 pub struct PeginAddressOutput {
     pub address: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RegisterPeginInput {
+    pub block_hash: String,
+    pub btc_tx: BitcoinTransaction,
+    pub merkle_branch_path: String,
+    pub merkle_branch_hashes: Vec<String>,
+}
+
+impl TryFrom<RegisterPeginInput> for PegInRequestTxSPVProof {
+    type Error = ParseFieldError;
+
+    fn try_from(value: RegisterPeginInput) -> Result<Self, Self::Error> {
+        let block_hash =
+            FixedBytes::<32>::from_hex(&value.block_hash).map_err(ParseFieldError::ParseHex)?;
+
+        let btc_tx: BtcTransaction = value.btc_tx.try_into()?;
+
+        let merkle_branches_hashes = value
+            .merkle_branch_hashes
+            .into_iter()
+            .map(|hash| {
+                hash.parse::<FixedBytes<32>>()
+                    .map_err(ParseFieldError::ParseHex)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let merkle_branch_path = U256::from_str_radix(&value.merkle_branch_path, 16)
+            .map_err(ParseFieldError::ParseNum)?;
+
+        Ok(PegInRequestTxSPVProof {
+            blockHash: block_hash,
+            btcTx: btc_tx,
+            merkleBranchPath: merkle_branch_path,
+            merkleBranchHashes: merkle_branches_hashes,
+        })
+    }
 }
 
 sol!(
@@ -62,6 +112,14 @@ impl PegManagerInstance for PegManagerAlloyWrapper {
             .getTemporaryPegInAddress(rootstock_deposit_address, value, btc_reimbursement_pub_key)
             .call()
             .await
+    }
+
+    #[allow(non_snake_case)]
+    async fn registerPeginRequest(
+        &self,
+        input: PegInRequestTxSPVProof,
+    ) -> alloy_contract::Result<registerPegInRequestReturn> {
+        self.inner.registerPegInRequest(input).call().await
     }
 }
 
@@ -137,6 +195,43 @@ where
                 Err(PegManagerErrors::InternalError)
             }
         }
+    }
+
+    pub(crate) async fn register_peg_in_request(
+        &self,
+        input: RegisterPeginInput,
+    ) -> Result<(), PegManagerErrors> {
+        let parsed_input = match PegInRequestTxSPVProof::try_from(input) {
+            Ok(i) => i,
+            Err(e) => {
+                // TODO(iago) distinguish error types
+                error!("Failed to parse RegisterPeginInput: {}", e);
+                return Err(PegManagerErrors::InternalError);
+            }
+        };
+
+        let result = self.instance.registerPeginRequest(parsed_input).await;
+        match result {
+            Ok(_) => {
+                info!("PegInRequestTxSPVProof registered");
+                return Ok(());
+            }
+            Err(TransportError(err)) => match err.as_error_resp() {
+                Some(e) => {
+                    error!("Error calling PegManager: {:?}", e);
+                }
+                None => {
+                    // TODO(iago) decode_contract_error, etc.
+                    error!("Missing ErrorPayload in PegManager error {:?}", err);
+                }
+            },
+            Err(e) => {
+                error!("Error calling PegManager: {:?}", e);
+            }
+        }
+
+        // TODO(iago) properly handle
+        return Err(PegManagerErrors::InternalError);
     }
 
     fn decode_contract_error(error_payload: &ErrorPayload) -> PegManagerErrors {
