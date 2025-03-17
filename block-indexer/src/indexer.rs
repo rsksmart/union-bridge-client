@@ -364,6 +364,11 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
     }
 
     fn get_and_save_uncle_blocks(&self, new_block: &RskBlock) -> Result<()> {
+        info!(
+            "[get_and_save_uncle_blocks] Attempt get and save uncles blocks ({:?})",
+            new_block.uncles()
+        );
+
         new_block.uncles().into_iter().try_for_each(|uncle_hash| {
             let uncle_block = self
                 .rsk_provider
