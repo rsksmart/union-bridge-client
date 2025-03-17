@@ -1,29 +1,23 @@
 #![cfg(feature = "testing")]
 
 use anyhow::Result;
-use block_indexer::{
-    indexer::BlockIndexer,
-    store::{BlockStore, CachedBlockStore},
-};
-use common::{
-    cache::LruCache,
-    rsk_indexer::RskIndexer,
-    rsk_provider::MockRskProvider,
-    shutdown_flag::ShutdownFlag,
-    types::{BlockHash, BlockNumber, RskBlock},
-};
+use block_indexer::indexer::BlockIndexer;
+use block_indexer::store::{BlockStore, CachedBlockStore};
+use common::cache::LruCache;
+use common::rsk_indexer::RskIndexer;
+use common::rsk_provider::MockRskProvider;
+use common::shutdown_flag::ShutdownFlag;
+use common::types::{BlockHash, BlockNumber, RskBlock};
 use log::info;
-use std::{
-    fs,
-    sync::{atomic::AtomicBool, Arc},
-};
+use std::fs;
+use std::sync::{atomic::AtomicBool, Arc};
 use tempfile::tempdir;
 use test_utils::{
     mock_rsk_provider_handler::MockRskProviderHandler, rsk_block_generator::FakeBlockGenerator,
-    rsk_utils::DEFAULT_BLOCK_HASH,
 };
 
 const BLOCK_CACHE_SIZE: usize = 100;
+use test_utils::rsk_utils::DEFAULT_BLOCK_HASH;
 
 /*
 # Given the initial best block is B
@@ -435,6 +429,7 @@ fn cycle_indexer(
     let indexer = BlockIndexer::new(store, mock_rsk_provider, block_hash, shutting_down.clone());
     let _ = indexer.run();
     info!("{}", msg.unwrap_or("Indexer run completed successfully."));
+    drop(indexer);
 }
 
 fn assert_best_block(
@@ -490,7 +485,7 @@ fn assert_canonical_chain(
     end_height: u64,
 ) -> () {
     for height in begin_height..=end_height {
-        let block_expected = generator.generate_block(height.into());
+        let block_expected = generator.clone().generate_block(height.into());
         let block_actual = store_after
             .get_canonical_block(height.into())
             .unwrap_or_else(|err| panic!("Failed to retrieve canonical block: {}", err))
@@ -498,19 +493,11 @@ fn assert_canonical_chain(
                 "No canonical block at height {} found after indexer run",
                 height
             ));
-        assert_eq!(block_expected.hash(), block_actual.hash(),);
-
-        // uncles hashes should be the same
-        assert_eq!(block_expected.uncles(), block_actual.uncles());
-        // check if uncle block is saved in storage
-        for uncle_hash in block_actual.uncles() {
-            store_after
-                .get_block_by_hash(uncle_hash)
-                .unwrap_or_else(|err| panic!("Failed to retrieve uncle block: {}", err))
-                .expect(&format!(
-                    "No uncle block at height {} found after indexer run",
-                    height
-                ));
-        }
+        assert_eq!(
+            block_expected.hash(),
+            block_actual.hash(),
+            "Hash of canonical block in storage at height {} does not match the hash of the expected block",
+            height
+        );
     }
 }

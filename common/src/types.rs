@@ -571,11 +571,11 @@ fn parse_uncles<'de, D>(deserializer: D) -> Result<Vec<BlockHash>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let hex_strings: Vec<String> = Deserialize::deserialize(deserializer)?;
+    let hex_strings: Vec<Value> = Deserialize::deserialize(deserializer)?;
 
     hex_strings
         .into_iter()
-        .map(|hex| BlockHash::try_from(hex.as_str()).map_err(de::Error::custom))
+        .map(|v| parse_hex_to_block_hash(v).map_err(de::Error::custom))
         .collect()
 }
 

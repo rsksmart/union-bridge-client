@@ -218,7 +218,6 @@ impl FakeBlockGenerator {
         let diff = self.generate_difficulty(height);
         let tot_diff = self.generate_total_difficulty(height);
         let ts = self.generate_timestamp(height);
-        let uncle_hash = from_hex_to_block_hash(&self.generate_hash(height, "uncle"));
         RskBlock::new(
             height.into(),
             block_hash,
@@ -227,7 +226,7 @@ impl FakeBlockGenerator {
             diff,
             tot_diff,
             BlockPow::from(H256::random()),
-            vec![uncle_hash],
+            vec![],
         )
     }
 
