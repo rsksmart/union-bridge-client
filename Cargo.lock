@@ -2635,17 +2635,13 @@ dependencies = [
 name = "key-manager"
 version = "0.1.0"
 dependencies = [
- "alloy-contract",
- "alloy-json-rpc",
  "alloy-primitives",
  "alloy-signer",
  "alloy-signer-local",
  "anyhow",
  "clap",
- "hex",
- "log",
- "log4rs",
  "rand 0.8.5",
+ "tempfile",
 ]
 
 [[package]]

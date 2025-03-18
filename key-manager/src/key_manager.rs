@@ -49,3 +49,53 @@ impl KeyManager {
         Ok((public_key_str, address_str))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_generate_key() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let destination = temp_dir.path().join("keystore");
+        fs::create_dir_all(&destination).unwrap();
+
+        let password = "test_password";
+
+        let result = KeyManager::generate_key(&destination, password);
+        assert!(result.is_ok());
+
+        let (file_path, public_key, address) = result.unwrap();
+
+        assert!(Path::new(&file_path).exists());
+        assert!(!public_key.is_empty());
+        assert!(!address.is_empty());
+
+        fs::remove_file(file_path).unwrap();
+    }
+
+    #[test]
+    fn test_derive_public_key_and_address() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let destination = temp_dir.path().join("keystore");
+        fs::create_dir_all(&destination).unwrap();
+
+        let password = "test_password";
+
+        let result = KeyManager::generate_key(&destination, password);
+        assert!(result.is_ok());
+        let (file_path, expected_public_key, expected_address) = result.unwrap();
+
+        let result =
+            KeyManager::derive_public_key_and_address(&PathBuf::from(file_path.clone()), password);
+        assert!(result.is_ok());
+
+        let (public_key, address) = result.unwrap();
+        assert_eq!(expected_public_key, public_key);
+        assert_eq!(expected_address, address);
+
+        fs::remove_file(file_path).unwrap();
+    }
+}
