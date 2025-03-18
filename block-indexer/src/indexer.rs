@@ -364,8 +364,12 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
     }
 
     fn get_and_save_uncle_blocks(&self, new_block: &RskBlock) -> Result<()> {
+        if new_block.uncles().is_empty() {
+            return Ok(());
+        }
+
         info!(
-            "[get_and_save_uncle_blocks] Attempt get and save uncles blocks ({:?})",
+            "[get_and_save_uncle_blocks] Attempting to get and save uncles blocks ({:?})",
             new_block.uncles()
         );
 
