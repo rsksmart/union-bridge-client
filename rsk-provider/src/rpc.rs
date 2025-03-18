@@ -244,27 +244,41 @@ mod tests {
     const RESPONSE_FILE_PATH: &str = "tests/resources/response.json";
 
     #[test]
-    fn test_parse_provider_response_when_given_valid_data_should_parse_block_succesfully() {
+    fn test_parse_provider_response_when_given_valid_data_should_parse_block_successfully() {
         let data = fs::read_to_string(RESPONSE_FILE_PATH).expect("JSON data should be present");
         let response: Value = serde_json::from_str(&data).expect("Failed to parse JSON");
         let result: Value = response["result"].clone();
 
-        let block = AlloyProvider::parse_block_provider_response(result)
+        let block = AlloyProvider::parse_block_provider_response(result.clone())
             .expect("JSON data should be valid")
             .expect("JSON data should map to RSK block");
 
         let expected_hash = BlockHash::try_from(
-            "0x2dbb8027f72a9fc147f165646e67db08c130ca698ff2d9fd02058c455b1a1c76",
+            result["hash"]
+                .as_str()
+                .expect("Block hash should be a string"),
         )
-        .expect("Invalid hex string");
-        let expected_parent = BlockHash::try_from(
-            "0x9e1898cf54b4fc263c0025b108f824fa703ed51fb74bdcae6da6e1b8cf728afb",
-        )
-        .expect("Invalid hex string");
+        .expect("Invalid hex string in JSON");
 
-        assert_eq!(BlockNumber::from(6086082), block.number());
+        let expected_parent = BlockHash::try_from(
+            result["parentHash"]
+                .as_str()
+                .expect("Parent hash should be a string"),
+        )
+        .expect("Invalid hex string in JSON");
+
+        let expected_uncle_hash = BlockHash::try_from(
+            result["uncles"][0]
+                .as_str()
+                .expect("Uncle hash should be a string"),
+        )
+        .expect("Invalid hex string in JSON");
+
+        assert_eq!(BlockNumber::from(6161807), block.number());
         assert_eq!(expected_hash, block.hash());
         assert_eq!(expected_parent, block.parent_hash());
+        assert_eq!(1, block.uncles().len());
+        assert_eq!(expected_uncle_hash, block.uncles()[0]);
     }
 
     #[test]

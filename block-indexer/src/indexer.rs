@@ -1,5 +1,5 @@
 use crate::store::BlockStore;
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use common::rsk_indexer::RskIndexer;
 use common::rsk_provider::{RskProvider, RskSubscription, RskSubscriptionError};
 use common::shutdown_flag::ShutdownFlag;
@@ -193,8 +193,6 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
             store_best_block.hash(),
         );
 
-        // TODO(Jira) request and persist uncles during this process: https://rsklabs.atlassian.net/browse/UB-16
-
         let mut new_block = starting_block.clone();
         loop {
             let store_block = self
@@ -213,6 +211,8 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                     new_block.number(),
                     new_block.hash(),
                 );
+                self.get_and_save_uncle_blocks(&new_block)
+                    .context("On Backward Sync")?;
                 self.save_as_canonical(&new_block)
                     .context("On Backward Sync")?;
             } else if !reached_connection_height {
@@ -361,6 +361,29 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 self.rsk_provider.get_best_block()
             }
         }
+    }
+
+    fn get_and_save_uncle_blocks(&self, new_block: &RskBlock) -> Result<()> {
+        if new_block.uncles().is_empty() {
+            return Ok(());
+        }
+
+        info!(
+            "[get_and_save_uncle_blocks] Attempting to get and save uncles blocks ({:?})",
+            new_block.uncles()
+        );
+
+        new_block.uncles().into_iter().try_for_each(|uncle_hash| {
+            let uncle_block = self
+                .rsk_provider
+                .get_block_by_hash(uncle_hash)
+                .context("Fetching uncle block")?
+                .ok_or_else(|| anyhow!("Uncle block not found: {uncle_hash}"))?;
+
+            self.store
+                .save_block(&uncle_block)
+                .context("Saving uncle block")
+        })
     }
 }
 
