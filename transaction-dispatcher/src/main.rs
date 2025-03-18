@@ -49,7 +49,7 @@ async fn main() -> Result<()> {
     );
 
     let rsk_contract_gateway = Arc::new(
-        RskContractsGatewayAlloy::new(&provider, &config)
+        RskContractsGatewayAlloy::new(provider, &config)
             .context("Could not instantiate RskContractsGateway")?,
     );
 

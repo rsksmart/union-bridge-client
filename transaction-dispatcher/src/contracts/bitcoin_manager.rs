@@ -1,5 +1,5 @@
 pub(crate) use crate::contracts::common::ParseFieldError;
-use crate::contracts::peg_manager::PegManagerAlloy::{BtcTransaction, BtcTxIn, BtcTxOut};
+use crate::contracts::peg_manager::Contract::{BtcTransaction, BtcTxIn, BtcTxOut};
 use alloy_primitives::Bytes;
 use alloy_sol_types::sol;
 use serde::{Deserialize, Serialize};

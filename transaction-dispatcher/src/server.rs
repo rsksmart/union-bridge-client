@@ -2,6 +2,7 @@ use crate::contracts::peg_manager::{
     PegManagerErrors, PeginAddressInput, PeginAddressOutput, RegisterPeginInput,
 };
 use crate::rsk_gateway::{RskContractsGateway, RskContractsGatewayAlloy};
+use alloy_provider::Provider;
 use anyhow::{Context, Result};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -13,23 +14,24 @@ use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
+use tokio::net::TcpListener;
 use tower_http::timeout::TimeoutLayer;
 
 pub struct Server {
-    listener: tokio::net::TcpListener,
+    listener: TcpListener,
     app: Router,
     shutdown_flag: ShutdownFlag,
 }
 
 impl Server {
-    pub async fn new<T: RskContractsGateway + Send + Sync + 'static>(
-        listener: tokio::net::TcpListener,
+    pub async fn new<P: Provider + 'static, T: RskContractsGateway<P> + Send + Sync + 'static>(
+        listener: TcpListener,
         rsk_contract_gateway: Arc<T>,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
         let app = Router::new()
-            .route("/pegin-address", post(Self::create_pegin_address))
-            .route("/register-pegin", post(Self::register_pegin))
+            .route("/pegin-address", post(Self::create_pegin_address::<P>))
+            .route("/register-pegin", post(Self::register_pegin::<P>))
             .layer((
                 // TraceLayer::new_for_http(), // TODO: enable when we change logging library to tracing
                 TimeoutLayer::new(Duration::from_secs(10)),
@@ -50,8 +52,8 @@ impl Server {
             .context("Error starting server")
     }
 
-    async fn create_pegin_address(
-        Extension(rsk_gateway): Extension<Arc<RskContractsGatewayAlloy>>,
+    async fn create_pegin_address<P: Provider>(
+        Extension(rsk_gateway): Extension<Arc<RskContractsGatewayAlloy<P>>>,
         Json(payload): Json<PeginAddressInput>,
     ) -> Result<Json<PeginAddressOutput>, ApiError> {
         match rsk_gateway
@@ -72,8 +74,8 @@ impl Server {
         }
     }
 
-    async fn register_pegin(
-        Extension(rsk_gateway): Extension<Arc<RskContractsGatewayAlloy>>,
+    async fn register_pegin<P: Provider>(
+        Extension(rsk_gateway): Extension<Arc<RskContractsGatewayAlloy<P>>>,
         Json(payload): Json<RegisterPeginInput>,
     ) -> Result<(), ApiError> {
         match rsk_gateway

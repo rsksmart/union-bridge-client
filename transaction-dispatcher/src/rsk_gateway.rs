@@ -1,6 +1,6 @@
-use crate::contracts::peg_manager::{PegManager, PegManagerAlloyWrapper, PegManagerInstance};
+use crate::contracts::peg_manager::{ContractApi, ContractWrapper, PegManagerGateway};
 use alloy_primitives::Address;
-use alloy_provider::RootProvider;
+use alloy_provider::Provider;
 use anyhow::{Context, Result};
 use common::{config::Config, types::ContractInfo};
 use std::collections::HashMap;
@@ -8,22 +8,22 @@ use std::collections::HashMap;
 /// Must  match the contract name in the config file
 const PEG_MANAGER_CONTRACT_NAME: &'static str = "PegManager";
 
-pub trait RskContractsGateway {
-    type Instance: PegManagerInstance;
-    fn get_peg_manager(&self) -> &PegManager<Self::Instance>;
+pub trait RskContractsGateway<P: Provider> {
+    type Instance: ContractApi;
+    fn get_peg_manager(&self) -> &PegManagerGateway<Self::Instance>;
 }
 
-pub struct RskContractsGatewayAlloy {
-    peg_manager_contract: PegManager<PegManagerAlloyWrapper>,
+pub struct RskContractsGatewayAlloy<P: Provider> {
+    peg_manager_contract: PegManagerGateway<ContractWrapper<P>>,
 }
 
-impl RskContractsGatewayAlloy {
-    pub fn new(provider: &RootProvider, config: &Config) -> Result<Self> {
+impl<P: Provider> RskContractsGatewayAlloy<P> {
+    pub fn new(provider: P, config: &Config) -> Result<Self> {
         let contract_address = Self::load_contract(
             PEG_MANAGER_CONTRACT_NAME,
             config.load_managed_contracts(true),
         )?;
-        let peg_manager_contract = PegManager::init(&provider, contract_address)
+        let peg_manager_contract = PegManagerGateway::init(provider, contract_address)
             .context("Could not instantiate PegManagerContract")?;
         Ok(RskContractsGatewayAlloy {
             peg_manager_contract,
@@ -41,9 +41,9 @@ impl RskContractsGatewayAlloy {
     }
 }
 
-impl RskContractsGateway for RskContractsGatewayAlloy {
-    type Instance = PegManagerAlloyWrapper;
-    fn get_peg_manager(&self) -> &PegManager<Self::Instance> {
+impl<P: Provider> RskContractsGateway<P> for RskContractsGatewayAlloy<P> {
+    type Instance = ContractWrapper<P>;
+    fn get_peg_manager(&self) -> &PegManagerGateway<Self::Instance> {
         &self.peg_manager_contract
     }
 }

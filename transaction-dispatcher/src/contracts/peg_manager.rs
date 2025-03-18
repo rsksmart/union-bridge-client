@@ -1,13 +1,14 @@
 use crate::contracts::bitcoin_manager::BitcoinManager::BitcoinManagerErrors;
-use crate::contracts::peg_manager::PegManagerAlloy::{
-    BtcTransaction, PegInRequestTxSPVProof, PegManagerAlloyErrors, PegManagerAlloyInstance,
+use crate::contracts::peg_manager::Contract::{
+    BtcTransaction, ContractErrors, ContractInstance, PegInRequestTxSPVProof,
     getTemporaryPegInAddressReturn, registerPegInRequestReturn,
 };
 use alloy_contract::Error::TransportError;
 use alloy_json_rpc::ErrorPayload;
 use alloy_primitives::hex::FromHex;
 use alloy_primitives::{Address, FixedBytes, U256};
-use alloy_provider::RootProvider;
+use alloy_provider::Provider;
+use alloy_rpc_types::TransactionReceipt;
 use alloy_sol_types::{SolInterface, sol};
 use anyhow::Result;
 use log::{debug, error, info};
@@ -18,20 +19,26 @@ use crate::contracts::bitcoin_manager::{BitcoinTransaction, ParseFieldError};
 use mockall::automock;
 use serde::{Deserialize, Serialize};
 
+// TODO(iago) refactor peg_manager to several files
+
 #[cfg_attr(feature = "testing", automock)]
-pub trait PegManagerInstance {
-    #[allow(non_snake_case)]
+pub trait ContractApi {
     #[allow(async_fn_in_trait)]
-    async fn getTemporaryPegInAddress(
+    async fn get_temporary_pegin_address_call(
         &self,
         rootstock_deposit_address: Address,
         value: u64,
         btc_reimbursement_pub_key: FixedBytes<32>,
     ) -> alloy_contract::Result<getTemporaryPegInAddressReturn>;
 
-    #[allow(non_snake_case)]
     #[allow(async_fn_in_trait)]
-    async fn registerPeginRequest(
+    async fn register_pegin_request_send(
+        &self,
+        input: PegInRequestTxSPVProof,
+    ) -> Result<TransactionReceipt>;
+
+    #[allow(async_fn_in_trait)]
+    async fn register_pegin_request_call(
         &self,
         input: PegInRequestTxSPVProof,
     ) -> alloy_contract::Result<registerPegInRequestReturn>;
@@ -91,18 +98,18 @@ impl TryFrom<RegisterPeginInput> for PegInRequestTxSPVProof {
 
 sol!(
     #[sol(rpc)]
-    PegManagerAlloy,
+    Contract,
     "../config/dev/abi/PegManager.json" // TODO we could also use bytecode here, automate deploys for testing, etc.
 );
 
 // needed so we can create a PegManagerApi trait for tests mocking
-pub struct PegManagerAlloyWrapper {
-    inner: PegManagerAlloyInstance<(), RootProvider>,
+pub struct ContractWrapper<P: Provider> {
+    inner: ContractInstance<(), P>,
 }
 
-impl PegManagerInstance for PegManagerAlloyWrapper {
+impl<P: Provider> ContractApi for ContractWrapper<P> {
     #[allow(non_snake_case)]
-    async fn getTemporaryPegInAddress(
+    async fn get_temporary_pegin_address_call(
         &self,
         rootstock_deposit_address: Address,
         value: u64,
@@ -115,7 +122,21 @@ impl PegManagerInstance for PegManagerAlloyWrapper {
     }
 
     #[allow(non_snake_case)]
-    async fn registerPeginRequest(
+    async fn register_pegin_request_send(
+        &self,
+        input: PegInRequestTxSPVProof,
+    ) -> Result<TransactionReceipt> {
+        Ok(self
+            .inner
+            .registerPegInRequest(input)
+            .send()
+            .await?
+            .get_receipt()
+            .await?)
+    }
+
+    #[allow(non_snake_case)]
+    async fn register_pegin_request_call(
         &self,
         input: PegInRequestTxSPVProof,
     ) -> alloy_contract::Result<registerPegInRequestReturn> {
@@ -123,28 +144,28 @@ impl PegManagerInstance for PegManagerAlloyWrapper {
     }
 }
 
-pub struct PegManager<I>
+pub struct PegManagerGateway<I>
 where
-    I: PegManagerInstance,
+    I: ContractApi,
 {
     address: Address,
     instance: I,
 }
 
-impl PegManager<PegManagerAlloyWrapper> {
-    pub fn init(provider: &RootProvider, address: Address) -> Result<Self> {
-        let instance = PegManagerAlloy::new(address, provider.clone());
+impl<P: Provider> PegManagerGateway<ContractWrapper<P>> {
+    pub fn init(provider: P, address: Address) -> Result<Self> {
+        let instance = Contract::new(address, provider);
 
-        Ok(PegManager {
+        Ok(PegManagerGateway {
             address,
-            instance: PegManagerAlloyWrapper { inner: instance },
+            instance: ContractWrapper { inner: instance },
         })
     }
 }
 
-impl<I> PegManager<I>
+impl<I> PegManagerGateway<I>
 where
-    I: PegManagerInstance,
+    I: ContractApi,
 {
     pub(crate) async fn get_temporary_pegin_address(
         &self,
@@ -169,7 +190,11 @@ where
 
         let result = self
             .instance
-            .getTemporaryPegInAddress(rootstock_deposit_address, value, btc_reimbursement_pub_key)
+            .get_temporary_pegin_address_call(
+                rootstock_deposit_address,
+                value,
+                btc_reimbursement_pub_key,
+            )
             .await;
 
         match result {
@@ -210,28 +235,55 @@ where
             }
         };
 
-        let result = self.instance.registerPeginRequest(parsed_input).await;
+        let result = self
+            .instance
+            .register_pegin_request_send(parsed_input.clone())
+            .await;
+
+        match result {
+            Ok(r) => {
+                if r.status() {
+                    info!("PeginRequest created in tx {}", r.transaction_hash);
+                    Ok(())
+                } else {
+                    self.request_pegin_inspect_error(parsed_input).await
+                }
+            }
+            Err(e) => {
+                error!("Error sending PeginRequest: {}", e);
+                Err(PegManagerErrors::InternalError)
+            }
+        }
+    }
+
+    async fn request_pegin_inspect_error(
+        &self,
+        parsed_input: PegInRequestTxSPVProof,
+    ) -> Result<(), PegManagerErrors> {
+        let result = self
+            .instance
+            .register_pegin_request_call(parsed_input)
+            .await;
+
         match result {
             Ok(_) => {
-                info!("PegInRequestTxSPVProof registered");
-                return Ok(());
+                // TODO properly handle
+                error!("RegisterPegin Call worked but Send failed");
+                Err(PegManagerErrors::InternalError)
             }
             Err(TransportError(err)) => match err.as_error_resp() {
-                Some(e) => {
-                    error!("Error calling PegManager: {:?}", e);
-                }
+                Some(e) => Err(Self::decode_contract_error(e)),
                 None => {
-                    // TODO(iago) decode_contract_error, etc.
+                    // TODO(iago) handle errors properly
                     error!("Missing ErrorPayload in PegManager error {:?}", err);
+                    Err(PegManagerErrors::InternalError)
                 }
             },
             Err(e) => {
                 error!("Error calling PegManager: {:?}", e);
+                Err(PegManagerErrors::InternalError)
             }
         }
-
-        // TODO(iago) properly handle
-        return Err(PegManagerErrors::InternalError);
     }
 
     fn decode_contract_error(error_payload: &ErrorPayload) -> PegManagerErrors {
@@ -242,11 +294,11 @@ where
             return PegManagerErrors::InternalError;
         };
 
-        let decoded_error = PegManagerAlloyErrors::abi_decode(&revert_data, true);
+        let decoded_error = ContractErrors::abi_decode(&revert_data, true);
         if decoded_error.is_ok() {
             let decoded_error = decoded_error.unwrap();
             return match decoded_error {
-                PegManagerAlloyErrors::StreamNotFoundByDenomination(e) => {
+                ContractErrors::StreamNotFoundByDenomination(e) => {
                     error!("StreamNotFoundByDenomination {}", e.denomination);
                     PegManagerErrors::StreamNotFoundByDenomination
                 }
@@ -305,12 +357,12 @@ mod tests {
     use crate::contracts::bitcoin_manager::BitcoinManager::{
         BitcoinManagerErrors, InvalidAddress, InvalidPublicKey,
     };
-    use crate::contracts::peg_manager::PegManagerAlloy::{
-        AlreadyRegisteredPegIn, PegManagerAlloyErrors, StreamNotFoundByDenomination,
+    use crate::contracts::peg_manager::Contract::{
+        AlreadyRegisteredPegIn, ContractErrors, StreamNotFoundByDenomination,
         getTemporaryPegInAddressReturn,
     };
     use crate::contracts::peg_manager::{
-        MockPegManagerInstance, PegManager, PegManagerErrors, PeginAddressInput,
+        MockContractApi, PegManagerErrors, PegManagerGateway, PeginAddressInput,
     };
     use alloy_contract::Error::TransportError;
     use alloy_json_rpc::ErrorPayload;
@@ -331,7 +383,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_temporary_pegin_address_success() {
-        let mut mock_instance = MockPegManagerInstance::new();
+        let mut mock_instance = MockContractApi::new();
 
         let input = PeginAddressInput {
             rootstock_deposit_address: VALID_ADDRESS.to_string(),
@@ -344,7 +396,7 @@ mod tests {
         };
 
         mock_instance
-            .expect_getTemporaryPegInAddress()
+            .expect_get_temporary_pegin_address_call()
             .with(
                 eq(VALID_ADDRESS.parse::<Address>().unwrap()),
                 eq(VALID_VALUE),
@@ -353,7 +405,7 @@ mod tests {
             .returning(move |_, _, _| Ok(output.clone()))
             .times(1);
 
-        let peg_manager = PegManager {
+        let peg_manager = PegManagerGateway {
             address: CONTRACT_ADDRESS.parse::<Address>().unwrap(),
             instance: mock_instance,
         };
@@ -365,7 +417,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_temporary_pegin_address_invalid_address_preliminary_validation() {
-        let mock_instance = MockPegManagerInstance::new();
+        let mock_instance = MockContractApi::new();
 
         let input = PeginAddressInput {
             rootstock_deposit_address: "0xinvalid_address".to_string(),
@@ -373,7 +425,7 @@ mod tests {
             btc_reimbursement_pub_key: VALID_PUB_KEY.to_string(),
         };
 
-        let peg_manager = PegManager {
+        let peg_manager = PegManagerGateway {
             address: CONTRACT_ADDRESS.parse::<Address>().unwrap(),
             instance: mock_instance,
         };
@@ -385,7 +437,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_temporary_pegin_address_invalid_address_smart_contract_raised() {
-        let mut mock_instance = MockPegManagerInstance::new();
+        let mut mock_instance = MockContractApi::new();
 
         let input = PeginAddressInput {
             // it has to be valid here in order to pass the preliminary validation (non SC)
@@ -395,7 +447,7 @@ mod tests {
         };
 
         mock_instance
-            .expect_getTemporaryPegInAddress()
+            .expect_get_temporary_pegin_address_call()
             .with(
                 always(),
                 eq(VALID_VALUE),
@@ -410,7 +462,7 @@ mod tests {
             })
             .times(1);
 
-        let peg_manager = PegManager {
+        let peg_manager = PegManagerGateway {
             address: CONTRACT_ADDRESS.parse::<Address>().unwrap(),
             instance: mock_instance,
         };
@@ -423,7 +475,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_temporary_pegin_address_invalid_public_key_preliminary_validation() {
-        let mock_instance = MockPegManagerInstance::new();
+        let mock_instance = MockContractApi::new();
 
         let input = PeginAddressInput {
             rootstock_deposit_address: VALID_ADDRESS.to_string(),
@@ -431,7 +483,7 @@ mod tests {
             btc_reimbursement_pub_key: "0xinvalid_pub_key".to_string(),
         };
 
-        let peg_manager = PegManager {
+        let peg_manager = PegManagerGateway {
             address: CONTRACT_ADDRESS.parse::<Address>().unwrap(),
             instance: mock_instance,
         };
@@ -443,7 +495,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_temporary_pegin_address_invalid_public_key_smart_contract_raised() {
-        let mut mock_instance = MockPegManagerInstance::new();
+        let mut mock_instance = MockContractApi::new();
 
         let input = PeginAddressInput {
             rootstock_deposit_address: VALID_ADDRESS.to_string(),
@@ -453,7 +505,7 @@ mod tests {
         };
 
         mock_instance
-            .expect_getTemporaryPegInAddress()
+            .expect_get_temporary_pegin_address_call()
             .with(
                 eq(VALID_ADDRESS.parse::<Address>().unwrap()),
                 eq(VALID_VALUE),
@@ -468,7 +520,7 @@ mod tests {
             })
             .times(1);
 
-        let peg_manager = PegManager {
+        let peg_manager = PegManagerGateway {
             address: CONTRACT_ADDRESS.parse::<Address>().unwrap(),
             instance: mock_instance,
         };
@@ -481,7 +533,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_temporary_pegin_address_internal_server_error() {
-        let mut mock_instance = MockPegManagerInstance::new();
+        let mut mock_instance = MockContractApi::new();
 
         let input = PeginAddressInput {
             rootstock_deposit_address: VALID_ADDRESS.to_string(),
@@ -491,23 +543,22 @@ mod tests {
         };
 
         mock_instance
-            .expect_getTemporaryPegInAddress()
+            .expect_get_temporary_pegin_address_call()
             .with(
                 eq(VALID_ADDRESS.parse::<Address>().unwrap()),
                 eq(VALID_VALUE),
                 always(),
             )
             .returning(move |_, _, _| {
-                let expected_err =
-                    PegManagerAlloyErrors::AlreadyRegisteredPegIn(AlreadyRegisteredPegIn {
-                        btcTxHash: FixedBytes::<32>::default(),
-                    });
+                let expected_err = ContractErrors::AlreadyRegisteredPegIn(AlreadyRegisteredPegIn {
+                    btcTxHash: FixedBytes::<32>::default(),
+                });
                 let expected_err_payload = generate_expected_error(expected_err);
                 Err(TransportError(ErrorResp(expected_err_payload)))
             })
             .times(1);
 
-        let peg_manager = PegManager {
+        let peg_manager = PegManagerGateway {
             address: CONTRACT_ADDRESS.parse::<Address>().unwrap(),
             instance: mock_instance,
         };
@@ -521,7 +572,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_temporary_pegin_address_stream_not_found_by_denomination_smart_contract_raised()
      {
-        let mut mock_instance = MockPegManagerInstance::new();
+        let mut mock_instance = MockContractApi::new();
 
         // just to make it clear that is invalid, but we do not care about the value as we force the SC to error
         let invalid_value = 2;
@@ -533,24 +584,23 @@ mod tests {
         };
 
         mock_instance
-            .expect_getTemporaryPegInAddress()
+            .expect_get_temporary_pegin_address_call()
             .with(
                 eq(VALID_ADDRESS.parse::<Address>().unwrap()),
                 eq(invalid_value),
                 eq(VALID_PUB_KEY.parse::<FixedBytes<32>>().unwrap()),
             )
             .returning(move |_, _, _| {
-                let expected_err = PegManagerAlloyErrors::StreamNotFoundByDenomination(
-                    StreamNotFoundByDenomination {
+                let expected_err =
+                    ContractErrors::StreamNotFoundByDenomination(StreamNotFoundByDenomination {
                         denomination: alloy_primitives::Uint::from(invalid_value),
-                    },
-                );
+                    });
                 let expected_err_payload = generate_expected_error(expected_err);
                 Err(TransportError(ErrorResp(expected_err_payload)))
             })
             .times(1);
 
-        let peg_manager = PegManager {
+        let peg_manager = PegManagerGateway {
             address: CONTRACT_ADDRESS.parse::<Address>().unwrap(),
             instance: mock_instance,
         };
