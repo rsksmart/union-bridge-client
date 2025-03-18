@@ -1,7 +1,7 @@
 indexer:
-  initial_block_hash: "0xb308493667676c0f4c5b59163e8f775d85c1f49ea4a554cdaa6f094123548f95"
+  initial_block_hash: "0xc588063b306c31bb0ed8dc98edae0da31b55a415f88b142b8429cc553e7f5551"
   storage:
-    path: "dataMonitor"
+    path: "data"
   cache:
     size: 1000
 
