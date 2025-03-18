@@ -206,9 +206,9 @@ fn compare_best_blocks(store_best_block: &RskBlock, provider_url: &str) -> Resul
 
     if store_best_block.hash() != provider_block_at_store.hash() {
         let height_diff: u64 = if provider_block_at_store.number() > store_best_block.number() {
-            provider_block_at_store.number() - store_best_block.number()
+            (provider_block_at_store.number() - store_best_block.number().value()).value()
         } else {
-            store_best_block.number() - provider_block_at_store.number()
+            (store_best_block.number() - provider_block_at_store.number().value()).value()
         };
         warn!(
             "Mismatch at store best height:\n  Store best block: {} ({})\n  Provider block at same height: {} ({}).\nDifference in block height: {} - check if this is expected.",
@@ -233,9 +233,9 @@ fn compare_best_blocks(store_best_block: &RskBlock, provider_url: &str) -> Resul
 
     if store_best_block.hash() != provider_best_block.hash() {
         let height_diff: u64 = if provider_best_block.number() > store_best_block.number() {
-            provider_best_block.number() - store_best_block.number()
+            (provider_best_block.number() - store_best_block.number().value()).value()
         } else {
-            store_best_block.number() - provider_best_block.number()
+            (store_best_block.number() - provider_best_block.number().value()).value()
         };
         warn!(
             "Mismatch between store best block and provider best block:\n  Store best block: {} ({})\n  Provider best block: {} ({}).\nDifference in block height: {}",

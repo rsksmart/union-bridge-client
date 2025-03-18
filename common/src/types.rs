@@ -110,14 +110,6 @@ impl Sub<u64> for BlockNumber {
     }
 }
 
-impl Sub for BlockNumber {
-    type Output = u64;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        self.0 - rhs.0
-    }
-}
-
 impl PartialEq<u64> for BlockNumber {
     fn eq(&self, other: &u64) -> bool {
         self.0 == *other
