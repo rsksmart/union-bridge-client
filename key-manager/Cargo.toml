@@ -1,0 +1,16 @@
+[package]
+name = "key-manager"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+alloy-primitives = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+
+alloy-signer = "0.12.5"
+alloy-signer-local = { version = "0.12.5", features = ["keystore"] }
+rand = "0.8.5"
+
+[dev-dependencies]
+tempfile = { workspace = true }
