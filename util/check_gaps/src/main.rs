@@ -13,7 +13,6 @@ use rsk_provider::rpc::AlloyProvider;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const CONFIG_CLI_FLAG: &str = "config-path";
-const STORAGE_CLI_FLAG: &str = "storage-path";
 const FINALITY_FOR_CHECK: u8 = 10;
 
 fn main() -> Result<()> {
@@ -34,13 +33,6 @@ fn main() -> Result<()> {
                 .help("Sets the path to the configuration directory")
                 .default_value("config/dev"),
         )
-        .arg(
-            Arg::new(STORAGE_CLI_FLAG)
-                .short('s')
-                .long(STORAGE_CLI_FLAG)
-                .value_name("PATH")
-                .help("Overrides the storage path for blocks"),
-        )
         .get_matches();
 
     let logger_path: &String = matches.get_one(LOGGER_CLI_FLAG).unwrap();
@@ -49,14 +41,8 @@ fn main() -> Result<()> {
     let config_path: &String = matches.get_one(CONFIG_CLI_FLAG).unwrap();
     let config = Config::load(config_path).expect("Failed to load config");
 
-    // Use the storage override if provided; otherwise use the storage path from config.
-    let storage_path = matches
-        .get_one::<String>(STORAGE_CLI_FLAG)
-        .unwrap_or(&config.indexer.storage.path)
-        .clone();
-
     let store = CachedBlockStore::new(
-        &format!("{}/blocks", storage_path),
+        &format!("{}/blocks", config.indexer.storage.path),
         config.indexer.cache.size,
     )?;
     let initial_block_hash = BlockHash::try_from(config.indexer.initial_block_hash.as_str())
