@@ -20,8 +20,10 @@ pub struct RskContractsGatewayAlloy {
 
 impl RskContractsGatewayAlloy {
     pub fn new(provider: &RootProvider, config: &Config) -> Result<Self> {
-        let contract_address =
-            Self::load_contract(PEG_MANAGER_CONTRACT_NAME, config.load_managed_contracts())?;
+        let contract_address = Self::load_contract(
+            PEG_MANAGER_CONTRACT_NAME,
+            config.load_managed_contracts(true),
+        )?;
         let peg_manager_contract = PegManager::init(&provider, contract_address)
             .context("Could not instantiate PegManagerContract")?;
         Ok(RskContractsGatewayAlloy {
