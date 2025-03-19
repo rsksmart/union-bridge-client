@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 common = { path = "../common" }
+key-manager = { path = "../key-manager" }
 
 alloy-primitives = { workspace = true }
 alloy-provider = { workspace = true, features = ["ws"] }

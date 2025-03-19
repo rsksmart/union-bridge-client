@@ -4704,6 +4704,7 @@ dependencies = [
  "common",
  "env_logger",
  "hex",
+ "key-manager",
  "log",
  "log4rs",
  "mockall",

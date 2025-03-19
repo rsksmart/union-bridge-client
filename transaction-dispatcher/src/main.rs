@@ -1,9 +1,15 @@
-use alloy_provider::{ProviderBuilder, RootProvider, WsConnect};
+use alloy_primitives::{Address, U256};
+use alloy_provider::network::{EthereumWallet, TransactionBuilder};
+use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
+use alloy_rpc_types::TransactionRequest;
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
 use common::config::Config;
 use common::shutdown_flag::ShutdownFlag;
+use key_manager::key_manager::KeyManager;
 use log::{error, info};
+use std::path::Path;
+use std::str::FromStr;
 use std::sync::Arc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayAlloy;
 use transaction_dispatcher::server::Server;
@@ -41,11 +47,18 @@ async fn main() -> Result<()> {
     let shutdown_flag = ShutdownFlag::init();
 
     let ws = WsConnect::new(&config.provider.rootstock.url);
-    let provider: RootProvider = ProviderBuilder::default().on_ws(ws).await?;
+
+    let key_store_path =
+        Path::new("/Users/illuque/.union_bridge/keystore/60fd8b82-c99b-4f88-80d4-e106697e7ef8"); // TODO(iago) config
+    let signer = KeyManager::get_signer(key_store_path, "test")?; // TODO(iago) env var or any other hidden way to get the password
+    let address = signer.address().to_string();
+    let wallet = EthereumWallet::from(signer);
+
+    let provider = ProviderBuilder::default().wallet(wallet).on_ws(ws).await?;
 
     info!(
-        "Connected to Rootstock at {}",
-        &config.provider.rootstock.url
+        "Connected to Rootstock at {} with address {}",
+        &config.provider.rootstock.url, address
     );
 
     let rsk_contract_gateway = Arc::new(
