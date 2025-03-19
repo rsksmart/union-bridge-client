@@ -52,7 +52,11 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
             return Ok(());
         }
 
-        let contract_addresses: Vec<String> = self.managed_contracts.keys().cloned().collect();
+        let contract_addresses: Vec<String> = self
+            .managed_contracts
+            .iter()
+            .map(|c| c.1.address.clone())
+            .collect();
 
         let best_block = self.rsk_provider.get_best_block()?;
 
