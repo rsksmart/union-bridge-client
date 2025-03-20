@@ -71,7 +71,7 @@ impl Config {
         Ok(parsed_config)
     }
 
-    pub fn load_managed_contracts(&self) -> HashMap<String, ContractInfo> {
+    pub fn load_managed_contracts(&self, by_name: bool) -> HashMap<String, ContractInfo> {
         self.contracts
             .iter()
             .map(|c| {
@@ -79,7 +79,10 @@ impl Config {
                 let abi = Self::load_abi_from_path(&abi_path);
 
                 (
-                    c.name.to_owned(),
+                    match by_name {
+                        true => c.name.to_owned(),
+                        false => c.address.to_owned(),
+                    },
                     ContractInfo {
                         name: c.name.to_owned(),
                         address: c.address.to_owned(),
@@ -146,10 +149,10 @@ mod tests {
     }
 
     #[test]
-    fn test_load_contracts_when_dev_config_set_should_load_contracts_successfully() {
+    fn test_load_contracts_when_dev_config_set_should_load_contracts_successfully_by_name() {
         let config_path = format!("{}/../config/stage", env!("CARGO_MANIFEST_DIR"));
         let config = Config::load(&config_path).expect("Failed to load config");
-        let contracts = config.load_managed_contracts();
+        let contracts = config.load_managed_contracts(true);
 
         assert_eq!(2, contracts.len());
 
@@ -173,6 +176,31 @@ mod tests {
             "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc",
             contract_info.address
         );
+        assert!(contract_info.abi.is_none());
+    }
+
+    #[test]
+    fn test_load_contracts_when_dev_config_set_should_load_contracts_successfully_by_address() {
+        let config_path = format!("{}/../config/stage", env!("CARGO_MANIFEST_DIR"));
+        let config = Config::load(&config_path).expect("Failed to load config");
+        let contracts = config.load_managed_contracts(false);
+
+        assert_eq!(2, contracts.len());
+
+        // first contract
+        let key = "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761";
+        let contract_info = contracts.get(key).unwrap();
+
+        assert_eq!("TestContractDyn", contract_info.name);
+        assert_eq!(key, contract_info.address);
+        assert!(!contract_info.abi.as_ref().unwrap().is_empty());
+
+        // second contract
+        let key = "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc";
+        let contract_info = contracts.get(key).unwrap();
+
+        assert_eq!("TestContractCompiled", contract_info.name);
+        assert_eq!(key, contract_info.address);
         assert!(contract_info.abi.is_none());
     }
 }
