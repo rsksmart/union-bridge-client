@@ -1,13 +1,17 @@
 use alloy_dyn_abi::{DynSolType, DynSolValue};
 use alloy_json_abi::{Event, EventParam, JsonAbi};
 use anyhow::{bail, Context, Result};
-use common::types::{RskEvent, RskLog};
+use common::types::{Address, RskEvent, RskLog};
 use hex;
 use log::error;
 use serde_json::{json, Value};
 use std::str::FromStr;
 
-pub fn process(contract_address: &str, rsk_log: RskLog, abi: &JsonAbi) -> Result<Option<RskEvent>> {
+pub fn process(
+    contract_address: Address,
+    rsk_log: RskLog,
+    abi: &JsonAbi,
+) -> Result<Option<RskEvent>> {
     if contract_address != rsk_log.info().address() {
         error!(
             "Log address {} does not match expected contract address {}",

@@ -2,8 +2,7 @@ use crate::contracts::peg_manager::{PegManager, PegManagerAlloyWrapper, PegManag
 use alloy_primitives::Address;
 use alloy_provider::RootProvider;
 use anyhow::{Context, Result};
-use common::config::Config;
-use common::types::ContractInfo;
+use common::{config::Config, types::ContractInfo};
 use std::collections::HashMap;
 
 /// Must  match the contract name in the config file
@@ -32,12 +31,16 @@ impl RskContractsGatewayAlloy {
     }
 
     fn load_contract(name: &str, contracts: HashMap<String, ContractInfo>) -> Result<Address> {
-        contracts
+        let address = contracts
             .get(name)
             .context(format!("Address not found for contract: {}", name))?
-            .address
-            .parse()
-            .context(format!("Could not parse contract address for: {}", name))
+            .address;
+        let address = hex::decode(address.value()).context("Hex decoding failed")?;
+        let address = String::from_utf8(address).context("Invalid UTF-8 in address")?;
+
+        address
+            .parse::<Address>()
+            .context("Parsing to Address failed")
     }
 }
 

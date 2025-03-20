@@ -1,5 +1,5 @@
 use crate::rpc::AlloyProvider;
-use alloy_primitives::{Address, B256};
+use alloy_primitives::{Address as AlloyAddress, B256};
 use alloy_pubsub::{Subscription, SubscriptionItem};
 use alloy_rpc_types::{FilterBlockOption, Header, Log, Topic};
 use anyhow::Result;
@@ -7,7 +7,7 @@ use anyhow::{anyhow, Context};
 use common::rsk_provider::{
     RskProvider, RskSubscription, RskSubscriptionError, RskSubscriptionFilter,
 };
-use common::types::{BlockHash, BlockNumber, LogEvent, LogInfo, RskBlock, RskLog};
+use common::types::{Address, BlockHash, BlockNumber, LogEvent, LogInfo, RskBlock, RskLog};
 use log::debug;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -101,13 +101,17 @@ impl AlloySubscription<Log> {
         }
     }
 
-    pub(super) fn build_addresses(filter: &RskSubscriptionFilter) -> Result<Vec<Address>> {
+    pub(super) fn build_addresses(filter: &RskSubscriptionFilter) -> Result<Vec<AlloyAddress>> {
         let addresses = filter
             .addresses
             .iter()
-            .map(|addr| addr.parse::<Address>())
-            .collect::<Result<Vec<Address>, _>>()
-            .context("Could not parse filter addresses")?;
+            .map(|addr| {
+                let addr = hex::decode(addr.value()).context("Hex decoding failed")?;
+                let addr = String::from_utf8(addr).context("Invalid UTF-8 in address")?;
+                addr.parse::<AlloyAddress>()
+                    .context("Parsing to Address failed")
+            })
+            .collect::<Result<Vec<_>>>()?;
 
         Ok(addresses)
     }
@@ -170,10 +174,13 @@ impl RskSubscription<RskLog> for AlloySubscription<Log> {
 
         let log_index = new_log
             .log_index
-            .ok_or_else(|| RskSubscriptionError::Transient("Missing log index"))?;
+            .ok_or_else(|| RskSubscriptionError::Transient("Missing log_index"))?;
+
+        let address = Address::try_from(new_log.address().to_string().as_str())
+            .map_err(|e| RskSubscriptionError::Unexpected(e.into()))?;
 
         let log_info = LogInfo::new(
-            new_log.address().to_string(),
+            address,
             block_hash,
             block_number,
             tx_hash.clone(),

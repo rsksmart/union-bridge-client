@@ -185,7 +185,7 @@ impl RskProvider for AlloyProvider {
                 "Dynamic event processing for contract {}",
                 contract_info.address
             );
-            rsk_event_result = event_processor_abi::process(&contract_info.address, new_log, &abi);
+            rsk_event_result = event_processor_abi::process(contract_info.address, new_log, &abi);
         } else {
             debug!(
                 "Static event processing for contract {}",

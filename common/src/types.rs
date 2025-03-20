@@ -1,6 +1,6 @@
 use alloy_json_abi::JsonAbi;
 use bitcoin::{blockdata::block::Header, consensus::encode::deserialize as btc_deserialize};
-use primitive_types::{H256, U256};
+use primitive_types::{H160, H256, U256};
 use serde::{de, Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::{
@@ -284,6 +284,55 @@ impl fmt::Display for BlockPow {
     }
 }
 
+/// Represents a Rootstock address.
+/// 
+/// This struct enforces type safety when working with addresses,
+/// preventing accidental misuse of raw `H160` values.
+/// 
+/// # Examples
+/// 
+/// ```
+/// use primitive_types::H160;
+/// use common::types::Address;
+/// 
+/// let raw_address = H160::random();
+/// let address = Address::from(raw_address);
+/// 
+/// println!("Address: {}", address);
+/// ```
+#[derive(Serialize, Deserialize, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Clone, Hash)]
+pub struct Address(H160);
+
+impl Address {
+    pub fn value(self) -> H160 {
+        self.0
+    }
+}
+
+impl From<H160> for Address {
+    fn from(h160: H160) -> Self {
+        Self(h160)
+    }
+}
+
+impl TryFrom<&str> for Address {
+    type Error = hex::FromHexError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let value = value.trim_start_matches("0x");
+        let bytes = hex::decode(value)?;
+        let h160 = H160::from_slice(&bytes);
+
+        Ok(Self(h160))
+    }
+}
+
+impl fmt::Display for Address {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "0x{}", hex::encode(self.0))
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct RskBlock {
     number: BlockNumber,
@@ -294,21 +343,6 @@ pub struct RskBlock {
     total_difficulty: BlockDifficulty,
     pow: BlockPow,
     uncles: Vec<BlockHash>,
-}
-
-impl From<RskRpcBlock> for RskBlock {
-    fn from(rpc_block: RskRpcBlock) -> Self {
-        Self::new(
-            rpc_block.number,
-            rpc_block.hash,
-            rpc_block.parent_hash,
-            rpc_block.timestamp,
-            rpc_block.difficulty,
-            rpc_block.total_difficulty,
-            rpc_block.pow,
-            rpc_block.uncles,
-        )
-    }
 }
 
 impl RskBlock {
@@ -367,16 +401,30 @@ impl RskBlock {
     }
 }
 
+impl From<RskRpcBlock> for RskBlock {
+    fn from(rpc_block: RskRpcBlock) -> Self {
+        Self::new(
+            rpc_block.number,
+            rpc_block.hash,
+            rpc_block.parent_hash,
+            rpc_block.timestamp,
+            rpc_block.difficulty,
+            rpc_block.total_difficulty,
+            rpc_block.pow,
+            rpc_block.uncles,
+        )
+    }
+}
+
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-// TODO(Jira) https://rsklabs.atlassian.net/browse/UB-43
 pub struct RskLog {
     info: LogInfo,
     event: LogEvent,
 }
 
 impl RskLog {
-    pub fn new(data: LogInfo, event: LogEvent) -> Self {
-        Self { info: data, event }
+    pub fn new(info: LogInfo, event: LogEvent) -> Self {
+        Self { info, event }
     }
 
     pub fn info(&self) -> &LogInfo {
@@ -415,9 +463,9 @@ impl RskEvent {
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct LogInfo {
-    address: String,
+    address: Address,
     block_hash: BlockHash,
-    number: BlockNumber,
+    block_number: BlockNumber,
     tx_hash: String,
     log_index: u64,
     removed: bool,
@@ -425,9 +473,9 @@ pub struct LogInfo {
 
 impl LogInfo {
     pub fn new(
-        address: String,
+        address: Address,
         block_hash: BlockHash,
-        number: BlockNumber,
+        block_number: BlockNumber,
         tx_hash: String,
         log_index: u64,
         removed: bool,
@@ -435,23 +483,23 @@ impl LogInfo {
         LogInfo {
             address,
             block_hash,
-            number,
+            block_number,
             tx_hash,
             log_index,
             removed,
         }
     }
 
-    pub fn address(&self) -> &str {
-        &self.address
+    pub fn address(&self) -> Address {
+        self.address
     }
 
     pub fn block_hash(&self) -> BlockHash {
         self.block_hash
     }
 
-    pub fn number(&self) -> BlockNumber {
-        self.number
+    pub fn block_number(&self) -> BlockNumber {
+        self.block_number
     }
 
     pub fn tx_hash(&self) -> &str {
@@ -489,7 +537,7 @@ impl LogEvent {
 
 #[derive(Debug, Clone)]
 pub struct ContractInfo {
-    pub address: String,
+    pub address: Address,
     pub name: String,
     pub abi: Option<JsonAbi>,
 }

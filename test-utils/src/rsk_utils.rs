@@ -1,14 +1,14 @@
+use common::types::{Address, BlockHash, BlockPow, ContractInfo};
+use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
 
-use common::types::{BlockHash, BlockPow, ContractInfo};
-use sha3::{Digest, Keccak256};
-
+pub const DEFAULT_ADDRESS: &str = "0x5a23bef6b2051Fc91a8b9B0307ed08D09C07cc2d";
 pub const DEFAULT_BLOCK_HASH: &str =
     "0x5d164d93bf09ee215cc67420f24d31b8d86c46ced6e770e8abf69c16bea3a67c";
 pub const DEFAULT_BITCOIN_MERGED_MINING_HEADER: &str =
 "0x00000020538fb0d4d0cbdf0f3b88e02551018fcd6064cbe5cbed40d78b4c3709000000004feaeec0d7a118f6d1c0d8fec32936b9dfff3bea45b537027c6439ac5ea98ccd34b8b467908316194c8b4487";
 
-/// Generates a fake Rootstock address based on a given number and an optional nonce.
+/// Generates a fake Rootstock address based on a given number.
 ///
 /// This function computes a Keccak256 hash of the little-endian byte representation
 /// of `address_num` appended with the optional nonce (if provided). The last 20 bytes
@@ -17,11 +17,10 @@ pub const DEFAULT_BITCOIN_MERGED_MINING_HEADER: &str =
 /// # Parameters
 ///
 /// - `address_num`: A numeric identifier used as part of the address generation.
-/// - `nonce`: An optional string slice to differentiate addresses.
 ///
 /// # Returns
 ///
-/// A `String` representing the fake Rootstock address.
+/// An `Address` representing the fake Rootstock address.
 ///
 /// # Example
 ///
@@ -29,9 +28,8 @@ pub const DEFAULT_BITCOIN_MERGED_MINING_HEADER: &str =
 /// use test_utils::rsk_utils::generate_fake_address;
 ///
 /// let address = generate_fake_address(1);
-/// assert!(address.starts_with("0x"));
 /// ```
-pub fn generate_fake_address(address_num: u64) -> String {
+pub fn generate_fake_address(address_num: u64) -> Address {
     let mut hasher = Keccak256::new();
     let data = address_num.to_le_bytes().to_vec();
     // Append nonce bytes if provided
@@ -39,27 +37,28 @@ pub fn generate_fake_address(address_num: u64) -> String {
     let hash = hasher.finalize();
     // Rootstock addresses are the last 20 bytes of the 32-byte hash
     let address_bytes = &hash[12..];
-    format!("0x{}", hex::encode(address_bytes))
+    let addr = format!("0x{}", hex::encode(address_bytes));
+    Address::try_from(addr.as_str()).unwrap()
 }
 
-pub fn generate_fake_addresses(addresses_size: u64) -> Vec<String> {
+pub fn generate_fake_addresses(addresses_size: u64) -> Vec<Address> {
     (0..addresses_size)
         .map(|i| generate_fake_address(i))
         .collect()
 }
 
-pub fn generate_fake_managed_contracts(addresses: Vec<String>) -> HashMap<String, ContractInfo> {
+pub fn generate_fake_managed_contracts(addresses: Vec<Address>) -> HashMap<String, ContractInfo> {
     addresses
         .into_iter()
         .map(|address| generate_fake_managed_contract(address))
         .collect()
 }
 
-pub fn generate_fake_managed_contract(address: String) -> (String, ContractInfo) {
+pub fn generate_fake_managed_contract(address: Address) -> (String, ContractInfo) {
     (
-        address.clone(),
+        address.to_string(),
         ContractInfo {
-            name: format!("contract_{}", address),
+            name: format!("contract_{}", address.to_string()),
             address,
             abi: None,
         },
