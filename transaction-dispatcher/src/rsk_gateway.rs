@@ -1,5 +1,6 @@
 use crate::contracts::peg_manager::{ContractApi, ContractWrapper, PegManagerGateway};
 use alloy_primitives::Address;
+use alloy_provider::network::EthereumWallet;
 use alloy_provider::Provider;
 use anyhow::{Context, Result};
 use common::{config::Config, types::ContractInfo};
@@ -18,12 +19,12 @@ pub struct RskContractsGatewayAlloy<P: Provider> {
 }
 
 impl<P: Provider> RskContractsGatewayAlloy<P> {
-    pub fn new(provider: P, config: &Config) -> Result<Self> {
+    pub fn new(provider: P, signer: EthereumWallet, config: &Config) -> Result<Self> {
         let contract_address = Self::load_contract(
             PEG_MANAGER_CONTRACT_NAME,
             config.load_managed_contracts(true),
         )?;
-        let peg_manager_contract = PegManagerGateway::init(provider, contract_address)
+        let peg_manager_contract = PegManagerGateway::init(provider, signer, contract_address)
             .context("Could not instantiate PegManagerContract")?;
         Ok(RskContractsGatewayAlloy {
             peg_manager_contract,

@@ -1,7 +1,5 @@
-use alloy_primitives::{Address, U256};
-use alloy_provider::network::{EthereumWallet, TransactionBuilder};
-use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
-use alloy_rpc_types::TransactionRequest;
+use alloy_provider::network::EthereumWallet;
+use alloy_provider::{ProviderBuilder, WsConnect};
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
 use common::config::Config;
@@ -9,7 +7,6 @@ use common::shutdown_flag::ShutdownFlag;
 use key_manager::key_manager::KeyManager;
 use log::{error, info};
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::Arc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayAlloy;
 use transaction_dispatcher::server::Server;
@@ -54,7 +51,10 @@ async fn main() -> Result<()> {
     let address = signer.address().to_string();
     let wallet = EthereumWallet::from(signer);
 
-    let provider = ProviderBuilder::default().wallet(wallet).on_ws(ws).await?;
+    let provider = ProviderBuilder::default()
+        .wallet(wallet.clone())
+        .on_ws(ws)
+        .await?;
 
     info!(
         "Connected to Rootstock at {} with address {}",
@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
     );
 
     let rsk_contract_gateway = Arc::new(
-        RskContractsGatewayAlloy::new(provider, &config)
+        RskContractsGatewayAlloy::new(provider, wallet, &config)
             .context("Could not instantiate RskContractsGateway")?,
     );
 
