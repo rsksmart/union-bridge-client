@@ -110,18 +110,24 @@ mod tests {
     use std::env;
 
     #[test]
-    fn test_config_load_when_dev_config_set_should_load_config_successfully() {
+    fn test_config_load_when_stage_config_set_should_load_config_successfully() {
         let config_path = format!("{}/../config/stage", env!("CARGO_MANIFEST_DIR"));
         let config = Config::load(&config_path).expect("Failed to load config");
 
         // indexer
-        assert_eq!("0xabc", config.indexer.initial_block_hash);
-        assert_eq!("/foo/bar", config.indexer.storage.path);
+        assert_eq!(
+            "0xf6e292fd22f1dc5a1ef4022b7fe4a959f90ec0b9f5fc0869af64b99195511b22",
+            config.indexer.initial_block_hash
+        );
+        assert_eq!(
+            "/tmp/monitor-executions/default/storage",
+            config.indexer.storage.path
+        );
         assert_eq!(1000, config.indexer.cache.size);
 
         // provider
         assert_eq!(
-            "wss://public-node.testnet.rsk.co/websocket",
+            "ws://rskj-01.testnet.ub.iovlabs.net:4445/websocket",
             config.provider.rootstock.url
         );
 
