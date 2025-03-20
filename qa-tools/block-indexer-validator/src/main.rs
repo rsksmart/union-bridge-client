@@ -23,7 +23,7 @@ fn main() -> Result<()> {
                 .long(LOGGER_CLI_FLAG)
                 .value_name("PATH")
                 .help("Sets the path to the log4rs configuration file")
-                .default_value("log4rs.yaml"),
+                .default_value("../log4rs.yaml"),
         )
         .arg(
             Arg::new(CONFIG_CLI_FLAG)
@@ -31,7 +31,7 @@ fn main() -> Result<()> {
                 .long(CONFIG_CLI_FLAG)
                 .value_name("PATH")
                 .help("Sets the path to the configuration directory")
-                .default_value("config/dev"),
+                .default_value("../config/dev"),
         )
         .get_matches();
 
@@ -58,7 +58,10 @@ fn main() -> Result<()> {
         .get_best_block()?
         .context("Failed to get best block")?;
 
-    compare_best_blocks(&store_best_block, &config.provider.rootstock.url)?;
+    let provider = AlloyProvider::new(&config.provider.rootstock.url, ShutdownFlag::init())
+        .expect("Failed to create AlloyProvider");
+
+    compare_best_blocks(&store_best_block, &provider)?;
 
     let back_sync_checkpoint = store.get_back_sync_checkpoint()?;
 
@@ -69,12 +72,7 @@ fn main() -> Result<()> {
         info!("No partial backward sync (checkpoint) found.");
     }
 
-    if !find_canonical_connection(
-        &store_best_block,
-        FINALITY_FOR_CHECK,
-        &store,
-        &config.provider.rootstock.url,
-    )? {
+    if !find_canonical_connection(&store_best_block, FINALITY_FOR_CHECK, &store, &provider)? {
         bail!(
             "Could not find canonical block for best block {} ({}) after {} attempts",
             store_best_block.number(),
@@ -107,7 +105,7 @@ fn main() -> Result<()> {
         };
     }
 
-    if !find_canonical_connection(&next_block, 1, &store, &config.provider.rootstock.url)? {
+    if !find_canonical_connection(&next_block, 1, &store, &provider)? {
         bail!(
             "Could not find canonical block for initial block {} ({})",
             next_block.number(),
@@ -129,11 +127,8 @@ fn find_canonical_connection(
     block_ref: &RskBlock,
     block_margin: u8,
     store: &CachedBlockStore<LruCache<RskBlock>>,
-    provider_url: &str,
+    provider: &AlloyProvider,
 ) -> Result<bool> {
-    let rsk_ws_provider = AlloyProvider::new(provider_url, ShutdownFlag::init())
-        .expect("Failed to create AlloyProvider");
-
     info!(
         "Finding connection point for block {} ({})",
         block_ref.number(),
@@ -141,7 +136,7 @@ fn find_canonical_connection(
     );
 
     let mut store_block = block_ref.clone();
-    let mut node_block = rsk_ws_provider
+    let mut node_block = provider
         .get_block_by_number(store_block.number())
         .with_context(|| {
             format!(
@@ -166,7 +161,7 @@ fn find_canonical_connection(
             break;
         }
 
-        node_block = rsk_ws_provider
+        node_block = provider
             .get_block_by_number(store_block.number() - i as u64)
             .with_context(|| {
                 format!(
@@ -189,10 +184,7 @@ fn find_canonical_connection(
     Ok(connection_found)
 }
 
-fn compare_best_blocks(store_best_block: &RskBlock, provider_url: &str) -> Result<()> {
-    let provider = AlloyProvider::new(provider_url, ShutdownFlag::init())
-        .expect("Failed to create AlloyProvider");
-
+fn compare_best_blocks(store_best_block: &RskBlock, provider: &AlloyProvider) -> Result<()> {
     // Check 1: Compare the store best block with the provider block at the same height.
     let provider_block_at_store = provider
         .get_block_by_number(store_best_block.number())
