@@ -1,5 +1,5 @@
 [package]
-name = "check_gaps"
+name = "block-indexer-validator"
 version = "0.1.0"
 edition = "2021"
 resolver = "2"
@@ -12,3 +12,4 @@ common = { path = "../../common" }
 anyhow = { workspace = true }
 clap = { workspace = true }
 log = { workspace = true }
+log4rs = { workspace = true }

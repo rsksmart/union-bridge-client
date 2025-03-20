@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["util/check_gaps", "common", "rsk-provider", "block-indexer", "log-indexer", "transaction-dispatcher", "test-utils", "key-manager"]
+members = ["qa-tools/block-indexer-validator", "common", "rsk-provider", "block-indexer", "log-indexer", "transaction-dispatcher", "test-utils", "key-manager"]
 
 [workspace.dependencies]
 alloy-primitives = "0.8.22"

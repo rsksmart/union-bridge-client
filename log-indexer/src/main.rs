@@ -18,7 +18,7 @@ fn main() -> Result<()> {
                 .long(LOGGER_CLI_FLAG)
                 .value_name("PATH")
                 .help("Sets the path to the log4rs configuration file")
-                .default_value("../log4rs.yaml"),
+                .default_value("log4rs.yaml"),
         )
         .arg(
             Arg::new(CONFIG_CLI_FLAG)
@@ -26,7 +26,7 @@ fn main() -> Result<()> {
                 .long(CONFIG_CLI_FLAG)
                 .value_name("PATH")
                 .help("Sets the path to the configuration directory")
-                .default_value("../config/dev"),
+                .default_value("config/dev"),
         )
         .get_matches();
 
