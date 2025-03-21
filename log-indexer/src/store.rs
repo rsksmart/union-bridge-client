@@ -44,13 +44,12 @@ impl RawLogStore {
     /// Ideally, this method should be used only for testing purposes
     #[cfg(feature = "testing")]
     pub fn get_all_logs(&self) -> Result<Vec<RskLog>> {
-        let all: std::collections::HashMap<String, RskLog> = self.db.get_all()?;
-        let logs = all
+        Ok(self
+            .db
+            .get_all()?
             .into_iter()
-            .filter(|(key, _)| key.starts_with("logs/"))
-            .map(|(_, log)| log)
-            .collect();
-        Ok(logs)
+            .filter_map(|(key, log)| key.starts_with("logs/").then_some(log))
+            .collect())
     }
 }
 
