@@ -40,6 +40,18 @@ impl RawLogStore {
     pub fn get(&self, key: String) -> Result<Option<RskLog>> {
         Ok(self.db.get(key)?)
     }
+
+    /// Ideally, this method should be used only for testing purposes
+    #[cfg(feature = "testing")]
+    pub fn get_all_logs(&self) -> Result<Vec<RskLog>> {
+        let all: std::collections::HashMap<String, RskLog> = self.db.get_all()?;
+        let logs = all
+            .into_iter()
+            .filter(|(key, _)| key.starts_with("logs/"))
+            .map(|(_, log)| log)
+            .collect();
+        Ok(logs)
+    }
 }
 
 impl LogStore for RawLogStore {

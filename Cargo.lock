@@ -2756,6 +2756,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "log-indexer-validator"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "common",
+ "log",
+ "log-indexer",
+ "log4rs",
+ "rsk-provider",
+ "serde_json",
+]
+
+[[package]]
 name = "log-mdc"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
