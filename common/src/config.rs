@@ -186,7 +186,7 @@ mod tests {
     }
 
     #[test]
-    fn test_load_contracts_when_dev_config_set_should_load_contracts_successfully_by_address() {
+    fn test_load_contracts_when_stage_config_set_should_load_contracts_successfully_by_address() {
         let config_path = format!("{}/../config/stage", env!("CARGO_MANIFEST_DIR"));
         let config = Config::load(&config_path).expect("Failed to load config");
         let contracts = config.load_managed_contracts(false);
@@ -195,18 +195,20 @@ mod tests {
 
         // first contract
         let key = "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761";
+        let address = Address::try_from(key).unwrap();
         let contract_info = contracts.get(key).unwrap();
 
         assert_eq!("TestContractDyn", contract_info.name);
-        assert_eq!(key, contract_info.address);
+        assert_eq!(address, contract_info.address);
         assert!(!contract_info.abi.as_ref().unwrap().is_empty());
 
         // second contract
         let key = "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc";
+        let address = Address::try_from(key).unwrap();
         let contract_info = contracts.get(key).unwrap();
 
         assert_eq!("TestContractCompiled", contract_info.name);
-        assert_eq!(key, contract_info.address);
+        assert_eq!(address, contract_info.address);
         assert!(contract_info.abi.is_none());
     }
 }
