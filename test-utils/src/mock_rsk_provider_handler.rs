@@ -1,15 +1,12 @@
+use crate::rsk_block_generator::FakeBlockGenerator;
 use crate::rsk_log_generator::FakeLogGenerator;
-use crate::{
-    rsk_block_generator::FakeBlockGenerator,
-    rsk_utils::{DEFAULT_ADDRESS, DEFAULT_BLOCK_HASH},
-};
 use anyhow::anyhow;
 use common::{
     rsk_provider::{
         MockRskProvider, MockRskSubscription, RskSubscriptionError, RskSubscriptionFilter,
     },
     shutdown_flag::ShutdownFlag,
-    types::{Address, BlockHash, BlockNumber, ContractInfo, LogInfo, RskBlock, RskEvent, RskLog},
+    types::{BlockHash, BlockNumber, ContractInfo, LogInfo, RskBlock, RskEvent, RskLog},
 };
 use log::info;
 use std::{
@@ -236,17 +233,10 @@ impl<'a> MockRskProviderHandler<'a> {
         self.provider
             .expect_decode_log()
             .withf(|_log: &RskLog, _contract: &ContractInfo| true)
-            .returning(move |_log: RskLog, _contract: &ContractInfo| {
+            .returning(move |log: RskLog, _contract: &ContractInfo| {
                 Ok(Some(RskEvent::new(
                     "TestEvent".to_string(),
-                    LogInfo::new(
-                        Address::try_from(DEFAULT_ADDRESS)?,
-                        BlockHash::try_from(DEFAULT_BLOCK_HASH)?,
-                        0.into(),
-                        "".to_string(),
-                        1,
-                        true,
-                    ),
+                    log.info().clone(),
                     serde_json::Value::Null,
                 )))
             })
