@@ -31,14 +31,11 @@ impl RskContractsGatewayAlloy {
     }
 
     fn load_contract(name: &str, contracts: HashMap<String, ContractInfo>) -> Result<Address> {
-        let address = contracts
+        contracts
             .get(name)
             .context(format!("Address not found for contract: {}", name))?
-            .address;
-        let address = hex::decode(address.value()).context("Hex decoding failed")?;
-        let address = String::from_utf8(address).context("Invalid UTF-8 in address")?;
-
-        address
+            .address
+            .to_string()
             .parse::<Address>()
             .context("Parsing to Address failed")
     }

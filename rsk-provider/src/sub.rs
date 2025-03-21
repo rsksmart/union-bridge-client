@@ -106,9 +106,8 @@ impl AlloySubscription<Log> {
             .addresses
             .iter()
             .map(|addr| {
-                let addr = hex::decode(addr.value()).context("Hex decoding failed")?;
-                let addr = String::from_utf8(addr).context("Invalid UTF-8 in address")?;
-                addr.parse::<AlloyAddress>()
+                addr.to_string()
+                    .parse::<AlloyAddress>()
                     .context("Parsing to Address failed")
             })
             .collect::<Result<Vec<_>>>()?;

@@ -285,19 +285,19 @@ impl fmt::Display for BlockPow {
 }
 
 /// Represents a Rootstock address.
-/// 
+///
 /// This struct enforces type safety when working with addresses,
 /// preventing accidental misuse of raw `H160` values.
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```
 /// use primitive_types::H160;
 /// use common::types::Address;
-/// 
+///
 /// let raw_address = H160::random();
 /// let address = Address::from(raw_address);
-/// 
+///
 /// println!("Address: {}", address);
 /// ```
 #[derive(Serialize, Deserialize, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Clone, Hash)]
