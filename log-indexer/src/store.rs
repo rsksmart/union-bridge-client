@@ -40,6 +40,17 @@ impl RawLogStore {
     pub fn get(&self, key: String) -> Result<Option<RskLog>> {
         Ok(self.db.get(key)?)
     }
+
+    /// Ideally, this method should be used only for testing purposes
+    #[cfg(feature = "testing")]
+    pub fn get_all_logs(&self) -> Result<Vec<RskLog>> {
+        Ok(self
+            .db
+            .get_all()?
+            .into_iter()
+            .filter_map(|(key, log)| key.starts_with("logs/").then_some(log))
+            .collect())
+    }
 }
 
 impl LogStore for RawLogStore {

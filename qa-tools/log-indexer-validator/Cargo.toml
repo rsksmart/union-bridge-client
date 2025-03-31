@@ -1,0 +1,16 @@
+[package]
+name = "log-indexer-validator"
+version = "0.1.0"
+edition = "2021"
+resolver = "2"
+
+[dependencies]
+log-indexer = { path = "../../log-indexer", features = ["testing"] }
+rsk-provider = { path = "../../rsk-provider" }
+common = { path = "../../common" }
+
+anyhow = { workspace = true }
+clap = { workspace = true }
+log = { workspace = true }
+log4rs = { workspace = true }
+serde_json = { workspace = true }
