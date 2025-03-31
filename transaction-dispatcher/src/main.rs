@@ -8,7 +8,7 @@ use key_manager::key_manager::KeyManager;
 use log::{error, info};
 use std::path::Path;
 use std::sync::Arc;
-use transaction_dispatcher::rsk_gateway::RskContractsGatewayAlloy;
+use transaction_dispatcher::rsk_gateway::RskContractsGateway;
 use transaction_dispatcher::server::Server;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
     );
 
     let rsk_contract_gateway = Arc::new(
-        RskContractsGatewayAlloy::new(provider, wallet, &config)
+        RskContractsGateway::new(provider, wallet, &config)
             .context("Could not instantiate RskContractsGateway")?,
     );
 

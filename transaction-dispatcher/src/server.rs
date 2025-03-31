@@ -1,7 +1,7 @@
-use crate::contracts::peg_manager::{
-    PegManagerErrors, PeginAddressInput, PeginAddressOutput, RegisterPeginInput,
-};
-use crate::rsk_gateway::{RskContractsGateway, RskContractsGatewayAlloy};
+use crate::contracts::peg_manager::{PegManagerErrors, PegManagerGatewayApi};
+use crate::rsk_gateway::{RskContractsGateway, RskContractsGatewayApi};
+use crate::use_cases::get_temporary_peg_in_address::{PegInAddressInput, PegInAddressOutput};
+use crate::use_cases::register_peg_in_request::RegisterPegInInput;
 use alloy_provider::Provider;
 use anyhow::{Context, Result};
 use axum::http::StatusCode;
@@ -24,14 +24,14 @@ pub struct Server {
 }
 
 impl Server {
-    pub async fn new<P: Provider + 'static, T: RskContractsGateway<P> + Send + Sync + 'static>(
+    pub async fn new<P: Provider + 'static>(
         listener: TcpListener,
-        rsk_contract_gateway: Arc<T>,
+        rsk_contract_gateway: Arc<RskContractsGateway<P>>,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
         let app = Router::new()
-            .route("/pegin-address", post(Self::create_pegin_address::<P>))
-            .route("/register-pegin", post(Self::register_pegin::<P>))
+            .route("/pegin-address", post(Self::create_peg_in_address::<P>))
+            .route("/register-pegin", post(Self::register_peg_in::<P>))
             .layer((
                 // TraceLayer::new_for_http(), // TODO: enable when we change logging library to tracing
                 TimeoutLayer::new(Duration::from_secs(10)),
@@ -52,13 +52,13 @@ impl Server {
             .context("Error starting server")
     }
 
-    async fn create_pegin_address<P: Provider>(
-        Extension(rsk_gateway): Extension<Arc<RskContractsGatewayAlloy<P>>>,
-        Json(payload): Json<PeginAddressInput>,
-    ) -> Result<Json<PeginAddressOutput>, ApiError> {
+    async fn create_peg_in_address<P: Provider>(
+        Extension(rsk_gateway): Extension<Arc<RskContractsGateway<P>>>,
+        Json(payload): Json<PegInAddressInput>,
+    ) -> Result<Json<PegInAddressOutput>, ApiError> {
         match rsk_gateway
             .get_peg_manager()
-            .get_temporary_pegin_address(payload)
+            .get_temporary_peg_in_address(payload)
             .await
         {
             Ok(address) => Ok(Json(address)),
@@ -74,9 +74,9 @@ impl Server {
         }
     }
 
-    async fn register_pegin<P: Provider>(
-        Extension(rsk_gateway): Extension<Arc<RskContractsGatewayAlloy<P>>>,
-        Json(payload): Json<RegisterPeginInput>,
+    async fn register_peg_in<P: Provider>(
+        Extension(rsk_gateway): Extension<Arc<RskContractsGateway<P>>>,
+        Json(payload): Json<RegisterPegInInput>,
     ) -> Result<(), ApiError> {
         match rsk_gateway
             .get_peg_manager()
