@@ -1,5 +1,5 @@
 use crate::contracts::bitcoin_manager;
-use crate::contracts::common::send_with_gas;
+use crate::contracts::common::{ContractInvokeReceipt, send_with_gas};
 use crate::contracts::peg_manager::SolPegManager::{
     BtcTransaction, PegInRequestTxSPVProof, SolPegManagerErrors, SolPegManagerInstance,
     getTemporaryPegInAddressReturn, registerPegInRequestReturn,
@@ -9,7 +9,6 @@ use alloy_primitives::hex::FromHex;
 use alloy_primitives::{Address, Bytes, FixedBytes, U256};
 use alloy_provider::Provider;
 use alloy_provider::network::EthereumWallet;
-use alloy_rpc_types::TransactionReceipt;
 use alloy_sol_types::{SolInterface, sol};
 use anyhow::{Context, Result, bail};
 use log::{debug, error, info, warn};
@@ -51,7 +50,7 @@ pub trait PegManagerContractApi {
         &self,
         signer: &EthereumWallet,
         input: PegInRequestTxSPVProof,
-    ) -> Result<TransactionReceipt>;
+    ) -> Result<ContractInvokeReceipt>;
 }
 
 // needed so we can create a PegManagerContractApi trait for tests mocking
@@ -86,7 +85,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         &self,
         signer: &EthereumWallet,
         input: PegInRequestTxSPVProof,
-    ) -> Result<TransactionReceipt> {
+    ) -> Result<ContractInvokeReceipt> {
         // TODO(iago) move chain_id and nonce retrieval to a common place
 
         let chain_id = self
@@ -123,7 +122,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
 
             debug!("Transaction receipt: {:?}", receipt);
 
-            if receipt.status() {
+            if receipt.status {
                 return Ok(receipt);
             } else if receipt.gas_used >= estimated_gas {
                 warn!("Bumping transaction gas");
@@ -144,7 +143,7 @@ pub trait PegManagerGatewayApi {
     async fn register_peg_in_request(
         &self,
         input: RegisterPegInInput,
-    ) -> Result<TransactionReceipt, PegManagerErrors>;
+    ) -> Result<ContractInvokeReceipt, PegManagerErrors>;
 }
 
 pub struct PegManagerGateway<C: PegManagerContractApi> {
@@ -187,7 +186,7 @@ impl<C: PegManagerContractApi> PegManagerGatewayApi for PegManagerGateway<C> {
     async fn register_peg_in_request(
         &self,
         input: RegisterPegInInput,
-    ) -> Result<TransactionReceipt, PegManagerErrors> {
+    ) -> Result<ContractInvokeReceipt, PegManagerErrors> {
         info!(
             "Interacting with PegManager#registerPegInRequest @ {}",
             self.contract_address
@@ -207,6 +206,8 @@ pub enum PegManagerErrors {
     InvalidPublicKey,
     #[error("Invalid address")]
     InvalidAddress,
+    #[error("Already registered PegIn")]
+    AlreadyRegisteredPegIn,
     #[error("Invalid value")]
     InvalidValue,
 }
@@ -235,6 +236,9 @@ fn decode_self_error(revert_data: &Bytes) -> Option<PegManagerErrors> {
     let decoded_error = SolPegManagerErrors::abi_decode(&revert_data, true);
     if decoded_error.is_ok() {
         let decoded_error = decoded_error.unwrap();
+
+        // TODO(iago) properly handle basic register_pegin errors instead of InternalError
+
         return Some(match decoded_error {
             SolPegManagerErrors::AddressEmptyCode(e) => {
                 error!("SolPegManagerErrors#AddressEmptyCode {}", e.target);
@@ -242,7 +246,7 @@ fn decode_self_error(revert_data: &Bytes) -> Option<PegManagerErrors> {
             }
             SolPegManagerErrors::AlreadyRegisteredPegIn(e) => {
                 error!("SolPegManagerErrors#AlreadyRegisteredPegIn {}", e.btcTxHash);
-                PegManagerErrors::InternalError
+                PegManagerErrors::AlreadyRegisteredPegIn
             }
             SolPegManagerErrors::BridgeBtcBlockNotInBestChain(e) => {
                 error!(
@@ -398,5 +402,59 @@ impl TryFrom<RegisterPegInInput> for PegInRequestTxSPVProof {
             merkleBranchPath: merkle_branch_path,
             merkleBranchHashes: merkle_branches_hashes,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::contracts::bitcoin_manager::SolBitcoinManager::{
+        IncorrectOutputNumber, SolBitcoinManagerErrors,
+    };
+    use crate::contracts::common::tests::generate_contract_expected_error;
+    use crate::contracts::peg_manager::SolPegManager::{
+        AlreadyRegisteredPegIn, SolPegManagerErrors, StreamNotFoundByDenomination,
+    };
+    use crate::contracts::peg_manager::{PegManagerErrors, decode_contract_error};
+
+    #[test]
+    fn test_already_registered_peg_in() {
+        let expected_err = SolPegManagerErrors::AlreadyRegisteredPegIn(AlreadyRegisteredPegIn {
+            btcTxHash: "0x6b8f74fe9c66c9c3a6c3d0b7111d9b6aaac0ea3db1bdbd6a38eb0e7d8b8bba3e"
+                .parse()
+                .expect("Failed to parse tx hash"),
+        });
+
+        let expected_err_payload = generate_contract_expected_error(expected_err);
+        let result = decode_contract_error(&expected_err_payload);
+
+        assert_eq!(result, PegManagerErrors::AlreadyRegisteredPegIn);
+    }
+
+    #[test]
+    fn test_stream_not_found_by_denomination() {
+        let expected_err =
+            SolPegManagerErrors::StreamNotFoundByDenomination(StreamNotFoundByDenomination {
+                denomination: alloy_primitives::Uint::from(125),
+            });
+
+        let expected_err_payload = generate_contract_expected_error(expected_err);
+        let result = decode_contract_error(&expected_err_payload);
+
+        assert_eq!(result, PegManagerErrors::StreamNotFoundByDenomination);
+    }
+
+    // check one of the errors to ensure the code keeps covering also SolBitcoinManagerErrors
+    // but the tests for SolBitcoinManagerErrors are in the bitcoin_manager.rs
+    #[test]
+    fn test_bitcoin_manager_error() {
+        let expected_err = SolBitcoinManagerErrors::IncorrectOutputNumber(IncorrectOutputNumber {
+            actual: alloy_primitives::Uint::from(1),
+            expected: alloy_primitives::Uint::from(2),
+        });
+
+        let expected_err_payload = generate_contract_expected_error(expected_err);
+        let result = decode_contract_error(&expected_err_payload);
+
+        assert_eq!(result, PegManagerErrors::InvalidPegInRequestData);
     }
 }

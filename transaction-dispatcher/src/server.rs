@@ -100,6 +100,9 @@ pub enum ApiError {
     #[error("Resource not found: {0}")]
     NotFound(String),
 
+    #[error("Forbidden: {0}")]
+    Forbidden(String),
+
     #[error("Internal server error")]
     InternalServerError,
 }
