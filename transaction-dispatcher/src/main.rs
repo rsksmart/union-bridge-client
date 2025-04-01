@@ -51,7 +51,7 @@ async fn main() -> Result<()> {
     let address = signer.address().to_string();
     let wallet = EthereumWallet::from(signer);
 
-    let provider = ProviderBuilder::default()
+    let provider = ProviderBuilder::new()
         .wallet(wallet.clone())
         .on_ws(ws)
         .await?;
@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
     );
 
     let rsk_contract_gateway = Arc::new(
-        RskContractsGateway::new(provider, wallet, &config)
+        RskContractsGateway::new(provider, &config)
             .context("Could not instantiate RskContractsGateway")?,
     );
 

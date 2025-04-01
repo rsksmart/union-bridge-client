@@ -1,13 +1,10 @@
-use crate::contracts::peg_manager::SolPegManager::registerPegInRequestCall;
-use alloy_contract::CallBuilder;
+use alloy_contract::SolCallBuilder;
 use alloy_primitives::hex::FromHexError;
 use alloy_primitives::ruint::ParseError;
 use alloy_provider::Provider;
-use alloy_provider::network::ReceiptResponse;
-use anyhow::Context;
-use common::types::{BlockHash, BlockNumber};
-use std::marker::PhantomData;
-use std::ops::Deref;
+use alloy_rpc_types::TransactionReceipt;
+use alloy_sol_types::SolCall;
+use log::{debug, error, warn};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -19,47 +16,87 @@ pub(crate) enum ParseFieldError {
     ParseHex(#[from] FromHexError),
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct ContractInvokeReceipt {
-    pub(crate) block_number: BlockNumber,
-    pub(crate) block_hash: BlockHash,
-    pub(crate) transaction_hash: String, // TODO create type
-    pub(crate) gas_used: u64,
-    pub(crate) status: bool,
+// TODO(create-Jira) - add ticket to test this, creating a mockeable wrapper around SolCallBuilder
+pub(super) async fn send_tx_with_gas_bump<P, F, T>(
+    build_tx: F,
+    max_attempts: u8,
+) -> alloy_contract::Result<TransactionReceipt>
+where
+    P: Provider,
+    T: SolCall,
+    F: Fn() -> SolCallBuilder<(), P, T>,
+{
+    // this works also as an eth_call, if not do a manual .call()
+    let estimated_gas = build_tx().estimate_gas().await?;
+
+    let mut receipt;
+    let mut attempt = 0;
+    loop {
+        let attempt_increment = 1 + (0.1 * (attempt + 1) as f64) as u64;
+        let gas_limit = estimated_gas * attempt_increment;
+
+        let tx_builder = build_tx().gas(gas_limit);
+
+        debug!("Sending transaction: {:?}", tx_builder);
+
+        receipt = tx_builder.send().await?.get_receipt().await?;
+
+        let should_retry =
+            !receipt.status() && attempt < max_attempts && likely_oog(&receipt, gas_limit);
+        if should_retry {
+            warn!("Bumping transaction gas");
+            attempt += 1;
+            continue;
+        }
+
+        if receipt.status() {
+            debug!("Transaction succeeded: {:?}", receipt);
+        } else {
+            error!("Transaction failed: {:?} - {:?}", receipt, tx_builder);
+        }
+
+        break;
+    }
+
+    Ok(receipt)
 }
 
-pub(super) async fn send_with_gas<P: Provider>(
-    provider: P,
-    tx_builder: CallBuilder<(), P, PhantomData<registerPegInRequestCall>>,
-    gas_to_use: u64,
-) -> anyhow::Result<ContractInvokeReceipt> {
-    let gas_price = provider
-        .get_gas_price()
-        .await
-        .context("getting gas price")?;
+fn likely_oog(receipt: &TransactionReceipt, gas_limit: u64) -> bool {
+    let oog_margin = gas_limit / 100;
+    !receipt.status() && receipt.gas_used >= gas_limit.saturating_sub(oog_margin)
+}
 
-    let pending_tx_builder = tx_builder
-        .gas_price(gas_price)
-        .gas(gas_to_use)
-        .send()
-        .await
-        .context("sending tx")?;
+#[cfg(test)]
+pub(crate) mod tests {
+    use alloy_json_rpc::ErrorPayload;
+    use alloy_sol_types::{SolInterface, SolValue};
 
-    let receipt = pending_tx_builder
-        .get_receipt()
-        .await
-        .context("getting receipt")?;
+    pub(crate) const CONTRACT_ERROR_TEMPLATE: &str =
+        r#"{"code":3,"message":"execution reverted:","data":"<to_replace>"}"#;
 
-    Ok(ContractInvokeReceipt {
-        block_number: receipt.block_number().unwrap_or_default().try_into()?,
-        block_hash: receipt
-            .block_hash()
-            .unwrap_or_default()
-            .to_string()
-            .deref()
-            .try_into()?,
-        transaction_hash: receipt.transaction_hash().to_string(),
-        gas_used: receipt.gas_used(),
-        status: receipt.status(),
-    })
+    #[allow(dead_code)]
+    pub(crate) const NO_REVERT_ERROR_TEMPLATE: &str =
+        r#"{"code":3,"message":"<to_replace_message>:","data":"<to_replace_data>"}"#;
+
+    pub(crate) fn generate_contract_revert_error<T: SolInterface>(input: T) -> ErrorPayload {
+        let error = CONTRACT_ERROR_TEMPLATE.replace(
+            "<to_replace>",
+            &format!("0x{}", hex::encode(input.abi_encode())),
+        );
+        serde_json::from_str::<ErrorPayload>(&error).unwrap()
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn generate_no_revert_error(msg: &str, data: &str) -> ErrorPayload {
+        let error = CONTRACT_ERROR_TEMPLATE
+            .replace(
+                "<to_replace_message>",
+                &format!("0x{}", hex::encode(msg.abi_encode())),
+            )
+            .replace(
+                "<to_replace_data>",
+                &format!("0x{}", hex::encode(data.abi_encode())),
+            );
+        serde_json::from_str::<ErrorPayload>(&error).unwrap()
+    }
 }

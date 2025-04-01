@@ -7,7 +7,7 @@ use rand::thread_rng;
 use std::path::Path;
 
 pub struct KeyManager {
-    // TODO(iago) instantiate with a path to the keystore so the methods below are instance ones (but for the generate one)
+    // TODO(create-Jira) - instantiate with a path to the keystore so the methods below are instance ones (but for the generate one)
 }
 
 impl KeyManager {

@@ -1,7 +1,6 @@
-use crate::contracts::peg_manager::{PegManagerErrors, PegManagerGatewayApi};
+use crate::rsk_gateway::PegManagerErrors;
 use crate::rsk_gateway::{RskContractsGateway, RskContractsGatewayApi};
-use crate::use_cases::get_temporary_peg_in_address::{PegInAddressInput, PegInAddressOutput};
-use crate::use_cases::register_peg_in_request::RegisterPegInInput;
+use crate::types::{PegInAddressInput, PegInAddressOutput, RegisterPegInInput};
 use alloy_provider::Provider;
 use anyhow::{Context, Result};
 use axum::http::StatusCode;
@@ -56,11 +55,7 @@ impl Server {
         Extension(rsk_gateway): Extension<Arc<RskContractsGateway<P>>>,
         Json(payload): Json<PegInAddressInput>,
     ) -> Result<Json<PegInAddressOutput>, ApiError> {
-        match rsk_gateway
-            .get_peg_manager()
-            .get_temporary_peg_in_address(payload)
-            .await
-        {
+        match rsk_gateway.get_temporary_peg_in_address(payload).await {
             Ok(address) => Ok(Json(address)),
             Err(e) => match e {
                 PegManagerErrors::InvalidPublicKey
@@ -78,11 +73,7 @@ impl Server {
         Extension(rsk_gateway): Extension<Arc<RskContractsGateway<P>>>,
         Json(payload): Json<RegisterPegInInput>,
     ) -> Result<(), ApiError> {
-        match rsk_gateway
-            .get_peg_manager()
-            .register_peg_in_request(payload)
-            .await
-        {
+        match rsk_gateway.register_peg_in_request(payload).await {
             Ok(_) => Ok(()),
             Err(_) => {
                 // TODO(iago) properly map errors

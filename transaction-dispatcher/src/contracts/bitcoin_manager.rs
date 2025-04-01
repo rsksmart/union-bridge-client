@@ -1,26 +1,19 @@
-use crate::contracts::bitcoin_manager::BitcoinManager::BitcoinManagerErrors;
+use crate::contracts::bitcoin_manager::SolBitcoinManager::SolBitcoinManagerErrors;
 pub(super) use crate::contracts::common::ParseFieldError;
-use crate::contracts::peg_manager::PegManagerErrors;
 use crate::contracts::peg_manager::SolPegManager::{BtcTransaction, BtcTxIn, BtcTxOut};
+use crate::rsk_gateway::PegManagerErrors;
+use crate::types::{BitcoinTransaction, BitcoinTransactionIn, BitcoinTransactionOut};
+use alloy_json_rpc::ErrorPayload;
 use alloy_primitives::Bytes;
 use alloy_sol_types::{SolInterface, sol};
 use log::error;
-use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
 sol!(
     #[sol(rpc)]
-    BitcoinManager,
+    SolBitcoinManager,
     "../config/dev/abi/BitcoinManager.json",
 );
-
-#[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct BitcoinTransactionIn {
-    pub(crate) tx_id: String,
-    pub(crate) v_out: u32,
-    pub(crate) sequence: u32,
-    pub(crate) script_sig: String,
-}
 
 impl TryFrom<BitcoinTransactionIn> for BtcTxIn {
     type Error = ParseFieldError;
@@ -35,12 +28,6 @@ impl TryFrom<BitcoinTransactionIn> for BtcTxIn {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct BitcoinTransactionOut {
-    pub(crate) amount: u64,
-    pub(crate) script_pub_key: String,
-}
-
 impl TryFrom<BitcoinTransactionOut> for BtcTxOut {
     type Error = ParseFieldError;
 
@@ -51,14 +38,6 @@ impl TryFrom<BitcoinTransactionOut> for BtcTxOut {
                 .map_err(ParseFieldError::ParseHex)?,
         })
     }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct BitcoinTransaction {
-    pub(crate) version: u32,
-    pub(crate) inputs: Vec<BitcoinTransactionIn>,
-    pub(crate) outputs: Vec<BitcoinTransactionOut>,
-    pub(crate) lock_time: u32,
 }
 
 impl TryFrom<BitcoinTransaction> for BtcTransaction {
@@ -94,112 +73,125 @@ impl TryFrom<BitcoinTransaction> for BtcTransaction {
     }
 }
 
-pub fn decode_contract_error(revert_data: &Bytes) -> Option<PegManagerErrors> {
-    let decoded_error = BitcoinManagerErrors::abi_decode(&revert_data, true);
+pub(crate) fn decode_contract_error(error_payload: &ErrorPayload) -> Option<PegManagerErrors> {
+    let revert_data = if let Some(data) = error_payload.as_revert_data() {
+        data
+    } else {
+        return Some(PegManagerErrors::NoRevertError(format!(
+            "Not a BitcoinManagerError: {:?}",
+            error_payload
+        )));
+    };
+
+    let decoded_error = SolBitcoinManagerErrors::abi_decode(&revert_data, true);
     if decoded_error.is_ok() {
+        // TODO(create-Jira) - review all errors and conceptually merge into or create new PegManagerErrors
         return Some(match decoded_error.unwrap() {
-            BitcoinManagerErrors::AddressEmptyCode(e) => {
-                error!("SolBitcoinManagerErrors#AddressEmptyCode {}", e.target);
-                PegManagerErrors::InternalError
+            SolBitcoinManagerErrors::AddressEmptyCode(e) => {
+                error!("SolSolBitcoinManagerErrors#AddressEmptyCode {}", e.target);
+                PegManagerErrors::UnhandledContractError
             }
-            BitcoinManagerErrors::FailedCall(_) => {
-                error!("SolBitcoinManagerErrors#FailedCall");
-                PegManagerErrors::InternalError
+            SolBitcoinManagerErrors::FailedCall(_) => {
+                error!("SolSolBitcoinManagerErrors#FailedCall");
+                PegManagerErrors::UnhandledContractError
             }
-            BitcoinManagerErrors::IncorrectOutputNumber(e) => {
+            SolBitcoinManagerErrors::IncorrectOutputNumber(e) => {
                 error!(
-                    "SolBitcoinManagerErrors#IncorrectOutputNumber actual: {}, expected: {}",
+                    "SolSolBitcoinManagerErrors#IncorrectOutputNumber actual: {}, expected: {}",
                     e.actual, e.expected
                 );
-                PegManagerErrors::InternalError
+                PegManagerErrors::InvalidPegInRequestData
             }
-            BitcoinManagerErrors::IncorrectP2TRScriptPub(e) => {
+            SolBitcoinManagerErrors::IncorrectP2TRScriptPub(e) => {
                 error!(
-                    "SolBitcoinManagerErrors#IncorrectP2TRScriptPub actual: {:?}, expected: {:?}",
+                    "SolSolBitcoinManagerErrors#IncorrectP2TRScriptPub actual: {:?}, expected: {:?}",
                     e.actual, e.expected
                 );
-                PegManagerErrors::InternalError
+                PegManagerErrors::InvalidPegInRequestData
             }
-            BitcoinManagerErrors::IncorrectlyFormedOpReturn(e) => {
+            SolBitcoinManagerErrors::IncorrectlyFormedOpReturn(e) => {
                 error!(
-                    "SolBitcoinManagerErrors#IncorrectlyFormedOpReturn index: {}",
+                    "SolSolBitcoinManagerErrors#IncorrectlyFormedOpReturn index: {}",
                     e.index
                 );
-                PegManagerErrors::InternalError
+                PegManagerErrors::InvalidPegInRequestData
             }
-            BitcoinManagerErrors::InvalidAddress(e) => {
-                error!("SolBitcoinManagerErrors#InvalidAddress {}", e._address);
+            SolBitcoinManagerErrors::InvalidAddress(e) => {
+                error!("SolSolBitcoinManagerErrors#InvalidAddress {}", e._address);
                 PegManagerErrors::InvalidAddress
             }
-            BitcoinManagerErrors::InvalidInitialization(_) => {
-                error!("SolBitcoinManagerErrors#InvalidInitialization");
-                PegManagerErrors::InternalError
+            SolBitcoinManagerErrors::InvalidInitialization(_) => {
+                error!("SolSolBitcoinManagerErrors#InvalidInitialization");
+                PegManagerErrors::UnhandledContractError
             }
-            BitcoinManagerErrors::InvalidOpReturnLength(e) => {
+            SolBitcoinManagerErrors::InvalidOpReturnLength(e) => {
                 error!(
-                    "SolBitcoinManagerErrors#InvalidOpReturnLength actual: {}, expected: {}",
+                    "SolSolBitcoinManagerErrors#InvalidOpReturnLength actual: {}, expected: {}",
                     e.actual, e.expected
                 );
-                PegManagerErrors::InternalError
+                PegManagerErrors::InvalidPegInRequestData
             }
-            BitcoinManagerErrors::InvalidPublicKey(e) => {
-                error!("SolBitcoinManagerErrors#InvalidPublicKey {}", e.publicKey);
+            SolBitcoinManagerErrors::InvalidPublicKey(e) => {
+                error!(
+                    "SolSolBitcoinManagerErrors#InvalidPublicKey {}",
+                    e.publicKey
+                );
                 PegManagerErrors::InvalidPublicKey
             }
-            BitcoinManagerErrors::InvalidValue(e) => {
-                error!("SolBitcoinManagerErrors#InvalidValue {}", e._value);
+            SolBitcoinManagerErrors::InvalidValue(e) => {
+                error!("SolSolBitcoinManagerErrors#InvalidValue {}", e._value);
                 PegManagerErrors::InvalidValue
             }
-            BitcoinManagerErrors::NotInitializing(_) => {
-                error!("SolBitcoinManagerErrors#NotInitializing");
-                PegManagerErrors::InternalError
+            SolBitcoinManagerErrors::NotInitializing(_) => {
+                error!("SolSolBitcoinManagerErrors#NotInitializing");
+                PegManagerErrors::UnhandledContractError
             }
-            BitcoinManagerErrors::NumberTooLarge(e) => {
+            SolBitcoinManagerErrors::NumberTooLarge(e) => {
                 error!(
-                    "SolBitcoinManagerErrors#NumberTooLarge actual: {}, max: {}",
+                    "SolSolBitcoinManagerErrors#NumberTooLarge actual: {}, max: {}",
                     e.actual, e.max
                 );
-                PegManagerErrors::InternalError
+                PegManagerErrors::UnhandledContractError
             }
-            BitcoinManagerErrors::OwnableInvalidOwner(e) => {
-                error!("SolBitcoinManagerErrors#OwnableInvalidOwner {}", e.owner);
-                PegManagerErrors::InternalError
+            SolBitcoinManagerErrors::OwnableInvalidOwner(e) => {
+                error!("SolSolBitcoinManagerErrors#OwnableInvalidOwner {}", e.owner);
+                PegManagerErrors::UnhandledContractError
             }
-            BitcoinManagerErrors::OwnableUnauthorizedAccount(e) => {
+            SolBitcoinManagerErrors::OwnableUnauthorizedAccount(e) => {
                 error!(
-                    "SolBitcoinManagerErrors#OwnableUnauthorizedAccount {}",
+                    "SolSolBitcoinManagerErrors#OwnableUnauthorizedAccount {}",
                     e.account
                 );
-                PegManagerErrors::InternalError
+                PegManagerErrors::UnhandledContractError
             }
-            BitcoinManagerErrors::UUPSUnauthorizedCallContext(_) => {
-                error!("SolBitcoinManagerErrors#UUPSUnauthorizedCallContext");
-                PegManagerErrors::InternalError
+            SolBitcoinManagerErrors::UUPSUnauthorizedCallContext(_) => {
+                error!("SolSolBitcoinManagerErrors#UUPSUnauthorizedCallContext");
+                PegManagerErrors::UnhandledContractError
             }
-            BitcoinManagerErrors::UUPSUnsupportedProxiableUUID(e) => {
+            SolBitcoinManagerErrors::UUPSUnsupportedProxiableUUID(e) => {
                 error!(
-                    "SolBitcoinManagerErrors#UUPSUnsupportedProxiableUUID slot: {:?}",
+                    "SolSolBitcoinManagerErrors#UUPSUnsupportedProxiableUUID slot: {:?}",
                     e.slot
                 );
-                PegManagerErrors::InternalError
+                PegManagerErrors::UnhandledContractError
             }
-            BitcoinManagerErrors::indexOverflow(e) => {
+            SolBitcoinManagerErrors::indexOverflow(e) => {
                 error!(
-                    "SolBitcoinManagerErrors#indexOverflow length: {}, from: {}, upTo: {}",
+                    "SolSolBitcoinManagerErrors#indexOverflow length: {}, from: {}, upTo: {}",
                     e.length, e.from, e.upTo
                 );
-                PegManagerErrors::InternalError
+                PegManagerErrors::UnhandledContractError
             }
-            BitcoinManagerErrors::ERC1967InvalidImplementation(e) => {
+            SolBitcoinManagerErrors::ERC1967InvalidImplementation(e) => {
                 error!(
-                    "SolBitcoinManagerErrors#ERC1967InvalidImplementation {}",
+                    "SolSolBitcoinManagerErrors#ERC1967InvalidImplementation {}",
                     e.implementation
                 );
-                PegManagerErrors::InternalError
+                PegManagerErrors::UnhandledContractError
             }
-            BitcoinManagerErrors::ERC1967NonPayable(_) => {
-                error!("SolBitcoinManagerErrors#ERC1967NonPayable");
-                PegManagerErrors::InternalError
+            SolBitcoinManagerErrors::ERC1967NonPayable(_) => {
+                error!("SolSolBitcoinManagerErrors#ERC1967NonPayable");
+                PegManagerErrors::UnhandledContractError
             }
         });
     }
@@ -210,11 +202,11 @@ pub fn decode_contract_error(revert_data: &Bytes) -> Option<PegManagerErrors> {
 mod tests {
     use crate::contracts::bitcoin_manager::SolBitcoinManager::{
         IncorrectOutputNumber, IncorrectP2TRScriptPub, IncorrectlyFormedOpReturn,
-        InvalidOpReturnLength, SolBitcoinManagerErrors,
+        InvalidOpReturnLength, NotInitializing, SolBitcoinManagerErrors,
     };
-    use crate::contracts::common::tests::generate_contract_expected_error;
-    use crate::contracts::peg_manager::SolPegManager::{NotInitializing, SolPegManagerErrors};
-    use crate::contracts::peg_manager::{PegManagerErrors, decode_contract_error};
+    use crate::contracts::bitcoin_manager::decode_contract_error;
+    use crate::contracts::common::tests::generate_contract_revert_error;
+    use crate::rsk_gateway::PegManagerErrors;
 
     #[test]
     fn test_incorrect_output_number() {
@@ -223,10 +215,10 @@ mod tests {
             expected: alloy_primitives::Uint::from(2),
         });
 
-        let expected_err_payload = generate_contract_expected_error(expected_err);
+        let expected_err_payload = generate_contract_revert_error(expected_err);
         let result = decode_contract_error(&expected_err_payload);
 
-        assert_eq!(result, PegManagerErrors::InvalidPegInRequestData);
+        matches!(result, Some(PegManagerErrors::InvalidPegInRequestData));
     }
 
     #[test]
@@ -237,10 +229,10 @@ mod tests {
                 expected: alloy_primitives::Bytes::from_static(&[0x01]),
             });
 
-        let expected_err_payload = generate_contract_expected_error(expected_err);
+        let expected_err_payload = generate_contract_revert_error(expected_err);
         let result = decode_contract_error(&expected_err_payload);
 
-        assert_eq!(result, PegManagerErrors::InvalidPegInRequestData);
+        matches!(result, Some(PegManagerErrors::InvalidPegInRequestData));
     }
 
     #[test]
@@ -250,10 +242,10 @@ mod tests {
                 index: alloy_primitives::Uint::from(1),
             });
 
-        let expected_err_payload = generate_contract_expected_error(expected_err);
+        let expected_err_payload = generate_contract_revert_error(expected_err);
         let result = decode_contract_error(&expected_err_payload);
 
-        assert_eq!(result, PegManagerErrors::InvalidPegInRequestData);
+        matches!(result, Some(PegManagerErrors::InvalidPegInRequestData));
     }
 
     #[test]
@@ -263,22 +255,22 @@ mod tests {
             expected: alloy_primitives::Uint::from(2),
         });
 
-        let expected_err_payload = generate_contract_expected_error(expected_err);
+        let expected_err_payload = generate_contract_revert_error(expected_err);
         let result = decode_contract_error(&expected_err_payload);
 
-        assert_eq!(result, PegManagerErrors::InvalidPegInRequestData);
+        matches!(result, Some(PegManagerErrors::InvalidPegInRequestData));
     }
 
-    // check one of the errors to ensure the mapping to InternalError keeps working
-    // there are more errors that map to InternalError, but we don't need to test all of them
+    // check one of the errors to ensure the mapping to UnhandledError keeps working
+    // there are more errors that map to UnhandledError, but we don't need to test all of them
     // all the ones that have defined mappings must be tested
     #[test]
     fn test_unhandled() {
-        let expected_err = SolPegManagerErrors::NotInitializing(NotInitializing {});
+        let expected_err = SolBitcoinManagerErrors::NotInitializing(NotInitializing {});
 
-        let expected_err_payload = generate_contract_expected_error(expected_err);
+        let expected_err_payload = generate_contract_revert_error(expected_err);
         let result = decode_contract_error(&expected_err_payload);
 
-        assert_eq!(result, PegManagerErrors::InternalError);
+        matches!(result, Some(PegManagerErrors::UnhandledContractError));
     }
 }
