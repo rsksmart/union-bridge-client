@@ -1,0 +1,46 @@
+[package]
+name = "qa-tools"
+version = "0.1.0"
+edition = "2021"
+resolver = "2"
+
+[[bin]]
+name = "block-indexer-runner"
+path = "src/block-indexer-runner.rs"
+
+[[bin]]
+name = "block-indexer-validator"
+path = "src/block-indexer-validator.rs"
+
+[[bin]]
+name = "log-indexer-runner"
+path = "src/log-indexer-runner.rs"
+
+[[bin]]
+name = "log-indexer-validator"
+path = "src/log-indexer-validator.rs"
+
+[[bin]]
+name = "archiver"
+path = "src/archiver.rs"
+
+[[bin]]
+name = "clear"
+path = "src/clear.rs"
+
+[dependencies]
+block-indexer = { path = "../block-indexer" }
+log-indexer = { path = "../log-indexer", features = ["testing"] }
+rsk-provider = { path = "../rsk-provider" }
+common = { path = "../common" }
+
+anyhow = { workspace = true }
+clap = { workspace = true }
+log = { workspace = true }
+log4rs = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true }
+regex = "1.7"
+tungstenite = "0.26.2"
+url = "2.3"
+chrono = "0.4.40"

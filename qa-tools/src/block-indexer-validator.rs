@@ -1,7 +1,7 @@
 use anyhow::{Context, Ok, Result, bail};
 use block_indexer::config::{Config, Logger};
 use block_indexer::store::{BlockStore, CachedBlockStore};
-use clap::{Arg, Command};
+use clap::Parser;
 use common::{
     alloy_rsk_provider::rpc::AlloyProvider,
     cache::LruCache,
@@ -11,53 +11,65 @@ use common::{
 };
 use log::{debug, info, warn};
 
-const LOGGER_CLI_FLAG: &str = "logger-path";
-const CONFIG_CLI_FLAG: &str = "config-path";
+/// Runs block-indexer-validator with the provided log configuration and configuration folder.
+#[derive(Parser, Debug)]
+#[command(author, version, about)]
+struct Args {
+    /// Mandatory tag (e.g. "happy_path")
+    #[arg(short = 't')]
+    tag: String,
+
+    /// Environment (optional, default: "stage")
+    #[arg(short = 'e', default_value = "stage")]
+    env: String,
+}
+
+const ROOT_DIRECTORY: &str = "/tmp/monitor-executions";
 const FINALITY_FOR_CHECK: u8 = 10;
 
 fn main() -> Result<()> {
-    let matches = Command::new("Check Fork Tool")
-        .arg(
-            Arg::new(LOGGER_CLI_FLAG)
-                .short('l')
-                .long(LOGGER_CLI_FLAG)
-                .value_name("PATH")
-                .help("Sets the path to the log4rs configuration file"),
-        )
-        .arg(
-            Arg::new(CONFIG_CLI_FLAG)
-                .short('c')
-                .long(CONFIG_CLI_FLAG)
-                .value_name("PATH")
-                .help("Sets the path to the configuration directory"),
-        )
-        .get_matches();
+    let args = Args::parse();
 
-    let logger_cfg_path = matches.get_one::<String>(LOGGER_CLI_FLAG);
-    Logger::init(logger_cfg_path).expect("Failed to load logger");
+    let target_folder = format!("{}/{}", ROOT_DIRECTORY, args.tag);
+    let target_config_folder = format!("{}/config/{}", target_folder, args.env);
+    let target_log_folder = target_folder.clone();
+    let target_log_config_file = format!("{}/log4rs.yaml", target_folder);
 
-    let config_path = matches.get_one::<String>(CONFIG_CLI_FLAG);
-    let config: Config = Config::load(config_path).expect("Failed to load config");
+    println!(
+        "Starting block-indexer-validator with log config: {} and config folder: {}",
+        target_log_config_file, target_config_folder
+    );
 
+    run_block_indexer_validator(&target_log_config_file, &target_config_folder)?;
+
+    let app_log_path = format!("{}/app.log", target_log_folder);
+    tail_file(&app_log_path, 20)?;
+
+    Ok(())
+}
+
+fn run_block_indexer_validator(log_config_path: &str, config_folder: &str) -> Result<()> {
+    log4rs::init_file(log_config_path, Default::default())
+        .with_context(|| format!("Initializing log4rs from {}", log_config_path))?;
+    let config = Config::load(config_folder)
+        .with_context(|| format!("Loading config from {}", config_folder))?;
     let store = CachedBlockStore::new(
         &format!("{}/blocks", config.indexer.storage.path),
         config.indexer.cache.size,
-    )?;
-    let initial_block_hash = BlockHash::try_from(config.indexer.initial_block_hash.as_str())
-        .expect(&format!(
-            "Invalid initial block hash: {}",
-            config.indexer.initial_block_hash
-        ));
+    )
+    .with_context(|| "Creating block store")?;
+    let shutdown_flag = ShutdownFlag::init();
 
+    let provider = AlloyProvider::new(&config.provider.rootstock.url, shutdown_flag.clone())
+        .with_context(|| "Creating AlloyProvider")?;
+    let initial_block_hash = BlockHash::try_from(config.indexer.initial_block_hash.as_str())
+        .with_context(|| "Parsing initial block hash")?;
     let initial_block = store
         .get_block_by_hash(initial_block_hash)?
         .context("Failed to get initial block")?;
     let store_best_block = store
         .get_best_block()?
         .context("Failed to get best block")?;
-
-    let provider = AlloyProvider::new(&config.provider.rootstock.url, ShutdownFlag::init())
-        .expect("Failed to create AlloyProvider");
 
     compare_best_blocks(&store_best_block, &provider)?;
 
@@ -79,9 +91,33 @@ fn main() -> Result<()> {
         );
     }
 
+    let next_block = find_next_block(&store, initial_block, store_best_block)?;
+
+    if !find_canonical_connection(&next_block, 1, &store, &provider)? {
+        bail!(
+            "Could not find canonical block for initial block {} ({})",
+            next_block.number(),
+            next_block.hash()
+        );
+    }
+
+    info!(
+        "Reached initial block {} ({}) with parent {} without gaps!!!",
+        next_block.number(),
+        next_block.hash(),
+        next_block.parent_hash()
+    );
+
+    Ok(())
+}
+
+fn find_next_block(
+    store: &CachedBlockStore<LruCache<RskBlock>>,
+    initial_block: RskBlock,
+    store_best_block: RskBlock,
+) -> Result<RskBlock, anyhow::Error> {
     let mut next_block = store_best_block;
     let mut expected_hash = next_block.hash();
-
     while next_block.number() > initial_block.number() {
         if next_block.hash() != expected_hash {
             bail!(
@@ -102,22 +138,18 @@ fn main() -> Result<()> {
             }
         };
     }
+    Ok(next_block)
+}
 
-    if !find_canonical_connection(&next_block, 1, &store, &provider)? {
-        bail!(
-            "Could not find canonical block for initial block {} ({})",
-            next_block.number(),
-            next_block.hash()
-        );
+fn tail_file<P: AsRef<Path>>(path: P, n: usize) -> Result<()> {
+    let content = fs::read_to_string(&path)
+        .with_context(|| format!("Reading log file: {:?}", path.as_ref()))?;
+    let lines: Vec<&str> = content.lines().collect();
+    let start = if lines.len() > n { lines.len() - n } else { 0 };
+    println!("--- Last {} lines of log ---", n);
+    for line in &lines[start..] {
+        println!("{}", line);
     }
-
-    info!(
-        "Reached initial block {} ({}) with parent {} without gaps!!!",
-        next_block.number(),
-        next_block.hash(),
-        next_block.parent_hash()
-    );
-
     Ok(())
 }
 

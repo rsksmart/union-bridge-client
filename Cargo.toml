@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["qa-tools/block-indexer-validator", "qa-tools/log-indexer-validator", "common", "block-indexer", "log-indexer", "transaction-dispatcher", "key-manager"]
+members = ["qa-tools", "common", "rsk-provider", "block-indexer", "log-indexer", "transaction-dispatcher", "test-utils", "key-manager"]
 
 [workspace.dependencies]
 alloy-dyn-abi = "0.8.22"

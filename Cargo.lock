@@ -1172,17 +1172,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "block-indexer-validator"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "block-indexer",
- "clap",
- "common",
- "log",
-]
-
-[[package]]
 name = "blst"
 version = "0.3.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1281,8 +1270,10 @@ checksum = "1a7964611d71df112cb1730f2ee67324fcf4d0fc6606acbbe9bfe06df124637c"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
+ "js-sys",
  "num-traits",
  "serde",
+ "wasm-bindgen",
  "windows-link",
 ]
 
@@ -2768,18 +2759,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "log-indexer-validator"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "common",
- "log",
- "log-indexer",
- "serde_json",
-]
-
-[[package]]
 name = "log-mdc"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3411,6 +3390,26 @@ dependencies = [
  "rusty-fork",
  "tempfile",
  "unarray",
+]
+
+[[package]]
+name = "qa-tools"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "block-indexer",
+ "chrono",
+ "clap",
+ "common",
+ "log",
+ "log-indexer",
+ "log4rs",
+ "regex",
+ "rsk-provider",
+ "serde",
+ "serde_json",
+ "tungstenite",
+ "url",
 ]
 
 [[package]]
