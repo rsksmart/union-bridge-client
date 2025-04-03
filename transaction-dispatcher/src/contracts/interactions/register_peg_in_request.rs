@@ -1,4 +1,3 @@
-use crate::contracts::interactions::common::handle_contract_result;
 use crate::contracts::peg_manager::PegManagerContractApi;
 use crate::contracts::peg_manager::SolPegManager::PegInRequestTxSPVProof;
 use crate::rsk_gateway::PegManagerErrors;
@@ -19,41 +18,46 @@ impl<C: PegManagerContractApi> RegisterPegInRequestInvoke<C> {
         &self,
         input: RegisterPegInInput,
     ) -> Result<RegisterPegInOutput, PegManagerErrors> {
+        info!("Init RegisterPegIn for: {:?}", input);
+
         let parsed_input: PegInRequestTxSPVProof = input.try_into().map_err(|e| {
-            error!("Failed to parse RegisterPegInInput: {}", e);
-            // TODO(iago) map this error (to 404) and other new errors (to ?) in server
-            PegManagerErrors::InvalidPegInRequestData
+            PegManagerErrors::InvalidPegInRequestData(format!(
+                "Failed to parse RegisterPegInInput: {}",
+                e
+            ))
         })?;
 
         // TODO(iago) check why sometimes it succeeds several times with the same payload (most of the times it does not)
 
-        let result = self
+        let receipt = self
             .contract
             .register_peg_in_request_send(parsed_input, 3) // TODO(iago) get bumps from config
-            .await;
+            .await?;
 
-        handle_contract_result(result, |r| {
-            if r.status() {
+        let result = match receipt.status() {
+            true => {
                 info!(
                     "RegisterPegInRequest successful at tx {}",
-                    r.transaction_hash
+                    receipt.transaction_hash
                 );
                 RegisterPegInOutput {
-                    transaction_hash: r.transaction_hash.to_string(),
+                    transaction_hash: receipt.transaction_hash.to_string(),
                     success: true,
                 }
-            } else {
-                error!("RegisterPegInRequest failed at tx {}", r.transaction_hash);
+            }
+            false => {
+                error!(
+                    "RegisterPegInRequest failed at tx {}",
+                    receipt.transaction_hash
+                );
                 RegisterPegInOutput {
-                    transaction_hash: r.transaction_hash.to_string(),
+                    transaction_hash: receipt.transaction_hash.to_string(),
                     success: false,
                 }
             }
-        })
-        .map_err(|e| {
-            error!("Error in RegisterPegInRequest SEND: {}", e);
-            e
-        })
+        };
+
+        Ok(result)
     }
 }
 
@@ -142,7 +146,7 @@ mod tests {
         assert!(result.is_err());
         matches!(
             result.err().unwrap(),
-            PegManagerErrors::AlreadyRegisteredPegIn
+            PegManagerErrors::AlreadyRegisteredPegIn(_)
         );
     }
 

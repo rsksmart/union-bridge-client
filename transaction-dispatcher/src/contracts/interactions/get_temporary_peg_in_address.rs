@@ -1,9 +1,8 @@
-use crate::contracts::interactions::common::handle_contract_result;
 use crate::contracts::peg_manager::PegManagerContractApi;
 use crate::rsk_gateway::PegManagerErrors;
 use crate::types::{PegInAddressInput, PegInAddressOutput};
 use alloy_primitives::{Address, FixedBytes};
-use log::{error, info};
+use log::info;
 // TODO(create-Jira) generate Try_From for the input struct like in the other cases
 
 pub(crate) struct GetTemporaryPegInAddressCall<C: PegManagerContractApi> {
@@ -19,44 +18,44 @@ impl<C: PegManagerContractApi> GetTemporaryPegInAddressCall<C> {
         &self,
         input: PegInAddressInput,
     ) -> Result<PegInAddressOutput, PegManagerErrors> {
+        info!("Init GetTemporaryPegInAddress for: {:?}", input);
+
         let rootstock_deposit_address: Address = input
             .rootstock_deposit_address
             .parse::<Address>()
             .map_err(|e| {
-                error!("Failed to parse rootstock_deposit_address: {}", e);
-                PegManagerErrors::InvalidAddress
+                PegManagerErrors::InvalidAddress(format!(
+                    "Failed to parse rootstock_deposit_address: {}",
+                    e
+                ))
             })?;
         let value = input.value;
         let btc_reimbursement_pub_key: FixedBytes<32> = input
             .btc_reimbursement_pub_key
             .parse::<FixedBytes<32>>()
             .map_err(|e| {
-                error!("Failed to parse btc_reimbursement_pub_key: {}", e);
-                PegManagerErrors::InvalidPublicKey
+                PegManagerErrors::InvalidPublicKey(format!(
+                    "Failed to parse btc_reimbursement_pub_key: {}",
+                    e
+                ))
             })?;
 
-        let result = self
+        let receipt = self
             .contract
             .get_temporary_peg_in_address_call(
                 rootstock_deposit_address,
                 value,
                 btc_reimbursement_pub_key,
             )
-            .await;
+            .await?;
 
-        handle_contract_result(result, |r| {
-            info!(
-                "GetTemporaryPegInAddress successful, deposit address: {}",
-                r.bitcoinDepositAddress
-            );
+        info!(
+            "GetTemporaryPegInAddress successful, deposit address: {}",
+            receipt.bitcoinDepositAddress
+        );
 
-            PegInAddressOutput {
-                address: r.bitcoinDepositAddress.to_string(),
-            }
-        })
-        .map_err(|e| {
-            error!("Error in GetTemporaryPegInAddress CALL: {}", e);
-            e
+        Ok(PegInAddressOutput {
+            address: receipt.bitcoinDepositAddress.to_string(),
         })
     }
 }
@@ -136,7 +135,7 @@ mod tests {
 
         let result = interaction.run(input).await;
         assert!(result.is_err());
-        matches!(result.err().unwrap(), PegManagerErrors::InvalidAddress);
+        matches!(result.err().unwrap(), PegManagerErrors::InvalidAddress(_));
     }
 
     #[tokio::test]
@@ -170,7 +169,7 @@ mod tests {
 
         let result = interaction.run(input).await;
         assert!(result.is_err());
-        matches!(result.err().unwrap(), PegManagerErrors::InvalidAddress);
+        matches!(result.err().unwrap(), PegManagerErrors::InvalidAddress(_));
     }
 
     #[tokio::test]
@@ -187,7 +186,7 @@ mod tests {
 
         let result = interaction.run(input).await;
         assert!(result.is_err());
-        matches!(result.err().unwrap(), PegManagerErrors::InvalidPublicKey);
+        matches!(result.err().unwrap(), PegManagerErrors::InvalidPublicKey(_));
     }
 
     // there are more errors that could be raised by the smart contract, but those are tested either on peg_manager.rs or bitcoin_manager.rs
@@ -222,7 +221,7 @@ mod tests {
 
         let result = call.run(input).await;
         assert!(result.is_err());
-        matches!(result.err().unwrap(), PegManagerErrors::InvalidPublicKey);
+        matches!(result.err().unwrap(), PegManagerErrors::InvalidPublicKey(_));
     }
 
     #[allow(unused)]

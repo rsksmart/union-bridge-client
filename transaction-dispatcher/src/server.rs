@@ -1,6 +1,6 @@
 use crate::rsk_gateway::PegManagerErrors;
 use crate::rsk_gateway::{RskContractsGateway, RskContractsGatewayApi};
-use crate::types::{PegInAddressInput, PegInAddressOutput, RegisterPegInInput};
+use crate::types::{PegInAddressInput, RegisterPegInInput};
 use alloy_provider::Provider;
 use anyhow::{Context, Result};
 use axum::http::StatusCode;
@@ -8,11 +8,9 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Extension, Json, Router};
 use common::shutdown_flag::ShutdownFlag;
-use log::error;
 use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
-use thiserror::Error;
 use tokio::net::TcpListener;
 use tower_http::timeout::TimeoutLayer;
 
@@ -54,62 +52,41 @@ impl Server {
     async fn create_peg_in_address<P: Provider>(
         Extension(rsk_gateway): Extension<Arc<RskContractsGateway<P>>>,
         Json(payload): Json<PegInAddressInput>,
-    ) -> Result<Json<PegInAddressOutput>, ApiError> {
+    ) -> impl IntoResponse {
         match rsk_gateway.get_temporary_peg_in_address(payload).await {
-            Ok(address) => Ok(Json(address)),
-            Err(e) => match e {
-                PegManagerErrors::InvalidPublicKey
-                | PegManagerErrors::InvalidAddress
-                | PegManagerErrors::InvalidValue => Err(ApiError::BadRequest(e.to_string())),
-                PegManagerErrors::StreamNotFoundByDenomination => {
-                    Err(ApiError::NotFound(e.to_string()))
-                }
-                _ => Err(ApiError::BadRequest(e.to_string())),
-            },
+            Ok(data) => (StatusCode::OK, Json(json!(data))).into_response(),
+            Err(e) => e.into_response(),
         }
     }
 
     async fn register_peg_in<P: Provider>(
         Extension(rsk_gateway): Extension<Arc<RskContractsGateway<P>>>,
         Json(payload): Json<RegisterPegInInput>,
-    ) -> Result<(), ApiError> {
+    ) -> impl IntoResponse {
         match rsk_gateway.register_peg_in_request(payload).await {
-            Ok(_) => Ok(()),
-            Err(_) => {
-                // TODO(iago) properly map errors
-                Err(ApiError::InternalServerError)
-            }
+            Ok(data) => (StatusCode::OK, Json(json!(data))).into_response(),
+            Err(e) => e.into_response(),
         }
     }
 }
 
-#[derive(Debug, Error)]
-pub enum ApiError {
-    #[error("Invalid request: {0}")]
-    BadRequest(String),
-
-    #[error("Resource not found: {0}")]
-    NotFound(String),
-
-    #[error("Forbidden: {0}")]
-    Forbidden(String),
-
-    #[error("Internal server error")]
-    InternalServerError,
-}
-
-impl IntoResponse for ApiError {
+impl IntoResponse for PegManagerErrors {
     fn into_response(self) -> Response {
-        let (status, message) = match &self {
-            ApiError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.to_string()),
-            ApiError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.to_string()),
+        let (status, message) = match self {
+            PegManagerErrors::InvalidPublicKey(msg)
+            | PegManagerErrors::InvalidAddress(msg)
+            | PegManagerErrors::InvalidValue(msg)
+            | PegManagerErrors::InvalidPegInRequestData(msg) => (StatusCode::BAD_REQUEST, msg),
+            PegManagerErrors::StreamNotFoundByDenomination(msg) => (StatusCode::NOT_FOUND, msg),
+            PegManagerErrors::AlreadyRegisteredPegIn(msg) => (StatusCode::FORBIDDEN, msg),
+            PegManagerErrors::NoRevertError(msg) => (StatusCode::CONFLICT, msg),
+            PegManagerErrors::NotOwner(msg) => (StatusCode::UNAUTHORIZED, msg),
             _ => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                StatusCode::INTERNAL_SERVER_ERROR.to_string(),
+                "Internal server error".to_string(),
             ),
         };
 
-        let body = Json(json!({ "error": message }));
-        (status, body).into_response()
+        (status, Json(json!({ "error": message }))).into_response()
     }
 }

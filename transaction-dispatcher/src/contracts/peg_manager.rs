@@ -114,123 +114,119 @@ fn decode_self_error(revert_data: &Bytes) -> Option<PegManagerErrors> {
         let decoded_error = decoded_error.unwrap();
         // TODO(create-Jira) - review all errors and conceptually merge into or create new PegManagerErrors
         return Some(match decoded_error {
-            SolPegManagerErrors::AddressEmptyCode(e) => {
-                error!("SolPegManagerErrors#AddressEmptyCode {}", e.target);
-                PegManagerErrors::UnhandledContractError
-            }
+            SolPegManagerErrors::AddressEmptyCode(e) => PegManagerErrors::UnhandledContractError(
+                format!("SolPegManagerErrors#AddressEmptyCode {}", e.target),
+            ),
             SolPegManagerErrors::AlreadyRegisteredPegIn(e) => {
-                error!("SolPegManagerErrors#AlreadyRegisteredPegIn {}", e.btcTxHash);
-                PegManagerErrors::AlreadyRegisteredPegIn
+                PegManagerErrors::AlreadyRegisteredPegIn(format!(
+                    "SolPegManagerErrors#AlreadyRegisteredPegIn {}",
+                    e.btcTxHash
+                ))
             }
             SolPegManagerErrors::BridgeBtcBlockNotInBestChain(e) => {
-                error!(
+                PegManagerErrors::UnhandledContractError(format!(
                     "SolPegManagerErrors#BridgeBtcBlockNotInBestChain {}",
                     e.blockHash
-                );
-                PegManagerErrors::UnhandledContractError
+                ))
             }
             SolPegManagerErrors::BridgeBtcBlockTooOld(e) => {
-                error!("SolPegManagerErrors#BridgeBtcBlockTooOld {}", e.maxDepth);
-                PegManagerErrors::UnhandledContractError
+                PegManagerErrors::UnhandledContractError(format!(
+                    "SolPegManagerErrors#BridgeBtcBlockTooOld {}",
+                    e.maxDepth
+                ))
             }
             SolPegManagerErrors::BridgeBtcInconsistentBlock(e) => {
-                error!(
+                PegManagerErrors::UnhandledContractError(format!(
                     "SolPegManagerErrors#BridgeBtcInconsistentBlock {}",
                     e.blockHash
-                );
-                PegManagerErrors::UnhandledContractError
+                ))
             }
             SolPegManagerErrors::BridgeBtcInexistantBlockHash(e) => {
-                error!(
+                PegManagerErrors::UnhandledContractError(format!(
                     "SolPegManagerErrors#BridgeBtcInexistantBlockHash {}",
                     e.blockHash
-                );
-                PegManagerErrors::UnhandledContractError
+                ))
             }
             SolPegManagerErrors::BridgeBtcTxInvalidMerkleBranch(e) => {
-                error!(
+                PegManagerErrors::UnhandledContractError(format!(
                     "SolPegManagerErrors#BridgeBtcTxInvalidMerkleBranch {} - {} - {:?}",
                     e.txHash, e.merkleBranchPath, e.merkleBranchHashes
-                );
-                PegManagerErrors::UnhandledContractError
+                ))
             }
             SolPegManagerErrors::BridgeBtcUnknownError(e) => {
-                error!("SolPegManagerErrors#BridgeBtcUnknownError {}", e.errorCode);
-                PegManagerErrors::UnhandledContractError
+                PegManagerErrors::UnhandledContractError(format!(
+                    "SolPegManagerErrors#BridgeBtcUnknownError {}",
+                    e.errorCode
+                ))
             }
             SolPegManagerErrors::ERC1967InvalidImplementation(e) => {
-                error!(
+                PegManagerErrors::UnhandledContractError(format!(
                     "SolPegManagerErrors#ERC1967InvalidImplementation {}",
                     e.implementation
-                );
-                PegManagerErrors::UnhandledContractError
+                ))
             }
-            SolPegManagerErrors::ERC1967NonPayable(_) => {
-                error!("SolPegManagerErrors#ERC1967NonPayable");
-                PegManagerErrors::UnhandledContractError
-            }
-            SolPegManagerErrors::FailedCall(_) => {
-                error!("SolPegManagerErrors#FailedCall");
-                PegManagerErrors::UnhandledContractError
-            }
+            SolPegManagerErrors::ERC1967NonPayable(_) => PegManagerErrors::UnhandledContractError(
+                "SolPegManagerErrors#ERC1967NonPayable".to_string(),
+            ),
+            SolPegManagerErrors::FailedCall(_) => PegManagerErrors::UnhandledContractError(
+                "SolPegManagerErrors#FailedCall".to_string(),
+            ),
             SolPegManagerErrors::InvalidInitialization(_) => {
-                error!("SolPegManagerErrors#InvalidInitialization");
-                PegManagerErrors::UnhandledContractError
+                PegManagerErrors::UnhandledContractError(
+                    "SolPegManagerErrors#InvalidInitialization".to_string(),
+                )
             }
             SolPegManagerErrors::NoEmptySlot(e) => {
-                error!(
+                PegManagerErrors::UnhandledContractError(format!(
                     "SolPegManagerErrors#NoEmptySlot {} - {}",
                     e.packetNumber, e.streamId
-                );
-                PegManagerErrors::UnhandledContractError
+                ))
             }
             SolPegManagerErrors::NotEnoughConfirmations(e) => {
-                error!(
+                PegManagerErrors::UnhandledContractError(format!(
                     "SolPegManagerErrors#NotEnoughConfirmations {} - {}",
                     e.expected, e.actual
-                );
-                PegManagerErrors::UnhandledContractError
+                ))
             }
-            SolPegManagerErrors::NotInitializing(_) => {
-                error!("SolPegManagerErrors#NotInitializing");
-                PegManagerErrors::UnhandledContractError
-            }
+            SolPegManagerErrors::NotInitializing(_) => PegManagerErrors::UnhandledContractError(
+                "SolPegManagerErrors#NotInitializing".to_string(),
+            ),
             SolPegManagerErrors::OwnableInvalidOwner(e) => {
-                error!("SolPegManagerErrors#OwnableInvalidOwner {}", e.owner);
-                PegManagerErrors::UnhandledContractError
+                PegManagerErrors::UnhandledContractError(format!(
+                    "SolPegManagerErrors#OwnableInvalidOwner {}",
+                    e.owner
+                ))
             }
             SolPegManagerErrors::OwnableUnauthorizedAccount(e) => {
-                error!(
+                PegManagerErrors::UnhandledContractError(format!(
                     "SolPegManagerErrors#OwnableUnauthorizedAccount {}",
                     e.account
-                );
-                PegManagerErrors::UnhandledContractError
+                ))
             }
-            SolPegManagerErrors::PacketOutOfBound(e) => {
-                error!("SolPegManagerErrors#PacketOutOfBound {}", e.packetNumber);
-                PegManagerErrors::UnhandledContractError
-            }
+            SolPegManagerErrors::PacketOutOfBound(e) => PegManagerErrors::UnhandledContractError(
+                format!("SolPegManagerErrors#PacketOutOfBound {}", e.packetNumber),
+            ),
             SolPegManagerErrors::StreamNotFoundByDenomination(e) => {
-                error!(
+                PegManagerErrors::StreamNotFoundByDenomination(format!(
                     "SolPegManagerErrors#StreamNotFoundByDenomination {}",
                     e.denomination
-                );
-                PegManagerErrors::StreamNotFoundByDenomination
+                ))
             }
             SolPegManagerErrors::tooManyDenominations(e) => {
-                error!(
+                PegManagerErrors::UnhandledContractError(format!(
                     "SolPegManagerErrors#tooManyDenominations {}",
                     e.maxDenominationsSize
-                );
-                PegManagerErrors::UnhandledContractError
+                ))
             }
             SolPegManagerErrors::UUPSUnauthorizedCallContext(_) => {
-                error!("SolPegManagerErrors#UUPSUnauthorizedCallContext");
-                PegManagerErrors::UnhandledContractError
+                PegManagerErrors::UnhandledContractError(
+                    "SolPegManagerErrors#UUPSUnauthorizedCallContext".to_string(),
+                )
             }
             SolPegManagerErrors::UUPSUnsupportedProxiableUUID(_) => {
-                error!("SolPegManagerErrors#UUPSUnsupportedProxiableUUID");
-                PegManagerErrors::UnhandledContractError
+                PegManagerErrors::UnhandledContractError(
+                    "SolPegManagerErrors#UUPSUnsupportedProxiableUUID".to_string(),
+                )
             }
         });
     }
@@ -302,7 +298,7 @@ mod tests {
         let expected_err_payload = generate_contract_revert_error(expected_err);
         let result = decode_contract_error(&expected_err_payload);
 
-        matches!(result, PegManagerErrors::AlreadyRegisteredPegIn);
+        matches!(result, PegManagerErrors::AlreadyRegisteredPegIn(_));
     }
 
     #[test]
@@ -315,7 +311,7 @@ mod tests {
         let expected_err_payload = generate_contract_revert_error(expected_err);
         let result = decode_contract_error(&expected_err_payload);
 
-        matches!(result, PegManagerErrors::StreamNotFoundByDenomination);
+        matches!(result, PegManagerErrors::StreamNotFoundByDenomination(_));
     }
 
     // check one of the errors to ensure the code keeps covering also SolBitcoinManagerErrors
@@ -330,7 +326,7 @@ mod tests {
         let expected_err_payload = generate_contract_revert_error(expected_err);
         let result = decode_contract_error(&expected_err_payload);
 
-        matches!(result, PegManagerErrors::InvalidPegInRequestData);
+        matches!(result, PegManagerErrors::InvalidPegInRequestData(_));
     }
 
     // check one of the errors to ensure the mapping to InternalError keeps working
@@ -343,6 +339,6 @@ mod tests {
         let expected_err_payload = generate_contract_revert_error(expected_err);
         let result = decode_contract_error(&expected_err_payload);
 
-        matches!(result, PegManagerErrors::UnhandledContractError);
+        matches!(result, PegManagerErrors::UnhandledContractError(_));
     }
 }

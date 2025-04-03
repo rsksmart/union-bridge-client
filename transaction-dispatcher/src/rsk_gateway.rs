@@ -8,7 +8,7 @@ use alloy_primitives::Address;
 use alloy_provider::Provider;
 use anyhow::{Context, Result};
 use common::{config::Config, types::ContractInfo};
-use log::info;
+use log::{error, info};
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -74,7 +74,13 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
             self.contract_address
         );
 
-        self.get_temporary_peg_in_address_call.run(input).await
+        self.get_temporary_peg_in_address_call
+            .run(input)
+            .await
+            .map_err(|err| {
+                error!("Error on get_temporary_peg_in_address_call: {}", err);
+                err
+            })
     }
 
     async fn register_peg_in_request(
@@ -86,29 +92,43 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
             self.contract_address
         );
 
-        self.register_peg_in_request_invoke.run(input).await
+        self.register_peg_in_request_invoke
+            .run(input)
+            .await
+            .map_err(|err| {
+                error!("Error on register_peg_in_request_invoke: {}", err);
+                err
+            })
     }
 }
 
-// TODO(iago) add parameters to the error to avoid the extra error! log
 #[derive(Debug, Error)]
 pub enum PegManagerErrors {
+    // mapped smart contract errors
+    #[error("Stream not found by denomination: {0}")]
+    StreamNotFoundByDenomination(String),
+    #[error("Invalid public key: {0}")]
+    InvalidPublicKey(String),
+    #[error("Invalid address: {0}")]
+    InvalidAddress(String),
+    #[error("Already registered PegIn: {0}")]
+    AlreadyRegisteredPegIn(String),
+    #[error("Invalid data in PegIn transaction: {0}")]
+    InvalidPegInRequestData(String),
+    #[error("Not Owner: {0}")]
+    NotOwner(String),
+    #[error("Invalid value: {0}")]
+    InvalidValue(String),
+
+    // unhandled smart contract errors
+    #[error("Unhandled Contract Error: {0}")]
+    UnhandledContractError(String),
+
+    // not smart contract errors
     #[error("No Revert Error: {0}")]
     NoRevertError(String),
+
+    // unexpected errors
     #[error("Unknown Contract Error: {0}")]
     UnknownContractError(String),
-    #[error("Unhandled Contract Error")]
-    UnhandledContractError,
-    #[error("Stream not found by denomination")]
-    StreamNotFoundByDenomination,
-    #[error("Invalid public key")]
-    InvalidPublicKey,
-    #[error("Invalid address")]
-    InvalidAddress,
-    #[error("Already registered PegIn")]
-    AlreadyRegisteredPegIn,
-    #[error("Invalid data in PegIn transaction")]
-    InvalidPegInRequestData,
-    #[error("Invalid value")]
-    InvalidValue,
 }
