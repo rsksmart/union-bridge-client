@@ -7,11 +7,15 @@ use log::{error, info};
 
 pub(crate) struct RegisterPegInRequestInvoke<C: PegManagerContractApi> {
     contract: C,
+    gas_bumps: u8,
 }
 
 impl<C: PegManagerContractApi> RegisterPegInRequestInvoke<C> {
-    pub(crate) fn new(contract: C) -> Self {
-        RegisterPegInRequestInvoke { contract }
+    pub(crate) fn new(contract: C, gas_bumps: u8) -> Self {
+        RegisterPegInRequestInvoke {
+            contract,
+            gas_bumps,
+        }
     }
 
     pub(crate) async fn run(
@@ -31,7 +35,7 @@ impl<C: PegManagerContractApi> RegisterPegInRequestInvoke<C> {
 
         let receipt = self
             .contract
-            .register_peg_in_request_send(parsed_input, 3) // TODO(iago) get bumps from config
+            .register_peg_in_request_send(parsed_input, self.gas_bumps)
             .await?;
 
         let result = match receipt.status() {
@@ -81,7 +85,10 @@ mod tests {
 
     impl RegisterPegInRequestInvoke<MockPegManagerContractApi> {
         pub(crate) fn new_for_tests(contract: MockPegManagerContractApi) -> Self {
-            RegisterPegInRequestInvoke { contract }
+            RegisterPegInRequestInvoke {
+                contract,
+                gas_bumps: 3,
+            }
         }
     }
 

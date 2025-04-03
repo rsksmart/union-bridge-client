@@ -49,6 +49,7 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             ),
             register_peg_in_request_invoke: RegisterPegInRequestInvoke::new(
                 peg_manager_contract.clone(),
+                config.transaction_dispatcher.transaction.gas_bumps_t1,
             ),
         })
     }

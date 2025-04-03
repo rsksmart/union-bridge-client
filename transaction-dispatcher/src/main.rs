@@ -45,9 +45,10 @@ async fn main() -> Result<()> {
 
     let ws = WsConnect::new(&config.provider.rootstock.url);
 
-    let key_store_path =
-        Path::new("/Users/illuque/.union_bridge/keystore/60fd8b82-c99b-4f88-80d4-e106697e7ef8"); // TODO(iago) config
-    let signer = KeyManager::get_signer(key_store_path, "test")?; // TODO(iago) env var or any other hidden way to get the password
+    let key_store_path = Path::new(&config.transaction_dispatcher.key_store.path);
+    let key_store_password = std::env::var("KEY_STORE_PASSWORD")
+        .context("KEY_STORE_PASSWORD environment variable not found")?;
+    let signer = KeyManager::get_signer(key_store_path, key_store_password)?;
     let address = signer.address().to_string();
     let wallet = EthereumWallet::from(signer);
 
@@ -66,8 +67,7 @@ async fn main() -> Result<()> {
             .context("Could not instantiate RskContractsGateway")?,
     );
 
-    let listener =
-        tokio::net::TcpListener::bind(&config.transaction_dispatcher.server_address).await?;
+    let listener = tokio::net::TcpListener::bind(&config.transaction_dispatcher.server.url).await?;
 
     let server = Server::new(listener, rsk_contract_gateway, shutdown_flag).await;
 

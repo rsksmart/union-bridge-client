@@ -20,4 +20,9 @@ contracts:
     address: "<ADDRESS_HERE>"
 
 transaction_dispatcher:
-  server_address: "0.0.0.0:3000"
+  server:
+    url: "0.0.0.0:3000"
+  key_store:
+    path: "<YOUR_KEY_STORE_PATH_HERE>"
+  transaction:
+    gas_bumps_t1: 3

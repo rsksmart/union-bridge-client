@@ -7,7 +7,7 @@ use rand::thread_rng;
 use std::path::Path;
 
 pub struct KeyManager {
-    // TODO(create-Jira) - instantiate with a path to the keystore so the methods below are instance ones (but for the generate one)
+    // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-86
 }
 
 impl KeyManager {
@@ -33,7 +33,7 @@ impl KeyManager {
         Ok((file_path, public_key_str, address_str))
     }
 
-    pub fn get_signer(location: &Path, password: &str) -> Result<LocalSigner<SigningKey>> {
+    pub fn get_signer(location: &Path, password: String) -> Result<LocalSigner<SigningKey>> {
         LocalSigner::decrypt_keystore(location, password).context("Getting signer")
     }
 
