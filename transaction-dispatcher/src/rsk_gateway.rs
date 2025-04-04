@@ -37,8 +37,10 @@ pub struct RskContractsGateway<P: Provider> {
 
 impl<P: Provider + Clone> RskContractsGateway<P> {
     pub fn new(provider: P, config: &Config) -> Result<Self> {
-        let contract_address =
-            Self::load_contract(PEG_MANAGER_CONTRACT_NAME, config.load_managed_contracts(true))?;
+        let contract_address = Self::load_contract(
+            PEG_MANAGER_CONTRACT_NAME,
+            config.load_managed_contracts(true),
+        )?;
 
         let peg_manager_contract = PegManagerContract::new(provider, contract_address);
 
