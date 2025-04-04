@@ -1,4 +1,7 @@
-use crate::{errors::ConfigError, types::ContractInfo};
+use crate::{
+    errors::ConfigError,
+    types::{Address, ContractInfo},
+};
 use alloy_json_abi::JsonAbi;
 use config;
 use serde::Deserialize;
@@ -75,6 +78,9 @@ impl Config {
         self.contracts
             .iter()
             .map(|c| {
+                let address = Address::try_from(c.address.as_str())
+                    .expect(&format!("Invalid address: {}", c.address));
+
                 let abi_path = format!("{}/abi/{}.json", self.path, c.name);
                 let abi = Self::load_abi_from_path(&abi_path);
 
@@ -85,7 +91,7 @@ impl Config {
                     },
                     ContractInfo {
                         name: c.name.to_owned(),
-                        address: c.address.to_owned(),
+                        address,
                         abi,
                     },
                 )
@@ -109,7 +115,7 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::Config;
+    use super::*;
     use std::env;
 
     #[test]
@@ -149,7 +155,7 @@ mod tests {
     }
 
     #[test]
-    fn test_load_contracts_when_dev_config_set_should_load_contracts_successfully_by_name() {
+    fn test_load_contracts_when_stage_config_set_should_load_contracts_successfully() {
         let config_path = format!("{}/../config/stage", env!("CARGO_MANIFEST_DIR"));
         let config = Config::load(&config_path).expect("Failed to load config");
         let contracts = config.load_managed_contracts(true);
@@ -162,7 +168,7 @@ mod tests {
 
         assert_eq!(key, contract_info.name);
         assert_eq!(
-            "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761",
+            Address::try_from("0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761").unwrap(),
             contract_info.address
         );
         assert!(!contract_info.abi.as_ref().unwrap().is_empty());
@@ -173,14 +179,14 @@ mod tests {
 
         assert_eq!(key, contract_info.name);
         assert_eq!(
-            "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc",
+            Address::try_from("0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc").unwrap(),
             contract_info.address
         );
         assert!(contract_info.abi.is_none());
     }
 
     #[test]
-    fn test_load_contracts_when_dev_config_set_should_load_contracts_successfully_by_address() {
+    fn test_load_contracts_when_stage_config_set_should_load_contracts_successfully_by_address() {
         let config_path = format!("{}/../config/stage", env!("CARGO_MANIFEST_DIR"));
         let config = Config::load(&config_path).expect("Failed to load config");
         let contracts = config.load_managed_contracts(false);
@@ -189,18 +195,20 @@ mod tests {
 
         // first contract
         let key = "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761";
+        let address = Address::try_from(key).unwrap();
         let contract_info = contracts.get(key).unwrap();
 
         assert_eq!("TestContractDyn", contract_info.name);
-        assert_eq!(key, contract_info.address);
+        assert_eq!(address, contract_info.address);
         assert!(!contract_info.abi.as_ref().unwrap().is_empty());
 
         // second contract
         let key = "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc";
+        let address = Address::try_from(key).unwrap();
         let contract_info = contracts.get(key).unwrap();
 
         assert_eq!("TestContractCompiled", contract_info.name);
-        assert_eq!(key, contract_info.address);
+        assert_eq!(address, contract_info.address);
         assert!(contract_info.abi.is_none());
     }
 }

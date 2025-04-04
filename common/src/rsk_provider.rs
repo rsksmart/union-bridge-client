@@ -1,9 +1,15 @@
-use crate::types::{BlockHash, BlockNumber, ContractInfo, RskBlock, RskEvent, RskLog};
+use crate::types::{Address, BlockHash, BlockNumber, ContractInfo, RskBlock, RskEvent, RskLog};
 use anyhow::Result;
 use thiserror::Error;
 
 #[cfg(feature = "testing")]
 use mockall::automock;
+
+#[derive(Debug)]
+pub enum BlockNumRef {
+    Latest,
+    Number(u64),
+}
 
 #[cfg_attr(feature = "testing", automock)]
 pub trait RskSubscription<T> {
@@ -12,22 +18,15 @@ pub trait RskSubscription<T> {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-// TODO(Jira) https://rsklabs.atlassian.net/browse/UB-43
 pub struct RskSubscriptionFilter {
-    pub addresses: Vec<String>,
+    pub addresses: Vec<Address>,
     pub topics: Vec<String>,
     pub from_block: Option<BlockNumber>,
 }
 
-#[derive(Debug)]
-pub enum BlockNumRef {
-    Latest,
-    Number(u64),
-}
-
 impl RskSubscriptionFilter {
     pub fn new(
-        addresses: Vec<String>,
+        addresses: Vec<Address>,
         topics: Vec<String>,
         from_block: Option<BlockNumber>,
     ) -> Self {

@@ -4,7 +4,7 @@ use common::{
     rsk_indexer::RskIndexer,
     rsk_provider::{RskProvider, RskSubscription, RskSubscriptionError, RskSubscriptionFilter},
     shutdown_flag::ShutdownFlag,
-    types::{BlockHash, BlockNumber, ContractInfo, RskLog},
+    types::{Address, BlockHash, BlockNumber, ContractInfo, RskLog},
 };
 use log::{error, info, warn};
 use std::collections::HashMap;
@@ -52,7 +52,7 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
             return Ok(());
         }
 
-        let contract_addresses: Vec<String> = self
+        let contract_addresses: Vec<Address> = self
             .managed_contracts
             .iter()
             .map(|c| c.1.address.clone())
@@ -113,10 +113,10 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                 }
             };
 
-            if new_log.info().number() < self.initial_block_number {
+            if new_log.info().block_number() < self.initial_block_number {
                 warn!(
                     "[subscribe_logs] Log block {} is lower than initial {}",
-                    new_log.info().number(),
+                    new_log.info().block_number(),
                     self.initial_block_number
                 );
                 continue;

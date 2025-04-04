@@ -5,7 +5,7 @@ use common::{
     rsk_indexer::RskIndexer,
     rsk_provider::{MockRskProvider, RskSubscriptionFilter},
     shutdown_flag::ShutdownFlag,
-    types::{BlockHash, ContractInfo, LogInfo},
+    types::{Address, BlockHash, ContractInfo, LogInfo},
 };
 use log::info;
 use log_indexer::{indexer::LogIndexer, store::RawLogStore};
@@ -69,7 +69,7 @@ fn test_when_log_indexer_runs_should_store_logs_from_subscription() -> Result<()
         INIT_BLOCK_HEIGHT.into(),
     );
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
-    let addresses: Vec<String> = generate_fake_addresses(LOG_INFO_TUPLE_SIZE);
+    let addresses: Vec<Address> = generate_fake_addresses(LOG_INFO_TUPLE_SIZE);
     let log_info_tuples: Vec<LogInfo> = log_info_tuple_generator(
         LOG_BLOCK_HEIGHT_RANGE,
         LOG_INFO_TUPLE_SIZE,
@@ -144,7 +144,7 @@ fn test_when_log_before_initial_height_should_not_store_log() -> Result<()> {
         INIT_BLOCK_HEIGHT.into(),
     );
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
-    let addresses: Vec<String> = generate_fake_addresses(LOG_INFO_TUPLE_SIZE);
+    let addresses: Vec<Address> = generate_fake_addresses(LOG_INFO_TUPLE_SIZE);
     let log_info_tuples: Vec<LogInfo> = log_info_tuple_generator(
         LOG_BLOCK_HEIGHT_RANGE,
         LOG_INFO_TUPLE_SIZE,
@@ -193,7 +193,7 @@ fn test_when_log_before_initial_height_should_not_store_log() -> Result<()> {
 fn log_info_tuple_generator(
     filter_from_block_height: Range<u64>,
     vec_size: u64,
-    addresses: Vec<String>,
+    addresses: Vec<Address>,
 ) -> Vec<LogInfo> {
     let mut v = Vec::with_capacity(vec_size as usize);
     let mut rng = rand::rng();
@@ -201,9 +201,9 @@ fn log_info_tuple_generator(
     for i in 0..vec_size {
         let block_num = rng.random_range(block_num_range.clone());
         let tx_id = rng.random_range(TX_ID_RANGE);
-        let address: String = addresses[i as usize].clone();
+        let address: Address = addresses[i as usize].clone();
         let block_hash = BlockHash::from(H256::random());
-        let tx_hash = generate_fake_tx_hash(tx_id, &address);
+        let tx_hash = generate_fake_tx_hash(tx_id, "");
         let log_index = rng.random_range(LOG_INDEX_RANGE);
         v.push(LogInfo::new(
             address,
