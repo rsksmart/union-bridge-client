@@ -1,13 +1,14 @@
+use crate::config::TransactionConfig;
+use crate::contracts::peg_manager::PegManagerContract;
 use crate::contracts::peg_manager::get_temporary_peg_in_address::GetTemporaryPegInAddressCall;
 use crate::contracts::peg_manager::register_peg_in_request::RegisterPegInRequestInvoke;
-use crate::contracts::peg_manager::PegManagerContract;
 use crate::types::{
     PegInAddressInput, PegInAddressOutput, RegisterPegInInput, RegisterPegInOutput,
 };
 use alloy_primitives::Address;
 use alloy_provider::Provider;
 use anyhow::{Context, Result};
-use common::{config::Config, types::ContractInfo};
+use common::types::ContractInfo;
 use log::{error, info};
 use std::collections::HashMap;
 use thiserror::Error;
@@ -36,11 +37,12 @@ pub struct RskContractsGateway<P: Provider> {
 }
 
 impl<P: Provider + Clone> RskContractsGateway<P> {
-    pub fn new(provider: P, config: &Config) -> Result<Self> {
-        let contract_address = Self::load_contract(
-            PEG_MANAGER_CONTRACT_NAME,
-            config.load_managed_contracts(true),
-        )?;
+    pub fn new(
+        provider: P,
+        managed_contracts: HashMap<String, ContractInfo>,
+        tx_config: &TransactionConfig,
+    ) -> Result<Self> {
+        let contract_address = Self::load_contract(PEG_MANAGER_CONTRACT_NAME, managed_contracts)?;
 
         let peg_manager_contract = PegManagerContract::new(provider, contract_address);
 
@@ -51,7 +53,7 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             ),
             register_peg_in_request_invoke: RegisterPegInRequestInvoke::new(
                 peg_manager_contract.clone(),
-                config.transaction_dispatcher.transaction.gas_bumps_t1,
+                tx_config.gas_bumps_t1,
             ),
         })
     }

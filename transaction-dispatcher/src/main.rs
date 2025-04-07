@@ -2,12 +2,12 @@ use alloy_provider::network::EthereumWallet;
 use alloy_provider::{ProviderBuilder, WsConnect};
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
-use common::config::Config;
 use common::shutdown_flag::ShutdownFlag;
 use key_manager::key_manager::KeyManager;
 use log::{error, info};
 use std::path::Path;
 use std::sync::Arc;
+use transaction_dispatcher::config::Config;
 use transaction_dispatcher::rsk_gateway::RskContractsGateway;
 use transaction_dispatcher::server::Server;
 
@@ -31,7 +31,7 @@ async fn main() -> Result<()> {
                 .long(CONFIG_CLI_FLAG)
                 .value_name("PATH")
                 .help("Sets the path to the configuration directory")
-                .default_value("../config/dev"),
+                .default_value("../config/local"), // for local usage within the crate
         )
         .get_matches();
 
@@ -39,13 +39,13 @@ async fn main() -> Result<()> {
     log4rs::init_file(logger_path, Default::default()).expect("Failed to load log4rs config");
 
     let config_path: &String = matches.get_one(CONFIG_CLI_FLAG).unwrap();
-    let config = Config::load(config_path).expect("Failed to load config");
+    let config: Config = Config::load(config_path).expect("Failed to load config");
 
     let shutdown_flag = ShutdownFlag::init();
 
     let ws = WsConnect::new(&config.provider.rootstock.url);
 
-    let key_store_path = Path::new(&config.transaction_dispatcher.key_store.path);
+    let key_store_path = Path::new(&config.key_store.path);
     let key_store_password = std::env::var("KEY_STORE_PASSWORD")
         .context("KEY_STORE_PASSWORD environment variable not found")?;
     let signer = KeyManager::get_signer(key_store_path, key_store_password)?;
@@ -63,11 +63,15 @@ async fn main() -> Result<()> {
     );
 
     let rsk_contract_gateway = Arc::new(
-        RskContractsGateway::new(provider, &config)
-            .context("Could not instantiate RskContractsGateway")?,
+        RskContractsGateway::new(
+            provider,
+            config.load_managed_contracts(),
+            &config.transaction,
+        )
+        .context("Could not instantiate RskContractsGateway")?,
     );
 
-    let listener = tokio::net::TcpListener::bind(&config.transaction_dispatcher.server.url).await?;
+    let listener = tokio::net::TcpListener::bind(&config.server.url).await?;
 
     let server = Server::new(listener, rsk_contract_gateway, shutdown_flag).await;
 

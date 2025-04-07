@@ -15,11 +15,3 @@ contracts:
 
   - name: "TestContractCompiled"
     address: "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc"
-
-transaction_dispatcher:
-  server:
-    url: "0.0.0.0:3000"
-  key_store:
-    path: "<YOUR_KEY_STORE_PATH_HERE>"
-  transaction:
-    gas_bumps_t1: 3

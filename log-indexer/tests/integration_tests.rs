@@ -220,7 +220,7 @@ fn log_info_tuple_generator(
 fn cycle_indexer(
     store: RawLogStore,
     mock_rsk_provider: MockRskProvider,
-    managed_contracts: HashMap<String, ContractInfo>,
+    managed_contracts: HashMap<Address, ContractInfo>,
     shutting_down: ShutdownFlag,
     msg: Option<&str>,
 ) -> () {

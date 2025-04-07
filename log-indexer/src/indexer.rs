@@ -13,7 +13,7 @@ pub struct LogIndexer<P: RskProvider, S: LogStore> {
     store: S,
     rsk_provider: P,
     initial_block_number: BlockNumber,
-    managed_contracts: HashMap<String, ContractInfo>,
+    managed_contracts: HashMap<Address, ContractInfo>,
     shutdown_flag: ShutdownFlag,
 }
 
@@ -22,7 +22,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         store: S,
         provider: P,
         initial_block_hash: BlockHash,
-        managed_contracts: HashMap<String, ContractInfo>,
+        managed_contracts: HashMap<Address, ContractInfo>,
         shutdown_flag: ShutdownFlag,
     ) -> Result<Self> {
         let initial_block_number = provider
@@ -124,9 +124,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 
             info!("[subscribe_logs] Processed log: {:?}", new_log);
 
-            let managed_contract = self
-                .managed_contracts
-                .get(&new_log.info().address().to_string());
+            let managed_contract = self.managed_contracts.get(&new_log.info().address());
             if managed_contract.is_none() {
                 error!(
                     "[subscribe_logs] Received unmanaged contract log: {:?}",

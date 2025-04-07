@@ -1,7 +1,7 @@
 use anyhow::{Context, Ok, Result};
 use clap::{Arg, Command};
-use common::config::Config;
 use log::info;
+use log_indexer::config::Config;
 use log_indexer::store::RawLogStore;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
@@ -23,7 +23,7 @@ fn main() -> Result<()> {
                 .long(CONFIG_CLI_FLAG)
                 .value_name("PATH")
                 .help("Sets the path to the configuration directory")
-                .default_value("config/dev"),
+                .default_value("../config/local"), // for local usage within the crate
         )
         .get_matches();
 
@@ -31,7 +31,7 @@ fn main() -> Result<()> {
     log4rs::init_file(logger_path, Default::default()).expect("Failed to load log4rs config");
 
     let config_path: &String = matches.get_one(CONFIG_CLI_FLAG).unwrap();
-    let config = Config::load(config_path).expect("Failed to load config");
+    let config: Config = Config::load(config_path).expect("Failed to load config");
 
     let store = RawLogStore::new(&format!("{}/logs", config.indexer.storage.path))?;
 

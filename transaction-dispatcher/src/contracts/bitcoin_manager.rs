@@ -9,10 +9,11 @@ use alloy_sol_types::{SolInterface, sol};
 use log::error;
 use std::str::FromStr;
 
+// TODO(iago) use features for properly include the corresponding ABI
 sol!(
     #[sol(rpc)]
     SolBitcoinManager,
-    "../config/dev/abi/BitcoinManager.json",
+    "../config/local/abi/BitcoinManager.json",
 );
 
 impl TryFrom<BitcoinTransactionIn> for BtcTxIn {

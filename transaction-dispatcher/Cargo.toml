@@ -21,6 +21,7 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 hex = { workspace = true }
 env_logger = { workspace = true }
+config = { workspace = true }
 
 alloy-json-rpc = "0.12.5"
 alloy-contract = "0.12.5"

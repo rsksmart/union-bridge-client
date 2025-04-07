@@ -27,7 +27,7 @@ use crate::types::RegisterPegInInput;
 sol!(
     #[sol(rpc)]
     SolPegManager,
-    "../config/dev/abi/PegManager.json" // TODO we could also use bytecode here, automate deploys for testing, etc.
+    "../config/local/abi/PegManager.json" // TODO we could also use bytecode here, automate deploys for testing, etc.
 );
 
 #[cfg_attr(test, automock)]

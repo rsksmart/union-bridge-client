@@ -1,9 +1,9 @@
 use anyhow::{bail, Context, Ok, Result};
+use block_indexer::config::Config;
 use block_indexer::store::{BlockStore, CachedBlockStore};
 use clap::{Arg, Command};
 use common::{
     cache::LruCache,
-    config::Config,
     rsk_provider::RskProvider,
     shutdown_flag::ShutdownFlag,
     types::{BlockHash, RskBlock},
@@ -23,7 +23,7 @@ fn main() -> Result<()> {
                 .long(LOGGER_CLI_FLAG)
                 .value_name("PATH")
                 .help("Sets the path to the log4rs configuration file")
-                .default_value("../log4rs.yaml"),
+                .default_value("../log4rs.yaml"), // TODO(iago) fix logger as well
         )
         .arg(
             Arg::new(CONFIG_CLI_FLAG)
@@ -31,7 +31,7 @@ fn main() -> Result<()> {
                 .long(CONFIG_CLI_FLAG)
                 .value_name("PATH")
                 .help("Sets the path to the configuration directory")
-                .default_value("../config/dev"),
+                .default_value("../config/dev"), // for local usage within the crate
         )
         .get_matches();
 
@@ -39,7 +39,7 @@ fn main() -> Result<()> {
     log4rs::init_file(logger_path, Default::default()).expect("Failed to load log4rs config");
 
     let config_path: &String = matches.get_one(CONFIG_CLI_FLAG).unwrap();
-    let config = Config::load(config_path).expect("Failed to load config");
+    let config: Config = Config::load(config_path).expect("Failed to load config");
 
     let store = CachedBlockStore::new(
         &format!("{}/blocks", config.indexer.storage.path),

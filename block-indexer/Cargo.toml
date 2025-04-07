@@ -12,6 +12,7 @@ clap = { workspace = true }
 log = { workspace = true }
 log4rs = { workspace = true }
 serde = { workspace = true }
+config = { workspace = true }
 storage-backend = { workspace = true }
 
 [dev-dependencies]

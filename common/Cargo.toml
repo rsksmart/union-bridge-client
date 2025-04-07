@@ -11,13 +11,14 @@ primitive-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+config = { workspace = true }
 
 alloy-json-abi = "0.8.21"
 lru = "0.13.0"
 bitcoin = "0.32.4"
-config = "0.15.8"
 signal-hook = "0.3"
 tokio = { workspace = true }
+log = "0.4.27"
 
 [dev-dependencies]
 test-utils = { path = "../test-utils" }
