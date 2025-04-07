@@ -1,11 +1,14 @@
-use alloy_provider::{ProviderBuilder, RootProvider, WsConnect};
+use alloy_provider::network::EthereumWallet;
+use alloy_provider::{ProviderBuilder, WsConnect};
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
 use common::config::Config;
 use common::shutdown_flag::ShutdownFlag;
+use key_manager::key_manager::KeyManager;
 use log::{error, info};
+use std::path::Path;
 use std::sync::Arc;
-use transaction_dispatcher::rsk_gateway::RskContractsGatewayAlloy;
+use transaction_dispatcher::rsk_gateway::RskContractsGateway;
 use transaction_dispatcher::server::Server;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
@@ -41,20 +44,30 @@ async fn main() -> Result<()> {
     let shutdown_flag = ShutdownFlag::init();
 
     let ws = WsConnect::new(&config.provider.rootstock.url);
-    let provider: RootProvider = ProviderBuilder::default().on_ws(ws).await?;
+
+    let key_store_path = Path::new(&config.transaction_dispatcher.key_store.path);
+    let key_store_password = std::env::var("KEY_STORE_PASSWORD")
+        .context("KEY_STORE_PASSWORD environment variable not found")?;
+    let signer = KeyManager::get_signer(key_store_path, key_store_password)?;
+    let address = signer.address().to_string();
+    let wallet = EthereumWallet::from(signer);
+
+    let provider = ProviderBuilder::new()
+        .wallet(wallet.clone())
+        .on_ws(ws)
+        .await?;
 
     info!(
-        "Connected to Rootstock at {}",
-        &config.provider.rootstock.url
+        "Connected to Rootstock at {} with address {}",
+        &config.provider.rootstock.url, address
     );
 
     let rsk_contract_gateway = Arc::new(
-        RskContractsGatewayAlloy::new(&provider, &config)
+        RskContractsGateway::new(provider, &config)
             .context("Could not instantiate RskContractsGateway")?,
     );
 
-    let listener =
-        tokio::net::TcpListener::bind(&config.transaction_dispatcher.server_address).await?;
+    let listener = tokio::net::TcpListener::bind(&config.transaction_dispatcher.server.url).await?;
 
     let server = Server::new(listener, rsk_contract_gateway, shutdown_flag).await;
 

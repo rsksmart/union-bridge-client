@@ -1,12 +1,14 @@
 use alloy_primitives::hex;
 use alloy_signer::k256::ecdsa::{SigningKey, VerifyingKey};
 use alloy_signer_local::LocalSigner;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use rand::rngs::OsRng;
 use rand::thread_rng;
 use std::path::Path;
 
-pub struct KeyManager {}
+pub struct KeyManager {
+    // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-86
+}
 
 impl KeyManager {
     pub fn generate_key(destination: &Path, password: &str) -> Result<(String, String, String)> {
@@ -29,6 +31,10 @@ impl KeyManager {
         let address_str = hex::encode(wallet.address());
         let file_path = destination.join(file_name).to_str().unwrap().to_string();
         Ok((file_path, public_key_str, address_str))
+    }
+
+    pub fn get_signer(location: &Path, password: String) -> Result<LocalSigner<SigningKey>> {
+        LocalSigner::decrypt_keystore(location, password).context("Getting signer")
     }
 
     pub fn derive_public_key_and_address(

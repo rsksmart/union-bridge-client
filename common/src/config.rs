@@ -53,7 +53,24 @@ pub struct ContractConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct TransactionDispatcherConfig {
-    pub server_address: String,
+    pub server: ServerConfig,
+    pub key_store: KeyStoreConfig,
+    pub transaction: TransactionConfig,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ServerConfig {
+    pub url: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct KeyStoreConfig {
+    pub path: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TransactionConfig {
+    pub gas_bumps_t1: u8,
 }
 
 impl Config {

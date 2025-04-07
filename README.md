@@ -60,7 +60,7 @@ The Union Bridge Monitor is not just a simple block indexer. It:
 # How to run the Monitor?
 
 Both `log-indexer` and `block-indexer` need to be run. TBD if we create an orchestrator to run both at the same time.
-Both crates are configurable, please check `config/dev` as a reference to create your own config. 
+Both crates are configurable, please check `config/dev` as a reference to create your own config.
 
 ```bash
 RUST_BACKTRACE=1 RUST_LOG=debug cargo run --bin log-indexer -- --logger-path "/path/to/log4rs.yaml" --config-path "/path/to/config/dir"
@@ -68,6 +68,23 @@ RUST_BACKTRACE=1 RUST_LOG=debug cargo run --bin log-indexer -- --logger-path "/p
 
 ```bash
 RUST_BACKTRACE=1 RUST_LOG=debug cargo run --bin block-indexer -- --logger-path "/path/to/log4rs.yaml" --config-path "/path/to/config/dir"
+```
+
+# How to run the Transaction Dispatcher?
+
+The first time you run it, or whenever you need to create a new private key, you need to run:
+
+```
+cargo run --bin key-manager new-key -p <YOUR_PASSWORD> -d <PATH_TO_STORE_IT>
+```
+
+It will print the local path to your key, and you have to configure it in
+`config.yaml/transaction_dispatcher/key_store/path`
+
+Now you can run the transaction dispatcher providing the password to unlock the key store:
+
+```bash
+KEY_STORE_PASSWORD="<YOUR_PASSWORD>" RUST_BACKTRACE=1 RUST_LOG=debug cargo run --bin transaction-dispatcher -- --logger-path "/path/to/log4rs.yaml" --config-path "/path/to/config/dir"
 ```
 
 # Utils/Check Gaps
@@ -137,14 +154,17 @@ for the remaining steps. Note that this doc is pointing to a WIP branch.
 Before contributing to the project, please run the following commands to set up the project:
 
 ## 1. Install _rust_ and _cargo_
+
 https://www.rust-lang.org/tools/install
 
 ## 2. Install _rusty-hook_
 
 This crate is used for commit hooks management.
 Run the following commands to install and initialize _rusty-hook_:
+
 ```
 cargo install rusty-hook
 rusty-hook init
 ```
+
 The file [rusty-hook.toml](rusty-hook.toml) will be used for hook configuration.

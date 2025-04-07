@@ -9,3 +9,4 @@
 config/dev/config.yaml
 logs/*
 .vscode/*
+union-bridge-contracts
