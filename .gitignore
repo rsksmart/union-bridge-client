@@ -7,6 +7,6 @@
 .DS_Store
 .idea
 config/local
-logs/*
+**/logs/*
 .vscode/*
 union-bridge-contracts

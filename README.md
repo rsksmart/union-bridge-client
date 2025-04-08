@@ -59,8 +59,6 @@ The Union Bridge Monitor is not just a simple block indexer. It:
 
 # How to run the Monitor?
 
-TODO(iago) update config info
-
 Both `log-indexer` and `block-indexer` need to be run. TBD if we create an orchestrator to run both at the same time.
 Both crates are configurable, please check sample files under `config` as a reference to create your own config.
 
@@ -74,14 +72,15 @@ RUST_BACKTRACE=1 RUST_LOG=debug cargo run --bin block-indexer -- --logger-path "
 
 # How to run the Transaction Dispatcher?
 
+Crate is configurable, please check sample files under `config` as a reference to create your own config.
+
 The first time you run it, or whenever you need to create a new private key, you need to run:
 
 ```
 cargo run --bin key-manager new-key -p <YOUR_PASSWORD> -d <PATH_TO_STORE_IT>
 ```
 
-It will print the local path to your key, and you have to configure it in
-`config.yaml/transaction_dispatcher/key_store/path`
+It will print the local path to your key, and you have to configure it in the config file.
 
 Now you can run the transaction dispatcher providing the password to unlock the key store:
 
