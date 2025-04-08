@@ -470,10 +470,6 @@ And the storage should contain these uncle blocks
 fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription_with_uncles(
 ) -> Result<()> {
     let _ = env_logger::builder().is_test(true).try_init();
-    const INIT_BLOCK_HEIGHT: u64 = 1;
-    const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
-    const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
-    const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
     let uncle_block_info_vec: Vec<UncleBlockInfo> = vec![
         UncleBlockInfo::new(5, false, "uD.A"),
         UncleBlockInfo::new(8, false, "uG.A"),
@@ -482,7 +478,10 @@ fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription
         UncleBlockInfo::new(22, false, "uP.B"),
         UncleBlockInfo::new(28, false, "uS.A"),
     ];
-
+    const INIT_BLOCK_HEIGHT: u64 = 1;
+    const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
+    const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
+    const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
     let temp_dir = tempdir()?;
     let store_path = temp_dir.path().join("blocks");
     fs::create_dir_all(&store_path)?;
@@ -575,12 +574,6 @@ And the storage should contain these uncle blocks
 fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complete_sync_with_uncles(
 ) -> Result<()> {
     let _ = env_logger::builder().is_test(true).try_init();
-    const INIT_BLOCK_HEIGHT: u64 = 1;
-    const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
-    const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
-    const REORG_BLOCK_HEIGHT: u64 = 10;
-    const REORG_HAPPENS_AT_HEIGHT: u64 = 15;
-    const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
     let uncle_block_info_vec: Vec<UncleBlockInfo> = vec![
         UncleBlockInfo::new(5, false, "uD.A"),
         UncleBlockInfo::new(12, false, "uJ.A"),
@@ -596,6 +589,12 @@ fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complet
         UncleBlockInfo::new(23, true, "uPP.A"),
         UncleBlockInfo::new(33, true, "uT.A"),
     ];
+    const INIT_BLOCK_HEIGHT: u64 = 1;
+    const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
+    const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
+    const REORG_BLOCK_HEIGHT: u64 = 10;
+    const REORG_HAPPENS_AT_HEIGHT: u64 = 15;
+    const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
 
     let temp_dir = tempdir()?;
     let store_path = temp_dir.path().join("blocks");
@@ -630,6 +629,112 @@ fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complet
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_number(Some(REORG_HAPPENS_AT_HEIGHT.into()), None);
     mock_rsk_provider_handler.set_provider_expect_subscribe_blocks(None);
+    cycle_indexer(store, mock_rsk_provider, shutting_down, None);
+    let store_after: CachedBlockStore<LruCache<RskBlock>> =
+        CachedBlockStore::new(store_path, BLOCK_CACHE_SIZE)?;
+    assert_best_block(&generator, &store_after, MAX_BLOCK_HEIGHT_SUBSCRIPTION);
+    assert_canonical_chain(
+        &generator,
+        &store_after,
+        INIT_BLOCK_HEIGHT,
+        MAX_BLOCK_HEIGHT_SUBSCRIPTION,
+    );
+    assert_uncle_block_links(
+        &store_after,
+        INIT_BLOCK_HEIGHT,
+        MAX_BLOCK_HEIGHT_SUBSCRIPTION,
+    );
+    assert_uncle_blocks_in_storage(&generator, &store_after, uncle_block_info_vec.clone());
+    Ok(())
+}
+
+/* Reorg during subscription with uncles
+Given the initial best block is B
+And the provider retrieves blocks B to M under backward sync
+And the provider retrieves blocks N to Z under subscription
+# (N = M+1)
+And certain blocks do have uncle blocks in the original chain
+| blockID | uncleBlockIDarr |
+| P       | P.A             |
+| R       | R.A             |
+| Y       | Y.A             |
+And certain blocks do have uncle blocks in the reorged chain
+| blockID | uncleBlockIDarr |
+| Q       | Q.A             |
+| R2      | R2.A            |
+| T       | T.A             |
+| Z       | Z.A             |
+When the indexer is started
+And a reorg happens at block X, from block R (N < R < X < Z)
+Then the best block in the storage should be Z
+And the storage should reflect the expected canonical chain containing blocks from B to Z
+And the storage should reflect that appropriate blocks are linked to its uncle blocks
+| blockID | uncleBlockIDarr |
+| P       | P.A             |
+| R2      | R2.A            |
+| T       | T.A             |
+| Z       | Z.A             |
+And the storage should contain these uncle blocks
+| uncleBlockIDarr |
+| P.A             |
+| R2.A            |
+| T.A             |
+| Z.A             |
+*/
+#[test]
+fn test_when_monitor_runs_and_reorg_happens_during_subscription_should_complete_sync_with_uncles(
+) -> Result<()> {
+    let _ = env_logger::builder().is_test(true).try_init();
+    let uncle_block_info_vec: Vec<UncleBlockInfo> = vec![
+        UncleBlockInfo::new(23, false, "uP.A"),
+        UncleBlockInfo::new(28, false, "uR.A"),
+        UncleBlockInfo::new(32, false, "uY.A"),
+        UncleBlockInfo::new(24, true, "uQ.A"),
+        UncleBlockInfo::new(28, true, "uR2.A"),
+        UncleBlockInfo::new(29, true, "uT.A"),
+        UncleBlockInfo::new(38, true, "uZ.A"),
+    ];
+
+    const INIT_BLOCK_HEIGHT: u64 = 1;
+    const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
+    const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
+    const REORG_BLOCK_HEIGHT: u64 = 25;
+    const REORG_HAPPENS_AT_HEIGHT: u64 = 30;
+    const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
+    let temp_dir = tempdir()?;
+    let store_path = temp_dir.path().join("blocks");
+    fs::create_dir_all(&store_path)?;
+    let store_path: &str = store_path.to_str().unwrap();
+    let store: CachedBlockStore<LruCache<RskBlock>> =
+        CachedBlockStore::new(store_path, BLOCK_CACHE_SIZE)?;
+    let shutting_down = ShutdownFlag::init();
+    let is_reorg = Arc::new(AtomicBool::new(false));
+    let mut mock_rsk_provider = MockRskProvider::new();
+    let generator = FakeBlockGenerator::new(
+        Some(REORG_BLOCK_HEIGHT.into()),
+        is_reorg.clone(),
+        Some(uncle_block_info_vec.clone()),
+    );
+    let mut mock_rsk_provider_handler = MockRskProviderHandler::new(
+        &mut mock_rsk_provider,
+        &generator,
+        is_reorg.clone(),
+        shutting_down.clone(),
+        INIT_BLOCK_HEIGHT.into(),
+        MAX_BLOCK_HEIGHT_BACKWARDS_SYNC.into(),
+        MAX_BLOCK_HEIGHT_SUBSCRIPTION.into(),
+        DELAY_BETWEEN_BLOCKS_SUBSCRIPTION,
+        Some(uncle_block_info_vec.clone()),
+    );
+    let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH)?;
+    mock_rsk_provider_handler
+        .set_provider_expect_get_block_by_hash(block_hash, INIT_BLOCK_HEIGHT.into());
+    mock_rsk_provider_handler.set_provider_expect_get_block_by_hash_uncles();
+    mock_rsk_provider_handler.set_provider_expect_get_best_block();
+    mock_rsk_provider_handler
+        .set_provider_expect_get_block_by_number(Some(REORG_HAPPENS_AT_HEIGHT.into()), None);
+    mock_rsk_provider_handler
+        .set_provider_expect_subscribe_blocks(Some(REORG_HAPPENS_AT_HEIGHT.into()));
     cycle_indexer(store, mock_rsk_provider, shutting_down, None);
     let store_after: CachedBlockStore<LruCache<RskBlock>> =
         CachedBlockStore::new(store_path, BLOCK_CACHE_SIZE)?;
