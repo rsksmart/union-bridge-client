@@ -5,16 +5,11 @@ use crate::rsk_gateway::PegManagerErrors;
 use crate::types::{BitcoinTransaction, BitcoinTransactionIn, BitcoinTransactionOut};
 use alloy_json_rpc::ErrorPayload;
 use alloy_primitives::Bytes;
-use alloy_sol_types::{SolInterface, sol};
+use alloy_sol_types::SolInterface;
 use log::error;
 use std::str::FromStr;
 
-// TODO(iago) use features for properly include the corresponding ABI
-sol!(
-    #[sol(rpc)]
-    SolBitcoinManager,
-    "../config/local/abi/BitcoinManager.json",
-);
+include!(concat!(env!("OUT_DIR"), "/abi.rs"));
 
 impl TryFrom<BitcoinTransactionIn> for BtcTxIn {
     type Error = ParseFieldError;

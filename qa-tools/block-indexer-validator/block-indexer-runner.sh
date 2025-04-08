@@ -57,8 +57,8 @@ if [ -n "$block_finality" ] && [ -n "$block_height" ]; then
   usage
 fi
 
-if [ "$env" == "dev" ]; then
-  source_config_path="config/dev"
+if [ "$env" == "local" ]; then
+  source_config_path="config/local"
 else
   source_config_path="config/stage"
 fi

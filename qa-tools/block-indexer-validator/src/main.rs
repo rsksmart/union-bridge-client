@@ -31,7 +31,7 @@ fn main() -> Result<()> {
                 .long(CONFIG_CLI_FLAG)
                 .value_name("PATH")
                 .help("Sets the path to the configuration directory")
-                .default_value("../config/dev"), // for local usage within the crate
+                .default_value("../config/local"), // for local usage within the crate
         )
         .get_matches();
 

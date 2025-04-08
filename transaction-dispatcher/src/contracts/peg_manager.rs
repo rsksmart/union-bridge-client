@@ -9,7 +9,7 @@ use alloy_primitives::hex::FromHex;
 use alloy_primitives::{Address, Bytes, FixedBytes, U256};
 use alloy_provider::Provider;
 use alloy_rpc_types::TransactionReceipt;
-use alloy_sol_types::{SolInterface, sol};
+use alloy_sol_types::SolInterface;
 use anyhow::Result;
 use log::error;
 
@@ -24,11 +24,7 @@ pub(crate) use crate::contracts::interactions::get_temporary_peg_in_address;
 pub(crate) use crate::contracts::interactions::register_peg_in_request;
 use crate::types::RegisterPegInInput;
 
-sol!(
-    #[sol(rpc)]
-    SolPegManager,
-    "../config/local/abi/PegManager.json" // TODO we could also use bytecode here, automate deploys for testing, etc.
-);
+include!(concat!(env!("OUT_DIR"), "/abi.rs"));
 
 #[cfg_attr(test, automock)]
 pub trait PegManagerContractApi {

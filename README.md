@@ -59,8 +59,10 @@ The Union Bridge Monitor is not just a simple block indexer. It:
 
 # How to run the Monitor?
 
+TODO(iago) update config info
+
 Both `log-indexer` and `block-indexer` need to be run. TBD if we create an orchestrator to run both at the same time.
-Both crates are configurable, please check `config/dev` as a reference to create your own config.
+Both crates are configurable, please check sample files under `config` as a reference to create your own config.
 
 ```bash
 RUST_BACKTRACE=1 RUST_LOG=debug cargo run --bin log-indexer -- --logger-path "/path/to/log4rs.yaml" --config-path "/path/to/config/dir"
