@@ -7,14 +7,12 @@ use key_manager::key_manager::KeyManager;
 use log::{error, info};
 use std::path::Path;
 use std::sync::Arc;
-use transaction_dispatcher::config::Config;
+use transaction_dispatcher::config::{Config, Logger};
 use transaction_dispatcher::rsk_gateway::RskContractsGateway;
 use transaction_dispatcher::server::Server;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const CONFIG_CLI_FLAG: &str = "config-path";
-
-const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -35,21 +33,10 @@ async fn main() -> Result<()> {
         )
         .get_matches();
 
-    let default_logger = format!("{}/log4rs.yaml", CARGO_MANIFEST_DIR);
-    let logger_path: &str = matches
-        .get_one::<String>(LOGGER_CLI_FLAG)
-        .map(|s| s.as_str())
-        .unwrap_or(&default_logger);
-    log4rs::init_file(logger_path, Default::default()).expect("Failed to load log4rs config");
+    let logger_cfg_path = matches.get_one::<String>(LOGGER_CLI_FLAG);
+    Logger::init(logger_cfg_path).expect("Failed to load logger");
 
-    let default_config = format!("{}/../config/local", CARGO_MANIFEST_DIR);
-    let config_path: &str = matches
-        .get_one::<String>(CONFIG_CLI_FLAG)
-        .map(|s| s.as_str())
-        .unwrap_or(&default_config);
-
-    println!("Using config file: {}", config_path);
-
+    let config_path = matches.get_one::<String>(CONFIG_CLI_FLAG);
     let config: Config = Config::load(config_path).expect("Failed to load config");
 
     let shutdown_flag = ShutdownFlag::init();

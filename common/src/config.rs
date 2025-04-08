@@ -1,9 +1,12 @@
 use crate::errors::ConfigError;
 use alloy_json_abi::JsonAbi;
+use anyhow::{Context, Result};
 use config;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use std::{fs, path::Path};
+
+const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 
 #[derive(Debug, Deserialize)]
 pub struct CommonConfig {
@@ -46,28 +49,100 @@ pub struct ContractConfig {
 }
 
 impl CommonConfig {
-    pub fn load<T: DeserializeOwned>(base_path: &str, crate_name: &str) -> Result<T, ConfigError> {
-        let common_config = format!("{base_path}/common.yaml");
-        let config = format!("{base_path}/{crate_name}.yaml");
+    pub fn load_config<T: DeserializeOwned>(
+        path_opt: Option<&String>,
+        crate_name: &str,
+    ) -> Result<T, ConfigError> {
+        // provided => use it as is
+        if path_opt.is_some() {
+            let config_path = &path_opt.unwrap();
+
+            println!("Loading custom config from: {:?}", Path::new(config_path));
+
+            return config::Config::builder()
+                .add_source(config::File::with_name(config_path).required(true))
+                .build()
+                .map_err(ConfigError::ConfigFileError)?
+                .try_deserialize::<T>()
+                .map_err(ConfigError::ConfigFileError);
+        }
+
+        // otherwise, compose using defaults (mostly for local)
+        let default_config_path = Self::get_default_config_path();
+        let common_config = &format!("{default_config_path}/common.yaml");
+        let config = &format!("{default_config_path}/{crate_name}.yaml");
+
+        println!(
+            "Loading default config from {:?} and {:?}",
+            Path::new(common_config),
+            Path::new(config)
+        );
+
         config::Config::builder()
-            .add_source(config::File::with_name(&common_config).required(false))
-            .add_source(config::File::with_name(&config).required(false))
+            .add_source(config::File::with_name(common_config).required(false)) // must exist if crate one does not
+            .add_source(config::File::with_name(config).required(false)) // must exist if common one does not
             .build()
             .map_err(ConfigError::ConfigFileError)?
             .try_deserialize::<T>()
             .map_err(ConfigError::ConfigFileError)
     }
 
+    pub fn get_default_config_path() -> String {
+        let project_root = Path::new(CARGO_MANIFEST_DIR)
+            .parent()
+            .and_then(|p| p.to_str())
+            .expect("Failed to get default_config_path")
+            .to_string();
+        format!("{}/config/local", project_root)
+    }
+
     pub fn load_abi_from_path(abi_path: &String) -> Option<JsonAbi> {
         if Path::new(&abi_path).exists() {
+            let abi_full_path = Path::new(abi_path);
             let abi_data = fs::read_to_string(&abi_path)
-                .expect(&format!("Failed to read ABI file: {}", abi_path));
+                .expect(&format!("Failed to read ABI file: {:?}", abi_full_path));
             Some(
                 serde_json::from_str::<JsonAbi>(&abi_data)
-                    .expect(&format!("Failed to parse ABI file: {}", abi_path)),
+                    .expect(&format!("Failed to parse ABI file: {:?}", abi_full_path)),
             )
         } else {
             None
         }
+    }
+
+    pub fn init_logger(logger_file_opt: Option<&String>, crate_name: &str) -> Result<()> {
+        // provided => use it as is
+        if logger_file_opt.is_some() {
+            let logger_file = logger_file_opt.unwrap();
+
+            println!("Logging to destination defined by {logger_file}");
+
+            log4rs::init_file(logger_file, Default::default())
+                .context("Failed to load log4rs config")?;
+            return Ok(());
+        }
+
+        // otherwise, use the default template and tweak it (mostly for local)
+        let project_root = Path::new(CARGO_MANIFEST_DIR)
+            .parent()
+            .and_then(|p| p.to_str())
+            .expect("Failed to get default_destination");
+
+        let base_yaml = format!("{project_root}/log4rs.yaml");
+        let mut config_str = fs::read_to_string(&base_yaml)
+            .context(format!("Failed to read base log4rs config: {base_yaml}"))?;
+
+        let default_destination = &format!("{project_root}/logs");
+
+        config_str = config_str.replace("{CRATE_NAME}", crate_name);
+        config_str = config_str.replace("{DESTINATION}", default_destination);
+
+        println!(
+            "Logging to {:?}",
+            format!("{}/{}.log", default_destination, crate_name)
+        );
+
+        let config = serde_yaml::from_str(&config_str).context("Failed to parse log4rs config")?;
+        log4rs::init_raw_config(config).context("Failed to initialize log4rs")
     }
 }
