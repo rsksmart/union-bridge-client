@@ -1,4 +1,4 @@
-use crate::test_utils::rsk_utils::{from_hex_to_block_hash, from_hex_to_block_pow};
+use crate::test_utils::rsk_utils::{from_hex_to_block_hash, from_hex_to_block_pow, UncleBlockInfo};
 use crate::types::{BlockDifficulty, BlockHash, BlockNumber, BlockPow, BlockTimestamp, RskBlock};
 use log::debug;
 use primitive_types::{H256, U256};
@@ -149,7 +149,7 @@ pub fn event_signature_to_topic(event_signature: &str) -> String {
 
 /// A stateless generator for fake RSK blocks that computes dynamic values (difficulty, timestamp,
 /// total difficulty and average block time) based on the block number. It has a built-in mechanism
-/// to handle generation of alternative blocks (to simulate reorganizations).`.
+/// to handle generation of alternative blocks (to simulate reorganizations).
 #[derive(Clone)]
 pub struct FakeBlockGenerator {
     base_difficulty: BlockDifficulty,
@@ -158,16 +158,14 @@ pub struct FakeBlockGenerator {
     avg_block_time: u64,
     reorg_block_height: Option<BlockNumber>,
     is_reorg: Arc<AtomicBool>,
-    uncle_block_heights: Option<Vec<BlockNumber>>,
-    uncle_block_heights_in_reorg: Option<Vec<BlockNumber>>,
+    uncle_block_info_vec: Option<Vec<UncleBlockInfo>>,
 }
 
 impl FakeBlockGenerator {
     pub fn new(
         reorg_block_height: Option<BlockNumber>,
         is_reorg: Arc<AtomicBool>,
-        uncle_block_heights: Option<Vec<BlockNumber>>,
-        uncle_block_heights_in_reorg: Option<Vec<BlockNumber>>,
+        uncle_block_info_vec: Option<Vec<UncleBlockInfo>>,
     ) -> Self {
         Self {
             base_difficulty: BlockDifficulty::from(
@@ -180,8 +178,7 @@ impl FakeBlockGenerator {
             avg_block_time: 30,
             reorg_block_height,
             is_reorg,
-            uncle_block_heights,
-            uncle_block_heights_in_reorg,
+            uncle_block_info_vec,
         }
     }
 
@@ -204,32 +201,49 @@ impl FakeBlockGenerator {
     }
 
     /// Generates a fake RSK block for the given block height.
-    pub fn generate_block(&self, height: BlockNumber, uncle_id: Option<i32>) -> RskBlock {
+    pub fn generate_block(
+        &self,
+        height: BlockNumber,
+        uncle_info: Option<UncleBlockInfo>, // uncle_info is None for regular blocks, Some for uncle blocks
+    ) -> Option<RskBlock> {
         let is_reorg = self.is_reorg.load(Ordering::SeqCst);
-        let parent_hash = self.generate_parent_hash(height, self.reorg_block_height, is_reorg); // parent is never an uncle
-        let block_hash =
-            self.generate_block_hash(height, self.reorg_block_height, is_reorg, uncle_id);
+        let reorged_block = is_reorg && self.reorg_block_height.map_or(false, |h| height > h);
+        if uncle_info
+            .as_ref()
+            .map_or(false, |info| info.reorg != reorged_block)
+        {
+            return None; // do not generate an uncle block if uncle_info.reorg does not match current reorg status
+        }
+        let parent_hash = self.generate_parent_hash(height, self.reorg_block_height, is_reorg);
+        let block_hash = self.generate_block_hash(height, is_reorg, uncle_info.clone());
         debug!(
-            "Generating block {} with hash: {} -- parent hash: {} -- is_reorg: {} -- uncle_id: {}",
+            "Generating block {} with hash: {} -- parent hash: {} -- is_reorg: {}{}",
             height,
             block_hash,
             parent_hash,
             is_reorg,
-            uncle_id.unwrap_or(-1)
+            if let Some(uncle_info) = &uncle_info {
+                format!(" -- uncle_id: {}", uncle_info.id)
+            } else {
+                "".to_string()
+            }
         );
+        let uncles_vec = if uncle_info.is_some() {
+            vec![] // if uncle_info is provided, this is an uncle block, so no uncles
+        } else {
+            self.generate_uncles_vec(height, is_reorg)
+        };
         let diff = self.generate_difficulty(height);
         let tot_diff = self.generate_total_difficulty(height);
         let ts = self.generate_timestamp(height);
-        let uncles_vec = self.generate_uncles_vec(height, is_reorg, uncle_id.is_some());
-
-        let mut hasher = Keccak256::new();
-        hasher.update(block_hash.value().as_bytes());
-        hasher.update(parent_hash.value().as_bytes());
-        hasher.update(ts.value().to_le_bytes());
-        let hash_result = hasher.finalize();
-        let block_pow = BlockPow::from(H256::from_slice(&hash_result));
-
-        RskBlock::new(
+        let block_pow = {
+            let mut hasher = Keccak256::new();
+            hasher.update(block_hash.value().as_bytes());
+            hasher.update(parent_hash.value().as_bytes());
+            hasher.update(ts.value().to_le_bytes());
+            BlockPow::from(H256::from_slice(&hasher.finalize()))
+        };
+        Some(RskBlock::new(
             height,
             block_hash,
             parent_hash,
@@ -238,43 +252,22 @@ impl FakeBlockGenerator {
             tot_diff,
             block_pow,
             uncles_vec,
-        )
+        ))
     }
 
-    fn generate_uncles_vec(
-        &self,
-        height: BlockNumber,
-        is_reorg: bool,
-        is_uncle: bool,
-    ) -> Vec<BlockHash> {
-        // uncles_vec is only applicable for blocks which are not uncles (uncles themselves do not have uncles)
-        // uncles_vec depends on the values in uncle_block_heights_in_reorg if the block is a reorged block
-        // uncles_vec depends on the values in uncle_block_heights if the block is not a reorged block
+    fn generate_uncles_vec(&self, height: BlockNumber, is_reorg: bool) -> Vec<BlockHash> {
         let mut uncles_vec: Vec<BlockHash> = vec![];
-        if is_uncle {
-            return uncles_vec;
-        }
-        if is_reorg && self.reorg_block_height.map_or(false, |h| height > h) {
-            // is a reorged block
-            if let Some(uncle_heights) = &self.uncle_block_heights_in_reorg {
-                for (index, uncle_height) in uncle_heights.iter().enumerate() {
-                    if uncle_height == &height {
-                        // this block will have uncles because the height is in the array of reorged uncle heights
-                        let flavor = format!("unclealt{}", index);
-                        let uncle_hash =
-                            from_hex_to_block_hash(&self.generate_hash(height, &flavor));
-                        uncles_vec.push(uncle_hash);
-                    }
-                }
-            }
-        }
-        // not a reorged block
-        else if let Some(uncle_heights) = &self.uncle_block_heights {
-            for (index, uncle_height) in uncle_heights.iter().enumerate() {
-                if uncle_height == &height {
-                    // this block will have uncles because the height is in the array of uncle heights
-                    let flavor = format!("uncle{}", index);
+        if let Some(uncle_block_info_vec) = &self.uncle_block_info_vec {
+            let reorged_block = is_reorg && self.reorg_block_height.map_or(false, |h| height > h);
+            for uncle_info in uncle_block_info_vec {
+                if uncle_info.height == height && uncle_info.reorg == reorged_block {
+                    let flavor = format!(
+                        "uncle_{}{}",
+                        if reorged_block { "alt" } else { "" },
+                        uncle_info.id
+                    );
                     let uncle_hash = from_hex_to_block_hash(&self.generate_hash(height, &flavor));
+                    debug!("Adding uncle {} to block {}", uncle_info.id, height);
                     uncles_vec.push(uncle_hash);
                 }
             }
@@ -305,28 +298,21 @@ impl FakeBlockGenerator {
     fn generate_block_hash(
         &self,
         height: BlockNumber,
-        reorg_block_height: Option<BlockNumber>,
         is_reorg: bool,
-        uncle_id: Option<i32>,
+        uncle_info: Option<UncleBlockInfo>,
     ) -> BlockHash {
-        let flavor: String;
-        if uncle_id.is_none() {
-            // NOT an uncle block
-            if reorg_block_height.map_or(false, |h| height >= h) && is_reorg {
-                flavor = "alt".to_string();
-            } else {
-                flavor = "".to_string();
-            }
+        let flavor;
+        let reorged_block = is_reorg && self.reorg_block_height.map_or(false, |h| height > h);
+        if let Some(uncle_info) = uncle_info {
+            flavor = format!(
+                "uncle_{}{}",
+                if reorged_block { "alt" } else { "" },
+                uncle_info.id
+            );
         } else {
-            // uncle block
-            if reorg_block_height.map_or(false, |h| height >= h) && is_reorg {
-                flavor = format!("unclealt{}", uncle_id.unwrap());
-            } else {
-                flavor = format!("uncle{}", uncle_id.unwrap());
-            }
+            flavor = format!("{}", if reorged_block { "alt" } else { "" });
         }
-        let block_hash = self.generate_hash(height, &flavor);
-        from_hex_to_block_hash(&block_hash)
+        from_hex_to_block_hash(&self.generate_hash(height, &flavor))
     }
 
     fn generate_difficulty(&self, height: BlockNumber) -> BlockDifficulty {

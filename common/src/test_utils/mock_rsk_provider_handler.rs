@@ -4,10 +4,11 @@ use crate::rsk_provider::{
 use crate::shutdown_flag::ShutdownFlag;
 use crate::test_utils::rsk_block_generator::FakeBlockGenerator;
 use crate::test_utils::rsk_log_generator::FakeLogGenerator;
-use crate::test_utils::rsk_utils::from_hex_to_block_hash;
+use crate::test_utils::rsk_utils::{from_hex_to_block_hash, UncleBlockInfo};
 use crate::types::{BlockHash, BlockNumber, ContractInfo, LogInfo, RskBlock, RskEvent, RskLog};
 use anyhow::anyhow;
 use log::info;
+use std::collections::HashSet;
 use std::{
     collections::VecDeque,
     sync::{
@@ -29,6 +30,7 @@ pub struct MockRskProviderHandler<'a> {
     block_height_backward_sync_max: BlockNumber,
     block_height_subscription_max: BlockNumber,
     delay_between_blocks_subscription: u64,
+    uncle_block_info_vec: Option<Vec<UncleBlockInfo>>,
 }
 
 impl<'a> MockRskProviderHandler<'a> {
@@ -41,6 +43,7 @@ impl<'a> MockRskProviderHandler<'a> {
         block_height_backward_sync_max: BlockNumber,
         block_height_subscription_max: BlockNumber,
         delay_between_blocks_subscription: u64,
+        uncle_block_info_vec: Option<Vec<UncleBlockInfo>>,
     ) -> Self {
         Self {
             provider,
@@ -53,48 +56,32 @@ impl<'a> MockRskProviderHandler<'a> {
             block_height_backward_sync_max,
             block_height_subscription_max,
             delay_between_blocks_subscription,
+            uncle_block_info_vec,
         }
     }
 
-    pub fn set_provider_expect_get_block_by_hash_uncles(
-        &mut self,
-        uncle_block_heights: Vec<BlockNumber>,
-        uncle_block_heights_reorg: Option<Vec<BlockNumber>>,
-    ) {
+    pub fn set_provider_expect_get_block_by_hash_uncles(&mut self) {
         let generator = self.block_generator.clone();
-        let capped_heights: Vec<_> = uncle_block_heights
-            .clone()
-            .into_iter()
-            .enumerate()
-            .take_while(|(_, height)| *height <= self.block_height_backward_sync_max)
-            .collect();
-        for (index, uncle_height) in capped_heights {
-            let expected_block_hash = from_hex_to_block_hash(
-                &generator.generate_hash(uncle_height, &format!("uncle{}", index)),
-            );
-            self.set_provider_expect_get_block_by_hash(
-                expected_block_hash,
-                uncle_height,
-                Some(index as i32),
-            );
-        }
-        if let Some(uncle_block_heights_reorg) = uncle_block_heights_reorg {
-            // if a reorg is expected, we need to set the block hashes for the reorged chain
-            let capped_heights_reorg: Vec<_> = uncle_block_heights_reorg
-                .clone()
-                .into_iter()
-                .enumerate()
-                .take_while(|(_, height)| *height <= self.block_height_backward_sync_max)
-                .collect();
-            for (index, uncle_height) in capped_heights_reorg {
-                let expected_block_hash = from_hex_to_block_hash(
-                    &generator.generate_hash(uncle_height, &format!("unclealt{}", index)),
+        if let Some(uncle_block_info_vec) = self.uncle_block_info_vec.clone() {
+            for uncle_info in uncle_block_info_vec {
+                let flavor = format!(
+                    "uncle_{}{}",
+                    if uncle_info.reorg { "alt" } else { "" },
+                    uncle_info.id
                 );
-                self.set_provider_expect_get_block_by_hash(
-                    expected_block_hash,
-                    uncle_height,
-                    Some(index as i32),
-                );
+                let expected_block_hash =
+                    from_hex_to_block_hash(&generator.generate_hash(uncle_info.height, &flavor));
+                self.provider
+                    .expect_get_block_by_hash()
+                    .with(mockall::predicate::eq(expected_block_hash))
+                    .returning({
+                        let generator = generator.clone();
+                        move |_hash| {
+                            Ok(generator
+                                .generate_block(uncle_info.height, Some(uncle_info.clone())))
+                        }
+                    })
+                    .times(0..);
             }
         }
     }
@@ -103,14 +90,13 @@ impl<'a> MockRskProviderHandler<'a> {
         &mut self,
         expected_block_hash: BlockHash,
         block_height: BlockNumber,
-        uncle_id: Option<i32>,
     ) {
-        info!("Obtaining hash for block height {}", block_height);
+        info!("Setting hash expectation for block height {}", block_height);
         let generator = self.block_generator.clone();
         self.provider
             .expect_get_block_by_hash()
             .with(mockall::predicate::eq(expected_block_hash))
-            .returning(move |_hash| Ok(Some(generator.generate_block(block_height, uncle_id))))
+            .returning(move |_hash| Ok(Some(generator.generate_block(block_height, None).unwrap())))
             .times(1..);
     }
 
@@ -128,7 +114,7 @@ impl<'a> MockRskProviderHandler<'a> {
                 } else {
                     block_height_backward_sync_max
                 };
-                Ok(generator.generate_block(block_height, None))
+                Ok(generator.generate_block(block_height, None).unwrap())
             })
             .times(1..);
     }
@@ -173,7 +159,7 @@ impl<'a> MockRskProviderHandler<'a> {
                             );
                         }
                     }
-                    Ok(Some(generator.generate_block(height, None)))
+                    Ok(Some(generator.generate_block(height, None).unwrap()))
                 } else {
                     Ok(None)
                 }
@@ -184,8 +170,6 @@ impl<'a> MockRskProviderHandler<'a> {
     pub fn set_provider_expect_subscribe_blocks(
         &mut self,
         simul_reorg_happens_at_height: Option<BlockNumber>,
-        uncle_block_heights: Option<Vec<BlockNumber>>,
-        uncle_block_heights_reorg: Option<Vec<BlockNumber>>,
     ) {
         let is_reorg = self.is_reorg.clone();
         let generator = self.block_generator.clone();
@@ -194,6 +178,10 @@ impl<'a> MockRskProviderHandler<'a> {
         let has_subscribed = self.has_subscribed.clone();
         let delay_between_blocks_subscription = self.delay_between_blocks_subscription;
         let block_height_subscription_max = self.block_height_subscription_max;
+        let uncle_block_info_vec = self.uncle_block_info_vec.clone();
+        // Create a persistent container for spent uncle flavors.
+        let spent_uncle_flavors = Arc::new(std::sync::Mutex::new(HashSet::new()));
+
         self.provider
             .expect_subscribe_blocks()
             .returning(move || {
@@ -201,37 +189,13 @@ impl<'a> MockRskProviderHandler<'a> {
                 let generator = generator.clone();
                 let shutting_down = shutting_down.clone();
                 let is_reorg = is_reorg.clone();
+                let uncle_block_info_vec = uncle_block_info_vec.clone();
                 has_subscribed.store(true, Ordering::SeqCst);
-                let uncle_block_heights =
-                    <Option<Vec<BlockNumber>> as Clone>::clone(&uncle_block_heights).map(|v| {
-                        std::cell::RefCell::new(
-                            v.into_iter()
-                                .map(Some)
-                                .collect::<Vec<Option<BlockNumber>>>(),
-                        )
-                    });
-                let _uncle_block_heights_reorg = <Option<Vec<BlockNumber>> as Clone>::clone(
-                    &uncle_block_heights_reorg,
-                )
-                .map(|v| {
-                    std::cell::RefCell::new(
-                        v.into_iter()
-                            .map(Some)
-                            .collect::<Vec<Option<BlockNumber>>>(),
-                    )
-                });
+                let spent_uncle_flavors = spent_uncle_flavors.clone();
                 mock_sub
                     .expect_next()
                     .returning(move || {
-                        if let Some(uncle_block) = provide_uncle_block(
-                            height_subscr_counter,
-                            &generator,
-                            uncle_block_heights.as_ref(),
-                        ) {
-                            // output an uncle block if available
-                            return uncle_block;
-                        }
-                        // if a reorg has to happen and the height is the reorg height, activate the reorg
+                        // If a reorg should happen at this height, activate it.
                         activate_reorg(
                             simul_reorg_happens_at_height,
                             height_subscr_counter,
@@ -240,12 +204,23 @@ impl<'a> MockRskProviderHandler<'a> {
                         );
 
                         thread::sleep(Duration::from_millis(delay_between_blocks_subscription));
-                        provide_block(
+
+                        let mut spent_uncle_ids = spent_uncle_flavors.lock().unwrap();
+                        if let Some(uncle_block) = provide_uncle_block(
+                            height_subscr_counter,
+                            &generator,
+                            uncle_block_info_vec.clone(),
+                            &mut *spent_uncle_ids,
+                        ) {
+                            return Ok(uncle_block);
+                        }
+
+                        Ok(provide_block(
                             &mut height_subscr_counter,
                             block_height_subscription_max,
                             &generator,
                             &shutting_down,
-                        )
+                        ))
                     })
                     .times(1..);
                 mock_sub.expect_unsubscribe().returning(|| Ok(())).times(1);
@@ -315,14 +290,14 @@ fn provide_block(
     block_height_subscription_max: BlockNumber,
     generator: &FakeBlockGenerator,
     shutting_down: &ShutdownFlag,
-) -> Result<RskBlock, RskSubscriptionError> {
-    let block = generator.generate_block(*height, None);
+) -> RskBlock {
+    let block = generator.generate_block(*height, None).unwrap();
     *height = *height + 1;
     if *height <= block_height_subscription_max {
-        Ok(block)
+        block
     } else {
         shutting_down.set(true);
-        Ok(block)
+        block
     }
 }
 
@@ -343,26 +318,27 @@ fn activate_reorg(
         }
     }
 }
-
 fn provide_uncle_block(
-    height_subscr_counter: BlockNumber,
+    height: BlockNumber,
     generator: &FakeBlockGenerator,
-    uncle_block_heights: Option<&std::cell::RefCell<Vec<Option<BlockNumber>>>>,
-) -> Option<Result<RskBlock, RskSubscriptionError>> {
-    // if height_subscr_counter-1 matches uncle_block_heights, return the uncle block. Also delete the uncle block from the list so it doesn't get returned again
-    if let Some(uncle_block_heights_cell) = &uncle_block_heights {
-        let mut uncle_heights = uncle_block_heights_cell.borrow_mut();
-        let uncle_height = height_subscr_counter - 1;
-        if let Some(index) = uncle_heights.iter().position(|x| {
-            if let Some(h) = x {
-                *h == uncle_height
-            } else {
-                false
+    uncle_block_info_vec: Option<Vec<UncleBlockInfo>>,
+    spent_uncle_ids: &mut HashSet<String>,
+) -> Option<RskBlock> {
+    let uncle_height = height - 1;
+    if let Some(uncle_block_info_vec) = &uncle_block_info_vec {
+        for uncle_info in uncle_block_info_vec.iter() {
+            if uncle_height == uncle_info.height {
+                let uncle_id = uncle_info.id.clone();
+                if spent_uncle_ids.contains(&uncle_id) {
+                    continue;
+                }
+                if let Some(uncle_block) =
+                    generator.generate_block(uncle_height, Some(uncle_info.clone()))
+                {
+                    spent_uncle_ids.insert(uncle_id.clone());
+                    return Some(uncle_block);
+                }
             }
-        }) {
-            let block = generator.generate_block(uncle_height, Some(index as i32));
-            uncle_heights[index] = None;
-            return Some(Ok(block));
         }
     }
     None
