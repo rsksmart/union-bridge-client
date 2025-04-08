@@ -1,8 +1,7 @@
-use crate::types::{Address, BlockHash, BlockPow, ContractInfo};
 use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
 
-use crate::types::BlockNumber;
+use crate::types::{Address, BlockHash, BlockNumber, BlockPow, ContractInfo};
 
 pub const DEFAULT_BLOCK_HASH: &str =
     "0x5d164d93bf09ee215cc67420f24d31b8d86c46ced6e770e8abf69c16bea3a67c";
