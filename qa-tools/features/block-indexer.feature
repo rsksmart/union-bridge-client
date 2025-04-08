@@ -6,7 +6,7 @@
 Feature: Rootstock block monitoring and tracking
 
 Scenario: happy path
-Given the initial best block is B (B = node latest block height - 100)
+Given the initial best block is B (B = node best block height - 100)
 And the indexer is started
 And the indexer catches up with backward sync and is suscribed for a while
 When the block indexer is shut down
