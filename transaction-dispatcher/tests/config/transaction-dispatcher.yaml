@@ -1,0 +1,17 @@
+provider:
+  rootstock:
+    url: "ws://fake-server:4445/websocket"
+
+key_store:
+  path: "/fake/path/.union_bridge/keystore/ab98c3c8-a772-4c44-b3a7-99864663b8cb"
+transaction:
+  gas_bumps_t1: 3
+server:
+  url: "0.0.0.0:3000"
+
+contracts:
+  - name: "TestContractDyn"
+    address: "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761"
+
+  - name: "TestContractCompiled"
+    address: "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc"

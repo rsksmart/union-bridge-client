@@ -2,12 +2,12 @@ use alloy_provider::network::EthereumWallet;
 use alloy_provider::{ProviderBuilder, WsConnect};
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
-use common::config::Config;
 use common::shutdown_flag::ShutdownFlag;
 use key_manager::key_manager::KeyManager;
 use log::{error, info};
 use std::path::Path;
 use std::sync::Arc;
+use transaction_dispatcher::config::{Config, Logger};
 use transaction_dispatcher::rsk_gateway::RskContractsGateway;
 use transaction_dispatcher::server::Server;
 
@@ -22,30 +22,28 @@ async fn main() -> Result<()> {
                 .short('l')
                 .long(LOGGER_CLI_FLAG)
                 .value_name("PATH")
-                .help("Sets the path to the log4rs configuration file")
-                .default_value("../log4rs.yaml"),
+                .help("Sets the path to the log4rs configuration file"),
         )
         .arg(
             Arg::new(CONFIG_CLI_FLAG)
                 .short('c')
                 .long(CONFIG_CLI_FLAG)
                 .value_name("PATH")
-                .help("Sets the path to the configuration directory")
-                .default_value("../config/dev"),
+                .help("Sets the path to the configuration directory"),
         )
         .get_matches();
 
-    let logger_path: &String = matches.get_one(LOGGER_CLI_FLAG).unwrap();
-    log4rs::init_file(logger_path, Default::default()).expect("Failed to load log4rs config");
+    let logger_cfg_path = matches.get_one::<String>(LOGGER_CLI_FLAG);
+    Logger::init(logger_cfg_path).expect("Failed to load logger");
 
-    let config_path: &String = matches.get_one(CONFIG_CLI_FLAG).unwrap();
-    let config = Config::load(config_path).expect("Failed to load config");
+    let config_path = matches.get_one::<String>(CONFIG_CLI_FLAG);
+    let config: Config = Config::load(config_path).expect("Failed to load config");
 
     let shutdown_flag = ShutdownFlag::init();
 
     let ws = WsConnect::new(&config.provider.rootstock.url);
 
-    let key_store_path = Path::new(&config.transaction_dispatcher.key_store.path);
+    let key_store_path = Path::new(&config.key_store.path);
     let key_store_password = std::env::var("KEY_STORE_PASSWORD")
         .context("KEY_STORE_PASSWORD environment variable not found")?;
     let signer = KeyManager::get_signer(key_store_path, key_store_password)?;
@@ -63,11 +61,15 @@ async fn main() -> Result<()> {
     );
 
     let rsk_contract_gateway = Arc::new(
-        RskContractsGateway::new(provider, &config)
-            .context("Could not instantiate RskContractsGateway")?,
+        RskContractsGateway::new(
+            provider,
+            config.load_managed_contracts(),
+            &config.transaction,
+        )
+        .context("Could not instantiate RskContractsGateway")?,
     );
 
-    let listener = tokio::net::TcpListener::bind(&config.transaction_dispatcher.server.url).await?;
+    let listener = tokio::net::TcpListener::bind(&config.server.url).await?;
 
     let server = Server::new(listener, rsk_contract_gateway, shutdown_flag).await;
 

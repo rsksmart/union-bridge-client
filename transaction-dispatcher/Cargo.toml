@@ -27,3 +27,6 @@ alloy-contract = "0.12.5"
 alloy-rpc-types = { version = "0.12.5", features = ["debug"] }
 axum = "0.8.1"
 tower-http = { version = "0.6.1", features = ["timeout", "trace"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }

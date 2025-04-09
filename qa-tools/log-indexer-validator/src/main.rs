@@ -1,7 +1,7 @@
 use anyhow::{Context, Ok, Result};
 use clap::{Arg, Command};
-use common::config::Config;
 use log::info;
+use log_indexer::config::{Config, Logger};
 use log_indexer::store::RawLogStore;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
@@ -14,24 +14,22 @@ fn main() -> Result<()> {
                 .short('l')
                 .long(LOGGER_CLI_FLAG)
                 .value_name("PATH")
-                .help("Sets the path to the log4rs configuration file")
-                .default_value("log4rs.yaml"),
+                .help("Sets the path to the log4rs configuration file"),
         )
         .arg(
             Arg::new(CONFIG_CLI_FLAG)
                 .short('c')
                 .long(CONFIG_CLI_FLAG)
                 .value_name("PATH")
-                .help("Sets the path to the configuration directory")
-                .default_value("config/dev"),
+                .help("Sets the path to the configuration directory"),
         )
         .get_matches();
 
-    let logger_path: &String = matches.get_one(LOGGER_CLI_FLAG).unwrap();
-    log4rs::init_file(logger_path, Default::default()).expect("Failed to load log4rs config");
+    let logger_cfg_path = matches.get_one::<String>(LOGGER_CLI_FLAG);
+    Logger::init(logger_cfg_path).expect("Failed to load logger");
 
-    let config_path: &String = matches.get_one(CONFIG_CLI_FLAG).unwrap();
-    let config = Config::load(config_path).expect("Failed to load config");
+    let config_path = matches.get_one::<String>(CONFIG_CLI_FLAG);
+    let config: Config = Config::load(config_path).expect("Failed to load config");
 
     let store = RawLogStore::new(&format!("{}/logs", config.indexer.storage.path))?;
 

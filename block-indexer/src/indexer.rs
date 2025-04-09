@@ -368,8 +368,8 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
             return Ok(());
         }
 
-        info!(
-            "[get_and_save_uncle_blocks] Attempting to get and save uncles blocks ({:?})",
+        debug!(
+            "[block_backward_sync] Attempting to get and save uncles blocks ({:?})",
             new_block.uncles()
         );
 

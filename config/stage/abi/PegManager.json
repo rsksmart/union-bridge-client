@@ -1,6 +1,19 @@
 [
   {
     "type": "function",
+    "name": "MAX_DENOMINATIONS_SIZE",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "UPGRADE_INTERFACE_VERSION",
     "inputs": [],
     "outputs": [
@@ -154,19 +167,6 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "debugPackets",
-    "inputs": [
-      {
-        "name": "streamId",
-        "type": "uint64",
-        "internalType": "uint64"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -517,8 +517,8 @@
     "outputs": [
       {
         "name": "bitcoinDepositAddress",
-        "type": "bytes",
-        "internalType": "bytes"
+        "type": "string",
+        "internalType": "string"
       }
     ],
     "stateMutability": "view"
@@ -541,6 +541,11 @@
         "name": "_bitcoinManager",
         "type": "address",
         "internalType": "contract IBitcoinManager"
+      },
+      {
+        "name": "_denominations",
+        "type": "uint64[]",
+        "internalType": "uint64[]"
       }
     ],
     "outputs": [],
@@ -1048,6 +1053,17 @@
         "name": "slot",
         "type": "bytes32",
         "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "tooManyDenominations",
+    "inputs": [
+      {
+        "name": "maxDenominationsSize",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ]
   }

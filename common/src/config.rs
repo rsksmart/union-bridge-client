@@ -1,21 +1,19 @@
-use crate::{
-    errors::ConfigError,
-    types::{Address, ContractInfo},
-};
+use crate::errors::ConfigError;
 use alloy_json_abi::JsonAbi;
+use anyhow::{Context, Result};
 use config;
+use log::debug;
+use serde::de::DeserializeOwned;
 use serde::Deserialize;
-use std::{collections::HashMap, fs, path::Path};
+use std::{fs, path::Path};
+
+const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Config {
+pub struct CommonConfig {
     pub indexer: IndexerConfig,
     pub provider: ProviderConfig,
     pub contracts: Vec<ContractConfig>,
-    pub transaction_dispatcher: TransactionDispatcherConfig,
-    #[serde(skip)]
-    path: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -51,181 +49,96 @@ pub struct ContractConfig {
     pub address: String,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct TransactionDispatcherConfig {
-    pub server: ServerConfig,
-    pub key_store: KeyStoreConfig,
-    pub transaction: TransactionConfig,
-}
+impl CommonConfig {
+    pub fn load_config<T: DeserializeOwned>(
+        path_opt: Option<&String>,
+        crate_name: &str,
+    ) -> Result<(T, String), ConfigError> {
+        let config_path = match path_opt {
+            Some(config_path) => config_path,
+            None => &Self::get_default_config_path(),
+        };
 
-#[derive(Debug, Deserialize)]
-pub struct ServerConfig {
-    pub url: String,
-}
+        let common_config = &format!("{config_path}/common.yaml");
+        let config = &format!("{config_path}/{crate_name}.yaml");
 
-#[derive(Debug, Deserialize)]
-pub struct KeyStoreConfig {
-    pub path: String,
-}
+        println!(
+            "Loading config from {:?} and {:?}",
+            Path::new(common_config),
+            Path::new(config)
+        );
 
-#[derive(Debug, Deserialize)]
-pub struct TransactionConfig {
-    pub gas_bumps_t1: u8,
-}
-
-impl Config {
-    pub fn load(path: &str) -> Result<Self, ConfigError> {
-        let config_path = format!("{}/config.yaml", path);
-
-        let raw_config = config::Config::builder()
-            .add_source(config::File::with_name(&config_path))
+        let cfg = config::Config::builder()
+            .add_source(config::File::with_name(common_config).required(false)) // must exist if crate one does not
+            .add_source(config::File::with_name(config).required(false)) // must exist if common one does not
             .build()
+            .map_err(ConfigError::ConfigFileError)?
+            .try_deserialize::<T>()
             .map_err(ConfigError::ConfigFileError)?;
 
-        let mut parsed_config = raw_config
-            .try_deserialize::<Config>()
-            .map_err(ConfigError::ConfigFileError)?;
-
-        parsed_config.path = path.to_owned();
-
-        Ok(parsed_config)
+        Ok((cfg, config_path.to_string()))
     }
 
-    pub fn load_managed_contracts(&self, by_name: bool) -> HashMap<String, ContractInfo> {
-        self.contracts
-            .iter()
-            .map(|c| {
-                let address = Address::try_from(c.address.as_str())
-                    .expect(&format!("Invalid address: {}", c.address));
-
-                let abi_path = format!("{}/abi/{}.json", self.path, c.name);
-                let abi = Self::load_abi_from_path(&abi_path);
-
-                (
-                    match by_name {
-                        true => c.name.to_owned(),
-                        false => c.address.to_owned(),
-                    },
-                    ContractInfo {
-                        name: c.name.to_owned(),
-                        address,
-                        abi,
-                    },
-                )
-            })
-            .collect()
+    pub fn get_default_config_path() -> String {
+        let project_root = Path::new(CARGO_MANIFEST_DIR)
+            .parent()
+            .and_then(|p| p.to_str())
+            .expect("Failed to get default_config_path")
+            .to_string();
+        format!("{}/config/local", project_root)
     }
 
-    fn load_abi_from_path(abi_path: &String) -> Option<JsonAbi> {
+    pub fn load_abi_from_path(abi_path: &String) -> Option<JsonAbi> {
         if Path::new(&abi_path).exists() {
+            let abi_full_path = Path::new(abi_path);
             let abi_data = fs::read_to_string(&abi_path)
-                .expect(&format!("Failed to read ABI file: {}", abi_path));
+                .expect(&format!("Failed to read ABI file: {:?}", abi_full_path));
             Some(
                 serde_json::from_str::<JsonAbi>(&abi_data)
-                    .expect(&format!("Failed to parse ABI file: {}", abi_path)),
+                    .expect(&format!("Failed to parse ABI file: {:?}", abi_full_path)),
             )
         } else {
+            debug!(
+                "ABI file not found: {:?}. ABI will not be loaded.",
+                abi_path
+            );
             None
         }
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::env;
+    pub fn init_logger(logger_file_opt: Option<&String>, crate_name: &str) -> Result<()> {
+        // provided => use it as is
+        if logger_file_opt.is_some() {
+            let logger_file = logger_file_opt.unwrap();
 
-    #[test]
-    fn test_config_load_when_stage_config_set_should_load_config_successfully() {
-        let config_path = format!("{}/../config/stage", env!("CARGO_MANIFEST_DIR"));
-        let config = Config::load(&config_path).expect("Failed to load config");
+            println!("Logging to destination defined by {logger_file}");
 
-        // indexer
-        assert_eq!(
-            "0xf6e292fd22f1dc5a1ef4022b7fe4a959f90ec0b9f5fc0869af64b99195511b22",
-            config.indexer.initial_block_hash
+            log4rs::init_file(logger_file, Default::default())
+                .context("Failed to load log4rs config")?;
+            return Ok(());
+        }
+
+        // otherwise, use the default template and tweak it (mostly for local)
+        let project_root = Path::new(CARGO_MANIFEST_DIR)
+            .parent()
+            .and_then(|p| p.to_str())
+            .expect("Failed to get default_destination");
+
+        let base_yaml = format!("{project_root}/log4rs.yaml");
+        let mut config_str = fs::read_to_string(&base_yaml)
+            .context(format!("Failed to read base log4rs config: {base_yaml}"))?;
+
+        let default_destination = &format!("{project_root}/logs");
+
+        config_str = config_str.replace("{CRATE_NAME}", crate_name);
+        config_str = config_str.replace("{DESTINATION}", default_destination);
+
+        println!(
+            "Logging to {:?}",
+            format!("{}/{}.log", default_destination, crate_name)
         );
-        assert_eq!(
-            "/tmp/monitor-executions/default/storage",
-            config.indexer.storage.path
-        );
-        assert_eq!(1000, config.indexer.cache.size);
 
-        // provider
-        assert_eq!(
-            "ws://rskj-01.testnet.ub.iovlabs.net:4445/websocket",
-            config.provider.rootstock.url
-        );
-
-        // contracts
-        assert_eq!(2, config.contracts.len());
-        assert_eq!("TestContractDyn", config.contracts[0].name);
-        assert_eq!(
-            "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761",
-            config.contracts[0].address
-        );
-        assert_eq!("TestContractCompiled", config.contracts[1].name);
-        assert_eq!(
-            "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc",
-            config.contracts[1].address
-        );
-    }
-
-    #[test]
-    fn test_load_contracts_when_stage_config_set_should_load_contracts_successfully() {
-        let config_path = format!("{}/../config/stage", env!("CARGO_MANIFEST_DIR"));
-        let config = Config::load(&config_path).expect("Failed to load config");
-        let contracts = config.load_managed_contracts(true);
-
-        assert_eq!(2, contracts.len());
-
-        // first contract
-        let key = "TestContractDyn";
-        let contract_info = contracts.get(key).unwrap();
-
-        assert_eq!(key, contract_info.name);
-        assert_eq!(
-            Address::try_from("0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761").unwrap(),
-            contract_info.address
-        );
-        assert!(!contract_info.abi.as_ref().unwrap().is_empty());
-
-        // second contract
-        let key = "TestContractCompiled";
-        let contract_info = contracts.get(key).unwrap();
-
-        assert_eq!(key, contract_info.name);
-        assert_eq!(
-            Address::try_from("0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc").unwrap(),
-            contract_info.address
-        );
-        assert!(contract_info.abi.is_none());
-    }
-
-    #[test]
-    fn test_load_contracts_when_stage_config_set_should_load_contracts_successfully_by_address() {
-        let config_path = format!("{}/../config/stage", env!("CARGO_MANIFEST_DIR"));
-        let config = Config::load(&config_path).expect("Failed to load config");
-        let contracts = config.load_managed_contracts(false);
-
-        assert_eq!(2, contracts.len());
-
-        // first contract
-        let key = "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761";
-        let address = Address::try_from(key).unwrap();
-        let contract_info = contracts.get(key).unwrap();
-
-        assert_eq!("TestContractDyn", contract_info.name);
-        assert_eq!(address, contract_info.address);
-        assert!(!contract_info.abi.as_ref().unwrap().is_empty());
-
-        // second contract
-        let key = "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc";
-        let address = Address::try_from(key).unwrap();
-        let contract_info = contracts.get(key).unwrap();
-
-        assert_eq!("TestContractCompiled", contract_info.name);
-        assert_eq!(address, contract_info.address);
-        assert!(contract_info.abi.is_none());
+        let config = serde_yaml::from_str(&config_str).context("Failed to parse log4rs config")?;
+        log4rs::init_raw_config(config).context("Failed to initialize log4rs")
     }
 }

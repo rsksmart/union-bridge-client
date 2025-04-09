@@ -1,0 +1,14 @@
+provider:
+  rootstock:
+    url: "wss://public-node.testnet.rsk.co/websocket"
+
+contracts:
+  - name: "PegManager"
+    address: "<ADDRESS_HERE>"
+
+server:
+  url: "<YOUR_SERVER_URL_HERE>"
+key_store:
+  path: "<YOUR_KEY_STORE_PATH_HERE>"
+transaction:
+  gas_bumps_t1: 3

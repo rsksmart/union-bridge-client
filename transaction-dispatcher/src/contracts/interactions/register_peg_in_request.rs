@@ -31,7 +31,7 @@ impl<C: PegManagerContractApi> RegisterPegInRequestInvoke<C> {
             ))
         })?;
 
-        // TODO(iago) check why sometimes it succeeds several times with the same payload (most of the times it does not)
+        // TODO(iago) check why sometimes it succeeds several times with the same payload (most of the times it does not). It looks like it happens after restarting anvil/tx-dispatcher in some situations.
 
         let receipt = self
             .contract

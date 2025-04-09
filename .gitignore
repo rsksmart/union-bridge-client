@@ -6,7 +6,7 @@
 .vscode/*
 .DS_Store
 .idea
-config/dev/config.yaml
-logs/*
+config/local
+**/logs/*
 .vscode/*
 union-bridge-contracts

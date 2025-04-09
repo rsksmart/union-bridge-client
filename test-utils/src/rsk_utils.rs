@@ -6,7 +6,7 @@ pub const DEFAULT_ADDRESS: &str = "0x5a23bef6b2051Fc91a8b9B0307ed08D09C07cc2d";
 pub const DEFAULT_BLOCK_HASH: &str =
     "0x5d164d93bf09ee215cc67420f24d31b8d86c46ced6e770e8abf69c16bea3a67c";
 pub const DEFAULT_BITCOIN_MERGED_MINING_HEADER: &str =
-"0x00000020538fb0d4d0cbdf0f3b88e02551018fcd6064cbe5cbed40d78b4c3709000000004feaeec0d7a118f6d1c0d8fec32936b9dfff3bea45b537027c6439ac5ea98ccd34b8b467908316194c8b4487";
+    "0x00000020538fb0d4d0cbdf0f3b88e02551018fcd6064cbe5cbed40d78b4c3709000000004feaeec0d7a118f6d1c0d8fec32936b9dfff3bea45b537027c6439ac5ea98ccd34b8b467908316194c8b4487";
 
 /// Generates a fake Rootstock address based on a given number.
 ///
@@ -47,16 +47,16 @@ pub fn generate_fake_addresses(addresses_size: u64) -> Vec<Address> {
         .collect()
 }
 
-pub fn generate_fake_managed_contracts(addresses: Vec<Address>) -> HashMap<String, ContractInfo> {
+pub fn generate_fake_managed_contracts(addresses: Vec<Address>) -> HashMap<Address, ContractInfo> {
     addresses
         .into_iter()
         .map(|address| generate_fake_managed_contract(address))
         .collect()
 }
 
-pub fn generate_fake_managed_contract(address: Address) -> (String, ContractInfo) {
+pub fn generate_fake_managed_contract(address: Address) -> (Address, ContractInfo) {
     (
-        address.to_string(),
+        address,
         ContractInfo {
             name: format!("contract_{}", address.to_string()),
             address,
