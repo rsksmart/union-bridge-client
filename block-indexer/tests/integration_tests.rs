@@ -12,7 +12,7 @@ use common::test_utils::rsk_block_generator::FakeBlockGenerator;
 use common::types::{BlockHash, BlockNumber, RskBlock};
 use log::info;
 use std::fs;
-use std::sync::{atomic::AtomicBool, Arc};
+use std::sync::{Arc, atomic::AtomicBool};
 use tempfile::tempdir;
 const BLOCK_CACHE_SIZE: usize = 100;
 use common::test_utils::rsk_utils::DEFAULT_BLOCK_HASH;
@@ -141,8 +141,8 @@ fn test_when_shutdown_happens_during_backwards_sync_should_set_checkpoint() -> R
 # And the storage should reflect the expected canonical chain containing blocks from B to Z
 */
 #[test]
-fn test_when_shutdown_happens_during_backwards_sync_and_indexer_restarts_should_complete_sync(
-) -> Result<()> {
+fn test_when_shutdown_happens_during_backwards_sync_and_indexer_restarts_should_complete_sync()
+-> Result<()> {
     let _ = env_logger::builder().is_test(true).try_init();
     const INIT_BLOCK_HEIGHT: u64 = 1;
     const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
@@ -246,8 +246,8 @@ fn test_when_shutdown_happens_during_backwards_sync_and_indexer_restarts_should_
 # And the storage should reflect the expected canonical chain containing blocks from B to Z
 */
 #[test]
-fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complete_sync(
-) -> Result<()> {
+fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complete_sync()
+-> Result<()> {
     let _ = env_logger::builder().is_test(true).try_init();
     const INIT_BLOCK_HEIGHT: u64 = 1;
     const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
@@ -367,8 +367,8 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_should_complete_
 # And the storage should reflect the expected canonical chain containing blocks from B to Z
 */
 #[test]
-fn test_when_monitor_runs_and_reorg_happens_during_subscription_from_early_block_should_complete_sync(
-) -> Result<()> {
+fn test_when_monitor_runs_and_reorg_happens_during_subscription_from_early_block_should_complete_sync()
+-> Result<()> {
     let _ = env_logger::builder().is_test(true).try_init();
     const INIT_BLOCK_HEIGHT: u64 = 1;
     const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
@@ -467,12 +467,14 @@ fn assert_checkpoint(
     assert_eq!(
         block_expected.hash(),
         checkpoint_block.hash(),
-        "Hash of checkpoint block in storage does not match the hash of the expected block (height {})", checkpoint_block_height
+        "Hash of checkpoint block in storage does not match the hash of the expected block (height {})",
+        checkpoint_block_height
     );
     assert_eq!(
         block_expected.number(),
         checkpoint_block.number(),
-        "Height of checkpoint block in storage does not match the height of the expected block ({})", checkpoint_block_height
+        "Height of checkpoint block in storage does not match the height of the expected block ({})",
+        checkpoint_block_height
     );
 }
 

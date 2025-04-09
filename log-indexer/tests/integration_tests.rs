@@ -5,8 +5,8 @@ use common::test_utils::mock_rsk_provider_handler::MockRskProviderHandler;
 use common::test_utils::rsk_block_generator::FakeBlockGenerator;
 use common::test_utils::rsk_log_generator::FakeLogGenerator;
 use common::test_utils::rsk_utils::{
-    generate_fake_address, generate_fake_addresses, generate_fake_managed_contracts,
-    generate_fake_tx_hash, DEFAULT_BLOCK_HASH,
+    DEFAULT_BLOCK_HASH, generate_fake_address, generate_fake_addresses,
+    generate_fake_managed_contracts, generate_fake_tx_hash,
 };
 use common::{
     rsk_indexer::RskIndexer,
@@ -21,7 +21,7 @@ use rand::Rng;
 use std::{
     collections::HashMap,
     ops::Range,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{Arc, atomic::AtomicBool},
 };
 use tempfile::tempdir;
 const TX_ID_RANGE: Range<u64> = 0..20;

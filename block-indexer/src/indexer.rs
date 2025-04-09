@@ -1,5 +1,5 @@
 use crate::store::BlockStore;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use common::rsk_indexer::RskIndexer;
 use common::rsk_provider::{RskProvider, RskSubscription, RskSubscriptionError};
 use common::shutdown_flag::ShutdownFlag;
@@ -116,7 +116,9 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                     continue;
                 }
                 Err(RskSubscriptionError::Lagged(err)) => {
-                    error!("[subscribe_blocks] Subscription lagged, a backward_sync will be needed: {err:?}");
+                    error!(
+                        "[subscribe_blocks] Subscription lagged, a backward_sync will be needed: {err:?}"
+                    );
                     continue;
                 }
                 Err(RskSubscriptionError::Unexpected(err)) => {

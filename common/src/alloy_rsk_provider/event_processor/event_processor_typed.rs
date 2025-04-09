@@ -1,8 +1,8 @@
-use alloy_primitives::{hex, LogData};
+use crate::types::{RskEvent, RskLog};
+use alloy_primitives::{LogData, hex};
 use alloy_sol_types::private::B256;
-use alloy_sol_types::{sol, SolEvent};
-use anyhow::{bail, Context, Result};
-use common::types::{RskEvent, RskLog};
+use alloy_sol_types::{SolEvent, sol};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt::Debug;

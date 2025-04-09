@@ -4,8 +4,8 @@ use log::debug;
 use primitive_types::{H256, U256};
 use sha3::{Digest, Keccak256};
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc,
+    atomic::{AtomicBool, Ordering},
 };
 
 /// Returns a list of default RSK test blocks.
@@ -63,8 +63,12 @@ pub fn get_first_default_rsk_block() -> RskBlock {
         1739358639.into(),
         BlockDifficulty::from(U256::from(10_000_000_000_000_000_000_000_u128)), // difficulty (10 ZH)
         BlockDifficulty::from(U256::from(26_000_000_000_000_000_000_000_000_u128)), // total difficulty (26,000 YH)
-        from_hex_to_block_pow("0x0040f824fcc532c20c04a1fc5d66d2dffcbd37742346469195b900000000000000000000407a7f3cbe06b4f6d6b2ddb24bba54202d27d3e44163107c952f6a21cea36d88bd81ac6726770217975bb5e0"),
-        vec![from_hex_to_block_hash("0x19a46a22882e08e5a9104a887dd66eecd2c71a1e887587f39dbf2d30c2616346")]
+        from_hex_to_block_pow(
+            "0x0040f824fcc532c20c04a1fc5d66d2dffcbd37742346469195b900000000000000000000407a7f3cbe06b4f6d6b2ddb24bba54202d27d3e44163107c952f6a21cea36d88bd81ac6726770217975bb5e0",
+        ),
+        vec![from_hex_to_block_hash(
+            "0x19a46a22882e08e5a9104a887dd66eecd2c71a1e887587f39dbf2d30c2616346",
+        )],
     )
 }
 
@@ -94,8 +98,10 @@ pub fn get_second_default_rsk_block() -> RskBlock {
         1739358657.into(),
         BlockDifficulty::from(U256::from(10_000_000_000_000_000_000_000_u128)), // difficulty (10 ZH)
         BlockDifficulty::from(U256::from(26_000_000_000_000_000_000_000_000_u128)), // total difficulty (26,000 YH)
-        from_hex_to_block_pow("0x00a00e20fcc532c20c04a1fc5d66d2dffcbd37742346469195b9000000000000000000003270dc5de9a169bdd5794d6d3f8e8595007a04966bece93015c60bee50e33dc6c581ac6726770217d62abb2a"),
-        vec![]
+        from_hex_to_block_pow(
+            "0x00a00e20fcc532c20c04a1fc5d66d2dffcbd37742346469195b9000000000000000000003270dc5de9a169bdd5794d6d3f8e8595007a04966bece93015c60bee50e33dc6c581ac6726770217d62abb2a",
+        ),
+        vec![],
     )
 }
 
@@ -125,8 +131,12 @@ pub fn get_third_default_rsk_block() -> RskBlock {
         1739358667.into(),
         BlockDifficulty::from(U256::from(10_000_000_000_000_000_000_000_u128)), // difficulty (10 ZH)
         BlockDifficulty::from(U256::from(26_000_000_000_000_000_000_000_000_u128)), // total difficulty (26,000 YH)
-        from_hex_to_block_pow("0x00400020fcc532c20c04a1fc5d66d2dffcbd37742346469195b90000000000000000000091bd0ea538156c5d96c1163769f7da85f28c3197d482991dbd0f014242805b28dd81ac6726770217387d6c91"),
-        vec![from_hex_to_block_hash("0xd257bf689705e7dcdce1174addccc3e7b495ef60040e6de39fafb5da00eff19a")]
+        from_hex_to_block_pow(
+            "0x00400020fcc532c20c04a1fc5d66d2dffcbd37742346469195b90000000000000000000091bd0ea538156c5d96c1163769f7da85f28c3197d482991dbd0f014242805b28dd81ac6726770217387d6c91",
+        ),
+        vec![from_hex_to_block_hash(
+            "0xd257bf689705e7dcdce1174addccc3e7b495ef60040e6de39fafb5da00eff19a",
+        )],
     )
 }
 

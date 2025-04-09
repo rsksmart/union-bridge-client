@@ -1,5 +1,5 @@
 use crate::store::LogStore;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use common::{
     rsk_indexer::RskIndexer,
     rsk_provider::{RskProvider, RskSubscription, RskSubscriptionError, RskSubscriptionFilter},
@@ -105,7 +105,9 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                 }
                 Err(RskSubscriptionError::Lagged(err)) => {
                     // TODO(Jira) trigger backward sync in scope of https://rsklabs.atlassian.net/browse/UB-45
-                    error!("[subscribe_logs] Subscription lagged, a backward_sync will be needed: {err:?}");
+                    error!(
+                        "[subscribe_logs] Subscription lagged, a backward_sync will be needed: {err:?}"
+                    );
                     continue;
                 }
                 Err(RskSubscriptionError::Unexpected(err)) => {

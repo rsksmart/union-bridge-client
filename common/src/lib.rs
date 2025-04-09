@@ -1,3 +1,4 @@
+pub mod alloy_rsk_provider;
 pub mod cache;
 pub mod config;
 pub mod errors;

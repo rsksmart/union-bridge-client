@@ -1,16 +1,14 @@
 [package]
 name = "log-indexer"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 common = { path = "../common" }
-rsk-provider = { path = "../rsk-provider" }
 
 anyhow = { workspace = true }
 clap = { workspace = true }
 log = { workspace = true }
-log4rs = { workspace = true }
 serde = { workspace = true }
 storage-backend = { workspace = true }
 

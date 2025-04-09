@@ -52,7 +52,7 @@ pub trait RskProvider {
     fn get_block_by_number(&self, num: BlockNumber) -> Result<Option<RskBlock>>;
     fn get_best_block(&self) -> Result<RskBlock>;
     fn decode_log(&self, new_log: RskLog, contract_info: &ContractInfo)
-        -> Result<Option<RskEvent>>;
+    -> Result<Option<RskEvent>>;
     fn disconnect(&self) -> Result<()>;
 }
 

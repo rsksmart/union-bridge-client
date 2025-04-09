@@ -1,9 +1,16 @@
 [package]
 name = "common"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
+alloy-dyn-abi = { workspace = true }
+alloy-json-abi = { workspace = true }
+alloy-primitives = { workspace = true }
+alloy-provider = { workspace = true, features = ["ws"] }
+alloy-pubsub = { workspace = true }
+alloy-rpc-types = { workspace = true }
+alloy-sol-types = { workspace = true }
 anyhow = { workspace = true }
 hex = { workspace = true }
 mockall = { workspace = true, optional = true }
@@ -14,10 +21,8 @@ thiserror = { workspace = true }
 log4rs = { workspace = true }
 config = { workspace = true }
 log = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
 serde_yaml = "0.9.33"
-
-alloy-json-abi = "0.8.21"
 lru = "0.13.0"
 bitcoin = "0.32.4"
 signal-hook = "0.3"

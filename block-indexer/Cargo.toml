@@ -1,11 +1,10 @@
 [package]
 name = "block-indexer"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 common = { path = "../common" }
-rsk-provider = { path = "../rsk-provider" }
 
 anyhow = { workspace = true }
 clap = { workspace = true }
