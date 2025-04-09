@@ -1,4 +1,4 @@
-#![cfg(feature = "testing")]
+#![cfg(feature = "test-mocks")]
 
 use anyhow::Result;
 use block_indexer::indexer::BlockIndexer;
@@ -7,17 +7,15 @@ use common::cache::LruCache;
 use common::rsk_indexer::RskIndexer;
 use common::rsk_provider::MockRskProvider;
 use common::shutdown_flag::ShutdownFlag;
+use common::test_utils::mock_rsk_provider_handler::MockRskProviderHandler;
+use common::test_utils::rsk_block_generator::FakeBlockGenerator;
 use common::types::{BlockHash, BlockNumber, RskBlock};
 use log::info;
 use std::fs;
 use std::sync::{atomic::AtomicBool, Arc};
 use tempfile::tempdir;
-use test_utils::{
-    mock_rsk_provider_handler::MockRskProviderHandler, rsk_block_generator::FakeBlockGenerator,
-};
-
 const BLOCK_CACHE_SIZE: usize = 100;
-use test_utils::rsk_utils::DEFAULT_BLOCK_HASH;
+use common::test_utils::rsk_utils::DEFAULT_BLOCK_HASH;
 
 /*
 # Given the initial best block is B

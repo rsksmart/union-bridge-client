@@ -36,13 +36,13 @@ impl RawLogStore {
     }
 
     /// Ideally, this method should be used only for testing purposes
-    #[cfg(feature = "testing")]
+    #[cfg(feature = "test-utils")]
     pub fn get(&self, key: String) -> Result<Option<RskLog>> {
         Ok(self.db.get(key)?)
     }
 
     /// Ideally, this method should be used only for testing purposes
-    #[cfg(feature = "testing")]
+    #[cfg(feature = "test-utils")]
     pub fn get_all_logs(&self) -> Result<Vec<RskLog>> {
         Ok(self
             .db
@@ -66,17 +66,17 @@ impl LogStore for RawLogStore {
     }
 }
 
-#[cfg(all(test, feature = "testing"))]
+#[cfg(all(test, feature = "test-mocks"))]
 mod tests {
     use super::RawLogStore;
     use crate::store::{LogStore, StoreKey};
     use anyhow::Result;
+    use common::test_utils::rsk_log_generator::FakeLogGenerator;
+    use common::test_utils::rsk_utils::generate_fake_address;
     use common::types::{BlockHash, LogInfo};
     use primitive_types::H256;
     use storage_backend::storage::KeyValueStore;
     use tempfile::tempdir;
-    use test_utils::rsk_log_generator::FakeLogGenerator;
-    use test_utils::rsk_utils::generate_fake_address;
 
     fn create_test_store() -> Result<RawLogStore> {
         let temp_dir = tempdir()?;

@@ -629,8 +629,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::test_utils::rsk_utils::{DEFAULT_BITCOIN_MERGED_MINING_HEADER, DEFAULT_BLOCK_HASH};
     use crate::types::{BlockHash, BlockPow};
-    use test_utils::rsk_utils::{DEFAULT_BITCOIN_MERGED_MINING_HEADER, DEFAULT_BLOCK_HASH};
 
     #[test]
     fn test_valid_block_hash_when_valid_hash_is_provided_should_return_ok() {

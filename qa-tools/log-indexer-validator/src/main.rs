@@ -1,5 +1,6 @@
 use anyhow::{Context, Ok, Result};
 use clap::{Arg, Command};
+use common::types::RskLog;
 use log::info;
 use log_indexer::config::{Config, Logger};
 use log_indexer::store::RawLogStore;
@@ -33,9 +34,7 @@ fn main() -> Result<()> {
 
     let store = RawLogStore::new(&format!("{}/logs", config.indexer.storage.path))?;
 
-    let stored_logs = store
-        .get_all_logs()
-        .context("Failed to retrieve logs from storage")?;
+    let stored_logs = get_all_logs(store)?;
 
     info!("Retrieved {} logs from storage", stored_logs.len());
 
@@ -46,4 +45,17 @@ fn main() -> Result<()> {
     log::logger().flush();
 
     Ok(())
+}
+
+#[cfg(feature = "test-utils")]
+fn get_all_logs(store: RawLogStore) -> Result<Vec<RskLog>> {
+    let stored_logs = store
+        .get_all_logs()
+        .context("Failed to retrieve logs from storage")?;
+    Ok(stored_logs)
+}
+
+#[cfg(not(feature = "test-utils"))]
+fn get_all_logs(_store: RawLogStore) -> Result<Vec<RskLog>> {
+    panic!("Launch this tool with testing feature!")
 }
