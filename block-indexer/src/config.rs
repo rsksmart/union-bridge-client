@@ -27,7 +27,7 @@ impl Logger {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{Config, CARGO_PKG_NAME};
+    use crate::config::{CARGO_PKG_NAME, Config};
     use common::config::CommonConfig;
     use std::fs;
     use std::path::Path;

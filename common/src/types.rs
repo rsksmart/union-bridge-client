@@ -1,7 +1,7 @@
 use alloy_json_abi::JsonAbi;
 use bitcoin::{blockdata::block::Header, consensus::encode::deserialize as btc_deserialize};
 use primitive_types::{H160, H256, U256};
-use serde::{de, Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de};
 use serde_json::Value;
 use std::{
     cmp::Ordering,
@@ -683,8 +683,8 @@ mod tests {
     }
 
     #[test]
-    fn test_missing_prefix_when_bitcoin_merged_mining_header_without_prefix_is_provided_should_return_ok(
-    ) {
+    fn test_missing_prefix_when_bitcoin_merged_mining_header_without_prefix_is_provided_should_return_ok()
+     {
         let valid_hash_without_prefix = &DEFAULT_BITCOIN_MERGED_MINING_HEADER[2..];
         let pow = BlockPow::try_from(valid_hash_without_prefix);
 

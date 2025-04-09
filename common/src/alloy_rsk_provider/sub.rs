@@ -7,7 +7,7 @@ use alloy_primitives::{Address as AlloyAddress, B256};
 use alloy_pubsub::{Subscription, SubscriptionItem};
 use alloy_rpc_types::{FilterBlockOption, Header, Log, Topic};
 use anyhow::Result;
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use log::debug;
 use serde::de::DeserializeOwned;
 use serde_json::Value;

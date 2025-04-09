@@ -1,10 +1,10 @@
 use crate::types::{Address, RskEvent, RskLog};
 use alloy_dyn_abi::{DynSolType, DynSolValue};
 use alloy_json_abi::{Event, EventParam, JsonAbi};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use hex;
 use log::error;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::str::FromStr;
 
 pub fn process(

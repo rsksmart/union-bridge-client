@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Ok, Result};
+use anyhow::{Context, Ok, Result, bail};
 use block_indexer::config::{Config, Logger};
 use block_indexer::store::{BlockStore, CachedBlockStore};
 use clap::{Arg, Command};

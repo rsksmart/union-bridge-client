@@ -6,9 +6,9 @@ use crate::types::{BlockHash, BlockNumber, ContractInfo, RskBlock, RskEvent, Rsk
 use alloy_primitives::B256;
 use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy_rpc_types::{Filter, FilterSet, Header, Log};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use log::{debug, warn};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::future::Future;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
@@ -236,7 +236,7 @@ mod tests {
     use crate::alloy_rsk_provider::rpc::AlloyProvider;
     use crate::types::BlockHash;
     use crate::types::BlockNumber;
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
     use std::fs;
 
     const RESPONSE_FILE_PATH: &str = "tests/resources/response.json";
