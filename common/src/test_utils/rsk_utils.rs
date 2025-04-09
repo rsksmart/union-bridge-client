@@ -1,4 +1,4 @@
-use common::types::{Address, BlockHash, BlockPow, ContractInfo};
+use crate::types::{Address, BlockHash, BlockPow, ContractInfo};
 use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
 
@@ -25,7 +25,7 @@ pub const DEFAULT_BITCOIN_MERGED_MINING_HEADER: &str =
 /// # Example
 ///
 /// ```
-/// use test_utils::rsk_utils::generate_fake_address;
+/// use common::test_utils::rsk_utils::generate_fake_address;
 ///
 /// let address = generate_fake_address(1);
 /// ```
@@ -83,7 +83,7 @@ pub fn generate_fake_managed_contract(address: Address) -> (Address, ContractInf
 /// # Example
 ///
 /// ```
-/// use test_utils::rsk_utils::generate_fake_tx_hash;
+/// use common::test_utils::rsk_utils::generate_fake_tx_hash;
 ///
 /// let tx_hash = generate_fake_tx_hash(1, "0xabc123...");
 /// assert!(tx_hash.starts_with("0x"));

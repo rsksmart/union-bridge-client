@@ -214,9 +214,11 @@ mod tests {
     use crate::store::CachedBlockStore;
     use crate::store::StoreKey;
     use anyhow::Result;
+    use common::test_utils::rsk_block_generator::{
+        get_default_rsk_blocks, get_first_default_rsk_block,
+    };
     use common::{cache::LruCache, types::RskBlock};
     use tempfile::tempdir;
-    use test_utils::rsk_block_generator::{get_default_rsk_blocks, get_first_default_rsk_block};
 
     fn create_test_store() -> Result<CachedBlockStore<LruCache<RskBlock>>> {
         let temp_dir = tempdir()?;

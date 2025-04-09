@@ -1,4 +1,4 @@
-use common::types::{Address, LogEvent, LogInfo, RskLog};
+use crate::types::{Address, LogEvent, LogInfo, RskLog};
 use sha3::{Digest, Keccak256};
 
 /// A stateless generator for fake RSK logs.
@@ -34,7 +34,7 @@ impl FakeLogGenerator {
 /// # Example
 ///
 /// ```
-/// use test_utils::rsk_log_generator::event_signature_to_topic;
+/// use common::test_utils::rsk_log_generator::event_signature_to_topic;
 ///
 /// let topic = event_signature_to_topic("Transfer(address,address,uint256)");
 /// assert!(topic.starts_with("0x"));
@@ -64,7 +64,7 @@ pub fn event_signature_to_topic(event_signature: &str) -> String {
 ///
 /// ```
 /// use common::types::Address;
-/// use test_utils::rsk_log_generator::address_to_topic;
+/// use common::test_utils::rsk_log_generator::address_to_topic;
 ///
 /// let address = Address::try_from("0x1234567890abcdef1234567890abcdef12345678").unwrap();
 /// let topic = address_to_topic(address);

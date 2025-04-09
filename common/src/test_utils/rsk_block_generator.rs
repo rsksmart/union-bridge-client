@@ -1,5 +1,5 @@
-use crate::rsk_utils::{from_hex_to_block_hash, from_hex_to_block_pow};
-use common::types::{BlockDifficulty, BlockNumber, BlockPow, BlockTimestamp, RskBlock};
+use crate::test_utils::rsk_utils::{from_hex_to_block_hash, from_hex_to_block_pow};
+use crate::types::{BlockDifficulty, BlockNumber, BlockPow, BlockTimestamp, RskBlock};
 use log::debug;
 use primitive_types::{H256, U256};
 use sha3::{Digest, Keccak256};
@@ -16,7 +16,7 @@ use std::sync::{
 /// # Example
 ///
 /// ```
-/// use test_utils::rsk_block_generator::get_default_rsk_blocks;
+/// use common::test_utils::rsk_block_generator::get_default_rsk_blocks;
 ///
 /// let blocks = get_default_rsk_blocks();
 ///
@@ -42,7 +42,7 @@ pub fn get_default_rsk_blocks() -> Vec<RskBlock> {
 /// # Example
 ///
 /// ```
-/// use test_utils::rsk_block_generator::get_first_default_rsk_block;
+/// use common::test_utils::rsk_block_generator::get_first_default_rsk_block;
 ///
 /// let block = get_first_default_rsk_block();
 /// assert_eq!(block.number(), 7_234_706);
@@ -73,7 +73,7 @@ pub fn get_first_default_rsk_block() -> RskBlock {
 /// # Example
 ///
 /// ```
-/// use test_utils::rsk_block_generator::get_second_default_rsk_block;
+/// use common::test_utils::rsk_block_generator::get_second_default_rsk_block;
 ///
 /// let block = get_second_default_rsk_block();
 /// assert_eq!(block.number(), 7_234_707);
@@ -104,7 +104,7 @@ pub fn get_second_default_rsk_block() -> RskBlock {
 /// # Example
 ///
 /// ```
-/// use test_utils::rsk_block_generator::get_third_default_rsk_block;
+/// use common::test_utils::rsk_block_generator::get_third_default_rsk_block;
 ///
 /// let block = get_third_default_rsk_block();
 /// assert_eq!(block.number(), 7_234_708);

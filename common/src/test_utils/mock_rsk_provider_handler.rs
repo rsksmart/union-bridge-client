@@ -1,13 +1,11 @@
-use crate::rsk_block_generator::FakeBlockGenerator;
-use crate::rsk_log_generator::FakeLogGenerator;
-use anyhow::anyhow;
-use common::{
-    rsk_provider::{
-        MockRskProvider, MockRskSubscription, RskSubscriptionError, RskSubscriptionFilter,
-    },
-    shutdown_flag::ShutdownFlag,
-    types::{BlockHash, BlockNumber, ContractInfo, LogInfo, RskBlock, RskEvent, RskLog},
+use crate::rsk_provider::{
+    MockRskProvider, MockRskSubscription, RskSubscriptionError, RskSubscriptionFilter,
 };
+use crate::shutdown_flag::ShutdownFlag;
+use crate::test_utils::rsk_block_generator::FakeBlockGenerator;
+use crate::test_utils::rsk_log_generator::FakeLogGenerator;
+use crate::types::{BlockHash, BlockNumber, ContractInfo, LogInfo, RskBlock, RskEvent, RskLog};
+use anyhow::anyhow;
 use log::info;
 use std::{
     collections::VecDeque,

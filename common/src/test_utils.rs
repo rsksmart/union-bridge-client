@@ -1,5 +1,4 @@
-#![cfg(feature = "testing")]
-
+#[cfg(any(feature = "test-mocks", feature = "test-utils"))]
 pub mod mock_rsk_provider_handler;
 pub mod rsk_block_generator;
 pub mod rsk_log_generator;

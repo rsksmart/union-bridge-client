@@ -47,7 +47,7 @@ impl ShutdownFlag {
         }
     }
 
-    #[cfg(feature = "testing")]
+    #[cfg(feature = "test-utils")]
     pub fn set(&self, value: bool) {
         self.flag.store(value, Ordering::SeqCst);
     }

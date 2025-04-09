@@ -1,6 +1,13 @@
-#![cfg(feature = "testing")]
+#![cfg(feature = "test-mocks")]
 
 use anyhow::{Context, Result};
+use common::test_utils::mock_rsk_provider_handler::MockRskProviderHandler;
+use common::test_utils::rsk_block_generator::FakeBlockGenerator;
+use common::test_utils::rsk_log_generator::FakeLogGenerator;
+use common::test_utils::rsk_utils::{
+    generate_fake_address, generate_fake_addresses, generate_fake_managed_contracts,
+    generate_fake_tx_hash, DEFAULT_BLOCK_HASH,
+};
 use common::{
     rsk_indexer::RskIndexer,
     rsk_provider::{MockRskProvider, RskSubscriptionFilter},
@@ -17,16 +24,6 @@ use std::{
     sync::{atomic::AtomicBool, Arc},
 };
 use tempfile::tempdir;
-use test_utils::{
-    mock_rsk_provider_handler::MockRskProviderHandler,
-    rsk_block_generator::FakeBlockGenerator,
-    rsk_log_generator::FakeLogGenerator,
-    rsk_utils::{
-        generate_fake_address, generate_fake_addresses, generate_fake_managed_contracts,
-        generate_fake_tx_hash, DEFAULT_BLOCK_HASH,
-    },
-};
-
 const TX_ID_RANGE: Range<u64> = 0..20;
 const LOG_INDEX_RANGE: Range<u64> = 0..20;
 const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
