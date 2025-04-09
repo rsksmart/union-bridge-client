@@ -34,8 +34,8 @@ pub struct TransactionConfig {
 
 impl Config {
     pub fn load(base_path: Option<&String>) -> Result<Self, ConfigError> {
-        let mut cfg = CommonConfig::load_config::<Self>(base_path, CARGO_PKG_NAME)?;
-        cfg.path = CommonConfig::get_default_config_path();
+        let (mut cfg, path) = CommonConfig::load_config::<Self>(base_path, CARGO_PKG_NAME)?;
+        cfg.path = path;
         Ok(cfg)
     }
 

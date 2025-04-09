@@ -1354,6 +1354,7 @@ dependencies = [
  "bitcoin",
  "config",
  "hex",
+ "log",
  "log4rs",
  "lru",
  "mockall",

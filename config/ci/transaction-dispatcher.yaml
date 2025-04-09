@@ -1,0 +1,6 @@
+key_store:
+  path: "/usr/local/union_bridge/keystore/ab98c3c8-a772-4c44-b3a7-99864663b8cb"
+transaction:
+  gas_bumps_t1: 3
+server:
+  url: "0.0.0.0:3000"

@@ -2,6 +2,7 @@ use crate::errors::ConfigError;
 use alloy_json_abi::JsonAbi;
 use anyhow::{Context, Result};
 use config;
+use log::debug;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use std::{fs, path::Path};
@@ -52,7 +53,7 @@ impl CommonConfig {
     pub fn load_config<T: DeserializeOwned>(
         path_opt: Option<&String>,
         crate_name: &str,
-    ) -> Result<T, ConfigError> {
+    ) -> Result<(T, String), ConfigError> {
         let config_path = match path_opt {
             Some(config_path) => config_path,
             None => &Self::get_default_config_path(),
@@ -62,18 +63,20 @@ impl CommonConfig {
         let config = &format!("{config_path}/{crate_name}.yaml");
 
         println!(
-            "Loading default config from {:?} and {:?}",
+            "Loading config from {:?} and {:?}",
             Path::new(common_config),
             Path::new(config)
         );
 
-        config::Config::builder()
+        let cfg = config::Config::builder()
             .add_source(config::File::with_name(common_config).required(false)) // must exist if crate one does not
             .add_source(config::File::with_name(config).required(false)) // must exist if common one does not
             .build()
             .map_err(ConfigError::ConfigFileError)?
             .try_deserialize::<T>()
-            .map_err(ConfigError::ConfigFileError)
+            .map_err(ConfigError::ConfigFileError)?;
+
+        Ok((cfg, config_path.to_string()))
     }
 
     pub fn get_default_config_path() -> String {
@@ -95,6 +98,10 @@ impl CommonConfig {
                     .expect(&format!("Failed to parse ABI file: {:?}", abi_full_path)),
             )
         } else {
+            debug!(
+                "ABI file not found: {:?}. ABI will not be loaded.",
+                abi_path
+            );
             None
         }
     }

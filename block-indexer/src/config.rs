@@ -12,7 +12,8 @@ pub struct Config {
 
 impl Config {
     pub fn load(base_path: Option<&String>) -> Result<Self, ConfigError> {
-        CommonConfig::load_config::<Self>(base_path, CARGO_PKG_NAME)
+        let (cfg, _) = CommonConfig::load_config::<Self>(base_path, CARGO_PKG_NAME)?;
+        Ok(cfg)
     }
 }
 

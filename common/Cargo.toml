@@ -20,6 +20,7 @@ bitcoin = "0.32.4"
 signal-hook = "0.3"
 tokio = { workspace = true }
 serde_yaml = "0.9.33"
+log = "0.4.27"
 
 [dev-dependencies]
 test-utils = { path = "../test-utils" }
