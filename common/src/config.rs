@@ -53,24 +53,13 @@ impl CommonConfig {
         path_opt: Option<&String>,
         crate_name: &str,
     ) -> Result<T, ConfigError> {
-        // provided => use it as is
-        if path_opt.is_some() {
-            let config_path = &path_opt.unwrap();
+        let config_path = match path_opt {
+            Some(config_path) => config_path,
+            None => &Self::get_default_config_path(),
+        };
 
-            println!("Loading custom config from: {:?}", Path::new(config_path));
-
-            return config::Config::builder()
-                .add_source(config::File::with_name(config_path).required(true))
-                .build()
-                .map_err(ConfigError::ConfigFileError)?
-                .try_deserialize::<T>()
-                .map_err(ConfigError::ConfigFileError);
-        }
-
-        // otherwise, compose using defaults (mostly for local)
-        let default_config_path = Self::get_default_config_path();
-        let common_config = &format!("{default_config_path}/common.yaml");
-        let config = &format!("{default_config_path}/{crate_name}.yaml");
+        let common_config = &format!("{config_path}/common.yaml");
+        let config = &format!("{config_path}/{crate_name}.yaml");
 
         println!(
             "Loading default config from {:?} and {:?}",

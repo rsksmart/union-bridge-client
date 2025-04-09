@@ -64,7 +64,7 @@ mod tests {
 
     #[test]
     fn test_config_load_when_stage_config_set_should_load_config_successfully() {
-        let config_path = &format!("{}/tests/config.yaml", CARGO_MANIFEST_DIR);
+        let config_path = &format!("{}/tests/config", CARGO_MANIFEST_DIR);
         let config: Config = Config::load(Some(config_path)).expect("Failed to load config");
 
         // indexer
@@ -97,7 +97,7 @@ mod tests {
 
     #[test]
     fn test_load_contracts_when_stage_config_set_should_load_contracts_successfully() {
-        let config_path = &format!("{}/tests/config.yaml", CARGO_MANIFEST_DIR);
+        let config_path = &format!("{}/tests/config", CARGO_MANIFEST_DIR);
         let config: Config = Config::load(Some(&config_path)).expect("Failed to load config");
         let contracts = config.load_managed_contracts();
 
