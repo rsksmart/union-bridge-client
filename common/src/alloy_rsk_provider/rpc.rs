@@ -1,14 +1,12 @@
-use crate::event_processor::{event_processor_abi, event_processor_typed};
-use crate::sub::AlloySubscription;
+use crate::alloy_rsk_provider::event_processor::{event_processor_abi, event_processor_typed};
+use crate::alloy_rsk_provider::sub::AlloySubscription;
+use crate::rsk_provider::{RskProvider, RskSubscriptionFilter};
+use crate::shutdown_flag::ShutdownFlag;
+use crate::types::{BlockHash, BlockNumber, ContractInfo, RskBlock, RskEvent, RskLog, RskRpcBlock};
 use alloy_primitives::B256;
 use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy_rpc_types::{Filter, FilterSet, Header, Log};
 use anyhow::{anyhow, Context, Result};
-use common::rsk_provider::{RskProvider, RskSubscriptionFilter};
-use common::shutdown_flag::ShutdownFlag;
-use common::types::{
-    BlockHash, BlockNumber, ContractInfo, RskBlock, RskEvent, RskLog, RskRpcBlock,
-};
 use log::{debug, warn};
 use serde_json::{json, Value};
 use std::future::Future;
@@ -235,9 +233,9 @@ impl RuntimeSync {
 
 #[cfg(test)]
 mod tests {
-    use crate::rpc::AlloyProvider;
-    use common::types::BlockHash;
-    use common::types::BlockNumber;
+    use crate::alloy_rsk_provider::rpc::AlloyProvider;
+    use crate::types::BlockHash;
+    use crate::types::BlockNumber;
     use serde_json::{json, Value};
     use std::fs;
 

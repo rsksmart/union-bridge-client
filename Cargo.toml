@@ -1,11 +1,14 @@
 [workspace]
 resolver = "2"
-members = ["qa-tools/block-indexer-validator", "qa-tools/log-indexer-validator", "common", "rsk-provider", "block-indexer", "log-indexer", "transaction-dispatcher", "key-manager"]
+members = ["qa-tools/block-indexer-validator", "qa-tools/log-indexer-validator", "common", "block-indexer", "log-indexer", "transaction-dispatcher", "key-manager"]
 
 [workspace.dependencies]
+alloy-dyn-abi = "0.8.22"
+alloy-json-abi = "0.8.22"
 alloy-primitives = "0.8.22"
-alloy-sol-types = "0.8.21"
 alloy-provider = { version = "0.12.5" }
+alloy-pubsub = { version = "0.12.5" }
+alloy-sol-types = "0.8.22"
 anyhow = "1.0.94"
 clap = "4.5.30"
 hex = "0.4.3"

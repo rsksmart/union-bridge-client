@@ -1,13 +1,13 @@
-use crate::rpc::AlloyProvider;
+use crate::alloy_rsk_provider::rpc::AlloyProvider;
+use crate::rsk_provider::{
+    RskProvider, RskSubscription, RskSubscriptionError, RskSubscriptionFilter,
+};
+use crate::types::{Address, BlockHash, BlockNumber, LogEvent, LogInfo, RskBlock, RskLog};
 use alloy_primitives::{Address as AlloyAddress, B256};
 use alloy_pubsub::{Subscription, SubscriptionItem};
 use alloy_rpc_types::{FilterBlockOption, Header, Log, Topic};
 use anyhow::Result;
 use anyhow::{anyhow, Context};
-use common::rsk_provider::{
-    RskProvider, RskSubscription, RskSubscriptionError, RskSubscriptionFilter,
-};
-use common::types::{Address, BlockHash, BlockNumber, LogEvent, LogInfo, RskBlock, RskLog};
 use log::debug;
 use serde::de::DeserializeOwned;
 use serde_json::Value;

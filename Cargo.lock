@@ -1154,7 +1154,6 @@ dependencies = [
  "common",
  "env_logger",
  "log",
- "rsk-provider",
  "rust-bitvmx-storage-backend",
  "serde",
  "tempfile",
@@ -1169,8 +1168,6 @@ dependencies = [
  "clap",
  "common",
  "log",
- "log4rs",
- "rsk-provider",
 ]
 
 [[package]]
@@ -1348,7 +1345,13 @@ checksum = "5b63caa9aa9397e2d9480a9b13673856c78d8ac123288526c37d7839f2a86990"
 name = "common"
 version = "0.1.0"
 dependencies = [
+ "alloy-dyn-abi",
  "alloy-json-abi",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-pubsub",
+ "alloy-rpc-types",
+ "alloy-sol-types",
  "anyhow",
  "bitcoin",
  "config",
@@ -2742,10 +2745,8 @@ dependencies = [
  "common",
  "env_logger",
  "log",
- "log4rs",
  "primitive-types 0.13.1",
  "rand 0.9.0",
- "rsk-provider",
  "rust-bitvmx-storage-backend",
  "serde",
  "tempfile",
@@ -2760,7 +2761,6 @@ dependencies = [
  "common",
  "log",
  "log-indexer",
- "log4rs",
  "serde_json",
 ]
 
@@ -3623,26 +3623,6 @@ dependencies = [
  "bitflags",
  "serde",
  "serde_derive",
-]
-
-[[package]]
-name = "rsk-provider"
-version = "0.1.0"
-dependencies = [
- "alloy-dyn-abi",
- "alloy-json-abi",
- "alloy-primitives",
- "alloy-provider",
- "alloy-pubsub",
- "alloy-rpc-types",
- "alloy-sol-types",
- "anyhow",
- "common",
- "hex",
- "log",
- "serde",
- "serde_json",
- "tokio",
 ]
 
 [[package]]

@@ -3,13 +3,13 @@ use block_indexer::config::{Config, Logger};
 use block_indexer::store::{BlockStore, CachedBlockStore};
 use clap::{Arg, Command};
 use common::{
+    alloy_rsk_provider::rpc::AlloyProvider,
     cache::LruCache,
     rsk_provider::RskProvider,
     shutdown_flag::ShutdownFlag,
     types::{BlockHash, RskBlock},
 };
 use log::{debug, info, warn};
-use rsk_provider::rpc::AlloyProvider;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const CONFIG_CLI_FLAG: &str = "config-path";

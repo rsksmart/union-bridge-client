@@ -6,10 +6,8 @@ resolver = "2"
 
 [dependencies]
 block-indexer = { path = "../../block-indexer" }
-rsk-provider = { path = "../../rsk-provider" }
 common = { path = "../../common" }
 
 anyhow = { workspace = true }
 clap = { workspace = true }
 log = { workspace = true }
-log4rs = { workspace = true }

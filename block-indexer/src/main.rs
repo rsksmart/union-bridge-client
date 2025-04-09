@@ -2,9 +2,11 @@ use anyhow::Result;
 use block_indexer::config::{Config, Logger};
 use block_indexer::{indexer::BlockIndexer, store::CachedBlockStore};
 use clap::{Arg, Command};
-use common::{rsk_indexer::RskIndexer, shutdown_flag::ShutdownFlag, types::BlockHash};
+use common::{
+    alloy_rsk_provider::rpc::AlloyProvider, rsk_indexer::RskIndexer, shutdown_flag::ShutdownFlag,
+    types::BlockHash,
+};
 use log::{error, info};
-use rsk_provider::rpc::AlloyProvider;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const CONFIG_CLI_FLAG: &str = "config-path";

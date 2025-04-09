@@ -5,12 +5,10 @@ edition = "2021"
 
 [dependencies]
 common = { path = "../common" }
-rsk-provider = { path = "../rsk-provider" }
 
 anyhow = { workspace = true }
 clap = { workspace = true }
 log = { workspace = true }
-log4rs = { workspace = true }
 serde = { workspace = true }
 storage-backend = { workspace = true }
 

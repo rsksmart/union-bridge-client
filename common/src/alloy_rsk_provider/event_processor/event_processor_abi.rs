@@ -1,7 +1,7 @@
+use crate::types::{Address, RskEvent, RskLog};
 use alloy_dyn_abi::{DynSolType, DynSolValue};
 use alloy_json_abi::{Event, EventParam, JsonAbi};
 use anyhow::{bail, Context, Result};
-use common::types::{Address, RskEvent, RskLog};
 use hex;
 use log::error;
 use serde_json::{json, Value};
