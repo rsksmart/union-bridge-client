@@ -613,7 +613,7 @@
       {
         "name": "_pegInRequestTxSPVProof",
         "type": "tuple",
-        "internalType": "struct PegInRequestTxSPVProof",
+        "internalType": "struct BtcTxSPVProof",
         "components": [
           {
             "name": "blockHash",

@@ -81,7 +81,7 @@ pub(crate) fn decode_contract_error(error_payload: &ErrorPayload) -> Option<PegM
 
     let decoded_error = SolBitcoinManagerErrors::abi_decode(&revert_data, true);
     if decoded_error.is_ok() {
-        // TODO(create-Jira) - review all errors and conceptually merge into or create new PegManagerErrors
+        // TODO(Jira): Improve error handling https://rsklabs.atlassian.net/browse/UB-107
         return Some(match decoded_error.unwrap() {
             SolBitcoinManagerErrors::AddressEmptyCode(e) => {
                 PegManagerErrors::UnhandledContractError(format!(
@@ -92,15 +92,9 @@ pub(crate) fn decode_contract_error(error_payload: &ErrorPayload) -> Option<PegM
             SolBitcoinManagerErrors::FailedCall(_) => PegManagerErrors::UnhandledContractError(
                 "SolSolBitcoinManagerErrors#FailedCall".to_string(),
             ),
-            SolBitcoinManagerErrors::IncorrectOutputNumber(e) => {
+            SolBitcoinManagerErrors::IncorrectOutputScript(e) => {
                 PegManagerErrors::InvalidPegInRequestData(format!(
-                    "SolSolBitcoinManagerErrors#IncorrectOutputNumber actual: {}, expected: {}",
-                    e.actual, e.expected
-                ))
-            }
-            SolBitcoinManagerErrors::IncorrectP2TRScriptPub(e) => {
-                PegManagerErrors::InvalidPegInRequestData(format!(
-                    "SolSolBitcoinManagerErrors#IncorrectP2TRScriptPub actual: {:?}, expected: {:?}",
+                    "SolSolBitcoinManagerErrors#IncorrectOutputScript actual: {}, expected: {}",
                     e.actual, e.expected
                 ))
             }
@@ -134,6 +128,12 @@ pub(crate) fn decode_contract_error(error_payload: &ErrorPayload) -> Option<PegM
                 "SolSolBitcoinManagerErrors#InvalidValue {}",
                 e._value
             )),
+            SolBitcoinManagerErrors::InvalidOutputAmount(e) => {
+                PegManagerErrors::UnhandledContractError(format!(
+                    "SolSolBitcoinManagerErrors#InvalidOutputAmount: {} - {}",
+                    e.expected, e.actual
+                ))
+            }
             SolBitcoinManagerErrors::NotInitializing(_) => {
                 PegManagerErrors::UnhandledContractError(
                     "SolSolBitcoinManagerErrors#NotInitializing".to_string(),
@@ -193,8 +193,8 @@ pub(crate) fn decode_contract_error(error_payload: &ErrorPayload) -> Option<PegM
 #[cfg(test)]
 mod tests {
     use crate::contracts::bitcoin_manager::SolBitcoinManager::{
-        IncorrectOutputNumber, IncorrectP2TRScriptPub, IncorrectlyFormedOpReturn,
-        InvalidOpReturnLength, NotInitializing, SolBitcoinManagerErrors,
+        IncorrectOutputScript, IncorrectlyFormedOpReturn, InvalidOpReturnLength, NotInitializing,
+        SolBitcoinManagerErrors,
     };
     use crate::contracts::bitcoin_manager::decode_contract_error;
     use crate::contracts::common::tests::generate_contract_revert_error;
@@ -202,24 +202,10 @@ mod tests {
 
     #[test]
     fn test_incorrect_output_number() {
-        let expected_err = SolBitcoinManagerErrors::IncorrectOutputNumber(IncorrectOutputNumber {
-            actual: alloy_primitives::Uint::from(1),
-            expected: alloy_primitives::Uint::from(2),
+        let expected_err = SolBitcoinManagerErrors::IncorrectOutputScript(IncorrectOutputScript {
+            actual: alloy_primitives::Bytes::from(vec![0x01, 0x2]),
+            expected: alloy_primitives::Bytes::from(vec![0x02, 0x3]),
         });
-
-        let expected_err_payload = generate_contract_revert_error(expected_err);
-        let result = decode_contract_error(&expected_err_payload);
-
-        matches!(result, Some(PegManagerErrors::InvalidPegInRequestData(_)));
-    }
-
-    #[test]
-    fn test_incorrect_p2tr_script_pub() {
-        let expected_err =
-            SolBitcoinManagerErrors::IncorrectP2TRScriptPub(IncorrectP2TRScriptPub {
-                actual: alloy_primitives::Bytes::from_static(&[0x00]),
-                expected: alloy_primitives::Bytes::from_static(&[0x01]),
-            });
 
         let expected_err_payload = generate_contract_revert_error(expected_err);
         let result = decode_contract_error(&expected_err_payload);

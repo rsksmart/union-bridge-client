@@ -16,7 +16,7 @@ pub(crate) enum ParseFieldError {
     ParseHex(#[from] FromHexError),
 }
 
-// TODO(create-Jira) - add ticket to test this, creating a mockeable wrapper around SolCallBuilder
+// TODO(Jira): properly test this, creating a mockeable wrapper around SolCallBuilder - https://rsklabs.atlassian.net/browse/UB-109
 pub(super) async fn send_tx_with_gas_bump<P, F, T>(
     build_tx: F,
     max_attempts: u8,

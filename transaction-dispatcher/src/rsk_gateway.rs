@@ -118,6 +118,8 @@ pub enum PegManagerErrors {
     InvalidAddress(String),
     #[error("Already registered PegIn: {0}")]
     AlreadyRegisteredPegIn(String),
+    #[error("Already registered PegIn Request: {0}")]
+    AlreadyRegisteredPegInRequest(String),
     #[error("Invalid data in PegIn transaction: {0}")]
     InvalidPegInRequestData(String),
     #[error("Not Owner: {0}")]

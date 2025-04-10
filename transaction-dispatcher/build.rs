@@ -48,8 +48,10 @@ sol!(
         )
         .unwrap();
 
-        println!("cargo:rerun-if-changed={}", file_name);
+        // TODO(iago) check if removing re-builds always
+        // println!("cargo:rerun-if-changed={}", abi_path);
     }
 
-    println!("cargo:rerun-if-env-changed=RUN_MODE");
+    // TODO(iago) check if removing re-builds always
+    // println!("cargo:rerun-if-env-changed=RUN_MODE");
 }
