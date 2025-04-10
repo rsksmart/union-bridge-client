@@ -48,10 +48,10 @@ sol!(
         )
         .unwrap();
 
-        // TODO(iago) check if removing re-builds always
+        // this is causing issues with the ABI changes not being properly detected
         // println!("cargo:rerun-if-changed={}", abi_path);
     }
 
-    // TODO(iago) check if removing re-builds always
+    // this is causing issues with the ABI changes not being properly detected
     // println!("cargo:rerun-if-env-changed=RUN_MODE");
 }
