@@ -1,6 +1,7 @@
-use anyhow::{Context, Ok, Result, bail};
-use block_indexer::config::{Config, Logger};
-use block_indexer::store::{BlockStore, CachedBlockStore};
+use std::{fs, path::Path};
+
+use anyhow::{bail, Context, Result};
+use block_indexer::{config::Config, store::BlockStore, store::CachedBlockStore};
 use clap::Parser;
 use common::{
     alloy_rsk_provider::rpc::AlloyProvider,
@@ -10,6 +11,7 @@ use common::{
     types::{BlockHash, RskBlock},
 };
 use log::{debug, info, warn};
+use qa_tools::utils::common::indexer_consts;
 
 /// Runs block-indexer-validator with the provided log configuration and configuration folder.
 #[derive(Parser, Debug)]
@@ -19,30 +21,25 @@ struct Args {
     #[arg(short = 't')]
     tag: String,
 
-    /// Environment (optional, default: "stage")
-    #[arg(short = 'e', default_value = "stage")]
+    /// Environment (optional, default: "qa")
+    #[arg(short = 'e', default_value = "qa")]
     env: String,
 }
 
-const ROOT_DIRECTORY: &str = "/tmp/monitor-executions";
 const FINALITY_FOR_CHECK: u8 = 10;
 
 fn main() -> Result<()> {
     let args = Args::parse();
-
-    let target_folder = format!("{}/{}", ROOT_DIRECTORY, args.tag);
+    let target_folder = format!("{}/{}", indexer_consts::ROOT_DIRECTORY, args.tag);
     let target_config_folder = format!("{}/config/{}", target_folder, args.env);
     let target_log_folder = target_folder.clone();
     let target_log_config_file = format!("{}/log4rs.yaml", target_folder);
-
     println!(
         "Starting block-indexer-validator with log config: {} and config folder: {}",
         target_log_config_file, target_config_folder
     );
-
     run_block_indexer_validator(&target_log_config_file, &target_config_folder)?;
-
-    let app_log_path = format!("{}/app.log", target_log_folder);
+    let app_log_path = format!("{}/args.tag.log", target_log_folder);
     tail_file(&app_log_path, 20)?;
 
     Ok(())
@@ -51,7 +48,7 @@ fn main() -> Result<()> {
 fn run_block_indexer_validator(log_config_path: &str, config_folder: &str) -> Result<()> {
     log4rs::init_file(log_config_path, Default::default())
         .with_context(|| format!("Initializing log4rs from {}", log_config_path))?;
-    let config = Config::load(config_folder)
+    let config = Config::load(Some(&config_folder.to_string()))
         .with_context(|| format!("Loading config from {}", config_folder))?;
     let store = CachedBlockStore::new(
         &format!("{}/blocks", config.indexer.storage.path),

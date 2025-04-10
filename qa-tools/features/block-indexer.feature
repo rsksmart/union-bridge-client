@@ -7,133 +7,133 @@ Feature: Rootstock block monitoring and tracking
 
 Scenario: happy path
 Given the initial best block is B (B = node best block height - 100)
-And the indexer is started
-And the indexer catches up with backward sync and is suscribed for a while
+And the block indexer is started
+And the block indexer catches up with backward sync and is suscribed for a while
 When the block indexer is shut down
 Then the best block in storage should be the best from the node
 And there should be no gaps in storage
 
-# cargo run --bin block-indexer-runner -- -f 100 -t happy_path
-# tail  -1000f /tmp/monitor-executions/happy_path/app.log
+# cargo run --bin block-indexer-runner -- -f 100 -t happy-path-blk-indxr
+# tail  -1000f /tmp/monitor-executions/happy-path-blk-indxr/app.log
 # ... until subscribed -> shut down
-# cargo run --bin block-indexer-validator -- -t happy_path
-# cargo run --bin archiver -- -t happy_path
+# cargo run --bin block-indexer-validator -- -t happy-path-blk-indxr
+# cargo run --bin archiver -- -t happy-path-blk-indxr
 
 Scenario: shut down during backward sync (checkpoint)
 Given the initial best block is B (B = node latest block height - 5000)
-And the indexer is started
-And the indexer runs in backward sync but it does not complete it
+And the block indexer is started
+And the block indexer runs in backward sync but it does not complete it
 When the block indexer is shut down
 Then the storage should have a checkpoint
 Then the latest block in storage should be B, not the best one from the provider
 
-# cargo run --bin block-indexer-runner -- -f 5000 -t shutdown_sync
-# tail  -1000f /tmp/monitor-executions/shutdown_sync/app.log
+# cargo run --bin block-indexer-runner -- -f 5000 -t shutdown-sync-blk-indxr
+# tail  -1000f /tmp/monitor-executions/shutdown-sync-blk-indxr/app.log
 # ... before finishes backward sync -> shut down
-# cargo run --bin block-indexer-validator -- -t shutdown_sync
-# cargo run --bin archiver -- -t shutdown_sync
+# cargo run --bin block-indexer-validator -- -t shutdown-sync-blk-indxr
+# cargo run --bin archiver -- -t shutdown-sync-blk-indxr
 
 Scenario: shut down during backward sync and restart
 Given the initial best block is B (B = node latest block height - 5000)
-And the indexer is started
-And the indexer runs in backward sync but it does not complete it
+And the block indexer is started
+And the block indexer runs in backward sync but it does not complete it
 When the block indexer is shut down
-And the indexer is started again
-And the indexer catches up with backward sync and is suscribed for a while
+And the block indexer is started again
+And the block indexer catches up with backward sync and is suscribed for a while
 Then the best block in storage should be the best from the node
 And the storage should not have a checkpoint
 And there should be no gaps in storage
 
-# cargo run --bin block-indexer-runner -- -f 5000 -t shutdown_n_restart
-# tail  -1000f /tmp/monitor-executions/shutdown_n_restart/app.log
+# cargo run --bin block-indexer-runner -- -f 5000 -t shutdown-n-restart-blk-indxr
+# tail  -1000f /tmp/monitor-executions/shutdown-n-restart-blk-indxr/app.log
 # ... before finishes backward sync -> shut down
-# cargo run --bin block-indexer-runner -- -t shutdown_n_restart -c false
+# cargo run --bin block-indexer-runner -- -t shutdown-n-restart-blk-indxr -c false
 # ... until subscribed -> shut down
-# cargo run --bin block-indexer-validator -- -t shutdown_n_restart
-# cargo run --bin archiver -- -t shutdown_n_restart
+# cargo run --bin block-indexer-validator -- -t shutdown-n-restart-blk-indxr
+# cargo run --bin archiver -- -t shutdown-n-restart-blk-indxr
 
-Scenario: shut down during subscription and restart with a more recent initial_block_hash
+Scenario: shut down during subscription and restart with a more recent initial block
 Given the initial best block is B (B = node latest block height - 5000)
-And the indexer is started
-And the indexer runs in backward sync but it does not complete it
+And the block indexer is started
+And the block indexer runs in backward sync but it does not complete it
 When the block indexer is shut down
-And the indexer is started again after with initial block L (L = node latest block height - 100)
-Then the indexer should reach synced status again
+And the block indexer is started again after with initial block L (L = node latest block height - 100)
+Then the block indexer should reach synced status again
 And the latest block in storage should be the latest from the node
 And there should be no gaps in storage
 
-# cargo run --bin block-indexer-runner -- -f 5000 -t shutdown_n_restart_more_recent
-# tail  -1000f /tmp/monitor-executions/shutdown_n_restart_more_recent/app.log
+# cargo run --bin block-indexer-runner -- -f 5000 -t shutdown-n-restart-more-recent-blk-indxr
+# tail  -1000f /tmp/monitor-executions/shutdown-n-restart-more-recent-blk-indxr/app.log
 # ... before finishes backward sync -> shut down
-# cargo run --bin block-indexer-runner -- -f 100 -t shutdown_n_restart_more_recent
+# cargo run --bin block-indexer-runner -- -f 100 -t shutdown-n-restart-more-recent-blk-indxr
 # ... until subscribed -> shut down
-# cargo run --bin block-indexer-validator -- -t shutdown_n_restart_more_recent
-# cargo run --bin archiver -- -t shutdown_n_restart_more_recent
+# cargo run --bin block-indexer-validator -- -t shutdown-n-restart-more-recent-blk-indxr
+# cargo run --bin archiver -- -t shutdown-n-restart-more-recent-blk-indxr
 
 Scenario: long run in subscribe mode
 Given the initial best block is B (B = node latest block height - 100)
-And the indexer is started
-And the indexer catches up with backward sync and is suscribed for a very long while
-When the indexer is shut down
+And the block indexer is started
+And the block indexer catches up with backward sync and is suscribed for a very long while
+When the block indexer is shut down
 Then the best block in storage should be the best from the node
 And the storage should not have a checkpoint
 And there should be no gaps in storage
 
-# tmux new-session -d -s long_run_subs 'cargo run --bin block-indexer-runner -- -f 100 -t long_run_subs'
-# tmux attach-session -t long_run_subs
+# tmux new-session -d -s long-run-subs-blk-indxr 'cargo run --bin block-indexer-runner -- -f 100 -t long-run-subs-blk-indxr'
+# tmux attach-session -t long-run-subs-blk-indxr
 # detach: CTRL+b, d
 # ... 24 hours -> shut down
-# tail  -1000f /tmp/monitor-executions/long_run_subs/app.log
-# cargo run --bin block-indexer-validator -- -t long_run_subs
-# cargo run --bin archiver -- -t long_run_subs
+# tail  -1000f /tmp/monitor-executions/long-run-subs-blk-indxr/app.log
+# cargo run --bin block-indexer-validator -- -t long-run-subs-blk-indxr
+# cargo run --bin archiver -- -t long-run-subs-blk-indxr
 
 Scenario: long run in backward sync mode
 Given the initial best block is the genesis block
-And the indexer is started  
-And the indexer runs until backward sync is completed
+And the block indexer is started  
+And the block indexer runs until backward sync is completed
 When the block indexer is shut down
 Then the best block in storage should be the best from the node
 And there should be no gaps in storage
 
-# tmux new-session -d -s long_run_sync 'cargo run --bin block-indexer-runner -- -b 0 -t long_run_sync'
-# tmux attach-session -t long_run_sync
+# tmux new-session -d -s long-run-sync-blk-indxr 'cargo run --bin block-indexer-runner -- -b 0 -t long-run-sync-blk-indxr'
+# tmux attach-session -t long-run-sync-blk-indxr
 # detach: CTRL+b, d
 # ... 24 hours -> shut down
-# tail  -1000f /tmp/monitor-executions/long_run_sync/app.log
-# cargo run --bin block-indexer-validator -- -t long_run_sync
-# cargo run --bin archiver -- -t long_run_sync
+# tail  -1000f /tmp/monitor-executions/long-run-sync-blk-indxr/app.log
+# cargo run --bin block-indexer-validator -- -t long-run-sync-blk-indxr
+# cargo run --bin archiver -- -t long-run-sync-blk-indxr
 
 Scenario: small cache
 Given the initial best block is B (B = node latest block height - 100)
 And the cache size is 5
-And the indexer is started
-And the indexer catches up with backward sync and is suscribed for a while
+And the block indexer is started
+And the block indexer catches up with backward sync and is suscribed for a while
 When the block indexer is shut down
 Then the best block in storage should be the best from the node
 And there should be no gaps in storage
 
-# tmux new-session -d -s small_cache 'cargo run --bin block-indexer-runner -- -f 100 -a 5 -t small_cache'
-# tmux attach-session -t small_cache
+# tmux new-session -d -s small-cache-blk-indxr 'cargo run --bin block-indexer-runner -- -f 100 -a 5 -t small-cache-blk-indxr'
+# tmux attach-session -t small-cache-blk-indxr
 # detach: CTRL+b, d
 # ... until subscribed, wait a bit longer (15 min) -> shut down
-# tail  -1000f /tmp/monitor-executions/small_cache/app.log
-# cargo run --bin block-indexer-validator -- -t small_cache
-# cargo run --bin archiver -- -t small_cache
+# tail  -1000f /tmp/monitor-executions/small-cache-blk-indxr/app.log
+# cargo run --bin block-indexer-validator -- -t small-cache-blk-indxr
+# cargo run --bin archiver -- -t small-cache-blk-indxr
 
 Scenario: large cache and long backward sync
 Given the initial best block is the genesis block
 And the cache size is 1000000
-And the indexer is started
-And the indexer runs until backward sync is completed
-And the indexer still runs for a while in subscription mode
+And the block indexer is started
+And the block indexer runs until backward sync is completed
+And the block indexer still runs for a while in subscription mode
 When the block indexer is shut down
 Then the best block in storage should be the best from the node
 And there should be no gaps in storage
 
-# tmux new-session -d -s long_run_sync_large_cache 'cargo run --bin block-indexer-runner -- -b 0 -t long_run_sync_large_cache'
-# tmux attach-session -t long_run_sync_large_cache
+# tmux new-session -d -s long-run-sync-large-cache-blk-indxr 'cargo run --bin block-indexer-runner -- -b 0 -t long-run-sync-large-cache-blk-indxr'
+# tmux attach-session -t long-run-sync-large-cache-blk-indxr
 # detach: CTRL+b, d
 # ... 24 hours -> shut down
-# tail  -1000f /tmp/monitor-executions/long_run_sync_large_cache/app.log
-# cargo run --bin block-indexer-validator -- -t long_run_sync_large_cache
-# cargo run --bin archiver -- -t long_run_sync_large_cache
+# tail  -1000f /tmp/monitor-executions/long-run-sync-large-cache-blk-indxr/app.log
+# cargo run --bin block-indexer-validator -- -t long-run-sync-large-cache-blk-indxr
+# cargo run --bin archiver -- -t long-run-sync-large-cache-blk-indxr

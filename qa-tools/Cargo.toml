@@ -30,8 +30,7 @@ path = "src/clear.rs"
 
 [dependencies]
 block-indexer = { path = "../block-indexer" }
-log-indexer = { path = "../log-indexer", features = ["testing"] }
-rsk-provider = { path = "../rsk-provider" }
+log-indexer = { path = "../log-indexer" }
 common = { path = "../common" }
 
 anyhow = { workspace = true }
@@ -44,3 +43,6 @@ regex = "1.7"
 tungstenite = "0.26.2"
 url = "2.3"
 chrono = "0.4.40"
+
+[features]
+test-utils = ["common/test-utils"]

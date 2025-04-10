@@ -3405,7 +3405,6 @@ dependencies = [
  "log-indexer",
  "log4rs",
  "regex",
- "rsk-provider",
  "serde",
  "serde_json",
  "tungstenite",
