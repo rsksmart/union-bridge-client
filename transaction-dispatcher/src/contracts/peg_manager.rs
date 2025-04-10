@@ -156,7 +156,7 @@ impl From<SolPegManagerErrors> for PegManagerErrors {
             ERC1967NonPayable(e) => PegManagerErrors::UnhandledContractError(format_sol_err!(e)),
             FailedCall(e) => PegManagerErrors::UnhandledContractError(format_sol_err!(e)),
             IncorrectInputsNumber(e) => {
-                PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.expected, e.expected))
+                PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.expected, e.actual))
             }
             IncorrectOutputsNumber(e) => {
                 PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.expected, e.actual))
