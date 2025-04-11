@@ -48,8 +48,10 @@ sol!(
         )
         .unwrap();
 
-        println!("cargo:rerun-if-changed={}", file_name);
+        // this is causing issues with the ABI changes not being properly detected
+        // println!("cargo:rerun-if-changed={}", abi_path);
     }
 
-    println!("cargo:rerun-if-env-changed=RUN_MODE");
+    // this is causing issues with the ABI changes not being properly detected
+    // println!("cargo:rerun-if-env-changed=RUN_MODE");
 }

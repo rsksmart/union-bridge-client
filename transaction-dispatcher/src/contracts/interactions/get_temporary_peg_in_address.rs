@@ -3,7 +3,8 @@ use crate::rsk_gateway::PegManagerErrors;
 use crate::types::{PegInAddressInput, PegInAddressOutput};
 use alloy_primitives::{Address, FixedBytes};
 use log::info;
-// TODO(create-Jira) generate Try_From for the input struct like in the other cases
+
+// TODO(Jira): generate Try_From for the input struct like in the other cases - https://rsklabs.atlassian.net/browse/UB-108
 
 pub(crate) struct GetTemporaryPegInAddressCall<C: PegManagerContractApi> {
     contract: C,

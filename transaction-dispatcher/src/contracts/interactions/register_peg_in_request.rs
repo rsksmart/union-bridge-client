@@ -1,5 +1,5 @@
 use crate::contracts::peg_manager::PegManagerContractApi;
-use crate::contracts::peg_manager::SolPegManager::PegInRequestTxSPVProof;
+use crate::contracts::peg_manager::SolPegManager::BtcTxSPVProof;
 use crate::rsk_gateway::PegManagerErrors;
 use crate::types::{RegisterPegInInput, RegisterPegInOutput};
 use anyhow::Result;
@@ -24,14 +24,14 @@ impl<C: PegManagerContractApi> RegisterPegInRequestInvoke<C> {
     ) -> Result<RegisterPegInOutput, PegManagerErrors> {
         info!("Init RegisterPegIn for: {:?}", input);
 
-        let parsed_input: PegInRequestTxSPVProof = input.try_into().map_err(|e| {
+        let parsed_input: BtcTxSPVProof = input.try_into().map_err(|e| {
             PegManagerErrors::InvalidPegInRequestData(format!(
                 "Failed to parse RegisterPegInInput: {}",
                 e
             ))
         })?;
 
-        // TODO(iago) check why sometimes it succeeds several times with the same payload (most of the times it does not). It looks like it happens after restarting anvil/tx-dispatcher in some situations.
+        // TODO(iago) check why sometimes it succeeds several times with the same payload (most of the times it does not). It looks like it happens after restarting anvil/tx-dispatcher without re-deploying contracts
 
         let receipt = self
             .contract

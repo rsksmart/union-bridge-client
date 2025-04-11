@@ -78,7 +78,7 @@ impl IntoResponse for PegManagerErrors {
             | PegManagerErrors::InvalidValue(msg)
             | PegManagerErrors::InvalidPegInRequestData(msg) => (StatusCode::BAD_REQUEST, msg),
             PegManagerErrors::StreamNotFoundByDenomination(msg) => (StatusCode::NOT_FOUND, msg),
-            PegManagerErrors::AlreadyRegisteredPegIn(msg) => (StatusCode::FORBIDDEN, msg),
+            PegManagerErrors::AlreadyRegisteredPegInRequest(msg) => (StatusCode::FORBIDDEN, msg),
             PegManagerErrors::NoRevertError(msg) => (StatusCode::CONFLICT, msg),
             PegManagerErrors::NotOwner(msg) => (StatusCode::UNAUTHORIZED, msg),
             _ => (

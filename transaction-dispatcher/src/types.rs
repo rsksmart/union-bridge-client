@@ -47,3 +47,31 @@ pub(crate) struct RegisterPegInOutput {
     pub(crate) transaction_hash: String,
     pub(crate) success: bool,
 }
+
+/// Macro to format sol! errors printing error variant name and its parameters.
+#[macro_export]
+macro_rules! format_sol_err {
+    ($err:expr $(, $arg:expr )* $(,)?) => {{
+        use std::any::type_name_of_val;
+        use std::fmt::Write;
+
+        fn short_type_name<T>(val: &T) -> String {
+            let full = type_name_of_val(val);
+            let parts: Vec<_> = full.rsplit("::").take(2).collect();
+            match parts.as_slice() {
+                [variant, enum_name] => format!("{}::{}", enum_name, variant),
+                [only] => only.to_string(),
+                _ => full.to_string(),
+            }
+        }
+
+        let mut msg = String::new();
+        let _ = write!(msg, "{}:", short_type_name(&$err));
+
+        $(
+            let _ = write!(msg, " {:?}", $arg);
+        )*
+
+        msg
+    }};
+}
