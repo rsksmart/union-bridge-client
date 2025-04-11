@@ -39,7 +39,7 @@ fn main() -> Result<()> {
         target_log_config_file, target_config_folder
     );
     run_block_indexer_validator(&target_log_config_file, &target_config_folder)?;
-    let app_log_path = format!("{}/args.tag.log", target_log_folder);
+    let app_log_path = format!("{}/app.log", target_log_folder);
     tail_file(&app_log_path, 20)?;
 
     Ok(())

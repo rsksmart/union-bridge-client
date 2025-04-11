@@ -23,8 +23,8 @@ pub mod indexer_args {
         pub cache_size: Option<u64>,
 
         // Whether to copy from the default config (true) or expect an existing config (false)
-        #[arg(short = 'c', default_value = "true")]
-        pub from_original_config: bool,
+        #[arg(short = 'c', value_parser = clap::value_parser!(bool))]
+        pub from_original_config: Option<bool>,
 
         // Environment: "dev" or "qa" (default: qa).
         #[arg(short = 'e', default_value = "qa")]

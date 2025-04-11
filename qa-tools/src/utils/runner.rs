@@ -61,7 +61,7 @@ pub fn copy_config_file(
     target_config_folder: &String,
     target_config_file: &String,
 ) -> Result<(), anyhow::Error> {
-    Ok(if args.from_original_config {
+    Ok(if args.from_original_config.unwrap_or(true) {
         fs::create_dir_all(target_config_folder)
             .with_context(|| format!("Creating target config folder: {}", target_config_folder))?;
         fs::copy(&source_config_file, target_config_file).with_context(|| {
