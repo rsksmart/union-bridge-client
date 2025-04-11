@@ -7,13 +7,13 @@ use crate::{
     shutdown_flag::ShutdownFlag,
     types::{
         Address, BlockHash, BlockNumber, ContractInfo, RskBlock, RskEvent, RskLog, RskRpcBlock,
-        RskRpcLog,
+        RskRpcLog, ToHexString,
     },
 };
 use alloy_primitives::B256;
 use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy_rpc_types::{Filter, FilterSet, Header, Log};
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use log::{debug, warn};
 use serde_json::{Value, json};
 use std::{future::Future, sync::Arc};
@@ -80,10 +80,7 @@ impl AlloyProvider {
 
     fn parse_logs_provider_response(response: Value) -> Result<Vec<RskLog>> {
         if response.is_null() || !response.is_array() {
-            return Err(anyhow!(
-                "Expected array in logs response, got: {:?}",
-                response
-            ));
+            bail!("Expected array in logs response, got: {:?}", response);
         }
 
         let rpc_logs: Vec<RskRpcLog> =
@@ -201,13 +198,10 @@ impl RskProvider for AlloyProvider {
         to: BlockNumber,
         address: Address,
     ) -> Result<Vec<RskLog>> {
-        let from_hex = format!("0x{:x}", from.value());
-        let to_hex = format!("0x{:x}", to.value());
-
         let params = json!([{
-            "fromBlock": from_hex,
-            "toBlock": to_hex,
-            "address": address.value()
+            "fromBlock": from.to_hex_string(),
+            "toBlock": to.to_hex_string(),
+            "address": address.to_hex_string()
         }]);
 
         let rpc_call = self.inner.client().request("eth_getLogs", params);
@@ -458,6 +452,8 @@ mod tests {
         let log = AlloyProvider::parse_logs_provider_response(result);
 
         assert!(log.is_err());
+        let err_msg = log.unwrap_err().to_string();
+        assert_eq!(err_msg, "Deserializing logs array");
     }
 
     #[test]
@@ -477,6 +473,8 @@ mod tests {
         let log = AlloyProvider::parse_logs_provider_response(result);
 
         assert!(log.is_err());
+        let err_msg = log.unwrap_err().to_string();
+        assert_eq!(err_msg, "Deserializing logs array");
     }
 
     #[test]
@@ -491,5 +489,7 @@ mod tests {
         let log = AlloyProvider::parse_logs_provider_response(result);
 
         assert!(log.is_err());
+        let err_msg = log.unwrap_err().to_string();
+        assert_eq!(err_msg, "Expected array in logs response, got: Null");
     }
 }
