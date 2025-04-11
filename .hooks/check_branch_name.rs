@@ -37,7 +37,7 @@ fn main() {
     if !is_valid {
         eprintln!(
             "❌ Error: Branch name '{}' is invalid.\n\
-             It must start with one of: ({})/REM",
+             It must start with one of: ({})/",
             branch_name,
             valid_prefixes.join(", ")
         );
