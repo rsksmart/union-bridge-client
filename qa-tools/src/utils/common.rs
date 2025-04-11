@@ -41,6 +41,19 @@ pub mod indexer_consts {
     pub const WEBSOCKET_ENDPOINT: &str = "ws://rskj-01.testnet.ub.iovlabs.net:4445/websocket";
 }
 
+#[derive(Clone)]
+pub struct RunnerPaths {
+    pub source_storage_folder: String,
+    pub source_config_file: String,
+    pub source_log_folder: &'static str,
+    pub source_log_config_file: String,
+    pub target_storage_folder: String,
+    pub target_config_folder: String,
+    pub target_config_file: String,
+    pub target_log_folder: String,
+    pub target_log_config_file: String,
+}
+
 pub fn check_constraints(args: &indexer_args::Args) -> Option<Result<(), anyhow::Error>> {
     if args.tag.is_empty() {
         return Some(Err(anyhow!("Error: -t <tag> is mandatory.")));

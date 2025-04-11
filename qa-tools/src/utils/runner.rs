@@ -3,23 +3,10 @@ use std::fs;
 
 use crate::utils::common::{
     get_block_hash, get_latest_block_hex, indexer_args, indexer_consts, update_file_text,
-    update_initial_block_hash,
+    update_initial_block_hash, RunnerPaths,
 };
 
-pub fn set_paths(
-    crate_name: String,
-    args: &indexer_args::Args,
-) -> Result<(
-    String,
-    String,
-    &'static str,
-    String,
-    String,
-    String,
-    String,
-    String,
-    String,
-)> {
+pub fn set_paths(crate_name: String, args: &indexer_args::Args) -> Result<RunnerPaths> {
     let source_config_path = if args.env == "dev" {
         format!("qa-tools/config/dev/{}", crate_name)
     } else {
@@ -37,7 +24,7 @@ pub fn set_paths(
     let target_config_file = format!("{}/common.yaml", target_config_folder);
     let target_log_folder = target_folder.clone();
     let target_log_config_file = format!("{}/log4rs.yaml", target_folder);
-    Ok((
+    Ok(RunnerPaths {
         source_storage_folder,
         source_config_file,
         source_log_folder,
@@ -47,7 +34,7 @@ pub fn set_paths(
         target_config_file,
         target_log_folder,
         target_log_config_file,
-    ))
+    })
 }
 
 pub fn copy_log4rs_file(

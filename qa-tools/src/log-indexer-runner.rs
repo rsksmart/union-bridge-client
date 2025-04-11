@@ -14,37 +14,27 @@ fn main() -> Result<()> {
     if let Some(err) = check_constraints(&args) {
         return err;
     }
-    let (
-        source_storage_folder,
-        source_config_file,
-        source_log_folder,
-        source_log_config_file,
-        target_storage_folder,
-        target_config_folder,
-        target_config_file,
-        target_log_folder,
-        target_log_config_file,
-    ) = set_paths("log-indexer".to_string(), &args)?;
+    let paths = set_paths("block-indexer".to_string(), &args)?;
     copy_log4rs_file(
-        source_log_folder,
-        source_log_config_file,
-        target_log_folder,
-        &target_log_config_file,
+        &paths.source_log_folder,
+        paths.source_log_config_file,
+        paths.target_log_folder,
+        &paths.target_log_config_file,
     )?;
     copy_config_file(
         &args,
-        source_config_file,
-        &target_config_folder,
-        &target_config_file,
+        paths.source_config_file,
+        &paths.target_config_folder,
+        &paths.target_config_file,
     )?;
-    update_initial_block_hash_in_config(&args, &target_config_file)?;
-    update_cache_size_in_config(&args, &target_config_file)?;
+    update_initial_block_hash_in_config(&args, &paths.target_config_file)?;
+    update_cache_size_in_config(&args, &paths.target_config_file)?;
     update_storage_path_in_config(
-        source_storage_folder,
-        target_storage_folder,
-        target_config_file,
+        paths.source_storage_folder,
+        paths.target_storage_folder,
+        paths.target_config_file,
     )?;
-    run_log_indexer(&target_log_config_file, &target_config_folder)?;
+    run_log_indexer(&paths.target_log_config_file, &paths.target_config_folder)?;
     Ok(())
 }
 
