@@ -1,15 +1,27 @@
 use alloy_json_abi::JsonAbi;
-use bitcoin::{blockdata::block::Header, consensus::encode::deserialize as btc_deserialize, parse::ParseIntError};
+use bitcoin::{blockdata::block::Header, consensus::encode::deserialize as btc_deserialize};
+use hex::FromHexError;
 use primitive_types::{H160, H256, U256};
 use serde::{Deserialize, Deserializer, Serialize, de};
 use serde_json::Value;
 use std::{
     cmp::Ordering,
     fmt,
+    num::ParseIntError,
     ops::{Add, Mul, Sub},
     str::FromStr,
     string::ToString,
 };
+
+/// A trait for types that can be converted into a hexadecimal string.
+///
+/// Implement this trait to provide a computer-friendly, lowercase hex
+/// representation of the underlying value. This is useful for serializing
+/// numerical values or identifiers in blockchain, networking, or low-level
+/// data applications.
+pub trait ToHexString {
+    fn to_hex_string(&self) -> String;
+}
 
 //// Represents a rootstock block hash.
 ///
@@ -45,7 +57,7 @@ impl From<H256> for BlockHash {
 }
 
 impl TryFrom<&str> for BlockHash {
-    type Error = hex::FromHexError;
+    type Error = FromHexError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         let value = value.trim_start_matches("0x");
@@ -98,11 +110,9 @@ impl TryFrom<&str> for BlockNumber {
     type Error = ParseIntError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let value = value.strip_prefix("0x").unwrap_or(value);
-        let parsed_value =
-            u64::from_str_radix(value, 16).unwrap_or_else(|_| value.parse::<u64>().unwrap());
+        let result = str_hex_to_u64(value.to_string())?;
 
-        Ok(BlockNumber(parsed_value))
+        Ok(BlockNumber(result))
     }
 }
 
@@ -131,6 +141,12 @@ impl PartialEq<u64> for BlockNumber {
 impl PartialOrd<u64> for BlockNumber {
     fn partial_cmp(&self, other: &u64) -> Option<Ordering> {
         Some(self.0.cmp(other))
+    }
+}
+
+impl ToHexString for BlockNumber {
+    fn to_hex_string(&self) -> String {
+        format!("0x{:x}", self.0)
     }
 }
 
@@ -328,7 +344,7 @@ impl From<H160> for Address {
 }
 
 impl TryFrom<&str> for Address {
-    type Error = hex::FromHexError;
+    type Error = FromHexError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         let value = value.trim_start_matches("0x");
@@ -339,9 +355,15 @@ impl TryFrom<&str> for Address {
     }
 }
 
+impl ToHexString for Address {
+    fn to_hex_string(&self) -> String {
+        format!("0x{:x}", self.0)
+    }
+}
+
 impl fmt::Display for Address {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "0x{}", hex::encode(self.0))
+        write!(f, "{}", self.to_hex_string())
     }
 }
 
@@ -630,7 +652,7 @@ where
     D: Deserializer<'de>,
 {
     let hex: String = Deserialize::deserialize(deserializer)?;
-    u64::from_str_radix(hex.trim_start_matches("0x"), 16).map_err(de::Error::custom)
+    str_hex_to_u64(hex).map_err(de::Error::custom)
 }
 
 fn parse_hex_to_block_number<'de, D>(deserializer: D) -> Result<BlockNumber, D::Error>
@@ -694,6 +716,10 @@ where
         .into_iter()
         .map(|v| parse_hex_to_block_hash(v).map_err(de::Error::custom))
         .collect()
+}
+
+fn str_hex_to_u64(hex: String) -> Result<u64, ParseIntError> {
+    u64::from_str_radix(hex.trim_start_matches("0x"), 16)
 }
 
 #[cfg(test)]
