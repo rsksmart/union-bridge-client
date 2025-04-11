@@ -150,7 +150,11 @@ The proof was executed, and the receipt saved to the file: stark-proof.bin. Tota
 Please check the [ZKVM CLI documentation](https://github.com/FairgateLabs/rust-bitvmx-zk-proof/tree/poc-generalise-host)
 for the remaining steps. Note that this doc is pointing to a WIP branch.
 
-# Developer setup
+# Developer setup & conventions
+
+This repository follows
+the [Conventional Commits](https://www.conventionalcommits.org/en/about/#tooling-for-conventional-commits) convention,
+and we have some git hooks to enforce it (check `.hooks/README.md` for more info).
 
 Before contributing to the project, please run the following commands to set up the project:
 
