@@ -1,18 +1,18 @@
 use crate::contracts::peg_manager::PegManagerContractApi;
 use crate::contracts::peg_manager::SolPegManager::BtcTxSPVProof;
 use crate::rsk_gateway::PegManagerErrors;
-use crate::types::{RegisterPegInInput, RegisterPegInOutput};
+use crate::types::{AcceptPegInInput, AcceptPegInOutput};
 use anyhow::Result;
 use log::{error, info};
 
-pub(crate) struct RegisterPegInRequestInvoke<C: PegManagerContractApi> {
+pub(crate) struct AcceptPegInRequestInvoke<C: PegManagerContractApi> {
     contract: C,
     gas_bumps: u8,
 }
 
-impl<C: PegManagerContractApi> RegisterPegInRequestInvoke<C> {
+impl<C: PegManagerContractApi> AcceptPegInRequestInvoke<C> {
     pub(crate) fn new(contract: C, gas_bumps: u8) -> Self {
-        RegisterPegInRequestInvoke {
+        AcceptPegInRequestInvoke {
             contract,
             gas_bumps,
         }
@@ -20,41 +20,39 @@ impl<C: PegManagerContractApi> RegisterPegInRequestInvoke<C> {
 
     pub(crate) async fn run(
         &self,
-        input: RegisterPegInInput,
-    ) -> Result<RegisterPegInOutput, PegManagerErrors> {
-        info!("Init RegisterPegIn for: {:?}", input);
+        input: AcceptPegInInput,
+    ) -> Result<AcceptPegInOutput, PegManagerErrors> {
+        info!("Init AcceptPegIn for: {:?}", input);
 
         let parsed_input: BtcTxSPVProof = input.try_into().map_err(|e| {
             PegManagerErrors::InvalidBtcTxSpvProof(format!(
-                "Failed to parse RegisterPegInInput: {}",
+                "Failed to parse AcceptPegInInput: {}",
                 e
             ))
         })?;
 
-        // TODO(iago) check why sometimes it succeeds several times with the same payload (most of the times it does not). It looks like it happens after restarting anvil/tx-dispatcher without re-deploying contracts
-
         let receipt = self
             .contract
-            .register_peg_in_request_send(parsed_input, self.gas_bumps)
+            .accept_peg_in_request_send(parsed_input, self.gas_bumps)
             .await?;
 
         let result = match receipt.status() {
             true => {
                 info!(
-                    "RegisterPegInRequest successful at tx {}",
+                    "AcceptPegInRequest successful at tx {}",
                     receipt.transaction_hash
                 );
-                RegisterPegInOutput {
+                AcceptPegInOutput {
                     transaction_hash: receipt.transaction_hash.to_string(),
                     success: true,
                 }
             }
             false => {
                 error!(
-                    "RegisterPegInRequest failed at tx {}",
+                    "AcceptPegInRequest failed at tx {}",
                     receipt.transaction_hash
                 );
-                RegisterPegInOutput {
+                AcceptPegInOutput {
                     transaction_hash: receipt.transaction_hash.to_string(),
                     success: false,
                 }
@@ -68,12 +66,12 @@ impl<C: PegManagerContractApi> RegisterPegInRequestInvoke<C> {
 #[cfg(test)]
 mod tests {
     use crate::contracts::common::tests::generate_contract_revert_error;
-    use crate::contracts::interactions::register_peg_in_request::{
-        RegisterPegInInput, RegisterPegInOutput, RegisterPegInRequestInvoke,
+    use crate::contracts::interactions::accept_peg_in_request::{
+        AcceptPegInInput, AcceptPegInOutput, AcceptPegInRequestInvoke,
     };
     use crate::contracts::peg_manager::MockPegManagerContractApi;
     use crate::contracts::peg_manager::SolPegManager::{
-        AlreadyRegisteredPegIn, SolPegManagerErrors,
+        AlreadyRegisteredAcceptPegIn, SolPegManagerErrors,
     };
     use crate::rsk_gateway::PegManagerErrors;
     use crate::types::{BitcoinTransaction, BitcoinTransactionIn, BitcoinTransactionOut};
@@ -83,9 +81,9 @@ mod tests {
     use alloy_rpc_types::{Log, Receipt, ReceiptEnvelope, ReceiptWithBloom, TransactionReceipt};
     use std::str::FromStr;
 
-    impl RegisterPegInRequestInvoke<MockPegManagerContractApi> {
+    impl AcceptPegInRequestInvoke<MockPegManagerContractApi> {
         pub(crate) fn new_for_tests(contract: MockPegManagerContractApi) -> Self {
-            RegisterPegInRequestInvoke {
+            AcceptPegInRequestInvoke {
                 contract,
                 gas_bumps: 3,
             }
@@ -98,7 +96,7 @@ mod tests {
 
         let input = get_base_input();
 
-        let expected_receipt = RegisterPegInOutput {
+        let expected_receipt = AcceptPegInOutput {
             transaction_hash: "0x4e3f8a2d39c1b872b77e8a5c9a24be8f1d489ea7cf2d38375f18b5b54e7df662"
                 .to_string(),
             success: true,
@@ -106,7 +104,7 @@ mod tests {
 
         let receipt_to_return = expected_receipt.clone();
 
-        mock.expect_register_peg_in_request_send()
+        mock.expect_accept_peg_in_request_send()
             .returning(move |_, _| {
                 Ok(get_fake_receipt(
                     true,
@@ -115,7 +113,7 @@ mod tests {
             })
             .times(1);
 
-        let invoke = RegisterPegInRequestInvoke::new_for_tests(mock);
+        let invoke = AcceptPegInRequestInvoke::new_for_tests(mock);
 
         let result = invoke.run(input).await;
         assert!(result.is_ok());
@@ -131,29 +129,30 @@ mod tests {
 
         let input = get_base_input();
 
-        mock.expect_register_peg_in_request_send()
+        mock.expect_accept_peg_in_request_send()
             .returning(move |_, _| {
-                let expected_err =
-                    SolPegManagerErrors::AlreadyRegisteredPegIn(AlreadyRegisteredPegIn {
+                let expected_err = SolPegManagerErrors::AlreadyRegisteredAcceptPegIn(
+                    AlreadyRegisteredAcceptPegIn {
                         btcTxHash:
                             "0x6b8f74fe9c66c9c3a6c3d0b7111d9b6aaac0ea3db1bdbd6a38eb0e7d8b8bba3e"
                                 .parse()
                                 .expect("Failed to parse tx hash"),
-                    });
+                    },
+                );
                 let expected_err_payload = generate_contract_revert_error(expected_err);
                 Err(TransportError(ErrorResp(expected_err_payload)))
             })
             .times(1);
 
-        mock.expect_register_peg_in_request_send().times(0);
+        mock.expect_accept_peg_in_request_send().times(0);
 
-        let invoke = RegisterPegInRequestInvoke::new_for_tests(mock);
+        let invoke = AcceptPegInRequestInvoke::new_for_tests(mock);
 
         let result = invoke.run(input).await;
         assert!(result.is_err());
         matches!(
             result.err().unwrap(),
-            PegManagerErrors::AlreadyRegisteredPegIn(_)
+            PegManagerErrors::AlreadyRegisteredAcceptPegIn(_)
         );
     }
 
@@ -163,7 +162,7 @@ mod tests {
 
         let input = get_base_input();
 
-        let expected_receipt = RegisterPegInOutput {
+        let expected_receipt = AcceptPegInOutput {
             transaction_hash: "0x4e3f8a2d39c1b872b77e8a5c9a24be8f1d489ea7cf2d38375f18b5b54e7df662"
                 .to_string(),
             success: false,
@@ -171,7 +170,7 @@ mod tests {
 
         let receipt_to_return = expected_receipt.clone();
 
-        mock.expect_register_peg_in_request_send()
+        mock.expect_accept_peg_in_request_send()
             .returning(move |_, _| {
                 Ok(get_fake_receipt(
                     false,
@@ -180,7 +179,7 @@ mod tests {
             })
             .times(1);
 
-        let invoke = RegisterPegInRequestInvoke::new_for_tests(mock);
+        let invoke = AcceptPegInRequestInvoke::new_for_tests(mock);
 
         let result = invoke.run(input).await;
         assert!(result.is_ok());
@@ -189,8 +188,8 @@ mod tests {
         assert_eq!(result_receipt, expected_receipt);
     }
 
-    fn get_base_input() -> RegisterPegInInput {
-        let input = RegisterPegInInput {
+    fn get_base_input() -> AcceptPegInInput {
+        let input = AcceptPegInInput {
             block_hash: "0x0000000000000000000282fa21665766e58eb6cb94e458c3ef6d4af1121e38d9".to_string(),
             btc_tx: BitcoinTransaction {
                 version: 1,

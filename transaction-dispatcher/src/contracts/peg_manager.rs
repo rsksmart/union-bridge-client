@@ -14,14 +14,18 @@ use log::error;
 
 use crate::contracts::bitcoin_manager::ParseFieldError;
 
-// re-export for convenience
-use crate::contracts::bitcoin_manager::SolBitcoinManager::SolBitcoinManagerErrors;
-pub(crate) use crate::contracts::interactions::get_temporary_peg_in_address;
-pub(crate) use crate::contracts::interactions::register_peg_in_request;
 use crate::format_sol_err;
 use crate::rsk_gateway::PegManagerErrors;
 use crate::types::RegisterPegInInput;
+
+// re-export for convenience
+use crate::contracts::bitcoin_manager::SolBitcoinManager::SolBitcoinManagerErrors;
+pub(crate) use crate::contracts::interactions::accept_peg_in_request;
+pub(crate) use crate::contracts::interactions::get_temporary_peg_in_address;
+pub(crate) use crate::contracts::interactions::register_peg_in_request;
+
 use SolPegManagerErrors::*;
+
 #[cfg(test)]
 use mockall::automock;
 
@@ -29,7 +33,6 @@ include!(concat!(env!("OUT_DIR"), "/abi.rs"));
 
 #[cfg_attr(test, automock)]
 pub trait PegManagerContractApi {
-    #[allow(async_fn_in_trait)]
     async fn get_temporary_peg_in_address_call(
         &self,
         rootstock_deposit_address: Address,
@@ -37,8 +40,13 @@ pub trait PegManagerContractApi {
         btc_reimbursement_pub_key: FixedBytes<32>,
     ) -> alloy_contract::Result<getTemporaryPegInAddressReturn>;
 
-    #[allow(async_fn_in_trait)]
     async fn register_peg_in_request_send(
+        &self,
+        input: BtcTxSPVProof,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TransactionReceipt>;
+
+    async fn accept_peg_in_request_send(
         &self,
         input: BtcTxSPVProof,
         gas_bumps: u8,
@@ -82,6 +90,18 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         )
         .await
     }
+
+    async fn accept_peg_in_request_send(
+        &self,
+        input: BtcTxSPVProof,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TransactionReceipt> {
+        send_tx_with_gas_bump(
+            || self.contract_instance.acceptPegInRequest(input.clone()),
+            gas_bumps,
+        )
+        .await
+    }
 }
 
 pub(crate) fn decode_contract_error(error_payload: &ErrorPayload) -> PegManagerErrors {
@@ -108,6 +128,7 @@ pub(crate) fn decode_contract_error(error_payload: &ErrorPayload) -> PegManagerE
 impl From<SolPegManagerErrors> for PegManagerErrors {
     fn from(err: SolPegManagerErrors) -> Self {
         match err {
+            // Mapped explicitly to specific PegManagerErrors variants
             AlreadyRegisteredPegIn(e) => {
                 PegManagerErrors::AlreadyRegisteredPegIn(format_sol_err!(e, e.btcTxHash))
             }
@@ -117,13 +138,37 @@ impl From<SolPegManagerErrors> for PegManagerErrors {
             StreamNotFoundByDenomination(e) => {
                 PegManagerErrors::StreamNotFoundByDenomination(format_sol_err!(e, e.denomination))
             }
+            AlreadyRegisteredAcceptPegIn(e) => {
+                PegManagerErrors::AlreadyRegisteredAcceptPegIn(format_sol_err!(e, e.btcTxHash))
+            }
+            IncorrectInputsNumber(e) => {
+                PegManagerErrors::InvalidBtcTxSpvProof(format_sol_err!(e, e.expected, e.actual))
+            }
+            IncorrectOutputsNumber(e) => {
+                PegManagerErrors::InvalidBtcTxSpvProof(format_sol_err!(e, e.expected, e.actual))
+            }
+            InvalidBtcTxVersion(e) => {
+                PegManagerErrors::InvalidBtcTxSpvProof(format_sol_err!(e, e.expected, e.actual))
+            }
+            InvalidLocktime(e) => {
+                PegManagerErrors::InvalidBtcTxSpvProof(format_sol_err!(e, e.expected, e.actual))
+            }
+            InvalidSequence(e) => {
+                PegManagerErrors::InvalidBtcTxSpvProof(format_sol_err!(e, e.expected, e.actual))
+            }
+            InvalidVout(e) => {
+                PegManagerErrors::InvalidBtcTxSpvProof(format_sol_err!(e, e.expected, e.actual))
+            }
+            PacketOutOfBound(e) => {
+                PegManagerErrors::PacketOutOfBound(format_sol_err!(e, e.packetNumber))
+            }
+            UnregisteredPegInRequest(e) => {
+                PegManagerErrors::UnregisteredRequest(format_sol_err!(e, e.btcTxHash))
+            }
 
-            // all others default to Unhandled, but still log their fields
+            // Defaulted to UnhandledContractError (still with specific data formatting)
             AddressEmptyCode(e) => {
                 PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.target))
-            }
-            AlreadyRegisteredAcceptPegIn(e) => {
-                PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.btcTxHash))
             }
             BridgeAddressZero(e) => PegManagerErrors::UnhandledContractError(format_sol_err!(e)),
             BridgeBtcBlockNotInBestChain(e) => {
@@ -155,29 +200,11 @@ impl From<SolPegManagerErrors> for PegManagerErrors {
             }
             ERC1967NonPayable(e) => PegManagerErrors::UnhandledContractError(format_sol_err!(e)),
             FailedCall(e) => PegManagerErrors::UnhandledContractError(format_sol_err!(e)),
-            IncorrectInputsNumber(e) => {
-                PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.expected, e.actual))
-            }
-            IncorrectOutputsNumber(e) => {
-                PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.expected, e.actual))
-            }
-            InvalidBtcTxVersion(e) => {
-                PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.expected, e.actual))
-            }
             InvalidInitialization(e) => {
                 PegManagerErrors::UnhandledContractError(format_sol_err!(e))
             }
-            InvalidLocktime(e) => {
-                PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.expected, e.actual))
-            }
             InvalidPubKeyLength(e) => {
                 PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.usrPubKeyLength))
-            }
-            InvalidSequence(e) => {
-                PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.expected, e.actual))
-            }
-            InvalidVout(e) => {
-                PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.expected, e.actual))
             }
             NoEmptySlot(e) => PegManagerErrors::UnhandledContractError(format_sol_err!(
                 e,
@@ -201,17 +228,11 @@ impl From<SolPegManagerErrors> for PegManagerErrors {
             OwnableUnauthorizedAccount(e) => {
                 PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.account))
             }
-            PacketOutOfBound(e) => {
-                PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.packetNumber))
-            }
             PegoutRequestAmountExceedsUint64Limit(e) => {
                 PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.amount))
             }
             tooManyDenominations(e) => {
                 PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.maxDenominationsSize))
-            }
-            UnregisteredPegInRequest(e) => {
-                PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.btcTxHash))
             }
             UUPSUnauthorizedCallContext(e) => {
                 PegManagerErrors::UnhandledContractError(format_sol_err!(e))
@@ -272,7 +293,11 @@ mod tests {
     };
     use crate::contracts::common::tests::generate_contract_revert_error;
     use crate::contracts::peg_manager::SolPegManager::{
-        AlreadyRegisteredPegIn, NotInitializing, SolPegManagerErrors, StreamNotFoundByDenomination,
+        AlreadyRegisteredAcceptPegIn, AlreadyRegisteredPegIn, AlreadyRegisteredPegInRequest,
+        BridgeBtcBlockNotInBestChain, IncorrectInputsNumber, IncorrectOutputsNumber,
+        InvalidBtcTxVersion, InvalidLocktime, InvalidSequence, InvalidVout, NotInitializing,
+        PacketOutOfBound, SolPegManagerErrors, StreamNotFoundByDenomination,
+        UnregisteredPegInRequest,
     };
     use crate::contracts::peg_manager::decode_contract_error;
     use crate::rsk_gateway::PegManagerErrors;
@@ -304,6 +329,156 @@ mod tests {
         matches!(result, PegManagerErrors::StreamNotFoundByDenomination(_));
     }
 
+    #[test]
+    fn test_already_registered_accept_peg_in() {
+        let expected_err =
+            SolPegManagerErrors::AlreadyRegisteredAcceptPegIn(AlreadyRegisteredAcceptPegIn {
+                btcTxHash: "0x123456789abcdef123456789abcdef123456789abcdef123456789abcdef1234"
+                    .parse()
+                    .expect("Failed to parse tx hash"),
+            });
+
+        let expected_err_payload = generate_contract_revert_error(expected_err);
+        let result = decode_contract_error(&expected_err_payload);
+
+        matches!(result, PegManagerErrors::AlreadyRegisteredAcceptPegIn(_));
+    }
+
+    #[test]
+    fn test_invalid_btc_tx_version() {
+        let expected_err = SolPegManagerErrors::InvalidBtcTxVersion(InvalidBtcTxVersion {
+            expected: alloy_primitives::U256::from(1),
+            actual: alloy_primitives::U256::from(2),
+        });
+
+        let expected_err_payload = generate_contract_revert_error(expected_err);
+        let result = decode_contract_error(&expected_err_payload);
+
+        matches!(result, PegManagerErrors::InvalidBtcTxSpvProof(_));
+    }
+
+    #[test]
+    fn test_bridge_btc_block_not_in_best_chain() {
+        let expected_err =
+            SolPegManagerErrors::BridgeBtcBlockNotInBestChain(BridgeBtcBlockNotInBestChain {
+                blockHash: "0x5d164d93bf09ee215cc67420f24d31b8d86c46ced6e770e8abf69c16bea3a67c"
+                    .parse()
+                    .expect("Failed to parse block hash"),
+            });
+
+        let expected_err_payload = generate_contract_revert_error(expected_err);
+        let result = decode_contract_error(&expected_err_payload);
+
+        matches!(result, PegManagerErrors::UnhandledContractError(_));
+    }
+
+    #[test]
+    fn test_unregistered_peg_in_request() {
+        let expected_err =
+            SolPegManagerErrors::UnregisteredPegInRequest(UnregisteredPegInRequest {
+                btcTxHash: "0x123456789abcdef123456789abcdef123456789abcdef123456789abcdef1234"
+                    .parse()
+                    .unwrap(),
+            });
+
+        let expected_err_payload = generate_contract_revert_error(expected_err);
+        let result = decode_contract_error(&expected_err_payload);
+
+        matches!(result, PegManagerErrors::UnregisteredRequest(_));
+    }
+
+    #[test]
+    fn test_incorrect_inputs_number() {
+        let expected_err = SolPegManagerErrors::IncorrectInputsNumber(IncorrectInputsNumber {
+            expected: alloy_primitives::U256::from(2),
+            actual: alloy_primitives::U256::from(3),
+        });
+
+        let expected_err_payload = generate_contract_revert_error(expected_err);
+        let result = decode_contract_error(&expected_err_payload);
+
+        matches!(result, PegManagerErrors::InvalidBtcTxSpvProof(_));
+    }
+
+    #[test]
+    fn test_incorrect_outputs_number() {
+        let expected_err = SolPegManagerErrors::IncorrectOutputsNumber(IncorrectOutputsNumber {
+            expected: alloy_primitives::U256::from(1),
+            actual: alloy_primitives::U256::from(2),
+        });
+
+        let expected_err_payload = generate_contract_revert_error(expected_err);
+        let result = decode_contract_error(&expected_err_payload);
+
+        matches!(result, PegManagerErrors::InvalidBtcTxSpvProof(_));
+    }
+
+    #[test]
+    fn test_invalid_locktime() {
+        let expected_err = SolPegManagerErrors::InvalidLocktime(InvalidLocktime {
+            expected: alloy_primitives::U256::from(1),
+            actual: alloy_primitives::U256::from(2),
+        });
+
+        let expected_err_payload = generate_contract_revert_error(expected_err);
+        let result = decode_contract_error(&expected_err_payload);
+
+        matches!(result, PegManagerErrors::InvalidBtcTxSpvProof(_));
+    }
+
+    #[test]
+    fn test_invalid_sequence() {
+        let expected_err = SolPegManagerErrors::InvalidSequence(InvalidSequence {
+            expected: alloy_primitives::U256::from(1),
+            actual: alloy_primitives::U256::from(2),
+        });
+
+        let expected_err_payload = generate_contract_revert_error(expected_err);
+        let result = decode_contract_error(&expected_err_payload);
+
+        matches!(result, PegManagerErrors::InvalidBtcTxSpvProof(_));
+    }
+
+    #[test]
+    fn test_invalid_vout() {
+        let expected_err = SolPegManagerErrors::InvalidVout(InvalidVout {
+            expected: alloy_primitives::U256::from(1),
+            actual: alloy_primitives::U256::from(2),
+        });
+
+        let expected_err_payload = generate_contract_revert_error(expected_err);
+        let result = decode_contract_error(&expected_err_payload);
+
+        matches!(result, PegManagerErrors::InvalidBtcTxSpvProof(_));
+    }
+
+    #[test]
+    fn test_packet_out_of_bound() {
+        let expected_err = SolPegManagerErrors::PacketOutOfBound(PacketOutOfBound {
+            packetNumber: alloy_primitives::U256::from(42),
+        });
+
+        let expected_err_payload = generate_contract_revert_error(expected_err);
+        let result = decode_contract_error(&expected_err_payload);
+
+        matches!(result, PegManagerErrors::PacketOutOfBound(_));
+    }
+
+    #[test]
+    fn test_already_registered_peg_in_request() {
+        let expected_err =
+            SolPegManagerErrors::AlreadyRegisteredPegInRequest(AlreadyRegisteredPegInRequest {
+                btcTxHash: "0x987654321abcdef987654321abcdef987654321abcdef987654321abcdef9876"
+                    .parse()
+                    .unwrap(),
+            });
+
+        let expected_err_payload = generate_contract_revert_error(expected_err);
+        let result = decode_contract_error(&expected_err_payload);
+
+        matches!(result, PegManagerErrors::AlreadyRegisteredPegInRequest(_));
+    }
+
     // check one of the errors to ensure the code keeps covering also SolBitcoinManagerErrors
     // but the tests for SolBitcoinManagerErrors are in the bitcoin_manager.rs
     #[test]
@@ -316,7 +491,7 @@ mod tests {
         let expected_err_payload = generate_contract_revert_error(expected_err);
         let result = decode_contract_error(&expected_err_payload);
 
-        matches!(result, PegManagerErrors::InvalidPegInRequestData(_));
+        matches!(result, PegManagerErrors::InvalidBtcTxSpvProof(_));
     }
 
     // check one of the errors to ensure the mapping to InternalError keeps working

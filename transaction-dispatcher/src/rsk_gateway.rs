@@ -1,9 +1,11 @@
 use crate::config::TransactionConfig;
 use crate::contracts::peg_manager::PegManagerContract;
+use crate::contracts::peg_manager::accept_peg_in_request::AcceptPegInRequestInvoke;
 use crate::contracts::peg_manager::get_temporary_peg_in_address::GetTemporaryPegInAddressCall;
 use crate::contracts::peg_manager::register_peg_in_request::RegisterPegInRequestInvoke;
 use crate::types::{
-    PegInAddressInput, PegInAddressOutput, RegisterPegInInput, RegisterPegInOutput,
+    AcceptPegInInput, AcceptPegInOutput, PegInAddressInput, PegInAddressOutput, RegisterPegInInput,
+    RegisterPegInOutput,
 };
 use alloy_primitives::Address;
 use alloy_provider::Provider;
@@ -17,23 +19,27 @@ use thiserror::Error;
 const PEG_MANAGER_CONTRACT_NAME: &'static str = "PegManager";
 
 pub(crate) trait RskContractsGatewayApi {
-    #[allow(async_fn_in_trait)]
     async fn get_temporary_peg_in_address(
         &self,
         input: PegInAddressInput,
     ) -> Result<PegInAddressOutput, PegManagerErrors>;
 
-    #[allow(async_fn_in_trait)]
     async fn register_peg_in_request(
         &self,
         input: RegisterPegInInput,
     ) -> Result<RegisterPegInOutput, PegManagerErrors>;
+
+    async fn accept_peg_in_request(
+        &self,
+        input: AcceptPegInInput,
+    ) -> Result<AcceptPegInOutput, PegManagerErrors>;
 }
 
 pub struct RskContractsGateway<P: Provider> {
     contract_address: Address,
     get_temporary_peg_in_address_call: GetTemporaryPegInAddressCall<PegManagerContract<P>>,
     register_peg_in_request_invoke: RegisterPegInRequestInvoke<PegManagerContract<P>>,
+    accept_peg_in_request_invoke: AcceptPegInRequestInvoke<PegManagerContract<P>>,
 }
 
 impl<P: Provider + Clone> RskContractsGateway<P> {
@@ -52,6 +58,10 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
                 peg_manager_contract.clone(),
             ),
             register_peg_in_request_invoke: RegisterPegInRequestInvoke::new(
+                peg_manager_contract.clone(),
+                tx_config.gas_bumps_t1,
+            ),
+            accept_peg_in_request_invoke: AcceptPegInRequestInvoke::new(
                 peg_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
@@ -105,27 +115,51 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
                 err
             })
     }
+
+    async fn accept_peg_in_request(
+        &self,
+        input: AcceptPegInInput,
+    ) -> Result<AcceptPegInOutput, PegManagerErrors> {
+        info!(
+            "Interacting with PegManager#acceptPegInRequest @ {}",
+            self.contract_address
+        );
+
+        self.accept_peg_in_request_invoke
+            .run(input)
+            .await
+            .map_err(|err| {
+                error!("Error on accept_peg_in_request_invoke: {}", err);
+                err
+            })
+    }
 }
 
 #[derive(Debug, Error)]
 pub enum PegManagerErrors {
     // mapped smart contract errors
-    #[error("Stream not found by denomination: {0}")]
-    StreamNotFoundByDenomination(String),
-    #[error("Invalid public key: {0}")]
-    InvalidPublicKey(String),
-    #[error("Invalid address: {0}")]
-    InvalidAddress(String),
     #[error("Already registered PegIn: {0}")]
     AlreadyRegisteredPegIn(String),
+    #[error("Already registered Accept PegIn: {0}")]
+    AlreadyRegisteredAcceptPegIn(String),
     #[error("Already registered PegIn Request: {0}")]
     AlreadyRegisteredPegInRequest(String),
-    #[error("Invalid data in PegIn transaction: {0}")]
-    InvalidPegInRequestData(String),
-    #[error("Not Owner: {0}")]
-    NotOwner(String),
+    #[error("Invalid address: {0}")]
+    InvalidAddress(String),
+    #[error("Invalid BTC Tx SPV Proof: {0}")]
+    InvalidBtcTxSpvProof(String),
+    #[error("Invalid public key: {0}")]
+    InvalidPublicKey(String),
     #[error("Invalid value: {0}")]
     InvalidValue(String),
+    #[error("Not Owner: {0}")]
+    NotOwner(String),
+    #[error("Packet out of Bound: {0}")]
+    PacketOutOfBound(String),
+    #[error("Stream not found by denomination: {0}")]
+    StreamNotFoundByDenomination(String),
+    #[error("Unregistered Request: {0}")]
+    UnregisteredRequest(String),
 
     // unhandled smart contract errors
     #[error("Unhandled Contract Error: {0}")]
