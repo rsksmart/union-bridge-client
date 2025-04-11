@@ -40,12 +40,25 @@
   },
   {
     "type": "function",
+    "name": "__ProofValidator_init",
+    "inputs": [
+      {
+        "name": "_bridgeAddress",
+        "type": "address",
+        "internalType": "address payable"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "acceptPegInRequest",
     "inputs": [
       {
         "name": "_pegInAcceptedTxSPVProof",
         "type": "tuple",
-        "internalType": "struct PegInAcceptedTxSPVProof",
+        "internalType": "struct BtcTxSPVProof",
         "components": [
           {
             "name": "blockHash",
@@ -144,6 +157,19 @@
   },
   {
     "type": "function",
+    "name": "bridge",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IBridge"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "committeeRegistry",
     "inputs": [],
     "outputs": [
@@ -157,6 +183,67 @@
   },
   {
     "type": "function",
+    "name": "computePegOutTxHash",
+    "inputs": [
+      {
+        "name": "usrPubKey",
+        "type": "bytes",
+        "internalType": "bytes"
+      },
+      {
+        "name": "prevoutData",
+        "type": "tuple",
+        "internalType": "struct PrevoutData",
+        "components": [
+          {
+            "name": "txid",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "vout",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "value",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "scriptPubKey",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
+      },
+      {
+        "name": "amount",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "dust",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
     "name": "createPacketsAndSlots",
     "inputs": [
       {
@@ -167,6 +254,67 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "getFirstFilledSlot",
+    "inputs": [
+      {
+        "name": "_streamId",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "slot",
+        "type": "tuple",
+        "internalType": "struct Slot",
+        "components": [
+          {
+            "name": "slotId",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "state",
+            "type": "uint8",
+            "internalType": "enum SlotState"
+          },
+          {
+            "name": "scriptPubKey",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "acceptPegInTx",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "acceptPegInAmount",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "take0Tx",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "take1Tx",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          }
+        ]
+      },
+      {
+        "name": "packetNumber",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -244,9 +392,14 @@
             "internalType": "uint64"
           },
           {
-            "name": "registered",
-            "type": "bool",
-            "internalType": "bool"
+            "name": "slotId",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "pegStatus",
+            "type": "uint8",
+            "internalType": "enum PegStatus"
           }
         ]
       }
@@ -255,10 +408,10 @@
   },
   {
     "type": "function",
-    "name": "getPegInTempInfo",
+    "name": "getPegOutTxHash",
     "inputs": [
       {
-        "name": "btcTxHash",
+        "name": "key",
         "type": "bytes32",
         "internalType": "bytes32"
       }
@@ -266,30 +419,8 @@
     "outputs": [
       {
         "name": "",
-        "type": "tuple",
-        "internalType": "struct PegInTempInfo",
-        "components": [
-          {
-            "name": "value",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "rskDestinationAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "btcReimbursementPubKey",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "utxoScriptPubKey",
-            "type": "bytes",
-            "internalType": "bytes"
-          }
-        ]
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "stateMutability": "view"
@@ -320,6 +451,47 @@
   },
   {
     "type": "function",
+    "name": "getRequestPegInTempInfo",
+    "inputs": [
+      {
+        "name": "btcTxHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct RequestPegInTempInfo",
+        "components": [
+          {
+            "name": "outputAmount",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "rskDestinationAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "btcReimbursementPubKey",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "utxoScriptPubKey",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getSlot",
     "inputs": [
       {
@@ -333,7 +505,7 @@
         "internalType": "uint64"
       },
       {
-        "name": "_slotId",
+        "name": "_slotNumber",
         "type": "uint64",
         "internalType": "uint64"
       }
@@ -355,14 +527,19 @@
             "internalType": "enum SlotState"
           },
           {
-            "name": "utxo",
+            "name": "scriptPubKey",
             "type": "bytes",
             "internalType": "bytes"
           },
           {
-            "name": "pegInTx",
+            "name": "acceptPegInTx",
             "type": "bytes32",
             "internalType": "bytes32"
+          },
+          {
+            "name": "acceptPegInAmount",
+            "type": "uint64",
+            "internalType": "uint64"
           },
           {
             "name": "take0Tx",
@@ -370,7 +547,7 @@
             "internalType": "bytes32"
           },
           {
-            "name": "take1TX",
+            "name": "take1Tx",
             "type": "bytes32",
             "internalType": "bytes32"
           }
@@ -531,6 +708,11 @@
         "name": "_initialOwner",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "_bridgeAddress",
+        "type": "address",
+        "internalType": "address payable"
       },
       {
         "name": "_committeeRegistry",
@@ -706,6 +888,24 @@
   },
   {
     "type": "function",
+    "name": "requestPegOut",
+    "inputs": [
+      {
+        "name": "_usrPubKey",
+        "type": "bytes",
+        "internalType": "bytes"
+      },
+      {
+        "name": "_batchFlag",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
     "name": "transferOwnership",
     "inputs": [
       {
@@ -737,6 +937,89 @@
   },
   {
     "type": "event",
+    "name": "AcceptedPegInRequest",
+    "inputs": [
+      {
+        "name": "blockHash",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "txHash",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "pegInTxHash",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "vout",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      },
+      {
+        "name": "streamPosition",
+        "type": "tuple",
+        "indexed": false,
+        "internalType": "struct StreamPosition",
+        "components": [
+          {
+            "name": "streamId",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "packetNumber",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "slotId",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "pegStatus",
+            "type": "uint8",
+            "internalType": "enum PegStatus"
+          }
+        ]
+      },
+      {
+        "name": "speedUpPubKey",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "rskDestinationAddress",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "rbtcAmount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "utxoScriptPubKey",
+        "type": "bytes",
+        "indexed": false,
+        "internalType": "bytes"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "Initialized",
     "inputs": [
       {
@@ -763,6 +1046,55 @@
         "type": "address",
         "indexed": true,
         "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PegOutRequested",
+    "inputs": [
+      {
+        "name": "usrPubKey",
+        "type": "bytes",
+        "indexed": true,
+        "internalType": "bytes"
+      },
+      {
+        "name": "amount",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      },
+      {
+        "name": "pegOutTxHash",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "digest",
+        "type": "bytes",
+        "indexed": false,
+        "internalType": "bytes"
+      },
+      {
+        "name": "streamId",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      },
+      {
+        "name": "packetNumber",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      },
+      {
+        "name": "slotId",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
       }
     ],
     "anonymous": false
@@ -848,6 +1180,17 @@
   },
   {
     "type": "error",
+    "name": "AlreadyRegisteredAcceptPegIn",
+    "inputs": [
+      {
+        "name": "btcTxHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "AlreadyRegisteredPegIn",
     "inputs": [
       {
@@ -856,6 +1199,22 @@
         "internalType": "bytes32"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "AlreadyRegisteredPegInRequest",
+    "inputs": [
+      {
+        "name": "btcTxHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "BridgeAddressZero",
+    "inputs": []
   },
   {
     "type": "error",
@@ -935,6 +1294,22 @@
   },
   {
     "type": "error",
+    "name": "BridgeExceededLockingCap",
+    "inputs": [
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "BridgeUnauthorizedCaller",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ERC1967InvalidImplementation",
     "inputs": [
       {
@@ -956,8 +1331,115 @@
   },
   {
     "type": "error",
+    "name": "IncorrectInputsNumber",
+    "inputs": [
+      {
+        "name": "actual",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "expected",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "IncorrectOutputsNumber",
+    "inputs": [
+      {
+        "name": "actual",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "expected",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidBtcTxVersion",
+    "inputs": [
+      {
+        "name": "actual",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "expected",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "InvalidInitialization",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidLocktime",
+    "inputs": [
+      {
+        "name": "actual",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "expected",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidPubKeyLength",
+    "inputs": [
+      {
+        "name": "usrPubKeyLength",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidSequence",
+    "inputs": [
+      {
+        "name": "actual",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "expected",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidVout",
+    "inputs": [
+      {
+        "name": "actual",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "expected",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",
@@ -970,6 +1452,43 @@
       },
       {
         "name": "packetNumber",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NoFilledSlot",
+    "inputs": [
+      {
+        "name": "streamId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "packetNumber",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NonExistentSlot",
+    "inputs": [
+      {
+        "name": "streamId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "packetNumber",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "slotId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -1031,6 +1550,17 @@
   },
   {
     "type": "error",
+    "name": "PegoutRequestAmountExceedsUint64Limit",
+    "inputs": [
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "StreamNotFoundByDenomination",
     "inputs": [
       {
@@ -1051,6 +1581,17 @@
     "inputs": [
       {
         "name": "slot",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "UnregisteredPegInRequest",
+    "inputs": [
+      {
+        "name": "btcTxHash",
         "type": "bytes32",
         "internalType": "bytes32"
       }

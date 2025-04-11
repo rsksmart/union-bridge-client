@@ -27,6 +27,25 @@
   },
   {
     "type": "function",
+    "name": "getAcceptPegInP2TRScriptPub",
+    "inputs": [
+      {
+        "name": "_committeePubKey",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
     "name": "getBtcTxHash",
     "inputs": [
       {
@@ -156,6 +175,59 @@
   },
   {
     "type": "function",
+    "name": "getPegInRequestP2TRScriptPub",
+    "inputs": [
+      {
+        "name": "_rskDestinationAddress",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_value",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "_btcReimbursementPubKey",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "_committeePubKey",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "getSpeedUpScriptPub",
+    "inputs": [
+      {
+        "name": "_pubKey",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
     "name": "getTemporaryPegInAddress",
     "inputs": [
       {
@@ -200,7 +272,7 @@
       {
         "name": "_network",
         "type": "uint8",
-        "internalType": "enum Network"
+        "internalType": "enum BtcNetwork"
       }
     ],
     "outputs": [],
@@ -214,7 +286,7 @@
       {
         "name": "",
         "type": "uint8",
-        "internalType": "enum Network"
+        "internalType": "enum BtcNetwork"
       }
     ],
     "stateMutability": "view"
@@ -285,7 +357,7 @@
   },
   {
     "type": "function",
-    "name": "validatePegInP2TRData",
+    "name": "validatRequestPegInP2TROutput",
     "inputs": [
       {
         "name": "_rskDestinationAddress",
@@ -330,66 +402,62 @@
   },
   {
     "type": "function",
-    "name": "validatePegInTx",
+    "name": "validateAcceptPegInP2TROutput",
     "inputs": [
       {
-        "name": "_pegInBtcTx",
+        "name": "_committeePubKey",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "_inputAmount",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "_p2trOut",
         "type": "tuple",
-        "internalType": "struct BtcTransaction",
+        "internalType": "struct BtcTxOut",
         "components": [
           {
-            "name": "version",
-            "type": "uint32",
-            "internalType": "uint32"
+            "name": "amount",
+            "type": "uint64",
+            "internalType": "uint64"
           },
           {
-            "name": "inputs",
-            "type": "tuple[]",
-            "internalType": "struct BtcTxIn[]",
-            "components": [
-              {
-                "name": "txId",
-                "type": "bytes32",
-                "internalType": "bytes32"
-              },
-              {
-                "name": "vout",
-                "type": "uint32",
-                "internalType": "uint32"
-              },
-              {
-                "name": "sequence",
-                "type": "uint32",
-                "internalType": "uint32"
-              },
-              {
-                "name": "scriptSig",
-                "type": "bytes",
-                "internalType": "bytes"
-              }
-            ]
+            "name": "scriptPubKey",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "validateSpeedUpOutput",
+    "inputs": [
+      {
+        "name": "_pubKey",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "_speedUpOut",
+        "type": "tuple",
+        "internalType": "struct BtcTxOut",
+        "components": [
+          {
+            "name": "amount",
+            "type": "uint64",
+            "internalType": "uint64"
           },
           {
-            "name": "outputs",
-            "type": "tuple[]",
-            "internalType": "struct BtcTxOut[]",
-            "components": [
-              {
-                "name": "amount",
-                "type": "uint64",
-                "internalType": "uint64"
-              },
-              {
-                "name": "scriptPubKey",
-                "type": "bytes",
-                "internalType": "bytes"
-              }
-            ]
-          },
-          {
-            "name": "locktime",
-            "type": "uint32",
-            "internalType": "uint32"
+            "name": "scriptPubKey",
+            "type": "bytes",
+            "internalType": "bytes"
           }
         ]
       }
@@ -476,23 +544,7 @@
   },
   {
     "type": "error",
-    "name": "IncorrectOutputNumber",
-    "inputs": [
-      {
-        "name": "actual",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "expected",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "IncorrectP2TRScriptPub",
+    "name": "IncorrectOutputScript",
     "inputs": [
       {
         "name": "actual",
@@ -551,6 +603,22 @@
   },
   {
     "type": "error",
+    "name": "InvalidOutputAmount",
+    "inputs": [
+      {
+        "name": "actual",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "expected",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "InvalidPublicKey",
     "inputs": [
       {
@@ -566,6 +634,11 @@
     "inputs": [
       {
         "name": "_value",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "expected",
         "type": "uint64",
         "internalType": "uint64"
       }
