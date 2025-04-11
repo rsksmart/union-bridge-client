@@ -1,0 +1,17 @@
+indexer:
+  initial_block_hash: "0xf6e292fd22f1dc5a1ef4022b7fe4a959f90ec0b9f5fc0869af64b99195511b22"
+  storage:
+    path: "/tmp/monitor-executions/default/storage"
+  cache:
+    size: 1000
+
+provider:
+  rootstock:
+    url: "ws://rskj-01.testnet.ub.iovlabs.net:4445/websocket"
+
+contracts:
+  - name: "TestContractDyn"
+    address: "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761"
+
+  - name: "TestContractCompiled"
+    address: "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc"
