@@ -47,7 +47,7 @@ fn test_when_log_indexer_runs_should_store_logs_from_subscription() -> Result<()
     let temp_dir = tempdir()?;
     let store_path = temp_dir.path().to_str().unwrap();
     let store = RawLogStore::new(store_path)?;
-    let block_generator = FakeBlockGenerator::new(0.into(), Arc::new(AtomicBool::new(false)));
+    let block_generator = FakeBlockGenerator::new(None, Arc::new(AtomicBool::new(false)), None);
     let log_generator = FakeLogGenerator::new();
     let shutting_down = ShutdownFlag::init();
     let mut mock_rsk_provider = MockRskProvider::new();
@@ -60,6 +60,7 @@ fn test_when_log_indexer_runs_should_store_logs_from_subscription() -> Result<()
         MAX_BLOCK_HEIGHT_SUBSCRIPTION.into(),
         MAX_BLOCK_HEIGHT_SUBSCRIPTION.into(),
         DELAY_BETWEEN_BLOCKS_SUBSCRIPTION,
+        None,
     );
     mock_rsk_provider_handler.set_provider_expect_get_block_by_hash(
         BlockHash::try_from(DEFAULT_BLOCK_HASH)?,
@@ -122,7 +123,7 @@ fn test_when_log_before_initial_height_should_not_store_log() -> Result<()> {
     let temp_dir = tempdir()?;
     let store_path = temp_dir.path().to_str().unwrap();
     let store = RawLogStore::new(store_path)?;
-    let block_generator = FakeBlockGenerator::new(0.into(), Arc::new(AtomicBool::new(false)));
+    let block_generator = FakeBlockGenerator::new(None, Arc::new(AtomicBool::new(false)), None);
     let log_generator = FakeLogGenerator::new();
     let shutting_down = ShutdownFlag::init();
     let mut mock_rsk_provider = MockRskProvider::new();
@@ -135,6 +136,7 @@ fn test_when_log_before_initial_height_should_not_store_log() -> Result<()> {
         MAX_BLOCK_HEIGHT_SUBSCRIPTION.into(),
         MAX_BLOCK_HEIGHT_SUBSCRIPTION.into(),
         DELAY_BETWEEN_BLOCKS_SUBSCRIPTION,
+        None,
     );
     mock_rsk_provider_handler.set_provider_expect_get_block_by_hash(
         BlockHash::try_from(DEFAULT_BLOCK_HASH)?,
