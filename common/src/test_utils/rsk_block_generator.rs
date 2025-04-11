@@ -1,4 +1,4 @@
-use crate::test_utils::rsk_utils::{from_hex_to_block_hash, from_hex_to_block_pow, UncleBlockInfo};
+use crate::test_utils::rsk_utils::{UncleBlockInfo, from_hex_to_block_hash, from_hex_to_block_pow};
 use crate::types::{BlockDifficulty, BlockHash, BlockNumber, BlockPow, BlockTimestamp, RskBlock};
 use log::debug;
 use primitive_types::{H256, U256};

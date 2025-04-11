@@ -15,7 +15,7 @@ use std::fs;
 use std::sync::{Arc, atomic::AtomicBool};
 use tempfile::tempdir;
 const BLOCK_CACHE_SIZE: usize = 100;
-use common::test_utils::rsk_utils::{UncleBlockInfo, DEFAULT_BLOCK_HASH};
+use common::test_utils::rsk_utils::{DEFAULT_BLOCK_HASH, UncleBlockInfo};
 
 /*
 Scenario: happy path
@@ -467,8 +467,8 @@ And the storage should contain these uncle blocks
 | S.A             |
 */
 #[test]
-fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription_with_uncles(
-) -> Result<()> {
+fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription_with_uncles()
+-> Result<()> {
     let _ = env_logger::builder().is_test(true).try_init();
     let uncle_block_info_vec: Vec<UncleBlockInfo> = vec![
         UncleBlockInfo::new(5, false, "uD.A"),
@@ -571,8 +571,8 @@ And the storage should contain these uncle blocks
 | T.A             |
 */
 #[test]
-fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complete_sync_with_uncles(
-) -> Result<()> {
+fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complete_sync_with_uncles()
+-> Result<()> {
     let _ = env_logger::builder().is_test(true).try_init();
     let uncle_block_info_vec: Vec<UncleBlockInfo> = vec![
         UncleBlockInfo::new(5, false, "uD.A"),
@@ -682,8 +682,8 @@ And the storage should contain these uncle blocks
 | Z.A             |
 */
 #[test]
-fn test_when_monitor_runs_and_reorg_happens_during_subscription_should_complete_sync_with_uncles(
-) -> Result<()> {
+fn test_when_monitor_runs_and_reorg_happens_during_subscription_should_complete_sync_with_uncles()
+-> Result<()> {
     let _ = env_logger::builder().is_test(true).try_init();
     let uncle_block_info_vec: Vec<UncleBlockInfo> = vec![
         UncleBlockInfo::new(23, false, "uP.A"),
