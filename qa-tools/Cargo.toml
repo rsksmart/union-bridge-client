@@ -45,4 +45,4 @@ url = "2.3"
 chrono = "0.4.40"
 
 [features]
-test-utils = ["common/test-utils"]
+default = ["log-indexer/test-utils"]

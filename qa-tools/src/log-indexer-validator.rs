@@ -40,16 +40,13 @@ fn run_log_indexer_validator(log_config_path: &str, config_folder: &str) -> Resu
     let store =
         log_indexer::store::RawLogStore::new(&format!("{}/logs", config.indexer.storage.path))
             .with_context(|| "Creating RawLogStore")?;
-    #[cfg(feature = "test-utils")]
-    {
-        let stored_logs = store
-            .get_all_logs()
-            .with_context(|| "Failed to retrieve logs from storage")?;
-        log::info!("Retrieved {} logs from storage", stored_logs.len());
-        let pretty_logs = serde_json::to_string_pretty(&stored_logs)
-            .with_context(|| "Failed to serialize logs to pretty JSON")?;
-        log::info!("Logs:\n{}", pretty_logs);
-    }
+    let stored_logs = store
+        .get_all_logs()
+        .with_context(|| "Failed to retrieve logs from storage")?;
+    log::info!("Retrieved {} logs from storage", stored_logs.len());
+    let pretty_logs = serde_json::to_string_pretty(&stored_logs)
+        .with_context(|| "Failed to serialize logs to pretty JSON")?;
+    log::info!("Logs:\n{}", pretty_logs);
     log::logger().flush();
     Ok(())
 }
