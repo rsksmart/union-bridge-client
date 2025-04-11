@@ -1,16 +1,22 @@
-use crate::alloy_rsk_provider::event_processor::{event_processor_abi, event_processor_typed};
-use crate::alloy_rsk_provider::sub::AlloySubscription;
-use crate::rsk_provider::{RskProvider, RskSubscriptionFilter};
-use crate::shutdown_flag::ShutdownFlag;
-use crate::types::{BlockHash, BlockNumber, ContractInfo, RskBlock, RskEvent, RskLog, RskRpcBlock};
+use crate::{
+    alloy_rsk_provider::{
+        event_processor::{event_processor_abi, event_processor_typed},
+        sub::AlloySubscription,
+    },
+    rsk_provider::{RskProvider, RskSubscriptionFilter},
+    shutdown_flag::ShutdownFlag,
+    types::{
+        Address, BlockHash, BlockNumber, ContractInfo, RskBlock, RskEvent, RskLog, RskRpcBlock,
+        RskRpcLog, ToHexString,
+    },
+};
 use alloy_primitives::B256;
 use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy_rpc_types::{Filter, FilterSet, Header, Log};
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use log::{debug, warn};
 use serde_json::{Value, json};
-use std::future::Future;
-use std::sync::Arc;
+use std::{future::Future, sync::Arc};
 use tokio::runtime::Runtime;
 
 #[derive(Clone)]
@@ -63,11 +69,26 @@ impl AlloyProvider {
         if response.is_null() || !response.is_object() {
             return Ok(None);
         }
+
         let rpc_block: RskRpcBlock =
             serde_json::from_value(response).context("Deserializing block")?;
 
         let rsk_block: RskBlock = RskBlock::from(rpc_block);
+
         Ok(Some(rsk_block))
+    }
+
+    fn parse_logs_provider_response(response: Value) -> Result<Vec<RskLog>> {
+        if response.is_null() || !response.is_array() {
+            bail!("Expected array in logs response, got: {:?}", response);
+        }
+
+        let rpc_logs: Vec<RskRpcLog> =
+            serde_json::from_value(response).context("Deserializing logs array")?;
+
+        let rsk_logs: Vec<RskLog> = rpc_logs.into_iter().map(RskLog::from).collect();
+
+        Ok(rsk_logs)
     }
 
     fn run_with_retries<Fut, Err>(&self, rpc_call: Fut) -> Result<Value>
@@ -171,6 +192,28 @@ impl RskProvider for AlloyProvider {
             .context("None best block")
     }
 
+    fn get_logs(
+        &self,
+        from: BlockNumber,
+        to: BlockNumber,
+        address: Address,
+    ) -> Result<Vec<RskLog>> {
+        let params = json!([{
+            "fromBlock": from.to_hex_string(),
+            "toBlock": to.to_hex_string(),
+            "address": address.to_hex_string()
+        }]);
+
+        let rpc_call = self.inner.client().request("eth_getLogs", params);
+
+        self.run_with_retries(rpc_call)
+            .context(format!(
+                "Getting logs for address {} from block {} to {}",
+                address, from, to
+            ))
+            .and_then(|response| Self::parse_logs_provider_response(response))
+    }
+
     fn decode_log(
         &self,
         new_log: RskLog,
@@ -233,17 +276,20 @@ impl RuntimeSync {
 
 #[cfg(test)]
 mod tests {
-    use crate::alloy_rsk_provider::rpc::AlloyProvider;
-    use crate::types::BlockHash;
-    use crate::types::BlockNumber;
+    use crate::{
+        alloy_rsk_provider::rpc::AlloyProvider,
+        types::{Address, BlockHash, BlockNumber},
+    };
     use serde_json::{Value, json};
     use std::fs;
 
-    const RESPONSE_FILE_PATH: &str = "tests/resources/response.json";
+    const BLOCK_RESPONSE_FILE_PATH: &str = "tests/resources/block_response.json";
+    const LOG_RESPONSE_FILE_PATH: &str = "tests/resources/log_response.json";
 
     #[test]
-    fn test_parse_provider_response_when_given_valid_data_should_parse_block_successfully() {
-        let data = fs::read_to_string(RESPONSE_FILE_PATH).expect("JSON data should be present");
+    fn test_parse_provider_block_response_when_given_valid_data_should_parse_block_successfully() {
+        let data =
+            fs::read_to_string(BLOCK_RESPONSE_FILE_PATH).expect("JSON data should be present");
         let response: Value = serde_json::from_str(&data).expect("Failed to parse JSON");
         let result: Value = response["result"].clone();
 
@@ -280,7 +326,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_provider_response_when_given_null_json_should_return_none() {
+    fn test_parse_provider_block_response_when_given_null_json_should_return_none() {
         let response = json!({
             "jsonrpc": "2.0",
             "id": 1,
@@ -295,8 +341,9 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_provider_response_when_given_invalid_type_in_data_should_return_error() {
-        let data = fs::read_to_string(RESPONSE_FILE_PATH).expect("JSON data should be present");
+    fn test_parse_provider_block_response_when_given_invalid_type_in_data_should_return_error() {
+        let data =
+            fs::read_to_string(BLOCK_RESPONSE_FILE_PATH).expect("JSON data should be present");
         let mut response: Value = serde_json::from_str(&data).expect("Failed to parse JSON");
         response["result"]["hash"] = json!(2);
         let result: Value = response["result"].clone();
@@ -307,7 +354,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_provider_response_when_given_missing_data_should_return_error() {
+    fn test_parse_provider_block_response_when_given_missing_data_should_return_error() {
         let response = json!({
          "jsonrpc": "2.0",
          "id": 1,
@@ -323,7 +370,8 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_provider_response_when_given_null_json_should_not_parse_block_succesfully() {
+    fn test_parse_provider_block_response_when_given_null_json_should_not_parse_block_succesfully()
+    {
         let response = json!({
             "jsonrpc": "2.0",
             "id": 1,
@@ -335,5 +383,113 @@ mod tests {
             .expect("JSON data should be valid");
 
         assert!(block.is_none());
+    }
+
+    #[test]
+    fn test_parse_provider_logs_response_when_given_valid_data_should_parse_logs_successfully() {
+        let data = fs::read_to_string(LOG_RESPONSE_FILE_PATH).expect("JSON data should be present");
+        let response: Value = serde_json::from_str(&data).expect("Failed to parse JSON");
+        let result: Value = response["result"].clone();
+
+        let logs = AlloyProvider::parse_logs_provider_response(result.clone())
+            .expect("JSON data should be valid");
+
+        let expected_address = Address::try_from(
+            result[0]["address"]
+                .as_str()
+                .expect("Log address should be a string"),
+        )
+        .expect("Invalid hex string in JSON");
+
+        let expected_block_hash = BlockHash::try_from(
+            result[0]["blockHash"]
+                .as_str()
+                .expect("Block hash should be a string"),
+        )
+        .expect("Invalid hex string in JSON");
+
+        let expected_block_number = BlockNumber::try_from(
+            result[0]["blockNumber"]
+                .as_str()
+                .expect("Block number should be a string"),
+        )
+        .expect("Invalid hex string in JSON");
+
+        let expected_tx_hash = result[0]["transactionHash"]
+            .as_str()
+            .expect("Transaction hash should be a string")
+            .to_string();
+
+        let expected_data = result[0]["data"]
+            .as_str()
+            .expect("Log data should be a string")
+            .to_string();
+
+        let expected_topics: Vec<String> = result[0]["topics"]
+            .as_array()
+            .expect("Topics should be an array")
+            .iter()
+            .map(|t| t.as_str().expect("Topic should be a string").to_string())
+            .collect();
+
+        assert_eq!(expected_address, logs[0].info().address());
+        assert_eq!(expected_block_hash, logs[0].info().block_hash());
+        assert_eq!(expected_block_number, logs[0].info().block_number());
+        assert_eq!(expected_tx_hash, logs[0].info().tx_hash());
+        assert_eq!(expected_data, logs[0].event().data());
+        assert_eq!(&expected_topics, logs[0].event().topics());
+    }
+
+    #[test]
+    fn test_parse_provider_log_response_when_given_invalid_type_in_data_should_return_error() {
+        let data = fs::read_to_string(LOG_RESPONSE_FILE_PATH).expect("JSON data should be present");
+
+        let mut response: Value = serde_json::from_str(&data).expect("Failed to parse JSON");
+
+        response["result"][0]["data"] = json!(2);
+
+        let result: Value = response["result"].clone();
+        let log = AlloyProvider::parse_logs_provider_response(result);
+
+        assert!(log.is_err());
+        let err_msg = log.unwrap_err().to_string();
+        assert_eq!(err_msg, "Deserializing logs array");
+    }
+
+    #[test]
+    fn test_parse_provider_log_response_when_given_missing_data_should_return_error() {
+        let response = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": [
+                {
+                    "address": "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761",
+                    "data": "0xabcdef"
+                }
+            ]
+        });
+
+        let result: Value = response["result"].clone();
+        let log = AlloyProvider::parse_logs_provider_response(result);
+
+        assert!(log.is_err());
+        let err_msg = log.unwrap_err().to_string();
+        assert_eq!(err_msg, "Deserializing logs array");
+    }
+
+    #[test]
+    fn test_parse_provider_log_response_when_given_null_json_should_not_parse_block_succesfully() {
+        let response = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": null
+        });
+        let result: Value = response["result"].clone();
+
+        let log = AlloyProvider::parse_logs_provider_response(result);
+
+        assert!(log.is_err());
+        let err_msg = log.unwrap_err().to_string();
+        assert_eq!(err_msg, "Expected array in logs response, got: Null");
     }
 }
