@@ -8,6 +8,7 @@ use crate::test_utils::rsk_utils::{UncleBlockInfo, from_hex_to_block_hash};
 use crate::types::{BlockHash, BlockNumber, ContractInfo, LogInfo, RskBlock, RskEvent, RskLog};
 use anyhow::anyhow;
 use log::info;
+use std::cell::RefCell;
 use std::collections::HashSet;
 use std::{
     collections::VecDeque,
@@ -180,7 +181,7 @@ impl<'a> MockRskProviderHandler<'a> {
         let block_height_subscription_max = self.block_height_subscription_max;
         let uncle_block_info_vec = self.uncle_block_info_vec.clone();
         // Create a persistent container for spent uncle flavors.
-        let spent_uncle_flavors = Arc::new(std::sync::Mutex::new(HashSet::new()));
+        let spent_uncle_flavors = RefCell::new(HashSet::new());
 
         self.provider
             .expect_subscribe_blocks()
@@ -205,7 +206,7 @@ impl<'a> MockRskProviderHandler<'a> {
 
                         thread::sleep(Duration::from_millis(delay_between_blocks_subscription));
 
-                        let mut spent_uncle_ids = spent_uncle_flavors.lock().unwrap();
+                        let mut spent_uncle_ids = spent_uncle_flavors.borrow_mut();
                         if let Some(uncle_block) = provide_uncle_block(
                             height_subscr_counter,
                             &generator,
@@ -324,6 +325,9 @@ fn provide_uncle_block(
     uncle_block_info_vec: Option<Vec<UncleBlockInfo>>,
     spent_uncle_ids: &mut HashSet<String>,
 ) -> Option<RskBlock> {
+    if height == 0 {
+        return None;
+    }
     let uncle_height = height - 1;
     if let Some(uncle_block_info_vec) = &uncle_block_info_vec {
         for uncle_info in uncle_block_info_vec.iter() {
