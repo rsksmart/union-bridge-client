@@ -21,6 +21,12 @@ pub struct IndexerConfig {
     pub initial_block_hash: String,
     pub storage: StorageConfig,
     pub cache: CacheConfig,
+    pub sync: SyncConfig,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SyncConfig {
+    pub batch_size: usize,
 }
 
 #[derive(Debug, Deserialize)]
