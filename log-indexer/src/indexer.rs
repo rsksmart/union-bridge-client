@@ -13,6 +13,7 @@ pub struct LogIndexer<P: RskProvider, S: LogStore> {
     store: S,
     rsk_provider: P,
     initial_block_number: BlockNumber,
+    sync_batch_size: usize,
     managed_contracts: HashMap<Address, ContractInfo>,
     shutdown_flag: ShutdownFlag,
 }
@@ -20,12 +21,13 @@ pub struct LogIndexer<P: RskProvider, S: LogStore> {
 impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
     pub fn new(
         store: S,
-        provider: P,
+        rsk_provider: P,
         initial_block_hash: BlockHash,
+        sync_batch_size: usize,
         managed_contracts: HashMap<Address, ContractInfo>,
         shutdown_flag: ShutdownFlag,
     ) -> Result<Self> {
-        let initial_block_number = provider
+        let initial_block_number = rsk_provider
             .get_block_by_hash(initial_block_hash)
             .context("Failed to get initial block by hash")?
             .context("Initial block not found on provider")?
@@ -33,8 +35,9 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 
         Ok(Self {
             store,
-            rsk_provider: provider,
+            rsk_provider,
             initial_block_number,
+            sync_batch_size,
             managed_contracts,
             shutdown_flag,
         })
@@ -62,8 +65,8 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
 
         // TODO(Jira) Address this hardcoding in scope of https://rsklabs.atlassian.net/browse/UB-45
         let block_from = best_block.number() - 10;
-        let filter = RskSubscriptionFilter::new(contract_addresses, vec![], Some(block_from));
 
+        let filter = RskSubscriptionFilter::new(contract_addresses, vec![], Some(block_from));
         info!(
             "[subscribe_logs] Start subscribe_logs with filter {:?}...",
             filter
@@ -87,6 +90,11 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
 }
 
 impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
+    fn sync(&self, addrs: Vec<Address>) -> Result<()> {
+        let best_block = self.rsk_provider.get_best_block()?;
+
+    }
+
     fn listen_logs(&self, rsk_log_subscription: &mut impl RskSubscription<RskLog>) -> Result<()> {
         while self.is_running() {
             let new_log = match rsk_log_subscription.next() {
@@ -153,6 +161,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
             };
 
             self.store.save_log(&new_log).context("Saving new log")?;
+            self.store.set_sync_checkpoint(&new_log).context("Setting new log checkpoint")?;
 
             // TODO(Jira) send via broker after some configurable finality is achieved and taking into account `removed` field https://rsklabs.atlassian.net/browse/UB-46
 
