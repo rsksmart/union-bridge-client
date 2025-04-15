@@ -196,20 +196,24 @@ impl RskProvider for AlloyProvider {
         &self,
         from: BlockNumber,
         to: BlockNumber,
-        address: Address,
+        addrs: &Vec<Address>,
     ) -> Result<Vec<RskLog>> {
+        let addrs: Vec<String> = addrs.iter().map(|addr| addr.to_hex_string()).collect();
+
         let params = json!([{
             "fromBlock": from.to_hex_string(),
             "toBlock": to.to_hex_string(),
-            "address": address.to_hex_string()
+            "address": addrs,
         }]);
 
         let rpc_call = self.inner.client().request("eth_getLogs", params);
 
         self.run_with_retries(rpc_call)
             .context(format!(
-                "Getting logs for address {} from block {} to {}",
-                address, from, to
+                "Getting logs for addresses [{}] from block {} to {}",
+                addrs.join(", "),
+                from,
+                to
             ))
             .and_then(|response| Self::parse_logs_provider_response(response))
     }
