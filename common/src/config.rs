@@ -19,13 +19,14 @@ pub struct CommonConfig {
 #[derive(Debug, Deserialize)]
 pub struct IndexerConfig {
     pub initial_block_hash: String,
+    pub sync: SyncConfig,
     pub storage: StorageConfig,
     pub cache: CacheConfig,
-    pub sync: SyncConfig,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct SyncConfig {
+    pub finality_depth: usize,
     pub batch_size: usize,
 }
 

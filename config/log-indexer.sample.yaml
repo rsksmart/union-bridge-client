@@ -1,5 +1,8 @@
 indexer:
   initial_block_hash: "<YOUR_INITIAL_BLOCK_HASH_HERE>"
+  sync:
+    finality_depth: 100
+    batch_size: 100
   storage:
     path: "<YOUR_DB_PATH_HERE>"
   cache:
