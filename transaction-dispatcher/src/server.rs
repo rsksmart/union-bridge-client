@@ -101,7 +101,8 @@ impl IntoResponse for PegManagerErrors {
             | PegManagerErrors::AlreadyRegisteredPegInRequest(msg) => (StatusCode::FORBIDDEN, msg),
 
             // conflict
-            PegManagerErrors::NoRevertError(msg) => (StatusCode::CONFLICT, msg),
+            PegManagerErrors::NoRevertError(msg)
+            | PegManagerErrors::NotEnoughConfirmations(msg) => (StatusCode::CONFLICT, msg),
 
             // unauthorized
             PegManagerErrors::NotOwner(msg) => (StatusCode::UNAUTHORIZED, msg),

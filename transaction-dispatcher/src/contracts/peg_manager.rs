@@ -159,6 +159,9 @@ impl From<SolPegManagerErrors> for PegManagerErrors {
             InvalidVout(e) => {
                 PegManagerErrors::InvalidBtcTxSpvProof(format_sol_err!(e, e.expected, e.actual))
             }
+            NotEnoughConfirmations(e) => {
+                PegManagerErrors::NotEnoughConfirmations(format_sol_err!(e, e.expected, e.actual))
+            }
             PacketOutOfBound(e) => {
                 PegManagerErrors::PacketOutOfBound(format_sol_err!(e, e.packetNumber))
             }
@@ -218,9 +221,6 @@ impl From<SolPegManagerErrors> for PegManagerErrors {
                 e.streamId,
                 e.slotId
             )),
-            NotEnoughConfirmations(e) => {
-                PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.expected, e.actual))
-            }
             NotInitializing(e) => PegManagerErrors::UnhandledContractError(format_sol_err!(e)),
             OwnableInvalidOwner(e) => {
                 PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.owner))

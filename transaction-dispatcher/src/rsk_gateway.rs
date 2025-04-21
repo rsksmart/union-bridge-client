@@ -154,6 +154,8 @@ pub enum PegManagerErrors {
     InvalidValue(String),
     #[error("Not Owner: {0}")]
     NotOwner(String),
+    #[error("Not Enough Confirmations: {0}")]
+    NotEnoughConfirmations(String),
     #[error("Packet out of Bound: {0}")]
     PacketOutOfBound(String),
     #[error("Stream not found by denomination: {0}")]
