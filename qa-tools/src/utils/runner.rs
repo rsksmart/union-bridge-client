@@ -2,8 +2,8 @@ use anyhow::{Context, Result};
 use std::fs;
 
 use crate::utils::common::{
-    get_block_hash, get_latest_block_hex, indexer_args, indexer_consts, update_file_text,
-    update_initial_block_hash, RunnerPaths,
+    RunnerPaths, get_block_hash, get_latest_block_hex, indexer_args, indexer_consts,
+    update_file_text, update_initial_block_hash,
 };
 
 pub fn set_paths(crate_name: String, args: &indexer_args::Args) -> Result<RunnerPaths> {
@@ -112,7 +112,9 @@ pub fn update_initial_block_hash_in_config(
         println!("Retrieved block hash for height {}: {}", height, block_hash);
         update_initial_block_hash(target_config_file, &block_hash)?;
     } else {
-        println!("No block finality or block height provided. Using existing initial_block_hash in config.");
+        println!(
+            "No block finality or block height provided. Using existing initial_block_hash in config."
+        );
     })
 }
 

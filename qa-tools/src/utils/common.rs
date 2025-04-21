@@ -1,8 +1,8 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use regex::Regex;
 use serde_json::Value;
 use std::{fs, path::Path};
-use tungstenite::{connect, Message};
+use tungstenite::{Message, connect};
 use url::Url;
 
 pub mod indexer_args {

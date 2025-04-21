@@ -1,6 +1,6 @@
 use std::{fs, path::Path};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use block_indexer::{config::Config, store::BlockStore, store::CachedBlockStore};
 use clap::Parser;
 use common::{

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["qa-tools", "common", "block-indexer", "log-indexer", "transaction-dispatcher", "key-manager"]
+members = ["qa-tools", "common", "block-indexer", "log-indexer", "transaction-dispatcher", "key-manager", "util/generate_elf_demo"]
 
 [workspace.dependencies]
 # alloy-rs-core
