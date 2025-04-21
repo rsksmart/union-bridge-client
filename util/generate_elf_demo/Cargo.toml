@@ -13,5 +13,5 @@ primitive-types = { version = "0.13.1", features = ["std", "serde"] }
 check_fork = { git = "ssh://git@github.com/rsksmart/union-bridge-check-fork.git", tag = "0.1.0" }
 zkvm_guest = { path = "../zkvm_guest" }
 zkvm_cli_serde = { package = "cli_serde", git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-zk-proof.git", branch = "poc-generalise-host" }
-reqwest = { version = "0.11", features = ["json"] }
+reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
 tokio = { version = "1", features = ["full"] }
