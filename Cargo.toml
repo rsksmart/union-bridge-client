@@ -3,12 +3,18 @@ resolver = "2"
 members = ["qa-tools", "common", "block-indexer", "log-indexer", "transaction-dispatcher", "key-manager"]
 
 [workspace.dependencies]
+# alloy-rs-core
 alloy-dyn-abi = "0.8.22"
 alloy-json-abi = "0.8.22"
 alloy-primitives = "0.8.22"
-alloy-provider = { version = "0.12.5" }
-alloy-pubsub = { version = "0.12.5" }
 alloy-sol-types = "0.8.22"
+# alloy
+alloy-contract = "0.12.5"
+alloy-json-rpc = "0.12.5"
+alloy-provider = "0.12.5"
+alloy-pubsub = "0.12.5"
+alloy-rpc-types = "0.12.5"
+#
 anyhow = "1.0.94"
 clap = "4.5.30"
 hex = "0.4.3"
@@ -20,7 +26,6 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0.11"
 tokio = { version = "1.41.1" }
-alloy-rpc-types = "0.12.5"
 config = "0.15.8"
 storage-backend = { package = "rust-bitvmx-storage-backend", git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-storage-backend.git", rev = "7f40d056f86295e3fd2a4f268f923ca3b4e70fbf" }
 
