@@ -58,18 +58,16 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
             return Ok(());
         }
 
-        let best_block = self.rsk_provider.get_best_block()?;
-
         let contract_addresses: Vec<Address> = self
             .managed_contracts
             .iter()
             .map(|c| c.1.address.clone())
             .collect();
 
-        self.recover_logs(&contract_addresses)?;
+        let last_block_number = self.recover_logs(&contract_addresses)?;
 
         let filter =
-            RskSubscriptionFilter::new(contract_addresses, vec![], Some(best_block.number()));
+            RskSubscriptionFilter::new(contract_addresses, vec![], Some(last_block_number));
         info!(
             "[subscribe_logs] Start subscribe_logs with filter {:?}...",
             filter
