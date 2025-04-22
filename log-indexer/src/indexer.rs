@@ -4,7 +4,7 @@ use common::{
     rsk_indexer::RskIndexer,
     rsk_provider::{RskProvider, RskSubscription, RskSubscriptionError, RskSubscriptionFilter},
     shutdown_flag::ShutdownFlag,
-    types::{Address, BlockHash, BlockNumber, ContractInfo, RskBlock, RskLog},
+    types::{Address, BlockHash, BlockNumber, ContractInfo, RskLog},
 };
 use log::{debug, error, info, warn};
 use std::collections::HashMap;
@@ -66,7 +66,7 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
             .map(|c| c.1.address.clone())
             .collect();
 
-        self.sync_logs(&best_block, &contract_addresses)?;
+        self.recover_logs(&contract_addresses)?;
 
         let filter =
             RskSubscriptionFilter::new(contract_addresses, vec![], Some(best_block.number()));
@@ -91,28 +91,89 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
 }
 
 impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
-    fn sync_logs(&self, best_block: &RskBlock, addrs: &Vec<Address>) -> Result<()> {
-        let checkpoint = self.store.get_sync_checkpoint()?;
-
+    fn recover_logs(&self, addrs: &Vec<Address>) -> Result<BlockNumber> {
         // If there is no sync checkpoint present in storage,
         // use the initial block number present in config
+        let checkpoint = self.store.get_sync_checkpoint()?;
         let mut start = match checkpoint {
-            Some(log) => log.info().block_number(),
-            None => self.initial_block_number,
+            Some(log) => {
+                info!(
+                    "Resuming log sync from checkpoint at block {}, tx {}, idx {}",
+                    log.info().block_number(),
+                    log.info().tx_hash(),
+                    log.info().log_index()
+                );
+                log.info().block_number()
+            }
+            None => {
+                info!(
+                    "No sync checkpoint found, starting from initial block {}",
+                    self.initial_block_number
+                );
+                self.initial_block_number
+            }
         };
-        let end = best_block.number();
 
         // This is needed in case there were previously logs saved in
         // storage that were later on reorganized
         let finality_depth = self.sync_finality_depth as u64;
+        let original_start = start;
         start = start - finality_depth;
-
         info!(
-            "Starting logs sync from block {} to {}, finality depth: {}, batch size: {}",
-            start, end, finality_depth, self.sync_batch_size
+            "Adjusted start block for finality: original = {}, finality_depth = {}, adjusted = {}",
+            original_start, finality_depth, start
         );
 
-        let batch_size = self.sync_batch_size as u64;
+        let max_attempts = 10;
+        for attempt in 1..=max_attempts {
+            let best_block = self.rsk_provider.get_best_block()?;
+            let end = best_block.number();
+
+            info!(
+                "[Attempt {}/{}] Starting logs sync from block {} to {} (batch size: {})",
+                attempt, max_attempts, start, end, self.sync_batch_size
+            );
+
+            self.sync_logs(start, end, addrs, self.sync_batch_size as u64)?;
+
+            info!(
+                "[Attempt {}/{}] Logs sync completed up to block {}",
+                attempt, max_attempts, end
+            );
+
+            let new_best_block = self.rsk_provider.get_best_block()?;
+
+            if best_block == new_best_block {
+                info!(
+                    "[Attempt {}/{}] Best block unchanged after sync (block {}). Sync finished.",
+                    attempt, max_attempts, end
+                );
+                return Ok(end);
+            } else {
+                info!(
+                    "[Attempt {}/{}] New blocks appeared during sync: previous best = {}, current best = {}. Continuing...",
+                    attempt,
+                    max_attempts,
+                    best_block.number(),
+                    new_best_block.number()
+                );
+                start = end + 1;
+            }
+        }
+
+        bail!(
+            "Failed to recover logs after {} attempts. Best block kept changing.",
+            max_attempts
+        );
+    }
+
+    fn sync_logs(
+        &self,
+        mut start: BlockNumber,
+        end: BlockNumber,
+        addrs: &Vec<Address>,
+        batch_size: u64,
+    ) -> Result<()> {
         while start <= end {
             let from = start;
             let to = if start + batch_size < end {
@@ -127,19 +188,40 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 
             debug!("Fetched {} logs from {} to {}", logs.len(), from, to);
 
-            logs.into_iter().try_for_each(|log| {
-                debug!(
-                    "Saving log at block {} tx {}",
-                    log.info().block_number(),
-                    log.info().tx_hash()
-                );
-                self.store.save_log(&log)
-            })?;
+            if !logs.is_empty() {
+                let ids = logs
+                    .iter()
+                    .map(|log| {
+                        format!(
+                            "[block: {}, tx: {}, idx: {}]",
+                            log.info().block_number(),
+                            log.info().tx_hash(),
+                            log.info().log_index()
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                debug!("Attempting to save {} logs: {}", logs.len(), ids);
+
+                self.store.save_logs(&logs)?;
+
+                debug!("Successfully saved {} logs", logs.len());
+
+                // Save the checkpoint in case the sync gets interrupted
+                if let Some(last_log) = logs.last() {
+                    debug!(
+                        "Setting sync checkpoint at block {}, tx {}, idx {}",
+                        last_log.info().block_number(),
+                        last_log.info().tx_hash(),
+                        last_log.info().log_index()
+                    );
+                    self.store.set_sync_checkpoint(last_log)?;
+                }
+            }
 
             start = to + 1;
         }
-
-        info!("Logs sync completed up to block {}", end);
 
         Ok(())
     }
@@ -210,6 +292,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
             };
 
             self.store.save_log(&new_log).context("Saving new log")?;
+            // TODO(Jira) avoid double writes for sync checkpoint in log indexer listener: https://rsklabs.atlassian.net/browse/UB-111
             self.store
                 .set_sync_checkpoint(&new_log)
                 .context("Setting new log checkpoint")?;
