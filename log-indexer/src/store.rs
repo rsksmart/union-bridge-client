@@ -4,9 +4,10 @@ use std::path::PathBuf;
 use storage_backend::storage::{KeyValueStore, Storage};
 
 pub trait LogStore {
-    fn save_log(&self, value: &RskLog) -> Result<()>;
+    fn save_log(&self, log: &RskLog) -> Result<()>;
+    fn save_logs(&self, logs: &[RskLog]) -> Result<()>;
     fn get_sync_checkpoint(&self) -> Result<Option<RskLog>>;
-    fn set_sync_checkpoint(&self, value: &RskLog) -> Result<()>;
+    fn set_sync_checkpoint(&self, log: &RskLog) -> Result<()>;
 }
 
 enum StoreKey {
@@ -20,7 +21,7 @@ impl StoreKey {
             StoreKey::LogId(address, tx_hash, log_index) => {
                 format!("logs/{}/{}/{}", address, tx_hash, log_index)
             }
-            StoreKey::LogSyncCheckpoint => "meta/tmp_sync_checkpoint".to_string(),
+            StoreKey::LogSyncCheckpoint => "meta/sync_checkpoint".to_string(),
         }
     }
 }
@@ -35,11 +36,11 @@ impl RawLogStore {
         Ok(Self { db })
     }
 
-    fn set_on_db<T: serde::ser::Serialize>(&self, key: &str, value: &T) -> Result<()> {
+    fn set<T: serde::ser::Serialize>(&self, key: &str, value: &T) -> Result<()> {
         Ok(self.db.set(key, value, None)?)
     }
 
-    fn get_from_db<T: serde::de::DeserializeOwned>(&self, key: &str) -> Result<Option<T>> {
+    fn get<T: serde::de::DeserializeOwned>(&self, key: &str) -> Result<Option<T>> {
         Ok(self.db.get(key)?)
     }
 
@@ -70,21 +71,25 @@ impl LogStore for RawLogStore {
         )
         .value();
 
-        self.set_on_db(&key, log)?;
+        self.set(&key, log)?;
 
         Ok(())
+    }
+
+    fn save_logs(&self, logs: &[RskLog]) -> Result<()> {
+        logs.iter().try_for_each(|log| self.save_log(log))
     }
 
     fn get_sync_checkpoint(&self) -> Result<Option<RskLog>> {
         let key = &StoreKey::LogSyncCheckpoint.value();
 
-        Ok(self.get_from_db(key)?)
+        Ok(self.get(key)?)
     }
 
-    fn set_sync_checkpoint(&self, value: &RskLog) -> Result<()> {
+    fn set_sync_checkpoint(&self, log: &RskLog) -> Result<()> {
         let key = &StoreKey::LogSyncCheckpoint.value();
 
-        Ok(self.set_on_db(key, value)?)
+        Ok(self.set(key, log)?)
     }
 }
 
