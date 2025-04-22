@@ -9,6 +9,7 @@ common = { path = "../common" }
 anyhow = { workspace = true }
 clap = { workspace = true }
 log = { workspace = true }
+mockall = { workspace = true }
 serde = { workspace = true }
 storage-backend = { workspace = true }
 

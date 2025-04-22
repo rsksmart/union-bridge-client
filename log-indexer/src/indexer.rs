@@ -9,6 +9,9 @@ use common::{
 use log::{debug, error, info, warn};
 use std::collections::HashMap;
 
+// #[cfg(test)]
+// use mockall::automock;
+
 pub struct LogIndexer<P: RskProvider, S: LogStore> {
     store: S,
     rsk_provider: P,
@@ -301,5 +304,45 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(all(test, feature = "test-mocks"))]
+mod tests {
+    use super::*;
+    use crate::store::MockLogStore;
+    use common::rsk_provider::MockRskProvider;
+
+    #[test]
+    fn recover_logs_when_no_checkpoint_should_start_from_initial_block() {
+        let mut mock_store = MockLogStore::new();
+        let mut mock_provider = MockRskProvider::new();
+
+        mock_store
+            .expect_get_sync_checkpoint()
+            .returning(|| Ok(None));
+
+        let best_block_number = BlockNumber::from(100);
+        mock_provider
+            .expect_get_best_block()
+            .times(2)
+            .returning(move || Ok(best_block_number.clone()));
+
+        let indexer = LogIndexer {
+            store: mock_store,
+            rsk_provider: mock_provider,
+            initial_block_number: BlockNumber::from(50),
+            sync_batch_size: 10,
+            sync_finality_depth: 6,
+            managed_contracts: HashMap::new(),
+            shutdown_flag: ShutdownFlag::init(),
+        };
+
+        let addresses = vec![];
+
+        let result = indexer.recover_logs(&addresses);
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), best_block_number);
     }
 }

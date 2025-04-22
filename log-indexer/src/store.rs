@@ -3,6 +3,10 @@ use common::types::{Address, RskLog};
 use std::path::PathBuf;
 use storage_backend::storage::{KeyValueStore, Storage};
 
+#[cfg(test)]
+use mockall::automock;
+
+#[cfg_attr(test, automock)]
 pub trait LogStore {
     fn save_log(&self, log: &RskLog) -> Result<()>;
     fn save_logs(&self, logs: &[RskLog]) -> Result<()>;
