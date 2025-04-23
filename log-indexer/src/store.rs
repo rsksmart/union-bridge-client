@@ -40,11 +40,11 @@ impl RawLogStore {
         Ok(Self { db })
     }
 
-    fn set<T: serde::ser::Serialize>(&self, key: &str, value: &T) -> Result<()> {
+    pub fn set<T: serde::ser::Serialize>(&self, key: &str, value: &T) -> Result<()> {
         Ok(self.db.set(key, value, None)?)
     }
 
-    fn get<T: serde::de::DeserializeOwned>(&self, key: &str) -> Result<Option<T>> {
+    pub fn get<T: serde::de::DeserializeOwned>(&self, key: &str) -> Result<Option<T>> {
         Ok(self.db.get(key)?)
     }
 
@@ -139,7 +139,7 @@ mod tests {
         .value();
 
         store.save_log(&expected_log)?;
-        let actual_log = store.get(log_key)?.unwrap();
+        let actual_log = store.get(&log_key)?.unwrap();
 
         assert_eq!(expected_log, actual_log);
         Ok(())

@@ -9,9 +9,6 @@ use common::{
 use log::{debug, error, info, warn};
 use std::collections::HashMap;
 
-// #[cfg(test)]
-// use mockall::automock;
-
 pub struct LogIndexer<P: RskProvider, S: LogStore> {
     store: S,
     rsk_provider: P,
@@ -144,7 +141,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 
             let new_best_block = self.rsk_provider.get_best_block()?;
 
-            if best_block == new_best_block {
+            if best_block.hash() == new_best_block.hash() {
                 info!(
                     "[Attempt {}/{}] Best block unchanged after sync (block {}). Sync finished.",
                     attempt, max_attempts, end
@@ -311,7 +308,11 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 mod tests {
     use super::*;
     use crate::store::MockLogStore;
-    use common::rsk_provider::MockRskProvider;
+    use common::{
+        rsk_provider::MockRskProvider,
+        test_utils::rsk_block_generator::get_first_default_rsk_block, types::*,
+    };
+    use primitive_types::{H160, H256, U256};
 
     #[test]
     fn recover_logs_when_no_checkpoint_should_start_from_initial_block() {
@@ -322,18 +323,23 @@ mod tests {
             .expect_get_sync_checkpoint()
             .returning(|| Ok(None));
 
-        let best_block_number = BlockNumber::from(100);
+        let best_block = get_first_default_rsk_block();
+        let best_block_number = best_block.number();
         mock_provider
             .expect_get_best_block()
             .times(2)
-            .returning(move || Ok(best_block_number.clone()));
+            .returning(move || Ok(best_block.clone()));
+
+        mock_provider
+            .expect_get_logs()
+            .returning(|_, _, _| Ok(vec![]));
 
         let indexer = LogIndexer {
             store: mock_store,
             rsk_provider: mock_provider,
-            initial_block_number: BlockNumber::from(50),
+            initial_block_number: BlockNumber::from(7_234_705),
             sync_batch_size: 10,
-            sync_finality_depth: 6,
+            sync_finality_depth: 0,
             managed_contracts: HashMap::new(),
             shutdown_flag: ShutdownFlag::init(),
         };
@@ -344,5 +350,152 @@ mod tests {
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), best_block_number);
+    }
+
+    #[test]
+    fn recover_logs_when_checkpoint_exists_should_resume_from_checkpoint_block() {
+        let mut mock_store = MockLogStore::new();
+        let mut mock_provider = MockRskProvider::new();
+
+        let dummy_log = RskLog::new(
+            LogInfo::new(
+                Address::from(H160::random()),
+                BlockHash::from(H256::random()),
+                BlockNumber::from(123),
+                "dummy_tx".to_string(),
+                0,
+                false,
+            ),
+            LogEvent::new("data".to_string(), vec![]),
+        );
+        mock_store
+            .expect_get_sync_checkpoint()
+            .returning(move || Ok(Some(dummy_log.clone())));
+
+        let best_block = get_first_default_rsk_block();
+        let best_block_number = best_block.number();
+
+        mock_provider
+            .expect_get_best_block()
+            .times(2)
+            .returning(move || Ok(best_block.clone()));
+
+        mock_provider
+            .expect_get_logs()
+            .returning(|_, _, _| Ok(vec![]));
+
+        let indexer = LogIndexer {
+            store: mock_store,
+            rsk_provider: mock_provider,
+            initial_block_number: BlockNumber::from(7_000_000),
+            sync_batch_size: 10,
+            sync_finality_depth: 0,
+            managed_contracts: HashMap::new(),
+            shutdown_flag: ShutdownFlag::init(),
+        };
+
+        let addresses = vec![];
+
+        let result = indexer.recover_logs(&addresses);
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), best_block_number);
+    }
+
+    #[test]
+    fn recover_logs_should_continue_if_best_block_changes_after_sync() {
+        let mut mock_store = MockLogStore::new();
+        let mut mock_provider = MockRskProvider::new();
+
+        mock_store
+            .expect_get_sync_checkpoint()
+            .returning(|| Ok(None));
+
+        let first_best = block_with_number(100);
+        let second_best = block_with_number(105);
+        let second_best_clone = second_best.clone();
+
+        let mut call_count = 0;
+        mock_provider
+            .expect_get_best_block()
+            .times(2)
+            .returning(move || {
+                call_count += 1;
+                if call_count < 1 {
+                    Ok(first_best.clone())
+                } else {
+                    Ok(second_best_clone.clone())
+                }
+            });
+
+        mock_provider
+            .expect_get_logs()
+            .returning(|_, _, _| Ok(vec![]));
+
+        let indexer = LogIndexer {
+            store: mock_store,
+            rsk_provider: mock_provider,
+            initial_block_number: BlockNumber::from(80),
+            sync_batch_size: 10,
+            sync_finality_depth: 0,
+            managed_contracts: HashMap::new(),
+            shutdown_flag: ShutdownFlag::init(),
+        };
+
+        let result = indexer.recover_logs(&vec![]);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), second_best.number());
+    }
+
+    #[test]
+    fn recover_logs_should_fail_if_best_block_keeps_changing() {
+        let mut mock_store = MockLogStore::new();
+        let mut mock_provider = MockRskProvider::new();
+
+        mock_store
+            .expect_get_sync_checkpoint()
+            .returning(|| Ok(None));
+
+        let mut counter = 100;
+        mock_provider.expect_get_best_block().returning(move || {
+            counter += 1;
+            Ok(block_with_number(counter))
+        });
+
+        mock_provider
+            .expect_get_logs()
+            .returning(|_, _, _| Ok(vec![]));
+
+        let indexer = LogIndexer {
+            store: mock_store,
+            rsk_provider: mock_provider,
+            initial_block_number: BlockNumber::from(80),
+            sync_batch_size: 10,
+            sync_finality_depth: 0,
+            managed_contracts: HashMap::new(),
+            shutdown_flag: ShutdownFlag::init(),
+        };
+
+        let result = indexer.recover_logs(&vec![]);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Failed to recover logs after")
+        );
+    }
+
+    fn block_with_number(n: u64) -> RskBlock {
+        RskBlock::new(
+            BlockNumber::from(n),
+            BlockHash::from(H256::random()),
+            BlockHash::from(H256::random()),
+            BlockTimestamp::from(0),
+            BlockDifficulty::from(U256::zero()),
+            BlockDifficulty::from(U256::zero()),
+            BlockPow::from(H256::random()),
+            vec![],
+        )
     }
 }

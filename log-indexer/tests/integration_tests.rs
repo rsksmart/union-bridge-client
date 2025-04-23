@@ -12,7 +12,7 @@ use common::{
     rsk_indexer::RskIndexer,
     rsk_provider::{MockRskProvider, RskSubscriptionFilter},
     shutdown_flag::ShutdownFlag,
-    types::{Address, BlockHash, ContractInfo, LogInfo},
+    types::{Address, BlockHash, ContractInfo, LogInfo, RskLog},
 };
 use log::info;
 use log_indexer::{indexer::LogIndexer, store::RawLogStore};
@@ -51,6 +51,9 @@ fn test_when_log_indexer_runs_should_store_logs_from_subscription() -> Result<()
     let log_generator = FakeLogGenerator::new();
     let shutting_down = ShutdownFlag::init();
     let mut mock_rsk_provider = MockRskProvider::new();
+    mock_rsk_provider
+        .expect_get_logs()
+        .returning(|_, _, _| Ok(vec![]));
     let mut mock_rsk_provider_handler = MockRskProviderHandler::new(
         &mut mock_rsk_provider,
         &block_generator,
@@ -75,7 +78,7 @@ fn test_when_log_indexer_runs_should_store_logs_from_subscription() -> Result<()
     let filter = RskSubscriptionFilter::new(
         addresses.clone(),
         vec![],
-        Some((MAX_BLOCK_HEIGHT_SUBSCRIPTION - FILTER_BLOCK_FROM_DEPTH).into()),
+        Some(MAX_BLOCK_HEIGHT_SUBSCRIPTION.into()),
     );
     mock_rsk_provider_handler.set_provider_expect_subscribe_logs(
         filter,
@@ -126,6 +129,9 @@ fn test_when_log_before_initial_height_should_not_store_log() -> Result<()> {
     let log_generator = FakeLogGenerator::new();
     let shutting_down = ShutdownFlag::init();
     let mut mock_rsk_provider = MockRskProvider::new();
+    mock_rsk_provider
+        .expect_get_logs()
+        .returning(|_, _, _| Ok(vec![]));
     let mut mock_rsk_provider_handler = MockRskProviderHandler::new(
         &mut mock_rsk_provider,
         &block_generator,
@@ -150,7 +156,7 @@ fn test_when_log_before_initial_height_should_not_store_log() -> Result<()> {
     let filter = RskSubscriptionFilter::new(
         addresses.clone(),
         vec![],
-        Some((MAX_BLOCK_HEIGHT_SUBSCRIPTION - FILTER_BLOCK_FROM_DEPTH).into()),
+        Some(MAX_BLOCK_HEIGHT_SUBSCRIPTION.into()),
     );
     let bad_log_info = LogInfo::new(
         generate_fake_address(LOG_INFO_TUPLE_SIZE + 1),
@@ -225,6 +231,8 @@ fn cycle_indexer(
         store,
         mock_rsk_provider,
         BlockHash::try_from(DEFAULT_BLOCK_HASH).unwrap(),
+        0,
+        0,
         managed_contracts,
         shutting_down.clone(),
     )
@@ -250,7 +258,7 @@ fn assert_logs(
             expected_log.info().log_index()
         );
         let actual_log = store
-            .get(expected_log_key)
+            .get(&expected_log_key)
             .unwrap()
             .expect("Log not found in storage!");
         assert_eq!(
@@ -273,6 +281,6 @@ fn assert_log_not_in_store(
         unexpected_log.info().tx_hash().to_string(),
         unexpected_log.info().log_index()
     );
-    let actual_log = store.get(unexpected_log_key).unwrap();
+    let actual_log: Option<RskLog> = store.get(&unexpected_log_key).unwrap();
     assert_eq!(actual_log, None, "Log should not be in storage");
 }
