@@ -4669,7 +4669,6 @@ dependencies = [
  "hex",
  "key-manager",
  "log",
- "log4rs",
  "mockall",
  "serde",
  "serde_json",

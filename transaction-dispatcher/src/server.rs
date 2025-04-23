@@ -29,6 +29,7 @@ impl Server {
         let app = Router::new()
             .route("/pegin-address", post(Self::create_peg_in_address::<P>))
             .route("/register-pegin", post(Self::register_peg_in::<P>))
+            .route("/accept-pegin", post(Self::accept_peg_in::<P>))
             .layer((
                 // TraceLayer::new_for_http(), // TODO: enable when we change logging library to tracing
                 TimeoutLayer::new(Duration::from_secs(10)),
@@ -68,19 +69,45 @@ impl Server {
             Err(e) => e.into_response(),
         }
     }
+
+    async fn accept_peg_in<P: Provider>(
+        Extension(rsk_gateway): Extension<Arc<RskContractsGateway<P>>>,
+        Json(payload): Json<RegisterPegInInput>,
+    ) -> impl IntoResponse {
+        match rsk_gateway.accept_peg_in_request(payload).await {
+            Ok(data) => (StatusCode::OK, Json(json!(data))).into_response(),
+            Err(e) => e.into_response(),
+        }
+    }
 }
 
 impl IntoResponse for PegManagerErrors {
     fn into_response(self) -> Response {
         let (status, message) = match self {
-            PegManagerErrors::InvalidPublicKey(msg)
-            | PegManagerErrors::InvalidAddress(msg)
+            // bad request
+            PegManagerErrors::InvalidAddress(msg)
+            | PegManagerErrors::InvalidPublicKey(msg)
             | PegManagerErrors::InvalidValue(msg)
-            | PegManagerErrors::InvalidPegInRequestData(msg) => (StatusCode::BAD_REQUEST, msg),
-            PegManagerErrors::StreamNotFoundByDenomination(msg) => (StatusCode::NOT_FOUND, msg),
-            PegManagerErrors::AlreadyRegisteredPegInRequest(msg) => (StatusCode::FORBIDDEN, msg),
-            PegManagerErrors::NoRevertError(msg) => (StatusCode::CONFLICT, msg),
+            | PegManagerErrors::InvalidBtcTxSpvProof(msg) => (StatusCode::BAD_REQUEST, msg),
+
+            // not found
+            PegManagerErrors::UnregisteredRequest(msg)
+            | PegManagerErrors::PacketOutOfBound(msg)
+            | PegManagerErrors::StreamNotFoundByDenomination(msg) => (StatusCode::NOT_FOUND, msg),
+
+            // forbidden
+            PegManagerErrors::AlreadyRegisteredAcceptPegIn(msg)
+            | PegManagerErrors::AlreadyRegisteredPegIn(msg)
+            | PegManagerErrors::AlreadyRegisteredPegInRequest(msg) => (StatusCode::FORBIDDEN, msg),
+
+            // conflict
+            PegManagerErrors::NoRevertError(msg)
+            | PegManagerErrors::NotEnoughConfirmations(msg) => (StatusCode::CONFLICT, msg),
+
+            // unauthorized
             PegManagerErrors::NotOwner(msg) => (StatusCode::UNAUTHORIZED, msg),
+
+            // unhandled => internal server error
             _ => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal server error".to_string(),

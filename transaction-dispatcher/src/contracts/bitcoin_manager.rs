@@ -72,16 +72,16 @@ impl TryFrom<BitcoinTransaction> for BtcTransaction {
 impl From<SolBitcoinManagerErrors> for PegManagerErrors {
     fn from(err: SolBitcoinManagerErrors) -> Self {
         match err {
-            // explicitly mapped variants
+            // Mapped explicitly to specific PegManagerErrors variants
             IncorrectOutputScript(e) => {
-                PegManagerErrors::InvalidPegInRequestData(format_sol_err!(e, e.actual, e.expected))
+                PegManagerErrors::InvalidBtcTxSpvProof(format_sol_err!(e, e.actual, e.expected))
             }
             IncorrectlyFormedOpReturn(e) => {
-                PegManagerErrors::InvalidPegInRequestData(format_sol_err!(e, e.index))
+                PegManagerErrors::InvalidBtcTxSpvProof(format_sol_err!(e, e.index))
             }
             InvalidAddress(e) => PegManagerErrors::InvalidAddress(format_sol_err!(e, e._address)),
             InvalidOpReturnLength(e) => {
-                PegManagerErrors::InvalidPegInRequestData(format_sol_err!(e, e.actual, e.expected))
+                PegManagerErrors::InvalidBtcTxSpvProof(format_sol_err!(e, e.actual, e.expected))
             }
             InvalidPublicKey(e) => {
                 PegManagerErrors::InvalidPublicKey(format_sol_err!(e, e.publicKey))
@@ -89,17 +89,17 @@ impl From<SolBitcoinManagerErrors> for PegManagerErrors {
             InvalidValue(e) => {
                 PegManagerErrors::InvalidValue(format_sol_err!(e, e.expected, e._value))
             }
+            InvalidOutputAmount(e) => {
+                PegManagerErrors::InvalidBtcTxSpvProof(format_sol_err!(e, e.expected, e.actual))
+            }
 
-            // all others default to Unhandled
+            // Defaulted to UnhandledContractError
             AddressEmptyCode(e) => {
                 PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.target))
             }
             FailedCall(e) => PegManagerErrors::UnhandledContractError(format_sol_err!(e)),
             InvalidInitialization(e) => {
                 PegManagerErrors::UnhandledContractError(format_sol_err!(e))
-            }
-            InvalidOutputAmount(e) => {
-                PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.expected, e.actual))
             }
             NotInitializing(e) => PegManagerErrors::UnhandledContractError(format_sol_err!(e)),
             NumberTooLarge(e) => {
@@ -131,12 +131,14 @@ impl From<SolBitcoinManagerErrors> for PegManagerErrors {
 #[cfg(test)]
 mod tests {
     use crate::contracts::bitcoin_manager::SolBitcoinManager::{
-        IncorrectOutputScript, IncorrectlyFormedOpReturn, InvalidOpReturnLength, NotInitializing,
+        IncorrectOutputScript, IncorrectlyFormedOpReturn, InvalidAddress, InvalidOpReturnLength,
+        InvalidOutputAmount, InvalidPublicKey, InvalidValue, NotInitializing,
         SolBitcoinManagerErrors,
     };
     use crate::contracts::common::tests::generate_contract_revert_error;
     use crate::rsk_gateway::PegManagerErrors;
     use alloy_json_rpc::ErrorPayload;
+    use alloy_primitives::FixedBytes;
     use alloy_sol_types::SolInterface;
 
     #[test]
@@ -149,7 +151,7 @@ mod tests {
         let expected_err_payload = generate_contract_revert_error(expected_err);
         let result = decode_contract_error(&expected_err_payload);
 
-        matches!(result, PegManagerErrors::InvalidPegInRequestData(_));
+        matches!(result, PegManagerErrors::InvalidBtcTxSpvProof(_));
     }
 
     #[test]
@@ -162,7 +164,7 @@ mod tests {
         let expected_err_payload = generate_contract_revert_error(expected_err);
         let result = decode_contract_error(&expected_err_payload);
 
-        matches!(result, PegManagerErrors::InvalidPegInRequestData(_));
+        matches!(result, PegManagerErrors::InvalidBtcTxSpvProof(_));
     }
 
     #[test]
@@ -175,7 +177,61 @@ mod tests {
         let expected_err_payload = generate_contract_revert_error(expected_err);
         let result = decode_contract_error(&expected_err_payload);
 
-        matches!(result, PegManagerErrors::InvalidPegInRequestData(_));
+        matches!(result, PegManagerErrors::InvalidBtcTxSpvProof(_));
+    }
+
+    #[test]
+    fn test_invalid_address() {
+        let expected_err = SolBitcoinManagerErrors::InvalidAddress(InvalidAddress {
+            _address: "0x00112233445566778899aabbccddeeff00112233"
+                .parse()
+                .expect("Failed to parse address"),
+        });
+
+        let expected_err_payload = generate_contract_revert_error(expected_err);
+        let result = decode_contract_error(&expected_err_payload);
+
+        matches!(result, PegManagerErrors::InvalidAddress(_));
+    }
+
+    #[test]
+    fn test_invalid_public_key() {
+        let expected_err = SolBitcoinManagerErrors::InvalidPublicKey(InvalidPublicKey {
+            publicKey: "0xc72a9f6fc8e57f1de528a48b6c4ad7a6db30b24a7bbf8cdd74b0a3b248b6f7f1"
+                .parse::<FixedBytes<32>>()
+                .unwrap(),
+        });
+
+        let expected_err_payload = generate_contract_revert_error(expected_err);
+        let result = decode_contract_error(&expected_err_payload);
+
+        matches!(result, PegManagerErrors::InvalidPublicKey(_));
+    }
+
+    #[test]
+    fn test_invalid_value() {
+        let expected_err = SolBitcoinManagerErrors::InvalidValue(InvalidValue {
+            expected: 1,
+            _value: 2,
+        });
+
+        let expected_err_payload = generate_contract_revert_error(expected_err);
+        let result = decode_contract_error(&expected_err_payload);
+
+        matches!(result, PegManagerErrors::InvalidValue(_));
+    }
+
+    #[test]
+    fn test_invalid_output_amount() {
+        let expected_err = SolBitcoinManagerErrors::InvalidOutputAmount(InvalidOutputAmount {
+            expected: 1,
+            actual: 2,
+        });
+
+        let expected_err_payload = generate_contract_revert_error(expected_err);
+        let result = decode_contract_error(&expected_err_payload);
+
+        matches!(result, PegManagerErrors::InvalidBtcTxSpvProof(_));
     }
 
     // check one of the errors to ensure the mapping to UnhandledError keeps working

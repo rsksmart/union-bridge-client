@@ -48,6 +48,9 @@ pub(crate) struct RegisterPegInOutput {
     pub(crate) success: bool,
 }
 
+pub type AcceptPegInInput = RegisterPegInInput;
+pub type AcceptPegInOutput = RegisterPegInOutput;
+
 /// Macro to format sol! errors printing error variant name and its parameters.
 #[macro_export]
 macro_rules! format_sol_err {
