@@ -122,61 +122,26 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
             original_start, finality_depth, start
         );
 
+        let mut best_block = self.rsk_provider.get_best_block()?;
+        let mut end = best_block.number();
+
+        let mut attempt = 1;
         let max_attempts = 10;
-        for attempt in 1..=max_attempts {
-            if self.is_running() {
-                return Ok(start);
-            }
+        let batch_size = self.sync_batch_size as u64;
 
-            let best_block = self.rsk_provider.get_best_block()?;
-            let end = best_block.number();
-
-            info!(
-                "[Attempt {}/{}] Starting logs sync from block {} to {} (batch size: {})",
-                attempt, max_attempts, start, end, self.sync_batch_size
-            );
-
-            self.recover_logs_round(start, end, addrs, self.sync_batch_size as u64)?;
-
-            info!(
-                "[Attempt {}/{}] Logs sync completed up to block {}",
-                attempt, max_attempts, end
-            );
-
-            let new_best_block = self.rsk_provider.get_best_block()?;
-
-            if best_block.hash() == new_best_block.hash() {
-                info!(
-                    "[Attempt {}/{}] Best block unchanged after sync (block {}). Sync finished.",
-                    attempt, max_attempts, end
-                );
-                return Ok(end);
-            } else {
-                info!(
-                    "[Attempt {}/{}] New blocks appeared during sync: previous best = {}, current best = {}. Continuing...",
-                    attempt,
-                    max_attempts,
-                    best_block.number(),
-                    new_best_block.number()
-                );
-                start = end + 1;
-            }
-        }
-
-        bail!(
-            "Failed to recover logs after {} attempts. Best block kept changing.",
-            max_attempts
+        info!(
+            "[Attempt {}/{}] Starting logs sync from block {} to {} (batch size: {})",
+            attempt, max_attempts, start, end, batch_size
         );
-    }
 
-    fn recover_logs_round(
-        &self,
-        mut start: BlockNumber,
-        end: BlockNumber,
-        addrs: &Vec<Address>,
-        batch_size: u64,
-    ) -> Result<()> {
         while self.is_running() && start <= end {
+            if attempt > max_attempts {
+                bail!(
+                    "Failed to recover logs after {} attempts. Best block kept changing.",
+                    max_attempts
+                );
+            }
+
             let from = start;
             let to = if start + batch_size < end {
                 start + batch_size
@@ -222,10 +187,31 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                 }
             }
 
+            if to == end {
+                // Check if the best block has changed
+                best_block = self.rsk_provider.get_best_block()?;
+                if end < best_block.number() {
+                    info!(
+                        "[Attempt {}/{}] New blocks appeared during sync: previous best = {}, current best = {}. Continuing...",
+                        attempt,
+                        max_attempts,
+                        end,
+                        best_block.number()
+                    );
+                    end = best_block.number();
+                    attempt += 1;
+                }
+            }
+
             start = to + 1;
         }
 
-        Ok(())
+        info!(
+            "[Attempt {}/{}] Best block unchanged after sync (block {}). Sync finished.",
+            attempt, max_attempts, end
+        );
+
+        Ok(end)
     }
 
     fn listen_logs(&self, rsk_log_subscription: &mut impl RskSubscription<RskLog>) -> Result<()> {
@@ -478,7 +464,7 @@ mod tests {
         let mut call_count = 0;
         mock_provider
             .expect_get_best_block()
-            .times(4)
+            .times(3)
             .returning(move || {
                 if call_count == 0 {
                     call_count += 1;
