@@ -132,7 +132,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                 attempt, max_attempts, start, end, self.sync_batch_size
             );
 
-            self.sync_logs(start, end, addrs, self.sync_batch_size as u64)?;
+            self.recover_logs_round(start, end, addrs, self.sync_batch_size as u64)?;
 
             info!(
                 "[Attempt {}/{}] Logs sync completed up to block {}",
@@ -165,14 +165,14 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         );
     }
 
-    fn sync_logs(
+    fn recover_logs_round(
         &self,
         mut start: BlockNumber,
         end: BlockNumber,
         addrs: &Vec<Address>,
         batch_size: u64,
     ) -> Result<()> {
-        while start <= end {
+        while self.is_running() && start <= end {
             let from = start;
             let to = if start + batch_size < end {
                 start + batch_size
@@ -308,10 +308,8 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 mod tests {
     use super::*;
     use crate::store::MockLogStore;
-    use common::{
-        rsk_provider::MockRskProvider,
-        test_utils::rsk_block_generator::get_first_default_rsk_block, types::*,
-    };
+    use common::{rsk_provider::MockRskProvider, types::*};
+    use mockall::predicate::*;
     use primitive_types::{H160, H256, U256};
 
     #[test]
@@ -319,12 +317,29 @@ mod tests {
         let mut mock_store = MockLogStore::new();
         let mut mock_provider = MockRskProvider::new();
 
+        let finality_depth = 1;
+        let best_block = block_with_number(100);
+        let best_block_number = best_block.number();
+        let initial_block = block_with_number(99);
+        let log_from_initial_block = RskLog::new(
+            LogInfo::new(
+                Address::from(H160::random()),
+                initial_block.hash(),
+                initial_block.number(),
+                "dummy_tx".to_string(),
+                0,
+                false,
+            ),
+            LogEvent::new("data".to_string(), vec![]),
+        );
+        let log_clone_for_store = log_from_initial_block.clone();
+        let log_clone_for_provider = log_from_initial_block.clone();
+
         mock_store
             .expect_get_sync_checkpoint()
+            .times(1)
             .returning(|| Ok(None));
 
-        let best_block = get_first_default_rsk_block();
-        let best_block_number = best_block.number();
         mock_provider
             .expect_get_best_block()
             .times(2)
@@ -332,14 +347,32 @@ mod tests {
 
         mock_provider
             .expect_get_logs()
-            .returning(|_, _, _| Ok(vec![]));
+            .with(
+                eq(initial_block.number() - finality_depth),
+                eq(best_block_number),
+                always(),
+            )
+            .times(1)
+            .returning(move |_, _, _| Ok(vec![log_clone_for_provider.clone()]));
+
+        mock_store
+            .expect_save_logs()
+            .with(eq(vec![log_clone_for_store.clone()]))
+            .times(1)
+            .returning(|_| Ok(()));
+
+        mock_store
+            .expect_set_sync_checkpoint()
+            .with(eq(log_clone_for_store))
+            .times(1)
+            .returning(|_| Ok(()));
 
         let indexer = LogIndexer {
             store: mock_store,
             rsk_provider: mock_provider,
-            initial_block_number: BlockNumber::from(7_234_705),
+            initial_block_number: BlockNumber::from(99),
             sync_batch_size: 10,
-            sync_finality_depth: 0,
+            sync_finality_depth: finality_depth as usize,
             managed_contracts: HashMap::new(),
             shutdown_flag: ShutdownFlag::init(),
         };
@@ -357,23 +390,28 @@ mod tests {
         let mut mock_store = MockLogStore::new();
         let mut mock_provider = MockRskProvider::new();
 
+        let finality_depth = 1;
+        let checkpoint_block = block_with_number(123);
+        let best_block = block_with_number(130);
+        let best_block_number = best_block.number();
         let dummy_log = RskLog::new(
             LogInfo::new(
                 Address::from(H160::random()),
-                BlockHash::from(H256::random()),
-                BlockNumber::from(123),
+                checkpoint_block.hash(),
+                checkpoint_block.number(),
                 "dummy_tx".to_string(),
                 0,
                 false,
             ),
             LogEvent::new("data".to_string(), vec![]),
         );
+        let log_clone_for_provider = dummy_log.clone();
+        let log_clone_for_store = dummy_log.clone();
+
         mock_store
             .expect_get_sync_checkpoint()
+            .times(1)
             .returning(move || Ok(Some(dummy_log.clone())));
-
-        let best_block = get_first_default_rsk_block();
-        let best_block_number = best_block.number();
 
         mock_provider
             .expect_get_best_block()
@@ -382,14 +420,32 @@ mod tests {
 
         mock_provider
             .expect_get_logs()
-            .returning(|_, _, _| Ok(vec![]));
+            .with(
+                eq(checkpoint_block.number() - finality_depth),
+                eq(best_block_number),
+                always(),
+            )
+            .times(1)
+            .returning(move |_, _, _| Ok(vec![log_clone_for_provider.clone()]));
+
+        mock_store
+            .expect_save_logs()
+            .with(eq(vec![log_clone_for_store.clone()]))
+            .times(1)
+            .returning(|_| Ok(()));
+
+        mock_store
+            .expect_set_sync_checkpoint()
+            .with(eq(log_clone_for_store))
+            .times(1)
+            .returning(|_| Ok(()));
 
         let indexer = LogIndexer {
             store: mock_store,
             rsk_provider: mock_provider,
-            initial_block_number: BlockNumber::from(7_000_000),
+            initial_block_number: BlockNumber::from(0), // should be ignored
             sync_batch_size: 10,
-            sync_finality_depth: 0,
+            sync_finality_depth: finality_depth as usize,
             managed_contracts: HashMap::new(),
             shutdown_flag: ShutdownFlag::init(),
         };
@@ -418,12 +474,13 @@ mod tests {
         let mut call_count = 0;
         mock_provider
             .expect_get_best_block()
-            .times(2)
+            .times(4)
             .returning(move || {
-                call_count += 1;
-                if call_count < 1 {
+                if call_count == 0 {
+                    call_count += 1;
                     Ok(first_best.clone())
                 } else {
+                    call_count += 1;
                     Ok(second_best_clone.clone())
                 }
             });
