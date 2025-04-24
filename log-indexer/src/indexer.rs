@@ -124,6 +124,10 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 
         let max_attempts = 10;
         for attempt in 1..=max_attempts {
+            if self.is_running() {
+                return Ok(start);
+            }
+
             let best_block = self.rsk_provider.get_best_block()?;
             let end = best_block.number();
 
