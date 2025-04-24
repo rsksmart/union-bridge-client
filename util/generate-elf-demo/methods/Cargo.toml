@@ -1,5 +1,5 @@
 [package]
-name = "zkvm_guest"
+name = "methods"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,4 +7,4 @@ edition = "2021"
 risc0-build = { version = "2.1.0" }
 
 [package.metadata.risc0]
-methods = ["code"]
+methods = ["check-fork-guest"]
