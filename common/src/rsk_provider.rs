@@ -51,7 +51,7 @@ pub trait RskProvider {
     fn get_block_by_hash(&self, hash: BlockHash) -> Result<Option<RskBlock>>;
     fn get_block_by_number(&self, num: BlockNumber) -> Result<Option<RskBlock>>;
     fn get_best_block(&self) -> Result<RskBlock>;
-    fn get_logs(&self, from: BlockNumber, to: BlockNumber, address: Address)
+    fn get_logs(&self, from: BlockNumber, to: BlockNumber, addrs: &Vec<Address>)
     -> Result<Vec<RskLog>>;
     fn decode_log(&self, new_log: RskLog, contract_info: &ContractInfo)
     -> Result<Option<RskEvent>>;
