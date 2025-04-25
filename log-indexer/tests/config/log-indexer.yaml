@@ -1,5 +1,8 @@
 indexer:
   initial_block_hash: "0xf6e292fd22f1dc5a1ef4022b7fe4a959f90ec0b9f5fc0869af64b99195511b22"
+  sync:
+    finality_depth: 100
+    batch_size: 100
   storage:
     path: "/fake/storage"
   cache:

@@ -52,6 +52,8 @@ fn main() -> Result<()> {
         store,
         alloy_provider,
         initial_block_hash,
+        config.indexer.sync.batch_size,
+        config.indexer.sync.finality_depth,
         config.load_managed_contracts(),
         shutdown_flag,
     )
