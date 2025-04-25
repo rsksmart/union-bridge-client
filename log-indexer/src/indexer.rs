@@ -150,42 +150,10 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
             };
 
             debug!("Fetching logs from block {} to {}", from, to);
-
             let logs = self.rsk_provider.get_logs(from, to, addrs)?;
-
             debug!("Fetched {} logs from {} to {}", logs.len(), from, to);
 
-            if !logs.is_empty() {
-                let ids = logs
-                    .iter()
-                    .map(|log| {
-                        format!(
-                            "[block: {}, tx: {}, idx: {}]",
-                            log.info().block_number(),
-                            log.info().tx_hash(),
-                            log.info().log_index()
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join(", ");
-
-                debug!("Attempting to save {} logs: {}", logs.len(), ids);
-
-                self.store.save_logs(&logs)?;
-
-                debug!("Successfully saved {} logs", logs.len());
-
-                // Save the checkpoint in case the sync gets interrupted
-                if let Some(last_log) = logs.last() {
-                    debug!(
-                        "Setting sync checkpoint at block {}, tx {}, idx {}",
-                        last_log.info().block_number(),
-                        last_log.info().tx_hash(),
-                        last_log.info().log_index()
-                    );
-                    self.store.set_sync_checkpoint(last_log)?;
-                }
-            }
+            self.save_logs_and_checkpoint(&logs)?;
 
             if to == end {
                 // Check if the best block has changed
@@ -212,6 +180,41 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         );
 
         Ok(end)
+    }
+
+    fn save_logs_and_checkpoint(&self, logs: &[RskLog]) -> Result<()> {
+        if logs.is_empty() {
+            return Ok(());
+        }
+
+        let ids = logs
+            .iter()
+            .map(|log| {
+                format!(
+                    "[block: {}, tx: {}, idx: {}]",
+                    log.info().block_number(),
+                    log.info().tx_hash(),
+                    log.info().log_index()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        debug!("Attempting to save {} logs: {}", logs.len(), ids);
+        self.store.save_logs(logs)?;
+        debug!("Successfully saved {} logs", logs.len());
+
+        if let Some(last_log) = logs.last() {
+            debug!(
+                "Setting sync checkpoint at block {}, tx {}, idx {}",
+                last_log.info().block_number(),
+                last_log.info().tx_hash(),
+                last_log.info().log_index()
+            );
+            self.store.set_sync_checkpoint(last_log)?;
+        }
+
+        Ok(())
     }
 
     fn listen_logs(&self, rsk_log_subscription: &mut impl RskSubscription<RskLog>) -> Result<()> {
