@@ -1,9 +1,9 @@
 use check_fork::CheckForkArgs;
 use generate_elf_demo::get_blocks;
+use methods::{CHECK_FORK_GUEST_ID, CHECK_FORK_GUEST_PATH};
 use primitive_types::U256;
 use std::error::Error;
 use zkvm_cli_serde::serialize_guest_input;
-use zkvm_guest::{CHECK_FORK_GUEST_ID, CHECK_FORK_GUEST_PATH};
 // use zkvm_host::prove_stark_no_cli;
 
 // Testing parameters, change for different behaviors
