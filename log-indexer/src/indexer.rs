@@ -122,7 +122,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
             original_start, finality_depth, start
         );
 
-        let mut best_block = self.rsk_provider.get_best_block()?;
+        let best_block = self.rsk_provider.get_best_block()?;
         let mut end = best_block.number();
 
         let mut attempt = 1;
@@ -157,16 +157,16 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 
             if to == end {
                 // Check if the best block has changed
-                best_block = self.rsk_provider.get_best_block()?;
-                if end < best_block.number() {
+                let new_best_block = self.rsk_provider.get_best_block()?;
+                if end < new_best_block.number() {
                     info!(
                         "[Attempt {}/{}] New blocks appeared during sync: previous best = {}, current best = {}. Continuing...",
                         attempt,
                         max_attempts,
                         end,
-                        best_block.number()
+                        new_best_block.number()
                     );
-                    end = best_block.number();
+                    end = new_best_block.number();
                     attempt += 1;
                 }
             }
