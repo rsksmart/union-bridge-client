@@ -48,6 +48,19 @@ pub(crate) struct RegisterPegInOutput {
     pub(crate) success: bool,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct RegisterPegOutInput {
+    pub(crate) amount_in_wei: u64,
+    pub(crate) usr_pub_key: String,
+    pub(crate) batch_flag: bool,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub(crate) struct RegisterPegOutOutput {
+    pub(crate) transaction_hash: String,
+    pub(crate) success: bool,
+}
+
 pub type AcceptPegInInput = RegisterPegInInput;
 pub type AcceptPegInOutput = RegisterPegInOutput;
 

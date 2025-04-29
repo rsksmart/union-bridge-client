@@ -1,11 +1,13 @@
-use crate::contracts::common::send_tx_with_gas_bump;
-use crate::contracts::peg_manager::SolPegManager::{
-    BtcTransaction, BtcTxSPVProof, SolPegManagerErrors, SolPegManagerInstance,
-    getTemporaryPegInAddressReturn,
+use crate::contracts::{
+    common::send_tx_with_gas_bump,
+    peg_manager::SolPegManager::{
+        BtcTransaction, BtcTxSPVProof, SolPegManagerErrors, SolPegManagerInstance,
+        getTemporaryPegInAddressReturn,
+    },
 };
+
 use alloy_json_rpc::ErrorPayload;
-use alloy_primitives::hex::FromHex;
-use alloy_primitives::{Address, FixedBytes, U256};
+use alloy_primitives::{Address, FixedBytes, U256, hex::FromHex};
 use alloy_provider::Provider;
 use alloy_rpc_types::TransactionReceipt;
 use alloy_sol_types::SolInterface;
@@ -23,6 +25,7 @@ use crate::contracts::bitcoin_manager::SolBitcoinManager::SolBitcoinManagerError
 pub(crate) use crate::contracts::interactions::accept_peg_in_request;
 pub(crate) use crate::contracts::interactions::get_temporary_peg_in_address;
 pub(crate) use crate::contracts::interactions::register_peg_in_request;
+pub(crate) use crate::contracts::interactions::register_peg_out_request;
 
 use SolPegManagerErrors::*;
 
@@ -49,6 +52,14 @@ pub trait PegManagerContractApi {
     async fn accept_peg_in_request_send(
         &self,
         input: BtcTxSPVProof,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TransactionReceipt>;
+
+    async fn register_peg_out_request_send(
+        &self,
+        msg_value: u64,
+        usr_pub_key: FixedBytes<33>,
+        batch_flag: bool,
         gas_bumps: u8,
     ) -> alloy_contract::Result<TransactionReceipt>;
 }
@@ -87,6 +98,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         send_tx_with_gas_bump(
             || self.contract_instance.registerPegInRequest(input.clone()),
             gas_bumps,
+            None,
         )
         .await
     }
@@ -99,6 +111,25 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         send_tx_with_gas_bump(
             || self.contract_instance.acceptPegInRequest(input.clone()),
             gas_bumps,
+            None,
+        )
+        .await
+    }
+
+    async fn register_peg_out_request_send(
+        &self,
+        msg_value: u64,
+        usr_pub_key: FixedBytes<33>,
+        batch_flag: bool,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TransactionReceipt> {
+        send_tx_with_gas_bump(
+            || {
+                self.contract_instance
+                    .requestPegOut(usr_pub_key.into(), batch_flag)
+            },
+            gas_bumps,
+            Some(msg_value),
         )
         .await
     }

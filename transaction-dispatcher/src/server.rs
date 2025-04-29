@@ -1,16 +1,18 @@
-use crate::rsk_gateway::PegManagerErrors;
-use crate::rsk_gateway::{RskContractsGateway, RskContractsGatewayApi};
-use crate::types::{PegInAddressInput, RegisterPegInInput};
+use crate::{
+    rsk_gateway::{PegManagerErrors, RskContractsGateway, RskContractsGatewayApi},
+    types::{PegInAddressInput, RegisterPegInInput, RegisterPegOutInput},
+};
 use alloy_provider::Provider;
 use anyhow::{Context, Result};
-use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
-use axum::routing::post;
-use axum::{Extension, Json, Router};
+use axum::{
+    Extension, Json, Router,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    routing::post,
+};
 use common::shutdown_flag::ShutdownFlag;
 use serde_json::json;
-use std::sync::Arc;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use tokio::net::TcpListener;
 use tower_http::timeout::TimeoutLayer;
 
@@ -30,6 +32,7 @@ impl Server {
             .route("/pegin-address", post(Self::create_peg_in_address::<P>))
             .route("/register-pegin", post(Self::register_peg_in::<P>))
             .route("/accept-pegin", post(Self::accept_peg_in::<P>))
+            .route("/register-pegout", post(Self::register_peg_out::<P>))
             .layer((
                 // TraceLayer::new_for_http(), // TODO: enable when we change logging library to tracing
                 TimeoutLayer::new(Duration::from_secs(10)),
@@ -75,6 +78,16 @@ impl Server {
         Json(payload): Json<RegisterPegInInput>,
     ) -> impl IntoResponse {
         match rsk_gateway.accept_peg_in_request(payload).await {
+            Ok(data) => (StatusCode::OK, Json(json!(data))).into_response(),
+            Err(e) => e.into_response(),
+        }
+    }
+
+    async fn register_peg_out<P: Provider>(
+        Extension(rsk_gateway): Extension<Arc<RskContractsGateway<P>>>,
+        Json(payload): Json<RegisterPegOutInput>,
+    ) -> impl IntoResponse {
+        match rsk_gateway.register_peg_out_request(payload).await {
             Ok(data) => (StatusCode::OK, Json(json!(data))).into_response(),
             Err(e) => e.into_response(),
         }
