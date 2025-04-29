@@ -7,10 +7,10 @@ use zkvm_cli_serde::serialize_guest_input;
 // use zkvm_host::prove_stark_no_cli;
 
 // Testing parameters, change for different behaviors
-const START_BLOCK_NUMBER: u32 = 6883222;
+const START_BLOCK_NUMBER: u64 = 6883222;
 const NUM_OF_BLOCKS: u16 = 100;
 const REQUIRED_EFFORT: u32 = 100;
-const INIT_BLOCK_NUMBER: u32 = START_BLOCK_NUMBER - 1;
+const INIT_BLOCK_NUMBER: u64 = START_BLOCK_NUMBER - 1;
 const INIT_TIMESTAMP: u64 = 1701129600;
 const REQUIRED_NUM_BLOCKS: u16 = NUM_OF_BLOCKS;
 
@@ -20,6 +20,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let args = CheckForkArgs {
         utxo_id: "FAKE_UTXO_ID".to_string(),         // tmp
+        pegout_id: "FAKE_PEGOUT_ID".to_string(),     // tmp
         operator_id: "FAKE_OPERATOR_ID".to_string(), // tmp
         init_block_time: INIT_TIMESTAMP,
         init_block_number: INIT_BLOCK_NUMBER,

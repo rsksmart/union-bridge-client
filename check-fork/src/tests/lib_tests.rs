@@ -3,7 +3,7 @@ use primitive_types::U256;
 
 const DEFAULT_DIFFICULTY: u128 = 5904436352267687415636;
 const DEFAULT_TIMESTAMP: u64 = 1000;
-const DEFAULT_INIT_BLOCK_NUMBER: u32 = 100;
+const DEFAULT_INIT_BLOCK_NUMBER: u64 = 100;
 const DEFAULT_REQ_NUMBER_OF_BLOCKS: u16 = 2;
 
 #[test]
@@ -235,6 +235,7 @@ fn fails_when_event_found_in_second_block() {
     let mut second_block = create_child_block(&first_block);
     second_block.bridge_event = Some(BridgeEvent {
         utxo_id: "utxo_2".to_string(),
+        pegout_id: "pegout_2".to_string(),
         operator_id: "operator_2".to_string(),
     });
 
@@ -271,6 +272,26 @@ fn fails_when_event_has_unexpected_utxo() {
 }
 
 #[test]
+fn fails_when_event_has_unexpected_pegout_id() {
+    let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
+
+    let second_block = create_child_block(&first_block);
+
+    let block_list = vec![first_block, second_block];
+
+    let args = CheckForkArgsBuilder::new(block_list)
+        .event_pegout_id("fake_pegout".to_string())
+        .build();
+
+    let result = check_fork(args);
+    assert_eq!(
+        result,
+        Err("BridgeEvent does not match pegoutID"),
+        "Expected to fail if the event has a different pegout_id"
+    );
+}
+
+#[test]
 fn fails_when_event_has_unexpected_operator() {
     let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
 
@@ -295,7 +316,10 @@ fn fails_when_consecutive_block_difficulty_is_lower_than_bounds() {
     let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
 
     let mut second_block = create_child_block(&first_block);
-    second_block.difficulty = first_block.difficulty * U256::from(97) / U256::from(100);
+    second_block.difficulty = first_block
+        .difficulty
+        .saturating_sub(first_block.difficulty / 399);
+    second_block.pow = calculate_superblock_effort(second_block.difficulty);
 
     let block_list = vec![first_block, second_block];
 
@@ -314,7 +338,9 @@ fn fails_when_consecutive_block_difficulty_is_higher_than_bounds() {
     let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
 
     let mut second_block = create_child_block(&first_block);
-    second_block.difficulty = first_block.difficulty * U256::from(103) / U256::from(100);
+    second_block.difficulty = first_block
+        .difficulty
+        .saturating_add(first_block.difficulty / 399);
     second_block.pow = calculate_superblock_effort(second_block.difficulty);
 
     let block_list = vec![first_block, second_block];
@@ -326,6 +352,25 @@ fn fails_when_consecutive_block_difficulty_is_higher_than_bounds() {
         result,
         Err("Consecutive Block difficulty is out of bounds"),
         "Expected to fail if the consecutive block difficulty is too high"
+    );
+}
+
+#[test]
+fn fails_when_consecutive_block_timestamp_is_lower() {
+    let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
+
+    let mut second_block = create_child_block(&first_block);
+    second_block.timestamp = first_block.timestamp;
+
+    let block_list = vec![first_block, second_block];
+
+    let args = CheckForkArgsBuilder::new(block_list).build();
+
+    let result = check_fork(args);
+    assert_eq!(
+        result,
+        Err("Block Timestamp is not increasing"),
+        "Expected to fail if the consecutive block timestamp is not higher"
     );
 }
 
@@ -464,7 +509,7 @@ fn fails_when_uncle_block_pow_is_lower_than_required() {
 
 // TODO add more complex tests, ie: with more than 2 blocks, with more uncles, with more real block data, etc.
 
-fn create_base_block(number: u32, bridge_event: bool) -> Block {
+fn create_base_block(number: u64, bridge_event: bool) -> Block {
     let difficulty = U256::from(DEFAULT_DIFFICULTY);
     Block {
         number,
@@ -474,6 +519,7 @@ fn create_base_block(number: u32, bridge_event: bool) -> Block {
         timestamp: DEFAULT_TIMESTAMP,
         bridge_event: bridge_event.then(|| BridgeEvent {
             utxo_id: format!("utxo_{}", number),
+            pegout_id: format!("pegout_{}", number),
             operator_id: format!("operator_{}", number),
         }),
         uncles: vec![],
@@ -481,7 +527,7 @@ fn create_base_block(number: u32, bridge_event: bool) -> Block {
     }
 }
 
-fn create_first_block(number: u32) -> Block {
+fn create_first_block(number: u64) -> Block {
     create_base_block(number, true)
 }
 
@@ -502,7 +548,7 @@ fn create_uncle(brother: &Block) -> Block {
 }
 
 fn build_valid_consecutive_difficulty(first_block: &Block) -> U256 {
-    (first_block.difficulty * U256::from(101)) / U256::from(100)
+    first_block.difficulty + first_block.difficulty / 400 // limit threshold
 }
 
 fn calculate_superblock_effort(difficulty: U256) -> String {
@@ -520,9 +566,10 @@ fn calculate_effort_from_pow(pow: String) -> U256 {
 #[derive(Default)]
 struct CheckForkArgsBuilder {
     utxo_id: Option<String>,
+    pegout_id: Option<String>,
     operator_id: Option<String>,
     init_block_time: Option<u64>,
-    init_block_number: Option<u32>,
+    init_block_number: Option<u64>,
     required_num_blocks: Option<u16>,
     required_effort: Option<U256>,
     block_list: Vec<Block>,
@@ -541,6 +588,11 @@ impl CheckForkArgsBuilder {
         self
     }
 
+    fn event_pegout_id(mut self, pegout_id: String) -> Self {
+        self.pegout_id = Some(pegout_id);
+        self
+    }
+
     fn event_operator_id(mut self, operator_id: String) -> Self {
         self.operator_id = Some(operator_id);
         self
@@ -551,7 +603,7 @@ impl CheckForkArgsBuilder {
         self
     }
 
-    fn init_block_number(mut self, init_block_number: u32) -> Self {
+    fn init_block_number(mut self, init_block_number: u64) -> Self {
         self.init_block_number = Some(init_block_number);
         self
     }
@@ -571,6 +623,9 @@ impl CheckForkArgsBuilder {
             utxo_id: self
                 .utxo_id
                 .unwrap_or_else(|| format!("utxo_{}", DEFAULT_INIT_BLOCK_NUMBER)),
+            pegout_id: self
+                .pegout_id
+                .unwrap_or_else(|| format!("pegout_{}", DEFAULT_INIT_BLOCK_NUMBER)),
             operator_id: self
                 .operator_id
                 .unwrap_or_else(|| format!("operator_{}", DEFAULT_INIT_BLOCK_NUMBER)),

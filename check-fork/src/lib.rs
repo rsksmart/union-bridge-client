@@ -6,7 +6,7 @@ pub const SUPERBLOCK_TIMES_DIFFICULTY: u8 = 20;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Block {
-    pub number: u32, // TODO enough? or should be u64?
+    pub number: u64,
     pub hash: String,
     pub parent: String,
     pub difficulty: U256,
@@ -20,15 +20,17 @@ pub struct Block {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BridgeEvent {
     pub utxo_id: String,
+    pub pegout_id: String,
     pub operator_id: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CheckForkArgs {
     pub utxo_id: String,
+    pub pegout_id: String,
     pub operator_id: String,
     pub init_block_time: u64,
-    pub init_block_number: u32,
+    pub init_block_number: u64,
     pub required_effort: U256,
     pub required_num_blocks: u16,
     pub block_list: Vec<Block>,
@@ -38,6 +40,7 @@ pub struct CheckForkArgs {
 pub fn check_fork(args: CheckForkArgs) -> Result<U256, &'static str> {
     let CheckForkArgs {
         utxo_id,
+        pegout_id,
         operator_id,
         init_block_time,
         init_block_number,
@@ -62,6 +65,7 @@ pub fn check_fork(args: CheckForkArgs) -> Result<U256, &'static str> {
         init_block_time,
         init_block_number,
         utxo_id,
+        pegout_id,
         operator_id,
     )?;
 
@@ -121,8 +125,9 @@ fn validate_block_list(
 fn validate_first_block(
     block: &Block,
     init_block_time: u64,
-    init_block_number: u32,
+    init_block_number: u64,
     utxo_id: String,
+    pegout_id: String,
     operator_id: String,
 ) -> Result<(), &'static str> {
     if block.timestamp < init_block_time {
@@ -135,7 +140,7 @@ fn validate_first_block(
 
     validate_enough_effort_superblock(block, "first")?;
 
-    validate_bridge_event(&block.bridge_event, utxo_id, operator_id)?;
+    validate_bridge_event(&block.bridge_event, utxo_id, pegout_id, operator_id)?;
 
     Ok(())
 }
@@ -143,11 +148,16 @@ fn validate_first_block(
 fn validate_bridge_event(
     bridge_event: &Option<BridgeEvent>,
     utxo_id: String,
+    pegout_id: String,
     operator_id: String,
 ) -> Result<(), &'static str> {
     let bridge_event = bridge_event
         .as_ref()
         .ok_or("First block is missing BridgeEvent")?;
+
+    if bridge_event.pegout_id != pegout_id {
+        return Err("BridgeEvent does not match pegoutID");
+    }
 
     if bridge_event.operator_id != operator_id {
         return Err("BridgeEvent does not match operatorID");
@@ -163,6 +173,11 @@ fn validate_bridge_event(
 fn validate_consecutive_block(block: &Block, prev_block: &Block) -> Result<(), &'static str> {
     if block.bridge_event.is_some() {
         return Err("Only the first block should contain a BridgeEvent");
+    }
+
+    // block timestamp should be greater than previous one
+    if block.timestamp <= prev_block.timestamp {
+        return Err("Block Timestamp is not increasing");
     }
 
     // blocks should be consecutive
@@ -228,8 +243,13 @@ fn validate_enough_effort_superblock(block: &Block, _block_type: &str) -> Result
 }
 
 fn validate_difficulty_in_bounds(block: &Block, prev_block: &Block) -> Result<(), &'static str> {
-    let lower_bound = prev_block.difficulty * 98 / 100;
-    let upper_bound = prev_block.difficulty * 102 / 100;
+    // check these RSKj lines:
+    // - https://github.com/rsksmart/rskj/blob/3cd3401a9c6cfd3dfa63120304d0f26f691ae6e7/rskj-core/src/main/java/co/rsk/core/DifficultyCalculator.java#L64
+    // - https://github.com/rsksmart/rskj/blob/master/rskj-core/src/main/java/org/ethereum/config/Constants.java#L150
+    let max_delta = prev_block.difficulty / 400;
+
+    let lower_bound = prev_block.difficulty.saturating_sub(max_delta);
+    let upper_bound = prev_block.difficulty.saturating_add(max_delta);
 
     let in_bounds = (lower_bound..=upper_bound).contains(&block.difficulty);
     if in_bounds {

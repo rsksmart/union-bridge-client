@@ -12,8 +12,8 @@ const RSK_RPC_URL: &str = "https://public-node.rsk.co";
 
 #[derive(Serialize, Deserialize, Debug)]
 struct RskBlock {
-    #[serde(deserialize_with = "hex_to_u32")]
-    number: u32,
+    #[serde(deserialize_with = "parse_hex_to_u64")]
+    number: u64,
     hash: String,
     #[serde(rename = "parentHash")]
     parent: String,
@@ -46,7 +46,7 @@ impl From<&RskBlock> for Block {
 }
 
 pub async fn get_blocks(
-    start_block_number: u32,
+    start_block_number: u64,
     num_of_blocks: u16,
 ) -> Result<Vec<Block>, Box<dyn Error>> {
     let client = Client::new();
@@ -54,7 +54,7 @@ pub async fn get_blocks(
     let mut blocks = vec![];
 
     for i in 0..num_of_blocks {
-        let block_number_hex = format!("0x{:x}", start_block_number + i as u32);
+        let block_number_hex = format!("0x{:x}", start_block_number + i as u64);
         let request_body = json!({
             "jsonrpc": "2.0",
             "method": "eth_getBlockByNumber",
@@ -70,7 +70,7 @@ pub async fn get_blocks(
         if error.is_some() {
             println!(
                 "Error fetching block {}: {:?}",
-                start_block_number - i as u32,
+                start_block_number - i as u64,
                 response_json
             );
         } else if result.is_some() {
@@ -88,6 +88,7 @@ pub async fn get_blocks(
                 // TODO(Jira): https://rsklabs.atlassian.net/browse/UB-10
                 input_block.bridge_event = Some(BridgeEvent {
                     utxo_id: "FAKE_UTXO_ID".to_string(),         // tmp
+                    pegout_id: "FAKE_PEGOUT_ID".to_string(),     // tmp
                     operator_id: "FAKE_OPERATOR_ID".to_string(), // tmp
                 });
             }
@@ -98,14 +99,6 @@ pub async fn get_blocks(
     println!("get_blocks done, total blocks '{}'", result.len());
 
     Ok(result)
-}
-
-fn hex_to_u32<'de, D>(deserializer: D) -> Result<u32, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let hex_str: &str = Deserialize::deserialize(deserializer)?;
-    u32::from_str_radix(hex_str.trim_start_matches("0x"), 16).map_err(de::Error::custom)
 }
 
 fn parse_hex_to_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
