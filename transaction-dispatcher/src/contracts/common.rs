@@ -1,6 +1,5 @@
 use alloy_contract::SolCallBuilder;
-use alloy_primitives::hex::FromHexError;
-use alloy_primitives::ruint::ParseError;
+use alloy_primitives::{U256, hex::FromHexError, ruint::ParseError};
 use alloy_provider::Provider;
 use alloy_rpc_types::TransactionReceipt;
 use alloy_sol_types::SolCall;
@@ -20,14 +19,24 @@ pub(crate) enum ParseFieldError {
 pub(super) async fn send_tx_with_gas_bump<P, F, T>(
     build_tx: F,
     max_attempts: u8,
+    value: Option<u64>,
 ) -> alloy_contract::Result<TransactionReceipt>
 where
     P: Provider,
     T: SolCall,
     F: Fn() -> SolCallBuilder<(), P, T>,
 {
+    // wrap builder so it always applies the `value`
+    let build_with_value = || {
+        let mut b = build_tx();
+        if let Some(v) = value {
+            b = b.value(U256::from(v));
+        }
+        b
+    };
+
     // this works also as an eth_call, if not do a manual .call()
-    let estimated_gas = build_tx().estimate_gas().await?;
+    let estimated_gas = build_with_value().estimate_gas().await?;
 
     let mut receipt;
     let mut attempt = 0;
@@ -35,7 +44,7 @@ where
         let attempt_increment = 1 + (0.1 * (attempt + 1) as f64) as u64;
         let gas_limit = estimated_gas * attempt_increment;
 
-        let tx_builder = build_tx().gas(gas_limit);
+        let tx_builder = build_with_value().gas(gas_limit);
 
         debug!("Sending transaction: {:?}", tx_builder);
 
