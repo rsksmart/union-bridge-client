@@ -3,12 +3,14 @@ use bitcoin::consensus::encode::deserialize as btc_deserialize;
 use check_fork::{Block, BridgeEvent};
 use primitive_types::U256;
 use reqwest::Client;
-use serde::{de, Deserialize, Deserializer, Serialize};
-use serde_json::{json, Value};
+use serde::{Deserialize, Deserializer, Serialize, de};
+use serde_json::{Value, json};
 use std::error::Error;
 use std::string::ToString;
 
 const RSK_RPC_URL: &str = "https://public-node.rsk.co";
+
+const SUPERBLOCK_THRESHOLD_FACTOR: u64 = 20;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct RskBlock {
@@ -48,6 +50,7 @@ impl From<&RskBlock> for Block {
 pub async fn get_blocks(
     start_block_number: u64,
     num_of_blocks: u32,
+    log_super_block: bool,
 ) -> Result<Vec<Block>, Box<dyn Error>> {
     let client = Client::new();
 
@@ -75,6 +78,11 @@ pub async fn get_blocks(
             );
         } else if result.is_some() {
             let block: RskBlock = serde_json::from_str(&result.unwrap().to_string())?;
+
+            if log_super_block {
+                log_if_superblock(&block)?;
+            }
+
             blocks.push(block);
         }
     }
@@ -97,6 +105,34 @@ pub async fn get_blocks(
         .collect();
 
     Ok(result)
+}
+
+fn log_if_superblock(block: &RskBlock) -> Result<(), Box<dyn Error>> {
+    // parse the block's actual PoW (from bitcoinMergedMiningHeader field) to decimal
+    let actual_block_pow = U256::from_str_radix(&block.pow, 16)
+        .map_err(|e| format!("Failed to parse block PoW '{}': {}", block.pow, e))?;
+
+    // compute the PoW target from difficulty by inversion
+    // U256::MAX, the "difficulty 1" target, represents the easiest possible target
+    // this conversion allows comparing target difficulty with the actual block PoW
+    let target_block_pow = U256::MAX / block.difficulty;
+
+    // define a superblock as one whose PoW is at least N times harder than the required target
+    let superblock_pow = target_block_pow / SUPERBLOCK_THRESHOLD_FACTOR;
+
+    // if the actual block PoW is lower (i.e., harder) than the SuperBlock threshold, we found a SuperBlock
+    if actual_block_pow < superblock_pow {
+        let formatted_time = chrono::DateTime::from_timestamp(block.timestamp as i64, 0)
+            .unwrap()
+            .format("%Y-%m-%d %H:%M:%S");
+
+        println!(
+            "SuperBlock: {}, pow: {}, threshold: {:064x}, time: {}",
+            block.number, &block.pow, superblock_pow, formatted_time
+        );
+    }
+
+    Ok(())
 }
 
 fn parse_hex_to_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>

@@ -17,6 +17,7 @@ lto = true
 [dependencies]
 bitcoin = "0.32.4"
 clap = { version = "4.5.30", features = ["derive"] }
+chrono = "0.4.38"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 hex = "0.4.3"

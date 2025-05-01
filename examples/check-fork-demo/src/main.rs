@@ -1,6 +1,6 @@
 use check_fork::CheckForkArgs;
-use clap::Parser;
 use check_fork_demo::get_blocks;
+use clap::Parser;
 use methods::{CHECK_FORK_GUEST_ID, CHECK_FORK_GUEST_PATH};
 use primitive_types::U256;
 use std::error::Error;
@@ -10,8 +10,8 @@ use zkvm_cli_serde::serialize_guest_input;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    // Operation to perform: [run, elf]
-    #[arg(short = 'o', long = "operation", value_parser = ["run", "elf"], required = true )]
+    // Operation to perform: [run, elf, sb]
+    #[arg(short = 'o', long = "operation", value_parser = ["run", "elf", "sb"], required = true )]
     operation: String,
 
     //
@@ -53,7 +53,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     println!("CLI {:?}", cli_args);
 
-    let blocks = get_blocks(cli_args.fetch_start_block, cli_args.fetch_block_count).await?;
+    let log_super_block = cli_args.operation == "sb";
+
+    let blocks = get_blocks(
+        cli_args.fetch_start_block,
+        cli_args.fetch_block_count,
+        log_super_block,
+    )
+    .await?;
 
     let check_fork_args = CheckForkArgs {
         utxo_id: "FAKE_UTXO_ID".to_string(),         // tmp
@@ -73,7 +80,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             Ok(_) => println!("Check Fork returned ACCEPT"),
             Err(e) => println!("Check Fork returned REJECT: {:?}", e),
         }
-    }
+    } // for "sb" operation, no need to do anything, get_blocks() already logs the superblocks
 
     Ok(())
 }
