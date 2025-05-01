@@ -26,22 +26,22 @@ pub(crate) trait RskContractsGatewayApi {
     async fn get_temporary_peg_in_address(
         &self,
         input: PegInAddressInput,
-    ) -> Result<PegInAddressOutput, PegManagerErrors>;
+    ) -> Result<PegInAddressOutput, DomainErrors>;
 
     async fn register_peg_in_request(
         &self,
         input: RegisterPegInInput,
-    ) -> Result<RegisterPegInOutput, PegManagerErrors>;
+    ) -> Result<RegisterPegInOutput, DomainErrors>;
 
     async fn accept_peg_in_request(
         &self,
         input: AcceptPegInInput,
-    ) -> Result<AcceptPegInOutput, PegManagerErrors>;
+    ) -> Result<AcceptPegInOutput, DomainErrors>;
 
     async fn register_peg_out_request(
         &self,
         input: RegisterPegOutInput,
-    ) -> Result<RegisterPegOutOutput, PegManagerErrors>;
+    ) -> Result<RegisterPegOutOutput, DomainErrors>;
 }
 
 pub struct RskContractsGateway<P: Provider> {
@@ -97,7 +97,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
     async fn get_temporary_peg_in_address(
         &self,
         input: PegInAddressInput,
-    ) -> Result<PegInAddressOutput, PegManagerErrors> {
+    ) -> Result<PegInAddressOutput, DomainErrors> {
         info!(
             "Interacting with PegManager#getTemporaryPegInAddress @ {}",
             self.contract_address
@@ -115,7 +115,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
     async fn register_peg_in_request(
         &self,
         input: RegisterPegInInput,
-    ) -> Result<RegisterPegInOutput, PegManagerErrors> {
+    ) -> Result<RegisterPegInOutput, DomainErrors> {
         info!(
             "Interacting with PegManager#registerPegInRequest @ {}",
             self.contract_address
@@ -133,7 +133,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
     async fn accept_peg_in_request(
         &self,
         input: AcceptPegInInput,
-    ) -> Result<AcceptPegInOutput, PegManagerErrors> {
+    ) -> Result<AcceptPegInOutput, DomainErrors> {
         info!(
             "Interacting with PegManager#acceptPegInRequest @ {}",
             self.contract_address
@@ -168,7 +168,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
 }
 
 #[derive(Debug, Error)]
-pub enum PegManagerErrors {
+pub enum DomainErrors {
     // mapped smart contract errors
     #[error("Already registered PegIn: {0}")]
     AlreadyRegisteredPegIn(String),

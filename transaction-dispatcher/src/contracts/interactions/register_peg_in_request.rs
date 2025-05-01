@@ -1,9 +1,9 @@
 use crate::contracts::peg_manager::PegManagerContractApi;
-use crate::contracts::peg_manager::SolPegManager::BtcTxSPVProof;
-use crate::rsk_gateway::PegManagerErrors;
+use crate::rsk_gateway::DomainErrors;
 use crate::types::{RegisterPegInInput, RegisterPegInOutput};
 use anyhow::Result;
 use log::{error, info};
+use union_contracts::bindings::pegmanager::PegManager::BtcTxSPVProof;
 
 pub(crate) struct RegisterPegInRequestInvoke<C: PegManagerContractApi> {
     contract: C,
@@ -21,14 +21,11 @@ impl<C: PegManagerContractApi> RegisterPegInRequestInvoke<C> {
     pub(crate) async fn run(
         &self,
         input: RegisterPegInInput,
-    ) -> Result<RegisterPegInOutput, PegManagerErrors> {
+    ) -> Result<RegisterPegInOutput, DomainErrors> {
         info!("Init RegisterPegIn for: {:?}", input);
 
         let parsed_input: BtcTxSPVProof = input.try_into().map_err(|e| {
-            PegManagerErrors::InvalidBtcTxSpvProof(format!(
-                "Failed to parse RegisterPegInInput: {}",
-                e
-            ))
+            DomainErrors::InvalidBtcTxSpvProof(format!("Failed to parse RegisterPegInInput: {}", e))
         })?;
 
         // TODO(iago) check why sometimes it succeeds several times with the same payload (most of the times it does not). It looks like it happens after restarting anvil/tx-dispatcher without re-deploying contracts
@@ -72,16 +69,14 @@ mod tests {
         RegisterPegInInput, RegisterPegInOutput, RegisterPegInRequestInvoke,
     };
     use crate::contracts::peg_manager::MockPegManagerContractApi;
-    use crate::contracts::peg_manager::SolPegManager::{
-        AlreadyRegisteredPegIn, SolPegManagerErrors,
-    };
-    use crate::rsk_gateway::PegManagerErrors;
+    use crate::rsk_gateway::DomainErrors;
     use crate::types::{BitcoinTransaction, BitcoinTransactionIn, BitcoinTransactionOut};
-    use alloy_contract::Error::TransportError;
-    use alloy_json_rpc::RpcError::ErrorResp;
     use alloy_primitives::{Address, Bloom, TxHash};
     use alloy_rpc_types::{Log, Receipt, ReceiptEnvelope, ReceiptWithBloom, TransactionReceipt};
     use std::str::FromStr;
+    use union_contracts::bindings::pegmanager::PegManager::{
+        AlreadyRegisteredPegIn, PegManagerErrors,
+    };
 
     impl RegisterPegInRequestInvoke<MockPegManagerContractApi> {
         pub(crate) fn new_for_tests(contract: MockPegManagerContractApi) -> Self {
@@ -134,14 +129,13 @@ mod tests {
         mock.expect_register_peg_in_request_send()
             .returning(move |_, _| {
                 let expected_err =
-                    SolPegManagerErrors::AlreadyRegisteredPegIn(AlreadyRegisteredPegIn {
+                    PegManagerErrors::AlreadyRegisteredPegIn(AlreadyRegisteredPegIn {
                         btcTxHash:
                             "0x6b8f74fe9c66c9c3a6c3d0b7111d9b6aaac0ea3db1bdbd6a38eb0e7d8b8bba3e"
                                 .parse()
                                 .expect("Failed to parse tx hash"),
                     });
-                let expected_err_payload = generate_contract_revert_error(expected_err);
-                Err(TransportError(ErrorResp(expected_err_payload)))
+                Err(generate_contract_revert_error(expected_err))
             })
             .times(1);
 
@@ -153,7 +147,7 @@ mod tests {
         assert!(result.is_err());
         matches!(
             result.err().unwrap(),
-            PegManagerErrors::AlreadyRegisteredPegIn(_)
+            DomainErrors::AlreadyRegisteredPegIn(_)
         );
     }
 

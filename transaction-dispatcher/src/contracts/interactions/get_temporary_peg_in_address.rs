@@ -1,5 +1,5 @@
 use crate::contracts::peg_manager::PegManagerContractApi;
-use crate::rsk_gateway::PegManagerErrors;
+use crate::rsk_gateway::DomainErrors;
 use crate::types::{PegInAddressInput, PegInAddressOutput};
 use alloy_primitives::{Address, FixedBytes};
 use log::info;
@@ -18,14 +18,14 @@ impl<C: PegManagerContractApi> GetTemporaryPegInAddressCall<C> {
     pub(crate) async fn run(
         &self,
         input: PegInAddressInput,
-    ) -> Result<PegInAddressOutput, PegManagerErrors> {
+    ) -> Result<PegInAddressOutput, DomainErrors> {
         info!("Init GetTemporaryPegInAddress for: {:?}", input);
 
         let rootstock_deposit_address: Address = input
             .rootstock_deposit_address
             .parse::<Address>()
             .map_err(|e| {
-                PegManagerErrors::InvalidAddress(format!(
+                DomainErrors::InvalidAddress(format!(
                     "Failed to parse rootstock_deposit_address: {}",
                     e
                 ))
@@ -35,7 +35,7 @@ impl<C: PegManagerContractApi> GetTemporaryPegInAddressCall<C> {
             .btc_reimbursement_pub_key
             .parse::<FixedBytes<32>>()
             .map_err(|e| {
-                PegManagerErrors::InvalidPublicKey(format!(
+                DomainErrors::InvalidPublicKey(format!(
                     "Failed to parse btc_reimbursement_pub_key: {}",
                     e
                 ))
@@ -63,21 +63,19 @@ impl<C: PegManagerContractApi> GetTemporaryPegInAddressCall<C> {
 
 #[cfg(test)]
 mod tests {
-    use crate::contracts::bitcoin_manager::SolBitcoinManager::{
-        InvalidAddress, InvalidPublicKey, SolBitcoinManagerErrors,
-    };
     use crate::contracts::common::tests::generate_contract_revert_error;
     use crate::contracts::interactions::get_temporary_peg_in_address::{
         GetTemporaryPegInAddressCall, PegInAddressInput,
     };
     use crate::contracts::peg_manager::MockPegManagerContractApi;
-    use crate::contracts::peg_manager::SolPegManager::getTemporaryPegInAddressReturn;
-    use crate::rsk_gateway::PegManagerErrors;
-    use alloy_contract::Error::TransportError;
-    use alloy_json_rpc::RpcError::ErrorResp;
+    use crate::rsk_gateway::DomainErrors;
     use alloy_primitives::Address;
     use alloy_primitives::FixedBytes;
     use mockall::predicate::{always, eq};
+    use union_contracts::bindings::bitcoinmanager::BitcoinManager::{
+        BitcoinManagerErrors, InvalidAddress, InvalidPublicKey,
+    };
+    use union_contracts::bindings::pegmanager::PegManager::getTemporaryPegInAddressReturn;
 
     const VALID_ADDRESS: &str = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
     const VALID_PUB_KEY: &str =
@@ -136,7 +134,7 @@ mod tests {
 
         let result = interaction.run(input).await;
         assert!(result.is_err());
-        matches!(result.err().unwrap(), PegManagerErrors::InvalidAddress(_));
+        matches!(result.err().unwrap(), DomainErrors::InvalidAddress(_));
     }
 
     #[tokio::test]
@@ -158,11 +156,10 @@ mod tests {
                 eq(VALID_PUB_KEY.parse::<FixedBytes<32>>().unwrap()),
             )
             .returning(move |_, _, _| {
-                let expected_err = SolBitcoinManagerErrors::InvalidAddress(InvalidAddress {
+                let expected_err = BitcoinManagerErrors::InvalidAddress(InvalidAddress {
                     _address: Address::default(),
                 });
-                let expected_err_payload = generate_contract_revert_error(expected_err);
-                Err(TransportError(ErrorResp(expected_err_payload)))
+                Err(generate_contract_revert_error(expected_err))
             })
             .times(1);
 
@@ -170,7 +167,7 @@ mod tests {
 
         let result = interaction.run(input).await;
         assert!(result.is_err());
-        matches!(result.err().unwrap(), PegManagerErrors::InvalidAddress(_));
+        matches!(result.err().unwrap(), DomainErrors::InvalidAddress(_));
     }
 
     #[tokio::test]
@@ -187,7 +184,7 @@ mod tests {
 
         let result = interaction.run(input).await;
         assert!(result.is_err());
-        matches!(result.err().unwrap(), PegManagerErrors::InvalidPublicKey(_));
+        matches!(result.err().unwrap(), DomainErrors::InvalidPublicKey(_));
     }
 
     // there are more errors that could be raised by the smart contract, but those are tested either on peg_manager.rs or bitcoin_manager.rs
@@ -210,11 +207,10 @@ mod tests {
                 always(),
             )
             .returning(move |_, _, _| {
-                let expected_err = SolBitcoinManagerErrors::InvalidPublicKey(InvalidPublicKey {
+                let expected_err = BitcoinManagerErrors::InvalidPublicKey(InvalidPublicKey {
                     publicKey: FixedBytes::<32>::default(),
                 });
-                let expected_err_payload = generate_contract_revert_error(expected_err);
-                Err(TransportError(ErrorResp(expected_err_payload)))
+                Err(generate_contract_revert_error(expected_err))
             })
             .times(1);
 
@@ -222,7 +218,7 @@ mod tests {
 
         let result = call.run(input).await;
         assert!(result.is_err());
-        matches!(result.err().unwrap(), PegManagerErrors::InvalidPublicKey(_));
+        matches!(result.err().unwrap(), DomainErrors::InvalidPublicKey(_));
     }
 
     #[allow(unused)]

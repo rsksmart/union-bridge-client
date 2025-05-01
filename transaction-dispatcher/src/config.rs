@@ -45,16 +45,12 @@ impl Config {
             .map(|c| {
                 let address = Address::try_from(c.address.as_str())
                     .expect(&format!("Invalid address: {}", c.address));
-
-                let abi_path = format!("{}/abi/{}.json", self.path, c.name);
-                let abi = CommonConfig::load_abi_from_path(&abi_path);
-
                 (
                     c.name.to_owned(),
                     ContractInfo {
                         name: c.name.to_owned(),
                         address,
-                        abi,
+                        abi: None,
                     },
                 )
             })
@@ -120,7 +116,7 @@ mod tests {
             Address::try_from("0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761").unwrap(),
             contract_info.address
         );
-        assert!(!contract_info.abi.as_ref().unwrap().is_empty());
+        assert!(contract_info.abi.is_none());
 
         // second contract
         let key = "TestContractCompiled";
