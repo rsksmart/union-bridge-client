@@ -47,7 +47,7 @@ impl From<&RskBlock> for Block {
 
 pub async fn get_blocks(
     start_block_number: u64,
-    num_of_blocks: u16,
+    num_of_blocks: u32,
 ) -> Result<Vec<Block>, Box<dyn Error>> {
     let client = Client::new();
 
@@ -95,8 +95,6 @@ pub async fn get_blocks(
             input_block
         })
         .collect();
-
-    println!("get_blocks done, total blocks '{}'", result.len());
 
     Ok(result)
 }

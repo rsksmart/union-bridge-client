@@ -109,17 +109,17 @@ This is the input to the _CheckFork_ function that will be executed by the `zkvm
 generate it run:
 
 ```bash
-cd utils/generate_elf_demo
-cargo run
+cd examples/check-fork-demo
+cargo run -- -o elf
 ```
 
 Some instructions on how to use this file and other parameters will be printed to the console. Example:
 
 ```
-get_blocks done, total blocks '100'
-CheckForkArgs serialized to file: /Users/illuque/workspace/rootstock/union_bridge/union-bridge-monitor/util/generate_elf_demo/check_fork_args.bin. Total time: 665.584µs
+CLI Args { operation: "run", fetch_start_block: 6883222, fetch_block_count: 100, cf_required_blocks: 100, cf_required_effort: 123456789, cf_init_block: 6883221, cf_init_timestamp: 1701129600 }
+CheckForkArgs serialized to file: /Users/illuque/workspace/rootstock/union_bridge/union-bridge-monitor/util/check-fork-demo/check_fork_args.bin. Total time: 665.584µs
 GetBlocks executed and CheckForkArgs generated. Relevant parameters for the interaction with the ZKVM CLI:
-    - input: /Users/illuque/workspace/rootstock/union_bridge/union-bridge-monitor/util/generate_elf_demo/check_fork_args.bin
+    - input: /Users/illuque/workspace/rootstock/union_bridge/union-bridge-monitor/util/check-fork-demo/check_fork_args.bin
     - elf: /Users/illuque/workspace/rootstock/union_bridge/union-bridge-monitor/target/riscv-guest/zkvm_guest/check_fork_guest/riscv32im-risc0-zkvm-elf/release/check_fork_guest
     - image_id: e0ce040cc1f5ab45bbadf8b81f41be224acfdb9eb7c1f39bec6102492e1137f7
 
@@ -130,7 +130,7 @@ GetBlocks executed and CheckForkArgs generated. Relevant parameters for the inte
 With the previous output, we can now generate the Stark Proof
 
 ```bash
-cargo run --release --bin host -- prove-stark --input /Users/illuque/workspace/rootstock/union_bridge/union-bridge-monitor/util/generate_elf_demo/check_fork_args.bin --elf /Users/illuque/workspace/rootstock/union_bridge/union-bridge-monitor/target/riscv-guest/zkvm_guest/check_fork_guest/riscv32im-risc0-zkvm-elf/release/check_fork_guest --output stark-proof.bin
+cargo run --release --bin host -- prove-stark --input /Users/illuque/workspace/rootstock/union_bridge/union-bridge-monitor/util/check-fork-demo/check_fork_args.bin --elf /Users/illuque/workspace/rootstock/union_bridge/union-bridge-monitor/target/riscv-guest/zkvm_guest/check_fork_guest/riscv32im-risc0-zkvm-elf/release/check_fork_guest --output stark-proof.bin
 ```
 
 An output like the following will be printed, showing _CheckFork_ execution result and the path to the resulting stark
