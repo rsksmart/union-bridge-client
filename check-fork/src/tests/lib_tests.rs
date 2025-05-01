@@ -4,7 +4,7 @@ use primitive_types::U256;
 const DEFAULT_DIFFICULTY: u128 = 5904436352267687415636;
 const DEFAULT_TIMESTAMP: u64 = 1000;
 const DEFAULT_INIT_BLOCK_NUMBER: u64 = 100;
-const DEFAULT_REQ_NUMBER_OF_BLOCKS: u16 = 2;
+const DEFAULT_REQ_NUMBER_OF_BLOCKS: u32 = 2;
 
 #[test]
 fn succeeds_with_two_blocks_when_all_conditions_met() {
@@ -570,7 +570,7 @@ struct CheckForkArgsBuilder {
     operator_id: Option<String>,
     init_block_time: Option<u64>,
     init_block_number: Option<u64>,
-    required_num_blocks: Option<u16>,
+    required_num_blocks: Option<u32>,
     required_effort: Option<U256>,
     block_list: Vec<Block>,
 }
@@ -608,7 +608,7 @@ impl CheckForkArgsBuilder {
         self
     }
 
-    fn required_num_blocks(mut self, required_num_blocks: u16) -> Self {
+    fn required_num_blocks(mut self, required_num_blocks: u32) -> Self {
         self.required_num_blocks = Some(required_num_blocks);
         self
     }

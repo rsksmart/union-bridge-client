@@ -32,7 +32,7 @@ pub struct CheckForkArgs {
     pub init_block_time: u64,
     pub init_block_number: u64,
     pub required_effort: U256,
-    pub required_num_blocks: u16,
+    pub required_num_blocks: u32,
     pub block_list: Vec<Block>,
 }
 
@@ -90,7 +90,7 @@ pub fn check_fork(args: CheckForkArgs) -> Result<U256, &'static str> {
     //
     // 4. validate enough cumulative PoW
     //
-    dbg!((cumulative_effort, required_effort));
+    dbg!((block_list.len(), cumulative_effort, required_effort));
 
     if cumulative_effort < required_effort {
         return Err("Cumulative PoW does not meet the required threshold");
@@ -108,14 +108,14 @@ fn accumulate_effort(cumulative_effort: U256, block: &Block) -> Result<U256, &'s
 }
 
 fn validate_block_list(
-    required_num_blocks: u16,
+    required_num_blocks: u32,
     block_list: &Vec<Block>,
 ) -> Result<(), &'static str> {
     if required_num_blocks < 1 {
         return Err("Invalid number of required blocks");
     }
 
-    if (block_list.len() as u16) < required_num_blocks {
+    if (block_list.len() as u32) < required_num_blocks {
         return Err("Insufficient number of blocks");
     }
 
