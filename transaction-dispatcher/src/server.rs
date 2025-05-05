@@ -39,7 +39,7 @@ impl Server {
                 Extension(rsk_contract_gateway),
             ));
 
-        Server {
+        Self {
             listener,
             app,
             shutdown_flag,
