@@ -194,6 +194,10 @@ pub enum PegManagerErrors {
     StreamNotFoundByDenomination(String),
     #[error("Unregistered Request: {0}")]
     UnregisteredRequest(String),
+    #[error("Invalid Publick Key Length: {0}")]
+    InvalidPubKeyLength(String),
+    #[error("Pegout Request Amount Exceeds u64 Limit: {0}")]
+    PegoutRequestAmountExceedsUint64Limit(String),
 
     // unhandled smart contract errors
     #[error("Unhandled Contract Error: {0}")]

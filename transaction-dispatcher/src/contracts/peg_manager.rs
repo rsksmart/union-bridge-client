@@ -199,6 +199,12 @@ impl From<SolPegManagerErrors> for PegManagerErrors {
             UnregisteredPegInRequest(e) => {
                 PegManagerErrors::UnregisteredRequest(format_sol_err!(e, e.btcTxHash))
             }
+            InvalidPubKeyLength(e) => {
+                PegManagerErrors::InvalidPubKeyLength(format_sol_err!(e, e.usrPubKeyLength))
+            }
+            PegoutRequestAmountExceedsUint64Limit(e) => {
+                PegManagerErrors::PegoutRequestAmountExceedsUint64Limit(format_sol_err!(e, e.amount))
+            }
 
             // Defaulted to UnhandledContractError (still with specific data formatting)
             AddressEmptyCode(e) => {
@@ -237,9 +243,6 @@ impl From<SolPegManagerErrors> for PegManagerErrors {
             InvalidInitialization(e) => {
                 PegManagerErrors::UnhandledContractError(format_sol_err!(e))
             }
-            InvalidPubKeyLength(e) => {
-                PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.usrPubKeyLength))
-            }
             NoEmptySlot(e) => PegManagerErrors::UnhandledContractError(format_sol_err!(
                 e,
                 e.packetNumber,
@@ -258,9 +261,6 @@ impl From<SolPegManagerErrors> for PegManagerErrors {
             }
             OwnableUnauthorizedAccount(e) => {
                 PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.account))
-            }
-            PegoutRequestAmountExceedsUint64Limit(e) => {
-                PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.amount))
             }
             tooManyDenominations(e) => {
                 PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.maxDenominationsSize))
