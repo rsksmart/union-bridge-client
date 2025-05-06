@@ -98,7 +98,6 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         send_tx_with_gas_bump(
             || self.contract_instance.registerPegInRequest(input.clone()),
             gas_bumps,
-            None,
         )
         .await
     }
@@ -111,7 +110,6 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         send_tx_with_gas_bump(
             || self.contract_instance.acceptPegInRequest(input.clone()),
             gas_bumps,
-            None,
         )
         .await
     }
@@ -127,9 +125,9 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
             || {
                 self.contract_instance
                     .requestPegOut(usr_pub_key.into(), batch_flag)
+                    .value(U256::from(msg_value))
             },
             gas_bumps,
-            Some(msg_value),
         )
         .await
     }
@@ -200,10 +198,12 @@ impl From<SolPegManagerErrors> for PegManagerErrors {
                 PegManagerErrors::UnregisteredRequest(format_sol_err!(e, e.btcTxHash))
             }
             InvalidPubKeyLength(e) => {
-                PegManagerErrors::InvalidPubKeyLength(format_sol_err!(e, e.usrPubKeyLength))
+                PegManagerErrors::InvalidPublicKey(format_sol_err!(e, e.usrPubKeyLength))
             }
             PegoutRequestAmountExceedsUint64Limit(e) => {
-                PegManagerErrors::PegoutRequestAmountExceedsUint64Limit(format_sol_err!(e, e.amount))
+                PegManagerErrors::PegoutRequestAmountExceedsUint64Limit(format_sol_err!(
+                    e, e.amount
+                ))
             }
 
             // Defaulted to UnhandledContractError (still with specific data formatting)

@@ -7,8 +7,6 @@ use alloy_primitives::FixedBytes;
 use anyhow::Result;
 use log::{debug, error, info};
 
-const WEI_PER_SATOSHI: u64 = 10u64.pow(10);
-
 pub struct RegisterPegOutRequestInvoke<C: PegManagerContractApi> {
     contract: C,
     gas_bumps: u8,
@@ -29,19 +27,10 @@ impl<C: PegManagerContractApi> RegisterPegOutRequestInvoke<C> {
         info!("Init RegisterPegOut for: {:?}", input);
 
         let msg_value = input.amount_in_wei;
-        let satoshi: u64 = msg_value / WEI_PER_SATOSHI;
-        if satoshi > u64::MAX {
-            return Err(PegManagerErrors::PegoutRequestAmountExceedsUint64Limit(
-                format!(
-                    "Requested peg-out amount exceeds u64 limit: {} satoshi",
-                    satoshi
-                ),
-            ));
-        }
 
         let usr_pub_key: FixedBytes<33> =
             input.usr_pub_key.parse::<FixedBytes<33>>().map_err(|e| {
-                PegManagerErrors::InvalidPubKeyLength(format!("Failed to parse usr_pub_key: {}", e))
+                PegManagerErrors::InvalidPublicKey(format!("Failed to parse usr_pub_key: {}", e))
             })?;
 
         let batch_flag = input.batch_flag;
@@ -58,7 +47,7 @@ impl<C: PegManagerContractApi> RegisterPegOutRequestInvoke<C> {
 
         let result = if receipt.status() {
             info!(
-                "RegisterPegInRequest successful at tx {}",
+                "RegisterPegOutRequest successful at tx {}",
                 receipt.transaction_hash
             );
             RegisterPegOutOutput {
@@ -67,7 +56,7 @@ impl<C: PegManagerContractApi> RegisterPegOutRequestInvoke<C> {
             }
         } else {
             error!(
-                "RegisterPegInRequest failed at tx {}",
+                "RegisterPegOutRequest failed at tx {}",
                 receipt.transaction_hash
             );
             RegisterPegOutOutput {
@@ -122,9 +111,10 @@ mod tests {
             .times(1);
 
         let invoke = RegisterPegOutRequestInvoke::new_for_tests(mock);
-        let result = invoke.run(input).await.unwrap();
+        let result = invoke.run(input).await;
 
-        assert_eq!(result, expected);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), expected);
     }
 
     #[tokio::test]
@@ -146,38 +136,10 @@ mod tests {
             .times(1);
 
         let invoke = RegisterPegOutRequestInvoke::new_for_tests(mock);
-        let result = invoke.run(input).await.unwrap();
-        assert_eq!(result, expected);
-    }
+        let result = invoke.run(input).await;
 
-    #[tokio::test]
-    async fn test_run_allow_max_wei() {
-        let mut mock = MockPegManagerContractApi::new();
-
-        // Use the largest u64 value for wei
-        let max_wei = u64::MAX;
-        let usr_pub_key = format!("0x{}", "01".repeat(33));
-        let input = RegisterPegOutInput {
-            amount_in_wei: max_wei,
-            usr_pub_key: usr_pub_key.clone(),
-            batch_flag: true,
-        };
-
-        // Prepare a fake successful receipt
-        let expected = RegisterPegOutOutput {
-            transaction_hash: "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd"
-                .to_string(),
-            success: true,
-        };
-        let receipt_return = expected.clone();
-         
-        mock.expect_register_peg_out_request_send()
-            .returning(move |_, _, _, _| Ok(get_fake_receipt(true, &receipt_return.transaction_hash)))
-            .times(1);
-
-        let invoke = RegisterPegOutRequestInvoke::new_for_tests(mock);
-        let result = invoke.run(input).await.unwrap();
-        assert_eq!(result, expected);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), expected);
     }
 
     #[tokio::test]
@@ -195,10 +157,10 @@ mod tests {
 
         let err = invoke.run(bad_input).await.err().unwrap();
         match err {
-            PegManagerErrors::InvalidPubKeyLength(msg) => {
+            PegManagerErrors::InvalidPublicKey(msg) => {
                 assert!(msg.contains("Failed to parse usr_pub_key"))
             }
-            _ => panic!("expected InvalidPublicKeyLength, got {:?}", err),
+            _ => panic!("expected InvalidPublicKey, got {:?}", err),
         }
     }
 
