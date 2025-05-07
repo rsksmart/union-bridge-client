@@ -111,6 +111,12 @@ impl From<alloy_contract::Error> for DomainErrors {
                 PegManagerErrors::UnregisteredPegInRequest(e) => {
                     DomainErrors::UnregisteredRequest(format!("{:?}", e))
                 }
+                PegManagerErrors::InvalidPubKeyLength(e) => {
+                    DomainErrors::InvalidPublicKey(format!("{:?}", e))
+                }
+                PegManagerErrors::PegoutRequestAmountExceedsUint64Limit(e) => {
+                    DomainErrors::PegoutRequestAmountExceedsUint64Limit(format!("{:?}", e))
+                }
                 _ => DomainErrors::UnhandledContractError(format!("{:?}", e)),
             },
             None => DomainErrors::NoRevertError(format!("{:?}", err)),

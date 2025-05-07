@@ -1,12 +1,4 @@
-use crate::contracts::{
-    common::send_tx_with_gas_bump,
-    peg_manager::SolPegManager::{
-        BtcTransaction, BtcTxSPVProof, SolPegManagerErrors, SolPegManagerInstance,
-        getTemporaryPegInAddressReturn,
-    },
-};
-
-use alloy_json_rpc::ErrorPayload;
+use crate::contracts::common::send_tx_with_gas_bump;
 use alloy_primitives::{Address, FixedBytes, U256, hex::FromHex};
 use alloy_provider::Provider;
 use alloy_rpc_types::TransactionReceipt;

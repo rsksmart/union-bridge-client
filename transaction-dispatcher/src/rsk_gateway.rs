@@ -151,7 +151,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
     async fn register_peg_out_request(
         &self,
         input: RegisterPegOutInput,
-    ) -> Result<RegisterPegOutOutput, PegManagerErrors> {
+    ) -> Result<RegisterPegOutOutput, DomainErrors> {
         info!(
             "Interacting with PegManager#registerPegOutRequest @ {}",
             self.contract_address
