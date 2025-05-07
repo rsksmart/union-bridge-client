@@ -4879,7 +4879,7 @@ checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
 [[package]]
 name = "union-bridge-contracts"
 version = "0.0.1-alpha.1"
-source = "git+ssh://git@github.com/FairgateLabs/bitvmx-union-bridge-contracts.git?branch=main#20a87139f78e48a0bf1d0f3a9334df384ff4a9f4"
+source = "git+ssh://git@github.com/FairgateLabs/bitvmx-union-bridge-contracts.git?tag=v0.0.1-alpha.1#676067f226853e9484203e6669f11c33c70f2cc9"
 dependencies = [
  "alloy",
  "serde",
