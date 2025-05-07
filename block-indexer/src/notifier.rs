@@ -3,7 +3,7 @@ use common::msg_broker::broker::BrokerServer;
 use common::msg_broker::types::{BrokerRequests, BrokerResponses};
 use common::shutdown_flag::ShutdownFlag;
 use common::types::RskBlock;
-use log::{debug, info, trace};
+use log::{debug, info, trace, warn};
 use std::collections::HashSet;
 use std::sync::mpsc;
 use std::sync::mpsc::TryRecvError;
@@ -58,11 +58,14 @@ impl Notifier {
                 self.consumers.insert(consumer_id);
             }
             Some((BrokerRequests::UnsubscribeBlocks, consumer_id)) => {
-                info!("Unsubscribing {consumer_id}");
+                info!("Unsubscribing consumer {consumer_id}");
                 self.consumers.remove(&consumer_id);
             }
             Some((_, consumer_id)) => {
-                bail!("Unknown request type on Notifier from consumer {consumer_id}");
+                warn!(
+                    "Unexpected request type on Notifier from consumer {consumer_id}, unsubscribing"
+                );
+                self.consumers.remove(&consumer_id);
             }
             None => {
                 trace!("No messages in Notifier's msg_broker");

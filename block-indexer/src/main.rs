@@ -57,7 +57,7 @@ fn main() -> Result<()> {
         config.indexer.cache.size,
     )?;
 
-    let indexer = BlockIndexer::new(
+    let indexer = BlockIndexer::new_with_notifier(
         store,
         alloy_provider,
         tx,

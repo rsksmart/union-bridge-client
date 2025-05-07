@@ -12,7 +12,7 @@ use std::sync::mpsc;
 pub struct BlockIndexer<P: RskProvider, S: BlockStore> {
     store: S,
     rsk_provider: P,
-    sender_channel: mpsc::Sender<RskBlock>,
+    notifier_channel: Option<mpsc::Sender<RskBlock>>,
     initial_block_hash: BlockHash,
     shutdown_flag: ShutdownFlag,
 }
@@ -21,7 +21,7 @@ pub struct BlockIndexer<P: RskProvider, S: BlockStore> {
 // TODO(Jira) allow changing the initial_block_hash on a running instance: https://rsklabs.atlassian.net/browse/UB-32
 
 impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
-    pub fn new(
+    pub fn new_with_notifier(
         store: S,
         provider: P,
         sender_channel: mpsc::Sender<RskBlock>,
@@ -31,7 +31,22 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         Self {
             store,
             rsk_provider: provider,
-            sender_channel,
+            notifier_channel: Some(sender_channel),
+            initial_block_hash,
+            shutdown_flag,
+        }
+    }
+
+    pub fn new(
+        store: S,
+        provider: P,
+        initial_block_hash: BlockHash,
+        shutdown_flag: ShutdownFlag,
+    ) -> Self {
+        Self {
+            store,
+            rsk_provider: provider,
+            notifier_channel: None,
             initial_block_hash,
             shutdown_flag,
         }
@@ -154,9 +169,13 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 self.save_as_best_block(&new_block)
                     .context("On Block subscription")?;
 
-                self.sender_channel
-                    .send(new_block.clone())
-                    .context("Sending new block through channel")?;
+                // TODO(iago) think on backward_sync and notifications
+
+                if let Some(channel) = &self.notifier_channel {
+                    channel
+                        .send(new_block)
+                        .context("Sending new block through channel")?;
+                }
             } else if is_reorg {
                 info!(
                     "[subscribe_blocks] Processing block {} ({}): fixing local reorg",
