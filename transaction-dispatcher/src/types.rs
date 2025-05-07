@@ -42,8 +42,21 @@ pub(crate) struct RegisterPegInInput {
     pub(crate) merkle_branch_hashes: Vec<String>,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub(crate) struct RegisterPegInOutput {
+    pub(crate) transaction_hash: String,
+    pub(crate) success: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct RegisterPegOutInput {
+    pub(crate) amount_in_wei: u64,
+    pub(crate) usr_pub_key: String,
+    pub(crate) batch_flag: bool,
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+pub(crate) struct RegisterPegOutOutput {
     pub(crate) transaction_hash: String,
     pub(crate) success: bool,
 }

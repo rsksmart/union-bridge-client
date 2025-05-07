@@ -1,6 +1,5 @@
 use alloy_contract::SolCallBuilder;
-use alloy_primitives::hex::FromHexError;
-use alloy_primitives::ruint::ParseError;
+use alloy_primitives::{hex::FromHexError, ruint::ParseError};
 use alloy_provider::Provider;
 use alloy_rpc_types::TransactionReceipt;
 use alloy_sol_types::SolCall;
