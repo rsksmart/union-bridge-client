@@ -1,5 +1,5 @@
 use check_fork::CheckForkArgs;
-use check_fork_demo::get_blocks;
+use check_fork_demo::{get_blocks, get_blocks_from_fixture, FIXTURES_BASE_DIR};
 use clap::Parser;
 use methods::{CHECK_FORK_GUEST_ID, CHECK_FORK_GUEST_PATH};
 use primitive_types::U256;
@@ -18,6 +18,14 @@ struct Args {
     // Fetch parameters
     //
 
+    // Use a fixture file instead of fetching blocks
+    #[arg(short = 'f', long = "fixture")]
+    fixture: Option<String>,
+
+    // Adds a bridge event to the first block
+    #[arg(short = 'g', long = "bridge-event", action = clap::ArgAction::Set, default_value_t = true)]
+    bridge_event: bool,
+
     // Start block number
     #[arg(short = 's', long = "fetch-start-block", default_value_t = 6883222)]
     fetch_start_block: u64,
@@ -35,8 +43,8 @@ struct Args {
     cf_required_blocks: u32,
 
     // Required effort
-    #[arg(short = 'e', long = "cf-required-effort", default_value_t = 123456789)]
-    cf_required_effort: u32,
+    #[arg(short = 'e', long = "cf-required-effort", default_value_t = U256::from(123456789))]
+    cf_required_effort: U256,
 
     // Initial block number
     #[arg(short = 'i', long = "cf-init-block", default_value_t = 6883221)]
@@ -55,12 +63,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let log_super_block = cli_args.operation == "sb";
 
-    let blocks = get_blocks(
-        cli_args.fetch_start_block,
-        cli_args.fetch_block_count,
-        log_super_block,
-    )
-    .await?;
+    let blocks = match &cli_args.fixture {
+        Some(path) => {
+            let fixture_path = format!(
+                "{}/{}.json",
+                FIXTURES_BASE_DIR,
+                path
+            );
+            let json = std::fs::read_to_string(fixture_path)?;
+            get_blocks_from_fixture(json, cli_args.bridge_event)?
+        }
+    
+        None => {
+            get_blocks(
+                cli_args.fetch_start_block,
+                cli_args.fetch_block_count,
+                log_super_block,
+                cli_args.bridge_event
+            )
+            .await?
+        }
+    };
 
     let check_fork_args = CheckForkArgs {
         utxo_id: "FAKE_UTXO_ID".to_string(),         // tmp

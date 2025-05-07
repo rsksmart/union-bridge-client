@@ -4,7 +4,7 @@ use serde::Serialize;
 
 pub const SUPERBLOCK_TIMES_DIFFICULTY: u8 = 20;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Block {
     pub number: u64,
     pub hash: String,
@@ -17,7 +17,7 @@ pub struct Block {
     pub pow: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct BridgeEvent {
     pub utxo_id: String,
     pub pegout_id: String,
@@ -211,7 +211,7 @@ fn validate_uncle(trunk_block: &Block, uncle: &Block) -> Result<(), &'static str
     }
 
     validate_enough_effort_superblock(uncle, "uncle")?;
-
+    validate_difficulty_in_bounds(uncle, trunk_block)?;
     Ok(())
 }
 

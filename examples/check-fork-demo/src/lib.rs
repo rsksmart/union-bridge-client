@@ -11,25 +11,33 @@ use std::string::ToString;
 const RSK_RPC_URL: &str = "https://public-node.rsk.co";
 
 const SUPERBLOCK_THRESHOLD_FACTOR: u64 = 20;
+pub const FIXTURES_BASE_DIR: &str = "qa-tools/fixtures/check-fork";
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct RskBlock {
-    #[serde(deserialize_with = "parse_hex_to_u64")]
+    #[serde(
+        deserialize_with = "parse_hex_to_u64",
+        serialize_with   = "parse_u64_to_hex"
+    )]
     number: u64,
     hash: String,
     #[serde(rename = "parentHash")]
     parent: String,
     #[serde(deserialize_with = "parse_rsk_difficulty")]
     difficulty: U256,
-    #[serde(deserialize_with = "parse_hex_to_u64")]
+    #[serde(
+        deserialize_with = "parse_hex_to_u64",
+        serialize_with   = "parse_u64_to_hex"
+    )]
     timestamp: u64,
     #[serde(
         rename = "bitcoinMergedMiningHeader",
         deserialize_with = "parse_bitcoin_header_to_pow"
     )]
     pow: String,
-    // bridge_event: Option<BridgeEvent>, // TODO(Jira) implement: https://rsklabs.atlassian.net/browse/UB-3
-    // uncles: Vec<Block>, // TODO(Jira) test with some: https://rsklabs.atlassian.net/browse/UB-16
+    bridge_event: Option<BridgeEvent>, // TODO(Jira) implement: https://rsklabs.atlassian.net/browse/UB-3
+    #[serde(default)]
+    uncles: Vec<RskBlock>, // TODO(Jira) test with some: https://rsklabs.atlassian.net/browse/UB-16
 }
 
 impl From<&RskBlock> for Block {
@@ -41,8 +49,8 @@ impl From<&RskBlock> for Block {
             difficulty: rsk_block.difficulty,
             timestamp: rsk_block.timestamp,
             pow: rsk_block.pow.clone(),
-            bridge_event: None, // TODO(Jira) implement: https://rsklabs.atlassian.net/browse/UB-3
-            uncles: vec![], // TODO(Jira) test with some: https://rsklabs.atlassian.net/browse/UB-16
+            bridge_event: rsk_block.bridge_event.clone(), // TODO(Jira) implement: https://rsklabs.atlassian.net/browse/UB-3
+            uncles: rsk_block.uncles.iter().map(Block::from).collect(), // TODO(Jira) test with some: https://rsklabs.atlassian.net/browse/UB-16
         }
     }
 }
@@ -51,9 +59,9 @@ pub async fn get_blocks(
     start_block_number: u64,
     num_of_blocks: u32,
     log_super_block: bool,
+    has_bridge_event: bool,
 ) -> Result<Vec<Block>, Box<dyn Error>> {
     let client = Client::new();
-
     let mut blocks = vec![];
 
     for i in 0..num_of_blocks {
@@ -73,12 +81,18 @@ pub async fn get_blocks(
         if error.is_some() {
             println!(
                 "Error fetching block {}: {:?}",
-                start_block_number - i as u64,
+                start_block_number + i as u64,
                 response_json
             );
         } else if result.is_some() {
-            let block: RskBlock = serde_json::from_str(&result.unwrap().to_string())?;
+            // originally we had:
+            // let block: RskBlock = serde_json::from_str(&result.unwrap().to_string())?;
 
+            // remove next three lines when connection with check-fork is done and uncles come in right format
+            let mut result = result.unwrap().clone();
+            result["uncles"] = serde_json::Value::Array(Vec::new()); 
+            let block: RskBlock = serde_json::from_str(&result.to_string())?;
+            
             if log_super_block {
                 log_if_superblock(&block)?;
             }
@@ -87,7 +101,21 @@ pub async fn get_blocks(
         }
     }
 
-    let result: Vec<Block> = blocks
+    // // Write blocks to the output file
+    // let serialized_blocks = serde_json::to_string(&blocks)?;
+    // std::fs::write("fixturefile", serialized_blocks)?;
+    if has_bridge_event {
+        let result: Vec<Block> = add_bridge_event(&blocks)?;
+        Ok(result)
+    } else {
+        let result: Vec<Block> = blocks.iter().map(|b| Block::from(b)).collect();
+        Ok(result)
+    }
+    
+}
+
+fn add_bridge_event(blocks: &[RskBlock]) -> Result<Vec<Block>, Box<dyn Error>> {
+    Ok(blocks
         .iter()
         .enumerate()
         .map(|(i, b)| {
@@ -102,9 +130,21 @@ pub async fn get_blocks(
             }
             input_block
         })
-        .collect();
+        .collect())
+}
 
-    Ok(result)
+pub fn get_blocks_from_fixture(
+    fixture: String,
+    has_bridge_event: bool,
+) -> Result<Vec<Block>, Box<dyn Error>> {
+    let blocks: Vec<RskBlock> = serde_json::from_str(&fixture)?;
+    if has_bridge_event {
+        let result: Vec<Block> = add_bridge_event(&blocks)?;
+        Ok(result)
+    } else {
+        let result: Vec<Block> = blocks.iter().map(|b| Block::from(b)).collect();
+        Ok(result)
+    }
 }
 
 fn log_if_superblock(block: &RskBlock) -> Result<(), Box<dyn Error>> {
@@ -135,6 +175,14 @@ fn log_if_superblock(block: &RskBlock) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+
+fn parse_u64_to_hex<S>(v: &u64, s: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    s.serialize_str(&format!("0x{:x}", v))
+}
+
 fn parse_hex_to_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
 where
     D: Deserializer<'de>,
@@ -157,16 +205,15 @@ fn parse_bitcoin_header_to_pow<'de, D>(deserializer: D) -> Result<String, D::Err
 where
     D: Deserializer<'de>,
 {
-    let header_hex: &str = Deserialize::deserialize(deserializer)?;
-    let header_bytes =
-        hex::decode(header_hex.trim_start_matches("0x")).map_err(de::Error::custom)?;
-
-    // deserialize the header bytes into a Bitcoin Header and extract the hash
-    let header_hash = btc_deserialize(&header_bytes)
-        .map(|h: Header| h.block_hash().to_string())
+    let hex = <&str>::deserialize(deserializer)?;
+    let bytes = hex::decode(hex.trim_start_matches("0x"))
         .map_err(de::Error::custom)?;
-
-    // dbg!((header_hex, header_hash));
-
-    Ok(header_hash)
+    // 80-byte → treat as full header, otherwise assume it is already a 32-byte hash
+    if bytes.len() == 80 {
+        btc_deserialize::<Header>(&bytes)
+            .map(|h| h.block_hash().to_string())
+            .map_err(de::Error::custom)
+    } else {
+        Ok(hex.to_owned())
+    }
 }
