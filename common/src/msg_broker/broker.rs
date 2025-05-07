@@ -3,7 +3,6 @@ use message_broker::broker_memstorage::MemStorage;
 use message_broker::channel::channel::{DualChannel, LocalChannel};
 use message_broker::rpc::BrokerConfig;
 use message_broker::rpc::sync_server::BrokerSync;
-use serde::{Deserialize, Deserializer, Serialize};
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
 

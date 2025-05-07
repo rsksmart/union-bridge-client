@@ -7,10 +7,12 @@ use common::{
     types::{BlockHash, BlockNumber, RskBlock},
 };
 use log::{debug, error, info, warn};
+use std::sync::mpsc;
 
 pub struct BlockIndexer<P: RskProvider, S: BlockStore> {
     store: S,
     rsk_provider: P,
+    sender_channel: mpsc::Sender<RskBlock>,
     initial_block_hash: BlockHash,
     shutdown_flag: ShutdownFlag,
 }
@@ -22,12 +24,14 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
     pub fn new(
         store: S,
         provider: P,
+        sender_channel: mpsc::Sender<RskBlock>,
         initial_block_hash: BlockHash,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
         Self {
             store,
             rsk_provider: provider,
+            sender_channel,
             initial_block_hash,
             shutdown_flag,
         }
@@ -149,6 +153,10 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 );
                 self.save_as_best_block(&new_block)
                     .context("On Block subscription")?;
+
+                self.sender_channel
+                    .send(new_block.clone())
+                    .context("Sending new block through channel")?;
             } else if is_reorg {
                 info!(
                     "[subscribe_blocks] Processing block {} ({}): fixing local reorg",

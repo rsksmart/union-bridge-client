@@ -145,7 +145,7 @@ impl<'a> MockRskProviderHandler<'a> {
                     // if a shutdown height is set, the provider will start shutting down at that height
                     if let Some(shutdown_height) = simul_shutdown_height {
                         if height == shutdown_height {
-                            shutting_down.set(true);
+                            shutting_down.set();
                             info!("Shutdown initiated at block height {}", height);
                         }
                     }
@@ -297,7 +297,7 @@ fn provide_block(
     if *height <= block_height_subscription_max {
         block
     } else {
-        shutting_down.set(true);
+        shutting_down.set();
         block
     }
 }
@@ -359,7 +359,7 @@ fn generate_next_rsk_log(
     if let Some(log_info) = tuples.pop_front() {
         let log = log_generator.generate_log(event_signature, log_info);
         if tuples.is_empty() {
-            shutting_down.set(true);
+            shutting_down.set();
         }
         Ok(log)
     } else {
