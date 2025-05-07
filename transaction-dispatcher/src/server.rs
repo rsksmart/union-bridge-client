@@ -1,5 +1,5 @@
 use crate::{
-    rsk_gateway::{PegManagerErrors, RskContractsGateway, RskContractsGatewayApi},
+    rsk_gateway::{DomainErrors, RskContractsGateway, RskContractsGatewayApi},
     types::{PegInAddressInput, RegisterPegInInput, RegisterPegOutInput},
 };
 use alloy_provider::Provider;
@@ -94,31 +94,32 @@ impl Server {
     }
 }
 
-impl IntoResponse for PegManagerErrors {
+impl IntoResponse for DomainErrors {
     fn into_response(self) -> Response {
         let (status, message) = match self {
             // bad request
-            PegManagerErrors::InvalidAddress(msg)
-            | PegManagerErrors::InvalidPublicKey(msg)
-            | PegManagerErrors::InvalidValue(msg)
-            | PegManagerErrors::InvalidBtcTxSpvProof(msg) => (StatusCode::BAD_REQUEST, msg),
+            DomainErrors::InvalidAddress(msg)
+            | DomainErrors::InvalidPublicKey(msg)
+            | DomainErrors::InvalidValue(msg)
+            | DomainErrors::InvalidBtcTxSpvProof(msg) => (StatusCode::BAD_REQUEST, msg),
 
             // not found
-            PegManagerErrors::UnregisteredRequest(msg)
-            | PegManagerErrors::PacketOutOfBound(msg)
-            | PegManagerErrors::StreamNotFoundByDenomination(msg) => (StatusCode::NOT_FOUND, msg),
+            DomainErrors::UnregisteredRequest(msg)
+            | DomainErrors::PacketOutOfBound(msg)
+            | DomainErrors::StreamNotFoundByDenomination(msg) => (StatusCode::NOT_FOUND, msg),
 
             // forbidden
-            PegManagerErrors::AlreadyRegisteredAcceptPegIn(msg)
-            | PegManagerErrors::AlreadyRegisteredPegIn(msg)
-            | PegManagerErrors::AlreadyRegisteredPegInRequest(msg) => (StatusCode::FORBIDDEN, msg),
+            DomainErrors::AlreadyRegisteredAcceptPegIn(msg)
+            | DomainErrors::AlreadyRegisteredPegIn(msg)
+            | DomainErrors::AlreadyRegisteredPegInRequest(msg) => (StatusCode::FORBIDDEN, msg),
 
             // conflict
-            PegManagerErrors::NoRevertError(msg)
-            | PegManagerErrors::NotEnoughConfirmations(msg) => (StatusCode::CONFLICT, msg),
+            DomainErrors::NoRevertError(msg) | DomainErrors::NotEnoughConfirmations(msg) => {
+                (StatusCode::CONFLICT, msg)
+            }
 
             // unauthorized
-            PegManagerErrors::NotOwner(msg) => (StatusCode::UNAUTHORIZED, msg),
+            DomainErrors::NotOwner(msg) => (StatusCode::UNAUTHORIZED, msg),
 
             // unhandled => internal server error
             _ => (

@@ -1,6 +1,6 @@
 use crate::{
     contracts::peg_manager::PegManagerContractApi,
-    rsk_gateway::PegManagerErrors,
+    rsk_gateway::DomainErrors,
     types::{RegisterPegOutInput, RegisterPegOutOutput},
 };
 use alloy_primitives::FixedBytes;
@@ -23,14 +23,14 @@ impl<C: PegManagerContractApi> RegisterPegOutRequestInvoke<C> {
     pub async fn run(
         &self,
         input: RegisterPegOutInput,
-    ) -> Result<RegisterPegOutOutput, PegManagerErrors> {
+    ) -> Result<RegisterPegOutOutput, DomainErrors> {
         info!("Init RegisterPegOut for: {:?}", input);
 
         let msg_value = input.amount_in_wei;
 
         let usr_pub_key: FixedBytes<33> =
             input.usr_pub_key.parse::<FixedBytes<33>>().map_err(|e| {
-                PegManagerErrors::InvalidPublicKey(format!("Failed to parse usr_pub_key: {}", e))
+                DomainErrors::InvalidPublicKey(format!("Failed to parse usr_pub_key: {}", e))
             })?;
 
         let batch_flag = input.batch_flag;
@@ -78,7 +78,7 @@ mod tests {
             },
             peg_manager::MockPegManagerContractApi,
         },
-        rsk_gateway::PegManagerErrors,
+        rsk_gateway::DomainErrors,
     };
     use alloy_primitives::{Bloom, TxHash};
     use alloy_rpc_types::{Log, Receipt, ReceiptEnvelope, ReceiptWithBloom, TransactionReceipt};
@@ -157,7 +157,7 @@ mod tests {
 
         let err = invoke.run(bad_input).await.err().unwrap();
         match err {
-            PegManagerErrors::InvalidPublicKey(msg) => {
+            DomainErrors::InvalidPublicKey(msg) => {
                 assert!(msg.contains("Failed to parse usr_pub_key"))
             }
             _ => panic!("expected InvalidPublicKey, got {:?}", err),

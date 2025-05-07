@@ -8,8 +8,8 @@ alloy-primitives = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 
-alloy-signer = "0.12.5"
-alloy-signer-local = { version = "0.12.5", features = ["keystore"] }
+alloy-signer ={ workspace = true }
+alloy-signer-local = { workspace = true, features = ["keystore"] }
 rand = "0.8.5"
 
 [dev-dependencies]

@@ -129,7 +129,7 @@ impl RskProvider for AlloyProvider {
         let subscription_request = self.inner.subscribe_blocks();
         let subscription = self
             .rt_sync
-            .run(subscription_request)
+            .run(subscription_request.into_future())
             .context("Failed to subscribe to blocks")?;
         self.monitor_shutdown(*subscription.local_id(), "Blocks".to_string());
         Ok(AlloySubscription::<Header>::new(subscription, self.clone()))
@@ -148,7 +148,7 @@ impl RskProvider for AlloyProvider {
         let subscription_request = self.inner.subscribe_logs(&filter);
         let subscription = self
             .rt_sync
-            .run(subscription_request)
+            .run(subscription_request.into_future())
             .context("Failed to subscribe to logs")?;
 
         self.monitor_shutdown(*subscription.local_id(), "Logs".to_string());

@@ -1,3 +1,4 @@
+use crate::rsk_gateway::DomainErrors;
 use alloy_contract::SolCallBuilder;
 use alloy_primitives::{hex::FromHexError, ruint::ParseError};
 use alloy_provider::Provider;
@@ -5,6 +6,7 @@ use alloy_rpc_types::TransactionReceipt;
 use alloy_sol_types::SolCall;
 use log::{debug, error, warn};
 use thiserror::Error;
+use union_contracts::bindings::pegmanager::PegManager::PegManagerErrors;
 
 #[derive(Debug, Error)]
 pub(crate) enum ParseFieldError {
@@ -65,9 +67,68 @@ fn likely_oog(receipt: &TransactionReceipt, gas_limit: u64) -> bool {
     !receipt.status() && receipt.gas_used >= gas_limit.saturating_sub(oog_margin)
 }
 
+impl From<alloy_contract::Error> for DomainErrors {
+    fn from(err: alloy_contract::Error) -> Self {
+        let decoded_err = err.as_decoded_interface_error::<PegManagerErrors>();
+        match decoded_err {
+            Some(e) => match e {
+                PegManagerErrors::AlreadyRegisteredAcceptPegIn(e) => {
+                    DomainErrors::AlreadyRegisteredAcceptPegIn(format!("{:?}", e))
+                }
+                PegManagerErrors::AlreadyRegisteredPegIn(e) => {
+                    DomainErrors::AlreadyRegisteredPegIn(format!("{:?}", e))
+                }
+                PegManagerErrors::AlreadyRegisteredPegInRequest(e) => {
+                    DomainErrors::AlreadyRegisteredPegInRequest(format!("{:?}", e))
+                }
+                PegManagerErrors::IncorrectInputsNumber(e) => {
+                    DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
+                }
+                PegManagerErrors::IncorrectOutputsNumber(e) => {
+                    DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
+                }
+                PegManagerErrors::InvalidBtcTxVersion(e) => {
+                    DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
+                }
+                PegManagerErrors::InvalidLocktime(e) => {
+                    DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
+                }
+                PegManagerErrors::InvalidSequence(e) => {
+                    DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
+                }
+                PegManagerErrors::InvalidVout(e) => {
+                    DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
+                }
+                PegManagerErrors::NotEnoughConfirmations(e) => {
+                    DomainErrors::NotEnoughConfirmations(format!("{:?}", e))
+                }
+                PegManagerErrors::PacketOutOfBound(e) => {
+                    DomainErrors::PacketOutOfBound(format!("{:?}", e))
+                }
+                PegManagerErrors::StreamNotFoundByDenomination(e) => {
+                    DomainErrors::StreamNotFoundByDenomination(format!("{:?}", e))
+                }
+                PegManagerErrors::UnregisteredPegInRequest(e) => {
+                    DomainErrors::UnregisteredRequest(format!("{:?}", e))
+                }
+                PegManagerErrors::InvalidPubKeyLength(e) => {
+                    DomainErrors::InvalidPublicKey(format!("{:?}", e))
+                }
+                PegManagerErrors::PegoutRequestAmountExceedsUint64Limit(e) => {
+                    DomainErrors::PegoutRequestAmountExceedsUint64Limit(format!("{:?}", e))
+                }
+                _ => DomainErrors::UnhandledContractError(format!("{:?}", e)),
+            },
+            None => DomainErrors::NoRevertError(format!("{:?}", err)),
+        }
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
+    use alloy_contract::Error::TransportError;
     use alloy_json_rpc::ErrorPayload;
+    use alloy_json_rpc::RpcError::ErrorResp;
     use alloy_sol_types::{SolInterface, SolValue};
 
     pub(crate) const CONTRACT_ERROR_TEMPLATE: &str =
@@ -77,16 +138,19 @@ pub(crate) mod tests {
     pub(crate) const NO_REVERT_ERROR_TEMPLATE: &str =
         r#"{"code":3,"message":"<to_replace_message>:","data":"<to_replace_data>"}"#;
 
-    pub(crate) fn generate_contract_revert_error<T: SolInterface>(input: T) -> ErrorPayload {
+    pub(crate) fn generate_contract_revert_error<T: SolInterface>(
+        input: T,
+    ) -> alloy_contract::Error {
         let error = CONTRACT_ERROR_TEMPLATE.replace(
             "<to_replace>",
             &format!("0x{}", hex::encode(input.abi_encode())),
         );
-        serde_json::from_str::<ErrorPayload>(&error).unwrap()
+        let payload = serde_json::from_str::<ErrorPayload>(&error).unwrap();
+        TransportError(ErrorResp(payload)).into()
     }
 
     #[allow(dead_code)]
-    pub(crate) fn generate_no_revert_error(msg: &str, data: &str) -> ErrorPayload {
+    pub(crate) fn generate_no_revert_error(msg: &str, data: &str) -> alloy_contract::Error {
         let error = CONTRACT_ERROR_TEMPLATE
             .replace(
                 "<to_replace_message>",
@@ -96,6 +160,7 @@ pub(crate) mod tests {
                 "<to_replace_data>",
                 &format!("0x{}", hex::encode(data.abi_encode())),
             );
-        serde_json::from_str::<ErrorPayload>(&error).unwrap()
+        let payload = serde_json::from_str::<ErrorPayload>(&error).unwrap();
+        TransportError(ErrorResp(payload)).into()
     }
 }

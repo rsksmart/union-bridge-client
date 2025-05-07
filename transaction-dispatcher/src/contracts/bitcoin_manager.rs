@@ -1,15 +1,9 @@
-use crate::contracts::bitcoin_manager::SolBitcoinManager::SolBitcoinManagerErrors;
 pub(super) use crate::contracts::common::ParseFieldError;
-use crate::contracts::peg_manager::SolPegManager::{BtcTransaction, BtcTxIn, BtcTxOut};
-use crate::format_sol_err;
-use crate::rsk_gateway::PegManagerErrors;
 use crate::types::{BitcoinTransaction, BitcoinTransactionIn, BitcoinTransactionOut};
-use SolBitcoinManagerErrors::*;
 use alloy_primitives::Bytes;
 use log::error;
 use std::str::FromStr;
-
-include!(concat!(env!("OUT_DIR"), "/abi.rs"));
+use union_contracts::bindings::pegmanager::PegManager::{BtcTransaction, BtcTxIn, BtcTxOut};
 
 impl TryFrom<BitcoinTransactionIn> for BtcTxIn {
     type Error = ParseFieldError;
@@ -69,169 +63,93 @@ impl TryFrom<BitcoinTransaction> for BtcTransaction {
     }
 }
 
-impl From<SolBitcoinManagerErrors> for PegManagerErrors {
-    fn from(err: SolBitcoinManagerErrors) -> Self {
-        match err {
-            // Mapped explicitly to specific PegManagerErrors variants
-            IncorrectOutputScript(e) => {
-                PegManagerErrors::InvalidBtcTxSpvProof(format_sol_err!(e, e.actual, e.expected))
-            }
-            IncorrectlyFormedOpReturn(e) => {
-                PegManagerErrors::InvalidBtcTxSpvProof(format_sol_err!(e, e.index))
-            }
-            InvalidAddress(e) => PegManagerErrors::InvalidAddress(format_sol_err!(e, e._address)),
-            InvalidOpReturnLength(e) => {
-                PegManagerErrors::InvalidBtcTxSpvProof(format_sol_err!(e, e.actual, e.expected))
-            }
-            InvalidPublicKey(e) => {
-                PegManagerErrors::InvalidPublicKey(format_sol_err!(e, e.publicKey))
-            }
-            InvalidValue(e) => {
-                PegManagerErrors::InvalidValue(format_sol_err!(e, e.expected, e._value))
-            }
-            InvalidOutputAmount(e) => {
-                PegManagerErrors::InvalidBtcTxSpvProof(format_sol_err!(e, e.expected, e.actual))
-            }
-
-            // Defaulted to UnhandledContractError
-            AddressEmptyCode(e) => {
-                PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.target))
-            }
-            FailedCall(e) => PegManagerErrors::UnhandledContractError(format_sol_err!(e)),
-            InvalidInitialization(e) => {
-                PegManagerErrors::UnhandledContractError(format_sol_err!(e))
-            }
-            NotInitializing(e) => PegManagerErrors::UnhandledContractError(format_sol_err!(e)),
-            NumberTooLarge(e) => {
-                PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.actual, e.max))
-            }
-            OwnableInvalidOwner(e) => {
-                PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.owner))
-            }
-            OwnableUnauthorizedAccount(e) => {
-                PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.account))
-            }
-            UUPSUnauthorizedCallContext(e) => {
-                PegManagerErrors::UnhandledContractError(format_sol_err!(e))
-            }
-            UUPSUnsupportedProxiableUUID(e) => {
-                PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.slot))
-            }
-            indexOverflow(e) => PegManagerErrors::UnhandledContractError(format_sol_err!(
-                e, e.length, e.from, e.upTo
-            )),
-            ERC1967InvalidImplementation(e) => {
-                PegManagerErrors::UnhandledContractError(format_sol_err!(e, e.implementation))
-            }
-            ERC1967NonPayable(e) => PegManagerErrors::UnhandledContractError(format_sol_err!(e)),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::contracts::bitcoin_manager::SolBitcoinManager::{
-        IncorrectOutputScript, IncorrectlyFormedOpReturn, InvalidAddress, InvalidOpReturnLength,
-        InvalidOutputAmount, InvalidPublicKey, InvalidValue, NotInitializing,
-        SolBitcoinManagerErrors,
-    };
     use crate::contracts::common::tests::generate_contract_revert_error;
-    use crate::rsk_gateway::PegManagerErrors;
-    use alloy_json_rpc::ErrorPayload;
+    use crate::rsk_gateway::DomainErrors;
     use alloy_primitives::FixedBytes;
-    use alloy_sol_types::SolInterface;
+    use union_contracts::bindings::bitcoinmanager::BitcoinManager::{
+        BitcoinManagerErrors, IncorrectOutputScript, IncorrectlyFormedOpReturn, InvalidAddress,
+        InvalidOpReturnLength, InvalidOutputAmount, InvalidPublicKey, InvalidValue,
+        NotInitializing,
+    };
 
     #[test]
     fn test_incorrect_output_number() {
-        let expected_err = SolBitcoinManagerErrors::IncorrectOutputScript(IncorrectOutputScript {
+        let err_data = BitcoinManagerErrors::IncorrectOutputScript(IncorrectOutputScript {
             actual: alloy_primitives::Bytes::from(vec![0x01, 0x2]),
             expected: alloy_primitives::Bytes::from(vec![0x02, 0x3]),
         });
 
-        let expected_err_payload = generate_contract_revert_error(expected_err);
-        let result = decode_contract_error(&expected_err_payload);
-
-        matches!(result, PegManagerErrors::InvalidBtcTxSpvProof(_));
+        let result = generate_contract_revert_error(err_data);
+        matches!(result.into(), DomainErrors::InvalidBtcTxSpvProof(_));
     }
 
     #[test]
     fn test_incorrectly_formed_op_return() {
-        let expected_err =
-            SolBitcoinManagerErrors::IncorrectlyFormedOpReturn(IncorrectlyFormedOpReturn {
-                index: alloy_primitives::Uint::from(1),
-            });
+        let err_data = BitcoinManagerErrors::IncorrectlyFormedOpReturn(IncorrectlyFormedOpReturn {
+            index: alloy_primitives::Uint::from(1),
+        });
 
-        let expected_err_payload = generate_contract_revert_error(expected_err);
-        let result = decode_contract_error(&expected_err_payload);
-
-        matches!(result, PegManagerErrors::InvalidBtcTxSpvProof(_));
+        let result = generate_contract_revert_error(err_data);
+        matches!(result.into(), DomainErrors::InvalidBtcTxSpvProof(_));
     }
 
     #[test]
     fn test_invalid_op_return_length() {
-        let expected_err = SolBitcoinManagerErrors::InvalidOpReturnLength(InvalidOpReturnLength {
+        let err_data = BitcoinManagerErrors::InvalidOpReturnLength(InvalidOpReturnLength {
             actual: alloy_primitives::Uint::from(1),
             expected: alloy_primitives::Uint::from(2),
         });
 
-        let expected_err_payload = generate_contract_revert_error(expected_err);
-        let result = decode_contract_error(&expected_err_payload);
-
-        matches!(result, PegManagerErrors::InvalidBtcTxSpvProof(_));
+        let result = generate_contract_revert_error(err_data);
+        matches!(result.into(), DomainErrors::InvalidBtcTxSpvProof(_));
     }
 
     #[test]
     fn test_invalid_address() {
-        let expected_err = SolBitcoinManagerErrors::InvalidAddress(InvalidAddress {
+        let err_data = BitcoinManagerErrors::InvalidAddress(InvalidAddress {
             _address: "0x00112233445566778899aabbccddeeff00112233"
                 .parse()
                 .expect("Failed to parse address"),
         });
 
-        let expected_err_payload = generate_contract_revert_error(expected_err);
-        let result = decode_contract_error(&expected_err_payload);
-
-        matches!(result, PegManagerErrors::InvalidAddress(_));
+        let result = generate_contract_revert_error(err_data);
+        matches!(result.into(), DomainErrors::InvalidAddress(_));
     }
 
     #[test]
     fn test_invalid_public_key() {
-        let expected_err = SolBitcoinManagerErrors::InvalidPublicKey(InvalidPublicKey {
+        let err_data = BitcoinManagerErrors::InvalidPublicKey(InvalidPublicKey {
             publicKey: "0xc72a9f6fc8e57f1de528a48b6c4ad7a6db30b24a7bbf8cdd74b0a3b248b6f7f1"
                 .parse::<FixedBytes<32>>()
                 .unwrap(),
         });
 
-        let expected_err_payload = generate_contract_revert_error(expected_err);
-        let result = decode_contract_error(&expected_err_payload);
-
-        matches!(result, PegManagerErrors::InvalidPublicKey(_));
+        let result = generate_contract_revert_error(err_data);
+        matches!(result.into(), DomainErrors::InvalidPublicKey(_));
     }
 
     #[test]
     fn test_invalid_value() {
-        let expected_err = SolBitcoinManagerErrors::InvalidValue(InvalidValue {
+        let err_data = BitcoinManagerErrors::InvalidValue(InvalidValue {
             expected: 1,
             _value: 2,
         });
 
-        let expected_err_payload = generate_contract_revert_error(expected_err);
-        let result = decode_contract_error(&expected_err_payload);
-
-        matches!(result, PegManagerErrors::InvalidValue(_));
+        let result = generate_contract_revert_error(err_data);
+        matches!(result.into(), DomainErrors::InvalidValue(_));
     }
 
     #[test]
     fn test_invalid_output_amount() {
-        let expected_err = SolBitcoinManagerErrors::InvalidOutputAmount(InvalidOutputAmount {
+        let err_data = BitcoinManagerErrors::InvalidOutputAmount(InvalidOutputAmount {
             expected: 1,
             actual: 2,
         });
 
-        let expected_err_payload = generate_contract_revert_error(expected_err);
-        let result = decode_contract_error(&expected_err_payload);
-
-        matches!(result, PegManagerErrors::InvalidBtcTxSpvProof(_));
+        let result = generate_contract_revert_error(err_data);
+        matches!(result.into(), DomainErrors::InvalidBtcTxSpvProof(_));
     }
 
     // check one of the errors to ensure the mapping to UnhandledError keeps working
@@ -239,30 +157,9 @@ mod tests {
     // all the ones that have defined mappings must be tested
     #[test]
     fn test_unhandled() {
-        let expected_err = SolBitcoinManagerErrors::NotInitializing(NotInitializing {});
+        let err_data = BitcoinManagerErrors::NotInitializing(NotInitializing {});
 
-        let expected_err_payload = generate_contract_revert_error(expected_err);
-        let result = decode_contract_error(&expected_err_payload);
-
-        matches!(result, PegManagerErrors::UnhandledContractError(_));
-    }
-
-    fn decode_contract_error(error_payload: &ErrorPayload) -> PegManagerErrors {
-        let revert_data = if let Some(data) = error_payload.as_revert_data() {
-            data
-        } else {
-            return PegManagerErrors::NoRevertError(format!(
-                "Not a BitcoinManagerError: {:?}",
-                error_payload
-            ));
-        };
-
-        match SolBitcoinManagerErrors::abi_decode(&revert_data, true) {
-            Ok(decoded_error) => decoded_error.into(),
-            Err(_) => PegManagerErrors::UnknownContractError(format!(
-                "Unknown BitcoinManagerError: {:?}",
-                error_payload
-            )),
-        }
+        let result = generate_contract_revert_error(err_data);
+        matches!(result.into(), DomainErrors::UnhandledContractError(_));
     }
 }
