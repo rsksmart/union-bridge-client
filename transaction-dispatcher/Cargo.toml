@@ -25,7 +25,7 @@ hex = { workspace = true }
 env_logger = { workspace = true }
 axum = "0.8.1"
 tower-http = { version = "0.6.1", features = ["timeout", "trace"] }
-union-contracts = { package = "union-bridge-contracts", git = "ssh://git@github.com/FairgateLabs/bitvmx-union-bridge-contracts.git", branch = "main" } # TODO(iago) fix to a tag when existing
+union-contracts = { package = "union-bridge-contracts", git = "ssh://git@github.com/FairgateLabs/bitvmx-union-bridge-contracts.git", tag = "v0.0.1-alpha.1" }
 
 [dev-dependencies]
 tempfile = { workspace = true }
