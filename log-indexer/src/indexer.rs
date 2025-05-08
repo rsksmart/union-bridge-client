@@ -8,10 +8,12 @@ use common::{
 };
 use log::{debug, error, info, warn};
 use std::collections::HashMap;
+use std::sync::mpsc;
 
 pub struct LogIndexer<P: RskProvider, S: LogStore> {
     store: S,
     rsk_provider: P,
+    notifier_channel: Option<mpsc::Sender<RskLog>>,
     initial_block_number: BlockNumber,
     sync_batch_size: usize,
     sync_finality_depth: usize,
@@ -20,6 +22,34 @@ pub struct LogIndexer<P: RskProvider, S: LogStore> {
 }
 
 impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
+    pub fn new_with_notifier(
+        store: S,
+        rsk_provider: P,
+        notifier_channel: mpsc::Sender<RskLog>,
+        initial_block_hash: BlockHash,
+        sync_batch_size: usize,
+        sync_finality_depth: usize,
+        managed_contracts: HashMap<Address, ContractInfo>,
+        shutdown_flag: ShutdownFlag,
+    ) -> Result<Self> {
+        let initial_block_number = rsk_provider
+            .get_block_by_hash(initial_block_hash)
+            .context("Failed to get initial block by hash")?
+            .context("Initial block not found on provider")?
+            .number();
+
+        Ok(Self {
+            store,
+            rsk_provider,
+            notifier_channel: Some(notifier_channel),
+            initial_block_number,
+            sync_batch_size,
+            sync_finality_depth,
+            managed_contracts,
+            shutdown_flag,
+        })
+    }
+
     pub fn new(
         store: S,
         rsk_provider: P,
@@ -38,6 +68,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         Ok(Self {
             store,
             rsk_provider,
+            notifier_channel: None,
             initial_block_number,
             sync_batch_size,
             sync_finality_depth,
@@ -217,6 +248,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         Ok(())
     }
 
+    // TODO(iago) future improvement: think in a way to just monitor logs when requested, having 2 modes: defined contracts + on demand
     fn listen_logs(&self, rsk_log_subscription: &mut impl RskSubscription<RskLog>) -> Result<()> {
         while self.is_running() {
             let new_log = match rsk_log_subscription.next() {
@@ -287,6 +319,12 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
             self.store
                 .set_sync_checkpoint(&new_log)
                 .context("Setting new log checkpoint")?;
+
+            if let Some(channel) = &self.notifier_channel {
+                channel
+                    .send(new_log)
+                    .context("Sending new block through channel")?;
+            }
 
             // TODO(Jira) send via broker after some configurable finality is achieved and taking into account `removed` field https://rsklabs.atlassian.net/browse/UB-46
 
