@@ -1,22 +1,81 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::fs;
 
 use crate::utils::common::{
-    RunnerPaths, get_block_hash, get_latest_block_hex, indexer_args, indexer_consts,
-    update_file_text, update_initial_block_hash,
+    config_consts, get_block_hash, get_latest_block_hex, update_file_text,
+    update_initial_block_hash,
 };
 
-pub fn set_paths(crate_name: String, args: &indexer_args::Args) -> Result<RunnerPaths> {
+pub mod indexer_runner_args {
+    use clap::{ArgAction, Parser};
+    #[derive(Parser, Debug)]
+    #[command(author, version, about)]
+    pub struct Args {
+        // Use block finality (number).
+        #[arg(short = 'f')]
+        pub block_finality: Option<u64>,
+
+        // Use a block height (number); cannot provide both -f and -b.
+        #[arg(short = 'b')]
+        pub block_height: Option<u64>,
+
+        // Cache size override (e.g. 500)
+        #[arg(short = 'a')]
+        pub cache_size: Option<u64>,
+
+        // Whether to copy from the default config (true) or expect an existing config (false)
+        #[arg(short = 'c', action = ArgAction::SetTrue)]
+        pub from_original_config: bool,
+
+        // Environment: "dev" or "qa" (default: qa).
+        #[arg(short = 'e', default_value = "qa")]
+        pub env: String,
+
+        // Mandatory tag (e.g. "happy_path").
+        #[arg(short = 't')]
+        pub tag: String,
+    }
+}
+
+pub fn check_constraints(args: &indexer_runner_args::Args) -> Option<Result<(), anyhow::Error>> {
+    if args.tag.is_empty() {
+        return Some(Err(anyhow!("Error: -t <tag> is mandatory.")));
+    }
+    if args.block_finality.is_some() && args.block_height.is_some() {
+        return Some(Err(anyhow!(
+            "Cannot provide both block finality (-f) and block height (-b)."
+        )));
+    }
+    None
+}
+
+#[derive(Clone)]
+pub struct IndexerRunnerPaths {
+    pub source_storage_folder: String,
+    pub source_config_file: String,
+    pub source_log_folder: &'static str,
+    pub source_log_config_file: String,
+    pub target_storage_folder: String,
+    pub target_config_folder: String,
+    pub target_config_file: String,
+    pub target_log_folder: String,
+    pub target_log_config_file: String,
+}
+
+pub fn set_paths(
+    crate_name: String,
+    args: &indexer_runner_args::Args,
+) -> Result<IndexerRunnerPaths> {
     let source_config_path = if args.env == "dev" {
         format!("qa-tools/config/dev/{}", crate_name)
     } else {
         format!("qa-tools/config/qa/{}", crate_name)
     };
-    let source_storage_folder = format!("{}/default/storage", indexer_consts::ROOT_DIRECTORY);
+    let source_storage_folder = format!("{}/default/storage", config_consts::ROOT_DIRECTORY);
     let source_config_file = format!("{}/base_config.yaml", source_config_path);
     let source_log_folder = "{DESTINATION}/{CRATE_NAME}";
     let source_log_config_file = format!("{}/log4rs.yaml", source_config_path);
-    let target_folder = format!("{}/{}", indexer_consts::ROOT_DIRECTORY, args.tag);
+    let target_folder = format!("{}/{}", config_consts::ROOT_DIRECTORY, args.tag);
     fs::create_dir_all(&target_folder)
         .with_context(|| format!("Creating target folder: {}", target_folder))?;
     let target_storage_folder = format!("{}/storage", target_folder);
@@ -24,7 +83,7 @@ pub fn set_paths(crate_name: String, args: &indexer_args::Args) -> Result<Runner
     let target_config_file = format!("{}/common.yaml", target_config_folder);
     let target_log_folder = target_folder.clone();
     let target_log_config_file = format!("{}/log4rs.yaml", target_folder);
-    Ok(RunnerPaths {
+    Ok(IndexerRunnerPaths {
         source_storage_folder,
         source_config_file,
         source_log_folder,
@@ -37,57 +96,13 @@ pub fn set_paths(crate_name: String, args: &indexer_args::Args) -> Result<Runner
     })
 }
 
-pub fn copy_log4rs_file(
-    source_log_folder: &str,
-    source_log_config_file: String,
-    target_log_folder: String,
-    target_log_config_file: &String,
-) -> Result<(), anyhow::Error> {
-    fs::create_dir_all(&target_log_folder)
-        .with_context(|| format!("Creating target log folder: {}", target_log_folder))?;
-    fs::copy(source_log_config_file, target_log_config_file)
-        .with_context(|| "Copying log config file")?;
-    update_file_text(
-        target_log_config_file,
-        source_log_folder,
-        &target_log_folder,
-    )?;
-    Ok(())
-}
-
-pub fn copy_config_file(
-    args: &indexer_args::Args,
-    source_config_file: String,
-    target_config_folder: &String,
-    target_config_file: &String,
-) -> Result<(), anyhow::Error> {
-    Ok(if args.from_original_config.unwrap_or(true) {
-        fs::create_dir_all(target_config_folder)
-            .with_context(|| format!("Creating target config folder: {}", target_config_folder))?;
-        fs::copy(&source_config_file, target_config_file).with_context(|| {
-            format!(
-                "Copying config from {} to {}",
-                source_config_file, target_config_file
-            )
-        })?;
-        println!(
-            "Copied config from {} to {}",
-            source_config_file, target_config_file
-        );
-    } else {
-        println!(
-            "Not copying config; expecting existing config file at {}",
-            target_config_file
-        );
-    })
-}
-
 pub fn update_initial_block_hash_in_config(
-    args: &indexer_args::Args,
+    args: &indexer_runner_args::Args,
     target_config_file: &String,
+    endpoint_url: &str,
 ) -> Result<(), anyhow::Error> {
     Ok(if let Some(finality) = args.block_finality {
-        let latest_block_hex = get_latest_block_hex(indexer_consts::WEBSOCKET_ENDPOINT)?;
+        let latest_block_hex = get_latest_block_hex(endpoint_url)?;
         println!("Latest block (hex): {}", latest_block_hex);
         let latest_block_dec = u64::from_str_radix(&latest_block_hex.trim_start_matches("0x"), 16)
             .with_context(|| "Parsing latest block hex")?;
@@ -96,7 +111,7 @@ pub fn update_initial_block_hash_in_config(
         println!("Target block (decimal): {}", target_block_dec);
         let target_block_hex = format!("0x{:x}", target_block_dec);
         println!("Target block (hex): {}", target_block_hex);
-        let block_hash = get_block_hash(indexer_consts::WEBSOCKET_ENDPOINT, &target_block_hex)?;
+        let block_hash = get_block_hash(endpoint_url, &target_block_hex)?;
         println!(
             "Retrieved block hash using finality {}: {}",
             finality, block_hash
@@ -108,7 +123,7 @@ pub fn update_initial_block_hash_in_config(
             "Using block height {} converted to hex: {}",
             height, target_block_hex
         );
-        let block_hash = get_block_hash(indexer_consts::WEBSOCKET_ENDPOINT, &target_block_hex)?;
+        let block_hash = get_block_hash(endpoint_url, &target_block_hex)?;
         println!("Retrieved block hash for height {}: {}", height, block_hash);
         update_initial_block_hash(target_config_file, &block_hash)?;
     } else {
@@ -119,7 +134,7 @@ pub fn update_initial_block_hash_in_config(
 }
 
 pub fn update_cache_size_in_config(
-    args: &indexer_args::Args,
+    args: &indexer_runner_args::Args,
     target_config_file: &String,
 ) -> Result<(), anyhow::Error> {
     Ok(if let Some(cache) = args.cache_size {

@@ -1,18 +1,17 @@
-// src/block-indexer-runner.rs
 use anyhow::{Context, Result};
 use block_indexer::{config::Config, indexer::BlockIndexer, store::CachedBlockStore};
 use clap::Parser;
 use common::alloy_rsk_provider::rpc::AlloyProvider;
 use common::{rsk_indexer::RskIndexer, shutdown_flag::ShutdownFlag, types::BlockHash};
-use qa_tools::utils::common::{check_constraints, indexer_args};
+use qa_tools::utils::common::{copy_config_file, copy_log4rs_file, get_endpoint_url};
 
-use qa_tools::utils::runner::{
-    copy_config_file, copy_log4rs_file, set_paths, update_cache_size_in_config,
+use qa_tools::utils::indexer::{
+    check_constraints, indexer_runner_args, set_paths, update_cache_size_in_config,
     update_initial_block_hash_in_config, update_storage_path_in_config,
 };
 
 fn main() -> Result<()> {
-    let args = indexer_args::Args::parse();
+    let args = indexer_runner_args::Args::parse();
     if let Some(err) = check_constraints(&args) {
         return err;
     }
@@ -24,12 +23,13 @@ fn main() -> Result<()> {
         &paths.target_log_config_file,
     )?;
     copy_config_file(
-        &args,
+        args.from_original_config,
         paths.source_config_file,
         &paths.target_config_folder,
         &paths.target_config_file,
     )?;
-    update_initial_block_hash_in_config(&args, &paths.target_config_file)?;
+    let endpoint_url = get_endpoint_url(&paths.target_config_file)?;
+    update_initial_block_hash_in_config(&args, &paths.target_config_file, &endpoint_url)?;
     update_cache_size_in_config(&args, &paths.target_config_file)?;
     update_storage_path_in_config(
         paths.source_storage_folder,

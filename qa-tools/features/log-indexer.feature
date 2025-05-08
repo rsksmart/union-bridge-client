@@ -16,10 +16,10 @@ And the logs stored should belong to blocks with height greater than B
 And the logs stored should belong to blocks with height greater than L (L = node best block height - 10)
 And the logs stored should appear in the order they were emitted without any missing events within that block range
 
-# tmux new-session -d -s happy-path-log-indxr 'cargo run --bin log-indexer-runner -- -f 100 -t happy-path-log-indxr'
+# tmux new-session -d -s happy-path-log-indxr 'cargo run --bin log_indexer_runner -- -f 100 -t happy-path-log-indxr'
 # tmux attach-session -t happy-path-log-indxr
 # detach: CTRL+b, d
 # tail  -1000f /tmp/monitor-executions/happy-path-log-indxr/app.log
 # wait for a while... -> shut down
-# cargo run --bin log-indexer-validator -- -t happy-path-log-indxr
+# cargo run --bin log_indexer_validator -- -t happy-path-log-indxr
 # cargo run --bin archiver -- -t happy-path-log-indxr

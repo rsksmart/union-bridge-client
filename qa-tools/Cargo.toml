@@ -5,20 +5,20 @@ edition = "2024"
 resolver = "2"
 
 [[bin]]
-name = "block-indexer-runner"
-path = "src/block-indexer-runner.rs"
+name = "block_indexer_runner"
+path = "src/block_indexer_runner.rs"
 
 [[bin]]
-name = "block-indexer-validator"
-path = "src/block-indexer-validator.rs"
+name = "block_indexer_validator"
+path = "src/block_indexer_validator.rs"
 
 [[bin]]
-name = "log-indexer-runner"
-path = "src/log-indexer-runner.rs"
+name = "log_indexer_runner"
+path = "src/log_indexer_runner.rs"
 
 [[bin]]
-name = "log-indexer-validator"
-path = "src/log-indexer-validator.rs"
+name = "log_indexer_validator"
+path = "src/log_indexer_validator.rs"
 
 [[bin]]
 name = "archiver"
@@ -31,6 +31,7 @@ path = "src/clear.rs"
 [dependencies]
 block-indexer = { path = "../block-indexer" }
 log-indexer = { path = "../log-indexer" }
+key-manager = { path = "../key-manager" }
 common = { path = "../common" }
 
 anyhow = { workspace = true }
@@ -39,10 +40,18 @@ log = { workspace = true }
 log4rs = { workspace = true }
 serde_json = { workspace = true }
 serde = { workspace = true }
+tempfile = { workspace = true }
 regex = "1.7"
+serde_yaml = "0.9"
 tungstenite = "0.26.2"
 url = "2.3"
 chrono = "0.4.40"
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+ethers-core = "2.0.14"
+ethers-signers = "2.0.14"
+ethers-middleware = "2.0.14"
+ethers-providers = "2.0.14"
+ethers-contract = "2.0.14"
 
 [features]
 default = ["log-indexer/test-utils"]

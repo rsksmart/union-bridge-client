@@ -11,9 +11,9 @@ use common::{
     types::{BlockHash, RskBlock},
 };
 use log::{debug, info, warn};
-use qa_tools::utils::common::indexer_consts;
+use qa_tools::utils::common::config_consts;
 
-/// Runs block-indexer-validator with the provided log configuration and configuration folder.
+/// Runs block_indexer_validator with the provided log configuration and configuration folder.
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
 struct Args {
@@ -30,12 +30,12 @@ const FINALITY_FOR_CHECK: u8 = 10;
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    let target_folder = format!("{}/{}", indexer_consts::ROOT_DIRECTORY, args.tag);
+    let target_folder = format!("{}/{}", config_consts::ROOT_DIRECTORY, args.tag);
     let target_config_folder = format!("{}/config/{}", target_folder, args.env);
     let target_log_folder = target_folder.clone();
     let target_log_config_file = format!("{}/log4rs.yaml", target_folder);
     println!(
-        "Starting block-indexer-validator with log config: {} and config folder: {}",
+        "Starting block_indexer_validator with log config: {} and config folder: {}",
         target_log_config_file, target_config_folder
     );
     run_block_indexer_validator(&target_log_config_file, &target_config_folder)?;
