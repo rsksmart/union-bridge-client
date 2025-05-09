@@ -1,5 +1,5 @@
 use crate::store::BlockStore;
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{anyhow, bail, Context, Result};
 use common::rsk_indexer::RskIndexer;
 use common::rsk_provider::{RskProvider, RskSubscription, RskSubscriptionError};
 use common::shutdown_flag::ShutdownFlag;
@@ -375,17 +375,25 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
             new_block.uncles()
         );
 
-        new_block.uncles().into_iter().try_for_each(|uncle_hash| {
-            let uncle_block = self
-                .rsk_provider
-                .get_block_by_hash(uncle_hash)
-                .context("Fetching uncle block")?
-                .ok_or_else(|| anyhow!("Uncle block not found: {uncle_hash}"))?;
+        new_block
+            .uncles()
+            .into_iter()
+            .try_for_each(|uncle_hash| -> Result<()> {
+                if let Some(uncle) = self
+                    .rsk_provider
+                    .get_block_by_hash(uncle_hash)
+                    .context("Fetching uncle block")?
+                {
+                    self.store
+                        .save_block(&uncle)
+                        .context("Saving uncle block")?;
+                } else {
+                    warn!("Uncle block not found: {}", uncle_hash);
+                }
+                Ok(())
+            })?;
 
-            self.store
-                .save_block(&uncle_block)
-                .context("Saving uncle block")
-        })
+        Ok(())
     }
 }
 
