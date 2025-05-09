@@ -13,7 +13,7 @@ use std::sync::mpsc;
 pub struct LogIndexer<P: RskProvider, S: LogStore> {
     store: S,
     rsk_provider: P,
-    notifier_channel: Option<mpsc::Sender<RskLog>>,
+    new_log_sender: Option<mpsc::Sender<RskLog>>,
     initial_block_number: BlockNumber,
     sync_batch_size: usize,
     sync_finality_depth: usize,
@@ -25,7 +25,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
     pub fn new_with_notifier(
         store: S,
         rsk_provider: P,
-        notifier_channel: mpsc::Sender<RskLog>,
+        new_log_sender: mpsc::Sender<RskLog>,
         initial_block_hash: BlockHash,
         sync_batch_size: usize,
         sync_finality_depth: usize,
@@ -41,7 +41,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         Ok(Self {
             store,
             rsk_provider,
-            notifier_channel: Some(notifier_channel),
+            new_log_sender: Some(new_log_sender),
             initial_block_number,
             sync_batch_size,
             sync_finality_depth,
@@ -68,7 +68,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         Ok(Self {
             store,
             rsk_provider,
-            notifier_channel: None,
+            new_log_sender: None,
             initial_block_number,
             sync_batch_size,
             sync_finality_depth,
@@ -248,7 +248,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         Ok(())
     }
 
-    // TODO(iago) future improvement: think in a way to just monitor logs when requested, having 2 modes: defined contracts + on demand
+    // TODO(Jira-FutureImprovements) evaluate the possibility of just monitoring logs when a consumer requests, or having 2 modes: defined contracts + on demand
     fn listen_logs(&self, rsk_log_subscription: &mut impl RskSubscription<RskLog>) -> Result<()> {
         while self.is_running() {
             let new_log = match rsk_log_subscription.next() {
@@ -320,7 +320,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                 .set_sync_checkpoint(&new_log)
                 .context("Setting new log checkpoint")?;
 
-            if let Some(channel) = &self.notifier_channel {
+            if let Some(channel) = &self.new_log_sender {
                 channel
                     .send(new_log)
                     .context("Sending new block through channel")?;
@@ -401,6 +401,7 @@ mod tests {
         let indexer = LogIndexer {
             store: mock_store,
             rsk_provider: mock_provider,
+            new_log_sender: None,
             initial_block_number: BlockNumber::from(99),
             sync_batch_size: 10,
             sync_finality_depth: finality_depth as usize,
@@ -474,6 +475,7 @@ mod tests {
         let indexer = LogIndexer {
             store: mock_store,
             rsk_provider: mock_provider,
+            new_log_sender: None,
             initial_block_number: BlockNumber::from(0), // should be ignored
             sync_batch_size: 10,
             sync_finality_depth: finality_depth as usize,
@@ -523,6 +525,7 @@ mod tests {
         let indexer = LogIndexer {
             store: mock_store,
             rsk_provider: mock_provider,
+            new_log_sender: None,
             initial_block_number: BlockNumber::from(80),
             sync_batch_size: 10,
             sync_finality_depth: 0,
@@ -557,6 +560,7 @@ mod tests {
         let indexer = LogIndexer {
             store: mock_store,
             rsk_provider: mock_provider,
+            new_log_sender: None,
             initial_block_number: BlockNumber::from(80),
             sync_batch_size: 10,
             sync_finality_depth: 0,

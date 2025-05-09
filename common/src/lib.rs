@@ -1,6 +1,7 @@
 pub mod alloy_rsk_provider;
 pub mod cache;
 pub mod config;
+pub mod constants;
 pub mod errors;
 pub mod msg_broker;
 pub mod rsk_indexer;

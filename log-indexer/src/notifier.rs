@@ -1,9 +1,10 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
+use common::constants::coordinator::MONITOR_CHECK_PERIOD;
 use common::msg_broker::broker::BrokerServer;
 use common::msg_broker::types::{BrokerRequests, BrokerResponses};
 use common::shutdown_flag::ShutdownFlag;
-use common::types::RskLog;
-use log::{debug, error, info, trace, warn};
+use common::types::{Address, RskLog};
+use log::{debug, info, trace, warn};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
@@ -13,7 +14,7 @@ use std::thread;
 pub struct Notifier {
     new_log_channel: mpsc::Receiver<RskLog>,
     msg_broker: BrokerServer,
-    topics_with_consumers: HashMap<String, HashSet<u32>>,
+    contracts_with_consumers: HashMap<Address, HashSet<u32>>,
     shutdown_flag: ShutdownFlag,
 }
 
@@ -26,7 +27,7 @@ impl Notifier {
         Self {
             new_log_channel: indexer_receiver,
             msg_broker,
-            topics_with_consumers: HashMap::new(),
+            contracts_with_consumers: HashMap::new(),
             shutdown_flag,
         }
     }
@@ -40,11 +41,11 @@ impl Notifier {
             self.update_consumers()?;
 
             if let Some(log) = self.try_new_log()? {
-                // try to receive new ASAP
                 self.notify_consumers(log)?;
+                // no sleep, try to receive new ASAP
             } else {
                 trace!("No new logs yet, sleep a bit");
-                thread::sleep(std::time::Duration::from_secs(5)); // TODO(iago) config   
+                thread::sleep(MONITOR_CHECK_PERIOD);
             }
         }
 
@@ -54,21 +55,17 @@ impl Notifier {
     }
     fn update_consumers(&mut self) -> Result<()> {
         match self.msg_broker.try_recv()? {
-            Some((BrokerRequests::SubscribeLogs(topic), consumer_id)) => {
-                info!("New consumer {consumer_id} subscribing to topic {topic}");
-                self.topics_with_consumers
-                    .entry(topic)
-                    .or_insert_with(HashSet::new)
-                    .insert(consumer_id);
+            Some((BrokerRequests::SubscribeLogs(event), consumer_id)) => {
+                self.subscribe_consumer_to_contract(event, consumer_id);
             }
             Some((BrokerRequests::UnsubscribeLogs(topic), consumer_id)) => {
-                self.unsubscribe_consumer_from_topic(topic, &consumer_id);
+                self.unsubscribe_consumer_from_contract(topic, consumer_id);
             }
             Some((_, consumer_id)) => {
                 warn!(
                     "Unexpected request type on Notifier from consumer {consumer_id}, unsubscribing"
                 );
-                self.unsubscribe_consumer_from_all_topics(&consumer_id);
+                self.unsubscribe_consumer_from_all_contracts(&consumer_id);
             }
             None => {
                 trace!("No messages in Notifier's msg_broker");
@@ -78,20 +75,28 @@ impl Notifier {
         Ok(())
     }
 
-    fn unsubscribe_consumer_from_topic(&mut self, topic: String, consumer_id: &u32) {
+    fn subscribe_consumer_to_contract(&mut self, address: Address, consumer_id: u32) {
+        info!("New consumer {consumer_id} subscribing to {address}");
+        self.contracts_with_consumers
+            .entry(address)
+            .or_insert_with(HashSet::new)
+            .insert(consumer_id);
+    }
+
+    fn unsubscribe_consumer_from_contract(&mut self, address: Address, consumer_id: u32) {
         info!("Unsubscribing consumer {consumer_id}");
-        if let Entry::Occupied(mut consumer) = self.topics_with_consumers.entry(topic) {
+        if let Entry::Occupied(mut consumer) = self.contracts_with_consumers.entry(address) {
             consumer.get_mut().remove(&consumer_id);
-            let consumer_topics = consumer.get();
-            if consumer_topics.is_empty() {
+            let consumer_contracts = consumer.get();
+            if consumer_contracts.is_empty() {
                 consumer.remove_entry();
             }
         }
     }
 
-    fn unsubscribe_consumer_from_all_topics(&mut self, consumer_id: &u32) {
-        info!("Unsubscribing consumer {consumer_id} from all topics");
-        self.topics_with_consumers.retain(|_, consumers| {
+    fn unsubscribe_consumer_from_all_contracts(&mut self, consumer_id: &u32) {
+        info!("Unsubscribing consumer {consumer_id} from all contracts");
+        self.contracts_with_consumers.retain(|_, consumers| {
             consumers.remove(consumer_id);
             !consumers.is_empty()
         });
@@ -112,20 +117,20 @@ impl Notifier {
     }
 
     fn notify_consumers(&mut self, new_log: RskLog) -> Result<()> {
+        let selector = new_log.selector();
+        let address: Address = new_log.info().address();
         let response = BrokerResponses::Log(new_log);
 
-        let topic = "test_topic"; // TODO(iago): Replace with actual topic from new_log
-        let consumers_for_topic = self.topics_with_consumers.get(topic);
-        if let Some(consumers_for_topic) = consumers_for_topic {
-            for c_id in consumers_for_topic {
-                debug!("Notifying consumer {c_id} about new log {topic}");
+        if let Some(consumers_for_contract) = self.contracts_with_consumers.get(&address) {
+            for c_id in consumers_for_contract {
+                debug!("Notifying {selector} to consumer {c_id}");
 
                 self.msg_broker
                     .send(&response, *c_id)
-                    .context(format!("Sending log {topic} to consumer {c_id}"))?;
+                    .context(format!("Sending {selector} to consumer {c_id}"))?;
             }
         } else {
-            debug!("No consumers for topic {topic}");
+            debug!("No consumers for event {selector}");
         }
 
         Ok(())

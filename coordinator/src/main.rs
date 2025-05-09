@@ -1,11 +1,11 @@
-use anyhow::{Result, anyhow, bail};
+use anyhow::Result;
 use clap::{Arg, Command};
 use common::config::CommonConfig;
 use common::msg_broker::broker::BrokerClient;
-use common::msg_broker::types::{BrokerRequests, BrokerResponses};
 use common::shutdown_flag::ShutdownFlag;
-use log::{debug, error, info, trace};
-use std::thread;
+use coordinator::coordinator::Coordinator;
+use coordinator::monitor::Monitor;
+use log::{error, info};
 
 const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 const LOGGER_CLI_FLAG: &str = "logger-path";
@@ -34,98 +34,18 @@ fn main() -> Result<()> {
 
     let block_broker = BrokerClient::new(12345); // TODO(iago) change to config
     let log_broker = BrokerClient::new(56789); // TODO(iago) change to config
+    let monitor = Monitor::new(block_broker, log_broker);
 
     let shutdown_flag = ShutdownFlag::init();
-    start_monitoring(&block_broker, &log_broker, shutdown_flag)?;
 
-    info!("Shutting down monitoring");
-    Ok(())
-}
+    let mut coordinator = Coordinator::new(monitor, shutdown_flag.clone());
+    coordinator.run().inspect_err(|e| {
+        error!("Unrecoverable error running coordinator: {:?}", e);
+        // signal other threads to shut down
+        shutdown_flag.set();
+    })?;
 
-fn start_monitoring(
-    block_broker: &BrokerClient,
-    log_broker: &BrokerClient,
-    shutdown_flag: ShutdownFlag,
-) -> Result<()> {
-    request_block_monitoring(block_broker)?;
-    request_log_monitoring(log_broker)?;
+    info!("Shutting down!");
 
-    loop {
-        if shutdown_flag.is_on() {
-            info!("Shutdown requested, stopping block notifier");
-            break;
-        }
-
-        try_new_log(log_broker)?;
-        try_new_block(block_broker)?;
-
-        thread::sleep(std::time::Duration::from_secs(5)); // TODO(iago) config
-    }
-
-    cancel_log_monitoring(log_broker)?;
-    cancel_block_monitoring(block_broker)?;
-
-    Ok(())
-}
-
-fn try_new_block(block_broker: &BrokerClient) -> Result<()> {
-    // TODO(iago) retries, etc.
-    match block_broker.try_recv()? {
-        Some(BrokerResponses::Block(b)) => {
-            info!("Received new Block from Block Notifier {:?}", b)
-        }
-        Some(e) => {
-            error!("Unexpected response type from Block Notifier {:?}", e);
-        }
-        None => trace!("No messages from Block Notifier"),
-    }
-
-    Ok(())
-}
-
-fn request_block_monitoring(block_broker: &BrokerClient) -> Result<()> {
-    let result = block_broker.send(1, BrokerRequests::SubscribeBlocks)?; // TODO(iago) config
-    if !result {
-        bail!("Could not subscribe to blocks")
-    }
-    Ok(())
-}
-
-fn cancel_block_monitoring(block_broker: &BrokerClient) -> Result<()> {
-    let result = block_broker.send(1, BrokerRequests::UnsubscribeBlocks)?; // TODO(iago) config
-    if !result {
-        bail!("Could not unsubscribe from blocks")
-    }
-    Ok(())
-}
-
-fn try_new_log(log_broker: &BrokerClient) -> Result<()> {
-    // TODO(iago) retries, etc.
-    match log_broker.try_recv()? {
-        Some(BrokerResponses::Log(b)) => {
-            info!("Received new Log from Log Notifier {:?}", b)
-        }
-        Some(e) => {
-            error!("Unexpected response type from Log Notifier {:?}", e);
-        }
-        None => trace!("No messages from Log Notifier"),
-    }
-
-    Ok(())
-}
-
-fn request_log_monitoring(log_broker: &BrokerClient) -> Result<()> {
-    let result = log_broker.send(1, BrokerRequests::SubscribeLogs("test_topic".to_string()))?; // TODO(iago) config
-    if !result {
-        bail!("Could not subscribe to logs")
-    }
-    Ok(())
-}
-
-fn cancel_log_monitoring(log_broker: &BrokerClient) -> Result<()> {
-    let result = log_broker.send(1, BrokerRequests::UnsubscribeLogs("test_topic".to_string()))?; // TODO(iago) config
-    if !result {
-        bail!("Could not unsubscribe from logs")
-    }
     Ok(())
 }

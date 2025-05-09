@@ -65,7 +65,11 @@ fn main() -> Result<()> {
         shutdown_flag.clone(),
     );
 
-    let mut notifier = Notifier::new(rx, BrokerServer::new(12345), shutdown_flag.clone()); // TODO(iago) config
+    let mut notifier = Notifier::new(
+        rx,
+        BrokerServer::new(12345), // TODO(iago) get server port from config
+        shutdown_flag.clone(),
+    );
 
     let shutdown_flag_notifier = shutdown_flag.clone();
     std::thread::spawn(move || {

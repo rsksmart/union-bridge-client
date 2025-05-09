@@ -1,4 +1,5 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
+use common::constants::coordinator::MONITOR_CHECK_PERIOD;
 use common::msg_broker::broker::BrokerServer;
 use common::msg_broker::types::{BrokerRequests, BrokerResponses};
 use common::shutdown_flag::ShutdownFlag;
@@ -39,11 +40,11 @@ impl Notifier {
             self.update_consumers()?;
 
             if let Some(block) = self.try_new_block()? {
-                // try to receive new ASAP
                 self.notify_consumers(block)?;
+                // no sleep, try to receive new ASAP
             } else {
                 trace!("No new blocks yet, sleep a bit");
-                thread::sleep(std::time::Duration::from_secs(5)); // TODO(iago) config   
+                thread::sleep(MONITOR_CHECK_PERIOD);
             }
         }
 

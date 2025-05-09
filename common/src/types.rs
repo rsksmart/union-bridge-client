@@ -1,4 +1,5 @@
 use alloy_json_abi::JsonAbi;
+use anyhow::Result;
 use bitcoin::{blockdata::block::Header, consensus::encode::deserialize as btc_deserialize};
 use hex::FromHexError;
 use primitive_types::{H160, H256, U256};
@@ -41,7 +42,7 @@ pub trait ToHexString {
 ///
 /// println!("Block hash: {}", block_hash);
 /// ```
-#[derive(Serialize, Deserialize, Copy, Debug, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, Copy, Debug, Eq, PartialEq, Hash, Clone)]
 pub struct BlockHash(H256);
 
 impl BlockHash {
@@ -91,7 +92,7 @@ impl fmt::Display for BlockHash {
 ///
 /// assert_eq!(next_block, BlockNumber::from(101));
 /// ```
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
 pub struct BlockNumber(u64);
 
 impl BlockNumber {
@@ -328,7 +329,9 @@ impl fmt::Display for BlockPow {
 ///
 /// println!("Address: {}", address);
 /// ```
-#[derive(Serialize, Deserialize, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Clone, Hash)]
+#[derive(
+    Serialize, Deserialize, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Clone, Hash, Default,
+)]
 pub struct Address(H160);
 
 impl Address {
@@ -367,7 +370,7 @@ impl fmt::Display for Address {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RskBlock {
     number: BlockNumber,
     hash: BlockHash,
@@ -377,6 +380,21 @@ pub struct RskBlock {
     total_difficulty: BlockDifficulty,
     pow: BlockPow,
     uncles: Vec<BlockHash>,
+}
+
+impl std::hash::Hash for RskBlock {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.hash.hash(state);
+    }
+}
+
+impl PartialEq for RskBlock {
+    fn eq(&self, other: &Self) -> bool {
+        self.hash == other.hash
+    }
+}
+impl Eq for RskBlock {
+    // derived from PartialEq
 }
 
 impl RskBlock {
@@ -467,6 +485,34 @@ impl RskLog {
 
     pub fn event(&self) -> &LogEvent {
         &self.event
+    }
+
+    pub fn selector(&self) -> Selector {
+        self.into()
+    }
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Default)]
+pub struct Selector {
+    pub address: Address,
+    pub sig_hash: String,
+}
+
+impl From<&RskLog> for Selector {
+    fn from(log: &RskLog) -> Self {
+        match log.event().topics().get(0) {
+            Some(t0) => Selector {
+                sig_hash: t0.clone(),
+                address: log.info().address(),
+            },
+            None => Selector::default(),
+        }
+    }
+}
+
+impl fmt::Display for Selector {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}@{}", self.sig_hash, self.address)
     }
 }
 

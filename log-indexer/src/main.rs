@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
 use common::msg_broker::broker::BrokerServer;
-use common::types::{RskBlock, RskLog};
+use common::types::RskLog;
 use common::{
     alloy_rsk_provider::rpc::AlloyProvider, rsk_indexer::RskIndexer, shutdown_flag::ShutdownFlag,
     types::BlockHash,
@@ -66,7 +66,11 @@ fn main() -> Result<()> {
     )
     .context("Failed to create LogIndexer")?;
 
-    let mut notifier = Notifier::new(rx, BrokerServer::new(56789), shutdown_flag.clone()); // TODO(iago) config
+    let mut notifier = Notifier::new(
+        rx,
+        BrokerServer::new(56789), // TODO(iago) get server port from config
+        shutdown_flag.clone(),
+    );
 
     let shutdown_flag_notifier = shutdown_flag.clone();
     std::thread::spawn(move || {

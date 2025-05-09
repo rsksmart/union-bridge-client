@@ -13,7 +13,7 @@ pub struct BrokerServer {
 
 impl BrokerServer {
     pub fn new(port: u16) -> Self {
-        let broker_storage = Arc::new(Mutex::new(MemStorage::new())); // TODO(iago) change to disk storage
+        let broker_storage = Arc::new(Mutex::new(MemStorage::new())); // TODO(Jira-CoordinatorResilience) change to disk storage
         let broker_config = BrokerConfig::new(port, None);
         let broker = BrokerSync::new(&broker_config, broker_storage.clone());
         let broker_channel = LocalChannel::new(1, broker_storage.clone()); // TODO(iago) change to config
