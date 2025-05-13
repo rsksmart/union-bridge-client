@@ -35,8 +35,6 @@ fn main() -> Result<()> {
     let config_path = matches.get_one::<String>(CONFIG_CLI_FLAG);
     let config: Config = Config::load(config_path).expect("Failed to load config");
 
-    let store = RawLogStore::new(&format!("{}/logs", config.indexer.storage.path))?;
-
     let shutdown_flag = ShutdownFlag::init();
 
     let alloy_provider = AlloyProvider::new(&config.provider.rootstock.url, shutdown_flag.clone())
@@ -47,6 +45,8 @@ fn main() -> Result<()> {
             "Invalid initial block hash: {}",
             config.indexer.initial_block_hash
         ));
+
+    let store = RawLogStore::new(&format!("{}/logs", config.indexer.storage.path))?;
 
     let indexer = LogIndexer::new(
         store,
