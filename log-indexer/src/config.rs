@@ -1,4 +1,4 @@
-use common::config::{CommonConfig, ContractConfig, IndexerConfig, ProviderConfig};
+use common::config::{CommonConfig, ContractConfig, IndexerConfig, NotifierConfig, ProviderConfig};
 use common::errors::ConfigError;
 use common::types::{Address, ContractInfo};
 use serde::Deserialize;
@@ -10,6 +10,7 @@ const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub struct Config {
     pub indexer: IndexerConfig,
     pub provider: ProviderConfig,
+    pub notifier: NotifierConfig,
     pub contracts: Vec<ContractConfig>,
     #[serde(skip)]
     pub path: String,

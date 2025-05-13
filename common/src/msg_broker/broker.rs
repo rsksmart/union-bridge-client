@@ -6,6 +6,9 @@ use message_broker::rpc::sync_server::BrokerSync;
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
+// by convention, server is id 1
+pub const BROKER_SERVER_ID: u32 = 1;
+
 pub struct BrokerServer {
     broker: BrokerSync,
     channel: LocalChannel<MemStorage>,
@@ -13,10 +16,11 @@ pub struct BrokerServer {
 
 impl BrokerServer {
     pub fn new(port: u16) -> Self {
-        let broker_storage = Arc::new(Mutex::new(MemStorage::new())); // TODO(Jira-CoordinatorResilience) change to disk storage
+        // TODO(Jira-CoordinatorResilience) change to disk storage
+        let broker_storage = Arc::new(Mutex::new(MemStorage::new()));
         let broker_config = BrokerConfig::new(port, None);
         let broker = BrokerSync::new(&broker_config, broker_storage.clone());
-        let broker_channel = LocalChannel::new(1, broker_storage.clone()); // TODO(iago) change to config
+        let broker_channel = LocalChannel::new(BROKER_SERVER_ID, broker_storage.clone());
 
         Self {
             broker,
@@ -62,9 +66,9 @@ pub struct BrokerClient {
 }
 
 impl BrokerClient {
-    pub fn new(port: u16) -> Self {
+    pub fn new(port: u16, my_id: u32) -> Self {
         let broker_config = BrokerConfig::new(port, None);
-        let client = DualChannel::new(&broker_config, 333); // TODO(iago) from config
+        let client = DualChannel::new(&broker_config, my_id);
         Self { channel: client }
     }
 

@@ -91,6 +91,8 @@ impl Notifier {
             if consumer_contracts.is_empty() {
                 consumer.remove_entry();
             }
+        } else {
+            debug!("Consumer {consumer_id} was not subscribed to {address}");
         }
     }
 

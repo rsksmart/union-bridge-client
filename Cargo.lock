@@ -1672,6 +1672,7 @@ dependencies = [
  "clap",
  "common",
  "log",
+ "serde",
  "serde_json",
 ]
 

@@ -1,13 +1,12 @@
 use anyhow::Result;
 use clap::{Arg, Command};
-use common::config::CommonConfig;
 use common::msg_broker::broker::BrokerClient;
 use common::shutdown_flag::ShutdownFlag;
+use coordinator::config::{Config, Logger};
 use coordinator::coordinator::Coordinator;
 use coordinator::monitor::Monitor;
 use log::{error, info};
 
-const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const CONFIG_CLI_FLAG: &str = "config-path";
 
@@ -30,10 +29,13 @@ fn main() -> Result<()> {
         .get_matches();
 
     let logger_cfg_path = matches.get_one::<String>(LOGGER_CLI_FLAG);
-    CommonConfig::init_logger(logger_cfg_path, CARGO_PKG_NAME).expect("Failed to load logger");
+    Logger::init(logger_cfg_path).expect("Failed to load logger");
 
-    let block_broker = BrokerClient::new(12345); // TODO(iago) change to config
-    let log_broker = BrokerClient::new(56789); // TODO(iago) change to config
+    let config_path = matches.get_one::<String>(CONFIG_CLI_FLAG);
+    let config: Config = Config::load(config_path).expect("Failed to load config");
+
+    let block_broker = BrokerClient::new(config.block_broker_port, config.broker_client_id);
+    let log_broker = BrokerClient::new(config.log_broker_port, config.broker_client_id);
     let monitor = Monitor::new(block_broker, log_broker);
 
     let shutdown_flag = ShutdownFlag::init();

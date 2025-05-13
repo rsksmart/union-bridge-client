@@ -60,7 +60,10 @@ impl Notifier {
             }
             Some((BrokerRequests::UnsubscribeBlocks, consumer_id)) => {
                 info!("Unsubscribing consumer {consumer_id}");
-                self.consumers.remove(&consumer_id);
+                let removed = self.consumers.remove(&consumer_id);
+                if !removed {
+                    debug!("Consumer {consumer_id} was not subscribed");
+                }
             }
             Some((_, consumer_id)) => {
                 warn!(

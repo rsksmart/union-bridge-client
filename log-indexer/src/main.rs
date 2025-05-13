@@ -68,7 +68,7 @@ fn main() -> Result<()> {
 
     let mut notifier = Notifier::new(
         rx,
-        BrokerServer::new(56789), // TODO(iago) get server port from config
+        BrokerServer::new(config.notifier.broker_port),
         shutdown_flag.clone(),
     );
 

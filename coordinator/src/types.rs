@@ -3,7 +3,6 @@ use common::types::{BlockNumber, RskLog, Selector};
 use log::warn;
 use std::ops::Add;
 
-// TODO(iago) use a better type
 pub type PegOutId = String;
 
 pub enum PegManagerEvents {
@@ -64,7 +63,7 @@ impl From<&RskLog> for PegManagerEvents {
 
 impl PegManagerEvents {
     fn get_peg_out_id_from_log(log: &RskLog) -> PegOutId {
-        // TODO(iago) replace with actual info from event
+        // TODO(Jira-PegManagerInRootstock) replace with actual info from event
         format!(
             "fake_pegout_id_{}_{}_{}",
             log.info().block_hash(),
