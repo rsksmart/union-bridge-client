@@ -1230,6 +1230,8 @@ dependencies = [
  "common",
  "env_logger",
  "log",
+ "mockall",
+ "primitive-types 0.13.1",
  "rust-bitvmx-storage-backend",
  "serde",
  "tempfile",

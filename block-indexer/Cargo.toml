@@ -9,12 +9,14 @@ common = { path = "../common" }
 anyhow = { workspace = true }
 clap = { workspace = true }
 log = { workspace = true }
+mockall = { workspace = true }
 serde = { workspace = true }
 storage-backend = { workspace = true }
 
 [dev-dependencies]
-tempfile = { workspace = true }
 env_logger = { workspace = true }
+primitive-types = { workspace = true }
+tempfile = { workspace = true }
 
 [features]
 test-mocks = ["common/test-mocks"]

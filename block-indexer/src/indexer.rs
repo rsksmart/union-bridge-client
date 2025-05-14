@@ -1,9 +1,11 @@
 use crate::store::BlockStore;
-use anyhow::{anyhow, bail, Context, Result};
-use common::rsk_indexer::RskIndexer;
-use common::rsk_provider::{RskProvider, RskSubscription, RskSubscriptionError};
-use common::shutdown_flag::ShutdownFlag;
-use common::types::{BlockHash, BlockNumber, RskBlock};
+use anyhow::{Context, Result, bail};
+use common::{
+    rsk_indexer::RskIndexer,
+    rsk_provider::{RskProvider, RskSubscription, RskSubscriptionError},
+    shutdown_flag::ShutdownFlag,
+    types::{BlockHash, BlockNumber, RskBlock},
+};
 use log::{debug, error, info, warn};
 
 pub struct BlockIndexer<P: RskProvider, S: BlockStore> {
@@ -388,7 +390,9 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                         .save_block(&uncle)
                         .context("Saving uncle block")?;
                 } else {
-                    warn!("Uncle block not found: {}", uncle_hash);
+                    warn!(
+                        "[block_backward_sync] Possible orphan block detected – uncle not found: {}",
+                        uncle_hash);
                 }
                 Ok(())
             })?;
@@ -402,5 +406,118 @@ impl<P: RskProvider, S: BlockStore> RskIndexer<P, S> for BlockIndexer<P, S> {
         self.init_db_if_required()?;
         self.startup_backward_sync()?;
         self.start_block_subscription()
+    }
+}
+
+#[cfg(all(test, feature = "test-mocks"))]
+mod tests {
+    use super::*;
+    use crate::store::MockBlockStore;
+    use common::{
+        rsk_provider::MockRskProvider,
+        test_utils::rsk_block_generator::{
+            get_first_default_rsk_block, get_second_default_rsk_block,
+        },
+    };
+
+    #[test]
+    fn returns_ok_if_no_uncles() {
+        let mut provider = MockRskProvider::new();
+        let mut store = MockBlockStore::new();
+        // no uncles
+        let block = get_second_default_rsk_block();
+
+        // neither provider nor store should ever be called
+        provider.expect_get_block_by_hash().never();
+        store.expect_save_block().never();
+
+        let idx = BlockIndexer {
+            rsk_provider: provider,
+            store,
+            initial_block_hash: block.parent_hash(),
+            shutdown_flag: ShutdownFlag::init(),
+        };
+
+        assert!(idx.get_and_save_uncle_blocks(&block).is_ok());
+    }
+
+    #[test]
+    fn saves_uncle_when_found() {
+        let uncle_block = get_first_default_rsk_block();
+        let uncle_hash = uncle_block.hash();
+
+        let mut provider = MockRskProvider::new();
+        provider
+            .expect_get_block_by_hash()
+            .with(eq(uncle_hash))
+            .times(1)
+            .returning(move || Ok(Some(uncle_block.clone())));
+
+        let mut store = MockBlockStore::new();
+        store
+            .expect_save_block()
+            .with(eq(uncle_block.clone()))
+            .times(1)
+            .returning(|_| Ok(()));
+
+        let base = get_second_default_rsk_block();
+        let block_with_uncle = RskBlock::new(
+            base.number(),
+            base.hash(),
+            base.parent_hash(),
+            base.timestamp(),
+            base.difficulty(),
+            base.total_difficulty(),
+            base.pow(),
+            vec![uncle_hash],
+        );
+
+        let idx = BlockIndexer {
+            rsk_provider: provider,
+            store,
+            initial_block_hash: block_with_uncle.parent_hash(),
+            shutdown_flag: ShutdownFlag::init(),
+        };
+
+        let res = idx.get_and_save_uncle_blocks(&block_with_uncle);
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn warns_but_ok_if_uncle_missing() {
+        let missing_hash = get_first_default_rsk_block().hash();
+
+        let mut provider = MockRskProvider::new();
+        provider
+            .expect_get_block_by_hash()
+            .with(eq(missing_hash))
+            .times(1)
+            .returning(|| Ok(None));
+
+        // store.save_block should never be called
+        let mut store = MockBlockStore::new();
+        store.expect_save_block().never();
+
+        let base = get_second_default_rsk_block();
+        let block_with_missing = RskBlock::new(
+            base.number(),
+            base.hash(),
+            base.parent_hash(),
+            base.timestamp(),
+            base.difficulty(),
+            base.total_difficulty(),
+            base.pow(),
+            vec![missing_hash],
+        );
+
+        let idx = BlockIndexer {
+            rsk_provider: provider,
+            store,
+            initial_block_hash: block_with_missing.parent_hash(),
+            shutdown_flag: ShutdownFlag::init(),
+        };
+
+        let res = idx.get_and_save_uncle_blocks(&block_with_missing);
+        assert!(res.is_ok());
     }
 }
