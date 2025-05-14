@@ -20,5 +20,4 @@ primitive-types = { workspace = true }
 tempfile = { workspace = true }
 
 [features]
-test-mocks = ["common/test-mocks"]
 test-utils = ["common/test-utils"]
