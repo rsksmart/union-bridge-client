@@ -4,6 +4,10 @@ use common::types::{BlockHash, BlockNumber, RskBlock};
 use std::path::PathBuf;
 use storage_backend::storage::{KeyValueStore, Storage};
 
+#[cfg(test)]
+use mockall::automock;
+
+#[cfg_attr(test, automock)]
 pub trait BlockStore {
     fn get_best_block(&self) -> Result<Option<RskBlock>>;
     fn set_best_block(&self, value: &RskBlock) -> Result<()>;
