@@ -372,8 +372,13 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
             return Ok(());
         }
 
+        let nephew_hash = new_block.hash();
+        let nephew_number = new_block.number();
+
         debug!(
-            "[block_backward_sync] Attempting to get and save uncles blocks ({:?})",
+            "[block_backward_sync] Nephew {} (#{}) has uncles: {:?}",
+            nephew_hash,
+            nephew_number,
             new_block.uncles()
         );
 
@@ -391,8 +396,8 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                         .context("Saving uncle block")?;
                 } else {
                     warn!(
-                        "[block_backward_sync] Possible orphan block detected – uncle not found: {}",
-                        uncle_hash);
+                        "[block_backward_sync] Possible orphan – nephew {} (#{}) references missing uncle {}",
+                        nephew_hash, nephew_number, uncle_hash);
                 }
                 Ok(())
             })?;
