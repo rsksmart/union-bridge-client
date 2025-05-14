@@ -211,7 +211,6 @@ fn validate_uncle(trunk_block: &Block, uncle: &Block) -> Result<(), &'static str
     }
 
     validate_enough_effort_superblock(uncle, "uncle")?;
-    validate_difficulty_in_bounds(uncle, trunk_block)?;
     Ok(())
 }
 
