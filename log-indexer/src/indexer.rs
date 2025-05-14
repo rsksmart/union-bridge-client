@@ -335,7 +335,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
     }
 }
 
-#[cfg(all(test, feature = "test-mocks"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::store::MockLogStore;

@@ -357,7 +357,7 @@ fn generate_next_rsk_log(
 ) -> Result<RskLog, RskSubscriptionError> {
     thread::sleep(Duration::from_millis(delay_between_blocks_subscription));
     if let Some(log_info) = tuples.pop_front() {
-        let log = log_generator.generate_log(event_signature, log_info);
+        let log = log_generator.generate_log_with_info(event_signature, log_info);
         if tuples.is_empty() {
             shutting_down.set();
         }

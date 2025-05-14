@@ -1,6 +1,6 @@
 use crate::types::PegManagerEvents;
 use anyhow::{Context, Result, bail};
-use common::msg_broker::broker::{BROKER_SERVER_ID, BrokerClient, BrokerError};
+use common::msg_broker::broker::{BROKER_SERVER_ID, BrokerClient, BrokerClientApi, BrokerError};
 use common::msg_broker::types::{BrokerRequests, BrokerResponses, FakePegManagerConfig};
 use common::types::RskBlock;
 use log::{debug, info, trace};

@@ -15,7 +15,7 @@ alloy-rpc-client = { workspace = true }
 alloy-transport = { workspace = true }
 anyhow = { workspace = true }
 hex = { workspace = true }
-mockall = { workspace = true, optional = true }
+mockall = { workspace = true }
 primitive-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -32,5 +32,4 @@ signal-hook = "0.3"
 sha3 = "0.10"
 
 [features]
-test-mocks = ["mockall"]
 test-utils = []

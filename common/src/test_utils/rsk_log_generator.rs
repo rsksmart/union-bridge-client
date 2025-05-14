@@ -1,4 +1,5 @@
-use crate::types::{Address, LogEvent, LogInfo, RskLog};
+use crate::types::{Address, BlockHash, LogEvent, LogInfo, RskLog};
+use primitive_types::H256;
 use sha3::{Digest, Keccak256};
 
 /// A stateless generator for fake RSK logs.
@@ -9,11 +10,24 @@ impl FakeLogGenerator {
     pub fn new() -> Self {
         FakeLogGenerator {}
     }
-    pub fn generate_log(&self, event_signature: &str, log_info: LogInfo) -> RskLog {
+    pub fn generate_log_with_info(&self, event_signature: &str, log_info: LogInfo) -> RskLog {
         let address = log_info.address();
         let topics = vec![address_to_topic(address)];
         let event: LogEvent = LogEvent::new(event_signature_to_topic(event_signature), topics);
         RskLog::new(log_info, event)
+    }
+
+    pub fn generate_log(&self, event_signature: &str, address: Address) -> RskLog {
+        let fake_log_info = LogInfo::new(
+            address.clone(),
+            BlockHash::from(H256::random()),
+            1.into(),
+            H256::random().to_string(),
+            1,
+            false,
+        );
+
+        self.generate_log_with_info(event_signature, fake_log_info)
     }
 }
 
