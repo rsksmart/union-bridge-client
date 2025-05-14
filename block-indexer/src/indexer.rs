@@ -419,6 +419,7 @@ mod tests {
             get_first_default_rsk_block, get_second_default_rsk_block,
         },
     };
+    use mockall::predicate::eq;
 
     #[test]
     fn returns_ok_if_no_uncles() {
@@ -446,19 +447,19 @@ mod tests {
         let uncle_block = get_first_default_rsk_block();
         let uncle_hash = uncle_block.hash();
 
-        let mut provider = MockRskProvider::new();
-        provider
-            .expect_get_block_by_hash()
-            .with(eq(uncle_hash))
-            .times(1)
-            .returning(move || Ok(Some(uncle_block.clone())));
-
         let mut store = MockBlockStore::new();
         store
             .expect_save_block()
             .with(eq(uncle_block.clone()))
             .times(1)
             .returning(|_| Ok(()));
+
+        let mut provider = MockRskProvider::new();
+        provider
+            .expect_get_block_by_hash()
+            .with(eq(uncle_hash))
+            .times(1)
+            .returning(move |_| Ok(Some(uncle_block.clone())));
 
         let base = get_second_default_rsk_block();
         let block_with_uncle = RskBlock::new(
@@ -492,7 +493,7 @@ mod tests {
             .expect_get_block_by_hash()
             .with(eq(missing_hash))
             .times(1)
-            .returning(|| Ok(None));
+            .returning(|_| Ok(None));
 
         // store.save_block should never be called
         let mut store = MockBlockStore::new();
