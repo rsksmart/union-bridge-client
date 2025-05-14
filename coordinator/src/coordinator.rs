@@ -2,6 +2,7 @@ use crate::monitor::Monitor;
 use crate::types::{Dispute, PegManagerEvents, PegOutId};
 use anyhow::{Context, Result, anyhow};
 use common::constants::coordinator::MONITOR_CHECK_PERIOD;
+use common::msg_broker::broker::BrokerClientApi;
 use common::msg_broker::types::FakePegManagerConfig;
 use common::shutdown_flag::ShutdownFlag;
 use common::types::{BlockNumber, RskBlock};
@@ -11,15 +12,15 @@ use std::thread;
 
 const FAKE_AMOUNT: u64 = 1000; // TODO(Jira-PegManagerInRootstock) replace with actual amount
 
-pub struct Coordinator {
-    monitor: Monitor,
+pub struct Coordinator<T: BrokerClientApi> {
+    monitor: Monitor<T>,
     disputes: HashMap<PegOutId, Dispute>,
     known_blocks: HashSet<RskBlock>,
     shutdown_flag: ShutdownFlag,
 }
 
-impl Coordinator {
-    pub fn new(monitor: Monitor, shutdown_flag: ShutdownFlag) -> Self {
+impl<T: BrokerClientApi> Coordinator<T> {
+    pub fn new(monitor: Monitor<T>, shutdown_flag: ShutdownFlag) -> Self {
         Self {
             monitor,
             disputes: HashMap::new(),

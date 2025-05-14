@@ -103,4 +103,6 @@ pub enum BrokerError {
     BrokerServerError(#[from] message_broker::rpc::errors::BrokerError),
     #[error("Serialization error on Broker: {0}")]
     SerializationError(#[from] serde_json::Error),
+    #[error("Unknown error on Broker: {0}")]
+    UnknownError(#[from] anyhow::Error),
 }

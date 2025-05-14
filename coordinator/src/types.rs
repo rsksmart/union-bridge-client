@@ -5,6 +5,7 @@ use std::ops::Add;
 
 pub type PegOutId = String;
 
+#[derive(Eq, PartialEq, Debug)]
 pub enum PegManagerEvents {
     RequestAdvanceFunds {
         // TODO add other fields

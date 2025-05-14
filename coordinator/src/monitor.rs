@@ -1,18 +1,18 @@
 use crate::types::PegManagerEvents;
 use anyhow::{Context, Result, bail};
-use common::msg_broker::broker::{BROKER_SERVER_ID, BrokerClient, BrokerClientApi, BrokerError};
+use common::msg_broker::broker::{BROKER_SERVER_ID, BrokerClientApi, BrokerError};
 use common::msg_broker::types::{BrokerRequests, BrokerResponses, FakePegManagerConfig};
 use common::types::RskBlock;
 use log::{debug, info, trace};
 
-pub struct Monitor {
-    block_broker: BrokerClient,
-    log_broker: BrokerClient,
+pub struct Monitor<T: BrokerClientApi> {
+    block_broker: T,
+    log_broker: T,
     block_monitoring_active: bool,
     log_monitoring_active: bool,
 }
-impl Monitor {
-    pub fn new(block_broker: BrokerClient, log_broker: BrokerClient) -> Self {
+impl<T: BrokerClientApi> Monitor<T> {
+    pub fn new(block_broker: T, log_broker: T) -> Self {
         Self {
             block_broker,
             log_broker,
@@ -130,14 +130,6 @@ impl Monitor {
         Ok(())
     }
 
-    fn request_cancel_event_monitoring(&mut self) -> Result<bool> {
-        self.send_to_log_broker(
-            // TODO(Jira-PegManagerInRootstock) forcing PegManager address for every received event for now
-            BrokerRequests::UnsubscribeLogs(FakePegManagerConfig::get_peg_manager_address()),
-        )
-        .context("Broker error on UnsubscribeLogs")
-    }
-
     pub fn cancel_block_monitoring(&mut self) -> Result<()> {
         if !self.block_monitoring_active {
             debug!("Cancel Block monitoring requested, but it was not active");
@@ -153,6 +145,14 @@ impl Monitor {
         Ok(())
     }
 
+    fn request_cancel_event_monitoring(&mut self) -> Result<bool> {
+        self.send_to_log_broker(
+            // TODO(Jira-PegManagerInRootstock) forcing PegManager address for every received event for now
+            BrokerRequests::UnsubscribeLogs(FakePegManagerConfig::get_peg_manager_address()),
+        )
+        .context("Broker error on UnsubscribeLogs")
+    }
+
     fn request_cancel_block_monitoring(&mut self) -> Result<bool> {
         self.send_to_block_broker(BrokerRequests::UnsubscribeBlocks)
             .context("Broker error on UnsubscribeBlocks")
@@ -164,5 +164,242 @@ impl Monitor {
 
     fn send_to_log_broker(&mut self, request: BrokerRequests) -> Result<bool, BrokerError> {
         self.log_broker.send(BROKER_SERVER_ID, request)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyhow::anyhow;
+    use common::msg_broker::broker::{BROKER_SERVER_ID, MockBrokerClientApi};
+    use common::msg_broker::types::{BrokerRequests, FakePegManagerConfig};
+    use common::test_utils::rsk_block_generator::get_first_default_rsk_block;
+    use common::test_utils::rsk_log_generator::FakeLogGenerator;
+    use common::test_utils::rsk_utils::generate_fake_address;
+    use mockall::predicate::*;
+
+    #[test]
+    fn test_start_event_monitoring_success() {
+        let mut log_broker = MockBrokerClientApi::new();
+        log_broker
+            .expect_send()
+            .with(
+                eq(BROKER_SERVER_ID),
+                eq(BrokerRequests::UnsubscribeLogs(
+                    FakePegManagerConfig::get_peg_manager_address(),
+                )),
+            )
+            .return_once(|_, _| Ok(true));
+
+        log_broker
+            .expect_send()
+            .with(
+                eq(BROKER_SERVER_ID),
+                eq(BrokerRequests::SubscribeLogs(
+                    FakePegManagerConfig::get_peg_manager_address(),
+                )),
+            )
+            .return_once(|_, _| Ok(true));
+
+        let mut monitor = Monitor::new(MockBrokerClientApi::new(), log_broker);
+        assert!(monitor.start_event_monitoring().is_ok());
+        assert!(monitor.log_monitoring_active);
+    }
+
+    #[test]
+    fn test_start_event_monitoring_fails_on_broker_error() {
+        let mut log_broker = MockBrokerClientApi::new();
+        log_broker
+            .expect_send()
+            .with(
+                eq(BROKER_SERVER_ID),
+                eq(BrokerRequests::UnsubscribeLogs(
+                    FakePegManagerConfig::get_peg_manager_address(),
+                )),
+            )
+            .return_once(|_, _| Ok(true));
+
+        log_broker
+            .expect_send()
+            .with(
+                eq(BROKER_SERVER_ID),
+                eq(BrokerRequests::SubscribeLogs(
+                    FakePegManagerConfig::get_peg_manager_address(),
+                )),
+            )
+            .return_once(|_, _| Err(BrokerError::UnknownError(anyhow!("fake error"))));
+
+        let mut monitor = Monitor::new(MockBrokerClientApi::new(), log_broker);
+        let err = monitor.start_event_monitoring();
+        assert!(err.is_err());
+        assert!(
+            err.as_ref()
+                .unwrap_err()
+                .to_string()
+                .contains("Broker error on SubscribeLogs")
+        );
+    }
+
+    #[test]
+    fn test_start_event_monitoring_fails_if_already_active() {
+        let mut monitor = Monitor::new(MockBrokerClientApi::new(), MockBrokerClientApi::new());
+        monitor.log_monitoring_active = true;
+        let err = monitor.start_event_monitoring();
+        assert!(err.is_err());
+        assert!(
+            err.as_ref()
+                .unwrap_err()
+                .to_string()
+                .contains("already active")
+        );
+    }
+
+    #[test]
+    fn test_start_block_monitoring_success() {
+        let mut block_broker = MockBrokerClientApi::new();
+        block_broker
+            .expect_send()
+            .with(eq(BROKER_SERVER_ID), eq(BrokerRequests::UnsubscribeBlocks))
+            .return_once(|_, _| Ok(true));
+
+        block_broker
+            .expect_send()
+            .with(eq(BROKER_SERVER_ID), eq(BrokerRequests::SubscribeBlocks))
+            .return_once(|_, _| Ok(true));
+
+        let mut monitor = Monitor::new(block_broker, MockBrokerClientApi::new());
+        assert!(monitor.start_block_monitoring().is_ok());
+        assert!(monitor.block_monitoring_active);
+    }
+
+    #[test]
+    fn test_start_block_monitoring_fails_on_broker_error() {
+        let mut block_broker = MockBrokerClientApi::new();
+        block_broker
+            .expect_send()
+            .with(eq(BROKER_SERVER_ID), eq(BrokerRequests::UnsubscribeBlocks))
+            .return_once(|_, _| Ok(true));
+
+        block_broker
+            .expect_send()
+            .with(eq(BROKER_SERVER_ID), eq(BrokerRequests::SubscribeBlocks))
+            .return_once(|_, _| Err(BrokerError::UnknownError(anyhow!("fake error"))));
+
+        let mut monitor = Monitor::new(block_broker, MockBrokerClientApi::new());
+        let err = monitor.start_block_monitoring();
+        assert!(err.is_err());
+        assert!(
+            err.as_ref()
+                .unwrap_err()
+                .to_string()
+                .contains("Broker error on SubscribeBlocks")
+        );
+    }
+
+    #[test]
+    fn test_start_block_monitoring_fails_if_already_active() {
+        let mut monitor = Monitor::new(MockBrokerClientApi::new(), MockBrokerClientApi::new());
+        monitor.block_monitoring_active = true;
+        let err = monitor.start_block_monitoring();
+        assert!(err.is_err());
+        assert!(
+            err.as_ref()
+                .unwrap_err()
+                .to_string()
+                .contains("already active")
+        );
+    }
+
+    #[test]
+    fn test_try_event_returns_some() {
+        let log = FakeLogGenerator::new()
+            .generate_log("Transfer(address,address,uint256", generate_fake_address(1));
+        let expected_event: PegManagerEvents = (&log).try_into().unwrap(); // or use your From impl
+
+        let mut log_broker = MockBrokerClientApi::new();
+        log_broker
+            .expect_try_recv()
+            .return_once(move || Ok(Some(BrokerResponses::Log(log))));
+
+        let mut monitor = Monitor::new(MockBrokerClientApi::new(), log_broker);
+        monitor.log_monitoring_active = true;
+
+        let result = monitor.try_event().expect("Failed to receive event");
+        assert_eq!(result, Some(expected_event));
+    }
+
+    #[test]
+    fn test_try_event_returns_none() {
+        let mut log_broker = MockBrokerClientApi::new();
+        log_broker.expect_try_recv().return_once(move || Ok(None));
+
+        let mut monitor = Monitor::new(MockBrokerClientApi::new(), log_broker);
+        monitor.log_monitoring_active = true;
+
+        let result = monitor.try_event().expect("Failed to receive event");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_try_block_returns_some() {
+        let block = get_first_default_rsk_block();
+        let mut block_broker = MockBrokerClientApi::new();
+        block_broker.expect_try_recv().return_once({
+            let block = block.clone();
+            move || Ok(Some(BrokerResponses::Block(block.clone())))
+        });
+
+        let mut monitor = Monitor::new(block_broker, MockBrokerClientApi::new());
+        monitor.block_monitoring_active = true;
+
+        let result = monitor.try_block().expect("Failed to receive block");
+        assert_eq!(result, Some(block));
+    }
+
+    #[test]
+    fn test_try_block_returns_none() {
+        let mut block_broker = MockBrokerClientApi::new();
+        block_broker.expect_try_recv().return_once(move || Ok(None));
+
+        let mut monitor = Monitor::new(block_broker, MockBrokerClientApi::new());
+        monitor.block_monitoring_active = true;
+
+        let result = monitor.try_block().expect("Failed to receive block");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_cancel_event_monitoring_success() {
+        let mut log_broker = MockBrokerClientApi::new();
+        log_broker
+            .expect_send()
+            .with(
+                eq(BROKER_SERVER_ID),
+                eq(BrokerRequests::UnsubscribeLogs(
+                    FakePegManagerConfig::get_peg_manager_address(),
+                )),
+            )
+            .return_once(|_, _| Ok(true));
+
+        let mut monitor = Monitor::new(MockBrokerClientApi::new(), log_broker);
+        monitor.log_monitoring_active = true;
+
+        assert!(monitor.cancel_event_monitoring().is_ok());
+        assert!(!monitor.log_monitoring_active);
+    }
+
+    #[test]
+    fn test_cancel_block_monitoring_success() {
+        let mut block_broker = MockBrokerClientApi::new();
+        block_broker
+            .expect_send()
+            .with(eq(BROKER_SERVER_ID), eq(BrokerRequests::UnsubscribeBlocks))
+            .return_once(|_, _| Ok(true));
+
+        let mut monitor = Monitor::new(block_broker, MockBrokerClientApi::new());
+        monitor.block_monitoring_active = true;
+
+        assert!(monitor.cancel_block_monitoring().is_ok());
+        assert!(!monitor.block_monitoring_active);
     }
 }

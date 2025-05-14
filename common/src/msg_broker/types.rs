@@ -2,7 +2,7 @@ use crate::types::{Address, BlockNumber, RskBlock, RskLog, Selector};
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
 pub enum BrokerRequests {
     SubscribeBlocks,
     UnsubscribeBlocks,
