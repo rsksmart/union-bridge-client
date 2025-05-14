@@ -35,12 +35,12 @@ pub fn copy_log4rs_file(
 }
 
 pub fn copy_config_file(
-    from_original_config: bool,
+    use_existing_config: bool,
     source_config_file: String,
     target_config_folder: &String,
     target_config_file: &String,
 ) -> Result<(), anyhow::Error> {
-    Ok(if from_original_config {
+    Ok(if use_existing_config {
         println!(
             "Not copying config; expecting existing config file at {}",
             target_config_file

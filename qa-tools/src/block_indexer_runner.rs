@@ -23,7 +23,7 @@ fn main() -> Result<()> {
         &paths.target_log_config_file,
     )?;
     copy_config_file(
-        args.from_original_config,
+        args.use_existing_config,
         paths.source_config_file,
         &paths.target_config_folder,
         &paths.target_config_file,

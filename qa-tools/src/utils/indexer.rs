@@ -25,7 +25,7 @@ pub mod indexer_runner_args {
 
         // Whether to copy from the default config (true) or expect an existing config (false)
         #[arg(short = 'c', action = ArgAction::SetTrue)]
-        pub from_original_config: bool,
+        pub use_existing_config: bool,
 
         // Environment: "dev" or "qa" (default: qa).
         #[arg(short = 'e', default_value = "qa")]
