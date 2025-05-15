@@ -61,8 +61,7 @@ impl<T: BrokerClientApi> Monitor<T> {
         }
     }
 
-    // TODO(Jira-CoordinatorResilience) retries, reconnects, etc.
-
+    // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - retries, reconnects, etc
     pub fn start_event_monitoring(&mut self) -> Result<()> {
         if self.log_monitoring_active {
             bail!("Start Log monitoring requested, but it was already active");
@@ -76,7 +75,7 @@ impl<T: BrokerClientApi> Monitor<T> {
 
         let result = self
             .send_to_log_broker(BrokerRequests::SubscribeLogs(
-                // TODO(Jira-CheckForkAutomation) forcing PegManager address for every received event for now
+                // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-3 - tmp forcing PegManager address for every received event for now
                 FakePegManagerConfig::get_peg_manager_address(),
             ))
             .context("Broker error on SubscribeLogs")?;
@@ -187,7 +186,7 @@ impl<T: BrokerClientApi> Monitor<T> {
 
     fn request_cancel_event_monitoring(&mut self) -> Result<bool> {
         self.send_to_log_broker(
-            // TODO(Jira-CheckForkAutomation) forcing PegManager address for every received event for now
+            // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-3 - tmp forcing PegManager address for every received event for now
             BrokerRequests::UnsubscribeLogs(FakePegManagerConfig::get_peg_manager_address()),
         )
         .context("Broker error on UnsubscribeLogs")
@@ -354,7 +353,7 @@ mod tests {
     fn test_try_event_returns_some() {
         let log = FakeLogGenerator::new()
             .generate_log("Transfer(address,address,uint256", generate_fake_address(1));
-        let expected_event: PegManagerEvents = (&log).try_into().unwrap(); // or use your From impl
+        let expected_event: PegManagerEvents = (&log).try_into().unwrap();
 
         let mut log_broker = MockBrokerClientApi::new();
         log_broker

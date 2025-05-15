@@ -525,7 +525,7 @@ impl From<RskRpcLog> for RskLog {
                 rpc_log.block_number,
                 rpc_log.tx_hash,
                 rpc_log.log_index,
-                // assumption is made where the log is canonical
+                // assumption is made where the log is canonical if coming from request (not subscription)
                 false,
             ),
             LogEvent::new(rpc_log.data, rpc_log.topics),
@@ -671,7 +671,7 @@ pub struct RskRpcBlock {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RskRpcLog {
-    #[serde(rename = "address", deserialize_with = "parse_hex_to_address")]
+    #[serde(deserialize_with = "parse_hex_to_address")]
     address: Address,
 
     #[serde(rename = "blockHash", deserialize_with = "parse_hex_to_block_hash")]
@@ -686,11 +686,10 @@ pub struct RskRpcLog {
     #[serde(rename = "logIndex", deserialize_with = "parse_hex_to_u64")]
     log_index: u64,
 
-    #[serde(rename = "data")]
     data: String,
 
-    #[serde(rename = "topics")]
     topics: Vec<String>,
+    // no "removed" field if coming from request (not subscription)
 }
 
 fn parse_hex_to_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>

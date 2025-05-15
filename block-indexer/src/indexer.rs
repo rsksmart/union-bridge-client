@@ -215,8 +215,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
             return Ok(());
         }
 
-        // TODO(Jira-CoordinatorResilience) think if it is feasible to send new-block notifications on backward sync
-        //  or if it's better to provide a mechanism to requests past blocks in such situation when complete
+        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - think if it is feasible to send new-block notifications on backward sync or if it's better to provide a mechanism to requests past blocks in such situation when complete
 
         let store_best_block = self
             .store

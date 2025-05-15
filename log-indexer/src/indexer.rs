@@ -248,7 +248,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         Ok(())
     }
 
-    // TODO(Jira-FutureImprovements) evaluate the possibility of just monitoring logs when a consumer requests, or having 2 modes: defined contracts + on demand
+    // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-133
     fn listen_logs(&self, rsk_log_subscription: &mut impl RskSubscription<RskLog>) -> Result<()> {
         while self.is_running() {
             let new_log = match rsk_log_subscription.next() {

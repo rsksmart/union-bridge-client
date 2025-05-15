@@ -30,7 +30,7 @@ pub struct BrokerServer {
 
 impl BrokerServer {
     pub fn new(port: u16) -> Self {
-        // TODO(Jira-CoordinatorResilience) change to disk storage
+        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - change to disk storage (broker feature)
         let broker_storage = Arc::new(Mutex::new(MemStorage::new()));
         let broker_config = BrokerConfig::new(port, None);
         let broker = BrokerSync::new(&broker_config, broker_storage.clone());

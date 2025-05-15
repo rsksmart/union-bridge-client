@@ -53,8 +53,8 @@ pub fn process(rsk_log: RskLog) -> Result<Option<RskEvent>> {
 
     let (name, decoded_log_input) = event_name_and_input.unwrap();
 
-    let event_json = RskEvent::new(name.to_string(), rsk_log.info().clone(), decoded_log_input);
-    Ok(Some(event_json))
+    let event = RskEvent::new(name.to_string(), rsk_log.info().clone(), decoded_log_input);
+    Ok(Some(event))
 }
 
 fn decode_event_input<T: SolEvent + Serialize + Debug>(

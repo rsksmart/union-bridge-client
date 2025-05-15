@@ -6,11 +6,11 @@ use std::convert::TryFrom;
 pub enum BrokerRequests {
     SubscribeBlocks,
     UnsubscribeBlocks,
-    // TODO(Jira-CoordinatorResilience) implement block retrieval, it will be needed to get the first blocks that might be missing after the trigger event (event received after block)
+    // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - implement block retrieval, it will be needed to get the first blocks that might be missing after the trigger event (event received after block)
     GetBlock(BlockNumber),
     SubscribeLogs(Address),
     UnsubscribeLogs(Address),
-    // TODO(Jira-CoordinatorResilience) add a limit time for receiving a response?
+    // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - add a limit time for receiving a response?
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -19,7 +19,7 @@ pub enum BrokerResponses {
     Log(RskLog),
 }
 
-// TODO(Jira-CheckForkAutomation) build on boot using generated alloy event types and a configured PegManager address:
+// TODO(Jira) https://rsklabs.atlassian.net/browse/UB-3 - build on boot using generated alloy event types and a configured PegManager address:
 pub struct FakePegManagerConfig {}
 
 impl FakePegManagerConfig {
@@ -42,7 +42,7 @@ impl FakePegManagerConfig {
     }
 
     pub fn get_req_adv_confirmations_for_amount(amount: u64) -> u32 {
-        // TODO(Jira-DetailsPolished) get threshold from config
+        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-134 - get threshold from config
         if amount < 1000 {
             10
         } else if amount < 10000 {
@@ -55,7 +55,8 @@ impl FakePegManagerConfig {
     }
 
     pub fn get_kickoff_adv_confirmations_for_amount(amount: u64) -> u32 {
-        // TODO(Jira-DetailsPolished) get threshold from config
+        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-134 -
+        // get threshold from config
         if amount < 1000 {
             5
         } else if amount < 10000 {

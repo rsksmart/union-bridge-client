@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::thread;
 use std::time::Duration;
 
-const FAKE_AMOUNT: u64 = 1000; // TODO(Jira-CheckForkAutomation) replace with actual amount
+const FAKE_AMOUNT: u64 = 1000; // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-3 - create one fake event of each check fork event type
 
 pub struct Coordinator<M: MonitorApi> {
     monitor: M,
@@ -86,7 +86,7 @@ impl<M: MonitorApi> Coordinator<M> {
         !self.shutdown_flag.is_on()
     }
 
-    // TODO(Jira-CheckForkAutomation) This piece will be refactored with a factory pattern or a similar approach and properly tested
+    // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-3 - This piece will be refactored with a factory pattern or a similar approach and properly tested
     fn process_event(&mut self, event: PegManagerEvents) -> Result<()> {
         match event {
             PegManagerEvents::RequestAdvanceFunds {

@@ -30,7 +30,7 @@ impl From<&RskLog> for PegManagerEvents {
     fn from(log: &RskLog) -> Self {
         let _selector: Selector = log.into();
 
-        // TODO(Jira-PegManagerInRootstock) - use Alloy for decoding events - ie: Deposit::decode_log(alloy_log)
+        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-3 - use Alloy for decoding events - ie: PegOutRequested::decode_log(alloy_log)
         //  an example to parse RskLog to alloy LogData can be found in: common/src/alloy_rsk_provider/event_processor/event_processor_typed.rs
 
         let selector = FakePegManagerConfig::get_request_advance_funds_selector();
@@ -65,7 +65,7 @@ impl From<&RskLog> for PegManagerEvents {
 
 impl PegManagerEvents {
     fn get_peg_out_id_from_log(log: &RskLog) -> PegOutId {
-        // TODO(Jira-PegManagerInRootstock) replace with actual info from event
+        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-3 - create one fake event of each check fork event type
         format!(
             "fake_pegout_id_{}_{}_{}",
             log.info().block_hash(),
