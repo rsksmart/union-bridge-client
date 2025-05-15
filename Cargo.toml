@@ -13,9 +13,11 @@ alloy-contract = "0.13.0"
 alloy-json-rpc = "0.13.0"
 alloy-provider = "0.13.0"
 alloy-pubsub = "0.13.0"
+alloy-rpc-client = "0.13.0"
+alloy-rpc-types = "0.13.0"
 alloy-signer = "0.13.0"
 alloy-signer-local = { version = "0.13.0" }
-alloy-rpc-types = "0.13.0"
+alloy-transport = "0.13.0"
 #
 anyhow = "1.0.94"
 clap = "4.5.30"

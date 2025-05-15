@@ -10,14 +10,47 @@ use crate::{
         RskRpcLog, ToHexString,
     },
 };
+
 use alloy_primitives::B256;
 use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
+use alloy_rpc_client::RpcClient;
 use alloy_rpc_types::{Filter, FilterSet, Header, Log};
+use alloy_transport::layers::RetryBackoffLayer;
 use anyhow::{Context, Result, anyhow, bail};
-use log::{debug, warn};
+use log::debug;
 use serde_json::{Value, json};
 use std::{future::Future, sync::Arc};
 use tokio::runtime::Runtime;
+
+// This struct is a wrapper around tokio::runtime::Runtime that allows for synchronous execution of
+// async functions.
+// Note 1: it is discouraged to start several runtimes, so use with caution.
+// Note 2: we need Tokio because Alloy requires a Tokio Reactor to work
+#[derive(Clone)]
+struct RuntimeSync {
+    rt: Arc<Runtime>,
+}
+
+impl RuntimeSync {
+    pub(super) fn new() -> Result<Self> {
+        // Note: we cannot use Builder::new_current_thread() because Alloy needs multiple to work
+        let rt = Runtime::new().context("Failed to create Tokio runtime")?;
+        Ok(RuntimeSync { rt: Arc::new(rt) })
+    }
+
+    pub(super) fn run<Fut, RetType, Err>(&self, future: Fut) -> Result<RetType>
+    where
+        Fut: Future<Output = Result<RetType, Err>>,
+        Err: std::error::Error + Send + 'static,
+    {
+        self.rt.block_on(async {
+            future
+                .await
+                .map_err(|e| anyhow!("Error on RuntimeSync: {:?}", e))
+                .context("Async operation failed")
+        })
+    }
+}
 
 #[derive(Clone)]
 pub struct AlloyProvider<T = RootProvider>
@@ -29,16 +62,27 @@ where
     shutdown_flag: ShutdownFlag,
 }
 
-// wait time for retry is 2^attempt, so: 1s + 2s + 4s + 8s = 15s max <=> half a block time
-const PROVIDER_RETRIES: i8 = 4;
-
 impl AlloyProvider {
     pub fn new(url: &str, shutdown_flag: ShutdownFlag) -> Result<Self> {
-        let ws = WsConnect::new(url);
+        // Set up the sync-runtime
         let rt_sync = RuntimeSync::new().context("On AlloyProvider")?;
-        let root_provider = rt_sync
-            .run(ProviderBuilder::default().on_ws(ws))
-            .context("Failed to create AlloyProvider")?;
+
+        // Prepare the WS transport
+        let ws = WsConnect::new(url);
+
+        // Build your retry layer
+        let max_retry = 4; // wait time for retry is 2^attempt, so: 1s + 2s + 4s + 8s = 15s max <=> half a block time
+        let initial_backoff_ms = 1_000;
+        let cups = 100;
+        let retry_layer = RetryBackoffLayer::new(max_retry, initial_backoff_ms, cups);
+
+        // Block on the RpcClient‐builder future
+        let client: RpcClient = rt_sync
+            .run(RpcClient::builder().layer(retry_layer).ws(ws))
+            .context("Failed to build RpcClient with retry layer")?;
+
+        // Synchronously feed that client into ProviderBuilder
+        let root_provider = ProviderBuilder::default().on_client(client);
 
         Ok(AlloyProvider {
             inner: root_provider,
@@ -47,7 +91,7 @@ impl AlloyProvider {
         })
     }
 
-    pub(super) fn unsubscribe(&self, name: &str, subscription_id: B256) -> Result<()> {
+    pub fn unsubscribe(&self, name: &str, subscription_id: B256) -> Result<()> {
         self.inner
             .unsubscribe(subscription_id)
             .context(format!("Failed to unsubscribe {subscription_id} @ {name}"))
@@ -91,33 +135,14 @@ impl AlloyProvider {
         Ok(rsk_logs)
     }
 
-    fn run_with_retries<Fut, Err>(&self, rpc_call: Fut) -> Result<Value>
+    fn run<Fut, Err>(&self, rpc_call: Fut) -> Result<Value>
     where
-        Fut: Future<Output = Result<Value, Err>> + Clone,
-        Err: std::error::Error + Send + 'static,
+        Fut: Future<Output = Result<Value, Err>> + Clone + Send + 'static,
+        Err: std::error::Error + Send + Sync + 'static,
     {
-        let mut result = Err(anyhow!("Invalid configuration on run_with_retries"));
+        let val = self.rt_sync.run(rpc_call.clone()).context("RPC failed")?;
 
-        for attempt in 0..PROVIDER_RETRIES {
-            let response = self
-                .rt_sync
-                .run(rpc_call.clone())
-                .context("Getting best block from provider");
-
-            result = response;
-            if result.is_ok() {
-                break;
-            } else {
-                let wait_time = 1 << attempt; // 2^attempt, check configured max retries to know the max time
-                warn!(
-                    "Failed to get best block from provider. Attempt {attempt}. Retry in: {wait_time}: {:?}",
-                    result.as_ref().err()
-                );
-                std::thread::sleep(std::time::Duration::from_secs(wait_time));
-            }
-        }
-
-        result
+        Ok(val)
     }
 }
 
@@ -161,7 +186,7 @@ impl RskProvider for AlloyProvider {
             .client()
             .request("eth_getBlockByHash", vec![json!(hash), json!(false)]);
 
-        self.run_with_retries(rpc_call)
+        self.run(rpc_call)
             .context(format!("Getting block {hash} from provider"))
             .and_then(|response| Self::parse_block_provider_response(response))
     }
@@ -174,7 +199,7 @@ impl RskProvider for AlloyProvider {
             .client()
             .request("eth_getBlockByNumber", vec![json!(num_hex), json!(false)]);
 
-        self.run_with_retries(rpc_call)
+        self.run(rpc_call)
             .context(format!("Getting block {num} from provider"))
             .and_then(|response| Self::parse_block_provider_response(response))
     }
@@ -185,7 +210,7 @@ impl RskProvider for AlloyProvider {
             .client()
             .request("eth_getBlockByNumber", vec![json!("latest"), json!(false)]);
 
-        self.run_with_retries(rpc_call)
+        self.run(rpc_call)
             .context("Getting block latest from provider")
             .and_then(|response| Self::parse_block_provider_response(response))
             .context("Getting best block from provider")?
@@ -208,7 +233,7 @@ impl RskProvider for AlloyProvider {
 
         let rpc_call = self.inner.client().request("eth_getLogs", params);
 
-        self.run_with_retries(rpc_call)
+        self.run(rpc_call)
             .context(format!(
                 "Getting logs for addresses [{}] from block {} to {}",
                 addrs.join(", "),
@@ -245,36 +270,6 @@ impl RskProvider for AlloyProvider {
     fn disconnect(&self) -> Result<()> {
         // nothing to do for this rsk_provider
         Ok(())
-    }
-}
-
-// This struct is a wrapper around tokio::runtime::Runtime that allows for synchronous execution of
-// async functions.
-// Note 1: it is discouraged to start several runtimes, so use with caution.
-// Note 2: we need Tokio because Alloy requires a Tokio Reactor to work
-#[derive(Clone)]
-struct RuntimeSync {
-    rt: Arc<Runtime>,
-}
-
-impl RuntimeSync {
-    pub(super) fn new() -> Result<Self> {
-        // Note: we cannot use Builder::new_current_thread() because Alloy needs multiple to work
-        let rt = Runtime::new().context("Failed to create Tokio runtime")?;
-        Ok(RuntimeSync { rt: Arc::new(rt) })
-    }
-
-    pub(super) fn run<Fut, RetType, Err>(&self, future: Fut) -> Result<RetType>
-    where
-        Fut: Future<Output = Result<RetType, Err>>,
-        Err: std::error::Error + Send + 'static,
-    {
-        self.rt.block_on(async {
-            future
-                .await
-                .map_err(|e| anyhow!("Error on RuntimeSync: {:?}", e))
-                .context("Async operation failed")
-        })
     }
 }
 
