@@ -1,5 +1,8 @@
 indexer:
-  initial_block_hash: "0xf6e292fd22f1dc5a1ef4022b7fe4a959f90ec0b9f5fc0869af64b99195511b22"
+  initial_block_hash: "0x08b34283d649fdd3b94651fe8c9b447a9c2e6525f0db5824107c759d1e59e043"
+  sync:
+    finality_depth: 100
+    batch_size: 100
   storage:
     path: "/tmp/monitor-executions/default/storage"
   cache:
@@ -8,3 +11,13 @@ indexer:
 provider:
   rootstock:
     url: "ws://rskj-01.testnet.ub.iovlabs.net:4445/websocket"
+
+contracts:
+  - name: "TestContractDyn"
+    address: "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761"
+
+  - name: "TestContractCompiled"
+    address: "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc"
+
+  - name: "PegManager"
+    address: "0x0165878A594ca255338adfa4d48449f69242Eb8F"

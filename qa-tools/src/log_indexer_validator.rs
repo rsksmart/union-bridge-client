@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use log_indexer::config::Config;
-use qa_tools::utils::common::indexer_consts;
+use qa_tools::utils::common::config_consts;
 
 /// Validator Runner for Log Indexer
 #[derive(Parser, Debug)]
@@ -22,11 +22,11 @@ fn main() -> Result<()> {
         return Err(anyhow::anyhow!("Error: -t <tag> is mandatory."));
     }
 
-    let target_folder = format!("{}/{}", indexer_consts::ROOT_DIRECTORY, args.tag);
+    let target_folder = format!("{}/{}", config_consts::ROOT_DIRECTORY, args.tag);
     let target_config_folder = format!("{}/config/{}", target_folder, args.env);
     let target_log_folder = target_folder.clone(); // logs are in the same folder
     let target_log_config_file = format!("{}/log4rs.yaml", target_log_folder);
-    println!("Starting log-indexer-validator with:");
+    println!("Starting log_indexer_validator with:");
     println!("  Log config file: {}", target_log_config_file);
     println!("  Config folder:   {}", target_config_folder);
     run_log_indexer_validator(&target_log_config_file, &target_config_folder)

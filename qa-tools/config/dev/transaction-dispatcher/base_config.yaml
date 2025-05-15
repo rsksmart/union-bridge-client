@@ -1,0 +1,14 @@
+provider:
+  rootstock:
+    url: "ws://127.0.0.1:8545"
+
+contracts:
+  - name: "PegManager"
+    address: "<ADDRESS_HERE>"
+
+server:
+  url: "0.0.0.0:3000"
+key_store:
+  path: "/Users/javier/Projects/UnionBridge/test-keystore/e5cd9470-cec7-42f4-b1ff-7e723de56793"
+transaction:
+  gas_bumps_t1: 3
