@@ -19,9 +19,7 @@ pub enum BrokerResponses {
     Log(RskLog),
 }
 
-// TODO(Jira-PegManagerInRootstock) build on boot either:
-//  a) from config, creating a Config.rs
-//  b) on a build.rs, making them constants instead of methods based on run_mode and config
+// TODO(Jira-CheckForkAutomation) build on boot using generated alloy event types and a configured PegManager address:
 pub struct FakePegManagerConfig {}
 
 impl FakePegManagerConfig {

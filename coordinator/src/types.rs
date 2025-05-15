@@ -1,6 +1,6 @@
 use common::msg_broker::types::FakePegManagerConfig;
 use common::types::{BlockNumber, RskLog, Selector};
-use log::warn;
+use log::{error, warn};
 use std::ops::Add;
 
 pub type PegOutId = String;
@@ -23,16 +23,16 @@ pub enum PegManagerEvents {
     RemoveKickoffAdvanceFunds {
         peg_out_id: PegOutId,
     },
-    UnknownEvent {
-        peg_out_id: PegOutId,
-    },
+    UnknownEvent {},
 }
 
 impl From<&RskLog> for PegManagerEvents {
     fn from(log: &RskLog) -> Self {
         let _selector: Selector = log.into();
 
-        // TODO(Jira-PegManagerInRootstock)
+        // TODO(Jira-PegManagerInRootstock) - use Alloy for decoding events - ie: Deposit::decode_log(alloy_log)
+        //  an example to parse RskLog to alloy LogData can be found in: common/src/alloy_rsk_provider/event_processor/event_processor_typed.rs
+
         let selector = FakePegManagerConfig::get_request_advance_funds_selector();
 
         let peg_out_id = Self::get_peg_out_id_from_log(&log);
@@ -57,7 +57,8 @@ impl From<&RskLog> for PegManagerEvents {
                 }
             }
         } else {
-            PegManagerEvents::UnknownEvent { peg_out_id }
+            error!("Unknown event received for log: {:?}", log);
+            PegManagerEvents::UnknownEvent {}
         }
     }
 }

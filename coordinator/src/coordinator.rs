@@ -1,28 +1,40 @@
-use crate::monitor::Monitor;
+use crate::monitor::MonitorApi;
 use crate::types::{Dispute, PegManagerEvents, PegOutId};
 use anyhow::{Context, Result, anyhow};
 use common::constants::coordinator::MONITOR_CHECK_PERIOD;
-use common::msg_broker::broker::BrokerClientApi;
 use common::msg_broker::types::FakePegManagerConfig;
 use common::shutdown_flag::ShutdownFlag;
 use common::types::{BlockNumber, RskBlock};
 use log::{error, info, warn};
 use std::collections::{HashMap, HashSet};
 use std::thread;
+use std::time::Duration;
 
-const FAKE_AMOUNT: u64 = 1000; // TODO(Jira-PegManagerInRootstock) replace with actual amount
+const FAKE_AMOUNT: u64 = 1000; // TODO(Jira-CheckForkAutomation) replace with actual amount
 
-pub struct Coordinator<T: BrokerClientApi> {
-    monitor: Monitor<T>,
+pub struct Coordinator<M: MonitorApi> {
+    monitor: M,
+    check_period: Duration,
     disputes: HashMap<PegOutId, Dispute>,
     known_blocks: HashSet<RskBlock>,
     shutdown_flag: ShutdownFlag,
 }
 
-impl<T: BrokerClientApi> Coordinator<T> {
-    pub fn new(monitor: Monitor<T>, shutdown_flag: ShutdownFlag) -> Self {
+impl<M: MonitorApi> Coordinator<M> {
+    pub fn new(monitor: M, shutdown_flag: ShutdownFlag) -> Self {
         Self {
             monitor,
+            check_period: MONITOR_CHECK_PERIOD,
+            disputes: HashMap::new(),
+            known_blocks: HashSet::new(),
+            shutdown_flag,
+        }
+    }
+
+    pub fn new_for_tests(monitor: M, shutdown_flag: ShutdownFlag) -> Self {
+        Self {
+            monitor,
+            check_period: Duration::from_millis(1),
             disputes: HashMap::new(),
             known_blocks: HashSet::new(),
             shutdown_flag,
@@ -50,7 +62,7 @@ impl<T: BrokerClientApi> Coordinator<T> {
                         .context("Error processing block")?;
                 }
 
-                thread::sleep(MONITOR_CHECK_PERIOD);
+                thread::sleep(self.check_period);
             }
             Ok(())
         })();
@@ -74,6 +86,7 @@ impl<T: BrokerClientApi> Coordinator<T> {
         !self.shutdown_flag.is_on()
     }
 
+    // TODO(Jira-CheckForkAutomation) This piece will be refactored with a factory pattern or a similar approach and properly tested
     fn process_event(&mut self, event: PegManagerEvents) -> Result<()> {
         match event {
             PegManagerEvents::RequestAdvanceFunds {
@@ -102,9 +115,9 @@ impl<T: BrokerClientApi> Coordinator<T> {
                 );
                 self.undo_kickoff_dispute(peg_out_id);
             }
-            PegManagerEvents::UnknownEvent { peg_out_id } => {
+            PegManagerEvents::UnknownEvent {} => {
                 // just log, we don't want to err
-                error!("Unknown event for peg_out: {}", peg_out_id);
+                error!("Unknown event");
             }
         }
         Ok(())
@@ -209,5 +222,149 @@ impl<T: BrokerClientApi> Coordinator<T> {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::coordinator::Coordinator;
+    use crate::monitor::MockMonitorApi;
+    use crate::types::PegManagerEvents;
+    use common::shutdown_flag::ShutdownFlag;
+    use common::test_utils::rsk_block_generator::{
+        get_first_default_rsk_block, get_second_default_rsk_block,
+    };
+    use common::types::RskBlock;
+    use std::thread;
+    use std::thread::{JoinHandle, sleep};
+    use std::time::Duration;
+
+    #[test]
+    fn test_coordinator_run_handles_several_events() {
+        let mut mock_monitor = MockMonitorApi::new();
+
+        let block_1 = get_first_default_rsk_block();
+        let block_2 = get_second_default_rsk_block();
+
+        let event_1: PegManagerEvents = PegManagerEvents::RequestAdvanceFunds {
+            peg_out_id: "peg_out_id".to_string(),
+            block_num: block_1.number(),
+        };
+
+        let event_2: PegManagerEvents = PegManagerEvents::KickoffAdvanceFunds {
+            peg_out_id: "peg_out_id".to_string(),
+            block_num: block_1.number(),
+        };
+
+        mock_monitor
+            .expect_start_event_monitoring()
+            .return_once(|| Ok(()));
+
+        mock_monitor
+            .expect_cancel_event_monitoring()
+            .return_once(|| Ok(()))
+            .once();
+
+        mock_monitor
+            .expect_start_block_monitoring()
+            .return_once(|| Ok(()))
+            .once();
+
+        mock_monitor
+            .expect_cancel_block_monitoring()
+            .return_once(|| Ok(()))
+            .times(1);
+
+        expect_try_event(vec![event_1, event_2], &mut mock_monitor);
+
+        expect_try_block(vec![block_1, block_2], &mut mock_monitor);
+
+        let shutdown_flag = ShutdownFlag::init();
+        handle_shutdown(shutdown_flag.clone());
+
+        let mut coordinator = Coordinator::new_for_tests(mock_monitor, shutdown_flag);
+        let result = coordinator.run();
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_coordinator_run_handles_unknown_event() {
+        let mut mock_monitor = MockMonitorApi::new();
+
+        let block_1 = get_first_default_rsk_block();
+        let block_2 = get_second_default_rsk_block();
+
+        let event_1: PegManagerEvents = PegManagerEvents::RequestAdvanceFunds {
+            peg_out_id: "peg_out_id".to_string(),
+            block_num: block_1.number(),
+        };
+
+        let event_2: PegManagerEvents = PegManagerEvents::UnknownEvent {};
+
+        mock_monitor
+            .expect_start_event_monitoring()
+            .return_once(|| Ok(()));
+
+        mock_monitor
+            .expect_cancel_event_monitoring()
+            .return_once(|| Ok(()))
+            .once();
+
+        mock_monitor
+            .expect_start_block_monitoring()
+            .return_once(|| Ok(()))
+            .once();
+
+        mock_monitor
+            .expect_cancel_block_monitoring()
+            .return_once(|| Ok(()))
+            .times(1);
+
+        expect_try_event(vec![event_1, event_2], &mut mock_monitor);
+
+        expect_try_block(vec![block_1, block_2], &mut mock_monitor);
+
+        let shutdown_flag = ShutdownFlag::init();
+        handle_shutdown(shutdown_flag.clone());
+
+        let mut coordinator = Coordinator::new_for_tests(mock_monitor, shutdown_flag);
+        let result = coordinator.run();
+
+        assert!(result.is_ok());
+    }
+
+    fn handle_shutdown(shutdown_flag: ShutdownFlag) -> JoinHandle<()> {
+        thread::spawn(move || {
+            // give time for logic to proceed
+            sleep(Duration::from_millis(10));
+            shutdown_flag.set();
+        })
+    }
+
+    fn expect_try_event(client_requests: Vec<PegManagerEvents>, monitor: &mut MockMonitorApi) {
+        use std::collections::VecDeque;
+
+        monitor.expect_try_event().returning_st({
+            let mut responses = client_requests
+                .into_iter()
+                .map(|e| Ok(Some(e)))
+                .collect::<VecDeque<_>>();
+
+            move || responses.pop_front().unwrap_or(Ok(None))
+        });
+    }
+
+    fn expect_try_block(blocks: Vec<RskBlock>, monitor: &mut MockMonitorApi) {
+        use std::collections::VecDeque;
+
+        monitor.expect_try_block().returning_st({
+            let mut responses = blocks
+                .into_iter()
+                .map(|b| Ok(Some(b)))
+                .collect::<VecDeque<_>>();
+
+            move || responses.pop_front().unwrap_or(Ok(None))
+        });
     }
 }

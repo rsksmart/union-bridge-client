@@ -5,12 +5,52 @@ use common::msg_broker::types::{BrokerRequests, BrokerResponses, FakePegManagerC
 use common::types::RskBlock;
 use log::{debug, info, trace};
 
-pub struct Monitor<T: BrokerClientApi> {
-    block_broker: T,
-    log_broker: T,
+#[cfg(test)]
+use mockall::automock;
+
+#[cfg_attr(test, automock)]
+pub trait MonitorApi {
+    fn start_event_monitoring(&mut self) -> Result<()>;
+    fn start_block_monitoring(&mut self) -> Result<()>;
+    fn try_event(&mut self) -> Result<Option<PegManagerEvents>>;
+    fn try_block(&mut self) -> Result<Option<RskBlock>>;
+    fn cancel_event_monitoring(&mut self) -> Result<()>;
+    fn cancel_block_monitoring(&mut self) -> Result<()>;
+}
+
+pub struct Monitor<BC: BrokerClientApi> {
+    block_broker: BC,
+    log_broker: BC,
     block_monitoring_active: bool,
     log_monitoring_active: bool,
 }
+
+impl<BC: BrokerClientApi> MonitorApi for Monitor<BC> {
+    fn start_event_monitoring(&mut self) -> Result<()> {
+        self.start_event_monitoring()
+    }
+
+    fn start_block_monitoring(&mut self) -> Result<()> {
+        self.start_block_monitoring()
+    }
+
+    fn try_event(&mut self) -> Result<Option<PegManagerEvents>> {
+        self.try_event()
+    }
+
+    fn try_block(&mut self) -> Result<Option<RskBlock>> {
+        self.try_block()
+    }
+
+    fn cancel_event_monitoring(&mut self) -> Result<()> {
+        self.cancel_event_monitoring()
+    }
+
+    fn cancel_block_monitoring(&mut self) -> Result<()> {
+        self.cancel_block_monitoring()
+    }
+}
+
 impl<T: BrokerClientApi> Monitor<T> {
     pub fn new(block_broker: T, log_broker: T) -> Self {
         Self {
@@ -36,7 +76,7 @@ impl<T: BrokerClientApi> Monitor<T> {
 
         let result = self
             .send_to_log_broker(BrokerRequests::SubscribeLogs(
-                // TODO(Jira-PegManagerInRootstock) forcing PegManager address for every received event for now
+                // TODO(Jira-CheckForkAutomation) forcing PegManager address for every received event for now
                 FakePegManagerConfig::get_peg_manager_address(),
             ))
             .context("Broker error on SubscribeLogs")?;
@@ -147,7 +187,7 @@ impl<T: BrokerClientApi> Monitor<T> {
 
     fn request_cancel_event_monitoring(&mut self) -> Result<bool> {
         self.send_to_log_broker(
-            // TODO(Jira-PegManagerInRootstock) forcing PegManager address for every received event for now
+            // TODO(Jira-CheckForkAutomation) forcing PegManager address for every received event for now
             BrokerRequests::UnsubscribeLogs(FakePegManagerConfig::get_peg_manager_address()),
         )
         .context("Broker error on UnsubscribeLogs")

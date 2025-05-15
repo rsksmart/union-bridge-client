@@ -326,8 +326,6 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                     .context("Sending new block through channel")?;
             }
 
-            // TODO(Jira) send via broker after some configurable finality is achieved and taking into account `removed` field https://rsklabs.atlassian.net/browse/UB-46
-
             info!("Decoded event: {rsk_event:?}");
         }
 

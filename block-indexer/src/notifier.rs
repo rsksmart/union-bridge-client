@@ -11,18 +11,18 @@ use std::sync::mpsc::TryRecvError;
 use std::thread;
 use std::time::Duration;
 
-pub struct Notifier<T: BrokerServerApi> {
+pub struct Notifier<BS: BrokerServerApi> {
     new_block_channel: mpsc::Receiver<RskBlock>,
-    msg_broker: T,
+    msg_broker: BS,
     check_period: Duration,
     consumers: HashSet<u32>,
     shutdown_flag: ShutdownFlag,
 }
 
-impl<T: BrokerServerApi> Notifier<T> {
+impl<BS: BrokerServerApi> Notifier<BS> {
     pub fn new(
         indexer_receiver: mpsc::Receiver<RskBlock>,
-        msg_broker: T,
+        msg_broker: BS,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
         Self {
@@ -37,7 +37,7 @@ impl<T: BrokerServerApi> Notifier<T> {
     #[cfg(test)]
     pub fn new_for_tests(
         indexer_receiver: mpsc::Receiver<RskBlock>,
-        msg_broker: T,
+        msg_broker: BS,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
         Self {
