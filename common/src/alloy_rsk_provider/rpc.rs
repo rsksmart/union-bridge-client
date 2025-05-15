@@ -71,8 +71,8 @@ impl AlloyProvider {
         let ws = WsConnect::new(url);
 
         // Build your retry layer
-        let max_retry = 4; // wait time for retry is 2^attempt, so: 1s + 2s + 4s + 8s = 15s max <=> half a block time
-        let initial_backoff_ms = 1_000;
+        let max_retry = 6; // wait time for retry is 2^attempt, so: 1s + 2s + 4s + 8s = 15s max <=> half a block time
+        let initial_backoff_ms = 500;
         let cups = 100;
         let retry_layer = RetryBackoffLayer::new(max_retry, initial_backoff_ms, cups);
 
