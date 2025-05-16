@@ -21,3 +21,4 @@ tempfile = { workspace = true }
 
 [features]
 test-utils = ["common/test-utils"]
+anvil = ["common/anvil"]

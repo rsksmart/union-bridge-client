@@ -18,3 +18,6 @@ contracts:
 
   - name: "TestContractCompiled"
     address: "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc"
+
+  - name: "PegManager"
+    address: "0x0165878A594ca255338adfa4d48449f69242Eb8F"

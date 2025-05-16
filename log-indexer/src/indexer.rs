@@ -1,5 +1,6 @@
 use crate::store::LogStore;
 use anyhow::{Context, Result, bail};
+use common::types::RskEvent;
 use common::{
     rsk_indexer::RskIndexer,
     rsk_provider::{RskProvider, RskSubscription, RskSubscriptionError, RskSubscriptionFilter},
@@ -17,6 +18,7 @@ pub struct LogIndexer<P: RskProvider, S: LogStore> {
     initial_block_number: BlockNumber,
     sync_batch_size: usize,
     sync_finality_depth: usize,
+    should_validate_logs: bool,
     managed_contracts: HashMap<Address, ContractInfo>,
     shutdown_flag: ShutdownFlag,
 }
@@ -45,6 +47,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
             initial_block_number,
             sync_batch_size,
             sync_finality_depth,
+            should_validate_logs: false,
             managed_contracts,
             shutdown_flag,
         })
@@ -72,6 +75,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
             initial_block_number,
             sync_batch_size,
             sync_finality_depth,
+            should_validate_logs: false,
             managed_contracts,
             shutdown_flag,
         })
@@ -121,8 +125,10 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
 
 impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
     fn recover_logs(&self, addrs: &Vec<Address>) -> Result<BlockNumber> {
-        // If there is no sync checkpoint present in storage,
-        // use the initial block number present in config
+        if cfg!(feature = "anvil") {
+            return Ok(BlockNumber::from(self.initial_block_number));
+        }
+
         let checkpoint = self.store.get_sync_checkpoint()?;
         let mut start = match checkpoint {
             Some(log) => {
@@ -288,31 +294,23 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 
             info!("[subscribe_logs] Processed log: {:?}", new_log);
 
-            let managed_contract = self.managed_contracts.get(&new_log.info().address());
-            if managed_contract.is_none() {
+            let Some(managed_contract) = self.managed_contracts.get(&new_log.info().address())
+            else {
                 error!(
-                    "[subscribe_logs] Received unmanaged contract log: {:?}",
-                    new_log
+                    "[subscribe_logs] Received unmanaged contract log {} [{:?}]",
+                    new_log.info().address(),
+                    self.managed_contracts
                 );
                 continue;
-            }
-            let managed_contract = managed_contract.unwrap();
-
-            let rsk_event_result = &self
-                .rsk_provider
-                .decode_log(new_log.clone(), managed_contract);
-
-            let rsk_event = match rsk_event_result {
-                Ok(Some(e)) => e,
-                Ok(None) => {
-                    error!("[subscribe_logs] Unmanaged log received: {:?}", new_log);
-                    continue;
-                }
-                Err(e) => {
-                    error!("[subscribe_logs] Ignoring malformed event: {:?}", e);
-                    continue;
-                }
             };
+
+            // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-133
+            if self.should_validate_logs {
+                match self.decode_validate_log(&new_log, &managed_contract) {
+                    Some(value) => value,
+                    None => continue,
+                };
+            }
 
             self.store.save_log(&new_log).context("Saving new log")?;
             // TODO(Jira) avoid double writes for sync checkpoint in log indexer listener: https://rsklabs.atlassian.net/browse/UB-111
@@ -321,15 +319,39 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                 .context("Setting new log checkpoint")?;
 
             if let Some(channel) = &self.new_log_sender {
-                channel
-                    .send(new_log)
-                    .context("Sending new block through channel")?;
+                if let Err(e) = channel.send(new_log) {
+                    error!("Failed to send new block through channel: {:?}", e);
+                }
             }
-
-            info!("Decoded event: {rsk_event:?}");
         }
 
         Ok(())
+    }
+
+    fn decode_validate_log(
+        &self,
+        new_log: &RskLog,
+        managed_contract: &ContractInfo,
+    ) -> Option<RskEvent> {
+        let rsk_event_result = self
+            .rsk_provider
+            .decode_log(new_log.clone(), managed_contract);
+
+        let rsk_event = match rsk_event_result {
+            Ok(Some(e)) => e,
+            Ok(None) => {
+                error!("[subscribe_logs] Unmanaged log received: {:?}", new_log);
+                return None;
+            }
+            Err(e) => {
+                error!("[subscribe_logs] Ignoring malformed event: {:?}", e);
+                return None;
+            }
+        };
+
+        info!("Decoded event: {rsk_event:?}");
+
+        Some(rsk_event)
     }
 }
 
@@ -403,6 +425,7 @@ mod tests {
             initial_block_number: BlockNumber::from(99),
             sync_batch_size: 10,
             sync_finality_depth: finality_depth as usize,
+            should_validate_logs: false,
             managed_contracts: HashMap::new(),
             shutdown_flag: ShutdownFlag::init(),
         };
@@ -477,6 +500,7 @@ mod tests {
             initial_block_number: BlockNumber::from(0), // should be ignored
             sync_batch_size: 10,
             sync_finality_depth: finality_depth as usize,
+            should_validate_logs: false,
             managed_contracts: HashMap::new(),
             shutdown_flag: ShutdownFlag::init(),
         };
@@ -527,6 +551,7 @@ mod tests {
             initial_block_number: BlockNumber::from(80),
             sync_batch_size: 10,
             sync_finality_depth: 0,
+            should_validate_logs: false,
             managed_contracts: HashMap::new(),
             shutdown_flag: ShutdownFlag::init(),
         };
@@ -563,6 +588,7 @@ mod tests {
             sync_batch_size: 10,
             sync_finality_depth: 0,
             managed_contracts: HashMap::new(),
+            should_validate_logs: false,
             shutdown_flag: ShutdownFlag::init(),
         };
 

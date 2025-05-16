@@ -114,7 +114,9 @@ impl<BS: BrokerServerApi> Notifier<BS> {
                 consumer.remove_entry();
             }
         } else {
-            debug!("Consumer {consumer_id} was not subscribed to contract {address}");
+            trace!(
+                "Unsubscribing consumer {consumer_id} that was not subscribed to contract {address}"
+            );
         }
     }
 

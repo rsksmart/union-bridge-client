@@ -631,14 +631,30 @@ pub struct RskRpcBlock {
     #[serde(deserialize_with = "parse_rsk_difficulty", rename = "totalDifficulty")]
     total_difficulty: BlockDifficulty,
 
-    #[serde(
-        rename = "bitcoinMergedMiningHeader",
-        deserialize_with = "parse_bitcoin_header_to_pow"
+    #[cfg_attr(
+        not(feature = "anvil"),
+        serde(
+            rename = "bitcoinMergedMiningHeader",
+            deserialize_with = "parse_bitcoin_header_to_pow"
+        )
+    )]
+    #[cfg_attr(
+        feature = "anvil",
+        serde(
+            default = "default_pow_header",
+            rename = "bitcoinMergedMiningHeader",
+            deserialize_with = "parse_bitcoin_header_to_pow"
+        )
     )]
     pow: BlockPow,
 
     #[serde(deserialize_with = "parse_uncles")]
     uncles: Vec<BlockHash>,
+}
+
+#[cfg(feature = "anvil")]
+fn default_pow_header() -> BlockPow {
+    BlockPow(H256::zero())
 }
 
 #[derive(Serialize, Deserialize, Debug)]
