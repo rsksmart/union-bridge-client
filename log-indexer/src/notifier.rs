@@ -4,7 +4,7 @@ use common::msg_broker::broker::BrokerServerApi;
 use common::msg_broker::types::{BrokerRequests, BrokerResponses};
 use common::shutdown_flag::ShutdownFlag;
 use common::types::{Address, RskLog};
-use log::{debug, info, trace, warn};
+use log::{debug, error, info, trace, warn};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
@@ -118,7 +118,7 @@ impl<BS: BrokerServerApi> Notifier<BS> {
                 consumer.remove_entry();
             }
         } else {
-            debug!("Consumer {consumer_id} was not subscribed to {address}");
+            debug!("Consumer {consumer_id} was not subscribed to contract {address}");
         }
     }
 
@@ -148,8 +148,20 @@ impl<BS: BrokerServerApi> Notifier<BS> {
     }
 
     fn notify_consumers(&mut self, new_log: RskLog) -> Result<()> {
-        let selector = new_log.selector();
         let address: Address = new_log.info().address();
+
+        let topics0 = new_log
+            .event()
+            .topics()
+            .get(0)
+            .map(|s| s.as_str())
+            .unwrap_or_else(|| {
+                error!("Log has no topics, using NoTopic for selector");
+                "NoTopic"
+            });
+
+        let selector = format!("{topics0} @ {address}");
+
         let response = BrokerResponses::Log(new_log);
 
         if let Some(consumers_for_contract) = self.contracts_with_consumers.get(&address) {
@@ -161,7 +173,7 @@ impl<BS: BrokerServerApi> Notifier<BS> {
                     .context(format!("Sending {selector} to consumer {c_id}"))?;
             }
         } else {
-            debug!("No consumers for event {selector}");
+            debug!("No consumers for contract @ {address}");
         }
 
         Ok(())

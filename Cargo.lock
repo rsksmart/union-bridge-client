@@ -1668,13 +1668,17 @@ dependencies = [
 name = "coordinator"
 version = "0.1.0"
 dependencies = [
+ "alloy-primitives",
+ "alloy-sol-types",
  "anyhow",
  "clap",
  "common",
+ "hex",
  "log",
  "mockall",
  "serde",
  "serde_json",
+ "union-bridge-contracts",
 ]
 
 [[package]]

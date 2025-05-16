@@ -37,12 +37,14 @@ pub fn process(rsk_log: RskLog) -> Result<Option<RskEvent>> {
     }
     let log_data = log_data.unwrap();
 
-    let topic0 = log_data.topics()[0];
+    let topic0 = log_data.topics().get(0);
     let event_name_and_input = match topic0 {
-        ev if ev == ValueUpdate::SIGNATURE_HASH => {
+        Some(ev) if *ev == ValueUpdate::SIGNATURE_HASH => {
             Some(decode_event_input::<ValueUpdate>(&log_data)?)
         }
-        ev if ev == LogValue::SIGNATURE_HASH => Some(decode_event_input::<LogValue>(&log_data)?),
+        Some(ev) if *ev == LogValue::SIGNATURE_HASH => {
+            Some(decode_event_input::<LogValue>(&log_data)?)
+        }
         // other types here in the future
         _ => None,
     };

@@ -73,14 +73,14 @@ impl<BS: BrokerServerApi> Notifier<BS> {
     fn update_consumers(&mut self) -> Result<()> {
         match self.msg_broker.try_recv()? {
             Some((BrokerRequests::SubscribeBlocks, consumer_id)) => {
-                info!("New consumer {consumer_id}");
+                info!("New consumer {consumer_id} for blocks");
                 self.consumers.insert(consumer_id);
             }
             Some((BrokerRequests::UnsubscribeBlocks, consumer_id)) => {
                 info!("Unsubscribing consumer {consumer_id}");
                 let removed = self.consumers.remove(&consumer_id);
                 if !removed {
-                    debug!("Consumer {consumer_id} was not subscribed");
+                    trace!("Consumer {consumer_id} was not subscribed to blocks");
                 }
             }
             Some((_, consumer_id)) => {

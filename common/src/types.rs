@@ -486,34 +486,6 @@ impl RskLog {
     pub fn event(&self) -> &LogEvent {
         &self.event
     }
-
-    pub fn selector(&self) -> Selector {
-        self.into()
-    }
-}
-
-#[derive(Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Default)]
-pub struct Selector {
-    pub address: Address,
-    pub sig_hash: String,
-}
-
-impl From<&RskLog> for Selector {
-    fn from(log: &RskLog) -> Self {
-        match log.event().topics().get(0) {
-            Some(t0) => Selector {
-                sig_hash: t0.clone(),
-                address: log.info().address(),
-            },
-            None => Selector::default(),
-        }
-    }
-}
-
-impl fmt::Display for Selector {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}@{}", self.sig_hash, self.address)
-    }
 }
 
 impl From<RskRpcLog> for RskLog {

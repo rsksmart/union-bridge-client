@@ -36,7 +36,7 @@ fn main() -> Result<()> {
 
     let block_broker = BrokerClient::new(config.block_broker_port, config.broker_client_id);
     let log_broker = BrokerClient::new(config.log_broker_port, config.broker_client_id);
-    let monitor = Monitor::new(block_broker, log_broker);
+    let monitor = Monitor::new(log_broker, block_broker);
 
     let shutdown_flag = ShutdownFlag::init();
 
