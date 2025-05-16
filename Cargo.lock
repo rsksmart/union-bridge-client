@@ -1286,6 +1286,7 @@ dependencies = [
  "primitive-types 0.13.1",
  "rust-bitvmx-storage-backend",
  "serde",
+ "serde_json",
  "tempfile",
 ]
 

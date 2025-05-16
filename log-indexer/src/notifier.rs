@@ -1,5 +1,4 @@
-use anyhow::{Context, Result};
-use common::constants::coordinator::MONITOR_CHECK_PERIOD;
+use anyhow::{Context, Result, anyhow};
 use common::msg_broker::broker::BrokerServerApi;
 use common::msg_broker::types::{BrokerRequests, BrokerResponses};
 use common::shutdown_flag::ShutdownFlag;
@@ -8,9 +7,10 @@ use log::{debug, error, info, trace, warn};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
-use std::sync::mpsc::TryRecvError;
-use std::thread;
+use std::sync::mpsc::RecvTimeoutError;
 use std::time::Duration;
+
+const MONITOR_CHECK_PERIOD: Duration = Duration::from_secs(5);
 
 pub struct Notifier<BS: BrokerServerApi> {
     new_log_channel: mpsc::Receiver<RskLog>,
@@ -58,12 +58,8 @@ impl<BS: BrokerServerApi> Notifier<BS> {
 
             self.update_consumers()?;
 
-            if let Some(log) = self.try_new_log()? {
+            if let Some(log) = self.wait_for_log(self.check_period)? {
                 self.notify_consumers(log)?;
-                // no sleep, try to receive new ASAP
-            } else {
-                trace!("No new logs yet, sleep a bit");
-                thread::sleep(self.check_period);
             }
         }
 
@@ -130,19 +126,19 @@ impl<BS: BrokerServerApi> Notifier<BS> {
         });
     }
 
-    fn try_new_log(&mut self) -> Result<Option<RskLog>> {
-        match self.new_log_channel.try_recv() {
-            Ok(b) => {
-                debug!("New log received by notifier {:?}", b);
-                Ok(Some(b))
+    fn wait_for_log(&mut self, timeout: Duration) -> Result<Option<RskLog>> {
+        match self.new_log_channel.recv_timeout(timeout) {
+            Ok(log) => {
+                debug!("New log received by notifier {:?}", log);
+                Ok(Some(log))
             }
-            Err(TryRecvError::Empty) => {
-                trace!("No new log yet");
+            Err(RecvTimeoutError::Timeout) => {
+                trace!("No new log within {:?} timeout", timeout);
                 Ok(None)
             }
-            Err(TryRecvError::Disconnected) => match self.shutdown_flag.is_on() {
+            Err(RecvTimeoutError::Disconnected) => match self.shutdown_flag.is_on() {
                 true => Ok(None),
-                false => Err(anyhow::anyhow!("Indexer channel disconnected")),
+                false => Err(anyhow!("Indexer channel disconnected")),
             },
         }
     }
@@ -188,7 +184,13 @@ mod tests {
     use common::test_utils::rsk_utils::generate_fake_address;
     use std::sync::mpsc;
     use std::sync::mpsc::Sender;
+    use std::thread;
     use std::thread::{JoinHandle, sleep};
+
+    struct ClientRequest {
+        id: u32,
+        request: BrokerRequests,
+    }
 
     #[test]
     fn test_run_new_log_received_no_consumers() {
@@ -466,10 +468,5 @@ mod tests {
 
             shutdown_flag.set();
         })
-    }
-
-    struct ClientRequest {
-        id: u32,
-        request: BrokerRequests,
     }
 }

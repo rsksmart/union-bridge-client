@@ -50,6 +50,7 @@ fn main() -> Result<()> {
             config.indexer.initial_block_hash
         ));
 
+    // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - think about bounding the channel
     let (tx, rx): (mpsc::Sender<RskBlock>, mpsc::Receiver<RskBlock>) = mpsc::channel();
 
     let store = CachedBlockStore::new(
