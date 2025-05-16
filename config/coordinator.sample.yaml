@@ -1,0 +1,3 @@
+log_broker_port: 9092
+block_broker_port: 9093
+broker_client_id: 333

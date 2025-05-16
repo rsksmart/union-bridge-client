@@ -12,6 +12,7 @@ log = { workspace = true }
 mockall = { workspace = true }
 serde = { workspace = true }
 storage-backend = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 env_logger = { workspace = true }
@@ -19,5 +20,4 @@ primitive-types = { workspace = true }
 tempfile = { workspace = true }
 
 [features]
-test-mocks = ["common/test-mocks"]
 test-utils = ["common/test-utils"]

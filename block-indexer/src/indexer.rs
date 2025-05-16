@@ -7,10 +7,12 @@ use common::{
     types::{BlockHash, BlockNumber, RskBlock},
 };
 use log::{debug, error, info, warn};
+use std::sync::mpsc;
 
 pub struct BlockIndexer<P: RskProvider, S: BlockStore> {
     store: S,
     rsk_provider: P,
+    new_block_sender: Option<mpsc::Sender<RskBlock>>,
     initial_block_hash: BlockHash,
     shutdown_flag: ShutdownFlag,
 }
@@ -19,6 +21,22 @@ pub struct BlockIndexer<P: RskProvider, S: BlockStore> {
 // TODO(Jira) allow changing the initial_block_hash on a running instance: https://rsklabs.atlassian.net/browse/UB-32
 
 impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
+    pub fn new_with_notifier(
+        store: S,
+        provider: P,
+        new_block_sender: mpsc::Sender<RskBlock>,
+        initial_block_hash: BlockHash,
+        shutdown_flag: ShutdownFlag,
+    ) -> Self {
+        Self {
+            store,
+            rsk_provider: provider,
+            new_block_sender: Some(new_block_sender),
+            initial_block_hash,
+            shutdown_flag,
+        }
+    }
+
     pub fn new(
         store: S,
         provider: P,
@@ -28,6 +46,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         Self {
             store,
             rsk_provider: provider,
+            new_block_sender: None,
             initial_block_hash,
             shutdown_flag,
         }
@@ -149,6 +168,8 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 );
                 self.save_as_best_block(&new_block)
                     .context("On Block subscription")?;
+
+                self.notify_best_block(new_block)?;
             } else if is_reorg {
                 info!(
                     "[subscribe_blocks] Processing block {} ({}): fixing local reorg",
@@ -161,6 +182,8 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                     .context("On Block subscription")?;
                 self.backward_sync(&provider_best_block)
                     .context("On Block subscription")?;
+
+                self.notify_best_block(new_block)?;
             } else {
                 info!(
                     "[subscribe_blocks] Processing block {} ({}): neither extending, nor competing",
@@ -177,11 +200,22 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         Ok(())
     }
 
+    fn notify_best_block(&self, new_block: RskBlock) -> Result<()> {
+        if let Some(channel) = &self.new_block_sender {
+            channel
+                .send(new_block)
+                .context("Sending best block through channel")?;
+        }
+        Ok(())
+    }
+
     fn backward_sync(&self, starting_block: &RskBlock) -> Result<()> {
         if !self.is_running() {
             info!("[block_backward_sync] Shutdown requested, skipping...");
             return Ok(());
         }
+
+        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - think if it is feasible to send new-block notifications on backward sync or if it's better to provide a mechanism to requests past blocks in such situation when complete
 
         let store_best_block = self
             .store
@@ -240,7 +274,6 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 self.store
                     .set_best_block(&starting_block)
                     .context("On Backward Sync")?;
-
                 break;
             }
 
@@ -414,7 +447,7 @@ impl<P: RskProvider, S: BlockStore> RskIndexer<P, S> for BlockIndexer<P, S> {
     }
 }
 
-#[cfg(all(test, feature = "test-mocks"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::store::MockBlockStore;
@@ -439,6 +472,7 @@ mod tests {
 
         let idx = BlockIndexer {
             rsk_provider: provider,
+            new_block_sender: None,
             store,
             initial_block_hash: block.parent_hash(),
             shutdown_flag: ShutdownFlag::init(),
@@ -480,6 +514,7 @@ mod tests {
 
         let idx = BlockIndexer {
             rsk_provider: provider,
+            new_block_sender: None,
             store,
             initial_block_hash: block_with_uncle.parent_hash(),
             shutdown_flag: ShutdownFlag::init(),
@@ -518,6 +553,7 @@ mod tests {
 
         let idx = BlockIndexer {
             rsk_provider: provider,
+            new_block_sender: None,
             store,
             initial_block_hash: block_with_missing.parent_hash(),
             shutdown_flag: ShutdownFlag::init(),

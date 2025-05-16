@@ -1,4 +1,4 @@
-use common::config::{CommonConfig, IndexerConfig, ProviderConfig};
+use common::config::{CommonConfig, IndexerConfig, NotifierConfig, ProviderConfig};
 use common::errors::ConfigError;
 use serde::Deserialize;
 
@@ -8,6 +8,7 @@ const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub struct Config {
     pub indexer: IndexerConfig,
     pub provider: ProviderConfig,
+    pub notifier: NotifierConfig,
 }
 
 impl Config {

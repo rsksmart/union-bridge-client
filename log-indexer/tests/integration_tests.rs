@@ -1,5 +1,3 @@
-#![cfg(feature = "test-mocks")]
-
 use anyhow::{Context, Result};
 use common::test_utils::mock_rsk_provider_handler::MockRskProviderHandler;
 use common::test_utils::rsk_block_generator::FakeBlockGenerator;
@@ -252,7 +250,7 @@ fn assert_logs(
     log_info_tuples: Vec<LogInfo>,
 ) -> () {
     for log_info in log_info_tuples {
-        let expected_log = log_generator.generate_log(event_signature, log_info);
+        let expected_log = log_generator.generate_log_with_info(event_signature, log_info);
         let expected_log_key = format!(
             "logs/{}/{}/{}",
             expected_log.info().address().to_string(),
@@ -276,7 +274,7 @@ fn assert_log_not_in_store(
     event_signature: &str,
     log_info: LogInfo,
 ) -> () {
-    let unexpected_log = log_generator.generate_log(event_signature, log_info);
+    let unexpected_log = log_generator.generate_log_with_info(event_signature, log_info);
     let unexpected_log_key = format!(
         "logs/{}/{}/{}",
         unexpected_log.info().address().to_string(),

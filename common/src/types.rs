@@ -1,4 +1,5 @@
 use alloy_json_abi::JsonAbi;
+use anyhow::Result;
 use bitcoin::{blockdata::block::Header, consensus::encode::deserialize as btc_deserialize};
 use hex::FromHexError;
 use primitive_types::{H160, H256, U256};
@@ -41,7 +42,7 @@ pub trait ToHexString {
 ///
 /// println!("Block hash: {}", block_hash);
 /// ```
-#[derive(Serialize, Deserialize, Copy, Debug, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, Copy, Debug, Eq, PartialEq, Hash, Clone)]
 pub struct BlockHash(H256);
 
 impl BlockHash {
@@ -91,7 +92,7 @@ impl fmt::Display for BlockHash {
 ///
 /// assert_eq!(next_block, BlockNumber::from(101));
 /// ```
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
 pub struct BlockNumber(u64);
 
 impl BlockNumber {
@@ -328,7 +329,9 @@ impl fmt::Display for BlockPow {
 ///
 /// println!("Address: {}", address);
 /// ```
-#[derive(Serialize, Deserialize, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Clone, Hash)]
+#[derive(
+    Serialize, Deserialize, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Clone, Hash, Default,
+)]
 pub struct Address(H160);
 
 impl Address {
@@ -367,7 +370,7 @@ impl fmt::Display for Address {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RskBlock {
     number: BlockNumber,
     hash: BlockHash,
@@ -377,6 +380,21 @@ pub struct RskBlock {
     total_difficulty: BlockDifficulty,
     pow: BlockPow,
     uncles: Vec<BlockHash>,
+}
+
+impl std::hash::Hash for RskBlock {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.hash.hash(state);
+    }
+}
+
+impl PartialEq for RskBlock {
+    fn eq(&self, other: &Self) -> bool {
+        self.hash == other.hash
+    }
+}
+impl Eq for RskBlock {
+    // derived from PartialEq
 }
 
 impl RskBlock {
@@ -479,7 +497,7 @@ impl From<RskRpcLog> for RskLog {
                 rpc_log.block_number,
                 rpc_log.tx_hash,
                 rpc_log.log_index,
-                // assumption is made where the log is canonical
+                // assumption is made where the log is canonical if coming from request (not subscription)
                 false,
             ),
             LogEvent::new(rpc_log.data, rpc_log.topics),
@@ -625,7 +643,7 @@ pub struct RskRpcBlock {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RskRpcLog {
-    #[serde(rename = "address", deserialize_with = "parse_hex_to_address")]
+    #[serde(deserialize_with = "parse_hex_to_address")]
     address: Address,
 
     #[serde(rename = "blockHash", deserialize_with = "parse_hex_to_block_hash")]
@@ -640,11 +658,10 @@ pub struct RskRpcLog {
     #[serde(rename = "logIndex", deserialize_with = "parse_hex_to_u64")]
     log_index: u64,
 
-    #[serde(rename = "data")]
     data: String,
 
-    #[serde(rename = "topics")]
     topics: Vec<String>,
+    // no "removed" field if coming from request (not subscription)
 }
 
 fn parse_hex_to_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>

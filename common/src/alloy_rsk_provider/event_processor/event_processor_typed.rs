@@ -37,12 +37,14 @@ pub fn process(rsk_log: RskLog) -> Result<Option<RskEvent>> {
     }
     let log_data = log_data.unwrap();
 
-    let topic0 = log_data.topics()[0];
+    let topic0 = log_data.topics().get(0);
     let event_name_and_input = match topic0 {
-        ev if ev == ValueUpdate::SIGNATURE_HASH => {
+        Some(ev) if *ev == ValueUpdate::SIGNATURE_HASH => {
             Some(decode_event_input::<ValueUpdate>(&log_data)?)
         }
-        ev if ev == LogValue::SIGNATURE_HASH => Some(decode_event_input::<LogValue>(&log_data)?),
+        Some(ev) if *ev == LogValue::SIGNATURE_HASH => {
+            Some(decode_event_input::<LogValue>(&log_data)?)
+        }
         // other types here in the future
         _ => None,
     };
@@ -53,8 +55,8 @@ pub fn process(rsk_log: RskLog) -> Result<Option<RskEvent>> {
 
     let (name, decoded_log_input) = event_name_and_input.unwrap();
 
-    let event_json = RskEvent::new(name.to_string(), rsk_log.info().clone(), decoded_log_input);
-    Ok(Some(event_json))
+    let event = RskEvent::new(name.to_string(), rsk_log.info().clone(), decoded_log_input);
+    Ok(Some(event))
 }
 
 fn decode_event_input<T: SolEvent + Serialize + Debug>(

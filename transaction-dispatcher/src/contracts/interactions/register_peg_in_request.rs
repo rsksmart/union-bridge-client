@@ -28,8 +28,6 @@ impl<C: PegManagerContractApi> RegisterPegInRequestInvoke<C> {
             DomainErrors::InvalidBtcTxSpvProof(format!("Failed to parse RegisterPegInInput: {}", e))
         })?;
 
-        // TODO(iago) check why sometimes it succeeds several times with the same payload (most of the times it does not). It looks like it happens after restarting anvil/tx-dispatcher without re-deploying contracts
-
         let receipt = self
             .contract
             .register_peg_in_request_send(parsed_input, self.gas_bumps)

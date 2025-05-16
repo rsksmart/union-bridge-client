@@ -1,0 +1,3 @@
+log_broker_port: 56789
+block_broker_port: 12345
+broker_client_id: 333

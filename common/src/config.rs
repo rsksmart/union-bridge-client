@@ -25,6 +25,11 @@ pub struct IndexerConfig {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct NotifierConfig {
+    pub broker_port: u16,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct SyncConfig {
     pub finality_depth: usize,
     pub batch_size: usize,

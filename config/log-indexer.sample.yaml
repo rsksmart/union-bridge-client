@@ -12,6 +12,9 @@ provider:
   rootstock:
     url: "wss://public-node.testnet.rsk.co/websocket"
 
+notifier:
+  broker_port: 12345
+
 contracts:
   - name: "PegManager"
     address: "<ADDRESS_HERE>"

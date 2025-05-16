@@ -92,7 +92,7 @@ impl LogStore for RawLogStore {
     }
 }
 
-#[cfg(all(test, feature = "test-mocks"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use anyhow::Result;
@@ -125,7 +125,7 @@ mod tests {
             1,
             false,
         );
-        let expected_log = log_generator.generate_log(signature, expected_log_info);
+        let expected_log = log_generator.generate_log_with_info(signature, expected_log_info);
         let log_key = StoreKey::LogId(
             expected_log.info().address(),
             expected_log.info().tx_hash().to_string(),
@@ -154,7 +154,7 @@ mod tests {
             1,
             false,
         );
-        let saved_log = log_generator.generate_log(signature, expected_log_info1);
+        let saved_log = log_generator.generate_log_with_info(signature, expected_log_info1);
         let log_key = StoreKey::LogId(
             saved_log.info().address(),
             saved_log.info().tx_hash().to_string(),
@@ -185,9 +185,9 @@ mod tests {
             4,
             false,
         );
-        let different_log2 = log_generator.generate_log(signature, expected_log_info2);
-        let different_log3 = log_generator.generate_log(signature, expected_log_info3);
-        let different_log4 = log_generator.generate_log(signature, expected_log_info4);
+        let different_log2 = log_generator.generate_log_with_info(signature, expected_log_info2);
+        let different_log3 = log_generator.generate_log_with_info(signature, expected_log_info3);
+        let different_log4 = log_generator.generate_log_with_info(signature, expected_log_info4);
 
         store.save_log(&saved_log)?;
         let actual_log = store.db.get(log_key)?.unwrap();
@@ -212,7 +212,8 @@ mod tests {
             1,
             false,
         );
-        let expected_checkpoint = log_generator.generate_log(signature, expected_log_info);
+        let expected_checkpoint =
+            log_generator.generate_log_with_info(signature, expected_log_info);
 
         store.set_sync_checkpoint(&expected_checkpoint)?;
         let actual_checkpoint = store.get_sync_checkpoint()?.unwrap();
