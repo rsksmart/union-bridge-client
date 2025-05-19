@@ -1,3 +1,6 @@
+notifier:
+  broker_port: 56789
+
 indexer:
   initial_block_hash: "0x08b34283d649fdd3b94651fe8c9b447a9c2e6525f0db5824107c759d1e59e043"
   sync:
