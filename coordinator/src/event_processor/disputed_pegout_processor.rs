@@ -6,7 +6,7 @@ use log::{error, info, warn};
 use std::collections::{HashMap, HashSet};
 
 pub struct DisputedPegoutProcessor {
-    requires_blocks: bool,
+    waiting_blocks: bool,
     disputes: HashMap<String, Dispute>,
     known_blocks: HashSet<RskBlock>,
 }
@@ -14,7 +14,7 @@ pub struct DisputedPegoutProcessor {
 impl DisputedPegoutProcessor {
     pub fn new() -> Self {
         Self {
-            requires_blocks: false,
+            waiting_blocks: false,
             disputes: HashMap::new(),
             known_blocks: HashSet::new(),
         }
@@ -44,7 +44,7 @@ impl DisputedPegoutProcessor {
         info!("Init dispute {dispute:?}, count {}", self.disputes.len());
         self.disputes.insert(peg_out_id, dispute);
 
-        self.requires_blocks = true;
+        self.waiting_blocks = true;
 
         Ok(())
     }
@@ -57,16 +57,8 @@ impl DisputedPegoutProcessor {
 
         if self.disputes.is_empty() {
             info!("No active disputes, stopping block monitoring");
-            self.requires_blocks = false;
+            self.waiting_blocks = false;
             self.known_blocks.clear();
-        }
-    }
-
-    fn undo_kickoff_dispute(&mut self, peg_out_id: String) {
-        if let Some(dispute) = self.disputes.get_mut(&peg_out_id) {
-            dispute.unset_kickoff();
-        } else {
-            warn!("RemoveKickoffAdvanceFunds but no dispute found for pegout {peg_out_id}");
         }
     }
 
@@ -79,6 +71,14 @@ impl DisputedPegoutProcessor {
             error!("KickoffAdvanceFunds but no dispute found for pegout {peg_out_id}");
         }
     }
+
+    fn undo_kickoff_dispute(&mut self, peg_out_id: String) {
+        if let Some(dispute) = self.disputes.get_mut(&peg_out_id) {
+            dispute.unset_kickoff();
+        } else {
+            warn!("RemoveKickoffAdvanceFunds but no dispute found for pegout {peg_out_id}");
+        }
+    }
 }
 
 impl EventProcessor for DisputedPegoutProcessor {
@@ -88,16 +88,18 @@ impl EventProcessor for DisputedPegoutProcessor {
                 info!("Handling RequestAdvanceFunds...{:?}", ev);
                 self.init_dispute(ev.peg_out_id.clone().to_string(), ev.block_num, ev.amount)?;
             }
+            // TODO(iago) think about how to force removed event
             RskPegManagerEvents::RemoveRequestAdvanceFunds { peg_out_id } => {
                 self.remove_dispute(peg_out_id);
             }
-            RskPegManagerEvents::KickoffAdvanceFunds {
-                peg_out_id,
-                block_num,
-            } => {
-                info!("Received KickoffAdvanceFunds for pegout {peg_out_id}, setting kickoff");
-                self.kickoff_dispute(peg_out_id.clone(), *block_num);
+            RskPegManagerEvents::KickoffAdvanceFunds(ev) => {
+                info!(
+                    "Received KickoffAdvanceFunds for pegout {}, setting kickoff",
+                    ev.peg_out_id
+                );
+                self.kickoff_dispute(ev.peg_out_id.clone(), ev.block_num);
             }
+            // TODO(iago) think about how to force removed event
             RskPegManagerEvents::RemoveKickoffAdvanceFunds { peg_out_id } => {
                 info!(
                     "Received RemoveKickoffAdvanceFunds for pegout {peg_out_id}, unsetting kickoff"
@@ -143,7 +145,7 @@ impl EventProcessor for DisputedPegoutProcessor {
     }
 
     fn waiting_blocks(&self) -> bool {
-        self.requires_blocks
+        self.waiting_blocks
     }
 
     fn shutdown(&self) {

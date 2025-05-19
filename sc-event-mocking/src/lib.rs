@@ -32,7 +32,6 @@ impl<P: Provider> Executor<P> {
         Ok(*contract.address())
     }
 
-    // TODO(iago) change eyre by anyhow
     pub async fn request_advance_funds(&self) -> Result<()> {
         let contract = self.get_contract_instance(self.address);
 

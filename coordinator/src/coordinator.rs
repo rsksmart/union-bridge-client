@@ -37,17 +37,27 @@ impl<M: MonitorApi> Coordinator<M> {
             .start_event_monitoring()
             .context("Failed to start event monitoring")?;
 
+        // TODO(Jira) this might be removed once we add resilience in scope of https://rsklabs.atlassian.net/browse/UB-132
+        self.monitor
+            .cancel_block_monitoring(true)
+            .context("Failed to cancel block monitoring")?;
+
         let result = (|| -> Result<()> {
             loop {
                 if !self.is_running() {
                     break;
                 }
 
+                let mut message_received = false;
+
                 if let Some(event) = self.monitor.try_event().context("Error getting event")? {
                     // each processor decides if the event is relevant
                     self.processors
                         .iter_mut()
                         .try_for_each(|p| p.process_new_event(&event))?;
+
+                    // no sleep, try to get new messages asap
+                    message_received = true;
                 }
 
                 // if any processor is waiting for blocks, we need to check for new blocks
@@ -60,17 +70,22 @@ impl<M: MonitorApi> Coordinator<M> {
                         self.processors
                             .iter_mut()
                             .try_for_each(|p| p.process_new_block(&block))?;
+
+                        // no sleep, try to get new messages asap
+                        message_received = true;
                     }
                 }
 
                 // if event or block processing made new blocks no longer required, we cancel block monitoring
                 if !self.check_processors_waiting_blocks() {
                     self.monitor
-                        .cancel_block_monitoring_if_on()
+                        .cancel_block_monitoring(false)
                         .context("Failed to cancel block monitoring")?;
                 }
 
-                thread::sleep(self.check_period);
+                if !message_received {
+                    thread::sleep(self.check_period);
+                }
             }
             Ok(())
         })();
@@ -78,7 +93,7 @@ impl<M: MonitorApi> Coordinator<M> {
         self.processors.iter().for_each(|p| p.shutdown());
 
         self.monitor
-            .cancel_block_monitoring_if_on()
+            .cancel_block_monitoring(false)
             .context("Failed to cancel block monitoring")?;
 
         self.monitor
@@ -102,7 +117,8 @@ mod tests {
     use crate::coordinator::Coordinator;
     use crate::monitor::MockMonitorApi;
     use crate::types::RskPegManagerEvents;
-    use common::fake_contracts::FakePegManager::RequestAdvanceFunds;
+    use alloy_primitives::U256;
+    use common::fake_contracts::FakePegManager::{KickoffAdvanceFunds, RequestAdvanceFunds};
     use common::shutdown_flag::ShutdownFlag;
     use common::test_utils::rsk_block_generator::{
         get_first_default_rsk_block, get_second_default_rsk_block,
@@ -124,10 +140,12 @@ mod tests {
             amount: 1,
         });
 
-        let event_2: RskPegManagerEvents = RskPegManagerEvents::KickoffAdvanceFunds {
-            peg_out_id: "peg_out_id".to_string(),
-            block_num: block_1.number().value(),
-        };
+        let event_2: RskPegManagerEvents =
+            RskPegManagerEvents::KickoffAdvanceFunds(KickoffAdvanceFunds {
+                peg_out_id: "peg_out_id".to_string(),
+                block_num: block_1.number().value(),
+                required_pow: U256::from(1),
+            });
 
         mock_monitor
             .expect_start_event_monitoring()
@@ -144,9 +162,9 @@ mod tests {
             .once();
 
         mock_monitor
-            .expect_cancel_block_monitoring_if_on()
-            .return_once(|| Ok(()))
-            .times(1);
+            .expect_cancel_block_monitoring()
+            .returning(|_b| Ok(()))
+            .times(2);
 
         expect_try_event(vec![event_1, event_2], &mut mock_monitor);
 
@@ -191,9 +209,9 @@ mod tests {
             .once();
 
         mock_monitor
-            .expect_cancel_block_monitoring_if_on()
-            .return_once(|| Ok(()))
-            .times(1);
+            .expect_cancel_block_monitoring()
+            .returning(|_b| Ok(()))
+            .times(2);
 
         expect_try_event(vec![event_1, event_2], &mut mock_monitor);
 

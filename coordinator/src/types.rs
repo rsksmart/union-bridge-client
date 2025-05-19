@@ -1,7 +1,7 @@
 use crate::types::RskPegManagerEvents::UnknownEvent;
 use alloy_primitives::{B256, LogData};
 use alloy_sol_types::SolEvent;
-use common::fake_contracts::FakePegManager::RequestAdvanceFunds;
+use common::fake_contracts::FakePegManager::{KickoffAdvanceFunds, RequestAdvanceFunds};
 use common::types::RskLog;
 use log::{error, warn};
 use union_contracts::bindings::pegmanager::PegManager::RegisteredPegInRequest;
@@ -9,17 +9,9 @@ use union_contracts::bindings::pegmanager::PegManager::RegisteredPegInRequest;
 #[derive(Eq, PartialEq, Debug)]
 pub enum RskPegManagerEvents {
     RequestAdvanceFunds(RequestAdvanceFunds),
-    RemoveRequestAdvanceFunds {
-        peg_out_id: String,
-    },
-    KickoffAdvanceFunds {
-        // TODO add other fields
-        peg_out_id: String,
-        block_num: u64,
-    },
-    RemoveKickoffAdvanceFunds {
-        peg_out_id: String,
-    },
+    RemoveRequestAdvanceFunds { peg_out_id: String },
+    KickoffAdvanceFunds(KickoffAdvanceFunds),
+    RemoveKickoffAdvanceFunds { peg_out_id: String },
     RegisteredPegInRequest(RegisteredPegInRequest),
     UnknownEvent,
 }
@@ -88,8 +80,6 @@ pub struct Dispute {
     kickoff_adv_confirmations: u32,
 }
 
-const REQ_ADV_CONFIRMATIONS_TOLERANCE_THRESHOLD: f64 = 1.10;
-
 impl Dispute {
     pub fn new(
         peg_out_id: String,
@@ -125,10 +115,14 @@ impl Dispute {
     }
 
     fn log_delayed_kickoff(&self, last_block: u64) {
-        let tolerance =
-            self.req_adv_confirmations as f64 * REQ_ADV_CONFIRMATIONS_TOLERANCE_THRESHOLD;
-        if last_block > self.req_adv_block.saturating_add(tolerance.ceil() as u64) {
-            warn!("KickoffAdvanceFunds not received yet, but we are past the tolerance threshold");
+        let diff_blocks = last_block.saturating_sub(
+            self.req_adv_block
+                .saturating_add(self.req_adv_confirmations as u64),
+        );
+        if diff_blocks > 0 {
+            warn!(
+                "KickoffAdvanceFunds not received yet, but we are past the tolerance threshold by {diff_blocks}"
+            );
         }
     }
 }

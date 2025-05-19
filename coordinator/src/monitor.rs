@@ -3,7 +3,7 @@ use anyhow::{Context, Result, bail};
 use common::msg_broker::broker::{BROKER_SERVER_ID, BrokerClientApi, BrokerError};
 use common::msg_broker::types::{BrokerRequests, BrokerResponses};
 use common::types::{Address, RskBlock};
-use log::{info, trace};
+use log::{debug, info, trace};
 
 #[cfg(test)]
 use mockall::automock;
@@ -15,7 +15,7 @@ pub trait MonitorApi {
     fn try_event(&mut self) -> Result<Option<RskPegManagerEvents>>;
     fn try_block(&mut self) -> Result<Option<RskBlock>>;
     fn cancel_event_monitoring(&mut self) -> Result<()>;
-    fn cancel_block_monitoring_if_on(&mut self) -> Result<()>;
+    fn cancel_block_monitoring(&mut self, force: bool) -> Result<()>;
 }
 
 pub struct Monitor<BC: BrokerClientApi> {
@@ -47,8 +47,8 @@ impl<BC: BrokerClientApi> MonitorApi for Monitor<BC> {
         self.cancel_event_monitoring()
     }
 
-    fn cancel_block_monitoring_if_on(&mut self) -> Result<()> {
-        self.cancel_block_monitoring_if_on()
+    fn cancel_block_monitoring(&mut self, force: bool) -> Result<()> {
+        self.cancel_block_monitoring_if_on(force)
     }
 }
 
@@ -137,7 +137,7 @@ impl<T: BrokerClientApi> Monitor<T> {
 
         match self.block_broker.try_recv()? {
             Some(BrokerResponses::Block(b)) => {
-                info!("Received new Block {:?}", b);
+                debug!("Received new Block {:?}", b);
                 Ok(Some(b))
             }
             Some(other) => bail!("Unexpected response type from Block Notifier: {:?}", other),
@@ -162,8 +162,8 @@ impl<T: BrokerClientApi> Monitor<T> {
         Ok(())
     }
 
-    pub fn cancel_block_monitoring_if_on(&mut self) -> Result<()> {
-        if !self.block_monitoring_active {
+    pub fn cancel_block_monitoring_if_on(&mut self, force: bool) -> Result<()> {
+        if !force && !self.block_monitoring_active {
             trace!("Cancel Block monitoring requested, but it was not active");
             return Ok(());
         };
@@ -386,7 +386,7 @@ mod tests {
             Monitor::new(MockBrokerClientApi::new(), block_broker, get_fake_address());
         monitor.block_monitoring_active = true;
 
-        assert!(monitor.cancel_block_monitoring_if_on().is_ok());
+        assert!(monitor.cancel_block_monitoring_if_on(false).is_ok());
         assert!(!monitor.block_monitoring_active);
     }
 
