@@ -7,6 +7,8 @@ use log::error;
 use serde_json::{Value, json};
 use std::str::FromStr;
 
+// TODO(Jira) https://rsklabs.atlassian.net/browse/UB-133
+
 pub fn process(
     contract_address: Address,
     rsk_log: RskLog,
@@ -24,7 +26,7 @@ pub fn process(
     let event = abi.events.values().flatten().find(|e| {
         e.selector()
             .to_string()
-            .eq_ignore_ascii_case(&rsk_log.event().topics()[0]) // TODO(Jira) another reason for https://rsklabs.atlassian.net/browse/UB-43
+            .eq_ignore_ascii_case(&rsk_log.event().topics()[0]) // TODO(Jira) another reason for https://rsklabs.atlassian.net/browse/UB-140
     });
     let event = event.unwrap();
 
@@ -93,7 +95,7 @@ fn build_data_tuple(event: &Event, rsk_log: &RskLog) -> Result<DynSolValue> {
 
     let type_data_tuple = DynSolType::Tuple(data_types);
 
-    // TODO(Jira) create custom types for topics, data... https://rsklabs.atlassian.net/browse/UB-43
+    // TODO(Jira) create custom types for topics, data... https://rsklabs.atlassian.net/browse/UB-140
     let data = &rsk_log.event().data().to_string();
     let data_as_hex =
         &hex::decode(&data.trim_start_matches("0x")).context("Decoding hex data tuple")?;

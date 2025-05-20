@@ -1,4 +1,4 @@
 [hooks]
 commit-msg = ".hooks/check_commit_message"
 pre-commit = "cargo fmt --check"
-pre-push = ".hooks/check_branch_name && RUN_MODE=ci cargo test --all-features"
+pre-push = ".hooks/check_branch_name && RUN_MODE=ci cargo test --features test-utils"

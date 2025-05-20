@@ -10,7 +10,6 @@ use anyhow::Result;
 use anyhow::{Context, anyhow};
 use log::debug;
 use serde::de::DeserializeOwned;
-use serde_json::Value;
 use tokio::sync::broadcast::error::RecvError;
 
 pub struct AlloySubscription<T> {
@@ -40,13 +39,25 @@ impl AlloySubscription<Header> {
             provider,
         }
     }
-}
 
-impl RskSubscription<RskBlock> for AlloySubscription<Header> {
-    fn next(&mut self) -> Result<RskBlock, RskSubscriptionError> {
-        let header = self.next()?;
+    #[cfg(feature = "anvil")]
+    fn get_block_hash(header: SubscriptionItem<Header>) -> Result<BlockHash, RskSubscriptionError> {
+        match header {
+            SubscriptionItem::Item(h) => {
+                Ok(BlockHash::try_from(h.hash.to_string().as_str()).expect("valid hash"))
+            }
+            _ => {
+                return Err(RskSubscriptionError::Unexpected(anyhow!(
+                    "Wrong Header: {:?}",
+                    header
+                )));
+            }
+        }
+    }
 
-        debug!("Received header: {:?}", header);
+    #[cfg(not(feature = "anvil"))]
+    fn get_block_hash(header: SubscriptionItem<Header>) -> Result<BlockHash, RskSubscriptionError> {
+        use serde_json::Value;
 
         let new_block_header_raw = match header {
             SubscriptionItem::Other(raw_json) => raw_json.get().to_string(),
@@ -69,6 +80,18 @@ impl RskSubscription<RskBlock> for AlloySubscription<Header> {
         })?;
         let new_block_hash = BlockHash::try_from(new_block_hash)
             .map_err(|err| RskSubscriptionError::Unexpected(anyhow!(err)))?;
+
+        Ok(new_block_hash)
+    }
+}
+
+impl RskSubscription<RskBlock> for AlloySubscription<Header> {
+    fn next(&mut self) -> Result<RskBlock, RskSubscriptionError> {
+        let header = self.next()?;
+
+        debug!("Received header: {:?}", header);
+
+        let new_block_hash = Self::get_block_hash(header)?;
 
         // TODO(Jira) tmp approach, try to get the required block data from the subscription itself (check Rsk and Alloy impl): https://rsklabs.atlassian.net/browse/UB-36
         let new_block = self

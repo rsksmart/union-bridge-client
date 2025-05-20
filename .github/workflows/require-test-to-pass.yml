@@ -62,4 +62,4 @@ jobs:
             ${{ runner.os }}-rust-cargo-
 
       - name: Run tests
-        run: RUN_MODE=ci cargo test --all-features
+        run: RUN_MODE=ci cargo test --features test-utils

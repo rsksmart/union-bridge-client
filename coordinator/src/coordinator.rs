@@ -101,7 +101,8 @@ impl<M: MonitorApi> Coordinator<M> {
 mod tests {
     use crate::coordinator::Coordinator;
     use crate::monitor::MockMonitorApi;
-    use crate::types::{RequestAdvanceFunds, RskPegManagerEvents};
+    use crate::types::RskPegManagerEvents;
+    use common::fake_contracts::FakePegManager::RequestAdvanceFunds;
     use common::shutdown_flag::ShutdownFlag;
     use common::test_utils::rsk_block_generator::{
         get_first_default_rsk_block, get_second_default_rsk_block,
@@ -114,19 +115,18 @@ mod tests {
     #[test]
     fn test_coordinator_run_handles_several_events() {
         let mut mock_monitor = MockMonitorApi::new();
-
         let block_1 = get_first_default_rsk_block();
         let block_2 = get_second_default_rsk_block();
 
         let event_1 = RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFunds {
-            peg_out_id: "peg_out_id".to_string(),
-            block_num: block_1.number(),
+            peg_out_id: "peg_out_id".to_string().parse().unwrap(),
+            block_num: block_1.number().value(),
             amount: 1,
         });
 
         let event_2: RskPegManagerEvents = RskPegManagerEvents::KickoffAdvanceFunds {
             peg_out_id: "peg_out_id".to_string(),
-            block_num: block_1.number(),
+            block_num: block_1.number().value(),
         };
 
         mock_monitor
@@ -169,8 +169,8 @@ mod tests {
         let block_2 = get_second_default_rsk_block();
 
         let event_1 = RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFunds {
-            peg_out_id: "peg_out_id".to_string(),
-            block_num: block_1.number(),
+            peg_out_id: "peg_out_id".to_string().parse().unwrap(),
+            block_num: block_1.number().value(),
             amount: 1,
         });
 

@@ -1,13 +1,13 @@
 use crate::event_processor::EventProcessor;
-use crate::types::{Dispute, FakePegManagerConfig, PegOutId, RskPegManagerEvents};
+use crate::types::{Dispute, FakePegManagerConfig, RskPegManagerEvents};
 use anyhow::{Result, anyhow};
-use common::types::{BlockNumber, RskBlock};
+use common::types::RskBlock;
 use log::{error, info, warn};
 use std::collections::{HashMap, HashSet};
 
 pub struct DisputedPegoutProcessor {
     requires_blocks: bool,
-    disputes: HashMap<PegOutId, Dispute>,
+    disputes: HashMap<String, Dispute>,
     known_blocks: HashSet<RskBlock>,
 }
 
@@ -19,12 +19,7 @@ impl DisputedPegoutProcessor {
             known_blocks: HashSet::new(),
         }
     }
-    fn init_dispute(
-        &mut self,
-        peg_out_id: PegOutId,
-        block_num: BlockNumber,
-        amount: u64,
-    ) -> Result<()> {
+    fn init_dispute(&mut self, peg_out_id: String, block_num: u64, amount: u64) -> Result<()> {
         let dispute = Dispute::new(
             peg_out_id.clone(),
             block_num,
@@ -54,7 +49,7 @@ impl DisputedPegoutProcessor {
         Ok(())
     }
 
-    fn remove_dispute(&mut self, peg_out_id: &PegOutId) -> () {
+    fn remove_dispute(&mut self, peg_out_id: &String) -> () {
         let removed_dispute = self.disputes.remove(peg_out_id);
         if removed_dispute.is_none() {
             warn!("Trying to remove unexisting dispute for pegout {peg_out_id}");
@@ -67,7 +62,7 @@ impl DisputedPegoutProcessor {
         }
     }
 
-    fn undo_kickoff_dispute(&mut self, peg_out_id: PegOutId) {
+    fn undo_kickoff_dispute(&mut self, peg_out_id: String) {
         if let Some(dispute) = self.disputes.get_mut(&peg_out_id) {
             dispute.unset_kickoff();
         } else {
@@ -75,7 +70,7 @@ impl DisputedPegoutProcessor {
         }
     }
 
-    fn kickoff_dispute(&mut self, peg_out_id: PegOutId, block_num: BlockNumber) {
+    fn kickoff_dispute(&mut self, peg_out_id: String, block_num: u64) {
         if let Some(dispute) = self.disputes.get_mut(&peg_out_id) {
             info!("KickoffAdvanceFunds reached for dispute {:?}", dispute);
             dispute.set_kickoff(block_num);
@@ -90,8 +85,8 @@ impl EventProcessor for DisputedPegoutProcessor {
     fn process_new_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         match event {
             RskPegManagerEvents::RequestAdvanceFunds(ev) => {
-                info!("Handling RequestAdvanceFunds...");
-                self.init_dispute(ev.peg_out_id.clone(), ev.block_num, ev.amount)?;
+                info!("Handling RequestAdvanceFunds...{:?}", ev);
+                self.init_dispute(ev.peg_out_id.clone().to_string(), ev.block_num, ev.amount)?;
             }
             RskPegManagerEvents::RemoveRequestAdvanceFunds { peg_out_id } => {
                 self.remove_dispute(peg_out_id);
@@ -117,14 +112,14 @@ impl EventProcessor for DisputedPegoutProcessor {
     fn process_new_block(&mut self, block: &RskBlock) -> Result<()> {
         info!("Received new Block from Block Notifier {:?}", block);
 
-        let block_num = block.number();
+        let block_num = block.number().value();
 
         // we want to remove the dispute using the centralized logic (remove_dispute) for cleanup, etc.
         // that's why we have two iterations rather than one using retain or alike
-        let complete_disputes: Vec<PegOutId> = self
+        let complete_disputes: Vec<String> = self
             .disputes
             .iter()
-            .filter(|(_, d)| d.is_complete_on(&block_num))
+            .filter(|(_, d)| d.is_complete_on(block_num))
             .map(|(id, _)| id.clone())
             .collect();
 

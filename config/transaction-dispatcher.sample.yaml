@@ -4,7 +4,7 @@ provider:
 
 contracts:
   - name: "PegManager"
-    address: "<ADDRESS_HERE>"
+    address: "<PEG_MANAGER_ADDRESS_HERE>"
 
 server:
   url: "<YOUR_SERVER_URL_HERE>"

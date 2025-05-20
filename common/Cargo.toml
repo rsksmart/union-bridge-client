@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+alloy-contract = { workspace = true }
 alloy-dyn-abi = { workspace = true }
 alloy-json-abi = { workspace = true }
 alloy-primitives = { workspace = true }
@@ -33,3 +34,4 @@ sha3 = "0.10"
 
 [features]
 test-utils = []
+anvil = []

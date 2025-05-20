@@ -20,6 +20,8 @@ sol! {
     event LogValue(bytes32 val);
 }
 
+// TODO(Jira) https://rsklabs.atlassian.net/browse/UB-133
+
 pub fn process(rsk_log: RskLog) -> Result<Option<RskEvent>> {
     let parsed_topics: Vec<B256> = rsk_log
         .event()

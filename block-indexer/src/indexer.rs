@@ -202,9 +202,9 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 
     fn notify_best_block(&self, new_block: RskBlock) -> Result<()> {
         if let Some(channel) = &self.new_block_sender {
-            channel
-                .send(new_block)
-                .context("Sending best block through channel")?;
+            if let Err(e) = channel.send(new_block) {
+                error!("Failed to send best block through channel: {:?}", e);
+            }
         }
         Ok(())
     }

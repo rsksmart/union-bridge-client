@@ -1,0 +1,16 @@
+[package]
+name = "sc-event-mocking"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+alloy-primitives = { workspace = true }
+alloy-provider = { workspace = true }
+alloy-node-bindings = "0.13.0"
+alloy-signer-local = { workspace = true }
+alloy-eips = "0.13.0"
+anyhow = {workspace = true}
+clap = { version = "4.5.30", features = ["derive"] }
+common = { path = "../common" }
+eyre = "0.6"
+tokio = { version = "1.45", features = ["rt-multi-thread", "signal", "io-std"] }
