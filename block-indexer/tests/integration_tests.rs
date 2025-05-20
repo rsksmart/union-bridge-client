@@ -213,9 +213,11 @@ fn test_when_shutdown_happens_during_backwards_sync_and_indexer_restarts_should_
         DELAY_BETWEEN_BLOCKS_SUBSCRIPTION,
         None,
     );
-    let block_hash = BlockHash::try_from(checkpoint_parent_hash_string.as_str())?;
+    let hash = BlockHash::try_from(checkpoint_parent_hash_string.as_str())?;
     mock_rsk_provider_handler
-        .set_provider_expect_get_block_by_hash(block_hash, BLOCK_HEIGHT_SHUTDOWN_HAPPENS_AT.into());
+        .set_provider_expect_get_block_by_hash(hash, BLOCK_HEIGHT_SHUTDOWN_HAPPENS_AT.into());
+    mock_rsk_provider_handler
+        .set_provider_expect_get_block_by_hash(block_hash, INIT_BLOCK_HEIGHT.into());
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
     mock_rsk_provider_handler.set_provider_expect_get_block_by_number(None, None);
     mock_rsk_provider_handler.set_provider_expect_subscribe_blocks(None);
