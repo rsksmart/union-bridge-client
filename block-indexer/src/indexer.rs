@@ -28,6 +28,8 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         initial_block_hash: BlockHash,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
+        Self::ensure_initial_block_exists(&provider, initial_block_hash);
+
         Self {
             store,
             rsk_provider: provider,
@@ -43,6 +45,8 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         initial_block_hash: BlockHash,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
+        Self::ensure_initial_block_exists(&provider, initial_block_hash);
+
         Self {
             store,
             rsk_provider: provider,
@@ -50,6 +54,22 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
             initial_block_hash,
             shutdown_flag,
         }
+    }
+
+    fn ensure_initial_block_exists(provider: &P, initial_block_hash: BlockHash) {
+        let opt_block = provider
+            .get_block_by_hash(initial_block_hash)
+            .expect(&format!(
+                "Precondition failed: error fetching initial block {:?}",
+                initial_block_hash
+            ));
+
+        opt_block.unwrap_or_else(|| {
+            panic!(
+                "Precondition failed: initial block {:?} not found",
+                initial_block_hash
+            )
+        });
     }
 
     fn is_running(&self) -> bool {
@@ -458,6 +478,7 @@ mod tests {
         },
     };
     use mockall::predicate::eq;
+    use primitive_types::H256;
 
     #[test]
     fn returns_ok_if_no_uncles() {
@@ -561,5 +582,28 @@ mod tests {
 
         let res = idx.get_and_save_uncle_blocks(&block_with_missing);
         assert!(res.is_ok());
+    }
+
+    #[test]
+    #[should_panic(expected = "Precondition failed: initial block")]
+    fn panics_when_initial_block_hash_not_found() {
+        // Given a random hash that the provider won't find...
+        let missing_hash = BlockHash::from(H256::random());
+
+        // Provider that returns Ok(None) for our missing hash
+        let mut provider = MockRskProvider::new();
+        provider
+            .expect_get_block_by_hash()
+            .with(eq(missing_hash))
+            .times(1)
+            .returning(|_| Ok(None));
+
+        // When we call the constructor, it should panic on the missing hash
+        let _idx = BlockIndexer::new(
+            MockBlockStore::new(),
+            provider,
+            missing_hash,
+            ShutdownFlag::init(),
+        );
     }
 }
