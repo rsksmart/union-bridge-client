@@ -2,8 +2,10 @@ use crate::types::RskPegManagerEvents::UnknownEvent;
 use alloy_primitives::{B256, LogData};
 use alloy_sol_types::SolEvent;
 use common::fake_contracts::FakePegManager::{KickoffAdvanceFunds, RequestAdvanceFunds};
-use common::types::RskLog;
-use log::{error, warn};
+use common::types::{BlockNumber, BlockPow, RskLog};
+use log::{error, info, warn};
+use primitive_types::U256;
+use std::collections::HashMap;
 use union_contracts::bindings::pegmanager::PegManager::RegisteredPegInRequest;
 
 #[derive(Eq, PartialEq, Debug)]
@@ -16,83 +18,119 @@ pub enum RskPegManagerEvents {
     UnknownEvent,
 }
 
-pub fn decode_rsk_log_to_peg_manager_event(log: RskLog) -> RskPegManagerEvents {
-    let parsed_topics: Vec<B256> = log
-        .event()
-        .topics()
-        .iter()
-        .filter_map(|topic| topic.parse::<B256>().ok())
-        .collect();
+type DecoderFn = fn(&LogData) -> RskPegManagerEvents;
 
-    let topic0 = parsed_topics.get(0).cloned();
+pub struct EventDecoder {
+    dispatch: HashMap<B256, DecoderFn>,
+}
 
-    let hex_data = match alloy_primitives::hex::decode(&log.event().data()) {
-        Ok(d) => d,
-        Err(e) => {
-            error!("Failed to decode RSK log {:?}: {}", log, e);
-            return UnknownEvent;
+impl EventDecoder {
+    pub fn new() -> Self {
+        let mut dispatcher = HashMap::new();
+        dispatcher.insert(
+            RegisteredPegInRequest::SIGNATURE_HASH,
+            Self::decode_register_pegin_event as DecoderFn,
+        );
+        dispatcher.insert(
+            RequestAdvanceFunds::SIGNATURE_HASH,
+            Self::decode_request_advance_funds_event as DecoderFn,
+        );
+        dispatcher.insert(
+            KickoffAdvanceFunds::SIGNATURE_HASH,
+            Self::decode_kickoff_advance_funds_event as DecoderFn,
+        );
+        Self {
+            dispatch: dispatcher,
         }
-    };
-
-    let log_data = LogData::new(parsed_topics, hex_data.into());
-    if log_data.is_none() {
-        error!("Failed to create Alloy LogData from rsk_log");
-        return UnknownEvent;
     }
 
-    let log_data = log_data.unwrap();
+    pub fn decode(&self, log: &RskLog) -> RskPegManagerEvents {
+        let (topic0, log_data) = match Self::parse_rsk_log_to_alloy(log) {
+            Some(value) => value,
+            None => return UnknownEvent,
+        };
 
-    match topic0 {
-        Some(ev) if *ev == RegisteredPegInRequest::SIGNATURE_HASH => {
-            decode_register_pegin_event(&log_data)
+        match self.dispatch.get(&topic0) {
+            Some(decoder_fn) => decoder_fn(&log_data),
+            None => {
+                warn!("Unknown event type for log: {:?}", log);
+                RskPegManagerEvents::UnknownEvent
+            }
         }
-        Some(ev) if *ev == RequestAdvanceFunds::SIGNATURE_HASH => {
-            decode_request_advance_funds_event(&log_data)
+    }
+
+    fn parse_rsk_log_to_alloy(log: &RskLog) -> Option<(B256, LogData)> {
+        let parsed_topics: Vec<B256> = log
+            .event()
+            .topics()
+            .iter()
+            .filter_map(|topic| topic.parse::<B256>().ok())
+            .collect();
+
+        let hex_data = match alloy_primitives::hex::decode(&log.event().data()) {
+            Ok(d) => d,
+            Err(e) => {
+                error!("Failed to decode RSK log {:?}: {}", log, e);
+                return None;
+            }
+        };
+
+        let log_data = match LogData::new(parsed_topics, hex_data.into()) {
+            Some(data) => data,
+            None => {
+                error!("Failed to create Alloy LogData from rsk_log");
+                return None;
+            }
+        };
+
+        let topic0 = match log_data.topics().first() {
+            Some(topic) => *topic,
+            None => {
+                warn!("No topics found in log: {:?}", log);
+                return None;
+            }
+        };
+
+        Some((topic0, log_data))
+    }
+
+    fn decode_register_pegin_event(log_data: &LogData) -> RskPegManagerEvents {
+        match RegisteredPegInRequest::decode_log_data(&log_data, true) {
+            Ok(ev) => RskPegManagerEvents::RegisteredPegInRequest(ev),
+            Err(_) => UnknownEvent,
         }
-        // TODO add other types here in the future
-        _ => {
-            warn!("Unknown event type in log {:?}", log_data);
-            UnknownEvent
+    }
+
+    fn decode_request_advance_funds_event(log_data: &LogData) -> RskPegManagerEvents {
+        match RequestAdvanceFunds::decode_log_data(&log_data, true) {
+            Ok(ev) => RskPegManagerEvents::RequestAdvanceFunds(ev),
+            Err(_) => UnknownEvent,
+        }
+    }
+
+    fn decode_kickoff_advance_funds_event(log_data: &LogData) -> RskPegManagerEvents {
+        match KickoffAdvanceFunds::decode_log_data(&log_data, true) {
+            Ok(ev) => RskPegManagerEvents::KickoffAdvanceFunds(ev),
+            Err(_) => UnknownEvent,
         }
     }
 }
 
-fn decode_register_pegin_event(log_data: &LogData) -> RskPegManagerEvents {
-    match RegisteredPegInRequest::decode_log_data(&log_data, true) {
-        Ok(ev) => RskPegManagerEvents::RegisteredPegInRequest(ev),
-        Err(_) => UnknownEvent,
-    }
-}
-
-fn decode_request_advance_funds_event(log_data: &LogData) -> RskPegManagerEvents {
-    match RequestAdvanceFunds::decode_log_data(&log_data, true) {
-        Ok(ev) => RskPegManagerEvents::RequestAdvanceFunds(ev),
-        Err(_) => UnknownEvent,
-    }
-}
-
-#[derive(Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Dispute {
     pub peg_out_id: String,
-    req_adv_block: u64,
-    req_adv_confirmations: u32,
+    req_adv_block: BlockNumber,
     kickoff_adv_block: Option<u64>,
-    kickoff_adv_confirmations: u32,
+    kickoff_pending_effort: U256,
 }
 
 impl Dispute {
-    pub fn new(
-        peg_out_id: String,
-        req_adv_block: u64,
-        req_adv_confirmations: u32,
-        kickoff_adv_confirmations: u32,
-    ) -> Self {
+    pub fn new(peg_out_id: String, req_adv_block: BlockNumber, kickoff_req_effort: U256) -> Self {
         Self {
             peg_out_id,
             req_adv_block,
-            req_adv_confirmations,
             kickoff_adv_block: None,
-            kickoff_adv_confirmations,
+            kickoff_pending_effort: kickoff_req_effort,
         }
     }
 
@@ -104,57 +142,49 @@ impl Dispute {
         self.kickoff_adv_block = None;
     }
 
-    pub fn is_complete_on(&self, last_block: u64) -> bool {
-        match self.kickoff_adv_block {
-            Some(b) => last_block >= &b + self.kickoff_adv_confirmations as u64,
-            None => {
-                self.log_delayed_kickoff(last_block);
-                false
-            }
+    pub fn update_pow(&mut self, block_effort: U256) -> () {
+        if let Some(_b) = self.kickoff_adv_block {
+            self.kickoff_pending_effort = self.kickoff_pending_effort.saturating_sub(block_effort);
+            info!(
+                "Dispute {}: reduced kickoff_proved_pending_effort by {} to {})",
+                self.peg_out_id, block_effort, self.kickoff_pending_effort
+            );
         }
     }
 
-    fn log_delayed_kickoff(&self, last_block: u64) {
-        let diff_blocks = last_block.saturating_sub(
-            self.req_adv_block
-                .saturating_add(self.req_adv_confirmations as u64),
-        );
-        if diff_blocks > 0 {
-            warn!(
-                "KickoffAdvanceFunds not received yet, but we are past the tolerance threshold by {diff_blocks}"
-            );
+    pub fn has_enough_pow(&self) -> bool {
+        self.kickoff_pending_effort.is_zero()
+    }
+}
+
+// TODO(iago) calculate reasonable values and build on boot via config
+pub struct FakePegManagerConfig {}
+
+impl FakePegManagerConfig {
+    pub fn get_req_effort_for_amount(amount: u64) -> U256 {
+        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-134 - get threshold from config
+        if amount < 1000 {
+            U256::from_dec_str("1000000000000").expect("Failed to parse U256")
+        } else if amount < 10000 {
+            U256::from_dec_str("2000000000000").expect("Failed to parse U256")
+        } else if amount < 100000 {
+            U256::from_dec_str("3000000000000").expect("Failed to parse U256")
+        } else {
+            U256::from_dec_str("4000000000000").expect("Failed to parse U256")
         }
     }
 }
 
-// TODO(Jira) https://rsklabs.atlassian.net/browse/UB-3 - build on boot via config
-pub struct FakePegManagerConfig {}
+#[cfg(not(feature = "anvil"))]
+pub fn pow_to_effort(pow: &BlockPow) -> U256 {
+    let pow_dec: U256 = U256::from_big_endian(pow.value().as_bytes());
+    U256::MAX.checked_div(pow_dec).unwrap_or_else(|| {
+        error!("Received 0 as pow");
+        U256::zero()
+    })
+}
 
-impl FakePegManagerConfig {
-    pub fn get_req_adv_confirmations_for_amount(amount: u64) -> u32 {
-        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-134 - get threshold from config
-        if amount < 1000 {
-            10
-        } else if amount < 10000 {
-            20
-        } else if amount < 100000 {
-            30
-        } else {
-            40
-        }
-    }
-
-    pub fn get_kickoff_adv_confirmations_for_amount(amount: u64) -> u32 {
-        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-134 - get threshold from config
-        // get threshold from config
-        if amount < 1000 {
-            5
-        } else if amount < 10000 {
-            10
-        } else if amount < 100000 {
-            15
-        } else {
-            20
-        }
-    }
+#[cfg(feature = "anvil")]
+pub fn pow_to_effort(_pow: &BlockPow) -> U256 {
+    U256::from(250000000000u64)
 }

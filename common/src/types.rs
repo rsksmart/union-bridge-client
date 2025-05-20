@@ -277,7 +277,7 @@ impl fmt::Display for BlockDifficulty {
 ///
 /// println!("Block PoW: {}", pow);
 /// ```
-#[derive(Serialize, Deserialize, Copy, Debug, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, Copy, Debug, Eq, PartialEq, Clone)]
 pub struct BlockPow(H256);
 
 impl BlockPow {

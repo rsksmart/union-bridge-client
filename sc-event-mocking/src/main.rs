@@ -20,6 +20,12 @@ enum Menu {
 
     #[command(visible_alias = "raf")]
     RequestAdvanceFunds,
+
+    #[command(visible_alias = "kaf")]
+    KickoffAdvanceFunds {
+        #[arg(help = "The ID of the pegout")]
+        pegout_id: String,
+    },
 }
 
 #[tokio::main]
@@ -66,6 +72,9 @@ async fn main() -> Result<()> {
             Ok(menu) => match menu {
                 Menu::RequestAdvanceFunds => {
                     executor.request_advance_funds().await?;
+                }
+                Menu::KickoffAdvanceFunds { pegout_id } => {
+                    executor.kickoff_advance_funds(pegout_id).await?;
                 }
                 Menu::Exit => {
                     break;

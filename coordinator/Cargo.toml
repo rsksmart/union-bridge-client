@@ -14,4 +14,8 @@ serde_json = { workspace = true }
 serde = { version = "1.0.217", features = ["derive"] }
 mockall = "0.13.1"
 union-contracts = { workspace = true }
+primitive-types = {workspace = true}
 hex = "0.4.3"
+
+[features]
+anvil = []

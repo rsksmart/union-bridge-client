@@ -1,4 +1,4 @@
-use crate::types::{RskPegManagerEvents, decode_rsk_log_to_peg_manager_event};
+use crate::types::{EventDecoder, RskPegManagerEvents};
 use anyhow::{Context, Result, bail};
 use common::msg_broker::broker::{BROKER_SERVER_ID, BrokerClientApi, BrokerError};
 use common::msg_broker::types::{BrokerRequests, BrokerResponses};
@@ -21,6 +21,7 @@ pub trait MonitorApi {
 pub struct Monitor<BC: BrokerClientApi> {
     log_broker: BC,
     block_broker: BC,
+    event_decoder: EventDecoder,
     peg_manager_address: Address,
     block_monitoring_active: bool,
     log_monitoring_active: bool,
@@ -48,7 +49,7 @@ impl<BC: BrokerClientApi> MonitorApi for Monitor<BC> {
     }
 
     fn cancel_block_monitoring(&mut self, force: bool) -> Result<()> {
-        self.cancel_block_monitoring_if_on(force)
+        self.cancel_block_monitoring(force)
     }
 }
 
@@ -57,6 +58,7 @@ impl<T: BrokerClientApi> Monitor<T> {
         Self {
             log_broker,
             block_broker,
+            event_decoder: EventDecoder::new(),
             peg_manager_address,
             block_monitoring_active: false,
             log_monitoring_active: false,
@@ -117,7 +119,7 @@ impl<T: BrokerClientApi> Monitor<T> {
         match self.log_broker.try_recv()? {
             Some(BrokerResponses::Log(log)) => {
                 info!("Received new Log {:?}", log);
-                let event: RskPegManagerEvents = decode_rsk_log_to_peg_manager_event(log);
+                let event: RskPegManagerEvents = self.event_decoder.decode(&log);
                 Ok(Some(event))
             }
             Some(e) => {
@@ -135,6 +137,7 @@ impl<T: BrokerClientApi> Monitor<T> {
             bail!("Block monitoring is not active");
         }
 
+        // TODO(Jira) do not simply fail on broker error, do some retries - https://rsklabs.atlassian.net/browse/UB-132
         match self.block_broker.try_recv()? {
             Some(BrokerResponses::Block(b)) => {
                 debug!("Received new Block {:?}", b);
@@ -162,7 +165,7 @@ impl<T: BrokerClientApi> Monitor<T> {
         Ok(())
     }
 
-    pub fn cancel_block_monitoring_if_on(&mut self, force: bool) -> Result<()> {
+    pub fn cancel_block_monitoring(&mut self, force: bool) -> Result<()> {
         if !force && !self.block_monitoring_active {
             trace!("Cancel Block monitoring requested, but it was not active");
             return Ok(());
@@ -201,7 +204,6 @@ impl<T: BrokerClientApi> Monitor<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::decode_rsk_log_to_peg_manager_event;
     use anyhow::anyhow;
     use common::msg_broker::broker::{BROKER_SERVER_ID, MockBrokerClientApi};
     use common::msg_broker::types::BrokerRequests;
@@ -309,7 +311,10 @@ mod tests {
     fn test_try_event_returns_some() {
         let log = FakeLogGenerator::new()
             .generate_log("Transfer(address,address,uint256", get_fake_address());
-        let expected_event: RskPegManagerEvents = decode_rsk_log_to_peg_manager_event(log.clone());
+
+        let event_decoder = EventDecoder::new();
+
+        let expected_event: RskPegManagerEvents = event_decoder.decode(&log);
 
         let mut log_broker = MockBrokerClientApi::new();
         log_broker
@@ -386,7 +391,7 @@ mod tests {
             Monitor::new(MockBrokerClientApi::new(), block_broker, get_fake_address());
         monitor.block_monitoring_active = true;
 
-        assert!(monitor.cancel_block_monitoring_if_on(false).is_ok());
+        assert!(monitor.cancel_block_monitoring(false).is_ok());
         assert!(!monitor.block_monitoring_active);
     }
 

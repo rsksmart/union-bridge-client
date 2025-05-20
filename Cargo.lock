@@ -1702,6 +1702,7 @@ dependencies = [
  "hex",
  "log",
  "mockall",
+ "primitive-types 0.13.1",
  "serde",
  "serde_json",
  "union-bridge-contracts",

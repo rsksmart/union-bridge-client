@@ -8,31 +8,32 @@ sol!(
     )]
     #[derive(Eq, PartialEq, Debug)]
     contract FakePegManager {
-    event RequestAdvanceFunds(
-        string peg_out_id,
-        uint64 block_num,
-        uint64 amount
-    );
+        event RequestAdvanceFunds(
+            string peg_out_id,
+            uint64 block_num,
+            uint64 amount
+        );
 
-    event KickoffAdvanceFunds(
-        string peg_out_id,
-        uint64 block_num,
-        uint256 required_pow
-    );
+        event KickoffAdvanceFunds(
+            string peg_out_id,
+            uint64 block_num,
+            uint256 required_pow
+        );
 
-    function requestAdvanceFunds(
-        string memory peg_out_id,
-        uint64 block_num,
-        uint64 amount
-    ) public {
-        emit RequestAdvanceFunds(peg_out_id, block_num, amount);
+        function requestAdvanceFunds(
+            string memory peg_out_id,
+            uint64 block_num,
+            uint64 amount
+        ) public {
+            emit RequestAdvanceFunds(peg_out_id, block_num, amount);
+        }
+
+        function kickoffAdvanceFunds(
+            string memory peg_out_id,
+            uint64 block_num,
+            uint256 required_pow
+        ) public {
+            emit KickoffAdvanceFunds(peg_out_id, block_num, required_pow);
+        }
     }
-
-    function kickoffAdvanceFunds(
-        string memory peg_out_id,
-        uint64 block_num,
-        uint256 required_pow
-    ) public {
-        emit KickoffAdvanceFunds(peg_out_id, block_num, required_pow);
-    }
-});
+);
