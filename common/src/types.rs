@@ -1,4 +1,5 @@
 use alloy_json_abi::JsonAbi;
+use alloy_primitives::FixedBytes;
 use anyhow::Result;
 use bitcoin::{blockdata::block::Header, consensus::encode::deserialize as btc_deserialize};
 use hex::FromHexError;
@@ -66,6 +67,18 @@ impl TryFrom<&str> for BlockHash {
         let h256 = H256::from_slice(&bytes);
 
         Ok(Self(h256))
+    }
+}
+
+impl From<FixedBytes<32>> for BlockHash {
+    fn from(bytes: FixedBytes<32>) -> Self {
+        BlockHash::from(H256::from_slice(&bytes.0))
+    }
+}
+
+impl From<BlockHash> for FixedBytes<32> {
+    fn from(hash: BlockHash) -> Self {
+        FixedBytes::<32>::from_slice(hash.value().as_bytes())
     }
 }
 

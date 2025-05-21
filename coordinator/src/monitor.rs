@@ -119,7 +119,7 @@ impl<T: BrokerClientApi> Monitor<T> {
         match self.log_broker.try_recv()? {
             Some(BrokerResponses::Log(log)) => {
                 info!("Received new Log {:?}", log);
-                let event: RskPegManagerEvents = self.event_decoder.decode(&log);
+                let event: RskPegManagerEvents = self.event_decoder.decode(log);
                 Ok(Some(event))
             }
             Some(e) => {
@@ -314,7 +314,7 @@ mod tests {
 
         let event_decoder = EventDecoder::new();
 
-        let expected_event: RskPegManagerEvents = event_decoder.decode(&log);
+        let expected_event: RskPegManagerEvents = event_decoder.decode(log.clone());
 
         let mut log_broker = MockBrokerClientApi::new();
         log_broker

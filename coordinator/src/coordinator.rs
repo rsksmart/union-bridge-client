@@ -1,8 +1,9 @@
-use crate::event_processor::{DisputedPegoutProcessor, EventProcessor};
+use crate::event_processor::{DisputedPegOutProcessor, EventProcessor};
 use crate::monitor::MonitorApi;
 use anyhow::{Context, Result};
 use common::constants::coordinator::MONITOR_CHECK_PERIOD;
 use common::shutdown_flag::ShutdownFlag;
+use log::error;
 use std::thread;
 use std::time::Duration;
 
@@ -17,7 +18,7 @@ impl<M: MonitorApi> Coordinator<M> {
     pub fn new(monitor: M, shutdown_flag: ShutdownFlag) -> Self {
         Self {
             monitor,
-            processors: vec![Box::new(DisputedPegoutProcessor::new())],
+            processors: vec![Box::new(DisputedPegOutProcessor::new())],
             check_period: MONITOR_CHECK_PERIOD,
             shutdown_flag,
         }
@@ -26,7 +27,7 @@ impl<M: MonitorApi> Coordinator<M> {
     pub fn new_for_tests(monitor: M, shutdown_flag: ShutdownFlag) -> Self {
         Self {
             monitor,
-            processors: vec![Box::new(DisputedPegoutProcessor::new())],
+            processors: vec![Box::new(DisputedPegOutProcessor::new())],
             check_period: Duration::from_millis(1),
             shutdown_flag,
         }
@@ -52,9 +53,11 @@ impl<M: MonitorApi> Coordinator<M> {
 
                 if let Some(event) = self.monitor.try_event().context("Error getting event")? {
                     // each processor decides if the event is relevant
-                    self.processors
-                        .iter_mut()
-                        .try_for_each(|p| p.process_new_event(&event))?;
+                    self.processors.iter_mut().for_each(|p| {
+                        if let Err(e) = p.process_new_event(&event) {
+                            error!("Error processing event {:?}: {:?}", event, e);
+                        }
+                    });
 
                     // no sleep, try to get new messages asap
                     message_received = true;
@@ -67,9 +70,11 @@ impl<M: MonitorApi> Coordinator<M> {
                         .context("Failed to start block monitoring")?;
 
                     if let Some(block) = self.monitor.try_block().context("Error getting block")? {
-                        self.processors
-                            .iter_mut()
-                            .try_for_each(|p| p.process_new_block(&block))?;
+                        self.processors.iter_mut().for_each(|p| {
+                            if let Err(e) = p.process_new_block(&block) {
+                                error!("Error processing block {:?}: {:?}", block, e);
+                            }
+                        });
 
                         // no sleep, try to get new messages asap
                         message_received = true;
@@ -104,7 +109,7 @@ impl<M: MonitorApi> Coordinator<M> {
     }
 
     fn check_processors_waiting_blocks(&mut self) -> bool {
-        self.processors.iter().any(|p| p.waiting_blocks())
+        self.processors.iter().any(|p| p.is_waiting_blocks())
     }
 
     fn is_running(&self) -> bool {
@@ -134,18 +139,26 @@ mod tests {
         let block_1 = get_first_default_rsk_block();
         let block_2 = get_second_default_rsk_block();
 
-        let event_1 = RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFunds {
-            peg_out_id: "peg_out_id".to_string().parse().unwrap(),
-            block_num: block_1.number().value(),
-            amount: 1,
-        });
+        let event_1 = RskPegManagerEvents::RequestAdvanceFunds(
+            RequestAdvanceFunds {
+                peg_out_id: "peg_out_id_1".to_string(),
+                block_hash: block_1.hash().into(),
+                amount: 1,
+            },
+            block_1.number(),
+        );
 
-        let event_2: RskPegManagerEvents =
-            RskPegManagerEvents::KickoffAdvanceFunds(KickoffAdvanceFunds {
-                peg_out_id: "peg_out_id".to_string(),
-                block_num: block_1.number().value(),
-                required_pow: U256::from(1),
-            });
+        let event_2: RskPegManagerEvents = RskPegManagerEvents::KickoffAdvanceFunds(
+            KickoffAdvanceFunds {
+                peg_out_id: "peg_out_id_2".to_string(),
+                utxo_id: "utxo_id".to_string(),
+                operator_id: "operator_id".to_string(),
+                block_hash: block_2.hash().into(),
+                required_effort: U256::from(1),
+                required_num_blocks: 5,
+            },
+            block_2.number(),
+        );
 
         mock_monitor
             .expect_start_event_monitoring()
@@ -186,13 +199,16 @@ mod tests {
         let block_1 = get_first_default_rsk_block();
         let block_2 = get_second_default_rsk_block();
 
-        let event_1 = RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFunds {
-            peg_out_id: "peg_out_id".to_string().parse().unwrap(),
-            block_num: block_1.number().value(),
-            amount: 1,
-        });
+        let event_1 = RskPegManagerEvents::RequestAdvanceFunds(
+            RequestAdvanceFunds {
+                peg_out_id: "peg_out_id".to_string(),
+                block_hash: block_1.hash().into(),
+                amount: 1,
+            },
+            block_1.number(),
+        );
 
-        let event_2: RskPegManagerEvents = RskPegManagerEvents::UnknownEvent {};
+        let event_2 = RskPegManagerEvents::UnknownEvent;
 
         mock_monitor
             .expect_start_event_monitoring()

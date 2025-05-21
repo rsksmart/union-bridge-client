@@ -1,111 +1,108 @@
 use crate::event_processor::EventProcessor;
-use crate::types::{Dispute, FakePegManagerConfig, RskPegManagerEvents, pow_to_effort};
-use anyhow::Result;
+use crate::event_processor::disputed_pegout_processor::types::Dispute;
+use crate::types::RskPegManagerEvents;
+use anyhow::{Result, bail};
+use check_fork::check_fork;
+use common::fake_contracts::FakePegManager::KickoffAdvanceFunds;
 use common::types::{BlockNumber, RskBlock};
 use log::{error, info, warn};
-use std::collections::{HashMap, HashSet};
+use std::collections::BTreeMap;
 
-pub struct DisputedPegoutProcessor {
-    waiting_blocks: bool,
-    disputes: HashMap<String, Dispute>,
-    known_blocks: HashSet<RskBlock>,
+pub struct DisputedPegOutProcessor {
+    req_adv_funds_block: Option<BlockNumber>,
+    dispute: Option<Dispute>,
+    // BTreeMap to sort blocks by number while keeping just the most recent one in case of reorgs
+    known_blocks: BTreeMap<BlockNumber, RskBlock>,
 }
 
-impl DisputedPegoutProcessor {
+impl DisputedPegOutProcessor {
     pub fn new() -> Self {
         Self {
-            waiting_blocks: false,
-            disputes: HashMap::new(),
-            // TODO(iago) we need to distinguish which ones are canonical and which ones are not
-            known_blocks: HashSet::new(),
+            req_adv_funds_block: None,
+            dispute: None,
+            known_blocks: BTreeMap::new(),
         }
     }
 
-    fn init_dispute(&mut self, peg_out_id: String, block: BlockNumber, amount: u64) -> Result<()> {
-        let dispute = Dispute::new(
-            peg_out_id.clone(),
-            block,
-            FakePegManagerConfig::get_req_effort_for_amount(amount),
-        );
+    fn kickoff_dispute(&mut self, event: &KickoffAdvanceFunds, block_number: &BlockNumber) -> () {
+        if !self.is_waiting_blocks() {
+            error!("Cannot kickoff dispute, RequestAdvanceFunds not yet received");
+            return;
+        }
 
-        if self.disputes.contains_key(&dispute.peg_out_id) {
-            error!("Dispute {:?} already exists", dispute);
+        if self.dispute.is_some() {
             // we don't want to err, so we just skip this event
             // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
-            return Ok(());
+            error!("More tha one active dispute is not expected on Union Bridge Design",);
+            return;
         }
 
-        if self.disputes.len() == 1 {
-            // we don't want to err, so we just skip this event
-            // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
-            error!("More than one dispute detected, this is not expected on Union Bridge Design");
-            return Ok(());
-        }
+        let post_kickoff_blocks: Vec<&RskBlock> = self
+            .known_blocks
+            .values()
+            .filter(|b| b.number().value() > block_number.value())
+            .collect();
 
-        info!("Init dispute {dispute:?}, count {}", self.disputes.len());
-        self.disputes.insert(peg_out_id, dispute);
-
-        self.waiting_blocks = true;
-
-        Ok(())
+        info!("Init dispute for {event:?}");
+        let new_dispute = Dispute::new(event.clone(), post_kickoff_blocks);
+        self.dispute = Some(new_dispute);
     }
 
-    fn remove_dispute(&mut self, peg_out_id: &String) -> () {
-        let removed_dispute = self.disputes.remove(peg_out_id);
-        if removed_dispute.is_none() {
-            warn!("Trying to remove unexisting dispute for pegout {peg_out_id}");
-        }
-
-        if self.disputes.is_empty() {
-            info!("No active disputes, stopping block monitoring");
-            self.waiting_blocks = false;
-            self.known_blocks.clear();
-        }
+    fn start_processing(&mut self, block_num: &BlockNumber) {
+        self.req_adv_funds_block = Some(block_num.clone());
     }
 
-    fn kickoff_dispute(&mut self, peg_out_id: String, block_num: u64) {
-        if let Some(dispute) = self.disputes.get_mut(&peg_out_id) {
-            info!("KickoffAdvanceFunds reached for dispute {:?}", dispute);
-            dispute.set_kickoff(block_num);
+    fn stop_processing(&mut self) {
+        self.req_adv_funds_block = None;
+    }
+
+    fn close_dispute(&mut self, completed: bool) -> () {
+        if let Some(dispute) = &self.dispute {
+            info!("Removing active {:?}", dispute);
+            self.dispute = None;
         } else {
-            // just log, we don't want to err
-            error!("KickoffAdvanceFunds but no dispute found for pegout {peg_out_id}");
+            info!("Trying to remove unexisting dispute");
+        }
+
+        if completed {
+            self.stop_processing()
         }
     }
 
-    fn undo_kickoff_dispute(&mut self, peg_out_id: String) {
-        if let Some(dispute) = self.disputes.get_mut(&peg_out_id) {
-            dispute.unset_kickoff();
-        } else {
-            warn!("RemoveKickoffAdvanceFunds but no dispute found for pegout {peg_out_id}");
+    fn run_check_fork(dispute: &mut Dispute) {
+        let args = dispute.check_fork_args();
+        // note: check-fork already validates consecutive blocks, etc.
+        match check_fork(args) {
+            Ok(effort) => {
+                info!("CheckFork accepted with effort {}", effort);
+                // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-89
+            }
+            Err(e) => {
+                error!("CheckFork rejected: {}", e);
+                // TODO(Jira) this should be monitored and analysed - https://rsklabs.atlassian.net/browse/UB-127
+            }
         }
     }
 }
 
-impl EventProcessor for DisputedPegoutProcessor {
+impl EventProcessor for DisputedPegOutProcessor {
     fn process_new_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         match event {
-            RskPegManagerEvents::RequestAdvanceFunds(ev) => {
-                info!("Handling {:?}...", ev);
-                self.init_dispute(
-                    ev.peg_out_id.clone().to_string(),
-                    BlockNumber::from(ev.block_num),
-                    ev.amount,
-                )?;
+            RskPegManagerEvents::RequestAdvanceFunds(ev, block_num) => {
+                info!("Handling {:?} @ block {}, waiting blocks...", ev, block_num);
+                self.start_processing(block_num);
             }
-            // TODO(iago) think about how to force removed event
             RskPegManagerEvents::RemoveRequestAdvanceFunds { peg_out_id } => {
                 info!("Handling RemoveRequestAdvanceFunds {peg_out_id}...");
-                self.remove_dispute(peg_out_id);
+                self.stop_processing();
             }
-            RskPegManagerEvents::KickoffAdvanceFunds(ev) => {
+            RskPegManagerEvents::KickoffAdvanceFunds(ev, block_num) => {
                 info!("Handling {:?}...", ev);
-                self.kickoff_dispute(ev.peg_out_id.clone(), ev.block_num);
+                self.kickoff_dispute(ev, block_num);
             }
-            // TODO(iago) think about how to force removed event
             RskPegManagerEvents::RemoveKickoffAdvanceFunds { peg_out_id } => {
                 info!("Handling RemoveKickoffAdvanceFunds {peg_out_id}...");
-                self.undo_kickoff_dispute(peg_out_id.clone());
+                self.close_dispute(false);
             }
             _ => {
                 info!("Ignoring {:?}...", event);
@@ -116,39 +113,204 @@ impl EventProcessor for DisputedPegoutProcessor {
     }
 
     fn process_new_block(&mut self, block: &RskBlock) -> Result<()> {
-        let block_pow = pow_to_effort(&block.pow());
+        if !self.is_waiting_blocks() {
+            bail!("Not waiting blocks, still received {}...", block.number());
+        }
 
-        // we want to remove the dispute using the centralized logic (remove_dispute) for cleanup, etc.
-        // that's why we have two iterations rather than one using retain or alike
-        let mut complete_disputes = Vec::new();
-        for (_id, dispute) in self.disputes.iter_mut() {
-            dispute.update_pow(block_pow);
-            if dispute.has_enough_pow() {
-                complete_disputes.push(dispute.clone());
+        if let Some(req_adv_funds_block) = &self.req_adv_funds_block {
+            if block.number().value() < req_adv_funds_block.value() {
+                warn!(
+                    "Ignoring block {}, older than RequestAdvanceFunds",
+                    block.number()
+                );
+                return Ok(());
             }
         }
 
-        // in the Union Bridge design, just one withdrawal/dispute will be active at a time, so the loop would not be needed
-        // in any case, we leave the code ready for the possibility of multiple withdrawals/disputes in the future
-        for dispute in complete_disputes {
+        let removed_block = self.known_blocks.insert(block.number(), block.clone());
+
+        if !self.dispute.is_some() {
+            info!(
+                "No active dispute, ignoring block effort for {}",
+                block.number()
+            );
+            return Ok(());
+        }
+
+        let dispute = self.dispute.as_mut().unwrap();
+
+        info!("Accumulating pow for dispute {}", dispute.pegout_id());
+
+        // TODO(Jira) this will probably be removed in scope of // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-144
+        if let Some(rb) = &removed_block {
+            dispute.update_with_block(rb, true);
+        }
+
+        dispute.update_with_block(block, false);
+
+        if dispute.has_enough_pow() {
             info!("Triggering CheckFork for complete dispute {:?}", dispute);
+            Self::run_check_fork(dispute);
 
-            // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-3 - invoke check fork
-
-            info!("Removing complete dispute {:?}", dispute);
-            self.remove_dispute(&dispute.peg_out_id)
+            info!("Completing dispute {}", dispute.pegout_id());
+            self.close_dispute(true);
         }
 
         Ok(())
     }
 
-    fn waiting_blocks(&self) -> bool {
-        self.waiting_blocks
+    fn is_waiting_blocks(&self) -> bool {
+        self.req_adv_funds_block.is_some()
     }
 
     fn shutdown(&self) {
-        if !self.disputes.is_empty() {
-            warn!("{} active disputes found on shutdown!", self.disputes.len());
+        if self.dispute.is_some() {
+            warn!("Active dispute found on shutdown! {:?}", self.dispute);
+        }
+    }
+}
+
+pub(super) mod types {
+    use check_fork::{Block, CheckForkArgs};
+    use common::fake_contracts::FakePegManager::KickoffAdvanceFunds;
+    use common::types::{BlockPow, RskBlock};
+    use log::info;
+    use primitive_types::U256;
+
+    #[derive(Debug)]
+    pub struct Dispute {
+        event: KickoffAdvanceFunds,
+        check_fork_args: CheckForkArgs,
+        accum_effort: U256,
+    }
+
+    impl Dispute {
+        pub(crate) fn new(event: KickoffAdvanceFunds, kickoff_blocks: Vec<&RskBlock>) -> Self {
+            let check_fork_args = CheckForkArgs {
+                utxo_id: event.utxo_id.clone(),
+                pegout_id: event.peg_out_id.clone(),
+                operator_id: event.operator_id.clone(),
+                required_effort: U256::from_big_endian(&event.required_effort.to_be_bytes_vec()),
+                required_num_blocks: event.required_num_blocks,
+                // fields that can be updated later on
+                init_block_time: 0,
+                init_block_number: 0,
+                block_list: vec![],
+            };
+
+            let mut instance = Self {
+                event,
+                check_fork_args,
+                accum_effort: U256::zero(),
+            };
+
+            // we already received the block that triggered the event, before the event itself
+            kickoff_blocks
+                .iter()
+                .for_each(|b| instance.update_check_fork_with_block(b));
+
+            instance
+        }
+
+        pub fn pegout_id(&self) -> String {
+            self.event.peg_out_id.clone()
+        }
+
+        pub fn check_fork_args(&self) -> CheckForkArgs {
+            self.check_fork_args.clone()
+        }
+
+        pub fn update_with_block(&mut self, block: &RskBlock, removed: bool) -> () {
+            let block_effort = Self::pow_to_effort(&block.pow());
+
+            if removed {
+                self.decrease_effort(block_effort);
+            } else {
+                self.increase_effort(block_effort);
+
+                // we received the block that triggered the event after the event itself
+                if block.hash() == self.event.block_hash.into() {
+                    self.update_check_fork_with_block(block);
+                }
+            }
+        }
+
+        pub fn has_enough_pow(&self) -> bool {
+            self.get_missing_effort() == U256::zero()
+        }
+
+        fn update_check_fork_with_block(&mut self, block: &RskBlock) {
+            self.check_fork_args.init_block_number = block.number().value();
+            self.check_fork_args.init_block_time = block.timestamp().value();
+            self.check_fork_args
+                .block_list
+                .push(self.new_check_fork_block(block))
+        }
+
+        fn increase_effort(&mut self, block_effort: U256) {
+            self.accum_effort = self.accum_effort.saturating_add(block_effort);
+            info!(
+                "Dispute {}: new block, pending effort {} (+{})",
+                self.pegout_id(),
+                self.get_missing_effort(),
+                block_effort
+            );
+        }
+
+        fn decrease_effort(&mut self, block_effort: U256) {
+            self.accum_effort = self.accum_effort.saturating_sub(block_effort);
+            info!(
+                "Dispute {}: new block, pending effort {} (-{})",
+                self.pegout_id(),
+                self.get_missing_effort(),
+                block_effort
+            );
+        }
+
+        fn get_missing_effort(&self) -> U256 {
+            let missing_effort = self
+                .check_fork_args
+                .required_effort
+                .saturating_sub(self.accum_effort);
+            missing_effort
+        }
+
+        fn new_check_fork_block(&self, new_block: &RskBlock) -> Block {
+            let bridge_event = (new_block.hash() == self.event.block_hash.into()).then(|| {
+                check_fork::BridgeEvent {
+                    utxo_id: self.event.utxo_id.clone(),
+                    pegout_id: self.event.peg_out_id.clone(),
+                    operator_id: self.event.operator_id.clone(),
+                }
+            });
+
+            Block {
+                number: new_block.number().value(),
+                hash: hex::encode(new_block.hash().value()),
+                parent: hex::encode(new_block.parent_hash().value()),
+                difficulty: new_block.difficulty().value(),
+                timestamp: new_block.timestamp().value(),
+                bridge_event,
+                // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-144
+                uncles: vec![],
+                pow: hex::encode(new_block.pow().value()),
+            }
+        }
+
+        #[cfg(not(feature = "anvil"))]
+        fn pow_to_effort(pow: &BlockPow) -> U256 {
+            use log::error;
+
+            let pow_dec: U256 = U256::from_big_endian(pow.value().as_bytes());
+            U256::MAX.checked_div(pow_dec).unwrap_or_else(|| {
+                error!("Received 0 as pow");
+                U256::zero()
+            })
+        }
+
+        #[cfg(feature = "anvil")]
+        fn pow_to_effort(_pow: &BlockPow) -> U256 {
+            U256::from(250000000000u64)
         }
     }
 }

@@ -2,6 +2,7 @@ use primitive_types::U256;
 use serde::Deserialize;
 use serde::Serialize;
 
+// TODO configurable
 pub const SUPERBLOCK_TIMES_DIFFICULTY: u8 = 20;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -24,7 +25,7 @@ pub struct BridgeEvent {
     pub operator_id: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CheckForkArgs {
     pub utxo_id: String,
     pub pegout_id: String,

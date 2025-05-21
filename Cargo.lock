@@ -1697,6 +1697,7 @@ dependencies = [
  "alloy-primitives",
  "alloy-sol-types",
  "anyhow",
+ "check-fork",
  "clap",
  "common",
  "hex",

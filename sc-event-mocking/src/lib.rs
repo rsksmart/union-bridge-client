@@ -46,7 +46,7 @@ impl<P: Provider> Executor<P> {
         let pegout_id = format!("pegout_{}", bb.header.number);
 
         let receipt = contract
-            .requestAdvanceFunds(pegout_id.clone(), bb.header.number, 1000)
+            .requestAdvanceFunds(pegout_id.clone(), bb.header.hash, 1000)
             .send()
             .await?
             .get_receipt()
@@ -74,10 +74,22 @@ impl<P: Provider> Executor<P> {
             .expect("no best block");
 
         // TODO: receive from param
-        let required_pow = U256::from(10_000_000_000_000u64);
+        let required_effort = U256::from(10_000_000_000_000u64);
+
+        let utxo_id = format!("utxo_{}", bb.header.number);
+        let operator_id = format!("operator_{}", bb.header.number);
+
+        let required_num_blocks = 5;
 
         let receipt = contract
-            .kickoffAdvanceFunds(pegout_id.clone(), bb.header.number, required_pow)
+            .kickoffAdvanceFunds(
+                bb.header.hash,
+                pegout_id.clone(),
+                utxo_id,
+                operator_id,
+                required_effort,
+                required_num_blocks,
+            )
             .send()
             .await?
             .get_receipt()
