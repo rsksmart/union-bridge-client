@@ -95,7 +95,8 @@ When the block indexer is shut down
 Then the best block in storage should be the best from the node
 And there should be no gaps in storage
 
-# tmux new-session -d -s long-run-sync-blk-indxr 'cargo run --bin block_indexer_runner -- -b 0 -t long-run-sync-blk-indxr'
+# Rootstock's genesis block is block height 1, not 0 as in Bitcoin
+# tmux new-session -d -s long-run-sync-blk-indxr 'cargo run --bin block_indexer_runner -- -b 1 -t long-run-sync-blk-indxr'
 # tmux attach-session -t long-run-sync-blk-indxr
 # detach: CTRL+b, d
 # ... 24 hours -> shut down
@@ -130,7 +131,8 @@ When the block indexer is shut down
 Then the best block in storage should be the best from the node
 And there should be no gaps in storage
 
-# tmux new-session -d -s long-run-sync-large-cache-blk-indxr 'cargo run --bin block_indexer_runner -- -b 0 -t long-run-sync-large-cache-blk-indxr'
+# Rootstock's genesis block is block height 1, not 0 as in Bitcoin
+# tmux new-session -d -s long-run-sync-large-cache-blk-indxr 'cargo run --bin block_indexer_runner -- -b 1 -t long-run-sync-large-cache-blk-indxr'
 # tmux attach-session -t long-run-sync-large-cache-blk-indxr
 # detach: CTRL+b, d
 # ... 24 hours -> shut down
