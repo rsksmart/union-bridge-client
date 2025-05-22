@@ -3,8 +3,8 @@ use bitcoin::consensus::encode::deserialize as btc_deserialize;
 use check_fork::{Block, BridgeEvent};
 use primitive_types::U256;
 use reqwest::Client;
-use serde::{Deserialize, Deserializer, Serialize, de};
-use serde_json::{Value, json};
+use serde::{de, Deserialize, Deserializer, Serialize};
+use serde_json::{json, Value};
 use std::error::Error;
 use std::string::ToString;
 
@@ -17,7 +17,7 @@ pub const FIXTURES_BASE_DIR: &str = "qa-tools/fixtures/check-fork";
 struct RskBlock {
     #[serde(
         deserialize_with = "parse_hex_to_u64",
-        serialize_with   = "parse_u64_to_hex"
+        serialize_with = "parse_u64_to_hex"
     )]
     number: u64,
     hash: String,
@@ -27,7 +27,7 @@ struct RskBlock {
     difficulty: U256,
     #[serde(
         deserialize_with = "parse_hex_to_u64",
-        serialize_with   = "parse_u64_to_hex"
+        serialize_with = "parse_u64_to_hex"
     )]
     timestamp: u64,
     #[serde(
@@ -90,9 +90,9 @@ pub async fn get_blocks(
 
             // remove next three lines when connection with check-fork is done and uncles come in right format
             let mut result = result.unwrap().clone();
-            result["uncles"] = serde_json::Value::Array(Vec::new()); 
+            result["uncles"] = serde_json::Value::Array(Vec::new());
             let block: RskBlock = serde_json::from_str(&result.to_string())?;
-            
+
             if log_super_block {
                 log_if_superblock(&block)?;
             }
@@ -111,7 +111,6 @@ pub async fn get_blocks(
         let result: Vec<Block> = blocks.iter().map(|b| Block::from(b)).collect();
         Ok(result)
     }
-    
 }
 
 fn add_bridge_event(blocks: &[RskBlock]) -> Result<Vec<Block>, Box<dyn Error>> {
@@ -155,7 +154,9 @@ fn log_if_superblock(block: &RskBlock) -> Result<(), Box<dyn Error>> {
     // compute the PoW target from difficulty by inversion
     // U256::MAX, the "difficulty 1" target, represents the easiest possible target
     // this conversion allows comparing target difficulty with the actual block PoW
-    let target_block_pow = U256::MAX / block.difficulty;
+    let target_block_pow = U256::MAX
+        .checked_div(block.difficulty)
+        .ok_or("0 division on log_if_superblock")?;
 
     // define a superblock as one whose PoW is at least N times harder than the required target
     let superblock_pow = target_block_pow / SUPERBLOCK_THRESHOLD_FACTOR;
@@ -174,7 +175,6 @@ fn log_if_superblock(block: &RskBlock) -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
-
 
 fn parse_u64_to_hex<S>(v: &u64, s: S) -> Result<S::Ok, S::Error>
 where
@@ -206,8 +206,7 @@ where
     D: Deserializer<'de>,
 {
     let hex = <&str>::deserialize(deserializer)?;
-    let bytes = hex::decode(hex.trim_start_matches("0x"))
-        .map_err(de::Error::custom)?;
+    let bytes = hex::decode(hex.trim_start_matches("0x")).map_err(de::Error::custom)?;
     // 80-byte → treat as full header, otherwise assume it is already a 32-byte hash
     if bytes.len() == 80 {
         btc_deserialize::<Header>(&bytes)

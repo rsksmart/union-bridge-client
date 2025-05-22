@@ -303,7 +303,7 @@ pub(super) mod types {
 
             let pow_dec: U256 = U256::from_big_endian(pow.value().as_bytes());
             U256::MAX.checked_div(pow_dec).unwrap_or_else(|| {
-                error!("Received 0 as pow");
+                error!("0 division on pow_to_effort");
                 U256::zero()
             })
         }
@@ -312,5 +312,284 @@ pub(super) mod types {
         fn pow_to_effort(_pow: &BlockPow) -> U256 {
             U256::from(250000000000u64)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy_primitives::U256 as AlloyU256;
+    use common::fake_contracts::FakePegManager::{KickoffAdvanceFunds, RequestAdvanceFunds};
+    use common::types::{BlockDifficulty, BlockHash, BlockPow, BlockTimestamp, RskBlock};
+    use primitive_types::{H256, U256};
+    use std::ops::Mul;
+
+    fn create_fake_block(number: u64, block_effort: U256) -> RskBlock {
+        let block_pow_u = U256::MAX.checked_div(block_effort).expect("0 division");
+        let pow = BlockPow::from(H256::from_slice(&block_pow_u.to_big_endian()));
+
+        let block_number = BlockNumber::from(number);
+        let block_hash = BlockHash::from(H256::from_low_u64_be(number));
+        let parent_hash = BlockHash::from(H256::from_low_u64_be(number - 1));
+        let timestamp = BlockTimestamp::from(number);
+        let difficulty = BlockDifficulty::from(U256::from(500));
+        let total_difficulty = difficulty.mul(BlockDifficulty::from(U256::from(1000)));
+        let uncles = vec![];
+
+        RskBlock::new(
+            block_number,
+            block_hash,
+            parent_hash,
+            timestamp,
+            difficulty,
+            total_difficulty,
+            pow,
+            uncles,
+        )
+    }
+
+    fn create_fake_request_event(peg_out_id: &str) -> RequestAdvanceFunds {
+        RequestAdvanceFunds {
+            block_hash: BlockHash::from(H256::from_low_u64_be(123)).into(),
+            peg_out_id: peg_out_id.to_string(),
+            amount: 1000,
+        }
+    }
+
+    fn create_fake_kickoff_event(peg_out_id: &str) -> KickoffAdvanceFunds {
+        KickoffAdvanceFunds {
+            block_hash: BlockHash::from(H256::from_low_u64_be(123)).into(),
+            peg_out_id: peg_out_id.to_string(),
+            utxo_id: "utxo123".to_string(),
+            operator_id: "op123".to_string(),
+            required_effort: AlloyU256::from(1000),
+            required_num_blocks: 4,
+        }
+    }
+
+    #[test]
+    fn test_new_processor_initial_state() {
+        let processor = DisputedPegOutProcessor::new();
+        assert!(processor.req_adv_funds_block.is_none());
+        assert!(processor.dispute.is_none());
+        assert!(processor.known_blocks.is_empty());
+        assert!(!processor.is_waiting_blocks());
+    }
+
+    #[test]
+    fn test_process_request_advance_funds() {
+        let mut processor = DisputedPegOutProcessor::new();
+        let block_num = BlockNumber::from(100);
+        let event = create_fake_request_event("peg123");
+
+        let result = processor
+            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(event, block_num));
+        assert!(result.is_ok());
+        assert!(processor.is_waiting_blocks());
+        assert!(processor.dispute.is_none());
+        assert_eq!(processor.req_adv_funds_block, Some(block_num));
+    }
+
+    #[test]
+    fn test_process_kickoff_advance_funds() {
+        let mut processor = DisputedPegOutProcessor::new();
+        let block_num = BlockNumber::from(100);
+
+        let pegout_id = "peg123";
+
+        let req_event = create_fake_request_event(pegout_id);
+        processor
+            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+                req_event, block_num,
+            ))
+            .unwrap();
+
+        let block1 = create_fake_block(101, U256::from(100));
+        let block2 = create_fake_block(102, U256::from(105));
+        processor.process_new_block(&block1).unwrap();
+        processor.process_new_block(&block2).unwrap();
+
+        let kickoff_event = create_fake_kickoff_event(pegout_id);
+        let result = processor.process_new_event(&RskPegManagerEvents::KickoffAdvanceFunds(
+            kickoff_event.clone(),
+            block_num,
+        ));
+        assert!(result.is_ok());
+        assert!(processor.dispute.is_some());
+
+        let dispute = processor.dispute.as_ref().unwrap();
+        assert_eq!(dispute.pegout_id(), pegout_id);
+        assert_eq!(dispute.check_fork_args().pegout_id, pegout_id);
+    }
+
+    #[test]
+    fn test_process_kickoff_without_request() {
+        let mut processor = DisputedPegOutProcessor::new();
+        let block_num = BlockNumber::from(100);
+        let kickoff_event = create_fake_kickoff_event("peg123");
+
+        let result = processor.process_new_event(&RskPegManagerEvents::KickoffAdvanceFunds(
+            kickoff_event,
+            block_num,
+        ));
+        assert!(result.is_ok());
+        assert!(processor.dispute.is_none()); // Should not create dispute without RequestAdvanceFunds
+    }
+
+    #[test]
+    fn test_process_blocks_accumulates_effort_and_closes_dispute() {
+        let mut processor = DisputedPegOutProcessor::new();
+        let block_num = BlockNumber::from(100);
+
+        let pegout_id = "peg123";
+
+        let req_event = create_fake_request_event(pegout_id);
+        processor
+            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+                req_event, block_num,
+            ))
+            .unwrap();
+
+        let kickoff_event = create_fake_kickoff_event(pegout_id);
+
+        // to need one more block than required ones to achieve the pow
+        let num_of_blocks = kickoff_event.required_num_blocks + 1;
+        let block_effort = kickoff_event
+            .required_effort
+            .checked_div(AlloyU256::from(num_of_blocks))
+            .expect("0 division");
+        let block_effort = U256::from_big_endian(&block_effort.to_be_bytes_vec());
+
+        processor
+            .process_new_event(&RskPegManagerEvents::KickoffAdvanceFunds(
+                kickoff_event,
+                block_num,
+            ))
+            .unwrap();
+
+        assert!(processor.dispute.is_some());
+        assert!(processor.req_adv_funds_block.is_some());
+        assert!(processor.is_waiting_blocks());
+
+        for i in 1..=num_of_blocks - 1 {
+            let block = create_fake_block(block_num.value() + i as u64, block_effort);
+            processor
+                .process_new_block(&block)
+                .expect("Should process block");
+        }
+
+        assert!(processor.dispute.is_some());
+        assert!(processor.req_adv_funds_block.is_some());
+        assert!(processor.is_waiting_blocks());
+
+        // we process the missing block
+        let block = create_fake_block(block_num.value() + 5, block_effort);
+        processor
+            .process_new_block(&block)
+            .expect("Should process block");
+
+        assert!(processor.dispute.is_none());
+        assert!(processor.req_adv_funds_block.is_none());
+        assert!(!processor.is_waiting_blocks());
+    }
+
+    #[test]
+    fn test_remove_request_advance_funds() {
+        let mut processor = DisputedPegOutProcessor::new();
+        let block_num = BlockNumber::from(100);
+
+        let pegout_id = "peg123";
+
+        let req_event = create_fake_request_event(pegout_id);
+        processor
+            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+                req_event, block_num,
+            ))
+            .unwrap();
+        assert!(processor.is_waiting_blocks());
+
+        let result = processor.process_new_event(&RskPegManagerEvents::RemoveRequestAdvanceFunds {
+            peg_out_id: pegout_id.to_string(),
+        });
+        assert!(result.is_ok());
+        assert!(!processor.is_waiting_blocks());
+        assert!(processor.dispute.is_none());
+        assert!(processor.req_adv_funds_block.is_none());
+    }
+
+    #[test]
+    fn test_remove_kickoff_advance_funds() {
+        let mut processor = DisputedPegOutProcessor::new();
+        let block_num = BlockNumber::from(100);
+
+        let pegout_id = "peg123";
+
+        let req_event = create_fake_request_event(pegout_id);
+        processor
+            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+                req_event, block_num,
+            ))
+            .unwrap();
+
+        let kickoff_event = create_fake_kickoff_event(pegout_id);
+        processor
+            .process_new_event(&RskPegManagerEvents::KickoffAdvanceFunds(
+                kickoff_event,
+                block_num,
+            ))
+            .unwrap();
+        assert!(processor.dispute.is_some());
+
+        let result = processor.process_new_event(&RskPegManagerEvents::RemoveKickoffAdvanceFunds {
+            peg_out_id: pegout_id.to_string(),
+        });
+        assert!(result.is_ok());
+        assert!(processor.dispute.is_none());
+        assert!(processor.req_adv_funds_block.is_some());
+        assert!(processor.is_waiting_blocks());
+    }
+
+    #[test]
+    fn test_process_old_block() {
+        let mut processor = DisputedPegOutProcessor::new();
+        let block_num = BlockNumber::from(100);
+
+        let req_event = create_fake_request_event("peg123");
+        processor
+            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+                req_event, block_num,
+            ))
+            .unwrap();
+
+        let old_block = create_fake_block(99, U256::from(100));
+        let result = processor.process_new_block(&old_block);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_shutdown_with_active_dispute() {
+        let mut processor = DisputedPegOutProcessor::new();
+        let block_num = BlockNumber::from(100);
+
+        let peg_out_id = "peg123";
+
+        let req_event = create_fake_request_event(peg_out_id);
+        processor
+            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+                req_event, block_num,
+            ))
+            .unwrap();
+
+        let kickoff_event = create_fake_kickoff_event(peg_out_id);
+        processor
+            .process_new_event(&RskPegManagerEvents::KickoffAdvanceFunds(
+                kickoff_event,
+                block_num,
+            ))
+            .unwrap();
+
+        assert!(processor.dispute.is_some());
+
+        processor.shutdown();
     }
 }

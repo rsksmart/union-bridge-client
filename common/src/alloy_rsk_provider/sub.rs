@@ -211,12 +211,12 @@ impl RskSubscription<RskLog> for AlloySubscription<Log> {
         );
 
         let event_data = LogEvent::new(
-            new_log.data().data.to_string(),
+            hex::ToHex::encode_hex(&new_log.data().data),
             new_log
                 .data()
                 .topics()
                 .iter()
-                .map(|t| t.to_string())
+                .map(|t| hex::ToHex::encode_hex(&t))
                 .collect(),
         );
 

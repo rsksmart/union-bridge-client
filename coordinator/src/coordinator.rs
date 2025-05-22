@@ -176,8 +176,15 @@ mod tests {
 
         mock_monitor
             .expect_cancel_block_monitoring()
+            .withf(|force| *force == true)
             .returning(|_b| Ok(()))
-            .times(2);
+            .times(1);
+
+        mock_monitor
+            .expect_cancel_block_monitoring()
+            .withf(|force| *force == false)
+            .returning(|_b| Ok(()))
+            .times(2..);
 
         expect_try_event(vec![event_1, event_2], &mut mock_monitor);
 
@@ -245,7 +252,7 @@ mod tests {
     fn handle_shutdown(shutdown_flag: ShutdownFlag) -> JoinHandle<()> {
         thread::spawn(move || {
             // give time for logic to proceed
-            sleep(Duration::from_millis(10));
+            sleep(Duration::from_millis(100));
             shutdown_flag.set();
         })
     }

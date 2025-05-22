@@ -9,10 +9,10 @@ use union_contracts::bindings::pegmanager::PegManager::RegisteredPegInRequest;
 
 #[derive(Eq, PartialEq, Debug)]
 pub enum RskPegManagerEvents {
-    RequestAdvanceFunds(RequestAdvanceFunds, BlockNumber),
-    RemoveRequestAdvanceFunds { peg_out_id: String },
-    KickoffAdvanceFunds(KickoffAdvanceFunds, BlockNumber),
-    RemoveKickoffAdvanceFunds { peg_out_id: String },
+    RequestAdvanceFunds(RequestAdvanceFunds, BlockNumber), // temporarily mock, no need to test it
+    RemoveRequestAdvanceFunds { peg_out_id: String },      // temporarily mock, no need to test it
+    KickoffAdvanceFunds(KickoffAdvanceFunds, BlockNumber), // temporarily mock, no need to test it
+    RemoveKickoffAdvanceFunds { peg_out_id: String },      // temporarily mock, no need to test it
     RegisteredPegInRequest(RegisteredPegInRequest, BlockNumber),
     UnknownEvent,
 }
@@ -120,6 +120,164 @@ impl EventDecoder {
         match KickoffAdvanceFunds::decode_log_data(&log_data, true) {
             Ok(ev) => RskPegManagerEvents::KickoffAdvanceFunds(ev, block_num),
             Err(_) => UnknownEvent,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy_primitives::U256;
+    use common::test_utils::rsk_log_generator::{FakeLogGenerator, event_signature_to_topic};
+    use common::test_utils::rsk_utils::generate_fake_address;
+    use common::types::{BlockHash, LogEvent, LogInfo, RskLog};
+    use primitive_types::H256;
+    use std::str::FromStr;
+
+    #[test]
+    fn test_decode_unknown_event() {
+        let decoder = EventDecoder::new();
+        let log = FakeLogGenerator::new().generate_log(
+            "Transfer(address,address,uint256)",
+            generate_fake_address(1),
+        );
+
+        let result = decoder.decode(log);
+        assert_eq!(result, UnknownEvent);
+    }
+
+    #[test]
+    fn test_decode_invalid_data() {
+        let log_event: LogEvent = LogEvent::new(
+            "fake".to_string(),
+            vec![event_signature_to_topic(
+                "Transfer(address,address,uint256)",
+            )],
+        );
+
+        let log_info = LogInfo::new(
+            generate_fake_address(1),
+            BlockHash::from(H256::random()),
+            1.into(),
+            H256::random().to_string(),
+            1,
+            false,
+        );
+
+        let log = RskLog::new(log_info, log_event);
+
+        let decoder = EventDecoder::new();
+        let result = decoder.decode(log);
+        assert_eq!(result, UnknownEvent);
+    }
+
+    #[test]
+    fn test_decode_no_topics() {
+        let log_event: LogEvent = LogEvent::new(
+            "0x1234567890abcdef1234567890abcdef12345678".to_string(),
+            vec![],
+        );
+
+        let log_info = LogInfo::new(
+            generate_fake_address(1),
+            BlockHash::from(H256::random()),
+            1.into(),
+            H256::random().to_string(),
+            1,
+            false,
+        );
+
+        let log = RskLog::new(log_info, log_event);
+
+        let decoder = EventDecoder::new();
+        let result = decoder.decode(log);
+        assert_eq!(result, UnknownEvent);
+    }
+
+    #[test]
+    fn test_decode_invalid_topics() {
+        let topic = event_signature_to_topic("Transfer(address,address,uint256)");
+        let log_event: LogEvent = LogEvent::new(
+            "0x1234567890abcdef1234567890abcdef12345678".to_string(),
+            vec![
+                topic.clone(),
+                topic.clone(),
+                topic.clone(),
+                topic.clone(),
+                topic,
+            ], // 5 topics, invalid
+        );
+
+        let log_info = LogInfo::new(
+            generate_fake_address(1),
+            BlockHash::from(H256::random()),
+            1.into(),
+            H256::random().to_string(),
+            1,
+            false,
+        );
+
+        let log = RskLog::new(log_info, log_event);
+
+        let decoder = EventDecoder::new();
+        let result = decoder.decode(log);
+        assert_eq!(result, UnknownEvent);
+    }
+
+    #[test]
+    fn test_decode_request_pegin_event() {
+        let expected_event = RegisteredPegInRequest {
+            blockHash: H256::from_low_u64_be(123)
+                .as_bytes()
+                .try_into()
+                .expect("Failed to decode block hash"),
+            txHash: H256::from_low_u64_be(456)
+                .as_bytes()
+                .try_into()
+                .expect("Failed to decode tx hash"),
+            vout: 1,
+            value: 1000,
+            packetNumber: U256::from(33),
+            rskDestinationAddress: alloy_primitives::Address::from_str(
+                "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
+            )
+            .expect("Invalid address"),
+            btcReimbursementPubKey: H256::from_low_u64_be(103991732982)
+                .as_bytes()
+                .try_into()
+                .expect("Failed to decode btcReimbursementPubKey"),
+            utxoScriptPubKey: alloy_primitives::Bytes::from("0x1234567890abcdef"),
+        };
+
+        let expected_block_num = 789;
+
+        let data = hex::ToHex::encode_hex(&expected_event.encode_log_data().data);
+        let topics = expected_event
+            .encode_topics()
+            .iter()
+            .map(|t| hex::ToHex::encode_hex(t))
+            .collect();
+
+        let log_event = LogEvent::new(data, topics);
+        let log_info = LogInfo::new(
+            generate_fake_address(1),
+            BlockHash::from(H256::random()),
+            expected_block_num.into(),
+            H256::random().to_string(),
+            1,
+            false,
+        );
+
+        let rsk_log = RskLog::new(log_info, log_event);
+
+        let decoder = EventDecoder::new();
+        let result = decoder.decode(rsk_log);
+        match result {
+            RskPegManagerEvents::RegisteredPegInRequest(event, block_number) => {
+                assert_eq!(event, expected_event);
+                assert_eq!(block_number, expected_block_num)
+            }
+            _ => panic!("Expected RegisteredPegInRequest event"),
         }
     }
 }

@@ -261,7 +261,9 @@ fn validate_difficulty_in_bounds(block: &Block, prev_block: &Block) -> Result<()
 
 fn calculate_block_effort(block: &Block) -> Result<U256, &'static str> {
     let pow_dec = U256::from_str_radix(&block.pow, 16).map_err(|_| "Failed to parse PoW to dec")?;
-    Ok(U256::MAX / pow_dec)
+    U256::MAX
+        .checked_div(pow_dec)
+        .ok_or("0 division on calculate_block_effort")
 }
 
 #[cfg(test)]
