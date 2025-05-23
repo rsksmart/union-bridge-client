@@ -35,7 +35,7 @@ sol!(
             uint256 required_effort,
             uint32 required_num_blocks
         ) public {
-            emit KickoffAdvanceFunds(block.hash, peg_out_id, utxo_id, operator_id, required_effort, required_num_blocks);
+            emit KickoffAdvanceFunds(peg_out_id, utxo_id, operator_id, required_effort, required_num_blocks);
         }
     }
 );
