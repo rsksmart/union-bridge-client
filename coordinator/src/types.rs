@@ -2,22 +2,33 @@ use crate::types::RskPegManagerEvents::UnknownEvent;
 use alloy_primitives::{B256, LogData};
 use alloy_sol_types::SolEvent;
 use common::fake_contracts::FakePegManager::{KickoffAdvanceFunds, RequestAdvanceFunds};
-use common::types::{BlockNumber, RskLog};
+use common::types::{BlockHash, BlockNumber, RskLog};
 use log::{error, warn};
 use std::collections::HashMap;
 use union_contracts::bindings::pegmanager::PegManager::RegisteredPegInRequest;
 
 #[derive(Eq, PartialEq, Debug)]
 pub enum RskPegManagerEvents {
-    RequestAdvanceFunds(RequestAdvanceFunds, BlockNumber), // temporarily mock, no need to test it
-    RemoveRequestAdvanceFunds { peg_out_id: String },      // temporarily mock, no need to test it
-    KickoffAdvanceFunds(KickoffAdvanceFunds, BlockNumber), // temporarily mock, no need to test it
-    RemoveKickoffAdvanceFunds { peg_out_id: String },      // temporarily mock, no need to test it
-    RegisteredPegInRequest(RegisteredPegInRequest, BlockNumber),
+    RequestAdvanceFunds(RequestAdvanceFundsData), // temporarily mock, no need to test it
+    RemoveRequestAdvanceFunds { peg_out_id: String }, // temporarily mock, no need to test it
+    KickoffAdvanceFunds(KickoffAdvanceFundsData), // temporarily mock, no need to test it
+    RemoveKickoffAdvanceFunds { peg_out_id: String }, // temporarily mock, no need to test it
+    RegisteredPegInRequest(RegisteredPegInRequestData),
     UnknownEvent,
 }
 
-type DecoderFn = fn(&LogData, BlockNumber) -> RskPegManagerEvents;
+pub type RequestAdvanceFundsData = EventWithBlock<RequestAdvanceFunds>;
+pub type KickoffAdvanceFundsData = EventWithBlock<KickoffAdvanceFunds>;
+pub type RegisteredPegInRequestData = EventWithBlock<RegisteredPegInRequest>;
+
+#[derive(Eq, PartialEq, Debug, Clone)]
+pub struct EventWithBlock<T> {
+    pub inner: T,
+    pub block_number: BlockNumber,
+    pub block_hash: BlockHash,
+}
+
+type DecoderFn = fn(&LogData, BlockNumber, BlockHash) -> RskPegManagerEvents;
 
 pub struct EventDecoder {
     dispatch: HashMap<B256, DecoderFn>,
@@ -49,8 +60,10 @@ impl EventDecoder {
             None => return UnknownEvent,
         };
 
+        let block_num = log.info().block_number();
+        let block_hash = log.info().block_hash();
         match self.dispatch.get(&topic0) {
-            Some(decoder_fn) => decoder_fn(&log_data, log.info().block_number()),
+            Some(decoder_fn) => decoder_fn(&log_data, block_num, block_hash),
             None => {
                 warn!("Unknown event type for log: {:?}", log);
                 UnknownEvent
@@ -95,30 +108,45 @@ impl EventDecoder {
 
     fn decode_register_pegin_event(
         log_data: &LogData,
-        block_num: BlockNumber,
+        block_number: BlockNumber,
+        block_hash: BlockHash,
     ) -> RskPegManagerEvents {
         match RegisteredPegInRequest::decode_log_data(&log_data, true) {
-            Ok(ev) => RskPegManagerEvents::RegisteredPegInRequest(ev, block_num),
+            Ok(ev) => RskPegManagerEvents::RegisteredPegInRequest(RegisteredPegInRequestData {
+                inner: ev,
+                block_number,
+                block_hash,
+            }),
             Err(_) => UnknownEvent,
         }
     }
 
     fn decode_request_advance_funds_event(
         log_data: &LogData,
-        block_num: BlockNumber,
+        block_number: BlockNumber,
+        block_hash: BlockHash,
     ) -> RskPegManagerEvents {
         match RequestAdvanceFunds::decode_log_data(&log_data, true) {
-            Ok(ev) => RskPegManagerEvents::RequestAdvanceFunds(ev, block_num),
+            Ok(event) => RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFundsData {
+                inner: event,
+                block_number,
+                block_hash,
+            }),
             Err(_) => UnknownEvent,
         }
     }
 
     fn decode_kickoff_advance_funds_event(
         log_data: &LogData,
-        block_num: BlockNumber,
+        block_number: BlockNumber,
+        block_hash: BlockHash,
     ) -> RskPegManagerEvents {
         match KickoffAdvanceFunds::decode_log_data(&log_data, true) {
-            Ok(ev) => RskPegManagerEvents::KickoffAdvanceFunds(ev, block_num),
+            Ok(event) => RskPegManagerEvents::KickoffAdvanceFunds(KickoffAdvanceFundsData {
+                inner: event,
+                block_number,
+                block_hash,
+            }),
             Err(_) => UnknownEvent,
         }
     }
@@ -226,8 +254,11 @@ mod tests {
 
     #[test]
     fn test_decode_request_pegin_event() {
+        let expected_block_hash = H256::from_low_u64_be(123);
+        let expected_block_num = 789;
+
         let expected_event = RegisteredPegInRequest {
-            blockHash: H256::from_low_u64_be(123)
+            blockHash: expected_block_hash
                 .as_bytes()
                 .try_into()
                 .expect("Failed to decode block hash"),
@@ -249,19 +280,17 @@ mod tests {
             utxoScriptPubKey: alloy_primitives::Bytes::from("0x1234567890abcdef"),
         };
 
-        let expected_block_num = 789;
-
-        let data = hex::ToHex::encode_hex(&expected_event.encode_log_data().data);
+        let data = hex::encode(&expected_event.encode_log_data().data);
         let topics = expected_event
             .encode_topics()
             .iter()
-            .map(|t| hex::ToHex::encode_hex(t))
+            .map(|t| hex::encode(t))
             .collect();
 
         let log_event = LogEvent::new(data, topics);
         let log_info = LogInfo::new(
             generate_fake_address(1),
-            BlockHash::from(H256::random()),
+            expected_block_hash.into(),
             expected_block_num.into(),
             H256::random().to_string(),
             1,
@@ -273,9 +302,10 @@ mod tests {
         let decoder = EventDecoder::new();
         let result = decoder.decode(rsk_log);
         match result {
-            RskPegManagerEvents::RegisteredPegInRequest(event, block_number) => {
-                assert_eq!(event, expected_event);
-                assert_eq!(block_number, expected_block_num)
+            RskPegManagerEvents::RegisteredPegInRequest(data) => {
+                assert_eq!(data.inner, expected_event);
+                assert_eq!(data.block_number, expected_block_num);
+                assert_eq!(data.block_hash, expected_block_hash.into());
             }
             _ => panic!("Expected RegisteredPegInRequest event"),
         }

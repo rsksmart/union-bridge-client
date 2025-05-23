@@ -1,11 +1,12 @@
 use crate::event_processor::{DisputedPegOutProcessor, EventProcessor};
 use crate::monitor::MonitorApi;
 use anyhow::{Context, Result};
-use common::constants::coordinator::MONITOR_CHECK_PERIOD;
 use common::shutdown_flag::ShutdownFlag;
 use log::error;
 use std::thread;
 use std::time::Duration;
+
+const CHECK_PERIOD: Duration = Duration::from_secs(1);
 
 pub struct Coordinator<M: MonitorApi> {
     monitor: M,
@@ -19,7 +20,7 @@ impl<M: MonitorApi> Coordinator<M> {
         Self {
             monitor,
             processors: vec![Box::new(DisputedPegOutProcessor::new())],
-            check_period: MONITOR_CHECK_PERIOD,
+            check_period: CHECK_PERIOD,
             shutdown_flag,
         }
     }
@@ -95,7 +96,7 @@ impl<M: MonitorApi> Coordinator<M> {
             Ok(())
         })();
 
-        self.processors.iter().for_each(|p| p.shutdown());
+        self.processors.iter_mut().for_each(|p| p.shutdown());
 
         self.monitor
             .cancel_block_monitoring(false)
@@ -121,7 +122,7 @@ impl<M: MonitorApi> Coordinator<M> {
 mod tests {
     use crate::coordinator::Coordinator;
     use crate::monitor::MockMonitorApi;
-    use crate::types::RskPegManagerEvents;
+    use crate::types::{KickoffAdvanceFundsData, RequestAdvanceFundsData, RskPegManagerEvents};
     use alloy_primitives::U256;
     use common::fake_contracts::FakePegManager::{KickoffAdvanceFunds, RequestAdvanceFunds};
     use common::shutdown_flag::ShutdownFlag;
@@ -133,32 +134,41 @@ mod tests {
     use std::thread::{JoinHandle, sleep};
     use std::time::Duration;
 
+    fn create_fake_request_event(peg_out_id: &str) -> RequestAdvanceFunds {
+        RequestAdvanceFunds {
+            peg_out_id: peg_out_id.to_string(),
+            amount: 1000,
+        }
+    }
+
+    fn create_fake_kickoff_event(peg_out_id: &str) -> KickoffAdvanceFunds {
+        KickoffAdvanceFunds {
+            peg_out_id: peg_out_id.to_string(),
+            utxo_id: "utxo123".to_string(),
+            operator_id: "op123".to_string(),
+            required_effort: U256::from(1000),
+            required_num_blocks: 4,
+        }
+    }
+
     #[test]
     fn test_coordinator_run_handles_several_events() {
         let mut mock_monitor = MockMonitorApi::new();
         let block_1 = get_first_default_rsk_block();
         let block_2 = get_second_default_rsk_block();
 
-        let event_1 = RskPegManagerEvents::RequestAdvanceFunds(
-            RequestAdvanceFunds {
-                peg_out_id: "peg_out_id_1".to_string(),
-                block_hash: block_1.hash().into(),
-                amount: 1,
-            },
-            block_1.number(),
-        );
+        let event_1 = RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFundsData {
+            inner: create_fake_request_event("peg_out_id_1"),
+            block_number: block_1.number(),
+            block_hash: block_1.hash().into(),
+        });
 
-        let event_2: RskPegManagerEvents = RskPegManagerEvents::KickoffAdvanceFunds(
-            KickoffAdvanceFunds {
-                peg_out_id: "peg_out_id_2".to_string(),
-                utxo_id: "utxo_id".to_string(),
-                operator_id: "operator_id".to_string(),
+        let event_2: RskPegManagerEvents =
+            RskPegManagerEvents::KickoffAdvanceFunds(KickoffAdvanceFundsData {
+                inner: create_fake_kickoff_event("peg_out_id_1"),
+                block_number: block_2.number(),
                 block_hash: block_2.hash().into(),
-                required_effort: U256::from(1),
-                required_num_blocks: 5,
-            },
-            block_2.number(),
-        );
+            });
 
         mock_monitor
             .expect_start_event_monitoring()
@@ -184,7 +194,7 @@ mod tests {
             .expect_cancel_block_monitoring()
             .withf(|force| *force == false)
             .returning(|_b| Ok(()))
-            .times(2..);
+            .times(1);
 
         expect_try_event(vec![event_1, event_2], &mut mock_monitor);
 
@@ -206,14 +216,11 @@ mod tests {
         let block_1 = get_first_default_rsk_block();
         let block_2 = get_second_default_rsk_block();
 
-        let event_1 = RskPegManagerEvents::RequestAdvanceFunds(
-            RequestAdvanceFunds {
-                peg_out_id: "peg_out_id".to_string(),
-                block_hash: block_1.hash().into(),
-                amount: 1,
-            },
-            block_1.number(),
-        );
+        let event_1 = RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFundsData {
+            inner: create_fake_request_event("peg_out_id_1"),
+            block_number: block_1.number(),
+            block_hash: block_1.hash().into(),
+        });
 
         let event_2 = RskPegManagerEvents::UnknownEvent;
 

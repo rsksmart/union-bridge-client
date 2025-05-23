@@ -19,5 +19,5 @@ pub trait EventProcessor {
         false
     }
 
-    fn shutdown(&self);
+    fn shutdown(&mut self);
 }

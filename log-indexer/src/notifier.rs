@@ -1,4 +1,5 @@
 use anyhow::{Context, Result, anyhow};
+use common::constants::indexer::NOTIFIER_CHECK_PERIOD;
 use common::msg_broker::broker::BrokerServerApi;
 use common::msg_broker::types::{BrokerRequests, BrokerResponses};
 use common::shutdown_flag::ShutdownFlag;
@@ -9,8 +10,6 @@ use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
 use std::sync::mpsc::RecvTimeoutError;
 use std::time::Duration;
-
-const MONITOR_CHECK_PERIOD: Duration = Duration::from_secs(5);
 
 pub struct Notifier<BS: BrokerServerApi> {
     new_log_channel: mpsc::Receiver<RskLog>,
@@ -30,7 +29,7 @@ impl<BS: BrokerServerApi> Notifier<BS> {
             new_log_channel: indexer_receiver,
             msg_broker,
             contracts_with_consumers: HashMap::new(),
-            check_period: MONITOR_CHECK_PERIOD,
+            check_period: NOTIFIER_CHECK_PERIOD,
             shutdown_flag,
         }
     }

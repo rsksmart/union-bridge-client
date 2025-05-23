@@ -122,8 +122,8 @@ impl<T: BrokerClientApi> Monitor<T> {
                 let event: RskPegManagerEvents = self.event_decoder.decode(log);
                 Ok(Some(event))
             }
-            Some(e) => {
-                bail!("Unexpected response type from Log Notifier {:?}", e)
+            Some(br) => {
+                bail!("Unexpected response type from Log Notifier {:?}", br)
             }
             None => {
                 trace!("No messages from Log Notifier");

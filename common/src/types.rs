@@ -543,7 +543,7 @@ impl RskEvent {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Debug, Clone)]
 pub struct LogInfo {
     address: Address,
     block_hash: BlockHash,

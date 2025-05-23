@@ -5,6 +5,7 @@ use alloy_provider::Provider;
 use anyhow::{Result, anyhow};
 use common::fake_contracts::FakePegManager;
 use common::fake_contracts::FakePegManager::FakePegManagerInstance;
+use std::time::SystemTime;
 
 pub struct Executor<P: Provider> {
     provider: P,
@@ -36,17 +37,15 @@ impl<P: Provider> Executor<P> {
     pub async fn request_advance_funds(&self) -> Result<()> {
         let contract = self.get_contract_instance(self.address);
 
-        // naive way to generate different pegout id
-        let bb = self
-            .provider
-            .get_block_by_number(BlockNumberOrTag::Latest)
-            .await?
-            .expect("no best block");
+        // naive way to generate a different pegout id each time
+        let naive_id = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)?
+            .as_secs();
 
-        let pegout_id = format!("pegout_{}", bb.header.number);
+        let pegout_id = format!("pegout_{naive_id}");
 
         let receipt = contract
-            .requestAdvanceFunds(pegout_id.clone(), bb.header.hash, 1000)
+            .requestAdvanceFunds(pegout_id.clone(), 1000)
             .send()
             .await?
             .get_receipt()
@@ -83,7 +82,6 @@ impl<P: Provider> Executor<P> {
 
         let receipt = contract
             .kickoffAdvanceFunds(
-                bb.header.hash,
                 pegout_id.clone(),
                 utxo_id,
                 operator_id,
