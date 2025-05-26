@@ -11,7 +11,7 @@ use mockall::automock;
 #[cfg_attr(test, automock)]
 pub trait MonitorApi {
     fn start_event_monitoring(&mut self) -> Result<()>;
-    fn start_block_monitoring_if_off(&mut self) -> Result<()>;
+    fn start_block_monitoring(&mut self) -> Result<()>;
     fn try_event(&mut self) -> Result<Option<RskPegManagerEvents>>;
     fn try_block(&mut self) -> Result<Option<RskBlock>>;
     fn cancel_event_monitoring(&mut self) -> Result<()>;
@@ -32,8 +32,8 @@ impl<BC: BrokerClientApi> MonitorApi for Monitor<BC> {
         self.start_event_monitoring()
     }
 
-    fn start_block_monitoring_if_off(&mut self) -> Result<()> {
-        self.start_block_monitoring_if_off()
+    fn start_block_monitoring(&mut self) -> Result<()> {
+        self.start_block_monitoring()
     }
 
     fn try_event(&mut self) -> Result<Option<RskPegManagerEvents>> {
@@ -73,7 +73,7 @@ impl<T: BrokerClientApi> Monitor<T> {
 
         // clean up a potential remaining connection
         self.request_cancel_event_monitoring()
-            .context("Cleaning up stalled log connection")?;
+            .context("Cleaning up potentially stalled log connection")?;
 
         info!("Starting event monitoring for {}", self.peg_manager_address);
 
@@ -90,11 +90,14 @@ impl<T: BrokerClientApi> Monitor<T> {
         Ok(())
     }
 
-    pub fn start_block_monitoring_if_off(&mut self) -> Result<()> {
+    pub fn start_block_monitoring(&mut self) -> Result<()> {
         if self.block_monitoring_active {
-            trace!("Start Block monitoring requested, but it was already active");
-            return Ok(());
+            bail!("Start Block monitoring requested, but it was already active");
         }
+
+        // clean up a potential remaining connection
+        self.request_cancel_block_monitoring()
+            .context("Cleaning up potentially stalled block connection")?;
 
         info!("Starting Block monitoring");
 
@@ -267,17 +270,20 @@ mod tests {
     #[test]
     fn test_start_block_monitoring_success() {
         let mut block_broker = MockBrokerClientApi::new();
+        expect_unsubscribe_blocks(&mut block_broker, 1);
         expect_subscribe_blocks(&mut block_broker, 1);
 
         let mut monitor =
             Monitor::new(MockBrokerClientApi::new(), block_broker, get_fake_address());
-        assert!(monitor.start_block_monitoring_if_off().is_ok());
+        assert!(monitor.start_block_monitoring().is_ok());
         assert!(monitor.block_monitoring_active);
     }
 
     #[test]
     fn test_start_block_monitoring_fails_on_broker_error() {
         let mut block_broker = MockBrokerClientApi::new();
+        expect_unsubscribe_blocks(&mut block_broker, 1);
+
         block_broker
             .expect_send()
             .with(eq(BROKER_SERVER_ID), eq(BrokerRequests::SubscribeBlocks))
@@ -285,7 +291,7 @@ mod tests {
 
         let mut monitor =
             Monitor::new(MockBrokerClientApi::new(), block_broker, get_fake_address());
-        let err = monitor.start_block_monitoring_if_off();
+        let err = monitor.start_block_monitoring();
         assert!(err.is_err());
         assert!(
             err.as_ref()
@@ -303,8 +309,8 @@ mod tests {
             get_fake_address(),
         );
         monitor.block_monitoring_active = true;
-        let err = monitor.start_block_monitoring_if_off();
-        assert!(err.is_ok());
+        let err = monitor.start_block_monitoring();
+        assert!(err.is_err());
     }
 
     #[test]

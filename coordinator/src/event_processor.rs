@@ -14,10 +14,5 @@ pub trait EventProcessor {
         Ok(())
     }
 
-    fn is_waiting_blocks(&self) -> bool {
-        // default false
-        false
-    }
-
     fn shutdown(&mut self);
 }

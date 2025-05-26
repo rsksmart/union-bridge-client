@@ -39,10 +39,9 @@ impl<M: MonitorApi> Coordinator<M> {
             .start_event_monitoring()
             .context("Failed to start event monitoring")?;
 
-        // TODO(Jira) this might be removed once we add resilience in scope of https://rsklabs.atlassian.net/browse/UB-132
         self.monitor
-            .cancel_block_monitoring(true)
-            .context("Failed to cancel block monitoring")?;
+            .start_block_monitoring()
+            .context("Failed to start block monitoring")?;
 
         let result = (|| -> Result<()> {
             loop {
@@ -64,29 +63,19 @@ impl<M: MonitorApi> Coordinator<M> {
                     message_received = true;
                 }
 
-                // if any processor is waiting for blocks, we need to check for new blocks
-                if self.check_processors_waiting_blocks() {
-                    self.monitor
-                        .start_block_monitoring_if_off()
-                        .context("Failed to start block monitoring")?;
+                self.monitor
+                    .start_block_monitoring()
+                    .context("Failed to start block monitoring")?;
 
-                    if let Some(block) = self.monitor.try_block().context("Error getting block")? {
-                        self.processors.iter_mut().for_each(|p| {
-                            if let Err(e) = p.process_new_block(&block) {
-                                error!("Error processing block {:?}: {:?}", block, e);
-                            }
-                        });
+                if let Some(block) = self.monitor.try_block().context("Error getting block")? {
+                    self.processors.iter_mut().for_each(|p| {
+                        if let Err(e) = p.process_new_block(&block) {
+                            error!("Error processing block {:?}: {:?}", block, e);
+                        }
+                    });
 
-                        // no sleep, try to get new messages asap
-                        message_received = true;
-                    }
-                }
-
-                // if event or block processing made new blocks no longer required, we cancel block monitoring
-                if !self.check_processors_waiting_blocks() {
-                    self.monitor
-                        .cancel_block_monitoring(false)
-                        .context("Failed to cancel block monitoring")?;
+                    // no sleep, try to get new messages asap
+                    message_received = true;
                 }
 
                 if !message_received {
@@ -107,10 +96,6 @@ impl<M: MonitorApi> Coordinator<M> {
             .context("Failed to cancel event monitoring")?;
 
         result
-    }
-
-    fn check_processors_waiting_blocks(&mut self) -> bool {
-        self.processors.iter().any(|p| p.is_waiting_blocks())
     }
 
     fn is_running(&self) -> bool {
@@ -175,7 +160,7 @@ mod tests {
             .return_once(|| Ok(()));
 
         mock_monitor
-            .expect_start_block_monitoring_if_off()
+            .expect_start_block_monitoring()
             .times(..)
             .returning(|| Ok(()));
 
@@ -229,7 +214,7 @@ mod tests {
             .return_once(|| Ok(()));
 
         mock_monitor
-            .expect_start_block_monitoring_if_off()
+            .expect_start_block_monitoring()
             .times(..)
             .returning(|| Ok(()));
 

@@ -1,14 +1,15 @@
 use crate::event_processor::EventProcessor;
 use crate::event_processor::disputed_pegout_processor::types::Dispute;
 use crate::types::{KickoffAdvanceFundsData, RequestAdvanceFundsData, RskPegManagerEvents};
-use anyhow::{Result, bail};
+use anyhow::Result;
 use check_fork::check_fork;
 use common::types::{BlockNumber, RskBlock};
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use primitive_types::U256;
 use std::collections::BTreeMap;
 
 pub struct DisputedPegOutProcessor {
+    // TODO(iago) rename dispute to advance_funds or sth like that, all occurrences
     event1: Option<RequestAdvanceFundsData>,
     dispute: Option<Dispute>,
     // BTreeMap to sort blocks by number while keeping just the most recent one in case of reorgs
@@ -18,13 +19,13 @@ pub struct DisputedPegOutProcessor {
 impl DisputedPegOutProcessor {
     pub fn new() -> Self {
         Self {
-            event1: None,
+            event1: None, // TODO(iago) convert to list
             dispute: None,
             known_blocks: BTreeMap::new(),
         }
     }
 
-    fn activate_monitoring(&mut self, event1: RequestAdvanceFundsData) {
+    fn register_advance_funds(&mut self, event1: RequestAdvanceFundsData) {
         // TODO(Jira) we should allow several RequestAdvanceFunds - https://rsklabs.atlassian.net/browse/UB-150
         self.event1 = Some(event1);
     }
@@ -114,7 +115,7 @@ impl EventProcessor for DisputedPegOutProcessor {
         match event {
             RskPegManagerEvents::RequestAdvanceFunds(data) => {
                 info!("Handling {:?}, waiting blocks...", data);
-                self.activate_monitoring(data.clone());
+                self.register_advance_funds(data.clone());
             }
             RskPegManagerEvents::RemoveRequestAdvanceFunds { peg_out_id } => {
                 info!("Handling RemoveRequestAdvanceFunds {peg_out_id}...");
@@ -137,12 +138,12 @@ impl EventProcessor for DisputedPegOutProcessor {
     }
 
     fn process_new_block(&mut self, block: &RskBlock) -> Result<()> {
-        if !self.is_waiting_blocks() {
-            bail!("Not waiting blocks, still received {}...", block.number());
-        }
-
         let Some(event1) = self.event1.as_ref() else {
-            bail!("No RequestAdvanceFunds event received");
+            debug!(
+                "No RequestAdvanceFunds event received, ignoring block {}",
+                block.number()
+            );
+            return Ok(());
         };
 
         if block.number().value() < event1.block_number.value() {
@@ -174,10 +175,6 @@ impl EventProcessor for DisputedPegOutProcessor {
         }
 
         Ok(())
-    }
-
-    fn is_waiting_blocks(&self) -> bool {
-        self.event1.is_some()
     }
 
     fn shutdown(&mut self) {
@@ -420,6 +417,19 @@ mod tests {
         }
     }
 
+    fn create_kickoff_block_2(original_block: &RskBlock) -> RskBlock {
+        RskBlock::new(
+            original_block.number(),
+            BlockHash::from(H256::from_low_u64_be(123)),
+            original_block.parent_hash(),
+            original_block.timestamp(),
+            original_block.difficulty(),
+            original_block.total_difficulty(),
+            original_block.pow(),
+            original_block.uncles().to_vec(),
+        )
+    }
+
     fn create_fake_kickoff_event(peg_out_id: &str) -> KickoffAdvanceFunds {
         KickoffAdvanceFunds {
             peg_out_id: peg_out_id.to_string(),
@@ -436,11 +446,10 @@ mod tests {
         assert!(processor.event1.is_none());
         assert!(processor.dispute.is_none());
         assert!(processor.known_blocks.is_empty());
-        assert!(!processor.is_waiting_blocks());
     }
 
     #[test]
-    fn test_process_new_event_request_advance_funds_triggers_block_wait() {
+    fn test_process_new_event_request_advance_funds_stores_event() {
         let mut processor = DisputedPegOutProcessor::new();
 
         let request_block = create_fake_block(100.into(), U256::from(50));
@@ -455,7 +464,6 @@ mod tests {
         ));
         assert!(result.is_ok());
         assert_eq!(processor.event1, Some(event_with_block));
-        assert!(processor.is_waiting_blocks());
         assert!(processor.known_blocks.is_empty());
         assert!(processor.dispute.is_none());
     }
@@ -502,7 +510,6 @@ mod tests {
             .expect("Should have processed request");
 
         assert!(result.is_ok());
-        assert!(processor.is_waiting_blocks());
         assert!(processor.dispute.is_some());
 
         let dispute = processor.dispute.as_ref().expect("Dispute should exist");
@@ -549,7 +556,6 @@ mod tests {
         ));
         assert!(result.is_ok());
         assert!(processor.event1.is_none());
-        assert!(!processor.is_waiting_blocks());
         assert!(processor.dispute.is_none());
         assert!(processor.known_blocks.is_empty());
     }
@@ -608,7 +614,6 @@ mod tests {
 
         assert!(processor.dispute.is_some());
         assert!(processor.event1.is_some());
-        assert!(processor.is_waiting_blocks());
 
         // -2: the one created after the kickoff counts, and we will create the last one out of this loop
         for i in 1..=total_blocks - 2 {
@@ -620,7 +625,6 @@ mod tests {
 
         assert!(processor.dispute.is_some());
         assert!(processor.event1.is_some());
-        assert!(processor.is_waiting_blocks());
 
         // we process the missing block
         let block = create_fake_block(kickoff_block.number() + 5, block_effort);
@@ -630,7 +634,6 @@ mod tests {
 
         assert!(processor.dispute.is_none());
         assert!(processor.event1.is_none());
-        assert!(!processor.is_waiting_blocks());
     }
 
     #[test]
@@ -687,7 +690,6 @@ mod tests {
 
         assert!(processor.dispute.is_some());
         assert!(processor.event1.is_some());
-        assert!(processor.is_waiting_blocks());
 
         // -2: the one created after the kickoff event counts, and we will create the last one out of this loop
         for i in 1..=total_blocks - 2 {
@@ -699,7 +701,6 @@ mod tests {
 
         assert!(processor.dispute.is_some());
         assert!(processor.event1.is_some());
-        assert!(processor.is_waiting_blocks());
 
         // we process the missing block
         let block = create_fake_block(kickoff_block.number() + 5, block_effort);
@@ -709,7 +710,6 @@ mod tests {
 
         assert!(processor.dispute.is_none());
         assert!(processor.event1.is_none());
-        assert!(!processor.is_waiting_blocks());
     }
 
     #[test]
@@ -745,7 +745,6 @@ mod tests {
             .expect("Should have processed kickoff");
 
         assert!(processor.event1.is_some());
-        assert!(processor.is_waiting_blocks());
         assert!(processor.known_blocks.is_empty());
         assert!(processor.dispute.is_none());
     }
@@ -812,20 +811,18 @@ mod tests {
             .expect("Should process block");
 
         assert!(processor.event1.is_some());
-        assert!(processor.is_waiting_blocks());
         assert!(processor.dispute.is_some());
         assert_eq!(processor.known_blocks.len(), 2);
 
         processor.shutdown();
 
         assert!(processor.event1.is_none());
-        assert!(!processor.is_waiting_blocks());
         assert!(processor.dispute.is_none());
         assert!(processor.known_blocks.is_empty());
     }
 
     #[test]
-    fn test_remove_request_advance_funds_event() {
+    fn test_remove_request_advance_funds_event_removes_it() {
         let mut processor = DisputedPegOutProcessor::new();
 
         let request_block = create_fake_block(100.into(), U256::from(50));
@@ -842,7 +839,6 @@ mod tests {
                 },
             ))
             .expect("Should have processed request");
-        assert!(processor.is_waiting_blocks());
 
         processor
             .process_new_event(&RskPegManagerEvents::RemoveRequestAdvanceFunds {
@@ -850,26 +846,16 @@ mod tests {
             })
             .expect("Should have processed request");
 
-        assert!(!processor.is_waiting_blocks());
         assert!(processor.dispute.is_none());
         assert!(processor.event1.is_none());
     }
 
     #[test]
-    fn test_remove_request_advance_funds_block() {
+    fn test_remove_request_advance_funds_block_removes_it() {
         let mut processor = DisputedPegOutProcessor::new();
 
         let request_block = create_fake_block(100.into(), U256::from(50));
-        let adv_funds_block_2 = RskBlock::new(
-            request_block.number(),
-            BlockHash::from(H256::from_low_u64_be(123)),
-            request_block.parent_hash(),
-            request_block.timestamp(),
-            request_block.difficulty(),
-            request_block.total_difficulty(),
-            request_block.pow(),
-            request_block.uncles().to_vec(),
-        );
+        let adv_funds_block_2 = create_kickoff_block_2(&request_block);
 
         let pegout_id = "peg123";
 
@@ -891,7 +877,6 @@ mod tests {
         assert!(processor.dispute.is_none());
         assert!(processor.event1.is_some());
         assert_eq!(processor.known_blocks.len(), 1);
-        assert!(processor.is_waiting_blocks());
 
         processor
             .process_new_block(&adv_funds_block_2)
@@ -900,7 +885,6 @@ mod tests {
         assert!(processor.dispute.is_none());
         assert!(processor.event1.is_some());
         assert_eq!(processor.known_blocks.len(), 1);
-        assert!(processor.is_waiting_blocks());
     }
 
     #[test]
@@ -909,16 +893,7 @@ mod tests {
 
         let advance_block = create_fake_block(100.into(), U256::from(50));
         let kickoff_block = create_fake_block(110.into(), U256::from(50));
-        let kickoff_block_2 = RskBlock::new(
-            kickoff_block.number(),
-            BlockHash::from(H256::from_low_u64_be(123)),
-            kickoff_block.parent_hash(),
-            kickoff_block.timestamp(),
-            kickoff_block.difficulty(),
-            kickoff_block.total_difficulty(),
-            kickoff_block.pow(),
-            kickoff_block.uncles().to_vec(),
-        );
+        let kickoff_block_2 = create_kickoff_block_2(&kickoff_block);
 
         let pegout_id = "peg123";
 
@@ -932,7 +907,6 @@ mod tests {
                 },
             ))
             .expect("Should have processed request");
-        assert!(processor.is_waiting_blocks());
 
         processor
             .process_new_block(&kickoff_block)
@@ -941,7 +915,6 @@ mod tests {
         assert!(processor.event1.is_some());
         assert!(processor.dispute.is_none());
         assert_eq!(processor.known_blocks.len(), 1);
-        assert!(processor.is_waiting_blocks());
 
         processor
             .process_new_block(&kickoff_block_2)
@@ -950,11 +923,10 @@ mod tests {
         assert!(processor.event1.is_some());
         assert!(processor.dispute.is_none());
         assert_eq!(processor.known_blocks.len(), 1);
-        assert!(processor.is_waiting_blocks());
     }
 
     #[test]
-    fn test_remove_kickoff_advance_funds_event() {
+    fn test_remove_kickoff_advance_funds_event_stops_dispute() {
         let mut processor = DisputedPegOutProcessor::new();
 
         let request_block = create_fake_block(100.into(), U256::from(50));
@@ -991,7 +963,6 @@ mod tests {
         assert!(processor.dispute.is_some());
         assert!(processor.event1.is_some());
         assert_eq!(processor.known_blocks.len(), 1);
-        assert!(processor.is_waiting_blocks());
 
         processor
             .process_new_event(&RskPegManagerEvents::RemoveKickoffAdvanceFunds {
@@ -1002,6 +973,5 @@ mod tests {
         assert!(processor.dispute.is_none());
         assert!(processor.event1.is_some());
         assert_eq!(processor.known_blocks.len(), 1);
-        assert!(processor.is_waiting_blocks());
     }
 }
