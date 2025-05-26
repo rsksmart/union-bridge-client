@@ -15,7 +15,7 @@ pub trait MonitorApi {
     fn try_event(&mut self) -> Result<Option<RskPegManagerEvents>>;
     fn try_block(&mut self) -> Result<Option<RskBlock>>;
     fn cancel_event_monitoring(&mut self) -> Result<()>;
-    fn cancel_block_monitoring(&mut self, force: bool) -> Result<()>;
+    fn cancel_block_monitoring(&mut self) -> Result<()>;
 }
 
 pub struct Monitor<BC: BrokerClientApi> {
@@ -48,8 +48,8 @@ impl<BC: BrokerClientApi> MonitorApi for Monitor<BC> {
         self.cancel_event_monitoring()
     }
 
-    fn cancel_block_monitoring(&mut self, force: bool) -> Result<()> {
-        self.cancel_block_monitoring(force)
+    fn cancel_block_monitoring(&mut self) -> Result<()> {
+        self.cancel_block_monitoring()
     }
 }
 
@@ -168,10 +168,9 @@ impl<T: BrokerClientApi> Monitor<T> {
         Ok(())
     }
 
-    pub fn cancel_block_monitoring(&mut self, force: bool) -> Result<()> {
-        if !force && !self.block_monitoring_active {
-            trace!("Cancel Block monitoring requested, but it was not active");
-            return Ok(());
+    pub fn cancel_block_monitoring(&mut self) -> Result<()> {
+        if !self.block_monitoring_active {
+            bail!("Cancel Block monitoring requested, but it was not active");
         };
 
         info!("Cancelling Block monitoring");
@@ -397,7 +396,7 @@ mod tests {
             Monitor::new(MockBrokerClientApi::new(), block_broker, get_fake_address());
         monitor.block_monitoring_active = true;
 
-        assert!(monitor.cancel_block_monitoring(false).is_ok());
+        assert!(monitor.cancel_block_monitoring().is_ok());
         assert!(!monitor.block_monitoring_active);
     }
 

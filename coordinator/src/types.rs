@@ -9,17 +9,17 @@ use union_contracts::bindings::pegmanager::PegManager::RegisteredPegInRequest;
 
 #[derive(Eq, PartialEq, Debug)]
 pub enum RskPegManagerEvents {
-    RequestAdvanceFunds(RequestAdvanceFundsData), // temporarily mock, no need to test it
+    RequestAdvanceFunds(RequestAdvanceFundsEvent), // temporarily mock, no need to test it
     RemoveRequestAdvanceFunds { peg_out_id: String }, // temporarily mock, no need to test it
-    KickoffAdvanceFunds(KickoffAdvanceFundsData), // temporarily mock, no need to test it
+    KickoffAdvanceFunds(KickoffAdvanceFundsEvent), // temporarily mock, no need to test it
     RemoveKickoffAdvanceFunds { peg_out_id: String }, // temporarily mock, no need to test it
-    RegisteredPegInRequest(RegisteredPegInRequestData),
+    RegisteredPegInRequest(RegisteredPegInRequestEvent),
     UnknownEvent,
 }
 
-pub type RequestAdvanceFundsData = EventWithBlock<RequestAdvanceFunds>;
-pub type KickoffAdvanceFundsData = EventWithBlock<KickoffAdvanceFunds>;
-pub type RegisteredPegInRequestData = EventWithBlock<RegisteredPegInRequest>;
+pub type RequestAdvanceFundsEvent = EventWithBlock<RequestAdvanceFunds>;
+pub type KickoffAdvanceFundsEvent = EventWithBlock<KickoffAdvanceFunds>;
+pub type RegisteredPegInRequestEvent = EventWithBlock<RegisteredPegInRequest>;
 
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub struct EventWithBlock<T> {
@@ -112,7 +112,7 @@ impl EventDecoder {
         block_hash: BlockHash,
     ) -> RskPegManagerEvents {
         match RegisteredPegInRequest::decode_log_data(&log_data, true) {
-            Ok(ev) => RskPegManagerEvents::RegisteredPegInRequest(RegisteredPegInRequestData {
+            Ok(ev) => RskPegManagerEvents::RegisteredPegInRequest(RegisteredPegInRequestEvent {
                 inner: ev,
                 block_number,
                 block_hash,
@@ -127,7 +127,7 @@ impl EventDecoder {
         block_hash: BlockHash,
     ) -> RskPegManagerEvents {
         match RequestAdvanceFunds::decode_log_data(&log_data, true) {
-            Ok(event) => RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFundsData {
+            Ok(event) => RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFundsEvent {
                 inner: event,
                 block_number,
                 block_hash,
@@ -142,7 +142,7 @@ impl EventDecoder {
         block_hash: BlockHash,
     ) -> RskPegManagerEvents {
         match KickoffAdvanceFunds::decode_log_data(&log_data, true) {
-            Ok(event) => RskPegManagerEvents::KickoffAdvanceFunds(KickoffAdvanceFundsData {
+            Ok(event) => RskPegManagerEvents::KickoffAdvanceFunds(KickoffAdvanceFundsEvent {
                 inner: event,
                 block_number,
                 block_hash,
