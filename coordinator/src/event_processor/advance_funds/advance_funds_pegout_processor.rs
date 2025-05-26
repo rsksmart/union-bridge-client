@@ -6,10 +6,11 @@ use check_fork::check_fork;
 use common::types::{BlockNumber, RskBlock};
 use log::{debug, error, info, warn};
 use primitive_types::U256;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 pub struct PegOutAdvanceFundsProcessor {
-    request_event: Option<RequestAdvanceFundsEvent>,
+    first_block_to_process: Option<BlockNumber>,
+    request_events: HashMap<String, RequestAdvanceFundsEvent>,
     adv_funds_checker: Option<AdvanceFundsChecker>,
     // BTreeMap to sort blocks by number while keeping just the most recent one in case of reorgs
     known_blocks: BTreeMap<BlockNumber, RskBlock>,
@@ -18,15 +19,29 @@ pub struct PegOutAdvanceFundsProcessor {
 impl PegOutAdvanceFundsProcessor {
     pub fn new() -> Self {
         Self {
-            request_event: None, // TODO(iago) convert to list
+            first_block_to_process: None,
+            request_events: HashMap::new(),
             adv_funds_checker: None,
             known_blocks: BTreeMap::new(),
         }
     }
 
-    fn request_advance_funds(&mut self, event1: RequestAdvanceFundsEvent) {
-        // TODO(Jira) we should allow several RequestAdvanceFunds - https://rsklabs.atlassian.net/browse/UB-150
-        self.request_event = Some(event1);
+    fn request_advance_funds(&mut self, event: RequestAdvanceFundsEvent) {
+        let pegout_id = event.inner.peg_out_id.to_string();
+
+        if self.request_events.is_empty() {
+            self.first_block_to_process = Some(event.block_number.clone());
+        }
+
+        let updated = self.request_events.insert(pegout_id.to_string(), event);
+        if updated.is_some() {
+            // TODO(Jira) this should be monitored and analysed - https://rsklabs.atlassian.net/browse/UB-127
+            error!(
+                "RequestAdvanceFunds for peg_out_id {} already exists",
+                pegout_id
+            );
+            return;
+        }
     }
 
     fn kickoff_advance_funds(&mut self, event2: KickoffAdvanceFundsEvent) -> () {
@@ -38,15 +53,10 @@ impl PegOutAdvanceFundsProcessor {
             return;
         }
 
-        let Some(event1) = self.request_event.as_ref() else {
-            error!("KickoffAdvanceFundsData received, but no RequestAdvanceFunds was");
-            return;
-        };
-
-        if event1.inner.peg_out_id != event2.inner.peg_out_id {
+        if !self.request_events.contains_key(&event2.inner.peg_out_id) {
             error!(
-                "KickoffAdvanceFundsData received for pegout {}, but RequestAdvanceFunds had pegout {}",
-                event1.inner.peg_out_id, event2.inner.peg_out_id
+                "KickoffAdvanceFundsData received for {}, but no RequestAdvanceFunds was",
+                &event2.inner.peg_out_id
             );
             return;
         }
@@ -68,13 +78,29 @@ impl PegOutAdvanceFundsProcessor {
         self.adv_funds_checker = Some(new_advance_funds);
     }
 
-    fn deactivate_monitoring(&mut self) {
-        // TODO(Jira) deactivate only if we don't have more RequestAdvanceFunds pending - https://rsklabs.atlassian.net/browse/UB-150
-        self.request_event = None;
-        self.known_blocks.clear();
+    fn update_block_monitoring(&mut self, pegout_id: &String) {
+        if self.request_events.remove(pegout_id).is_none() {
+            // TODO(Jira) this should be monitored and analysed - https://rsklabs.atlassian.net/browse/UB-127
+            error!("Removing non-existing RequestAdvanceFunds for pegout_id {pegout_id}");
+            return;
+        }
+
+        // update first_block_to_process
+        let first_block_on_events = self.request_events.values().map(|e| e.block_number).min();
+        match first_block_on_events {
+            Some(new_fb) => {
+                self.first_block_to_process = Some(new_fb);
+                self.known_blocks.retain(|_, b| b.number() >= new_fb);
+            }
+            None => {
+                info!("No more RequestAdvanceFunds events, clearing block monitoring");
+                self.first_block_to_process = None;
+                self.known_blocks.clear();
+            }
+        }
     }
 
-    fn close_advance_funds(&mut self, done: bool) -> () {
+    fn close_advance_funds(&mut self, pegout_id: &String, done: bool) -> () {
         if let Some(afc) = &self.adv_funds_checker {
             info!("Removing active {:?}", afc);
             self.adv_funds_checker = None;
@@ -83,7 +109,7 @@ impl PegOutAdvanceFundsProcessor {
         }
 
         if done {
-            self.deactivate_monitoring()
+            self.update_block_monitoring(pegout_id)
         }
     }
 
@@ -92,7 +118,10 @@ impl PegOutAdvanceFundsProcessor {
         // note: check-fork already validates consecutive blocks, etc.
         match check_fork(args) {
             Ok(effort) if effort != U256::zero() => {
-                info!("CheckFork accepted with pow {}", U256::MAX / effort);
+                info!(
+                    "CheckFork accepted with effort {effort} (pow 0x{:x})",
+                    U256::MAX / effort
+                );
                 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-89
             }
             Ok(_effort) => {
@@ -118,7 +147,7 @@ impl EventProcessor for PegOutAdvanceFundsProcessor {
             }
             RskPegManagerEvents::RemoveRequestAdvanceFunds { peg_out_id } => {
                 info!("Handling RemoveRequestAdvanceFunds {peg_out_id}...");
-                self.deactivate_monitoring();
+                self.update_block_monitoring(peg_out_id);
             }
             RskPegManagerEvents::KickoffAdvanceFunds(data) => {
                 info!("Handling {:?}...", data);
@@ -126,7 +155,7 @@ impl EventProcessor for PegOutAdvanceFundsProcessor {
             }
             RskPegManagerEvents::RemoveKickoffAdvanceFunds { peg_out_id } => {
                 info!("Handling RemoveKickoffAdvanceFunds {peg_out_id}...");
-                self.close_advance_funds(false);
+                self.close_advance_funds(peg_out_id, false);
             }
             _ => {
                 info!("Ignoring {:?}...", event);
@@ -137,30 +166,32 @@ impl EventProcessor for PegOutAdvanceFundsProcessor {
     }
 
     fn process_new_block(&mut self, block: &RskBlock) -> Result<()> {
-        let Some(event1) = self.request_event.as_ref() else {
+        if let Some(first_block) = self.first_block_to_process {
+            if block.number() < first_block {
+                warn!(
+                    "Ignoring block {}, older than first RequestAdvanceFunds at {}",
+                    block.number(),
+                    first_block
+                );
+                return Ok(());
+            }
+        } else {
             debug!(
-                "No RequestAdvanceFunds event received, ignoring block {}",
+                "Ignoring block {}, no RequestAdvanceFunds events received yet",
                 block.number()
             );
-            return Ok(());
-        };
-
-        if block.number().value() < event1.block_number.value() {
-            warn!("Ignoring older block {}", block.number());
             return Ok(());
         }
 
         let removed_block = self.known_blocks.insert(block.number(), block.clone());
 
         let Some(afc) = self.adv_funds_checker.as_mut() else {
-            info!(
+            debug!(
                 "No active advance funds, ignoring block's {} pow",
                 block.number()
             );
             return Ok(());
         };
-
-        info!("Accumulating pow for advance funds {}", afc.pegout_id());
 
         if let Some(rb) = &removed_block {
             afc.update_with_block(rb, true);
@@ -172,8 +203,9 @@ impl EventProcessor for PegOutAdvanceFundsProcessor {
             info!("Triggering CheckFork for complete advance funds {:?}", afc);
             Self::run_check_fork(afc);
 
-            info!("Completing advance funds {}", afc.pegout_id());
-            self.close_advance_funds(true);
+            let pegout_id = afc.pegout_id();
+            info!("Completing advance funds {}", pegout_id);
+            self.close_advance_funds(&pegout_id, true);
         }
 
         Ok(())
@@ -187,7 +219,7 @@ impl EventProcessor for PegOutAdvanceFundsProcessor {
             );
         }
         self.adv_funds_checker = None;
-        self.request_event = None;
+        self.request_events.clear();
         self.known_blocks.clear();
     }
 }
@@ -259,33 +291,70 @@ mod tests {
     #[test]
     fn test_new_processor_initial_state_is_clear() {
         let processor = PegOutAdvanceFundsProcessor::new();
-        assert!(processor.request_event.is_none());
+        assert!(processor.first_block_to_process.is_none());
+        assert!(processor.request_events.is_empty());
         assert!(processor.adv_funds_checker.is_none());
         assert!(processor.known_blocks.is_empty());
     }
 
     #[test]
-    fn test_process_new_event_request_advance_funds_stores_event() {
+    fn test_process_new_event_request_advance_funds_keeps_events() {
         let mut processor = PegOutAdvanceFundsProcessor::new();
 
         let request_block = create_fake_block(100.into(), U256::from(50));
 
-        let event_with_block = EventWithBlock {
-            inner: create_fake_request_event("peg123"),
+        let pegout_id = "peg123";
+
+        let request_event = EventWithBlock {
+            inner: create_fake_request_event(pegout_id),
             block_number: request_block.number(),
             block_hash: BlockHash::from(H256::from_low_u64_be(123)),
         };
-        let result = processor.process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
-            event_with_block.clone(),
-        ));
-        assert!(result.is_ok());
-        assert_eq!(processor.request_event, Some(event_with_block));
+        processor
+            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(request_event))
+            .expect("Should have processed request");
+
+        assert_eq!(
+            processor.first_block_to_process,
+            Some(request_block.number())
+        );
+        assert!(
+            processor
+                .request_events
+                .contains_key(&pegout_id.to_string())
+        );
+
+        let pegout_id_2 = "peg456";
+        processor
+            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(EventWithBlock {
+                inner: create_fake_request_event(pegout_id_2),
+                block_number: request_block.number() + 1,
+                block_hash: BlockHash::from(H256::from_low_u64_be(456)),
+            }))
+            .expect("Should have processed request");
+
+        assert_eq!(
+            processor.first_block_to_process,
+            Some(request_block.number())
+        );
+        assert!(
+            processor
+                .request_events
+                .contains_key(&pegout_id.to_string())
+        );
+        assert!(
+            processor
+                .request_events
+                .contains_key(&pegout_id_2.to_string())
+        );
+
         assert!(processor.known_blocks.is_empty());
         assert!(processor.adv_funds_checker.is_none());
     }
 
     #[test]
-    fn test_process_new_event_kickoff_advance_funds_creates_advance_funds() {
+    fn test_process_new_event_kickoff_advance_funds_creates_advance_funds_when_one_request_exists()
+    {
         let mut processor = PegOutAdvanceFundsProcessor::new();
 
         let request_block = create_fake_block(100.into(), U256::from(50));
@@ -293,14 +362,14 @@ mod tests {
 
         let pegout_id = "peg123";
 
-        let request_event = create_fake_request_event(pegout_id);
+        let request_event = RequestAdvanceFundsEvent {
+            inner: create_fake_request_event(pegout_id),
+            block_number: request_block.number(),
+            block_hash: request_block.hash(),
+        };
         processor
             .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
-                RequestAdvanceFundsEvent {
-                    inner: request_event,
-                    block_number: request_block.number(),
-                    block_hash: request_block.hash(),
-                },
+                request_event.clone(),
             ))
             .expect("Should have processed request");
 
@@ -313,19 +382,22 @@ mod tests {
             .expect("Should have processed request");
 
         let kickoff_event = create_fake_kickoff_event(pegout_id);
-        let result = processor.process_new_event(&RskPegManagerEvents::KickoffAdvanceFunds(
-            KickoffAdvanceFundsEvent {
-                inner: kickoff_event,
-                block_number: kickoff_block.number(),
-                block_hash: kickoff_block.hash(),
-            },
-        ));
+        processor
+            .process_new_event(&RskPegManagerEvents::KickoffAdvanceFunds(
+                KickoffAdvanceFundsEvent {
+                    inner: kickoff_event,
+                    block_number: kickoff_block.number(),
+                    block_hash: kickoff_block.hash(),
+                },
+            ))
+            .expect("Should have processed request");
 
         processor
             .process_new_block(&kickoff_block)
             .expect("Should have processed request");
 
-        assert!(result.is_ok());
+        assert_eq!(processor.request_events.len(), 1);
+        assert!(processor.request_events.contains_key(pegout_id));
         assert!(processor.adv_funds_checker.is_some());
 
         let adv_funds = processor
@@ -360,23 +432,162 @@ mod tests {
     }
 
     #[test]
-    fn test_process_new_event_kickoff_advance_funds_without_request_exits() {
+    fn test_process_new_event_kickoff_advance_funds_creates_advance_funds_when_two_requests_exist()
+    {
+        let mut processor = PegOutAdvanceFundsProcessor::new();
+
+        let request_block_1 = create_fake_block(100.into(), U256::from(50));
+        let request_block_2 = create_fake_block(105.into(), U256::from(52));
+        let kickoff_block = create_fake_block(110.into(), U256::from(51));
+
+        let pegout_id_1 = "peg123";
+        let pegout_id_2 = "peg456";
+
+        let request_event_1 = RequestAdvanceFundsEvent {
+            inner: create_fake_request_event(pegout_id_1),
+            block_number: request_block_1.number(),
+            block_hash: request_block_1.hash(),
+        };
+        processor
+            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+                request_event_1.clone(),
+            ))
+            .expect("Should have processed request");
+        processor
+            .process_new_block(&request_block_1)
+            .expect("Should have processed request");
+
+        let request_event_2 = RequestAdvanceFundsEvent {
+            inner: create_fake_request_event(pegout_id_2),
+            block_number: request_block_2.number(),
+            block_hash: request_block_2.hash(),
+        };
+        processor
+            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+                request_event_2.clone(),
+            ))
+            .expect("Should have processed request");
+        processor
+            .process_new_block(&request_block_2)
+            .expect("Should have processed request");
+
+        let kickoff_event = create_fake_kickoff_event(pegout_id_1);
+        processor
+            .process_new_event(&RskPegManagerEvents::KickoffAdvanceFunds(
+                KickoffAdvanceFundsEvent {
+                    inner: kickoff_event,
+                    block_number: kickoff_block.number(),
+                    block_hash: kickoff_block.hash(),
+                },
+            ))
+            .expect("Should have processed request");
+
+        processor
+            .process_new_block(&kickoff_block)
+            .expect("Should have processed request");
+
+        assert_eq!(processor.request_events.len(), 2);
+        assert!(processor.request_events.contains_key(pegout_id_1),);
+        assert!(processor.request_events.contains_key(pegout_id_2));
+        assert!(processor.adv_funds_checker.is_some());
+
+        let adv_funds = processor
+            .adv_funds_checker
+            .as_ref()
+            .expect("AdvanceFundsPowChecker should exist");
+        assert_eq!(adv_funds.pegout_id(), pegout_id_1);
+        assert_eq!(adv_funds.check_fork_args().pegout_id, pegout_id_1);
+
+        assert_eq!(processor.known_blocks.len(), 3);
+        assert_eq!(
+            processor
+                .known_blocks
+                .get(&request_block_1.number())
+                .expect("Should exist"),
+            &request_block_1
+        );
+        assert_eq!(
+            processor
+                .known_blocks
+                .get(&request_block_2.number())
+                .expect("Should exist"),
+            &request_block_2
+        );
+        assert_eq!(
+            processor
+                .known_blocks
+                .get(&kickoff_block.number())
+                .expect("Should exist"),
+            &kickoff_block
+        );
+    }
+
+    #[test]
+    fn test_process_new_event_kickoff_advance_funds_exits_when_no_requests() {
         let mut processor = PegOutAdvanceFundsProcessor::new();
 
         let kickoff_block = create_fake_block(110.into(), U256::from(51));
         let kickoff_event = create_fake_kickoff_event("peg123");
 
-        let result = processor.process_new_event(&RskPegManagerEvents::KickoffAdvanceFunds(
-            KickoffAdvanceFundsEvent {
-                inner: kickoff_event,
-                block_number: kickoff_block.number(),
-                block_hash: kickoff_block.parent_hash(),
-            },
-        ));
-        assert!(result.is_ok());
-        assert!(processor.request_event.is_none());
+        processor
+            .process_new_event(&RskPegManagerEvents::KickoffAdvanceFunds(
+                KickoffAdvanceFundsEvent {
+                    inner: kickoff_event,
+                    block_number: kickoff_block.number(),
+                    block_hash: kickoff_block.parent_hash(),
+                },
+            ))
+            .expect("Should have processed request");
+
+        assert!(processor.first_block_to_process.is_none());
+        assert!(processor.request_events.is_empty());
         assert!(processor.adv_funds_checker.is_none());
         assert!(processor.known_blocks.is_empty());
+    }
+
+    #[test]
+    fn test_process_new_event_kickoff_advance_funds_exits_when_no_matching_request() {
+        let mut processor = PegOutAdvanceFundsProcessor::new();
+
+        let request_block = create_fake_block(100.into(), U256::from(50));
+
+        let pegout_id_req = "peg123";
+        let request_event = RequestAdvanceFundsEvent {
+            inner: create_fake_request_event(pegout_id_req),
+            block_number: request_block.number(),
+            block_hash: request_block.hash(),
+        };
+        processor
+            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+                request_event.clone(),
+            ))
+            .expect("Should have processed request");
+        processor
+            .process_new_block(&request_block)
+            .expect("Should have processed request");
+
+        let pegout_id_kick = "peg456";
+        let kickoff_block = create_fake_block(110.into(), U256::from(51));
+        let kickoff_event = create_fake_kickoff_event(pegout_id_kick);
+
+        processor
+            .process_new_event(&RskPegManagerEvents::KickoffAdvanceFunds(
+                KickoffAdvanceFundsEvent {
+                    inner: kickoff_event,
+                    block_number: kickoff_block.number(),
+                    block_hash: kickoff_block.parent_hash(),
+                },
+            ))
+            .expect("Should have processed request");
+
+        assert_eq!(
+            processor.first_block_to_process,
+            Some(request_block.number())
+        );
+        assert!(processor.request_events.contains_key(pegout_id_req));
+        assert!(processor.adv_funds_checker.is_none());
+        assert_eq!(processor.known_blocks.len(), 1);
+        assert_eq!(processor.known_blocks.values().next(), Some(&request_block));
     }
 
     #[test]
@@ -387,14 +598,14 @@ mod tests {
 
         let pegout_id = "peg123";
 
-        let request_event = create_fake_request_event(pegout_id);
+        let request_event = RequestAdvanceFundsEvent {
+            inner: create_fake_request_event(pegout_id),
+            block_number: request_block.number(),
+            block_hash: request_block.hash(),
+        };
         processor
             .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
-                RequestAdvanceFundsEvent {
-                    inner: request_event,
-                    block_number: request_block.number(),
-                    block_hash: request_block.hash(),
-                },
+                request_event.clone(),
             ))
             .expect("Should have processed request");
 
@@ -432,7 +643,11 @@ mod tests {
             .expect("Should process block");
 
         assert!(processor.adv_funds_checker.is_some());
-        assert!(processor.request_event.is_some());
+        assert!(
+            processor
+                .request_events
+                .contains_key(&pegout_id.to_string())
+        );
 
         // -2: the one created after the kickoff counts, and we will create the last one out of this loop
         for i in 1..=total_blocks - 2 {
@@ -443,7 +658,12 @@ mod tests {
         }
 
         assert!(processor.adv_funds_checker.is_some());
-        assert!(processor.request_event.is_some());
+        assert!(
+            processor
+                .request_events
+                .contains_key(&pegout_id.to_string())
+        );
+        assert_eq!(processor.known_blocks.len(), total_blocks as usize);
 
         // we process the missing block
         let block = create_fake_block(kickoff_block.number() + 5, block_effort);
@@ -452,7 +672,8 @@ mod tests {
             .expect("Should process block");
 
         assert!(processor.adv_funds_checker.is_none());
-        assert!(processor.request_event.is_none());
+        assert!(processor.request_events.is_empty());
+        assert!(processor.known_blocks.is_empty());
     }
 
     #[test]
@@ -508,7 +729,11 @@ mod tests {
             .expect("Should have processed kickoff");
 
         assert!(processor.adv_funds_checker.is_some());
-        assert!(processor.request_event.is_some());
+        assert!(
+            processor
+                .request_events
+                .contains_key(&pegout_id.to_string())
+        );
 
         // -2: the one created after the kickoff event counts, and we will create the last one out of this loop
         for i in 1..=total_blocks - 2 {
@@ -519,7 +744,11 @@ mod tests {
         }
 
         assert!(processor.adv_funds_checker.is_some());
-        assert!(processor.request_event.is_some());
+        assert!(
+            processor
+                .request_events
+                .contains_key(&pegout_id.to_string())
+        );
 
         // we process the missing block
         let block = create_fake_block(kickoff_block.number() + 5, block_effort);
@@ -528,7 +757,7 @@ mod tests {
             .expect("Should process block");
 
         assert!(processor.adv_funds_checker.is_none());
-        assert!(processor.request_event.is_none());
+        assert!(processor.request_events.is_empty());
     }
 
     #[test]
@@ -563,7 +792,11 @@ mod tests {
             ))
             .expect("Should have processed kickoff");
 
-        assert!(processor.request_event.is_some());
+        assert!(
+            processor
+                .request_events
+                .contains_key(&pegout_id.to_string())
+        );
         assert!(processor.known_blocks.is_empty());
         assert!(processor.adv_funds_checker.is_none());
     }
@@ -587,6 +820,7 @@ mod tests {
 
         let old_block = create_fake_block(99.into(), U256::from(100));
         let result = processor.process_new_block(&old_block);
+
         assert!(result.is_ok());
     }
 
@@ -629,13 +863,17 @@ mod tests {
             .process_new_block(&kickoff_block)
             .expect("Should process block");
 
-        assert!(processor.request_event.is_some());
+        assert!(
+            processor
+                .request_events
+                .contains_key(&pegout_id.to_string())
+        );
         assert!(processor.adv_funds_checker.is_some());
         assert_eq!(processor.known_blocks.len(), 2);
 
         processor.shutdown();
 
-        assert!(processor.request_event.is_none());
+        assert!(processor.request_events.is_empty());
         assert!(processor.adv_funds_checker.is_none());
         assert!(processor.known_blocks.is_empty());
     }
@@ -644,29 +882,54 @@ mod tests {
     fn test_remove_request_advance_funds_event_removes_it() {
         let mut processor = PegOutAdvanceFundsProcessor::new();
 
-        let request_block = create_fake_block(100.into(), U256::from(50));
+        let request_block_1 = create_fake_block(100.into(), U256::from(50));
+        let request_block_2 = create_fake_block(101.into(), U256::from(51));
 
-        let pegout_id = "peg123";
+        let pegout_id_1 = "peg123";
+        let pegout_id_2 = "peg456";
 
-        let request_event = create_fake_request_event(pegout_id);
+        let request_event_1 = RequestAdvanceFundsEvent {
+            inner: create_fake_request_event(pegout_id_1),
+            block_number: request_block_1.number(),
+            block_hash: request_block_1.hash(),
+        };
+        processor
+            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(request_event_1))
+            .expect("Should have processed request");
+
+        let request_event_2 = RequestAdvanceFundsEvent {
+            inner: create_fake_request_event(pegout_id_2),
+            block_number: request_block_2.number(),
+            block_hash: request_block_2.hash(),
+        };
         processor
             .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
-                RequestAdvanceFundsEvent {
-                    inner: request_event,
-                    block_number: request_block.number(),
-                    block_hash: request_block.hash(),
-                },
+                request_event_2.clone(),
             ))
             .expect("Should have processed request");
 
+        assert_eq!(processor.request_events.len(), 2);
+        assert!(processor.request_events.contains_key(pegout_id_1));
+        assert!(processor.request_events.contains_key(pegout_id_2));
+        assert_eq!(
+            processor.first_block_to_process,
+            Some(request_block_1.number())
+        );
+
         processor
             .process_new_event(&RskPegManagerEvents::RemoveRequestAdvanceFunds {
-                peg_out_id: pegout_id.to_string(),
+                peg_out_id: pegout_id_1.to_string(),
             })
             .expect("Should have processed request");
 
         assert!(processor.adv_funds_checker.is_none());
-        assert!(processor.request_event.is_none());
+        assert_eq!(processor.request_events.len(), 1);
+        assert_eq!(
+            processor.first_block_to_process,
+            Some(request_block_2.number())
+        );
+        assert!(processor.request_events.contains_key(pegout_id_2));
+        assert!(processor.known_blocks.is_empty());
     }
 
     #[test]
@@ -694,7 +957,11 @@ mod tests {
             .expect("Should process block");
 
         assert!(processor.adv_funds_checker.is_none());
-        assert!(processor.request_event.is_some());
+        assert!(
+            processor
+                .request_events
+                .contains_key(&pegout_id.to_string())
+        );
         assert_eq!(processor.known_blocks.len(), 1);
 
         processor
@@ -702,12 +969,16 @@ mod tests {
             .expect("Should process block");
 
         assert!(processor.adv_funds_checker.is_none());
-        assert!(processor.request_event.is_some());
+        assert!(
+            processor
+                .request_events
+                .contains_key(&pegout_id.to_string())
+        );
         assert_eq!(processor.known_blocks.len(), 1);
     }
 
     #[test]
-    fn test_remove_kickoff_advance_funds_block() {
+    fn test_remove_kickoff_advance_funds_block_removes_it() {
         let mut processor = PegOutAdvanceFundsProcessor::new();
 
         let advance_block = create_fake_block(100.into(), U256::from(50));
@@ -731,7 +1002,11 @@ mod tests {
             .process_new_block(&kickoff_block)
             .expect("Should process block");
 
-        assert!(processor.request_event.is_some());
+        assert!(
+            processor
+                .request_events
+                .contains_key(&pegout_id.to_string())
+        );
         assert!(processor.adv_funds_checker.is_none());
         assert_eq!(processor.known_blocks.len(), 1);
 
@@ -739,7 +1014,11 @@ mod tests {
             .process_new_block(&kickoff_block_2)
             .expect("Should process block");
 
-        assert!(processor.request_event.is_some());
+        assert!(
+            processor
+                .request_events
+                .contains_key(&pegout_id.to_string())
+        );
         assert!(processor.adv_funds_checker.is_none());
         assert_eq!(processor.known_blocks.len(), 1);
     }
@@ -780,7 +1059,11 @@ mod tests {
             .expect("Should have processed kickoff");
 
         assert!(processor.adv_funds_checker.is_some());
-        assert!(processor.request_event.is_some());
+        assert!(
+            processor
+                .request_events
+                .contains_key(&pegout_id.to_string())
+        );
         assert_eq!(processor.known_blocks.len(), 1);
 
         processor
@@ -790,7 +1073,11 @@ mod tests {
             .expect("Should have processed kickoff");
 
         assert!(processor.adv_funds_checker.is_none());
-        assert!(processor.request_event.is_some());
+        assert!(
+            processor
+                .request_events
+                .contains_key(&pegout_id.to_string())
+        );
         assert_eq!(processor.known_blocks.len(), 1);
     }
 }

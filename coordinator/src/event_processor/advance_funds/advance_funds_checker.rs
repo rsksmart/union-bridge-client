@@ -19,14 +19,16 @@ impl AdvanceFundsChecker {
         post_kickoff_blocks: Vec<&RskBlock>,
     ) -> Self {
         let check_fork_args = CheckForkArgs {
+            // coming from the kickoff event
             utxo_id: event.inner.utxo_id.clone(),
             pegout_id: event.inner.peg_out_id.clone(),
             operator_id: event.inner.operator_id.clone(),
             required_effort: U256::from_big_endian(&event.inner.required_effort.to_be_bytes_vec()),
             required_num_blocks: event.inner.required_num_blocks,
-            // fields that can be updated later on
+            // coming from the kickoff block
             init_block_time: 0,
             init_block_number: 0,
+            // coming from kickoff and post-kickoff blocks
             block_list: vec![],
         };
 
@@ -87,6 +89,7 @@ impl AdvanceFundsChecker {
     fn add_block_to_check_fork(&mut self, block: &RskBlock) {
         // we received the block that triggered the event after the event itself
         if block.hash() == self.kickoff_event.block_hash.into() {
+            info!("Setting InitBlock on check_fork_args {:?}", block);
             self.check_fork_args.init_block_number = block.number().value();
             self.check_fork_args.init_block_time = block.timestamp().value();
         }
@@ -139,11 +142,13 @@ impl AdvanceFundsChecker {
         );
 
         let bridge_event = (new_block.hash() == self.kickoff_event.block_hash.into()).then(|| {
-            check_fork::BridgeEvent {
+            let bridge_event = check_fork::BridgeEvent {
                 utxo_id: self.kickoff_event.inner.utxo_id.clone(),
                 pegout_id: self.kickoff_event.inner.peg_out_id.clone(),
                 operator_id: self.kickoff_event.inner.operator_id.clone(),
-            }
+            };
+            info!("Set check_fork_args {:?}", bridge_event);
+            bridge_event
         });
 
         Block {

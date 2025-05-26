@@ -63,10 +63,6 @@ impl<M: MonitorApi> Coordinator<M> {
                     message_received = true;
                 }
 
-                self.monitor
-                    .start_block_monitoring()
-                    .context("Failed to start block monitoring")?;
-
                 if let Some(block) = self.monitor.try_block().context("Error getting block")? {
                     self.processors.iter_mut().for_each(|p| {
                         if let Err(e) = p.process_new_block(&block) {
