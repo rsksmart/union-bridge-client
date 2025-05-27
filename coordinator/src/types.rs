@@ -2,9 +2,11 @@ use crate::types::RskPegManagerEvents::UnknownEvent;
 use alloy_primitives::{B256, LogData};
 use alloy_sol_types::SolEvent;
 use common::fake_contracts::FakePegManager::{KickoffAdvanceFunds, RequestAdvanceFunds};
-use common::types::{BlockHash, BlockNumber, RskLog};
+use common::types::{BlockHash, BlockNumber, RskBlock, RskLog};
 use log::{error, warn};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::hash::Hash;
 use union_contracts::bindings::pegmanager::PegManager::RegisteredPegInRequest;
 
 #[derive(Eq, PartialEq, Debug)]
@@ -149,6 +151,34 @@ impl EventDecoder {
             }),
             Err(_) => UnknownEvent,
         }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct BlockWithUncles {
+    block: RskBlock,
+    uncles: Vec<RskBlock>,
+}
+
+impl BlockWithUncles {
+    pub fn new(block: RskBlock, uncles: Vec<RskBlock>) -> Self {
+        Self { block, uncles }
+    }
+
+    pub fn hash(&self) -> BlockHash {
+        self.block.hash()
+    }
+
+    pub fn number(&self) -> BlockNumber {
+        self.block.number()
+    }
+
+    pub fn block(&self) -> &RskBlock {
+        &self.block
+    }
+
+    pub fn uncles(&self) -> &[RskBlock] {
+        &self.uncles
     }
 }
 

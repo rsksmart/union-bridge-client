@@ -14,6 +14,6 @@ pub enum BrokerRequests {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum BrokerResponses {
-    Block(RskBlock),
+    Block(RskBlock, Vec<RskBlock>),
     Log(RskLog),
 }

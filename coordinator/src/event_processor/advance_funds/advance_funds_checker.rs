@@ -1,4 +1,4 @@
-use crate::types::KickoffAdvanceFundsEvent;
+use crate::types::{BlockWithUncles, KickoffAdvanceFundsEvent};
 use check_fork::{Block, CheckForkArgs};
 use common::types::{BlockPow, RskBlock};
 use log::{debug, info};
@@ -16,7 +16,7 @@ pub(super) struct AdvanceFundsChecker {
 impl AdvanceFundsChecker {
     pub(super) fn new(
         event: KickoffAdvanceFundsEvent,
-        post_kickoff_blocks: Vec<&RskBlock>,
+        post_kickoff_blocks: Vec<&BlockWithUncles>,
     ) -> Self {
         let check_fork_args = CheckForkArgs {
             // coming from the kickoff event
@@ -54,11 +54,11 @@ impl AdvanceFundsChecker {
         self.check_fork_args.clone()
     }
 
-    pub fn update_with_block(&mut self, block: &RskBlock, removed: bool) -> () {
+    pub fn update_with_block(&mut self, block_with_uncles: &BlockWithUncles, removed: bool) -> () {
         if removed {
-            self.remove_block_from_check_fork(block);
+            self.remove_block_from_check_fork(&block_with_uncles.block());
         } else {
-            self.add_block_to_check_fork(block);
+            self.add_block_to_check_fork(block_with_uncles);
         }
     }
 
@@ -86,7 +86,9 @@ impl AdvanceFundsChecker {
         self.get_missing_blocks() == 0
     }
 
-    fn add_block_to_check_fork(&mut self, block: &RskBlock) {
+    fn add_block_to_check_fork(&mut self, block_with_uncles: &BlockWithUncles) {
+        let block = &block_with_uncles.block();
+
         // we received the block that triggered the event after the event itself
         if block.hash() == self.kickoff_event.block_hash.into() {
             info!("Setting InitBlock on check_fork_args {:?}", block);
@@ -100,6 +102,9 @@ impl AdvanceFundsChecker {
             .push(self.new_check_fork_block(block));
 
         self.increase_effort(Self::pow_to_effort(&block.pow()));
+
+        // TODO(iago) include uncles in the block item
+        // TODO(iago) count uncles effort for check_fork
     }
 
     fn remove_block_from_check_fork(&mut self, block: &RskBlock) {

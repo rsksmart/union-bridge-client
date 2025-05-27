@@ -1,10 +1,9 @@
 use anyhow::Result;
 use block_indexer::config::{Config, Logger};
-use block_indexer::notifier::Notifier;
+use block_indexer::notifier::{BlockNotif, Notifier};
 use block_indexer::{indexer::BlockIndexer, store::CachedBlockStore};
 use clap::{Arg, Command};
 use common::msg_broker::broker::BrokerServer;
-use common::types::RskBlock;
 use common::{
     alloy_rsk_provider::rpc::AlloyProvider, rsk_indexer::RskIndexer, shutdown_flag::ShutdownFlag,
     types::BlockHash,
@@ -51,7 +50,7 @@ fn main() -> Result<()> {
         ));
 
     // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - think about bounding the channel
-    let (tx, rx): (mpsc::Sender<RskBlock>, mpsc::Receiver<RskBlock>) = mpsc::channel();
+    let (tx, rx): (mpsc::Sender<BlockNotif>, mpsc::Receiver<BlockNotif>) = mpsc::channel();
 
     let store = CachedBlockStore::new(
         &format!("{}/blocks", config.indexer.storage.path),

@@ -1,3 +1,4 @@
+use crate::notifier::BlockNotif;
 use crate::store::BlockStore;
 use anyhow::{Context, Result, bail};
 use common::{
@@ -12,7 +13,7 @@ use std::sync::mpsc;
 pub struct BlockIndexer<P: RskProvider, S: BlockStore> {
     store: S,
     rsk_provider: P,
-    new_block_sender: Option<mpsc::Sender<RskBlock>>,
+    new_block_sender: Option<mpsc::Sender<BlockNotif>>,
     initial_block_hash: BlockHash,
     shutdown_flag: ShutdownFlag,
 }
@@ -24,7 +25,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
     pub fn new_with_notifier(
         store: S,
         provider: P,
-        new_block_sender: mpsc::Sender<RskBlock>,
+        new_block_sender: mpsc::Sender<BlockNotif>,
         initial_block_hash: BlockHash,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
@@ -186,10 +187,15 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                     new_block.number(),
                     new_block.hash()
                 );
+                // order matters: 1) process uncles, 2) notify, 3) save as the best block
+                // once save_as_best_block is called, the block won't be re-queried again (unless reorgs)
+                let uncles = self
+                    .process_uncle_blocks(&new_block)
+                    .context("On Backward Sync")?;
+                // consumer should be resilient to re-notifications
+                self.notify_block(new_block.clone(), uncles)?;
                 self.save_as_best_block(&new_block)
                     .context("On Block subscription")?;
-
-                self.notify_best_block(new_block)?;
             } else if is_reorg {
                 info!(
                     "[subscribe_blocks] Processing block {} ({}): fixing local reorg",
@@ -202,8 +208,6 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                     .context("On Block subscription")?;
                 self.backward_sync(&provider_best_block)
                     .context("On Block subscription")?;
-
-                self.notify_best_block(new_block)?;
             } else {
                 info!(
                     "[subscribe_blocks] Processing block {} ({}): neither extending, nor competing",
@@ -220,9 +224,9 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         Ok(())
     }
 
-    fn notify_best_block(&self, new_block: RskBlock) -> Result<()> {
+    fn notify_block(&self, block: RskBlock, uncles: Vec<RskBlock>) -> Result<()> {
         if let Some(channel) = &self.new_block_sender {
-            if let Err(e) = channel.send(new_block) {
+            if let Err(e) = channel.send(BlockNotif { block, uncles }) {
                 error!("Failed to send best block through channel: {:?}", e);
             }
         }
@@ -269,8 +273,13 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                     new_block.number(),
                     new_block.hash(),
                 );
-                self.get_and_save_uncle_blocks(&new_block)
+                // order matters: 1) process uncles, 2) notify, 3) save as canonical
+                // once save_as_canonical is called, the block won't be re-queried again (unless reorgs)
+                let uncles = self
+                    .process_uncle_blocks(&new_block)
                     .context("On Backward Sync")?;
+                // consumer should be resilient to re-notifications
+                self.notify_block(new_block.clone(), uncles)?;
                 self.save_as_canonical(&new_block)
                     .context("On Backward Sync")?;
             } else if !reached_connection_height {
@@ -420,9 +429,9 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         }
     }
 
-    fn get_and_save_uncle_blocks(&self, new_block: &RskBlock) -> Result<()> {
+    fn process_uncle_blocks(&self, new_block: &RskBlock) -> Result<Vec<RskBlock>> {
         if new_block.uncles().is_empty() {
-            return Ok(());
+            return Ok(Vec::new());
         }
 
         let nephew_hash = new_block.hash();
@@ -435,27 +444,27 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
             new_block.uncles()
         );
 
-        new_block
-            .uncles()
-            .into_iter()
-            .try_for_each(|uncle_hash| -> Result<()> {
-                if let Some(uncle) = self
-                    .rsk_provider
-                    .get_block_by_hash(uncle_hash)
-                    .context("Fetching uncle block")?
-                {
-                    self.store
-                        .save_block(&uncle)
-                        .context("Saving uncle block")?;
-                } else {
-                    warn!(
-                        "[block_backward_sync] Possible orphan – nephew {} (#{}) references missing uncle {}",
-                        nephew_hash, nephew_number, uncle_hash);
-                }
-                Ok(())
-            })?;
+        let mut uncle_blocks = Vec::new();
 
-        Ok(())
+        for uncle_hash in new_block.uncles() {
+            if let Some(uncle) = self
+                .rsk_provider
+                .get_block_by_hash(uncle_hash)
+                .context("Fetching uncle block")?
+            {
+                self.store
+                    .save_block(&uncle)
+                    .context("Saving uncle block")?;
+                uncle_blocks.push(uncle);
+            } else {
+                warn!(
+                    "[block_backward_sync] Possible orphan – nephew {} (#{}) references missing uncle {}",
+                    nephew_hash, nephew_number, uncle_hash
+                );
+            }
+        }
+
+        Ok(uncle_blocks)
     }
 }
 
@@ -499,7 +508,7 @@ mod tests {
             shutdown_flag: ShutdownFlag::init(),
         };
 
-        assert!(idx.get_and_save_uncle_blocks(&block).is_ok());
+        assert!(idx.process_uncle_blocks(&block).is_ok());
     }
 
     #[test]
@@ -541,7 +550,7 @@ mod tests {
             shutdown_flag: ShutdownFlag::init(),
         };
 
-        let res = idx.get_and_save_uncle_blocks(&block_with_uncle);
+        let res = idx.process_uncle_blocks(&block_with_uncle);
         assert!(res.is_ok());
     }
 
@@ -580,7 +589,7 @@ mod tests {
             shutdown_flag: ShutdownFlag::init(),
         };
 
-        let res = idx.get_and_save_uncle_blocks(&block_with_missing);
+        let res = idx.process_uncle_blocks(&block_with_missing);
         assert!(res.is_ok());
     }
 

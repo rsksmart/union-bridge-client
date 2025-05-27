@@ -1,9 +1,11 @@
 use crate::event_processor::EventProcessor;
 use crate::event_processor::advance_funds::advance_funds_checker::AdvanceFundsChecker;
-use crate::types::{KickoffAdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents};
+use crate::types::{
+    BlockWithUncles, KickoffAdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents,
+};
 use anyhow::Result;
 use check_fork::check_fork;
-use common::types::{BlockNumber, RskBlock};
+use common::types::BlockNumber;
 use log::{debug, error, info, warn};
 use primitive_types::U256;
 use std::collections::{BTreeMap, HashMap};
@@ -13,7 +15,7 @@ pub struct PegOutAdvanceFundsProcessor {
     request_events: HashMap<String, RequestAdvanceFundsEvent>,
     adv_funds_checker: Option<AdvanceFundsChecker>,
     // BTreeMap to sort blocks by number while keeping just the most recent one in case of reorgs
-    known_blocks: BTreeMap<BlockNumber, RskBlock>,
+    known_blocks: BTreeMap<BlockNumber, BlockWithUncles>,
 }
 
 impl PegOutAdvanceFundsProcessor {
@@ -67,7 +69,7 @@ impl PegOutAdvanceFundsProcessor {
             return;
         }
 
-        let post_kickoff_blocks: Vec<&RskBlock> = self
+        let post_kickoff_blocks: Vec<&BlockWithUncles> = self
             .known_blocks
             .values()
             .filter(|b| b.number() >= event2.block_number)
@@ -165,7 +167,9 @@ impl EventProcessor for PegOutAdvanceFundsProcessor {
         Ok(())
     }
 
-    fn process_new_block(&mut self, block: &RskBlock) -> Result<()> {
+    fn process_new_block(&mut self, block_with_uncles: &BlockWithUncles) -> Result<()> {
+        let block = &block_with_uncles.block();
+
         if let Some(first_block) = self.first_block_to_process {
             if block.number() < first_block {
                 warn!(
@@ -183,7 +187,9 @@ impl EventProcessor for PegOutAdvanceFundsProcessor {
             return Ok(());
         }
 
-        let removed_block = self.known_blocks.insert(block.number(), block.clone());
+        let removed_block = self
+            .known_blocks
+            .insert(block.number(), block_with_uncles.clone());
 
         let Some(afc) = self.adv_funds_checker.as_mut() else {
             debug!(
@@ -197,7 +203,7 @@ impl EventProcessor for PegOutAdvanceFundsProcessor {
             afc.update_with_block(rb, true);
         }
 
-        afc.update_with_block(block, false);
+        afc.update_with_block(block_with_uncles, false);
 
         if afc.is_ready_for_check_fork() {
             info!("Triggering CheckFork for complete advance funds {:?}", afc);

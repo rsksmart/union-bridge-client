@@ -1,4 +1,4 @@
-use crate::types::{EventDecoder, RskPegManagerEvents};
+use crate::types::{BlockWithUncles, EventDecoder, RskPegManagerEvents};
 use anyhow::{Context, Result, bail};
 use common::msg_broker::broker::{BROKER_SERVER_ID, BrokerClientApi, BrokerError};
 use common::msg_broker::types::{BrokerRequests, BrokerResponses};
@@ -13,7 +13,7 @@ pub trait MonitorApi {
     fn start_event_monitoring(&mut self) -> Result<()>;
     fn start_block_monitoring(&mut self) -> Result<()>;
     fn try_event(&mut self) -> Result<Option<RskPegManagerEvents>>;
-    fn try_block(&mut self) -> Result<Option<RskBlock>>;
+    fn try_block(&mut self) -> Result<Option<BlockWithUncles>>;
     fn cancel_event_monitoring(&mut self) -> Result<()>;
     fn cancel_block_monitoring(&mut self) -> Result<()>;
 }
@@ -40,7 +40,7 @@ impl<BC: BrokerClientApi> MonitorApi for Monitor<BC> {
         self.try_event()
     }
 
-    fn try_block(&mut self) -> Result<Option<RskBlock>> {
+    fn try_block(&mut self) -> Result<Option<BlockWithUncles>> {
         self.try_block()
     }
 
@@ -135,16 +135,16 @@ impl<T: BrokerClientApi> Monitor<T> {
         }
     }
 
-    pub fn try_block(&mut self) -> Result<Option<RskBlock>> {
+    pub fn try_block(&mut self) -> Result<Option<BlockWithUncles>> {
         if !self.block_monitoring_active {
             bail!("Block monitoring is not active");
         }
 
         // TODO(Jira) do not simply fail on broker error, do some retries - https://rsklabs.atlassian.net/browse/UB-132
         match self.block_broker.try_recv()? {
-            Some(BrokerResponses::Block(b)) => {
+            Some(BrokerResponses::Block(b, us)) => {
                 debug!("Received new Block {:?}", b);
-                Ok(Some(b))
+                Ok(Some(BlockWithUncles::new(b, us)))
             }
             Some(other) => bail!("Unexpected response type from Block Notifier: {:?}", other),
             None => {
