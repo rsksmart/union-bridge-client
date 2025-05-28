@@ -5,12 +5,12 @@ use log::{debug, info};
 #[cfg(feature = "anvil")]
 use primitive_types::H256;
 use primitive_types::U256;
+use std::str::FromStr;
 
 #[derive(Debug)]
 pub(super) struct AdvanceFundsChecker {
     kickoff_event: KickoffAdvanceFundsEvent,
     check_fork_args: CheckForkArgs,
-    accum_effort: U256,
 }
 
 impl AdvanceFundsChecker {
@@ -35,7 +35,6 @@ impl AdvanceFundsChecker {
         let mut instance = Self {
             kickoff_event: event,
             check_fork_args,
-            accum_effort: U256::zero(),
         };
 
         // we already received the block that triggered the event, before the event itself
@@ -63,27 +62,42 @@ impl AdvanceFundsChecker {
     }
 
     pub fn is_ready_for_check_fork(&self) -> bool {
-        self.has_enough_pow() && self.has_enough_blocks()
-    }
+        let accum_effort = self
+            .check_fork_args
+            .block_list
+            .iter()
+            .flat_map(|b| std::iter::once(b).chain(&b.uncles))
+            .map(|b| Self::pow_to_effort(&b.pow))
+            .fold(U256::zero(), |accum, effort| accum.saturating_add(effort));
 
-    fn get_missing_effort(&self) -> U256 {
-        self.check_fork_args
+        let pending_effort = self
+            .check_fork_args
             .required_effort
-            .saturating_sub(self.accum_effort)
-    }
+            .saturating_sub(accum_effort);
 
-    fn has_enough_pow(&self) -> bool {
-        self.get_missing_effort() == U256::zero()
-    }
+        let is_effort_ready = pending_effort == U256::zero();
 
-    fn get_missing_blocks(&self) -> u32 {
-        self.check_fork_args
+        let pending_blocks = self
+            .check_fork_args
             .required_num_blocks
-            .saturating_sub(self.check_fork_args.block_list.len() as u32)
-    }
+            .saturating_sub(self.check_fork_args.block_list.len() as u32);
 
-    fn has_enough_blocks(&self) -> bool {
-        self.get_missing_blocks() == 0
+        let is_block_count_ready = pending_blocks == 0;
+
+        let ready = is_effort_ready && is_block_count_ready;
+        if ready {
+            info!(
+                "AdvanceFundsChecker {} is ready for checkFork: {:?}",
+                self.check_fork_args.pegout_id, self.check_fork_args
+            );
+        } else {
+            debug!(
+                "AdvanceFundsChecker {} is missing {} effort and {} blocks for checkFork",
+                self.check_fork_args.pegout_id, pending_effort, pending_blocks
+            );
+        }
+
+        ready
     }
 
     fn add_block_to_check_fork(&mut self, block_with_uncles: &BlockWithUncles) {
@@ -100,47 +114,11 @@ impl AdvanceFundsChecker {
         self.check_fork_args
             .block_list
             .push(self.new_check_fork_block(block_with_uncles));
-
-        // TODO(iago) pensar si realmente hace falta esto o si podemos calcularlo a partir de check_fork blocks
-
-        // increase the effort with the block and its uncles
-        self.increase_effort(Self::pow_to_effort(&block.pow()));
-        for uncle in block_with_uncles.uncles() {
-            self.increase_effort(Self::pow_to_effort(&uncle.pow()));
-        }
     }
 
     fn remove_block_from_check_fork(&mut self, block: &RskBlock) {
         let hash = hex::encode(block.hash().value());
-
-        let before_len = self.check_fork_args.block_list.len();
         self.check_fork_args.block_list.retain(|b| b.hash != hash);
-
-        if self.check_fork_args.block_list.len() < before_len {
-            self.decrease_effort(Self::pow_to_effort(&block.pow()));
-        }
-    }
-
-    fn increase_effort(&mut self, block_effort: U256) {
-        self.accum_effort = self.accum_effort.saturating_add(block_effort);
-        info!(
-            "AdvanceFundsPowChecker {} got new block. Pending effort {} (+{}). Pending blocks {}.",
-            self.pegout_id(),
-            self.get_missing_effort(),
-            block_effort,
-            self.get_missing_blocks()
-        );
-    }
-
-    fn decrease_effort(&mut self, block_effort: U256) {
-        self.accum_effort = self.accum_effort.saturating_sub(block_effort);
-        info!(
-            "AdvanceFundsPowChecker {}: new block, pending effort {} (-{}), blocks {}",
-            self.pegout_id(),
-            self.get_missing_effort(),
-            block_effort,
-            self.get_missing_blocks()
-        );
     }
 
     fn new_check_fork_block(&self, block_with_uncles: &BlockWithUncles) -> Block {
@@ -165,20 +143,37 @@ impl AdvanceFundsChecker {
             .uncles()
             .iter()
             .map(|uncle| {
+                info!(
+                    "Adding to checkFork uncle {} ({}) with pow {}",
+                    uncle.number(),
+                    uncle.hash(),
+                    uncle.pow(),
+                );
                 // convert each uncle to a checkFork Block: they have neither bridge event nor uncles
                 self.rsk_block_to_check_fork_block(uncle, None, vec![])
             })
             .collect();
+
+        info!(
+            "Adding to checkFork block {} ({}) with pow {}",
+            block.number(),
+            block.hash(),
+            block.pow(),
+        );
 
         // create a checkFork Block with bridge_event and uncles if any
         self.rsk_block_to_check_fork_block(block, bridge_event, uncle_blocks)
     }
 
     #[cfg(not(feature = "anvil"))]
-    fn pow_to_effort(pow: &BlockPow) -> U256 {
+    fn pow_to_effort(pow: &String) -> U256 {
         use log::error;
 
-        let pow_dec: U256 = U256::from_big_endian(pow.value().as_bytes());
+        // TODO(iago) update when moved to H256
+        let pow_dec: U256 = U256::from_str(pow).unwrap_or_else(|e| {
+            error!("Could not parse pow {} to effort: {}", pow, e);
+            U256::zero()
+        });
         U256::MAX.checked_div(pow_dec).unwrap_or_else(|| {
             error!("0 division on pow_to_effort");
             U256::zero()

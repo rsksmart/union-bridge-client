@@ -8,14 +8,14 @@ pub const SUPERBLOCK_TIMES_DIFFICULTY: u8 = 20;
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Block {
     pub number: u64,
-    pub hash: String,
-    pub parent: String,
+    pub hash: String,   // TODO(iago) change to H256
+    pub parent: String, // TODO(iago) change to H256
     pub difficulty: U256,
     pub timestamp: u64,
     pub bridge_event: Option<BridgeEvent>,
     pub uncles: Vec<Block>,
     // alternatively we can receive `bitcoinMergedMiningHeader`, but we would need to include bitcoin crate here, etc.
-    pub pow: String,
+    pub pow: String, // TODO(iago) change to H256
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
