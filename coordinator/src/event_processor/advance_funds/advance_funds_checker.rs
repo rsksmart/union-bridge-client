@@ -7,7 +7,7 @@ use primitive_types::U256;
 
 #[derive(Debug)]
 pub(super) struct AdvanceFundsChecker {
-    kickoff_event: KickoffAdvanceFundsEvent,
+    kickoff_block_hash: H256,
     check_fork_args: CheckForkArgs,
 }
 
@@ -31,7 +31,7 @@ impl AdvanceFundsChecker {
         };
 
         let mut instance = Self {
-            kickoff_event: event,
+            kickoff_block_hash: event.block_hash.value(),
             check_fork_args,
         };
 
@@ -44,7 +44,7 @@ impl AdvanceFundsChecker {
     }
 
     pub fn pegout_id(&self) -> String {
-        self.kickoff_event.inner.peg_out_id.clone()
+        self.check_fork_args.pegout_id.clone()
     }
 
     pub fn check_fork_args(&self) -> CheckForkArgs {
@@ -102,7 +102,7 @@ impl AdvanceFundsChecker {
         let block = &block_with_uncles.block();
 
         // we received the block that triggered the event after the event itself
-        if block.hash() == self.kickoff_event.block_hash.into() {
+        if block.hash() == self.kickoff_block_hash.into() {
             info!("Setting InitBlock on check_fork_args {:?}", block);
             self.check_fork_args.init_block_number = block.number().value();
             self.check_fork_args.init_block_time = block.timestamp().value();
@@ -123,16 +123,16 @@ impl AdvanceFundsChecker {
     fn new_check_fork_block(&self, block_with_uncles: &BlockWithUncles) -> Block {
         debug!(
             "hash {} - block {:?}",
-            self.kickoff_event.block_hash, block_with_uncles
+            self.kickoff_block_hash, block_with_uncles
         );
 
         let block = &block_with_uncles.block();
 
-        let bridge_event = (block.hash() == self.kickoff_event.block_hash.into()).then(|| {
+        let bridge_event = (block.hash() == self.kickoff_block_hash.into()).then(|| {
             let bridge_event = check_fork::BridgeEvent {
-                utxo_id: self.kickoff_event.inner.utxo_id.clone(),
-                pegout_id: self.kickoff_event.inner.peg_out_id.clone(),
-                operator_id: self.kickoff_event.inner.operator_id.clone(),
+                utxo_id: self.check_fork_args.utxo_id.clone(),
+                pegout_id: self.check_fork_args.pegout_id.clone(),
+                operator_id: self.check_fork_args.operator_id.clone(),
             };
             info!("Set check_fork_args {:?}", bridge_event);
             bridge_event
