@@ -1,11 +1,12 @@
 use bitcoin::blockdata::block::Header;
 use bitcoin::consensus::encode::deserialize as btc_deserialize;
 use check_fork::{Block, BridgeEvent};
-use primitive_types::U256;
+use primitive_types::{H256, U256};
 use reqwest::Client;
-use serde::{de, Deserialize, Deserializer, Serialize};
-use serde_json::{json, Value};
+use serde::{Deserialize, Deserializer, Serialize, de};
+use serde_json::{Value, json};
 use std::error::Error;
+use std::str::FromStr;
 use std::string::ToString;
 
 const RSK_RPC_URL: &str = "https://public-node.rsk.co";
@@ -20,9 +21,9 @@ struct RskBlock {
         serialize_with = "parse_u64_to_hex"
     )]
     number: u64,
-    hash: String,
+    hash: H256,
     #[serde(rename = "parentHash")]
-    parent: String,
+    parent: H256,
     #[serde(deserialize_with = "parse_rsk_difficulty")]
     difficulty: U256,
     #[serde(
@@ -34,7 +35,7 @@ struct RskBlock {
         rename = "bitcoinMergedMiningHeader",
         deserialize_with = "parse_bitcoin_header_to_pow"
     )]
-    pow: String,
+    pow: H256,
     bridge_event: Option<BridgeEvent>, // TODO(Jira) implement: https://rsklabs.atlassian.net/browse/UB-3
     #[serde(default)]
     uncles: Vec<RskBlock>, // TODO(Jira) test with some: https://rsklabs.atlassian.net/browse/UB-16
@@ -44,11 +45,11 @@ impl From<&RskBlock> for Block {
     fn from(rsk_block: &RskBlock) -> Self {
         Block {
             number: rsk_block.number,
-            hash: rsk_block.hash.clone(),
-            parent: rsk_block.parent.clone(),
+            hash: rsk_block.hash,
+            parent: rsk_block.parent,
             difficulty: rsk_block.difficulty,
             timestamp: rsk_block.timestamp,
-            pow: rsk_block.pow.clone(),
+            pow: rsk_block.pow,
             bridge_event: rsk_block.bridge_event.clone(), // TODO(Jira) implement: https://rsklabs.atlassian.net/browse/UB-3
             uncles: rsk_block.uncles.iter().map(Block::from).collect(), // TODO(Jira) test with some: https://rsklabs.atlassian.net/browse/UB-16
         }
@@ -92,7 +93,6 @@ pub async fn get_blocks(
             let mut result = result.unwrap().clone();
             result["uncles"] = serde_json::Value::Array(Vec::new());
             let block: RskBlock = serde_json::from_str(&result.to_string())?;
-
             if log_super_block {
                 log_if_superblock(&block)?;
             }
@@ -148,8 +148,7 @@ pub fn get_blocks_from_fixture(
 
 fn log_if_superblock(block: &RskBlock) -> Result<(), Box<dyn Error>> {
     // parse the block's actual PoW (from bitcoinMergedMiningHeader field) to decimal
-    let actual_block_pow = U256::from_str_radix(&block.pow, 16)
-        .map_err(|e| format!("Failed to parse block PoW '{}': {}", block.pow, e))?;
+    let actual_block_pow = U256::from_big_endian(&block.pow.as_bytes());
 
     // compute the PoW target from difficulty by inversion
     // U256::MAX, the "difficulty 1" target, represents the easiest possible target
@@ -201,7 +200,7 @@ where
     Ok(difficulty_dec)
 }
 
-fn parse_bitcoin_header_to_pow<'de, D>(deserializer: D) -> Result<String, D::Error>
+fn parse_bitcoin_header_to_pow<'de, D>(deserializer: D) -> Result<H256, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -210,9 +209,10 @@ where
     // 80-byte → treat as full header, otherwise assume it is already a 32-byte hash
     if bytes.len() == 80 {
         btc_deserialize::<Header>(&bytes)
-            .map(|h| h.block_hash().to_string())
+            .map(|h| H256::from_str(&h.block_hash().to_string()))
+            .expect("Failed to deserialize hash")
             .map_err(de::Error::custom)
     } else {
-        Ok(hex.to_owned())
+        H256::from_str(&hex).map_err(de::Error::custom)
     }
 }

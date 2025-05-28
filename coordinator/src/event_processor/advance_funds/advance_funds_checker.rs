@@ -2,10 +2,8 @@ use crate::types::{BlockWithUncles, KickoffAdvanceFundsEvent};
 use check_fork::{Block, CheckForkArgs};
 use common::types::{BlockPow, RskBlock};
 use log::{debug, info};
-#[cfg(feature = "anvil")]
 use primitive_types::H256;
 use primitive_types::U256;
-use std::str::FromStr;
 
 #[derive(Debug)]
 pub(super) struct AdvanceFundsChecker {
@@ -117,8 +115,9 @@ impl AdvanceFundsChecker {
     }
 
     fn remove_block_from_check_fork(&mut self, block: &RskBlock) {
-        let hash = hex::encode(block.hash().value());
-        self.check_fork_args.block_list.retain(|b| b.hash != hash);
+        self.check_fork_args
+            .block_list
+            .retain(|b| b.hash != block.hash().value());
     }
 
     fn new_check_fork_block(&self, block_with_uncles: &BlockWithUncles) -> Block {
@@ -166,22 +165,18 @@ impl AdvanceFundsChecker {
     }
 
     #[cfg(not(feature = "anvil"))]
-    fn pow_to_effort(pow: &String) -> U256 {
+    fn pow_to_effort(pow: &H256) -> U256 {
         use log::error;
 
-        // TODO(iago) update when moved to H256
-        let pow_dec: U256 = U256::from_str(pow).unwrap_or_else(|e| {
-            error!("Could not parse pow {} to effort: {}", pow, e);
-            U256::zero()
-        });
-        U256::MAX.checked_div(pow_dec).unwrap_or_else(|| {
+        let pow: U256 = U256::from_big_endian(pow.as_bytes());
+        U256::MAX.checked_div(pow).unwrap_or_else(|| {
             error!("0 division on pow_to_effort");
             U256::zero()
         })
     }
 
     #[cfg(feature = "anvil")]
-    fn pow_to_effort(_pow: &BlockPow) -> U256 {
+    fn pow_to_effort(_pow: &H256) -> U256 {
         U256::from(2500000000000u64)
     }
 
@@ -193,8 +188,8 @@ impl AdvanceFundsChecker {
     ) -> Block {
         Block {
             number: block.number().value(),
-            hash: hex::encode(block.hash().value()),
-            parent: hex::encode(block.parent_hash().value()),
+            hash: block.hash().value(),
+            parent: block.parent_hash().value(),
             difficulty: block.difficulty().value(),
             timestamp: block.timestamp().value(),
             bridge_event,
@@ -204,12 +199,12 @@ impl AdvanceFundsChecker {
     }
 
     #[cfg(not(feature = "anvil"))]
-    fn get_block_pow(pow: &BlockPow) -> String {
-        hex::encode(pow.value())
+    fn get_block_pow(pow: &BlockPow) -> H256 {
+        pow.value()
     }
 
     #[cfg(feature = "anvil")]
-    fn get_block_pow(_pow: &BlockPow) -> String {
-        hex::encode(H256::from_low_u64_be(2500000000000u64))
+    fn get_block_pow(_pow: &BlockPow) -> H256 {
+        H256::from_low_u64_be(2500000000000u64)
     }
 }
