@@ -515,6 +515,7 @@ mod tests {
 
     #[test]
     fn saves_uncle_when_found() {
+        let base: RskBlock = get_second_default_rsk_block();
         let uncle_block = get_first_default_rsk_block();
         let uncle_hash = uncle_block.hash();
 
@@ -525,12 +526,12 @@ mod tests {
             .times(1)
             .returning(|_| Ok(()));
 
-        let mut provider = MockRskProvider::new();
+        let mut provider: MockRskProvider = MockRskProvider::new();
         provider
-            .expect_get_block_by_hash()
-            .with(eq(uncle_hash))
+            .expect_get_uncle_by_hash_and_index()
+            .with(eq(base.hash()), eq(0))
             .times(1)
-            .returning(move |_| Ok(Some(uncle_block.clone())));
+            .returning(move |_, _| Ok(Some(uncle_block.clone())));
 
         let base = get_second_default_rsk_block();
         let block_with_uncle = RskBlock::new(
@@ -558,20 +559,20 @@ mod tests {
 
     #[test]
     fn warns_but_ok_if_uncle_missing() {
+        let base = get_second_default_rsk_block();
         let missing_hash = get_first_default_rsk_block().hash();
 
         let mut provider = MockRskProvider::new();
         provider
-            .expect_get_block_by_hash()
-            .with(eq(missing_hash))
+            .expect_get_uncle_by_hash_and_index()
+            .with(eq(base.hash()), eq(0))
             .times(1)
-            .returning(|_| Ok(None));
+            .returning(|_, _| Ok(None));
 
         // store.save_block should never be called
         let mut store = MockBlockStore::new();
         store.expect_save_block().never();
 
-        let base = get_second_default_rsk_block();
         let block_with_missing = RskBlock::new(
             base.number(),
             base.hash(),

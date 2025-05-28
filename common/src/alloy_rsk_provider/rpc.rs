@@ -217,6 +217,17 @@ impl RskProvider for AlloyProvider {
             .context("None best block")
     }
 
+    fn get_uncle_by_hash_and_index(&self, hash: BlockHash, index: u64) -> Result<Option<RskBlock>> {
+        let rpc_call = self.inner.client().request(
+            "eth_getUncleByBlockHashAndIndex",
+            vec![json!(hash), json!(index)],
+        );
+
+        self.run(rpc_call)
+            .context(format!("Getting block {hash} from provider"))
+            .and_then(|response| Self::parse_block_provider_response(response))
+    }
+
     fn get_logs(
         &self,
         from: BlockNumber,
