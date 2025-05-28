@@ -6,7 +6,6 @@ use common::types::{BlockHash, BlockNumber, RskBlock, RskLog};
 use log::{error, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::hash::Hash;
 use union_contracts::bindings::pegmanager::PegManager::RegisteredPegInRequest;
 
 #[derive(Eq, PartialEq, Debug)]
@@ -154,7 +153,7 @@ impl EventDecoder {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Eq, PartialEq, Serialize, Deserialize, Debug, Clone)]
 pub struct BlockWithUncles {
     block: RskBlock,
     uncles: Vec<RskBlock>,
@@ -165,8 +164,20 @@ impl BlockWithUncles {
         Self { block, uncles }
     }
 
+    #[cfg(test)]
+    pub fn new_no_uncles(block: RskBlock) -> Self {
+        Self {
+            block,
+            uncles: vec![],
+        }
+    }
+
     pub fn hash(&self) -> BlockHash {
         self.block.hash()
+    }
+
+    pub fn parent(&self) -> BlockHash {
+        self.block.parent_hash()
     }
 
     pub fn number(&self) -> BlockNumber {

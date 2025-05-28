@@ -236,6 +236,7 @@ mod tests {
     use crate::types::EventWithBlock;
     use alloy_primitives::U256 as AlloyU256;
     use common::fake_contracts::FakePegManager::{KickoffAdvanceFunds, RequestAdvanceFunds};
+    use common::test_utils::rsk_block_generator::create_block_from_template;
     use common::types::{BlockDifficulty, BlockHash, BlockPow, BlockTimestamp, RskBlock};
     use primitive_types::{H256, U256};
     use std::ops::Mul;
@@ -363,8 +364,10 @@ mod tests {
     {
         let mut processor = PegOutAdvanceFundsProcessor::new();
 
-        let request_block = create_fake_block(100.into(), U256::from(50));
-        let kickoff_block = create_fake_block(110.into(), U256::from(51));
+        let request_block =
+            BlockWithUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
+        let kickoff_block =
+            BlockWithUncles::new_no_uncles(create_fake_block(110.into(), U256::from(51)));
 
         let pegout_id = "peg123";
 
@@ -379,7 +382,8 @@ mod tests {
             ))
             .expect("Should have processed request");
 
-        let any_block = create_fake_block(102.into(), U256::from(105));
+        let any_block =
+            BlockWithUncles::new_no_uncles(create_fake_block(102.into(), U256::from(105)));
         processor
             .process_new_block(&request_block)
             .expect("Should have processed request");
@@ -399,7 +403,7 @@ mod tests {
             .expect("Should have processed request");
 
         processor
-            .process_new_block(&kickoff_block)
+            .process_new_block(&kickoff_block.clone())
             .expect("Should have processed request");
 
         assert_eq!(processor.request_events.len(), 1);
@@ -442,9 +446,12 @@ mod tests {
     {
         let mut processor = PegOutAdvanceFundsProcessor::new();
 
-        let request_block_1 = create_fake_block(100.into(), U256::from(50));
-        let request_block_2 = create_fake_block(105.into(), U256::from(52));
-        let kickoff_block = create_fake_block(110.into(), U256::from(51));
+        let request_block_1 =
+            BlockWithUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
+        let request_block_2 =
+            BlockWithUncles::new_no_uncles(create_fake_block(105.into(), U256::from(52)));
+        let kickoff_block =
+            BlockWithUncles::new_no_uncles(create_fake_block(110.into(), U256::from(51)));
 
         let pegout_id_1 = "peg123";
         let pegout_id_2 = "peg456";
@@ -555,7 +562,8 @@ mod tests {
     fn test_process_new_event_kickoff_advance_funds_exits_when_no_matching_request() {
         let mut processor = PegOutAdvanceFundsProcessor::new();
 
-        let request_block = create_fake_block(100.into(), U256::from(50));
+        let request_block =
+            BlockWithUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
 
         let pegout_id_req = "peg123";
         let request_event = RequestAdvanceFundsEvent {
@@ -600,93 +608,8 @@ mod tests {
     fn test_process_kickoff_block_after_event_accumulates_effort_and_closes_advance_funds() {
         let mut processor = PegOutAdvanceFundsProcessor::new();
 
-        let request_block = create_fake_block(100.into(), U256::from(50));
-
-        let pegout_id = "peg123";
-
-        let request_event = RequestAdvanceFundsEvent {
-            inner: create_fake_request_event(pegout_id),
-            block_number: request_block.number(),
-            block_hash: request_block.hash(),
-        };
-        processor
-            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
-                request_event.clone(),
-            ))
-            .expect("Should have processed request");
-
-        // we process the advance funds block
-        processor
-            .process_new_block(&request_block)
-            .expect("Should process block");
-
-        let kickoff_event = create_fake_kickoff_event(pegout_id);
-
-        // to need one more block than required ones to achieve the pow
-        let total_blocks = kickoff_event.required_num_blocks + 1;
-
-        let block_effort = kickoff_event
-            .required_effort
-            .checked_div(AlloyU256::from(total_blocks))
-            .expect("0 division");
-        let block_effort = U256::from_big_endian(&block_effort.to_be_bytes_vec());
-
-        let kickoff_block = create_fake_block(request_block.number() + 1, block_effort);
-
-        processor
-            .process_new_event(&RskPegManagerEvents::KickoffAdvanceFunds(
-                KickoffAdvanceFundsEvent {
-                    inner: kickoff_event,
-                    block_number: kickoff_block.number(),
-                    block_hash: kickoff_block.hash(),
-                },
-            ))
-            .expect("Should have processed kickoff");
-
-        // we process the kickoff block after the kickoff event
-        processor
-            .process_new_block(&kickoff_block)
-            .expect("Should process block");
-
-        assert!(processor.adv_funds_checker.is_some());
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
-
-        // -2: the one created after the kickoff counts, and we will create the last one out of this loop
-        for i in 1..=total_blocks - 2 {
-            let block = create_fake_block(kickoff_block.number() + i as u64, block_effort);
-            processor
-                .process_new_block(&block)
-                .expect("Should process block");
-        }
-
-        assert!(processor.adv_funds_checker.is_some());
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
-        assert_eq!(processor.known_blocks.len(), total_blocks as usize);
-
-        // we process the missing block
-        let block = create_fake_block(kickoff_block.number() + 5, block_effort);
-        processor
-            .process_new_block(&block)
-            .expect("Should process block");
-
-        assert!(processor.adv_funds_checker.is_none());
-        assert!(processor.request_events.is_empty());
-        assert!(processor.known_blocks.is_empty());
-    }
-
-    #[test]
-    fn test_process_kickoff_block_before_event_accumulates_effort_and_closes_advance_funds() {
-        let mut processor = PegOutAdvanceFundsProcessor::new();
-
-        let request_block = create_fake_block(100.into(), U256::from(50));
+        let request_block =
+            BlockWithUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
 
         let pegout_id = "peg123";
 
@@ -706,6 +629,14 @@ mod tests {
             .process_new_block(&request_block)
             .expect("Should process block");
 
+        assert!(processor.adv_funds_checker.is_none());
+        assert!(processor.request_events.contains_key(pegout_id));
+        assert_eq!(
+            processor.first_block_to_process,
+            Some(request_block.number())
+        );
+        assert!(processor.known_blocks.contains_key(&request_block.number()));
+
         let kickoff_event = create_fake_kickoff_event(pegout_id);
 
         // to need one more block than required ones to achieve the pow
@@ -713,17 +644,129 @@ mod tests {
 
         let block_effort = kickoff_event
             .required_effort
-            .checked_div(AlloyU256::from(total_blocks))
+            .checked_div(AlloyU256::from(total_blocks + 1)) // +1 because the uncle we will create also counts for the pow
             .expect("0 division");
         let block_effort = U256::from_big_endian(&block_effort.to_be_bytes_vec());
 
-        let kickoff_block = create_fake_block(request_block.number() + 1, block_effort);
+        let kickoff_block = BlockWithUncles::new_no_uncles(create_fake_block(
+            request_block.number() + 1,
+            block_effort,
+        ));
+
+        // we process the kickoff block after the kickoff event
+        processor
+            .process_new_event(&RskPegManagerEvents::KickoffAdvanceFunds(
+                KickoffAdvanceFundsEvent {
+                    inner: kickoff_event,
+                    block_number: kickoff_block.number(),
+                    block_hash: kickoff_block.hash(),
+                },
+            ))
+            .expect("Should have processed kickoff");
+        processor
+            .process_new_block(&kickoff_block)
+            .expect("Should process block");
+
+        assert!(processor.adv_funds_checker.is_some());
+        assert!(
+            processor
+                .request_events
+                .contains_key(&pegout_id.to_string())
+        );
+        assert!(processor.first_block_to_process.is_some());
+        assert!(!processor.known_blocks.is_empty());
+
+        let kickoff_sibling = create_block_from_template(
+            &kickoff_block.block(),
+            "0xa7b3f84f619c302a11892a379ac5a3a0bfbf8a3dce946a3db31cfb4c2f5cd909",
+            kickoff_block.parent(),
+            vec![],
+        );
+
+        let block_with_uncle = BlockWithUncles::new(
+            create_fake_block(kickoff_block.number() + 1, block_effort),
+            vec![kickoff_sibling],
+        );
+        processor
+            .process_new_block(&block_with_uncle)
+            .expect("Should process block");
+
+        assert!(processor.adv_funds_checker.is_some());
+        assert!(
+            processor
+                .request_events
+                .contains_key(&pegout_id.to_string())
+        );
+
+        // -1: the one created after the kickoff event counts, and the one we created before this loop
+        for i in 2..=total_blocks {
+            let block = BlockWithUncles::new_no_uncles(create_fake_block(
+                kickoff_block.number() + i as u64,
+                block_effort,
+            ));
+            processor
+                .process_new_block(&block)
+                .expect("Should process block");
+        }
+
+        assert!(processor.adv_funds_checker.is_none());
+        assert!(processor.request_events.is_empty());
+        assert!(processor.known_blocks.is_empty());
+    }
+
+    #[test]
+    fn test_process_kickoff_block_before_event_accumulates_effort_and_closes_advance_funds() {
+        let mut processor = PegOutAdvanceFundsProcessor::new();
+
+        let request_block =
+            BlockWithUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
+
+        let pegout_id = "peg123";
+
+        let request_event = create_fake_request_event(pegout_id);
+        processor
+            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+                RequestAdvanceFundsEvent {
+                    inner: request_event,
+                    block_number: request_block.number(),
+                    block_hash: request_block.hash(),
+                },
+            ))
+            .expect("Should have processed request");
+
+        // we process the advance funds block
+        processor
+            .process_new_block(&request_block)
+            .expect("Should process block");
+
+        assert!(processor.adv_funds_checker.is_none());
+        assert!(processor.request_events.contains_key(pegout_id));
+        assert_eq!(
+            processor.first_block_to_process,
+            Some(request_block.number())
+        );
+        assert!(processor.known_blocks.contains_key(&request_block.number()));
+
+        let kickoff_event = create_fake_kickoff_event(pegout_id);
+
+        // to need one more block than required ones to achieve the pow
+        let total_blocks = kickoff_event.required_num_blocks + 1;
+
+        let block_effort = kickoff_event
+            .required_effort
+            .checked_div(AlloyU256::from(total_blocks + 1)) // +1 because the uncle we will create also counts for the pow
+            .expect("0 division");
+        let block_effort = U256::from_big_endian(&block_effort.to_be_bytes_vec());
+
+        let kickoff_block = BlockWithUncles::new_no_uncles(create_fake_block(
+            request_block.number() + 1,
+            block_effort,
+        ));
 
         // we process the kickoff block before the kickoff event
         processor
             .process_new_block(&kickoff_block)
             .expect("Should process block");
-
         processor
             .process_new_event(&RskPegManagerEvents::KickoffAdvanceFunds(
                 KickoffAdvanceFundsEvent {
@@ -740,14 +783,23 @@ mod tests {
                 .request_events
                 .contains_key(&pegout_id.to_string())
         );
+        assert!(processor.first_block_to_process.is_some());
+        assert!(!processor.known_blocks.is_empty());
 
-        // -2: the one created after the kickoff event counts, and we will create the last one out of this loop
-        for i in 1..=total_blocks - 2 {
-            let block = create_fake_block(kickoff_block.number() + i as u64, block_effort);
-            processor
-                .process_new_block(&block)
-                .expect("Should process block");
-        }
+        let kickoff_sibling = create_block_from_template(
+            &kickoff_block.block(),
+            "0xa7b3f84f619c302a11892a379ac5a3a0bfbf8a3dce946a3db31cfb4c2f5cd909",
+            kickoff_block.parent(),
+            vec![],
+        );
+
+        let block_with_uncle = BlockWithUncles::new(
+            create_fake_block(kickoff_block.number() + 1, block_effort),
+            vec![kickoff_sibling],
+        );
+        processor
+            .process_new_block(&block_with_uncle)
+            .expect("Should process block");
 
         assert!(processor.adv_funds_checker.is_some());
         assert!(
@@ -755,15 +807,24 @@ mod tests {
                 .request_events
                 .contains_key(&pegout_id.to_string())
         );
+        assert!(processor.first_block_to_process.is_some());
+        assert!(!processor.known_blocks.is_empty());
 
-        // we process the missing block
-        let block = create_fake_block(kickoff_block.number() + 5, block_effort);
-        processor
-            .process_new_block(&block)
-            .expect("Should process block");
+        // -1: the one created after the kickoff event counts, and the one we created before this loop
+        for i in 2..=total_blocks {
+            let block = BlockWithUncles::new_no_uncles(create_fake_block(
+                kickoff_block.number() + i as u64,
+                block_effort,
+            ));
+            processor
+                .process_new_block(&block)
+                .expect("Should process block");
+        }
 
         assert!(processor.adv_funds_checker.is_none());
         assert!(processor.request_events.is_empty());
+        assert!(processor.first_block_to_process.is_none());
+        assert!(processor.known_blocks.is_empty());
     }
 
     #[test]
@@ -824,7 +885,8 @@ mod tests {
             ))
             .expect("Should have processed request");
 
-        let old_block = create_fake_block(99.into(), U256::from(100));
+        let old_block =
+            BlockWithUncles::new_no_uncles(create_fake_block(99.into(), U256::from(100)));
         let result = processor.process_new_block(&old_block);
 
         assert!(result.is_ok());
@@ -834,8 +896,10 @@ mod tests {
     fn test_shutdown_with_active_advance_funds_works() {
         let mut processor = PegOutAdvanceFundsProcessor::new();
 
-        let request_block = create_fake_block(100.into(), U256::from(50));
-        let kickoff_block = create_fake_block(110.into(), U256::from(100));
+        let request_block =
+            BlockWithUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
+        let kickoff_block =
+            BlockWithUncles::new_no_uncles(create_fake_block(110.into(), U256::from(100)));
 
         let pegout_id = "peg123";
 
@@ -942,8 +1006,10 @@ mod tests {
     fn test_remove_request_advance_funds_block_removes_it() {
         let mut processor = PegOutAdvanceFundsProcessor::new();
 
-        let request_block = create_fake_block(100.into(), U256::from(50));
-        let adv_funds_block_2 = create_kickoff_block_2(&request_block);
+        let request_block =
+            BlockWithUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
+        let adv_funds_block_2 =
+            BlockWithUncles::new_no_uncles(create_kickoff_block_2(&request_block.block()));
 
         let pegout_id = "peg123";
 
@@ -987,9 +1053,12 @@ mod tests {
     fn test_remove_kickoff_advance_funds_block_removes_it() {
         let mut processor = PegOutAdvanceFundsProcessor::new();
 
-        let advance_block = create_fake_block(100.into(), U256::from(50));
-        let kickoff_block = create_fake_block(110.into(), U256::from(50));
-        let kickoff_block_2 = create_kickoff_block_2(&kickoff_block);
+        let advance_block =
+            BlockWithUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
+        let kickoff_block =
+            BlockWithUncles::new_no_uncles(create_fake_block(110.into(), U256::from(50)));
+        let kickoff_block_2 =
+            BlockWithUncles::new_no_uncles(create_kickoff_block_2(&kickoff_block.block()));
 
         let pegout_id = "peg123";
 
@@ -1033,8 +1102,10 @@ mod tests {
     fn test_remove_kickoff_advance_funds_event_stops_advance_funds() {
         let mut processor = PegOutAdvanceFundsProcessor::new();
 
-        let request_block = create_fake_block(100.into(), U256::from(50));
-        let kickoff_block = create_fake_block(110.into(), U256::from(100));
+        let request_block =
+            BlockWithUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
+        let kickoff_block =
+            BlockWithUncles::new_no_uncles(create_fake_block(110.into(), U256::from(100)));
 
         let pegout_id = "peg123";
 

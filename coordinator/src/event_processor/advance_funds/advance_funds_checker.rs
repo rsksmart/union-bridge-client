@@ -96,15 +96,18 @@ impl AdvanceFundsChecker {
             self.check_fork_args.init_block_time = block.timestamp().value();
         }
 
-        // include the block in the list
+        // include the block in the list, with uncles if any
         self.check_fork_args
             .block_list
-            .push(self.new_check_fork_block(block));
+            .push(self.new_check_fork_block(block_with_uncles));
 
+        // TODO(iago) pensar si realmente hace falta esto o si podemos calcularlo a partir de check_fork blocks
+
+        // increase the effort with the block and its uncles
         self.increase_effort(Self::pow_to_effort(&block.pow()));
-
-        // TODO(iago) include uncles in the block item
-        // TODO(iago) count uncles effort for check_fork
+        for uncle in block_with_uncles.uncles() {
+            self.increase_effort(Self::pow_to_effort(&uncle.pow()));
+        }
     }
 
     fn remove_block_from_check_fork(&mut self, block: &RskBlock) {
@@ -140,13 +143,15 @@ impl AdvanceFundsChecker {
         );
     }
 
-    fn new_check_fork_block(&self, new_block: &RskBlock) -> Block {
+    fn new_check_fork_block(&self, block_with_uncles: &BlockWithUncles) -> Block {
         debug!(
             "hash {} - block {:?}",
-            self.kickoff_event.block_hash, new_block
+            self.kickoff_event.block_hash, block_with_uncles
         );
 
-        let bridge_event = (new_block.hash() == self.kickoff_event.block_hash.into()).then(|| {
+        let block = &block_with_uncles.block();
+
+        let bridge_event = (block.hash() == self.kickoff_event.block_hash.into()).then(|| {
             let bridge_event = check_fork::BridgeEvent {
                 utxo_id: self.kickoff_event.inner.utxo_id.clone(),
                 pegout_id: self.kickoff_event.inner.peg_out_id.clone(),
@@ -156,17 +161,17 @@ impl AdvanceFundsChecker {
             bridge_event
         });
 
-        Block {
-            number: new_block.number().value(),
-            hash: hex::encode(new_block.hash().value()),
-            parent: hex::encode(new_block.parent_hash().value()),
-            difficulty: new_block.difficulty().value(),
-            timestamp: new_block.timestamp().value(),
-            bridge_event,
-            // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-144
-            uncles: vec![],
-            pow: Self::get_block_pow(&new_block.pow()),
-        }
+        let uncle_blocks: Vec<Block> = block_with_uncles
+            .uncles()
+            .iter()
+            .map(|uncle| {
+                // convert each uncle to a checkFork Block: they have neither bridge event nor uncles
+                self.rsk_block_to_check_fork_block(uncle, None, vec![])
+            })
+            .collect();
+
+        // create a checkFork Block with bridge_event and uncles if any
+        self.rsk_block_to_check_fork_block(block, bridge_event, uncle_blocks)
     }
 
     #[cfg(not(feature = "anvil"))]
@@ -183,6 +188,24 @@ impl AdvanceFundsChecker {
     #[cfg(feature = "anvil")]
     fn pow_to_effort(_pow: &BlockPow) -> U256 {
         U256::from(2500000000000u64)
+    }
+
+    fn rsk_block_to_check_fork_block(
+        &self,
+        block: &RskBlock,
+        bridge_event: Option<check_fork::BridgeEvent>,
+        uncles: Vec<Block>,
+    ) -> Block {
+        Block {
+            number: block.number().value(),
+            hash: hex::encode(block.hash().value()),
+            parent: hex::encode(block.parent_hash().value()),
+            difficulty: block.difficulty().value(),
+            timestamp: block.timestamp().value(),
+            bridge_event,
+            uncles,
+            pow: Self::get_block_pow(&block.pow()),
+        }
     }
 
     #[cfg(not(feature = "anvil"))]

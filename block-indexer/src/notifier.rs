@@ -137,9 +137,8 @@ mod tests {
     use super::*;
     use common::msg_broker::broker::MockBrokerServerApi;
     use common::test_utils::rsk_block_generator::{
-        get_first_default_rsk_block, get_second_default_rsk_block,
+        create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
     };
-    use common::types::BlockHash;
     use std::sync::mpsc;
     use std::sync::mpsc::Sender;
     use std::thread;
@@ -224,28 +223,7 @@ mod tests {
             request: BrokerRequests::SubscribeBlocks,
         }];
 
-        let block_1_template = get_first_default_rsk_block();
-
-        let expected_block_1 = create_block_from_template(
-            &block_1_template,
-            "0xa7b3f84f619c302a11892a379ac5a3a0bfbf8a3dce946a3db31cfb4c2f5cd909",
-            block_1_template.parent_hash(),
-            vec![],
-        );
-
-        let expected_uncle_1 = create_block_from_template(
-            &block_1_template,
-            "0x3e5f9c2451b8efb4c1e3739816e44e4f0e9c25b2f9f6a57bdbf71e2df7c1b790",
-            block_1_template.parent_hash(),
-            vec![],
-        );
-
-        let expected_block_2 = create_block_from_template(
-            &get_second_default_rsk_block(),
-            "0x5c8a91d7ef0d46f3a65f1c345beab0cf56a8e065f2b762fe9b8e2d771fd42c83",
-            expected_block_1.hash(),
-            vec![expected_uncle_1.hash()],
-        );
+        let (expected_block_1, expected_uncle_1, expected_block_2) = create_block_and_uncles();
 
         let mut mock_broker_server = MockBrokerServerApi::new();
 
@@ -503,26 +481,5 @@ mod tests {
 
             shutdown_flag.set();
         })
-    }
-
-    // TODO(iago) ticket for builder pattern for RskBlock in tests
-    // TODO(iago) ticket for builder pattern for RskLog in tests
-
-    fn create_block_from_template(
-        template: &RskBlock,
-        hash: &str,
-        parent: BlockHash,
-        uncles: Vec<BlockHash>,
-    ) -> RskBlock {
-        RskBlock::new(
-            template.number(),
-            BlockHash::try_from(hash).expect("Failed to parse hash"),
-            parent,
-            template.timestamp(),
-            template.difficulty(),
-            template.total_difficulty(),
-            template.pow(),
-            uncles,
-        )
     }
 }

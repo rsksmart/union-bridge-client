@@ -103,14 +103,15 @@ impl<M: MonitorApi> Coordinator<M> {
 mod tests {
     use crate::coordinator::Coordinator;
     use crate::monitor::MockMonitorApi;
-    use crate::types::{KickoffAdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents};
+    use crate::types::{
+        BlockWithUncles, KickoffAdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents,
+    };
     use alloy_primitives::U256;
     use common::fake_contracts::FakePegManager::{KickoffAdvanceFunds, RequestAdvanceFunds};
     use common::shutdown_flag::ShutdownFlag;
     use common::test_utils::rsk_block_generator::{
-        get_first_default_rsk_block, get_second_default_rsk_block,
+        create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
     };
-    use common::types::RskBlock;
     use std::thread;
     use std::thread::{JoinHandle, sleep};
     use std::time::Duration;
@@ -135,8 +136,7 @@ mod tests {
     #[test]
     fn test_coordinator_run_handles_several_events() {
         let mut mock_monitor = MockMonitorApi::new();
-        let block_1 = get_first_default_rsk_block();
-        let block_2 = get_second_default_rsk_block();
+        let (block_1, uncle_1, block_2) = create_block_and_uncles();
 
         let event_1 = RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFundsEvent {
             inner: create_fake_request_event("peg_out_id_1"),
@@ -172,7 +172,13 @@ mod tests {
 
         expect_try_event(vec![event_1, event_2], &mut mock_monitor);
 
-        expect_try_block(vec![block_1, block_2], &mut mock_monitor);
+        expect_try_block(
+            vec![
+                BlockWithUncles::new(block_1, vec![]),
+                BlockWithUncles::new(block_2, vec![uncle_1]),
+            ],
+            &mut mock_monitor,
+        );
 
         let shutdown_flag = ShutdownFlag::init();
         handle_shutdown(shutdown_flag.clone());
@@ -219,7 +225,13 @@ mod tests {
 
         expect_try_event(vec![event_1, event_2], &mut mock_monitor);
 
-        expect_try_block(vec![block_1, block_2], &mut mock_monitor);
+        expect_try_block(
+            vec![
+                BlockWithUncles::new(block_1, vec![]),
+                BlockWithUncles::new(block_2, vec![]),
+            ],
+            &mut mock_monitor,
+        );
 
         let shutdown_flag = ShutdownFlag::init();
         handle_shutdown(shutdown_flag.clone());
@@ -251,7 +263,7 @@ mod tests {
         });
     }
 
-    fn expect_try_block(blocks: Vec<RskBlock>, monitor: &mut MockMonitorApi) {
+    fn expect_try_block(blocks: Vec<BlockWithUncles>, monitor: &mut MockMonitorApi) {
         use std::collections::VecDeque;
 
         monitor.expect_try_block().returning_st({

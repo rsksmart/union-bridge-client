@@ -2,7 +2,7 @@ use crate::types::{BlockWithUncles, EventDecoder, RskPegManagerEvents};
 use anyhow::{Context, Result, bail};
 use common::msg_broker::broker::{BROKER_SERVER_ID, BrokerClientApi, BrokerError};
 use common::msg_broker::types::{BrokerRequests, BrokerResponses};
-use common::types::{Address, RskBlock};
+use common::types::Address;
 use log::{debug, info, trace};
 
 #[cfg(test)]
@@ -209,7 +209,7 @@ mod tests {
     use anyhow::anyhow;
     use common::msg_broker::broker::{BROKER_SERVER_ID, MockBrokerClientApi};
     use common::msg_broker::types::BrokerRequests;
-    use common::test_utils::rsk_block_generator::get_first_default_rsk_block;
+    use common::test_utils::rsk_block_generator::create_block_and_uncles;
     use common::test_utils::rsk_log_generator::FakeLogGenerator;
     use mockall::predicate::*;
 
@@ -347,11 +347,14 @@ mod tests {
 
     #[test]
     fn test_try_block_returns_some() {
-        let block = get_first_default_rsk_block();
         let mut block_broker = MockBrokerClientApi::new();
+
+        let (expected_block_1, expected_uncle_1, _) = create_block_and_uncles();
+
         block_broker.expect_try_recv().return_once({
-            let block = block.clone();
-            move || Ok(Some(BrokerResponses::Block(block.clone())))
+            let block = expected_block_1.clone();
+            let uncle = expected_uncle_1.clone();
+            move || Ok(Some(BrokerResponses::Block(block, vec![uncle])))
         });
 
         let mut monitor =
@@ -359,7 +362,13 @@ mod tests {
         monitor.block_monitoring_active = true;
 
         let result = monitor.try_block().expect("Failed to receive block");
-        assert_eq!(result, Some(block));
+        assert_eq!(
+            result,
+            Some(BlockWithUncles::new(
+                expected_block_1,
+                vec![expected_uncle_1]
+            ))
+        );
     }
 
     #[test]
