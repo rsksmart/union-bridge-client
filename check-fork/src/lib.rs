@@ -261,6 +261,8 @@ fn validate_difficulty_in_bounds(block: &Block, prev_block: &Block) -> Result<()
 
 fn calculate_block_effort(block: &Block) -> Result<U256, &'static str> {
     let pow = U256::from_big_endian(block.pow.as_bytes());
+    // compute the effort by inverting the pow
+    // U256::MAX, the "difficulty 1" target, represents the easiest possible target
     U256::MAX
         .checked_div(pow)
         .ok_or("0 division on calculate_block_effort")

@@ -3,6 +3,7 @@ use alloy_primitives::FixedBytes;
 use anyhow::Result;
 use bitcoin::{blockdata::block::Header, consensus::encode::deserialize as btc_deserialize};
 use hex::FromHexError;
+use log::error;
 use primitive_types::{H160, H256, U256};
 use serde::{Deserialize, Deserializer, Serialize, de};
 use serde_json::Value;
@@ -296,6 +297,17 @@ pub struct BlockPow(H256);
 impl BlockPow {
     pub fn value(self) -> H256 {
         self.0
+    }
+
+    pub fn into_effort(self) -> U256 {
+        let pow: U256 = U256::from_big_endian(self.value().as_bytes());
+        // compute the effort by inverting the pow
+        // U256::MAX, the "difficulty 1" target, represents the easiest possible target
+        U256::MAX.checked_div(pow).unwrap_or_else(|| {
+            // TODO(Jira) this should be monitored and analysed - https://rsklabs.atlassian.net/browse/UB-127
+            error!("0 division on pow_to_effort");
+            U256::zero()
+        })
     }
 }
 
@@ -667,7 +679,8 @@ pub struct RskRpcBlock {
 
 #[cfg(feature = "anvil")]
 fn default_pow_header() -> BlockPow {
-    BlockPow(H256::zero())
+    use crate::anvil_mocks::get_anvil_block_pow;
+    get_anvil_block_pow()
 }
 
 #[derive(Serialize, Deserialize, Debug)]

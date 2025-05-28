@@ -119,17 +119,12 @@ impl PegOutAdvanceFundsProcessor {
         let args = adv_funds_approver.check_fork_args();
         // note: check-fork already validates consecutive blocks, etc.
         match check_fork(args) {
-            Ok(effort) if effort != U256::zero() => {
+            Ok(effort) => {
                 info!(
                     "CheckFork accepted with effort {effort} (pow 0x{:x})",
-                    U256::MAX / effort
+                    Self::pow_from_effort(effort)
                 );
                 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-89
-            }
-            Ok(_effort) => {
-                error!("CheckFork with 0 effort was accepted");
-                // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
-                // TODO(Jira) discuss with architects on error handling - https://rsklabs.atlassian.net/browse/UB-149
             }
             Err(e) => {
                 error!("CheckFork rejected: {}", e);
@@ -137,6 +132,15 @@ impl PegOutAdvanceFundsProcessor {
                 // TODO(Jira) discuss with architects on error handling - https://rsklabs.atlassian.net/browse/UB-149
             }
         }
+    }
+
+    fn pow_from_effort(effort: U256) -> U256 {
+        let pow = U256::MAX.checked_div(effort).unwrap_or_else(|| {
+            // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
+            error!("CheckFork accepted with 0 effort",);
+            U256::zero()
+        });
+        pow
     }
 }
 

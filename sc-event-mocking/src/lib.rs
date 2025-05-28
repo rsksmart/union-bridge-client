@@ -1,8 +1,8 @@
 use alloy_eips::BlockNumberOrTag;
-use alloy_primitives::Address;
-use alloy_primitives::U256;
+use alloy_primitives::{Address, U256};
 use alloy_provider::Provider;
 use anyhow::{Result, anyhow};
+use common::anvil_mocks::get_anvil_block_pow;
 use common::fake_contracts::FakePegManager;
 use common::fake_contracts::FakePegManager::FakePegManagerInstance;
 use std::time::SystemTime;
@@ -72,13 +72,20 @@ impl<P: Provider> Executor<P> {
             .await?
             .expect("no best block");
 
-        // TODO: receive from param
-        let required_effort = U256::from(10_000_000_000_000u64);
+        let anvil_effort = get_anvil_block_pow().into_effort();
+
+        // TODO: receive from param, taking into account that for now Anvil return a fixed pow per block
+        let required_num_blocks: u32 = 5;
+
+        // required_num_blocks + 1 to complete req pow before req blocks
+        let blocks_to_fill_effort = U256::from_be_slice(&(required_num_blocks - 1).to_be_bytes());
+        let effort_alloy = U256::from_be_slice(&anvil_effort.to_big_endian());
+        let required_effort = effort_alloy
+            .checked_mul(blocks_to_fill_effort)
+            .expect("required_effort should not overflow");
 
         let utxo_id = format!("utxo_{}", bb.header.number);
         let operator_id = format!("operator_{}", bb.header.number);
-
-        let required_num_blocks = 5;
 
         let receipt = contract
             .kickoffAdvanceFunds(

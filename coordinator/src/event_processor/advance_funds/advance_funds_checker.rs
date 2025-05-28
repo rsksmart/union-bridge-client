@@ -30,6 +30,11 @@ impl AdvanceFundsChecker {
             block_list: vec![],
         };
 
+        info!(
+            "Creating AdvanceFundsChecker with {:?} and kickoff_block_hash: {}",
+            check_fork_args, event.block_hash
+        );
+
         let mut instance = Self {
             kickoff_block_hash: event.block_hash.value(),
             check_fork_args,
@@ -65,7 +70,7 @@ impl AdvanceFundsChecker {
             .block_list
             .iter()
             .flat_map(|b| std::iter::once(b).chain(&b.uncles))
-            .map(|b| Self::pow_to_effort(&b.pow))
+            .map(|b| BlockPow::from(b.pow).into_effort())
             .fold(U256::zero(), |accum, effort| accum.saturating_add(effort));
 
         let pending_effort = self
@@ -73,16 +78,15 @@ impl AdvanceFundsChecker {
             .required_effort
             .saturating_sub(accum_effort);
 
-        let is_effort_ready = pending_effort == U256::zero();
-
         let pending_blocks = self
             .check_fork_args
             .required_num_blocks
             .saturating_sub(self.check_fork_args.block_list.len() as u32);
 
-        let is_block_count_ready = pending_blocks == 0;
+        let is_req_effort_achieved = pending_effort == U256::zero();
+        let is_req_blocks_achieved = pending_blocks == 0;
 
-        let ready = is_effort_ready && is_block_count_ready;
+        let ready = is_req_effort_achieved && is_req_blocks_achieved;
         if ready {
             info!(
                 "AdvanceFundsChecker {} is ready for checkFork: {:?}",
@@ -143,10 +147,10 @@ impl AdvanceFundsChecker {
             .iter()
             .map(|uncle| {
                 info!(
-                    "Adding to checkFork uncle {} ({}) with pow {}",
+                    "Adding to checkFork uncle {} ({}) with effort {}",
                     uncle.number(),
                     uncle.hash(),
-                    uncle.pow(),
+                    block.pow().into_effort(),
                 );
                 // convert each uncle to a checkFork Block: they have neither bridge event nor uncles
                 self.rsk_block_to_check_fork_block(uncle, None, vec![])
@@ -154,30 +158,14 @@ impl AdvanceFundsChecker {
             .collect();
 
         info!(
-            "Adding to checkFork block {} ({}) with pow {}",
+            "Adding to checkFork block {} ({}) with effort {}",
             block.number(),
             block.hash(),
-            block.pow(),
+            block.pow().into_effort(),
         );
 
         // create a checkFork Block with bridge_event and uncles if any
         self.rsk_block_to_check_fork_block(block, bridge_event, uncle_blocks)
-    }
-
-    #[cfg(not(feature = "anvil"))]
-    fn pow_to_effort(pow: &H256) -> U256 {
-        use log::error;
-
-        let pow: U256 = U256::from_big_endian(pow.as_bytes());
-        U256::MAX.checked_div(pow).unwrap_or_else(|| {
-            error!("0 division on pow_to_effort");
-            U256::zero()
-        })
-    }
-
-    #[cfg(feature = "anvil")]
-    fn pow_to_effort(_pow: &H256) -> U256 {
-        U256::from(2500000000000u64)
     }
 
     fn rsk_block_to_check_fork_block(
@@ -194,17 +182,7 @@ impl AdvanceFundsChecker {
             timestamp: block.timestamp().value(),
             bridge_event,
             uncles,
-            pow: Self::get_block_pow(&block.pow()),
+            pow: block.pow().value(),
         }
-    }
-
-    #[cfg(not(feature = "anvil"))]
-    fn get_block_pow(pow: &BlockPow) -> H256 {
-        pow.value()
-    }
-
-    #[cfg(feature = "anvil")]
-    fn get_block_pow(_pow: &BlockPow) -> H256 {
-        H256::from_low_u64_be(2500000000000u64)
     }
 }
