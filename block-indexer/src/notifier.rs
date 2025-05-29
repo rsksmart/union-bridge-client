@@ -3,7 +3,7 @@ use common::constants::indexer::NOTIFIER_CHECK_PERIOD;
 use common::msg_broker::broker::BrokerServerApi;
 pub use common::msg_broker::types::{BrokerRequests, BrokerResponses};
 use common::shutdown_flag::ShutdownFlag;
-use common::types::RskBlock;
+use common::types::RskBlockAndUncles;
 use log::{debug, info, trace, warn};
 use std::collections::HashSet;
 use std::sync::mpsc;
@@ -11,22 +11,16 @@ use std::sync::mpsc::RecvTimeoutError;
 use std::time::Duration;
 
 pub struct Notifier<BS: BrokerServerApi> {
-    new_block_channel: mpsc::Receiver<BlockNotif>,
+    new_block_channel: mpsc::Receiver<RskBlockAndUncles>,
     msg_broker: BS,
     check_period: Duration,
     consumers: HashSet<u32>,
     shutdown_flag: ShutdownFlag,
 }
 
-#[derive(Debug)]
-pub struct BlockNotif {
-    pub block: RskBlock,
-    pub uncles: Vec<RskBlock>,
-}
-
 impl<BS: BrokerServerApi> Notifier<BS> {
     pub fn new(
-        indexer_receiver: mpsc::Receiver<BlockNotif>,
+        indexer_receiver: mpsc::Receiver<RskBlockAndUncles>,
         msg_broker: BS,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
@@ -41,7 +35,7 @@ impl<BS: BrokerServerApi> Notifier<BS> {
 
     #[cfg(test)]
     pub fn new_for_tests(
-        indexer_receiver: mpsc::Receiver<BlockNotif>,
+        indexer_receiver: mpsc::Receiver<RskBlockAndUncles>,
         msg_broker: BS,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
@@ -98,7 +92,7 @@ impl<BS: BrokerServerApi> Notifier<BS> {
         Ok(())
     }
 
-    fn wait_for_block(&mut self, timeout: Duration) -> Result<Option<BlockNotif>> {
+    fn wait_for_block(&mut self, timeout: Duration) -> Result<Option<RskBlockAndUncles>> {
         match self.new_block_channel.recv_timeout(timeout) {
             Ok(block) => {
                 debug!("New block received by notifier {:?}", block);
@@ -115,10 +109,10 @@ impl<BS: BrokerServerApi> Notifier<BS> {
         }
     }
 
-    fn notify_consumers(&mut self, new_block: BlockNotif) -> Result<()> {
-        let hash = new_block.block.hash();
-        let number = new_block.block.number();
-        let response = BrokerResponses::Block(new_block.block, new_block.uncles);
+    fn notify_consumers(&mut self, new_block: RskBlockAndUncles) -> Result<()> {
+        let hash = new_block.hash();
+        let number = new_block.number();
+        let response = BrokerResponses::Block(new_block);
 
         for c_id in &self.consumers {
             debug!("Notifying consumer {c_id} about new block {number} ({hash})");
@@ -139,11 +133,11 @@ mod tests {
     use common::test_utils::rsk_block_generator::{
         create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
     };
+    use common::types::RskBlock;
     use std::sync::mpsc;
     use std::sync::mpsc::Sender;
     use std::thread;
     use std::thread::{JoinHandle, sleep};
-    use std::time::Duration;
 
     struct ClientRequest {
         id: u32,
@@ -166,10 +160,7 @@ mod tests {
         let handle_external_events = handle_external_events(
             tx,
             shutdown_flag,
-            vec![BlockNotif {
-                block: expected_block.clone(),
-                uncles: vec![],
-            }],
+            vec![RskBlockAndUncles::new_no_uncles(expected_block.clone())],
         );
 
         let result = notifier.run();
@@ -248,14 +239,8 @@ mod tests {
             tx,
             shutdown_flag,
             vec![
-                BlockNotif {
-                    block: expected_block_1.clone(),
-                    uncles: vec![],
-                },
-                BlockNotif {
-                    block: expected_block_2.clone(),
-                    uncles: vec![expected_uncle_1],
-                },
+                RskBlockAndUncles::new_no_uncles(expected_block_1.clone()),
+                RskBlockAndUncles::new(expected_block_2.clone(), vec![expected_uncle_1]).unwrap(),
             ],
         );
 
@@ -328,14 +313,8 @@ mod tests {
             tx,
             shutdown_flag,
             vec![
-                BlockNotif {
-                    block: expected_block_1.clone(),
-                    uncles: vec![],
-                },
-                BlockNotif {
-                    block: expected_block_2.clone(),
-                    uncles: vec![],
-                },
+                RskBlockAndUncles::new_no_uncles(expected_block_1.clone()),
+                RskBlockAndUncles::new_no_uncles(expected_block_2.clone()),
             ],
         );
 
@@ -401,14 +380,8 @@ mod tests {
             tx,
             shutdown_flag,
             vec![
-                BlockNotif {
-                    block: expected_block_1.clone(),
-                    uncles: vec![],
-                },
-                BlockNotif {
-                    block: expected_block_2.clone(),
-                    uncles: vec![],
-                },
+                RskBlockAndUncles::new_no_uncles(expected_block_1.clone()),
+                RskBlockAndUncles::new_no_uncles(expected_block_2.clone()),
             ],
         );
 
@@ -451,10 +424,10 @@ mod tests {
             .withf({
                 let expected_block = expected_block.clone(); // move into closure
                 move |response, consumer_id| match response {
-                    BrokerResponses::Block(actual_block, uncles) => {
+                    BrokerResponses::Block(bau) => {
                         *consumer_id == dest
-                            && *actual_block == expected_block
-                            && uncles.iter().all(|u| expected_uncles.contains(u))
+                            && *bau.block() == expected_block
+                            && bau.uncles().iter().all(|u| expected_uncles.contains(u))
                     }
                     _ => false,
                 }
@@ -464,9 +437,9 @@ mod tests {
     }
 
     fn handle_external_events(
-        tx: Sender<BlockNotif>,
+        tx: Sender<RskBlockAndUncles>,
         shutdown_flag: ShutdownFlag,
-        blocks: Vec<BlockNotif>,
+        blocks: Vec<RskBlockAndUncles>,
     ) -> JoinHandle<()> {
         thread::spawn(move || {
             // give time for subscriptions to be processed

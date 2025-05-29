@@ -103,15 +103,14 @@ impl<M: MonitorApi> Coordinator<M> {
 mod tests {
     use crate::coordinator::Coordinator;
     use crate::monitor::MockMonitorApi;
-    use crate::types::{
-        BlockWithUncles, KickoffAdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents,
-    };
+    use crate::types::{KickoffAdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents};
     use alloy_primitives::U256;
     use common::fake_contracts::FakePegManager::{KickoffAdvanceFunds, RequestAdvanceFunds};
     use common::shutdown_flag::ShutdownFlag;
     use common::test_utils::rsk_block_generator::{
         create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
     };
+    use common::types::RskBlockAndUncles;
     use std::thread;
     use std::thread::{JoinHandle, sleep};
     use std::time::Duration;
@@ -174,8 +173,8 @@ mod tests {
 
         expect_try_block(
             vec![
-                BlockWithUncles::new(block_1, vec![]),
-                BlockWithUncles::new(block_2, vec![uncle_1]),
+                RskBlockAndUncles::new_no_uncles(block_1),
+                RskBlockAndUncles::new(block_2, vec![uncle_1]).unwrap(),
             ],
             &mut mock_monitor,
         );
@@ -227,8 +226,8 @@ mod tests {
 
         expect_try_block(
             vec![
-                BlockWithUncles::new(block_1, vec![]),
-                BlockWithUncles::new(block_2, vec![]),
+                RskBlockAndUncles::new_no_uncles(block_1),
+                RskBlockAndUncles::new_no_uncles(block_2),
             ],
             &mut mock_monitor,
         );
@@ -263,7 +262,7 @@ mod tests {
         });
     }
 
-    fn expect_try_block(blocks: Vec<BlockWithUncles>, monitor: &mut MockMonitorApi) {
+    fn expect_try_block(blocks: Vec<RskBlockAndUncles>, monitor: &mut MockMonitorApi) {
         use std::collections::VecDeque;
 
         monitor.expect_try_block().returning_st({

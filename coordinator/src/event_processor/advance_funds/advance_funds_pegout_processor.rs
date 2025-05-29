@@ -1,11 +1,9 @@
 use crate::event_processor::EventProcessor;
 use crate::event_processor::advance_funds::advance_funds_checker::AdvanceFundsChecker;
-use crate::types::{
-    BlockWithUncles, KickoffAdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents,
-};
+use crate::types::{KickoffAdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents};
 use anyhow::Result;
 use check_fork::check_fork;
-use common::types::BlockNumber;
+use common::types::{BlockNumber, RskBlockAndUncles};
 use log::{debug, error, info, warn};
 use primitive_types::U256;
 use std::collections::{BTreeMap, HashMap};
@@ -15,7 +13,7 @@ pub struct PegOutAdvanceFundsProcessor {
     request_events: HashMap<String, RequestAdvanceFundsEvent>,
     adv_funds_checker: Option<AdvanceFundsChecker>,
     // BTreeMap to sort blocks by number while keeping just the most recent one in case of reorgs
-    known_blocks: BTreeMap<BlockNumber, BlockWithUncles>,
+    known_blocks: BTreeMap<BlockNumber, RskBlockAndUncles>,
 }
 
 impl PegOutAdvanceFundsProcessor {
@@ -69,7 +67,7 @@ impl PegOutAdvanceFundsProcessor {
             return;
         }
 
-        let post_kickoff_blocks: Vec<&BlockWithUncles> = self
+        let post_kickoff_blocks: Vec<&RskBlockAndUncles> = self
             .known_blocks
             .values()
             .filter(|b| b.number() >= event2.block_number)
@@ -171,7 +169,7 @@ impl EventProcessor for PegOutAdvanceFundsProcessor {
         Ok(())
     }
 
-    fn process_new_block(&mut self, block_with_uncles: &BlockWithUncles) -> Result<()> {
+    fn process_new_block(&mut self, block_with_uncles: &RskBlockAndUncles) -> Result<()> {
         let block = &block_with_uncles.block();
 
         if let Some(first_block) = self.first_block_to_process {
@@ -369,9 +367,9 @@ mod tests {
         let mut processor = PegOutAdvanceFundsProcessor::new();
 
         let request_block =
-            BlockWithUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
+            RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
         let kickoff_block =
-            BlockWithUncles::new_no_uncles(create_fake_block(110.into(), U256::from(51)));
+            RskBlockAndUncles::new_no_uncles(create_fake_block(110.into(), U256::from(51)));
 
         let pegout_id = "peg123";
 
@@ -387,7 +385,7 @@ mod tests {
             .expect("Should have processed request");
 
         let any_block =
-            BlockWithUncles::new_no_uncles(create_fake_block(102.into(), U256::from(105)));
+            RskBlockAndUncles::new_no_uncles(create_fake_block(102.into(), U256::from(105)));
         processor
             .process_new_block(&request_block)
             .expect("Should have processed request");
@@ -451,11 +449,11 @@ mod tests {
         let mut processor = PegOutAdvanceFundsProcessor::new();
 
         let request_block_1 =
-            BlockWithUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
+            RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
         let request_block_2 =
-            BlockWithUncles::new_no_uncles(create_fake_block(105.into(), U256::from(52)));
+            RskBlockAndUncles::new_no_uncles(create_fake_block(105.into(), U256::from(52)));
         let kickoff_block =
-            BlockWithUncles::new_no_uncles(create_fake_block(110.into(), U256::from(51)));
+            RskBlockAndUncles::new_no_uncles(create_fake_block(110.into(), U256::from(51)));
 
         let pegout_id_1 = "peg123";
         let pegout_id_2 = "peg456";
@@ -567,7 +565,7 @@ mod tests {
         let mut processor = PegOutAdvanceFundsProcessor::new();
 
         let request_block =
-            BlockWithUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
+            RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
 
         let pegout_id_req = "peg123";
         let request_event = RequestAdvanceFundsEvent {
@@ -613,7 +611,7 @@ mod tests {
         let mut processor = PegOutAdvanceFundsProcessor::new();
 
         let request_block =
-            BlockWithUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
+            RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
 
         let pegout_id = "peg123";
 
@@ -652,7 +650,7 @@ mod tests {
             .expect("0 division");
         let block_effort = U256::from_big_endian(&block_effort.to_be_bytes_vec());
 
-        let kickoff_block = BlockWithUncles::new_no_uncles(create_fake_block(
+        let kickoff_block = RskBlockAndUncles::new_no_uncles(create_fake_block(
             request_block.number() + 1,
             block_effort,
         ));
@@ -687,10 +685,11 @@ mod tests {
             vec![],
         );
 
-        let block_with_uncle = BlockWithUncles::new(
+        let block_with_uncle = RskBlockAndUncles::new(
             create_fake_block(kickoff_block.number() + 1, block_effort),
             vec![kickoff_sibling],
-        );
+        )
+        .unwrap();
         processor
             .process_new_block(&block_with_uncle)
             .expect("Should process block");
@@ -704,7 +703,7 @@ mod tests {
 
         // -1: the one created after the kickoff event counts, and the one we created before this loop
         for i in 2..=total_blocks {
-            let block = BlockWithUncles::new_no_uncles(create_fake_block(
+            let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
                 kickoff_block.number() + i as u64,
                 block_effort,
             ));
@@ -723,7 +722,7 @@ mod tests {
         let mut processor = PegOutAdvanceFundsProcessor::new();
 
         let request_block =
-            BlockWithUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
+            RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
 
         let pegout_id = "peg123";
 
@@ -762,7 +761,7 @@ mod tests {
             .expect("0 division");
         let block_effort = U256::from_big_endian(&block_effort.to_be_bytes_vec());
 
-        let kickoff_block = BlockWithUncles::new_no_uncles(create_fake_block(
+        let kickoff_block = RskBlockAndUncles::new_no_uncles(create_fake_block(
             request_block.number() + 1,
             block_effort,
         ));
@@ -797,10 +796,11 @@ mod tests {
             vec![],
         );
 
-        let block_with_uncle = BlockWithUncles::new(
+        let block_with_uncle = RskBlockAndUncles::new(
             create_fake_block(kickoff_block.number() + 1, block_effort),
             vec![kickoff_sibling],
-        );
+        )
+        .unwrap();
         processor
             .process_new_block(&block_with_uncle)
             .expect("Should process block");
@@ -816,7 +816,7 @@ mod tests {
 
         // -1: the one created after the kickoff event counts, and the one we created before this loop
         for i in 2..=total_blocks {
-            let block = BlockWithUncles::new_no_uncles(create_fake_block(
+            let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
                 kickoff_block.number() + i as u64,
                 block_effort,
             ));
@@ -890,7 +890,7 @@ mod tests {
             .expect("Should have processed request");
 
         let old_block =
-            BlockWithUncles::new_no_uncles(create_fake_block(99.into(), U256::from(100)));
+            RskBlockAndUncles::new_no_uncles(create_fake_block(99.into(), U256::from(100)));
         let result = processor.process_new_block(&old_block);
 
         assert!(result.is_ok());
@@ -901,9 +901,9 @@ mod tests {
         let mut processor = PegOutAdvanceFundsProcessor::new();
 
         let request_block =
-            BlockWithUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
+            RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
         let kickoff_block =
-            BlockWithUncles::new_no_uncles(create_fake_block(110.into(), U256::from(100)));
+            RskBlockAndUncles::new_no_uncles(create_fake_block(110.into(), U256::from(100)));
 
         let pegout_id = "peg123";
 
@@ -1011,9 +1011,9 @@ mod tests {
         let mut processor = PegOutAdvanceFundsProcessor::new();
 
         let request_block =
-            BlockWithUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
+            RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
         let adv_funds_block_2 =
-            BlockWithUncles::new_no_uncles(create_kickoff_block_2(&request_block.block()));
+            RskBlockAndUncles::new_no_uncles(create_kickoff_block_2(&request_block.block()));
 
         let pegout_id = "peg123";
 
@@ -1058,11 +1058,11 @@ mod tests {
         let mut processor = PegOutAdvanceFundsProcessor::new();
 
         let advance_block =
-            BlockWithUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
+            RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
         let kickoff_block =
-            BlockWithUncles::new_no_uncles(create_fake_block(110.into(), U256::from(50)));
+            RskBlockAndUncles::new_no_uncles(create_fake_block(110.into(), U256::from(50)));
         let kickoff_block_2 =
-            BlockWithUncles::new_no_uncles(create_kickoff_block_2(&kickoff_block.block()));
+            RskBlockAndUncles::new_no_uncles(create_kickoff_block_2(&kickoff_block.block()));
 
         let pegout_id = "peg123";
 
@@ -1107,9 +1107,9 @@ mod tests {
         let mut processor = PegOutAdvanceFundsProcessor::new();
 
         let request_block =
-            BlockWithUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
+            RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
         let kickoff_block =
-            BlockWithUncles::new_no_uncles(create_fake_block(110.into(), U256::from(100)));
+            RskBlockAndUncles::new_no_uncles(create_fake_block(110.into(), U256::from(100)));
 
         let pegout_id = "peg123";
 

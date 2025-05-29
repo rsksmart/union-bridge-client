@@ -1,6 +1,6 @@
-use crate::notifier::BlockNotif;
 use crate::store::BlockStore;
 use anyhow::{Context, Result, bail};
+use common::types::RskBlockAndUncles;
 use common::{
     rsk_indexer::RskIndexer,
     rsk_provider::{RskProvider, RskSubscription, RskSubscriptionError},
@@ -13,7 +13,7 @@ use std::sync::mpsc;
 pub struct BlockIndexer<P: RskProvider, S: BlockStore> {
     store: S,
     rsk_provider: P,
-    new_block_sender: Option<mpsc::Sender<BlockNotif>>,
+    new_block_sender: Option<mpsc::Sender<RskBlockAndUncles>>,
     initial_block_hash: BlockHash,
     shutdown_flag: ShutdownFlag,
 }
@@ -25,7 +25,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
     pub fn new_with_notifier(
         store: S,
         provider: P,
-        new_block_sender: mpsc::Sender<BlockNotif>,
+        new_block_sender: mpsc::Sender<RskBlockAndUncles>,
         initial_block_hash: BlockHash,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
@@ -226,8 +226,12 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 
     fn notify_block(&self, block: RskBlock, uncles: Vec<RskBlock>) -> Result<()> {
         if let Some(channel) = &self.new_block_sender {
-            if let Err(e) = channel.send(BlockNotif { block, uncles }) {
-                error!("Failed to send best block through channel: {:?}", e);
+            if let Err(e) = channel.send(RskBlockAndUncles::new(block, uncles)?) {
+                // TODO(Jira) this should be monitored and analysed - https://rsklabs.atlassian.net/browse/UB-127
+                error!(
+                    "[notify_block] Failed to send best block through channel: {:?}",
+                    e
+                );
             }
         }
         Ok(())

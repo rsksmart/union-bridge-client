@@ -1,6 +1,6 @@
 use alloy_json_abi::JsonAbi;
 use alloy_primitives::FixedBytes;
-use anyhow::Result;
+use anyhow::{Result, bail};
 use bitcoin::{blockdata::block::Header, consensus::encode::deserialize as btc_deserialize};
 use hex::FromHexError;
 use log::error;
@@ -843,5 +843,52 @@ mod tests {
         let pow = BlockPow::try_from(valid_hash_without_prefix);
 
         assert!(pow.is_ok());
+    }
+}
+
+#[derive(Eq, PartialEq, Serialize, Deserialize, Debug, Clone)]
+pub struct RskBlockAndUncles {
+    block: RskBlock,
+    uncles: Vec<RskBlock>,
+}
+
+impl RskBlockAndUncles {
+    pub fn new(block: RskBlock, uncles: Vec<RskBlock>) -> Result<Self> {
+        if uncles.len() > 2 {
+            bail!(
+                "[notify_block] Block {} ({}) has {} uncles, more than the 2 expected",
+                block.number(),
+                block.hash(),
+                uncles.len()
+            );
+        }
+        Ok(Self { block, uncles })
+    }
+
+    pub fn new_no_uncles(block: RskBlock) -> Self {
+        Self {
+            block,
+            uncles: vec![],
+        }
+    }
+
+    pub fn hash(&self) -> BlockHash {
+        self.block.hash()
+    }
+
+    pub fn parent(&self) -> BlockHash {
+        self.block.parent_hash()
+    }
+
+    pub fn number(&self) -> BlockNumber {
+        self.block.number()
+    }
+
+    pub fn block(&self) -> &RskBlock {
+        &self.block
+    }
+
+    pub fn uncles(&self) -> &[RskBlock] {
+        &self.uncles
     }
 }

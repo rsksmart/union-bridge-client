@@ -167,7 +167,7 @@ fn log_if_superblock(block: &RskBlock) -> Result<(), Box<dyn Error>> {
             .format("%Y-%m-%d %H:%M:%S");
 
         println!(
-            "SuperBlock: {}, pow: {}, threshold: {:064x}, time: {}",
+            "SuperBlock: {}, pow: {:?}, threshold: 0x{:064x}, time: {}",
             block.number, &block.pow, superblock_pow, formatted_time
         );
     }

@@ -2,9 +2,8 @@ use crate::types::RskPegManagerEvents::UnknownEvent;
 use alloy_primitives::{B256, LogData};
 use alloy_sol_types::SolEvent;
 use common::fake_contracts::FakePegManager::{KickoffAdvanceFunds, RequestAdvanceFunds};
-use common::types::{BlockHash, BlockNumber, RskBlock, RskLog};
+use common::types::{BlockHash, BlockNumber, RskLog};
 use log::{error, warn};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use union_contracts::bindings::pegmanager::PegManager::RegisteredPegInRequest;
 
@@ -153,46 +152,6 @@ impl EventDecoder {
     }
 }
 
-#[derive(Eq, PartialEq, Serialize, Deserialize, Debug, Clone)]
-pub struct BlockWithUncles {
-    block: RskBlock,
-    uncles: Vec<RskBlock>,
-}
-
-impl BlockWithUncles {
-    pub fn new(block: RskBlock, uncles: Vec<RskBlock>) -> Self {
-        Self { block, uncles }
-    }
-
-    #[cfg(test)]
-    pub fn new_no_uncles(block: RskBlock) -> Self {
-        Self {
-            block,
-            uncles: vec![],
-        }
-    }
-
-    pub fn hash(&self) -> BlockHash {
-        self.block.hash()
-    }
-
-    pub fn parent(&self) -> BlockHash {
-        self.block.parent_hash()
-    }
-
-    pub fn number(&self) -> BlockNumber {
-        self.block.number()
-    }
-
-    pub fn block(&self) -> &RskBlock {
-        &self.block
-    }
-
-    pub fn uncles(&self) -> &[RskBlock] {
-        &self.uncles
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,8 +160,6 @@ mod tests {
     use common::test_utils::rsk_utils::generate_fake_address;
     use common::types::{BlockHash, LogEvent, LogInfo, RskLog};
     use primitive_types::H256;
-    use std::str::FromStr;
-
     #[test]
     fn test_decode_unknown_event() {
         let decoder = EventDecoder::new();
@@ -310,10 +267,9 @@ mod tests {
             vout: 1,
             value: 1000,
             packetNumber: U256::from(33),
-            rskDestinationAddress: alloy_primitives::Address::from_str(
-                "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
-            )
-            .expect("Invalid address"),
+            rskDestinationAddress: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
+                .parse::<alloy_primitives::Address>()
+                .expect("Invalid address"),
             btcReimbursementPubKey: H256::from_low_u64_be(103991732982)
                 .as_bytes()
                 .try_into()
