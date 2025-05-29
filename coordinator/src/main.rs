@@ -34,8 +34,16 @@ fn main() -> Result<()> {
     let config_path = matches.get_one::<String>(CONFIG_CLI_FLAG);
     let config: Config = Config::load(config_path).expect("Failed to load config");
 
-    let block_broker = BrokerClient::new(config.block_broker_port, config.broker_client_id);
-    let log_broker = BrokerClient::new(config.log_broker_port, config.broker_client_id);
+    let block_broker = BrokerClient::new(
+        config.block_broker.ip,
+        config.block_broker.port,
+        config.broker_client_id,
+    );
+    let log_broker = BrokerClient::new(
+        config.log_broker.ip,
+        config.log_broker.port,
+        config.broker_client_id,
+    );
     let monitor = Monitor::new(log_broker, block_broker, config.get_peg_manager_contract());
 
     let shutdown_flag = ShutdownFlag::init();

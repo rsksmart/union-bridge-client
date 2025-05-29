@@ -1,9 +1,9 @@
 block_broker:
-  ip: "0.0.0.0"
+  ip: "172.25.0.10"
   port: 12345
 
 log_broker:
-  ip: "0.0.0.0"
+  ip: "172.25.0.11"
   port: 56789
 
 broker_client_id: 333

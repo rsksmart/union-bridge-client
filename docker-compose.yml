@@ -1,0 +1,131 @@
+# define base configuration for services
+x-base-service: &base-service
+  build: &base-build
+    context: .
+    dockerfile: Dockerfile
+    ssh:
+      - default=${SSH_AUTH_SOCK}
+  environment:
+    - RUST_BACKTRACE=1
+    - RUST_LOG=debug
+  restart: unless-stopped
+  volumes:
+    - ./config/docker:/app/config/docker # TODO get from env or arg, with default to local
+  # healthcheck base configuration
+  healthcheck: &base-healthcheck
+    interval: 30s
+    timeout: 10s
+    retries: 3
+    start_period: 10s
+
+services:
+  block-indexer:
+    <<: *base-service
+    build:
+      <<: *base-build
+      args:
+        - CRATE=block-indexer
+    container_name: block-indexer
+    volumes:
+      - ./.db/docker/block-indexer:/app/db/block-indexer
+    # expose the broker port
+    ports:
+      - "12345:12345"  # broker server port from the configuration
+    networks:
+      internal:
+        ipv4_address: 172.25.0.10
+    # healthcheck to ensure the service is running properly
+    healthcheck:
+      <<: *base-healthcheck
+      test: [ "CMD", "ps", "aux", "|", "grep", "block-indexer" ]
+
+  log-indexer:
+    <<: *base-service
+    build:
+      <<: *base-build
+      args:
+        - CRATE=log-indexer
+    container_name: log-indexer
+    volumes:
+      - ./.db/docker/log-indexer:/app/db/log-indexer
+    # expose the broker port
+    ports:
+      - "56789:56789"  # broker server port from the configuration
+    networks:
+      internal:
+        ipv4_address: 172.25.0.11
+    # healthcheck to ensure the service is running properly
+    healthcheck:
+      <<: *base-healthcheck
+      test: [ "CMD", "ps", "aux", "|", "grep", "log-indexer" ]
+
+  transaction-dispatcher:
+    <<: *base-service
+    build:
+      <<: *base-build
+      args:
+        - CRATE=transaction-dispatcher
+    container_name: transaction-dispatcher
+    volumes:
+      - ./.db/docker/transaction-dispatcher:/app/db/transaction-dispatcher
+    # expose the http port
+    ports:
+      - "3000:3000"  # http server port from the configuration
+    networks:
+      internal:
+        ipv4_address: 172.25.0.12
+    # healthcheck to ensure the service is running properly
+    healthcheck:
+      <<: *base-healthcheck
+      test: [ "CMD", "ps", "aux", "|", "grep", "transaction-dispatcher" ]
+
+  coordinator:
+    <<: *base-service
+    build:
+      <<: *base-build
+      args:
+        - CRATE=coordinator
+    container_name: coordinator
+    volumes:
+      - ./.db/docker/coordinator:/app/db/coordinator
+    # healthcheck to ensure the service is running properly
+    healthcheck:
+      <<: *base-healthcheck
+      test: [ "CMD", "ps", "aux", "|", "grep", "coordinator" ]
+    networks:
+      internal:
+        ipv4_address: 172.25.0.13
+
+  sc-event-mocking:
+    <<: *base-service
+    build:
+      <<: *base-build
+      args:
+        - CRATE=sc-event-mocking
+    container_name: sc-event-mocking
+    volumes:
+      - ./.db/docker/sc-event-mocking:/app/db/sc-event-mocking
+    # expose the broker port
+    ports:
+      - "2222:2222" # anvil port, hardcoded in code
+    networks:
+      internal:
+        ipv4_address: 172.25.0.14
+    # healthcheck to ensure the service is running properly
+    healthcheck:
+      <<: *base-healthcheck
+      test: [ "CMD", "ps", "aux", "|", "grep", "sc-event-mocking" ]
+
+# define a named volume for persistent data storage
+volumes:
+  db:
+    driver: local
+
+networks:
+  internal:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
+
+# TODO(iago) allow the usage of anvil feature

@@ -2,16 +2,23 @@ use common::config::{CommonConfig, ContractConfig};
 use common::errors::ConfigError;
 use common::types::Address;
 use serde::Deserialize;
+use std::net::IpAddr;
 
 const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 const PEG_MANAGER_CONTRACT_NAME: &str = "PegManager";
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
-    pub log_broker_port: u16,
-    pub block_broker_port: u16,
+    pub log_broker: BrokerConfig,
+    pub block_broker: BrokerConfig,
     pub broker_client_id: u32,
     pub contracts: Vec<ContractConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BrokerConfig {
+    pub ip: IpAddr,
+    pub port: u16,
 }
 
 impl Config {

@@ -76,6 +76,8 @@ impl AlloyProvider {
         let cups = 100;
         let retry_layer = RetryBackoffLayer::new(max_retry, initial_backoff_ms, cups);
 
+        debug!("========={}", url);
+
         // Block on the RpcClient‐builder future
         let client: RpcClient = rt_sync
             .run(RpcClient::builder().layer(retry_layer).ws(ws))
