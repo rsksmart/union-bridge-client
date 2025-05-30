@@ -465,6 +465,23 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 );
             }
         }
+        /*
+        let uncle_ammount = new_block.uncles().len();
+        for i in 0..uncle_ammount{
+            if let Some(uncle) = self
+                .rsk_provider
+                .get_uncle_by_hash_and_index(nephew_hash, i as u64)
+                .context("Fetching uncle block")?
+            {
+                self.store
+                    .save_block(&uncle)
+                    .context("Saving uncle block")?;
+            } else {
+                warn!(
+                    "[block_backward_sync] Possible orphan – nephew {} (#{}) references missing uncle {}",
+                    nephew_hash, nephew_number, new_block.uncles()[i]);
+            }
+        }*/
 
         Ok(uncle_blocks)
     }
