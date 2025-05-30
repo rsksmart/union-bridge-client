@@ -1,11 +1,9 @@
 use anyhow::{Context, Result};
-use common::{
-    contracts::types::PegInAddressInput,
-    msg_broker::{
-        broker::BrokerServerApi,
-        types::{BrokerRequests, BrokerResponses},
-    },
+use common::msg_broker::{
+    broker::BrokerServerApi,
+    types::{BrokerRequests, BrokerResponses},
 };
+use serde_json::json;
 use std::collections::HashSet;
 
 pub struct Executor<BS: BrokerServerApi> {
@@ -31,11 +29,15 @@ impl<BS: BrokerServerApi> Executor<BS> {
                 println!("Status: Unsubscribing consumer {consumer_id}");
                 let removed = self.consumers.remove(&consumer_id);
                 if !removed {
-                    println!("Status: Consumer {consumer_id} was not subscribed to BitVMX messages");
+                    println!(
+                        "Status: Consumer {consumer_id} was not subscribed to BitVMX messages"
+                    );
                 }
             }
             Some((_, consumer_id)) => {
-                println!("Status: Unexpected request type from consumer {consumer_id}, unsubscribing");
+                println!(
+                    "Status: Unexpected request type from consumer {consumer_id}, unsubscribing"
+                );
                 self.consumers.remove(&consumer_id);
             }
             None => {
@@ -52,11 +54,11 @@ impl<BS: BrokerServerApi> Executor<BS> {
         value: u64,
         btc_reimbursement_pub_key: String,
     ) -> Result<()> {
-        let payload = PegInAddressInput {
-            rootstock_deposit_address,
-            value,
-            btc_reimbursement_pub_key,
-        };
+        let payload = json!({
+            "rootstock_deposit_address": rootstock_deposit_address,
+            "value": value,
+            "btc_reimbursement_pub_key": btc_reimbursement_pub_key,
+        });
 
         let event = BrokerResponses::GetTemporaryPegInAddress(payload);
 
@@ -65,7 +67,10 @@ impl<BS: BrokerServerApi> Executor<BS> {
 
     fn notify_consumers(&self, event: BrokerResponses) -> Result<()> {
         for c_id in &self.consumers {
-            println!("Status: Notifying consumer {} about new event {:?}", c_id, event);
+            println!(
+                "Status: Notifying consumer {} about new event {:?}",
+                c_id, event
+            );
 
             self.broker_server
                 .send(&event, *c_id)

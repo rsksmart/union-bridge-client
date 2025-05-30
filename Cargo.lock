@@ -1297,6 +1297,7 @@ dependencies = [
  "clap",
  "common",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1606,7 +1607,6 @@ version = "0.1.0"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-json-abi",
- "alloy-json-rpc",
  "alloy-primitives",
  "alloy-provider",
  "alloy-pubsub",
@@ -1615,7 +1615,6 @@ dependencies = [
  "alloy-sol-types",
  "alloy-transport",
  "anyhow",
- "axum",
  "bitcoin",
  "bitvmx-broker",
  "config",
@@ -1632,7 +1631,6 @@ dependencies = [
  "signal-hook",
  "thiserror 2.0.11",
  "tokio",
- "union-bridge-contracts",
 ]
 
 [[package]]
