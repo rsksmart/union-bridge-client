@@ -61,23 +61,22 @@ impl<'a> MockRskProviderHandler<'a> {
         }
     }
 
-    pub fn set_provider_expect_get_block_by_hash_uncles(&mut self) {
+    pub fn set_provider_expect_get_uncle_by_hash_and_index(&mut self) {
         let generator = self.block_generator.clone();
         if let Some(uncle_block_info_vec) = self.uncle_block_info_vec.clone() {
             for uncle_info in uncle_block_info_vec {
-                let flavor = format!(
-                    "uncle_{}{}",
-                    if uncle_info.reorg { "alt" } else { "" },
-                    uncle_info.id
-                );
-                let expected_block_hash =
+                let flavor = format!("{}", if uncle_info.reorg { "alt" } else { "" },);
+                let expected_nephew_hash =
                     from_hex_to_block_hash(&generator.generate_hash(uncle_info.height, &flavor));
                 self.provider
-                    .expect_get_block_by_hash()
-                    .with(mockall::predicate::eq(expected_block_hash))
+                    .expect_get_uncle_by_hash_and_index()
+                    .with(
+                        mockall::predicate::eq(expected_nephew_hash),
+                        mockall::predicate::eq(uncle_info.index),
+                    )
                     .returning({
                         let generator = generator.clone();
-                        move |_hash| {
+                        move |_hash, _index| {
                             Ok(generator
                                 .generate_block(uncle_info.height, Some(uncle_info.clone())))
                         }
@@ -284,6 +283,67 @@ impl<'a> MockRskProviderHandler<'a> {
             })
             .times(1..);
     }
+
+    // pub fn set_provider_expect_get_uncle_by_hash_and_index(&mut self, simul_reorg_happens_at_height: Option<BlockNumber>) {
+    //     let generator = self.block_generator.clone();
+    //     let uncle_block_info_vec = self.uncle_block_info_vec.as_ref().unwrap();
+    //     for uncle_info in uncle_block_info_vec.iter() {
+
+    //         self.provider
+    //         .expect_get_uncle_by_hash_and_index()
+    //         .with(eq(nephew_hash), eq(uncle_index as u64))
+    //         .returning(move |_, _| Ok(Some(uncle_block.clone())));
+
+    //         if uncle_info.reorg == reorged_block {
+    //             let maybe_uncle_block = generator.generate_block(
+    //                 uncle_info.height,
+    //                 Some(uncle_info.clone()),
+    //             );
+    //             if let Some(uncle_block) = maybe_uncle_block {
+    //                 self.provider
+    //                     .expect_get_uncle_by_hash_and_index()
+    //                     .with(eq(nephew_hash), eq(uncle_index as u64))
+    //                     .returning(move |_, _| Ok(Some(uncle_block.clone())));
+    //             }
+    //         }
+    //     }
+
+    //     use std::collections::HashMap;
+    //     let mut nephew_to_uncles: HashMap<BlockNumber, Vec<UncleBlockInfo>> = HashMap::new();
+    //     for uncle_info in uncle_block_info_vec.iter() {
+    //         let nephew_height = uncle_info.height;
+    //         nephew_to_uncles.entry(nephew_height).or_default().push(uncle_info.clone());
+    //     }
+    //     for (nephew_height, uncles) in nephew_to_uncles {
+    //         for &reorged_block in &[false, true] {
+    //             let nephew_flavor = if reorged_block && simul_reorg_happens_at_height.map_or(false, |h| nephew_height > h) {
+    //                 "alt"
+    //             } else {
+    //                 ""
+    //             };
+    //             let nephew_hash = from_hex_to_block_hash(&generator.generate_hash(nephew_height, nephew_flavor));
+    //             debug!(
+    //                 "[MOCK SETUP] nephew_height: {}, nephew_flavor: '{}', nephew_hash: {:?}, num_uncles: {}",
+    //                 nephew_height, nephew_flavor, nephew_hash, uncles.len()
+    //             );
+    //             for (uncle_index, uncle_info) in uncles.iter().enumerate() {
+    //                 // Only set up expectations for uncle blocks that match the reorg state
+    //                 if uncle_info.reorg == reorged_block {
+    //                     let maybe_uncle_block = generator.generate_block(
+    //                         uncle_info.height,
+    //                         Some(uncle_info.clone()),
+    //                     );
+    //                     if let Some(uncle_block) = maybe_uncle_block {
+    //                         self.provider
+    //                             .expect_get_uncle_by_hash_and_index()
+    //                             .with(eq(nephew_hash), eq(uncle_index as u64))
+    //                             .returning(move |_, _| Ok(Some(uncle_block.clone())));
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
 }
 
 fn provide_block(
