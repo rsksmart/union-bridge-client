@@ -1,10 +1,12 @@
-use crate::event_processor::{DisputedPegoutProcessor, EventProcessor};
+use crate::event_processor::{EventProcessor, PegOutAdvanceFundsProcessor};
 use crate::monitor::MonitorApi;
 use anyhow::{Context, Result};
-use common::constants::coordinator::MONITOR_CHECK_PERIOD;
 use common::shutdown_flag::ShutdownFlag;
+use log::error;
 use std::thread;
 use std::time::Duration;
+
+const CHECK_PERIOD: Duration = Duration::from_secs(1);
 
 pub struct Coordinator<M: MonitorApi> {
     monitor: M,
@@ -17,8 +19,8 @@ impl<M: MonitorApi> Coordinator<M> {
     pub fn new(monitor: M, shutdown_flag: ShutdownFlag) -> Self {
         Self {
             monitor,
-            processors: vec![Box::new(DisputedPegoutProcessor::new())],
-            check_period: MONITOR_CHECK_PERIOD,
+            processors: vec![Box::new(PegOutAdvanceFundsProcessor::new())],
+            check_period: CHECK_PERIOD,
             shutdown_flag,
         }
     }
@@ -26,7 +28,7 @@ impl<M: MonitorApi> Coordinator<M> {
     pub fn new_for_tests(monitor: M, shutdown_flag: ShutdownFlag) -> Self {
         Self {
             monitor,
-            processors: vec![Box::new(DisputedPegoutProcessor::new())],
+            processors: vec![Box::new(PegOutAdvanceFundsProcessor::new())],
             check_period: Duration::from_millis(1),
             shutdown_flag,
         }
@@ -37,48 +39,52 @@ impl<M: MonitorApi> Coordinator<M> {
             .start_event_monitoring()
             .context("Failed to start event monitoring")?;
 
+        self.monitor
+            .start_block_monitoring()
+            .context("Failed to start block monitoring")?;
+
         let result = (|| -> Result<()> {
             loop {
                 if !self.is_running() {
                     break;
                 }
 
+                let mut message_received = false;
+
                 if let Some(event) = self.monitor.try_event().context("Error getting event")? {
                     // each processor decides if the event is relevant
-                    self.processors
-                        .iter_mut()
-                        .try_for_each(|p| p.process_new_event(&event))?;
+                    self.processors.iter_mut().for_each(|p| {
+                        if let Err(e) = p.process_new_event(&event) {
+                            error!("Error processing event {:?}: {:?}", event, e);
+                        }
+                    });
+
+                    // no sleep, try to get new messages asap
+                    message_received = true;
                 }
 
-                // if any processor is waiting for blocks, we need to check for new blocks
-                if self.check_processors_waiting_blocks() {
-                    self.monitor
-                        .start_block_monitoring_if_off()
-                        .context("Failed to start block monitoring")?;
+                if let Some(block) = self.monitor.try_block().context("Error getting block")? {
+                    self.processors.iter_mut().for_each(|p| {
+                        if let Err(e) = p.process_new_block(&block) {
+                            error!("Error processing block {:?}: {:?}", block, e);
+                        }
+                    });
 
-                    if let Some(block) = self.monitor.try_block().context("Error getting block")? {
-                        self.processors
-                            .iter_mut()
-                            .try_for_each(|p| p.process_new_block(&block))?;
-                    }
+                    // no sleep, try to get new messages asap
+                    message_received = true;
                 }
 
-                // if event or block processing made new blocks no longer required, we cancel block monitoring
-                if !self.check_processors_waiting_blocks() {
-                    self.monitor
-                        .cancel_block_monitoring_if_on()
-                        .context("Failed to cancel block monitoring")?;
+                if !message_received {
+                    thread::sleep(self.check_period);
                 }
-
-                thread::sleep(self.check_period);
             }
             Ok(())
         })();
 
-        self.processors.iter().for_each(|p| p.shutdown());
+        self.processors.iter_mut().for_each(|p| p.shutdown());
 
         self.monitor
-            .cancel_block_monitoring_if_on()
+            .cancel_block_monitoring()
             .context("Failed to cancel block monitoring")?;
 
         self.monitor
@@ -86,10 +92,6 @@ impl<M: MonitorApi> Coordinator<M> {
             .context("Failed to cancel event monitoring")?;
 
         result
-    }
-
-    fn check_processors_waiting_blocks(&mut self) -> bool {
-        self.processors.iter().any(|p| p.waiting_blocks())
     }
 
     fn is_running(&self) -> bool {
@@ -101,8 +103,9 @@ impl<M: MonitorApi> Coordinator<M> {
 mod tests {
     use crate::coordinator::Coordinator;
     use crate::monitor::MockMonitorApi;
-    use crate::types::RskPegManagerEvents;
-    use common::fake_contracts::FakePegManager::RequestAdvanceFunds;
+    use crate::types::{KickoffAdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents};
+    use alloy_primitives::U256;
+    use common::fake_contracts::FakePegManager::{KickoffAdvanceFunds, RequestAdvanceFunds};
     use common::shutdown_flag::ShutdownFlag;
     use common::test_utils::rsk_block_generator::{
         get_first_default_rsk_block, get_second_default_rsk_block,
@@ -112,29 +115,48 @@ mod tests {
     use std::thread::{JoinHandle, sleep};
     use std::time::Duration;
 
+    fn create_fake_request_event(peg_out_id: &str) -> RequestAdvanceFunds {
+        RequestAdvanceFunds {
+            peg_out_id: peg_out_id.to_string(),
+            amount: 1000,
+        }
+    }
+
+    fn create_fake_kickoff_event(peg_out_id: &str) -> KickoffAdvanceFunds {
+        KickoffAdvanceFunds {
+            peg_out_id: peg_out_id.to_string(),
+            utxo_id: "utxo123".to_string(),
+            operator_id: "op123".to_string(),
+            required_effort: U256::from(1000),
+            required_num_blocks: 4,
+        }
+    }
+
     #[test]
     fn test_coordinator_run_handles_several_events() {
         let mut mock_monitor = MockMonitorApi::new();
         let block_1 = get_first_default_rsk_block();
         let block_2 = get_second_default_rsk_block();
 
-        let event_1 = RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFunds {
-            peg_out_id: "peg_out_id".to_string().parse().unwrap(),
-            block_num: block_1.number().value(),
-            amount: 1,
+        let event_1 = RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFundsEvent {
+            inner: create_fake_request_event("peg_out_id_1"),
+            block_number: block_1.number(),
+            block_hash: block_1.hash().into(),
         });
 
-        let event_2: RskPegManagerEvents = RskPegManagerEvents::KickoffAdvanceFunds {
-            peg_out_id: "peg_out_id".to_string(),
-            block_num: block_1.number().value(),
-        };
+        let event_2: RskPegManagerEvents =
+            RskPegManagerEvents::KickoffAdvanceFunds(KickoffAdvanceFundsEvent {
+                inner: create_fake_kickoff_event("peg_out_id_1"),
+                block_number: block_2.number(),
+                block_hash: block_2.hash().into(),
+            });
 
         mock_monitor
             .expect_start_event_monitoring()
             .return_once(|| Ok(()));
 
         mock_monitor
-            .expect_start_block_monitoring_if_off()
+            .expect_start_block_monitoring()
             .times(..)
             .returning(|| Ok(()));
 
@@ -144,9 +166,9 @@ mod tests {
             .once();
 
         mock_monitor
-            .expect_cancel_block_monitoring_if_on()
+            .expect_cancel_block_monitoring()
             .return_once(|| Ok(()))
-            .times(1);
+            .once();
 
         expect_try_event(vec![event_1, event_2], &mut mock_monitor);
 
@@ -168,20 +190,20 @@ mod tests {
         let block_1 = get_first_default_rsk_block();
         let block_2 = get_second_default_rsk_block();
 
-        let event_1 = RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFunds {
-            peg_out_id: "peg_out_id".to_string().parse().unwrap(),
-            block_num: block_1.number().value(),
-            amount: 1,
+        let event_1 = RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFundsEvent {
+            inner: create_fake_request_event("peg_out_id_1"),
+            block_number: block_1.number(),
+            block_hash: block_1.hash().into(),
         });
 
-        let event_2: RskPegManagerEvents = RskPegManagerEvents::UnknownEvent {};
+        let event_2 = RskPegManagerEvents::UnknownEvent;
 
         mock_monitor
             .expect_start_event_monitoring()
             .return_once(|| Ok(()));
 
         mock_monitor
-            .expect_start_block_monitoring_if_off()
+            .expect_start_block_monitoring()
             .times(..)
             .returning(|| Ok(()));
 
@@ -191,9 +213,9 @@ mod tests {
             .once();
 
         mock_monitor
-            .expect_cancel_block_monitoring_if_on()
+            .expect_cancel_block_monitoring()
             .return_once(|| Ok(()))
-            .times(1);
+            .once();
 
         expect_try_event(vec![event_1, event_2], &mut mock_monitor);
 
@@ -211,7 +233,7 @@ mod tests {
     fn handle_shutdown(shutdown_flag: ShutdownFlag) -> JoinHandle<()> {
         thread::spawn(move || {
             // give time for logic to proceed
-            sleep(Duration::from_millis(10));
+            sleep(Duration::from_millis(100));
             shutdown_flag.set();
         })
     }

@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, anyhow};
-use common::constants::coordinator::MONITOR_CHECK_PERIOD;
+use common::constants::indexer::NOTIFIER_CHECK_PERIOD;
 use common::msg_broker::broker::BrokerServerApi;
 use common::msg_broker::types::{BrokerRequests, BrokerResponses};
 use common::shutdown_flag::ShutdownFlag;
@@ -27,7 +27,7 @@ impl<BS: BrokerServerApi> Notifier<BS> {
         Self {
             new_block_channel: indexer_receiver,
             msg_broker,
-            check_period: MONITOR_CHECK_PERIOD,
+            check_period: NOTIFIER_CHECK_PERIOD,
             consumers: HashSet::new(),
             shutdown_flag,
         }

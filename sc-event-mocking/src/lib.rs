@@ -1,9 +1,11 @@
 use alloy_eips::BlockNumberOrTag;
 use alloy_primitives::Address;
+use alloy_primitives::U256;
 use alloy_provider::Provider;
 use anyhow::{Result, anyhow};
 use common::fake_contracts::FakePegManager;
 use common::fake_contracts::FakePegManager::FakePegManagerInstance;
+use std::time::SystemTime;
 
 pub struct Executor<P: Provider> {
     provider: P,
@@ -32,11 +34,37 @@ impl<P: Provider> Executor<P> {
         Ok(*contract.address())
     }
 
-    // TODO(iago) change eyre by anyhow
     pub async fn request_advance_funds(&self) -> Result<()> {
         let contract = self.get_contract_instance(self.address);
 
-        // naive way to generate different pegout id
+        // naive way to generate a different pegout id each time
+        let naive_id = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)?
+            .as_secs();
+
+        let pegout_id = format!("pegout_{naive_id}");
+
+        let receipt = contract
+            .requestAdvanceFunds(pegout_id.clone(), 1000)
+            .send()
+            .await?
+            .get_receipt()
+            .await?;
+
+        if receipt.status() {
+            println!(
+                "Transaction succeeded: {:?}, pegout_id: {}",
+                receipt, pegout_id
+            );
+            Ok(())
+        } else {
+            eprintln!("Transaction failed: {:?}", receipt);
+            Err(anyhow!("Transaction failed"))
+        }
+    }
+
+    pub async fn kickoff_advance_funds(&self, pegout_id: String) -> Result<()> {
+        let contract = self.get_contract_instance(self.address);
 
         let bb = self
             .provider
@@ -44,17 +72,32 @@ impl<P: Provider> Executor<P> {
             .await?
             .expect("no best block");
 
-        let pegout_id = format!("pegout_{}", bb.header.number);
+        // TODO: receive from param
+        let required_effort = U256::from(10_000_000_000_000u64);
+
+        let utxo_id = format!("utxo_{}", bb.header.number);
+        let operator_id = format!("operator_{}", bb.header.number);
+
+        let required_num_blocks = 5;
 
         let receipt = contract
-            .requestAdvanceFunds(pegout_id, bb.header.number, 1000)
+            .kickoffAdvanceFunds(
+                pegout_id.clone(),
+                utxo_id,
+                operator_id,
+                required_effort,
+                required_num_blocks,
+            )
             .send()
             .await?
             .get_receipt()
             .await?;
 
         if receipt.status() {
-            println!("Transaction succeeded: {:?}", receipt);
+            println!(
+                "Transaction succeeded: {:?}, pegout_id: {}",
+                receipt, pegout_id
+            );
             Ok(())
         } else {
             eprintln!("Transaction failed: {:?}", receipt);

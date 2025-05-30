@@ -1,9 +1,9 @@
-use crate::types::{RskPegManagerEvents, decode_rsk_log_to_peg_manager_event};
+use crate::types::{EventDecoder, RskPegManagerEvents};
 use anyhow::{Context, Result, bail};
 use common::msg_broker::broker::{BROKER_SERVER_ID, BrokerClientApi, BrokerError};
 use common::msg_broker::types::{BrokerRequests, BrokerResponses};
 use common::types::{Address, RskBlock};
-use log::{info, trace};
+use log::{debug, info, trace};
 
 #[cfg(test)]
 use mockall::automock;
@@ -11,16 +11,17 @@ use mockall::automock;
 #[cfg_attr(test, automock)]
 pub trait MonitorApi {
     fn start_event_monitoring(&mut self) -> Result<()>;
-    fn start_block_monitoring_if_off(&mut self) -> Result<()>;
+    fn start_block_monitoring(&mut self) -> Result<()>;
     fn try_event(&mut self) -> Result<Option<RskPegManagerEvents>>;
     fn try_block(&mut self) -> Result<Option<RskBlock>>;
     fn cancel_event_monitoring(&mut self) -> Result<()>;
-    fn cancel_block_monitoring_if_on(&mut self) -> Result<()>;
+    fn cancel_block_monitoring(&mut self) -> Result<()>;
 }
 
 pub struct Monitor<BC: BrokerClientApi> {
     log_broker: BC,
     block_broker: BC,
+    event_decoder: EventDecoder,
     peg_manager_address: Address,
     block_monitoring_active: bool,
     log_monitoring_active: bool,
@@ -31,8 +32,8 @@ impl<BC: BrokerClientApi> MonitorApi for Monitor<BC> {
         self.start_event_monitoring()
     }
 
-    fn start_block_monitoring_if_off(&mut self) -> Result<()> {
-        self.start_block_monitoring_if_off()
+    fn start_block_monitoring(&mut self) -> Result<()> {
+        self.start_block_monitoring()
     }
 
     fn try_event(&mut self) -> Result<Option<RskPegManagerEvents>> {
@@ -47,8 +48,8 @@ impl<BC: BrokerClientApi> MonitorApi for Monitor<BC> {
         self.cancel_event_monitoring()
     }
 
-    fn cancel_block_monitoring_if_on(&mut self) -> Result<()> {
-        self.cancel_block_monitoring_if_on()
+    fn cancel_block_monitoring(&mut self) -> Result<()> {
+        self.cancel_block_monitoring()
     }
 }
 
@@ -57,6 +58,7 @@ impl<T: BrokerClientApi> Monitor<T> {
         Self {
             log_broker,
             block_broker,
+            event_decoder: EventDecoder::new(),
             peg_manager_address,
             block_monitoring_active: false,
             log_monitoring_active: false,
@@ -71,7 +73,7 @@ impl<T: BrokerClientApi> Monitor<T> {
 
         // clean up a potential remaining connection
         self.request_cancel_event_monitoring()
-            .context("Cleaning up stalled log connection")?;
+            .context("Cleaning up potentially stalled log connection")?;
 
         info!("Starting event monitoring for {}", self.peg_manager_address);
 
@@ -88,11 +90,14 @@ impl<T: BrokerClientApi> Monitor<T> {
         Ok(())
     }
 
-    pub fn start_block_monitoring_if_off(&mut self) -> Result<()> {
+    pub fn start_block_monitoring(&mut self) -> Result<()> {
         if self.block_monitoring_active {
-            trace!("Start Block monitoring requested, but it was already active");
-            return Ok(());
+            bail!("Start Block monitoring requested, but it was already active");
         }
+
+        // clean up a potential remaining connection
+        self.request_cancel_block_monitoring()
+            .context("Cleaning up potentially stalled block connection")?;
 
         info!("Starting Block monitoring");
 
@@ -117,11 +122,11 @@ impl<T: BrokerClientApi> Monitor<T> {
         match self.log_broker.try_recv()? {
             Some(BrokerResponses::Log(log)) => {
                 info!("Received new Log {:?}", log);
-                let event: RskPegManagerEvents = decode_rsk_log_to_peg_manager_event(log);
+                let event: RskPegManagerEvents = self.event_decoder.decode(log);
                 Ok(Some(event))
             }
-            Some(e) => {
-                bail!("Unexpected response type from Log Notifier {:?}", e)
+            Some(br) => {
+                bail!("Unexpected response type from Log Notifier {:?}", br)
             }
             None => {
                 trace!("No messages from Log Notifier");
@@ -135,9 +140,10 @@ impl<T: BrokerClientApi> Monitor<T> {
             bail!("Block monitoring is not active");
         }
 
+        // TODO(Jira) do not simply fail on broker error, do some retries - https://rsklabs.atlassian.net/browse/UB-132
         match self.block_broker.try_recv()? {
             Some(BrokerResponses::Block(b)) => {
-                info!("Received new Block {:?}", b);
+                debug!("Received new Block {:?}", b);
                 Ok(Some(b))
             }
             Some(other) => bail!("Unexpected response type from Block Notifier: {:?}", other),
@@ -162,10 +168,9 @@ impl<T: BrokerClientApi> Monitor<T> {
         Ok(())
     }
 
-    pub fn cancel_block_monitoring_if_on(&mut self) -> Result<()> {
+    pub fn cancel_block_monitoring(&mut self) -> Result<()> {
         if !self.block_monitoring_active {
-            trace!("Cancel Block monitoring requested, but it was not active");
-            return Ok(());
+            bail!("Cancel Block monitoring requested, but it was not active");
         };
 
         info!("Cancelling Block monitoring");
@@ -201,7 +206,6 @@ impl<T: BrokerClientApi> Monitor<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::decode_rsk_log_to_peg_manager_event;
     use anyhow::anyhow;
     use common::msg_broker::broker::{BROKER_SERVER_ID, MockBrokerClientApi};
     use common::msg_broker::types::BrokerRequests;
@@ -265,17 +269,20 @@ mod tests {
     #[test]
     fn test_start_block_monitoring_success() {
         let mut block_broker = MockBrokerClientApi::new();
+        expect_unsubscribe_blocks(&mut block_broker, 1);
         expect_subscribe_blocks(&mut block_broker, 1);
 
         let mut monitor =
             Monitor::new(MockBrokerClientApi::new(), block_broker, get_fake_address());
-        assert!(monitor.start_block_monitoring_if_off().is_ok());
+        assert!(monitor.start_block_monitoring().is_ok());
         assert!(monitor.block_monitoring_active);
     }
 
     #[test]
     fn test_start_block_monitoring_fails_on_broker_error() {
         let mut block_broker = MockBrokerClientApi::new();
+        expect_unsubscribe_blocks(&mut block_broker, 1);
+
         block_broker
             .expect_send()
             .with(eq(BROKER_SERVER_ID), eq(BrokerRequests::SubscribeBlocks))
@@ -283,7 +290,7 @@ mod tests {
 
         let mut monitor =
             Monitor::new(MockBrokerClientApi::new(), block_broker, get_fake_address());
-        let err = monitor.start_block_monitoring_if_off();
+        let err = monitor.start_block_monitoring();
         assert!(err.is_err());
         assert!(
             err.as_ref()
@@ -301,15 +308,18 @@ mod tests {
             get_fake_address(),
         );
         monitor.block_monitoring_active = true;
-        let err = monitor.start_block_monitoring_if_off();
-        assert!(err.is_ok());
+        let err = monitor.start_block_monitoring();
+        assert!(err.is_err());
     }
 
     #[test]
     fn test_try_event_returns_some() {
         let log = FakeLogGenerator::new()
             .generate_log("Transfer(address,address,uint256", get_fake_address());
-        let expected_event: RskPegManagerEvents = decode_rsk_log_to_peg_manager_event(log.clone());
+
+        let event_decoder = EventDecoder::new();
+
+        let expected_event: RskPegManagerEvents = event_decoder.decode(log.clone());
 
         let mut log_broker = MockBrokerClientApi::new();
         log_broker
@@ -386,7 +396,7 @@ mod tests {
             Monitor::new(MockBrokerClientApi::new(), block_broker, get_fake_address());
         monitor.block_monitoring_active = true;
 
-        assert!(monitor.cancel_block_monitoring_if_on().is_ok());
+        assert!(monitor.cancel_block_monitoring().is_ok());
         assert!(!monitor.block_monitoring_active);
     }
 

@@ -554,13 +554,18 @@ fn build_valid_consecutive_difficulty(first_block: &Block) -> U256 {
 fn calculate_superblock_effort(difficulty: U256) -> String {
     format!(
         "{:064x}",
-        U256::MAX / difficulty / U256::from(SUPERBLOCK_TIMES_DIFFICULTY)
+        U256::MAX
+            .checked_div(difficulty)
+            .and_then(|n| n.checked_div(U256::from(SUPERBLOCK_TIMES_DIFFICULTY)))
+            .expect("0 division on calculate_superblock_effort")
     )
 }
 
 fn calculate_effort_from_pow(pow: String) -> U256 {
     let pow_dec = U256::from_str_radix(&pow, 16).unwrap();
-    U256::MAX / pow_dec
+    U256::MAX
+        .checked_div(pow_dec)
+        .expect("0 division on calculate_effort_from_pow")
 }
 
 #[derive(Default)]

@@ -50,9 +50,9 @@ fn main() {
 }
 
 fn fail(msg: &str) -> ! {
-    eprintln!("❌ Invalid commit message:\n\n\"{msg}\"\n");
-    eprintln!("Expected format: type(scope?): description");
-    eprintln!("Allowed types: feat, fix, chore, docs, refactor, test, style, perf, build");
-    eprintln!("Example: fix(wallet): handle gas estimation issue");
+    println!("❌ Invalid commit message:\n\n\"{msg}\"\n");
+    println!("Expected format: type(scope?): description");
+    println!("Allowed types: feat, fix, chore, docs, refactor, test, style, perf, build");
+    println!("Example: fix(wallet): handle gas estimation issue");
     exit(1);
 }
