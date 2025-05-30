@@ -1,4 +1,5 @@
 **/.env
+**/.envrc
 **/app.log*
 **/check_fork_args.bin
 **/stark-proof.bin
@@ -8,4 +9,5 @@
 .idea
 config/local
 **/logs/*
-.db
+**/.db
+**/.union-bridge-contracts

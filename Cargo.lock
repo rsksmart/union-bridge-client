@@ -4804,8 +4804,8 @@ dependencies = [
  "anyhow",
  "clap",
  "common",
- "eyre",
  "tokio",
+ "union-bridge-contracts",
 ]
 
 [[package]]

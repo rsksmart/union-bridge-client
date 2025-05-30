@@ -1,42 +1,87 @@
 use alloy_eips::BlockNumberOrTag;
 use alloy_primitives::{Address, U256};
 use alloy_provider::Provider;
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use common::anvil_mocks::get_anvil_block_pow;
 use common::fake_contracts::FakePegManager;
 use common::fake_contracts::FakePegManager::FakePegManagerInstance;
+use std::env;
+use std::io::{BufRead, BufReader};
+use std::process::{Command, Stdio};
 use std::time::SystemTime;
+use union_contracts::bindings::pegmanager::PegManager::PegManagerInstance;
 
 pub struct Executor<P: Provider> {
     provider: P,
-    address: Address,
+    real_peg_manager: PegManagerInstance<(), P>, // TODO use it to call methods from CLI if we want
+    fake_peg_manager: FakePegManagerInstance<(), P>,
 }
 
-impl<P: Provider> Executor<P> {
-    pub async fn new(provider: P) -> Result<Self> {
-        let address = Self::deploy(&provider)
+impl<P: Provider + Clone> Executor<P> {
+    pub async fn new(provider: P, provider_url: &str) -> Result<Self> {
+        // deploy FakePegManager
+        let fake_peg_manager = FakePegManager::deploy(provider.clone())
             .await
-            .expect("Cannot deploy contract");
-        Ok(Self { provider, address })
+            .context("Cannot deploy FakePegManager")?;
+
+        let real_peg_manager = Self::deploy_real_peg_manager(&provider, provider_url)?;
+
+        Ok(Self {
+            provider,
+            real_peg_manager,
+            fake_peg_manager,
+        })
     }
 
-    async fn deploy(provider: &P) -> Result<Address> {
-        let contract = FakePegManager::deploy(provider).await?;
-        let bb = provider
-            .get_block_by_number(BlockNumberOrTag::Latest)
-            .await?
-            .expect("no best block");
-        println!(
-            "Deployed contract @ address {} and block {}",
-            contract.address(),
-            bb.header.hash.to_string()
-        );
-        Ok(*contract.address())
+    // TODO(iago) juntarme con Pedro para ver si podemos mejorar el proceso de deploy (o crear un script Rust custom...)
+    fn deploy_real_peg_manager(provider: &P, rpc_url: &str) -> Result<PegManagerInstance<(), P>> {
+        println!("Deploying real PegManager on {}...", rpc_url);
+
+        let union_contracts_deploy_script = env::var("UNION_CONTRACTS_DEPLOY_SCRIPT")
+            .context("UNION_CONTRACTS_DEPLOY_SCRIPT not set")?;
+
+        let mut child = Command::new("bash")
+            .arg(format!("{}", union_contracts_deploy_script))
+            .env("RPC_URL", rpc_url)
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("Failed to start script");
+
+        let stdout = child.stdout.take().expect("Failed to capture stdout");
+        let reader = BufReader::new(stdout);
+
+        let mut opt_addr = None;
+        for line_res in reader.lines() {
+            let line = line_res.expect("Failed to read line from script output");
+            println!("{}", line);
+            if opt_addr.is_none() {
+                opt_addr = Self::try_get_peg_manager_address(line);
+            }
+        }
+
+        child.wait().expect("Failed to wait on child");
+
+        let address = match opt_addr {
+            Some(addr) => {
+                println!("Real PegManager deployed at address: {}", addr);
+                addr
+            }
+            None => {
+                bail!("PegManager address not found in output");
+            }
+        };
+
+        let real_peg_manager_address = address
+            .parse::<Address>()
+            .context("Parsing logged address to Address failed")?;
+
+        Ok(PegManagerInstance::new(
+            real_peg_manager_address,
+            provider.clone(),
+        ))
     }
 
     pub async fn request_advance_funds(&self) -> Result<()> {
-        let contract = self.get_contract_instance(self.address);
-
         // naive way to generate a different pegout id each time
         let naive_id = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)?
@@ -44,8 +89,9 @@ impl<P: Provider> Executor<P> {
 
         let pegout_id = format!("pegout_{naive_id}");
 
-        let receipt = contract
-            .requestAdvanceFunds(pegout_id.clone(), 1000)
+        let receipt = self
+            .fake_peg_manager
+            .requestAdvanceFunds(pegout_id.to_string(), 1000)
             .send()
             .await?
             .get_receipt()
@@ -64,8 +110,6 @@ impl<P: Provider> Executor<P> {
     }
 
     pub async fn kickoff_advance_funds(&self, pegout_id: String) -> Result<()> {
-        let contract = self.get_contract_instance(self.address);
-
         let bb = self
             .provider
             .get_block_by_number(BlockNumberOrTag::Latest)
@@ -87,7 +131,8 @@ impl<P: Provider> Executor<P> {
         let utxo_id = format!("utxo_{}", bb.header.number);
         let operator_id = format!("operator_{}", bb.header.number);
 
-        let receipt = contract
+        let receipt = self
+            .fake_peg_manager
             .kickoffAdvanceFunds(
                 pegout_id.clone(),
                 utxo_id,
@@ -112,7 +157,16 @@ impl<P: Provider> Executor<P> {
         }
     }
 
-    fn get_contract_instance(&self, address: Address) -> FakePegManagerInstance<(), &P> {
-        FakePegManagerInstance::new(address, &self.provider)
+    fn try_get_peg_manager_address(line: String) -> Option<String> {
+        if line.contains("PegManager.sol  address") {
+            // Expect format: "...PegManager.sol  address:  0x..."
+            let parts: Vec<&str> = line.split("address:").collect();
+            if parts.len() == 2 {
+                let address = parts[1].trim().to_string();
+                println!("Real PegManager deployed at address: {}", address);
+                return Some(address);
+            }
+        }
+        None
     }
 }

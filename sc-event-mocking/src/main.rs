@@ -30,9 +30,11 @@ enum Menu {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let anvil_port = 2222u16;
+
     let anvil = Anvil::new()
-        .block_time(5) // block every 5 seconds
-        .port(2222u16)
+        .block_time(1) // block every 1 seconds
+        .port(anvil_port)
         .spawn();
 
     let key = anvil.keys().get(0).expect("No key found").clone();
@@ -48,10 +50,9 @@ async fn main() -> Result<()> {
     let mut lines = BufReader::new(io::stdin()).lines();
 
     println!("Connected to Anvil @ {}", anvil.endpoint_url());
-    let executor = Executor::new(anvil_provider).await?;
+    let executor = Executor::new(anvil_provider, anvil.ws_endpoint_url().as_str()).await?;
 
-    Menu::command().print_help()?;
-    println!("Ctrl+C or `exit` to quit.");
+    print_help()?;
 
     loop {
         println!();
@@ -82,7 +83,7 @@ async fn main() -> Result<()> {
             },
             Err(err) => {
                 eprintln!("Invalid command: {err}");
-                Menu::command().print_help()?;
+                print_help()?;
             }
         }
     }
@@ -90,5 +91,15 @@ async fn main() -> Result<()> {
     println!();
     println!("Goodbye!");
 
+    Ok(())
+}
+
+fn print_help() -> Result<()> {
+    Menu::command().print_help()?;
+    println!();
+    println!("Ctrl+C or `exit` to quit the service (and anvil)");
+    println!(
+        "If attached in Docker, use [Ctrl + P, then Ctrl + Q] to detach without stopping the container"
+    );
     Ok(())
 }
