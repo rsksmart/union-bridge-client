@@ -44,7 +44,7 @@ impl PegOutAdvanceFundsProcessor {
         }
     }
 
-    fn kickoff_advance_funds(&mut self, event2: KickoffAdvanceFundsEvent) -> () {
+    fn kickoff_advance_funds(&mut self, event2: KickoffAdvanceFundsEvent) {
         if self.known_blocks.is_empty() {
             // this happens when a kickoff is received before any block
             // it should not happen in real life because RequestAdvanceFunds must be received many blocks before KickoffAdvanceFunds
