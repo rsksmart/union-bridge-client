@@ -6,4 +6,8 @@ log_broker:
   ip: "0.0.0.0"
   port: 56789
 
+bitvmx_broker:
+  ip: "0.0.0.0"
+  port: 9094
+
 broker_client_id: 333

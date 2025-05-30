@@ -27,7 +27,7 @@ enum Commands {
 }
 
 fn main() -> Result<()> {
-    let broker_server = BrokerServer::new(9000);
+    let broker_server = BrokerServer::new(9094);
 
     let mut executor = Executor::new(broker_server);
 
