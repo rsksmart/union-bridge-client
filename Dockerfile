@@ -72,6 +72,4 @@ RUN mkdir -p /app/db/${CRATE}
 ENV RUST_BACKTRACE=1
 ENV RUST_LOG=debug
 
-# run the crate
-ENV CRATE=${CRATE}
-ENTRYPOINT ["/bin/sh", "-c", "/app/$CRATE --config-path /app/config/docker"]
+# ENTRYPOINT in docker-compose.yml

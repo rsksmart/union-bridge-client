@@ -1,3 +1,5 @@
+# TODO(iago) check other potential unifications, like the healthcheck test, volumes, etc.
+
 # define base configuration for services
 x-base-service: &base-service
   build: &base-build
@@ -10,7 +12,8 @@ x-base-service: &base-service
     - RUST_LOG=debug
   restart: unless-stopped
   volumes:
-    - ./config/docker:/app/config/docker # TODO get from env or arg, with default to local
+    - ./config/docker:/app/config/docker:ro
+    - ./log4rs.yaml:/app/log4rs.yaml:ro
   # healthcheck base configuration
   healthcheck: &base-healthcheck
     interval: 30s
@@ -38,6 +41,8 @@ services:
     healthcheck:
       <<: *base-healthcheck
       test: [ "CMD", "ps", "aux", "|", "grep", "block-indexer" ]
+    entrypoint: ["/app/block-indexer", "--config-path", "/app/config/docker"]
+
 
   log-indexer:
     <<: *base-service
@@ -58,6 +63,7 @@ services:
     healthcheck:
       <<: *base-healthcheck
       test: [ "CMD", "ps", "aux", "|", "grep", "log-indexer" ]
+    entrypoint: ["/app/log-indexer", "--config-path", "/app/config/docker"]
 
   transaction-dispatcher:
     <<: *base-service
@@ -68,16 +74,24 @@ services:
     container_name: transaction-dispatcher
     volumes:
       - ./.db/docker/transaction-dispatcher:/app/db/transaction-dispatcher
+      - "${HOST_KEY_STORE_PATH}:/keystore/key.json:ro" # mount local keystore into container
     # expose the http port
     ports:
       - "3000:3000"  # http server port from the configuration
     networks:
       internal:
         ipv4_address: 172.25.0.12
+    # env vars for keystore access
+    environment:
+      - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
     # healthcheck to ensure the service is running properly
     healthcheck:
       <<: *base-healthcheck
       test: [ "CMD", "ps", "aux", "|", "grep", "transaction-dispatcher" ]
+    entrypoint:
+      - /bin/sh
+      - -c
+      - exec /app/transaction-dispatcher --config-path /app/config/docker
 
   coordinator:
     <<: *base-service
@@ -95,26 +109,28 @@ services:
     networks:
       internal:
         ipv4_address: 172.25.0.13
+    entrypoint: ["/app/coordinator", "--config-path", "/app/config/docker"]
 
-  sc-event-mocking:
-    <<: *base-service
-    build:
-      <<: *base-build
-      args:
-        - CRATE=sc-event-mocking
-    container_name: sc-event-mocking
-    volumes:
-      - ./.db/docker/sc-event-mocking:/app/db/sc-event-mocking
-    # expose the broker port
-    ports:
-      - "2222:2222" # anvil port, hardcoded in code
-    networks:
-      internal:
-        ipv4_address: 172.25.0.14
-    # healthcheck to ensure the service is running properly
-    healthcheck:
-      <<: *base-healthcheck
-      test: [ "CMD", "ps", "aux", "|", "grep", "sc-event-mocking" ]
+#  sc-event-mocking:
+#    <<: *base-service
+#    build:
+#      <<: *base-build
+#      args:
+#        - CRATE=sc-event-mocking
+#    container_name: sc-event-mocking
+#    volumes:
+#      - ./.db/docker/sc-event-mocking:/app/db/sc-event-mocking
+#    # expose the broker port
+#    ports:
+#      - "2222:2222" # anvil port, hardcoded in code
+#    networks:
+#      internal:
+#        ipv4_address: 172.25.0.14
+#    # healthcheck to ensure the service is running properly
+#    healthcheck:
+#      <<: *base-healthcheck
+#      test: [ "CMD", "ps", "aux", "|", "grep", "sc-event-mocking" ]
+#    entrypoint: ["/app/sc-event-mocking", "--config-path", "/app/config/docker"]
 
 # define a named volume for persistent data storage
 volumes:

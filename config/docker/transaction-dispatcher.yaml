@@ -1,5 +1,5 @@
 key_store:
-  path: "/Users/illuque/.union_bridge/keystore/ab98c3c8-a772-4c44-b3a7-99864663b8cb"
+  path: "/keystore/key.json" # should match the volumes in docker-compose.yml
 transaction:
   gas_bumps_t1: 3
 server:
@@ -7,4 +7,4 @@ server:
 
 provider:
   rootstock:
-    url: "ws://127.0.0.1:8545"
+    url: "ws://rskj-01.testnet.ub.iovlabs.net:4445/websocket"
