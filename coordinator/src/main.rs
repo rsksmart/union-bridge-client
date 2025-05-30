@@ -36,7 +36,13 @@ fn main() -> Result<()> {
 
     let block_broker = BrokerClient::new(config.block_broker_port, config.broker_client_id);
     let log_broker = BrokerClient::new(config.log_broker_port, config.broker_client_id);
-    let monitor = Monitor::new(log_broker, block_broker, config.get_peg_manager_contract());
+    let bitvmx_broker = BrokerClient::new(config.bitvmx_broker_port, config.broker_client_id);
+    let monitor = Monitor::new(
+        log_broker,
+        block_broker,
+        bitvmx_broker,
+        config.get_peg_manager_contract(),
+    );
 
     let shutdown_flag = ShutdownFlag::init();
 
