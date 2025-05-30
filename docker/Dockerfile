@@ -1,3 +1,5 @@
+# --- BUILDER STAGE ---
+
 # Accepts the crate name and optional features to build
 ARG CRATE
 ARG FEATURES=""
@@ -26,7 +28,7 @@ RUN mkdir -p -m 0700 ~/.ssh && \
 # copy only dependency files for caching
 COPY Cargo.toml Cargo.lock ./
 
-# copy workspace:
+# copy full workspace:
 # - assumes correct usage of .dockerignore to exclude unnecessary files)
 # - this invalidates cache only when source changes
 COPY . .
@@ -36,10 +38,13 @@ RUN mkdir -p .cargo && \
     echo '[net]\ngit-fetch-with-cli = true' > .cargo/config.toml
 RUN --mount=type=ssh,id=default cargo fetch
 
+# build the entire workspace and reuse, to reduce build time
 # build with SSH mounting to be able to clone private repository dependencies
 # optionally builds with --features if FEATURES is non-empty
 RUN --mount=type=ssh,id=default \
-    cargo build --release -p ${CRATE} ${FEATURES:+--features ${FEATURES}}
+    cargo build --release ${FEATURES:+--features ${FEATURES}}
+
+# --- RUNTIME STAGE ---
 
 # create a smaller runtime image
 FROM debian:bookworm-slim
