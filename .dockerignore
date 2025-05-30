@@ -15,8 +15,8 @@ examples/
 .vscode/
 
 # env
-.env
-.env.sample
+docker/.env
+docker/.env.sample
 
 # Other
 *.rs.bk
