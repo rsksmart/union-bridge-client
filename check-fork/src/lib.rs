@@ -1,4 +1,4 @@
-use primitive_types::U256;
+use primitive_types::{H256, U256};
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -8,14 +8,14 @@ pub const SUPERBLOCK_TIMES_DIFFICULTY: u8 = 20;
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Block {
     pub number: u64,
-    pub hash: String,
-    pub parent: String,
+    pub hash: H256,
+    pub parent: H256,
     pub difficulty: U256,
     pub timestamp: u64,
     pub bridge_event: Option<BridgeEvent>,
     pub uncles: Vec<Block>,
     // alternatively we can receive `bitcoinMergedMiningHeader`, but we would need to include bitcoin crate here, etc.
-    pub pow: String,
+    pub pow: H256,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -260,9 +260,11 @@ fn validate_difficulty_in_bounds(block: &Block, prev_block: &Block) -> Result<()
 }
 
 fn calculate_block_effort(block: &Block) -> Result<U256, &'static str> {
-    let pow_dec = U256::from_str_radix(&block.pow, 16).map_err(|_| "Failed to parse PoW to dec")?;
+    let pow = U256::from_big_endian(block.pow.as_bytes());
+    // compute the effort by inverting the pow
+    // U256::MAX, the "difficulty 1" target, represents the easiest possible target
     U256::MAX
-        .checked_div(pow_dec)
+        .checked_div(pow)
         .ok_or("0 division on calculate_block_effort")
 }
 

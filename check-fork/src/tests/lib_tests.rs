@@ -1,5 +1,5 @@
 use crate::{Block, BridgeEvent, CheckForkArgs, SUPERBLOCK_TIMES_DIFFICULTY, check_fork};
-use primitive_types::U256;
+use primitive_types::{H256, U256};
 
 const DEFAULT_DIFFICULTY: u128 = 5904436352267687415636;
 const DEFAULT_TIMESTAMP: u64 = 1000;
@@ -195,7 +195,7 @@ fn fails_when_consecutive_blocks_are_not_parent_child() {
     let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
 
     let mut second_block = create_child_block(&first_block);
-    second_block.parent = "fake".to_string();
+    second_block.parent = H256::from_low_u64_be(1);
 
     let block_list = vec![first_block, second_block];
 
@@ -401,7 +401,7 @@ fn fails_when_uncle_parent_is_different_from_trunk() {
     let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
 
     let mut second_block_uncle = create_uncle(&first_block);
-    second_block_uncle.parent = "fake".to_string();
+    second_block_uncle.parent = H256::from_low_u64_be(1);
 
     let mut second_block = create_child_block(&first_block);
     second_block.uncles = vec![second_block_uncle];
@@ -513,8 +513,8 @@ fn create_base_block(number: u64, bridge_event: bool) -> Block {
     let difficulty = U256::from(DEFAULT_DIFFICULTY);
     Block {
         number,
-        hash: format!("hash_{}", number),
-        parent: format!("hash_{}", number - 1),
+        hash: H256::from_low_u64_be(number),
+        parent: H256::from_low_u64_be(number - 1),
         difficulty,
         timestamp: DEFAULT_TIMESTAMP,
         bridge_event: bridge_event.then(|| BridgeEvent {
@@ -551,18 +551,18 @@ fn build_valid_consecutive_difficulty(first_block: &Block) -> U256 {
     first_block.difficulty + first_block.difficulty / 400 // limit threshold
 }
 
-fn calculate_superblock_effort(difficulty: U256) -> String {
-    format!(
-        "{:064x}",
+fn calculate_superblock_effort(difficulty: U256) -> H256 {
+    H256::from(
         U256::MAX
             .checked_div(difficulty)
             .and_then(|n| n.checked_div(U256::from(SUPERBLOCK_TIMES_DIFFICULTY)))
             .expect("0 division on calculate_superblock_effort")
+            .to_big_endian(),
     )
 }
 
-fn calculate_effort_from_pow(pow: String) -> U256 {
-    let pow_dec = U256::from_str_radix(&pow, 16).unwrap();
+fn calculate_effort_from_pow(pow: H256) -> U256 {
+    let pow_dec = U256::from_big_endian(pow.as_bytes());
     U256::MAX
         .checked_div(pow_dec)
         .expect("0 division on calculate_effort_from_pow")

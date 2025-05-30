@@ -160,8 +160,6 @@ mod tests {
     use common::test_utils::rsk_utils::generate_fake_address;
     use common::types::{BlockHash, LogEvent, LogInfo, RskLog};
     use primitive_types::H256;
-    use std::str::FromStr;
-
     #[test]
     fn test_decode_unknown_event() {
         let decoder = EventDecoder::new();
@@ -269,10 +267,9 @@ mod tests {
             vout: 1,
             value: 1000,
             packetNumber: U256::from(33),
-            rskDestinationAddress: alloy_primitives::Address::from_str(
-                "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
-            )
-            .expect("Invalid address"),
+            rskDestinationAddress: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
+                .parse::<alloy_primitives::Address>()
+                .expect("Invalid address"),
             btcReimbursementPubKey: H256::from_low_u64_be(103991732982)
                 .as_bytes()
                 .try_into()

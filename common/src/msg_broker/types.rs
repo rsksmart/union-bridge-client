@@ -1,4 +1,4 @@
-use crate::types::{Address, BlockNumber, RskBlock, RskLog};
+use crate::types::{Address, BlockNumber, RskBlockAndUncles, RskLog};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
@@ -14,6 +14,6 @@ pub enum BrokerRequests {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum BrokerResponses {
-    Block(RskBlock),
+    Block(RskBlockAndUncles),
     Log(RskLog),
 }

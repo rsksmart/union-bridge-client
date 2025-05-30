@@ -2,7 +2,7 @@ use crate::types::{EventDecoder, RskPegManagerEvents};
 use anyhow::{Context, Result, bail};
 use common::msg_broker::broker::{BROKER_SERVER_ID, BrokerClientApi, BrokerError};
 use common::msg_broker::types::{BrokerRequests, BrokerResponses};
-use common::types::{Address, RskBlock};
+use common::types::{Address, RskBlockAndUncles};
 use log::{debug, info, trace};
 
 #[cfg(test)]
@@ -13,7 +13,7 @@ pub trait MonitorApi {
     fn start_event_monitoring(&mut self) -> Result<()>;
     fn start_block_monitoring(&mut self) -> Result<()>;
     fn try_event(&mut self) -> Result<Option<RskPegManagerEvents>>;
-    fn try_block(&mut self) -> Result<Option<RskBlock>>;
+    fn try_block(&mut self) -> Result<Option<RskBlockAndUncles>>;
     fn cancel_event_monitoring(&mut self) -> Result<()>;
     fn cancel_block_monitoring(&mut self) -> Result<()>;
 }
@@ -40,7 +40,7 @@ impl<BC: BrokerClientApi> MonitorApi for Monitor<BC> {
         self.try_event()
     }
 
-    fn try_block(&mut self) -> Result<Option<RskBlock>> {
+    fn try_block(&mut self) -> Result<Option<RskBlockAndUncles>> {
         self.try_block()
     }
 
@@ -135,16 +135,16 @@ impl<T: BrokerClientApi> Monitor<T> {
         }
     }
 
-    pub fn try_block(&mut self) -> Result<Option<RskBlock>> {
+    pub fn try_block(&mut self) -> Result<Option<RskBlockAndUncles>> {
         if !self.block_monitoring_active {
             bail!("Block monitoring is not active");
         }
 
         // TODO(Jira) do not simply fail on broker error, do some retries - https://rsklabs.atlassian.net/browse/UB-132
         match self.block_broker.try_recv()? {
-            Some(BrokerResponses::Block(b)) => {
-                debug!("Received new Block {:?}", b);
-                Ok(Some(b))
+            Some(BrokerResponses::Block(bau)) => {
+                debug!("Received new Block {:?}", bau);
+                Ok(Some(bau))
             }
             Some(other) => bail!("Unexpected response type from Block Notifier: {:?}", other),
             None => {
@@ -209,7 +209,7 @@ mod tests {
     use anyhow::anyhow;
     use common::msg_broker::broker::{BROKER_SERVER_ID, MockBrokerClientApi};
     use common::msg_broker::types::BrokerRequests;
-    use common::test_utils::rsk_block_generator::get_first_default_rsk_block;
+    use common::test_utils::rsk_block_generator::create_block_and_uncles;
     use common::test_utils::rsk_log_generator::FakeLogGenerator;
     use mockall::predicate::*;
 
@@ -347,11 +347,18 @@ mod tests {
 
     #[test]
     fn test_try_block_returns_some() {
-        let block = get_first_default_rsk_block();
         let mut block_broker = MockBrokerClientApi::new();
+
+        let (expected_block_1, expected_uncle_1, _) = create_block_and_uncles();
+
         block_broker.expect_try_recv().return_once({
-            let block = block.clone();
-            move || Ok(Some(BrokerResponses::Block(block.clone())))
+            let block = expected_block_1.clone();
+            let uncle = expected_uncle_1.clone();
+            move || {
+                Ok(Some(BrokerResponses::Block(
+                    RskBlockAndUncles::new(block, vec![uncle]).unwrap(),
+                )))
+            }
         });
 
         let mut monitor =
@@ -359,7 +366,10 @@ mod tests {
         monitor.block_monitoring_active = true;
 
         let result = monitor.try_block().expect("Failed to receive block");
-        assert_eq!(result, Some(block));
+        assert_eq!(
+            result,
+            Some(RskBlockAndUncles::new(expected_block_1, vec![expected_uncle_1]).unwrap())
+        );
     }
 
     #[test]

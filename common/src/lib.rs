@@ -1,4 +1,5 @@
 pub mod alloy_rsk_provider;
+pub mod anvil_mocks;
 pub mod cache;
 pub mod config;
 pub mod constants;
