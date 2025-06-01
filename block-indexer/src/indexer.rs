@@ -466,16 +466,26 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
             }
         }
         /*
-          let uncle_ammount = new_block.uncles().len();
-        for i in 0..uncle_ammount {
+                  let uncle_amount = new_block.uncles().len();
+        for i in 0..uncle_amount {
             if let Some(uncle) = self
                 .rsk_provider
                 .get_uncle_by_hash_and_index(nephew_hash, i as u64)
                 .context("Fetching uncle block")?
             {
-                self.store
-                    .save_block(&uncle)
-                    .context("Saving uncle block")?;
+                if !new_block.uncles().contains(&uncle.hash()) {
+                    warn!(
+                        "[block_backward_sync] Received uncle {} is not in nephew {} (#{}) uncles list: {:?}",
+                        uncle.hash(),
+                        nephew_hash,
+                        nephew_number,
+                        new_block.uncles()
+                    );
+                } else {
+                    self.store
+                        .save_block(&uncle)
+                        .context("Saving uncle block")?;
+                }
             } else {
                 warn!(
                     "[block_backward_sync] Possible orphan – nephew {} (#{}) references missing uncle {}",
@@ -484,7 +494,8 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                     new_block.uncles()[i]
                 );
             }
-        }*/
+
+          */
 
         Ok(uncle_blocks)
     }
@@ -505,7 +516,7 @@ mod tests {
     use common::{
         rsk_provider::MockRskProvider,
         test_utils::rsk_block_generator::{
-            get_first_default_rsk_block, get_second_default_rsk_block,
+            get_first_default_rsk_block, get_second_default_rsk_block, get_third_default_rsk_block,
         },
     };
     use mockall::predicate::eq;
@@ -613,6 +624,43 @@ mod tests {
         };
 
         let res = idx.process_uncle_blocks(&block_with_missing);
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn warns_but_ok_if_uncle_mismatch_listed_hashes() {
+        let base = get_third_default_rsk_block();
+        let uncle_hash = get_second_default_rsk_block().hash();
+
+        let mut provider = MockRskProvider::new();
+        provider
+            .expect_get_uncle_by_hash_and_index()
+            .with(eq(base.hash()), eq(0))
+            .times(1)
+            .returning(move |_, _| Ok(Some(get_first_default_rsk_block())));
+
+        let mut store: MockBlockStore = MockBlockStore::new();
+        store.expect_save_block().never();
+
+        let block_with_uncle = RskBlock::new(
+            base.number(),
+            base.hash(),
+            base.parent_hash(),
+            base.timestamp(),
+            base.difficulty(),
+            base.total_difficulty(),
+            base.pow(),
+            vec![uncle_hash],
+        );
+
+        let idx = BlockIndexer {
+            rsk_provider: provider,
+            new_block_sender: None,
+            store,
+            initial_block_hash: block_with_uncle.parent_hash(),
+            shutdown_flag: ShutdownFlag::init(),
+        };
+        let res = idx.get_and_save_uncle_blocks(&block_with_uncle);
         assert!(res.is_ok());
     }
 
