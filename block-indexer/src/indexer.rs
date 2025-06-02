@@ -448,25 +448,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 
         let mut uncle_blocks = Vec::new();
 
-        for uncle_hash in new_block.uncles() {
-            if let Some(uncle) = self
-                .rsk_provider
-                .get_block_by_hash(uncle_hash)
-                .context("Fetching uncle block")?
-            {
-                self.store
-                    .save_block(&uncle)
-                    .context("Saving uncle block")?;
-                uncle_blocks.push(uncle);
-            } else {
-                warn!(
-                    "[block_backward_sync] Possible orphan – nephew {} (#{}) references missing uncle {}",
-                    nephew_hash, nephew_number, uncle_hash
-                );
-            }
-        }
-        /*
-                  let uncle_amount = new_block.uncles().len();
+        let uncle_amount = new_block.uncles().len();
         for i in 0..uncle_amount {
             if let Some(uncle) = self
                 .rsk_provider
@@ -485,6 +467,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                     self.store
                         .save_block(&uncle)
                         .context("Saving uncle block")?;
+                    uncle_blocks.push(uncle);
                 }
             } else {
                 warn!(
@@ -494,9 +477,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                     new_block.uncles()[i]
                 );
             }
-
-          */
-
+        }
         Ok(uncle_blocks)
     }
 }
@@ -660,7 +641,7 @@ mod tests {
             initial_block_hash: block_with_uncle.parent_hash(),
             shutdown_flag: ShutdownFlag::init(),
         };
-        let res = idx.get_and_save_uncle_blocks(&block_with_uncle);
+        let res = idx.process_uncle_blocks(&block_with_uncle);
         assert!(res.is_ok());
     }
 
