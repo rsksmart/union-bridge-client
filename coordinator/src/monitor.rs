@@ -252,7 +252,7 @@ impl<T: BrokerClientApi> Monitor<T> {
         }
 
         if !self.request_cancel_bitvmx_monitoring()? {
-            bail!("Broker could not deliver UnsubscribeLogs")
+            bail!("Broker could not deliver UnsubscribeBitVMX")
         }
 
         self.bitvmx_monitoring_active = false;
