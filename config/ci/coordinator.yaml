@@ -1,3 +1,4 @@
 log_broker_port: 56789
 block_broker_port: 12345
+bitvmx_broker_port: 9094
 broker_client_id: 333
