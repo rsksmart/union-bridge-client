@@ -1290,6 +1290,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitvmxclient-mocking"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "common",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
