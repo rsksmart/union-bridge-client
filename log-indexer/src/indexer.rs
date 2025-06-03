@@ -124,11 +124,8 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
 }
 
 impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
+    #[cfg(not(feature = "anvil"))]
     fn recover_logs(&self, addrs: &Vec<Address>) -> Result<BlockNumber> {
-        if cfg!(feature = "anvil") {
-            return Ok(BlockNumber::from(self.initial_block_number));
-        }
-
         let checkpoint = self.store.get_sync_checkpoint()?;
         let mut start = match checkpoint {
             Some(log) => {
@@ -217,6 +214,11 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         );
 
         Ok(end)
+    }
+
+    #[cfg(feature = "anvil")]
+    fn recover_logs(&self, addrs: &Vec<Address>) -> Result<BlockNumber> {
+        return Ok(BlockNumber::from(self.initial_block_number));
     }
 
     fn save_logs_and_checkpoint(&self, logs: &[RskLog]) -> Result<()> {

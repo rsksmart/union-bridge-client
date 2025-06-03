@@ -29,8 +29,6 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         initial_block_hash: BlockHash,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
-        Self::ensure_initial_block_exists(&provider, initial_block_hash);
-
         Self {
             store,
             rsk_provider: provider,
@@ -46,8 +44,6 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         initial_block_hash: BlockHash,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
-        Self::ensure_initial_block_exists(&provider, initial_block_hash);
-
         Self {
             store,
             rsk_provider: provider,
@@ -57,38 +53,40 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         }
     }
 
-    fn ensure_initial_block_exists(provider: &P, initial_block_hash: BlockHash) {
+    #[cfg(not(feature = "anvil"))]
+    fn get_initial_block(&self, provider: &P) -> RskBlock {
         let opt_block = provider
-            .get_block_by_hash(initial_block_hash)
+            .get_block_by_hash(self.initial_block_hash)
             .expect(&format!(
                 "Precondition failed: error fetching initial block {:?}",
-                initial_block_hash
+                self.initial_block_hash
             ));
 
         opt_block.unwrap_or_else(|| {
             panic!(
                 "Precondition failed: initial block {:?} not found",
-                initial_block_hash
+                self.initial_block_hash
             )
-        });
+        })
+    }
+
+    #[cfg(feature = "anvil")]
+    fn get_initial_block(&self, provider: &P) -> RskBlock {
+        provider
+            .get_best_block()
+            .expect("Precondition failed: error fetching best block on anvil")
     }
 
     fn is_running(&self) -> bool {
         !self.shutdown_flag.is_on()
     }
 
-    fn init_db_if_required(&self) -> Result<()> {
+    fn init_db_if_required(&self, initial_block_node: RskBlock) -> Result<()> {
         let best_block: Option<RskBlock> =
             self.store.get_best_block().context("Initialising DB")?;
         if best_block.is_some() {
             return Ok(());
         }
-
-        let initial_block_node = self
-            .rsk_provider
-            .get_block_by_hash(self.initial_block_hash)
-            .context("Initialising DB")?
-            .context("Initial block hash not found on provider while initialising DB")?;
 
         info!(
             "[initialize_db_if_required] New instance: initializing DB with {} ({})",
@@ -474,7 +472,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 
 impl<P: RskProvider, S: BlockStore> RskIndexer<P, S> for BlockIndexer<P, S> {
     fn run(&self) -> Result<()> {
-        self.init_db_if_required()?;
+        self.init_db_if_required(self.get_initial_block(&self.rsk_provider))?;
         self.startup_backward_sync()?;
         self.start_block_subscription()
     }
@@ -612,11 +610,13 @@ mod tests {
             .returning(|_| Ok(None));
 
         // When we call the constructor, it should panic on the missing hash
-        let _idx = BlockIndexer::new(
+        let idx = BlockIndexer::new(
             MockBlockStore::new(),
             provider,
             missing_hash,
             ShutdownFlag::init(),
         );
+
+        idx.run().expect("Should panic, not regular error");
     }
 }
