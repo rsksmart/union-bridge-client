@@ -1,5 +1,8 @@
 # Build artifacts
 **/target/
+**.cargo/
+
+#logs
 **/logs/
 
 # Examples crate
@@ -15,8 +18,9 @@ examples/
 .vscode/
 
 # env
-docker/.env
-docker/.env.sample
+**.env
+**.env.sample
+.envrc
 
 # Other
 *.rs.bk

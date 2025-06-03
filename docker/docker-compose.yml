@@ -31,7 +31,8 @@ services:
       <<: *base-build
       args:
         - CRATE=block-indexer
-        - FEATURES=${FEATURES}
+      cache_from:
+        - builder-union-client:latest # build separately
     container_name: block-indexer
     volumes:
       - ../config/docker/common.yaml:/app/config/common.yaml:ro
@@ -47,6 +48,8 @@ services:
       <<: *base-healthcheck
       test: [ "CMD", "ps", "aux", "|", "grep", "block-indexer" ]
     entrypoint: [ "/app/block-indexer", "--config-path", "/app/config" ]
+    depends_on:
+      - sc-event-mocking
 
   log-indexer:
     <<: *base-service
@@ -54,6 +57,8 @@ services:
       <<: *base-build
       args:
         - CRATE=log-indexer
+      cache_from:
+        - builder-union-client:latest # build separately
     container_name: log-indexer
     volumes:
       - ../config/docker/common.yaml:/app/config/common.yaml:ro
@@ -69,6 +74,8 @@ services:
       <<: *base-healthcheck
       test: [ "CMD", "ps", "aux", "|", "grep", "log-indexer" ]
     entrypoint: [ "/app/log-indexer", "--config-path", "/app/config" ]
+    depends_on:
+      - sc-event-mocking
 
   # TODO(iago) try to generate a key with keymanager on build of this service container
   transaction-dispatcher:
@@ -77,6 +84,8 @@ services:
       <<: *base-build
       args:
         - CRATE=transaction-dispatcher
+      cache_from:
+        - builder-union-client:latest # build separately
     container_name: transaction-dispatcher
     volumes:
       - ../config/docker/common.yaml:/app/config/common.yaml:ro
@@ -94,6 +103,8 @@ services:
       <<: *base-healthcheck
       test: [ "CMD", "ps", "aux", "|", "grep", "transaction-dispatcher" ]
     entrypoint: [ "/app/transaction-dispatcher", "--config-path", "/app/config" ]
+    depends_on:
+      - sc-event-mocking
 
   coordinator:
     <<: *base-service
@@ -101,6 +112,8 @@ services:
       <<: *base-build
       args:
         - CRATE=coordinator
+      cache_from:
+        - builder-union-client:latest # build separately
     container_name: coordinator
     volumes:
       - ../config/docker/common.yaml:/app/config/common.yaml:ro
@@ -113,6 +126,9 @@ services:
       <<: *base-healthcheck
       test: [ "CMD", "ps", "aux", "|", "grep", "coordinator" ]
     entrypoint: [ "/app/coordinator", "--config-path", "/app/config" ]
+    depends_on:
+      - log-indexer
+      - block-indexer
 
   sc-event-mocking:
     <<: *base-service
@@ -120,7 +136,9 @@ services:
       <<: *base-build
       args:
         - CRATE=sc-event-mocking
-        - UNION_CONTRACTS_TAG=v0.0.1-alpha.1
+        - UNION_CONTRACTS_TAG=${UNION_CONTRACTS_TAG}
+      cache_from:
+        - builder-union-client:latest # build separately
     stdin_open: true   # for CLI
     tty: true          # for CLI
     container_name: sc-event-mocking
@@ -134,7 +152,7 @@ services:
     healthcheck:
       <<: *base-healthcheck
       test: [ "CMD", "ps", "aux", "|", "grep", "sc-event-mocking" ]
-    entrypoint: [ "/app/sc-event-mocking", "--config-path", "/app/config" ]
+    entrypoint: [ "/app/sc-event-mocking" ]
     # entrypoint: [ "/bin/sh", "-c", "sleep infinity" ]
 
 networks:
@@ -143,5 +161,3 @@ networks:
     ipam:
       config:
         - subnet: 172.25.0.0/16
-
-# TODO(iago) allow the usage of anvil feature

@@ -4,7 +4,3 @@ transaction:
   gas_bumps_t1: 3
 server:
   url: "0.0.0.0:3000"
-
-provider:
-  rootstock:
-    url: "ws://rskj-01.testnet.ub.iovlabs.net:4445/websocket"

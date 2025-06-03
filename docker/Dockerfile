@@ -2,18 +2,16 @@
 ARG CRATE
 # docker-compose.yml arg to specify the tag of union-contracts repository to use - if defined, contracts will be deployed for that service
 ARG UNION_CONTRACTS_TAG
-# docker-compose.yml arg to specify the Rust features to use (ie. anvil)
-ARG FEATURES=""
-# --build-arg to build just the specified crate on build stage (by default we build all for caching)
-ARG JUST_CRATE="false"
+# --build-arg to specify the Rust features to use (ie. anvil)
+ARG FEATURES
+# --build-arg to specify just one crate to build in the builder stage
+ARG JUST_CRATE
 
-# --- BUILDER STAGE ---
+# --- BUILDER STAGE 1: build the deps ---
 
 FROM rust:1.86-slim-bookworm AS builder
-
-ARG CRATE
+ARG JUST_CRATE=""
 ARG FEATURES=""
-ARG JUST_CRATE="false"
 
 WORKDIR /app
 
@@ -33,26 +31,31 @@ RUN apt-get update && apt-get install -y \
 RUN mkdir -p -m 0700 ~/.ssh && \
     ssh-keyscan github.com >> ~/.ssh/known_hosts
 
-# copy only dependency files for caching
+# copy only dependency files for better caching
 COPY Cargo.toml Cargo.lock ./
 
-# copy full workspace:
-# - assumes correct usage of .dockerignore to exclude unnecessary files)
-# - this invalidates cache only when source changes
-COPY . .
-
-# build and cache cargo dependencies only
-RUN mkdir -p .cargo && \
-    echo '[net]\ngit-fetch-with-cli = true' > .cargo/config.toml
+# TODO(iago) create crates folder and copy it instead
+# copy workspace members:
+COPY qa-tools qa-tools
+COPY common common
+COPY block-indexer block-indexer
+COPY log-indexer log-indexer
+COPY transaction-dispatcher transaction-dispatcher
+COPY key-manager key-manager
+COPY check-fork check-fork
+COPY coordinator coordinator
+COPY sc-event-mocking sc-event-mocking
 
 # SSH mount for private repos
-RUN --mount=type=ssh,id=default cargo fetch
+RUN --mount=type=ssh,id=default mkdir -p .cargo && \
+    echo '[net]\ngit-fetch-with-cli = true' > .cargo/config.toml && \
+    cargo fetch --locked
 
 # two build modes:
 # 1) build the entire workspace and reuse among containers, to reduce build time
 # 2) build just one crate for speed
 # optionally builds with --features if provided
-RUN --mount=type=ssh,id=default cargo build --release ${CRATE:+-p $CRATE} ${FEATURES:+--features $FEATURES};
+RUN --mount=type=ssh,id=default cargo build --release ${JUST_CRATE:+-p $JUST_CRATE} ${FEATURES:+--features $FEATURES};
 
 # --- RUNTIME STAGE ---
 
