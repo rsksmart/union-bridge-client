@@ -3,6 +3,7 @@
 #####################################################################################################################################
 
 # TODO(iago) add depends on (similar to https://github.com/FairgateLabs/union-bridge-e2e-test/blob/main/docker-compose.yaml)
+# TODO(iago) revisar si son necesarias todas las env var
 
 # define base configuration for services
 x-base-service: &base-service
@@ -122,6 +123,8 @@ services:
     stdin_open: true   # for CLI
     tty: true          # for CLI
     container_name: sc-event-mocking
+    ports:
+      - "2222:2222"  # anvil port, hardcoded in crate
     networks:
       internal:
         ipv4_address: 172.25.0.14

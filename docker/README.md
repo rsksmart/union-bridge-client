@@ -7,7 +7,7 @@ docker compose build
 
 To build just one crate contaier, run:
 ```bash
-docker compose build --build-arg JUST_CRATE=<crate-name>
+docker compose build <crate-name> --build-arg JUST_CRATE=true
 ```
 
 # Run

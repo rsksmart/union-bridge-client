@@ -1,7 +1,7 @@
 ARG CRATE
 ARG UNION_CONTRACTS_TAG
 ARG FEATURES=""
-ARG JUST_CRATE=""
+ARG JUST_CRATE="false"
 
 # --- BUILDER STAGE ---
 
@@ -9,7 +9,7 @@ FROM rust:1.86-slim-bookworm AS builder
 
 ARG CRATE
 ARG FEATURES=""
-ARG JUST_CRATE=""
+ARG JUST_CRATE="false"
 
 WORKDIR /app
 
@@ -44,18 +44,17 @@ RUN mkdir -p .cargo && \
 # SSH mount for private repos
 RUN --mount=type=ssh,id=default cargo fetch
 
-# build the entire workspace and reuse among containers, to reduce build time
+# two build modes:
+# 1) build the entire workspace and reuse among containers, to reduce build time
+# 2) build just one crate for speed
 # optionally builds with --features if provided
 RUN --mount=type=ssh,id=default bash -c '\
-  if [ -z "$JUST_CRATE" ]; then \
+  if [ "$JUST_CRATE" = "true" ]; then \
+    echo "Building only $CRATE"; \
+    cargo build --release -p "$CRATE" '"${FEATURES:+--features $FEATURES}"'; \
+  else \
+    echo "Building entire workspace"; \
     cargo build --release '"${FEATURES:+--features $FEATURES}"'; \
-  fi'
-
-# build just one crate for speed
-# optionally builds with --features if provided
-RUN --mount=type=ssh,id=default bash -c '\
-  if [ -n "$JUST_CRATE" ]; then \
-    cargo build --release -p "$JUST_CRATE" '"${FEATURES:+--features $FEATURES}"'; \
   fi'
 
 # --- RUNTIME STAGE ---

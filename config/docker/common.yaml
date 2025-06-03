@@ -10,7 +10,7 @@ indexer:
 
 provider:
   rootstock:
-    url: "ws://rskj-01.testnet.ub.iovlabs.net:4445/websocket"
+    url: "ws://172.25.0.14:2222" # This should match the service and the port exposed by sc-event-mocking in docker-compose
 
 contracts:
   - name: "TestContractDyn"

@@ -35,6 +35,8 @@ async fn main() -> Result<()> {
     let anvil = Anvil::new()
         .block_time(1) // block every 1 seconds
         .port(anvil_port)
+        .arg("--host")
+        .arg("0.0.0.0") // for Docker networking compatibility
         .spawn();
 
     let key = anvil.keys().get(0).expect("No key found").clone();
