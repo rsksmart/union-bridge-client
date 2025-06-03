@@ -1,6 +1,10 @@
+# docker-compose.yml arg to specify the crate to build and run
 ARG CRATE
+# docker-compose.yml arg to specify the tag of union-contracts repository to use - if defined, contracts will be deployed for that service
 ARG UNION_CONTRACTS_TAG
+# docker-compose.yml arg to specify the Rust features to use (ie. anvil)
 ARG FEATURES=""
+# --build-arg to build just the specified crate on build stage (by default we build all for caching)
 ARG JUST_CRATE="false"
 
 # --- BUILDER STAGE ---
@@ -48,14 +52,7 @@ RUN --mount=type=ssh,id=default cargo fetch
 # 1) build the entire workspace and reuse among containers, to reduce build time
 # 2) build just one crate for speed
 # optionally builds with --features if provided
-RUN --mount=type=ssh,id=default bash -c '\
-  if [ "$JUST_CRATE" = "true" ]; then \
-    echo "Building only $CRATE"; \
-    cargo build --release -p "$CRATE" '"${FEATURES:+--features $FEATURES}"'; \
-  else \
-    echo "Building entire workspace"; \
-    cargo build --release '"${FEATURES:+--features $FEATURES}"'; \
-  fi'
+RUN --mount=type=ssh,id=default cargo build --release ${CRATE:+-p $CRATE} ${FEATURES:+--features $FEATURES};
 
 # --- RUNTIME STAGE ---
 

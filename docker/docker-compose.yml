@@ -31,6 +31,7 @@ services:
       <<: *base-build
       args:
         - CRATE=block-indexer
+        - FEATURES=${FEATURES}
     container_name: block-indexer
     volumes:
       - ../config/docker/common.yaml:/app/config/common.yaml:ro
