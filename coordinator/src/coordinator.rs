@@ -1,10 +1,13 @@
-use crate::event_processor::{DisputedPegoutProcessor, EventProcessor};
-use crate::monitor::MonitorApi;
-use anyhow::{Context, Result};
-use common::constants::coordinator::MONITOR_CHECK_PERIOD;
-use common::shutdown_flag::ShutdownFlag;
-use std::thread;
-use std::time::Duration;
+use crate::{
+    event_processor::{DisputedPegoutProcessor, EventProcessor},
+    monitor::MonitorApi,
+};
+use anyhow::{Context, Result, bail};
+use common::{constants::coordinator::MONITOR_CHECK_PERIOD, shutdown_flag::ShutdownFlag};
+use log::info;
+use reqwest::blocking::Client;
+use serde_json::Value;
+use std::{thread, time::Duration};
 
 pub struct Coordinator<M: MonitorApi> {
     monitor: M,
@@ -37,10 +40,28 @@ impl<M: MonitorApi> Coordinator<M> {
             .start_event_monitoring()
             .context("Failed to start event monitoring")?;
 
+        self.monitor
+            .start_bitvmx_monitoring()
+            .context("Failed to start BitVMX event monitoring")?;
+
         let result = (|| -> Result<()> {
             loop {
                 if !self.is_running() {
                     break;
+                }
+
+                // TODO: Once BitVMX API types are ready update to match according to type
+                if let Some(event) = self
+                    .monitor
+                    .try_bitvmx_event()
+                    .context("Error getting BitVMX event")?
+                {
+                    // happy path assume always JSON value represents a PegInAddressInput
+                    let response = self.proxy_peg_in_address_request(event)?;
+                    info!(
+                        "Successfully proxied pegin address request. Response:\n{}",
+                        serde_json::to_string_pretty(&response)?
+                    );
                 }
 
                 if let Some(event) = self.monitor.try_event().context("Error getting event")? {
@@ -78,6 +99,10 @@ impl<M: MonitorApi> Coordinator<M> {
         self.processors.iter().for_each(|p| p.shutdown());
 
         self.monitor
+            .cancel_bitvmx_monitoring()
+            .context("Failed to cancel BitVMX event monitoring")?;
+
+        self.monitor
             .cancel_block_monitoring_if_on()
             .context("Failed to cancel block monitoring")?;
 
@@ -95,26 +120,48 @@ impl<M: MonitorApi> Coordinator<M> {
     fn is_running(&self) -> bool {
         !self.shutdown_flag.is_on()
     }
+
+    fn proxy_peg_in_address_request(&self, json_value: Value) -> Result<Value> {
+        let client = Client::new();
+        let res = client
+            .post("http://0.0.0.0:3000/pegin-address") // TODO: Remove http client
+            .json(&json_value)
+            .send()
+            .context("Failed to send request to /pegin-address")?;
+
+        if res.status().is_success() {
+            let result: Value = res.json().context("Failed to parse response as JSON")?;
+            Ok(result)
+        } else {
+            let status = res.status();
+            let text = res.text().unwrap_or_else(|_| "<no body>".to_string());
+            bail!("Request failed: {status} - {text}");
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::coordinator::Coordinator;
-    use crate::monitor::MockMonitorApi;
-    use crate::types::RskPegManagerEvents;
-    use common::fake_contracts::FakePegManager::RequestAdvanceFunds;
-    use common::shutdown_flag::ShutdownFlag;
-    use common::test_utils::rsk_block_generator::{
-        get_first_default_rsk_block, get_second_default_rsk_block,
+    use crate::{coordinator::Coordinator, monitor::MockMonitorApi, types::RskPegManagerEvents};
+    use common::{
+        fake_contracts::FakePegManager::RequestAdvanceFunds,
+        shutdown_flag::ShutdownFlag,
+        test_utils::rsk_block_generator::{
+            get_first_default_rsk_block, get_second_default_rsk_block,
+        },
+        types::RskBlock,
     };
-    use common::types::RskBlock;
+    use serde_json::json;
     use std::thread;
-    use std::thread::{JoinHandle, sleep};
-    use std::time::Duration;
+    use std::{
+        thread::{JoinHandle, sleep},
+        time::Duration,
+    };
 
     #[test]
     fn test_coordinator_run_handles_several_events() {
         let mut mock_monitor = MockMonitorApi::new();
+
         let block_1 = get_first_default_rsk_block();
         let block_2 = get_second_default_rsk_block();
 
@@ -123,14 +170,19 @@ mod tests {
             block_num: block_1.number().value(),
             amount: 1,
         });
-
         let event_2: RskPegManagerEvents = RskPegManagerEvents::KickoffAdvanceFunds {
             peg_out_id: "peg_out_id".to_string(),
             block_num: block_1.number().value(),
         };
 
+        let bitvmx_event = json!("GetTemporaryPegInAddress");
+
         mock_monitor
             .expect_start_event_monitoring()
+            .return_once(|| Ok(()));
+
+        mock_monitor
+            .expect_start_bitvmx_monitoring()
             .return_once(|| Ok(()));
 
         mock_monitor
@@ -151,6 +203,10 @@ mod tests {
         expect_try_event(vec![event_1, event_2], &mut mock_monitor);
 
         expect_try_block(vec![block_1, block_2], &mut mock_monitor);
+
+        mock_monitor
+            .expect_try_bitvmx_event()
+            .returning(move || Ok(Some(bitvmx_event.clone())));
 
         let shutdown_flag = ShutdownFlag::init();
         handle_shutdown(shutdown_flag.clone());
