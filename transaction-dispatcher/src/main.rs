@@ -46,6 +46,9 @@ async fn main() -> Result<()> {
     let key_store_path = Path::new(&config.key_store.path);
     let key_store_password = std::env::var("KEY_STORE_PASSWORD")
         .context("KEY_STORE_PASSWORD environment variable not found")?;
+
+    info!("Getting signer from key at {}", key_store_path.display());
+
     let signer = KeyManager::get_signer(key_store_path, key_store_password)?;
     let address = signer.address().to_string();
     let wallet = EthereumWallet::from(signer);

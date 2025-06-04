@@ -36,7 +36,7 @@ impl<P: Provider + Clone> Executor<P> {
         })
     }
 
-    // TODO(iago) juntarme con Pedro para ver si podemos mejorar el proceso de deploy (o crear un script Rust custom...)
+    // TODO check with Pedro if we can improve the deployment via Rust (alloy) directly, not via sh script
     fn deploy_real_peg_manager(provider: &P, rpc_url: &str) -> Result<PegManagerInstance<(), P>> {
         println!("Deploying real PegManager on {}...", rpc_url);
 

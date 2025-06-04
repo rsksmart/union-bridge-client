@@ -173,3 +173,6 @@ rusty-hook init
 ```
 
 The file [rusty-hook.toml](rusty-hook.toml) will be used for hook configuration.
+
+# Docker
+Check the [docker/README.md](docker/README.md) for more information on how to build and run the monitor using Docker.

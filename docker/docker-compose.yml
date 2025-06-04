@@ -2,8 +2,6 @@
 # DISCLAIMER: This docker-compose file is intended for development and testing purposes only, not for production use. ###############
 #####################################################################################################################################
 
-# TODO(iago) revisar si son necesarias todas las env var
-
 # define base configuration for services
 x-base-service: &base-service
   build: &base-build
@@ -71,7 +69,6 @@ services:
     depends_on:
       - sc-event-mocking
 
-  # TODO(iago) try to generate a key with keymanager on build of this service container
   transaction-dispatcher:
     <<: *base-service
     build:
@@ -83,7 +80,6 @@ services:
       - ../config/docker/common.yaml:/app/config/common.yaml:ro
       - ../config/docker/transaction-dispatcher.yaml:/app/config/transaction-dispatcher.yaml:ro
       - ./log4rs.yaml:/app/log4rs.yaml:ro
-      - "${HOST_KEY_STORE_PATH}:/keystore/key.json:ro" # mount local keystore into container
     ports:
       - "3000:3000"  # http server port from the configuration
     networks:

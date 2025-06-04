@@ -56,13 +56,13 @@ RUN --mount=type=ssh,id=default mkdir -p .cargo && \
 # 2) build just one crate for speed
 # optionally builds with --features if provided
 RUN --mount=type=ssh,id=default cargo build --release${JUST_CRATE:+ -p $JUST_CRATE}${FEATURES:+ --features $FEATURES};
+# build key-manager always (even if $JUST_CRATE provided), as it might be used by other services
+RUN --mount=type=ssh,id=default cargo build --release -p key-manager;
 
 # --- RUNTIME STAGE ---
 
 FROM debian:bookworm-slim AS runtime
 ARG CRATE
-ARG UNION_CONTRACTS_TAG
-LABEL contracts_tag=${UNION_CONTRACTS_TAG}
 
 WORKDIR /app
 
@@ -73,16 +73,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # copy the crate built binary
 COPY --from=builder /app/target/release/${CRATE} /app/${CRATE}
+COPY --from=builder /app/target/release/key-manager /app/key-manager
 
 # create directories for data
 RUN mkdir -p /app/db/${CRATE}
 
 # if deploying contracts (checked within the script): clone, build and deploy them
-COPY docker/dockerfile-contracts-setup.sh /app/contracts-setup.sh
 ENV FOUNDRY_VERSION=1.1.0
-RUN chmod +x /app/contracts-setup.sh
-RUN --mount=type=ssh,id=default /app/contracts-setup.sh
+ARG UNION_CONTRACTS_TAG
+COPY docker/dockerfile-contracts-setup.sh /app/contracts-setup.sh
+RUN --mount=type=ssh,id=default chmod +x /app/contracts-setup.sh && /app/contracts-setup.sh
 ENV PATH="/opt/foundry/bin:$PATH"
+
+ENV KEY_STORE_PASSWORD="test"
+COPY docker/dockerfile-key-setup.sh /app/dockerfile-key-setup.sh
+RUN if [ "$CRATE" = "transaction-dispatcher" ]; then \
+    chmod +x /app/dockerfile-key-setup.sh && \
+    /app/dockerfile-key-setup.sh; \
+    fi
 
 # set environment variables
 ENV RUST_BACKTRACE=1
