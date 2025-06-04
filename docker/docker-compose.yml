@@ -37,7 +37,7 @@ services:
     volumes:
       - ../config/docker/common.yaml:/app/config/common.yaml:ro
       - ../config/docker/block-indexer.yaml:/app/config/block-indexer.yaml:ro
-      - ../log4rs.yaml:/app/log4rs.yaml:ro
+      - ./log4rs.yaml:/app/log4rs.yaml:ro
       - ../.db/docker/block-indexer:/app/db/block-indexer
     ports:
       - "12345:12345"  # broker server port from the configuration
@@ -47,7 +47,7 @@ services:
     healthcheck:
       <<: *base-healthcheck
       test: [ "CMD", "ps", "aux", "|", "grep", "block-indexer" ]
-    entrypoint: [ "/app/block-indexer", "--config-path", "/app/config" ]
+    entrypoint: [ "/app/block-indexer", "--config-path", "/app/config"]
     depends_on:
       - sc-event-mocking
 
@@ -63,7 +63,7 @@ services:
     volumes:
       - ../config/docker/common.yaml:/app/config/common.yaml:ro
       - ../config/docker/log-indexer.yaml:/app/config/log-indexer.yaml:ro
-      - ../log4rs.yaml:/app/log4rs.yaml:ro
+      - ./log4rs.yaml:/app/log4rs.yaml:ro
       - ../.db/docker/log-indexer:/app/db/log-indexer
     ports:
       - "56789:56789"  # broker server port from the configuration
@@ -73,7 +73,7 @@ services:
     healthcheck:
       <<: *base-healthcheck
       test: [ "CMD", "ps", "aux", "|", "grep", "log-indexer" ]
-    entrypoint: [ "/app/log-indexer", "--config-path", "/app/config" ]
+    entrypoint: [ "/app/log-indexer", "--config-path", "/app/config"]
     depends_on:
       - sc-event-mocking
 
@@ -90,7 +90,7 @@ services:
     volumes:
       - ../config/docker/common.yaml:/app/config/common.yaml:ro
       - ../config/docker/transaction-dispatcher.yaml:/app/config/transaction-dispatcher.yaml:ro
-      - ../log4rs.yaml:/app/log4rs.yaml:ro
+      - ./log4rs.yaml:/app/log4rs.yaml:ro
       - "${HOST_KEY_STORE_PATH}:/keystore/key.json:ro" # mount local keystore into container
     ports:
       - "3000:3000"  # http server port from the configuration
@@ -102,7 +102,7 @@ services:
     healthcheck:
       <<: *base-healthcheck
       test: [ "CMD", "ps", "aux", "|", "grep", "transaction-dispatcher" ]
-    entrypoint: [ "/app/transaction-dispatcher", "--config-path", "/app/config" ]
+    entrypoint: [ "/app/transaction-dispatcher", "--config-path", "/app/config"]
     depends_on:
       - sc-event-mocking
 
@@ -118,14 +118,14 @@ services:
     volumes:
       - ../config/docker/common.yaml:/app/config/common.yaml:ro
       - ../config/docker/coordinator.yaml:/app/config/coordinator.yaml:ro
-      - ../log4rs.yaml:/app/log4rs.yaml:ro
+      - ./log4rs.yaml:/app/log4rs.yaml:ro
     networks:
       internal:
         ipv4_address: 172.25.0.13
     healthcheck:
       <<: *base-healthcheck
       test: [ "CMD", "ps", "aux", "|", "grep", "coordinator" ]
-    entrypoint: [ "/app/coordinator", "--config-path", "/app/config" ]
+    entrypoint: [ "/app/coordinator", "--config-path", "/app/config"]
     depends_on:
       - log-indexer
       - block-indexer
