@@ -17,6 +17,7 @@ union-contracts = { workspace = true }
 primitive-types = {workspace = true}
 hex = "0.4.3"
 check-fork = { path = "../check-fork" }
+sc-event-mocking = { path = "../sc-event-mocking" }
 
 [features]
 anvil = []

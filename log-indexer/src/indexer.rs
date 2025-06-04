@@ -16,7 +16,9 @@ pub struct LogIndexer<P: RskProvider, S: LogStore> {
     rsk_provider: P,
     new_log_sender: Option<mpsc::Sender<RskLog>>,
     initial_block_number: BlockNumber,
+    #[cfg_attr(feature = "anvil", allow(dead_code))]
     sync_batch_size: usize,
+    #[cfg_attr(feature = "anvil", allow(dead_code))]
     sync_finality_depth: usize,
     should_validate_logs: bool,
     managed_contracts: HashMap<Address, ContractInfo>,
@@ -231,10 +233,11 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
     }
 
     #[cfg(feature = "anvil")]
-    fn recover_logs(&self, addrs: &Vec<Address>) -> Result<BlockNumber> {
+    fn recover_logs(&self, _addrs: &Vec<Address>) -> Result<BlockNumber> {
         return Ok(BlockNumber::from(self.initial_block_number));
     }
 
+    #[cfg_attr(feature = "anvil", allow(dead_code))]
     fn save_logs_and_checkpoint(&self, logs: &[RskLog]) -> Result<()> {
         if logs.is_empty() {
             return Ok(());

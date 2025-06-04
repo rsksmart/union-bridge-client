@@ -1,6 +1,6 @@
 use alloy_json_abi::JsonAbi;
 use alloy_primitives::FixedBytes;
-use anyhow::{Result, bail};
+use anyhow::Result;
 use bitcoin::{blockdata::block::Header, consensus::encode::deserialize as btc_deserialize};
 use hex::FromHexError;
 use log::error;
@@ -854,14 +854,6 @@ pub struct RskBlockAndUncles {
 
 impl RskBlockAndUncles {
     pub fn new(block: RskBlock, uncles: Vec<RskBlock>) -> Result<Self> {
-        if uncles.len() > 2 {
-            bail!(
-                "[notify_block] Block {} ({}) has {} uncles, more than the 2 expected",
-                block.number(),
-                block.hash(),
-                uncles.len()
-            );
-        }
         Ok(Self { block, uncles })
     }
 

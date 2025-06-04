@@ -105,12 +105,14 @@ mod tests {
     use crate::monitor::MockMonitorApi;
     use crate::types::{KickoffAdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents};
     use alloy_primitives::U256;
-    use common::fake_contracts::FakePegManager::{KickoffAdvanceFunds, RequestAdvanceFunds};
     use common::shutdown_flag::ShutdownFlag;
     use common::test_utils::rsk_block_generator::{
         create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
     };
     use common::types::RskBlockAndUncles;
+    use sc_event_mocking::fake_contracts::FakePegManager::{
+        KickoffAdvanceFunds, RequestAdvanceFunds,
+    };
     use std::thread;
     use std::thread::{JoinHandle, sleep};
     use std::time::Duration;

@@ -1,18 +1,21 @@
+use crate::fake_contracts::FakePegManager;
+use crate::fake_contracts::FakePegManager::FakePegManagerInstance;
 use alloy_eips::BlockNumberOrTag;
 use alloy_primitives::{Address, U256};
 use alloy_provider::Provider;
 use anyhow::{Context, Result, anyhow, bail};
 use common::anvil_mocks::get_anvil_block_pow;
-use common::fake_contracts::FakePegManager;
-use common::fake_contracts::FakePegManager::FakePegManagerInstance;
 use std::env;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::time::SystemTime;
 use union_contracts::bindings::pegmanager::PegManager::PegManagerInstance;
 
+pub mod fake_contracts;
+
 pub struct Executor<P: Provider> {
     provider: P,
+    #[allow(dead_code)]
     real_peg_manager: PegManagerInstance<(), P>, // TODO use it to call methods from CLI if we want
     fake_peg_manager: FakePegManagerInstance<(), P>,
 }
