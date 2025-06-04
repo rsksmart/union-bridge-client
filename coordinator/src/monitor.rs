@@ -1,13 +1,16 @@
 use crate::types::{RskPegManagerEvents, decode_rsk_log_to_peg_manager_event};
 use anyhow::{Context, Result, bail};
-use common::msg_broker::broker::{BROKER_SERVER_ID, BrokerClientApi, BrokerError};
-use common::msg_broker::types::{BrokerRequests, BrokerResponses};
-use common::types::{Address, RskBlock};
+use common::{
+    msg_broker::{
+        broker::{BROKER_SERVER_ID, BrokerClientApi, BrokerError},
+        types::{BrokerRequests, BrokerResponses},
+    },
+    types::{Address, RskBlock},
+};
 use log::{info, trace};
 
 #[cfg(test)]
 use mockall::automock;
-use serde_json::Value;
 
 #[cfg_attr(test, automock)]
 pub trait MonitorApi {
@@ -16,7 +19,7 @@ pub trait MonitorApi {
     fn start_bitvmx_monitoring(&mut self) -> Result<()>;
     fn try_event(&mut self) -> Result<Option<RskPegManagerEvents>>;
     fn try_block(&mut self) -> Result<Option<RskBlock>>;
-    fn try_bitvmx_event(&mut self) -> Result<Option<Value>>;
+    fn try_bitvmx_event(&mut self) -> Result<Option<BrokerResponses>>;
     fn cancel_event_monitoring(&mut self) -> Result<()>;
     fn cancel_block_monitoring_if_on(&mut self) -> Result<()>;
     fn cancel_bitvmx_monitoring(&mut self) -> Result<()>;
@@ -53,7 +56,7 @@ impl<T: BrokerClientApi> MonitorApi for Monitor<T> {
         self.try_block()
     }
 
-    fn try_bitvmx_event(&mut self) -> Result<Option<Value>> {
+    fn try_bitvmx_event(&mut self) -> Result<Option<BrokerResponses>> {
         self.try_bitvmx_event()
     }
 
@@ -197,17 +200,16 @@ impl<T: BrokerClientApi> Monitor<T> {
         }
     }
 
-    pub fn try_bitvmx_event(&mut self) -> Result<Option<Value>> {
+    pub fn try_bitvmx_event(&mut self) -> Result<Option<BrokerResponses>> {
         if !self.bitvmx_monitoring_active {
             bail!("BitVMX monitoring is not active");
         }
 
         match self.bitvmx_broker.try_recv()? {
-            Some(BrokerResponses::GetTemporaryPegInAddress(v)) => {
-                info!("Received new Value {:?}", v);
-                Ok(Some(v))
+            Some(response) => {
+                info!("Received BitVMX response: {:?}", response);
+                Ok(Some(response))
             }
-            Some(other) => bail!("Unexpected response type from BitVMX broker: {:?}", other),
             None => {
                 trace!("No messages from BitVMX broker");
                 Ok(None)
@@ -555,11 +557,11 @@ mod tests {
 
     #[test]
     fn test_try_bitvmx_event_returns_some() {
-        let value = json!("some value");
+        let value = BrokerResponses::GetTemporaryPegInAddress(json!("some value"));
         let mock_value = value.clone();
         let mut bitvmx_broker = MockBrokerClientApi::new();
         bitvmx_broker.expect_try_recv().return_once({
-            move || Ok(Some(BrokerResponses::GetTemporaryPegInAddress(mock_value)))
+            move || Ok(Some(mock_value))
         });
 
         let mut monitor = Monitor::new(
@@ -570,14 +572,18 @@ mod tests {
         );
         monitor.bitvmx_monitoring_active = true;
 
-        let result = monitor.try_bitvmx_event().expect("Failed to receive BitVMX event");
+        let result = monitor
+            .try_bitvmx_event()
+            .expect("Failed to receive BitVMX event");
         assert_eq!(result, Some(value));
     }
 
     #[test]
     fn test_try_bitvmx_event_returns_none() {
         let mut bitvmx_broker = MockBrokerClientApi::new();
-        bitvmx_broker.expect_try_recv().return_once(move || Ok(None));
+        bitvmx_broker
+            .expect_try_recv()
+            .return_once(move || Ok(None));
 
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),

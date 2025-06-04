@@ -3,8 +3,11 @@ use crate::{
     monitor::MonitorApi,
 };
 use anyhow::{Context, Result, bail};
-use common::{constants::coordinator::MONITOR_CHECK_PERIOD, shutdown_flag::ShutdownFlag};
-use log::info;
+use common::{
+    constants::coordinator::MONITOR_CHECK_PERIOD, msg_broker::types::BrokerResponses,
+    shutdown_flag::ShutdownFlag,
+};
+use log::{info, warn};
 use reqwest::blocking::Client;
 use serde_json::Value;
 use std::{thread, time::Duration};
@@ -50,18 +53,23 @@ impl<M: MonitorApi> Coordinator<M> {
                     break;
                 }
 
-                // TODO: Once BitVMX API types are ready update to match according to type
-                if let Some(event) = self
+                if let Some(response) = self
                     .monitor
                     .try_bitvmx_event()
                     .context("Error getting BitVMX event")?
                 {
-                    // happy path assume always JSON value represents a PegInAddressInput
-                    let response = self.proxy_peg_in_address_request(event)?;
-                    info!(
-                        "Successfully proxied pegin address request. Response:\n{}",
-                        serde_json::to_string_pretty(&response)?
-                    );
+                    match response {
+                        BrokerResponses::GetTemporaryPegInAddress(value) => {
+                            let result = self.proxy_peg_in_address_request(value)?;
+                            info!(
+                                "Successfully proxied pegin address request. Response: {}",
+                                result
+                            );
+                        }
+                        other => {
+                            warn!("Unexpected BitVMX broker response: {:?}", other);
+                        }
+                    }
                 }
 
                 if let Some(event) = self.monitor.try_event().context("Error getting event")? {

@@ -15,9 +15,10 @@ pub enum BrokerRequests {
     UnsubscribeBitVMX,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub enum BrokerResponses {
     Block(RskBlock),
     Log(RskLog),
+    // TODO: Once BitVMX API types are ready update to match according to type
     GetTemporaryPegInAddress(Value),
 }
