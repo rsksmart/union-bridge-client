@@ -34,7 +34,7 @@ RUN mkdir -p -m 0700 ~/.ssh && \
 # copy only dependency files for better caching
 COPY Cargo.toml Cargo.lock ./
 
-# TODO(iago) create crates folder and copy it instead
+# TODO create crates folder and move crates there, so we can copy it instead of the individual crates
 # copy workspace members:
 COPY qa-tools qa-tools
 COPY common common
@@ -55,11 +55,11 @@ RUN --mount=type=ssh,id=default mkdir -p .cargo && \
 # 1) build the entire workspace and reuse among containers, to reduce build time
 # 2) build just one crate for speed
 # optionally builds with --features if provided
-RUN --mount=type=ssh,id=default cargo build --release ${JUST_CRATE:+-p $JUST_CRATE} ${FEATURES:+--features $FEATURES};
+RUN --mount=type=ssh,id=default cargo build --release${JUST_CRATE:+ -p $JUST_CRATE}${FEATURES:+ --features $FEATURES};
 
 # --- RUNTIME STAGE ---
 
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim AS runtime
 ARG CRATE
 ARG UNION_CONTRACTS_TAG
 LABEL contracts_tag=${UNION_CONTRACTS_TAG}
@@ -78,7 +78,7 @@ COPY --from=builder /app/target/release/${CRATE} /app/${CRATE}
 RUN mkdir -p /app/db/${CRATE}
 
 # if deploying contracts (checked within the script): clone, build and deploy them
-COPY docker/contracts-setup.sh /app/contracts-setup.sh
+COPY docker/dockerfile-contracts-setup.sh /app/contracts-setup.sh
 ENV FOUNDRY_VERSION=1.1.0
 RUN chmod +x /app/contracts-setup.sh
 RUN --mount=type=ssh,id=default /app/contracts-setup.sh

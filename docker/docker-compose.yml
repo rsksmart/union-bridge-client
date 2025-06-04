@@ -2,7 +2,6 @@
 # DISCLAIMER: This docker-compose file is intended for development and testing purposes only, not for production use. ###############
 #####################################################################################################################################
 
-# TODO(iago) add depends on (similar to https://github.com/FairgateLabs/union-bridge-e2e-test/blob/main/docker-compose.yaml)
 # TODO(iago) revisar si son necesarias todas las env var
 
 # define base configuration for services
@@ -24,15 +23,12 @@ x-base-service: &base-service
     start_period: 10s
 
 services:
-  # TODO(iago) attach logs
   block-indexer:
     <<: *base-service
     build:
       <<: *base-build
       args:
         - CRATE=block-indexer
-      cache_from:
-        - builder-union-client:latest # build separately
     container_name: block-indexer
     volumes:
       - ../config/docker/common.yaml:/app/config/common.yaml:ro
@@ -57,8 +53,6 @@ services:
       <<: *base-build
       args:
         - CRATE=log-indexer
-      cache_from:
-        - builder-union-client:latest # build separately
     container_name: log-indexer
     volumes:
       - ../config/docker/common.yaml:/app/config/common.yaml:ro
@@ -84,8 +78,6 @@ services:
       <<: *base-build
       args:
         - CRATE=transaction-dispatcher
-      cache_from:
-        - builder-union-client:latest # build separately
     container_name: transaction-dispatcher
     volumes:
       - ../config/docker/common.yaml:/app/config/common.yaml:ro
@@ -112,8 +104,6 @@ services:
       <<: *base-build
       args:
         - CRATE=coordinator
-      cache_from:
-        - builder-union-client:latest # build separately
     container_name: coordinator
     volumes:
       - ../config/docker/common.yaml:/app/config/common.yaml:ro
@@ -137,8 +127,6 @@ services:
       args:
         - CRATE=sc-event-mocking
         - UNION_CONTRACTS_TAG=${UNION_CONTRACTS_TAG}
-      cache_from:
-        - builder-union-client:latest # build separately
     stdin_open: true   # for CLI
     tty: true          # for CLI
     container_name: sc-event-mocking

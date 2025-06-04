@@ -29,11 +29,13 @@ Note: if you are not in a NIX system, you can check the commands within `docker/
 
 # Run
 
-To run the whole project's docker-compose, run:
+To run the project's docker-compose, run:
 
 ```bash
-docker compose up -d
+docker compose up
 ```
+
+Note: take into account that the Cargo features are specified at build time, so if you want to change them, you need to rebuild the compose.
 
 # sc-event-mocking
 

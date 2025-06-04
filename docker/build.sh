@@ -3,17 +3,6 @@
 features=""
 service=""
 
-# build base image for caching (contains cargo workspace build)
-docker build \
-  --target builder \
-  --ssh default="$SSH_AUTH_SOCK" \
-  -t builder-union-client:latest \
-  -f Dockerfile \
-  .. || {
-    echo "Failed to build builder-union-client image"
-    exit 1
-  }
-
 for arg in "$@"; do
   if [[ "$arg" == "anvil" ]]; then
     features="anvil"
