@@ -6,4 +6,4 @@ log_broker:
   ip: "0.0.0.0"
   port: 56789
 
-broker_client_id: 333cache
+broker_client_id: 333

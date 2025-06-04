@@ -51,6 +51,9 @@ impl<M: MonitorApi> Coordinator<M> {
 
                 let mut message_received = false;
 
+                // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132
+                //  if block monitor restarted, this is not realising and keeps waiting logs forever
+                //  maybe using persistent storage instead of memory fixes it?
                 if let Some(event) = self.monitor.try_event().context("Error getting event")? {
                     // each processor decides if the event is relevant
                     self.processors.iter_mut().for_each(|p| {
@@ -63,6 +66,9 @@ impl<M: MonitorApi> Coordinator<M> {
                     message_received = true;
                 }
 
+                // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - if block monitor restarted, this is not realising and keeps waiting blocks forever
+                //  if block monitor restarted, this is not realising and keeps waiting logs forever
+                //  maybe using persistent storage instead of memory fixes it?
                 if let Some(block) = self.monitor.try_block().context("Error getting block")? {
                     self.processors.iter_mut().for_each(|p| {
                         if let Err(e) = p.process_new_block(&block) {

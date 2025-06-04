@@ -9,7 +9,7 @@ use common::{
     alloy_rsk_provider::rpc::AlloyProvider, rsk_indexer::RskIndexer, shutdown_flag::ShutdownFlag,
     types::BlockHash,
 };
-use log::{error, info};
+use log::{debug, error, info};
 use std::sync::mpsc;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
@@ -56,10 +56,9 @@ fn main() -> Result<()> {
         mpsc::Receiver<RskBlockAndUncles>,
     ) = mpsc::channel();
 
-    let store = CachedBlockStore::new(
-        &format!("{}/blocks", config.indexer.storage.path),
-        config.indexer.cache.size,
-    )?;
+    let store_path = &format!("{}/blocks", config.indexer.storage.path);
+    debug!("Creating block store at: {}", store_path);
+    let store = CachedBlockStore::new(store_path, config.indexer.cache.size)?;
 
     let indexer = BlockIndexer::new_with_notifier(
         store,

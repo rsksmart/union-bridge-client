@@ -1,4 +1,5 @@
 use crate::msg_broker::types::{BrokerRequests, BrokerResponses};
+use log::debug;
 use message_broker::broker_memstorage::MemStorage;
 use message_broker::channel::channel::{DualChannel, LocalChannel};
 use message_broker::rpc::BrokerConfig;
@@ -76,7 +77,7 @@ pub struct BrokerClient {
 
 impl BrokerClient {
     pub fn new(ip: IpAddr, port: u16, my_id: u32) -> Self {
-        println!("Starting BrokerClient on {ip}:{port} with id {my_id}");
+        debug!("Starting BrokerClient on {ip}:{port} with id {my_id}");
         let broker_config = BrokerConfig::new(port, Some(ip));
         let client = DualChannel::new(&broker_config, my_id);
         Self { channel: client }

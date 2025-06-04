@@ -39,8 +39,14 @@ _Note: take into account that the Cargo features are specified at build time, so
 
 # sc-event-mocking
 
-If you want to use the `sc-event-mocking` CLI, run (and then double-enter):
+If you want to use the `sc-event-mocking` CLI, run (you may need to double-enter):
 
 ```bash
-docker attach $(docker compose ps -q sc-event-mocking)
+./cli-event-mocking.sh
 ```
+
+# Troubleshooting
+
+If you see an error like _Failed to get initial block by hash_, you may need to either:
+1) reconfigure the `indexer.initial_block_hash` if running without features
+2) rebuild the compose with the `anvil` feature enabled, which will skip this check: `./docker/build.sh anvil`

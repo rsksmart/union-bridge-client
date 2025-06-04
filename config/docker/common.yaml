@@ -1,7 +1,7 @@
 indexer:
   initial_block_hash: "0x27de5a07c7e9b812c3e7ee4c7c51fa131280ed9e16f1d70b5751034943d75c47"
   storage:
-    path: "/Users/illuque/.union_bridge/database"
+    path: "/app/db/" # This should match the volume mount in docker-compose
   cache:
     size: 1000
   sync:
