@@ -1,15 +1,9 @@
 use crate::{
-    event_processor::{DisputedPegoutProcessor, EventProcessor},
+    event_processor::{DisputedPegoutProcessor, EventProcessor, GetTemporaryPeginAddressProcessor},
     monitor::MonitorApi,
 };
-use anyhow::{Context, Result, bail};
-use common::{
-    constants::coordinator::MONITOR_CHECK_PERIOD, msg_broker::types::BrokerResponses,
-    shutdown_flag::ShutdownFlag,
-};
-use log::{info, warn};
-use reqwest::blocking::Client;
-use serde_json::Value;
+use anyhow::{Context, Result};
+use common::{constants::coordinator::MONITOR_CHECK_PERIOD, shutdown_flag::ShutdownFlag};
 use std::{thread, time::Duration};
 
 pub struct Coordinator<M: MonitorApi> {
@@ -23,7 +17,10 @@ impl<M: MonitorApi> Coordinator<M> {
     pub fn new(monitor: M, shutdown_flag: ShutdownFlag) -> Self {
         Self {
             monitor,
-            processors: vec![Box::new(DisputedPegoutProcessor::new())],
+            processors: vec![
+                Box::new(DisputedPegoutProcessor::new()),
+                Box::new(GetTemporaryPeginAddressProcessor::new()),
+            ],
             check_period: MONITOR_CHECK_PERIOD,
             shutdown_flag,
         }
@@ -32,7 +29,10 @@ impl<M: MonitorApi> Coordinator<M> {
     pub fn new_for_tests(monitor: M, shutdown_flag: ShutdownFlag) -> Self {
         Self {
             monitor,
-            processors: vec![Box::new(DisputedPegoutProcessor::new())],
+            processors: vec![
+                Box::new(DisputedPegoutProcessor::new()),
+                Box::new(GetTemporaryPeginAddressProcessor::new()),
+            ],
             check_period: Duration::from_millis(1),
             shutdown_flag,
         }
@@ -53,23 +53,15 @@ impl<M: MonitorApi> Coordinator<M> {
                     break;
                 }
 
-                if let Some(response) = self
+                if let Some(event) = self
                     .monitor
                     .try_bitvmx_event()
                     .context("Error getting BitVMX event")?
                 {
-                    match response {
-                        BrokerResponses::GetTemporaryPegInAddress(value) => {
-                            let result = self.proxy_peg_in_address_request(value)?;
-                            info!(
-                                "Successfully proxied pegin address request. Response: {}",
-                                result
-                            );
-                        }
-                        other => {
-                            warn!("Unexpected BitVMX broker response: {:?}", other);
-                        }
-                    }
+                    // each processor decides if the event is relevant
+                    self.processors
+                        .iter_mut()
+                        .try_for_each(|p| p.process_new_bitvmx_event(&event))?;
                 }
 
                 if let Some(event) = self.monitor.try_event().context("Error getting event")? {
@@ -128,24 +120,6 @@ impl<M: MonitorApi> Coordinator<M> {
     fn is_running(&self) -> bool {
         !self.shutdown_flag.is_on()
     }
-
-    fn proxy_peg_in_address_request(&self, json_value: Value) -> Result<Value> {
-        let client = Client::new();
-        let res = client
-            .post("http://0.0.0.0:3000/pegin-address") // TODO: Remove http client
-            .json(&json_value)
-            .send()
-            .context("Failed to send request to /pegin-address")?;
-
-        if res.status().is_success() {
-            let result: Value = res.json().context("Failed to parse response as JSON")?;
-            Ok(result)
-        } else {
-            let status = res.status();
-            let text = res.text().unwrap_or_else(|_| "<no body>".to_string());
-            bail!("Request failed: {status} - {text}");
-        }
-    }
 }
 
 #[cfg(test)]
@@ -153,6 +127,9 @@ mod tests {
     use crate::{coordinator::Coordinator, monitor::MockMonitorApi, types::RskPegManagerEvents};
     use common::{
         fake_contracts::FakePegManager::RequestAdvanceFunds,
+        msg_broker::{
+            types::BrokerResponses::GetTemporaryPegInAddress,
+        },
         shutdown_flag::ShutdownFlag,
         test_utils::rsk_block_generator::{
             get_first_default_rsk_block, get_second_default_rsk_block,
@@ -183,7 +160,8 @@ mod tests {
             block_num: block_1.number().value(),
         };
 
-        let bitvmx_event = json!("GetTemporaryPegInAddress");
+        let bitvmx_event =
+            GetTemporaryPegInAddress(json!("GetTemporaryPegInAddress"));
 
         mock_monitor
             .expect_start_event_monitoring()

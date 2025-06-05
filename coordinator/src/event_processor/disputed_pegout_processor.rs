@@ -1,5 +1,7 @@
-use crate::event_processor::EventProcessor;
-use crate::types::{Dispute, FakePegManagerConfig, RskPegManagerEvents};
+use crate::{
+    event_processor::EventProcessor,
+    types::{Dispute, FakePegManagerConfig, RskPegManagerEvents},
+};
 use anyhow::{Result, anyhow};
 use common::types::RskBlock;
 use log::{error, info, warn};
@@ -19,6 +21,7 @@ impl DisputedPegoutProcessor {
             known_blocks: HashSet::new(),
         }
     }
+
     fn init_dispute(&mut self, peg_out_id: String, block_num: u64, amount: u64) -> Result<()> {
         let dispute = Dispute::new(
             peg_out_id.clone(),
