@@ -1,8 +1,8 @@
 # QA Tools
 
-A collection of tools for testing and validating the Union Bridge Monitor components.
+A collection of tools for testing and validating the Union Bridge Monitor components. Each crate contains the validation tools for a component of the union bridge client.
 
-## Tools
+## Crates
 
 ### Block Indexer Tools
 - `block_indexer_runner`: Runs the block indexer with configurable parameters
@@ -14,44 +14,16 @@ A collection of tools for testing and validating the Union Bridge Monitor compon
 - `log_indexer_validator`: Validates log indexer state after running
 - Features: managed contracts monitoring, event tracking
 
+### Check Fork Tools
+- `check_fork_runner`: Runs and validates the check fork with configurable parameters
+- Features: managed contracts monitoring, event tracking
+
+### Transaction dispatcher Tools
+WIP
+
 ### Utility Tools
 - `archiver`: Archives execution results with timestamps
 - `clear`: Cleans up temporary execution directories
 
 ## Usage
-
-All tools use the `/tmp/monitor-executions` directory for storing data and require a tag parameter (`-t`).
-
-Common parameters:
-- `-t <tag>`: Required tag for the execution (e.g., "happy_path")
-- `-e <env>`: Environment (default: "stage")
-- `-f <finality>`: Block finality for initial block selection
-- `-b <height>`: Specific block height for initial block
-- `-a <size>`: Cache size override
-- `-c <bool>`: Use default config (true) or existing config (false)
-
-### Example Scenarios
-
-See `features/block-indexer.feature` and `features/log-indexer.feature` for detailed test scenarios and commands.
-
-Basic usage:
-```bash
-# Run block indexer
-cargo run --bin block_indexer_runner -- -f 100 -t happy_path
-
-# Monitor logs
-tail -1000f /tmp/monitor-executions/happy_path/app.log
-
-# Validate results
-cargo run --bin block_indexer_validator -- -t happy_path
-
-# Archive results
-cargo run --bin archiver -- -t happy_path
-```
-
-For long-running tests, use tmux:
-```bash
-tmux new-session -d -s test_session 'cargo run --bin block_indexer_runner -- -f 100 -t test_tag'
-tmux attach-session -t test_session
-# Use Ctrl+b, d to detach
-```
+To find instructions, search for the comments under scenarios within `features/` folder of each crate.

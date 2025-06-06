@@ -1,0 +1,23 @@
+[package]
+name = "qa-tools-transaction-dispatcher"
+version = "0.1.0"
+edition = "2024"
+resolver = "2"
+
+[dependencies]
+# Dependencies from the main repository
+transaction-dispatcher = { path = "../../transaction-dispatcher" }
+common = { path = "../../common" }
+
+# Dependencies from the qa-tools workspace
+qa-tools-common = { path = "../common" }
+
+# Other dependencies
+anyhow = { workspace = true }
+clap = { workspace = true }
+log = { workspace = true }
+log4rs = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true }
