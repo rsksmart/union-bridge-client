@@ -4,12 +4,12 @@ use common::msg_broker::broker::BrokerServerApi;
 use common::msg_broker::types::{FromServer, ToServer};
 use common::shutdown_flag::ShutdownFlag;
 use common::types::{Address, RskLog};
-use log::{debug, error, info, trace, warn};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
 use std::sync::mpsc::RecvTimeoutError;
 use std::time::Duration;
+use tracing::{debug, error, info, trace, warn};
 
 pub struct Notifier<BS: BrokerServerApi> {
     new_log_channel: mpsc::Receiver<RskLog>,
@@ -50,6 +50,7 @@ impl<BS: BrokerServerApi> Notifier<BS> {
     }
 
     pub fn run(&mut self) -> Result<()> {
+        debug!("Starting notifier");
         loop {
             if self.shutdown_flag.is_on() {
                 break;
@@ -145,6 +146,7 @@ impl<BS: BrokerServerApi> Notifier<BS> {
     }
 
     fn notify_consumers(&mut self, new_log: RskLog) -> Result<()> {
+        debug!("New log received {:?}", new_log);
         let address: Address = new_log.info().address();
 
         let topics0 = new_log

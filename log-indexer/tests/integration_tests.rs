@@ -13,7 +13,6 @@ use common::{
     shutdown_flag::ShutdownFlag,
     types::{Address, BlockHash, ContractInfo, LogInfo, RskLog},
 };
-use log::info;
 use log_indexer::{indexer::LogIndexer, store::RawLogStore};
 use primitive_types::H256;
 use rand::Rng;
@@ -23,7 +22,9 @@ use std::{
     sync::{Arc, atomic::AtomicBool},
 };
 use tempfile::tempdir;
+use tracing::info;
 
+const TX_ID_RANGE: Range<u64> = 0..20;
 const LOG_INDEX_RANGE: Range<u64> = 0..20;
 const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
 

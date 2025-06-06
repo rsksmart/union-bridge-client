@@ -8,10 +8,13 @@ common = { path = "../common" }
 
 anyhow = { workspace = true }
 clap = { workspace = true }
-log = { workspace = true }
 mockall = { workspace = true }
 serde = { workspace = true }
 storage-backend = { workspace = true }
+
+#tracing
+tracing = { workspace = true }
+tracing-appender = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

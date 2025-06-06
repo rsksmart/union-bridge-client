@@ -7,9 +7,9 @@ use common::{
     shutdown_flag::ShutdownFlag,
     types::{Address, BlockHash, BlockNumber, ContractInfo, RskLog},
 };
-use log::{debug, error, info, warn};
 use std::collections::HashMap;
 use std::sync::mpsc;
+use tracing::{Level, debug, error, info, info_span, span, warn};
 
 pub struct LogIndexer<P: RskProvider, S: LogStore> {
     store: S,
@@ -105,7 +105,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
     fn run(&self) -> Result<()> {
         if !self.is_running() {
-            info!("[subscribe_logs] Shutdown requested, skipping...");
+            info!("Shutdown requested, skipping...");
             return Ok(());
         }
 
@@ -119,10 +119,7 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
 
         let filter =
             RskSubscriptionFilter::new(contract_addresses, vec![], Some(last_block_number));
-        info!(
-            "[subscribe_logs] Start subscribe_logs with filter {:?}...",
-            filter
-        );
+        info!("Start subscribe_logs with filter {:?}...", filter);
 
         let mut rsk_log_subscription = self
             .rsk_provider
@@ -142,6 +139,16 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
 impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
     #[cfg(not(feature = "anvil"))]
     fn recover_logs(&self, addrs: &Vec<Address>) -> Result<BlockNumber> {
+        let span = info_span!(
+            "recover_logs",
+            from = tracing::field::Empty,
+            to = tracing::field::Empty
+        );
+        let _guard = span.enter();
+        if cfg!(feature = "anvil") {
+            return Ok(BlockNumber::from(self.initial_block_number));
+        }
+
         let checkpoint = self.store.get_sync_checkpoint()?;
         let mut start = match checkpoint {
             Some(log) => {
@@ -275,6 +282,8 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 
     // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-133
     fn listen_logs(&self, rsk_log_subscription: &mut impl RskSubscription<RskLog>) -> Result<()> {
+        let span = info_span!("logs_listener");
+        let _guard = span.enter();
         while self.is_running() {
             let new_log = match rsk_log_subscription.next() {
                 Ok(log) => log,
@@ -282,41 +291,41 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                     if self.is_running() {
                         bail!("Provider closed unexpectedly!");
                     } else {
-                        info!("[subscribe_logs] Shutdown requested, quitting...");
+                        info!("Shutdown requested, quitting...");
                         break;
                     }
                 }
                 Err(RskSubscriptionError::Transient(err)) => {
-                    error!("[subscribe_logs] Ignoring problematic log: {err:?}");
+                    error!("Ignoring problematic log: {err:?}");
                     continue;
                 }
                 Err(RskSubscriptionError::Lagged(err)) => {
                     // TODO(Jira) trigger backward sync in scope of https://rsklabs.atlassian.net/browse/UB-45
-                    error!(
-                        "[subscribe_logs] Subscription lagged, a backward_sync will be needed: {err:?}"
-                    );
+                    error!("Subscription lagged, a backward_sync will be needed: {err:?}");
                     continue;
                 }
                 Err(RskSubscriptionError::Unexpected(err)) => {
-                    bail!("[subscribe_logs] Unknown error on log subs: {err:?}");
+                    bail!("Unknown error on log subs: {err:?}");
                 }
             };
+            let span = span!(Level::DEBUG, "[received log]", ?new_log);
+            let _guard = span.enter();
 
             if new_log.info().block_number() < self.initial_block_number {
                 warn!(
-                    "[subscribe_logs] Log block {} is lower than initial {}",
+                    "Log block {} is lower than initial {}",
                     new_log.info().block_number(),
                     self.initial_block_number
                 );
                 continue;
             }
 
-            info!("[subscribe_logs] Processed log: {:?}", new_log);
+            info!(" Processed log: {:?}", new_log);
 
             let Some(managed_contract) = self.managed_contracts.get(&new_log.info().address())
             else {
                 error!(
-                    "[subscribe_logs] Received unmanaged contract log {} [{:?}]",
+                    "Received unmanaged contract log {} [{:?}]",
                     new_log.info().address(),
                     self.managed_contracts
                 );
@@ -359,11 +368,11 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         let rsk_event = match rsk_event_result {
             Ok(Some(e)) => e,
             Ok(None) => {
-                error!("[subscribe_logs] Unmanaged log received: {:?}", new_log);
+                error!("Unmanaged log received: {:?}", new_log);
                 return None;
             }
             Err(e) => {
-                error!("[subscribe_logs] Ignoring malformed event: {:?}", e);
+                error!("Ignoring malformed event: {:?}", e);
                 return None;
             }
         };

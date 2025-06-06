@@ -6,11 +6,11 @@ use common::{
     alloy_rsk_provider::rpc::AlloyProvider, rsk_indexer::RskIndexer, shutdown_flag::ShutdownFlag,
     types::BlockHash,
 };
-use log::{debug, error, info};
-use log_indexer::config::{Config, Logger};
+use log_indexer::config::{Config, Tracer};
 use log_indexer::notifier::Notifier;
 use log_indexer::{indexer::LogIndexer, store::RawLogStore};
 use std::sync::mpsc;
+use tracing::{error, info, debug};
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const CONFIG_CLI_FLAG: &str = "config-path";
@@ -33,8 +33,8 @@ fn main() -> Result<()> {
         )
         .get_matches();
 
-    let logger_cfg_path = matches.get_one::<String>(LOGGER_CLI_FLAG);
-    Logger::init(logger_cfg_path).expect("Failed to load logger");
+    let logger_path = matches.get_one::<String>(LOGGER_CLI_FLAG);
+    let _tracer = Tracer::init(logger_path)?;
 
     let config_path = matches.get_one::<String>(CONFIG_CLI_FLAG);
     let config: Config = Config::load(config_path).expect("Failed to load config");
@@ -88,7 +88,6 @@ fn main() -> Result<()> {
     })?;
 
     info!("Quitting now...");
-    log::logger().flush();
 
     Ok(())
 }

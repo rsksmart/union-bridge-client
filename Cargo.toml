@@ -32,6 +32,13 @@ serde_json = "1.0"
 thiserror = "2.0.11"
 tokio = { version = "1.41.1" }
 config = "0.15.8"
+chrono = { version = "0.4", features = ["clock"] }
+
+#tracing
+tracing = "0.1.41"
+tracing-subscriber = "0.3.19"
+tracing-appender = "0.2.3"
+
 storage-backend = { package = "rust-bitvmx-storage-backend", git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-storage-backend.git", rev = "7f40d056f86295e3fd2a4f268f923ca3b4e70fbf" }
 union-contracts = { package = "union-bridge-contracts", git = "ssh://git@github.com/FairgateLabs/bitvmx-union-bridge-contracts.git", tag = "v0.0.1-alpha.1" }
 message-broker = { package = "bitvmx-broker", git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-broker.git", rev = "2afe95510b1694d0ed87a59c9b69915f65d382e7" }

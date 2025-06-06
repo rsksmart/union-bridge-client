@@ -23,15 +23,20 @@ thiserror = { workspace = true }
 log4rs = { workspace = true }
 config = { workspace = true }
 log = { workspace = true }
-message-broker = { workspace = true }
+message-broker = { package = "bitvmx-broker", git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-broker.git", rev = "2afe95510b1694d0ed87a59c9b69915f65d382e7" }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 serde_yaml = "0.9.33"
 lru = "0.13.0"
 bitcoin = "0.32.4"
 signal-hook = "0.3"
 sha3 = "0.10"
+chrono = { workspace = true }
 # TODO(jira) https://rsklabs.atlassian.net/browse/ub-176
 bitvmx-client = { workspace = true }
+
+#tracing
+tracing-appender = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [features]
 test-utils = []
