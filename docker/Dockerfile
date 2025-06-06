@@ -85,13 +85,6 @@ COPY docker/dockerfile-contracts-setup.sh /app/contracts-setup.sh
 RUN --mount=type=ssh,id=default chmod +x /app/contracts-setup.sh && /app/contracts-setup.sh
 ENV PATH="/opt/foundry/bin:$PATH"
 
-ENV KEY_STORE_PASSWORD="test"
-COPY docker/dockerfile-key-setup.sh /app/dockerfile-key-setup.sh
-RUN if [ "$CRATE" = "transaction-dispatcher" ]; then \
-    chmod +x /app/dockerfile-key-setup.sh && \
-    /app/dockerfile-key-setup.sh; \
-    fi
-
 # set environment variables
 ENV RUST_BACKTRACE=1
 ENV RUST_LOG=debug

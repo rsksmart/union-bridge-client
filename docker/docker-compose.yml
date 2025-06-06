@@ -80,6 +80,7 @@ services:
       - ../config/docker/common.yaml:/app/config/common.yaml:ro
       - ../config/docker/transaction-dispatcher.yaml:/app/config/transaction-dispatcher.yaml:ro
       - ./log4rs.yaml:/app/log4rs.yaml:ro
+      - ./entrypoint-tx-dispatcher.sh:/app/entrypoint-tx-dispatcher.sh:ro
     ports:
       - "3000:3000"  # http server port from the configuration
     networks:
@@ -90,7 +91,7 @@ services:
     healthcheck:
       <<: *base-healthcheck
       test: [ "CMD", "ps", "aux", "|", "grep", "transaction-dispatcher" ]
-    entrypoint: [ "/app/transaction-dispatcher", "--config-path", "/app/config"]
+    entrypoint: [ "/app/entrypoint-tx-dispatcher.sh"]
     depends_on:
       - sc-event-mocking
 
