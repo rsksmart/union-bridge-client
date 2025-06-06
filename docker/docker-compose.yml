@@ -32,7 +32,7 @@ services:
       - ../config/docker/common.yaml:/app/config/common.yaml:ro
       - ../config/docker/block-indexer.yaml:/app/config/block-indexer.yaml:ro
       - ./log4rs.yaml:/app/log4rs.yaml:ro
-      - ./.db//block-indexer:/app/db/blocks
+      - ./.db/block-indexer:/app/db/blocks
     ports:
       - "12345:12345"  # broker server port from the configuration
     networks:
@@ -40,10 +40,11 @@ services:
         ipv4_address: 172.25.0.10
     healthcheck:
       <<: *base-healthcheck
-      test: [ "CMD", "ps", "aux", "|", "grep", "block-indexer" ]
-    entrypoint: [ "/app/block-indexer", "--config-path", "/app/config"]
+      test: [ "CMD-SHELL", "pgrep block-indexer" ] # TODO improve with health endpoint
+    entrypoint: [ "/app/block-indexer", "--config-path", "/app/config" ]
     depends_on:
-      - sc-event-mocking
+      sc-event-mocking:
+        condition: service_healthy
 
   log-indexer:
     <<: *base-service
@@ -56,7 +57,7 @@ services:
       - ../config/docker/common.yaml:/app/config/common.yaml:ro
       - ../config/docker/log-indexer.yaml:/app/config/log-indexer.yaml:ro
       - ./log4rs.yaml:/app/log4rs.yaml:ro
-      - ./.db//log-indexer:/app/db/logs
+      - ./.db/log-indexer:/app/db/logs
     ports:
       - "56789:56789"  # broker server port from the configuration
     networks:
@@ -64,10 +65,11 @@ services:
         ipv4_address: 172.25.0.11
     healthcheck:
       <<: *base-healthcheck
-      test: [ "CMD", "ps", "aux", "|", "grep", "log-indexer" ]
-    entrypoint: [ "/app/log-indexer", "--config-path", "/app/config"]
+      test: [ "CMD-SHELL", "pgrep log-indexer" ] # TODO improve with health endpoint
+    entrypoint: [ "/app/log-indexer", "--config-path", "/app/config" ]
     depends_on:
-      - sc-event-mocking
+      sc-event-mocking:
+        condition: service_healthy
 
   transaction-dispatcher:
     <<: *base-service
@@ -75,6 +77,7 @@ services:
       <<: *base-build
       args:
         - CRATE=transaction-dispatcher
+        - FOUNDRY_VERSION=${FOUNDRY_VERSION}
     container_name: transaction-dispatcher
     volumes:
       - ../config/docker/common.yaml:/app/config/common.yaml:ro
@@ -88,12 +91,14 @@ services:
         ipv4_address: 172.25.0.12
     environment:
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
+      - FUNDING_ADDRESS=${FUNDING_ADDRESS}
     healthcheck:
       <<: *base-healthcheck
       test: [ "CMD", "ps", "aux", "|", "grep", "transaction-dispatcher" ]
-    entrypoint: [ "/app/entrypoint-tx-dispatcher.sh"]
+    entrypoint: [ "sh", "/app/entrypoint-tx-dispatcher.sh" ]
     depends_on:
-      - sc-event-mocking
+      sc-event-mocking:
+        condition: service_healthy
 
   coordinator:
     <<: *base-service
@@ -112,7 +117,7 @@ services:
     healthcheck:
       <<: *base-healthcheck
       test: [ "CMD", "ps", "aux", "|", "grep", "coordinator" ]
-    entrypoint: [ "/app/coordinator", "--config-path", "/app/config"]
+    entrypoint: [ "/app/coordinator", "--config-path", "/app/config" ]
     depends_on:
       - log-indexer
       - block-indexer
@@ -123,10 +128,13 @@ services:
       <<: *base-build
       args:
         - CRATE=sc-event-mocking
+        - FOUNDRY_VERSION=${FOUNDRY_VERSION}
         - UNION_CONTRACTS_TAG=${UNION_CONTRACTS_TAG}
     stdin_open: true   # for CLI
     tty: true          # for CLI
     container_name: sc-event-mocking
+    volumes:
+      - ./entrypoint-sc-ev-mock.sh:/app/entrypoint-sc-ev-mock.sh:ro
     ports:
       - "2222:2222"  # anvil port, hardcoded in crate
     networks:
@@ -137,7 +145,10 @@ services:
       - CHECK_FORK_REQUIRED_NUM_BLOCKS=${CHECK_FORK_REQUIRED_NUM_BLOCKS}
     healthcheck:
       <<: *base-healthcheck
-      test: [ "CMD", "ps", "aux", "|", "grep", "sc-event-mocking" ]
+      test: [
+        "CMD-SHELL",
+        "RUST_LOG=error cast code 0xa513E6E4b8f2a923D98304ec87F64353C4D5C853 --rpc-url http://localhost:2222 | grep -vq '^0x$'" # PegManager contract address should match config and deployed address
+      ]
     entrypoint: [ "/app/sc-event-mocking" ]
     # entrypoint: [ "/bin/sh", "-c", "sleep infinity" ]
 

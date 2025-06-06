@@ -2,6 +2,8 @@
 ARG CRATE
 # docker-compose.yml arg to specify the tag of union-contracts repository to use - if defined, contracts will be deployed for that service
 ARG UNION_CONTRACTS_TAG
+# docker-compose.yml arg to specify the Foundry version - if defined, Foundry will be installed for that service
+ARG FOUNDRY_VERSION
 # --build-arg to specify the Rust features to use (ie. anvil)
 ARG FEATURES
 # --build-arg to specify just one crate to build in the builder stage
@@ -69,23 +71,32 @@ WORKDIR /app
 # install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 # copy the crate built binary
 COPY --from=builder /app/target/release/${CRATE} /app/${CRATE}
+# copy always, but only used by transaction-dispatcher
 COPY --from=builder /app/target/release/key-manager /app/key-manager
 
 # create directories for data
 RUN mkdir -p /app/db/${CRATE}
 
-# if deploying contracts (checked within the script): clone, build and deploy them
-ENV FOUNDRY_VERSION=1.1.0
+# if Foundry required (checked within the script): install it
+ARG FOUNDRY_VERSION
+COPY docker/dockerfile-foundry-setup.sh /app/foundry-setup.sh
+RUN chmod +x /app/foundry-setup.sh && /app/foundry-setup.sh
+
+# required by contracts-setup and also by sc-event-mocking that spins up anvil
+ENV PATH="/opt/foundry/bin:$PATH"
+
+# if contracts required (checked within the script): clone, build and deploy them
 ARG UNION_CONTRACTS_TAG
 COPY docker/dockerfile-contracts-setup.sh /app/contracts-setup.sh
 RUN --mount=type=ssh,id=default chmod +x /app/contracts-setup.sh && /app/contracts-setup.sh
-ENV PATH="/opt/foundry/bin:$PATH"
 
 # set environment variables
+ENV PATH="/opt/foundry/bin:$PATH"
 ENV RUST_BACKTRACE=1
 ENV RUST_LOG=debug
 
