@@ -124,17 +124,7 @@ Now you can run the transaction dispatcher providing the password to unlock the 
 KEY_STORE_PASSWORD="<YOUR_PASSWORD>" RUST_BACKTRACE=1 RUST_LOG=debug cargo run --bin transaction-dispatcher -- --logger-path "/path/to/log4rs.yaml" --config-path "/path/to/config/dir"
 ```
 
-# Utils/Check Gaps
-
-This tool checks if there are any gaps in the blocks indexed by the monitor.
-
-To run it:
-
-```bash
-RUST_BACKTRACE=1 RUST_LOG=debug cargo run --bin check_gaps -- --config-path "/path/to/config/dir"
-```
-
-# Utils/Generate ELF Demo
+# QA-tools/Generate ELF Demo
 
 This utility shows how to generate the input for the _CheckFork_ function and its Stark Proof. Its purpose is just to
 serve as reference for the integration of the new Monitor with _CheckFork_ and the ZKVM CLI. To be determined how.
@@ -145,19 +135,19 @@ This is the input to the _CheckFork_ function that will be executed by the `zkvm
 generate it run:
 
 ```bash
-cd examples/check-fork-demo
-cargo run -- -o elf
+cd qa-tools/check-fork
+cargo run --bin check_fork_runner -- -o elf
 ```
 
 Some instructions on how to use this file and other parameters will be printed to the console. Example:
 
 ```
-CLI Args { operation: "run", fetch_start_block: 6883222, fetch_block_count: 100, cf_required_blocks: 100, cf_required_effort: 123456789, cf_init_block: 6883221, cf_init_timestamp: 1701129600 }
-CheckForkArgs serialized to file: /Users/illuque/workspace/rootstock/union_bridge/union-bridge-monitor/util/check-fork-demo/check_fork_args.bin. Total time: 665.584µs
+CLI Args { operation: "elf", fixture: None, bridge_event: true, fetch_start_block: 6883222, fetch_block_count: 100, cf_required_blocks: 100, cf_required_effort: 4886718345, cf_init_block: 6883221, cf_init_timestamp: 1701129600 }
+CheckForkArgs serialized to file: /path/to/repo/union-bridge-client/qa-tools/check_fork_args.bin. Total time: 3.741667ms
 GetBlocks executed and CheckForkArgs generated. Relevant parameters for the interaction with the ZKVM CLI:
-    - input: /Users/illuque/workspace/rootstock/union_bridge/union-bridge-monitor/util/check-fork-demo/check_fork_args.bin
-    - elf: /Users/illuque/workspace/rootstock/union_bridge/union-bridge-monitor/target/riscv-guest/zkvm_guest/check_fork_guest/riscv32im-risc0-zkvm-elf/release/check_fork_guest
-    - image_id: e0ce040cc1f5ab45bbadf8b81f41be224acfdb9eb7c1f39bec6102492e1137f7
+    - input: /path/to/repo/union-bridge-client/qa-tools/check_fork_args.bin
+    - elf: /path/to/repo/union-bridge-client/qa-tools/target/riscv-guest/methods/check-fork-guest/riscv32im-risc0-zkvm-elf/release/check-fork-guest.bin
+    - image_id: c24b36840af78835ddca7eb7ddc933d2b1bcc01656133b2c110b42102fc71f3c
 
 ```
 
@@ -168,7 +158,7 @@ Clone Fairgate's [ZK Proof](https://github.com/FairgateLabs/rust-bitvmx-zk-proof
 
 Then run the following command where:
 ```bash
-cargo run --release --bin host -- prove-stark --input /Users/illuque/workspace/rootstock/union_bridge/union-bridge-monitor/util/check-fork-demo/check_fork_args.bin --elf /Users/illuque/workspace/rootstock/union_bridge/union-bridge-monitor/target/riscv-guest/zkvm_guest/check_fork_guest/riscv32im-risc0-zkvm-elf/release/check_fork_guest --output stark-proof.bin
+cargo run --release --bin host -- prove-stark --input /Users/illuque/workspace/rootstock/union_bridge/union-bridge-client/util/check-fork-demo.old/check_fork_args.bin --elf /Users/illuque/workspace/rootstock/union_bridge/union-bridge-client/target/riscv-guest/zkvm_guest/check_fork_guest/riscv32im-risc0-zkvm-elf/release/check_fork_guest --output stark-proof.bin
 ```
 
 An output like the following will be printed, showing _CheckFork_ execution result and the path to the resulting stark
