@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+alloy-contract = { workspace = true }
+alloy-sol-types = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-provider = { workspace = true }
 alloy-node-bindings = "0.13.0"
@@ -12,8 +14,8 @@ alloy-eips = "0.13.0"
 anyhow = { workspace = true }
 clap = { version = "4.5.30", features = ["derive"] }
 common = { path = "../common" }
-eyre = "0.6"
 tokio = { version = "1.45", features = ["rt-multi-thread", "signal", "io-std"] }
+union-contracts = { workspace = true }
 
 [features]
 default = ["anvil"]

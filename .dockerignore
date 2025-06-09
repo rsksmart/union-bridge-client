@@ -1,0 +1,30 @@
+# Build artifacts
+**/target/
+**.cargo/
+
+#logs
+**/logs/
+
+# Examples crate
+examples/
+
+# Git
+.git/
+.github/
+.gitmodules
+
+# Editor/project config
+.idea/
+.vscode/
+
+# env
+**.env
+**.env.sample
+.envrc
+
+# Other
+*.rs.bk
+*.log
+*.swp
+.DS_Store
+.hooks

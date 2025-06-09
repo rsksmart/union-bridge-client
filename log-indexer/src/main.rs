@@ -6,7 +6,7 @@ use common::{
     alloy_rsk_provider::rpc::AlloyProvider, rsk_indexer::RskIndexer, shutdown_flag::ShutdownFlag,
     types::BlockHash,
 };
-use log::{error, info};
+use log::{debug, error, info};
 use log_indexer::config::{Config, Logger};
 use log_indexer::notifier::Notifier;
 use log_indexer::{indexer::LogIndexer, store::RawLogStore};
@@ -52,7 +52,9 @@ fn main() -> Result<()> {
 
     let (tx, rx): (mpsc::Sender<RskLog>, mpsc::Receiver<RskLog>) = mpsc::channel();
 
-    let store = RawLogStore::new(&format!("{}/logs", config.indexer.storage.path))?;
+    let store_path = &format!("{}/logs", config.indexer.storage.path);
+    debug!("Creating log store at: {}", store_path);
+    let store = RawLogStore::new(store_path)?;
 
     let indexer = LogIndexer::new_with_notifier(
         store,

@@ -334,8 +334,6 @@ impl FakeBlockGenerator {
     }
 }
 
-// TODO(iago) ticket for builder pattern for RskBlock in tests
-
 pub fn create_block_and_uncles() -> (RskBlock, RskBlock, RskBlock) {
     let block_1_template = get_first_default_rsk_block();
 

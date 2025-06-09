@@ -51,6 +51,9 @@ impl<M: MonitorApi> Coordinator<M> {
 
                 let mut message_received = false;
 
+                // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132
+                //  if block monitor restarted, this is not realising and keeps waiting logs forever
+                //  maybe using persistent storage instead of memory fixes it?
                 if let Some(event) = self.monitor.try_event().context("Error getting event")? {
                     // each processor decides if the event is relevant
                     self.processors.iter_mut().for_each(|p| {
@@ -63,6 +66,9 @@ impl<M: MonitorApi> Coordinator<M> {
                     message_received = true;
                 }
 
+                // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - if block monitor restarted, this is not realising and keeps waiting blocks forever
+                //  if block monitor restarted, this is not realising and keeps waiting logs forever
+                //  maybe using persistent storage instead of memory fixes it?
                 if let Some(block) = self.monitor.try_block().context("Error getting block")? {
                     self.processors.iter_mut().for_each(|p| {
                         if let Err(e) = p.process_new_block(&block) {
@@ -105,12 +111,14 @@ mod tests {
     use crate::monitor::MockMonitorApi;
     use crate::types::{KickoffAdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents};
     use alloy_primitives::U256;
-    use common::fake_contracts::FakePegManager::{KickoffAdvanceFunds, RequestAdvanceFunds};
     use common::shutdown_flag::ShutdownFlag;
     use common::test_utils::rsk_block_generator::{
         create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
     };
     use common::types::RskBlockAndUncles;
+    use sc_event_mocking::fake_contracts::FakePegManager::{
+        KickoffAdvanceFunds, RequestAdvanceFunds,
+    };
     use std::thread;
     use std::thread::{JoinHandle, sleep};
     use std::time::Duration;

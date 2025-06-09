@@ -237,10 +237,12 @@ mod tests {
     use super::*;
     use crate::types::EventWithBlock;
     use alloy_primitives::U256 as AlloyU256;
-    use common::fake_contracts::FakePegManager::{KickoffAdvanceFunds, RequestAdvanceFunds};
     use common::test_utils::rsk_block_generator::create_block_from_template;
     use common::types::{BlockDifficulty, BlockHash, BlockPow, BlockTimestamp, RskBlock};
     use primitive_types::{H256, U256};
+    use sc_event_mocking::fake_contracts::FakePegManager::{
+        KickoffAdvanceFunds, RequestAdvanceFunds,
+    };
     use std::ops::Mul;
 
     fn create_fake_block(number: BlockNumber, effort: U256) -> RskBlock {

@@ -1,9 +1,11 @@
 use crate::msg_broker::types::{BrokerRequests, BrokerResponses};
+use log::debug;
 use message_broker::broker_memstorage::MemStorage;
 use message_broker::channel::channel::{DualChannel, LocalChannel};
 use message_broker::rpc::BrokerConfig;
 use message_broker::rpc::sync_server::BrokerSync;
 use mockall::automock;
+use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
@@ -32,7 +34,7 @@ impl BrokerServer {
     pub fn new(port: u16) -> Self {
         // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - change to disk storage (broker feature)
         let broker_storage = Arc::new(Mutex::new(MemStorage::new()));
-        let broker_config = BrokerConfig::new(port, None);
+        let broker_config = BrokerConfig::new(port, Some(IpAddr::from(Ipv4Addr::new(0, 0, 0, 0))));
         let broker = BrokerSync::new(&broker_config, broker_storage.clone());
         let broker_channel = LocalChannel::new(BROKER_SERVER_ID, broker_storage.clone());
 
@@ -74,8 +76,9 @@ pub struct BrokerClient {
 }
 
 impl BrokerClient {
-    pub fn new(port: u16, my_id: u32) -> Self {
-        let broker_config = BrokerConfig::new(port, None);
+    pub fn new(ip: IpAddr, port: u16, my_id: u32) -> Self {
+        debug!("Starting BrokerClient on {ip}:{port} with id {my_id}");
+        let broker_config = BrokerConfig::new(port, Some(ip));
         let client = DualChannel::new(&broker_config, my_id);
         Self { channel: client }
     }

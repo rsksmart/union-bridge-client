@@ -1,0 +1,23 @@
+indexer:
+  initial_block_hash: "0x27de5a07c7e9b812c3e7ee4c7c51fa131280ed9e16f1d70b5751034943d75c47"
+  storage:
+    path: "/app/db/" # This should match the volume mount in docker-compose
+  cache:
+    size: 1000
+  sync:
+    finality_depth: 100
+    batch_size: 100
+
+provider:
+  rootstock:
+    url: "ws://172.25.0.14:2222" # This should match the service and the port exposed by sc-event-mocking in docker-compose
+
+contracts:
+  - name: "TestContractDyn"
+    address: "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761"
+
+  - name: "TestContractCompiled"
+    address: "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc"
+
+  - name: "PegManager"
+    address: "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853"
