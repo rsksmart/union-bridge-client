@@ -73,17 +73,17 @@ impl CommonConfig {
         };
 
         let common_config = &format!("{config_path}/common.yaml");
-        let config = &format!("{config_path}/{crate_name}.yaml");
+        let crate_config = &format!("{config_path}/{crate_name}.yaml");
 
         println!(
             "Loading config from {:?} and {:?}",
             Path::new(common_config),
-            Path::new(config)
+            Path::new(crate_config),
         );
 
         let cfg = config::Config::builder()
             .add_source(config::File::with_name(common_config).required(false)) // must exist if crate one does not
-            .add_source(config::File::with_name(config).required(false)) // must exist if common one does not
+            .add_source(config::File::with_name(crate_config).required(false)) // must exist if common one does not
             .build()
             .map_err(ConfigError::ConfigFileError)?
             .try_deserialize::<T>()
