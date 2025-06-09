@@ -434,6 +434,7 @@ mod tests {
     #[test]
     fn test_start_bitvmx_monitoring_success() {
         let mut bitvmx_broker = MockBrokerClientApi::new();
+        expect_unsubscribe_bitvmx(&mut bitvmx_broker, 1);
         expect_subscribe_bitvmx(&mut bitvmx_broker, 1);
 
         let mut monitor = Monitor::new(
@@ -450,6 +451,7 @@ mod tests {
     #[test]
     fn test_start_bitvmx_monitoring_fails_on_broker_error() {
         let mut bitvmx_broker = MockBrokerClientApi::new();
+        expect_unsubscribe_bitvmx(&mut bitvmx_broker, 1);
         bitvmx_broker
             .expect_send()
             .with(eq(BROKER_SERVER_ID), eq(BrokerRequests::SubscribeBitVMX))
@@ -481,7 +483,7 @@ mod tests {
         );
         monitor.bitvmx_monitoring_active = true;
         let err = monitor.start_bitvmx_monitoring();
-        assert!(err.is_ok());
+        assert!(err.is_err());
     }
 
     #[test]
@@ -613,7 +615,7 @@ mod tests {
         );
         monitor.bitvmx_monitoring_active = true;
 
-        let result = monitor.try_block().expect("Failed to receive BitVMX event");
+        let result = monitor.try_bitvmx_event().expect("Failed to receive BitVMX event");
         assert_eq!(result, None);
     }
 

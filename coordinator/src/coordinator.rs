@@ -206,12 +206,22 @@ mod tests {
             .returning(|| Ok(()));
 
         mock_monitor
+            .expect_start_bitvmx_monitoring()
+            .times(..)
+            .returning(|| Ok(()));
+
+        mock_monitor
             .expect_cancel_event_monitoring()
             .return_once(|| Ok(()))
             .once();
 
         mock_monitor
             .expect_cancel_block_monitoring()
+            .return_once(|| Ok(()))
+            .once();
+
+        mock_monitor
+            .expect_cancel_bitvmx_monitoring()
             .return_once(|| Ok(()))
             .once();
 
@@ -261,6 +271,11 @@ mod tests {
             .expect_start_block_monitoring()
             .times(..)
             .returning(|| Ok(()));
+        
+        mock_monitor
+            .expect_start_bitvmx_monitoring()
+            .times(..)
+            .returning(|| Ok(()));
 
         mock_monitor
             .expect_cancel_event_monitoring()
@@ -269,6 +284,11 @@ mod tests {
 
         mock_monitor
             .expect_cancel_block_monitoring()
+            .return_once(|| Ok(()))
+            .once();
+
+        mock_monitor
+            .expect_cancel_bitvmx_monitoring()
             .return_once(|| Ok(()))
             .once();
 
