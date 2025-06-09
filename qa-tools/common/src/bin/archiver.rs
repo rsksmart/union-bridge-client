@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
 use chrono::Local;
 use clap::Parser;
+use qa_tools_common::common::config_consts;
 use std::fs;
 use std::path::Path;
-use qa_tools_common::common::config_consts;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]

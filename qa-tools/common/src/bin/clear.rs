@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-use std::{fs, path::Path};
 use qa_tools_common::common::config_consts;
+use std::{fs, path::Path};
 
 fn main() -> Result<()> {
     let root_directory = config_consts::ROOT_DIRECTORY;
