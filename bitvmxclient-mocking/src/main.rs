@@ -2,7 +2,7 @@ use anyhow::Result;
 use bitvmxclient_mocking::Executor;
 use clap::{Parser, Subcommand};
 use common::msg_broker::broker::BrokerServer;
-use std::io::{self, Write};
+use std::{io::{self, Write}, sync::{Arc, Mutex}, thread, time::Duration};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -28,42 +28,49 @@ enum Commands {
 
 fn main() -> Result<()> {
     let broker_server = BrokerServer::new(9094);
+    let executor = Arc::new(Mutex::new(Executor::new(broker_server)));
 
-    let mut executor = Executor::new(broker_server);
+    // Spawn background thread to update consumers
+    {
+        let executor = Arc::clone(&executor);
+        thread::spawn(move || {
+            loop {
+                {
+                    let mut executor = executor.lock().unwrap();
+                    if let Err(e) = executor.update_consumers() {
+                        eprintln!("Error updating consumers: {e}");
+                    }
+                }
+                thread::sleep(Duration::from_secs(5));
+            }
+        });
+    }
 
+    // CLI loop
     let stdin = io::stdin();
     let mut line = String::new();
 
     println!("Mock BitVMX Events CLI");
-    println!(
-        "Type `get_temporary_pegin_address <rootstock_deposit_address> <value> <btc_reimbursement_pub_key>`"
-    );
+    println!("Type `get_temporary_pegin_address <addr> <val> <pubkey>`");
     println!("or `exit` to quit.");
 
     loop {
-        println!("\n");
-        // pick up new subscriptions
-        executor.update_consumers()?;
-
-        // prompt
         print!("> ");
         io::stdout().flush()?;
         line.clear();
         if stdin.read_line(&mut line)? == 0 {
-            // EOF
-            break;
+            break; // EOF
         }
+
         let input = line.trim();
         if input.is_empty() {
             continue;
         }
 
-        // build fake argv for clap
         let argv = std::iter::once("bridge-cli")
             .chain(input.split_whitespace())
             .collect::<Vec<_>>();
 
-        // parse and dispatch
         match Cli::try_parse_from(&argv) {
             Ok(Cli { command }) => match command {
                 Commands::GetTemporaryPeginAddress {
@@ -71,6 +78,7 @@ fn main() -> Result<()> {
                     value,
                     btc_reimbursement_pub_key,
                 } => {
+                    let executor = executor.lock().unwrap();
                     executor.send_get_temporary_pegin_address_event(
                         rootstock_deposit_address,
                         value,

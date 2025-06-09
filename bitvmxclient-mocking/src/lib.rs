@@ -22,27 +22,22 @@ impl<BS: BrokerServerApi> Executor<BS> {
     pub fn update_consumers(&mut self) -> Result<()> {
         match self.broker_server.try_recv()? {
             Some((BrokerRequests::SubscribeBitVMX, consumer_id)) => {
-                println!("Status: New consumer {consumer_id} for BitVMX messages");
+                eprintln!("Status: New consumer {consumer_id} for BitVMX messages");
                 self.consumers.insert(consumer_id);
             }
             Some((BrokerRequests::UnsubscribeBitVMX, consumer_id)) => {
-                println!("Status: Unsubscribing consumer {consumer_id}");
-                let removed = self.consumers.remove(&consumer_id);
-                if !removed {
-                    println!(
-                        "Status: Consumer {consumer_id} was not subscribed to BitVMX messages"
-                    );
+                if self.consumers.contains(&consumer_id) {
+                    eprintln!("Status: Unsubscribing consumer {consumer_id}");
+                    self.consumers.remove(&consumer_id);
                 }
             }
             Some((_, consumer_id)) => {
-                println!(
+                eprintln!(
                     "Status: Unexpected request type from consumer {consumer_id}, unsubscribing"
                 );
                 self.consumers.remove(&consumer_id);
             }
-            None => {
-                println!("Status: No messages in broker");
-            }
+            None => {}
         }
 
         Ok(())
