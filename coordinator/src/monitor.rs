@@ -1,13 +1,13 @@
 use crate::types::{EventDecoder, RskPegManagerEvents};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use common::{
     msg_broker::{
-        broker::{BrokerClientApi, BrokerError, BROKER_SERVER_ID},
+        broker::{BROKER_SERVER_ID, BrokerClientApi, BrokerError},
         types::{BrokerRequests, BrokerResponses},
     },
     types::{Address, RskBlockAndUncles},
 };
-use log::{info, trace};
+use log::{debug, info, trace};
 
 #[cfg(test)]
 use mockall::automock;
@@ -15,13 +15,13 @@ use mockall::automock;
 #[cfg_attr(test, automock)]
 pub trait MonitorApi {
     fn start_event_monitoring(&mut self) -> Result<()>;
-    fn start_block_monitoring_if_off(&mut self) -> Result<()>;
+    fn start_block_monitoring(&mut self) -> Result<()>;
     fn start_bitvmx_monitoring(&mut self) -> Result<()>;
     fn try_event(&mut self) -> Result<Option<RskPegManagerEvents>>;
     fn try_block(&mut self) -> Result<Option<RskBlockAndUncles>>;
     fn try_bitvmx_event(&mut self) -> Result<Option<BrokerResponses>>;
     fn cancel_event_monitoring(&mut self) -> Result<()>;
-    fn cancel_block_monitoring_if_on(&mut self) -> Result<()>;
+    fn cancel_block_monitoring(&mut self) -> Result<()>;
     fn cancel_bitvmx_monitoring(&mut self) -> Result<()>;
 }
 
@@ -29,6 +29,7 @@ pub struct Monitor<T: BrokerClientApi> {
     log_broker: T,
     block_broker: T,
     bitvmx_broker: T,
+    event_decoder: EventDecoder,
     peg_manager_address: Address,
     block_monitoring_active: bool,
     log_monitoring_active: bool,
@@ -84,6 +85,7 @@ impl<T: BrokerClientApi> Monitor<T> {
             log_broker,
             block_broker,
             bitvmx_broker,
+            event_decoder: EventDecoder::new(),
             peg_manager_address,
             block_monitoring_active: false,
             log_monitoring_active: false,
@@ -299,11 +301,11 @@ mod tests {
     use anyhow::anyhow;
     use common::{
         msg_broker::{
-            broker::{MockBrokerClientApi, BROKER_SERVER_ID},
+            broker::{BROKER_SERVER_ID, MockBrokerClientApi},
             types::BrokerRequests,
         },
         test_utils::{
-            rsk_block_generator::get_first_default_rsk_block, rsk_log_generator::FakeLogGenerator,
+            rsk_block_generator::create_block_and_uncles, rsk_log_generator::FakeLogGenerator,
         },
     };
     use mockall::predicate::*;
@@ -347,11 +349,12 @@ mod tests {
         );
         let err = monitor.start_event_monitoring();
         assert!(err.is_err());
-        assert!(err
-            .as_ref()
-            .unwrap_err()
-            .to_string()
-            .contains("Broker error on SubscribeLogs"));
+        assert!(
+            err.as_ref()
+                .unwrap_err()
+                .to_string()
+                .contains("Broker error on SubscribeLogs")
+        );
     }
 
     #[test]
@@ -365,11 +368,12 @@ mod tests {
         monitor.log_monitoring_active = true;
         let err = monitor.start_event_monitoring();
         assert!(err.is_err());
-        assert!(err
-            .as_ref()
-            .unwrap_err()
-            .to_string()
-            .contains("already active"));
+        assert!(
+            err.as_ref()
+                .unwrap_err()
+                .to_string()
+                .contains("already active")
+        );
     }
 
     #[test]
@@ -406,11 +410,12 @@ mod tests {
         );
         let err = monitor.start_block_monitoring();
         assert!(err.is_err());
-        assert!(err
-            .as_ref()
-            .unwrap_err()
-            .to_string()
-            .contains("Broker error on SubscribeBlocks"));
+        assert!(
+            err.as_ref()
+                .unwrap_err()
+                .to_string()
+                .contains("Broker error on SubscribeBlocks")
+        );
     }
 
     #[test]
@@ -458,11 +463,12 @@ mod tests {
         );
         let err = monitor.start_bitvmx_monitoring();
         assert!(err.is_err());
-        assert!(err
-            .as_ref()
-            .unwrap_err()
-            .to_string()
-            .contains("Broker error on SubscribeBitVMX"));
+        assert!(
+            err.as_ref()
+                .unwrap_err()
+                .to_string()
+                .contains("Broker error on SubscribeBitVMX")
+        );
     }
 
     #[test]
@@ -576,7 +582,7 @@ mod tests {
         let mut bitvmx_broker = MockBrokerClientApi::new();
         bitvmx_broker
             .expect_try_recv()
-            .return_once({ move || Ok(Some(mock_value)) });
+            .return_once(move || Ok(Some(mock_value)));
 
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),

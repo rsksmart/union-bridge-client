@@ -1,9 +1,11 @@
 use crate::{
-    event_processor::{DisputedPegoutProcessor, EventProcessor, GetTemporaryPeginAddressProcessor},
+    event_processor::{
+        EventProcessor, GetTemporaryPeginAddressProcessor, PegOutAdvanceFundsProcessor,
+    },
     monitor::MonitorApi,
 };
 use anyhow::{Context, Result};
-use common::{constants::coordinator::MONITOR_CHECK_PERIOD, shutdown_flag::ShutdownFlag};
+use common::shutdown_flag::ShutdownFlag;
 use log::error;
 use std::{thread, time::Duration};
 
@@ -21,10 +23,10 @@ impl<M: MonitorApi> Coordinator<M> {
         Self {
             monitor,
             processors: vec![
-                Box::new(DisputedPegoutProcessor::new()),
+                Box::new(PegOutAdvanceFundsProcessor::new()),
                 Box::new(GetTemporaryPeginAddressProcessor::new()),
             ],
-            check_period: MONITOR_CHECK_PERIOD,
+            check_period: CHECK_PERIOD,
             shutdown_flag,
         }
     }
@@ -33,7 +35,7 @@ impl<M: MonitorApi> Coordinator<M> {
         Self {
             monitor,
             processors: vec![
-                Box::new(DisputedPegoutProcessor::new()),
+                Box::new(PegOutAdvanceFundsProcessor::new()),
                 Box::new(GetTemporaryPeginAddressProcessor::new()),
             ],
             check_period: Duration::from_millis(1),
@@ -146,14 +148,14 @@ mod tests {
         test_utils::rsk_block_generator::{
             create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
         },
-        types::{RskBlock, RskBlockAndUncles},
+        types::RskBlockAndUncles,
     };
     use sc_event_mocking::fake_contracts::FakePegManager::{
         KickoffAdvanceFunds, RequestAdvanceFunds,
     };
     use serde_json::json;
     use std::{
-        thread::{self, sleep, JoinHandle},
+        thread::{self, JoinHandle, sleep},
         time::Duration,
     };
 

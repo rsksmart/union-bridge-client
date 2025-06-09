@@ -50,7 +50,7 @@ impl EventProcessor for GetTemporaryPeginAddressProcessor {
         }
     }
 
-    fn shutdown(&self) {
+    fn shutdown(&mut self) {
         info!("Shutting down GetTemporaryPeginAddressProcessor");
     }
 }
