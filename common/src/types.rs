@@ -178,7 +178,7 @@ impl fmt::Display for BlockNumber {
 /// This struct ensures type safety when working with block timestamps, preventing
 /// accidental misuse of raw `u64` values in places where a `BlockTimestamp` is expected.
 /// ```
-#[derive(Serialize, Deserialize, Debug, PartialEq, Copy, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Copy, Clone)]
 pub struct BlockTimestamp(u64);
 
 impl BlockTimestamp {
@@ -227,7 +227,7 @@ impl Sub<u64> for BlockTimestamp {
 ///
 /// println!("Block difficulty: {}", block_difficulty);
 /// ```
-#[derive(Serialize, Deserialize, Debug, PartialEq, PartialOrd, Copy, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Copy, Clone)]
 pub struct BlockDifficulty(U256);
 
 impl BlockDifficulty {
@@ -418,6 +418,7 @@ impl PartialEq for RskBlock {
         self.hash == other.hash
     }
 }
+
 impl Eq for RskBlock {
     // derived from PartialEq
 }
@@ -493,7 +494,7 @@ impl From<RskRpcBlock> for RskBlock {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct RskLog {
     info: LogInfo,
     event: LogEvent,
@@ -609,7 +610,7 @@ impl LogInfo {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct LogEvent {
     data: String,
     topics: Vec<String>,
