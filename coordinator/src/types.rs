@@ -29,8 +29,9 @@ pub struct EventWithBlock<T> {
     pub block_hash: BlockHash,
 }
 
-type DecoderFn = fn(&LogData, BlockNumber, BlockHash, bool) -> RskPegManagerEvents;
+pub type EventStatus = bool;
 
+type DecoderFn = fn(&LogData, BlockNumber, BlockHash, EventStatus) -> RskPegManagerEvents;
 pub struct EventDecoder {
     dispatch: HashMap<B256, DecoderFn>,
 }
