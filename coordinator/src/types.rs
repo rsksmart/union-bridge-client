@@ -14,6 +14,7 @@ pub enum RskPegManagerEvents {
     KickoffAdvanceFunds(KickoffAdvanceFundsEvent), // temporarily mock, no need to test it
     RemoveKickoffAdvanceFunds { peg_out_id: String }, // temporarily mock, no need to test it
     RegisteredPegInRequest(RegisteredPegInRequestEvent),
+    RemoveRegisteredPegInRequest(RegisteredPegInRequestEvent),
     UnknownEvent,
 }
 
@@ -28,7 +29,7 @@ pub struct EventWithBlock<T> {
     pub block_hash: BlockHash,
 }
 
-type DecoderFn = fn(&LogData, BlockNumber, BlockHash) -> RskPegManagerEvents;
+type DecoderFn = fn(&LogData, BlockNumber, BlockHash, bool) -> RskPegManagerEvents;
 
 pub struct EventDecoder {
     dispatch: HashMap<B256, DecoderFn>,
@@ -63,7 +64,7 @@ impl EventDecoder {
         let block_num = log.info().block_number();
         let block_hash = log.info().block_hash();
         match self.dispatch.get(&topic0) {
-            Some(decoder_fn) => decoder_fn(&log_data, block_num, block_hash),
+            Some(decoder_fn) => decoder_fn(&log_data, block_num, block_hash, log.info().removed()),
             None => {
                 warn!("Unknown event type for log: {:?}", log);
                 UnknownEvent
@@ -110,13 +111,23 @@ impl EventDecoder {
         log_data: &LogData,
         block_number: BlockNumber,
         block_hash: BlockHash,
+        removed: bool,
     ) -> RskPegManagerEvents {
         match RegisteredPegInRequest::decode_log_data(&log_data, true) {
-            Ok(ev) => RskPegManagerEvents::RegisteredPegInRequest(RegisteredPegInRequestEvent {
-                inner: ev,
-                block_number,
-                block_hash,
-            }),
+            Ok(ev) if !removed => {
+                RskPegManagerEvents::RegisteredPegInRequest(RegisteredPegInRequestEvent {
+                    inner: ev,
+                    block_number,
+                    block_hash,
+                })
+            }
+            Ok(ev) => {
+                RskPegManagerEvents::RemoveRegisteredPegInRequest(RegisteredPegInRequestEvent {
+                    inner: ev,
+                    block_number,
+                    block_hash,
+                })
+            }
             Err(_) => UnknownEvent,
         }
     }
@@ -125,13 +136,19 @@ impl EventDecoder {
         log_data: &LogData,
         block_number: BlockNumber,
         block_hash: BlockHash,
+        removed: bool,
     ) -> RskPegManagerEvents {
         match RequestAdvanceFunds::decode_log_data(&log_data, true) {
-            Ok(event) => RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFundsEvent {
-                inner: event,
-                block_number,
-                block_hash,
-            }),
+            Ok(event) if !removed => {
+                RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFundsEvent {
+                    inner: event,
+                    block_number,
+                    block_hash,
+                })
+            }
+            Ok(event) => RskPegManagerEvents::RemoveRequestAdvanceFunds {
+                peg_out_id: event.peg_out_id,
+            },
             Err(_) => UnknownEvent,
         }
     }
@@ -140,13 +157,19 @@ impl EventDecoder {
         log_data: &LogData,
         block_number: BlockNumber,
         block_hash: BlockHash,
+        removed: bool,
     ) -> RskPegManagerEvents {
         match KickoffAdvanceFunds::decode_log_data(&log_data, true) {
-            Ok(event) => RskPegManagerEvents::KickoffAdvanceFunds(KickoffAdvanceFundsEvent {
-                inner: event,
-                block_number,
-                block_hash,
-            }),
+            Ok(event) if !removed => {
+                RskPegManagerEvents::KickoffAdvanceFunds(KickoffAdvanceFundsEvent {
+                    inner: event,
+                    block_number,
+                    block_hash,
+                })
+            }
+            Ok(event) => RskPegManagerEvents::RemoveKickoffAdvanceFunds {
+                peg_out_id: event.peg_out_id,
+            },
             Err(_) => UnknownEvent,
         }
     }
