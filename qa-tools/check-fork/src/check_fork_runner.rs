@@ -5,7 +5,7 @@ use primitive_types::U256;
 use std::error::Error;
 use zkvm_cli_serde::serialize_guest_input;
 // use zkvm_host::prove_stark_no_cli;
-use qa_tools_check_fork::{get_blocks, get_blocks_from_fixture, FIXTURES_BASE_DIR};
+use qa_tools_check_fork::{FIXTURES_BASE_DIR, get_blocks, get_blocks_from_fixture};
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -64,21 +64,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let blocks = match &cli_args.fixture {
         Some(path) => {
-            let fixture_path = format!(
-                "{}/{}.json",
-                FIXTURES_BASE_DIR,
-                path
-            );
+            let fixture_path = format!("{}/{}.json", FIXTURES_BASE_DIR, path);
             let json = std::fs::read_to_string(fixture_path)?;
             get_blocks_from_fixture(json, cli_args.bridge_event)?
         }
-    
+
         None => {
             get_blocks(
                 cli_args.fetch_start_block,
                 cli_args.fetch_block_count,
                 log_super_block,
-                cli_args.bridge_event
+                cli_args.bridge_event,
             )
             .await?
         }
