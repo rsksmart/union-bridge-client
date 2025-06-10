@@ -43,7 +43,7 @@ services:
       test: [ "CMD-SHELL", "pgrep block-indexer" ] # TODO improve with health endpoint
     entrypoint: [ "/app/block-indexer", "--config-path", "/app/config" ]
     depends_on:
-      sc-event-mocking:
+      actors-mocking:
         condition: service_healthy
 
   log-indexer:
@@ -68,7 +68,7 @@ services:
       test: [ "CMD-SHELL", "pgrep log-indexer" ] # TODO improve with health endpoint
     entrypoint: [ "/app/log-indexer", "--config-path", "/app/config" ]
     depends_on:
-      sc-event-mocking:
+      actors-mocking:
         condition: service_healthy
 
   transaction-dispatcher:
@@ -97,7 +97,7 @@ services:
       test: [ "CMD", "ps", "aux", "|", "grep", "transaction-dispatcher" ]
     entrypoint: [ "sh", "/app/entrypoint-tx-dispatcher.sh" ]
     depends_on:
-      sc-event-mocking:
+      actors-mocking:
         condition: service_healthy
 
   coordinator:
@@ -122,17 +122,17 @@ services:
       - log-indexer
       - block-indexer
 
-  sc-event-mocking:
+  actors-mocking:
     <<: *base-service
     build:
       <<: *base-build
       args:
-        - CRATE=sc-event-mocking
+        - CRATE=actors-mocking
         - FOUNDRY_VERSION=${FOUNDRY_VERSION}
         - UNION_CONTRACTS_TAG=${UNION_CONTRACTS_TAG}
     stdin_open: true   # for CLI
     tty: true          # for CLI
-    container_name: sc-event-mocking
+    container_name: actors-mocking
     volumes:
       - ./entrypoint-sc-ev-mock.sh:/app/entrypoint-sc-ev-mock.sh:ro
     ports:
@@ -149,7 +149,7 @@ services:
         "CMD-SHELL",
         "RUST_LOG=error cast code 0xa513E6E4b8f2a923D98304ec87F64353C4D5C853 --rpc-url http://localhost:2222 | grep -vq '^0x$'" # PegManager contract address should match config and deployed address
       ]
-    entrypoint: [ "/app/sc-event-mocking" ]
+    entrypoint: [ "/app/actors-mocking" ]
     # entrypoint: [ "/bin/sh", "-c", "sleep infinity" ]
 
 networks:

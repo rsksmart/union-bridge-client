@@ -13,6 +13,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "actors-mocking"
+version = "0.1.0"
+dependencies = [
+ "alloy-contract",
+ "alloy-eips",
+ "alloy-node-bindings",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-signer-local",
+ "alloy-sol-types",
+ "anyhow",
+ "clap",
+ "common",
+ "serde_json",
+ "tokio",
+ "union-bridge-contracts",
+]
+
+[[package]]
 name = "addr2line"
 version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1296,17 +1315,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bitvmxclient-mocking"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "common",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1710,6 +1718,7 @@ dependencies = [
 name = "coordinator"
 version = "0.1.0"
 dependencies = [
+ "actors-mocking",
  "alloy-primitives",
  "alloy-sol-types",
  "anyhow",
@@ -1721,7 +1730,6 @@ dependencies = [
  "mockall",
  "primitive-types 0.13.1",
  "reqwest 0.12.12",
- "sc-event-mocking",
  "serde",
  "serde_json",
  "union-bridge-contracts",
@@ -4849,24 +4857,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
 dependencies = [
  "winapi-util",
-]
-
-[[package]]
-name = "sc-event-mocking"
-version = "0.1.0"
-dependencies = [
- "alloy-contract",
- "alloy-eips",
- "alloy-node-bindings",
- "alloy-primitives",
- "alloy-provider",
- "alloy-signer-local",
- "alloy-sol-types",
- "anyhow",
- "clap",
- "common",
- "tokio",
- "union-bridge-contracts",
 ]
 
 [[package]]

@@ -1,9 +1,9 @@
 use crate::types::RskPegManagerEvents::UnknownEvent;
+use actors_mocking::fake_contracts::FakePegManager::{KickoffAdvanceFunds, RequestAdvanceFunds};
 use alloy_primitives::{B256, LogData};
 use alloy_sol_types::SolEvent;
 use common::types::{BlockHash, BlockNumber, RskLog};
 use log::{error, warn};
-use sc_event_mocking::fake_contracts::FakePegManager::{KickoffAdvanceFunds, RequestAdvanceFunds};
 use std::collections::HashMap;
 use union_contracts::bindings::pegmanager::PegManager::RegisteredPegInRequest;
 

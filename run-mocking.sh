@@ -2,4 +2,4 @@
 
 set -euo pipefail
 
-cargo run --bin sc-event-mocking
+cargo run --bin actors-mocking

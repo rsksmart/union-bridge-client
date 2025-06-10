@@ -42,9 +42,9 @@ docker compose up
 
 _Note: take into account that the Cargo features are specified at build time, so if you want to change them, you need to rebuild the compose._
 
-# sc-event-mocking
+# actors-mocking
 
-If you want to use the `sc-event-mocking` CLI, run (you may need to double-enter):
+If you want to use the `actors-mocking` CLI, run (you may need to double-enter):
 
 ```bash
 ./cli-event-mocking.sh

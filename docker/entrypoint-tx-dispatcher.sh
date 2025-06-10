@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-RPC_URL="http://sc-event-mocking:2222"
+RPC_URL="http://actors-mocking:2222"
 KEYSTORE_PATH="/keystore/key.json"
 
 if [ ! -f "${KEYSTORE_PATH}" ]; then

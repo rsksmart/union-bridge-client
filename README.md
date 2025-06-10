@@ -77,7 +77,7 @@ This will automatically load the environment variables defined in the `.envrc` o
 # How to run the Union Client?
 
 To run the Union-Client you have several options:
-1. Manually run the required crates: `block-indexer` + `log-indexer` + `transaction-dispatcher` + `coordinator` (+ `sc-event-mocking` for mocks).
+1. Manually run the required crates: `block-indexer` + `log-indexer` + `transaction-dispatcher` + `coordinator` (+ `actors-mocking` for mocks).
    - Make sure you have the required dependencies installed (e.g., `anvil` for mocks).
    - Use the provided sample config files under `config` to create your own configuration.
    - Run each crate with the appropriate command, passing the paths to the logger and config files.

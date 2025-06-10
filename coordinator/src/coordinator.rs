@@ -142,6 +142,9 @@ mod tests {
         monitor::MockMonitorApi,
         types::{KickoffAdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents},
     };
+    use actors_mocking::fake_contracts::FakePegManager::{
+        KickoffAdvanceFunds, RequestAdvanceFunds,
+    };
     use alloy_primitives::U256;
     use common::{
         msg_broker::types::BrokerResponses::GetTemporaryPegInAddress,
@@ -150,9 +153,6 @@ mod tests {
             create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
         },
         types::RskBlockAndUncles,
-    };
-    use sc_event_mocking::fake_contracts::FakePegManager::{
-        KickoffAdvanceFunds, RequestAdvanceFunds,
     };
     use serde_json::json;
     use std::{

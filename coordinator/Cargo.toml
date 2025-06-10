@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 check-fork = { path = "../check-fork" }
 common = { path = "../common" }
-sc-event-mocking = { path = "../sc-event-mocking" }
+actors-mocking = { path = "../actors-mocking" }
 
 alloy-primitives = { workspace = true }
 alloy-sol-types = { workspace = true }
