@@ -57,7 +57,36 @@ The Union Bridge Monitor is not just a simple block indexer. It:
 - **Integrates with a zero‑knowledge proof pipeline** for fork validation.
 - **Interfaces with the Union Bridge contracts and the Union Client** for full protocol orchestration.
 
-# How to run the Monitor?
+# Configuration
+
+Configuration files are located under the `config` directory, organized in environment folders. The final config is the composition of the following files in the defined order:
+- `common.yaml`: common configuration for all environments.
+- `{crate_name}.yaml`: specific configuration for each crate.
+
+## Environment Variables
+The project also uses some environment variables for private properties.
+
+We recommend using `direnv` to manage them. Then you can set them up by:
+1. copying `[.envrc.sample](.envrc.sample)`) in the project root as `.envrc`
+2. modifying what you need
+3. and running `direnv allow` (every time you do a change)
+ 
+This will automatically load the environment variables defined in the `.envrc` on the services that require them.
+
+
+# How to run the Union Client?
+
+To run the Union-Client you have several options:
+1. Manually run the required crates: `block-indexer` + `log-indexer` + `transaction-dispatcher` + `coordinator` (+ `sc-event-mocking` for mocks).
+   - Make sure you have the required dependencies installed (e.g., `anvil` for mocks).
+   - Use the provided sample config files under `config` to create your own configuration.
+   - Run each crate with the appropriate command, passing the paths to the logger and config files.
+2. Use the **sh** scripts:
+   1. `./run-client.sh` to run without mocks, using **local** config.
+   2. `./run-mocks.sh` in one terminal and `./run-client.sh anvil` in another one to use mocks and the **anvil** config.
+3. Use the `docker-compose` file to run the Union Client. Check the [docker/README.md](docker/README.md) for more information on how to build and run the monitor using Docker.
+
+# How to run the Monitors?
 
 Both `log-indexer` and `block-indexer` need to be run. TBD if we create an orchestrator to run both at the same time.
 Both crates are configurable, please check sample files under `config` as a reference to create your own config.
@@ -173,6 +202,3 @@ rusty-hook init
 ```
 
 The file [rusty-hook.toml](rusty-hook.toml) will be used for hook configuration.
-
-# Docker
-Check the [docker/README.md](docker/README.md) for more information on how to build and run the monitor using Docker.
