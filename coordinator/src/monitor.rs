@@ -615,7 +615,9 @@ mod tests {
         );
         monitor.bitvmx_monitoring_active = true;
 
-        let result = monitor.try_bitvmx_event().expect("Failed to receive BitVMX event");
+        let result = monitor
+            .try_bitvmx_event()
+            .expect("Failed to receive BitVMX event");
         assert_eq!(result, None);
     }
 
