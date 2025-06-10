@@ -53,7 +53,7 @@ fn main() -> Result<()> {
         log_broker,
         block_broker,
         bitvmx_broker,
-        config.get_peg_manager_contract(),
+        config.get_peg_manager_contract_addresses(),
     );
 
     let shutdown_flag = ShutdownFlag::init();

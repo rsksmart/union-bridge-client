@@ -28,15 +28,25 @@ impl Config {
         Ok(cfg)
     }
 
-    pub fn get_peg_manager_contract(&self) -> Address {
+    pub fn get_peg_manager_contract_addresses(&self) -> Vec<Address> {
         self.contracts
             .iter()
-            .find(|contract| contract.name == PEG_MANAGER_CONTRACT_NAME)
+            .filter(|contract| Self::get_contracts_to_subscribe_to(contract))
             .map(|contract| contract.address.clone())
             .map(|address| {
                 Address::try_from(address.as_str()).expect("Invalid contract address on config")
             })
-            .expect("PegManager contract not found on config")
+            .collect::<Vec<Address>>()
+    }
+
+    #[cfg(feature = "anvil")]
+    fn get_contracts_to_subscribe_to(contract: &&ContractConfig) -> bool {
+        contract.name == PEG_MANAGER_CONTRACT_NAME || contract.name == "FakePegManager"
+    }
+
+    #[cfg(not(feature = "anvil"))]
+    fn get_contracts_to_subscribe_to(contract: &&ContractConfig) -> bool {
+        contract.name == PEG_MANAGER_CONTRACT_NAME
     }
 }
 
