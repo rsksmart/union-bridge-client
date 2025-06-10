@@ -161,7 +161,7 @@ impl PartialOrd<u64> for BlockNumber {
 
 impl ToHexString for BlockNumber {
     fn to_hex_string(&self) -> String {
-        format!("0x{:x}", self.0)
+        format!("{:#x}", self.0)
     }
 }
 
@@ -385,7 +385,7 @@ impl TryFrom<&str> for Address {
 
 impl ToHexString for Address {
     fn to_hex_string(&self) -> String {
-        format!("0x{:x}", self.0)
+        format!("{:#x}", self.0)
     }
 }
 

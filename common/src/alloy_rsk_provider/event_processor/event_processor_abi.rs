@@ -59,8 +59,8 @@ pub fn process(
 #[allow(unexpected_cfgs)]
 fn dyn_value_to_json(value: &DynSolValue) -> Result<Value> {
     let parsed = match value {
-        DynSolValue::Uint(num, _) => json!(format!("0x{:x}", num)),
-        DynSolValue::Int(num, _) => json!(format!("0x{:x}", num)),
+        DynSolValue::Uint(num, _) => json!(format!("{:#x}", num)),
+        DynSolValue::Int(num, _) => json!(format!("{:#x}", num)),
         DynSolValue::Bool(b) => json!(b),
         DynSolValue::String(s) => json!(s),
         DynSolValue::Address(addr) => json!(format!("{:?}", addr.to_string())),

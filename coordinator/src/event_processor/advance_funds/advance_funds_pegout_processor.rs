@@ -126,7 +126,7 @@ impl<T: BrokerClientApi> PegOutAdvanceFundsProcessor<T> {
         match check_fork(&args) {
             Ok(effort) => {
                 info!(
-                    "CheckFork accepted with effort {effort} (pow 0x{:x}). The elf path is {:?}. The image id is {:?}",
+                    "CheckFork accepted with effort {effort} (pow {:#x}). The elf path is {:?}. The image id is {:?}",
                     Self::pow_from_effort(effort),
                     CHECK_FORK_GUEST_PATH,
                     CHECK_FORK_GUEST_ID,
