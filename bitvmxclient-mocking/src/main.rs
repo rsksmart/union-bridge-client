@@ -2,7 +2,12 @@ use anyhow::Result;
 use bitvmxclient_mocking::Executor;
 use clap::{Parser, Subcommand};
 use common::msg_broker::broker::BrokerServer;
-use std::{io::{self, Write}, sync::{Arc, Mutex}, thread, time::Duration};
+use std::{
+    io::{self, Write},
+    sync::{Arc, Mutex},
+    thread,
+    time::Duration,
+};
 
 #[derive(Debug, Parser)]
 #[command(

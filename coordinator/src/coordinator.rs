@@ -31,13 +31,14 @@ impl<M: MonitorApi> Coordinator<M> {
         }
     }
 
-    pub fn new_for_tests(monitor: M, shutdown_flag: ShutdownFlag) -> Self {
+    pub fn new_for_tests(
+        monitor: M,
+        processors: Vec<Box<dyn EventProcessor>>,
+        shutdown_flag: ShutdownFlag,
+    ) -> Self {
         Self {
             monitor,
-            processors: vec![
-                Box::new(PegOutAdvanceFundsProcessor::new()),
-                Box::new(GetTemporaryPeginAddressProcessor::new()),
-            ],
+            processors,
             check_period: Duration::from_millis(1),
             shutdown_flag,
         }
@@ -135,6 +136,7 @@ impl<M: MonitorApi> Coordinator<M> {
 
 #[cfg(test)]
 mod tests {
+    use crate::event_processor::{EventProcessor, MockEventProcessor};
     use crate::{
         coordinator::Coordinator,
         monitor::MockMonitorApi,
@@ -241,7 +243,8 @@ mod tests {
         let shutdown_flag = ShutdownFlag::init();
         handle_shutdown(shutdown_flag.clone());
 
-        let mut coordinator = Coordinator::new_for_tests(mock_monitor, shutdown_flag);
+        let mut coordinator =
+            Coordinator::new_for_tests(mock_monitor, generate_ok_processors(), shutdown_flag);
         let result = coordinator.run();
 
         assert!(result.is_ok());
@@ -270,7 +273,7 @@ mod tests {
             .expect_start_block_monitoring()
             .times(..)
             .returning(|| Ok(()));
-        
+
         mock_monitor
             .expect_start_bitvmx_monitoring()
             .times(..)
@@ -301,10 +304,21 @@ mod tests {
             &mut mock_monitor,
         );
 
+        let bitvmx_event = GetTemporaryPegInAddress(json!("GetTemporaryPegInAddress"));
+
+        mock_monitor
+            .expect_try_bitvmx_event()
+            .returning(move || Ok(Some(bitvmx_event.clone())));
+
+        mock_monitor
+            .expect_try_bitvmx_event()
+            .returning(move || Ok(None));
+
         let shutdown_flag = ShutdownFlag::init();
         handle_shutdown(shutdown_flag.clone());
 
-        let mut coordinator = Coordinator::new_for_tests(mock_monitor, shutdown_flag);
+        let mut coordinator =
+            Coordinator::new_for_tests(mock_monitor, generate_ok_processors(), shutdown_flag);
         let result = coordinator.run();
 
         assert!(result.is_ok());
@@ -342,5 +356,34 @@ mod tests {
 
             move || responses.pop_front().unwrap_or(Ok(None))
         });
+    }
+
+    fn generate_ok_processors() -> Vec<Box<dyn EventProcessor>> {
+        let mut mock_pegout_processor = MockEventProcessor::new();
+        let mut mock_get_temp_addr_processor = MockEventProcessor::new();
+
+        expect_processors_ok(&mut mock_pegout_processor);
+        expect_processors_ok(&mut mock_get_temp_addr_processor);
+
+        vec![
+            Box::new(mock_pegout_processor),
+            Box::new(mock_get_temp_addr_processor),
+        ]
+    }
+
+    fn expect_processors_ok(mock_pegout_processor: &mut MockEventProcessor) {
+        mock_pegout_processor
+            .expect_process_new_bitvmx_event()
+            .returning(|_| Ok(()))
+            .times(1..);
+        mock_pegout_processor
+            .expect_process_new_block()
+            .returning(|_| Ok(()))
+            .times(1..);
+        mock_pegout_processor
+            .expect_process_new_event()
+            .returning(|_| Ok(()))
+            .times(1..);
+        mock_pegout_processor.expect_shutdown().return_once(|| ());
     }
 }
