@@ -40,12 +40,12 @@ impl Config {
     }
 
     #[cfg(feature = "anvil")]
-    fn get_contracts_to_subscribe_to(contract: &&ContractConfig) -> bool {
+    fn get_contracts_to_subscribe_to(contract: &ContractConfig) -> bool {
         contract.name == PEG_MANAGER_CONTRACT_NAME || contract.name == "FakePegManager"
     }
 
     #[cfg(not(feature = "anvil"))]
-    fn get_contracts_to_subscribe_to(contract: &&ContractConfig) -> bool {
+    fn get_contracts_to_subscribe_to(contract: &ContractConfig) -> bool {
         contract.name == PEG_MANAGER_CONTRACT_NAME
     }
 }

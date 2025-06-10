@@ -114,6 +114,8 @@ services:
     networks:
       internal:
         ipv4_address: 172.25.0.13
+    environment:
+      - TRANSACTION_DISPATCHER_URL=http://transaction-dispatcher:3000
     healthcheck:
       <<: *base-healthcheck
       test: [ "CMD", "ps", "aux", "|", "grep", "coordinator" ]
