@@ -11,7 +11,7 @@ const PEG_MANAGER_CONTRACT_NAME: &str = "PegManager";
 pub struct Config {
     pub log_broker: BrokerConfig,
     pub block_broker: BrokerConfig,
-    pub bitvmx_broker_port: BrokerConfig,
+    pub bitvmx_broker: BrokerConfig,
     pub broker_client_id: u32,
     pub contracts: Vec<ContractConfig>,
 }

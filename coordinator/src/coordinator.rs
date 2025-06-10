@@ -142,7 +142,6 @@ mod tests {
     };
     use alloy_primitives::U256;
     use common::{
-        fake_contracts::FakePegManager::{KickoffAdvanceFunds, RequestAdvanceFunds},
         msg_broker::types::BrokerResponses::GetTemporaryPegInAddress,
         shutdown_flag::ShutdownFlag,
         test_utils::rsk_block_generator::{
@@ -201,12 +200,12 @@ mod tests {
             .return_once(|| Ok(()));
 
         mock_monitor
-            .expect_start_block_monitoring()
+            .expect_start_bitvmx_monitoring()
             .times(..)
             .returning(|| Ok(()));
 
         mock_monitor
-            .expect_start_bitvmx_monitoring()
+            .expect_start_block_monitoring()
             .times(..)
             .returning(|| Ok(()));
 
