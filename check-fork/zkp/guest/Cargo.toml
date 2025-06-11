@@ -8,4 +8,4 @@ edition = "2024"
 [dependencies]
 risc0-zkvm = { version = "2.0.1", default-features = false, features = ['std'] }
 check-fork = { path = "../../../check-fork" }
-bincode = "1.3.3" # TODO(iago) update
+bincode = { version = "2.0.1", features = ["serde"] }
