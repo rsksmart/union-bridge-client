@@ -157,7 +157,9 @@ GetBlocks executed and CheckForkArgs generated. Relevant parameters for the inte
 ## 2) Generate the Stark Proof
 
 With the previous output, we can now generate the Stark Proof
+Clone Fairgate's [ZK Proof](https://github.com/FairgateLabs/rust-bitvmx-zk-proof/) repo, for now at `poc-generalise-host` branch.
 
+Then run the following command where:
 ```bash
 cargo run --release --bin host -- prove-stark --input /Users/illuque/workspace/rootstock/union_bridge/union-bridge-monitor/util/check-fork-demo/check_fork_args.bin --elf /Users/illuque/workspace/rootstock/union_bridge/union-bridge-monitor/target/riscv-guest/zkvm_guest/check_fork_guest/riscv32im-risc0-zkvm-elf/release/check_fork_guest --output stark-proof.bin
 ```
