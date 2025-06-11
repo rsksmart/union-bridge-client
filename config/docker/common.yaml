@@ -10,7 +10,7 @@ indexer:
 
 provider:
   rootstock:
-    url: "ws://172.25.0.14:2222" # This should match the service and the port exposed by sc-event-mocking in docker-compose
+    url: "ws://172.25.0.14:2222" # This should match the service and the port exposed by actors-mocking in docker-compose
 
 contracts:
   - name: "TestContractDyn"
@@ -21,3 +21,6 @@ contracts:
 
   - name: "PegManager"
     address: "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853"
+
+  - name: "FakePegManager"
+    address: "0x5FbDB2315678afecb367f032d93F642f64180aa3"

@@ -1,5 +1,6 @@
 use crate::types::{Address, BlockNumber, RskBlockAndUncles, RskLog};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
 pub enum BrokerRequests {
@@ -10,10 +11,14 @@ pub enum BrokerRequests {
     SubscribeLogs(Address),
     UnsubscribeLogs(Address),
     // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - add a limit time for receiving a response?
+    SubscribeBitVMX,
+    UnsubscribeBitVMX,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub enum BrokerResponses {
     Block(RskBlockAndUncles),
     Log(RskLog),
+    // TODO: Once BitVMX API types are ready update to match according to type
+    GetTemporaryPegInAddress(Value),
 }

@@ -46,7 +46,7 @@ COPY transaction-dispatcher transaction-dispatcher
 COPY key-manager key-manager
 COPY check-fork check-fork
 COPY coordinator coordinator
-COPY sc-event-mocking sc-event-mocking
+COPY actors-mocking actors-mocking
 
 # SSH mount for private repos
 RUN --mount=type=ssh,id=default mkdir -p .cargo && \
@@ -87,7 +87,7 @@ ARG FOUNDRY_VERSION
 COPY docker/dockerfile-foundry-setup.sh /app/foundry-setup.sh
 RUN chmod +x /app/foundry-setup.sh && /app/foundry-setup.sh
 
-# required by contracts-setup and also by sc-event-mocking that spins up anvil
+# required by contracts-setup and also by actors-mocking that spins up anvil
 ENV PATH="/opt/foundry/bin:$PATH"
 
 # if contracts required (checked within the script): clone, build and deploy them

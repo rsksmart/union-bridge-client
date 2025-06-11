@@ -11,8 +11,6 @@ use std::process::{Command, Stdio};
 use std::time::SystemTime;
 use union_contracts::bindings::pegmanager::PegManager::PegManagerInstance;
 
-pub mod fake_contracts;
-
 pub struct Executor<P: Provider> {
     provider: P,
     #[allow(dead_code)]
@@ -22,10 +20,17 @@ pub struct Executor<P: Provider> {
 
 impl<P: Provider + Clone> Executor<P> {
     pub async fn new(provider: P, provider_url: &str) -> Result<Self> {
+        println!("Deploying FakePegManager to {}...", provider_url);
+
         // deploy FakePegManager
         let fake_peg_manager = FakePegManager::deploy(provider.clone())
             .await
             .context("Cannot deploy FakePegManager")?;
+
+        println!(
+            "FakePegManager deployed at {}...",
+            fake_peg_manager.address()
+        );
 
         let real_peg_manager = Self::deploy_real_peg_manager(&provider, provider_url)?;
 
@@ -168,7 +173,6 @@ impl<P: Provider + Clone> Executor<P> {
             let parts: Vec<&str> = line.split("address:").collect();
             if parts.len() == 2 {
                 let address = parts[1].trim().to_string();
-                println!("Real PegManager deployed at address: {}", address);
                 return Some(address);
             }
         }

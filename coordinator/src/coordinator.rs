@@ -1,10 +1,13 @@
-use crate::event_processor::{EventProcessor, PegOutAdvanceFundsProcessor};
-use crate::monitor::MonitorApi;
+use crate::{
+    event_processor::{
+        EventProcessor, GetTemporaryPeginAddressProcessor, PegOutAdvanceFundsProcessor,
+    },
+    monitor::MonitorApi,
+};
 use anyhow::{Context, Result};
 use common::shutdown_flag::ShutdownFlag;
 use log::error;
-use std::thread;
-use std::time::Duration;
+use std::{thread, time::Duration};
 
 const CHECK_PERIOD: Duration = Duration::from_secs(1);
 
@@ -19,16 +22,23 @@ impl<M: MonitorApi> Coordinator<M> {
     pub fn new(monitor: M, shutdown_flag: ShutdownFlag) -> Self {
         Self {
             monitor,
-            processors: vec![Box::new(PegOutAdvanceFundsProcessor::new())],
+            processors: vec![
+                Box::new(PegOutAdvanceFundsProcessor::new()),
+                Box::new(GetTemporaryPeginAddressProcessor::new()),
+            ],
             check_period: CHECK_PERIOD,
             shutdown_flag,
         }
     }
 
-    pub fn new_for_tests(monitor: M, shutdown_flag: ShutdownFlag) -> Self {
+    pub fn new_for_tests(
+        monitor: M,
+        processors: Vec<Box<dyn EventProcessor>>,
+        shutdown_flag: ShutdownFlag,
+    ) -> Self {
         Self {
             monitor,
-            processors: vec![Box::new(PegOutAdvanceFundsProcessor::new())],
+            processors,
             check_period: Duration::from_millis(1),
             shutdown_flag,
         }
@@ -43,6 +53,10 @@ impl<M: MonitorApi> Coordinator<M> {
             .start_block_monitoring()
             .context("Failed to start block monitoring")?;
 
+        self.monitor
+            .start_bitvmx_monitoring()
+            .context("Failed to start BitVMX event monitoring")?;
+
         let result = (|| -> Result<()> {
             loop {
                 if !self.is_running() {
@@ -50,6 +64,17 @@ impl<M: MonitorApi> Coordinator<M> {
                 }
 
                 let mut message_received = false;
+
+                if let Some(event) = self
+                    .monitor
+                    .try_bitvmx_event()
+                    .context("Error getting BitVMX event")?
+                {
+                    // each processor decides if the event is relevant
+                    self.processors
+                        .iter_mut()
+                        .try_for_each(|p| p.process_new_bitvmx_event(&event))?;
+                }
 
                 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132
                 //  if block monitor restarted, this is not realising and keeps waiting logs forever
@@ -90,6 +115,10 @@ impl<M: MonitorApi> Coordinator<M> {
         self.processors.iter_mut().for_each(|p| p.shutdown());
 
         self.monitor
+            .cancel_bitvmx_monitoring()
+            .context("Failed to cancel BitVMX event monitoring")?;
+
+        self.monitor
             .cancel_block_monitoring()
             .context("Failed to cancel block monitoring")?;
 
@@ -107,21 +136,29 @@ impl<M: MonitorApi> Coordinator<M> {
 
 #[cfg(test)]
 mod tests {
-    use crate::coordinator::Coordinator;
-    use crate::monitor::MockMonitorApi;
-    use crate::types::{KickoffAdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents};
-    use alloy_primitives::U256;
-    use common::shutdown_flag::ShutdownFlag;
-    use common::test_utils::rsk_block_generator::{
-        create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
+    use crate::event_processor::{EventProcessor, MockEventProcessor};
+    use crate::{
+        coordinator::Coordinator,
+        monitor::MockMonitorApi,
+        types::{KickoffAdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents},
     };
-    use common::types::RskBlockAndUncles;
-    use sc_event_mocking::fake_contracts::FakePegManager::{
+    use actors_mocking::fake_contracts::FakePegManager::{
         KickoffAdvanceFunds, RequestAdvanceFunds,
     };
-    use std::thread;
-    use std::thread::{JoinHandle, sleep};
-    use std::time::Duration;
+    use alloy_primitives::U256;
+    use common::{
+        msg_broker::types::BrokerResponses::GetTemporaryPegInAddress,
+        shutdown_flag::ShutdownFlag,
+        test_utils::rsk_block_generator::{
+            create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
+        },
+        types::RskBlockAndUncles,
+    };
+    use serde_json::json;
+    use std::{
+        thread::{self, JoinHandle, sleep},
+        time::Duration,
+    };
 
     fn create_fake_request_event(peg_out_id: &str) -> RequestAdvanceFunds {
         RequestAdvanceFunds {
@@ -158,9 +195,16 @@ mod tests {
                 block_hash: block_2.hash().into(),
             });
 
+        let bitvmx_event = GetTemporaryPegInAddress(json!("GetTemporaryPegInAddress"));
+
         mock_monitor
             .expect_start_event_monitoring()
             .return_once(|| Ok(()));
+
+        mock_monitor
+            .expect_start_bitvmx_monitoring()
+            .times(..)
+            .returning(|| Ok(()));
 
         mock_monitor
             .expect_start_block_monitoring()
@@ -177,6 +221,11 @@ mod tests {
             .return_once(|| Ok(()))
             .once();
 
+        mock_monitor
+            .expect_cancel_bitvmx_monitoring()
+            .return_once(|| Ok(()))
+            .once();
+
         expect_try_event(vec![event_1, event_2], &mut mock_monitor);
 
         expect_try_block(
@@ -187,10 +236,15 @@ mod tests {
             &mut mock_monitor,
         );
 
+        mock_monitor
+            .expect_try_bitvmx_event()
+            .returning(move || Ok(Some(bitvmx_event.clone())));
+
         let shutdown_flag = ShutdownFlag::init();
         handle_shutdown(shutdown_flag.clone());
 
-        let mut coordinator = Coordinator::new_for_tests(mock_monitor, shutdown_flag);
+        let mut coordinator =
+            Coordinator::new_for_tests(mock_monitor, generate_ok_processors(), shutdown_flag);
         let result = coordinator.run();
 
         assert!(result.is_ok());
@@ -221,12 +275,22 @@ mod tests {
             .returning(|| Ok(()));
 
         mock_monitor
+            .expect_start_bitvmx_monitoring()
+            .times(..)
+            .returning(|| Ok(()));
+
+        mock_monitor
             .expect_cancel_event_monitoring()
             .return_once(|| Ok(()))
             .once();
 
         mock_monitor
             .expect_cancel_block_monitoring()
+            .return_once(|| Ok(()))
+            .once();
+
+        mock_monitor
+            .expect_cancel_bitvmx_monitoring()
             .return_once(|| Ok(()))
             .once();
 
@@ -240,10 +304,21 @@ mod tests {
             &mut mock_monitor,
         );
 
+        let bitvmx_event = GetTemporaryPegInAddress(json!("GetTemporaryPegInAddress"));
+
+        mock_monitor
+            .expect_try_bitvmx_event()
+            .returning(move || Ok(Some(bitvmx_event.clone())));
+
+        mock_monitor
+            .expect_try_bitvmx_event()
+            .returning(move || Ok(None));
+
         let shutdown_flag = ShutdownFlag::init();
         handle_shutdown(shutdown_flag.clone());
 
-        let mut coordinator = Coordinator::new_for_tests(mock_monitor, shutdown_flag);
+        let mut coordinator =
+            Coordinator::new_for_tests(mock_monitor, generate_ok_processors(), shutdown_flag);
         let result = coordinator.run();
 
         assert!(result.is_ok());
@@ -281,5 +356,34 @@ mod tests {
 
             move || responses.pop_front().unwrap_or(Ok(None))
         });
+    }
+
+    fn generate_ok_processors() -> Vec<Box<dyn EventProcessor>> {
+        let mut mock_pegout_processor = MockEventProcessor::new();
+        let mut mock_get_temp_addr_processor = MockEventProcessor::new();
+
+        expect_processors_ok(&mut mock_pegout_processor);
+        expect_processors_ok(&mut mock_get_temp_addr_processor);
+
+        vec![
+            Box::new(mock_pegout_processor),
+            Box::new(mock_get_temp_addr_processor),
+        ]
+    }
+
+    fn expect_processors_ok(mock_pegout_processor: &mut MockEventProcessor) {
+        mock_pegout_processor
+            .expect_process_new_bitvmx_event()
+            .returning(|_| Ok(()))
+            .times(1..);
+        mock_pegout_processor
+            .expect_process_new_block()
+            .returning(|_| Ok(()))
+            .times(1..);
+        mock_pegout_processor
+            .expect_process_new_event()
+            .returning(|_| Ok(()))
+            .times(1..);
+        mock_pegout_processor.expect_shutdown().return_once(|| ());
     }
 }
