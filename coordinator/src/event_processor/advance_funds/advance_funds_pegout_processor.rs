@@ -3,6 +3,7 @@ use crate::event_processor::advance_funds::advance_funds_checker::AdvanceFundsCh
 use crate::types::{KickoffAdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents};
 use anyhow::Result;
 use check_fork::check_fork;
+use check_fork_zkp::{CHECK_FORK_GUEST_ELF, CHECK_FORK_GUEST_ID, CHECK_FORK_GUEST_PATH};
 use common::types::{BlockNumber, RskBlockAndUncles};
 use log::{debug, error, info, warn};
 use primitive_types::U256;
@@ -119,10 +120,12 @@ impl PegOutAdvanceFundsProcessor {
         match check_fork(args) {
             Ok(effort) => {
                 info!(
-                    "CheckFork accepted with effort {effort} (pow 0x{:x})",
-                    Self::pow_from_effort(effort)
+                    "CheckFork accepted with effort {effort} (pow 0x{:x}). The elf path is {:?}. The image id is {:?}. The elf is {:?}",
+                    Self::pow_from_effort(effort),
+                    CHECK_FORK_GUEST_PATH,
+                    CHECK_FORK_GUEST_ID,
+                    CHECK_FORK_GUEST_ELF,
                 );
-                // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-89
             }
             Err(e) => {
                 error!("CheckFork rejected: {}", e);
