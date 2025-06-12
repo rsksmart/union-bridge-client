@@ -59,7 +59,8 @@ async fn main() -> Result<()> {
     let provider = ProviderBuilder::new()
         .wallet(wallet.clone())
         .on_ws(ws)
-        .await?;
+        .await
+        .context("Failed to connect to Rootstock provider")?;
 
     info!(
         "Connected to Rootstock at {} with address {}",

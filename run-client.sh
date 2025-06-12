@@ -68,8 +68,13 @@ trap cleanup INT TERM EXIT
      fi
  }
 
-# Start other services in the background
-echo "Starting other services..."
+# TODO temporary code until bitvmx types are moved to its own crate
+# Prepare bitvmx-client dependency (via workspace)
+git -C ../rust-bitvmx-workspace/ checkout main
+git -C ../rust-bitvmx-workspace/ submodule update --init --recursive
+
+# Start services in the background
+echo "Starting services..."
 run_service "block-indexer"
 run_service "log-indexer"
 run_service "transaction-dispatcher"

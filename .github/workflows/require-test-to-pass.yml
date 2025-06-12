@@ -22,44 +22,88 @@ jobs:
 
     steps:
 
-      ########################################
-      ### Needed for local tests with act ###
-      ########################################
-      #      - name: Set up Rust
-      #        uses: actions-rust-lang/setup-rust-toolchain@v1
-      #
-      #      - name: Cache Rust installation
-      #        uses: actions/cache@v3
-      #        with:
-      #          path: |
-      #            ~/.rustup
-      #          key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.lock') }}
-      #          restore-keys: |
-      #            ${{ runner.os }}-rust-
-      #
-      #      - name: Install RocksDB Dependencies
-      #        run: |
-      #          sudo apt-get update
-      #          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libclang-dev clang
-      ########################################
+      #########################################
+      #### Needed for local tests with act ####
+      #########################################
+      - name: Set up Node.js
+        if: ${{ env.ACT }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
 
-      - name: Fix Fairgate Git access
+      - name: Cache Rust
+        id: cache-rust
+        if: ${{ env.ACT }}
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.rustup
+          key: ${{ runner.os }}-rustup-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-rustup-
+
+      - name: Install Rust
+        if: ${{ env.ACT && steps.cache-rust.outputs.cache-hit != 'true' }}
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Add Rust to PATH
+        if: ${{ env.ACT }}
+        run: echo "~/.cargo/bin" >> $GITHUB_PATH
+
+      # Install RocksDB deps
+      - name: Install RocksDB Dependencies
+        if: ${{ env.ACT }}
         run: |
-          git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/".insteadOf "ssh://git@github.com/"
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libclang-dev clang
+      #########################################
+      ########## End of local section #########
+      #########################################
 
-      - name: Checkout repository
+      # TODO temporary until bitvmx-client types are extracted to a separate crate
+      - name: Checkout BitVMX
+        if: steps.cache-bitvmx.outputs.cache-hit != 'true'
+        run: |
+          git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf "https://github.com/FairgateLabs"
+          git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf "git@github.com:FairgateLabs"
+          git clone --recursive --branch main git@github.com:FairgateLabs/rust-bitvmx-workspace rust-bitvmx-workspace
+
+      - name: Cache RISC Zero
+        id: cache-risc0
+        uses: actions/cache@v3
+        with:
+          path: ~/.risc0
+          key: ${{ runner.os }}-risc0-v0.4.1
+          restore-keys: |
+            ${{ runner.os }}-risc0-
+
+      - name: Install RiscZero
+        if: steps.cache-risc0.outputs.cache-hit != 'true'
+        run: |
+          curl -L https://risczero.com/install | bash
+          ~/.risc0/bin/rzup install
+
+      - name: Checkout Our Repository
         uses: actions/checkout@v4
+        with:
+          path: union-bridge-client
 
-      - name: Cache dependencies
+      - name: Cache Client Dependencies
         uses: actions/cache@v3
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target/
-          key: ${{ runner.os }}-rust-cargo-${{ hashFiles('Cargo.lock') }}
+          key: ${{ runner.os }}-rust-cargo-${{ hashFiles('union-bridge-client/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-rust-cargo-
 
       - name: Run tests
-        run: RUN_MODE=ci cargo test --features test-utils
+        run: |
+          git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf "ssh://git@github.com/FairgateLabs"
+          RUN_MODE=ci cargo test --features test-utils --locked
+        working-directory: union-bridge-client
