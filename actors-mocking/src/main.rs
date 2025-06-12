@@ -75,8 +75,8 @@ async fn main() -> Result<()> {
             loop {
                 {
                     let mut executor = bitvmx_executor.lock().unwrap();
-                    if let Err(e) = executor.update_consumers() {
-                        eprintln!("Error updating consumers: {e}");
+                    if let Err(e) = executor.try_recv() {
+                        eprintln!("Error receiving BitVMX message: {e}");
                     }
                 }
                 thread::sleep(Duration::from_secs(5));

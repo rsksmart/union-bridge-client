@@ -5,6 +5,7 @@ use crate::{
     monitor::MonitorApi,
 };
 use anyhow::{Context, Result};
+use common::msg_broker::broker::BrokerClientApi;
 use common::shutdown_flag::ShutdownFlag;
 use log::error;
 use std::{thread, time::Duration};
@@ -19,11 +20,15 @@ pub struct Coordinator<M: MonitorApi> {
 }
 
 impl<M: MonitorApi> Coordinator<M> {
-    pub fn new(monitor: M, shutdown_flag: ShutdownFlag) -> Self {
+    pub fn new<T: BrokerClientApi + 'static>(
+        monitor: M,
+        bitvmx_broker: T,
+        shutdown_flag: ShutdownFlag,
+    ) -> Self {
         Self {
             monitor,
             processors: vec![
-                Box::new(PegOutAdvanceFundsProcessor::new()),
+                Box::new(PegOutAdvanceFundsProcessor::new(bitvmx_broker)),
                 Box::new(GetTemporaryPeginAddressProcessor::new()),
             ],
             check_period: CHECK_PERIOD,
@@ -147,7 +152,7 @@ mod tests {
     };
     use alloy_primitives::U256;
     use common::{
-        msg_broker::types::BrokerResponses::GetTemporaryPegInAddress,
+        msg_broker::types::FromServer::GetTemporaryPegInAddress,
         shutdown_flag::ShutdownFlag,
         test_utils::rsk_block_generator::{
             create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,

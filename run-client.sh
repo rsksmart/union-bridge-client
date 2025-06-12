@@ -75,7 +75,7 @@ run_service "log-indexer"
 run_service "transaction-dispatcher"
 sleep 2 # give some time for indexers to initialize
 run_service "coordinator"
-# wait for the services to finish
+sleep 2 # wait for the coordinator to finish
 
 echo
 echo "All services started successfully, you can check log files. Press Ctrl+C to shut down all services in the correct order."

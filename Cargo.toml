@@ -20,6 +20,7 @@ alloy-signer-local = { version = "0.13.0" }
 alloy-transport = "0.13.0"
 #
 anyhow = "1.0.94"
+bincode = { version = "2.0.1", features = ["serde"] }
 clap = "4.5.30"
 hex = "0.4.3"
 log = "0.4.22"
@@ -33,6 +34,9 @@ tokio = { version = "1.41.1" }
 config = "0.15.8"
 storage-backend = { package = "rust-bitvmx-storage-backend", git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-storage-backend.git", rev = "7f40d056f86295e3fd2a4f268f923ca3b4e70fbf" }
 union-contracts = { package = "union-bridge-contracts", git = "ssh://git@github.com/FairgateLabs/bitvmx-union-bridge-contracts.git", tag = "v0.0.1-alpha.1" }
+message-broker = { package = "bitvmx-broker", git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-broker.git", rev = "2afe95510b1694d0ed87a59c9b69915f65d382e7" }
+# TODO this should be a temporary dep, until BitVMX Broker types are extracted to a separate crate
+bitvmx-client = { path = "../rust-bitvmx-workspace/rust-bitvmx-client" }
 
 #dev-dependencies
 tempfile = "3.16.0"

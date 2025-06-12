@@ -17,6 +17,9 @@ common = { path = "../common" }
 tokio = { version = "1.45", features = ["rt-multi-thread", "signal", "io-std"] }
 union-contracts = { workspace = true }
 serde_json = { workspace = true }
+# TODO this should be a temporary dep, until BitVMX Broker types are extracted to a separate crate
+bitvmx-client = { workspace = true }
+hex = "0.4"
 
 [features]
 default = ["anvil"]

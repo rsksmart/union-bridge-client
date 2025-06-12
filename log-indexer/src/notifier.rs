@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, anyhow};
 use common::constants::indexer::NOTIFIER_CHECK_PERIOD;
 use common::msg_broker::broker::BrokerServerApi;
-use common::msg_broker::types::{BrokerRequests, BrokerResponses};
+use common::msg_broker::types::{FromServer, ToServer};
 use common::shutdown_flag::ShutdownFlag;
 use common::types::{Address, RskLog};
 use log::{debug, error, info, trace, warn};
@@ -69,10 +69,10 @@ impl<BS: BrokerServerApi> Notifier<BS> {
 
     fn update_consumers(&mut self) -> Result<()> {
         match self.msg_broker.try_recv()? {
-            Some((BrokerRequests::SubscribeLogs(event), consumer_id)) => {
+            Some((ToServer::SubscribeLogs(event), consumer_id)) => {
                 self.subscribe_consumer_to_contract(event, consumer_id);
             }
-            Some((BrokerRequests::UnsubscribeLogs(topic), consumer_id)) => {
+            Some((ToServer::UnsubscribeLogs(topic), consumer_id)) => {
                 self.unsubscribe_consumer_from_contract(topic, consumer_id);
             }
             Some((_, consumer_id)) => {
@@ -159,7 +159,7 @@ impl<BS: BrokerServerApi> Notifier<BS> {
 
         let selector = format!("{topics0} @ {address}");
 
-        let response = BrokerResponses::Log(new_log);
+        let response = FromServer::Log(new_log);
 
         if let Some(consumers_for_contract) = self.contracts_with_consumers.get(&address) {
             for c_id in consumers_for_contract {
@@ -190,7 +190,7 @@ mod tests {
 
     struct ClientRequest {
         id: u32,
-        request: BrokerRequests,
+        request: ToServer,
     }
 
     #[test]
@@ -232,12 +232,9 @@ mod tests {
             FakeLogGenerator::new().generate_log("Transfer(address,address,uint256)", address);
 
         let mut mock_broker = MockBrokerServerApi::new();
-        mock_broker.expect_try_recv().returning(|| {
-            Ok(Some((
-                BrokerRequests::SubscribeLogs(generate_fake_address(2)),
-                1,
-            )))
-        }); // subscribe for a different address
+        mock_broker
+            .expect_try_recv()
+            .returning(|| Ok(Some((ToServer::SubscribeLogs(generate_fake_address(2)), 1)))); // subscribe for a different address
         mock_broker.expect_send().never(); // nothing to send, no consumers yet for that address
 
         let mut notifier = Notifier::new_for_tests(rx, mock_broker, shutdown_flag.clone());
@@ -267,7 +264,7 @@ mod tests {
 
         let client_requests = vec![ClientRequest {
             id: client_id,
-            request: BrokerRequests::SubscribeLogs(address_1),
+            request: ToServer::SubscribeLogs(address_1),
         }];
 
         let expected_log_1 =
@@ -313,11 +310,11 @@ mod tests {
         let client_requests = vec![
             ClientRequest {
                 id: client_id_1,
-                request: BrokerRequests::SubscribeLogs(address_1),
+                request: ToServer::SubscribeLogs(address_1),
             },
             ClientRequest {
                 id: client_id_2,
-                request: BrokerRequests::SubscribeLogs(address_1),
+                request: ToServer::SubscribeLogs(address_1),
             },
         ];
 
@@ -370,16 +367,16 @@ mod tests {
         let client_requests = vec![
             ClientRequest {
                 id: client_id_1,
-                request: BrokerRequests::SubscribeLogs(address_1),
+                request: ToServer::SubscribeLogs(address_1),
             },
             ClientRequest {
                 id: client_id_2,
-                request: BrokerRequests::SubscribeLogs(address_1),
+                request: ToServer::SubscribeLogs(address_1),
             },
             // should not receive logs for this address
             ClientRequest {
                 id: client_id_1,
-                request: BrokerRequests::UnsubscribeLogs(address_1),
+                request: ToServer::UnsubscribeLogs(address_1),
             },
         ];
 
@@ -441,7 +438,7 @@ mod tests {
             .withf({
                 let expected_log = expected_log.clone(); // move into closure
                 move |response, consumer_id| match response {
-                    BrokerResponses::Log(actual_log) => {
+                    FromServer::Log(actual_log) => {
                         *consumer_id == dest && *actual_log == expected_log
                     }
                     _ => false,

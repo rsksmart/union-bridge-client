@@ -1,6 +1,6 @@
 use crate::types::RskPegManagerEvents;
 use anyhow::Result;
-use common::{msg_broker::types::BrokerResponses, types::RskBlockAndUncles};
+use common::{msg_broker::types::FromServer, types::RskBlockAndUncles};
 
 mod advance_funds;
 pub use advance_funds::advance_funds_pegout_processor::*;
@@ -13,7 +13,7 @@ use mockall::automock;
 
 #[cfg_attr(test, automock)]
 pub trait EventProcessor {
-    fn process_new_bitvmx_event(&mut self, _event: &BrokerResponses) -> Result<()> {
+    fn process_new_bitvmx_event(&mut self, _event: &FromServer) -> Result<()> {
         // default no-op
         Ok(())
     }

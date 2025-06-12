@@ -1,4 +1,4 @@
-use crate::msg_broker::types::{BrokerRequests, BrokerResponses};
+use crate::msg_broker::types::{FromServer, ToServer};
 use log::debug;
 use message_broker::broker_memstorage::MemStorage;
 use message_broker::channel::channel::{DualChannel, LocalChannel};
@@ -14,15 +14,15 @@ pub const BROKER_SERVER_ID: u32 = 1;
 
 #[automock]
 pub trait BrokerServerApi {
-    fn try_recv(&self) -> Result<Option<(BrokerRequests, u32)>, BrokerError>;
-    fn send(&self, msg: &BrokerResponses, dst: u32) -> Result<(), BrokerError>;
+    fn try_recv(&self) -> Result<Option<(ToServer, u32)>, BrokerError>;
+    fn send(&self, msg: &FromServer, dst: u32) -> Result<(), BrokerError>;
     fn close(&mut self);
 }
 
 #[automock]
 pub trait BrokerClientApi {
-    fn send(&self, dest: u32, msg: BrokerRequests) -> Result<bool, BrokerError>;
-    fn try_recv(&self) -> Result<Option<BrokerResponses>, BrokerError>;
+    fn send(&self, dest: u32, msg: ToServer) -> Result<bool, BrokerError>;
+    fn try_recv(&self) -> Result<Option<FromServer>, BrokerError>;
 }
 
 pub struct BrokerServer {
@@ -46,7 +46,7 @@ impl BrokerServer {
 }
 
 impl BrokerServerApi for BrokerServer {
-    fn try_recv(&self) -> Result<Option<(BrokerRequests, u32)>, BrokerError> {
+    fn try_recv(&self) -> Result<Option<(ToServer, u32)>, BrokerError> {
         if let Some((msg, sender)) = self
             .channel
             .recv()
@@ -59,7 +59,7 @@ impl BrokerServerApi for BrokerServer {
         }
     }
 
-    fn send(&self, msg: &BrokerResponses, dst: u32) -> Result<(), BrokerError> {
+    fn send(&self, msg: &FromServer, dst: u32) -> Result<(), BrokerError> {
         self.channel
             .send(dst, serde_json::to_string(&msg)?)
             .map_err(BrokerError::BrokerServerError)?;
@@ -71,8 +71,9 @@ impl BrokerServerApi for BrokerServer {
     }
 }
 
+#[derive(Clone)]
 pub struct BrokerClient {
-    channel: DualChannel,
+    channel: Arc<DualChannel>,
 }
 
 impl BrokerClient {
@@ -80,18 +81,20 @@ impl BrokerClient {
         debug!("Starting BrokerClient on {ip}:{port} with id {my_id}");
         let broker_config = BrokerConfig::new(port, Some(ip));
         let client = DualChannel::new(&broker_config, my_id);
-        Self { channel: client }
+        Self {
+            channel: Arc::new(client),
+        }
     }
 }
 
 impl BrokerClientApi for BrokerClient {
-    fn send(&self, dest: u32, msg: BrokerRequests) -> Result<bool, BrokerError> {
+    fn send(&self, dest: u32, msg: ToServer) -> Result<bool, BrokerError> {
         self.channel
             .send(dest, serde_json::to_string(&msg)?)
             .map_err(BrokerError::BrokerServerError)
     }
 
-    fn try_recv(&self) -> Result<Option<BrokerResponses>, BrokerError> {
+    fn try_recv(&self) -> Result<Option<FromServer>, BrokerError> {
         self.channel.recv()?.map_or(Ok(None), |(data, _id)| {
             serde_json::from_str(&data)
                 .map(|deserialized| Some(deserialized))
