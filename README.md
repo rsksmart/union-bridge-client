@@ -204,3 +204,36 @@ rusty-hook init
 ```
 
 The file [rusty-hook.toml](rusty-hook.toml) will be used for hook configuration.
+
+## Clone the repository
+
+Clone the repository:
+
+```bash
+git clone --recurse-submodules git@github.com:rsksmart/union-bridge-client.git
+```
+
+For now, as a temporary approach, we need to clone BitVMX Workspace as a sibling of our repository to use some BitVMX Client types that in the future will be extracted to a separate crate. To do this, run the following command:
+
+```bash
+git clone --recurse-submodules git@github.com:FairgateLabs/rust-bitvmx-workspace.git ../rust-bitvmx-workspace
+```
+
+## GitHub Actions
+To test locally the GitHub Actions, you can use the `act` tool.
+
+You can install it via Homebrew:
+
+```bash
+brew install act
+```
+
+Then, you can run the tests with the following command:
+
+```bash
+act -j automated-tests -s FAIRGATE_GITHUB_TOKEN=<ask_your_colleagues> --container-architecture linux/amd64
+```
+
+Where:
+- `FAIRGATE_GITHUB_TOKEN` is needed for now to access Fairgate private repositories used as dependencies
+- `--container-architecture linux/amd64` is needed to run Risc0 tools
