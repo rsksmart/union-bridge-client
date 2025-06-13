@@ -24,7 +24,7 @@ impl GetTemporaryPeginAddressProcessor {
 
     fn proxy_peg_in_address_request(&self, json_value: &Value) -> Result<Value> {
         let res = self
-            .client
+            .http_client
             .post(format!("{}/pegin-address", Self::get_tx_dispatcher_url())) // TODO: Remove http client
             .json(json_value)
             .send()

@@ -32,6 +32,13 @@ impl<BS: BrokerServerApi> Executor<BS> {
                     self.consumers.remove(&consumer_id);
                 }
             }
+            Some((ToServer::TemporaryPegInAddressMockedBitVMX(value), consumer_id)) => {
+                println!(
+                    "Received TemporaryPegInAddressMockedBitVMX from consumer {consumer_id}: {}",
+                    serde_json::to_string_pretty(&value)
+                        .unwrap_or_else(|e| format!("(invalid JSON: {e})"))
+                );
+            }
             Some((ToServer::ToBitVMX(msg), from)) => match msg {
                 IncomingBitVMXApiMessages::GenerateZKP(id, data) => {
                     println!(
