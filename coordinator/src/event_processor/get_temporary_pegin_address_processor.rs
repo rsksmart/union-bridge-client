@@ -1,19 +1,24 @@
 use crate::event_processor::EventProcessor;
 use anyhow::{Context, Result, bail};
-use common::msg_broker::types::FromServer;
+use common::msg_broker::{
+    broker::{BROKER_SERVER_ID, BrokerClientApi},
+    types::{FromServer, ToServer},
+};
 use log::info;
 use reqwest::blocking::Client;
 use serde_json::Value;
-use std::env;
+use std::{env, sync::Arc};
 
 pub struct GetTemporaryPeginAddressProcessor {
-    client: Client,
+    http_client: Client,
+    bitvmx_broker: Arc<dyn BrokerClientApi>,
 }
 
 impl GetTemporaryPeginAddressProcessor {
-    pub fn new() -> Self {
+    pub fn new(bitvmx_broker: Arc<dyn BrokerClientApi>) -> Self {
         Self {
-            client: Client::new(),
+            http_client: Client::new(),
+            bitvmx_broker,
         }
     }
 
@@ -50,11 +55,18 @@ impl EventProcessor for GetTemporaryPeginAddressProcessor {
                     "Successfully proxied pegin address request. Response: {}",
                     result
                 );
-                // TODO notify end user about the result
-                Ok(())
+
+                // For now send the result back to bitvmx client mock, in the future
+                // this will probably go to the end user
+                self.bitvmx_broker.send(
+                    BROKER_SERVER_ID,
+                    ToServer::TemporaryPegInAddressMockedBitVMX(result),
+                )?;
             }
-            _ => return Ok(()), // ignore unrelated events
+            _ => {} // ignore unrelated events
         }
+
+        Ok(())
     }
 
     fn shutdown(&mut self) {
