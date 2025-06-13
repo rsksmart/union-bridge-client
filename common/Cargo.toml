@@ -30,7 +30,7 @@ lru = "0.13.0"
 bitcoin = "0.32.4"
 signal-hook = "0.3"
 sha3 = "0.10"
-# TODO this should be a temporary dep, until BitVMX Broker types are extracted to a separate crate
+# TODO(jira) https://rsklabs.atlassian.net/browse/ub-176
 bitvmx-client = { workspace = true }
 
 [features]

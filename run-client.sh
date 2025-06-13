@@ -68,7 +68,7 @@ trap cleanup INT TERM EXIT
      fi
  }
 
-# TODO temporary code until bitvmx types are moved to its own crate
+# TODO(jira) https://rsklabs.atlassian.net/browse/ub-176
 # Prepare bitvmx-client dependency (via workspace)
 git -C ../rust-bitvmx-workspace/ checkout main
 git -C ../rust-bitvmx-workspace/ submodule update --init --recursive

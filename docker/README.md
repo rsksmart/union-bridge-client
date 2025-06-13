@@ -1,13 +1,17 @@
 # Setup
 Copy the `.env.example` file to `.env` and adjust the values as needed. This file contains environment variables that will be automatically used by the Docker Compose setup.
 
-```bash
-
 # Build
 
-To build the whole project's docker-compose, run:
-
 ## Whole Project
+
+**Only the first time, or when you want to rebuild the builder image** (containing apt packages, etc.), you should run the following command:
+
+```bash
+./docker/build_builder.sh
+```
+
+Usually you will only need to build the project itself, which is done by the following command:
 
 ```bash
 ./docker/build.sh

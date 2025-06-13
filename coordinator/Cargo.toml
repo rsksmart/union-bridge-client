@@ -18,7 +18,7 @@ log = { workspace = true }
 serde_json = { workspace = true }
 union-contracts = { workspace = true }
 primitive-types = { workspace = true }
-# TODO this should be a temporary dep, until BitVMX Broker types are extracted to a separate crate
+# TODO(jira) https://rsklabs.atlassian.net/browse/ub-176
 bitvmx-client = { workspace = true }
 hex = { workspace = true }
 mockall = { workspace = true }

@@ -63,7 +63,7 @@ jobs:
       ########## End of local section #########
       #########################################
 
-      # TODO temporary until bitvmx-client types are extracted to a separate crate
+      # TODO(jira) https://rsklabs.atlassian.net/browse/ub-176
       - name: Checkout BitVMX
         if: steps.cache-bitvmx.outputs.cache-hit != 'true'
         run: |
