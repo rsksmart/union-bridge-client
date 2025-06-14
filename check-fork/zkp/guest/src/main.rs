@@ -8,7 +8,7 @@ fn main() {
         .expect("Failed to deserialize args")
         .0;
 
-    let output = check_fork(args_des);
+    let output = check_fork(&args_des);
 
     let result = match output {
         Ok(effort) => {

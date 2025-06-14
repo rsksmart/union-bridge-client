@@ -123,7 +123,7 @@ impl<T: BrokerClientApi> PegOutAdvanceFundsProcessor<T> {
 
     fn schedule_check_fork_zkp(&mut self, args: CheckForkArgs) -> () {
         // note: check-fork already validates consecutive blocks, etc.
-        match check_fork(args.clone()) {
+        match check_fork(&args) {
             Ok(effort) => {
                 info!(
                     "CheckFork accepted with effort {effort} (pow 0x{:x}). The elf path is {:?}. The image id is {:?}",

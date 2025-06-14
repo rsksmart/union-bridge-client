@@ -21,7 +21,7 @@ fn succeeds_with_two_blocks_when_all_conditions_met() {
     let args = CheckForkArgsBuilder::new(block_list)
         .required_effort(actual_effort)
         .build();
-    let result = check_fork(args);
+    let result = check_fork(&args);
 
     assert_eq!(
         result,
@@ -51,7 +51,7 @@ fn succeeds_with_two_blocks_and_one_uncle_when_all_conditions_met() {
         .required_effort(actual_effort)
         .build();
 
-    let result = check_fork(args);
+    let result = check_fork(&args);
     assert_eq!(
         result,
         Ok(actual_effort),
@@ -71,7 +71,7 @@ fn fails_when_required_block_number_is_invalid() {
         .required_num_blocks(0)
         .build();
 
-    let result = check_fork(args);
+    let result = check_fork(&args);
     assert_eq!(
         result,
         Err("Invalid number of required blocks"),
@@ -91,7 +91,7 @@ fn fails_when_provided_blocks_are_less_than_required() {
         .required_num_blocks(3)
         .build();
 
-    let result = check_fork(args);
+    let result = check_fork(&args);
     assert_eq!(
         result,
         Err("Insufficient number of blocks"),
@@ -111,7 +111,7 @@ fn fails_when_first_block_timestamp_is_lower_than_min_requested() {
         .init_block_time(1_000_000)
         .build();
 
-    let result = check_fork(args);
+    let result = check_fork(&args);
     assert_eq!(
         result,
         Err("First block timestamp lower than expected"),
@@ -131,7 +131,7 @@ fn fails_when_first_block_number_is_lower_than_min_requested() {
         .init_block_number(1_000_000)
         .build();
 
-    let result = check_fork(args);
+    let result = check_fork(&args);
     assert_eq!(
         result,
         Err("First block number lower than expected"),
@@ -162,7 +162,7 @@ fn fails_when_cumulative_effort_below_expected() {
         .required_effort(expected_effort)
         .build();
 
-    let result = check_fork(args);
+    let result = check_fork(&args);
     assert_eq!(
         result,
         Err("Cumulative PoW does not meet the required threshold"),
@@ -182,7 +182,7 @@ fn fails_when_blocks_are_not_consecutive() {
 
     let args = CheckForkArgsBuilder::new(block_list).build();
 
-    let result = check_fork(args);
+    let result = check_fork(&args);
     assert_eq!(
         result,
         Err("Block numbers are not consecutive"),
@@ -201,7 +201,7 @@ fn fails_when_consecutive_blocks_are_not_parent_child() {
 
     let args = CheckForkArgsBuilder::new(block_list).build();
 
-    let result = check_fork(args);
+    let result = check_fork(&args);
     assert_eq!(
         result,
         Err("Invalid parent linkage between blocks"),
@@ -220,7 +220,7 @@ fn fails_when_event_not_found_in_first_block() {
 
     let args = CheckForkArgsBuilder::new(block_list).build();
 
-    let result = check_fork(args);
+    let result = check_fork(&args);
     assert_eq!(
         result,
         Err("First block is missing BridgeEvent"),
@@ -243,7 +243,7 @@ fn fails_when_event_found_in_second_block() {
 
     let args = CheckForkArgsBuilder::new(block_list).build();
 
-    let result = check_fork(args);
+    let result = check_fork(&args);
     assert_eq!(
         result,
         Err("Only the first block should contain a BridgeEvent"),
@@ -263,7 +263,7 @@ fn fails_when_event_has_unexpected_utxo() {
         .event_utxo_id("fake_utxo".to_string())
         .build();
 
-    let result = check_fork(args);
+    let result = check_fork(&args);
     assert_eq!(
         result,
         Err("BridgeEvent does not match utxoID"),
@@ -283,7 +283,7 @@ fn fails_when_event_has_unexpected_pegout_id() {
         .event_pegout_id("fake_pegout".to_string())
         .build();
 
-    let result = check_fork(args);
+    let result = check_fork(&args);
     assert_eq!(
         result,
         Err("BridgeEvent does not match pegoutID"),
@@ -303,7 +303,7 @@ fn fails_when_event_has_unexpected_operator() {
         .event_operator_id("fake_operator".to_string())
         .build();
 
-    let result = check_fork(args);
+    let result = check_fork(&args);
     assert_eq!(
         result,
         Err("BridgeEvent does not match operatorID"),
@@ -325,7 +325,7 @@ fn fails_when_consecutive_block_difficulty_is_lower_than_bounds() {
 
     let args = CheckForkArgsBuilder::new(block_list).build();
 
-    let result = check_fork(args);
+    let result = check_fork(&args);
     assert_eq!(
         result,
         Err("Consecutive Block difficulty is out of bounds"),
@@ -347,7 +347,7 @@ fn fails_when_consecutive_block_difficulty_is_higher_than_bounds() {
 
     let args = CheckForkArgsBuilder::new(block_list).build();
 
-    let result = check_fork(args);
+    let result = check_fork(&args);
     assert_eq!(
         result,
         Err("Consecutive Block difficulty is out of bounds"),
@@ -366,7 +366,7 @@ fn fails_when_consecutive_block_timestamp_is_lower() {
 
     let args = CheckForkArgsBuilder::new(block_list).build();
 
-    let result = check_fork(args);
+    let result = check_fork(&args);
     assert_eq!(
         result,
         Err("Block Timestamp is not increasing"),
@@ -388,7 +388,7 @@ fn fails_when_uncle_number_is_different_from_trunk() {
 
     let args = CheckForkArgsBuilder::new(block_list).build();
 
-    let result = check_fork(args);
+    let result = check_fork(&args);
     assert_eq!(
         result,
         Err("Uncle's block number does not match trunk block number"),
@@ -410,7 +410,7 @@ fn fails_when_uncle_parent_is_different_from_trunk() {
 
     let args = CheckForkArgsBuilder::new(block_list).build();
 
-    let result = check_fork(args);
+    let result = check_fork(&args);
     assert_eq!(
         result,
         Err("Uncle's parent does not match trunk block's parent"),
@@ -432,7 +432,7 @@ fn fails_when_uncle_difficulty_is_different_from_trunk() {
 
     let args = CheckForkArgsBuilder::new(block_list).build();
 
-    let result = check_fork(args);
+    let result = check_fork(&args);
     assert_eq!(
         result,
         Err("Uncle's difficulty does not match trunk block's difficulty"),
@@ -453,7 +453,7 @@ fn fails_when_first_block_pow_is_lower_than_required() {
 
     let args = CheckForkArgsBuilder::new(block_list).build();
 
-    let result = check_fork(args);
+    let result = check_fork(&args);
     assert_eq!(
         result,
         Err("First block's PoW is less than the required difficulty"),
@@ -475,7 +475,7 @@ fn fails_when_consecutive_block_pow_is_lower_than_required() {
 
     let args = CheckForkArgsBuilder::new(block_list).build();
 
-    let result = check_fork(args);
+    let result = check_fork(&args);
     assert_eq!(
         result,
         Err("Consecutive Block's PoW is less than the required difficulty"),
@@ -499,7 +499,7 @@ fn fails_when_uncle_block_pow_is_lower_than_required() {
 
     let args = CheckForkArgsBuilder::new(block_list).build();
 
-    let result = check_fork(args);
+    let result = check_fork(&args);
     assert_eq!(
         result,
         Err("Uncle's Block PoW is less than the required difficulty"),
