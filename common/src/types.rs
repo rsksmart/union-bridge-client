@@ -37,7 +37,7 @@ pub trait ToHexString {
 ///
 /// ```
 /// use primitive_types::H256;
-/// use common::types::BlockHash;
+/// use common::types::{BlockHash};
 ///
 /// let raw_hash = H256::random();
 /// let block_hash = BlockHash::from(raw_hash);
@@ -45,21 +45,21 @@ pub trait ToHexString {
 /// println!("Block hash: {}", block_hash);
 /// ```
 #[derive(Serialize, Deserialize, Copy, Debug, Eq, PartialEq, Hash, Clone)]
-pub struct BlockHash(H256);
+pub struct Hash32(H256);
 
-impl BlockHash {
+impl Hash32 {
     pub fn value(self) -> H256 {
         self.0
     }
 }
 
-impl From<H256> for BlockHash {
+impl From<H256> for Hash32 {
     fn from(h256: H256) -> Self {
         Self(h256)
     }
 }
 
-impl TryFrom<&str> for BlockHash {
+impl TryFrom<&str> for Hash32 {
     type Error = FromHexError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
@@ -71,23 +71,25 @@ impl TryFrom<&str> for BlockHash {
     }
 }
 
-impl From<FixedBytes<32>> for BlockHash {
+impl From<FixedBytes<32>> for Hash32 {
     fn from(bytes: FixedBytes<32>) -> Self {
-        BlockHash::from(H256::from_slice(&bytes.0))
+        Hash32::from(H256::from_slice(&bytes.0))
     }
 }
 
-impl From<BlockHash> for FixedBytes<32> {
-    fn from(hash: BlockHash) -> Self {
+impl From<Hash32> for FixedBytes<32> {
+    fn from(hash: Hash32) -> Self {
         FixedBytes::<32>::from_slice(hash.value().as_bytes())
     }
 }
 
-impl fmt::Display for BlockHash {
+impl fmt::Display for Hash32 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "0x{}", hex::encode(self.0))
     }
 }
+
+pub type BlockHash = Hash32;
 
 /// Represents a block number in the rootstock blockchain.
 ///
