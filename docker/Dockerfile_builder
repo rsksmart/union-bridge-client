@@ -1,4 +1,4 @@
-# Custom Rust builder image with Risc0
+# Custom Rust builder image
 FROM rust:1.86-slim-bookworm
 
 # Install build dependencies

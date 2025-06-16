@@ -3,7 +3,7 @@ ARG FEATURES
 
 # --- BUILDER STAGE ---
 
-FROM union-client-builder:rust-1.86-risc0-a AS builder
+FROM union-client-builder:rust-1.86-risc0-v1 AS builder
 ARG FEATURES
 
 # setup SSH for private repositories

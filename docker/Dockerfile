@@ -11,7 +11,7 @@ ARG JUST_CRATE
 
 # --- BUILDER STAGE ---
 
-FROM union-client-builder:rust-1.86-a AS builder
+FROM union-client-builder:rust-1.86-v1 AS builder
 ARG JUST_CRATE=""
 ARG FEATURES=""
 

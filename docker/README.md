@@ -3,31 +3,33 @@ Copy the `.env.example` file to `.env` and adjust the values as needed. This fil
 
 # Build
 
+_Note: All the commands mentioned below should be run from the `docker` directory._
+
 ## Whole Project
 
 **Only the first time, or when you want to rebuild the builder image** (containing apt packages, etc.), you should run the following command:
 
 ```bash
-./docker/build_builder.sh
+./build_builder.sh
 ```
 
-Usually you will only need to build the project itself, which is done by the following command:
+Usually you will only need to build the project itself, which is done by running the following command:
 
 ```bash
-./docker/build.sh
+./build.sh
 ```
 
 In anvil mode;
 
 ```bash
-./docker/build.sh anvil
+./build.sh anvil
 ```
 
 ## Just a Service
 To build just one service, run:
 
 ```bash
-./docker/build.sh service="<service_name>"
+./build.sh service="<service_name>"
 ```
 
 This mode works also with `anvil`:
@@ -54,8 +56,8 @@ If you want to use the `actors-mocking` CLI, run (you may need to double-enter):
 ./cli-event-mocking.sh
 ```
 
-# Troubleshooting
+## Troubleshooting
 
 If you see an error like _Failed to get initial block by hash_, you may need to either:
 1) reconfigure the `indexer.initial_block_hash` if running without features
-2) rebuild the compose with the `anvil` feature enabled, which will skip this check: `./docker/build.sh anvil`
+2) rebuild the compose with the `anvil` feature enabled, which will skip this check: `./build.sh anvil`

@@ -22,47 +22,6 @@ jobs:
 
     steps:
 
-      #########################################
-      #### Needed for local tests with act ####
-      #########################################
-      - name: Set up Node.js
-        if: ${{ env.ACT }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-
-      - name: Cache Rust
-        id: cache-rust
-        if: ${{ env.ACT }}
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/bin
-            ~/.rustup
-          key: ${{ runner.os }}-rustup-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-rustup-
-
-      - name: Install Rust
-        if: ${{ env.ACT && steps.cache-rust.outputs.cache-hit != 'true' }}
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-
-      - name: Add Rust to PATH
-        if: ${{ env.ACT }}
-        run: echo "~/.cargo/bin" >> $GITHUB_PATH
-
-      # Install RocksDB deps
-      - name: Install RocksDB Dependencies
-        if: ${{ env.ACT }}
-        run: |
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libclang-dev clang
-      #########################################
-      ########## End of local section #########
-      #########################################
-
       # TODO(jira) https://rsklabs.atlassian.net/browse/ub-176
       - name: Checkout BitVMX
         if: steps.cache-bitvmx.outputs.cache-hit != 'true'
@@ -70,6 +29,18 @@ jobs:
           git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf "https://github.com/FairgateLabs"
           git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf "git@github.com:FairgateLabs"
           git clone --recursive --branch main git@github.com:FairgateLabs/rust-bitvmx-workspace rust-bitvmx-workspace
+
+      - name: Checkout Our Repository
+        uses: actions/checkout@v4
+        with:
+          path: union-bridge-client
+
+      # Install RocksDB deps
+      - name: Install RocksDB Dependencies
+        if: ${{ env.ACT }}
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libclang-dev clang
 
       - name: Cache RISC Zero
         id: cache-risc0
@@ -80,24 +51,40 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-risc0-
 
+      - name: Set up Node.js
+        if: ${{ env.ACT }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
       - name: Install RiscZero
         if: steps.cache-risc0.outputs.cache-hit != 'true'
         run: |
           curl -L https://risczero.com/install | bash
           ~/.risc0/bin/rzup install
 
-      - name: Checkout Our Repository
-        uses: actions/checkout@v4
+      - name: Install Rust
+        if: ${{ env.ACT }}
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          path: union-bridge-client
+          toolchain: stable
+          cache: 'true'
+          cache-workspaces: |
+            union-bridge-client
+            rust-bitvmx-workspace/rust-bitvmx-client
 
-      - name: Cache Client Dependencies
+      - name: Cache Dependencies
+        if: ${{ ! env.ACT }}
         uses: actions/cache@v3
         with:
           path: |
+            ~/.cargo/bin
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
             ~/.cargo/registry
             ~/.cargo/git
-            target/
+            union-bridge-client/target
+            rust-bitvmx-workspace/rust-bitvmx-client/target
           key: ${{ runner.os }}-rust-cargo-${{ hashFiles('union-bridge-client/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-rust-cargo-
