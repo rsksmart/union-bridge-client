@@ -90,6 +90,7 @@ impl fmt::Display for Hash32 {
 }
 
 pub type BlockHash = Hash32;
+pub type TxHash = Hash32;
 
 /// Represents a block number in the rootstock blockchain.
 ///
@@ -563,7 +564,7 @@ pub struct LogInfo {
     address: Address,
     block_hash: BlockHash,
     block_number: BlockNumber,
-    tx_hash: String,
+    tx_hash: TxHash,
     log_index: u64,
     removed: bool,
 }
@@ -573,7 +574,7 @@ impl LogInfo {
         address: Address,
         block_hash: BlockHash,
         block_number: BlockNumber,
-        tx_hash: String,
+        tx_hash: TxHash,
         log_index: u64,
         removed: bool,
     ) -> Self {
@@ -599,8 +600,8 @@ impl LogInfo {
         self.block_number
     }
 
-    pub fn tx_hash(&self) -> &str {
-        &self.tx_hash
+    pub fn tx_hash(&self) -> TxHash {
+        self.tx_hash
     }
 
     pub fn log_index(&self) -> u64 {
@@ -644,10 +645,10 @@ pub struct RskRpcBlock {
     #[serde(deserialize_with = "parse_hex_to_block_number")]
     number: BlockNumber,
 
-    #[serde(deserialize_with = "parse_hex_to_block_hash")]
+    #[serde(deserialize_with = "parse_hex_to_hash32")]
     hash: BlockHash,
 
-    #[serde(rename = "parentHash", deserialize_with = "parse_hex_to_block_hash")]
+    #[serde(rename = "parentHash", deserialize_with = "parse_hex_to_hash32")]
     parent_hash: BlockHash,
 
     #[serde(deserialize_with = "parse_hex_to_block_timestamp")]
@@ -691,14 +692,14 @@ pub struct RskRpcLog {
     #[serde(deserialize_with = "parse_hex_to_address")]
     address: Address,
 
-    #[serde(rename = "blockHash", deserialize_with = "parse_hex_to_block_hash")]
+    #[serde(rename = "blockHash", deserialize_with = "parse_hex_to_hash32")]
     block_hash: BlockHash,
 
     #[serde(rename = "blockNumber", deserialize_with = "parse_hex_to_block_number")]
     block_number: BlockNumber,
 
-    #[serde(rename = "transactionHash")]
-    tx_hash: String,
+    #[serde(rename = "transactionHash", deserialize_with = "parse_hex_to_hash32")]
+    tx_hash: TxHash,
 
     #[serde(rename = "logIndex", deserialize_with = "parse_hex_to_u64")]
     log_index: u64,
@@ -731,13 +732,13 @@ where
     parse_hex_to_u64(deserializer).map(BlockTimestamp::from)
 }
 
-fn parse_hex_to_block_hash<'de, D>(deserializer: D) -> Result<BlockHash, D::Error>
+fn parse_hex_to_hash32<'de, D>(deserializer: D) -> Result<Hash32, D::Error>
 where
     D: Deserializer<'de>,
 {
     let hex: String = Deserialize::deserialize(deserializer)?;
 
-    BlockHash::try_from(hex.as_str()).map_err(de::Error::custom)
+    Hash32::try_from(hex.as_str()).map_err(de::Error::custom)
 }
 
 fn parse_hex_to_address<'de, D>(deserializer: D) -> Result<Address, D::Error>
@@ -776,7 +777,7 @@ where
 
     hex_strings
         .into_iter()
-        .map(|v| parse_hex_to_block_hash(v).map_err(de::Error::custom))
+        .map(|v| parse_hex_to_hash32(v).map_err(de::Error::custom))
         .collect()
 }
 

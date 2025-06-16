@@ -96,6 +96,7 @@ impl LogStore for RawLogStore {
 mod tests {
     use super::*;
     use anyhow::Result;
+    use common::types::TxHash;
     use common::{
         test_utils::{rsk_log_generator::FakeLogGenerator, rsk_utils::generate_fake_address},
         types::{BlockHash, LogInfo},
@@ -121,7 +122,7 @@ mod tests {
             addr1.clone(),
             BlockHash::from(H256::random()),
             1.into(),
-            H256::random().to_string(),
+            TxHash::from(H256::random()),
             1,
             false,
         );
@@ -150,7 +151,7 @@ mod tests {
             addr.clone(),
             BlockHash::from(H256::random()),
             1.into(),
-            H256::random().to_string(),
+            TxHash::from(H256::random()),
             1,
             false,
         );
@@ -165,7 +166,7 @@ mod tests {
             addr.clone(),
             BlockHash::from(H256::random()),
             2.into(),
-            H256::random().to_string(),
+            TxHash::from(H256::random()),
             2,
             false,
         );
@@ -173,7 +174,7 @@ mod tests {
             addr.clone(),
             BlockHash::from(H256::random()),
             3.into(),
-            H256::random().to_string(),
+            TxHash::from(H256::random()),
             3,
             false,
         );
@@ -181,7 +182,7 @@ mod tests {
             addr.clone(),
             BlockHash::from(H256::random()),
             4.into(),
-            H256::random().to_string(),
+            TxHash::from(H256::random()),
             4,
             false,
         );
@@ -208,7 +209,7 @@ mod tests {
             addr.clone(),
             BlockHash::from(H256::random()),
             1.into(),
-            H256::random().to_string(),
+            TxHash::from(H256::random()),
             1,
             false,
         );

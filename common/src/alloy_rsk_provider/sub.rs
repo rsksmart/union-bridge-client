@@ -2,7 +2,7 @@ use crate::alloy_rsk_provider::rpc::AlloyProvider;
 use crate::rsk_provider::{
     RskProvider, RskSubscription, RskSubscriptionError, RskSubscriptionFilter,
 };
-use crate::types::{Address, BlockHash, BlockNumber, LogEvent, LogInfo, RskBlock, RskLog};
+use crate::types::{Address, BlockHash, BlockNumber, LogEvent, LogInfo, RskBlock, RskLog, TxHash};
 use alloy_primitives::{Address as AlloyAddress, B256};
 use alloy_pubsub::{Subscription, SubscriptionItem};
 use alloy_rpc_types::{FilterBlockOption, Header, Log, Topic};
@@ -180,8 +180,9 @@ impl RskSubscription<RskLog> for AlloySubscription<Log> {
 
         let tx_hash = new_log
             .transaction_hash
-            .map(|h| h.to_string())
-            .ok_or_else(|| RskSubscriptionError::Transient("Missing transaction_hash"))?;
+            .map(TxHash::try_from)
+            .ok_or_else(|| RskSubscriptionError::Transient("Missing transaction_hash"))?
+            .map_err(|e| RskSubscriptionError::Unexpected(e.into()))?;
 
         let block_hash = new_log
             .block_hash
@@ -205,7 +206,7 @@ impl RskSubscription<RskLog> for AlloySubscription<Log> {
             address,
             block_hash,
             block_number,
-            tx_hash.clone(),
+            tx_hash,
             log_index,
             new_log.removed,
         );

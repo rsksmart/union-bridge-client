@@ -180,7 +180,7 @@ mod tests {
     use alloy_primitives::U256;
     use common::test_utils::rsk_log_generator::{FakeLogGenerator, event_signature_to_topic};
     use common::test_utils::rsk_utils::generate_fake_address;
-    use common::types::{BlockHash, LogEvent, LogInfo, RskLog};
+    use common::types::{BlockHash, LogEvent, LogInfo, RskLog, TxHash};
     use primitive_types::H256;
     #[test]
     fn test_decode_unknown_event() {
@@ -207,7 +207,7 @@ mod tests {
             generate_fake_address(1),
             BlockHash::from(H256::random()),
             1.into(),
-            H256::random().to_string(),
+            TxHash::from(H256::random()),
             1,
             false,
         );
@@ -230,7 +230,7 @@ mod tests {
             generate_fake_address(1),
             BlockHash::from(H256::random()),
             1.into(),
-            H256::random().to_string(),
+            TxHash::from(H256::random()),
             1,
             false,
         );
@@ -260,7 +260,7 @@ mod tests {
             generate_fake_address(1),
             BlockHash::from(H256::random()),
             1.into(),
-            H256::random().to_string(),
+            TxHash::from(H256::random()),
             1,
             false,
         );
@@ -311,7 +311,7 @@ mod tests {
             generate_fake_address(1),
             expected_block_hash.into(),
             expected_block_num.into(),
-            H256::random().to_string(),
+            TxHash::from(H256::random()),
             1,
             false,
         );

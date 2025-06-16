@@ -1,4 +1,4 @@
-use crate::types::{Address, BlockHash, LogEvent, LogInfo, RskLog};
+use crate::types::{Address, BlockHash, LogEvent, LogInfo, RskLog, TxHash};
 use primitive_types::H256;
 use sha3::{Digest, Keccak256};
 
@@ -22,7 +22,7 @@ impl FakeLogGenerator {
             address.clone(),
             BlockHash::from(H256::random()),
             1.into(),
-            H256::random().to_string(),
+            TxHash::from(H256::random()),
             1,
             false,
         );

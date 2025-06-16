@@ -4,8 +4,9 @@ use common::test_utils::rsk_block_generator::FakeBlockGenerator;
 use common::test_utils::rsk_log_generator::FakeLogGenerator;
 use common::test_utils::rsk_utils::{
     DEFAULT_BLOCK_HASH, generate_fake_address, generate_fake_addresses,
-    generate_fake_managed_contracts, generate_fake_tx_hash,
+    generate_fake_managed_contracts,
 };
+use common::types::TxHash;
 use common::{
     rsk_indexer::RskIndexer,
     rsk_provider::{MockRskProvider, RskSubscriptionFilter},
@@ -22,7 +23,7 @@ use std::{
     sync::{Arc, atomic::AtomicBool},
 };
 use tempfile::tempdir;
-const TX_ID_RANGE: Range<u64> = 0..20;
+
 const LOG_INDEX_RANGE: Range<u64> = 0..20;
 const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
 
@@ -162,7 +163,7 @@ fn test_when_log_before_initial_height_should_not_store_log() -> Result<()> {
         generate_fake_address(LOG_INFO_TUPLE_SIZE + 1),
         BlockHash::from(H256::random()),
         (INIT_BLOCK_HEIGHT - 1).into(),
-        generate_fake_tx_hash(1, ""),
+        TxHash::from(H256::random()),
         1,
         false,
     );
@@ -203,10 +204,9 @@ fn log_info_tuple_generator(
     let block_num_range = filter_from_block_height.clone();
     for i in 0..vec_size {
         let block_num = rng.random_range(block_num_range.clone());
-        let tx_id = rng.random_range(TX_ID_RANGE);
         let address: Address = addresses[i as usize].clone();
         let block_hash = BlockHash::from(H256::random());
-        let tx_hash = generate_fake_tx_hash(tx_id, "");
+        let tx_hash = TxHash::from(H256::random());
         let log_index = rng.random_range(LOG_INDEX_RANGE);
         v.push(LogInfo::new(
             address,

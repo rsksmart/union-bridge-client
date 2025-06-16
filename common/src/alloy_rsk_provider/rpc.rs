@@ -289,6 +289,7 @@ impl RskProvider for AlloyProvider {
 
 #[cfg(test)]
 mod tests {
+    use crate::types::TxHash;
     use crate::{
         alloy_rsk_provider::rpc::AlloyProvider,
         types::{Address, BlockHash, BlockNumber},
@@ -428,10 +429,12 @@ mod tests {
         )
         .expect("Invalid hex string in JSON");
 
-        let expected_tx_hash = result[0]["transactionHash"]
-            .as_str()
-            .expect("Transaction hash should be a string")
-            .to_string();
+        let expected_tx_hash = TxHash::try_from(
+            result[0]["transactionHash"]
+                .as_str()
+                .expect("Transaction hash should be a string"),
+        )
+        .expect("Invalid hex string in JSON");
 
         let expected_data = result[0]["data"]
             .as_str()
