@@ -24,5 +24,5 @@ ethers-signers = "2.0.14"
 ethers-middleware = "2.0.14"
 ethers-providers = "2.0.14"
 ethers-contract = "2.0.14"
-cucumber = { version = "0.21", features = ["output-junit", "tracing"] }
-
+cucumber = "0.21"
+reqwest = { version = "0.12.15", features = ["json"] }
