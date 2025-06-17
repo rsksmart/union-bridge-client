@@ -7,7 +7,7 @@ use crate::{
 use anyhow::{Context, Result};
 use common::{msg_broker::broker::BrokerClientApi, shutdown_flag::ShutdownFlag};
 use log::error;
-use std::{sync::Arc, thread, time::Duration};
+use std::{thread, time::Duration};
 
 const CHECK_PERIOD: Duration = Duration::from_secs(1);
 
@@ -19,9 +19,9 @@ pub struct Coordinator<M: MonitorApi> {
 }
 
 impl<M: MonitorApi> Coordinator<M> {
-    pub fn new(
+    pub fn new<B: BrokerClientApi + Clone + 'static>(
         monitor: M,
-        bitvmx_broker: Arc<dyn BrokerClientApi>,
+        bitvmx_broker: B,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
         Self {

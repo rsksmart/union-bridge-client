@@ -16,22 +16,19 @@ use common::{
 };
 use log::{debug, error, info, warn};
 use primitive_types::U256;
-use std::{
-    collections::{BTreeMap, HashMap},
-    sync::Arc,
-};
+use std::collections::{BTreeMap, HashMap};
 use uuid::Uuid;
 
-pub struct PegOutAdvanceFundsProcessor {
-    bitvmx_broker: Arc<dyn BrokerClientApi>,
+pub struct PegOutAdvanceFundsProcessor<T: BrokerClientApi> {
+    bitvmx_broker: T,
     first_block_to_process: Option<BlockNumber>,
     request_events: HashMap<String, RequestAdvanceFundsEvent>,
     adv_funds_checker: Option<AdvanceFundsChecker>,
     known_blocks: BTreeMap<BlockNumber, RskBlockAndUncles>,
 }
 
-impl PegOutAdvanceFundsProcessor {
-    pub fn new(bitvmx_broker: Arc<dyn BrokerClientApi>) -> Self {
+impl<T: BrokerClientApi> PegOutAdvanceFundsProcessor<T> {
+    pub fn new(bitvmx_broker: T) -> Self {
         Self {
             bitvmx_broker,
             first_block_to_process: None,
@@ -204,7 +201,7 @@ impl PegOutAdvanceFundsProcessor {
     }
 }
 
-impl EventProcessor for PegOutAdvanceFundsProcessor {
+impl<T: BrokerClientApi> EventProcessor for PegOutAdvanceFundsProcessor<T> {
     fn process_new_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         match event {
             RskPegManagerEvents::RequestAdvanceFunds(data) => {
@@ -368,7 +365,7 @@ mod tests {
 
     #[test]
     fn test_new_processor_initial_state_is_clear() {
-        let processor = PegOutAdvanceFundsProcessor::new(Arc::new(MockBrokerClientApi::new()));
+        let processor = PegOutAdvanceFundsProcessor::new(MockBrokerClientApi::new());
         assert!(processor.first_block_to_process.is_none());
         assert!(processor.request_events.is_empty());
         assert!(processor.adv_funds_checker.is_none());
@@ -377,7 +374,7 @@ mod tests {
 
     #[test]
     fn test_process_new_event_request_advance_funds_keeps_events() {
-        let mut processor = PegOutAdvanceFundsProcessor::new(Arc::new(MockBrokerClientApi::new()));
+        let mut processor = PegOutAdvanceFundsProcessor::new(MockBrokerClientApi::new());
 
         let request_block = create_fake_block(100.into(), U256::from(50));
 
@@ -433,7 +430,7 @@ mod tests {
     #[test]
     fn test_process_new_event_kickoff_advance_funds_creates_advance_funds_when_one_request_exists()
     {
-        let mut processor = PegOutAdvanceFundsProcessor::new(Arc::new(MockBrokerClientApi::new()));
+        let mut processor = PegOutAdvanceFundsProcessor::new(MockBrokerClientApi::new());
 
         let request_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
@@ -515,7 +512,7 @@ mod tests {
     #[test]
     fn test_process_new_event_kickoff_advance_funds_creates_advance_funds_when_two_requests_exist()
     {
-        let mut processor = PegOutAdvanceFundsProcessor::new(Arc::new(MockBrokerClientApi::new()));
+        let mut processor = PegOutAdvanceFundsProcessor::new(MockBrokerClientApi::new());
 
         let request_block_1 =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
@@ -608,7 +605,7 @@ mod tests {
 
     #[test]
     fn test_process_new_event_kickoff_advance_funds_exits_when_no_requests() {
-        let mut processor = PegOutAdvanceFundsProcessor::new(Arc::new(MockBrokerClientApi::new()));
+        let mut processor = PegOutAdvanceFundsProcessor::new(MockBrokerClientApi::new());
 
         let kickoff_block = create_fake_block(110.into(), U256::from(51));
         let kickoff_event = create_fake_kickoff_event("peg123");
@@ -631,7 +628,7 @@ mod tests {
 
     #[test]
     fn test_process_new_event_kickoff_advance_funds_exits_when_no_matching_request() {
-        let mut processor = PegOutAdvanceFundsProcessor::new(Arc::new(MockBrokerClientApi::new()));
+        let mut processor = PegOutAdvanceFundsProcessor::new(MockBrokerClientApi::new());
 
         let request_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
@@ -680,7 +677,7 @@ mod tests {
         let mut bitvmx_broker = MockBrokerClientApi::new();
         expect_zkp_bitvmx(&mut bitvmx_broker);
 
-        let mut processor = PegOutAdvanceFundsProcessor::new(Arc::new(bitvmx_broker));
+        let mut processor = PegOutAdvanceFundsProcessor::new(bitvmx_broker);
 
         let request_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
@@ -809,7 +806,7 @@ mod tests {
         let mut bitvmx_broker = MockBrokerClientApi::new();
         expect_zkp_bitvmx(&mut bitvmx_broker);
 
-        let mut processor = PegOutAdvanceFundsProcessor::new(Arc::new(bitvmx_broker));
+        let mut processor = PegOutAdvanceFundsProcessor::new(bitvmx_broker);
 
         let request_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
@@ -923,7 +920,7 @@ mod tests {
 
     #[test]
     fn test_process_kickoff_event_without_blocks_early_exits() {
-        let mut processor = PegOutAdvanceFundsProcessor::new(Arc::new(MockBrokerClientApi::new()));
+        let mut processor = PegOutAdvanceFundsProcessor::new(MockBrokerClientApi::new());
 
         let request_block = create_fake_block(100.into(), U256::from(50));
         let kickoff_block = create_fake_block(110.into(), U256::from(50));
@@ -964,7 +961,7 @@ mod tests {
 
     #[test]
     fn test_process_old_block_early_exits() {
-        let mut processor = PegOutAdvanceFundsProcessor::new(Arc::new(MockBrokerClientApi::new()));
+        let mut processor = PegOutAdvanceFundsProcessor::new(MockBrokerClientApi::new());
 
         let request_block = create_fake_block(100.into(), U256::from(50));
 
@@ -988,7 +985,7 @@ mod tests {
 
     #[test]
     fn test_shutdown_with_active_advance_funds_works() {
-        let mut processor = PegOutAdvanceFundsProcessor::new(Arc::new(MockBrokerClientApi::new()));
+        let mut processor = PegOutAdvanceFundsProcessor::new(MockBrokerClientApi::new());
 
         let request_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
@@ -1044,7 +1041,7 @@ mod tests {
 
     #[test]
     fn test_remove_request_advance_funds_event_removes_it() {
-        let mut processor = PegOutAdvanceFundsProcessor::new(Arc::new(MockBrokerClientApi::new()));
+        let mut processor = PegOutAdvanceFundsProcessor::new(MockBrokerClientApi::new());
 
         let request_block_1 = create_fake_block(100.into(), U256::from(50));
         let request_block_2 = create_fake_block(101.into(), U256::from(51));
@@ -1098,7 +1095,7 @@ mod tests {
 
     #[test]
     fn test_remove_request_advance_funds_block_removes_it() {
-        let mut processor = PegOutAdvanceFundsProcessor::new(Arc::new(MockBrokerClientApi::new()));
+        let mut processor = PegOutAdvanceFundsProcessor::new(MockBrokerClientApi::new());
 
         let request_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
@@ -1145,7 +1142,7 @@ mod tests {
 
     #[test]
     fn test_remove_kickoff_advance_funds_block_removes_it() {
-        let mut processor = PegOutAdvanceFundsProcessor::new(Arc::new(MockBrokerClientApi::new()));
+        let mut processor = PegOutAdvanceFundsProcessor::new(MockBrokerClientApi::new());
 
         let advance_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
@@ -1194,7 +1191,7 @@ mod tests {
 
     #[test]
     fn test_remove_kickoff_advance_funds_event_stops_advance_funds() {
-        let mut processor = PegOutAdvanceFundsProcessor::new(Arc::new(MockBrokerClientApi::new()));
+        let mut processor = PegOutAdvanceFundsProcessor::new(MockBrokerClientApi::new());
 
         let request_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));

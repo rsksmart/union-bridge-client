@@ -7,15 +7,15 @@ use common::msg_broker::{
 use log::info;
 use reqwest::blocking::Client;
 use serde_json::Value;
-use std::{env, sync::Arc};
+use std::env;
 
-pub struct GetTemporaryPeginAddressProcessor {
+pub struct GetTemporaryPeginAddressProcessor<T: BrokerClientApi> {
     http_client: Client,
-    bitvmx_broker: Arc<dyn BrokerClientApi>,
+    bitvmx_broker: T,
 }
 
-impl GetTemporaryPeginAddressProcessor {
-    pub fn new(bitvmx_broker: Arc<dyn BrokerClientApi>) -> Self {
+impl<T: BrokerClientApi> GetTemporaryPeginAddressProcessor<T> {
+    pub fn new(bitvmx_broker: T) -> Self {
         Self {
             http_client: Client::new(),
             bitvmx_broker,
@@ -46,7 +46,7 @@ impl GetTemporaryPeginAddressProcessor {
     }
 }
 
-impl EventProcessor for GetTemporaryPeginAddressProcessor {
+impl<T: BrokerClientApi> EventProcessor for GetTemporaryPeginAddressProcessor<T> {
     fn process_new_bitvmx_event(&mut self, event: &FromServer) -> Result<()> {
         match event {
             FromServer::GetTemporaryPegInAddress(value) => {
