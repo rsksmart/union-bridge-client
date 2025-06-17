@@ -59,32 +59,39 @@ The Union Bridge Monitor is not just a simple block indexer. It:
 
 # Configuration
 
-Configuration files are located under the `config` directory, organized in environment folders. The final config is the composition of the following files in the defined order:
+Configuration files are located under the `config` directory, organized in environment folders. The final config is the
+composition of the following files in the defined order:
+
 - `common.yaml`: common configuration for all environments.
 - `{crate_name}.yaml`: specific configuration for each crate.
 
 ## Environment Variables
+
 The project also uses some environment variables for private properties.
 
 We recommend using `direnv` to manage them. Then you can set them up by:
+
 1. copying `[.envrc.sample](.envrc.sample)`) in the project root as `.envrc`
 2. modifying what you need
 3. and running `direnv allow` (every time you do a change)
- 
-This will automatically load the environment variables defined in the `.envrc` on the services that require them.
 
+This will automatically load the environment variables defined in the `.envrc` on the services that require them.
 
 # How to run the Union Client?
 
 To run the Union-Client you have several options:
-1. Manually run the required crates: `block-indexer` + `log-indexer` + `transaction-dispatcher` + `coordinator` (+ `actors-mocking` for mocks).
-   - Make sure you have the required dependencies installed (e.g., `anvil` for mocks).
-   - Use the provided sample config files under `config` to create your own configuration.
-   - Run each crate with the appropriate command, passing the paths to the logger and config files.
+
+1. Manually run the required crates: `block-indexer` + `log-indexer` + `transaction-dispatcher` + `coordinator` (+
+   `actors-mocking` for mocks).
+    - Make sure you have the required dependencies installed (e.g., `anvil` for mocks).
+    - Use the provided sample config files under `config` to create your own configuration.
+    - Run each crate with the appropriate command, passing the paths to the logger and config files.
 2. Use the **sh** scripts:
-   1. `./run-client.sh` to run without mocks, using **local** config.
-   2. `./run-mocks.sh` in one terminal and `./run-client.sh anvil` in another one to use mocks and the **anvil** config.
-3. Use the `docker-compose` file to run the Union Client. Check the [docker/README.md](docker/README.md) for more information on how to build and run the monitor using Docker.
+    1. `./run-client.sh` to run without mocks, using **local** config.
+    2. `./run-mocks.sh` in one terminal and `./run-client.sh anvil` in another one to use mocks and the **anvil**
+       config.
+3. Use the `docker-compose` file to run the Union Client. Check the [docker/README.md](docker/README.md) for more
+   information on how to build and run the monitor using Docker.
 
 # How to run the Monitors?
 
@@ -204,3 +211,39 @@ rusty-hook init
 ```
 
 The file [rusty-hook.toml](rusty-hook.toml) will be used for hook configuration.
+
+## Clone the repository
+
+Clone the repository:
+
+```bash
+git clone --recurse-submodules git@github.com:rsksmart/union-bridge-client.git
+```
+
+For now, as a temporary approach, we need to clone BitVMX Workspace as a sibling of our repository to use some BitVMX
+Client types that in the future will be extracted to a separate crate. To do this, run the following command:
+
+```bash
+git clone --recurse-submodules git@github.com:FairgateLabs/rust-bitvmx-workspace.git ../rust-bitvmx-workspace
+```
+
+## GitHub Actions
+
+To test locally the GitHub Actions, you can use the `act` tool. You need to have Docker installed and running on your
+machine, as `act` uses Docker to run the actions in a local environment.
+
+You can install it via Homebrew:
+
+```bash
+brew install act
+```
+
+**Only the first time you run `act`, or whenever the base image changes**. To do so, run the following command from the `.github/act` directory:
+
+```bash
+act -j automated-tests -s FAIRGATE_GITHUB_TOKEN=<ask_your_colleagues> --container-architecture linux/amd64
+```
+
+Where:
+- `FAIRGATE_GITHUB_TOKEN` is needed for now to access Fairgate private repositories used as dependencies
+- `--container-architecture linux/amd64` is needed to run Risc0 tools

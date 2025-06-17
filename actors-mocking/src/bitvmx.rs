@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
+use bitvmx_client::types::IncomingBitVMXApiMessages;
 use common::msg_broker::{
     broker::BrokerServerApi,
-    types::{BrokerRequests, BrokerResponses},
+    types::{FromServer, ToServer},
 };
 use serde_json::json;
 use std::collections::HashSet;
@@ -19,18 +20,29 @@ impl<BS: BrokerServerApi> Executor<BS> {
         }
     }
 
-    pub fn update_consumers(&mut self) -> Result<()> {
+    pub fn try_recv(&mut self) -> Result<()> {
         match self.broker_server.try_recv()? {
-            Some((BrokerRequests::SubscribeBitVMX, consumer_id)) => {
+            Some((ToServer::SubscribeMockedBitVMX, consumer_id)) => {
                 println!("Status: New consumer {consumer_id} for BitVMX messages");
                 self.consumers.insert(consumer_id);
             }
-            Some((BrokerRequests::UnsubscribeBitVMX, consumer_id)) => {
+            Some((ToServer::UnsubscribeMockedBitVMX, consumer_id)) => {
                 if self.consumers.contains(&consumer_id) {
                     println!("Status: Unsubscribing consumer {consumer_id}");
                     self.consumers.remove(&consumer_id);
                 }
             }
+            Some((ToServer::ToBitVMX(msg), from)) => match msg {
+                IncomingBitVMXApiMessages::GenerateZKP(id, data) => {
+                    println!(
+                        "Received GenerateZKP from {from} with id {id} and data {:?}",
+                        hex::encode(data)
+                    );
+                }
+                _ => {
+                    println!("Unexpected IncomingBitVMXApiMessages received {:?}", msg);
+                }
+            },
             Some((_, consumer_id)) => {
                 println!(
                     "Status: Unexpected request type from consumer {consumer_id}, unsubscribing"
@@ -55,12 +67,12 @@ impl<BS: BrokerServerApi> Executor<BS> {
             "btc_reimbursement_pub_key": btc_reimbursement_pub_key,
         });
 
-        let event = BrokerResponses::GetTemporaryPegInAddress(payload);
+        let event = FromServer::GetTemporaryPegInAddress(payload);
 
         self.notify_consumers(event)
     }
 
-    fn notify_consumers(&self, event: BrokerResponses) -> Result<()> {
+    fn notify_consumers(&self, event: FromServer) -> Result<()> {
         for c_id in &self.consumers {
             println!(
                 "Status: Notifying consumer {} about new event {:?}",

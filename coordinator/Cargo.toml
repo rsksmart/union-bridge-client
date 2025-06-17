@@ -7,20 +7,25 @@ edition = "2024"
 check-fork = { path = "../check-fork" }
 common = { path = "../common" }
 actors-mocking = { path = "../actors-mocking" }
+check-fork-zkp = { path = "../check-fork/zkp" }
 
 alloy-primitives = { workspace = true }
 alloy-sol-types = { workspace = true }
 anyhow = { workspace = true }
+bincode = { workspace = true }
 clap = { workspace = true }
 log = { workspace = true }
 serde_json = { workspace = true }
 union-contracts = { workspace = true }
-primitive-types = {workspace = true}
+primitive-types = { workspace = true }
+# TODO(jira) https://rsklabs.atlassian.net/browse/ub-176
+bitvmx-client = { workspace = true }
+hex = { workspace = true }
+mockall = { workspace = true }
+serde = { workspace = true }
 
-hex = "0.4.3"
-mockall = "0.13.1"
 reqwest = { version = "0.12", features = ["json", "blocking"] }
-serde = { version = "1.0.217", features = ["derive"] }
+uuid = { version = "1.11.0", features = ["v4"] }
 
 [features]
 anvil = []

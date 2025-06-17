@@ -1,6 +1,6 @@
 use crate::event_processor::EventProcessor;
 use anyhow::{Context, Result, bail};
-use common::msg_broker::types::BrokerResponses;
+use common::msg_broker::types::FromServer;
 use log::info;
 use reqwest::blocking::Client;
 use serde_json::Value;
@@ -42,9 +42,9 @@ impl GetTemporaryPeginAddressProcessor {
 }
 
 impl EventProcessor for GetTemporaryPeginAddressProcessor {
-    fn process_new_bitvmx_event(&mut self, event: &BrokerResponses) -> Result<()> {
+    fn process_new_bitvmx_event(&mut self, event: &FromServer) -> Result<()> {
         match event {
-            BrokerResponses::GetTemporaryPegInAddress(value) => {
+            FromServer::GetTemporaryPegInAddress(value) => {
                 let result = self.proxy_peg_in_address_request(value)?;
                 info!(
                     "Successfully proxied pegin address request. Response: {}",
