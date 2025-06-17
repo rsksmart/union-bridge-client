@@ -471,12 +471,12 @@ fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription
 -> Result<()> {
     let _ = env_logger::builder().is_test(true).try_init();
     let uncle_block_info_vec: Vec<UncleBlockInfo> = vec![
-        UncleBlockInfo::new(5, false, "uD.A"),
-        UncleBlockInfo::new(8, false, "uG.A"),
-        UncleBlockInfo::new(8, false, "uG.B"),
-        UncleBlockInfo::new(22, false, "uP.A"),
-        UncleBlockInfo::new(22, false, "uP.B"),
-        UncleBlockInfo::new(28, false, "uS.A"),
+        UncleBlockInfo::new(5, false, "uD.A", 0),
+        UncleBlockInfo::new(8, false, "uG.A", 0),
+        UncleBlockInfo::new(8, false, "uG.B", 1),
+        UncleBlockInfo::new(22, false, "uP.A", 0),
+        UncleBlockInfo::new(22, false, "uP.B", 1),
+        UncleBlockInfo::new(28, false, "uS.A", 0),
     ];
     const INIT_BLOCK_HEIGHT: u64 = 1;
     const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
@@ -509,7 +509,7 @@ fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription
     let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH)?;
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_hash(block_hash, INIT_BLOCK_HEIGHT.into());
-    mock_rsk_provider_handler.set_provider_expect_get_block_by_hash_uncles();
+    mock_rsk_provider_handler.set_provider_expect_get_uncle_by_hash_and_index();
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
     mock_rsk_provider_handler.set_provider_expect_get_block_by_number(None, None);
     mock_rsk_provider_handler.set_provider_expect_subscribe_blocks(None);
@@ -575,19 +575,19 @@ fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complet
 -> Result<()> {
     let _ = env_logger::builder().is_test(true).try_init();
     let uncle_block_info_vec: Vec<UncleBlockInfo> = vec![
-        UncleBlockInfo::new(5, false, "uD.A"),
-        UncleBlockInfo::new(12, false, "uJ.A"),
-        UncleBlockInfo::new(17, false, "uL.A"),
-        UncleBlockInfo::new(22, false, "uP.A"),
-        UncleBlockInfo::new(28, false, "uS.A"),
-        UncleBlockInfo::new(8, true, "uF.A"),
-        UncleBlockInfo::new(12, true, "uJ2.A"),
-        UncleBlockInfo::new(13, true, "uJJ.A"),
-        UncleBlockInfo::new(17, true, "uL2.A"),
-        UncleBlockInfo::new(19, true, "uLL.A"),
-        UncleBlockInfo::new(22, true, "uP2.A"),
-        UncleBlockInfo::new(23, true, "uPP.A"),
-        UncleBlockInfo::new(33, true, "uT.A"),
+        UncleBlockInfo::new(5, false, "uD.A", 0),
+        UncleBlockInfo::new(12, false, "uJ.A", 0),
+        UncleBlockInfo::new(17, false, "uL.A", 0),
+        UncleBlockInfo::new(22, false, "uP.A", 0),
+        UncleBlockInfo::new(28, false, "uS.A", 0),
+        UncleBlockInfo::new(8, true, "uF.A", 0),
+        UncleBlockInfo::new(12, true, "uJ2.A", 0),
+        UncleBlockInfo::new(13, true, "uJJ.A", 0),
+        UncleBlockInfo::new(17, true, "uL2.A", 0),
+        UncleBlockInfo::new(19, true, "uLL.A", 0),
+        UncleBlockInfo::new(22, true, "uP2.A", 0),
+        UncleBlockInfo::new(23, true, "uPP.A", 0),
+        UncleBlockInfo::new(33, true, "uT.A", 0),
     ];
     const INIT_BLOCK_HEIGHT: u64 = 1;
     const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
@@ -624,7 +624,7 @@ fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complet
     let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH)?;
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_hash(block_hash, INIT_BLOCK_HEIGHT.into());
-    mock_rsk_provider_handler.set_provider_expect_get_block_by_hash_uncles();
+    mock_rsk_provider_handler.set_provider_expect_get_uncle_by_hash_and_index();
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_number(Some(REORG_HAPPENS_AT_HEIGHT.into()), None);
@@ -686,13 +686,13 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_should_complete_
 -> Result<()> {
     let _ = env_logger::builder().is_test(true).try_init();
     let uncle_block_info_vec: Vec<UncleBlockInfo> = vec![
-        UncleBlockInfo::new(23, false, "uP.A"),
-        UncleBlockInfo::new(28, false, "uR.A"),
-        UncleBlockInfo::new(32, false, "uY.A"),
-        UncleBlockInfo::new(24, true, "uQ.A"),
-        UncleBlockInfo::new(28, true, "uR2.A"),
-        UncleBlockInfo::new(29, true, "uT.A"),
-        UncleBlockInfo::new(38, true, "uZ.A"),
+        UncleBlockInfo::new(23, false, "uP.A", 0),
+        UncleBlockInfo::new(28, false, "uR.A", 0),
+        UncleBlockInfo::new(32, false, "uY.A", 0),
+        UncleBlockInfo::new(24, true, "uQ.A", 0),
+        UncleBlockInfo::new(28, true, "uR2.A", 0),
+        UncleBlockInfo::new(29, true, "uT.A", 0),
+        UncleBlockInfo::new(38, true, "uZ.A", 0),
     ];
 
     const INIT_BLOCK_HEIGHT: u64 = 1;
@@ -729,7 +729,7 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_should_complete_
     let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH)?;
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_hash(block_hash, INIT_BLOCK_HEIGHT.into());
-    mock_rsk_provider_handler.set_provider_expect_get_block_by_hash_uncles();
+    mock_rsk_provider_handler.set_provider_expect_get_uncle_by_hash_and_index();
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_number(Some(REORG_HAPPENS_AT_HEIGHT.into()), None);

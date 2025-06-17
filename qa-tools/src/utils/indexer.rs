@@ -109,7 +109,7 @@ pub fn update_initial_block_hash_in_config(
         println!("Latest block (decimal): {}", latest_block_dec);
         let target_block_dec = latest_block_dec.saturating_sub(finality);
         println!("Target block (decimal): {}", target_block_dec);
-        let target_block_hex = format!("0x{:x}", target_block_dec);
+        let target_block_hex = format!("{:#x}", target_block_dec);
         println!("Target block (hex): {}", target_block_hex);
         let block_hash = get_block_hash(endpoint_url, &target_block_hex)?;
         println!(
@@ -118,7 +118,7 @@ pub fn update_initial_block_hash_in_config(
         );
         update_initial_block_hash(target_config_file, &block_hash)?;
     } else if let Some(height) = args.block_height {
-        let target_block_hex = format!("0x{:x}", height);
+        let target_block_hex = format!("{:#x}", height);
         println!(
             "Using block height {} converted to hex: {}",
             height, target_block_hex

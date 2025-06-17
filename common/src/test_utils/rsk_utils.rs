@@ -11,14 +11,16 @@ pub struct UncleBlockInfo {
     pub height: BlockNumber,
     pub reorg: bool,
     pub id: String,
+    pub index: u64,
 }
 
 impl UncleBlockInfo {
-    pub fn new(height: i32, reorg: bool, uncle_id: &str) -> Self {
+    pub fn new(height: i32, reorg: bool, uncle_id: &str, index: u64) -> Self {
         Self {
             height: BlockNumber::from(height as u64),
             reorg,
             id: uncle_id.to_string(),
+            index,
         }
     }
 }

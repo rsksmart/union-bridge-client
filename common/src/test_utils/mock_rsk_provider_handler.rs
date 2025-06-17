@@ -61,23 +61,22 @@ impl<'a> MockRskProviderHandler<'a> {
         }
     }
 
-    pub fn set_provider_expect_get_block_by_hash_uncles(&mut self) {
+    pub fn set_provider_expect_get_uncle_by_hash_and_index(&mut self) {
         let generator = self.block_generator.clone();
         if let Some(uncle_block_info_vec) = self.uncle_block_info_vec.clone() {
             for uncle_info in uncle_block_info_vec {
-                let flavor = format!(
-                    "uncle_{}{}",
-                    if uncle_info.reorg { "alt" } else { "" },
-                    uncle_info.id
-                );
-                let expected_block_hash =
+                let flavor = format!("{}", if uncle_info.reorg { "alt" } else { "" },);
+                let expected_nephew_hash =
                     from_hex_to_block_hash(&generator.generate_hash(uncle_info.height, &flavor));
                 self.provider
-                    .expect_get_block_by_hash()
-                    .with(mockall::predicate::eq(expected_block_hash))
+                    .expect_get_uncle_by_hash_and_index()
+                    .with(
+                        mockall::predicate::eq(expected_nephew_hash),
+                        mockall::predicate::eq(uncle_info.index),
+                    )
                     .returning({
                         let generator = generator.clone();
-                        move |_hash| {
+                        move |_hash, _index| {
                             Ok(generator
                                 .generate_block(uncle_info.height, Some(uncle_info.clone())))
                         }

@@ -49,6 +49,7 @@ pub trait RskProvider {
     fn subscribe_logs(&self, filter: RskSubscriptionFilter) -> Result<Self::LogSubscription>;
     fn get_block_by_hash(&self, hash: BlockHash) -> Result<Option<RskBlock>>;
     fn get_block_by_number(&self, num: BlockNumber) -> Result<Option<RskBlock>>;
+    fn get_uncle_by_hash_and_index(&self, hash: BlockHash, index: u64) -> Result<Option<RskBlock>>;
     fn get_best_block(&self) -> Result<RskBlock>;
     fn get_logs(
         &self,

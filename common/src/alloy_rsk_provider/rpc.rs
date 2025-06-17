@@ -192,7 +192,7 @@ impl RskProvider for AlloyProvider {
     }
 
     fn get_block_by_number(&self, num: BlockNumber) -> Result<Option<RskBlock>> {
-        let num_hex = format!("0x{:x}", num.value());
+        let num_hex = format!("{:#x}", num.value());
 
         let rpc_call = self
             .inner
@@ -215,6 +215,20 @@ impl RskProvider for AlloyProvider {
             .and_then(|response| Self::parse_block_provider_response(response))
             .context("Getting best block from provider")?
             .context("None best block")
+    }
+
+    fn get_uncle_by_hash_and_index(&self, hash: BlockHash, index: u64) -> Result<Option<RskBlock>> {
+        // Convert index to hexadecimal format
+        let hex_index = format!("{:#x}", index);
+
+        let rpc_call = self.inner.client().request(
+            "eth_getUncleByBlockHashAndIndex",
+            vec![json!(hash), json!(hex_index)],
+        );
+
+        self.run(rpc_call)
+            .context(format!("Getting block {hash} from provider"))
+            .and_then(|response| Self::parse_block_provider_response(response))
     }
 
     fn get_logs(
