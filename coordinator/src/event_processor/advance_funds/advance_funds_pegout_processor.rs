@@ -1,14 +1,19 @@
-use crate::event_processor::EventProcessor;
-use crate::event_processor::advance_funds::advance_funds_checker::AdvanceFundsChecker;
-use crate::types::{KickoffAdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents};
+use crate::{
+    event_processor::{EventProcessor, advance_funds::advance_funds_checker::AdvanceFundsChecker},
+    types::{KickoffAdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents},
+};
 use anyhow::Result;
 use bincode::config::standard;
 use bitvmx_client::types::IncomingBitVMXApiMessages;
 use check_fork::{CheckForkArgs, check_fork};
 use check_fork_zkp::{CHECK_FORK_GUEST_ID, CHECK_FORK_GUEST_PATH};
-use common::msg_broker::broker::{BROKER_SERVER_ID, BrokerClientApi};
-use common::msg_broker::types::ToServer;
-use common::types::{BlockNumber, RskBlockAndUncles};
+use common::{
+    msg_broker::{
+        broker::{BROKER_SERVER_ID, BrokerClientApi},
+        types::ToServer,
+    },
+    types::{BlockNumber, RskBlockAndUncles},
+};
 use log::{debug, error, info, warn};
 use primitive_types::U256;
 use std::collections::{BTreeMap, HashMap};
@@ -19,7 +24,6 @@ pub struct PegOutAdvanceFundsProcessor<T: BrokerClientApi> {
     first_block_to_process: Option<BlockNumber>,
     request_events: HashMap<String, RequestAdvanceFundsEvent>,
     adv_funds_checker: Option<AdvanceFundsChecker>,
-    // BTreeMap to sort blocks by number while keeping just the most recent one in case of reorgs
     known_blocks: BTreeMap<BlockNumber, RskBlockAndUncles>,
 }
 

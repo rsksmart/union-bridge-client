@@ -1,25 +1,30 @@
 use crate::event_processor::EventProcessor;
 use anyhow::{Context, Result, bail};
-use common::msg_broker::types::FromServer;
+use common::msg_broker::{
+    broker::{BROKER_SERVER_ID, BrokerClientApi},
+    types::{FromServer, ToServer},
+};
 use log::info;
 use reqwest::blocking::Client;
 use serde_json::Value;
 use std::env;
 
-pub struct GetTemporaryPeginAddressProcessor {
-    client: Client,
+pub struct GetTemporaryPeginAddressProcessor<T: BrokerClientApi> {
+    http_client: Client,
+    bitvmx_broker: T,
 }
 
-impl GetTemporaryPeginAddressProcessor {
-    pub fn new() -> Self {
+impl<T: BrokerClientApi> GetTemporaryPeginAddressProcessor<T> {
+    pub fn new(bitvmx_broker: T) -> Self {
         Self {
-            client: Client::new(),
+            http_client: Client::new(),
+            bitvmx_broker,
         }
     }
 
     fn proxy_peg_in_address_request(&self, json_value: &Value) -> Result<Value> {
         let res = self
-            .client
+            .http_client
             .post(format!("{}/pegin-address", Self::get_tx_dispatcher_url())) // TODO: Remove http client
             .json(json_value)
             .send()
@@ -41,7 +46,7 @@ impl GetTemporaryPeginAddressProcessor {
     }
 }
 
-impl EventProcessor for GetTemporaryPeginAddressProcessor {
+impl<T: BrokerClientApi> EventProcessor for GetTemporaryPeginAddressProcessor<T> {
     fn process_new_bitvmx_event(&mut self, event: &FromServer) -> Result<()> {
         match event {
             FromServer::GetTemporaryPegInAddress(value) => {
@@ -50,11 +55,18 @@ impl EventProcessor for GetTemporaryPeginAddressProcessor {
                     "Successfully proxied pegin address request. Response: {}",
                     result
                 );
-                // TODO notify end user about the result
-                Ok(())
+
+                // For now send the result back to bitvmx client mock, in the future
+                // this will probably go to the end user
+                self.bitvmx_broker.send(
+                    BROKER_SERVER_ID,
+                    ToServer::TemporaryPegInAddressMockedBitVMX(result),
+                )?;
             }
-            _ => return Ok(()), // ignore unrelated events
+            _ => {} // ignore unrelated events
         }
+
+        Ok(())
     }
 
     fn shutdown(&mut self) {

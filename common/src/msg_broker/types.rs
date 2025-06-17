@@ -15,18 +15,20 @@ pub enum ToServer {
     SubscribeLogs(Address),
     UnsubscribeLogs(Address),
 
-    // fake bitvmx incoming messages
-    SubscribeMockedBitVMX,
-    UnsubscribeMockedBitVMX,
-
     // real BitVMX API messages
     ToBitVMX(IncomingBitVMXApiMessages),
+
+    // fake bitvmx outgoing messages
+    SubscribeMockedBitVMX,
+    UnsubscribeMockedBitVMX,
+    TemporaryPegInAddressMockedBitVMX(Value),
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub enum FromServer {
     Block(RskBlockAndUncles),
     Log(RskLog),
-    // TODO: Once BitVMX API types are ready update to match according to type
+
+    // fake bitvmx incoming messages
     GetTemporaryPegInAddress(Value),
 }

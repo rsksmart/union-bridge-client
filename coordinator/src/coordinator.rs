@@ -5,8 +5,7 @@ use crate::{
     monitor::MonitorApi,
 };
 use anyhow::{Context, Result};
-use common::msg_broker::broker::BrokerClientApi;
-use common::shutdown_flag::ShutdownFlag;
+use common::{msg_broker::broker::BrokerClientApi, shutdown_flag::ShutdownFlag};
 use log::error;
 use std::{thread, time::Duration};
 
@@ -20,16 +19,18 @@ pub struct Coordinator<M: MonitorApi> {
 }
 
 impl<M: MonitorApi> Coordinator<M> {
-    pub fn new<T: BrokerClientApi + 'static>(
+    pub fn new<B: BrokerClientApi + Clone + 'static>(
         monitor: M,
-        bitvmx_broker: T,
+        bitvmx_broker: B,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
         Self {
             monitor,
             processors: vec![
-                Box::new(PegOutAdvanceFundsProcessor::new(bitvmx_broker)),
-                Box::new(GetTemporaryPeginAddressProcessor::new()),
+                Box::new(PegOutAdvanceFundsProcessor::new(bitvmx_broker.clone())),
+                Box::new(GetTemporaryPeginAddressProcessor::new(
+                    bitvmx_broker.clone(),
+                )),
             ],
             check_period: CHECK_PERIOD,
             shutdown_flag,
