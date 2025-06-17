@@ -1,7 +1,9 @@
-use cucumber::{gherkin::Step, then, when};
+use cucumber::gherkin::Step;
+use cucumber::{then, when};
+use qa_tools_common::common::extract_params;
 use serde_json::Value;
-
-use crate::steps::{TestWorld, call_endpoint, extract_addresses, extract_params};
+use crate::steps::{call_endpoint, extract_addresses};
+use crate::TestWorld;
 
 #[when(expr = "I POST to {string}")]
 async fn post_endpoint(world: &mut TestWorld, endpoint: String, step: &Step) {
