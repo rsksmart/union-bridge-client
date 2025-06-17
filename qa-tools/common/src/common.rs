@@ -1,7 +1,13 @@
 use anyhow::{Context, Result, anyhow};
+use cucumber::gherkin::Step;
 use regex::Regex;
 use serde::Deserialize;
 use serde_json::Value;
+use std::collections::HashMap;
+use std::io::Result as ioResult;
+use std::process::{Child, Command, Output};
+use std::thread::sleep;
+use std::time::Duration;
 use std::{fs, path::Path};
 use tungstenite::{Message, connect};
 use url::Url;
@@ -149,7 +155,85 @@ struct Rootstock {
 }
 
 pub fn get_endpoint_url(config_file_path: &str) -> Result<String> {
-    let contents = std::fs::read_to_string(config_file_path)?;
+    let contents = fs::read_to_string(config_file_path)?;
     let config: Config = serde_yaml::from_str(&contents)?;
     Ok(config.provider.rootstock.url)
+}
+
+pub fn spawn_command(command: &str) -> Child {
+    Command::new("bash")
+        .arg("-c")
+        .arg(command)
+        .spawn()
+        .unwrap_or_else(|e| panic!("Failed to spawn `{}`: {}", command, e))
+}
+
+pub fn execute_command(command: &str) {
+    let output = execute_command_output(command)
+        .unwrap_or_else(|e| panic!("Failed to execute `{}`: {}", command, e));
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        panic!(
+            "`{}` failed (status: {}):\n{}",
+            command, output.status, stderr
+        );
+    }
+}
+
+fn execute_command_output(command: &str) -> ioResult<Output> {
+    Command::new("bash").arg("-c").arg(command).output()
+}
+
+pub fn execute_script(script_path: &str) {
+    execute_command(&format!("chmod +x {}", script_path));
+    let output = Command::new("bash").arg(script_path).output()
+        .unwrap_or_else(|e| panic!("Failed to execute `{}`: {}", script_path, e));
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        panic!(
+            "`{}` failed (status: {}):\n{}",
+            script_path, output.status, stderr
+        );
+    }
+}
+
+fn send_sigterm(pid: u32) {
+    execute_command(&format!("kill -15 {}", pid));
+}
+
+fn wait_for_exit(child: &mut Child, timeout_ms: u64) -> ioResult<bool> {
+    let mut waited = 0;
+    while waited < timeout_ms {
+        if let Some(_) = child.try_wait()? {
+            return Ok(true);
+        }
+        sleep(Duration::from_millis(100));
+        waited += 100;
+    }
+    Ok(false)
+}
+
+pub fn kill_process(child: &mut Child) {
+    let pid = child.id();
+    send_sigterm(pid);
+    if !wait_for_exit(child, 3_000).unwrap_or(false) {
+        child.kill().unwrap();
+        if !wait_for_exit(child, 3_000).unwrap_or(false) {
+            panic!("Failed to terminate process with PID: {}", pid);
+        }
+    }
+}
+
+pub fn extract_params(step: &Step) -> HashMap<String, String> {
+    step.table
+        .as_ref()
+        .filter(|table| table.rows.len() == 2)
+        .map(|table| {
+            table.rows[0]
+                .iter()
+                .cloned()
+                .zip(table.rows[1].iter().cloned())
+                .collect()
+        })
+        .unwrap_or_default()
 }

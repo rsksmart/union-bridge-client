@@ -38,3 +38,4 @@ ethers-signers = { workspace = true }
 ethers-middleware = { workspace = true }
 ethers-providers = { workspace = true }
 ethers-contract = { workspace = true }
+cucumber = { workspace = true }
