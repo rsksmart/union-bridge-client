@@ -17,6 +17,19 @@ const DEFAULT_LOG_DIRECTORY: &str = "logs";
 const DEFAULT_TRACING_LEVEL: &str = "DEBUG";
 const DEFAULT_DATE_TIME_FORMAT: &str = "%Y-%m-%d %H:%M:%S%.3f";
 
+pub fn get_project_root_path() -> String {
+    Path::new(CARGO_MANIFEST_DIR)
+        .parent()
+        .and_then(|p| p.to_str())
+        .map(|s| s.to_string())
+        .expect("Failed to get project root path")
+}
+
+fn get_default_log_path() -> String {
+    let project_root_path = get_project_root_path();
+    format!("{}/{}", project_root_path, DEFAULT_LOG_DIRECTORY)
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CommonConfig {
     pub indexer: IndexerConfig,
@@ -70,7 +83,7 @@ pub struct ContractConfig {
     pub address: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct TracingConfig {
     pub log_directory: Option<String>,
     pub logfile_prefix: Option<String>,
@@ -79,12 +92,24 @@ pub struct TracingConfig {
     pub filtered_crates: Option<HashMap<String, String>>,
 }
 
+impl std::fmt::Debug for TracingConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TracingConfig")
+            .field("log_directory", &self.get_log_directory())
+            .field("logfile_prefix", &self.get_logfile_prefix())
+            .field("tracing_level", &self.get_tracing_level())
+            .field("date_time_format", &self.get_date_time_format())
+            .field("filtered_crates", &self.get_filtered_crates())
+            .finish()
+    }
+}
+
 impl TracingConfig {
     /// Get log directory with default if None
     pub fn get_log_directory(&self) -> String {
         self.log_directory
             .clone()
-            .unwrap_or_else(|| DEFAULT_LOG_DIRECTORY.to_string())
+            .unwrap_or_else(|| get_default_log_path())
     }
 
     /// Get logfile prefix with default if None
@@ -191,17 +216,19 @@ impl CommonConfig {
 
     pub fn init_tracer(
         config_path: String,
+        crate_name: &str,
     ) -> Result<(tracing_appender::non_blocking::WorkerGuard, TracingConfig)> {
         // Read tracing configuration from file
         println!("Initializing tracing config from {:?}", config_path);
         let tracing_config = Self::load_tracing_config(&config_path)?;
 
         println!("Tracing config applied: {:?}", tracing_config);
+        let logfile_prefix = tracing_config
+            .logfile_prefix
+            .clone()
+            .unwrap_or(crate_name.to_string());
 
-        let debug_file = rolling::daily(
-            &tracing_config.get_log_directory(),
-            &tracing_config.get_logfile_prefix(),
-        );
+        let debug_file = rolling::daily(&tracing_config.get_log_directory(), logfile_prefix);
 
         let (non_blocking, guard) = tracing_appender::non_blocking(debug_file);
 
@@ -213,8 +240,8 @@ impl CommonConfig {
         let mut filter: EnvFilter = EnvFilter::from_default_env()
             .add_directive(base_level.parse().expect("Invalid base tracing level"));
 
-        for (crate_name, level) in filtered_crates {
-            let directive = format!("{}={}", crate_name, level);
+        for (filtered_crate, level) in filtered_crates {
+            let directive = format!("{}={}", filtered_crate, level);
             filter =
                 filter.add_directive(directive.parse().expect("Invalid crate filter directive"));
         }
@@ -274,10 +301,7 @@ impl CommonConfig {
         }
 
         // otherwise, use the default template and tweak it (mostly for local)
-        let project_root = Path::new(CARGO_MANIFEST_DIR)
-            .parent()
-            .and_then(|p| p.to_str())
-            .expect("Failed to get default_destination");
+        let project_root = get_project_root_path();
 
         let base_yaml = format!("{project_root}/log4rs.yaml");
         let mut config_str = fs::read_to_string(&base_yaml)

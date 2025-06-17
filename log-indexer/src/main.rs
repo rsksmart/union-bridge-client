@@ -10,7 +10,7 @@ use log_indexer::config::{Config, Tracer};
 use log_indexer::notifier::Notifier;
 use log_indexer::{indexer::LogIndexer, store::RawLogStore};
 use std::sync::mpsc;
-use tracing::{error, info, debug};
+use tracing::{debug, error, info};
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const CONFIG_CLI_FLAG: &str = "config-path";

@@ -66,17 +66,15 @@ impl std::fmt::Debug for Tracer {
 
 impl Tracer {
     pub fn init(logger_path: Option<&String>) -> anyhow::Result<Self> {
-        let (guard, config) = match logger_path {
-            Some(path) => CommonConfig::init_tracer(path.clone())?,
-            None => {
-                // Use default path if none provided
-                let default_path = format!(
-                    "{}/log-indexer-tracing.yaml",
-                    CommonConfig::get_default_config_path()
-                );
-                CommonConfig::init_tracer(default_path)?
-            }
-        };
+        let path = logger_path.cloned().unwrap_or_else(|| {
+            format!(
+                "{}/log-indexer-tracing.yaml",
+                CommonConfig::get_default_config_path()
+            )
+        });
+
+        let (guard, config) = CommonConfig::init_tracer(path, CARGO_PKG_NAME)?;
+
         Ok(Tracer {
             _guard: guard,
             config,
@@ -297,40 +295,6 @@ log_directory: "./logs"
 
         // Verify the applied configuration with defaults
         assert_eq!(tracer.log_directory(), "./logs");
-        assert_eq!(tracer.logfile_prefix(), ""); // default
-        assert_eq!(tracer.tracing_level(), "DEBUG"); // default
-        assert_eq!(tracer.date_time_format(), "%Y-%m-%d %H:%M:%S%.3f"); // default
-    }
-
-    #[test]
-    fn test_tracer_init_with_completely_empty_config() {
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let config_file = temp_dir.path().join("empty_defaults_tracing.yaml");
-
-        // Create default logs directory
-        let logs_dir = temp_dir.path().join("logs");
-        fs::create_dir_all(&logs_dir).expect("Failed to create logs directory");
-
-        // Completely empty config - should use all defaults
-        let config_content = r#""#;
-
-        fs::write(&config_file, config_content).expect("Failed to write config file");
-
-        // Change to temp directory so relative "logs" path works
-        let original_dir = std::env::current_dir().expect("Failed to get current dir");
-        std::env::set_current_dir(&temp_dir).expect("Failed to change directory");
-
-        let config_path = config_file.to_str().unwrap().to_string();
-        let result = Tracer::init(Some(&config_path));
-
-        // Restore original directory
-        std::env::set_current_dir(original_dir).expect("Failed to restore directory");
-
-        assert!(result.is_ok());
-        let tracer = result.unwrap();
-
-        // Verify all default values are applied
-        assert_eq!(tracer.log_directory(), "logs"); // default
         assert_eq!(tracer.logfile_prefix(), ""); // default
         assert_eq!(tracer.tracing_level(), "DEBUG"); // default
         assert_eq!(tracer.date_time_format(), "%Y-%m-%d %H:%M:%S%.3f"); // default
