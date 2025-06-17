@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
@@ -84,6 +84,8 @@ lazy_static::lazy_static! {
 
     pub static ref TRANSACTION_DISPATCHER_TOML_PATH: String = env::var("TRANSACTION_DISPATCHER_TOML_PATH")
         .unwrap_or_else(|_| "../transaction-dispatcher/Cargo.toml".to_string());
+    pub static ref CONFIG_ENV_PATH: String = env::var("CONFIG_ENV_PATH")
+        .unwrap_or_else(|_| "../config/local".to_string());
 }
 
 pub fn extract_params(step: &Step) -> HashMap<String, String> {
@@ -457,7 +459,32 @@ pub async fn wait_for_transaction_dispatcher() -> Result<(), String> {
 pub fn execute_script(script_path: &str) -> Result<String, String> {
     let full_path = get_contracts_path().join(script_path);
     execute_command(&format!("chmod +x {}", full_path.display()), false)?;
-    execute_command(&format!("{}", full_path.display()), false)
+    // execute_command(&format!("{}", full_path.display()), false)
+    execute_deploy(&format!("{}", full_path.display()))
+}
+
+// let union_contracts_deploy_script = env::var("UNION_CONTRACTS_DEPLOY_SCRIPT")
+// .context("UNION_CONTRACTS_DEPLOY_SCRIPT not set")?;
+//
+// let mut child = Command::new("bash")
+// .arg(format!("{}", union_contracts_deploy_script))
+// .env("RPC_URL", rpc_url)
+// .stdout(Stdio::piped())
+// .spawn()
+// .expect("Failed to start script");
+
+pub fn execute_deploy(command: &str) -> Result<String, String> {
+    let output = Command::new("bash")
+        .arg(command)
+        .stdout(Stdio::piped())
+        .output()
+        .map_err(|e| format!("Failed to execute command: {}", e))?;
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).to_string())
+    }
+
 }
 
 pub fn execute_command(command: &str, spawn: bool) -> Result<String, String> {
@@ -479,7 +506,7 @@ pub fn execute_command(command: &str, spawn: bool) -> Result<String, String> {
             Err(e) => Err(format!("Failed to check command status: {}", e)),
         }
     } else {
-        let output = Command::new("sh")
+        let output = Command::new("bash")
             .arg("-c")
             .arg(command)
             .output()
@@ -493,8 +520,7 @@ pub fn execute_command(command: &str, spawn: bool) -> Result<String, String> {
 }
 
 pub fn get_contracts_path() -> PathBuf {
-    std::env::current_dir()
-        .expect("Failed to get current directory")
+    PathBuf::from(".")
         .join(CONTRACTS_PATH.as_str())
 }
 
@@ -517,9 +543,10 @@ pub fn transfer_ether(from: &str, to: &str, amount: &str) -> Result<String, Stri
 
 pub async fn start_transaction_dispatcher() -> Result<String, String> {
     let command = format!(
-        "KEY_STORE_PASSWORD={} cargo run --manifest-path {} --bin transaction-dispatcher",
+        "KEY_STORE_PASSWORD={} cargo run --manifest-path {} --bin transaction-dispatcher -- --config-path {}",
         KEY_STORE_PASSWORD.as_str(),
-        TRANSACTION_DISPATCHER_TOML_PATH.as_str()
+        TRANSACTION_DISPATCHER_TOML_PATH.as_str(),
+        CONFIG_ENV_PATH.as_str()
     );
     execute_command(&command, true)?;
     wait_for_transaction_dispatcher().await?;

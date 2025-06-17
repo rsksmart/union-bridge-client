@@ -1,0 +1,90 @@
+name: Integration Tests
+on:
+  push:
+    paths:
+      - 'transaction-dispatcher/**'
+  pull_request:
+    branches:
+      - main
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      CONTRACTS_PATH: "../../bitvmx-union-bridge-contracts"
+      TX_DISPATCHER_URL: "http://localhost:3000"
+      KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }} # "p09ol."
+      KEY_STORE_ARCHIVE:   ${{ secrets.KEY_STORE_ARCHIVE }}
+      CONFIG_ENV_PATH: "../config/ci"
+    steps:
+
+      - name: Set up Node.js
+        if: ${{ env.ACT }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Rust
+        if: ${{ env.ACT }}
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: false
+
+      - name: Install RocksDB Dependencies
+        if: ${{ env.ACT }}
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libclang-dev clang
+
+      - name: Cache Foundry installation
+        id: cache-foundry
+        if: ${{ env.ACT }}
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.foundry/bin
+          key: ${{ runner.os }}-foundry-1.2.3-dev
+          restore-keys: |
+            ${{ runner.os }}-foundry-
+
+      - name: Install Foundry (forge & anvil)
+        if: ${{ env.ACT == 'true' && steps.cache-foundry.outputs.cache-hit != 'true' }}
+        run: |
+          curl -L https://foundry.paradigm.xyz | bash
+          ~/.foundry/bin/foundryup
+
+      - name: Add Foundry to PATH
+        run: echo "$HOME/.foundry/bin" >> $GITHUB_PATH
+
+      - name: Checkout code and submodules
+        uses: actions/checkout@v4
+
+      - name: Clone contracts
+        run: |
+          if [ ! -d "../bitvmx-union-bridge-contracts" ]; then
+            git clone https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs/bitvmx-union-bridge-contracts.git ../bitvmx-union-bridge-contracts
+          fi
+
+      - name: Unpack keystore
+        run: |
+          cd qa-tools
+          rm -rf tmp_keystore
+          mkdir -p tmp_keystore
+          echo "$KEY_STORE_ARCHIVE" | base64 --decode > tmp_keystore/keystore.tar.gz
+          tar xz -f tmp_keystore/keystore.tar.gz -C tmp_keystore
+          ls -l tmp_keystore
+          cd ..
+
+        # cache the bitvmx-union-bridge-contracts
+      - name: Run integration tests
+        run: |
+          which anvil || anvil --version
+          echo $PATH
+          echo $CONTRACTS_PATH
+          cd qa-tools
+          pwd
+          ls -l
+          ls -l tmp_keystore
+          git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf "ssh://git@github.com/FairgateLabs"
+          cargo run --bin qa-tools-transaction-dispatcher -- --tags @transaction-dispatcher-accept-pegin
+
