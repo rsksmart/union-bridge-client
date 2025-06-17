@@ -1,5 +1,9 @@
+provider:
+  rootstock:
+    url: "ws://127.0.0.1:9385"
+
 key_store:
-  path: "/usr/local/union_bridge/keystore/ab98c3c8-a772-4c44-b3a7-99864663b8cb"
+  path: "tmp_keystore/e5cd9470-cec7-42f4-b1ff-7e723de56793"
 transaction:
   gas_bumps_t1: 3
 server:

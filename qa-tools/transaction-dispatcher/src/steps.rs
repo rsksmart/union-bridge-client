@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
@@ -77,13 +77,15 @@ lazy_static::lazy_static! {
         .unwrap_or_else(|_| "http://localhost:3000".to_string());
 
     pub static ref ANVIL_URL: String = env::var("ANVIL_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:8545".to_string());
+        .unwrap_or_else(|_| "http://127.0.0.1:9385".to_string());
 
     pub static ref KEY_STORE_PASSWORD: String = env::var("KEY_STORE_PASSWORD")
         .unwrap_or_else(|_| "p09ol.".to_string());
 
     pub static ref TRANSACTION_DISPATCHER_TOML_PATH: String = env::var("TRANSACTION_DISPATCHER_TOML_PATH")
         .unwrap_or_else(|_| "../transaction-dispatcher/Cargo.toml".to_string());
+    pub static ref CONFIG_ENV_PATH: String = env::var("CONFIG_ENV_PATH")
+        .unwrap_or_else(|_| "../config/local".to_string());
 }
 
 pub fn extract_params(step: &Step) -> HashMap<String, String> {
@@ -430,7 +432,7 @@ pub async fn wait_for_anvil() -> Result<(), String> {
 
 pub async fn wait_for_transaction_dispatcher() -> Result<(), String> {
     let client = reqwest::Client::new();
-    let max_retries = 3;
+    let max_retries = 10;
 
     for retry in 0..max_retries {
         if client
@@ -446,7 +448,7 @@ pub async fn wait_for_transaction_dispatcher() -> Result<(), String> {
             retry + 1,
             max_retries
         );
-        thread::sleep(Duration::from_secs(1));
+        thread::sleep(Duration::from_secs(10));
     }
     Err(format!(
         "Transaction dispatcher failed to start after {} attempts",
@@ -457,10 +459,24 @@ pub async fn wait_for_transaction_dispatcher() -> Result<(), String> {
 pub fn execute_script(script_path: &str) -> Result<String, String> {
     let full_path = get_contracts_path().join(script_path);
     execute_command(&format!("chmod +x {}", full_path.display()), false)?;
-    execute_command(&format!("{}", full_path.display()), false)
+    execute_deploy(&format!("{}", full_path.display()))
 }
 
-pub fn execute_command(command: &str, spawn: bool) -> Result<String, String> {
+pub fn execute_deploy(command: &str) -> Result<String, String> {
+    let output = Command::new("bash")
+        .arg(command)
+        .env("RPC_URL", "http://127.0.0.1:9385")
+        .stdout(Stdio::piped())
+        .output()
+        .map_err(|e| format!("Failed to execute command: {}", e))?;
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).to_string())
+    }
+}
+
+pub fn execute_command(command: &str, spawn: bool) -> Result<(String, Option<u32>), String> {
     if spawn {
         let mut child = Command::new("sh")
             .arg("-c")
@@ -468,43 +484,45 @@ pub fn execute_command(command: &str, spawn: bool) -> Result<String, String> {
             .spawn()
             .map_err(|e| format!("Failed to spawn command: {}", e))?;
 
+        let pid = child.id();
+        println!("Spawned command {} with PID: {}", command, pid);
         thread::sleep(Duration::from_secs(1));
 
         match child.try_wait() {
             Ok(Some(status)) if !status.success() => {
                 Err(format!("Command failed with status: {}", status))
             }
-            Ok(None) => Ok("Command spawned successfully".to_string()),
-            Ok(Some(status)) => Ok(format!("Command completed with status: {}", status)),
+            Ok(None) => Ok(("Command spawned successfully".to_string(), Some(pid))),
+            Ok(Some(status)) => Ok((format!("Command completed with status: {}", status), Some(pid))),
             Err(e) => Err(format!("Failed to check command status: {}", e)),
         }
     } else {
-        let output = Command::new("sh")
+        let output = Command::new("bash")
             .arg("-c")
             .arg(command)
             .output()
             .map_err(|e| format!("Failed to execute command: {}", e))?;
+        
         if output.status.success() {
-            Ok(String::from_utf8_lossy(&output.stdout).to_string())
+            Ok((String::from_utf8_lossy(&output.stdout).to_string(), None))
         } else {
-            Err(String::from_utf8_lossy(&output.stderr).to_string())
+            Err(format!("Command failed - Error: {}", String::from_utf8_lossy(&output.stderr)))
         }
     }
 }
 
 pub fn get_contracts_path() -> PathBuf {
-    std::env::current_dir()
-        .expect("Failed to get current directory")
+    PathBuf::from(".")
         .join(CONTRACTS_PATH.as_str())
 }
 
 pub async fn start_anvil() -> Result<String, String> {
-    execute_command("anvil", true)?;
+    execute_command("anvil --port 9385", true)?;
     wait_for_anvil().await?;
     Ok("Anvil started successfully".to_string())
 }
 
-pub fn transfer_ether(from: &str, to: &str, amount: &str) -> Result<String, String> {
+pub fn transfer_ether(from: &str, to: &str, amount: &str) -> Result<(String, Option<u32>), String> {
     let command = format!(
         "cast send --rpc-url {} --from {} {} --value {} --unlocked",
         ANVIL_URL.as_str(),
@@ -515,13 +533,16 @@ pub fn transfer_ether(from: &str, to: &str, amount: &str) -> Result<String, Stri
     execute_command(&command, false)
 }
 
-pub async fn start_transaction_dispatcher() -> Result<String, String> {
+pub async fn start_transaction_dispatcher() -> Result<(String, Option<u32>), String> {
     let command = format!(
-        "KEY_STORE_PASSWORD={} cargo run --manifest-path {} --bin transaction-dispatcher",
+        "KEY_STORE_PASSWORD={} cargo run --manifest-path {} --bin transaction-dispatcher -- --config-path {}",
         KEY_STORE_PASSWORD.as_str(),
-        TRANSACTION_DISPATCHER_TOML_PATH.as_str()
+        TRANSACTION_DISPATCHER_TOML_PATH.as_str(),
+        CONFIG_ENV_PATH.as_str()
     );
-    execute_command(&command, true)?;
+    let (_response, pid) = execute_command(&command, true)?;
+
     wait_for_transaction_dispatcher().await?;
-    Ok("Transaction dispatcher started successfully".to_string())
+    println!("Transaction dispatcher started with PID: {}", pid.unwrap_or(0));
+    Ok(("Transaction dispatcher started successfully".to_string(), pid))
 }
