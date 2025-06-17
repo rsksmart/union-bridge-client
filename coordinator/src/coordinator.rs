@@ -237,7 +237,7 @@ mod tests {
         expect_try_block(
             vec![
                 RskBlockAndUncles::new_no_uncles(block_1),
-                RskBlockAndUncles::new(block_2, vec![uncle_1]).unwrap(),
+                RskBlockAndUncles::new(block_2, vec![uncle_1]),
             ],
             &mut mock_monitor,
         );

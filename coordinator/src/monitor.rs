@@ -563,9 +563,10 @@ mod tests {
             let block = expected_block_1.clone();
             let uncle = expected_uncle_1.clone();
             move || {
-                Ok(Some(FromServer::Block(
-                    RskBlockAndUncles::new(block, vec![uncle]).unwrap(),
-                )))
+                Ok(Some(FromServer::Block(RskBlockAndUncles::new(
+                    block,
+                    vec![uncle],
+                ))))
             }
         });
 
@@ -580,7 +581,10 @@ mod tests {
         let result = monitor.try_block().expect("Failed to receive block");
         assert_eq!(
             result,
-            Some(RskBlockAndUncles::new(expected_block_1, vec![expected_uncle_1]).unwrap())
+            Some(RskBlockAndUncles::new(
+                expected_block_1,
+                vec![expected_uncle_1]
+            ))
         );
     }
 

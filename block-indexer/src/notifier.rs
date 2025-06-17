@@ -240,7 +240,7 @@ mod tests {
             shutdown_flag,
             vec![
                 RskBlockAndUncles::new_no_uncles(expected_block_1.clone()),
-                RskBlockAndUncles::new(expected_block_2.clone(), vec![expected_uncle_1]).unwrap(),
+                RskBlockAndUncles::new(expected_block_2.clone(), vec![expected_uncle_1]),
             ],
         );
 

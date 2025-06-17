@@ -854,8 +854,8 @@ pub struct RskBlockAndUncles {
 }
 
 impl RskBlockAndUncles {
-    pub fn new(block: RskBlock, uncles: Vec<RskBlock>) -> Result<Self> {
-        Ok(Self { block, uncles })
+    pub fn new(block: RskBlock, uncles: Vec<RskBlock>) -> Self {
+        Self { block, uncles }
     }
 
     pub fn new_no_uncles(block: RskBlock) -> Self {

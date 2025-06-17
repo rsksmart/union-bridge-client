@@ -1,5 +1,5 @@
 use check_fork::CheckForkArgs;
-use check_fork_demo::{get_blocks, get_blocks_from_fixture, FIXTURES_BASE_DIR};
+use check_fork_demo::{FIXTURES_BASE_DIR, get_blocks, get_blocks_from_fixture};
 use clap::Parser;
 use methods::{CHECK_FORK_GUEST_ID, CHECK_FORK_GUEST_PATH};
 use primitive_types::U256;
@@ -65,21 +65,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let blocks = match &cli_args.fixture {
         Some(path) => {
-            let fixture_path = format!(
-                "{}/{}.json",
-                FIXTURES_BASE_DIR,
-                path
-            );
+            let fixture_path = format!("{}/{}.json", FIXTURES_BASE_DIR, path);
             let json = std::fs::read_to_string(fixture_path)?;
             get_blocks_from_fixture(json, cli_args.bridge_event)?
         }
-    
+
         None => {
             get_blocks(
                 cli_args.fetch_start_block,
                 cli_args.fetch_block_count,
                 log_super_block,
-                cli_args.bridge_event
+                cli_args.bridge_event,
             )
             .await?
         }
@@ -99,7 +95,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     if cli_args.operation == "elf" {
         generate_elf(&check_fork_args)?;
     } else if cli_args.operation == "run" {
-        match check_fork::check_fork(check_fork_args) {
+        match check_fork::check_fork(&check_fork_args) {
             Ok(_) => println!("Check Fork returned ACCEPT"),
             Err(e) => println!("Check Fork returned REJECT: {:?}", e),
         }
