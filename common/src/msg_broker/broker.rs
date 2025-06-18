@@ -4,7 +4,7 @@ use message_broker::broker_memstorage::MemStorage;
 use message_broker::channel::channel::{DualChannel, LocalChannel};
 use message_broker::rpc::BrokerConfig;
 use message_broker::rpc::sync_server::BrokerSync;
-use mockall::{automock, mock};
+use mockall::automock;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
@@ -23,19 +23,6 @@ pub trait BrokerServerApi {
 pub trait BrokerClientApi {
     fn send(&self, dest: u32, msg: ToServer) -> Result<bool, BrokerError>;
     fn try_recv(&self) -> Result<Option<FromServer>, BrokerError>;
-}
-
-mock! {
-    pub BrokerClientApiStruct {}
-
-    impl BrokerClientApi for BrokerClientApiStruct {
-        fn send(&self, dest: u32, msg: ToServer) -> Result<bool, BrokerError>;
-        fn try_recv(&self) -> Result<Option<FromServer>, BrokerError>;
-    }
-
-    impl Clone for BrokerClientApiStruct {
-        fn clone(&self) -> Self;
-    }
 }
 
 pub struct BrokerServer {
@@ -124,11 +111,4 @@ pub enum BrokerError {
     SerializationError(#[from] serde_json::Error),
     #[error("Unknown error on Broker: {0}")]
     UnknownError(#[from] anyhow::Error),
-}
-
-#[cfg(test)]
-impl Clone for MockBrokerClientApi {
-    fn clone(&self) -> Self {
-        MockBrokerClientApi::new()
-    }
 }
