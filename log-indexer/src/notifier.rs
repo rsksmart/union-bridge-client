@@ -151,10 +151,10 @@ impl<BS: BrokerServerApi> Notifier<BS> {
             .event()
             .topics()
             .get(0)
-            .map(|s| s.as_str())
+            .map(|s| s.to_string())
             .unwrap_or_else(|| {
                 error!("Log has no topics, using NoTopic for selector");
-                "NoTopic"
+                "NoTopic".to_string()
             });
 
         let selector = format!("{topics0} @ {address}");

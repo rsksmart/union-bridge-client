@@ -27,7 +27,7 @@ pub fn process(rsk_log: RskLog) -> Result<Option<RskEvent>> {
         .event()
         .topics()
         .iter()
-        .filter_map(|topic| topic.parse::<B256>().ok())
+        .map(|topic| B256::from(*topic))
         .collect();
 
     let hex_data =

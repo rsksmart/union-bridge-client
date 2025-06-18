@@ -91,6 +91,7 @@ impl fmt::Display for Hash32 {
 
 pub type BlockHash = Hash32;
 pub type TxHash = Hash32;
+pub type LogTopic = Hash32;
 
 /// Represents a block number in the rootstock blockchain.
 ///
@@ -616,11 +617,11 @@ impl LogInfo {
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct LogEvent {
     data: String,
-    topics: Vec<String>,
+    topics: Vec<LogTopic>,
 }
 
 impl LogEvent {
-    pub fn new(data: String, topics: Vec<String>) -> Self {
+    pub fn new(data: String, topics: Vec<LogTopic>) -> Self {
         Self { data, topics }
     }
 
@@ -628,7 +629,7 @@ impl LogEvent {
         &self.data
     }
 
-    pub fn topics(&self) -> &Vec<String> {
+    pub fn topics(&self) -> &Vec<LogTopic> {
         &self.topics
     }
 }
@@ -677,7 +678,7 @@ pub struct RskRpcBlock {
     )]
     pow: BlockPow,
 
-    #[serde(deserialize_with = "parse_uncles")]
+    #[serde(deserialize_with = "parse_hash32_vec")]
     uncles: Vec<BlockHash>,
 }
 
@@ -706,7 +707,8 @@ pub struct RskRpcLog {
 
     data: String,
 
-    topics: Vec<String>,
+    #[serde(deserialize_with = "parse_hash32_vec")]
+    topics: Vec<LogTopic>,
     // no "removed" field if coming from request (not subscription)
 }
 
@@ -769,7 +771,7 @@ where
     BlockPow::try_from(hex.as_str()).map_err(de::Error::custom)
 }
 
-fn parse_uncles<'de, D>(deserializer: D) -> Result<Vec<BlockHash>, D::Error>
+fn parse_hash32_vec<'de, D>(deserializer: D) -> Result<Vec<Hash32>, D::Error>
 where
     D: Deserializer<'de>,
 {

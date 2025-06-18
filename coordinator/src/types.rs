@@ -78,7 +78,7 @@ impl EventDecoder {
             .event()
             .topics()
             .iter()
-            .filter_map(|topic| topic.parse::<B256>().ok())
+            .map(|topic| B256::from(*topic))
             .collect();
 
         let hex_data = match alloy_primitives::hex::decode(&log.event().data()) {
@@ -180,7 +180,7 @@ mod tests {
     use alloy_primitives::U256;
     use common::test_utils::rsk_log_generator::{FakeLogGenerator, event_signature_to_topic};
     use common::test_utils::rsk_utils::generate_fake_address;
-    use common::types::{BlockHash, LogEvent, LogInfo, RskLog, TxHash};
+    use common::types::{BlockHash, Hash32, LogEvent, LogInfo, RskLog, TxHash};
     use primitive_types::H256;
     #[test]
     fn test_decode_unknown_event() {
@@ -303,7 +303,7 @@ mod tests {
         let topics = expected_event
             .encode_topics()
             .iter()
-            .map(|t| hex::encode(t))
+            .map(|t| Hash32::from(B256::from(*t)))
             .collect();
 
         let log_event = LogEvent::new(data, topics);

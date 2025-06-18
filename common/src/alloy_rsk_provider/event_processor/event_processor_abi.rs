@@ -26,7 +26,7 @@ pub fn process(
     let event = abi.events.values().flatten().find(|e| {
         e.selector()
             .to_string()
-            .eq_ignore_ascii_case(&rsk_log.event().topics()[0]) // TODO(Jira) another reason for https://rsklabs.atlassian.net/browse/UB-140
+            .eq_ignore_ascii_case(&rsk_log.event().topics()[0].to_string()) // TODO(Jira) another reason for https://rsklabs.atlassian.net/browse/UB-140
     });
     let event = event.unwrap();
 
@@ -35,7 +35,8 @@ pub fn process(
     let topic_params: Vec<&EventParam> = event.inputs.iter().filter(|i| i.indexed).collect();
     for (i, input) in topic_params.iter().enumerate() {
         let sol_type = DynSolType::from_str(input.ty.as_str())?;
-        let sol_value = sol_type.abi_decode_params((&rsk_log.event().topics()[i]).as_ref())?;
+        let sol_value =
+            sol_type.abi_decode_params((&rsk_log.event().topics()[i]).to_string().as_ref())?;
         decoded_log_input.insert(input.name.to_string(), dyn_value_to_json(&sol_value)?);
     }
 

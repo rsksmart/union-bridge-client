@@ -1,4 +1,5 @@
-use crate::types::{Address, BlockHash, LogEvent, LogInfo, RskLog, TxHash};
+use crate::types::{Address, BlockHash, Hash32, LogEvent, LogInfo, LogTopic, RskLog, TxHash};
+use hex;
 use primitive_types::H256;
 use sha3::{Digest, Keccak256};
 
@@ -12,8 +13,12 @@ impl FakeLogGenerator {
     }
     pub fn generate_log_with_info(&self, event_signature: &str, log_info: LogInfo) -> RskLog {
         let address = log_info.address();
-        let topics = vec![address_to_topic(address)];
-        let event: LogEvent = LogEvent::new(event_signature_to_topic(event_signature), topics);
+        let topics: Vec<Hash32> = vec![address_to_topic(address)];
+        let event_signature_topic = format!(
+            "0x{}",
+            hex::encode(event_signature_to_topic(event_signature).value().as_bytes())
+        );
+        let event: LogEvent = LogEvent::new(event_signature_topic, topics);
         RskLog::new(log_info, event)
     }
 
@@ -51,13 +56,13 @@ impl FakeLogGenerator {
 /// use common::test_utils::rsk_log_generator::event_signature_to_topic;
 ///
 /// let topic = event_signature_to_topic("Transfer(address,address,uint256)");
-/// assert!(topic.starts_with("0x"));
+/// assert_eq!(topic.to_string(), "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef");
 /// ```
-pub fn event_signature_to_topic(event_signature: &str) -> String {
+pub fn event_signature_to_topic(event_signature: &str) -> LogTopic {
     let mut hasher = Keccak256::new();
     hasher.update(event_signature.as_bytes());
-    let hash = hasher.finalize();
-    format!("0x{}", hex::encode(hash))
+    let hash: [u8; 32] = hasher.finalize().into();
+    LogTopic::from(H256::from(hash))
 }
 
 /// Converts a Rootstock address into a topic by left-padding it with zeros.
@@ -82,9 +87,8 @@ pub fn event_signature_to_topic(event_signature: &str) -> String {
 ///
 /// let address = Address::try_from("0x1234567890abcdef1234567890abcdef12345678").unwrap();
 /// let topic = address_to_topic(address);
-/// assert!(topic.starts_with("0x"));
+/// assert_eq!(topic.to_string(), "0x0000000000000000000000001234567890abcdef1234567890abcdef12345678");
 /// ```
-pub fn address_to_topic(address: Address) -> String {
-    let addr_hex = hex::encode(address.value());
-    format!("0x{}{}", "0".repeat(24), addr_hex)
+pub fn address_to_topic(address: Address) -> LogTopic {
+    LogTopic::from(H256::from(address.value()))
 }
