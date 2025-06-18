@@ -46,7 +46,7 @@ RUN apt-get update -y && \
 # SSH mount for private repos
 RUN --mount=type=ssh,id=default mkdir -p .cargo && \
     echo '[net]\ngit-fetch-with-cli = true' > .cargo/config.toml && \
-    cargo fetch --locked
+    cargo fetch # TODO(Jira) re-add --locked in scope of https://rsklabs.atlassian.net/browse/UB-176
 
 # two build modes:
 # 1) build the entire workspace and reuse among containers, to reduce build time
