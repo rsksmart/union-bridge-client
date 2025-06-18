@@ -1,5 +1,5 @@
 use crate::config::REQUIRED_CONFIRMATIONS;
-use crate::event_processor::Confirmations;
+use crate::event_processor::helpers::Confirmations;
 use crate::types::KickoffAdvanceFundsEvent;
 use check_fork::{Block, CheckForkArgs};
 use common::types::{BlockPow, RskBlock, RskBlockAndUncles};
@@ -677,7 +677,7 @@ mod tests {
         // but confirmations should have been updated
         let expected_confirmations = 1;
         assert_eq!(
-            checker.check_fork_confirmations.accum,
+            checker.check_fork_confirmations.accum(),
             expected_confirmations
         );
     }
@@ -772,20 +772,20 @@ mod tests {
 
         let expected_confirmations = 2;
         assert_eq!(
-            checker.check_fork_confirmations.accum,
+            checker.check_fork_confirmations.accum(),
             expected_confirmations
         );
 
         // remove a confirmation
         checker.update_with_block(&block3, true);
         assert_eq!(
-            checker.check_fork_confirmations.accum,
+            checker.check_fork_confirmations.accum(),
             expected_confirmations - 1
         );
 
         // remove another confirmation
         checker.update_with_block(&block2, true);
-        assert_eq!(checker.check_fork_confirmations.accum, 0);
+        assert_eq!(checker.check_fork_confirmations.accum(), 0);
     }
 
     #[test]

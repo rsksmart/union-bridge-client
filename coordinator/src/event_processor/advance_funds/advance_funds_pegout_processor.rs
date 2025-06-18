@@ -1,3 +1,4 @@
+use crate::event_processor::helpers::BlockchainView;
 use crate::{
     event_processor::{EventProcessor, advance_funds::advance_funds_checker::AdvanceFundsChecker},
     types::{KickoffAdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents},
@@ -7,7 +8,6 @@ use bincode::config::standard;
 use bitvmx_client::types::IncomingBitVMXApiMessages;
 use check_fork::{CheckForkArgs, check_fork};
 use check_fork_zkp::{CHECK_FORK_GUEST_ID, CHECK_FORK_GUEST_PATH};
-use common::types::RskBlock;
 use common::{
     msg_broker::{
         broker::{BROKER_SERVER_ID, BrokerClientApi},
@@ -17,7 +17,7 @@ use common::{
 };
 use log::{debug, error, info, warn};
 use primitive_types::U256;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 pub struct PegOutAdvanceFundsProcessor<B: BrokerClientApi> {
@@ -25,7 +25,7 @@ pub struct PegOutAdvanceFundsProcessor<B: BrokerClientApi> {
     first_block_to_process: Option<BlockNumber>,
     request_events: HashMap<String, RequestAdvanceFundsEvent>,
     adv_funds_checker: Option<AdvanceFundsChecker>,
-    known_blocks: BTreeMap<BlockNumber, RskBlockAndUncles>,
+    chain_view: BlockchainView,
 }
 
 impl<B: BrokerClientApi> PegOutAdvanceFundsProcessor<B> {
@@ -35,7 +35,7 @@ impl<B: BrokerClientApi> PegOutAdvanceFundsProcessor<B> {
             first_block_to_process: None,
             request_events: HashMap::new(),
             adv_funds_checker: None,
-            known_blocks: BTreeMap::new(),
+            chain_view: BlockchainView::new(),
         }
     }
 
@@ -68,7 +68,7 @@ impl<B: BrokerClientApi> PegOutAdvanceFundsProcessor<B> {
             return;
         }
 
-        if self.known_blocks.is_empty() {
+        if self.chain_view.get_tip().is_none() {
             // this happens when a kickoff is received before any block
             // it should not happen in real life because RequestAdvanceFunds must be received many blocks before KickoffAdvanceFunds
             // TODO(Jira) this should be monitored and analysed - https://rsklabs.atlassian.net/browse/UB-127
@@ -84,11 +84,8 @@ impl<B: BrokerClientApi> PegOutAdvanceFundsProcessor<B> {
             return;
         }
 
-        let post_kickoff_blocks: Vec<&RskBlockAndUncles> = self
-            .known_blocks
-            .values()
-            .filter(|b| b.number() >= event2.block_number)
-            .collect();
+        let post_kickoff_blocks: Vec<&RskBlockAndUncles> =
+            self.chain_view.get_from(event2.block_number);
 
         info!("Init advance funds with {event2:?} and {post_kickoff_blocks:?}");
         let new_advance_funds = AdvanceFundsChecker::new(event2, post_kickoff_blocks);
@@ -107,12 +104,12 @@ impl<B: BrokerClientApi> PegOutAdvanceFundsProcessor<B> {
         match next_request_event_block {
             Some(new_fb) => {
                 self.first_block_to_process = Some(new_fb);
-                self.known_blocks.retain(|_, b| b.number() >= new_fb);
+                self.chain_view.restart_from(new_fb);
             }
             None => {
                 info!("No more RequestAdvanceFunds events, clearing block monitoring");
                 self.first_block_to_process = None;
-                self.known_blocks.clear();
+                self.chain_view.clear();
             }
         }
     }
@@ -213,24 +210,6 @@ impl<B: BrokerClientApi> PegOutAdvanceFundsProcessor<B> {
         });
         pow
     }
-
-    fn validate_consecutive_block(&mut self, block: &RskBlock) {
-        // validate that blocks are consecutive
-        if let Some((&prev_number, prev_block)) = self.known_blocks.iter().rev().next() {
-            if block.number() != prev_number + 1 || block.parent_hash() != prev_block.block().hash()
-            {
-                // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
-                // TODO(Jira) we should properly react to this fact - https://rsklabs.atlassian.net/browse/UB-132
-                error!(
-                    "Non-consecutive block or parent hash mismatch: block {} after {}, parent_hash: {:?}, expected: {:?}",
-                    block.number(),
-                    prev_number,
-                    block.parent_hash(),
-                    prev_block.block().hash()
-                );
-            }
-        }
-    }
 }
 
 impl<T: BrokerClientApi> EventProcessor for PegOutAdvanceFundsProcessor<T> {
@@ -261,9 +240,7 @@ impl<T: BrokerClientApi> EventProcessor for PegOutAdvanceFundsProcessor<T> {
         Ok(())
     }
 
-    fn process_new_block(&mut self, block_with_uncles: &RskBlockAndUncles) -> Result<()> {
-        let block = &block_with_uncles.block();
-
+    fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
         if let Some(first_block) = self.first_block_to_process {
             if block.number() < first_block {
                 warn!(
@@ -281,14 +258,7 @@ impl<T: BrokerClientApi> EventProcessor for PegOutAdvanceFundsProcessor<T> {
             return Ok(());
         }
 
-        // block-indexer guarantees that blocks are consecutive
-        // and CheckFork validates it as part of its logic
-        // still we validate it here to ensure the integrity of the advance funds processing
-        self.validate_consecutive_block(block);
-
-        let removed_block = self
-            .known_blocks
-            .insert(block.number(), block_with_uncles.clone());
+        let replaced_block = self.chain_view.add(block.clone());
 
         let Some(afc) = self.adv_funds_checker.as_mut() else {
             debug!(
@@ -298,11 +268,11 @@ impl<T: BrokerClientApi> EventProcessor for PegOutAdvanceFundsProcessor<T> {
             return Ok(());
         };
 
-        if let Some(rb) = &removed_block {
+        if let Some(rb) = &replaced_block {
             afc.update_with_block(rb, true);
         }
 
-        afc.update_with_block(block_with_uncles, false);
+        afc.update_with_block(block, false);
 
         if afc.has_enough_confirmations() {
             info!("Triggering CheckFork for complete advance funds {:?}", afc);
@@ -329,7 +299,7 @@ impl<T: BrokerClientApi> EventProcessor for PegOutAdvanceFundsProcessor<T> {
         }
         self.adv_funds_checker = None;
         self.request_events.clear();
-        self.known_blocks.clear();
+        self.chain_view.clear();
     }
 }
 
@@ -385,7 +355,7 @@ mod tests {
         assert!(processor.first_block_to_process.is_none());
         assert!(processor.request_events.is_empty());
         assert!(processor.adv_funds_checker.is_none());
-        assert!(processor.known_blocks.is_empty());
+        assert!(processor.chain_view.is_empty());
     }
 
     #[test]
@@ -439,7 +409,7 @@ mod tests {
                 .contains_key(&pegout_id_2.to_string())
         );
 
-        assert!(processor.known_blocks.is_empty());
+        assert!(processor.chain_view.is_empty());
         assert!(processor.adv_funds_checker.is_none());
     }
 
@@ -501,24 +471,24 @@ mod tests {
         assert_eq!(adv_funds.pegout_id(), pegout_id);
         assert_eq!(adv_funds.check_fork_args().pegout_id, pegout_id);
 
-        assert_eq!(processor.known_blocks.len(), 3);
+        assert_eq!(processor.chain_view.len(), 3);
         assert_eq!(
             processor
-                .known_blocks
+                .chain_view
                 .get(&request_block.number())
                 .expect("Should exist"),
             &request_block
         );
         assert_eq!(
             processor
-                .known_blocks
+                .chain_view
                 .get(&any_block.number())
                 .expect("Should exist"),
             &any_block
         );
         assert_eq!(
             processor
-                .known_blocks
+                .chain_view
                 .get(&kickoff_block.number())
                 .expect("Should exist"),
             &kickoff_block
@@ -595,24 +565,24 @@ mod tests {
         assert_eq!(adv_funds.pegout_id(), pegout_id_1);
         assert_eq!(adv_funds.check_fork_args().pegout_id, pegout_id_1);
 
-        assert_eq!(processor.known_blocks.len(), 3);
+        assert_eq!(processor.chain_view.len(), 3);
         assert_eq!(
             processor
-                .known_blocks
+                .chain_view
                 .get(&request_block_1.number())
                 .expect("Should exist"),
             &request_block_1
         );
         assert_eq!(
             processor
-                .known_blocks
+                .chain_view
                 .get(&request_block_2.number())
                 .expect("Should exist"),
             &request_block_2
         );
         assert_eq!(
             processor
-                .known_blocks
+                .chain_view
                 .get(&kickoff_block.number())
                 .expect("Should exist"),
             &kickoff_block
@@ -639,7 +609,7 @@ mod tests {
         assert!(processor.first_block_to_process.is_none());
         assert!(processor.request_events.is_empty());
         assert!(processor.adv_funds_checker.is_none());
-        assert!(processor.known_blocks.is_empty());
+        assert!(processor.chain_view.is_empty());
     }
 
     #[test]
@@ -684,8 +654,11 @@ mod tests {
         );
         assert!(processor.request_events.contains_key(pegout_id_req));
         assert!(processor.adv_funds_checker.is_none());
-        assert_eq!(processor.known_blocks.len(), 1);
-        assert_eq!(processor.known_blocks.values().next(), Some(&request_block));
+        assert_eq!(processor.chain_view.len(), 1);
+        assert_eq!(
+            processor.chain_view.get(&request_block.number()),
+            Some(&request_block)
+        );
     }
 
     #[test]
@@ -722,7 +695,10 @@ mod tests {
             processor.first_block_to_process,
             Some(request_block.number())
         );
-        assert!(processor.known_blocks.contains_key(&request_block.number()));
+        assert_eq!(
+            processor.chain_view.get(&request_block.number()),
+            Some(&request_block)
+        );
 
         let kickoff_event = create_fake_kickoff_event(pegout_id);
 
@@ -764,7 +740,7 @@ mod tests {
                 .contains_key(&pegout_id.to_string())
         );
         assert!(processor.first_block_to_process.is_some());
-        assert!(!processor.known_blocks.is_empty());
+        assert!(!processor.chain_view.is_empty());
 
         let kickoff_sibling = create_block_from_template(
             &kickoff_block.block(),
@@ -809,7 +785,7 @@ mod tests {
                 .contains_key(&pegout_id.to_string())
         );
         assert!(processor.first_block_to_process.is_some());
-        assert!(!processor.known_blocks.is_empty());
+        assert!(!processor.chain_view.is_empty());
 
         let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
             kickoff_block.number() + required_blocks_plus_confirmations as u64 - 1,
@@ -824,7 +800,7 @@ mod tests {
         assert!(processor.adv_funds_checker.is_none());
         assert!(processor.request_events.is_empty());
         assert!(processor.first_block_to_process.is_none());
-        assert!(processor.known_blocks.is_empty());
+        assert!(processor.chain_view.is_empty());
     }
 
     #[test]
@@ -861,7 +837,10 @@ mod tests {
             processor.first_block_to_process,
             Some(request_block.number())
         );
-        assert!(processor.known_blocks.contains_key(&request_block.number()));
+        assert_eq!(
+            processor.chain_view.get(&request_block.number()),
+            Some(&request_block)
+        );
 
         let kickoff_event = create_fake_kickoff_event(pegout_id);
 
@@ -903,7 +882,7 @@ mod tests {
                 .contains_key(&pegout_id.to_string())
         );
         assert!(processor.first_block_to_process.is_some());
-        assert!(!processor.known_blocks.is_empty());
+        assert!(!processor.chain_view.is_empty());
 
         let kickoff_sibling = create_block_from_template(
             &kickoff_block.block(),
@@ -927,7 +906,7 @@ mod tests {
                 .contains_key(&pegout_id.to_string())
         );
         assert!(processor.first_block_to_process.is_some());
-        assert!(!processor.known_blocks.is_empty());
+        assert!(!processor.chain_view.is_empty());
 
         // starting in 2 because we already have: the one created before the kickoff event and the one before this loop
         // we stop at -2: range limit exclusive and leaving one confirmation pending
@@ -950,7 +929,7 @@ mod tests {
                 .contains_key(&pegout_id.to_string())
         );
         assert!(processor.first_block_to_process.is_some());
-        assert!(!processor.known_blocks.is_empty());
+        assert!(!processor.chain_view.is_empty());
 
         let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
             kickoff_block.number() + required_blocks_plus_confirmations as u64 - 1,
@@ -965,7 +944,7 @@ mod tests {
         assert!(processor.adv_funds_checker.is_none());
         assert!(processor.request_events.is_empty());
         assert!(processor.first_block_to_process.is_none());
-        assert!(processor.known_blocks.is_empty());
+        assert!(processor.chain_view.is_empty());
     }
 
     #[test]
@@ -1005,7 +984,7 @@ mod tests {
                 .request_events
                 .contains_key(&pegout_id.to_string())
         );
-        assert!(processor.known_blocks.is_empty());
+        assert!(processor.chain_view.is_empty());
         assert!(processor.adv_funds_checker.is_none());
     }
 
@@ -1080,13 +1059,13 @@ mod tests {
                 .contains_key(&pegout_id.to_string())
         );
         assert!(processor.adv_funds_checker.is_some());
-        assert_eq!(processor.known_blocks.len(), 2);
+        assert_eq!(processor.chain_view.len(), 2);
 
         processor.shutdown();
 
         assert!(processor.request_events.is_empty());
         assert!(processor.adv_funds_checker.is_none());
-        assert!(processor.known_blocks.is_empty());
+        assert!(processor.chain_view.is_empty());
     }
 
     #[test]
@@ -1140,7 +1119,7 @@ mod tests {
             Some(request_block_2.number())
         );
         assert!(processor.request_events.contains_key(pegout_id_2));
-        assert!(processor.known_blocks.is_empty());
+        assert!(processor.chain_view.is_empty());
     }
 
     #[test]
@@ -1175,7 +1154,7 @@ mod tests {
                 .request_events
                 .contains_key(&pegout_id.to_string())
         );
-        assert_eq!(processor.known_blocks.len(), 1);
+        assert_eq!(processor.chain_view.len(), 1);
 
         processor
             .process_new_block(&adv_funds_block_2)
@@ -1187,7 +1166,7 @@ mod tests {
                 .request_events
                 .contains_key(&pegout_id.to_string())
         );
-        assert_eq!(processor.known_blocks.len(), 1);
+        assert_eq!(processor.chain_view.len(), 1);
     }
 
     #[test]
@@ -1224,7 +1203,7 @@ mod tests {
                 .contains_key(&pegout_id.to_string())
         );
         assert!(processor.adv_funds_checker.is_none());
-        assert_eq!(processor.known_blocks.len(), 1);
+        assert_eq!(processor.chain_view.len(), 1);
 
         processor
             .process_new_block(&kickoff_block_2)
@@ -1236,7 +1215,7 @@ mod tests {
                 .contains_key(&pegout_id.to_string())
         );
         assert!(processor.adv_funds_checker.is_none());
-        assert_eq!(processor.known_blocks.len(), 1);
+        assert_eq!(processor.chain_view.len(), 1);
     }
 
     #[test]
@@ -1282,7 +1261,7 @@ mod tests {
                 .request_events
                 .contains_key(&pegout_id.to_string())
         );
-        assert_eq!(processor.known_blocks.len(), 1);
+        assert_eq!(processor.chain_view.len(), 1);
 
         processor
             .process_new_event(&RskPegManagerEvents::RemoveKickoffAdvanceFunds {
@@ -1296,7 +1275,7 @@ mod tests {
                 .request_events
                 .contains_key(&pegout_id.to_string())
         );
-        assert_eq!(processor.known_blocks.len(), 1);
+        assert_eq!(processor.chain_view.len(), 1);
     }
 
     fn expect_zkp_bitvmx(bitvmx_broker: &mut MockBrokerClientApi) {
