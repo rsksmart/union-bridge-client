@@ -31,7 +31,7 @@ COPY actors-mocking actors-mocking
 # SSH mount for private repos
 RUN --mount=type=ssh,id=default mkdir -p .cargo && \
     echo '[net]\ngit-fetch-with-cli = true' > .cargo/config.toml && \
-    cargo fetch --locked
+    cargo fetch # TODO(Jira) re-add --locked in scope of https://rsklabs.atlassian.net/browse/UB-176
 
 # required by Risc0, otherwise it points to ~/.risc0
 ENV RISC0_HOME=/opt/risc0

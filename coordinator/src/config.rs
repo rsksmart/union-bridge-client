@@ -4,6 +4,9 @@ use common::types::Address;
 use serde::Deserialize;
 use std::net::IpAddr;
 
+// TODO this should be event-type-dependent, therefore for now we use a constant - it makes no sense adding it to the config
+pub const REQUIRED_CONFIRMATIONS: u32 = 5;
+
 const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 const PEG_MANAGER_CONTRACT_NAME: &str = "PegManager";
 

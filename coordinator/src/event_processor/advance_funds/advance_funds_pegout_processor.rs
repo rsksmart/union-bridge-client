@@ -7,6 +7,7 @@ use bincode::config::standard;
 use bitvmx_client::types::IncomingBitVMXApiMessages;
 use check_fork::{CheckForkArgs, check_fork};
 use check_fork_zkp::{CHECK_FORK_GUEST_ID, CHECK_FORK_GUEST_PATH};
+use common::types::RskBlock;
 use common::{
     msg_broker::{
         broker::{BROKER_SERVER_ID, BrokerClientApi},
@@ -19,16 +20,16 @@ use primitive_types::U256;
 use std::collections::{BTreeMap, HashMap};
 use uuid::Uuid;
 
-pub struct PegOutAdvanceFundsProcessor<T: BrokerClientApi> {
-    bitvmx_broker: T,
+pub struct PegOutAdvanceFundsProcessor<B: BrokerClientApi> {
+    bitvmx_broker: B,
     first_block_to_process: Option<BlockNumber>,
     request_events: HashMap<String, RequestAdvanceFundsEvent>,
     adv_funds_checker: Option<AdvanceFundsChecker>,
     known_blocks: BTreeMap<BlockNumber, RskBlockAndUncles>,
 }
 
-impl<T: BrokerClientApi> PegOutAdvanceFundsProcessor<T> {
-    pub fn new(bitvmx_broker: T) -> Self {
+impl<B: BrokerClientApi> PegOutAdvanceFundsProcessor<B> {
+    pub fn new(bitvmx_broker: B) -> Self {
         Self {
             bitvmx_broker,
             first_block_to_process: None,
@@ -182,7 +183,7 @@ impl<T: BrokerClientApi> PegOutAdvanceFundsProcessor<T> {
         }
     }
 
-    pub fn serialize_guest_input<S: serde::Serialize>(data: &S) -> Result<Vec<u8>> {
+    fn serialize_guest_input<S: serde::Serialize>(data: &S) -> Result<Vec<u8>> {
         bincode::serde::encode_to_vec(data, standard()).map_err(|e| {
             // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
             // TODO(Jira) discuss with architects on error handling - https://rsklabs.atlassian.net/browse/UB-149
@@ -198,6 +199,24 @@ impl<T: BrokerClientApi> PegOutAdvanceFundsProcessor<T> {
             U256::zero()
         });
         pow
+    }
+
+    fn validate_consecutive_block(&mut self, block: &RskBlock) {
+        // validate that blocks are consecutive
+        if let Some((&prev_number, prev_block)) = self.known_blocks.iter().rev().next() {
+            if block.number() != prev_number + 1 || block.parent_hash() != prev_block.block().hash()
+            {
+                // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
+                // TODO(Jira) we should properly react to this fact - https://rsklabs.atlassian.net/browse/UB-132
+                error!(
+                    "Non-consecutive block or parent hash mismatch: block {} after {}, parent_hash: {:?}, expected: {:?}",
+                    block.number(),
+                    prev_number,
+                    block.parent_hash(),
+                    prev_block.block().hash()
+                );
+            }
+        }
     }
 }
 
@@ -248,6 +267,11 @@ impl<T: BrokerClientApi> EventProcessor for PegOutAdvanceFundsProcessor<T> {
             return Ok(());
         }
 
+        // block-indexer guarantees that blocks are consecutive
+        // and CheckFork validates it as part of its logic
+        // still we validate it here to ensure the integrity of the advance funds processing
+        self.validate_consecutive_block(block);
+
         let removed_block = self
             .known_blocks
             .insert(block.number(), block_with_uncles.clone());
@@ -266,7 +290,7 @@ impl<T: BrokerClientApi> EventProcessor for PegOutAdvanceFundsProcessor<T> {
 
         afc.update_with_block(block_with_uncles, false);
 
-        if afc.is_ready_for_check_fork() {
+        if afc.has_enough_confirmations() {
             info!("Triggering CheckFork for complete advance funds {:?}", afc);
 
             let args = afc.check_fork_args();
@@ -297,6 +321,8 @@ impl<T: BrokerClientApi> EventProcessor for PegOutAdvanceFundsProcessor<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::REQUIRED_CONFIRMATIONS;
+    use crate::event_processor::advance_funds::tests::create_fake_block;
     use crate::types::EventWithBlock;
     use actors_mocking::fake_contracts::FakePegManager::{
         KickoffAdvanceFunds, RequestAdvanceFunds,
@@ -304,34 +330,9 @@ mod tests {
     use alloy_primitives::U256 as AlloyU256;
     use common::msg_broker::broker::MockBrokerClientApi;
     use common::test_utils::rsk_block_generator::create_block_from_template;
-    use common::types::{BlockDifficulty, BlockHash, BlockPow, BlockTimestamp, RskBlock};
+    use common::types::{BlockHash, RskBlock};
     use mockall::predicate::{eq, function};
     use primitive_types::{H256, U256};
-    use std::ops::Mul;
-
-    fn create_fake_block(number: BlockNumber, effort: U256) -> RskBlock {
-        let block_pow_u = U256::MAX.checked_div(effort).expect("0 division");
-        let pow = BlockPow::from(H256::from_slice(&block_pow_u.to_big_endian()));
-
-        let block_number = number;
-        let block_hash = BlockHash::from(H256::from_low_u64_be(number.value()));
-        let parent_hash = BlockHash::from(H256::from_low_u64_be(number.value() - 1));
-        let timestamp = BlockTimestamp::from(number.value() * 1000);
-        let difficulty = BlockDifficulty::from(U256::from(500));
-        let total_difficulty = difficulty.mul(BlockDifficulty::from(U256::from(1000)));
-        let uncles = vec![];
-
-        RskBlock::new(
-            block_number,
-            block_hash,
-            parent_hash,
-            timestamp,
-            difficulty,
-            total_difficulty,
-            pow,
-            uncles,
-        )
-    }
 
     fn create_fake_request_event(peg_out_id: &str) -> RequestAdvanceFunds {
         RequestAdvanceFunds {
@@ -710,12 +711,15 @@ mod tests {
 
         let kickoff_event = create_fake_kickoff_event(pegout_id);
 
-        // to need one more block than required ones to achieve the pow
-        let total_blocks = kickoff_event.required_num_blocks + 1;
+        let required_blocks = kickoff_event.required_num_blocks;
+        let required_blocks_plus_confirmations = required_blocks + REQUIRED_CONFIRMATIONS;
+        // -1 because the uncle we will create also counts for the pow
+        // -1 to require one more block than required ones to achieve the pow
+        let blocks_to_achieve_pow = required_blocks - 2;
 
         let block_effort = kickoff_event
             .required_effort
-            .checked_div(AlloyU256::from(total_blocks + 1)) // +1 because the uncle we will create also counts for the pow
+            .checked_div(AlloyU256::from(blocks_to_achieve_pow))
             .expect("0 division");
         let block_effort = U256::from_big_endian(&block_effort.to_be_bytes_vec());
 
@@ -757,8 +761,7 @@ mod tests {
         let block_with_uncle = RskBlockAndUncles::new(
             create_fake_block(kickoff_block.number() + 1, block_effort),
             vec![kickoff_sibling],
-        )
-        .unwrap();
+        );
         processor
             .process_new_block(&block_with_uncle)
             .expect("Should process block");
@@ -770,8 +773,9 @@ mod tests {
                 .contains_key(&pegout_id.to_string())
         );
 
-        // -1: the one created after the kickoff event counts, and the one we created before this loop
-        for i in 2..=total_blocks {
+        // starting in 2 because we already have: the one created after the kickoff event and the one before this loop
+        // we stop at -2: range limit exclusive and leaving one confirmation pending
+        for i in 2..=required_blocks_plus_confirmations - 2 {
             let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
                 kickoff_block.number() + i as u64,
                 block_effort,
@@ -781,24 +785,31 @@ mod tests {
                 .expect("Should process block");
         }
 
+        // confirmations -1, not ready
+
+        assert!(processor.adv_funds_checker.is_some());
+        assert!(
+            processor
+                .request_events
+                .contains_key(&pegout_id.to_string())
+        );
+        assert!(processor.first_block_to_process.is_some());
+        assert!(!processor.known_blocks.is_empty());
+
+        let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
+            kickoff_block.number() + required_blocks_plus_confirmations as u64 - 1,
+            block_effort,
+        ));
+        processor
+            .process_new_block(&block)
+            .expect("Should process block");
+
+        // now we have enough confirmations
+
         assert!(processor.adv_funds_checker.is_none());
         assert!(processor.request_events.is_empty());
+        assert!(processor.first_block_to_process.is_none());
         assert!(processor.known_blocks.is_empty());
-    }
-
-    fn expect_zkp_bitvmx(bitvmx_broker: &mut MockBrokerClientApi) {
-        bitvmx_broker
-            .expect_send()
-            .with(
-                eq(BROKER_SERVER_ID),
-                function(|req: &ToServer| {
-                    matches!(
-                        req,
-                        ToServer::ToBitVMX(IncomingBitVMXApiMessages::GenerateZKP(_, _))
-                    )
-                }),
-            )
-            .return_once(|_, _| Ok(true));
     }
 
     #[test]
@@ -839,12 +850,15 @@ mod tests {
 
         let kickoff_event = create_fake_kickoff_event(pegout_id);
 
-        // to need one more block than required ones to achieve the pow
-        let total_blocks = kickoff_event.required_num_blocks + 1;
+        let required_blocks = kickoff_event.required_num_blocks;
+        let required_blocks_plus_confirmations = required_blocks + REQUIRED_CONFIRMATIONS;
+        // -1 because the uncle we will create also counts for the pow
+        // -1 to require one more block than required ones to achieve the pow
+        let blocks_to_achieve_pow = required_blocks - 2;
 
         let block_effort = kickoff_event
             .required_effort
-            .checked_div(AlloyU256::from(total_blocks + 1)) // +1 because the uncle we will create also counts for the pow
+            .checked_div(AlloyU256::from(blocks_to_achieve_pow))
             .expect("0 division");
         let block_effort = U256::from_big_endian(&block_effort.to_be_bytes_vec());
 
@@ -886,8 +900,7 @@ mod tests {
         let block_with_uncle = RskBlockAndUncles::new(
             create_fake_block(kickoff_block.number() + 1, block_effort),
             vec![kickoff_sibling],
-        )
-        .unwrap();
+        );
         processor
             .process_new_block(&block_with_uncle)
             .expect("Should process block");
@@ -901,8 +914,9 @@ mod tests {
         assert!(processor.first_block_to_process.is_some());
         assert!(!processor.known_blocks.is_empty());
 
-        // -1: the one created after the kickoff event counts, and the one we created before this loop
-        for i in 2..=total_blocks {
+        // starting in 2 because we already have: the one created before the kickoff event and the one before this loop
+        // we stop at -2: range limit exclusive and leaving one confirmation pending
+        for i in 2..=required_blocks_plus_confirmations - 2 {
             let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
                 kickoff_block.number() + i as u64,
                 block_effort,
@@ -911,6 +925,27 @@ mod tests {
                 .process_new_block(&block)
                 .expect("Should process block");
         }
+
+        // confirmations -1, not ready
+
+        assert!(processor.adv_funds_checker.is_some());
+        assert!(
+            processor
+                .request_events
+                .contains_key(&pegout_id.to_string())
+        );
+        assert!(processor.first_block_to_process.is_some());
+        assert!(!processor.known_blocks.is_empty());
+
+        let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
+            kickoff_block.number() + required_blocks_plus_confirmations as u64 - 1,
+            block_effort,
+        ));
+        processor
+            .process_new_block(&block)
+            .expect("Should process block");
+
+        // now we have enough confirmations
 
         assert!(processor.adv_funds_checker.is_none());
         assert!(processor.request_events.is_empty());
@@ -1247,5 +1282,20 @@ mod tests {
                 .contains_key(&pegout_id.to_string())
         );
         assert_eq!(processor.known_blocks.len(), 1);
+    }
+
+    fn expect_zkp_bitvmx(bitvmx_broker: &mut MockBrokerClientApi) {
+        bitvmx_broker
+            .expect_send()
+            .with(
+                eq(BROKER_SERVER_ID),
+                function(|req: &ToServer| {
+                    matches!(
+                        req,
+                        ToServer::ToBitVMX(IncomingBitVMXApiMessages::GenerateZKP(_, _))
+                    )
+                }),
+            )
+            .return_once(|_, _| Ok(true));
     }
 }

@@ -28,7 +28,7 @@ jobs:
         run: |
           git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf "https://github.com/FairgateLabs"
           git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf "git@github.com:FairgateLabs"
-          git clone --recursive --branch main git@github.com:FairgateLabs/rust-bitvmx-workspace rust-bitvmx-workspace
+          git clone --recursive --rev f5d15597ee27f9a659498ef5fb86f4ecee094d51 git@github.com:FairgateLabs/rust-bitvmx-workspace rust-bitvmx-workspace
 
       - name: Checkout Our Repository
         uses: actions/checkout@v4
@@ -92,5 +92,5 @@ jobs:
       - name: Run tests
         run: |
           git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf "ssh://git@github.com/FairgateLabs"
-          RUN_MODE=ci cargo test --features test-utils --locked
+          RUN_MODE=ci cargo test --features test-utils # --locked TODO(Jira) re-add --locked in scope of https://rsklabs.atlassian.net/browse/UB-176
         working-directory: union-bridge-client

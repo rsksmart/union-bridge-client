@@ -70,7 +70,7 @@ trap cleanup INT TERM EXIT
 
 # TODO(jira) https://rsklabs.atlassian.net/browse/ub-176
 # Prepare bitvmx-client dependency (via workspace)
-git -C ../rust-bitvmx-workspace/ checkout main
+git -C ../rust-bitvmx-workspace/ checkout f5d15597ee27f9a659498ef5fb86f4ecee094d51
 git -C ../rust-bitvmx-workspace/ submodule update --init --recursive
 
 # Start services in the background
