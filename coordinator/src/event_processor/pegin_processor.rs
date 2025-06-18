@@ -141,7 +141,9 @@ impl<T: BrokerClientApi> PeginProcessor<T> {
 impl<T: BrokerClientApi> EventProcessor for PeginProcessor<T> {
     fn process_new_bitvmx_event(&mut self, event: &FromServer) -> Result<()> {
         match event {
-            FromServer::FromBitVMX(method, data) => {
+            FromServer::FromBitVMX(method, data)
+                if matches!(method.as_str(), "pegin-address" | "register-pegin") =>
+            {
                 info!(
                     "Handling BitVMX event. Method: {}, Payload: {:?}",
                     method, data
