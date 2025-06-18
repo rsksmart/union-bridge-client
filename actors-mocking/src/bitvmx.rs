@@ -74,7 +74,7 @@ impl<BS: BrokerServerApi> Executor<BS> {
             "btc_reimbursement_pub_key": btc_reimbursement_pub_key,
         });
 
-        let event = FromServer::GetTemporaryPegInAddress(payload);
+        let event = FromServer::FromBitVMX("pegin-address".to_owned(), payload);
 
         self.notify_consumers(event)
     }

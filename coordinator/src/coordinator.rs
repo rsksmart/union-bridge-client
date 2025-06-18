@@ -1,5 +1,5 @@
 use crate::{
-    event_processor::{AdvanceFundsProcessor, EventProcessor, GetTemporaryPeginAddressProcessor},
+    event_processor::{AdvanceFundsProcessor, EventProcessor, PeginProcessor},
     monitor::MonitorApi,
 };
 use anyhow::{Context, Result};
@@ -37,9 +37,7 @@ impl<M: MonitorApi> Coordinator<M> {
                     contracts_gateway.clone(),
                     bitvmx_broker.clone(),
                 )),
-                Box::new(GetTemporaryPeginAddressProcessor::new(
-                    bitvmx_broker.clone(),
-                )),
+                Box::new(PeginProcessor::new(bitvmx_broker.clone())),
             ],
             check_period: CHECK_PERIOD,
             shutdown_flag,
@@ -160,7 +158,7 @@ pub(crate) mod tests {
     use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
     use alloy_primitives::U256;
     use common::{
-        msg_broker::types::FromServer::GetTemporaryPegInAddress,
+        msg_broker::types::FromServer::FromBitVMX,
         shutdown_flag::ShutdownFlag,
         test_utils::rsk_block_generator::{
             create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
@@ -213,7 +211,10 @@ pub(crate) mod tests {
             block_hash: block_2.hash().into(),
         });
 
-        let bitvmx_event = GetTemporaryPegInAddress(json!("GetTemporaryPegInAddress"));
+        let bitvmx_event = FromBitVMX(
+            "pegin-address".to_string(),
+            json!("GetTemporaryPegInAddress"),
+        );
 
         mock_monitor
             .expect_start_event_monitoring()
@@ -322,7 +323,10 @@ pub(crate) mod tests {
             &mut mock_monitor,
         );
 
-        let bitvmx_event = GetTemporaryPegInAddress(json!("GetTemporaryPegInAddress"));
+        let bitvmx_event = FromBitVMX(
+            "pegin-address".to_string(),
+            json!("GetTemporaryPegInAddress"),
+        );
 
         mock_monitor
             .expect_try_bitvmx_event()

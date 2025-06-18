@@ -29,6 +29,6 @@ pub enum FromServer {
     Block(RskBlockAndUncles),
     Log(RskLog),
 
-    // fake bitvmx incoming messages
-    GetTemporaryPegInAddress(Value),
+    // "real" BitVMX API messages
+    FromBitVMX(String, Value),
 }
