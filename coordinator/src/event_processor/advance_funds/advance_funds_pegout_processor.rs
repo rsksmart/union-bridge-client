@@ -17,14 +17,16 @@ use common::{
 };
 use log::{debug, error, info, warn};
 use primitive_types::U256;
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use uuid::Uuid;
 
 pub struct PegOutAdvanceFundsProcessor<B: BrokerClientApi> {
     bitvmx_broker: B,
     first_block_to_process: Option<BlockNumber>,
     request_events: HashMap<String, RequestAdvanceFundsEvent>,
-    adv_funds_checker: Option<AdvanceFundsChecker>,
+    adv_funds_checker: Option<Rc<RefCell<AdvanceFundsChecker>>>,
     chain_view: BlockchainView,
 }
 
@@ -89,7 +91,9 @@ impl<B: BrokerClientApi> PegOutAdvanceFundsProcessor<B> {
 
         info!("Init advance funds with {event2:?} and {post_kickoff_blocks:?}");
         let new_advance_funds = AdvanceFundsChecker::new(event2, post_kickoff_blocks);
-        self.adv_funds_checker = Some(new_advance_funds);
+        let adv_funds_rc = Rc::new(RefCell::new(new_advance_funds));
+        self.chain_view.add_observer(adv_funds_rc.clone());
+        self.adv_funds_checker = Some(adv_funds_rc);
     }
 
     fn stop_monitoring_blocks_for_pegout(&mut self, pegout_id: &String) {
@@ -258,7 +262,7 @@ impl<T: BrokerClientApi> EventProcessor for PegOutAdvanceFundsProcessor<T> {
             return Ok(());
         }
 
-        let replaced_block = self.chain_view.add(block.clone());
+        self.chain_view.add(block.clone());
 
         let Some(afc) = self.adv_funds_checker.as_mut() else {
             debug!(
@@ -268,17 +272,11 @@ impl<T: BrokerClientApi> EventProcessor for PegOutAdvanceFundsProcessor<T> {
             return Ok(());
         };
 
-        if let Some(rb) = &replaced_block {
-            afc.update_with_block(rb, true);
-        }
-
-        afc.update_with_block(block, false);
-
-        if afc.has_enough_confirmations() {
+        if afc.borrow().has_enough_confirmations() {
             info!("Triggering CheckFork for complete advance funds {:?}", afc);
 
-            let args = afc.check_fork_args();
-            let pegout_id = afc.pegout_id();
+            let args = afc.borrow().check_fork_args();
+            let pegout_id = afc.borrow().pegout_id();
 
             // TODO(Jira) if this fails, we should not close the pegout and retry it later - https://rsklabs.atlassian.net/browse/UB-132
             self.schedule_check_fork_zkp(args);
@@ -468,8 +466,8 @@ mod tests {
             .adv_funds_checker
             .as_ref()
             .expect("AdvanceFundsPowChecker should exist");
-        assert_eq!(adv_funds.pegout_id(), pegout_id);
-        assert_eq!(adv_funds.check_fork_args().pegout_id, pegout_id);
+        assert_eq!(adv_funds.borrow().pegout_id(), pegout_id);
+        assert_eq!(adv_funds.borrow().check_fork_args().pegout_id, pegout_id);
 
         assert_eq!(processor.chain_view.len(), 3);
         assert_eq!(
@@ -562,8 +560,8 @@ mod tests {
             .adv_funds_checker
             .as_ref()
             .expect("AdvanceFundsPowChecker should exist");
-        assert_eq!(adv_funds.pegout_id(), pegout_id_1);
-        assert_eq!(adv_funds.check_fork_args().pegout_id, pegout_id_1);
+        assert_eq!(adv_funds.borrow().pegout_id(), pegout_id_1);
+        assert_eq!(adv_funds.borrow().check_fork_args().pegout_id, pegout_id_1);
 
         assert_eq!(processor.chain_view.len(), 3);
         assert_eq!(

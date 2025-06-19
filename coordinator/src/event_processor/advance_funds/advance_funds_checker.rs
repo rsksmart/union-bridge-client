@@ -1,5 +1,5 @@
 use crate::config::REQUIRED_CONFIRMATIONS;
-use crate::event_processor::helpers::Confirmations;
+use crate::event_processor::helpers::{BlockchainObserver, Confirmations};
 use crate::types::KickoffAdvanceFundsEvent;
 use check_fork::{Block, CheckForkArgs};
 use common::types::{BlockPow, RskBlock, RskBlockAndUncles};
@@ -12,6 +12,28 @@ pub(super) struct AdvanceFundsChecker {
     kickoff_block_hash: H256,
     check_fork_args: CheckForkArgs,
     check_fork_confirmations: Confirmations,
+}
+
+impl BlockchainObserver for AdvanceFundsChecker {
+    fn update_with_block(
+        &mut self,
+        new_block: &RskBlockAndUncles,
+        removed_block: &Option<RskBlockAndUncles>,
+    ) {
+        if self.is_check_fork_ready() {
+            // we only collect confirmations if CheckFork is ready
+            self.check_fork_confirmations
+                .update_with_block(new_block, removed_block);
+            // we don't want to keep adding blocks to the CheckFork once it's ready
+            return;
+        }
+
+        if let Some(rb) = removed_block {
+            self.remove_block_from_check_fork(&rb.block());
+        } else {
+            self.add_block_to_check_fork(new_block);
+        }
+    }
 }
 
 impl AdvanceFundsChecker {
@@ -61,25 +83,6 @@ impl AdvanceFundsChecker {
 
     pub fn check_fork_args(&self) -> CheckForkArgs {
         self.check_fork_args.clone()
-    }
-
-    pub fn update_with_block(
-        &mut self,
-        block_with_uncles: &RskBlockAndUncles,
-        removed: bool,
-    ) -> () {
-        if self.is_check_fork_ready() {
-            // we only start collecting confirmations when CheckFork is ready
-            self.check_fork_confirmations.update(removed);
-            // we don't want to keep adding blocks to the CheckFork once it's ready
-            return;
-        }
-
-        if removed {
-            self.remove_block_from_check_fork(&block_with_uncles.block());
-        } else {
-            self.add_block_to_check_fork(block_with_uncles);
-        }
     }
 
     pub fn has_enough_confirmations(&self) -> bool {
@@ -244,7 +247,7 @@ mod tests {
     fn create_fake_block_with_uncles(
         number: u64,
         effort: U256,
-        uncles: Vec<common::types::RskBlock>,
+        uncles: Vec<RskBlock>,
     ) -> RskBlockAndUncles {
         let block = create_fake_block(BlockNumber::from(number), effort);
         RskBlockAndUncles::new(block, uncles)
@@ -399,13 +402,13 @@ mod tests {
         // add a block
         let block_number = 101;
         let block = create_fake_block_with_uncles(block_number, U256::from(300), vec![]);
-        checker.update_with_block(&block, false);
+        checker.update_with_block(&block, &None);
 
         assert_eq!(checker.check_fork_args.block_list.len(), 1);
         assert_eq!(checker.check_fork_args.block_list[0].number, block_number);
 
         // remove the block
-        checker.update_with_block(&block, true);
+        checker.update_with_block(&block, &Some(block.clone()));
         assert_eq!(checker.check_fork_args.block_list.len(), 0);
     }
 
@@ -436,7 +439,7 @@ mod tests {
             create_fake_block(BlockNumber::from(kickoff_block_number), U256::from(300));
         let kickoff_block_with_uncles = RskBlockAndUncles::new(kickoff_block, vec![]);
 
-        checker.update_with_block(&kickoff_block_with_uncles, false);
+        checker.update_with_block(&kickoff_block_with_uncles, &None);
 
         assert_eq!(
             checker.check_fork_args.init_block_number,
@@ -483,7 +486,7 @@ mod tests {
             vec![uncle1, uncle2],
         );
 
-        checker.update_with_block(&block, false);
+        checker.update_with_block(&block, &None);
 
         assert_eq!(checker.check_fork_args.block_list.len(), 1);
         let added_block = &checker.check_fork_args.block_list[0];
@@ -519,7 +522,7 @@ mod tests {
         let test_block_number = 101;
         let low_effort = U256::from(100);
         let block = create_fake_block_with_uncles(test_block_number, low_effort, vec![]);
-        checker.update_with_block(&block, false);
+        checker.update_with_block(&block, &None);
 
         assert!(!checker.is_check_fork_ready());
     }
@@ -549,7 +552,7 @@ mod tests {
         // add a block with sufficient effort but not enough blocks
         let test_block_number = 101;
         let block = create_fake_block_with_uncles(test_block_number, required_effort, vec![]);
-        checker.update_with_block(&block, false);
+        checker.update_with_block(&block, &None);
 
         assert!(!checker.is_check_fork_ready());
     }
@@ -579,13 +582,13 @@ mod tests {
         let block1_number = 101;
         let block1_effort = U256::from(300);
         let block1 = create_fake_block_with_uncles(block1_number, block1_effort, vec![]);
-        checker.update_with_block(&block1, false);
+        checker.update_with_block(&block1, &None);
         assert!(!checker.is_check_fork_ready());
 
         let block2_number = 102;
         let block2_effort = U256::from(200);
         let block2 = create_fake_block_with_uncles(block2_number, block2_effort, vec![]);
-        checker.update_with_block(&block2, false);
+        checker.update_with_block(&block2, &None);
         assert!(checker.is_check_fork_ready());
     }
 
@@ -627,7 +630,7 @@ mod tests {
             vec![uncle1, uncle2],
         );
 
-        checker.update_with_block(&block, false);
+        checker.update_with_block(&block, &None);
 
         // total effort should be 350 (block) + 200 (uncle1) + 250 (uncle2) = 800
         assert!(checker.is_check_fork_ready());
@@ -658,7 +661,7 @@ mod tests {
         // add a block to make check fork ready
         let block1_number = 101;
         let block1 = create_fake_block_with_uncles(block1_number, required_effort, vec![]);
-        checker.update_with_block(&block1, false);
+        checker.update_with_block(&block1, &None);
         assert!(checker.is_check_fork_ready());
 
         let initial_block_count = checker.check_fork_args.block_list.len();
@@ -667,7 +670,7 @@ mod tests {
         let block2_number = 102;
         let block2_effort = U256::from(200);
         let block2 = create_fake_block_with_uncles(block2_number, block2_effort, vec![]);
-        checker.update_with_block(&block2, false);
+        checker.update_with_block(&block2, &None);
 
         // block list should not have grown
         assert_eq!(
@@ -710,7 +713,7 @@ mod tests {
         // make check fork ready
         let initial_block_number = 101;
         let block1 = create_fake_block_with_uncles(initial_block_number, required_effort, vec![]);
-        checker.update_with_block(&block1, false);
+        checker.update_with_block(&block1, &None);
         assert!(checker.is_check_fork_ready());
 
         // still no confirmations after just becoming ready
@@ -725,7 +728,7 @@ mod tests {
                 confirmation_effort,
                 vec![],
             );
-            checker.update_with_block(&block, false);
+            checker.update_with_block(&block, &None);
         }
 
         // should now have enough confirmations
@@ -757,7 +760,7 @@ mod tests {
         // make check fork ready
         let initial_block_number = 101;
         let block1 = create_fake_block_with_uncles(initial_block_number, required_effort, vec![]);
-        checker.update_with_block(&block1, false);
+        checker.update_with_block(&block1, &None);
         assert!(checker.is_check_fork_ready());
 
         // add some confirmations
@@ -767,8 +770,8 @@ mod tests {
         let block2 = create_fake_block_with_uncles(block2_number, confirmation_effort, vec![]);
         let block3 = create_fake_block_with_uncles(block3_number, confirmation_effort, vec![]);
 
-        checker.update_with_block(&block2, false);
-        checker.update_with_block(&block3, false);
+        checker.update_with_block(&block2, &None);
+        checker.update_with_block(&block3, &None);
 
         let expected_confirmations = 2;
         assert_eq!(
@@ -777,14 +780,14 @@ mod tests {
         );
 
         // remove a confirmation
-        checker.update_with_block(&block3, true);
+        checker.update_with_block(&block3, &Some(block3.clone()));
         assert_eq!(
             checker.check_fork_confirmations.accum(),
             expected_confirmations - 1
         );
 
         // remove another confirmation
-        checker.update_with_block(&block2, true);
+        checker.update_with_block(&block2, &Some(block3.clone()));
         assert_eq!(checker.check_fork_confirmations.accum(), 0);
     }
 
@@ -822,9 +825,9 @@ mod tests {
         let block2 = create_fake_block_with_uncles(block2_number, block2_effort, vec![]);
         let block3 = create_fake_block_with_uncles(block3_number, block3_effort, vec![]);
 
-        checker.update_with_block(&block1, false);
-        checker.update_with_block(&block2, false);
-        checker.update_with_block(&block3, false);
+        checker.update_with_block(&block1, &None);
+        checker.update_with_block(&block2, &None);
+        checker.update_with_block(&block3, &None);
 
         let expected_initial_blocks = 3;
         assert_eq!(
@@ -834,7 +837,7 @@ mod tests {
         assert!(!checker.is_check_fork_ready()); // ensure check fork is not ready yet
 
         // remove middle block
-        checker.update_with_block(&block2, true);
+        checker.update_with_block(&block2, &Some(block2.clone()));
         assert_eq!(
             checker.check_fork_args.block_list.len(),
             expected_initial_blocks - 1
@@ -879,7 +882,7 @@ mod tests {
             create_fake_block(BlockNumber::from(kickoff_block_number), U256::from(300));
         let kickoff_block_with_uncles = RskBlockAndUncles::new(kickoff_block, vec![]);
 
-        checker.update_with_block(&kickoff_block_with_uncles, false);
+        checker.update_with_block(&kickoff_block_with_uncles, &None);
 
         // verify bridge event is set
         let check_fork_block = &checker.check_fork_args.block_list[0];
@@ -917,7 +920,7 @@ mod tests {
         let non_kickoff_block_number = 101;
         let block =
             create_fake_block_with_uncles(non_kickoff_block_number, U256::from(300), vec![]);
-        checker.update_with_block(&block, false);
+        checker.update_with_block(&block, &None);
 
         // verify no bridge event is set
         let check_fork_block = &checker.check_fork_args.block_list[0];

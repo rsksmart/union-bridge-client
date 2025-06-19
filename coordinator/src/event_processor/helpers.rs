@@ -1,6 +1,8 @@
 use common::types::{BlockNumber, RskBlock, RskBlockAndUncles};
 use log::{error, info};
+use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct Confirmations {
@@ -18,22 +20,6 @@ impl Confirmations {
         }
     }
 
-    pub fn update(&mut self, removed: bool) {
-        if removed {
-            self.accum = self.accum.saturating_sub(1);
-            info!(
-                "Removed confirmation for {}. Status: {}/{}",
-                self.flow_id, self.accum, self.req
-            );
-        } else {
-            self.accum = self.accum.saturating_add(1);
-            info!(
-                "Added confirmation to {}. Status: {}/{}",
-                self.flow_id, self.accum, self.req
-            );
-        }
-    }
-
     pub fn is_confirmed(&self) -> bool {
         self.accum >= self.req
     }
@@ -44,31 +30,76 @@ impl Confirmations {
     }
 }
 
+impl BlockchainObserver for Confirmations {
+    fn update_with_block(
+        &mut self,
+        new_block: &RskBlockAndUncles,
+        removed_block: &Option<RskBlockAndUncles>,
+    ) {
+        if removed_block.is_some() {
+            self.accum = self.accum.saturating_sub(1);
+            info!(
+                "Replaced block {} ({}) for {}, keeping confirmations. Status: {}/{}",
+                new_block.number(),
+                new_block.hash(),
+                self.flow_id,
+                self.accum,
+                self.req
+            );
+        } else {
+            self.accum = self.accum.saturating_add(1);
+            info!(
+                "New block {} ({}) for {}, increasing confirmations. Status: {}/{}",
+                new_block.number(),
+                new_block.hash(),
+                self.flow_id,
+                self.accum,
+                self.req
+            );
+        }
+    }
+}
+
+pub trait BlockchainObserver {
+    fn update_with_block(
+        &mut self,
+        new_block: &RskBlockAndUncles,
+        removed_block: &Option<RskBlockAndUncles>,
+    );
+}
+
 // TODO(iago) move to another place
-#[derive(Debug)]
 pub struct BlockchainView {
     blocks: BTreeMap<BlockNumber, RskBlockAndUncles>,
+    observers: Vec<Rc<RefCell<dyn BlockchainObserver>>>,
 }
 
 impl BlockchainView {
     pub fn new() -> Self {
         Self {
             blocks: BTreeMap::new(),
+            observers: Vec::new(),
         }
     }
 
-    /// Adds a block to the known blocks.
-    ///
-    /// # Arguments
-    ///
-    /// * `block` - The block to add.
-    ///
-    /// # Returns
-    ///
-    /// The replaced block if it exists, `None` otherwise.
-    pub fn add(&mut self, block: RskBlockAndUncles) -> Option<RskBlockAndUncles> {
+    pub fn add_observer(&mut self, observer: Rc<RefCell<dyn BlockchainObserver>>) {
+        // add the visitor to track confirmations
+        self.observers.push(observer);
+    }
+
+    pub fn add(&mut self, block: RskBlockAndUncles) {
         self.validate_consecutive_block(&block.block());
-        self.blocks.insert(block.block().number(), block)
+
+        let new_block = block.clone();
+
+        let removed_block = self.blocks.insert(block.block().number(), block);
+
+        // update all visitors when adding or removing a new block
+        for observer in &mut self.observers {
+            observer
+                .borrow_mut()
+                .update_with_block(&new_block, &removed_block);
+        }
     }
 
     pub fn get_from(&self, number: BlockNumber) -> Vec<&RskBlockAndUncles> {
