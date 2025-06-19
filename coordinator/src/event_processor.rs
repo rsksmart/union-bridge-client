@@ -1,13 +1,13 @@
 use crate::types::RskPegManagerEvents;
 use anyhow::Result;
 use common::{msg_broker::types::FromServer, types::RskBlockAndUncles};
-mod advance_funds;
-pub use advance_funds::advance_funds_pegout_processor::*;
 
+mod advance_funds;
 mod get_temporary_pegin_address_processor;
 mod helpers;
 
 pub use get_temporary_pegin_address_processor::*;
+pub use advance_funds::advance_funds_pegout_processor::*;
 
 #[cfg(test)]
 use mockall::automock;

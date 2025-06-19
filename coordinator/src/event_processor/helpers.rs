@@ -1,7 +1,7 @@
 use common::types::{BlockNumber, RskBlock, RskBlockAndUncles};
 use log::{error, info};
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -31,6 +31,10 @@ impl Confirmations {
 }
 
 impl BlockchainObserver for Confirmations {
+    fn get_id(&self) -> String {
+        self.flow_id.clone()
+    }
+
     fn update_with_block(
         &mut self,
         new_block: &RskBlockAndUncles,
@@ -61,6 +65,8 @@ impl BlockchainObserver for Confirmations {
 }
 
 pub trait BlockchainObserver {
+    fn get_id(&self) -> String;
+
     fn update_with_block(
         &mut self,
         new_block: &RskBlockAndUncles,
@@ -71,20 +77,24 @@ pub trait BlockchainObserver {
 // TODO(iago) move to another place
 pub struct BlockchainView {
     blocks: BTreeMap<BlockNumber, RskBlockAndUncles>,
-    observers: Vec<Rc<RefCell<dyn BlockchainObserver>>>,
+    observers: HashMap<String, Rc<RefCell<dyn BlockchainObserver>>>,
 }
 
 impl BlockchainView {
     pub fn new() -> Self {
         Self {
             blocks: BTreeMap::new(),
-            observers: Vec::new(),
+            observers: HashMap::new(),
         }
     }
 
     pub fn add_observer(&mut self, observer: Rc<RefCell<dyn BlockchainObserver>>) {
-        // add the visitor to track confirmations
-        self.observers.push(observer);
+        let id = observer.borrow().get_id();
+        self.observers.insert(id, observer);
+    }
+
+    pub fn remove_observer(&mut self, observer_id: &str) {
+        self.observers.remove(observer_id);
     }
 
     pub fn add(&mut self, block: RskBlockAndUncles) {
@@ -95,7 +105,7 @@ impl BlockchainView {
         let removed_block = self.blocks.insert(block.block().number(), block);
 
         // update all visitors when adding or removing a new block
-        for observer in &mut self.observers {
+        for observer in self.observers.values() {
             observer
                 .borrow_mut()
                 .update_with_block(&new_block, &removed_block);
@@ -116,6 +126,7 @@ impl BlockchainView {
 
     pub fn clear(&mut self) {
         self.blocks.clear();
+        self.observers.clear();
     }
 
     #[cfg(test)]
@@ -126,6 +137,16 @@ impl BlockchainView {
     #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.blocks.is_empty()
+    }
+
+    #[cfg(test)]
+    pub fn is_observed(&self) -> bool {
+        !self.observers.is_empty()
+    }
+
+    #[cfg(test)]
+    pub fn has_observer(&self, id: &str) -> bool {
+        self.observers.contains_key(id)
     }
 
     #[cfg(test)]

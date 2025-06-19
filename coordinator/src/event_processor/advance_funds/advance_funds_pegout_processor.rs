@@ -1,4 +1,4 @@
-use crate::event_processor::helpers::BlockchainView;
+use crate::event_processor::helpers::{BlockchainObserver, BlockchainView};
 use crate::{
     event_processor::{EventProcessor, advance_funds::advance_funds_checker::AdvanceFundsChecker},
     types::{KickoffAdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents},
@@ -66,7 +66,10 @@ impl<B: BrokerClientApi> PegOutAdvanceFundsProcessor<B> {
                 "More than one active advance funds is not expected on Union Bridge Design. Closing active one: {:?}",
                 afc
             );
-            self.close_pegout(&afc.pegout_id());
+
+            let pegout_id = afc.borrow().pegout_id();
+            self.close_pegout(&pegout_id);
+
             return;
         }
 
@@ -120,14 +123,16 @@ impl<B: BrokerClientApi> PegOutAdvanceFundsProcessor<B> {
 
     fn stop_pow_accum_for_pegout(&mut self, pegout_id: &String) {
         if let Some(afc) = &self.adv_funds_checker {
-            if &afc.pegout_id() == pegout_id {
+            if &afc.borrow().pegout_id() == pegout_id {
                 info!("Removing active {:?}", afc);
+                self.chain_view
+                    .remove_observer(afc.borrow().get_id().as_str());
                 self.adv_funds_checker = None;
             } else {
                 error!(
                     "Trying to remove advance funds for pegout_id {}, but active one is {}. This is not expected on Union Bridge Design",
                     pegout_id,
-                    afc.pegout_id()
+                    afc.borrow().pegout_id()
                 );
             }
         } else {
@@ -282,7 +287,8 @@ impl<T: BrokerClientApi> EventProcessor for PegOutAdvanceFundsProcessor<T> {
             self.schedule_check_fork_zkp(args);
 
             info!("Completing advance funds {}", pegout_id);
-            self.close_pegout(&pegout_id);
+            self.stop_monitoring_blocks_for_pegout(&pegout_id);
+            self.stop_pow_accum_for_pegout(&pegout_id);
         }
 
         Ok(())
@@ -354,6 +360,7 @@ mod tests {
         assert!(processor.request_events.is_empty());
         assert!(processor.adv_funds_checker.is_none());
         assert!(processor.chain_view.is_empty());
+        assert!(!processor.chain_view.is_observed());
     }
 
     #[test]
@@ -408,6 +415,7 @@ mod tests {
         );
 
         assert!(processor.chain_view.is_empty());
+        assert!(!processor.chain_view.is_observed());
         assert!(processor.adv_funds_checker.is_none());
     }
 
@@ -608,6 +616,7 @@ mod tests {
         assert!(processor.request_events.is_empty());
         assert!(processor.adv_funds_checker.is_none());
         assert!(processor.chain_view.is_empty());
+        assert!(!processor.chain_view.is_observed());
     }
 
     #[test]
@@ -739,6 +748,8 @@ mod tests {
         );
         assert!(processor.first_block_to_process.is_some());
         assert!(!processor.chain_view.is_empty());
+        assert!(processor.chain_view.is_observed());
+        assert!(processor.chain_view.has_observer(pegout_id));
 
         let kickoff_sibling = create_block_from_template(
             &kickoff_block.block(),
@@ -784,6 +795,8 @@ mod tests {
         );
         assert!(processor.first_block_to_process.is_some());
         assert!(!processor.chain_view.is_empty());
+        assert!(processor.chain_view.is_observed());
+        assert!(processor.chain_view.has_observer(pegout_id));
 
         let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
             kickoff_block.number() + required_blocks_plus_confirmations as u64 - 1,
@@ -799,6 +812,7 @@ mod tests {
         assert!(processor.request_events.is_empty());
         assert!(processor.first_block_to_process.is_none());
         assert!(processor.chain_view.is_empty());
+        assert!(!processor.chain_view.is_observed());
     }
 
     #[test]
@@ -881,6 +895,8 @@ mod tests {
         );
         assert!(processor.first_block_to_process.is_some());
         assert!(!processor.chain_view.is_empty());
+        assert!(processor.chain_view.is_observed());
+        assert!(processor.chain_view.has_observer(pegout_id));
 
         let kickoff_sibling = create_block_from_template(
             &kickoff_block.block(),
@@ -905,6 +921,8 @@ mod tests {
         );
         assert!(processor.first_block_to_process.is_some());
         assert!(!processor.chain_view.is_empty());
+        assert!(processor.chain_view.is_observed());
+        assert!(processor.chain_view.has_observer(pegout_id));
 
         // starting in 2 because we already have: the one created before the kickoff event and the one before this loop
         // we stop at -2: range limit exclusive and leaving one confirmation pending
@@ -928,6 +946,8 @@ mod tests {
         );
         assert!(processor.first_block_to_process.is_some());
         assert!(!processor.chain_view.is_empty());
+        assert!(processor.chain_view.is_observed());
+        assert!(processor.chain_view.has_observer(pegout_id));
 
         let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
             kickoff_block.number() + required_blocks_plus_confirmations as u64 - 1,
@@ -943,6 +963,7 @@ mod tests {
         assert!(processor.request_events.is_empty());
         assert!(processor.first_block_to_process.is_none());
         assert!(processor.chain_view.is_empty());
+        assert!(!processor.chain_view.is_observed());
     }
 
     #[test]
@@ -983,6 +1004,7 @@ mod tests {
                 .contains_key(&pegout_id.to_string())
         );
         assert!(processor.chain_view.is_empty());
+        assert!(!processor.chain_view.is_observed());
         assert!(processor.adv_funds_checker.is_none());
     }
 
@@ -1064,6 +1086,7 @@ mod tests {
         assert!(processor.request_events.is_empty());
         assert!(processor.adv_funds_checker.is_none());
         assert!(processor.chain_view.is_empty());
+        assert!(!processor.chain_view.is_observed());
     }
 
     #[test]
@@ -1118,6 +1141,7 @@ mod tests {
         );
         assert!(processor.request_events.contains_key(pegout_id_2));
         assert!(processor.chain_view.is_empty());
+        assert!(!processor.chain_view.is_observed());
     }
 
     #[test]
@@ -1332,7 +1356,12 @@ mod tests {
 
         // verify first advance funds checker is active
         assert!(processor.adv_funds_checker.is_some());
-        let first_checker_pegout_id = processor.adv_funds_checker.as_ref().unwrap().pegout_id();
+        let first_checker_pegout_id = processor
+            .adv_funds_checker
+            .as_ref()
+            .unwrap()
+            .borrow()
+            .pegout_id();
         assert_eq!(first_checker_pegout_id, pegout_id_1);
         assert_eq!(processor.request_events.len(), 1);
 

@@ -15,6 +15,10 @@ pub(super) struct AdvanceFundsChecker {
 }
 
 impl BlockchainObserver for AdvanceFundsChecker {
+    fn get_id(&self) -> String {
+        self.check_fork_args.pegout_id.clone()
+    }
+
     fn update_with_block(
         &mut self,
         new_block: &RskBlockAndUncles,
