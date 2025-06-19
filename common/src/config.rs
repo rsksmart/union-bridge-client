@@ -90,6 +90,8 @@ pub struct TracingConfig {
     pub tracing_level: Option<String>,
     pub date_time_format: Option<String>,
     pub filtered_crates: Option<HashMap<String, String>>,
+    pub enable_file_output: Option<bool>,
+    pub enable_stdout: Option<bool>,
 }
 
 impl std::fmt::Debug for TracingConfig {
@@ -100,6 +102,8 @@ impl std::fmt::Debug for TracingConfig {
             .field("tracing_level", &self.get_tracing_level())
             .field("date_time_format", &self.get_date_time_format())
             .field("filtered_crates", &self.get_filtered_crates())
+            .field("enable_file_output", &self.get_enable_file_output())
+            .field("enable_stdout", &self.get_enable_stdout())
             .finish()
     }
 }
@@ -137,9 +141,31 @@ impl TracingConfig {
             .clone()
             .unwrap_or_else(|| HashMap::new())
     }
+
+    /// Get enable file output with default if None
+    pub fn get_enable_file_output(&self) -> bool {
+        self.enable_file_output.unwrap_or(true)
+    }
+
+    /// Get enable stdout with validation - ensures at least one output is enabled
+    pub fn get_enable_stdout(&self) -> bool {
+        let file_enabled = self.get_enable_file_output();
+        let stdout_enabled = self.enable_stdout.unwrap_or(true);
+
+        // If both are disabled, show warning and enable stdout
+        if !file_enabled && !stdout_enabled {
+            eprintln!(
+                "WARNING: Both file_output and stdout are disabled. Enabling stdout as fallback. At least one output must be active."
+            );
+            return true;
+        }
+
+        stdout_enabled
+    }
 }
 
 // Custom time formatter that uses configurable format
+#[derive(Clone)]
 struct CustomTimeFormatter {
     format: String,
 }
@@ -217,29 +243,24 @@ impl CommonConfig {
     pub fn init_tracer(
         config_path: String,
         crate_name: &str,
-    ) -> Result<(tracing_appender::non_blocking::WorkerGuard, TracingConfig)> {
+    ) -> Result<(
+        Option<tracing_appender::non_blocking::WorkerGuard>,
+        TracingConfig,
+    )> {
         // Read tracing configuration from file
         println!("Initializing tracing config from {:?}", config_path);
         let tracing_config = Self::load_tracing_config(&config_path)?;
 
         println!("Tracing config applied: {:?}", tracing_config);
-        let logfile_prefix = tracing_config
-            .logfile_prefix
-            .clone()
-            .unwrap_or(crate_name.to_string());
 
-        let debug_file = rolling::daily(&tracing_config.get_log_directory(), logfile_prefix);
-
-        let (non_blocking, guard) = tracing_appender::non_blocking(debug_file);
-
-        let time_formatter = CustomTimeFormatter::new(tracing_config.get_date_time_format());
+        let mut guard = None;
 
         let base_level = tracing_config.get_tracing_level().to_lowercase();
-        let filtered_crates = tracing_config.get_filtered_crates();
+        let time_formatter = CustomTimeFormatter::new(tracing_config.get_date_time_format());
 
+        let filtered_crates = tracing_config.get_filtered_crates();
         let mut filter: EnvFilter = EnvFilter::from_default_env()
             .add_directive(base_level.parse().expect("Invalid base tracing level"));
-
         for (filtered_crate, level) in filtered_crates {
             let directive = format!("{}={}", filtered_crate, level);
             filter =
@@ -252,15 +273,42 @@ impl CommonConfig {
             tracing_config.get_filtered_crates().len()
         );
 
-        let result = tracing_subscriber::registry()
-            .with(filter)
-            .with(
+        let file_output_layer = if tracing_config.get_enable_file_output() {
+            let logfile_prefix = tracing_config
+                .logfile_prefix
+                .clone()
+                .unwrap_or(crate_name.to_string());
+            let debug_file = rolling::daily(&tracing_config.get_log_directory(), logfile_prefix);
+
+            let (non_blocking, appender_guard) = tracing_appender::non_blocking(debug_file);
+            guard = Some(appender_guard);
+            Some(
                 tracing_subscriber::fmt::layer()
                     .with_writer(non_blocking)
                     .with_ansi(false)
+                    .with_timer(time_formatter.clone())
+                    .with_line_number(true),
+            )
+        } else {
+            None
+        };
+
+        let stdout_layer = if tracing_config.get_enable_stdout() {
+            Some(
+                tracing_subscriber::fmt::layer()
+                    .with_writer(std::io::stdout)
+                    .with_ansi(true)
                     .with_timer(time_formatter)
                     .with_line_number(true),
             )
+        } else {
+            None
+        };
+
+        let result = tracing_subscriber::registry()
+            .with(filter)
+            .with(file_output_layer)
+            .with(stdout_layer)
             .try_init();
 
         match result {

@@ -8,4 +8,6 @@ filtered_crates:
   tokio_tungstenite: "off"
   alloy_transport_ws: "info"
   alloy_rpc_client: "debug"  
-  
+
+enable_file_output: true
+enable_console_output: true

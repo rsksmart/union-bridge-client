@@ -5,9 +5,13 @@ use common::errors::ConfigError;
 use common::types::{Address, ContractInfo};
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::sync::OnceLock;
 use tracing_appender::non_blocking::WorkerGuard;
 
 const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
+
+// Global static to hold the WorkerGuard for the entire program lifetime
+static TRACER_GUARD: OnceLock<Option<WorkerGuard>> = OnceLock::new();
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -50,7 +54,6 @@ impl Config {
 }
 
 pub struct Tracer {
-    _guard: WorkerGuard,
     config: TracingConfig,
 }
 
@@ -58,7 +61,7 @@ pub struct Tracer {
 impl std::fmt::Debug for Tracer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Tracer")
-            .field("_guard", &"<WorkerGuard>")
+            .field("_guard", &"<Global WorkerGuard>")
             .field("config", &self.config)
             .finish()
     }
@@ -75,10 +78,10 @@ impl Tracer {
 
         let (guard, config) = CommonConfig::init_tracer(path, CARGO_PKG_NAME)?;
 
-        Ok(Tracer {
-            _guard: guard,
-            config,
-        })
+        // Store the guard in the global static - this will keep it alive for the entire program
+        let _ = TRACER_GUARD.set(guard);
+
+        Ok(Tracer { config })
     }
 
     #[cfg(test)]
