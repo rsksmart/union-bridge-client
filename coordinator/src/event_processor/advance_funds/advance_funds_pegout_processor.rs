@@ -39,7 +39,7 @@ impl<B: BrokerClientApi> PegOutAdvanceFundsProcessor<B> {
         }
     }
 
-    fn request_advance_funds(&mut self, event: RequestAdvanceFundsEvent) {
+    fn start_monitoring_blocks_for_pegout(&mut self, event: RequestAdvanceFundsEvent) {
         let pegout_id = event.inner.peg_out_id.to_string();
 
         if self.request_events.is_empty() {
@@ -57,7 +57,17 @@ impl<B: BrokerClientApi> PegOutAdvanceFundsProcessor<B> {
         }
     }
 
-    fn kickoff_advance_funds(&mut self, event2: KickoffAdvanceFundsEvent) {
+    fn start_pow_accum_for_pegout(&mut self, event2: KickoffAdvanceFundsEvent) {
+        if let Some(afc) = &self.adv_funds_checker {
+            // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
+            error!(
+                "More than one active advance funds is not expected on Union Bridge Design. Closing active one: {:?}",
+                afc
+            );
+            self.close_pegout(&afc.pegout_id());
+            return;
+        }
+
         if self.known_blocks.is_empty() {
             // this happens when a kickoff is received before any block
             // it should not happen in real life because RequestAdvanceFunds must be received many blocks before KickoffAdvanceFunds
@@ -74,12 +84,6 @@ impl<B: BrokerClientApi> PegOutAdvanceFundsProcessor<B> {
             return;
         }
 
-        if self.adv_funds_checker.is_some() {
-            // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
-            error!("More than one active advance funds is not expected on Union Bridge Design",);
-            return;
-        }
-
         let post_kickoff_blocks: Vec<&RskBlockAndUncles> = self
             .known_blocks
             .values()
@@ -91,16 +95,16 @@ impl<B: BrokerClientApi> PegOutAdvanceFundsProcessor<B> {
         self.adv_funds_checker = Some(new_advance_funds);
     }
 
-    fn update_block_monitoring(&mut self, pegout_id: &String) {
+    fn stop_monitoring_blocks_for_pegout(&mut self, pegout_id: &String) {
         if self.request_events.remove(pegout_id).is_none() {
             // TODO(Jira) this should be monitored and analysed - https://rsklabs.atlassian.net/browse/UB-127
             error!("Removing non-existing RequestAdvanceFunds for pegout_id {pegout_id}");
             return;
         }
 
-        // update first_block_to_process
-        let first_block_on_events = self.request_events.values().map(|e| e.block_number).min();
-        match first_block_on_events {
+        // update first_block_to_process and known_blocks to the next RequestAdvanceFunds event block
+        let next_request_event_block = self.request_events.values().map(|e| e.block_number).min();
+        match next_request_event_block {
             Some(new_fb) => {
                 self.first_block_to_process = Some(new_fb);
                 self.known_blocks.retain(|_, b| b.number() >= new_fb);
@@ -113,20 +117,29 @@ impl<B: BrokerClientApi> PegOutAdvanceFundsProcessor<B> {
         }
     }
 
-    fn close_advance_funds(&mut self, pegout_id: &String, done: bool) -> () {
+    fn stop_pow_accum_for_pegout(&mut self, pegout_id: &String) {
         if let Some(afc) = &self.adv_funds_checker {
-            info!("Removing active {:?}", afc);
-            self.adv_funds_checker = None;
+            if &afc.pegout_id() == pegout_id {
+                info!("Removing active {:?}", afc);
+                self.adv_funds_checker = None;
+            } else {
+                error!(
+                    "Trying to remove advance funds for pegout_id {}, but active one is {}. This is not expected on Union Bridge Design",
+                    pegout_id,
+                    afc.pegout_id()
+                );
+            }
         } else {
             info!("Trying to remove unexisting advance funds");
         }
-
-        if done {
-            self.update_block_monitoring(pegout_id)
-        }
     }
 
-    fn schedule_check_fork_zkp(&mut self, args: CheckForkArgs) -> () {
+    fn close_pegout(&mut self, pegout_id: &String) {
+        self.stop_pow_accum_for_pegout(pegout_id);
+        self.stop_monitoring_blocks_for_pegout(pegout_id)
+    }
+
+    fn schedule_check_fork_zkp(&mut self, args: CheckForkArgs) {
         // note: check-fork already validates consecutive blocks, etc.
         match check_fork(&args) {
             Ok(effort) => {
@@ -225,19 +238,20 @@ impl<T: BrokerClientApi> EventProcessor for PegOutAdvanceFundsProcessor<T> {
         match event {
             RskPegManagerEvents::RequestAdvanceFunds(data) => {
                 info!("Handling {:?}, waiting blocks...", data);
-                self.request_advance_funds(data.clone());
+                self.start_monitoring_blocks_for_pegout(data.clone());
             }
             RskPegManagerEvents::RemoveRequestAdvanceFunds { peg_out_id } => {
                 info!("Handling RemoveRequestAdvanceFunds {peg_out_id}...");
-                self.update_block_monitoring(peg_out_id);
+                self.stop_monitoring_blocks_for_pegout(peg_out_id);
             }
             RskPegManagerEvents::KickoffAdvanceFunds(data) => {
                 info!("Handling {:?}...", data);
-                self.kickoff_advance_funds(data.clone());
+                self.start_pow_accum_for_pegout(data.clone());
             }
             RskPegManagerEvents::RemoveKickoffAdvanceFunds { peg_out_id } => {
                 info!("Handling RemoveKickoffAdvanceFunds {peg_out_id}...");
-                self.close_advance_funds(peg_out_id, false);
+                // just a reorg, but we want to keep the flow alive waiting for the new KickoffAdvanceFunds
+                self.stop_pow_accum_for_pegout(peg_out_id);
             }
             _ => {
                 info!("Ignoring {:?}...", event);
@@ -296,10 +310,11 @@ impl<T: BrokerClientApi> EventProcessor for PegOutAdvanceFundsProcessor<T> {
             let args = afc.check_fork_args();
             let pegout_id = afc.pegout_id();
 
+            // TODO(Jira) if this fails, we should not close the pegout and retry it later - https://rsklabs.atlassian.net/browse/UB-132
             self.schedule_check_fork_zkp(args);
 
             info!("Completing advance funds {}", pegout_id);
-            self.close_advance_funds(&pegout_id, true);
+            self.close_pegout(&pegout_id);
         }
 
         Ok(())
@@ -1297,5 +1312,82 @@ mod tests {
                 }),
             )
             .return_once(|_, _| Ok(true));
+    }
+
+    #[test]
+    fn test_kickoff_advance_funds_with_active_checker_closes_existing_and_returns() {
+        let mut processor = PegOutAdvanceFundsProcessor::new(MockBrokerClientApi::new());
+
+        let request_block_1 =
+            RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
+        let kickoff_block_1 =
+            RskBlockAndUncles::new_no_uncles(create_fake_block(110.into(), U256::from(100)));
+
+        let pegout_id_1 = "peg123";
+        let pegout_id_2 = "peg456";
+
+        let request_event_1 = create_fake_request_event(pegout_id_1);
+        processor
+            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+                RequestAdvanceFundsEvent {
+                    inner: request_event_1,
+                    block_number: request_block_1.number(),
+                    block_hash: request_block_1.hash(),
+                },
+            ))
+            .expect("Should have processed request");
+        assert_eq!(processor.request_events.len(), 1);
+
+        processor
+            .process_new_block(&request_block_1)
+            .expect("Should process block");
+
+        let kickoff_event_1 = create_fake_kickoff_event(pegout_id_1);
+        processor
+            .process_new_event(&RskPegManagerEvents::KickoffAdvanceFunds(
+                KickoffAdvanceFundsEvent {
+                    inner: kickoff_event_1,
+                    block_number: kickoff_block_1.number(),
+                    block_hash: kickoff_block_1.hash(),
+                },
+            ))
+            .expect("Should have processed kickoff");
+
+        // verify first advance funds checker is active
+        assert!(processor.adv_funds_checker.is_some());
+        let first_checker_pegout_id = processor.adv_funds_checker.as_ref().unwrap().pegout_id();
+        assert_eq!(first_checker_pegout_id, pegout_id_1);
+        assert_eq!(processor.request_events.len(), 1);
+
+        let request_event_2 = create_fake_request_event(pegout_id_2);
+        processor
+            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+                RequestAdvanceFundsEvent {
+                    inner: request_event_2,
+                    block_number: request_block_1.number() + 1,
+                    block_hash: BlockHash::from(H256::from_low_u64_be(456)),
+                },
+            ))
+            .expect("Should have processed request");
+        assert_eq!(processor.request_events.len(), 2);
+
+        // attempt to kickoff second advance funds while first is active
+        let kickoff_block_2 =
+            RskBlockAndUncles::new_no_uncles(create_fake_block(115.into(), U256::from(100)));
+        let kickoff_event_2 = create_fake_kickoff_event(pegout_id_2);
+        processor
+            .process_new_event(&RskPegManagerEvents::KickoffAdvanceFunds(
+                KickoffAdvanceFundsEvent {
+                    inner: kickoff_event_2,
+                    block_number: kickoff_block_2.number(),
+                    block_hash: kickoff_block_2.hash(),
+                },
+            ))
+            .expect("Should have processed kickoff");
+
+        // verify that the first advance funds checker was closed and no new one was created
+        assert!(processor.adv_funds_checker.is_none());
+        assert_eq!(processor.request_events.len(), 1);
+        assert!(processor.request_events.contains_key(pegout_id_2));
     }
 }
