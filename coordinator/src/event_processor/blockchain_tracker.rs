@@ -101,6 +101,12 @@ impl BlockchainView {
 
         // new tip block
         if removed_block.is_none() {
+            debug!(
+                "Adding new tip {} ({}) to BlockchainView",
+                new_block.number(),
+                new_block.hash()
+            );
+
             if let Some(prev_tip) = prev_tip {
                 self.validate_consecutive_block(&new_block.block(), prev_tip.block());
             }
@@ -112,12 +118,20 @@ impl BlockchainView {
 
         let removed_block = removed_block.unwrap();
 
-        let new_tip = self
+        let stored_tip = self
             .get_tip()
             .expect("There should be a tip block after adding a new block");
 
         // tip replaced
-        if new_block.number() == new_tip.number() {
+        if new_block.number() == stored_tip.number() {
+            info!(
+                "Replacing tip block {} ({}) with {} ({}) in BlockchainView",
+                stored_tip.number(),
+                stored_tip.hash(),
+                new_block.number(),
+                new_block.hash()
+            );
+
             // update all visitors of the replacement
             self.notify_added_block(&new_block);
             self.notify_removed_block(&removed_block);
@@ -146,6 +160,12 @@ impl BlockchainView {
     }
 
     fn rollback_to(&mut self, new_tip: RskBlockAndUncles) {
+        debug!(
+            "Reorg detected, rolling back BlockchainView to {} ({})",
+            new_tip.number(),
+            new_tip.hash()
+        );
+
         let mut blocks_to_rollback = Vec::new();
         for (_, block) in self.blocks.iter().rev() {
             // new tip is already in the chain, so we stop as soon as we reach it
@@ -155,15 +175,27 @@ impl BlockchainView {
             blocks_to_rollback.push(block.clone());
         }
 
-        for rolled_back_block in &blocks_to_rollback {
-            self.blocks.remove(&rolled_back_block.number());
+        for btr in &blocks_to_rollback {
+            debug!(
+                "Rolling back block {} ({}) in BlockchainView",
+                btr.number(),
+                btr.hash()
+            );
+
+            self.blocks.remove(&btr.number());
 
             // notify observers about the removal
-            self.notify_removed_block(rolled_back_block);
+            self.notify_removed_block(btr);
         }
 
         // notify observers about the new tip
         self.notify_added_block(&new_tip);
+
+        info!(
+            "Reorg fixed, rolled back BlockchainView to {} ({})",
+            new_tip.number(),
+            new_tip.hash()
+        );
     }
 
     fn notify_added_block(&mut self, new_block: &RskBlockAndUncles) {
