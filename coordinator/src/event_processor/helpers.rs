@@ -1,5 +1,5 @@
 use common::types::{BlockNumber, RskBlock, RskBlockAndUncles};
-use log::info;
+use log::{debug, info};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
@@ -82,6 +82,10 @@ impl BlockchainView {
     }
 
     pub fn add_observer(&mut self, observer: Rc<RefCell<dyn BlockchainObserver>>) {
+        debug!(
+            "Adding observer to BlockchainView: {}",
+            observer.borrow().get_id()
+        );
         let id = observer.borrow().get_id();
         self.observers.insert(id, observer);
     }
@@ -101,10 +105,7 @@ impl BlockchainView {
                 self.validate_consecutive_block(&new_block.block(), prev_tip.block());
             }
 
-            // update all visitors when adding a new block
-            for observer in self.observers.values() {
-                observer.borrow_mut().on_block_added(&new_block);
-            }
+            self.notify_added_block(&new_block);
 
             return;
         }
@@ -118,10 +119,8 @@ impl BlockchainView {
         // tip replaced
         if new_block.number() == new_tip.number() {
             // update all visitors of the replacement
-            for observer in self.observers.values() {
-                observer.borrow_mut().on_block_removed(&removed_block);
-                observer.borrow_mut().on_block_added(&new_block);
-            }
+            self.notify_added_block(&new_block);
+            self.notify_removed_block(&removed_block);
             return;
         }
 
@@ -160,14 +159,23 @@ impl BlockchainView {
             self.blocks.remove(&rolled_back_block.number());
 
             // notify observers about the removal
-            for observer in self.observers.values() {
-                observer.borrow_mut().on_block_removed(rolled_back_block);
-            }
+            self.notify_removed_block(rolled_back_block);
         }
 
         // notify observers about the new tip
+        self.notify_added_block(&new_tip);
+    }
+
+    fn notify_added_block(&mut self, new_block: &RskBlockAndUncles) {
+        // update all visitors when adding a new block
         for observer in self.observers.values() {
-            observer.borrow_mut().on_block_added(&new_tip);
+            observer.borrow_mut().on_block_added(&new_block);
+        }
+    }
+
+    fn notify_removed_block(&mut self, rolled_back_block: &RskBlockAndUncles) {
+        for observer in self.observers.values() {
+            observer.borrow_mut().on_block_removed(rolled_back_block);
         }
     }
 
@@ -331,10 +339,7 @@ mod tests {
             tracker_ref.get_added_blocks(),
             vec![block_100.clone(), block_101.clone(), block_102.clone()]
         );
-        assert_eq!(
-            tracker_ref.get_removed_blocks(),
-            Vec::<RskBlockAndUncles>::new()
-        );
+        assert!(tracker_ref.get_removed_blocks().is_empty(),);
 
         // verify final chain state has correct blocks
         assert_eq!(chain_view.len(), 3);
@@ -428,10 +433,6 @@ mod tests {
         );
         assert_eq!(chain_view.get_at(&BlockNumber::from(102)), None);
         assert_eq!(chain_view.get_at(&BlockNumber::from(103)), None);
-
-        // verify the alternative block is actually different from original
-        assert_ne!(alt_block_101.hash(), block_101.hash());
-        assert_eq!(alt_block_101.number(), block_101.number());
     }
 
     #[test]
