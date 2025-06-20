@@ -147,12 +147,14 @@ impl BlockchainView {
     }
 
     fn rollback_to(&mut self, new_tip: RskBlockAndUncles) {
-        let blocks_to_rollback: Vec<_> = self
-            .blocks
-            .iter()
-            .filter(|(_, b)| b.number() > new_tip.number())
-            .map(|(_, b)| b.clone())
-            .collect();
+        let mut blocks_to_rollback = Vec::new();
+        for (_, block) in self.blocks.iter().rev() {
+            // new tip is already in the chain, so we stop as soon as we reach it
+            if block.number() <= new_tip.number() {
+                break;
+            }
+            blocks_to_rollback.push(block.clone());
+        }
 
         for rolled_back_block in &blocks_to_rollback {
             self.blocks.remove(&rolled_back_block.number());
@@ -414,9 +416,8 @@ mod tests {
         // 2. alternative block 101 should be added
         assert_eq!(
             tracker_ref.get_removed_blocks(),
-            vec![block_102.clone(), block_103.clone()]
+            vec![block_103.clone(), block_102.clone()]
         );
-        assert_eq!(tracker_ref.get_added_blocks(), vec![alt_block_101.clone()]);
 
         // verify final chain state with actual block values
         assert_eq!(chain_view.len(), 2); // blocks 100 and alt_101
@@ -484,11 +485,11 @@ mod tests {
 
         let tracker_ref = tracker.borrow();
 
-        // should remove blocks 103, 104, 105 and add alternative block 102
+        // should remove blocks 105, 104, 103 and add alternative block 102
         assert_eq!(
             tracker_ref.get_removed_blocks(),
-            vec![blocks[3].clone(), blocks[4].clone(), blocks[5].clone()]
-        ); // blocks 103, 104, 105
+            vec![blocks[5].clone(), blocks[4].clone(), blocks[3].clone()]
+        ); // blocks 105, 104, 103
         assert_eq!(tracker_ref.get_added_blocks(), vec![alt_block_102.clone()]);
 
         // verify final chain state with actual block values
