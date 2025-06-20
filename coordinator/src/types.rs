@@ -180,7 +180,7 @@ mod tests {
     use alloy_primitives::U256;
     use common::test_utils::rsk_log_generator::{FakeLogGenerator, event_signature_to_topic};
     use common::test_utils::rsk_utils::generate_fake_address;
-    use common::types::{BlockHash, Hash32, LogEvent, LogInfo, RskLog, TxHash};
+    use common::types::{BlockHash, Hash256, LogEvent, LogInfo, RskLog, TxHash};
     use primitive_types::H256;
     #[test]
     fn test_decode_unknown_event() {
@@ -303,7 +303,7 @@ mod tests {
         let topics = expected_event
             .encode_topics()
             .iter()
-            .map(|t| Hash32::from(B256::from(*t)))
+            .map(|t| Hash256::from(B256::from(*t)))
             .collect();
 
         let log_event = LogEvent::new(data, topics);

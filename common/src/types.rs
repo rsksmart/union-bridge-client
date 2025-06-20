@@ -45,21 +45,21 @@ pub trait ToHexString {
 /// println!("Block hash: {}", block_hash);
 /// ```
 #[derive(Serialize, Deserialize, Copy, Debug, Eq, PartialEq, Hash, Clone)]
-pub struct Hash32(H256);
+pub struct Hash256(H256);
 
-impl Hash32 {
+impl Hash256 {
     pub fn value(self) -> H256 {
         self.0
     }
 }
 
-impl From<H256> for Hash32 {
+impl From<H256> for Hash256 {
     fn from(h256: H256) -> Self {
         Self(h256)
     }
 }
 
-impl TryFrom<&str> for Hash32 {
+impl TryFrom<&str> for Hash256 {
     type Error = FromHexError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
@@ -71,27 +71,27 @@ impl TryFrom<&str> for Hash32 {
     }
 }
 
-impl From<FixedBytes<32>> for Hash32 {
+impl From<FixedBytes<32>> for Hash256 {
     fn from(bytes: FixedBytes<32>) -> Self {
-        Hash32::from(H256::from_slice(&bytes.0))
+        Hash256::from(H256::from_slice(&bytes.0))
     }
 }
 
-impl From<Hash32> for FixedBytes<32> {
-    fn from(hash: Hash32) -> Self {
+impl From<Hash256> for FixedBytes<32> {
+    fn from(hash: Hash256) -> Self {
         FixedBytes::<32>::from_slice(hash.value().as_bytes())
     }
 }
 
-impl fmt::Display for Hash32 {
+impl fmt::Display for Hash256 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "0x{}", hex::encode(self.0))
     }
 }
 
-pub type BlockHash = Hash32;
-pub type TxHash = Hash32;
-pub type LogTopic = Hash32;
+pub type BlockHash = Hash256;
+pub type TxHash = Hash256;
+pub type LogTopic = Hash256;
 
 /// Represents a block number in the rootstock blockchain.
 ///
@@ -646,10 +646,10 @@ pub struct RskRpcBlock {
     #[serde(deserialize_with = "parse_hex_to_block_number")]
     number: BlockNumber,
 
-    #[serde(deserialize_with = "parse_hex_to_hash32")]
+    #[serde(deserialize_with = "parse_hex_to_hash256")]
     hash: BlockHash,
 
-    #[serde(rename = "parentHash", deserialize_with = "parse_hex_to_hash32")]
+    #[serde(rename = "parentHash", deserialize_with = "parse_hex_to_hash256")]
     parent_hash: BlockHash,
 
     #[serde(deserialize_with = "parse_hex_to_block_timestamp")]
@@ -678,7 +678,7 @@ pub struct RskRpcBlock {
     )]
     pow: BlockPow,
 
-    #[serde(deserialize_with = "parse_hash32_vec")]
+    #[serde(deserialize_with = "parse_hash256_vec")]
     uncles: Vec<BlockHash>,
 }
 
@@ -693,13 +693,13 @@ pub struct RskRpcLog {
     #[serde(deserialize_with = "parse_hex_to_address")]
     address: Address,
 
-    #[serde(rename = "blockHash", deserialize_with = "parse_hex_to_hash32")]
+    #[serde(rename = "blockHash", deserialize_with = "parse_hex_to_hash256")]
     block_hash: BlockHash,
 
     #[serde(rename = "blockNumber", deserialize_with = "parse_hex_to_block_number")]
     block_number: BlockNumber,
 
-    #[serde(rename = "transactionHash", deserialize_with = "parse_hex_to_hash32")]
+    #[serde(rename = "transactionHash", deserialize_with = "parse_hex_to_hash256")]
     tx_hash: TxHash,
 
     #[serde(rename = "logIndex", deserialize_with = "parse_hex_to_u64")]
@@ -707,7 +707,7 @@ pub struct RskRpcLog {
 
     data: String,
 
-    #[serde(deserialize_with = "parse_hash32_vec")]
+    #[serde(deserialize_with = "parse_hash256_vec")]
     topics: Vec<LogTopic>,
     // no "removed" field if coming from request (not subscription)
 }
@@ -734,13 +734,13 @@ where
     parse_hex_to_u64(deserializer).map(BlockTimestamp::from)
 }
 
-fn parse_hex_to_hash32<'de, D>(deserializer: D) -> Result<Hash32, D::Error>
+fn parse_hex_to_hash256<'de, D>(deserializer: D) -> Result<Hash256, D::Error>
 where
     D: Deserializer<'de>,
 {
     let hex: String = Deserialize::deserialize(deserializer)?;
 
-    Hash32::try_from(hex.as_str()).map_err(de::Error::custom)
+    Hash256::try_from(hex.as_str()).map_err(de::Error::custom)
 }
 
 fn parse_hex_to_address<'de, D>(deserializer: D) -> Result<Address, D::Error>
@@ -771,7 +771,7 @@ where
     BlockPow::try_from(hex.as_str()).map_err(de::Error::custom)
 }
 
-fn parse_hash32_vec<'de, D>(deserializer: D) -> Result<Vec<Hash32>, D::Error>
+fn parse_hash256_vec<'de, D>(deserializer: D) -> Result<Vec<Hash256>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -779,7 +779,7 @@ where
 
     hex_strings
         .into_iter()
-        .map(|v| parse_hex_to_hash32(v).map_err(de::Error::custom))
+        .map(|v| parse_hex_to_hash256(v).map_err(de::Error::custom))
         .collect()
 }
 
