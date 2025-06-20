@@ -4,14 +4,22 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
+pub trait BlockchainObserver {
+    fn get_id(&self) -> String;
+
+    fn on_block_added(&mut self, block: &RskBlockAndUncles);
+
+    fn on_block_removed(&mut self, block: &RskBlockAndUncles);
+}
+
 #[derive(Debug)]
-pub struct Confirmations {
+pub struct BlockConfirmations {
     flow_id: String,
     accum: u32,
     req: u32,
 }
 
-impl Confirmations {
+impl BlockConfirmations {
     pub fn new(flow_id: String, req_confirmations: u32) -> Self {
         Self {
             flow_id,
@@ -30,7 +38,7 @@ impl Confirmations {
     }
 }
 
-impl BlockchainObserver for Confirmations {
+impl BlockchainObserver for BlockConfirmations {
     fn get_id(&self) -> String {
         self.flow_id.clone()
     }
@@ -58,14 +66,6 @@ impl BlockchainObserver for Confirmations {
             self.req
         );
     }
-}
-
-pub trait BlockchainObserver {
-    fn get_id(&self) -> String;
-
-    fn on_block_added(&mut self, block: &RskBlockAndUncles);
-
-    fn on_block_removed(&mut self, block: &RskBlockAndUncles);
 }
 
 pub struct BlockchainView {
@@ -438,7 +438,7 @@ mod tests {
     #[test]
     fn test_confirmations_observer_reorg_behavior() {
         let mut chain_view = BlockchainView::new();
-        let confirmations = Rc::new(RefCell::new(Confirmations::new("test".to_string(), 3)));
+        let confirmations = Rc::new(RefCell::new(BlockConfirmations::new("test".to_string(), 3)));
         chain_view.add_observer(confirmations.clone());
 
         // build initial chain and accumulate confirmations

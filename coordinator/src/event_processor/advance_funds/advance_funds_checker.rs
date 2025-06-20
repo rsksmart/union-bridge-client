@@ -1,5 +1,5 @@
 use crate::config::REQUIRED_CONFIRMATIONS;
-use crate::event_processor::helpers::{BlockchainObserver, Confirmations};
+use crate::event_processor::blockchain_tracker::{BlockConfirmations, BlockchainObserver};
 use crate::types::KickoffAdvanceFundsEvent;
 use check_fork::{Block, CheckForkArgs};
 use common::types::{BlockPow, RskBlock, RskBlockAndUncles};
@@ -11,7 +11,7 @@ use primitive_types::U256;
 pub(super) struct AdvanceFundsChecker {
     kickoff_block_hash: H256,
     check_fork_args: CheckForkArgs,
-    check_fork_confirmations: Confirmations,
+    check_fork_confirmations: BlockConfirmations,
 }
 
 impl BlockchainObserver for AdvanceFundsChecker {
@@ -62,7 +62,7 @@ impl AdvanceFundsChecker {
         let mut instance = Self {
             kickoff_block_hash: event.block_hash.value(),
             check_fork_args,
-            check_fork_confirmations: Confirmations::new(
+            check_fork_confirmations: BlockConfirmations::new(
                 event.inner.peg_out_id.clone(),
                 REQUIRED_CONFIRMATIONS,
             ),

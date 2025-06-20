@@ -1,4 +1,4 @@
-use crate::event_processor::helpers::{BlockchainObserver, BlockchainView};
+use crate::event_processor::blockchain_tracker::{BlockchainObserver, BlockchainView};
 use crate::{
     event_processor::{EventProcessor, advance_funds::advance_funds_checker::AdvanceFundsChecker},
     types::{KickoffAdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents},
