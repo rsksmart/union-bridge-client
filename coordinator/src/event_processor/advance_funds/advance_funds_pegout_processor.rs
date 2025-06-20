@@ -60,17 +60,19 @@ impl<B: BrokerClientApi> PegOutAdvanceFundsProcessor<B> {
     }
 
     fn start_pow_accum_for_pegout(&mut self, event2: KickoffAdvanceFundsEvent) {
-        if let Some(afc) = &self.adv_funds_checker {
-            // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
-            error!(
-                "More than one active advance funds is not expected on Union Bridge Design. Closing active one: {:?}",
-                afc
-            );
-
-            let pegout_id = afc.borrow().pegout_id();
-            self.close_pegout(&pegout_id);
-
-            return;
+        match self.adv_funds_checker.as_ref() {
+            Some(afc) if &afc.borrow().pegout_id() == &event2.inner.peg_out_id => {
+                warn!("Already monitoring advance funds for {event2:?}");
+                return;
+            }
+            Some(afc) => {
+                // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
+                error!("A second advance funds was not expected. Closing {:?}", afc);
+                let pegout_id = afc.borrow().pegout_id();
+                self.close_pegout(&pegout_id);
+                return;
+            }
+            None => {}
         }
 
         if self.chain_view.get_tip().is_none() {
