@@ -61,9 +61,8 @@ jobs:
 
       - name: Clone contracts
         run: |
-          if [ ! -d "../bitvmx-union-bridge-contracts" ]; then
-            git clone https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs/bitvmx-union-bridge-contracts.git ../bitvmx-union-bridge-contracts
-          fi
+          rm -rf ../bitvmx-union-bridge-contracts
+          git clone --branch v0.0.1-alpha.1 https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs/bitvmx-union-bridge-contracts.git ../bitvmx-union-bridge-contracts
 
       - name: Unpack keystore
         run: |
@@ -75,7 +74,6 @@ jobs:
           ls -l tmp_keystore
           cd ..
 
-        # cache the bitvmx-union-bridge-contracts
       - name: Run integration tests
         run: |
           which anvil || anvil --version
@@ -86,5 +84,5 @@ jobs:
           ls -l
           ls -l tmp_keystore
           git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf "ssh://git@github.com/FairgateLabs"
-          cargo run --bin qa-tools-transaction-dispatcher -- --tags @transaction-dispatcher-accept-pegin
+          RUST_BACKTRACE=1 cargo run --bin qa-tools-transaction-dispatcher -- --tags @transaction-dispatcher-pegin-address
 
