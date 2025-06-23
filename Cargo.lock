@@ -7919,6 +7919,7 @@ dependencies = [
 name = "transaction-dispatcher"
 version = "0.1.0"
 dependencies = [
+ "actors-mocking",
  "alloy-contract",
  "alloy-json-rpc",
  "alloy-primitives",

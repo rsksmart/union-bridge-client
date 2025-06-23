@@ -1,3 +1,5 @@
+use crate::contracts::peg_manager::FakePegManagerContract;
+use crate::contracts::peg_manager::notify_check_fork_complete::NotifyCheckForkCompleteInvoke;
 use crate::{
     config::TransactionConfig,
     contracts::peg_manager::{
@@ -21,6 +23,7 @@ use thiserror::Error;
 
 /// Must match the contract name in the config file
 const PEG_MANAGER_CONTRACT_NAME: &'static str = "PegManager";
+const FAKE_PEG_MANAGER_CONTRACT_NAME: &'static str = "FakePegManager";
 
 pub trait RskContractsGatewayApi {
     fn get_temporary_peg_in_address(
@@ -42,6 +45,11 @@ pub trait RskContractsGatewayApi {
         &self,
         input: RegisterPegOutInput,
     ) -> impl Future<Output = Result<RegisterPegOutOutput, DomainErrors>>;
+
+    fn notify_check_fork_completion(
+        &self,
+        input: &str,
+    ) -> impl Future<Output = Result<(), DomainErrors>>;
 }
 
 #[derive(Clone)]
@@ -51,6 +59,7 @@ pub struct RskContractsGateway<P: Provider> {
     register_peg_in_request_invoke: RegisterPegInRequestInvoke<PegManagerContract<P>>,
     accept_peg_in_request_invoke: AcceptPegInRequestInvoke<PegManagerContract<P>>,
     register_peg_out_request_invoke: RegisterPegOutRequestInvoke<PegManagerContract<P>>,
+    notify_check_fork_completion_invoke: NotifyCheckForkCompleteInvoke<FakePegManagerContract<P>>,
 }
 
 impl<P: Provider + Clone> RskContractsGateway<P> {
@@ -59,9 +68,13 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
         managed_contracts: HashMap<String, ContractInfo>,
         tx_config: &TransactionConfig,
     ) -> Result<Self> {
-        let contract_address = Self::load_contract(PEG_MANAGER_CONTRACT_NAME, managed_contracts)?;
+        let contract_address = Self::load_contract(PEG_MANAGER_CONTRACT_NAME, &managed_contracts)?;
+        let fake_contract_address =
+            Self::load_contract(FAKE_PEG_MANAGER_CONTRACT_NAME, &managed_contracts)?;
 
-        let peg_manager_contract = PegManagerContract::new(provider, contract_address);
+        let peg_manager_contract = PegManagerContract::new(provider.clone(), contract_address);
+        let fake_peg_manager_contract =
+            FakePegManagerContract::new(provider, fake_contract_address);
 
         Ok(RskContractsGateway {
             contract_address,
@@ -80,10 +93,14 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
                 peg_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
+            notify_check_fork_completion_invoke: NotifyCheckForkCompleteInvoke::new(
+                fake_peg_manager_contract.clone(),
+                tx_config.gas_bumps_t1,
+            ),
         })
     }
 
-    fn load_contract(name: &str, contracts: HashMap<String, ContractInfo>) -> Result<Address> {
+    fn load_contract(name: &str, contracts: &HashMap<String, ContractInfo>) -> Result<Address> {
         contracts
             .get(name)
             .context(format!("Address not found for contract: {}", name))?
@@ -163,6 +180,21 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
             .await
             .map_err(|err| {
                 error!("Error on register_peg_out_request_invoke: {}", err);
+                err
+            })
+    }
+
+    async fn notify_check_fork_completion(&self, input: &str) -> Result<(), DomainErrors> {
+        info!(
+            "Interacting with PegManager#registerPegOutRequest @ {}",
+            self.contract_address
+        );
+
+        self.notify_check_fork_completion_invoke
+            .run(input)
+            .await
+            .map_err(|err| {
+                error!("Error on notify_check_fork_completion_invoke: {}", err);
                 err
             })
     }

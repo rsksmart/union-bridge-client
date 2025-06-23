@@ -25,12 +25,11 @@ pub fn get_contracts_gateway<P: Provider + Clone>(
     .context("Could not instantiate RskContractsGateway")
 }
 
-pub fn get_contracts_gateway_from_lib(
+pub fn get_contracts_gateway_as_lib(
+    rt_sync: RuntimeSync,
     config: config::ConfigAsLib,
 ) -> Result<RskContractsGateway<impl Provider + Clone>> {
     let key_store_path = Path::new(&config.key_store.path);
-
-    let rt_sync = RuntimeSync::new().context("On AlloyProvider")?;
 
     let signer = KeyManager::get_signer(key_store_path)?;
     let wallet = EthereumWallet::from(signer);

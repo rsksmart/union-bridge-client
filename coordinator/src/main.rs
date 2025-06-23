@@ -1,5 +1,6 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Arg, Command};
+use common::runtime_sync::RuntimeSync;
 use common::{msg_broker::broker::BrokerClient, shutdown_flag::ShutdownFlag};
 use coordinator::{
     config::{Config, Logger},
@@ -65,10 +66,15 @@ fn main() -> Result<()> {
 
     let shutdown_flag = ShutdownFlag::init();
 
-    let contracts_gateway =
-        transaction_dispatcher::get_contracts_gateway_from_lib(tx_dispatcher_config)?;
+    let rt_sync = RuntimeSync::new().context("Failed to create runtime sync")?;
+
+    let contracts_gateway = transaction_dispatcher::get_contracts_gateway_as_lib(
+        rt_sync.clone(),
+        tx_dispatcher_config,
+    )?;
 
     let mut coordinator = Coordinator::new(
+        rt_sync,
         monitor,
         contracts_gateway,
         bitvmx_broker,

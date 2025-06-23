@@ -3,6 +3,7 @@ use crate::{
     monitor::MonitorApi,
 };
 use anyhow::{Context, Result};
+use common::runtime_sync::RuntimeSync;
 use common::{msg_broker::broker::BrokerClientApi, shutdown_flag::ShutdownFlag};
 use log::error;
 use std::{thread, time::Duration};
@@ -10,27 +11,32 @@ use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 
 const CHECK_PERIOD: Duration = Duration::from_secs(1);
 
-pub struct Coordinator<M: MonitorApi, G: RskContractsGatewayApi> {
+pub struct Coordinator<M: MonitorApi> {
     monitor: M,
-    #[allow(dead_code)]
-    contracts_gateway: G,
     processors: Vec<Box<dyn EventProcessor>>,
     check_period: Duration,
     shutdown_flag: ShutdownFlag,
 }
 
-impl<M: MonitorApi, G: RskContractsGatewayApi> Coordinator<M, G> {
-    pub fn new<B: BrokerClientApi + Clone + 'static>(
+impl<M: MonitorApi> Coordinator<M> {
+    pub fn new<
+        BC: BrokerClientApi + Clone + 'static,
+        CG: RskContractsGatewayApi + Clone + 'static,
+    >(
+        rt_sync: RuntimeSync,
         monitor: M,
-        contracts_gateway: G,
-        bitvmx_broker: B,
+        contracts_gateway: CG,
+        bitvmx_broker: BC,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
         Self {
             monitor,
-            contracts_gateway,
             processors: vec![
-                Box::new(AdvanceFundsProcessor::new(bitvmx_broker.clone())),
+                Box::new(AdvanceFundsProcessor::new(
+                    rt_sync,
+                    contracts_gateway.clone(),
+                    bitvmx_broker.clone(),
+                )),
                 Box::new(GetTemporaryPeginAddressProcessor::new(
                     bitvmx_broker.clone(),
                 )),
@@ -42,13 +48,11 @@ impl<M: MonitorApi, G: RskContractsGatewayApi> Coordinator<M, G> {
 
     pub fn new_for_tests(
         monitor: M,
-        contracts_gateway: G,
         processors: Vec<Box<dyn EventProcessor>>,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
         Self {
             monitor,
-            contracts_gateway,
             processors,
             check_period: Duration::from_millis(1),
             shutdown_flag,
@@ -146,7 +150,7 @@ impl<M: MonitorApi, G: RskContractsGatewayApi> Coordinator<M, G> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use crate::event_processor::{EventProcessor, MockEventProcessor};
     use crate::{
         coordinator::Coordinator,
@@ -257,12 +261,8 @@ mod tests {
         let shutdown_flag = ShutdownFlag::init();
         handle_shutdown(shutdown_flag.clone());
 
-        let mut coordinator = Coordinator::new_for_tests(
-            mock_monitor,
-            MockRskContractsGatewayApi::new(),
-            generate_ok_processors(),
-            shutdown_flag,
-        );
+        let mut coordinator =
+            Coordinator::new_for_tests(mock_monitor, generate_ok_processors(), shutdown_flag);
         let result = coordinator.run();
 
         assert!(result.is_ok());
@@ -335,12 +335,8 @@ mod tests {
         let shutdown_flag = ShutdownFlag::init();
         handle_shutdown(shutdown_flag.clone());
 
-        let mut coordinator = Coordinator::new_for_tests(
-            mock_monitor,
-            MockRskContractsGatewayApi::new(),
-            generate_ok_processors(),
-            shutdown_flag,
-        );
+        let mut coordinator =
+            Coordinator::new_for_tests(mock_monitor, generate_ok_processors(), shutdown_flag);
         let result = coordinator.run();
 
         assert!(result.is_ok());
@@ -410,6 +406,7 @@ mod tests {
     }
 
     mock! {
+        #[derive(Clone)]
         pub RskContractsGatewayApi {}
 
         impl RskContractsGatewayApi for RskContractsGatewayApi {
@@ -432,6 +429,11 @@ mod tests {
                 &self,
                 input: RegisterPegOutInput,
             ) -> Result<RegisterPegOutOutput, DomainErrors>;
+
+            async fn notify_check_fork_completion(
+                &self,
+                input: &str,
+            ) -> Result<(), DomainErrors>;
         }
     }
 }

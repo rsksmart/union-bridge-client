@@ -9,13 +9,13 @@ use reqwest::blocking::Client;
 use serde_json::Value;
 use std::env;
 
-pub struct GetTemporaryPeginAddressProcessor<T: BrokerClientApi> {
+pub struct GetTemporaryPeginAddressProcessor<BC: BrokerClientApi> {
     http_client: Client,
-    bitvmx_broker: T,
+    bitvmx_broker: BC,
 }
 
-impl<T: BrokerClientApi> GetTemporaryPeginAddressProcessor<T> {
-    pub fn new(bitvmx_broker: T) -> Self {
+impl<BC: BrokerClientApi> GetTemporaryPeginAddressProcessor<BC> {
+    pub fn new(bitvmx_broker: BC) -> Self {
         Self {
             http_client: Client::new(),
             bitvmx_broker,
@@ -46,7 +46,7 @@ impl<T: BrokerClientApi> GetTemporaryPeginAddressProcessor<T> {
     }
 }
 
-impl<T: BrokerClientApi> EventProcessor for GetTemporaryPeginAddressProcessor<T> {
+impl<BC: BrokerClientApi> EventProcessor for GetTemporaryPeginAddressProcessor<BC> {
     fn process_new_bitvmx_event(&mut self, event: &FromServer) -> Result<()> {
         match event {
             FromServer::GetTemporaryPegInAddress(value) => {
