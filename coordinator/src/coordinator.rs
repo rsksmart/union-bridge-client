@@ -1,7 +1,5 @@
 use crate::{
-    event_processor::{
-        EventProcessor, GetTemporaryPeginAddressProcessor, PegOutAdvanceFundsProcessor,
-    },
+    event_processor::{AdvanceFundsProcessor, EventProcessor, GetTemporaryPeginAddressProcessor},
     monitor::MonitorApi,
 };
 use anyhow::{Context, Result};
@@ -27,7 +25,7 @@ impl<M: MonitorApi> Coordinator<M> {
         Self {
             monitor,
             processors: vec![
-                Box::new(PegOutAdvanceFundsProcessor::new(bitvmx_broker.clone())),
+                Box::new(AdvanceFundsProcessor::new(bitvmx_broker.clone())),
                 Box::new(GetTemporaryPeginAddressProcessor::new(
                     bitvmx_broker.clone(),
                 )),
@@ -146,11 +144,9 @@ mod tests {
     use crate::{
         coordinator::Coordinator,
         monitor::MockMonitorApi,
-        types::{KickoffAdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents},
+        types::{AdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents},
     };
-    use actors_mocking::fake_contracts::FakePegManager::{
-        KickoffAdvanceFunds, RequestAdvanceFunds,
-    };
+    use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
     use alloy_primitives::U256;
     use common::{
         msg_broker::types::FromServer::GetTemporaryPegInAddress,
@@ -173,8 +169,8 @@ mod tests {
         }
     }
 
-    fn create_fake_kickoff_event(peg_out_id: &str) -> KickoffAdvanceFunds {
-        KickoffAdvanceFunds {
+    fn create_fake_advance_funds_event(peg_out_id: &str) -> AdvanceFunds {
+        AdvanceFunds {
             peg_out_id: peg_out_id.to_string(),
             utxo_id: "utxo123".to_string(),
             operator_id: "op123".to_string(),
@@ -194,12 +190,11 @@ mod tests {
             block_hash: block_1.hash().into(),
         });
 
-        let event_2: RskPegManagerEvents =
-            RskPegManagerEvents::KickoffAdvanceFunds(KickoffAdvanceFundsEvent {
-                inner: create_fake_kickoff_event("peg_out_id_1"),
-                block_number: block_2.number(),
-                block_hash: block_2.hash().into(),
-            });
+        let event_2: RskPegManagerEvents = RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
+            inner: create_fake_advance_funds_event("peg_out_id_1"),
+            block_number: block_2.number(),
+            block_hash: block_2.hash().into(),
+        });
 
         let bitvmx_event = GetTemporaryPegInAddress(json!("GetTemporaryPegInAddress"));
 

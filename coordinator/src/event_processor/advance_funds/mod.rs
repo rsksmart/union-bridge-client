@@ -1,5 +1,5 @@
-mod advance_funds_checker;
-pub mod advance_funds_pegout_processor;
+pub mod advance_funds_processor;
+mod check_fork_accumulator;
 
 #[cfg(test)]
 pub(crate) mod tests {

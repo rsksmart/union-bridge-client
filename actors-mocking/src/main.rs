@@ -29,7 +29,7 @@ enum Menu {
     InvokeRequestAdvanceFunds,
 
     #[command(visible_alias = "kaf")]
-    InvokeKickoffAdvanceFunds {
+    InvokeAdvanceFunds {
         #[arg(help = "The ID of the pegout")]
         pegout_id: String,
     },
@@ -112,8 +112,8 @@ async fn main() -> Result<()> {
                 Menu::InvokeRequestAdvanceFunds => {
                     events_executor.request_advance_funds().await?;
                 }
-                Menu::InvokeKickoffAdvanceFunds { pegout_id } => {
-                    events_executor.kickoff_advance_funds(pegout_id).await?;
+                Menu::InvokeAdvanceFunds { pegout_id } => {
+                    events_executor.advance_funds(pegout_id).await?;
                 }
                 Menu::RecvGetTemporaryPeginAddress {
                     rootstock_deposit_address,

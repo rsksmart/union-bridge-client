@@ -6,7 +6,7 @@ mod advance_funds;
 mod blockchain_tracker;
 mod get_temporary_pegin_address_processor;
 
-pub use advance_funds::advance_funds_pegout_processor::*;
+pub use advance_funds::advance_funds_processor::*;
 pub use get_temporary_pegin_address_processor::*;
 
 #[cfg(test)]
