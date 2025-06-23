@@ -27,7 +27,7 @@ impl<C: PegManagerContractApi> NotifyCheckForkCompleteInvoke<C> {
             .notify_check_fork_completion(input, self.gas_bumps)
             .await?;
 
-        let result = if receipt.status() {
+        if receipt.status() {
             info!(
                 "NotifyCheckForkComplete successful at tx {}",
                 receipt.transaction_hash
@@ -39,6 +39,6 @@ impl<C: PegManagerContractApi> NotifyCheckForkCompleteInvoke<C> {
             );
         };
 
-        Ok(result)
+        Ok(())
     }
 }

@@ -186,7 +186,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
 
     async fn notify_check_fork_completion(&self, input: &str) -> Result<(), DomainErrors> {
         info!(
-            "Interacting with PegManager#registerPegOutRequest @ {}",
+            "Interacting with PegManager#notifyCheckForkCompletion @ {}",
             self.contract_address
         );
 
