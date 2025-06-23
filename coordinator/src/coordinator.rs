@@ -6,24 +6,29 @@ use anyhow::{Context, Result};
 use common::{msg_broker::broker::BrokerClientApi, shutdown_flag::ShutdownFlag};
 use log::error;
 use std::{thread, time::Duration};
+use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 
 const CHECK_PERIOD: Duration = Duration::from_secs(1);
 
-pub struct Coordinator<M: MonitorApi> {
+pub struct Coordinator<M: MonitorApi, G: RskContractsGatewayApi> {
     monitor: M,
+    #[allow(dead_code)]
+    contracts_gateway: G,
     processors: Vec<Box<dyn EventProcessor>>,
     check_period: Duration,
     shutdown_flag: ShutdownFlag,
 }
 
-impl<M: MonitorApi> Coordinator<M> {
+impl<M: MonitorApi, G: RskContractsGatewayApi> Coordinator<M, G> {
     pub fn new<B: BrokerClientApi + Clone + 'static>(
         monitor: M,
+        contracts_gateway: G,
         bitvmx_broker: B,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
         Self {
             monitor,
+            contracts_gateway,
             processors: vec![
                 Box::new(AdvanceFundsProcessor::new(bitvmx_broker.clone())),
                 Box::new(GetTemporaryPeginAddressProcessor::new(
@@ -37,11 +42,13 @@ impl<M: MonitorApi> Coordinator<M> {
 
     pub fn new_for_tests(
         monitor: M,
+        contracts_gateway: G,
         processors: Vec<Box<dyn EventProcessor>>,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
         Self {
             monitor,
+            contracts_gateway,
             processors,
             check_period: Duration::from_millis(1),
             shutdown_flag,
@@ -156,10 +163,16 @@ mod tests {
         },
         types::RskBlockAndUncles,
     };
+    use mockall::mock;
     use serde_json::json;
     use std::{
         thread::{self, JoinHandle, sleep},
         time::Duration,
+    };
+    use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
+    use transaction_dispatcher::types::{
+        AcceptPegInInput, AcceptPegInOutput, PegInAddressInput, PegInAddressOutput,
+        RegisterPegInInput, RegisterPegInOutput, RegisterPegOutInput, RegisterPegOutOutput,
     };
 
     fn create_fake_request_event(peg_out_id: &str) -> RequestAdvanceFunds {
@@ -244,8 +257,12 @@ mod tests {
         let shutdown_flag = ShutdownFlag::init();
         handle_shutdown(shutdown_flag.clone());
 
-        let mut coordinator =
-            Coordinator::new_for_tests(mock_monitor, generate_ok_processors(), shutdown_flag);
+        let mut coordinator = Coordinator::new_for_tests(
+            mock_monitor,
+            MockRskContractsGatewayApi::new(),
+            generate_ok_processors(),
+            shutdown_flag,
+        );
         let result = coordinator.run();
 
         assert!(result.is_ok());
@@ -318,8 +335,12 @@ mod tests {
         let shutdown_flag = ShutdownFlag::init();
         handle_shutdown(shutdown_flag.clone());
 
-        let mut coordinator =
-            Coordinator::new_for_tests(mock_monitor, generate_ok_processors(), shutdown_flag);
+        let mut coordinator = Coordinator::new_for_tests(
+            mock_monitor,
+            MockRskContractsGatewayApi::new(),
+            generate_ok_processors(),
+            shutdown_flag,
+        );
         let result = coordinator.run();
 
         assert!(result.is_ok());
@@ -386,5 +407,31 @@ mod tests {
             .returning(|_| Ok(()))
             .times(1..);
         mock_pegout_processor.expect_shutdown().return_once(|| ());
+    }
+
+    mock! {
+        pub RskContractsGatewayApi {}
+
+        impl RskContractsGatewayApi for RskContractsGatewayApi {
+            async fn get_temporary_peg_in_address(
+                &self,
+                input: PegInAddressInput,
+            ) -> Result<PegInAddressOutput, DomainErrors>;
+
+            async fn register_peg_in_request(
+                &self,
+                input: RegisterPegInInput,
+            ) -> Result<RegisterPegInOutput, DomainErrors>;
+
+            async fn accept_peg_in_request(
+                &self,
+                input: AcceptPegInInput,
+            ) -> Result<AcceptPegInOutput, DomainErrors>;
+
+            async fn register_peg_out_request(
+                &self,
+                input: RegisterPegOutInput,
+            ) -> Result<RegisterPegOutOutput, DomainErrors>;
+        }
     }
 }

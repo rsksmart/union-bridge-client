@@ -19,31 +19,32 @@ use log::{error, info};
 use std::collections::HashMap;
 use thiserror::Error;
 
-/// Must  match the contract name in the config file
+/// Must match the contract name in the config file
 const PEG_MANAGER_CONTRACT_NAME: &'static str = "PegManager";
 
-pub(crate) trait RskContractsGatewayApi {
-    async fn get_temporary_peg_in_address(
+pub trait RskContractsGatewayApi {
+    fn get_temporary_peg_in_address(
         &self,
         input: PegInAddressInput,
-    ) -> Result<PegInAddressOutput, DomainErrors>;
+    ) -> impl Future<Output = Result<PegInAddressOutput, DomainErrors>>;
 
-    async fn register_peg_in_request(
+    fn register_peg_in_request(
         &self,
         input: RegisterPegInInput,
-    ) -> Result<RegisterPegInOutput, DomainErrors>;
+    ) -> impl Future<Output = Result<RegisterPegInOutput, DomainErrors>>;
 
-    async fn accept_peg_in_request(
+    fn accept_peg_in_request(
         &self,
         input: AcceptPegInInput,
-    ) -> Result<AcceptPegInOutput, DomainErrors>;
+    ) -> impl Future<Output = Result<AcceptPegInOutput, DomainErrors>>;
 
-    async fn register_peg_out_request(
+    fn register_peg_out_request(
         &self,
         input: RegisterPegOutInput,
-    ) -> Result<RegisterPegOutOutput, DomainErrors>;
+    ) -> impl Future<Output = Result<RegisterPegOutOutput, DomainErrors>>;
 }
 
+#[derive(Clone)]
 pub struct RskContractsGateway<P: Provider> {
     contract_address: Address,
     get_temporary_peg_in_address_call: GetTemporaryPegInAddressCall<PegManagerContract<P>>,

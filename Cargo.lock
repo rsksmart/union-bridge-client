@@ -2505,6 +2505,7 @@ dependencies = [
  "reqwest 0.12.20",
  "serde",
  "serde_json",
+ "transaction-dispatcher",
  "union-bridge-contracts",
  "uuid 1.17.0",
 ]

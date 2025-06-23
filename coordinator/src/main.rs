@@ -7,6 +7,7 @@ use coordinator::{
     monitor::Monitor,
 };
 use log::{error, info};
+use transaction_dispatcher::config::ConfigAsLib;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const CONFIG_CLI_FLAG: &str = "config-path";
@@ -35,6 +36,10 @@ fn main() -> Result<()> {
     let config_path = matches.get_one::<String>(CONFIG_CLI_FLAG);
     let config: Config = Config::load(config_path).expect("Failed to load config");
 
+    // Load transaction dispatcher configuration
+    let tx_dispatcher_config: ConfigAsLib =
+        ConfigAsLib::load(config_path).expect("Failed to load transaction dispatcher config");
+
     let block_broker = BrokerClient::new(
         config.block_broker.ip,
         config.block_broker.port,
@@ -60,7 +65,15 @@ fn main() -> Result<()> {
 
     let shutdown_flag = ShutdownFlag::init();
 
-    let mut coordinator = Coordinator::new(monitor, bitvmx_broker, shutdown_flag.clone());
+    let contracts_gateway =
+        transaction_dispatcher::get_contracts_gateway_from_lib(tx_dispatcher_config)?;
+
+    let mut coordinator = Coordinator::new(
+        monitor,
+        contracts_gateway,
+        bitvmx_broker,
+        shutdown_flag.clone(),
+    );
     coordinator.run().inspect_err(|e| {
         error!("Unrecoverable error running coordinator: {:?}", e);
         // signal other threads to shut down

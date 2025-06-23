@@ -1,64 +1,64 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct BitcoinTransaction {
-    pub(crate) version: u32,
-    pub(crate) inputs: Vec<BitcoinTransactionIn>,
-    pub(crate) outputs: Vec<BitcoinTransactionOut>,
-    pub(crate) lock_time: u32,
+pub struct BitcoinTransaction {
+    pub version: u32,
+    pub inputs: Vec<BitcoinTransactionIn>,
+    pub outputs: Vec<BitcoinTransactionOut>,
+    pub lock_time: u32,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct BitcoinTransactionIn {
-    pub(crate) tx_id: String,
-    pub(crate) v_out: u32,
-    pub(crate) sequence: u32,
-    pub(crate) script_sig: String,
+pub struct BitcoinTransactionIn {
+    pub tx_id: String,
+    pub v_out: u32,
+    pub sequence: u32,
+    pub script_sig: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct BitcoinTransactionOut {
-    pub(crate) amount: u64,
-    pub(crate) script_pub_key: String,
+pub struct BitcoinTransactionOut {
+    pub amount: u64,
+    pub script_pub_key: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct PegInAddressInput {
-    pub(crate) rootstock_deposit_address: String,
-    pub(crate) value: u64,
-    pub(crate) btc_reimbursement_pub_key: String,
+pub struct PegInAddressInput {
+    pub rootstock_deposit_address: String,
+    pub value: u64,
+    pub btc_reimbursement_pub_key: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct PegInAddressOutput {
-    pub(crate) address: String,
+pub struct PegInAddressOutput {
+    pub address: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct RegisterPegInInput {
-    pub(crate) block_hash: String,
-    pub(crate) btc_tx: BitcoinTransaction,
-    pub(crate) merkle_branch_path: String,
-    pub(crate) merkle_branch_hashes: Vec<String>,
+pub struct RegisterPegInInput {
+    pub block_hash: String,
+    pub btc_tx: BitcoinTransaction,
+    pub merkle_branch_path: String,
+    pub merkle_branch_hashes: Vec<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
-pub(crate) struct RegisterPegInOutput {
-    pub(crate) transaction_hash: String,
-    pub(crate) success: bool,
+pub struct RegisterPegInOutput {
+    pub transaction_hash: String,
+    pub success: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct RegisterPegOutInput {
-    pub(crate) amount_in_wei: u64,
-    pub(crate) usr_pub_key: String,
-    pub(crate) batch_flag: bool,
+pub struct RegisterPegOutInput {
+    pub amount_in_wei: u64,
+    pub usr_pub_key: String,
+    pub batch_flag: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
-pub(crate) struct RegisterPegOutOutput {
-    pub(crate) transaction_hash: String,
-    pub(crate) success: bool,
+pub struct RegisterPegOutOutput {
+    pub transaction_hash: String,
+    pub success: bool,
 }
 
 pub type AcceptPegInInput = RegisterPegInInput;

@@ -6,8 +6,7 @@ use common::shutdown_flag::ShutdownFlag;
 use key_manager::key_manager::KeyManager;
 use log::{error, info};
 use std::path::Path;
-use std::sync::Arc;
-use transaction_dispatcher::config::{Config, Logger};
+use transaction_dispatcher::config::{ConfigAsBin, Logger};
 use transaction_dispatcher::rsk_gateway::RskContractsGateway;
 use transaction_dispatcher::server::Server;
 
@@ -37,17 +36,15 @@ async fn main() -> Result<()> {
     Logger::init(logger_cfg_path).expect("Failed to load logger");
 
     let config_path = matches.get_one::<String>(CONFIG_CLI_FLAG);
-    let config: Config = Config::load(config_path).expect("Failed to load config");
+    let config: ConfigAsBin = ConfigAsBin::load(config_path).expect("Failed to load config");
 
     let shutdown_flag = ShutdownFlag::init();
 
-    let ws = WsConnect::new(&config.provider.rootstock.url);
+    let ws = WsConnect::new(&config.provider().rootstock.url);
 
-    let key_store_path = Path::new(&config.key_store.path);
-    let key_store_password = std::env::var("KEY_STORE_PASSWORD")
-        .context("KEY_STORE_PASSWORD environment variable not found")?;
+    let key_store_path = Path::new(&config.key_store().path);
 
-    let signer = KeyManager::get_signer(key_store_path, key_store_password)?;
+    let signer = KeyManager::get_signer(key_store_path)?;
     let address = signer.address().to_string();
     let wallet = EthereumWallet::from(signer);
 
@@ -64,17 +61,16 @@ async fn main() -> Result<()> {
 
     info!(
         "Connected to Rootstock at {} with address {}",
-        &config.provider.rootstock.url, address
+        &config.provider().rootstock.url,
+        address
     );
 
-    let rsk_contract_gateway = Arc::new(
-        RskContractsGateway::new(
-            provider,
-            config.load_managed_contracts(),
-            &config.transaction,
-        )
-        .context("Could not instantiate RskContractsGateway")?,
-    );
+    let rsk_contract_gateway = RskContractsGateway::new(
+        provider,
+        config.load_managed_contracts(),
+        config.transaction(),
+    )
+    .context("Could not instantiate RskContractsGateway")?;
 
     let listener = tokio::net::TcpListener::bind(&config.server.url).await?;
 

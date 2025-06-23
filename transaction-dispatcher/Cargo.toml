@@ -13,7 +13,6 @@ alloy-rpc-types = { workspace = true, features = ["debug"] }
 alloy-sol-types = { workspace = true, features = ["json"] }
 alloy-json-rpc = { workspace = true }
 alloy-contract = { workspace = true }
-mockall = { workspace = true }
 clap = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
@@ -29,3 +28,4 @@ union-contracts = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+mockall = { workspace = true }

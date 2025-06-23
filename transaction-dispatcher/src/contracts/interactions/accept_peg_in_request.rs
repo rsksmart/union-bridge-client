@@ -5,6 +5,7 @@ use anyhow::Result;
 use log::{error, info};
 use union_contracts::bindings::pegmanager::PegManager::BtcTxSPVProof;
 
+#[derive(Clone)]
 pub(crate) struct AcceptPegInRequestInvoke<C: PegManagerContractApi> {
     contract: C,
     gas_bumps: u8,

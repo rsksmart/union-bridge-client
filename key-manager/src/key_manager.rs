@@ -33,7 +33,9 @@ impl KeyManager {
         Ok((file_path, public_key_str, address_str))
     }
 
-    pub fn get_signer(location: &Path, password: String) -> Result<LocalSigner<SigningKey>> {
+    pub fn get_signer(location: &Path) -> Result<LocalSigner<SigningKey>> {
+        let password = std::env::var("KEY_STORE_PASSWORD")
+            .context("KEY_STORE_PASSWORD environment variable not found")?;
         LocalSigner::decrypt_keystore(location, password).context("Getting signer")
     }
 

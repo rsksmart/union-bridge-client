@@ -9,7 +9,7 @@ use thiserror::Error;
 use union_contracts::bindings::pegmanager::PegManager::PegManagerErrors;
 
 #[derive(Debug, Error)]
-pub(crate) enum ParseFieldError {
+pub enum ParseFieldError {
     #[error("Failed to parse: {0}")]
     ParseNum(#[from] ParseError),
 
