@@ -1,5 +1,5 @@
 use crate::types::RskPegManagerEvents::UnknownEvent;
-use actors_mocking::fake_contracts::FakePegManager::{KickoffAdvanceFunds, RequestAdvanceFunds};
+use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
 use alloy_primitives::{B256, LogData};
 use alloy_sol_types::SolEvent;
 use common::types::{BlockHash, BlockNumber, RskLog};
@@ -11,15 +11,15 @@ use union_contracts::bindings::pegmanager::PegManager::RegisteredPegInRequest;
 pub enum RskPegManagerEvents {
     RequestAdvanceFunds(RequestAdvanceFundsEvent), // temporarily mock, no need to test it
     RemoveRequestAdvanceFunds { peg_out_id: String }, // temporarily mock, no need to test it
-    KickoffAdvanceFunds(KickoffAdvanceFundsEvent), // temporarily mock, no need to test it
-    RemoveKickoffAdvanceFunds { peg_out_id: String }, // temporarily mock, no need to test it
+    AdvanceFunds(AdvanceFundsEvent),               // temporarily mock, no need to test it
+    RemoveAdvanceFunds { peg_out_id: String },     // temporarily mock, no need to test it
     RegisteredPegInRequest(RegisteredPegInRequestEvent),
     RemoveRegisteredPegInRequest(RegisteredPegInRequestEvent),
     UnknownEvent,
 }
 
 pub type RequestAdvanceFundsEvent = EventWithBlock<RequestAdvanceFunds>;
-pub type KickoffAdvanceFundsEvent = EventWithBlock<KickoffAdvanceFunds>;
+pub type AdvanceFundsEvent = EventWithBlock<AdvanceFunds>;
 pub type RegisteredPegInRequestEvent = EventWithBlock<RegisteredPegInRequest>;
 
 #[derive(Eq, PartialEq, Debug, Clone)]
@@ -48,8 +48,8 @@ impl EventDecoder {
             Self::decode_request_advance_funds_event as DecoderFn,
         );
         dispatcher.insert(
-            KickoffAdvanceFunds::SIGNATURE_HASH,
-            Self::decode_kickoff_advance_funds_event as DecoderFn,
+            AdvanceFunds::SIGNATURE_HASH,
+            Self::decode_advance_funds_event as DecoderFn,
         );
         Self {
             dispatch: dispatcher,
@@ -154,21 +154,19 @@ impl EventDecoder {
         }
     }
 
-    fn decode_kickoff_advance_funds_event(
+    fn decode_advance_funds_event(
         log_data: &LogData,
         block_number: BlockNumber,
         block_hash: BlockHash,
         removed: bool,
     ) -> RskPegManagerEvents {
-        match KickoffAdvanceFunds::decode_log_data(&log_data, true) {
-            Ok(event) if !removed => {
-                RskPegManagerEvents::KickoffAdvanceFunds(KickoffAdvanceFundsEvent {
-                    inner: event,
-                    block_number,
-                    block_hash,
-                })
-            }
-            Ok(event) => RskPegManagerEvents::RemoveKickoffAdvanceFunds {
+        match AdvanceFunds::decode_log_data(&log_data, true) {
+            Ok(event) if !removed => RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
+                inner: event,
+                block_number,
+                block_hash,
+            }),
+            Ok(event) => RskPegManagerEvents::RemoveAdvanceFunds {
                 peg_out_id: event.peg_out_id,
             },
             Err(_) => UnknownEvent,
