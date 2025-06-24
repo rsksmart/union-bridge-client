@@ -165,20 +165,37 @@ impl<T: BrokerClientApi> PeginProcessor<T> {
     }
 
     fn process_confirmed_register_pegin_events(&mut self) -> Result<()> {
-        let mut retained = Vec::new();
-        let events: Vec<_> = self.register_pegin_events.drain(..).collect();
+        let confirmed_events: Vec<_> = self
+            .register_pegin_events
+            .iter()
+            .filter(|event| event.is_confirmed())
+            .map(|event| (event.event_id, event.data.inner.clone()))
+            .collect();
 
-        for event in events {
-            if event.is_confirmed() {
-                let event_id = event.event_id;
-                let data = event.data.inner;
-                self.handle_confirmed_event(event_id, "RegisteredPegInRequest", data)?;
-            } else {
-                retained.push(event);
+        let mut processed_events = Vec::new();
+        confirmed_events.iter().for_each(|(event_id, data)| {
+            match self.handle_confirmed_event(*event_id, "RegisteredPegInRequest", data) {
+                Ok(_) => {
+                    info!(
+                        "Successfully processed confirmed RegisteredPegInRequest event: {}",
+                        event_id
+                    );
+                    processed_events.push(*event_id);
+                }
+                Err(e) => {
+                    // TODO(Jira) this should be monitored and analysed - https://rsklabs.atlassian.net/browse/UB-127
+                    error!(
+                        "Error processing confirmed RegisteredPegInRequest event {}: {}",
+                        event_id, e
+                    );
+                }
             }
-        }
+        });
 
-        self.register_pegin_events = retained;
+        // only remove successfully processed events - keep unconfirmed and failed events
+        self.register_pegin_events
+            .retain(|event| !event.is_confirmed() || !processed_events.contains(&event.event_id));
+
         Ok(())
     }
 
