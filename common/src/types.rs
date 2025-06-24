@@ -45,21 +45,27 @@ pub trait ToHexString {
 /// println!("Block hash: {}", block_hash);
 /// ```
 #[derive(Serialize, Deserialize, Copy, Debug, Eq, PartialEq, Hash, Clone)]
-pub struct BlockHash(H256);
+pub struct Hash256(H256);
 
-impl BlockHash {
+impl Hash256 {
     pub fn value(self) -> H256 {
         self.0
     }
 }
 
-impl From<H256> for BlockHash {
+impl From<H256> for Hash256 {
     fn from(h256: H256) -> Self {
         Self(h256)
     }
 }
 
-impl TryFrom<&str> for BlockHash {
+impl From<H160> for Hash256 {
+    fn from(h160: H160) -> Self {
+        Self(H256::from(h160))
+    }
+}
+
+impl TryFrom<&str> for Hash256 {
     type Error = FromHexError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
@@ -71,23 +77,27 @@ impl TryFrom<&str> for BlockHash {
     }
 }
 
-impl From<FixedBytes<32>> for BlockHash {
+impl From<FixedBytes<32>> for Hash256 {
     fn from(bytes: FixedBytes<32>) -> Self {
-        BlockHash::from(H256::from_slice(&bytes.0))
+        Hash256::from(H256::from_slice(&bytes.0))
     }
 }
 
-impl From<BlockHash> for FixedBytes<32> {
-    fn from(hash: BlockHash) -> Self {
+impl From<Hash256> for FixedBytes<32> {
+    fn from(hash: Hash256) -> Self {
         FixedBytes::<32>::from_slice(hash.value().as_bytes())
     }
 }
 
-impl fmt::Display for BlockHash {
+impl fmt::Display for Hash256 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "0x{}", hex::encode(self.0))
     }
 }
+
+pub type BlockHash = Hash256;
+pub type TxHash = Hash256;
+pub type LogTopic = Hash256;
 
 /// Represents a block number in the rootstock blockchain.
 ///
@@ -561,7 +571,7 @@ pub struct LogInfo {
     address: Address,
     block_hash: BlockHash,
     block_number: BlockNumber,
-    tx_hash: String,
+    tx_hash: TxHash,
     log_index: u64,
     removed: bool,
 }
@@ -571,7 +581,7 @@ impl LogInfo {
         address: Address,
         block_hash: BlockHash,
         block_number: BlockNumber,
-        tx_hash: String,
+        tx_hash: TxHash,
         log_index: u64,
         removed: bool,
     ) -> Self {
@@ -597,8 +607,8 @@ impl LogInfo {
         self.block_number
     }
 
-    pub fn tx_hash(&self) -> &str {
-        &self.tx_hash
+    pub fn tx_hash(&self) -> TxHash {
+        self.tx_hash
     }
 
     pub fn log_index(&self) -> u64 {
@@ -610,22 +620,71 @@ impl LogInfo {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct DataBytes(pub Vec<u8>);
+
+impl DataBytes {
+    pub fn new(data: Vec<u8>) -> Self {
+        Self(data)
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+
+    pub fn from_hex_str(s: &str) -> Result<Self, hex::FromHexError> {
+        let clean = s.trim_start_matches("0x");
+        hex::decode(clean).map(Self)
+    }
+
+    pub fn to_hex_string(&self) -> String {
+        format!("0x{}", hex::encode(&self.0))
+    }
+}
+
+impl fmt::Display for DataBytes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.to_hex_string())
+    }
+}
+
+impl AsRef<[u8]> for DataBytes {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for DataBytes {
+    type Error = hex::FromHexError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        DataBytes::from_hex_str(&value)
+    }
+}
+
+impl From<DataBytes> for String {
+    fn from(data: DataBytes) -> Self {
+        data.to_hex_string()
+    }
+}
+
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct LogEvent {
-    data: String,
-    topics: Vec<String>,
+    data: DataBytes,
+    topics: Vec<LogTopic>,
 }
 
 impl LogEvent {
-    pub fn new(data: String, topics: Vec<String>) -> Self {
+    pub fn new(data: DataBytes, topics: Vec<LogTopic>) -> Self {
         Self { data, topics }
     }
 
-    pub fn data(&self) -> &str {
+    pub fn data(&self) -> &DataBytes {
         &self.data
     }
 
-    pub fn topics(&self) -> &Vec<String> {
+    pub fn topics(&self) -> &Vec<LogTopic> {
         &self.topics
     }
 }
@@ -642,10 +701,10 @@ pub struct RskRpcBlock {
     #[serde(deserialize_with = "parse_hex_to_block_number")]
     number: BlockNumber,
 
-    #[serde(deserialize_with = "parse_hex_to_block_hash")]
+    #[serde(deserialize_with = "parse_hex_to_hash256")]
     hash: BlockHash,
 
-    #[serde(rename = "parentHash", deserialize_with = "parse_hex_to_block_hash")]
+    #[serde(rename = "parentHash", deserialize_with = "parse_hex_to_hash256")]
     parent_hash: BlockHash,
 
     #[serde(deserialize_with = "parse_hex_to_block_timestamp")]
@@ -674,7 +733,7 @@ pub struct RskRpcBlock {
     )]
     pow: BlockPow,
 
-    #[serde(deserialize_with = "parse_uncles")]
+    #[serde(deserialize_with = "parse_hash256_vec")]
     uncles: Vec<BlockHash>,
 }
 
@@ -689,21 +748,23 @@ pub struct RskRpcLog {
     #[serde(deserialize_with = "parse_hex_to_address")]
     address: Address,
 
-    #[serde(rename = "blockHash", deserialize_with = "parse_hex_to_block_hash")]
+    #[serde(rename = "blockHash", deserialize_with = "parse_hex_to_hash256")]
     block_hash: BlockHash,
 
     #[serde(rename = "blockNumber", deserialize_with = "parse_hex_to_block_number")]
     block_number: BlockNumber,
 
-    #[serde(rename = "transactionHash")]
-    tx_hash: String,
+    #[serde(rename = "transactionHash", deserialize_with = "parse_hex_to_hash256")]
+    tx_hash: TxHash,
 
     #[serde(rename = "logIndex", deserialize_with = "parse_hex_to_u64")]
     log_index: u64,
 
-    data: String,
+    #[serde(deserialize_with = "parse_hex_to_data_bytes")]
+    data: DataBytes,
 
-    topics: Vec<String>,
+    #[serde(deserialize_with = "parse_hash256_vec")]
+    topics: Vec<LogTopic>,
     // no "removed" field if coming from request (not subscription)
 }
 
@@ -729,13 +790,13 @@ where
     parse_hex_to_u64(deserializer).map(BlockTimestamp::from)
 }
 
-fn parse_hex_to_block_hash<'de, D>(deserializer: D) -> Result<BlockHash, D::Error>
+fn parse_hex_to_hash256<'de, D>(deserializer: D) -> Result<Hash256, D::Error>
 where
     D: Deserializer<'de>,
 {
     let hex: String = Deserialize::deserialize(deserializer)?;
 
-    BlockHash::try_from(hex.as_str()).map_err(de::Error::custom)
+    Hash256::try_from(hex.as_str()).map_err(de::Error::custom)
 }
 
 fn parse_hex_to_address<'de, D>(deserializer: D) -> Result<Address, D::Error>
@@ -766,7 +827,7 @@ where
     BlockPow::try_from(hex.as_str()).map_err(de::Error::custom)
 }
 
-fn parse_uncles<'de, D>(deserializer: D) -> Result<Vec<BlockHash>, D::Error>
+fn parse_hash256_vec<'de, D>(deserializer: D) -> Result<Vec<Hash256>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -774,7 +835,7 @@ where
 
     hex_strings
         .into_iter()
-        .map(|v| parse_hex_to_block_hash(v).map_err(de::Error::custom))
+        .map(|v| parse_hex_to_hash256(v).map_err(de::Error::custom))
         .collect()
 }
 
@@ -782,10 +843,19 @@ fn str_hex_to_u64(hex: String) -> Result<u64, ParseIntError> {
     u64::from_str_radix(hex.trim_start_matches("0x"), 16)
 }
 
+fn parse_hex_to_data_bytes<'de, D>(deserializer: D) -> Result<DataBytes, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let hex: String = Deserialize::deserialize(deserializer)?;
+
+    DataBytes::from_hex_str(hex.as_str()).map_err(de::Error::custom)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::test_utils::rsk_utils::{DEFAULT_BITCOIN_MERGED_MINING_HEADER, DEFAULT_BLOCK_HASH};
-    use crate::types::{BlockHash, BlockPow};
+    use crate::types::{BlockHash, BlockPow, DataBytes};
 
     #[test]
     fn test_valid_block_hash_when_valid_hash_is_provided_should_return_ok() {
@@ -844,6 +914,53 @@ mod tests {
         let pow = BlockPow::try_from(valid_hash_without_prefix);
 
         assert!(pow.is_ok());
+    }
+
+    #[test]
+    fn test_from_hex_str_with_0x_prefix() {
+        let hex = "0xdeadbeef";
+        let bytes = DataBytes::from_hex_str(hex).expect("Failed to parse hex");
+        assert_eq!(bytes.0, vec![0xde, 0xad, 0xbe, 0xef]);
+    }
+
+    #[test]
+    fn test_from_hex_str_without_prefix() {
+        let hex = "deadbeef";
+        let bytes = DataBytes::from_hex_str(hex).expect("Failed to parse hex");
+        assert_eq!(bytes.0, vec![0xde, 0xad, 0xbe, 0xef]);
+    }
+
+    #[test]
+    fn test_to_hex_string() {
+        let data = DataBytes(vec![0xca, 0xfe, 0xba, 0xbe]);
+        assert_eq!(data.to_hex_string(), "0xcafebabe");
+    }
+
+    #[test]
+    fn test_display_impl() {
+        let data = DataBytes(vec![0xca, 0xfe, 0xba, 0xbe]);
+        assert_eq!(format!("{}", data), "0xcafebabe");
+    }
+
+    #[test]
+    fn test_try_from_string() {
+        let hex_string = String::from("0x1234abcd");
+        let bytes = DataBytes::try_from(hex_string).expect("Conversion failed");
+        assert_eq!(bytes.0, vec![0x12, 0x34, 0xab, 0xcd]);
+    }
+
+    #[test]
+    fn test_from_data_bytes_to_string() {
+        let data = DataBytes(vec![0x01, 0x02, 0x03]);
+        let s: String = data.into();
+        assert_eq!(s, "0x010203");
+    }
+
+    #[test]
+    fn test_invalid_hex_should_fail() {
+        let invalid = "0xxyz123";
+        let result = DataBytes::from_hex_str(invalid);
+        assert!(result.is_err());
     }
 }
 

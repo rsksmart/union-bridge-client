@@ -289,6 +289,7 @@ impl RskProvider for AlloyProvider {
 
 #[cfg(test)]
 mod tests {
+    use crate::types::{DataBytes, LogTopic, TxHash};
     use crate::{
         alloy_rsk_provider::rpc::AlloyProvider,
         types::{Address, BlockHash, BlockNumber},
@@ -428,21 +429,28 @@ mod tests {
         )
         .expect("Invalid hex string in JSON");
 
-        let expected_tx_hash = result[0]["transactionHash"]
-            .as_str()
-            .expect("Transaction hash should be a string")
-            .to_string();
+        let expected_tx_hash = TxHash::try_from(
+            result[0]["transactionHash"]
+                .as_str()
+                .expect("Transaction hash should be a string"),
+        )
+        .expect("Invalid hex string in JSON");
 
-        let expected_data = result[0]["data"]
-            .as_str()
-            .expect("Log data should be a string")
-            .to_string();
+        let expected_data = &DataBytes::from_hex_str(
+            result[0]["data"]
+                .as_str()
+                .expect("Log data should be a string"),
+        )
+        .expect("Failed to parse expected data");
 
-        let expected_topics: Vec<String> = result[0]["topics"]
+        let expected_topics: Vec<LogTopic> = result[0]["topics"]
             .as_array()
             .expect("Topics should be an array")
             .iter()
-            .map(|t| t.as_str().expect("Topic should be a string").to_string())
+            .map(|t| {
+                LogTopic::try_from(t.as_str().expect("Topic should be a string"))
+                    .expect("Invalid hex string in JSON")
+            })
             .collect();
 
         assert_eq!(expected_address, logs[0].info().address());

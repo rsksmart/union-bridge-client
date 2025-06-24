@@ -1,5 +1,5 @@
 use crate::types::{RskEvent, RskLog};
-use alloy_primitives::{LogData, hex};
+use alloy_primitives::LogData;
 use alloy_sol_types::private::B256;
 use alloy_sol_types::{SolEvent, sol};
 use anyhow::{Context, Result, bail};
@@ -27,13 +27,12 @@ pub fn process(rsk_log: RskLog) -> Result<Option<RskEvent>> {
         .event()
         .topics()
         .iter()
-        .filter_map(|topic| topic.parse::<B256>().ok())
+        .map(|topic| B256::from(*topic))
         .collect();
 
-    let hex_data =
-        hex::decode(&rsk_log.event().data()).context("Failed to decode hex data from rsk_log")?;
+    let data = rsk_log.event().data().as_bytes().to_vec();
 
-    let log_data = LogData::new(parsed_topics, hex_data.into());
+    let log_data = LogData::new(parsed_topics, data.into());
     if log_data.is_none() {
         bail!("Failed to create Alloy LogData from rsk_log")
     }
