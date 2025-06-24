@@ -390,7 +390,7 @@ mod tests {
         let finality_depth = 1;
         let best_block = block_with_number(100);
         let best_block_number = best_block.number();
-        let initial_block = block_with_number(99);
+        let initial_block: RskBlock = block_with_number(99);
         let log_from_initial_block = RskLog::new(
             LogInfo::new(
                 Address::from(H160::random()),
@@ -400,7 +400,7 @@ mod tests {
                 0,
                 false,
             ),
-            LogEvent::new("data".to_string(), vec![]),
+            LogEvent::new(DataBytes("data".as_bytes().to_vec()), vec![]),
         );
         let log_clone_for_store = log_from_initial_block.clone();
         let log_clone_for_provider = log_from_initial_block.clone();
@@ -475,7 +475,7 @@ mod tests {
                 0,
                 false,
             ),
-            LogEvent::new("data".to_string(), vec![]),
+            LogEvent::new(DataBytes::new("data".as_bytes().to_vec()), vec![]),
         );
         let log_clone_for_provider = dummy_log.clone();
         let log_clone_for_store = dummy_log.clone();

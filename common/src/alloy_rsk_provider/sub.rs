@@ -3,7 +3,8 @@ use crate::rsk_provider::{
     RskProvider, RskSubscription, RskSubscriptionError, RskSubscriptionFilter,
 };
 use crate::types::{
-    Address, BlockHash, BlockNumber, LogEvent, LogInfo, LogTopic, RskBlock, RskLog, TxHash,
+    Address, BlockHash, BlockNumber, DataBytes, LogEvent, LogInfo, LogTopic, RskBlock, RskLog,
+    TxHash,
 };
 use alloy_primitives::{Address as AlloyAddress, B256};
 use alloy_pubsub::{Subscription, SubscriptionItem};
@@ -214,7 +215,7 @@ impl RskSubscription<RskLog> for AlloySubscription<Log> {
         );
 
         let event_data = LogEvent::new(
-            hex::encode(&new_log.data().data),
+            DataBytes::new(new_log.data().data.to_vec()),
             new_log
                 .data()
                 .topics()

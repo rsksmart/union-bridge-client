@@ -289,7 +289,7 @@ impl RskProvider for AlloyProvider {
 
 #[cfg(test)]
 mod tests {
-    use crate::types::{LogTopic, TxHash};
+    use crate::types::{DataBytes, LogTopic, TxHash};
     use crate::{
         alloy_rsk_provider::rpc::AlloyProvider,
         types::{Address, BlockHash, BlockNumber},
@@ -436,10 +436,12 @@ mod tests {
         )
         .expect("Invalid hex string in JSON");
 
-        let expected_data = result[0]["data"]
-            .as_str()
-            .expect("Log data should be a string")
-            .to_string();
+        let expected_data = &DataBytes::from_hex_str(
+            result[0]["data"]
+                .as_str()
+                .expect("Log data should be a string"),
+        )
+        .expect("Failed to parse expected data");
 
         let expected_topics: Vec<LogTopic> = result[0]["topics"]
             .as_array()

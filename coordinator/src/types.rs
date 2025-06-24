@@ -81,13 +81,7 @@ impl EventDecoder {
             .map(|topic| B256::from(*topic))
             .collect();
 
-        let hex_data = match alloy_primitives::hex::decode(&log.event().data()) {
-            Ok(d) => d,
-            Err(e) => {
-                error!("Failed to decode RSK log {:?}: {}", log, e);
-                return None;
-            }
-        };
+        let hex_data = log.event().data().as_bytes().to_vec();
 
         let log_data = match LogData::new(parsed_topics, hex_data.into()) {
             Some(data) => data,
@@ -180,7 +174,7 @@ mod tests {
     use alloy_primitives::U256;
     use common::test_utils::rsk_log_generator::{FakeLogGenerator, event_signature_to_topic};
     use common::test_utils::rsk_utils::generate_fake_address;
-    use common::types::{BlockHash, Hash256, LogEvent, LogInfo, RskLog, TxHash};
+    use common::types::{BlockHash, DataBytes, Hash256, LogEvent, LogInfo, RskLog, TxHash};
     use primitive_types::H256;
     #[test]
     fn test_decode_unknown_event() {
@@ -197,7 +191,7 @@ mod tests {
     #[test]
     fn test_decode_invalid_data() {
         let log_event: LogEvent = LogEvent::new(
-            "fake".to_string(),
+            DataBytes::new("fake".as_bytes().to_vec()),
             vec![event_signature_to_topic(
                 "Transfer(address,address,uint256)",
             )],
@@ -222,7 +216,7 @@ mod tests {
     #[test]
     fn test_decode_no_topics() {
         let log_event: LogEvent = LogEvent::new(
-            "0x1234567890abcdef1234567890abcdef12345678".to_string(),
+            DataBytes::from_hex_str("0x1234567890abcdef1234567890abcdef12345678").unwrap(),
             vec![],
         );
 
@@ -246,7 +240,7 @@ mod tests {
     fn test_decode_invalid_topics() {
         let topic = event_signature_to_topic("Transfer(address,address,uint256)");
         let log_event: LogEvent = LogEvent::new(
-            "0x1234567890abcdef1234567890abcdef12345678".to_string(),
+            DataBytes::from_hex_str("0x1234567890abcdef1234567890abcdef12345678").unwrap(),
             vec![
                 topic.clone(),
                 topic.clone(),
@@ -299,7 +293,7 @@ mod tests {
             utxoScriptPubKey: alloy_primitives::Bytes::from("0x1234567890abcdef"),
         };
 
-        let data = hex::encode(&expected_event.encode_log_data().data);
+        let data = DataBytes::new(expected_event.encode_log_data().data.to_vec());
         let topics = expected_event
             .encode_topics()
             .iter()

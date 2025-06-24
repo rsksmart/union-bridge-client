@@ -614,18 +614,67 @@ impl LogInfo {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct DataBytes(pub Vec<u8>);
+
+impl DataBytes {
+    pub fn new(data: Vec<u8>) -> Self {
+        Self(data)
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+
+    pub fn from_hex_str(s: &str) -> Result<Self, hex::FromHexError> {
+        let clean = s.trim_start_matches("0x");
+        hex::decode(clean).map(Self)
+    }
+
+    pub fn to_hex_string(&self) -> String {
+        format!("0x{}", hex::encode(&self.0))
+    }
+}
+
+impl fmt::Display for DataBytes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.to_hex_string())
+    }
+}
+
+impl AsRef<[u8]> for DataBytes {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for DataBytes {
+    type Error = hex::FromHexError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        DataBytes::from_hex_str(&value)
+    }
+}
+
+impl From<DataBytes> for String {
+    fn from(data: DataBytes) -> Self {
+        data.to_hex_string()
+    }
+}
+
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct LogEvent {
-    data: String,
+    data: DataBytes,
     topics: Vec<LogTopic>,
 }
 
 impl LogEvent {
-    pub fn new(data: String, topics: Vec<LogTopic>) -> Self {
+    pub fn new(data: DataBytes, topics: Vec<LogTopic>) -> Self {
         Self { data, topics }
     }
 
-    pub fn data(&self) -> &str {
+    pub fn data(&self) -> &DataBytes {
         &self.data
     }
 
@@ -705,7 +754,8 @@ pub struct RskRpcLog {
     #[serde(rename = "logIndex", deserialize_with = "parse_hex_to_u64")]
     log_index: u64,
 
-    data: String,
+    #[serde(deserialize_with = "parse_hex_to_data_bytes")]
+    data: DataBytes,
 
     #[serde(deserialize_with = "parse_hash256_vec")]
     topics: Vec<LogTopic>,
@@ -787,10 +837,19 @@ fn str_hex_to_u64(hex: String) -> Result<u64, ParseIntError> {
     u64::from_str_radix(hex.trim_start_matches("0x"), 16)
 }
 
+fn parse_hex_to_data_bytes<'de, D>(deserializer: D) -> Result<DataBytes, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let hex: String = Deserialize::deserialize(deserializer)?;
+
+    DataBytes::from_hex_str(hex.as_str()).map_err(de::Error::custom)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::test_utils::rsk_utils::{DEFAULT_BITCOIN_MERGED_MINING_HEADER, DEFAULT_BLOCK_HASH};
-    use crate::types::{BlockHash, BlockPow};
+    use crate::types::{BlockHash, BlockPow, DataBytes};
 
     #[test]
     fn test_valid_block_hash_when_valid_hash_is_provided_should_return_ok() {
@@ -849,6 +908,53 @@ mod tests {
         let pow = BlockPow::try_from(valid_hash_without_prefix);
 
         assert!(pow.is_ok());
+    }
+
+    #[test]
+    fn test_from_hex_str_with_0x_prefix() {
+        let hex = "0xdeadbeef";
+        let bytes = DataBytes::from_hex_str(hex).expect("Failed to parse hex");
+        assert_eq!(bytes.0, vec![0xde, 0xad, 0xbe, 0xef]);
+    }
+
+    #[test]
+    fn test_from_hex_str_without_prefix() {
+        let hex = "deadbeef";
+        let bytes = DataBytes::from_hex_str(hex).expect("Failed to parse hex");
+        assert_eq!(bytes.0, vec![0xde, 0xad, 0xbe, 0xef]);
+    }
+
+    #[test]
+    fn test_to_hex_string() {
+        let data = DataBytes(vec![0xca, 0xfe, 0xba, 0xbe]);
+        assert_eq!(data.to_hex_string(), "0xcafebabe");
+    }
+
+    #[test]
+    fn test_display_impl() {
+        let data = DataBytes(vec![0xca, 0xfe, 0xba, 0xbe]);
+        assert_eq!(format!("{}", data), "0xcafebabe");
+    }
+
+    #[test]
+    fn test_try_from_string() {
+        let hex_string = String::from("0x1234abcd");
+        let bytes = DataBytes::try_from(hex_string).expect("Conversion failed");
+        assert_eq!(bytes.0, vec![0x12, 0x34, 0xab, 0xcd]);
+    }
+
+    #[test]
+    fn test_from_data_bytes_to_string() {
+        let data = DataBytes(vec![0x01, 0x02, 0x03]);
+        let s: String = data.into();
+        assert_eq!(s, "0x010203");
+    }
+
+    #[test]
+    fn test_invalid_hex_should_fail() {
+        let invalid = "0xxyz123";
+        let result = DataBytes::from_hex_str(invalid);
+        assert!(result.is_err());
     }
 }
 

@@ -1,5 +1,6 @@
-use crate::types::{Address, BlockHash, Hash256, LogEvent, LogInfo, LogTopic, RskLog, TxHash};
-use hex;
+use crate::types::{
+    Address, BlockHash, DataBytes, Hash256, LogEvent, LogInfo, LogTopic, RskLog, TxHash,
+};
 use primitive_types::H256;
 use sha3::{Digest, Keccak256};
 
@@ -14,10 +15,7 @@ impl FakeLogGenerator {
     pub fn generate_log_with_info(&self, event_signature: &str, log_info: LogInfo) -> RskLog {
         let address = log_info.address();
         let topics: Vec<Hash256> = vec![address_to_topic(address)];
-        let event_signature_topic = format!(
-            "0x{}",
-            hex::encode(event_signature_to_topic(event_signature).value().as_bytes())
-        );
+        let event_signature_topic = DataBytes::new(event_signature.as_bytes().to_vec());
         let event: LogEvent = LogEvent::new(event_signature_topic, topics);
         RskLog::new(log_info, event)
     }
