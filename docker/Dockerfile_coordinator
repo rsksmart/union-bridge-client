@@ -37,7 +37,6 @@ RUN --mount=type=ssh,id=default mkdir -p .cargo && \
 ENV RISC0_HOME=/opt/risc0
 
 RUN --mount=type=ssh,id=default cargo build --release -p coordinator ${FEATURES:+ --features $FEATURES};
-RUN --mount=type=ssh,id=default cargo build --release -p key-manager;
 
 # --- RUNTIME STAGE ---
 
@@ -51,15 +50,8 @@ RUN apt-get update -y && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-ARG FOUNDRY_VERSION
-COPY docker/dockerfile_sh/foundry-setup.sh /app/foundry-setup.sh
-RUN chmod +x /app/foundry-setup.sh && /app/foundry-setup.sh
-# required by contracts-setup and also by actors-mocking that spins up anvil
-ENV PATH="/opt/foundry/bin:$PATH"
-
 # copy the crate built binary
 COPY --from=builder /app/target/release/coordinator /app/coordinator
-COPY --from=builder /app/target/release/key-manager /app/key-manager
 
 # set environment variables
 ENV RUST_BACKTRACE=1
