@@ -33,6 +33,11 @@ impl KeyManager {
         Ok((file_path, public_key_str, address_str))
     }
 
+    /// Retrieves a signer by decrypting the keystore at the specified location.
+    /// 
+    /// This function depends on the `KEY_STORE_PASSWORD` environment variable
+    /// to retrieve the password required for decryption. Ensure that this
+    /// environment variable is set before calling this function.
     pub fn get_signer(location: &Path) -> Result<LocalSigner<SigningKey>> {
         let password = std::env::var("KEY_STORE_PASSWORD")
             .context("KEY_STORE_PASSWORD environment variable not found")?;
