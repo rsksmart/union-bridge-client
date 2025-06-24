@@ -44,14 +44,12 @@ async fn main() -> Result<()> {
 
     let key_store_path = Path::new(&config.key_store().path);
 
+    info!("Getting signer from key at {}", key_store_path.display());
     let signer = KeyManager::get_signer(key_store_path)?;
     let address = signer.address().to_string();
-    let wallet = EthereumWallet::from(signer);
+    info!("Got signer with address {address}");
 
-    info!(
-        "Getting signer from key at {} with address {address}",
-        key_store_path.display()
-    );
+    let wallet = EthereumWallet::from(signer);
 
     let provider = ProviderBuilder::new()
         .wallet(wallet.clone())

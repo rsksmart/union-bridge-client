@@ -34,7 +34,7 @@ impl KeyManager {
     }
 
     /// Retrieves a signer by decrypting the keystore at the specified location.
-    /// 
+    ///
     /// This function depends on the `KEY_STORE_PASSWORD` environment variable
     /// to retrieve the password required for decryption. Ensure that this
     /// environment variable is set before calling this function.

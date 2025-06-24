@@ -89,7 +89,7 @@ services:
     volumes:
       - *common-config
       - *log-config
-      - ./entrypoint-tx-dispatcher.sh:/app/entrypoint-tx-dispatcher.sh:ro
+      - ./entrypoint_sh/key-setup.sh:/app/entrypoint-key-setup.sh:ro
     ports:
       - "3000:3000"  # http server port from the configuration
     networks:
@@ -101,7 +101,8 @@ services:
     healthcheck:
       <<: *base-healthcheck
       test: [ "CMD", "ps", "aux", "|", "grep", "transaction-dispatcher" ]
-    entrypoint: [ "sh", "/app/entrypoint-tx-dispatcher.sh" ]
+    entrypoint: [ "sh", "/app/entrypoint-key-setup.sh" ]
+    command: [ "/app/transaction-dispatcher", "--config-path", "/app/config" ]
     depends_on:
       actors-mocking:
         condition: service_healthy
@@ -111,22 +112,27 @@ services:
     platform: linux/amd64
     build:
       <<: *base-build
-      dockerfile: coordinator/Dockerfile # custom Dockerfile, risc0 needs amd64
+      dockerfile: docker/Dockerfile_coordinator # custom Dockerfile, risc0 needs amd64
       args:
         - CRATE=coordinator
+        - FOUNDRY_VERSION=${FOUNDRY_VERSION}
     container_name: coordinator
     volumes:
       - *common-config
       - *log-config
+      - ./entrypoint_sh/key-setup.sh:/app/entrypoint-key-setup.sh:ro
     networks:
       internal:
         ipv4_address: 172.25.0.13
     environment:
       - TRANSACTION_DISPATCHER_URL=http://transaction-dispatcher:3000
+      - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
+      - FUNDING_ADDRESS=${FUNDING_ADDRESS}
     healthcheck:
       <<: *base-healthcheck
       test: [ "CMD", "ps", "aux", "|", "grep", "coordinator" ]
-    entrypoint: [ "/app/coordinator", "--config-path", "/app/config" ]
+    entrypoint: [ "sh", "/app/entrypoint-key-setup.sh" ]
+    command: [ "/app/coordinator", "--config-path", "/app/config" ]
     depends_on:
       block-indexer:
         condition: service_healthy

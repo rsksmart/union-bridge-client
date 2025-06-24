@@ -31,7 +31,10 @@ pub fn get_contracts_gateway_as_lib(
 ) -> Result<RskContractsGateway<impl Provider + Clone>> {
     let key_store_path = Path::new(&config.key_store.path);
 
+    info!("Getting signer from key at {}", key_store_path.display());
     let signer = KeyManager::get_signer(key_store_path)?;
+    info!("Got signer with address {}", signer.address());
+
     let wallet = EthereumWallet::from(signer);
     let rsk_url = &config.provider.rootstock.url;
     let ws = WsConnect::new(rsk_url);
