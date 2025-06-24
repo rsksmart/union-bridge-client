@@ -1,7 +1,7 @@
 use crate::{
     event_processor::{
         EventProcessor,
-        blockchain_tracker::{BlockConfirmations, BlockchainObserver, BlockchainView},
+        blockchain_tracker::{BlockConfirmations, BlockchainView},
     },
     types::{RegisteredPegInRequestEvent, RskPegManagerEvents},
 };
@@ -14,7 +14,7 @@ use common::{
     },
     types::RskBlockAndUncles,
 };
-use log::info;
+use log::{error, info};
 use reqwest::blocking::Client;
 use serde_json::{Value, json};
 use std::{cell::RefCell, env, rc::Rc};
@@ -26,37 +26,24 @@ const REGISTERED_PEGIN_REQUEST_CONFIRMATIONS: u32 = 5;
 struct UnconfirmedEvent<T: Clone> {
     event_id: Uuid,
     data: T,
-    confirmations: BlockConfirmations,
+    confirmations: Rc<RefCell<BlockConfirmations>>,
 }
 
 impl<T: Clone> UnconfirmedEvent<T> {
     fn new(data: T, required_confirmations: u32) -> Self {
         let event_id = Uuid::new_v4();
         let confirmations = BlockConfirmations::new(event_id.to_string(), required_confirmations);
+        let rc_confirmations = Rc::new(RefCell::new(confirmations));
 
         Self {
             event_id,
             data,
-            confirmations,
+            confirmations: rc_confirmations,
         }
     }
 
     fn is_confirmed(&self) -> bool {
-        self.confirmations.is_confirmed()
-    }
-}
-
-impl<T: Clone> BlockchainObserver for UnconfirmedEvent<T> {
-    fn get_id(&self) -> String {
-        self.event_id.to_string()
-    }
-
-    fn on_block_added(&mut self, block: &RskBlockAndUncles) {
-        self.confirmations.on_block_added(block);
-    }
-
-    fn on_block_removed(&mut self, block: &RskBlockAndUncles) {
-        self.confirmations.on_block_removed(block);
+        self.confirmations.borrow().is_confirmed()
     }
 }
 
@@ -112,20 +99,37 @@ impl<T: BrokerClientApi> PeginProcessor<T> {
     }
 
     fn process_confirmed_register_pegin_events(&mut self) -> Result<()> {
-        let mut retained = Vec::new();
-        let events: Vec<_> = self.register_pegin_events.drain(..).collect();
+        let confirmed_events: Vec<_> = self
+            .register_pegin_events
+            .iter()
+            .filter(|event| event.is_confirmed())
+            .map(|event| (event.event_id, event.data.inner.clone()))
+            .collect();
 
-        for event in events {
-            if event.is_confirmed() {
-                let event_id = event.event_id;
-                let data = event.data.inner;
-                self.handle_confirmed_event(event_id, "RegisteredPegInRequest", data)?;
-            } else {
-                retained.push(event);
+        let mut processed_events = Vec::new();
+        confirmed_events.iter().for_each(|(event_id, data)| {
+            match self.handle_confirmed_event(*event_id, "RegisteredPegInRequest", data) {
+                Ok(_) => {
+                    info!(
+                        "Successfully processed confirmed RegisteredPegInRequest event: {}",
+                        event_id
+                    );
+                    processed_events.push(*event_id);
+                }
+                Err(e) => {
+                    // TODO(Jira) this should be monitored and analysed - https://rsklabs.atlassian.net/browse/UB-127
+                    error!(
+                        "Error processing confirmed RegisteredPegInRequest event {}: {}",
+                        event_id, e
+                    );
+                }
             }
-        }
+        });
 
-        self.register_pegin_events = retained;
+        // only remove successfully processed events - keep unconfirmed and failed events
+        self.register_pegin_events
+            .retain(|event| !event.is_confirmed() || !processed_events.contains(&event.event_id));
+
         Ok(())
     }
 
@@ -198,14 +202,15 @@ impl<T: BrokerClientApi> EventProcessor for PeginProcessor<T> {
                 let unconfirmed_event =
                     UnconfirmedEvent::new(data.clone(), REGISTERED_PEGIN_REQUEST_CONFIRMATIONS);
 
-                self.register_pegin_events.push(unconfirmed_event.clone());
                 self.blockchain
-                    .add_observer(Rc::new(RefCell::new(unconfirmed_event.clone())));
+                    .add_observer(unconfirmed_event.confirmations.clone());
 
                 info!(
-                    "Successfully added RegisteredPegInRequest event to unconfirmed queue. Event: {:?}",
+                    "Adding RegisteredPegInRequest event to unconfirmed queue. Event: {:?}",
                     unconfirmed_event
                 );
+
+                self.register_pegin_events.push(unconfirmed_event);
             }
             _ => {}
         }
@@ -226,7 +231,7 @@ impl<T: BrokerClientApi> EventProcessor for PeginProcessor<T> {
     }
 
     fn shutdown(&mut self) {
-        info!("Shutting down GetTemporaryPeginAddressProcessor");
+        info!("Shutting down PeginProcessor");
 
         self.blockchain.clear();
     }
