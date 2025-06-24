@@ -181,11 +181,12 @@ impl RskSubscription<RskLog> for AlloySubscription<Log> {
             }
         };
 
-        let tx_hash = new_log
-            .transaction_hash
-            .map(TxHash::try_from)
-            .ok_or_else(|| RskSubscriptionError::Transient("Missing transaction_hash"))?
-            .map_err(|e| RskSubscriptionError::Unexpected(e.into()))?;
+        let tx_hash = TxHash::try_from(
+            new_log
+                .transaction_hash
+                .ok_or_else(|| RskSubscriptionError::Transient("Missing transaction_hash"))?,
+        )
+        .map_err(|e| RskSubscriptionError::Unexpected(e.into()))?;
 
         let block_hash = new_log
             .block_hash

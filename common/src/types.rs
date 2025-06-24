@@ -37,7 +37,7 @@ pub trait ToHexString {
 ///
 /// ```
 /// use primitive_types::H256;
-/// use common::types::{BlockHash};
+/// use common::types::BlockHash;
 ///
 /// let raw_hash = H256::random();
 /// let block_hash = BlockHash::from(raw_hash);
@@ -56,6 +56,12 @@ impl Hash256 {
 impl From<H256> for Hash256 {
     fn from(h256: H256) -> Self {
         Self(h256)
+    }
+}
+
+impl From<H160> for Hash256 {
+    fn from(h160: H160) -> Self {
+        Self(H256::from(h160))
     }
 }
 

@@ -88,5 +88,5 @@ pub fn event_signature_to_topic(event_signature: &str) -> LogTopic {
 /// assert_eq!(topic.to_string(), "0x0000000000000000000000001234567890abcdef1234567890abcdef12345678");
 /// ```
 pub fn address_to_topic(address: Address) -> LogTopic {
-    LogTopic::from(H256::from(address.value()))
+    LogTopic::from(address.value())
 }
