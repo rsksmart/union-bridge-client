@@ -164,6 +164,47 @@ impl<T: BrokerClientApi> PeginProcessor<T> {
         Ok(())
     }
 
+    fn process_confirmed_register_pegin_events(&mut self) -> Result<()> {
+        let mut retained = Vec::new();
+        let events: Vec<_> = self.register_pegin_events.drain(..).collect();
+
+        for event in events {
+            if event.is_confirmed() {
+                let event_id = event.event_id;
+                let data = event.data.inner;
+                self.handle_confirmed_event(event_id, "RegisteredPegInRequest", data)?;
+            } else {
+                retained.push(event);
+            }
+        }
+
+        self.register_pegin_events = retained;
+        Ok(())
+    }
+
+    fn handle_confirmed_event<E: serde::Serialize>(
+        &mut self,
+        event_id: Uuid,
+        variable_name: &str,
+        data: E,
+    ) -> Result<()> {
+        let data = json!(data).to_string();
+
+        self.bitvmx_broker.send(
+            BROKER_SERVER_ID,
+            ToServer::ToBitVMX(IncomingBitVMXApiMessages::SetVar(
+                event_id,
+                variable_name.to_string(),
+                VariableTypes::String(data),
+            )),
+        )?;
+
+        self.blockchain
+            .remove_observer(event_id.to_string().as_str());
+
+        Ok(())
+    }
+
     fn get_tx_dispatcher_url() -> String {
         // Env var because the http server is temporary: defined for docker, defaulting otherwise
         env::var("TRANSACTION_DISPATCHER_URL").unwrap_or("http://0.0.0.0:3000".to_string())

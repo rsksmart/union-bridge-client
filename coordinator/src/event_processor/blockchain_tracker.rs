@@ -12,7 +12,7 @@ pub trait BlockchainObserver {
     fn on_block_removed(&mut self, block: &RskBlockAndUncles);
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlockConfirmations {
     flow_id: String,
     init: BlockNumber,
