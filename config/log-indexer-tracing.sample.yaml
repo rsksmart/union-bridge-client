@@ -9,6 +9,6 @@ filtered_crates:
   tokio_tungstenite: "off"
   alloy_transport_ws: "info"
   alloy_rpc_client: "debug"  
-
+#if both file and console output are disabled the console output would be enabled by default
 enable_file_output: true
 enable_console_output: true
