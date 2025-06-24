@@ -98,20 +98,17 @@ impl<T: BrokerClientApi> PeginProcessor<T> {
     }
 
     fn send_response_to_bitvmx(&self, method: &str, payload: Value) -> Result<bool> {
-        let msg = match method {
-            // For now send the result back to bitvmx client mock, in the future
-            // this will probably go to the end user
-            "pegin-address" => ToServer::TemporaryPegInAddressMockedBitVMX(payload),
+        match method {
+            "pegin-address" => {
+                let msg = ToServer::TemporaryPegInAddressMockedBitVMX(payload);
+                Ok(self.bitvmx_broker.send(BROKER_SERVER_ID, msg)?)
+            }
             "register-pegin" => {
-                ToServer::ToBitVMX(IncomingBitVMXApiMessages::DispatchTransactionName(
-                    Uuid::new_v4(),
-                    "register-pegin".to_string(),
-                ))
+                // No response needed for register-pegin
+                Ok(true)
             }
             _ => bail!("Unsupported method name for BitVMX response: {}", method),
-        };
-
-        Ok(self.bitvmx_broker.send(BROKER_SERVER_ID, msg)?)
+        }
     }
 
     fn process_confirmed_register_pegin_events(&mut self) -> Result<()> {
