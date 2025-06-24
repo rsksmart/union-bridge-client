@@ -34,7 +34,7 @@ fn main() -> Result<()> {
         .get_matches();
 
     let logger_path = matches.get_one::<String>(LOGGER_CLI_FLAG);
-    let _tracer = Tracer::init(logger_path)?;
+    let _tracer = Tracer::init(logger_path, "log-indexer")?;
 
     let config_path = matches.get_one::<String>(CONFIG_CLI_FLAG);
     let config: Config = Config::load(config_path).expect("Failed to load config");

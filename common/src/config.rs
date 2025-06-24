@@ -1,21 +1,13 @@
 use crate::errors::ConfigError;
 use alloy_json_abi::JsonAbi;
 use anyhow::{Context, Result};
-use chrono;
 use config;
 use log::debug;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
-use std::collections::HashMap;
 use std::{fs, path::Path};
-use tracing_appender::rolling;
-use tracing_subscriber::fmt::time::FormatTime;
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
-const DEFAULT_LOG_DIRECTORY: &str = "logs";
-const DEFAULT_TRACING_LEVEL: &str = "DEBUG";
-const DEFAULT_DATE_TIME_FORMAT: &str = "%Y-%m-%d %H:%M:%S%.3f";
 
 pub fn get_project_root_path() -> String {
     Path::new(CARGO_MANIFEST_DIR)
@@ -23,11 +15,6 @@ pub fn get_project_root_path() -> String {
         .and_then(|p| p.to_str())
         .map(|s| s.to_string())
         .expect("Failed to get project root path")
-}
-
-fn get_default_log_path() -> String {
-    let project_root_path = get_project_root_path();
-    format!("{}/{}", project_root_path, DEFAULT_LOG_DIRECTORY)
 }
 
 #[derive(Debug, Deserialize)]
@@ -81,106 +68,6 @@ pub struct ContractConfig {
     // TODO(Jira-RethinkContractHandling) convert into a map
     pub name: String,
     pub address: String,
-}
-
-#[derive(Deserialize)]
-pub struct TracingConfig {
-    pub log_directory: Option<String>,
-    pub logfile_prefix: Option<String>,
-    pub tracing_level: Option<String>,
-    pub date_time_format: Option<String>,
-    pub filtered_crates: Option<HashMap<String, String>>,
-    pub enable_file_output: Option<bool>,
-    pub enable_stdout: Option<bool>,
-}
-
-impl std::fmt::Debug for TracingConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TracingConfig")
-            .field("log_directory", &self.get_log_directory())
-            .field("logfile_prefix", &self.get_logfile_prefix())
-            .field("tracing_level", &self.get_tracing_level())
-            .field("date_time_format", &self.get_date_time_format())
-            .field("filtered_crates", &self.get_filtered_crates())
-            .field("enable_file_output", &self.get_enable_file_output())
-            .field("enable_stdout", &self.get_enable_stdout())
-            .finish()
-    }
-}
-
-impl TracingConfig {
-    /// Get log directory with default if None
-    pub fn get_log_directory(&self) -> String {
-        self.log_directory
-            .clone()
-            .unwrap_or_else(|| get_default_log_path())
-    }
-
-    /// Get logfile prefix with default if None
-    pub fn get_logfile_prefix(&self) -> String {
-        self.logfile_prefix.clone().unwrap_or_else(|| String::new())
-    }
-
-    /// Get tracing level with default if None
-    pub fn get_tracing_level(&self) -> String {
-        self.tracing_level
-            .clone()
-            .unwrap_or_else(|| DEFAULT_TRACING_LEVEL.to_string())
-    }
-
-    /// Get date time format with default if None
-    pub fn get_date_time_format(&self) -> String {
-        self.date_time_format
-            .clone()
-            .unwrap_or_else(|| DEFAULT_DATE_TIME_FORMAT.to_string())
-    }
-
-    /// Get filtered crates with default if None
-    pub fn get_filtered_crates(&self) -> HashMap<String, String> {
-        self.filtered_crates
-            .clone()
-            .unwrap_or_else(|| HashMap::new())
-    }
-
-    /// Get enable file output with default if None
-    pub fn get_enable_file_output(&self) -> bool {
-        self.enable_file_output.unwrap_or(true)
-    }
-
-    /// Get enable stdout with validation - ensures at least one output is enabled
-    pub fn get_enable_stdout(&self) -> bool {
-        let file_enabled = self.get_enable_file_output();
-        let stdout_enabled = self.enable_stdout.unwrap_or(true);
-
-        // If both are disabled, show warning and enable stdout
-        if !file_enabled && !stdout_enabled {
-            eprintln!(
-                "WARNING: Both file_output and stdout are disabled. Enabling stdout as fallback. At least one output must be active."
-            );
-            return true;
-        }
-
-        stdout_enabled
-    }
-}
-
-// Custom time formatter that uses configurable format
-#[derive(Clone)]
-struct CustomTimeFormatter {
-    format: String,
-}
-
-impl CustomTimeFormatter {
-    fn new(format: String) -> Self {
-        Self { format }
-    }
-}
-
-impl FormatTime for CustomTimeFormatter {
-    fn format_time(&self, w: &mut tracing_subscriber::fmt::format::Writer<'_>) -> std::fmt::Result {
-        let now = chrono::Local::now();
-        write!(w, "{}", now.format(&self.format))
-    }
 }
 
 impl CommonConfig {
@@ -238,102 +125,6 @@ impl CommonConfig {
             );
             None
         }
-    }
-
-    pub fn init_tracer(
-        config_path: String,
-        crate_name: &str,
-    ) -> Result<(
-        Option<tracing_appender::non_blocking::WorkerGuard>,
-        TracingConfig,
-    )> {
-        // Read tracing configuration from file
-        println!("Initializing tracing config from {:?}", config_path);
-        let tracing_config = Self::load_tracing_config(&config_path)?;
-
-        println!("Tracing config applied: {:?}", tracing_config);
-
-        let mut guard = None;
-
-        let base_level = tracing_config.get_tracing_level().to_lowercase();
-        let time_formatter = CustomTimeFormatter::new(tracing_config.get_date_time_format());
-
-        let filtered_crates = tracing_config.get_filtered_crates();
-        let mut filter: EnvFilter = EnvFilter::from_default_env()
-            .add_directive(base_level.parse().expect("Invalid base tracing level"));
-        for (filtered_crate, level) in filtered_crates {
-            let directive = format!("{}={}", filtered_crate, level);
-            filter =
-                filter.add_directive(directive.parse().expect("Invalid crate filter directive"));
-        }
-
-        println!(
-            "Tracing filter applied with base level: {} and {} crate-specific filters",
-            tracing_config.get_tracing_level(),
-            tracing_config.get_filtered_crates().len()
-        );
-
-        let file_output_layer = if tracing_config.get_enable_file_output() {
-            let logfile_prefix = tracing_config
-                .logfile_prefix
-                .clone()
-                .unwrap_or(crate_name.to_string());
-            let debug_file = rolling::daily(&tracing_config.get_log_directory(), logfile_prefix);
-
-            let (non_blocking, appender_guard) = tracing_appender::non_blocking(debug_file);
-            guard = Some(appender_guard);
-            Some(
-                tracing_subscriber::fmt::layer()
-                    .with_writer(non_blocking)
-                    .with_ansi(false)
-                    .with_timer(time_formatter.clone())
-                    .with_line_number(true),
-            )
-        } else {
-            None
-        };
-
-        let stdout_layer = if tracing_config.get_enable_stdout() {
-            Some(
-                tracing_subscriber::fmt::layer()
-                    .with_writer(std::io::stdout)
-                    .with_ansi(true)
-                    .with_timer(time_formatter)
-                    .with_line_number(true),
-            )
-        } else {
-            None
-        };
-
-        let result = tracing_subscriber::registry()
-            .with(filter)
-            .with(file_output_layer)
-            .with(stdout_layer)
-            .try_init();
-
-        match result {
-            Ok(_) => println!("Tracing subscriber initialized successfully"),
-            Err(e) => {
-                // This is expected in tests where multiple tests try to set the global subscriber
-                println!(
-                    "Tracing subscriber already initialized (likely in test environment): {}",
-                    e
-                );
-            }
-        }
-
-        Ok((guard, tracing_config))
-    }
-
-    fn load_tracing_config(config_path: &str) -> Result<TracingConfig, ConfigError> {
-        let cfg = config::Config::builder()
-            .add_source(config::File::with_name(config_path).required(true))
-            .build()
-            .map_err(ConfigError::ConfigFileError)?
-            .try_deserialize::<TracingConfig>()
-            .map_err(ConfigError::ConfigFileError)?;
-
-        Ok(cfg)
     }
 
     pub fn init_logger(logger_file_opt: Option<&String>, crate_name: &str) -> Result<()> {
