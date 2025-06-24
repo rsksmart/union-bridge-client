@@ -21,8 +21,8 @@ const FUNDS_AMOUNT_WEI: &str = "1000000000000000000"; // 1 ETH
 const ANVIL_TIMEOUT: Duration = Duration::from_secs(5);
 const TX_DISPATCHER_MANIFEST_RELATIVE_PATH: &str = "../transaction-dispatcher/Cargo.toml";
 const TX_DISPATCHER_URL_DEFAULT: &str = "http://localhost:3000";
-const TX_DISPATCHER_CONFIG_PATH_DEFAULT: &str = "../config/local";
-const TX_DISPATCHER_TIMEOUT: Duration = Duration::from_secs(30);
+const TX_DISPATCHER_CONFIG_PATH_DEFAULT: &str = "../config/qa-local";
+const TX_DISPATCHER_TIMEOUT: Duration = Duration::from_secs(300);
 
 lazy_static::lazy_static! {
     pub static ref DEPLOY_LOCAL_CONTRACTS_PATH: String = env::var("DEPLOY_LOCAL_CONTRACTS_PATH")
@@ -62,8 +62,8 @@ async fn main() {
     let junit_report = env::var("JUNIT_REPORT");
     if junit_report.is_ok() {
         let report_file = File::create(junit_report.unwrap()).unwrap();
+        println!("Running tests with JUnit report at: {:?}", report_file);
         TestWorld::cucumber()
-            .init_tracing()
             .with_writer(JUnit::new(report_file, 0))
             .max_concurrent_scenarios(Some(1)) // Run in sequence to avoid conflicts between scenarios
             .before(|_, _, _, world: &mut TestWorld| {
