@@ -1,6 +1,6 @@
+use crate::{TX_DISPATCHER_URL, TestWorld};
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use byteorder::{LittleEndian, WriteBytesExt};
-use cucumber::{World, gherkin::Step};
 use hex;
 use once_cell::sync::Lazy;
 use rand::rngs::StdRng;
@@ -10,14 +10,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::env;
-use std::path::PathBuf;
-use std::process::{Command, Stdio};
 use std::sync::Mutex;
-use std::thread;
-use std::time::Duration;
+use crate::constants::{DEFAULT_AMOUNT_0, DEFAULT_AMOUNT_0_ACCEPT_PEGIN, DEFAULT_AMOUNT_1, DEFAULT_AMOUNT_1_ACCEPT_PEGIN, DEFAULT_AMOUNT_IN_WEI, DEFAULT_SCRIPT_PUB_KEY_0, DEFAULT_SCRIPT_PUB_KEY_0_ACCEPT_PEGIN, DEFAULT_SCRIPT_PUB_KEY_1, DEFAULT_SCRIPT_PUB_KEY_1_ACCEPT_PEGIN, DEFAULT_SCRIPT_SIG, DEFAULT_SEQUENCE, DEFAULT_V_OUT, DEFAULT_V_OUT_ACCEPT_PEGIN};
 
 pub static SEEDED_RNG: Lazy<Mutex<StdRng>> = Lazy::new(|| Mutex::new(StdRng::seed_from_u64(45)));
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BtcOutput {
@@ -39,67 +36,6 @@ pub struct BtcTransaction {
     pub outputs: Vec<BtcOutput>,
     pub inputs: Vec<BtcInput>,
     pub lock_time: u32,
-}
-
-#[derive(Debug, Default, World)]
-pub struct TestWorld {
-    pub response: Option<String>,
-    pub status_code: Option<u16>,
-    pub response_2: Option<String>,
-    pub status_code_2: Option<u16>,
-    pub register_pegin_block_hash: Option<String>,
-    pub register_pegin_btc_txid: Option<String>,
-    pub register_pegin_merkle_hash: Option<String>,
-}
-
-pub const DEFAULT_SEQUENCE: u32 = 4294967293;
-pub const DEFAULT_V_OUT: u32 = 1694;
-pub const DEFAULT_SCRIPT_PUB_KEY_0: &str =
-    "0x5120228f281f297fd01cd363b9c93f742ba2976c1ec5a6083d9f754cb61e505356c3";
-pub const DEFAULT_SCRIPT_PUB_KEY_0_ACCEPT_PEGIN: &str =
-    "0x51209687ca13c4fb3fa3ba05c2f9119dda026bfe66f0098dcf9b896a98ecb2e96702";
-pub const DEFAULT_SCRIPT_PUB_KEY_1: &str = "0x6a4552534b5f504547494e000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c87d235c24420b2f55450c8414725aa74e6db01035245efdab0e1cfa7ab29aca0f";
-pub const DEFAULT_SCRIPT_PUB_KEY_1_ACCEPT_PEGIN: &str =
-    "0x0014298a0fe992f755152a81ee64bdc4cc96d3bb8969";
-pub const DEFAULT_SCRIPT_SIG: &str = "";
-pub const DEFAULT_AMOUNT_0: u64 = 100000;
-pub const DEFAULT_AMOUNT_0_ACCEPT_PEGIN: u64 = 99365;
-pub const DEFAULT_AMOUNT_1: u64 = 0;
-pub const DEFAULT_AMOUNT_1_ACCEPT_PEGIN: u64 = 300;
-pub const DEFAULT_AMOUNT_IN_WEI: u64 = 1000000000000000;
-pub const DEFAULT_V_OUT_ACCEPT_PEGIN: u32 = 0;
-
-lazy_static::lazy_static! {
-    pub static ref CONTRACTS_PATH: String = env::var("CONTRACTS_PATH")
-        .unwrap_or_else(|_| "../../bitvmx-union-bridge-contracts".to_string());
-
-    pub static ref TX_DISPATCHER_URL: String = env::var("TX_DISPATCHER_URL")
-        .unwrap_or_else(|_| "http://localhost:3000".to_string());
-
-    pub static ref ANVIL_URL: String = env::var("ANVIL_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:9385".to_string());
-
-    pub static ref KEY_STORE_PASSWORD: String = env::var("KEY_STORE_PASSWORD")
-        .unwrap_or_else(|_| "p09ol.".to_string());
-
-    pub static ref TRANSACTION_DISPATCHER_TOML_PATH: String = env::var("TRANSACTION_DISPATCHER_TOML_PATH")
-        .unwrap_or_else(|_| "../transaction-dispatcher/Cargo.toml".to_string());
-    pub static ref CONFIG_ENV_PATH: String = env::var("CONFIG_ENV_PATH")
-        .unwrap_or_else(|_| "../config/local".to_string());
-}
-
-pub fn extract_params(step: &Step) -> HashMap<String, String> {
-    step.table
-        .as_ref()
-        .filter(|table| table.rows.len() == 2)
-        .map(|table| {
-            table.rows[0]
-                .iter()
-                .cloned()
-                .zip(table.rows[1].iter().cloned())
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 pub async fn call_endpoint(
@@ -188,6 +124,7 @@ fn generate_payload_register_pegin(
             v_out,
             sequence,
             script_sig: DEFAULT_SCRIPT_SIG.to_string(),
+
         }],
         lock_time: 0,
     };
@@ -412,137 +349,4 @@ fn get_from_world(key: &str, world: &TestWorld) -> Option<String> {
         "merkle_hash" => world.register_pegin_merkle_hash.clone(),
         _ => None,
     }
-}
-
-pub async fn wait_for_anvil() -> Result<(), String> {
-    let client = reqwest::Client::new();
-    let max_retries = 3;
-
-    for _retry in 0..max_retries {
-        if client.get(ANVIL_URL.as_str()).send().await.is_ok() {
-            return Ok(());
-        }
-        thread::sleep(Duration::from_secs(1));
-    }
-    Err(format!(
-        "Anvil failed to start after {} attempts",
-        max_retries
-    ))
-}
-
-pub async fn wait_for_transaction_dispatcher() -> Result<(), String> {
-    let client = reqwest::Client::new();
-    let max_retries = 10;
-
-    for retry in 0..max_retries {
-        if client
-            .get(format!("{}/health", TX_DISPATCHER_URL.as_str()))
-            .send()
-            .await
-            .is_ok()
-        {
-            return Ok(());
-        }
-        println!(
-            "Waiting for transaction dispatcher to start... (attempt {}/{})",
-            retry + 1,
-            max_retries
-        );
-        thread::sleep(Duration::from_secs(10));
-    }
-    Err(format!(
-        "Transaction dispatcher failed to start after {} attempts",
-        max_retries
-    ))
-}
-
-pub fn execute_script(script_path: &str) -> Result<String, String> {
-    let full_path = get_contracts_path().join(script_path);
-    execute_command(&format!("chmod +x {}", full_path.display()), false)?;
-    execute_deploy(&format!("{}", full_path.display()))
-}
-
-pub fn execute_deploy(command: &str) -> Result<String, String> {
-    let output = Command::new("bash")
-        .arg(command)
-        .env("RPC_URL", "http://127.0.0.1:9385")
-        .stdout(Stdio::piped())
-        .output()
-        .map_err(|e| format!("Failed to execute command: {}", e))?;
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
-        Err(String::from_utf8_lossy(&output.stderr).to_string())
-    }
-}
-
-pub fn execute_command(command: &str, spawn: bool) -> Result<(String, Option<u32>), String> {
-    if spawn {
-        let mut child = Command::new("sh")
-            .arg("-c")
-            .arg(command)
-            .spawn()
-            .map_err(|e| format!("Failed to spawn command: {}", e))?;
-
-        let pid = child.id();
-        println!("Spawned command {} with PID: {}", command, pid);
-        thread::sleep(Duration::from_secs(1));
-
-        match child.try_wait() {
-            Ok(Some(status)) if !status.success() => {
-                Err(format!("Command failed with status: {}", status))
-            }
-            Ok(None) => Ok(("Command spawned successfully".to_string(), Some(pid))),
-            Ok(Some(status)) => Ok((format!("Command completed with status: {}", status), Some(pid))),
-            Err(e) => Err(format!("Failed to check command status: {}", e)),
-        }
-    } else {
-        let output = Command::new("bash")
-            .arg("-c")
-            .arg(command)
-            .output()
-            .map_err(|e| format!("Failed to execute command: {}", e))?;
-        
-        if output.status.success() {
-            Ok((String::from_utf8_lossy(&output.stdout).to_string(), None))
-        } else {
-            Err(format!("Command failed - Error: {}", String::from_utf8_lossy(&output.stderr)))
-        }
-    }
-}
-
-pub fn get_contracts_path() -> PathBuf {
-    PathBuf::from(".")
-        .join(CONTRACTS_PATH.as_str())
-}
-
-pub async fn start_anvil() -> Result<String, String> {
-    execute_command("anvil --port 9385", true)?;
-    wait_for_anvil().await?;
-    Ok("Anvil started successfully".to_string())
-}
-
-pub fn transfer_ether(from: &str, to: &str, amount: &str) -> Result<(String, Option<u32>), String> {
-    let command = format!(
-        "cast send --rpc-url {} --from {} {} --value {} --unlocked",
-        ANVIL_URL.as_str(),
-        from,
-        to,
-        amount
-    );
-    execute_command(&command, false)
-}
-
-pub async fn start_transaction_dispatcher() -> Result<(String, Option<u32>), String> {
-    let command = format!(
-        "KEY_STORE_PASSWORD={} cargo run --manifest-path {} --bin transaction-dispatcher -- --config-path {}",
-        KEY_STORE_PASSWORD.as_str(),
-        TRANSACTION_DISPATCHER_TOML_PATH.as_str(),
-        CONFIG_ENV_PATH.as_str()
-    );
-    let (_response, pid) = execute_command(&command, true)?;
-
-    wait_for_transaction_dispatcher().await?;
-    println!("Transaction dispatcher started with PID: {}", pid.unwrap_or(0));
-    Ok(("Transaction dispatcher started successfully".to_string(), pid))
 }

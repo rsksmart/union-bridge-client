@@ -1,6 +1,6 @@
 provider:
   rootstock:
-    url: "ws://127.0.0.1:9385"
+    url: "ws://127.0.0.1:8545"
 
 key_store:
   path: "tmp_keystore/e5cd9470-cec7-42f4-b1ff-7e723de56793"

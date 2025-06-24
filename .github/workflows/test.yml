@@ -10,11 +10,11 @@ jobs:
   test:
     runs-on: ubuntu-latest
     env:
-      CONTRACTS_PATH: "../../bitvmx-union-bridge-contracts"
+      DEPLOY_LOCAL_CONTRACTS_PATH: "../../bitvmx-union-bridge-contracts/shell/script/deploy/deploy-local.sh"
       TX_DISPATCHER_URL: "http://localhost:3000"
-      KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }} # "p09ol."
+      KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
       KEY_STORE_ARCHIVE:   ${{ secrets.KEY_STORE_ARCHIVE }}
-      CONFIG_ENV_PATH: "../config/ci"
+      TX_DISPATCHER_CONFIG_PATH: "../config/ci"
     steps:
 
       - name: Set up Node.js
@@ -76,13 +76,7 @@ jobs:
 
       - name: Run integration tests
         run: |
-          which anvil || anvil --version
-          echo $PATH
-          echo $CONTRACTS_PATH
           cd qa-tools
-          pwd
-          ls -l
-          ls -l tmp_keystore
           git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf "ssh://git@github.com/FairgateLabs"
           RUST_BACKTRACE=1 cargo run --bin qa-tools-transaction-dispatcher -- --tags @transaction-dispatcher-pegin-address
 
