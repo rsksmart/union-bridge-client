@@ -4,26 +4,51 @@ A collection of tools for testing and validating the Union Bridge Monitor compon
 
 ## Crates
 
-### Block Indexer Tools
+### Block Indexer Tools (manual execution)
 - `block_indexer_runner`: Runs the block indexer with configurable parameters
 - `block_indexer_validator`: Validates block indexer state after running
 - Features: backward sync, checkpoints, different cache sizes, long runs
 
-### Log Indexer Tools
+To find instructions on how to execute tests, search for the comments under scenarios within `features/` folder.
+
+### Log Indexer Tools (manual execution)
 - `log_indexer_runner`: Runs the log indexer with configurable parameters
 - `log_indexer_validator`: Validates log indexer state after running
 - Features: managed contracts monitoring, event tracking
 
-### Check Fork Tools
+To find instructions on how to execute tests, search for the comments under scenarios within `features/` folder.
+
+### Utility Tools for block indexer and log indexer
+- `archiver`: Archives `/tmp/monitor-executions` with timestamps
+- `clear`: Cleans up `/tmp/monitor-executions` directories
+
+### Check Fork Tools (manual execution)
 - `check_fork_runner`: Runs and validates the check fork with configurable parameters
 - Features: managed contracts monitoring, event tracking
 
-### Transaction dispatcher Tools
-WIP
+To find instructions on how to execute tests, search for the comments under scenarios within `features/` folder.
 
-### Utility Tools
-- `archiver`: Archives execution results with timestamps
-- `clear`: Cleans up temporary execution directories
+### Transaction dispatcher Tools (automated)
 
-## Usage
-To find instructions, search for the comments under scenarios within `features/` folder of each crate.
+#### Execute automated tests locally
+```bash
+cd qa-tools
+cargo run --bin qa-tools-transaction-dispatcher -- --tags @transaction-dispatcher
+```
+Optional: add JUNIT_REPORT env variable to generate JUnit XML reports under `qa-tools/reports/` directory.
+```bash
+cd qa-tools
+JUNIT_REPORT="reports/tx_dispatcher.xml" cargo run --bin qa-tools-transaction-dispatcher -- --tags @transaction-dispatcher
+```
+#### Execute automated tests via ACT pipeline (local)
+```bash
+export FAIRGATE_GITHUB_TOKEN="=== REPLACE_WITH_TOKEN ==="
+export KEY_STORE_PASSWORD="=== REPLACE_WITH_PASSWORD ==="
+act -j test --reuse \
+--secret FAIRGATE_GITHUB_TOKEN=$FAIRGATE_GITHUB_TOKEN \
+--secret KEY_STORE_PASSWORD=$KEY_STORE_PASSWORD
+```
+Currently the pipeline execution prints the JUnit XML report to the console. Pushing the report to Testomat is WIP.
+
+
+

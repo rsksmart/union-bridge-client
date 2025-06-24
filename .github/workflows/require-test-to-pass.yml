@@ -94,3 +94,9 @@ jobs:
           git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf "ssh://git@github.com/FairgateLabs"
           RUN_MODE=ci cargo test --features test-utils # --locked TODO(Jira) re-add --locked in scope of https://rsklabs.atlassian.net/browse/UB-176
         working-directory: union-bridge-client
+
+      - name: Run transaction dispatcher integration tests
+        run: |
+          git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf "ssh://git@github.com/FairgateLabs"
+          RUN_MODE=ci cargo run --bin qa-tools-transaction-dispatcher -- --tags @transaction-dispatcher
+        working-directory: union-bridge-client
