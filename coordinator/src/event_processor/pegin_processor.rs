@@ -192,7 +192,7 @@ impl<T: BrokerClientApi> PeginProcessor<T> {
             }
         });
 
-        // only remove successfully processed events - keep unconfirmed and failed events
+        // Only remove successfully processed events - keep unconfirmed and failed events
         self.register_pegin_events
             .retain(|event| !event.is_confirmed() || !processed_events.contains(&event.event_id));
 
