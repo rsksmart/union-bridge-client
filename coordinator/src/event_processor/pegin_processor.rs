@@ -1,4 +1,5 @@
 use crate::{
+    config::REQUIRED_CONFIRMATIONS,
     event_processor::{
         EventProcessor,
         blockchain_tracker::{BlockConfirmations, BlockchainView},
@@ -20,8 +21,6 @@ use serde_json::{Value, json};
 use std::{cell::RefCell, env, rc::Rc};
 use uuid::Uuid;
 
-const REGISTERED_PEGIN_REQUEST_CONFIRMATIONS: u32 = 5;
-
 #[derive(Debug, Clone)]
 struct UnconfirmedEvent<T: Clone> {
     event_id: Uuid,
@@ -40,6 +39,10 @@ impl<T: Clone> UnconfirmedEvent<T> {
             data,
             confirmations: rc_confirmations,
         }
+    }
+
+    pub fn confirmations(&self) -> Rc<RefCell<BlockConfirmations>> {
+        self.confirmations.clone()
     }
 
     fn is_confirmed(&self) -> bool {
@@ -126,7 +129,7 @@ impl<T: BrokerClientApi> PeginProcessor<T> {
             }
         });
 
-        // only remove successfully processed events - keep unconfirmed and failed events
+        // Only remove successfully processed events - keep unconfirmed and failed events
         self.register_pegin_events
             .retain(|event| !event.is_confirmed() || !processed_events.contains(&event.event_id));
 
@@ -199,11 +202,10 @@ impl<T: BrokerClientApi> EventProcessor for PeginProcessor<T> {
                     data
                 );
 
-                let unconfirmed_event =
-                    UnconfirmedEvent::new(data.clone(), REGISTERED_PEGIN_REQUEST_CONFIRMATIONS);
+                let unconfirmed_event = UnconfirmedEvent::new(data.clone(), REQUIRED_CONFIRMATIONS);
 
                 self.blockchain
-                    .add_observer(unconfirmed_event.confirmations.clone());
+                    .add_observer(unconfirmed_event.confirmations());
 
                 info!(
                     "Adding RegisteredPegInRequest event to unconfirmed queue. Event: {:?}",
@@ -234,5 +236,311 @@ impl<T: BrokerClientApi> EventProcessor for PeginProcessor<T> {
         info!("Shutting down PeginProcessor");
 
         self.blockchain.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::event_processor::EventProcessor;
+    use crate::types::RegisteredPegInRequestEvent;
+    use alloy_primitives::{Address, Bytes, U256};
+    use common::msg_broker::broker::{BROKER_SERVER_ID, MockBrokerClientApi};
+    use common::msg_broker::types::{FromServer, ToServer};
+    use common::test_utils::rsk_block_generator::create_block_and_uncles;
+    use common::types::{BlockHash, BlockNumber, RskLog};
+    use mockito::mock;
+    use primitive_types::H256;
+    use serde_json::json;
+    use union_contracts::bindings::pegmanager::PegManager::RegisteredPegInRequest;
+
+    #[test]
+    fn process_new_bitvmx_event_handles_pegin_address_correctly() {
+        let _m = mock("POST", "/pegin-address")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"address": "bcrt1test"}"#)
+            .create();
+
+        unsafe {
+            std::env::set_var("TRANSACTION_DISPATCHER_URL", &mockito::server_url());
+        }
+
+        let mut broker = MockBrokerClientApi::new();
+        broker
+            .expect_send()
+            .withf(|dest, msg| {
+                *dest == BROKER_SERVER_ID
+                    && matches!(msg, ToServer::TemporaryPegInAddressMockedBitVMX(payload)
+                        if payload.get("address") == Some(&json!("bcrt1test")))
+            })
+            .returning(|_, _| Ok(true));
+
+        let mut processor = PeginProcessor::new(broker);
+
+        let data = json!({
+            "btc_reimbursement_pub_key": "0xabc",
+            "rootstock_deposit_address": "0xdef",
+            "value": 42
+        });
+        let event = FromServer::FromBitVMX("pegin-address".to_string(), data);
+
+        let result = processor.process_new_bitvmx_event(&event);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn process_new_bitvmx_event_fails_on_dispatcher_error() {
+        let _m = mockito::mock("POST", "/pegin-address")
+            .with_status(500)
+            .with_body("Internal Server Error")
+            .create();
+
+        unsafe {
+            std::env::set_var("TRANSACTION_DISPATCHER_URL", &mockito::server_url());
+        }
+
+        let mut broker = MockBrokerClientApi::new();
+        broker.expect_send().times(0);
+
+        let mut processor = PeginProcessor::new(broker);
+
+        let data = serde_json::json!({
+            "btc_reimbursement_pub_key": "0xabc",
+            "rootstock_deposit_address": "0xdef",
+            "value": 42
+        });
+
+        let event = FromServer::FromBitVMX("pegin-address".to_string(), data);
+        let result = processor.process_new_bitvmx_event(&event);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn process_new_bitvmx_event_register_pegin_does_not_send_response() {
+        let _m = mockito::mock("POST", "/register-pegin")
+            .with_status(200)
+            .with_body(r#"{"result": "ok"}"#)
+            .create();
+
+        unsafe {
+            std::env::set_var("TRANSACTION_DISPATCHER_URL", &mockito::server_url());
+        }
+
+        let mut broker = MockBrokerClientApi::new();
+        broker.expect_send().times(0);
+
+        let mut processor = PeginProcessor::new(broker);
+
+        let data = serde_json::json!({
+            "block_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "btc_tx": {
+                "version": 1,
+                "inputs": [
+                    {
+                        "tx_id": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                        "v_out": 0,
+                        "sequence": 429496729,
+                        "script_sig": "483045022100..."
+                    }
+                ],
+                "outputs": [
+                    {
+                        "amount": 100000,
+                        "script_pub_key": "76a914..."
+                    }
+                ],
+                "lock_time": 0
+            },
+            "merkle_branch_path": "left-right-left",
+            "merkle_branch_hashes": [
+                "0x1111111111111111111111111111111111111111111111111111111111111111",
+                "0x2222222222222222222222222222222222222222222222222222222222222222"
+            ]
+        });
+
+        let event = FromServer::FromBitVMX("register-pegin".to_string(), data);
+        let result = processor.process_new_bitvmx_event(&event);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn process_new_bitvmx_event_register_pegin_fails_on_dispatcher_error() {
+        let _m = mockito::mock("POST", "/register-pegin")
+            .with_status(500)
+            .with_body("Internal Server Error")
+            .create();
+
+        unsafe {
+            std::env::set_var("TRANSACTION_DISPATCHER_URL", &mockito::server_url());
+        }
+
+        let mut broker = MockBrokerClientApi::new();
+        broker.expect_send().times(0);
+
+        let mut processor = PeginProcessor::new(broker);
+
+        let data = serde_json::json!({
+            "block_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "btc_tx": {
+                "version": 1,
+                "inputs": [
+                    {
+                        "tx_id": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                        "v_out": 0,
+                        "sequence": 429496729,
+                        "script_sig": "483045022100..."
+                    }
+                ],
+                "outputs": [
+                    {
+                        "amount": 100000,
+                        "script_pub_key": "76a914..."
+                    }
+                ],
+                "lock_time": 0
+            },
+            "merkle_branch_path": "left-right-left",
+            "merkle_branch_hashes": [
+                "0x1111111111111111111111111111111111111111111111111111111111111111",
+                "0x2222222222222222222222222222222222222222222222222222222222222222"
+            ]
+        });
+
+        let event = FromServer::FromBitVMX("register-pegin".to_string(), data);
+        let result = processor.process_new_bitvmx_event(&event);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn process_new_event_registers_pegin_event_and_observer() {
+        let broker = MockBrokerClientApi::new();
+        let mut processor = PeginProcessor::new(broker);
+
+        let event = RskPegManagerEvents::RegisteredPegInRequest(RegisteredPegInRequestEvent {
+            inner: dummy_pegin_request(),
+            block_number: BlockNumber::from(123),
+            block_hash: BlockHash::from(H256::from([0xaa; 32])),
+        });
+
+        let result = processor.process_new_event(&event);
+        assert!(result.is_ok());
+
+        assert_eq!(processor.register_pegin_events.len(), 1);
+
+        let observer_id = processor.register_pegin_events[0].event_id.to_string();
+        assert!(processor.blockchain.has_observer(&observer_id));
+    }
+
+    #[test]
+    fn process_new_event_ignores_unknown_event() {
+        let broker = MockBrokerClientApi::new();
+        let mut processor = PeginProcessor::new(broker);
+
+        let result = processor.process_new_event(&RskPegManagerEvents::UnknownEvent);
+        assert!(result.is_ok());
+        assert_eq!(processor.register_pegin_events.len(), 0);
+    }
+
+    #[test]
+    fn process_new_block_ignores_if_no_pending_events() {
+        let broker = MockBrokerClientApi::new();
+        let mut processor = PeginProcessor::new(broker);
+
+        let (block_1, _, _) = create_block_and_uncles();
+        let block = RskBlockAndUncles::new_no_uncles(block_1);
+
+        let result = processor.process_new_block(&block);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn process_new_block_adds_confirmations_but_event_not_confirmed() {
+        let broker = MockBrokerClientApi::new();
+        let mut processor = PeginProcessor::new(broker);
+
+        let req = dummy_pegin_request();
+        let event = RegisteredPegInRequestEvent {
+            inner: req,
+            block_number: BlockNumber::from(100),
+            block_hash: BlockHash::from(H256::from_low_u64_be(123)),
+        };
+
+        let unconfirmed = UnconfirmedEvent::new(event.clone(), 5);
+        let observer_id = unconfirmed.event_id.to_string();
+
+        processor
+            .blockchain
+            .add_observer(unconfirmed.confirmations());
+        processor.register_pegin_events.push(unconfirmed);
+
+        // Simulate one new block
+        let (block_1, _, _) = create_block_and_uncles();
+        let block = RskBlockAndUncles::new_no_uncles(block_1);
+
+        let result = processor.process_new_block(&block);
+        assert!(result.is_ok());
+
+        assert_eq!(processor.register_pegin_events.len(), 1);
+        assert!(processor.blockchain.has_observer(&observer_id));
+    }
+
+    #[test]
+    fn process_new_block_confirms_and_removes_event() {
+        let broker = MockBrokerClientApi::new();
+        let mut processor = PeginProcessor::new(broker);
+
+        let req = dummy_pegin_request();
+        let event = RegisteredPegInRequestEvent {
+            inner: req,
+            block_number: BlockNumber::from(100),
+            block_hash: BlockHash::from(H256::from_low_u64_be(123)),
+        };
+
+        let unconfirmed = UnconfirmedEvent::new(event.clone(), 1); // confirm after 1 block
+        let observer_id = unconfirmed.event_id.to_string();
+
+        processor
+            .blockchain
+            .add_observer(unconfirmed.confirmations());
+        processor.register_pegin_events.push(unconfirmed);
+
+        let (block_1, _, _) = create_block_and_uncles();
+        let block = RskBlockAndUncles::new_no_uncles(block_1);
+
+        let result = processor.process_new_block(&block);
+        assert!(result.is_ok());
+
+        // Should have been removed from pending
+        assert_eq!(processor.register_pegin_events.len(), 0);
+        assert!(!processor.blockchain.has_observer(&observer_id));
+    }
+
+    fn dummy_pegin_request() -> RegisteredPegInRequest {
+        RegisteredPegInRequest {
+            blockHash: H256::from_low_u64_be(123)
+                .as_bytes()
+                .try_into()
+                .expect("Failed to decode block hash"),
+            txHash: H256::from_low_u64_be(456)
+                .as_bytes()
+                .try_into()
+                .expect("Failed to decode tx hash"),
+            vout: 1,
+            value: 1000,
+            packetNumber: U256::from(33),
+            rskDestinationAddress: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
+                .parse::<Address>()
+                .expect("Invalid address"),
+            btcReimbursementPubKey: H256::from_low_u64_be(103991732982)
+                .as_bytes()
+                .try_into()
+                .expect("Failed to decode btcReimbursementPubKey"),
+            utxoScriptPubKey: Bytes::from("0x1234567890abcdef"),
+        }
     }
 }

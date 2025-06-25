@@ -168,7 +168,7 @@ pub(crate) mod tests {
     use mockall::mock;
     use serde_json::json;
     use std::{
-        thread::{self, JoinHandle, sleep},
+        thread::{self, sleep, JoinHandle},
         time::Duration,
     };
     use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
