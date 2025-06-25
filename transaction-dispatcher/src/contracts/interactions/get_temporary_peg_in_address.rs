@@ -42,7 +42,7 @@ impl<C: PegManagerContractApi> GetTemporaryPegInAddressCall<C> {
                 ))
             })?;
 
-        let receipt = self
+        let address = self
             .contract
             .get_temporary_peg_in_address_call(
                 rootstock_deposit_address,
@@ -53,12 +53,10 @@ impl<C: PegManagerContractApi> GetTemporaryPegInAddressCall<C> {
 
         info!(
             "GetTemporaryPegInAddress successful, deposit address: {}",
-            receipt.bitcoinDepositAddress
+            address
         );
 
-        Ok(PegInAddressOutput {
-            address: receipt.bitcoinDepositAddress.to_string(),
-        })
+        Ok(PegInAddressOutput { address })
     }
 }
 
@@ -74,10 +72,10 @@ mod tests {
     use alloy_primitives::FixedBytes;
     use mockall::predicate::always;
     use mockall::predicate::eq;
-    use union_contracts::bindings::bitcoinmanager::BitcoinManager::{
+    use union_contracts::bindings::bitcoin_manager::BitcoinManager::{
         BitcoinManagerErrors, InvalidAddress, InvalidPublicKey,
     };
-    use union_contracts::bindings::pegmanager::PegManager::getTemporaryPegInAddressReturn;
+    use union_contracts::bindings::peg_manager::PegManager::getTemporaryPegInAddressReturn;
 
     const VALID_ADDRESS: &str = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
     const VALID_PUB_KEY: &str =
@@ -111,7 +109,7 @@ mod tests {
                 eq(VALID_VALUE),
                 eq(VALID_PUB_KEY.parse::<FixedBytes<32>>().unwrap()),
             )
-            .returning(move |_, _, _| Ok(output.clone()))
+            .returning(move |_, _, _| Ok(output.bitcoinDepositAddress.clone()))
             .times(1);
 
         let interaction = GetTemporaryPegInAddressCall::new_for_tests(mock_instance);

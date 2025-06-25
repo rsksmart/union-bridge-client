@@ -4,9 +4,9 @@ use alloy_provider::Provider;
 use alloy_rpc_types::TransactionReceipt;
 use anyhow::Result;
 use log::{error, info};
-use union_contracts::bindings::pegmanager::PegManager;
-use union_contracts::bindings::pegmanager::PegManager::{
-    BtcTransaction, BtcTxSPVProof, PegManagerInstance, getTemporaryPegInAddressReturn,
+use union_contracts::bindings::peg_manager::PegManager;
+use union_contracts::bindings::peg_manager::PegManager::{
+    BtcTransaction, BtcTxSPVProof, PegManagerInstance,
 };
 
 use crate::contracts::bitcoin_manager::ParseFieldError;
@@ -32,7 +32,7 @@ pub trait PegManagerContractApi {
         rootstock_deposit_address: Address,
         value: u64,
         btc_reimbursement_pub_key: FixedBytes<32>,
-    ) -> alloy_contract::Result<getTemporaryPegInAddressReturn>;
+    ) -> alloy_contract::Result<String>;
 
     async fn register_peg_in_request_send(
         &self,
@@ -64,7 +64,7 @@ pub trait PegManagerContractApi {
 // needed so we can create a PegManagerContractApi trait for tests mocking
 #[derive(Clone)]
 pub struct PegManagerContract<P: Provider> {
-    contract_instance: PegManagerInstance<(), P>,
+    contract_instance: PegManagerInstance<P>,
 }
 
 impl<P: Provider> PegManagerContract<P> {
@@ -81,7 +81,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         rootstock_deposit_address: Address,
         value: u64,
         btc_reimbursement_pub_key: FixedBytes<32>,
-    ) -> alloy_contract::Result<getTemporaryPegInAddressReturn> {
+    ) -> alloy_contract::Result<String> {
         self.contract_instance
             .getTemporaryPegInAddress(rootstock_deposit_address, value, btc_reimbursement_pub_key)
             .call()
@@ -142,7 +142,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
 // needed so we can create a PegManagerContractApi trait for tests mocking
 #[derive(Clone)]
 pub struct FakePegManagerContract<P: Provider> {
-    contract_instance: FakePegManagerInstance<(), P>,
+    contract_instance: FakePegManagerInstance<P>,
 }
 
 impl<P: Provider> FakePegManagerContract<P> {
@@ -162,7 +162,7 @@ impl<P: Provider> PegManagerContractApi for FakePegManagerContract<P> {
         _rootstock_deposit_address: Address,
         _value: u64,
         _btc_reimbursement_pub_key: FixedBytes<32>,
-    ) -> alloy_contract::Result<getTemporaryPegInAddressReturn> {
+    ) -> alloy_contract::Result<String> {
         todo!("Not yet implemented for FakePegManagerContract");
     }
 
@@ -254,14 +254,14 @@ impl TryFrom<RegisterPegInInput> for BtcTxSPVProof {
 mod tests {
     use crate::contracts::common::tests::generate_contract_revert_error;
     use crate::rsk_gateway::DomainErrors;
-    use union_contracts::bindings::bitcoinmanager::BitcoinManager::{
+    use union_contracts::bindings::bitcoin_manager::BitcoinManager::{
         BitcoinManagerErrors, IncorrectOutputScript,
     };
-    use union_contracts::bindings::pegmanager::PegManager::{
+    use union_contracts::bindings::peg_manager::PegManager::{
         AlreadyRegisteredAcceptPegIn, AlreadyRegisteredPegIn, AlreadyRegisteredPegInRequest,
         BridgeBtcBlockNotInBestChain, IncorrectInputsNumber, IncorrectOutputsNumber,
         InvalidBtcTxVersion, InvalidLocktime, InvalidSequence, InvalidVout, NotInitializing,
-        PacketOutOfBound, PegManagerErrors, StreamNotFoundByDenomination, UnregisteredPegInRequest,
+        PegManagerErrors, UnregisteredPegInRequest,
     };
 
     #[test]
@@ -274,17 +274,6 @@ mod tests {
 
         let result = generate_contract_revert_error(expected_err);
         matches!(result.into(), DomainErrors::AlreadyRegisteredPegIn(_));
-    }
-
-    #[test]
-    fn test_stream_not_found_by_denomination() {
-        let expected_err =
-            PegManagerErrors::StreamNotFoundByDenomination(StreamNotFoundByDenomination {
-                denomination: alloy_primitives::Uint::from(125),
-            });
-
-        let result = generate_contract_revert_error(expected_err);
-        matches!(result.into(), DomainErrors::StreamNotFoundByDenomination(_));
     }
 
     #[test]
@@ -389,16 +378,6 @@ mod tests {
 
         let result = generate_contract_revert_error(expected_err);
         matches!(result.into(), DomainErrors::InvalidBtcTxSpvProof(_));
-    }
-
-    #[test]
-    fn test_packet_out_of_bound() {
-        let expected_err = PegManagerErrors::PacketOutOfBound(PacketOutOfBound {
-            packetNumber: alloy_primitives::U256::from(42),
-        });
-
-        let result = generate_contract_revert_error(expected_err);
-        matches!(result.into(), DomainErrors::PacketOutOfBound(_));
     }
 
     #[test]

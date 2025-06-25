@@ -62,6 +62,7 @@ async fn main() -> Result<()> {
     let wallet = EthereumWallet::from(signer);
     let anvil_provider = ProviderBuilder::new()
         .wallet(wallet)
+        .with_simple_nonce_management()
         .connect(anvil.ws_endpoint_url().as_str())
         .await
         .expect("Could not set up provider");

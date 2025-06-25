@@ -52,7 +52,7 @@ impl AlloyProvider {
             .context("Failed to build RpcClient with retry layer")?;
 
         // Synchronously feed that client into ProviderBuilder
-        let root_provider = ProviderBuilder::default().on_client(client);
+        let root_provider = ProviderBuilder::default().connect_client(client);
 
         Ok(AlloyProvider {
             inner: root_provider,

@@ -3,7 +3,7 @@ use crate::types::{BitcoinTransaction, BitcoinTransactionIn, BitcoinTransactionO
 use alloy_primitives::Bytes;
 use log::error;
 use std::str::FromStr;
-use union_contracts::bindings::pegmanager::PegManager::{BtcTransaction, BtcTxIn, BtcTxOut};
+use union_contracts::bindings::peg_manager::PegManager::{BtcTransaction, BtcTxIn, BtcTxOut};
 
 impl TryFrom<BitcoinTransactionIn> for BtcTxIn {
     type Error = ParseFieldError;
@@ -68,7 +68,7 @@ mod tests {
     use crate::contracts::common::tests::generate_contract_revert_error;
     use crate::rsk_gateway::DomainErrors;
     use alloy_primitives::FixedBytes;
-    use union_contracts::bindings::bitcoinmanager::BitcoinManager::{
+    use union_contracts::bindings::bitcoin_manager::BitcoinManager::{
         BitcoinManagerErrors, IncorrectOutputScript, IncorrectlyFormedOpReturn, InvalidAddress,
         InvalidOpReturnLength, InvalidOutputAmount, InvalidPublicKey, InvalidValue,
         NotInitializing,

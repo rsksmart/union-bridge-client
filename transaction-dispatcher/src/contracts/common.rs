@@ -2,11 +2,14 @@ use crate::rsk_gateway::DomainErrors;
 use alloy_contract::SolCallBuilder;
 use alloy_primitives::{hex::FromHexError, ruint::ParseError};
 use alloy_provider::Provider;
+use alloy_provider::network::ReceiptResponse;
 use alloy_rpc_types::TransactionReceipt;
 use alloy_sol_types::SolCall;
 use log::{debug, error, warn};
 use thiserror::Error;
-use union_contracts::bindings::pegmanager::PegManager::PegManagerErrors;
+use union_contracts::bindings::bitcoin_manager::BitcoinManager::BitcoinManagerErrors;
+use union_contracts::bindings::peg_manager::PegManager::PegManagerErrors;
+use union_contracts::bindings::stream_manager::StreamManager::StreamManagerErrors;
 
 #[derive(Debug, Error)]
 pub enum ParseFieldError {
@@ -18,14 +21,14 @@ pub enum ParseFieldError {
 }
 
 // TODO(Jira): properly test this, creating a mockeable wrapper around SolCallBuilder - https://rsklabs.atlassian.net/browse/UB-109
-pub(super) async fn send_tx_with_gas_bump<P, F, T>(
+pub(super) async fn send_tx_with_gas_bump<P, D, F>(
     build_tx: F,
     max_attempts: u8,
 ) -> alloy_contract::Result<TransactionReceipt>
 where
     P: Provider,
-    T: SolCall,
-    F: Fn() -> SolCallBuilder<(), P, T>,
+    D: SolCall,
+    F: Fn() -> SolCallBuilder<P, D>,
 {
     // this works also as an eth_call, if not do a manual .call()
     let estimated_gas = build_tx().estimate_gas().await?;
@@ -62,16 +65,32 @@ where
     Ok(receipt)
 }
 
-fn likely_oog(receipt: &TransactionReceipt, gas_limit: u64) -> bool {
+fn likely_oog<T: ReceiptResponse>(receipt: &T, gas_limit: u64) -> bool {
     let oog_margin = gas_limit / 100;
-    !receipt.status() && receipt.gas_used >= gas_limit.saturating_sub(oog_margin)
+    !receipt.status() && receipt.gas_used() >= gas_limit.saturating_sub(oog_margin)
 }
 
 impl From<alloy_contract::Error> for DomainErrors {
     fn from(err: alloy_contract::Error) -> Self {
+        match Self::try_as_peg_manager_error(&err) {
+            Some(domain_error) => domain_error,
+            None => match Self::try_as_bitcoin_manager_error(&err) {
+                Some(domain_error) => domain_error,
+                None => match Self::try_as_stream_manager_error(&err) {
+                    Some(domain_error) => domain_error,
+                    // not able to decode the error as any typed contract error
+                    None => DomainErrors::NoRevertError(format!("{:?}", err)),
+                },
+            },
+        }
+    }
+}
+
+impl DomainErrors {
+    fn try_as_peg_manager_error(err: &alloy_contract::Error) -> Option<DomainErrors> {
         let decoded_err = err.as_decoded_interface_error::<PegManagerErrors>();
         match decoded_err {
-            Some(e) => match e {
+            Some(e) => Some(match e {
                 PegManagerErrors::AlreadyRegisteredAcceptPegIn(e) => {
                     DomainErrors::AlreadyRegisteredAcceptPegIn(format!("{:?}", e))
                 }
@@ -102,12 +121,6 @@ impl From<alloy_contract::Error> for DomainErrors {
                 PegManagerErrors::NotEnoughConfirmations(e) => {
                     DomainErrors::NotEnoughConfirmations(format!("{:?}", e))
                 }
-                PegManagerErrors::PacketOutOfBound(e) => {
-                    DomainErrors::PacketOutOfBound(format!("{:?}", e))
-                }
-                PegManagerErrors::StreamNotFoundByDenomination(e) => {
-                    DomainErrors::StreamNotFoundByDenomination(format!("{:?}", e))
-                }
                 PegManagerErrors::UnregisteredPegInRequest(e) => {
                     DomainErrors::UnregisteredRequest(format!("{:?}", e))
                 }
@@ -118,8 +131,45 @@ impl From<alloy_contract::Error> for DomainErrors {
                     DomainErrors::PegoutRequestAmountExceedsUint64Limit(format!("{:?}", e))
                 }
                 _ => DomainErrors::UnhandledContractError(format!("{:?}", e)),
-            },
-            None => DomainErrors::NoRevertError(format!("{:?}", err)),
+            }),
+            None => None,
+        }
+    }
+
+    fn try_as_bitcoin_manager_error(err: &alloy_contract::Error) -> Option<DomainErrors> {
+        let decoded_err = err.as_decoded_interface_error::<BitcoinManagerErrors>();
+        match decoded_err {
+            Some(e) => Some(match e {
+                BitcoinManagerErrors::InvalidAddress(e) => {
+                    DomainErrors::InvalidAddress(format!("{:?}", e))
+                }
+                BitcoinManagerErrors::InvalidPublicKey(e) => {
+                    DomainErrors::InvalidPublicKey(format!("{:?}", e))
+                }
+                BitcoinManagerErrors::InvalidValue(e) => {
+                    DomainErrors::InvalidValue(format!("{:?}", e))
+                }
+                // TODO handle more based on needs
+                _ => DomainErrors::UnhandledContractError(format!("{:?}", e)),
+            }),
+            None => None,
+        }
+    }
+
+    fn try_as_stream_manager_error(err: &alloy_contract::Error) -> Option<DomainErrors> {
+        let decoded_err = err.as_decoded_interface_error::<StreamManagerErrors>();
+        match decoded_err {
+            Some(e) => Some(match e {
+                StreamManagerErrors::StreamNotFoundByDenomination(e) => {
+                    DomainErrors::StreamNotFoundByDenomination(format!("{:?}", e))
+                }
+                StreamManagerErrors::PacketOutOfBound(e) => {
+                    DomainErrors::PacketOutOfBound(format!("{:?}", e))
+                }
+                // TODO handle more based on needs
+                _ => DomainErrors::UnhandledContractError(format!("{:?}", e)),
+            }),
+            None => None,
         }
     }
 }
