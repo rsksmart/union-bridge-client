@@ -14,6 +14,7 @@ jobs:
     env:
       DEPLOY_LOCAL_CONTRACTS_PATH: "../../bitvmx-union-bridge-contracts/shell/script/deploy/deploy-local.sh"
       TX_DISPATCHER_URL: "http://localhost:3000"
+      KEY_STORE_FILE: ${{ secrets.KEY_STORE_FILE }}
       KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
       TX_DISPATCHER_CONFIG_PATH: "../config/ci"
     steps:
@@ -43,27 +44,49 @@ jobs:
       - name: Add Foundry to PATH
         run: echo "$HOME/.foundry/bin" >> $GITHUB_PATH
 
-      - name: Checkout code and submodules
+      - name: Checkout BitVMX contracts
         uses: actions/checkout@v4
+        with:
+          repository: FairgateLabs/bitvmx-union-bridge-contracts
+          token: ${{ secrets.FAIRGATE_GITHUB_TOKEN }}
+          ref: v0.0.1-alpha.1
+          path: bitvmx-union-bridge-contracts
 
-      - name: Clone contracts
-        run: |
-          rm -rf ../bitvmx-union-bridge-contracts
-          git clone --branch v0.0.1-alpha.1 https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs/bitvmx-union-bridge-contracts.git ../bitvmx-union-bridge-contracts
+      - name: Checkout BitVMX workspace
+        if: steps.cache-bitvmx.outputs.cache-hit != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: FairgateLabs/rust-bitvmx-workspace
+          token: ${{ secrets.FAIRGATE_GITHUB_TOKEN }}
+          ref: f5d15597ee27f9a659498ef5fb86f4ecee094d51
+          path: rust-bitvmx-workspace
+          submodules: recursive
+          fetch-depth: 0
 
-      - name: Checkout BitVMX
-        run: |
-          rm -rf ../rust-bitvmx-workspace
-          git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf "https://github.com/FairgateLabs"
-          git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf "git@github.com:FairgateLabs"
-          git clone --recursive --rev f5d15597ee27f9a659498ef5fb86f4ecee094d51 git@github.com:FairgateLabs/rust-bitvmx-workspace ../rust-bitvmx-workspace
+      - name: Restore Git metadata cache
+        uses: actions/cache@v3
+        id: cache-repo
+        with:
+          path: union-bridge-client/.git
+          key: ${{ runner.os }}-repo-${{ hashFiles('union-bridge-client/**') }}
+          restore-keys: |
+            ${{ runner.os }}-repo-
 
+      - name: Checkout Our Repository
+        uses: actions/checkout@v4
+        with:
+          path: union-bridge-client
+          fetch-depth: 0
 
+      - name: Setup keystore
+        working-directory: union-bridge-client/qa-tools
+        run:
+          echo "${KEY_STORE_FILE}" > test_keystore/keyfile
+        
       - name: Run integration tests
-        working-directory: qa-tools
+        working-directory: union-bridge-client/qa-tools
         run: |
           git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf "ssh://git@github.com/FairgateLabs"
-          mkdir -p reports
-          JUNIT_REPORT="reports/tx_dispatcher.xml" RUST_BACKTRACE=1 cargo run --bin qa-tools-transaction-dispatcher -- --tags @transaction-dispatcher
+          JUNIT_REPORT="reports/tx_dispatcher.xml" RUST_BACKTRACE=1 cargo run --bin qa-tools-transaction-dispatcher -- --tags @transaction-dispatcher-register-pegout
           cat reports/tx_dispatcher.xml
 
