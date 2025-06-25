@@ -1,4 +1,4 @@
-name: Integration Tests
+name: QA Integration Tests
 permissions:
   contents: read
 on:
@@ -41,8 +41,13 @@ jobs:
       - name: Install Foundry # enables RPC caching
         uses: foundry-rs/foundry-toolchain@v1
 
-      - name: Add Foundry to PATH
-        run: echo "$HOME/.foundry/bin" >> $GITHUB_PATH
+      - name: Add Foundry and anvil to PATH
+        run: |
+          echo "$HOME/.foundry/bin" >> $GITHUB_PATH
+          export PATH="$HOME/.foundry/bin:$PATH"
+          echo "PATH is now: $PATH"
+          which anvil || echo "anvil still not found"
+          anvil --version || echo "anvil version check failed"
 
       - name: Checkout BitVMX contracts
         uses: actions/checkout@v4
@@ -87,6 +92,6 @@ jobs:
         working-directory: union-bridge-client/qa-tools
         run: |
           git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf "ssh://git@github.com/FairgateLabs"
-          JUNIT_REPORT="reports/tx_dispatcher.xml" RUST_BACKTRACE=1 cargo run --bin qa-tools-transaction-dispatcher -- --tags @transaction-dispatcher-register-pegout
+          JUNIT_REPORT="reports/tx_dispatcher.xml" RUST_BACKTRACE=1 cargo run --bin qa-tools-transaction-dispatcher -- --tags @transaction-dispatcher
           cat reports/tx_dispatcher.xml
 
