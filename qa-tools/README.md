@@ -33,21 +33,36 @@ To find instructions on how to execute tests, search for the comments under scen
 #### Execute automated tests locally
 ```bash
 cd qa-tools
+export KEY_STORE_PASSWORD="=== REPLACE_WITH_PASSWORD ==="
+export KEY_STORE_PATH="replace/with/path/to/your/keystore"
+KEY_STORE_FILE="$(cat "$KEY_STORE_PATH")"
+echo "${KEY_STORE_FILE}" > test_keystore/keyfile
 cargo run --bin qa-tools-transaction-dispatcher -- --tags @transaction-dispatcher
 ```
-Optional: add JUNIT_REPORT env variable to generate JUnit XML reports under `qa-tools/reports/` directory.
+Optional: add `JUNIT_REPORT` env variable to generate JUnit XML reports under `qa-tools/reports/` directory.
 ```bash
-cd qa-tools
+... same setup as above ...
 JUNIT_REPORT="reports/tx_dispatcher.xml" cargo run --bin qa-tools-transaction-dispatcher -- --tags @transaction-dispatcher
 ```
 #### Execute automated tests via ACT pipeline (local)
 ```bash
+export KEY_STORE_PATH="replace/with/path/to/your/keystore"
+export KEY_STORE_FILE="$(cat "$KEY_STORE_PATH")"
 export FAIRGATE_GITHUB_TOKEN="=== REPLACE_WITH_TOKEN ==="
 export KEY_STORE_PASSWORD="=== REPLACE_WITH_PASSWORD ==="
-act -j test --reuse \
+act -j test \
 --secret FAIRGATE_GITHUB_TOKEN=$FAIRGATE_GITHUB_TOKEN \
---secret KEY_STORE_PASSWORD=$KEY_STORE_PASSWORD
+--secret KEY_STORE_PASSWORD=$KEY_STORE_PASSWORD \
+--secret KEY_STORE_FILE=$KEY_STORE_FILE
 ```
+
+Optional: add `reuse` flag to speed up the pipeline setup.
+```bash
+... same setup as above ...
+act -j test --reuse \
+... same setup as above ...
+```
+
 Currently the pipeline execution prints the JUnit XML report to the console. Pushing the report to Testomat is WIP.
 
 

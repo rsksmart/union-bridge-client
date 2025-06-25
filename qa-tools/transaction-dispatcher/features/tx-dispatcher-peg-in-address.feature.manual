@@ -7,14 +7,14 @@ Feature: Retrieve a temporary peg-in address
   Background:
     Given the key is created and stored in the keystore
       | keyStorePassword | p09ol.                                             |
-      | keyStorePath     | test-keystore/e5cd9470-cec7-42f4-b1ff-7e723de56793 |
+      | keyStorePath     | keystore/e5cd9470-cec7-42f4-b1ff-7e723de56793 |
     And the contracts are deployed
     And the dispatcher is running
 
-    # mkdir -p /Users/javier/Projects/UnionBridge/test-keystore
-    # cargo run --bin key-manager new-key -p p09ol. -d /Users/javier/Projects/UnionBridge/test-keystore
-    # cargo run --bin key-manager derive-public-data -p p09ol. -k /Users/javier/Projects/UnionBridge/test-keystore/e5cd9470-cec7-42f4-b1ff-7e723de56793
-    # -> Generated key @ /Users/javier/Projects/UnionBridge/test-keystore/e5cd9470-cec7-42f4-b1ff-7e723de56793, public '0218a778dc2ca60d1b983c020a32c35902bc7a069db0323469de2ae6491497f970', address '5bdd03ceaf59cad075cb29c67696581d857b9031'
+    # mkdir -p /Users/javier/Projects/UnionBridge/keystore
+    # cargo run --bin key-manager new-key -p p09ol. -d /Users/javier/Projects/UnionBridge/keystore
+    # cargo run --bin key-manager derive-public-data -p p09ol. -k /Users/javier/Projects/UnionBridge/keystore/e5cd9470-cec7-42f4-b1ff-7e723de56793
+    # -> Generated key @ /Users/javier/Projects/UnionBridge/keystore/e5cd9470-cec7-42f4-b1ff-7e723de56793, public '0218a778dc2ca60d1b983c020a32c35902bc7a069db0323469de2ae6491497f970', address '5bdd03ceaf59cad075cb29c67696581d857b9031'
     # anvil
     # cast send --rpc-url http://127.0.0.1:8545 --from 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 5bdd03ceaf59cad075cb29c67696581d857b9031 --value 1ether --unlocked
     # /Users/javier/Projects/UnionBridge/bitvmx-union-bridge-contracts/shell/script/deploy/deploy-local.sh

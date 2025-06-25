@@ -3,7 +3,7 @@ provider:
     url: "ws://127.0.0.1:8545"
 
 key_store:
-  path: "test_keystore/e5cd9470-cec7-42f4-b1ff-7e723de56793"
+  path: "test_keystore/keyfile"
 transaction:
   gas_bumps_t1: 3
 server:

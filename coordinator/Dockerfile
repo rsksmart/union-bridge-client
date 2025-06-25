@@ -18,7 +18,6 @@ COPY Cargo.lock ./
 
 # TODO create crates folder and move crates there, so we can copy it instead of the individual crates
 # copy workspace members:
-COPY qa-tools qa-tools
 COPY common common
 COPY block-indexer block-indexer
 COPY log-indexer log-indexer

@@ -99,4 +99,4 @@ jobs:
         run: |
           git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf "ssh://git@github.com/FairgateLabs"
           RUN_MODE=ci cargo run --bin qa-tools-transaction-dispatcher -- --tags @transaction-dispatcher
-        working-directory: union-bridge-client
+        working-directory: union-bridge-client/qa-tools
