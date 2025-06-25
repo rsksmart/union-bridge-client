@@ -6,7 +6,7 @@ use anyhow::Result;
 use log::{error, info};
 use union_contracts::bindings::peg_manager::PegManager;
 use union_contracts::bindings::peg_manager::PegManager::{
-    BtcTransaction, BtcTxSPVProof, PegManagerInstance,
+    BtcTransaction, BtcTxSPVProof, PegManagerErrors, PegManagerInstance,
 };
 
 use crate::contracts::bitcoin_manager::ParseFieldError;
@@ -20,6 +20,7 @@ pub(crate) use crate::contracts::interactions::notify_check_fork_complete;
 pub(crate) use crate::contracts::interactions::register_peg_in_request;
 pub(crate) use crate::contracts::interactions::register_peg_out_request;
 
+use crate::rsk_gateway::DomainErrors;
 use actors_mocking::fake_contracts::FakePegManager;
 use actors_mocking::fake_contracts::FakePegManager::FakePegManagerInstance;
 #[cfg(test)]
@@ -247,6 +248,55 @@ impl TryFrom<RegisterPegInInput> for BtcTxSPVProof {
             merkleBranchPath: merkle_branch_path,
             merkleBranchHashes: merkle_branches_hashes,
         })
+    }
+}
+
+pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> {
+    let decoded_err = err.as_decoded_interface_error::<PegManagerErrors>();
+    match decoded_err {
+        Some(e) => Some(match e {
+            PegManagerErrors::AlreadyRegisteredAcceptPegIn(e) => {
+                DomainErrors::AlreadyRegisteredAcceptPegIn(format!("{:?}", e))
+            }
+            PegManagerErrors::AlreadyRegisteredPegIn(e) => {
+                DomainErrors::AlreadyRegisteredPegIn(format!("{:?}", e))
+            }
+            PegManagerErrors::AlreadyRegisteredPegInRequest(e) => {
+                DomainErrors::AlreadyRegisteredPegInRequest(format!("{:?}", e))
+            }
+            PegManagerErrors::IncorrectInputsNumber(e) => {
+                DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
+            }
+            PegManagerErrors::IncorrectOutputsNumber(e) => {
+                DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
+            }
+            PegManagerErrors::InvalidBtcTxVersion(e) => {
+                DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
+            }
+            PegManagerErrors::InvalidLocktime(e) => {
+                DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
+            }
+            PegManagerErrors::InvalidSequence(e) => {
+                DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
+            }
+            PegManagerErrors::InvalidVout(e) => {
+                DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
+            }
+            PegManagerErrors::NotEnoughConfirmations(e) => {
+                DomainErrors::NotEnoughConfirmations(format!("{:?}", e))
+            }
+            PegManagerErrors::UnregisteredPegInRequest(e) => {
+                DomainErrors::UnregisteredRequest(format!("{:?}", e))
+            }
+            PegManagerErrors::InvalidPubKeyLength(e) => {
+                DomainErrors::InvalidPublicKey(format!("{:?}", e))
+            }
+            PegManagerErrors::PegoutRequestAmountExceedsUint64Limit(e) => {
+                DomainErrors::PegoutRequestAmountExceedsUint64Limit(format!("{:?}", e))
+            }
+            _ => DomainErrors::UnhandledContractError(format!("{:?}", e)),
+        }),
+        None => None,
     }
 }
 

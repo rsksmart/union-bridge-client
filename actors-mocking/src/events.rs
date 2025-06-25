@@ -27,10 +27,7 @@ impl<P: Provider + Clone> Executor<P> {
             .await
             .context("Cannot deploy FakePegManager")?;
 
-        println!(
-            "FakePegManager deployed at {}...",
-            fake_peg_manager.address()
-        );
+        println!("FakePegManager deployed at {}", fake_peg_manager.address());
 
         let real_peg_manager = Self::deploy_real_peg_manager(&provider, provider_url)?;
 

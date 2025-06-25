@@ -1,8 +1,10 @@
 pub(super) use crate::contracts::common::ParseFieldError;
+use crate::rsk_gateway::DomainErrors;
 use crate::types::{BitcoinTransaction, BitcoinTransactionIn, BitcoinTransactionOut};
 use alloy_primitives::Bytes;
 use log::error;
 use std::str::FromStr;
+use union_contracts::bindings::bitcoin_manager::BitcoinManager::BitcoinManagerErrors;
 use union_contracts::bindings::peg_manager::PegManager::{BtcTransaction, BtcTxIn, BtcTxOut};
 
 impl TryFrom<BitcoinTransactionIn> for BtcTxIn {
@@ -60,6 +62,24 @@ impl TryFrom<BitcoinTransaction> for BtcTransaction {
             outputs,
             locktime: value.lock_time,
         })
+    }
+}
+
+pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> {
+    let decoded_err = err.as_decoded_interface_error::<BitcoinManagerErrors>();
+    match decoded_err {
+        Some(e) => Some(match e {
+            BitcoinManagerErrors::InvalidAddress(e) => {
+                DomainErrors::InvalidAddress(format!("{:?}", e))
+            }
+            BitcoinManagerErrors::InvalidPublicKey(e) => {
+                DomainErrors::InvalidPublicKey(format!("{:?}", e))
+            }
+            BitcoinManagerErrors::InvalidValue(e) => DomainErrors::InvalidValue(format!("{:?}", e)),
+            // TODO handle more based on needs
+            _ => DomainErrors::UnhandledContractError(format!("{:?}", e)),
+        }),
+        None => None,
     }
 }
 
