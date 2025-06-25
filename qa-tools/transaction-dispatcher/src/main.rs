@@ -17,6 +17,7 @@ const ANVIL_DOMAIN_DEFAULT: &str = "http://localhost";
 const ANVIL_PORT_DEFAULT: u16 = 8545;
 const ANVIL_ADRESS_DEFAULT: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 const KEY_STORE_ADDRESS_DEFAULT: &str = "0x5bdd03ceaf59cad075cb29c67696581d857b9031";
+const KEY_STORE_PASSWORD_DEFAULT: &str = "p09ol.";
 const FUNDS_AMOUNT_WEI: &str = "1000000000000000000"; // 1 ETH
 const ANVIL_TIMEOUT: Duration = Duration::from_secs(5);
 const TX_DISPATCHER_MANIFEST_RELATIVE_PATH: &str = "../transaction-dispatcher/Cargo.toml";
@@ -37,7 +38,7 @@ lazy_static::lazy_static! {
     pub static ref KEY_STORE_ADDRESS: String = env::var("KEY_STORE_ADDRESS")
         .unwrap_or_else(|_| KEY_STORE_ADDRESS_DEFAULT.to_string());
     pub static ref KEY_STORE_PASSWORD: String = env::var("KEY_STORE_PASSWORD")
-        .unwrap_or_else(|_| Err("KEY_STORE_PASSWORD environment variable is not set").unwrap());
+        .unwrap_or_else(|_| KEY_STORE_PASSWORD_DEFAULT.to_string());
     pub static ref TX_DISPATCHER_URL: String = env::var("TX_DISPATCHER_URL")
         .unwrap_or_else(|_| TX_DISPATCHER_URL_DEFAULT.to_string());
         pub static ref TX_DISPATCHER_CONFIG_PATH: String = env::var("TX_DISPATCHER_CONFIG_PATH")
