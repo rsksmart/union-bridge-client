@@ -28,7 +28,9 @@ jobs:
         run: |
           git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf "https://github.com/FairgateLabs"
           git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf "git@github.com:FairgateLabs"
-          git clone --recursive --rev f5d15597ee27f9a659498ef5fb86f4ecee094d51 git@github.com:FairgateLabs/rust-bitvmx-workspace rust-bitvmx-workspace
+          git clone --depth 1 --recursive git@github.com:FairgateLabs/rust-bitvmx-workspace rust-bitvmx-workspace
+          git -C rust-bitvmx-workspace fetch --depth 1 origin f5d15597ee27f9a659498ef5fb86f4ecee094d51
+          git -C rust-bitvmx-workspace checkout f5d15597ee27f9a659498ef5fb86f4ecee094d51
 
       - name: Checkout Our Repository
         uses: actions/checkout@v4
