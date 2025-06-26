@@ -6,6 +6,7 @@ use log::info;
 
 // TODO(Jira): generate Try_From for the input struct like in the other cases - https://rsklabs.atlassian.net/browse/UB-108
 
+#[derive(Clone)]
 pub(crate) struct GetTemporaryPegInAddressCall<C: PegManagerContractApi> {
     contract: C,
 }
@@ -71,7 +72,8 @@ mod tests {
     use crate::rsk_gateway::DomainErrors;
     use alloy_primitives::Address;
     use alloy_primitives::FixedBytes;
-    use mockall::predicate::{always, eq};
+    use mockall::predicate::always;
+    use mockall::predicate::eq;
     use union_contracts::bindings::bitcoinmanager::BitcoinManager::{
         BitcoinManagerErrors, InvalidAddress, InvalidPublicKey,
     };
@@ -82,7 +84,6 @@ mod tests {
         "0xc72a9f6fc8e57f1de528a48b6c4ad7a6db30b24a7bbf8cdd74b0a3b248b6f7f1";
     const VALID_VALUE: u64 = 1000;
 
-    #[cfg(test)]
     impl GetTemporaryPegInAddressCall<MockPegManagerContractApi> {
         pub(crate) fn new_for_tests(contract: MockPegManagerContractApi) -> Self {
             GetTemporaryPegInAddressCall { contract }

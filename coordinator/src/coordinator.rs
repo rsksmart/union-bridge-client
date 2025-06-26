@@ -3,9 +3,11 @@ use crate::{
     monitor::MonitorApi,
 };
 use anyhow::{Context, Result};
+use common::runtime_sync::RuntimeSync;
 use common::{msg_broker::broker::BrokerClientApi, shutdown_flag::ShutdownFlag};
 use log::error;
 use std::{thread, time::Duration};
+use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 
 const CHECK_PERIOD: Duration = Duration::from_secs(1);
 
@@ -17,15 +19,24 @@ pub struct Coordinator<M: MonitorApi> {
 }
 
 impl<M: MonitorApi> Coordinator<M> {
-    pub fn new<B: BrokerClientApi + Clone + 'static>(
+    pub fn new<
+        BC: BrokerClientApi + Clone + 'static,
+        CG: RskContractsGatewayApi + Clone + 'static,
+    >(
+        rt_sync: RuntimeSync,
         monitor: M,
-        bitvmx_broker: B,
+        contracts_gateway: CG,
+        bitvmx_broker: BC,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
         Self {
             monitor,
             processors: vec![
-                Box::new(AdvanceFundsProcessor::new(bitvmx_broker.clone())),
+                Box::new(AdvanceFundsProcessor::new(
+                    rt_sync,
+                    contracts_gateway.clone(),
+                    bitvmx_broker.clone(),
+                )),
                 Box::new(GetTemporaryPeginAddressProcessor::new(
                     bitvmx_broker.clone(),
                 )),
@@ -139,7 +150,7 @@ impl<M: MonitorApi> Coordinator<M> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use crate::event_processor::{EventProcessor, MockEventProcessor};
     use crate::{
         coordinator::Coordinator,
@@ -156,10 +167,16 @@ mod tests {
         },
         types::RskBlockAndUncles,
     };
+    use mockall::mock;
     use serde_json::json;
     use std::{
         thread::{self, JoinHandle, sleep},
         time::Duration,
+    };
+    use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
+    use transaction_dispatcher::types::{
+        AcceptPegInInput, AcceptPegInOutput, PegInAddressInput, PegInAddressOutput,
+        RegisterPegInInput, RegisterPegInOutput, RegisterPegOutInput, RegisterPegOutOutput,
     };
 
     fn create_fake_request_event(peg_out_id: &str) -> RequestAdvanceFunds {
@@ -386,5 +403,37 @@ mod tests {
             .returning(|_| Ok(()))
             .times(1..);
         mock_pegout_processor.expect_shutdown().return_once(|| ());
+    }
+
+    mock! {
+        #[derive(Clone)]
+        pub RskContractsGatewayApi {}
+
+        impl RskContractsGatewayApi for RskContractsGatewayApi {
+            async fn get_temporary_peg_in_address(
+                &self,
+                input: PegInAddressInput,
+            ) -> Result<PegInAddressOutput, DomainErrors>;
+
+            async fn register_peg_in_request(
+                &self,
+                input: RegisterPegInInput,
+            ) -> Result<RegisterPegInOutput, DomainErrors>;
+
+            async fn accept_peg_in_request(
+                &self,
+                input: AcceptPegInInput,
+            ) -> Result<AcceptPegInOutput, DomainErrors>;
+
+            async fn register_peg_out_request(
+                &self,
+                input: RegisterPegOutInput,
+            ) -> Result<RegisterPegOutOutput, DomainErrors>;
+
+            async fn notify_check_fork_completion(
+                &self,
+                input: &str,
+            ) -> Result<(), DomainErrors>;
+        }
     }
 }

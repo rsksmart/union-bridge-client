@@ -3,7 +3,7 @@ use alloy_primitives::{Address, FixedBytes, U256, hex::FromHex};
 use alloy_provider::Provider;
 use alloy_rpc_types::TransactionReceipt;
 use anyhow::Result;
-use log::error;
+use log::{error, info};
 use union_contracts::bindings::pegmanager::PegManager;
 use union_contracts::bindings::pegmanager::PegManager::{
     BtcTransaction, BtcTxSPVProof, PegManagerInstance, getTemporaryPegInAddressReturn,
@@ -16,9 +16,12 @@ use crate::types::RegisterPegInInput;
 // re-export for convenience
 pub(crate) use crate::contracts::interactions::accept_peg_in_request;
 pub(crate) use crate::contracts::interactions::get_temporary_peg_in_address;
+pub(crate) use crate::contracts::interactions::notify_check_fork_complete;
 pub(crate) use crate::contracts::interactions::register_peg_in_request;
 pub(crate) use crate::contracts::interactions::register_peg_out_request;
 
+use actors_mocking::fake_contracts::FakePegManager;
+use actors_mocking::fake_contracts::FakePegManager::FakePegManagerInstance;
 #[cfg(test)]
 use mockall::automock;
 
@@ -50,6 +53,12 @@ pub trait PegManagerContractApi {
         batch_flag: bool,
         gas_bumps: u8,
     ) -> alloy_contract::Result<TransactionReceipt>;
+
+    async fn notify_check_fork_completion(
+        &self,
+        pegout_id: &str,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TransactionReceipt>;
 }
 
 // needed so we can create a PegManagerContractApi trait for tests mocking
@@ -60,6 +69,7 @@ pub struct PegManagerContract<P: Provider> {
 
 impl<P: Provider> PegManagerContract<P> {
     pub fn new(provider: P, contract_address: Address) -> Self {
+        info!("Connecting to PegManagerContract @ {}", contract_address);
         let contract_instance = PegManager::new(contract_address, provider);
         PegManagerContract { contract_instance }
     }
@@ -114,6 +124,83 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
                 self.contract_instance
                     .requestPegOut(usr_pub_key.into(), batch_flag)
                     .value(U256::from(msg_value))
+            },
+            gas_bumps,
+        )
+        .await
+    }
+
+    async fn notify_check_fork_completion(
+        &self,
+        _pegout_id: &str,
+        _gas_bumps: u8,
+    ) -> alloy_contract::Result<TransactionReceipt> {
+        todo!("NotifyCheckForkComplete is not implemented yet for real PegManager");
+    }
+}
+
+// needed so we can create a PegManagerContractApi trait for tests mocking
+#[derive(Clone)]
+pub struct FakePegManagerContract<P: Provider> {
+    contract_instance: FakePegManagerInstance<(), P>,
+}
+
+impl<P: Provider> FakePegManagerContract<P> {
+    pub fn new(provider: P, contract_address: Address) -> Self {
+        info!(
+            "Connecting to FakePegManagerContract @ {}",
+            contract_address
+        );
+        let contract_instance = FakePegManager::new(contract_address, provider);
+        FakePegManagerContract { contract_instance }
+    }
+}
+
+impl<P: Provider> PegManagerContractApi for FakePegManagerContract<P> {
+    async fn get_temporary_peg_in_address_call(
+        &self,
+        _rootstock_deposit_address: Address,
+        _value: u64,
+        _btc_reimbursement_pub_key: FixedBytes<32>,
+    ) -> alloy_contract::Result<getTemporaryPegInAddressReturn> {
+        todo!("Not yet implemented for FakePegManagerContract");
+    }
+
+    async fn register_peg_in_request_send(
+        &self,
+        _input: BtcTxSPVProof,
+        _gas_bumps: u8,
+    ) -> alloy_contract::Result<TransactionReceipt> {
+        todo!("Not yet implemented for FakePegManagerContract");
+    }
+
+    async fn accept_peg_in_request_send(
+        &self,
+        _input: BtcTxSPVProof,
+        _gas_bumps: u8,
+    ) -> alloy_contract::Result<TransactionReceipt> {
+        todo!("Not yet implemented for FakePegManagerContract");
+    }
+
+    async fn register_peg_out_request_send(
+        &self,
+        _msg_value: u64,
+        _usr_pub_key: FixedBytes<33>,
+        _batch_flag: bool,
+        _gas_bumps: u8,
+    ) -> alloy_contract::Result<TransactionReceipt> {
+        todo!("Not yet implemented for FakePegManagerContract");
+    }
+
+    async fn notify_check_fork_completion(
+        &self,
+        pegout_id: &str,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TransactionReceipt> {
+        send_tx_with_gas_bump(
+            || {
+                self.contract_instance
+                    .checkForkComplete(pegout_id.to_string())
             },
             gas_bumps,
         )

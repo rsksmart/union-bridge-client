@@ -7,6 +7,7 @@ pub mod errors;
 pub mod msg_broker;
 pub mod rsk_indexer;
 pub mod rsk_provider;
+pub mod runtime_sync;
 pub mod shutdown_flag;
 pub mod test_utils;
 pub mod types;

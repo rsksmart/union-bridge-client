@@ -2505,6 +2505,7 @@ dependencies = [
  "reqwest 0.12.20",
  "serde",
  "serde_json",
+ "transaction-dispatcher",
  "union-bridge-contracts",
  "uuid 1.17.0",
 ]
@@ -7918,6 +7919,7 @@ dependencies = [
 name = "transaction-dispatcher"
 version = "0.1.0"
 dependencies = [
+ "actors-mocking",
  "alloy-contract",
  "alloy-json-rpc",
  "alloy-primitives",

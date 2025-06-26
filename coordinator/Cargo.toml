@@ -8,6 +8,7 @@ check-fork = { path = "../check-fork" }
 common = { path = "../common" }
 actors-mocking = { path = "../actors-mocking" }
 check-fork-zkp = { path = "../check-fork/zkp" }
+transaction-dispatcher = { path = "../transaction-dispatcher" }
 
 alloy-primitives = { workspace = true }
 alloy-sol-types = { workspace = true }
@@ -21,11 +22,13 @@ primitive-types = { workspace = true }
 # TODO(jira) https://rsklabs.atlassian.net/browse/ub-176
 bitvmx-client = { workspace = true }
 hex = { workspace = true }
-mockall = { workspace = true }
 serde = { workspace = true }
 
 reqwest = { version = "0.12", features = ["json", "blocking"] }
 uuid = { version = "1.11.0", features = ["v4"] }
+
+[dev-dependencies]
+mockall = { workspace = true }
 
 [features]
 anvil = []

@@ -25,5 +25,5 @@ RUN mkdir -p -m 0700 ~/.ssh && \
 
 # TODO(jira) https://rsklabs.atlassian.net/browse/ub-176
 # setup bitvmx workspace
-COPY dockerfile-bitvmx-setup.sh /app/bitvmx-setup.sh
+COPY dockerfile_sh/bitvmx-setup.sh /app/bitvmx-setup.sh
 RUN --mount=type=ssh,id=default chmod +x /app/bitvmx-setup.sh && /app/bitvmx-setup.sh

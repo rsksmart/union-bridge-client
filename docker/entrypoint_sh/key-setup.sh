@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -e
 
+if [ -z "${KEY_STORE_PASSWORD:-}" ]; then
+  echo "[key-setup] No KEY_STORE_PASSWORD provided, exiting."
+  exit 1
+fi
+
+if [ -z "${FUNDING_ADDRESS:-}" ]; then
+  echo "[key-setup] No FUNDING_ADDRESS provided, exiting."
+  exit 1
+fi
+
 RPC_URL="http://actors-mocking:2222"
 KEYSTORE_PATH="/keystore/key.json"
 
@@ -45,4 +55,5 @@ fi
 
 echo "[key-setup] Using key at ${KEYSTORE_PATH} with address ${address}"
 
-exec /app/transaction-dispatcher --config-path /app/config
+# forward to command entry in docker-compose.yml
+exec "$@"

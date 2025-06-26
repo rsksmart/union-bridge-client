@@ -7,6 +7,7 @@ use alloy_primitives::FixedBytes;
 use anyhow::Result;
 use log::{debug, error, info};
 
+#[derive(Clone)]
 pub struct RegisterPegOutRequestInvoke<C: PegManagerContractApi> {
     contract: C,
     gas_bumps: u8,

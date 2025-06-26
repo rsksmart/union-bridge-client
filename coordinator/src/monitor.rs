@@ -25,10 +25,10 @@ pub trait MonitorApi {
     fn cancel_bitvmx_monitoring(&mut self) -> Result<()>;
 }
 
-pub struct Monitor<T: BrokerClientApi> {
-    log_broker: T,
-    block_broker: T,
-    bitvmx_broker: T,
+pub struct Monitor<BC: BrokerClientApi> {
+    log_broker: BC,
+    block_broker: BC,
+    bitvmx_broker: BC,
     event_decoder: EventDecoder,
     peg_manager_addresses: Vec<Address>,
     block_monitoring_active: bool,
@@ -36,7 +36,7 @@ pub struct Monitor<T: BrokerClientApi> {
     bitvmx_monitoring_active: bool,
 }
 
-impl<T: BrokerClientApi> MonitorApi for Monitor<T> {
+impl<BC: BrokerClientApi> MonitorApi for Monitor<BC> {
     fn start_event_monitoring(&mut self) -> Result<()> {
         self.start_event_monitoring()
     }
@@ -74,11 +74,11 @@ impl<T: BrokerClientApi> MonitorApi for Monitor<T> {
     }
 }
 
-impl<T: BrokerClientApi> Monitor<T> {
+impl<BC: BrokerClientApi> Monitor<BC> {
     pub fn new(
-        log_broker: T,
-        block_broker: T,
-        bitvmx_broker: T,
+        log_broker: BC,
+        block_broker: BC,
+        bitvmx_broker: BC,
         peg_manager_addresses: Vec<Address>,
     ) -> Self {
         Self {

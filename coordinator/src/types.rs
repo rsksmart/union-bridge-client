@@ -7,6 +7,8 @@ use log::{error, warn};
 use std::collections::HashMap;
 use union_contracts::bindings::pegmanager::PegManager::RegisteredPegInRequest;
 
+// TODO(Jira) https://rsklabs.atlassian.net/browse/UB-183
+
 #[derive(Eq, PartialEq, Debug)]
 pub enum RskPegManagerEvents {
     RequestAdvanceFunds(RequestAdvanceFundsEvent), // temporarily mock, no need to test it

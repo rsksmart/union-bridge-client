@@ -10,6 +10,7 @@ use bincode::config::standard;
 use bitvmx_client::types::IncomingBitVMXApiMessages;
 use check_fork::{CheckForkArgs, check_fork};
 use check_fork_zkp::{CHECK_FORK_GUEST_ID, CHECK_FORK_GUEST_PATH};
+use common::runtime_sync::RuntimeSync;
 use common::{
     msg_broker::{
         broker::{BROKER_SERVER_ID, BrokerClientApi},
@@ -22,19 +23,37 @@ use primitive_types::U256;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;
 
-pub struct AdvanceFundsProcessor<B: BrokerClientApi> {
-    bitvmx_broker: B,
+pub struct AdvanceFundsProcessor<CG: RskContractsGatewayApi, BC: BrokerClientApi> {
+    rt_sync: RuntimeSync,
+    contracts: CG,
+    bitvmx_broker: BC,
     first_block_to_process: Option<BlockNumber>,
     request_events: HashMap<String, RequestAdvanceFundsEvent>,
     advance_funds_checker: Option<Rc<RefCell<CheckForkAccumulator>>>,
     chain_view: BlockchainView,
 }
 
-impl<B: BrokerClientApi> AdvanceFundsProcessor<B> {
-    pub fn new(bitvmx_broker: B) -> Self {
+impl<CG: RskContractsGatewayApi, BC: BrokerClientApi> AdvanceFundsProcessor<CG, BC> {
+    pub fn new(rt_sync: RuntimeSync, contracts: CG, bitvmx_broker: BC) -> Self {
         Self {
+            rt_sync,
+            contracts,
+            bitvmx_broker,
+            first_block_to_process: None,
+            request_events: HashMap::new(),
+            advance_funds_checker: None,
+            chain_view: BlockchainView::new(),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn new_for_test(contracts: CG, bitvmx_broker: BC) -> Self {
+        Self {
+            rt_sync: RuntimeSync::new().unwrap(),
+            contracts,
             bitvmx_broker,
             first_block_to_process: None,
             request_events: HashMap::new(),
@@ -206,6 +225,32 @@ impl<B: BrokerClientApi> AdvanceFundsProcessor<B> {
         }
     }
 
+    fn notify_contracts_advance_funds_complete(&self, pegout_id: &str) {
+        debug!(
+            "Notifying contracts that advance funds for {} are complete",
+            pegout_id
+        );
+
+        let result = self
+            .rt_sync
+            .run(async { self.contracts.notify_check_fork_completion(pegout_id).await });
+        match result {
+            Ok(_) => {
+                info!(
+                    "Successfully notified contracts about advance funds completion for {}",
+                    pegout_id
+                );
+            }
+            Err(e) => {
+                // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
+                error!(
+                    "Error notifying contracts about advance funds completion for {}: {}",
+                    pegout_id, e
+                );
+            }
+        }
+    }
+
     fn serialize_guest_input<S: serde::Serialize>(data: &S) -> Result<Vec<u8>> {
         bincode::serde::encode_to_vec(data, standard()).map_err(|e| {
             // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
@@ -225,7 +270,9 @@ impl<B: BrokerClientApi> AdvanceFundsProcessor<B> {
     }
 }
 
-impl<T: BrokerClientApi> EventProcessor for AdvanceFundsProcessor<T> {
+impl<CG: RskContractsGatewayApi, T: BrokerClientApi> EventProcessor
+    for AdvanceFundsProcessor<CG, T>
+{
     fn process_new_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         match event {
             RskPegManagerEvents::RequestAdvanceFunds(data) => {
@@ -289,6 +336,8 @@ impl<T: BrokerClientApi> EventProcessor for AdvanceFundsProcessor<T> {
             // TODO(Jira) if this fails, we should not close the pegout and retry it later - https://rsklabs.atlassian.net/browse/UB-132
             self.schedule_check_fork_zkp(args);
 
+            self.notify_contracts_advance_funds_complete(&pegout_id);
+
             info!("Completing advance funds {}", pegout_id);
             self.stop_monitoring_blocks_for_pegout(&pegout_id);
             self.stop_pow_accum_for_pegout(&pegout_id);
@@ -314,6 +363,7 @@ impl<T: BrokerClientApi> EventProcessor for AdvanceFundsProcessor<T> {
 mod tests {
     use super::*;
     use crate::config::REQUIRED_CONFIRMATIONS;
+    use crate::coordinator::tests::MockRskContractsGatewayApi;
     use crate::event_processor::advance_funds::tests::create_fake_block;
     use crate::types::EventWithBlock;
     use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
@@ -356,7 +406,10 @@ mod tests {
 
     #[test]
     fn test_new_processor_initial_state_is_clear() {
-        let processor = AdvanceFundsProcessor::new(MockBrokerClientApi::new());
+        let processor = AdvanceFundsProcessor::new_for_test(
+            MockRskContractsGatewayApi::new(),
+            MockBrokerClientApi::new(),
+        );
         assert!(processor.first_block_to_process.is_none());
         assert!(processor.request_events.is_empty());
         assert!(processor.advance_funds_checker.is_none());
@@ -366,7 +419,10 @@ mod tests {
 
     #[test]
     fn test_process_new_event_request_advance_funds_keeps_events() {
-        let mut processor = AdvanceFundsProcessor::new(MockBrokerClientApi::new());
+        let mut processor = AdvanceFundsProcessor::new_for_test(
+            MockRskContractsGatewayApi::new(),
+            MockBrokerClientApi::new(),
+        );
 
         let request_block = create_fake_block(100.into(), U256::from(50));
 
@@ -422,8 +478,10 @@ mod tests {
 
     #[test]
     fn test_process_new_event_advance_funds_creates_checker_when_one_request_exists() {
-        let mut processor = AdvanceFundsProcessor::new(MockBrokerClientApi::new());
-
+        let mut processor = AdvanceFundsProcessor::new_for_test(
+            MockRskContractsGatewayApi::new(),
+            MockBrokerClientApi::new(),
+        );
         let request_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
         let any_block = RskBlockAndUncles::new_no_uncles(create_fake_block(
@@ -509,8 +567,10 @@ mod tests {
     #[test]
     fn test_process_new_event_advance_funds_advance_funds_creates_advance_funds_when_two_requests_exist()
      {
-        let mut processor = AdvanceFundsProcessor::new(MockBrokerClientApi::new());
-
+        let mut processor = AdvanceFundsProcessor::new_for_test(
+            MockRskContractsGatewayApi::new(),
+            MockBrokerClientApi::new(),
+        );
         let request_block_1 =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
         let request_block_2 = RskBlockAndUncles::new_no_uncles(create_fake_block(
@@ -607,8 +667,10 @@ mod tests {
 
     #[test]
     fn test_process_new_event_advance_funds_advance_funds_exits_when_no_requests() {
-        let mut processor = AdvanceFundsProcessor::new(MockBrokerClientApi::new());
-
+        let mut processor = AdvanceFundsProcessor::new_for_test(
+            MockRskContractsGatewayApi::new(),
+            MockBrokerClientApi::new(),
+        );
         let advance_funds_block = create_fake_block(110.into(), U256::from(51));
         let advance_funds_event = create_fake_advance_funds_event("peg123");
 
@@ -629,8 +691,10 @@ mod tests {
 
     #[test]
     fn test_process_new_event_advance_funds_accumulator_exits_when_no_matching_request() {
-        let mut processor = AdvanceFundsProcessor::new(MockBrokerClientApi::new());
-
+        let mut processor = AdvanceFundsProcessor::new_for_test(
+            MockRskContractsGatewayApi::new(),
+            MockBrokerClientApi::new(),
+        );
         let request_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
 
@@ -679,12 +743,14 @@ mod tests {
         let mut bitvmx_broker = MockBrokerClientApi::new();
         expect_zkp_bitvmx(&mut bitvmx_broker);
 
-        let mut processor = AdvanceFundsProcessor::new(bitvmx_broker);
+        let pegout_id = "peg123";
+        let mut rsk_gateway = MockRskContractsGatewayApi::new();
+        expect_notify_check_fork(&mut rsk_gateway, pegout_id);
+
+        let mut processor = AdvanceFundsProcessor::new_for_test(rsk_gateway, bitvmx_broker);
 
         let request_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
-
-        let pegout_id = "peg123";
 
         let request_event = create_fake_request_event(pegout_id);
         processor
@@ -824,12 +890,14 @@ mod tests {
         let mut bitvmx_broker = MockBrokerClientApi::new();
         expect_zkp_bitvmx(&mut bitvmx_broker);
 
-        let mut processor = AdvanceFundsProcessor::new(bitvmx_broker);
+        let pegout_id = "peg123";
+        let mut rsk_gateway = MockRskContractsGatewayApi::new();
+        expect_notify_check_fork(&mut rsk_gateway, pegout_id);
+
+        let mut processor = AdvanceFundsProcessor::new_for_test(rsk_gateway, bitvmx_broker);
 
         let request_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
-
-        let pegout_id = "peg123";
 
         let request_event = create_fake_request_event(pegout_id);
         processor
@@ -970,7 +1038,10 @@ mod tests {
 
     #[test]
     fn test_process_advance_funds_event_without_blocks_early_exits() {
-        let mut processor = AdvanceFundsProcessor::new(MockBrokerClientApi::new());
+        let mut processor = AdvanceFundsProcessor::new_for_test(
+            MockRskContractsGatewayApi::new(),
+            MockBrokerClientApi::new(),
+        );
 
         let request_block = create_fake_block(100.into(), U256::from(50));
         let advance_funds_block = create_fake_block(110.into(), U256::from(50));
@@ -1010,7 +1081,10 @@ mod tests {
 
     #[test]
     fn test_process_old_block_early_exits() {
-        let mut processor = AdvanceFundsProcessor::new(MockBrokerClientApi::new());
+        let mut processor = AdvanceFundsProcessor::new_for_test(
+            MockRskContractsGatewayApi::new(),
+            MockBrokerClientApi::new(),
+        );
 
         let request_block = create_fake_block(100.into(), U256::from(50));
 
@@ -1034,7 +1108,10 @@ mod tests {
 
     #[test]
     fn test_shutdown_with_active_advance_funds_works() {
-        let mut processor = AdvanceFundsProcessor::new(MockBrokerClientApi::new());
+        let mut processor = AdvanceFundsProcessor::new_for_test(
+            MockRskContractsGatewayApi::new(),
+            MockBrokerClientApi::new(),
+        );
 
         let request_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
@@ -1091,7 +1168,10 @@ mod tests {
 
     #[test]
     fn test_remove_request_advance_funds_event_removes_it() {
-        let mut processor = AdvanceFundsProcessor::new(MockBrokerClientApi::new());
+        let mut processor = AdvanceFundsProcessor::new_for_test(
+            MockRskContractsGatewayApi::new(),
+            MockBrokerClientApi::new(),
+        );
 
         let request_block_1 = create_fake_block(100.into(), U256::from(50));
         let request_block_2 = create_fake_block(101.into(), U256::from(51));
@@ -1146,7 +1226,10 @@ mod tests {
 
     #[test]
     fn test_remove_request_advance_funds_block_removes_it() {
-        let mut processor = AdvanceFundsProcessor::new(MockBrokerClientApi::new());
+        let mut processor = AdvanceFundsProcessor::new_for_test(
+            MockRskContractsGatewayApi::new(),
+            MockBrokerClientApi::new(),
+        );
 
         let request_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
@@ -1193,8 +1276,10 @@ mod tests {
 
     #[test]
     fn test_remove_advance_funds_advance_funds_block_removes_it() {
-        let mut processor = AdvanceFundsProcessor::new(MockBrokerClientApi::new());
-
+        let mut processor = AdvanceFundsProcessor::new_for_test(
+            MockRskContractsGatewayApi::new(),
+            MockBrokerClientApi::new(),
+        );
         let advance_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
         let advance_funds_block =
@@ -1243,8 +1328,10 @@ mod tests {
 
     #[test]
     fn test_remove_advance_funds_advance_funds_event_stops_advance_funds() {
-        let mut processor = AdvanceFundsProcessor::new(MockBrokerClientApi::new());
-
+        let mut processor = AdvanceFundsProcessor::new_for_test(
+            MockRskContractsGatewayApi::new(),
+            MockBrokerClientApi::new(),
+        );
         let request_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
         let advance_funds_block =
@@ -1304,9 +1391,11 @@ mod tests {
         let mut bitvmx_broker = MockBrokerClientApi::new();
         expect_zkp_bitvmx(&mut bitvmx_broker);
 
-        let mut processor = AdvanceFundsProcessor::new(bitvmx_broker);
-
         let pegout_id = "peg123";
+        let mut rsk_gateway = MockRskContractsGatewayApi::new();
+        expect_notify_check_fork(&mut rsk_gateway, pegout_id);
+
+        let mut processor = AdvanceFundsProcessor::new_for_test(rsk_gateway, bitvmx_broker);
 
         // create initial request block
         let request_block =
@@ -1495,8 +1584,10 @@ mod tests {
 
     #[test]
     fn test_process_blocks_handles_deep_reorg_before_kickoff() {
-        let mut processor = AdvanceFundsProcessor::new(MockBrokerClientApi::new());
-
+        let mut processor = AdvanceFundsProcessor::new_for_test(
+            MockRskContractsGatewayApi::new(),
+            MockBrokerClientApi::new(),
+        );
         let pegout_id = "peg123";
 
         // create initial request block
@@ -1634,9 +1725,11 @@ mod tests {
             )
             .returning(|_, _| Ok(true));
 
-        let mut processor = AdvanceFundsProcessor::new(bitvmx_broker);
-
         let pegout_id = "peg123";
+        let mut rsk_gateway = MockRskContractsGatewayApi::new();
+        expect_notify_check_fork(&mut rsk_gateway, pegout_id);
+
+        let mut processor = AdvanceFundsProcessor::new_for_test(rsk_gateway, bitvmx_broker);
 
         // set up request and kickoff like previous tests
         let request_block =
@@ -1760,8 +1853,10 @@ mod tests {
 
     #[test]
     fn test_advance_funds_with_active_accumulator_closes_existing_and_returns() {
-        let mut processor = AdvanceFundsProcessor::new(MockBrokerClientApi::new());
-
+        let mut processor = AdvanceFundsProcessor::new_for_test(
+            MockRskContractsGatewayApi::new(),
+            MockBrokerClientApi::new(),
+        );
         let request_block_1 =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
         let advance_funds_block_1 =
@@ -1834,5 +1929,14 @@ mod tests {
         assert!(processor.advance_funds_checker.is_none());
         assert_eq!(processor.request_events.len(), 1);
         assert!(processor.request_events.contains_key(pegout_id_2));
+    }
+
+    fn expect_notify_check_fork(rsk_gateway: &mut MockRskContractsGatewayApi, pegout_id: &str) {
+        let id = pegout_id.to_string();
+        rsk_gateway
+            .expect_notify_check_fork_completion()
+            .with(eq(id))
+            .times(1)
+            .returning(|_| Ok(()));
     }
 }
