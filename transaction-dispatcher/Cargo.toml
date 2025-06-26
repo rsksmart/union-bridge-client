@@ -13,6 +13,7 @@ alloy-rpc-types = { workspace = true, features = ["debug"] }
 alloy-sol-types = { workspace = true, features = ["json"] }
 alloy-json-rpc = { workspace = true }
 alloy-contract = { workspace = true }
+alloy-transport = { workspace = true }
 clap = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

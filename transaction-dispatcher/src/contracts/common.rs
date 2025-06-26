@@ -1,12 +1,13 @@
+use crate::contracts::{bitcoin_manager, peg_manager, stream_manager};
 use crate::rsk_gateway::DomainErrors;
 use alloy_contract::SolCallBuilder;
 use alloy_primitives::{hex::FromHexError, ruint::ParseError};
 use alloy_provider::Provider;
+use alloy_provider::network::ReceiptResponse;
 use alloy_rpc_types::TransactionReceipt;
 use alloy_sol_types::SolCall;
 use log::{debug, error, warn};
 use thiserror::Error;
-use union_contracts::bindings::pegmanager::PegManager::PegManagerErrors;
 
 #[derive(Debug, Error)]
 pub enum ParseFieldError {
@@ -18,14 +19,14 @@ pub enum ParseFieldError {
 }
 
 // TODO(Jira): properly test this, creating a mockeable wrapper around SolCallBuilder - https://rsklabs.atlassian.net/browse/UB-109
-pub(super) async fn send_tx_with_gas_bump<P, F, T>(
+pub(super) async fn send_tx_with_gas_bump<P, D, F>(
     build_tx: F,
     max_attempts: u8,
 ) -> alloy_contract::Result<TransactionReceipt>
 where
     P: Provider,
-    T: SolCall,
-    F: Fn() -> SolCallBuilder<(), P, T>,
+    D: SolCall,
+    F: Fn() -> SolCallBuilder<P, D>,
 {
     // this works also as an eth_call, if not do a manual .call()
     let estimated_gas = build_tx().estimate_gas().await?;
@@ -64,63 +65,15 @@ where
 
 fn likely_oog(receipt: &TransactionReceipt, gas_limit: u64) -> bool {
     let oog_margin = gas_limit / 100;
-    !receipt.status() && receipt.gas_used >= gas_limit.saturating_sub(oog_margin)
+    !receipt.status() && receipt.gas_used() >= gas_limit.saturating_sub(oog_margin)
 }
 
 impl From<alloy_contract::Error> for DomainErrors {
     fn from(err: alloy_contract::Error) -> Self {
-        let decoded_err = err.as_decoded_interface_error::<PegManagerErrors>();
-        match decoded_err {
-            Some(e) => match e {
-                PegManagerErrors::AlreadyRegisteredAcceptPegIn(e) => {
-                    DomainErrors::AlreadyRegisteredAcceptPegIn(format!("{:?}", e))
-                }
-                PegManagerErrors::AlreadyRegisteredPegIn(e) => {
-                    DomainErrors::AlreadyRegisteredPegIn(format!("{:?}", e))
-                }
-                PegManagerErrors::AlreadyRegisteredPegInRequest(e) => {
-                    DomainErrors::AlreadyRegisteredPegInRequest(format!("{:?}", e))
-                }
-                PegManagerErrors::IncorrectInputsNumber(e) => {
-                    DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
-                }
-                PegManagerErrors::IncorrectOutputsNumber(e) => {
-                    DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
-                }
-                PegManagerErrors::InvalidBtcTxVersion(e) => {
-                    DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
-                }
-                PegManagerErrors::InvalidLocktime(e) => {
-                    DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
-                }
-                PegManagerErrors::InvalidSequence(e) => {
-                    DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
-                }
-                PegManagerErrors::InvalidVout(e) => {
-                    DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
-                }
-                PegManagerErrors::NotEnoughConfirmations(e) => {
-                    DomainErrors::NotEnoughConfirmations(format!("{:?}", e))
-                }
-                PegManagerErrors::PacketOutOfBound(e) => {
-                    DomainErrors::PacketOutOfBound(format!("{:?}", e))
-                }
-                PegManagerErrors::StreamNotFoundByDenomination(e) => {
-                    DomainErrors::StreamNotFoundByDenomination(format!("{:?}", e))
-                }
-                PegManagerErrors::UnregisteredPegInRequest(e) => {
-                    DomainErrors::UnregisteredRequest(format!("{:?}", e))
-                }
-                PegManagerErrors::InvalidPubKeyLength(e) => {
-                    DomainErrors::InvalidPublicKey(format!("{:?}", e))
-                }
-                PegManagerErrors::PegoutRequestAmountExceedsUint64Limit(e) => {
-                    DomainErrors::PegoutRequestAmountExceedsUint64Limit(format!("{:?}", e))
-                }
-                _ => DomainErrors::UnhandledContractError(format!("{:?}", e)),
-            },
-            None => DomainErrors::NoRevertError(format!("{:?}", err)),
-        }
+        peg_manager::decode_error(&err)
+            .or_else(|| bitcoin_manager::decode_error(&err))
+            .or_else(|| stream_manager::decode_error(&err))
+            .unwrap_or_else(|| DomainErrors::NoRevertError(format!("{:?}", err)))
     }
 }
 

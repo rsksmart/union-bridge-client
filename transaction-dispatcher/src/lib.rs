@@ -39,7 +39,8 @@ pub fn get_contracts_gateway_as_lib(
     let rsk_url = &config.provider.rootstock.url;
     let ws = WsConnect::new(rsk_url);
 
-    let provider = rt_sync.run(async { ProviderBuilder::new().wallet(wallet).on_ws(ws).await })?;
+    let provider =
+        rt_sync.run(async { ProviderBuilder::new().wallet(wallet).connect_ws(ws).await })?;
 
     info!(
         "Connected to Rootstock at {} with address {}",
