@@ -24,3 +24,5 @@ root:
 loggers:
   tarpc: # from bitvmx-broker
     level: warn
+  alloy:
+    level: warn
