@@ -4,9 +4,9 @@ use alloy_provider::Provider;
 use alloy_rpc_types::TransactionReceipt;
 use anyhow::Result;
 use log::{error, info};
-use union_contracts::bindings::peg_manager::PegManager;
-use union_contracts::bindings::peg_manager::PegManager::{
-    BtcTransaction, BtcTxSPVProof, PegManagerErrors, PegManagerInstance,
+use union_contracts::bindings::pegmanager::PegManager;
+use union_contracts::bindings::pegmanager::PegManager::{
+    BtcTransaction, BtcTxSPVProof, PegManagerInstance, getTemporaryPeginAddressReturn,
 };
 
 use crate::contracts::bitcoin_manager::ParseFieldError;
@@ -33,7 +33,7 @@ pub trait PegManagerContractApi {
         rootstock_deposit_address: Address,
         value: u64,
         btc_reimbursement_pub_key: FixedBytes<32>,
-    ) -> alloy_contract::Result<String>;
+    ) -> alloy_contract::Result<getTemporaryPeginAddressReturn>;
 
     async fn register_peg_in_request_send(
         &self,
@@ -51,7 +51,6 @@ pub trait PegManagerContractApi {
         &self,
         msg_value: u64,
         usr_pub_key: FixedBytes<33>,
-        batch_flag: bool,
         gas_bumps: u8,
     ) -> alloy_contract::Result<TransactionReceipt>;
 
@@ -82,9 +81,9 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         rootstock_deposit_address: Address,
         value: u64,
         btc_reimbursement_pub_key: FixedBytes<32>,
-    ) -> alloy_contract::Result<String> {
+    ) -> alloy_contract::Result<getTemporaryPeginAddressReturn> {
         self.contract_instance
-            .getTemporaryPegInAddress(rootstock_deposit_address, value, btc_reimbursement_pub_key)
+            .getTemporaryPeginAddress(rootstock_deposit_address, value, btc_reimbursement_pub_key)
             .call()
             .await
     }
@@ -95,7 +94,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         gas_bumps: u8,
     ) -> alloy_contract::Result<TransactionReceipt> {
         send_tx_with_gas_bump(
-            || self.contract_instance.registerPegInRequest(input.clone()),
+            || self.contract_instance.requestPegin(input.clone()),
             gas_bumps,
         )
         .await
@@ -107,7 +106,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         gas_bumps: u8,
     ) -> alloy_contract::Result<TransactionReceipt> {
         send_tx_with_gas_bump(
-            || self.contract_instance.acceptPegInRequest(input.clone()),
+            || self.contract_instance.acceptPegin(input.clone()),
             gas_bumps,
         )
         .await
@@ -117,13 +116,12 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         &self,
         msg_value: u64,
         usr_pub_key: FixedBytes<33>,
-        batch_flag: bool,
         gas_bumps: u8,
     ) -> alloy_contract::Result<TransactionReceipt> {
         send_tx_with_gas_bump(
             || {
                 self.contract_instance
-                    .requestPegOut(usr_pub_key.into(), batch_flag)
+                    .tryPegout(usr_pub_key.into())
                     .value(U256::from(msg_value))
             },
             gas_bumps,
@@ -163,7 +161,7 @@ impl<P: Provider> PegManagerContractApi for FakePegManagerContract<P> {
         _rootstock_deposit_address: Address,
         _value: u64,
         _btc_reimbursement_pub_key: FixedBytes<32>,
-    ) -> alloy_contract::Result<String> {
+    ) -> alloy_contract::Result<getTemporaryPeginAddressReturn> {
         todo!("Not yet implemented for FakePegManagerContract");
     }
 
@@ -187,7 +185,6 @@ impl<P: Provider> PegManagerContractApi for FakePegManagerContract<P> {
         &self,
         _msg_value: u64,
         _usr_pub_key: FixedBytes<33>,
-        _batch_flag: bool,
         _gas_bumps: u8,
     ) -> alloy_contract::Result<TransactionReceipt> {
         todo!("Not yet implemented for FakePegManagerContract");
@@ -302,36 +299,22 @@ mod tests {
     use union_contracts::bindings::bitcoin_manager::BitcoinManager::{
         BitcoinManagerErrors, IncorrectOutputScript,
     };
-    use union_contracts::bindings::peg_manager::PegManager::{
-        AlreadyRegisteredAcceptPegIn, AlreadyRegisteredPegIn, AlreadyRegisteredPegInRequest,
+    use union_contracts::bindings::pegmanager::PegManager::{
         BridgeBtcBlockNotInBestChain, IncorrectInputsNumber, IncorrectOutputsNumber,
-        InvalidBtcTxVersion, InvalidLocktime, InvalidSequence, InvalidVout, NotInitializing,
-        PegManagerErrors, UnregisteredPegInRequest,
+        InvalidBtcTxVersion, InvalidLocktime, NotInitializing, PegManagerErrors,
+        PeginAlreadyRequested,
     };
 
     #[test]
-    fn test_already_registered_peg_in() {
-        let expected_err = PegManagerErrors::AlreadyRegisteredPegIn(AlreadyRegisteredPegIn {
-            btcTxHash: "0x6b8f74fe9c66c9c3a6c3d0b7111d9b6aaac0ea3db1bdbd6a38eb0e7d8b8bba3e"
+    fn test_already_registered_accept_peg_in() {
+        let expected_err = PegManagerErrors::PeginAlreadyRequested(PeginAlreadyRequested {
+            btcTxHash: "0x123456789abcdef123456789abcdef123456789abcdef123456789abcdef1234"
                 .parse()
                 .expect("Failed to parse tx hash"),
         });
 
         let result = generate_contract_revert_error(expected_err);
-        matches!(result.into(), DomainErrors::AlreadyRegisteredPegIn(_));
-    }
-
-    #[test]
-    fn test_already_registered_accept_peg_in() {
-        let expected_err =
-            PegManagerErrors::AlreadyRegisteredAcceptPegIn(AlreadyRegisteredAcceptPegIn {
-                btcTxHash: "0x123456789abcdef123456789abcdef123456789abcdef123456789abcdef1234"
-                    .parse()
-                    .expect("Failed to parse tx hash"),
-            });
-
-        let result = generate_contract_revert_error(expected_err);
-        matches!(result.into(), DomainErrors::AlreadyRegisteredAcceptPegIn(_));
+        matches!(result.into(), DomainErrors::PeginAlreadyRequested(_));
     }
 
     #[test]
@@ -356,18 +339,6 @@ mod tests {
 
         let result = generate_contract_revert_error(expected_err);
         matches!(result.into(), DomainErrors::UnhandledContractError(_));
-    }
-
-    #[test]
-    fn test_unregistered_peg_in_request() {
-        let expected_err = PegManagerErrors::UnregisteredPegInRequest(UnregisteredPegInRequest {
-            btcTxHash: "0x123456789abcdef123456789abcdef123456789abcdef123456789abcdef1234"
-                .parse()
-                .unwrap(),
-        });
-
-        let result = generate_contract_revert_error(expected_err);
-        matches!(result.into(), DomainErrors::UnregisteredRequest(_));
     }
 
     #[test]
@@ -404,41 +375,15 @@ mod tests {
     }
 
     #[test]
-    fn test_invalid_sequence() {
-        let expected_err = PegManagerErrors::InvalidSequence(InvalidSequence {
-            expected: alloy_primitives::U256::from(1),
-            actual: alloy_primitives::U256::from(2),
+    fn test_already_pegin_requested() {
+        let expected_err = PegManagerErrors::PeginAlreadyRequested(PeginAlreadyRequested {
+            btcTxHash: "0x987654321abcdef987654321abcdef987654321abcdef987654321abcdef9876"
+                .parse()
+                .unwrap(),
         });
 
         let result = generate_contract_revert_error(expected_err);
-        matches!(result.into(), DomainErrors::InvalidBtcTxSpvProof(_));
-    }
-
-    #[test]
-    fn test_invalid_vout() {
-        let expected_err = PegManagerErrors::InvalidVout(InvalidVout {
-            expected: alloy_primitives::U256::from(1),
-            actual: alloy_primitives::U256::from(2),
-        });
-
-        let result = generate_contract_revert_error(expected_err);
-        matches!(result.into(), DomainErrors::InvalidBtcTxSpvProof(_));
-    }
-
-    #[test]
-    fn test_already_registered_peg_in_request() {
-        let expected_err =
-            PegManagerErrors::AlreadyRegisteredPegInRequest(AlreadyRegisteredPegInRequest {
-                btcTxHash: "0x987654321abcdef987654321abcdef987654321abcdef987654321abcdef9876"
-                    .parse()
-                    .unwrap(),
-            });
-
-        let result = generate_contract_revert_error(expected_err);
-        matches!(
-            result.into(),
-            DomainErrors::AlreadyRegisteredPegInRequest(_)
-        );
+        matches!(result.into(), DomainErrors::PeginAlreadyRequested(_));
     }
 
     // check one of the errors to ensure the code keeps covering also BitcoinManagerErrors

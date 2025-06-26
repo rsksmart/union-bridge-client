@@ -36,7 +36,7 @@ impl<C: PegManagerContractApi> GetTemporaryPegInAddressCall<C> {
             .btc_reimbursement_pub_key
             .parse::<FixedBytes<32>>()
             .map_err(|e| {
-                DomainErrors::InvalidPublicKey(format!(
+                DomainErrors::InvalidCompressedPubKey(format!(
                     "Failed to parse btc_reimbursement_pub_key: {}",
                     e
                 ))
@@ -75,7 +75,7 @@ mod tests {
     use union_contracts::bindings::bitcoin_manager::BitcoinManager::{
         BitcoinManagerErrors, InvalidAddress, InvalidPublicKey,
     };
-    use union_contracts::bindings::peg_manager::PegManager::getTemporaryPegInAddressReturn;
+    use union_contracts::bindings::pegmanager::PegManager::getTemporaryPeginAddressReturn;
 
     const VALID_ADDRESS: &str = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
     const VALID_PUB_KEY: &str =
@@ -98,7 +98,7 @@ mod tests {
             btc_reimbursement_pub_key: VALID_PUB_KEY.to_string(),
         };
         let expected_deposit_address = "0xfake0deposit0address".to_string();
-        let output = getTemporaryPegInAddressReturn {
+        let output = getTemporaryPeginAddressReturn {
             bitcoinDepositAddress: expected_deposit_address.clone(),
         };
 
@@ -183,7 +183,10 @@ mod tests {
 
         let result = interaction.run(input).await;
         assert!(result.is_err());
-        matches!(result.err().unwrap(), DomainErrors::InvalidPublicKey(_));
+        matches!(
+            result.err().unwrap(),
+            DomainErrors::InvalidCompressedPubKey(_)
+        );
     }
 
     // there are more errors that could be raised by the smart contract, but those are tested either on peg_manager.rs or bitcoin_manager.rs
@@ -217,7 +220,10 @@ mod tests {
 
         let result = call.run(input).await;
         assert!(result.is_err());
-        matches!(result.err().unwrap(), DomainErrors::InvalidPublicKey(_));
+        matches!(
+            result.err().unwrap(),
+            DomainErrors::InvalidCompressedPubKey(_)
+        );
     }
 
     #[allow(unused)]

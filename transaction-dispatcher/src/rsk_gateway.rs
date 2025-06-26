@@ -203,30 +203,20 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
 #[derive(Debug, Error)]
 pub enum DomainErrors {
     // mapped smart contract errors
-    #[error("Already registered PegIn: {0}")]
-    AlreadyRegisteredPegIn(String),
-    #[error("Already registered Accept PegIn: {0}")]
-    AlreadyRegisteredAcceptPegIn(String),
-    #[error("Already registered PegIn Request: {0}")]
-    AlreadyRegisteredPegInRequest(String),
+    #[error("Pegin already requested: {0}")]
+    PeginAlreadyRequested(String),
     #[error("Invalid address: {0}")]
     InvalidAddress(String),
     #[error("Invalid BTC Tx SPV Proof: {0}")]
     InvalidBtcTxSpvProof(String),
-    #[error("Invalid public key: {0}")]
-    InvalidPublicKey(String),
+    #[error("Invalid compressed public key: {0}")]
+    InvalidCompressedPubKey(String),
     #[error("Invalid value: {0}")]
     InvalidValue(String),
     #[error("Not Owner: {0}")]
     NotOwner(String),
     #[error("Not Enough Confirmations: {0}")]
     NotEnoughConfirmations(String),
-    #[error("Packet out of Bound: {0}")]
-    PacketOutOfBound(String),
-    #[error("Stream not found by denomination: {0}")]
-    StreamNotFoundByDenomination(String),
-    #[error("Unregistered Request: {0}")]
-    UnregisteredRequest(String),
     #[error("Pegout Request Amount Exceeds u64 Limit: {0}")]
     PegoutRequestAmountExceedsUint64Limit(String),
 

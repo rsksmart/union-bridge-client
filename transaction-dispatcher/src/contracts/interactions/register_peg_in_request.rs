@@ -64,6 +64,7 @@ impl<C: PegManagerContractApi> RegisterPegInRequestInvoke<C> {
 #[cfg(test)]
 mod tests {
     use crate::contracts::common::tests::generate_contract_revert_error;
+    use crate::contracts::peg_manager::MockPegManagerContractApi;
     use crate::contracts::interactions::register_peg_in_request::{
         RegisterPegInInput, RegisterPegInOutput, RegisterPegInRequestInvoke,
     };
@@ -72,11 +73,9 @@ mod tests {
     use alloy_primitives::{Address, Bloom, TxHash};
     use alloy_rpc_types::{Log, Receipt, ReceiptEnvelope, ReceiptWithBloom, TransactionReceipt};
     use std::str::FromStr;
-    use union_contracts::bindings::peg_manager::PegManager::{
-        AlreadyRegisteredPegIn, PegManagerErrors,
+    use union_contracts::bindings::pegmanager::PegManager::{
+        PegManagerErrors, PeginAlreadyRequested,
     };
-
-    use crate::contracts::peg_manager::MockPegManagerContractApi;
 
     impl RegisterPegInRequestInvoke<MockPegManagerContractApi> {
         pub(crate) fn new_for_tests(contract: MockPegManagerContractApi) -> Self {
@@ -128,13 +127,11 @@ mod tests {
 
         mock.expect_register_peg_in_request_send()
             .returning(move |_, _| {
-                let expected_err =
-                    PegManagerErrors::AlreadyRegisteredPegIn(AlreadyRegisteredPegIn {
-                        btcTxHash:
-                            "0x6b8f74fe9c66c9c3a6c3d0b7111d9b6aaac0ea3db1bdbd6a38eb0e7d8b8bba3e"
-                                .parse()
-                                .expect("Failed to parse tx hash"),
-                    });
+                let expected_err = PegManagerErrors::PeginAlreadyRequested(PeginAlreadyRequested {
+                    btcTxHash: "0x6b8f74fe9c66c9c3a6c3d0b7111d9b6aaac0ea3db1bdbd6a38eb0e7d8b8bba3e"
+                        .parse()
+                        .expect("Failed to parse tx hash"),
+                });
                 Err(generate_contract_revert_error(expected_err))
             })
             .times(1);
@@ -147,7 +144,7 @@ mod tests {
         assert!(result.is_err());
         matches!(
             result.err().unwrap(),
-            DomainErrors::AlreadyRegisteredPegIn(_)
+            DomainErrors::PeginAlreadyRequested(_)
         );
     }
 

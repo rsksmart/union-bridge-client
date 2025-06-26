@@ -52,7 +52,6 @@ pub struct RegisterPegInOutput {
 pub struct RegisterPegOutInput {
     pub(crate) amount_in_wei: u64,
     pub(crate) usr_pub_key: String,
-    pub(crate) batch_flag: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
