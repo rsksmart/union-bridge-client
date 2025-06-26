@@ -1,3 +1,5 @@
+#![cfg(feature = "anvil")]
+
 use actors_mocking::{bitvmx, events};
 use alloy_node_bindings::Anvil;
 use alloy_provider::ProviderBuilder;

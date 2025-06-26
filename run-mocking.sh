@@ -2,4 +2,4 @@
 
 set -euo pipefail
 
-cargo run --bin actors-mocking
+cargo run --bin actors-mocking --features "anvil"
