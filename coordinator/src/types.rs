@@ -23,6 +23,7 @@ pub enum RskPegManagerEvents {
 pub type RequestAdvanceFundsEvent = EventWithBlock<RequestAdvanceFunds>;
 pub type AdvanceFundsEvent = EventWithBlock<AdvanceFunds>;
 pub type PeginRequestedEvent = EventWithBlock<PeginRequested>;
+pub type AcceptedPegInRequestEvent = EventWithBlock<AcceptedPegInRequest>;
 
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub struct EventWithBlock<T> {
@@ -44,6 +45,10 @@ impl EventDecoder {
         dispatcher.insert(
             PeginRequested::SIGNATURE_HASH,
             Self::decode_pegin_requested_event as DecoderFn,
+        );
+        dispatcher.insert(
+            AcceptedPegInRequest::SIGNATURE_HASH,
+            Self::decode_accept_pegin_event as DecoderFn,
         );
         dispatcher.insert(
             RequestAdvanceFunds::SIGNATURE_HASH,
@@ -125,6 +130,29 @@ impl EventDecoder {
         }
     }
 
+    fn decode_accept_pegin_event(
+        log_data: &LogData,
+        block_number: BlockNumber,
+        block_hash: BlockHash,
+        removed: bool,
+    ) -> RskPegManagerEvents {
+        match AcceptedPegInRequest::decode_log_data(&log_data, true) {
+            Ok(ev) if !removed => {
+                RskPegManagerEvents::AcceptedPegInRequest(AcceptedPegInRequestEvent {
+                    inner: ev,
+                    block_number,
+                    block_hash,
+                })
+            }
+            Ok(ev) => RskPegManagerEvents::AcceptedPegInRequest(AcceptedPegInRequestEvent {
+                inner: ev,
+                block_number,
+                block_hash,
+            }),
+            Err(_) => UnknownEvent,
+        }
+    }
+
     fn decode_request_advance_funds_event(
         log_data: &LogData,
         block_number: BlockNumber,
@@ -175,6 +203,7 @@ mod tests {
     use common::types::{BlockHash, DataBytes, Hash256, LogEvent, LogInfo, RskLog, TxHash};
     use primitive_types::H256;
     use union_contracts::bindings::peg_manager::PegManager::{PrevoutData, RequestPeginTempInfo};
+    use union_contracts::bindings::pegmanager::PegManager::StreamPosition;
 
     #[test]
     fn test_decode_unknown_event() {
@@ -332,6 +361,72 @@ mod tests {
                 assert_eq!(data.block_hash, expected_block_hash.into());
             }
             _ => panic!("Expected RegisteredPegInRequest event"),
+        }
+    }
+
+    #[test]
+    fn test_decode_accept_pegin_event() {
+        let expected_block_hash = H256::from_low_u64_be(123);
+        let expected_block_num = 789;
+
+        let expected_event = AcceptedPegInRequest {
+            blockHash: expected_block_hash
+                .as_bytes()
+                .try_into()
+                .expect("Failed to decode block hash"),
+            txHash: H256::from_low_u64_be(456)
+                .as_bytes()
+                .try_into()
+                .expect("Failed to decode tx hash"),
+            pegInTxHash: H256::from_low_u64_be(789)
+                .as_bytes()
+                .try_into()
+                .expect("Failed to decode pegInTxHash"),
+            vout: 1,
+            streamPosition: StreamPosition {
+                streamId: 1,
+                packetNumber: 2,
+                slotId: 3,
+                pegStatus: 1u8.into(),
+            },
+            speedUpPubKey: H256::from_low_u64_be(555)
+                .as_bytes()
+                .try_into()
+                .expect("Failed to decode speedUpPubKey"),
+            rskDestinationAddress: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
+                .parse::<alloy_primitives::Address>()
+                .expect("Invalid address"),
+            rbtcAmount: U256::from(100000),
+            utxoScriptPubKey: alloy_primitives::Bytes::from("0x1234567890abcdef"),
+        };
+
+        let data = DataBytes::new(expected_event.encode_log_data().data.to_vec());
+        let topics = expected_event
+            .encode_topics()
+            .iter()
+            .map(|t| Hash256::from(B256::from(*t)))
+            .collect();
+
+        let log_event = LogEvent::new(data, topics);
+        let log_info = LogInfo::new(
+            generate_fake_address(1),
+            expected_block_hash.into(),
+            expected_block_num.into(),
+            TxHash::from(H256::random()),
+            1,
+            false,
+        );
+
+        let rsk_log = RskLog::new(log_info, log_event);
+        let decoder = EventDecoder::new();
+        let result = decoder.decode(rsk_log);
+        match result {
+            RskPegManagerEvents::AcceptedPegInRequest(data) => {
+                assert_eq!(data.inner, expected_event);
+                assert_eq!(data.block_number, expected_block_num);
+                assert_eq!(data.block_hash, expected_block_hash.into());
+            }
+            _ => panic!("Expected AcceptedPegInRequest event"),
         }
     }
 }
