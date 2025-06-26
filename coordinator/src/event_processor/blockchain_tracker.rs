@@ -15,26 +15,31 @@ pub trait BlockchainObserver {
 #[derive(Debug)]
 pub struct BlockConfirmations {
     flow_id: String,
-    accum: u32,
-    req: u32,
+    init: BlockNumber,
+    last: BlockNumber,
+    required: u32,
 }
 
 impl BlockConfirmations {
-    pub fn new(flow_id: String, req_confirmations: u32) -> Self {
+    pub fn new(flow_id: String, init: BlockNumber, req_confirmations: u32) -> Self {
         Self {
             flow_id,
-            accum: 0,
-            req: req_confirmations,
+            init,
+            last: init,
+            required: req_confirmations,
         }
     }
 
     pub fn is_confirmed(&self) -> bool {
-        self.accum >= self.req
+        self.accum() >= self.required as u64
     }
 
-    #[cfg(test)]
-    pub fn accum(&self) -> u32 {
-        self.accum
+    pub fn accum(&self) -> u64 {
+        if self.last < self.init {
+            0
+        } else {
+            self.last.value() - self.init.value() + 1
+        }
     }
 }
 
@@ -44,26 +49,26 @@ impl BlockchainObserver for BlockConfirmations {
     }
 
     fn on_block_added(&mut self, block: &RskBlockAndUncles) {
-        self.accum = self.accum.saturating_add(1);
+        self.last = block.number();
         info!(
             "New block {} ({}) for {}, increasing confirmations. Status: {}/{}",
             block.number(),
             block.hash(),
             self.flow_id,
-            self.accum,
-            self.req
+            self.accum(),
+            self.required
         );
     }
 
     fn on_block_removed(&mut self, block: &RskBlockAndUncles) {
-        self.accum = self.accum.saturating_sub(1);
+        self.last = block.number();
         info!(
             "Removed block {} ({}) for {}, reducing confirmations. Status: {}/{}",
             block.number(),
             block.hash(),
             self.flow_id,
-            self.accum,
-            self.req
+            self.accum(),
+            self.required
         );
     }
 }
@@ -470,7 +475,11 @@ mod tests {
     #[test]
     fn test_confirmations_observer_reorg_behavior() {
         let mut chain_view = BlockchainView::new();
-        let confirmations = Rc::new(RefCell::new(BlockConfirmations::new("test".to_string(), 3)));
+        let confirmations = Rc::new(RefCell::new(BlockConfirmations::new(
+            "test".to_string(),
+            BlockNumber::from(100),
+            3,
+        )));
         chain_view.add_observer(confirmations.clone());
 
         // build initial chain and accumulate confirmations
@@ -490,10 +499,10 @@ mod tests {
         // - started with 4 confirmations (blocks 100, 101, 102, 103)
         // - removed blocks 102 and 103 (-2 confirmations)
         // - added alternative block 101 (+1 confirmation)
-        // - but block 101 was already there and gets replaced, so:
-        //   4 - 2 + 1 = 3 confirmations (blocks 100, alt_101, and the +1 from adding alt_101)
-        assert_eq!(confirmations.borrow().accum(), 3);
-        assert!(confirmations.borrow().is_confirmed());
+        // - but block 101 was already there and gets replaced (-1 confirmation), so:
+        //   4 - 2 + 1 - 1 = 2 confirmations (blocks 100, alt_101, and the +1 from adding alt_101)
+        assert_eq!(confirmations.borrow().accum(), 2);
+        assert!(!confirmations.borrow().is_confirmed());
     }
 
     #[test]

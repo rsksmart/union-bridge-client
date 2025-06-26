@@ -11,7 +11,7 @@ use primitive_types::U256;
 pub(super) struct CheckForkAccumulator {
     advance_funds_block_hash: H256,
     args: CheckForkArgs,
-    confirmations: BlockConfirmations,
+    confirmations: Option<BlockConfirmations>,
 }
 
 impl BlockchainObserver for CheckForkAccumulator {
@@ -20,9 +20,12 @@ impl BlockchainObserver for CheckForkAccumulator {
     }
 
     fn on_block_added(&mut self, block: &RskBlockAndUncles) {
+        // we only collect confirmations if CheckFork is ready
         if self.is_check_fork_ready() {
-            // we only collect confirmations if CheckFork is ready
-            self.confirmations.on_block_added(block);
+            // creates it if it doesn't exist
+            self.confirmations
+                .get_or_insert_with(|| Self::new_confirmations(block, &self.args.pegout_id))
+                .on_block_added(block);
         } else {
             self.add_block_to_check_fork(block);
         }
@@ -31,7 +34,9 @@ impl BlockchainObserver for CheckForkAccumulator {
     fn on_block_removed(&mut self, block: &RskBlockAndUncles) {
         // we optimistically try to remove the block from both the check_fork_args and confirmations
         self.remove_block_from_check_fork(block.block());
-        self.confirmations.on_block_removed(block);
+        if let Some(confirmations) = &mut self.confirmations {
+            confirmations.on_block_removed(block);
+        }
     }
 }
 
@@ -62,10 +67,7 @@ impl CheckForkAccumulator {
         let mut instance = Self {
             advance_funds_block_hash: event.block_hash.value(),
             args: check_fork_args,
-            confirmations: BlockConfirmations::new(
-                event.inner.peg_out_id.clone(),
-                REQUIRED_CONFIRMATIONS,
-            ),
+            confirmations: None,
         };
 
         // we already received the block that triggered the event, before the event itself
@@ -85,7 +87,9 @@ impl CheckForkAccumulator {
     }
 
     pub fn has_enough_confirmations(&self) -> bool {
-        self.confirmations.is_confirmed()
+        self.confirmations
+            .as_ref()
+            .map_or(false, |c| c.is_confirmed())
     }
 
     fn is_check_fork_ready(&self) -> bool {
@@ -205,6 +209,14 @@ impl CheckForkAccumulator {
             uncles,
             pow: block.pow().value(),
         }
+    }
+
+    fn new_confirmations(block: &RskBlockAndUncles, pegout_id: &String) -> BlockConfirmations {
+        BlockConfirmations::new(
+            pegout_id.to_string(),
+            block.number(),
+            REQUIRED_CONFIRMATIONS,
+        )
     }
 }
 
@@ -668,7 +680,10 @@ mod tests {
         assert_eq!(checker.args.block_list.len(), initial_block_count);
         // but confirmations should have been updated
         let expected_confirmations = 1;
-        assert_eq!(checker.confirmations.accum(), expected_confirmations);
+        assert_eq!(
+            checker.confirmations.unwrap().accum(),
+            expected_confirmations
+        );
     }
 
     #[test]
@@ -760,15 +775,21 @@ mod tests {
         checker.on_block_added(&block3);
 
         let expected_confirmations = 2;
-        assert_eq!(checker.confirmations.accum(), expected_confirmations);
+        assert_eq!(
+            checker.confirmations.as_ref().unwrap().accum(),
+            expected_confirmations
+        );
 
         // remove a confirmation
         checker.on_block_removed(&block2);
-        assert_eq!(checker.confirmations.accum(), expected_confirmations - 1);
+        assert_eq!(
+            checker.confirmations.as_ref().unwrap().accum(),
+            expected_confirmations - 1
+        );
 
         // remove another confirmation
-        checker.on_block_removed(&block3);
-        assert_eq!(checker.confirmations.accum(), 0);
+        checker.on_block_removed(&block1);
+        assert_eq!(checker.confirmations.unwrap().accum(), 0);
     }
 
     #[test]
