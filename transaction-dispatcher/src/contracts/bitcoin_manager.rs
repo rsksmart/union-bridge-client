@@ -67,20 +67,15 @@ impl TryFrom<BitcoinTransaction> for BtcTransaction {
 
 pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> {
     let decoded_err = err.as_decoded_interface_error::<BitcoinManagerErrors>();
-    match decoded_err {
-        Some(e) => Some(match e {
-            BitcoinManagerErrors::InvalidAddress(e) => {
-                DomainErrors::InvalidAddress(format!("{:?}", e))
-            }
-            BitcoinManagerErrors::InvalidPublicKey(e) => {
-                DomainErrors::InvalidPublicKey(format!("{:?}", e))
-            }
-            BitcoinManagerErrors::InvalidValue(e) => DomainErrors::InvalidValue(format!("{:?}", e)),
-            // TODO handle more based on needs
-            _ => DomainErrors::UnhandledContractError(format!("{:?}", e)),
-        }),
-        None => None,
-    }
+    decoded_err.map(|e| match e {
+        BitcoinManagerErrors::InvalidAddress(e) => DomainErrors::InvalidAddress(format!("{:?}", e)),
+        BitcoinManagerErrors::InvalidPublicKey(e) => {
+            DomainErrors::InvalidPublicKey(format!("{:?}", e))
+        }
+        BitcoinManagerErrors::InvalidValue(e) => DomainErrors::InvalidValue(format!("{:?}", e)),
+        // TODO handle more based on needs
+        _ => DomainErrors::UnhandledContractError(format!("{:?}", e)),
+    })
 }
 
 #[cfg(test)]

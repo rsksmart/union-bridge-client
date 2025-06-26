@@ -70,17 +70,10 @@ fn likely_oog(receipt: &TransactionReceipt, gas_limit: u64) -> bool {
 
 impl From<alloy_contract::Error> for DomainErrors {
     fn from(err: alloy_contract::Error) -> Self {
-        match peg_manager::decode_error(&err) {
-            Some(domain_error) => domain_error,
-            None => match bitcoin_manager::decode_error(&err) {
-                Some(domain_error) => domain_error,
-                None => match stream_manager::decode_error(&err) {
-                    Some(domain_error) => domain_error,
-                    // not able to decode the error as any typed contract error
-                    None => DomainErrors::NoRevertError(format!("{:?}", err)),
-                },
-            },
-        }
+        peg_manager::decode_error(&err)
+            .or_else(|| bitcoin_manager::decode_error(&err))
+            .or_else(|| stream_manager::decode_error(&err))
+            .unwrap_or_else(|| DomainErrors::NoRevertError(format!("{:?}", err)))
     }
 }
 

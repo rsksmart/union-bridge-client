@@ -3,19 +3,16 @@ use union_contracts::bindings::stream_manager::StreamManager::StreamManagerError
 
 pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> {
     let decoded_err = err.as_decoded_interface_error::<StreamManagerErrors>();
-    match decoded_err {
-        Some(e) => Some(match e {
-            StreamManagerErrors::StreamNotFoundByDenomination(e) => {
-                DomainErrors::StreamNotFoundByDenomination(format!("{:?}", e))
-            }
-            StreamManagerErrors::PacketOutOfBound(e) => {
-                DomainErrors::PacketOutOfBound(format!("{:?}", e))
-            }
-            // TODO handle more based on needs
-            _ => DomainErrors::UnhandledContractError(format!("{:?}", e)),
-        }),
-        None => None,
-    }
+    decoded_err.map(|e| match e {
+        StreamManagerErrors::StreamNotFoundByDenomination(e) => {
+            DomainErrors::StreamNotFoundByDenomination(format!("{:?}", e))
+        }
+        StreamManagerErrors::PacketOutOfBound(e) => {
+            DomainErrors::PacketOutOfBound(format!("{:?}", e))
+        }
+        // TODO handle more based on needs
+        _ => DomainErrors::UnhandledContractError(format!("{:?}", e)),
+    })
 }
 
 #[cfg(test)]

@@ -253,51 +253,46 @@ impl TryFrom<RegisterPegInInput> for BtcTxSPVProof {
 
 pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> {
     let decoded_err = err.as_decoded_interface_error::<PegManagerErrors>();
-    match decoded_err {
-        Some(e) => Some(match e {
-            PegManagerErrors::AlreadyRegisteredAcceptPegIn(e) => {
-                DomainErrors::AlreadyRegisteredAcceptPegIn(format!("{:?}", e))
-            }
-            PegManagerErrors::AlreadyRegisteredPegIn(e) => {
-                DomainErrors::AlreadyRegisteredPegIn(format!("{:?}", e))
-            }
-            PegManagerErrors::AlreadyRegisteredPegInRequest(e) => {
-                DomainErrors::AlreadyRegisteredPegInRequest(format!("{:?}", e))
-            }
-            PegManagerErrors::IncorrectInputsNumber(e) => {
-                DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
-            }
-            PegManagerErrors::IncorrectOutputsNumber(e) => {
-                DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
-            }
-            PegManagerErrors::InvalidBtcTxVersion(e) => {
-                DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
-            }
-            PegManagerErrors::InvalidLocktime(e) => {
-                DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
-            }
-            PegManagerErrors::InvalidSequence(e) => {
-                DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
-            }
-            PegManagerErrors::InvalidVout(e) => {
-                DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
-            }
-            PegManagerErrors::NotEnoughConfirmations(e) => {
-                DomainErrors::NotEnoughConfirmations(format!("{:?}", e))
-            }
-            PegManagerErrors::UnregisteredPegInRequest(e) => {
-                DomainErrors::UnregisteredRequest(format!("{:?}", e))
-            }
-            PegManagerErrors::InvalidPubKeyLength(e) => {
-                DomainErrors::InvalidPublicKey(format!("{:?}", e))
-            }
-            PegManagerErrors::PegoutRequestAmountExceedsUint64Limit(e) => {
-                DomainErrors::PegoutRequestAmountExceedsUint64Limit(format!("{:?}", e))
-            }
-            _ => DomainErrors::UnhandledContractError(format!("{:?}", e)),
-        }),
-        None => None,
-    }
+    decoded_err.map(|e| match e {
+        PegManagerErrors::AlreadyRegisteredAcceptPegIn(e) => {
+            DomainErrors::AlreadyRegisteredAcceptPegIn(format!("{:?}", e))
+        }
+        PegManagerErrors::AlreadyRegisteredPegIn(e) => {
+            DomainErrors::AlreadyRegisteredPegIn(format!("{:?}", e))
+        }
+        PegManagerErrors::AlreadyRegisteredPegInRequest(e) => {
+            DomainErrors::AlreadyRegisteredPegInRequest(format!("{:?}", e))
+        }
+        PegManagerErrors::IncorrectInputsNumber(e) => {
+            DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
+        }
+        PegManagerErrors::IncorrectOutputsNumber(e) => {
+            DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
+        }
+        PegManagerErrors::InvalidBtcTxVersion(e) => {
+            DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
+        }
+        PegManagerErrors::InvalidLocktime(e) => {
+            DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
+        }
+        PegManagerErrors::InvalidSequence(e) => {
+            DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
+        }
+        PegManagerErrors::InvalidVout(e) => DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e)),
+        PegManagerErrors::NotEnoughConfirmations(e) => {
+            DomainErrors::NotEnoughConfirmations(format!("{:?}", e))
+        }
+        PegManagerErrors::UnregisteredPegInRequest(e) => {
+            DomainErrors::UnregisteredRequest(format!("{:?}", e))
+        }
+        PegManagerErrors::InvalidPubKeyLength(e) => {
+            DomainErrors::InvalidPublicKey(format!("{:?}", e))
+        }
+        PegManagerErrors::PegoutRequestAmountExceedsUint64Limit(e) => {
+            DomainErrors::PegoutRequestAmountExceedsUint64Limit(format!("{:?}", e))
+        }
+        _ => DomainErrors::UnhandledContractError(format!("{:?}", e)),
+    })
 }
 
 #[cfg(test)]
