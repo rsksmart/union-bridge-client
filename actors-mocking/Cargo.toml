@@ -22,5 +22,5 @@ bitvmx-client = { workspace = true }
 hex = "0.4"
 
 [features]
-default = ["anvil"]
+default = []
 anvil = ["common/anvil"]

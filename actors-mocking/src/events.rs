@@ -1,3 +1,5 @@
+#![cfg(feature = "anvil")]
+
 use crate::fake_contracts::FakePegManager;
 use crate::fake_contracts::FakePegManager::FakePegManagerInstance;
 use alloy_eips::BlockNumberOrTag;
