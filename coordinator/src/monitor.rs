@@ -3,7 +3,7 @@ use anyhow::{Context, Result, bail};
 use common::{
     msg_broker::{
         broker::{BROKER_SERVER_ID, BrokerClientApi, BrokerError},
-        types::{BrokerRequests, BrokerResponses},
+        types::{FromServer, ToServer},
     },
     types::{Address, RskBlockAndUncles},
 };
@@ -19,7 +19,7 @@ pub trait MonitorApi {
     fn start_bitvmx_monitoring(&mut self) -> Result<()>;
     fn try_event(&mut self) -> Result<Option<RskPegManagerEvents>>;
     fn try_block(&mut self) -> Result<Option<RskBlockAndUncles>>;
-    fn try_bitvmx_event(&mut self) -> Result<Option<BrokerResponses>>;
+    fn try_bitvmx_event(&mut self) -> Result<Option<FromServer>>;
     fn cancel_event_monitoring(&mut self) -> Result<()>;
     fn cancel_block_monitoring(&mut self) -> Result<()>;
     fn cancel_bitvmx_monitoring(&mut self) -> Result<()>;
@@ -57,7 +57,7 @@ impl<T: BrokerClientApi> MonitorApi for Monitor<T> {
         self.try_block()
     }
 
-    fn try_bitvmx_event(&mut self) -> Result<Option<BrokerResponses>> {
+    fn try_bitvmx_event(&mut self) -> Result<Option<FromServer>> {
         self.try_bitvmx_event()
     }
 
@@ -106,7 +106,7 @@ impl<T: BrokerClientApi> Monitor<T> {
         let addresses = self.peg_manager_addresses.clone();
         for addr in addresses {
             let result = self
-                .send_to_log_broker(BrokerRequests::SubscribeLogs(addr))
+                .send_to_log_broker(ToServer::SubscribeLogs(addr))
                 .context("Broker error on SubscribeLogs")?;
             if !result {
                 bail!("Broker could not deliver SubscribeLogs for {}", addr);
@@ -130,7 +130,7 @@ impl<T: BrokerClientApi> Monitor<T> {
         info!("Starting Block monitoring");
 
         let result = self
-            .send_to_block_broker(BrokerRequests::SubscribeBlocks)
+            .send_to_block_broker(ToServer::SubscribeBlocks)
             .context("Broker error on SubscribeBlocks")?;
 
         if !result {
@@ -154,7 +154,7 @@ impl<T: BrokerClientApi> Monitor<T> {
         info!("Starting BitVMX monitoring");
 
         let result = self
-            .send_to_bitvmx_broker(BrokerRequests::SubscribeBitVMX)
+            .send_to_bitvmx_broker(ToServer::SubscribeMockedBitVMX)
             .context("Broker error on SubscribeBitVMX")?;
 
         if !result {
@@ -172,7 +172,7 @@ impl<T: BrokerClientApi> Monitor<T> {
         }
 
         match self.log_broker.try_recv()? {
-            Some(BrokerResponses::Log(log)) => {
+            Some(FromServer::Log(log)) => {
                 info!("Received new Log {:?}", log);
                 let event: RskPegManagerEvents = self.event_decoder.decode(log);
                 Ok(Some(event))
@@ -194,7 +194,7 @@ impl<T: BrokerClientApi> Monitor<T> {
 
         // TODO(Jira) do not simply fail on broker error, do some retries - https://rsklabs.atlassian.net/browse/UB-132
         match self.block_broker.try_recv()? {
-            Some(BrokerResponses::Block(bau)) => {
+            Some(FromServer::Block(bau)) => {
                 debug!("Received new Block {:?}", bau);
                 Ok(Some(bau))
             }
@@ -206,7 +206,7 @@ impl<T: BrokerClientApi> Monitor<T> {
         }
     }
 
-    pub fn try_bitvmx_event(&mut self) -> Result<Option<BrokerResponses>> {
+    pub fn try_bitvmx_event(&mut self) -> Result<Option<FromServer>> {
         if !self.bitvmx_monitoring_active {
             bail!("BitVMX monitoring is not active");
         }
@@ -274,7 +274,7 @@ impl<T: BrokerClientApi> Monitor<T> {
         for addr in addresses {
             result = result
                 && self
-                    .send_to_log_broker(BrokerRequests::UnsubscribeLogs(addr))
+                    .send_to_log_broker(ToServer::UnsubscribeLogs(addr))
                     .context("Broker error on UnsubscribeLogs")?;
             if !result {
                 bail!("Broker could not deliver UnsubscribeLogs for {}", addr);
@@ -285,24 +285,24 @@ impl<T: BrokerClientApi> Monitor<T> {
     }
 
     fn request_cancel_block_monitoring(&mut self) -> Result<bool> {
-        self.send_to_block_broker(BrokerRequests::UnsubscribeBlocks)
+        self.send_to_block_broker(ToServer::UnsubscribeBlocks)
             .context("Broker error on UnsubscribeBlocks")
     }
 
     fn request_cancel_bitvmx_monitoring(&mut self) -> Result<bool> {
-        self.send_to_bitvmx_broker(BrokerRequests::UnsubscribeBitVMX)
+        self.send_to_bitvmx_broker(ToServer::UnsubscribeMockedBitVMX)
             .context("Broker error on UnsubscribeBitVMX")
     }
 
-    fn send_to_log_broker(&mut self, request: BrokerRequests) -> Result<bool, BrokerError> {
+    fn send_to_log_broker(&mut self, request: ToServer) -> Result<bool, BrokerError> {
         self.log_broker.send(BROKER_SERVER_ID, request)
     }
 
-    fn send_to_block_broker(&mut self, request: BrokerRequests) -> Result<bool, BrokerError> {
+    fn send_to_block_broker(&mut self, request: ToServer) -> Result<bool, BrokerError> {
         self.block_broker.send(BROKER_SERVER_ID, request)
     }
 
-    fn send_to_bitvmx_broker(&mut self, request: BrokerRequests) -> Result<bool, BrokerError> {
+    fn send_to_bitvmx_broker(&mut self, request: ToServer) -> Result<bool, BrokerError> {
         self.bitvmx_broker.send(BROKER_SERVER_ID, request)
     }
 }
@@ -314,7 +314,7 @@ mod tests {
     use common::{
         msg_broker::{
             broker::{BROKER_SERVER_ID, MockBrokerClientApi},
-            types::BrokerRequests,
+            types::ToServer,
         },
         test_utils::{
             rsk_block_generator::create_block_and_uncles, rsk_log_generator::FakeLogGenerator,
@@ -354,10 +354,9 @@ mod tests {
 
         log_broker
             .expect_send()
-            .with(
-                eq(BROKER_SERVER_ID),
-                eq(BrokerRequests::SubscribeLogs(address_1)),
-            )
+            .with(eq(BROKER_SERVER_ID), function(move |req: &ToServer| {
+                matches!(req, ToServer::SubscribeLogs(a) if *a == address_1)
+            }))
             .return_once(|_, _| Err(BrokerError::UnknownError(anyhow!("fake error"))));
 
         let mut monitor = Monitor::new(
@@ -418,7 +417,10 @@ mod tests {
 
         block_broker
             .expect_send()
-            .with(eq(BROKER_SERVER_ID), eq(BrokerRequests::SubscribeBlocks))
+            .with(
+                eq(BROKER_SERVER_ID),
+                function(|req: &ToServer| matches!(req, ToServer::SubscribeBlocks)),
+            )
             .return_once(|_, _| Err(BrokerError::UnknownError(anyhow!("fake error"))));
 
         let mut monitor = Monitor::new(
@@ -473,7 +475,10 @@ mod tests {
         expect_unsubscribe_bitvmx(&mut bitvmx_broker, 1);
         bitvmx_broker
             .expect_send()
-            .with(eq(BROKER_SERVER_ID), eq(BrokerRequests::SubscribeBitVMX))
+            .with(
+                eq(BROKER_SERVER_ID),
+                function(|req: &ToServer| matches!(req, ToServer::SubscribeMockedBitVMX)),
+            )
             .return_once(|_, _| Err(BrokerError::UnknownError(anyhow!("fake error"))));
 
         let mut monitor = Monitor::new(
@@ -517,7 +522,7 @@ mod tests {
         let mut log_broker = MockBrokerClientApi::new();
         log_broker
             .expect_try_recv()
-            .return_once(move || Ok(Some(BrokerResponses::Log(log))));
+            .return_once(move || Ok(Some(FromServer::Log(log))));
 
         let mut monitor = Monitor::new(
             log_broker,
@@ -558,9 +563,10 @@ mod tests {
             let block = expected_block_1.clone();
             let uncle = expected_uncle_1.clone();
             move || {
-                Ok(Some(BrokerResponses::Block(
-                    RskBlockAndUncles::new(block, vec![uncle]).unwrap(),
-                )))
+                Ok(Some(FromServer::Block(RskBlockAndUncles::new(
+                    block,
+                    vec![uncle],
+                ))))
             }
         });
 
@@ -575,7 +581,10 @@ mod tests {
         let result = monitor.try_block().expect("Failed to receive block");
         assert_eq!(
             result,
-            Some(RskBlockAndUncles::new(expected_block_1, vec![expected_uncle_1]).unwrap())
+            Some(RskBlockAndUncles::new(
+                expected_block_1,
+                vec![expected_uncle_1]
+            ))
         );
     }
 
@@ -598,7 +607,7 @@ mod tests {
 
     #[test]
     fn test_try_bitvmx_event_returns_some() {
-        let value = BrokerResponses::GetTemporaryPegInAddress(json!("some value"));
+        let value = FromServer::GetTemporaryPegInAddress(json!("some value"));
         let mock_value = value.clone();
         let mut bitvmx_broker = MockBrokerClientApi::new();
         bitvmx_broker
@@ -700,7 +709,9 @@ mod tests {
             .expect_send()
             .with(
                 eq(BROKER_SERVER_ID),
-                eq(BrokerRequests::SubscribeLogs(addr)),
+                function(
+                    move |req: &ToServer| matches!(req, ToServer::SubscribeLogs(a) if *a == addr),
+                ),
             )
             .return_once(|_, _| Ok(true));
     }
@@ -708,7 +719,10 @@ mod tests {
     fn expect_subscribe_blocks(block_broker: &mut MockBrokerClientApi, times: usize) {
         block_broker
             .expect_send()
-            .with(eq(BROKER_SERVER_ID), eq(BrokerRequests::SubscribeBlocks))
+            .with(
+                eq(BROKER_SERVER_ID),
+                function(|req: &ToServer| matches!(req, ToServer::SubscribeBlocks)),
+            )
             .times(times)
             .returning(|_, _| Ok(true));
     }
@@ -716,7 +730,10 @@ mod tests {
     fn expect_subscribe_bitvmx(bitvmx_broker: &mut MockBrokerClientApi, times: usize) {
         bitvmx_broker
             .expect_send()
-            .with(eq(BROKER_SERVER_ID), eq(BrokerRequests::SubscribeBitVMX))
+            .with(
+                eq(BROKER_SERVER_ID),
+                function(|req: &ToServer| matches!(req, ToServer::SubscribeMockedBitVMX)),
+            )
             .times(times)
             .returning(|_, _| Ok(true));
     }
@@ -726,7 +743,9 @@ mod tests {
             .expect_send()
             .with(
                 eq(BROKER_SERVER_ID),
-                eq(BrokerRequests::UnsubscribeLogs(addr)),
+                function(
+                    move |req: &ToServer| matches!(req, ToServer::UnsubscribeLogs(a) if *a == addr),
+                ),
             )
             .return_once(|_, _| Ok(true));
     }
@@ -734,7 +753,10 @@ mod tests {
     fn expect_unsubscribe_blocks(block_broker: &mut MockBrokerClientApi, times: usize) {
         block_broker
             .expect_send()
-            .with(eq(BROKER_SERVER_ID), eq(BrokerRequests::UnsubscribeBlocks))
+            .with(
+                eq(BROKER_SERVER_ID),
+                function(|req: &ToServer| matches!(req, ToServer::UnsubscribeBlocks)),
+            )
             .times(times)
             .returning(|_, _| Ok(true));
     }
@@ -742,7 +764,10 @@ mod tests {
     fn expect_unsubscribe_bitvmx(bitvmx_broker: &mut MockBrokerClientApi, times: usize) {
         bitvmx_broker
             .expect_send()
-            .with(eq(BROKER_SERVER_ID), eq(BrokerRequests::UnsubscribeBitVMX))
+            .with(
+                eq(BROKER_SERVER_ID),
+                function(|req: &ToServer| matches!(req, ToServer::UnsubscribeMockedBitVMX)),
+            )
             .times(times)
             .returning(|_, _| Ok(true));
     }

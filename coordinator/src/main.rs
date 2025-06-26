@@ -1,10 +1,11 @@
 use anyhow::Result;
 use clap::{Arg, Command};
-use common::msg_broker::broker::BrokerClient;
-use common::shutdown_flag::ShutdownFlag;
-use coordinator::config::{Config, Logger};
-use coordinator::coordinator::Coordinator;
-use coordinator::monitor::Monitor;
+use common::{msg_broker::broker::BrokerClient, shutdown_flag::ShutdownFlag};
+use coordinator::{
+    config::{Config, Logger},
+    coordinator::Coordinator,
+    monitor::Monitor,
+};
 use log::{error, info};
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
@@ -49,16 +50,17 @@ fn main() -> Result<()> {
         config.bitvmx_broker.port,
         config.broker_client_id,
     );
+
     let monitor = Monitor::new(
         log_broker,
         block_broker,
-        bitvmx_broker,
+        bitvmx_broker.clone(),
         config.get_peg_manager_contract_addresses(),
     );
 
     let shutdown_flag = ShutdownFlag::init();
 
-    let mut coordinator = Coordinator::new(monitor, shutdown_flag.clone());
+    let mut coordinator = Coordinator::new(monitor, bitvmx_broker, shutdown_flag.clone());
     coordinator.run().inspect_err(|e| {
         error!("Unrecoverable error running coordinator: {:?}", e);
         // signal other threads to shut down

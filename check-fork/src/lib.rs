@@ -38,7 +38,7 @@ pub struct CheckForkArgs {
 }
 
 #[allow(dead_code)]
-pub fn check_fork(args: CheckForkArgs) -> Result<U256, &'static str> {
+pub fn check_fork(args: &CheckForkArgs) -> Result<U256, &'static str> {
     let CheckForkArgs {
         utxo_id,
         pegout_id,
@@ -49,6 +49,12 @@ pub fn check_fork(args: CheckForkArgs) -> Result<U256, &'static str> {
         required_num_blocks,
         block_list,
     } = args;
+
+    // extract values directly to avoid dereferencing later
+    let init_block_time = *init_block_time;
+    let init_block_number = *init_block_number;
+    let required_effort = *required_effort;
+    let required_num_blocks = *required_num_blocks;
 
     //
     // 1. validate list size
@@ -127,9 +133,9 @@ fn validate_first_block(
     block: &Block,
     init_block_time: u64,
     init_block_number: u64,
-    utxo_id: String,
-    pegout_id: String,
-    operator_id: String,
+    utxo_id: &str,
+    pegout_id: &str,
+    operator_id: &str,
 ) -> Result<(), &'static str> {
     if block.timestamp < init_block_time {
         return Err("First block timestamp lower than expected");
@@ -148,9 +154,9 @@ fn validate_first_block(
 
 fn validate_bridge_event(
     bridge_event: &Option<BridgeEvent>,
-    utxo_id: String,
-    pegout_id: String,
-    operator_id: String,
+    utxo_id: &str,
+    pegout_id: &str,
+    operator_id: &str,
 ) -> Result<(), &'static str> {
     let bridge_event = bridge_event
         .as_ref()

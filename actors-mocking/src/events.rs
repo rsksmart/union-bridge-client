@@ -117,7 +117,7 @@ impl<P: Provider + Clone> Executor<P> {
         }
     }
 
-    pub async fn kickoff_advance_funds(&self, pegout_id: String) -> Result<()> {
+    pub async fn advance_funds(&self, pegout_id: String) -> Result<()> {
         let bb = self
             .provider
             .get_block_by_number(BlockNumberOrTag::Latest)
@@ -143,7 +143,7 @@ impl<P: Provider + Clone> Executor<P> {
 
         let receipt = self
             .fake_peg_manager
-            .kickoffAdvanceFunds(
+            .advanceFunds(
                 pegout_id.clone(),
                 utxo_id,
                 operator_id,

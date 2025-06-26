@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, anyhow};
 use common::constants::indexer::NOTIFIER_CHECK_PERIOD;
 use common::msg_broker::broker::BrokerServerApi;
-pub use common::msg_broker::types::{BrokerRequests, BrokerResponses};
+pub use common::msg_broker::types::{FromServer, ToServer};
 use common::shutdown_flag::ShutdownFlag;
 use common::types::RskBlockAndUncles;
 use log::{debug, info, trace, warn};
@@ -67,11 +67,11 @@ impl<BS: BrokerServerApi> Notifier<BS> {
     }
     fn update_consumers(&mut self) -> Result<()> {
         match self.msg_broker.try_recv()? {
-            Some((BrokerRequests::SubscribeBlocks, consumer_id)) => {
+            Some((ToServer::SubscribeBlocks, consumer_id)) => {
                 info!("New consumer {consumer_id} for blocks");
                 self.consumers.insert(consumer_id);
             }
-            Some((BrokerRequests::UnsubscribeBlocks, consumer_id)) => {
+            Some((ToServer::UnsubscribeBlocks, consumer_id)) => {
                 info!("Unsubscribing consumer {consumer_id}");
                 let removed = self.consumers.remove(&consumer_id);
                 if !removed {
@@ -112,7 +112,7 @@ impl<BS: BrokerServerApi> Notifier<BS> {
     fn notify_consumers(&mut self, new_block: RskBlockAndUncles) -> Result<()> {
         let hash = new_block.hash();
         let number = new_block.number();
-        let response = BrokerResponses::Block(new_block);
+        let response = FromServer::Block(new_block);
 
         for c_id in &self.consumers {
             debug!("Notifying consumer {c_id} about new block {number} ({hash})");
@@ -141,7 +141,7 @@ mod tests {
 
     struct ClientRequest {
         id: u32,
-        request: BrokerRequests,
+        request: ToServer,
     }
 
     #[test]
@@ -183,7 +183,7 @@ mod tests {
         let mut mock_broker = MockBrokerServerApi::new();
         mock_broker
             .expect_try_recv()
-            .returning(|| Ok(Some((BrokerRequests::SubscribeBlocks, 1)))); // subscription received
+            .returning(|| Ok(Some((ToServer::SubscribeBlocks, 1)))); // subscription received
         mock_broker.expect_send().never(); // nothing to send, no blocks received yet
 
         let mut notifier = Notifier::new_for_tests(rx, mock_broker, shutdown_flag.clone());
@@ -211,7 +211,7 @@ mod tests {
 
         let client_requests = vec![ClientRequest {
             id: client_id,
-            request: BrokerRequests::SubscribeBlocks,
+            request: ToServer::SubscribeBlocks,
         }];
 
         let (expected_block_1, expected_uncle_1, expected_block_2) = create_block_and_uncles();
@@ -240,7 +240,7 @@ mod tests {
             shutdown_flag,
             vec![
                 RskBlockAndUncles::new_no_uncles(expected_block_1.clone()),
-                RskBlockAndUncles::new(expected_block_2.clone(), vec![expected_uncle_1]).unwrap(),
+                RskBlockAndUncles::new(expected_block_2.clone(), vec![expected_uncle_1]),
             ],
         );
 
@@ -267,11 +267,11 @@ mod tests {
         let client_requests = vec![
             ClientRequest {
                 id: client_id_1,
-                request: BrokerRequests::SubscribeBlocks,
+                request: ToServer::SubscribeBlocks,
             },
             ClientRequest {
                 id: client_id_2,
-                request: BrokerRequests::SubscribeBlocks,
+                request: ToServer::SubscribeBlocks,
             },
         ];
 
@@ -341,16 +341,16 @@ mod tests {
         let client_requests = vec![
             ClientRequest {
                 id: client_id_1,
-                request: BrokerRequests::SubscribeBlocks,
+                request: ToServer::SubscribeBlocks,
             },
             ClientRequest {
                 id: client_id_2,
-                request: BrokerRequests::SubscribeBlocks,
+                request: ToServer::SubscribeBlocks,
             },
             // should not receive blocks for this address
             ClientRequest {
                 id: client_id_1,
-                request: BrokerRequests::UnsubscribeBlocks,
+                request: ToServer::UnsubscribeBlocks,
             },
         ];
 
@@ -424,7 +424,7 @@ mod tests {
             .withf({
                 let expected_block = expected_block.clone(); // move into closure
                 move |response, consumer_id| match response {
-                    BrokerResponses::Block(bau) => {
+                    FromServer::Block(bau) => {
                         *consumer_id == dest
                             && *bau.block() == expected_block
                             && bau.uncles().iter().all(|u| expected_uncles.contains(u))

@@ -11,3 +11,6 @@ config/local
 **/logs/*
 **/.db
 **/.union-bridge-contracts
+**/.llmignore
+qa-tools/reports/**
+qa-tools/test_keystore/**

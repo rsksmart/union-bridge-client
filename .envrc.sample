@@ -6,3 +6,6 @@ export CHECK_FORK_REQUIRED_NUM_BLOCKS=25
 
 # for transaction dispatcher
 export KEY_STORE_PASSWORD="<super-secret-password>"
+
+# CI/CD specific
+export FAIRGATE_GITHUB_TOKEN="<example_token>"

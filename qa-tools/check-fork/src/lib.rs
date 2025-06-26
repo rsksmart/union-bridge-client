@@ -66,7 +66,7 @@ pub async fn get_blocks(
     let mut blocks = vec![];
 
     for i in 0..num_of_blocks {
-        let block_number_hex = format!("0x{:x}", start_block_number + i as u64);
+        let block_number_hex = format!("{:#x}", start_block_number + i as u64);
         let request_body = json!({
             "jsonrpc": "2.0",
             "method": "eth_getBlockByNumber",
@@ -179,7 +179,7 @@ fn parse_u64_to_hex<S>(v: &u64, s: S) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
 {
-    s.serialize_str(&format!("0x{:x}", v))
+    s.serialize_str(&format!("{:#x}", v))
 }
 
 fn parse_hex_to_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>

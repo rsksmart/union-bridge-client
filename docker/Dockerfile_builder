@@ -1,0 +1,23 @@
+# Custom Rust builder image
+FROM rust:1.86-slim-bookworm
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    clang \
+    libclang-dev \
+    llvm-dev \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# setup SSH for private repositories
+RUN mkdir -p -m 0700 ~/.ssh && \
+    ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+# TODO(jira) https://rsklabs.atlassian.net/browse/ub-176
+# setup bitvmx workspace
+COPY dockerfile-bitvmx-setup.sh /app/bitvmx-setup.sh
+RUN --mount=type=ssh,id=default chmod +x /app/bitvmx-setup.sh && /app/bitvmx-setup.sh

@@ -11,8 +11,6 @@ for arg in "$@"; do
   fi
 done
 
-export COMPOSE_PARALLEL_LIMIT=1
-
 if [[ -n "$features" ]] && [[ -n "$service" ]]; then
   docker compose build "$service" --build-arg FEATURES="$features" --build-arg JUST_CRATE="$service"
 elif [[ -n "$features" ]]; then

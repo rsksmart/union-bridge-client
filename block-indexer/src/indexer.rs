@@ -224,7 +224,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 
     fn notify_block(&self, block: RskBlock, uncles: Vec<RskBlock>) -> Result<()> {
         if let Some(channel) = &self.new_block_sender {
-            if let Err(e) = channel.send(RskBlockAndUncles::new(block, uncles)?) {
+            if let Err(e) = channel.send(RskBlockAndUncles::new(block, uncles)) {
                 // TODO(Jira) this should be monitored and analysed - https://rsklabs.atlassian.net/browse/UB-127
                 error!(
                     "[notify_block] Failed to send best block through channel: {:?}",
@@ -448,24 +448,36 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 
         let mut uncle_blocks = Vec::new();
 
-        for uncle_hash in new_block.uncles() {
+        let uncle_amount = new_block.uncles().len();
+        for i in 0..uncle_amount {
             if let Some(uncle) = self
                 .rsk_provider
-                .get_block_by_hash(uncle_hash)
+                .get_uncle_by_hash_and_index(nephew_hash, i as u64)
                 .context("Fetching uncle block")?
             {
-                self.store
-                    .save_block(&uncle)
-                    .context("Saving uncle block")?;
-                uncle_blocks.push(uncle);
+                if !new_block.uncles().contains(&uncle.hash()) {
+                    warn!(
+                        "[block_backward_sync] Received uncle {} is not in nephew {} (#{}) uncles list: {:?}",
+                        uncle.hash(),
+                        nephew_hash,
+                        nephew_number,
+                        new_block.uncles()
+                    );
+                } else {
+                    self.store
+                        .save_block(&uncle)
+                        .context("Saving uncle block")?;
+                    uncle_blocks.push(uncle);
+                }
             } else {
                 warn!(
                     "[block_backward_sync] Possible orphan – nephew {} (#{}) references missing uncle {}",
-                    nephew_hash, nephew_number, uncle_hash
+                    nephew_hash,
+                    nephew_number,
+                    new_block.uncles()[i]
                 );
             }
         }
-
         Ok(uncle_blocks)
     }
 }
@@ -485,7 +497,7 @@ mod tests {
     use common::{
         rsk_provider::MockRskProvider,
         test_utils::rsk_block_generator::{
-            get_first_default_rsk_block, get_second_default_rsk_block,
+            get_first_default_rsk_block, get_second_default_rsk_block, get_third_default_rsk_block,
         },
     };
     use mockall::predicate::eq;
@@ -515,6 +527,7 @@ mod tests {
 
     #[test]
     fn saves_uncle_when_found() {
+        let base: RskBlock = get_second_default_rsk_block();
         let uncle_block = get_first_default_rsk_block();
         let uncle_hash = uncle_block.hash();
 
@@ -525,12 +538,12 @@ mod tests {
             .times(1)
             .returning(|_| Ok(()));
 
-        let mut provider = MockRskProvider::new();
+        let mut provider: MockRskProvider = MockRskProvider::new();
         provider
-            .expect_get_block_by_hash()
-            .with(eq(uncle_hash))
+            .expect_get_uncle_by_hash_and_index()
+            .with(eq(base.hash()), eq(0))
             .times(1)
-            .returning(move |_| Ok(Some(uncle_block.clone())));
+            .returning(move |_, _| Ok(Some(uncle_block.clone())));
 
         let base = get_second_default_rsk_block();
         let block_with_uncle = RskBlock::new(
@@ -558,20 +571,20 @@ mod tests {
 
     #[test]
     fn warns_but_ok_if_uncle_missing() {
+        let base = get_second_default_rsk_block();
         let missing_hash = get_first_default_rsk_block().hash();
 
         let mut provider = MockRskProvider::new();
         provider
-            .expect_get_block_by_hash()
-            .with(eq(missing_hash))
+            .expect_get_uncle_by_hash_and_index()
+            .with(eq(base.hash()), eq(0))
             .times(1)
-            .returning(|_| Ok(None));
+            .returning(|_, _| Ok(None));
 
         // store.save_block should never be called
         let mut store = MockBlockStore::new();
         store.expect_save_block().never();
 
-        let base = get_second_default_rsk_block();
         let block_with_missing = RskBlock::new(
             base.number(),
             base.hash(),
@@ -592,6 +605,43 @@ mod tests {
         };
 
         let res = idx.process_uncle_blocks(&block_with_missing);
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn warns_but_ok_if_uncle_mismatch_listed_hashes() {
+        let base = get_third_default_rsk_block();
+        let uncle_hash = get_second_default_rsk_block().hash();
+
+        let mut provider = MockRskProvider::new();
+        provider
+            .expect_get_uncle_by_hash_and_index()
+            .with(eq(base.hash()), eq(0))
+            .times(1)
+            .returning(move |_, _| Ok(Some(get_first_default_rsk_block())));
+
+        let mut store: MockBlockStore = MockBlockStore::new();
+        store.expect_save_block().never();
+
+        let block_with_uncle = RskBlock::new(
+            base.number(),
+            base.hash(),
+            base.parent_hash(),
+            base.timestamp(),
+            base.difficulty(),
+            base.total_difficulty(),
+            base.pow(),
+            vec![uncle_hash],
+        );
+
+        let idx = BlockIndexer {
+            rsk_provider: provider,
+            new_block_sender: None,
+            store,
+            initial_block_hash: block_with_uncle.parent_hash(),
+            shutdown_flag: ShutdownFlag::init(),
+        };
+        let res = idx.process_uncle_blocks(&block_with_uncle);
         assert!(res.is_ok());
     }
 

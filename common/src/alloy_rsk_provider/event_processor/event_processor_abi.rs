@@ -24,18 +24,17 @@ pub fn process(
     }
 
     let event = abi.events.values().flatten().find(|e| {
-        e.selector()
-            .to_string()
-            .eq_ignore_ascii_case(&rsk_log.event().topics()[0]) // TODO(Jira) another reason for https://rsklabs.atlassian.net/browse/UB-140
+        e.selector().as_slice() == rsk_log.event().topics()[0].value().as_bytes() // TODO(Jira) another reason for https://rsklabs.atlassian.net/browse/UB-140
     });
     let event = event.unwrap();
 
-    let mut decoded_log_input = serde_json::Map::new();
+    let mut decoded_log_input: serde_json::Map<String, Value> = serde_json::Map::new();
 
     let topic_params: Vec<&EventParam> = event.inputs.iter().filter(|i| i.indexed).collect();
     for (i, input) in topic_params.iter().enumerate() {
         let sol_type = DynSolType::from_str(input.ty.as_str())?;
-        let sol_value = sol_type.abi_decode_params((&rsk_log.event().topics()[i]).as_ref())?;
+        let sol_value =
+            sol_type.abi_decode_params((&rsk_log.event().topics()[i]).value().as_bytes())?;
         decoded_log_input.insert(input.name.to_string(), dyn_value_to_json(&sol_value)?);
     }
 
@@ -59,8 +58,8 @@ pub fn process(
 #[allow(unexpected_cfgs)]
 fn dyn_value_to_json(value: &DynSolValue) -> Result<Value> {
     let parsed = match value {
-        DynSolValue::Uint(num, _) => json!(format!("0x{:x}", num)),
-        DynSolValue::Int(num, _) => json!(format!("0x{:x}", num)),
+        DynSolValue::Uint(num, _) => json!(format!("{:#x}", num)),
+        DynSolValue::Int(num, _) => json!(format!("{:#x}", num)),
         DynSolValue::Bool(b) => json!(b),
         DynSolValue::String(s) => json!(s),
         DynSolValue::Address(addr) => json!(format!("{:?}", addr.to_string())),

@@ -1,11 +1,9 @@
 use crate::{
-    event_processor::{
-        EventProcessor, GetTemporaryPeginAddressProcessor, PegOutAdvanceFundsProcessor,
-    },
+    event_processor::{AdvanceFundsProcessor, EventProcessor, GetTemporaryPeginAddressProcessor},
     monitor::MonitorApi,
 };
 use anyhow::{Context, Result};
-use common::shutdown_flag::ShutdownFlag;
+use common::{msg_broker::broker::BrokerClientApi, shutdown_flag::ShutdownFlag};
 use log::error;
 use std::{thread, time::Duration};
 
@@ -19,12 +17,18 @@ pub struct Coordinator<M: MonitorApi> {
 }
 
 impl<M: MonitorApi> Coordinator<M> {
-    pub fn new(monitor: M, shutdown_flag: ShutdownFlag) -> Self {
+    pub fn new<B: BrokerClientApi + Clone + 'static>(
+        monitor: M,
+        bitvmx_broker: B,
+        shutdown_flag: ShutdownFlag,
+    ) -> Self {
         Self {
             monitor,
             processors: vec![
-                Box::new(PegOutAdvanceFundsProcessor::new()),
-                Box::new(GetTemporaryPeginAddressProcessor::new()),
+                Box::new(AdvanceFundsProcessor::new(bitvmx_broker.clone())),
+                Box::new(GetTemporaryPeginAddressProcessor::new(
+                    bitvmx_broker.clone(),
+                )),
             ],
             check_period: CHECK_PERIOD,
             shutdown_flag,
@@ -140,14 +144,12 @@ mod tests {
     use crate::{
         coordinator::Coordinator,
         monitor::MockMonitorApi,
-        types::{KickoffAdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents},
+        types::{AdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents},
     };
-    use actors_mocking::fake_contracts::FakePegManager::{
-        KickoffAdvanceFunds, RequestAdvanceFunds,
-    };
+    use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
     use alloy_primitives::U256;
     use common::{
-        msg_broker::types::BrokerResponses::GetTemporaryPegInAddress,
+        msg_broker::types::FromServer::GetTemporaryPegInAddress,
         shutdown_flag::ShutdownFlag,
         test_utils::rsk_block_generator::{
             create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
@@ -167,8 +169,8 @@ mod tests {
         }
     }
 
-    fn create_fake_kickoff_event(peg_out_id: &str) -> KickoffAdvanceFunds {
-        KickoffAdvanceFunds {
+    fn create_fake_advance_funds_event(peg_out_id: &str) -> AdvanceFunds {
+        AdvanceFunds {
             peg_out_id: peg_out_id.to_string(),
             utxo_id: "utxo123".to_string(),
             operator_id: "op123".to_string(),
@@ -188,12 +190,11 @@ mod tests {
             block_hash: block_1.hash().into(),
         });
 
-        let event_2: RskPegManagerEvents =
-            RskPegManagerEvents::KickoffAdvanceFunds(KickoffAdvanceFundsEvent {
-                inner: create_fake_kickoff_event("peg_out_id_1"),
-                block_number: block_2.number(),
-                block_hash: block_2.hash().into(),
-            });
+        let event_2: RskPegManagerEvents = RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
+            inner: create_fake_advance_funds_event("peg_out_id_1"),
+            block_number: block_2.number(),
+            block_hash: block_2.hash().into(),
+        });
 
         let bitvmx_event = GetTemporaryPegInAddress(json!("GetTemporaryPegInAddress"));
 
@@ -231,7 +232,7 @@ mod tests {
         expect_try_block(
             vec![
                 RskBlockAndUncles::new_no_uncles(block_1),
-                RskBlockAndUncles::new(block_2, vec![uncle_1]).unwrap(),
+                RskBlockAndUncles::new(block_2, vec![uncle_1]),
             ],
             &mut mock_monitor,
         );

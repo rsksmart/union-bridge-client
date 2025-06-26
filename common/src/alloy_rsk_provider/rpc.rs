@@ -192,7 +192,7 @@ impl RskProvider for AlloyProvider {
     }
 
     fn get_block_by_number(&self, num: BlockNumber) -> Result<Option<RskBlock>> {
-        let num_hex = format!("0x{:x}", num.value());
+        let num_hex = format!("{:#x}", num.value());
 
         let rpc_call = self
             .inner
@@ -215,6 +215,20 @@ impl RskProvider for AlloyProvider {
             .and_then(|response| Self::parse_block_provider_response(response))
             .context("Getting best block from provider")?
             .context("None best block")
+    }
+
+    fn get_uncle_by_hash_and_index(&self, hash: BlockHash, index: u64) -> Result<Option<RskBlock>> {
+        // Convert index to hexadecimal format
+        let hex_index = format!("{:#x}", index);
+
+        let rpc_call = self.inner.client().request(
+            "eth_getUncleByBlockHashAndIndex",
+            vec![json!(hash), json!(hex_index)],
+        );
+
+        self.run(rpc_call)
+            .context(format!("Getting block {hash} from provider"))
+            .and_then(|response| Self::parse_block_provider_response(response))
     }
 
     fn get_logs(
@@ -275,6 +289,7 @@ impl RskProvider for AlloyProvider {
 
 #[cfg(test)]
 mod tests {
+    use crate::types::{DataBytes, LogTopic, TxHash};
     use crate::{
         alloy_rsk_provider::rpc::AlloyProvider,
         types::{Address, BlockHash, BlockNumber},
@@ -414,21 +429,28 @@ mod tests {
         )
         .expect("Invalid hex string in JSON");
 
-        let expected_tx_hash = result[0]["transactionHash"]
-            .as_str()
-            .expect("Transaction hash should be a string")
-            .to_string();
+        let expected_tx_hash = TxHash::try_from(
+            result[0]["transactionHash"]
+                .as_str()
+                .expect("Transaction hash should be a string"),
+        )
+        .expect("Invalid hex string in JSON");
 
-        let expected_data = result[0]["data"]
-            .as_str()
-            .expect("Log data should be a string")
-            .to_string();
+        let expected_data = &DataBytes::from_hex_str(
+            result[0]["data"]
+                .as_str()
+                .expect("Log data should be a string"),
+        )
+        .expect("Failed to parse expected data");
 
-        let expected_topics: Vec<String> = result[0]["topics"]
+        let expected_topics: Vec<LogTopic> = result[0]["topics"]
             .as_array()
             .expect("Topics should be an array")
             .iter()
-            .map(|t| t.as_str().expect("Topic should be a string").to_string())
+            .map(|t| {
+                LogTopic::try_from(t.as_str().expect("Topic should be a string"))
+                    .expect("Invalid hex string in JSON")
+            })
             .collect();
 
         assert_eq!(expected_address, logs[0].info().address());

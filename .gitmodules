@@ -1,3 +1,0 @@
-[submodule "zkvm_host"]
-	path = util/zkvm_host
-	url = https://github.com/FairgateLabs/rust-bitvmx-zk-proof.git

@@ -11,14 +11,16 @@ pub struct UncleBlockInfo {
     pub height: BlockNumber,
     pub reorg: bool,
     pub id: String,
+    pub index: u64,
 }
 
 impl UncleBlockInfo {
-    pub fn new(height: i32, reorg: bool, uncle_id: &str) -> Self {
+    pub fn new(height: i32, reorg: bool, uncle_id: &str, index: u64) -> Self {
         Self {
             height: BlockNumber::from(height as u64),
             reorg,
             id: uncle_id.to_string(),
+            index,
         }
     }
 }
@@ -78,39 +80,6 @@ pub fn generate_fake_managed_contract(address: Address) -> (Address, ContractInf
             abi: None,
         },
     )
-}
-
-/// Generates a fake transaction hash using a transaction ID and a sender address.
-///
-/// This function concatenates the little-endian byte representation of `tx_id` with the
-/// bytes of the `from` string, computes the Keccak256 hash of the result, and returns
-/// the hash formatted as a hexadecimal string.
-///
-/// # Parameters
-///
-/// - `tx_id`: The transaction identifier used in the hash generation.
-/// - `from`: A string slice representing the sender's address.
-///
-/// # Returns
-///
-/// A `String` containing the fake transaction hash.
-///
-/// # Example
-///
-/// ```
-/// use common::test_utils::rsk_utils::generate_fake_tx_hash;
-///
-/// let tx_hash = generate_fake_tx_hash(1, "0xabc123...");
-/// assert!(tx_hash.starts_with("0x"));
-/// ```
-pub fn generate_fake_tx_hash(tx_id: u64, from: &str) -> String {
-    let mut hasher = Keccak256::new();
-    let mut data = Vec::new();
-    data.extend_from_slice(&tx_id.to_le_bytes());
-    data.extend_from_slice(from.as_bytes());
-    hasher.update(data);
-    let hash = hasher.finalize();
-    format!("0x{}", hex::encode(hash))
 }
 
 /// Converts a hex string into a `BlockHash`.
