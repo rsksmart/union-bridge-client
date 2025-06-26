@@ -94,7 +94,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     if cli_args.operation == "elf" {
         generate_elf(&check_fork_args)?;
     } else if cli_args.operation == "run" {
-        match check_fork::check_fork(check_fork_args) {
+        match check_fork::check_fork(&check_fork_args) {
             Ok(_) => println!("Check Fork returned ACCEPT"),
             Err(e) => println!("Check Fork returned REJECT: {:?}", e),
         }
