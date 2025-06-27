@@ -8,6 +8,7 @@ use crate::{
 };
 use anyhow::{Context, Result, bail};
 use bitvmx_client::{program::variables::VariableTypes, types::IncomingBitVMXApiMessages};
+use common::types::BlockNumber;
 use common::{
     msg_broker::{
         broker::{BROKER_SERVER_ID, BrokerClientApi},
@@ -29,9 +30,10 @@ struct UnconfirmedEvent<T: Clone> {
 }
 
 impl<T: Clone> UnconfirmedEvent<T> {
-    fn new(data: T, required_confirmations: u32) -> Self {
+    fn new(data: T, init_block: BlockNumber, required_confirmations: u32) -> Self {
         let event_id = Uuid::new_v4();
-        let confirmations = BlockConfirmations::new(event_id.to_string(), required_confirmations);
+        let confirmations =
+            BlockConfirmations::new(event_id.to_string(), init_block, required_confirmations);
         let rc_confirmations = Rc::new(RefCell::new(confirmations));
 
         Self {
@@ -202,7 +204,8 @@ impl<T: BrokerClientApi> EventProcessor for PeginProcessor<T> {
                     data
                 );
 
-                let unconfirmed_event = UnconfirmedEvent::new(data.clone(), REQUIRED_CONFIRMATIONS);
+                let unconfirmed_event =
+                    UnconfirmedEvent::new(data.clone(), data.block_number, REQUIRED_CONFIRMATIONS);
 
                 self.blockchain
                     .add_observer(unconfirmed_event.confirmations());
@@ -248,7 +251,8 @@ mod tests {
     use common::msg_broker::broker::{BROKER_SERVER_ID, MockBrokerClientApi};
     use common::msg_broker::types::{FromServer, ToServer};
     use common::test_utils::rsk_block_generator::create_block_and_uncles;
-    use common::types::{BlockHash, BlockNumber, RskLog};
+    use common::types::{BlockHash, BlockNumber};
+    use mockall::predicate::{eq, function};
     use mockito::mock;
     use primitive_types::H256;
     use serde_json::json;
@@ -463,14 +467,16 @@ mod tests {
         let broker = MockBrokerClientApi::new();
         let mut processor = PeginProcessor::new(broker);
 
+        let (block_1, _, _) = create_block_and_uncles();
+
         let req = dummy_pegin_request();
         let event = RegisteredPegInRequestEvent {
             inner: req,
-            block_number: BlockNumber::from(100),
-            block_hash: BlockHash::from(H256::from_low_u64_be(123)),
+            block_number: block_1.number(),
+            block_hash: block_1.hash(),
         };
 
-        let unconfirmed = UnconfirmedEvent::new(event.clone(), 5);
+        let unconfirmed = UnconfirmedEvent::new(event.clone(), event.block_number, 5);
         let observer_id = unconfirmed.event_id.to_string();
 
         processor
@@ -479,7 +485,6 @@ mod tests {
         processor.register_pegin_events.push(unconfirmed);
 
         // Simulate one new block
-        let (block_1, _, _) = create_block_and_uncles();
         let block = RskBlockAndUncles::new_no_uncles(block_1);
 
         let result = processor.process_new_block(&block);
@@ -491,25 +496,41 @@ mod tests {
 
     #[test]
     fn process_new_block_confirms_and_removes_event() {
-        let broker = MockBrokerClientApi::new();
-        let mut processor = PeginProcessor::new(broker);
+        let (block_1, _, _) = create_block_and_uncles();
 
         let req = dummy_pegin_request();
         let event = RegisteredPegInRequestEvent {
             inner: req,
-            block_number: BlockNumber::from(100),
-            block_hash: BlockHash::from(H256::from_low_u64_be(123)),
+            block_number: block_1.number(),
+            block_hash: block_1.hash(),
         };
 
-        let unconfirmed = UnconfirmedEvent::new(event.clone(), 1); // confirm after 1 block
+        let unconfirmed = UnconfirmedEvent::new(event.clone(), event.block_number, 1); // confirm after 1 block
         let observer_id = unconfirmed.event_id.to_string();
+
+        let mut broker = MockBrokerClientApi::new();
+        let expected_payload = json!(event.inner).to_string();
+
+        broker
+            .expect_send()
+            .times(1)
+            .with(
+                eq(BROKER_SERVER_ID),
+                function(move |req: &ToServer| {
+                    matches!(req, ToServer::ToBitVMX(IncomingBitVMXApiMessages::SetVar(_, variable_name, data)) 
+                        if variable_name == "RegisteredPegInRequest" && 
+                           matches!(data, VariableTypes::String(payload) if *payload == expected_payload))
+                }),
+            )
+            .returning(|_, _| Ok(true));
+
+        let mut processor = PeginProcessor::new(broker);
 
         processor
             .blockchain
             .add_observer(unconfirmed.confirmations());
         processor.register_pegin_events.push(unconfirmed);
 
-        let (block_1, _, _) = create_block_and_uncles();
         let block = RskBlockAndUncles::new_no_uncles(block_1);
 
         let result = processor.process_new_block(&block);
