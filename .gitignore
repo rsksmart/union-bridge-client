@@ -1,5 +1,6 @@
 **/.env
 **/.envrc
+**/.actrc
 **/app.log*
 **/check_fork_args.bin
 **/stark-proof.bin

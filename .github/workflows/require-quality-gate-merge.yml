@@ -1,10 +1,10 @@
 name: Check Peer Test Action
 
-on:
-  pull_request:
-    types: [ opened, synchronize, reopened, labeled, unlabeled ]
-    branches:
-      - main
+#on:
+#  pull_request:
+#    types: [ opened, synchronize, reopened, labeled, unlabeled ]
+#    branches:
+#      - main
 
 permissions:
   contents: read

@@ -230,10 +230,21 @@ brew install act
 
 **Only the first time you run `act`, or whenever the base image changes**. To do so, run the following command from the `.github/act` directory:
 
+Then, copy the `.actrc.sample` to `.actrc` and configure it as needed. This file is used to configure the `act` tool.
+
+To run the same actions as the CI runs on pull requests, you can use the following command:
 ```bash
-act -j automated-tests -s FAIRGATE_GITHUB_TOKEN=<ask_your_colleagues> --container-architecture linux/amd64
+act pull_request -s KEY_STORE_FILE=$(cat <path_to_your_keystore_file>)
 ```
 
-Where:
-- `FAIRGATE_GITHUB_TOKEN` is needed for now to access Fairgate private repositories used as dependencies
-- `--container-architecture linux/amd64` is needed to run Risc0 tools
+To run just Crate Tests, you can use the following command:
+```bash
+act -j crate-tests -s KEY_STORE_FILE=$(cat <path_to_your_keystore_file>)
+```
+
+To run just QA Tests, you can use the following command:
+```bash
+act -j qa-tests -s KEY_STORE_FILE=$(cat <path_to_your_keystore_file>)
+```
+
+NOTE: Uploading and downloading artifacts is slow locally, but fast on the CI.

@@ -1633,7 +1633,6 @@ dependencies = [
  "clap",
  "comfy-table",
  "config 0.15.11",
- "console",
  "ctrlc",
  "emulator",
  "enum_dispatch",
@@ -3171,8 +3170,6 @@ dependencies = [
  "serde",
  "serde-big-array",
  "serde_json",
- "strum 0.27.1",
- "strum_macros 0.27.1",
  "thiserror 1.0.69",
  "tracing",
  "tracing-subscriber",
@@ -7388,12 +7385,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sha1_smol"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbfa15b3dddfee50a0fff136974b3e1bde555604ba463834a7eb7deb6417705d"
-
-[[package]]
 name = "sha2"
 version = "0.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8674,7 +8665,6 @@ dependencies = [
  "getrandom 0.3.3",
  "js-sys",
  "serde",
- "sha1_smol",
  "wasm-bindgen",
 ]
 
