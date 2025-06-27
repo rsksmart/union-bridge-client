@@ -1,14 +1,14 @@
+use crate::types::EventWithBlock;
 use crate::{
     config::REQUIRED_CONFIRMATIONS,
     event_processor::{
         EventProcessor,
         blockchain_tracker::{BlockConfirmations, BlockchainView},
     },
-    types::{RegisteredPegInRequestEvent, RskPegManagerEvents},
+    types::RskPegManagerEvents,
 };
 use anyhow::{Context, Result, bail};
 use bitvmx_client::{program::variables::VariableTypes, types::IncomingBitVMXApiMessages};
-use common::types::BlockNumber;
 use common::{
     msg_broker::{
         broker::{BROKER_SERVER_ID, BrokerClientApi},
@@ -20,20 +20,24 @@ use log::{error, info};
 use reqwest::blocking::Client;
 use serde_json::{Value, json};
 use std::{cell::RefCell, env, rc::Rc};
+use union_contracts::bindings::pegmanager::PegManager::RegisteredPegInRequest;
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 struct UnconfirmedEvent<T: Clone> {
     event_id: Uuid,
-    data: T,
+    data: EventWithBlock<T>,
     confirmations: Rc<RefCell<BlockConfirmations>>,
 }
 
 impl<T: Clone> UnconfirmedEvent<T> {
-    fn new(data: T, init_block: BlockNumber, required_confirmations: u32) -> Self {
+    fn new(data: EventWithBlock<T>, required_confirmations: u32) -> Self {
         let event_id = Uuid::new_v4();
-        let confirmations =
-            BlockConfirmations::new(event_id.to_string(), init_block, required_confirmations);
+        let confirmations = BlockConfirmations::new(
+            event_id.to_string(),
+            data.block_number,
+            required_confirmations,
+        );
         let rc_confirmations = Rc::new(RefCell::new(confirmations));
 
         Self {
@@ -56,7 +60,7 @@ pub struct PeginProcessor<T: BrokerClientApi> {
     http_client: Client,
     bitvmx_broker: T,
     blockchain: BlockchainView,
-    register_pegin_events: Vec<UnconfirmedEvent<RegisteredPegInRequestEvent>>,
+    register_pegin_events: Vec<UnconfirmedEvent<RegisteredPegInRequest>>,
 }
 
 impl<T: BrokerClientApi> PeginProcessor<T> {
@@ -204,8 +208,7 @@ impl<T: BrokerClientApi> EventProcessor for PeginProcessor<T> {
                     data
                 );
 
-                let unconfirmed_event =
-                    UnconfirmedEvent::new(data.clone(), data.block_number, REQUIRED_CONFIRMATIONS);
+                let unconfirmed_event = UnconfirmedEvent::new(data.clone(), REQUIRED_CONFIRMATIONS);
 
                 self.blockchain
                     .add_observer(unconfirmed_event.confirmations());
@@ -476,7 +479,7 @@ mod tests {
             block_hash: block_1.hash(),
         };
 
-        let unconfirmed = UnconfirmedEvent::new(event.clone(), event.block_number, 5);
+        let unconfirmed = UnconfirmedEvent::new(event.clone(), 5);
         let observer_id = unconfirmed.event_id.to_string();
 
         processor
@@ -505,7 +508,7 @@ mod tests {
             block_hash: block_1.hash(),
         };
 
-        let unconfirmed = UnconfirmedEvent::new(event.clone(), event.block_number, 1); // confirm after 1 block
+        let unconfirmed = UnconfirmedEvent::new(event.clone(), 1); // confirm after 1 block
         let observer_id = unconfirmed.event_id.to_string();
 
         let mut broker = MockBrokerClientApi::new();
