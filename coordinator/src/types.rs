@@ -5,7 +5,7 @@ use alloy_sol_types::SolEvent;
 use common::types::{BlockHash, BlockNumber, RskLog};
 use log::{error, warn};
 use std::collections::HashMap;
-use union_contracts::bindings::pegmanager::PegManager::PeginRequested;
+use union_contracts::bindings::peg_manager::PegManager::PeginRequested;
 
 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-183
 
@@ -110,7 +110,7 @@ impl EventDecoder {
         block_hash: BlockHash,
         removed: bool,
     ) -> RskPegManagerEvents {
-        match PeginRequested::decode_log_data(&log_data, true) {
+        match PeginRequested::decode_log_data(&log_data) {
             Ok(ev) if !removed => RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
                 inner: ev,
                 block_number,
@@ -174,7 +174,7 @@ mod tests {
     use common::test_utils::rsk_utils::generate_fake_address;
     use common::types::{BlockHash, DataBytes, Hash256, LogEvent, LogInfo, RskLog, TxHash};
     use primitive_types::H256;
-    use union_contracts::bindings::pegmanager::PegManager::{PrevoutData, RequestPeginTempInfo};
+    use union_contracts::bindings::peg_manager::PegManager::{PrevoutData, RequestPeginTempInfo};
 
     #[test]
     fn test_decode_unknown_event() {

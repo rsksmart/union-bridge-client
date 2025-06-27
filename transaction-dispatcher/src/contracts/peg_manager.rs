@@ -4,9 +4,8 @@ use alloy_provider::Provider;
 use alloy_rpc_types::TransactionReceipt;
 use anyhow::Result;
 use log::{error, info};
-use union_contracts::bindings::pegmanager::PegManager;
-use union_contracts::bindings::pegmanager::PegManager::{
-    BtcTransaction, BtcTxSPVProof, PegManagerInstance, getTemporaryPeginAddressReturn,
+use union_contracts::bindings::peg_manager::PegManager::{
+    self, BtcTransaction, BtcTxSPVProof, PegManagerErrors, PegManagerInstance,
 };
 
 use crate::contracts::bitcoin_manager::ParseFieldError;
@@ -33,7 +32,7 @@ pub trait PegManagerContractApi {
         rootstock_deposit_address: Address,
         value: u64,
         btc_reimbursement_pub_key: FixedBytes<32>,
-    ) -> alloy_contract::Result<getTemporaryPeginAddressReturn>;
+    ) -> alloy_contract::Result<String>;
 
     async fn register_peg_in_request_send(
         &self,
@@ -81,7 +80,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         rootstock_deposit_address: Address,
         value: u64,
         btc_reimbursement_pub_key: FixedBytes<32>,
-    ) -> alloy_contract::Result<getTemporaryPeginAddressReturn> {
+    ) -> alloy_contract::Result<String> {
         self.contract_instance
             .getTemporaryPeginAddress(rootstock_deposit_address, value, btc_reimbursement_pub_key)
             .call()
@@ -161,7 +160,7 @@ impl<P: Provider> PegManagerContractApi for FakePegManagerContract<P> {
         _rootstock_deposit_address: Address,
         _value: u64,
         _btc_reimbursement_pub_key: FixedBytes<32>,
-    ) -> alloy_contract::Result<getTemporaryPeginAddressReturn> {
+    ) -> alloy_contract::Result<String> {
         todo!("Not yet implemented for FakePegManagerContract");
     }
 
@@ -251,14 +250,11 @@ impl TryFrom<RegisterPegInInput> for BtcTxSPVProof {
 pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> {
     let decoded_err = err.as_decoded_interface_error::<PegManagerErrors>();
     decoded_err.map(|e| match e {
-        PegManagerErrors::AlreadyRegisteredAcceptPegIn(e) => {
-            DomainErrors::AlreadyRegisteredAcceptPegIn(format!("{:?}", e))
+        PegManagerErrors::PeginAlreadyAccepted(e) => {
+            DomainErrors::PeginAlreadyAccepted(format!("{:?}", e))
         }
-        PegManagerErrors::AlreadyRegisteredPegIn(e) => {
-            DomainErrors::AlreadyRegisteredPegIn(format!("{:?}", e))
-        }
-        PegManagerErrors::AlreadyRegisteredPegInRequest(e) => {
-            DomainErrors::AlreadyRegisteredPegInRequest(format!("{:?}", e))
+        PegManagerErrors::PeginAlreadyRequested(e) => {
+            DomainErrors::PeginAlreadyRequested(format!("{:?}", e))
         }
         PegManagerErrors::IncorrectInputsNumber(e) => {
             DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
@@ -272,18 +268,11 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
         PegManagerErrors::InvalidLocktime(e) => {
             DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
         }
-        PegManagerErrors::InvalidSequence(e) => {
-            DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
-        }
-        PegManagerErrors::InvalidVout(e) => DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e)),
         PegManagerErrors::NotEnoughConfirmations(e) => {
             DomainErrors::NotEnoughConfirmations(format!("{:?}", e))
         }
-        PegManagerErrors::UnregisteredPegInRequest(e) => {
-            DomainErrors::UnregisteredRequest(format!("{:?}", e))
-        }
-        PegManagerErrors::InvalidPubKeyLength(e) => {
-            DomainErrors::InvalidPublicKey(format!("{:?}", e))
+        PegManagerErrors::InvalidCompressedPubKey(e) => {
+            DomainErrors::InvalidCompressedPubKey(format!("{:?}", e))
         }
         PegManagerErrors::PegoutRequestAmountExceedsUint64Limit(e) => {
             DomainErrors::PegoutRequestAmountExceedsUint64Limit(format!("{:?}", e))
@@ -299,7 +288,7 @@ mod tests {
     use union_contracts::bindings::bitcoin_manager::BitcoinManager::{
         BitcoinManagerErrors, IncorrectOutputScript,
     };
-    use union_contracts::bindings::pegmanager::PegManager::{
+    use union_contracts::bindings::peg_manager::PegManager::{
         BridgeBtcBlockNotInBestChain, IncorrectInputsNumber, IncorrectOutputsNumber,
         InvalidBtcTxVersion, InvalidLocktime, NotInitializing, PegManagerErrors,
         PeginAlreadyRequested,

@@ -205,12 +205,16 @@ pub enum DomainErrors {
     // mapped smart contract errors
     #[error("Pegin already requested: {0}")]
     PeginAlreadyRequested(String),
+    #[error("Pegin already accepted: {0}")]
+    PeginAlreadyAccepted(String),
     #[error("Invalid address: {0}")]
     InvalidAddress(String),
     #[error("Invalid BTC Tx SPV Proof: {0}")]
     InvalidBtcTxSpvProof(String),
     #[error("Invalid compressed public key: {0}")]
     InvalidCompressedPubKey(String),
+    #[error("Invalid public key: {0}")]
+    InvalidPublicKey(String),
     #[error("Invalid value: {0}")]
     InvalidValue(String),
     #[error("Not Owner: {0}")]
@@ -219,6 +223,10 @@ pub enum DomainErrors {
     NotEnoughConfirmations(String),
     #[error("Pegout Request Amount Exceeds u64 Limit: {0}")]
     PegoutRequestAmountExceedsUint64Limit(String),
+    #[error("Stream not found by denomination: {0}")]
+    StreamNotFoundByDenomination(String),
+    #[error("Packet out of bound: {0}")]
+    PacketOutOfBound(String),
 
     // unhandled smart contract errors
     #[error("Unhandled Contract Error: {0}")]

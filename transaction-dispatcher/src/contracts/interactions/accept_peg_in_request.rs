@@ -77,7 +77,7 @@ mod tests {
     use alloy_primitives::{Address, Bloom, TxHash};
     use alloy_rpc_types::{Log, Receipt, ReceiptEnvelope, ReceiptWithBloom, TransactionReceipt};
     use std::str::FromStr;
-    use union_contracts::bindings::pegmanager::PegManager::{
+    use union_contracts::bindings::peg_manager::PegManager::{
         PegManagerErrors, PeginAlreadyAccepted,
     };
 

@@ -52,7 +52,7 @@ impl<C: PegManagerContractApi> GetTemporaryPegInAddressCall<C> {
             .await?;
 
         info!(
-            "GetTemporaryPegInAddress successful, deposit address: {}",
+            "GetTemporaryPegInAddress successful, deposit address: {:?}",
             address
         );
 
@@ -75,7 +75,7 @@ mod tests {
     use union_contracts::bindings::bitcoin_manager::BitcoinManager::{
         BitcoinManagerErrors, InvalidAddress, InvalidPublicKey,
     };
-    use union_contracts::bindings::pegmanager::PegManager::getTemporaryPeginAddressReturn;
+    use union_contracts::bindings::peg_manager::PegManager::getTemporaryPeginAddressReturn;
 
     const VALID_ADDRESS: &str = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
     const VALID_PUB_KEY: &str =

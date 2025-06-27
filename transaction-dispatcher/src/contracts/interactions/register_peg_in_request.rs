@@ -64,16 +64,16 @@ impl<C: PegManagerContractApi> RegisterPegInRequestInvoke<C> {
 #[cfg(test)]
 mod tests {
     use crate::contracts::common::tests::generate_contract_revert_error;
-    use crate::contracts::peg_manager::MockPegManagerContractApi;
     use crate::contracts::interactions::register_peg_in_request::{
         RegisterPegInInput, RegisterPegInOutput, RegisterPegInRequestInvoke,
     };
+    use crate::contracts::peg_manager::MockPegManagerContractApi;
     use crate::rsk_gateway::DomainErrors;
     use crate::types::{BitcoinTransaction, BitcoinTransactionIn, BitcoinTransactionOut};
     use alloy_primitives::{Address, Bloom, TxHash};
     use alloy_rpc_types::{Log, Receipt, ReceiptEnvelope, ReceiptWithBloom, TransactionReceipt};
     use std::str::FromStr;
-    use union_contracts::bindings::pegmanager::PegManager::{
+    use union_contracts::bindings::peg_manager::PegManager::{
         PegManagerErrors, PeginAlreadyRequested,
     };
 
