@@ -1,0 +1,62 @@
+name: QA Tests
+
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: write
+
+on:
+  pull_request:
+    types: [ opened, synchronize, reopened, ready_for_review ]
+    branches:
+      - main
+  merge_group:
+    types: [ checks_requested ]
+    branches:
+      - main
+
+jobs:
+  qa-tests:
+    name: 'QA Tests'
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY_LOCAL_CONTRACTS_PATH: "../../bitvmx-union-bridge-contracts/shell/script/deploy/deploy-local.sh"
+      TX_DISPATCHER_URL: "http://localhost:3000"
+      KEY_STORE_FILE: ${{ secrets.KEY_STORE_FILE }}
+      KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+      TX_DISPATCHER_CONFIG_PATH: "../config/ci"
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          path: union-bridge-client
+
+      - name: Build
+        uses: ./union-bridge-client/.github/actions/common-ci
+        with:
+          fairgate_github_token: ${{ secrets.FAIRGATE_GITHUB_TOKEN }}
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Checkout BitVMX contracts
+        uses: actions/checkout@v4
+        with:
+          repository: FairgateLabs/bitvmx-union-bridge-contracts
+          token: ${{ secrets.FAIRGATE_GITHUB_TOKEN }}
+          ref: v0.0.1-alpha.1
+          path: bitvmx-union-bridge-contracts
+
+      - name: Setup keystore
+        working-directory: union-bridge-client/qa-tools
+        run:
+          echo "${KEY_STORE_FILE}" > test_keystore/keyfile
+        
+      - name: Run integration tests
+        working-directory: union-bridge-client/qa-tools
+        run: |
+          git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf "ssh://git@github.com/FairgateLabs"
+          JUNIT_REPORT="reports/tx_dispatcher.xml" RUST_BACKTRACE=1 cargo run --bin qa-tools-transaction-dispatcher -- --tags @transaction-dispatcher
+          cat reports/tx_dispatcher.xml
+
