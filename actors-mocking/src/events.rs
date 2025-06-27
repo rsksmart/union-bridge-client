@@ -1,3 +1,5 @@
+#![cfg(feature = "anvil")]
+
 use crate::fake_contracts::FakePegManager;
 use crate::fake_contracts::FakePegManager::FakePegManagerInstance;
 use alloy_eips::BlockNumberOrTag;
@@ -9,13 +11,13 @@ use std::env;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::time::SystemTime;
-use union_contracts::bindings::pegmanager::PegManager::PegManagerInstance;
+use union_contracts::bindings::peg_manager::PegManager::PegManagerInstance;
 
 pub struct Executor<P: Provider> {
     provider: P,
     #[allow(dead_code)]
-    real_peg_manager: PegManagerInstance<(), P>, // TODO use it to call methods from CLI if we want
-    fake_peg_manager: FakePegManagerInstance<(), P>,
+    real_peg_manager: PegManagerInstance<P>, // TODO use it to call methods from CLI if we want
+    fake_peg_manager: FakePegManagerInstance<P>,
 }
 
 impl<P: Provider + Clone> Executor<P> {
@@ -27,10 +29,7 @@ impl<P: Provider + Clone> Executor<P> {
             .await
             .context("Cannot deploy FakePegManager")?;
 
-        println!(
-            "FakePegManager deployed at {}...",
-            fake_peg_manager.address()
-        );
+        println!("FakePegManager deployed at {}", fake_peg_manager.address());
 
         let real_peg_manager = Self::deploy_real_peg_manager(&provider, provider_url)?;
 
@@ -42,7 +41,7 @@ impl<P: Provider + Clone> Executor<P> {
     }
 
     // TODO check with Pedro if we can improve the deployment via Rust (alloy) directly, not via sh script
-    fn deploy_real_peg_manager(provider: &P, rpc_url: &str) -> Result<PegManagerInstance<(), P>> {
+    fn deploy_real_peg_manager(provider: &P, rpc_url: &str) -> Result<PegManagerInstance<P>> {
         println!("Deploying real PegManager on {}...", rpc_url);
 
         let union_contracts_deploy_script = env::var("UNION_CONTRACTS_DEPLOY_SCRIPT")

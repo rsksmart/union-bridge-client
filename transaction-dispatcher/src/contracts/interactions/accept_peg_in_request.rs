@@ -3,8 +3,9 @@ use crate::rsk_gateway::DomainErrors;
 use crate::types::{AcceptPegInInput, AcceptPegInOutput};
 use anyhow::Result;
 use log::{error, info};
-use union_contracts::bindings::pegmanager::PegManager::BtcTxSPVProof;
+use union_contracts::bindings::peg_manager::PegManager::BtcTxSPVProof;
 
+#[derive(Clone)]
 pub(crate) struct AcceptPegInRequestInvoke<C: PegManagerContractApi> {
     contract: C,
     gas_bumps: u8,
@@ -72,7 +73,7 @@ mod tests {
     use alloy_primitives::{Address, Bloom, TxHash};
     use alloy_rpc_types::{Log, Receipt, ReceiptEnvelope, ReceiptWithBloom, TransactionReceipt};
     use std::str::FromStr;
-    use union_contracts::bindings::pegmanager::PegManager::{
+    use union_contracts::bindings::peg_manager::PegManager::{
         AlreadyRegisteredAcceptPegIn, PegManagerErrors,
     };
 

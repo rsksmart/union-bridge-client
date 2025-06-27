@@ -77,14 +77,14 @@ COPY --from=builder /app/target/release/key-manager /app/key-manager
 
 # if Foundry required (checked within the script): install it
 ARG FOUNDRY_VERSION
-COPY docker/dockerfile-foundry-setup.sh /app/foundry-setup.sh
+COPY docker/dockerfile_sh/foundry-setup.sh /app/foundry-setup.sh
 RUN chmod +x /app/foundry-setup.sh && /app/foundry-setup.sh
 # required by contracts-setup and also by actors-mocking that spins up anvil
 ENV PATH="/opt/foundry/bin:$PATH"
 
 # if contracts required (checked within the script): clone, build and deploy them
 ARG UNION_CONTRACTS_TAG
-COPY docker/dockerfile-contracts-setup.sh /app/contracts-setup.sh
+COPY docker/dockerfile_sh/contracts-setup.sh /app/contracts-setup.sh
 RUN --mount=type=ssh,id=default chmod +x /app/contracts-setup.sh && /app/contracts-setup.sh
 
 # set environment variables

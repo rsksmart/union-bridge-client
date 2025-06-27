@@ -8,9 +8,9 @@ alloy-contract = { workspace = true }
 alloy-sol-types = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-provider = { workspace = true }
-alloy-node-bindings = "0.13.0"
 alloy-signer-local = { workspace = true }
-alloy-eips = "0.13.0"
+alloy-node-bindings = "1.0.12"
+alloy-eips = "1.0.12"
 anyhow = { workspace = true }
 clap = { version = "4.5.30", features = ["derive"] }
 common = { path = "../common" }
@@ -22,5 +22,5 @@ bitvmx-client = { workspace = true }
 hex = "0.4"
 
 [features]
-default = ["anvil"]
+default = []
 anvil = ["common/anvil"]

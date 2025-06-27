@@ -5,7 +5,9 @@ use alloy_sol_types::SolEvent;
 use common::types::{BlockHash, BlockNumber, RskLog};
 use log::{error, warn};
 use std::collections::HashMap;
-use union_contracts::bindings::pegmanager::PegManager::RegisteredPegInRequest;
+use union_contracts::bindings::peg_manager::PegManager::RegisteredPegInRequest;
+
+// TODO(Jira) https://rsklabs.atlassian.net/browse/UB-183
 
 #[derive(Eq, PartialEq, Debug)]
 pub enum RskPegManagerEvents {
@@ -108,7 +110,7 @@ impl EventDecoder {
         block_hash: BlockHash,
         removed: bool,
     ) -> RskPegManagerEvents {
-        match RegisteredPegInRequest::decode_log_data(&log_data, true) {
+        match RegisteredPegInRequest::decode_log_data(&log_data) {
             Ok(ev) if !removed => {
                 RskPegManagerEvents::RegisteredPegInRequest(RegisteredPegInRequestEvent {
                     inner: ev,
@@ -133,7 +135,7 @@ impl EventDecoder {
         block_hash: BlockHash,
         removed: bool,
     ) -> RskPegManagerEvents {
-        match RequestAdvanceFunds::decode_log_data(&log_data, true) {
+        match RequestAdvanceFunds::decode_log_data(&log_data) {
             Ok(event) if !removed => {
                 RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFundsEvent {
                     inner: event,
@@ -154,7 +156,7 @@ impl EventDecoder {
         block_hash: BlockHash,
         removed: bool,
     ) -> RskPegManagerEvents {
-        match AdvanceFunds::decode_log_data(&log_data, true) {
+        match AdvanceFunds::decode_log_data(&log_data) {
             Ok(event) if !removed => RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
                 inner: event,
                 block_number,

@@ -6,6 +6,7 @@ use log::info;
 
 // TODO(Jira): generate Try_From for the input struct like in the other cases - https://rsklabs.atlassian.net/browse/UB-108
 
+#[derive(Clone)]
 pub(crate) struct GetTemporaryPegInAddressCall<C: PegManagerContractApi> {
     contract: C,
 }
@@ -41,7 +42,7 @@ impl<C: PegManagerContractApi> GetTemporaryPegInAddressCall<C> {
                 ))
             })?;
 
-        let receipt = self
+        let address = self
             .contract
             .get_temporary_peg_in_address_call(
                 rootstock_deposit_address,
@@ -52,12 +53,10 @@ impl<C: PegManagerContractApi> GetTemporaryPegInAddressCall<C> {
 
         info!(
             "GetTemporaryPegInAddress successful, deposit address: {}",
-            receipt.bitcoinDepositAddress
+            address
         );
 
-        Ok(PegInAddressOutput {
-            address: receipt.bitcoinDepositAddress.to_string(),
-        })
+        Ok(PegInAddressOutput { address })
     }
 }
 
@@ -71,18 +70,18 @@ mod tests {
     use crate::rsk_gateway::DomainErrors;
     use alloy_primitives::Address;
     use alloy_primitives::FixedBytes;
-    use mockall::predicate::{always, eq};
-    use union_contracts::bindings::bitcoinmanager::BitcoinManager::{
+    use mockall::predicate::always;
+    use mockall::predicate::eq;
+    use union_contracts::bindings::bitcoin_manager::BitcoinManager::{
         BitcoinManagerErrors, InvalidAddress, InvalidPublicKey,
     };
-    use union_contracts::bindings::pegmanager::PegManager::getTemporaryPegInAddressReturn;
+    use union_contracts::bindings::peg_manager::PegManager::getTemporaryPegInAddressReturn;
 
     const VALID_ADDRESS: &str = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
     const VALID_PUB_KEY: &str =
         "0xc72a9f6fc8e57f1de528a48b6c4ad7a6db30b24a7bbf8cdd74b0a3b248b6f7f1";
     const VALID_VALUE: u64 = 1000;
 
-    #[cfg(test)]
     impl GetTemporaryPegInAddressCall<MockPegManagerContractApi> {
         pub(crate) fn new_for_tests(contract: MockPegManagerContractApi) -> Self {
             GetTemporaryPegInAddressCall { contract }
@@ -110,7 +109,7 @@ mod tests {
                 eq(VALID_VALUE),
                 eq(VALID_PUB_KEY.parse::<FixedBytes<32>>().unwrap()),
             )
-            .returning(move |_, _, _| Ok(output.clone()))
+            .returning(move |_, _, _| Ok(output.bitcoinDepositAddress.clone()))
             .times(1);
 
         let interaction = GetTemporaryPegInAddressCall::new_for_tests(mock_instance);

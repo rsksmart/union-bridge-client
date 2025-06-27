@@ -1,3 +1,5 @@
+#![cfg(feature = "anvil")]
+
 use actors_mocking::{bitvmx, events};
 use alloy_node_bindings::Anvil;
 use alloy_provider::ProviderBuilder;
@@ -62,6 +64,7 @@ async fn main() -> Result<()> {
     let wallet = EthereumWallet::from(signer);
     let anvil_provider = ProviderBuilder::new()
         .wallet(wallet)
+        .with_simple_nonce_management()
         .connect(anvil.ws_endpoint_url().as_str())
         .await
         .expect("Could not set up provider");

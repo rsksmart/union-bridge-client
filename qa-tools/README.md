@@ -16,13 +16,6 @@ To find instructions on how to execute tests, search for the comments under scen
 - `log_indexer_validator`: Validates log indexer state after running
 - Features: managed contracts monitoring, event tracking
 
-### Check Fork Tools
-- `check_fork_runner`: Runs and validates the check fork with configurable parameters
-- Features: managed contracts monitoring, event tracking
-
-### Transaction dispatcher Tools
-WIP
-
 To find instructions on how to execute tests, search for the comments under scenarios within `features/` folder.
 
 ### Utility Tools for block indexer and log indexer

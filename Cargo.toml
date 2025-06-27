@@ -4,20 +4,20 @@ members = ["common", "block-indexer", "log-indexer", "transaction-dispatcher", "
 
 [workspace.dependencies]
 # alloy-rs-core
-alloy-dyn-abi = "0.8.22"
-alloy-json-abi = "0.8.22"
-alloy-primitives = "0.8.22"
-alloy-sol-types = "0.8.22"
+alloy-dyn-abi = "1.2.1"
+alloy-json-abi = "1.2.1"
+alloy-primitives = "1.2.1"
+alloy-sol-types = "1.2.1"
 # alloy
-alloy-contract = "0.13.0"
-alloy-json-rpc = "0.13.0"
-alloy-provider = "0.13.0"
-alloy-pubsub = "0.13.0"
-alloy-rpc-client = "0.13.0"
-alloy-rpc-types = "0.13.0"
-alloy-signer = "0.13.0"
-alloy-signer-local = { version = "0.13.0" }
-alloy-transport = "0.13.0"
+alloy-contract = "1.0.12"
+alloy-json-rpc = "1.0.12"
+alloy-provider = "1.0.12"
+alloy-pubsub = "1.0.12"
+alloy-rpc-client = "1.0.12"
+alloy-rpc-types = "1.0.12"
+alloy-signer = "1.0.12"
+alloy-signer-local = { version = "1.0.12" }
+alloy-transport = "1.0.12"
 #
 anyhow = "1.0.94"
 bincode = { version = "2.0.1", features = ["serde"] }
@@ -33,7 +33,7 @@ thiserror = "2.0.11"
 tokio = { version = "1.41.1" }
 config = "0.15.8"
 storage-backend = { package = "rust-bitvmx-storage-backend", git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-storage-backend.git", rev = "7f40d056f86295e3fd2a4f268f923ca3b4e70fbf" }
-union-contracts = { package = "union-bridge-contracts", git = "ssh://git@github.com/FairgateLabs/bitvmx-union-bridge-contracts.git", tag = "v0.0.1-alpha.1" }
+union-contracts = { package = "union-bridge-contracts", git = "ssh://git@github.com/FairgateLabs/bitvmx-union-bridge-contracts.git", branch = "alpha1-alloy1.0.12" }
 message-broker = { package = "bitvmx-broker", git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-broker.git", rev = "2afe95510b1694d0ed87a59c9b69915f65d382e7" }
 # TODO(jira) https://rsklabs.atlassian.net/browse/ub-176
 bitvmx-client = { path = "../rust-bitvmx-workspace/rust-bitvmx-client" }

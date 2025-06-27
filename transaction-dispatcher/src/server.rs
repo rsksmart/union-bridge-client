@@ -12,7 +12,7 @@ use axum::{
 };
 use common::shutdown_flag::ShutdownFlag;
 use serde_json::json;
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 use tokio::net::TcpListener;
 use tower_http::timeout::TimeoutLayer;
 
@@ -23,9 +23,9 @@ pub struct Server {
 }
 
 impl Server {
-    pub async fn new<P: Provider + 'static>(
+    pub async fn new<P: Provider + Clone + 'static>(
         listener: TcpListener,
-        rsk_contract_gateway: Arc<RskContractsGateway<P>>,
+        rsk_contract_gateway: RskContractsGateway<P>,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
         let app = Router::new()
@@ -54,7 +54,7 @@ impl Server {
     }
 
     async fn create_peg_in_address<P: Provider>(
-        Extension(rsk_gateway): Extension<Arc<RskContractsGateway<P>>>,
+        Extension(rsk_gateway): Extension<RskContractsGateway<P>>,
         Json(payload): Json<PegInAddressInput>,
     ) -> impl IntoResponse {
         match rsk_gateway.get_temporary_peg_in_address(payload).await {
@@ -64,7 +64,7 @@ impl Server {
     }
 
     async fn register_peg_in<P: Provider>(
-        Extension(rsk_gateway): Extension<Arc<RskContractsGateway<P>>>,
+        Extension(rsk_gateway): Extension<RskContractsGateway<P>>,
         Json(payload): Json<RegisterPegInInput>,
     ) -> impl IntoResponse {
         match rsk_gateway.register_peg_in_request(payload).await {
@@ -74,7 +74,7 @@ impl Server {
     }
 
     async fn accept_peg_in<P: Provider>(
-        Extension(rsk_gateway): Extension<Arc<RskContractsGateway<P>>>,
+        Extension(rsk_gateway): Extension<RskContractsGateway<P>>,
         Json(payload): Json<RegisterPegInInput>,
     ) -> impl IntoResponse {
         match rsk_gateway.accept_peg_in_request(payload).await {
@@ -84,7 +84,7 @@ impl Server {
     }
 
     async fn register_peg_out<P: Provider>(
-        Extension(rsk_gateway): Extension<Arc<RskContractsGateway<P>>>,
+        Extension(rsk_gateway): Extension<RskContractsGateway<P>>,
         Json(payload): Json<RegisterPegOutInput>,
     ) -> impl IntoResponse {
         match rsk_gateway.register_peg_out_request(payload).await {

@@ -13,7 +13,7 @@ alloy-rpc-types = { workspace = true, features = ["debug"] }
 alloy-sol-types = { workspace = true, features = ["json"] }
 alloy-json-rpc = { workspace = true }
 alloy-contract = { workspace = true }
-mockall = { workspace = true }
+alloy-transport = { workspace = true }
 clap = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
@@ -25,7 +25,9 @@ hex = { workspace = true }
 env_logger = { workspace = true }
 axum = "0.8.1"
 tower-http = { version = "0.6.1", features = ["timeout", "trace"] }
+actors-mocking = { path = "../actors-mocking" }
 union-contracts = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+mockall = { workspace = true }

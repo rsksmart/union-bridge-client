@@ -3,8 +3,9 @@ use crate::rsk_gateway::DomainErrors;
 use crate::types::{RegisterPegInInput, RegisterPegInOutput};
 use anyhow::Result;
 use log::{error, info};
-use union_contracts::bindings::pegmanager::PegManager::BtcTxSPVProof;
+use union_contracts::bindings::peg_manager::PegManager::BtcTxSPVProof;
 
+#[derive(Clone)]
 pub(crate) struct RegisterPegInRequestInvoke<C: PegManagerContractApi> {
     contract: C,
     gas_bumps: u8,
@@ -66,15 +67,16 @@ mod tests {
     use crate::contracts::interactions::register_peg_in_request::{
         RegisterPegInInput, RegisterPegInOutput, RegisterPegInRequestInvoke,
     };
-    use crate::contracts::peg_manager::MockPegManagerContractApi;
     use crate::rsk_gateway::DomainErrors;
     use crate::types::{BitcoinTransaction, BitcoinTransactionIn, BitcoinTransactionOut};
     use alloy_primitives::{Address, Bloom, TxHash};
     use alloy_rpc_types::{Log, Receipt, ReceiptEnvelope, ReceiptWithBloom, TransactionReceipt};
     use std::str::FromStr;
-    use union_contracts::bindings::pegmanager::PegManager::{
+    use union_contracts::bindings::peg_manager::PegManager::{
         AlreadyRegisteredPegIn, PegManagerErrors,
     };
+
+    use crate::contracts::peg_manager::MockPegManagerContractApi;
 
     impl RegisterPegInRequestInvoke<MockPegManagerContractApi> {
         pub(crate) fn new_for_tests(contract: MockPegManagerContractApi) -> Self {

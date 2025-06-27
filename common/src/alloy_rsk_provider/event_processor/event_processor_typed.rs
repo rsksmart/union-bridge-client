@@ -68,7 +68,7 @@ fn decode_event_input<T: SolEvent + Serialize + Debug>(
         .next()
         .unwrap_or_default();
 
-    let decoded_event = T::decode_log_data(&log_data, true)?;
+    let decoded_event = T::decode_log_data(&log_data)?;
     let event_json = serde_json::to_value(&decoded_event)
         .context(format!("Failed to serialize {name:?} to json"))?;
     Ok((name, event_json))

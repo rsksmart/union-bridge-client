@@ -6,15 +6,28 @@ use std::collections::HashMap;
 
 const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
+fn load_config_with_path<T>(base_path: Option<&String>) -> Result<(T, String), ConfigError>
+where
+    T: for<'de> serde::Deserialize<'de>,
+{
+    CommonConfig::load_config::<T>(base_path, CARGO_PKG_NAME)
+}
+
 #[derive(Debug, Deserialize)]
-pub struct Config {
+pub struct ConfigAsBin {
+    pub server: ServerConfig,
+    #[serde(flatten)]
+    pub lib_config: ConfigAsLib,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ConfigAsLib {
     pub provider: ProviderConfig,
     pub key_store: KeyStoreConfig,
-    pub server: ServerConfig,
     pub transaction: TransactionConfig,
     pub contracts: Vec<ContractConfig>,
     #[serde(skip)]
-    path: String,
+    pub path: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -32,9 +45,41 @@ pub struct TransactionConfig {
     pub gas_bumps_t1: u8,
 }
 
-impl Config {
+impl ConfigAsBin {
     pub fn load(base_path: Option<&String>) -> Result<Self, ConfigError> {
-        let (mut cfg, path) = CommonConfig::load_config::<Self>(base_path, CARGO_PKG_NAME)?;
+        let (mut cfg, path) = load_config_with_path::<ConfigAsBin>(base_path)?;
+        cfg.lib_config.path = path;
+        Ok(cfg)
+    }
+
+    pub fn provider(&self) -> &ProviderConfig {
+        &self.lib_config.provider
+    }
+
+    pub fn load_managed_contracts(&self) -> HashMap<String, ContractInfo> {
+        self.lib_config.load_managed_contracts()
+    }
+
+    pub fn key_store(&self) -> &KeyStoreConfig {
+        &self.lib_config.key_store
+    }
+
+    pub fn transaction(&self) -> &TransactionConfig {
+        &self.lib_config.transaction
+    }
+
+    pub fn contracts(&self) -> &Vec<ContractConfig> {
+        &self.lib_config.contracts
+    }
+
+    pub fn path(&self) -> &String {
+        &self.lib_config.path
+    }
+}
+
+impl ConfigAsLib {
+    pub fn load(base_path: Option<&String>) -> Result<Self, ConfigError> {
+        let (mut cfg, path) = load_config_with_path::<ConfigAsLib>(base_path)?;
         cfg.path = path;
         Ok(cfg)
     }
@@ -78,12 +123,13 @@ mod tests {
     #[test]
     fn test_config_load_when_custom_config_set_should_load_config_successfully() {
         let config_path = &format!("{}/tests/config", CARGO_MANIFEST_DIR);
-        let config: Config = Config::load(Some(config_path)).expect("Failed to load config");
+        let config: ConfigAsBin =
+            ConfigAsBin::load(Some(config_path)).expect("Failed to load config");
 
         // provider
         assert_eq!(
             "ws://fake-server:4445/websocket",
-            config.provider.rootstock.url
+            config.provider().rootstock.url
         );
 
         // server
@@ -92,17 +138,18 @@ mod tests {
         // key store
         assert_eq!(
             "/fake/path/.union_bridge/keystore/ab98c3c8-a772-4c44-b3a7-99864663b8cb",
-            config.key_store.path
+            config.key_store().path
         );
 
         // transaction
-        assert_eq!(3, config.transaction.gas_bumps_t1);
+        assert_eq!(3, config.transaction().gas_bumps_t1);
     }
 
     #[test]
     fn test_load_contracts_when_stage_config_set_should_load_contracts_successfully() {
         let config_path = &format!("{}/tests/config", CARGO_MANIFEST_DIR);
-        let config: Config = Config::load(Some(config_path)).expect("Failed to load config");
+        let config: ConfigAsBin =
+            ConfigAsBin::load(Some(config_path)).expect("Failed to load config");
         let contracts = config.load_managed_contracts();
 
         assert_eq!(2, contracts.len());

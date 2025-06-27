@@ -48,7 +48,7 @@ services:
         ipv4_address: 172.25.0.10
     healthcheck:
       <<: *base-healthcheck
-      test: [ "CMD-SHELL", "pgrep block-indexer" ] # TODO improve with health endpoint
+      test: [ "CMD", "pgrep", "-f", "block-indexer" ] # TODO improve with health endpoint
     entrypoint: [ "/app/block-indexer", "--config-path", "/app/config" ]
     depends_on:
       actors-mocking:
@@ -72,7 +72,7 @@ services:
         ipv4_address: 172.25.0.11
     healthcheck:
       <<: *base-healthcheck
-      test: [ "CMD-SHELL", "pgrep log-indexer" ] # TODO improve with health endpoint
+      test: [ "CMD", "pgrep", "-f", "log-indexer" ] # TODO improve with health endpoint
     entrypoint: [ "/app/log-indexer", "--config-path", "/app/config" ]
     depends_on:
       actors-mocking:
@@ -89,7 +89,8 @@ services:
     volumes:
       - *common-config
       - *log-config
-      - ./entrypoint-tx-dispatcher.sh:/app/entrypoint-tx-dispatcher.sh:ro
+      - ./entrypoint_sh/key-setup.sh:/app/key-setup.sh:ro
+      - keystore:/keystore
     ports:
       - "3000:3000"  # http server port from the configuration
     networks:
@@ -100,8 +101,9 @@ services:
       - FUNDING_ADDRESS=${FUNDING_ADDRESS}
     healthcheck:
       <<: *base-healthcheck
-      test: [ "CMD", "ps", "aux", "|", "grep", "transaction-dispatcher" ]
-    entrypoint: [ "sh", "/app/entrypoint-tx-dispatcher.sh" ]
+      test: [ "CMD", "pgrep", "-f", "transaction-dispatcher" ]
+    entrypoint: [ "sh", "/app/key-setup.sh" ]
+    command: [ "/app/transaction-dispatcher", "--config-path", "/app/config" ]
     depends_on:
       actors-mocking:
         condition: service_healthy
@@ -111,26 +113,30 @@ services:
     platform: linux/amd64
     build:
       <<: *base-build
-      dockerfile: coordinator/Dockerfile # custom Dockerfile, risc0 needs amd64
+      dockerfile: docker/Dockerfile_coordinator # custom Dockerfile, risc0 needs amd64
       args:
         - CRATE=coordinator
     container_name: coordinator
     volumes:
       - *common-config
       - *log-config
+      - keystore:/keystore
     networks:
       internal:
         ipv4_address: 172.25.0.13
     environment:
       - TRANSACTION_DISPATCHER_URL=http://transaction-dispatcher:3000
+      - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
     healthcheck:
       <<: *base-healthcheck
-      test: [ "CMD", "ps", "aux", "|", "grep", "coordinator" ]
+      test: [ "CMD", "pgrep", "-f", "coordinator" ]
     entrypoint: [ "/app/coordinator", "--config-path", "/app/config" ]
     depends_on:
       block-indexer:
         condition: service_healthy
       log-indexer:
+        condition: service_healthy
+      transaction-dispatcher:
         condition: service_healthy
 
   actors-mocking:
@@ -167,3 +173,6 @@ networks:
     ipam:
       config:
         - subnet: 172.25.0.0/16
+
+volumes:
+  keystore:

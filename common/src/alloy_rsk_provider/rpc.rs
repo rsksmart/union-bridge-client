@@ -11,46 +11,16 @@ use crate::{
     },
 };
 
+use crate::runtime_sync::RuntimeSync;
 use alloy_primitives::B256;
 use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy_rpc_client::RpcClient;
 use alloy_rpc_types::{Filter, FilterSet, Header, Log};
 use alloy_transport::layers::RetryBackoffLayer;
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, bail};
 use log::debug;
 use serde_json::{Value, json};
-use std::{future::Future, sync::Arc};
-use tokio::runtime::Runtime;
-
-// This struct is a wrapper around tokio::runtime::Runtime that allows for synchronous execution of
-// async functions.
-// Note 1: it is discouraged to start several runtimes, so use with caution.
-// Note 2: we need Tokio because Alloy requires a Tokio Reactor to work
-#[derive(Clone)]
-struct RuntimeSync {
-    rt: Arc<Runtime>,
-}
-
-impl RuntimeSync {
-    pub(super) fn new() -> Result<Self> {
-        // Note: we cannot use Builder::new_current_thread() because Alloy needs multiple to work
-        let rt = Runtime::new().context("Failed to create Tokio runtime")?;
-        Ok(RuntimeSync { rt: Arc::new(rt) })
-    }
-
-    pub(super) fn run<Fut, RetType, Err>(&self, future: Fut) -> Result<RetType>
-    where
-        Fut: Future<Output = Result<RetType, Err>>,
-        Err: std::error::Error + Send + 'static,
-    {
-        self.rt.block_on(async {
-            future
-                .await
-                .map_err(|e| anyhow!("Error on RuntimeSync: {:?}", e))
-                .context("Async operation failed")
-        })
-    }
-}
+use std::future::Future;
 
 #[derive(Clone)]
 pub struct AlloyProvider<T = RootProvider>
@@ -82,7 +52,7 @@ impl AlloyProvider {
             .context("Failed to build RpcClient with retry layer")?;
 
         // Synchronously feed that client into ProviderBuilder
-        let root_provider = ProviderBuilder::default().on_client(client);
+        let root_provider = ProviderBuilder::default().connect_client(client);
 
         Ok(AlloyProvider {
             inner: root_provider,
