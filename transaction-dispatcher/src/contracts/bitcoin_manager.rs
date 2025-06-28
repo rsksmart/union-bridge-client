@@ -142,7 +142,7 @@ mod tests {
         });
 
         let result = generate_contract_revert_error(err_data);
-        matches!(result.into(), DomainErrors::InvalidPublicKey(_));
+        matches!(result.into(), DomainErrors::InvalidCompressedPubKey(_));
     }
 
     #[test]

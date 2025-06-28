@@ -16,7 +16,7 @@ use union_contracts::bindings::peg_manager::PegManager::PegManagerInstance;
 pub struct Executor<P: Provider> {
     provider: P,
     #[allow(dead_code)]
-    real_peg_manager: PegManagerInstance<P>, // TODO use it to call methods from CLI if we want
+    real_peg_manager: Option<PegManagerInstance<P>>, // TODO use it to call methods from CLI if we want
     fake_peg_manager: FakePegManagerInstance<P>,
 }
 
@@ -31,11 +31,12 @@ impl<P: Provider + Clone> Executor<P> {
 
         println!("FakePegManager deployed at {}", fake_peg_manager.address());
 
-        let real_peg_manager = Self::deploy_real_peg_manager(&provider, provider_url)?;
+        // TODO: find a way to automate deployment and setup script
+        // let real_peg_manager = Self::deploy_real_peg_manager(&provider, provider_url)?;
 
         Ok(Self {
             provider,
-            real_peg_manager,
+            real_peg_manager: None,
             fake_peg_manager,
         })
     }
@@ -44,41 +45,28 @@ impl<P: Provider + Clone> Executor<P> {
     fn deploy_real_peg_manager(provider: &P, rpc_url: &str) -> Result<PegManagerInstance<P>> {
         println!("Deploying real PegManager on {}...", rpc_url);
 
-        let union_contracts_deploy_script = env::var("UNION_CONTRACTS_DEPLOY_SCRIPT")
+        let deploy_script = env::var("UNION_CONTRACTS_DEPLOY_SCRIPT")
             .context("UNION_CONTRACTS_DEPLOY_SCRIPT not set")?;
+        let setup_script = env::var("UNION_CONTRACTS_SETUP_SCRIPT")
+            .context("UNION_CONTRACTS_SETUP_SCRIPT not set")?;
 
-        let mut child = Command::new("bash")
-            .arg(format!("{}", union_contracts_deploy_script))
-            .env("RPC_URL", rpc_url)
-            .stdout(Stdio::piped())
-            .spawn()
-            .expect("Failed to start script");
+        // Run deployment script
+        let output_lines =
+            Self::run_script(&deploy_script, rpc_url).context("Failed to execute deploy script")?;
 
-        let stdout = child.stdout.take().expect("Failed to capture stdout");
-        let reader = BufReader::new(stdout);
+        // Find PegManager address in deploy script output
+        let address_line = output_lines
+            .iter()
+            .find_map(|line| Self::try_get_peg_manager_address(line.clone()))
+            .ok_or_else(|| anyhow!("PegManager address not found in output"))?;
 
-        let mut opt_addr = None;
-        for line_res in reader.lines() {
-            let line = line_res.expect("Failed to read line from script output");
-            println!("{}", line);
-            if opt_addr.is_none() {
-                opt_addr = Self::try_get_peg_manager_address(line);
-            }
-        }
+        println!("Real PegManager deployed at address: {}", address_line);
 
-        child.wait().expect("Failed to wait on child");
+        // Run setup script
+        println!("Running setup script...");
+        Self::run_script(&setup_script, rpc_url).context("Failed to execute setup script")?;
 
-        let address = match opt_addr {
-            Some(addr) => {
-                println!("Real PegManager deployed at address: {}", addr);
-                addr
-            }
-            None => {
-                bail!("PegManager address not found in output");
-            }
-        };
-
-        let real_peg_manager_address = address
+        let real_peg_manager_address = address_line
             .parse::<Address>()
             .context("Parsing logged address to Address failed")?;
 
@@ -86,6 +74,28 @@ impl<P: Provider + Clone> Executor<P> {
             real_peg_manager_address,
             provider.clone(),
         ))
+    }
+
+    fn run_script(script_path: &str, rpc_url: &str) -> Result<Vec<String>> {
+        let mut child = Command::new("bash")
+            .arg(script_path)
+            .env("RPC_URL", rpc_url)
+            .stdout(Stdio::piped())
+            .spawn()
+            .with_context(|| format!("Failed to spawn script: {}", script_path))?;
+
+        let stdout = child.stdout.take().context("Failed to capture stdout")?;
+        let reader = BufReader::new(stdout);
+
+        let mut output_lines = Vec::new();
+        for line_res in reader.lines() {
+            let line = line_res.context("Failed to read line from script output")?;
+            println!("{}", line);
+            output_lines.push(line);
+        }
+
+        child.wait().context("Failed to wait for script")?;
+        Ok(output_lines)
     }
 
     pub async fn request_advance_funds(&self) -> Result<()> {

@@ -99,19 +99,9 @@ impl IntoResponse for DomainErrors {
         let (status, message) = match self {
             // bad request
             DomainErrors::InvalidAddress(msg)
-            | DomainErrors::InvalidPublicKey(msg)
+            | DomainErrors::InvalidCompressedPubKey(msg)
             | DomainErrors::InvalidValue(msg)
             | DomainErrors::InvalidBtcTxSpvProof(msg) => (StatusCode::BAD_REQUEST, msg),
-
-            // not found
-            DomainErrors::UnregisteredRequest(msg)
-            | DomainErrors::PacketOutOfBound(msg)
-            | DomainErrors::StreamNotFoundByDenomination(msg) => (StatusCode::NOT_FOUND, msg),
-
-            // forbidden
-            DomainErrors::AlreadyRegisteredAcceptPegIn(msg)
-            | DomainErrors::AlreadyRegisteredPegIn(msg)
-            | DomainErrors::AlreadyRegisteredPegInRequest(msg) => (StatusCode::FORBIDDEN, msg),
 
             // conflict
             DomainErrors::NoRevertError(msg) | DomainErrors::NotEnoughConfirmations(msg) => {
