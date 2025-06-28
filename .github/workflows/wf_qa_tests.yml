@@ -55,7 +55,7 @@ jobs:
         with:
           repository: FairgateLabs/bitvmx-union-bridge-contracts
           token: ${{ secrets.FAIRGATE_GITHUB_TOKEN }}
-          ref: v0.0.1-alpha.1
+          ref: v0.0.1-alpha.2
           path: bitvmx-union-bridge-contracts
 
       - name: Setup keystore
