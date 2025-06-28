@@ -23,6 +23,14 @@ jobs:
         if: ${{ env.ACT }}
         uses: ./union-bridge-client/.github/actions/act_setup
 
+      - name: Install sccache
+        if: ${{ ! env.ACT }}
+        run: cargo install sccache
+
+      - name: Setup sccache
+        if: ${{ ! env.ACT }}
+        run: echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+
       - name: Checkout BitVMX workspace
         uses: actions/checkout@v4
         with:
@@ -46,6 +54,15 @@ jobs:
         run: |
           curl -L https://risczero.com/install | bash
           ~/.risc0/bin/rzup install
+
+      - name: Cache sccache
+        if: ${{ ! env.ACT }}
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/sccache
+          key: ${{ runner.os }}-sccache-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-sccache-
 
       - name: Cache Dependencies
         uses: actions/cache@v3
@@ -81,3 +98,7 @@ jobs:
             union-bridge-client/target
             union-bridge-client/qa-tools/target
             rust-bitvmx-workspace/rust-bitvmx-client/target
+
+      - name: Show sccache stats
+        if: ${{ ! env.ACT }}
+        run: sccache --show-stats
