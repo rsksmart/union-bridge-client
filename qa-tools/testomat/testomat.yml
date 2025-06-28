@@ -1,0 +1,64 @@
+framework: cucumber
+language: rust
+tests:
+  - ../transaction-dispatcher/features/**/*.feature
+  - ../log-indexer/features/**/*.feature
+  - ../block-indexer/features/**/*.feature
+
+# Testomat.io configuration
+testomat:
+  # Replace these with your actual Testomat credentials
+  api_key: ${TESTOMAT_API_KEY}
+  project_id: ${TESTOMAT_PROJECT_ID}
+  
+  # Test run configuration
+  title: "Union Bridge Tests"
+  description: "Integration tests for Union Bridge components"
+  
+  # Labels for organizing tests
+  labels:
+    - integration
+    - blockchain
+    - rust
+    - union-bridge
+  
+  # Test run settings
+  run:
+    # Optional: specify test run name
+    name: "Local Integration Test Run"
+    
+    # Optional: specify environment
+    environment: "local"
+    
+    # Optional: specify test run tags
+    tags:
+      - "integration"
+      - "local"
+  
+  # Report configuration
+  report:
+    # Path to test reports (relative to this directory)
+    path: "../reports/"
+    
+    # Report formats supported
+    formats:
+      - xml
+      - json
+    
+    # Optional: custom report file patterns
+    patterns:
+      - "*.xml"
+      - "tx_dispatcher.xml"
+  
+  # Optional: Test execution settings
+  execution:
+    # Parallel execution settings
+    parallel: false
+    workers: 1
+    
+    # Timeout settings
+    timeout: 300000  # 5 minutes in milliseconds
+    
+    # Retry settings
+    retries: 1
+    retry_delay: 1000  # 1 second in milliseconds 

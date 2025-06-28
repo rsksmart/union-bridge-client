@@ -1,14 +1,14 @@
-# Union Bridge - Monitor
+# Union Bridge - Client
 
-The Union Bridge Monitor is a key part of the Union Bridge Protocol. It helps connect Bitcoin and Rootstock, together
+The Union Bridge Client is a key part of the Union Bridge Protocol. It helps connect Bitcoin and Rootstock, together
 with BitVMX (through the BitVMX Client) in a trust‑minimized way. In simple terms, it watches for important events on
 Rootstock and then triggers the next steps in the protocol to handle peg‑ins and peg‑outs.
 
-## What the Monitor Does
+## What the Client Does
 
 ### Event Observer
 
-The monitor constantly scans the Rootstock blockchain for different events required for the various Union Bridge flows.
+The client constantly scans the Rootstock blockchain for different events required for the various Union Bridge flows.
 It uses **JSON‑RPC endpoints** to subscribe to new block headers and smart contract logs. Then, it extracts only the
 relevant events, such as peg‑in requests and peg‑out requests. This logic is implemented under `log-indexer`
 crate.
@@ -16,40 +16,40 @@ crate.
 It also listens every new block produced by Rootstock, storing just the minimal required data that will also be used as
 part of the different Union Bridge flows. This logic is implemented under `block-indexer` crate.
 
-If an interruption occurs (such as a network issue), the monitor uses its saved state to resume processing. The monitor
+If an interruption occurs (such as a network issue), the client uses its saved state to resume processing. The client
 listens for termination signals (like **SIGINT** or **SIGTERM**) and shuts down gracefully while ensuring that its
 current state is saved. It also implements retry and fallback mechanisms to handle temporary connectivity problems or
 blockchain reorganizations.
 
 ### Transaction Dispatcher
 
-Based on the received events and its current state, the monitor triggers the next step in the Union Bridge protocol.
+Based on the received events and its current state, the client triggers the next step in the Union Bridge protocol.
 
-Example: When a peg‑out needs to be validated, the monitor gathers all the necessary information and passes it to the *
-*check_fork module** via the **Union Client**. **(TBD: final architecture of the Union Client vs. Monitor integration is
+Example: When a peg‑out needs to be validated, the client gathers all the necessary information and passes it to the *
+*check_fork module** via the **Union Client**. **(TBD: final architecture of the Union Client vs. Client integration is
 still under discussion.)**
 
 ## Interfaces
 
 - **Blockchain Nodes and Smart Contracts:**  
-  The monitor interacts with Rootstock nodes via **JSON-RPC**, enabling it to retrieve the latest blocks, get events
+  The client interacts with Rootstock nodes via **JSON-RPC**, enabling it to retrieve the latest blocks, get events
   emitted by the Union Bridge contracts, verify transaction inclusion, and broadcast transactions as needed. In the long
   term, an open peer-to-peer (P2P) system could be introduced to enhance resilience against individual node failures.
 
 - **Union Client:**  
-  The Union Client is a command‑line tool (or library) that connects the monitor with other subsystems, including the
-  check_fork module. **(TBD: final details of this integration and the possibility to include it in the monitor are
+  The Union Client is a command‑line tool (or library) that connects the client with other subsystems, including the
+  check_fork module. **(TBD: final details of this integration and the possibility to include it in the client are
   under discussion.)**
 
 - **Utilities:**  
   The repository also includes extra tools such as:
-    - **Check Gaps:** A tool to verify that there are no missing blocks in the monitor’s index.
+    - **Check Gaps:** A tool to verify that there are no missing blocks in the client’s index.
     - **Generate ELF Demo:** A utility that shows how to create the input for the check_fork function and how to produce
-      Stark proofs. This demo helps illustrate how the monitor integrates with the ZKVM pipeline.
+      Stark proofs. This demo helps illustrate how the client integrates with the ZKVM pipeline.
 
 ## Summary
 
-The Union Bridge Monitor is not just a simple block indexer. It:
+The Union Bridge Client is not just a simple block indexer. It:
 
 - **Monitors blockchain events** on Rootstock.
 - **Keeps track of relevant aspects of the current protocol state.**
@@ -91,9 +91,9 @@ To run the Union-Client you have several options:
     2. `./run-mocks.sh` in one terminal and `./run-client.sh anvil` in another one to use mocks and the **anvil**
        config.
 3. Use the `docker-compose` file to run the Union Client. Check the [docker/README.md](docker/README.md) for more
-   information on how to build and run the monitor using Docker.
+   information on how to build and run the client using Docker.
 
-# How to run the Monitors?
+# How to run the Clients?
 
 Both `log-indexer` and `block-indexer` need to be run. TBD if we create an orchestrator to run both at the same time.
 Both crates are configurable, please check sample files under `config` as a reference to create your own config.
@@ -124,20 +124,10 @@ Now you can run the transaction dispatcher providing the password to unlock the 
 KEY_STORE_PASSWORD="<YOUR_PASSWORD>" RUST_BACKTRACE=1 RUST_LOG=debug cargo run --bin transaction-dispatcher -- --logger-path "/path/to/log4rs.yaml" --config-path "/path/to/config/dir"
 ```
 
-# Utils/Check Gaps
-
-This tool checks if there are any gaps in the blocks indexed by the monitor.
-
-To run it:
-
-```bash
-RUST_BACKTRACE=1 RUST_LOG=debug cargo run --bin check_gaps -- --config-path "/path/to/config/dir"
-```
-
-# Utils/Generate ELF Demo
+# QA-tools/Generate ELF Demo
 
 This utility shows how to generate the input for the _CheckFork_ function and its Stark Proof. Its purpose is just to
-serve as reference for the integration of the new Monitor with _CheckFork_ and the ZKVM CLI. To be determined how.
+serve as reference for the integration of the new Client with _CheckFork_ and the ZKVM CLI. To be determined how.
 
 ## 1) Generate `check_fork_args.bin` (input to the CheckFork function)
 
@@ -145,19 +135,19 @@ This is the input to the _CheckFork_ function that will be executed by the `zkvm
 generate it run:
 
 ```bash
-cd examples/check-fork-demo
-cargo run -- -o elf
+cd qa-tools/check-fork
+cargo run --bin check_fork_runner -- -o elf
 ```
 
 Some instructions on how to use this file and other parameters will be printed to the console. Example:
 
 ```
-CLI Args { operation: "run", fetch_start_block: 6883222, fetch_block_count: 100, cf_required_blocks: 100, cf_required_effort: 123456789, cf_init_block: 6883221, cf_init_timestamp: 1701129600 }
-CheckForkArgs serialized to file: /Users/illuque/workspace/rootstock/union_bridge/union-bridge-monitor/util/check-fork-demo/check_fork_args.bin. Total time: 665.584µs
+CLI Args { operation: "elf", fixture: None, bridge_event: true, fetch_start_block: 6883222, fetch_block_count: 100, cf_required_blocks: 100, cf_required_effort: 4886718345, cf_init_block: 6883221, cf_init_timestamp: 1701129600 }
+CheckForkArgs serialized to file: /path/to/repo/union-bridge-client/qa-tools/check_fork_args.bin. Total time: 3.741667ms
 GetBlocks executed and CheckForkArgs generated. Relevant parameters for the interaction with the ZKVM CLI:
-    - input: /Users/illuque/workspace/rootstock/union_bridge/union-bridge-monitor/util/check-fork-demo/check_fork_args.bin
-    - elf: /Users/illuque/workspace/rootstock/union_bridge/union-bridge-monitor/target/riscv-guest/zkvm_guest/check_fork_guest/riscv32im-risc0-zkvm-elf/release/check_fork_guest
-    - image_id: e0ce040cc1f5ab45bbadf8b81f41be224acfdb9eb7c1f39bec6102492e1137f7
+    - input: /path/to/repo/union-bridge-client/qa-tools/check_fork_args.bin
+    - elf: /path/to/repo/union-bridge-client/qa-tools/target/riscv-guest/methods/check-fork-guest/riscv32im-risc0-zkvm-elf/release/check-fork-guest.bin
+    - image_id: c24b36840af78835ddca7eb7ddc933d2b1bcc01656133b2c110b42102fc71f3c
 
 ```
 
@@ -168,7 +158,7 @@ Clone Fairgate's [ZK Proof](https://github.com/FairgateLabs/rust-bitvmx-zk-proof
 
 Then run the following command where:
 ```bash
-cargo run --release --bin host -- prove-stark --input /Users/illuque/workspace/rootstock/union_bridge/union-bridge-monitor/util/check-fork-demo/check_fork_args.bin --elf /Users/illuque/workspace/rootstock/union_bridge/union-bridge-monitor/target/riscv-guest/zkvm_guest/check_fork_guest/riscv32im-risc0-zkvm-elf/release/check_fork_guest --output stark-proof.bin
+cargo run --release --bin host -- prove-stark --input /Users/illuque/workspace/rootstock/union_bridge/union-bridge-client/util/check-fork-demo.old/check_fork_args.bin --elf /Users/illuque/workspace/rootstock/union_bridge/union-bridge-client/target/riscv-guest/zkvm_guest/check_fork_guest/riscv32im-risc0-zkvm-elf/release/check_fork_guest --output stark-proof.bin
 ```
 
 An output like the following will be printed, showing _CheckFork_ execution result and the path to the resulting stark
@@ -240,10 +230,23 @@ brew install act
 
 **Only the first time you run `act`, or whenever the base image changes**. To do so, run the following command from the `.github/act` directory:
 
+Then, copy the `.actrc.sample` to `.actrc` and configure it as needed. This file is used to configure the `act` tool.
+
+To run the same actions as the CI runs on pull requests, you can use the following command:
 ```bash
-act -j automated-tests -s FAIRGATE_GITHUB_TOKEN=<ask_your_colleagues> --container-architecture linux/amd64
+act pull_request -s KEY_STORE_FILE=$(cat <path_to_your_keystore_file>)
 ```
 
-Where:
-- `FAIRGATE_GITHUB_TOKEN` is needed for now to access Fairgate private repositories used as dependencies
-- `--container-architecture linux/amd64` is needed to run Risc0 tools
+To run just Crate Tests, you can use the following command:
+```bash
+act -j crates-tests -s KEY_STORE_FILE=$(cat <path_to_your_keystore_file>)
+```
+
+To run just QA Tests, you can use the following command:
+```bash
+act -j qa-tests -s KEY_STORE_FILE=$(cat <path_to_your_keystore_file>)
+```
+
+NOTE: Uploading and downloading artifacts is slow locally, but fast on the CI.
+NOTE: You can add `--reuse` to reuse previous Docker containers to speed up execution by skipping setup and preserving cache, filesystem, and environment state.
+NOTE: If you find concurrency errors, try running with `--concurrent-jobs 1` to run the actions sequentially.

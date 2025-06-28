@@ -1,57 +1,69 @@
 # QA Tools
 
-A collection of tools for testing and validating the Union Bridge Monitor components.
+A collection of tools for testing and validating the Union Bridge Monitor components. Each crate contains the validation tools for a component of the union bridge client.
 
-## Tools
+## Crates
 
-### Block Indexer Tools
+### Block Indexer Tools (manual execution)
 - `block_indexer_runner`: Runs the block indexer with configurable parameters
 - `block_indexer_validator`: Validates block indexer state after running
 - Features: backward sync, checkpoints, different cache sizes, long runs
 
-### Log Indexer Tools
+To find instructions on how to execute tests, search for the comments under scenarios within `features/` folder.
+
+### Log Indexer Tools (manual execution)
 - `log_indexer_runner`: Runs the log indexer with configurable parameters
 - `log_indexer_validator`: Validates log indexer state after running
 - Features: managed contracts monitoring, event tracking
 
-### Utility Tools
-- `archiver`: Archives execution results with timestamps
-- `clear`: Cleans up temporary execution directories
+To find instructions on how to execute tests, search for the comments under scenarios within `features/` folder.
 
-## Usage
+### Utility Tools for block indexer and log indexer
+- `archiver`: Archives `/tmp/monitor-executions` with timestamps
+- `clear`: Cleans up `/tmp/monitor-executions` directories
 
-All tools use the `/tmp/monitor-executions` directory for storing data and require a tag parameter (`-t`).
+### Check Fork Tools (manual execution)
+- `check_fork_runner`: Runs and validates the check fork with configurable parameters
+- Features: managed contracts monitoring, event tracking
 
-Common parameters:
-- `-t <tag>`: Required tag for the execution (e.g., "happy_path")
-- `-e <env>`: Environment (default: "stage")
-- `-f <finality>`: Block finality for initial block selection
-- `-b <height>`: Specific block height for initial block
-- `-a <size>`: Cache size override
-- `-c <bool>`: Use default config (true) or existing config (false)
+To find instructions on how to execute tests, search for the comments under scenarios within `features/` folder.
 
-### Example Scenarios
+### Transaction dispatcher Tools (automated)
 
-See `features/block-indexer.feature` and `features/log-indexer.feature` for detailed test scenarios and commands.
-
-Basic usage:
+#### Execute automated tests locally
 ```bash
-# Run block indexer
-cargo run --bin block_indexer_runner -- -f 100 -t happy_path
-
-# Monitor logs
-tail -1000f /tmp/monitor-executions/happy_path/app.log
-
-# Validate results
-cargo run --bin block_indexer_validator -- -t happy_path
-
-# Archive results
-cargo run --bin archiver -- -t happy_path
+cd qa-tools
+export KEY_STORE_PASSWORD="=== REPLACE_WITH_PASSWORD ==="
+export KEY_STORE_PATH="replace/with/path/to/your/keystore"
+KEY_STORE_FILE="$(cat "$KEY_STORE_PATH")"
+echo "${KEY_STORE_FILE}" > test_keystore/keyfile
+cargo run --bin qa-tools-transaction-dispatcher -- --tags @transaction-dispatcher
+```
+Optional: add `JUNIT_REPORT` env variable to generate JUnit XML reports under `qa-tools/reports/` directory.
+```bash
+... same setup as above ...
+JUNIT_REPORT="reports/tx_dispatcher.xml" cargo run --bin qa-tools-transaction-dispatcher -- --tags @transaction-dispatcher
+```
+#### Execute automated tests via ACT pipeline (local)
+```bash
+export KEY_STORE_PATH="replace/with/path/to/your/keystore"
+export KEY_STORE_FILE="$(cat "$KEY_STORE_PATH")"
+export FAIRGATE_GITHUB_TOKEN="=== REPLACE_WITH_TOKEN ==="
+export KEY_STORE_PASSWORD="=== REPLACE_WITH_PASSWORD ==="
+act -j test \
+--secret FAIRGATE_GITHUB_TOKEN=$FAIRGATE_GITHUB_TOKEN \
+--secret KEY_STORE_PASSWORD=$KEY_STORE_PASSWORD \
+--secret KEY_STORE_FILE=$KEY_STORE_FILE
 ```
 
-For long-running tests, use tmux:
+Optional: add `reuse` flag to speed up the pipeline setup.
 ```bash
-tmux new-session -d -s test_session 'cargo run --bin block_indexer_runner -- -f 100 -t test_tag'
-tmux attach-session -t test_session
-# Use Ctrl+b, d to detach
+... same setup as above ...
+act -j test --reuse \
+... same setup as above ...
 ```
+
+Currently the pipeline execution prints the JUnit XML report to the console. Pushing the report to Testomat is WIP.
+
+
+

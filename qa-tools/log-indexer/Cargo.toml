@@ -1,0 +1,31 @@
+[package]
+name = "qa-tools-log-indexer"
+version = "0.1.0"
+edition = "2024"
+resolver = "2"
+
+[[bin]]
+name = "log_indexer_runner"
+path = "src/log_indexer_runner.rs"
+
+[[bin]]
+name = "log_indexer_validator"
+path = "src/log_indexer_validator.rs"
+
+[dependencies]
+# Dependencies from the main repository
+log-indexer = { path = "../../log-indexer", features = ["test-utils"] }
+common = { path = "../../common" }
+
+# Dependencies from the qa-tools workspace
+qa-tools-common = { path = "../common" }
+
+# Other dependencies
+anyhow = { workspace = true }
+clap = { workspace = true }
+log = { workspace = true }
+log4rs = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true }

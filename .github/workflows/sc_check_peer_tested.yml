@@ -1,0 +1,71 @@
+name: Check Peer Tested
+
+on:
+  pull_request:
+    types: [ opened, synchronize, reopened, labeled, unlabeled ]
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: write
+
+jobs:
+  check-peer-test:
+    name: "Check Peer Test Job"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Remove label on new commits
+        id: remove_label
+        if: ${{ github.event.action == 'synchronize' }}
+        uses: actions/github-script@v7.0.1
+        with:
+          script: |
+            const requiredLabel = 'peer tested';
+            const labels = context.payload.pull_request.labels;
+            const peerTestedLabelPresent = labels.some(label => label.name === requiredLabel);
+
+            if (peerTestedLabelPresent) {
+              console.log(`Removing label '${requiredLabel}' after ${context.payload.action}`);
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                name: requiredLabel,
+              });
+              core.setOutput('was_removed', true);
+            } else {
+              console.log(`Label '${requiredLabel}' not present after ${context.payload.action}`);
+              core.setOutput('was_removed', false);
+            }
+
+      - name: Create and conclude label check
+        id: create_commit_status
+        uses: actions/github-script@v7.0.1
+        with:
+          script: |
+            console.log(`Triggering action '${context.payload.action}'`);
+
+            const requiredLabel = 'peer tested';
+
+            const wasRemoved = '${{ steps.remove_label.outputs.was_removed }}';
+            console.log(`Label removed on previous step: ${wasRemoved}`);
+
+            const peerTestedLabelPresent = wasRemoved ? false : context.payload.pull_request.labels.some(label => label.name === requiredLabel);
+            const state = peerTestedLabelPresent ? 'success' : 'pending';
+            const description = peerTestedLabelPresent ? `'${requiredLabel}' label found` : `'${requiredLabel}' label missing, required for PR to be merged`;
+            const contextStatus = `Peer Test Status Check`;
+
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.payload.pull_request.head.sha,
+              state: state,
+              target_url: '', // You can provide a URL here if you want to link to a specific location
+              description: description,
+              context: contextStatus
+            });
+
+            console.log(`Label present: ${peerTestedLabelPresent}, state: ${state}, context: ${contextStatus}`);

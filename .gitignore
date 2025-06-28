@@ -1,5 +1,6 @@
 **/.env
 **/.envrc
+**/.actrc
 **/app.log*
 **/check_fork_args.bin
 **/stark-proof.bin
@@ -11,3 +12,6 @@ config/local
 **/logs/*
 **/.db
 **/.union-bridge-contracts
+**/.llmignore
+qa-tools/reports/**
+qa-tools/test_keystore/**
