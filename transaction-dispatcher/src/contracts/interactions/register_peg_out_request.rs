@@ -31,19 +31,17 @@ impl<C: PegManagerContractApi> RegisterPegOutRequestInvoke<C> {
 
         let usr_pub_key: FixedBytes<33> =
             input.usr_pub_key.parse::<FixedBytes<33>>().map_err(|e| {
-                DomainErrors::InvalidPublicKey(format!("Failed to parse usr_pub_key: {}", e))
+                DomainErrors::InvalidCompressedPubKey(format!("Failed to parse usr_pub_key: {}", e))
             })?;
 
-        let batch_flag = input.batch_flag;
-
         debug!(
-            "Calling register_peg_out_request_send: value = {}, usr_pub_key = {:?}, batch_flag = {}, gas_bumps = {}",
-            msg_value, usr_pub_key, batch_flag, self.gas_bumps
+            "Calling register_peg_out_request_send: value = {}, usr_pub_key = {:?}, gas_bumps = {}",
+            msg_value, usr_pub_key, self.gas_bumps
         );
 
         let receipt = self
             .contract
-            .register_peg_out_request_send(msg_value, usr_pub_key, batch_flag, self.gas_bumps)
+            .register_peg_out_request_send(msg_value, usr_pub_key, self.gas_bumps)
             .await?;
 
         let result = if receipt.status() {
@@ -106,9 +104,7 @@ mod tests {
         let receipt_return = expected.clone();
 
         mock.expect_register_peg_out_request_send()
-            .returning(move |_, _, _, _| {
-                Ok(get_fake_receipt(true, &receipt_return.transaction_hash))
-            })
+            .returning(move |_, _, _| Ok(get_fake_receipt(true, &receipt_return.transaction_hash)))
             .times(1);
 
         let invoke = RegisterPegOutRequestInvoke::new_for_tests(mock);
@@ -131,9 +127,7 @@ mod tests {
         let receipt_return = expected.clone();
 
         mock.expect_register_peg_out_request_send()
-            .returning(move |_, _, _, _| {
-                Ok(get_fake_receipt(false, &receipt_return.transaction_hash))
-            })
+            .returning(move |_, _, _| Ok(get_fake_receipt(false, &receipt_return.transaction_hash)))
             .times(1);
 
         let invoke = RegisterPegOutRequestInvoke::new_for_tests(mock);
@@ -153,12 +147,11 @@ mod tests {
         let bad_input = RegisterPegOutInput {
             amount_in_wei: 1_000,
             usr_pub_key: "not-a-hex-key".to_string(),
-            batch_flag: false,
         };
 
         let err = invoke.run(bad_input).await.err().unwrap();
         match err {
-            DomainErrors::InvalidPublicKey(msg) => {
+            DomainErrors::InvalidCompressedPubKey(msg) => {
                 assert!(msg.contains("Failed to parse usr_pub_key"))
             }
             _ => panic!("expected InvalidPublicKey, got {:?}", err),
@@ -170,7 +163,6 @@ mod tests {
         RegisterPegOutInput {
             amount_in_wei: 1_234_567,
             usr_pub_key,
-            batch_flag: true,
         }
     }
 

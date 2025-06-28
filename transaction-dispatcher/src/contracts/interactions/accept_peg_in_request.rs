@@ -63,18 +63,22 @@ impl<C: PegManagerContractApi> AcceptPegInRequestInvoke<C> {
 
 #[cfg(test)]
 mod tests {
-    use crate::contracts::common::tests::generate_contract_revert_error;
-    use crate::contracts::interactions::accept_peg_in_request::{
-        AcceptPegInInput, AcceptPegInOutput, AcceptPegInRequestInvoke,
+    use crate::{
+        contracts::{
+            common::tests::generate_contract_revert_error,
+            interactions::accept_peg_in_request::{
+                AcceptPegInInput, AcceptPegInOutput, AcceptPegInRequestInvoke,
+            },
+            peg_manager::MockPegManagerContractApi,
+        },
+        rsk_gateway::DomainErrors,
+        types::{BitcoinTransaction, BitcoinTransactionIn, BitcoinTransactionOut},
     };
-    use crate::contracts::peg_manager::MockPegManagerContractApi;
-    use crate::rsk_gateway::DomainErrors;
-    use crate::types::{BitcoinTransaction, BitcoinTransactionIn, BitcoinTransactionOut};
     use alloy_primitives::{Address, Bloom, TxHash};
     use alloy_rpc_types::{Log, Receipt, ReceiptEnvelope, ReceiptWithBloom, TransactionReceipt};
     use std::str::FromStr;
     use union_contracts::bindings::peg_manager::PegManager::{
-        AlreadyRegisteredAcceptPegIn, PegManagerErrors,
+        PegManagerErrors, PeginAlreadyAccepted,
     };
 
     impl AcceptPegInRequestInvoke<MockPegManagerContractApi> {
@@ -127,13 +131,11 @@ mod tests {
 
         mock.expect_accept_peg_in_request_send()
             .returning(move |_, _| {
-                let expected_err =
-                    PegManagerErrors::AlreadyRegisteredAcceptPegIn(AlreadyRegisteredAcceptPegIn {
-                        btcTxHash:
-                            "0x6b8f74fe9c66c9c3a6c3d0b7111d9b6aaac0ea3db1bdbd6a38eb0e7d8b8bba3e"
-                                .parse()
-                                .expect("Failed to parse tx hash"),
-                    });
+                let expected_err = PegManagerErrors::PeginAlreadyAccepted(PeginAlreadyAccepted {
+                    btcTxHash: "0x6b8f74fe9c66c9c3a6c3d0b7111d9b6aaac0ea3db1bdbd6a38eb0e7d8b8bba3e"
+                        .parse()
+                        .expect("Failed to parse tx hash"),
+                });
                 Err(generate_contract_revert_error(expected_err))
             })
             .times(1);
@@ -146,7 +148,7 @@ mod tests {
         assert!(result.is_err());
         matches!(
             result.err().unwrap(),
-            DomainErrors::AlreadyRegisteredAcceptPegIn(_)
+            DomainErrors::PeginAlreadyRequested(_)
         );
     }
 
