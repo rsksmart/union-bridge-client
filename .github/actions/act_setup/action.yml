@@ -1,4 +1,5 @@
 name: "Act Setup"
+description: "Installs dependencies missing from Act but present on GitHub-hosted runners."
 
 runs:
   using: "composite"

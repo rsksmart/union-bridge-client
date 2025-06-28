@@ -239,7 +239,7 @@ act pull_request -s KEY_STORE_FILE=$(cat <path_to_your_keystore_file>)
 
 To run just Crate Tests, you can use the following command:
 ```bash
-act -j crate-tests -s KEY_STORE_FILE=$(cat <path_to_your_keystore_file>)
+act -j crates-tests -s KEY_STORE_FILE=$(cat <path_to_your_keystore_file>)
 ```
 
 To run just QA Tests, you can use the following command:
@@ -248,3 +248,4 @@ act -j qa-tests -s KEY_STORE_FILE=$(cat <path_to_your_keystore_file>)
 ```
 
 NOTE: Uploading and downloading artifacts is slow locally, but fast on the CI.
+NOTE: You can add `--reuse` to reuse previous Docker containers to speed up execution by skipping setup and preserving cache, filesystem, and environment state.

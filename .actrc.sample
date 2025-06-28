@@ -1,4 +1,4 @@
-# required for actions/download-artifact@v3 to work locally
+# required for actions/download-artifact@v4 to work locally
 --artifact-server-path /Users/illuque/.union_bridge/act_artifacts
 # required for Risc0 toolchain to work locally
 --container-architecture linux/amd64

@@ -143,7 +143,7 @@ dependencies = [
  "alloy-primitives",
  "alloy-rlp",
  "alloy-serde",
- "alloy-trie",
+ "alloy-trie 0.9.0",
  "alloy-tx-macros",
  "auto_impl",
  "c-kzg",
@@ -288,7 +288,7 @@ dependencies = [
  "alloy-eips",
  "alloy-primitives",
  "alloy-serde",
- "alloy-trie",
+ "alloy-trie 0.9.0",
  "serde",
 ]
 
@@ -778,6 +778,22 @@ dependencies = [
 
 [[package]]
 name = "alloy-trie"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "983d99aa81f586cef9dae38443245e585840fcf0fc58b09aee0b1f27aed1d500"
+dependencies = [
+ "alloy-primitives",
+ "alloy-rlp",
+ "arrayvec",
+ "derive_more",
+ "nybbles 0.3.4",
+ "serde",
+ "smallvec",
+ "tracing",
+]
+
+[[package]]
+name = "alloy-trie"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bada1fc392a33665de0dc50d401a3701b62583c655e3522a323490a5da016962"
@@ -786,7 +802,7 @@ dependencies = [
  "alloy-rlp",
  "arrayvec",
  "derive_more",
- "nybbles",
+ "nybbles 0.4.0",
  "serde",
  "smallvec",
  "tracing",
@@ -4633,6 +4649,19 @@ dependencies = [
 
 [[package]]
 name = "nybbles"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8983bb634df7248924ee0c4c3a749609b5abcb082c28fffe3254b3eb3602b307"
+dependencies = [
+ "alloy-rlp",
+ "const-hex",
+ "proptest",
+ "serde",
+ "smallvec",
+]
+
+[[package]]
+name = "nybbles"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "11d51b0175c49668a033fe7cc69080110d9833b291566cdf332905f3ad9c68a0"
@@ -7314,7 +7343,7 @@ version = "0.0.1-alpha.2"
 source = "git+ssh://git@github.com/FairgateLabs/bitvmx-union-bridge-contracts.git?tag=v0.0.1-alpha.2#94fed13bcd20e2263a23235fe70033473e8d914d"
 dependencies = [
  "alloy",
- "alloy-trie",
+ "alloy-trie 0.8.1",
  "serde",
 ]
 

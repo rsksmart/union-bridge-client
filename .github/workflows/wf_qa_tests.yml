@@ -10,6 +10,7 @@ on:
 
 jobs:
   qa-tests:
+    name: 'QA Tests'
     runs-on: ubuntu-latest
 
     env:
@@ -35,7 +36,7 @@ jobs:
       # therefore, we disable it (see next step also)
       - name: Download build artifacts
         if: ${{ ! env.ACT }}
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: build-artifacts
 
@@ -43,7 +44,7 @@ jobs:
       # therefore, we use this tweak
       - name: Artifacts Tweak
         if: ${{ env.ACT }}
-        uses: ./union-bridge-client/.github/actions/artifacts_tweak
+        uses: ./union-bridge-client/.github/actions/act_artifacts_tweak
         with:
           fairgate_github_token: ${{ secrets.FAIRGATE_GITHUB_TOKEN }}
 
@@ -60,7 +61,7 @@ jobs:
 
       - name: Setup keystore
         working-directory: union-bridge-client/qa-tools
-        run:
+        run: |
           echo "${KEY_STORE_FILE}" > test_keystore/keyfile
 
       - name: Run integration tests

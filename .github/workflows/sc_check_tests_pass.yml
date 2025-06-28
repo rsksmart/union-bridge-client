@@ -16,16 +16,19 @@ on:
       - main
 
 jobs:
-  build:
-    uses: ./.github/workflows/tests/build.yml
+  build-tests:
+    name: 'Build Tests'
+    uses: ./.github/workflows/wf_build_tests.yml
     secrets: inherit
 
   crates-tests:
-    needs: build
-    uses: ./.github/workflows/tests/crates.yml
+    name: 'Crates Tests'
+    needs: build-tests
+    uses: ./.github/workflows/wf_crates_tests.yml
     secrets: inherit
 
   qa-tests:
-    needs: build
-    uses: ./.github/workflows/tests/qa.yml
+    name: 'QA Tests'
+    needs: build-tests
+    uses: ./.github/workflows/wf_qa_tests.yml
     secrets: inherit

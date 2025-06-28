@@ -9,7 +9,8 @@ on:
   workflow_call:
 
 jobs:
-  build:
+  build-tests:
+    name: "Build Tests"
     runs-on: ubuntu-latest
 
     steps:
@@ -50,13 +51,10 @@ jobs:
         uses: actions/cache@v3
         with:
           path: |
-            ~/.cargo/bin
-            ~/.cargo/.crates.toml
-            ~/.cargo/.crates2.json
             ~/.cargo/registry
             ~/.cargo/git
-            ./target
-            rust-bitvmx-workspace/rust-bitvmx-client/target
+            ./union-bridge-client/target
+            ./rust-bitvmx-workspace/rust-bitvmx-client/target
           key: ${{ runner.os }}-rust-cargo-${{ hashFiles('./Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-rust-cargo-
@@ -76,7 +74,7 @@ jobs:
       # we cannot use upload/download artifacts with act, it's sooo slow
       - name: Upload build artifacts
         if: ${{ ! env.ACT }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: build-artifacts
           path: |

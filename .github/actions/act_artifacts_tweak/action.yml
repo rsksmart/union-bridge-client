@@ -1,4 +1,5 @@
-name: "Act Setup"
+name: "Act Artifacts Setup"
+description: "We cannot use upload/download artifacts with Act, it's sooo slow. Therefore, we create this action to include all required dependencies for building the repo."
 
 inputs:
   fairgate_github_token:
@@ -22,7 +23,7 @@ runs:
       run: |
         curl -L https://risczero.com/install | bash
         ~/.risc0/bin/rzup install
-        
+
     # we cannot use upload/download artifacts with act, it's sooo slow
     # therefore, we clone this repo which is a dependency for build until https://rsklabs.atlassian.net/browse/UB-176
     - name: Checkout BitVMX workspace
