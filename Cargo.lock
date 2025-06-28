@@ -102,9 +102,9 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "alloy"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "abd191f441f5763d262e8cf076fbaf6db0a9a3b234f58810557bb3949eece83e"
+checksum = "9f5bedd6a59a2bd3a2f1cb7ff488549a2004302edca4df4d578bf0a814888615"
 dependencies = [
  "alloy-consensus",
  "alloy-contract",
@@ -135,9 +135,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-consensus"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "806275fdf84a9677bba30ab76887983fc669b4dbf52e0b9587fc65c988aa4f06"
+checksum = "d8b77018eec2154eb158869f9f2914a3ea577adf87b11be2764d4795d5ccccf7"
 dependencies = [
  "alloy-eips",
  "alloy-primitives",
@@ -160,9 +160,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-consensus-any"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "badfd375a1a059ac27048bc9fc73091940b0693c3018a0238383ead5ebe48a47"
+checksum = "65bf8b058ff364d6e94bcd2979d7da1862e94d2987065a4eb41fa9eac36e028a"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -174,9 +174,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-contract"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "624cac8e9085d1461bb94f487fe38b3bd3cfad0285ae022a573e2b7be1dd7434"
+checksum = "049ed4836d368929d7c5e206bab2e8d92f00524222edc0026c6bf2a3cb8a02d5"
 dependencies = [
  "alloy-consensus",
  "alloy-dyn-abi",
@@ -261,9 +261,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-eips"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "334bca3e3b957e4272f6f434db27dc0f39c27ae9de752eacb31b7be9cce4dd0c"
+checksum = "33d134f3ac4926124eaf521a1031d11ea98816df3d39fc446fcfd6b36884603f"
 dependencies = [
  "alloy-eip2124",
  "alloy-eip2930",
@@ -281,9 +281,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-genesis"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "614462440df2d478efa9445d6b148f5f404fd8b889ffe53aeb9236eb2d318894"
+checksum = "fb1c2792605e648bdd1fddcfed8ce0d39d3db495c71d2240cb53df8aee8aea1f"
 dependencies = [
  "alloy-eips",
  "alloy-primitives",
@@ -319,9 +319,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-json-rpc"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0623849314fecb86fc335774b7049151adaec19ebac2426c42a1c6d43df2650c"
+checksum = "31cfdacfeb6b6b40bf6becf92e69e575c68c9f80311c3961d019e29c0b8d6be2"
 dependencies = [
  "alloy-primitives",
  "alloy-sol-types",
@@ -334,9 +334,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-network"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e1d6de8ee0ef8992d0f6e20d576a7bcfb1f5e76173738deb811969296d2f46a"
+checksum = "de68a3f09cd9ab029cf87d08630e1336ca9a530969689fd151d505fa888a2603"
 dependencies = [
  "alloy-consensus",
  "alloy-consensus-any",
@@ -360,9 +360,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-network-primitives"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58652eeeec752eb0b54de2b8b1e3c42ec35be3e99b6f9ac4209bf0d38ecd0241"
+checksum = "fcc2689c8addfc43461544d07a6f5f3a3e1f5f4efae61206cb5783dc383cfc8f"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -373,9 +373,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-node-bindings"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02fa8fa651fc53b34aebc6b2a786a1007bf1e097b6bbad64a97557b7379ab732"
+checksum = "638b7551f1819023c41765416b75b3959ebe45bb174969cd20ee3b5f2e72c75d"
 dependencies = [
  "alloy-genesis",
  "alloy-hardforks",
@@ -421,9 +421,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-provider"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "160e90c39e471a835af97dc91cac75cf16c3d504ad2ce20c17e51a05a754b45c"
+checksum = "8ced931220f547d30313530ad315654b7862ef52631c90ab857d792865f84a7d"
 dependencies = [
  "alloy-chains",
  "alloy-consensus",
@@ -463,9 +463,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-pubsub"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08745d745c4b9f247baf5d1324c4ee24f61ad72b37702b4ccb7dea10299dd7de"
+checksum = "8e37d6cf286fd30bacac525ab1491f9d1030d39ecce237821f2a5d5922eb9a37"
 dependencies = [
  "alloy-json-rpc",
  "alloy-primitives",
@@ -506,9 +506,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-rpc-client"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2b0f1ddddf65f5b8df258ab204bb719a298a550b70e5d9355e56f312274c2e7"
+checksum = "6d1d1eac6e48b772c7290f0f79211a0e822a38b057535b514cc119abd857d5b6"
 dependencies = [
  "alloy-json-rpc",
  "alloy-primitives",
@@ -533,9 +533,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-rpc-types"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9577dbe16550c3d83d6ac7656a560ecfe82b9f1268c869eab6cc9a82de417c64"
+checksum = "8589c6ae318fcc9624d42e9166f7f82b630d9ad13e180c52addf20b93a8af266"
 dependencies = [
  "alloy-primitives",
  "alloy-rpc-types-debug",
@@ -547,9 +547,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-rpc-types-any"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "635e602d271a907875a7f65a732dad523ca7a767c7ca9d20fec6428c09d3fb88"
+checksum = "02cfd7ecb21a1bfe68ac6b551172e4d41f828bcc33a2e1563a65d482d4efc1cf"
 dependencies = [
  "alloy-consensus-any",
  "alloy-rpc-types-eth",
@@ -558,9 +558,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-rpc-types-debug"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad7dca384a783e2598d8cfcbac598b9ff08345ed0ab1bbba93ee69ae60898b30"
+checksum = "7c81ae89a04859751bac72e5e73459bceb3e6a4d2541f2f1374e35be358fd171"
 dependencies = [
  "alloy-primitives",
  "serde",
@@ -568,9 +568,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-rpc-types-engine"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fbeb91b73980ede87c4f62b03316cc86a4e76ea13eaf35507fabd6e717b5445f"
+checksum = "662b720c498883427ffb9f5e38c7f02b56ac5c0cdd60b457e88ce6b6a20b9ce9"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -586,9 +586,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-rpc-types-eth"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d4785c613476178a820685135db58472734deba83fa0700bd19aa81b3aec184"
+checksum = "bb082c325bdfd05a7c71f52cd1060e62491fbf6edf55962720bdc380847b0784"
 dependencies = [
  "alloy-consensus",
  "alloy-consensus-any",
@@ -606,9 +606,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-serde"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4a9c0a4942ae1458f054f900b1f2386a1101331b3220313189fc811502d4f1a"
+checksum = "c7f26c17270c2ac1bd555c4304fe067639f0ddafdd3c8d07a200b2bb5a326e03"
 dependencies = [
  "alloy-primitives",
  "serde",
@@ -617,9 +617,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-signer"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d23d8fcd0531ecd6b41f84f1acabf174033ad20a0da59f941064fa58c89c811"
+checksum = "5d9fd649d6ed5b8d7e5014e01758efb937e8407124b182a7f711bf487a1a2697"
 dependencies = [
  "alloy-primitives",
  "async-trait",
@@ -632,9 +632,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-signer-local"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7f87574b7feb48e1011b718faf0c17d516743de3d4e08dbb9fb1465cfeddfd1"
+checksum = "c288c5b38be486bb84986701608f5d815183de990e884bb747f004622783e125"
 dependencies = [
  "alloy-consensus",
  "alloy-network",
@@ -722,9 +722,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-transport"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac51fda778a8b4012c91cc161ed8400efedd7c2e33d937439543d73190478ec9"
+checksum = "e1b790b89e31e183ae36ac0a1419942e21e94d745066f5281417c3e4299ea39e"
 dependencies = [
  "alloy-json-rpc",
  "alloy-primitives",
@@ -745,9 +745,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-transport-http"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f63d5f69ab4a7e2607f3d9b6c7ee6bf1ee1b726d411aa08a00a174d1dde37ac"
+checksum = "f643645a33a681d09ac1ca2112014c2ca09c68aad301da4400484d59c746bc70"
 dependencies = [
  "alloy-json-rpc",
  "alloy-transport",
@@ -760,9 +760,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-transport-ws"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69060d439b5bb919440d75d87b5f598738d043a51a5932943ab65fa92084e1f6"
+checksum = "3d27aae8c7a6403d3d3e874ad2eeeadbf46267b614bac2d4d82786b9b8496464"
 dependencies = [
  "alloy-pubsub",
  "alloy-transport",
@@ -794,9 +794,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-tx-macros"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c194c0f69223d1b3a1637c3ceaf966f392fc9a2756264e27d61bb72bd0c4645"
+checksum = "d4ef40a046b9bf141afc440cef596c79292708aade57c450dc74e843270fd8e7"
 dependencies = [
  "alloy-primitives",
  "darling 0.20.11",
@@ -4434,9 +4434,9 @@ dependencies = [
 
 [[package]]
 name = "minreq"
-version = "2.13.4"
+version = "2.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0d2aaba477837b46ec1289588180fabfccf0c3b1d1a0c6b1866240cd6cd5ce9"
+checksum = "84885312a86831bff4a3cb04a1e54a3f698407e3274c83249313f194d3e0b678"
 dependencies = [
  "log",
  "serde",
