@@ -1,4 +1,4 @@
-name: QA Tests
+name: QA Tests WF
 
 permissions:
   contents: read
@@ -10,7 +10,6 @@ on:
 
 jobs:
   qa-tests:
-    name: 'QA Tests'
     runs-on: ubuntu-latest
 
     env:

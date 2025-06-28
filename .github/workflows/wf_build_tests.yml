@@ -1,4 +1,4 @@
-name: Build Tests
+name: Build Tests WF
 
 permissions:
   contents: read
@@ -10,7 +10,6 @@ on:
 
 jobs:
   build-tests:
-    name: "Build Tests"
     runs-on: ubuntu-latest
 
     steps:
@@ -29,7 +28,9 @@ jobs:
 
       - name: Setup sccache
         if: ${{ ! env.ACT }}
-        run: echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+        run: |
+          echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
 
       - name: Checkout BitVMX workspace
         uses: actions/checkout@v4

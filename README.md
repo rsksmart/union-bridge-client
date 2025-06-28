@@ -249,3 +249,4 @@ act -j qa-tests -s KEY_STORE_FILE=$(cat <path_to_your_keystore_file>)
 
 NOTE: Uploading and downloading artifacts is slow locally, but fast on the CI.
 NOTE: You can add `--reuse` to reuse previous Docker containers to speed up execution by skipping setup and preserving cache, filesystem, and environment state.
+NOTE: If you find concurrency errors, try running with `--concurrent-jobs 1` to run the actions sequentially.
