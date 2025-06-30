@@ -1,19 +1,20 @@
 #![cfg(feature = "anvil")]
 
+use actors_mocking::bitvmx::BtcTx;
 use actors_mocking::{bitvmx, events};
 use alloy_node_bindings::Anvil;
-use alloy_provider::ProviderBuilder;
-use alloy_provider::network::EthereumWallet;
+use alloy_provider::{ProviderBuilder, network::EthereumWallet};
 use alloy_signer_local::LocalSigner;
 use anyhow::Result;
 use clap::{CommandFactory, Parser};
 use common::msg_broker::broker::BrokerServer;
-use std::io::Write;
-use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::Duration;
-use tokio::io;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use std::{
+    io::Write,
+    sync::{Arc, Mutex},
+    thread,
+    time::Duration,
+};
+use tokio::io::{self, AsyncBufReadExt, BufReader};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -40,10 +41,21 @@ enum Menu {
     // Mock received BitVMX events
     //
     #[command(visible_alias = "gta")]
-    RecvGetTemporaryPeginAddress {
+    GetTemporaryPeginAddress {
         rootstock_deposit_address: String,
         value: u64,
         btc_reimbursement_pub_key: String,
+    },
+    #[command(name = "pegin-requested", visible_alias = "pr")]
+    PeginRequested {
+        #[arg(help = "Bitcoin block hash (hex)")]
+        block_hash: String,
+        #[arg(help = "BTC transaction as JSON string")]
+        btc_tx: String,
+        #[arg(help = "Merkle branch path (hex)")]
+        merkle_branch_path: String,
+        #[arg(help = "Merkle branch hashes (comma-separated hex values)")]
+        merkle_branch_hashes: String,
     },
 }
 
@@ -118,7 +130,7 @@ async fn main() -> Result<()> {
                 Menu::InvokeAdvanceFunds { pegout_id } => {
                     events_executor.advance_funds(pegout_id).await?;
                 }
-                Menu::RecvGetTemporaryPeginAddress {
+                Menu::GetTemporaryPeginAddress {
                     rootstock_deposit_address,
                     value,
                     btc_reimbursement_pub_key,
@@ -130,6 +142,31 @@ async fn main() -> Result<()> {
                         rootstock_deposit_address,
                         value,
                         btc_reimbursement_pub_key,
+                    )?;
+                }
+                Menu::PeginRequested {
+                    block_hash,
+                    btc_tx,
+                    merkle_branch_path,
+                    merkle_branch_hashes,
+                } => {
+                    let btc_tx: BtcTx = serde_json::from_str(&btc_tx)
+                        .map_err(|e| anyhow::anyhow!("Failed to parse btc_tx JSON: {}", e))?;
+
+                    let merkle_hashes: Vec<String> = merkle_branch_hashes
+                        .split(',')
+                        .map(str::to_string)
+                        .collect();
+
+                    let executor = bitvmx_executor
+                        .lock()
+                        .expect("Failed to lock bitvmx_executor");
+
+                    executor.send_pegin_requested_event(
+                        block_hash,
+                        btc_tx,
+                        merkle_branch_path,
+                        merkle_hashes,
                     )?;
                 }
                 Menu::Exit => {

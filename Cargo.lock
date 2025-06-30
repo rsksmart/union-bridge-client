@@ -18,6 +18,7 @@ dependencies = [
  "clap",
  "common",
  "hex 0.4.3",
+ "serde",
  "serde_json",
  "tokio",
  "union-bridge-contracts",
