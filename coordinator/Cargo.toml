@@ -29,6 +29,7 @@ uuid = { version = "1.11.0", features = ["v4"] }
 
 [dev-dependencies]
 mockall = { workspace = true }
+mockito = "0.31"
 
 [features]
 anvil = []

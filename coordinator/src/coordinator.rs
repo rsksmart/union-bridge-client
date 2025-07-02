@@ -1,5 +1,5 @@
 use crate::{
-    event_processor::{AdvanceFundsProcessor, EventProcessor},
+    event_processor::{AdvanceFundsProcessor, EventProcessor, PeginProcessor},
     monitor::MonitorApi,
 };
 use anyhow::{Context, Result};
@@ -37,11 +37,14 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
         Self {
             monitor,
             bitvmx_broker: bitvmx_broker.clone(),
-            processors: vec![Box::new(AdvanceFundsProcessor::new(
-                rt_sync,
-                Arc::new(contracts_gateway),
-                bitvmx_broker,
-            ))],
+            processors: vec![
+                Box::new(AdvanceFundsProcessor::new(
+                    rt_sync,
+                    Arc::new(contracts_gateway),
+                    bitvmx_broker.clone(),
+                )),
+                Box::new(PeginProcessor::new(bitvmx_broker.clone())),
+            ],
             check_period: CHECK_PERIOD,
             shutdown_flag,
         }
@@ -214,6 +217,7 @@ pub(crate) mod tests {
     use bitvmx_client::types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
     use common::msg_broker::broker::{BROKER_SERVER_ID, MockBrokerClientApi};
     use common::{
+        msg_broker::types::FromServer::FromBitVMX,
         shutdown_flag::ShutdownFlag,
         test_utils::rsk_block_generator::{
             create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
