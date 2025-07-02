@@ -103,6 +103,15 @@ impl IntoResponse for DomainErrors {
             | DomainErrors::InvalidValue(msg)
             | DomainErrors::InvalidBtcTxSpvProof(msg) => (StatusCode::BAD_REQUEST, msg),
 
+            // not found
+            DomainErrors::PacketOutOfBound(msg)
+            | DomainErrors::StreamNotFoundByDenomination(msg) => (StatusCode::NOT_FOUND, msg),
+
+            // forbidden
+            DomainErrors::PeginAlreadyRequested(msg) | DomainErrors::PeginAlreadyAccepted(msg) => {
+                (StatusCode::FORBIDDEN, msg)
+            }
+
             // conflict
             DomainErrors::NoRevertError(msg) | DomainErrors::NotEnoughConfirmations(msg) => {
                 (StatusCode::CONFLICT, msg)
