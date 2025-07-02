@@ -1,4 +1,4 @@
-use qa_tools_common::common::{execute_command, execute_script, spawn_command};
+use qa_tools_common::common::{execute_command, execute_script, execute_script_with_basedir, spawn_command};
 use reqwest::Client;
 use std::process::Child;
 use std::time::Duration;
@@ -22,6 +22,14 @@ pub fn deploy_contracts(deploy_local_path: &str) {
         deploy_local_path
     );
     execute_script(deploy_local_path);
+}
+
+pub fn packet_creation_flow(packet_creation_flow_basedir: &str, packet_creation_flow_relative_path: &str) {
+    println!(
+        " *** SETUP *** Executing packet creation flow in base dir: {} and relative path: {}",
+        packet_creation_flow_basedir, packet_creation_flow_relative_path
+    );
+    execute_script_with_basedir(packet_creation_flow_basedir, packet_creation_flow_relative_path);
 }
 
 pub fn transfer_funds(anvil_url: &str, from: &str, to: &str, amount: &str) {
