@@ -17,7 +17,7 @@ pub(crate) use crate::contracts::interactions::accept_peg_in_request;
 pub(crate) use crate::contracts::interactions::get_temporary_peg_in_address;
 pub(crate) use crate::contracts::interactions::notify_check_fork_complete;
 pub(crate) use crate::contracts::interactions::register_peg_in_request;
-pub(crate) use crate::contracts::interactions::register_peg_out_request;
+pub(crate) use crate::contracts::interactions::try_peg_out_request;
 
 use crate::rsk_gateway::DomainErrors;
 use actors_mocking::fake_contracts::FakePegManager;
@@ -46,7 +46,7 @@ pub trait PegManagerContractApi {
         gas_bumps: u8,
     ) -> alloy_contract::Result<TransactionReceipt>;
 
-    async fn register_peg_out_request_send(
+    async fn try_peg_out_request_send(
         &self,
         msg_value: u64,
         usr_pub_key: FixedBytes<33>,
@@ -111,7 +111,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         .await
     }
 
-    async fn register_peg_out_request_send(
+    async fn try_peg_out_request_send(
         &self,
         msg_value: u64,
         usr_pub_key: FixedBytes<33>,
@@ -180,7 +180,7 @@ impl<P: Provider> PegManagerContractApi for FakePegManagerContract<P> {
         todo!("Not yet implemented for FakePegManagerContract");
     }
 
-    async fn register_peg_out_request_send(
+    async fn try_peg_out_request_send(
         &self,
         _msg_value: u64,
         _usr_pub_key: FixedBytes<33>,

@@ -49,13 +49,13 @@ pub struct RegisterPegInOutput {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct RegisterPegOutInput {
+pub struct TryPegOutInput {
     pub(crate) amount_in_wei: u64,
     pub(crate) usr_pub_key: String,
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
-pub struct RegisterPegOutOutput {
+pub struct TryPegOutOutput {
     pub(crate) transaction_hash: String,
     pub(crate) success: bool,
 }

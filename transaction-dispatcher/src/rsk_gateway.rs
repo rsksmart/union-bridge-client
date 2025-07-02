@@ -6,11 +6,11 @@ use crate::{
         PegManagerContract, accept_peg_in_request::AcceptPegInRequestInvoke,
         get_temporary_peg_in_address::GetTemporaryPegInAddressCall,
         register_peg_in_request::RegisterPegInRequestInvoke,
-        register_peg_out_request::RegisterPegOutRequestInvoke,
+        try_peg_out_request::TryPegOutRequestInvoke,
     },
     types::{
         AcceptPegInInput, AcceptPegInOutput, PegInAddressInput, PegInAddressOutput,
-        RegisterPegInInput, RegisterPegInOutput, RegisterPegOutInput, RegisterPegOutOutput,
+        RegisterPegInInput, RegisterPegInOutput, TryPegOutInput, TryPegOutOutput,
     },
 };
 use alloy_primitives::Address;
@@ -41,10 +41,10 @@ pub trait RskContractsGatewayApi {
         input: AcceptPegInInput,
     ) -> impl Future<Output = Result<AcceptPegInOutput, DomainErrors>>;
 
-    fn register_peg_out_request(
+    fn try_peg_out_request(
         &self,
-        input: RegisterPegOutInput,
-    ) -> impl Future<Output = Result<RegisterPegOutOutput, DomainErrors>>;
+        input: TryPegOutInput,
+    ) -> impl Future<Output = Result<TryPegOutOutput, DomainErrors>>;
 
     fn notify_check_fork_completion(
         &self,
@@ -58,7 +58,7 @@ pub struct RskContractsGateway<P: Provider> {
     get_temporary_peg_in_address_call: GetTemporaryPegInAddressCall<PegManagerContract<P>>,
     register_peg_in_request_invoke: RegisterPegInRequestInvoke<PegManagerContract<P>>,
     accept_peg_in_request_invoke: AcceptPegInRequestInvoke<PegManagerContract<P>>,
-    register_peg_out_request_invoke: RegisterPegOutRequestInvoke<PegManagerContract<P>>,
+    try_peg_out_request_invoke: TryPegOutRequestInvoke<PegManagerContract<P>>,
     notify_check_fork_completion_invoke: NotifyCheckForkCompleteInvoke<FakePegManagerContract<P>>,
 }
 
@@ -89,7 +89,7 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
                 peg_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
-            register_peg_out_request_invoke: RegisterPegOutRequestInvoke::new(
+            try_peg_out_request_invoke: TryPegOutRequestInvoke::new(
                 peg_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
@@ -166,20 +166,20 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
             })
     }
 
-    async fn register_peg_out_request(
+    async fn try_peg_out_request(
         &self,
-        input: RegisterPegOutInput,
-    ) -> Result<RegisterPegOutOutput, DomainErrors> {
+        input: TryPegOutInput,
+    ) -> Result<TryPegOutOutput, DomainErrors> {
         info!(
             "Interacting with PegManager#registerPegOutRequest @ {}",
             self.contract_address
         );
 
-        self.register_peg_out_request_invoke
+        self.try_peg_out_request_invoke
             .run(input)
             .await
             .map_err(|err| {
-                error!("Error on register_peg_out_request_invoke: {}", err);
+                error!("Error on try_peg_out_request_invoke: {}", err);
                 err
             })
     }
