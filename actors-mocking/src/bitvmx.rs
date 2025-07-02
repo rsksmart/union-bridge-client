@@ -47,10 +47,29 @@ impl<BS: BitVmxBrokerServerApi> Executor<BS> {
                         .unwrap_or_else(|e| format!("(invalid JSON: {e})"))
                 );
             }
+            Some((
+                     IncomingBitVMXApiMessages::Setup(program_id, program_name, addresses, port),
+                     from,
+                 )) => {
+                println!(
+                    "Received Setup from {from}: program_id = {program_id}, program_name = {program_name}, addresses = {:?}, port = {port} at {}",
+                    addresses,
+                    Self::reception_time()
+                );
+            }
             Some((IncomingBitVMXApiMessages::GenerateZKP(id, data), from)) => {
                 println!(
                     "Received GenerateZKP from {from} with id {id} and data {:?} at {}",
                     hex::encode(data),
+                    Self::reception_time()
+                );
+            }
+            Some((
+                     IncomingBitVMXApiMessages::DispatchTransactionName(uuid, transaction_name),
+                     from,
+                 )) => {
+                println!(
+                    "Received DispatchTransactionName from {from}: uuid = {uuid}, transaction_name = {transaction_name} at {}",
                     Self::reception_time()
                 );
             }

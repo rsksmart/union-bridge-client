@@ -14,6 +14,8 @@ use thiserror::Error;
 // by convention, server is id 1
 pub const BROKER_SERVER_ID: u32 = 1;
 pub const BITVMX_L2_BROKER_CLIENT_ID: u32 = 100; // Should match the ID defined in the BitVMX Client
+pub const PROGRAM_TYPE_REQUEST_PEGOUT: &str = "request_pegout";
+pub const USER_TAKE: &str = "USER_TAKE";
 
 #[automock]
 pub trait BrokerServerApi<S: Serialize, C: Serialize> {

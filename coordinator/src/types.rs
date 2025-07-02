@@ -8,7 +8,9 @@ use log::{error, warn};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
+use union_contracts::bindings::peg_manager::PegManager::{
+    PeginAccepted, PeginRequested, PegoutRegistered, PegoutRequested,
+};
 use union_contracts::bindings::signature_manager::SignatureManager::{
     AllNoncesReady, AllSignaturesReady,
 };
@@ -20,6 +22,8 @@ pub enum RskPegManagerEvents {
     AdvanceFunds(AdvanceFundsEvent),               // temporarily mock, no need to test it
     PeginRequested(PeginRequestedEvent),
     PeginAccepted(PeginAcceptedEvent),
+    PegoutRegistered(PegoutRegisteredEvent),
+    PegoutRequested(PegoutRequestedEvent),
     RemoveRegisteredPeginRequest(PeginRequestedEvent),
     AllNoncesReady(AllNoncesReadyEvent),
     AllSignaturesReady(AllSignaturesReadyEvent),
@@ -32,6 +36,8 @@ pub type PeginRequestedEvent = EventWithBlock<PeginRequested>;
 pub type PeginAcceptedEvent = EventWithBlock<PeginAccepted>;
 pub type AllNoncesReadyEvent = EventWithBlock<Hash256>;
 pub type AllSignaturesReadyEvent = EventWithBlock<Hash256>;
+pub type PegoutRequestedEvent = EventWithBlock<PegoutRequested>;
+pub type PegoutRegisteredEvent = EventWithBlock<PegoutRegistered>;
 
 pub type EventStatus = bool;
 type DecoderFn = fn(&LogData, BlockNumber, BlockHash, EventStatus, TxHash) -> RskPegManagerEvents;
@@ -75,6 +81,14 @@ impl EventDecoder {
         dispatcher.insert(
             AllSignaturesReady::SIGNATURE_HASH,
             Self::decode_all_signatures_ready_event as DecoderFn,
+        );
+        dispatcher.insert(
+            PegoutRegistered::SIGNATURE_HASH,
+            Self::decode_pegout_registered_event as DecoderFn,
+        );
+        dispatcher.insert(
+            PegoutRequested::SIGNATURE_HASH,
+            Self::decode_pegout_requested_event as DecoderFn,
         );
         Self {
             dispatch: dispatcher,
@@ -163,6 +177,44 @@ impl EventDecoder {
         match PeginAccepted::decode_log_data(&log_data) {
             Ok(ev) => RskPegManagerEvents::PeginAccepted(PeginAcceptedEvent {
                 inner: ev,
+                block_number,
+                block_hash,
+                removed,
+                tx_hash,
+            }),
+            Err(_) => UnknownEvent,
+        }
+    }
+
+    fn decode_pegout_requested_event(
+        log_data: &LogData,
+        block_number: BlockNumber,
+        block_hash: BlockHash,
+        removed: bool,
+        tx_hash: TxHash,
+    ) -> RskPegManagerEvents {
+        match PegoutRequested::decode_log_data(&log_data) {
+            Ok(event) => RskPegManagerEvents::PegoutRequested(PegoutRequestedEvent {
+                inner: event,
+                block_number,
+                block_hash,
+                removed,
+                tx_hash,
+            }),
+            Err(_) => UnknownEvent,
+        }
+    }
+
+    fn decode_pegout_registered_event(
+        log_data: &LogData,
+        block_number: BlockNumber,
+        block_hash: BlockHash,
+        removed: bool,
+        tx_hash: TxHash,
+    ) -> RskPegManagerEvents {
+        match PegoutRegistered::decode_log_data(&log_data) {
+            Ok(event) => RskPegManagerEvents::PegoutRegistered(PegoutRegisteredEvent {
+                inner: event,
                 block_number,
                 block_hash,
                 removed,

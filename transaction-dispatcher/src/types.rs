@@ -46,6 +46,15 @@ pub struct RequestPeginInput {
     pub merkle_branch_hashes: Vec<String>,
 }
 
+//Todo discuss about common or "duplicated" tyes
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RawBtcTxSPVProof {
+    pub(crate) block_hash: String,
+    pub(crate) btc_tx: BitcoinTransaction,
+    pub(crate) merkle_branch_path: String,
+    pub(crate) merkle_branch_hashes: Vec<String>,
+}
+
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct RequestPeginOutput {
     pub transaction_hash: String,
@@ -86,6 +95,8 @@ pub type AddMemberNonceOutput = TxSentOutput;
 pub type AddMemberSignatureOutput = TxSentOutput;
 pub type AcceptPeginInput = RequestPeginInput;
 pub type AcceptPeginOutput = RequestPeginOutput;
+pub type RegisterPegOutInput = RawBtcTxSPVProof;
+pub type RegisterPegOutOutput = TxSentOutput;
 
 impl From<TxIn> for BitcoinTransactionIn {
     fn from(input: TxIn) -> Self {
