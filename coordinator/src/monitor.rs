@@ -310,6 +310,7 @@ impl<BC: BrokerClientApi> Monitor<BC> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::monitor::FromServer::FromBitVMX;
     use anyhow::anyhow;
     use common::{
         msg_broker::{
@@ -607,7 +608,10 @@ mod tests {
 
     #[test]
     fn test_try_bitvmx_event_returns_some() {
-        let value = FromServer::GetTemporaryPegInAddress(json!("some value"));
+        let value = FromBitVMX(
+            "pegin-address".to_string(),
+            json!("GetTemporaryPegInAddress"),
+        );
         let mock_value = value.clone();
         let mut bitvmx_broker = MockBrokerClientApi::new();
         bitvmx_broker

@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "outputs": [
+    {
+      "amount": 100000,
+      "script_pub_key": "0x5120aa2820738e170f675ca6d8c30a160f9968cd8bb922b0cc0157169a85fafa3ccd"
+    },
+    {
+      "amount": 0,
+      "script_pub_key": "0x6a4552534b5f504547494e000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c87d235c24420b2f55450c8414725aa74e6db01035245efdab0e1cfa7ab29aca0f"
+    }
+  ],
+  "inputs": [
+    {
+      "tx_id": "0x360b81785dc7c2f40627fea364676dbb73e6276683caffd9f906b0e0bd36b3d2",
+      "v_out": 1694,
+      "sequence": 4294967293,
+      "script_sig": ""
+    }
+  ],
+  "lock_time": 0
+}
