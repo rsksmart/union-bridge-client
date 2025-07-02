@@ -19,7 +19,7 @@ use log::{error, info};
 use reqwest::blocking::Client;
 use serde_json::{Value, json};
 use std::{cell::RefCell, env, rc::Rc};
-use union_contracts::bindings::peg_manager::PegManager::PeginRequested;
+use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
@@ -60,7 +60,7 @@ pub struct PeginProcessor<T: BrokerClientApi> {
     bitvmx_broker: T,
     blockchain: BlockchainView,
     pegin_requested_events: Vec<UnconfirmedEvent<PeginRequested>>,
-    accept_pegin_events: Vec<UnconfirmedEvent<AcceptedPegInRequestEvent>>,
+    pegin_accepted_events: Vec<UnconfirmedEvent<PeginAccepted>>,
 }
 
 impl<T: BrokerClientApi> PeginProcessor<T> {
@@ -70,7 +70,7 @@ impl<T: BrokerClientApi> PeginProcessor<T> {
             bitvmx_broker,
             blockchain: BlockchainView::new(),
             pegin_requested_events: Vec::new(),
-            accept_pegin_events: Vec::new(),
+            pegin_accepted_events: Vec::new(),
         }
     }
 
@@ -147,32 +147,9 @@ impl<T: BrokerClientApi> PeginProcessor<T> {
         Ok(())
     }
 
-    fn handle_confirmed_event<E: serde::Serialize>(
-        &mut self,
-        event_id: Uuid,
-        variable_name: &str,
-        data: E,
-    ) -> Result<()> {
-        let data = json!(data).to_string();
-
-        self.bitvmx_broker.send(
-            BROKER_SERVER_ID,
-            ToServer::ToBitVMX(IncomingBitVMXApiMessages::SetVar(
-                event_id,
-                variable_name.to_string(),
-                VariableTypes::String(data),
-            )),
-        )?;
-
-        self.blockchain
-            .remove_observer(event_id.to_string().as_str());
-
-        Ok(())
-    }
-
-    fn process_confirmed_register_pegin_events(&mut self) -> Result<()> {
+    fn process_confirmed_pegin_accepted_events(&mut self) -> Result<()> {
         let confirmed_events: Vec<_> = self
-            .register_pegin_events
+            .pegin_accepted_events
             .iter()
             .filter(|event| event.is_confirmed())
             .map(|event| (event.event_id, event.data.inner.clone()))
@@ -180,10 +157,10 @@ impl<T: BrokerClientApi> PeginProcessor<T> {
 
         let mut processed_events = Vec::new();
         confirmed_events.iter().for_each(|(event_id, data)| {
-            match self.handle_confirmed_event(*event_id, "RegisteredPegInRequest", data) {
+            match self.handle_confirmed_event(*event_id, "PeginAccepted", data) {
                 Ok(_) => {
                     info!(
-                        "Successfully processed confirmed RegisteredPegInRequest event: {}",
+                        "Successfully processed confirmed PeginAccepted event: {}",
                         event_id
                     );
                     processed_events.push(*event_id);
@@ -191,7 +168,7 @@ impl<T: BrokerClientApi> PeginProcessor<T> {
                 Err(e) => {
                     // TODO(Jira) this should be monitored and analysed - https://rsklabs.atlassian.net/browse/UB-127
                     error!(
-                        "Error processing confirmed RegisteredPegInRequest event {}: {}",
+                        "Error processing confirmed PeginAccepted event {}: {}",
                         event_id, e
                     );
                 }
@@ -199,42 +176,7 @@ impl<T: BrokerClientApi> PeginProcessor<T> {
         });
 
         // Only remove successfully processed events - keep unconfirmed and failed events
-        self.register_pegin_events
-            .retain(|event| !event.is_confirmed() || !processed_events.contains(&event.event_id));
-
-        Ok(())
-    }
-
-    fn process_confirmed_accept_pegin_events(&mut self) -> Result<()> {
-        let confirmed_events: Vec<_> = self
-            .accept_pegin_events
-            .iter()
-            .filter(|event| event.is_confirmed())
-            .map(|event| (event.event_id, event.data.inner.clone()))
-            .collect();
-
-        let mut processed_events = Vec::new();
-        confirmed_events.iter().for_each(|(event_id, data)| {
-            match self.handle_confirmed_event(*event_id, "AcceptedPegInRequest", data) {
-                Ok(_) => {
-                    info!(
-                        "Successfully processed confirmed AcceptedPegInRequest event: {}",
-                        event_id
-                    );
-                    processed_events.push(*event_id);
-                }
-                Err(e) => {
-                    // TODO(Jira) this should be monitored and analysed - https://rsklabs.atlassian.net/browse/UB-127
-                    error!(
-                        "Error processing confirmed AcceptedPegInRequest event {}: {}",
-                        event_id, e
-                    );
-                }
-            }
-        });
-
-        // Only remove successfully processed events - keep unconfirmed and failed events
-        self.accept_pegin_events
+        self.pegin_accepted_events
             .retain(|event| !event.is_confirmed() || !processed_events.contains(&event.event_id));
 
         Ok(())
@@ -318,8 +260,8 @@ impl<T: BrokerClientApi> EventProcessor for PeginProcessor<T> {
 
                 self.pegin_requested_events.push(unconfirmed_event);
             }
-            RskPegManagerEvents::AcceptedPegInRequest(data) => {
-                info!("Handling AcceptedPegInRequest event: {:?}", data);
+            RskPegManagerEvents::PeginAccepted(data) => {
+                info!("Handling PeginAccepted event: {:?}", data);
 
                 let unconfirmed_event = UnconfirmedEvent::new(data.clone(), REQUIRED_CONFIRMATIONS);
 
@@ -327,11 +269,11 @@ impl<T: BrokerClientApi> EventProcessor for PeginProcessor<T> {
                     .add_observer(unconfirmed_event.confirmations());
 
                 info!(
-                    "Adding AcceptedPegInRequest event to unconfirmed queue. Event: {:?}",
+                    "Adding PeginAccepted event to unconfirmed queue. Event: {:?}",
                     unconfirmed_event
                 );
 
-                self.accept_pegin_events.push(unconfirmed_event);
+                self.pegin_accepted_events.push(unconfirmed_event);
             }
             _ => {}
         }
@@ -340,14 +282,14 @@ impl<T: BrokerClientApi> EventProcessor for PeginProcessor<T> {
     }
 
     fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
-        if self.pegin_requested_events.is_empty() && self.accept_pegin_events.is_empty() {
+        if self.pegin_requested_events.is_empty() && self.pegin_accepted_events.is_empty() {
             return Ok(());
         }
 
         self.blockchain.update(block.clone());
 
         self.process_confirmed_pegin_requested_events()?;
-        self.process_confirmed_accept_pegin_events()?;
+        self.process_confirmed_pegin_accepted_events()?;
 
         Ok(())
     }
@@ -355,8 +297,8 @@ impl<T: BrokerClientApi> EventProcessor for PeginProcessor<T> {
     fn shutdown(&mut self) {
         info!("Shutting down PeginProcessor");
 
-        self.register_pegin_events.clear();
-        self.accept_pegin_events.clear();
+        self.pegin_requested_events.clear();
+        self.pegin_accepted_events.clear();
         self.blockchain.clear();
     }
 }
@@ -364,8 +306,11 @@ impl<T: BrokerClientApi> EventProcessor for PeginProcessor<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{event_processor::EventProcessor, types::PeginRequestedEvent};
-    use alloy_primitives::{Address, Bytes, U256};
+    use crate::{
+        event_processor::EventProcessor,
+        types::{PeginAcceptedEvent, PeginRequestedEvent},
+    };
+    use alloy_primitives::{Address, Bytes, FixedBytes, U256};
     use common::{
         msg_broker::{
             broker::{BROKER_SERVER_ID, MockBrokerClientApi},
@@ -379,7 +324,8 @@ mod tests {
     use primitive_types::H256;
     use serde_json::json;
     use union_contracts::bindings::peg_manager::PegManager::{
-        PeginRequested, PrevoutData, RequestPeginTempInfo,
+        PeginRequested, PrevoutData, RequestPeginTempInfo, StreamPosition,
+    };
 
     #[test]
     fn process_new_bitvmx_event_handles_pegin_address_correctly() {
@@ -544,7 +490,7 @@ mod tests {
     }
 
     #[test]
-    fn process_new_bitvmx_event_accept_pegin_does_not_send_response() {
+    fn process_new_bitvmx_pegin_accepted_event_does_not_send_response() {
         let _m = mockito::mock("POST", "/accept-pegin")
             .with_status(200)
             .with_body(r#"{"result": "ok"}"#)
@@ -589,7 +535,7 @@ mod tests {
     }
 
     #[test]
-    fn process_new_bitvmx_event_accept_pegin_fails_on_dispatcher_error() {
+    fn process_new_bitvmx_pegin_accepted_event_fails_on_dispatcher_error() {
         let _m = mockito::mock("POST", "/accept-pegin")
             .with_status(500)
             .with_body("Internal Server Error")
@@ -654,12 +600,12 @@ mod tests {
     }
 
     #[test]
-    fn process_new_event_registers_accept_pegin_event_and_observer() {
+    fn process_new_event_registers_pegin_accepted_event_and_observer() {
         let broker = MockBrokerClientApi::new();
         let mut processor = PeginProcessor::new(broker);
 
-        let event = RskPegManagerEvents::AcceptedPegInRequest(AcceptedPegInRequestEvent {
-            inner: dummy_accept_pegin_request(),
+        let event = RskPegManagerEvents::PeginAccepted(PeginAcceptedEvent {
+            inner: dummy_pegin_accepted_event(),
             block_number: BlockNumber::from(456),
             block_hash: BlockHash::from(H256::from([0xbb; 32])),
         });
@@ -667,9 +613,9 @@ mod tests {
         let result = processor.process_new_event(&event);
         assert!(result.is_ok());
 
-        assert_eq!(processor.accept_pegin_events.len(), 1);
+        assert_eq!(processor.pegin_accepted_events.len(), 1);
 
-        let observer_id = processor.accept_pegin_events[0].event_id.to_string();
+        let observer_id = processor.pegin_accepted_events[0].event_id.to_string();
         assert!(processor.blockchain.has_observer(&observer_id));
     }
 
@@ -775,12 +721,12 @@ mod tests {
     }
 
     #[test]
-    fn process_new_block_adds_confirmations_for_accept_pegin_but_event_not_confirmed() {
+    fn process_new_block_adds_confirmations_for_pegin_accepted_event_not_confirmed() {
         let broker = MockBrokerClientApi::new();
         let mut processor = PeginProcessor::new(broker);
 
-        let req = dummy_accept_pegin_request();
-        let event = AcceptedPegInRequestEvent {
+        let req = dummy_pegin_accepted_event();
+        let event = PeginAcceptedEvent {
             inner: req,
             block_number: BlockNumber::from(100),
             block_hash: BlockHash::from(H256::from_low_u64_be(123)),
@@ -792,7 +738,7 @@ mod tests {
         processor
             .blockchain
             .add_observer(unconfirmed.confirmations());
-        processor.accept_pegin_events.push(unconfirmed);
+        processor.pegin_accepted_events.push(unconfirmed);
 
         let (block_1, _, _) = create_block_and_uncles();
         let block = RskBlockAndUncles::new_no_uncles(block_1);
@@ -800,7 +746,7 @@ mod tests {
         let result = processor.process_new_block(&block);
         assert!(result.is_ok());
 
-        assert_eq!(processor.register_pegin_events.len(), 0);
+        assert_eq!(processor.pegin_accepted_events.len(), 0);
         assert!(!processor.blockchain.has_observer(&observer_id));
     }
 
@@ -815,15 +761,15 @@ mod tests {
                         msg,
                         ToServer::ToBitVMX(
                             IncomingBitVMXApiMessages::SetVar(_, name, VariableTypes::String(_))
-                        ) if name == "AcceptedPegInRequest"
+                        ) if name == "PeginAccepted"
                     )
             })
             .returning(|_, _| Ok(true));
 
         let mut processor = PeginProcessor::new(broker);
 
-        let req = dummy_accept_pegin_request();
-        let event = AcceptedPegInRequestEvent {
+        let req = dummy_pegin_accepted_event();
+        let event = PeginAcceptedEvent {
             inner: req,
             block_number: BlockNumber::from(100),
             block_hash: BlockHash::from(H256::from_low_u64_be(123)),
@@ -835,7 +781,7 @@ mod tests {
         processor
             .blockchain
             .add_observer(unconfirmed.confirmations());
-        processor.accept_pegin_events.push(unconfirmed);
+        processor.pegin_accepted_events.push(unconfirmed);
 
         let (block_1, _, _) = create_block_and_uncles();
         let block = RskBlockAndUncles::new_no_uncles(block_1);
@@ -843,7 +789,7 @@ mod tests {
         let result = processor.process_new_block(&block);
         assert!(result.is_ok());
 
-        assert_eq!(processor.accept_pegin_events.len(), 0);
+        assert_eq!(processor.pegin_accepted_events.len(), 0);
         assert!(!processor.blockchain.has_observer(&observer_id));
     }
 
@@ -882,35 +828,25 @@ mod tests {
         }
     }
 
-    fn dummy_accept_pegin_request() -> AcceptedPegInRequest {
-        AcceptedPegInRequest {
-            blockHash: H256::from_low_u64_be(123)
-                .as_bytes()
-                .try_into()
-                .expect("Failed to decode block hash"),
-            txHash: H256::from_low_u64_be(456)
-                .as_bytes()
-                .try_into()
-                .expect("Failed to decode tx hash"),
-            pegInTxHash: H256::from_low_u64_be(789)
-                .as_bytes()
-                .try_into()
-                .expect("Failed to decode pegInTxHash"),
-            vout: 1,
+    fn dummy_pegin_accepted_event() -> PeginAccepted {
+        PeginAccepted {
+            blockHash: FixedBytes::<32>::from_slice(H256::from_low_u64_be(1).as_bytes()),
+            acceptPeginTxHash: FixedBytes::<32>::from_slice(H256::from_low_u64_be(2).as_bytes()),
+            peginRequestTxHash: FixedBytes::<32>::from_slice(H256::from_low_u64_be(3).as_bytes()),
+            vout: 0,
             streamPosition: StreamPosition {
-                streamId: 1,
-                packetNumber: 2,
-                slotId: 3,
-                pegStatus: 1u8.into(),
+                streamId: 42,
+                packetNumber: 33,
+                slotId: 0,
+                pegStatus: 1.into(),
             },
-            speedUpPubKey: H256::from_low_u64_be(555)
-                .as_bytes()
-                .try_into()
-                .expect("Failed to decode speedUpPubKey"),
+            speedUpPubKey: FixedBytes::<32>::from_slice(
+                H256::from_low_u64_be(103991732982).as_bytes(),
+            ),
             rskDestinationAddress: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
                 .parse::<Address>()
                 .expect("Invalid address"),
-            rbtcAmount: U256::from(100000),
+            rbtcAmount: U256::from(12345678),
             utxoScriptPubKey: Bytes::from("0xabcdef0123456789"),
         }
     }

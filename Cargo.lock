@@ -4549,24 +4549,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mockito"
-version = "0.31.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "80f9fece9bd97ab74339fe19f4bcaf52b76dcc18e5364c7977c1838f76b38de9"
-dependencies = [
- "assert-json-diff",
- "colored",
- "httparse",
- "lazy_static",
- "log",
- "rand 0.8.5",
- "regex",
- "serde_json",
- "serde_urlencoded",
- "similar",
-]
-
-[[package]]
 name = "musig2"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
