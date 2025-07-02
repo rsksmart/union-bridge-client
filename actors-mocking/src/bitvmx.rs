@@ -123,7 +123,7 @@ impl<BS: BrokerServerApi> Executor<BS> {
             "merkle_branch_hashes": merkle_branch_hashes,
         });
 
-        let event = FromServer::FromBitVMX("pegin-requested".to_owned(), payload);
+        let event = FromServer::FromBitVMX("register-pegin".to_owned(), payload);
 
         self.notify_consumers(event)
     }

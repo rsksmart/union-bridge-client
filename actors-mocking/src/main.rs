@@ -5,9 +5,11 @@ use actors_mocking::{bitvmx, events};
 use alloy_node_bindings::Anvil;
 use alloy_provider::{ProviderBuilder, network::EthereumWallet};
 use alloy_signer_local::LocalSigner;
-use anyhow::Result;
+use anyhow::{Context, Result, anyhow};
 use clap::{CommandFactory, Parser};
 use common::msg_broker::broker::BrokerServer;
+use serde_json::Value;
+use std::path::PathBuf;
 use std::{
     io::Write,
     sync::{Arc, Mutex},
@@ -50,8 +52,8 @@ enum Menu {
     PeginRequested {
         #[arg(help = "Bitcoin block hash (hex)")]
         block_hash: String,
-        #[arg(help = "BTC transaction as JSON string")]
-        btc_tx: String,
+        #[arg(long, help = "Path to BTC transaction JSON file")]
+        btc_tx_file: PathBuf,
         #[arg(help = "Merkle branch path (hex)")]
         merkle_branch_path: String,
         #[arg(help = "Merkle branch hashes (comma-separated hex values)")]
@@ -146,12 +148,16 @@ async fn main() -> Result<()> {
                 }
                 Menu::PeginRequested {
                     block_hash,
-                    btc_tx,
+                    btc_tx_file,
                     merkle_branch_path,
                     merkle_branch_hashes,
                 } => {
-                    let btc_tx: BtcTx = serde_json::from_str(&btc_tx)
-                        .map_err(|e| anyhow::anyhow!("Failed to parse btc_tx JSON: {}", e))?;
+                    let json_str = std::fs::read_to_string(&btc_tx_file).with_context(|| {
+                        format!("Failed to read file: {}", btc_tx_file.display())
+                    })?;
+
+                    let btc_tx: BtcTx = serde_json::from_str(&json_str)
+                        .context("Failed to parse BTC transaction JSON")?;
 
                     let merkle_hashes: Vec<String> = merkle_branch_hashes
                         .split(',')
