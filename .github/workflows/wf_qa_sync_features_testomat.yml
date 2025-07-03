@@ -1,0 +1,27 @@
+name: QA Sync Features with Testomat WF
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '**/*.feature'
+
+jobs:
+  sync-testomat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '22'
+
+      - name: Push transaction dispatcher feature changes to Testomat
+        working-directory: qa-tools/transaction-dispatcher
+        run: |
+          TESTOMATIO=${{ secrets.PROJECT_REPORTING_API_KEY }} \
+          TESTOMATIO_PREPEND_DIR="Transaction dispatcher" \
+          npx check-cucumber@latest "**/*.feature" --dir features --sync

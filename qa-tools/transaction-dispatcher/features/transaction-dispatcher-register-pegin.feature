@@ -1,11 +1,13 @@
-@transaction-dispatcher @transaction-dispatcher-register-pegin
+@transaction-dispatcher @transaction-dispatcher-register-pegin @STXDISP02 @S22bfae21
 Feature: Transaction dispatcher register pegin
 
+  @TTXD02001
   Scenario: Happy path
     When I POST to "/register-pegin"
     Then the response code should be "200"
     And the response should contain a valid transaction hash
 
+  @TTXD02002
   Scenario: Unsupported denomination
     When I POST to "/register-pegin"
      | amount |
@@ -13,6 +15,7 @@ Feature: Transaction dispatcher register pegin
     Then the response code should be "404"
     And the response should contain the error "StreamNotFoundByDenomination"
 
+  @TTXD02003
   Scenario: Register peg-in request already registered
     When I POST to "/register-pegin"
      | amount | tx_id | block_hash | merkle_hash | sequence | v_out | script_sig | merkle_branch_path |
