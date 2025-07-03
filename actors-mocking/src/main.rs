@@ -59,6 +59,17 @@ enum Menu {
         #[arg(help = "Merkle branch hashes (comma-separated hex values)")]
         merkle_branch_hashes: String,
     },
+    #[command(name = "pegin-accepted", visible_alias = "pa")]
+    PeginAccepted {
+        #[arg(help = "Bitcoin block hash (hex)")]
+        block_hash: String,
+        #[arg(long, help = "Path to BTC transaction JSON file")]
+        btc_tx_file: PathBuf,
+        #[arg(help = "Merkle branch path (hex)")]
+        merkle_branch_path: String,
+        #[arg(help = "Merkle branch hashes (comma-separated hex values)")]
+        merkle_branch_hashes: String,
+    },
 }
 
 #[tokio::main]
@@ -169,6 +180,35 @@ async fn main() -> Result<()> {
                         .expect("Failed to lock bitvmx_executor");
 
                     executor.send_pegin_requested_event(
+                        block_hash,
+                        btc_tx,
+                        merkle_branch_path,
+                        merkle_hashes,
+                    )?;
+                }
+                Menu::PeginAccepted {
+                    block_hash,
+                    btc_tx_file,
+                    merkle_branch_path,
+                    merkle_branch_hashes,
+                } => {
+                    let json_str = std::fs::read_to_string(&btc_tx_file).with_context(|| {
+                        format!("Failed to read file: {}", btc_tx_file.display())
+                    })?;
+
+                    let btc_tx: BtcTx = serde_json::from_str(&json_str)
+                        .context("Failed to parse BTC transaction JSON")?;
+
+                    let merkle_hashes: Vec<String> = merkle_branch_hashes
+                        .split(',')
+                        .map(str::to_string)
+                        .collect();
+
+                    let executor = bitvmx_executor
+                        .lock()
+                        .expect("Failed to lock bitvmx_executor");
+
+                    executor.send_pegin_accepted_event(
                         block_hash,
                         btc_tx,
                         merkle_branch_path,

@@ -128,6 +128,25 @@ impl<BS: BrokerServerApi> Executor<BS> {
         self.notify_consumers(event)
     }
 
+    pub fn send_pegin_accepted_event(
+        &self,
+        block_hash: String,
+        btc_tx: BtcTx,
+        merkle_branch_path: String,
+        merkle_branch_hashes: Vec<String>,
+    ) -> Result<()> {
+        let payload = json!({
+            "block_hash": block_hash,
+            "btc_tx": btc_tx,
+            "merkle_branch_path": merkle_branch_path,
+            "merkle_branch_hashes": merkle_branch_hashes,
+        });
+
+        let event = FromServer::FromBitVMX("accept-pegin".to_owned(), payload);
+
+        self.notify_consumers(event)
+    }
+
     fn notify_consumers(&self, event: FromServer) -> Result<()> {
         for c_id in &self.consumers {
             println!(
