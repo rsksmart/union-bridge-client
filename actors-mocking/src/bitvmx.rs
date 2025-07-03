@@ -29,22 +29,19 @@ pub struct Input {
 
 pub struct Executor<BS: BitVmxBrokerServerApi> {
     broker_server: BS,
+    consumers: HashSet<u32>,
 }
 
 impl<BS: BitVmxBrokerServerApi> Executor<BS> {
     pub fn new(broker_server: BS) -> Self {
-        Self { broker_server }
+        Self {
+            broker_server,
+            consumers: HashSet::new(),
+        }
     }
 
     pub fn try_recv(&mut self) -> Result<()> {
         match self.broker_server.try_recv()? {
-            Some((IncomingBitVMXApiMessages::GenerateZKP(id, data), from)) => {
-                println!(
-                    "Received GenerateZKP from {from} with id {id} and data {:?} at {}",
-                    hex::encode(data),
-                    Self::reception_time()
-                );
-            }
             Some((IncomingBitVMXApiMessages::Ping(), from)) => {
                 // println!("Received Ping from {from} at {}", Self::reception_time());
 
@@ -52,11 +49,18 @@ impl<BS: BitVmxBrokerServerApi> Executor<BS> {
                     .send(&OutgoingBitVMXApiMessages::Pong(), from)
                     .context("Failed to send Pong response")?;
             }
-            Some(IncomingBitVMXApiMessages::SetVar(uuid, name, value)) => {
+            Some((IncomingBitVMXApiMessages::SetVar(uuid, name, value), from)) => {
                 println!(
                     "Received SetVar from {from}: uuid = {uuid}, name = {name}, value = {}",
                     serde_json::to_string_pretty(&value)
                         .unwrap_or_else(|e| format!("(invalid JSON: {e})"))
+                );
+            }
+            Some((IncomingBitVMXApiMessages::GenerateZKP(id, data), from)) => {
+                println!(
+                    "Received GenerateZKP from {from} with id {id} and data {:?} at {}",
+                    hex::encode(data),
+                    Self::reception_time()
                 );
             }
             Some((msg, _from)) => {
@@ -93,6 +97,25 @@ impl<BS: BitVmxBrokerServerApi> Executor<BS> {
         self.notify_consumers(event)
     }
 
+    pub fn send_pegin_accepted_event(
+        &self,
+        block_hash: String,
+        btc_tx: BtcTx,
+        merkle_branch_path: String,
+        merkle_branch_hashes: Vec<String>,
+    ) -> Result<()> {
+        let payload = json!({
+            "block_hash": block_hash,
+            "btc_tx": btc_tx,
+            "merkle_branch_path": merkle_branch_path,
+            "merkle_branch_hashes": merkle_branch_hashes,
+        });
+
+        let event = FromServer::FromBitVMX("accept-pegin".to_owned(), payload);
+
+        self.notify_consumers(event)
+    }
+
     fn reception_time() -> String {
         chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
     }
@@ -104,7 +127,7 @@ impl<BS: BitVmxBrokerServerApi> Executor<BS> {
                 c_id, event
             );
 
-            self.broker_server
+            self.broker_server.send
                 .send(&event, *c_id)
                 .context(format!("sending event {:?} to consumer {}", event, c_id))?;
         }

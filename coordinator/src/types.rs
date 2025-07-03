@@ -5,7 +5,7 @@ use alloy_sol_types::SolEvent;
 use common::types::{BlockHash, BlockNumber, RskLog};
 use log::{error, warn};
 use std::collections::HashMap;
-use union_contracts::bindings::peg_manager::PegManager::PeginRequested;
+use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
 
 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-183
 
@@ -16,6 +16,7 @@ pub enum RskPegManagerEvents {
     AdvanceFunds(AdvanceFundsEvent),               // temporarily mock, no need to test it
     RemoveAdvanceFunds { peg_out_id: String },     // temporarily mock, no need to test it
     PeginRequested(PeginRequestedEvent),
+    PeginAccepted(PeginAcceptedEvent),
     RemoveRegisteredPegInRequest(PeginRequestedEvent),
     UnknownEvent,
 }
@@ -23,6 +24,7 @@ pub enum RskPegManagerEvents {
 pub type RequestAdvanceFundsEvent = EventWithBlock<RequestAdvanceFunds>;
 pub type AdvanceFundsEvent = EventWithBlock<AdvanceFunds>;
 pub type PeginRequestedEvent = EventWithBlock<PeginRequested>;
+pub type PeginAcceptedEvent = EventWithBlock<PeginAccepted>;
 
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub struct EventWithBlock<T> {
@@ -44,6 +46,10 @@ impl EventDecoder {
         dispatcher.insert(
             PeginRequested::SIGNATURE_HASH,
             Self::decode_pegin_requested_event as DecoderFn,
+        );
+        dispatcher.insert(
+            PeginAccepted::SIGNATURE_HASH,
+            Self::decode_pegin_accepted_event as DecoderFn,
         );
         dispatcher.insert(
             RequestAdvanceFunds::SIGNATURE_HASH,
@@ -125,6 +131,27 @@ impl EventDecoder {
         }
     }
 
+    fn decode_pegin_accepted_event(
+        log_data: &LogData,
+        block_number: BlockNumber,
+        block_hash: BlockHash,
+        removed: bool,
+    ) -> RskPegManagerEvents {
+        match PeginAccepted::decode_log_data(&log_data) {
+            Ok(ev) if !removed => RskPegManagerEvents::PeginAccepted(PeginAcceptedEvent {
+                inner: ev,
+                block_number,
+                block_hash,
+            }),
+            Ok(ev) => RskPegManagerEvents::PeginAccepted(PeginAcceptedEvent {
+                inner: ev,
+                block_number,
+                block_hash,
+            }),
+            Err(_) => UnknownEvent,
+        }
+    }
+
     fn decode_request_advance_funds_event(
         log_data: &LogData,
         block_number: BlockNumber,
@@ -169,12 +196,14 @@ impl EventDecoder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy_primitives::U256;
+    use alloy_primitives::{Address, B256, Bytes, FixedBytes, U256};
     use common::test_utils::rsk_log_generator::{FakeLogGenerator, event_signature_to_topic};
     use common::test_utils::rsk_utils::generate_fake_address;
     use common::types::{BlockHash, DataBytes, Hash256, LogEvent, LogInfo, RskLog, TxHash};
     use primitive_types::H256;
-    use union_contracts::bindings::peg_manager::PegManager::{PrevoutData, RequestPeginTempInfo};
+    use union_contracts::bindings::peg_manager::PegManager::{
+        PrevoutData, RequestPeginTempInfo, StreamPosition,
+    };
 
     #[test]
     fn test_decode_unknown_event() {
@@ -332,6 +361,62 @@ mod tests {
                 assert_eq!(data.block_hash, expected_block_hash.into());
             }
             _ => panic!("Expected RegisteredPegInRequest event"),
+        }
+    }
+
+    #[test]
+    fn test_decode_pegin_accepted_event() {
+        let expected_block_hash = H256::from_low_u64_be(123);
+        let expected_block_num = 789;
+
+        let expected_event = PeginAccepted {
+            blockHash: FixedBytes::<32>::from_slice(H256::from_low_u64_be(1).as_bytes()),
+            acceptPeginTxHash: FixedBytes::<32>::from_slice(H256::from_low_u64_be(2).as_bytes()),
+            peginRequestTxHash: FixedBytes::<32>::from_slice(H256::from_low_u64_be(3).as_bytes()),
+            vout: 0,
+            streamPosition: StreamPosition {
+                streamId: 42,
+                packetNumber: 33,
+                slotId: 0,
+                pegStatus: 1.into(),
+            },
+            speedUpPubKey: FixedBytes::<32>::from_slice(
+                H256::from_low_u64_be(103991732982).as_bytes(),
+            ),
+            rskDestinationAddress: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
+                .parse::<Address>()
+                .expect("Invalid address"),
+            rbtcAmount: U256::from(12345678),
+            utxoScriptPubKey: Bytes::from("0xabcdef0123456789"),
+        };
+
+        let data = DataBytes::new(expected_event.encode_log_data().data.to_vec());
+        let topics = expected_event
+            .encode_topics()
+            .iter()
+            .map(|t| Hash256::from(B256::from(*t)))
+            .collect();
+
+        let log_event = LogEvent::new(data, topics);
+        let log_info = LogInfo::new(
+            generate_fake_address(1),
+            expected_block_hash.into(),
+            expected_block_num.into(),
+            TxHash::from(H256::random()),
+            1,
+            false,
+        );
+
+        let rsk_log = RskLog::new(log_info, log_event);
+        let decoder = EventDecoder::new();
+        let result = decoder.decode(rsk_log);
+        match result {
+            RskPegManagerEvents::PeginAccepted(data) => {
+                assert_eq!(data.inner, expected_event);
+                assert_eq!(data.block_number, expected_block_num);
+                assert_eq!(data.block_hash, expected_block_hash.into());
+            }
+            _ => panic!("Expected AcceptedPegInRequest event"),
         }
     }
 }
