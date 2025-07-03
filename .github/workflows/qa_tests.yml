@@ -55,8 +55,22 @@ jobs:
         run: |
           echo "${KEY_STORE_FILE}" > test_keystore/keyfile
 
-      - name: Run integration tests
+      - name: Run transaction dispatcher integration tests
         working-directory: qa-tools
         run: |
           JUNIT_REPORT="reports/tx_dispatcher.xml" RUST_BACKTRACE=1 cargo run --bin qa-tools-transaction-dispatcher -- --tags @transaction-dispatcher
           cat reports/tx_dispatcher.xml
+
+      - name: Print tests summary
+        if: ${{ env.ACT }}
+        working-directory: union-bridge-client/qa-tools
+        run:
+          cat reports/tx_dispatcher.xml
+
+      - name: Upload reports to Testomat
+        if: ${{ ! env.ACT }}
+        working-directory: union-bridge-client/qa-tools
+        run: |
+          TESTOMATIO=${{ secrets.PROJECT_REPORTING_API_KEY }} \
+          TESTOMATIO_TITLE="Regression - tx dispatcher | ${{ github.ref_name }} | $(date +'%Y-%m-%d %H:%M')" \
+          npx report-xml reports/tx_dispatcher.xml
