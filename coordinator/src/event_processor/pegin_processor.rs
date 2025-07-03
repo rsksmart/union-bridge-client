@@ -725,11 +725,13 @@ mod tests {
         let broker = MockBrokerClientApi::new();
         let mut processor = PeginProcessor::new(broker);
 
+        let (block_1, _, _) = create_block_and_uncles();
+
         let req = dummy_pegin_accepted_event();
         let event = PeginAcceptedEvent {
             inner: req,
-            block_number: BlockNumber::from(100),
-            block_hash: BlockHash::from(H256::from_low_u64_be(123)),
+            block_number: block_1.number(),
+            block_hash: block_1.hash(),
         };
 
         let unconfirmed = UnconfirmedEvent::new(event.clone(), 5);
@@ -740,18 +742,17 @@ mod tests {
             .add_observer(unconfirmed.confirmations());
         processor.pegin_accepted_events.push(unconfirmed);
 
-        let (block_1, _, _) = create_block_and_uncles();
         let block = RskBlockAndUncles::new_no_uncles(block_1);
 
         let result = processor.process_new_block(&block);
         assert!(result.is_ok());
 
-        assert_eq!(processor.pegin_accepted_events.len(), 0);
-        assert!(!processor.blockchain.has_observer(&observer_id));
+        assert_eq!(processor.pegin_accepted_events.len(), 1);
+        assert!(processor.blockchain.has_observer(&observer_id));
     }
 
     #[test]
-    fn process_new_block_confirms_and_removes_accept_pegin_event() {
+    fn process_new_block_confirms_and_removes_pegin_accepted_event() {
         let mut broker = MockBrokerClientApi::new();
         broker
             .expect_send()

@@ -202,7 +202,7 @@ mod tests {
     use common::types::{BlockHash, DataBytes, Hash256, LogEvent, LogInfo, RskLog, TxHash};
     use primitive_types::H256;
     use union_contracts::bindings::peg_manager::PegManager::{
-        PegStatus, PrevoutData, RequestPeginTempInfo, StreamPosition,
+        PrevoutData, RequestPeginTempInfo, StreamPosition,
     };
 
     #[test]
