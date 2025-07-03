@@ -1202,7 +1202,7 @@
   },
   {
     "type": "error",
-    "name": "AlreadyRegisteredPegInRequest",
+    "name": "PeginAlreadyRequested",
     "inputs": [
       {
         "name": "btcTxHash",
