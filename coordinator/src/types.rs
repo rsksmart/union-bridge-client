@@ -5,7 +5,9 @@ use alloy_sol_types::SolEvent;
 use common::types::{BlockHash, BlockNumber, RskLog};
 use log::{error, warn};
 use std::collections::HashMap;
-use union_contracts::bindings::peg_manager::PegManager::PeginRequested;
+use union_contracts::bindings::peg_manager::PegManager::{
+    PeginRequested, PegoutRegistered, PegoutRequested,
+};
 
 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-183
 
@@ -16,6 +18,8 @@ pub enum RskPegManagerEvents {
     AdvanceFunds(AdvanceFundsEvent),               // temporarily mock, no need to test it
     RemoveAdvanceFunds { peg_out_id: String },     // temporarily mock, no need to test it
     PeginRequested(PeginRequestedEvent),
+    PegoutRegistered(PegoutRegisteredEvent),
+    PegoutRequested(PegoutRequestedEvent),
     RemoveRegisteredPegInRequest(PeginRequestedEvent),
     UnknownEvent,
 }
@@ -23,6 +27,8 @@ pub enum RskPegManagerEvents {
 pub type RequestAdvanceFundsEvent = EventWithBlock<RequestAdvanceFunds>;
 pub type AdvanceFundsEvent = EventWithBlock<AdvanceFunds>;
 pub type PeginRequestedEvent = EventWithBlock<PeginRequested>;
+pub type PegoutRequestedEvent = EventWithBlock<PegoutRequested>;
+pub type PegoutRegisteredEvent = EventWithBlock<PegoutRegistered>;
 
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub struct EventWithBlock<T> {
@@ -52,6 +58,14 @@ impl EventDecoder {
         dispatcher.insert(
             AdvanceFunds::SIGNATURE_HASH,
             Self::decode_advance_funds_event as DecoderFn,
+        );
+        dispatcher.insert(
+            PegoutRegistered::SIGNATURE_HASH,
+            Self::decode_pegout_registered_event as DecoderFn,
+        );
+        dispatcher.insert(
+            PegoutRequested::SIGNATURE_HASH,
+            Self::decode_pegout_requested_event as DecoderFn,
         );
         Self {
             dispatch: dispatcher,
@@ -118,6 +132,38 @@ impl EventDecoder {
             }),
             Ok(ev) => RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
                 inner: ev,
+                block_number,
+                block_hash,
+            }),
+            Err(_) => UnknownEvent,
+        }
+    }
+
+    fn decode_pegout_requested_event(
+        log_data: &LogData,
+        block_number: BlockNumber,
+        block_hash: BlockHash,
+        removed: bool,
+    ) -> RskPegManagerEvents {
+        match PegoutRequested::decode_log_data(&log_data) {
+            Ok(event) => RskPegManagerEvents::PegoutRequested(PegoutRequestedEvent {
+                inner: event,
+                block_number,
+                block_hash,
+            }),
+            Err(_) => UnknownEvent,
+        }
+    }
+
+    fn decode_pegout_registered_event(
+        log_data: &LogData,
+        block_number: BlockNumber,
+        block_hash: BlockHash,
+        removed: bool,
+    ) -> RskPegManagerEvents {
+        match PegoutRegistered::decode_log_data(&log_data) {
+            Ok(event) => RskPegManagerEvents::PegoutRegistered(PegoutRegisteredEvent {
+                inner: event,
                 block_number,
                 block_hash,
             }),

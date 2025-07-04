@@ -31,4 +31,6 @@ pub enum FromServer {
 
     // fake bitvmx incoming messages
     GetTemporaryPegInAddress(Value),
+    RegisterPegoutSignature(Value),
+    RegisterPegout(Value),
 }

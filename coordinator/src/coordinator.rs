@@ -1,5 +1,7 @@
 use crate::{
-    event_processor::{AdvanceFundsProcessor, EventProcessor, GetTemporaryPeginAddressProcessor},
+    event_processor::{
+        AdvanceFundsProcessor, EventProcessor, GetTemporaryPeginAddressProcessor, PegoutProcessor,
+    },
     monitor::MonitorApi,
 };
 use anyhow::{Context, Result};
@@ -40,6 +42,7 @@ impl<M: MonitorApi> Coordinator<M> {
                 Box::new(GetTemporaryPeginAddressProcessor::new(
                     bitvmx_broker.clone(),
                 )),
+                Box::new(PegoutProcessor::new(bitvmx_broker.clone())),
             ],
             check_period: CHECK_PERIOD,
             shutdown_flag,
