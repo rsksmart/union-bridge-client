@@ -10,13 +10,14 @@ use union_contracts::bindings::peg_manager::PegManager::{
 
 use crate::contracts::bitcoin_manager::ParseFieldError;
 
-use crate::types::RegisterPegInInput;
+use crate::types::{RawBtcTxSPVProof, RegisterPegInInput};
 
 // re-export for convenience
 pub(crate) use crate::contracts::interactions::accept_peg_in_request;
 pub(crate) use crate::contracts::interactions::get_temporary_peg_in_address;
 pub(crate) use crate::contracts::interactions::notify_check_fork_complete;
 pub(crate) use crate::contracts::interactions::register_peg_in_request;
+pub(crate) use crate::contracts::interactions::register_peg_out_request;
 pub(crate) use crate::contracts::interactions::try_peg_out_request;
 
 use crate::rsk_gateway::DomainErrors;
@@ -50,6 +51,12 @@ pub trait PegManagerContractApi {
         &self,
         msg_value: u64,
         usr_pub_key: FixedBytes<33>,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TransactionReceipt>;
+
+    async fn register_peg_out_request_send(
+        &self,
+        input: BtcTxSPVProof,
         gas_bumps: u8,
     ) -> alloy_contract::Result<TransactionReceipt>;
 
@@ -128,6 +135,18 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         .await
     }
 
+    async fn register_peg_out_request_send(
+        &self,
+        input: BtcTxSPVProof,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TransactionReceipt> {
+        send_tx_with_gas_bump(
+            || self.contract_instance.registerPegout(input.clone()),
+            gas_bumps,
+        )
+        .await
+    }
+
     async fn notify_check_fork_completion(
         &self,
         _pegout_id: &str,
@@ -188,6 +207,13 @@ impl<P: Provider> PegManagerContractApi for FakePegManagerContract<P> {
     ) -> alloy_contract::Result<TransactionReceipt> {
         todo!("Not yet implemented for FakePegManagerContract");
     }
+    async fn register_peg_out_request_send(
+        &self,
+        _input: BtcTxSPVProof,
+        _gas_bumps: u8,
+    ) -> alloy_contract::Result<TransactionReceipt> {
+        todo!("Not yet implemented for FakePegManagerContract");
+    }
 
     async fn notify_check_fork_completion(
         &self,
@@ -209,6 +235,48 @@ impl TryFrom<RegisterPegInInput> for BtcTxSPVProof {
     type Error = ParseFieldError;
 
     fn try_from(value: RegisterPegInInput) -> Result<Self, Self::Error> {
+        let block_hash =
+            FixedBytes::<32>::from_hex(&value.block_hash).map_err(ParseFieldError::ParseHex)?;
+
+        let btc_tx: BtcTransaction = value.btc_tx.try_into().map_err(|e| {
+            error!("Failed to parse BTC transaction: {}", e);
+            e
+        })?;
+
+        let merkle_branches_hashes = value
+            .merkle_branch_hashes
+            .into_iter()
+            .map(|hash| {
+                hash.parse::<FixedBytes<32>>()
+                    .map_err(ParseFieldError::ParseHex)
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| {
+                error!("Failed to convert merkle_branch_hashes: {:?}", e);
+                e
+            })?;
+
+        let merkle_branch_path =
+            U256::from_str_radix(&value.merkle_branch_path.trim_start_matches("0x"), 16).map_err(
+                |e| {
+                    error!("Failed to convert merkle_branch_path: {:?}", e);
+                    e
+                },
+            )?;
+
+        Ok(BtcTxSPVProof {
+            blockHash: block_hash,
+            btcTx: btc_tx,
+            merkleBranchPath: merkle_branch_path,
+            merkleBranchHashes: merkle_branches_hashes,
+        })
+    }
+}
+
+impl TryFrom<RawBtcTxSPVProof> for BtcTxSPVProof {
+    type Error = ParseFieldError;
+
+    fn try_from(value: RawBtcTxSPVProof) -> Result<Self, Self::Error> {
         let block_hash =
             FixedBytes::<32>::from_hex(&value.block_hash).map_err(ParseFieldError::ParseHex)?;
 

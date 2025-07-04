@@ -176,7 +176,8 @@ pub(crate) mod tests {
     use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
     use transaction_dispatcher::types::{
         AcceptPegInInput, AcceptPegInOutput, PegInAddressInput, PegInAddressOutput,
-        RegisterPegInInput, RegisterPegInOutput, TryPegOutInput, TryPegOutOutput,
+        RegisterPegInInput, RegisterPegInOutput, RegisterPegOutInput, RegisterPegOutOutput,
+        TryPegOutInput, TryPegOutOutput,
     };
 
     fn create_fake_request_event(peg_out_id: &str) -> RequestAdvanceFunds {
@@ -429,6 +430,11 @@ pub(crate) mod tests {
                 &self,
                 input: TryPegOutInput,
             ) -> Result<TryPegOutOutput, DomainErrors>;
+
+            async fn register_peg_out_request(
+                &self,
+                input: RegisterPegOutInput,
+            ) -> Result<RegisterPegOutOutput, DomainErrors>;
 
             async fn notify_check_fork_completion(
                 &self,

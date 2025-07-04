@@ -42,8 +42,23 @@ pub struct RegisterPegInInput {
     pub(crate) merkle_branch_hashes: Vec<String>,
 }
 
+//Todo discuss about common or "duplicated" tyes
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RawBtcTxSPVProof {
+    pub(crate) block_hash: String,
+    pub(crate) btc_tx: BitcoinTransaction,
+    pub(crate) merkle_branch_path: String,
+    pub(crate) merkle_branch_hashes: Vec<String>,
+}
+
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct RegisterPegInOutput {
+    pub(crate) transaction_hash: String,
+    pub(crate) success: bool,
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+pub struct TxSentOutput {
     pub(crate) transaction_hash: String,
     pub(crate) success: bool,
 }
@@ -62,3 +77,5 @@ pub struct TryPegOutOutput {
 
 pub type AcceptPegInInput = RegisterPegInInput;
 pub type AcceptPegInOutput = RegisterPegInOutput;
+pub type RegisterPegOutInput = RawBtcTxSPVProof;
+pub type RegisterPegOutOutput = TxSentOutput;

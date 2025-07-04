@@ -1,6 +1,6 @@
 use crate::{
     rsk_gateway::{DomainErrors, RskContractsGateway, RskContractsGatewayApi},
-    types::{PegInAddressInput, RegisterPegInInput, TryPegOutInput},
+    types::{PegInAddressInput, RegisterPegInInput, RegisterPegOutInput, TryPegOutInput},
 };
 use alloy_provider::Provider;
 use anyhow::{Context, Result};
@@ -33,6 +33,7 @@ impl Server {
             .route("/register-pegin", post(Self::register_peg_in::<P>))
             .route("/accept-pegin", post(Self::accept_peg_in::<P>))
             .route("/try-pegout", post(Self::try_peg_out::<P>))
+            .route("/register-pegout", post(Self::register_peg_out::<P>))
             .layer((
                 // TraceLayer::new_for_http(), // TODO: enable when we change logging library to tracing
                 TimeoutLayer::new(Duration::from_secs(10)),
@@ -88,6 +89,16 @@ impl Server {
         Json(payload): Json<TryPegOutInput>,
     ) -> impl IntoResponse {
         match rsk_gateway.try_peg_out_request(payload).await {
+            Ok(data) => (StatusCode::OK, Json(json!(data))).into_response(),
+            Err(e) => e.into_response(),
+        }
+    }
+
+    async fn register_peg_out<P: Provider>(
+        Extension(rsk_gateway): Extension<RskContractsGateway<P>>,
+        Json(payload): Json<RegisterPegOutInput>,
+    ) -> impl IntoResponse {
+        match rsk_gateway.register_peg_out_request(payload).await {
             Ok(data) => (StatusCode::OK, Json(json!(data))).into_response(),
             Err(e) => e.into_response(),
         }
