@@ -2,6 +2,7 @@ use crate::types::RskPegManagerEvents::UnknownEvent;
 use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
 use alloy_primitives::{B256, LogData};
 use alloy_sol_types::SolEvent;
+use alloy_sol_types::sol_data::FixedBytes;
 use common::types::{BlockHash, BlockNumber, RskLog};
 use log::{error, warn};
 use std::collections::HashMap;
@@ -20,9 +21,17 @@ pub enum RskPegManagerEvents {
     UnknownEvent,
 }
 
+pub enum RskSignatureManagerEvents {
+    AllNoncesReady(AllNoncesReadyEvent),
+    AllSignaturesReady(AllSignaturesReadyEvent),
+}
+
 pub type RequestAdvanceFundsEvent = EventWithBlock<RequestAdvanceFunds>;
 pub type AdvanceFundsEvent = EventWithBlock<AdvanceFunds>;
 pub type PeginRequestedEvent = EventWithBlock<PeginRequested>;
+type FixedBytes32 = FixedBytes<32>;
+pub type AllNoncesReadyEvent = EventWithBlock<FixedBytes32>;
+pub type AllSignaturesReadyEvent = EventWithBlock<FixedBytes32>;
 
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub struct EventWithBlock<T> {

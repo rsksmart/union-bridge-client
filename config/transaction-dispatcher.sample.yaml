@@ -5,6 +5,8 @@ provider:
 contracts:
   - name: "PegManager"
     address: "<PEG_MANAGER_ADDRESS_HERE>"
+  - name: "SignatureManager"
+    address: "<SIGNATURE_MANAGER_ADDRESS_HERE>"
 
 server:
   url: "<YOUR_SERVER_URL_HERE>"
