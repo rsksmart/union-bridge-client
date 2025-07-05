@@ -1,5 +1,6 @@
 use crate::contracts::types::{Address, Bytes, FixedBytes32, TransactionReceiptResult};
 use alloy_provider::Provider;
+use hex::FromHexError;
 use log::info;
 
 use crate::contracts::common::send_tx_with_gas_bump;
@@ -7,6 +8,9 @@ use crate::contracts::common::send_tx_with_gas_bump;
 use mockall::automock;
 use union_contracts::bindings::signature_manager::SignatureManager;
 use union_contracts::bindings::signature_manager::SignatureManager::SignatureManagerInstance;
+
+pub(crate) use crate::contracts::interactions::add_member_nonce::AddMemberNonceInvoke;
+pub(crate) use crate::contracts::interactions::add_member_signature::AddMemberSignatureInvoke;
 
 #[cfg_attr(test, automock)]
 pub trait SignatureManagerContractApi {
@@ -73,4 +77,16 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
         )
         .await
     }
+}
+
+pub fn hex_to_fixed_bytes32(value: &str) -> Result<FixedBytes32, FromHexError> {
+    let value = value.trim_start_matches("0x");
+    let bytes = hex::decode(value)?;
+    Ok(FixedBytes32::from_slice(&bytes))
+}
+
+pub fn hex_to_bytes(value: &str) -> Result<Bytes, FromHexError> {
+    let value = value.trim_start_matches("0x");
+    let bytes = hex::decode(value)?;
+    Ok(Bytes::from(bytes))
 }

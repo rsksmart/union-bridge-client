@@ -1,6 +1,9 @@
 use crate::{
     rsk_gateway::{DomainErrors, RskContractsGateway, RskContractsGatewayApi},
-    types::{PegInAddressInput, RegisterPegInInput, RegisterPegOutInput},
+    types::{
+        AddMemberNonceInput, AddMemberSignatureInput, PegInAddressInput, RegisterPegInInput,
+        RegisterPegOutInput,
+    },
 };
 use alloy_provider::Provider;
 use anyhow::{Context, Result};
@@ -33,6 +36,11 @@ impl Server {
             .route("/register-pegin", post(Self::register_peg_in::<P>))
             .route("/accept-pegin", post(Self::accept_peg_in::<P>))
             .route("/register-pegout", post(Self::register_peg_out::<P>))
+            .route("/add-member-nonce", post(Self::add_member_nonce::<P>))
+            .route(
+                "/add-member-signature",
+                post(Self::add_member_signature::<P>),
+            )
             .layer((
                 // TraceLayer::new_for_http(), // TODO: enable when we change logging library to tracing
                 TimeoutLayer::new(Duration::from_secs(10)),
@@ -51,6 +59,26 @@ impl Server {
             .with_graceful_shutdown(self.shutdown_flag.wait_for())
             .await
             .context("Error starting server")
+    }
+
+    async fn add_member_nonce<P: Provider>(
+        Extension(rsk_gateway): Extension<RskContractsGateway<P>>,
+        Json(payload): Json<AddMemberNonceInput>,
+    ) -> impl IntoResponse {
+        match rsk_gateway.add_member_nonce(payload).await {
+            Ok(data) => (StatusCode::OK, Json(json!(data))).into_response(),
+            Err(e) => e.into_response(),
+        }
+    }
+
+    async fn add_member_signature<P: Provider>(
+        Extension(rsk_gateway): Extension<RskContractsGateway<P>>,
+        Json(payload): Json<AddMemberSignatureInput>,
+    ) -> impl IntoResponse {
+        match rsk_gateway.add_member_signature(payload).await {
+            Ok(data) => (StatusCode::OK, Json(json!(data))).into_response(),
+            Err(e) => e.into_response(),
+        }
     }
 
     async fn create_peg_in_address<P: Provider>(

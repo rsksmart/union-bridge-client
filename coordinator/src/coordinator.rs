@@ -228,7 +228,8 @@ pub(crate) mod tests {
     };
     use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
     use transaction_dispatcher::types::{
-        AcceptPegInInput, AcceptPegInOutput, PegInAddressInput, PegInAddressOutput,
+        AcceptPegInInput, AcceptPegInOutput, AddMemberNonceInput, AddMemberNonceOutput,
+        AddMemberSignatureInput, AddMemberSignatureOutput, PegInAddressInput, PegInAddressOutput,
         RegisterPegInInput, RegisterPegInOutput, RegisterPegOutInput, RegisterPegOutOutput,
     };
 
@@ -512,6 +513,16 @@ pub(crate) mod tests {
                 &self,
                 input: RegisterPegOutInput,
             ) -> Result<RegisterPegOutOutput, DomainErrors>;
+
+            async fn add_member_nonce(
+                &self,
+                input: AddMemberNonceInput,
+            ) -> Result<AddMemberNonceOutput, DomainErrors>;
+
+            async fn add_member_signature(
+                &self,
+                input: AddMemberSignatureInput,
+            ) -> Result<AddMemberSignatureOutput, DomainErrors>;
 
             async fn notify_check_fork_completion(
                 &self,
