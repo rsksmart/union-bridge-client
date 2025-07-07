@@ -14,29 +14,14 @@ jobs:
 
     steps:
 
-      # required to be able to import .github/actions/act_setup
+      # cannot be moved to tests_setup action because its needed to find the action itself
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           path: union-bridge-client
 
-      - name: Act Setup
-        if: ${{ env.ACT }}
-        uses: ./union-bridge-client/.github/actions/act_setup
-
-      # we cannot use upload/download artifacts with act, it's sooo slow
-      # therefore, we disable it (see next step also)
-      - name: Download build artifacts
-        if: ${{ ! env.ACT }}
-        uses: actions/download-artifact@v4
-        with:
-          name: build-artifacts
-
-      # we cannot use upload/download artifacts with act, it's sooo slow
-      # therefore, we use this tweak
-      - name: Artifacts Tweak
-        if: ${{ env.ACT }}
-        uses: ./union-bridge-client/.github/actions/act_artifacts_tweak
+      - name: Setup
+        uses: ./union-bridge-client/.github/actions/tests_setup
         with:
           fairgate_github_token: ${{ secrets.FAIRGATE_GITHUB_TOKEN }}
 
