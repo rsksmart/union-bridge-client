@@ -85,8 +85,8 @@ jobs:
           git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf "https://github.com/FairgateLabs"
           git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf "git@github.com:FairgateLabs"
           git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf "ssh://git@github.com/FairgateLabs"
+          export CARGO_TARGET_DIR=shared-target
           cargo build --workspace --exclude actors-mocking
-          cargo build -p actors-mocking --features anvil
           cargo build --manifest-path qa-tools/Cargo.toml
 
       # we cannot use upload/download artifacts with act, it's sooo slow
@@ -96,9 +96,7 @@ jobs:
         with:
           name: build-artifacts
           path: |
-            union-bridge-client/target
-            union-bridge-client/qa-tools/target
-            rust-bitvmx-workspace/rust-bitvmx-client/target
+            union-bridge-client/shared-target
 
       - name: Show sccache stats
         if: ${{ ! env.ACT }}

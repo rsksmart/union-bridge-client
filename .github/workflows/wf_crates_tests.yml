@@ -44,4 +44,5 @@ jobs:
         working-directory: union-bridge-client
         run: |
           git config --global url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf "ssh://git@github.com/FairgateLabs"
+          export CARGO_TARGET_DIR=shared-target
           RUN_MODE=ci cargo test --features test-utils # --locked TODO(Jira) re-add --locked in scope of https://rsklabs.atlassian.net/browse/UB-176
