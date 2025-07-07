@@ -11,7 +11,7 @@ if [ -z "${FUNDING_ADDRESS:-}" ]; then
   exit 1
 fi
 
-RPC_URL="http://actors-mocking:2222"
+RPC_URL="http://actors-mocking:8545"
 KEYSTORE_PATH="/keystore/key.json"
 
 if [ ! -f "${KEYSTORE_PATH}" ]; then
@@ -26,6 +26,8 @@ if [ ! -f "${KEYSTORE_PATH}" ]; then
   [ -z "${key_path}" ] && echo "[key-setup] Error: Could not extract key path" && exit 1
 
   mv "${key_path}" "${KEYSTORE_PATH}"
+else
+  echo "[key-setup] Key already exists at ${KEYSTORE_PATH}, skipping key generation."
 fi
 
 if ! pd_output=$(/app/key-manager derive-public-data -p "${KEY_STORE_PASSWORD}" -k "${KEYSTORE_PATH}" 2>&1) ; then
@@ -38,7 +40,7 @@ if ! address=$(echo "${pd_output}" | sed -n "s/.*address '\([^']*\)'.*/\1/p"); t
   exit 1
 fi
 
-if ! balance=$(RUST_LOG=error cast balance -e "${FUNDING_ADDRESS}" --rpc-url "${RPC_URL}"); then
+if ! balance=$(RUST_LOG=error cast balance -e "${address}" --rpc-url "${RPC_URL}"); then
   echo "[key-setup] Error: Failed to get balance for address ${address}"
   exit 1
 fi
@@ -51,6 +53,8 @@ if [ "$balance" = "0.000000000000000000" ]; then
     "${address}" \
     --value 1ether \
     --unlocked
+else
+  echo "[key-setup] Address ${address} has balance of ${balance}, skipping funding."
 fi
 
 echo "[key-setup] Using key at ${KEYSTORE_PATH} with address ${address}"

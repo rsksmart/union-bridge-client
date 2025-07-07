@@ -37,7 +37,9 @@ enum Menu {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let anvil_port = 2222u16;
+    // hardcoded for now
+    // Fairgate scripts are hard to configure in this regard, as they do a source .env on each script pointing to this default port
+    let anvil_port = 8545u16;
 
     let anvil = Anvil::new()
         .block_time(1) // block every 1 seconds

@@ -151,18 +151,20 @@ services:
     tty: true          # for CLI
     container_name: actors-mocking
     ports:
-      - "2222:2222"  # anvil port, hardcoded in crate
+      - "8545:8545"  # anvil port, hardcoded in crate
     networks:
       internal:
         ipv4_address: 172.25.0.14
     environment:
-      - UNION_CONTRACTS_DEPLOY_SCRIPT=/app/contracts/shell/script/deploy/deploy-local.sh
+      - UNION_CONTRACTS_PATH=/app/contracts
+      - UNION_CONTRACTS_DEPLOY_SCRIPT=shell/script/deploy/deploy-local.sh
+      - UNION_CONTRACTS_SETUP_SCRIPT=shell/script/integration-test/packet-creation-flow.sh
       - CHECK_FORK_REQUIRED_NUM_BLOCKS=${CHECK_FORK_REQUIRED_NUM_BLOCKS}
     healthcheck:
       <<: *base-healthcheck
       test: [
         "CMD-SHELL",
-        "RUST_LOG=error cast code 0xa513E6E4b8f2a923D98304ec87F64353C4D5C853 --rpc-url http://localhost:2222 | grep -vq '^0x$'" # PegManager contract address should match config and deployed address
+        "RUST_LOG=error cast code 0x68B1D87F95878fE05B998F19b66F4baba5De1aed --rpc-url http://localhost:8545 | grep -vq '^0x$'" # FakePegManager contract address should match config and deployed address
       ]
     entrypoint: [ "/app/actors-mocking" ]
     # entrypoint: [ "/bin/sh", "-c", "sleep infinity" ]
