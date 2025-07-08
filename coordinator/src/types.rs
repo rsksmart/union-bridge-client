@@ -22,7 +22,6 @@ pub enum RskPegManagerEvents {
     AllNoncesReady(AllNoncesReadyEvent),
     AllSignaturesReady(AllSignaturesReadyEvent),
     UnknownEvent,
-    RemovedLogEvent,
 }
 
 pub type RequestAdvanceFundsEvent = EventWithBlock<RequestAdvanceFunds>;
@@ -36,6 +35,7 @@ pub struct EventWithBlock<T> {
     pub inner: T,
     pub block_number: BlockNumber,
     pub block_hash: BlockHash,
+    pub removed: bool,
 }
 
 pub type EventStatus = bool;
@@ -126,15 +126,11 @@ impl EventDecoder {
         removed: bool,
     ) -> RskPegManagerEvents {
         match PeginRequested::decode_log_data(&log_data) {
-            Ok(ev) if !removed => RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
-                inner: ev,
-                block_number,
-                block_hash,
-            }),
             Ok(ev) => RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
                 inner: ev,
                 block_number,
                 block_hash,
+                removed: removed,
             }),
             Err(_) => UnknownEvent,
         }
@@ -152,8 +148,10 @@ impl EventDecoder {
                     inner: event,
                     block_number,
                     block_hash,
+                    removed: removed,
                 })
             }
+            //TODO: updated the logic using the removed flag
             Ok(event) => RskPegManagerEvents::RemoveRequestAdvanceFunds {
                 peg_out_id: event.peg_out_id,
             },
@@ -172,6 +170,7 @@ impl EventDecoder {
                 inner: event,
                 block_number,
                 block_hash,
+                removed: false,
             }),
             Ok(event) => RskPegManagerEvents::RemoveAdvanceFunds {
                 peg_out_id: event.peg_out_id,
@@ -187,19 +186,15 @@ impl EventDecoder {
         removed: bool,
     ) -> RskPegManagerEvents {
         match AllNoncesReady::decode_log_data(&log_data) {
-            Ok(event) if removed => {
+            Ok(event) => {
                 // TODO: Replace with proper error handling
-                warn!(
-                    "Removed log event {:?} at block: {:?} with hash: {:?}",
-                    event, block_number, block_hash
-                );
-                RskPegManagerEvents::RemovedLogEvent
+                RskPegManagerEvents::AllNoncesReady(AllNoncesReadyEvent {
+                    inner: Hash256::from(event.hashToSign),
+                    block_number,
+                    block_hash,
+                    removed,
+                })
             }
-            Ok(event) => RskPegManagerEvents::AllNoncesReady(AllNoncesReadyEvent {
-                inner: Hash256::from(event.hashToSign),
-                block_number,
-                block_hash,
-            }),
             Err(_) => RskPegManagerEvents::UnknownEvent,
         }
     }
@@ -211,18 +206,11 @@ impl EventDecoder {
         removed: bool,
     ) -> RskPegManagerEvents {
         match AllSignaturesReady::decode_log_data(&log_data) {
-            Ok(event) if removed => {
-                // TODO: Replace with proper error handling
-                warn!(
-                    "Removed log event {:?} at block: {:?} with hash: {:?}",
-                    event, block_number, block_hash
-                );
-                RskPegManagerEvents::RemovedLogEvent
-            }
-            Ok(event) => RskPegManagerEvents::AllSignaturesReady(AllSignaturesReadyEvent {
+            Ok(event) => RskPegManagerEvents::AllSignaturesReady(AllNoncesReadyEvent {
                 inner: Hash256::from(event.hashToSign),
                 block_number,
                 block_hash,
+                removed,
             }),
             Err(_) => RskPegManagerEvents::UnknownEvent,
         }
@@ -469,7 +457,7 @@ mod tests {
             expected_block_num.into(),
             TxHash::from(H256::random()),
             1,
-            false,
+            true,
         );
 
         let rsk_log = RskLog::new(log_info, log_event);
@@ -481,6 +469,7 @@ mod tests {
                 assert_eq!(data.inner, Hash256::from(expected_hash_to_sign));
                 assert_eq!(data.block_number, expected_block_num);
                 assert_eq!(data.block_hash, expected_block_hash.into());
+                assert_eq!(data.removed, true);
             }
             _ => panic!("Expected AllSignaturesReady event"),
         }

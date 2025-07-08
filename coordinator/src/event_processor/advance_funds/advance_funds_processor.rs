@@ -439,6 +439,7 @@ mod tests {
             inner: create_fake_request_event(pegout_id),
             block_number: request_block.number(),
             block_hash: BlockHash::from(H256::from_low_u64_be(123)),
+            removed: false,
         };
         processor
             .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(request_event))
@@ -460,6 +461,7 @@ mod tests {
                 inner: create_fake_request_event(pegout_id_2),
                 block_number: request_block.number() + 1,
                 block_hash: BlockHash::from(H256::from_low_u64_be(456)),
+                removed: false,
             }))
             .expect("Should have processed request");
 
@@ -506,6 +508,7 @@ mod tests {
             inner: create_fake_request_event(pegout_id),
             block_number: request_block.number(),
             block_hash: request_block.hash(),
+            removed: false,
         };
         processor
             .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
@@ -526,6 +529,7 @@ mod tests {
                 inner: advance_funds_event,
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
+                removed: false,
             }))
             .expect("Should have processed request");
 
@@ -596,6 +600,7 @@ mod tests {
             inner: create_fake_request_event(pegout_id_1),
             block_number: request_block_1.number(),
             block_hash: request_block_1.hash(),
+            removed: false,
         };
         processor
             .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
@@ -610,6 +615,7 @@ mod tests {
             inner: create_fake_request_event(pegout_id_2),
             block_number: request_block_2.number(),
             block_hash: request_block_2.hash(),
+            removed: false,
         };
         processor
             .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
@@ -626,6 +632,7 @@ mod tests {
                 inner: advance_funds_event,
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
+                removed: false,
             }))
             .expect("Should have processed request");
 
@@ -686,6 +693,7 @@ mod tests {
                 inner: advance_funds_event,
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.parent_hash(),
+                removed: false,
             }))
             .expect("Should have processed request");
 
@@ -710,6 +718,7 @@ mod tests {
             inner: create_fake_request_event(pegout_id_req),
             block_number: request_block.number(),
             block_hash: request_block.hash(),
+            removed: false,
         };
         processor
             .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
@@ -729,6 +738,7 @@ mod tests {
                 inner: advance_funds_event,
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.parent_hash(),
+                removed: false,
             }))
             .expect("Should have processed request");
 
@@ -767,6 +777,7 @@ mod tests {
                     inner: request_event,
                     block_number: request_block.number(),
                     block_hash: request_block.hash(),
+                    removed: false,
                 },
             ))
             .expect("Should have processed request");
@@ -812,6 +823,7 @@ mod tests {
                 inner: advance_funds_event,
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
+                removed: false,
             }))
             .expect("Should have processed kickoff");
         processor
@@ -915,6 +927,7 @@ mod tests {
                     inner: request_event,
                     block_number: request_block.number(),
                     block_hash: request_block.hash(),
+                    removed: false,
                 },
             ))
             .expect("Should have processed request");
@@ -963,6 +976,7 @@ mod tests {
                 inner: advance_funds_event,
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
+                removed: false,
             }))
             .expect("Should have processed kickoff");
 
@@ -1064,6 +1078,7 @@ mod tests {
                     inner: request_event,
                     block_number: request_block.number(),
                     block_hash: request_block.hash(),
+                    removed: false,
                 },
             ))
             .expect("Should have processed request");
@@ -1075,6 +1090,7 @@ mod tests {
                 inner: advance_funds_event,
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
+                removed: false,
             }))
             .expect("Should have processed kickoff");
 
@@ -1104,6 +1120,7 @@ mod tests {
                     inner: request_event,
                     block_number: request_block.number(),
                     block_hash: request_block.hash(),
+                    removed: false,
                 },
             ))
             .expect("Should have processed request");
@@ -1138,6 +1155,7 @@ mod tests {
                     inner: request_event,
                     block_number: request_block.number(),
                     block_hash: request_block.hash(),
+                    removed: false,
                 },
             ))
             .expect("Should have processed request");
@@ -1152,6 +1170,7 @@ mod tests {
                 inner: advance_funds_event,
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
+                removed: false,
             }))
             .expect("Should have processed kickoff");
 
@@ -1192,6 +1211,7 @@ mod tests {
             inner: create_fake_request_event(pegout_id_1),
             block_number: request_block_1.number(),
             block_hash: request_block_1.hash(),
+            removed: false,
         };
         processor
             .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(request_event_1))
@@ -1201,6 +1221,7 @@ mod tests {
             inner: create_fake_request_event(pegout_id_2),
             block_number: request_block_2.number(),
             block_hash: request_block_2.hash(),
+            removed: false,
         };
         processor
             .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
@@ -1254,6 +1275,7 @@ mod tests {
                     inner: request_event,
                     block_number: request_block.number(),
                     block_hash: request_block.hash(),
+                    removed: false,
                 },
             ))
             .expect("Should have processed request");
@@ -1306,6 +1328,7 @@ mod tests {
                     inner: request_event,
                     block_number: advance_block.number(),
                     block_hash: advance_block.hash(),
+                    removed: false,
                 },
             ))
             .expect("Should have processed request");
@@ -1355,6 +1378,7 @@ mod tests {
                     inner: request_event,
                     block_number: request_block.number(),
                     block_hash: request_block.hash(),
+                    removed: false,
                 },
             ))
             .expect("Should have processed request");
@@ -1369,6 +1393,7 @@ mod tests {
                 inner: advance_funds_event,
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
+                removed: false,
             }))
             .expect("Should have processed kickoff");
 
@@ -1419,6 +1444,7 @@ mod tests {
                     inner: request_event,
                     block_number: request_block.number(),
                     block_hash: request_block.hash(),
+                    removed: false,
                 },
             ))
             .expect("Should have processed request");
@@ -1448,6 +1474,7 @@ mod tests {
                 inner: advance_funds_event,
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
+                removed: false,
             }))
             .expect("Should have processed kickoff");
 
@@ -1612,6 +1639,7 @@ mod tests {
                     inner: request_event,
                     block_number: request_block.number(),
                     block_hash: request_block.hash(),
+                    removed: false,
                 },
             ))
             .expect("Should have processed request");
@@ -1707,6 +1735,7 @@ mod tests {
                 block_hash: BlockHash::from(H256::from_low_u64_be(
                     advance_funds_block_number.value(),
                 )),
+                removed: false,
             }))
             .expect("Should have processed kickoff");
 
@@ -1750,6 +1779,7 @@ mod tests {
                     inner: request_event,
                     block_number: request_block.number(),
                     block_hash: request_block.hash(),
+                    removed: false,
                 },
             ))
             .expect("Should have processed request");
@@ -1778,6 +1808,7 @@ mod tests {
                 inner: advance_funds_event.clone(),
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
+                removed: false,
             }))
             .expect("Should have processed kickoff");
 
@@ -1882,6 +1913,7 @@ mod tests {
                     inner: request_event_1,
                     block_number: request_block_1.number(),
                     block_hash: request_block_1.hash(),
+                    removed: false,
                 },
             ))
             .expect("Should have processed request");
@@ -1897,6 +1929,7 @@ mod tests {
                 inner: advance_funds_event_1,
                 block_number: advance_funds_block_1.number(),
                 block_hash: advance_funds_block_1.hash(),
+                removed: false,
             }))
             .expect("Should have processed kickoff");
 
@@ -1918,6 +1951,7 @@ mod tests {
                     inner: request_event_2,
                     block_number: request_block_1.number() + 1,
                     block_hash: BlockHash::from(H256::from_low_u64_be(456)),
+                    removed: false,
                 },
             ))
             .expect("Should have processed request");
@@ -1932,6 +1966,7 @@ mod tests {
                 inner: advance_funds_event_2,
                 block_number: advance_funds_block_2.number(),
                 block_hash: advance_funds_block_2.hash(),
+                removed: false,
             }))
             .expect("Should have processed kickoff");
 

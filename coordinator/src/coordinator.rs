@@ -259,12 +259,14 @@ pub(crate) mod tests {
             inner: create_fake_request_event("peg_out_id_1"),
             block_number: block_1.number(),
             block_hash: block_1.hash().into(),
+            removed: false,
         });
 
         let event_2: RskPegManagerEvents = RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
             inner: create_fake_advance_funds_event("peg_out_id_1"),
             block_number: block_2.number(),
             block_hash: block_2.hash().into(),
+            removed: false,
         });
 
         let bitvmx_event = OutgoingBitVMXApiMessages::Pong();
@@ -348,6 +350,7 @@ pub(crate) mod tests {
             inner: create_fake_request_event("peg_out_id_1"),
             block_number: block_1.number(),
             block_hash: block_1.hash().into(),
+            removed: false,
         });
 
         let event_2 = RskPegManagerEvents::UnknownEvent;
