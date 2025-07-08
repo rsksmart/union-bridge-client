@@ -22,6 +22,7 @@ pub enum RskPegManagerEvents {
     AllNoncesReady(AllNoncesReadyEvent),
     AllSignaturesReady(AllSignaturesReadyEvent),
     UnknownEvent,
+    RemovedLogEvent,
 }
 
 pub type RequestAdvanceFundsEvent = EventWithBlock<RequestAdvanceFunds>;
@@ -186,6 +187,14 @@ impl EventDecoder {
         removed: bool,
     ) -> RskPegManagerEvents {
         match AllNoncesReady::decode_log_data(&log_data) {
+            Ok(event) if removed => {
+                // TODO: Replace with proper error handling
+                warn!(
+                    "Removed log event {:?} at block: {:?} with hash: {:?}",
+                    event, block_number, block_hash
+                );
+                RskPegManagerEvents::RemovedLogEvent
+            }
             Ok(event) => RskPegManagerEvents::AllNoncesReady(AllNoncesReadyEvent {
                 inner: Hash256::from(event.hashToSign),
                 block_number,
@@ -202,6 +211,14 @@ impl EventDecoder {
         removed: bool,
     ) -> RskPegManagerEvents {
         match AllSignaturesReady::decode_log_data(&log_data) {
+            Ok(event) if removed => {
+                // TODO: Replace with proper error handling
+                warn!(
+                    "Removed log event {:?} at block: {:?} with hash: {:?}",
+                    event, block_number, block_hash
+                );
+                RskPegManagerEvents::RemovedLogEvent
+            }
             Ok(event) => RskPegManagerEvents::AllSignaturesReady(AllSignaturesReadyEvent {
                 inner: Hash256::from(event.hashToSign),
                 block_number,
