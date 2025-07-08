@@ -13,45 +13,93 @@ use common::{
         broker::{BROKER_SERVER_ID, BrokerClientApi},
         types::{FromServer, ToServer},
     },
-    types::RskBlockAndUncles,
+    types::{RskBlockAndUncles, TxHash},
 };
-use log::{error, info};
+use log::info;
 use reqwest::blocking::Client;
-use serde_json::{Value, json};
-use std::{cell::RefCell, env, rc::Rc};
+use serde::Serialize;
+use serde_json::Value;
+use std::{cell::RefCell, collections::HashMap, env, rc::Rc};
 use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
-struct UnconfirmedEvent<T: Clone> {
-    event_id: Uuid,
+struct PeginEvent<T: Clone> {
     data: EventWithBlock<T>,
     confirmations: Rc<RefCell<BlockConfirmations>>,
+    is_handled: bool,
 }
 
-impl<T: Clone> UnconfirmedEvent<T> {
-    fn new(data: EventWithBlock<T>, required_confirmations: u32) -> Self {
-        let event_id = Uuid::new_v4();
-        let confirmations = BlockConfirmations::new(
-            event_id.to_string(),
-            data.block_number,
-            required_confirmations,
-        );
+impl<T: Clone> PeginEvent<T> {
+    fn new(data: EventWithBlock<T>, confirmations: BlockConfirmations) -> Self {
         let rc_confirmations = Rc::new(RefCell::new(confirmations));
 
         Self {
-            event_id,
             data,
             confirmations: rc_confirmations,
+            is_handled: false,
         }
     }
 
-    pub fn confirmations(&self) -> Rc<RefCell<BlockConfirmations>> {
-        self.confirmations.clone()
+    fn data(&self) -> T {
+        self.data.inner.clone()
     }
 
     fn is_confirmed(&self) -> bool {
         self.confirmations.borrow().is_confirmed()
+    }
+
+    fn confirmations(&self) -> Rc<RefCell<BlockConfirmations>> {
+        self.confirmations.clone()
+    }
+
+    fn is_handled(&self) -> bool {
+        self.is_handled
+    }
+
+    fn mark_handled(&mut self) {
+        self.is_handled = true
+    }
+}
+
+#[derive(Debug)]
+struct PeginEventState {
+    pegin_flow_id: Uuid,
+    pegin_requested: PeginEvent<PeginRequested>,
+    pegin_accepted: Option<PeginEvent<PeginAccepted>>,
+}
+
+impl PeginEventState {
+    fn new(pegin_flow_id: Uuid, pegin_requested: PeginEvent<PeginRequested>) -> Self {
+        Self {
+            pegin_flow_id,
+            pegin_requested,
+            pegin_accepted: None,
+        }
+    }
+
+    fn pegin_flow_id(&self) -> Uuid {
+        self.pegin_flow_id
+    }
+
+    fn pegin_requested(&self) -> &PeginEvent<PeginRequested> {
+        &self.pegin_requested
+    }
+
+    fn pegin_accepted(&self) -> Option<&PeginEvent<PeginAccepted>> {
+        self.pegin_accepted.as_ref()
+    }
+
+    fn pegin_requested_mut(&mut self) -> &mut PeginEvent<PeginRequested> {
+        &mut self.pegin_requested
+    }
+
+    fn pegin_accepted_mut(&mut self) -> Option<&mut PeginEvent<PeginAccepted>> {
+        self.pegin_accepted.as_mut()
+    }
+
+    fn set_pegin_accepted(&mut self, pegin_accepted: PeginEvent<PeginAccepted>) {
+        self.pegin_accepted = Some(pegin_accepted);
     }
 }
 
@@ -59,8 +107,7 @@ pub struct PeginProcessor<T: BrokerClientApi> {
     http_client: Client,
     bitvmx_broker: T,
     blockchain: BlockchainView,
-    pegin_requested_events: Vec<UnconfirmedEvent<PeginRequested>>,
-    pegin_accepted_events: Vec<UnconfirmedEvent<PeginAccepted>>,
+    tracker: HashMap<TxHash, PeginEventState>,
 }
 
 impl<T: BrokerClientApi> PeginProcessor<T> {
@@ -69,8 +116,40 @@ impl<T: BrokerClientApi> PeginProcessor<T> {
             http_client: Client::new(),
             bitvmx_broker,
             blockchain: BlockchainView::new(),
-            pegin_requested_events: Vec::new(),
-            pegin_accepted_events: Vec::new(),
+            tracker: HashMap::new(),
+        }
+    }
+
+    /// Inserts a `pegin_requested` event. Fails if one already exists for the same tx_hash.
+    fn insert_pegin_requested(
+        &mut self,
+        pegin_flow_id: Uuid,
+        event: PeginEvent<PeginRequested>,
+    ) -> Result<()> {
+        let tx_hash: TxHash = event.data.inner.acceptPeginTxHash.into();
+
+        if self.tracker.contains_key(&tx_hash) {
+            bail!("PeginRequested already exists for tx_hash: {:?}", tx_hash);
+        }
+
+        self.tracker
+            .insert(tx_hash, PeginEventState::new(pegin_flow_id, event));
+
+        Ok(())
+    }
+
+    /// Inserts a `pegin_accepted` event. Fails if no corresponding `pegin_requested` exists.
+    fn insert_pegin_accepted(&mut self, event: PeginEvent<PeginAccepted>) -> Result<()> {
+        let tx_hash: TxHash = event.data.inner.acceptPeginTxHash.into();
+
+        match self.tracker.get_mut(&tx_hash) {
+            Some(state) => {
+                state.set_pegin_accepted(event);
+                Ok(())
+            }
+            None => {
+                bail!("PeginRequested cannot be found for tx_hash: {:?}", tx_hash);
+            }
         }
     }
 
@@ -112,95 +191,117 @@ impl<T: BrokerClientApi> PeginProcessor<T> {
         }
     }
 
-    fn process_confirmed_pegin_requested_events(&mut self) -> Result<()> {
-        let confirmed_events: Vec<_> = self
-            .pegin_requested_events
-            .iter()
-            .filter(|event| event.is_confirmed())
-            .map(|event| (event.event_id, event.data.inner.clone()))
-            .collect();
+    fn process_unhandled_confirmed_pegin_requested_events(&mut self) -> Result<()> {
+        let mut events = Vec::new();
 
-        let mut processed_events = Vec::new();
-        confirmed_events.iter().for_each(|(event_id, data)| {
-            match self.handle_confirmed_event(*event_id, "PeginRequested", data) {
+        for (tx_hash, state) in &self.tracker {
+            let event = state.pegin_requested();
+            if event.is_confirmed() && !event.is_handled() {
+                events.push((tx_hash.clone(), state.pegin_flow_id(), event.data().clone()));
+            }
+        }
+
+        for (tx_hash, pegin_flow_id, data) in events {
+            match self.handle_confirmed_event(pegin_flow_id, "PeginRequested", &data) {
                 Ok(_) => {
-                    info!(
-                        "Successfully processed confirmed PeginRequested event: {}",
-                        event_id
-                    );
-                    processed_events.push(*event_id);
+                    if let Some(state) = self.tracker.get_mut(&tx_hash) {
+                        state.pegin_requested_mut().mark_handled();
+                        self.blockchain
+                            .remove_observer(pegin_flow_id.to_string().as_str());
+                        info!(
+                            "Successfully processed confirmed PeginRequested event: {}",
+                            pegin_flow_id
+                        );
+                    } else {
+                        bail!(
+                            "Tracker missing expected state for tx_hash {} (flow_id: {}) when handling PeginRequested",
+                            tx_hash,
+                            pegin_flow_id
+                        );
+                    }
                 }
                 Err(e) => {
-                    // TODO(Jira) this should be monitored and analysed - https://rsklabs.atlassian.net/browse/UB-127
-                    error!(
-                        "Error processing confirmed PeginRequested event {}: {}",
-                        event_id, e
+                    bail!(
+                        "Error processing confirmed PeginRequested event (tx_hash: {}, flow_id: {}): {}",
+                        tx_hash,
+                        pegin_flow_id,
+                        e
                     );
                 }
             }
-        });
-
-        // Only remove successfully processed events - keep unconfirmed and failed events
-        self.pegin_requested_events
-            .retain(|event| !event.is_confirmed() || !processed_events.contains(&event.event_id));
+        }
 
         Ok(())
     }
 
-    fn process_confirmed_pegin_accepted_events(&mut self) -> Result<()> {
-        let confirmed_events: Vec<_> = self
-            .pegin_accepted_events
-            .iter()
-            .filter(|event| event.is_confirmed())
-            .map(|event| (event.event_id, event.data.inner.clone()))
-            .collect();
+    fn process_unhandled_confirmed_pegin_accepted_events(&mut self) -> Result<()> {
+        let mut events = Vec::new();
 
-        let mut processed_events = Vec::new();
-        confirmed_events.iter().for_each(|(event_id, data)| {
-            match self.handle_confirmed_event(*event_id, "PeginAccepted", data) {
+        for (tx_hash, state) in &self.tracker {
+            if let Some(event) = state.pegin_accepted() {
+                if event.is_confirmed() && !event.is_handled() {
+                    events.push((tx_hash.clone(), state.pegin_flow_id(), event.data().clone()));
+                }
+            }
+        }
+
+        for (tx_hash, pegin_flow_id, data) in events {
+            match self.handle_confirmed_event(pegin_flow_id, "PeginAccepted", &data) {
                 Ok(_) => {
-                    info!(
-                        "Successfully processed confirmed PeginAccepted event: {}",
-                        event_id
-                    );
-                    processed_events.push(*event_id);
+                    if let Some(state) = self.tracker.get_mut(&tx_hash) {
+                        if let Some(pegin_accepted) = state.pegin_accepted_mut() {
+                            pegin_accepted.mark_handled();
+                            self.blockchain
+                                .remove_observer(pegin_flow_id.to_string().as_str());
+                            info!(
+                                "Successfully processed confirmed PeginAccepted event: {}",
+                                pegin_flow_id
+                            );
+                        } else {
+                            bail!(
+                                "Expected PeginAccepted event not present for tx_hash {} (flow_id: {})",
+                                tx_hash,
+                                pegin_flow_id
+                            );
+                        }
+                    } else {
+                        bail!(
+                            "Tracker missing expected state for tx_hash {} (flow_id: {}) when handling PeginAccepted",
+                            tx_hash,
+                            pegin_flow_id
+                        );
+                    }
                 }
                 Err(e) => {
-                    // TODO(Jira) this should be monitored and analysed - https://rsklabs.atlassian.net/browse/UB-127
-                    error!(
-                        "Error processing confirmed PeginAccepted event {}: {}",
-                        event_id, e
+                    bail!(
+                        "Error processing confirmed PeginAccepted event (tx_hash: {}, flow_id: {}): {}",
+                        tx_hash,
+                        pegin_flow_id,
+                        e
                     );
                 }
             }
-        });
-
-        // Only remove successfully processed events - keep unconfirmed and failed events
-        self.pegin_accepted_events
-            .retain(|event| !event.is_confirmed() || !processed_events.contains(&event.event_id));
+        }
 
         Ok(())
     }
 
-    fn handle_confirmed_event<E: serde::Serialize>(
-        &mut self,
-        event_id: Uuid,
+    fn handle_confirmed_event<E: Serialize>(
+        &self,
+        pegin_flow_id: Uuid,
         variable_name: &str,
-        data: E,
+        data: &E,
     ) -> Result<()> {
-        let data = json!(data).to_string();
+        let data = serde_json::to_string(data)?;
 
         self.bitvmx_broker.send(
             BROKER_SERVER_ID,
             ToServer::ToBitVMX(IncomingBitVMXApiMessages::SetVar(
-                event_id,
+                pegin_flow_id,
                 variable_name.to_string(),
                 VariableTypes::String(data),
             )),
         )?;
-
-        self.blockchain
-            .remove_observer(event_id.to_string().as_str());
 
         Ok(())
     }
@@ -248,32 +349,55 @@ impl<T: BrokerClientApi> EventProcessor for PeginProcessor<T> {
             RskPegManagerEvents::PeginRequested(data) => {
                 info!("Handling PeginRequested event: {:?}", data);
 
-                let unconfirmed_event = UnconfirmedEvent::new(data.clone(), REQUIRED_CONFIRMATIONS);
+                let pegin_flow_id = Uuid::new_v4();
 
-                self.blockchain
-                    .add_observer(unconfirmed_event.confirmations());
-
-                info!(
-                    "Adding PeginRequested event to unconfirmed queue. Event: {:?}",
-                    unconfirmed_event
+                let confirmations = BlockConfirmations::new(
+                    pegin_flow_id.to_string(),
+                    data.block_number,
+                    REQUIRED_CONFIRMATIONS,
                 );
 
-                self.pegin_requested_events.push(unconfirmed_event);
+                let pegin_requested = PeginEvent::new(data.clone(), confirmations);
+
+                self.blockchain
+                    .add_observer(pegin_requested.confirmations());
+
+                info!(
+                    "Adding PeginRequested event to pegin event tracker. Event: {:?}",
+                    pegin_requested
+                );
+
+                self.insert_pegin_requested(pegin_flow_id, pegin_requested)?;
             }
             RskPegManagerEvents::PeginAccepted(data) => {
                 info!("Handling PeginAccepted event: {:?}", data);
 
-                let unconfirmed_event = UnconfirmedEvent::new(data.clone(), REQUIRED_CONFIRMATIONS);
+                let tx_hash: TxHash = data.inner.acceptPeginTxHash.into();
+                let Some(state) = self.tracker.get(&tx_hash) else {
+                    bail!(
+                        "Received PeginAccepted for unknown acceptPeginTxHash: {:?}",
+                        tx_hash
+                    );
+                };
 
-                self.blockchain
-                    .add_observer(unconfirmed_event.confirmations());
+                let pegin_flow_id = state.pegin_flow_id();
 
-                info!(
-                    "Adding PeginAccepted event to unconfirmed queue. Event: {:?}",
-                    unconfirmed_event
+                let confirmations = BlockConfirmations::new(
+                    pegin_flow_id.to_string(),
+                    data.block_number,
+                    REQUIRED_CONFIRMATIONS,
                 );
 
-                self.pegin_accepted_events.push(unconfirmed_event);
+                let pegin_accepted = PeginEvent::new(data.clone(), confirmations);
+
+                self.blockchain.add_observer(pegin_accepted.confirmations());
+
+                info!(
+                    "Adding PeginAccepted event to pegin event tracker. Event: {:?}",
+                    pegin_accepted
+                );
+
+                self.insert_pegin_accepted(pegin_accepted)?;
             }
             _ => {}
         }
@@ -282,14 +406,14 @@ impl<T: BrokerClientApi> EventProcessor for PeginProcessor<T> {
     }
 
     fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
-        if self.pegin_requested_events.is_empty() && self.pegin_accepted_events.is_empty() {
+        if self.tracker.is_empty() {
             return Ok(());
         }
 
         self.blockchain.update(block.clone());
 
-        self.process_confirmed_pegin_requested_events()?;
-        self.process_confirmed_pegin_accepted_events()?;
+        self.process_unhandled_confirmed_pegin_requested_events()?;
+        self.process_unhandled_confirmed_pegin_accepted_events()?;
 
         Ok(())
     }
@@ -297,9 +421,8 @@ impl<T: BrokerClientApi> EventProcessor for PeginProcessor<T> {
     fn shutdown(&mut self) {
         info!("Shutting down PeginProcessor");
 
-        self.pegin_requested_events.clear();
-        self.pegin_accepted_events.clear();
         self.blockchain.clear();
+        self.tracker.clear();
     }
 }
 
@@ -317,7 +440,7 @@ mod tests {
             types::{FromServer, ToServer},
         },
         test_utils::rsk_block_generator::create_block_and_uncles,
-        types::{BlockHash, BlockNumber},
+        types::BlockHash,
     };
     use mockall::predicate::{eq, function};
     use mockito::mock;
@@ -584,18 +707,26 @@ mod tests {
         let broker = MockBrokerClientApi::new();
         let mut processor = PeginProcessor::new(broker);
 
+        let pegin_requested = dummy_pegin_requested_event();
+        let tx_hash: TxHash = pegin_requested.acceptPeginTxHash.into();
         let event = RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
-            inner: dummy_pegin_requested_event(),
-            block_number: BlockNumber::from(123),
+            inner: pegin_requested,
+            block_number: 123.into(),
             block_hash: BlockHash::from(H256::from([0xaa; 32])),
+            removed: false,
         });
 
         let result = processor.process_new_event(&event);
         assert!(result.is_ok());
 
-        assert_eq!(processor.pegin_requested_events.len(), 1);
+        assert_eq!(processor.tracker.len(), 1);
 
-        let observer_id = processor.pegin_requested_events[0].event_id.to_string();
+        let observer_id = processor
+            .tracker
+            .get(&tx_hash)
+            .unwrap()
+            .pegin_flow_id()
+            .to_string();
         assert!(processor.blockchain.has_observer(&observer_id));
     }
 
@@ -604,18 +735,36 @@ mod tests {
         let broker = MockBrokerClientApi::new();
         let mut processor = PeginProcessor::new(broker);
 
+        let pegin_requested = dummy_pegin_requested_event();
+        let event = RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
+            inner: pegin_requested,
+            block_number: 122.into(),
+            block_hash: BlockHash::from(H256::from([0xba; 32])),
+            removed: false,
+        });
+        let result = processor.process_new_event(&event);
+        assert!(result.is_ok());
+
+        let pegin_accepted = dummy_pegin_accepted_event();
+        let tx_hash: TxHash = pegin_accepted.acceptPeginTxHash.into();
         let event = RskPegManagerEvents::PeginAccepted(PeginAcceptedEvent {
             inner: dummy_pegin_accepted_event(),
-            block_number: BlockNumber::from(456),
+            block_number: 456.into(),
             block_hash: BlockHash::from(H256::from([0xbb; 32])),
+            removed: false,
         });
 
         let result = processor.process_new_event(&event);
         assert!(result.is_ok());
 
-        assert_eq!(processor.pegin_accepted_events.len(), 1);
+        assert_eq!(processor.tracker.len(), 1);
 
-        let observer_id = processor.pegin_accepted_events[0].event_id.to_string();
+        let observer_id = processor
+            .tracker
+            .get(&tx_hash)
+            .unwrap()
+            .pegin_flow_id()
+            .to_string();
         assert!(processor.blockchain.has_observer(&observer_id));
     }
 
@@ -626,7 +775,7 @@ mod tests {
 
         let result = processor.process_new_event(&RskPegManagerEvents::UnknownEvent);
         assert!(result.is_ok());
-        assert_eq!(processor.pegin_requested_events.len(), 0);
+        assert_eq!(processor.tracker.len(), 0);
     }
 
     #[test]
@@ -648,20 +797,26 @@ mod tests {
 
         let (block_1, _, _) = create_block_and_uncles();
 
-        let req = dummy_pegin_requested_event();
+        let pegin_requested = dummy_pegin_requested_event();
         let event = PeginRequestedEvent {
-            inner: req,
+            inner: pegin_requested,
             block_number: block_1.number(),
             block_hash: block_1.hash(),
+            removed: false,
         };
 
-        let unconfirmed = UnconfirmedEvent::new(event.clone(), 5);
-        let observer_id = unconfirmed.event_id.to_string();
+        let pegin_flow_id = Uuid::new_v4();
+        let confirmations = BlockConfirmations::new(
+            pegin_flow_id.to_string(),
+            block_1.number(),
+            REQUIRED_CONFIRMATIONS,
+        );
+        let pegin_event = PeginEvent::new(event.clone(), confirmations);
 
         processor
             .blockchain
-            .add_observer(unconfirmed.confirmations());
-        processor.pegin_requested_events.push(unconfirmed);
+            .add_observer(pegin_event.confirmations());
+        let _ = processor.insert_pegin_requested(pegin_flow_id, pegin_event);
 
         // Simulate one new block
         let block = RskBlockAndUncles::new_no_uncles(block_1);
@@ -669,55 +824,71 @@ mod tests {
         let result = processor.process_new_block(&block);
         assert!(result.is_ok());
 
-        assert_eq!(processor.pegin_requested_events.len(), 1);
-        assert!(processor.blockchain.has_observer(&observer_id));
+        assert_eq!(processor.tracker.len(), 1);
+        assert!(
+            processor
+                .blockchain
+                .has_observer(&pegin_flow_id.to_string())
+        );
     }
 
     #[test]
     fn process_new_block_confirms_and_removes_event() {
         let (block_1, _, _) = create_block_and_uncles();
 
-        let req = dummy_pegin_requested_event();
+        let pegin_requested = dummy_pegin_requested_event();
         let event = PeginRequestedEvent {
-            inner: req,
+            inner: pegin_requested.clone(),
             block_number: block_1.number(),
             block_hash: block_1.hash(),
+            removed: false,
         };
 
-        let unconfirmed = UnconfirmedEvent::new(event.clone(), 1); // confirm after 1 block
-        let observer_id = unconfirmed.event_id.to_string();
+        let pegin_flow_id = Uuid::new_v4();
+        let confirmations = BlockConfirmations::new(
+            pegin_flow_id.to_string(),
+            block_1.number(),
+            1, // confirm after 1 block
+        );
+        let pegin_event = PeginEvent::new(event.clone(), confirmations);
 
         let mut broker = MockBrokerClientApi::new();
-        let expected_payload = json!(event.inner).to_string();
+        let expected_payload = json!(event.inner);
 
         broker
             .expect_send()
             .times(1)
             .with(
-                eq(BROKER_SERVER_ID),
-                function(move |req: &ToServer| {
-                    matches!(req, ToServer::ToBitVMX(IncomingBitVMXApiMessages::SetVar(_, variable_name, data))
-                        if variable_name == "PeginRequested" &&
-                           matches!(data, VariableTypes::String(payload) if *payload == expected_payload))
-                }),
-            )
+    eq(BROKER_SERVER_ID),
+    function(move |req: &ToServer| {
+        matches!(
+            req,
+            ToServer::ToBitVMX(IncomingBitVMXApiMessages::SetVar(_, variable_name, VariableTypes::String(actual)))
+                if variable_name == "PeginRequested"
+                && serde_json::from_str::<Value>(actual).ok() == Some(expected_payload.clone())
+        )
+    }),
+)
             .returning(|_, _| Ok(true));
 
         let mut processor = PeginProcessor::new(broker);
 
         processor
             .blockchain
-            .add_observer(unconfirmed.confirmations());
-        processor.pegin_requested_events.push(unconfirmed);
+            .add_observer(pegin_event.confirmations());
+        let _ = processor.insert_pegin_requested(pegin_flow_id, pegin_event);
 
         let block = RskBlockAndUncles::new_no_uncles(block_1);
 
         let result = processor.process_new_block(&block);
         assert!(result.is_ok());
 
-        // Should have been removed from pending
-        assert_eq!(processor.pegin_requested_events.len(), 0);
-        assert!(!processor.blockchain.has_observer(&observer_id));
+        assert_eq!(processor.tracker.len(), 1);
+        assert!(
+            !processor
+                .blockchain
+                .has_observer(&pegin_flow_id.to_string())
+        );
     }
 
     #[test]
@@ -725,30 +896,60 @@ mod tests {
         let broker = MockBrokerClientApi::new();
         let mut processor = PeginProcessor::new(broker);
 
-        let (block_1, _, _) = create_block_and_uncles();
+        let (block_1, block_2, _) = create_block_and_uncles();
 
-        let req = dummy_pegin_accepted_event();
-        let event = PeginAcceptedEvent {
-            inner: req,
+        let pegin_requested = dummy_pegin_requested_event();
+        let pegin_requested_event = PeginRequestedEvent {
+            inner: pegin_requested.clone(),
             block_number: block_1.number(),
             block_hash: block_1.hash(),
+            removed: false,
         };
 
-        let unconfirmed = UnconfirmedEvent::new(event.clone(), 5);
-        let observer_id = unconfirmed.event_id.to_string();
+        let pegin_accepted = dummy_pegin_accepted_event();
+        let pegin_accepted_event = PeginAcceptedEvent {
+            inner: pegin_accepted,
+            block_number: block_2.number(),
+            block_hash: block_2.hash(),
+            removed: false,
+        };
+
+        let pegin_flow_id = Uuid::new_v4();
+
+        let pegin_requested_confirmations = BlockConfirmations::new(
+            pegin_flow_id.to_string(),
+            block_1.number(),
+            REQUIRED_CONFIRMATIONS,
+        );
+        let pegin_accepted_confirmations = BlockConfirmations::new(
+            pegin_flow_id.to_string(),
+            block_2.number(),
+            REQUIRED_CONFIRMATIONS,
+        );
+
+        let pegin_requested_event =
+            PeginEvent::new(pegin_requested_event.clone(), pegin_requested_confirmations);
+        let pegin_accepted_event =
+            PeginEvent::new(pegin_accepted_event.clone(), pegin_accepted_confirmations);
 
         processor
             .blockchain
-            .add_observer(unconfirmed.confirmations());
-        processor.pegin_accepted_events.push(unconfirmed);
+            .add_observer(pegin_accepted_event.confirmations());
+
+        let _ = processor.insert_pegin_requested(pegin_flow_id, pegin_requested_event);
+        let _ = processor.insert_pegin_accepted(pegin_accepted_event);
 
         let block = RskBlockAndUncles::new_no_uncles(block_1);
 
         let result = processor.process_new_block(&block);
         assert!(result.is_ok());
 
-        assert_eq!(processor.pegin_accepted_events.len(), 1);
-        assert!(processor.blockchain.has_observer(&observer_id));
+        assert_eq!(processor.tracker.len(), 1);
+        assert!(
+            processor
+                .blockchain
+                .has_observer(&pegin_flow_id.to_string())
+        );
     }
 
     #[test]
@@ -769,20 +970,40 @@ mod tests {
 
         let mut processor = PeginProcessor::new(broker);
 
-        let req = dummy_pegin_accepted_event();
-        let event = PeginAcceptedEvent {
-            inner: req,
-            block_number: BlockNumber::from(100),
-            block_hash: BlockHash::from(H256::from_low_u64_be(123)),
+        let pegin_requested = dummy_pegin_requested_event();
+        let pegin_requested_event = PeginRequestedEvent {
+            inner: pegin_requested,
+            block_number: 99.into(),
+            block_hash: BlockHash::from(H256::from_low_u64_be(122)),
+            removed: false,
         };
 
-        let unconfirmed = UnconfirmedEvent::new(event.clone(), 1); // confirm after 1 block
-        let observer_id = unconfirmed.event_id.to_string();
+        let pegin_accepted = dummy_pegin_accepted_event();
+        let pegin_accepted_event = PeginAcceptedEvent {
+            inner: pegin_accepted,
+            block_number: 100.into(),
+            block_hash: BlockHash::from(H256::from_low_u64_be(123)),
+            removed: false,
+        };
+
+        let pegin_flow_id = Uuid::new_v4();
+
+        let pegin_requested_confirmations =
+            BlockConfirmations::new(pegin_flow_id.to_string(), 99.into(), 0);
+        let pegin_accepted_confirmations =
+            BlockConfirmations::new(pegin_flow_id.to_string(), 100.into(), 1);
+
+        let mut pegin_requested_event =
+            PeginEvent::new(pegin_requested_event.clone(), pegin_requested_confirmations);
+        pegin_requested_event.mark_handled(); // assumes already handled
+        let pegin_accepted_event =
+            PeginEvent::new(pegin_accepted_event.clone(), pegin_accepted_confirmations);
 
         processor
             .blockchain
-            .add_observer(unconfirmed.confirmations());
-        processor.pegin_accepted_events.push(unconfirmed);
+            .add_observer(pegin_accepted_event.confirmations());
+        let _ = processor.insert_pegin_requested(pegin_flow_id, pegin_requested_event);
+        let _ = processor.insert_pegin_accepted(pegin_accepted_event);
 
         let (block_1, _, _) = create_block_and_uncles();
         let block = RskBlockAndUncles::new_no_uncles(block_1);
@@ -790,8 +1011,12 @@ mod tests {
         let result = processor.process_new_block(&block);
         assert!(result.is_ok());
 
-        assert_eq!(processor.pegin_accepted_events.len(), 0);
-        assert!(!processor.blockchain.has_observer(&observer_id));
+        assert_eq!(processor.tracker.len(), 1);
+        assert!(
+            !processor
+                .blockchain
+                .has_observer(&pegin_flow_id.to_string())
+        );
     }
 
     fn dummy_pegin_requested_event() -> PeginRequested {
@@ -832,7 +1057,7 @@ mod tests {
     fn dummy_pegin_accepted_event() -> PeginAccepted {
         PeginAccepted {
             blockHash: FixedBytes::<32>::from_slice(H256::from_low_u64_be(1).as_bytes()),
-            acceptPeginTxHash: FixedBytes::<32>::from_slice(H256::from_low_u64_be(2).as_bytes()),
+            acceptPeginTxHash: FixedBytes::<32>::from_slice(H256::from_low_u64_be(222).as_bytes()),
             peginRequestTxHash: FixedBytes::<32>::from_slice(H256::from_low_u64_be(3).as_bytes()),
             vout: 0,
             streamPosition: StreamPosition {

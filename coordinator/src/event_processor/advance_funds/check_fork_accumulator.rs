@@ -249,6 +249,7 @@ mod tests {
             },
             block_number: BlockNumber::from(block_number),
             block_hash: BlockHash::from(block_hash),
+            removed: false,
         }
     }
 

@@ -26,16 +26,17 @@ pub type AdvanceFundsEvent = EventWithBlock<AdvanceFunds>;
 pub type PeginRequestedEvent = EventWithBlock<PeginRequested>;
 pub type PeginAcceptedEvent = EventWithBlock<PeginAccepted>;
 
+pub type EventStatus = bool;
+type DecoderFn = fn(&LogData, BlockNumber, BlockHash, EventStatus) -> RskPegManagerEvents;
+
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub struct EventWithBlock<T> {
     pub inner: T,
     pub block_number: BlockNumber,
     pub block_hash: BlockHash,
+    pub removed: EventStatus,
 }
 
-pub type EventStatus = bool;
-
-type DecoderFn = fn(&LogData, BlockNumber, BlockHash, EventStatus) -> RskPegManagerEvents;
 pub struct EventDecoder {
     dispatch: HashMap<B256, DecoderFn>,
 }
@@ -114,18 +115,14 @@ impl EventDecoder {
         log_data: &LogData,
         block_number: BlockNumber,
         block_hash: BlockHash,
-        removed: bool,
+        removed: EventStatus,
     ) -> RskPegManagerEvents {
         match PeginRequested::decode_log_data(&log_data) {
-            Ok(ev) if !removed => RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
-                inner: ev,
-                block_number,
-                block_hash,
-            }),
             Ok(ev) => RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
                 inner: ev,
                 block_number,
                 block_hash,
+                removed,
             }),
             Err(_) => UnknownEvent,
         }
@@ -135,18 +132,14 @@ impl EventDecoder {
         log_data: &LogData,
         block_number: BlockNumber,
         block_hash: BlockHash,
-        removed: bool,
+        removed: EventStatus,
     ) -> RskPegManagerEvents {
         match PeginAccepted::decode_log_data(&log_data) {
-            Ok(ev) if !removed => RskPegManagerEvents::PeginAccepted(PeginAcceptedEvent {
-                inner: ev,
-                block_number,
-                block_hash,
-            }),
             Ok(ev) => RskPegManagerEvents::PeginAccepted(PeginAcceptedEvent {
                 inner: ev,
                 block_number,
                 block_hash,
+                removed,
             }),
             Err(_) => UnknownEvent,
         }
@@ -156,7 +149,7 @@ impl EventDecoder {
         log_data: &LogData,
         block_number: BlockNumber,
         block_hash: BlockHash,
-        removed: bool,
+        removed: EventStatus,
     ) -> RskPegManagerEvents {
         match RequestAdvanceFunds::decode_log_data(&log_data) {
             Ok(event) if !removed => {
@@ -164,6 +157,7 @@ impl EventDecoder {
                     inner: event,
                     block_number,
                     block_hash,
+                    removed,
                 })
             }
             Ok(event) => RskPegManagerEvents::RemoveRequestAdvanceFunds {
@@ -177,13 +171,14 @@ impl EventDecoder {
         log_data: &LogData,
         block_number: BlockNumber,
         block_hash: BlockHash,
-        removed: bool,
+        removed: EventStatus,
     ) -> RskPegManagerEvents {
         match AdvanceFunds::decode_log_data(&log_data) {
             Ok(event) if !removed => RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
                 inner: event,
                 block_number,
                 block_hash,
+                removed,
             }),
             Ok(event) => RskPegManagerEvents::RemoveAdvanceFunds {
                 peg_out_id: event.peg_out_id,
@@ -341,13 +336,14 @@ mod tests {
             .collect();
 
         let log_event = LogEvent::new(data, topics);
+        let removed = false;
         let log_info = LogInfo::new(
             generate_fake_address(1),
             expected_block_hash.into(),
             expected_block_num.into(),
             TxHash::from(H256::random()),
             1,
-            false,
+            removed,
         );
 
         let rsk_log = RskLog::new(log_info, log_event);
@@ -359,8 +355,9 @@ mod tests {
                 assert_eq!(data.inner, expected_event);
                 assert_eq!(data.block_number, expected_block_num);
                 assert_eq!(data.block_hash, expected_block_hash.into());
+                assert_eq!(data.removed, removed);
             }
-            _ => panic!("Expected RegisteredPegInRequest event"),
+            _ => panic!("Expected PeginRequested event"),
         }
     }
 
@@ -398,13 +395,14 @@ mod tests {
             .collect();
 
         let log_event = LogEvent::new(data, topics);
+        let removed = false;
         let log_info = LogInfo::new(
             generate_fake_address(1),
             expected_block_hash.into(),
             expected_block_num.into(),
             TxHash::from(H256::random()),
             1,
-            false,
+            removed,
         );
 
         let rsk_log = RskLog::new(log_info, log_event);
@@ -415,8 +413,9 @@ mod tests {
                 assert_eq!(data.inner, expected_event);
                 assert_eq!(data.block_number, expected_block_num);
                 assert_eq!(data.block_hash, expected_block_hash.into());
+                assert_eq!(data.removed, removed);
             }
-            _ => panic!("Expected AcceptedPegInRequest event"),
+            _ => panic!("Expected PeginAccepted event"),
         }
     }
 }
