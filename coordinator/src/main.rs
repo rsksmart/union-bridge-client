@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
+use common::msg_broker::bitvmx_broker::BitVmxBrokerClient;
 use common::runtime_sync::RuntimeSync;
 use common::{msg_broker::broker::BrokerClient, shutdown_flag::ShutdownFlag};
 use coordinator::{
@@ -51,7 +52,7 @@ fn main() -> Result<()> {
         config.log_broker.port,
         config.broker_client_id,
     );
-    let bitvmx_broker = BrokerClient::new(
+    let bitvmx_broker = BitVmxBrokerClient::new(
         config.bitvmx_broker.ip,
         config.bitvmx_broker.port,
         config.broker_client_id,

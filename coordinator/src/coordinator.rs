@@ -1,10 +1,10 @@
 use crate::event_processor::BitVmxPingPongProcessor;
 use crate::{
-    event_processor::{AdvanceFundsProcessor, EventProcessor, GetTemporaryPeginAddressProcessor},
+    event_processor::{AdvanceFundsProcessor, EventProcessor},
     monitor::MonitorApi,
 };
 use anyhow::{Context, Result};
-use common::msg_broker::types::FromServer;
+use bitvmx_client::types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
 use common::runtime_sync::RuntimeSync;
 use common::types::RskBlockAndUncles;
 use common::{msg_broker::broker::BrokerClientApi, shutdown_flag::ShutdownFlag};
@@ -24,7 +24,7 @@ pub struct Coordinator<M: MonitorApi> {
 
 impl<M: MonitorApi> Coordinator<M> {
     pub fn new<
-        BC: BrokerClientApi + Clone + 'static,
+        BC: BrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages> + Clone + 'static,
         CG: RskContractsGatewayApi + Clone + 'static,
     >(
         rt_sync: RuntimeSync,
@@ -38,16 +38,11 @@ impl<M: MonitorApi> Coordinator<M> {
             bitvmx_ping_pong_processor: Box::new(BitVmxPingPongProcessor::new(
                 bitvmx_broker.clone(),
             )),
-            processors: vec![
-                Box::new(AdvanceFundsProcessor::new(
-                    rt_sync,
-                    contracts_gateway.clone(),
-                    bitvmx_broker.clone(),
-                )),
-                Box::new(GetTemporaryPeginAddressProcessor::new(
-                    bitvmx_broker.clone(),
-                )),
-            ],
+            processors: vec![Box::new(AdvanceFundsProcessor::new(
+                rt_sync,
+                contracts_gateway.clone(),
+                bitvmx_broker.clone(),
+            ))],
             check_period: CHECK_PERIOD,
             shutdown_flag,
         }
@@ -165,7 +160,7 @@ impl<M: MonitorApi> Coordinator<M> {
         }
     }
 
-    fn check_bitvmx_pong(&mut self, event: &FromServer) {
+    fn check_bitvmx_pong(&mut self, event: &OutgoingBitVMXApiMessages) {
         let result = self
             .bitvmx_ping_pong_processor
             .process_new_bitvmx_event(event);
@@ -190,8 +185,8 @@ pub(crate) mod tests {
     };
     use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
     use alloy_primitives::U256;
+    use bitvmx_client::types::OutgoingBitVMXApiMessages;
     use common::{
-        msg_broker::types::FromServer::GetTemporaryPegInAddress,
         shutdown_flag::ShutdownFlag,
         test_utils::rsk_block_generator::{
             create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
@@ -199,7 +194,6 @@ pub(crate) mod tests {
         types::RskBlockAndUncles,
     };
     use mockall::mock;
-    use serde_json::json;
     use std::{
         thread::{self, JoinHandle, sleep},
         time::Duration,
@@ -244,7 +238,7 @@ pub(crate) mod tests {
             block_hash: block_2.hash().into(),
         });
 
-        let bitvmx_event = GetTemporaryPegInAddress(json!("GetTemporaryPegInAddress"));
+        let bitvmx_event = OutgoingBitVMXApiMessages::Pong();
 
         mock_monitor
             .expect_start_event_monitoring()
@@ -292,8 +286,24 @@ pub(crate) mod tests {
         let shutdown_flag = ShutdownFlag::init();
         handle_shutdown(shutdown_flag.clone());
 
-        let mut coordinator =
-            Coordinator::new_for_tests(mock_monitor, generate_ok_processors(), shutdown_flag);
+        let mut ping_pong_processor = MockEventProcessor::new();
+
+        ping_pong_processor
+            .expect_process_new_bitvmx_event()
+            .returning(|_| Ok(()))
+            .times(1..);
+
+        ping_pong_processor
+            .expect_process_new_block()
+            .returning(|_| Ok(()))
+            .times(1..);
+
+        let mut coordinator = Coordinator::new_for_tests(
+            mock_monitor,
+            Box::new(ping_pong_processor),
+            generate_ok_processors(),
+            shutdown_flag,
+        );
         let result = coordinator.run();
 
         assert!(result.is_ok());
@@ -353,7 +363,7 @@ pub(crate) mod tests {
             &mut mock_monitor,
         );
 
-        let bitvmx_event = GetTemporaryPegInAddress(json!("GetTemporaryPegInAddress"));
+        let bitvmx_event = OutgoingBitVMXApiMessages::Pong();
 
         mock_monitor
             .expect_try_bitvmx_event()
@@ -366,8 +376,24 @@ pub(crate) mod tests {
         let shutdown_flag = ShutdownFlag::init();
         handle_shutdown(shutdown_flag.clone());
 
-        let mut coordinator =
-            Coordinator::new_for_tests(mock_monitor, generate_ok_processors(), shutdown_flag);
+        let mut ping_pong_processor = MockEventProcessor::new();
+
+        ping_pong_processor
+            .expect_process_new_bitvmx_event()
+            .returning(|_| Ok(()))
+            .times(1..);
+
+        ping_pong_processor
+            .expect_process_new_block()
+            .returning(|_| Ok(()))
+            .times(1..);
+
+        let mut coordinator = Coordinator::new_for_tests(
+            mock_monitor,
+            Box::new(ping_pong_processor),
+            generate_ok_processors(),
+            shutdown_flag,
+        );
         let result = coordinator.run();
 
         assert!(result.is_ok());

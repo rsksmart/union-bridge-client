@@ -7,15 +7,12 @@ use crate::{
 };
 use anyhow::Result;
 use bincode::config::standard;
-use bitvmx_client::types::IncomingBitVMXApiMessages;
+use bitvmx_client::types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
 use check_fork::{CheckForkArgs, check_fork};
 use check_fork_zkp::{CHECK_FORK_GUEST_ID, CHECK_FORK_GUEST_PATH};
 use common::runtime_sync::RuntimeSync;
 use common::{
-    msg_broker::{
-        broker::{BROKER_SERVER_ID, BrokerClientApi},
-        types::ToServer,
-    },
+    msg_broker::broker::{BROKER_SERVER_ID, BrokerClientApi},
     types::{BlockNumber, RskBlockAndUncles},
 };
 use log::{debug, error, info, warn};
@@ -26,7 +23,10 @@ use std::rc::Rc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;
 
-pub struct AdvanceFundsProcessor<CG: RskContractsGatewayApi, BC: BrokerClientApi> {
+pub struct AdvanceFundsProcessor<
+    CG: RskContractsGatewayApi,
+    BC: BrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>,
+> {
     rt_sync: RuntimeSync,
     contracts: CG,
     bitvmx_broker: BC,
@@ -36,7 +36,11 @@ pub struct AdvanceFundsProcessor<CG: RskContractsGatewayApi, BC: BrokerClientApi
     chain_view: BlockchainView,
 }
 
-impl<CG: RskContractsGatewayApi, BC: BrokerClientApi> AdvanceFundsProcessor<CG, BC> {
+impl<
+    CG: RskContractsGatewayApi,
+    BC: BrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>,
+> AdvanceFundsProcessor<CG, BC>
+{
     pub fn new(rt_sync: RuntimeSync, contracts: CG, bitvmx_broker: BC) -> Self {
         Self {
             rt_sync,
@@ -204,10 +208,7 @@ impl<CG: RskContractsGatewayApi, BC: BrokerClientApi> AdvanceFundsProcessor<CG, 
         let request_id = Uuid::new_v4();
         let broker_result = self.bitvmx_broker.send(
             BROKER_SERVER_ID,
-            ToServer::ToBitVMX(IncomingBitVMXApiMessages::GenerateZKP(
-                request_id,
-                serialized_args,
-            )),
+            IncomingBitVMXApiMessages::GenerateZKP(request_id, serialized_args),
         );
 
         match broker_result {
@@ -270,8 +271,10 @@ impl<CG: RskContractsGatewayApi, BC: BrokerClientApi> AdvanceFundsProcessor<CG, 
     }
 }
 
-impl<CG: RskContractsGatewayApi, T: BrokerClientApi> EventProcessor
-    for AdvanceFundsProcessor<CG, T>
+impl<CG, BC> EventProcessor for AdvanceFundsProcessor<CG, BC>
+where
+    CG: RskContractsGatewayApi,
+    BC: BrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>,
 {
     fn process_new_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         match event {
@@ -1716,11 +1719,8 @@ mod tests {
             .times(1)
             .with(
                 eq(BROKER_SERVER_ID),
-                function(|req: &ToServer| {
-                    matches!(
-                        req,
-                        ToServer::ToBitVMX(IncomingBitVMXApiMessages::GenerateZKP(_, _))
-                    )
+                function(|req: &IncomingBitVMXApiMessages| {
+                    matches!(req, IncomingBitVMXApiMessages::GenerateZKP(_, _))
                 }),
             )
             .returning(|_, _| Ok(true));
@@ -1836,16 +1836,18 @@ mod tests {
         assert!(!processor.chain_view.is_observed());
     }
 
-    fn expect_zkp_bitvmx(bitvmx_broker: &mut MockBrokerClientApi) {
+    fn expect_zkp_bitvmx(
+        bitvmx_broker: &mut MockBrokerClientApi<
+            IncomingBitVMXApiMessages,
+            OutgoingBitVMXApiMessages,
+        >,
+    ) {
         bitvmx_broker
             .expect_send()
             .with(
                 eq(BROKER_SERVER_ID),
-                function(|req: &ToServer| {
-                    matches!(
-                        req,
-                        ToServer::ToBitVMX(IncomingBitVMXApiMessages::GenerateZKP(_, _))
-                    )
+                function(|req: &IncomingBitVMXApiMessages| {
+                    matches!(req, IncomingBitVMXApiMessages::GenerateZKP(_, _))
                 }),
             )
             .return_once(|_, _| Ok(true));

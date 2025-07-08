@@ -15,6 +15,7 @@ dependencies = [
  "alloy-sol-types",
  "anyhow",
  "bitvmx-client",
+ "chrono",
  "clap",
  "common",
  "hex 0.4.3",
