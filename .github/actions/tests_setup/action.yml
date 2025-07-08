@@ -1,0 +1,68 @@
+name: "Build Tests"
+description: "Builds the union-bridge-client workspace and qa-tools, with caching and dependency management"
+
+inputs:
+  fairgate_github_token:
+    description: "GitHub token for accessing FairgateLabs repositories"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+
+    - name: Checkout BitVMX workspace
+      uses: actions/checkout@v4
+      with:
+        repository: FairgateLabs/rust-bitvmx-workspace
+        token: ${{ inputs.fairgate_github_token }}
+        ref: f5d15597ee27f9a659498ef5fb86f4ecee094d51
+        path: rust-bitvmx-workspace
+        submodules: recursive
+        fetch-depth: 0
+
+    - name: Set up Node.js
+      if: ${{ env.ACT }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: 18
+
+    - name: Install Rust
+      if: ${{ env.ACT }}
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        toolchain: stable
+        cache: false
+
+    - name: Install RocksDB Dependencies
+      if: ${{ env.ACT }}
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libclang-dev clang
+
+    - name: Cache RISC Zero
+      id: cache-risc0
+      uses: actions/cache@v3
+      with:
+        path: ~/.risc0
+        key: ${{ runner.os }}-risc0-v0.4.1
+        restore-keys: |
+          ${{ runner.os }}-risc0-
+
+    - name: Install RISC Zero
+      if: steps.cache-risc0.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        curl -L https://risczero.com/install | bash
+        ~/.risc0/bin/rzup install
+
+    - name: Cache Dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          ./union-bridge-client/shared-target
+        key: ${{ runner.os }}-rust-cargo-${{ hashFiles('union-bridge-client/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-rust-cargo-
