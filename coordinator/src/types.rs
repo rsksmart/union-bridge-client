@@ -14,9 +14,7 @@ use union_contracts::bindings::signature_manager::SignatureManager::{
 #[derive(Eq, PartialEq, Debug)]
 pub enum RskPegManagerEvents {
     RequestAdvanceFunds(RequestAdvanceFundsEvent), // temporarily mock, no need to test it
-    RemoveRequestAdvanceFunds { peg_out_id: String }, // temporarily mock, no need to test it
     AdvanceFunds(AdvanceFundsEvent),               // temporarily mock, no need to test it
-    RemoveAdvanceFunds { peg_out_id: String },     // temporarily mock, no need to test it
     PeginRequested(PeginRequestedEvent),
     RemoveRegisteredPegInRequest(PeginRequestedEvent),
     AllNoncesReady(AllNoncesReadyEvent),
@@ -143,18 +141,12 @@ impl EventDecoder {
         removed: bool,
     ) -> RskPegManagerEvents {
         match RequestAdvanceFunds::decode_log_data(&log_data) {
-            Ok(event) if !removed => {
-                RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFundsEvent {
-                    inner: event,
-                    block_number,
-                    block_hash,
-                    removed: removed,
-                })
-            }
-            //TODO: updated the logic using the removed flag
-            Ok(event) => RskPegManagerEvents::RemoveRequestAdvanceFunds {
-                peg_out_id: event.peg_out_id,
-            },
+            Ok(event) => RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFundsEvent {
+                inner: event,
+                block_number,
+                block_hash,
+                removed: removed,
+            }),
             Err(_) => UnknownEvent,
         }
     }
@@ -166,15 +158,12 @@ impl EventDecoder {
         removed: bool,
     ) -> RskPegManagerEvents {
         match AdvanceFunds::decode_log_data(&log_data) {
-            Ok(event) if !removed => RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
+            Ok(event) => RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
                 inner: event,
                 block_number,
                 block_hash,
-                removed: false,
+                removed: removed,
             }),
-            Ok(event) => RskPegManagerEvents::RemoveAdvanceFunds {
-                peg_out_id: event.peg_out_id,
-            },
             Err(_) => UnknownEvent,
         }
     }
@@ -206,7 +195,7 @@ impl EventDecoder {
         removed: bool,
     ) -> RskPegManagerEvents {
         match AllSignaturesReady::decode_log_data(&log_data) {
-            Ok(event) => RskPegManagerEvents::AllSignaturesReady(AllNoncesReadyEvent {
+            Ok(event) => RskPegManagerEvents::AllSignaturesReady(AllSignaturesReadyEvent {
                 inner: Hash256::from(event.hashToSign),
                 block_number,
                 block_hash,

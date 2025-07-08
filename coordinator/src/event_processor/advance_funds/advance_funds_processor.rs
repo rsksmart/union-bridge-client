@@ -282,20 +282,25 @@ where
     fn process_new_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         match event {
             RskPegManagerEvents::RequestAdvanceFunds(data) => {
-                info!("Handling {:?}, waiting blocks...", data);
-                self.start_monitoring_blocks_for_pegout(data.clone());
-            }
-            RskPegManagerEvents::RemoveRequestAdvanceFunds { peg_out_id } => {
-                info!("Handling RemoveRequestAdvanceFunds {peg_out_id}...");
-                self.stop_monitoring_blocks_for_pegout(peg_out_id);
+                if !data.removed {
+                    info!("Handling {:?}, waiting blocks...", data);
+                    self.start_monitoring_blocks_for_pegout(data.clone());
+                } else {
+                    info!(
+                        "Handling RemoveRequestAdvanceFunds {}...",
+                        data.inner.peg_out_id
+                    );
+                    self.stop_monitoring_blocks_for_pegout(&data.inner.peg_out_id);
+                }
             }
             RskPegManagerEvents::AdvanceFunds(data) => {
-                info!("Handling {:?}...", data);
-                self.start_pow_accum_for_pegout(data.clone());
-            }
-            RskPegManagerEvents::RemoveAdvanceFunds { peg_out_id } => {
-                info!("Handling RemoveAdvanceFunds {peg_out_id}...");
-                self.stop_pow_accum_for_pegout(peg_out_id);
+                if !data.removed {
+                    info!("Handling {:?}...", data);
+                    self.start_pow_accum_for_pegout(data.clone());
+                } else {
+                    info!("Handling RemoveAdvanceFunds {}...", data.inner.peg_out_id);
+                    self.stop_pow_accum_for_pegout(&data.inner.peg_out_id);
+                }
             }
             _ => {
                 info!("Ignoring {:?}...", event);
@@ -1238,9 +1243,14 @@ mod tests {
         );
 
         processor
-            .process_new_event(&RskPegManagerEvents::RemoveRequestAdvanceFunds {
-                peg_out_id: pegout_id_1.to_string(),
-            })
+            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+                RequestAdvanceFundsEvent {
+                    inner: create_fake_request_event(pegout_id_1),
+                    block_number: request_block_1.number(),
+                    block_hash: request_block_1.hash(),
+                    removed: true,
+                },
+            ))
             .expect("Should have processed request");
 
         assert!(processor.advance_funds_checker.is_none());
@@ -1406,10 +1416,13 @@ mod tests {
         assert_eq!(processor.chain_view.len(), 1);
 
         processor
-            .process_new_event(&RskPegManagerEvents::RemoveAdvanceFunds {
-                peg_out_id: pegout_id.to_string(),
-            })
-            .expect("Should have processed kickoff");
+            .process_new_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
+                inner: create_fake_advance_funds_event(pegout_id),
+                block_number: advance_funds_block.number(),
+                block_hash: advance_funds_block.hash(),
+                removed: true,
+            }))
+            .expect("Should have processed removal");
 
         assert!(processor.advance_funds_checker.is_none());
         assert!(
