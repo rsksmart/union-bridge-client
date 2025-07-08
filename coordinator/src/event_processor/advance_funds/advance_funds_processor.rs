@@ -7,12 +7,13 @@ use crate::{
 };
 use anyhow::Result;
 use bincode::config::standard;
-use bitvmx_client::types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+use bitvmx_client::types::IncomingBitVMXApiMessages;
 use check_fork::{CheckForkArgs, check_fork};
 use check_fork_zkp::{CHECK_FORK_GUEST_ID, CHECK_FORK_GUEST_PATH};
+use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::{
-    msg_broker::broker::{BROKER_SERVER_ID, BrokerClientApi},
+    msg_broker::broker::BROKER_SERVER_ID,
     types::{BlockNumber, RskBlockAndUncles},
 };
 use log::{debug, error, info, warn};
@@ -23,10 +24,11 @@ use std::rc::Rc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;
 
-pub struct AdvanceFundsProcessor<
+pub struct AdvanceFundsProcessor<CG, BC>
+where
     CG: RskContractsGatewayApi,
-    BC: BrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>,
-> {
+    BC: BitVmxBrokerClientApi,
+{
     rt_sync: RuntimeSync,
     contracts: CG,
     bitvmx_broker: BC,
@@ -36,10 +38,10 @@ pub struct AdvanceFundsProcessor<
     chain_view: BlockchainView,
 }
 
-impl<
+impl<CG, BC> AdvanceFundsProcessor<CG, BC>
+where
     CG: RskContractsGatewayApi,
-    BC: BrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>,
-> AdvanceFundsProcessor<CG, BC>
+    BC: BitVmxBrokerClientApi,
 {
     pub fn new(rt_sync: RuntimeSync, contracts: CG, bitvmx_broker: BC) -> Self {
         Self {
@@ -274,7 +276,7 @@ impl<
 impl<CG, BC> EventProcessor for AdvanceFundsProcessor<CG, BC>
 where
     CG: RskContractsGatewayApi,
-    BC: BrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>,
+    BC: BitVmxBrokerClientApi,
 {
     fn process_new_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         match event {
@@ -371,6 +373,7 @@ mod tests {
     use crate::types::EventWithBlock;
     use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
     use alloy_primitives::U256 as AlloyU256;
+    use bitvmx_client::types::OutgoingBitVMXApiMessages;
     use common::msg_broker::broker::MockBrokerClientApi;
     use common::test_utils::rsk_block_generator::create_block_from_template;
     use common::types::{BlockHash, RskBlock};

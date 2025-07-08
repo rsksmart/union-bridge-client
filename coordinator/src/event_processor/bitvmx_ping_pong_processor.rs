@@ -2,13 +2,14 @@ use crate::event_processor::EventProcessor;
 use alloy_primitives::BlockNumber;
 use anyhow::{Result, bail};
 use bitvmx_client::types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
-use common::msg_broker::broker::{BROKER_SERVER_ID, BrokerClientApi};
+use common::msg_broker::broker::BROKER_SERVER_ID;
+use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::types::RskBlockAndUncles;
 use log::{debug, info, trace};
 
 pub struct BitVmxPingPongProcessor<BC>
 where
-    BC: BrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>,
+    BC: BitVmxBrokerClientApi,
 {
     bitvmx_broker: BC,
     ping_block: Option<BlockNumber>,
@@ -16,7 +17,7 @@ where
 
 impl<BC> BitVmxPingPongProcessor<BC>
 where
-    BC: BrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>,
+    BC: BitVmxBrokerClientApi,
 {
     pub fn new(bitvmx_broker: BC) -> Self {
         Self {
@@ -30,7 +31,7 @@ const ROUND_BLOCK_INTERVAL: u64 = 2;
 
 impl<BC> EventProcessor for BitVmxPingPongProcessor<BC>
 where
-    BC: BrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>,
+    BC: BitVmxBrokerClientApi,
 {
     fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
         let block_num = block.number().value();

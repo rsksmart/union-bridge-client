@@ -1,12 +1,12 @@
 use anyhow::{Context, Result};
 use bitvmx_client::types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
-use common::msg_broker::broker::BrokerServerApi;
+use common::msg_broker::broker::BitVmxBrokerServerApi;
 
-pub struct Executor<BS: BrokerServerApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>> {
+pub struct Executor<BS: BitVmxBrokerServerApi> {
     broker_server: BS,
 }
 
-impl<BS: BrokerServerApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>> Executor<BS> {
+impl<BS: BitVmxBrokerServerApi> Executor<BS> {
     pub fn new(broker_server: BS) -> Self {
         Self { broker_server }
     }

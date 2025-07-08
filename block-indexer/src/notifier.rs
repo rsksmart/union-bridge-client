@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, anyhow};
 use common::constants::indexer::NOTIFIER_CHECK_PERIOD;
-use common::msg_broker::broker::BrokerServerApi;
+use common::msg_broker::broker::UnionBrokerServerApi;
 pub use common::msg_broker::types::{FromServer, ToServer};
 use common::shutdown_flag::ShutdownFlag;
 use common::types::RskBlockAndUncles;
@@ -10,7 +10,7 @@ use std::sync::mpsc;
 use std::sync::mpsc::RecvTimeoutError;
 use std::time::Duration;
 
-pub struct Notifier<BS: BrokerServerApi<ToServer, FromServer>> {
+pub struct Notifier<BS: UnionBrokerServerApi> {
     new_block_channel: mpsc::Receiver<RskBlockAndUncles>,
     msg_broker: BS,
     check_period: Duration,
@@ -18,7 +18,7 @@ pub struct Notifier<BS: BrokerServerApi<ToServer, FromServer>> {
     shutdown_flag: ShutdownFlag,
 }
 
-impl<BS: BrokerServerApi<ToServer, FromServer>> Notifier<BS> {
+impl<BS: UnionBrokerServerApi> Notifier<BS> {
     pub fn new(
         indexer_receiver: mpsc::Receiver<RskBlockAndUncles>,
         msg_broker: BS,

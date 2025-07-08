@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
-use common::msg_broker::bitvmx_broker::BitVmxBrokerClient;
+use common::msg_broker::broker::BitVmxBrokerClient;
 use common::runtime_sync::RuntimeSync;
 use common::{msg_broker::broker::BrokerClient, shutdown_flag::ShutdownFlag};
 use coordinator::{

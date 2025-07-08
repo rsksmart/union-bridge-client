@@ -5,7 +5,7 @@ use alloy_provider::network::EthereumWallet;
 use alloy_signer_local::LocalSigner;
 use anyhow::Result;
 use clap::{CommandFactory, Parser};
-use common::msg_broker::bitvmx_broker::BitVmxBrokerServer;
+use common::msg_broker::broker::BitVmxBrokerServer;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 use std::thread;

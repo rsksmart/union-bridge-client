@@ -1,9 +1,10 @@
 use crate::types::{EventDecoder, RskPegManagerEvents};
 use anyhow::{Context, Result, bail};
-use bitvmx_client::types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+use bitvmx_client::types::OutgoingBitVMXApiMessages;
 use common::{
     msg_broker::{
-        broker::{BROKER_SERVER_ID, BrokerClientApi, BrokerError},
+        broker::BitVmxBrokerClientApi,
+        broker::{BROKER_SERVER_ID, BrokerError, UnionBrokerClientApi},
         types::{FromServer, ToServer},
     },
     types::{Address, RskBlockAndUncles},
@@ -28,8 +29,8 @@ pub trait MonitorApi {
 
 pub struct Monitor<UBC, BBC>
 where
-    UBC: BrokerClientApi<ToServer, FromServer>,
-    BBC: BrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>,
+    UBC: UnionBrokerClientApi,
+    BBC: BitVmxBrokerClientApi,
 {
     log_broker: UBC,
     block_broker: UBC,
@@ -43,8 +44,8 @@ where
 
 impl<UBC, BBC> MonitorApi for Monitor<UBC, BBC>
 where
-    UBC: BrokerClientApi<ToServer, FromServer>,
-    BBC: BrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>,
+    UBC: UnionBrokerClientApi,
+    BBC: BitVmxBrokerClientApi,
 {
     fn start_event_monitoring(&mut self) -> Result<()> {
         self.start_event_monitoring()
@@ -85,8 +86,8 @@ where
 
 impl<UBC, BBC> Monitor<UBC, BBC>
 where
-    UBC: BrokerClientApi<ToServer, FromServer>,
-    BBC: BrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>,
+    UBC: UnionBrokerClientApi,
+    BBC: BitVmxBrokerClientApi,
 {
     pub fn new(
         log_broker: UBC,
@@ -299,6 +300,7 @@ where
 mod tests {
     use super::*;
     use anyhow::anyhow;
+    use bitvmx_client::types::IncomingBitVMXApiMessages;
     use common::{
         msg_broker::{
             broker::{BROKER_SERVER_ID, MockBrokerClientApi},

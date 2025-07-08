@@ -4,10 +4,11 @@ use crate::{
     monitor::MonitorApi,
 };
 use anyhow::{Context, Result};
-use bitvmx_client::types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+use bitvmx_client::types::OutgoingBitVMXApiMessages;
+use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
+use common::shutdown_flag::ShutdownFlag;
 use common::types::RskBlockAndUncles;
-use common::{msg_broker::broker::BrokerClientApi, shutdown_flag::ShutdownFlag};
 use log::error;
 use std::{thread, time::Duration};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
@@ -24,7 +25,7 @@ pub struct Coordinator<M: MonitorApi> {
 
 impl<M: MonitorApi> Coordinator<M> {
     pub fn new<
-        BC: BrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages> + Clone + 'static,
+        BC: BitVmxBrokerClientApi + Clone + 'static,
         CG: RskContractsGatewayApi + Clone + 'static,
     >(
         rt_sync: RuntimeSync,
