@@ -3,10 +3,12 @@ use anyhow::Result;
 use common::{msg_broker::types::FromServer, types::RskBlockAndUncles};
 
 mod advance_funds;
+mod bitvmx_ping_pong_processor;
 mod blockchain_tracker;
 mod get_temporary_pegin_address_processor;
 
 pub use advance_funds::advance_funds_processor::*;
+pub use bitvmx_ping_pong_processor::*;
 pub use get_temporary_pegin_address_processor::*;
 
 #[cfg(test)]

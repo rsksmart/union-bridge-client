@@ -5,7 +5,7 @@ use crate::fake_contracts::FakePegManager::FakePegManagerInstance;
 use alloy_eips::BlockNumberOrTag;
 use alloy_primitives::{Address, U256};
 use alloy_provider::Provider;
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow};
 use common::anvil_mocks::get_anvil_block_pow;
 use std::env;
 use std::io::{BufRead, BufReader};

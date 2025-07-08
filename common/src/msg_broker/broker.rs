@@ -1,4 +1,5 @@
 use crate::msg_broker::types::{FromServer, ToServer};
+use bitvmx_client::types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
 use log::debug;
 use message_broker::broker_memstorage::MemStorage;
 use message_broker::channel::channel::{DualChannel, LocalChannel};
@@ -52,7 +53,12 @@ impl BrokerServerApi for BrokerServer {
             .recv()
             .map_err(BrokerError::BrokerServerError)?
         {
-            let req = serde_json::from_str(&msg).map_err(BrokerError::SerializationError)?;
+            // BitVMX messages come as OutgoingBitVMXApiMessages, we wrap them in FromServer
+            let req = serde_json::from_str::<IncomingBitVMXApiMessages>(&msg)
+                .map(|msg| ToServer::ToBitVMX(msg))
+                .or_else(|_| serde_json::from_str(&msg))
+                .map_err(BrokerError::SerializationError)?;
+
             Ok(Some((req, sender)))
         } else {
             Ok(None)
@@ -60,9 +66,17 @@ impl BrokerServerApi for BrokerServer {
     }
 
     fn send(&self, msg: &FromServer, dst: u32) -> Result<(), BrokerError> {
+        let final_msg = match msg {
+            // to BitVMX => send the inner message
+            FromServer::FromBitVMX(inner) => serde_json::to_string(&inner),
+            // internal message => send as is
+            _ => serde_json::to_string(&msg),
+        };
+
         self.channel
-            .send(dst, serde_json::to_string(&msg)?)
+            .send(dst, final_msg?)
             .map_err(BrokerError::BrokerServerError)?;
+
         Ok(())
     }
 
@@ -89,15 +103,27 @@ impl BrokerClient {
 
 impl BrokerClientApi for BrokerClient {
     fn send(&self, dest: u32, msg: ToServer) -> Result<bool, BrokerError> {
+        let final_msg = match msg {
+            // to BitVMX => send the inner message
+            ToServer::ToBitVMX(inner) => serde_json::to_string(&inner),
+            // internal message => send as is
+            _ => serde_json::to_string(&msg),
+        }
+        .map_err(BrokerError::SerializationError)?;
+
         self.channel
-            .send(dest, serde_json::to_string(&msg)?)
+            .send(dest, final_msg)
             .map_err(BrokerError::BrokerServerError)
     }
 
     fn try_recv(&self) -> Result<Option<FromServer>, BrokerError> {
         self.channel.recv()?.map_or(Ok(None), |(data, _id)| {
-            serde_json::from_str(&data)
-                .map(|deserialized| Some(deserialized))
+            let bitvmx_msg = serde_json::from_str::<OutgoingBitVMXApiMessages>(&data)
+                .map(|msg| FromServer::FromBitVMX(msg));
+
+            bitvmx_msg
+                .or(serde_json::from_str::<FromServer>(&data))
+                .map(|msg| Some(msg))
                 .map_err(BrokerError::SerializationError)
         })
     }
@@ -109,6 +135,8 @@ pub enum BrokerError {
     BrokerServerError(#[from] message_broker::rpc::errors::BrokerError),
     #[error("Serialization error on Broker: {0}")]
     SerializationError(#[from] serde_json::Error),
+    #[error("Unknown sender on Broker: {0}")]
+    UnknownSenderError(u32),
     #[error("Unknown error on Broker: {0}")]
     UnknownError(#[from] anyhow::Error),
 }

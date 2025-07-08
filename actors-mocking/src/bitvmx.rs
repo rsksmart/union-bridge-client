@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use bitvmx_client::types::IncomingBitVMXApiMessages;
+use bitvmx_client::types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
 use common::msg_broker::{
     broker::BrokerServerApi,
     types::{FromServer, ToServer},
@@ -46,13 +46,21 @@ impl<BS: BrokerServerApi> Executor<BS> {
                         hex::encode(data)
                     );
                 }
+                IncomingBitVMXApiMessages::Ping() => {
+                    self.broker_server
+                        .send(
+                            &FromServer::FromBitVMX(OutgoingBitVMXApiMessages::Pong()),
+                            from,
+                        )
+                        .context("Failed to send Pong response")?;
+                }
                 _ => {
                     println!("Unexpected IncomingBitVMXApiMessages received {:?}", msg);
                 }
             },
-            Some((_, consumer_id)) => {
+            Some((data, consumer_id)) => {
                 println!(
-                    "Status: Unexpected request type from consumer {consumer_id}, unsubscribing"
+                    "Status: Unexpected request {data:?} type from consumer {consumer_id}, unsubscribing"
                 );
                 self.consumers.remove(&consumer_id);
             }

@@ -1,5 +1,5 @@
 use crate::types::{Address, RskBlockAndUncles, RskLog};
-use bitvmx_client::types::IncomingBitVMXApiMessages;
+use bitvmx_client::types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -18,16 +18,20 @@ pub enum ToServer {
     // real BitVMX API messages
     ToBitVMX(IncomingBitVMXApiMessages),
 
+    // TODO remove
     // fake bitvmx outgoing messages
     SubscribeMockedBitVMX,
     UnsubscribeMockedBitVMX,
     TemporaryPegInAddressMockedBitVMX(Value),
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum FromServer {
     Block(RskBlockAndUncles),
     Log(RskLog),
+
+    // real BitVMX incoming messages
+    FromBitVMX(OutgoingBitVMXApiMessages),
 
     // fake bitvmx incoming messages
     GetTemporaryPegInAddress(Value),

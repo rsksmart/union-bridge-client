@@ -1,9 +1,12 @@
+use crate::event_processor::BitVmxPingPongProcessor;
 use crate::{
     event_processor::{AdvanceFundsProcessor, EventProcessor, GetTemporaryPeginAddressProcessor},
     monitor::MonitorApi,
 };
 use anyhow::{Context, Result};
+use common::msg_broker::types::FromServer;
 use common::runtime_sync::RuntimeSync;
+use common::types::RskBlockAndUncles;
 use common::{msg_broker::broker::BrokerClientApi, shutdown_flag::ShutdownFlag};
 use log::error;
 use std::{thread, time::Duration};
@@ -13,6 +16,7 @@ const CHECK_PERIOD: Duration = Duration::from_secs(1);
 
 pub struct Coordinator<M: MonitorApi> {
     monitor: M,
+    bitvmx_ping_pong_processor: Box<dyn EventProcessor>,
     processors: Vec<Box<dyn EventProcessor>>,
     check_period: Duration,
     shutdown_flag: ShutdownFlag,
@@ -31,6 +35,9 @@ impl<M: MonitorApi> Coordinator<M> {
     ) -> Self {
         Self {
             monitor,
+            bitvmx_ping_pong_processor: Box::new(BitVmxPingPongProcessor::new(
+                bitvmx_broker.clone(),
+            )),
             processors: vec![
                 Box::new(AdvanceFundsProcessor::new(
                     rt_sync,
@@ -48,11 +55,13 @@ impl<M: MonitorApi> Coordinator<M> {
 
     pub fn new_for_tests(
         monitor: M,
+        bitvmx_ping_pong_processor: Box<dyn EventProcessor>,
         processors: Vec<Box<dyn EventProcessor>>,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
         Self {
             monitor,
+            bitvmx_ping_pong_processor,
             processors,
             check_period: Duration::from_millis(1),
             shutdown_flag,
@@ -85,6 +94,8 @@ impl<M: MonitorApi> Coordinator<M> {
                     .try_bitvmx_event()
                     .context("Error getting BitVMX event")?
                 {
+                    self.check_bitvmx_pong(&event);
+
                     // each processor decides if the event is relevant
                     self.processors
                         .iter_mut()
@@ -110,6 +121,8 @@ impl<M: MonitorApi> Coordinator<M> {
                 //  if block monitor restarted, this is not realising and keeps waiting logs forever
                 //  maybe using persistent storage instead of memory fixes it?
                 if let Some(block) = self.monitor.try_block().context("Error getting block")? {
+                    self.send_bitvmx_ping(&block);
+
                     self.processors.iter_mut().for_each(|p| {
                         if let Err(e) = p.process_new_block(&block) {
                             error!("Error processing block {:?}: {:?}", block, e);
@@ -142,6 +155,24 @@ impl<M: MonitorApi> Coordinator<M> {
             .context("Failed to cancel event monitoring")?;
 
         result
+    }
+
+    fn send_bitvmx_ping(&mut self, block: &RskBlockAndUncles) {
+        let result = self.bitvmx_ping_pong_processor.process_new_block(&block);
+        if result.is_err() {
+            // TODO for now just log it, but we should handle it properly
+            error!("Error checking BitVMX status : {:?}", result);
+        }
+    }
+
+    fn check_bitvmx_pong(&mut self, event: &FromServer) {
+        let result = self
+            .bitvmx_ping_pong_processor
+            .process_new_bitvmx_event(event);
+        if result.is_err() {
+            // TODO for now just log it, but we should handle it properly
+            error!("Error checking BitVMX Pong : {:?}", result);
+        }
     }
 
     fn is_running(&self) -> bool {
