@@ -216,7 +216,7 @@ where
 
         match self.bitvmx_broker.try_recv()? {
             Some(response) => {
-                info!("Received BitVMX response: {:?}", response);
+                debug!("Received BitVMX response: {:?}", response);
                 Ok(Some(response))
             }
             None => {
