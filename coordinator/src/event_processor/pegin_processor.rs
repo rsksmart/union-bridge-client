@@ -151,6 +151,53 @@ impl<T: BrokerClientApi> PeginProcessor<T> {
         }
     }
 
+    fn untrack_pegin_requested(&mut self, event: EventWithBlock<PeginRequested>) -> Result<()> {
+        let tx_hash: TxHash = event.inner.acceptPeginTxHash.into();
+
+        match self.tracker.remove(&tx_hash) {
+            Some(state) => {
+                self.blockchain
+                    .remove_observer(state.pegin_flow_id().to_string().as_str());
+
+                info!(
+                    "Untracked PeginRequested event. tx_hash: {:?}, pegin_flow_id: {}",
+                    tx_hash,
+                    state.pegin_flow_id()
+                );
+
+                Ok(())
+            }
+            None => bail!(
+                "Expected to untrack PeginRequested event but no entry found for tx_hash: {:?}",
+                tx_hash
+            ),
+        }
+    }
+
+    fn untrack_pegin_accepted(&mut self, event: EventWithBlock<PeginAccepted>) -> Result<()> {
+        let tx_hash: TxHash = event.inner.acceptPeginTxHash.into();
+
+        match self.tracker.get_mut(&tx_hash) {
+            Some(state) => {
+                self.blockchain
+                    .remove_observer(state.pegin_flow_id().to_string().as_str());
+                state.pegin_accepted = None;
+
+                info!(
+                    "Untracked PeginAccepted event. tx_hash: {:?}, pegin_flow_id: {}",
+                    tx_hash,
+                    state.pegin_flow_id()
+                );
+
+                Ok(())
+            }
+            None => bail!(
+                "Expected to untrack PeginAccepted event but no entry found for tx_hash: {:?}",
+                tx_hash
+            ),
+        }
+    }
+
     fn proxy_request(&self, method_name: &str, json_value: &Value) -> Result<Value> {
         let url = format!("{}/{}", Self::get_tx_dispatcher_url(), method_name);
 
@@ -345,6 +392,12 @@ impl<T: BrokerClientApi> EventProcessor for PeginProcessor<T> {
     fn process_new_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         match event {
             RskPegManagerEvents::PeginRequested(data) => {
+                if data.removed {
+                    info!("Handling PeginRequested removed event: {:?}", data);
+
+                    return self.untrack_pegin_requested(data.clone());
+                }
+
                 info!("Handling PeginRequested event: {:?}", data);
 
                 let pegin_flow_id = Uuid::new_v4();
@@ -368,6 +421,12 @@ impl<T: BrokerClientApi> EventProcessor for PeginProcessor<T> {
                 self.track_pegin_requested(pegin_flow_id, pegin_requested)?;
             }
             RskPegManagerEvents::PeginAccepted(data) => {
+                if data.removed {
+                    info!("Handling PeginAccepted removed event: {:?}", data);
+
+                    return self.untrack_pegin_accepted(data.clone());
+                }
+
                 info!("Handling PeginAccepted event: {:?}", data);
 
                 let tx_hash: TxHash = data.inner.acceptPeginTxHash.into();
@@ -729,7 +788,45 @@ mod tests {
     }
 
     #[test]
-    fn process_new_event_registers_pegin_accepted_event_and_observer() {
+    fn process_removed_pegin_requested_event() {
+        let broker = MockBrokerClientApi::new();
+        let mut processor = PeginProcessor::new(broker);
+
+        let pegin_requested = dummy_pegin_requested_event();
+        let tx_hash: TxHash = pegin_requested.acceptPeginTxHash.into();
+        let event = RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
+            inner: pegin_requested.clone(),
+            block_number: 123.into(),
+            block_hash: BlockHash::from(H256::from([0xaa; 32])),
+            removed: false,
+        });
+
+        let result = processor.process_new_event(&event);
+        let observer_id = processor
+            .tracker
+            .get(&tx_hash)
+            .unwrap()
+            .pegin_flow_id()
+            .to_string();
+        assert!(result.is_ok());
+        assert_eq!(processor.tracker.len(), 1);
+        assert!(processor.blockchain.has_observer(&observer_id));
+
+        let event = RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
+            inner: pegin_requested.clone(),
+            block_number: 123.into(),
+            block_hash: BlockHash::from(H256::from([0xaa; 32])),
+            removed: true, // event is removed
+        });
+
+        let result = processor.process_new_event(&event);
+        assert!(result.is_ok());
+        assert_eq!(processor.tracker.len(), 0);
+        assert!(!processor.blockchain.has_observer(&observer_id));
+    }
+
+    #[test]
+    fn process_new_event_pegin_accepted_event_and_observer() {
         let broker = MockBrokerClientApi::new();
         let mut processor = PeginProcessor::new(broker);
 
@@ -764,6 +861,61 @@ mod tests {
             .pegin_flow_id()
             .to_string();
         assert!(processor.blockchain.has_observer(&observer_id));
+    }
+
+    #[test]
+    fn process_removed_event_pegin_accepted_event() {
+        let broker = MockBrokerClientApi::new();
+        let mut processor = PeginProcessor::new(broker);
+
+        let pegin_requested = dummy_pegin_requested_event();
+        let event = RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
+            inner: pegin_requested,
+            block_number: 122.into(),
+            block_hash: BlockHash::from(H256::from([0xba; 32])),
+            removed: false,
+        });
+        let result = processor.process_new_event(&event);
+        assert!(result.is_ok());
+
+        let pegin_accepted = dummy_pegin_accepted_event();
+        let tx_hash: TxHash = pegin_accepted.acceptPeginTxHash.into();
+        let event = RskPegManagerEvents::PeginAccepted(PeginAcceptedEvent {
+            inner: dummy_pegin_accepted_event(),
+            block_number: 456.into(),
+            block_hash: BlockHash::from(H256::from([0xbb; 32])),
+            removed: false,
+        });
+
+        let result = processor.process_new_event(&event);
+        assert!(result.is_ok());
+        assert_eq!(processor.tracker.len(), 1);
+
+        let event = RskPegManagerEvents::PeginAccepted(PeginAcceptedEvent {
+            inner: dummy_pegin_accepted_event(),
+            block_number: 456.into(),
+            block_hash: BlockHash::from(H256::from([0xbb; 32])),
+            removed: true, // event is removed
+        });
+
+        let result = processor.process_new_event(&event);
+        let observer_id = processor
+            .tracker
+            .get(&tx_hash)
+            .unwrap()
+            .pegin_flow_id()
+            .to_string();
+        assert!(result.is_ok());
+        assert_eq!(processor.tracker.len(), 1);
+        assert!(!processor.blockchain.has_observer(&observer_id));
+        assert!(
+            processor
+                .tracker
+                .get(&tx_hash)
+                .unwrap()
+                .pegin_accepted()
+                .is_none()
+        );
     }
 
     #[test]
