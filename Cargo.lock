@@ -15,6 +15,7 @@ dependencies = [
  "alloy-sol-types",
  "anyhow",
  "bitvmx-client",
+ "chrono",
  "clap",
  "common",
  "hex 0.4.3",
@@ -1616,7 +1617,7 @@ dependencies = [
 [[package]]
 name = "bitvmx-broker"
 version = "0.1.0"
-source = "git+ssh://git@github.com/FairgateLabs/rust-bitvmx-broker.git?rev=2afe95510b1694d0ed87a59c9b69915f65d382e7#2afe95510b1694d0ed87a59c9b69915f65d382e7"
+source = "git+ssh://git@github.com/FairgateLabs/rust-bitvmx-broker.git?rev=98e9b43bdac2a02d6313767a0f2607b7e8f8da5e#98e9b43bdac2a02d6313767a0f2607b7e8f8da5e"
 dependencies = [
  "anyhow",
  "clap",
@@ -1625,6 +1626,7 @@ dependencies = [
  "tarpc",
  "thiserror 2.0.12",
  "tokio",
+ "tokio-serde",
  "tracing",
 ]
 
@@ -2258,7 +2260,7 @@ dependencies = [
  "alloy-transport",
  "anyhow",
  "bitcoin",
- "bitvmx-broker 0.1.0 (git+ssh://git@github.com/FairgateLabs/rust-bitvmx-broker.git?rev=2afe95510b1694d0ed87a59c9b69915f65d382e7)",
+ "bitvmx-broker 0.1.0 (git+ssh://git@github.com/FairgateLabs/rust-bitvmx-broker.git?rev=98e9b43bdac2a02d6313767a0f2607b7e8f8da5e)",
  "bitvmx-client",
  "config 0.15.11",
  "hex 0.4.3",

@@ -1,5 +1,3 @@
-#![cfg(feature = "anvil")]
-
 use actors_mocking::{bitvmx, events};
 use alloy_node_bindings::Anvil;
 use alloy_provider::ProviderBuilder;
@@ -7,7 +5,7 @@ use alloy_provider::network::EthereumWallet;
 use alloy_signer_local::LocalSigner;
 use anyhow::Result;
 use clap::{CommandFactory, Parser};
-use common::msg_broker::broker::BrokerServer;
+use common::msg_broker::broker::BitVmxBrokerServer;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -35,16 +33,6 @@ enum Menu {
         #[arg(help = "The ID of the pegout")]
         pegout_id: String,
     },
-
-    //
-    // Mock received BitVMX events
-    //
-    #[command(visible_alias = "gta")]
-    RecvGetTemporaryPeginAddress {
-        rootstock_deposit_address: String,
-        value: u64,
-        btc_reimbursement_pub_key: String,
-    },
 }
 
 #[tokio::main]
@@ -70,8 +58,8 @@ async fn main() -> Result<()> {
         .expect("Could not set up provider");
 
     // Spawn background thread to update BitVMX consumers
-    let broker_server = BrokerServer::new(9094);
-    let bitvmx_executor = Arc::new(Mutex::new(bitvmx::Executor::new(broker_server)));
+    let bitvmx_broker_server = BitVmxBrokerServer::new(9094);
+    let bitvmx_executor = Arc::new(Mutex::new(bitvmx::Executor::new(bitvmx_broker_server)));
     {
         let bitvmx_executor = Arc::clone(&bitvmx_executor);
         thread::spawn(move || {
@@ -82,7 +70,7 @@ async fn main() -> Result<()> {
                         eprintln!("Error receiving BitVMX message: {e}");
                     }
                 }
-                thread::sleep(Duration::from_secs(5));
+                thread::sleep(Duration::from_millis(250));
             }
         });
     }
@@ -117,20 +105,6 @@ async fn main() -> Result<()> {
                 }
                 Menu::InvokeAdvanceFunds { pegout_id } => {
                     events_executor.advance_funds(pegout_id).await?;
-                }
-                Menu::RecvGetTemporaryPeginAddress {
-                    rootstock_deposit_address,
-                    value,
-                    btc_reimbursement_pub_key,
-                } => {
-                    let executor = bitvmx_executor
-                        .lock()
-                        .expect("Failed to lock bitvmx_executor");
-                    executor.send_get_temporary_pegin_address_event(
-                        rootstock_deposit_address,
-                        value,
-                        btc_reimbursement_pub_key,
-                    )?;
                 }
                 Menu::Exit => {
                     break;

@@ -1,13 +1,16 @@
 use crate::types::{EventDecoder, RskPegManagerEvents};
 use anyhow::{Context, Result, bail};
+use bitvmx_client::types::OutgoingBitVMXApiMessages;
 use common::{
     msg_broker::{
-        broker::{BROKER_SERVER_ID, BrokerClientApi, BrokerError},
+        broker::BitVmxBrokerClientApi,
+        broker::{BROKER_SERVER_ID, BrokerError, UnionBrokerClientApi},
         types::{FromServer, ToServer},
     },
     types::{Address, RskBlockAndUncles},
 };
 use log::{debug, info, trace};
+use std::sync::Arc;
 
 #[cfg(test)]
 use mockall::automock;
@@ -19,16 +22,20 @@ pub trait MonitorApi {
     fn start_bitvmx_monitoring(&mut self) -> Result<()>;
     fn try_event(&mut self) -> Result<Option<RskPegManagerEvents>>;
     fn try_block(&mut self) -> Result<Option<RskBlockAndUncles>>;
-    fn try_bitvmx_event(&mut self) -> Result<Option<FromServer>>;
+    fn try_bitvmx_event(&mut self) -> Result<Option<OutgoingBitVMXApiMessages>>;
     fn cancel_event_monitoring(&mut self) -> Result<()>;
     fn cancel_block_monitoring(&mut self) -> Result<()>;
     fn cancel_bitvmx_monitoring(&mut self) -> Result<()>;
 }
 
-pub struct Monitor<BC: BrokerClientApi> {
-    log_broker: BC,
-    block_broker: BC,
-    bitvmx_broker: BC,
+pub struct Monitor<UBC, BBC>
+where
+    UBC: UnionBrokerClientApi,
+    BBC: BitVmxBrokerClientApi,
+{
+    log_broker: UBC,
+    block_broker: UBC,
+    bitvmx_broker: Arc<BBC>,
     event_decoder: EventDecoder,
     peg_manager_addresses: Vec<Address>,
     block_monitoring_active: bool,
@@ -36,7 +43,11 @@ pub struct Monitor<BC: BrokerClientApi> {
     bitvmx_monitoring_active: bool,
 }
 
-impl<BC: BrokerClientApi> MonitorApi for Monitor<BC> {
+impl<UBC, BBC> MonitorApi for Monitor<UBC, BBC>
+where
+    UBC: UnionBrokerClientApi,
+    BBC: BitVmxBrokerClientApi,
+{
     fn start_event_monitoring(&mut self) -> Result<()> {
         self.start_event_monitoring()
     }
@@ -57,7 +68,7 @@ impl<BC: BrokerClientApi> MonitorApi for Monitor<BC> {
         self.try_block()
     }
 
-    fn try_bitvmx_event(&mut self) -> Result<Option<FromServer>> {
+    fn try_bitvmx_event(&mut self) -> Result<Option<OutgoingBitVMXApiMessages>> {
         self.try_bitvmx_event()
     }
 
@@ -74,11 +85,15 @@ impl<BC: BrokerClientApi> MonitorApi for Monitor<BC> {
     }
 }
 
-impl<BC: BrokerClientApi> Monitor<BC> {
+impl<UBC, BBC> Monitor<UBC, BBC>
+where
+    UBC: UnionBrokerClientApi,
+    BBC: BitVmxBrokerClientApi,
+{
     pub fn new(
-        log_broker: BC,
-        block_broker: BC,
-        bitvmx_broker: BC,
+        log_broker: UBC,
+        block_broker: UBC,
+        bitvmx_broker: Arc<BBC>,
         peg_manager_addresses: Vec<Address>,
     ) -> Self {
         Self {
@@ -147,19 +162,7 @@ impl<BC: BrokerClientApi> Monitor<BC> {
             bail!("Start BitVMX monitoring requested, but it was already active");
         }
 
-        // clean up a potential remaining connection
-        self.request_cancel_bitvmx_monitoring()
-            .context("Cleaning up stalled bitvmx connection")?;
-
         info!("Starting BitVMX monitoring");
-
-        let result = self
-            .send_to_bitvmx_broker(ToServer::SubscribeMockedBitVMX)
-            .context("Broker error on SubscribeBitVMX")?;
-
-        if !result {
-            bail!("Broker could not deliver SubscribeBitVMX")
-        }
 
         self.bitvmx_monitoring_active = true;
 
@@ -206,14 +209,14 @@ impl<BC: BrokerClientApi> Monitor<BC> {
         }
     }
 
-    pub fn try_bitvmx_event(&mut self) -> Result<Option<FromServer>> {
+    pub fn try_bitvmx_event(&mut self) -> Result<Option<OutgoingBitVMXApiMessages>> {
         if !self.bitvmx_monitoring_active {
             bail!("BitVMX monitoring is not active");
         }
 
         match self.bitvmx_broker.try_recv()? {
             Some(response) => {
-                info!("Received BitVMX response: {:?}", response);
+                debug!("Received BitVMX response: {:?}", response);
                 Ok(Some(response))
             }
             None => {
@@ -258,10 +261,6 @@ impl<BC: BrokerClientApi> Monitor<BC> {
             bail!("Cancel BitVMX monitoring requested, but it was not active");
         }
 
-        if !self.request_cancel_bitvmx_monitoring()? {
-            bail!("Broker could not deliver UnsubscribeBitVMX")
-        }
-
         self.bitvmx_monitoring_active = false;
 
         Ok(())
@@ -289,11 +288,6 @@ impl<BC: BrokerClientApi> Monitor<BC> {
             .context("Broker error on UnsubscribeBlocks")
     }
 
-    fn request_cancel_bitvmx_monitoring(&mut self) -> Result<bool> {
-        self.send_to_bitvmx_broker(ToServer::UnsubscribeMockedBitVMX)
-            .context("Broker error on UnsubscribeBitVMX")
-    }
-
     fn send_to_log_broker(&mut self, request: ToServer) -> Result<bool, BrokerError> {
         self.log_broker.send(BROKER_SERVER_ID, request)
     }
@@ -301,16 +295,13 @@ impl<BC: BrokerClientApi> Monitor<BC> {
     fn send_to_block_broker(&mut self, request: ToServer) -> Result<bool, BrokerError> {
         self.block_broker.send(BROKER_SERVER_ID, request)
     }
-
-    fn send_to_bitvmx_broker(&mut self, request: ToServer) -> Result<bool, BrokerError> {
-        self.bitvmx_broker.send(BROKER_SERVER_ID, request)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use anyhow::anyhow;
+    use bitvmx_client::types::IncomingBitVMXApiMessages;
     use common::{
         msg_broker::{
             broker::{BROKER_SERVER_ID, MockBrokerClientApi},
@@ -321,7 +312,6 @@ mod tests {
         },
     };
     use mockall::predicate::*;
-    use serde_json::json;
 
     #[test]
     fn test_start_event_monitoring_success() {
@@ -337,7 +327,7 @@ mod tests {
         let mut monitor = Monitor::new(
             log_broker,
             MockBrokerClientApi::new(),
-            MockBrokerClientApi::new(),
+            Arc::new(MockBrokerClientApi::new()),
             vec![address_1, address_2],
         );
 
@@ -362,7 +352,7 @@ mod tests {
         let mut monitor = Monitor::new(
             log_broker,
             MockBrokerClientApi::new(),
-            MockBrokerClientApi::new(),
+            Arc::new(MockBrokerClientApi::new()),
             vec![address_1],
         );
         let err = monitor.start_event_monitoring();
@@ -380,7 +370,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
             MockBrokerClientApi::new(),
-            MockBrokerClientApi::new(),
+            Arc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
         monitor.log_monitoring_active = true;
@@ -403,7 +393,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
             block_broker,
-            MockBrokerClientApi::new(),
+            Arc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
         assert!(monitor.start_block_monitoring().is_ok());
@@ -426,7 +416,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
             block_broker,
-            MockBrokerClientApi::new(),
+            Arc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
         let err = monitor.start_block_monitoring();
@@ -444,7 +434,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
             MockBrokerClientApi::new(),
-            MockBrokerClientApi::new(),
+            Arc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
         monitor.block_monitoring_active = true;
@@ -453,56 +443,11 @@ mod tests {
     }
 
     #[test]
-    fn test_start_bitvmx_monitoring_success() {
-        let mut bitvmx_broker = MockBrokerClientApi::new();
-        expect_unsubscribe_bitvmx(&mut bitvmx_broker, 1);
-        expect_subscribe_bitvmx(&mut bitvmx_broker, 1);
-
-        let mut monitor = Monitor::new(
-            MockBrokerClientApi::new(),
-            MockBrokerClientApi::new(),
-            bitvmx_broker,
-            vec![get_fake_address_1()],
-        );
-
-        assert!(monitor.start_bitvmx_monitoring().is_ok());
-        assert!(monitor.bitvmx_monitoring_active);
-    }
-
-    #[test]
-    fn test_start_bitvmx_monitoring_fails_on_broker_error() {
-        let mut bitvmx_broker = MockBrokerClientApi::new();
-        expect_unsubscribe_bitvmx(&mut bitvmx_broker, 1);
-        bitvmx_broker
-            .expect_send()
-            .with(
-                eq(BROKER_SERVER_ID),
-                function(|req: &ToServer| matches!(req, ToServer::SubscribeMockedBitVMX)),
-            )
-            .return_once(|_, _| Err(BrokerError::UnknownError(anyhow!("fake error"))));
-
-        let mut monitor = Monitor::new(
-            MockBrokerClientApi::new(),
-            MockBrokerClientApi::new(),
-            bitvmx_broker,
-            vec![get_fake_address_1()],
-        );
-        let err = monitor.start_bitvmx_monitoring();
-        assert!(err.is_err());
-        assert!(
-            err.as_ref()
-                .unwrap_err()
-                .to_string()
-                .contains("Broker error on SubscribeBitVMX")
-        );
-    }
-
-    #[test]
     fn test_start_bitvmx_monitoring_fails_if_already_active() {
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
             MockBrokerClientApi::new(),
-            MockBrokerClientApi::new(),
+            Arc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
         monitor.bitvmx_monitoring_active = true;
@@ -527,7 +472,7 @@ mod tests {
         let mut monitor = Monitor::new(
             log_broker,
             MockBrokerClientApi::new(),
-            MockBrokerClientApi::new(),
+            Arc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
         monitor.log_monitoring_active = true;
@@ -544,7 +489,7 @@ mod tests {
         let mut monitor = Monitor::new(
             log_broker,
             MockBrokerClientApi::new(),
-            MockBrokerClientApi::new(),
+            Arc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
         monitor.log_monitoring_active = true;
@@ -573,7 +518,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
             block_broker,
-            MockBrokerClientApi::new(),
+            Arc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
         monitor.block_monitoring_active = true;
@@ -596,7 +541,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
             block_broker,
-            MockBrokerClientApi::new(),
+            Arc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
         monitor.block_monitoring_active = true;
@@ -607,17 +552,18 @@ mod tests {
 
     #[test]
     fn test_try_bitvmx_event_returns_some() {
-        let value = FromServer::GetTemporaryPegInAddress(json!("some value"));
+        let value = OutgoingBitVMXApiMessages::Pong();
         let mock_value = value.clone();
-        let mut bitvmx_broker = MockBrokerClientApi::new();
+        let mut bitvmx_broker =
+            MockBrokerClientApi::<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>::new();
         bitvmx_broker
             .expect_try_recv()
             .return_once(move || Ok(Some(mock_value)));
 
         let mut monitor = Monitor::new(
-            MockBrokerClientApi::new(),
-            MockBrokerClientApi::new(),
-            bitvmx_broker,
+            MockBrokerClientApi::<ToServer, FromServer>::new(),
+            MockBrokerClientApi::<ToServer, FromServer>::new(),
+            Arc::new(bitvmx_broker),
             vec![get_fake_address_1()],
         );
         monitor.bitvmx_monitoring_active = true;
@@ -625,7 +571,7 @@ mod tests {
         let result = monitor
             .try_bitvmx_event()
             .expect("Failed to receive BitVMX event");
-        assert_eq!(result, Some(value));
+        assert!(matches!(result, Some(OutgoingBitVMXApiMessages::Pong())));
     }
 
     #[test]
@@ -638,7 +584,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
             MockBrokerClientApi::new(),
-            bitvmx_broker,
+            Arc::new(bitvmx_broker),
             vec![get_fake_address_1()],
         );
         monitor.bitvmx_monitoring_active = true;
@@ -646,7 +592,7 @@ mod tests {
         let result = monitor
             .try_bitvmx_event()
             .expect("Failed to receive BitVMX event");
-        assert_eq!(result, None);
+        assert!(matches!(result, None));
     }
 
     #[test]
@@ -661,7 +607,7 @@ mod tests {
         let mut monitor = Monitor::new(
             log_broker,
             MockBrokerClientApi::new(),
-            MockBrokerClientApi::new(),
+            Arc::new(MockBrokerClientApi::new()),
             vec![address_1, address_2],
         );
         monitor.log_monitoring_active = true;
@@ -678,7 +624,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
             block_broker,
-            MockBrokerClientApi::new(),
+            Arc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
         monitor.block_monitoring_active = true;
@@ -689,13 +635,12 @@ mod tests {
 
     #[test]
     fn test_cancel_bitvmx_monitoring_success() {
-        let mut bitvmx_broker = MockBrokerClientApi::new();
-        expect_unsubscribe_bitvmx(&mut bitvmx_broker, 1);
+        let bitvmx_broker = MockBrokerClientApi::new();
 
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
             MockBrokerClientApi::new(),
-            bitvmx_broker,
+            Arc::new(bitvmx_broker),
             vec![get_fake_address_1()],
         );
         monitor.bitvmx_monitoring_active = true;
@@ -704,7 +649,10 @@ mod tests {
         assert!(!monitor.bitvmx_monitoring_active);
     }
 
-    fn expect_subscribe_logs(log_broker: &mut MockBrokerClientApi, addr: Address) {
+    fn expect_subscribe_logs(
+        log_broker: &mut MockBrokerClientApi<ToServer, FromServer>,
+        addr: Address,
+    ) {
         log_broker
             .expect_send()
             .with(
@@ -716,7 +664,10 @@ mod tests {
             .return_once(|_, _| Ok(true));
     }
 
-    fn expect_subscribe_blocks(block_broker: &mut MockBrokerClientApi, times: usize) {
+    fn expect_subscribe_blocks(
+        block_broker: &mut MockBrokerClientApi<ToServer, FromServer>,
+        times: usize,
+    ) {
         block_broker
             .expect_send()
             .with(
@@ -727,18 +678,10 @@ mod tests {
             .returning(|_, _| Ok(true));
     }
 
-    fn expect_subscribe_bitvmx(bitvmx_broker: &mut MockBrokerClientApi, times: usize) {
-        bitvmx_broker
-            .expect_send()
-            .with(
-                eq(BROKER_SERVER_ID),
-                function(|req: &ToServer| matches!(req, ToServer::SubscribeMockedBitVMX)),
-            )
-            .times(times)
-            .returning(|_, _| Ok(true));
-    }
-
-    fn expect_unsubscribe_logs(log_broker: &mut MockBrokerClientApi, addr: Address) {
+    fn expect_unsubscribe_logs(
+        log_broker: &mut MockBrokerClientApi<ToServer, FromServer>,
+        addr: Address,
+    ) {
         log_broker
             .expect_send()
             .with(
@@ -750,23 +693,15 @@ mod tests {
             .return_once(|_, _| Ok(true));
     }
 
-    fn expect_unsubscribe_blocks(block_broker: &mut MockBrokerClientApi, times: usize) {
+    fn expect_unsubscribe_blocks(
+        block_broker: &mut MockBrokerClientApi<ToServer, FromServer>,
+        times: usize,
+    ) {
         block_broker
             .expect_send()
             .with(
                 eq(BROKER_SERVER_ID),
                 function(|req: &ToServer| matches!(req, ToServer::UnsubscribeBlocks)),
-            )
-            .times(times)
-            .returning(|_, _| Ok(true));
-    }
-
-    fn expect_unsubscribe_bitvmx(bitvmx_broker: &mut MockBrokerClientApi, times: usize) {
-        bitvmx_broker
-            .expect_send()
-            .with(
-                eq(BROKER_SERVER_ID),
-                function(|req: &ToServer| matches!(req, ToServer::UnsubscribeMockedBitVMX)),
             )
             .times(times)
             .returning(|_, _| Ok(true));

@@ -20,6 +20,7 @@ serde_json = { workspace = true }
 # TODO(jira) https://rsklabs.atlassian.net/browse/ub-176
 bitvmx-client = { workspace = true }
 hex = "0.4"
+chrono = "0.4.41"
 
 [features]
 default = []

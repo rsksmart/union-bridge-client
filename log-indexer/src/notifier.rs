@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, anyhow};
 use common::constants::indexer::NOTIFIER_CHECK_PERIOD;
-use common::msg_broker::broker::BrokerServerApi;
+use common::msg_broker::broker::UnionBrokerServerApi;
 use common::msg_broker::types::{FromServer, ToServer};
 use common::shutdown_flag::ShutdownFlag;
 use common::types::{Address, RskLog};
@@ -11,7 +11,7 @@ use std::sync::mpsc;
 use std::sync::mpsc::RecvTimeoutError;
 use std::time::Duration;
 
-pub struct Notifier<BS: BrokerServerApi> {
+pub struct Notifier<BS: UnionBrokerServerApi> {
     new_log_channel: mpsc::Receiver<RskLog>,
     msg_broker: BS,
     contracts_with_consumers: HashMap<Address, HashSet<u32>>,
@@ -19,7 +19,7 @@ pub struct Notifier<BS: BrokerServerApi> {
     shutdown_flag: ShutdownFlag,
 }
 
-impl<BS: BrokerServerApi> Notifier<BS> {
+impl<BS: UnionBrokerServerApi> Notifier<BS> {
     pub fn new(
         indexer_receiver: mpsc::Receiver<RskLog>,
         msg_broker: BS,
@@ -414,7 +414,7 @@ mod tests {
 
     fn expect_try_recv_subscribe(
         client_requests: Vec<ClientRequest>,
-        mock_broker_server: &mut MockBrokerServerApi,
+        mock_broker_server: &mut MockBrokerServerApi<ToServer, FromServer>,
     ) {
         use std::collections::VecDeque;
 
@@ -431,7 +431,7 @@ mod tests {
     fn expect_send_log(
         dest: u32,
         expected_log: &RskLog,
-        mock_broker_server: &mut MockBrokerServerApi,
+        mock_broker_server: &mut MockBrokerServerApi<ToServer, FromServer>,
     ) {
         mock_broker_server
             .expect_send()
