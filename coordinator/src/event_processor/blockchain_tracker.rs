@@ -140,6 +140,7 @@ impl BlockchainView {
             // update all visitors of the replacement
             self.notify_added_block(&new_block);
             self.notify_removed_block(&removed_block);
+
             return;
         }
 
@@ -335,7 +336,7 @@ mod tests {
         let block_number = BlockNumber::from(number);
         // different hash to make it an alternative block
         let block_hash = BlockHash::from(H256::from_low_u64_be(number + 1000));
-        let parent_hash = BlockHash::from(H256::from_low_u64_be(number.saturating_sub(1)));
+        let parent_hash = BlockHash::from(H256::from_low_u64_be((number + 1000).saturating_sub(1)));
         let timestamp = BlockTimestamp::from(number * 1000);
         let difficulty = BlockDifficulty::from(U256::from(500));
         let total_difficulty = difficulty.mul(BlockDifficulty::from(U256::from(1000)));
@@ -429,10 +430,17 @@ mod tests {
     }
 
     #[test]
-    fn test_blockchain_view_reorg_observer_notifications() {
+    fn test_blockchain_view_reorg_old_block_observer_notifications() {
         let mut chain_view = BlockchainView::new();
-        let tracker = Rc::new(RefCell::new(NotificationTracker::new("test")));
+        let tracker = Rc::new(RefCell::new(NotificationTracker::new("tracker")));
         chain_view.add_observer(tracker.clone());
+
+        let confirmations = Rc::new(RefCell::new(BlockConfirmations::new(
+            "confirmations".to_string(),
+            BlockNumber::from(100),
+            3,
+        )));
+        chain_view.add_observer(confirmations.clone());
 
         // build initial chain: 100 -> 101 -> 102 -> 103
         let block_100 = create_test_block(100);
@@ -444,6 +452,10 @@ mod tests {
         chain_view.update(block_101.clone());
         chain_view.update(block_102.clone());
         chain_view.update(block_103.clone());
+
+        // should have 4 confirmations
+        assert_eq!(confirmations.borrow().accum(), 4);
+        assert!(confirmations.borrow().is_confirmed());
 
         tracker.borrow().clear();
 
@@ -470,30 +482,6 @@ mod tests {
         );
         assert_eq!(chain_view.get_at(&BlockNumber::from(102)), None);
         assert_eq!(chain_view.get_at(&BlockNumber::from(103)), None);
-    }
-
-    #[test]
-    fn test_confirmations_observer_reorg_behavior() {
-        let mut chain_view = BlockchainView::new();
-        let confirmations = Rc::new(RefCell::new(BlockConfirmations::new(
-            "test".to_string(),
-            BlockNumber::from(100),
-            3,
-        )));
-        chain_view.add_observer(confirmations.clone());
-
-        // build initial chain and accumulate confirmations
-        chain_view.update(create_test_block(100));
-        chain_view.update(create_test_block(101));
-        chain_view.update(create_test_block(102));
-        chain_view.update(create_test_block(103));
-
-        // should have 4 confirmations
-        assert_eq!(confirmations.borrow().accum(), 4);
-        assert!(confirmations.borrow().is_confirmed());
-
-        // simulate reorg back to block 101
-        chain_view.update(create_alt_test_block(101));
 
         // should have 3 confirmations now:
         // - started with 4 confirmations (blocks 100, 101, 102, 103)
@@ -503,6 +491,50 @@ mod tests {
         //   4 - 2 + 1 - 1 = 2 confirmations (blocks 100, alt_101, and the +1 from adding alt_101)
         assert_eq!(confirmations.borrow().accum(), 2);
         assert!(!confirmations.borrow().is_confirmed());
+    }
+
+    #[test]
+    #[should_panic(expected = "Non-consecutive block or parent hash mismatch")]
+    fn test_blockchain_view_fails_on_tip_gap() {
+        let mut chain_view = BlockchainView::new();
+        let tracker = Rc::new(RefCell::new(NotificationTracker::new("test")));
+        chain_view.add_observer(tracker.clone());
+
+        // build initial chain: 100 -> 101 -> 102 -> 103
+        let block_100 = create_test_block(100);
+        let block_101 = create_test_block(101);
+
+        chain_view.update(block_100.clone());
+        chain_view.update(block_101.clone());
+
+        tracker.borrow().clear();
+
+        // simulate reorg at block 102
+        let alt_block_102 = create_test_block(103);
+
+        chain_view.update(alt_block_102.clone());
+    }
+
+    #[test]
+    #[should_panic(expected = "Non-consecutive block or parent hash mismatch")]
+    fn test_blockchain_view_fails_on_not_connected_tip() {
+        let mut chain_view = BlockchainView::new();
+        let tracker = Rc::new(RefCell::new(NotificationTracker::new("test")));
+        chain_view.add_observer(tracker.clone());
+
+        // build initial chain: 100 -> 101 -> 102 -> 103
+        let block_100 = create_test_block(100);
+        let block_101 = create_test_block(101);
+
+        chain_view.update(block_100.clone());
+        chain_view.update(block_101.clone());
+
+        tracker.borrow().clear();
+
+        // simulate reorg at block 102
+        let alt_block_102 = create_alt_test_block(102);
+
+        chain_view.update(alt_block_102.clone());
     }
 
     #[test]
