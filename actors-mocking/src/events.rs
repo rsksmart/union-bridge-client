@@ -22,35 +22,36 @@ impl<P: Provider + Clone> Executor<P> {
     pub async fn new(provider: P, provider_url: &str) -> Result<Self> {
         println!("Deploying FakePegManager to {}...", provider_url);
 
-        // deploy FakePegManager
+        let real_peg_manager = Self::deploy_real_peg_manager(&provider)?;
+
+        // deploy FakePegManager: must go after real PegManager deployment to not affect generated addresses
         let fake_peg_manager = FakePegManager::deploy(provider.clone())
             .await
             .context("Cannot deploy FakePegManager")?;
 
         println!("FakePegManager deployed at {}", fake_peg_manager.address());
 
-        // TODO: find a way to automate deployment and setup script
-        // let real_peg_manager = Self::deploy_real_peg_manager(&provider, provider_url)?;
-
         Ok(Self {
             provider,
-            real_peg_manager: None,
+            real_peg_manager: Some(real_peg_manager),
             fake_peg_manager,
         })
     }
 
     // TODO check with Pedro if we can improve the deployment via Rust (alloy) directly, not via sh script
-    fn deploy_real_peg_manager(provider: &P, rpc_url: &str) -> Result<PegManagerInstance<P>> {
-        println!("Deploying real PegManager on {}...", rpc_url);
+    fn deploy_real_peg_manager(provider: &P) -> Result<PegManagerInstance<P>> {
+        println!("Deploying real PegManager");
 
+        let contracts_path =
+            env::var("UNION_CONTRACTS_PATH").context("UNION_CONTRACTS_PATH not set")?;
         let deploy_script = env::var("UNION_CONTRACTS_DEPLOY_SCRIPT")
             .context("UNION_CONTRACTS_DEPLOY_SCRIPT not set")?;
         let setup_script = env::var("UNION_CONTRACTS_SETUP_SCRIPT")
             .context("UNION_CONTRACTS_SETUP_SCRIPT not set")?;
 
         // Run deployment script
-        let output_lines =
-            Self::run_script(&deploy_script, rpc_url).context("Failed to execute deploy script")?;
+        let output_lines = Self::run_script(&contracts_path, &deploy_script)
+            .context("Failed to execute deploy script")?;
 
         // Find PegManager address in deploy script output
         let address_line = output_lines
@@ -58,15 +59,16 @@ impl<P: Provider + Clone> Executor<P> {
             .find_map(|line| Self::try_get_peg_manager_address(line.clone()))
             .ok_or_else(|| anyhow!("PegManager address not found in output"))?;
 
-        println!("Real PegManager deployed at address: {}", address_line);
-
         // Run setup script
         println!("Running setup script...");
-        Self::run_script(&setup_script, rpc_url).context("Failed to execute setup script")?;
+        Self::run_script(&contracts_path, &setup_script)
+            .context("Failed to execute setup script")?;
 
         let real_peg_manager_address = address_line
             .parse::<Address>()
             .context("Parsing logged address to Address failed")?;
+
+        println!("Real PegManager deployed at {}", real_peg_manager_address);
 
         Ok(PegManagerInstance::new(
             real_peg_manager_address,
@@ -74,10 +76,12 @@ impl<P: Provider + Clone> Executor<P> {
         ))
     }
 
-    fn run_script(script_path: &str, rpc_url: &str) -> Result<Vec<String>> {
+    fn run_script(contracts_path: &str, script_path: &str) -> Result<Vec<String>> {
+        let script_full_path = format!("{}/{}", contracts_path, script_path);
+
         let mut child = Command::new("bash")
-            .arg(script_path)
-            .env("RPC_URL", rpc_url)
+            .current_dir(contracts_path)
+            .arg(script_full_path)
             .stdout(Stdio::piped())
             .spawn()
             .with_context(|| format!("Failed to spawn script: {}", script_path))?;
