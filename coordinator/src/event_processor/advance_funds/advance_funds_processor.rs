@@ -21,6 +21,7 @@ use primitive_types::U256;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::Arc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;
 
@@ -30,8 +31,8 @@ where
     BC: BitVmxBrokerClientApi,
 {
     rt_sync: RuntimeSync,
-    contracts: CG,
-    bitvmx_broker: BC,
+    contracts: Arc<CG>,
+    bitvmx_broker: Arc<BC>,
     first_block_to_process: Option<BlockNumber>,
     request_events: HashMap<String, RequestAdvanceFundsEvent>,
     advance_funds_checker: Option<Rc<RefCell<CheckForkAccumulator>>>,
@@ -43,7 +44,7 @@ where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
 {
-    pub fn new(rt_sync: RuntimeSync, contracts: CG, bitvmx_broker: BC) -> Self {
+    pub fn new(rt_sync: RuntimeSync, contracts: Arc<CG>, bitvmx_broker: Arc<BC>) -> Self {
         Self {
             rt_sync,
             contracts,
@@ -56,7 +57,7 @@ where
     }
 
     #[cfg(test)]
-    pub fn new_for_test(contracts: CG, bitvmx_broker: BC) -> Self {
+    pub fn new_for_test(contracts: Arc<CG>, bitvmx_broker: Arc<BC>) -> Self {
         Self {
             rt_sync: RuntimeSync::new().unwrap(),
             contracts,
@@ -413,8 +414,8 @@ mod tests {
     #[test]
     fn test_new_processor_initial_state_is_clear() {
         let processor = AdvanceFundsProcessor::new_for_test(
-            MockRskContractsGatewayApi::new(),
-            MockBrokerClientApi::new(),
+            Arc::new(MockRskContractsGatewayApi::new()),
+            Arc::new(MockBrokerClientApi::new()),
         );
         assert!(processor.first_block_to_process.is_none());
         assert!(processor.request_events.is_empty());
@@ -426,8 +427,8 @@ mod tests {
     #[test]
     fn test_process_new_event_request_advance_funds_keeps_events() {
         let mut processor = AdvanceFundsProcessor::new_for_test(
-            MockRskContractsGatewayApi::new(),
-            MockBrokerClientApi::new(),
+            Arc::new(MockRskContractsGatewayApi::new()),
+            Arc::new(MockBrokerClientApi::new()),
         );
 
         let request_block = create_fake_block(100.into(), U256::from(50));
@@ -485,8 +486,8 @@ mod tests {
     #[test]
     fn test_process_new_event_advance_funds_creates_checker_when_one_request_exists() {
         let mut processor = AdvanceFundsProcessor::new_for_test(
-            MockRskContractsGatewayApi::new(),
-            MockBrokerClientApi::new(),
+            Arc::new(MockRskContractsGatewayApi::new()),
+            Arc::new(MockBrokerClientApi::new()),
         );
         let request_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
@@ -574,8 +575,8 @@ mod tests {
     fn test_process_new_event_advance_funds_advance_funds_creates_advance_funds_when_two_requests_exist()
      {
         let mut processor = AdvanceFundsProcessor::new_for_test(
-            MockRskContractsGatewayApi::new(),
-            MockBrokerClientApi::new(),
+            Arc::new(MockRskContractsGatewayApi::new()),
+            Arc::new(MockBrokerClientApi::new()),
         );
         let request_block_1 =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
@@ -674,8 +675,8 @@ mod tests {
     #[test]
     fn test_process_new_event_advance_funds_advance_funds_exits_when_no_requests() {
         let mut processor = AdvanceFundsProcessor::new_for_test(
-            MockRskContractsGatewayApi::new(),
-            MockBrokerClientApi::new(),
+            Arc::new(MockRskContractsGatewayApi::new()),
+            Arc::new(MockBrokerClientApi::new()),
         );
         let advance_funds_block = create_fake_block(110.into(), U256::from(51));
         let advance_funds_event = create_fake_advance_funds_event("peg123");
@@ -698,8 +699,8 @@ mod tests {
     #[test]
     fn test_process_new_event_advance_funds_accumulator_exits_when_no_matching_request() {
         let mut processor = AdvanceFundsProcessor::new_for_test(
-            MockRskContractsGatewayApi::new(),
-            MockBrokerClientApi::new(),
+            Arc::new(MockRskContractsGatewayApi::new()),
+            Arc::new(MockBrokerClientApi::new()),
         );
         let request_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
@@ -753,7 +754,8 @@ mod tests {
         let mut rsk_gateway = MockRskContractsGatewayApi::new();
         expect_notify_check_fork(&mut rsk_gateway, pegout_id);
 
-        let mut processor = AdvanceFundsProcessor::new_for_test(rsk_gateway, bitvmx_broker);
+        let mut processor =
+            AdvanceFundsProcessor::new_for_test(Arc::new(rsk_gateway), Arc::new(bitvmx_broker));
 
         let request_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
@@ -900,7 +902,8 @@ mod tests {
         let mut rsk_gateway = MockRskContractsGatewayApi::new();
         expect_notify_check_fork(&mut rsk_gateway, pegout_id);
 
-        let mut processor = AdvanceFundsProcessor::new_for_test(rsk_gateway, bitvmx_broker);
+        let mut processor =
+            AdvanceFundsProcessor::new_for_test(Arc::new(rsk_gateway), Arc::new(bitvmx_broker));
 
         let request_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
@@ -1045,8 +1048,8 @@ mod tests {
     #[test]
     fn test_process_advance_funds_event_without_blocks_early_exits() {
         let mut processor = AdvanceFundsProcessor::new_for_test(
-            MockRskContractsGatewayApi::new(),
-            MockBrokerClientApi::new(),
+            Arc::new(MockRskContractsGatewayApi::new()),
+            Arc::new(MockBrokerClientApi::new()),
         );
 
         let request_block = create_fake_block(100.into(), U256::from(50));
@@ -1088,8 +1091,8 @@ mod tests {
     #[test]
     fn test_process_old_block_early_exits() {
         let mut processor = AdvanceFundsProcessor::new_for_test(
-            MockRskContractsGatewayApi::new(),
-            MockBrokerClientApi::new(),
+            Arc::new(MockRskContractsGatewayApi::new()),
+            Arc::new(MockBrokerClientApi::new()),
         );
 
         let request_block = create_fake_block(100.into(), U256::from(50));
@@ -1115,8 +1118,8 @@ mod tests {
     #[test]
     fn test_shutdown_with_active_advance_funds_works() {
         let mut processor = AdvanceFundsProcessor::new_for_test(
-            MockRskContractsGatewayApi::new(),
-            MockBrokerClientApi::new(),
+            Arc::new(MockRskContractsGatewayApi::new()),
+            Arc::new(MockBrokerClientApi::new()),
         );
 
         let request_block =
@@ -1175,8 +1178,8 @@ mod tests {
     #[test]
     fn test_remove_request_advance_funds_event_removes_it() {
         let mut processor = AdvanceFundsProcessor::new_for_test(
-            MockRskContractsGatewayApi::new(),
-            MockBrokerClientApi::new(),
+            Arc::new(MockRskContractsGatewayApi::new()),
+            Arc::new(MockBrokerClientApi::new()),
         );
 
         let request_block_1 = create_fake_block(100.into(), U256::from(50));
@@ -1233,8 +1236,8 @@ mod tests {
     #[test]
     fn test_remove_request_advance_funds_block_removes_it() {
         let mut processor = AdvanceFundsProcessor::new_for_test(
-            MockRskContractsGatewayApi::new(),
-            MockBrokerClientApi::new(),
+            Arc::new(MockRskContractsGatewayApi::new()),
+            Arc::new(MockBrokerClientApi::new()),
         );
 
         let request_block =
@@ -1283,8 +1286,8 @@ mod tests {
     #[test]
     fn test_remove_advance_funds_advance_funds_block_removes_it() {
         let mut processor = AdvanceFundsProcessor::new_for_test(
-            MockRskContractsGatewayApi::new(),
-            MockBrokerClientApi::new(),
+            Arc::new(MockRskContractsGatewayApi::new()),
+            Arc::new(MockBrokerClientApi::new()),
         );
         let advance_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
@@ -1335,8 +1338,8 @@ mod tests {
     #[test]
     fn test_remove_advance_funds_advance_funds_event_stops_advance_funds() {
         let mut processor = AdvanceFundsProcessor::new_for_test(
-            MockRskContractsGatewayApi::new(),
-            MockBrokerClientApi::new(),
+            Arc::new(MockRskContractsGatewayApi::new()),
+            Arc::new(MockBrokerClientApi::new()),
         );
         let request_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
@@ -1401,7 +1404,8 @@ mod tests {
         let mut rsk_gateway = MockRskContractsGatewayApi::new();
         expect_notify_check_fork(&mut rsk_gateway, pegout_id);
 
-        let mut processor = AdvanceFundsProcessor::new_for_test(rsk_gateway, bitvmx_broker);
+        let mut processor =
+            AdvanceFundsProcessor::new_for_test(Arc::new(rsk_gateway), Arc::new(bitvmx_broker));
 
         // create initial request block
         let request_block =
@@ -1591,8 +1595,8 @@ mod tests {
     #[test]
     fn test_process_blocks_handles_deep_reorg_before_kickoff() {
         let mut processor = AdvanceFundsProcessor::new_for_test(
-            MockRskContractsGatewayApi::new(),
-            MockBrokerClientApi::new(),
+            Arc::new(MockRskContractsGatewayApi::new()),
+            Arc::new(MockBrokerClientApi::new()),
         );
         let pegout_id = "peg123";
 
@@ -1732,7 +1736,8 @@ mod tests {
         let mut rsk_gateway = MockRskContractsGatewayApi::new();
         expect_notify_check_fork(&mut rsk_gateway, pegout_id);
 
-        let mut processor = AdvanceFundsProcessor::new_for_test(rsk_gateway, bitvmx_broker);
+        let mut processor =
+            AdvanceFundsProcessor::new_for_test(Arc::new(rsk_gateway), Arc::new(bitvmx_broker));
 
         // set up request and kickoff like previous tests
         let request_block =
@@ -1859,8 +1864,8 @@ mod tests {
     #[test]
     fn test_advance_funds_with_active_accumulator_closes_existing_and_returns() {
         let mut processor = AdvanceFundsProcessor::new_for_test(
-            MockRskContractsGatewayApi::new(),
-            MockBrokerClientApi::new(),
+            Arc::new(MockRskContractsGatewayApi::new()),
+            Arc::new(MockBrokerClientApi::new()),
         );
         let request_block_1 =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));

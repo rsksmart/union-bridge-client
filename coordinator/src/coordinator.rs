@@ -1,48 +1,46 @@
-use crate::event_processor::BitVmxPingPongProcessor;
 use crate::{
     event_processor::{AdvanceFundsProcessor, EventProcessor},
     monitor::MonitorApi,
 };
 use anyhow::{Context, Result};
-use bitvmx_client::types::OutgoingBitVMXApiMessages;
-use common::msg_broker::broker::BitVmxBrokerClientApi;
+use bitvmx_client::types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 use common::runtime_sync::RuntimeSync;
 use common::shutdown_flag::ShutdownFlag;
-use common::types::RskBlockAndUncles;
-use log::error;
+use log::{error, info, warn};
+use std::ops::Sub;
+use std::sync::Arc;
+use std::time::Instant;
 use std::{thread, time::Duration};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 
 const CHECK_PERIOD: Duration = Duration::from_secs(1);
+const BITVMX_NOT_RESPONDING_THRESHOLD: Duration = Duration::from_secs(30);
+const BITVMX_PING_AFTER_SILENCE: Duration = Duration::from_secs(15);
 
-pub struct Coordinator<M: MonitorApi> {
+pub struct Coordinator<M: MonitorApi, BC: BitVmxBrokerClientApi> {
     monitor: M,
-    bitvmx_ping_pong_processor: Box<dyn EventProcessor>,
+    bitvmx_broker: Arc<BC>,
     processors: Vec<Box<dyn EventProcessor>>,
     check_period: Duration,
     shutdown_flag: ShutdownFlag,
 }
 
-impl<M: MonitorApi> Coordinator<M> {
-    pub fn new<
-        BC: BitVmxBrokerClientApi + Clone + 'static,
-        CG: RskContractsGatewayApi + Clone + 'static,
-    >(
+impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
+    pub fn new<CG: RskContractsGatewayApi + 'static>(
         rt_sync: RuntimeSync,
         monitor: M,
         contracts_gateway: CG,
-        bitvmx_broker: BC,
+        bitvmx_broker: Arc<BC>,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
         Self {
             monitor,
-            bitvmx_ping_pong_processor: Box::new(BitVmxPingPongProcessor::new(
-                bitvmx_broker.clone(),
-            )),
+            bitvmx_broker: bitvmx_broker.clone(),
             processors: vec![Box::new(AdvanceFundsProcessor::new(
                 rt_sync,
-                contracts_gateway.clone(),
-                bitvmx_broker.clone(),
+                Arc::new(contracts_gateway),
+                bitvmx_broker,
             ))],
             check_period: CHECK_PERIOD,
             shutdown_flag,
@@ -51,13 +49,13 @@ impl<M: MonitorApi> Coordinator<M> {
 
     pub fn new_for_tests(
         monitor: M,
-        bitvmx_ping_pong_processor: Box<dyn EventProcessor>,
+        bitvmx_broker: BC,
         processors: Vec<Box<dyn EventProcessor>>,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
         Self {
             monitor,
-            bitvmx_ping_pong_processor,
+            bitvmx_broker: Arc::new(bitvmx_broker),
             processors,
             check_period: Duration::from_millis(1),
             shutdown_flag,
@@ -77,11 +75,18 @@ impl<M: MonitorApi> Coordinator<M> {
             .start_bitvmx_monitoring()
             .context("Failed to start BitVMX event monitoring")?;
 
+        let mut bitvmx_last_msg = Instant::now().sub(BITVMX_PING_AFTER_SILENCE);
+        let mut bitvmx_ping: Option<Instant> = None;
+
+        // TODO we will need to think what happens if we accumulate messages of a certain type
+
         let result = (|| -> Result<()> {
             loop {
                 if !self.is_running() {
                     break;
                 }
+
+                self.check_bitvmx_liveness(&mut bitvmx_ping, bitvmx_last_msg);
 
                 let mut message_received = false;
 
@@ -90,7 +95,8 @@ impl<M: MonitorApi> Coordinator<M> {
                     .try_bitvmx_event()
                     .context("Error getting BitVMX event")?
                 {
-                    self.check_bitvmx_pong(&event);
+                    self.check_bitvmx_pong(&event).then(|| bitvmx_ping = None);
+                    bitvmx_last_msg = Instant::now();
 
                     // each processor decides if the event is relevant
                     self.processors
@@ -117,8 +123,6 @@ impl<M: MonitorApi> Coordinator<M> {
                 //  if block monitor restarted, this is not realising and keeps waiting logs forever
                 //  maybe using persistent storage instead of memory fixes it?
                 if let Some(block) = self.monitor.try_block().context("Error getting block")? {
-                    self.send_bitvmx_ping(&block);
-
                     self.processors.iter_mut().for_each(|p| {
                         if let Err(e) = p.process_new_block(&block) {
                             error!("Error processing block {:?}: {:?}", block, e);
@@ -153,21 +157,42 @@ impl<M: MonitorApi> Coordinator<M> {
         result
     }
 
-    fn send_bitvmx_ping(&mut self, block: &RskBlockAndUncles) {
-        let result = self.bitvmx_ping_pong_processor.process_new_block(&block);
-        if result.is_err() {
-            // TODO for now just log it, but we should handle it properly
-            error!("Error checking BitVMX status : {:?}", result);
+    fn check_bitvmx_liveness(&self, bitvmx_ping: &mut Option<Instant>, bitvmx_last_msg: Instant) {
+        if let Some(ping) = bitvmx_ping {
+            if ping.elapsed() > BITVMX_NOT_RESPONDING_THRESHOLD {
+                // TODO in the future we have to properly handle this situation
+                warn!("BitVMX is not responding");
+                *bitvmx_ping = None;
+            }
+        }
+
+        // send ping if we have not received any message from BitVMX for a while and there is no pending ping
+        if bitvmx_last_msg.elapsed() > BITVMX_PING_AFTER_SILENCE && bitvmx_ping.is_none() {
+            self.send_bitvmx_ping();
+            *bitvmx_ping = Some(Instant::now());
         }
     }
 
-    fn check_bitvmx_pong(&mut self, event: &OutgoingBitVMXApiMessages) {
+    fn send_bitvmx_ping(&self) {
+        info!("Sending Ping to BitVMX");
+
         let result = self
-            .bitvmx_ping_pong_processor
-            .process_new_bitvmx_event(event);
+            .bitvmx_broker
+            .send(BROKER_SERVER_ID, IncomingBitVMXApiMessages::Ping());
+
         if result.is_err() {
-            // TODO for now just log it, but we should handle it properly
-            error!("Error checking BitVMX Pong : {:?}", result);
+            // TODO we need to handle this situation properly
+            error!("Failed to send Ping to BitVMX: {:?}", result);
+        }
+    }
+
+    fn check_bitvmx_pong(&mut self, event: &OutgoingBitVMXApiMessages) -> bool {
+        match event {
+            OutgoingBitVMXApiMessages::Pong() => {
+                info!("Received Pong from BitVMX");
+                true
+            }
+            _ => false,
         }
     }
 
@@ -186,7 +211,8 @@ pub(crate) mod tests {
     };
     use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
     use alloy_primitives::U256;
-    use bitvmx_client::types::OutgoingBitVMXApiMessages;
+    use bitvmx_client::types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+    use common::msg_broker::broker::{BROKER_SERVER_ID, MockBrokerClientApi};
     use common::{
         shutdown_flag::ShutdownFlag,
         test_utils::rsk_block_generator::{
@@ -195,6 +221,7 @@ pub(crate) mod tests {
         types::RskBlockAndUncles,
     };
     use mockall::mock;
+    use mockall::predicate::{eq, function};
     use std::{
         thread::{self, JoinHandle, sleep},
         time::Duration,
@@ -287,21 +314,20 @@ pub(crate) mod tests {
         let shutdown_flag = ShutdownFlag::init();
         handle_shutdown(shutdown_flag.clone());
 
-        let mut ping_pong_processor = MockEventProcessor::new();
-
-        ping_pong_processor
-            .expect_process_new_bitvmx_event()
-            .returning(|_| Ok(()))
-            .times(1..);
-
-        ping_pong_processor
-            .expect_process_new_block()
-            .returning(|_| Ok(()))
-            .times(1..);
+        let mut bitvmx_broker = MockBrokerClientApi::new();
+        bitvmx_broker
+            .expect_send()
+            .with(
+                eq(BROKER_SERVER_ID),
+                function(|req: &IncomingBitVMXApiMessages| {
+                    matches!(req, IncomingBitVMXApiMessages::Ping())
+                }),
+            )
+            .return_once(|_, _| Ok(true));
 
         let mut coordinator = Coordinator::new_for_tests(
             mock_monitor,
-            Box::new(ping_pong_processor),
+            bitvmx_broker,
             generate_ok_processors(),
             shutdown_flag,
         );
@@ -377,21 +403,20 @@ pub(crate) mod tests {
         let shutdown_flag = ShutdownFlag::init();
         handle_shutdown(shutdown_flag.clone());
 
-        let mut ping_pong_processor = MockEventProcessor::new();
-
-        ping_pong_processor
-            .expect_process_new_bitvmx_event()
-            .returning(|_| Ok(()))
-            .times(1..);
-
-        ping_pong_processor
-            .expect_process_new_block()
-            .returning(|_| Ok(()))
-            .times(1..);
+        let mut bitvmx_broker = MockBrokerClientApi::new();
+        bitvmx_broker
+            .expect_send()
+            .with(
+                eq(BROKER_SERVER_ID),
+                function(|req: &IncomingBitVMXApiMessages| {
+                    matches!(req, IncomingBitVMXApiMessages::Ping())
+                }),
+            )
+            .return_once(|_, _| Ok(true));
 
         let mut coordinator = Coordinator::new_for_tests(
             mock_monitor,
-            Box::new(ping_pong_processor),
+            bitvmx_broker,
             generate_ok_processors(),
             shutdown_flag,
         );

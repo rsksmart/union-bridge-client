@@ -9,6 +9,7 @@ use coordinator::{
     monitor::Monitor,
 };
 use log::{error, info};
+use std::sync::Arc;
 use transaction_dispatcher::config::ConfigAsLib;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
@@ -52,7 +53,7 @@ fn main() -> Result<()> {
         config.log_broker.port,
         config.broker_client_id,
     );
-    let bitvmx_broker = BitVmxBrokerClient::new(
+    let bitvmx_broker = Arc::new(BitVmxBrokerClient::new(
         config.bitvmx_broker.ip,
         config.bitvmx_broker.port,
         config.broker_client_id,

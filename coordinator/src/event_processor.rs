@@ -4,11 +4,9 @@ use bitvmx_client::types::OutgoingBitVMXApiMessages;
 use common::types::RskBlockAndUncles;
 
 mod advance_funds;
-mod bitvmx_ping_pong_processor;
 mod blockchain_tracker;
 
 pub use advance_funds::advance_funds_processor::*;
-pub use bitvmx_ping_pong_processor::*;
 
 #[cfg(test)]
 use mockall::automock;

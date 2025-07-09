@@ -11,24 +11,23 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
-/// Union-Client-specific broker server implementation
-
 // by convention, server is id 1
 pub const BROKER_SERVER_ID: u32 = 1;
 
 #[automock]
-pub trait BrokerServerApi<T: Serialize, F: Serialize> {
-    fn try_recv(&self) -> Result<Option<(T, u32)>, BrokerError>;
-    fn send(&self, msg: &F, dst: u32) -> Result<(), BrokerError>;
+pub trait BrokerServerApi<S: Serialize, C: Serialize> {
+    fn send(&self, msg: &C, dst: u32) -> Result<(), BrokerError>;
+    fn try_recv(&self) -> Result<Option<(S, u32)>, BrokerError>;
     fn close(&mut self);
 }
 
 #[automock]
-pub trait BrokerClientApi<T: Serialize, F: Serialize> {
-    fn send(&self, dest: u32, msg: T) -> Result<bool, BrokerError>;
-    fn try_recv(&self) -> Result<Option<F>, BrokerError>;
+pub trait BrokerClientApi<S: Serialize, C: Serialize> {
+    fn send(&self, dest: u32, msg: S) -> Result<bool, BrokerError>;
+    fn try_recv(&self) -> Result<Option<C>, BrokerError>;
 }
 
+/// Union-specific broker server implementation
 pub struct BrokerServer {
     broker: BrokerSync,
     channel: LocalChannel<MemStorage>,
@@ -83,9 +82,12 @@ impl BrokerServerApi<ToServer, FromServer> for BrokerServer {
     }
 }
 
-#[derive(Clone)]
+/// Union-specific broker client implementation
+/// Do not make cloneable, use Arc instead. Reasons:
+/// 1. cloning DualChannel can be considered expensive
+/// 2. automock is not creating a cloneable MockBrokerClientApi
 pub struct BrokerClient {
-    channel: Arc<DualChannel>,
+    channel: DualChannel,
 }
 
 impl BrokerClient {
@@ -93,9 +95,7 @@ impl BrokerClient {
         debug!("Starting BrokerClient on {ip}:{port} with id {my_id}");
         let broker_config = BrokerConfig::new(port, Some(ip));
         let client = DualChannel::new(&broker_config, my_id);
-        Self {
-            channel: Arc::new(client),
-        }
+        Self { channel: client }
     }
 }
 
@@ -185,9 +185,11 @@ impl BrokerServerApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages> for B
 }
 
 /// BitVMX-specific broker client implementation
-#[derive(Clone)]
+/// Do not make cloneable, use Arc instead. Reasons:
+/// 1. cloning DualChannel can be considered expensive
+/// 2. automock is not creating a cloneable MockBrokerClientApi
 pub struct BitVmxBrokerClient {
-    channel: Arc<DualChannel>,
+    channel: DualChannel,
 }
 
 impl BitVmxBrokerClient {
@@ -195,9 +197,7 @@ impl BitVmxBrokerClient {
         debug!("Starting BitVmxBrokerClient on {ip}:{port} with id {my_id}");
         let broker_config = BrokerConfig::new(port, Some(ip));
         let client = DualChannel::new(&broker_config, my_id);
-        Self {
-            channel: Arc::new(client),
-        }
+        Self { channel: client }
     }
 }
 
