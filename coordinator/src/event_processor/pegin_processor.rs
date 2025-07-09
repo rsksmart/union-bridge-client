@@ -120,8 +120,7 @@ impl<T: BrokerClientApi> PeginProcessor<T> {
         }
     }
 
-    /// Inserts a `pegin_requested` event. Fails if one already exists for the same tx_hash.
-    fn insert_pegin_requested(
+    fn track_pegin_requested(
         &mut self,
         pegin_flow_id: Uuid,
         event: PeginEvent<PeginRequested>,
@@ -138,8 +137,7 @@ impl<T: BrokerClientApi> PeginProcessor<T> {
         Ok(())
     }
 
-    /// Inserts a `pegin_accepted` event. Fails if no corresponding `pegin_requested` exists.
-    fn insert_pegin_accepted(&mut self, event: PeginEvent<PeginAccepted>) -> Result<()> {
+    fn track_pegin_accepted(&mut self, event: PeginEvent<PeginAccepted>) -> Result<()> {
         let tx_hash: TxHash = event.data.inner.acceptPeginTxHash.into();
 
         match self.tracker.get_mut(&tx_hash) {
@@ -367,7 +365,7 @@ impl<T: BrokerClientApi> EventProcessor for PeginProcessor<T> {
                     pegin_requested
                 );
 
-                self.insert_pegin_requested(pegin_flow_id, pegin_requested)?;
+                self.track_pegin_requested(pegin_flow_id, pegin_requested)?;
             }
             RskPegManagerEvents::PeginAccepted(data) => {
                 info!("Handling PeginAccepted event: {:?}", data);
@@ -397,7 +395,7 @@ impl<T: BrokerClientApi> EventProcessor for PeginProcessor<T> {
                     pegin_accepted
                 );
 
-                self.insert_pegin_accepted(pegin_accepted)?;
+                self.track_pegin_accepted(pegin_accepted)?;
             }
             _ => {}
         }
@@ -816,7 +814,7 @@ mod tests {
         processor
             .blockchain
             .add_observer(pegin_event.confirmations());
-        let _ = processor.insert_pegin_requested(pegin_flow_id, pegin_event);
+        let _ = processor.track_pegin_requested(pegin_flow_id, pegin_event);
 
         // Simulate one new block
         let block = RskBlockAndUncles::new_no_uncles(block_1);
@@ -876,7 +874,7 @@ mod tests {
         processor
             .blockchain
             .add_observer(pegin_event.confirmations());
-        let _ = processor.insert_pegin_requested(pegin_flow_id, pegin_event);
+        let _ = processor.track_pegin_requested(pegin_flow_id, pegin_event);
 
         let block = RskBlockAndUncles::new_no_uncles(block_1);
 
@@ -936,8 +934,8 @@ mod tests {
             .blockchain
             .add_observer(pegin_accepted_event.confirmations());
 
-        let _ = processor.insert_pegin_requested(pegin_flow_id, pegin_requested_event);
-        let _ = processor.insert_pegin_accepted(pegin_accepted_event);
+        let _ = processor.track_pegin_requested(pegin_flow_id, pegin_requested_event);
+        let _ = processor.track_pegin_accepted(pegin_accepted_event);
 
         let block = RskBlockAndUncles::new_no_uncles(block_1);
 
@@ -1002,8 +1000,8 @@ mod tests {
         processor
             .blockchain
             .add_observer(pegin_accepted_event.confirmations());
-        let _ = processor.insert_pegin_requested(pegin_flow_id, pegin_requested_event);
-        let _ = processor.insert_pegin_accepted(pegin_accepted_event);
+        let _ = processor.track_pegin_requested(pegin_flow_id, pegin_requested_event);
+        let _ = processor.track_pegin_accepted(pegin_accepted_event);
 
         let (block_1, _, _) = create_block_and_uncles();
         let block = RskBlockAndUncles::new_no_uncles(block_1);
