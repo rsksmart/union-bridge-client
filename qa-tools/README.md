@@ -69,13 +69,15 @@ Optional: add `JUNIT_REPORT` env variable to generate JUnit XML reports under `q
 JUNIT_REPORT="reports/tx_dispatcher.xml" cargo run --bin qa-tools-transaction-dispatcher -- --tags @transaction-dispatcher
 ```
 #### Execute automated tests via ACT pipeline (local)
+You will need to have docker installed and running to execute the pipeline locally.
+Once docker is running, you can execute the pipeline with the command below.
 ```bash
 export KEY_STORE_PATH="replace/with/path/to/your/keystore"
 export KEY_STORE_FILE="$(cat "$KEY_STORE_PATH")"
 export FAIRGATE_GITHUB_TOKEN="=== REPLACE_WITH_TOKEN ==="
 export UNION_CONTRACTS_GITHUB_TOKEN="=== REPLACE_WITH_TOKEN ==="
 export KEY_STORE_PASSWORD="=== REPLACE_WITH_PASSWORD ==="
-act -j test \
+act -j qa-tests \
 --secret FAIRGATE_GITHUB_TOKEN=$FAIRGATE_GITHUB_TOKEN \
 --secret UNION_CONTRACTS_GITHUB_TOKEN=$UNION_CONTRACTS_GITHUB_TOKEN \
 --secret KEY_STORE_PASSWORD=$KEY_STORE_PASSWORD \
@@ -87,7 +89,7 @@ should be uploaded to testomat unless we explicitly want to test this part of th
 Optional: add `reuse` flag to speed up the pipeline setup.
 ```bash
 ... same setup as above ...
-act -j test --reuse \
+act -j qa-tests --reuse \
 ... same setup as above ...
 ```
 Currently the pipeline execution prints the JUnit XML report to the console.
