@@ -9,6 +9,7 @@
 .DS_Store
 .idea
 config/local
+config/qa-coordinator
 **/logs/*
 **/.db
 **/.union-bridge-contracts

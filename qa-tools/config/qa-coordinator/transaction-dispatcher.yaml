@@ -1,0 +1,6 @@
+key_store:
+  path: "/Users/javier/Projects/UnionBridge/keystore/e5cd9470-cec7-42f4-b1ff-7e723de56793"
+transaction:
+  gas_bumps_t1: 3
+server:
+  url: "0.0.0.0:3000"
