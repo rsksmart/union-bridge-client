@@ -228,7 +228,8 @@ pub(crate) mod tests {
     };
     use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
     use transaction_dispatcher::types::{
-        AcceptPegInInput, AcceptPegInOutput, PegInAddressInput, PegInAddressOutput,
+        AcceptPegInInput, AcceptPegInOutput, AddMemberNonceInput, AddMemberNonceOutput,
+        AddMemberSignatureInput, AddMemberSignatureOutput, PegInAddressInput, PegInAddressOutput,
         RegisterPegInInput, RegisterPegInOutput, RegisterPegOutInput, RegisterPegOutOutput,
     };
 
@@ -258,12 +259,14 @@ pub(crate) mod tests {
             inner: create_fake_request_event("peg_out_id_1"),
             block_number: block_1.number(),
             block_hash: block_1.hash().into(),
+            removed: false,
         });
 
         let event_2: RskPegManagerEvents = RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
             inner: create_fake_advance_funds_event("peg_out_id_1"),
             block_number: block_2.number(),
             block_hash: block_2.hash().into(),
+            removed: false,
         });
 
         let bitvmx_event = OutgoingBitVMXApiMessages::Pong();
@@ -347,6 +350,7 @@ pub(crate) mod tests {
             inner: create_fake_request_event("peg_out_id_1"),
             block_number: block_1.number(),
             block_hash: block_1.hash().into(),
+            removed: false,
         });
 
         let event_2 = RskPegManagerEvents::UnknownEvent;
@@ -512,6 +516,16 @@ pub(crate) mod tests {
                 &self,
                 input: RegisterPegOutInput,
             ) -> Result<RegisterPegOutOutput, DomainErrors>;
+
+            async fn add_member_nonce(
+                &self,
+                input: AddMemberNonceInput,
+            ) -> Result<AddMemberNonceOutput, DomainErrors>;
+
+            async fn add_member_signature(
+                &self,
+                input: AddMemberSignatureInput,
+            ) -> Result<AddMemberSignatureOutput, DomainErrors>;
 
             async fn notify_check_fork_completion(
                 &self,

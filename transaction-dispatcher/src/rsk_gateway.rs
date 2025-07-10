@@ -1,5 +1,9 @@
 use crate::contracts::peg_manager::FakePegManagerContract;
 use crate::contracts::peg_manager::notify_check_fork_complete::NotifyCheckForkCompleteInvoke;
+use crate::contracts::signature_manager::{
+    AddMemberNonceInvoke, AddMemberSignatureInvoke, SignatureManagerContract,
+};
+
 use crate::{
     config::TransactionConfig,
     contracts::peg_manager::{
@@ -9,7 +13,8 @@ use crate::{
         register_peg_out_request::RegisterPegOutRequestInvoke,
     },
     types::{
-        AcceptPegInInput, AcceptPegInOutput, PegInAddressInput, PegInAddressOutput,
+        AcceptPegInInput, AcceptPegInOutput, AddMemberNonceInput, AddMemberNonceOutput,
+        AddMemberSignatureInput, AddMemberSignatureOutput, PegInAddressInput, PegInAddressOutput,
         RegisterPegInInput, RegisterPegInOutput, RegisterPegOutInput, RegisterPegOutOutput,
     },
 };
@@ -24,6 +29,7 @@ use thiserror::Error;
 /// Must match the contract name in the config file
 const PEG_MANAGER_CONTRACT_NAME: &'static str = "PegManager";
 const FAKE_PEG_MANAGER_CONTRACT_NAME: &'static str = "FakePegManager";
+const SIGNATURE_MANAGER_CONTRACT_NAME: &'static str = "SignatureManager";
 
 pub trait RskContractsGatewayApi {
     fn get_temporary_peg_in_address(
@@ -46,6 +52,16 @@ pub trait RskContractsGatewayApi {
         input: RegisterPegOutInput,
     ) -> impl Future<Output = Result<RegisterPegOutOutput, DomainErrors>>;
 
+    fn add_member_nonce(
+        &self,
+        input: AddMemberNonceInput,
+    ) -> impl Future<Output = Result<AddMemberNonceOutput, DomainErrors>>;
+
+    fn add_member_signature(
+        &self,
+        input: AddMemberSignatureInput,
+    ) -> impl Future<Output = Result<AddMemberSignatureOutput, DomainErrors>>;
+
     fn notify_check_fork_completion(
         &self,
         input: &str,
@@ -59,6 +75,8 @@ pub struct RskContractsGateway<P: Provider> {
     register_peg_in_request_invoke: RegisterPegInRequestInvoke<PegManagerContract<P>>,
     accept_peg_in_request_invoke: AcceptPegInRequestInvoke<PegManagerContract<P>>,
     register_peg_out_request_invoke: RegisterPegOutRequestInvoke<PegManagerContract<P>>,
+    add_member_nonce_invoke: AddMemberNonceInvoke<SignatureManagerContract<P>>,
+    add_member_signature_invoke: AddMemberSignatureInvoke<SignatureManagerContract<P>>,
     notify_check_fork_completion_invoke: NotifyCheckForkCompleteInvoke<FakePegManagerContract<P>>,
 }
 
@@ -71,10 +89,14 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
         let contract_address = Self::load_contract(PEG_MANAGER_CONTRACT_NAME, &managed_contracts)?;
         let fake_contract_address =
             Self::load_contract(FAKE_PEG_MANAGER_CONTRACT_NAME, &managed_contracts)?;
+        let signature_manager_address =
+            Self::load_contract(SIGNATURE_MANAGER_CONTRACT_NAME, &managed_contracts)?;
 
         let peg_manager_contract = PegManagerContract::new(provider.clone(), contract_address);
         let fake_peg_manager_contract =
-            FakePegManagerContract::new(provider, fake_contract_address);
+            FakePegManagerContract::new(provider.clone(), fake_contract_address);
+        let signature_manager_contract =
+            SignatureManagerContract::new(provider, signature_manager_address);
 
         Ok(RskContractsGateway {
             contract_address,
@@ -95,6 +117,14 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             ),
             notify_check_fork_completion_invoke: NotifyCheckForkCompleteInvoke::new(
                 fake_peg_manager_contract.clone(),
+                tx_config.gas_bumps_t1,
+            ),
+            add_member_nonce_invoke: AddMemberNonceInvoke::new(
+                signature_manager_contract.clone(),
+                tx_config.gas_bumps_t1,
+            ),
+            add_member_signature_invoke: AddMemberSignatureInvoke::new(
+                signature_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
         })
@@ -180,6 +210,42 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
             .await
             .map_err(|err| {
                 error!("Error on register_peg_out_request_invoke: {}", err);
+                err
+            })
+    }
+
+    async fn add_member_nonce(
+        &self,
+        input: AddMemberNonceInput,
+    ) -> Result<AddMemberNonceOutput, DomainErrors> {
+        info!(
+            "Interacting with SignatureManager#addMemberNonce @ {}",
+            self.contract_address
+        );
+
+        self.add_member_nonce_invoke
+            .run(input)
+            .await
+            .map_err(|err| {
+                error!("Error on add_member_nonce_invoke: {}", err);
+                err
+            })
+    }
+
+    async fn add_member_signature(
+        &self,
+        input: AddMemberSignatureInput,
+    ) -> Result<AddMemberSignatureOutput, DomainErrors> {
+        info!(
+            "Interacting with SignatureManager#addMemberSignature @ {}",
+            self.contract_address
+        );
+
+        self.add_member_signature_invoke
+            .run(input)
+            .await
+            .map_err(|err| {
+                error!("Error on add_member_signature_invoke: {}", err);
                 err
             })
     }
