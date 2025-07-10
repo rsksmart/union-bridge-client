@@ -257,6 +257,8 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
             store_best_block.hash(),
         );
 
+        let mut blocks_to_notify = Vec::new();
+
         let mut new_block = starting_block.clone();
         loop {
             let store_block = self
@@ -281,7 +283,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                     .process_uncle_blocks(&new_block)
                     .context("On Backward Sync")?;
                 // consumer should be resilient to re-notifications
-                self.notify_block(new_block.clone(), uncles)?;
+                blocks_to_notify.push((new_block.clone(), uncles.clone()));
                 self.save_as_canonical(&new_block)
                     .context("On Backward Sync")?;
             } else if !reached_connection_height {
@@ -305,6 +307,12 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 self.store
                     .set_best_block(&starting_block)
                     .context("On Backward Sync")?;
+
+                // notify the consumer about the new chain in ascending order
+                for (block, uncles) in blocks_to_notify.into_iter().rev() {
+                    self.notify_block(block, uncles)?;
+                }
+
                 break;
             }
 
