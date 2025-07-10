@@ -15,3 +15,4 @@ config/local
 **/.llmignore
 qa-tools/reports/**
 qa-tools/test_keystore/**
+qa-tools/coordinator/node_modules
