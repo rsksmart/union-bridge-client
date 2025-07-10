@@ -1,5 +1,10 @@
 name: QA Sync Features with Testomat WF
 
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: write
+  
 on:
   push:
     branches:

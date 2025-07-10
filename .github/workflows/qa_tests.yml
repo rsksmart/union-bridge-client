@@ -73,4 +73,4 @@ jobs:
         run: |
           TESTOMATIO=${{ secrets.PROJECT_REPORTING_API_KEY }} \
           TESTOMATIO_TITLE="Regression - tx dispatcher | ${{ github.ref_name }} | $(date +'%Y-%m-%d %H:%M')" \
-          npx report-xml reports/tx_dispatcher.xml
+          npx @testomatio/reporter-xml reports/tx_dispatcher.xml
