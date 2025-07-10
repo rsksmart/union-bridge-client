@@ -35,7 +35,7 @@ where
     bitvmx_broker: Arc<BC>,
     first_block_to_process: Option<BlockNumber>,
     request_events: HashMap<String, RequestAdvanceFundsEvent>,
-    advance_funds_checker: Option<Rc<RefCell<CheckForkAccumulator>>>,
+    check_fork_accumulator: Option<Rc<RefCell<CheckForkAccumulator>>>,
     chain_view: BlockchainView,
 }
 
@@ -51,7 +51,7 @@ where
             bitvmx_broker,
             first_block_to_process: None,
             request_events: HashMap::new(),
-            advance_funds_checker: None,
+            check_fork_accumulator: None,
             chain_view: BlockchainView::new(),
         }
     }
@@ -64,7 +64,7 @@ where
             bitvmx_broker,
             first_block_to_process: None,
             request_events: HashMap::new(),
-            advance_funds_checker: None,
+            check_fork_accumulator: None,
             chain_view: BlockchainView::new(),
         }
     }
@@ -88,7 +88,7 @@ where
     }
 
     fn start_pow_accum_for_pegout(&mut self, event2: AdvanceFundsEvent) {
-        match self.advance_funds_checker.as_ref() {
+        match self.check_fork_accumulator.as_ref() {
             Some(afc) if &afc.borrow().pegout_id() == &event2.inner.peg_out_id => {
                 warn!("Already monitoring advance funds for {event2:?}");
                 return;
@@ -126,7 +126,7 @@ where
         let new_advance_funds = CheckForkAccumulator::new(event2, post_advance_funds_blocks);
         let advance_funds_rc = Rc::new(RefCell::new(new_advance_funds));
         self.chain_view.add_observer(advance_funds_rc.clone());
-        self.advance_funds_checker = Some(advance_funds_rc);
+        self.check_fork_accumulator = Some(advance_funds_rc);
     }
 
     fn stop_monitoring_blocks_for_pegout(&mut self, pegout_id: &String) {
@@ -152,12 +152,12 @@ where
     }
 
     fn stop_pow_accum_for_pegout(&mut self, pegout_id: &String) {
-        if let Some(afc) = &self.advance_funds_checker {
+        if let Some(afc) = &self.check_fork_accumulator {
             if &afc.borrow().pegout_id() == pegout_id {
                 info!("Removing active {:?}", afc);
                 self.chain_view
                     .remove_observer(afc.borrow().get_id().as_str());
-                self.advance_funds_checker = None;
+                self.check_fork_accumulator = None;
             } else {
                 error!(
                     "Trying to remove advance funds for pegout_id {}, but active one is {}. This is not expected on Union Bridge Design",
@@ -325,7 +325,7 @@ where
 
         self.chain_view.update(block.clone());
 
-        let Some(afc) = self.advance_funds_checker.as_mut() else {
+        let Some(afc) = self.check_fork_accumulator.as_mut() else {
             debug!(
                 "No active advance funds, ignoring block's {} pow",
                 block.number()
@@ -353,13 +353,13 @@ where
     }
 
     fn shutdown(&mut self) {
-        if self.advance_funds_checker.is_some() {
+        if self.check_fork_accumulator.is_some() {
             warn!(
                 "Active advance funds found on shutdown! {:?}",
-                self.advance_funds_checker
+                self.check_fork_accumulator
             );
         }
-        self.advance_funds_checker = None;
+        self.check_fork_accumulator = None;
         self.request_events.clear();
         self.chain_view.clear();
     }
@@ -419,7 +419,7 @@ mod tests {
         );
         assert!(processor.first_block_to_process.is_none());
         assert!(processor.request_events.is_empty());
-        assert!(processor.advance_funds_checker.is_none());
+        assert!(processor.check_fork_accumulator.is_none());
         assert!(processor.chain_view.is_empty());
         assert!(!processor.chain_view.is_observed());
     }
@@ -480,7 +480,7 @@ mod tests {
 
         assert!(processor.chain_view.is_empty());
         assert!(!processor.chain_view.is_observed());
-        assert!(processor.advance_funds_checker.is_none());
+        assert!(processor.check_fork_accumulator.is_none());
     }
 
     #[test]
@@ -535,10 +535,10 @@ mod tests {
 
         assert_eq!(processor.request_events.len(), 1);
         assert!(processor.request_events.contains_key(pegout_id));
-        assert!(processor.advance_funds_checker.is_some());
+        assert!(processor.check_fork_accumulator.is_some());
 
         let advance_funds = processor
-            .advance_funds_checker
+            .check_fork_accumulator
             .as_ref()
             .expect("AdvanceFundsPowChecker should exist");
         assert_eq!(advance_funds.borrow().pegout_id(), pegout_id);
@@ -636,10 +636,10 @@ mod tests {
         assert_eq!(processor.request_events.len(), 2);
         assert!(processor.request_events.contains_key(pegout_id_1),);
         assert!(processor.request_events.contains_key(pegout_id_2));
-        assert!(processor.advance_funds_checker.is_some());
+        assert!(processor.check_fork_accumulator.is_some());
 
         let advance_funds = processor
-            .advance_funds_checker
+            .check_fork_accumulator
             .as_ref()
             .expect("AdvanceFundsPowChecker should exist");
         assert_eq!(advance_funds.borrow().pegout_id(), pegout_id_1);
@@ -691,7 +691,7 @@ mod tests {
 
         assert!(processor.first_block_to_process.is_none());
         assert!(processor.request_events.is_empty());
-        assert!(processor.advance_funds_checker.is_none());
+        assert!(processor.check_fork_accumulator.is_none());
         assert!(processor.chain_view.is_empty());
         assert!(!processor.chain_view.is_observed());
     }
@@ -737,7 +737,7 @@ mod tests {
             Some(request_block.number())
         );
         assert!(processor.request_events.contains_key(pegout_id_req));
-        assert!(processor.advance_funds_checker.is_none());
+        assert!(processor.check_fork_accumulator.is_none());
         assert_eq!(processor.chain_view.len(), 1);
         assert_eq!(
             processor.chain_view.get_at(&request_block.number()),
@@ -776,7 +776,7 @@ mod tests {
             .process_new_block(&request_block)
             .expect("Should process block");
 
-        assert!(processor.advance_funds_checker.is_none());
+        assert!(processor.check_fork_accumulator.is_none());
         assert!(processor.request_events.contains_key(pegout_id));
         assert_eq!(
             processor.first_block_to_process,
@@ -818,7 +818,7 @@ mod tests {
             .process_new_block(&advance_funds_block)
             .expect("Should process block");
 
-        assert!(processor.advance_funds_checker.is_some());
+        assert!(processor.check_fork_accumulator.is_some());
         assert!(
             processor
                 .request_events
@@ -844,7 +844,7 @@ mod tests {
             .process_new_block(&block_with_uncle)
             .expect("Should process block");
 
-        assert!(processor.advance_funds_checker.is_some());
+        assert!(processor.check_fork_accumulator.is_some());
         assert!(
             processor
                 .request_events
@@ -865,7 +865,7 @@ mod tests {
 
         // confirmations -1, not ready
 
-        assert!(processor.advance_funds_checker.is_some());
+        assert!(processor.check_fork_accumulator.is_some());
         assert!(
             processor
                 .request_events
@@ -886,7 +886,7 @@ mod tests {
 
         // now we have enough confirmations
 
-        assert!(processor.advance_funds_checker.is_none());
+        assert!(processor.check_fork_accumulator.is_none());
         assert!(processor.request_events.is_empty());
         assert!(processor.first_block_to_process.is_none());
         assert!(processor.chain_view.is_empty());
@@ -924,7 +924,7 @@ mod tests {
             .process_new_block(&request_block)
             .expect("Should process block");
 
-        assert!(processor.advance_funds_checker.is_none());
+        assert!(processor.check_fork_accumulator.is_none());
         assert!(processor.request_events.contains_key(pegout_id));
         assert_eq!(
             processor.first_block_to_process,
@@ -966,7 +966,7 @@ mod tests {
             }))
             .expect("Should have processed kickoff");
 
-        assert!(processor.advance_funds_checker.is_some());
+        assert!(processor.check_fork_accumulator.is_some());
         assert!(
             processor
                 .request_events
@@ -992,7 +992,7 @@ mod tests {
             .process_new_block(&block_with_uncle)
             .expect("Should process block");
 
-        assert!(processor.advance_funds_checker.is_some());
+        assert!(processor.check_fork_accumulator.is_some());
         assert!(
             processor
                 .request_events
@@ -1017,7 +1017,7 @@ mod tests {
 
         // confirmations -1, not ready
 
-        assert!(processor.advance_funds_checker.is_some());
+        assert!(processor.check_fork_accumulator.is_some());
         assert!(
             processor
                 .request_events
@@ -1038,7 +1038,7 @@ mod tests {
 
         // now we have enough confirmations
 
-        assert!(processor.advance_funds_checker.is_none());
+        assert!(processor.check_fork_accumulator.is_none());
         assert!(processor.request_events.is_empty());
         assert!(processor.first_block_to_process.is_none());
         assert!(processor.chain_view.is_empty());
@@ -1085,7 +1085,7 @@ mod tests {
         );
         assert!(processor.chain_view.is_empty());
         assert!(!processor.chain_view.is_observed());
-        assert!(processor.advance_funds_checker.is_none());
+        assert!(processor.check_fork_accumulator.is_none());
     }
 
     #[test]
@@ -1164,13 +1164,13 @@ mod tests {
                 .request_events
                 .contains_key(&pegout_id.to_string())
         );
-        assert!(processor.advance_funds_checker.is_some());
+        assert!(processor.check_fork_accumulator.is_some());
         assert_eq!(processor.chain_view.len(), 2);
 
         processor.shutdown();
 
         assert!(processor.request_events.is_empty());
-        assert!(processor.advance_funds_checker.is_none());
+        assert!(processor.check_fork_accumulator.is_none());
         assert!(processor.chain_view.is_empty());
         assert!(!processor.chain_view.is_observed());
     }
@@ -1222,7 +1222,7 @@ mod tests {
             })
             .expect("Should have processed request");
 
-        assert!(processor.advance_funds_checker.is_none());
+        assert!(processor.check_fork_accumulator.is_none());
         assert_eq!(processor.request_events.len(), 1);
         assert_eq!(
             processor.first_block_to_process,
@@ -1262,7 +1262,7 @@ mod tests {
             .process_new_block(&request_block)
             .expect("Should process block");
 
-        assert!(processor.advance_funds_checker.is_none());
+        assert!(processor.check_fork_accumulator.is_none());
         assert!(
             processor
                 .request_events
@@ -1274,7 +1274,7 @@ mod tests {
             .process_new_block(&advance_funds_block)
             .expect("Should process block");
 
-        assert!(processor.advance_funds_checker.is_none());
+        assert!(processor.check_fork_accumulator.is_none());
         assert!(
             processor
                 .request_events
@@ -1319,7 +1319,7 @@ mod tests {
                 .request_events
                 .contains_key(&pegout_id.to_string())
         );
-        assert!(processor.advance_funds_checker.is_none());
+        assert!(processor.check_fork_accumulator.is_none());
         assert_eq!(processor.chain_view.len(), 1);
 
         processor
@@ -1331,7 +1331,7 @@ mod tests {
                 .request_events
                 .contains_key(&pegout_id.to_string())
         );
-        assert!(processor.advance_funds_checker.is_none());
+        assert!(processor.check_fork_accumulator.is_none());
         assert_eq!(processor.chain_view.len(), 1);
     }
 
@@ -1372,7 +1372,7 @@ mod tests {
             }))
             .expect("Should have processed kickoff");
 
-        assert!(processor.advance_funds_checker.is_some());
+        assert!(processor.check_fork_accumulator.is_some());
         assert!(
             processor
                 .request_events
@@ -1386,7 +1386,7 @@ mod tests {
             })
             .expect("Should have processed kickoff");
 
-        assert!(processor.advance_funds_checker.is_none());
+        assert!(processor.check_fork_accumulator.is_none());
         assert!(
             processor
                 .request_events
@@ -1456,7 +1456,7 @@ mod tests {
             .expect("Should process kickoff block");
 
         // verify advance funds is active
-        assert!(processor.advance_funds_checker.is_some());
+        assert!(processor.check_fork_accumulator.is_some());
         assert_eq!(processor.chain_view.len(), 2);
 
         // build original chain - process several blocks after kickoff
@@ -1474,7 +1474,7 @@ mod tests {
 
         // at this point we should have: request_block + advance_funds_block + 4 more blocks = 6 total
         assert_eq!(processor.chain_view.len(), 6);
-        assert!(processor.advance_funds_checker.is_some());
+        assert!(processor.check_fork_accumulator.is_some());
 
         // now simulate a reorg: create alternative chain from block after kickoff
         // the reorg starts at advance_funds_block.number() + 2 (replacing the 2nd block after kickoff)
@@ -1533,7 +1533,7 @@ mod tests {
             }
         }
 
-        assert!(processor.advance_funds_checker.is_some());
+        assert!(processor.check_fork_accumulator.is_some());
 
         // continue building the alternative chain
         let mut alt_blocks = vec![alt_block_1];
@@ -1546,14 +1546,14 @@ mod tests {
                 .expect("Should process alternative block");
 
             // check if advance funds completed during alternative chain building
-            if processor.advance_funds_checker.is_none() {
+            if processor.check_fork_accumulator.is_none() {
                 break;
             }
         }
 
         // the advance funds might complete during alternative chain building
         // due to the accumulated effort, which is expected behavior
-        if processor.advance_funds_checker.is_none() {
+        if processor.check_fork_accumulator.is_none() {
             // advance funds completed during reorg - verify final state
             assert!(processor.request_events.is_empty());
             assert!(processor.first_block_to_process.is_none());
@@ -1573,7 +1573,7 @@ mod tests {
                     .expect("Should process additional block");
 
                 // check if advance funds completed
-                if processor.advance_funds_checker.is_none() {
+                if processor.check_fork_accumulator.is_none() {
                     break;
                 }
 
@@ -1584,7 +1584,7 @@ mod tests {
             }
 
             // verify advance funds completed successfully after reorg
-            assert!(processor.advance_funds_checker.is_none());
+            assert!(processor.check_fork_accumulator.is_none());
             assert!(processor.request_events.is_empty());
             assert!(processor.first_block_to_process.is_none());
             assert!(processor.chain_view.is_empty());
@@ -1634,7 +1634,7 @@ mod tests {
         }
 
         assert_eq!(processor.chain_view.len(), 6); // request + 5 blocks
-        assert!(processor.advance_funds_checker.is_none()); // No kickoff yet
+        assert!(processor.check_fork_accumulator.is_none()); // No kickoff yet
 
         // now simulate a deep reorg that goes back to request block
         // create alternative chain with higher difficulty
@@ -1659,7 +1659,7 @@ mod tests {
         // verify deep reorg was handled properly
         // should have: request_block + 8 alternative blocks = 9 total
         assert_eq!(processor.chain_view.len(), 9);
-        assert!(processor.advance_funds_checker.is_none()); // Still no kickoff
+        assert!(processor.check_fork_accumulator.is_none()); // Still no kickoff
         assert!(processor.request_events.contains_key(pegout_id));
 
         // verify blocks present after deep reorg
@@ -1711,7 +1711,7 @@ mod tests {
             .expect("Should have processed kickoff");
 
         // verify kickoff was processed on reorganized chain
-        assert!(processor.advance_funds_checker.is_some());
+        assert!(processor.check_fork_accumulator.is_some());
         assert!(!processor.request_events.is_empty());
         assert!(processor.first_block_to_process.is_some());
         assert_eq!(processor.chain_view.len(), 9);
@@ -1813,8 +1813,8 @@ mod tests {
         }
 
         // we should be in confirmation period but not complete
-        assert!(processor.advance_funds_checker.is_some());
-        let afc = processor.advance_funds_checker.as_ref().unwrap();
+        assert!(processor.check_fork_accumulator.is_some());
+        let afc = processor.check_fork_accumulator.as_ref().unwrap();
         let has_enough_confirmations = afc.borrow().has_enough_confirmations();
         assert!(!has_enough_confirmations);
 
@@ -1837,7 +1837,7 @@ mod tests {
         }
 
         // verify advance funds completed after reorg (triggering the single ZKP call)
-        assert!(processor.advance_funds_checker.is_none());
+        assert!(processor.check_fork_accumulator.is_none());
         assert!(processor.request_events.is_empty());
         assert!(processor.first_block_to_process.is_none());
         assert!(processor.chain_view.is_empty());
@@ -1901,9 +1901,9 @@ mod tests {
             .expect("Should have processed kickoff");
 
         // verify first advance funds checker is active
-        assert!(processor.advance_funds_checker.is_some());
+        assert!(processor.check_fork_accumulator.is_some());
         let first_checker_pegout_id = processor
-            .advance_funds_checker
+            .check_fork_accumulator
             .as_ref()
             .unwrap()
             .borrow()
@@ -1936,7 +1936,7 @@ mod tests {
             .expect("Should have processed kickoff");
 
         // verify that the first advance funds checker was closed and no new one was created
-        assert!(processor.advance_funds_checker.is_none());
+        assert!(processor.check_fork_accumulator.is_none());
         assert_eq!(processor.request_events.len(), 1);
         assert!(processor.request_events.contains_key(pegout_id_2));
     }

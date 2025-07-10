@@ -3,7 +3,7 @@ use crate::event_processor::blockchain_tracker::{BlockConfirmations, BlockchainO
 use crate::types::AdvanceFundsEvent;
 use check_fork::{Block, CheckForkArgs};
 use common::types::{BlockPow, RskBlock, RskBlockAndUncles};
-use log::info;
+use log::{debug, info};
 use primitive_types::H256;
 use primitive_types::U256;
 
@@ -26,16 +26,37 @@ impl BlockchainObserver for CheckForkAccumulator {
             self.confirmations
                 .get_or_insert_with(|| Self::new_confirmations(block, &self.args.pegout_id))
                 .on_block_added(block);
+            debug!(
+                "Adding confirmation with block {} ({})",
+                block.number(),
+                block.hash()
+            );
         } else {
             self.add_block_to_check_fork(block);
+            debug!(
+                "CheckFork added block {} ({})",
+                block.number(),
+                block.hash()
+            );
         }
     }
 
     fn on_block_removed(&mut self, block: &RskBlockAndUncles) {
         // we optimistically try to remove the block from both the check_fork_args and confirmations
         self.remove_block_from_check_fork(block.block());
+        debug!(
+            "CheckFork removed block {} ({})",
+            block.number(),
+            block.hash()
+        );
+
         if let Some(confirmations) = &mut self.confirmations {
             confirmations.on_block_removed(block);
+            debug!(
+                "Removing confirmation with block {} ({})",
+                block.number(),
+                block.hash()
+            );
         }
     }
 }
