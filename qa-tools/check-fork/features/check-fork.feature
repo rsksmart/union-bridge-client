@@ -1,8 +1,7 @@
-# As the check-fork component,
-# I want to accept or reject a submitted Rootstock fork proof,
-# So that the Union Bridge honours only peg-outs backed by a valid proof of work.
-
 Feature: Check Fork
+    As the check-fork component,
+    I want to accept or reject a submitted Rootstock fork proof,
+    So that the Union Bridge honours only peg-outs backed by a valid proof of work.
 
 Scenario: Happy path
     Given the check_fork component is set with parameters:
