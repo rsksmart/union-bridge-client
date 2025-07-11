@@ -1,6 +1,6 @@
 use crate::types::RskPegManagerEvents;
 use anyhow::Result;
-use bitvmx_client::types::OutgoingBitVMXApiMessages;
+use common::msg_broker::bitvmx_types::OutgoingBitVMXApiMessages;
 use common::types::RskBlockAndUncles;
 
 mod advance_funds;
