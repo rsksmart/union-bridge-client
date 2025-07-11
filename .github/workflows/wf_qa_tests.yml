@@ -21,14 +21,14 @@ jobs:
 
     steps:
 
-      # cannot be moved to tests_setup action because its needed to find the action itself
+      # cannot be moved to common_setup action because it's necessary to find the action itself
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           path: union-bridge-client
 
       - name: Setup
-        uses: ./union-bridge-client/.github/actions/tests_setup
+        uses: ./union-bridge-client/.github/actions/common_setup
         with:
           fairgate_github_token: ${{ secrets.FAIRGATE_GITHUB_TOKEN }}
 

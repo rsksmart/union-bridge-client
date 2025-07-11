@@ -1,0 +1,62 @@
+name: "CodeQL Advanced"
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  codeql-analysis:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      packages: read
+      actions: read
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            build-mode: none
+          - language: rust
+            build-mode: none
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: union-bridge-client
+
+      # CodeQL expects its workflow to be here; I found no way to specify a custom path
+      - name: Copy CodeQL workflow to expected location
+        run: |
+          mkdir -p .github/workflows
+          cp union-bridge-client/.github/workflows/codeql.yml .github/workflows/
+
+      - name: Setup
+        uses: ./union-bridge-client/.github/actions/common_setup
+        with:
+          fairgate_github_token: ${{ secrets.FAIRGATE_GITHUB_TOKEN }}
+
+      - name: Inject FairgateLabs token into SSH URLs
+        run: |
+          git config --global \
+            url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf \
+            "ssh://git@github.com/FairgateLabs"
+
+      # initialize CodeQL pointing at the real root of client code
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          source-root: union-bridge-client
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          checkout_path: union-bridge-client
+          category: "/language:${{ matrix.language }}"
