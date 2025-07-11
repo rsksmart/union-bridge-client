@@ -1,4 +1,4 @@
-name: CodeQL Custom
+name: CodeQL-Advanced
 
 on:
   pull_request:
@@ -14,7 +14,8 @@ on:
       - main
 
 jobs:
-  codeql-analysis:
+  codeql:
+    name: codeql-${{ matrix.language }}
     runs-on: ubuntu-latest
     permissions:
       security-events: write

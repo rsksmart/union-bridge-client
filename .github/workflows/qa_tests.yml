@@ -1,4 +1,4 @@
-name: QA Tests
+name: QA-Tests
 
 permissions:
   contents: read
