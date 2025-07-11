@@ -9,6 +9,7 @@ pub const REQUIRED_CONFIRMATIONS: u32 = 5;
 
 const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 const PEG_MANAGER_CONTRACT_NAME: &str = "PegManager";
+const SIGNATURE_CONTRACT_NAME: &str = "SignatureManager";
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -44,12 +45,14 @@ impl Config {
 
     #[cfg(feature = "anvil")]
     fn get_contracts_to_subscribe_to(contract: &ContractConfig) -> bool {
-        contract.name == PEG_MANAGER_CONTRACT_NAME || contract.name == "FakePegManager"
+        contract.name == PEG_MANAGER_CONTRACT_NAME
+            || contract.name == "FakePegManager"
+            || contract.name == SIGNATURE_CONTRACT_NAME
     }
 
     #[cfg(not(feature = "anvil"))]
     fn get_contracts_to_subscribe_to(contract: &ContractConfig) -> bool {
-        contract.name == PEG_MANAGER_CONTRACT_NAME
+        contract.name == PEG_MANAGER_CONTRACT_NAME || contract.name == SIGNATURE_CONTRACT_NAME
     }
 }
 

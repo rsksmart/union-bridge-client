@@ -1,9 +1,8 @@
-# As a monitor component,
-# I want to continuously track the status of the Rootstock chain
-# so that I have an index of the logs I am interested in
-# and I robustly handle network issues, shutdowns, different cache sizes and long runs
-
 Feature: Rootstock log monitoring and tracking
+  As a monitor component,
+  I want to continuously track the status of the Rootstock chain
+  so that I have an index of the logs I am interested in
+  and I robustly handle network issues, shutdowns, different cache sizes and long runs
 
 Scenario: happy path
 Given the initial best block is B (B = node best block height - 100)

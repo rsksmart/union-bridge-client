@@ -1,6 +1,6 @@
 use crate::types::{EventDecoder, RskPegManagerEvents};
 use anyhow::{Context, Result, bail};
-use bitvmx_client::types::OutgoingBitVMXApiMessages;
+use common::msg_broker::bitvmx_types::OutgoingBitVMXApiMessages;
 use common::{
     msg_broker::{
         broker::BitVmxBrokerClientApi,
@@ -301,7 +301,11 @@ where
 mod tests {
     use super::*;
     use anyhow::anyhow;
-    use bitvmx_client::types::IncomingBitVMXApiMessages;
+    use common::msg_broker::bitvmx_types::IncomingBitVMXApiMessages;
+    use common::test_utils::rsk_block_generator::{
+        create_block_from_template, get_first_default_rsk_block, get_second_default_rsk_block,
+        get_third_default_rsk_block,
+    };
     use common::{
         msg_broker::{
             broker::{BROKER_SERVER_ID, MockBrokerClientApi},
@@ -312,6 +316,91 @@ mod tests {
         },
     };
     use mockall::predicate::*;
+
+    #[test]
+    fn test_try_block_handles_wrong_order_blocks() {
+        let mut block_broker = MockBrokerClientApi::new();
+        let template_block1 = get_first_default_rsk_block();
+        let template_block2 = get_second_default_rsk_block();
+        let template_block3 = get_third_default_rsk_block();
+
+        let block1 = create_block_from_template(
+            &template_block1,
+            "0xa7b3f84f619c302a11892a379ac5a3a0bfbf8a3dce946a3db31cfb4c2f5cd909",
+            template_block1.parent_hash(),
+            vec![],
+        );
+        let block2 = create_block_from_template(
+            &template_block2,
+            "0x5c8a91d7ef0d46f3a65f1c345beab0cf56a8e065f2b762fe9b8e2d771fd42c83",
+            block1.hash(),
+            vec![],
+        );
+        let block3 = create_block_from_template(
+            &template_block3,
+            "0x3e5f9c2451b8efb4c1e3739816e44e4f0e9c25b2f9f6a57bdbf71e2df7c1b790",
+            block2.hash(),
+            vec![],
+        );
+
+        // Mock the broker to return blocks in wrong order
+        block_broker.expect_try_recv().times(3).returning({
+            let b3 = block3.clone();
+            let b2 = block2.clone();
+            let b1 = block1.clone();
+            let mut call_count = 0;
+            move || {
+                call_count += 1;
+                match call_count {
+                    1 => Ok(Some(FromServer::Block(RskBlockAndUncles::new(
+                        b3.clone(),
+                        vec![],
+                    )))),
+                    2 => Ok(Some(FromServer::Block(RskBlockAndUncles::new(
+                        b2.clone(),
+                        vec![],
+                    )))),
+                    3 => Ok(Some(FromServer::Block(RskBlockAndUncles::new(
+                        b1.clone(),
+                        vec![],
+                    )))),
+                    _ => Ok(None),
+                }
+            }
+        });
+
+        let mut monitor = Monitor::new(
+            MockBrokerClientApi::new(),
+            block_broker,
+            Arc::new(MockBrokerClientApi::new()),
+            vec![get_fake_address_1()],
+        );
+        monitor.block_monitoring_active = true;
+
+        let result1 = monitor.try_block().expect("Failed to receive first block");
+        assert_eq!(
+            result1,
+            Some(RskBlockAndUncles::new(block3.clone(), vec![]))
+        );
+        let result2 = monitor.try_block().expect("Failed to receive second block");
+        assert_eq!(
+            result2,
+            Some(RskBlockAndUncles::new(block2.clone(), vec![]))
+        );
+        let result3 = monitor.try_block().expect("Failed to receive third block");
+        assert_eq!(
+            result3,
+            Some(RskBlockAndUncles::new(block1.clone(), vec![]))
+        );
+
+        assert_eq!(block1.hash(), block2.parent_hash());
+        assert_eq!(block2.hash(), block3.parent_hash());
+
+        // Verify blocks were received in wrong order
+        assert_eq!(result1.as_ref().unwrap().block().hash(), block3.hash());
+        assert_eq!(result2.as_ref().unwrap().block().hash(), block2.hash());
+        assert_eq!(result3.as_ref().unwrap().block().hash(), block1.hash());
+    }
 
     #[test]
     fn test_start_event_monitoring_success() {

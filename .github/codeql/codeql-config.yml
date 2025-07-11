@@ -1,0 +1,6 @@
+name: "CodeQL Config"
+
+# exclude directories from analysis
+paths-ignore:
+  - 'actors-mocking/**'
+  - 'qa-tools/**'

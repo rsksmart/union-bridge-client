@@ -18,3 +18,5 @@ notifier:
 contracts:
   - name: "PegManager"
     address: "<ADDRESS_HERE>"
+  - name: "SignatureManager"
+    address:  "<SIGNATURE_MANAGER_ADDRESS_HERE>"

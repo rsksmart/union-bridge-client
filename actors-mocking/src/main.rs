@@ -69,12 +69,18 @@ async fn main() -> Result<()> {
     // Fairgate scripts are hard to configure in this regard, as they do a source .env on each script pointing to this default port
     let anvil_port = 8545u16;
 
-    let anvil = Anvil::new()
-        .block_time(1) // block every 1 seconds
-        .port(anvil_port)
-        .arg("--host")
-        .arg("0.0.0.0") // for Docker networking compatibility
-        .spawn();
+    let mut tmp_anvil = Anvil::new().port(anvil_port).arg("--host").arg("0.0.0.0");
+
+    let anvil_block_time = std::env::var("ANVIL_BLOCK_TIME")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(1);
+
+    if anvil_block_time != 0 {
+        tmp_anvil = tmp_anvil.block_time(anvil_block_time);
+    }
+
+    let anvil = tmp_anvil.spawn();
 
     let key = anvil.keys().get(0).expect("No key found").clone();
     let signer = LocalSigner::from_signing_key(key.into());

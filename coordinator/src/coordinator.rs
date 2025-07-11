@@ -3,7 +3,7 @@ use crate::{
     monitor::MonitorApi,
 };
 use anyhow::{Context, Result};
-use bitvmx_client::types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
 use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 use common::runtime_sync::RuntimeSync;
 use common::shutdown_flag::ShutdownFlag;
@@ -214,7 +214,7 @@ pub(crate) mod tests {
     };
     use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
     use alloy_primitives::U256;
-    use bitvmx_client::types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+    use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
     use common::msg_broker::broker::{BROKER_SERVER_ID, MockBrokerClientApi};
     use common::{
         shutdown_flag::ShutdownFlag,
@@ -231,7 +231,8 @@ pub(crate) mod tests {
     };
     use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
     use transaction_dispatcher::types::{
-        AcceptPegInInput, AcceptPegInOutput, PegInAddressInput, PegInAddressOutput,
+        AcceptPegInInput, AcceptPegInOutput, AddMemberNonceInput, AddMemberNonceOutput,
+        AddMemberSignatureInput, AddMemberSignatureOutput, PegInAddressInput, PegInAddressOutput,
         RegisterPegInInput, RegisterPegInOutput, RegisterPegOutInput, RegisterPegOutOutput,
     };
 
@@ -518,6 +519,16 @@ pub(crate) mod tests {
                 &self,
                 input: RegisterPegOutInput,
             ) -> Result<RegisterPegOutOutput, DomainErrors>;
+
+            async fn add_member_nonce(
+                &self,
+                input: AddMemberNonceInput,
+            ) -> Result<AddMemberNonceOutput, DomainErrors>;
+
+            async fn add_member_signature(
+                &self,
+                input: AddMemberSignatureInput,
+            ) -> Result<AddMemberSignatureOutput, DomainErrors>;
 
             async fn notify_check_fork_completion(
                 &self,

@@ -104,7 +104,7 @@ impl BlockchainView {
 
         let removed_block = self.blocks.insert(new_block.number(), new_block.clone());
 
-        // new tip block
+        // new tip without reorg
         if removed_block.is_none() {
             debug!(
                 "Adding new tip {} ({}) to BlockchainView",
@@ -127,7 +127,7 @@ impl BlockchainView {
             .get_tip()
             .expect("There should be a tip block after adding a new block");
 
-        // tip replaced
+        // tip replacement
         if new_block.number() == stored_tip.number() {
             info!(
                 "Replacing tip block {} ({}) with {} ({}) in BlockchainView",
@@ -138,14 +138,14 @@ impl BlockchainView {
             );
 
             // update all visitors of the replacement
-            self.notify_added_block(&new_block);
             self.notify_removed_block(&removed_block);
+            self.notify_added_block(&new_block);
 
             return;
         }
 
         // reorg
-        self.rollback_to(new_block);
+        self.rollback_to(new_block, removed_block);
     }
 
     pub fn get_from(&self, number: BlockNumber) -> Vec<&RskBlockAndUncles> {
@@ -165,7 +165,7 @@ impl BlockchainView {
         self.observers.clear();
     }
 
-    fn rollback_to(&mut self, new_tip: RskBlockAndUncles) {
+    fn rollback_to(&mut self, new_tip: RskBlockAndUncles, removed_block: RskBlockAndUncles) {
         debug!(
             "Reorg detected, rolling back BlockchainView to {} ({})",
             new_tip.number(),
@@ -195,6 +195,7 @@ impl BlockchainView {
         }
 
         // notify observers about the new tip
+        self.notify_removed_block(&removed_block);
         self.notify_added_block(&new_tip);
 
         info!(
@@ -470,7 +471,7 @@ mod tests {
         // 2. alternative block 101 should be added
         assert_eq!(
             tracker_ref.get_removed_blocks(),
-            vec![block_103.clone(), block_102.clone()]
+            vec![block_103.clone(), block_102.clone(), block_101.clone()]
         );
 
         // verify final chain state with actual block values
@@ -562,7 +563,12 @@ mod tests {
         // should remove blocks 105, 104, 103 and add alternative block 102
         assert_eq!(
             tracker_ref.get_removed_blocks(),
-            vec![blocks[5].clone(), blocks[4].clone(), blocks[3].clone()]
+            vec![
+                blocks[5].clone(),
+                blocks[4].clone(),
+                blocks[3].clone(),
+                blocks[2].clone()
+            ]
         ); // blocks 105, 104, 103
         assert_eq!(tracker_ref.get_added_blocks(), vec![alt_block_102.clone()]);
 

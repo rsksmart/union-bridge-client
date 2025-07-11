@@ -60,5 +60,25 @@ pub struct RegisterPegOutOutput {
     pub(crate) success: bool,
 }
 
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+pub struct AddMemberNonceInput {
+    pub(crate) hash_to_sign: String,
+    pub(crate) nonce: String,
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+pub struct AddMemberSignatureInput {
+    pub(crate) hash_to_sign: String,
+    pub(crate) signature: String,
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+pub struct TxSentOutput {
+    pub(crate) transaction_hash: String,
+    pub(crate) success: bool,
+}
+
+pub type AddMemberNonceOutput = TxSentOutput;
+pub type AddMemberSignatureOutput = TxSentOutput;
 pub type AcceptPegInInput = RegisterPegInInput;
 pub type AcceptPegInOutput = RegisterPegInOutput;
