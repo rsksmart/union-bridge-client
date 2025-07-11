@@ -1,6 +1,6 @@
 use crate::types::{EventDecoder, RskPegManagerEvents};
 use anyhow::{Context, Result, bail};
-use bitvmx_client::types::OutgoingBitVMXApiMessages;
+use common::msg_broker::bitvmx_types::OutgoingBitVMXApiMessages;
 use common::{
     msg_broker::{
         broker::BitVmxBrokerClientApi,
@@ -301,7 +301,7 @@ where
 mod tests {
     use super::*;
     use anyhow::anyhow;
-    use bitvmx_client::types::IncomingBitVMXApiMessages;
+    use common::msg_broker::bitvmx_types::IncomingBitVMXApiMessages;
     use common::test_utils::rsk_block_generator::{
         create_block_from_template, get_first_default_rsk_block, get_second_default_rsk_block,
         get_third_default_rsk_block,

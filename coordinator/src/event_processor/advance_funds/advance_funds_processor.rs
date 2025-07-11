@@ -7,9 +7,9 @@ use crate::{
 };
 use anyhow::Result;
 use bincode::config::standard;
-use bitvmx_client::types::IncomingBitVMXApiMessages;
 use check_fork::{CheckForkArgs, check_fork};
 use check_fork_zkp::{CHECK_FORK_GUEST_ID, CHECK_FORK_GUEST_PATH};
+use common::msg_broker::bitvmx_types::IncomingBitVMXApiMessages;
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::{
@@ -379,7 +379,7 @@ mod tests {
     use crate::types::EventWithBlock;
     use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
     use alloy_primitives::U256 as AlloyU256;
-    use bitvmx_client::types::OutgoingBitVMXApiMessages;
+    use common::msg_broker::bitvmx_types::OutgoingBitVMXApiMessages;
     use common::msg_broker::broker::MockBrokerClientApi;
     use common::test_utils::rsk_block_generator::create_block_from_template;
     use common::types::{BlockHash, RskBlock};

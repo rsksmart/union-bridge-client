@@ -3,7 +3,7 @@ use crate::{
     monitor::MonitorApi,
 };
 use anyhow::{Context, Result};
-use bitvmx_client::types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
 use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 use common::runtime_sync::RuntimeSync;
 use common::shutdown_flag::ShutdownFlag;
@@ -211,7 +211,7 @@ pub(crate) mod tests {
     };
     use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
     use alloy_primitives::U256;
-    use bitvmx_client::types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+    use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
     use common::msg_broker::broker::{BROKER_SERVER_ID, MockBrokerClientApi};
     use common::{
         shutdown_flag::ShutdownFlag,

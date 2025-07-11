@@ -19,8 +19,6 @@ log = { workspace = true }
 serde_json = { workspace = true }
 union-contracts = { workspace = true }
 primitive-types = { workspace = true }
-# TODO(jira) https://rsklabs.atlassian.net/browse/ub-176
-bitvmx-client = { workspace = true }
 hex = { workspace = true }
 serde = { workspace = true }
 

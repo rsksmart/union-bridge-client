@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use bitvmx_client::types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
 use common::msg_broker::broker::BitVmxBrokerServerApi;
 
 pub struct Executor<BS: BitVmxBrokerServerApi> {
