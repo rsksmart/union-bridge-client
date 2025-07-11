@@ -1,4 +1,4 @@
-name: QA Tests WF
+name: QA Tests
 
 permissions:
   contents: read
@@ -36,6 +36,7 @@ jobs:
         uses: ./.github/actions/common_setup
         with:
           fairgate_github_token: ${{ secrets.FAIRGATE_GITHUB_TOKEN }}
+          cache-build: true
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1

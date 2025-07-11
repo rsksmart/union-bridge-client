@@ -5,6 +5,9 @@ inputs:
   fairgate_github_token:
     description: "GitHub token for accessing FairgateLabs repositories"
     required: true
+  cache-build:
+    description: "Wether dependencies should be cached"
+    required: true
 
 runs:
   using: "composite"
@@ -47,7 +50,8 @@ runs:
         curl -L https://risczero.com/install | bash
         ~/.risc0/bin/rzup install
 
-    - name: Cache Dependencies
+    - name: Cache Build
+      if: ${{ inputs.cache-build == 'true' }}
       uses: actions/cache@v3
       with:
         path: |
@@ -58,7 +62,7 @@ runs:
         restore-keys: |
           ${{ runner.os }}-rust-cargo-
 
-    - name: Inject FairgateLabs token into SSH URLs
+    - name: Fix Fairgate private repo dependency cloning
       shell: bash
       run: |
         git config --global \
