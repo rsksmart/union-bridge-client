@@ -1,0 +1,6 @@
+name: "CodeQL Config"
+
+# Exclude directories from analysis
+paths-ignore:
+  - 'rust-bitvmx-workspace/**'
+  - 'union-bridge-client/qa-tools/**'

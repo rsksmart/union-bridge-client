@@ -54,6 +54,7 @@ jobs:
           source-root: union-bridge-client
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
+          config-file: union-bridge-client/.github/codeql/codeql-config.yml
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
