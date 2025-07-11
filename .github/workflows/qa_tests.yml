@@ -57,6 +57,5 @@ jobs:
       - name: Run integration tests
         working-directory: qa-tools
         run: |
-          export CARGO_TARGET_DIR=shared-target
           JUNIT_REPORT="reports/tx_dispatcher.xml" RUST_BACKTRACE=1 cargo run --bin qa-tools-transaction-dispatcher -- --tags @transaction-dispatcher
           cat reports/tx_dispatcher.xml

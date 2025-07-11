@@ -46,7 +46,6 @@ jobs:
         if: matrix.language == 'rust'
         run: |
           cd check-fork/zkp
-          export CARGO_TARGET_DIR=shared-target
           cargo build
 
       # initialize CodeQL pointing at the real root of client code
