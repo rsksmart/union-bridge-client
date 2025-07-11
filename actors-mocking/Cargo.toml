@@ -22,6 +22,7 @@ serde = { workspace = true }
 bitvmx-client = { workspace = true }
 hex = "0.4"
 chrono = "0.4.41"
+uuid = { version = "1.11.0", features = ["v4"] }
 
 [features]
 default = []

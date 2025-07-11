@@ -1,9 +1,12 @@
 use anyhow::{Context, Result};
-use bitvmx_client::types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
-use common::msg_broker::broker::BitVmxBrokerServerApi;
+use bitvmx_client::{
+    program::variables::VariableTypes,
+    types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages},
+};
+use common::msg_broker::broker::{BITVMX_L2_BROKER_CLIENT_ID, BitVmxBrokerServerApi};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::HashSet;
+use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BtcTx {
@@ -29,15 +32,11 @@ pub struct Input {
 
 pub struct Executor<BS: BitVmxBrokerServerApi> {
     broker_server: BS,
-    consumers: HashSet<u32>,
 }
 
 impl<BS: BitVmxBrokerServerApi> Executor<BS> {
     pub fn new(broker_server: BS) -> Self {
-        Self {
-            broker_server,
-            consumers: HashSet::new(),
-        }
+        Self { broker_server }
     }
 
     pub fn try_recv(&mut self) -> Result<()> {
@@ -92,9 +91,20 @@ impl<BS: BitVmxBrokerServerApi> Executor<BS> {
             "merkle_branch_hashes": merkle_branch_hashes,
         });
 
-        let event = FromServer::FromBitVMX("register-pegin".to_owned(), payload);
+        let uuid = Uuid::new_v4();
+        let event = OutgoingBitVMXApiMessages::Variable(
+            uuid,
+            "register-pegin".to_string(),
+            VariableTypes::String(payload.to_string()),
+        );
 
-        self.notify_consumers(event)
+        return self
+            .broker_server
+            .send(&event, BITVMX_L2_BROKER_CLIENT_ID)
+            .context(format!(
+                "sending event {:?} to consumer {}",
+                event, BITVMX_L2_BROKER_CLIENT_ID
+            ));
     }
 
     pub fn send_pegin_accepted_event(
@@ -111,27 +121,23 @@ impl<BS: BitVmxBrokerServerApi> Executor<BS> {
             "merkle_branch_hashes": merkle_branch_hashes,
         });
 
-        let event = FromServer::FromBitVMX("accept-pegin".to_owned(), payload);
+        let uuid = Uuid::new_v4();
+        let event = OutgoingBitVMXApiMessages::Variable(
+            uuid,
+            "accept-pegin".to_string(),
+            VariableTypes::String(payload.to_string()),
+        );
 
-        self.notify_consumers(event)
+        return self
+            .broker_server
+            .send(&event, BITVMX_L2_BROKER_CLIENT_ID)
+            .context(format!(
+                "sending event {:?} to consumer {}",
+                event, BITVMX_L2_BROKER_CLIENT_ID
+            ));
     }
 
     fn reception_time() -> String {
         chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
-    }
-
-    fn notify_consumers(&self, event: FromServer) -> Result<()> {
-        for c_id in &self.consumers {
-            println!(
-                "Status: Notifying consumer {} about new event {:?}",
-                c_id, event
-            );
-
-            self.broker_server.send
-                .send(&event, *c_id)
-                .context(format!("sending event {:?} to consumer {}", event, c_id))?;
-        }
-
-        Ok(())
     }
 }

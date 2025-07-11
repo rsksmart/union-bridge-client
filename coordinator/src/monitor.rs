@@ -300,7 +300,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::monitor::FromServer::FromBitVMX;
     use anyhow::anyhow;
     use bitvmx_client::types::IncomingBitVMXApiMessages;
     use common::{

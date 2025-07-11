@@ -217,7 +217,6 @@ pub(crate) mod tests {
     use bitvmx_client::types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
     use common::msg_broker::broker::{BROKER_SERVER_ID, MockBrokerClientApi};
     use common::{
-        msg_broker::types::FromServer::FromBitVMX,
         shutdown_flag::ShutdownFlag,
         test_utils::rsk_block_generator::{
             create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,

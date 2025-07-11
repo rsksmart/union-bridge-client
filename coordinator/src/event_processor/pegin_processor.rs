@@ -2,24 +2,24 @@ use crate::{
     config::REQUIRED_CONFIRMATIONS,
     event_processor::{
         EventProcessor,
-        blockchain_tracker::{BlockConfirmations, BlockchainView},
+        blockchain_tracker::{BlockConfirmations, BlockchainObserver, BlockchainView},
     },
     types::{EventWithBlock, RskPegManagerEvents},
 };
 use anyhow::{Context, Result, bail};
-use bitvmx_client::{program::variables::VariableTypes, types::IncomingBitVMXApiMessages};
+use bitvmx_client::{
+    program::variables::VariableTypes,
+    types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages},
+};
 use common::{
-    msg_broker::{
-        broker::{BROKER_SERVER_ID, BrokerClientApi},
-        types::{FromServer, ToServer},
-    },
+    msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi},
     types::{RskBlockAndUncles, TxHash},
 };
 use log::info;
 use reqwest::blocking::Client;
 use serde::Serialize;
 use serde_json::Value;
-use std::{cell::RefCell, collections::HashMap, env, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, env, rc::Rc, sync::Arc};
 use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
 use uuid::Uuid;
 
@@ -41,20 +41,8 @@ impl<T: Clone> PeginEvent<T> {
         }
     }
 
-    fn data(&self) -> T {
-        self.data.inner.clone()
-    }
-
     fn is_confirmed(&self) -> bool {
         self.confirmations.borrow().is_confirmed()
-    }
-
-    fn confirmations(&self) -> Rc<RefCell<BlockConfirmations>> {
-        self.confirmations.clone()
-    }
-
-    fn is_handled(&self) -> bool {
-        self.is_handled
     }
 
     fn mark_handled(&mut self) {
@@ -77,41 +65,17 @@ impl PeginEventState {
             pegin_accepted: None,
         }
     }
-
-    fn pegin_flow_id(&self) -> Uuid {
-        self.pegin_flow_id
-    }
-
-    fn pegin_requested(&self) -> &PeginEvent<PeginRequested> {
-        &self.pegin_requested
-    }
-
-    fn pegin_accepted(&self) -> Option<&PeginEvent<PeginAccepted>> {
-        self.pegin_accepted.as_ref()
-    }
-
-    fn pegin_requested_mut(&mut self) -> &mut PeginEvent<PeginRequested> {
-        &mut self.pegin_requested
-    }
-
-    fn pegin_accepted_mut(&mut self) -> Option<&mut PeginEvent<PeginAccepted>> {
-        self.pegin_accepted.as_mut()
-    }
-
-    fn set_pegin_accepted(&mut self, pegin_accepted: PeginEvent<PeginAccepted>) {
-        self.pegin_accepted = Some(pegin_accepted);
-    }
 }
 
-pub struct PeginProcessor<T: BrokerClientApi> {
+pub struct PeginProcessor<T: BitVmxBrokerClientApi> {
     http_client: Client,
-    bitvmx_broker: T,
+    bitvmx_broker: Arc<T>,
     blockchain: BlockchainView,
     tracker: HashMap<TxHash, PeginEventState>,
 }
 
-impl<T: BrokerClientApi> PeginProcessor<T> {
-    pub fn new(bitvmx_broker: T) -> Self {
+impl<T: BitVmxBrokerClientApi> PeginProcessor<T> {
+    pub fn new(bitvmx_broker: Arc<T>) -> Self {
         Self {
             http_client: Client::new(),
             bitvmx_broker,
@@ -142,7 +106,7 @@ impl<T: BrokerClientApi> PeginProcessor<T> {
 
         match self.tracker.get_mut(&tx_hash) {
             Some(state) => {
-                state.set_pegin_accepted(event);
+                state.pegin_accepted = Some(event);
                 Ok(())
             }
             None => {
@@ -156,13 +120,19 @@ impl<T: BrokerClientApi> PeginProcessor<T> {
 
         match self.tracker.remove(&tx_hash) {
             Some(state) => {
-                self.blockchain
-                    .remove_observer(state.pegin_flow_id().to_string().as_str());
+                if state.pegin_accepted.is_some() {
+                    bail!(
+                        "PeginAccepted found while trying to remove PeginRequested event. This should never occur."
+                    );
+                }
+
+                let confirmations = state.pegin_requested.confirmations.borrow();
+                let observer_id = confirmations.get_id();
+                self.blockchain.remove_observer(observer_id.as_str());
 
                 info!(
                     "Untracked PeginRequested event. tx_hash: {:?}, pegin_flow_id: {}",
-                    tx_hash,
-                    state.pegin_flow_id()
+                    tx_hash, state.pegin_flow_id
                 );
 
                 Ok(())
@@ -179,14 +149,22 @@ impl<T: BrokerClientApi> PeginProcessor<T> {
 
         match self.tracker.get_mut(&tx_hash) {
             Some(state) => {
-                self.blockchain
-                    .remove_observer(state.pegin_flow_id().to_string().as_str());
+                if let Some(pegin_accepted) = &state.pegin_accepted {
+                    let confirmations = pegin_accepted.confirmations.borrow();
+                    let observer_id = confirmations.get_id();
+                    self.blockchain.remove_observer(observer_id.as_str());
+                } else {
+                    bail!(
+                        "Trying to untrack PeginAccepted event, but tracker entry for tx_hash: {:?} has no PeginAccepted event",
+                        tx_hash
+                    );
+                }
+
                 state.pegin_accepted = None;
 
                 info!(
                     "Untracked PeginAccepted event. tx_hash: {:?}, pegin_flow_id: {}",
-                    tx_hash,
-                    state.pegin_flow_id()
+                    tx_hash, state.pegin_flow_id
                 );
 
                 Ok(())
@@ -218,134 +196,105 @@ impl<T: BrokerClientApi> PeginProcessor<T> {
         }
     }
 
-    fn send_response_to_bitvmx(&self, method: &str, payload: Value) -> Result<bool> {
-        match method {
-            "pegin-address" => {
-                let msg = ToServer::TemporaryPegInAddressMockedBitVMX(payload);
-                Ok(self.bitvmx_broker.send(BROKER_SERVER_ID, msg)?)
-            }
-            "register-pegin" => {
-                // No response needed for register-pegin
-                Ok(true)
-            }
-            "accept-pegin" => {
-                // No response needed for accept-pegin
-                Ok(true)
-            }
-            _ => bail!("Unsupported method name for BitVMX response: {}", method),
-        }
-    }
-
     fn process_unhandled_confirmed_pegin_requested_events(&mut self) -> Result<()> {
-        let mut events = Vec::new();
+        for (tx_hash, state) in self.tracker.iter_mut() {
+            let flow_id = state.pegin_flow_id;
 
-        for (tx_hash, state) in &self.tracker {
-            let event = state.pegin_requested();
-            if event.is_confirmed() && !event.is_handled() {
-                events.push((tx_hash.clone(), state.pegin_flow_id(), event.data().clone()));
+            let event = &mut state.pegin_requested;
+            if !event.is_confirmed() || event.is_handled {
+                continue;
             }
-        }
 
-        for (tx_hash, pegin_flow_id, data) in events {
-            match self.handle_confirmed_event(pegin_flow_id, "PeginRequested", &data) {
-                Ok(_) => {
-                    if let Some(state) = self.tracker.get_mut(&tx_hash) {
-                        state.pegin_requested_mut().mark_handled();
-                        self.blockchain
-                            .remove_observer(pegin_flow_id.to_string().as_str());
-                        info!(
-                            "Successfully processed confirmed PeginRequested event: {}",
-                            pegin_flow_id
-                        );
-                    } else {
-                        bail!(
-                            "Tracker missing expected state for tx_hash {} (flow_id: {}) when handling PeginRequested",
-                            tx_hash,
-                            pegin_flow_id
-                        );
-                    }
-                }
-                Err(e) => {
-                    bail!(
-                        "Error processing confirmed PeginRequested event (tx_hash: {}, flow_id: {}): {}",
-                        tx_hash,
-                        pegin_flow_id,
-                        e
-                    );
-                }
-            }
+            Self::send_to_bitvmx(
+                &self.bitvmx_broker,
+                flow_id,
+                "PeginRequested",
+                &event.data.inner,
+            )
+            .context(format!(
+                "Error processing confirmed PeginRequested event (tx_hash: {}, flow_id: {})",
+                tx_hash, flow_id
+            ))?;
+
+            event.mark_handled();
+
+            let confirmations = event.confirmations.borrow();
+            let observer_id = confirmations.get_id();
+            self.blockchain.remove_observer(observer_id.as_str());
+
+            info!(
+                "Successfully processed confirmed PeginRequested event: {}",
+                flow_id
+            );
         }
 
         Ok(())
     }
 
     fn process_unhandled_confirmed_pegin_accepted_events(&mut self) -> Result<()> {
-        let mut events = Vec::new();
+        let mut to_remove = Vec::new();
 
-        for (tx_hash, state) in &self.tracker {
-            if let Some(event) = state.pegin_accepted() {
-                if event.is_confirmed() && !event.is_handled() {
-                    events.push((tx_hash.clone(), state.pegin_flow_id(), event.data().clone()));
-                }
-            }
+        for (tx_hash, state) in self.tracker.iter_mut() {
+            let flow_id = state.pegin_flow_id;
+
+            let event = match state.pegin_accepted.as_mut() {
+                None => continue,
+                Some(event) if !event.is_confirmed() || event.is_handled => continue,
+                Some(event) => event,
+            };
+
+            Self::send_to_bitvmx(
+                &self.bitvmx_broker,
+                flow_id,
+                "PeginAccepted",
+                &event.data.inner,
+            )
+            .context(format!(
+                "Error processing confirmed PeginAccepted event (tx_hash: {}, flow_id: {})",
+                tx_hash, flow_id
+            ))?;
+
+            event.mark_handled();
+
+            let confirmations = event.confirmations.borrow();
+            let observer_id = confirmations.get_id();
+            self.blockchain.remove_observer(observer_id.as_str());
+
+            info!(
+                "Successfully processed confirmed PeginAccepted event: {}",
+                flow_id
+            );
+
+            to_remove.push((*tx_hash, flow_id));
         }
 
-        for (tx_hash, pegin_flow_id, data) in events {
-            match self.handle_confirmed_event(pegin_flow_id, "PeginAccepted", &data) {
-                Ok(_) => {
-                    if let Some(state) = self.tracker.get_mut(&tx_hash) {
-                        if let Some(pegin_accepted) = state.pegin_accepted_mut() {
-                            pegin_accepted.mark_handled();
-                            self.blockchain
-                                .remove_observer(pegin_flow_id.to_string().as_str());
-                            info!(
-                                "Successfully processed confirmed PeginAccepted event: {}",
-                                pegin_flow_id
-                            );
-                        } else {
-                            bail!(
-                                "Expected PeginAccepted event not present for tx_hash {} (flow_id: {})",
-                                tx_hash,
-                                pegin_flow_id
-                            );
-                        }
-                    } else {
-                        bail!(
-                            "Tracker missing expected state for tx_hash {} (flow_id: {}) when handling PeginAccepted",
-                            tx_hash,
-                            pegin_flow_id
-                        );
-                    }
-                }
-                Err(e) => {
-                    bail!(
-                        "Error processing confirmed PeginAccepted event (tx_hash: {}, flow_id: {}): {}",
-                        tx_hash,
-                        pegin_flow_id,
-                        e
-                    );
-                }
-            }
+        // Pegin completed so we can remove the state in tracker
+        for (tx_hash, flow_id) in to_remove {
+            info!(
+                "Pegin completed. Removing pegin event state. tx_hash: {:?}, flow_id: {}",
+                tx_hash, flow_id
+            );
+            self.tracker.remove(&tx_hash);
         }
 
         Ok(())
     }
 
-    fn handle_confirmed_event<E: Serialize>(
-        &self,
+    fn send_to_bitvmx<E: Serialize>(
+        bitvmx_broker: &T,
         pegin_flow_id: Uuid,
         variable_name: &str,
         data: &E,
     ) -> Result<()> {
         let data = serde_json::to_string(data)?;
 
-        self.bitvmx_broker.send(
+        bitvmx_broker.send(
             BROKER_SERVER_ID,
-            ToServer::ToBitVMX(IncomingBitVMXApiMessages::SetVar(
+            IncomingBitVMXApiMessages::SetVar(
                 pegin_flow_id,
                 variable_name.to_string(),
                 VariableTypes::String(data),
-            )),
+            ),
         )?;
 
         Ok(())
@@ -357,30 +306,25 @@ impl<T: BrokerClientApi> PeginProcessor<T> {
     }
 }
 
-impl<T: BrokerClientApi> EventProcessor for PeginProcessor<T> {
-    fn process_new_bitvmx_event(&mut self, event: &FromServer) -> Result<()> {
+impl<T: BitVmxBrokerClientApi> EventProcessor for PeginProcessor<T> {
+    fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
         match event {
-            FromServer::FromBitVMX(method, data)
-                if matches!(
-                    method.as_str(),
-                    "pegin-address" | "register-pegin" | "accept-pegin"
-                ) =>
-            {
+            OutgoingBitVMXApiMessages::Variable(
+                pegin_flow_id,
+                method,
+                VariableTypes::String(data),
+            ) if matches!(method.as_str(), "register-pegin" | "accept-pegin") => {
                 info!(
-                    "Handling BitVMX event. Method: {}, Payload: {:?}",
-                    method, data
+                    "Handling BitVMX Variable Event. Flow Id: {}, Method: {}, Payload: {:?}",
+                    pegin_flow_id, method, data
                 );
 
-                let result = self.proxy_request(method, data)?;
-                info!(
-                    "Successfully proxied request for method '{}'. Response: {}",
-                    method, result
-                );
+                let json_data = serde_json::from_str(data)?;
+                let result = self.proxy_request(method, &json_data)?;
 
-                self.send_response_to_bitvmx(method, result.clone())?;
                 info!(
-                    "Successfully sent response to BitVMX broker for method '{}'. Payload: {}",
-                    method, result
+                    "Successfully proxied request. Flow Id: {}, Method: '{}', Response: {}",
+                    pegin_flow_id, method, result
                 );
             }
             _ => {}
@@ -401,17 +345,15 @@ impl<T: BrokerClientApi> EventProcessor for PeginProcessor<T> {
                 info!("Handling PeginRequested event: {:?}", data);
 
                 let pegin_flow_id = Uuid::new_v4();
+                let observer_id = format!("pegin_requested-{}", pegin_flow_id);
 
-                let confirmations = BlockConfirmations::new(
-                    pegin_flow_id.to_string(),
-                    data.block_number,
-                    REQUIRED_CONFIRMATIONS,
-                );
+                let confirmations =
+                    BlockConfirmations::new(observer_id, data.block_number, REQUIRED_CONFIRMATIONS);
 
                 let pegin_requested = PeginEvent::new(data.clone(), confirmations);
 
                 self.blockchain
-                    .add_observer(pegin_requested.confirmations());
+                    .add_observer(pegin_requested.confirmations.clone());
 
                 info!(
                     "Adding PeginRequested event to pegin event tracker. Event: {:?}",
@@ -437,17 +379,14 @@ impl<T: BrokerClientApi> EventProcessor for PeginProcessor<T> {
                     );
                 };
 
-                let pegin_flow_id = state.pegin_flow_id();
-
-                let confirmations = BlockConfirmations::new(
-                    pegin_flow_id.to_string(),
-                    data.block_number,
-                    REQUIRED_CONFIRMATIONS,
-                );
+                let observer_id = format!("pegin_accepted-{}", state.pegin_flow_id);
+                let confirmations =
+                    BlockConfirmations::new(observer_id, data.block_number, REQUIRED_CONFIRMATIONS);
 
                 let pegin_accepted = PeginEvent::new(data.clone(), confirmations);
 
-                self.blockchain.add_observer(pegin_accepted.confirmations());
+                self.blockchain
+                    .add_observer(pegin_accepted.confirmations.clone());
 
                 info!(
                     "Adding PeginAccepted event to pegin event tracker. Event: {:?}",
@@ -492,84 +431,16 @@ mod tests {
     };
     use alloy_primitives::{Address, Bytes, FixedBytes, U256};
     use common::{
-        msg_broker::{
-            broker::{BROKER_SERVER_ID, MockBrokerClientApi},
-            types::{FromServer, ToServer},
-        },
+        msg_broker::broker::{BROKER_SERVER_ID, MockBrokerClientApi},
         test_utils::rsk_block_generator::create_block_and_uncles,
         types::BlockHash,
     };
     use mockall::predicate::{eq, function};
-    use mockito::mock;
     use primitive_types::H256;
     use serde_json::json;
     use union_contracts::bindings::peg_manager::PegManager::{
         PeginRequested, PrevoutData, RequestPeginTempInfo, StreamPosition,
     };
-
-    #[test]
-    fn process_new_bitvmx_event_handles_pegin_address_correctly() {
-        let _m = mock("POST", "/pegin-address")
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(r#"{"address": "bcrt1test"}"#)
-            .create();
-
-        unsafe {
-            std::env::set_var("TRANSACTION_DISPATCHER_URL", &mockito::server_url());
-        }
-
-        let mut broker = MockBrokerClientApi::new();
-        broker
-            .expect_send()
-            .withf(|dest, msg| {
-                *dest == BROKER_SERVER_ID
-                    && matches!(msg, ToServer::TemporaryPegInAddressMockedBitVMX(payload)
-                        if payload.get("address") == Some(&json!("bcrt1test")))
-            })
-            .returning(|_, _| Ok(true));
-
-        let mut processor = PeginProcessor::new(broker);
-
-        let data = json!({
-            "btc_reimbursement_pub_key": "0xabc",
-            "rootstock_deposit_address": "0xdef",
-            "value": 42
-        });
-        let event = FromServer::FromBitVMX("pegin-address".to_string(), data);
-
-        let result = processor.process_new_bitvmx_event(&event);
-
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn process_new_bitvmx_event_fails_on_dispatcher_error() {
-        let _m = mockito::mock("POST", "/pegin-address")
-            .with_status(500)
-            .with_body("Internal Server Error")
-            .create();
-
-        unsafe {
-            std::env::set_var("TRANSACTION_DISPATCHER_URL", &mockito::server_url());
-        }
-
-        let mut broker = MockBrokerClientApi::new();
-        broker.expect_send().times(0);
-
-        let mut processor = PeginProcessor::new(broker);
-
-        let data = serde_json::json!({
-            "btc_reimbursement_pub_key": "0xabc",
-            "rootstock_deposit_address": "0xdef",
-            "value": 42
-        });
-
-        let event = FromServer::FromBitVMX("pegin-address".to_string(), data);
-        let result = processor.process_new_bitvmx_event(&event);
-
-        assert!(result.is_err());
-    }
 
     #[test]
     fn process_new_bitvmx_event_pegin_requested_does_not_send_response() {
@@ -585,7 +456,7 @@ mod tests {
         let mut broker = MockBrokerClientApi::new();
         broker.expect_send().times(0);
 
-        let mut processor = PeginProcessor::new(broker);
+        let mut processor = PeginProcessor::new(broker.into());
 
         let data = serde_json::json!({
             "block_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -614,9 +485,15 @@ mod tests {
             ]
         });
 
-        let event = FromServer::FromBitVMX("register-pegin".to_string(), data);
-        let result = processor.process_new_bitvmx_event(&event);
+        let payload = serde_json::to_string(&data).unwrap();
+        let uuid = Uuid::new_v4();
+        let event = OutgoingBitVMXApiMessages::Variable(
+            uuid,
+            "register-pegin".to_string(),
+            VariableTypes::String(payload),
+        );
 
+        let result = processor.process_new_bitvmx_event(&event);
         assert!(result.is_ok());
     }
 
@@ -634,7 +511,7 @@ mod tests {
         let mut broker = MockBrokerClientApi::new();
         broker.expect_send().times(0);
 
-        let mut processor = PeginProcessor::new(broker);
+        let mut processor = PeginProcessor::new(broker.into());
 
         let data = serde_json::json!({
             "block_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -663,9 +540,15 @@ mod tests {
             ]
         });
 
-        let event = FromServer::FromBitVMX("register-pegin".to_string(), data);
-        let result = processor.process_new_bitvmx_event(&event);
+        let payload = serde_json::to_string(&data).unwrap();
+        let uuid = Uuid::new_v4();
+        let event = OutgoingBitVMXApiMessages::Variable(
+            uuid,
+            "register-pegin".to_string(),
+            VariableTypes::String(payload),
+        );
 
+        let result = processor.process_new_bitvmx_event(&event);
         assert!(result.is_err());
     }
 
@@ -683,7 +566,7 @@ mod tests {
         let mut broker = MockBrokerClientApi::new();
         broker.expect_send().times(0); // Should not send anything
 
-        let mut processor = PeginProcessor::new(broker);
+        let mut processor = PeginProcessor::new(broker.into());
 
         let data = serde_json::json!({
             "block_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -708,9 +591,15 @@ mod tests {
             ]
         });
 
-        let event = FromServer::FromBitVMX("accept-pegin".to_string(), data);
-        let result = processor.process_new_bitvmx_event(&event);
+        let payload = serde_json::to_string(&data).unwrap();
+        let uuid = Uuid::new_v4();
+        let event = OutgoingBitVMXApiMessages::Variable(
+            uuid,
+            "accept-pegin".to_string(),
+            VariableTypes::String(payload),
+        );
 
+        let result = processor.process_new_bitvmx_event(&event);
         assert!(result.is_ok());
     }
 
@@ -728,7 +617,7 @@ mod tests {
         let mut broker = MockBrokerClientApi::new();
         broker.expect_send().times(0);
 
-        let mut processor = PeginProcessor::new(broker);
+        let mut processor = PeginProcessor::new(broker.into());
 
         let data = serde_json::json!({
             "block_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -753,16 +642,22 @@ mod tests {
             ]
         });
 
-        let event = FromServer::FromBitVMX("accept-pegin".to_string(), data);
-        let result = processor.process_new_bitvmx_event(&event);
+        let payload = serde_json::to_string(&data).unwrap();
+        let uuid = Uuid::new_v4();
+        let event = OutgoingBitVMXApiMessages::Variable(
+            uuid,
+            "accept-pegin".to_string(),
+            VariableTypes::String(payload),
+        );
 
+        let result = processor.process_new_bitvmx_event(&event);
         assert!(result.is_err());
     }
 
     #[test]
     fn process_new_event_pegin_requested_event_and_observer() {
         let broker = MockBrokerClientApi::new();
-        let mut processor = PeginProcessor::new(broker);
+        let mut processor = PeginProcessor::new(broker.into());
 
         let pegin_requested = dummy_pegin_requested_event();
         let tx_hash: TxHash = pegin_requested.acceptPeginTxHash.into();
@@ -781,16 +676,15 @@ mod tests {
         let observer_id = processor
             .tracker
             .get(&tx_hash)
-            .unwrap()
-            .pegin_flow_id()
-            .to_string();
-        assert!(processor.blockchain.has_observer(&observer_id));
+            .map(|state| state.pegin_requested.confirmations.borrow().get_id())
+            .unwrap();
+        assert!(processor.blockchain.has_observer(observer_id.as_str()));
     }
 
     #[test]
     fn process_removed_pegin_requested_event() {
         let broker = MockBrokerClientApi::new();
-        let mut processor = PeginProcessor::new(broker);
+        let mut processor = PeginProcessor::new(broker.into());
 
         let pegin_requested = dummy_pegin_requested_event();
         let tx_hash: TxHash = pegin_requested.acceptPeginTxHash.into();
@@ -805,12 +699,11 @@ mod tests {
         let observer_id = processor
             .tracker
             .get(&tx_hash)
-            .unwrap()
-            .pegin_flow_id()
-            .to_string();
+            .map(|state| state.pegin_requested.confirmations.borrow().get_id())
+            .unwrap();
         assert!(result.is_ok());
         assert_eq!(processor.tracker.len(), 1);
-        assert!(processor.blockchain.has_observer(&observer_id));
+        assert!(processor.blockchain.has_observer(observer_id.as_str()));
 
         let event = RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
             inner: pegin_requested.clone(),
@@ -828,7 +721,7 @@ mod tests {
     #[test]
     fn process_new_event_pegin_accepted_event_and_observer() {
         let broker = MockBrokerClientApi::new();
-        let mut processor = PeginProcessor::new(broker);
+        let mut processor = PeginProcessor::new(broker.into());
 
         let pegin_requested = dummy_pegin_requested_event();
         let event = RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
@@ -857,16 +750,16 @@ mod tests {
         let observer_id = processor
             .tracker
             .get(&tx_hash)
-            .unwrap()
-            .pegin_flow_id()
-            .to_string();
-        assert!(processor.blockchain.has_observer(&observer_id));
+            .and_then(|state| state.pegin_accepted.as_ref())
+            .map(|accepted| accepted.confirmations.borrow().get_id())
+            .unwrap();
+        assert!(processor.blockchain.has_observer(observer_id.as_str()));
     }
 
     #[test]
     fn process_removed_event_pegin_accepted_event() {
         let broker = MockBrokerClientApi::new();
-        let mut processor = PeginProcessor::new(broker);
+        let mut processor = PeginProcessor::new(broker.into());
 
         let pegin_requested = dummy_pegin_requested_event();
         let event = RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
@@ -903,7 +796,7 @@ mod tests {
             .tracker
             .get(&tx_hash)
             .unwrap()
-            .pegin_flow_id()
+            .pegin_flow_id
             .to_string();
         assert!(result.is_ok());
         assert_eq!(processor.tracker.len(), 1);
@@ -913,7 +806,7 @@ mod tests {
                 .tracker
                 .get(&tx_hash)
                 .unwrap()
-                .pegin_accepted()
+                .pegin_accepted
                 .is_none()
         );
     }
@@ -921,7 +814,7 @@ mod tests {
     #[test]
     fn process_new_event_ignores_unknown_event() {
         let broker = MockBrokerClientApi::new();
-        let mut processor = PeginProcessor::new(broker);
+        let mut processor = PeginProcessor::new(broker.into());
 
         let result = processor.process_new_event(&RskPegManagerEvents::UnknownEvent);
         assert!(result.is_ok());
@@ -931,7 +824,7 @@ mod tests {
     #[test]
     fn process_new_block_ignores_if_no_pending_events() {
         let broker = MockBrokerClientApi::new();
-        let mut processor = PeginProcessor::new(broker);
+        let mut processor = PeginProcessor::new(broker.into());
 
         let (block_1, _, _) = create_block_and_uncles();
         let block = RskBlockAndUncles::new_no_uncles(block_1);
@@ -943,7 +836,7 @@ mod tests {
     #[test]
     fn process_new_block_adds_confirmations_for_register_pegin_but_event_not_confirmed() {
         let broker = MockBrokerClientApi::new();
-        let mut processor = PeginProcessor::new(broker);
+        let mut processor = PeginProcessor::new(broker.into());
 
         let (block_1, _, _) = create_block_and_uncles();
 
@@ -965,7 +858,7 @@ mod tests {
 
         processor
             .blockchain
-            .add_observer(pegin_event.confirmations());
+            .add_observer(pegin_event.confirmations.clone());
         let _ = processor.track_pegin_requested(pegin_flow_id, pegin_event);
 
         // Simulate one new block
@@ -1010,10 +903,10 @@ mod tests {
             .times(1)
             .with(
     eq(BROKER_SERVER_ID),
-    function(move |req: &ToServer| {
+    function(move |req: &IncomingBitVMXApiMessages| {
         matches!(
             req,
-            ToServer::ToBitVMX(IncomingBitVMXApiMessages::SetVar(_, variable_name, VariableTypes::String(actual)))
+            IncomingBitVMXApiMessages::SetVar(_, variable_name, VariableTypes::String(actual))
                 if variable_name == "PeginRequested"
                 && serde_json::from_str::<Value>(actual).ok() == Some(expected_payload.clone())
         )
@@ -1021,11 +914,11 @@ mod tests {
 )
             .returning(|_, _| Ok(true));
 
-        let mut processor = PeginProcessor::new(broker);
+        let mut processor = PeginProcessor::new(broker.into());
 
         processor
             .blockchain
-            .add_observer(pegin_event.confirmations());
+            .add_observer(pegin_event.confirmations.clone());
         let _ = processor.track_pegin_requested(pegin_flow_id, pegin_event);
 
         let block = RskBlockAndUncles::new_no_uncles(block_1);
@@ -1044,7 +937,7 @@ mod tests {
     #[test]
     fn process_new_block_adds_confirmations_for_pegin_accepted_event_not_confirmed() {
         let broker = MockBrokerClientApi::new();
-        let mut processor = PeginProcessor::new(broker);
+        let mut processor = PeginProcessor::new(broker.into());
 
         let (block_1, block_2, _) = create_block_and_uncles();
 
@@ -1084,7 +977,7 @@ mod tests {
 
         processor
             .blockchain
-            .add_observer(pegin_accepted_event.confirmations());
+            .add_observer(pegin_accepted_event.confirmations.clone());
 
         let _ = processor.track_pegin_requested(pegin_flow_id, pegin_requested_event);
         let _ = processor.track_pegin_accepted(pegin_accepted_event);
@@ -1111,14 +1004,13 @@ mod tests {
                 *dest == BROKER_SERVER_ID
                     && matches!(
                         msg,
-                        ToServer::ToBitVMX(
                             IncomingBitVMXApiMessages::SetVar(_, name, VariableTypes::String(_))
-                        ) if name == "PeginAccepted"
+                         if name == "PeginAccepted"
                     )
             })
             .returning(|_, _| Ok(true));
 
-        let mut processor = PeginProcessor::new(broker);
+        let mut processor = PeginProcessor::new(broker.into());
 
         let pegin_requested = dummy_pegin_requested_event();
         let pegin_requested_event = PeginRequestedEvent {
@@ -1151,7 +1043,7 @@ mod tests {
 
         processor
             .blockchain
-            .add_observer(pegin_accepted_event.confirmations());
+            .add_observer(pegin_accepted_event.confirmations.clone());
         let _ = processor.track_pegin_requested(pegin_flow_id, pegin_requested_event);
         let _ = processor.track_pegin_accepted(pegin_accepted_event);
 
@@ -1161,7 +1053,7 @@ mod tests {
         let result = processor.process_new_block(&block);
         assert!(result.is_ok());
 
-        assert_eq!(processor.tracker.len(), 1);
+        assert_eq!(processor.tracker.len(), 0); // since pegin is completed at this point
         assert!(
             !processor
                 .blockchain

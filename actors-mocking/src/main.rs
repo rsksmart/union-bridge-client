@@ -3,10 +3,9 @@ use actors_mocking::{bitvmx, events};
 use alloy_node_bindings::Anvil;
 use alloy_provider::{ProviderBuilder, network::EthereumWallet};
 use alloy_signer_local::LocalSigner;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 use clap::{CommandFactory, Parser};
 use common::msg_broker::broker::BitVmxBrokerServer;
-use serde_json::Value;
 use std::path::PathBuf;
 use std::{
     io::Write,
