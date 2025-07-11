@@ -1,0 +1,11 @@
+# required for mono-repo to work (workspace dependencies)
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/" # main workspace directory
+    schedule:
+      interval: "daily"
+  - package-ecosystem: "cargo"
+    directory: "zkp/guest" # guest workspace directory
+    schedule:
+      interval: "daily"
