@@ -1,0 +1,36 @@
+name: Crates Tests WF
+
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: write
+
+on:
+  pull_request:
+    types: [ opened, synchronize, reopened, ready_for_review ]
+    branches:
+      - main
+  merge_group:
+    types: [ checks_requested ]
+    branches:
+      - main
+
+jobs:
+  crates-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # cannot be moved to common_setup action because its needed to find the action itself
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup
+        uses: ./.github/actions/common_setup
+        with:
+          fairgate_github_token: ${{ secrets.FAIRGATE_GITHUB_TOKEN }}
+
+      - name: Test
+        run: |
+          export CARGO_TARGET_DIR=shared-target
+          RUN_MODE=ci cargo test --features test-utils --locked
