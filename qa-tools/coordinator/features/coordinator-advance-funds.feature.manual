@@ -11,8 +11,8 @@ Feature: Coordinator - Advance Funds process
     And the account is funded
 
     # Copy the qa-tools/config/qa-coordinator directory and paste it under union-bridge-client/config
+    # Set the needed variables in qa-tools/env/coordinator/env
     # Copy the qa-tools/env/coordinator/env file and paste it as union-bridge-client/.env
-    # remove .block_time(1) from actors-mocking/src/main.rs (so we can control the block mining manually)
 
     # Terminal window 1:
     # > source .env && ./run-mocking.sh
@@ -21,10 +21,11 @@ Feature: Coordinator - Advance Funds process
 
     # Terminal window 2:
     # > cd qa-tools/coordinator
+    # > npm install node-fetch@2 --save
     # > node anvil_proxy.js
 
     # Terminal window 3:
-    # > export KEY_STORE_PASSWORD="p09ol."
+    # > export KEY_STORE_PASSWORD="=== REPLACE_WITH_PASSWORD ==="
     # > ./run-client.sh anvil qa-coordinator
 
     # Terminal window 4:
@@ -37,7 +38,10 @@ Feature: Coordinator - Advance Funds process
     # > tail -100f logs/block-indexer.log
 
     # Terminal window 7:
-    # > cast send --rpc-url http://127.0.0.1:8546 --from 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 5bdd03ceaf59cad075cb29c67696581d857b9031 --value 1ether --unlocked
+    # > cd qa-tools/coordinator
+    # > chmod +x commands.sh
+    # > source ./commands.sh
+    # > fund
 
   @TCRD01001
   Scenario: happy path
@@ -51,7 +55,7 @@ Feature: Coordinator - Advance Funds process
     # > raf
     # copy pegout_id from response
     # > kaf pegout_id
-    # > curl -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"evm_mine","params":[],"id":1}' http://127.0.0.1:8546
+    # > mine
 
   @TCRD01002
   Scenario: AdvanceFunds without RequestAdvanceFunds
@@ -114,9 +118,7 @@ Feature: Coordinator - Advance Funds process
     And I wait for 1 blocks
     And I send the RequestAdvanceFunds event
     And I send the AdvanceFunds event for the second pegout
-    Then the pow accumulation should abort
-    And check-fork process should not be triggered
-    And the second pegout should be invalidated
+    Then ... TBD
 
   @TCRD01008
   Scenario: additional AdvanceFunds event - during pow confirmation
@@ -125,10 +127,9 @@ Feature: Coordinator - Advance Funds process
     And I wait for enough blocks for pow accumulation
     And I send the RequestAdvanceFunds event
     And I send the AdvanceFunds event for the second pegout
-    Then the pow confirmation should abort
-    And check-fork process should not be triggered
-    And the second pegout should be invalidated
+    Then ... TBD
 
+  # Scenario currently not supported, as the coordinator does not support RemoveRequestAdvanceFunds and RemoveAdvanceFunds events
   @TCRD01009
   Scenario: RemoveRequestAdvanceFunds cancels the RequestAdvanceFunds event
     When I send the RequestAdvanceFunds event
@@ -140,10 +141,11 @@ Feature: Coordinator - Advance Funds process
 
     # > raf
     # copy pegout_id from response
-    # > curl -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"evm_mine","params":[],"id":1}' http://127.0.0.1:8546
+    # > mine
     # > reraf pegout_id
     # > kaf pegout_id
 
+  # Scenario currently not supported, as the coordinator does not support RemoveRequestAdvanceFunds and RemoveAdvanceFunds events
   @TCRD01010
   Scenario: RemoveAdvanceFunds cancels the AdvanceFunds event
     When I send the RequestAdvanceFunds event
@@ -164,11 +166,11 @@ Feature: Coordinator - Advance Funds process
     # > raf
     # copy pegout_id from response
     # > kaf pegout_id
-    # > curl -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"evm_mine","params":[],"id":1}' http://127.0.0.1:8546
+    # > mine
     # > reaf pegout_id
-    # > curl -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"evm_mine","params":[],"id":1}' http://127.0.0.1:8546
+    # > mine
     # > kaf pegout_id
-    # > curl -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"evm_mine","params":[],"id":1}' http://127.0.0.1:8546
+    # > mine
 
   @TCRD01011
   Scenario: reorg delays pow accumulation
@@ -186,10 +188,10 @@ Feature: Coordinator - Advance Funds process
     And the blocks accumulated in the pow should be consistent with the reorg
 
   # save snapshot:
-  # curl -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"evm_snapshot","params":[],"id":1}' http://127.0.0.1:8546
+  # save
 
   # load snapshot
-  # curl -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"evm_revert","params":["0x0"],"id":1}' http://127.0.0.1:8546
+  # load
 
   @TCRD01012
   Scenario: reorg delays pow confirmation

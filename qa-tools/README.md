@@ -36,8 +36,10 @@ the BitVMX messages, and the emission of the events that are expected to be proc
   - RemoveRequestAdvanceFunds (reraf pegout_id)
   - AdvanceFunds (kaf pegout_id)
   - RemoveAdvanceFunds (reaf pegout_id)
-- The feature file includes useful comments with the necessary commands to run the tests. Remember to adjust the .evn and 
-config files accordingly (instructions are provided in the background section of the feature file).
+- The feature file includes useful comments with the necessary commands to run the tests.
+- Remember to adjust the .env and config files accordingly (instructions are provided in the background section of the feature file).
+- The crate includes also a script to load useful commands for executing some test steps. Find the details in the feature file.
+
 ### Transaction dispatcher Tools (automated)
 
 #### Execute automated tests locally
