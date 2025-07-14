@@ -5,8 +5,10 @@ use common::types::RskBlockAndUncles;
 
 mod advance_funds;
 mod blockchain_tracker;
+mod pegin_processor;
 
 pub use advance_funds::advance_funds_processor::*;
+pub use pegin_processor::*;
 
 #[cfg(test)]
 use mockall::automock;

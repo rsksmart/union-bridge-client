@@ -1,8 +1,10 @@
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
-use common::msg_broker::broker::BitVmxBrokerClient;
-use common::runtime_sync::RuntimeSync;
-use common::{msg_broker::broker::BrokerClient, shutdown_flag::ShutdownFlag};
+use common::{
+    msg_broker::broker::{BITVMX_L2_BROKER_CLIENT_ID, BitVmxBrokerClient, BrokerClient},
+    runtime_sync::RuntimeSync,
+    shutdown_flag::ShutdownFlag,
+};
 use coordinator::{
     config::{Config, Logger},
     coordinator::Coordinator,
@@ -14,8 +16,6 @@ use transaction_dispatcher::config::ConfigAsLib;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const CONFIG_CLI_FLAG: &str = "config-path";
-
-const BITVMX_L2_BROKER_CLIENT_ID: u32 = 100; // Should match the ID defined in the BitVMX Client
 
 fn main() -> Result<()> {
     let matches = Command::new("Union Bridge Block Indexer")
