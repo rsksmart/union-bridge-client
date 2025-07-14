@@ -102,9 +102,11 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
                     bitvmx_last_msg = Instant::now();
 
                     // each processor decides if the event is relevant
-                    self.processors
-                        .iter_mut()
-                        .try_for_each(|p| p.process_new_bitvmx_event(&event))?;
+                    self.processors.iter_mut().for_each(|p| {
+                        if let Err(e) = p.process_new_bitvmx_event(&event) {
+                            error!("Error processing BitVMX event {:?}: {:?}", event, e);
+                        }
+                    });
                 }
 
                 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132
@@ -114,7 +116,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
                     // each processor decides if the event is relevant
                     self.processors.iter_mut().for_each(|p| {
                         if let Err(e) = p.process_new_event(&event) {
-                            error!("Error processing event {:?}: {:?}", event, e);
+                            error!("Error processing Union Bridge event {:?}: {:?}", event, e);
                         }
                     });
 
