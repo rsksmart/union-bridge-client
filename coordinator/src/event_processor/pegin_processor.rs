@@ -7,12 +7,11 @@ use crate::{
     types::{EventWithBlock, RskPegManagerEvents},
 };
 use anyhow::{Context, Result, bail};
-use bitvmx_client::{
-    program::variables::VariableTypes,
-    types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages},
-};
 use common::{
-    msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi},
+    msg_broker::{
+        bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, VariableTypes},
+        broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi},
+    },
     types::{RskBlockAndUncles, TxHash},
 };
 use log::info;

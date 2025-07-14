@@ -17,7 +17,7 @@ dependencies = [
  "chrono",
  "clap",
  "common",
- "hex 0.4.3",
+ "hex",
  "serde",
  "serde_json",
  "tokio",
@@ -1712,17 +1712,6 @@ checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
  "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "comfy-table"
-version = "7.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a65ebfec4fb190b6f90e944a817d60499ee0744e582530e2c9900a22e591d9a"
-dependencies = [
- "crossterm 0.28.1",
- "unicode-segmentation",
- "unicode-width",
 ]
 
 [[package]]
@@ -3571,24 +3560,6 @@ dependencies = [
  "serde_json",
  "serde_urlencoded",
  "similar",
-]
-
-[[package]]
-name = "musig2"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d89eb08ce8778538f84198774795f418358360a29841cfea8dbbb28c04d777e2"
-dependencies = [
- "base16ct",
- "hmac 0.12.1",
- "once_cell",
- "rand 0.8.5",
- "secp",
- "secp256k1 0.30.0",
- "serde",
- "serdect 0.3.0",
- "sha2 0.10.9",
- "subtle",
 ]
 
 [[package]]

@@ -1,10 +1,8 @@
 use anyhow::{Context, Result};
-use bitvmx_client::{
-    program::variables::VariableTypes,
-    types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages},
+use common::msg_broker::{
+    bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, VariableTypes},
+    broker::{BITVMX_L2_BROKER_CLIENT_ID, BitVmxBrokerServerApi},
 };
-use common::msg_broker::broker::{BITVMX_L2_BROKER_CLIENT_ID, BitVmxBrokerServerApi};
-use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
