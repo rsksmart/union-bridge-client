@@ -4,14 +4,14 @@ on:
   pull_request:
     types: [ opened, synchronize, reopened, ready_for_review ]
     branches:
-      - main
+      - fake-just-disabling # TODO restore main when CodeQL for rust is out of preview
   merge_group:
     types: [ checks_requested ]
     branches:
-      - main
+      - fake-just-disabling # TODO restore main when CodeQL for rust is out of preview
   push:
     branches:
-      - main
+      - fake-just-disabling # TODO restore main when CodeQL for rust is out of preview
 
 jobs:
   codeql:
