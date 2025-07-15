@@ -246,7 +246,7 @@ mod tests {
     use super::*;
     use crate::event_processor::advance_funds::tests::create_fake_block;
     use actors_mocking::fake_contracts::FakePegManager::AdvanceFunds;
-    use common::types::{BlockHash, BlockNumber, RskBlockAndUncles};
+    use common::types::{BlockHash, BlockNumber, RskBlockAndUncles, TxHash};
     use primitive_types::H256;
 
     fn create_fake_advance_funds_event(
@@ -257,6 +257,7 @@ mod tests {
         required_num_blocks: u32,
         block_hash: H256,
         block_number: u64,
+        tx_hash: H256,
     ) -> AdvanceFundsEvent {
         AdvanceFundsEvent {
             inner: AdvanceFunds {
@@ -271,6 +272,7 @@ mod tests {
             block_number: BlockNumber::from(block_number),
             block_hash: BlockHash::from(block_hash),
             removed: false,
+            tx_hash: TxHash::from(tx_hash),
         }
     }
 
@@ -292,6 +294,7 @@ mod tests {
         let required_num_blocks = 5;
         let block_hash = H256::from_low_u64_be(100);
         let block_number = 100;
+        let tx_hash = H256::from_low_u64_be(100);
 
         let event = create_fake_advance_funds_event(
             pegout_id,
@@ -301,6 +304,7 @@ mod tests {
             required_num_blocks,
             block_hash,
             block_number,
+            tx_hash,
         );
 
         let checker = CheckForkAccumulator::new(event.clone(), vec![]);
@@ -326,6 +330,7 @@ mod tests {
         let required_num_blocks = 2;
         let block_hash = H256::from_low_u64_be(100);
         let block_number = 100;
+        let tx_hash = H256::from_low_u64_be(100);
 
         let event = create_fake_advance_funds_event(
             pegout_id,
@@ -335,6 +340,7 @@ mod tests {
             required_num_blocks,
             block_hash,
             block_number,
+            tx_hash,
         );
 
         let block1_number = 101;
@@ -352,13 +358,14 @@ mod tests {
 
     #[test]
     fn test_pegout_id() {
-        let pegout_id = "test_pegout_id";
+        let pegout_id = "pegout_123";
         let utxo_id = "utxo_456";
         let operator_id = "operator_789";
         let required_effort = U256::from(1000);
         let required_num_blocks = 5;
         let block_hash = H256::from_low_u64_be(100);
         let block_number = 100;
+        let tx_hash = H256::from_low_u64_be(100);
 
         let event = create_fake_advance_funds_event(
             pegout_id,
@@ -368,6 +375,7 @@ mod tests {
             required_num_blocks,
             block_hash,
             block_number,
+            tx_hash,
         );
 
         let checker = CheckForkAccumulator::new(event, vec![]);
@@ -383,6 +391,7 @@ mod tests {
         let required_num_blocks = 5;
         let block_hash = H256::from_low_u64_be(100);
         let block_number = 100;
+        let tx_hash = H256::from_low_u64_be(100);
 
         let event = create_fake_advance_funds_event(
             pegout_id,
@@ -392,6 +401,7 @@ mod tests {
             required_num_blocks,
             block_hash,
             block_number,
+            tx_hash,
         );
 
         let checker = CheckForkAccumulator::new(event, vec![]);
@@ -413,6 +423,7 @@ mod tests {
         let required_num_blocks = 3;
         let block_hash = H256::from_low_u64_be(100);
         let block_number = 100;
+        let tx_hash = H256::from_low_u64_be(100);
 
         let event = create_fake_advance_funds_event(
             pegout_id,
@@ -422,6 +433,7 @@ mod tests {
             required_num_blocks,
             block_hash,
             block_number,
+            tx_hash,
         );
 
         let mut checker = CheckForkAccumulator::new(event, vec![]);
@@ -449,6 +461,7 @@ mod tests {
         let advance_funds_blockk_number = 100;
         let advance_funds_block_hash = H256::from_low_u64_be(advance_funds_blockk_number);
         let expected_timestamp = advance_funds_blockk_number * 1000; // timestamp is number * 1000
+        let tx_hash = H256::from_low_u64_be(100);
 
         let event = create_fake_advance_funds_event(
             pegout_id,
@@ -458,6 +471,7 @@ mod tests {
             required_num_blocks,
             advance_funds_block_hash,
             advance_funds_blockk_number,
+            tx_hash,
         );
 
         let mut checker = CheckForkAccumulator::new(event, vec![]);
@@ -484,6 +498,7 @@ mod tests {
         let required_num_blocks = 3;
         let block_hash = H256::from_low_u64_be(100);
         let block_number = 100;
+        let tx_hash = H256::from_low_u64_be(100);
 
         let event = create_fake_advance_funds_event(
             pegout_id,
@@ -493,6 +508,7 @@ mod tests {
             required_num_blocks,
             block_hash,
             block_number,
+            tx_hash,
         );
 
         let mut checker = CheckForkAccumulator::new(event, vec![]);
@@ -531,6 +547,7 @@ mod tests {
         let required_num_blocks = 1;
         let block_hash = H256::from_low_u64_be(100);
         let block_number = 100;
+        let tx_hash = H256::from_low_u64_be(100);
 
         let event = create_fake_advance_funds_event(
             pegout_id,
@@ -540,6 +557,7 @@ mod tests {
             required_num_blocks,
             block_hash,
             block_number,
+            tx_hash,
         );
 
         let mut checker = CheckForkAccumulator::new(event, vec![]);
@@ -562,6 +580,7 @@ mod tests {
         let required_num_blocks = 10;
         let block_hash = H256::from_low_u64_be(100);
         let block_number = 100;
+        let tx_hash = H256::from_low_u64_be(100);
 
         let event = create_fake_advance_funds_event(
             pegout_id,
@@ -571,6 +590,7 @@ mod tests {
             required_num_blocks,
             block_hash,
             block_number,
+            tx_hash,
         );
 
         let mut checker = CheckForkAccumulator::new(event, vec![]);
@@ -592,6 +612,7 @@ mod tests {
         let required_num_blocks = 2;
         let block_hash = H256::from_low_u64_be(100);
         let block_number = 100;
+        let tx_hash = H256::from_low_u64_be(100);
 
         let event = create_fake_advance_funds_event(
             pegout_id,
@@ -601,6 +622,7 @@ mod tests {
             required_num_blocks,
             block_hash,
             block_number,
+            tx_hash,
         );
 
         let mut checker = CheckForkAccumulator::new(event, vec![]);
@@ -627,6 +649,7 @@ mod tests {
         let required_num_blocks = 1;
         let block_hash = H256::from_low_u64_be(100);
         let block_number = 100;
+        let tx_hash = H256::from_low_u64_be(100);
 
         let event = create_fake_advance_funds_event(
             pegout_id,
@@ -636,6 +659,7 @@ mod tests {
             required_num_blocks,
             block_hash,
             block_number,
+            tx_hash,
         );
 
         let mut checker = CheckForkAccumulator::new(event, vec![]);
@@ -671,6 +695,7 @@ mod tests {
         let required_num_blocks = 1;
         let block_hash = H256::from_low_u64_be(100);
         let block_number = 100;
+        let tx_hash = H256::from_low_u64_be(100);
 
         let event = create_fake_advance_funds_event(
             pegout_id,
@@ -680,6 +705,7 @@ mod tests {
             required_num_blocks,
             block_hash,
             block_number,
+            tx_hash,
         );
 
         let mut checker = CheckForkAccumulator::new(event, vec![]);
@@ -717,6 +743,7 @@ mod tests {
         let required_num_blocks = 1;
         let block_hash = H256::from_low_u64_be(100);
         let block_number = 100;
+        let tx_hash = H256::from_low_u64_be(100);
 
         let event = create_fake_advance_funds_event(
             pegout_id,
@@ -726,6 +753,7 @@ mod tests {
             required_num_blocks,
             block_hash,
             block_number,
+            tx_hash,
         );
 
         let mut checker = CheckForkAccumulator::new(event, vec![]);
@@ -767,6 +795,7 @@ mod tests {
         let required_num_blocks = 1;
         let block_hash = H256::from_low_u64_be(100);
         let block_number = 100;
+        let tx_hash = H256::from_low_u64_be(100);
 
         let event = create_fake_advance_funds_event(
             pegout_id,
@@ -776,6 +805,7 @@ mod tests {
             required_num_blocks,
             block_hash,
             block_number,
+            tx_hash,
         );
 
         let mut checker = CheckForkAccumulator::new(event, vec![]);
@@ -823,6 +853,7 @@ mod tests {
         let required_num_blocks = 3;
         let block_hash = H256::from_low_u64_be(100);
         let block_number = 100;
+        let tx_hash = H256::from_low_u64_be(100);
 
         let event = create_fake_advance_funds_event(
             pegout_id,
@@ -832,6 +863,7 @@ mod tests {
             required_num_blocks,
             block_hash,
             block_number,
+            tx_hash,
         );
 
         let mut checker = CheckForkAccumulator::new(event, vec![]);
@@ -877,6 +909,7 @@ mod tests {
         let required_num_blocks = 3;
         let advance_funds_block_number = 100;
         let advance_funds_hash = H256::from_low_u64_be(advance_funds_block_number);
+        let tx_hash = H256::from_low_u64_be(100);
 
         let event = create_fake_advance_funds_event(
             pegout_id,
@@ -886,6 +919,7 @@ mod tests {
             required_num_blocks,
             advance_funds_hash,
             advance_funds_block_number,
+            tx_hash,
         );
 
         let mut checker = CheckForkAccumulator::new(event, vec![]);
@@ -918,6 +952,7 @@ mod tests {
         let required_num_blocks = 3;
         let advance_funds_block_number = 100;
         let advance_funds_hash = H256::from_low_u64_be(advance_funds_block_number);
+        let tx_hash = H256::from_low_u64_be(100);
 
         let event = create_fake_advance_funds_event(
             pegout_id,
@@ -927,6 +962,7 @@ mod tests {
             required_num_blocks,
             advance_funds_hash,
             advance_funds_block_number,
+            tx_hash,
         );
 
         let mut checker = CheckForkAccumulator::new(event, vec![]);

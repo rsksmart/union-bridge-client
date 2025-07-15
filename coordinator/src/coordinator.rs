@@ -218,6 +218,7 @@ pub(crate) mod tests {
     use alloy_primitives::U256;
     use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
     use common::msg_broker::broker::{BROKER_SERVER_ID, MockBrokerClientApi};
+    use common::types::TxHash;
     use common::{
         shutdown_flag::ShutdownFlag,
         test_utils::rsk_block_generator::{
@@ -227,6 +228,7 @@ pub(crate) mod tests {
     };
     use mockall::mock;
     use mockall::predicate::{eq, function};
+    use primitive_types::H256;
     use std::{
         thread::{self, JoinHandle, sleep},
         time::Duration,
@@ -265,6 +267,7 @@ pub(crate) mod tests {
             block_number: block_1.number(),
             block_hash: block_1.hash().into(),
             removed: false,
+            tx_hash: TxHash::from(H256::from_low_u64_be(block_1.number().value())),
         });
 
         let event_2: RskPegManagerEvents = RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
@@ -272,6 +275,7 @@ pub(crate) mod tests {
             block_number: block_2.number(),
             block_hash: block_2.hash().into(),
             removed: false,
+            tx_hash: TxHash::from(H256::from_low_u64_be(block_2.number().value())),
         });
 
         let bitvmx_event = OutgoingBitVMXApiMessages::Pong();
@@ -356,6 +360,7 @@ pub(crate) mod tests {
             block_number: block_1.number(),
             block_hash: block_1.hash().into(),
             removed: false,
+            tx_hash: TxHash::from(H256::from_low_u64_be(block_1.number().value())),
         });
 
         let event_2 = RskPegManagerEvents::UnknownEvent;

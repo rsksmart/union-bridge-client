@@ -2,7 +2,7 @@ use crate::types::RskPegManagerEvents::UnknownEvent;
 use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
 use alloy_primitives::{B256, LogData};
 use alloy_sol_types::SolEvent;
-use common::types::{BlockHash, BlockNumber, Hash256, RskLog};
+use common::types::{BlockHash, BlockNumber, Hash256, RskLog, TxHash};
 use log::{error, warn};
 use std::collections::HashMap;
 use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
@@ -31,7 +31,7 @@ pub type AllNoncesReadyEvent = EventWithBlock<Hash256>;
 pub type AllSignaturesReadyEvent = EventWithBlock<Hash256>;
 
 pub type EventStatus = bool;
-type DecoderFn = fn(&LogData, BlockNumber, BlockHash, EventStatus) -> RskPegManagerEvents;
+type DecoderFn = fn(&LogData, BlockNumber, BlockHash, EventStatus, TxHash) -> RskPegManagerEvents;
 
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub struct EventWithBlock<T> {
@@ -39,6 +39,7 @@ pub struct EventWithBlock<T> {
     pub block_number: BlockNumber,
     pub block_hash: BlockHash,
     pub removed: EventStatus,
+    pub tx_hash: TxHash,
 }
 
 pub struct EventDecoder {
@@ -85,8 +86,15 @@ impl EventDecoder {
 
         let block_num = log.info().block_number();
         let block_hash = log.info().block_hash();
+        let tx_hash = log.info().tx_hash();
         match self.dispatch.get(&topic0) {
-            Some(decoder_fn) => decoder_fn(&log_data, block_num, block_hash, log.info().removed()),
+            Some(decoder_fn) => decoder_fn(
+                &log_data,
+                block_num,
+                block_hash,
+                log.info().removed(),
+                tx_hash,
+            ),
             None => {
                 warn!("Unknown event type for log: {:?}", log);
                 UnknownEvent
@@ -128,6 +136,7 @@ impl EventDecoder {
         block_number: BlockNumber,
         block_hash: BlockHash,
         removed: EventStatus,
+        tx_hash: TxHash,
     ) -> RskPegManagerEvents {
         match PeginRequested::decode_log_data(&log_data) {
             Ok(ev) => RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
@@ -135,6 +144,7 @@ impl EventDecoder {
                 block_number,
                 block_hash,
                 removed,
+                tx_hash,
             }),
             Err(_) => UnknownEvent,
         }
@@ -145,6 +155,7 @@ impl EventDecoder {
         block_number: BlockNumber,
         block_hash: BlockHash,
         removed: EventStatus,
+        tx_hash: TxHash,
     ) -> RskPegManagerEvents {
         match PeginAccepted::decode_log_data(&log_data) {
             Ok(ev) => RskPegManagerEvents::PeginAccepted(PeginAcceptedEvent {
@@ -152,6 +163,7 @@ impl EventDecoder {
                 block_number,
                 block_hash,
                 removed,
+                tx_hash,
             }),
             Err(_) => UnknownEvent,
         }
@@ -162,6 +174,7 @@ impl EventDecoder {
         block_number: BlockNumber,
         block_hash: BlockHash,
         removed: EventStatus,
+        tx_hash: TxHash,
     ) -> RskPegManagerEvents {
         match RequestAdvanceFunds::decode_log_data(&log_data) {
             Ok(event) => RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFundsEvent {
@@ -169,6 +182,7 @@ impl EventDecoder {
                 block_number,
                 block_hash,
                 removed: removed,
+                tx_hash,
             }),
             Err(_) => UnknownEvent,
         }
@@ -179,6 +193,7 @@ impl EventDecoder {
         block_number: BlockNumber,
         block_hash: BlockHash,
         removed: EventStatus,
+        tx_hash: TxHash,
     ) -> RskPegManagerEvents {
         match AdvanceFunds::decode_log_data(&log_data) {
             Ok(event) => RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
@@ -186,6 +201,7 @@ impl EventDecoder {
                 block_number,
                 block_hash,
                 removed,
+                tx_hash,
             }),
             Err(_) => UnknownEvent,
         }
@@ -196,6 +212,7 @@ impl EventDecoder {
         block_number: BlockNumber,
         block_hash: BlockHash,
         removed: bool,
+        tx_hash: TxHash,
     ) -> RskPegManagerEvents {
         match AllNoncesReady::decode_log_data(&log_data) {
             Ok(event) => {
@@ -205,6 +222,7 @@ impl EventDecoder {
                     block_number,
                     block_hash,
                     removed,
+                    tx_hash,
                 })
             }
             Err(_) => RskPegManagerEvents::UnknownEvent,
@@ -216,6 +234,7 @@ impl EventDecoder {
         block_number: BlockNumber,
         block_hash: BlockHash,
         removed: bool,
+        tx_hash: TxHash,
     ) -> RskPegManagerEvents {
         match AllSignaturesReady::decode_log_data(&log_data) {
             Ok(event) => RskPegManagerEvents::AllSignaturesReady(AllSignaturesReadyEvent {
@@ -223,6 +242,7 @@ impl EventDecoder {
                 block_number,
                 block_hash,
                 removed,
+                tx_hash,
             }),
             Err(_) => RskPegManagerEvents::UnknownEvent,
         }
@@ -378,11 +398,12 @@ mod tests {
 
         let log_event = LogEvent::new(data, topics);
         let removed = false;
+        let expected_tx_hash = TxHash::from(H256::random());
         let log_info = LogInfo::new(
             generate_fake_address(1),
             expected_block_hash.into(),
             expected_block_num.into(),
-            TxHash::from(H256::random()),
+            expected_tx_hash,
             1,
             removed,
         );
@@ -397,6 +418,7 @@ mod tests {
                 assert_eq!(data.block_number, expected_block_num);
                 assert_eq!(data.block_hash, expected_block_hash.into());
                 assert_eq!(data.removed, removed);
+                assert_eq!(data.tx_hash, expected_tx_hash);
             }
             _ => panic!("Expected PeginRequested event"),
         }
@@ -437,11 +459,12 @@ mod tests {
 
         let log_event = LogEvent::new(data, topics);
         let removed = false;
+        let expected_tx_hash = TxHash::from(H256::random());
         let log_info = LogInfo::new(
             generate_fake_address(1),
             expected_block_hash.into(),
             expected_block_num.into(),
-            TxHash::from(H256::random()),
+            expected_tx_hash,
             1,
             removed,
         );
@@ -455,6 +478,7 @@ mod tests {
                 assert_eq!(data.block_number, expected_block_num);
                 assert_eq!(data.block_hash, expected_block_hash.into());
                 assert_eq!(data.removed, removed);
+                assert_eq!(data.tx_hash, expected_tx_hash);
             }
             _ => panic!("Expected PeginAccepted event"),
         }
@@ -481,11 +505,12 @@ mod tests {
             .collect();
 
         let log_event = LogEvent::new(data, topics);
+        let expected_tx_hash = TxHash::from(H256::random());
         let log_info = LogInfo::new(
             generate_fake_address(1),
             expected_block_hash.into(),
             expected_block_num.into(),
-            TxHash::from(H256::random()),
+            expected_tx_hash,
             1,
             false,
         );
@@ -499,6 +524,7 @@ mod tests {
                 assert_eq!(data.inner, Hash256::from(expected_hash_to_sign));
                 assert_eq!(data.block_number, expected_block_num);
                 assert_eq!(data.block_hash, expected_block_hash.into());
+                assert_eq!(data.tx_hash, expected_tx_hash);
             }
             _ => panic!("Expected AllNoncesReady event"),
         }
@@ -525,11 +551,12 @@ mod tests {
             .collect();
 
         let log_event = LogEvent::new(data, topics);
+        let expected_tx_hash = TxHash::from(H256::random());
         let log_info = LogInfo::new(
             generate_fake_address(1),
             expected_block_hash.into(),
             expected_block_num.into(),
-            TxHash::from(H256::random()),
+            expected_tx_hash,
             1,
             true,
         );
@@ -544,6 +571,7 @@ mod tests {
                 assert_eq!(data.block_number, expected_block_num);
                 assert_eq!(data.block_hash, expected_block_hash.into());
                 assert_eq!(data.removed, true);
+                assert_eq!(data.tx_hash, expected_tx_hash);
             }
             _ => panic!("Expected AllSignaturesReady event"),
         }
