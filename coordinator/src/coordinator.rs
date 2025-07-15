@@ -9,7 +9,7 @@ use common::runtime_sync::RuntimeSync;
 use common::shutdown_flag::ShutdownFlag;
 use log::{error, info, warn};
 use std::ops::Sub;
-use std::sync::Arc;
+use std::rc::Rc;
 use std::time::Instant;
 use std::{thread, time::Duration};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
@@ -20,7 +20,7 @@ const BITVMX_PING_AFTER_SILENCE: Duration = Duration::from_secs(15);
 
 pub struct Coordinator<M: MonitorApi, BC: BitVmxBrokerClientApi> {
     monitor: M,
-    bitvmx_broker: Arc<BC>,
+    bitvmx_broker: Rc<BC>,
     processors: Vec<Box<dyn EventProcessor>>,
     check_period: Duration,
     shutdown_flag: ShutdownFlag,
@@ -30,22 +30,23 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
     pub fn new<CG: RskContractsGatewayApi + 'static>(
         rt_sync: RuntimeSync,
         monitor: M,
-        contracts_gateway: Arc<CG>,
-        bitvmx_broker: Arc<BC>,
+        contracts_gateway: CG,
+        bitvmx_broker: Rc<BC>,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
+        let contracts_arc = Rc::new(contracts_gateway);
         Self {
             monitor,
             bitvmx_broker: bitvmx_broker.clone(),
             processors: vec![
                 Box::new(AdvanceFundsProcessor::new(
                     rt_sync.clone(),
-                    contracts_gateway.clone(),
+                    contracts_arc.clone(),
                     bitvmx_broker.clone(),
                 )),
                 Box::new(PeginProcessor::new(
                     rt_sync.clone(),
-                    contracts_gateway.clone(),
+                    contracts_arc,
                     bitvmx_broker.clone(),
                 )),
             ],
@@ -62,7 +63,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
     ) -> Self {
         Self {
             monitor,
-            bitvmx_broker: Arc::new(bitvmx_broker),
+            bitvmx_broker: Rc::new(bitvmx_broker),
             processors,
             check_period: Duration::from_millis(1),
             shutdown_flag,

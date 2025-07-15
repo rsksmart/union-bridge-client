@@ -18,7 +18,7 @@ use common::{
 use log::{error, info};
 use serde::Serialize;
 use serde_json::Value;
-use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use transaction_dispatcher::{
     rsk_gateway::RskContractsGatewayApi,
     types::{AcceptPegInInput, RegisterPegInInput},
@@ -76,8 +76,8 @@ where
     BC: BitVmxBrokerClientApi,
 {
     rt_sync: RuntimeSync,
-    contracts: Arc<CG>,
-    bitvmx_broker: Arc<BC>,
+    contracts: Rc<CG>,
+    bitvmx_broker: Rc<BC>,
     blockchain: BlockchainView,
     tracker: HashMap<TxHash, PeginEventState>,
 }
@@ -87,7 +87,7 @@ where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
 {
-    pub fn new(rt_sync: RuntimeSync, contracts: Arc<CG>, bitvmx_broker: Arc<BC>) -> Self {
+    pub fn new(rt_sync: RuntimeSync, contracts: Rc<CG>, bitvmx_broker: Rc<BC>) -> Self {
         Self {
             rt_sync,
             contracts,

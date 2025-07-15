@@ -10,7 +10,7 @@ use common::{
     types::{Address, RskBlockAndUncles},
 };
 use log::{debug, info, trace};
-use std::sync::Arc;
+use std::rc::Rc;
 
 #[cfg(test)]
 use mockall::automock;
@@ -35,7 +35,7 @@ where
 {
     log_broker: UBC,
     block_broker: UBC,
-    bitvmx_broker: Arc<BBC>,
+    bitvmx_broker: Rc<BBC>,
     event_decoder: EventDecoder,
     peg_manager_addresses: Vec<Address>,
     block_monitoring_active: bool,
@@ -93,7 +93,7 @@ where
     pub fn new(
         log_broker: UBC,
         block_broker: UBC,
-        bitvmx_broker: Arc<BBC>,
+        bitvmx_broker: Rc<BBC>,
         peg_manager_addresses: Vec<Address>,
     ) -> Self {
         Self {
@@ -372,7 +372,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
             block_broker,
-            Arc::new(MockBrokerClientApi::new()),
+            Rc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
         monitor.block_monitoring_active = true;
@@ -416,7 +416,7 @@ mod tests {
         let mut monitor = Monitor::new(
             log_broker,
             MockBrokerClientApi::new(),
-            Arc::new(MockBrokerClientApi::new()),
+            Rc::new(MockBrokerClientApi::new()),
             vec![address_1, address_2],
         );
 
@@ -441,7 +441,7 @@ mod tests {
         let mut monitor = Monitor::new(
             log_broker,
             MockBrokerClientApi::new(),
-            Arc::new(MockBrokerClientApi::new()),
+            Rc::new(MockBrokerClientApi::new()),
             vec![address_1],
         );
         let err = monitor.start_event_monitoring();
@@ -459,7 +459,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
             MockBrokerClientApi::new(),
-            Arc::new(MockBrokerClientApi::new()),
+            Rc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
         monitor.log_monitoring_active = true;
@@ -482,7 +482,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
             block_broker,
-            Arc::new(MockBrokerClientApi::new()),
+            Rc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
         assert!(monitor.start_block_monitoring().is_ok());
@@ -505,7 +505,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
             block_broker,
-            Arc::new(MockBrokerClientApi::new()),
+            Rc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
         let err = monitor.start_block_monitoring();
@@ -523,7 +523,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
             MockBrokerClientApi::new(),
-            Arc::new(MockBrokerClientApi::new()),
+            Rc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
         monitor.block_monitoring_active = true;
@@ -536,7 +536,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
             MockBrokerClientApi::new(),
-            Arc::new(MockBrokerClientApi::new()),
+            Rc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
         monitor.bitvmx_monitoring_active = true;
@@ -561,7 +561,7 @@ mod tests {
         let mut monitor = Monitor::new(
             log_broker,
             MockBrokerClientApi::new(),
-            Arc::new(MockBrokerClientApi::new()),
+            Rc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
         monitor.log_monitoring_active = true;
@@ -578,7 +578,7 @@ mod tests {
         let mut monitor = Monitor::new(
             log_broker,
             MockBrokerClientApi::new(),
-            Arc::new(MockBrokerClientApi::new()),
+            Rc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
         monitor.log_monitoring_active = true;
@@ -607,7 +607,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
             block_broker,
-            Arc::new(MockBrokerClientApi::new()),
+            Rc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
         monitor.block_monitoring_active = true;
@@ -630,7 +630,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
             block_broker,
-            Arc::new(MockBrokerClientApi::new()),
+            Rc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
         monitor.block_monitoring_active = true;
@@ -652,7 +652,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockBrokerClientApi::<ToServer, FromServer>::new(),
             MockBrokerClientApi::<ToServer, FromServer>::new(),
-            Arc::new(bitvmx_broker),
+            Rc::new(bitvmx_broker),
             vec![get_fake_address_1()],
         );
         monitor.bitvmx_monitoring_active = true;
@@ -673,7 +673,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
             MockBrokerClientApi::new(),
-            Arc::new(bitvmx_broker),
+            Rc::new(bitvmx_broker),
             vec![get_fake_address_1()],
         );
         monitor.bitvmx_monitoring_active = true;
@@ -696,7 +696,7 @@ mod tests {
         let mut monitor = Monitor::new(
             log_broker,
             MockBrokerClientApi::new(),
-            Arc::new(MockBrokerClientApi::new()),
+            Rc::new(MockBrokerClientApi::new()),
             vec![address_1, address_2],
         );
         monitor.log_monitoring_active = true;
@@ -713,7 +713,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
             block_broker,
-            Arc::new(MockBrokerClientApi::new()),
+            Rc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
         monitor.block_monitoring_active = true;
@@ -729,7 +729,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
             MockBrokerClientApi::new(),
-            Arc::new(bitvmx_broker),
+            Rc::new(bitvmx_broker),
             vec![get_fake_address_1()],
         );
         monitor.bitvmx_monitoring_active = true;
