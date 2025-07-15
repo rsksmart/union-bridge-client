@@ -1,19 +1,19 @@
 use crate::{
     contracts::peg_manager::PegManagerContractApi,
     rsk_gateway::DomainErrors,
-    types::{TryPegOutInput, TryPegOutOutput},
+    types::{RequestPegoutOutput, TryPegoutInput},
 };
 use alloy_primitives::FixedBytes;
 use anyhow::Result;
 use log::{debug, error, info};
 
 #[derive(Clone)]
-pub struct TryPegOutRequestInvoke<C: PegManagerContractApi> {
+pub struct TryPegoutInvoke<C: PegManagerContractApi> {
     contract: C,
     gas_bumps: u8,
 }
 
-impl<C: PegManagerContractApi> TryPegOutRequestInvoke<C> {
+impl<C: PegManagerContractApi> TryPegoutInvoke<C> {
     pub fn new(contract: C, gas_bumps: u8) -> Self {
         Self {
             contract,
@@ -21,8 +21,8 @@ impl<C: PegManagerContractApi> TryPegOutRequestInvoke<C> {
         }
     }
 
-    pub async fn run(&self, input: TryPegOutInput) -> Result<TryPegOutOutput, DomainErrors> {
-        info!("Init RegisterPegOut for: {:?}", input);
+    pub async fn run(&self, input: TryPegoutInput) -> Result<RequestPegoutOutput, DomainErrors> {
+        info!("Init Pegout request for: {:?}", input);
 
         let msg_value = input.amount_in_wei;
 
@@ -32,30 +32,27 @@ impl<C: PegManagerContractApi> TryPegOutRequestInvoke<C> {
             })?;
 
         debug!(
-            "Calling try_peg_out_request_send: value = {}, usr_pub_key = {:?}, gas_bumps = {}",
+            "Calling invoke_request_pegout: value = {}, usr_pub_key = {:?}, gas_bumps = {}",
             msg_value, usr_pub_key, self.gas_bumps
         );
 
         let receipt = self
             .contract
-            .try_peg_out_request_send(msg_value, usr_pub_key, self.gas_bumps)
+            .invoke_request_pegout(msg_value, usr_pub_key, self.gas_bumps)
             .await?;
 
         let result = if receipt.status() {
             info!(
-                "RegisterPegOutRequest successful at tx {}",
+                "Pegout Request successful at tx {}",
                 receipt.transaction_hash
             );
-            TryPegOutOutput {
+            RequestPegoutOutput {
                 transaction_hash: receipt.transaction_hash.to_string(),
                 success: true,
             }
         } else {
-            error!(
-                "RegisterPegOutRequest failed at tx {}",
-                receipt.transaction_hash
-            );
-            TryPegOutOutput {
+            error!("Pegout request failed at tx {}", receipt.transaction_hash);
+            RequestPegoutOutput {
                 transaction_hash: receipt.transaction_hash.to_string(),
                 success: false,
             }
@@ -69,9 +66,7 @@ impl<C: PegManagerContractApi> TryPegOutRequestInvoke<C> {
 mod tests {
     use crate::{
         contracts::{
-            interactions::try_peg_out_request::{
-                TryPegOutInput, TryPegOutOutput, TryPegOutRequestInvoke,
-            },
+            interactions::request_pegout::{RequestPegoutOutput, TryPegoutInput, TryPegoutInvoke},
             peg_manager::MockPegManagerContractApi,
         },
         rsk_gateway::DomainErrors,
@@ -80,9 +75,9 @@ mod tests {
     use alloy_rpc_types::{Log, Receipt, ReceiptEnvelope, ReceiptWithBloom, TransactionReceipt};
     use std::str::FromStr;
 
-    impl TryPegOutRequestInvoke<MockPegManagerContractApi> {
+    impl TryPegoutInvoke<MockPegManagerContractApi> {
         fn new_for_tests(contract: MockPegManagerContractApi) -> Self {
-            TryPegOutRequestInvoke {
+            TryPegoutInvoke {
                 contract,
                 gas_bumps: 3,
             }
@@ -93,18 +88,18 @@ mod tests {
     async fn test_run_successful() {
         let mut mock = MockPegManagerContractApi::new();
         let input = get_base_input();
-        let expected = TryPegOutOutput {
+        let expected = RequestPegoutOutput {
             transaction_hash: "0xfeedfacecafebeef000000000000000000000000000000000000000000000000"
                 .to_string(),
             success: true,
         };
         let receipt_return = expected.clone();
 
-        mock.expect_try_peg_out_request_send()
+        mock.expect_invoke_request_pegout()
             .returning(move |_, _, _| Ok(get_fake_receipt(true, &receipt_return.transaction_hash)))
             .times(1);
 
-        let invoke = TryPegOutRequestInvoke::new_for_tests(mock);
+        let invoke = TryPegoutInvoke::new_for_tests(mock);
         let result = invoke.run(input).await;
 
         assert!(result.is_ok());
@@ -116,18 +111,18 @@ mod tests {
         let mut mock = MockPegManagerContractApi::new();
         let input = get_base_input();
 
-        let expected = TryPegOutOutput {
+        let expected = RequestPegoutOutput {
             transaction_hash: "0xdeadbeefdeadbeef000000000000000000000000000000000000000000000000"
                 .to_string(),
             success: false,
         };
         let receipt_return = expected.clone();
 
-        mock.expect_try_peg_out_request_send()
+        mock.expect_invoke_request_pegout()
             .returning(move |_, _, _| Ok(get_fake_receipt(false, &receipt_return.transaction_hash)))
             .times(1);
 
-        let invoke = TryPegOutRequestInvoke::new_for_tests(mock);
+        let invoke = TryPegoutInvoke::new_for_tests(mock);
         let result = invoke.run(input).await;
 
         assert!(result.is_ok());
@@ -138,10 +133,10 @@ mod tests {
     async fn test_run_invalid_pub_key_length() {
         let mut mock = MockPegManagerContractApi::new();
         // should never hit the contract if parse fails
-        mock.expect_try_peg_out_request_send().times(0);
+        mock.expect_invoke_request_pegout().times(0);
 
-        let invoke = TryPegOutRequestInvoke::new_for_tests(mock);
-        let bad_input = TryPegOutInput {
+        let invoke = TryPegoutInvoke::new_for_tests(mock);
+        let bad_input = TryPegoutInput {
             amount_in_wei: 1_000,
             usr_pub_key: "not-a-hex-key".to_string(),
         };
@@ -155,9 +150,9 @@ mod tests {
         }
     }
 
-    fn get_base_input() -> TryPegOutInput {
+    fn get_base_input() -> TryPegoutInput {
         let usr_pub_key = format!("0x{}", "01".repeat(33));
-        TryPegOutInput {
+        TryPegoutInput {
             amount_in_wei: 1_234_567,
             usr_pub_key,
         }

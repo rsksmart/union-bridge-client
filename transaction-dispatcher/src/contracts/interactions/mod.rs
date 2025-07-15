@@ -7,4 +7,4 @@ pub(crate) mod get_temporary_pegin_address;
 pub(crate) mod notify_check_fork_complete;
 pub(crate) mod register_pegout;
 pub(crate) mod request_pegin;
-pub(crate) mod try_peg_out_request;
+pub(crate) mod request_pegout;

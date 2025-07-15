@@ -1,3 +1,7 @@
+use crate::rsk_gateway::{DomainErrors, RskContractsGateway, RskContractsGatewayApi};
+use crate::types::{
+    AddMemberNonceInput, AddMemberSignatureInput, PeginAddressInput, RequestPeginInput,
+    TryPegoutInput,
 use crate::{
     rsk_gateway::{DomainErrors, RskContractsGateway, RskContractsGatewayApi},
     types::{
@@ -14,6 +18,7 @@ use axum::{
     routing::post,
 };
 use common::shutdown_flag::ShutdownFlag;
+use log::debug;
 use serde_json::json;
 use std::time::Duration;
 use tokio::net::TcpListener;
@@ -35,7 +40,7 @@ impl Server {
             .route("/pegin-address", post(Self::create_pegin_address::<P>))
             .route("/register-pegin", post(Self::request_pegin::<P>))
             .route("/accept-pegin", post(Self::accept_pegin::<P>))
-            .route("/register-pegout", post(Self::register_pegout::<P>))
+            .route("/request-pegout", post(Self::request_pegout::<P>))
             .layer((
                 // TraceLayer::new_for_http(), // TODO: enable when we change logging library to tracing
                 TimeoutLayer::new(Duration::from_secs(10)),
@@ -76,45 +81,46 @@ impl Server {
         }
     }
 
-    async fn create_pegin_address<P: Provider>(
+    async fn request_pegout<P: Provider>(
         Extension(rsk_gateway): Extension<RskContractsGateway<P>>,
-        Json(payload): Json<PeginAddressInput>,
+        Json(payload): Json<TryPegoutInput>,
     ) -> impl IntoResponse {
-        match rsk_gateway.get_temporary_pegin_address(payload).await {
+        debug!("Handling pegout request: {:?}", payload);
+        match rsk_gateway.request_pegout(payload).await {
             Ok(data) => (StatusCode::OK, Json(json!(data))).into_response(),
             Err(e) => e.into_response(),
         }
     }
 
-    async fn request_pegin<P: Provider>(
-        Extension(rsk_gateway): Extension<RskContractsGateway<P>>,
-        Json(payload): Json<RequestPeginInput>,
-    ) -> impl IntoResponse {
-        match rsk_gateway.request_pegin(payload).await {
-            Ok(data) => (StatusCode::OK, Json(json!(data))).into_response(),
-            Err(e) => e.into_response(),
-        }
+async fn create_pegin_address<P: Provider>(
+    Extension(rsk_gateway): Extension<RskContractsGateway<P>>,
+    Json(payload): Json<PeginAddressInput>,
+) -> impl IntoResponse {
+    match rsk_gateway.get_temporary_pegin_address(payload).await {
+        Ok(data) => (StatusCode::OK, Json(json!(data))).into_response(),
+        Err(e) => e.into_response(),
     }
+}
 
-    async fn accept_pegin<P: Provider>(
-        Extension(rsk_gateway): Extension<RskContractsGateway<P>>,
-        Json(payload): Json<RequestPeginInput>,
-    ) -> impl IntoResponse {
-        match rsk_gateway.accept_pegin(payload).await {
-            Ok(data) => (StatusCode::OK, Json(json!(data))).into_response(),
-            Err(e) => e.into_response(),
-        }
+async fn request_pegin<P: Provider>(
+    Extension(rsk_gateway): Extension<RskContractsGateway<P>>,
+    Json(payload): Json<RequestPeginInput>,
+) -> impl IntoResponse {
+    match rsk_gateway.request_pegin(payload).await {
+        Ok(data) => (StatusCode::OK, Json(json!(data))).into_response(),
+        Err(e) => e.into_response(),
     }
+}
 
-    async fn register_pegout<P: Provider>(
-        Extension(rsk_gateway): Extension<RskContractsGateway<P>>,
-        Json(payload): Json<RegisterPegoutInput>,
-    ) -> impl IntoResponse {
-        match rsk_gateway.register_pegout(payload).await {
-            Ok(data) => (StatusCode::OK, Json(json!(data))).into_response(),
-            Err(e) => e.into_response(),
-        }
+async fn accept_pegin<P: Provider>(
+    Extension(rsk_gateway): Extension<RskContractsGateway<P>>,
+    Json(payload): Json<RequestPeginInput>,
+) -> impl IntoResponse {
+    match rsk_gateway.accept_pegin(payload).await {
+        Ok(data) => (StatusCode::OK, Json(json!(data))).into_response(),
+        Err(e) => e.into_response(),
     }
+}
 }
 
 impl IntoResponse for DomainErrors {

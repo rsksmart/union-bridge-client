@@ -66,6 +66,24 @@ enum Menu {
         #[arg(help = "Merkle branch hashes (comma-separated hex values)")]
         merkle_branch_hashes: String,
     },
+    #[command(name = "pegout-requested", visible_alias = "por")]
+    PegoutRequested {
+        #[arg(help = "Amount in wei")]
+        amount_in_wei: u64,
+        #[arg(help = "User public key (hex)")]
+        usr_pub_key: String,
+    },
+    #[command(name = "register-pegout", visible_alias = "rpo")]
+    RegisterPegout {
+        #[arg(help = "Bitcoin block hash (hex)")]
+        block_hash: String,
+        #[arg(long, help = "Path to BTC transaction JSON file")]
+        btc_tx_file: PathBuf,
+        #[arg(help = "Merkle branch path (hex)")]
+        merkle_branch_path: String,
+        #[arg(help = "Merkle branch hashes (comma-separated hex values)")]
+        merkle_branch_hashes: String,
+    },
 }
 
 #[tokio::main]
@@ -213,6 +231,45 @@ async fn main() -> Result<()> {
                         .expect("Failed to lock bitvmx_executor");
 
                     executor.send_pegin_accepted_event(
+                        block_hash,
+                        tx,
+                        merkle_branch_path,
+                        merkle_hashes,
+                    )?;
+                }
+                Menu::PegoutRequested {
+                    amount_in_wei,
+                    usr_pub_key,
+                } => {
+                    let executor = bitvmx_executor
+                        .lock()
+                        .expect("Failed to lock bitvmx_executor");
+
+                    executor.send_pegout_requested_event(amount_in_wei, usr_pub_key)?;
+                }
+                Menu::RegisterPegout {
+                    block_hash,
+                    btc_tx_file,
+                    merkle_branch_path,
+                    merkle_branch_hashes,
+                } => {
+                    let json_str = std::fs::read_to_string(&btc_tx_file).with_context(|| {
+                        format!("Failed to read file: {}", btc_tx_file.display())
+                    })?;
+
+                    let tx: Transaction = serde_json::from_str(&json_str)
+                        .context("Failed to parse BTC transaction JSON")?;
+
+                    let merkle_hashes: Vec<String> = merkle_branch_hashes
+                        .split(',')
+                        .map(str::to_string)
+                        .collect();
+
+                    let executor = bitvmx_executor
+                        .lock()
+                        .expect("Failed to lock bitvmx_executor");
+
+                    executor.send_register_pegout_event(
                         block_hash,
                         tx,
                         merkle_branch_path,

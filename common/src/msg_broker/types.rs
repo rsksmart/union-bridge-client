@@ -27,7 +27,5 @@ pub enum FromServer {
     // real BitVMX incoming messages
     FromBitVMX(OutgoingBitVMXApiMessages),
     // fake bitvmx incoming messages
-    GetTemporaryPegInAddress(Value),
-    RegisterPegoutSignature(Value),
     RegisterPegout(Value),
 }

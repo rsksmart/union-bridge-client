@@ -19,6 +19,7 @@ dependencies = [
  "clap",
  "common",
  "hex",
+ "log",
  "serde",
  "serde_json",
  "tokio",

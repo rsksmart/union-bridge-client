@@ -259,6 +259,7 @@ pub(crate) mod tests {
         RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput,
         TryPegOutInput, TryPegOutOutput,
     };
+
     fn create_fake_request_event(pegout_id: &str) -> RequestAdvanceFunds {
         RequestAdvanceFunds {
             pegout_id: pegout_id.to_string(),
@@ -541,10 +542,10 @@ pub(crate) mod tests {
                 input: AcceptPeginInput,
             ) -> Result<AcceptPeginOutput, DomainErrors>;
 
-            async fn try_peg_out_request(
+            async fn request_pegout(
                 &self,
-                input: TryPegOutInput,
-            ) -> Result<TryPegOutOutput, DomainErrors>;
+                input: TryPegoutInput,
+            ) -> Result<RequestPegoutOutput, DomainErrors>;
 
             async fn register_pegout(
                 &self,
