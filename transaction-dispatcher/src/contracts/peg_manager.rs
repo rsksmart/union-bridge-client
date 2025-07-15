@@ -231,12 +231,10 @@ impl TryFrom<RegisterPegInInput> for BtcTxSPVProof {
             })?;
 
         let merkle_branch_path =
-            U256::from_str_radix(&value.merkle_branch_path.trim_start_matches("0x"), 16).map_err(
-                |e| {
+            U256::from_str_radix(value.merkle_branch_path.trim_start_matches("0x"), 16)
+                .inspect_err(|e| {
                     error!("Failed to convert merkle_branch_path: {:?}", e);
-                    e
-                },
-            )?;
+                })?;
 
         Ok(BtcTxSPVProof {
             blockHash: block_hash,

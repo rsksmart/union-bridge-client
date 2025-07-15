@@ -67,4 +67,4 @@ runs:
       run: |
         git config --global \
           url."https://${{ inputs.fairgate_github_token }}@github.com/FairgateLabs".insteadOf \
-          "ssh://git@github.com/FairgateLabs"
+          "https://github.com/FairgateLabs"
