@@ -1,8 +1,10 @@
+use anyhow::bail;
 use common::types::{BlockNumber, RskBlock, RskBlockAndUncles};
-use log::{debug, info};
+use log::{debug, info, warn};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
+use uuid::Uuid;
 
 pub trait BlockchainObserver {
     fn get_id(&self) -> String;
@@ -257,8 +259,77 @@ impl BlockchainView {
     }
 }
 
+pub struct ConfirmableEvent {
+    id: String,
+    chain_view: Rc<RefCell<BlockchainView>>,
+    req_confirmations: u32,
+    confirmations: Option<Rc<RefCell<BlockConfirmations>>>,
+}
+
+impl ConfirmableEvent {
+    pub fn new(id: Uuid, req_confirmations: u32, chain_view: Rc<RefCell<BlockchainView>>) -> Self {
+        ConfirmableEvent {
+            id: id.to_string(),
+            chain_view,
+            req_confirmations,
+            confirmations: None,
+        }
+    }
+
+    pub fn start_confirming(&mut self, block_number: BlockNumber) -> anyhow::Result<()> {
+        let rc_confirmations = Rc::new(RefCell::new(BlockConfirmations::new(
+            self.id.clone(),
+            block_number,
+            self.req_confirmations,
+        )));
+
+        self.confirmations = Some(rc_confirmations.clone());
+        // remove just in case
+        self.remove_observer();
+        self.add_observer(rc_confirmations);
+
+        Ok(())
+    }
+
+    pub fn stop_confirming(&mut self) -> anyhow::Result<()> {
+        if self.confirmations.is_none() {
+            bail!(
+                "Confirmations not set for protocol {} but stop_confirming called",
+                self.id
+            );
+        }
+
+        self.remove_observer();
+        self.confirmations = None;
+        // state.sent remains true because the transaction is again Pending and will be mined again, so all_signatures_processed will be called again
+
+        Ok(())
+    }
+
+    pub fn is_confirmed(&self) -> bool {
+        self.confirmations
+            .as_ref()
+            .map(|c| c.borrow().is_confirmed())
+            .unwrap_or_else(|| {
+                warn!(
+                    "Confirmations not set for protocol {} but is_event_confirmed called",
+                    self.id
+                );
+                false
+            })
+    }
+
+    fn add_observer(&mut self, rc_confirmations: Rc<RefCell<BlockConfirmations>>) {
+        self.chain_view.borrow_mut().add_observer(rc_confirmations);
+    }
+
+    fn remove_observer(&mut self) {
+        self.chain_view.borrow_mut().remove_observer(&self.id);
+    }
+}
+
 #[cfg(test)]
-mod tests {
+mod tests_blockchain_view {
     use super::*;
     use common::types::{BlockDifficulty, BlockHash, BlockPow, BlockTimestamp, RskBlock};
     use primitive_types::{H256, U256};
@@ -587,5 +658,417 @@ mod tests {
         // verify the alternative block is actually different from original
         assert_ne!(alt_block_102.hash(), blocks[2].hash()); // different from original block 102
         assert_eq!(alt_block_102.number(), blocks[2].number()); // same block number
+    }
+}
+
+#[cfg(test)]
+mod confirmable_event_tests {
+    use crate::blockchain_tracker::{BlockchainView, ConfirmableEvent};
+    use common::test_utils::rsk_block_generator::FakeBlockGenerator;
+    use common::types::{BlockNumber, RskBlockAndUncles};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
+    use uuid::Uuid;
+
+    #[test]
+    fn test_confirmable_event_happy_path_flow() {
+        // setup
+        let id = Uuid::new_v4();
+        let req_confirmations = 3;
+        let chain_view = Rc::new(RefCell::new(BlockchainView::new()));
+
+        let mut confirmable_event =
+            ConfirmableEvent::new(id, req_confirmations, chain_view.clone());
+
+        // step 1: start_confirming() - should succeed and add observer
+        let block_number = BlockNumber::from(100);
+        let result = confirmable_event.start_confirming(block_number);
+        assert!(result.is_ok(), "start_confirming() should succeed");
+
+        // verify observer was added to blockchain view
+        assert!(chain_view.borrow().has_observer(&id.to_string()));
+
+        // step 2: should not be confirmed yet (no blocks processed)
+        assert!(
+            !confirmable_event.is_confirmed(),
+            "Should not be confirmed initially"
+        );
+
+        // step 3: simulate processing blocks to reach confirmation
+        // we need to process req_confirmations number of blocks
+        for i in 0..req_confirmations as u64 {
+            let block = create_test_block(block_number + i);
+            chain_view.borrow_mut().update(block);
+        }
+
+        // step 4: should be confirmed after processing enough blocks
+        assert!(
+            confirmable_event.is_confirmed(),
+            "Should be confirmed after processing enough blocks"
+        );
+    }
+
+    #[test]
+    fn test_confirmable_event_stop_confirming_and_resuming() {
+        // setup
+        let id = Uuid::new_v4();
+
+        let req_confirmations = 3;
+        let chain_view = Rc::new(RefCell::new(BlockchainView::new()));
+
+        let mut confirmable_event =
+            ConfirmableEvent::new(id, req_confirmations, chain_view.clone());
+
+        let block_number = BlockNumber::from(100);
+        confirmable_event
+            .start_confirming(block_number)
+            .expect("Failed to start confirming");
+
+        // step 1: verify observer was added
+        assert!(chain_view.borrow().has_observer(&id.to_string()));
+
+        // step 2: stop_confirming() should succeed and remove observer
+        let result = confirmable_event.stop_confirming();
+        assert!(result.is_ok(), "stop_confirming() should succeed");
+
+        // step 3: observer should be removed from the blockchain view
+        assert!(
+            !chain_view.borrow().has_observer(&id.to_string()),
+            "Observer should be removed from blockchain view after stop_confirming"
+        );
+
+        // step 4: confirmations should be None after stopping
+        assert!(
+            !confirmable_event.is_confirmed(),
+            "Should not be confirmed after stopping"
+        );
+    }
+
+    #[test]
+    fn test_confirmable_event_stop_confirming_without_start_fails() {
+        // setup
+        let id = Uuid::new_v4();
+
+        let req_confirmations = 3;
+        let chain_view = Rc::new(RefCell::new(BlockchainView::new()));
+
+        let mut confirmable_event =
+            ConfirmableEvent::new(id, req_confirmations, chain_view.clone());
+
+        // stop_confirming without a start should fail
+        let result = confirmable_event.stop_confirming();
+        assert!(
+            result.is_err(),
+            "stop_confirming() without start should fail"
+        );
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Confirmations not set for protocol")
+        );
+    }
+
+    #[test]
+    fn test_confirmable_event_blocks_removed_reduces_confirmations() {
+        // setup
+        let id = Uuid::new_v4();
+
+        let req_confirmations = 3;
+        let chain_view = Rc::new(RefCell::new(BlockchainView::new()));
+
+        let mut confirmable_event =
+            ConfirmableEvent::new(id, req_confirmations, chain_view.clone());
+
+        let start_block = BlockNumber::from(100);
+        confirmable_event
+            .start_confirming(start_block)
+            .expect("Failed to start confirming");
+
+        // step 1: add enough blocks to reach confirmation
+        let mut blocks = Vec::new();
+        for i in 0..req_confirmations as u64 {
+            let block = create_test_block(start_block + i);
+            blocks.push(block.clone());
+            chain_view.borrow_mut().update(block);
+        }
+
+        // step 2: should be confirmed after processing enough blocks
+        assert!(
+            confirmable_event.is_confirmed(),
+            "Should be confirmed after processing enough blocks"
+        );
+
+        // step 3: simulate a reorg by creating an alternative block at position 1
+        // this should cause blocks 1 and 2 to be removed, reducing confirmations
+        let alt_block_1 = create_alt_test_block(start_block + 1);
+        chain_view.borrow_mut().update(alt_block_1);
+
+        // step 4: should no longer be confirmed due to reduced confirmations
+        assert!(
+            !confirmable_event.is_confirmed(),
+            "Should not be confirmed after reorg removes blocks"
+        );
+    }
+
+    #[test]
+    fn test_confirmable_event_is_confirmed_when_confirmations_none() {
+        // setup
+        let id = Uuid::new_v4();
+
+        let req_confirmations = 3;
+        let chain_view = Rc::new(RefCell::new(BlockchainView::new()));
+
+        let confirmable_event = ConfirmableEvent::new(id, req_confirmations, chain_view.clone());
+
+        // step 1: is_confirmed() should return false and log warning
+        assert!(
+            !confirmable_event.is_confirmed(),
+            "Should not be confirmed when confirmations is None"
+        );
+    }
+
+    #[test]
+    fn test_confirmable_event_start_confirming_twice_fails() {
+        // setup
+        let id = Uuid::new_v4();
+
+        let req_confirmations = 3;
+        let chain_view = Rc::new(RefCell::new(BlockchainView::new()));
+
+        let mut confirmable_event =
+            ConfirmableEvent::new(id, req_confirmations, chain_view.clone());
+
+        // step 1: first start_confirming() should succeed
+        let block_number = BlockNumber::from(100);
+        let result = confirmable_event.start_confirming(block_number);
+        assert!(result.is_ok(), "First start_confirming() should succeed");
+
+        // step 2: second start_confirming() should succeed (replaces previous)
+        let result = confirmable_event.start_confirming(block_number + 1);
+        assert!(result.is_ok(), "Second start_confirming() should succeed");
+
+        // step 3: should still work properly
+        assert!(
+            !confirmable_event.is_confirmed(),
+            "Should not be confirmed initially"
+        );
+    }
+
+    #[test]
+    fn test_confirmable_event_stop_confirming_twice_fails() {
+        // setup
+        let id = Uuid::new_v4();
+        let req_confirmations = 3;
+        let chain_view = Rc::new(RefCell::new(BlockchainView::new()));
+
+        let mut confirmable_event =
+            ConfirmableEvent::new(id, req_confirmations, chain_view.clone());
+
+        let block_number = BlockNumber::from(100);
+        confirmable_event
+            .start_confirming(block_number)
+            .expect("Failed to start confirming");
+
+        // step 1: first stop_confirming() should succeed
+        let result = confirmable_event.stop_confirming();
+        assert!(result.is_ok(), "First stop_confirming() should succeed");
+
+        // step 2: second stop_confirming() should succeed with warning
+        let result = confirmable_event.stop_confirming();
+        assert!(result.is_err(), "Second stop_confirming() should fail");
+
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Confirmations not set for protocol")
+        );
+    }
+
+    #[test]
+    fn test_confirmable_event_restart_confirming_after_stopping() {
+        // setup
+        let id = Uuid::new_v4();
+
+        let req_confirmations = 3;
+        let chain_view = Rc::new(RefCell::new(BlockchainView::new()));
+
+        let mut confirmable_event =
+            ConfirmableEvent::new(id, req_confirmations, chain_view.clone());
+
+        let block_number = BlockNumber::from(100);
+        confirmable_event
+            .start_confirming(block_number)
+            .expect("Failed to start confirming");
+
+        // step 1: add partial confirmations (not enough to reach confirmation)
+        for i in 0..(req_confirmations - 1) as u64 {
+            let block = create_test_block(block_number + i);
+            chain_view.borrow_mut().update(block);
+        }
+
+        // step 2: should not be confirmed yet (partial confirmations)
+        assert!(
+            !confirmable_event.is_confirmed(),
+            "Should not be confirmed with partial confirmations"
+        );
+
+        // step 3: stop_confirming() - this should reset all confirmations
+        confirmable_event
+            .stop_confirming()
+            .expect("Failed to stop confirming");
+        assert!(
+            !confirmable_event.is_confirmed(),
+            "Should not be confirmed after stopping (confirmations reset)"
+        );
+
+        // step 4: restart confirming should succeed
+        let restart_block = block_number + (req_confirmations - 1) as u64;
+        let result = confirmable_event.start_confirming(restart_block);
+        assert!(result.is_ok(), "Should be able to restart confirming");
+
+        // step 5: should work properly after restart (confirmations start from 0 again)
+        assert!(
+            !confirmable_event.is_confirmed(),
+            "Should not be confirmed initially after restart"
+        );
+
+        // step 6: add blocks to reach confirmation from restart point (consecutive blocks)
+        for i in 0..req_confirmations as u64 {
+            let block = create_test_block(restart_block + i);
+            chain_view.borrow_mut().update(block);
+        }
+
+        // step 7: should be confirmed after processing enough blocks from restart
+        assert!(
+            confirmable_event.is_confirmed(),
+            "Should be confirmed after restart and processing blocks"
+        );
+    }
+
+    #[test]
+    fn test_confirmable_event_zero_confirmations_required() {
+        // setup
+        let id = Uuid::new_v4();
+
+        let req_confirmations = 0; // Edge case: zero confirmations
+        let chain_view = Rc::new(RefCell::new(BlockchainView::new()));
+
+        let mut confirmable_event =
+            ConfirmableEvent::new(id, req_confirmations, chain_view.clone());
+
+        let block_number = BlockNumber::from(100);
+        confirmable_event
+            .start_confirming(block_number)
+            .expect("Failed to start confirming");
+
+        // step 1: should be immediately confirmed with zero confirmations required
+        assert!(
+            confirmable_event.is_confirmed(),
+            "Should be immediately confirmed with zero confirmations required"
+        );
+    }
+
+    #[test]
+    fn test_confirmable_event_one_confirmation_required() {
+        // setup
+        let id = Uuid::new_v4();
+
+        let req_confirmations = 1; // Edge case: one confirmation
+        let chain_view = Rc::new(RefCell::new(BlockchainView::new()));
+
+        let mut confirmable_event =
+            ConfirmableEvent::new(id, req_confirmations, chain_view.clone());
+
+        let block_number = BlockNumber::from(100);
+        confirmable_event
+            .start_confirming(block_number)
+            .expect("Failed to start confirming");
+
+        // step 1: with 1 confirmation required, it might be immediately confirmed
+        // depending on how the blockchain tracker counts confirmations
+        let _initially_confirmed = confirmable_event.is_confirmed();
+
+        // step 2: add one block to ensure it's confirmed
+        let block = create_test_block(block_number);
+        chain_view.borrow_mut().update(block);
+
+        // step 3: should definitely be confirmed after adding a block
+        assert!(
+            confirmable_event.is_confirmed(),
+            "Should be confirmed after adding a block with 1 confirmation required"
+        );
+    }
+
+    #[test]
+    fn test_confirmable_event_observer_cleanup_after_stop_confirming() {
+        // setup
+        let id = Uuid::new_v4();
+
+        let req_confirmations = 3;
+        let chain_view = Rc::new(RefCell::new(BlockchainView::new()));
+
+        let mut confirmable_event =
+            ConfirmableEvent::new(id, req_confirmations, chain_view.clone());
+
+        let block_number = BlockNumber::from(100);
+        confirmable_event
+            .start_confirming(block_number)
+            .expect("Failed to start confirming");
+
+        // step 1: verify observer was added
+        assert!(
+            chain_view.borrow().has_observer(&id.to_string()),
+            "Observer should be added after start_confirming"
+        );
+
+        // step 2: stop_confirming()
+        confirmable_event
+            .stop_confirming()
+            .expect("Failed to stop confirming");
+
+        // step 3: confirmations should be None (observer reference removed from struct)
+        assert!(
+            confirmable_event.confirmations.is_none(),
+            "confirmations should be None after stop_confirming"
+        );
+
+        // step 4: observer should be removed from the blockchain view
+        assert!(
+            !chain_view.borrow().has_observer(&id.to_string()),
+            "Observer should be removed from blockchain view after stop_confirming"
+        );
+
+        // step 5: is_confirmed should return false and log warning
+        assert!(
+            !confirmable_event.is_confirmed(),
+            "Should not be confirmed after stop_confirming"
+        );
+    }
+
+    fn create_test_block(block_number: BlockNumber) -> RskBlockAndUncles {
+        let generator = FakeBlockGenerator::new(None, Arc::new(AtomicBool::new(false)), None);
+        let block = generator
+            .generate_block(block_number, None)
+            .expect("Failed to generate test block");
+
+        RskBlockAndUncles::new_no_uncles(block)
+    }
+
+    fn create_alt_test_block(block_number: BlockNumber) -> RskBlockAndUncles {
+        // create a generator with a reorg flag set to true to generate alternative blocks
+        let generator = FakeBlockGenerator::new(
+            Some(block_number - 1),
+            Arc::new(AtomicBool::new(true)),
+            None,
+        );
+        let block = generator
+            .generate_block(block_number, None)
+            .expect("Failed to generate alternative test block");
+
+        RskBlockAndUncles::new_no_uncles(block)
     }
 }

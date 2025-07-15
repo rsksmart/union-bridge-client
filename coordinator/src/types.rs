@@ -4,6 +4,7 @@ use alloy_primitives::{B256, LogData};
 use alloy_sol_types::SolEvent;
 use common::types::{BlockHash, BlockNumber, Hash256, RskLog, TxHash};
 use log::{error, warn};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
 use union_contracts::bindings::signature_manager::SignatureManager::{
@@ -181,7 +182,7 @@ impl EventDecoder {
                 inner: event,
                 block_number,
                 block_hash,
-                removed: removed,
+                removed,
                 tx_hash,
             }),
             Err(_) => UnknownEvent,
@@ -244,9 +245,16 @@ impl EventDecoder {
                 removed,
                 tx_hash,
             }),
-            Err(_) => RskPegManagerEvents::UnknownEvent,
+            Err(_) => UnknownEvent,
         }
     }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct MemberSignature {
+    pub hash_to_sign: String,
+    pub btc_signature: String,
+    pub btc_nonce: String,
 }
 
 #[cfg(test)]

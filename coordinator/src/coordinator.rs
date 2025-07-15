@@ -1,5 +1,6 @@
+use crate::flows::advance_funds::advance_funds_flow::AdvanceFundsProcessor;
 use crate::{
-    event_processor::{AdvanceFundsProcessor, EventProcessor, PeginProcessor},
+    event_processor::{EventProcessor, PeginProcessor},
     monitor::MonitorApi,
 };
 use anyhow::{Context, Result};
@@ -120,7 +121,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
                 if let Some(event) = self.monitor.try_event().context("Error getting event")? {
                     // each processor decides if the event is relevant
                     self.processors.iter_mut().for_each(|p| {
-                        if let Err(e) = p.process_new_event(&event) {
+                        if let Err(e) = p.process_new_rsk_event(&event) {
                             error!("Error processing Union Bridge event {:?}: {:?}", event, e);
                         }
                     });
@@ -501,7 +502,7 @@ pub(crate) mod tests {
             .returning(|_| Ok(()))
             .times(1..);
         mock_pegout_processor
-            .expect_process_new_event()
+            .expect_process_new_rsk_event()
             .returning(|_| Ok(()))
             .times(1..);
         mock_pegout_processor.expect_shutdown().return_once(|| ());

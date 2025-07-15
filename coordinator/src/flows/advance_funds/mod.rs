@@ -1,4 +1,4 @@
-pub mod advance_funds_processor;
+pub mod advance_funds_flow;
 mod check_fork_accumulator;
 
 #[cfg(test)]
