@@ -1,11 +1,21 @@
-# required for mono-repo to work (workspace dependencies)
 version: 2
+
+registries:
+  github:
+    type: git
+    url: https://github.com/FairgateLabs
+    username: x-access-token
+    password: ${{ secrets.FAIRGATE_GITHUB_TOKEN }}
+
 updates:
   - package-ecosystem: "cargo"
-    directory: "/" # main workspace directory
+    directory: "/" # main workspace
     schedule:
-      interval: "daily"
+      interval: "hourly"
+    registries:
+      - github
+
   - package-ecosystem: "cargo"
-    directory: "/zkp/guest" # guest workspace directory
+    directory: "/check-fork/zkp/guest" # guest workspace
     schedule:
-      interval: "daily"
+      interval: "hourly"

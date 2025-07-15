@@ -28,9 +28,11 @@ dependencies = [
  "clap",
  "common",
  "hex",
+ "serde",
  "serde_json",
  "tokio",
  "union-bridge-contracts",
+ "uuid 1.17.0",
 ]
 
 [[package]]
