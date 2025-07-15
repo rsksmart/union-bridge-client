@@ -382,6 +382,7 @@ mod tests {
     use common::msg_broker::bitvmx_types::OutgoingBitVMXApiMessages;
     use common::msg_broker::broker::MockBrokerClientApi;
     use common::test_utils::rsk_block_generator::create_block_from_template;
+    use common::types::TxHash;
     use common::types::{BlockHash, RskBlock};
     use mockall::predicate::{eq, function};
     use primitive_types::{H256, U256};
@@ -445,6 +446,7 @@ mod tests {
             block_number: request_block.number(),
             block_hash: BlockHash::from(H256::from_low_u64_be(123)),
             removed: false,
+            tx_hash: TxHash::from(H256::from_low_u64_be(123)),
         };
         processor
             .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(request_event))
@@ -467,6 +469,7 @@ mod tests {
                 block_number: request_block.number() + 1,
                 block_hash: BlockHash::from(H256::from_low_u64_be(456)),
                 removed: false,
+                tx_hash: TxHash::from(H256::from_low_u64_be(456)),
             }))
             .expect("Should have processed request");
 
@@ -514,6 +517,7 @@ mod tests {
             block_number: request_block.number(),
             block_hash: request_block.hash(),
             removed: false,
+            tx_hash: TxHash::from(H256::from_low_u64_be(123)),
         };
         processor
             .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
@@ -535,6 +539,7 @@ mod tests {
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
                 removed: false,
+                tx_hash: TxHash::from(H256::from_low_u64_be(123)),
             }))
             .expect("Should have processed request");
 
@@ -606,6 +611,7 @@ mod tests {
             block_number: request_block_1.number(),
             block_hash: request_block_1.hash(),
             removed: false,
+            tx_hash: TxHash::from(H256::from_low_u64_be(123)),
         };
         processor
             .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
@@ -621,6 +627,7 @@ mod tests {
             block_number: request_block_2.number(),
             block_hash: request_block_2.hash(),
             removed: false,
+            tx_hash: TxHash::from(H256::from_low_u64_be(456)),
         };
         processor
             .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
@@ -638,6 +645,7 @@ mod tests {
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
                 removed: false,
+                tx_hash: TxHash::from(H256::from_low_u64_be(789)),
             }))
             .expect("Should have processed request");
 
@@ -699,6 +707,7 @@ mod tests {
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.parent_hash(),
                 removed: false,
+                tx_hash: TxHash::from(H256::from_low_u64_be(1234)),
             }))
             .expect("Should have processed request");
 
@@ -724,6 +733,7 @@ mod tests {
             block_number: request_block.number(),
             block_hash: request_block.hash(),
             removed: false,
+            tx_hash: TxHash::from(H256::from_low_u64_be(123)),
         };
         processor
             .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
@@ -744,6 +754,7 @@ mod tests {
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.parent_hash(),
                 removed: false,
+                tx_hash: TxHash::from(H256::from_low_u64_be(456)),
             }))
             .expect("Should have processed request");
 
@@ -783,6 +794,7 @@ mod tests {
                     block_number: request_block.number(),
                     block_hash: request_block.hash(),
                     removed: false,
+                    tx_hash: TxHash::from(H256::from_low_u64_be(100)),
                 },
             ))
             .expect("Should have processed request");
@@ -829,6 +841,7 @@ mod tests {
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
                 removed: false,
+                tx_hash: TxHash::from(H256::from_low_u64_be(123)),
             }))
             .expect("Should have processed kickoff");
         processor
@@ -933,6 +946,7 @@ mod tests {
                     block_number: request_block.number(),
                     block_hash: request_block.hash(),
                     removed: false,
+                    tx_hash: TxHash::from(H256::from_low_u64_be(100)),
                 },
             ))
             .expect("Should have processed request");
@@ -982,6 +996,7 @@ mod tests {
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
                 removed: false,
+                tx_hash: TxHash::from(H256::from_low_u64_be(256)),
             }))
             .expect("Should have processed kickoff");
 
@@ -1084,6 +1099,7 @@ mod tests {
                     block_number: request_block.number(),
                     block_hash: request_block.hash(),
                     removed: false,
+                    tx_hash: TxHash::from(H256::from_low_u64_be(123)),
                 },
             ))
             .expect("Should have processed request");
@@ -1096,6 +1112,7 @@ mod tests {
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
                 removed: false,
+                tx_hash: TxHash::from(H256::from_low_u64_be(456)),
             }))
             .expect("Should have processed kickoff");
 
@@ -1126,6 +1143,7 @@ mod tests {
                     block_number: request_block.number(),
                     block_hash: request_block.hash(),
                     removed: false,
+                    tx_hash: TxHash::from(H256::from_low_u64_be(100)),
                 },
             ))
             .expect("Should have processed request");
@@ -1161,6 +1179,7 @@ mod tests {
                     block_number: request_block.number(),
                     block_hash: request_block.hash(),
                     removed: false,
+                    tx_hash: TxHash::from(H256::from_low_u64_be(110)),
                 },
             ))
             .expect("Should have processed request");
@@ -1176,6 +1195,7 @@ mod tests {
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
                 removed: false,
+                tx_hash: TxHash::from(H256::from_low_u64_be(789)),
             }))
             .expect("Should have processed kickoff");
 
@@ -1217,6 +1237,7 @@ mod tests {
             block_number: request_block_1.number(),
             block_hash: request_block_1.hash(),
             removed: false,
+            tx_hash: TxHash::from(H256::from_low_u64_be(123)),
         };
         processor
             .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(request_event_1))
@@ -1227,6 +1248,7 @@ mod tests {
             block_number: request_block_2.number(),
             block_hash: request_block_2.hash(),
             removed: false,
+            tx_hash: TxHash::from(H256::from_low_u64_be(456)),
         };
         processor
             .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
@@ -1249,6 +1271,7 @@ mod tests {
                     block_number: request_block_1.number(),
                     block_hash: request_block_1.hash(),
                     removed: true,
+                    tx_hash: TxHash::from(H256::from_low_u64_be(789)),
                 },
             ))
             .expect("Should have processed request");
@@ -1286,6 +1309,7 @@ mod tests {
                     block_number: request_block.number(),
                     block_hash: request_block.hash(),
                     removed: false,
+                    tx_hash: TxHash::from(H256::from_low_u64_be(123)),
                 },
             ))
             .expect("Should have processed request");
@@ -1339,6 +1363,7 @@ mod tests {
                     block_number: advance_block.number(),
                     block_hash: advance_block.hash(),
                     removed: false,
+                    tx_hash: TxHash::from(H256::from_low_u64_be(123)),
                 },
             ))
             .expect("Should have processed request");
@@ -1389,6 +1414,7 @@ mod tests {
                     block_number: request_block.number(),
                     block_hash: request_block.hash(),
                     removed: false,
+                    tx_hash: TxHash::from(H256::from_low_u64_be(123)),
                 },
             ))
             .expect("Should have processed request");
@@ -1404,6 +1430,7 @@ mod tests {
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
                 removed: false,
+                tx_hash: TxHash::from(H256::from_low_u64_be(123)),
             }))
             .expect("Should have processed kickoff");
 
@@ -1421,6 +1448,7 @@ mod tests {
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
                 removed: true,
+                tx_hash: TxHash::from(H256::from_low_u64_be(456)),
             }))
             .expect("Should have processed removal");
 
@@ -1458,6 +1486,7 @@ mod tests {
                     block_number: request_block.number(),
                     block_hash: request_block.hash(),
                     removed: false,
+                    tx_hash: TxHash::from(H256::from_low_u64_be(100)),
                 },
             ))
             .expect("Should have processed request");
@@ -1488,6 +1517,7 @@ mod tests {
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
                 removed: false,
+                tx_hash: TxHash::from(H256::from_low_u64_be(101)),
             }))
             .expect("Should have processed kickoff");
 
@@ -1653,6 +1683,7 @@ mod tests {
                     block_number: request_block.number(),
                     block_hash: request_block.hash(),
                     removed: false,
+                    tx_hash: TxHash::from(H256::from_low_u64_be(105)),
                 },
             ))
             .expect("Should have processed request");
@@ -1749,6 +1780,7 @@ mod tests {
                     advance_funds_block_number.value(),
                 )),
                 removed: false,
+                tx_hash: TxHash::from(H256::from_low_u64_be(136)),
             }))
             .expect("Should have processed kickoff");
 
@@ -1793,6 +1825,7 @@ mod tests {
                     block_number: request_block.number(),
                     block_hash: request_block.hash(),
                     removed: false,
+                    tx_hash: TxHash::from(H256::from_low_u64_be(100)),
                 },
             ))
             .expect("Should have processed request");
@@ -1822,6 +1855,7 @@ mod tests {
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
                 removed: false,
+                tx_hash: TxHash::from(H256::from_low_u64_be(456)),
             }))
             .expect("Should have processed kickoff");
 
@@ -1927,6 +1961,7 @@ mod tests {
                     block_number: request_block_1.number(),
                     block_hash: request_block_1.hash(),
                     removed: false,
+                    tx_hash: TxHash::from(H256::from_low_u64_be(888)),
                 },
             ))
             .expect("Should have processed request");
@@ -1943,6 +1978,7 @@ mod tests {
                 block_number: advance_funds_block_1.number(),
                 block_hash: advance_funds_block_1.hash(),
                 removed: false,
+                tx_hash: TxHash::from(H256::from_low_u64_be(963)),
             }))
             .expect("Should have processed kickoff");
 
@@ -1965,6 +2001,7 @@ mod tests {
                     block_number: request_block_1.number() + 1,
                     block_hash: BlockHash::from(H256::from_low_u64_be(456)),
                     removed: false,
+                    tx_hash: TxHash::from(H256::from_low_u64_be(456)),
                 },
             ))
             .expect("Should have processed request");
@@ -1980,6 +2017,7 @@ mod tests {
                 block_number: advance_funds_block_2.number(),
                 block_hash: advance_funds_block_2.hash(),
                 removed: false,
+                tx_hash: TxHash::from(H256::from_low_u64_be(115)),
             }))
             .expect("Should have processed kickoff");
 

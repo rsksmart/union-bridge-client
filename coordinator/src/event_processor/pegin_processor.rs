@@ -665,6 +665,7 @@ mod tests {
             block_number: 123.into(),
             block_hash: BlockHash::from(H256::from([0xaa; 32])),
             removed: false,
+            tx_hash: tx_hash.clone(),
         });
 
         let result = processor.process_new_event(&event);
@@ -692,6 +693,7 @@ mod tests {
             block_number: 123.into(),
             block_hash: BlockHash::from(H256::from([0xaa; 32])),
             removed: false,
+            tx_hash: tx_hash.clone(),
         });
 
         let result = processor.process_new_event(&event);
@@ -708,7 +710,8 @@ mod tests {
             inner: pegin_requested.clone(),
             block_number: 123.into(),
             block_hash: BlockHash::from(H256::from([0xaa; 32])),
-            removed: true, // event is removed
+            removed: true, // event is removed,
+            tx_hash: tx_hash.clone(),
         });
 
         let result = processor.process_new_event(&event);
@@ -728,6 +731,7 @@ mod tests {
             block_number: 122.into(),
             block_hash: BlockHash::from(H256::from([0xba; 32])),
             removed: false,
+            tx_hash: TxHash::from(H256::from_low_u64_be(122)),
         });
         let result = processor.process_new_event(&event);
         assert!(result.is_ok());
@@ -739,6 +743,7 @@ mod tests {
             block_number: 456.into(),
             block_hash: BlockHash::from(H256::from([0xbb; 32])),
             removed: false,
+            tx_hash: tx_hash.clone(),
         });
 
         let result = processor.process_new_event(&event);
@@ -766,6 +771,7 @@ mod tests {
             block_number: 122.into(),
             block_hash: BlockHash::from(H256::from([0xba; 32])),
             removed: false,
+            tx_hash: TxHash::from(H256::from_low_u64_be(9)),
         });
         let result = processor.process_new_event(&event);
         assert!(result.is_ok());
@@ -777,6 +783,7 @@ mod tests {
             block_number: 456.into(),
             block_hash: BlockHash::from(H256::from([0xbb; 32])),
             removed: false,
+            tx_hash: tx_hash.clone(),
         });
 
         let result = processor.process_new_event(&event);
@@ -788,6 +795,7 @@ mod tests {
             block_number: 456.into(),
             block_hash: BlockHash::from(H256::from([0xbb; 32])),
             removed: true, // event is removed
+            tx_hash: TxHash::from(H256::from_low_u64_be(10)),
         });
 
         let result = processor.process_new_event(&event);
@@ -845,6 +853,7 @@ mod tests {
             block_number: block_1.number(),
             block_hash: block_1.hash(),
             removed: false,
+            tx_hash: TxHash::from(H256::from_low_u64_be(9)),
         };
 
         let pegin_flow_id = Uuid::new_v4();
@@ -884,6 +893,7 @@ mod tests {
             block_number: block_1.number(),
             block_hash: block_1.hash(),
             removed: false,
+            tx_hash: TxHash::from(H256::from_low_u64_be(9)),
         };
 
         let pegin_flow_id = Uuid::new_v4();
@@ -946,6 +956,7 @@ mod tests {
             block_number: block_1.number(),
             block_hash: block_1.hash(),
             removed: false,
+            tx_hash: TxHash::from(H256::from_low_u64_be(10)),
         };
 
         let pegin_accepted = dummy_pegin_accepted_event();
@@ -954,6 +965,7 @@ mod tests {
             block_number: block_2.number(),
             block_hash: block_2.hash(),
             removed: false,
+            tx_hash: TxHash::from(H256::from_low_u64_be(9)),
         };
 
         let pegin_flow_id = Uuid::new_v4();
@@ -1017,6 +1029,7 @@ mod tests {
             block_number: 99.into(),
             block_hash: BlockHash::from(H256::from_low_u64_be(122)),
             removed: false,
+            tx_hash: TxHash::from(H256::from_low_u64_be(10)),
         };
 
         let pegin_accepted = dummy_pegin_accepted_event();
@@ -1025,6 +1038,7 @@ mod tests {
             block_number: 100.into(),
             block_hash: BlockHash::from(H256::from_low_u64_be(123)),
             removed: false,
+            tx_hash: TxHash::from(H256::from_low_u64_be(11)),
         };
 
         let pegin_flow_id = Uuid::new_v4();
