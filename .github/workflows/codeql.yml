@@ -42,11 +42,15 @@ jobs:
           fairgate_github_token: ${{ secrets.FAIRGATE_GITHUB_TOKEN }}
           cache-build: false
 
-      # required due to check-fork/zkp/build.rs
-      - name: Build with Cargo
+      - name: Build Main Workspace
         if: matrix.language == 'rust'
         run: |
-          cd check-fork/zkp
+          cargo build          
+
+      - name: Build CheckFork Workspace
+        if: matrix.language == 'rust'
+        working-directory: check-fork/zkp
+        run: |
           cargo build
 
       # initialize CodeQL pointing at the real root of client code
@@ -55,7 +59,13 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
-          config-file: ./.github/codeql/codeql-config.yml
+          packs: codeql/rust-all
+          config: |
+            name: "CodeQL Config"
+            paths-ignore:
+              - 'actors-mocking/**'
+              - 'qa-tools/**'
+              - '.hooks/**'
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3

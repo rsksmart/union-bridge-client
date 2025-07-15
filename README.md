@@ -154,7 +154,7 @@ GetBlocks executed and CheckForkArgs generated. Relevant parameters for the inte
 ## 2) Generate the Stark Proof
 
 With the previous output, we can now generate the Stark Proof
-Clone Fairgate's [ZK Proof](https://github.com/FairgateLabs/rust-bitvmx-zk-proof/) repo, for now at `poc-generalise-host` branch.
+Clone Fairgate's [ZK Proof](https://github.com/FairgateLabs/rust-bitvmx-zk-proof/) repo, for now at `main` branch.
 
 Then run the following command where:
 ```bash
@@ -175,7 +175,7 @@ The proof was executed, and the receipt saved to the file: stark-proof.bin. Tota
 
 ## 3) Generate the Snark Proof (from the Stark) & Verify the Snark Proof
 
-Please check the [ZKVM CLI documentation](https://github.com/FairgateLabs/rust-bitvmx-zk-proof/tree/poc-generalise-host)
+Please check the [ZKVM CLI documentation](https://github.com/FairgateLabs/rust-bitvmx-zk-proof/tree/main)
 for the remaining steps. Note that this doc is pointing to a WIP branch.
 
 # Developer setup & conventions
