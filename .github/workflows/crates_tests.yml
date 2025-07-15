@@ -31,6 +31,11 @@ jobs:
           fairgate_github_token: ${{ secrets.FAIRGATE_GITHUB_TOKEN }}
           cache-build: true
 
+      - name: Clippy
+        run: |
+          # Fail on any warning (including those flagged by pedantic/security lints)
+          RISC0_SKIP_BUILD=1 cargo clippy --workspace --all-targets --all-features -- -D warnings
+
       - name: Test
         run: |
           RUN_MODE=ci cargo test --features test-utils --locked
