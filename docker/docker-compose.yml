@@ -125,7 +125,6 @@ services:
       internal:
         ipv4_address: 172.25.0.13
     environment:
-      - TRANSACTION_DISPATCHER_URL=http://transaction-dispatcher:3000
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
     healthcheck:
       <<: *base-healthcheck

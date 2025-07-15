@@ -12,13 +12,17 @@ use common::{
         bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, VariableTypes},
         broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi},
     },
+    runtime_sync::RuntimeSync,
     types::{RskBlockAndUncles, TxHash},
 };
-use log::info;
-use reqwest::blocking::Client;
+use log::{error, info};
 use serde::Serialize;
 use serde_json::Value;
-use std::{cell::RefCell, collections::HashMap, env, rc::Rc, sync::Arc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
+use transaction_dispatcher::{
+    rsk_gateway::RskContractsGatewayApi,
+    types::{AcceptPegInInput, RegisterPegInInput},
+};
 use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
 use uuid::Uuid;
 
@@ -66,17 +70,27 @@ impl PeginEventState {
     }
 }
 
-pub struct PeginProcessor<T: BitVmxBrokerClientApi> {
-    http_client: Client,
-    bitvmx_broker: Arc<T>,
+pub struct PeginProcessor<CG, BC>
+where
+    CG: RskContractsGatewayApi,
+    BC: BitVmxBrokerClientApi,
+{
+    rt_sync: RuntimeSync,
+    contracts: Arc<CG>,
+    bitvmx_broker: Arc<BC>,
     blockchain: BlockchainView,
     tracker: HashMap<TxHash, PeginEventState>,
 }
 
-impl<T: BitVmxBrokerClientApi> PeginProcessor<T> {
-    pub fn new(bitvmx_broker: Arc<T>) -> Self {
+impl<CG, BC> PeginProcessor<CG, BC>
+where
+    CG: RskContractsGatewayApi,
+    BC: BitVmxBrokerClientApi,
+{
+    pub fn new(rt_sync: RuntimeSync, contracts: Arc<CG>, bitvmx_broker: Arc<BC>) -> Self {
         Self {
-            http_client: Client::new(),
+            rt_sync,
+            contracts,
             bitvmx_broker,
             blockchain: BlockchainView::new(),
             tracker: HashMap::new(),
@@ -175,26 +189,6 @@ impl<T: BitVmxBrokerClientApi> PeginProcessor<T> {
         }
     }
 
-    fn proxy_request(&self, method_name: &str, json_value: &Value) -> Result<Value> {
-        let url = format!("{}/{}", Self::get_tx_dispatcher_url(), method_name);
-
-        let res = self
-            .http_client
-            .post(url)
-            .json(json_value)
-            .send()
-            .context("Failed to send request")?;
-
-        if res.status().is_success() {
-            let result: Value = res.json().context("Failed to parse response as JSON")?;
-            Ok(result)
-        } else {
-            let status = res.status();
-            let text = res.text().unwrap_or_else(|_| "<no body>".to_string());
-            bail!("Request failed: {status} - {text}");
-        }
-    }
-
     fn process_unhandled_confirmed_pegin_requested_events(&mut self) -> Result<()> {
         for (tx_hash, state) in self.tracker.iter_mut() {
             let flow_id = state.pegin_flow_id;
@@ -279,8 +273,57 @@ impl<T: BitVmxBrokerClientApi> PeginProcessor<T> {
         Ok(())
     }
 
+    fn send_to_union_bridge(&self, method_name: &str, json_value: &Value) -> Result<()> {
+        info!(
+            "Dispatching transaction to union bridge. Method: '{}', Payload: {}",
+            method_name, json_value
+        );
+
+        match method_name {
+            "register-pegin" => {
+                let input: RegisterPegInInput = serde_json::from_value(json_value.clone())
+                    .context("Failed to deserialize RegisterPegInInput")?;
+
+                match self
+                    .rt_sync
+                    .run(async { self.contracts.register_peg_in_request(input).await })
+                {
+                    Ok(_) => {
+                        info!("Successfully called '{}'", method_name);
+                        Ok(())
+                    }
+                    Err(domain_err) => {
+                        error!("Error calling '{}': {:?}", method_name, domain_err);
+                        Err(domain_err.into())
+                    }
+                }
+            }
+
+            "accept-pegin" => {
+                let input: AcceptPegInInput = serde_json::from_value(json_value.clone())
+                    .context("Failed to deserialize AcceptPegInInput")?;
+
+                match self
+                    .rt_sync
+                    .run(async { self.contracts.accept_peg_in_request(input).await })
+                {
+                    Ok(_) => {
+                        info!("Successfully called '{}'", method_name);
+                        Ok(())
+                    }
+                    Err(domain_err) => {
+                        error!("Error calling '{}': {:?}", method_name, domain_err);
+                        Err(domain_err.into())
+                    }
+                }
+            }
+
+            _ => bail!("Unsupported method: {}", method_name),
+        }
+    }
+
     fn send_to_bitvmx<E: Serialize>(
-        bitvmx_broker: &T,
+        bitvmx_broker: &BC,
         pegin_flow_id: Uuid,
         variable_name: &str,
         data: &E,
@@ -298,14 +341,13 @@ impl<T: BitVmxBrokerClientApi> PeginProcessor<T> {
 
         Ok(())
     }
-
-    fn get_tx_dispatcher_url() -> String {
-        // Env var because the http server is temporary: defined for docker, defaulting otherwise
-        env::var("TRANSACTION_DISPATCHER_URL").unwrap_or("http://0.0.0.0:3000".to_string())
-    }
 }
 
-impl<T: BitVmxBrokerClientApi> EventProcessor for PeginProcessor<T> {
+impl<CG, BC> EventProcessor for PeginProcessor<CG, BC>
+where
+    CG: RskContractsGatewayApi,
+    BC: BitVmxBrokerClientApi,
+{
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
         match event {
             OutgoingBitVMXApiMessages::Variable(
@@ -318,13 +360,9 @@ impl<T: BitVmxBrokerClientApi> EventProcessor for PeginProcessor<T> {
                     pegin_flow_id, method, data
                 );
 
-                let json_data = serde_json::from_str(data)?;
-                let result = self.proxy_request(method, &json_data)?;
+                let json_data: Value = serde_json::from_str(data)?;
 
-                info!(
-                    "Successfully proxied request. Flow Id: {}, Method: '{}', Response: {}",
-                    pegin_flow_id, method, result
-                );
+                self.send_to_union_bridge(method, &json_data)?;
             }
             _ => {}
         }
@@ -425,6 +463,7 @@ impl<T: BitVmxBrokerClientApi> EventProcessor for PeginProcessor<T> {
 mod tests {
     use super::*;
     use crate::{
+        coordinator::tests::MockRskContractsGatewayApi,
         event_processor::EventProcessor,
         types::{PeginAcceptedEvent, PeginRequestedEvent},
     };
@@ -437,26 +476,36 @@ mod tests {
     use mockall::predicate::{eq, function};
     use primitive_types::H256;
     use serde_json::json;
+    use transaction_dispatcher::{
+        rsk_gateway::DomainErrors,
+        types::{AcceptPegInOutput, RegisterPegInOutput},
+    };
     use union_contracts::bindings::peg_manager::PegManager::{
         PeginRequested, PrevoutData, RequestPeginTempInfo, StreamPosition,
     };
 
     #[test]
     fn process_new_bitvmx_event_pegin_requested_does_not_send_response() {
-        let _m = mockito::mock("POST", "/register-pegin")
-            .with_status(200)
-            .with_body(r#"{"result": "ok"}"#)
-            .create();
+        // Prepare the mocked contracts gateway
+        let mut contracts = MockRskContractsGatewayApi::new();
+        let expected_receipt = RegisterPegInOutput {
+            transaction_hash: "0x4e3f8a2d39c1b872b77e8a5c9a24be8f1d489ea7cf2d38375f18b5b54e7df662"
+                .to_string(),
+            success: true,
+        };
+        contracts
+            .expect_register_peg_in_request()
+            .times(1)
+            .returning(move |_| Ok(expected_receipt.clone()));
 
-        unsafe {
-            std::env::set_var("TRANSACTION_DISPATCHER_URL", &mockito::server_url());
-        }
-
+        // Prepare broker and assert it doesn't send anything
         let mut broker = MockBrokerClientApi::new();
         broker.expect_send().times(0);
 
-        let mut processor = PeginProcessor::new(broker.into());
+        let rt_sync = RuntimeSync::new().unwrap();
+        let mut processor = PeginProcessor::new(rt_sync, contracts.into(), broker.into());
 
+        // Simulate event payload
         let data = serde_json::json!({
             "block_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "btc_tx": {
@@ -492,26 +541,28 @@ mod tests {
             VariableTypes::String(payload),
         );
 
+        // Run and assert
         let result = processor.process_new_bitvmx_event(&event);
         assert!(result.is_ok());
     }
 
     #[test]
     fn process_new_bitvmx_event_pegin_requested_fails_on_dispatcher_error() {
-        let _m = mockito::mock("POST", "/register-pegin")
-            .with_status(500)
-            .with_body("Internal Server Error")
-            .create();
+        // Prepare a mocked contracts gateway that simulates a failure
+        let mut contracts = MockRskContractsGatewayApi::new();
+        contracts
+            .expect_register_peg_in_request()
+            .times(1)
+            .returning(|_| Err(DomainErrors::UnknownContractError("simulated error".into())));
 
-        unsafe {
-            std::env::set_var("TRANSACTION_DISPATCHER_URL", &mockito::server_url());
-        }
-
+        // Prepare broker and assert it doesn't send anything
         let mut broker = MockBrokerClientApi::new();
         broker.expect_send().times(0);
 
-        let mut processor = PeginProcessor::new(broker.into());
+        let rt_sync = RuntimeSync::new().unwrap();
+        let mut processor = PeginProcessor::new(rt_sync, contracts.into(), broker.into());
 
+        // Simulate payload
         let data = serde_json::json!({
             "block_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "btc_tx": {
@@ -548,25 +599,33 @@ mod tests {
         );
 
         let result = processor.process_new_bitvmx_event(&event);
+
+        // We expect an error due to contract dispatch failure
         assert!(result.is_err());
     }
 
     #[test]
     fn process_new_bitvmx_pegin_accepted_event_does_not_send_response() {
-        let _m = mockito::mock("POST", "/accept-pegin")
-            .with_status(200)
-            .with_body(r#"{"result": "ok"}"#)
-            .create();
+        // Prepare the mocked contracts gateway
+        let mut contracts = MockRskContractsGatewayApi::new();
+        let expected_receipt = AcceptPegInOutput {
+            transaction_hash: "0x7e8f27d21c8a0cfebfd2c647db4687e51eae3eaecdbf9f247c9057be682176a3"
+                .to_string(),
+            success: true,
+        };
+        contracts
+            .expect_accept_peg_in_request()
+            .times(1)
+            .returning(move |_| Ok(expected_receipt.clone()));
 
-        unsafe {
-            std::env::set_var("TRANSACTION_DISPATCHER_URL", &mockito::server_url());
-        }
-
+        // Prepare broker and assert it doesn't send anything
         let mut broker = MockBrokerClientApi::new();
         broker.expect_send().times(0); // Should not send anything
 
-        let mut processor = PeginProcessor::new(broker.into());
+        let rt_sync = RuntimeSync::new().unwrap();
+        let mut processor = PeginProcessor::new(rt_sync, contracts.into(), broker.into());
 
+        // Simulate event payload
         let data = serde_json::json!({
             "block_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "btc_tx": {
@@ -604,20 +663,22 @@ mod tests {
 
     #[test]
     fn process_new_bitvmx_pegin_accepted_event_fails_on_dispatcher_error() {
-        let _m = mockito::mock("POST", "/accept-pegin")
-            .with_status(500)
-            .with_body("Internal Server Error")
-            .create();
+        // Set up the mocked contracts gateway with an error
+        let mut contracts = MockRskContractsGatewayApi::new();
+        contracts
+            .expect_accept_peg_in_request()
+            .times(1)
+            .returning(|_| Err(DomainErrors::UnknownContractError("simulated error".into())));
 
-        unsafe {
-            std::env::set_var("TRANSACTION_DISPATCHER_URL", &mockito::server_url());
-        }
-
+        // Set up a broker that should not be called
         let mut broker = MockBrokerClientApi::new();
         broker.expect_send().times(0);
 
-        let mut processor = PeginProcessor::new(broker.into());
+        // Runtime and processor initialization
+        let rt_sync = RuntimeSync::new().unwrap();
+        let mut processor = PeginProcessor::new(rt_sync, contracts.into(), broker.into());
 
+        // Payload
         let data = serde_json::json!({
             "block_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "btc_tx": {
@@ -656,7 +717,11 @@ mod tests {
     #[test]
     fn process_new_event_pegin_requested_event_and_observer() {
         let broker = MockBrokerClientApi::new();
-        let mut processor = PeginProcessor::new(broker.into());
+        let mut processor = PeginProcessor::new(
+            RuntimeSync::new().unwrap(),
+            MockRskContractsGatewayApi::new().into(),
+            broker.into(),
+        );
 
         let pegin_requested = dummy_pegin_requested_event();
         let tx_hash: TxHash = pegin_requested.acceptPeginTxHash.into();
@@ -684,7 +749,11 @@ mod tests {
     #[test]
     fn process_removed_pegin_requested_event() {
         let broker = MockBrokerClientApi::new();
-        let mut processor = PeginProcessor::new(broker.into());
+        let mut processor = PeginProcessor::new(
+            RuntimeSync::new().unwrap(),
+            MockRskContractsGatewayApi::new().into(),
+            broker.into(),
+        );
 
         let pegin_requested = dummy_pegin_requested_event();
         let tx_hash: TxHash = pegin_requested.acceptPeginTxHash.into();
@@ -723,7 +792,11 @@ mod tests {
     #[test]
     fn process_new_event_pegin_accepted_event_and_observer() {
         let broker = MockBrokerClientApi::new();
-        let mut processor = PeginProcessor::new(broker.into());
+        let mut processor = PeginProcessor::new(
+            RuntimeSync::new().unwrap(),
+            MockRskContractsGatewayApi::new().into(),
+            broker.into(),
+        );
 
         let pegin_requested = dummy_pegin_requested_event();
         let event = RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
@@ -763,7 +836,11 @@ mod tests {
     #[test]
     fn process_removed_event_pegin_accepted_event() {
         let broker = MockBrokerClientApi::new();
-        let mut processor = PeginProcessor::new(broker.into());
+        let mut processor = PeginProcessor::new(
+            RuntimeSync::new().unwrap(),
+            MockRskContractsGatewayApi::new().into(),
+            broker.into(),
+        );
 
         let pegin_requested = dummy_pegin_requested_event();
         let event = RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
@@ -821,7 +898,11 @@ mod tests {
     #[test]
     fn process_new_event_ignores_unknown_event() {
         let broker = MockBrokerClientApi::new();
-        let mut processor = PeginProcessor::new(broker.into());
+        let mut processor = PeginProcessor::new(
+            RuntimeSync::new().unwrap(),
+            MockRskContractsGatewayApi::new().into(),
+            broker.into(),
+        );
 
         let result = processor.process_new_event(&RskPegManagerEvents::UnknownEvent);
         assert!(result.is_ok());
@@ -831,7 +912,11 @@ mod tests {
     #[test]
     fn process_new_block_ignores_if_no_pending_events() {
         let broker = MockBrokerClientApi::new();
-        let mut processor = PeginProcessor::new(broker.into());
+        let mut processor = PeginProcessor::new(
+            RuntimeSync::new().unwrap(),
+            MockRskContractsGatewayApi::new().into(),
+            broker.into(),
+        );
 
         let (block_1, _, _) = create_block_and_uncles();
         let block = RskBlockAndUncles::new_no_uncles(block_1);
@@ -843,7 +928,11 @@ mod tests {
     #[test]
     fn process_new_block_adds_confirmations_for_register_pegin_but_event_not_confirmed() {
         let broker = MockBrokerClientApi::new();
-        let mut processor = PeginProcessor::new(broker.into());
+        let mut processor = PeginProcessor::new(
+            RuntimeSync::new().unwrap(),
+            MockRskContractsGatewayApi::new().into(),
+            broker.into(),
+        );
 
         let (block_1, _, _) = create_block_and_uncles();
 
@@ -923,7 +1012,11 @@ mod tests {
 )
             .returning(|_, _| Ok(true));
 
-        let mut processor = PeginProcessor::new(broker.into());
+        let mut processor = PeginProcessor::new(
+            RuntimeSync::new().unwrap(),
+            MockRskContractsGatewayApi::new().into(),
+            broker.into(),
+        );
 
         processor
             .blockchain
@@ -946,7 +1039,11 @@ mod tests {
     #[test]
     fn process_new_block_adds_confirmations_for_pegin_accepted_event_not_confirmed() {
         let broker = MockBrokerClientApi::new();
-        let mut processor = PeginProcessor::new(broker.into());
+        let mut processor = PeginProcessor::new(
+            RuntimeSync::new().unwrap(),
+            MockRskContractsGatewayApi::new().into(),
+            broker.into(),
+        );
 
         let (block_1, block_2, _) = create_block_and_uncles();
 
@@ -1021,7 +1118,11 @@ mod tests {
             })
             .returning(|_, _| Ok(true));
 
-        let mut processor = PeginProcessor::new(broker.into());
+        let mut processor = PeginProcessor::new(
+            RuntimeSync::new().unwrap(),
+            MockRskContractsGatewayApi::new().into(),
+            broker.into(),
+        );
 
         let pegin_requested = dummy_pegin_requested_event();
         let pegin_requested_event = PeginRequestedEvent {

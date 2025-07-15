@@ -30,7 +30,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
     pub fn new<CG: RskContractsGatewayApi + 'static>(
         rt_sync: RuntimeSync,
         monitor: M,
-        contracts_gateway: CG,
+        contracts_gateway: Arc<CG>,
         bitvmx_broker: Arc<BC>,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
@@ -39,11 +39,15 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
             bitvmx_broker: bitvmx_broker.clone(),
             processors: vec![
                 Box::new(AdvanceFundsProcessor::new(
-                    rt_sync,
-                    Arc::new(contracts_gateway),
+                    rt_sync.clone(),
+                    contracts_gateway.clone(),
                     bitvmx_broker.clone(),
                 )),
-                Box::new(PeginProcessor::new(bitvmx_broker.clone())),
+                Box::new(PeginProcessor::new(
+                    rt_sync.clone(),
+                    contracts_gateway.clone(),
+                    bitvmx_broker.clone(),
+                )),
             ],
             check_period: CHECK_PERIOD,
             shutdown_flag,

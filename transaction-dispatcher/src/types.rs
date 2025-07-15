@@ -44,8 +44,8 @@ pub struct RegisterPegInInput {
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct RegisterPegInOutput {
-    pub(crate) transaction_hash: String,
-    pub(crate) success: bool,
+    pub transaction_hash: String,
+    pub success: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

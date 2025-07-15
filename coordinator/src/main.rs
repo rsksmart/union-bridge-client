@@ -72,10 +72,10 @@ fn main() -> Result<()> {
 
     let rt_sync = RuntimeSync::new().context("Failed to create runtime sync")?;
 
-    let contracts_gateway = transaction_dispatcher::get_contracts_gateway_as_lib(
+    let contracts_gateway = Arc::new(transaction_dispatcher::get_contracts_gateway_as_lib(
         rt_sync.clone(),
         tx_dispatcher_config,
-    )?;
+    )?);
 
     let mut coordinator = Coordinator::new(
         rt_sync,
