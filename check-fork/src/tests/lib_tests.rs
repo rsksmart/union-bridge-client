@@ -11,10 +11,10 @@ fn succeeds_with_two_blocks_when_all_conditions_met() {
     let mut actual_effort = U256::zero();
 
     let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
-    actual_effort += calculate_effort_from_pow(first_block.pow.clone());
+    actual_effort += calculate_effort_from_pow(first_block.pow);
 
     let second_block = create_child_block(&first_block);
-    actual_effort += calculate_effort_from_pow(second_block.pow.clone());
+    actual_effort += calculate_effort_from_pow(second_block.pow);
 
     let block_list = vec![first_block, second_block];
 
@@ -35,15 +35,15 @@ fn succeeds_with_two_blocks_and_one_uncle_when_all_conditions_met() {
     let mut actual_effort = U256::zero();
 
     let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
-    actual_effort += calculate_effort_from_pow(first_block.pow.clone());
+    actual_effort += calculate_effort_from_pow(first_block.pow);
 
     let second_block_uncle = create_uncle(&first_block);
-    actual_effort += calculate_effort_from_pow(second_block_uncle.pow.clone());
+    actual_effort += calculate_effort_from_pow(second_block_uncle.pow);
 
     let mut second_block = create_child_block(&first_block);
     second_block.uncles = vec![second_block_uncle];
 
-    actual_effort += calculate_effort_from_pow(second_block.pow.clone());
+    actual_effort += calculate_effort_from_pow(second_block.pow);
 
     let block_list = vec![first_block, second_block];
 
@@ -144,15 +144,15 @@ fn fails_when_cumulative_effort_below_expected() {
     let mut actual_effort = U256::zero();
 
     let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
-    actual_effort += calculate_effort_from_pow(first_block.pow.clone());
+    actual_effort += calculate_effort_from_pow(first_block.pow);
 
     let second_block_uncle = create_uncle(&first_block);
-    actual_effort += calculate_effort_from_pow(second_block_uncle.pow.clone());
+    actual_effort += calculate_effort_from_pow(second_block_uncle.pow);
 
     let mut second_block = create_child_block(&first_block);
     second_block.uncles = vec![second_block_uncle];
 
-    actual_effort += calculate_effort_from_pow(second_block.pow.clone());
+    actual_effort += calculate_effort_from_pow(second_block.pow);
 
     let block_list = vec![first_block, second_block];
 
@@ -534,7 +534,7 @@ fn create_first_block(number: u64) -> Block {
 fn create_child_block(parent: &Block) -> Block {
     let mut child = create_base_block(parent.number + 1, false);
     child.timestamp = parent.timestamp + 100;
-    child.difficulty = build_valid_consecutive_difficulty(&parent);
+    child.difficulty = build_valid_consecutive_difficulty(parent);
     child.pow = calculate_superblock_effort(child.difficulty);
     child
 }

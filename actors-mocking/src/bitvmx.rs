@@ -97,13 +97,12 @@ impl<BS: BitVmxBrokerServerApi> Executor<BS> {
             VariableTypes::String(payload.to_string()),
         );
 
-        return self
-            .broker_server
+        self.broker_server
             .send(&event, BITVMX_L2_BROKER_CLIENT_ID)
             .context(format!(
                 "sending event {:?} to consumer {}",
                 event, BITVMX_L2_BROKER_CLIENT_ID
-            ));
+            ))
     }
 
     pub fn send_pegin_accepted_event(
@@ -127,13 +126,12 @@ impl<BS: BitVmxBrokerServerApi> Executor<BS> {
             VariableTypes::String(payload.to_string()),
         );
 
-        return self
-            .broker_server
+        self.broker_server
             .send(&event, BITVMX_L2_BROKER_CLIENT_ID)
             .context(format!(
                 "sending event {:?} to consumer {}",
                 event, BITVMX_L2_BROKER_CLIENT_ID
-            ));
+            ))
     }
 
     fn reception_time() -> String {

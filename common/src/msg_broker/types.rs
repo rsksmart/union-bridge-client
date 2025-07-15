@@ -3,6 +3,7 @@ use crate::types::{Address, RskBlockAndUncles, RskLog};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum ToServer {
     // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - add a limit time for receiving a response?
 

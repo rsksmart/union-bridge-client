@@ -35,6 +35,7 @@ pub struct MockRskProviderHandler<'a> {
 }
 
 impl<'a> MockRskProviderHandler<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         provider: &'a mut MockRskProvider,
         block_generator: &FakeBlockGenerator,
@@ -65,7 +66,7 @@ impl<'a> MockRskProviderHandler<'a> {
         let generator = self.block_generator.clone();
         if let Some(uncle_block_info_vec) = self.uncle_block_info_vec.clone() {
             for uncle_info in uncle_block_info_vec {
-                let flavor = format!("{}", if uncle_info.reorg { "alt" } else { "" },);
+                let flavor = (if uncle_info.reorg { "alt" } else { "" }).to_string();
                 let expected_nephew_hash =
                     from_hex_to_block_hash(&generator.generate_hash(uncle_info.height, &flavor));
                 self.provider
@@ -210,7 +211,7 @@ impl<'a> MockRskProviderHandler<'a> {
                             height_subscr_counter,
                             &generator,
                             uncle_block_info_vec.clone(),
-                            &mut *spent_uncle_ids,
+                            &mut spent_uncle_ids,
                         ) {
                             return Ok(uncle_block);
                         }

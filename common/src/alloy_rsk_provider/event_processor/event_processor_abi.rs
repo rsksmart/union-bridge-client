@@ -34,7 +34,7 @@ pub fn process(
     for (i, input) in topic_params.iter().enumerate() {
         let sol_type = DynSolType::from_str(input.ty.as_str())?;
         let sol_value =
-            sol_type.abi_decode_params((&rsk_log.event().topics()[i]).value().as_bytes())?;
+            sol_type.abi_decode_params(rsk_log.event().topics()[i].value().as_bytes())?;
         decoded_log_input.insert(input.name.to_string(), dyn_value_to_json(&sol_value)?);
     }
 
@@ -97,7 +97,7 @@ fn build_data_tuple(event: &Event, rsk_log: &RskLog) -> Result<DynSolValue> {
     // TODO(Jira) create custom types for topics, data... https://rsklabs.atlassian.net/browse/UB-140
     let data = &rsk_log.event().data().to_string();
     let data_as_hex =
-        &hex::decode(&data.trim_start_matches("0x")).context("Decoding hex data tuple")?;
+        &hex::decode(data.trim_start_matches("0x")).context("Decoding hex data tuple")?;
     let data_as_tuple = type_data_tuple
         .abi_decode_params(data_as_hex)
         .context(format!("Decoding tuple {type_data_tuple:?}"))?;

@@ -110,7 +110,7 @@ impl CheckForkAccumulator {
     pub fn has_enough_confirmations(&self) -> bool {
         self.confirmations
             .as_ref()
-            .map_or(false, |c| c.is_confirmed())
+            .is_some_and(|c| c.is_confirmed())
     }
 
     fn is_check_fork_ready(&self) -> bool {
@@ -249,6 +249,7 @@ mod tests {
     use common::types::{BlockHash, BlockNumber, RskBlockAndUncles, TxHash};
     use primitive_types::H256;
 
+    #[allow(clippy::too_many_arguments)]
     fn create_fake_advance_funds_event(
         pegout_id: &str,
         utxo_id: &str,

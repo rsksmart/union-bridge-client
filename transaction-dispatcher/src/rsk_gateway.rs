@@ -27,9 +27,9 @@ use std::collections::HashMap;
 use thiserror::Error;
 
 /// Must match the contract name in the config file
-const PEG_MANAGER_CONTRACT_NAME: &'static str = "PegManager";
-const FAKE_PEG_MANAGER_CONTRACT_NAME: &'static str = "FakePegManager";
-const SIGNATURE_MANAGER_CONTRACT_NAME: &'static str = "SignatureManager";
+const PEG_MANAGER_CONTRACT_NAME: &str = "PegManager";
+const FAKE_PEG_MANAGER_CONTRACT_NAME: &str = "FakePegManager";
+const SIGNATURE_MANAGER_CONTRACT_NAME: &str = "SignatureManager";
 
 pub trait RskContractsGatewayApi {
     fn get_temporary_peg_in_address(

@@ -55,7 +55,7 @@ pub trait RskProvider {
         &self,
         from: BlockNumber,
         to: BlockNumber,
-        addrs: &Vec<Address>,
+        addrs: &[Address],
     ) -> Result<Vec<RskLog>>;
     fn decode_log(&self, new_log: RskLog, contract_info: &ContractInfo)
     -> Result<Option<RskEvent>>;

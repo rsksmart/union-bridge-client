@@ -110,7 +110,7 @@ impl BrokerClientApi<ToServer, FromServer> for BrokerClient {
     fn try_recv(&self) -> Result<Option<FromServer>, BrokerError> {
         self.channel.recv()?.map_or(Ok(None), |(data, _id)| {
             serde_json::from_str(&data)
-                .map(|deserialized| Some(deserialized))
+                .map(Some)
                 .map_err(BrokerError::SerializationError)
         })
     }

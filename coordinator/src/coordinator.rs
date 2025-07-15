@@ -265,7 +265,7 @@ pub(crate) mod tests {
         let event_1 = RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFundsEvent {
             inner: create_fake_request_event("peg_out_id_1"),
             block_number: block_1.number(),
-            block_hash: block_1.hash().into(),
+            block_hash: block_1.hash(),
             removed: false,
             tx_hash: TxHash::from(H256::from_low_u64_be(block_1.number().value())),
         });
@@ -273,7 +273,7 @@ pub(crate) mod tests {
         let event_2: RskPegManagerEvents = RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
             inner: create_fake_advance_funds_event("peg_out_id_1"),
             block_number: block_2.number(),
-            block_hash: block_2.hash().into(),
+            block_hash: block_2.hash(),
             removed: false,
             tx_hash: TxHash::from(H256::from_low_u64_be(block_2.number().value())),
         });
@@ -358,7 +358,7 @@ pub(crate) mod tests {
         let event_1 = RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFundsEvent {
             inner: create_fake_request_event("peg_out_id_1"),
             block_number: block_1.number(),
-            block_hash: block_1.hash().into(),
+            block_hash: block_1.hash(),
             removed: false,
             tx_hash: TxHash::from(H256::from_low_u64_be(block_1.number().value())),
         });

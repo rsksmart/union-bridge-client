@@ -89,7 +89,7 @@ impl ConfigAsLib {
             .iter()
             .map(|c| {
                 let address = Address::try_from(c.address.as_str())
-                    .expect(&format!("Invalid address: {}", c.address));
+                    .unwrap_or_else(|_| panic!("Invalid address: {}", c.address));
                 (
                     c.name.to_owned(),
                     ContractInfo {

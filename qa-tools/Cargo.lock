@@ -28,9 +28,11 @@ dependencies = [
  "clap",
  "common",
  "hex",
+ "serde",
  "serde_json",
  "tokio",
  "union-bridge-contracts",
+ "uuid 1.17.0",
 ]
 
 [[package]]
@@ -1713,7 +1715,7 @@ checksum = "b94f61472cee1439c0b966b47e3aca9ae07e45d070759512cd390ea2bebc6675"
 [[package]]
 name = "cli_serde"
 version = "0.1.0"
-source = "git+ssh://git@github.com/FairgateLabs/rust-bitvmx-zk-proof.git?branch=poc-generalise-host#0081c0d1dfae56ceb647879ca7fd4c63a431d1b3"
+source = "git+ssh://git@github.com/FairgateLabs/rust-bitvmx-zk-proof.git?branch=main#eb1310fbbc59b93bf7c51c631d996d5325fc5f23"
 dependencies = [
  "bincode",
  "hex",

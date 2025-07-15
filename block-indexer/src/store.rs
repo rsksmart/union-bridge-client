@@ -49,7 +49,7 @@ impl<C: Cache<RskBlock>> CachedBlockStore<C> {
     }
 
     fn get_from_cache(&self, key: &str) -> Result<Option<RskBlock>> {
-        Ok(self.block_cache.get(key)?)
+        self.block_cache.get(key)
     }
 
     fn get_from_db<T: serde::de::DeserializeOwned>(&self, key: &str) -> Result<Option<T>> {
@@ -83,22 +83,22 @@ impl<C: Cache<RskBlock>> CachedBlockStore<C> {
     fn set_best_block(&self, value: &RskBlock) -> Result<()> {
         let key = &StoreKey::BestBlock.value();
         self.save_to_cache(key, value)?;
-        Ok(self.set_on_db(key, value)?)
+        self.set_on_db(key, value)
     }
 
     fn get_back_sync_checkpoint(&self) -> Result<Option<RskBlock>> {
         let key = &StoreKey::BackSyncCheckpoint.value();
-        Ok(self.get_from_db(key)?)
+        self.get_from_db(key)
     }
 
     fn set_back_sync_checkpoint(&self, value: &RskBlock) -> Result<()> {
         let key = &StoreKey::BackSyncCheckpoint.value();
-        Ok(self.set_on_db(key, value)?)
+        self.set_on_db(key, value)
     }
 
     fn reset_back_sync_checkpoint(&self) -> Result<()> {
         let key = &StoreKey::BackSyncCheckpoint.value();
-        Ok(self.delete_from_db(key)?)
+        self.delete_from_db(key)
     }
 
     fn get_block_by_hash(&self, hash: BlockHash) -> Result<Option<RskBlock>> {
@@ -148,7 +148,7 @@ impl<C: Cache<RskBlock>> CachedBlockStore<C> {
     fn set_canonical_block(&self, block: &RskBlock) -> Result<()> {
         let key = &StoreKey::BlockByNumber(block.number()).value();
         self.save_to_cache(key, block)?;
-        Ok(self.set_on_db(key, &block.hash().to_string())?)
+        self.set_on_db(key, &block.hash().to_string())
     }
 }
 

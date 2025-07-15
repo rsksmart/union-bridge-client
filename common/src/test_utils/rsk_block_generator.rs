@@ -207,10 +207,10 @@ impl FakeBlockGenerator {
         uncle_info: Option<UncleBlockInfo>, // uncle_info is None for regular blocks, Some for uncle blocks
     ) -> Option<RskBlock> {
         let is_reorg = self.is_reorg.load(Ordering::SeqCst);
-        let reorged_block = is_reorg && self.reorg_block_height.map_or(false, |h| height > h);
+        let reorged_block = is_reorg && self.reorg_block_height.is_some_and(|h| height > h);
         if uncle_info
             .as_ref()
-            .map_or(false, |info| info.reorg != reorged_block)
+            .is_some_and(|info| info.reorg != reorged_block)
         {
             return None; // do not generate an uncle block if uncle_info.reorg does not match current reorg status
         }
@@ -258,7 +258,7 @@ impl FakeBlockGenerator {
     fn generate_uncles_vec(&self, height: BlockNumber, is_reorg: bool) -> Vec<BlockHash> {
         let mut uncles_vec: Vec<BlockHash> = vec![];
         if let Some(uncle_block_info_vec) = &self.uncle_block_info_vec {
-            let reorged_block = is_reorg && self.reorg_block_height.map_or(false, |h| height > h);
+            let reorged_block = is_reorg && self.reorg_block_height.is_some_and(|h| height > h);
             for uncle_info in uncle_block_info_vec {
                 if uncle_info.height == height && uncle_info.reorg == reorged_block {
                     let flavor = format!(
@@ -284,12 +284,11 @@ impl FakeBlockGenerator {
         let parent_hash = if height == 0 {
             "0x0000000000000000000000000000000000000000000000000000000000000000".to_string()
         } else {
-            let flavor: String;
-            if reorg_block_height.map_or(false, |h| height > h) && is_reorg {
-                flavor = "alt".to_string();
+            let flavor = if reorg_block_height.is_some_and(|h| height > h) && is_reorg {
+                "alt".to_string()
             } else {
-                flavor = "".to_string();
-            }
+                "".to_string()
+            };
             self.generate_hash(height - 1, &flavor)
         };
         from_hex_to_block_hash(&parent_hash)
@@ -302,7 +301,7 @@ impl FakeBlockGenerator {
         uncle_info: Option<UncleBlockInfo>,
     ) -> BlockHash {
         let flavor;
-        let reorged_block = is_reorg && self.reorg_block_height.map_or(false, |h| height > h);
+        let reorged_block = is_reorg && self.reorg_block_height.is_some_and(|h| height > h);
         if let Some(uncle_info) = uncle_info {
             flavor = format!(
                 "uncle_{}{}",
@@ -310,7 +309,7 @@ impl FakeBlockGenerator {
                 uncle_info.id
             );
         } else {
-            flavor = format!("{}", if reorged_block { "alt" } else { "" });
+            flavor = (if reorged_block { "alt" } else { "" }).to_string();
         }
         from_hex_to_block_hash(&self.generate_hash(height, &flavor))
     }

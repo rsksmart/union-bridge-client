@@ -82,7 +82,7 @@ async fn main() -> Result<()> {
 
     let anvil = tmp_anvil.spawn();
 
-    let key = anvil.keys().get(0).expect("No key found").clone();
+    let key = anvil.keys().first().expect("No key found").clone();
     let signer = LocalSigner::from_signing_key(key.into());
 
     let wallet = EthereumWallet::from(signer);

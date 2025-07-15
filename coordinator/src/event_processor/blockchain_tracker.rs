@@ -100,7 +100,7 @@ impl BlockchainView {
     }
 
     pub fn update(&mut self, new_block: RskBlockAndUncles) {
-        let prev_tip = self.get_tip().map(|b| b.clone());
+        let prev_tip = self.get_tip().cloned();
 
         let removed_block = self.blocks.insert(new_block.number(), new_block.clone());
 
@@ -113,7 +113,7 @@ impl BlockchainView {
             );
 
             if let Some(prev_tip) = prev_tip {
-                self.validate_consecutive_block(&new_block.block(), prev_tip.block());
+                self.validate_consecutive_block(new_block.block(), prev_tip.block());
             }
 
             self.notify_added_block(&new_block);
@@ -153,7 +153,7 @@ impl BlockchainView {
     }
 
     pub fn get_tip(&self) -> Option<&RskBlockAndUncles> {
-        self.blocks.values().rev().next()
+        self.blocks.values().next_back()
     }
 
     pub fn restart_from(&mut self, first_block: BlockNumber) {
@@ -208,7 +208,7 @@ impl BlockchainView {
     fn notify_added_block(&mut self, new_block: &RskBlockAndUncles) {
         // update all visitors when adding a new block
         for observer in self.observers.values() {
-            observer.borrow_mut().on_block_added(&new_block);
+            observer.borrow_mut().on_block_added(new_block);
         }
     }
 

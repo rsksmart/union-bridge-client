@@ -28,7 +28,7 @@ impl Config {
             .iter()
             .map(|c| {
                 let address = Address::try_from(c.address.as_str())
-                    .expect(&format!("Invalid address: {}", c.address));
+                    .unwrap_or_else(|_| panic!("Invalid address: {}", c.address));
 
                 let abi_path = format!("{}/abi/{}.json", self.path, c.name);
                 let abi = CommonConfig::load_abi_from_path(&abi_path);
@@ -99,7 +99,7 @@ mod tests {
     #[test]
     fn test_load_contracts_when_stage_config_set_should_load_contracts_successfully() {
         let config_path = &format!("{}/tests/config", CARGO_MANIFEST_DIR);
-        let config: Config = Config::load(Some(&config_path)).expect("Failed to load config");
+        let config: Config = Config::load(Some(config_path)).expect("Failed to load config");
         let contracts = config.load_managed_contracts();
 
         assert_eq!(2, contracts.len());

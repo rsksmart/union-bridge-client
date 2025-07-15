@@ -36,6 +36,11 @@ impl Server {
             .route("/register-pegin", post(Self::register_peg_in::<P>))
             .route("/accept-pegin", post(Self::accept_peg_in::<P>))
             .route("/register-pegout", post(Self::register_peg_out::<P>))
+            .route("/add-member-nonce", post(Self::add_member_nonce::<P>))
+            .route(
+                "/add-member-signature",
+                post(Self::add_member_signature::<P>),
+            )
             .layer((
                 // TraceLayer::new_for_http(), // TODO: enable when we change logging library to tracing
                 TimeoutLayer::new(Duration::from_secs(10)),
@@ -56,6 +61,7 @@ impl Server {
             .context("Error starting server")
     }
 
+    #[allow(unused)]
     async fn add_member_nonce<P: Provider>(
         Extension(rsk_gateway): Extension<RskContractsGateway<P>>,
         Json(payload): Json<AddMemberNonceInput>,
@@ -66,6 +72,7 @@ impl Server {
         }
     }
 
+    #[allow(unused)]
     async fn add_member_signature<P: Provider>(
         Extension(rsk_gateway): Extension<RskContractsGateway<P>>,
         Json(payload): Json<AddMemberSignatureInput>,

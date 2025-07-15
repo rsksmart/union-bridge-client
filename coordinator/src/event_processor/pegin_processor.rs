@@ -449,7 +449,7 @@ mod tests {
             .create();
 
         unsafe {
-            std::env::set_var("TRANSACTION_DISPATCHER_URL", &mockito::server_url());
+            std::env::set_var("TRANSACTION_DISPATCHER_URL", mockito::server_url());
         }
 
         let mut broker = MockBrokerClientApi::new();
@@ -504,7 +504,7 @@ mod tests {
             .create();
 
         unsafe {
-            std::env::set_var("TRANSACTION_DISPATCHER_URL", &mockito::server_url());
+            std::env::set_var("TRANSACTION_DISPATCHER_URL", mockito::server_url());
         }
 
         let mut broker = MockBrokerClientApi::new();
@@ -559,7 +559,7 @@ mod tests {
             .create();
 
         unsafe {
-            std::env::set_var("TRANSACTION_DISPATCHER_URL", &mockito::server_url());
+            std::env::set_var("TRANSACTION_DISPATCHER_URL", mockito::server_url());
         }
 
         let mut broker = MockBrokerClientApi::new();
@@ -610,7 +610,7 @@ mod tests {
             .create();
 
         unsafe {
-            std::env::set_var("TRANSACTION_DISPATCHER_URL", &mockito::server_url());
+            std::env::set_var("TRANSACTION_DISPATCHER_URL", mockito::server_url());
         }
 
         let mut broker = MockBrokerClientApi::new();
@@ -665,7 +665,7 @@ mod tests {
             block_number: 123.into(),
             block_hash: BlockHash::from(H256::from([0xaa; 32])),
             removed: false,
-            tx_hash: tx_hash.clone(),
+            tx_hash,
         });
 
         let result = processor.process_new_event(&event);
@@ -693,7 +693,7 @@ mod tests {
             block_number: 123.into(),
             block_hash: BlockHash::from(H256::from([0xaa; 32])),
             removed: false,
-            tx_hash: tx_hash.clone(),
+            tx_hash,
         });
 
         let result = processor.process_new_event(&event);
@@ -711,7 +711,7 @@ mod tests {
             block_number: 123.into(),
             block_hash: BlockHash::from(H256::from([0xaa; 32])),
             removed: true, // event is removed,
-            tx_hash: tx_hash.clone(),
+            tx_hash,
         });
 
         let result = processor.process_new_event(&event);
@@ -743,7 +743,7 @@ mod tests {
             block_number: 456.into(),
             block_hash: BlockHash::from(H256::from([0xbb; 32])),
             removed: false,
-            tx_hash: tx_hash.clone(),
+            tx_hash,
         });
 
         let result = processor.process_new_event(&event);
@@ -783,7 +783,7 @@ mod tests {
             block_number: 456.into(),
             block_hash: BlockHash::from(H256::from([0xbb; 32])),
             removed: false,
-            tx_hash: tx_hash.clone(),
+            tx_hash,
         });
 
         let result = processor.process_new_event(&event);
@@ -1119,7 +1119,7 @@ mod tests {
                 streamId: 42,
                 packetNumber: 33,
                 slotId: 0,
-                pegStatus: 1.into(),
+                pegStatus: 1,
             },
             speedUpPubKey: FixedBytes::<32>::from_slice(
                 H256::from_low_u64_be(103991732982).as_bytes(),
