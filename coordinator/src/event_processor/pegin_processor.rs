@@ -449,7 +449,7 @@ mod tests {
             .create();
 
         unsafe {
-            std::env::set_var("TRANSACTION_DISPATCHER_URL", &mockito::server_url());
+            std::env::set_var("TRANSACTION_DISPATCHER_URL", mockito::server_url());
         }
 
         let mut broker = MockBrokerClientApi::new();
@@ -504,7 +504,7 @@ mod tests {
             .create();
 
         unsafe {
-            std::env::set_var("TRANSACTION_DISPATCHER_URL", &mockito::server_url());
+            std::env::set_var("TRANSACTION_DISPATCHER_URL", mockito::server_url());
         }
 
         let mut broker = MockBrokerClientApi::new();
@@ -559,7 +559,7 @@ mod tests {
             .create();
 
         unsafe {
-            std::env::set_var("TRANSACTION_DISPATCHER_URL", &mockito::server_url());
+            std::env::set_var("TRANSACTION_DISPATCHER_URL", mockito::server_url());
         }
 
         let mut broker = MockBrokerClientApi::new();
@@ -610,7 +610,7 @@ mod tests {
             .create();
 
         unsafe {
-            std::env::set_var("TRANSACTION_DISPATCHER_URL", &mockito::server_url());
+            std::env::set_var("TRANSACTION_DISPATCHER_URL", mockito::server_url());
         }
 
         let mut broker = MockBrokerClientApi::new();
@@ -1105,7 +1105,7 @@ mod tests {
                 streamId: 42,
                 packetNumber: 33,
                 slotId: 0,
-                pegStatus: 1.into(),
+                pegStatus: 1,
             },
             speedUpPubKey: FixedBytes::<32>::from_slice(
                 H256::from_low_u64_be(103991732982).as_bytes(),

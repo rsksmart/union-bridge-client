@@ -158,7 +158,7 @@ impl RskProvider for AlloyProvider {
 
         self.run(rpc_call)
             .context(format!("Getting block {hash} from provider"))
-            .and_then(|response| Self::parse_block_provider_response(response))
+            .and_then(Self::parse_block_provider_response)
     }
 
     fn get_block_by_number(&self, num: BlockNumber) -> Result<Option<RskBlock>> {
@@ -171,7 +171,7 @@ impl RskProvider for AlloyProvider {
 
         self.run(rpc_call)
             .context(format!("Getting block {num} from provider"))
-            .and_then(|response| Self::parse_block_provider_response(response))
+            .and_then(Self::parse_block_provider_response)
     }
 
     fn get_best_block(&self) -> Result<RskBlock> {
@@ -182,7 +182,7 @@ impl RskProvider for AlloyProvider {
 
         self.run(rpc_call)
             .context("Getting block latest from provider")
-            .and_then(|response| Self::parse_block_provider_response(response))
+            .and_then(Self::parse_block_provider_response)
             .context("Getting best block from provider")?
             .context("None best block")
     }
@@ -198,14 +198,14 @@ impl RskProvider for AlloyProvider {
 
         self.run(rpc_call)
             .context(format!("Getting block {hash} from provider"))
-            .and_then(|response| Self::parse_block_provider_response(response))
+            .and_then(Self::parse_block_provider_response)
     }
 
     fn get_logs(
         &self,
         from: BlockNumber,
         to: BlockNumber,
-        addrs: &Vec<Address>,
+        addrs: &[Address],
     ) -> Result<Vec<RskLog>> {
         let addrs: Vec<String> = addrs.iter().map(|addr| addr.to_hex_string()).collect();
 
@@ -224,7 +224,7 @@ impl RskProvider for AlloyProvider {
                 from,
                 to
             ))
-            .and_then(|response| Self::parse_logs_provider_response(response))
+            .and_then(Self::parse_logs_provider_response)
     }
 
     fn decode_log(
@@ -239,7 +239,7 @@ impl RskProvider for AlloyProvider {
                 "Dynamic event processing for contract {}",
                 contract_info.address
             );
-            rsk_event_result = event_processor_abi::process(contract_info.address, new_log, &abi);
+            rsk_event_result = event_processor_abi::process(contract_info.address, new_log, abi);
         } else {
             debug!(
                 "Static event processing for contract {}",

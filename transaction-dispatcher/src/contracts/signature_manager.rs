@@ -55,7 +55,7 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
         send_tx_with_gas_bump(
             || {
                 self.contract_instance
-                    .addMemberNonce(hash_to_sign.clone(), nonce.clone())
+                    .addMemberNonce(hash_to_sign, nonce.clone())
             },
             gas_bumps,
         )
@@ -71,7 +71,7 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
         send_tx_with_gas_bump(
             || {
                 self.contract_instance
-                    .addMemberSignature(hash_to_sign.clone(), signature.clone())
+                    .addMemberSignature(hash_to_sign, signature)
             },
             gas_bumps,
         )
@@ -91,6 +91,7 @@ pub fn hex_to_bytes(value: &str) -> Result<Bytes, FromHexError> {
     Ok(Bytes::from(bytes))
 }
 
+#[allow(unused)]
 pub(crate) fn decode_error(
     err: &alloy_contract::Error,
 ) -> Option<crate::rsk_gateway::DomainErrors> {

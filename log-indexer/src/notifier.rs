@@ -100,7 +100,7 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
         info!("New consumer {consumer_id} subscribing to {address}");
         self.contracts_with_consumers
             .entry(address)
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(consumer_id);
     }
 
@@ -150,7 +150,7 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
         let topics0 = new_log
             .event()
             .topics()
-            .get(0)
+            .first()
             .map(|s| s.to_string())
             .unwrap_or_else(|| {
                 error!("Log has no topics, using NoTopic for selector");

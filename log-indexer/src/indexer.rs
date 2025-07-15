@@ -26,6 +26,7 @@ pub struct LogIndexer<P: RskProvider, S: LogStore> {
 }
 
 impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new_with_notifier(
         store: S,
         rsk_provider: P,
@@ -109,11 +110,8 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
             return Ok(());
         }
 
-        let contract_addresses: Vec<Address> = self
-            .managed_contracts
-            .iter()
-            .map(|c| c.1.address.clone())
-            .collect();
+        let contract_addresses: Vec<Address> =
+            self.managed_contracts.iter().map(|c| c.1.address).collect();
 
         let last_block_number = self.recover_logs(&contract_addresses)?;
 
@@ -131,9 +129,7 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
 
         let loop_result = self.listen_logs(&mut rsk_log_subscription);
 
-        rsk_log_subscription
-            .unsubscribe()
-            .and_then(|_| loop_result)?;
+        rsk_log_subscription.unsubscribe().and(loop_result)?;
 
         Ok(())
     }
@@ -141,7 +137,7 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
 
 impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
     #[cfg(not(feature = "anvil"))]
-    fn recover_logs(&self, addrs: &Vec<Address>) -> Result<BlockNumber> {
+    fn recover_logs(&self, addrs: &[Address]) -> Result<BlockNumber> {
         let checkpoint = self.store.get_sync_checkpoint()?;
         let mut start = match checkpoint {
             Some(log) => {
@@ -233,8 +229,8 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
     }
 
     #[cfg(feature = "anvil")]
-    fn recover_logs(&self, _addrs: &Vec<Address>) -> Result<BlockNumber> {
-        return Ok(BlockNumber::from(self.initial_block_number));
+    fn recover_logs(&self, _addrs: &[Address]) -> Result<BlockNumber> {
+        Ok(self.initial_block_number)
     }
 
     #[cfg_attr(feature = "anvil", allow(dead_code))]
@@ -325,7 +321,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 
             // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-133
             if self.should_validate_logs {
-                match self.decode_validate_log(&new_log, &managed_contract) {
+                match self.decode_validate_log(&new_log, managed_contract) {
                     Some(value) => value,
                     None => continue,
                 };
@@ -575,7 +571,7 @@ mod tests {
             shutdown_flag: ShutdownFlag::init(),
         };
 
-        let result = indexer.recover_logs(&vec![]);
+        let result = indexer.recover_logs(&[]);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), second_best.number());
     }
@@ -611,7 +607,7 @@ mod tests {
             shutdown_flag: ShutdownFlag::init(),
         };
 
-        let result = indexer.recover_logs(&vec![]);
+        let result = indexer.recover_logs(&[]);
         assert!(result.is_err());
         assert!(
             result

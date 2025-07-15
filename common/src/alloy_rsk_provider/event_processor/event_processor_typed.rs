@@ -38,7 +38,7 @@ pub fn process(rsk_log: RskLog) -> Result<Option<RskEvent>> {
     }
     let log_data = log_data.unwrap();
 
-    let topic0 = log_data.topics().get(0);
+    let topic0 = log_data.topics().first();
     let event_name_and_input = match topic0 {
         Some(ev) if *ev == ValueUpdate::SIGNATURE_HASH => {
             Some(decode_event_input::<ValueUpdate>(&log_data)?)
@@ -68,7 +68,7 @@ fn decode_event_input<T: SolEvent + Serialize + Debug>(
         .next()
         .unwrap_or_default();
 
-    let decoded_event = T::decode_log_data(&log_data)?;
+    let decoded_event = T::decode_log_data(log_data)?;
     let event_json = serde_json::to_value(&decoded_event)
         .context(format!("Failed to serialize {name:?} to json"))?;
     Ok((name, event_json))

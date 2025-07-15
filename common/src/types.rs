@@ -26,7 +26,7 @@ pub trait ToHexString {
     fn to_hex_string(&self) -> String;
 }
 
-//// Represents a rootstock block hash.
+/// Represents a rootstock block hash.
 ///
 /// This struct ensures type safety when working with block hashes, preventing
 /// accidental misuse of raw `H256` values in places where a `BlockHash` is expected.
@@ -434,6 +434,7 @@ impl Eq for RskBlock {
 }
 
 impl RskBlock {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         number: BlockNumber,
         hash: BlockHash,
@@ -684,7 +685,7 @@ impl LogEvent {
         &self.data
     }
 
-    pub fn topics(&self) -> &Vec<LogTopic> {
+    pub fn topics(&self) -> &[LogTopic] {
         &self.topics
     }
 }
@@ -871,7 +872,7 @@ mod tests {
 
         assert!(block_hash.is_err());
 
-        if let Err(_) = block_hash {
+        if block_hash.is_err() {
             // The error was expected due to invalid hex input
         } else {
             panic!("Expected Error, but got: {:?}", block_hash);
@@ -900,7 +901,7 @@ mod tests {
 
         assert!(pow.is_err());
 
-        if let Err(_) = pow {
+        if pow.is_err() {
             // The error was expected due to invalid hex input
         } else {
             panic!("Expected Error, but got: {:?}", pow);

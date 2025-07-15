@@ -73,7 +73,7 @@ where
         let pegout_id = event.inner.peg_out_id.to_string();
 
         if self.request_events.is_empty() {
-            self.first_block_to_process = Some(event.block_number.clone());
+            self.first_block_to_process = Some(event.block_number);
         }
 
         let updated = self.request_events.insert(pegout_id.to_string(), event);
@@ -83,13 +83,12 @@ where
                 "RequestAdvanceFunds for peg_out_id {} already exists",
                 pegout_id
             );
-            return;
         }
     }
 
     fn start_pow_accum_for_pegout(&mut self, event2: AdvanceFundsEvent) {
         match self.check_fork_accumulator.as_ref() {
-            Some(afc) if &afc.borrow().pegout_id() == &event2.inner.peg_out_id => {
+            Some(afc) if afc.borrow().pegout_id() == event2.inner.peg_out_id => {
                 warn!("Already monitoring advance funds for {event2:?}");
                 return;
             }
@@ -265,12 +264,11 @@ where
     }
 
     fn pow_from_effort(effort: U256) -> U256 {
-        let pow = U256::MAX.checked_div(effort).unwrap_or_else(|| {
+        U256::MAX.checked_div(effort).unwrap_or_else(|| {
             // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
             error!("CheckFork accepted with 0 effort",);
             U256::zero()
-        });
-        pow
+        })
     }
 }
 
@@ -454,11 +452,7 @@ mod tests {
             processor.first_block_to_process,
             Some(request_block.number())
         );
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
 
         let pegout_id_2 = "peg456";
         processor
@@ -474,16 +468,8 @@ mod tests {
             processor.first_block_to_process,
             Some(request_block.number())
         );
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id_2.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
+        assert!(processor.request_events.contains_key(pegout_id_2));
 
         assert!(processor.chain_view.is_empty());
         assert!(!processor.chain_view.is_observed());
@@ -836,18 +822,14 @@ mod tests {
             .expect("Should process block");
 
         assert!(processor.check_fork_accumulator.is_some());
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
         assert!(processor.first_block_to_process.is_some());
         assert!(!processor.chain_view.is_empty());
         assert!(processor.chain_view.is_observed());
         assert!(processor.chain_view.has_observer(pegout_id));
 
         let advance_funds_sibling = create_block_from_template(
-            &advance_funds_block.block(),
+            advance_funds_block.block(),
             "0xa7b3f84f619c302a11892a379ac5a3a0bfbf8a3dce946a3db31cfb4c2f5cd909",
             advance_funds_block.parent(),
             vec![],
@@ -862,11 +844,7 @@ mod tests {
             .expect("Should process block");
 
         assert!(processor.check_fork_accumulator.is_some());
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
 
         // starting in 2 because we already have: the one created after the kickoff event and the one before this loop
         // we stop at -2: range limit exclusive and leaving one confirmation pending
@@ -883,11 +861,7 @@ mod tests {
         // confirmations -1, not ready
 
         assert!(processor.check_fork_accumulator.is_some());
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
         assert!(processor.first_block_to_process.is_some());
         assert!(!processor.chain_view.is_empty());
         assert!(processor.chain_view.is_observed());
@@ -986,18 +960,14 @@ mod tests {
             .expect("Should have processed kickoff");
 
         assert!(processor.check_fork_accumulator.is_some());
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
         assert!(processor.first_block_to_process.is_some());
         assert!(!processor.chain_view.is_empty());
         assert!(processor.chain_view.is_observed());
         assert!(processor.chain_view.has_observer(pegout_id));
 
         let advance_funds_sibling = create_block_from_template(
-            &advance_funds_block.block(),
+            advance_funds_block.block(),
             "0xa7b3f84f619c302a11892a379ac5a3a0bfbf8a3dce946a3db31cfb4c2f5cd909",
             advance_funds_block.parent(),
             vec![],
@@ -1012,11 +982,7 @@ mod tests {
             .expect("Should process block");
 
         assert!(processor.check_fork_accumulator.is_some());
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
         assert!(processor.first_block_to_process.is_some());
         assert!(!processor.chain_view.is_empty());
         assert!(processor.chain_view.is_observed());
@@ -1037,11 +1003,7 @@ mod tests {
         // confirmations -1, not ready
 
         assert!(processor.check_fork_accumulator.is_some());
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
         assert!(processor.first_block_to_process.is_some());
         assert!(!processor.chain_view.is_empty());
         assert!(processor.chain_view.is_observed());
@@ -1099,11 +1061,7 @@ mod tests {
             }))
             .expect("Should have processed kickoff");
 
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
         assert!(processor.chain_view.is_empty());
         assert!(!processor.chain_view.is_observed());
         assert!(processor.check_fork_accumulator.is_none());
@@ -1183,11 +1141,7 @@ mod tests {
             .process_new_block(&advance_funds_block)
             .expect("Should process block");
 
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
         assert!(processor.check_fork_accumulator.is_some());
         assert_eq!(processor.chain_view.len(), 2);
 
@@ -1274,7 +1228,7 @@ mod tests {
         let request_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
         let advance_funds_block =
-            RskBlockAndUncles::new_no_uncles(create_advance_funds_block(&request_block.block()));
+            RskBlockAndUncles::new_no_uncles(create_advance_funds_block(request_block.block()));
 
         let pegout_id = "peg123";
 
@@ -1295,11 +1249,7 @@ mod tests {
             .expect("Should process block");
 
         assert!(processor.check_fork_accumulator.is_none());
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
         assert_eq!(processor.chain_view.len(), 1);
 
         processor
@@ -1307,11 +1257,7 @@ mod tests {
             .expect("Should process block");
 
         assert!(processor.check_fork_accumulator.is_none());
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
         assert_eq!(processor.chain_view.len(), 1);
     }
 
@@ -1326,7 +1272,7 @@ mod tests {
         let advance_funds_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(110.into(), U256::from(50)));
         let advance_funds_block_2 = RskBlockAndUncles::new_no_uncles(create_advance_funds_block(
-            &advance_funds_block.block(),
+            advance_funds_block.block(),
         ));
 
         let pegout_id = "peg123";
@@ -1347,11 +1293,7 @@ mod tests {
             .process_new_block(&advance_funds_block)
             .expect("Should process block");
 
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
         assert!(processor.check_fork_accumulator.is_none());
         assert_eq!(processor.chain_view.len(), 1);
 
@@ -1359,11 +1301,7 @@ mod tests {
             .process_new_block(&advance_funds_block_2)
             .expect("Should process block");
 
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
         assert!(processor.check_fork_accumulator.is_none());
         assert_eq!(processor.chain_view.len(), 1);
     }
@@ -1408,11 +1346,7 @@ mod tests {
             .expect("Should have processed kickoff");
 
         assert!(processor.check_fork_accumulator.is_some());
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
         assert_eq!(processor.chain_view.len(), 1);
 
         processor
@@ -1425,11 +1359,7 @@ mod tests {
             .expect("Should have processed removal");
 
         assert!(processor.check_fork_accumulator.is_none());
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
         assert_eq!(processor.chain_view.len(), 1);
     }
 

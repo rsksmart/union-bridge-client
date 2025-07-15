@@ -99,7 +99,7 @@ pub(crate) mod tests {
             &format!("0x{}", hex::encode(input.abi_encode())),
         );
         let payload = serde_json::from_str::<ErrorPayload>(&error).unwrap();
-        TransportError(ErrorResp(payload)).into()
+        TransportError(ErrorResp(payload))
     }
 
     #[allow(dead_code)]
@@ -114,6 +114,6 @@ pub(crate) mod tests {
                 &format!("0x{}", hex::encode(data.abi_encode())),
             );
         let payload = serde_json::from_str::<ErrorPayload>(&error).unwrap();
-        TransportError(ErrorResp(payload)).into()
+        TransportError(ErrorResp(payload))
     }
 }

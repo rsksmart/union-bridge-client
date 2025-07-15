@@ -57,10 +57,12 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
     fn get_initial_block(&self, provider: &P) -> RskBlock {
         let opt_block = provider
             .get_block_by_hash(self.initial_block_hash)
-            .expect(&format!(
-                "Precondition failed: error fetching initial block {:?}",
-                self.initial_block_hash
-            ));
+            .unwrap_or_else(|_| {
+                panic!(
+                    "Precondition failed: error fetching initial block {:?}",
+                    self.initial_block_hash
+                )
+            });
 
         opt_block.unwrap_or_else(|| {
             panic!(
@@ -131,9 +133,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 
         let loop_result = self.listen_blocks(&mut rsk_block_subscription);
 
-        rsk_block_subscription
-            .unsubscribe()
-            .and_then(|_| loop_result)
+        rsk_block_subscription.unsubscribe().and(loop_result)
     }
 
     fn listen_blocks(
@@ -267,7 +267,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 .context("On Backward Sync")?;
 
             let is_missing = store_block.is_none();
-            let is_reorg = store_block.map_or(false, |sb| sb.hash() != new_block.hash());
+            let is_reorg = store_block.is_some_and(|sb| sb.hash() != new_block.hash());
             let reached_connection_height = new_block.number() <= store_best_block.number();
 
             if is_missing || is_reorg {
@@ -305,7 +305,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                     .context("On Backward Sync")?;
                 // it represents also the connection point to achieve full sync
                 self.store
-                    .set_best_block(&starting_block)
+                    .set_best_block(starting_block)
                     .context("On Backward Sync")?;
 
                 // notify the consumer about the new chain in ascending order
@@ -406,22 +406,22 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 
     fn save_as_canonical(&self, canonical_block: &RskBlock) -> Result<()> {
         self.store
-            .save_block(&canonical_block)
+            .save_block(canonical_block)
             .context("Storing canonical block")?;
         // last, to avoid requiring db transactionality, as it is used to distinguish new block from reorgs
         self.store
-            .set_canonical_block(&canonical_block)
+            .set_canonical_block(canonical_block)
             .context("Setting canonical block")
     }
 
     fn save_as_best_block(&self, new_block: &RskBlock) -> Result<()> {
-        self.save_as_canonical(&new_block)
+        self.save_as_canonical(new_block)
             .context("Saving canonical")?;
         // last is preferred to not mark as best a block that was not yet stored
         // furthermore, if this line is fails for any reason (or app quits on error right before
         // running), soon a new block will become best (either one extending or reorg)
         self.store
-            .set_best_block(&new_block)
+            .set_best_block(new_block)
             .context("Saving as best block")
     }
 

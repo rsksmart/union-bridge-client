@@ -110,7 +110,7 @@ impl CheckForkAccumulator {
     pub fn has_enough_confirmations(&self) -> bool {
         self.confirmations
             .as_ref()
-            .map_or(false, |c| c.is_confirmed())
+            .is_some_and(|c| c.is_confirmed())
     }
 
     fn is_check_fork_ready(&self) -> bool {

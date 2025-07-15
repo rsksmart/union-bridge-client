@@ -681,7 +681,7 @@ mod tests {
         let result = monitor
             .try_bitvmx_event()
             .expect("Failed to receive BitVMX event");
-        assert!(matches!(result, None));
+        assert!(result.is_none());
     }
 
     #[test]

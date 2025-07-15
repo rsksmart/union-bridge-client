@@ -129,7 +129,7 @@ impl EventDecoder {
         block_hash: BlockHash,
         removed: EventStatus,
     ) -> RskPegManagerEvents {
-        match PeginRequested::decode_log_data(&log_data) {
+        match PeginRequested::decode_log_data(log_data) {
             Ok(ev) => RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
                 inner: ev,
                 block_number,
@@ -146,7 +146,7 @@ impl EventDecoder {
         block_hash: BlockHash,
         removed: EventStatus,
     ) -> RskPegManagerEvents {
-        match PeginAccepted::decode_log_data(&log_data) {
+        match PeginAccepted::decode_log_data(log_data) {
             Ok(ev) => RskPegManagerEvents::PeginAccepted(PeginAcceptedEvent {
                 inner: ev,
                 block_number,
@@ -163,12 +163,12 @@ impl EventDecoder {
         block_hash: BlockHash,
         removed: EventStatus,
     ) -> RskPegManagerEvents {
-        match RequestAdvanceFunds::decode_log_data(&log_data) {
+        match RequestAdvanceFunds::decode_log_data(log_data) {
             Ok(event) => RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFundsEvent {
                 inner: event,
                 block_number,
                 block_hash,
-                removed: removed,
+                removed,
             }),
             Err(_) => UnknownEvent,
         }
@@ -180,7 +180,7 @@ impl EventDecoder {
         block_hash: BlockHash,
         removed: EventStatus,
     ) -> RskPegManagerEvents {
-        match AdvanceFunds::decode_log_data(&log_data) {
+        match AdvanceFunds::decode_log_data(log_data) {
             Ok(event) => RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
                 inner: event,
                 block_number,
@@ -197,7 +197,7 @@ impl EventDecoder {
         block_hash: BlockHash,
         removed: bool,
     ) -> RskPegManagerEvents {
-        match AllNoncesReady::decode_log_data(&log_data) {
+        match AllNoncesReady::decode_log_data(log_data) {
             Ok(event) => {
                 // TODO: Replace with proper error handling
                 RskPegManagerEvents::AllNoncesReady(AllNoncesReadyEvent {
@@ -217,7 +217,7 @@ impl EventDecoder {
         block_hash: BlockHash,
         removed: bool,
     ) -> RskPegManagerEvents {
-        match AllSignaturesReady::decode_log_data(&log_data) {
+        match AllSignaturesReady::decode_log_data(log_data) {
             Ok(event) => RskPegManagerEvents::AllSignaturesReady(AllSignaturesReadyEvent {
                 inner: Hash256::from(event.hashToSign),
                 block_number,
@@ -306,13 +306,7 @@ mod tests {
         let topic = event_signature_to_topic("Transfer(address,address,uint256)");
         let log_event: LogEvent = LogEvent::new(
             DataBytes::from_hex_str("0x1234567890abcdef1234567890abcdef12345678").unwrap(),
-            vec![
-                topic.clone(),
-                topic.clone(),
-                topic.clone(),
-                topic.clone(),
-                topic,
-            ], // 5 topics, invalid
+            vec![topic, topic, topic, topic, topic], // 5 topics, invalid
         );
 
         let log_info = LogInfo::new(
@@ -416,7 +410,7 @@ mod tests {
                 streamId: 42,
                 packetNumber: 33,
                 slotId: 0,
-                pegStatus: 1.into(),
+                pegStatus: 1,
             },
             speedUpPubKey: FixedBytes::<32>::from_slice(
                 H256::from_low_u64_be(103991732982).as_bytes(),
@@ -543,7 +537,7 @@ mod tests {
                 assert_eq!(data.inner, Hash256::from(expected_hash_to_sign));
                 assert_eq!(data.block_number, expected_block_num);
                 assert_eq!(data.block_hash, expected_block_hash.into());
-                assert_eq!(data.removed, true);
+                assert!(data.removed);
             }
             _ => panic!("Expected AllSignaturesReady event"),
         }

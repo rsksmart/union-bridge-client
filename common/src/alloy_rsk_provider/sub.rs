@@ -49,12 +49,10 @@ impl AlloySubscription<Header> {
             SubscriptionItem::Item(h) => {
                 Ok(BlockHash::try_from(h.hash.to_string().as_str()).expect("valid hash"))
             }
-            _ => {
-                return Err(RskSubscriptionError::Unexpected(anyhow!(
-                    "Wrong Header: {:?}",
-                    header
-                )));
-            }
+            _ => Err(RskSubscriptionError::Unexpected(anyhow!(
+                "Wrong Header: {:?}",
+                header
+            ))),
         }
     }
 
@@ -72,7 +70,7 @@ impl AlloySubscription<Header> {
             }
         };
 
-        let new_block_header: Value = serde_json::from_str(&*new_block_header_raw)
+        let new_block_header: Value = serde_json::from_str(&new_block_header_raw)
             .context(format!("Error parsing header json: {new_block_header_raw}",))
             .map_err(RskSubscriptionError::Unexpected)?;
         let new_block_hash = new_block_header["hash"].as_str().ok_or_else(|| {

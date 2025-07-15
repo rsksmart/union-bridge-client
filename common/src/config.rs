@@ -104,11 +104,11 @@ impl CommonConfig {
     pub fn load_abi_from_path(abi_path: &String) -> Option<JsonAbi> {
         if Path::new(&abi_path).exists() {
             let abi_full_path = Path::new(abi_path);
-            let abi_data = fs::read_to_string(&abi_path)
-                .expect(&format!("Failed to read ABI file: {:?}", abi_full_path));
+            let abi_data = fs::read_to_string(abi_path)
+                .unwrap_or_else(|_| panic!("Failed to read ABI file: {:?}", abi_full_path));
             Some(
                 serde_json::from_str::<JsonAbi>(&abi_data)
-                    .expect(&format!("Failed to parse ABI file: {:?}", abi_full_path)),
+                    .unwrap_or_else(|_| panic!("Failed to parse ABI file: {:?}", abi_full_path)),
             )
         } else {
             debug!(
