@@ -250,11 +250,12 @@ impl EventDecoder {
     }
 }
 
+// TODO improve inner types when BitVMX one gets clear
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct MemberSignature {
-    pub hash_to_sign: String,
-    pub btc_signature: String,
-    pub btc_nonce: String,
+pub struct Musig2MemberSignature {
+    pub hash_to_sign: Hash256,
+    pub signature: String,
+    pub nonce: Hash256,
 }
 
 #[cfg(test)]

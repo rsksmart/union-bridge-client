@@ -1,4 +1,4 @@
-use anyhow::bail;
+use anyhow::Result;
 use common::types::{BlockNumber, RskBlock, RskBlockAndUncles};
 use log::{debug, info, warn};
 use std::cell::RefCell;
@@ -89,10 +89,18 @@ impl BlockchainView {
     }
 
     pub fn add_observer(&mut self, observer: Rc<RefCell<dyn BlockchainObserver>>) {
-        debug!(
-            "Adding observer to BlockchainView: {}",
-            observer.borrow().get_id()
-        );
+        let observer_id = observer.borrow().get_id();
+
+        debug!("Adding observer to BlockchainView: {}", observer_id);
+
+        if self.observers.contains_key(&observer_id) {
+            // TODO improve error handling, for now just halt for us to realise
+            panic!(
+                "Observer with id {} already exists in BlockchainView, halting to avoid duplicates",
+                observer.borrow().get_id()
+            );
+        }
+
         let id = observer.borrow().get_id();
         self.observers.insert(id, observer);
     }
@@ -101,6 +109,7 @@ impl BlockchainView {
         self.observers.remove(observer_id);
     }
 
+    // TODO try to receive a reference to avoid cloning the block
     pub fn update(&mut self, new_block: RskBlockAndUncles) {
         let prev_tip = self.get_tip().map(|b| b.clone());
 
@@ -260,7 +269,7 @@ impl BlockchainView {
 }
 
 pub struct ConfirmableEvent {
-    id: String,
+    id: Uuid,
     chain_view: Rc<RefCell<BlockchainView>>,
     req_confirmations: u32,
     confirmations: Option<Rc<RefCell<BlockConfirmations>>>,
@@ -269,16 +278,16 @@ pub struct ConfirmableEvent {
 impl ConfirmableEvent {
     pub fn new(id: Uuid, req_confirmations: u32, chain_view: Rc<RefCell<BlockchainView>>) -> Self {
         ConfirmableEvent {
-            id: id.to_string(),
+            id,
             chain_view,
             req_confirmations,
             confirmations: None,
         }
     }
 
-    pub fn start_confirming(&mut self, block_number: BlockNumber) -> anyhow::Result<()> {
+    pub fn start_confirming(&mut self, block_number: BlockNumber) -> Result<()> {
         let rc_confirmations = Rc::new(RefCell::new(BlockConfirmations::new(
-            self.id.clone(),
+            self.id.to_string(),
             block_number,
             self.req_confirmations,
         )));
@@ -291,9 +300,9 @@ impl ConfirmableEvent {
         Ok(())
     }
 
-    pub fn stop_confirming(&mut self) -> anyhow::Result<()> {
+    pub fn stop_confirming(&mut self) -> Result<()> {
         if self.confirmations.is_none() {
-            bail!(
+            warn!(
                 "Confirmations not set for protocol {} but stop_confirming called",
                 self.id
             );
@@ -324,7 +333,9 @@ impl ConfirmableEvent {
     }
 
     fn remove_observer(&mut self) {
-        self.chain_view.borrow_mut().remove_observer(&self.id);
+        self.chain_view
+            .borrow_mut()
+            .remove_observer(&self.id.to_string());
     }
 }
 
@@ -747,7 +758,7 @@ mod confirmable_event_tests {
     }
 
     #[test]
-    fn test_confirmable_event_stop_confirming_without_start_fails() {
+    fn test_confirmable_event_stop_confirming_without_start_does_not_fail() {
         // setup
         let id = Uuid::new_v4();
 
@@ -760,14 +771,8 @@ mod confirmable_event_tests {
         // stop_confirming without a start should fail
         let result = confirmable_event.stop_confirming();
         assert!(
-            result.is_err(),
-            "stop_confirming() without start should fail"
-        );
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Confirmations not set for protocol")
+            result.is_ok(),
+            "stop_confirming() without start should NOT fail"
         );
     }
 
@@ -858,7 +863,7 @@ mod confirmable_event_tests {
     }
 
     #[test]
-    fn test_confirmable_event_stop_confirming_twice_fails() {
+    fn test_confirmable_event_stop_confirming_twice_does_not_fail() {
         // setup
         let id = Uuid::new_v4();
         let req_confirmations = 3;
@@ -878,14 +883,7 @@ mod confirmable_event_tests {
 
         // step 2: second stop_confirming() should succeed with warning
         let result = confirmable_event.stop_confirming();
-        assert!(result.is_err(), "Second stop_confirming() should fail");
-
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Confirmations not set for protocol")
-        );
+        assert!(result.is_ok(), "Second stop_confirming() should NOT fail");
     }
 
     #[test]

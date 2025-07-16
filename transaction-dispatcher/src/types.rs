@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+// TODO improve these structs with proper typing for their fields now that we removed the http server
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct BitcoinTransaction {
     pub version: u32,

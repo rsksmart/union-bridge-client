@@ -1,4 +1,4 @@
-use crate::flows::advance_funds::advance_funds_flow::AdvanceFundsProcessor;
+use crate::flows::advance_funds::advance_funds_processor::AdvanceFundsProcessor;
 use crate::{
     event_processor::{EventProcessor, PeginProcessor},
     monitor::MonitorApi,

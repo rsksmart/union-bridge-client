@@ -56,8 +56,8 @@ struct PeginEventState {
     pegin_flow_id: Uuid,
     pegin_requested: PeginEvent<PeginRequested>,
     pegin_accepted: Option<PeginEvent<PeginAccepted>>,
-    // TODO(signatures)
-    // signatures_flow: Option<SignatureFlow>,
+    // TODO(signatures-1.1)
+    // btc_signatures_flow: Option<BtcSignatureFlow>,
 }
 
 impl PeginEventState {
@@ -80,7 +80,7 @@ where
     bitvmx_broker: Rc<BC>,
     blockchain: BlockchainView,
     tracker: HashMap<TxHash, PeginEventState>,
-    // TODO(signatures) instantiate self.signatures_flow (SignatureFlow with contracts => req tx-dispatcher as lib)
+    // TODO(signatures-1.2) instantiate self.btc_signatures_flow (BtcSignatureFlow with contracts => req tx-dispatcher as lib)
 }
 
 impl<CG, BC> PeginProcessor<CG, BC>
@@ -173,8 +173,6 @@ where
 
         self.tracker
             .insert(tx_hash, PeginEventState::new(pegin_flow_id, event));
-
-        // TODO(signatures) call SignatureFlow::request_signature_to_bitvmx
 
         Ok(())
     }
@@ -436,7 +434,7 @@ where
 
                 self.handle_contract_call(method, &json_data)?;
             }
-            // TODO(signatures) match corresponding message and call SignatureFlow::send_signature_to_contracts
+            // TODO(signatures-2) delegate SIGNATURE_MESSAGE message to BtcSignatureFlow::process_new_bitvmx_event, it is the response to request-pegin event we send them
             _ => {}
         }
 
@@ -447,8 +445,7 @@ where
         match event {
             RskPegManagerEvents::PeginRequested(data) => self.handle_pegin_requested(data),
             RskPegManagerEvents::PeginAccepted(data) => self.handle_pegin_accepted(data),
-            // TODO(signatures) match AllSignaturesReady and call SignatureFlow::set_all_signatures_ready if !removed
-            // TODO(signatures) match AllSignaturesReady and call SignatureFlow::unset_all_signatures_ready if removed
+            // TODO(signatures-3) delegate AllNoncesReady and AllSignaturesReady to BtcSignatureFlow::process_new_rsk_event
             _ => Ok(()),
         }
     }
@@ -463,7 +460,7 @@ where
         self.process_unhandled_confirmed_pegin_requested_events()?;
         self.process_unhandled_confirmed_pegin_accepted_events()?;
 
-        // TODO(signatures) implement process_unhandled_confirmed_signatures that calls SignatureFlow::is_all_signatures_ready_confirmed
+        // TODO(signatures-4) delegate to BtcSignatureFlow::process_new_block
 
         Ok(())
     }
