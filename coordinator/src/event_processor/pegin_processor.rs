@@ -4,7 +4,7 @@ use crate::{
         EventProcessor,
         blockchain_tracker::{BlockConfirmations, BlockchainObserver, BlockchainView},
     },
-    types::{EventWithBlock, RskPegManagerEvents},
+    types::{EventWithBlock, PeginAcceptedEvent, PeginRequestedEvent, RskPegManagerEvents},
 };
 use anyhow::{Context, Result, bail};
 use common::{
@@ -18,9 +18,9 @@ use common::{
 use log::{error, info};
 use serde::Serialize;
 use serde_json::Value;
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, fmt::Debug, future::Future, rc::Rc};
 use transaction_dispatcher::{
-    rsk_gateway::RskContractsGatewayApi,
+    rsk_gateway::{DomainErrors, RskContractsGatewayApi},
     types::{AcceptPegInInput, RegisterPegInInput},
 };
 use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
@@ -95,6 +95,63 @@ where
             blockchain: BlockchainView::new(),
             tracker: HashMap::new(),
         }
+    }
+
+    fn handle_pegin_requested(&mut self, data: &PeginRequestedEvent) -> Result<()> {
+        if data.removed {
+            info!("Handling PeginRequested removed event: {:?}", data);
+            return self.untrack_pegin_requested(data.clone());
+        }
+
+        info!("Handling PeginRequested event: {:?}", data);
+
+        let pegin_flow_id = Uuid::new_v4();
+        let observer_id = format!("pegin_requested-{}", pegin_flow_id);
+        let confirmations =
+            BlockConfirmations::new(observer_id, data.block_number, REQUIRED_CONFIRMATIONS);
+        let pegin_requested = PeginEvent::new(data.clone(), confirmations);
+
+        self.blockchain
+            .add_observer(pegin_requested.confirmations.clone());
+
+        info!(
+            "Adding PeginRequested event to pegin event tracker. Event: {:?}",
+            pegin_requested
+        );
+
+        self.track_pegin_requested(pegin_flow_id, pegin_requested)
+    }
+
+    fn handle_pegin_accepted(&mut self, data: &PeginAcceptedEvent) -> Result<()> {
+        if data.removed {
+            info!("Handling PeginAccepted removed event: {:?}", data);
+            return self.untrack_pegin_accepted(data.clone());
+        }
+
+        info!("Handling PeginAccepted event: {:?}", data);
+
+        let tx_hash: TxHash = data.inner.acceptPeginTxHash.into();
+        let Some(state) = self.tracker.get(&tx_hash) else {
+            bail!(
+                "Received PeginAccepted for unknown acceptPeginTxHash: {:?}",
+                tx_hash
+            );
+        };
+
+        let observer_id = format!("pegin_accepted-{}", state.pegin_flow_id);
+        let confirmations =
+            BlockConfirmations::new(observer_id, data.block_number, REQUIRED_CONFIRMATIONS);
+        let pegin_accepted = PeginEvent::new(data.clone(), confirmations);
+
+        self.blockchain
+            .add_observer(pegin_accepted.confirmations.clone());
+
+        info!(
+            "Adding PeginAccepted event to pegin event tracker. Event: {:?}",
+            pegin_accepted
+        );
+
+        self.track_pegin_accepted(pegin_accepted)
     }
 
     fn track_pegin_requested(
@@ -273,49 +330,27 @@ where
         Ok(())
     }
 
-    fn send_to_union_bridge(&self, method_name: &str, json_value: &Value) -> Result<()> {
+    fn send_to_contract(&self, method_name: &str, json_data: &Value) -> Result<()> {
         info!(
-            "Dispatching transaction to union bridge. Method: '{}', Payload: {}",
-            method_name, json_value
+            "Dispatching transaction to contract. Method: '{}', Payload: {}",
+            method_name, json_data
         );
 
         match method_name {
             "register-pegin" => {
-                let input: RegisterPegInInput = serde_json::from_value(json_value.clone())
+                let input: RegisterPegInInput = serde_json::from_value(json_data.clone())
                     .context("Failed to deserialize RegisterPegInInput")?;
-
-                match self
-                    .rt_sync
-                    .run(async { self.contracts.register_peg_in_request(input).await })
-                {
-                    Ok(_) => {
-                        info!("Successfully called '{}'", method_name);
-                        Ok(())
-                    }
-                    Err(domain_err) => {
-                        error!("Error calling '{}': {:?}", method_name, domain_err);
-                        Err(domain_err.into())
-                    }
-                }
+                self.handle_contract_call(method_name, || async {
+                    self.contracts.register_peg_in_request(input).await
+                })
             }
 
             "accept-pegin" => {
-                let input: AcceptPegInInput = serde_json::from_value(json_value.clone())
+                let input: AcceptPegInInput = serde_json::from_value(json_data.clone())
                     .context("Failed to deserialize AcceptPegInInput")?;
-
-                match self
-                    .rt_sync
-                    .run(async { self.contracts.accept_peg_in_request(input).await })
-                {
-                    Ok(_) => {
-                        info!("Successfully called '{}'", method_name);
-                        Ok(())
-                    }
-                    Err(domain_err) => {
-                        error!("Error calling '{}': {:?}", method_name, domain_err);
-                        Err(domain_err.into())
-                    }
-                }
+                self.handle_contract_call(method_name, || async {
+                    self.contracts.accept_peg_in_request(input).await
+                })
             }
 
             _ => bail!("Unsupported method: {}", method_name),
@@ -341,6 +376,24 @@ where
 
         Ok(())
     }
+
+    fn handle_contract_call<Fut, F, T>(&self, method_name: &str, f: F) -> Result<()>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<T, DomainErrors>>,
+        T: Debug,
+    {
+        match self.rt_sync.run(f()) {
+            Ok(_) => {
+                info!("Successfully called '{}'", method_name);
+                Ok(())
+            }
+            Err(domain_err) => {
+                error!("Error calling '{}': {:?}", method_name, domain_err);
+                Err(domain_err.into())
+            }
+        }
+    }
 }
 
 impl<CG, BC> EventProcessor for PeginProcessor<CG, BC>
@@ -362,7 +415,7 @@ where
 
                 let json_data: Value = serde_json::from_str(data)?;
 
-                self.send_to_union_bridge(method, &json_data)?;
+                self.send_to_contract(method, &json_data)?;
             }
             _ => {}
         }
@@ -372,70 +425,10 @@ where
 
     fn process_new_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         match event {
-            RskPegManagerEvents::PeginRequested(data) => {
-                if data.removed {
-                    info!("Handling PeginRequested removed event: {:?}", data);
-
-                    return self.untrack_pegin_requested(data.clone());
-                }
-
-                info!("Handling PeginRequested event: {:?}", data);
-
-                let pegin_flow_id = Uuid::new_v4();
-                let observer_id = format!("pegin_requested-{}", pegin_flow_id);
-
-                let confirmations =
-                    BlockConfirmations::new(observer_id, data.block_number, REQUIRED_CONFIRMATIONS);
-
-                let pegin_requested = PeginEvent::new(data.clone(), confirmations);
-
-                self.blockchain
-                    .add_observer(pegin_requested.confirmations.clone());
-
-                info!(
-                    "Adding PeginRequested event to pegin event tracker. Event: {:?}",
-                    pegin_requested
-                );
-
-                self.track_pegin_requested(pegin_flow_id, pegin_requested)?;
-            }
-            RskPegManagerEvents::PeginAccepted(data) => {
-                if data.removed {
-                    info!("Handling PeginAccepted removed event: {:?}", data);
-
-                    return self.untrack_pegin_accepted(data.clone());
-                }
-
-                info!("Handling PeginAccepted event: {:?}", data);
-
-                let tx_hash: TxHash = data.inner.acceptPeginTxHash.into();
-                let Some(state) = self.tracker.get(&tx_hash) else {
-                    bail!(
-                        "Received PeginAccepted for unknown acceptPeginTxHash: {:?}",
-                        tx_hash
-                    );
-                };
-
-                let observer_id = format!("pegin_accepted-{}", state.pegin_flow_id);
-                let confirmations =
-                    BlockConfirmations::new(observer_id, data.block_number, REQUIRED_CONFIRMATIONS);
-
-                let pegin_accepted = PeginEvent::new(data.clone(), confirmations);
-
-                self.blockchain
-                    .add_observer(pegin_accepted.confirmations.clone());
-
-                info!(
-                    "Adding PeginAccepted event to pegin event tracker. Event: {:?}",
-                    pegin_accepted
-                );
-
-                self.track_pegin_accepted(pegin_accepted)?;
-            }
-            _ => {}
+            RskPegManagerEvents::PeginRequested(data) => self.handle_pegin_requested(data),
+            RskPegManagerEvents::PeginAccepted(data) => self.handle_pegin_accepted(data),
+            _ => Ok(()),
         }
-
-        Ok(())
     }
 
     fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
