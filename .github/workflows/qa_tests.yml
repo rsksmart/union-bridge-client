@@ -56,7 +56,7 @@ jobs:
           echo "${KEY_STORE_FILE}" > test_keystore/keyfile
 
       - name: Run transaction dispatcher integration tests
-        working-directory: union-bridge-client/qa-tools
+        working-directory: qa-tools
         run: |
           JUNIT_REPORT="reports/tx_dispatcher.xml" RUST_BACKTRACE=1 cargo run --bin qa-tools-transaction-dispatcher -- --tags @transaction-dispatcher
           cat reports/tx_dispatcher.xml
