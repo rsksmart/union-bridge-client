@@ -63,7 +63,7 @@ jobs:
 
       - name: Print tests summary
         if: ${{ env.ACT }}
-        working-directory: union-bridge-client/qa-tools
+        working-directory: qa-tools
         run:
           cat reports/tx_dispatcher.xml
 
