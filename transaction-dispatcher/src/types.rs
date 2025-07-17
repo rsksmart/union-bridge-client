@@ -1,5 +1,6 @@
+use common::types::Hash256;
+use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
-
 // TODO improve these structs with proper typing for their fields now that we removed the http server
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -64,14 +65,14 @@ pub struct RegisterPegOutOutput {
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct AddMemberNonceInput {
-    pub hash_to_sign: String,
-    pub nonce: String,
+    pub hash_to_sign: Hash256,
+    pub nonce: PubNonce,
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct AddMemberSignatureInput {
-    pub hash_to_sign: String,
-    pub signature: String,
+    pub hash_to_sign: Hash256,
+    pub signature: PartialSignature,
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]

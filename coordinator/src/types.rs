@@ -2,8 +2,10 @@ use crate::types::RskPegManagerEvents::UnknownEvent;
 use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
 use alloy_primitives::{B256, LogData};
 use alloy_sol_types::SolEvent;
+use bitcoin::PublicKey;
 use common::types::{BlockHash, BlockNumber, Hash256, RskLog, TxHash};
 use log::{error, warn};
+use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
@@ -250,12 +252,16 @@ impl EventDecoder {
     }
 }
 
-// TODO improve inner types when BitVMX one gets clear
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Musig2MemberSignature {
+pub struct BitVmxSigningInfo {
+    pub protocol_name: String,
+    // TODO there not used for now
+    pub take_aggr_key: PublicKey,
+    // TODO there is a TODO on the BitVMX side suggesting it will be included, but for now we will have to store it ourselves
+    #[serde(default)]
     pub hash_to_sign: Hash256,
-    pub signature: String,
-    pub nonce: Hash256,
+    pub signature: PartialSignature,
+    pub nonce: PubNonce,
 }
 
 #[cfg(test)]

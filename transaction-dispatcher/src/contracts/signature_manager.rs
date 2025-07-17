@@ -1,6 +1,5 @@
 use crate::contracts::types::{Address, Bytes, FixedBytes32, TransactionReceiptResult};
 use alloy_provider::Provider;
-use hex::FromHexError;
 use log::info;
 
 use crate::contracts::common::send_tx_with_gas_bump;
@@ -79,18 +78,6 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
     }
 }
 
-pub fn hex_to_fixed_bytes32(value: &str) -> Result<FixedBytes32, FromHexError> {
-    let value = value.trim_start_matches("0x");
-    let bytes = hex::decode(value)?;
-    Ok(FixedBytes32::from_slice(&bytes))
-}
-
-pub fn hex_to_bytes(value: &str) -> Result<Bytes, FromHexError> {
-    let value = value.trim_start_matches("0x");
-    let bytes = hex::decode(value)?;
-    Ok(Bytes::from(bytes))
-}
-
 pub(crate) fn decode_error(
     err: &alloy_contract::Error,
 ) -> Option<crate::rsk_gateway::DomainErrors> {
@@ -122,80 +109,6 @@ mod tests {
     use union_contracts::bindings::signature_manager::SignatureManager::{
         AcceptPeginTxHashNotFound, AddressEmptyCode, HashToSignNotFound, SignatureManagerErrors,
     };
-
-    // Test helper functions
-    #[test]
-    fn test_hex_to_fixed_bytes32_valid() {
-        let hex_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
-        let result = hex_to_fixed_bytes32(hex_str);
-        assert!(result.is_ok());
-
-        let expected_bytes = [
-            0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab,
-            0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78,
-            0x90, 0xab, 0xcd, 0xef,
-        ];
-        let fixed_bytes = result.unwrap();
-        assert_eq!(fixed_bytes.0, expected_bytes);
-    }
-
-    #[test]
-    fn test_hex_to_fixed_bytes32_without_prefix() {
-        let hex_str = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
-        let result = hex_to_fixed_bytes32(hex_str);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_hex_to_fixed_bytes32_invalid_chars() {
-        let hex_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdeg"; // 'g' is invalid
-        let result = hex_to_fixed_bytes32(hex_str);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_hex_to_bytes_valid() {
-        let hex_str = "0x1234abcd";
-        let result = hex_to_bytes(hex_str);
-        assert!(result.is_ok());
-
-        let bytes = result.unwrap();
-        assert_eq!(bytes.as_ref(), &[0x12, 0x34, 0xab, 0xcd]);
-    }
-
-    #[test]
-    fn test_hex_to_bytes_without_prefix() {
-        let hex_str = "1234abcd";
-        let result = hex_to_bytes(hex_str);
-        assert!(result.is_ok());
-
-        let bytes = result.unwrap();
-        assert_eq!(bytes.as_ref(), &[0x12, 0x34, 0xab, 0xcd]);
-    }
-
-    #[test]
-    fn test_hex_to_bytes_empty() {
-        let hex_str = "0x";
-        let result = hex_to_bytes(hex_str);
-        assert!(result.is_ok());
-
-        let bytes = result.unwrap();
-        assert_eq!(bytes.as_ref(), &[] as &[u8]);
-    }
-
-    #[test]
-    fn test_hex_to_bytes_invalid_chars() {
-        let hex_str = "0x1234gg";
-        let result = hex_to_bytes(hex_str);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_hex_to_bytes_odd_length() {
-        let hex_str = "0x123"; // Odd length should fail
-        let result = hex_to_bytes(hex_str);
-        assert!(result.is_err());
-    }
 
     // Test error decoding functions
     #[test]

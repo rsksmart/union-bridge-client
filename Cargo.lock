@@ -1710,6 +1710,7 @@ dependencies = [
  "log4rs",
  "lru",
  "mockall",
+ "musig2",
  "primitive-types 0.13.1",
  "serde",
  "serde_json",
@@ -1817,6 +1818,7 @@ dependencies = [
  "alloy-sol-types",
  "anyhow",
  "bincode 2.0.1",
+ "bitcoin",
  "check-fork",
  "check-fork-zkp",
  "clap",
@@ -1824,6 +1826,7 @@ dependencies = [
  "hex",
  "log",
  "mockall",
+ "musig2",
  "primitive-types 0.13.1",
  "serde",
  "serde_json",
@@ -2166,7 +2169,7 @@ dependencies = [
  "digest 0.10.7",
  "elliptic-curve",
  "rfc6979",
- "serdect",
+ "serdect 0.2.0",
  "signature",
  "spki",
 ]
@@ -2213,7 +2216,7 @@ dependencies = [
  "pkcs8",
  "rand_core 0.6.4",
  "sec1",
- "serdect",
+ "serdect 0.2.0",
  "subtle",
  "zeroize",
 ]
@@ -3163,7 +3166,7 @@ dependencies = [
  "ecdsa",
  "elliptic-curve",
  "once_cell",
- "serdect",
+ "serdect 0.2.0",
  "sha2",
 ]
 
@@ -3476,6 +3479,24 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.104",
+]
+
+[[package]]
+name = "musig2"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d89eb08ce8778538f84198774795f418358360a29841cfea8dbbb28c04d777e2"
+dependencies = [
+ "base16ct",
+ "hmac",
+ "once_cell",
+ "rand 0.8.5",
+ "secp",
+ "secp256k1 0.30.0",
+ "serde",
+ "serdect 0.3.0",
+ "sha2",
+ "subtle",
 ]
 
 [[package]]
@@ -4690,9 +4711,24 @@ dependencies = [
  "der",
  "generic-array",
  "pkcs8",
- "serdect",
+ "serdect 0.2.0",
  "subtle",
  "zeroize",
+]
+
+[[package]]
+name = "secp"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7ac68feda6cce08c5091b4e87cf93d4b7fa04b4afd9988d4b36121d949f79ec"
+dependencies = [
+ "base16ct",
+ "once_cell",
+ "rand 0.8.5",
+ "secp256k1 0.30.0",
+ "serde",
+ "serdect 0.3.0",
+ "subtle",
 ]
 
 [[package]]
@@ -4906,6 +4942,16 @@ name = "serdect"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a84f14a19e9a014bb9f4512488d9829a68e04ecabffb0f9904cd1ace94598177"
+dependencies = [
+ "base16ct",
+ "serde",
+]
+
+[[package]]
+name = "serdect"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f42f67da2385b51a5f9652db9c93d78aeaf7610bf5ec366080b6de810604af53"
 dependencies = [
  "base16ct",
  "serde",
@@ -5642,6 +5688,7 @@ dependencies = [
  "alloy-transport",
  "anyhow",
  "axum",
+ "bitcoin",
  "clap",
  "common",
  "env_logger",
@@ -5649,6 +5696,7 @@ dependencies = [
  "key-manager",
  "log",
  "mockall",
+ "musig2",
  "serde",
  "serde_json",
  "tempfile",

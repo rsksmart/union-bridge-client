@@ -16,9 +16,11 @@ alloy-contract = { workspace = true }
 alloy-transport = { workspace = true }
 clap = { workspace = true }
 anyhow = { workspace = true }
+bitcoin = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 log = { workspace = true }
+musig2 = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 hex = { workspace = true }

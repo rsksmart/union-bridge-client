@@ -1,6 +1,6 @@
 use super::btc_signature_flow::{BtcSignatureFlow, BtcSignatureFlowApi};
 use crate::event_processor::EventProcessor;
-use crate::types::{AllNoncesReadyEvent, Musig2MemberSignature, RskPegManagerEvents};
+use crate::types::{AllNoncesReadyEvent, BitVmxSigningInfo, RskPegManagerEvents};
 use anyhow::{Result, anyhow, bail};
 use common::msg_broker::bitvmx_types::{OutgoingBitVMXApiMessages, VariableTypes};
 use common::runtime_sync::RuntimeSync;
@@ -13,7 +13,7 @@ use uuid::Uuid;
 #[cfg(test)]
 use mockall::automock;
 
-const SIGNATURE_MESSAGE: &str = "btc-signature";
+pub(crate) const SIGNATURE_MESSAGE: &str = "signing_info";
 
 #[cfg_attr(test, automock)]
 pub trait BtcSignatureFlowFactoryApi<BSF: BtcSignatureFlowApi> {
@@ -104,7 +104,7 @@ where
             OutgoingBitVMXApiMessages::Variable(flow_id, method, VariableTypes::String(data))
                 if matches!(method.as_str(), SIGNATURE_MESSAGE) =>
             {
-                let signature = serde_json::from_str::<Musig2MemberSignature>(data)
+                let signing_info = serde_json::from_str::<BitVmxSigningInfo>(data)
                     .map_err(|e| anyhow!("Failed to deserialize signature data: {e}"))?;
 
                 if self.flows.contains_key(flow_id) {
@@ -115,7 +115,7 @@ where
                 self.flows.insert(*flow_id, new_flow);
 
                 let flow = self.flows.get_mut(flow_id).unwrap();
-                flow.send_nonce_to_contracts(&signature)?;
+                flow.send_nonce_to_contracts(&signing_info)?;
                 Ok(())
             }
             _ => {
@@ -197,25 +197,33 @@ mod tests {
     use crate::blockchain_tracker::BlockchainView;
     use crate::flows::btc_signature::btc_signature_flow::MockBtcSignatureFlowApi;
     use crate::types::{AllNoncesReadyEvent, AllSignaturesReadyEvent};
+    use bitcoin::PublicKey;
     use common::test_utils::rsk_block_generator::create_block_and_uncles;
     use common::types::{BlockNumber, RskBlockAndUncles, TxHash};
     use mockall::predicate::*;
+    use musig2::PubNonce;
     use primitive_types::H256;
     use std::cell::RefCell;
     use std::rc::Rc;
+    use std::str::FromStr;
 
     #[test]
     fn test_process_new_bitvmx_event_creates_flow_and_sends_nonce() {
         // create signature data for the event
         let flow_id = Uuid::new_v4();
         let hash_to_sign = Hash256::from(H256::random());
-        let nonce = Hash256::from(H256::random());
-        let signature = Musig2MemberSignature {
+        let nonce = "0279BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798032DE2662628C90B03F5E720284EB52FF7D71F4284F627B68A853D78C78E1FFE93".parse::<PubNonce>().unwrap();
+        let signature = "44477400e59c41025e4e18c4de244b90b14554dcdcbfa396ead4659aa6343249"
+            .parse()
+            .unwrap();
+        let signing_info = BitVmxSigningInfo {
+            protocol_name: "pegin".to_string(),
+            take_aggr_key: PublicKey::from_str("04c4b0bbb339aa236bff38dbe6a451e111972a7909a126bc424013cba2ec33bc38e98ac269ffe028345c31ac8d0a365f29c8f7e7cfccac72f84e1acd02bc554f35").unwrap(),
             hash_to_sign,
-            nonce,
-            signature: "test_signature".to_string(),
+            nonce: nonce.clone(),
+            signature,
         };
-        let signature_json = serde_json::to_string(&signature).unwrap();
+        let signature_json = serde_json::to_string(&signing_info).unwrap();
 
         let event = OutgoingBitVMXApiMessages::Variable(
             flow_id,
@@ -227,10 +235,8 @@ mod tests {
         let mut mock_flow = MockBtcSignatureFlowApi::new();
         mock_flow
             .expect_send_nonce_to_contracts()
-            .withf(move |arg: &Musig2MemberSignature| {
-                arg.hash_to_sign == hash_to_sign
-                    && arg.nonce == nonce
-                    && arg.signature == "test_signature"
+            .withf(move |arg: &BitVmxSigningInfo| {
+                arg.hash_to_sign == hash_to_sign && arg.nonce == nonce && arg.signature == signature
             })
             .times(1)
             .returning(|_| Ok(()));
@@ -668,13 +674,18 @@ mod tests {
         // create signature data for the event
         let flow_id = Uuid::new_v4();
         let hash_to_sign = Hash256::from(H256::random());
-        let nonce = Hash256::from(H256::random());
-        let signature = Musig2MemberSignature {
+        let nonce = "0279BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798032DE2662628C90B03F5E720284EB52FF7D71F4284F627B68A853D78C78E1FFE93".parse::<PubNonce>().unwrap();
+        let signature = "44477400e59c41025e4e18c4de244b90b14554dcdcbfa396ead4659aa6343249"
+            .parse()
+            .unwrap();
+        let signing_info = BitVmxSigningInfo {
+            protocol_name: "pegin".to_string(),
+            take_aggr_key: PublicKey::from_str("04c4b0bbb339aa236bff38dbe6a451e111972a7909a126bc424013cba2ec33bc38e98ac269ffe028345c31ac8d0a365f29c8f7e7cfccac72f84e1acd02bc554f35").unwrap(),
             hash_to_sign,
-            nonce,
-            signature: "test_signature".to_string(),
+            nonce: nonce.clone(),
+            signature
         };
-        let signature_json = serde_json::to_string(&signature).unwrap();
+        let signature_json = serde_json::to_string(&signing_info).unwrap();
 
         let event = OutgoingBitVMXApiMessages::Variable(
             flow_id,
@@ -857,13 +868,18 @@ mod tests {
         // create signature data for the event
         let flow_id = Uuid::new_v4();
         let hash_to_sign = Hash256::from(H256::random());
-        let nonce = Hash256::from(H256::random());
-        let signature = Musig2MemberSignature {
+        let nonce = "0279BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798032DE2662628C90B03F5E720284EB52FF7D71F4284F627B68A853D78C78E1FFE93".parse::<PubNonce>().unwrap();
+        let signature = "44477400e59c41025e4e18c4de244b90b14554dcdcbfa396ead4659aa6343249"
+            .parse()
+            .unwrap();
+        let signing_info = BitVmxSigningInfo {
+            protocol_name: "pegin".to_string(),
+            take_aggr_key: PublicKey::from_str("04c4b0bbb339aa236bff38dbe6a451e111972a7909a126bc424013cba2ec33bc38e98ac269ffe028345c31ac8d0a365f29c8f7e7cfccac72f84e1acd02bc554f35").unwrap(),
             hash_to_sign,
             nonce,
-            signature: "test_signature".to_string(),
+            signature,
         };
-        let signature_json = serde_json::to_string(&signature).unwrap();
+        let signature_json = serde_json::to_string(&signing_info).unwrap();
 
         let event = OutgoingBitVMXApiMessages::Variable(
             flow_id,

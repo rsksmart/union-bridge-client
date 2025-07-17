@@ -435,6 +435,7 @@ where
                 self.handle_contract_call(method, &json_data)?;
             }
             // TODO(signatures-2) delegate SIGNATURE_MESSAGE message to BtcSignatureFlow::process_new_bitvmx_event, it is the response to request-pegin event we send them
+            //  it looks like for now they do not include hash_to_sign in the message (see TODO in BitVmxSigningInfo), so we need to inject it in the OutgoingBitVMXApiMessages from the calling flow
             _ => {}
         }
 

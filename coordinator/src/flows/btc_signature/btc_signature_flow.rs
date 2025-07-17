@@ -1,11 +1,12 @@
 use crate::blockchain_tracker::{BlockchainView, ConfirmableEvent};
 use crate::config::REQUIRED_CONFIRMATIONS;
-use crate::types::Musig2MemberSignature;
+use crate::types::BitVmxSigningInfo;
 use anyhow::{Context, Result, anyhow, bail};
 use common::runtime_sync::RuntimeSync;
 use common::types::{BlockNumber, Hash256};
 use log::info;
 use std::cell::RefCell;
+use std::hash::Hash;
 use std::rc::Rc;
 use std::sync::Arc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
@@ -17,7 +18,7 @@ use mockall::automock;
 
 #[cfg_attr(test, automock)]
 pub trait BtcSignatureFlowApi {
-    fn send_nonce_to_contracts(&mut self, data: &Musig2MemberSignature) -> Result<()>;
+    fn send_nonce_to_contracts(&mut self, data: &BitVmxSigningInfo) -> Result<()>;
 
     fn set_all_nonces_ready(&mut self, block_number: BlockNumber) -> Result<()>;
 
@@ -43,7 +44,7 @@ pub trait BtcSignatureFlowApi {
 
 pub struct State {
     pub flow_id: Uuid,
-    pub data: Option<Musig2MemberSignature>,
+    pub data: Option<BitVmxSigningInfo>,
     pub nonce_step: Option<ConfirmableEvent>,
     pub signature_step: Option<ConfirmableEvent>,
 }
@@ -157,7 +158,7 @@ impl<CG> BtcSignatureFlowApi for BtcSignatureFlow<CG>
 where
     CG: RskContractsGatewayApi,
 {
-    fn send_nonce_to_contracts(&mut self, data: &Musig2MemberSignature) -> Result<()> {
+    fn send_nonce_to_contracts(&mut self, data: &BitVmxSigningInfo) -> Result<()> {
         info!("Sending nonce to contract for flow {}", self.state.flow_id);
 
         if self.state.nonce_step.is_some() || self.state.data.is_some() {
@@ -170,8 +171,8 @@ where
         // send the nonce
 
         let nonce = AddMemberNonceInput {
-            hash_to_sign: hex::encode(data.hash_to_sign.value().0),
-            nonce: hex::encode(data.nonce.value().0),
+            hash_to_sign: data.hash_to_sign,
+            nonce: data.nonce.clone(),
         };
 
         let send_nonce_result = self
@@ -247,8 +248,8 @@ where
         // send the signature
 
         let signature_input = AddMemberSignatureInput {
-            hash_to_sign: hex::encode(member_signature.hash_to_sign.value().0),
-            signature: member_signature.signature.clone(),
+            hash_to_sign: member_signature.hash_to_sign,
+            signature: member_signature.signature,
         };
 
         let send_sig_result = self
@@ -312,14 +313,17 @@ pub(crate) mod tests {
     use super::*;
     use crate::blockchain_tracker::BlockchainView;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
+    use bitcoin::PublicKey;
     use common::runtime_sync::RuntimeSync;
     use common::test_utils::rsk_block_generator::create_block_and_uncles;
     use common::types::{BlockNumber, Hash256, RskBlock, RskBlockAndUncles};
     use mockall::predicate::function;
+    use musig2::{PartialSignature, PubNonce};
     use primitive_types::H256;
     use serde_json::json;
     use std::cell::RefCell;
     use std::rc::Rc;
+    use std::str::FromStr;
     use std::sync::Arc;
     use transaction_dispatcher::types::{AddMemberNonceInput, AddMemberSignatureInput};
     use uuid::Uuid;
@@ -670,7 +674,7 @@ pub(crate) mod tests {
         );
 
         // attempt to send nonce to contracts should fail
-        let result = flow.send_nonce_to_contracts(&fake_signature_bitvmx());
+        let result = flow.send_nonce_to_contracts(&fake_signature_bitvmx("pegin"));
         assert!(
             result.is_err(),
             "should fail when contract nonce call fails"
@@ -743,20 +747,20 @@ pub(crate) mod tests {
     fn test_duplicate_calls_for_steps() {
         // setup test data
         let flow_id = Uuid::new_v4();
-        let bitvmx_signature = fake_signature_bitvmx();
+        let bitvmx_signature = fake_signature_bitvmx("pegin");
 
         // setup mock contracts gateway - expecting only one call each (duplicates should be prevented)
         let mut mock_contracts = MockRskContractsGatewayApi::new();
         setup_nonce_mock(
             &mut mock_contracts,
             bitvmx_signature.hash_to_sign,
-            bitvmx_signature.nonce,
+            &bitvmx_signature.nonce,
             1,
         );
         setup_signature_mock(
             &mut mock_contracts,
             bitvmx_signature.hash_to_sign,
-            bitvmx_signature.signature.as_str(),
+            &bitvmx_signature.signature,
             1,
         );
 
@@ -839,12 +843,9 @@ pub(crate) mod tests {
     pub(crate) fn setup_nonce_mock(
         mock_contracts: &mut MockRskContractsGatewayApi,
         expected_hash: Hash256,
-        expected_nonce: Hash256,
+        expected_nonce: &PubNonce,
         times: usize,
     ) {
-        let expected_hash = hex::encode(expected_hash.value().0);
-        let expected_nonce = hex::encode(expected_nonce.value().0);
-
         mock_contracts
             .expect_add_member_nonce()
             .times(times)
@@ -867,12 +868,9 @@ pub(crate) mod tests {
     pub(crate) fn setup_signature_mock(
         mock_contracts: &mut MockRskContractsGatewayApi,
         expected_hash: Hash256,
-        expected_signature: &str,
+        expected_signature: &PartialSignature,
         times: usize,
     ) {
-        let expected_hash = hex::encode(expected_hash.value().0);
-        let expected_signature = expected_signature.to_string();
-
         mock_contracts
             .expect_add_member_signature()
             .times(times)
@@ -896,13 +894,13 @@ pub(crate) mod tests {
         nonce_contract_calls: Option<usize>,
         signature_contract_calls: Option<usize>,
     ) -> (
-        Musig2MemberSignature,
+        BitVmxSigningInfo,
         BtcSignatureFlow<MockRskContractsGatewayApi>,
         Rc<RefCell<BlockchainView>>,
     ) {
         // setup test data
         let flow_id = Uuid::new_v4();
-        let bitvmx_signature = fake_signature_bitvmx();
+        let bitvmx_signature = fake_signature_bitvmx("pegin");
 
         // setup mock contracts gateway based on expectations
         let mut mock_contracts = MockRskContractsGatewayApi::new();
@@ -910,7 +908,7 @@ pub(crate) mod tests {
             setup_nonce_mock(
                 &mut mock_contracts,
                 bitvmx_signature.hash_to_sign,
-                bitvmx_signature.nonce,
+                &bitvmx_signature.nonce,
                 times,
             );
         }
@@ -918,7 +916,7 @@ pub(crate) mod tests {
             setup_signature_mock(
                 &mut mock_contracts,
                 bitvmx_signature.hash_to_sign,
-                bitvmx_signature.signature.as_str(),
+                &bitvmx_signature.signature,
                 times,
             );
         }
@@ -940,7 +938,7 @@ pub(crate) mod tests {
 
     pub(crate) fn complete_nonce_step<CG: RskContractsGatewayApi>(
         flow: &mut BtcSignatureFlow<CG>,
-        bitvmx_signature: &Musig2MemberSignature,
+        bitvmx_signature: &BitVmxSigningInfo,
         start_block: BlockNumber,
         blockchain_view: &Rc<RefCell<BlockchainView>>,
     ) -> Result<()> {
@@ -991,15 +989,22 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    pub(crate) fn fake_signature_bitvmx() -> Musig2MemberSignature {
-        Musig2MemberSignature {
-            hash_to_sign: "a1b2c3d4e5f60123456789abcdef0123456789abcdef0123456789abcdef0123".try_into().expect(
-                "Invalid hash_to_sign format",
-            ),
-            signature: "3045022100a1b2c3d4e5f60123456789abcdef0123456789abcdef0123456789abcdef022100b1c2d3e4f5123456789abcdef0123456789abcdef0123456789abcdef0123456789".into(),
-            nonce: "11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff".try_into().expect(
-                "Invalid nonce format",
-            ),
+    pub(crate) fn fake_signature_bitvmx(protocol_name: &str) -> BitVmxSigningInfo {
+        let hash_to_sign = "a1b2c3d4e5f60123456789abcdef0123456789abcdef0123456789abcdef0123"
+            .try_into()
+            .unwrap();
+        let nonce = "0279BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798032DE2662628C90B03F5E720284EB52FF7D71F4284F627B68A853D78C78E1FFE93".parse::<PubNonce>().unwrap();
+        let signature = "44477400e59c41025e4e18c4de244b90b14554dcdcbfa396ead4659aa6343249"
+            .parse()
+            .unwrap();
+        let aggr_key = PublicKey::from_str("04c4b0bbb339aa236bff38dbe6a451e111972a7909a126bc424013cba2ec33bc38e98ac269ffe028345c31ac8d0a365f29c8f7e7cfccac72f84e1acd02bc554f35").unwrap();
+
+        BitVmxSigningInfo {
+            protocol_name: protocol_name.to_string(),
+            take_aggr_key: aggr_key,
+            hash_to_sign,
+            nonce: nonce.clone(),
+            signature,
         }
     }
 }
