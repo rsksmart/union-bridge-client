@@ -47,6 +47,12 @@ impl<BS: BitVmxBrokerServerApi> Executor<BS> {
                     .send(&OutgoingBitVMXApiMessages::Pong(), from)
                     .context("Failed to send Pong response")?;
             }
+            Some((IncomingBitVMXApiMessages::SubscribeToRskPegin(), from)) => {
+                println!(
+                    "Received message 'SubscribeToRskPegin' from client '{}'",
+                    from
+                );
+            }
             Some((IncomingBitVMXApiMessages::SetVar(uuid, name, value), from)) => {
                 println!(
                     "Received SetVar from {from}: uuid = {uuid}, name = {name}, value = {}",
