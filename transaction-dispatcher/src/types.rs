@@ -1,4 +1,5 @@
-use common::types::Hash256;
+use bitcoin::{Transaction, TxIn, TxOut};
+use common::{msg_broker::bitvmx_types::BtcTxSPVProof, types::Hash256};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
 // TODO improve these structs with proper typing for their fields now that we removed the http server
@@ -85,3 +86,49 @@ pub type AddMemberNonceOutput = TxSentOutput;
 pub type AddMemberSignatureOutput = TxSentOutput;
 pub type AcceptPegInInput = RegisterPegInInput;
 pub type AcceptPegInOutput = RegisterPegInOutput;
+
+impl From<TxIn> for BitcoinTransactionIn {
+    fn from(input: TxIn) -> Self {
+        BitcoinTransactionIn {
+            tx_id: input.previous_output.txid.to_string(),
+            v_out: input.previous_output.vout,
+            sequence: input.sequence.0,
+            script_sig: hex::encode(input.script_sig.into_bytes()),
+        }
+    }
+}
+
+impl From<TxOut> for BitcoinTransactionOut {
+    fn from(output: TxOut) -> Self {
+        BitcoinTransactionOut {
+            amount: output.value.to_sat(),
+            script_pub_key: hex::encode(output.script_pubkey.into_bytes()),
+        }
+    }
+}
+
+impl From<Transaction> for BitcoinTransaction {
+    fn from(tx: Transaction) -> Self {
+        BitcoinTransaction {
+            version: tx.version.0 as u32,
+            lock_time: tx.lock_time.to_consensus_u32(),
+            inputs: tx.input.into_iter().map(Into::into).collect(),
+            outputs: tx.output.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<BtcTxSPVProof> for RegisterPegInInput {
+    fn from(proof: BtcTxSPVProof) -> Self {
+        RegisterPegInInput {
+            block_hash: proof.block_hash,
+            btc_tx: BitcoinTransaction::from(proof.tx),
+            merkle_branch_path: proof.merkle_branch_path,
+            merkle_branch_hashes: proof
+                .merkle_branch_hashes
+                .into_iter()
+                .map(hex::encode)
+                .collect(),
+        }
+    }
+}

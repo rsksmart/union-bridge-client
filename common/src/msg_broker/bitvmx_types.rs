@@ -32,6 +32,7 @@ pub enum IncomingBitVMXApiMessages {
     ExecuteZKP(),
     GetZKPExecutionResult(),
     Finalize(),
+    GetSPVProof(Txid),
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -61,6 +62,7 @@ pub enum OutgoingBitVMXApiMessages {
     HashedMessage(Uuid, String, u32, u32, String),
     ProofReady(Uuid),
     ProofNotReady(Uuid),
+    SPVProof(Txid, Option<BtcTxSPVProof>),
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -214,3 +216,11 @@ pub struct P2PAddress {
 
 #[derive(Clone, Hash, Default, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PeerId(pub String);
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BtcTxSPVProof {
+    pub block_hash: String,
+    pub tx: Transaction,
+    pub merkle_branch_path: String,
+    pub merkle_branch_hashes: Vec<[u8; 32]>,
+}

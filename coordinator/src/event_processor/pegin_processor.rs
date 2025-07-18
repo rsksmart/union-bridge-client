@@ -5,15 +5,18 @@ use crate::{
     types::{EventWithBlock, PeginAcceptedEvent, PeginRequestedEvent, RskPegManagerEvents},
 };
 use anyhow::{Context, Result, bail};
+use bitcoin::Txid;
 use common::{
     msg_broker::{
-        bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, VariableTypes},
+        bitvmx_types::{
+            BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, VariableTypes,
+        },
         broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi},
     },
     runtime_sync::RuntimeSync,
     types::{RskBlockAndUncles, TxHash},
 };
-use log::{error, info};
+use log::info;
 use serde::Serialize;
 use serde_json::Value;
 use std::{cell::RefCell, collections::HashMap, fmt::Debug, future::Future, rc::Rc};
@@ -336,57 +339,21 @@ where
         Ok(())
     }
 
-    fn handle_contract_call(&self, method_name: &str, json_data: &Value) -> Result<()> {
-        info!(
-            "Dispatching transaction to contract. Method: '{}', Payload: {}",
-            method_name, json_data
-        );
-
-        match method_name {
-            "register-pegin" => {
-                let input: RegisterPegInInput = serde_json::from_value(json_data.clone())
-                    .context("Failed to deserialize RegisterPegInInput")?;
-                self.send_to_contract(method_name, || async {
-                    self.contracts.register_peg_in_request(input).await
-                })
-            }
-
-            "accept-pegin" => {
-                let input: AcceptPegInInput = serde_json::from_value(json_data.clone())
-                    .context("Failed to deserialize AcceptPegInInput")?;
-                self.send_to_contract(method_name, || async {
-                    self.contracts.accept_peg_in_request(input).await
-                })
-            }
-
-            _ => bail!("Unsupported method: {}", method_name),
-        }
-    }
-
-    fn send_to_contract<Fut, F, T>(&self, method_name: &str, f: F) -> Result<()>
-    where
-        F: FnOnce() -> Fut,
-        Fut: Future<Output = Result<T, DomainErrors>>,
-        T: Debug,
-    {
-        match self.rt_sync.run(f()) {
-            Ok(_) => {
-                info!("Successfully executed '{}'", method_name);
-                Ok(())
-            }
-            Err(domain_err) => {
-                error!("Error executing '{}': {:?}", method_name, domain_err);
-                Err(domain_err.into())
-            }
-        }
-    }
-
     fn subscribe_to_bitvmx_pegin_events(bitvmx_broker: &BC) -> Result<()> {
         // Used to subscribe to bitvmx pegin events, otherwise the client will not receive pegin
         // events from the bitvmx broker
         Self::send_to_bitvmx(
             bitvmx_broker,
             IncomingBitVMXApiMessages::SubscribeToRskPegin(),
+        )
+    }
+
+    fn handle_pegin_transaction_found(&self, tx_id: Txid) -> Result<()> {
+        // When notified of a new pegin tx found, the client will immediately
+        // request the SPV proof of such transaction to notify the contract
+        Self::send_to_bitvmx(
+            &self.bitvmx_broker,
+            IncomingBitVMXApiMessages::GetSPVProof(tx_id),
         )
     }
 
@@ -411,6 +378,48 @@ where
 
         Ok(())
     }
+
+    fn handle_contract_call(&self, method_name: &str, json_data: &Value) -> Result<()> {
+        match method_name {
+            "accept-pegin" => {
+                let input: AcceptPegInInput = serde_json::from_value(json_data.clone())
+                    .context("Failed to deserialize AcceptPegInInput")?;
+                self.invoke_contract(method_name, || async {
+                    self.contracts.accept_peg_in_request(input).await
+                })
+            }
+
+            _ => bail!("Unsupported method: {}", method_name),
+        }
+    }
+
+    fn handle_request_pegin(&self, spv_proof: BtcTxSPVProof) -> Result<()> {
+        let input: RegisterPegInInput = spv_proof.into();
+
+        self.invoke_contract("requestPegin", || async {
+            self.contracts.register_peg_in_request(input).await
+        })
+    }
+
+    fn invoke_contract<Fut, F, T>(&self, method_name: &str, f: F) -> Result<()>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<T, DomainErrors>>,
+        T: Debug,
+    {
+        info!(
+            "Submitting contract transaction: method = '{}'",
+            method_name
+        );
+
+        match self.rt_sync.run(f()) {
+            Ok(_) => {
+                info!("Successfully executed '{}'", method_name);
+                Ok(())
+            }
+            Err(domain_err) => bail!("Error executing '{}': {:?}", method_name, domain_err),
+        }
+    }
 }
 
 impl<CG, BC> EventProcessor for PeginProcessor<CG, BC>
@@ -420,13 +429,35 @@ where
 {
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
         match event {
+            OutgoingBitVMXApiMessages::PeginTransactionFound(tx_id, _) => {
+                info!(
+                    "Received BitVMX PeginTransactionFound event with tx_id: {}",
+                    tx_id
+                );
+
+                self.handle_pegin_transaction_found(tx_id.clone())?;
+            }
+            OutgoingBitVMXApiMessages::SPVProof(tx_id, spv_proof_opt) => match spv_proof_opt {
+                Some(spv_proof) => {
+                    info!(
+                        "Received BitVMX SPVProof for tx_id: {}, proof: {:?}",
+                        tx_id, spv_proof
+                    );
+
+                    self.handle_request_pegin(spv_proof.clone())?;
+                }
+                None => bail!(
+                    "Received BitVMX SPVProof event for tx_id: {}, but no SPV proof was included.",
+                    tx_id
+                ),
+            },
             OutgoingBitVMXApiMessages::Variable(
                 pegin_flow_id,
                 method,
                 VariableTypes::String(data),
-            ) if matches!(method.as_str(), "register-pegin" | "accept-pegin") => {
+            ) if matches!(method.as_str(), "accept-pegin") => {
                 info!(
-                    "Handling BitVMX Variable Event. Flow Id: {}, Method: {}, Payload: {:?}",
+                    "Received BitVMX Variable Event. Flow Id: {}, Method: {}, Payload: {:?}",
                     pegin_flow_id, method, data
                 );
 
@@ -484,11 +515,19 @@ mod tests {
     };
     use alloy_primitives::{Address, Bytes, FixedBytes, U256};
     use anyhow::anyhow;
+    use bitcoin::{
+        Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, absolute::LockTime,
+        hashes::Hash, transaction::Version,
+    };
     use common::{
-        msg_broker::broker::{BROKER_SERVER_ID, BrokerError, MockBrokerClientApi},
+        msg_broker::{
+            bitvmx_types::{TransactionBlockchainStatus, TransactionStatus},
+            broker::{BROKER_SERVER_ID, BrokerError, MockBrokerClientApi},
+        },
         test_utils::rsk_block_generator::create_block_and_uncles,
         types::BlockHash,
     };
+    use hex::FromHex;
     use mockall::predicate::{eq, function};
     use primitive_types::H256;
     use serde_json::json;
@@ -540,7 +579,55 @@ mod tests {
     }
 
     #[test]
-    fn process_new_bitvmx_event_pegin_requested_does_not_send_response() {
+    fn process_new_bitvmx_pegin_transaction_found_should_send_get_svp_proof_bitvmx_message() {
+        let status = dummy_transaction_status();
+        let txid = status.tx_id;
+
+        let mut broker = MockBrokerClientApi::new();
+        expect_bitvmx_subscription_success(&mut broker);
+
+        broker
+            .expect_send()
+            .withf(move |to, msg| {
+                *to == BROKER_SERVER_ID
+                    && matches!(msg, IncomingBitVMXApiMessages::GetSPVProof(id) if id == &txid)
+            })
+            .times(1)
+            .returning(|_, _| Ok(true));
+
+        let mut processor = PeginProcessor::new(
+            RuntimeSync::new().unwrap(),
+            MockRskContractsGatewayApi::new().into(),
+            broker.into(),
+        );
+
+        let event = OutgoingBitVMXApiMessages::PeginTransactionFound(txid, status);
+        let result = processor.process_new_bitvmx_event(&event);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn process_new_bitvmx_empty_spv_proof_event_should_return_error() {
+        // Prepare broker and assert it doesn't send anything except pegin subscription
+        let mut broker = MockBrokerClientApi::new();
+        expect_bitvmx_subscription_success(&mut broker);
+
+        let mut processor = PeginProcessor::new(
+            RuntimeSync::new().unwrap(),
+            MockRskContractsGatewayApi::new().into(),
+            broker.into(),
+        );
+
+        let tx_id = dummy_spv_proof().tx.compute_txid();
+        let event = OutgoingBitVMXApiMessages::SPVProof(tx_id, None);
+
+        // Run and assert
+        let result = processor.process_new_bitvmx_event(&event);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn process_new_bitvmx_spv_proof_event_for_request_pegin_should_call_request_pegin() {
         // Prepare the mocked contracts gateway
         let mut contracts = MockRskContractsGatewayApi::new();
         let expected_receipt = RegisterPegInOutput {
@@ -560,41 +647,9 @@ mod tests {
         let rt_sync = RuntimeSync::new().unwrap();
         let mut processor = PeginProcessor::new(rt_sync, contracts.into(), broker.into());
 
-        // Simulate event payload
-        let data = json!({
-            "block_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "btc_tx": {
-                "version": 1,
-                "inputs": [
-                    {
-                        "tx_id": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-                        "v_out": 0,
-                        "sequence": 429496729,
-                        "script_sig": "483045022100..."
-                    }
-                ],
-                "outputs": [
-                    {
-                        "amount": 100000,
-                        "script_pub_key": "76a914..."
-                    }
-                ],
-                "lock_time": 0
-            },
-            "merkle_branch_path": "left-right-left",
-            "merkle_branch_hashes": [
-                "0x1111111111111111111111111111111111111111111111111111111111111111",
-                "0x2222222222222222222222222222222222222222222222222222222222222222"
-            ]
-        });
-
-        let payload = serde_json::to_string(&data).unwrap();
-        let uuid = Uuid::new_v4();
-        let event = OutgoingBitVMXApiMessages::Variable(
-            uuid,
-            "register-pegin".to_string(),
-            VariableTypes::String(payload),
-        );
+        let spv_proof = dummy_spv_proof();
+        let tx_id = spv_proof.tx.compute_txid();
+        let event = OutgoingBitVMXApiMessages::SPVProof(tx_id, Some(spv_proof));
 
         // Run and assert
         let result = processor.process_new_bitvmx_event(&event);
@@ -602,7 +657,7 @@ mod tests {
     }
 
     #[test]
-    fn process_new_bitvmx_event_pegin_requested_fails_on_dispatcher_error() {
+    fn process_new_bitvmx_spv_proof_event_for_request_pegin_should_fail_on_dispatch_error() {
         // Prepare a mocked contracts gateway that simulates a failure
         let mut contracts = MockRskContractsGatewayApi::new();
         contracts
@@ -617,45 +672,12 @@ mod tests {
         let rt_sync = RuntimeSync::new().unwrap();
         let mut processor = PeginProcessor::new(rt_sync, contracts.into(), broker.into());
 
-        // Simulate payload
-        let data = json!({
-            "block_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "btc_tx": {
-                "version": 1,
-                "inputs": [
-                    {
-                        "tx_id": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-                        "v_out": 0,
-                        "sequence": 429496729,
-                        "script_sig": "483045022100..."
-                    }
-                ],
-                "outputs": [
-                    {
-                        "amount": 100000,
-                        "script_pub_key": "76a914..."
-                    }
-                ],
-                "lock_time": 0
-            },
-            "merkle_branch_path": "left-right-left",
-            "merkle_branch_hashes": [
-                "0x1111111111111111111111111111111111111111111111111111111111111111",
-                "0x2222222222222222222222222222222222222222222222222222222222222222"
-            ]
-        });
-
-        let payload = serde_json::to_string(&data).unwrap();
-        let uuid = Uuid::new_v4();
-        let event = OutgoingBitVMXApiMessages::Variable(
-            uuid,
-            "register-pegin".to_string(),
-            VariableTypes::String(payload),
-        );
-
-        let result = processor.process_new_bitvmx_event(&event);
+        let spv_proof = dummy_spv_proof();
+        let tx_id = spv_proof.tx.compute_txid();
+        let event = OutgoingBitVMXApiMessages::SPVProof(tx_id, Some(spv_proof));
 
         // We expect an error due to contract dispatch failure
+        let result = processor.process_new_bitvmx_event(&event);
         assert!(result.is_err());
     }
 
@@ -1259,6 +1281,67 @@ mod tests {
                     && matches!(msg, IncomingBitVMXApiMessages::SubscribeToRskPegin())
             })
             .returning(|_, _| Ok(true));
+    }
+
+    fn dummy_transaction_status() -> TransactionStatus {
+        let tx = Transaction {
+            version: Version::ONE,
+            lock_time: LockTime::from_height(0).unwrap(),
+            input: vec![],
+            output: vec![],
+        };
+
+        let txid = tx.compute_txid();
+
+        TransactionStatus {
+            tx_id: txid,
+            tx,
+            block_info: None,
+            confirmations: 0,
+            status: TransactionBlockchainStatus::Confirmed,
+        }
+    }
+
+    fn dummy_spv_proof() -> BtcTxSPVProof {
+        let tx = Transaction {
+            version: Version::ONE,
+            lock_time: LockTime::from_consensus(0),
+            input: vec![TxIn {
+                previous_output: OutPoint {
+                    txid: Txid::from_byte_array(
+                        <[u8; 32]>::from_hex(
+                            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                        )
+                        .unwrap(),
+                    ),
+                    vout: 0,
+                },
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence(429496729),
+                witness: bitcoin::Witness::default(),
+            }],
+            output: vec![TxOut {
+                value: Amount::from_btc(1 as f64).unwrap(),
+                script_pubkey: ScriptBuf::new(),
+            }],
+        };
+
+        BtcTxSPVProof {
+            block_hash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                .to_string(),
+            tx,
+            merkle_branch_path: "left-right-left".to_string(),
+            merkle_branch_hashes: vec![
+                <[u8; 32]>::from_hex(
+                    "1111111111111111111111111111111111111111111111111111111111111111",
+                )
+                .unwrap(),
+                <[u8; 32]>::from_hex(
+                    "2222222222222222222222222222222222222222222222222222222222222222",
+                )
+                .unwrap(),
+            ],
+        }
     }
 
     fn dummy_pegin_requested_event() -> PeginRequested {
