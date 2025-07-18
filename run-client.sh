@@ -99,10 +99,6 @@ for svc in "${SERVICES[@]}"; do
     fi
 done
 
-# prepare bitvmx-client dependency
-git -C ../rust-bitvmx-workspace/ checkout f5d15597ee27f9a659498ef5fb86f4ecee094d51
-git -C ../rust-bitvmx-workspace/ submodule update --init --recursive
-
 # Start services in the background
 echo "Starting services..."
 run_service "block-indexer"
