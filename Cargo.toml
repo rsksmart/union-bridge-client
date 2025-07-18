@@ -33,7 +33,7 @@ thiserror = "2.0.11"
 tokio = { version = "1.41.1" }
 config = "0.15.8"
 storage-backend = { package = "rust-bitvmx-storage-backend", git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-storage-backend.git", rev = "7f40d056f86295e3fd2a4f268f923ca3b4e70fbf" }
-union-contracts = { package = "union-bridge-contracts", git = "ssh://git@github.com/FairgateLabs/bitvmx-union-bridge-contracts.git", tag = "v0.0.1-alpha.2" }
+union-contracts = { package = "union-bridge-contracts", git = "ssh://git@github.com/temp-rsk/bitvmx-union-bridge-contracts.git", tag = "v0.0.1-alpha.2" }
 message-broker = { package = "bitvmx-broker", git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-broker.git", rev = "98e9b43bdac2a02d6313767a0f2607b7e8f8da5e" }
 
 #dev-dependencies

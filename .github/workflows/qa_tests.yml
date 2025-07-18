@@ -36,6 +36,7 @@ jobs:
         uses: ./.github/actions/common_setup
         with:
           fairgate_github_token: ${{ secrets.FAIRGATE_GITHUB_TOKEN }}
+          contracts_github_token: ${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}
           cache-build: true
 
       - name: Install Foundry
@@ -44,8 +45,8 @@ jobs:
       - name: Checkout BitVMX contracts
         uses: actions/checkout@v4
         with:
-          repository: FairgateLabs/bitvmx-union-bridge-contracts
-          token: ${{ secrets.FAIRGATE_GITHUB_TOKEN }}
+          repository: temp-rsk/bitvmx-union-bridge-contracts
+          token: ${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}
           ref: v0.0.1-alpha.2
           path: bitvmx-union-bridge-contracts
 

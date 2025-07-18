@@ -61,9 +61,11 @@ JUNIT_REPORT="reports/tx_dispatcher.xml" cargo run --bin qa-tools-transaction-di
 export KEY_STORE_PATH="replace/with/path/to/your/keystore"
 export KEY_STORE_FILE="$(cat "$KEY_STORE_PATH")"
 export FAIRGATE_GITHUB_TOKEN="=== REPLACE_WITH_TOKEN ==="
+export UNION_CONTRACTS_GITHUB_TOKEN="=== REPLACE_WITH_TOKEN ==="
 export KEY_STORE_PASSWORD="=== REPLACE_WITH_PASSWORD ==="
 act -j test \
 --secret FAIRGATE_GITHUB_TOKEN=$FAIRGATE_GITHUB_TOKEN \
+--secret UNION_CONTRACTS_GITHUB_TOKEN=&UNION_CONTRACTS_GITHUB_TOKEN \
 --secret KEY_STORE_PASSWORD=$KEY_STORE_PASSWORD \
 --secret KEY_STORE_FILE=$KEY_STORE_FILE
 ```

@@ -5,6 +5,7 @@
 
 # needed for now to access Fairgate private repositories used as dependencies
 -s FAIRGATE_GITHUB_TOKEN=<ask_your_colleagues>
+-s UNION_CONTRACTS_GITHUB_TOKEN=<ask_your_colleagues>
 
 # needed for transaction-dispatcher
 -s KEY_STORE_PASSWORD=<key_password>

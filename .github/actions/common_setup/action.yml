@@ -3,7 +3,10 @@ description: "Builds the union-bridge-client"
 
 inputs:
   fairgate_github_token:
-    description: "GitHub token for accessing FairgateLabs repositories"
+    description: "GitHub token for accessing FairgateLabs org repositories"
+    required: true
+  contracts_github_token:
+    description: "GitHub token for accessing temp-rsk org contracts repository"
     required: true
   cache-build:
     description: "Wether dependencies should be cached"
@@ -68,3 +71,10 @@ runs:
         git config --global \
           url."https://${{ inputs.fairgate_github_token }}@github.com/FairgateLabs".insteadOf \
           "ssh://git@github.com/FairgateLabs"
+
+    - name: Fix temp-rsk private repo dependency cloning
+      shell: bash
+      run: |
+        git config --global \
+          url."https://${{ inputs.contracts_github_token }}@github.com/temp-rsk".insteadOf \
+          "ssh://git@github.com/temp-rsk"
