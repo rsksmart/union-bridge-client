@@ -186,7 +186,9 @@ fn execute_command_output(command: &str) -> ioResult<Output> {
 
 pub fn execute_script(script_path: &str) {
     execute_command(&format!("chmod +x {}", script_path));
-    let output = Command::new("bash").arg(script_path).output()
+    let output = Command::new("bash")
+        .arg(script_path)
+        .output()
         .unwrap_or_else(|e| panic!("Failed to execute `{}`: {}", script_path, e));
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -201,26 +203,25 @@ pub fn execute_script(script_path: &str) {
 pub fn execute_script_with_basedir(script_basedir: &str, script_relative_path: &str) {
     let script_full_path = format!("{}/{}", script_basedir, script_relative_path);
     execute_command(&format!("chmod +x {}", script_full_path));
-    let command = format!(
-        "cd {} && ./{}",
-        script_basedir, script_relative_path
-    );
+
     println!(
         "Executing script: {} in base dir: {}",
         script_relative_path, script_basedir
     );
 
     let output = Command::new("bash")
-        .arg("-c")
-        .arg(command).output()
+        .current_dir(script_basedir)
+        .arg(script_full_path)
+        .output()
         .unwrap_or_else(|e| panic!("Failed to execute `{}`: {}", script_relative_path, e));
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        println!("`{}` failed (status: {}):\n{}",
-                 script_relative_path, output.status, stderr);
+        println!(
+            "`{}` failed (status: {}):\n{}",
+            script_relative_path, output.status, stderr
+        );
         panic!();
     }
-
 }
 
 fn send_sigterm(pid: u32) {

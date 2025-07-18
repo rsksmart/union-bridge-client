@@ -20,10 +20,12 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      DEPLOY_LOCAL_CONTRACTS_PATH: "../../bitvmx-union-bridge-contracts/shell/script/deploy/deploy-local.sh"
+      DEPLOY_LOCAL_CONTRACTS_RELATIVE_PATH: "shell/script/deploy/deploy-local.sh"
+      CONTRACTS_BASEDIR: "../bitvmx-union-bridge-contracts"
       TX_DISPATCHER_URL: "http://localhost:3000"
       KEY_STORE_FILE: ${{ secrets.KEY_STORE_FILE }}
       KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+      KEY_STORE_ADDRESS: ${{ vars.KEY_STORE_ADDRESS }}
       TX_DISPATCHER_CONFIG_PATH: "../config/ci"
 
     steps:
@@ -47,8 +49,14 @@ jobs:
         with:
           repository: temp-rsk/bitvmx-union-bridge-contracts
           token: ${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}
-          ref: v0.0.1-alpha.2
+          ref: v0.0.1-alpha.2_tweaks
           path: bitvmx-union-bridge-contracts
+
+      - name: Setup BitVMX contracts
+        working-directory: bitvmx-union-bridge-contracts
+        run: |
+          forge install
+          npm install -g @openzeppelin/upgrades-core@1.44.0
 
       - name: Setup keystore
         working-directory: qa-tools

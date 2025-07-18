@@ -1,20 +1,24 @@
-mod step_definitions;
-mod steps;
 mod constants;
 mod setup;
+mod step_definitions;
+mod steps;
 mod teardown;
 
+use crate::setup::{
+    deploy_contracts, packet_creation_flow, setup_anvil, setup_transaction_dispatcher,
+    transfer_funds,
+};
+use crate::teardown::{shutdown_anvil, shutdown_transaction_dispatcher};
 use cucumber::{World, writer::JUnit};
 use std::env;
 use std::fs::File;
 use std::process::Child;
 use std::time::Duration;
-use crate::setup::{deploy_contracts, packet_creation_flow, setup_anvil, setup_transaction_dispatcher, transfer_funds};
-use crate::teardown::{shutdown_anvil, shutdown_transaction_dispatcher};
 
-const DEPLOY_LOCAL_CONTRACTS_PATH_DEFAULT: &str = "../../bitvmx-union-bridge-contracts/shell/script/deploy/deploy-local.sh";
-const PACKET_CREATION_FLOW_RELATIVE_PATH_DEFAULT: &str = "shell/script/integration-test/packet-creation-flow.sh";
-const PACKET_CREATION_FLOW_BASEDIR_DEFAULT: &str = "../../bitvmx-union-bridge-contracts";
+const CONTRACTS_BASEDIR_DEFAULT: &str = "../../bitvmx-union-bridge-contracts";
+const DEPLOY_LOCAL_CONTRACTS_RELATIVE_PATH_DEFAULT: &str = "shell/script/deploy/deploy-local.sh";
+const PACKET_CREATION_FLOW_RELATIVE_PATH_DEFAULT: &str =
+    "shell/script/integration-test/packet-creation-flow.sh";
 const ANVIL_DOMAIN_DEFAULT: &str = "http://localhost";
 const ANVIL_PORT_DEFAULT: u16 = 8545;
 const ANVIL_ADRESS_DEFAULT: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
@@ -27,12 +31,12 @@ const TX_DISPATCHER_CONFIG_PATH_DEFAULT: &str = "../config/qa-local";
 const TX_DISPATCHER_TIMEOUT: Duration = Duration::from_secs(300);
 
 lazy_static::lazy_static! {
-    pub static ref DEPLOY_LOCAL_CONTRACTS_PATH: String = env::var("DEPLOY_LOCAL_CONTRACTS_PATH")
-        .unwrap_or_else(|_| DEPLOY_LOCAL_CONTRACTS_PATH_DEFAULT.to_string());
+    pub static ref DEPLOY_LOCAL_CONTRACTS_RELATIVE_PATH: String = env::var("DEPLOY_LOCAL_CONTRACTS_RELATIVE_PATH")
+        .unwrap_or_else(|_| DEPLOY_LOCAL_CONTRACTS_RELATIVE_PATH_DEFAULT.to_string());
     pub static ref PACKET_CREATION_FLOW_RELATIVE_PATH: String = env::var("PACKET_CREATION_FLOW_RELATIVE_PATH")
         .unwrap_or_else(|_| PACKET_CREATION_FLOW_RELATIVE_PATH_DEFAULT.to_string());
-    pub static ref PACKET_CREATION_FLOW_BASEDIR: String = env::var("PACKET_CREATION_FLOW_BASEDIR")
-        .unwrap_or_else(|_| PACKET_CREATION_FLOW_BASEDIR_DEFAULT.to_string());
+    pub static ref CONTRACTS_BASEDIR: String = env::var("CONTRACTS_BASEDIR")
+        .unwrap_or_else(|_| CONTRACTS_BASEDIR_DEFAULT.to_string());
     pub static ref ANVIL_DOMAIN: String = env::var("ANVIL_DOMAIN")
         .unwrap_or_else(|_| ANVIL_DOMAIN_DEFAULT.to_string());
     pub static ref ANVIL_PORT: String = env::var("ANVIL_PORT")
@@ -116,8 +120,14 @@ async fn tx_dispatcher_setup(world: &mut TestWorld) {
     let anvil_port: u16 = ANVIL_PORT.parse().unwrap();
     let child_anvil: Child = setup_anvil(&ANVIL_URL, anvil_port, ANVIL_TIMEOUT).await;
     world.child_anvil = Some(child_anvil);
-    deploy_contracts(DEPLOY_LOCAL_CONTRACTS_PATH.as_str());
-    packet_creation_flow(PACKET_CREATION_FLOW_BASEDIR.as_str(), PACKET_CREATION_FLOW_RELATIVE_PATH.as_str());
+    deploy_contracts(
+        CONTRACTS_BASEDIR.as_str(),
+        DEPLOY_LOCAL_CONTRACTS_RELATIVE_PATH.as_str(),
+    );
+    packet_creation_flow(
+        CONTRACTS_BASEDIR.as_str(),
+        PACKET_CREATION_FLOW_RELATIVE_PATH.as_str(),
+    );
     transfer_funds(
         &ANVIL_URL,
         &ANVIL_ADDRESS,

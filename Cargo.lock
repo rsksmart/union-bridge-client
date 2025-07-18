@@ -5761,7 +5761,7 @@ checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
 [[package]]
 name = "union-bridge-contracts"
 version = "0.0.1-alpha.2"
-source = "git+ssh://git@github.com/temp-rsk/bitvmx-union-bridge-contracts.git?tag=v0.0.1-alpha.2#94fed13bcd20e2263a23235fe70033473e8d914d"
+source = "git+ssh://git@github.com/temp-rsk/bitvmx-union-bridge-contracts.git?branch=v0.0.1-alpha.2_tweaks#7bfaac5bafbf3e0f55ad16af9710a4d21c11caf8"
 dependencies = [
  "alloy",
  "alloy-trie 0.8.1",
