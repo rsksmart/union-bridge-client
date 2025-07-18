@@ -383,7 +383,7 @@ where
     fn subscribe_to_bitvmx_pegin_events(bitvmx_broker: &BC) -> Result<()> {
         // Used to subscribe to bitvmx pegin events, otherwise the client will not receive pegin
         // events from the bitvmx broker
-        Self::send_to_bitmvx(
+        Self::send_to_bitvmx(
             bitvmx_broker,
             IncomingBitVMXApiMessages::SubscribeToRskPegin(),
         )
@@ -402,10 +402,10 @@ where
             VariableTypes::String(data),
         );
 
-        Self::send_to_bitmvx(bitvmx_broker, message)
+        Self::send_to_bitvmx(bitvmx_broker, message)
     }
 
-    fn send_to_bitmvx(bitvmx_broker: &BC, message: IncomingBitVMXApiMessages) -> Result<()> {
+    fn send_to_bitvmx(bitvmx_broker: &BC, message: IncomingBitVMXApiMessages) -> Result<()> {
         bitvmx_broker.send(BROKER_SERVER_ID, message)?;
 
         Ok(())
