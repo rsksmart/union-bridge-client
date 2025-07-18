@@ -10,4 +10,5 @@ export CHECK_FORK_REQUIRED_NUM_BLOCKS=25
 export KEY_STORE_PASSWORD="<super-secret-password>"
 
 # CI/CD specific
-export FAIRGATE_GITHUB_TOKEN="<example_token>"
+export FAIRGATE_GITHUB_TOKEN="<ask_your_colleagues>"
+export UNION_CONTRACTS_GITHUB_TOKEN="<ask_your_colleagues>"

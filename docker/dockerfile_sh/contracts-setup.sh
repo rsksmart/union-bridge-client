@@ -12,7 +12,7 @@ ssh-keyscan github.com >> ~/.ssh/known_hosts
 
 echo "[contracts-setup] Cloning contracts @ ${UNION_CONTRACTS_TAG}..."
 git clone --depth=1 --branch "$UNION_CONTRACTS_TAG" \
-  ssh://git@github.com/FairgateLabs/bitvmx-union-bridge-contracts.git /app/contracts
+  ssh://git@github.com/temp-rsk/bitvmx-union-bridge-contracts.git /app/contracts
 
 echo "[contracts-setup] Installing and building contracts..."
 cd /app/contracts
