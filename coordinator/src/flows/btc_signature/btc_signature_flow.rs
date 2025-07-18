@@ -7,7 +7,6 @@ use common::types::{BlockNumber, Hash256};
 use log::info;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::{AddMemberNonceInput, AddMemberSignatureInput};
 use uuid::Uuid;
@@ -49,7 +48,7 @@ pub struct State {
 }
 
 pub struct BtcSignatureFlow<CG: RskContractsGatewayApi> {
-    contracts: Arc<CG>,
+    contracts: Rc<CG>,
     rt_sync: RuntimeSync,
     blockchain_view: Rc<RefCell<BlockchainView>>,
     state: State,
@@ -59,7 +58,7 @@ impl<CG> BtcSignatureFlow<CG>
 where
     CG: RskContractsGatewayApi,
 {
-    pub fn new(contracts_gateway: Arc<CG>, rt_sync: RuntimeSync, flow_id: Uuid) -> Self {
+    pub fn new(contracts_gateway: Rc<CG>, rt_sync: RuntimeSync, flow_id: Uuid) -> Self {
         BtcSignatureFlow {
             contracts: contracts_gateway,
             rt_sync,
@@ -75,7 +74,7 @@ where
 
     #[cfg(test)]
     pub fn new_for_tests(
-        contracts_gateway: Arc<CG>,
+        contracts_gateway: Rc<CG>,
         rt_sync: RuntimeSync,
         blockchain_view: Rc<RefCell<BlockchainView>>,
         flow_id: Uuid,
@@ -323,7 +322,6 @@ pub(crate) mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
     use std::str::FromStr;
-    use std::sync::Arc;
     use transaction_dispatcher::types::{AddMemberNonceInput, AddMemberSignatureInput};
     use uuid::Uuid;
 
@@ -666,7 +664,7 @@ pub(crate) mod tests {
 
         // create a signature flow instance
         let mut flow = BtcSignatureFlow::new_for_tests(
-            Arc::new(mock_contracts),
+            Rc::new(mock_contracts),
             rt_sync,
             blockchain_view,
             flow_id,
@@ -701,7 +699,7 @@ pub(crate) mod tests {
 
         // create a signature flow instance
         let mut flow = BtcSignatureFlow::new_for_tests(
-            Arc::new(mock_contracts),
+            Rc::new(mock_contracts),
             rt_sync,
             blockchain_view,
             flow_id,
@@ -769,7 +767,7 @@ pub(crate) mod tests {
 
         // create a signature flow instance
         let mut flow = BtcSignatureFlow::new_for_tests(
-            Arc::new(mock_contracts),
+            Rc::new(mock_contracts),
             rt_sync,
             blockchain_view.clone(),
             flow_id,
@@ -926,7 +924,7 @@ pub(crate) mod tests {
 
         // create a signature flow instance
         let flow = BtcSignatureFlow::new_for_tests(
-            Arc::new(mock_contracts),
+            Rc::new(mock_contracts),
             rt_sync,
             blockchain_view.clone(),
             flow_id,

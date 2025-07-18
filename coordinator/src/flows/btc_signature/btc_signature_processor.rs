@@ -6,6 +6,7 @@ use common::msg_broker::bitvmx_types::{OutgoingBitVMXApiMessages, VariableTypes}
 use common::runtime_sync::RuntimeSync;
 use common::types::{Hash256, RskBlockAndUncles};
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::Arc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;
@@ -21,13 +22,13 @@ pub trait BtcSignatureFlowFactoryApi<BSF: BtcSignatureFlowApi> {
 }
 
 pub struct BtcSignatureFlowFactory<CG: RskContractsGatewayApi> {
-    contracts_gateway: Arc<CG>,
+    contracts_gateway: Rc<CG>,
     rt_sync: RuntimeSync,
 }
 
 impl<CG: RskContractsGatewayApi> BtcSignatureFlowFactory<CG> {
     // TODO(signatures-1.3) use from pegin and pegout flows to instantiate BtcSignatureFlow
-    pub fn new(contracts_gateway: Arc<CG>, rt_sync: RuntimeSync) -> Self {
+    pub fn new(contracts_gateway: Rc<CG>, rt_sync: RuntimeSync) -> Self {
         Self {
             contracts_gateway,
             rt_sync,
