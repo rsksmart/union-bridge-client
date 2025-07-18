@@ -3,11 +3,8 @@ use anyhow::Result;
 use common::msg_broker::bitvmx_types::OutgoingBitVMXApiMessages;
 use common::types::RskBlockAndUncles;
 
-mod advance_funds;
-mod blockchain_tracker;
 mod pegin_processor;
 
-pub use advance_funds::advance_funds_processor::*;
 pub use pegin_processor::*;
 
 #[cfg(test)]
@@ -20,7 +17,7 @@ pub trait EventProcessor {
         Ok(())
     }
 
-    fn process_new_event(&mut self, _event: &RskPegManagerEvents) -> Result<()> {
+    fn process_new_rsk_event(&mut self, _event: &RskPegManagerEvents) -> Result<()> {
         // default no-op
         Ok(())
     }

@@ -1,6 +1,5 @@
-use crate::contracts::signature_manager::{
-    SignatureManagerContractApi, hex_to_bytes, hex_to_fixed_bytes32,
-};
+use crate::contracts;
+use crate::contracts::signature_manager::SignatureManagerContractApi;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{AddMemberNonceInput, AddMemberNonceOutput};
 use log::{error, info};
@@ -25,11 +24,8 @@ impl<C: SignatureManagerContractApi> AddMemberNonceInvoke<C> {
     ) -> Result<AddMemberNonceOutput, DomainErrors> {
         info!("Init AddMemberNonce for: {:?}", input);
 
-        let hash_to_sign = hex_to_fixed_bytes32(&input.hash_to_sign)
-            .map_err(|e| DomainErrors::InvalidValue(format!("Invalid hash_to_sign: {}", e)))?;
-
-        let nonce = hex_to_bytes(&input.nonce)
-            .map_err(|e| DomainErrors::InvalidValue(format!("Invalid nonce hex: {}", e)))?;
+        let hash_to_sign = input.hash_to_sign.into();
+        let nonce = contracts::types::Bytes::from(input.nonce.serialize());
 
         let receipt = self
             .contract

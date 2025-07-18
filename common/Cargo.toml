@@ -14,8 +14,10 @@ alloy-sol-types = { workspace = true }
 alloy-rpc-client = { workspace = true }
 alloy-transport = { workspace = true }
 anyhow = { workspace = true }
+bitcoin = { workspace = true }
 hex = { workspace = true }
 mockall = { workspace = true }
+musig2 = { workspace = true }
 primitive-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -27,7 +29,6 @@ message-broker = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 serde_yaml = "0.9.33"
 lru = "0.13.0"
-bitcoin = { version = "0.32.4", features = ["std", "rand-std", "serde"] }
 signal-hook = "0.3"
 sha3 = "0.10"
 # TODO(jira) https://rsklabs.atlassian.net/browse/ub-176

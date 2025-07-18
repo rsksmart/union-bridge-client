@@ -210,13 +210,6 @@ Clone the repository:
 git clone --recurse-submodules git@github.com:rsksmart/union-bridge-client.git
 ```
 
-For now, as a temporary approach, we need to clone BitVMX Workspace as a sibling of our repository to use some BitVMX
-Client types that in the future will be extracted to a separate crate. To do this, run the following command:
-
-```bash
-git clone --recurse-submodules git@github.com:FairgateLabs/rust-bitvmx-workspace.git ../rust-bitvmx-workspace
-```
-
 ## GitHub Actions
 
 To test locally the GitHub Actions, you can use the `act` tool. You need to have Docker installed and running on your

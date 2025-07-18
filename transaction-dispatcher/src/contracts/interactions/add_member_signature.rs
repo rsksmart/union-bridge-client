@@ -1,4 +1,5 @@
-use crate::contracts::signature_manager::{SignatureManagerContractApi, hex_to_fixed_bytes32};
+use crate::contracts::signature_manager::SignatureManagerContractApi;
+use crate::contracts::types::FixedBytes32;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{AddMemberSignatureInput, AddMemberSignatureOutput};
 use log::{error, info};
@@ -23,11 +24,8 @@ impl<C: SignatureManagerContractApi> AddMemberSignatureInvoke<C> {
     ) -> Result<AddMemberSignatureOutput, DomainErrors> {
         info!("Init AddMemberSignature for: {:?}", input);
 
-        let hash_to_sign = hex_to_fixed_bytes32(&input.hash_to_sign)
-            .map_err(|e| DomainErrors::InvalidValue(format!("Invalid hash_to_sign: {}", e)))?;
-
-        let signature = hex_to_fixed_bytes32(&input.signature)
-            .map_err(|e| DomainErrors::InvalidValue(format!("Invalid signature: {}", e)))?;
+        let hash_to_sign = input.hash_to_sign.into();
+        let signature = FixedBytes32::from_slice(&input.signature.serialize());
 
         let receipt = self
             .contract

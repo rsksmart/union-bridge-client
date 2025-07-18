@@ -1,5 +1,5 @@
+use crate::blockchain_tracker::{BlockConfirmations, BlockchainObserver};
 use crate::config::REQUIRED_CONFIRMATIONS;
-use crate::event_processor::blockchain_tracker::{BlockConfirmations, BlockchainObserver};
 use crate::types::AdvanceFundsEvent;
 use check_fork::{Block, CheckForkArgs};
 use common::types::{BlockPow, RskBlock, RskBlockAndUncles};
@@ -244,7 +244,7 @@ impl CheckForkAccumulator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event_processor::advance_funds::tests::create_fake_block;
+    use crate::flows::advance_funds::tests::create_fake_block;
     use actors_mocking::fake_contracts::FakePegManager::AdvanceFunds;
     use common::types::{BlockHash, BlockNumber, RskBlockAndUncles, TxHash};
     use primitive_types::H256;

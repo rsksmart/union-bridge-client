@@ -1,9 +1,7 @@
+use crate::blockchain_tracker::{BlockConfirmations, BlockchainObserver, BlockchainView};
 use crate::{
     config::REQUIRED_CONFIRMATIONS,
-    event_processor::{
-        EventProcessor,
-        blockchain_tracker::{BlockConfirmations, BlockchainObserver, BlockchainView},
-    },
+    event_processor::EventProcessor,
     types::{EventWithBlock, PeginAcceptedEvent, PeginRequestedEvent, RskPegManagerEvents},
 };
 use anyhow::{Context, Result, bail};
@@ -58,6 +56,8 @@ struct PeginEventState {
     pegin_flow_id: Uuid,
     pegin_requested: PeginEvent<PeginRequested>,
     pegin_accepted: Option<PeginEvent<PeginAccepted>>,
+    // TODO(signatures-1.1)
+    // btc_signatures_flow: Option<BtcSignatureFlow>,
 }
 
 impl PeginEventState {
@@ -80,6 +80,7 @@ where
     bitvmx_broker: Rc<BC>,
     blockchain: BlockchainView,
     tracker: HashMap<TxHash, PeginEventState>,
+    // TODO(signatures-1.2) instantiate self.btc_signatures_flow (BtcSignatureFlow with contracts => req tx-dispatcher as lib)
 }
 
 impl<CG, BC> PeginProcessor<CG, BC>
@@ -433,16 +434,19 @@ where
 
                 self.handle_contract_call(method, &json_data)?;
             }
+            // TODO(signatures-2) delegate SIGNATURE_MESSAGE message to BtcSignatureFlow::process_new_bitvmx_event, it is the response to request-pegin event we send them
+            //  it looks like for now they do not include hash_to_sign in the message (see TODO in BitVmxSigningInfo), so we need to inject it in the OutgoingBitVMXApiMessages from the calling flow
             _ => {}
         }
 
         Ok(())
     }
 
-    fn process_new_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
+    fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         match event {
             RskPegManagerEvents::PeginRequested(data) => self.handle_pegin_requested(data),
             RskPegManagerEvents::PeginAccepted(data) => self.handle_pegin_accepted(data),
+            // TODO(signatures-3) delegate AllNoncesReady and AllSignaturesReady to BtcSignatureFlow::process_new_rsk_event
             _ => Ok(()),
         }
     }
@@ -456,6 +460,8 @@ where
 
         self.process_unhandled_confirmed_pegin_requested_events()?;
         self.process_unhandled_confirmed_pegin_accepted_events()?;
+
+        // TODO(signatures-4) delegate to BtcSignatureFlow::process_new_block
 
         Ok(())
     }
@@ -555,7 +561,7 @@ mod tests {
         let mut processor = PeginProcessor::new(rt_sync, contracts.into(), broker.into());
 
         // Simulate event payload
-        let data = serde_json::json!({
+        let data = json!({
             "block_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "btc_tx": {
                 "version": 1,
@@ -612,7 +618,7 @@ mod tests {
         let mut processor = PeginProcessor::new(rt_sync, contracts.into(), broker.into());
 
         // Simulate payload
-        let data = serde_json::json!({
+        let data = json!({
             "block_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "btc_tx": {
                 "version": 1,
@@ -675,7 +681,7 @@ mod tests {
         let mut processor = PeginProcessor::new(rt_sync, contracts.into(), broker.into());
 
         // Simulate event payload
-        let data = serde_json::json!({
+        let data = json!({
             "block_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "btc_tx": {
                 "version": 1,
@@ -728,7 +734,7 @@ mod tests {
         let mut processor = PeginProcessor::new(rt_sync, contracts.into(), broker.into());
 
         // Payload
-        let data = serde_json::json!({
+        let data = json!({
             "block_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "btc_tx": {
                 "version": 1,
@@ -784,7 +790,7 @@ mod tests {
             tx_hash: tx_hash.clone(),
         });
 
-        let result = processor.process_new_event(&event);
+        let result = processor.process_new_rsk_event(&event);
         assert!(result.is_ok());
 
         assert_eq!(processor.tracker.len(), 1);
@@ -818,7 +824,7 @@ mod tests {
             tx_hash: tx_hash.clone(),
         });
 
-        let result = processor.process_new_event(&event);
+        let result = processor.process_new_rsk_event(&event);
         let observer_id = processor
             .tracker
             .get(&tx_hash)
@@ -836,7 +842,7 @@ mod tests {
             tx_hash: tx_hash.clone(),
         });
 
-        let result = processor.process_new_event(&event);
+        let result = processor.process_new_rsk_event(&event);
         assert!(result.is_ok());
         assert_eq!(processor.tracker.len(), 0);
         assert!(!processor.blockchain.has_observer(&observer_id));
@@ -861,7 +867,7 @@ mod tests {
             removed: false,
             tx_hash: TxHash::from(H256::from_low_u64_be(122)),
         });
-        let result = processor.process_new_event(&event);
+        let result = processor.process_new_rsk_event(&event);
         assert!(result.is_ok());
 
         let pegin_accepted = dummy_pegin_accepted_event();
@@ -874,7 +880,7 @@ mod tests {
             tx_hash: tx_hash.clone(),
         });
 
-        let result = processor.process_new_event(&event);
+        let result = processor.process_new_rsk_event(&event);
         assert!(result.is_ok());
 
         assert_eq!(processor.tracker.len(), 1);
@@ -907,7 +913,7 @@ mod tests {
             removed: false,
             tx_hash: TxHash::from(H256::from_low_u64_be(9)),
         });
-        let result = processor.process_new_event(&event);
+        let result = processor.process_new_rsk_event(&event);
         assert!(result.is_ok());
 
         let pegin_accepted = dummy_pegin_accepted_event();
@@ -920,7 +926,7 @@ mod tests {
             tx_hash: tx_hash.clone(),
         });
 
-        let result = processor.process_new_event(&event);
+        let result = processor.process_new_rsk_event(&event);
         assert!(result.is_ok());
         assert_eq!(processor.tracker.len(), 1);
 
@@ -932,7 +938,7 @@ mod tests {
             tx_hash: TxHash::from(H256::from_low_u64_be(10)),
         });
 
-        let result = processor.process_new_event(&event);
+        let result = processor.process_new_rsk_event(&event);
         let observer_id = processor
             .tracker
             .get(&tx_hash)
@@ -963,7 +969,7 @@ mod tests {
             broker.into(),
         );
 
-        let result = processor.process_new_event(&RskPegManagerEvents::UnknownEvent);
+        let result = processor.process_new_rsk_event(&RskPegManagerEvents::UnknownEvent);
         assert!(result.is_ok());
         assert_eq!(processor.tracker.len(), 0);
     }

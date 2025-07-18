@@ -4,6 +4,7 @@ use anyhow::Result;
 use bitcoin::{blockdata::block::Header, consensus::encode::deserialize as btc_deserialize};
 use hex::FromHexError;
 use log::error;
+use musig2::PubNonce;
 use primitive_types::{H160, H256, U256};
 use serde::{Deserialize, Deserializer, Serialize, de};
 use serde_json::Value;
@@ -44,7 +45,7 @@ pub trait ToHexString {
 ///
 /// println!("Block hash: {}", block_hash);
 /// ```
-#[derive(Serialize, Deserialize, Copy, Debug, Eq, PartialEq, Hash, Clone)]
+#[derive(Serialize, Deserialize, Copy, Debug, Eq, PartialEq, Hash, Clone, Default)]
 pub struct Hash256(H256);
 
 impl Hash256 {
@@ -86,6 +87,12 @@ impl From<FixedBytes<32>> for Hash256 {
 impl From<Hash256> for FixedBytes<32> {
     fn from(hash: Hash256) -> Self {
         FixedBytes::<32>::from_slice(hash.value().as_bytes())
+    }
+}
+
+impl From<PubNonce> for Hash256 {
+    fn from(nonce: PubNonce) -> Self {
+        Hash256::from(H256::from_slice(nonce.serialize().as_slice()))
     }
 }
 

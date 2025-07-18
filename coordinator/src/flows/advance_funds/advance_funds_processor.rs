@@ -1,8 +1,7 @@
-use crate::event_processor::blockchain_tracker::{BlockchainObserver, BlockchainView};
+use crate::blockchain_tracker::{BlockchainObserver, BlockchainView};
+use crate::flows::advance_funds::check_fork_accumulator::CheckForkAccumulator;
 use crate::{
-    event_processor::{
-        EventProcessor, advance_funds::check_fork_accumulator::CheckForkAccumulator,
-    },
+    event_processor::EventProcessor,
     types::{AdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents},
 };
 use anyhow::Result;
@@ -278,7 +277,7 @@ where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
 {
-    fn process_new_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
+    fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         match event {
             RskPegManagerEvents::RequestAdvanceFunds(data) => {
                 if !data.removed {
@@ -374,7 +373,7 @@ mod tests {
     use super::*;
     use crate::config::REQUIRED_CONFIRMATIONS;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
-    use crate::event_processor::advance_funds::tests::create_fake_block;
+    use crate::flows::advance_funds::tests::create_fake_block;
     use crate::types::EventWithBlock;
     use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
     use alloy_primitives::U256 as AlloyU256;
@@ -448,7 +447,7 @@ mod tests {
             tx_hash: TxHash::from(H256::from_low_u64_be(123)),
         };
         processor
-            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(request_event))
+            .process_new_rsk_event(&RskPegManagerEvents::RequestAdvanceFunds(request_event))
             .expect("Should have processed request");
 
         assert_eq!(
@@ -463,7 +462,7 @@ mod tests {
 
         let pegout_id_2 = "peg456";
         processor
-            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(EventWithBlock {
+            .process_new_rsk_event(&RskPegManagerEvents::RequestAdvanceFunds(EventWithBlock {
                 inner: create_fake_request_event(pegout_id_2),
                 block_number: request_block.number() + 1,
                 block_hash: BlockHash::from(H256::from_low_u64_be(456)),
@@ -519,7 +518,7 @@ mod tests {
             tx_hash: TxHash::from(H256::from_low_u64_be(123)),
         };
         processor
-            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+            .process_new_rsk_event(&RskPegManagerEvents::RequestAdvanceFunds(
                 request_event.clone(),
             ))
             .expect("Should have processed request");
@@ -533,7 +532,7 @@ mod tests {
 
         let advance_funds_event = create_fake_advance_funds_event(pegout_id);
         processor
-            .process_new_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
+            .process_new_rsk_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
                 inner: advance_funds_event,
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
@@ -613,7 +612,7 @@ mod tests {
             tx_hash: TxHash::from(H256::from_low_u64_be(123)),
         };
         processor
-            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+            .process_new_rsk_event(&RskPegManagerEvents::RequestAdvanceFunds(
                 request_event_1.clone(),
             ))
             .expect("Should have processed request");
@@ -629,7 +628,7 @@ mod tests {
             tx_hash: TxHash::from(H256::from_low_u64_be(456)),
         };
         processor
-            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+            .process_new_rsk_event(&RskPegManagerEvents::RequestAdvanceFunds(
                 request_event_2.clone(),
             ))
             .expect("Should have processed request");
@@ -639,7 +638,7 @@ mod tests {
 
         let advance_funds_event = create_fake_advance_funds_event(pegout_id_1);
         processor
-            .process_new_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
+            .process_new_rsk_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
                 inner: advance_funds_event,
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
@@ -701,7 +700,7 @@ mod tests {
         let advance_funds_event = create_fake_advance_funds_event("peg123");
 
         processor
-            .process_new_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
+            .process_new_rsk_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
                 inner: advance_funds_event,
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.parent_hash(),
@@ -735,7 +734,7 @@ mod tests {
             tx_hash: TxHash::from(H256::from_low_u64_be(123)),
         };
         processor
-            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+            .process_new_rsk_event(&RskPegManagerEvents::RequestAdvanceFunds(
                 request_event.clone(),
             ))
             .expect("Should have processed request");
@@ -748,7 +747,7 @@ mod tests {
         let advance_funds_event = create_fake_advance_funds_event(pegout_id_kick);
 
         processor
-            .process_new_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
+            .process_new_rsk_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
                 inner: advance_funds_event,
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.parent_hash(),
@@ -787,7 +786,7 @@ mod tests {
 
         let request_event = create_fake_request_event(pegout_id);
         processor
-            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+            .process_new_rsk_event(&RskPegManagerEvents::RequestAdvanceFunds(
                 RequestAdvanceFundsEvent {
                     inner: request_event,
                     block_number: request_block.number(),
@@ -835,7 +834,7 @@ mod tests {
 
         // we process the kickoff block after the kickoff event
         processor
-            .process_new_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
+            .process_new_rsk_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
                 inner: advance_funds_event,
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
@@ -939,7 +938,7 @@ mod tests {
 
         let request_event = create_fake_request_event(pegout_id);
         processor
-            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+            .process_new_rsk_event(&RskPegManagerEvents::RequestAdvanceFunds(
                 RequestAdvanceFundsEvent {
                     inner: request_event,
                     block_number: request_block.number(),
@@ -990,7 +989,7 @@ mod tests {
             .process_new_block(&advance_funds_block)
             .expect("Should process block");
         processor
-            .process_new_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
+            .process_new_rsk_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
                 inner: advance_funds_event,
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
@@ -1092,7 +1091,7 @@ mod tests {
 
         let request_event = create_fake_request_event(pegout_id);
         processor
-            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+            .process_new_rsk_event(&RskPegManagerEvents::RequestAdvanceFunds(
                 RequestAdvanceFundsEvent {
                     inner: request_event,
                     block_number: request_block.number(),
@@ -1106,7 +1105,7 @@ mod tests {
         let advance_funds_event = create_fake_advance_funds_event(pegout_id);
 
         processor
-            .process_new_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
+            .process_new_rsk_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
                 inner: advance_funds_event,
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
@@ -1136,7 +1135,7 @@ mod tests {
 
         let request_event = create_fake_request_event("peg123");
         processor
-            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+            .process_new_rsk_event(&RskPegManagerEvents::RequestAdvanceFunds(
                 RequestAdvanceFundsEvent {
                     inner: request_event,
                     block_number: request_block.number(),
@@ -1172,7 +1171,7 @@ mod tests {
 
         let request_event = create_fake_request_event(pegout_id);
         processor
-            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+            .process_new_rsk_event(&RskPegManagerEvents::RequestAdvanceFunds(
                 RequestAdvanceFundsEvent {
                     inner: request_event,
                     block_number: request_block.number(),
@@ -1189,7 +1188,7 @@ mod tests {
 
         let advance_funds_event = create_fake_advance_funds_event(pegout_id);
         processor
-            .process_new_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
+            .process_new_rsk_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
                 inner: advance_funds_event,
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
@@ -1239,7 +1238,7 @@ mod tests {
             tx_hash: TxHash::from(H256::from_low_u64_be(123)),
         };
         processor
-            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(request_event_1))
+            .process_new_rsk_event(&RskPegManagerEvents::RequestAdvanceFunds(request_event_1))
             .expect("Should have processed request");
 
         let request_event_2 = RequestAdvanceFundsEvent {
@@ -1250,7 +1249,7 @@ mod tests {
             tx_hash: TxHash::from(H256::from_low_u64_be(456)),
         };
         processor
-            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+            .process_new_rsk_event(&RskPegManagerEvents::RequestAdvanceFunds(
                 request_event_2.clone(),
             ))
             .expect("Should have processed request");
@@ -1264,7 +1263,7 @@ mod tests {
         );
 
         processor
-            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+            .process_new_rsk_event(&RskPegManagerEvents::RequestAdvanceFunds(
                 RequestAdvanceFundsEvent {
                     inner: create_fake_request_event(pegout_id_1),
                     block_number: request_block_1.number(),
@@ -1302,7 +1301,7 @@ mod tests {
 
         let request_event = create_fake_request_event(pegout_id);
         processor
-            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+            .process_new_rsk_event(&RskPegManagerEvents::RequestAdvanceFunds(
                 RequestAdvanceFundsEvent {
                     inner: request_event,
                     block_number: request_block.number(),
@@ -1356,7 +1355,7 @@ mod tests {
 
         let request_event = create_fake_request_event(pegout_id);
         processor
-            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+            .process_new_rsk_event(&RskPegManagerEvents::RequestAdvanceFunds(
                 RequestAdvanceFundsEvent {
                     inner: request_event,
                     block_number: advance_block.number(),
@@ -1407,7 +1406,7 @@ mod tests {
 
         let request_event = create_fake_request_event(pegout_id);
         processor
-            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+            .process_new_rsk_event(&RskPegManagerEvents::RequestAdvanceFunds(
                 RequestAdvanceFundsEvent {
                     inner: request_event,
                     block_number: request_block.number(),
@@ -1424,7 +1423,7 @@ mod tests {
 
         let advance_funds_event = create_fake_advance_funds_event(pegout_id);
         processor
-            .process_new_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
+            .process_new_rsk_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
                 inner: advance_funds_event,
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
@@ -1442,7 +1441,7 @@ mod tests {
         assert_eq!(processor.chain_view.len(), 1);
 
         processor
-            .process_new_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
+            .process_new_rsk_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
                 inner: create_fake_advance_funds_event(pegout_id),
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
@@ -1479,7 +1478,7 @@ mod tests {
         // process request event
         let request_event = create_fake_request_event(pegout_id);
         processor
-            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+            .process_new_rsk_event(&RskPegManagerEvents::RequestAdvanceFunds(
                 RequestAdvanceFundsEvent {
                     inner: request_event,
                     block_number: request_block.number(),
@@ -1511,7 +1510,7 @@ mod tests {
         ));
 
         processor
-            .process_new_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
+            .process_new_rsk_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
                 inner: advance_funds_event,
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
@@ -1676,7 +1675,7 @@ mod tests {
         // process request event
         let request_event = create_fake_request_event(pegout_id);
         processor
-            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+            .process_new_rsk_event(&RskPegManagerEvents::RequestAdvanceFunds(
                 RequestAdvanceFundsEvent {
                     inner: request_event,
                     block_number: request_block.number(),
@@ -1772,7 +1771,7 @@ mod tests {
         let advance_funds_block_number = reorg_point + 3; // Pick a block in the middle of new chain
 
         processor
-            .process_new_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
+            .process_new_rsk_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
                 inner: advance_funds_event,
                 block_number: advance_funds_block_number,
                 block_hash: BlockHash::from(H256::from_low_u64_be(
@@ -1818,7 +1817,7 @@ mod tests {
 
         let request_event = create_fake_request_event(pegout_id);
         processor
-            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+            .process_new_rsk_event(&RskPegManagerEvents::RequestAdvanceFunds(
                 RequestAdvanceFundsEvent {
                     inner: request_event,
                     block_number: request_block.number(),
@@ -1849,7 +1848,7 @@ mod tests {
         ));
 
         processor
-            .process_new_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
+            .process_new_rsk_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
                 inner: advance_funds_event.clone(),
                 block_number: advance_funds_block.number(),
                 block_hash: advance_funds_block.hash(),
@@ -1954,7 +1953,7 @@ mod tests {
 
         let request_event_1 = create_fake_request_event(pegout_id_1);
         processor
-            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+            .process_new_rsk_event(&RskPegManagerEvents::RequestAdvanceFunds(
                 RequestAdvanceFundsEvent {
                     inner: request_event_1,
                     block_number: request_block_1.number(),
@@ -1972,7 +1971,7 @@ mod tests {
 
         let advance_funds_event_1 = create_fake_advance_funds_event(pegout_id_1);
         processor
-            .process_new_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
+            .process_new_rsk_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
                 inner: advance_funds_event_1,
                 block_number: advance_funds_block_1.number(),
                 block_hash: advance_funds_block_1.hash(),
@@ -1994,7 +1993,7 @@ mod tests {
 
         let request_event_2 = create_fake_request_event(pegout_id_2);
         processor
-            .process_new_event(&RskPegManagerEvents::RequestAdvanceFunds(
+            .process_new_rsk_event(&RskPegManagerEvents::RequestAdvanceFunds(
                 RequestAdvanceFundsEvent {
                     inner: request_event_2,
                     block_number: request_block_1.number() + 1,
@@ -2011,7 +2010,7 @@ mod tests {
             RskBlockAndUncles::new_no_uncles(create_fake_block(115.into(), U256::from(100)));
         let advance_funds_event_2 = create_fake_advance_funds_event(pegout_id_2);
         processor
-            .process_new_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
+            .process_new_rsk_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
                 inner: advance_funds_event_2,
                 block_number: advance_funds_block_2.number(),
                 block_hash: advance_funds_block_2.hash(),
