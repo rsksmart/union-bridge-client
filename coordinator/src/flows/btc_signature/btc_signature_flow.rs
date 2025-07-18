@@ -6,7 +6,6 @@ use common::runtime_sync::RuntimeSync;
 use common::types::{BlockNumber, Hash256};
 use log::info;
 use std::cell::RefCell;
-use std::hash::Hash;
 use std::rc::Rc;
 use std::sync::Arc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;

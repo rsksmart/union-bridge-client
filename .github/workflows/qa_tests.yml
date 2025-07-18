@@ -47,7 +47,7 @@ jobs:
         with:
           repository: temp-rsk/bitvmx-union-bridge-contracts
           token: ${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}
-          ref: v0.0.1-alpha.2
+          ref: v0.0.1-alpha.2_tweaks
           path: bitvmx-union-bridge-contracts
 
       - name: Setup keystore
