@@ -46,6 +46,9 @@ jobs:
           --sarif \
           --output=semgrep.sarif \
           --verbose \
+          --exclude qa-tools \
+          --exclude actors-mocking \
+          --exclude "test*" \
           .
       continue-on-error: true
 
