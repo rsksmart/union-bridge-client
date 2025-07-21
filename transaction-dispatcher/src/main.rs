@@ -46,8 +46,8 @@ async fn main() -> Result<()> {
 
     info!("Getting signer from key at {}", key_store_path.display());
     let signer = KeyManager::get_signer(key_store_path)?;
-    let address = signer.address().to_string();
-    info!("Got signer with address {address}");
+    let signer_address_str = signer.address().to_string();
+    let signer_address = signer.address().into();
 
     let wallet = EthereumWallet::from(signer);
 
@@ -61,13 +61,14 @@ async fn main() -> Result<()> {
     info!(
         "Connected to Rootstock at {} with address {}",
         &config.provider().rootstock.url,
-        address
+        signer_address_str
     );
 
     let rsk_contract_gateway = RskContractsGateway::new(
         provider,
         config.load_managed_contracts(),
         config.transaction(),
+        signer_address,
     )
     .context("Could not instantiate RskContractsGateway")?;
 

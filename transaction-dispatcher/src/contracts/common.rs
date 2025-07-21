@@ -1,4 +1,4 @@
-use crate::contracts::{bitcoin_manager, peg_manager, stream_manager};
+use crate::contracts::{bitcoin_manager, committee_registry, peg_manager, stream_manager};
 use crate::rsk_gateway::DomainErrors;
 use alloy_contract::SolCallBuilder;
 use alloy_primitives::{hex::FromHexError, ruint::ParseError};
@@ -73,6 +73,7 @@ impl From<alloy_contract::Error> for DomainErrors {
         peg_manager::decode_error(&err)
             .or_else(|| bitcoin_manager::decode_error(&err))
             .or_else(|| stream_manager::decode_error(&err))
+            .or_else(|| committee_registry::decode_error(&err))
             .unwrap_or_else(|| DomainErrors::NoRevertError(format!("{:?}", err)))
     }
 }
@@ -99,7 +100,7 @@ pub(crate) mod tests {
             &format!("0x{}", hex::encode(input.abi_encode())),
         );
         let payload = serde_json::from_str::<ErrorPayload>(&error).unwrap();
-        TransportError(ErrorResp(payload)).into()
+        TransportError(ErrorResp(payload))
     }
 
     #[allow(dead_code)]
@@ -114,6 +115,6 @@ pub(crate) mod tests {
                 &format!("0x{}", hex::encode(data.abi_encode())),
             );
         let payload = serde_json::from_str::<ErrorPayload>(&error).unwrap();
-        TransportError(ErrorResp(payload)).into()
+        TransportError(ErrorResp(payload))
     }
 }

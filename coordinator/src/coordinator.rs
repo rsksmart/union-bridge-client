@@ -228,15 +228,16 @@ pub(crate) mod tests {
     };
     use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
     use alloy_primitives::U256;
-    use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
-    use common::msg_broker::broker::{BROKER_SERVER_ID, MockBrokerClientApi};
-    use common::types::TxHash;
     use common::{
+        msg_broker::{
+            bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages},
+            broker::{BROKER_SERVER_ID, MockBrokerClientApi},
+        },
         shutdown_flag::ShutdownFlag,
         test_utils::rsk_block_generator::{
             create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
         },
-        types::RskBlockAndUncles,
+        types::{RskBlockAndUncles, TxHash},
     };
     use mockall::mock;
     use mockall::predicate::{eq, function};
@@ -248,10 +249,10 @@ pub(crate) mod tests {
     use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
     use transaction_dispatcher::types::{
         AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
-        AddMemberSignatureInput, AddMemberSignatureOutput, PeginAddressInput, PeginAddressOutput,
-        RegisterPegoutInput, RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput,
+        AddMemberSignatureInput, AddMemberSignatureOutput, ApplyToStreamInput, ApplyToStreamOutput,
+        GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterPegoutInput,
+        RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput,
     };
-
     fn create_fake_request_event(pegout_id: &str) -> RequestAdvanceFunds {
         RequestAdvanceFunds {
             pegout_id: pegout_id.to_string(),
@@ -553,6 +554,15 @@ pub(crate) mod tests {
                 &self,
                 input: &str,
             ) -> Result<(), DomainErrors>;
+
+           async fn get_member_public_keys(
+                &self,
+            ) -> Result<GetMemberPublicKeysOutput, DomainErrors>;
+
+            async fn apply_to_stream(
+                &self,
+                input: ApplyToStreamInput,
+            ) -> Result<ApplyToStreamOutput, DomainErrors>;
         }
     }
 }

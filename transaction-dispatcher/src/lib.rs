@@ -3,6 +3,7 @@ use alloy_provider::network::EthereumWallet;
 use alloy_provider::{Provider, ProviderBuilder, WsConnect};
 use anyhow::{Context, Result};
 use common::runtime_sync::RuntimeSync;
+use common::types::Address;
 use key_manager::key_manager::KeyManager;
 use log::info;
 use std::path::Path;
@@ -16,11 +17,13 @@ pub mod types;
 pub fn get_contracts_gateway<P: Provider + Clone>(
     provider: P,
     config: config::ConfigAsBin,
+    member_address: Address,
 ) -> Result<RskContractsGateway<P>> {
     RskContractsGateway::new(
         provider,
         config.load_managed_contracts(),
         config.transaction(),
+        member_address,
     )
     .context("Could not instantiate RskContractsGateway")
 }
@@ -34,6 +37,8 @@ pub fn get_contracts_gateway_as_lib(
     info!("Getting signer from key at {}", key_store_path.display());
     let signer = KeyManager::get_signer(key_store_path)?;
     info!("Got signer with address {}", signer.address());
+
+    let signer_address = signer.address().into();
 
     let wallet = EthereumWallet::from(signer);
     let rsk_url = &config.provider.rootstock.url;
@@ -51,6 +56,7 @@ pub fn get_contracts_gateway_as_lib(
         provider,
         config.load_managed_contracts(),
         &config.transaction,
+        signer_address,
     )
     .context("Could not instantiate RskContractsGateway")
 }

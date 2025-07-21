@@ -132,3 +132,30 @@ impl From<BtcTxSPVProof> for RequestPeginInput {
         }
     }
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetMemberPublicKeysOutput {
+    pub public_keys: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ApplyToStreamInput {
+    pub stream_id: u8,
+    pub role: u8, // TODO(iago) enum for this
+    pub committee_public_keys: [CommitteePublicKey; 3],
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct CommitteePublicKey {
+    pub x: [u8; 32],
+    pub y: [u8; 32],
+    pub r: [u8; 32],
+    pub s: [u8; 32],
+    pub v: u8,
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+pub struct ApplyToStreamOutput {
+    pub transaction_hash: String,
+    pub success: bool,
+}
