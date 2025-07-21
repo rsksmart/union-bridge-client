@@ -379,7 +379,7 @@ where
         Ok(())
     }
 
-    fn handle_contract_call(&self, method_name: &str, json_data: &Value) -> Result<()> {
+    fn handle_contract_invoke(&self, method_name: &str, json_data: &Value) -> Result<()> {
         match method_name {
             "accept-pegin" => {
                 let input: AcceptPegInInput = serde_json::from_value(json_data.clone())
@@ -401,7 +401,7 @@ where
         })
     }
 
-    fn invoke_contract<Fut, F, T>(&self, method_name: &str, f: F) -> Result<()>
+    fn invoke_contract<Fut, F, T>(&self, method_name: &str, invoke: F) -> Result<()>
     where
         F: FnOnce() -> Fut,
         Fut: Future<Output = Result<T, DomainErrors>>,
@@ -412,7 +412,7 @@ where
             method_name
         );
 
-        match self.rt_sync.run(f()) {
+        match self.rt_sync.run(invoke()) {
             Ok(_) => {
                 info!("Successfully executed '{}'", method_name);
                 Ok(())
@@ -463,7 +463,7 @@ where
 
                 let json_data: Value = serde_json::from_str(data)?;
 
-                self.handle_contract_call(method, &json_data)?;
+                self.handle_contract_invoke(method, &json_data)?;
             }
             // TODO(signatures-2) delegate SIGNATURE_MESSAGE message to BtcSignatureFlow::process_new_bitvmx_event, it is the response to request-pegin event we send them
             //  it looks like for now they do not include hash_to_sign in the message (see TODO in BitVmxSigningInfo), so we need to inject it in the OutgoingBitVMXApiMessages from the calling flow
@@ -1321,7 +1321,7 @@ mod tests {
                 witness: bitcoin::Witness::default(),
             }],
             output: vec![TxOut {
-                value: Amount::from_btc(1 as f64).unwrap(),
+                value: Amount::from_btc(1.0).unwrap(),
                 script_pubkey: ScriptBuf::new(),
             }],
         };

@@ -24,7 +24,6 @@ primitive-types = { workspace = true }
 hex = { workspace = true }
 serde = { workspace = true }
 
-bitcoin = { version = "0.32.4", features = ["std", "rand-std", "serde"] }
 uuid = { version = "1.11.0", features = ["v4"] }
 
 [dev-dependencies]

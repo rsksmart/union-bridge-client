@@ -1,9 +1,9 @@
-use actors_mocking::bitvmx::BtcTx;
 use actors_mocking::{bitvmx, events};
 use alloy_node_bindings::Anvil;
 use alloy_provider::{ProviderBuilder, network::EthereumWallet};
 use alloy_signer_local::LocalSigner;
 use anyhow::{Context, Result};
+use bitcoin::Transaction;
 use clap::{CommandFactory, Parser};
 use common::msg_broker::broker::BitVmxBrokerServer;
 use std::path::PathBuf;
@@ -152,14 +152,14 @@ async fn main() -> Result<()> {
                         format!("Failed to read file: {}", btc_tx_file.display())
                     })?;
 
-                    let btc_tx: BtcTx = serde_json::from_str(&json_str)
+                    let tx: Transaction = serde_json::from_str(&json_str)
                         .context("Failed to parse BTC transaction JSON")?;
 
                     let executor = bitvmx_executor
                         .lock()
                         .expect("Failed to lock bitvmx_executor");
 
-                    executor.send_pegin_transaction_found(btc_tx)?;
+                    executor.send_pegin_transaction_found(tx)?;
                 }
                 Menu::PeginRequested {
                     block_hash,
@@ -171,7 +171,7 @@ async fn main() -> Result<()> {
                         format!("Failed to read file: {}", btc_tx_file.display())
                     })?;
 
-                    let btc_tx: BtcTx = serde_json::from_str(&json_str)
+                    let tx: Transaction = serde_json::from_str(&json_str)
                         .context("Failed to parse BTC transaction JSON")?;
 
                     let merkle_hashes: Vec<String> = merkle_branch_hashes
@@ -185,7 +185,7 @@ async fn main() -> Result<()> {
 
                     executor.send_pegin_requested_event(
                         block_hash,
-                        btc_tx,
+                        tx,
                         merkle_branch_path,
                         merkle_hashes,
                     )?;
@@ -200,7 +200,7 @@ async fn main() -> Result<()> {
                         format!("Failed to read file: {}", btc_tx_file.display())
                     })?;
 
-                    let btc_tx: BtcTx = serde_json::from_str(&json_str)
+                    let tx: Transaction = serde_json::from_str(&json_str)
                         .context("Failed to parse BTC transaction JSON")?;
 
                     let merkle_hashes: Vec<String> = merkle_branch_hashes
@@ -214,7 +214,7 @@ async fn main() -> Result<()> {
 
                     executor.send_pegin_accepted_event(
                         block_hash,
-                        btc_tx,
+                        tx,
                         merkle_branch_path,
                         merkle_hashes,
                     )?;
