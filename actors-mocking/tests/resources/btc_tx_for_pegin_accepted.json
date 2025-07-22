@@ -1,22 +1,22 @@
 {
   "version": 2,
   "lock_time": 0,
-  "inputs": [
+  "input": [
     {
-      "tx_id": "0x9a40f6df4226a822b1b952d41d490a3ab91f1826b684c56a05d75be16f0eb088",
-      "v_out": 0,
+      "previous_output": "88b00e6fe15bd7056ac584b626181fb93a0a491dd452b9b122a82642dff6409a:0",
+      "script_sig": "",
       "sequence": 4294967293,
-      "script_sig": "0x"
+      "witness": []
     }
   ],
-  "outputs": [
+  "output": [
     {
-      "amount": 99365,
-      "script_pub_key": "0x51209687ca13c4fb3fa3ba05c2f9119dda026bfe66f0098dcf9b896a98ecb2e96702"
+      "value": 99365,
+      "script_pubkey": "51209687ca13c4fb3fa3ba05c2f9119dda026bfe66f0098dcf9b896a98ecb2e96702"
     },
     {
-      "amount": 300,
-      "script_pub_key": "0x0014298a0fe992f755152a81ee64bdc4cc96d3bb8969"
+      "value": 300,
+      "script_pubkey": "0014298a0fe992f755152a81ee64bdc4cc96d3bb8969"
     }
   ]
 }
