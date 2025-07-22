@@ -638,7 +638,7 @@ mod tests {
             success: true,
         };
         contracts
-            .expect_register_peg_in_request()
+            .expect_request_pegin()
             .times(1)
             .returning(move |_| Ok(expected_receipt.clone()));
 
@@ -663,7 +663,7 @@ mod tests {
         // Prepare a mocked contracts gateway that simulates a failure
         let mut contracts = MockRskContractsGatewayApi::new();
         contracts
-            .expect_register_peg_in_request()
+            .expect_request_pegin()
             .times(1)
             .returning(|_| Err(DomainErrors::UnknownContractError("simulated error".into())));
 
@@ -693,7 +693,7 @@ mod tests {
             success: true,
         };
         contracts
-            .expect_accept_peg_in_request()
+            .expect_accept_pegin()
             .times(1)
             .returning(move |_| Ok(expected_receipt.clone()));
 
@@ -745,7 +745,7 @@ mod tests {
         // Set up the mocked contracts gateway with an error
         let mut contracts = MockRskContractsGatewayApi::new();
         contracts
-            .expect_accept_peg_in_request()
+            .expect_accept_pegin()
             .times(1)
             .returning(|_| Err(DomainErrors::UnknownContractError("simulated error".into())));
 

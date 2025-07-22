@@ -146,7 +146,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
         input: PeginAddressInput,
     ) -> Result<PeginAddressOutput, DomainErrors> {
         info!(
-            "Interacting with PegManager#getTemporaryPegInAddress @ {}",
+            "Interacting with PegManager#getTemporaryPeginAddress @ {}",
             self.contract_address
         );
 
@@ -154,7 +154,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
             .run(input)
             .await
             .map_err(|err| {
-                error!("Error on get_temporary_peg_in_address_call: {}", err);
+                error!("Error on get_temporary_pegin_address_call: {}", err);
                 err
             })
     }
@@ -164,12 +164,12 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
         input: RequestPeginInput,
     ) -> Result<RequestPeginOutput, DomainErrors> {
         info!(
-            "Interacting with PegManager#registerPegInRequest @ {}",
+            "Interacting with PegManager#requestPegin @ {}",
             self.contract_address
         );
 
         self.request_pegin_invoke.run(input).await.map_err(|err| {
-            error!("Error on register_peg_in_request_invoke: {}", err);
+            error!("Error on request_pegin_invoke: {}", err);
             err
         })
     }
@@ -179,12 +179,12 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
         input: AcceptPeginInput,
     ) -> Result<AcceptPeginOutput, DomainErrors> {
         info!(
-            "Interacting with PegManager#acceptPegInRequest @ {}",
+            "Interacting with PegManager#acceptPegin @ {}",
             self.contract_address
         );
 
         self.accept_pegin_invoke.run(input).await.map_err(|err| {
-            error!("Error on accept_peg_in_request_invoke: {}", err);
+            error!("Error on accept_pegin_invoke: {}", err);
             err
         })
     }
@@ -194,12 +194,12 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
         input: RegisterPegoutInput,
     ) -> Result<RegisterPegoutOutput, DomainErrors> {
         info!(
-            "Interacting with PegManager#registerPegOutRequest @ {}",
+            "Interacting with PegManager#RegisterPegoutInvoke @ {}",
             self.contract_address
         );
 
         self.register_pegout_invoke.run(input).await.map_err(|err| {
-            error!("Error on register_peg_out_request_invoke: {}", err);
+            error!("Error on register_pegout_invoke: {}", err);
             err
         })
     }

@@ -295,7 +295,7 @@ mod tests {
     };
 
     #[test]
-    fn test_already_registered_accept_peg_in() {
+    fn test_already_registered_accept_pegin() {
         let expected_err = PegManagerErrors::PeginAlreadyRequested(PeginAlreadyRequested {
             btcTxHash: "0x123456789abcdef123456789abcdef123456789abcdef123456789abcdef1234"
                 .parse()

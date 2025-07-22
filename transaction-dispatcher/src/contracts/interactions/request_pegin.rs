@@ -66,7 +66,7 @@ impl<C: PegManagerContractApi> RequestPeginInvoke<C> {
 #[cfg(test)]
 mod tests {
     use crate::contracts::common::tests::generate_contract_revert_error;
-    use crate::contracts::interactions::register_peg_in_request::{
+    use crate::contracts::interactions::request_pegin::{
         RequestPeginInput, RequestPeginInvoke, RequestPeginOutput,
     };
     use crate::contracts::peg_manager::MockPegManagerContractApi;

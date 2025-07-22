@@ -65,7 +65,7 @@ impl<C: PegManagerContractApi> GetTemporaryPeginAddressCall<C> {
 #[cfg(test)]
 mod tests {
     use crate::contracts::common::tests::generate_contract_revert_error;
-    use crate::contracts::interactions::get_temporary_peg_in_address::{
+    use crate::contracts::interactions::get_temporary_pegin_address::{
         GetTemporaryPeginAddressCall, PeginAddressInput,
     };
     use crate::contracts::peg_manager::MockPegManagerContractApi;

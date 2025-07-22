@@ -69,7 +69,7 @@ impl CheckForkAccumulator {
         let check_fork_args = CheckForkArgs {
             // coming from the AdvanceFunds event
             utxo_id: event.inner.utxo_id.clone(),
-            pegout_id: event.inner.peg_out_id.clone(),
+            pegout_id: event.inner.pegout_id.clone(),
             operator_id: event.inner.operator_id.clone(),
             required_effort: U256::from_big_endian(&event.inner.required_effort.to_be_bytes_vec()),
             required_num_blocks: event.inner.required_num_blocks,
@@ -261,7 +261,7 @@ mod tests {
     ) -> AdvanceFundsEvent {
         AdvanceFundsEvent {
             inner: AdvanceFunds {
-                peg_out_id: pegout_id.to_string(),
+                pegout_id: pegout_id.to_string(),
                 utxo_id: utxo_id.to_string(),
                 operator_id: operator_id.to_string(),
                 required_effort: alloy_primitives::U256::from_be_bytes(

@@ -64,7 +64,7 @@ impl<C: PegManagerContractApi> RegisterPegoutInvoke<C> {
 mod tests {
     use crate::{
         contracts::{
-            interactions::register_peg_out_request::{
+            interactions::register_pegout::{
                 RegisterPegoutInput, RegisterPegoutOutput, RegisterPegoutInvoke,
             },
             peg_manager::MockPegManagerContractApi,

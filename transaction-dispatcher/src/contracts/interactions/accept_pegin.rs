@@ -68,7 +68,7 @@ mod tests {
     use crate::{
         contracts::{
             common::tests::generate_contract_revert_error,
-            interactions::accept_peg_in_request::{
+            interactions::accept_pegin::{
                 AcceptPeginInput, AcceptPeginInvoke, AcceptPeginOutput,
             },
             peg_manager::MockPegManagerContractApi,

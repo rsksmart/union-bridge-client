@@ -9,19 +9,19 @@ sol!(
     #[derive(Eq, PartialEq, Debug)]
     contract FakePegManager {
         event RequestAdvanceFunds(
-            string peg_out_id,
+            string pegout_id,
             uint64 amount
         );
 
         function requestAdvanceFunds(
-            string memory peg_out_id,
+            string memory pegout_id,
             uint64 amount
         ) public {
-            emit RequestAdvanceFunds(peg_out_id, amount);
+            emit RequestAdvanceFunds(pegout_id, amount);
         }
 
         event AdvanceFunds(
-            string peg_out_id,
+            string pegout_id,
             string utxo_id,
             string operator_id,
             uint256 required_effort,
@@ -29,23 +29,23 @@ sol!(
         );
 
         function advanceFunds(
-            string memory peg_out_id,
+            string memory pegout_id,
             string memory utxo_id,
             string memory operator_id,
             uint256 required_effort,
             uint32 required_num_blocks
         ) public {
-            emit AdvanceFunds(peg_out_id, utxo_id, operator_id, required_effort, required_num_blocks);
+            emit AdvanceFunds(pegout_id, utxo_id, operator_id, required_effort, required_num_blocks);
         }
 
         event CheckForkComplete(
-            string peg_out_id
+            string pegout_id
         );
 
         function checkForkComplete(
-            string memory peg_out_id
+            string memory pegout_id
         ) public {
-            emit CheckForkComplete(peg_out_id);
+            emit CheckForkComplete(pegout_id);
         }
     }
 );

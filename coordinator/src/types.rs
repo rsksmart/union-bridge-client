@@ -20,7 +20,7 @@ pub enum RskPegManagerEvents {
     AdvanceFunds(AdvanceFundsEvent),               // temporarily mock, no need to test it
     PeginRequested(PeginRequestedEvent),
     PeginAccepted(PeginAcceptedEvent),
-    RemoveRegisteredPegInRequest(PeginRequestedEvent),
+    RemoveRegisteredPeginRequest(PeginRequestedEvent),
     AllNoncesReady(AllNoncesReadyEvent),
     AllSignaturesReady(AllSignaturesReadyEvent),
     UnknownEvent,

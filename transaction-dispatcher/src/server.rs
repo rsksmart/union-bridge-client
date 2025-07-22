@@ -32,10 +32,10 @@ impl Server {
         shutdown_flag: ShutdownFlag,
     ) -> Self {
         let app = Router::new()
-            .route("/pegin-address", post(Self::create_peg_in_address::<P>))
-            .route("/register-pegin", post(Self::register_peg_in::<P>))
-            .route("/accept-pegin", post(Self::accept_peg_in::<P>))
-            .route("/register-pegout", post(Self::register_peg_out::<P>))
+            .route("/pegin-address", post(Self::create_pegin_address::<P>))
+            .route("/request-pegin", post(Self::request_pegin::<P>))
+            .route("/accept-pegin", post(Self::accept_pegin::<P>))
+            .route("/register-pegout", post(Self::register_pegout::<P>))
             .layer((
                 // TraceLayer::new_for_http(), // TODO: enable when we change logging library to tracing
                 TimeoutLayer::new(Duration::from_secs(10)),
@@ -76,7 +76,7 @@ impl Server {
         }
     }
 
-    async fn create_peg_in_address<P: Provider>(
+    async fn create_pegin_address<P: Provider>(
         Extension(rsk_gateway): Extension<RskContractsGateway<P>>,
         Json(payload): Json<PeginAddressInput>,
     ) -> impl IntoResponse {
@@ -86,7 +86,7 @@ impl Server {
         }
     }
 
-    async fn register_peg_in<P: Provider>(
+    async fn request_pegin<P: Provider>(
         Extension(rsk_gateway): Extension<RskContractsGateway<P>>,
         Json(payload): Json<RequestPeginInput>,
     ) -> impl IntoResponse {
@@ -96,7 +96,7 @@ impl Server {
         }
     }
 
-    async fn accept_peg_in<P: Provider>(
+    async fn accept_pegin<P: Provider>(
         Extension(rsk_gateway): Extension<RskContractsGateway<P>>,
         Json(payload): Json<RequestPeginInput>,
     ) -> impl IntoResponse {
@@ -106,7 +106,7 @@ impl Server {
         }
     }
 
-    async fn register_peg_out<P: Provider>(
+    async fn register_pegout<P: Provider>(
         Extension(rsk_gateway): Extension<RskContractsGateway<P>>,
         Json(payload): Json<RegisterPegoutInput>,
     ) -> impl IntoResponse {

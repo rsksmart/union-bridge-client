@@ -252,16 +252,16 @@ pub(crate) mod tests {
         RegisterPegoutInput, RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput,
     };
 
-    fn create_fake_request_event(peg_out_id: &str) -> RequestAdvanceFunds {
+    fn create_fake_request_event(pegout_id: &str) -> RequestAdvanceFunds {
         RequestAdvanceFunds {
-            peg_out_id: peg_out_id.to_string(),
+            pegout_id: pegout_id.to_string(),
             amount: 1000,
         }
     }
 
-    fn create_fake_advance_funds_event(peg_out_id: &str) -> AdvanceFunds {
+    fn create_fake_advance_funds_event(pegout_id: &str) -> AdvanceFunds {
         AdvanceFunds {
-            peg_out_id: peg_out_id.to_string(),
+            pegout_id: pegout_id.to_string(),
             utxo_id: "utxo123".to_string(),
             operator_id: "op123".to_string(),
             required_effort: U256::from(1000),
@@ -275,7 +275,7 @@ pub(crate) mod tests {
         let (block_1, uncle_1, block_2) = create_block_and_uncles();
 
         let event_1 = RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFundsEvent {
-            inner: create_fake_request_event("peg_out_id_1"),
+            inner: create_fake_request_event("pegout_id_1"),
             block_number: block_1.number(),
             block_hash: block_1.hash().into(),
             removed: false,
@@ -283,7 +283,7 @@ pub(crate) mod tests {
         });
 
         let event_2: RskPegManagerEvents = RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
-            inner: create_fake_advance_funds_event("peg_out_id_1"),
+            inner: create_fake_advance_funds_event("pegout_id_1"),
             block_number: block_2.number(),
             block_hash: block_2.hash().into(),
             removed: false,
@@ -368,7 +368,7 @@ pub(crate) mod tests {
         let block_2 = get_second_default_rsk_block();
 
         let event_1 = RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFundsEvent {
-            inner: create_fake_request_event("peg_out_id_1"),
+            inner: create_fake_request_event("pegout_id_1"),
             block_number: block_1.number(),
             block_hash: block_1.hash().into(),
             removed: false,
