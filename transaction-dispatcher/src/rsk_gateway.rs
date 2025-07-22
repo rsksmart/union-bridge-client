@@ -1,21 +1,20 @@
-use crate::contracts::peg_manager::FakePegManagerContract;
-use crate::contracts::peg_manager::notify_check_fork_complete::NotifyCheckForkCompleteInvoke;
-use crate::contracts::signature_manager::{
-    AddMemberNonceInvoke, AddMemberSignatureInvoke, SignatureManagerContract,
-};
-
 use crate::{
     config::TransactionConfig,
-    contracts::peg_manager::{
-        PegManagerContract, accept_peg_in_request::AcceptPegInRequestInvoke,
-        get_temporary_peg_in_address::GetTemporaryPegInAddressCall,
-        register_peg_in_request::RegisterPegInRequestInvoke,
-        register_peg_out_request::RegisterPegOutRequestInvoke,
+    contracts::{
+        peg_manager::{
+            FakePegManagerContract, PegManagerContract, accept_pegin::AcceptPeginInvoke,
+            get_temporary_pegin_address::GetTemporaryPeginAddressCall,
+            notify_check_fork_complete::NotifyCheckForkCompleteInvoke,
+            register_pegout::RegisterPegoutInvoke, request_pegin::RequestPeginInvoke,
+        },
+        signature_manager::{
+            AddMemberNonceInvoke, AddMemberSignatureInvoke, SignatureManagerContract,
+        },
     },
     types::{
-        AcceptPegInInput, AcceptPegInOutput, AddMemberNonceInput, AddMemberNonceOutput,
-        AddMemberSignatureInput, AddMemberSignatureOutput, PegInAddressInput, PegInAddressOutput,
-        RegisterPegInInput, RegisterPegInOutput, RegisterPegOutInput, RegisterPegOutOutput,
+        AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
+        AddMemberSignatureInput, AddMemberSignatureOutput, PeginAddressInput, PeginAddressOutput,
+        RegisterPegoutInput, RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput,
     },
 };
 use alloy_primitives::Address;
@@ -32,25 +31,25 @@ const FAKE_PEG_MANAGER_CONTRACT_NAME: &'static str = "FakePegManager";
 const SIGNATURE_MANAGER_CONTRACT_NAME: &'static str = "SignatureManager";
 
 pub trait RskContractsGatewayApi {
-    fn get_temporary_peg_in_address(
+    fn get_temporary_pegin_address(
         &self,
-        input: PegInAddressInput,
-    ) -> impl Future<Output = Result<PegInAddressOutput, DomainErrors>>;
+        input: PeginAddressInput,
+    ) -> impl Future<Output = Result<PeginAddressOutput, DomainErrors>>;
 
-    fn register_peg_in_request(
+    fn request_pegin(
         &self,
-        input: RegisterPegInInput,
-    ) -> impl Future<Output = Result<RegisterPegInOutput, DomainErrors>>;
+        input: RequestPeginInput,
+    ) -> impl Future<Output = Result<RequestPeginOutput, DomainErrors>>;
 
-    fn accept_peg_in_request(
+    fn accept_pegin(
         &self,
-        input: AcceptPegInInput,
-    ) -> impl Future<Output = Result<AcceptPegInOutput, DomainErrors>>;
+        input: AcceptPeginInput,
+    ) -> impl Future<Output = Result<AcceptPeginOutput, DomainErrors>>;
 
-    fn register_peg_out_request(
+    fn register_pegout(
         &self,
-        input: RegisterPegOutInput,
-    ) -> impl Future<Output = Result<RegisterPegOutOutput, DomainErrors>>;
+        input: RegisterPegoutInput,
+    ) -> impl Future<Output = Result<RegisterPegoutOutput, DomainErrors>>;
 
     fn add_member_nonce(
         &self,
@@ -71,10 +70,10 @@ pub trait RskContractsGatewayApi {
 #[derive(Clone)]
 pub struct RskContractsGateway<P: Provider> {
     contract_address: Address,
-    get_temporary_peg_in_address_call: GetTemporaryPegInAddressCall<PegManagerContract<P>>,
-    register_peg_in_request_invoke: RegisterPegInRequestInvoke<PegManagerContract<P>>,
-    accept_peg_in_request_invoke: AcceptPegInRequestInvoke<PegManagerContract<P>>,
-    register_peg_out_request_invoke: RegisterPegOutRequestInvoke<PegManagerContract<P>>,
+    get_temporary_pegin_address_call: GetTemporaryPeginAddressCall<PegManagerContract<P>>,
+    request_pegin_invoke: RequestPeginInvoke<PegManagerContract<P>>,
+    accept_pegin_invoke: AcceptPeginInvoke<PegManagerContract<P>>,
+    register_pegout_invoke: RegisterPegoutInvoke<PegManagerContract<P>>,
     add_member_nonce_invoke: AddMemberNonceInvoke<SignatureManagerContract<P>>,
     add_member_signature_invoke: AddMemberSignatureInvoke<SignatureManagerContract<P>>,
     notify_check_fork_completion_invoke: NotifyCheckForkCompleteInvoke<FakePegManagerContract<P>>,
@@ -100,18 +99,18 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
 
         Ok(RskContractsGateway {
             contract_address,
-            get_temporary_peg_in_address_call: GetTemporaryPegInAddressCall::new(
+            get_temporary_pegin_address_call: GetTemporaryPeginAddressCall::new(
                 peg_manager_contract.clone(),
             ),
-            register_peg_in_request_invoke: RegisterPegInRequestInvoke::new(
-                peg_manager_contract.clone(),
-                tx_config.gas_bumps_t1,
-            ),
-            accept_peg_in_request_invoke: AcceptPegInRequestInvoke::new(
+            request_pegin_invoke: RequestPeginInvoke::new(
                 peg_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
-            register_peg_out_request_invoke: RegisterPegOutRequestInvoke::new(
+            accept_pegin_invoke: AcceptPeginInvoke::new(
+                peg_manager_contract.clone(),
+                tx_config.gas_bumps_t1,
+            ),
+            register_pegout_invoke: RegisterPegoutInvoke::new(
                 peg_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
@@ -142,16 +141,16 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
 }
 
 impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
-    async fn get_temporary_peg_in_address(
+    async fn get_temporary_pegin_address(
         &self,
-        input: PegInAddressInput,
-    ) -> Result<PegInAddressOutput, DomainErrors> {
+        input: PeginAddressInput,
+    ) -> Result<PeginAddressOutput, DomainErrors> {
         info!(
             "Interacting with PegManager#getTemporaryPegInAddress @ {}",
             self.contract_address
         );
 
-        self.get_temporary_peg_in_address_call
+        self.get_temporary_pegin_address_call
             .run(input)
             .await
             .map_err(|err| {
@@ -160,58 +159,49 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
             })
     }
 
-    async fn register_peg_in_request(
+    async fn request_pegin(
         &self,
-        input: RegisterPegInInput,
-    ) -> Result<RegisterPegInOutput, DomainErrors> {
+        input: RequestPeginInput,
+    ) -> Result<RequestPeginOutput, DomainErrors> {
         info!(
             "Interacting with PegManager#registerPegInRequest @ {}",
             self.contract_address
         );
 
-        self.register_peg_in_request_invoke
-            .run(input)
-            .await
-            .map_err(|err| {
-                error!("Error on register_peg_in_request_invoke: {}", err);
-                err
-            })
+        self.request_pegin_invoke.run(input).await.map_err(|err| {
+            error!("Error on register_peg_in_request_invoke: {}", err);
+            err
+        })
     }
 
-    async fn accept_peg_in_request(
+    async fn accept_pegin(
         &self,
-        input: AcceptPegInInput,
-    ) -> Result<AcceptPegInOutput, DomainErrors> {
+        input: AcceptPeginInput,
+    ) -> Result<AcceptPeginOutput, DomainErrors> {
         info!(
             "Interacting with PegManager#acceptPegInRequest @ {}",
             self.contract_address
         );
 
-        self.accept_peg_in_request_invoke
-            .run(input)
-            .await
-            .map_err(|err| {
-                error!("Error on accept_peg_in_request_invoke: {}", err);
-                err
-            })
+        self.accept_pegin_invoke.run(input).await.map_err(|err| {
+            error!("Error on accept_peg_in_request_invoke: {}", err);
+            err
+        })
     }
 
-    async fn register_peg_out_request(
+    async fn register_pegout(
         &self,
-        input: RegisterPegOutInput,
-    ) -> Result<RegisterPegOutOutput, DomainErrors> {
+        input: RegisterPegoutInput,
+    ) -> Result<RegisterPegoutOutput, DomainErrors> {
         info!(
             "Interacting with PegManager#registerPegOutRequest @ {}",
             self.contract_address
         );
 
-        self.register_peg_out_request_invoke
-            .run(input)
-            .await
-            .map_err(|err| {
-                error!("Error on register_peg_out_request_invoke: {}", err);
-                err
-            })
+        self.register_pegout_invoke.run(input).await.map_err(|err| {
+            error!("Error on register_peg_out_request_invoke: {}", err);
+            err
+        })
     }
 
     async fn add_member_nonce(

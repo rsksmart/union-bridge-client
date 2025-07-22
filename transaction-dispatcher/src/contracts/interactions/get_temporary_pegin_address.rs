@@ -1,26 +1,28 @@
-use crate::contracts::peg_manager::PegManagerContractApi;
-use crate::rsk_gateway::DomainErrors;
-use crate::types::{PegInAddressInput, PegInAddressOutput};
+use crate::{
+    contracts::peg_manager::PegManagerContractApi,
+    rsk_gateway::DomainErrors,
+    types::{PeginAddressInput, PeginAddressOutput},
+};
 use alloy_primitives::{Address, FixedBytes};
 use log::info;
 
 // TODO(Jira): generate Try_From for the input struct like in the other cases - https://rsklabs.atlassian.net/browse/UB-108
 
 #[derive(Clone)]
-pub(crate) struct GetTemporaryPegInAddressCall<C: PegManagerContractApi> {
+pub(crate) struct GetTemporaryPeginAddressCall<C: PegManagerContractApi> {
     contract: C,
 }
 
-impl<C: PegManagerContractApi> GetTemporaryPegInAddressCall<C> {
+impl<C: PegManagerContractApi> GetTemporaryPeginAddressCall<C> {
     pub(crate) fn new(contract: C) -> Self {
-        GetTemporaryPegInAddressCall { contract }
+        GetTemporaryPeginAddressCall { contract }
     }
 
     pub(crate) async fn run(
         &self,
-        input: PegInAddressInput,
-    ) -> Result<PegInAddressOutput, DomainErrors> {
-        info!("Init GetTemporaryPegInAddress for: {:?}", input);
+        input: PeginAddressInput,
+    ) -> Result<PeginAddressOutput, DomainErrors> {
+        info!("Init GetTemporaryPeginAddressCall for: {:?}", input);
 
         let rootstock_deposit_address: Address = input
             .rootstock_deposit_address
@@ -44,7 +46,7 @@ impl<C: PegManagerContractApi> GetTemporaryPegInAddressCall<C> {
 
         let address = self
             .contract
-            .get_temporary_peg_in_address_call(
+            .call_get_temporary_pegin_address(
                 rootstock_deposit_address,
                 value,
                 btc_reimbursement_pub_key,
@@ -52,11 +54,11 @@ impl<C: PegManagerContractApi> GetTemporaryPegInAddressCall<C> {
             .await?;
 
         info!(
-            "GetTemporaryPegInAddress successful, deposit address: {:?}",
+            "GetTemporaryPeginAddress successful, deposit address: {:?}",
             address
         );
 
-        Ok(PegInAddressOutput { address })
+        Ok(PeginAddressOutput { address })
     }
 }
 
@@ -64,7 +66,7 @@ impl<C: PegManagerContractApi> GetTemporaryPegInAddressCall<C> {
 mod tests {
     use crate::contracts::common::tests::generate_contract_revert_error;
     use crate::contracts::interactions::get_temporary_peg_in_address::{
-        GetTemporaryPegInAddressCall, PegInAddressInput,
+        GetTemporaryPeginAddressCall, PeginAddressInput,
     };
     use crate::contracts::peg_manager::MockPegManagerContractApi;
     use crate::rsk_gateway::DomainErrors;
@@ -82,9 +84,9 @@ mod tests {
         "0xc72a9f6fc8e57f1de528a48b6c4ad7a6db30b24a7bbf8cdd74b0a3b248b6f7f1";
     const VALID_VALUE: u64 = 1000;
 
-    impl GetTemporaryPegInAddressCall<MockPegManagerContractApi> {
+    impl GetTemporaryPeginAddressCall<MockPegManagerContractApi> {
         pub(crate) fn new_for_tests(contract: MockPegManagerContractApi) -> Self {
-            GetTemporaryPegInAddressCall { contract }
+            GetTemporaryPeginAddressCall { contract }
         }
     }
 
@@ -92,7 +94,7 @@ mod tests {
     async fn test_get_temporary_pegin_address_success() {
         let mut mock_instance = MockPegManagerContractApi::new();
 
-        let input = PegInAddressInput {
+        let input = PeginAddressInput {
             rootstock_deposit_address: VALID_ADDRESS.to_string(),
             value: VALID_VALUE,
             btc_reimbursement_pub_key: VALID_PUB_KEY.to_string(),
@@ -103,7 +105,7 @@ mod tests {
         };
 
         mock_instance
-            .expect_get_temporary_peg_in_address_call()
+            .expect_call_get_temporary_pegin_address()
             .with(
                 eq(VALID_ADDRESS.parse::<Address>().unwrap()),
                 eq(VALID_VALUE),
@@ -112,7 +114,7 @@ mod tests {
             .returning(move |_, _, _| Ok(output.bitcoinDepositAddress.clone()))
             .times(1);
 
-        let interaction = GetTemporaryPegInAddressCall::new_for_tests(mock_instance);
+        let interaction = GetTemporaryPeginAddressCall::new_for_tests(mock_instance);
 
         let result = interaction.run(input).await;
         assert!(result.is_ok());
@@ -123,13 +125,13 @@ mod tests {
     async fn test_get_temporary_pegin_address_invalid_address_preliminary_validation() {
         let mock_instance = MockPegManagerContractApi::new();
 
-        let input = PegInAddressInput {
+        let input = PeginAddressInput {
             rootstock_deposit_address: "0xinvalid_address".to_string(),
             value: VALID_VALUE,
             btc_reimbursement_pub_key: VALID_PUB_KEY.to_string(),
         };
 
-        let interaction = GetTemporaryPegInAddressCall::new_for_tests(mock_instance);
+        let interaction = GetTemporaryPeginAddressCall::new_for_tests(mock_instance);
 
         let result = interaction.run(input).await;
         assert!(result.is_err());
@@ -140,7 +142,7 @@ mod tests {
     async fn test_get_temporary_pegin_address_invalid_address_smart_contract_raised() {
         let mut mock_instance = MockPegManagerContractApi::new();
 
-        let input = PegInAddressInput {
+        let input = PeginAddressInput {
             // it has to be valid here in order to pass the preliminary validation (non SC)
             rootstock_deposit_address: VALID_ADDRESS.to_string(),
             value: VALID_VALUE,
@@ -148,7 +150,7 @@ mod tests {
         };
 
         mock_instance
-            .expect_get_temporary_peg_in_address_call()
+            .expect_call_get_temporary_pegin_address()
             .with(
                 always(),
                 eq(VALID_VALUE),
@@ -162,7 +164,7 @@ mod tests {
             })
             .times(1);
 
-        let interaction = GetTemporaryPegInAddressCall::new_for_tests(mock_instance);
+        let interaction = GetTemporaryPeginAddressCall::new_for_tests(mock_instance);
 
         let result = interaction.run(input).await;
         assert!(result.is_err());
@@ -173,13 +175,13 @@ mod tests {
     async fn test_get_temporary_pegin_address_invalid_public_key_preliminary_validation() {
         let mock_instance = MockPegManagerContractApi::new();
 
-        let input = PegInAddressInput {
+        let input = PeginAddressInput {
             rootstock_deposit_address: VALID_ADDRESS.to_string(),
             value: VALID_VALUE,
             btc_reimbursement_pub_key: "0xinvalid_pub_key".to_string(),
         };
 
-        let interaction = GetTemporaryPegInAddressCall::new_for_tests(mock_instance);
+        let interaction = GetTemporaryPeginAddressCall::new_for_tests(mock_instance);
 
         let result = interaction.run(input).await;
         assert!(result.is_err());
@@ -194,7 +196,7 @@ mod tests {
     async fn test_get_temporary_pegin_address_revert() {
         let mut mock_instance = MockPegManagerContractApi::new();
 
-        let input = PegInAddressInput {
+        let input = PeginAddressInput {
             rootstock_deposit_address: VALID_ADDRESS.to_string(),
             value: VALID_VALUE,
             // it has to be valid here in order to pass the preliminary validation (non SC)
@@ -202,7 +204,7 @@ mod tests {
         };
 
         mock_instance
-            .expect_get_temporary_peg_in_address_call()
+            .expect_call_get_temporary_pegin_address()
             .with(
                 eq(VALID_ADDRESS.parse::<Address>().unwrap()),
                 eq(VALID_VALUE),
@@ -216,7 +218,7 @@ mod tests {
             })
             .times(1);
 
-        let call = GetTemporaryPegInAddressCall::new_for_tests(mock_instance);
+        let call = GetTemporaryPeginAddressCall::new_for_tests(mock_instance);
 
         let result = call.run(input).await;
         assert!(result.is_err());

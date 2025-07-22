@@ -1,5 +1,5 @@
-use crate::blockchain_tracker::{BlockConfirmations, BlockchainObserver, BlockchainView};
 use crate::{
+    blockchain_tracker::{BlockConfirmations, BlockchainObserver, BlockchainView},
     config::REQUIRED_CONFIRMATIONS,
     event_processor::EventProcessor,
     types::{EventWithBlock, PeginAcceptedEvent, PeginRequestedEvent, RskPegManagerEvents},
@@ -22,10 +22,12 @@ use serde_json::Value;
 use std::{cell::RefCell, collections::HashMap, fmt::Debug, future::Future, rc::Rc};
 use transaction_dispatcher::{
     rsk_gateway::{DomainErrors, RskContractsGatewayApi},
-    types::{AcceptPegInInput, RegisterPegInInput},
+    types::{AcceptPeginInput, RequestPeginInput},
 };
 use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
 use uuid::Uuid;
+
+const ACCEPT_PEGIN: &'static str = "accept-pegin";
 
 #[derive(Debug, Clone)]
 struct PeginEvent<T: Clone> {
@@ -381,11 +383,11 @@ where
 
     fn handle_contract_invoke(&self, method_name: &str, json_data: &Value) -> Result<()> {
         match method_name {
-            "accept-pegin" => {
-                let input: AcceptPegInInput = serde_json::from_value(json_data.clone())
-                    .context("Failed to deserialize AcceptPegInInput")?;
-                self.invoke_contract(method_name, || async {
-                    self.contracts.accept_peg_in_request(input).await
+            ACCEPT_PEGIN => {
+                let input: AcceptPeginInput = serde_json::from_value(json_data.clone())
+                    .context("Failed to deserialize AcceptPeginInput")?;
+                self.invoke_contract(ACCEPT_PEGIN, || async {
+                    self.contracts.accept_pegin(input).await
                 })
             }
 
@@ -394,10 +396,10 @@ where
     }
 
     fn handle_request_pegin(&self, spv_proof: BtcTxSPVProof) -> Result<()> {
-        let input: RegisterPegInInput = spv_proof.into();
+        let input: RequestPeginInput = spv_proof.into();
 
         self.invoke_contract("requestPegin", || async {
-            self.contracts.register_peg_in_request(input).await
+            self.contracts.request_pegin(input).await
         })
     }
 
@@ -455,7 +457,7 @@ where
                 pegin_flow_id,
                 method,
                 VariableTypes::String(data),
-            ) if matches!(method.as_str(), "accept-pegin") => {
+            ) if matches!(method.as_str(), ACCEPT_PEGIN) => {
                 info!(
                     "Received BitVMX Variable Event. Flow Id: {}, Method: {}, Payload: {:?}",
                     pegin_flow_id, method, data
@@ -533,7 +535,7 @@ mod tests {
     use serde_json::json;
     use transaction_dispatcher::{
         rsk_gateway::DomainErrors,
-        types::{AcceptPegInOutput, RegisterPegInOutput},
+        types::{AcceptPeginOutput, RequestPeginOutput},
     };
     use union_contracts::bindings::peg_manager::PegManager::{
         PeginRequested, PrevoutData, RequestPeginTempInfo, StreamPosition,
@@ -630,7 +632,7 @@ mod tests {
     fn process_new_bitvmx_spv_proof_event_for_request_pegin_should_call_request_pegin() {
         // Prepare the mocked contracts gateway
         let mut contracts = MockRskContractsGatewayApi::new();
-        let expected_receipt = RegisterPegInOutput {
+        let expected_receipt = RequestPeginOutput {
             transaction_hash: "0x4e3f8a2d39c1b872b77e8a5c9a24be8f1d489ea7cf2d38375f18b5b54e7df662"
                 .to_string(),
             success: true,
@@ -685,7 +687,7 @@ mod tests {
     fn process_new_bitvmx_pegin_accepted_event_does_not_send_response() {
         // Prepare the mocked contracts gateway
         let mut contracts = MockRskContractsGatewayApi::new();
-        let expected_receipt = AcceptPegInOutput {
+        let expected_receipt = AcceptPeginOutput {
             transaction_hash: "0x7e8f27d21c8a0cfebfd2c647db4687e51eae3eaecdbf9f247c9057be682176a3"
                 .to_string(),
             success: true,

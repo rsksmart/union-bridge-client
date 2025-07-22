@@ -1,8 +1,8 @@
 use crate::{
     rsk_gateway::{DomainErrors, RskContractsGateway, RskContractsGatewayApi},
     types::{
-        AddMemberNonceInput, AddMemberSignatureInput, PegInAddressInput, RegisterPegInInput,
-        RegisterPegOutInput,
+        AddMemberNonceInput, AddMemberSignatureInput, PeginAddressInput, RequestPeginInput,
+        RegisterPegoutInput,
     },
 };
 use alloy_provider::Provider;
@@ -78,9 +78,9 @@ impl Server {
 
     async fn create_peg_in_address<P: Provider>(
         Extension(rsk_gateway): Extension<RskContractsGateway<P>>,
-        Json(payload): Json<PegInAddressInput>,
+        Json(payload): Json<PeginAddressInput>,
     ) -> impl IntoResponse {
-        match rsk_gateway.get_temporary_peg_in_address(payload).await {
+        match rsk_gateway.get_temporary_pegin_address(payload).await {
             Ok(data) => (StatusCode::OK, Json(json!(data))).into_response(),
             Err(e) => e.into_response(),
         }
@@ -88,9 +88,9 @@ impl Server {
 
     async fn register_peg_in<P: Provider>(
         Extension(rsk_gateway): Extension<RskContractsGateway<P>>,
-        Json(payload): Json<RegisterPegInInput>,
+        Json(payload): Json<RequestPeginInput>,
     ) -> impl IntoResponse {
-        match rsk_gateway.register_peg_in_request(payload).await {
+        match rsk_gateway.request_pegin(payload).await {
             Ok(data) => (StatusCode::OK, Json(json!(data))).into_response(),
             Err(e) => e.into_response(),
         }
@@ -98,9 +98,9 @@ impl Server {
 
     async fn accept_peg_in<P: Provider>(
         Extension(rsk_gateway): Extension<RskContractsGateway<P>>,
-        Json(payload): Json<RegisterPegInInput>,
+        Json(payload): Json<RequestPeginInput>,
     ) -> impl IntoResponse {
-        match rsk_gateway.accept_peg_in_request(payload).await {
+        match rsk_gateway.accept_pegin(payload).await {
             Ok(data) => (StatusCode::OK, Json(json!(data))).into_response(),
             Err(e) => e.into_response(),
         }
@@ -108,9 +108,9 @@ impl Server {
 
     async fn register_peg_out<P: Provider>(
         Extension(rsk_gateway): Extension<RskContractsGateway<P>>,
-        Json(payload): Json<RegisterPegOutInput>,
+        Json(payload): Json<RegisterPegoutInput>,
     ) -> impl IntoResponse {
-        match rsk_gateway.register_peg_out_request(payload).await {
+        match rsk_gateway.register_pegout(payload).await {
             Ok(data) => (StatusCode::OK, Json(json!(data))).into_response(),
             Err(e) => e.into_response(),
         }

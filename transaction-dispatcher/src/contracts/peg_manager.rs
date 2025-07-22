@@ -10,14 +10,14 @@ use union_contracts::bindings::peg_manager::PegManager::{
 
 use crate::contracts::bitcoin_manager::ParseFieldError;
 
-use crate::types::RegisterPegInInput;
+use crate::types::RequestPeginInput;
 
 // re-export for convenience
-pub(crate) use crate::contracts::interactions::accept_peg_in_request;
-pub(crate) use crate::contracts::interactions::get_temporary_peg_in_address;
+pub(crate) use crate::contracts::interactions::accept_pegin;
+pub(crate) use crate::contracts::interactions::get_temporary_pegin_address;
 pub(crate) use crate::contracts::interactions::notify_check_fork_complete;
-pub(crate) use crate::contracts::interactions::register_peg_in_request;
-pub(crate) use crate::contracts::interactions::register_peg_out_request;
+pub(crate) use crate::contracts::interactions::register_pegout;
+pub(crate) use crate::contracts::interactions::request_pegin;
 
 use crate::rsk_gateway::DomainErrors;
 use actors_mocking::fake_contracts::FakePegManager;
@@ -27,26 +27,26 @@ use mockall::automock;
 
 #[cfg_attr(test, automock)]
 pub trait PegManagerContractApi {
-    async fn get_temporary_peg_in_address_call(
+    async fn call_get_temporary_pegin_address(
         &self,
         rootstock_deposit_address: Address,
         value: u64,
         btc_reimbursement_pub_key: FixedBytes<32>,
     ) -> alloy_contract::Result<String>;
 
-    async fn register_peg_in_request_send(
+    async fn invoke_request_pegin(
         &self,
         input: BtcTxSPVProof,
         gas_bumps: u8,
     ) -> alloy_contract::Result<TransactionReceipt>;
 
-    async fn accept_peg_in_request_send(
+    async fn invoke_accept_pegin(
         &self,
         input: BtcTxSPVProof,
         gas_bumps: u8,
     ) -> alloy_contract::Result<TransactionReceipt>;
 
-    async fn register_peg_out_request_send(
+    async fn invoke_register_pegout(
         &self,
         msg_value: u64,
         usr_pub_key: FixedBytes<33>,
@@ -75,7 +75,7 @@ impl<P: Provider> PegManagerContract<P> {
 }
 
 impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
-    async fn get_temporary_peg_in_address_call(
+    async fn call_get_temporary_pegin_address(
         &self,
         rootstock_deposit_address: Address,
         value: u64,
@@ -87,7 +87,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
             .await
     }
 
-    async fn register_peg_in_request_send(
+    async fn invoke_request_pegin(
         &self,
         input: BtcTxSPVProof,
         gas_bumps: u8,
@@ -99,7 +99,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         .await
     }
 
-    async fn accept_peg_in_request_send(
+    async fn invoke_accept_pegin(
         &self,
         input: BtcTxSPVProof,
         gas_bumps: u8,
@@ -111,7 +111,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         .await
     }
 
-    async fn register_peg_out_request_send(
+    async fn invoke_register_pegout(
         &self,
         msg_value: u64,
         usr_pub_key: FixedBytes<33>,
@@ -155,7 +155,7 @@ impl<P: Provider> FakePegManagerContract<P> {
 }
 
 impl<P: Provider> PegManagerContractApi for FakePegManagerContract<P> {
-    async fn get_temporary_peg_in_address_call(
+    async fn call_get_temporary_pegin_address(
         &self,
         _rootstock_deposit_address: Address,
         _value: u64,
@@ -164,7 +164,7 @@ impl<P: Provider> PegManagerContractApi for FakePegManagerContract<P> {
         todo!("Not yet implemented for FakePegManagerContract");
     }
 
-    async fn register_peg_in_request_send(
+    async fn invoke_request_pegin(
         &self,
         _input: BtcTxSPVProof,
         _gas_bumps: u8,
@@ -172,7 +172,7 @@ impl<P: Provider> PegManagerContractApi for FakePegManagerContract<P> {
         todo!("Not yet implemented for FakePegManagerContract");
     }
 
-    async fn accept_peg_in_request_send(
+    async fn invoke_accept_pegin(
         &self,
         _input: BtcTxSPVProof,
         _gas_bumps: u8,
@@ -180,7 +180,7 @@ impl<P: Provider> PegManagerContractApi for FakePegManagerContract<P> {
         todo!("Not yet implemented for FakePegManagerContract");
     }
 
-    async fn register_peg_out_request_send(
+    async fn invoke_register_pegout(
         &self,
         _msg_value: u64,
         _usr_pub_key: FixedBytes<33>,
@@ -205,10 +205,10 @@ impl<P: Provider> PegManagerContractApi for FakePegManagerContract<P> {
     }
 }
 
-impl TryFrom<RegisterPegInInput> for BtcTxSPVProof {
+impl TryFrom<RequestPeginInput> for BtcTxSPVProof {
     type Error = ParseFieldError;
 
-    fn try_from(value: RegisterPegInInput) -> Result<Self, Self::Error> {
+    fn try_from(value: RequestPeginInput) -> Result<Self, Self::Error> {
         let block_hash =
             FixedBytes::<32>::from_hex(&value.block_hash).map_err(ParseFieldError::ParseHex)?;
 
