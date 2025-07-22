@@ -24,6 +24,7 @@ dependencies = [
  "alloy-signer-local",
  "alloy-sol-types",
  "anyhow",
+ "bitcoin",
  "chrono",
  "clap",
  "common",

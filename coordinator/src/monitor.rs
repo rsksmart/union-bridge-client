@@ -1,19 +1,17 @@
-use crate::types::{EventDecoder, RskPegManagerEvents};
-use anyhow::{Context, Result, bail};
-use common::msg_broker::bitvmx_types::OutgoingBitVMXApiMessages;
-use common::{
-    msg_broker::{
-        broker::BitVmxBrokerClientApi,
-        broker::{BROKER_SERVER_ID, BrokerError, UnionBrokerClientApi},
-        types::{FromServer, ToServer},
-    },
-    types::{Address, RskBlockAndUncles},
-};
-use log::{debug, info, trace};
 use std::rc::Rc;
 
+use anyhow::{Context, Result, bail};
+use common::msg_broker::bitvmx_types::OutgoingBitVMXApiMessages;
+use common::msg_broker::broker::{
+    BROKER_SERVER_ID, BitVmxBrokerClientApi, BrokerError, UnionBrokerClientApi,
+};
+use common::msg_broker::types::{FromServer, ToServer};
+use common::types::{Address, RskBlockAndUncles};
+use log::{debug, info, trace};
 #[cfg(test)]
 use mockall::automock;
+
+use crate::types::{EventDecoder, RskPegManagerEvents};
 
 #[cfg_attr(test, automock)]
 pub trait MonitorApi {
@@ -299,23 +297,18 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use anyhow::anyhow;
     use common::msg_broker::bitvmx_types::IncomingBitVMXApiMessages;
+    use common::msg_broker::broker::{BROKER_SERVER_ID, MockBrokerClientApi};
+    use common::msg_broker::types::ToServer;
     use common::test_utils::rsk_block_generator::{
-        create_block_from_template, get_first_default_rsk_block, get_second_default_rsk_block,
-        get_third_default_rsk_block,
+        create_block_and_uncles, create_block_from_template, get_first_default_rsk_block,
+        get_second_default_rsk_block, get_third_default_rsk_block,
     };
-    use common::{
-        msg_broker::{
-            broker::{BROKER_SERVER_ID, MockBrokerClientApi},
-            types::ToServer,
-        },
-        test_utils::{
-            rsk_block_generator::create_block_and_uncles, rsk_log_generator::FakeLogGenerator,
-        },
-    };
+    use common::test_utils::rsk_log_generator::FakeLogGenerator;
     use mockall::predicate::*;
+
+    use super::*;
 
     #[test]
     fn test_try_block_handles_wrong_order_blocks() {

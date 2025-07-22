@@ -1,17 +1,14 @@
+use std::rc::Rc;
+
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
-use common::{
-    msg_broker::broker::{BITVMX_L2_BROKER_CLIENT_ID, BitVmxBrokerClient, BrokerClient},
-    runtime_sync::RuntimeSync,
-    shutdown_flag::ShutdownFlag,
-};
-use coordinator::{
-    config::{Config, Logger},
-    coordinator::Coordinator,
-    monitor::Monitor,
-};
+use common::msg_broker::broker::{BITVMX_L2_BROKER_CLIENT_ID, BitVmxBrokerClient, BrokerClient};
+use common::runtime_sync::RuntimeSync;
+use common::shutdown_flag::ShutdownFlag;
+use coordinator::config::{Config, Logger};
+use coordinator::coordinator::Coordinator;
+use coordinator::monitor::Monitor;
 use log::{error, info};
-use std::rc::Rc;
 use transaction_dispatcher::config::ConfigAsLib;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";

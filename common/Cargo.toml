@@ -3,37 +3,37 @@ name = "common"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+test-utils = []
+anvil = []
+
 [dependencies]
 alloy-dyn-abi = { workspace = true }
 alloy-json-abi = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-provider = { workspace = true, features = ["ws"] }
 alloy-pubsub = { workspace = true }
+alloy-rpc-client = { workspace = true }
 alloy-rpc-types = { workspace = true }
 alloy-sol-types = { workspace = true }
-alloy-rpc-client = { workspace = true }
 alloy-transport = { workspace = true }
 anyhow = { workspace = true }
 bitcoin = { workspace = true }
+config = { workspace = true }
 hex = { workspace = true }
+log = { workspace = true }
+log4rs = { workspace = true }
+lru = "0.13.0"
+message-broker = { workspace = true }
 mockall = { workspace = true }
 musig2 = { workspace = true }
 primitive-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-thiserror = { workspace = true }
-log4rs = { workspace = true }
-config = { workspace = true }
-log = { workspace = true }
-message-broker = { workspace = true }
-tokio = { workspace = true, features = ["rt-multi-thread"] }
 serde_yaml = "0.9.33"
-lru = "0.13.0"
-signal-hook = "0.3"
 sha3 = "0.10"
+signal-hook = "0.3"
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
 # TODO(jira) https://rsklabs.atlassian.net/browse/ub-176
 uuid = { version = "1.11.0", features = ["v4", "serde"] }
-
-[features]
-test-utils = []
-anvil = []

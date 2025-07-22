@@ -1,8 +1,9 @@
+use std::collections::HashMap;
+
 use common::config::{CommonConfig, ContractConfig, IndexerConfig, NotifierConfig, ProviderConfig};
 use common::errors::ConfigError;
 use common::types::{Address, ContractInfo};
 use serde::Deserialize;
-use std::collections::HashMap;
 
 const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
@@ -56,10 +57,12 @@ impl Logger {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::path::Path;
     use std::{env, fs};
+
     use tempfile::TempDir;
+
+    use super::*;
 
     const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 

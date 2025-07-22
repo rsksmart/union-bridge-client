@@ -1,5 +1,6 @@
-use crate::rsk_provider::RskProvider;
 use anyhow::Result;
+
+use crate::rsk_provider::RskProvider;
 
 pub trait RskIndexer<P, S>
 where

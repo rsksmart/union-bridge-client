@@ -1,8 +1,10 @@
 #![cfg(feature = "anvil")]
 
-use crate::types::BlockPow;
-use primitive_types::{H256, U256};
 use std::str::FromStr;
+
+use primitive_types::{H256, U256};
+
+use crate::types::BlockPow;
 
 pub fn get_anvil_block_pow() -> BlockPow {
     // ~= difficulty x 20

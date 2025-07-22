@@ -1,11 +1,13 @@
-use crate::types::{Address, RskEvent, RskLog};
+use std::str::FromStr;
+
 use alloy_dyn_abi::{DynSolType, DynSolValue};
 use alloy_json_abi::{Event, EventParam, JsonAbi};
 use anyhow::{Context, Result, bail};
 use hex;
 use log::error;
 use serde_json::{Value, json};
-use std::str::FromStr;
+
+use crate::types::{Address, RskEvent, RskLog};
 
 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-133
 

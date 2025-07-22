@@ -1,13 +1,15 @@
-use crate::contracts::{bitcoin_manager, peg_manager, stream_manager};
-use crate::rsk_gateway::DomainErrors;
 use alloy_contract::SolCallBuilder;
-use alloy_primitives::{hex::FromHexError, ruint::ParseError};
+use alloy_primitives::hex::FromHexError;
+use alloy_primitives::ruint::ParseError;
 use alloy_provider::Provider;
 use alloy_provider::network::ReceiptResponse;
 use alloy_rpc_types::TransactionReceipt;
 use alloy_sol_types::SolCall;
 use log::{debug, error, warn};
 use thiserror::Error;
+
+use crate::contracts::{bitcoin_manager, peg_manager, stream_manager};
+use crate::rsk_gateway::DomainErrors;
 
 #[derive(Debug, Error)]
 pub enum ParseFieldError {

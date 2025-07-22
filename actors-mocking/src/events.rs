@@ -1,15 +1,17 @@
-use crate::fake_contracts::FakePegManager;
-use crate::fake_contracts::FakePegManager::FakePegManagerInstance;
+use std::env;
+use std::io::{BufRead, BufReader};
+use std::process::{Command, Stdio};
+use std::time::SystemTime;
+
 use alloy_eips::BlockNumberOrTag;
 use alloy_primitives::{Address, U256};
 use alloy_provider::Provider;
 use anyhow::{Context, Result, anyhow};
 use common::types::BlockPow;
-use std::env;
-use std::io::{BufRead, BufReader};
-use std::process::{Command, Stdio};
-use std::time::SystemTime;
 use union_contracts::bindings::peg_manager::PegManager::PegManagerInstance;
+
+use crate::fake_contracts::FakePegManager;
+use crate::fake_contracts::FakePegManager::FakePegManagerInstance;
 
 pub struct Executor<P: Provider> {
     provider: P,

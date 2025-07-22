@@ -1,16 +1,17 @@
+use std::sync::mpsc;
+
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
+use common::alloy_rsk_provider::rpc::AlloyProvider;
 use common::msg_broker::broker::BrokerServer;
-use common::types::RskLog;
-use common::{
-    alloy_rsk_provider::rpc::AlloyProvider, rsk_indexer::RskIndexer, shutdown_flag::ShutdownFlag,
-    types::BlockHash,
-};
+use common::rsk_indexer::RskIndexer;
+use common::shutdown_flag::ShutdownFlag;
+use common::types::{BlockHash, RskLog};
 use log::{debug, error, info};
 use log_indexer::config::{Config, Logger};
+use log_indexer::indexer::LogIndexer;
 use log_indexer::notifier::Notifier;
-use log_indexer::{indexer::LogIndexer, store::RawLogStore};
-use std::sync::mpsc;
+use log_indexer::store::RawLogStore;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const CONFIG_CLI_FLAG: &str = "config-path";

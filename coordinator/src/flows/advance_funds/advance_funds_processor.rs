@@ -1,27 +1,24 @@
-use crate::blockchain_tracker::{BlockchainObserver, BlockchainView};
-use crate::flows::advance_funds::check_fork_accumulator::CheckForkAccumulator;
-use crate::{
-    event_processor::EventProcessor,
-    types::{AdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents},
-};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+
 use anyhow::Result;
 use bincode::config::standard;
 use check_fork::{CheckForkArgs, check_fork};
 use check_fork_zkp::{CHECK_FORK_GUEST_ID, CHECK_FORK_GUEST_PATH};
 use common::msg_broker::bitvmx_types::IncomingBitVMXApiMessages;
-use common::msg_broker::broker::BitVmxBrokerClientApi;
+use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 use common::runtime_sync::RuntimeSync;
-use common::{
-    msg_broker::broker::BROKER_SERVER_ID,
-    types::{BlockNumber, RskBlockAndUncles},
-};
+use common::types::{BlockNumber, RskBlockAndUncles};
 use log::{debug, error, info, warn};
 use primitive_types::U256;
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::rc::Rc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;
+
+use crate::blockchain_tracker::{BlockchainObserver, BlockchainView};
+use crate::event_processor::EventProcessor;
+use crate::flows::advance_funds::check_fork_accumulator::CheckForkAccumulator;
+use crate::types::{AdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents};
 
 pub struct AdvanceFundsProcessor<CG, BC>
 where
@@ -370,20 +367,20 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::config::REQUIRED_CONFIRMATIONS;
-    use crate::coordinator::tests::MockRskContractsGatewayApi;
-    use crate::flows::advance_funds::tests::create_fake_block;
-    use crate::types::EventWithBlock;
     use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
     use alloy_primitives::U256 as AlloyU256;
     use common::msg_broker::bitvmx_types::OutgoingBitVMXApiMessages;
     use common::msg_broker::broker::MockBrokerClientApi;
     use common::test_utils::rsk_block_generator::create_block_from_template;
-    use common::types::TxHash;
-    use common::types::{BlockHash, RskBlock};
+    use common::types::{BlockHash, RskBlock, TxHash};
     use mockall::predicate::{eq, function};
     use primitive_types::{H256, U256};
+
+    use super::*;
+    use crate::config::REQUIRED_CONFIRMATIONS;
+    use crate::coordinator::tests::MockRskContractsGatewayApi;
+    use crate::flows::advance_funds::tests::create_fake_block;
+    use crate::types::EventWithBlock;
 
     fn create_fake_request_event(pegout_id: &str) -> RequestAdvanceFunds {
         RequestAdvanceFunds {

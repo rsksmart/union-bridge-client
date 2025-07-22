@@ -1,12 +1,10 @@
 use anyhow::{Context, Result};
 use bitcoin::Transaction;
-use common::msg_broker::{
-    bitvmx_types::{
-        BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages,
-        TransactionBlockchainStatus, TransactionStatus, VariableTypes,
-    },
-    broker::{BITVMX_L2_BROKER_CLIENT_ID, BitVmxBrokerServerApi},
+use common::msg_broker::bitvmx_types::{
+    BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages,
+    TransactionBlockchainStatus, TransactionStatus, VariableTypes,
 };
+use common::msg_broker::broker::{BITVMX_L2_BROKER_CLIENT_ID, BitVmxBrokerServerApi};
 use serde_json::json;
 use uuid::Uuid;
 

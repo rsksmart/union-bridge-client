@@ -1,23 +1,21 @@
-use crate::{
-    rsk_gateway::{DomainErrors, RskContractsGateway, RskContractsGatewayApi},
-    types::{
-        AddMemberNonceInput, AddMemberSignatureInput, PeginAddressInput, RequestPeginInput,
-        RegisterPegoutInput,
-    },
-};
+use std::time::Duration;
+
 use alloy_provider::Provider;
 use anyhow::{Context, Result};
-use axum::{
-    Extension, Json, Router,
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    routing::post,
-};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use axum::routing::post;
+use axum::{Extension, Json, Router};
 use common::shutdown_flag::ShutdownFlag;
 use serde_json::json;
-use std::time::Duration;
 use tokio::net::TcpListener;
 use tower_http::timeout::TimeoutLayer;
+
+use crate::rsk_gateway::{DomainErrors, RskContractsGateway, RskContractsGatewayApi};
+use crate::types::{
+    AddMemberNonceInput, AddMemberSignatureInput, PeginAddressInput, RegisterPegoutInput,
+    RequestPeginInput,
+};
 
 pub struct Server {
     listener: TcpListener,

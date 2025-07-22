@@ -154,9 +154,11 @@ GetBlocks executed and CheckForkArgs generated. Relevant parameters for the inte
 ## 2) Generate the Stark Proof
 
 With the previous output, we can now generate the Stark Proof
-Clone Fairgate's [ZK Proof](https://github.com/FairgateLabs/rust-bitvmx-zk-proof/) repo, for now at `poc-generalise-host` branch.
+Clone Fairgate's [ZK Proof](https://github.com/FairgateLabs/rust-bitvmx-zk-proof/) repo, for now at
+`poc-generalise-host` branch.
 
 Then run the following command where:
+
 ```bash
 cargo run --release --bin host -- prove-stark --input /Users/illuque/workspace/rootstock/union_bridge/union-bridge-client/util/check-fork-demo.old/check_fork_args.bin --elf /Users/illuque/workspace/rootstock/union_bridge/union-bridge-client/target/riscv-guest/zkvm_guest/check_fork_guest/riscv32im-risc0-zkvm-elf/release/check_fork_guest --output stark-proof.bin
 ```
@@ -186,11 +188,11 @@ and we have some git hooks to enforce it (check `.hooks/README.md` for more info
 
 Before contributing to the project, please run the following commands to set up the project:
 
-## 1. Install _rust_ and _cargo_
+## Install _rust_ and _cargo_
 
 https://www.rust-lang.org/tools/install
 
-## 2. Install _rusty-hook_
+## Install _rusty-hook_
 
 This crate is used for commit hooks management.
 Run the following commands to install and initialize _rusty-hook_:
@@ -201,6 +203,22 @@ rusty-hook init
 ```
 
 The file [rusty-hook.toml](rusty-hook.toml) will be used for hook configuration.
+
+## Install formatting tools
+
+Install `rustfmt` nightly, as it supports features we use in `rustfmt.toml` like imports reorder and grouping:
+
+```bash
+rustup component add rustfmt --toolchain nightly
+```
+
+Install `cargo-sort` to sort dependencies in `Cargo.toml` files:
+
+```bash
+cargo install cargo-sort
+```
+
+Together with the hooks, these tools will help you keep the codebase clean and consistent on `pre-commit`.
 
 ## Clone the repository
 
@@ -221,25 +239,30 @@ You can install it via Homebrew:
 brew install act
 ```
 
-**Only the first time you run `act`, or whenever the base image changes**. To do so, run the following command from the `.github/act` directory:
+**Only the first time you run `act`, or whenever the base image changes**. To do so, run the following command from the
+`.github/act` directory:
 
 Then, copy the `.actrc.sample` to `.actrc` and configure it as needed. This file is used to configure the `act` tool.
 
 To run the same actions as the CI runs on pull requests, you can use the following command:
+
 ```bash
 act pull_request -s KEY_STORE_FILE=$(cat <path_to_your_keystore_file>)
 ```
 
 To run just Crate Tests, you can use the following command:
+
 ```bash
 act -j crates-tests -s KEY_STORE_FILE=$(cat <path_to_your_keystore_file>)
 ```
 
 To run just QA Tests, you can use the following command:
+
 ```bash
 act -j qa-tests -s KEY_STORE_FILE=$(cat <path_to_your_keystore_file>)
 ```
 
 NOTE: Uploading and downloading artifacts is slow locally, but fast on the CI.
-NOTE: You can add `--reuse` to reuse previous Docker containers to speed up execution by skipping setup and preserving cache, filesystem, and environment state.
+NOTE: You can add `--reuse` to reuse previous Docker containers to speed up execution by skipping setup and preserving
+cache, filesystem, and environment state.
 NOTE: If you find concurrency errors, try running with `--concurrent-jobs 1` to run the actions sequentially.

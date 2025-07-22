@@ -1,5 +1,6 @@
-use crate::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
-use crate::msg_broker::types::{FromServer, ToServer};
+use std::net::{IpAddr, Ipv4Addr};
+use std::sync::{Arc, Mutex};
+
 use log::debug;
 use message_broker::broker_memstorage::MemStorage;
 use message_broker::channel::channel::{DualChannel, LocalChannel};
@@ -7,9 +8,10 @@ use message_broker::rpc::BrokerConfig;
 use message_broker::rpc::sync_server::BrokerSync;
 use mockall::automock;
 use serde::Serialize;
-use std::net::{IpAddr, Ipv4Addr};
-use std::sync::{Arc, Mutex};
 use thiserror::Error;
+
+use crate::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+use crate::msg_broker::types::{FromServer, ToServer};
 
 // by convention, server is id 1
 pub const BROKER_SERVER_ID: u32 = 1;

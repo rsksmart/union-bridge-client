@@ -1,21 +1,21 @@
+use std::cmp::Ordering;
+use std::fmt;
+use std::num::ParseIntError;
+use std::ops::{Add, Mul, Sub};
+use std::str::FromStr;
+use std::string::ToString;
+
 use alloy_json_abi::JsonAbi;
 use alloy_primitives::FixedBytes;
 use anyhow::Result;
-use bitcoin::{blockdata::block::Header, consensus::encode::deserialize as btc_deserialize};
+use bitcoin::blockdata::block::Header;
+use bitcoin::consensus::encode::deserialize as btc_deserialize;
 use hex::FromHexError;
 use log::error;
 use musig2::PubNonce;
 use primitive_types::{H160, H256, U256};
 use serde::{Deserialize, Deserializer, Serialize, de};
 use serde_json::Value;
-use std::{
-    cmp::Ordering,
-    fmt,
-    num::ParseIntError,
-    ops::{Add, Mul, Sub},
-    str::FromStr,
-    string::ToString,
-};
 
 /// A trait for types that can be converted into a hexadecimal string.
 ///

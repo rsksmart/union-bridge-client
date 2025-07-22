@@ -1,5 +1,6 @@
-use crate::{Block, BridgeEvent, CheckForkArgs, SUPERBLOCK_TIMES_DIFFICULTY, check_fork};
 use primitive_types::{H256, U256};
+
+use crate::{Block, BridgeEvent, CheckForkArgs, SUPERBLOCK_TIMES_DIFFICULTY, check_fork};
 
 const DEFAULT_DIFFICULTY: u128 = 5904436352267687415636;
 const DEFAULT_TIMESTAMP: u64 = 1000;

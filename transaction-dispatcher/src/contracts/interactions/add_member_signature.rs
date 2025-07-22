@@ -1,8 +1,9 @@
+use log::{error, info};
+
 use crate::contracts::signature_manager::SignatureManagerContractApi;
 use crate::contracts::types::FixedBytes32;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{AddMemberSignatureInput, AddMemberSignatureOutput};
-use log::{error, info};
 
 #[derive(Clone)]
 pub(crate) struct AddMemberSignatureInvoke<C: SignatureManagerContractApi> {

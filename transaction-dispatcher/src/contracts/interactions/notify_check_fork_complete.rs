@@ -1,6 +1,8 @@
-use crate::{contracts::peg_manager::PegManagerContractApi, rsk_gateway::DomainErrors};
 use anyhow::Result;
 use log::{error, info};
+
+use crate::contracts::peg_manager::PegManagerContractApi;
+use crate::rsk_gateway::DomainErrors;
 
 #[derive(Clone)]
 pub struct NotifyCheckForkCompleteInvoke<C: PegManagerContractApi> {

@@ -1,4 +1,5 @@
-use crate::types::RskPegManagerEvents::UnknownEvent;
+use std::collections::HashMap;
+
 use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
 use alloy_primitives::{B256, LogData};
 use alloy_sol_types::SolEvent;
@@ -7,11 +8,12 @@ use common::types::{BlockHash, BlockNumber, Hash256, RskLog, TxHash};
 use log::{error, warn};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
 use union_contracts::bindings::signature_manager::SignatureManager::{
     AllNoncesReady, AllSignaturesReady,
 };
+
+use crate::types::RskPegManagerEvents::UnknownEvent;
 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-183
 
 #[derive(Eq, PartialEq, Debug)]
@@ -266,7 +268,6 @@ pub struct BitVmxSigningInfo {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use alloy_primitives::{Address, B256, Bytes, FixedBytes, U256};
     use common::test_utils::rsk_log_generator::{FakeLogGenerator, event_signature_to_topic};
     use common::test_utils::rsk_utils::generate_fake_address;
@@ -275,6 +276,8 @@ mod tests {
     use union_contracts::bindings::peg_manager::PegManager::{
         PrevoutData, RequestPeginTempInfo, StreamPosition,
     };
+
+    use super::*;
 
     #[test]
     fn test_decode_unknown_event() {

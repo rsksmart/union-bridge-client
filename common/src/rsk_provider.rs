@@ -1,8 +1,8 @@
-use crate::types::{Address, BlockHash, BlockNumber, ContractInfo, RskBlock, RskEvent, RskLog};
 use anyhow::Result;
+use mockall::automock;
 use thiserror::Error;
 
-use mockall::automock;
+use crate::types::{Address, BlockHash, BlockNumber, ContractInfo, RskBlock, RskEvent, RskLog};
 
 #[derive(Debug)]
 pub enum BlockNumRef {

@@ -1,8 +1,9 @@
+use log::{error, info};
+
 use crate::contracts;
 use crate::contracts::signature_manager::SignatureManagerContractApi;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{AddMemberNonceInput, AddMemberNonceOutput};
-use log::{error, info};
 
 #[derive(Clone)]
 pub(crate) struct AddMemberNonceInvoke<C: SignatureManagerContractApi> {

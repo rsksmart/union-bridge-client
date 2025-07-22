@@ -1,9 +1,10 @@
-use anyhow::Result;
-use common::types::{BlockNumber, RskBlock, RskBlockAndUncles};
-use log::{debug, info, warn};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
+
+use anyhow::Result;
+use common::types::{BlockNumber, RskBlock, RskBlockAndUncles};
+use log::{debug, info, warn};
 use uuid::Uuid;
 
 pub trait BlockchainObserver {
@@ -341,10 +342,12 @@ impl ConfirmableEvent {
 
 #[cfg(test)]
 mod tests_blockchain_view {
-    use super::*;
+    use std::ops::Mul;
+
     use common::types::{BlockDifficulty, BlockHash, BlockPow, BlockTimestamp, RskBlock};
     use primitive_types::{H256, U256};
-    use std::ops::Mul;
+
+    use super::*;
 
     // mock observer that tracks all notifications for testing
     #[derive(Debug)]
@@ -674,14 +677,16 @@ mod tests_blockchain_view {
 
 #[cfg(test)]
 mod confirmable_event_tests {
-    use crate::blockchain_tracker::{BlockchainView, ConfirmableEvent};
-    use common::test_utils::rsk_block_generator::FakeBlockGenerator;
-    use common::types::{BlockNumber, RskBlockAndUncles};
     use std::cell::RefCell;
     use std::rc::Rc;
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
+
+    use common::test_utils::rsk_block_generator::FakeBlockGenerator;
+    use common::types::{BlockNumber, RskBlockAndUncles};
     use uuid::Uuid;
+
+    use crate::blockchain_tracker::{BlockchainView, ConfirmableEvent};
 
     #[test]
     fn test_confirmable_event_happy_path_flow() {

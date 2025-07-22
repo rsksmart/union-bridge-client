@@ -1,18 +1,18 @@
+use std::io::Write;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
+
 use actors_mocking::{bitvmx, events};
 use alloy_node_bindings::Anvil;
-use alloy_provider::{ProviderBuilder, network::EthereumWallet};
+use alloy_provider::ProviderBuilder;
+use alloy_provider::network::EthereumWallet;
 use alloy_signer_local::LocalSigner;
 use anyhow::{Context, Result};
 use bitcoin::Transaction;
 use clap::{CommandFactory, Parser};
 use common::msg_broker::broker::BitVmxBrokerServer;
-use std::path::PathBuf;
-use std::{
-    io::Write,
-    sync::{Arc, Mutex},
-    thread,
-    time::Duration,
-};
 use tokio::io::{self, AsyncBufReadExt, BufReader};
 
 #[derive(Debug, Parser)]

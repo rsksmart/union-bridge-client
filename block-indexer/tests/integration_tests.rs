@@ -1,3 +1,7 @@
+use std::fs;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+
 use anyhow::Result;
 use block_indexer::indexer::BlockIndexer;
 use block_indexer::store::{BlockStore, CachedBlockStore};
@@ -9,8 +13,6 @@ use common::test_utils::mock_rsk_provider_handler::MockRskProviderHandler;
 use common::test_utils::rsk_block_generator::FakeBlockGenerator;
 use common::types::{BlockHash, BlockNumber, RskBlock};
 use log::info;
-use std::fs;
-use std::sync::{Arc, atomic::AtomicBool};
 use tempfile::tempdir;
 const BLOCK_CACHE_SIZE: usize = 100;
 use common::test_utils::rsk_utils::{DEFAULT_BLOCK_HASH, UncleBlockInfo};

@@ -1,5 +1,6 @@
 use bitcoin::{Transaction, TxIn, TxOut};
-use common::{msg_broker::bitvmx_types::BtcTxSPVProof, types::Hash256};
+use common::msg_broker::bitvmx_types::BtcTxSPVProof;
+use common::types::Hash256;
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
 // TODO improve these structs with proper typing for their fields now that we removed the http server

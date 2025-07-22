@@ -1,7 +1,8 @@
-use anyhow::{Result, anyhow};
-use lru::LruCache as InnerLruCache;
 use std::num::NonZeroUsize;
 use std::sync::RwLock;
+
+use anyhow::{Result, anyhow};
+use lru::LruCache as InnerLruCache;
 
 pub trait Cache<V> {
     fn get(&self, key: &str) -> Result<Option<V>>;

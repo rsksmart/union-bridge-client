@@ -1,4 +1,12 @@
+use std::collections::HashMap;
+use std::ops::Range;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+
 use anyhow::{Context, Result};
+use common::rsk_indexer::RskIndexer;
+use common::rsk_provider::{MockRskProvider, RskSubscriptionFilter};
+use common::shutdown_flag::ShutdownFlag;
 use common::test_utils::mock_rsk_provider_handler::MockRskProviderHandler;
 use common::test_utils::rsk_block_generator::FakeBlockGenerator;
 use common::test_utils::rsk_log_generator::FakeLogGenerator;
@@ -6,22 +14,12 @@ use common::test_utils::rsk_utils::{
     DEFAULT_BLOCK_HASH, generate_fake_address, generate_fake_addresses,
     generate_fake_managed_contracts,
 };
-use common::types::TxHash;
-use common::{
-    rsk_indexer::RskIndexer,
-    rsk_provider::{MockRskProvider, RskSubscriptionFilter},
-    shutdown_flag::ShutdownFlag,
-    types::{Address, BlockHash, ContractInfo, LogInfo, RskLog},
-};
+use common::types::{Address, BlockHash, ContractInfo, LogInfo, RskLog, TxHash};
 use log::info;
-use log_indexer::{indexer::LogIndexer, store::RawLogStore};
+use log_indexer::indexer::LogIndexer;
+use log_indexer::store::RawLogStore;
 use primitive_types::H256;
 use rand::Rng;
-use std::{
-    collections::HashMap,
-    ops::Range,
-    sync::{Arc, atomic::AtomicBool},
-};
 use tempfile::tempdir;
 
 const LOG_INDEX_RANGE: Range<u64> = 0..20;

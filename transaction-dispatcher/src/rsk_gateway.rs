@@ -1,29 +1,27 @@
-use crate::{
-    config::TransactionConfig,
-    contracts::{
-        peg_manager::{
-            FakePegManagerContract, PegManagerContract, accept_pegin::AcceptPeginInvoke,
-            get_temporary_pegin_address::GetTemporaryPeginAddressCall,
-            notify_check_fork_complete::NotifyCheckForkCompleteInvoke,
-            register_pegout::RegisterPegoutInvoke, request_pegin::RequestPeginInvoke,
-        },
-        signature_manager::{
-            AddMemberNonceInvoke, AddMemberSignatureInvoke, SignatureManagerContract,
-        },
-    },
-    types::{
-        AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
-        AddMemberSignatureInput, AddMemberSignatureOutput, PeginAddressInput, PeginAddressOutput,
-        RegisterPegoutInput, RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput,
-    },
-};
+use std::collections::HashMap;
+
 use alloy_primitives::Address;
 use alloy_provider::Provider;
 use anyhow::{Context, Result};
 use common::types::ContractInfo;
 use log::{error, info};
-use std::collections::HashMap;
 use thiserror::Error;
+
+use crate::config::TransactionConfig;
+use crate::contracts::peg_manager::accept_pegin::AcceptPeginInvoke;
+use crate::contracts::peg_manager::get_temporary_pegin_address::GetTemporaryPeginAddressCall;
+use crate::contracts::peg_manager::notify_check_fork_complete::NotifyCheckForkCompleteInvoke;
+use crate::contracts::peg_manager::register_pegout::RegisterPegoutInvoke;
+use crate::contracts::peg_manager::request_pegin::RequestPeginInvoke;
+use crate::contracts::peg_manager::{FakePegManagerContract, PegManagerContract};
+use crate::contracts::signature_manager::{
+    AddMemberNonceInvoke, AddMemberSignatureInvoke, SignatureManagerContract,
+};
+use crate::types::{
+    AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
+    AddMemberSignatureInput, AddMemberSignatureOutput, PeginAddressInput, PeginAddressOutput,
+    RegisterPegoutInput, RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput,
+};
 
 /// Must match the contract name in the config file
 const PEG_MANAGER_CONTRACT_NAME: &'static str = "PegManager";

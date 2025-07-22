@@ -1,18 +1,19 @@
-use crate::blockchain_tracker::{BlockchainView, ConfirmableEvent};
-use crate::config::REQUIRED_CONFIRMATIONS;
-use crate::types::BitVmxSigningInfo;
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use anyhow::{Context, Result, anyhow, bail};
 use common::runtime_sync::RuntimeSync;
 use common::types::{BlockNumber, Hash256};
 use log::info;
-use std::cell::RefCell;
-use std::rc::Rc;
+#[cfg(test)]
+use mockall::automock;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::{AddMemberNonceInput, AddMemberSignatureInput};
 use uuid::Uuid;
 
-#[cfg(test)]
-use mockall::automock;
+use crate::blockchain_tracker::{BlockchainView, ConfirmableEvent};
+use crate::config::REQUIRED_CONFIRMATIONS;
+use crate::types::BitVmxSigningInfo;
 
 #[cfg_attr(test, automock)]
 pub trait BtcSignatureFlowApi {
@@ -308,9 +309,10 @@ where
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::*;
-    use crate::blockchain_tracker::BlockchainView;
-    use crate::coordinator::tests::MockRskContractsGatewayApi;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use std::str::FromStr;
+
     use bitcoin::PublicKey;
     use common::runtime_sync::RuntimeSync;
     use common::test_utils::rsk_block_generator::create_block_and_uncles;
@@ -319,11 +321,12 @@ pub(crate) mod tests {
     use musig2::{PartialSignature, PubNonce};
     use primitive_types::H256;
     use serde_json::json;
-    use std::cell::RefCell;
-    use std::rc::Rc;
-    use std::str::FromStr;
     use transaction_dispatcher::types::{AddMemberNonceInput, AddMemberSignatureInput};
     use uuid::Uuid;
+
+    use super::*;
+    use crate::blockchain_tracker::BlockchainView;
+    use crate::coordinator::tests::MockRskContractsGatewayApi;
 
     #[test]
     fn test_nonce_step_with_unset() {

@@ -1,18 +1,19 @@
-use super::btc_signature_flow::{BtcSignatureFlow, BtcSignatureFlowApi};
-use crate::event_processor::EventProcessor;
-use crate::types::{AllNoncesReadyEvent, BitVmxSigningInfo, RskPegManagerEvents};
+use std::collections::HashMap;
+use std::rc::Rc;
+use std::sync::Arc;
+
 use anyhow::{Result, anyhow, bail};
 use common::msg_broker::bitvmx_types::{OutgoingBitVMXApiMessages, VariableTypes};
 use common::runtime_sync::RuntimeSync;
 use common::types::{Hash256, RskBlockAndUncles};
-use std::collections::HashMap;
-use std::rc::Rc;
-use std::sync::Arc;
+#[cfg(test)]
+use mockall::automock;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;
 
-#[cfg(test)]
-use mockall::automock;
+use super::btc_signature_flow::{BtcSignatureFlow, BtcSignatureFlowApi};
+use crate::event_processor::EventProcessor;
+use crate::types::{AllNoncesReadyEvent, BitVmxSigningInfo, RskPegManagerEvents};
 
 pub(crate) const SIGNATURE_MESSAGE: &str = "signing_info";
 
@@ -194,19 +195,21 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::blockchain_tracker::BlockchainView;
-    use crate::flows::btc_signature::btc_signature_flow::MockBtcSignatureFlowApi;
-    use crate::types::{AllNoncesReadyEvent, AllSignaturesReadyEvent};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use std::str::FromStr;
+
     use bitcoin::PublicKey;
     use common::test_utils::rsk_block_generator::create_block_and_uncles;
     use common::types::{BlockNumber, RskBlockAndUncles, TxHash};
     use mockall::predicate::*;
     use musig2::PubNonce;
     use primitive_types::H256;
-    use std::cell::RefCell;
-    use std::rc::Rc;
-    use std::str::FromStr;
+
+    use super::*;
+    use crate::blockchain_tracker::BlockchainView;
+    use crate::flows::btc_signature::btc_signature_flow::MockBtcSignatureFlowApi;
+    use crate::types::{AllNoncesReadyEvent, AllSignaturesReadyEvent};
 
     #[test]
     fn test_process_new_bitvmx_event_creates_flow_and_sends_nonce() {

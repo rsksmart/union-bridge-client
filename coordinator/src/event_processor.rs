@@ -1,14 +1,14 @@
-use crate::types::RskPegManagerEvents;
 use anyhow::Result;
 use common::msg_broker::bitvmx_types::OutgoingBitVMXApiMessages;
 use common::types::RskBlockAndUncles;
 
-mod pegin_processor;
+use crate::types::RskPegManagerEvents;
 
-pub use pegin_processor::*;
+mod pegin_processor;
 
 #[cfg(test)]
 use mockall::automock;
+pub use pegin_processor::*;
 
 #[cfg_attr(test, automock)]
 pub trait EventProcessor {

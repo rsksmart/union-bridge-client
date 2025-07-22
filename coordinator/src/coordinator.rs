@@ -1,25 +1,19 @@
-use crate::{
-    event_processor::{EventProcessor, PeginProcessor},
-    flows::advance_funds::advance_funds_processor::AdvanceFundsProcessor,
-    monitor::MonitorApi,
-};
+use std::ops::Sub;
+use std::rc::Rc;
+use std::thread;
+use std::time::{Duration, Instant};
+
 use anyhow::{Context, Result};
-use common::{
-    msg_broker::{
-        bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages},
-        broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi},
-    },
-    runtime_sync::RuntimeSync,
-    shutdown_flag::ShutdownFlag,
-};
+use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
+use common::runtime_sync::RuntimeSync;
+use common::shutdown_flag::ShutdownFlag;
 use log::{error, info, warn};
-use std::{
-    ops::Sub,
-    rc::Rc,
-    thread,
-    time::{Duration, Instant},
-};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
+
+use crate::event_processor::{EventProcessor, PeginProcessor};
+use crate::flows::advance_funds::advance_funds_processor::AdvanceFundsProcessor;
+use crate::monitor::MonitorApi;
 
 const CHECK_PERIOD: Duration = Duration::from_secs(1);
 const BITVMX_NOT_RESPONDING_THRESHOLD: Duration = Duration::from_secs(30);
@@ -220,37 +214,32 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use crate::event_processor::{EventProcessor, MockEventProcessor};
-    use crate::{
-        coordinator::Coordinator,
-        monitor::MockMonitorApi,
-        types::{AdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents},
-    };
+    use std::thread::{self, JoinHandle, sleep};
+    use std::time::Duration;
+
     use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
     use alloy_primitives::U256;
     use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
     use common::msg_broker::broker::{BROKER_SERVER_ID, MockBrokerClientApi};
-    use common::types::TxHash;
-    use common::{
-        shutdown_flag::ShutdownFlag,
-        test_utils::rsk_block_generator::{
-            create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
-        },
-        types::RskBlockAndUncles,
+    use common::shutdown_flag::ShutdownFlag;
+    use common::test_utils::rsk_block_generator::{
+        create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
     };
+    use common::types::{RskBlockAndUncles, TxHash};
     use mockall::mock;
     use mockall::predicate::{eq, function};
     use primitive_types::H256;
-    use std::{
-        thread::{self, JoinHandle, sleep},
-        time::Duration,
-    };
     use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
     use transaction_dispatcher::types::{
         AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
         AddMemberSignatureInput, AddMemberSignatureOutput, PeginAddressInput, PeginAddressOutput,
         RegisterPegoutInput, RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput,
     };
+
+    use crate::coordinator::Coordinator;
+    use crate::event_processor::{EventProcessor, MockEventProcessor};
+    use crate::monitor::MockMonitorApi;
+    use crate::types::{AdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents};
 
     fn create_fake_request_event(pegout_id: &str) -> RequestAdvanceFunds {
         RequestAdvanceFunds {

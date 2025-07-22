@@ -1,11 +1,11 @@
-use crate::blockchain_tracker::{BlockConfirmations, BlockchainObserver};
-use crate::config::REQUIRED_CONFIRMATIONS;
-use crate::types::AdvanceFundsEvent;
 use check_fork::{Block, CheckForkArgs};
 use common::types::{BlockPow, RskBlock, RskBlockAndUncles};
 use log::{debug, info};
-use primitive_types::H256;
-use primitive_types::U256;
+use primitive_types::{H256, U256};
+
+use crate::blockchain_tracker::{BlockConfirmations, BlockchainObserver};
+use crate::config::REQUIRED_CONFIRMATIONS;
+use crate::types::AdvanceFundsEvent;
 
 #[derive(Debug)]
 pub(super) struct CheckForkAccumulator {
@@ -243,11 +243,12 @@ impl CheckForkAccumulator {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::flows::advance_funds::tests::create_fake_block;
     use actors_mocking::fake_contracts::FakePegManager::AdvanceFunds;
     use common::types::{BlockHash, BlockNumber, RskBlockAndUncles, TxHash};
     use primitive_types::H256;
+
+    use super::*;
+    use crate::flows::advance_funds::tests::create_fake_block;
 
     fn create_fake_advance_funds_event(
         pegout_id: &str,

@@ -1,14 +1,13 @@
-use crate::store::BlockStore;
-use anyhow::{Context, Result, bail};
-use common::types::RskBlockAndUncles;
-use common::{
-    rsk_indexer::RskIndexer,
-    rsk_provider::{RskProvider, RskSubscription, RskSubscriptionError},
-    shutdown_flag::ShutdownFlag,
-    types::{BlockHash, BlockNumber, RskBlock},
-};
-use log::{debug, error, info, warn};
 use std::sync::mpsc;
+
+use anyhow::{Context, Result, bail};
+use common::rsk_indexer::RskIndexer;
+use common::rsk_provider::{RskProvider, RskSubscription, RskSubscriptionError};
+use common::shutdown_flag::ShutdownFlag;
+use common::types::{BlockHash, BlockNumber, RskBlock, RskBlockAndUncles};
+use log::{debug, error, info, warn};
+
+use crate::store::BlockStore;
 
 pub struct BlockIndexer<P: RskProvider, S: BlockStore> {
     store: S,
@@ -500,16 +499,15 @@ impl<P: RskProvider, S: BlockStore> RskIndexer<P, S> for BlockIndexer<P, S> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::store::MockBlockStore;
-    use common::{
-        rsk_provider::MockRskProvider,
-        test_utils::rsk_block_generator::{
-            get_first_default_rsk_block, get_second_default_rsk_block, get_third_default_rsk_block,
-        },
+    use common::rsk_provider::MockRskProvider;
+    use common::test_utils::rsk_block_generator::{
+        get_first_default_rsk_block, get_second_default_rsk_block, get_third_default_rsk_block,
     };
     use mockall::predicate::eq;
     use primitive_types::H256;
+
+    use super::*;
+    use crate::store::MockBlockStore;
 
     #[test]
     fn returns_ok_if_no_uncles() {

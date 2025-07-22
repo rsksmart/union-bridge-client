@@ -3,31 +3,31 @@ name = "coordinator"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+anvil = []
+
 [dependencies]
-check-fork = { path = "../check-fork" }
-common = { path = "../common" }
 actors-mocking = { path = "../actors-mocking" }
-check-fork-zkp = { path = "../check-fork/zkp" }
-transaction-dispatcher = { path = "../transaction-dispatcher" }
 
 alloy-primitives = { workspace = true }
 alloy-sol-types = { workspace = true }
 anyhow = { workspace = true }
 bincode = { workspace = true }
 bitcoin = { workspace = true }
+check-fork = { path = "../check-fork" }
+check-fork-zkp = { path = "../check-fork/zkp" }
 clap = { workspace = true }
+common = { path = "../common" }
+hex = { workspace = true }
 log = { workspace = true }
 musig2 = { workspace = true }
-serde_json = { workspace = true }
-union-contracts = { workspace = true }
 primitive-types = { workspace = true }
-hex = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
+transaction-dispatcher = { path = "../transaction-dispatcher" }
+union-contracts = { workspace = true }
 
 uuid = { version = "1.11.0", features = ["v4"] }
 
 [dev-dependencies]
 mockall = { workspace = true }
-
-[features]
-anvil = []

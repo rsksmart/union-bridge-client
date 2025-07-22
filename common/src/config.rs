@@ -1,11 +1,14 @@
-use crate::errors::ConfigError;
+use std::fs;
+use std::path::Path;
+
 use alloy_json_abi::JsonAbi;
 use anyhow::{Context, Result};
 use config;
 use log::debug;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
-use std::{fs, path::Path};
+
+use crate::errors::ConfigError;
 
 const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 

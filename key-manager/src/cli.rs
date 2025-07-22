@@ -1,7 +1,9 @@
-use crate::key_manager::KeyManager;
+use std::path::Path;
+
 use anyhow::{Ok, Result};
 use clap::{Parser, Subcommand};
-use std::path::Path;
+
+use crate::key_manager::KeyManager;
 
 pub struct Cli {}
 

@@ -29,11 +29,13 @@ impl Logger {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{CARGO_PKG_NAME, Config};
-    use common::config::CommonConfig;
     use std::fs;
     use std::path::Path;
+
+    use common::config::CommonConfig;
     use tempfile::TempDir;
+
+    use crate::config::{CARGO_PKG_NAME, Config};
 
     const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 

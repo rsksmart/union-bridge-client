@@ -1,11 +1,10 @@
-use crate::{
-    contracts::peg_manager::PegManagerContractApi,
-    rsk_gateway::DomainErrors,
-    types::{RequestPeginInput, RequestPeginOutput},
-};
 use anyhow::Result;
 use log::{error, info};
 use union_contracts::bindings::peg_manager::PegManager::BtcTxSPVProof;
+
+use crate::contracts::peg_manager::PegManagerContractApi;
+use crate::rsk_gateway::DomainErrors;
+use crate::types::{RequestPeginInput, RequestPeginOutput};
 
 #[derive(Clone)]
 pub(crate) struct RequestPeginInvoke<C: PegManagerContractApi> {
@@ -38,20 +37,14 @@ impl<C: PegManagerContractApi> RequestPeginInvoke<C> {
 
         let result = match receipt.status() {
             true => {
-                info!(
-                    "RequestPegin successful at tx {}",
-                    receipt.transaction_hash
-                );
+                info!("RequestPegin successful at tx {}", receipt.transaction_hash);
                 RequestPeginOutput {
                     transaction_hash: receipt.transaction_hash.to_string(),
                     success: true,
                 }
             }
             false => {
-                error!(
-                    "RequestPegin failed at tx {}",
-                    receipt.transaction_hash
-                );
+                error!("RequestPegin failed at tx {}", receipt.transaction_hash);
                 RequestPeginOutput {
                     transaction_hash: receipt.transaction_hash.to_string(),
                     success: false,
@@ -65,6 +58,14 @@ impl<C: PegManagerContractApi> RequestPeginInvoke<C> {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
+    use alloy_primitives::{Address, Bloom, TxHash};
+    use alloy_rpc_types::{Log, Receipt, ReceiptEnvelope, ReceiptWithBloom, TransactionReceipt};
+    use union_contracts::bindings::peg_manager::PegManager::{
+        PegManagerErrors, PeginAlreadyRequested,
+    };
+
     use crate::contracts::common::tests::generate_contract_revert_error;
     use crate::contracts::interactions::request_pegin::{
         RequestPeginInput, RequestPeginInvoke, RequestPeginOutput,
@@ -72,12 +73,6 @@ mod tests {
     use crate::contracts::peg_manager::MockPegManagerContractApi;
     use crate::rsk_gateway::DomainErrors;
     use crate::types::{BitcoinTransaction, BitcoinTransactionIn, BitcoinTransactionOut};
-    use alloy_primitives::{Address, Bloom, TxHash};
-    use alloy_rpc_types::{Log, Receipt, ReceiptEnvelope, ReceiptWithBloom, TransactionReceipt};
-    use std::str::FromStr;
-    use union_contracts::bindings::peg_manager::PegManager::{
-        PegManagerErrors, PeginAlreadyRequested,
-    };
 
     impl RequestPeginInvoke<MockPegManagerContractApi> {
         pub(crate) fn new_for_tests(contract: MockPegManagerContractApi) -> Self {

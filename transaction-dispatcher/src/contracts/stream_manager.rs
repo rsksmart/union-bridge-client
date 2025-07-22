@@ -1,5 +1,6 @@
-use crate::rsk_gateway::DomainErrors;
 use union_contracts::bindings::stream_manager::StreamManager::StreamManagerErrors;
+
+use crate::rsk_gateway::DomainErrors;
 
 pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> {
     let decoded_err = err.as_decoded_interface_error::<StreamManagerErrors>();
@@ -17,11 +18,12 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
 
 #[cfg(test)]
 mod tests {
-    use crate::contracts::common::tests::generate_contract_revert_error;
-    use crate::rsk_gateway::DomainErrors;
     use union_contracts::bindings::stream_manager::StreamManager::{
         PacketOutOfBound, StreamManagerErrors, StreamNotFoundByDenomination,
     };
+
+    use crate::contracts::common::tests::generate_contract_revert_error;
+    use crate::rsk_gateway::DomainErrors;
 
     #[test]
     fn test_stream_not_found_by_denomination() {

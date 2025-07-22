@@ -1,11 +1,13 @@
-use crate::types::{RskEvent, RskLog};
+use std::fmt::Debug;
+
 use alloy_primitives::LogData;
 use alloy_sol_types::private::B256;
 use alloy_sol_types::{SolEvent, sol};
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::fmt::Debug;
+
+use crate::types::{RskEvent, RskLog};
 
 // define here known events, they are converted to Rust structs (mapped types, etc.)
 // for now these are just examples

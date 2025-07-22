@@ -1,31 +1,29 @@
-use crate::{
-    blockchain_tracker::{BlockConfirmations, BlockchainObserver, BlockchainView},
-    config::REQUIRED_CONFIRMATIONS,
-    event_processor::EventProcessor,
-    types::{EventWithBlock, PeginAcceptedEvent, PeginRequestedEvent, RskPegManagerEvents},
-};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::fmt::Debug;
+use std::future::Future;
+use std::rc::Rc;
+
 use anyhow::{Context, Result, bail};
 use bitcoin::Txid;
-use common::{
-    msg_broker::{
-        bitvmx_types::{
-            BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, VariableTypes,
-        },
-        broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi},
-    },
-    runtime_sync::RuntimeSync,
-    types::{RskBlockAndUncles, TxHash},
+use common::msg_broker::bitvmx_types::{
+    BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, VariableTypes,
 };
+use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
+use common::runtime_sync::RuntimeSync;
+use common::types::{RskBlockAndUncles, TxHash};
 use log::info;
 use serde::Serialize;
 use serde_json::Value;
-use std::{cell::RefCell, collections::HashMap, fmt::Debug, future::Future, rc::Rc};
-use transaction_dispatcher::{
-    rsk_gateway::{DomainErrors, RskContractsGatewayApi},
-    types::{AcceptPeginInput, RequestPeginInput},
-};
+use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
+use transaction_dispatcher::types::{AcceptPeginInput, RequestPeginInput};
 use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
 use uuid::Uuid;
+
+use crate::blockchain_tracker::{BlockConfirmations, BlockchainObserver, BlockchainView};
+use crate::config::REQUIRED_CONFIRMATIONS;
+use crate::event_processor::EventProcessor;
+use crate::types::{EventWithBlock, PeginAcceptedEvent, PeginRequestedEvent, RskPegManagerEvents};
 
 const ACCEPT_PEGIN: &'static str = "accept-pegin";
 
@@ -509,37 +507,30 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        coordinator::tests::MockRskContractsGatewayApi,
-        event_processor::EventProcessor,
-        types::{PeginAcceptedEvent, PeginRequestedEvent},
-    };
     use alloy_primitives::{Address, Bytes, FixedBytes, U256};
     use anyhow::anyhow;
-    use bitcoin::{
-        Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, absolute::LockTime,
-        hashes::Hash, transaction::Version,
-    };
-    use common::{
-        msg_broker::{
-            bitvmx_types::{TransactionBlockchainStatus, TransactionStatus},
-            broker::{BROKER_SERVER_ID, BrokerError, MockBrokerClientApi},
-        },
-        test_utils::rsk_block_generator::create_block_and_uncles,
-        types::BlockHash,
-    };
+    use bitcoin::absolute::LockTime;
+    use bitcoin::hashes::Hash;
+    use bitcoin::transaction::Version;
+    use bitcoin::{Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut};
+    use common::msg_broker::bitvmx_types::{TransactionBlockchainStatus, TransactionStatus};
+    use common::msg_broker::broker::{BROKER_SERVER_ID, BrokerError, MockBrokerClientApi};
+    use common::test_utils::rsk_block_generator::create_block_and_uncles;
+    use common::types::BlockHash;
     use hex::FromHex;
     use mockall::predicate::{eq, function};
     use primitive_types::H256;
     use serde_json::json;
-    use transaction_dispatcher::{
-        rsk_gateway::DomainErrors,
-        types::{AcceptPeginOutput, RequestPeginOutput},
-    };
+    use transaction_dispatcher::rsk_gateway::DomainErrors;
+    use transaction_dispatcher::types::{AcceptPeginOutput, RequestPeginOutput};
     use union_contracts::bindings::peg_manager::PegManager::{
         PeginRequested, PrevoutData, RequestPeginTempInfo, StreamPosition,
     };
+
+    use super::*;
+    use crate::coordinator::tests::MockRskContractsGatewayApi;
+    use crate::event_processor::EventProcessor;
+    use crate::types::{PeginAcceptedEvent, PeginRequestedEvent};
 
     #[test]
     fn subscribe_to_bitvmx_pegin_events_succeeds() {

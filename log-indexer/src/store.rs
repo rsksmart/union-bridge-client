@@ -1,10 +1,10 @@
+use std::path::PathBuf;
+
 use anyhow::Result;
 use common::types::{Address, RskLog};
-use std::path::PathBuf;
-use storage_backend::storage::{KeyValueStore, Storage};
-
 #[cfg(test)]
 use mockall::automock;
+use storage_backend::storage::{KeyValueStore, Storage};
 
 #[cfg_attr(test, automock)]
 pub trait LogStore {
@@ -94,16 +94,15 @@ impl LogStore for RawLogStore {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use anyhow::Result;
-    use common::types::TxHash;
-    use common::{
-        test_utils::{rsk_log_generator::FakeLogGenerator, rsk_utils::generate_fake_address},
-        types::{BlockHash, LogInfo},
-    };
+    use common::test_utils::rsk_log_generator::FakeLogGenerator;
+    use common::test_utils::rsk_utils::generate_fake_address;
+    use common::types::{BlockHash, LogInfo, TxHash};
     use primitive_types::H256;
     use storage_backend::storage::KeyValueStore;
     use tempfile::tempdir;
+
+    use super::*;
 
     fn create_test_store() -> Result<RawLogStore> {
         let temp_dir = tempdir()?;

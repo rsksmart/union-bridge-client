@@ -1,11 +1,10 @@
-use crate::{
-    contracts::peg_manager::PegManagerContractApi,
-    rsk_gateway::DomainErrors,
-    types::{RegisterPegoutInput, RegisterPegoutOutput},
-};
 use alloy_primitives::FixedBytes;
 use anyhow::Result;
 use log::{error, info};
+
+use crate::contracts::peg_manager::PegManagerContractApi;
+use crate::rsk_gateway::DomainErrors;
+use crate::types::{RegisterPegoutInput, RegisterPegoutOutput};
 
 #[derive(Clone)]
 pub struct RegisterPegoutInvoke<C: PegManagerContractApi> {
@@ -62,18 +61,16 @@ impl<C: PegManagerContractApi> RegisterPegoutInvoke<C> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        contracts::{
-            interactions::register_pegout::{
-                RegisterPegoutInput, RegisterPegoutOutput, RegisterPegoutInvoke,
-            },
-            peg_manager::MockPegManagerContractApi,
-        },
-        rsk_gateway::DomainErrors,
-    };
+    use std::str::FromStr;
+
     use alloy_primitives::{Bloom, TxHash};
     use alloy_rpc_types::{Log, Receipt, ReceiptEnvelope, ReceiptWithBloom, TransactionReceipt};
-    use std::str::FromStr;
+
+    use crate::contracts::interactions::register_pegout::{
+        RegisterPegoutInput, RegisterPegoutInvoke, RegisterPegoutOutput,
+    };
+    use crate::contracts::peg_manager::MockPegManagerContractApi;
+    use crate::rsk_gateway::DomainErrors;
 
     impl RegisterPegoutInvoke<MockPegManagerContractApi> {
         fn new_for_tests(contract: MockPegManagerContractApi) -> Self {

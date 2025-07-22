@@ -1,3 +1,9 @@
+use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
+use std::sync::mpsc;
+use std::sync::mpsc::RecvTimeoutError;
+use std::time::Duration;
+
 use anyhow::{Context, Result, anyhow};
 use common::constants::indexer::NOTIFIER_CHECK_PERIOD;
 use common::msg_broker::broker::UnionBrokerServerApi;
@@ -5,11 +11,6 @@ use common::msg_broker::types::{FromServer, ToServer};
 use common::shutdown_flag::ShutdownFlag;
 use common::types::{Address, RskLog};
 use log::{debug, error, info, trace, warn};
-use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
-use std::sync::mpsc;
-use std::sync::mpsc::RecvTimeoutError;
-use std::time::Duration;
 
 pub struct Notifier<BS: UnionBrokerServerApi> {
     new_log_channel: mpsc::Receiver<RskLog>,
@@ -179,14 +180,16 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use common::msg_broker::broker::MockBrokerServerApi;
-    use common::test_utils::rsk_log_generator::FakeLogGenerator;
-    use common::test_utils::rsk_utils::generate_fake_address;
     use std::sync::mpsc;
     use std::sync::mpsc::Sender;
     use std::thread;
     use std::thread::{JoinHandle, sleep};
+
+    use common::msg_broker::broker::MockBrokerServerApi;
+    use common::test_utils::rsk_log_generator::FakeLogGenerator;
+    use common::test_utils::rsk_utils::generate_fake_address;
+
+    use super::*;
 
     struct ClientRequest {
         id: u32,

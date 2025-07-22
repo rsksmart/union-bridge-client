@@ -1,6 +1,7 @@
-use anyhow::{Context, Result, anyhow};
 use std::future::Future;
 use std::sync::Arc;
+
+use anyhow::{Context, Result, anyhow};
 use tokio::runtime::Runtime;
 
 // This struct is a wrapper around tokio::runtime::Runtime that allows for synchronous execution of

@@ -1,8 +1,9 @@
 // TODO(jira) https://rsklabs.atlassian.net/browse/ub-176
 
+use std::collections::HashMap;
+
 use bitcoin::{Amount, BlockHash, PrivateKey, PublicKey, ScriptBuf, Transaction, Txid};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use uuid::Uuid;
 
 type ProgramId = Uuid;

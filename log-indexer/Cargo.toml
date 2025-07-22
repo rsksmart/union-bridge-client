@@ -3,22 +3,22 @@ name = "log-indexer"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+test-utils = ["common/test-utils"]
+anvil = ["common/anvil"]
+
 [dependencies]
-common = { path = "../common" }
 
 anyhow = { workspace = true }
 clap = { workspace = true }
+common = { path = "../common" }
 log = { workspace = true }
 mockall = { workspace = true }
 serde = { workspace = true }
 storage-backend = { workspace = true }
 
 [dev-dependencies]
-tempfile = { workspace = true }
-primitive-types = { workspace = true }
 env_logger = { workspace = true }
+primitive-types = { workspace = true }
 rand = "0.9.0"
-
-[features]
-test-utils = ["common/test-utils"]
-anvil = ["common/anvil"]
+tempfile = { workspace = true }

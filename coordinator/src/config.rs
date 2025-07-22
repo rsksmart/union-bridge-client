@@ -1,8 +1,9 @@
+use std::net::IpAddr;
+
 use common::config::{CommonConfig, ContractConfig};
 use common::errors::ConfigError;
 use common::types::Address;
 use serde::Deserialize;
-use std::net::IpAddr;
 
 // TODO this should be event-type-dependent, therefore for now we use a constant - it makes no sense adding it to the config
 pub const REQUIRED_CONFIRMATIONS: u32 = 5;

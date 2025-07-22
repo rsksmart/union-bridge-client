@@ -1,29 +1,26 @@
-use crate::contracts::common::send_tx_with_gas_bump;
-use alloy_primitives::{Address, FixedBytes, U256, hex::FromHex};
+use actors_mocking::fake_contracts::FakePegManager;
+use actors_mocking::fake_contracts::FakePegManager::FakePegManagerInstance;
+use alloy_primitives::hex::FromHex;
+use alloy_primitives::{Address, FixedBytes, U256};
 use alloy_provider::Provider;
 use alloy_rpc_types::TransactionReceipt;
 use anyhow::Result;
 use log::{error, info};
+#[cfg(test)]
+use mockall::automock;
 use union_contracts::bindings::peg_manager::PegManager::{
     self, BtcTransaction, BtcTxSPVProof, PegManagerErrors, PegManagerInstance,
 };
 
 use crate::contracts::bitcoin_manager::ParseFieldError;
-
-use crate::types::RequestPeginInput;
-
+use crate::contracts::common::send_tx_with_gas_bump;
 // re-export for convenience
 pub(crate) use crate::contracts::interactions::accept_pegin;
-pub(crate) use crate::contracts::interactions::get_temporary_pegin_address;
-pub(crate) use crate::contracts::interactions::notify_check_fork_complete;
-pub(crate) use crate::contracts::interactions::register_pegout;
-pub(crate) use crate::contracts::interactions::request_pegin;
-
+pub(crate) use crate::contracts::interactions::{
+    get_temporary_pegin_address, notify_check_fork_complete, register_pegout, request_pegin,
+};
 use crate::rsk_gateway::DomainErrors;
-use actors_mocking::fake_contracts::FakePegManager;
-use actors_mocking::fake_contracts::FakePegManager::FakePegManagerInstance;
-#[cfg(test)]
-use mockall::automock;
+use crate::types::RequestPeginInput;
 
 #[cfg_attr(test, automock)]
 pub trait PegManagerContractApi {
@@ -283,8 +280,6 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
 
 #[cfg(test)]
 mod tests {
-    use crate::contracts::common::tests::generate_contract_revert_error;
-    use crate::rsk_gateway::DomainErrors;
     use union_contracts::bindings::bitcoin_manager::BitcoinManager::{
         BitcoinManagerErrors, IncorrectOutputScript,
     };
@@ -293,6 +288,9 @@ mod tests {
         InvalidBtcTxVersion, InvalidLocktime, NotInitializing, PegManagerErrors,
         PeginAlreadyRequested,
     };
+
+    use crate::contracts::common::tests::generate_contract_revert_error;
+    use crate::rsk_gateway::DomainErrors;
 
     #[test]
     fn test_already_registered_accept_pegin() {

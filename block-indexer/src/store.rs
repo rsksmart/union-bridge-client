@@ -1,11 +1,11 @@
+use std::path::PathBuf;
+
 use anyhow::{Context, Result};
 use common::cache::{Cache, LruCache};
 use common::types::{BlockHash, BlockNumber, RskBlock};
-use std::path::PathBuf;
-use storage_backend::storage::{KeyValueStore, Storage};
-
 #[cfg(test)]
 use mockall::automock;
+use storage_backend::storage::{KeyValueStore, Storage};
 
 #[cfg_attr(test, automock)]
 pub trait BlockStore {
@@ -215,14 +215,15 @@ impl<C: Cache<RskBlock>> BlockStore for CachedBlockStore<C> {
 
 #[cfg(test)]
 mod tests {
-    use crate::store::CachedBlockStore;
-    use crate::store::StoreKey;
     use anyhow::Result;
+    use common::cache::LruCache;
     use common::test_utils::rsk_block_generator::{
         get_default_rsk_blocks, get_first_default_rsk_block,
     };
-    use common::{cache::LruCache, types::RskBlock};
+    use common::types::RskBlock;
     use tempfile::tempdir;
+
+    use crate::store::{CachedBlockStore, StoreKey};
 
     fn create_test_store() -> Result<CachedBlockStore<LruCache<RskBlock>>> {
         let temp_dir = tempdir()?;

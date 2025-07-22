@@ -1,15 +1,16 @@
-use crate::store::LogStore;
-use anyhow::{Context, Result, bail};
-use common::types::RskEvent;
-use common::{
-    rsk_indexer::RskIndexer,
-    rsk_provider::{RskProvider, RskSubscription, RskSubscriptionError, RskSubscriptionFilter},
-    shutdown_flag::ShutdownFlag,
-    types::{Address, BlockHash, BlockNumber, ContractInfo, RskLog},
-};
-use log::{debug, error, info, warn};
 use std::collections::HashMap;
 use std::sync::mpsc;
+
+use anyhow::{Context, Result, bail};
+use common::rsk_indexer::RskIndexer;
+use common::rsk_provider::{
+    RskProvider, RskSubscription, RskSubscriptionError, RskSubscriptionFilter,
+};
+use common::shutdown_flag::ShutdownFlag;
+use common::types::{Address, BlockHash, BlockNumber, ContractInfo, RskEvent, RskLog};
+use log::{debug, error, info, warn};
+
+use crate::store::LogStore;
 
 pub struct LogIndexer<P: RskProvider, S: LogStore> {
     store: S,
@@ -376,11 +377,13 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::store::MockLogStore;
-    use common::{rsk_provider::MockRskProvider, types::*};
+    use common::rsk_provider::MockRskProvider;
+    use common::types::*;
     use mockall::predicate::*;
     use primitive_types::{H160, H256, U256};
+
+    use super::*;
+    use crate::store::MockLogStore;
 
     #[test]
     fn recover_logs_when_no_checkpoint_should_start_from_initial_block() {

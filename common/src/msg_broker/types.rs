@@ -1,6 +1,7 @@
+use serde::{Deserialize, Serialize};
+
 use crate::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
 use crate::types::{Address, RskBlockAndUncles, RskLog};
-use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum ToServer {

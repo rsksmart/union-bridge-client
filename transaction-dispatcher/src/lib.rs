@@ -1,11 +1,13 @@
-use crate::rsk_gateway::RskContractsGateway;
+use std::path::Path;
+
 use alloy_provider::network::EthereumWallet;
 use alloy_provider::{Provider, ProviderBuilder, WsConnect};
 use anyhow::{Context, Result};
 use common::runtime_sync::RuntimeSync;
 use key_manager::key_manager::KeyManager;
 use log::info;
-use std::path::Path;
+
+use crate::rsk_gateway::RskContractsGateway;
 
 pub mod config;
 mod contracts;

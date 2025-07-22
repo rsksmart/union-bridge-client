@@ -1,17 +1,5 @@
-use crate::{
-    alloy_rsk_provider::{
-        event_processor::{event_processor_abi, event_processor_typed},
-        sub::AlloySubscription,
-    },
-    rsk_provider::{RskProvider, RskSubscriptionFilter},
-    shutdown_flag::ShutdownFlag,
-    types::{
-        Address, BlockHash, BlockNumber, ContractInfo, RskBlock, RskEvent, RskLog, RskRpcBlock,
-        RskRpcLog, ToHexString,
-    },
-};
+use std::future::Future;
 
-use crate::runtime_sync::RuntimeSync;
 use alloy_primitives::B256;
 use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy_rpc_client::RpcClient;
@@ -20,7 +8,16 @@ use alloy_transport::layers::RetryBackoffLayer;
 use anyhow::{Context, Result, bail};
 use log::debug;
 use serde_json::{Value, json};
-use std::future::Future;
+
+use crate::alloy_rsk_provider::event_processor::{event_processor_abi, event_processor_typed};
+use crate::alloy_rsk_provider::sub::AlloySubscription;
+use crate::rsk_provider::{RskProvider, RskSubscriptionFilter};
+use crate::runtime_sync::RuntimeSync;
+use crate::shutdown_flag::ShutdownFlag;
+use crate::types::{
+    Address, BlockHash, BlockNumber, ContractInfo, RskBlock, RskEvent, RskLog, RskRpcBlock,
+    RskRpcLog, ToHexString,
+};
 
 #[derive(Clone)]
 pub struct AlloyProvider<T = RootProvider>
@@ -259,13 +256,12 @@ impl RskProvider for AlloyProvider {
 
 #[cfg(test)]
 mod tests {
-    use crate::types::{DataBytes, LogTopic, TxHash};
-    use crate::{
-        alloy_rsk_provider::rpc::AlloyProvider,
-        types::{Address, BlockHash, BlockNumber},
-    };
-    use serde_json::{Value, json};
     use std::fs;
+
+    use serde_json::{Value, json};
+
+    use crate::alloy_rsk_provider::rpc::AlloyProvider;
+    use crate::types::{Address, BlockHash, BlockNumber, DataBytes, LogTopic, TxHash};
 
     const BLOCK_RESPONSE_FILE_PATH: &str = "tests/resources/block_response.json";
     const LOG_RESPONSE_FILE_PATH: &str = "tests/resources/log_response.json";

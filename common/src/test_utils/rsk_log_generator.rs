@@ -1,8 +1,9 @@
+use primitive_types::H256;
+use sha3::{Digest, Keccak256};
+
 use crate::types::{
     Address, BlockHash, DataBytes, Hash256, LogEvent, LogInfo, LogTopic, RskLog, TxHash,
 };
-use primitive_types::H256;
-use sha3::{Digest, Keccak256};
 
 /// A stateless generator for fake RSK logs.
 #[derive(Clone)]

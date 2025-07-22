@@ -1,6 +1,5 @@
 use primitive_types::{H256, U256};
-use serde::Deserialize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 // TODO configurable
 pub const SUPERBLOCK_TIMES_DIFFICULTY: u8 = 20;

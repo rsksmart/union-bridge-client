@@ -1,0 +1,6 @@
+# reorder elements on each use { … }
+reorder_imports = true
+
+# group imports by crate, module, item
+group_imports = "StdExternalCrate"  # std / external crates / local crates
+imports_granularity = "Module"       # group by crate

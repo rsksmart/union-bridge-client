@@ -1,10 +1,9 @@
-use crate::{
-    contracts::peg_manager::PegManagerContractApi,
-    rsk_gateway::DomainErrors,
-    types::{PeginAddressInput, PeginAddressOutput},
-};
 use alloy_primitives::{Address, FixedBytes};
 use log::info;
+
+use crate::contracts::peg_manager::PegManagerContractApi;
+use crate::rsk_gateway::DomainErrors;
+use crate::types::{PeginAddressInput, PeginAddressOutput};
 
 // TODO(Jira): generate Try_From for the input struct like in the other cases - https://rsklabs.atlassian.net/browse/UB-108
 
@@ -64,20 +63,19 @@ impl<C: PegManagerContractApi> GetTemporaryPeginAddressCall<C> {
 
 #[cfg(test)]
 mod tests {
+    use alloy_primitives::{Address, FixedBytes};
+    use mockall::predicate::{always, eq};
+    use union_contracts::bindings::bitcoin_manager::BitcoinManager::{
+        BitcoinManagerErrors, InvalidAddress, InvalidPublicKey,
+    };
+    use union_contracts::bindings::peg_manager::PegManager::getTemporaryPeginAddressReturn;
+
     use crate::contracts::common::tests::generate_contract_revert_error;
     use crate::contracts::interactions::get_temporary_pegin_address::{
         GetTemporaryPeginAddressCall, PeginAddressInput,
     };
     use crate::contracts::peg_manager::MockPegManagerContractApi;
     use crate::rsk_gateway::DomainErrors;
-    use alloy_primitives::Address;
-    use alloy_primitives::FixedBytes;
-    use mockall::predicate::always;
-    use mockall::predicate::eq;
-    use union_contracts::bindings::bitcoin_manager::BitcoinManager::{
-        BitcoinManagerErrors, InvalidAddress, InvalidPublicKey,
-    };
-    use union_contracts::bindings::peg_manager::PegManager::getTemporaryPeginAddressReturn;
 
     const VALID_ADDRESS: &str = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
     const VALID_PUB_KEY: &str =

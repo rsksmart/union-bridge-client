@@ -1,12 +1,12 @@
-use crate::test_utils::rsk_utils::{UncleBlockInfo, from_hex_to_block_hash, from_hex_to_block_pow};
-use crate::types::{BlockDifficulty, BlockHash, BlockNumber, BlockPow, BlockTimestamp, RskBlock};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use log::debug;
 use primitive_types::{H256, U256};
 use sha3::{Digest, Keccak256};
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
+
+use crate::test_utils::rsk_utils::{UncleBlockInfo, from_hex_to_block_hash, from_hex_to_block_pow};
+use crate::types::{BlockDifficulty, BlockHash, BlockNumber, BlockPow, BlockTimestamp, RskBlock};
 
 /// Returns a list of default RSK test blocks.
 ///

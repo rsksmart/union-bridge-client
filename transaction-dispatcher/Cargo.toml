@@ -5,8 +5,6 @@ edition = "2024"
 
 [dependencies]
 actors-mocking = { path = "../actors-mocking" }
-common = { path = "../common" }
-key-manager = { path = "../key-manager" }
 
 alloy-contract = { workspace = true }
 alloy-json-rpc = { workspace = true }
@@ -16,21 +14,23 @@ alloy-rpc-types = { workspace = true, features = ["debug"] }
 alloy-sol-types = { workspace = true, features = ["json"] }
 alloy-transport = { workspace = true }
 anyhow = { workspace = true }
+
+axum = "0.8.1"
 bitcoin = { workspace = true }
 clap = { workspace = true }
+common = { path = "../common" }
 env_logger = { workspace = true }
 hex = { workspace = true }
+key-manager = { path = "../key-manager" }
 log = { workspace = true }
 musig2 = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+tower-http = { version = "0.6.1", features = ["timeout", "trace"] }
 union-contracts = { workspace = true }
 
-axum = "0.8.1"
-tower-http = { version = "0.6.1", features = ["timeout", "trace"] }
-
 [dev-dependencies]
-tempfile = { workspace = true }
 mockall = { workspace = true }
+tempfile = { workspace = true }

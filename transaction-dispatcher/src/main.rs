@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use alloy_provider::network::EthereumWallet;
 use alloy_provider::{ProviderBuilder, WsConnect};
 use anyhow::{Context, Result};
@@ -5,7 +7,6 @@ use clap::{Arg, Command};
 use common::shutdown_flag::ShutdownFlag;
 use key_manager::key_manager::KeyManager;
 use log::{error, info};
-use std::path::Path;
 use transaction_dispatcher::config::{ConfigAsBin, Logger};
 use transaction_dispatcher::rsk_gateway::RskContractsGateway;
 use transaction_dispatcher::server::Server;
