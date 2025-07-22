@@ -27,19 +27,19 @@ pub struct BitcoinTransactionOut {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct PegInAddressInput {
+pub struct PeginAddressInput {
     pub rootstock_deposit_address: String,
     pub value: u64,
     pub btc_reimbursement_pub_key: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct PegInAddressOutput {
+pub struct PeginAddressOutput {
     pub address: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct RegisterPegInInput {
+pub struct RequestPeginInput {
     pub block_hash: String,
     pub btc_tx: BitcoinTransaction,
     pub merkle_branch_path: String,
@@ -47,19 +47,19 @@ pub struct RegisterPegInInput {
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
-pub struct RegisterPegInOutput {
+pub struct RequestPeginOutput {
     pub transaction_hash: String,
     pub success: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct RegisterPegOutInput {
+pub struct RegisterPegoutInput {
     pub amount_in_wei: u64,
     pub usr_pub_key: String,
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
-pub struct RegisterPegOutOutput {
+pub struct RegisterPegoutOutput {
     pub transaction_hash: String,
     pub success: bool,
 }
@@ -84,8 +84,8 @@ pub struct TxSentOutput {
 
 pub type AddMemberNonceOutput = TxSentOutput;
 pub type AddMemberSignatureOutput = TxSentOutput;
-pub type AcceptPegInInput = RegisterPegInInput;
-pub type AcceptPegInOutput = RegisterPegInOutput;
+pub type AcceptPeginInput = RequestPeginInput;
+pub type AcceptPeginOutput = RequestPeginOutput;
 
 impl From<TxIn> for BitcoinTransactionIn {
     fn from(input: TxIn) -> Self {
@@ -118,9 +118,9 @@ impl From<Transaction> for BitcoinTransaction {
     }
 }
 
-impl From<BtcTxSPVProof> for RegisterPegInInput {
+impl From<BtcTxSPVProof> for RequestPeginInput {
     fn from(proof: BtcTxSPVProof) -> Self {
-        RegisterPegInInput {
+        RequestPeginInput {
             block_hash: proof.block_hash,
             btc_tx: BitcoinTransaction::from(proof.tx),
             merkle_branch_path: proof.merkle_branch_path,

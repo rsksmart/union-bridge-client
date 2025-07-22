@@ -1,19 +1,21 @@
-use crate::contracts::peg_manager::PegManagerContractApi;
-use crate::rsk_gateway::DomainErrors;
-use crate::types::{AcceptPegInInput, AcceptPegInOutput};
+use crate::{
+    contracts::peg_manager::PegManagerContractApi,
+    rsk_gateway::DomainErrors,
+    types::{AcceptPeginInput, AcceptPeginOutput},
+};
 use anyhow::Result;
 use log::{error, info};
 use union_contracts::bindings::peg_manager::PegManager::BtcTxSPVProof;
 
 #[derive(Clone)]
-pub(crate) struct AcceptPegInRequestInvoke<C: PegManagerContractApi> {
+pub(crate) struct AcceptPeginInvoke<C: PegManagerContractApi> {
     contract: C,
     gas_bumps: u8,
 }
 
-impl<C: PegManagerContractApi> AcceptPegInRequestInvoke<C> {
+impl<C: PegManagerContractApi> AcceptPeginInvoke<C> {
     pub(crate) fn new(contract: C, gas_bumps: u8) -> Self {
-        AcceptPegInRequestInvoke {
+        AcceptPeginInvoke {
             contract,
             gas_bumps,
         }
@@ -21,36 +23,36 @@ impl<C: PegManagerContractApi> AcceptPegInRequestInvoke<C> {
 
     pub(crate) async fn run(
         &self,
-        input: AcceptPegInInput,
-    ) -> Result<AcceptPegInOutput, DomainErrors> {
-        info!("Init AcceptPegIn for: {:?}", input);
+        input: AcceptPeginInput,
+    ) -> Result<AcceptPeginOutput, DomainErrors> {
+        info!("Init AcceptPeginInvoke for: {:?}", input);
 
         let parsed_input: BtcTxSPVProof = input.try_into().map_err(|e| {
-            DomainErrors::InvalidBtcTxSpvProof(format!("Failed to parse AcceptPegInInput: {}", e))
+            DomainErrors::InvalidBtcTxSpvProof(format!("Failed to parse AcceptPeginInput: {}", e))
         })?;
 
         let receipt = self
             .contract
-            .accept_peg_in_request_send(parsed_input, self.gas_bumps)
+            .invoke_accept_pegin(parsed_input, self.gas_bumps)
             .await?;
 
         let result = match receipt.status() {
             true => {
                 info!(
-                    "AcceptPegInRequest successful at tx {}",
+                    "AcceptPegin successful at tx {}",
                     receipt.transaction_hash
                 );
-                AcceptPegInOutput {
+                AcceptPeginOutput {
                     transaction_hash: receipt.transaction_hash.to_string(),
                     success: true,
                 }
             }
             false => {
                 error!(
-                    "AcceptPegInRequest failed at tx {}",
+                    "AcceptPegin failed at tx {}",
                     receipt.transaction_hash
                 );
-                AcceptPegInOutput {
+                AcceptPeginOutput {
                     transaction_hash: receipt.transaction_hash.to_string(),
                     success: false,
                 }
@@ -66,8 +68,8 @@ mod tests {
     use crate::{
         contracts::{
             common::tests::generate_contract_revert_error,
-            interactions::accept_peg_in_request::{
-                AcceptPegInInput, AcceptPegInOutput, AcceptPegInRequestInvoke,
+            interactions::accept_pegin::{
+                AcceptPeginInput, AcceptPeginInvoke, AcceptPeginOutput,
             },
             peg_manager::MockPegManagerContractApi,
         },
@@ -81,9 +83,9 @@ mod tests {
         PegManagerErrors, PeginAlreadyAccepted,
     };
 
-    impl AcceptPegInRequestInvoke<MockPegManagerContractApi> {
+    impl AcceptPeginInvoke<MockPegManagerContractApi> {
         pub(crate) fn new_for_tests(contract: MockPegManagerContractApi) -> Self {
-            AcceptPegInRequestInvoke {
+            AcceptPeginInvoke {
                 contract,
                 gas_bumps: 3,
             }
@@ -96,7 +98,7 @@ mod tests {
 
         let input = get_base_input();
 
-        let expected_receipt = AcceptPegInOutput {
+        let expected_receipt = AcceptPeginOutput {
             transaction_hash: "0x4e3f8a2d39c1b872b77e8a5c9a24be8f1d489ea7cf2d38375f18b5b54e7df662"
                 .to_string(),
             success: true,
@@ -104,7 +106,7 @@ mod tests {
 
         let receipt_to_return = expected_receipt.clone();
 
-        mock.expect_accept_peg_in_request_send()
+        mock.expect_invoke_accept_pegin()
             .returning(move |_, _| {
                 Ok(get_fake_receipt(
                     true,
@@ -113,7 +115,7 @@ mod tests {
             })
             .times(1);
 
-        let invoke = AcceptPegInRequestInvoke::new_for_tests(mock);
+        let invoke = AcceptPeginInvoke::new_for_tests(mock);
 
         let result = invoke.run(input).await;
         assert!(result.is_ok());
@@ -129,7 +131,7 @@ mod tests {
 
         let input = get_base_input();
 
-        mock.expect_accept_peg_in_request_send()
+        mock.expect_invoke_accept_pegin()
             .returning(move |_, _| {
                 let expected_err = PegManagerErrors::PeginAlreadyAccepted(PeginAlreadyAccepted {
                     btcTxHash: "0x6b8f74fe9c66c9c3a6c3d0b7111d9b6aaac0ea3db1bdbd6a38eb0e7d8b8bba3e"
@@ -140,9 +142,9 @@ mod tests {
             })
             .times(1);
 
-        mock.expect_accept_peg_in_request_send().times(0);
+        mock.expect_invoke_accept_pegin().times(0);
 
-        let invoke = AcceptPegInRequestInvoke::new_for_tests(mock);
+        let invoke = AcceptPeginInvoke::new_for_tests(mock);
 
         let result = invoke.run(input).await;
         assert!(result.is_err());
@@ -158,7 +160,7 @@ mod tests {
 
         let input = get_base_input();
 
-        let expected_receipt = AcceptPegInOutput {
+        let expected_receipt = AcceptPeginOutput {
             transaction_hash: "0x4e3f8a2d39c1b872b77e8a5c9a24be8f1d489ea7cf2d38375f18b5b54e7df662"
                 .to_string(),
             success: false,
@@ -166,7 +168,7 @@ mod tests {
 
         let receipt_to_return = expected_receipt.clone();
 
-        mock.expect_accept_peg_in_request_send()
+        mock.expect_invoke_accept_pegin()
             .returning(move |_, _| {
                 Ok(get_fake_receipt(
                     false,
@@ -175,7 +177,7 @@ mod tests {
             })
             .times(1);
 
-        let invoke = AcceptPegInRequestInvoke::new_for_tests(mock);
+        let invoke = AcceptPeginInvoke::new_for_tests(mock);
 
         let result = invoke.run(input).await;
         assert!(result.is_ok());
@@ -184,8 +186,8 @@ mod tests {
         assert_eq!(result_receipt, expected_receipt);
     }
 
-    fn get_base_input() -> AcceptPegInInput {
-        let input = AcceptPegInInput {
+    fn get_base_input() -> AcceptPeginInput {
+        let input = AcceptPeginInput {
             block_hash: "0x0000000000000000000282fa21665766e58eb6cb94e458c3ef6d4af1121e38d9".to_string(),
             btc_tx: BitcoinTransaction {
                 version: 1,

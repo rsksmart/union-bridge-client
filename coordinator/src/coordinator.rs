@@ -1,18 +1,24 @@
-use crate::flows::advance_funds::advance_funds_processor::AdvanceFundsProcessor;
 use crate::{
     event_processor::{EventProcessor, PeginProcessor},
+    flows::advance_funds::advance_funds_processor::AdvanceFundsProcessor,
     monitor::MonitorApi,
 };
 use anyhow::{Context, Result};
-use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
-use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
-use common::runtime_sync::RuntimeSync;
-use common::shutdown_flag::ShutdownFlag;
+use common::{
+    msg_broker::{
+        bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages},
+        broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi},
+    },
+    runtime_sync::RuntimeSync,
+    shutdown_flag::ShutdownFlag,
+};
 use log::{error, info, warn};
-use std::ops::Sub;
-use std::rc::Rc;
-use std::time::Instant;
-use std::{thread, time::Duration};
+use std::{
+    ops::Sub,
+    rc::Rc,
+    thread,
+    time::{Duration, Instant},
+};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 
 const CHECK_PERIOD: Duration = Duration::from_secs(1);
@@ -241,21 +247,21 @@ pub(crate) mod tests {
     };
     use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
     use transaction_dispatcher::types::{
-        AcceptPegInInput, AcceptPegInOutput, AddMemberNonceInput, AddMemberNonceOutput,
-        AddMemberSignatureInput, AddMemberSignatureOutput, PegInAddressInput, PegInAddressOutput,
-        RegisterPegInInput, RegisterPegInOutput, RegisterPegOutInput, RegisterPegOutOutput,
+        AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
+        AddMemberSignatureInput, AddMemberSignatureOutput, PeginAddressInput, PeginAddressOutput,
+        RegisterPegoutInput, RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput,
     };
 
-    fn create_fake_request_event(peg_out_id: &str) -> RequestAdvanceFunds {
+    fn create_fake_request_event(pegout_id: &str) -> RequestAdvanceFunds {
         RequestAdvanceFunds {
-            peg_out_id: peg_out_id.to_string(),
+            pegout_id: pegout_id.to_string(),
             amount: 1000,
         }
     }
 
-    fn create_fake_advance_funds_event(peg_out_id: &str) -> AdvanceFunds {
+    fn create_fake_advance_funds_event(pegout_id: &str) -> AdvanceFunds {
         AdvanceFunds {
-            peg_out_id: peg_out_id.to_string(),
+            pegout_id: pegout_id.to_string(),
             utxo_id: "utxo123".to_string(),
             operator_id: "op123".to_string(),
             required_effort: U256::from(1000),
@@ -269,7 +275,7 @@ pub(crate) mod tests {
         let (block_1, uncle_1, block_2) = create_block_and_uncles();
 
         let event_1 = RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFundsEvent {
-            inner: create_fake_request_event("peg_out_id_1"),
+            inner: create_fake_request_event("pegout_id_1"),
             block_number: block_1.number(),
             block_hash: block_1.hash().into(),
             removed: false,
@@ -277,7 +283,7 @@ pub(crate) mod tests {
         });
 
         let event_2: RskPegManagerEvents = RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
-            inner: create_fake_advance_funds_event("peg_out_id_1"),
+            inner: create_fake_advance_funds_event("pegout_id_1"),
             block_number: block_2.number(),
             block_hash: block_2.hash().into(),
             removed: false,
@@ -362,7 +368,7 @@ pub(crate) mod tests {
         let block_2 = get_second_default_rsk_block();
 
         let event_1 = RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFundsEvent {
-            inner: create_fake_request_event("peg_out_id_1"),
+            inner: create_fake_request_event("pegout_id_1"),
             block_number: block_1.number(),
             block_hash: block_1.hash().into(),
             removed: false,
@@ -513,25 +519,25 @@ pub(crate) mod tests {
         pub RskContractsGatewayApi {}
 
         impl RskContractsGatewayApi for RskContractsGatewayApi {
-            async fn get_temporary_peg_in_address(
+            async fn get_temporary_pegin_address(
                 &self,
-                input: PegInAddressInput,
-            ) -> Result<PegInAddressOutput, DomainErrors>;
+                input: PeginAddressInput,
+            ) -> Result<PeginAddressOutput, DomainErrors>;
 
-            async fn register_peg_in_request(
+            async fn request_pegin(
                 &self,
-                input: RegisterPegInInput,
-            ) -> Result<RegisterPegInOutput, DomainErrors>;
+                input: RequestPeginInput,
+            ) -> Result<RequestPeginOutput, DomainErrors>;
 
-            async fn accept_peg_in_request(
+            async fn accept_pegin(
                 &self,
-                input: AcceptPegInInput,
-            ) -> Result<AcceptPegInOutput, DomainErrors>;
+                input: AcceptPeginInput,
+            ) -> Result<AcceptPeginOutput, DomainErrors>;
 
-            async fn register_peg_out_request(
+            async fn register_pegout(
                 &self,
-                input: RegisterPegOutInput,
-            ) -> Result<RegisterPegOutOutput, DomainErrors>;
+                input: RegisterPegoutInput,
+            ) -> Result<RegisterPegoutOutput, DomainErrors>;
 
             async fn add_member_nonce(
                 &self,

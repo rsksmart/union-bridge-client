@@ -68,7 +68,7 @@ where
     }
 
     fn start_monitoring_blocks_for_pegout(&mut self, event: RequestAdvanceFundsEvent) {
-        let pegout_id = event.inner.peg_out_id.to_string();
+        let pegout_id = event.inner.pegout_id.to_string();
 
         if self.request_events.is_empty() {
             self.first_block_to_process = Some(event.block_number.clone());
@@ -78,7 +78,7 @@ where
         if updated.is_some() {
             // TODO(Jira) this should be monitored and analysed - https://rsklabs.atlassian.net/browse/UB-127
             error!(
-                "RequestAdvanceFunds for peg_out_id {} already exists",
+                "RequestAdvanceFunds for pegout_id {} already exists",
                 pegout_id
             );
             return;
@@ -87,7 +87,7 @@ where
 
     fn start_pow_accum_for_pegout(&mut self, event2: AdvanceFundsEvent) {
         match self.check_fork_accumulator.as_ref() {
-            Some(afc) if &afc.borrow().pegout_id() == &event2.inner.peg_out_id => {
+            Some(afc) if &afc.borrow().pegout_id() == &event2.inner.pegout_id => {
                 warn!("Already monitoring advance funds for {event2:?}");
                 return;
             }
@@ -109,10 +109,10 @@ where
             return;
         }
 
-        if !self.request_events.contains_key(&event2.inner.peg_out_id) {
+        if !self.request_events.contains_key(&event2.inner.pegout_id) {
             error!(
                 "AdvanceFundsData received for {}, but no RequestAdvanceFunds was",
-                &event2.inner.peg_out_id
+                &event2.inner.pegout_id
             );
             return;
         }
@@ -286,9 +286,9 @@ where
                 } else {
                     info!(
                         "Handling RemoveRequestAdvanceFunds {}...",
-                        data.inner.peg_out_id
+                        data.inner.pegout_id
                     );
-                    self.stop_monitoring_blocks_for_pegout(&data.inner.peg_out_id);
+                    self.stop_monitoring_blocks_for_pegout(&data.inner.pegout_id);
                 }
             }
             RskPegManagerEvents::AdvanceFunds(data) => {
@@ -296,8 +296,8 @@ where
                     info!("Handling {:?}...", data);
                     self.start_pow_accum_for_pegout(data.clone());
                 } else {
-                    info!("Handling RemoveAdvanceFunds {}...", data.inner.peg_out_id);
-                    self.stop_pow_accum_for_pegout(&data.inner.peg_out_id);
+                    info!("Handling RemoveAdvanceFunds {}...", data.inner.pegout_id);
+                    self.stop_pow_accum_for_pegout(&data.inner.pegout_id);
                 }
             }
             _ => {
@@ -385,9 +385,9 @@ mod tests {
     use mockall::predicate::{eq, function};
     use primitive_types::{H256, U256};
 
-    fn create_fake_request_event(peg_out_id: &str) -> RequestAdvanceFunds {
+    fn create_fake_request_event(pegout_id: &str) -> RequestAdvanceFunds {
         RequestAdvanceFunds {
-            peg_out_id: peg_out_id.to_string(),
+            pegout_id: pegout_id.to_string(),
             amount: 1000,
         }
     }
@@ -405,9 +405,9 @@ mod tests {
         )
     }
 
-    fn create_fake_advance_funds_event(peg_out_id: &str) -> AdvanceFunds {
+    fn create_fake_advance_funds_event(pegout_id: &str) -> AdvanceFunds {
         AdvanceFunds {
-            peg_out_id: peg_out_id.to_string(),
+            pegout_id: pegout_id.to_string(),
             utxo_id: "utxo123".to_string(),
             operator_id: "op123".to_string(),
             required_effort: AlloyU256::from(1000),
