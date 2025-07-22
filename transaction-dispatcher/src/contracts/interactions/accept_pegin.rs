@@ -38,20 +38,14 @@ impl<C: PegManagerContractApi> AcceptPeginInvoke<C> {
 
         let result = match receipt.status() {
             true => {
-                info!(
-                    "AcceptPegin successful at tx {}",
-                    receipt.transaction_hash
-                );
+                info!("AcceptPegin successful at tx {}", receipt.transaction_hash);
                 AcceptPeginOutput {
                     transaction_hash: receipt.transaction_hash.to_string(),
                     success: true,
                 }
             }
             false => {
-                error!(
-                    "AcceptPegin failed at tx {}",
-                    receipt.transaction_hash
-                );
+                error!("AcceptPegin failed at tx {}", receipt.transaction_hash);
                 AcceptPeginOutput {
                     transaction_hash: receipt.transaction_hash.to_string(),
                     success: false,
@@ -68,9 +62,7 @@ mod tests {
     use crate::{
         contracts::{
             common::tests::generate_contract_revert_error,
-            interactions::accept_pegin::{
-                AcceptPeginInput, AcceptPeginInvoke, AcceptPeginOutput,
-            },
+            interactions::accept_pegin::{AcceptPeginInput, AcceptPeginInvoke, AcceptPeginOutput},
             peg_manager::MockPegManagerContractApi,
         },
         rsk_gateway::DomainErrors,

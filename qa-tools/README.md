@@ -2,6 +2,22 @@
 
 A collection of tools for testing and validating the Union Bridge Monitor components. Each crate contains the validation tools for a component of the union bridge client.
 
+## Initial setup
+
+### BitVMX Union Bridge contracts
+
+Before executing any tests, you will need to set up the BitVMX Union Bridge contracts in your local environment.
+In order to do that, follow these instructions:
+
+```bash
+# Move to the directory right above union-bridge-client, so the contracts repo will be a sibling.
+cd ..
+git clone git@github.com:temp-rsk/bitvmx-union-bridge-contracts.git 
+cd bitvmx-union-bridge-contracts   
+git checkout v0.0.1-alpha.2_tweaks
+git submodule update --init --recursive
+```
+
 ## Crates
 
 ### Block Indexer Tools (manual execution)
@@ -58,6 +74,7 @@ Currently the pipeline includes steps to execute the steps and upload the report
 ```bash
 cd qa-tools
 export KEY_STORE_PASSWORD="=== REPLACE_WITH_PASSWORD ==="
+export KEY_STORE_ADDRESS="=== REPLACE_WITH_ADDRESS ==="
 export KEY_STORE_PATH="replace/with/path/to/your/keystore"
 KEY_STORE_FILE="$(cat "$KEY_STORE_PATH")"
 echo "${KEY_STORE_FILE}" > test_keystore/keyfile
@@ -77,6 +94,7 @@ export KEY_STORE_FILE="$(cat "$KEY_STORE_PATH")"
 export FAIRGATE_GITHUB_TOKEN="=== REPLACE_WITH_TOKEN ==="
 export UNION_CONTRACTS_GITHUB_TOKEN="=== REPLACE_WITH_TOKEN ==="
 export KEY_STORE_PASSWORD="=== REPLACE_WITH_PASSWORD ==="
+export KEY_STORE_ADDRESS="=== REPLACE_WITH_ADDRESS ==="
 act -j qa-tests \
 --secret FAIRGATE_GITHUB_TOKEN=$FAIRGATE_GITHUB_TOKEN \
 --secret UNION_CONTRACTS_GITHUB_TOKEN=$UNION_CONTRACTS_GITHUB_TOKEN \

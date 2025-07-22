@@ -211,7 +211,7 @@ pub fn execute_script_with_basedir(script_basedir: &str, script_relative_path: &
 
     let output = Command::new("bash")
         .current_dir(script_basedir)
-        .arg(script_full_path)
+        .arg(script_relative_path)
         .output()
         .unwrap_or_else(|e| panic!("Failed to execute `{}`: {}", script_relative_path, e));
     if !output.status.success() {
