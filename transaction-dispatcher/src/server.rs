@@ -33,7 +33,7 @@ impl Server {
     ) -> Self {
         let app = Router::new()
             .route("/pegin-address", post(Self::create_pegin_address::<P>))
-            .route("/request-pegin", post(Self::request_pegin::<P>))
+            .route("/register-pegin", post(Self::request_pegin::<P>))
             .route("/accept-pegin", post(Self::accept_pegin::<P>))
             .route("/register-pegout", post(Self::register_pegout::<P>))
             .layer((
