@@ -16,14 +16,35 @@ on:
       - main
 
 jobs:
+
+#  sync-testomat:
+#    runs-on: ubuntu-latest
+#    steps:
+#      - uses: actions/checkout@v3
+#        with:
+#          fetch-depth: 0
+#
+#      - uses: actions/setup-node@v3
+#        with:
+#          node-version: '22'
+#
+#      - name: Push transaction dispatcher feature changes to Testomat
+#        working-directory: qa-tools/transaction-dispatcher
+#        run: |
+#          TESTOMATIO=${{ secrets.PROJECT_REPORTING_API_KEY }} \
+#          TESTOMATIO_PREPEND_DIR="Transaction dispatcher" \
+#          npx check-cucumber@latest "**/*.feature" --dir features --sync
+
   qa-tests:
     runs-on: ubuntu-latest
 
     env:
-      DEPLOY_LOCAL_CONTRACTS_PATH: "../../bitvmx-union-bridge-contracts/shell/script/deploy/deploy-local.sh"
+      DEPLOY_LOCAL_CONTRACTS_RELATIVE_PATH: "shell/script/deploy/deploy-local.sh"
+      CONTRACTS_BASEDIR: "../bitvmx-union-bridge-contracts"
       TX_DISPATCHER_URL: "http://localhost:3000"
       KEY_STORE_FILE: ${{ secrets.KEY_STORE_FILE }}
       KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+      KEY_STORE_ADDRESS: ${{ vars.KEY_STORE_ADDRESS }}
       TX_DISPATCHER_CONFIG_PATH: "../config/ci"
 
     steps:
@@ -50,13 +71,33 @@ jobs:
           ref: v0.0.1-alpha.2_tweaks
           path: bitvmx-union-bridge-contracts
 
+      - name: Setup BitVMX contracts
+        working-directory: bitvmx-union-bridge-contracts
+        run: |
+          forge install
+          npm install -g @openzeppelin/upgrades-core@1.44.0
+
       - name: Setup keystore
         working-directory: qa-tools
         run: |
           echo "${KEY_STORE_FILE}" > test_keystore/keyfile
 
-      - name: Run integration tests
+      - name: Run transaction dispatcher integration tests
         working-directory: qa-tools
         run: |
-          JUNIT_REPORT="reports/tx_dispatcher.xml" RUST_BACKTRACE=1 cargo run --bin qa-tools-transaction-dispatcher -- --tags @transaction-dispatcher
-          cat reports/tx_dispatcher.xml
+          RUST_BACKTRACE=1 cargo run --bin qa-tools-transaction-dispatcher -- --tags @transaction-dispatcher
+
+#      - name: Print tests summary
+#        if: ${{ env.ACT }}
+#        working-directory: qa-tools
+#        run:
+#          cat reports/tx_dispatcher.xml
+#
+#      - name: Upload reports to Testomat
+#        if: ${{ ! env.ACT }}
+#        working-directory: qa-tools
+#        run: |
+#          npm install @testomatio/reporter
+#          TESTOMATIO=${{ secrets.PROJECT_REPORTING_API_KEY }} \
+#          TESTOMATIO_TITLE="Regression - tx dispatcher | ${{ github.ref_name }} | $(date +'%Y-%m-%d %H:%M')" \
+#          npx @testomatio/reporter xml reports/tx_dispatcher.xml

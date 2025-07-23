@@ -27,7 +27,7 @@ Feature: Register peg-in request
     And I POST "/register-pegin"
       | blockHash        | 0x0000000000000000000282fa21665766e58eb6cb94e458c3ef6d4af112155555                                                                               |
       | amount           | 100000                                                                                                                                           |
-      | scriptPubKey0    | 0x5120228f281f297fd01cd363b9c93f742ba2976c1ec5a6083d9f754cb61e505356c3                                                                           |
+      | scriptPubKey0    | 0x5120aa2820738e170f675ca6d8c30a160f9968cd8bb922b0cc0157169a85fafa3ccd                                                                           |
       | scriptPubKey1    | 0x6a4552534b5f504547494e000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c87d235c24420b2f55450c8414725aa74e6db01035245efdab0e1cfa7ab29aca0f |
       | merkleHashBranch | 0x3fcef4a1ddf759a858190b89ecbd1ff3dffb49704e110b68baf5b5de7021910f                                                                               |
     Then the response code is "200"
@@ -36,7 +36,7 @@ Feature: Register peg-in request
     # /Users/javier/Projects/UnionBridge/bitvmx-union-bridge-contracts/shell/script/register-pegin-request.sh
     # privKey: 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
     # KEY_STORE_PASSWORD=p09ol. RUST_BACKTRACE=1 RUST_LOG=debug cargo run --manifest-path /Users/javier/Projects/UnionBridge/union-bridge-client/transaction-dispatcher/Cargo.toml --bin transaction-dispatcher
-    # curl -i -X POST http://localhost:3000/register-pegin \    -H "Content-Type: application/json" \    -d '{        "block_hash": "0x0000000000000000000282fa21665766e58eb6cb94e458c3ef6d4af1121e38d9",        "btc_tx": {            "version": 2,            "outputs": [{                "amount": 100000,                "script_pub_key": "0x5120228f281f297fd01cd363b9c93f742ba2976c1ec5a6083d9f754cb61e505356c3"            },{                "amount": 0,                "script_pub_key": "0x6a4552534b5f504547494e000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c87d235c24420b2f55450c8414725aa74e6db01035245efdab0e1cfa7ab29aca0f"            }],            "inputs": [{                "tx_id": "0x360b81785dc7c2f40627fea364676dbb73e6276683caffd9f906b0e0bd36b3d2",                "v_out": 1694,                "sequence": 4294967293,                "script_sig": ""            }],            "lock_time": 0        },        "merkle_branch_path": "0xFF6B0000",        "merkle_branch_hashes": [            "0x3fcef4a1ddf759a858190b89ecbd1ff3dffb49704e110b68baf5b5de7021910f"        ]    }'
+    # curl -i -X POST http://localhost:3000/register-pegin \    -H "Content-Type: application/json" \    -d '{        "block_hash": "0x0000000000000000000282fa21665766e58eb6cb94e458c3ef6d4af1121e38d9",        "btc_tx": {            "version": 2,            "outputs": [{                "amount": 100000,                "script_pub_key": "0x5120aa2820738e170f675ca6d8c30a160f9968cd8bb922b0cc0157169a85fafa3ccd"            },{                "amount": 0,                "script_pub_key": "0x6a4552534b5f504547494e000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c87d235c24420b2f55450c8414725aa74e6db01035245efdab0e1cfa7ab29aca0f"            }],            "inputs": [{                "tx_id": "0x360b81785dc7c2f40627fea364676dbb73e6276683caffd9f906b0e0bd36b3d2",                "v_out": 1694,                "sequence": 4294967293,                "script_sig": ""            }],            "lock_time": 0        },        "merkle_branch_path": "0xFF6B0000",        "merkle_branch_hashes": [            "0x3fcef4a1ddf759a858190b89ecbd1ff3dffb49704e110b68baf5b5de7021910f"        ]    }'
 
   Scenario: Register peg-in request already registered
     When the bridge is set up to register the peg-in transaction
@@ -44,17 +44,17 @@ Feature: Register peg-in request
     And I POST "/register-pegin"
       | blockHash        | 0x0000000000000000000282fa21665766e58eb6cb94e458c3ef6d4af112155555                                                                               |
       | amount           | 100000                                                                                                                                           |
-      | scriptPubKey0    | 0x5120228f281f297fd01cd363b9c93f742ba2976c1ec5a6083d9f754cb61e505356c3                                                                           |
+      | scriptPubKey0    | 0x5120aa2820738e170f675ca6d8c30a160f9968cd8bb922b0cc0157169a85fafa3ccd                                                                           |
       | scriptPubKey1    | 0x6a4552534b5f504547494e000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c87d235c24420b2f55450c8414725aa74e6db01035245efdab0e1cfa7ab29aca0f |
       | merkleHashBranch | 0x3fcef4a1ddf759a858190b89ecbd1ff3dffb49704e110b68baf5b5de7021910f                                                                               |
     And I POST "/register-pegin"
       | blockHash        | 0x0000000000000000000282fa21665766e58eb6cb94e458c3ef6d4af112155555                                                                               |
       | amount           | 100000                                                                                                                                           |
-      | scriptPubKey0    | 0x5120228f281f297fd01cd363b9c93f742ba2976c1ec5a6083d9f754cb61e505356c3                                                                           |
+      | scriptPubKey0    | 0x5120aa2820738e170f675ca6d8c30a160f9968cd8bb922b0cc0157169a85fafa3ccd                                                                           |
       | scriptPubKey1    | 0x6a4552534b5f504547494e000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c87d235c24420b2f55450c8414725aa74e6db01035245efdab0e1cfa7ab29aca0f |
       | merkleHashBranch | 0x3fcef4a1ddf759a858190b89ecbd1ff3dffb49704e110b68baf5b5de7021910f                                                                               |
     Then the response code is "403"
-    And the response contains the error "AlreadyRegisteredPegInRequest"
+    And the response contains the error "PeginAlreadyRequested"
 
     # Do all steps in "Happy path" scenario, but execute twice the POST request
 
@@ -64,7 +64,7 @@ Feature: Register peg-in request
     And I POST "/register-pegin"
       | blockHash        | 0x0000000000000000000282fa21665766e58eb6cb94e458c3ef6d4af112155555                                                                               |
       | amount           | 123456                                                                                                                                           |
-      | scriptPubKey0    | 0x5120228f281f297fd01cd363b9c93f742ba2976c1ec5a6083d9f754cb61e505356c3                                                                           |
+      | scriptPubKey0    | 0x5120aa2820738e170f675ca6d8c30a160f9968cd8bb922b0cc0157169a85fafa3ccd                                                                           |
       | scriptPubKey1    | 0x6a4552534b5f504547494e000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c87d235c24420b2f55450c8414725aa74e6db01035245efdab0e1cfa7ab29aca0f |
       | merkleHashBranch | 0x3fcef4a1ddf759a858190b89ecbd1ff3dffb49704e110b68baf5b5de7021910f                                                                               |
     Then the response code is "404"
@@ -73,7 +73,7 @@ Feature: Register peg-in request
     # /Users/javier/Projects/UnionBridge/bitvmx-union-bridge-contracts/shell/script/register-pegin-request.sh
     # privKey: 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
     # KEY_STORE_PASSWORD=p09ol. RUST_BACKTRACE=1 RUST_LOG=debug cargo run --manifest-path /Users/javier/Projects/UnionBridge/union-bridge-client/transaction-dispatcher/Cargo.toml --bin transaction-dispatcher
-    # curl -i -X POST http://localhost:3000/register-pegin \    -H "Content-Type: application/json" \    -d '{        "block_hash": "0x0000000000000000000282fa21665766e58eb6cb94e458c3ef6d4af1121e38d9",        "btc_tx": {            "version": 2,            "outputs": [{                "amount": 123456,                "script_pub_key": "0x5120228f281f297fd01cd363b9c93f742ba2976c1ec5a6083d9f754cb61e505356c3"            },{                "amount": 0,                "script_pub_key": "0x6a4552534b5f504547494e000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c87d235c24420b2f55450c8414725aa74e6db01035245efdab0e1cfa7ab29aca0f"            }],            "inputs": [{                "tx_id": "0x360b81785dc7c2f40627fea364676dbb73e6276683caffd9f906b0e0bd36b3d2",                "v_out": 1694,                "sequence": 4294967293,                "script_sig": ""            }],            "lock_time": 0        },        "merkle_branch_path": "0xFF6B0000",        "merkle_branch_hashes": [            "0x3fcef4a1ddf759a858190b89ecbd1ff3dffb49704e110b68baf5b5de7021910f"        ]    }'
+    # curl -i -X POST http://localhost:3000/register-pegin \    -H "Content-Type: application/json" \    -d '{        "block_hash": "0x0000000000000000000282fa21665766e58eb6cb94e458c3ef6d4af1121e38d9",        "btc_tx": {            "version": 2,            "outputs": [{                "amount": 123456,                "script_pub_key": "0x5120aa2820738e170f675ca6d8c30a160f9968cd8bb922b0cc0157169a85fafa3ccd"            },{                "amount": 0,                "script_pub_key": "0x6a4552534b5f504547494e000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c87d235c24420b2f55450c8414725aa74e6db01035245efdab0e1cfa7ab29aca0f"            }],            "inputs": [{                "tx_id": "0x360b81785dc7c2f40627fea364676dbb73e6276683caffd9f906b0e0bd36b3d2",                "v_out": 1694,                "sequence": 4294967293,                "script_sig": ""            }],            "lock_time": 0        },        "merkle_branch_path": "0xFF6B0000",        "merkle_branch_hashes": [            "0x3fcef4a1ddf759a858190b89ecbd1ff3dffb49704e110b68baf5b5de7021910f"        ]    }'
 
   Scenario: Wrong scriptPubKey - OUTPUT[0]
     When the bridge is set up to register the peg-in transaction
@@ -98,7 +98,7 @@ Feature: Register peg-in request
     And I POST "/register-pegin"
       | blockHash        | 0x0000000000000000000282fa21665766e58eb6cb94e458c3ef6d4af112155555                                                                               |
       | amount           | 100000                                                                                                                                           |
-      | scriptPubKey0    | 0x5120228f281f297fd01cd363b9c93f742ba2976c1ec5a6083d9f754cb61e505356c3                                                                           |
+      | scriptPubKey0    | 0x5120aa2820738e170f675ca6d8c30a160f9968cd8bb922b0cc0157169a85fafa3ccd                                                                           |
       | scriptPubKey1    | 0x6b452534b5f504547494e000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c87d235c24420b2f55450c8414725aa74e6db01035245efdab0e1cfa7ab29aca0f |
       | merkleHashBranch | 0x3fcef4a1ddf759a858190b89ecbd1ff3dffb49704e110b68baf5b5de7021910f                                                                               |
     Then the response code is "400"
@@ -107,7 +107,7 @@ Feature: Register peg-in request
     # /Users/javier/Projects/UnionBridge/bitvmx-union-bridge-contracts/shell/script/register-pegin-request.sh
     # privKey: 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
     # KEY_STORE_PASSWORD=p09ol. RUST_BACKTRACE=1 RUST_LOG=debug cargo run --manifest-path /Users/javier/Projects/UnionBridge/union-bridge-client/transaction-dispatcher/Cargo.toml --bin transaction-dispatcher
-    # curl -i -X POST http://localhost:3000/register-pegin \    -H "Content-Type: application/json" \    -d '{        "block_hash": "0x0000000000000000000282fa21665766e58eb6cb94e458c3ef6d4af1121e38d9",        "btc_tx": {            "version": 2,            "outputs": [{                "amount": 100000,                "script_pub_key": "0x5120228f281f297fd01cd363b9c93f742ba2976c1ec5a6083d9f754cb61e505356c3"            },{                "amount": 0,                "script_pub_key": "0x6b452534b5f504547494e000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c87d235c24420b2f55450c8414725aa74e6db01035245efdab0e1cfa7ab29aca0f"            }],            "inputs": [{                "tx_id": "0x360b81785dc7c2f40627fea364676dbb73e6276683caffd9f906b0e0bd36b3d2",                "v_out": 1694,                "sequence": 4294967293,                "script_sig": ""            }],            "lock_time": 0        },        "merkle_branch_path": "0xFF6B0000",        "merkle_branch_hashes": [            "0x3fcef4a1ddf759a858190b89ecbd1ff3dffb49704e110b68baf5b5de7021910f"        ]    }'
+    # curl -i -X POST http://localhost:3000/register-pegin \    -H "Content-Type: application/json" \    -d '{        "block_hash": "0x0000000000000000000282fa21665766e58eb6cb94e458c3ef6d4af1121e38d9",        "btc_tx": {            "version": 2,            "outputs": [{                "amount": 100000,                "script_pub_key": "0x5120aa2820738e170f675ca6d8c30a160f9968cd8bb922b0cc0157169a85fafa3ccd"            },{                "amount": 0,                "script_pub_key": "0x6b452534b5f504547494e000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c87d235c24420b2f55450c8414725aa74e6db01035245efdab0e1cfa7ab29aca0f"            }],            "inputs": [{                "tx_id": "0x360b81785dc7c2f40627fea364676dbb73e6276683caffd9f906b0e0bd36b3d2",                "v_out": 1694,                "sequence": 4294967293,                "script_sig": ""            }],            "lock_time": 0        },        "merkle_branch_path": "0xFF6B0000",        "merkle_branch_hashes": [            "0x3fcef4a1ddf759a858190b89ecbd1ff3dffb49704e110b68baf5b5de7021910f"        ]    }'
 
     Scenario: Wrong length to return (scriptPubKey - OUTPUT[1])
     When the bridge is set up to register the peg-in transaction
@@ -115,7 +115,7 @@ Feature: Register peg-in request
     And I POST "/register-pegin"
       | blockHash        | 0x0000000000000000000282fa21665766e58eb6cb94e458c3ef6d4af112155555                                                                               |
       | amount           | 100000                                                                                                                                           |
-      | scriptPubKey0    | 0x5120228f281f297fd01cd363b9c93f742ba2976c1ec5a6083d9f754cb61e505356c3                                                                           |
+      | scriptPubKey0    | 0x5120aa2820738e170f675ca6d8c30a160f9968cd8bb922b0cc0157169a85fafa3ccd                                                                           |
       | scriptPubKey1    | 0x6a4452534b5f504547494e000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c87d235c24420b2f55450c8414725aa74e6db01035245efdab0e1cfa7ab29aca0f |
       | merkleHashBranch | 0x3fcef4a1ddf759a858190b89ecbd1ff3dffb49704e110b68baf5b5de7021910f                                                                               |
     Then the response code is "400"
@@ -124,5 +124,5 @@ Feature: Register peg-in request
     # /Users/javier/Projects/UnionBridge/bitvmx-union-bridge-contracts/shell/script/register-pegin-request.sh
     # privKey: 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
     # KEY_STORE_PASSWORD=p09ol. RUST_BACKTRACE=1 RUST_LOG=debug cargo run --manifest-path /Users/javier/Projects/UnionBridge/union-bridge-client/transaction-dispatcher/Cargo.toml --bin transaction-dispatcher
-    # curl -i -X POST http://localhost:3000/register-pegin \    -H "Content-Type: application/json" \    -d '{        "block_hash": "0x0000000000000000000282fa21665766e58eb6cb94e458c3ef6d4af1121e38d9",        "btc_tx": {            "version": 2,            "outputs": [{                "amount": 100000,                "script_pub_key": "0x5120228f281f297fd01cd363b9c93f742ba2976c1ec5a6083d9f754cb61e505356c3"            },{                "amount": 0,                "script_pub_key": "0x6a4452534b5f504547494e000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c87d235c24420b2f55450c8414725aa74e6db01035245efdab0e1cfa7ab29aca0f"            }],            "inputs": [{                "tx_id": "0x360b81785dc7c2f40627fea364676dbb73e6276683caffd9f906b0e0bd36b3d2",                "v_out": 1694,                "sequence": 4294967293,                "script_sig": ""            }],            "lock_time": 0        },        "merkle_branch_path": "0xFF6B0000",        "merkle_branch_hashes": [            "0x3fcef4a1ddf759a858190b89ecbd1ff3dffb49704e110b68baf5b5de7021910f"        ]    }'
+    # curl -i -X POST http://localhost:3000/register-pegin \    -H "Content-Type: application/json" \    -d '{        "block_hash": "0x0000000000000000000282fa21665766e58eb6cb94e458c3ef6d4af1121e38d9",        "btc_tx": {            "version": 2,            "outputs": [{                "amount": 100000,                "script_pub_key": "0x5120aa2820738e170f675ca6d8c30a160f9968cd8bb922b0cc0157169a85fafa3ccd"            },{                "amount": 0,                "script_pub_key": "0x6a4452534b5f504547494e000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c87d235c24420b2f55450c8414725aa74e6db01035245efdab0e1cfa7ab29aca0f"            }],            "inputs": [{                "tx_id": "0x360b81785dc7c2f40627fea364676dbb73e6276683caffd9f906b0e0bd36b3d2",                "v_out": 1694,                "sequence": 4294967293,                "script_sig": ""            }],            "lock_time": 0        },        "merkle_branch_path": "0xFF6B0000",        "merkle_branch_hashes": [            "0x3fcef4a1ddf759a858190b89ecbd1ff3dffb49704e110b68baf5b5de7021910f"        ]    }'
     

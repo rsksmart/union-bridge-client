@@ -227,17 +227,17 @@ Then, copy the `.actrc.sample` to `.actrc` and configure it as needed. This file
 
 To run the same actions as the CI runs on pull requests, you can use the following command:
 ```bash
-act pull_request -s KEY_STORE_FILE=$(cat <path_to_your_keystore_file>)
+act pull_request -s KEY_STORE_FILE=$(cat <path_to_your_keystore_file>) --container-architecture linux/amd64
 ```
 
 To run just Crate Tests, you can use the following command:
 ```bash
-act -j crates-tests -s KEY_STORE_FILE=$(cat <path_to_your_keystore_file>)
+act -j crates-tests -s KEY_STORE_FILE=$(cat <path_to_your_keystore_file>) --container-architecture linux/amd64
 ```
 
 To run just QA Tests, you can use the following command:
 ```bash
-act -j qa-tests -s KEY_STORE_FILE=$(cat <path_to_your_keystore_file>)
+act -j qa-tests -s KEY_STORE_FILE=$(cat <path_to_your_keystore_file>) --container-architecture linux/amd64
 ```
 
 NOTE: Uploading and downloading artifacts is slow locally, but fast on the CI.
