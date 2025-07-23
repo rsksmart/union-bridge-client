@@ -11,25 +11,12 @@ use crate::contracts::peg_manager::{
 use crate::contracts::signature_manager::{
     AddMemberNonceInvoke, AddMemberSignatureInvoke, SignatureManagerContract,
 };
-
-use crate::{
-    config::TransactionConfig,
-    contracts::{
-        peg_manager::{
-            FakePegManagerContract, PegManagerContract, accept_pegin::AcceptPeginInvoke,
-            get_temporary_pegin_address::GetTemporaryPeginAddressCall,
-            notify_check_fork_complete::NotifyCheckForkCompleteInvoke,
-            request_pegin::RequestPeginInvoke,
-        },
-        signature_manager::{
-            AddMemberNonceInvoke, AddMemberSignatureInvoke, SignatureManagerContract,
-        },
-    },
 use crate::types::{
     AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
     AddMemberSignatureInput, AddMemberSignatureOutput, ApplyToStreamInput, ApplyToStreamOutput,
     GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterPegoutInput,
-    RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput,
+    RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
+    RequestPegoutOutput,
 };
 use alloy_primitives::U256;
 use alloy_provider::Provider;
@@ -41,6 +28,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use thiserror::Error;
 
+use crate::contracts::peg_manager::request_pegout::TryPegoutInvoke;
 #[cfg(test)]
 use mockall::automock;
 
@@ -90,11 +78,6 @@ pub trait RskContractsGatewayApi {
         input: AcceptPeginInput,
     ) -> impl Future<Output = Result<AcceptPeginOutput, DomainErrors>>;
 
-    fn request_pegout(
-        &self,
-        input: TryPegoutInput,
-    ) -> impl Future<Output = Result<RequestPegoutOutput, DomainErrors>>;
-
     fn add_member_nonce(
         &self,
         input: AddMemberNonceInput,
@@ -109,6 +92,11 @@ pub trait RskContractsGatewayApi {
         &self,
         input: &str,
     ) -> impl Future<Output = Result<(), DomainErrors>>;
+
+    fn request_pegout(
+        &self,
+        input: RequestPegoutInput,
+    ) -> impl Future<Output = Result<RequestPegoutOutput, DomainErrors>>;
 
     fn register_pegout(
         &self,
@@ -131,17 +119,13 @@ pub struct RskContractsGateway<P: Provider> {
     get_temporary_pegin_address_call: GetTemporaryPeginAddressCall<PegManagerContract<P>>,
     request_pegin_invoke: RequestPeginInvoke<PegManagerContract<P>>,
     accept_pegin_invoke: AcceptPeginInvoke<PegManagerContract<P>>,
-    request_pegout_invoke: TryPegoutInvoke<PegManagerContract<P>>,
-    get_temporary_pegin_address_call: GetTemporaryPeginAddressCall<PegManagerContract<P>>,
-    request_pegin_invoke: RequestPeginInvoke<PegManagerContract<P>>,
-    accept_pegin_invoke: AcceptPeginInvoke<PegManagerContract<P>>,
-    register_pegout_invoke: RegisterPegoutInvoke<PegManagerContract<P>>,
     add_member_nonce_invoke: AddMemberNonceInvoke<SignatureManagerContract<P>>,
     add_member_signature_invoke: AddMemberSignatureInvoke<SignatureManagerContract<P>>,
     notify_check_fork_completion_invoke: NotifyCheckForkCompleteInvoke<FakePegManagerContract<P>>,
-    register_pegout_invoke: RegisterPegoutInvoke<PegManagerContract<P>>,
     get_member_public_keys_call: GetMemberPublicKeysCall<CommitteeRegistryContract<P>>,
     apply_to_stream_invoke: ApplyToStreamInvoke<CommitteeRegistryContract<P>, P>,
+    request_pegout_invoke: TryPegoutInvoke<PegManagerContract<P>>,
+    register_pegout_invoke: RegisterPegoutInvoke<PegManagerContract<P>>,
 }
 
 impl<P: Provider + Clone> RskContractsGateway<P> {
@@ -273,7 +257,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
 
     async fn request_pegout(
         &self,
-        input: TryPegoutInput,
+        input: RequestPegoutInput,
     ) -> Result<RequestPegoutOutput, DomainErrors> {
         info!(
             "Interacting with PegManager#tryPegoutRequest @ {}",

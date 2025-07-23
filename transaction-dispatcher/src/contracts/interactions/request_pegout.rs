@@ -1,7 +1,7 @@
 use crate::{
     contracts::peg_manager::PegManagerContractApi,
     rsk_gateway::DomainErrors,
-    types::{RequestPegoutOutput, TryPegoutInput},
+    types::{RequestPegoutInput, RequestPegoutOutput},
 };
 use alloy_primitives::FixedBytes;
 use anyhow::Result;
@@ -21,7 +21,10 @@ impl<C: PegManagerContractApi> TryPegoutInvoke<C> {
         }
     }
 
-    pub async fn run(&self, input: TryPegoutInput) -> Result<RequestPegoutOutput, DomainErrors> {
+    pub async fn run(
+        &self,
+        input: RequestPegoutInput,
+    ) -> Result<RequestPegoutOutput, DomainErrors> {
         info!("Init Pegout request for: {:?}", input);
 
         let msg_value = input.amount_in_wei;
@@ -66,7 +69,9 @@ impl<C: PegManagerContractApi> TryPegoutInvoke<C> {
 mod tests {
     use crate::{
         contracts::{
-            interactions::request_pegout::{RequestPegoutOutput, TryPegoutInput, TryPegoutInvoke},
+            interactions::request_pegout::{
+                RequestPegoutInput, RequestPegoutOutput, TryPegoutInvoke,
+            },
             peg_manager::MockPegManagerContractApi,
         },
         rsk_gateway::DomainErrors,
@@ -136,7 +141,7 @@ mod tests {
         mock.expect_invoke_request_pegout().times(0);
 
         let invoke = TryPegoutInvoke::new_for_tests(mock);
-        let bad_input = TryPegoutInput {
+        let bad_input = RequestPegoutInput {
             amount_in_wei: 1_000,
             usr_pub_key: "not-a-hex-key".to_string(),
         };
@@ -150,9 +155,9 @@ mod tests {
         }
     }
 
-    fn get_base_input() -> TryPegoutInput {
+    fn get_base_input() -> RequestPegoutInput {
         let usr_pub_key = format!("0x{}", "01".repeat(33));
-        TryPegoutInput {
+        RequestPegoutInput {
             amount_in_wei: 1_234_567,
             usr_pub_key,
         }

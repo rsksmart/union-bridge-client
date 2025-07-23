@@ -256,8 +256,8 @@ pub(crate) mod tests {
         AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
         AddMemberSignatureInput, AddMemberSignatureOutput, ApplyToStreamInput, ApplyToStreamOutput,
         GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterPegoutInput,
-        RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput,
-        TryPegOutInput, TryPegOutOutput,
+        RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
+        RequestPegoutOutput,
     };
 
     fn create_fake_request_event(pegout_id: &str) -> RequestAdvanceFunds {
@@ -544,7 +544,7 @@ pub(crate) mod tests {
 
             async fn request_pegout(
                 &self,
-                input: TryPegoutInput,
+                input: RequestPegoutInput,
             ) -> Result<RequestPegoutOutput, DomainErrors>;
 
             async fn register_pegout(

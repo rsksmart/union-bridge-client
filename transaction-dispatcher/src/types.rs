@@ -46,7 +46,6 @@ pub struct BtcTxSPVProofInput {
     pub merkle_branch_hashes: Vec<String>,
 }
 
-
 // Type aliases for specific use cases
 pub type RegisterPegInInput = BtcTxSPVProofInput;
 pub type RawBtcTxSPVProof = BtcTxSPVProofInput;
@@ -58,7 +57,7 @@ pub struct RequestPeginOutput {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct TryPegoutInput {
+pub struct RequestPegoutInput {
     pub amount_in_wei: u64,
     pub usr_pub_key: String,
 }
