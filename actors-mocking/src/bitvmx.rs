@@ -7,7 +7,6 @@ use common::msg_broker::{
     },
     broker::{BITVMX_L2_BROKER_CLIENT_ID, BitVmxBrokerServerApi},
 };
-use log::info;
 use serde_json::json;
 use uuid::Uuid;
 
@@ -23,14 +22,14 @@ impl<BS: BitVmxBrokerServerApi> Executor<BS> {
     pub fn try_recv(&mut self) -> Result<()> {
         match self.broker_server.try_recv()? {
             Some((IncomingBitVMXApiMessages::GenerateZKP(id, data), from)) => {
-                info!(
+                println!(
                     "Received GenerateZKP from {from} with id {id} and data {:?} at {}",
                     hex::encode(data),
                     Self::reception_time()
                 );
             }
             Some((IncomingBitVMXApiMessages::Ping(), from)) => {
-                info!("Received Ping from {from} at {}", Self::reception_time());
+                println!("Received Ping from {from} at {}", Self::reception_time());
 
                 self.broker_server
                     .send(&OutgoingBitVMXApiMessages::Pong(), from)
@@ -43,13 +42,13 @@ impl<BS: BitVmxBrokerServerApi> Executor<BS> {
                 );
             }
             Some((IncomingBitVMXApiMessages::GetSPVProof(tx_id), from)) => {
-                info!(
+                println!(
                     "Received message 'GetSPVProof' from client '{}': tx_id = {}",
                     from, tx_id
                 );
             }
             Some((IncomingBitVMXApiMessages::SetVar(uuid, name, value), from)) => {
-                info!(
+                println!(
                     "Received SetVar from {from}: uuid = {uuid}, name = {name}, value = {}",
                     serde_json::to_string_pretty(&value)
                         .unwrap_or_else(|e| format!("(invalid JSON: {e})"))
@@ -59,7 +58,7 @@ impl<BS: BitVmxBrokerServerApi> Executor<BS> {
                 IncomingBitVMXApiMessages::Setup(program_id, program_name, addresses, port),
                 from,
             )) => {
-                info!(
+                println!(
                     "Received Setup from {from}: program_id = {program_id}, program_name = {program_name}, addresses = {:?}, port = {port} at {}",
                     addresses,
                     Self::reception_time()
@@ -69,13 +68,13 @@ impl<BS: BitVmxBrokerServerApi> Executor<BS> {
                 IncomingBitVMXApiMessages::DispatchTransactionName(uuid, transaction_name),
                 from,
             )) => {
-                info!(
+                println!(
                     "Received DispatchTransactionName from {from}: uuid = {uuid}, transaction_name = {transaction_name} at {}",
                     Self::reception_time()
                 );
             }
             Some((msg, _from)) => {
-                info!(
+                println!(
                     "Unexpected IncomingBitVMXApiMessages received {:?} at {}",
                     msg,
                     Self::reception_time()
