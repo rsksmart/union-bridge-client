@@ -87,13 +87,13 @@ pub(crate) fn decode_error(
     let decoded_err = err.as_decoded_interface_error::<SignatureManagerErrors>();
     decoded_err.map(|e| match e {
         SignatureManagerErrors::AcceptPeginTxHashNotFound(e) => {
-            DomainErrors::InvalidValue(format!("AcceptPeginTxHashNotFound: {:?}", e))
+            DomainErrors::InvalidValue(format!("{:?}", e))
         }
         SignatureManagerErrors::AddressEmptyCode(e) => {
-            DomainErrors::InvalidAddress(format!("AddressEmptyCode: {:?}", e))
+            DomainErrors::InvalidAddress(format!("{:?}", e))
         }
         SignatureManagerErrors::HashToSignNotFound(e) => {
-            DomainErrors::InvalidValue(format!("HashToSignNotFound: {:?}", e))
+            DomainErrors::InvalidValue(format!("{:?}", e))
         }
         // TODO handle more based on needs
         _ => DomainErrors::UnhandledContractError(format!("{:?}", e)),

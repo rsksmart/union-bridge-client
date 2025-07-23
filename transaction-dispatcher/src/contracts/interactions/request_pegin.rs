@@ -38,20 +38,14 @@ impl<C: PegManagerContractApi> RequestPeginInvoke<C> {
 
         let result = match receipt.status() {
             true => {
-                info!(
-                    "RequestPegin successful at tx {}",
-                    receipt.transaction_hash
-                );
+                info!("RequestPegin successful at tx {}", receipt.transaction_hash);
                 RequestPeginOutput {
                     transaction_hash: receipt.transaction_hash.to_string(),
                     success: true,
                 }
             }
             false => {
-                error!(
-                    "RequestPegin failed at tx {}",
-                    receipt.transaction_hash
-                );
+                error!("RequestPegin failed at tx {}", receipt.transaction_hash);
                 RequestPeginOutput {
                     transaction_hash: receipt.transaction_hash.to_string(),
                     success: false,

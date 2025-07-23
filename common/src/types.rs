@@ -388,6 +388,20 @@ impl From<H160> for Address {
     }
 }
 
+impl From<alloy_primitives::Address> for Address {
+    fn from(addr: alloy_primitives::Address) -> Self {
+        Self(H160::from_slice(addr.as_slice()))
+    }
+}
+
+impl From<Address> for alloy_primitives::Address {
+    fn from(addr: Address) -> Self {
+        Self(*alloy_primitives::Address::from_slice(
+            addr.0.as_fixed_bytes(),
+        ))
+    }
+}
+
 impl TryFrom<&str> for Address {
     type Error = FromHexError;
 

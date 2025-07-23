@@ -65,7 +65,7 @@ mod tests {
     use crate::{
         contracts::{
             interactions::register_pegout::{
-                RegisterPegoutInput, RegisterPegoutOutput, RegisterPegoutInvoke,
+                RegisterPegoutInput, RegisterPegoutInvoke, RegisterPegoutOutput,
             },
             peg_manager::MockPegManagerContractApi,
         },

@@ -54,24 +54,45 @@ impl<P: Provider + Clone> Executor<P> {
             .context("Failed to execute deploy script")?;
 
         // Find PegManager address in deploy script output
-        let address_line = output_lines
+        let peg_manager_address = output_lines
             .iter()
-            .find_map(|line| Self::try_get_peg_manager_address(line.clone()))
-            .ok_or_else(|| anyhow!("PegManager address not found in output"))?;
+            .find_map(|line| Self::try_get_real_contract_address(line.clone(), "PegManager"))
+            .ok_or_else(|| anyhow!("PegManager address not found in output"))?
+            .parse::<Address>()?;
+
+        println!("Real PegManager deployed at {}", peg_manager_address);
+
+        // Find SignatureManager address in deploy script output
+        let signature_manager_address = output_lines
+            .iter()
+            .find_map(|line| Self::try_get_real_contract_address(line.clone(), "SignatureManager"))
+            .ok_or_else(|| anyhow!("SignatureManager address not found in output"))?
+            .parse::<Address>()?;
+
+        println!(
+            "Real SignatureManager deployed at {}",
+            signature_manager_address
+        );
+
+        // Find CommitteeRegistry address in deploy script output
+        let committee_registry_address = output_lines
+            .iter()
+            .find_map(|line| Self::try_get_real_contract_address(line.clone(), "CommitteeRegistry"))
+            .ok_or_else(|| anyhow!("CommitteeRegistry address not found in output"))?
+            .parse::<Address>()?;
+
+        println!(
+            "Real CommitteeRegistry deployed at {}",
+            committee_registry_address
+        );
 
         // Run setup script
         println!("Running setup script...");
         Self::run_script(&contracts_path, &setup_script)
             .context("Failed to execute setup script")?;
 
-        let real_peg_manager_address = address_line
-            .parse::<Address>()
-            .context("Parsing logged address to Address failed")?;
-
-        println!("Real PegManager deployed at {}", real_peg_manager_address);
-
         Ok(PegManagerInstance::new(
-            real_peg_manager_address,
+            peg_manager_address,
             provider.clone(),
         ))
     }
@@ -187,8 +208,9 @@ impl<P: Provider + Clone> Executor<P> {
         panic!("This crate should be used with 'anvil' feature enabled");
     }
 
-    fn try_get_peg_manager_address(line: String) -> Option<String> {
-        if line.contains("PegManager.sol  address") {
+    fn try_get_real_contract_address(line: String, contract_name: &str) -> Option<String> {
+        let pat = format!("{contract_name}.sol  address");
+        if line.contains(pat.as_str()) {
             // Expect format: "...PegManager.sol  address:  0x..."
             let parts: Vec<&str> = line.split("address:").collect();
             if parts.len() == 2 {

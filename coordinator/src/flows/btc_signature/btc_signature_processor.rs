@@ -7,7 +7,6 @@ use common::runtime_sync::RuntimeSync;
 use common::types::{Hash256, RskBlockAndUncles};
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::Arc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;
 

@@ -1,8 +1,8 @@
 use crate::{
     rsk_gateway::{DomainErrors, RskContractsGateway, RskContractsGatewayApi},
     types::{
-        AddMemberNonceInput, AddMemberSignatureInput, PeginAddressInput, RequestPeginInput,
-        RegisterPegoutInput,
+        AddMemberNonceInput, AddMemberSignatureInput, PeginAddressInput, RegisterPegoutInput,
+        RequestPeginInput,
     },
 };
 use alloy_provider::Provider;

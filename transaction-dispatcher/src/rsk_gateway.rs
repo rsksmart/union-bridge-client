@@ -1,34 +1,64 @@
-use crate::{
-    config::TransactionConfig,
-    contracts::{
-        peg_manager::{
-            FakePegManagerContract, PegManagerContract, accept_pegin::AcceptPeginInvoke,
-            get_temporary_pegin_address::GetTemporaryPeginAddressCall,
-            notify_check_fork_complete::NotifyCheckForkCompleteInvoke,
-            register_pegout::RegisterPegoutInvoke, request_pegin::RequestPeginInvoke,
-        },
-        signature_manager::{
-            AddMemberNonceInvoke, AddMemberSignatureInvoke, SignatureManagerContract,
-        },
-    },
-    types::{
-        AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
-        AddMemberSignatureInput, AddMemberSignatureOutput, PeginAddressInput, PeginAddressOutput,
-        RegisterPegoutInput, RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput,
-    },
+use crate::config::TransactionConfig;
+use crate::contracts::committee_registry::{
+    ApplyToStreamInvoke, CommitteeRegistryContract, GetMemberPublicKeysCall,
 };
-use alloy_primitives::Address;
+use crate::contracts::peg_manager::{
+    FakePegManagerContract, PegManagerContract, accept_pegin::AcceptPeginInvoke,
+    get_temporary_pegin_address::GetTemporaryPeginAddressCall,
+    notify_check_fork_complete::NotifyCheckForkCompleteInvoke,
+    register_pegout::RegisterPegoutInvoke, request_pegin::RequestPeginInvoke,
+};
+use crate::contracts::signature_manager::{
+    AddMemberNonceInvoke, AddMemberSignatureInvoke, SignatureManagerContract,
+};
+use crate::types::{
+    AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
+    AddMemberSignatureInput, AddMemberSignatureOutput, ApplyToStreamInput, ApplyToStreamOutput,
+    GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterPegoutInput,
+    RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput,
+};
+use alloy_primitives::U256;
 use alloy_provider::Provider;
-use anyhow::{Context, Result};
+use anyhow::{Result, anyhow};
+use common::types::Address;
 use common::types::ContractInfo;
 use log::{error, info};
 use std::collections::HashMap;
+use std::error::Error;
 use thiserror::Error;
 
+#[cfg(test)]
+use mockall::automock;
+
 /// Must match the contract name in the config file
-const PEG_MANAGER_CONTRACT_NAME: &'static str = "PegManager";
-const FAKE_PEG_MANAGER_CONTRACT_NAME: &'static str = "FakePegManager";
-const SIGNATURE_MANAGER_CONTRACT_NAME: &'static str = "SignatureManager";
+const PEG_MANAGER_CONTRACT_NAME: &str = "PegManager";
+const FAKE_PEG_MANAGER_CONTRACT_NAME: &str = "FakePegManager";
+const SIGNATURE_MANAGER_CONTRACT_NAME: &str = "SignatureManager";
+const COMMITTEE_REGISTRY_CONTRACT_NAME: &str = "CommitteeRegistry";
+
+#[cfg_attr(test, automock)]
+pub trait BalanceProvider {
+    #[allow(async_fn_in_trait)]
+    async fn get_balance(
+        &self,
+        addr: alloy_primitives::Address,
+    ) -> Result<U256, Box<dyn Error + Send + Sync>>;
+}
+
+// implement BalanceProvider for any type that implements Provider
+impl<T> BalanceProvider for T
+where
+    T: Provider,
+{
+    async fn get_balance(
+        &self,
+        addr: alloy_primitives::Address,
+    ) -> Result<U256, Box<dyn Error + Send + Sync>> {
+        self.get_balance(addr)
+            .await
+            .map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)
+    }
+}
 
 pub trait RskContractsGatewayApi {
     fn get_temporary_pegin_address(
@@ -65,6 +95,15 @@ pub trait RskContractsGatewayApi {
         &self,
         input: &str,
     ) -> impl Future<Output = Result<(), DomainErrors>>;
+
+    fn get_member_public_keys(
+        &self,
+    ) -> impl Future<Output = Result<GetMemberPublicKeysOutput, DomainErrors>>;
+
+    fn apply_to_stream(
+        &self,
+        input: ApplyToStreamInput,
+    ) -> impl Future<Output = Result<ApplyToStreamOutput, DomainErrors>>;
 }
 
 #[derive(Clone)]
@@ -77,6 +116,8 @@ pub struct RskContractsGateway<P: Provider> {
     add_member_nonce_invoke: AddMemberNonceInvoke<SignatureManagerContract<P>>,
     add_member_signature_invoke: AddMemberSignatureInvoke<SignatureManagerContract<P>>,
     notify_check_fork_completion_invoke: NotifyCheckForkCompleteInvoke<FakePegManagerContract<P>>,
+    get_member_public_keys_call: GetMemberPublicKeysCall<CommitteeRegistryContract<P>>,
+    apply_to_stream_invoke: ApplyToStreamInvoke<CommitteeRegistryContract<P>, P>,
 }
 
 impl<P: Provider + Clone> RskContractsGateway<P> {
@@ -84,18 +125,24 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
         provider: P,
         managed_contracts: HashMap<String, ContractInfo>,
         tx_config: &TransactionConfig,
+        member_address: Address,
     ) -> Result<Self> {
         let contract_address = Self::load_contract(PEG_MANAGER_CONTRACT_NAME, &managed_contracts)?;
         let fake_contract_address =
             Self::load_contract(FAKE_PEG_MANAGER_CONTRACT_NAME, &managed_contracts)?;
         let signature_manager_address =
             Self::load_contract(SIGNATURE_MANAGER_CONTRACT_NAME, &managed_contracts)?;
+        let committee_registry_address =
+            Self::load_contract(COMMITTEE_REGISTRY_CONTRACT_NAME, &managed_contracts)?;
 
-        let peg_manager_contract = PegManagerContract::new(provider.clone(), contract_address);
+        let peg_manager_contract =
+            PegManagerContract::new(provider.clone(), contract_address.into());
         let fake_peg_manager_contract =
-            FakePegManagerContract::new(provider.clone(), fake_contract_address);
+            FakePegManagerContract::new(provider.clone(), fake_contract_address.into());
         let signature_manager_contract =
-            SignatureManagerContract::new(provider, signature_manager_address);
+            SignatureManagerContract::new(provider.clone(), signature_manager_address.into());
+        let committee_registry_contract =
+            CommitteeRegistryContract::new(provider.clone(), committee_registry_address.into());
 
         Ok(RskContractsGateway {
             contract_address,
@@ -126,17 +173,24 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
                 signature_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
+            get_member_public_keys_call: GetMemberPublicKeysCall::new(
+                committee_registry_contract.clone(),
+                member_address.into(),
+            ),
+            apply_to_stream_invoke: ApplyToStreamInvoke::new(
+                committee_registry_contract.clone(),
+                tx_config.gas_bumps_t1,
+                provider.clone(),
+                alloy_primitives::Address::from(member_address),
+            ),
         })
     }
 
     fn load_contract(name: &str, contracts: &HashMap<String, ContractInfo>) -> Result<Address> {
         contracts
             .get(name)
-            .context(format!("Address not found for contract: {}", name))?
-            .address
-            .to_string()
-            .parse::<Address>()
-            .context("Parsing to Address failed")
+            .map(|info| info.address)
+            .ok_or_else(|| anyhow!(format!("Address not found for contract: {}", name)))
     }
 }
 
@@ -254,6 +308,33 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
                 err
             })
     }
+
+    async fn get_member_public_keys(&self) -> Result<GetMemberPublicKeysOutput, DomainErrors> {
+        info!(
+            "Interacting with CommitteeRegistry#getMemberPublicKeys @ {}",
+            self.contract_address
+        );
+
+        self.get_member_public_keys_call.run().await.map_err(|err| {
+            error!("Error on get_member_public_keys_call: {}", err);
+            err
+        })
+    }
+
+    async fn apply_to_stream(
+        &self,
+        input: ApplyToStreamInput,
+    ) -> Result<ApplyToStreamOutput, DomainErrors> {
+        info!(
+            "Interacting with CommitteeRegistry#applyToStream @ {}",
+            self.contract_address
+        );
+
+        self.apply_to_stream_invoke.run(input).await.map_err(|err| {
+            error!("Error on apply_to_stream_call: {}", err);
+            err
+        })
+    }
 }
 
 #[derive(Debug, Error)]
@@ -283,6 +364,10 @@ pub enum DomainErrors {
     StreamNotFoundByDenomination(String),
     #[error("Packet out of bound: {0}")]
     PacketOutOfBound(String),
+    #[error("Error interacting with Committee: {0}")]
+    CommitteeError(String),
+    #[error("Error collecting signatures: {0}")]
+    SignaturesError(String),
 
     // unhandled smart contract errors
     #[error("Unhandled Contract Error: {0}")]
@@ -295,4 +380,7 @@ pub enum DomainErrors {
     // unexpected errors
     #[error("Unknown Contract Error: {0}")]
     UnknownContractError(String),
+
+    #[error("Internal non-contract error: {0}")]
+    InternalServerError(String),
 }
