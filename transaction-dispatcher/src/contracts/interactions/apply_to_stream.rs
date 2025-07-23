@@ -4,7 +4,7 @@ use crate::rsk_gateway::{BalanceProvider, DomainErrors};
 use crate::types::{ApplyToStreamInput, ApplyToStreamOutput};
 
 use anyhow::Result;
-use log::{error, info};
+use log::{debug, error, info};
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     PublicKeyRegistration, StreamDenomination,
 };
@@ -36,7 +36,7 @@ impl<C: CommitteeRegistryContractApi, BP: BalanceProvider> ApplyToStreamInvoke<C
         &self,
         input: ApplyToStreamInput,
     ) -> Result<ApplyToStreamOutput, DomainErrors> {
-        info!("Init ApplyToStream stream: {:?}", input.stream_id);
+        info!("Init ApplyToStream stream: {:?}", input);
 
         let member_balance = self
             .balance_provider
@@ -46,7 +46,7 @@ impl<C: CommitteeRegistryContractApi, BP: BalanceProvider> ApplyToStreamInvoke<C
 
         let min_deposit = self
             .contract
-            .get_minimum_deposit(StreamDenomination::from(input.stream_id))
+            .call_get_minimum_deposit(StreamDenomination::from(input.stream_id))
             .await?;
 
         if min_deposit > member_balance {
@@ -55,19 +55,24 @@ impl<C: CommitteeRegistryContractApi, BP: BalanceProvider> ApplyToStreamInvoke<C
             ));
         }
 
-        let public_keys_mapped = input
+        let public_keys_regs = input
             .committee_public_keys
             .iter()
             .cloned()
             .map(PublicKeyRegistration::from)
             .collect();
 
+        debug!(
+            "ApplyToStream with derived PublicKeyRegistrations {:?}",
+            public_keys_regs
+        );
+
         let receipt = self
             .contract
-            .apply_to_stream_invoke(
+            .invoke_apply_to_stream(
                 input.stream_id,
                 input.role,
-                public_keys_mapped,
+                public_keys_regs,
                 self.gas_bumps,
             )
             .await?;
@@ -138,14 +143,14 @@ mod tests {
 
         // expect get_minimum_deposit to be called
         mock_instance
-            .expect_get_minimum_deposit()
+            .expect_call_get_minimum_deposit()
             .with(eq(StreamDenomination::from(input.stream_id)))
             .returning(|_| Ok(U256::from(100)))
             .times(1);
 
         // expect apply_to_stream_call to be called
         mock_instance
-            .expect_apply_to_stream_invoke()
+            .expect_invoke_apply_to_stream()
             .with(
                 eq(input.stream_id),
                 eq(input.role),
@@ -194,7 +199,7 @@ mod tests {
 
         // expect get_minimum_deposit to be called
         mock_instance
-            .expect_get_minimum_deposit()
+            .expect_call_get_minimum_deposit()
             .with(eq(StreamDenomination::from(input.stream_id)))
             .returning(|_| Ok(U256::from(100)))
             .times(1);

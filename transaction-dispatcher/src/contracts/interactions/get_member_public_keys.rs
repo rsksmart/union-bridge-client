@@ -26,7 +26,7 @@ impl<C: CommitteeRegistryContractApi> GetMemberPublicKeysCall<C> {
 
         let public_keys = self
             .contract
-            .get_member_public_keys_call(self.member_address)
+            .call_get_member_public_keys(self.member_address)
             .await
             .map_err(|e| {
                 DomainErrors::UnhandledContractError(format!(
@@ -66,7 +66,7 @@ mod tests {
         ];
 
         mock_instance
-            .expect_get_member_public_keys_call()
+            .expect_call_get_member_public_keys()
             .with(always())
             .returning(move |_| Ok(expected_public_keys.clone()))
             .times(1);
@@ -93,7 +93,7 @@ mod tests {
         let mut mock_instance = MockCommitteeRegistryContractApi::new();
 
         mock_instance
-            .expect_get_member_public_keys_call()
+            .expect_call_get_member_public_keys()
             .with(always())
             .returning(move |_| {
                 Err(alloy_contract::Error::TransportError(

@@ -17,12 +17,12 @@ use crate::rsk_gateway::DomainErrors;
 
 #[cfg_attr(test, automock)]
 pub trait CommitteeRegistryContractApi {
-    async fn get_member_public_keys_call(
+    async fn call_get_member_public_keys(
         &self,
         member_address: Address,
     ) -> alloy_contract::Result<Vec<alloy_primitives::FixedBytes<32>>>;
 
-    async fn apply_to_stream_invoke(
+    async fn invoke_apply_to_stream(
         &self,
         stream: u8,
         role: u8,
@@ -30,8 +30,10 @@ pub trait CommitteeRegistryContractApi {
         gas_bumps: u8,
     ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt>;
 
-    async fn get_minimum_deposit(&self, stream: StreamDenomination)
-    -> alloy_contract::Result<U256>;
+    async fn call_get_minimum_deposit(
+        &self,
+        stream: StreamDenomination,
+    ) -> alloy_contract::Result<U256>;
 }
 
 #[derive(Clone)]
@@ -51,7 +53,7 @@ impl<P: Provider> CommitteeRegistryContract<P> {
 }
 
 impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> {
-    async fn get_member_public_keys_call(
+    async fn call_get_member_public_keys(
         &self,
         member_address: Address,
     ) -> alloy_contract::Result<Vec<alloy_primitives::FixedBytes<32>>> {
@@ -61,7 +63,7 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
             .await
     }
 
-    async fn apply_to_stream_invoke(
+    async fn invoke_apply_to_stream(
         &self,
         stream: u8,
         role: u8,
@@ -78,7 +80,7 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
         .await
     }
 
-    async fn get_minimum_deposit(
+    async fn call_get_minimum_deposit(
         &self,
         stream: StreamDenomination,
     ) -> alloy_contract::Result<U256> {
