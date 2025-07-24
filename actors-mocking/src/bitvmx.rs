@@ -149,12 +149,24 @@ impl<BS: BitVmxBrokerServerApi> Executor<BS> {
         merkle_branch_path: String,
         merkle_branch_hashes: Vec<String>,
     ) -> Result<()> {
-        let payload = json!({
-            "block_hash": block_hash,
-            "btc_tx": tx,
-            "merkle_branch_path": merkle_branch_path,
-            "merkle_branch_hashes": merkle_branch_hashes,
-        });
+        let spv_proof = BtcTxSPVProof {
+            block_hash,
+            tx: tx.clone(),
+            merkle_branch_path,
+            merkle_branch_hashes: merkle_branch_hashes
+                .into_iter()
+                .map(|h| {
+                    let bytes = hex::decode(h.trim_start_matches("0x"))
+                        .expect(&format!("Invalid hex in merkle_branch_hashes: {}", h));
+                    <[u8; 32]>::try_from(bytes.as_slice()).expect(&format!(
+                        "Merkle hash must be 32 bytes, but received {} bytes",
+                        bytes.len()
+                    ))
+                })
+                .collect(),
+        };
+
+        let payload = json!(spv_proof);
 
         let uuid = Uuid::new_v4();
         let event = OutgoingBitVMXApiMessages::Variable(

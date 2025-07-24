@@ -399,8 +399,10 @@ where
     fn handle_contract_invoke(&self, method_name: &str, json_data: &Value) -> Result<()> {
         match method_name {
             ACCEPT_PEGIN => {
-                let input: AcceptPeginInput = serde_json::from_value(json_data.clone())
-                    .context("Failed to deserialize AcceptPeginInput")?;
+                let spv_proof: BtcTxSPVProof = serde_json::from_value(json_data.clone())
+                    .context("Failed to deserialize BtcTxSPVProof")?;
+                let input: AcceptPeginInput = spv_proof.into();
+
                 self.invoke_contract(ACCEPT_PEGIN, || async {
                     self.contracts.accept_pegin(input).await
                 })
