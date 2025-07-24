@@ -115,22 +115,7 @@ impl<BS: BitVmxBrokerServerApi> Executor<BS> {
         merkle_branch_path: String,
         merkle_branch_hashes: Vec<String>,
     ) -> Result<()> {
-        let spv_proof = BtcTxSPVProof {
-            block_hash,
-            tx: tx.clone(),
-            merkle_branch_path,
-            merkle_branch_hashes: merkle_branch_hashes
-                .into_iter()
-                .map(|h| {
-                    let bytes = hex::decode(h.trim_start_matches("0x"))
-                        .expect(&format!("Invalid hex in merkle_branch_hashes: {}", h));
-                    <[u8; 32]>::try_from(bytes.as_slice()).expect(&format!(
-                        "Merkle hash must be 32 bytes, but received {} bytes",
-                        bytes.len()
-                    ))
-                })
-                .collect(),
-        };
+        let spv_proof = Self::build_spv_proof(block_hash, &tx, merkle_branch_path, merkle_branch_hashes)?;
 
         let event = OutgoingBitVMXApiMessages::SPVProof(tx.compute_txid(), Some(spv_proof));
 
@@ -149,22 +134,7 @@ impl<BS: BitVmxBrokerServerApi> Executor<BS> {
         merkle_branch_path: String,
         merkle_branch_hashes: Vec<String>,
     ) -> Result<()> {
-        let spv_proof = BtcTxSPVProof {
-            block_hash,
-            tx: tx.clone(),
-            merkle_branch_path,
-            merkle_branch_hashes: merkle_branch_hashes
-                .into_iter()
-                .map(|h| {
-                    let bytes = hex::decode(h.trim_start_matches("0x"))
-                        .expect(&format!("Invalid hex in merkle_branch_hashes: {}", h));
-                    <[u8; 32]>::try_from(bytes.as_slice()).expect(&format!(
-                        "Merkle hash must be 32 bytes, but received {} bytes",
-                        bytes.len()
-                    ))
-                })
-                .collect(),
-        };
+        let spv_proof = Self::build_spv_proof(block_hash, &tx, merkle_branch_path, merkle_branch_hashes)?;
 
         let payload = json!(spv_proof);
 
@@ -241,6 +211,35 @@ impl<BS: BitVmxBrokerServerApi> Executor<BS> {
                 "sending event {:?} to consumer {}",
                 event, BITVMX_L2_BROKER_CLIENT_ID
             ))
+    }
+
+    fn build_spv_proof(
+        block_hash: String,
+        tx: &Transaction,
+        merkle_branch_path: String,
+        merkle_branch_hashes: Vec<String>,
+    ) -> Result<BtcTxSPVProof> {
+        let merkle_branch_hashes = merkle_branch_hashes
+            .into_iter()
+            .map(|h| {
+                let bytes = hex::decode(h.trim_start_matches("0x")).map_err(|e| {
+                    anyhow::anyhow!("Invalid hex in merkle_branch_hashes {}: {}", h, e)
+                })?;
+                <[u8; 32]>::try_from(bytes.as_slice()).map_err(|_| {
+                    anyhow::anyhow!(
+                        "Merkle hash must be 32 bytes, but received {} bytes",
+                        bytes.len()
+                    )
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(BtcTxSPVProof {
+            block_hash,
+            tx: tx.clone(),
+            merkle_branch_path,
+            merkle_branch_hashes,
+        })
     }
 
     fn reception_time() -> String {

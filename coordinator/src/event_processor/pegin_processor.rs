@@ -746,30 +746,8 @@ mod tests {
         );
 
         // Simulate event payload
-        let data = json!({
-            "block_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "btc_tx": {
-                "version": 1,
-                "inputs": [{
-                    "tx_id": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-                    "v_out": 0,
-                    "sequence": 429496729,
-                    "script_sig": "483045022100..."
-                }],
-                "outputs": [{
-                    "amount": 100000,
-                    "script_pub_key": "76a914..."
-                }],
-                "lock_time": 0
-            },
-            "merkle_branch_path": "left-right-left",
-            "merkle_branch_hashes": [
-                "0x1111111111111111111111111111111111111111111111111111111111111111",
-                "0x2222222222222222222222222222222222222222222222222222222222222222"
-            ]
-        });
-
-        let payload = serde_json::to_string(&data).unwrap();
+        let spv_proof = dummy_spv_proof();
+        let payload = serde_json::to_string(&spv_proof).unwrap();
         let uuid = Uuid::new_v4();
         let event = OutgoingBitVMXApiMessages::Variable(
             uuid,
@@ -804,30 +782,8 @@ mod tests {
         );
 
         // Payload
-        let data = json!({
-            "block_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "btc_tx": {
-                "version": 1,
-                "inputs": [{
-                    "tx_id": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-                    "v_out": 0,
-                    "sequence": 429496729,
-                    "script_sig": "483045022100..."
-                }],
-                "outputs": [{
-                    "amount": 100000,
-                    "script_pub_key": "76a914..."
-                }],
-                "lock_time": 0
-            },
-            "merkle_branch_path": "left-right-left",
-            "merkle_branch_hashes": [
-                "0x1111111111111111111111111111111111111111111111111111111111111111",
-                "0x2222222222222222222222222222222222222222222222222222222222222222"
-            ]
-        });
-
-        let payload = serde_json::to_string(&data).unwrap();
+        let spv_proof = dummy_spv_proof();
+        let payload = serde_json::to_string(&spv_proof).unwrap();
         let uuid = Uuid::new_v4();
         let event = OutgoingBitVMXApiMessages::Variable(
             uuid,
