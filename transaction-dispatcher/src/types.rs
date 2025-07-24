@@ -46,10 +46,6 @@ pub struct BtcTxSPVProofInput {
     pub merkle_branch_hashes: Vec<String>,
 }
 
-// Type aliases for specific use cases
-pub type RegisterPegInInput = BtcTxSPVProofInput;
-pub type RawBtcTxSPVProof = BtcTxSPVProofInput;
-
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct RequestPeginOutput {
     pub transaction_hash: String,
@@ -83,9 +79,10 @@ pub struct TxSentOutput {
 pub type AddMemberNonceOutput = TxSentOutput;
 pub type AddMemberSignatureOutput = TxSentOutput;
 pub type RequestPeginInput = BtcTxSPVProofInput;
+pub type RegisterPegInInput = BtcTxSPVProofInput;
 pub type AcceptPeginInput = BtcTxSPVProofInput;
 pub type AcceptPeginOutput = RequestPeginOutput;
-pub type RegisterPegoutInput = RawBtcTxSPVProof;
+pub type RegisterPegoutInput = BtcTxSPVProofInput;
 pub type RegisterPegoutOutput = TxSentOutput;
 pub type RequestPegoutOutput = TxSentOutput;
 

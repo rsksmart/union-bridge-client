@@ -4,10 +4,9 @@ use crate::{
     event_processor::EventProcessor,
     types::{EventWithBlock, RskPegManagerEvents},
 };
-use anyhow::bail;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use common::msg_broker::bitvmx_types::{
-    IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, VariableTypes,
+    BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, VariableTypes,
 };
 use common::runtime_sync::RuntimeSync;
 use common::types::{Hash256, TxHash};
@@ -56,13 +55,12 @@ impl<T: Clone> PegoutEvent<T> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct PegoutEventState {
     pegout_requested_tx: TxHash,
     pegout_requested: PegoutEvent<PegoutRequested>,
     pegout_registered_tx: Option<TxHash>,
     pegout_registered: Option<PegoutEvent<PegoutRegistered>>,
-    pegout_registered_handled: bool,
     all_signatures_ready: Option<PegoutEvent<Hash256>>,
 }
 
@@ -73,7 +71,6 @@ impl PegoutEventState {
             pegout_requested,
             pegout_registered_tx: None,
             pegout_registered: None,
-            pegout_registered_handled: false,
             all_signatures_ready: None,
         }
     }
@@ -96,6 +93,24 @@ impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> PegoutProcessor<CG, 
             blockchain: BlockchainView::new(),
             tracker: HashMap::new(),
         }
+    }
+
+    fn notify_pegout_requested_to_bitvmx(
+        bitvmx_broker: &BC,
+        flow_id: Uuid,
+        event_data: &impl Serialize,
+    ) -> Result<()> {
+        //Set var must be sent first
+        Self::send_set_var_to_bitvmx(bitvmx_broker, flow_id, "PegoutRequested", event_data)
+            .context(format!(
+                "Error processing confirmed pegout event (flow_id: {})",
+                flow_id
+            ))?;
+
+        //Setup must be sent after set_var
+        Self::send_setup_to_bitvmx(bitvmx_broker, flow_id)?;
+
+        Ok(())
     }
 
     fn track_pegout_requested(&mut self, event: EventWithBlock<PegoutRequested>) -> Result<()> {
@@ -123,8 +138,8 @@ impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> PegoutProcessor<CG, 
         self.blockchain
             .add_observer(pegout_requested_event.confirmations.clone());
         info!(
-            "Adding PegoutRequested event to the pegout event tracker. Event{:?}",
-            pegout_requested_event
+            "Adding PegoutRequested event to the pegout event tracker. id: {} Event{:?}",
+            flow_id, pegout_requested_event
         );
 
         let pegout_event_state = PegoutEventState::new(tx_hash, pegout_requested_event);
@@ -133,41 +148,38 @@ impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> PegoutProcessor<CG, 
         Ok(())
     }
 
-    fn untrack_pegout_requested(&mut self, event: EventWithBlock<PegoutRequested>) -> Result<()> {
-        //find in tracer value the one with same pegout_signature_hash
-        let flow_id = {
-            let (flow_id, pegout_event) = self
-                .tracker
-                .iter_mut()
-                .find(|(_, value)| value.pegout_requested_tx == event.tx_hash)
-                .ok_or_else(|| {
-                    anyhow::anyhow!("Pegout not found for tx_hash: {}", event.tx_hash)
-                })?;
+    fn untrack_pegout_requested(&mut self, event: &EventWithBlock<PegoutRequested>) -> Result<()> {
+        // Find the pegout event state for the given transaction hash
+        let (flow_id, pegout_event) = self
+            .tracker
+            .iter()
+            .find(|(_, value)| value.pegout_requested_tx == event.tx_hash)
+            .ok_or_else(|| anyhow!("Pegout not found for tx_hash: {}", event.tx_hash))?;
 
-            if pegout_event.pegout_registered.is_some() {
-                bail!(
-                    "Pegout registered found while trying to remove PegoutRequested event {:?}=>{:?}",
-                    event,
-                    pegout_event.pegout_registered
-                );
-            }
+        let flow_id = flow_id.clone();
 
-            let observer_id = {
-                let confirmations = pegout_event.pegout_requested.confirmations.borrow();
-                confirmations.get_id()
-            };
-
-            self.blockchain.remove_observer(observer_id.as_str());
-            info!(
-                "Untracked pegout requested event, pegout_requested_tx={:?}, flow_id={:?},",
-                pegout_event.pegout_requested_tx, *flow_id
+        if pegout_event.pegout_registered.is_some() {
+            bail!(
+                "Pegout registered found while trying to remove PegoutRequested event {:?}=>{:?}",
+                event,
+                pegout_event.pegout_registered
             );
+        }
 
-            *flow_id // Retornamos el flow_id para usarlo después
-        };
+        let observer_id = pegout_event
+            .pegout_requested
+            .confirmations
+            .borrow()
+            .get_id();
+        self.blockchain.remove_observer(&observer_id);
 
-        // Ahora podemos hacer el remove porque el préstamo anterior ya terminó
+        info!(
+            "Untracked pegout requested event, pegout_requested_tx={:?}, flow_id={:?},",
+            pegout_event.pegout_requested_tx, flow_id
+        );
+
         self.tracker.remove(&flow_id);
+
         if self.tracker.is_empty() {
             debug!("Pegout tracker is empty, clearing blockchain observers");
             self.blockchain.clear();
@@ -183,8 +195,8 @@ impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> PegoutProcessor<CG, 
         let pegout_event = self
             .tracker
             .get_mut(flow_id)
-            .ok_or_else(|| anyhow::anyhow!("Pegout not found for flow_id: {}", flow_id))?;
-        if pegout_event.pegout_registered_handled {
+            .ok_or_else(|| anyhow!("Pegout not found for flow_id: {}", flow_id))?;
+        if pegout_event.pegout_registered.is_some() {
             bail!("Pegout already registered for flow_id: {}", flow_id);
         }
         let result = self
@@ -193,7 +205,6 @@ impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> PegoutProcessor<CG, 
 
         pegout_event.pegout_registered_tx =
             Some(TxHash::try_from(result.transaction_hash.as_str())?);
-        pegout_event.pegout_registered_handled = true;
         Ok(result)
     }
 
@@ -206,9 +217,7 @@ impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> PegoutProcessor<CG, 
                     .pegout_registered_tx
                     .map_or(false, |tx| tx == event.tx_hash)
             })
-            .ok_or_else(|| {
-                anyhow::anyhow!("Pegout registered not found for tx_hash: {}", event.tx_hash)
-            })?;
+            .ok_or_else(|| anyhow!("Pegout registered not found for tx_hash: {}", event.tx_hash))?;
 
         let observer_id = format!("pegout_registered-{}", flow_id);
 
@@ -221,8 +230,8 @@ impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> PegoutProcessor<CG, 
         self.blockchain
             .add_observer(pegout_event.confirmations.clone());
         info!(
-            "Adding PegoutRegistered event to the pegout event tracker. Event{:?}",
-            pegout_event
+            "Adding PegoutRegistered event to the pegout event tracker. Id: {} Event{:?}",
+            flow_id, pegout_event
         );
 
         pegout_event_state.pegout_registered = Some(pegout_event);
@@ -230,38 +239,55 @@ impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> PegoutProcessor<CG, 
     }
 
     fn untrack_pegout_registered(&mut self, event: EventWithBlock<PegoutRegistered>) -> Result<()> {
-        let (flow_id, pegout_event) = self
-            .tracker
-            .iter_mut()
-            .find(|(_, value)| {
-                value
-                    .pegout_registered_tx
-                    .map_or(false, |tx| tx == event.tx_hash)
-            })
-            .ok_or_else(|| anyhow::anyhow!("Pegout not found for tx_hash: {}", event.tx_hash))?;
+        // Find the pegout event state for the given transaction hash
+        let flow_id = {
+            let (flow_id, pegout_event) = self
+                .tracker
+                .iter_mut()
+                .find(|(_, value)| {
+                    value
+                        .pegout_registered_tx
+                        .map_or(false, |tx| tx == event.tx_hash)
+                })
+                .ok_or_else(|| anyhow!("Pegout not found for tx_hash: {}", event.tx_hash))?;
 
-        if pegout_event.pegout_registered.is_none() {
-            bail!(
-                "Pegout registered not found while trying to remove PegoutRegistered event {:?}=>{:?}",
-                event,
-                pegout_event.pegout_registered
-            );
-        }
-        let observer_id = {
-            let confirmations = pegout_event
+            // Validate that pegout registered event exists
+            if pegout_event.pegout_registered.is_none() {
+                bail!(
+                    "Pegout registered not found while trying to remove PegoutRegistered event {:?}=>{:?}",
+                    event,
+                    pegout_event.pegout_registered
+                );
+            }
+
+            // Remove the blockchain observer
+            let observer_id = pegout_event
                 .pegout_registered
                 .as_ref()
-                .ok_or_else(|| anyhow::anyhow!("Pegout registered event not found"))?
+                .ok_or_else(|| anyhow!("Pegout registered event not found"))?
                 .confirmations
-                .borrow();
-            confirmations.get_id()
+                .borrow()
+                .get_id();
+            self.blockchain.remove_observer(observer_id.as_str());
+
+            // Clear the pegout registered event
+            pegout_event.pegout_registered = None;
+
+            info!(
+                "Untracked pegout registered event, pegout_registered_tx={:?}, flow_id={:?}",
+                pegout_event.pegout_registered_tx, *flow_id
+            );
+
+            *flow_id
         };
-        self.blockchain.remove_observer(observer_id.as_str());
-        pegout_event.pegout_registered = None;
-        info!(
-            "Untracked pegout registered event, pegout_registered_tx={:?}, flow_id={:?},",
-            pegout_event.pegout_registered_tx, flow_id
-        );
+
+        // Remove from tracker and clean up if empty
+        self.tracker.remove(&flow_id);
+        if self.tracker.is_empty() {
+            debug!("Pegout tracker is empty, clearing blockchain observers");
+            self.blockchain.clear();
+        }
+
         Ok(())
     }
 
@@ -272,11 +298,6 @@ impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> PegoutProcessor<CG, 
         json_value: &Value,
     ) -> Result<Value> {
         match method_name {
-            "register-pegout" => {
-                let input: RegisterPegoutInput = serde_json::from_value(json_value.clone())?;
-                let result = self.handle_register_pegout(flow_id, input)?;
-                Ok(serde_json::to_value(result)?)
-            }
             "add-member-signature" => {
                 info!("Add member signature received. To be implemented.");
                 Ok(serde_json::json!({"status": "signature_added"}))
@@ -348,20 +369,11 @@ impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> PegoutProcessor<CG, 
                 continue;
             }
             info!("Confirmed pegout requested id: {}", flow_id);
-            //Set var must be sent first
-            Self::send_set_var_to_bitvmx(
+            Self::notify_pegout_requested_to_bitvmx(
                 &self.bitvmx_broker,
                 *flow_id,
-                "PegoutRequested",
                 &event.data.inner,
-            )
-            .context(format!(
-                "Error processing confirmed pegout event (flow_id: {})",
-                flow_id
-            ))?;
-
-            //Setup must be sent after set_var
-            Self::send_setup_to_bitvmx(&self.bitvmx_broker, *flow_id)?;
+            )?;
 
             event.mark_handled();
 
@@ -370,7 +382,7 @@ impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> PegoutProcessor<CG, 
             self.blockchain.remove_observer(observer_id.as_str());
 
             info!(
-                "Successfully processed confirmed PeginRequested event: {}",
+                "Successfully processed confirmed pegout requested event: {}",
                 flow_id
             );
         }
@@ -378,6 +390,7 @@ impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> PegoutProcessor<CG, 
         Ok(())
     }
 
+    //TODO review this last step again and compare it with the FG example to validate the flow.
     fn process_unhandled_confirmed_pegout_registered_events(&mut self) -> Result<()> {
         let mut flow_id_to_remove: Option<Uuid> = None;
 
@@ -406,7 +419,7 @@ impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> PegoutProcessor<CG, 
             flow_id_to_remove = Some(flow_id);
 
             info!(
-                "Successfully processed confirmed PeginRegistered event: {}",
+                "Successfully processed confirmed pegout registered event: {}",
                 flow_id
             );
         }
@@ -454,14 +467,26 @@ impl<CG: RskContractsGatewayApi, T: BitVmxBrokerClientApi> EventProcessor
 {
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
         match event {
+            //TODO pending to define this message to start the pegout register step
+            OutgoingBitVMXApiMessages::SPVProof(tx_id, spv_proof_opt) => match spv_proof_opt {
+                Some(spv_proof) => {
+                    info!(
+                        "Received BitVMX SPVProof for tx_id: {}, proof: {:?}",
+                        tx_id, spv_proof
+                    );
+                }
+                None => bail!(
+                    "Received BitVMX SPVProof event for tx_id: {}, but no SPV proof was included.",
+                    tx_id
+                ),
+            },
             OutgoingBitVMXApiMessages::Variable(flow_id, method, VariableTypes::String(data))
-                if matches!(method.as_str(), "request-pegout" | "register-pegout") =>
+                if matches!(method.as_str(), "register-pegout") =>
             {
                 info!(
                     "Handling BitVMX Variable Event. Flow Id: {}, Method: {}, Payload: {:?}",
                     flow_id, method, data
                 );
-
                 let json_data = serde_json::from_str(data)?;
                 let result = self.handle_bitvmx_request(flow_id, method, &json_data)?;
 
@@ -476,13 +501,13 @@ impl<CG: RskContractsGatewayApi, T: BitVmxBrokerClientApi> EventProcessor
         Ok(())
     }
 
-    fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> anyhow::Result<()> {
+    fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         trace!("Processing new event: {:?}", event);
         match event {
             RskPegManagerEvents::PegoutRequested(data) => {
                 if data.removed {
-                    info!("Handling PeginRequested removed event: {:?}", data);
-                    self.untrack_pegout_requested(data.clone())?;
+                    info!("Handling Pegout Requested removed event: {:?}", data);
+                    self.untrack_pegout_requested(data)?;
                     return Ok(());
                 }
                 debug!("Handling Pegout Requested event {:?}", data);
@@ -491,7 +516,6 @@ impl<CG: RskContractsGatewayApi, T: BitVmxBrokerClientApi> EventProcessor
             RskPegManagerEvents::PegoutRegistered(data) => {
                 debug!("Handling Pegout Registered event {:?}", data);
                 //TODO ask about how to relate the pegout_requested event with the pegout_registered event
-                //missing untrack pegout_requested event
                 if data.removed {
                     self.untrack_pegout_registered(data.clone())?;
                     return Ok(());
@@ -504,7 +528,7 @@ impl<CG: RskContractsGatewayApi, T: BitVmxBrokerClientApi> EventProcessor
         Ok(())
     }
 
-    fn process_new_block(&mut self, block: &RskBlockAndUncles) -> anyhow::Result<()> {
+    fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
         if self.tracker.is_empty() {
             return Ok(());
         }

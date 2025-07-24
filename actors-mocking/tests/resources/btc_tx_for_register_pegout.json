@@ -3,16 +3,16 @@
   "lock_time": 0,
   "input": [
     {
-      "txId": "0x73d69e28cbe4ffc75b786b5dae8086a8112f6eb793d6891f2f900aac968a78ea",
-      "vout": 0,
+      "previous_output": "73d69e28cbe4ffc75b786b5dae8086a8112f6eb793d6891f2f900aac968a78ea:0",
       "sequence": 4294967293,
-      "scriptSig": ""
+      "script_sig": "",
+      "witness": []
     }
   ],
   "output": [
     {
       "value": 99000,
-      "script_pubkey": "0x00143fd2e14f4b448a071e074e1e1879318447f2a266"
+      "script_pubkey": "00143fd2e14f4b448a071e074e1e1879318447f2a266"
     },
     {
       "value": 300,
