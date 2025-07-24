@@ -6,6 +6,10 @@ log_broker:
   ip: "0.0.0.0"
   port: 56789
 
+user_broker:
+  ip: "0.0.0.0"
+  port: 5550 # hardcoded in user-api crate
+
 bitvmx_broker:
   ip: "0.0.0.0"
   port: 9094

@@ -18,7 +18,7 @@ alloy-signer-local = { workspace = true }
 alloy-sol-types = { workspace = true, features = ["json"] }
 alloy-transport = { workspace = true }
 anyhow = { workspace = true }
-axum = "0.8.1"
+axum = { workspace = true }
 clap = { workspace = true }
 bitcoin = { workspace = true }
 env_logger = { workspace = true }

@@ -1,4 +1,4 @@
-use crate::types::RskPegManagerEvents;
+use crate::types::{RskPegManagerEvents, UserRequests};
 use anyhow::Result;
 use common::msg_broker::bitvmx_types::OutgoingBitVMXApiMessages;
 use common::types::RskBlockAndUncles;
@@ -14,6 +14,11 @@ use mockall::automock;
 
 #[cfg_attr(test, automock)]
 pub trait EventProcessor {
+    fn process_user_request(&mut self, _event: &UserRequests) -> Result<()> {
+        // default no-op
+        Ok(())
+    }
+
     fn process_new_bitvmx_event(&mut self, _event: &OutgoingBitVMXApiMessages) -> Result<()> {
         // default no-op
         Ok(())

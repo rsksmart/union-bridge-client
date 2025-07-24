@@ -1,4 +1,4 @@
-use crate::types::{EventDecoder, RskPegManagerEvents};
+use crate::types::{EventDecoder, RskPegManagerEvents, UserRequests};
 use anyhow::{Context, Result, bail};
 use common::msg_broker::bitvmx_types::OutgoingBitVMXApiMessages;
 use common::{
@@ -11,6 +11,7 @@ use common::{
 };
 use log::{debug, info, trace};
 use std::rc::Rc;
+use transaction_dispatcher::types::ApplyToStreamInput;
 
 #[cfg(test)]
 use mockall::automock;
@@ -20,7 +21,8 @@ pub trait MonitorApi {
     fn start_event_monitoring(&mut self) -> Result<()>;
     fn start_block_monitoring(&mut self) -> Result<()>;
     fn start_bitvmx_monitoring(&mut self) -> Result<()>;
-    fn try_event(&mut self) -> Result<Option<RskPegManagerEvents>>;
+    fn try_user_request(&self) -> Result<Option<UserRequests>>;
+    fn try_rsk_event(&mut self) -> Result<Option<RskPegManagerEvents>>;
     fn try_block(&mut self) -> Result<Option<RskBlockAndUncles>>;
     fn try_bitvmx_event(&mut self) -> Result<Option<OutgoingBitVMXApiMessages>>;
     fn cancel_event_monitoring(&mut self) -> Result<()>;
@@ -35,6 +37,7 @@ where
 {
     log_broker: UBC,
     block_broker: UBC,
+    user_broker: UBC,
     bitvmx_broker: Rc<BBC>,
     event_decoder: EventDecoder,
     peg_manager_addresses: Vec<Address>,
@@ -48,6 +51,8 @@ where
     UBC: UnionBrokerClientApi,
     BBC: BitVmxBrokerClientApi,
 {
+    // TODO(iago) do all methods to be mut?
+
     fn start_event_monitoring(&mut self) -> Result<()> {
         self.start_event_monitoring()
     }
@@ -60,7 +65,11 @@ where
         self.start_bitvmx_monitoring()
     }
 
-    fn try_event(&mut self) -> Result<Option<RskPegManagerEvents>> {
+    fn try_user_request(&self) -> Result<Option<UserRequests>> {
+        self.try_user_request()
+    }
+
+    fn try_rsk_event(&mut self) -> Result<Option<RskPegManagerEvents>> {
         self.try_event()
     }
 
@@ -93,12 +102,14 @@ where
     pub fn new(
         log_broker: UBC,
         block_broker: UBC,
+        user_broker: UBC,
         bitvmx_broker: Rc<BBC>,
         peg_manager_addresses: Vec<Address>,
     ) -> Self {
         Self {
             log_broker,
             block_broker,
+            user_broker,
             bitvmx_broker,
             event_decoder: EventDecoder::new(),
             peg_manager_addresses,
@@ -107,6 +118,8 @@ where
             bitvmx_monitoring_active: false,
         }
     }
+
+    // TODO(iago) do these methods need to be public?
 
     // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - retries, reconnects, etc
     pub fn start_event_monitoring(&mut self) -> Result<()> {
@@ -266,6 +279,26 @@ where
         Ok(())
     }
 
+    pub fn try_user_request(&self) -> Result<Option<UserRequests>> {
+        match self.user_broker.try_recv()? {
+            Some(FromServer::UserApplyStream(req)) => {
+                info!("Received new User request {:?}", req);
+
+                let apply_to_stream_input: ApplyToStreamInput = serde_json::from_value(req)
+                    .context("Failed to deserialize UserApplyCommittee request")?;
+
+                Ok(Some(UserRequests::ApplyToStream(apply_to_stream_input)))
+            }
+            Some(br) => {
+                bail!("Unexpected request from User {:?}", br)
+            }
+            None => {
+                trace!("No messages from User broker");
+                Ok(None)
+            }
+        }
+    }
+
     fn request_cancel_event_monitoring(&mut self) -> Result<bool> {
         let mut result = true;
 
@@ -371,6 +404,7 @@ mod tests {
 
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
+            MockBrokerClientApi::new(),
             block_broker,
             Rc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
@@ -416,6 +450,7 @@ mod tests {
         let mut monitor = Monitor::new(
             log_broker,
             MockBrokerClientApi::new(),
+            MockBrokerClientApi::new(),
             Rc::new(MockBrokerClientApi::new()),
             vec![address_1, address_2],
         );
@@ -441,6 +476,7 @@ mod tests {
         let mut monitor = Monitor::new(
             log_broker,
             MockBrokerClientApi::new(),
+            MockBrokerClientApi::new(),
             Rc::new(MockBrokerClientApi::new()),
             vec![address_1],
         );
@@ -457,6 +493,7 @@ mod tests {
     #[test]
     fn test_start_event_monitoring_fails_if_already_active() {
         let mut monitor = Monitor::new(
+            MockBrokerClientApi::new(),
             MockBrokerClientApi::new(),
             MockBrokerClientApi::new(),
             Rc::new(MockBrokerClientApi::new()),
@@ -481,6 +518,7 @@ mod tests {
 
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
+            MockBrokerClientApi::new(),
             block_broker,
             Rc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
@@ -504,6 +542,7 @@ mod tests {
 
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
+            MockBrokerClientApi::new(),
             block_broker,
             Rc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
@@ -523,6 +562,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
             MockBrokerClientApi::new(),
+            MockBrokerClientApi::new(),
             Rc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
@@ -534,6 +574,7 @@ mod tests {
     #[test]
     fn test_start_bitvmx_monitoring_fails_if_already_active() {
         let mut monitor = Monitor::new(
+            MockBrokerClientApi::new(),
             MockBrokerClientApi::new(),
             MockBrokerClientApi::new(),
             Rc::new(MockBrokerClientApi::new()),
@@ -561,6 +602,7 @@ mod tests {
         let mut monitor = Monitor::new(
             log_broker,
             MockBrokerClientApi::new(),
+            MockBrokerClientApi::new(),
             Rc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
@@ -577,6 +619,7 @@ mod tests {
 
         let mut monitor = Monitor::new(
             log_broker,
+            MockBrokerClientApi::new(),
             MockBrokerClientApi::new(),
             Rc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
@@ -606,6 +649,7 @@ mod tests {
 
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
+            MockBrokerClientApi::new(),
             block_broker,
             Rc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
@@ -628,6 +672,7 @@ mod tests {
         block_broker.expect_try_recv().return_once(move || Ok(None));
 
         let mut monitor = Monitor::new(
+            MockBrokerClientApi::new(),
             MockBrokerClientApi::new(),
             block_broker,
             Rc::new(MockBrokerClientApi::new()),
@@ -652,6 +697,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockBrokerClientApi::<ToServer, FromServer>::new(),
             MockBrokerClientApi::<ToServer, FromServer>::new(),
+            MockBrokerClientApi::<ToServer, FromServer>::new(),
             Rc::new(bitvmx_broker),
             vec![get_fake_address_1()],
         );
@@ -671,6 +717,7 @@ mod tests {
             .return_once(move || Ok(None));
 
         let mut monitor = Monitor::new(
+            MockBrokerClientApi::new(),
             MockBrokerClientApi::new(),
             MockBrokerClientApi::new(),
             Rc::new(bitvmx_broker),
@@ -696,6 +743,7 @@ mod tests {
         let mut monitor = Monitor::new(
             log_broker,
             MockBrokerClientApi::new(),
+            MockBrokerClientApi::new(),
             Rc::new(MockBrokerClientApi::new()),
             vec![address_1, address_2],
         );
@@ -712,6 +760,7 @@ mod tests {
 
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
+            MockBrokerClientApi::new(),
             block_broker,
             Rc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
@@ -727,6 +776,7 @@ mod tests {
         let bitvmx_broker = MockBrokerClientApi::new();
 
         let mut monitor = Monitor::new(
+            MockBrokerClientApi::new(),
             MockBrokerClientApi::new(),
             MockBrokerClientApi::new(),
             Rc::new(bitvmx_broker),

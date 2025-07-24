@@ -5418,6 +5418,7 @@ dependencies = [
  "bytes",
  "libc",
  "mio",
+ "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
  "socket2",
@@ -5856,6 +5857,20 @@ dependencies = [
  "form_urlencoded",
  "idna",
  "percent-encoding",
+]
+
+[[package]]
+name = "user-api"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "common",
+ "log",
+ "serde_json",
+ "thiserror 2.0.12",
+ "tokio",
+ "tower-http",
 ]
 
 [[package]]

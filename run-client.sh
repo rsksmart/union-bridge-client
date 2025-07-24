@@ -104,6 +104,7 @@ echo "Starting services..."
 run_service "block-indexer"
 run_service "log-indexer"
 run_service "transaction-dispatcher"
+run_service "user-api"
 sleep 2 # give some time for indexers to initialize
 run_service "coordinator"
 sleep 2 # wait for the coordinator to finish
