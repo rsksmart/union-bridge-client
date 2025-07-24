@@ -313,7 +313,7 @@ impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> PegoutProcessor<CG, 
         data: &E,
     ) -> Result<()> {
         let data = serde_json::to_string(data)?;
-
+        debug!("Sending set_var with id: {} and data: {}", flow_id, data);
         bitvmx_broker.send(
             BROKER_SERVER_ID,
             IncomingBitVMXApiMessages::SetVar(
@@ -330,6 +330,10 @@ impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> PegoutProcessor<CG, 
         bitvmx_broker: &BC,
         flow_id: Uuid,
     ) -> Result<()> {
+        debug!(
+            "Sending dispatch transaction name msg to bitvmx with id: {}",
+            flow_id
+        );
         bitvmx_broker.send(
             BROKER_SERVER_ID,
             IncomingBitVMXApiMessages::DispatchTransactionName(flow_id, USER_TAKE.to_string()),
@@ -343,8 +347,8 @@ impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> PegoutProcessor<CG, 
             if !event.is_confirmed() || event.is_handled {
                 continue;
             }
-            Self::send_setup_to_bitvmx(&self.bitvmx_broker, *flow_id)?;
-
+            info!("Confirmed pegout requested id: {}", flow_id);
+            //Set var must be sent first
             Self::send_set_var_to_bitvmx(
                 &self.bitvmx_broker,
                 *flow_id,
@@ -355,6 +359,10 @@ impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> PegoutProcessor<CG, 
                 "Error processing confirmed pegout event (flow_id: {})",
                 flow_id
             ))?;
+
+            //Setup must be sent after set_var
+            Self::send_setup_to_bitvmx(&self.bitvmx_broker, *flow_id)?;
+
             event.mark_handled();
 
             let confirmations = event.confirmations.borrow();
