@@ -84,6 +84,7 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
         &self,
         _stream: StreamDenomination,
     ) -> alloy_contract::Result<U256> {
+        // TODO(207): Resolve to new getMinimumDeposit method from alpha3
         // self.contract_instance.getMissingCommunicationDataCount
         //     .getMinimumDeposit(u8::from(stream))
         //     .call()
