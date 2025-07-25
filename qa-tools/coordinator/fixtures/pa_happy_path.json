@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "lock_time": 0,
+  "input": [
+    {
+      "previous_output": "<REPLACE_WITH_peginRequestTxHash_FROM_PR_RESPONSE>:0",
+      "script_sig": "",
+      "sequence": 4294967293,
+      "witness": []
+    }
+  ],
+  "output": [
+    {
+      "value": 99365,
+      "script_pubkey": "51209687ca13c4fb3fa3ba05c2f9119dda026bfe66f0098dcf9b896a98ecb2e96702"
+    },
+    {
+      "value": 300,
+      "script_pubkey": "0014298a0fe992f755152a81ee64bdc4cc96d3bb8969"
+    }
+  ]
+}
