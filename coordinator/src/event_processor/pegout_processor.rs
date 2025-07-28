@@ -390,9 +390,8 @@ impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> PegoutProcessor<CG, 
         Ok(())
     }
 
-    //TODO review this last step again and compare it with the FG example to validate the flow.
     fn process_unhandled_confirmed_pegout_registered_events(&mut self) -> Result<()> {
-        let mut flow_id_to_remove: Option<Uuid> = None;
+        let mut flow_ids_to_remove: Vec<Uuid> = Vec::new();
 
         for (flow_id, event) in self.tracker.iter_mut().filter_map(|(flow_id, state)| {
             state
@@ -416,7 +415,7 @@ impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> PegoutProcessor<CG, 
             let observer_id = confirmations.get_id();
             self.blockchain.remove_observer(observer_id.as_str());
 
-            flow_id_to_remove = Some(flow_id);
+            flow_ids_to_remove.push(flow_id);
 
             info!(
                 "Successfully processed confirmed pegout registered event: {}",
@@ -424,7 +423,7 @@ impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> PegoutProcessor<CG, 
             );
         }
 
-        if let Some(flow_id) = flow_id_to_remove {
+        for flow_id in flow_ids_to_remove {
             self.tracker.remove(&flow_id);
         }
         if self.tracker.is_empty() {
