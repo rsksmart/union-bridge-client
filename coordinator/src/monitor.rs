@@ -52,7 +52,7 @@ where
     UBC: UnionBrokerClientApi,
     BBC: BitVmxBrokerClientApi,
 {
-    // TODO(iago) do all methods to be mut?
+    // TODO should all methods be mut?
 
     fn start_event_monitoring(&mut self) -> Result<()> {
         self.start_event_monitoring()
@@ -124,7 +124,7 @@ where
         }
     }
 
-    // TODO(iago) do these methods need to be public?
+    // TODO should all these methods be public?
 
     // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - retries, reconnects, etc
     pub fn start_event_monitoring(&mut self) -> Result<()> {

@@ -4,6 +4,7 @@ use axum::{http::StatusCode, response::IntoResponse, routing::get, Extension, Js
 use common::msg_broker::broker::{BrokerServer, BrokerServerApi};
 use common::msg_broker::types::FromServer;
 use common::shutdown_flag::ShutdownFlag;
+use log::error;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Duration;
@@ -22,6 +23,7 @@ impl Server {
         listener: TcpListener,
         broker_server: Arc<BrokerServer>,
         shutdown_flag: ShutdownFlag,
+        coordinator_client_id: u32,
     ) -> Self {
         let app = Router::new()
             .route("/health", get(Self::health_check))
@@ -29,6 +31,7 @@ impl Server {
             .layer((
                 TimeoutLayer::new(Duration::from_secs(10)),
                 Extension(broker_server.clone()),
+                Extension(coordinator_client_id),
             ));
 
         Self {
@@ -40,15 +43,17 @@ impl Server {
     }
 
     pub async fn start(self) -> Result<()> {
-        // Set up a shutdown handler to properly close the broker server
+        // set up a shutdown handler to properly close the broker server
         let broker_server = self.broker_server.clone();
         let shutdown_flag = self.shutdown_flag.clone();
 
         tokio::spawn(async move {
             shutdown_flag.wait_for().await;
-            // Close the broker server before the runtime is dropped
+            // close the broker server before the runtime is dropped
             if let Ok(mut broker) = Arc::try_unwrap(broker_server) {
                 broker.close();
+            } else {
+                error!("Failed to unwrap broker_server Arc - could not close broker cleanly");
             }
         });
 
@@ -64,10 +69,11 @@ impl Server {
 
     async fn apply_stream(
         Extension(broker): Extension<Arc<BrokerServer>>,
+        Extension(destination): Extension<u32>,
         Json(payload): Json<Value>,
     ) -> impl IntoResponse {
         // TODO(Jira) send a proper type instead of Value in scope of https://rsklabs.atlassian.net/browse/UB-214
-        let res = broker.send(&FromServer::UserApplyStream(payload), 333);
+        let res = broker.send(&FromServer::UserApplyStream(payload), destination);
         match res {
             Ok(_) => (StatusCode::OK, Json(json!({ "result": "ok" }))),
             Err(e) => (
