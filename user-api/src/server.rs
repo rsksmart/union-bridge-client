@@ -4,7 +4,6 @@ use axum::{http::StatusCode, response::IntoResponse, routing::get, Extension, Js
 use common::msg_broker::broker::{BrokerServer, BrokerServerApi};
 use common::msg_broker::types::FromServer;
 use common::shutdown_flag::ShutdownFlag;
-use log::error;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,7 +14,6 @@ pub struct Server {
     listener: TcpListener,
     app: Router,
     shutdown_flag: ShutdownFlag,
-    broker_server: Arc<BrokerServer>,
 }
 
 impl Server {
@@ -38,25 +36,10 @@ impl Server {
             listener,
             app,
             shutdown_flag,
-            broker_server,
         }
     }
 
     pub async fn start(self) -> Result<()> {
-        // set up a shutdown handler to properly close the broker server
-        let broker_server = self.broker_server.clone();
-        let shutdown_flag = self.shutdown_flag.clone();
-
-        tokio::spawn(async move {
-            shutdown_flag.wait_for().await;
-            // close the broker server before the runtime is dropped
-            if let Ok(mut broker) = Arc::try_unwrap(broker_server) {
-                broker.close();
-            } else {
-                error!("Failed to unwrap broker_server Arc - could not close broker cleanly");
-            }
-        });
-
         axum::serve(self.listener, self.app)
             .with_graceful_shutdown(self.shutdown_flag.wait_for())
             .await

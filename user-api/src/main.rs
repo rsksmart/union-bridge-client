@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
-use common::msg_broker::broker::BrokerServer;
+use common::msg_broker::broker::{BrokerServer, BrokerServerApi};
 use common::shutdown_flag::ShutdownFlag;
 use log::{error, info};
 use std::net::SocketAddr;
@@ -11,8 +11,6 @@ use user_api::Server;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const CONFIG_CLI_FLAG: &str = "config-path";
-
-const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -44,7 +42,7 @@ async fn main() -> Result<()> {
     let shutdown_flag = ShutdownFlag::init();
 
     let broker_port = config.broker_server_port;
-    let broker_server = Arc::new(BrokerServer::new(broker_port));
+    let mut broker_server = Arc::new(BrokerServer::new(broker_port));
     info!("Broker Server started on {broker_port}");
 
     let http_addr = SocketAddr::from(([0, 0, 0, 0], config.http_server_port));
@@ -65,17 +63,25 @@ async fn main() -> Result<()> {
     }
 
     // this is required due to BrokerServer creating its own runtime, and it cannot be dropped in an async context: Cannot drop a runtime in a context where blocking is not allowed
-    tokio::spawn(async move {
+    let broker_fut = tokio::spawn(async move {
         shutdown_flag.wait_for().await;
 
         tokio::task::spawn_blocking(move || {
+            Arc::get_mut(&mut broker_server)
+                .expect("Could not get Broker Server to close")
+                .close();
             drop(broker_server); // <- drop in blocking context
+            info!("Shutdown requested, Broker server closed");
         })
         .await
         .expect("failed to drop broker server");
     });
 
-    info!("Server shutdown complete");
+    broker_fut
+        .await
+        .inspect_err(|e| error!("Error closing Broker Server: {}", e))?;
+
+    info!("Shutdown complete");
 
     Ok(())
 }
