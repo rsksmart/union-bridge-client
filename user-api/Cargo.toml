@@ -12,3 +12,4 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
 common = { path = "../common" }
+transaction-dispatcher = { path = "../transaction-dispatcher", features = ["types"] }

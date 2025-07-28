@@ -99,6 +99,10 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
             .start_bitvmx_monitoring()
             .context("Failed to start BitVMX event monitoring")?;
 
+        self.monitor
+            .start_user_monitoring()
+            .context("Failed to start User request monitoring")?;
+
         let mut bitvmx_last_msg = Instant::now().sub(BITVMX_PING_AFTER_SILENCE);
         let mut bitvmx_ping: Option<Instant> = None;
 
@@ -342,6 +346,11 @@ pub(crate) mod tests {
             .returning(|| Ok(()));
 
         mock_monitor
+            .expect_start_user_monitoring()
+            .times(..)
+            .returning(|| Ok(()));
+
+        mock_monitor
             .expect_cancel_event_monitoring()
             .return_once(|| Ok(()))
             .once();
@@ -369,6 +378,11 @@ pub(crate) mod tests {
         mock_monitor
             .expect_try_bitvmx_event()
             .returning(move || Ok(Some(bitvmx_event.clone())));
+
+        mock_monitor
+            .expect_try_user_request()
+            .returning(|| Ok(None))
+            .times(1..);
 
         let shutdown_flag = ShutdownFlag::init();
         handle_shutdown(shutdown_flag.clone());
@@ -422,6 +436,11 @@ pub(crate) mod tests {
             .returning(|| Ok(()));
 
         mock_monitor
+            .expect_start_user_monitoring()
+            .times(..)
+            .returning(|| Ok(()));
+
+        mock_monitor
             .expect_start_bitvmx_monitoring()
             .times(..)
             .returning(|| Ok(()));
@@ -460,6 +479,11 @@ pub(crate) mod tests {
         mock_monitor
             .expect_try_bitvmx_event()
             .returning(move || Ok(None));
+
+        mock_monitor
+            .expect_try_user_request()
+            .returning(|| Ok(None))
+            .times(1..);
 
         let shutdown_flag = ShutdownFlag::init();
         handle_shutdown(shutdown_flag.clone());

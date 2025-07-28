@@ -11,7 +11,6 @@ use common::{
 };
 use log::{debug, info, trace};
 use std::rc::Rc;
-use transaction_dispatcher::types::ApplyToStreamInput;
 
 #[cfg(test)]
 use mockall::automock;
@@ -21,6 +20,7 @@ pub trait MonitorApi {
     fn start_event_monitoring(&mut self) -> Result<()>;
     fn start_block_monitoring(&mut self) -> Result<()>;
     fn start_bitvmx_monitoring(&mut self) -> Result<()>;
+    fn start_user_monitoring(&mut self) -> Result<()>;
     fn try_user_request(&self) -> Result<Option<UserRequests>>;
     fn try_rsk_event(&mut self) -> Result<Option<RskPegManagerEvents>>;
     fn try_block(&mut self) -> Result<Option<RskBlockAndUncles>>;
@@ -44,6 +44,7 @@ where
     block_monitoring_active: bool,
     log_monitoring_active: bool,
     bitvmx_monitoring_active: bool,
+    user_monitoring_active: bool,
 }
 
 impl<UBC, BBC> MonitorApi for Monitor<UBC, BBC>
@@ -63,6 +64,9 @@ where
 
     fn start_bitvmx_monitoring(&mut self) -> Result<()> {
         self.start_bitvmx_monitoring()
+    }
+    fn start_user_monitoring(&mut self) -> Result<()> {
+        self.start_user_monitoring()
     }
 
     fn try_user_request(&self) -> Result<Option<UserRequests>> {
@@ -116,6 +120,7 @@ where
             block_monitoring_active: false,
             log_monitoring_active: false,
             bitvmx_monitoring_active: false,
+            user_monitoring_active: false,
         }
     }
 
@@ -178,6 +183,18 @@ where
         info!("Starting BitVMX monitoring");
 
         self.bitvmx_monitoring_active = true;
+
+        Ok(())
+    }
+
+    pub fn start_user_monitoring(&mut self) -> Result<()> {
+        if self.user_monitoring_active {
+            bail!("Start User monitoring requested, but it was already active");
+        }
+
+        info!("Starting User monitoring");
+
+        self.user_monitoring_active = true;
 
         Ok(())
     }
@@ -282,12 +299,17 @@ where
     pub fn try_user_request(&self) -> Result<Option<UserRequests>> {
         match self.user_broker.try_recv()? {
             Some(FromServer::UserApplyStream(req)) => {
-                info!("Received new User request {:?}", req);
+                // TODO(Jira) this should not be needed afer https://rsklabs.atlassian.net/browse/UB-214
+                let input = match serde_json::from_value(req) {
+                    Ok(val) => val,
+                    Err(e) => {
+                        log::error!("Failed to deserialize UserApplyStream request: {}", e);
+                        return Ok(None);
+                    }
+                };
 
-                let apply_to_stream_input: ApplyToStreamInput = serde_json::from_value(req)
-                    .context("Failed to deserialize UserApplyCommittee request")?;
-
-                Ok(Some(UserRequests::ApplyToStream(apply_to_stream_input)))
+                info!("Received UserApplyStream {:?}", input);
+                Ok(Some(UserRequests::ApplyToStream(input)))
             }
             Some(br) => {
                 bail!("Unexpected request from User {:?}", br)
@@ -404,8 +426,8 @@ mod tests {
 
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
-            MockBrokerClientApi::new(),
             block_broker,
+            MockBrokerClientApi::new(),
             Rc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
@@ -518,8 +540,8 @@ mod tests {
 
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
-            MockBrokerClientApi::new(),
             block_broker,
+            MockBrokerClientApi::new(),
             Rc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
@@ -542,8 +564,8 @@ mod tests {
 
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
-            MockBrokerClientApi::new(),
             block_broker,
+            MockBrokerClientApi::new(),
             Rc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
@@ -649,8 +671,8 @@ mod tests {
 
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
-            MockBrokerClientApi::new(),
             block_broker,
+            MockBrokerClientApi::new(),
             Rc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
@@ -673,8 +695,8 @@ mod tests {
 
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
-            MockBrokerClientApi::new(),
             block_broker,
+            MockBrokerClientApi::new(),
             Rc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );
@@ -760,8 +782,8 @@ mod tests {
 
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
-            MockBrokerClientApi::new(),
             block_broker,
+            MockBrokerClientApi::new(),
             Rc::new(MockBrokerClientApi::new()),
             vec![get_fake_address_1()],
         );

@@ -66,7 +66,8 @@ impl Server {
         Extension(broker): Extension<Arc<BrokerServer>>,
         Json(payload): Json<Value>,
     ) -> impl IntoResponse {
-        let res = broker.send(&FromServer::UserApplyStream(payload), 333); // TODO(iago) hardcoded for now
+        // TODO(Jira) send a proper type instead of Value in scope of https://rsklabs.atlassian.net/browse/UB-214
+        let res = broker.send(&FromServer::UserApplyStream(payload), 333);
         match res {
             Ok(_) => (StatusCode::OK, Json(json!({ "result": "ok" }))),
             Err(e) => (

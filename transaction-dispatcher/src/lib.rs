@@ -12,6 +12,8 @@ pub mod config;
 mod contracts;
 pub mod rsk_gateway;
 pub mod server;
+
+#[cfg(feature = "types")]
 pub mod types;
 
 pub fn get_contracts_gateway<P: Provider + Clone>(

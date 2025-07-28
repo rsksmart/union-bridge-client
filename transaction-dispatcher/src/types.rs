@@ -2,7 +2,7 @@ use bitcoin::{Transaction, TxIn, TxOut};
 use common::{msg_broker::bitvmx_types::BtcTxSPVProof, types::Hash256};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
-// TODO improve these structs with proper typing for their fields now that we removed the http server
+// TODO(Jira) https://rsklabs.atlassian.net/browse/UB-214
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct BitcoinTransaction {
@@ -140,16 +140,16 @@ pub struct GetMemberPublicKeysOutput {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ApplyToStreamInput {
     pub stream_id: u8,
-    pub role: u8, // TODO(iago) enum for this
+    pub role: u8,
     pub committee_public_keys: [CommitteePublicKey; 3],
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct CommitteePublicKey {
-    pub x: [u8; 32],
-    pub y: [u8; 32],
-    pub r: [u8; 32],
-    pub s: [u8; 32],
+    pub x: String,
+    pub y: String,
+    pub r: String,
+    pub s: String,
     pub v: u8,
 }
 

@@ -7,6 +7,7 @@ use message_broker::rpc::BrokerConfig;
 use message_broker::rpc::sync_server::BrokerSync;
 use mockall::automock;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
@@ -15,15 +16,17 @@ use thiserror::Error;
 pub const BROKER_SERVER_ID: u32 = 1;
 pub const BITVMX_L2_BROKER_CLIENT_ID: u32 = 100; // Should match the ID defined in the BitVMX Client
 
+// TODO(Jira) https://rsklabs.atlassian.net/browse/UB-213
+
 #[automock]
-pub trait BrokerServerApi<S: Serialize, C: Serialize> {
+pub trait BrokerServerApi<S: Serialize, C: DeserializeOwned> {
     fn send(&self, msg: &C, dst: u32) -> Result<(), BrokerError>;
     fn try_recv(&self) -> Result<Option<(S, u32)>, BrokerError>;
     fn close(&mut self);
 }
 
 #[automock]
-pub trait BrokerClientApi<S: Serialize, C: Serialize> {
+pub trait BrokerClientApi<S: Serialize, C: DeserializeOwned> {
     fn send(&self, dest: u32, msg: S) -> Result<bool, BrokerError>;
     fn try_recv(&self) -> Result<Option<C>, BrokerError>;
 }

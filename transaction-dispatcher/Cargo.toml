@@ -22,7 +22,7 @@ axum = { workspace = true }
 clap = { workspace = true }
 bitcoin = { workspace = true }
 env_logger = { workspace = true }
-hex = { workspace = true }
+hex = { workspace = true, features = ["serde"] }
 log = { workspace = true }
 musig2 = { workspace = true }
 primitive-types = { workspace = true }
@@ -36,3 +36,8 @@ union-contracts = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 mockall = { workspace = true }
+
+[features]
+# TODO(Jira) remove in scope of https://rsklabs.atlassian.net/browse/UB-214
+default = ["types"]
+types = []
