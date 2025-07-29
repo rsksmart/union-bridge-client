@@ -1,5 +1,5 @@
 use crate::flows::btc_signature::btc_signature_subflow::{
-    BtcSignatureSubFlowApi, BtcSignatureSubFlowFactoryApi,
+    BtcSignatureSubFlowApi, BtcSignatureSubFlowFactoryApi, SIGNATURE_MESSAGE,
 };
 use crate::{
     blockchain_tracker::{BlockConfirmations, BlockchainObserver, BlockchainView},
@@ -19,7 +19,7 @@ use common::{
     runtime_sync::RuntimeSync,
     types::{RskBlockAndUncles, TxHash},
 };
-use log::info;
+use log::{debug, error, info};
 use serde::Serialize;
 use serde_json::Value;
 use std::{cell::RefCell, collections::HashMap, fmt::Debug, future::Future, rc::Rc};
@@ -28,6 +28,7 @@ use transaction_dispatcher::{
     types::{AcceptPeginInput, RequestPeginInput},
 };
 use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
+use union_contracts::bindings::signature_manager::SignatureManager::AllNoncesReady;
 use uuid::Uuid;
 
 const ACCEPT_PEGIN: &'static str = "accept-pegin";
@@ -143,6 +144,27 @@ where
         );
 
         self.track_pegin_requested(pegin_flow_id, pegin_requested)
+    }
+
+    fn delegate_to_sub_flow(&mut self, event: &RskPegManagerEvents) -> Result<()> {
+        for (tx_hash, state) in self.tracker.iter_mut() {
+            let flow_id = state.pegin_flow_id;
+
+            let sub_flow = match state.btc_signatures_flow.as_mut() {
+                None => continue,
+                Some(sub_flow) if sub_flow.is_done() => continue, // nothing else to do
+                Some(sub_flow) => sub_flow,
+            };
+
+            debug!(
+                "Delegating RSK event {event:?} for flow {flow_id} and tx_hash {tx_hash} to sub flow",
+            );
+
+            // internally it jumps to the next step in the sub flow
+            sub_flow.delegate_rsk_event(flow_id, event)?;
+        }
+
+        Ok(())
     }
 
     fn handle_pegin_accepted(&mut self, data: &PeginAcceptedEvent) -> Result<()> {
@@ -302,6 +324,40 @@ where
 
             // now we start the signatures sub-flow
             state.btc_signatures_flow = Some(self.btc_sig_subflow_factory.create_flow(flow_id));
+        }
+
+        Ok(())
+    }
+
+    fn process_unhandled_confirmed_sig_flow_events(
+        &mut self,
+        block: &RskBlockAndUncles,
+    ) -> Result<()> {
+        for (tx_hash, state) in self.tracker.iter_mut() {
+            let flow_id = state.pegin_flow_id;
+
+            let sub_flow = match state.btc_signatures_flow.as_mut() {
+                None => continue,
+                Some(sub_flow) if sub_flow.is_done() => continue, // nothing else to do
+                Some(sub_flow) => sub_flow,
+            };
+
+            sub_flow.delegate_block(block)?;
+
+            if !sub_flow.is_done() {
+                debug!(
+                    "BtcSignatures flow {} for hash {} is not done yet, waiting for completion",
+                    flow_id, tx_hash
+                );
+                continue; // still waiting for completion
+            }
+
+            info!(
+                "Successfully completed BtcSignatures flow {} for hash {}",
+                flow_id, tx_hash
+            );
+
+            // TODO jump to the next step in the flow for this pegin event
         }
 
         Ok(())
@@ -474,18 +530,50 @@ where
                 pegin_flow_id,
                 method,
                 VariableTypes::String(data),
-            ) if matches!(method.as_str(), ACCEPT_PEGIN) => {
-                info!(
-                    "Received BitVMX Variable Event. Flow Id: {}, Method: {}, Payload: {:?}",
-                    pegin_flow_id, method, data
-                );
+            ) => match method.as_str() {
+                ACCEPT_PEGIN => {
+                    info!(
+                        "Received BitVMX Variable ACCEPT_PEGIN. Flow Id: {}, Method: {}, Payload: {:?}",
+                        pegin_flow_id, method, data
+                    );
 
-                let json_data: Value = serde_json::from_str(data)?;
+                    let json_data: Value = serde_json::from_str(data)?;
 
-                self.handle_contract_invoke(method, &json_data)?;
-            }
-            // TODO(signatures-2) delegate SIGNATURE_MESSAGE message to BtcSignatureFlow::process_new_bitvmx_event, it is the response to request-pegin event we send them
-            //  it looks like for now they do not include hash_to_sign in the message (see TODO in BitVmxSigningInfo), so we need to inject it in the OutgoingBitVMXApiMessages from the calling flow
+                    self.handle_contract_invoke(method, &json_data)?;
+                }
+                SIGNATURE_MESSAGE => {
+                    info!(
+                        "Received BitVMX Variable SIGNATURE_MESSAGE. Flow Id: {}, Method: {}, Payload: {:?}",
+                        pegin_flow_id, method, data
+                    );
+
+                    let state = self.tracker.values_mut().find(|state| {
+                        state.pegin_flow_id == *pegin_flow_id
+                            && state
+                                .btc_signatures_flow
+                                .as_ref()
+                                .map_or(false, |flow| !flow.is_done())
+                    });
+
+                    match state {
+                        Some(mut state) => match state.btc_signatures_flow.as_mut() {
+                            Some(sub_flow) => {
+                                debug!(
+                                    "Delegating BitVMX message {event:?} for flow {pegin_flow_id} to sub flow"
+                                );
+                                sub_flow.delegate_bitvmx_event(&event)?;
+                            }
+                            None => {
+                                error!("No active sub flow for flow_id: {}", pegin_flow_id);
+                            }
+                        },
+                        None => {
+                            error!("Unexpected message received from BitVMX {event:?}");
+                        }
+                    }
+                }
+                _ => {}
+            },
             _ => {}
         }
 
@@ -495,8 +583,9 @@ where
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         match event {
             RskPegManagerEvents::PeginRequested(data) => self.handle_pegin_requested(data),
+            RskPegManagerEvents::AllNoncesReady(_data) => self.delegate_to_sub_flow(event),
+            RskPegManagerEvents::AllSignaturesReady(_data) => self.delegate_to_sub_flow(event),
             RskPegManagerEvents::PeginAccepted(data) => self.handle_pegin_accepted(data),
-            // TODO(signatures-3) delegate AllNoncesReady and AllSignaturesReady to BtcSignatureFlow::process_new_rsk_event
             _ => Ok(()),
         }
     }
@@ -509,9 +598,8 @@ where
         self.blockchain.update(block.clone());
 
         self.process_unhandled_confirmed_pegin_requested_events()?;
+        self.process_unhandled_confirmed_sig_flow_events(block)?;
         self.process_unhandled_confirmed_pegin_accepted_events()?;
-
-        // TODO(signatures-4) delegate to BtcSignatureFlow::process_new_block
 
         Ok(())
     }
@@ -1161,7 +1249,14 @@ mod tests {
         mock_btc_sig_subflow_factory
             .expect_create_flow()
             .times(1)
-            .returning(move |_| MockBtcSignatureSubFlowApi::new());
+            .returning(|_| {
+                let mut mock_btc_signature_sub_flow_api = MockBtcSignatureSubFlowApi::new();
+                mock_btc_signature_sub_flow_api
+                    .expect_is_done()
+                    .times(1)
+                    .returning(|| true);
+                mock_btc_signature_sub_flow_api
+            });
 
         let mut processor = PeginProcessor::new(
             RuntimeSync::new().unwrap(),
