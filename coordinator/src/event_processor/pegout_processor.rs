@@ -6,7 +6,7 @@ use crate::{
 };
 use anyhow::{Context, Result, anyhow, bail};
 use common::msg_broker::bitvmx_types::{
-    BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, VariableTypes,
+    IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, VariableTypes,
 };
 use common::runtime_sync::RuntimeSync;
 use common::types::{Hash256, TxHash};
@@ -87,8 +87,8 @@ pub struct PegoutProcessor<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi
 impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> PegoutProcessor<CG, BC> {
     pub fn new(rt_sync: RuntimeSync, contracts_gateway: Rc<CG>, bitvmx_broker: Rc<BC>) -> Self {
         Self {
-            rt_sync,
-            contracts_gateway,
+            rt_sync: rt_sync,
+            contracts_gateway: contracts_gateway,
             bitvmx_broker,
             blockchain: BlockchainView::new(),
             tracker: HashMap::new(),
@@ -187,7 +187,7 @@ impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> PegoutProcessor<CG, 
         Ok(())
     }
 
-    fn handle_register_pegout(
+    fn _handle_register_pegout(
         &mut self,
         flow_id: &Uuid,
         input: RegisterPegoutInput,
@@ -293,9 +293,9 @@ impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> PegoutProcessor<CG, 
 
     fn handle_bitvmx_request(
         &mut self,
-        flow_id: &Uuid,
+        _flow_id: &Uuid,
         method_name: &str,
-        json_value: &Value,
+        _json_value: &Value,
     ) -> Result<Value> {
         match method_name {
             "add-member-signature" => {
