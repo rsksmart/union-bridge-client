@@ -20,7 +20,7 @@ pub(crate) trait BtcSignatureSubFlowApi {
     fn delegate_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()>;
     fn delegate_rsk_event(&mut self, flow_id: Uuid, event: &RskPegManagerEvents) -> Result<()>;
     fn delegate_block(&mut self, block: &RskBlockAndUncles) -> Result<()>;
-    fn is_done(&self) -> bool; // TODO(iago) call
+    fn is_done(&self) -> bool;
 }
 
 #[cfg_attr(test, automock)]
@@ -108,7 +108,6 @@ where
         }
     }
 
-    // TODO(iago) add a way to check if the flow is over
     fn delegate_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
         // update blockchain view
         self.lifecycle
@@ -122,7 +121,7 @@ where
         }
 
         // check if signatures are ready and close flow
-        if self.lifecycle.is_all_signagures_ready_confirmed()? {
+        if self.lifecycle.is_all_signatures_ready_confirmed()? {
             self.is_done = true;
             self.lifecycle.blockchain_view().borrow_mut().clear();
         }
@@ -436,7 +435,7 @@ mod tests {
             .times(1)
             .returning(|| Ok(false));
         mock_flow
-            .expect_is_all_signagures_ready_confirmed()
+            .expect_is_all_signatures_ready_confirmed()
             .times(1)
             .returning(|| Ok(false));
 
@@ -464,7 +463,7 @@ mod tests {
             .times(1)
             .returning(|| Ok(true));
         mock_flow
-            .expect_is_all_signagures_ready_confirmed()
+            .expect_is_all_signatures_ready_confirmed()
             .times(1)
             .returning(|| Ok(false));
         mock_flow
@@ -498,7 +497,7 @@ mod tests {
             .times(1)
             .returning(|| Ok(false));
         mock_flow
-            .expect_is_all_signagures_ready_confirmed()
+            .expect_is_all_signatures_ready_confirmed()
             .times(1)
             .returning(|| Ok(true));
 
@@ -533,7 +532,7 @@ mod tests {
             .times(1)
             .returning(|| Ok(false));
         mock_flow
-            .expect_is_all_signagures_ready_confirmed()
+            .expect_is_all_signatures_ready_confirmed()
             .times(1)
             .returning(|| Ok(false));
 
@@ -543,7 +542,7 @@ mod tests {
             .times(1)
             .returning(|| Ok(true));
         mock_flow
-            .expect_is_all_signagures_ready_confirmed()
+            .expect_is_all_signatures_ready_confirmed()
             .times(1)
             .returning(|| Ok(false));
         mock_flow
@@ -704,7 +703,7 @@ mod tests {
             .times(1)
             .returning(|| Ok(true));
         mock_flow
-            .expect_is_all_signagures_ready_confirmed()
+            .expect_is_all_signatures_ready_confirmed()
             .times(1)
             .returning(|| Ok(true));
         mock_flow

@@ -32,7 +32,7 @@ pub(crate) trait BtcSignatureLifecycleApi {
 
     fn unset_all_signatures_ready(&mut self) -> Result<()>;
 
-    fn is_all_signagures_ready_confirmed(&self) -> Result<bool>;
+    fn is_all_signatures_ready_confirmed(&self) -> Result<bool>;
 
     fn blockchain_view(&self) -> Rc<RefCell<BlockchainView>>;
 
@@ -95,6 +95,9 @@ where
         }
     }
 
+    /// Modify the confirmation status of the Nonces step.
+    /// - Some(block_number) => start confirming at block_number
+    /// - None => stop confirming
     fn modify_nonces_confirmation_status(
         &mut self,
         block_number: Option<BlockNumber>,
@@ -119,6 +122,9 @@ where
         Self::modify_event_confirmation_status(flow_id, block_number, nonce_event)
     }
 
+    /// Modify the confirmation status of the Signatures step.
+    /// - Some(block_number) => start confirming at block_number
+    /// - None => stop confirming
     fn modify_signatures_confirmation_status(
         &mut self,
         block_number: Option<BlockNumber>,
@@ -139,6 +145,9 @@ where
         Self::modify_event_confirmation_status(flow_id, block_number, signature_event)
     }
 
+    /// Modify the confirmation status of the received ConfirmableEvent.
+    /// - Some(block_number) => start confirming at block_number
+    /// - None => stop confirming
     fn modify_event_confirmation_status(
         flow_id: Uuid,
         block_number: Option<BlockNumber>,
@@ -294,7 +303,7 @@ where
         self.modify_signatures_confirmation_status(None)
     }
 
-    fn is_all_signagures_ready_confirmed(&self) -> Result<bool> {
+    fn is_all_signatures_ready_confirmed(&self) -> Result<bool> {
         let signature_step = self
             .state
             .signature_step
@@ -481,7 +490,7 @@ mod tests {
 
         // verify not confirmed initially
         let is_confirmed = flow
-            .is_all_signagures_ready_confirmed()
+            .is_all_signatures_ready_confirmed()
             .expect("failed to check confirmation status");
         assert!(!is_confirmed, "should not be confirmed initially");
 
@@ -493,7 +502,7 @@ mod tests {
 
         // verify not yet confirmed
         let is_confirmed = flow
-            .is_all_signagures_ready_confirmed()
+            .is_all_signatures_ready_confirmed()
             .expect("failed to check confirmation status");
         assert!(!is_confirmed, "should not be confirmed yet");
 
@@ -503,7 +512,7 @@ mod tests {
 
         // verify confirmed after enough blocks
         let is_confirmed = flow
-            .is_all_signagures_ready_confirmed()
+            .is_all_signatures_ready_confirmed()
             .expect("failed to check confirmation status");
         assert!(is_confirmed, "should be confirmed after enough blocks");
     }
@@ -528,7 +537,7 @@ mod tests {
 
         // verify not confirmed initially
         let is_confirmed = flow
-            .is_all_signagures_ready_confirmed()
+            .is_all_signatures_ready_confirmed()
             .expect("failed to check confirmation status");
         assert!(!is_confirmed, "should not be confirmed initially");
 
@@ -540,7 +549,7 @@ mod tests {
 
         // verify not yet confirmed
         let is_confirmed = flow
-            .is_all_signagures_ready_confirmed()
+            .is_all_signatures_ready_confirmed()
             .expect("failed to check confirmation status");
         assert!(!is_confirmed, "should not be confirmed yet");
 
@@ -556,7 +565,7 @@ mod tests {
 
         // check that confirmations don't accumulate after unsetting signatures
         let is_confirmed = flow
-            .is_all_signagures_ready_confirmed()
+            .is_all_signatures_ready_confirmed()
             .expect("failed to check confirmation status");
         assert!(
             !is_confirmed,
@@ -575,7 +584,7 @@ mod tests {
 
         // step 8: verify confirmed after enough blocks
         let is_confirmed = flow
-            .is_all_signagures_ready_confirmed()
+            .is_all_signatures_ready_confirmed()
             .expect("failed to check confirmation status");
         assert!(is_confirmed, "should be confirmed after enough blocks");
     }
@@ -606,7 +615,7 @@ mod tests {
 
         // verify not yet confirmed
         let is_confirmed = flow
-            .is_all_signagures_ready_confirmed()
+            .is_all_signatures_ready_confirmed()
             .expect("failed to check confirmation status");
         assert!(!is_confirmed, "should not be confirmed yet");
 
@@ -641,7 +650,7 @@ mod tests {
             .expect("failed to complete Signatures step");
 
         assert!(
-            flow.is_all_signagures_ready_confirmed().unwrap(),
+            flow.is_all_signatures_ready_confirmed().unwrap(),
             "Signatures should be confirmed"
         );
     }
@@ -736,7 +745,7 @@ mod tests {
             "should fail when checking nonce confirmation before setting ready"
         );
 
-        let result = flow.is_all_signagures_ready_confirmed();
+        let result = flow.is_all_signatures_ready_confirmed();
         assert!(
             result.is_err(),
             "should fail when checking signature confirmation before setting ready"
@@ -981,7 +990,7 @@ mod tests {
 
         // verify confirmed after enough blocks
         let is_confirmed = flow
-            .is_all_signagures_ready_confirmed()
+            .is_all_signatures_ready_confirmed()
             .expect("failed to check confirmation status");
         assert!(
             is_confirmed,

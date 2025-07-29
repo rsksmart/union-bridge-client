@@ -268,6 +268,7 @@ impl BlockchainView {
     }
 }
 
+// TODO use this type for all confirmable events in the Coordinator
 pub struct ConfirmableEvent {
     id: Uuid,
     chain_view: Rc<RefCell<BlockchainView>>,
