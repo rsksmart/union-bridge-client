@@ -1,186 +1,60 @@
-use crate::{
-    contracts::peg_manager::PegManagerContractApi,
-    rsk_gateway::DomainErrors,
-    types::{RegisterPegoutInput, RegisterPegoutOutput},
-};
-use alloy_primitives::FixedBytes;
+use crate::contracts::peg_manager::PegManagerContractApi;
+use crate::rsk_gateway::DomainErrors;
+use crate::types::{RegisterPegoutInput, RegisterPegoutOutput};
 use anyhow::Result;
 use log::{error, info};
+use union_contracts::bindings::peg_manager::PegManager::BtcTxSPVProof;
 
 #[derive(Clone)]
-pub struct RegisterPegoutInvoke<C: PegManagerContractApi> {
+pub(crate) struct RegisterPegoutInvoke<C: PegManagerContractApi> {
     contract: C,
     gas_bumps: u8,
 }
 
 impl<C: PegManagerContractApi> RegisterPegoutInvoke<C> {
-    pub fn new(contract: C, gas_bumps: u8) -> Self {
-        Self {
+    pub(crate) fn new(contract: C, gas_bumps: u8) -> Self {
+        RegisterPegoutInvoke {
             contract,
             gas_bumps,
         }
     }
 
-    pub async fn run(
+    pub(crate) async fn run(
         &self,
         input: RegisterPegoutInput,
     ) -> Result<RegisterPegoutOutput, DomainErrors> {
-        info!("Init RegisterPegoutInvoke for: {:?}", input);
+        info!("Init RegisterPegout for: {:?}", input);
 
-        let msg_value = input.amount_in_wei;
-
-        let usr_pub_key: FixedBytes<33> =
-            input.usr_pub_key.parse::<FixedBytes<33>>().map_err(|e| {
-                DomainErrors::InvalidCompressedPubKey(format!("Failed to parse usr_pub_key: {}", e))
-            })?;
+        let parsed_input: BtcTxSPVProof = input.try_into().map_err(|e| {
+            DomainErrors::InvalidBtcTxSpvProof(format!(
+                "Failed to parse RegisterPegoutInput: {}",
+                e
+            ))
+        })?;
 
         let receipt = self
             .contract
-            .invoke_register_pegout(msg_value, usr_pub_key, self.gas_bumps)
+            .invoke_register_pegout(parsed_input, self.gas_bumps)
             .await?;
 
-        let result = if receipt.status() {
-            info!(
-                "RegisterPegout successful at tx {}",
-                receipt.transaction_hash
-            );
-            RegisterPegoutOutput {
-                transaction_hash: receipt.transaction_hash.to_string(),
-                success: true,
-            }
-        } else {
-            error!("RegisterPegout failed at tx {}", receipt.transaction_hash);
-            RegisterPegoutOutput {
-                transaction_hash: receipt.transaction_hash.to_string(),
-                success: false,
-            }
+        let result = RegisterPegoutOutput {
+            transaction_hash: receipt.transaction_hash.to_string(),
+            success: receipt.status(),
         };
 
+        if result.success {
+            info!(
+                "invoke_register_pegout successful at tx {}",
+                receipt.transaction_hash
+            );
+        } else {
+            error!(
+                "invoke_register_pegout failed at tx {}",
+                receipt.transaction_hash
+            );
+        }
         Ok(result)
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::{
-        contracts::{
-            interactions::register_pegout::{
-                RegisterPegoutInput, RegisterPegoutInvoke, RegisterPegoutOutput,
-            },
-            peg_manager::MockPegManagerContractApi,
-        },
-        rsk_gateway::DomainErrors,
-    };
-    use alloy_primitives::{Bloom, TxHash};
-    use alloy_rpc_types::{Log, Receipt, ReceiptEnvelope, ReceiptWithBloom, TransactionReceipt};
-    use std::str::FromStr;
-
-    impl RegisterPegoutInvoke<MockPegManagerContractApi> {
-        fn new_for_tests(contract: MockPegManagerContractApi) -> Self {
-            RegisterPegoutInvoke {
-                contract,
-                gas_bumps: 3,
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn test_run_successful() {
-        let mut mock = MockPegManagerContractApi::new();
-        let input = get_base_input();
-        let expected = RegisterPegoutOutput {
-            transaction_hash: "0xfeedfacecafebeef000000000000000000000000000000000000000000000000"
-                .to_string(),
-            success: true,
-        };
-        let receipt_return = expected.clone();
-
-        mock.expect_invoke_register_pegout()
-            .returning(move |_, _, _| Ok(get_fake_receipt(true, &receipt_return.transaction_hash)))
-            .times(1);
-
-        let invoke = RegisterPegoutInvoke::new_for_tests(mock);
-        let result = invoke.run(input).await;
-
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), expected);
-    }
-
-    #[tokio::test]
-    async fn test_run_fail_no_revert() {
-        let mut mock = MockPegManagerContractApi::new();
-        let input = get_base_input();
-
-        let expected = RegisterPegoutOutput {
-            transaction_hash: "0xdeadbeefdeadbeef000000000000000000000000000000000000000000000000"
-                .to_string(),
-            success: false,
-        };
-        let receipt_return = expected.clone();
-
-        mock.expect_invoke_register_pegout()
-            .returning(move |_, _, _| Ok(get_fake_receipt(false, &receipt_return.transaction_hash)))
-            .times(1);
-
-        let invoke = RegisterPegoutInvoke::new_for_tests(mock);
-        let result = invoke.run(input).await;
-
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), expected);
-    }
-
-    #[tokio::test]
-    async fn test_run_invalid_pub_key_length() {
-        let mut mock = MockPegManagerContractApi::new();
-        // should never hit the contract if parse fails
-        mock.expect_invoke_register_pegout().times(0);
-
-        let invoke = RegisterPegoutInvoke::new_for_tests(mock);
-        let bad_input = RegisterPegoutInput {
-            amount_in_wei: 1_000,
-            usr_pub_key: "not-a-hex-key".to_string(),
-        };
-
-        let err = invoke.run(bad_input).await.err().unwrap();
-        match err {
-            DomainErrors::InvalidCompressedPubKey(msg) => {
-                assert!(msg.contains("Failed to parse usr_pub_key"))
-            }
-            _ => panic!("expected InvalidPublicKey, got {:?}", err),
-        }
-    }
-
-    fn get_base_input() -> RegisterPegoutInput {
-        let usr_pub_key = format!("0x{}", "01".repeat(33));
-        RegisterPegoutInput {
-            amount_in_wei: 1_234_567,
-            usr_pub_key,
-        }
-    }
-
-    fn get_fake_receipt(status: bool, hash: &str) -> TransactionReceipt<ReceiptEnvelope<Log>> {
-        let receipt = Receipt {
-            status: status.into(),
-            cumulative_gas_used: 21_000,
-            logs: vec![],
-        };
-        let envelope = ReceiptEnvelope::Eip1559(ReceiptWithBloom {
-            receipt,
-            logs_bloom: Bloom::ZERO,
-        });
-        TransactionReceipt {
-            inner: envelope,
-            transaction_hash: TxHash::from_str(hash).expect("invalid tx hash"),
-            transaction_index: Some(0),
-            block_hash: None,
-            block_number: None,
-            gas_used: 21_000,
-            effective_gas_price: 0,
-            blob_gas_used: None,
-            blob_gas_price: None,
-            from: Default::default(),
-            to: Some(Default::default()),
-            contract_address: None,
-        }
-    }
-}
+//todo test

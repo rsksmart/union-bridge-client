@@ -21,8 +21,15 @@ impl<BS: BitVmxBrokerServerApi> Executor<BS> {
 
     pub fn try_recv(&mut self) -> Result<()> {
         match self.broker_server.try_recv()? {
+            Some((IncomingBitVMXApiMessages::GenerateZKP(id, data), from)) => {
+                println!(
+                    "Received GenerateZKP from {from} with id {id} and data {:?} at {}",
+                    hex::encode(data),
+                    Self::reception_time()
+                );
+            }
             Some((IncomingBitVMXApiMessages::Ping(), from)) => {
-                // println!("Received Ping from {from} at {}", Self::reception_time());
+                println!("Received Ping from {from} at {}", Self::reception_time());
 
                 self.broker_server
                     .send(&OutgoingBitVMXApiMessages::Pong(), from)
@@ -47,10 +54,22 @@ impl<BS: BitVmxBrokerServerApi> Executor<BS> {
                         .unwrap_or_else(|e| format!("(invalid JSON: {e})"))
                 );
             }
-            Some((IncomingBitVMXApiMessages::GenerateZKP(id, data), from)) => {
+            Some((
+                IncomingBitVMXApiMessages::Setup(program_id, program_name, addresses, port),
+                from,
+            )) => {
                 println!(
-                    "Received GenerateZKP from {from} with id {id} and data {:?} at {}",
-                    hex::encode(data),
+                    "Received Setup from {from}: program_id = {program_id}, program_name = {program_name}, addresses = {:?}, port = {port} at {}",
+                    addresses,
+                    Self::reception_time()
+                );
+            }
+            Some((
+                IncomingBitVMXApiMessages::DispatchTransactionName(uuid, transaction_name),
+                from,
+            )) => {
+                println!(
+                    "Received DispatchTransactionName from {from}: uuid = {uuid}, transaction_name = {transaction_name} at {}",
                     Self::reception_time()
                 );
             }
@@ -143,6 +162,66 @@ impl<BS: BitVmxBrokerServerApi> Executor<BS> {
             "accept-pegin".to_string(),
             VariableTypes::String(payload.to_string()),
         );
+
+        self.broker_server
+            .send(&event, BITVMX_L2_BROKER_CLIENT_ID)
+            .context(format!(
+                "sending event {:?} to consumer {}",
+                event, BITVMX_L2_BROKER_CLIENT_ID
+            ))
+    }
+
+    pub fn send_pegout_requested_event(
+        &self,
+        amount_in_wei: u64,
+        usr_pub_key: String,
+    ) -> Result<()> {
+        let payload = json!({
+            "amount_in_wei": amount_in_wei,
+            "usr_pub_key": usr_pub_key,
+        });
+
+        let uuid = Uuid::new_v4();
+        let event = OutgoingBitVMXApiMessages::Variable(
+            uuid,
+            "request-pegout".to_string(),
+            VariableTypes::String(payload.to_string()),
+        );
+
+        return self
+            .broker_server
+            .send(&event, BITVMX_L2_BROKER_CLIENT_ID)
+            .context(format!(
+                "sending event {:?} to consumer {}",
+                event, BITVMX_L2_BROKER_CLIENT_ID
+            ));
+    }
+
+    pub fn send_register_pegout_event(
+        &self,
+        block_hash: String,
+        tx: Transaction,
+        merkle_branch_path: String,
+        merkle_branch_hashes: Vec<String>,
+    ) -> Result<()> {
+        let spv_proof = BtcTxSPVProof {
+            block_hash,
+            tx: tx.clone(),
+            merkle_branch_path,
+            merkle_branch_hashes: merkle_branch_hashes
+                .into_iter()
+                .map(|h| {
+                    let bytes = hex::decode(h.trim_start_matches("0x"))
+                        .expect(&format!("Invalid hex in merkle_branch_hashes: {}", h));
+                    <[u8; 32]>::try_from(bytes.as_slice()).expect(&format!(
+                        "Merkle hash must be 32 bytes, but received {} bytes",
+                        bytes.len()
+                    ))
+                })
+                .collect(),
+        };
+
+        let event = OutgoingBitVMXApiMessages::SPVProof(tx.compute_txid(), Some(spv_proof));
 
         self.broker_server
             .send(&event, BITVMX_L2_BROKER_CLIENT_ID)

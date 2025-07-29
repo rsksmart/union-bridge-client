@@ -1,6 +1,7 @@
 use crate::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
 use crate::types::{Address, RskBlockAndUncles, RskLog};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum ToServer {
@@ -25,4 +26,6 @@ pub enum FromServer {
 
     // real BitVMX incoming messages
     FromBitVMX(OutgoingBitVMXApiMessages),
+    // fake bitvmx incoming messages
+    RegisterPegout(Value),
 }

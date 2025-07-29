@@ -1,5 +1,5 @@
 use crate::{
-    event_processor::{EventProcessor, PeginProcessor},
+    event_processor::{EventProcessor, PeginProcessor, PegoutProcessor},
     flows::advance_funds::advance_funds_processor::AdvanceFundsProcessor,
     monitor::MonitorApi,
 };
@@ -52,6 +52,11 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
                     bitvmx_broker.clone(),
                 )),
                 Box::new(PeginProcessor::new(
+                    rt_sync.clone(),
+                    contracts_arc.clone(),
+                    bitvmx_broker.clone(),
+                )),
+                Box::new(PegoutProcessor::new(
                     rt_sync.clone(),
                     contracts_arc,
                     bitvmx_broker.clone(),
@@ -251,8 +256,10 @@ pub(crate) mod tests {
         AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
         AddMemberSignatureInput, AddMemberSignatureOutput, ApplyToStreamInput, ApplyToStreamOutput,
         GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterPegoutInput,
-        RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput,
+        RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
+        RequestPegoutOutput,
     };
+
     fn create_fake_request_event(pegout_id: &str) -> RequestAdvanceFunds {
         RequestAdvanceFunds {
             pegout_id: pegout_id.to_string(),
@@ -534,6 +541,11 @@ pub(crate) mod tests {
                 &self,
                 input: AcceptPeginInput,
             ) -> Result<AcceptPeginOutput, DomainErrors>;
+
+            async fn request_pegout(
+                &self,
+                input: RequestPegoutInput,
+            ) -> Result<RequestPegoutOutput, DomainErrors>;
 
             async fn register_pegout(
                 &self,

@@ -10,6 +10,7 @@ use union_contracts::bindings::peg_manager::PegManager::{
 
 use crate::contracts::bitcoin_manager::ParseFieldError;
 
+use crate::types::BtcTxSPVProofInput;
 use crate::types::RequestPeginInput;
 
 // re-export for convenience
@@ -18,6 +19,7 @@ pub(crate) use crate::contracts::interactions::get_temporary_pegin_address;
 pub(crate) use crate::contracts::interactions::notify_check_fork_complete;
 pub(crate) use crate::contracts::interactions::register_pegout;
 pub(crate) use crate::contracts::interactions::request_pegin;
+pub(crate) use crate::contracts::interactions::request_pegout;
 
 use crate::rsk_gateway::DomainErrors;
 use actors_mocking::fake_contracts::FakePegManager;
@@ -46,10 +48,16 @@ pub trait PegManagerContractApi {
         gas_bumps: u8,
     ) -> alloy_contract::Result<TransactionReceipt>;
 
-    async fn invoke_register_pegout(
+    async fn invoke_request_pegout(
         &self,
         msg_value: u64,
         usr_pub_key: FixedBytes<33>,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TransactionReceipt>;
+
+    async fn invoke_register_pegout(
+        &self,
+        input: BtcTxSPVProof,
         gas_bumps: u8,
     ) -> alloy_contract::Result<TransactionReceipt>;
 
@@ -111,7 +119,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         .await
     }
 
-    async fn invoke_register_pegout(
+    async fn invoke_request_pegout(
         &self,
         msg_value: u64,
         usr_pub_key: FixedBytes<33>,
@@ -123,6 +131,18 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
                     .tryPegout(usr_pub_key.into())
                     .value(U256::from(msg_value))
             },
+            gas_bumps,
+        )
+        .await
+    }
+
+    async fn invoke_register_pegout(
+        &self,
+        input: BtcTxSPVProof,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TransactionReceipt> {
+        send_tx_with_gas_bump(
+            || self.contract_instance.registerPegout(input.clone()),
             gas_bumps,
         )
         .await
@@ -180,10 +200,17 @@ impl<P: Provider> PegManagerContractApi for FakePegManagerContract<P> {
         todo!("Not yet implemented for FakePegManagerContract");
     }
 
-    async fn invoke_register_pegout(
+    async fn invoke_request_pegout(
         &self,
         _msg_value: u64,
         _usr_pub_key: FixedBytes<33>,
+        _gas_bumps: u8,
+    ) -> alloy_contract::Result<TransactionReceipt> {
+        todo!("Not yet implemented for FakePegManagerContract");
+    }
+    async fn invoke_register_pegout(
+        &self,
+        _input: BtcTxSPVProof,
         _gas_bumps: u8,
     ) -> alloy_contract::Result<TransactionReceipt> {
         todo!("Not yet implemented for FakePegManagerContract");
@@ -205,19 +232,25 @@ impl<P: Provider> PegManagerContractApi for FakePegManagerContract<P> {
     }
 }
 
-impl TryFrom<RequestPeginInput> for BtcTxSPVProof {
+impl TryFrom<BtcTxSPVProofInput> for BtcTxSPVProof {
     type Error = ParseFieldError;
 
-    fn try_from(value: RequestPeginInput) -> Result<Self, Self::Error> {
-        let block_hash =
-            FixedBytes::<32>::from_hex(&value.block_hash).map_err(ParseFieldError::ParseHex)?;
+    fn try_from(value: BtcTxSPVProofInput) -> Result<Self, Self::Error> {
+        value.into_btc_tx_spv_proof()
+    }
+}
 
-        let btc_tx: BtcTransaction = value.btc_tx.try_into().map_err(|e| {
+impl BtcTxSPVProofInput {
+    fn into_btc_tx_spv_proof(self) -> Result<BtcTxSPVProof, ParseFieldError> {
+        let block_hash =
+            FixedBytes::<32>::from_hex(&self.block_hash).map_err(ParseFieldError::ParseHex)?;
+
+        let btc_tx: BtcTransaction = self.btc_tx.try_into().map_err(|e| {
             error!("Failed to parse BTC transaction: {}", e);
             e
         })?;
 
-        let merkle_branches_hashes = value
+        let merkle_branches_hashes = self
             .merkle_branch_hashes
             .into_iter()
             .map(|hash| {
@@ -231,7 +264,7 @@ impl TryFrom<RequestPeginInput> for BtcTxSPVProof {
             })?;
 
         let merkle_branch_path =
-            U256::from_str_radix(&value.merkle_branch_path.trim_start_matches("0x"), 16).map_err(
+            U256::from_str_radix(&self.merkle_branch_path.trim_start_matches("0x"), 16).map_err(
                 |e| {
                     error!("Failed to convert merkle_branch_path: {:?}", e);
                     e

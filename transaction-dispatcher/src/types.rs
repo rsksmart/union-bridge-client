@@ -39,7 +39,7 @@ pub struct PeginAddressOutput {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct RequestPeginInput {
+pub struct BtcTxSPVProofInput {
     pub block_hash: String,
     pub btc_tx: BitcoinTransaction,
     pub merkle_branch_path: String,
@@ -53,15 +53,9 @@ pub struct RequestPeginOutput {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct RegisterPegoutInput {
+pub struct RequestPegoutInput {
     pub amount_in_wei: u64,
     pub usr_pub_key: String,
-}
-
-#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
-pub struct RegisterPegoutOutput {
-    pub transaction_hash: String,
-    pub success: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
@@ -84,8 +78,13 @@ pub struct TxSentOutput {
 
 pub type AddMemberNonceOutput = TxSentOutput;
 pub type AddMemberSignatureOutput = TxSentOutput;
-pub type AcceptPeginInput = RequestPeginInput;
+pub type RequestPeginInput = BtcTxSPVProofInput;
+pub type RegisterPegInInput = BtcTxSPVProofInput;
+pub type AcceptPeginInput = BtcTxSPVProofInput;
 pub type AcceptPeginOutput = RequestPeginOutput;
+pub type RegisterPegoutInput = BtcTxSPVProofInput;
+pub type RegisterPegoutOutput = TxSentOutput;
+pub type RequestPegoutOutput = TxSentOutput;
 
 impl From<TxIn> for BitcoinTransactionIn {
     fn from(input: TxIn) -> Self {
