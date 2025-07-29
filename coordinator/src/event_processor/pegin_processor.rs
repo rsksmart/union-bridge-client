@@ -1,3 +1,6 @@
+use crate::flows::btc_signature::btc_signature_subflow::{
+    BtcSignatureSubFlowApi, BtcSignatureSubFlowFactoryApi,
+};
 use crate::{
     blockchain_tracker::{BlockConfirmations, BlockchainObserver, BlockchainView},
     config::REQUIRED_CONFIRMATIONS,
@@ -57,54 +60,63 @@ impl<T: Clone> PeginEvent<T> {
 }
 
 #[derive(Debug)]
-struct PeginEventState {
+struct PeginEventState<BSF: BtcSignatureSubFlowApi> {
     pegin_flow_id: Uuid,
     pegin_requested: PeginEvent<PeginRequested>,
     pegin_accepted: Option<PeginEvent<PeginAccepted>>,
-    // TODO(signatures-1.1)
-    // btc_signatures_flow: Option<BtcSignatureFlow>,
+    btc_signatures_flow: Option<BSF>,
 }
 
-impl PeginEventState {
+impl<BSF: BtcSignatureSubFlowApi> PeginEventState<BSF> {
     fn new(pegin_flow_id: Uuid, pegin_requested: PeginEvent<PeginRequested>) -> Self {
         Self {
             pegin_flow_id,
             pegin_requested,
             pegin_accepted: None,
+            btc_signatures_flow: None,
         }
     }
 }
 
-pub struct PeginProcessor<CG, BC>
+pub struct PeginProcessor<CG, BC, BSF, FactoryBSF>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
+    BSF: BtcSignatureSubFlowApi,
+    FactoryBSF: BtcSignatureSubFlowFactoryApi<BSF>,
 {
     rt_sync: RuntimeSync,
     contracts: Rc<CG>,
     bitvmx_broker: Rc<BC>,
     blockchain: BlockchainView,
-    tracker: HashMap<TxHash, PeginEventState>,
-    // TODO(signatures-1.2) instantiate self.btc_signatures_flow (BtcSignatureFlow with contracts => req tx-dispatcher as lib)
+    tracker: HashMap<TxHash, PeginEventState<BSF>>,
+    btc_sig_subflow_factory: FactoryBSF,
 }
 
-impl<CG, BC> PeginProcessor<CG, BC>
+impl<CG, BC, BSF, FactoryBSF> PeginProcessor<CG, BC, BSF, FactoryBSF>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
+    BSF: BtcSignatureSubFlowApi,
+    FactoryBSF: BtcSignatureSubFlowFactoryApi<BSF>,
 {
-    pub fn new(rt_sync: RuntimeSync, contracts: Rc<CG>, bitvmx_broker: Rc<BC>) -> Self {
+    pub fn new(
+        rt_sync: RuntimeSync,
+        contracts: Rc<CG>,
+        bitvmx_broker: Rc<BC>,
+        factory: FactoryBSF,
+    ) -> Self {
         Self::subscribe_to_bitvmx_pegin_events(&bitvmx_broker)
             .expect("Failed to subscribe to BitVMX pegin events");
 
         info!("Successfully subscribed to BitVMX pegin events");
-
         Self {
             rt_sync,
             contracts,
             bitvmx_broker,
             blockchain: BlockchainView::new(),
             tracker: HashMap::new(),
+            btc_sig_subflow_factory: factory,
         }
     }
 
@@ -284,9 +296,12 @@ where
             self.blockchain.remove_observer(observer_id.as_str());
 
             info!(
-                "Successfully processed confirmed PeginRequested event: {}",
+                "Successfully processed confirmed PeginRequested event for flow {}, starting BTC signature flow",
                 flow_id
             );
+
+            // now we start the signatures sub-flow
+            state.btc_signatures_flow = Some(self.btc_sig_subflow_factory.create_flow(flow_id));
         }
 
         Ok(())
@@ -424,10 +439,12 @@ where
     }
 }
 
-impl<CG, BC> EventProcessor for PeginProcessor<CG, BC>
+impl<CG, BC, BSF, FactoryBSF> EventProcessor for PeginProcessor<CG, BC, BSF, FactoryBSF>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
+    BSF: BtcSignatureSubFlowApi,
+    FactoryBSF: BtcSignatureSubFlowFactoryApi<BSF>,
 {
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
         match event {
@@ -510,6 +527,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::flows::btc_signature::btc_signature_subflow::{
+        MockBtcSigSubFlowFactory, MockBtcSignatureSubFlowApi,
+    };
     use crate::{
         coordinator::tests::MockRskContractsGatewayApi,
         event_processor::EventProcessor,
@@ -552,6 +572,7 @@ mod tests {
             RuntimeSync::new().unwrap(),
             MockRskContractsGatewayApi::new().into(),
             broker.into(),
+            MockBtcSigSubFlowFactory::new(),
         );
     }
 
@@ -577,6 +598,7 @@ mod tests {
             RuntimeSync::new().unwrap(),
             MockRskContractsGatewayApi::new().into(),
             broker.into(),
+            MockBtcSigSubFlowFactory::new(),
         );
     }
 
@@ -601,6 +623,7 @@ mod tests {
             RuntimeSync::new().unwrap(),
             MockRskContractsGatewayApi::new().into(),
             broker.into(),
+            MockBtcSigSubFlowFactory::new(),
         );
 
         let event = OutgoingBitVMXApiMessages::PeginTransactionFound(txid, status);
@@ -618,6 +641,7 @@ mod tests {
             RuntimeSync::new().unwrap(),
             MockRskContractsGatewayApi::new().into(),
             broker.into(),
+            MockBtcSigSubFlowFactory::new(),
         );
 
         let tx_id = dummy_spv_proof().tx.compute_txid();
@@ -647,7 +671,12 @@ mod tests {
         expect_bitvmx_subscription_success(&mut broker);
 
         let rt_sync = RuntimeSync::new().unwrap();
-        let mut processor = PeginProcessor::new(rt_sync, contracts.into(), broker.into());
+        let mut processor = PeginProcessor::new(
+            rt_sync,
+            contracts.into(),
+            broker.into(),
+            MockBtcSigSubFlowFactory::new(),
+        );
 
         let spv_proof = dummy_spv_proof();
         let tx_id = spv_proof.tx.compute_txid();
@@ -672,7 +701,12 @@ mod tests {
         expect_bitvmx_subscription_success(&mut broker);
 
         let rt_sync = RuntimeSync::new().unwrap();
-        let mut processor = PeginProcessor::new(rt_sync, contracts.into(), broker.into());
+        let mut processor = PeginProcessor::new(
+            rt_sync,
+            contracts.into(),
+            broker.into(),
+            MockBtcSigSubFlowFactory::new(),
+        );
 
         let spv_proof = dummy_spv_proof();
         let tx_id = spv_proof.tx.compute_txid();
@@ -702,7 +736,12 @@ mod tests {
         expect_bitvmx_subscription_success(&mut broker);
 
         let rt_sync = RuntimeSync::new().unwrap();
-        let mut processor = PeginProcessor::new(rt_sync, contracts.into(), broker.into());
+        let mut processor = PeginProcessor::new(
+            rt_sync,
+            contracts.into(),
+            broker.into(),
+            MockBtcSigSubFlowFactory::new(),
+        );
 
         // Simulate event payload
         let data = json!({
@@ -755,7 +794,12 @@ mod tests {
 
         // Runtime and processor initialization
         let rt_sync = RuntimeSync::new().unwrap();
-        let mut processor = PeginProcessor::new(rt_sync, contracts.into(), broker.into());
+        let mut processor = PeginProcessor::new(
+            rt_sync,
+            contracts.into(),
+            broker.into(),
+            MockBtcSigSubFlowFactory::new(),
+        );
 
         // Payload
         let data = json!({
@@ -802,6 +846,7 @@ mod tests {
             RuntimeSync::new().unwrap(),
             MockRskContractsGatewayApi::new().into(),
             broker.into(),
+            MockBtcSigSubFlowFactory::new(),
         );
 
         let pegin_requested = dummy_pegin_requested_event();
@@ -836,6 +881,7 @@ mod tests {
             RuntimeSync::new().unwrap(),
             MockRskContractsGatewayApi::new().into(),
             broker.into(),
+            MockBtcSigSubFlowFactory::new(),
         );
 
         let pegin_requested = dummy_pegin_requested_event();
@@ -881,6 +927,7 @@ mod tests {
             RuntimeSync::new().unwrap(),
             MockRskContractsGatewayApi::new().into(),
             broker.into(),
+            MockBtcSigSubFlowFactory::new(),
         );
 
         let pegin_requested = dummy_pegin_requested_event();
@@ -927,6 +974,7 @@ mod tests {
             RuntimeSync::new().unwrap(),
             MockRskContractsGatewayApi::new().into(),
             broker.into(),
+            MockBtcSigSubFlowFactory::new(),
         );
 
         let pegin_requested = dummy_pegin_requested_event();
@@ -991,6 +1039,7 @@ mod tests {
             RuntimeSync::new().unwrap(),
             MockRskContractsGatewayApi::new().into(),
             broker.into(),
+            MockBtcSigSubFlowFactory::new(),
         );
 
         let result = processor.process_new_rsk_event(&RskPegManagerEvents::UnknownEvent);
@@ -1007,6 +1056,7 @@ mod tests {
             RuntimeSync::new().unwrap(),
             MockRskContractsGatewayApi::new().into(),
             broker.into(),
+            MockBtcSigSubFlowFactory::new(),
         );
 
         let (block_1, _, _) = create_block_and_uncles();
@@ -1025,6 +1075,7 @@ mod tests {
             RuntimeSync::new().unwrap(),
             MockRskContractsGatewayApi::new().into(),
             broker.into(),
+            MockBtcSigSubFlowFactory::new(),
         );
 
         let (block_1, _, _) = create_block_and_uncles();
@@ -1094,22 +1145,29 @@ mod tests {
             .expect_send()
             .times(1)
             .with(
-    eq(BROKER_SERVER_ID),
-    function(move |req: &IncomingBitVMXApiMessages| {
-        matches!(
+                eq(BROKER_SERVER_ID),
+                function(move |req: &IncomingBitVMXApiMessages| {
+                    matches!(
             req,
             IncomingBitVMXApiMessages::SetVar(_, variable_name, VariableTypes::String(actual))
                 if variable_name == "PeginRequested"
                 && serde_json::from_str::<Value>(actual).ok() == Some(expected_payload.clone())
         )
-    }),
-)
+                }),
+            )
             .returning(|_, _| Ok(true));
+
+        let mut mock_btc_sig_subflow_factory = MockBtcSigSubFlowFactory::new();
+        mock_btc_sig_subflow_factory
+            .expect_create_flow()
+            .times(1)
+            .returning(move |_| MockBtcSignatureSubFlowApi::new());
 
         let mut processor = PeginProcessor::new(
             RuntimeSync::new().unwrap(),
             MockRskContractsGatewayApi::new().into(),
             broker.into(),
+            mock_btc_sig_subflow_factory,
         );
 
         processor
@@ -1139,6 +1197,7 @@ mod tests {
             RuntimeSync::new().unwrap(),
             MockRskContractsGatewayApi::new().into(),
             broker.into(),
+            MockBtcSigSubFlowFactory::new(),
         );
 
         let (block_1, block_2, _) = create_block_and_uncles();
@@ -1219,6 +1278,7 @@ mod tests {
             RuntimeSync::new().unwrap(),
             MockRskContractsGatewayApi::new().into(),
             broker.into(),
+            MockBtcSigSubFlowFactory::new(),
         );
 
         let pegin_requested = dummy_pegin_requested_event();

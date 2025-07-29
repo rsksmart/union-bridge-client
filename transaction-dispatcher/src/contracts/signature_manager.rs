@@ -78,6 +78,7 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
     }
 }
 
+// TODO(iago) check
 pub(crate) fn decode_error(
     err: &alloy_contract::Error,
 ) -> Option<crate::rsk_gateway::DomainErrors> {

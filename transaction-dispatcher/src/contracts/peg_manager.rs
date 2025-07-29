@@ -11,7 +11,6 @@ use union_contracts::bindings::peg_manager::PegManager::{
 use crate::contracts::bitcoin_manager::ParseFieldError;
 
 use crate::types::BtcTxSPVProofInput;
-use crate::types::RequestPeginInput;
 
 // re-export for convenience
 pub(crate) use crate::contracts::interactions::accept_pegin;

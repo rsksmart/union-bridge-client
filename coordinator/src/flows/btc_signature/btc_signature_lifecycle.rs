@@ -15,7 +15,9 @@ use uuid::Uuid;
 use mockall::automock;
 
 #[cfg_attr(test, automock)]
-pub trait BtcSignatureFlowApi {
+pub(crate) trait BtcSignatureLifecycleApi {
+    fn flow_id(&self) -> Uuid;
+
     fn send_nonce_to_contracts(&mut self, data: &BitVmxSigningInfo) -> Result<()>;
 
     fn set_all_nonces_ready(&mut self, block_number: BlockNumber) -> Result<()>;
@@ -32,34 +34,35 @@ pub trait BtcSignatureFlowApi {
 
     fn is_all_signagures_ready_confirmed(&self) -> Result<bool>;
 
-    fn get_hash_to_sign(&self) -> Option<Hash256>;
-
-    /// Returns a reference to the blockchain view
     fn blockchain_view(&self) -> Rc<RefCell<BlockchainView>>;
 
     // TODO implement auto-clean after inactivity to cover cases where .close_flow() is not called
 }
 
-pub struct State {
-    pub flow_id: Uuid,
-    pub data: Option<BitVmxSigningInfo>,
-    pub nonce_step: Option<ConfirmableEvent>,
-    pub signature_step: Option<ConfirmableEvent>,
+pub(crate) struct State {
+    pub(crate) flow_id: Uuid,
+    pub(crate) data: Option<BitVmxSigningInfo>,
+    pub(crate) nonce_step: Option<ConfirmableEvent>,
+    pub(crate) signature_step: Option<ConfirmableEvent>,
 }
 
-pub struct BtcSignatureFlow<CG: RskContractsGatewayApi> {
+pub(crate) struct BtcSignatureLifeCycle<CG: RskContractsGatewayApi> {
     contracts: Rc<CG>,
     rt_sync: RuntimeSync,
     blockchain_view: Rc<RefCell<BlockchainView>>,
     state: State,
 }
 
-impl<CG> BtcSignatureFlow<CG>
+impl<CG> BtcSignatureLifeCycle<CG>
 where
     CG: RskContractsGatewayApi,
 {
-    pub fn new(contracts_gateway: Rc<CG>, rt_sync: RuntimeSync, flow_id: Uuid) -> Self {
-        BtcSignatureFlow {
+    pub(in crate::flows::btc_signature) fn new(
+        contracts_gateway: Rc<CG>,
+        rt_sync: RuntimeSync,
+        flow_id: Uuid,
+    ) -> Self {
+        BtcSignatureLifeCycle {
             contracts: contracts_gateway,
             rt_sync,
             blockchain_view: Rc::new(RefCell::new(BlockchainView::new())),
@@ -73,13 +76,13 @@ where
     }
 
     #[cfg(test)]
-    pub fn new_for_tests(
+    pub(in crate::flows::btc_signature) fn new_for_tests(
         contracts_gateway: Rc<CG>,
         rt_sync: RuntimeSync,
         blockchain_view: Rc<RefCell<BlockchainView>>,
         flow_id: Uuid,
     ) -> Self {
-        BtcSignatureFlow {
+        BtcSignatureLifeCycle {
             contracts: contracts_gateway,
             rt_sync,
             blockchain_view,
@@ -92,7 +95,7 @@ where
         }
     }
 
-    pub(crate) fn modify_nonces_confirmation_status(
+    fn modify_nonces_confirmation_status(
         &mut self,
         block_number: Option<BlockNumber>,
     ) -> Result<()> {
@@ -116,7 +119,7 @@ where
         Self::modify_event_confirmation_status(flow_id, block_number, nonce_event)
     }
 
-    pub(crate) fn modify_signatures_confirmation_status(
+    fn modify_signatures_confirmation_status(
         &mut self,
         block_number: Option<BlockNumber>,
     ) -> Result<()> {
@@ -152,10 +155,14 @@ where
     }
 }
 
-impl<CG> BtcSignatureFlowApi for BtcSignatureFlow<CG>
+impl<CG> BtcSignatureLifecycleApi for BtcSignatureLifeCycle<CG>
 where
     CG: RskContractsGatewayApi,
 {
+    fn flow_id(&self) -> Uuid {
+        self.state.flow_id
+    }
+
     fn send_nonce_to_contracts(&mut self, data: &BitVmxSigningInfo) -> Result<()> {
         info!("Sending nonce to contract for flow {}", self.state.flow_id);
 
@@ -297,17 +304,13 @@ where
         Ok(signature_step.is_confirmed())
     }
 
-    fn get_hash_to_sign(&self) -> Option<Hash256> {
-        self.state.data.as_ref().map(|s| s.hash_to_sign.clone())
-    }
-
     fn blockchain_view(&self) -> Rc<RefCell<BlockchainView>> {
         self.blockchain_view.clone()
     }
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
+mod tests {
     use super::*;
     use crate::blockchain_tracker::BlockchainView;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
@@ -663,7 +666,7 @@ pub(crate) mod tests {
         let blockchain_view = Rc::new(RefCell::new(BlockchainView::new()));
 
         // create a signature flow instance
-        let mut flow = BtcSignatureFlow::new_for_tests(
+        let mut flow = BtcSignatureLifeCycle::new_for_tests(
             Rc::new(mock_contracts),
             rt_sync,
             blockchain_view,
@@ -698,7 +701,7 @@ pub(crate) mod tests {
         let blockchain_view = Rc::new(RefCell::new(BlockchainView::new()));
 
         // create a signature flow instance
-        let mut flow = BtcSignatureFlow::new_for_tests(
+        let mut flow = BtcSignatureLifeCycle::new_for_tests(
             Rc::new(mock_contracts),
             rt_sync,
             blockchain_view,
@@ -766,7 +769,7 @@ pub(crate) mod tests {
         let blockchain_view = Rc::new(RefCell::new(BlockchainView::new()));
 
         // create a signature flow instance
-        let mut flow = BtcSignatureFlow::new_for_tests(
+        let mut flow = BtcSignatureLifeCycle::new_for_tests(
             Rc::new(mock_contracts),
             rt_sync,
             blockchain_view.clone(),
@@ -812,7 +815,9 @@ pub(crate) mod tests {
         );
     }
 
-    pub(crate) fn create_test_block(block_number: BlockNumber) -> RskBlockAndUncles {
+    pub(in crate::flows::btc_signature) fn create_test_block(
+        block_number: BlockNumber,
+    ) -> RskBlockAndUncles {
         let (block, _uncle1, _uncle2) = create_block_and_uncles();
 
         // create a new block with the desired number and proper parent hash
@@ -837,7 +842,7 @@ pub(crate) mod tests {
         RskBlockAndUncles::new_no_uncles(modified_block)
     }
 
-    pub(crate) fn setup_nonce_mock(
+    pub(in crate::flows::btc_signature) fn setup_nonce_mock(
         mock_contracts: &mut MockRskContractsGatewayApi,
         expected_hash: Hash256,
         expected_nonce: &PubNonce,
@@ -862,7 +867,7 @@ pub(crate) mod tests {
             });
     }
 
-    pub(crate) fn setup_signature_mock(
+    pub(in crate::flows::btc_signature) fn setup_signature_mock(
         mock_contracts: &mut MockRskContractsGatewayApi,
         expected_hash: Hash256,
         expected_signature: &PartialSignature,
@@ -887,12 +892,12 @@ pub(crate) mod tests {
             });
     }
 
-    pub(crate) fn setup_test_flow_with_options(
+    pub(in crate::flows::btc_signature) fn setup_test_flow_with_options(
         nonce_contract_calls: Option<usize>,
         signature_contract_calls: Option<usize>,
     ) -> (
         BitVmxSigningInfo,
-        BtcSignatureFlow<MockRskContractsGatewayApi>,
+        BtcSignatureLifeCycle<MockRskContractsGatewayApi>,
         Rc<RefCell<BlockchainView>>,
     ) {
         // setup test data
@@ -923,7 +928,7 @@ pub(crate) mod tests {
         let blockchain_view = Rc::new(RefCell::new(BlockchainView::new()));
 
         // create a signature flow instance
-        let flow = BtcSignatureFlow::new_for_tests(
+        let flow = BtcSignatureLifeCycle::new_for_tests(
             Rc::new(mock_contracts),
             rt_sync,
             blockchain_view.clone(),
@@ -933,8 +938,8 @@ pub(crate) mod tests {
         (bitvmx_signature, flow, blockchain_view)
     }
 
-    pub(crate) fn complete_nonce_step<CG: RskContractsGatewayApi>(
-        flow: &mut BtcSignatureFlow<CG>,
+    pub(in crate::flows::btc_signature) fn complete_nonce_step<CG: RskContractsGatewayApi>(
+        flow: &mut BtcSignatureLifeCycle<CG>,
         bitvmx_signature: &BitVmxSigningInfo,
         start_block: BlockNumber,
         blockchain_view: &Rc<RefCell<BlockchainView>>,
@@ -960,8 +965,8 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    pub(crate) fn complete_signature_step<CG: RskContractsGatewayApi>(
-        flow: &mut BtcSignatureFlow<CG>,
+    pub(in crate::flows::btc_signature) fn complete_signature_step<CG: RskContractsGatewayApi>(
+        flow: &mut BtcSignatureLifeCycle<CG>,
         start_block: BlockNumber,
         blockchain_view: &Rc<RefCell<BlockchainView>>,
     ) -> Result<()> {
@@ -986,7 +991,9 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    pub(crate) fn fake_signature_bitvmx(protocol_name: &str) -> BitVmxSigningInfo {
+    pub(in crate::flows::btc_signature) fn fake_signature_bitvmx(
+        protocol_name: &str,
+    ) -> BitVmxSigningInfo {
         let hash_to_sign = "a1b2c3d4e5f60123456789abcdef0123456789abcdef0123456789abcdef0123"
             .try_into()
             .unwrap();

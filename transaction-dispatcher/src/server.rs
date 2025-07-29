@@ -1,8 +1,5 @@
 use crate::rsk_gateway::{DomainErrors, RskContractsGateway, RskContractsGatewayApi};
-use crate::types::{
-    AddMemberNonceInput, AddMemberSignatureInput, PeginAddressInput, RequestPeginInput,
-    RequestPegoutInput,
-};
+use crate::types::{PeginAddressInput, RequestPeginInput, RequestPegoutInput};
 use alloy_provider::Provider;
 use anyhow::{Context, Result};
 use axum::{
@@ -53,26 +50,6 @@ impl Server {
             .with_graceful_shutdown(self.shutdown_flag.wait_for())
             .await
             .context("Error starting server")
-    }
-
-    async fn add_member_nonce<P: Provider>(
-        Extension(rsk_gateway): Extension<RskContractsGateway<P>>,
-        Json(payload): Json<AddMemberNonceInput>,
-    ) -> impl IntoResponse {
-        match rsk_gateway.add_member_nonce(payload).await {
-            Ok(data) => (StatusCode::OK, Json(json!(data))).into_response(),
-            Err(e) => e.into_response(),
-        }
-    }
-
-    async fn add_member_signature<P: Provider>(
-        Extension(rsk_gateway): Extension<RskContractsGateway<P>>,
-        Json(payload): Json<AddMemberSignatureInput>,
-    ) -> impl IntoResponse {
-        match rsk_gateway.add_member_signature(payload).await {
-            Ok(data) => (StatusCode::OK, Json(json!(data))).into_response(),
-            Err(e) => e.into_response(),
-        }
     }
 
     async fn request_pegout<P: Provider>(
