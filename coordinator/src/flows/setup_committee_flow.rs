@@ -15,46 +15,93 @@ use common::msg_broker::bitvmx_types::{
     IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, P2PAddress,
 };
 use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
-#[cfg(test)]
-use mockall::automock;
 use transaction_dispatcher::types::ApplyToStreamInput;
 
-#[derive(Debug, Clone)]
+#[cfg(test)]
+use mockall::automock;
+
+#[cfg_attr(test, automock)]
+pub(crate) trait SetupCommitteeFlowFactoryApi<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi>
+{
+    fn create_flow(&self, flow_id: Uuid) -> SetupCommitteeFlow<CG, BC>;
+}
+
+#[derive(Default, Debug)]
+pub struct Context {
+    pub user_input: Option<ApplyToStreamInput>,
+    pub p2p_address: Option<P2PAddress>,
+    pub take_key: Option<PublicKey>,
+    pub dispute_key: Option<PublicKey>,
+    pub agg_take_key: Option<PublicKey>,
+    pub agg_dispute_key: Option<PublicKey>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Steps {
-    Step1(ApplyToStreamInput), // user input
-    Step2(P2PAddress),         // comm info
-    Step3(PublicKey),          // take key
-    Step4(PublicKey),          // dispute key
+    NotStarted,
+    //
+    UserInput,
+    BitVmxCommInfo,
+    BitVmxTakeKey,
+    BitVmxDisputeKey,
+    SetupTakeAggregatedKey,
+    SetupDisputeAggregatedKey,
+    //
+    Complete,
 }
 
 impl Steps {
-    fn num(&self) -> u8 {
+    fn next(&self) -> Result<Steps> {
+        let next = match self {
+            Steps::NotStarted => Steps::UserInput,
+            Steps::UserInput => Steps::BitVmxCommInfo,
+            Steps::BitVmxCommInfo => Steps::BitVmxTakeKey,
+            Steps::BitVmxTakeKey => Steps::BitVmxDisputeKey,
+            Steps::BitVmxDisputeKey => Steps::SetupTakeAggregatedKey,
+            Steps::SetupTakeAggregatedKey => Steps::SetupDisputeAggregatedKey,
+            Steps::SetupDisputeAggregatedKey => Steps::Complete,
+            Steps::Complete => {
+                bail!("Flow is already complete at {:?}", self)
+            }
+        };
+
+        Ok(next)
+    }
+}
+
+enum StepData {
+    ApplyToStreamInput(ApplyToStreamInput),
+    P2PAddress(P2PAddress),
+    PublicKey(PublicKey),
+}
+
+impl StepData {
+    fn into_user_input(self) -> Result<ApplyToStreamInput> {
         match self {
-            Steps::Step1(_) => 1,
-            Steps::Step2(_) => 2,
-            Steps::Step3(_) => 3,
-            Steps::Step4(_) => 4,
+            StepData::ApplyToStreamInput(input) => Ok(input),
+            _ => bail!("Expected ApplyToStreamInput"),
         }
     }
 
-    fn run<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi>(
-        &self,
-        flow: &mut SetupCommitteeFlow<CG, BC>,
-    ) -> Result<()> {
+    fn into_p2p_address(self) -> Result<P2PAddress> {
         match self {
-            Steps::Step1(input) => flow.request_bitvmx_comm_info(input),
-            Steps::Step2(_) => flow.request_bitvmx_take_pub_key(),
-            Steps::Step3(_) => flow.request_bitvmx_dispute_pub_key(),
-            Steps::Step4(_) => {
-                todo!("not yet implemented")
-            }
+            StepData::P2PAddress(addr) => Ok(addr),
+            _ => bail!("Expected P2PAddress"),
+        }
+    }
+
+    fn into_pubkey(self) -> Result<PublicKey> {
+        match self {
+            StepData::PublicKey(pk) => Ok(pk),
+            _ => bail!("Expected PublicKey"),
         }
     }
 }
 
 pub(crate) struct State {
     flow_id: Uuid,
-    steps: Vec<Steps>,
+    step: Steps,
+    ctx: Context,
 }
 
 pub(crate) struct SetupCommitteeFlow<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> {
@@ -78,34 +125,101 @@ where
             blockchain_view: Rc::new(RefCell::new(BlockchainView::new())),
             state: State {
                 flow_id,
-                steps: vec![],
+                step: Steps::NotStarted,
+                ctx: Context::default(),
             },
         }
     }
 
-    fn current_step(&mut self) -> u8 {
-        self.state.steps.len() as u8
-    }
+    fn next_step(&mut self, data: StepData) -> Result<()> {
+        self.state.step = self.state.step.next()?;
 
-    fn next_step(&mut self, step: Steps) -> Result<()> {
-        if step.num() != self.current_step() + 1 {
-            bail!("Invalid step change {step:?}");
-        }
-
-        step.run(self)?;
-
-        self.state.steps.push(step);
+        match self.state.step {
+            Steps::NotStarted => {
+                bail!("Flow is in NotStarted state");
+            }
+            Steps::UserInput => {
+                self.process_user_input(data)?;
+            }
+            Steps::BitVmxCommInfo => {
+                self.process_comm_info(data)?;
+            }
+            Steps::BitVmxTakeKey => {
+                self.process_take_key(data)?;
+            }
+            Steps::BitVmxDisputeKey => {
+                self.process_dispute_key(data)?;
+            }
+            Steps::SetupTakeAggregatedKey => {
+                self.process_take_aggregated_key(data)?;
+            }
+            Steps::SetupDisputeAggregatedKey => {
+                self.process_dispute_aggregated_key(data)?;
+            }
+            Steps::Complete => {
+                info!("Setup committee flow complete")
+            }
+        };
 
         Ok(())
     }
 
-    fn request_bitvmx_comm_info(&self, input: &ApplyToStreamInput) -> Result<()> {
+    fn process_user_input(&mut self, data: StepData) -> Result<()> {
+        let input = data.into_user_input()?;
+        self.state.ctx.user_input = Some(input.clone());
+        self.request_bitvmx_comm_info(&input)?;
+        Ok(())
+    }
+
+    fn process_comm_info(&mut self, data: StepData) -> Result<()> {
+        let addr = data.into_p2p_address()?;
+        self.state.ctx.p2p_address = Some(addr.clone());
+        self.request_bitvmx_take_pub_key()?;
+        Ok(())
+    }
+
+    fn process_take_key(&mut self, data: StepData) -> Result<()> {
+        let key = data.into_pubkey()?;
+        self.state.ctx.take_key = Some(key);
+        self.request_bitvmx_dispute_pub_key()?;
+        Ok(())
+    }
+
+    fn process_dispute_key(&mut self, data: StepData) -> Result<()> {
+        let key = data.into_pubkey()?;
+        self.state.ctx.dispute_key = Some(key);
+        self.setup_take_aggregated_pubkey()?;
+        Ok(())
+    }
+
+    fn process_take_aggregated_key(&mut self, data: StepData) -> Result<()> {
+        let key = data.into_pubkey()?;
+        self.state.ctx.agg_take_key = Some(key);
+        self.setup_dispute_aggregated_pubkey()?;
+        Ok(())
+    }
+
+    fn process_dispute_aggregated_key(&mut self, data: StepData) -> Result<()> {
+        let key = data.into_pubkey()?;
+        self.state.ctx.agg_dispute_key = Some(key);
+        Ok(())
+    }
+
+    fn request_bitvmx_comm_info(&self, _input: &ApplyToStreamInput) -> Result<()> {
         // TODO how do they know for whom to get comm info?
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo());
         Ok(())
     }
 
     fn request_bitvmx_take_pub_key(&self) -> Result<()> {
+        self.request_bitvmx_member_pub_key()
+    }
+
+    fn request_bitvmx_dispute_pub_key(&self) -> Result<()> {
+        self.request_bitvmx_member_pub_key()
+    }
+
+    fn request_bitvmx_member_pub_key(&self) -> Result<()> {
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetPubKey(
             self.state.flow_id,
             true,
@@ -113,11 +227,41 @@ where
         Ok(())
     }
 
-    fn request_bitvmx_dispute_pub_key(&self) -> Result<()> {
-        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetPubKey(
+    fn setup_take_aggregated_pubkey(&self) -> Result<()> {
+        // TODO(ask-Fairgate) how to get these keys? I guess it's for the whole committee
+        let mut committee_take_keys = vec![];
+
+        if let Some(my_take_key) = self.state.ctx.take_key {
+            committee_take_keys.push(my_take_key);
+            self.setup_aggregated_pubkey(committee_take_keys)
+        } else {
+            bail!("Take key not found in context");
+        }
+    }
+
+    fn setup_dispute_aggregated_pubkey(&self) -> Result<()> {
+        // TODO(ask-Fairgate) how to get these keys? I guess it's for the whole committee
+        let mut committee_dispute_keys = vec![];
+
+        if let Some(my_dispute_key) = self.state.ctx.dispute_key {
+            committee_dispute_keys.push(my_dispute_key);
+            self.setup_aggregated_pubkey(committee_dispute_keys)
+        } else {
+            bail!("Dispute key not found in context");
+        }
+    }
+
+    fn setup_aggregated_pubkey(&self, participants_keys: Vec<PublicKey>) -> Result<()> {
+        let leader_idx = 0; // TODO not yet implemented
+        let p2p_addresses = vec![]; // TODO(ask-Fairgate) CommitteeRegistry.getMemberCommunicationData???
+
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetupKey(
             self.state.flow_id,
-            true,
+            p2p_addresses,
+            Some(participants_keys),
+            leader_idx,
         ));
+
         Ok(())
     }
 
@@ -154,7 +298,7 @@ where
             UserRequests::ApplyToStream(input) => {
                 let flow_id = Uuid::new_v4();
                 let mut flow = self.flow_factory.create_flow(flow_id);
-                flow.next_step(Steps::Step1(input.clone()))?;
+                flow.next_step(StepData::ApplyToStreamInput(input.clone()))?;
                 self.flows.insert(flow_id, flow);
             }
         }
@@ -165,26 +309,18 @@ where
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
         match event {
             OutgoingBitVMXApiMessages::CommInfo(comm_info) => {
-                // TODO how do we distinguish between flows? I think BitVMX should add uuid into this
+                // TODO(ask-Fairgate) how do we distinguish between flows? I think BitVMX should add uuid into this
                 let first_flow = self.flows.values_mut().next();
                 match first_flow {
-                    Some(flow) => flow.next_step(Steps::Step2(comm_info.clone()))?,
+                    Some(flow) => flow.next_step(StepData::P2PAddress(comm_info.clone()))?,
                     None => bail!("No flow found for OutgoingBitVMXApiMessages::CommInfo"),
                 }
             }
             OutgoingBitVMXApiMessages::PubKey(uuid, key) => {
                 if let Some(flow) = self.flows.get_mut(uuid) {
-                    // required to distinguish between take key and dispute keys (same message under the hood)
-                    if flow.current_step() == 2 {
-                        flow.next_step(Steps::Step3(key.clone()))?;
-                    } else if flow.current_step() == 3 {
-                        flow.next_step(Steps::Step4(key.clone()))?;
-                    } else {
-                        bail!(
-                            "Invalid step {} for OutgoingBitVMXApiMessages::PubKey",
-                            flow.current_step()
-                        );
-                    }
+                    flow.next_step(StepData::PublicKey(key.clone()))?;
+                } else {
+                    bail!("No flow found for OutgoingBitVMXApiMessages::PubKey and id {uuid}");
                 }
             }
             _ => {}
@@ -194,15 +330,8 @@ where
     }
 
     fn shutdown(&mut self) {
-        // Handle shutdown logic if necessary
+        // TODO handle shutdown logic if necessary
     }
-}
-
-// TODO commonize with other flows
-#[cfg_attr(test, automock)]
-pub(crate) trait SetupCommitteeFlowFactoryApi<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi>
-{
-    fn create_flow(&self, flow_id: Uuid) -> SetupCommitteeFlow<CG, BC>;
 }
 
 pub(crate) struct SetupCommitteeFlowFactory<CG, BC>
@@ -233,6 +362,7 @@ where
     }
 }
 
+// TODO commonize with other flows
 impl<CG, BC> SetupCommitteeFlowFactoryApi<CG, BC> for SetupCommitteeFlowFactory<CG, BC>
 where
     CG: RskContractsGatewayApi,

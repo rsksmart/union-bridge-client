@@ -21,7 +21,7 @@ impl<BS: BitVmxBrokerServerApi> Executor<BS> {
 
     pub fn try_recv(&mut self) -> Result<()> {
         match self.broker_server.try_recv()? {
-            Some((IncomingBitVMXApiMessages::GenerateZKP(id, data), from)) => {
+            Some((IncomingBitVMXApiMessages::GenerateZKP(id, data, _), from)) => {
                 println!(
                     "Received GenerateZKP from {from} with id {id} and data {:?} at {}",
                     hex::encode(data),
