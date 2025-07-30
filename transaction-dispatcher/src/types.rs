@@ -150,7 +150,7 @@ pub struct GetMemberPublicKeysOutput {
     pub public_keys: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ApplyToStreamInput {
     pub stream_id: u8,
     pub role: u8,
