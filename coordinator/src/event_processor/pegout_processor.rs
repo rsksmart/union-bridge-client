@@ -87,8 +87,8 @@ pub struct PegoutProcessor<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi
 impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> PegoutProcessor<CG, BC> {
     pub fn new(rt_sync: RuntimeSync, contracts_gateway: Rc<CG>, bitvmx_broker: Rc<BC>) -> Self {
         Self {
-            rt_sync: rt_sync,
-            contracts_gateway: contracts_gateway,
+            rt_sync,
+            contracts_gateway,
             bitvmx_broker,
             blockchain: BlockchainView::new(),
             tracker: HashMap::new(),

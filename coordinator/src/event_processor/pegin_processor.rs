@@ -452,20 +452,6 @@ where
         Ok(())
     }
 
-    fn handle_contract_invoke(&self, method_name: &str, json_data: &Value) -> Result<()> {
-        match method_name {
-            ACCEPT_PEGIN => {
-                let input: AcceptPeginInput = serde_json::from_value(json_data.clone())
-                    .context("Failed to deserialize AcceptPeginInput")?;
-                self.invoke_contract(ACCEPT_PEGIN, || async {
-                    self.contracts.accept_pegin(input).await
-                })
-            }
-
-            _ => bail!("Unsupported method: {}", method_name),
-        }
-    }
-
     fn handle_request_pegin(&self, spv_proof: BtcTxSPVProof) -> Result<()> {
         let input: RequestPeginInput = spv_proof.into();
 
@@ -537,9 +523,12 @@ where
                         pegin_flow_id, method, data
                     );
 
-                    let json_data: Value = serde_json::from_str(data)?;
+                    let input: AcceptPeginInput = serde_json::from_str(data)
+                        .context("Failed to deserialize AcceptPeginInput")?;
 
-                    self.handle_contract_invoke(method, &json_data)?;
+                    self.invoke_contract(ACCEPT_PEGIN, || async {
+                        self.contracts.accept_pegin(input).await
+                    })?;
                 }
                 SIGNATURE_MESSAGE => {
                     info!(
