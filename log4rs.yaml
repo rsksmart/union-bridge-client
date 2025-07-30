@@ -24,5 +24,7 @@ root:
 loggers:
   tarpc: # from bitvmx-broker
     level: warn
-  alloy:
+  alloy_provider:
+    level: warn
+  alloy_rpc-client:
     level: warn
