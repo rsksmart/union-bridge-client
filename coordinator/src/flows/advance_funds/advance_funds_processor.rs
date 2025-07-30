@@ -15,7 +15,7 @@ use common::{
     msg_broker::broker::BROKER_SERVER_ID,
     types::{BlockNumber, RskBlockAndUncles},
 };
-use log::{debug, error, info, warn};
+use log::{debug, error, info, trace, warn};
 use primitive_types::U256;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -319,7 +319,7 @@ where
                 return Ok(());
             }
         } else {
-            debug!(
+            trace!(
                 "Ignoring block {}, no RequestAdvanceFunds events received yet",
                 block.number()
             );
