@@ -4,6 +4,7 @@ use axum::{http::StatusCode, response::IntoResponse, routing::get, Extension, Js
 use common::msg_broker::broker::{BrokerServer, BrokerServerApi};
 use common::msg_broker::types::FromServer;
 use common::shutdown_flag::ShutdownFlag;
+use log::info;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Duration;
@@ -55,6 +56,11 @@ impl Server {
         Extension(destination): Extension<u32>,
         Json(payload): Json<Value>,
     ) -> impl IntoResponse {
+        info!(
+            "Received apply stream request for destination: {} with payload: {:?}",
+            destination, payload
+        );
+
         // TODO(Jira) send a proper type instead of Value in scope of https://rsklabs.atlassian.net/browse/UB-214
         let res = broker.send(&FromServer::UserApplyStream(payload), destination);
         match res {

@@ -68,7 +68,7 @@ where
     }
 }
 
-// TODO(iago) this can me moved to common for all flows
+// TODO commonize with other flows
 #[cfg_attr(test, automock)]
 pub(crate) trait SetupCommitteeFlowFactoryApi<BSF: SetupCommitteeFlowApi> {
     fn create_flow(&self, flow_id: Uuid) -> BSF;
