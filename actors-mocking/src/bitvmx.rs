@@ -115,7 +115,8 @@ impl<BS: BitVmxBrokerServerApi> Executor<BS> {
         merkle_branch_path: String,
         merkle_branch_hashes: Vec<String>,
     ) -> Result<()> {
-        let spv_proof = Self::build_spv_proof(block_hash, &tx, merkle_branch_path, merkle_branch_hashes)?;
+        let spv_proof =
+            Self::build_spv_proof(block_hash, &tx, merkle_branch_path, merkle_branch_hashes)?;
 
         let event = OutgoingBitVMXApiMessages::SPVProof(tx.compute_txid(), Some(spv_proof));
 
@@ -134,7 +135,8 @@ impl<BS: BitVmxBrokerServerApi> Executor<BS> {
         merkle_branch_path: String,
         merkle_branch_hashes: Vec<String>,
     ) -> Result<()> {
-        let spv_proof = Self::build_spv_proof(block_hash, &tx, merkle_branch_path, merkle_branch_hashes)?;
+        let spv_proof =
+            Self::build_spv_proof(block_hash, &tx, merkle_branch_path, merkle_branch_hashes)?;
 
         let payload = json!(spv_proof);
 
