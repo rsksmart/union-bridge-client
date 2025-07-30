@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use union_contracts::bindings::peg_manager::PegManager::{
     PeginAccepted, PeginRequested, PegoutRegistered, PegoutRequested,
 };
+use transaction_dispatcher::types::ApplyToStreamInput;
 use union_contracts::bindings::signature_manager::SignatureManager::{
     AllNoncesReady, AllSignaturesReady,
 };
@@ -28,6 +29,11 @@ pub enum RskPegManagerEvents {
     AllNoncesReady(AllNoncesReadyEvent),
     AllSignaturesReady(AllSignaturesReadyEvent),
     UnknownEvent,
+}
+
+#[derive(Debug)]
+pub enum UserRequests {
+    ApplyToStream(ApplyToStreamInput),
 }
 
 pub type RequestAdvanceFundsEvent = EventWithBlock<RequestAdvanceFunds>;

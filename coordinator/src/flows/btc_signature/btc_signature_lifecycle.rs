@@ -3,7 +3,7 @@ use crate::config::REQUIRED_CONFIRMATIONS;
 use crate::types::BitVmxSigningInfo;
 use anyhow::{Context, Result, anyhow, bail};
 use common::runtime_sync::RuntimeSync;
-use common::types::{BlockNumber, Hash256};
+use common::types::BlockNumber;
 use log::info;
 use std::cell::RefCell;
 use std::rc::Rc;

@@ -8,7 +8,7 @@ check-fork = { path = "../check-fork" }
 common = { path = "../common" }
 actors-mocking = { path = "../actors-mocking" }
 check-fork-zkp = { path = "../check-fork/zkp" }
-transaction-dispatcher = { path = "../transaction-dispatcher" }
+transaction-dispatcher = { path = "../transaction-dispatcher", features = ["types"] }
 
 alloy-primitives = { workspace = true }
 alloy-sol-types = { workspace = true }

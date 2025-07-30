@@ -55,6 +55,11 @@ fn main() -> Result<()> {
         config.log_broker.port,
         config.broker_client_id,
     );
+    let user_broker = BrokerClient::new(
+        config.user_broker.ip,
+        config.user_broker.port,
+        config.broker_client_id,
+    );
     let bitvmx_broker = Rc::new(BitVmxBrokerClient::new(
         config.bitvmx_broker.ip,
         config.bitvmx_broker.port,
@@ -64,6 +69,7 @@ fn main() -> Result<()> {
     let monitor = Monitor::new(
         log_broker,
         block_broker,
+        user_broker,
         bitvmx_broker.clone(),
         config.get_peg_manager_contract_addresses(),
     );

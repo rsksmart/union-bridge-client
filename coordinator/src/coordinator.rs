@@ -99,6 +99,10 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
             .start_bitvmx_monitoring()
             .context("Failed to start BitVMX event monitoring")?;
 
+        self.monitor
+            .start_user_monitoring()
+            .context("Failed to start User request monitoring")?;
+
         let mut bitvmx_last_msg = Instant::now().sub(BITVMX_PING_AFTER_SILENCE);
         let mut bitvmx_ping: Option<Instant> = None;
 
@@ -116,6 +120,22 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
 
                 if let Some(event) = self
                     .monitor
+                    .try_user_request()
+                    .context("Error getting User request")?
+                {
+                    // each processor decides if the event is relevant
+                    self.processors.iter_mut().for_each(|p| {
+                        if let Err(e) = p.process_user_request(&event) {
+                            error!("Error processing User request {:?}: {:?}", event, e);
+                        }
+                    });
+
+                    // no sleep, try to get new messages asap
+                    message_received = true;
+                }
+
+                if let Some(event) = self
+                    .monitor
                     .try_bitvmx_event()
                     .context("Error getting BitVMX event")?
                 {
@@ -128,12 +148,19 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
                             error!("Error processing BitVMX event {:?}: {:?}", event, e);
                         }
                     });
+
+                    // no sleep, try to get new messages asap
+                    message_received = true;
                 }
 
                 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132
                 //  if block monitor restarted, this is not realising and keeps waiting logs forever
                 //  maybe using persistent storage instead of memory fixes it?
-                if let Some(event) = self.monitor.try_event().context("Error getting event")? {
+                if let Some(event) = self
+                    .monitor
+                    .try_rsk_event()
+                    .context("Error getting event")?
+                {
                     // each processor decides if the event is relevant
                     self.processors.iter_mut().for_each(|p| {
                         if let Err(e) = p.process_new_rsk_event(&event) {
@@ -319,6 +346,11 @@ pub(crate) mod tests {
             .returning(|| Ok(()));
 
         mock_monitor
+            .expect_start_user_monitoring()
+            .times(..)
+            .returning(|| Ok(()));
+
+        mock_monitor
             .expect_cancel_event_monitoring()
             .return_once(|| Ok(()))
             .once();
@@ -333,7 +365,7 @@ pub(crate) mod tests {
             .return_once(|| Ok(()))
             .once();
 
-        expect_try_event(vec![event_1, event_2], &mut mock_monitor);
+        expect_try_rsk_event(vec![event_1, event_2], &mut mock_monitor);
 
         expect_try_block(
             vec![
@@ -346,6 +378,11 @@ pub(crate) mod tests {
         mock_monitor
             .expect_try_bitvmx_event()
             .returning(move || Ok(Some(bitvmx_event.clone())));
+
+        mock_monitor
+            .expect_try_user_request()
+            .returning(|| Ok(None))
+            .times(1..);
 
         let shutdown_flag = ShutdownFlag::init();
         handle_shutdown(shutdown_flag.clone());
@@ -399,6 +436,11 @@ pub(crate) mod tests {
             .returning(|| Ok(()));
 
         mock_monitor
+            .expect_start_user_monitoring()
+            .times(..)
+            .returning(|| Ok(()));
+
+        mock_monitor
             .expect_start_bitvmx_monitoring()
             .times(..)
             .returning(|| Ok(()));
@@ -418,7 +460,7 @@ pub(crate) mod tests {
             .return_once(|| Ok(()))
             .once();
 
-        expect_try_event(vec![event_1, event_2], &mut mock_monitor);
+        expect_try_rsk_event(vec![event_1, event_2], &mut mock_monitor);
 
         expect_try_block(
             vec![
@@ -437,6 +479,11 @@ pub(crate) mod tests {
         mock_monitor
             .expect_try_bitvmx_event()
             .returning(move || Ok(None));
+
+        mock_monitor
+            .expect_try_user_request()
+            .returning(|| Ok(None))
+            .times(1..);
 
         let shutdown_flag = ShutdownFlag::init();
         handle_shutdown(shutdown_flag.clone());
@@ -471,10 +518,13 @@ pub(crate) mod tests {
         })
     }
 
-    fn expect_try_event(client_requests: Vec<RskPegManagerEvents>, monitor: &mut MockMonitorApi) {
+    fn expect_try_rsk_event(
+        client_requests: Vec<RskPegManagerEvents>,
+        monitor: &mut MockMonitorApi,
+    ) {
         use std::collections::VecDeque;
 
-        monitor.expect_try_event().returning_st({
+        monitor.expect_try_rsk_event().returning_st({
             let mut responses = client_requests
                 .into_iter()
                 .map(|e| Ok(Some(e)))

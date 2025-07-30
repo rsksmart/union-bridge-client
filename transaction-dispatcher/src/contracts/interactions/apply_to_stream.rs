@@ -59,8 +59,12 @@ impl<C: CommitteeRegistryContractApi, BP: BalanceProvider> ApplyToStreamInvoke<C
             .committee_public_keys
             .iter()
             .cloned()
-            .map(PublicKeyRegistration::from)
-            .collect();
+            .map(|key| {
+                PublicKeyRegistration::try_from(key).map_err(|e| {
+                    DomainErrors::InvalidPublicKey(format!("Invalid public key: {}", e))
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
         debug!(
             "ApplyToStream with derived PublicKeyRegistrations {:?}",
@@ -157,8 +161,9 @@ mod tests {
                 eq(fake_pub_keys()
                     .iter()
                     .cloned()
-                    .map(PublicKeyRegistration::from)
-                    .collect::<Vec<_>>()),
+                    .map(PublicKeyRegistration::try_from)
+                    .collect::<Result<Vec<_>, _>>()
+                    .unwrap()),
                 eq(3u8),
             )
             .returning(|_, _, _, _| {
@@ -257,25 +262,25 @@ mod tests {
     fn fake_pub_keys() -> [CommitteePublicKey; 3] {
         [
             CommitteePublicKey {
-                x: [1u8; 32],
-                y: [1u8; 32],
-                r: [1u8; 32],
-                s: [1u8; 32],
+                x: "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f".to_string(),
+                y: "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f".to_string(),
+                r: "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f".to_string(),
+                s: "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f".to_string(),
                 v: 27,
             },
             CommitteePublicKey {
-                x: [2u8; 32],
-                y: [2u8; 32],
-                r: [2u8; 32],
-                s: [2u8; 32],
+                x: "0x0f0e0d0c0b0a09080706050403020100fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0".to_string(),
+                y: "0x0f0e0d0c0b0a09080706050403020100fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0".to_string(),
+                r: "0x0f0e0d0c0b0a09080706050403020100fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0".to_string(),
+                s: "0x0f0e0d0c0b0a09080706050403020100fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0".to_string(),
                 v: 28,
             },
             CommitteePublicKey {
-                x: [3u8; 32],
-                y: [3u8; 32],
-                r: [3u8; 32],
-                s: [3u8; 32],
-                v: 29,
+                x: "0xff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00".to_string(),
+                y: "0xff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00".to_string(),
+                r: "0xff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00".to_string(),
+                s: "0xff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00".to_string(),
+                v: 28,
             },
         ]
     }

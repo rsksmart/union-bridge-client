@@ -16,6 +16,7 @@ const COMMITTEE_REGISTRY_CONTRACT_NAME: &str = "CommitteeRegistry";
 pub struct Config {
     pub log_broker: BrokerConfig,
     pub block_broker: BrokerConfig,
+    pub user_broker: BrokerConfig,
     pub bitvmx_broker: BrokerConfig,
     pub broker_client_id: u32,
     pub contracts: Vec<ContractConfig>,

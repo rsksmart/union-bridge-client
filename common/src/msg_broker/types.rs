@@ -1,7 +1,8 @@
-use crate::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
 use crate::types::{Address, RskBlockAndUncles, RskLog};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+// TODO(Jira) https://rsklabs.atlassian.net/browse/UB-213
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum ToServer {
@@ -14,18 +15,17 @@ pub enum ToServer {
     // log-indexer
     SubscribeLogs(Address),
     UnsubscribeLogs(Address),
-
-    // real BitVMX API messages
-    ToBitVMX(IncomingBitVMXApiMessages),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum FromServer {
+    // Indexers
     Block(RskBlockAndUncles),
     Log(RskLog),
 
-    // real BitVMX incoming messages
-    FromBitVMX(OutgoingBitVMXApiMessages),
+    // User API
+    UserApplyStream(Value), // TODO(iago) get TransactionDispatcher destination type for now (while not moved to coomon)
+
     // fake bitvmx incoming messages
     RegisterPegout(Value),
 }
