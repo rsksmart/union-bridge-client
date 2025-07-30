@@ -141,7 +141,7 @@ pub struct GetMemberPublicKeysOutput {
 pub struct ApplyToStreamInput {
     pub stream_id: u8,
     pub role: u8,
-    pub committee_public_keys: [CommitteePublicKey; 3],
+    pub committee_public_keys: [CommitteePublicKey; 3], // TODO(iago) different type for Coordinator input, committee_public_keys is not required there and calculated afterwards
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]

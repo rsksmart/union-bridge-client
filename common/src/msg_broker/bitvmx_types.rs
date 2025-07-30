@@ -12,6 +12,7 @@ pub enum IncomingBitVMXApiMessages {
     Ping(),
     SetVar(Uuid, String, VariableTypes),
     SetWitness(Uuid, String, WitnessTypes),
+    SetFundingUtxo(Utxo),
     GetVar(Uuid, String),
     GetWitness(Uuid, String),
     GetCommInfo(),
@@ -22,18 +23,16 @@ pub enum IncomingBitVMXApiMessages {
     SubscribeToTransaction(Uuid, Txid),
     SubscribeUTXO(),
     SubscribeToRskPegin(),
+    GetSPVProof(Txid),
     DispatchTransaction(Uuid, Transaction),
     DispatchTransactionName(Uuid, String),
-    SetupKey(Uuid, Vec<P2PAddress>, u16),
+    SetupKey(Uuid, Vec<P2PAddress>, Option<Vec<PublicKey>>, u16),
     GetAggregatedPubkey(Uuid),
     GetKeyPair(Uuid),
     GetPubKey(Uuid, bool),
-    GenerateZKP(Uuid, Vec<u8>),
+    GenerateZKP(Uuid, Vec<u8>, String),
     ProofReady(Uuid),
-    ExecuteZKP(),
-    GetZKPExecutionResult(),
-    Finalize(),
-    GetSPVProof(Txid),
+    GetZKPExecutionResult(Uuid),
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -53,7 +52,7 @@ pub enum OutgoingBitVMXApiMessages {
     AggregatedPubkey(Uuid, PublicKey),
     AggregatedPubkeyNotReady(Uuid),
     TransactionInfo(Uuid, String, Transaction),
-    ZKPResult(/* Add appropriate type */),
+    ZKPResult(Uuid, Vec<u8>, Vec<u8>),
     ExecutionResult(/* Add appropriate type */),
     CommInfo(P2PAddress),
     KeyPair(Uuid, PrivateKey, PublicKey),
@@ -64,6 +63,7 @@ pub enum OutgoingBitVMXApiMessages {
     HashedMessage(Uuid, String, u32, u32, String),
     ProofReady(Uuid),
     ProofNotReady(Uuid),
+    ProofGenerationError(Uuid, String),
     SPVProof(Txid, Option<BtcTxSPVProof>),
 }
 
@@ -225,4 +225,12 @@ pub struct BtcTxSPVProof {
     pub tx: Transaction,
     pub merkle_branch_path: String,
     pub merkle_branch_hashes: Vec<[u8; 32]>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Utxo {
+    pub txid: Txid,
+    pub vout: u32,
+    pub amount: u64,
+    pub pub_key: PublicKey,
 }
