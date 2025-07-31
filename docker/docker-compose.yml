@@ -84,7 +84,6 @@ services:
       <<: *base-build
       args:
         - CRATE=transaction-dispatcher
-        - FOUNDRY_VERSION=${FOUNDRY_VERSION}
     container_name: transaction-dispatcher
     volumes:
       - *common-config
@@ -98,7 +97,6 @@ services:
         ipv4_address: 172.25.0.12
     environment:
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
-      - FUNDING_ADDRESS=${FUNDING_ADDRESS}
     healthcheck:
       <<: *base-healthcheck
       test: [ "CMD", "pgrep", "-f", "transaction-dispatcher" ]
