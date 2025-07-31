@@ -150,6 +150,8 @@ where
         for (tx_hash, state) in self.tracker.iter_mut() {
             let flow_id = state.pegin_flow_id;
 
+            // TODO here we also need to check if the event (tx id?) is for our flow or for other flow
+
             let sub_flow = match state.btc_signatures_flow.as_mut() {
                 None => continue,
                 Some(sub_flow) if sub_flow.is_done() => continue, // nothing else to do
