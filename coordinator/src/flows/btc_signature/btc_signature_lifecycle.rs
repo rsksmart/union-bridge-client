@@ -3,7 +3,7 @@ use crate::config::REQUIRED_CONFIRMATIONS;
 use crate::types::BitVmxSigningInfo;
 use anyhow::{Context, Result, anyhow, bail};
 use common::runtime_sync::RuntimeSync;
-use common::types::BlockNumber;
+use common::types::{BlockNumber, Hash256};
 use log::info;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -33,6 +33,8 @@ pub(crate) trait BtcSignatureLifecycleApi {
     fn unset_all_signatures_ready(&mut self) -> Result<()>;
 
     fn is_all_signatures_ready_confirmed(&self) -> Result<bool>;
+
+    fn get_hash_to_sign(&self) -> Option<Hash256>;
 
     fn blockchain_view(&self) -> Rc<RefCell<BlockchainView>>;
 
@@ -311,6 +313,10 @@ where
             .ok_or_else(|| anyhow!("flow {} is not at Signatures step", self.state.flow_id))?;
 
         Ok(signature_step.is_confirmed())
+    }
+
+    fn get_hash_to_sign(&self) -> Option<Hash256> {
+        self.state.data.as_ref().map(|s| s.hash_to_sign.clone())
     }
 
     fn blockchain_view(&self) -> Rc<RefCell<BlockchainView>> {

@@ -8,10 +8,10 @@ use log::{error, warn};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use transaction_dispatcher::types::ApplyToStreamInput;
 use union_contracts::bindings::peg_manager::PegManager::{
     PeginAccepted, PeginRequested, PegoutRegistered, PegoutRequested,
 };
-use transaction_dispatcher::types::ApplyToStreamInput;
 use union_contracts::bindings::signature_manager::SignatureManager::{
     AllNoncesReady, AllSignaturesReady,
 };

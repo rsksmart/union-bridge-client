@@ -88,19 +88,27 @@ where
 
         match event {
             RskPegManagerEvents::AllNoncesReady(event) => {
-                if event.removed {
-                    self.lifecycle.unset_all_nonces_ready()?;
-                } else {
-                    self.lifecycle.set_all_nonces_ready(event.block_number)?;
+                if let Some(hash) = self.lifecycle.get_hash_to_sign() {
+                    if hash == event.inner {
+                        if event.removed {
+                            self.lifecycle.unset_all_nonces_ready()?;
+                        } else {
+                            self.lifecycle.set_all_nonces_ready(event.block_number)?;
+                        }
+                    }
                 }
                 Ok(())
             }
             RskPegManagerEvents::AllSignaturesReady(event) => {
-                if event.removed {
-                    self.lifecycle.unset_all_signatures_ready()?;
-                } else {
-                    self.lifecycle
-                        .set_all_signatures_ready(event.block_number)?;
+                if let Some(hash) = self.lifecycle.get_hash_to_sign() {
+                    if hash == event.inner {
+                        if event.removed {
+                            self.lifecycle.unset_all_signatures_ready()?;
+                        } else {
+                            self.lifecycle
+                                .set_all_signatures_ready(event.block_number)?;
+                        }
+                    }
                 }
                 Ok(())
             }
@@ -268,6 +276,10 @@ mod tests {
         // setup mock flow to handle the event
         let mut mock_flow = MockBtcSignatureLifecycleApi::new();
         mock_flow
+            .expect_get_hash_to_sign()
+            .times(1)
+            .returning(move || Some(hash_to_sign));
+        mock_flow
             .expect_set_all_nonces_ready()
             .with(eq(block_number))
             .times(1)
@@ -305,6 +317,10 @@ mod tests {
 
         let mut mock_flow = MockBtcSignatureLifecycleApi::new();
         mock_flow
+            .expect_get_hash_to_sign()
+            .times(1)
+            .returning(move || Some(hash_to_sign));
+        mock_flow
             .expect_unset_all_nonces_ready()
             .times(1)
             .returning(|| Ok(()));
@@ -340,6 +356,10 @@ mod tests {
         });
 
         let mut mock_flow = MockBtcSignatureLifecycleApi::new();
+        mock_flow
+            .expect_get_hash_to_sign()
+            .times(1)
+            .returning(move || Some(hash_to_sign));
         mock_flow
             .expect_set_all_signatures_ready()
             .with(eq(block_number))
@@ -377,6 +397,10 @@ mod tests {
         });
 
         let mut mock_flow = MockBtcSignatureLifecycleApi::new();
+        mock_flow
+            .expect_get_hash_to_sign()
+            .times(1)
+            .returning(move || Some(hash_to_sign));
         mock_flow
             .expect_unset_all_signatures_ready()
             .times(1)
@@ -659,6 +683,10 @@ mod tests {
 
         // setup mock flow to fail when setting nonces ready
         let mut mock_flow = MockBtcSignatureLifecycleApi::new();
+        mock_flow
+            .expect_get_hash_to_sign()
+            .times(1)
+            .returning(move || Some(hash_to_sign));
         mock_flow
             .expect_set_all_nonces_ready()
             .with(eq(block_number))
