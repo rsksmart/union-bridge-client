@@ -25,6 +25,7 @@ COPY transaction-dispatcher transaction-dispatcher
 COPY key-manager key-manager
 COPY check-fork check-fork
 COPY coordinator coordinator
+COPY user-api user-api
 COPY actors-mocking actors-mocking
 
 # SSH mount for private repos

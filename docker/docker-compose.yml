@@ -137,6 +137,28 @@ services:
         condition: service_healthy
       transaction-dispatcher:
         condition: service_healthy
+      user-api:
+        condition: service_healthy
+
+  user-api:
+    <<: *base-service
+    build:
+      <<: *base-build
+      args:
+        - CRATE=user-api
+    container_name: user-api
+    volumes:
+      - *common-config
+      - *log-config
+    ports:
+      - "5551:5551"  # http server port from the configuration
+    networks:
+      internal:
+        ipv4_address: 172.25.0.15
+    healthcheck:
+      <<: *base-healthcheck
+      test: [ "CMD", "pgrep", "-f", "user-api" ]
+    entrypoint: [ "/app/user-api", "--config-path", "/app/config" ]
 
   actors-mocking:
     <<: *base-service
