@@ -96,10 +96,13 @@ services:
 
   coordinator:
     <<: *base-service
-    platform: linux/amd64
+    # when the zkp feature is re-enabled, use this to build coordinator in an image with amd64 support (required by Risc0 in Macs with M chips) via Dockerfile_coordinator
+    # platform: linux/amd64
     build:
       <<: *base-build
-      dockerfile: docker/Dockerfile_coordinator # custom Dockerfile, risc0 needs amd64
+      dockerfile: docker/Dockerfile
+      # when the zkp feature is re-enabled, use this to build coordinator in an image with amd64 support (required by Risc0 in Macs with M chips)
+      # dockerfile: docker/Dockerfile_coordinator
       args:
         - CRATE=coordinator
     container_name: coordinator

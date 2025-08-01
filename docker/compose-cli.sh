@@ -88,9 +88,10 @@ build_builder() {
   echo "🔨 Building Standard Builder image with command: ${cmd[@]}"
   "${cmd[@]}"
 
-  cmd=(docker build --ssh default --platform linux/amd64 -t union-client-builder:rust-1.86-risc0-v1 -f Dockerfile_builder_risc0 .)
-  echo "🔨 Building Risc0 Builder image with command: ${cmd[@]}"
-  "${cmd[@]}"
+# when the zkp feature is re-enabled, use this to build coordinator in an image with amd64 support (required by Risc0 in Macs with M chips) via Dockerfile_coordinator
+#  cmd=(docker build --ssh default --platform linux/amd64 -t union-client-builder:rust-1.86-risc0-v1 -f Dockerfile_builder_risc0 .)
+#  echo "🔨 Building Risc0 Builder image with command: ${cmd[@]}"
+#  "${cmd[@]}"
 
   echo "✅ Builder Base images ready"
 }

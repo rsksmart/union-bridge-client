@@ -4,8 +4,6 @@ ARG CRATE
 ARG FEATURES
 # --build-arg to specify just one crate to build in the builder stage
 ARG JUST_CRATE
-# --build-arg to specify crates to exclude from the workspace build
-ARG EXCLUDES
 
 # --- BUILDER STAGE ---
 
@@ -53,9 +51,11 @@ RUN --mount=type=ssh,id=default mkdir -p .cargo && \
 # 1) build the entire workspace and reuse among containers, to reduce build time
 # 2) build just one crate for speed
 # optionally builds with --features if provided
-# check-fork needs amd64 architecture due to Risc0, so we exclude it and also coordinator, which is built in a separate stage, as it has it as dependency
 # we also exclude key-manager, which is built always in the next step
-RUN --mount=type=ssh,id=default cargo build --workspace --exclude coordinator --exclude check-fork --exclude check-fork-zkp --exclude key-manager --exclude actors-mocking --quiet --release${JUST_CRATE:+ -p $JUST_CRATE}${FEATURES:+ --features $FEATURES};
+ARG EXCLUDES="--exclude check-fork --exclude check-fork-zkp --exclude key-manager --exclude actors-mocking"
+# when the zkp feature is re-enabled, use this to build coordinator in an image with amd64 support (required by Risc0 in Macs with M chips) via Dockerfile_coordinator
+# EXCLUDES="--exclude coordinator--exclude check-fork --exclude check-fork-zkp --exclude key-manager --exclude actors-mocking"
+RUN --mount=type=ssh,id=default cargo build --workspace --quiet --release ${EXCLUDES}${JUST_CRATE:+ -p $JUST_CRATE}${FEATURES:+ --features $FEATURES};
 # build key-manager always (even if $JUST_CRATE provided), as it might be used by other services
 RUN --mount=type=ssh,id=default cargo build --quiet --release -p key-manager;
 
