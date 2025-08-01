@@ -259,7 +259,7 @@ mod tests {
         }
     }
 
-    fn fake_pub_keys() -> [CommitteePublicKey; 3] {
+    fn fake_pub_keys() -> Vec<CommitteePublicKey> {
         [
             CommitteePublicKey {
                 x: "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f".to_string(),
@@ -283,5 +283,6 @@ mod tests {
                 v: 28,
             },
         ]
+        .to_vec()
     }
 }

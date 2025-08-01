@@ -118,15 +118,15 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
 
                 let mut message_received = false;
 
-                if let Some(event) = self
+                if let Some(req) = self
                     .monitor
                     .try_user_request()
                     .context("Error getting User request")?
                 {
                     // each processor decides if the event is relevant
                     self.processors.iter_mut().for_each(|p| {
-                        if let Err(e) = p.process_user_request(&event) {
-                            error!("Error processing User request {:?}: {:?}", event, e);
+                        if let Err(e) = p.process_user_request(&req) {
+                            error!("Error processing User request {:?}: {:?}", req, e);
                         }
                     });
 

@@ -9,7 +9,7 @@ use common::{
     },
     types::{Address, RskBlockAndUncles},
 };
-use log::{debug, info, trace};
+use log::{debug, error, info, trace};
 use std::rc::Rc;
 
 #[cfg(test)]
@@ -298,18 +298,18 @@ where
 
     pub fn try_user_request(&self) -> Result<Option<UserRequests>> {
         match self.user_broker.try_recv()? {
-            Some(FromServer::UserApplyStream(req)) => {
-                // TODO(Jira) this should not be needed afer https://rsklabs.atlassian.net/browse/UB-214
-                let input = match serde_json::from_value(req) {
-                    Ok(val) => val,
-                    Err(e) => {
-                        log::error!("Failed to deserialize UserApplyStream request: {}", e);
-                        return Ok(None);
+            // TODO(Jira) this should not be needed after https://rsklabs.atlassian.net/browse/UB-213
+            Some(FromServer::UserRequest(req)) => {
+                match serde_json::from_value::<UserRequests>(req) {
+                    Ok(ur) => {
+                        info!("Received UserRequest {ur:?}",);
+                        Ok(Some(ur))
                     }
-                };
-
-                info!("Received UserApplyStream {:?}", input);
-                Ok(Some(UserRequests::ApplyToStream(input)))
+                    Err(e) => {
+                        error!("Failed to deserialize UserRequest request: {}", e);
+                        Ok(None)
+                    }
+                }
             }
             Some(br) => {
                 bail!("Unexpected request from User {:?}", br)

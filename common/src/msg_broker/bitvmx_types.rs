@@ -234,3 +234,35 @@ pub struct Utxo {
     pub amount: u64,
     pub pub_key: PublicKey,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewCommittee {
+    pub my_role: ParticipantRole,
+    pub take_aggregated_key: PublicKey,
+    pub dispute_aggregated_key: PublicKey,
+    pub addresses: HashMap<PublicKey, P2PAddress>,
+    pub operator_count: u32,
+    pub watchtower_count: u32,
+    pub packet_size: u32,
+}
+
+impl NewCommittee {
+    pub fn name() -> String {
+        "new_committee".to_string()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ParticipantRole {
+    Prover,
+    Verifier,
+}
+
+impl From<ParticipantRole> for u8 {
+    fn from(role: ParticipantRole) -> Self {
+        match role {
+            ParticipantRole::Prover => 1,
+            ParticipantRole::Verifier => 2,
+        }
+    }
+}

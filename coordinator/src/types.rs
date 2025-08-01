@@ -3,18 +3,22 @@ use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanc
 use alloy_primitives::{B256, LogData};
 use alloy_sol_types::SolEvent;
 use bitcoin::PublicKey;
+use common::msg_broker::bitvmx_types::ParticipantRole;
 use common::types::{BlockHash, BlockNumber, Hash256, RskLog, TxHash};
 use log::{error, warn};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use transaction_dispatcher::types::ApplyToStreamInput;
+use transaction_dispatcher::types::{ApplyToStreamInput, CommitteePublicKey};
 use union_contracts::bindings::peg_manager::PegManager::{
     PeginAccepted, PeginRequested, PegoutRegistered, PegoutRequested,
 };
 use union_contracts::bindings::signature_manager::SignatureManager::{
     AllNoncesReady, AllSignaturesReady,
 };
+
+use crate::user_requests::ApplyToStream;
+
 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-183
 
 #[derive(Eq, PartialEq, Debug)]
@@ -31,9 +35,9 @@ pub enum RskPegManagerEvents {
     UnknownEvent,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 pub enum UserRequests {
-    ApplyToStream(ApplyToStreamInput),
+    ApplyToStream(ApplyToStream),
 }
 
 pub type RequestAdvanceFundsEvent = EventWithBlock<RequestAdvanceFunds>;

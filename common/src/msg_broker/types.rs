@@ -24,7 +24,7 @@ pub enum FromServer {
     Log(RskLog),
 
     // User API
-    UserApplyStream(Value), // TODO(iago) get TransactionDispatcher destination type for now (while not moved to coomon)
+    UserRequest(Value),
 
     // fake bitvmx incoming messages
     RegisterPegout(Value),
