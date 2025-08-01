@@ -62,7 +62,7 @@ impl Server {
         );
 
         // TODO(Jira) send a proper type instead of Value in scope of https://rsklabs.atlassian.net/browse/UB-214
-        let res = broker.send(&FromServer::UserApplyStream(payload), destination);
+        let res = broker.send(&FromServer::UserRequest(payload), destination);
         match res {
             Ok(_) => (StatusCode::OK, Json(json!({ "result": "ok" }))),
             Err(e) => (
