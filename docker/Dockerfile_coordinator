@@ -39,7 +39,7 @@ ENV RISC0_HOME=/opt/risc0
 ENV RUST_LOG=error
 ENV CARGO_TERM_QUIET=true
 
-RUN --mount=type=ssh,id=default cargo build --quiet --release -p coordinator ${FEATURES:+ --features $FEATURES};
+RUN --mount=type=ssh,id=default cargo build --quiet --release -p coordinator${FEATURES:+ --features $FEATURES};
 
 # --- RUNTIME STAGE ---
 
