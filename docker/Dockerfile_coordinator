@@ -54,7 +54,7 @@ RUN apt-get update -y && \
 COPY --from=builder /app/target/release/coordinator /app/coordinator
 
 # set environment variables
-ENV RUST_BACKTRACE=1
-ENV RUST_LOG=debug
+# ENV RUST_BACKTRACE=1
+# ENV RUST_LOG=debug
 
 # ENTRYPOINT is handled in docker-compose.yml

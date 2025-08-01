@@ -89,7 +89,7 @@ COPY docker/dockerfile_sh/contracts-setup.sh /app/contracts-setup.sh
 RUN --mount=type=ssh,id=default chmod +x /app/contracts-setup.sh && /app/contracts-setup.sh
 
 # set environment variables
-ENV RUST_BACKTRACE=1
-ENV RUST_LOG=debug
+# ENV RUST_BACKTRACE=1
+# ENV RUST_LOG=debug
 
 # ENTRYPOINT is handled in docker-compose.yml
