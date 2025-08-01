@@ -16,37 +16,50 @@ _Note: All the commands mentioned below should be run from the `docker` director
 Usually you will only need to build the project itself, which is done by running the following command:
 
 ```bash
-./build.sh
+./docker_build.sh
 ```
 
 In anvil mode;
 
 ```bash
-./build.sh anvil
+./docker_build.sh anvil
+```
+
+With mocking (actors-mocking):
+
+```bash
+./docker_build.sh mocking
 ```
 
 ## Just a Service
+
 To build just one service, run:
 
 ```bash
-./build.sh service="<service_name>"
+./docker_build.sh service="<service_name>"
 ```
 
-This mode works also with `anvil`:
+This mode works also with `anvil`.
 
 ## Notes
 
-_Note: if you are not in a NIX system, you can check the commands within `docker/build.sh` and run them manually as a temporary approach._
+_Note: if you are not in a NIX system, you can check the commands within `docker/docker_build.sh` and run them manually as a temporary approach._
 
 # Run
 
 To run the project's docker-compose, run:
 
 ```bash
-docker compose up
+./docker_run.sh
 ```
 
-_Note: take into account that the Cargo features are specified at build time, so if you want to change them, you need to rebuild the compose._
+If you want to run with mocks, you first need to build with mocking (see above) and then run:
+
+```bash
+./docker_run.sh mocking
+```
+
+_Note: take into account that mocking and the Cargo features are specified at build time, so if you want to change them, you need to rebuild the compose._
 
 # actors-mocking
 
@@ -59,5 +72,6 @@ If you want to use the `actors-mocking` CLI, run (you may need to double-enter):
 ## Troubleshooting
 
 If you see an error like _Failed to get initial block by hash_, you may need to either:
+
 1) reconfigure the `indexer.initial_block_hash` if running without features
-2) rebuild the compose with the `anvil` feature enabled, which will skip this check: `./build.sh anvil`
+2) rebuild the compose with the `anvil` feature enabled, which will skip this check: `./docker_build.sh anvil`

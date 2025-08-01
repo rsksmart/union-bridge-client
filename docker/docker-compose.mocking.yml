@@ -1,0 +1,61 @@
+#####################################################################################################################################
+# DISCLAIMER: This docker-compose file is intended for development and testing purposes only, not for production use. ###############
+#####################################################################################################################################
+
+services:
+  actors-mocking:
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile_mocking
+      ssh:
+        - default=${SSH_AUTH_SOCK}
+      args:
+        - CRATE=actors-mocking
+        - FOUNDRY_VERSION=${FOUNDRY_VERSION}
+        - UNION_CONTRACTS_TAG=${UNION_CONTRACTS_TAG}
+    environment:
+      - RUST_BACKTRACE=1
+      - RUST_LOG=debug
+      - UNION_CONTRACTS_PATH=/app/contracts
+      - UNION_CONTRACTS_DEPLOY_SCRIPT=shell/script/deploy/deploy-local.sh
+      - UNION_CONTRACTS_SETUP_SCRIPT=shell/script/integration-test/packet-creation-flow.sh
+      - CHECK_FORK_REQUIRED_NUM_BLOCKS=${CHECK_FORK_REQUIRED_NUM_BLOCKS}
+      - FAKE_PEGMANAGER_CONTRACT_ADDRESS=${FAKE_PEGMANAGER_CONTRACT_ADDRESS}
+    volumes:
+      - ../config/docker:/app/config:ro
+      - ./log4rs.yaml:/app/log4rs.yaml:ro
+    stdin_open: true   # for CLI
+    tty: true          # for CLI
+    container_name: actors-mocking
+    ports:
+      - "8545:8545"  # anvil port, hardcoded in crate
+    networks:
+      internal:
+        ipv4_address: 172.25.0.14
+    healthcheck:
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+      test: [
+        "CMD-SHELL",
+        # check FakePegManager is deployed (it is the last contract deployed)
+        "RUST_LOG=error cast code ${FAKE_PEGMANAGER_CONTRACT_ADDRESS} --rpc-url http://localhost:8545 | grep -vq '^0x$'"
+      ]
+    entrypoint: [ "/app/actors-mocking" ]
+    restart: no
+
+  log-indexer:
+    depends_on:
+      actors-mocking:
+        condition: service_healthy
+
+  block-indexer:
+    depends_on:
+      actors-mocking:
+        condition: service_healthy
+
+  transaction-dispatcher:
+    depends_on:
+      actors-mocking:
+        condition: service_healthy
