@@ -41,10 +41,13 @@ RUN apt-get update -y && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+ENV RUST_LOG=error
+ENV CARGO_TERM_QUIET=true
+
 # SSH mount for private repos
 RUN --mount=type=ssh,id=default mkdir -p .cargo && \
     echo '[net]\ngit-fetch-with-cli = true' > .cargo/config.toml && \
-    cargo fetch # TODO(Jira) re-add --locked in scope of https://rsklabs.atlassian.net/browse/UB-176
+    cargo fetch --locked
 
 # two build modes:
 # 1) build the entire workspace and reuse among containers, to reduce build time
@@ -52,9 +55,9 @@ RUN --mount=type=ssh,id=default mkdir -p .cargo && \
 # optionally builds with --features if provided
 # check-fork needs amd64 architecture due to Risc0, so we exclude it and also coordinator, which is built in a separate stage, as it has it as dependency
 # we also exclude key-manager, which is built always in the next step
-RUN --mount=type=ssh,id=default cargo build --workspace --exclude coordinator --exclude check-fork --exclude check-fork-zkp --exclude key-manager${EXCLUDES:+ $EXCLUDES} --release${JUST_CRATE:+ -p $JUST_CRATE}${FEATURES:+ --features $FEATURES};
+RUN --mount=type=ssh,id=default cargo build --workspace --exclude coordinator --exclude check-fork --exclude check-fork-zkp --exclude key-manager --quiet --release${JUST_CRATE:+ -p $JUST_CRATE}${FEATURES:+ --features $FEATURES};
 # build key-manager always (even if $JUST_CRATE provided), as it might be used by other services
-RUN --mount=type=ssh,id=default cargo build --release -p key-manager;
+RUN --mount=type=ssh,id=default cargo build --quiet --release -p key-manager;
 
 # --- RUNTIME STAGE ---
 
@@ -75,7 +78,7 @@ COPY --from=builder /app/target/release/${CRATE} /app/${CRATE}
 COPY --from=builder /app/target/release/key-manager /app/key-manager
 
 # set environment variables
-# ENV RUST_BACKTRACE=1
-# ENV RUST_LOG=debug
+ENV RUST_BACKTRACE=1
+ENV RUST_LOG=debug
 
 # ENTRYPOINT is handled in docker-compose.yml

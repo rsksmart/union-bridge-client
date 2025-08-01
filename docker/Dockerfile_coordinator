@@ -36,7 +36,10 @@ RUN --mount=type=ssh,id=default mkdir -p .cargo && \
 # required by Risc0, otherwise it points to ~/.risc0
 ENV RISC0_HOME=/opt/risc0
 
-RUN --mount=type=ssh,id=default cargo build --release -p coordinator ${FEATURES:+ --features $FEATURES};
+ENV RUST_LOG=error
+ENV CARGO_TERM_QUIET=true
+
+RUN --mount=type=ssh,id=default cargo build --quiet --release -p coordinator ${FEATURES:+ --features $FEATURES};
 
 # --- RUNTIME STAGE ---
 
@@ -54,7 +57,7 @@ RUN apt-get update -y && \
 COPY --from=builder /app/target/release/coordinator /app/coordinator
 
 # set environment variables
-# ENV RUST_BACKTRACE=1
-# ENV RUST_LOG=debug
+ENV RUST_BACKTRACE=1
+ENV RUST_LOG=debug
 
 # ENTRYPOINT is handled in docker-compose.yml

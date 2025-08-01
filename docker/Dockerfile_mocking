@@ -42,9 +42,12 @@ RUN apt-get update -y && \
 # SSH mount for private repos
 RUN --mount=type=ssh,id=default mkdir -p .cargo .&& \
     echo '[net]\ngit-fetch-with-cli = true' > .cargo/config.toml && \
-    cargo fetch # TODO(Jira) re-add --locked in scope of https://rsklabs.atlassian.net/browse/UB-176
+    cargo fetch --locked
 
-RUN --mount=type=ssh,id=default cargo build --release -p actors-mocking${FEATURES:+ --features $FEATURES};
+ENV RUST_LOG=error
+ENV CARGO_TERM_QUIET=true
+
+RUN --mount=type=ssh,id=default cargo build  --quiet --release -p actors-mocking${FEATURES:+ --features $FEATURES};
 
 # --- RUNTIME STAGE ---
 
@@ -70,7 +73,7 @@ RUN --mount=type=ssh,id=default chmod +x /app/actors-mocking-setup.sh && /app/ac
 ENV PATH="/opt/foundry/bin:$PATH"
 
 # set environment variables
-# ENV RUST_BACKTRACE=1
-# ENV RUST_LOG=debug
+ENV RUST_BACKTRACE=1
+ENV RUST_LOG=debug
 
 # ENTRYPOINT is handled in docker-compose.yml
