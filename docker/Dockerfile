@@ -55,7 +55,7 @@ RUN --mount=type=ssh,id=default mkdir -p .cargo && \
 # optionally builds with --features if provided
 # check-fork needs amd64 architecture due to Risc0, so we exclude it and also coordinator, which is built in a separate stage, as it has it as dependency
 # we also exclude key-manager, which is built always in the next step
-RUN --mount=type=ssh,id=default cargo build --workspace --exclude coordinator --exclude check-fork --exclude check-fork-zkp --exclude key-manager --quiet --release${JUST_CRATE:+ -p $JUST_CRATE}${FEATURES:+ --features $FEATURES};
+RUN --mount=type=ssh,id=default cargo build --workspace --exclude coordinator --exclude check-fork --exclude check-fork-zkp --exclude key-manager --exclude actors-mocking --quiet --release${JUST_CRATE:+ -p $JUST_CRATE}${FEATURES:+ --features $FEATURES};
 # build key-manager always (even if $JUST_CRATE provided), as it might be used by other services
 RUN --mount=type=ssh,id=default cargo build --quiet --release -p key-manager;
 
