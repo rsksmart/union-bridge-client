@@ -209,7 +209,7 @@ where
         let request_id = Uuid::new_v4();
         let broker_result = self.bitvmx_broker.send(
             BROKER_SERVER_ID,
-            IncomingBitVMXApiMessages::GenerateZKP(request_id, serialized_args),
+            IncomingBitVMXApiMessages::GenerateZKP(request_id, serialized_args, "TODO".to_string()),
         );
 
         match broker_result {
@@ -1799,7 +1799,7 @@ mod tests {
             .with(
                 eq(BROKER_SERVER_ID),
                 function(|req: &IncomingBitVMXApiMessages| {
-                    matches!(req, IncomingBitVMXApiMessages::GenerateZKP(_, _))
+                    matches!(req, IncomingBitVMXApiMessages::GenerateZKP(_, _, _))
                 }),
             )
             .returning(|_, _| Ok(true));
@@ -1931,7 +1931,7 @@ mod tests {
             .with(
                 eq(BROKER_SERVER_ID),
                 function(|req: &IncomingBitVMXApiMessages| {
-                    matches!(req, IncomingBitVMXApiMessages::GenerateZKP(_, _))
+                    matches!(req, IncomingBitVMXApiMessages::GenerateZKP(_, _, _))
                 }),
             )
             .return_once(|_, _| Ok(true));
