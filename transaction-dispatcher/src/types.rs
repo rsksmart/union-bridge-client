@@ -161,7 +161,7 @@ pub struct GetMemberPublicKeysOutput {
 pub struct ApplyToStreamInput {
     pub stream_id: u8,
     pub role: u8,
-    pub committee_public_keys: [CommitteePublicKey; 3],
+    pub committee_public_keys: Vec<CommitteePublicKey>, // TODO(iago) change to [CommitteePublicKey; 3] when ready
     pub funding_utxo: UTXO,
 }
 
