@@ -1,13 +1,11 @@
 # docker-compose.yml arg to specify the crate to build and run
 ARG CRATE
-# docker-compose.yml arg to specify the tag of union-contracts repository to use - if defined, contracts will be deployed for that service
-ARG UNION_CONTRACTS_TAG
-# docker-compose.yml arg to specify the Foundry version - if defined, Foundry will be installed for that service
-ARG FOUNDRY_VERSION
 # --build-arg to specify the Rust features to use (ie. anvil)
 ARG FEATURES
 # --build-arg to specify just one crate to build in the builder stage
 ARG JUST_CRATE
+# --build-arg to specify crates to exclude from the workspace build
+ARG EXCLUDES
 
 # --- BUILDER STAGE ---
 
@@ -54,7 +52,7 @@ RUN --mount=type=ssh,id=default mkdir -p .cargo && \
 # optionally builds with --features if provided
 # check-fork needs amd64 architecture due to Risc0, so we exclude it and also coordinator, which is built in a separate stage, as it has it as dependency
 # we also exclude key-manager, which is built always in the next step
-RUN --mount=type=ssh,id=default cargo build --workspace --exclude coordinator --exclude check-fork --exclude check-fork-zkp --exclude key-manager --release${JUST_CRATE:+ -p $JUST_CRATE}${FEATURES:+ --features $FEATURES};
+RUN --mount=type=ssh,id=default cargo build --workspace --exclude coordinator --exclude check-fork --exclude check-fork-zkp --exclude key-manager${EXCLUDES:+ $EXCLUDES} --release${JUST_CRATE:+ -p $JUST_CRATE}${FEATURES:+ --features $FEATURES};
 # build key-manager always (even if $JUST_CRATE provided), as it might be used by other services
 RUN --mount=type=ssh,id=default cargo build --release -p key-manager;
 
@@ -75,14 +73,6 @@ RUN apt-get update -y && \
 COPY --from=builder /app/target/release/${CRATE} /app/${CRATE}
 # copy always, but only used by transaction-dispatcher
 COPY --from=builder /app/target/release/key-manager /app/key-manager
-
-# if contracts required (checked within the script): clone, build and deploy them
-ARG UNION_CONTRACTS_TAG
-ARG FOUNDRY_VERSION
-COPY docker/dockerfile_sh/actors-mocking-setup.sh /app/actors-mocking-setup.sh
-RUN --mount=type=ssh,id=default chmod +x /app/actors-mocking-setup.sh && /app/actors-mocking-setup.sh
-# required by contracts-setup and also by actors-mocking that spins up anvil
-ENV PATH="/opt/foundry/bin:$PATH"
 
 # set environment variables
 # ENV RUST_BACKTRACE=1

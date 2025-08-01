@@ -11,14 +11,11 @@ for arg in "$@"; do
   fi
 done
 
-if [[ -n "$features" ]] && [[ -n "$service" ]]; then
-  docker compose build "$service" --build-arg FEATURES="$features" --build-arg JUST_CRATE="$service"
-elif [[ -n "$features" ]]; then
-  docker compose build --build-arg FEATURES="$features"
-elif [[ -n "$service" ]]; then
-  docker compose build "$service" --build-arg JUST_CRATE="$service"
-else
-  docker compose build
-fi
+cmd=(docker compose build)
 
-exit 0
+[[ -n $service ]] && cmd+=("$service" --build-arg JUST_CRATE="$service")
+[[ -n $features ]] && cmd+=(--build-arg FEATURES="$features")
+
+echo "Running command: ${cmd[@]}"
+
+"${cmd[@]}"
