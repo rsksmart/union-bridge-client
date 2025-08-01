@@ -8,7 +8,6 @@ use log::{error, warn};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use transaction_dispatcher::types::ApplyToStreamInput;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     AllCommunicationDataReady, NewCommittee, NewPendingCommittee,
 };
@@ -18,6 +17,9 @@ use union_contracts::bindings::peg_manager::PegManager::{
 use union_contracts::bindings::signature_manager::SignatureManager::{
     AllNoncesReady, AllSignaturesReady,
 };
+
+use crate::user_requests::ApplyToStream;
+
 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-183
 
 #[derive(Eq, PartialEq, Debug)]
@@ -37,9 +39,9 @@ pub enum RskPegManagerEvents {
     UnknownEvent,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 pub enum UserRequests {
-    ApplyToStream(ApplyToStreamInput),
+    ApplyToStream(ApplyToStream),
 }
 
 pub type RequestAdvanceFundsEvent = EventWithBlock<RequestAdvanceFunds>;
