@@ -1,12 +1,18 @@
-use actors_mocking::{bitvmx, events};
+use actors_mocking::{
+    bitvmx::{self, BitVmxSigningInfo},
+    events,
+};
 use alloy_node_bindings::Anvil;
 use alloy_provider::{ProviderBuilder, network::EthereumWallet};
 use alloy_signer_local::LocalSigner;
 use anyhow::{Context, Result};
-use bitcoin::Transaction;
+use bitcoin::{PublicKey, Transaction};
 use clap::{CommandFactory, Parser};
 use common::msg_broker::broker::BitVmxBrokerServer;
+use common::types::Hash256;
+use musig2::{PartialSignature, PubNonce};
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::{
     io::Write,
     sync::{Arc, Mutex},
@@ -83,6 +89,19 @@ enum Menu {
         merkle_branch_path: String,
         #[arg(help = "Merkle branch hashes (comma-separated hex values)")]
         merkle_branch_hashes: String,
+    },
+    #[command(name = "send-signature", visible_alias = "ss")]
+    SendSignature {
+        #[arg(help = "Protocol name/UUID")]
+        protocol_name: String,
+        #[arg(help = "Aggregated public key (hex)")]
+        take_aggr_key: String,
+        #[arg(help = "Hash to sign (hex)")]
+        hash_to_sign: String,
+        #[arg(help = "Partial signature (hex)")]
+        signature: String,
+        #[arg(help = "Public nonce (hex)")]
+        nonce: String,
     },
 }
 
@@ -276,6 +295,38 @@ async fn main() -> Result<()> {
                         merkle_hashes,
                     )?;
                 }
+                Menu::SendSignature {
+                    protocol_name,
+                    take_aggr_key,
+                    hash_to_sign,
+                    signature,
+                    nonce,
+                } => {
+                    let take_aggr_key = PublicKey::from_str(&take_aggr_key)?;
+                    let hash_bytes: Vec<u8> = hex::decode(hash_to_sign.trim_start_matches("0x"))?;
+                    let hash_array: [u8; 32] = hash_bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| anyhow::anyhow!("Hash must be exactly 32 bytes"))?;
+                    let hash_to_sign =
+                        Hash256::from(alloy_primitives::FixedBytes::from(hash_array));
+                    let signature = PartialSignature::from_str(&signature)?;
+                    let nonce = PubNonce::from_str(&nonce)?;
+                    let bit_vmx_signing_info = BitVmxSigningInfo {
+                        protocol_name,
+                        take_aggr_key,
+                        hash_to_sign,
+                        signature,
+                        nonce,
+                    };
+
+                    let executor = bitvmx_executor
+                        .lock()
+                        .expect("Failed to lock bitvmx_executor");
+
+                    executor.send_signature_event(bit_vmx_signing_info)?;
+                }
+
                 Menu::Exit => {
                     break;
                 }

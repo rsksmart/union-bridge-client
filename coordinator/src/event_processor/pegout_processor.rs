@@ -67,7 +67,6 @@ struct PegoutEventState<BSF: BtcSignatureSubFlowApi> {
     pegout_requested: PegoutEvent<PegoutRequested>,
     pegout_registered_tx: Option<TxHash>,
     pegout_registered: Option<PegoutEvent<PegoutRegistered>>,
-    all_signatures_ready: Option<PegoutEvent<Hash256>>,
     btc_signatures_flow: Option<BSF>,
 }
 
@@ -78,7 +77,6 @@ impl<BSF: BtcSignatureSubFlowApi> PegoutEventState<BSF> {
             pegout_requested,
             pegout_registered_tx: None,
             pegout_registered: None,
-            all_signatures_ready: None,
             btc_signatures_flow: None,
         }
     }
@@ -474,7 +472,7 @@ where
         &mut self,
         block: &RskBlockAndUncles,
     ) -> Result<()> {
-        for (flow_id, state) in self.tracker.iter_mut() {
+        for (_, state) in self.tracker.iter_mut() {
             if let Some(btc_flow) = state.btc_signatures_flow.as_mut() {
                 btc_flow.delegate_block(block)?;
             }
@@ -524,7 +522,7 @@ where
                     flow_id, method, result
                 );
             }
-            OutgoingBitVMXApiMessages::Variable(flow_id, method, VariableTypes::String(data))
+            OutgoingBitVMXApiMessages::Variable(flow_id, method, VariableTypes::String(_data))
                 if matches!(method.as_str(), SIGNATURE_MESSAGE) =>
             {
                 let state = self
