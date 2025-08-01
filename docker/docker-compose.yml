@@ -15,9 +15,6 @@ x-base-service: &base-service
     dockerfile: docker/Dockerfile
     ssh:
       - default=${SSH_AUTH_SOCK}
-  environment:
-    - RUST_BACKTRACE=1
-    - RUST_LOG=debug
   volumes:
     - *common-config
     - *log-config
@@ -50,9 +47,6 @@ services:
       <<: *base-healthcheck
       test: [ "CMD", "pgrep", "-f", "block-indexer" ] # TODO improve with health endpoint
     entrypoint: [ "/app/block-indexer", "--config-path", "/app/config" ]
-    depends_on:
-      actors-mocking:
-        condition: service_healthy
 
   log-indexer:
     <<: *base-service
@@ -74,9 +68,6 @@ services:
       <<: *base-healthcheck
       test: [ "CMD", "pgrep", "-f", "log-indexer" ] # TODO improve with health endpoint
     entrypoint: [ "/app/log-indexer", "--config-path", "/app/config" ]
-    depends_on:
-      actors-mocking:
-        condition: service_healthy
 
   transaction-dispatcher:
     <<: *base-service
@@ -84,7 +75,6 @@ services:
       <<: *base-build
       args:
         - CRATE=transaction-dispatcher
-        - FOUNDRY_VERSION=${FOUNDRY_VERSION}
     container_name: transaction-dispatcher
     volumes:
       - *common-config
@@ -98,22 +88,21 @@ services:
         ipv4_address: 172.25.0.12
     environment:
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
-      - FUNDING_ADDRESS=${FUNDING_ADDRESS}
     healthcheck:
       <<: *base-healthcheck
       test: [ "CMD", "pgrep", "-f", "transaction-dispatcher" ]
     entrypoint: [ "sh", "/app/key-setup.sh" ]
     command: [ "/app/transaction-dispatcher", "--config-path", "/app/config" ]
-    depends_on:
-      actors-mocking:
-        condition: service_healthy
 
   coordinator:
     <<: *base-service
-    platform: linux/amd64
+    # when the zkp feature is re-enabled, use this to build coordinator in an image with amd64 support (required by Risc0 in Macs with M chips) via Dockerfile_coordinator
+    # platform: linux/amd64
     build:
       <<: *base-build
-      dockerfile: docker/Dockerfile_coordinator # custom Dockerfile, risc0 needs amd64
+      dockerfile: docker/Dockerfile
+      # when the zkp feature is re-enabled, use this to build coordinator in an image with amd64 support (required by Risc0 in Macs with M chips)
+      # dockerfile: docker/Dockerfile_coordinator
       args:
         - CRATE=coordinator
     container_name: coordinator
@@ -137,38 +126,29 @@ services:
         condition: service_healthy
       transaction-dispatcher:
         condition: service_healthy
+      user-api:
+        condition: service_healthy
 
-  actors-mocking:
+  user-api:
     <<: *base-service
     build:
       <<: *base-build
       args:
-        - CRATE=actors-mocking
-        - FOUNDRY_VERSION=${FOUNDRY_VERSION}
-        - UNION_CONTRACTS_TAG=${UNION_CONTRACTS_TAG}
-    stdin_open: true   # for CLI
-    tty: true          # for CLI
-    container_name: actors-mocking
+        - CRATE=user-api
+    container_name: user-api
+    volumes:
+      - *common-config
+      - *log-config
     ports:
-      - "8545:8545"  # anvil port, hardcoded in crate
+      - "5551:5551"  # http server port from the configuration
     networks:
       internal:
-        ipv4_address: 172.25.0.14
-    environment:
-      - UNION_CONTRACTS_PATH=/app/contracts
-      - UNION_CONTRACTS_DEPLOY_SCRIPT=shell/script/deploy/deploy-local.sh
-      - UNION_CONTRACTS_SETUP_SCRIPT=shell/script/integration-test/packet-creation-flow.sh
-      - CHECK_FORK_REQUIRED_NUM_BLOCKS=${CHECK_FORK_REQUIRED_NUM_BLOCKS}
-      - FAKE_PEGMANAGER_CONTRACT_ADDRESS=${FAKE_PEGMANAGER_CONTRACT_ADDRESS}
+        ipv4_address: 172.25.0.15
     healthcheck:
       <<: *base-healthcheck
-      test: [
-        "CMD-SHELL",
-        # check FakePegManager is deployed (it is the last contract deployed)
-        "RUST_LOG=error cast code ${FAKE_PEGMANAGER_CONTRACT_ADDRESS} --rpc-url http://localhost:8545 | grep -vq '^0x$'"
-      ]
-    entrypoint: [ "/app/actors-mocking" ]
-    # entrypoint: [ "/bin/sh", "-c", "sleep infinity" ]
+      test: [ "CMD", "pgrep", "-f", "user-api" ]
+    entrypoint: [ "/app/user-api", "--config-path", "/app/config" ]
+
 
 networks:
   internal:
