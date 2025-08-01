@@ -25,7 +25,7 @@ else
   echo "[key-setup] Key already exists at ${KEYSTORE_PATH}, skipping key generation."
 fi
 
-echo "[key-setup] Using key at ${KEYSTORE_PATH} with address ${address}"
+echo "[key-setup] Using key at ${KEYSTORE_PATH}"
 
 # forward to command entry in docker-compose.yml
 exec "$@"

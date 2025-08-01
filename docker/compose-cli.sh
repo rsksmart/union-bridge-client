@@ -100,7 +100,7 @@ build_services() {
   echo "🔨 Building service container(s)..."
 
   if [[ $MOCKING -eq 1 ]]; then
-    cmd=(docker-compose -f docker-compose.yml -f docker-compose.mocking.yml build)
+    cmd=(docker compose -f docker-compose.yml -f docker-compose.mocking.yml build)
   else 
     cmd=(docker compose build)
   fi
@@ -118,7 +118,7 @@ start_services() {
   echo "🚀 Starting services..."
 
   if [[ $MOCKING -eq 1 ]]; then
-    cmd=(docker-compose -f docker-compose.yml -f docker-compose.mocking.yml up)
+    cmd=(docker compose -f docker-compose.yml -f docker-compose.mocking.yml up)
   else
     cmd=(docker compose up)
   fi
@@ -132,7 +132,7 @@ stop_services() {
   echo "🛑 Stopping services..."
 
   if [[ $MOCKING -eq 1 ]]; then
-    cmd=(docker-compose -f docker-compose.yml -f docker-compose.mocking.yml down)
+    cmd=(docker compose -f docker-compose.yml -f docker-compose.mocking.yml down)
   else
     cmd=(docker compose down)
   fi

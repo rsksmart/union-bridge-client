@@ -32,4 +32,4 @@ If you want to use the `actors-mocking` CLI, run (you may need to double-enter):
 If you see an error like _Failed to get initial block by hash_, you may need to either:
 
 1) reconfigure the `indexer.initial_block_hash` if running without features
-2) rebuild the compose with the `anvil` feature enabled, which will skip this check: `./docker_build.sh anvil`
+2) rebuild the compose with the `anvil` feature enabled, which will skip this check: `./compose-cli.sh build --feature-anvil`
