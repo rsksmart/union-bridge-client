@@ -1,6 +1,8 @@
 // TODO(jira) https://rsklabs.atlassian.net/browse/ub-176
 
+use crate::types::Hash256;
 use bitcoin::{Amount, BlockHash, PrivateKey, PublicKey, ScriptBuf, Transaction, Txid};
+use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -223,4 +225,16 @@ pub struct BtcTxSPVProof {
     pub tx: Transaction,
     pub merkle_branch_path: String,
     pub merkle_branch_hashes: Vec<[u8; 32]>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct BitVmxSigningInfo {
+    pub protocol_name: String,
+    // TODO not used for now
+    pub take_aggr_key: PublicKey,
+    // TODO there is a TODO on the BitVMX side suggesting it will be included, but for now we will have to store it ourselves
+    #[serde(default)]
+    pub hash_to_sign: Hash256,
+    pub signature: PartialSignature,
+    pub nonce: PubNonce,
 }

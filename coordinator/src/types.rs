@@ -310,18 +310,6 @@ impl EventDecoder {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct BitVmxSigningInfo {
-    pub protocol_name: String,
-    // TODO there not used for now
-    pub take_aggr_key: PublicKey,
-    // TODO there is a TODO on the BitVMX side suggesting it will be included, but for now we will have to store it ourselves
-    #[serde(default)]
-    pub hash_to_sign: Hash256,
-    pub signature: PartialSignature,
-    pub nonce: PubNonce,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

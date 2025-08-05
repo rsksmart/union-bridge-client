@@ -1,7 +1,7 @@
 use crate::blockchain_tracker::{BlockchainView, ConfirmableEvent};
 use crate::config::REQUIRED_CONFIRMATIONS;
-use crate::types::BitVmxSigningInfo;
 use anyhow::{Context, Result, anyhow, bail};
+use common::msg_broker::bitvmx_types::BitVmxSigningInfo;
 use common::runtime_sync::RuntimeSync;
 use common::types::{BlockNumber, Hash256};
 use log::info;

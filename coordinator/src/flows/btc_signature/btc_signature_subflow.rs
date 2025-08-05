@@ -1,7 +1,9 @@
 use super::btc_signature_lifecycle::{BtcSignatureLifeCycle, BtcSignatureLifecycleApi};
-use crate::types::{BitVmxSigningInfo, RskPegManagerEvents};
+use crate::types::RskPegManagerEvents;
 use anyhow::{Result, anyhow, bail};
-use common::msg_broker::bitvmx_types::{OutgoingBitVMXApiMessages, VariableTypes};
+use common::msg_broker::bitvmx_types::{
+    BitVmxSigningInfo, OutgoingBitVMXApiMessages, VariableTypes,
+};
 use common::types::RskBlockAndUncles;
 
 use common::runtime_sync::RuntimeSync;
@@ -89,6 +91,7 @@ where
         match event {
             RskPegManagerEvents::AllNoncesReady(event) => {
                 if let Some(hash) = self.lifecycle.get_hash_to_sign() {
+                    //the hash is used to check if the event is for the current flow if not, it is ignored
                     if hash == event.inner {
                         if event.removed {
                             self.lifecycle.unset_all_nonces_ready()?;
@@ -101,6 +104,7 @@ where
             }
             RskPegManagerEvents::AllSignaturesReady(event) => {
                 if let Some(hash) = self.lifecycle.get_hash_to_sign() {
+                    //the hash is used to check if the event is for the current flow if not, it is ignored
                     if hash == event.inner {
                         if event.removed {
                             self.lifecycle.unset_all_signatures_ready()?;

@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
-use bitcoin::{PublicKey, Transaction};
+use bitcoin::Transaction;
+use common::msg_broker::bitvmx_types::BitVmxSigningInfo;
 use common::msg_broker::{
     bitvmx_types::{
         BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages,
@@ -7,23 +8,8 @@ use common::msg_broker::{
     },
     broker::{BITVMX_L2_BROKER_CLIENT_ID, BitVmxBrokerServerApi},
 };
-use common::types::Hash256;
-use musig2::{PartialSignature, PubNonce};
-use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct BitVmxSigningInfo {
-    pub protocol_name: String,
-    // TODO there not used for now
-    pub take_aggr_key: PublicKey,
-    // TODO there is a TODO on the BitVMX side suggesting it will be included, but for now we will have to store it ourselves
-    #[serde(default)]
-    pub hash_to_sign: Hash256,
-    pub signature: PartialSignature,
-    pub nonce: PubNonce,
-}
 
 pub struct Executor<BS: BitVmxBrokerServerApi> {
     broker_server: BS,

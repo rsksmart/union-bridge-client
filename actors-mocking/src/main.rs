@@ -1,13 +1,12 @@
-use actors_mocking::{
-    bitvmx::{self, BitVmxSigningInfo},
-    events,
-};
+use actors_mocking::bitvmx;
+use actors_mocking::events;
 use alloy_node_bindings::Anvil;
 use alloy_provider::{ProviderBuilder, network::EthereumWallet};
 use alloy_signer_local::LocalSigner;
 use anyhow::{Context, Result};
 use bitcoin::{PublicKey, Transaction};
 use clap::{CommandFactory, Parser};
+use common::msg_broker::bitvmx_types::BitVmxSigningInfo;
 use common::msg_broker::broker::BitVmxBrokerServer;
 use common::types::Hash256;
 use musig2::{PartialSignature, PubNonce};

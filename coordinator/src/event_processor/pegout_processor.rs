@@ -67,7 +67,7 @@ struct PegoutEventState<BSF: BtcSignatureSubFlowApi> {
     pegout_requested: PegoutEvent<PegoutRequested>,
     pegout_registered_tx: Option<TxHash>,
     pegout_registered: Option<PegoutEvent<PegoutRegistered>>,
-    btc_signatures_flow: Option<BSF>,
+    btc_sig_flow: Option<BSF>,
 }
 
 impl<BSF: BtcSignatureSubFlowApi> PegoutEventState<BSF> {
@@ -77,7 +77,7 @@ impl<BSF: BtcSignatureSubFlowApi> PegoutEventState<BSF> {
             pegout_requested,
             pegout_registered_tx: None,
             pegout_registered: None,
-            btc_signatures_flow: None,
+            btc_sig_flow: None,
         }
     }
 }
@@ -351,7 +351,7 @@ where
         Ok(())
     }
 
-    //TOOD To update data struct:
+    //TODO To update data struct:
     /*
        #[derive(Debug, Clone, Serialize, Deserialize)]
        pub struct PegOutRequest {
@@ -473,7 +473,7 @@ where
         block: &RskBlockAndUncles,
     ) -> Result<()> {
         for (_, state) in self.tracker.iter_mut() {
-            if let Some(btc_flow) = state.btc_signatures_flow.as_mut() {
+            if let Some(btc_flow) = state.btc_sig_flow.as_mut() {
                 btc_flow.delegate_block(block)?;
             }
         }
@@ -529,7 +529,7 @@ where
                     .tracker
                     .get_mut(flow_id)
                     .ok_or_else(|| anyhow!("Pegout not found for flow_id: {}", flow_id))?;
-                if state.btc_signatures_flow.is_some() {
+                if state.btc_sig_flow.is_some() {
                     bail!(
                         "BTC signatures flow already exists for flow_id: {}",
                         flow_id
@@ -537,7 +537,7 @@ where
                 } else {
                     let mut btc_sig_subflow = self.btc_sig_subflow_factory.create_flow(*flow_id);
                     let result = btc_sig_subflow.delegate_bitvmx_event(event)?;
-                    state.btc_signatures_flow = Some(btc_sig_subflow);
+                    state.btc_sig_flow = Some(btc_sig_subflow);
                     result
                 }
             }
@@ -572,7 +572,7 @@ where
             | RskPegManagerEvents::AllSignaturesReady(data) => {
                 debug!("Handling signature event {:?}", data);
                 for (flow_id, state) in self.tracker.iter_mut() {
-                    if let Some(btc_flow) = state.btc_signatures_flow.as_mut() {
+                    if let Some(btc_flow) = state.btc_sig_flow.as_mut() {
                         btc_flow.delegate_rsk_event(*flow_id, event)?;
                         if btc_flow.is_done() {
                             //TODO do the part related  with execute the pegout.
