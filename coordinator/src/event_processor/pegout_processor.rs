@@ -13,7 +13,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::Txid;
 use common::msg_broker::bitvmx_types::{
     IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PegOutAccepted, RegisterSignaturesInput,
-    VariableTypes,
+    TransactionBlockchainStatus, TransactionStatus, VariableTypes,
 };
 use common::runtime_sync::RuntimeSync;
 use common::{
@@ -31,9 +31,12 @@ use transaction_dispatcher::types::{RegisterPegoutInput, RegisterPegoutOutput};
 use union_contracts::bindings::peg_manager::PegManager::{PegoutRegistered, PegoutRequested};
 use uuid::Uuid;
 
-pub const USER_TAKE: &str = "USER_TAKE";
+pub const USER_TAKE: &str = "USER_TAKE_TX";
 pub const PROGRAM_TYPE_REQUEST_PEGOUT: &str = "request_pegout";
 pub const PEGOUT_REQUEST_NAME: &str = "pegout_request";
+pub const MIN_TX_CONFIRMATIONS: u32 = 3;
+//TOOD pending to implement this delay
+pub const GET_TRANSACTION_INFO_DELAY_SECONDS: u64 = 600;
 pub const PEGOUT_ACCEPTED_NAME: &str = "pegout_accepted";
 
 #[derive(Debug, Clone)]
@@ -71,6 +74,7 @@ struct PegoutEventState<BSF: BtcSignatureSubFlowApi> {
     pegout_registered_tx: Option<TxHash>,
     pegout_registered: Option<PegoutEvent<PegoutRegistered>>,
     btc_sig_flow: Option<BSF>,
+    spv_proof_tx_id: Option<Txid>,
 }
 
 impl<BSF: BtcSignatureSubFlowApi> PegoutEventState<BSF> {
@@ -82,6 +86,7 @@ impl<BSF: BtcSignatureSubFlowApi> PegoutEventState<BSF> {
             pegout_registered_tx: None,
             pegout_registered: None,
             btc_sig_flow: None,
+            spv_proof_tx_id: None,
         }
     }
 }
@@ -215,24 +220,25 @@ where
         Ok(())
     }
 
-    fn _handle_register_pegout(
+    fn handle_register_pegout(
         &mut self,
-        flow_id: &Uuid,
+        tx_id: &Txid,
         input: RegisterPegoutInput,
     ) -> Result<RegisterPegoutOutput> {
-        let pegout_event = self
+        let (_flow_id, state) = self
             .tracker
-            .get_mut(flow_id)
-            .ok_or_else(|| anyhow!("Pegout not found for flow_id: {}", flow_id))?;
-        if pegout_event.pegout_registered.is_some() {
-            bail!("Pegout already registered for flow_id: {}", flow_id);
-        }
+            .iter_mut()
+            .find(|(_, state)| state.spv_proof_tx_id == Some(*tx_id))
+            .ok_or_else(|| anyhow!("Pegout state not found for tx_id: {}", tx_id))?;
         let result = self
             .rt_sync
             .run(async { self.contracts_gateway.register_pegout(input).await })?;
-
-        pegout_event.pegout_registered_tx =
-            Some(TxHash::try_from(result.transaction_hash.as_str())?);
+        if result.success {
+            info!("Pegout registered successfully for tx_id: {}", tx_id);
+            state.pegout_registered_tx = Some(TxHash::try_from(result.transaction_hash.as_str())?);
+        } else {
+            bail!("Pegout registration failed for tx_id: {}", tx_id);
+        }
         Ok(result)
     }
 
@@ -400,6 +406,61 @@ where
         Ok(())
     }
 
+    fn send_get_transaction_info_by_name_to_bitvmx(
+        bitvmx_broker: &BC,
+        flow_id: Uuid,
+    ) -> Result<()> {
+        let msg =
+            IncomingBitVMXApiMessages::GetTransactionInofByName(flow_id, USER_TAKE.to_string());
+        bitvmx_broker.send(BROKER_SERVER_ID, msg)?;
+        Ok(())
+    }
+
+    fn send_get_spv_proof_to_bitvmx(bitvmx_broker: &BC, tx_id: Txid) -> Result<()> {
+        let msg = IncomingBitVMXApiMessages::GetSPVProof(tx_id);
+        bitvmx_broker.send(BROKER_SERVER_ID, msg)?;
+        Ok(())
+    }
+
+    fn handle_request_spv_proof(&mut self, flow_id: &Uuid, tx_id: Txid) -> Result<()> {
+        let state = self
+            .tracker
+            .get_mut(flow_id)
+            .ok_or_else(|| anyhow!("Pegout state not found for flow_id: {}", flow_id))?;
+        state.spv_proof_tx_id = Some(tx_id);
+        Self::send_get_spv_proof_to_bitvmx(&self.bitvmx_broker, tx_id)?;
+        Ok(())
+    }
+
+    fn handle_transaction_status_received(
+        &mut self,
+        flow_id: &Uuid,
+        tx_status: TransactionStatus,
+    ) -> Result<()> {
+        if tx_status.status == TransactionBlockchainStatus::Confirmed
+            && tx_status.confirmations >= MIN_TX_CONFIRMATIONS
+        {
+            //request SPV proof
+            debug!(
+                "Transaction confirmed with sufficient confirmations for flow_id: {}",
+                flow_id
+            );
+            self.handle_request_spv_proof(flow_id, tx_status.tx_id)?;
+        } else {
+            debug!(
+                "Transaction not confirmed with sufficient confirmations for flow_id: {}",
+                flow_id
+            );
+            debug!(
+                "Sending get transaction info by name to bitvmx with id: {}",
+                flow_id
+            );
+            //TODO we need to delay this re-send request
+            Self::send_get_transaction_info_by_name_to_bitvmx(&self.bitvmx_broker, *flow_id)?;
+        }
+        Ok(())
+    }
+
     fn process_unhandled_confirmed_pegout_requested_events(&mut self) -> Result<()> {
         for (flow_id, state) in self.tracker.iter_mut() {
             let event = &mut state.pegout_requested;
@@ -425,6 +486,12 @@ where
             );
         }
 
+        Ok(())
+    }
+
+    fn execute_pegout_step(&mut self, flow_id: &Uuid) -> Result<()> {
+        Self::send_dispatch_transaction_name_msg_to_bitvmx(&self.bitvmx_broker, *flow_id)?;
+        Self::send_get_transaction_info_by_name_to_bitvmx(&self.bitvmx_broker, *flow_id)?;
         Ok(())
     }
 
@@ -504,6 +571,8 @@ where
                         "Received BitVMX SPVProof for tx_id: {}, proof: {:?}",
                         tx_id, spv_proof
                     );
+                    let register_pegout_input = RegisterPegoutInput::from(spv_proof.clone());
+                    self.handle_register_pegout(tx_id, register_pegout_input)?;
                 }
                 None => bail!(
                     "Received BitVMX SPVProof event for tx_id: {}, but no SPV proof was included.",
@@ -546,6 +615,13 @@ where
                     state.btc_sig_flow = Some(btc_sig_subflow);
                 }
             }
+            OutgoingBitVMXApiMessages::Transaction(flow_id, tx_status, _tx_opt) => {
+                debug!(
+                    "Received BitVMX Transaction event. Flow Id: {}, Tx Status: {:?}",
+                    flow_id, tx_status
+                );
+                self.handle_transaction_status_received(flow_id, tx_status.clone())?;
+            }
             _ => {}
         }
 
@@ -576,13 +652,19 @@ where
             RskPegManagerEvents::AllNoncesReady(data)
             | RskPegManagerEvents::AllSignaturesReady(data) => {
                 debug!("Handling signature event {:?}", data);
+                let mut flow_ids_to_execute = Vec::new();
+
                 for (flow_id, state) in self.tracker.iter_mut() {
                     if let Some(btc_flow) = state.btc_sig_flow.as_mut() {
                         btc_flow.delegate_rsk_event(*flow_id, event)?;
                         if btc_flow.is_done() {
-                            //TODO do the part related  with execute the pegout.
+                            flow_ids_to_execute.push(*flow_id);
                         }
                     }
+                }
+
+                for flow_id in flow_ids_to_execute {
+                    self.execute_pegout_step(&flow_id)?;
                 }
             }
             _ => (),
