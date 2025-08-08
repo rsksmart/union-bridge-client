@@ -9,85 +9,21 @@ use common::msg_broker::{
     },
     broker::{BitVmxBrokerServer, BITVMX_L2_BROKER_CLIENT_ID},
 };
-use log::{debug, info};
-use serde::Deserialize;
+use log::{debug, info, warn};
 use serde_json::json;
-use std::fmt;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::thread::sleep;
-use std::time::Duration;
-use tokio::sync::Notify;
 use tokio::task::JoinHandle;
-use tokio_util::sync::CancellationToken;
+use tokio::time::sleep;
+use tokio::time::Duration;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct RequestPeginTempInfo {
-    pub rskDestinationAddress: String,
-    pub btcReimbursementPubKey: String,
-    pub acceptPeginSignatureHash: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct PrevoutData {
-    pub value: u64,
-    pub scriptPubKey: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "snake_case")]
-pub struct PeginRequestedPayload {
-    pub txid: String,
-    pub amount: u64,
-    pub accept_pegin_sighash: Vec<u8>,
-    pub take_aggregated_key: String,
-    pub operators_take_key: Vec<String>,
-    pub slot_index: u64,
-    pub committee_id: String,
-    pub rootstock_address: String,
-    pub reimbursement_pubkey: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct StreamPosition {
-    pub stream_id: u64,
-    pub packet_number: u64,
-    pub slot_id: u64,
-    pub peg_status: u8,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct PeginAcceptedPayload {
-    pub block_hash: String,
-    pub accept_pegin_tx_hash: String,
-    pub pegin_request_tx_hash: String,
-    pub vout: u64,
-    pub stream_position: StreamPosition,
-    pub speed_up_pub_key: String,
-    pub rsk_destination_address: String,
-    pub rbtc_amount: String,
-    pub utxo_script_pub_key: String,
-}
-
-impl fmt::Debug for AutomatedBitVmxMock {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("AutomatedBitVmxMock")
-            .field("broker_server", &"<BitVmxBrokerServer>")
-            .field("pending_requests", &"<HashMap>")
-            .field("background", &"<JoinHandle>")
-            .finish()
-    }
-}
-
 pub struct AutomatedBitVmxMock {
-    broker_server: Arc<Mutex<BitVmxBrokerServer>>,
-    cancel: CancellationToken,
-    started: Arc<Notify>,
-    background: Mutex<Option<JoinHandle<Result<()>>>>,
+    port: u16,
+    pub broker_server: Arc<Mutex<BitVmxBrokerServer>>,
+    pending_requests: Arc<Mutex<HashMap<String, IncomingBitVMXApiMessages>>>,
+    running: Arc<Mutex<bool>>,
+    background_handle: Option<JoinHandle<Result<()>>>,
     block_hash: Arc<Mutex<Option<String>>>,
     tx: Arc<Mutex<Option<Transaction>>>,
     merkle_branch_path: Arc<Mutex<Option<String>>>,
@@ -97,133 +33,50 @@ pub struct AutomatedBitVmxMock {
 }
 
 impl AutomatedBitVmxMock {
-    pub fn new(port: u16) -> Arc<Self> {
-        let server = BitVmxBrokerServer::new(port);
-        Arc::new(Self {
-            broker_server: Arc::new(Mutex::new(server)),
-            cancel: CancellationToken::new(),
-            started: Arc::new(Notify::new()),
-            background: Mutex::new(None),
+    pub fn set_running(&self, running: Arc<Mutex<bool>>) {
+        info!("Setting AutomatedBitVmxMock running state");
+        *self.running.lock().unwrap() = *running.lock().unwrap();
+    }
+}
+
+impl AutomatedBitVmxMock {
+    pub fn get_running(&self) -> Arc<Mutex<bool>> {
+        Arc::clone(&self.running)
+    }
+}
+
+impl Default for AutomatedBitVmxMock {
+    fn default() -> Self {
+        Self::new(8547)
+    }
+}
+
+impl std::fmt::Debug for AutomatedBitVmxMock {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AutomatedBitVmxMock")
+            .field("pending_requests", &self.pending_requests)
+            .field("running", &self.running)
+            .field("broker_server", &"<BitVmxBrokerServer>")
+            .finish()
+    }
+}
+
+impl AutomatedBitVmxMock {
+    pub fn new(port: u16) -> Self {
+        info!("Creating AutomatedBitVmxMock on port {}", port);
+        Self {
+            port,
+            broker_server: Arc::new(Mutex::new(BitVmxBrokerServer::new(port))),
+            pending_requests: Arc::new(Mutex::new(HashMap::new())),
+            running: Arc::new(Mutex::new(false)),
+            background_handle: None,
             block_hash: Arc::new(Mutex::new(None)),
             tx: Arc::new(Mutex::new(None)),
             merkle_branch_path: Arc::new(Mutex::new(None)),
             merkle_branch_hashes: Arc::new(Mutex::new(None)),
             last_pegin_requested_flow_id: Arc::new(Mutex::new(None)),
             last_pegin_accepted_flow_id: Arc::new(Mutex::new(None)),
-        })
-    }
-
-    pub async fn start(self: &Arc<Self>) -> Result<()> {
-        let me = Arc::clone(self);
-        let handle = tokio::spawn(async move { me.main_loop().await });
-        *self.background.lock().unwrap() = Some(handle);
-        self.started.notified().await;
-        Ok(())
-    }
-
-    async fn main_loop(self: Arc<Self>) -> Result<()> {
-        info!("Starting BitVMX mock server async...");
-        self.started.notify_waiters();
-        let mut tick = tokio::time::interval(Duration::from_millis(2));
-        loop {
-            loop {
-                let next = { self.broker_server.lock().unwrap().try_recv().ok().flatten() };
-                if let Some((req, _sender)) = next {
-                    self.handle_request(req)?;
-                } else {
-                    break;
-                }
-            }
-            tokio::select! {
-                _ = tick.tick() => { /* poll again */ }
-                _ = self.cancel.cancelled() => {
-                    info!("BitVMX mock server async task stopped");
-                    break;
-                }
-            }
         }
-        Ok(())
-    }
-
-    fn handle_request(&self, request: IncomingBitVMXApiMessages) -> Result<()> {
-        match request {
-            IncomingBitVMXApiMessages::Ping() => {
-                debug!("Auto-responding to Ping with Pong");
-                let _ = {
-                    let mut srv = self.broker_server.lock().unwrap();
-                    srv.send(
-                        &OutgoingBitVMXApiMessages::Pong(),
-                        BITVMX_L2_BROKER_CLIENT_ID,
-                    )
-                };
-            }
-            IncomingBitVMXApiMessages::SetVar(flow_id, name, VariableTypes::String(data)) => {
-                println!("SetVar received: {}", name);
-                match name.as_str() {
-                    "PeginRequest" => {
-                        println!("PeginRequest received: {}", data);
-                        let payload: PeginRequestedPayload = serde_json::from_str(&data)
-                            .expect("Invalid PeginRequested JSON payload");
-                        println!("Pegin requested payload: {:?}", payload);
-                        *self.last_pegin_requested_flow_id.lock().unwrap() = Some(flow_id);
-                    }
-                    "PeginAccepted" => {
-                        let payload: PeginAcceptedPayload = serde_json::from_str(&data)
-                            .context("Invalid PeginAccepted JSON payload")?;
-                        info!("Pegin accepted payload: {:?}", payload);
-                        *self.last_pegin_accepted_flow_id.lock().unwrap() = Some(flow_id);
-                    }
-                    _ => {
-                        info!("Unhandled SetVar name: {}", name);
-                    }
-                }
-            }
-            IncomingBitVMXApiMessages::GetSPVProof(_tx_id) => {
-                let bh = self
-                    .block_hash
-                    .lock()
-                    .unwrap()
-                    .clone()
-                    .context("Block hash not set")?;
-                let tx = self.tx.lock().unwrap().clone().context("Tx not set")?;
-                let path = self
-                    .merkle_branch_path
-                    .lock()
-                    .unwrap()
-                    .clone()
-                    .context("Path not set")?;
-                let list = self
-                    .merkle_branch_hashes
-                    .lock()
-                    .unwrap()
-                    .clone()
-                    .context("Hashes not set")?;
-                let hashes: Vec<[u8; 32]> = list
-                    .into_iter()
-                    .map(|hex_str| {
-                        let bytes =
-                            hex::decode(hex_str.trim_start_matches("0x")).context("Invalid hex")?;
-                        <[u8; 32]>::try_from(bytes.as_slice()).context("Invalid hash length")
-                    })
-                    .collect::<Result<_>>()?;
-                let proof = BtcTxSPVProof {
-                    block_hash: bh.clone(),
-                    tx: tx.clone(),
-                    merkle_branch_path: path.clone(),
-                    merkle_branch_hashes: hashes,
-                };
-                let event = OutgoingBitVMXApiMessages::SPVProof(tx.compute_txid(), Some(proof));
-                let _ = {
-                    let srv = self.broker_server.lock().unwrap();
-                    srv.send(&event, BITVMX_L2_BROKER_CLIENT_ID)
-                };
-            }
-            IncomingBitVMXApiMessages::SubscribeToRskPegin() => {
-                info!("Coordinator subscribed to RSK pegin events");
-            }
-            _ => {}
-        }
-        Ok(())
     }
 
     pub fn get_last_pegin_requested_flow_id(&self) -> Option<String> {
@@ -242,8 +95,151 @@ impl AutomatedBitVmxMock {
             .map(|id| id.to_string())
     }
 
+    pub fn run(&mut self) -> Result<()> {
+        info!("Starting BitVMX mock server async...");
+        *self.running.lock().unwrap() = true;
+
+        let running = Arc::clone(&self.running);
+        let server = Arc::clone(&self.broker_server);
+        let block_hash = Arc::clone(&self.block_hash);
+        let tx = Arc::clone(&self.tx);
+        let merkle_branch_path = Arc::clone(&self.merkle_branch_path);
+        let merkle_branch_hashes = Arc::clone(&self.merkle_branch_hashes);
+        let last_pegin_requested_flow_id = Arc::clone(&self.last_pegin_requested_flow_id);
+        let last_pegin_accepted_flow_id = Arc::clone(&self.last_pegin_accepted_flow_id);
+
+        let handle = tokio::spawn({
+            async move {
+                while *running.lock().unwrap() {
+                    // receive
+                    if let Ok(Some((request, _sender))) = {
+                        let mut srv = server.lock().unwrap();
+                        srv.try_recv()
+                    } {
+                        info!("Received request from coordinator: {:?}", request);
+
+                        match request {
+                            IncomingBitVMXApiMessages::Ping() => {
+                                debug!("Auto-responding to Ping with Pong");
+                                let _ = {
+                                    let mut srv = server.lock().unwrap();
+                                    srv.send(
+                                        &OutgoingBitVMXApiMessages::Pong(),
+                                        BITVMX_L2_BROKER_CLIENT_ID,
+                                    )
+                                };
+                            }
+
+                            IncomingBitVMXApiMessages::SetVar(
+                                flow_id,
+                                name,
+                                VariableTypes::String(data),
+                            ) => {
+                                match name.as_str() {
+                                    "PeginRequested" => {
+                                        info!("SetVar PeginRequested (flow {}): {}", flow_id, data);
+                                        // optionally: store for later assertions
+                                        *last_pegin_requested_flow_id.lock().unwrap() =
+                                            Some(flow_id);
+                                    }
+                                    "PeginAccepted" => {
+                                        info!("SetVar PeginAccepted (flow {}): {}", flow_id, data);
+                                        // optionally: store for later assertions
+                                        // *self.last_pegin_accepted.lock().unwrap() = Some((flow_id, data.clone()));
+                                        *last_pegin_accepted_flow_id.lock().unwrap() =
+                                            Some(flow_id);
+                                    }
+                                    _ => {
+                                        debug!("SetVar {} (flow {}): {}", name, flow_id, data);
+                                    }
+                                }
+                            }
+
+                            IncomingBitVMXApiMessages::GetSPVProof(tx_id) => {
+                                info!("Auto-responding to GetSPVProof for tx_id: {}", tx_id);
+                                info!("My block_hash: {:?}", block_hash.lock().unwrap());
+                                let bh = block_hash
+                                    .lock()
+                                    .unwrap()
+                                    .as_ref()
+                                    .expect("Block hash not set")
+                                    .clone();
+                                let txobj =
+                                    tx.lock().unwrap().as_ref().expect("Tx not set").clone();
+                                let path = merkle_branch_path
+                                    .lock()
+                                    .unwrap()
+                                    .as_ref()
+                                    .expect("Path not set")
+                                    .clone();
+                                let list = merkle_branch_hashes
+                                    .lock()
+                                    .unwrap()
+                                    .as_ref()
+                                    .expect("Hashes not set")
+                                    .clone();
+                                let hashes: Vec<[u8; 32]> = list
+                                    .into_iter()
+                                    .map(|hex_str| {
+                                        let bytes = hex::decode(hex_str.trim_start_matches("0x"))
+                                            .expect("Invalid hex");
+                                        <[u8; 32]>::try_from(bytes.as_slice()).unwrap()
+                                    })
+                                    .collect();
+
+                                let proof = {
+                                    BtcTxSPVProof {
+                                        block_hash: bh.clone(),
+                                        tx: txobj.clone(),
+                                        merkle_branch_path: path.clone(),
+                                        merkle_branch_hashes: hashes,
+                                    }
+                                };
+                                let event = OutgoingBitVMXApiMessages::SPVProof(
+                                    txobj.clone().compute_txid(),
+                                    Some(proof),
+                                );
+                                let _ = {
+                                    let srv = server.lock().unwrap();
+                                    srv.send(&event, BITVMX_L2_BROKER_CLIENT_ID)
+                                };
+                                info!(
+                                    "Sent auto SPV proof for computed tx id: {}",
+                                    txobj.clone().compute_txid()
+                                );
+                                info!("Sent auto SPV proof for tx_id: {}", tx_id);
+                            }
+                            IncomingBitVMXApiMessages::SubscribeToRskPegin() => {
+                                info!("Coordinator subscribed to RSK pegin events");
+                            }
+                            _ => {
+                                debug!("Ignoring message {:?}", request);
+                            }
+                        }
+                    }
+                    sleep(Duration::from_millis(10)).await;
+                }
+                info!("BitVMX mock server async task stopped");
+                Ok(())
+            }
+        });
+        self.background_handle = Some(handle);
+        Ok(())
+    }
+
+    pub async fn stop(&mut self) {
+        info!("Stopping AutomatedBitVmxMock...");
+        *self.running.lock().unwrap() = false;
+
+        if let Some(handle) = self.background_handle.take() {
+            handle.abort();
+            sleep(Duration::from_millis(1000)).await;
+        }
+        info!("AutomatedBitVmxMock stopped");
+    }
+
     pub fn trigger_pegin_found(
-        &self,
+        &mut self,
         tx: Transaction,
         block_hash: String,
         merkle_branch_path: String,
@@ -252,8 +248,11 @@ impl AutomatedBitVmxMock {
         *self.tx.lock().unwrap() = Some(tx.clone());
         *self.block_hash.lock().unwrap() = Some(block_hash);
         *self.merkle_branch_path.lock().unwrap() = Some(merkle_branch_path);
-        *self.merkle_branch_hashes.lock().unwrap() = Some(merkle_branch_hashes);
-
+        *self.merkle_branch_hashes.lock().unwrap() = Some(merkle_branch_hashes); // Assuming empty for now, can be set later
+        info!(
+            "Triggering PeginTransactionFound for tx: {}",
+            tx.compute_txid()
+        );
         let tx_id = tx.compute_txid();
         let tx_status = TransactionStatus {
             tx_id,
@@ -272,46 +271,18 @@ impl AutomatedBitVmxMock {
     }
 
     pub fn accept_pegin(
-        &self,
+        &mut self,
         accept_tx: Transaction,
         block_hash: String,
         merkle_branch_path: String,
         merkle_branch_hashes: Vec<String>,
     ) -> Result<()> {
-        // First, send the pegin_accepted message with signature data
-        let flow_id = self.get_last_pegin_requested_flow_id().unwrap();
-        let pegin_accepted_payload = json!({
-            "committee_id": flow_id.to_string(),
-            "accept_pegin_txid": accept_tx.compute_txid().to_string(),
-            "accept_pegin_nonce": "0279BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798032DE2662628C90B03F5E720284EB52FF7D71F4284F627B68A853D78C78E1FFE93",
-            "accept_pegin_signature": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-            "operator_take_sighash": [
-                18, 52, 86, 120, 154, 188, 222, 240, 71, 33, 128, 91, 201, 124, 156, 78,
-                89, 67, 45, 12, 198, 233, 44, 167, 89, 123, 78, 90, 67, 189, 234, 112
-            ],
-            "operator_won_sighash": [
-                171, 205, 239, 18, 45, 67, 89, 123, 78, 90, 156, 188, 222, 240, 71, 33,
-                128, 91, 201, 124, 156, 78, 89, 67, 45, 12, 198, 233, 44, 167, 89, 123
-            ]
-        });
-
-        let flow_id_uuid =  Uuid::parse_str(&flow_id)
-            .context("Failed to parse flow_id as UUID")?;
-
-        let pegin_accepted_event = OutgoingBitVMXApiMessages::Variable(
-            flow_id_uuid,
-            "pegin_accepted".to_string(),
-            VariableTypes::String(pegin_accepted_payload.to_string()),
+        info!(
+            "Triggering accept-pegin for tx: {}",
+            accept_tx.compute_txid()
         );
 
-        self.broker_server
-            .lock()
-            .unwrap()
-            .send(&pegin_accepted_event, BITVMX_L2_BROKER_CLIENT_ID)
-            .context("Failed to send pegin_accepted Variable event")?;
-
-        sleep(Duration::from_secs(3));
-
+        // Convert hex strings to [u8; 32] arrays for merkle branch hashes
         let hashes: Vec<[u8; 32]> = merkle_branch_hashes
             .into_iter()
             .map(|hex_str| {
@@ -320,31 +291,47 @@ impl AutomatedBitVmxMock {
                 <[u8; 32]>::try_from(bytes.as_slice())
                     .map_err(|_| anyhow::anyhow!("Invalid hash length: expected 32 bytes"))
             })
-            .collect::<Result<_>>()?;
+            .collect::<Result<Vec<_>>>()?;
+
+        // Build the SPV proof for the accept transaction
         let spv_proof = BtcTxSPVProof {
             block_hash: block_hash.clone(),
             tx: accept_tx.clone(),
             merkle_branch_path: merkle_branch_path.clone(),
             merkle_branch_hashes: hashes,
         };
+
+        // Create the payload for the accept-pegin Variable event
         let payload = json!(spv_proof);
+
+        // Generate a flow ID for this accept-pegin event
+        let flow_id = uuid::Uuid::new_v4();
+
+        info!(
+            "Sending accept-pegin Variable event with flow_id: {} for tx: {}",
+            flow_id,
+            accept_tx.compute_txid()
+        );
+
+        // Create the accept-pegin Variable event
         let event = OutgoingBitVMXApiMessages::Variable(
-            flow_id_uuid,
+            flow_id,
             "accept-pegin".to_string(),
             VariableTypes::String(payload.to_string()),
         );
+
+        // Send the event to the coordinator
         self.broker_server
             .lock()
             .unwrap()
             .send(&event, BITVMX_L2_BROKER_CLIENT_ID)
             .context("Failed to send accept-pegin Variable event")?;
-        Ok(())
-    }
 
-    pub async fn stop(&self) {
-        self.cancel.cancel();
-        if let Some(h) = self.background.lock().unwrap().take() {
-            let _ = h.await;
-        }
+        info!(
+            "Successfully sent accept-pegin event for tx: {}",
+            accept_tx.compute_txid()
+        );
+
+        Ok(())
     }
 }

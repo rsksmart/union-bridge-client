@@ -32,7 +32,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "union-bridge-contracts",
+ "union-bridge-contracts 0.0.1-alpha.3",
  "uuid 1.17.0",
 ]
 
@@ -587,7 +587,7 @@ dependencies = [
  "alloy-rlp",
  "alloy-serde",
  "alloy-sol-types",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "serde",
  "serde_json",
  "thiserror 2.0.12",
@@ -1961,9 +1961,8 @@ dependencies = [
  "primitive-types 0.13.1",
  "serde",
  "serde_json",
- "sha2",
  "transaction-dispatcher",
- "union-bridge-contracts",
+ "union-bridge-contracts 0.0.1-alpha.3",
  "uuid 1.17.0",
 ]
 
@@ -3905,6 +3904,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "itertools"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4103,7 +4111,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.53.2",
 ]
 
 [[package]]
@@ -5149,7 +5157,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "tokio-util",
  "transaction-dispatcher",
  "uuid 1.17.0",
  "warp",
@@ -5252,7 +5259,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
- "union-bridge-contracts",
+ "union-bridge-contracts 0.0.1-alpha.2",
 ]
 
 [[package]]
@@ -7291,7 +7298,7 @@ dependencies = [
  "thiserror 2.0.12",
  "tokio",
  "tower-http",
- "union-bridge-contracts",
+ "union-bridge-contracts 0.0.1-alpha.3",
 ]
 
 [[package]]
@@ -7473,8 +7480,18 @@ checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
 
 [[package]]
 name = "union-bridge-contracts"
+version = "0.0.1-alpha.2"
+source = "git+ssh://git@github.com/temp-rsk/bitvmx-union-bridge-contracts.git?branch=v0.0.1-alpha.2_tweaks#7bfaac5bafbf3e0f55ad16af9710a4d21c11caf8"
+dependencies = [
+ "alloy",
+ "alloy-trie 0.8.1",
+ "serde",
+]
+
+[[package]]
+name = "union-bridge-contracts"
 version = "0.0.1-alpha.3"
-source = "git+ssh://git@github.com/temp-rsk/bitvmx-union-bridge-contracts.git?tag=v0.0.1-alpha.5#b0e8e64b960fd5392b77a1fde5fa7125965e4b3d"
+source = "git+ssh://git@github.com/temp-rsk/bitvmx-union-bridge-contracts.git?tag=v0.0.1-alpha.3#346d03f91c7cbd8a829a5a7933cae5d0adc455f1"
 dependencies = [
  "alloy",
  "alloy-trie 0.8.1",
@@ -7821,7 +7838,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
