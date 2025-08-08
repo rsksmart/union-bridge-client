@@ -1,0 +1,247 @@
+use qa_tools_common::common::{execute_command, execute_script_with_basedir, spawn_command};
+use reqwest::Client;
+use std::process::Child;
+use std::time::Duration;
+use tokio::time::{sleep, timeout};
+
+pub async fn setup_anvil(anvil_url: &str, anvil_port: u16, anvil_timeout: Duration) -> Child {
+    println!(" *** SETUP *** Setting up anvil at: {}", anvil_url);
+    let command = format!("anvil --port {}", anvil_port);
+    let anvil_child = spawn_command(&command);
+    wait_for_anvil(anvil_url, anvil_timeout).await;
+    println!(
+        " *** SETUP *** Anvil is up and running at: {}, with PID: {}",
+        anvil_url,
+        anvil_child.id()
+    );
+    anvil_child
+}
+
+pub fn deploy_contracts(contracts_base_dir: &str, deploy_local_path: &str) {
+    println!(
+        " *** SETUP *** Deploying contracts in base dir: {} and relative path: {}",
+        contracts_base_dir, deploy_local_path
+    );
+    execute_script_with_basedir(contracts_base_dir, deploy_local_path);
+}
+
+pub fn packet_creation_flow(contracts_base_dir: &str, packet_creation_flow_relative_path: &str) {
+    println!(
+        " *** SETUP *** Executing packet creation flow in base dir: {} and relative path: {}",
+        contracts_base_dir, packet_creation_flow_relative_path
+    );
+    execute_script_with_basedir(contracts_base_dir, packet_creation_flow_relative_path);
+}
+
+pub fn transfer_funds(anvil_url: &str, from: &str, to: &str, amount: &str) {
+    println!(
+        "*** SETUP *** Transferring funds from {} to {} with amount: {}",
+        from, to, amount
+    );
+    let command = format!(
+        "cast send --rpc-url {} --from {} {} --value {} --unlocked",
+        anvil_url, from, to, amount
+    );
+    execute_command(&command);
+    // TODO: in tesnet environment, we should wait for the transaction to be mined
+}
+
+pub async fn setup_block_indexer(
+    manifest_path: &str,
+    config_path: &str,
+    timeout: Duration,
+) -> Child {
+    let command = format!(
+        "cargo run --manifest-path {} --bin block-indexer --features anvil -- --config-path {}",
+        manifest_path, config_path
+    );
+    println!(
+        "*** SETUP *** Setting up block indexer with command: {}",
+        command
+    );
+    let child = spawn_command(&command);
+    wait_for_block_indexer(timeout).await;
+    println!(
+        "*** SETUP *** Block indexer is up and running with PID: {}",
+        child.id()
+    );
+    child
+}
+
+pub async fn setup_log_indexer(manifest_path: &str, config_path: &str, timeout: Duration) -> Child {
+    let command = format!(
+        "cargo run --manifest-path {} --bin log-indexer --features anvil -- --config-path {}",
+        manifest_path, config_path
+    );
+    println!(
+        "*** SETUP *** Setting up log indexer with command: {}",
+        command
+    );
+    let child = spawn_command(&command);
+    wait_for_log_indexer(timeout).await;
+    println!(
+        "*** SETUP *** Log indexer is up and running with PID: {}",
+        child.id()
+    );
+    child
+}
+
+pub async fn setup_coordinator(manifest_path: &str, config_path: &str, timeout: Duration) -> Child {
+    let command = format!(
+        "cargo run --manifest-path {} --bin coordinator --features anvil -- --config-path {}",
+        manifest_path, config_path
+    );
+    println!(
+        "*** SETUP *** Setting up coordinator with command: {}",
+        command
+    );
+    let child = spawn_command(&command);
+    wait_for_coordinator(timeout).await;
+    println!(
+        "*** SETUP *** Coordinator is up and running with PID: {}",
+        child.id()
+    );
+    child
+}
+
+pub async fn setup_transaction_dispatcher(
+    key_store_passwd: &str,
+    tx_dispatcher_url: &str,
+    tx_dispatcher_manifest_path: &str,
+    tx_dispatcher_config_path: &str,
+    tx_dispatcher_timeout: Duration,
+) -> Child {
+    let command = format!(
+        "KEY_STORE_PASSWORD={} cargo run --manifest-path {} --bin transaction-dispatcher -- --config-path {}",
+        key_store_passwd, tx_dispatcher_manifest_path, tx_dispatcher_config_path
+    );
+    println!(
+        "*** SETUP *** Setting up transaction dispatcher at url: {} with command: {}",
+        tx_dispatcher_url, command
+    );
+    let child = spawn_command(&command);
+    wait_for_transaction_dispatcher(tx_dispatcher_url, tx_dispatcher_timeout).await;
+    println!(
+        "*** SETUP *** Transaction dispatcher is up and running at: {}, with PID: {}",
+        tx_dispatcher_url,
+        child.id()
+    );
+    child
+}
+
+async fn wait_for_anvil(anvil_url: &str, anvil_timeout: Duration) {
+    let client = Client::new();
+    let waiter = async {
+        loop {
+            if client.get(anvil_url).send().await.is_ok() {
+                return;
+            }
+            sleep(Duration::from_millis(100)).await;
+        }
+    };
+    timeout(anvil_timeout, waiter)
+        .await
+        .unwrap_or_else(|_| panic!("Anvil did not start within {:?} seconds", anvil_timeout));
+}
+
+async fn wait_for_block_indexer(timeout_duration: Duration) {
+    wait_for_tcp_port("127.0.0.1:12345", timeout_duration).await;
+}
+async fn wait_for_log_indexer(timeout_duration: Duration) {
+    wait_for_tcp_port("127.0.0.1:56789", timeout_duration).await;
+}
+async fn wait_for_coordinator(timeout_duration: Duration) {
+    let waiter = async {
+        loop {
+            let block_broker_ok = tokio::net::TcpStream::connect("127.0.0.1:12345")
+                .await
+                .is_ok();
+            let log_broker_ok = tokio::net::TcpStream::connect("127.0.0.1:56789")
+                .await
+                .is_ok();
+            let bitvmx_broker_ok = tokio::net::TcpStream::connect("127.0.0.1:9094")
+                .await
+                .is_ok();
+            if block_broker_ok && log_broker_ok && bitvmx_broker_ok {
+                // Give coordinator a moment to initialize after dependencies are ready
+                sleep(Duration::from_millis(500)).await;
+                return;
+            }
+            sleep(Duration::from_millis(100)).await;
+        }
+    };
+    timeout(timeout_duration, waiter).await.unwrap_or_else(|_| {
+        panic!(
+            "Coordinator dependencies did not start within {:?}",
+            timeout_duration
+        )
+    });
+}
+
+async fn wait_for_transaction_dispatcher(tx_dispatcher_url: &str, tx_dispatcher_timeout: Duration) {
+    let client = Client::new();
+    let url = format!("{}/pegin-address", tx_dispatcher_url);
+    let waiter = async {
+        loop {
+            if let Ok(resp) = client
+                .post(&url)
+                .header("Content-Type", "application/json")
+                .json("{}")
+                .send()
+                .await
+            {
+                if resp.status().is_client_error() {
+                    return;
+                }
+            }
+            sleep(Duration::from_millis(100)).await;
+        }
+    };
+    timeout(tx_dispatcher_timeout, waiter)
+        .await
+        .unwrap_or_else(|_| {
+            panic!(
+                "Transaction dispatcher did not start within {:?} seconds",
+                tx_dispatcher_timeout
+            )
+        });
+}
+
+pub async fn setup_user_api(manifest_path: &str, config_path: &str, timeout: Duration) -> Child {
+    let command = format!(
+        "cargo run --manifest-path {} --bin user-api -- --config-path {}",
+        manifest_path, config_path
+    );
+    println!(
+        "*** SETUP *** Setting up user-api with command: {}",
+        command
+    );
+    let child = spawn_command(&command);
+    wait_for_user_api(timeout).await;
+    println!(
+        "*** SETUP *** User-api is up and running with PID: {}",
+        child.id()
+    );
+    child
+}
+
+async fn wait_for_user_api(timeout_duration: Duration) {
+    wait_for_tcp_port("127.0.0.1:5550", timeout_duration).await;
+}
+
+async fn wait_for_tcp_port(address: &str, timeout_duration: Duration) {
+    let waiter = async {
+        loop {
+            if tokio::net::TcpStream::connect(address).await.is_ok() {
+                return;
+            }
+            sleep(Duration::from_millis(100)).await;
+        }
+    };
+    timeout(timeout_duration, waiter).await.unwrap_or_else(|_| {
+        panic!(
+            "Service at {} did not start within {:?}",
+            address, timeout_duration
+        )
+    });
+}

@@ -1,3 +1,10 @@
+use crate::constants::{
+    DEFAULT_AMOUNT_0, DEFAULT_AMOUNT_0_ACCEPT_PEGIN, DEFAULT_AMOUNT_1,
+    DEFAULT_AMOUNT_1_ACCEPT_PEGIN, DEFAULT_AMOUNT_IN_WEI, DEFAULT_SCRIPT_PUB_KEY_0,
+    DEFAULT_SCRIPT_PUB_KEY_0_ACCEPT_PEGIN, DEFAULT_SCRIPT_PUB_KEY_1,
+    DEFAULT_SCRIPT_PUB_KEY_1_ACCEPT_PEGIN, DEFAULT_SCRIPT_SIG, DEFAULT_SEQUENCE, DEFAULT_V_OUT,
+    DEFAULT_V_OUT_ACCEPT_PEGIN,
+};
 use crate::{TX_DISPATCHER_URL, TestWorld};
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use byteorder::{LittleEndian, WriteBytesExt};
@@ -11,10 +18,8 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::Mutex;
-use crate::constants::{DEFAULT_AMOUNT_0, DEFAULT_AMOUNT_0_ACCEPT_PEGIN, DEFAULT_AMOUNT_1, DEFAULT_AMOUNT_1_ACCEPT_PEGIN, DEFAULT_AMOUNT_IN_WEI, DEFAULT_SCRIPT_PUB_KEY_0, DEFAULT_SCRIPT_PUB_KEY_0_ACCEPT_PEGIN, DEFAULT_SCRIPT_PUB_KEY_1, DEFAULT_SCRIPT_PUB_KEY_1_ACCEPT_PEGIN, DEFAULT_SCRIPT_SIG, DEFAULT_SEQUENCE, DEFAULT_V_OUT, DEFAULT_V_OUT_ACCEPT_PEGIN};
 
 pub static SEEDED_RNG: Lazy<Mutex<StdRng>> = Lazy::new(|| Mutex::new(StdRng::seed_from_u64(45)));
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BtcOutput {
@@ -124,7 +129,6 @@ fn generate_payload_register_pegin(
             v_out,
             sequence,
             script_sig: DEFAULT_SCRIPT_SIG.to_string(),
-
         }],
         lock_time: 0,
     };

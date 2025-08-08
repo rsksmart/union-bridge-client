@@ -21,8 +21,6 @@ pub fn shutdown_transaction_dispatcher(child_opt: Option<Child>) {
         );
         kill_process(&mut child);
     } else {
-        println!(
-            " *** TEARDOWN *** No Transaction Dispatcher process found, skipping shutdown."
-        );
+        println!(" *** TEARDOWN *** No Transaction Dispatcher process found, skipping shutdown.");
     }
 }

@@ -1,12 +1,17 @@
 indexer:
+  initial_block_hash: "0x8fd79c5989aaa44d8510c92bf860de91a1eb771387b9aa91b01436e4a8c38f28"
+  sync:
+    finality_depth: 100
+    batch_size: 100
   storage:
     path: "/tmp/monitor-executions/common"
   cache:
     size: 1000
 
-notifier:
-  broker_port: 56789
-  
+provider:
+  rootstock:
+    url: "ws://127.0.0.1:8545"
+
 contracts:
   - name: "PegManager"
     address: "0x0165878A594ca255338adfa4d48449f69242Eb8F"
