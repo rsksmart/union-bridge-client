@@ -56,7 +56,7 @@ impl<C: CommitteeRegistryContractApi, BP: BalanceProvider> ApplyToStreamInvoke<C
         }
 
         let public_keys_regs = input
-            .committee_public_keys
+            .public_keys
             .iter()
             .cloned()
             .map(|key| {
@@ -142,7 +142,7 @@ mod tests {
         let input = ApplyToStreamInput {
             stream_id: 123,
             role: 1,
-            committee_public_keys: fake_pub_keys(),
+            public_keys: fake_pub_keys(),
         };
 
         // expect get_minimum_deposit to be called
@@ -199,7 +199,7 @@ mod tests {
         let input = ApplyToStreamInput {
             stream_id: 123,
             role: 1,
-            committee_public_keys: fake_pub_keys(),
+            public_keys: fake_pub_keys(),
         };
 
         // expect get_minimum_deposit to be called
