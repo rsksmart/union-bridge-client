@@ -287,11 +287,7 @@ pub(crate) mod tests {
     };
     use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
     use transaction_dispatcher::types::{
-        AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
-        AddMemberSignatureInput, AddMemberSignatureOutput, ApplyToStreamInput, ApplyToStreamOutput,
-        GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterPegoutInput,
-        RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
-        RequestPegoutOutput,
+        AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput, AddMemberSignatureInput, AddMemberSignatureOutput, ApplyToStreamInput, ApplyToStreamOutput, GetCommitteeInput, GetCommitteeOutput, GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterPegoutInput, RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput, RequestPegoutOutput
     };
 
     fn create_fake_request_event(pegout_id: &str) -> RequestAdvanceFunds {
@@ -632,6 +628,11 @@ pub(crate) mod tests {
                 &self,
                 input: ApplyToStreamInput,
             ) -> Result<ApplyToStreamOutput, DomainErrors>;
+
+            async fn get_committee(
+                &self,
+                input: GetCommitteeInput,
+            ) -> Result<GetCommitteeOutput, DomainErrors>;
         }
     }
 }

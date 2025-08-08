@@ -1,6 +1,6 @@
 use crate::config::TransactionConfig;
 use crate::contracts::committee_registry::{
-    ApplyToStreamInvoke, CommitteeRegistryContract, GetMemberPublicKeysCall,
+    ApplyToStreamInvoke, CommitteeRegistryContract, GetCommitteeCall, GetMemberPublicKeysCall,
 };
 use crate::contracts::peg_manager::{
     FakePegManagerContract, PegManagerContract, accept_pegin::AcceptPeginInvoke,
@@ -14,9 +14,9 @@ use crate::contracts::signature_manager::{
 use crate::types::{
     AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
     AddMemberSignatureInput, AddMemberSignatureOutput, ApplyToStreamInput, ApplyToStreamOutput,
-    GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterPegoutInput,
-    RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
-    RequestPegoutOutput,
+    GetCommitteeInput, GetCommitteeOutput, GetMemberPublicKeysOutput, PeginAddressInput,
+    PeginAddressOutput, RegisterPegoutInput, RegisterPegoutOutput, RequestPeginInput,
+    RequestPeginOutput, RequestPegoutInput, RequestPegoutOutput,
 };
 use alloy_primitives::U256;
 use alloy_provider::Provider;
@@ -111,6 +111,11 @@ pub trait RskContractsGatewayApi {
         &self,
         input: ApplyToStreamInput,
     ) -> impl Future<Output = Result<ApplyToStreamOutput, DomainErrors>>;
+
+    fn get_committee(
+        &self,
+        input: GetCommitteeInput,
+    ) -> impl Future<Output = Result<GetCommitteeOutput, DomainErrors>>;
 }
 
 #[derive(Clone)]
@@ -126,6 +131,7 @@ pub struct RskContractsGateway<P: Provider> {
     apply_to_stream_invoke: ApplyToStreamInvoke<CommitteeRegistryContract<P>, P>,
     request_pegout_invoke: TryPegoutInvoke<PegManagerContract<P>>,
     register_pegout_invoke: RegisterPegoutInvoke<PegManagerContract<P>>,
+    get_committee_call: GetCommitteeCall<CommitteeRegistryContract<P>>,
 }
 
 impl<P: Provider + Clone> RskContractsGateway<P> {
@@ -195,6 +201,7 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
                 provider.clone(),
                 alloy_primitives::Address::from(member_address),
             ),
+            get_committee_call: GetCommitteeCall::new(committee_registry_contract.clone()),
         })
     }
 
@@ -359,6 +366,21 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
 
         self.apply_to_stream_invoke.run(input).await.map_err(|err| {
             error!("Error on apply_to_stream_call: {}", err);
+            err
+        })
+    }
+
+    async fn get_committee(
+        &self,
+        input: GetCommitteeInput,
+    ) -> Result<GetCommitteeOutput, DomainErrors> {
+        info!(
+            "Interacting with CommitteeRegistry#getCommittee @ {}",
+            self.contract_address
+        );
+
+        self.get_committee_call.run(input).await.map_err(|err| {
+            error!("Error on get_committee_call: {}", err);
             err
         })
     }

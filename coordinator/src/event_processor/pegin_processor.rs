@@ -1,12 +1,13 @@
-use crate::flows::btc_signature::btc_signature_subflow::{
-    BtcSignatureSubFlowApi, BtcSignatureSubFlowFactoryApi,
-};
 use crate::{
     blockchain_tracker::{BlockConfirmations, BlockchainObserver, BlockchainView},
     config::REQUIRED_CONFIRMATIONS,
     event_processor::EventProcessor,
+    flows::btc_signature::btc_signature_subflow::{
+        BtcSignatureSubFlowApi, BtcSignatureSubFlowFactoryApi,
+    },
     types::{EventWithBlock, PeginAcceptedEvent, PeginRequestedEvent, RskPegManagerEvents},
 };
+use alloy_primitives::{FixedBytes, U256};
 use anyhow::{Context, Result, bail};
 use bitcoin::Txid;
 use common::{
@@ -25,12 +26,62 @@ use serde_json::Value;
 use std::{cell::RefCell, collections::HashMap, fmt::Debug, future::Future, rc::Rc};
 use transaction_dispatcher::{
     rsk_gateway::{DomainErrors, RskContractsGatewayApi},
-    types::{AcceptPeginInput, RequestPeginInput},
+    types::{AcceptPeginInput, GetCommitteeInput, RequestPeginInput},
 };
-use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
+use union_contracts::bindings::{
+    committee_registry::CommitteeRegistry::Committee,
+    peg_manager::PegManager::{PeginAccepted, PeginRequested},
+};
 use uuid::Uuid;
 
 const ACCEPT_PEGIN: &'static str = "accept-pegin";
+
+#[derive(Debug, Clone, Serialize)]
+struct PeginRequest {
+    txid: FixedBytes<32>, // requestPeginTxHash
+    amount: u64,
+    accept_pegin_sighash: Vec<u8>, // acceptPeginSignatureMessage
+    take_aggregated_key: FixedBytes<32>,
+    operators_take_key: Vec<String>,
+    slot_index: u32,
+    committee_id: U256,
+    rootstock_address: String,
+    reimbursement_pubkey: FixedBytes<32>,
+}
+
+impl PeginRequest {
+    fn build(event: PeginRequested, committee: Committee) -> Result<Self> {
+        // collect only the member addresses that are operators
+        let operators_take_key: Vec<String> = committee
+            .members
+            .iter()
+            .filter(|m| m.role == 1) // assumes Role==1 is Operator
+            .map(|m| m.memberAddress.to_checksum(None))
+            .collect();
+
+        // TODO(contracts-upgrade-alpha4): get real slot index from contract when available
+        let slot_index: u32 = 0;
+
+        let rootstock_address = event
+            .requestPeginInfo
+            .rskDestinationAddress
+            .to_checksum(None);
+
+        let accept_pegin_sighash = event.acceptPeginSignatureMessage.to_vec();
+
+        Ok(Self {
+            txid: event.requestPeginTxHash,
+            amount: event.prevoutData.value,
+            accept_pegin_sighash,
+            take_aggregated_key: committee.aggregatedKey,
+            operators_take_key,
+            slot_index,
+            committee_id: event.committeeId,
+            rootstock_address,
+            reimbursement_pubkey: event.requestPeginInfo.btcReimbursementPubKey,
+        })
+    }
+}
 
 #[derive(Debug, Clone)]
 struct PeginEvent<T: Clone> {
@@ -60,17 +111,17 @@ impl<T: Clone> PeginEvent<T> {
 }
 
 #[derive(Debug)]
-struct PeginEventState<BSF: BtcSignatureSubFlowApi> {
-    pegin_flow_id: Uuid,
+struct PeginState<BSF: BtcSignatureSubFlowApi> {
+    flow_id: Uuid,
     pegin_requested: PeginEvent<PeginRequested>,
     pegin_accepted: Option<PeginEvent<PeginAccepted>>,
     btc_signatures_flow: Option<BSF>,
 }
 
-impl<BSF: BtcSignatureSubFlowApi> PeginEventState<BSF> {
+impl<BSF: BtcSignatureSubFlowApi> PeginState<BSF> {
     fn new(pegin_flow_id: Uuid, pegin_requested: PeginEvent<PeginRequested>) -> Self {
         Self {
-            pegin_flow_id,
+            flow_id: pegin_flow_id,
             pegin_requested,
             pegin_accepted: None,
             btc_signatures_flow: None,
@@ -89,7 +140,7 @@ where
     contracts: Rc<CG>,
     bitvmx_broker: Rc<BC>,
     blockchain: BlockchainView,
-    tracker: HashMap<TxHash, PeginEventState<BSF>>,
+    tracker: HashMap<TxHash, PeginState<BSF>>,
     btc_sig_subflow_factory: FactoryBSF,
 }
 
@@ -110,6 +161,7 @@ where
             .expect("Failed to subscribe to BitVMX pegin events");
 
         info!("Successfully subscribed to BitVMX pegin events");
+
         Self {
             rt_sync,
             contracts,
@@ -161,7 +213,7 @@ where
             );
         };
 
-        let observer_id = format!("pegin_accepted-{}", state.pegin_flow_id);
+        let observer_id = format!("pegin_accepted-{}", state.flow_id);
         let confirmations =
             BlockConfirmations::new(observer_id, data.block_number, REQUIRED_CONFIRMATIONS);
         let pegin_accepted = PeginEvent::new(data.clone(), confirmations);
@@ -189,7 +241,7 @@ where
         }
 
         self.tracker
-            .insert(tx_hash, PeginEventState::new(pegin_flow_id, event));
+            .insert(tx_hash, PeginState::new(pegin_flow_id, event));
 
         Ok(())
     }
@@ -225,7 +277,7 @@ where
 
                 info!(
                     "Untracked PeginRequested event. tx_hash: {:?}, pegin_flow_id: {}",
-                    tx_hash, state.pegin_flow_id
+                    tx_hash, state.flow_id
                 );
 
                 Ok(())
@@ -257,7 +309,7 @@ where
 
                 info!(
                     "Untracked PeginAccepted event. tx_hash: {:?}, pegin_flow_id: {}",
-                    tx_hash, state.pegin_flow_id
+                    tx_hash, state.flow_id
                 );
 
                 Ok(())
@@ -271,18 +323,28 @@ where
 
     fn process_unhandled_confirmed_pegin_requested_events(&mut self) -> Result<()> {
         for (tx_hash, state) in self.tracker.iter_mut() {
-            let flow_id = state.pegin_flow_id;
+            let flow_id = state.flow_id;
 
             let event = &mut state.pegin_requested;
             if !event.is_confirmed() || event.is_handled {
                 continue;
             }
 
+            let response = Self::call_contract(&self.rt_sync, "getCommittee", || async {
+                self.contracts
+                    .get_committee(GetCommitteeInput {
+                        committee_id: event.data.inner.committeeId,
+                    })
+                    .await
+            })?;
+
+            let pegin_request = PeginRequest::build(event.data.inner.clone(), response.committee)?;
+
             Self::send_bitvmx_variable(
                 &self.bitvmx_broker,
                 flow_id,
-                "PeginRequested",
-                &event.data.inner,
+                "PeginRequest",
+                &pegin_request,
             )
             .context(format!(
                 "Error processing confirmed PeginRequested event (tx_hash: {}, flow_id: {})",
@@ -311,7 +373,7 @@ where
         let mut to_remove = Vec::new();
 
         for (tx_hash, state) in self.tracker.iter_mut() {
-            let flow_id = state.pegin_flow_id;
+            let flow_id = state.flow_id;
 
             let event = match state.pegin_accepted.as_mut() {
                 None => continue,
@@ -439,6 +501,28 @@ where
             Err(domain_err) => bail!("Error executing '{}': {:?}", method_name, domain_err),
         }
     }
+
+    fn call_contract<Fut, F, T>(rt_sync: &RuntimeSync, method_name: &str, call: F) -> Result<T>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<T, DomainErrors>>,
+        T: Debug,
+    {
+        info!("Calling contract method: '{}'", method_name);
+
+        match rt_sync.run(call()) {
+            Ok(result) => {
+                info!(
+                    "Successfully called '{}', result: {:?}",
+                    method_name, result
+                );
+                Ok(result)
+            }
+            Err(domain_err) => {
+                bail!("Error calling '{}': {:?}", method_name, domain_err)
+            }
+        }
+    }
 }
 
 impl<CG, BC, BSF, FactoryBSF> EventProcessor for PeginProcessor<CG, BC, BSF, FactoryBSF>
@@ -537,7 +621,7 @@ mod tests {
         event_processor::EventProcessor,
         types::{PeginAcceptedEvent, PeginRequestedEvent},
     };
-    use alloy_primitives::{Address, Bytes, FixedBytes, U256};
+    use alloy_primitives::{Address, Bytes, FixedBytes, U256, address};
     use anyhow::anyhow;
     use bitcoin::{
         Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, absolute::LockTime,
@@ -555,10 +639,12 @@ mod tests {
     use mockall::predicate::{eq, function};
     use primitive_types::H256;
     use serde_json::json;
+    use transaction_dispatcher::types::GetCommitteeOutput;
     use transaction_dispatcher::{
         rsk_gateway::DomainErrors,
         types::{AcceptPeginOutput, RequestPeginOutput},
     };
+    use union_contracts::bindings::committee_registry::CommitteeRegistry::{CommitteeMember, Role};
     use union_contracts::bindings::peg_manager::PegManager::{
         PeginRequested, PrevoutData, RequestPeginTempInfo, StreamPosition,
     };
@@ -969,12 +1055,7 @@ mod tests {
         });
 
         let result = processor.process_new_rsk_event(&event);
-        let observer_id = processor
-            .tracker
-            .get(&tx_hash)
-            .unwrap()
-            .pegin_flow_id
-            .to_string();
+        let observer_id = processor.tracker.get(&tx_hash).unwrap().flow_id.to_string();
         assert!(result.is_ok());
         assert_eq!(processor.tracker.len(), 1);
         assert!(!processor.blockchain.has_observer(&observer_id));
@@ -1095,25 +1176,42 @@ mod tests {
         );
         let pegin_event = PeginEvent::new(event.clone(), confirmations);
 
+        let mut contracts = MockRskContractsGatewayApi::new();
+        let committee = dummy_committee();
+        let committee_clone_for_build = committee.clone();
+
+        contracts
+            .expect_get_committee()
+            .withf(move |inp: &GetCommitteeInput| inp.committee_id == pegin_requested.committeeId)
+            .returning(move |_| {
+                Ok(GetCommitteeOutput {
+                    committee: committee.clone(),
+                })
+            })
+            .times(1);
+
         let mut broker = MockBrokerClientApi::new();
         expect_bitvmx_subscription_success(&mut broker);
-        let expected_payload = json!(event.inner);
+
+        let expected_pegin_request =
+            PeginRequest::build(pegin_requested.clone(), committee_clone_for_build).unwrap();
+        let expected_payload = json!(expected_pegin_request);
 
         broker
-            .expect_send()
-            .times(1)
-            .with(
-                eq(BROKER_SERVER_ID),
-                function(move |req: &IncomingBitVMXApiMessages| {
-                    matches!(
-            req,
-            IncomingBitVMXApiMessages::SetVar(_, variable_name, VariableTypes::String(actual))
-                if variable_name == "PeginRequested"
-                && serde_json::from_str::<Value>(actual).ok() == Some(expected_payload.clone())
+        .expect_send()
+        .times(1)
+        .with(
+            eq(BROKER_SERVER_ID),
+            function(move |req: &IncomingBitVMXApiMessages| {
+                matches!(
+                    req,
+                    IncomingBitVMXApiMessages::SetVar(_, var_name, VariableTypes::String(actual))
+                        if var_name == "PeginRequest"
+                        && serde_json::from_str::<Value>(actual).ok() == Some(expected_payload.clone())
+                )
+            }),
         )
-                }),
-            )
-            .returning(|_, _| Ok(true));
+        .returning(|_, _| Ok(true));
 
         let mut mock_btc_sig_subflow_factory = MockBtcSigSubFlowFactory::new();
         mock_btc_sig_subflow_factory
@@ -1123,7 +1221,7 @@ mod tests {
 
         let mut processor = PeginProcessor::new(
             RuntimeSync::new().unwrap(),
-            MockRskContractsGatewayApi::new().into(),
+            contracts.into(),
             broker.into(),
             mock_btc_sig_subflow_factory,
         );
@@ -1419,6 +1517,25 @@ mod tests {
                 .expect("Invalid address"),
             rbtcAmount: U256::from(12345678),
             utxoScriptPubKey: Bytes::from("0xabcdef0123456789"),
+        }
+    }
+
+    fn dummy_committee() -> Committee {
+        let leader: Address = address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
+        Committee {
+            aggregatedKey: FixedBytes::from([0x11u8; 32]),
+            members: vec![
+                CommitteeMember {
+                    memberAddress: leader,
+                    role: Role::from(1u8).into(), // Operator
+                },
+                CommitteeMember {
+                    memberAddress: address!("0x0000000000000000000000000000000000000001"),
+                    role: Role::from(2u8).into(), // Non-operator, should be filtered out
+                },
+            ],
+            leaderAddress: leader,
+            operatorTakeIndex: U256::from(0u64),
         }
     }
 }

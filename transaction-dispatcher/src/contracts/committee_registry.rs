@@ -1,19 +1,20 @@
 use crate::contracts::common::send_tx_with_gas_bump;
 use crate::contracts::types::Address;
+use crate::rsk_gateway::DomainErrors;
 use alloy_primitives::U256;
 use alloy_provider::Provider;
 use log::info;
-
-#[cfg(test)]
-use mockall::automock;
-use union_contracts::bindings::committee_registry::CommitteeRegistry;
+use union_contracts::bindings::committee_registry::CommitteeRegistry::{self, Committee};
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     CommitteeRegistryErrors, CommitteeRegistryInstance, StreamDenomination,
 };
 
+#[cfg(test)]
+use mockall::automock;
+
 pub(crate) use crate::contracts::interactions::apply_to_stream::ApplyToStreamInvoke;
 pub(crate) use crate::contracts::interactions::get_member_public_keys::GetMemberPublicKeysCall;
-use crate::rsk_gateway::DomainErrors;
+pub(crate) use crate::contracts::interactions::get_committee::GetCommitteeCall;
 
 #[cfg_attr(test, automock)]
 pub trait CommitteeRegistryContractApi {
@@ -34,6 +35,8 @@ pub trait CommitteeRegistryContractApi {
         &self,
         stream: StreamDenomination,
     ) -> alloy_contract::Result<U256>;
+
+    async fn call_get_committee(&self, committee_id: U256) -> alloy_contract::Result<Committee>;
 }
 
 #[derive(Clone)]
@@ -90,6 +93,13 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
         //     .call()
         //     .await
         Ok(U256::default())
+    }
+
+    async fn call_get_committee(&self, committee_id: U256) -> alloy_contract::Result<Committee> {
+        self.contract_instance
+            .getCommittee(committee_id)
+            .call()
+            .await
     }
 }
 
