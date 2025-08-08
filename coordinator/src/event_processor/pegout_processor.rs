@@ -2,7 +2,7 @@ use crate::blockchain_tracker::{BlockConfirmations, BlockchainObserver, Blockcha
 use crate::flows::btc_signature::btc_signature_lifecycle::BtcSignatureLifeCycle;
 use crate::flows::btc_signature::btc_signature_subflow::{
     BaseBtcSignatureSubFlow, BtcSignatureSubFlowApi, BtcSignatureSubFlowFactory,
-    BtcSignatureSubFlowFactoryApi, SIGNATURE_MESSAGE,
+    BtcSignatureSubFlowFactoryApi,
 };
 use crate::{
     config::REQUIRED_CONFIRMATIONS,
@@ -11,13 +11,13 @@ use crate::{
 };
 use anyhow::{Context, Result, anyhow, bail};
 use common::msg_broker::bitvmx_types::{
-    IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, VariableTypes,
+    IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PegOutAccepted, RegisterSignaturesInput,
+    VariableTypes,
 };
 use common::runtime_sync::RuntimeSync;
-use common::types::{Hash256, TxHash};
 use common::{
     msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi},
-    types::RskBlockAndUncles,
+    types::{RskBlockAndUncles, TxHash},
 };
 use log::{debug, info, trace};
 use serde::Serialize;
@@ -33,6 +33,7 @@ use uuid::Uuid;
 pub const USER_TAKE: &str = "USER_TAKE";
 pub const PROGRAM_TYPE_REQUEST_PEGOUT: &str = "request_pegout";
 pub const PEGOUT_REQUEST_NAME: &str = "pegout_request";
+pub const PEGOUT_ACCEPTED_NAME: &str = "pegout_accepted";
 
 #[derive(Debug, Clone)]
 struct PegoutEvent<T: Clone> {
@@ -522,8 +523,8 @@ where
                     flow_id, method, result
                 );
             }
-            OutgoingBitVMXApiMessages::Variable(flow_id, method, VariableTypes::String(_data))
-                if matches!(method.as_str(), SIGNATURE_MESSAGE) =>
+            OutgoingBitVMXApiMessages::Variable(flow_id, method, VariableTypes::String(data))
+                if matches!(method.as_str(), PEGOUT_ACCEPTED_NAME) =>
             {
                 let state = self
                     .tracker
@@ -536,9 +537,10 @@ where
                     );
                 } else {
                     let mut btc_sig_subflow = self.btc_sig_subflow_factory.create_flow(*flow_id);
-                    let result = btc_sig_subflow.delegate_bitvmx_event(event)?;
+                    let input = serde_json::from_str::<PegOutAccepted>(data)?;
+                    let input = RegisterSignaturesInput::try_from(input)?;
+                    btc_sig_subflow.start_signature_flow(*flow_id, &input)?;
                     state.btc_sig_flow = Some(btc_sig_subflow);
-                    result
                 }
             }
             _ => {}

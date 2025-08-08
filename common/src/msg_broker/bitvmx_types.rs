@@ -2,6 +2,7 @@
 
 use crate::types::Hash256;
 use bitcoin::{Amount, BlockHash, PrivateKey, PublicKey, ScriptBuf, Transaction, Txid};
+use musig2::secp::MaybeScalar;
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -237,4 +238,35 @@ pub struct BitVmxSigningInfo {
     pub hash_to_sign: Hash256,
     pub signature: PartialSignature,
     pub nonce: PubNonce,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterSignaturesInput {
+    pub hash_to_sign: Hash256,
+    pub nonce: PubNonce,
+    pub signature: PartialSignature,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PegOutAccepted {
+    pub committee_id: Uuid,
+    pub user_take_txid: Txid,
+    pub user_take_sighash: Vec<u8>,
+    pub user_take_nonce: PubNonce,
+    pub user_take_signature: MaybeScalar,
+}
+
+impl TryFrom<PegOutAccepted> for RegisterSignaturesInput {
+    type Error = anyhow::Error;
+
+    fn try_from(value: PegOutAccepted) -> Result<Self, Self::Error> {
+        Ok(RegisterSignaturesInput {
+            hash_to_sign: Hash256::from(alloy_primitives::FixedBytes::from(
+                <[u8; 32]>::try_from(value.user_take_sighash)
+                    .map_err(|_| anyhow::anyhow!("Hash must be exactly 32 bytes"))?,
+            )),
+            nonce: value.user_take_nonce,
+            signature: value.user_take_signature,
+        })
+    }
 }

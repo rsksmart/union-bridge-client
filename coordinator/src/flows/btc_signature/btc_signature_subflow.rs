@@ -1,9 +1,7 @@
 use super::btc_signature_lifecycle::{BtcSignatureLifeCycle, BtcSignatureLifecycleApi};
 use crate::types::RskPegManagerEvents;
-use anyhow::{Result, anyhow, bail};
-use common::msg_broker::bitvmx_types::{
-    BitVmxSigningInfo, OutgoingBitVMXApiMessages, VariableTypes,
-};
+use anyhow::{Result, bail};
+use common::msg_broker::bitvmx_types::RegisterSignaturesInput;
 use common::types::RskBlockAndUncles;
 
 use common::runtime_sync::RuntimeSync;
@@ -15,11 +13,13 @@ use uuid::Uuid;
 #[cfg(test)]
 use mockall::automock;
 
-pub(crate) const SIGNATURE_MESSAGE: &str = "signing_info";
-
 #[cfg_attr(test, automock)]
 pub(crate) trait BtcSignatureSubFlowApi {
-    fn delegate_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()>;
+    fn start_signature_flow(
+        &mut self,
+        flow_id: Uuid,
+        event: &RegisterSignaturesInput,
+    ) -> Result<()>;
     fn delegate_rsk_event(&mut self, flow_id: Uuid, event: &RskPegManagerEvents) -> Result<()>;
     fn delegate_block(&mut self, block: &RskBlockAndUncles) -> Result<()>;
     fn is_done(&self) -> bool;
@@ -59,26 +59,17 @@ impl<BSF> BtcSignatureSubFlowApi for BaseBtcSignatureSubFlow<BSF>
 where
     BSF: BtcSignatureLifecycleApi,
 {
-    fn delegate_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
-        match event {
-            OutgoingBitVMXApiMessages::Variable(flow_id, method, VariableTypes::String(data))
-                if matches!(method.as_str(), SIGNATURE_MESSAGE) =>
-            {
-                if self.lifecycle.flow_id() != *flow_id {
-                    return Ok(()); // not mine
-                }
-
-                let signing_info = serde_json::from_str::<BitVmxSigningInfo>(data)
-                    .map_err(|e| anyhow!("Failed to deserialize signature data: {e}"))?;
-
-                self.lifecycle.send_nonce_to_contracts(&signing_info)?;
-
-                Ok(())
-            }
-            _ => {
-                bail!("Unexpected BitVMX event in BtcSignatureSubFlow: {event:?}")
-            }
+    fn start_signature_flow(
+        &mut self,
+        flow_id: Uuid,
+        event: &RegisterSignaturesInput,
+    ) -> Result<()> {
+        if self.lifecycle.flow_id() != flow_id {
+            return Ok(()); // not mine
         }
+
+        self.lifecycle.send_nonce_to_contracts(event)?;
+        Ok(())
     }
 
     fn delegate_rsk_event(&mut self, flow_id: Uuid, event: &RskPegManagerEvents) -> Result<()> {
@@ -179,7 +170,7 @@ mod tests {
     use crate::blockchain_tracker::BlockchainView;
     use crate::flows::btc_signature::btc_signature_lifecycle::MockBtcSignatureLifecycleApi;
     use crate::types::{AllNoncesReadyEvent, AllSignaturesReadyEvent};
-    use bitcoin::PublicKey;
+    use anyhow::anyhow;
     use common::test_utils::rsk_block_generator::create_block_and_uncles;
     use common::types::{BlockNumber, Hash256, RskBlockAndUncles, TxHash};
     use mockall::predicate::*;
@@ -187,7 +178,6 @@ mod tests {
     use primitive_types::H256;
     use std::cell::RefCell;
     use std::rc::Rc;
-    use std::str::FromStr;
 
     type MockBtcSignatureSubFlow = BaseBtcSignatureSubFlow<MockBtcSignatureLifecycleApi>;
 
@@ -201,35 +191,27 @@ mod tests {
     }
 
     #[test]
-    fn test_process_new_bitvmx_event() {
+    fn test_start_signature_flow() {
         // create signature data for the event
         let hash_to_sign = Hash256::from(H256::random());
         let nonce = "0279BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798032DE2662628C90B03F5E720284EB52FF7D71F4284F627B68A853D78C78E1FFE93".parse::<PubNonce>().unwrap();
         let signature = "44477400e59c41025e4e18c4de244b90b14554dcdcbfa396ead4659aa6343249"
             .parse()
             .unwrap();
-        let signing_info = BitVmxSigningInfo {
-            protocol_name: "pegin".to_string(),
-            take_aggr_key: PublicKey::from_str("04c4b0bbb339aa236bff38dbe6a451e111972a7909a126bc424013cba2ec33bc38e98ac269ffe028345c31ac8d0a365f29c8f7e7cfccac72f84e1acd02bc554f35").unwrap(),
+
+        let flow_id = Uuid::new_v4();
+
+        let event = RegisterSignaturesInput {
             hash_to_sign,
             nonce: nonce.clone(),
             signature,
         };
-        let signature_json = serde_json::to_string(&signing_info).unwrap();
-
-        let flow_id = Uuid::new_v4();
-
-        let event = OutgoingBitVMXApiMessages::Variable(
-            flow_id,
-            SIGNATURE_MESSAGE.to_string(),
-            VariableTypes::String(signature_json),
-        );
 
         // setup mock flow to expect nonce being sent to contracts
         let mut mock_flow = MockBtcSignatureLifecycleApi::new();
         mock_flow
             .expect_send_nonce_to_contracts()
-            .withf(move |arg: &BitVmxSigningInfo| {
+            .withf(move |arg: &RegisterSignaturesInput| {
                 arg.hash_to_sign == hash_to_sign && arg.nonce == nonce && arg.signature == signature
             })
             .times(1)
@@ -242,24 +224,38 @@ mod tests {
 
         let mut sub_flow = MockBtcSignatureSubFlow::new(mock_flow);
 
-        let result = sub_flow.delegate_bitvmx_event(&event);
+        let result = sub_flow.start_signature_flow(flow_id, &event);
 
         assert!(result.is_ok());
     }
 
     #[test]
-    fn test_process_new_bitvmx_event_rejects_invalid_event() {
-        let event = OutgoingBitVMXApiMessages::Variable(
-            Uuid::new_v4(),
-            "wrong-message".to_string(),
-            VariableTypes::String("data".to_string()),
-        );
+    fn test_start_signature_flow_wrong_flow_id() {
+        let hash_to_sign = Hash256::from(H256::random());
+        let nonce = "0279BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798032DE2662628C90B03F5E720284EB52FF7D71F4284F627B68A853D78C78E1FFE93".parse::<PubNonce>().unwrap();
+        let signature = "44477400e59c41025e4e18c4de244b90b14554dcdcbfa396ead4659aa6343249"
+            .parse()
+            .unwrap();
 
-        let mut sub_flow = MockBtcSignatureSubFlow::new(MockBtcSignatureLifecycleApi::new());
+        let flow_id = Uuid::new_v4();
+        let wrong_flow_id = Uuid::new_v4();
 
-        let result = sub_flow.delegate_bitvmx_event(&event);
+        let event = RegisterSignaturesInput {
+            hash_to_sign,
+            nonce,
+            signature,
+        };
 
-        assert!(result.is_err());
+        let mut mock_flow = MockBtcSignatureLifecycleApi::new();
+        mock_flow.expect_flow_id().returning(move || flow_id);
+        // Should not call send_nonce_to_contracts since flow_id doesn't match
+        mock_flow.expect_send_nonce_to_contracts().times(0);
+
+        let mut sub_flow = MockBtcSignatureSubFlow::new(mock_flow);
+
+        let result = sub_flow.start_signature_flow(wrong_flow_id, &event);
+
+        assert!(result.is_ok()); // Should succeed but do nothing
     }
 
     #[test]
@@ -591,75 +587,32 @@ mod tests {
     }
 
     #[test]
-    fn test_process_new_bitvmx_event_invalid_json() {
-        let flow_id = Uuid::new_v4();
-
-        let event = OutgoingBitVMXApiMessages::Variable(
-            flow_id,
-            SIGNATURE_MESSAGE.to_string(),
-            VariableTypes::String("invalid json".to_string()),
-        );
-
-        let mut sub_flow = MockBtcSignatureSubFlow::new(MockBtcSignatureLifecycleApi::new());
-        sub_flow
-            .lifecycle
-            .expect_flow_id()
-            .times(1)
-            .returning(move || flow_id);
-
-        let result = sub_flow.delegate_bitvmx_event(&event);
-
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Failed to deserialize signature data")
-        );
-    }
-
-    #[test]
-    fn test_process_new_bitvmx_event_send_nonce_fails() {
-        // create signature data for the event
+    fn test_start_signature_flow_send_nonce_fails() {
         let hash_to_sign = Hash256::from(H256::random());
         let nonce = "0279BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798032DE2662628C90B03F5E720284EB52FF7D71F4284F627B68A853D78C78E1FFE93".parse::<PubNonce>().unwrap();
         let signature = "44477400e59c41025e4e18c4de244b90b14554dcdcbfa396ead4659aa6343249"
             .parse()
             .unwrap();
-        let signing_info = BitVmxSigningInfo {
-            protocol_name: "pegin".to_string(),
-            take_aggr_key: PublicKey::from_str("04c4b0bbb339aa236bff38dbe6a451e111972a7909a126bc424013cba2ec33bc38e98ac269ffe028345c31ac8d0a365f29c8f7e7cfccac72f84e1acd02bc554f35").unwrap(),
-            hash_to_sign,
-            nonce: nonce.clone(),
-            signature,
-        };
-        let signature_json = serde_json::to_string(&signing_info).unwrap();
 
         let flow_id = Uuid::new_v4();
-        let event = OutgoingBitVMXApiMessages::Variable(
-            flow_id,
-            SIGNATURE_MESSAGE.to_string(),
-            VariableTypes::String(signature_json),
-        );
+
+        let event = RegisterSignaturesInput {
+            hash_to_sign,
+            nonce,
+            signature,
+        };
 
         // setup mock flow to fail when sending nonce
         let mut mock_flow = MockBtcSignatureLifecycleApi::new();
+        mock_flow.expect_flow_id().returning(move || flow_id);
         mock_flow
             .expect_send_nonce_to_contracts()
             .times(1)
             .returning(|_| Err(anyhow!("Contract call failed")));
-        mock_flow
-            .expect_blockchain_view()
-            .returning(|| Rc::new(RefCell::new(BlockchainView::new())));
 
         let mut sub_flow = MockBtcSignatureSubFlow::new(mock_flow);
-        sub_flow
-            .lifecycle
-            .expect_flow_id()
-            .times(1)
-            .returning(move || flow_id);
 
-        let result = sub_flow.delegate_bitvmx_event(&event);
+        let result = sub_flow.start_signature_flow(flow_id, &event);
 
         assert!(result.is_err());
         assert!(
