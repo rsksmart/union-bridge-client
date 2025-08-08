@@ -2,11 +2,8 @@ use crate::types::RskPegManagerEvents::UnknownEvent;
 use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
 use alloy_primitives::{B256, LogData};
 use alloy_sol_types::SolEvent;
-use bitcoin::PublicKey;
 use common::types::{BlockHash, BlockNumber, Hash256, RskLog, TxHash};
 use log::{error, warn};
-use musig2::{PartialSignature, PubNonce};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use transaction_dispatcher::types::ApplyToStreamInput;
 use union_contracts::bindings::peg_manager::PegManager::{

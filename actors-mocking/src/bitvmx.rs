@@ -1,9 +1,8 @@
 use anyhow::{Context, Result};
 use bitcoin::Transaction;
-use common::msg_broker::bitvmx_types::BitVmxSigningInfo;
 use common::msg_broker::{
     bitvmx_types::{
-        BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages,
+        BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PegOutAccepted,
         TransactionBlockchainStatus, TransactionStatus, VariableTypes,
     },
     broker::{BITVMX_L2_BROKER_CLIENT_ID, BitVmxBrokerServerApi},
@@ -216,20 +215,17 @@ impl<BS: BitVmxBrokerServerApi> Executor<BS> {
             ))
     }
 
-    pub fn send_signature_event(&self, bit_vmx_signing_info: BitVmxSigningInfo) -> Result<()> {
-        let payload = json!({
-            "take_aggr_key": bit_vmx_signing_info.take_aggr_key,
-            "hash_to_sign": bit_vmx_signing_info.hash_to_sign,
-            "signature": bit_vmx_signing_info.signature,
-            "nonce": bit_vmx_signing_info.nonce,
-        });
-        let uuid = Uuid::parse_str(&bit_vmx_signing_info.protocol_name)?;
+    pub fn send_pegout_accepted_event(
+        &self,
+        flow_id: Uuid,
+        pegout_accepted: PegOutAccepted,
+    ) -> Result<()> {
+        let payload = json!(pegout_accepted);
         let event = OutgoingBitVMXApiMessages::Variable(
-            uuid,
-            "signing_info".to_string(),
+            flow_id,
+            "pegout_accepted".to_string(),
             VariableTypes::String(payload.to_string()),
         );
-
         self.broker_server
             .send(&event, BITVMX_L2_BROKER_CLIENT_ID)
             .context(format!(

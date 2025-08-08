@@ -10,6 +10,7 @@ use crate::{
     types::{EventWithBlock, RskPegManagerEvents},
 };
 use anyhow::{Context, Result, anyhow, bail};
+use bitcoin::Txid;
 use common::msg_broker::bitvmx_types::{
     IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PegOutAccepted, RegisterSignaturesInput,
     VariableTypes,
@@ -66,6 +67,7 @@ impl<T: Clone> PegoutEvent<T> {
 struct PegoutEventState<BSF: BtcSignatureSubFlowApi> {
     pegout_requested_tx: TxHash,
     pegout_requested: PegoutEvent<PegoutRequested>,
+    pegout_accepted_tx: Option<Txid>,
     pegout_registered_tx: Option<TxHash>,
     pegout_registered: Option<PegoutEvent<PegoutRegistered>>,
     btc_sig_flow: Option<BSF>,
@@ -76,6 +78,7 @@ impl<BSF: BtcSignatureSubFlowApi> PegoutEventState<BSF> {
         Self {
             pegout_requested_tx,
             pegout_requested,
+            pegout_accepted_tx: None,
             pegout_registered_tx: None,
             pegout_registered: None,
             btc_sig_flow: None,
@@ -338,14 +341,13 @@ where
         }
     }
 
-    //TODO define with FG about this parameters
     fn send_setup_to_bitvmx(bitvmx_broker: &BC, flow_id: Uuid) -> Result<()> {
         bitvmx_broker.send(
             BROKER_SERVER_ID,
             IncomingBitVMXApiMessages::Setup(
                 flow_id,
                 PROGRAM_TYPE_REQUEST_PEGOUT.to_string(),
-                vec![],
+                vec![], //TODO add the p2p address of the committee members.
                 0,
             ),
         )?;
@@ -537,9 +539,10 @@ where
                     );
                 } else {
                     let mut btc_sig_subflow = self.btc_sig_subflow_factory.create_flow(*flow_id);
-                    let input = serde_json::from_str::<PegOutAccepted>(data)?;
-                    let input = RegisterSignaturesInput::try_from(input)?;
-                    btc_sig_subflow.start_signature_flow(*flow_id, &input)?;
+                    let input: PegOutAccepted = serde_json::from_str::<PegOutAccepted>(data)?;
+                    state.pegout_accepted_tx = Some(input.user_take_txid);
+                    let register_input = RegisterSignaturesInput::try_from(input.clone())?;
+                    btc_sig_subflow.start_signature_flow(*flow_id, &register_input)?;
                     state.btc_sig_flow = Some(btc_sig_subflow);
                 }
             }

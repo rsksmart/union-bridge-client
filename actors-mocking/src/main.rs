@@ -4,11 +4,11 @@ use alloy_node_bindings::Anvil;
 use alloy_provider::{ProviderBuilder, network::EthereumWallet};
 use alloy_signer_local::LocalSigner;
 use anyhow::{Context, Result};
-use bitcoin::{PublicKey, Transaction};
+use bitcoin::{Transaction, Txid};
 use clap::{CommandFactory, Parser};
-use common::msg_broker::bitvmx_types::BitVmxSigningInfo;
+use common::msg_broker::bitvmx_types::PegOutAccepted;
 use common::msg_broker::broker::BitVmxBrokerServer;
-use common::types::Hash256;
+use hex::FromHex;
 use musig2::{PartialSignature, PubNonce};
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -19,6 +19,7 @@ use std::{
     time::Duration,
 };
 use tokio::io::{self, AsyncBufReadExt, BufReader};
+use uuid::Uuid;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -90,17 +91,19 @@ enum Menu {
         merkle_branch_hashes: String,
     },
     #[command(name = "send-signature", visible_alias = "ss")]
-    SendSignature {
-        #[arg(help = "Protocol name/UUID")]
-        protocol_name: String,
-        #[arg(help = "Aggregated public key (hex)")]
-        take_aggr_key: String,
-        #[arg(help = "Hash to sign (hex)")]
-        hash_to_sign: String,
-        #[arg(help = "Partial signature (hex)")]
-        signature: String,
+    PegoutAccepted {
+        #[arg(help = "Flow ID (UUID)")]
+        flow_id: String,
+        #[arg(help = "Committee name/UUID")]
+        committee_id: String,
+        #[arg(help = "User take txid (hex)")]
+        user_take_txid: String,
+        #[arg(help = "User take sighash (hex)")]
+        user_take_sighash: String,
         #[arg(help = "Public nonce (hex)")]
-        nonce: String,
+        user_take_nonce: String,
+        #[arg(help = "User take signature (hex)")]
+        user_take_signature: String,
     },
 }
 
@@ -294,38 +297,35 @@ async fn main() -> Result<()> {
                         merkle_hashes,
                     )?;
                 }
-                Menu::SendSignature {
-                    protocol_name,
-                    take_aggr_key,
-                    hash_to_sign,
-                    signature,
-                    nonce,
+                Menu::PegoutAccepted {
+                    flow_id,
+                    committee_id,
+                    user_take_txid,
+                    user_take_sighash,
+                    user_take_nonce,
+                    user_take_signature,
                 } => {
-                    let take_aggr_key = PublicKey::from_str(&take_aggr_key)?;
-                    let hash_bytes: Vec<u8> = hex::decode(hash_to_sign.trim_start_matches("0x"))?;
-                    let hash_array: [u8; 32] = hash_bytes
-                        .as_slice()
-                        .try_into()
-                        .map_err(|_| anyhow::anyhow!("Hash must be exactly 32 bytes"))?;
-                    let hash_to_sign =
-                        Hash256::from(alloy_primitives::FixedBytes::from(hash_array));
-                    let signature = PartialSignature::from_str(&signature)?;
-                    let nonce = PubNonce::from_str(&nonce)?;
-                    let bit_vmx_signing_info = BitVmxSigningInfo {
-                        protocol_name,
-                        take_aggr_key,
-                        hash_to_sign,
-                        signature,
-                        nonce,
+                    let flow_id = Uuid::parse_str(&flow_id)?;
+                    let committee_id = Uuid::parse_str(&committee_id)?;
+                    let user_take_txid = Txid::from_str(&user_take_txid)?;
+                    let user_take_sighash = Vec::<u8>::from_hex(user_take_sighash)?;
+                    let user_take_nonce = PubNonce::from_str(&user_take_nonce)?;
+                    let user_take_signature = PartialSignature::from_str(&user_take_signature)?;
+
+                    let pegout_accepted = PegOutAccepted {
+                        committee_id,
+                        user_take_txid,
+                        user_take_sighash,
+                        user_take_nonce,
+                        user_take_signature,
                     };
 
                     let executor = bitvmx_executor
                         .lock()
                         .expect("Failed to lock bitvmx_executor");
 
-                    executor.send_signature_event(bit_vmx_signing_info)?;
+                    executor.send_pegout_accepted_event(flow_id, pegout_accepted)?;
                 }
-
                 Menu::Exit => {
                     break;
                 }
