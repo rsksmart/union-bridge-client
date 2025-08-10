@@ -36,6 +36,9 @@ use uuid::Uuid;
 
 const ACCEPT_PEGIN: &'static str = "accept-pegin";
 
+/// Data structure used to send pegin request information to the BitVMX client.
+/// This transforms raw blockchain events into a structured format with all necessary
+/// committee and signature data that BitVMX needs for pegin processing.
 #[derive(Debug, Clone, Serialize)]
 struct PeginRequest {
     txid: FixedBytes<32>, // requestPeginTxHash
@@ -51,11 +54,13 @@ struct PeginRequest {
 
 impl PeginRequest {
     fn build(event: PeginRequested, committee: Committee) -> Result<Self> {
+        const OPERATOR_ROLE: u8 = 1;
+        
         // collect only the member addresses that are operators
         let operators_take_key: Vec<String> = committee
             .members
             .iter()
-            .filter(|m| m.role == 1) // assumes Role==1 is Operator
+            .filter(|m| m.role == OPERATOR_ROLE)
             .map(|m| m.memberAddress.to_checksum(None))
             .collect();
 
