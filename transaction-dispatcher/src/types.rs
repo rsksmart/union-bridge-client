@@ -254,7 +254,7 @@ pub struct DepositCommunicationDataOutput {
 pub struct P2PAddressParser;
 
 impl P2PAddressParser {
-    pub fn contracts_to_bitvmx(input: CommunicationData) -> Result<P2PAddress> {
+    pub fn contracts_to_bitvmx(input: &CommunicationData) -> Result<P2PAddress> {
         let mut buf = [0u8; 256];
         for (dst, fb) in buf.chunks_mut(32).zip(input.data.iter()) {
             let chunk: [u8; 32] = (*fb).into();
@@ -392,7 +392,7 @@ mod tests {
             peer_id: PeerId(peer.to_string()),
         };
         let comm = P2PAddressParser::bitvmx_to_contracts(&original).expect("encode should succeed");
-        let decoded = P2PAddressParser::contracts_to_bitvmx(comm).expect("decode should succeed");
+        let decoded = P2PAddressParser::contracts_to_bitvmx(&comm).expect("decode should succeed");
         assert_eq!(decoded.address, original.address);
         assert_eq!(decoded.peer_id.0, original.peer_id.0);
     }
@@ -454,7 +454,7 @@ mod tests {
         buf[0..2].copy_from_slice(&(300u16.to_be_bytes())); // addr_len = 300
         // No addr bytes filled; guard should trip
         let comm = P2PAddressParser::buf_to_comm(buf).expect("buf_to_comm should succeed");
-        let err = P2PAddressParser::contracts_to_bitvmx(comm).unwrap_err();
+        let err = P2PAddressParser::contracts_to_bitvmx(&comm).unwrap_err();
         assert!(
             err.to_string().contains("address bytes out of bounds"),
             "unexpected error: {}",
@@ -473,7 +473,7 @@ mod tests {
         buf[3..5].copy_from_slice(&(400u16.to_be_bytes()));
         // Guard should trip
         let comm = P2PAddressParser::buf_to_comm(buf).expect("buf_to_comm should succeed");
-        let err = P2PAddressParser::contracts_to_bitvmx(comm).unwrap_err();
+        let err = P2PAddressParser::contracts_to_bitvmx(&comm).unwrap_err();
         assert!(
             err.to_string().contains("peer id bytes out of bounds"),
             "unexpected error: {}",
@@ -491,7 +491,7 @@ mod tests {
         buf[3..5].copy_from_slice(&(0u16.to_be_bytes()));
         let comm = P2PAddressParser::buf_to_comm(buf).expect("buf_to_comm should succeed");
 
-        let err = P2PAddressParser::contracts_to_bitvmx(comm).unwrap_err();
+        let err = P2PAddressParser::contracts_to_bitvmx(&comm).unwrap_err();
         assert!(
             err.to_string()
                 .to_lowercase()
@@ -514,7 +514,7 @@ mod tests {
         buf[5] = 0xFF; // invalid UTF-8
         let comm = P2PAddressParser::buf_to_comm(buf).expect("buf_to_comm should succeed");
 
-        let err = P2PAddressParser::contracts_to_bitvmx(comm).unwrap_err();
+        let err = P2PAddressParser::contracts_to_bitvmx(&comm).unwrap_err();
         assert!(
             err.to_string()
                 .to_lowercase()
