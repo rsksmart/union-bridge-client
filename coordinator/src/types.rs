@@ -3,6 +3,7 @@ use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanc
 use alloy_primitives::{B256, LogData};
 use alloy_sol_types::SolEvent;
 use bitcoin::PublicKey;
+use common::msg_broker::bitvmx_types::PegOutAccepted;
 use common::types::{BlockHash, BlockNumber, Hash256, RskLog, TxHash};
 use log::{error, warn};
 use musig2::{PartialSignature, PubNonce};
@@ -310,16 +311,25 @@ impl EventDecoder {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct BitVmxSigningInfo {
-    pub protocol_name: String,
-    // TODO there not used for now
-    pub take_aggr_key: PublicKey,
-    // TODO there is a TODO on the BitVMX side suggesting it will be included, but for now we will have to store it ourselves
-    #[serde(default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterSignaturesInput {
     pub hash_to_sign: Hash256,
-    pub signature: PartialSignature,
     pub nonce: PubNonce,
+    pub signature: PartialSignature,
+}
+impl TryFrom<PegOutAccepted> for RegisterSignaturesInput {
+    type Error = anyhow::Error;
+
+    fn try_from(value: PegOutAccepted) -> Result<Self, Self::Error> {
+        Ok(RegisterSignaturesInput {
+            hash_to_sign: Hash256::from(alloy_primitives::FixedBytes::from(
+                <[u8; 32]>::try_from(value.user_take_sighash)
+                    .map_err(|_| anyhow::anyhow!("Hash must be exactly 32 bytes"))?,
+            )),
+            nonce: value.user_take_nonce,
+            signature: value.user_take_signature,
+        })
+    }
 }
 
 #[cfg(test)]

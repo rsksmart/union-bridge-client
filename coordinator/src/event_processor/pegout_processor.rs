@@ -1,12 +1,19 @@
 use crate::blockchain_tracker::{BlockConfirmations, BlockchainObserver, BlockchainView};
+use crate::flows::btc_signature::btc_signature_lifecycle::BtcSignatureLifeCycle;
+use crate::flows::btc_signature::btc_signature_subflow::{
+    BaseBtcSignatureSubFlow, BtcSignatureSubFlowApi, BtcSignatureSubFlowFactory,
+    BtcSignatureSubFlowFactoryApi,
+};
+use crate::types::RegisterSignaturesInput;
 use crate::{
     config::REQUIRED_CONFIRMATIONS,
     event_processor::EventProcessor,
     types::{EventWithBlock, RskPegManagerEvents},
 };
 use anyhow::{Context, Result, anyhow, bail};
+use bitcoin::Txid;
 use common::msg_broker::bitvmx_types::{
-    IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, VariableTypes,
+    IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PegOutAccepted, VariableTypes,
 };
 use common::runtime_sync::RuntimeSync;
 use common::types::{Hash256, TxHash};
@@ -56,42 +63,62 @@ impl<T: Clone> PegoutEvent<T> {
 }
 
 #[derive(Debug, Clone)]
-struct PegoutEventState {
+struct PegoutEventState<BSF: BtcSignatureSubFlowApi> {
     pegout_requested_tx: TxHash,
     pegout_requested: PegoutEvent<PegoutRequested>,
+    pegout_accepted_tx: Option<Txid>,
     pegout_registered_tx: Option<TxHash>,
     pegout_registered: Option<PegoutEvent<PegoutRegistered>>,
-    all_signatures_ready: Option<PegoutEvent<Hash256>>,
+    btc_sig_flow: Option<BSF>,
 }
 
-impl PegoutEventState {
+impl<BSF: BtcSignatureSubFlowApi> PegoutEventState<BSF> {
     fn new(pegout_requested_tx: TxHash, pegout_requested: PegoutEvent<PegoutRequested>) -> Self {
         Self {
             pegout_requested_tx,
             pegout_requested,
+            pegout_accepted_tx: None,
             pegout_registered_tx: None,
             pegout_registered: None,
-            all_signatures_ready: None,
+            btc_sig_flow: None,
         }
     }
 }
 
-pub struct PegoutProcessor<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> {
+pub struct PegoutProcessor<CG, BC, BSF, FactoryBSF>
+where
+    CG: RskContractsGatewayApi,
+    BC: BitVmxBrokerClientApi,
+    BSF: BtcSignatureSubFlowApi,
+    FactoryBSF: BtcSignatureSubFlowFactoryApi<BSF>,
+{
     rt_sync: RuntimeSync,
     contracts_gateway: Rc<CG>,
     bitvmx_broker: Rc<BC>,
     blockchain: BlockchainView,
-    tracker: HashMap<Uuid, PegoutEventState>,
+    tracker: HashMap<Uuid, PegoutEventState<BSF>>,
+    btc_sig_subflow_factory: FactoryBSF,
 }
 
-impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> PegoutProcessor<CG, BC> {
+impl<CG, BC>
+    PegoutProcessor<
+        CG,
+        BC,
+        BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<CG>>,
+        BtcSignatureSubFlowFactory<CG>,
+    >
+where
+    CG: RskContractsGatewayApi,
+    BC: BitVmxBrokerClientApi,
+{
     pub fn new(rt_sync: RuntimeSync, contracts_gateway: Rc<CG>, bitvmx_broker: Rc<BC>) -> Self {
         Self {
-            rt_sync: rt_sync,
-            contracts_gateway: contracts_gateway,
+            rt_sync: rt_sync.clone(),
+            contracts_gateway: contracts_gateway.clone(),
             bitvmx_broker,
             blockchain: BlockchainView::new(),
             tracker: HashMap::new(),
+            btc_sig_subflow_factory: BtcSignatureSubFlowFactory::new(contracts_gateway, rt_sync),
         }
     }
 
@@ -362,6 +389,16 @@ impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> PegoutProcessor<CG, 
         Ok(())
     }
 
+    fn send_get_transaction_info_by_name_to_bitvmx(
+        bitvmx_broker: &BC,
+        flow_id: Uuid,
+    ) -> Result<()> {
+        let msg =
+            IncomingBitVMXApiMessages::GetTransactionInofByName(flow_id, USER_TAKE.to_string());
+        bitvmx_broker.send(BROKER_SERVER_ID, msg)?;
+        Ok(())
+    }
+
     fn process_unhandled_confirmed_pegout_requested_events(&mut self) -> Result<()> {
         for (flow_id, state) in self.tracker.iter_mut() {
             let event = &mut state.pegout_requested;
@@ -433,36 +470,35 @@ impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> PegoutProcessor<CG, 
         Ok(())
     }
 
-    fn process_unhandled_confirmed_all_signatures_ready_events(&mut self) -> Result<()> {
-        for (flow_id, state) in self.tracker.iter_mut() {
-            let event = match &mut state.all_signatures_ready {
-                Some(event) => event,
-                None => continue,
-            };
-            if !event.is_confirmed() || event.is_handled {
-                continue;
+    fn process_unhandled_confirmed_sig_flow_events(
+        &mut self,
+        block: &RskBlockAndUncles,
+    ) -> Result<()> {
+        for (_, state) in self.tracker.iter_mut() {
+            if let Some(btc_flow) = state.btc_sig_flow.as_mut() {
+                btc_flow.delegate_block(block)?;
             }
-
-            Self::send_dispatch_transaction_name_msg_to_bitvmx(&self.bitvmx_broker, *flow_id)?;
-
-            event.mark_handled();
-
-            let confirmations = event.confirmations.borrow();
-            let observer_id = confirmations.get_id();
-            self.blockchain.remove_observer(observer_id.as_str());
-
-            info!(
-                "Successfully processed confirmed AllSignaturesReady event: {}",
-                flow_id
-            );
         }
+        Ok(())
+    }
 
+    fn execute_pegout_step(&mut self, flow_id: &Uuid) -> Result<()> {
+        Self::send_dispatch_transaction_name_msg_to_bitvmx(&self.bitvmx_broker, *flow_id)?;
+        Self::send_get_transaction_info_by_name_to_bitvmx(&self.bitvmx_broker, *flow_id)?;
         Ok(())
     }
 }
 
-impl<CG: RskContractsGatewayApi, T: BitVmxBrokerClientApi> EventProcessor
-    for PegoutProcessor<CG, T>
+impl<CG, BC> EventProcessor
+    for PegoutProcessor<
+        CG,
+        BC,
+        BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<CG>>,
+        BtcSignatureSubFlowFactory<CG>,
+    >
+where
+    CG: RskContractsGatewayApi,
+    BC: BitVmxBrokerClientApi,
 {
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
         match event {
@@ -479,6 +515,27 @@ impl<CG: RskContractsGatewayApi, T: BitVmxBrokerClientApi> EventProcessor
                     tx_id
                 ),
             },
+            OutgoingBitVMXApiMessages::Variable(flow_id, method, VariableTypes::String(data))
+                if matches!(method.as_str(), PEGOUT_ACCEPTED_NAME) =>
+            {
+                let state = self
+                    .tracker
+                    .get_mut(flow_id)
+                    .ok_or_else(|| anyhow!("Pegout not found for flow_id: {}", flow_id))?;
+                if state.btc_sig_flow.is_some() {
+                    bail!(
+                        "BTC signatures flow already exists for flow_id: {}",
+                        flow_id
+                    );
+                } else {
+                    let mut btc_sig_subflow = self.btc_sig_subflow_factory.create_flow(*flow_id);
+                    let input: PegOutAccepted = serde_json::from_str::<PegOutAccepted>(data)?;
+                    state.pegout_accepted_tx = Some(input.user_take_txid);
+                    let register_input = RegisterSignaturesInput::try_from(input.clone())?;
+                    btc_sig_subflow.start_signature_flow(*flow_id, &register_input)?;
+                    state.btc_sig_flow = Some(btc_sig_subflow);
+                }
+            }
             OutgoingBitVMXApiMessages::Variable(flow_id, method, VariableTypes::String(data))
                 if matches!(method.as_str(), "register-pegout") =>
             {
@@ -521,6 +578,24 @@ impl<CG: RskContractsGatewayApi, T: BitVmxBrokerClientApi> EventProcessor
                 }
                 self.track_pegout_registered(data.clone())?;
             }
+            RskPegManagerEvents::AllNoncesReady(data)
+            | RskPegManagerEvents::AllSignaturesReady(data) => {
+                debug!("Handling signature event {:?}", data);
+                let mut flow_ids_to_execute = Vec::new();
+
+                for (flow_id, state) in self.tracker.iter_mut() {
+                    if let Some(btc_flow) = state.btc_sig_flow.as_mut() {
+                        btc_flow.delegate_rsk_event(*flow_id, event)?;
+                        if btc_flow.is_done() {
+                            flow_ids_to_execute.push(*flow_id);
+                        }
+                    }
+                }
+
+                for flow_id in flow_ids_to_execute {
+                    self.execute_pegout_step(&flow_id)?;
+                }
+            }
             _ => (),
         }
 
@@ -535,7 +610,7 @@ impl<CG: RskContractsGatewayApi, T: BitVmxBrokerClientApi> EventProcessor
 
         self.process_unhandled_confirmed_pegout_requested_events()?;
         self.process_unhandled_confirmed_pegout_registered_events()?;
-        self.process_unhandled_confirmed_all_signatures_ready_events()?;
+        self.process_unhandled_confirmed_sig_flow_events(block)?;
         Ok(())
     }
 

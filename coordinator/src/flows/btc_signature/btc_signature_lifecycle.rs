@@ -1,9 +1,8 @@
 use crate::blockchain_tracker::{BlockchainView, ConfirmableEvent};
 use crate::config::REQUIRED_CONFIRMATIONS;
-use crate::types::BitVmxSigningInfo;
 use anyhow::{Context, Result, anyhow, bail};
 use common::runtime_sync::RuntimeSync;
-use common::types::BlockNumber;
+use common::types::{BlockNumber, Hash256};
 use log::info;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -11,6 +10,7 @@ use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::{AddMemberNonceInput, AddMemberSignatureInput};
 use uuid::Uuid;
 
+use crate::types::RegisterSignaturesInput;
 #[cfg(test)]
 use mockall::automock;
 
@@ -18,7 +18,7 @@ use mockall::automock;
 pub(crate) trait BtcSignatureLifecycleApi {
     fn flow_id(&self) -> Uuid;
 
-    fn send_nonce_to_contracts(&mut self, data: &BitVmxSigningInfo) -> Result<()>;
+    fn send_nonce_to_contracts(&mut self, data: &RegisterSignaturesInput) -> Result<()>;
 
     fn set_all_nonces_ready(&mut self, block_number: BlockNumber) -> Result<()>;
 
@@ -34,6 +34,8 @@ pub(crate) trait BtcSignatureLifecycleApi {
 
     fn is_all_signatures_ready_confirmed(&self) -> Result<bool>;
 
+    fn get_hash_to_sign(&self) -> Option<Hash256>;
+
     fn blockchain_view(&self) -> Rc<RefCell<BlockchainView>>;
 
     // TODO implement auto-clean after inactivity to cover cases where .close_flow() is not called
@@ -41,7 +43,7 @@ pub(crate) trait BtcSignatureLifecycleApi {
 
 pub(crate) struct State {
     pub(crate) flow_id: Uuid,
-    pub(crate) data: Option<BitVmxSigningInfo>,
+    pub(crate) data: Option<RegisterSignaturesInput>,
     pub(crate) nonce_step: Option<ConfirmableEvent>,
     pub(crate) signature_step: Option<ConfirmableEvent>,
 }
@@ -172,7 +174,7 @@ where
         self.state.flow_id
     }
 
-    fn send_nonce_to_contracts(&mut self, data: &BitVmxSigningInfo) -> Result<()> {
+    fn send_nonce_to_contracts(&mut self, data: &RegisterSignaturesInput) -> Result<()> {
         info!("Sending nonce to contract for flow {}", self.state.flow_id);
 
         if self.state.nonce_step.is_some() || self.state.data.is_some() {
@@ -313,6 +315,10 @@ where
         Ok(signature_step.is_confirmed())
     }
 
+    fn get_hash_to_sign(&self) -> Option<Hash256> {
+        self.state.data.as_ref().map(|s| s.hash_to_sign.clone())
+    }
+
     fn blockchain_view(&self) -> Rc<RefCell<BlockchainView>> {
         self.blockchain_view.clone()
     }
@@ -323,7 +329,7 @@ mod tests {
     use super::*;
     use crate::blockchain_tracker::BlockchainView;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
-    use bitcoin::PublicKey;
+
     use common::runtime_sync::RuntimeSync;
     use common::test_utils::rsk_block_generator::create_block_and_uncles;
     use common::types::{BlockNumber, Hash256, RskBlock, RskBlockAndUncles};
@@ -333,17 +339,18 @@ mod tests {
     use serde_json::json;
     use std::cell::RefCell;
     use std::rc::Rc;
-    use std::str::FromStr;
+
+    use crate::types::RegisterSignaturesInput;
     use transaction_dispatcher::types::{AddMemberNonceInput, AddMemberSignatureInput};
     use uuid::Uuid;
 
     #[test]
     fn test_nonce_step_with_unset() {
-        let (bitvmx_signature, mut flow, blockchain_view) =
+        let (signature_input, mut flow, blockchain_view) =
             setup_test_flow_with_options(Some(1), None); // only expect nonce calls
 
         // step 1: send nonce (but NOT signature)
-        flow.send_nonce_to_contracts(&bitvmx_signature)
+        flow.send_nonce_to_contracts(&signature_input)
             .expect("failed to send nonce to contracts");
 
         // step 2: set nonces ready
@@ -407,11 +414,11 @@ mod tests {
 
     #[test]
     fn test_nonce_step_happy_path() {
-        let (bitvmx_signature, mut flow, blockchain_view) =
+        let (signature_input, mut flow, blockchain_view) =
             setup_test_flow_with_options(Some(1), None); // only expect nonce calls
 
         // step 1: send nonce (but NOT signature)
-        flow.send_nonce_to_contracts(&bitvmx_signature)
+        flow.send_nonce_to_contracts(&signature_input)
             .expect("failed to send nonce to contracts");
 
         // step 2: set nonces ready
@@ -471,12 +478,12 @@ mod tests {
 
     #[test]
     fn test_signature_step_happy_path() {
-        let (bitvmx_signature, mut flow, blockchain_view) =
+        let (signature_input, mut flow, blockchain_view) =
             setup_test_flow_with_options(Some(1), Some(1)); // expect both nonce and signature calls
 
         // step 2: complete Nonces step first
         let start_block = BlockNumber::from(100);
-        complete_nonce_step(&mut flow, &bitvmx_signature, start_block, &blockchain_view)
+        complete_nonce_step(&mut flow, &signature_input, start_block, &blockchain_view)
             .expect("failed to complete Nonces step");
 
         // step 3: send signatures to contract
@@ -519,12 +526,12 @@ mod tests {
 
     #[test]
     fn test_signature_step_with_signature_unset() {
-        let (bitvmx_signature, mut flow, blockchain_view) =
+        let (signature_input, mut flow, blockchain_view) =
             setup_test_flow_with_options(Some(1), Some(1)); // expect both nonce and signature calls
 
         // step 1: complete Nonces step
         let start_block = BlockNumber::from(100);
-        complete_nonce_step(&mut flow, &bitvmx_signature, start_block, &blockchain_view)
+        complete_nonce_step(&mut flow, &signature_input, start_block, &blockchain_view)
             .expect("failed to complete Nonces step");
 
         // step 2: send signatures to contract
@@ -591,12 +598,12 @@ mod tests {
 
     #[test]
     fn test_signature_step_with_nonce_unset() {
-        let (bitvmx_signature, mut flow, blockchain_view) =
+        let (signature_input, mut flow, blockchain_view) =
             setup_test_flow_with_options(Some(1), Some(1)); // expect both nonce and signature calls
 
         // step 1: complete Nonces step
         let start_block = BlockNumber::from(100);
-        complete_nonce_step(&mut flow, &bitvmx_signature, start_block, &blockchain_view)
+        complete_nonce_step(&mut flow, &signature_input, start_block, &blockchain_view)
             .expect("failed to complete Nonces step");
 
         // step 2: send signatures to contract
@@ -636,12 +643,12 @@ mod tests {
 
     #[test]
     fn test_full_flow_happy_path() {
-        let (bitvmx_signature, mut flow, blockchain_view) =
+        let (signature_input, mut flow, blockchain_view) =
             setup_test_flow_with_options(Some(1), Some(1)); // expect both nonce and signature calls
 
         // step 2: complete Nonces step
         let start_block = BlockNumber::from(100);
-        complete_nonce_step(&mut flow, &bitvmx_signature, start_block, &blockchain_view)
+        complete_nonce_step(&mut flow, &signature_input, start_block, &blockchain_view)
             .expect("failed to complete Nonces step");
 
         // step 3: complete Signatures step
@@ -683,7 +690,7 @@ mod tests {
         );
 
         // attempt to send nonce to contracts should fail
-        let result = flow.send_nonce_to_contracts(&fake_signature_bitvmx("pegin"));
+        let result = flow.send_nonce_to_contracts(&fake_signature_input());
         assert!(
             result.is_err(),
             "should fail when contract nonce call fails"
@@ -756,20 +763,20 @@ mod tests {
     fn test_duplicate_calls_for_steps() {
         // setup test data
         let flow_id = Uuid::new_v4();
-        let bitvmx_signature = fake_signature_bitvmx("pegin");
+        let signature_input = fake_signature_input();
 
         // setup mock contracts gateway - expecting only one call each (duplicates should be prevented)
         let mut mock_contracts = MockRskContractsGatewayApi::new();
         setup_nonce_mock(
             &mut mock_contracts,
-            bitvmx_signature.hash_to_sign,
-            &bitvmx_signature.nonce,
+            signature_input.hash_to_sign,
+            &signature_input.nonce,
             1,
         );
         setup_signature_mock(
             &mut mock_contracts,
-            bitvmx_signature.hash_to_sign,
-            &bitvmx_signature.signature,
+            signature_input.hash_to_sign,
+            &signature_input.signature,
             1,
         );
 
@@ -787,11 +794,11 @@ mod tests {
 
         // step 1: send nonce to contracts
         let start_block = BlockNumber::from(100);
-        complete_nonce_step(&mut flow, &bitvmx_signature, start_block, &blockchain_view)
+        complete_nonce_step(&mut flow, &signature_input, start_block, &blockchain_view)
             .expect("failed to complete Nonces step");
 
         // a second request to send_nonce_to_contracts for the same flow ID should fail
-        let result = flow.send_nonce_to_contracts(&bitvmx_signature);
+        let result = flow.send_nonce_to_contracts(&signature_input);
         assert!(
             result.is_err(),
             "should fail when calling send_nonce_to_contracts twice"
@@ -905,29 +912,29 @@ mod tests {
         nonce_contract_calls: Option<usize>,
         signature_contract_calls: Option<usize>,
     ) -> (
-        BitVmxSigningInfo,
+        RegisterSignaturesInput,
         BtcSignatureLifeCycle<MockRskContractsGatewayApi>,
         Rc<RefCell<BlockchainView>>,
     ) {
         // setup test data
         let flow_id = Uuid::new_v4();
-        let bitvmx_signature = fake_signature_bitvmx("pegin");
+        let signature_input = fake_signature_input();
 
         // setup mock contracts gateway based on expectations
         let mut mock_contracts = MockRskContractsGatewayApi::new();
         if let Some(times) = nonce_contract_calls {
             setup_nonce_mock(
                 &mut mock_contracts,
-                bitvmx_signature.hash_to_sign,
-                &bitvmx_signature.nonce,
+                signature_input.hash_to_sign,
+                &signature_input.nonce,
                 times,
             );
         }
         if let Some(times) = signature_contract_calls {
             setup_signature_mock(
                 &mut mock_contracts,
-                bitvmx_signature.hash_to_sign,
-                &bitvmx_signature.signature,
+                signature_input.hash_to_sign,
+                &signature_input.signature,
                 times,
             );
         }
@@ -944,16 +951,16 @@ mod tests {
             flow_id,
         );
 
-        (bitvmx_signature, flow, blockchain_view)
+        (signature_input, flow, blockchain_view)
     }
 
     pub(in crate::flows::btc_signature) fn complete_nonce_step<CG: RskContractsGatewayApi>(
         flow: &mut BtcSignatureLifeCycle<CG>,
-        bitvmx_signature: &BitVmxSigningInfo,
+        signature_input: &RegisterSignaturesInput,
         start_block: BlockNumber,
         blockchain_view: &Rc<RefCell<BlockchainView>>,
     ) -> Result<()> {
-        flow.send_nonce_to_contracts(bitvmx_signature)?;
+        flow.send_nonce_to_contracts(signature_input)?;
         flow.set_all_nonces_ready(start_block)?;
 
         // add enough blocks for nonce confirmation
@@ -1000,9 +1007,7 @@ mod tests {
         Ok(())
     }
 
-    pub(in crate::flows::btc_signature) fn fake_signature_bitvmx(
-        protocol_name: &str,
-    ) -> BitVmxSigningInfo {
+    pub(in crate::flows::btc_signature) fn fake_signature_input() -> RegisterSignaturesInput {
         let hash_to_sign = "a1b2c3d4e5f60123456789abcdef0123456789abcdef0123456789abcdef0123"
             .try_into()
             .unwrap();
@@ -1010,13 +1015,10 @@ mod tests {
         let signature = "44477400e59c41025e4e18c4de244b90b14554dcdcbfa396ead4659aa6343249"
             .parse()
             .unwrap();
-        let aggr_key = PublicKey::from_str("04c4b0bbb339aa236bff38dbe6a451e111972a7909a126bc424013cba2ec33bc38e98ac269ffe028345c31ac8d0a365f29c8f7e7cfccac72f84e1acd02bc554f35").unwrap();
 
-        BitVmxSigningInfo {
-            protocol_name: protocol_name.to_string(),
-            take_aggr_key: aggr_key,
+        RegisterSignaturesInput {
             hash_to_sign,
-            nonce: nonce.clone(),
+            nonce,
             signature,
         }
     }
