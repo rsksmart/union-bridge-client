@@ -23,7 +23,7 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::CommitteeM
 
 #[cfg(test)]
 use mockall::automock;
-use transaction_dispatcher::types::ApplyToStreamInput;
+use transaction_dispatcher::types::{ApplyToStreamInput, CommitteePublicKey};
 
 const NO_LEADER_IDX: u16 = 0;
 
@@ -584,9 +584,12 @@ where
                 self.request_bitvmx_comm_pub_key()?;
             }
             Steps::GetMyCommKey => {
-                self.state.ctx.my_comm_key =
-                    Self::close_pub_key_req(self.state.flow_id, req_id, data)?;
-                // start next
+                Self::close_pub_key_req(
+                    &mut self.state.ctx.my_comm_key,
+                    self.state.flow_id,
+                    req_id,
+                    data,
+                )?;
                 self.apply_to_stream()?;
             }
             Steps::ApplyToStream => {
