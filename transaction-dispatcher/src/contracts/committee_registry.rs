@@ -28,6 +28,7 @@ pub trait CommitteeRegistryContractApi {
         role: u8,
         public_keys: Vec<CommitteeRegistry::PublicKeyRegistration>,
         gas_bumps: u8,
+        value: U256,
     ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt>;
 
     async fn call_get_minimum_deposit(
@@ -69,11 +70,13 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
         role: u8,
         public_keys: Vec<CommitteeRegistry::PublicKeyRegistration>,
         gas_bumps: u8,
+        value: U256,
     ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt> {
         send_tx_with_gas_bump(
             || {
                 self.contract_instance
                     .applyToStream(stream, role, public_keys.clone())
+                    .value(value)
             },
             gas_bumps,
         )
@@ -89,7 +92,9 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
         //     .getMinimumDeposit(u8::from(stream))
         //     .call()
         //     .await
-        Ok(U256::default())
+        
+        // Temporary hardcoded minimum deposit (0.025 RBTC = 25000000000000000 wei)
+        Ok(U256::from(25000000000000000u64))
     }
 }
 
