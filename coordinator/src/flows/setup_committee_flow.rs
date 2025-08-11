@@ -55,7 +55,7 @@ pub(crate) trait SetupCommitteeFlowFactoryApi<CG: RskContractsGatewayApi, BC: Bi
     fn create_flow(&self, flow_id: Uuid) -> SetupCommitteeFlow<CG, BC>;
 }
 
-// TODO(iago) improve with structs instead of tuples, using tuples for now for validation
+// TODO improve with structs instead of tuples, using tuples for now for validation
 type PubKeyReq = Option<(Uuid, Option<PublicKey>)>; // request id, response data
 type SetupCoreReq = Option<(Uuid, Uuid, Option<String>)>; // request id, committee id, response data // TODO(iago) TBC what to store here in data
 
@@ -167,14 +167,27 @@ where
     }
 
     fn close_pub_key_req(
+        pub_key_req: &mut PubKeyReq,
         flow_id: Uuid,
         req_id: Option<Uuid>,
         data: StepData,
-    ) -> Result<Option<(Uuid, Option<PublicKey>)>> {
-        let req_id = req_id
-            .with_context(|| format!("Missing request id for GetMyTakeKey and flow {flow_id}",))?;
+    ) -> Result<()> {
+        let req_id = req_id.with_context(|| {
+            format!("Missing request id on close_pub_key_req for flow {flow_id}",)
+        })?;
 
-        Ok(Some((req_id, Some(data.into_pubkey()?))))
+        match pub_key_req {
+            Some(r) if req_id == r.0 => {
+                r.1 = Some(data.into_pubkey()?);
+                Ok(())
+            }
+            Some(r) => {
+                bail!("Request id {req_id} does not match expected {r:?} for flow {flow_id}",)
+            }
+            None => {
+                bail!("Missing request for pubkey in flow {flow_id} with req_id {req_id}",)
+            }
+        }
     }
 
     fn add_my_comm_data(
@@ -435,13 +448,21 @@ where
                 self.request_bitvmx_take_pub_key()?;
             }
             Steps::GetMyTakeKey => {
-                self.state.ctx.my_take_key =
-                    Self::close_pub_key_req(self.state.flow_id, req_id, data)?;
+                Self::close_pub_key_req(
+                    &mut self.state.ctx.my_take_key,
+                    self.state.flow_id,
+                    req_id,
+                    data,
+                )?;
                 self.request_bitvmx_dispute_pub_key()?;
             }
             Steps::GetDisputeKey => {
-                self.state.ctx.my_dispute_key =
-                    Self::close_pub_key_req(self.state.flow_id, req_id, data)?;
+                Self::close_pub_key_req(
+                    &mut self.state.ctx.my_dispute_key,
+                    self.state.flow_id,
+                    req_id,
+                    data,
+                )?;
                 // start next
                 self.apply_to_stream()?;
             }
@@ -450,14 +471,22 @@ where
                 self.setup_bitvmx_aggregated_take_pubkey()?;
             }
             Steps::SetupTakeAggregatedKey => {
-                self.state.ctx.agg_take_key =
-                    Self::close_pub_key_req(self.state.flow_id, req_id, data)?;
+                Self::close_pub_key_req(
+                    &mut self.state.ctx.agg_take_key,
+                    self.state.flow_id,
+                    req_id,
+                    data,
+                )?;
                 // start next
                 self.setup_bitvmx_aggregated_dispute_pubkey()?;
             }
             Steps::SetupDisputeAggregatedKey => {
-                self.state.ctx.agg_dispute_key =
-                    Self::close_pub_key_req(self.state.flow_id, req_id, data)?;
+                Self::close_pub_key_req(
+                    &mut self.state.ctx.agg_dispute_key,
+                    self.state.flow_id,
+                    req_id,
+                    data,
+                )?;
                 // start next
                 self.setup_dispute_core_protocol()?;
             }
@@ -584,7 +613,7 @@ where
     }
 
     fn get_flow_for_request_id(&mut self, uuid: &Uuid) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
-        // TODO(iago) super naive approach implemented here for now: find within the different flows and their step datas one with the req_id
+        // TODO super naive approach implemented here for now: find within the different flows and their step datas one with the req_id
         // an alternative could be storing all the requests (ids) for which the flow is waiting response
         // in a same array - but I find this super risky, as it will only work if a) we NEVER send 2
         // "concurrent request-id-depending" messages to BitVMX and b) BitVMX guarantees order in request/response;
