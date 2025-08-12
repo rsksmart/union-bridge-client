@@ -7,7 +7,7 @@ use crate::{
     },
     types::{EventWithBlock, PeginAcceptedEvent, PeginRequestedEvent, RskPegManagerEvents},
 };
-use alloy_primitives::{FixedBytes, U256};
+use alloy_primitives::FixedBytes;
 use anyhow::{Context, Result, bail};
 use bitcoin::{
     PublicKey, Txid,
@@ -48,7 +48,7 @@ struct PeginRequest {
     take_aggregated_key: PublicKey,
     operators_take_key: Vec<PublicKey>,
     slot_index: u64,
-    committee_id: U256,
+    committee_id: Uuid,
     rootstock_address: String,
     reimbursement_pubkey: PublicKey,
 }
@@ -413,6 +413,11 @@ where
         // Convert requestPeginTxHash to Txid
         let txid = Txid::from_slice(pegin_event.requestPeginTxHash.as_slice())?;
 
+        // Convert committee_id to UUID
+        let committee_bytes = pegin_event.committeeId.to_be_bytes_vec();
+        let uuid_bytes: [u8; 16] = committee_bytes[..16].try_into()?;
+        let committee_id = Uuid::from_bytes(uuid_bytes);
+
         Ok(PeginRequest {
             txid,
             amount: pegin_event.prevoutData.value,
@@ -420,7 +425,7 @@ where
             take_aggregated_key,
             operators_take_key,
             slot_index,
-            committee_id: pegin_event.committeeId,
+            committee_id,
             rootstock_address,
             reimbursement_pubkey,
         })
@@ -1556,9 +1561,10 @@ mod tests {
                 rskDestinationAddress: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
                     .parse::<alloy_primitives::Address>()
                     .expect("Invalid address"),
-                btcReimbursementPubKey: "0xc6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
-                    .parse::<FixedBytes<32>>()
-                    .expect("Failed to parse reimbursement key"),
+                btcReimbursementPubKey:
+                    "0xc6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+                        .parse::<FixedBytes<32>>()
+                        .expect("Failed to parse reimbursement key"),
                 acceptPeginSignatureHash: H256::from_low_u64_be(4444444)
                     .as_bytes()
                     .try_into()
@@ -1598,7 +1604,9 @@ mod tests {
     fn dummy_committee() -> Committee {
         let leader: Address = address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
         Committee {
-            aggregatedKey: "0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798".parse().unwrap(),
+            aggregatedKey: "0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+                .parse()
+                .unwrap(),
             members: vec![
                 CommitteeMember {
                     memberAddress: leader,
@@ -1639,7 +1647,11 @@ mod tests {
                 })
                 .collect(),
             slot_index: 0,
-            committee_id: pegin_requested.committeeId,
+            committee_id: {
+                let committee_bytes = pegin_requested.committeeId.to_be_bytes_vec();
+                let uuid_bytes: [u8; 16] = committee_bytes[..16].try_into().unwrap();
+                Uuid::from_bytes(uuid_bytes)
+            },
             rootstock_address: pegin_requested
                 .requestPeginInfo
                 .rskDestinationAddress
