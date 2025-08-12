@@ -16,6 +16,7 @@ use qa_tools_bitvmx_mock::AutomatedBitVmxMock;
 use std::env;
 use std::fs::File;
 use std::process::Child;
+use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -25,7 +26,7 @@ const PACKET_CREATION_FLOW_RELATIVE_PATH_DEFAULT: &str =
     "shell/script/integration-test/packet-creation-flow.sh";
 const ANVIL_DOMAIN_DEFAULT: &str = "http://localhost";
 const ANVIL_PORT_DEFAULT: u16 = 8545;
-const ANVIL_ADRESS_DEFAULT: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+const ANVIL_ADDRESS_DEFAULT: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 const PEG_MANAGER_ADDRESS: &str = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
 const FUNDS_AMOUNT_WEI: &str = "1000000000000000000"; // 1 ETH
 const ANVIL_TIMEOUT: Duration = Duration::from_secs(5);
@@ -56,7 +57,7 @@ lazy_static::lazy_static! {
         .unwrap_or_else(|_| ANVIL_PORT_DEFAULT.to_string());
     pub static ref ANVIL_URL: String = format!("{}:{}", ANVIL_DOMAIN.as_str(), ANVIL_PORT.as_str());
     pub static ref ANVIL_ADDRESS: String = env::var("ANVIL_ADDRESS")
-        .unwrap_or_else(|_| ANVIL_ADRESS_DEFAULT.to_string());
+        .unwrap_or_else(|_| ANVIL_ADDRESS_DEFAULT.to_string());
     pub static ref KEY_STORE_ADDRESS: String = env::var("KEY_STORE_ADDRESS")
         .unwrap_or_else(|_| Err("KEY_STORE_ADDRESS environment variable is not set").unwrap());
     pub static ref KEY_STORE_PASSWORD: String = env::var("KEY_STORE_PASSWORD")
@@ -65,11 +66,11 @@ lazy_static::lazy_static! {
         .unwrap_or_else(|_| TX_DISPATCHER_URL_DEFAULT.to_string());
     pub static ref TX_DISPATCHER_CONFIG_PATH: String = env::var("TX_DISPATCHER_CONFIG_PATH")
         .unwrap_or_else(|_| TX_DISPATCHER_CONFIG_PATH_DEFAULT.to_string());
-    pub static ref BLOCK_INDEXER_CONFIG_PATH: String = env::var("TX_DISPATCHER_CONFIG_PATH")
+    pub static ref BLOCK_INDEXER_CONFIG_PATH: String = env::var("BLOCK_INDEXER_CONFIG_PATH")
         .unwrap_or_else(|_| BLOCK_INDEXER_CONFIG_PATH_DEFAULT.to_string());
-    pub static ref LOG_INDEXER_CONFIG_PATH: String = env::var("TX_DISPATCHER_CONFIG_PATH")
+    pub static ref LOG_INDEXER_CONFIG_PATH: String = env::var("LOG_INDEXER_CONFIG_PATH")
         .unwrap_or_else(|_| LOG_INDEXER_CONFIG_PATH_DEFAULT.to_string());
-    pub static ref COORDINATOR_CONFIG_PATH: String = env::var("TX_DISPATCHER_CONFIG_PATH")
+    pub static ref COORDINATOR_CONFIG_PATH: String = env::var("COORDINATOR_CONFIG_PATH")
         .unwrap_or_else(|_| COORDINATOR_CONFIG_PATH_DEFAULT.to_string());
     pub static ref USER_API_CONFIG_PATH: String = env::var("USER_API_CONFIG_PATH")
         .unwrap_or_else(|_| USER_API_CONFIG_PATH_DEFAULT.to_string());
@@ -85,7 +86,7 @@ pub struct TestWorld {
     pub child_tx_dispatcher: Option<Child>,
     pub child_coordinator: Option<Child>,
     pub child_user_api: Option<Child>,
-    pub bitvmx_mock: Option<AutomatedBitVmxMock>,
+    pub bitvmx_mock: Option<Arc<AutomatedBitVmxMock>>,
     pub anvil_url: String,
     pub peg_manager_address: String,
     pub pegin_request_tx_id: String,
@@ -121,7 +122,7 @@ async fn main() {
             .await;
     } else {
         TestWorld::cucumber()
-            .init_tracing()
+            // .init_tracing()
             .max_concurrent_scenarios(Some(1)) // Run in sequence to avoid conflicts between scenarios
             .before(|_, _, _, world: &mut TestWorld| {
                 Box::pin(async move {
@@ -165,9 +166,9 @@ async fn setup(world: &mut TestWorld) {
     let bitvmx_port: u16 = BITVMX_PORT.parse().unwrap();
     let mut bitvmx_mock = AutomatedBitVmxMock::new(bitvmx_port);
     bitvmx_mock
-        .run()
+        .start()
+        .await
         .expect("BitVMX mock server failed to start");
-    sleep(Duration::from_secs(5));
     world.bitvmx_mock = Some(bitvmx_mock);
 
     let child_block_indexer: Child = setup_block_indexer(

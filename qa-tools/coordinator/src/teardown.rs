@@ -1,7 +1,7 @@
 use qa_tools_bitvmx_mock::AutomatedBitVmxMock;
 use qa_tools_common::common::kill_process;
-use std::iter::Take;
 use std::process::Child;
+use std::sync::Arc;
 
 pub fn shutdown_anvil(child_opt: Option<Child>) {
     if let Some(mut child) = child_opt {
@@ -72,7 +72,7 @@ pub fn shutdown_user_api(child: &mut Option<Child>) {
     }
 }
 
-pub async fn shutdown_bitvmx_mock(bitvmx_mock: Option<AutomatedBitVmxMock>) {
+pub async fn shutdown_bitvmx_mock(bitvmx_mock: Option<Arc<AutomatedBitVmxMock>>) {
     if let Some(mut mock) = bitvmx_mock {
         mock.stop().await;
         tokio::task::spawn_blocking(move || drop(mock))

@@ -163,7 +163,6 @@ async fn wait_for_coordinator(timeout_duration: Duration) {
                 .await
                 .is_ok();
             if block_broker_ok && log_broker_ok && bitvmx_broker_ok {
-                // Give coordinator a moment to initialize after dependencies are ready
                 sleep(Duration::from_millis(500)).await;
                 return;
             }

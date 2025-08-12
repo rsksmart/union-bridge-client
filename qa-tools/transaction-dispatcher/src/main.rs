@@ -21,7 +21,7 @@ const PACKET_CREATION_FLOW_RELATIVE_PATH_DEFAULT: &str =
     "shell/script/integration-test/packet-creation-flow.sh";
 const ANVIL_DOMAIN_DEFAULT: &str = "http://localhost";
 const ANVIL_PORT_DEFAULT: u16 = 8545;
-const ANVIL_ADRESS_DEFAULT: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+const ANVIL_ADDRESS_DEFAULT: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 const FUNDS_AMOUNT_WEI: &str = "1000000000000000000"; // 1 ETH
 const ANVIL_TIMEOUT: Duration = Duration::from_secs(5);
 const TX_DISPATCHER_MANIFEST_RELATIVE_PATH: &str = "../transaction-dispatcher/Cargo.toml";
@@ -42,7 +42,7 @@ lazy_static::lazy_static! {
         .unwrap_or_else(|_| ANVIL_PORT_DEFAULT.to_string());
     pub static ref ANVIL_URL: String = format!("{}:{}", ANVIL_DOMAIN.as_str(), ANVIL_PORT.as_str());
     pub static ref ANVIL_ADDRESS: String = env::var("ANVIL_ADDRESS")
-        .unwrap_or_else(|_| ANVIL_ADRESS_DEFAULT.to_string());
+        .unwrap_or_else(|_| ANVIL_ADDRESS_DEFAULT.to_string());
     pub static ref KEY_STORE_ADDRESS: String = env::var("KEY_STORE_ADDRESS")
         .unwrap_or_else(|_| Err("KEY_STORE_ADDRESS environment variable is not set").unwrap());
     pub static ref KEY_STORE_PASSWORD: String = env::var("KEY_STORE_PASSWORD")
