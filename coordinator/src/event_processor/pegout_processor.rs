@@ -34,6 +34,7 @@ use uuid::Uuid;
 
 pub const USER_TAKE: &str = "USER_TAKE";
 pub const PROGRAM_TYPE_REQUEST_PEGOUT: &str = "request_pegout";
+pub const PEGOUT_ACCEPTED_NAME: &str = "pegout_accepted";
 
 #[derive(Debug, Clone)]
 struct PegoutEvent<T: Clone> {
@@ -394,7 +395,7 @@ where
         flow_id: Uuid,
     ) -> Result<()> {
         let msg =
-            IncomingBitVMXApiMessages::GetTransactionInofByName(flow_id, USER_TAKE.to_string());
+            IncomingBitVMXApiMessages::GetTransactionInfoByName(flow_id, USER_TAKE.to_string());
         bitvmx_broker.send(BROKER_SERVER_ID, msg)?;
         Ok(())
     }
@@ -481,12 +482,6 @@ where
         }
         Ok(())
     }
-
-    fn execute_pegout_step(&mut self, flow_id: &Uuid) -> Result<()> {
-        Self::send_dispatch_transaction_name_msg_to_bitvmx(&self.bitvmx_broker, *flow_id)?;
-        Self::send_get_transaction_info_by_name_to_bitvmx(&self.bitvmx_broker, *flow_id)?;
-        Ok(())
-    }
 }
 
 impl<CG, BC> EventProcessor
@@ -531,7 +526,7 @@ where
                     let mut btc_sig_subflow = self.btc_sig_subflow_factory.create_flow(*flow_id);
                     let input: PegOutAccepted = serde_json::from_str::<PegOutAccepted>(data)?;
                     state.pegout_accepted_tx = Some(input.user_take_txid);
-                    let register_input = RegisterSignaturesInput::try_from(input.clone())?;
+                    let register_input = RegisterSignaturesInput::try_from(input)?;
                     btc_sig_subflow.start_signature_flow(*flow_id, &register_input)?;
                     state.btc_sig_flow = Some(btc_sig_subflow);
                 }
@@ -581,19 +576,21 @@ where
             RskPegManagerEvents::AllNoncesReady(data)
             | RskPegManagerEvents::AllSignaturesReady(data) => {
                 debug!("Handling signature event {:?}", data);
-                let mut flow_ids_to_execute = Vec::new();
 
                 for (flow_id, state) in self.tracker.iter_mut() {
                     if let Some(btc_flow) = state.btc_sig_flow.as_mut() {
                         btc_flow.delegate_rsk_event(*flow_id, event)?;
                         if btc_flow.is_done() {
-                            flow_ids_to_execute.push(*flow_id);
+                            Self::send_dispatch_transaction_name_msg_to_bitvmx(
+                                &self.bitvmx_broker,
+                                *flow_id,
+                            )?;
+                            Self::send_get_transaction_info_by_name_to_bitvmx(
+                                &self.bitvmx_broker,
+                                *flow_id,
+                            )?;
                         }
                     }
-                }
-
-                for flow_id in flow_ids_to_execute {
-                    self.execute_pegout_step(&flow_id)?;
                 }
             }
             _ => (),
