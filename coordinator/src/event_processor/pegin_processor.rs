@@ -415,7 +415,11 @@ where
 
         // Convert committee_id to UUID
         let committee_bytes = pegin_event.committeeId.to_be_bytes_vec();
-        let uuid_bytes: [u8; 16] = committee_bytes[..16].try_into()?;
+        if committee_bytes.len() < 16 {
+            bail!("Committee ID too short for UUID conversion: expected at least 16 bytes, got {}", committee_bytes.len());
+        }
+        let uuid_bytes: [u8; 16] = committee_bytes[..16].try_into()
+            .context("Failed to convert committee_id to UUID")?;
         let committee_id = Uuid::from_bytes(uuid_bytes);
 
         Ok(PeginRequest {
@@ -1649,7 +1653,10 @@ mod tests {
             slot_index: 0,
             committee_id: {
                 let committee_bytes = pegin_requested.committeeId.to_be_bytes_vec();
-                let uuid_bytes: [u8; 16] = committee_bytes[..16].try_into().unwrap();
+                let uuid_bytes: [u8; 16] = committee_bytes.get(..16)
+                    .expect("Committee ID should have at least 16 bytes for tests")
+                    .try_into()
+                    .expect("Slice of 16 bytes should convert to [u8; 16]");
                 Uuid::from_bytes(uuid_bytes)
             },
             rootstock_address: pegin_requested
