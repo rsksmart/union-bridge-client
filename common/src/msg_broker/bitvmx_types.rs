@@ -1,6 +1,8 @@
 // TODO(jira) https://rsklabs.atlassian.net/browse/ub-176
 
 use bitcoin::{Amount, BlockHash, PrivateKey, PublicKey, ScriptBuf, Transaction, Txid};
+use musig2::PubNonce;
+use musig2::secp::MaybeScalar;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -16,7 +18,7 @@ pub enum IncomingBitVMXApiMessages {
     GetWitness(Uuid, String),
     GetCommInfo(),
     GetTransaction(Uuid, Txid),
-    GetTransactionInofByName(Uuid, String),
+    GetTransactionInfoByName(Uuid, String),
     GetHashedMessage(Uuid, String, u32, u32),
     Setup(ProgramId, String, Vec<P2PAddress>, u16),
     SubscribeToTransaction(Uuid, Txid),
@@ -223,4 +225,13 @@ pub struct BtcTxSPVProof {
     pub tx: Transaction,
     pub merkle_branch_path: String,
     pub merkle_branch_hashes: Vec<[u8; 32]>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PegOutAccepted {
+    pub committee_id: Uuid,
+    pub user_take_txid: Txid,
+    pub user_take_sighash: Vec<u8>,
+    pub user_take_nonce: PubNonce,
+    pub user_take_signature: MaybeScalar,
 }
