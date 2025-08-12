@@ -10,6 +10,7 @@ use common::msg_broker::{
     broker::{BitVmxBrokerServer, BITVMX_L2_BROKER_CLIENT_ID},
 };
 use log::{debug, info};
+use serde::Deserialize;
 use serde_json::json;
 use std::fmt;
 use std::sync::{Arc, Mutex};
@@ -18,6 +19,58 @@ use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct RequestPeginTempInfo {
+    pub rskDestinationAddress: String,
+    pub btcReimbursementPubKey: String,
+    pub acceptPeginSignatureHash: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PrevoutData {
+    pub value: u64,
+    pub scriptPubKey: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PeginRequestedPayload {
+    pub committeeId: String,
+    pub requestPeginTxHash: String,
+    pub acceptPeginTxHash: String,
+    pub vout: u64,
+    pub streamId: u64,
+    pub packetNumber: u64,
+    pub requestPeginInfo: RequestPeginTempInfo,
+    pub prevoutData: PrevoutData,
+    pub acceptPeginSignatureMessage: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct StreamPosition {
+    pub stream_id: u64,
+    pub packet_number: u64,
+    pub slot_id: u64,
+    pub peg_status: u8,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PeginAcceptedPayload {
+    pub block_hash: String,
+    pub accept_pegin_tx_hash: String,
+    pub pegin_request_tx_hash: String,
+    pub vout: u64,
+    pub stream_position: StreamPosition,
+    pub speed_up_pub_key: String,
+    pub rsk_destination_address: String,
+    pub rbtc_amount: String,
+    pub utxo_script_pub_key: String,
+}
 
 impl fmt::Debug for AutomatedBitVmxMock {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -103,12 +156,18 @@ impl AutomatedBitVmxMock {
                     )
                 };
             }
-            IncomingBitVMXApiMessages::SetVar(flow_id, name, VariableTypes::String(_data)) => {
+            IncomingBitVMXApiMessages::SetVar(flow_id, name, VariableTypes::String(data)) => {
                 match name.as_str() {
                     "PeginRequested" => {
+                        let payload: PeginRequestedPayload = serde_json::from_str(&data)
+                            .context("Invalid PeginRequested JSON payload")?;
+                        info!("Pegin accepted payload: {:?}", payload);
                         *self.last_pegin_requested_flow_id.lock().unwrap() = Some(flow_id);
                     }
                     "PeginAccepted" => {
+                        let payload: PeginAcceptedPayload = serde_json::from_str(&data)
+                            .context("Invalid PeginAccepted JSON payload")?;
+                        info!("Pegin accepted payload: {:?}", payload);
                         *self.last_pegin_accepted_flow_id.lock().unwrap() = Some(flow_id);
                     }
                     _ => {}
@@ -134,7 +193,6 @@ impl AutomatedBitVmxMock {
                     .unwrap()
                     .clone()
                     .context("Hashes not set")?;
-
                 let hashes: Vec<[u8; 32]> = list
                     .into_iter()
                     .map(|hex_str| {
@@ -143,7 +201,6 @@ impl AutomatedBitVmxMock {
                         <[u8; 32]>::try_from(bytes.as_slice()).context("Invalid hash length")
                     })
                     .collect::<Result<_>>()?;
-
                 let proof = BtcTxSPVProof {
                     block_hash: bh.clone(),
                     tx: tx.clone(),
