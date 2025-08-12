@@ -4,37 +4,44 @@ use crate::flows::btc_signature::btc_signature_subflow::{
     BaseBtcSignatureSubFlow, BtcSignatureSubFlowApi, BtcSignatureSubFlowFactory,
     BtcSignatureSubFlowFactoryApi,
 };
-use crate::types::RegisterSignaturesBitVmxData;
+use crate::types::{RegisterSignaturesBitVmxData, TickScheduler};
 use crate::{
     config::REQUIRED_CONFIRMATIONS,
     event_processor::EventProcessor,
     types::{EventWithBlock, RskPegManagerEvents},
 };
+use alloy_primitives::U256;
 use anyhow::{Context, Result, anyhow, bail};
-use bitcoin::Txid;
+use bitcoin::key::Parity;
+use bitcoin::{PublicKey, Txid, XOnlyPublicKey};
 use common::msg_broker::bitvmx_types::{
-    IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PegOutAccepted, VariableTypes,
+    IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, P2PAddress, PegOutAccepted,
+    PegOutRequest, TransactionStatus, VariableTypes,
 };
 use common::runtime_sync::RuntimeSync;
-use common::types::TxHash;
+use common::types::{CommitteeId, TxHash};
 use common::{
     msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi},
     types::RskBlockAndUncles,
 };
 use log::{debug, info, trace};
 use serde::Serialize;
-use serde_json::Value;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
+use transaction_dispatcher::types::{
+    GetCommitteeInput, GetCommunicationDataInput, P2PAddressParser,
+};
 use transaction_dispatcher::types::{RegisterPegoutInput, RegisterPegoutOutput};
 use union_contracts::bindings::peg_manager::PegManager::{PegoutRegistered, PegoutRequested};
 use uuid::Uuid;
 
-pub const USER_TAKE: &str = "USER_TAKE";
+pub const USER_TAKE_TX: &str = "USER_TAKE_TX";
 pub const PROGRAM_TYPE_REQUEST_PEGOUT: &str = "request_pegout";
 pub const PEGOUT_ACCEPTED_NAME: &str = "pegout_accepted";
+pub const MIN_TX_CONFIRMATIONS: u32 = 4;
+pub const BLOCKS_DELAY_FOR_TX_CHECK: u32 = 20; // Number of blocks to wait before rechecking transaction status
 
 #[derive(Debug, Clone)]
 struct PegoutEvent<T: Clone> {
@@ -71,6 +78,7 @@ struct PegoutEventState<BSF: BtcSignatureSubFlowApi> {
     pegout_registered_tx: Option<TxHash>,
     pegout_registered: Option<PegoutEvent<PegoutRegistered>>,
     btc_sig_flow: Option<BSF>,
+    spv_proof_tx_id: Option<Txid>,
 }
 
 impl<BSF: BtcSignatureSubFlowApi> PegoutEventState<BSF> {
@@ -82,6 +90,7 @@ impl<BSF: BtcSignatureSubFlowApi> PegoutEventState<BSF> {
             pegout_registered_tx: None,
             pegout_registered: None,
             btc_sig_flow: None,
+            spv_proof_tx_id: None,
         }
     }
 }
@@ -99,6 +108,7 @@ where
     blockchain: BlockchainView,
     tracker: HashMap<Uuid, PegoutEventState<BSF>>,
     btc_sig_subflow_factory: FactoryBSF,
+    scheduler: TickScheduler<Uuid>,
 }
 
 impl<CG, BC>
@@ -120,25 +130,136 @@ where
             blockchain: BlockchainView::new(),
             tracker: HashMap::new(),
             btc_sig_subflow_factory: BtcSignatureSubFlowFactory::new(contracts_gateway, rt_sync),
+            scheduler: TickScheduler::new(),
         }
     }
 
-    fn notify_pegout_requested_to_bitvmx(
-        bitvmx_broker: &BC,
-        flow_id: Uuid,
-        event_data: &impl Serialize,
-    ) -> Result<()> {
-        //Set var must be sent first
-        Self::send_set_var_to_bitvmx(bitvmx_broker, flow_id, "PegoutRequested", event_data)
-            .context(format!(
-                "Error processing confirmed pegout event (flow_id: {})",
+    fn handle_tick(&mut self) -> Result<()> {
+        if self.scheduler.is_empty() {
+            return Ok(());
+        }
+        let ready = self.scheduler.tick();
+        for flow_id in ready {
+            debug!(
+                "Sending delayed get transaction info by name to bitvmx with id: {}",
                 flow_id
-            ))?;
+            );
+            Self::send_get_transaction_info_by_name_to_bitvmx(&self.bitvmx_broker, flow_id)?;
+        }
+        Ok(())
+    }
 
+    fn notify_pegout_requested_to_bitvmx(
+        &mut self,
+        flow_id: Uuid,
+        pegout_requested: &PegoutRequested,
+    ) -> Result<()> {
+        let data_to_send: PegOutRequest =
+            self.pegout_requested_to_bitvmx_request(pegout_requested)?;
+        //Set var must be sent first
+        Self::send_set_var_to_bitvmx(
+            &self.bitvmx_broker,
+            flow_id,
+            PegOutRequest::name().as_str(),
+            &data_to_send,
+        )
+        .context(format!(
+            "Error processing confirmed pegout event (flow_id: {})",
+            flow_id
+        ))?;
+
+        let committee_id = pegout_requested.committeeId.try_into()?;
+        let p2p_addresses = self
+            .get_committee_member_address(committee_id)
+            .context("Failed to get committee member addresses")?;
         //Setup must be sent after set_var
-        Self::send_setup_to_bitvmx(bitvmx_broker, flow_id)?;
+        Self::send_setup_to_bitvmx(&self.bitvmx_broker, flow_id, p2p_addresses)?;
 
         Ok(())
+    }
+
+    fn build_take_aggregated_key(
+        committee_response: &transaction_dispatcher::types::GetCommitteeOutput,
+    ) -> Result<PublicKey> {
+        let aggregated_xonly_key =
+            XOnlyPublicKey::from_slice(committee_response.committee.aggregatedKey.as_slice())
+                .context("Failed to parse aggregated public key from committee")?;
+        let aggregated_secp_key = aggregated_xonly_key.public_key(Parity::Even);
+        Ok(PublicKey::new(aggregated_secp_key))
+    }
+
+    fn get_committee_member_address(
+        &mut self,
+        committee_id: CommitteeId,
+    ) -> Result<Vec<P2PAddress>> {
+        let input = GetCommunicationDataInput {
+            committee_id: committee_id.clone(),
+            member_address: self.contracts_gateway.my_address().into(),
+        };
+        let member_comm_data = self.rt_sync.run(async {
+            self.contracts_gateway
+                .get_committee_communication_data(input)
+                .await
+        })?;
+
+        //TODO clarify how this data is going to be retrieved
+        let addresses: Vec<P2PAddress> = vec![];
+
+        //TODO
+        // if addresses.is_empty() {
+        //     bail!("No committee members found for stream ID: {}", stream_id);
+        // }
+
+        Ok(addresses)
+    }
+
+    fn pegout_requested_to_bitvmx_request(
+        &mut self,
+        event: &PegoutRequested,
+    ) -> Result<PegOutRequest> {
+        let committee_id = event.committeeId.try_into()?;
+
+        let committee_response = self.rt_sync.run(async {
+            self.contracts_gateway
+                .get_committee(GetCommitteeInput { committee_id })
+                .await
+        })?;
+
+        //TODO it is pending to decide the exact conversion from U256 coming from the contract to Uuid
+        // AS ferist solution it was decided to take the first 16 bytes of the U256
+        let committee_bytes = event.committeeId.to_be_bytes_vec();
+        let uuid_bytes_slice = committee_bytes
+            .get(..16)
+            .ok_or_else(|| anyhow!("Committee ID should have at least 16 bytes"))?;
+        let uuid_bytes: [u8; 16] = uuid_bytes_slice
+            .try_into()
+            .map_err(|_| anyhow!("Invalid Committee ID length; expected 16 bytes"))?;
+        let committee_id = Uuid::from_bytes(uuid_bytes);
+
+        // Convert user pubkey bytes to bitcoin::PublicKey
+        let user_pubkey_bytes: Vec<u8> = event.userPubKey.clone().to_vec();
+        let user_pubkey = bitcoin::PublicKey::from_slice(&user_pubkey_bytes)
+            .context("Invalid userPubKey in PegoutRequested event")?;
+
+        let take_aggregated_key = Self::build_take_aggregated_key(&committee_response)?;
+
+        // Convert fixed-size hashes and ids to Vec<u8>
+        let pegout_signature_hash: Vec<u8> = event.pegoutSignatureHash.as_slice().to_vec();
+        let pegout_id: Vec<u8> = event.pegoutId.as_slice().to_vec();
+        let pegout_signature_message: Vec<u8> = event.pegoutSignatureMessage.clone().to_vec();
+
+        Ok(PegOutRequest {
+            committee_id,
+            stream_id: event.streamId,
+            packet_number: event.packetNumber,
+            slot_id: event.slotId,
+            amount: event.amount,
+            pegout_id,
+            pegout_signature_hash,
+            pegout_signature_message,
+            user_pubkey,
+            take_aggregated_key,
+        })
     }
 
     fn track_pegout_requested(&mut self, event: EventWithBlock<PegoutRequested>) -> Result<()> {
@@ -211,28 +332,30 @@ where
         if self.tracker.is_empty() {
             debug!("Pegout tracker is empty, clearing blockchain observers");
             self.blockchain.clear();
+            self.scheduler.clear();
         }
         Ok(())
     }
 
-    fn _handle_register_pegout(
+    fn handle_register_pegout(
         &mut self,
-        flow_id: &Uuid,
+        tx_id: &Txid,
         input: RegisterPegoutInput,
     ) -> Result<RegisterPegoutOutput> {
-        let pegout_event = self
+        let (_flow_id, state) = self
             .tracker
-            .get_mut(flow_id)
-            .ok_or_else(|| anyhow!("Pegout not found for flow_id: {}", flow_id))?;
-        if pegout_event.pegout_registered.is_some() {
-            bail!("Pegout already registered for flow_id: {}", flow_id);
-        }
+            .iter_mut()
+            .find(|(_, state)| state.spv_proof_tx_id == Some(*tx_id))
+            .ok_or_else(|| anyhow!("Pegout state not found for tx_id: {}", tx_id))?;
         let result = self
             .rt_sync
             .run(async { self.contracts_gateway.register_pegout(input).await })?;
-
-        pegout_event.pegout_registered_tx =
-            Some(TxHash::try_from(result.transaction_hash.as_str())?);
+        if result.success {
+            info!("Pegout registered successfully for tx_id: {}", tx_id);
+            state.pegout_registered_tx = Some(TxHash::try_from(result.transaction_hash.as_str())?);
+        } else {
+            bail!("Pegout registration failed for tx_id: {}", tx_id);
+        }
         Ok(result)
     }
 
@@ -319,36 +442,17 @@ where
         Ok(())
     }
 
-    fn handle_bitvmx_request(
-        &mut self,
-        _flow_id: &Uuid,
-        method_name: &str,
-        _json_value: &Value,
-    ) -> Result<Value> {
-        match method_name {
-            "add-member-signature" => {
-                info!("Add member signature received. To be implemented.");
-                Ok(serde_json::json!({"status": "signature_added"}))
-            }
-            "add-member-nonce" => {
-                info!("Add member nonce received. To be implemented.");
-                Ok(serde_json::json!({"status": "nonce_added"}))
-            }
-            _ => bail!(
-                "Unsupported method name for BitVMX response: {}",
-                method_name
-            ),
-        }
-    }
-
-    //TODO define with FG about this parameters
-    fn send_setup_to_bitvmx(bitvmx_broker: &BC, flow_id: Uuid) -> Result<()> {
+    fn send_setup_to_bitvmx(
+        bitvmx_broker: &BC,
+        flow_id: Uuid,
+        p2p_address: Vec<P2PAddress>,
+    ) -> Result<()> {
         bitvmx_broker.send(
             BROKER_SERVER_ID,
             IncomingBitVMXApiMessages::Setup(
                 flow_id,
                 PROGRAM_TYPE_REQUEST_PEGOUT.to_string(),
-                vec![],
+                p2p_address,
                 0,
             ),
         )?;
@@ -385,7 +489,7 @@ where
         );
         bitvmx_broker.send(
             BROKER_SERVER_ID,
-            IncomingBitVMXApiMessages::DispatchTransactionName(flow_id, USER_TAKE.to_string()),
+            IncomingBitVMXApiMessages::DispatchTransactionName(flow_id, USER_TAKE_TX.to_string()),
         )?;
         Ok(())
     }
@@ -395,25 +499,85 @@ where
         flow_id: Uuid,
     ) -> Result<()> {
         let msg =
-            IncomingBitVMXApiMessages::GetTransactionInfoByName(flow_id, USER_TAKE.to_string());
+            IncomingBitVMXApiMessages::GetTransactionInfoByName(flow_id, USER_TAKE_TX.to_string());
         bitvmx_broker.send(BROKER_SERVER_ID, msg)?;
         Ok(())
     }
 
+    fn send_get_spv_proof_to_bitvmx(bitvmx_broker: &BC, tx_id: Txid) -> Result<()> {
+        let msg = IncomingBitVMXApiMessages::GetSPVProof(tx_id);
+        bitvmx_broker.send(BROKER_SERVER_ID, msg)?;
+        Ok(())
+    }
+
+    fn handle_request_spv_proof(&mut self, flow_id: &Uuid, tx_id: Txid) -> Result<()> {
+        let state = self
+            .tracker
+            .get_mut(flow_id)
+            .ok_or_else(|| anyhow!("Pegout state not found for flow_id: {}", flow_id))?;
+        state.spv_proof_tx_id = Some(tx_id);
+        Self::send_get_spv_proof_to_bitvmx(&self.bitvmx_broker, tx_id)?;
+        Ok(())
+    }
+
+    fn handle_transaction_status_received(
+        &mut self,
+        flow_id: &Uuid,
+        tx_status: TransactionStatus,
+    ) -> Result<()> {
+        //find the pegout event state for the given flow_id
+        let state = self
+            .tracker
+            .get_mut(flow_id)
+            .ok_or_else(|| anyhow!("Pegout state not found for flow_id: {}", flow_id))?;
+        if state.spv_proof_tx_id != Some(tx_status.tx_id) {
+            bail!(
+                "Pegout state for flow_id: {} does not match tx_id: {}",
+                flow_id,
+                tx_status.tx_id
+            );
+        }
+        if tx_status.confirmations >= MIN_TX_CONFIRMATIONS {
+            debug!(
+                "Transaction confirmed with sufficient confirmations for flow_id: {}",
+                flow_id
+            );
+            if self.scheduler.is_scheduled(flow_id) {
+                debug!(
+                    "Unscheduling get transaction info by name to bitvmx with id: {}",
+                    flow_id
+                );
+                self.scheduler.cancel(flow_id);
+            }
+            self.handle_request_spv_proof(flow_id, tx_status.tx_id)?;
+        } else {
+            debug!(
+                "Transaction not confirmed with sufficient confirmations for flow_id: {}",
+                flow_id
+            );
+            debug!(
+                "Scheduling get transaction info by name to bitvmx with id: {}",
+                flow_id
+            );
+            self.scheduler.schedule(*flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
+        }
+        Ok(())
+    }
+
     fn process_unhandled_confirmed_pegout_requested_events(&mut self) -> Result<()> {
+        let mut vec_to_process: Vec<(Uuid, PegoutEvent<PegoutRequested>)> = Vec::new();
         for (flow_id, state) in self.tracker.iter_mut() {
             let event = &mut state.pegout_requested;
             if !event.is_confirmed() || event.is_handled {
                 continue;
             }
-            info!("Confirmed pegout requested id: {}", flow_id);
-            Self::notify_pegout_requested_to_bitvmx(
-                &self.bitvmx_broker,
-                *flow_id,
-                &event.data.inner,
-            )?;
-
             event.mark_handled();
+            vec_to_process.push((*flow_id, event.clone()));
+        }
+
+        for (flow_id, event) in vec_to_process {
+            info!("Confirmed pegout requested id: {}", flow_id);
+            self.notify_pegout_requested_to_bitvmx(flow_id, &event.data.inner)?;
 
             let confirmations = event.confirmations.borrow();
             let observer_id = confirmations.get_id();
@@ -497,13 +661,15 @@ where
 {
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
         match event {
-            //TODO pending to define this message to start the pegout register step
             OutgoingBitVMXApiMessages::SPVProof(tx_id, spv_proof_opt) => match spv_proof_opt {
                 Some(spv_proof) => {
                     info!(
                         "Received BitVMX SPVProof for tx_id: {}, proof: {:?}",
                         tx_id, spv_proof
                     );
+                    let register_pegout_input: transaction_dispatcher::types::BtcTxSPVProofInput =
+                        RegisterPegoutInput::from(spv_proof.clone());
+                    self.handle_register_pegout(tx_id, register_pegout_input)?;
                 }
                 None => bail!(
                     "Received BitVMX SPVProof event for tx_id: {}, but no SPV proof was included.",
@@ -531,20 +697,12 @@ where
                     state.btc_sig_flow = Some(btc_sig_subflow);
                 }
             }
-            OutgoingBitVMXApiMessages::Variable(flow_id, method, VariableTypes::String(data))
-                if matches!(method.as_str(), "register-pegout") =>
-            {
-                info!(
-                    "Handling BitVMX Variable Event. Flow Id: {}, Method: {}, Payload: {:?}",
-                    flow_id, method, data
+            OutgoingBitVMXApiMessages::Transaction(flow_id, tx_status, _tx_opt) => {
+                debug!(
+                    "Received BitVMX Transaction event. Flow Id: {}, Tx Status: {:?}",
+                    flow_id, tx_status
                 );
-                let json_data = serde_json::from_str(data)?;
-                let result = self.handle_bitvmx_request(flow_id, method, &json_data)?;
-
-                info!(
-                    "Successfully proxied request. Flow Id: {}, Method: '{}', Response: {}",
-                    flow_id, method, result
-                );
+                self.handle_transaction_status_received(flow_id, tx_status.clone())?;
             }
             _ => {}
         }
@@ -566,7 +724,6 @@ where
             }
             RskPegManagerEvents::PegoutRegistered(data) => {
                 debug!("Handling Pegout Registered event {:?}", data);
-                //TODO ask about how to relate the pegout_requested event with the pegout_registered event
                 if data.removed {
                     self.untrack_pegout_registered(data.clone())?;
                     return Ok(());
@@ -608,6 +765,7 @@ where
         self.process_unhandled_confirmed_pegout_requested_events()?;
         self.process_unhandled_confirmed_pegout_registered_events()?;
         self.process_unhandled_confirmed_sig_flow_events(block)?;
+        self.handle_tick()?;
         Ok(())
     }
 
