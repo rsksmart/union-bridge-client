@@ -10,7 +10,7 @@ use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::{AddMemberNonceInput, AddMemberSignatureInput};
 use uuid::Uuid;
 
-use crate::types::RegisterSignaturesInput;
+use crate::types::RegisterSignaturesBitVmxData;
 #[cfg(test)]
 use mockall::automock;
 
@@ -18,7 +18,7 @@ use mockall::automock;
 pub(crate) trait BtcSignatureLifecycleApi {
     fn flow_id(&self) -> Uuid;
 
-    fn send_nonce_to_contracts(&mut self, data: &RegisterSignaturesInput) -> Result<()>;
+    fn send_nonce_to_contracts(&mut self, data: &RegisterSignaturesBitVmxData) -> Result<()>;
 
     fn set_all_nonces_ready(&mut self, block_number: BlockNumber) -> Result<()>;
 
@@ -43,7 +43,7 @@ pub(crate) trait BtcSignatureLifecycleApi {
 
 pub(crate) struct State {
     pub(crate) flow_id: Uuid,
-    pub(crate) data: Option<RegisterSignaturesInput>,
+    pub(crate) data: Option<RegisterSignaturesBitVmxData>,
     pub(crate) nonce_step: Option<ConfirmableEvent>,
     pub(crate) signature_step: Option<ConfirmableEvent>,
 }
@@ -174,7 +174,7 @@ where
         self.state.flow_id
     }
 
-    fn send_nonce_to_contracts(&mut self, data: &RegisterSignaturesInput) -> Result<()> {
+    fn send_nonce_to_contracts(&mut self, data: &RegisterSignaturesBitVmxData) -> Result<()> {
         info!("Sending nonce to contract for flow {}", self.state.flow_id);
 
         if self.state.nonce_step.is_some() || self.state.data.is_some() {
@@ -340,7 +340,7 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use crate::types::RegisterSignaturesInput;
+    use crate::types::RegisterSignaturesBitVmxData;
     use transaction_dispatcher::types::{AddMemberNonceInput, AddMemberSignatureInput};
     use uuid::Uuid;
 
@@ -912,7 +912,7 @@ mod tests {
         nonce_contract_calls: Option<usize>,
         signature_contract_calls: Option<usize>,
     ) -> (
-        RegisterSignaturesInput,
+        RegisterSignaturesBitVmxData,
         BtcSignatureLifeCycle<MockRskContractsGatewayApi>,
         Rc<RefCell<BlockchainView>>,
     ) {
@@ -956,7 +956,7 @@ mod tests {
 
     pub(in crate::flows::btc_signature) fn complete_nonce_step<CG: RskContractsGatewayApi>(
         flow: &mut BtcSignatureLifeCycle<CG>,
-        signature_input: &RegisterSignaturesInput,
+        signature_input: &RegisterSignaturesBitVmxData,
         start_block: BlockNumber,
         blockchain_view: &Rc<RefCell<BlockchainView>>,
     ) -> Result<()> {
@@ -1007,7 +1007,7 @@ mod tests {
         Ok(())
     }
 
-    pub(in crate::flows::btc_signature) fn fake_signature_input() -> RegisterSignaturesInput {
+    pub(in crate::flows::btc_signature) fn fake_signature_input() -> RegisterSignaturesBitVmxData {
         let hash_to_sign = "a1b2c3d4e5f60123456789abcdef0123456789abcdef0123456789abcdef0123"
             .try_into()
             .unwrap();
@@ -1016,7 +1016,7 @@ mod tests {
             .parse()
             .unwrap();
 
-        RegisterSignaturesInput {
+        RegisterSignaturesBitVmxData {
             hash_to_sign,
             nonce,
             signature,

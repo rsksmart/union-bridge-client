@@ -1,5 +1,5 @@
 use super::btc_signature_lifecycle::{BtcSignatureLifeCycle, BtcSignatureLifecycleApi};
-use crate::types::{RegisterSignaturesInput, RskPegManagerEvents};
+use crate::types::{RegisterSignaturesBitVmxData, RskPegManagerEvents};
 use anyhow::{Result, bail};
 use common::types::RskBlockAndUncles;
 
@@ -17,7 +17,7 @@ pub(crate) trait BtcSignatureSubFlowApi {
     fn start_signature_flow(
         &mut self,
         flow_id: Uuid,
-        event: &RegisterSignaturesInput,
+        event: &RegisterSignaturesBitVmxData,
     ) -> Result<()>;
     fn delegate_rsk_event(&mut self, flow_id: Uuid, event: &RskPegManagerEvents) -> Result<()>;
     fn delegate_block(&mut self, block: &RskBlockAndUncles) -> Result<()>;
@@ -61,7 +61,7 @@ where
     fn start_signature_flow(
         &mut self,
         flow_id: Uuid,
-        event: &RegisterSignaturesInput,
+        event: &RegisterSignaturesBitVmxData,
     ) -> Result<()> {
         if self.lifecycle.flow_id() != flow_id {
             return Ok(()); // not mine
@@ -200,7 +200,7 @@ mod tests {
 
         let flow_id = Uuid::new_v4();
 
-        let event = RegisterSignaturesInput {
+        let event = RegisterSignaturesBitVmxData {
             hash_to_sign,
             nonce: nonce.clone(),
             signature,
@@ -210,7 +210,7 @@ mod tests {
         let mut mock_flow = MockBtcSignatureLifecycleApi::new();
         mock_flow
             .expect_send_nonce_to_contracts()
-            .withf(move |arg: &RegisterSignaturesInput| {
+            .withf(move |arg: &RegisterSignaturesBitVmxData| {
                 arg.hash_to_sign == hash_to_sign && arg.nonce == nonce && arg.signature == signature
             })
             .times(1)
@@ -239,7 +239,7 @@ mod tests {
         let flow_id = Uuid::new_v4();
         let wrong_flow_id = Uuid::new_v4();
 
-        let event = RegisterSignaturesInput {
+        let event = RegisterSignaturesBitVmxData {
             hash_to_sign,
             nonce,
             signature,
@@ -595,7 +595,7 @@ mod tests {
 
         let flow_id = Uuid::new_v4();
 
-        let event = RegisterSignaturesInput {
+        let event = RegisterSignaturesBitVmxData {
             hash_to_sign,
             nonce,
             signature,

@@ -312,16 +312,16 @@ impl EventDecoder {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RegisterSignaturesInput {
+pub struct RegisterSignaturesBitVmxData {
     pub hash_to_sign: Hash256,
     pub nonce: PubNonce,
     pub signature: PartialSignature,
 }
-impl TryFrom<PegOutAccepted> for RegisterSignaturesInput {
+impl TryFrom<PegOutAccepted> for RegisterSignaturesBitVmxData {
     type Error = anyhow::Error;
 
     fn try_from(value: PegOutAccepted) -> Result<Self, Self::Error> {
-        Ok(RegisterSignaturesInput {
+        Ok(RegisterSignaturesBitVmxData {
             hash_to_sign: Hash256::from(alloy_primitives::FixedBytes::from(
                 <[u8; 32]>::try_from(value.user_take_sighash)
                     .map_err(|_| anyhow::anyhow!("Hash must be exactly 32 bytes"))?,

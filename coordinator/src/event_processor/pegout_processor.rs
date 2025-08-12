@@ -4,7 +4,7 @@ use crate::flows::btc_signature::btc_signature_subflow::{
     BaseBtcSignatureSubFlow, BtcSignatureSubFlowApi, BtcSignatureSubFlowFactory,
     BtcSignatureSubFlowFactoryApi,
 };
-use crate::types::RegisterSignaturesInput;
+use crate::types::RegisterSignaturesBitVmxData;
 use crate::{
     config::REQUIRED_CONFIRMATIONS,
     event_processor::EventProcessor,
@@ -526,7 +526,7 @@ where
                     let mut btc_sig_subflow = self.btc_sig_subflow_factory.create_flow(*flow_id);
                     let input: PegOutAccepted = serde_json::from_str::<PegOutAccepted>(data)?;
                     state.pegout_accepted_tx = Some(input.user_take_txid);
-                    let register_input = RegisterSignaturesInput::try_from(input)?;
+                    let register_input = RegisterSignaturesBitVmxData::try_from(input)?;
                     btc_sig_subflow.start_signature_flow(*flow_id, &register_input)?;
                     state.btc_sig_flow = Some(btc_sig_subflow);
                 }
