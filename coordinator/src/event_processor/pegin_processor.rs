@@ -8,7 +8,7 @@ use crate::{
     types::{EventWithBlock, PeginAcceptedEvent, PeginRequestedEvent, RskPegManagerEvents},
 };
 use alloy_primitives::FixedBytes;
-use anyhow::{Context, Result, bail};
+use anyhow::{anyhow, bail, Context, Result};
 use bitcoin::{
     PublicKey, Txid,
     hashes::Hash,
@@ -461,10 +461,10 @@ where
 
     fn build_committee_id(pegin_event: &PeginRequested) -> Result<Uuid> {
         let committee_bytes = pegin_event.committeeId.to_be_bytes_vec();
-        if committee_bytes.len() < 16 {
-            bail!("Committee ID too short for UUID conversion: expected at least 16 bytes, got {}", committee_bytes.len());
-        }
-        let uuid_bytes: [u8; 16] = committee_bytes[..16].try_into()
+        let uuid_bytes: [u8; 16] = committee_bytes
+            .get(..16)
+            .ok_or_else(|| anyhow!("Committee ID too short for UUID conversion: expected at least 16 bytes, got {}", committee_bytes.len()))?
+            .try_into()
             .context("Failed to convert committee_id to UUID")?;
         Ok(Uuid::from_bytes(uuid_bytes))
     }
