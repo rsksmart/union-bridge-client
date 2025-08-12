@@ -6,7 +6,7 @@ export UNION_CONTRACTS_SETUP_SCRIPT="shell/script/integration-test/packet-creati
 
 export CHECK_FORK_REQUIRED_NUM_BLOCKS=5
 
-export KEY_STORE_PASSWORD="p09ol."
+export KEY_STORE_PASSWORD="<input_password_here>"
 
 export KEY_STORE_ADDRESS="0x5bdd03ceaf59cad075cb29c67696581d857b9031"
 

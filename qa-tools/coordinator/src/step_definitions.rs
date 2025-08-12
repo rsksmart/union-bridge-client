@@ -12,7 +12,6 @@ use std::str::FromStr;
 use std::time::Duration;
 use tokio::time::sleep;
 use union_contracts::bindings::peg_manager::PegManager;
-use union_contracts::bindings::peg_manager::PegManager::StreamPosition;
 
 #[when(expr = "bitvmx finds a pegin request")]
 async fn bitvmx_finds_a_pegin_request(world: &mut TestWorld, step: &Step) {
@@ -87,11 +86,10 @@ async fn pegin_request_should_be_registered(world: &mut TestWorld) {
             .await
             .expect("contract call failed");
         let peg_status = stream_position.pegStatus;
-
         println!("Stream position: {:?}", stream_position);
         println!("Stream status: {:?}", peg_status);
         last_peg_status = peg_status;
-        sleep(Duration::from_secs(5)).await;
+        sleep(Duration::from_secs(2)).await;
         if peg_status == 1 {
             break;
         }
@@ -128,7 +126,7 @@ async fn enough_confirmations_received(world: &mut TestWorld) {
         if !response.status().is_success() {
             println!("Failed to mine block {}: HTTP {}", i, response.status());
         }
-        sleep(Duration::from_millis(200)).await;
+        sleep(Duration::from_millis(100)).await;
     }
     println!("Successfully mined {} blocks.", blocks_to_mine);
 }
@@ -158,7 +156,7 @@ async fn pegin_request_should_be_accepted(world: &mut TestWorld) {
         println!("Stream position: {:?}", stream_position);
         println!("Stream status: {:?}", peg_status);
         last_peg_status = peg_status;
-        sleep(Duration::from_secs(5)).await;
+        sleep(Duration::from_secs(2)).await;
         if peg_status == 2 {
             break;
         }
@@ -166,29 +164,56 @@ async fn pegin_request_should_be_accepted(world: &mut TestWorld) {
     assert_eq!(last_peg_status, 2, "Pegin not accepted after 5 attempts.",);
 }
 
-#[then(expr = "the pegin request should be registed in the coordinator")]
+#[then(expr = "the pegin request should be registered in the coordinator")]
 async fn pegin_request_should_be_registered_in_the_coordinator(world: &mut TestWorld) {
-    let last_pegin_requested_flow_id = world
-        .bitvmx_mock
-        .as_mut()
-        .unwrap()
-        .get_last_pegin_requested_flow_id();
+    let n_attempts = 5;
+    let mut last_pegin_requested_flow_id = None;
+    for attempt in 1..=n_attempts {
+        println!(
+            "🔍 Checking pegin request in coordinator (attempt {}/{})...",
+            attempt, n_attempts
+        );
+        last_pegin_requested_flow_id = world
+            .bitvmx_mock
+            .as_ref()
+            .unwrap()
+            .get_last_pegin_requested_flow_id();
+
+        if last_pegin_requested_flow_id.is_some() {
+            break;
+        }
+        sleep(Duration::from_secs(2)).await;
+    }
     assert!(
         last_pegin_requested_flow_id.is_some(),
-        "No pegin requested flow ID found in the coordinator mock."
+        "No pegin request flow ID found in the coordinator mock after {} attempts.",
+        n_attempts
     );
 }
 
-#[then(expr = "the pegin accept should be registed in the coordinator")]
+#[then(expr = "the pegin accept should be registered in the coordinator")]
 async fn pegin_process_should_be_completed(world: &mut TestWorld) {
-    sleep(Duration::from_secs(5)).await;
-    let last_pegin_accepted_flow_id = world
-        .bitvmx_mock
-        .as_mut()
-        .unwrap()
-        .get_last_pegin_accepted_flow_id();
+    let n_attempts = 5;
+    let mut last_pegin_accepted_flow_id = None;
+    for attempt in 1..=n_attempts {
+        println!(
+            "🔍 Checking pegin accept in coordinator (attempt {}/{})...",
+            attempt, n_attempts
+        );
+        last_pegin_accepted_flow_id = world
+            .bitvmx_mock
+            .as_ref()
+            .unwrap()
+            .get_last_pegin_accepted_flow_id();
+
+        if last_pegin_accepted_flow_id.is_some() {
+            break;
+        }
+        sleep(Duration::from_secs(2)).await;
+    }
     assert!(
         last_pegin_accepted_flow_id.is_some(),
-        "No pegin accepted flow ID found in the coordinator mock."
+        "No pegin accepted flow ID found in the coordinator mock after {} attempts.",
+        n_attempts
     );
 }
