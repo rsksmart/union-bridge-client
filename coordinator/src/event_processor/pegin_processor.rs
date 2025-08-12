@@ -9,7 +9,11 @@ use crate::{
 };
 use alloy_primitives::{FixedBytes, U256};
 use anyhow::{Context, Result, bail};
-use bitcoin::Txid;
+use bitcoin::{
+    PublicKey, Txid,
+    hashes::Hash,
+    secp256k1::{Parity::Even, XOnlyPublicKey},
+};
 use common::{
     msg_broker::{
         bitvmx_types::{
@@ -26,12 +30,9 @@ use serde_json::Value;
 use std::{cell::RefCell, collections::HashMap, fmt::Debug, future::Future, rc::Rc};
 use transaction_dispatcher::{
     rsk_gateway::{DomainErrors, RskContractsGatewayApi},
-    types::{AcceptPeginInput, GetCommitteeInput, RequestPeginInput},
+    types::{AcceptPeginInput, GetCommitteeInput, GetMemberPublicKeysInput, RequestPeginInput},
 };
-use union_contracts::bindings::{
-    committee_registry::CommitteeRegistry::Committee,
-    peg_manager::PegManager::{PeginAccepted, PeginRequested},
-};
+use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
 use uuid::Uuid;
 
 const ACCEPT_PEGIN: &'static str = "accept-pegin";
@@ -41,51 +42,15 @@ const ACCEPT_PEGIN: &'static str = "accept-pegin";
 /// committee and signature data that BitVMX needs for pegin processing.
 #[derive(Debug, Clone, Serialize)]
 struct PeginRequest {
-    txid: FixedBytes<32>, // requestPeginTxHash
+    txid: Txid, // requestPeginTxHash
     amount: u64,
     accept_pegin_sighash: Vec<u8>, // acceptPeginSignatureMessage
-    take_aggregated_key: FixedBytes<32>,
-    operators_take_key: Vec<String>,
-    slot_index: u32,
+    take_aggregated_key: PublicKey,
+    operators_take_key: Vec<PublicKey>,
+    slot_index: u64,
     committee_id: U256,
     rootstock_address: String,
-    reimbursement_pubkey: FixedBytes<32>,
-}
-
-impl PeginRequest {
-    fn build(event: PeginRequested, committee: Committee) -> Result<Self> {
-        const OPERATOR_ROLE: u8 = 1;
-        
-        // collect only the member addresses that are operators
-        let operators_take_key: Vec<String> = committee
-            .members
-            .iter()
-            .filter(|m| m.role == OPERATOR_ROLE)
-            .map(|m| m.memberAddress.to_checksum(None))
-            .collect();
-
-        // TODO(contracts-upgrade-alpha4): get real slot index from contract when available
-        let slot_index: u32 = 0;
-
-        let rootstock_address = event
-            .requestPeginInfo
-            .rskDestinationAddress
-            .to_checksum(None);
-
-        let accept_pegin_sighash = event.acceptPeginSignatureMessage.to_vec();
-
-        Ok(Self {
-            txid: event.requestPeginTxHash,
-            amount: event.prevoutData.value,
-            accept_pegin_sighash,
-            take_aggregated_key: committee.aggregatedKey,
-            operators_take_key,
-            slot_index,
-            committee_id: event.committeeId,
-            rootstock_address,
-            reimbursement_pubkey: event.requestPeginInfo.btcReimbursementPubKey,
-        })
-    }
+    reimbursement_pubkey: PublicKey,
 }
 
 #[derive(Debug, Clone)]
@@ -327,23 +292,21 @@ where
     }
 
     fn process_unhandled_confirmed_pegin_requested_events(&mut self) -> Result<()> {
-        for (tx_hash, state) in self.tracker.iter_mut() {
-            let flow_id = state.flow_id;
+        let events_to_process: Vec<(TxHash, Uuid, PeginRequested)> = self
+            .tracker
+            .iter()
+            .filter_map(|(tx_hash, state)| {
+                let event = &state.pegin_requested;
+                if event.is_confirmed() && !event.is_handled {
+                    Some((*tx_hash, state.flow_id, event.data.inner.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
 
-            let event = &mut state.pegin_requested;
-            if !event.is_confirmed() || event.is_handled {
-                continue;
-            }
-
-            let response = Self::call_contract(&self.rt_sync, "getCommittee", || async {
-                self.contracts
-                    .get_committee(GetCommitteeInput {
-                        committee_id: event.data.inner.committeeId,
-                    })
-                    .await
-            })?;
-
-            let pegin_request = PeginRequest::build(event.data.inner.clone(), response.committee)?;
+        for (tx_hash, flow_id, pegin_event) in events_to_process {
+            let pegin_request = self.build_pegin_request_bitvmx_message(&pegin_event)?;
 
             Self::send_bitvmx_variable(
                 &self.bitvmx_broker,
@@ -356,22 +319,111 @@ where
                 tx_hash, flow_id
             ))?;
 
-            event.mark_handled();
+            // Mark event as handled and clean up
+            if let Some(state) = self.tracker.get_mut(&tx_hash) {
+                let event = &mut state.pegin_requested;
+                event.mark_handled();
 
-            let confirmations = event.confirmations.borrow();
-            let observer_id = confirmations.get_id();
-            self.blockchain.remove_observer(observer_id.as_str());
+                let confirmations = event.confirmations.borrow();
+                let observer_id = confirmations.get_id();
+                self.blockchain.remove_observer(observer_id.as_str());
 
-            info!(
-                "Successfully processed confirmed PeginRequested event for flow {}, starting BTC signature flow",
-                flow_id
-            );
+                info!(
+                    "Successfully processed confirmed PeginRequested event for flow {}, starting BTC signature flow",
+                    flow_id
+                );
 
-            // now we start the signatures sub-flow
-            state.btc_signatures_flow = Some(self.btc_sig_subflow_factory.create_flow(flow_id));
+                // now we start the signatures sub-flow
+                state.btc_signatures_flow = Some(self.btc_sig_subflow_factory.create_flow(flow_id));
+            }
         }
 
         Ok(())
+    }
+
+    fn build_pegin_request_bitvmx_message(
+        &self,
+        pegin_event: &PeginRequested,
+    ) -> Result<PeginRequest> {
+        // Get committee information
+        let response = Self::call_contract(&self.rt_sync, "getCommittee", || async {
+            self.contracts
+                .get_committee(GetCommitteeInput {
+                    committee_id: pegin_event.committeeId,
+                })
+                .await
+        })?;
+
+        // Build operators take keys by calling get_member_public_keys for each operator
+        const OPERATOR_ROLE: u8 = 1;
+        let mut operators_take_key = Vec::new();
+
+        for member in &response.committee.members {
+            if member.role == OPERATOR_ROLE {
+                let public_keys_response =
+                    Self::call_contract(&self.rt_sync, "getMemberPublicKeys", || async {
+                        self.contracts
+                            .get_member_public_keys(GetMemberPublicKeysInput {
+                                member_address: member.memberAddress,
+                            })
+                            .await
+                    })?;
+
+                // The first key represents the operator's take public key
+                if let Some(first_key) = public_keys_response.public_keys.first() {
+                    let key_bytes: FixedBytes<32> = first_key.parse()?;
+
+                    let xonly_key = XOnlyPublicKey::from_slice(key_bytes.as_slice())?;
+                    let secp_key = xonly_key.public_key(Even);
+                    let public_key = PublicKey::new(secp_key);
+
+                    operators_take_key.push(public_key);
+                }
+            }
+        }
+
+        // Build PeginRequest
+
+        // TODO(contracts-upgrade-alpha4): get real slot index from contract when available
+        let slot_index: u64 = 0;
+
+        let rootstock_address = pegin_event
+            .requestPeginInfo
+            .rskDestinationAddress
+            .to_checksum(None);
+
+        let accept_pegin_sighash = pegin_event.acceptPeginSignatureMessage.to_vec();
+
+        // Convert committee aggregated key to PublicKey
+        let aggregated_xonly_key =
+            XOnlyPublicKey::from_slice(response.committee.aggregatedKey.as_slice())?;
+        let aggregated_secp_key = aggregated_xonly_key.public_key(Even);
+        let take_aggregated_key = PublicKey::new(aggregated_secp_key);
+
+        // Convert reimbursement key to PublicKey
+        let reimbursement_xonly_key = XOnlyPublicKey::from_slice(
+            pegin_event
+                .requestPeginInfo
+                .btcReimbursementPubKey
+                .as_slice(),
+        )?;
+        let reimbursement_secp_key = reimbursement_xonly_key.public_key(Even);
+        let reimbursement_pubkey = PublicKey::new(reimbursement_secp_key);
+
+        // Convert requestPeginTxHash to Txid
+        let txid = Txid::from_slice(pegin_event.requestPeginTxHash.as_slice())?;
+
+        Ok(PeginRequest {
+            txid,
+            amount: pegin_event.prevoutData.value,
+            accept_pegin_sighash,
+            take_aggregated_key,
+            operators_take_key,
+            slot_index,
+            committee_id: pegin_event.committeeId,
+            rootstock_address,
+            reimbursement_pubkey,
+        })
     }
 
     fn process_unhandled_confirmed_pegin_accepted_events(&mut self) -> Result<()> {
@@ -645,11 +697,14 @@ mod tests {
     use primitive_types::H256;
     use serde_json::json;
     use transaction_dispatcher::types::GetCommitteeOutput;
+    use transaction_dispatcher::types::GetMemberPublicKeysOutput;
     use transaction_dispatcher::{
         rsk_gateway::DomainErrors,
         types::{AcceptPeginOutput, RequestPeginOutput},
     };
-    use union_contracts::bindings::committee_registry::CommitteeRegistry::{CommitteeMember, Role};
+    use union_contracts::bindings::committee_registry::CommitteeRegistry::{
+        Committee, CommitteeMember, Role,
+    };
     use union_contracts::bindings::peg_manager::PegManager::{
         PeginRequested, PrevoutData, RequestPeginTempInfo, StreamPosition,
     };
@@ -1183,7 +1238,8 @@ mod tests {
 
         let mut contracts = MockRskContractsGatewayApi::new();
         let committee = dummy_committee();
-        let committee_clone_for_build = committee.clone();
+        let committee_clone = committee.clone();
+        let pegin_requested_clone = pegin_requested.clone();
 
         contracts
             .expect_get_committee()
@@ -1195,11 +1251,26 @@ mod tests {
             })
             .times(1);
 
+        contracts
+            .expect_get_member_public_keys()
+            .returning(move |_| {
+                Ok(GetMemberPublicKeysOutput {
+                    public_keys: vec![
+                        "0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+                            .to_string(),
+                    ],
+                })
+            })
+            .times(1);
+
         let mut broker = MockBrokerClientApi::new();
         expect_bitvmx_subscription_success(&mut broker);
 
-        let expected_pegin_request =
-            PeginRequest::build(pegin_requested.clone(), committee_clone_for_build).unwrap();
+        let expected_pegin_request = dummy_pegin_request(
+            pegin_requested_clone,
+            committee_clone,
+            vec!["0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"],
+        );
         let expected_payload = json!(expected_pegin_request);
 
         broker
@@ -1485,10 +1556,9 @@ mod tests {
                 rskDestinationAddress: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
                     .parse::<alloy_primitives::Address>()
                     .expect("Invalid address"),
-                btcReimbursementPubKey: H256::from_low_u64_be(103991732982)
-                    .as_bytes()
-                    .try_into()
-                    .expect("Failed to decode key"),
+                btcReimbursementPubKey: "0xc6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+                    .parse::<FixedBytes<32>>()
+                    .expect("Failed to parse reimbursement key"),
                 acceptPeginSignatureHash: H256::from_low_u64_be(4444444)
                     .as_bytes()
                     .try_into()
@@ -1528,7 +1598,7 @@ mod tests {
     fn dummy_committee() -> Committee {
         let leader: Address = address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
         Committee {
-            aggregatedKey: FixedBytes::from([0x11u8; 32]),
+            aggregatedKey: "0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798".parse().unwrap(),
             members: vec![
                 CommitteeMember {
                     memberAddress: leader,
@@ -1541,6 +1611,50 @@ mod tests {
             ],
             leaderAddress: leader,
             operatorTakeIndex: U256::from(0u64),
+        }
+    }
+
+    fn dummy_pegin_request(
+        pegin_requested: PeginRequested,
+        committee: Committee,
+        operator_keys: Vec<&str>,
+    ) -> PeginRequest {
+        PeginRequest {
+            txid: Txid::from_slice(pegin_requested.requestPeginTxHash.as_slice()).unwrap(),
+            amount: pegin_requested.prevoutData.value,
+            accept_pegin_sighash: pegin_requested.acceptPeginSignatureMessage.to_vec(),
+            take_aggregated_key: {
+                let xonly_key =
+                    XOnlyPublicKey::from_slice(committee.aggregatedKey.as_slice()).unwrap();
+                let secp_key = xonly_key.public_key(Even);
+                PublicKey::new(secp_key)
+            },
+            operators_take_key: operator_keys
+                .into_iter()
+                .map(|key_str| {
+                    let key_bytes: FixedBytes<32> = key_str.parse().unwrap();
+                    let xonly_key = XOnlyPublicKey::from_slice(key_bytes.as_slice()).unwrap();
+                    let secp_key = xonly_key.public_key(Even);
+                    PublicKey::new(secp_key)
+                })
+                .collect(),
+            slot_index: 0,
+            committee_id: pegin_requested.committeeId,
+            rootstock_address: pegin_requested
+                .requestPeginInfo
+                .rskDestinationAddress
+                .to_checksum(None),
+            reimbursement_pubkey: {
+                let xonly_key = XOnlyPublicKey::from_slice(
+                    pegin_requested
+                        .requestPeginInfo
+                        .btcReimbursementPubKey
+                        .as_slice(),
+                )
+                .unwrap();
+                let secp_key = xonly_key.public_key(Even);
+                PublicKey::new(secp_key)
+            },
         }
     }
 }

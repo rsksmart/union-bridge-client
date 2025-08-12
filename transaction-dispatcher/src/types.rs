@@ -1,4 +1,4 @@
-use alloy_primitives::U256;
+use alloy_primitives::{Address, U256};
 use bitcoin::{Transaction, TxIn, TxOut};
 use common::{msg_broker::bitvmx_types::BtcTxSPVProof, types::Hash256};
 use musig2::{PartialSignature, PubNonce};
@@ -132,6 +132,11 @@ impl From<BtcTxSPVProof> for RequestPeginInput {
                 .collect(),
         }
     }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetMemberPublicKeysInput {
+    pub member_address: Address,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
