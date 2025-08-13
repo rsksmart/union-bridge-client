@@ -8,7 +8,7 @@ use crate::{
     types::{EventWithBlock, PeginAcceptedEvent, PeginRequestedEvent, RskPegManagerEvents},
 };
 use alloy_primitives::FixedBytes;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::{
     PublicKey, Txid,
     hashes::Hash,
@@ -301,7 +301,7 @@ where
 
         for (tx_hash, state) in self.tracker.iter_mut() {
             let event = &mut state.pegin_requested;
-            
+
             // Skip if event is not ready for processing
             if !event.is_confirmed() || event.is_handled {
                 continue;
@@ -311,23 +311,15 @@ where
             let pegin_event = &event.data.inner;
 
             // Build the pegin request message
-            let pegin_request = Self::build_pegin_request_bitvmx_message(
-                rt_sync,
-                contracts,
-                pegin_event,
-            )?;
+            let pegin_request =
+                Self::build_pegin_request_bitvmx_message(rt_sync, contracts, pegin_event)?;
 
             // Send to BitVMX
-            Self::send_bitvmx_variable(
-                bitvmx_broker,
-                flow_id,
-                PEGIN_REQUEST,
-                &pegin_request,
-            )
-            .context(format!(
-                "Error processing confirmed PeginRequested event (tx_hash: {}, flow_id: {})",
-                tx_hash, flow_id
-            ))?;
+            Self::send_bitvmx_variable(bitvmx_broker, flow_id, PEGIN_REQUEST, &pegin_request)
+                .context(format!(
+                    "Error processing confirmed PeginRequested event (tx_hash: {}, flow_id: {})",
+                    tx_hash, flow_id
+                ))?;
 
             // Mark event as handled and clean up
             event.mark_handled();
@@ -362,7 +354,8 @@ where
                 .await
         })?;
 
-        let operators_take_key = Self::build_operators_take_key(rt_sync, contracts, &committee_response)?;
+        let operators_take_key =
+            Self::build_operators_take_key(rt_sync, contracts, &committee_response)?;
 
         // TODO(contracts-upgrade-alpha4): get real slot index from contract when available
         let slot_index: u64 = 0;
@@ -1687,7 +1680,8 @@ mod tests {
             slot_index: 0,
             committee_id: {
                 let committee_bytes = pegin_requested.committeeId.to_be_bytes_vec();
-                let uuid_bytes: [u8; 16] = committee_bytes.get(..16)
+                let uuid_bytes: [u8; 16] = committee_bytes
+                    .get(..16)
                     .expect("Committee ID should have at least 16 bytes for tests")
                     .try_into()
                     .expect("Slice of 16 bytes should convert to [u8; 16]");
