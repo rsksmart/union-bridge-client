@@ -1,7 +1,11 @@
 use crate::blockchain_tracker::BlockchainView;
 use crate::event_processor::EventProcessor;
-use crate::types::UserRequests;
-use anyhow::{Context, Result, bail};
+use crate::types::{
+    AllCommunicationDataReadyEvent, NewCommitteePendingEvent, NewCommitteeReadyEvent,
+    RskPegManagerEvents, UserRequests,
+};
+use alloy_primitives::{Address, U256};
+use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::PublicKey;
 use bitcoin::hex::DisplayHex;
 use common::runtime_sync::RuntimeSync;
@@ -19,11 +23,16 @@ use common::msg_broker::bitvmx_types::{
 use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 
 use crate::user_requests::ApplyToStream;
-use union_contracts::bindings::committee_registry::CommitteeRegistry::CommitteeMember;
+use union_contracts::bindings::committee_registry::CommitteeRegistry::{
+    AllCommunicationDataReady, CommitteeMember, NewPendingCommittee,
+};
 
 #[cfg(test)]
 use mockall::automock;
-use transaction_dispatcher::types::ApplyToStreamInput;
+use transaction_dispatcher::types::{
+    ApplyToStreamInput, GetMemberPublicKeysInput, GetMemberPublicKeysOutput,
+};
+use union_contracts::bindings::committee_registry::CommitteeRegistry;
 
 const NO_LEADER_IDX: u16 = 0;
 
@@ -108,6 +117,9 @@ enum StepData {
     UserRequest(ApplyToStream),
     CommInfo(P2PAddress),
     PublicKey(PublicKey),
+    NewCommitteePending(NewCommitteePendingEvent),
+    AllCommunicationDataReady(AllCommunicationDataReadyEvent),
+    NewCommitteeReady(NewCommitteeReadyEvent),
 }
 
 impl StepData {
@@ -130,6 +142,30 @@ impl StepData {
             StepData::PublicKey(pk) => Ok(pk),
             _ => bail!("Expected PublicKey"),
         }
+    }
+
+    fn into_new_committee_pending(self) -> Result<NewCommitteePendingEvent> {
+        let event = match self {
+            StepData::NewCommitteePending(event) => event,
+            _ => return Err(anyhow!("Expected NewCommitteePending")),
+        };
+
+        // TODO(agus) we can use it to create the committee_id
+        let block_num = event.block_number;
+
+        Ok(event)
+    }
+
+    fn into_new_committee_ready(self) -> Result<NewCommitteeReadyEvent> {
+        let event = match self {
+            StepData::NewCommitteeReady(event) => event,
+            _ => return Err(anyhow!("Expected NewCommitteeReady")),
+        };
+
+        // TODO(agus) we can use it to create the committee_id
+        let block_num = event.block_number;
+
+        Ok(event)
     }
 }
 
@@ -426,6 +462,15 @@ where
         // TODO(Fairgate) Diego is working on this, ask again in some days
         Ok(Vec::new())
     }
+
+    fn get_member_public_keys(&mut self) -> Result<GetMemberPublicKeysOutput> {
+        self.rt_sync.run(
+            self.contracts
+                .get_member_public_keys(GetMemberPublicKeysInput {
+                    member_address: Address::default(), // TODO(agus) invoke with every member address
+                }),
+        )
+    }
 }
 
 impl<CG, BC> SetupCommitteeFlowApi for SetupCommitteeFlow<CG, BC>
@@ -612,6 +657,19 @@ where
             .find(|f| f.state.step == Steps::GetMyCommInfo)
     }
 
+    fn get_flow_for_stream_id(&self, stream_id: u64) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
+        // TODO(ask-Fairgate) implement when clarified how to relate events with flows
+        None
+    }
+
+    fn get_flow_for_committee_id(
+        &self,
+        committee_id: U256,
+    ) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
+        // TODO(ask-Fairgate) implement when clarified how to relate events with flows
+        None
+    }
+
     fn get_flow_for_request_id(&mut self, uuid: &Uuid) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
         // TODO super naive approach implemented here for now: find within the different flows and their step datas one with the req_id
         // an alternative could be storing all the requests (ids) for which the flow is waiting response
@@ -665,6 +723,62 @@ where
                 let mut flow = self.flow_factory.create_flow(flow_id);
                 flow.complete_step_and_next(None, StepData::UserRequest(input.clone()))?;
                 self.flows.insert(flow_id, flow);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
+        match event {
+            RskPegManagerEvents::NewCommitteePending(new_committee_pending) => {
+                let data = &new_committee_pending.inner;
+
+                // TODO(ask-Fairgate) for some reason streamId is U256 for NewPendingCommittee but u64 for AllCommunicationDataReady
+                let stream_id = data.streamId.try_into().with_context(|| {
+                    format!(
+                        "could not parse streamId {} to u64 for NewCommitteePending event",
+                        data.streamId
+                    )
+                })?;
+
+                // TODO(ask-Fairgate) how to identify the matching flow with the provided data?
+                if let Some(first_flow) = self.get_flow_for_stream_id(stream_id) {
+                    first_flow.complete_step_and_next(
+                        None,
+                        StepData::NewCommitteePending(new_committee_pending.clone()),
+                    )?
+                } else {
+                    bail!("No flow found for {new_committee_pending:?}")
+                }
+            }
+            RskPegManagerEvents::NewCommitteeReady(new_committee_ready) => {
+                let data = &new_committee_ready.inner;
+
+                // TODO(ask-Fairgate) how to identify the matching flow with the provided data?
+                if let Some(first_flow) = self.get_flow_for_committee_id(data.committeeId) {
+                    first_flow.complete_step_and_next(
+                        None,
+                        StepData::NewCommitteeReady(new_committee_ready.clone()),
+                    )?
+                } else {
+                    bail!("No flow found for {new_committee_ready:?}")
+                }
+            }
+            RskPegManagerEvents::AllCommunicationDataReady(all_comm_data_ready) => {
+                let data = &all_comm_data_ready.inner;
+
+                if let Some(first_flow) = self.get_flow_for_stream_id(data.streamId) {
+                    first_flow.complete_step_and_next(
+                        None,
+                        StepData::AllCommunicationDataReady(all_comm_data_ready.clone()),
+                    )?
+                } else {
+                    bail!("No flow found for {all_comm_data_ready:?}")
+                }
+            }
+            _ => {
+                info!("Ignoring RSK event: {:?}", event);
             }
         }
 
