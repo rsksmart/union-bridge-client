@@ -1,7 +1,7 @@
 use crate::config::TransactionConfig;
 use crate::contracts::committee_registry::{
-    ApplyToStreamInvoke, CommitteeRegistryContract, GetCommitteeCall,
-    GetMemberCommunicationDataCall, GetMemberPublicKeysCall,
+    ApplyToStreamInvoke, CommitteeRegistryContract, DepositCommunicationDataInvoke,
+    GetCommitteeCall, GetMemberCommunicationDataCall, GetMemberPublicKeysCall,
 };
 use crate::contracts::peg_manager::{
     FakePegManagerContract, PegManagerContract, accept_pegin::AcceptPeginInvoke,
@@ -15,10 +15,11 @@ use crate::contracts::signature_manager::{
 use crate::types::{
     AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
     AddMemberSignatureInput, AddMemberSignatureOutput, ApplyToStreamInput, ApplyToStreamOutput,
-    GetCommitteeInput, GetCommitteeOutput, GetMemberCommunicationDataOutput,
-    GetMemberPublicKeysInput, GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput,
-    RegisterPegoutInput, RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput,
-    RequestPegoutInput, RequestPegoutOutput,
+    DepositCommunicationDataInput, DepositCommunicationDataOutput, GetCommitteeInput,
+    GetCommitteeOutput, GetMemberCommunicationDataOutput, GetMemberPublicKeysInput,
+    GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterPegoutInput,
+    RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
+    RequestPegoutOutput,
 };
 use alloy_primitives::U256;
 use alloy_provider::Provider;
@@ -124,6 +125,11 @@ pub trait RskContractsGatewayApi {
         &self,
         stream_id: u64,
     ) -> impl Future<Output = Result<GetMemberCommunicationDataOutput, DomainErrors>>;
+
+    fn deposit_communication_data(
+        &self,
+        input: DepositCommunicationDataInput,
+    ) -> impl Future<Output = Result<DepositCommunicationDataOutput, DomainErrors>>;
 }
 
 #[derive(Clone)]
@@ -142,10 +148,12 @@ pub struct RskContractsGateway<P: Provider> {
     request_pegout_invoke: TryPegoutInvoke<PegManagerContract<P>>,
     register_pegout_invoke: RegisterPegoutInvoke<PegManagerContract<P>>,
     get_committee_call: GetCommitteeCall<CommitteeRegistryContract<P>>,
+    deposit_communication_data_invoke: DepositCommunicationDataInvoke<CommitteeRegistryContract<P>>,
 }
 
 impl<P: Provider + Clone> RskContractsGateway<P> {
     pub fn new(
+        // TODO make provider an Rc so we avoid more expensive cloning
         provider: P,
         managed_contracts: HashMap<String, ContractInfo>,
         tx_config: &TransactionConfig,
@@ -158,6 +166,8 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             Self::load_contract(SIGNATURE_MANAGER_CONTRACT_NAME, &managed_contracts)?;
         let committee_registry_address =
             Self::load_contract(COMMITTEE_REGISTRY_CONTRACT_NAME, &managed_contracts)?;
+
+        // TODO make these contracts Rc so we avoid more expensive cloning
 
         let peg_manager_contract =
             PegManagerContract::new(provider.clone(), contract_address.into());
@@ -215,6 +225,10 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
                 alloy_primitives::Address::from(member_address),
             ),
             get_committee_call: GetCommitteeCall::new(committee_registry_contract.clone()),
+            deposit_communication_data_invoke: DepositCommunicationDataInvoke::new(
+                committee_registry_contract.clone(),
+                tx_config.gas_bumps_t1,
+            ),
         })
     }
 
@@ -418,6 +432,24 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
             .await
             .map_err(|err| {
                 error!("Error on get_member_communication_data_call: {}", err);
+                err
+            })
+    }
+
+    async fn deposit_communication_data(
+        &self,
+        input: DepositCommunicationDataInput,
+    ) -> Result<DepositCommunicationDataOutput, DomainErrors> {
+        info!(
+            "Interacting with CommitteeRegistry#depositCommunicationData @ {}",
+            self.contract_address
+        );
+
+        self.deposit_communication_data_invoke
+            .run(input)
+            .await
+            .map_err(|err| {
+                error!("Error on deposit_communication_data_invoke: {}", err);
                 err
             })
     }

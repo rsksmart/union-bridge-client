@@ -187,6 +187,18 @@ pub struct GetMemberCommunicationDataOutput {
     pub communication_data: Vec<CommunicationData>,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DepositCommunicationDataInput {
+    pub stream_id: u64,
+    pub communication_data: Vec<CommunicationData>,
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+pub struct DepositCommunicationDataOutput {
+    pub transaction_hash: String,
+    pub success: bool,
+}
+
 /// Parser and encoder for converting between [`P2PAddress`] (BitVMX) and [`CommunicationData`] (Contracts Bindings)
 /// using a fixed-size 256-byte payload (`bytes32[8]` in Solidity terms).
 ///
