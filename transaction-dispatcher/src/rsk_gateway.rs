@@ -10,11 +10,12 @@ use crate::contracts::peg_manager::{
     register_pegout::RegisterPegoutInvoke, request_pegin::RequestPeginInvoke,
 };
 use crate::contracts::signature_manager::{
-    AddMemberNonceInvoke, AddMemberSignatureInvoke, SignatureManagerContract,
+    AddMemberNonceInvoke, AddMemberSignatureInvoke, AddOperatorTakeTxHashInvoke, SignatureManagerContract
 };
 use crate::types::{
     AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
-    AddMemberSignatureInput, AddMemberSignatureOutput, ApplyToStreamInput, ApplyToStreamOutput,
+    AddMemberSignatureInput, AddMemberSignatureOutput, AddOperatorTakeTxHashInput, 
+    AddOperatorTakeTxHashOutput, ApplyToStreamInput, ApplyToStreamOutput,
     DepositCommunicationDataInput, DepositCommunicationDataOutput, GetCommitteeInput,
     GetCommitteeOutput, GetMemberCommunicationDataOutput, GetMemberPublicKeysInput,
     GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterPegoutInput,
@@ -91,6 +92,11 @@ pub trait RskContractsGatewayApi {
         input: AddMemberSignatureInput,
     ) -> impl Future<Output = Result<AddMemberSignatureOutput, DomainErrors>>;
 
+    fn add_operator_take_tx_hash(
+        &self,
+        input: AddOperatorTakeTxHashInput,
+    ) -> impl Future<Output = Result<AddOperatorTakeTxHashOutput, DomainErrors>>;
+
     fn notify_check_fork_completion(
         &self,
         input: &str,
@@ -140,6 +146,7 @@ pub struct RskContractsGateway<P: Provider> {
     accept_pegin_invoke: AcceptPeginInvoke<PegManagerContract<P>>,
     add_member_nonce_invoke: AddMemberNonceInvoke<SignatureManagerContract<P>>,
     add_member_signature_invoke: AddMemberSignatureInvoke<SignatureManagerContract<P>>,
+    add_operator_take_tx_hash_invoke: AddOperatorTakeTxHashInvoke<SignatureManagerContract<P>>,
     notify_check_fork_completion_invoke: NotifyCheckForkCompleteInvoke<FakePegManagerContract<P>>,
     get_member_public_keys_call: GetMemberPublicKeysCall<CommitteeRegistryContract<P>>,
     get_member_communication_data_call:
@@ -208,6 +215,10 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
                 tx_config.gas_bumps_t1,
             ),
             add_member_signature_invoke: AddMemberSignatureInvoke::new(
+                signature_manager_contract.clone(),
+                tx_config.gas_bumps_t1,
+            ),
+            add_operator_take_tx_hash_invoke: AddOperatorTakeTxHashInvoke::new(
                 signature_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
@@ -336,6 +347,24 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
             .await
             .map_err(|err| {
                 error!("Error on add_member_signature_invoke: {}", err);
+                err
+            })
+    }
+
+    async fn add_operator_take_tx_hash(
+        &self,
+        input: AddOperatorTakeTxHashInput,
+    ) -> Result<AddMemberNonceOutput, DomainErrors> {
+        info!(
+            "Interacting with SignatureManager#addOperatorTakeTxHash @ {}",
+            self.contract_address
+        );
+
+        self.add_operator_take_tx_hash_invoke
+            .run(input)
+            .await
+            .map_err(|err| {
+                error!("Error on add_operator_take_tx_hash_invoke: {}", err);
                 err
             })
     }
