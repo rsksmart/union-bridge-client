@@ -289,9 +289,9 @@ pub(crate) mod tests {
     use transaction_dispatcher::types::{
         AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
         AddMemberSignatureInput, AddMemberSignatureOutput, ApplyToStreamInput, ApplyToStreamOutput,
-        GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterPegoutInput,
-        RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
-        RequestPegoutOutput,
+        GetCommitteeInput, GetCommitteeOutput, GetMemberPublicKeysInput, GetMemberPublicKeysOutput,
+        PeginAddressInput, PeginAddressOutput, RegisterPegoutInput, RegisterPegoutOutput,
+        RequestPeginInput, RequestPeginOutput, RequestPegoutInput, RequestPegoutOutput,
     };
 
     fn create_fake_request_event(pegout_id: &str) -> RequestAdvanceFunds {
@@ -625,13 +625,18 @@ pub(crate) mod tests {
             ) -> Result<(), DomainErrors>;
 
            async fn get_member_public_keys(
-                &self,
+                &self, input: GetMemberPublicKeysInput
             ) -> Result<GetMemberPublicKeysOutput, DomainErrors>;
 
             async fn apply_to_stream(
                 &self,
                 input: ApplyToStreamInput,
             ) -> Result<ApplyToStreamOutput, DomainErrors>;
+
+            async fn get_committee(
+                &self,
+                input: GetCommitteeInput,
+            ) -> Result<GetCommitteeOutput, DomainErrors>;
         }
     }
 }

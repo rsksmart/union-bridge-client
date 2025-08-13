@@ -1,7 +1,9 @@
+use alloy_primitives::{Address, U256};
 use bitcoin::{Transaction, TxIn, TxOut};
 use common::{msg_broker::bitvmx_types::BtcTxSPVProof, types::Hash256};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
+use union_contracts::bindings::committee_registry::CommitteeRegistry::Committee;
 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-214
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -133,6 +135,11 @@ impl From<BtcTxSPVProof> for RequestPeginInput {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct GetMemberPublicKeysInput {
+    pub member_address: Address,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct GetMemberPublicKeysOutput {
     pub public_keys: Vec<String>,
 }
@@ -157,4 +164,14 @@ pub struct CommitteePublicKey {
 pub struct ApplyToStreamOutput {
     pub transaction_hash: String,
     pub success: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetCommitteeInput {
+    pub committee_id: U256,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetCommitteeOutput {
+    pub committee: Committee,
 }
