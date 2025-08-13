@@ -288,7 +288,8 @@ pub(crate) mod tests {
     use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
     use transaction_dispatcher::types::{
         AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
-        AddMemberSignatureInput, AddMemberSignatureOutput, ApplyToStreamInput, ApplyToStreamOutput,
+        AddMemberSignatureInput, AddMemberSignatureOutput, AddOperatorTakeTxHashInput, 
+        AddOperatorTakeTxHashOutput, ApplyToStreamInput, ApplyToStreamOutput,
         DepositCommunicationDataInput, DepositCommunicationDataOutput, GetCommitteeInput,
         GetCommitteeOutput, GetMemberCommunicationDataOutput, GetMemberPublicKeysInput,
         GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterPegoutInput,
@@ -649,6 +650,11 @@ pub(crate) mod tests {
                 &self,
                 input: DepositCommunicationDataInput
             ) -> Result<DepositCommunicationDataOutput, DomainErrors>;
+
+            async fn add_operator_take_tx_hash(
+                &self,
+                input: AddOperatorTakeTxHashInput,
+            ) -> Result<AddOperatorTakeTxHashOutput, DomainErrors>;
         }
     }
 }
