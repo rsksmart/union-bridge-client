@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use transaction_dispatcher::types::ApplyToStreamInput;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
-    NewCommittee, NewPendingCommittee,
+    AllCommunicationDataReady, NewCommittee, NewPendingCommittee,
 };
 use union_contracts::bindings::peg_manager::PegManager::{
     PeginAccepted, PeginRequested, PegoutRegistered, PegoutRequested,
@@ -33,6 +33,7 @@ pub enum RskPegManagerEvents {
     AllSignaturesReady(AllSignaturesReadyEvent),
     NewCommitteePending(NewCommitteePendingEvent),
     NewCommitteeReady(NewCommitteeReadyEvent),
+    AllCommunicationDataReady(AllCommunicationDataReadyEvent),
     UnknownEvent,
 }
 
@@ -51,6 +52,7 @@ pub type PegoutRequestedEvent = EventWithBlock<PegoutRequested>;
 pub type PegoutRegisteredEvent = EventWithBlock<PegoutRegistered>;
 pub type NewCommitteePendingEvent = EventWithBlock<NewPendingCommittee>;
 pub type NewCommitteeReadyEvent = EventWithBlock<NewCommittee>;
+pub type AllCommunicationDataReadyEvent = EventWithBlock<AllCommunicationDataReady>;
 
 pub type EventStatus = bool;
 type DecoderFn = fn(&LogData, BlockNumber, BlockHash, EventStatus, TxHash) -> RskPegManagerEvents;
@@ -110,6 +112,10 @@ impl EventDecoder {
         dispatcher.insert(
             NewCommittee::SIGNATURE_HASH,
             Self::decode_new_committee_ready_event as DecoderFn,
+        );
+        dispatcher.insert(
+            AllCommunicationDataReady::SIGNATURE_HASH,
+            Self::decode_all_communication_data_ready_event as DecoderFn,
         );
         Self {
             dispatch: dispatcher,
@@ -358,6 +364,27 @@ impl EventDecoder {
                 removed,
                 tx_hash,
             }),
+            Err(_) => UnknownEvent,
+        }
+    }
+
+    fn decode_all_communication_data_ready_event(
+        log_data: &LogData,
+        block_number: BlockNumber,
+        block_hash: BlockHash,
+        removed: bool,
+        tx_hash: TxHash,
+    ) -> RskPegManagerEvents {
+        match AllCommunicationDataReady::decode_log_data(&log_data) {
+            Ok(event) => {
+                RskPegManagerEvents::AllCommunicationDataReady(AllCommunicationDataReadyEvent {
+                    inner: event,
+                    block_number,
+                    block_hash,
+                    removed,
+                    tx_hash,
+                })
+            }
             Err(_) => UnknownEvent,
         }
     }
@@ -789,6 +816,38 @@ mod tests {
                 assert_eq!(data.tx_hash, expected_tx_hash);
             }
             _ => panic!("Expected NewCommitteeReady event"),
+        }
+    }
+
+    #[test]
+    fn test_decode_all_communication_data_ready_event() {
+        let expected_block_hash = H256::from_low_u64_be(333);
+        let expected_block_num = 777;
+        let expected_stream_id = 12345u64;
+
+        let expected_event = AllCommunicationDataReady {
+            streamId: expected_stream_id,
+        };
+
+        let removed = false;
+        let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(
+            &expected_event,
+            expected_block_hash,
+            expected_block_num,
+            removed,
+        );
+
+        let decoder = EventDecoder::new();
+        let result = decoder.decode(rsk_log);
+        match result {
+            RskPegManagerEvents::AllCommunicationDataReady(data) => {
+                assert_eq!(data.inner, expected_event);
+                assert_eq!(data.block_number, expected_block_num);
+                assert_eq!(data.block_hash, expected_block_hash.into());
+                assert_eq!(data.removed, removed);
+                assert_eq!(data.tx_hash, expected_tx_hash);
+            }
+            _ => panic!("Expected AllCommunicationDataReady event"),
         }
     }
 }
