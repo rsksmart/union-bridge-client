@@ -13,8 +13,8 @@ use crate::{
 use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::Txid;
 use common::msg_broker::bitvmx_types::{
-    IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PegOutAccepted, TransactionStatus,
-    VariableTypes,
+    IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PegOutAccepted, PegOutRequest,
+    TransactionStatus, VariableTypes,
 };
 use common::runtime_sync::RuntimeSync;
 use common::types::TxHash;
@@ -31,7 +31,6 @@ use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::{RegisterPegoutInput, RegisterPegoutOutput};
 use union_contracts::bindings::peg_manager::PegManager::{PegoutRegistered, PegoutRequested};
 use uuid::Uuid;
-
 pub const USER_TAKE: &str = "USER_TAKE_TX";
 pub const PROGRAM_TYPE_REQUEST_PEGOUT: &str = "request_pegout";
 pub const PEGOUT_ACCEPTED_NAME: &str = "pegout_accepted";
@@ -147,19 +146,62 @@ where
     fn notify_pegout_requested_to_bitvmx(
         bitvmx_broker: &BC,
         flow_id: Uuid,
-        event_data: &impl Serialize,
+        pegout_requested: &PegoutRequested,
     ) -> Result<()> {
+        let data_to_send: PegOutRequest =
+            Self::pegout_requested_to_bitvmx_request(pegout_requested)?;
         //Set var must be sent first
-        Self::send_set_var_to_bitvmx(bitvmx_broker, flow_id, "PegoutRequested", event_data)
-            .context(format!(
-                "Error processing confirmed pegout event (flow_id: {})",
-                flow_id
-            ))?;
+        Self::send_set_var_to_bitvmx(
+            bitvmx_broker,
+            flow_id,
+            PegOutRequest::name().as_str(),
+            &data_to_send,
+        )
+        .context(format!(
+            "Error processing confirmed pegout event (flow_id: {})",
+            flow_id
+        ))?;
 
         //Setup must be sent after set_var
         Self::send_setup_to_bitvmx(bitvmx_broker, flow_id)?;
 
         Ok(())
+    }
+
+    fn pegout_requested_to_bitvmx_request(event: &PegoutRequested) -> Result<PegOutRequest> {
+        let committee_bytes = event.committeeId.to_be_bytes_vec();
+        let uuid_bytes: [u8; 16] = committee_bytes
+            .get(..16)
+            .expect("Committee ID should have at least 16 bytes for tests")
+            .try_into()
+            .expect("Slice of 16 bytes should convert to [u8; 16]");
+        let committee_id = Uuid::from_bytes(uuid_bytes);
+
+        // Convert user pubkey bytes to bitcoin::PublicKey
+        let user_pubkey_bytes: Vec<u8> = event.userPubKey.clone().to_vec();
+        let user_pubkey = bitcoin::PublicKey::from_slice(&user_pubkey_bytes)
+            .context("Invalid userPubKey in PegoutRequested event")?;
+
+        //TODO take_aggregated_key
+        let take_aggregated_key = user_pubkey;
+
+        // Convert fixed-size hashes and ids to Vec<u8>
+        let pegout_signature_hash: Vec<u8> = event.pegoutSignatureHash.as_slice().to_vec();
+        let pegout_id: Vec<u8> = event.pegoutId.as_slice().to_vec();
+        let pegout_signature_message: Vec<u8> = event.pegoutSignatureMessage.clone().to_vec();
+
+        Ok(PegOutRequest {
+            committee_id,
+            stream_id: event.streamId,
+            packet_number: event.packetNumber,
+            slot_id: event.slotId,
+            amount: event.amount,
+            pegout_id,
+            pegout_signature_hash,
+            pegout_signature_message,
+            user_pubkey,
+            take_aggregated_key,
+        })
     }
 
     fn track_pegout_requested(&mut self, event: EventWithBlock<PegoutRequested>) -> Result<()> {
