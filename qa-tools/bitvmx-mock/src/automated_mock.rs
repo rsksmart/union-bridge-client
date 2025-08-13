@@ -161,7 +161,7 @@ impl AutomatedBitVmxMock {
                     "PeginRequested" => {
                         let payload: PeginRequestedPayload = serde_json::from_str(&data)
                             .context("Invalid PeginRequested JSON payload")?;
-                        info!("Pegin accepted payload: {:?}", payload);
+                        info!("Pegin requested payload: {:?}", payload);
                         *self.last_pegin_requested_flow_id.lock().unwrap() = Some(flow_id);
                     }
                     "PeginAccepted" => {
