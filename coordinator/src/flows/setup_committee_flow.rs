@@ -59,6 +59,7 @@ pub(crate) trait SetupCommitteeFlowFactoryApi<CG: RskContractsGatewayApi, BC: Bi
 
 // TODO(iago) improve with structs instead of tuples, using tuples for now for validation
 type PubKeyReq = Option<(Uuid, Option<SignedPublicKey>)>; // request id, response data
+type AggKeyReq = Option<(Uuid, Option<PublicKey>)>; // request id, response data
 type SetupCoreReq = Option<(Uuid, Uuid, Option<String>)>; // request id, committee id, response data // TODO(iago) TBC what to store here in data
 
 #[derive(Default, Debug)]
@@ -68,8 +69,8 @@ struct FlowContext {
     my_take_key: PubKeyReq,
     my_dispute_key: PubKeyReq,
     my_comm_key: PubKeyReq,
-    agg_take_key: PubKeyReq,
-    agg_dispute_key: PubKeyReq,
+    agg_take_key: AggKeyReq,
+    agg_dispute_key: AggKeyReq,
     setup_core: SetupCoreReq,
 }
 
@@ -82,7 +83,9 @@ enum Steps {
     GetMyCommKey,
     ApplyToStream,
     SetupTakeAggregatedKey,
+    GetTakeAggregatedKey,
     SetupDisputeAggregatedKey,
+    GetDisputeAggregatedKey,
     SetupDisputeCoreProtocol,
     //
     Complete,
@@ -97,8 +100,10 @@ impl Steps {
             Steps::GetDisputeKey => Steps::GetMyCommKey,
             Steps::GetMyCommKey => Steps::ApplyToStream,
             Steps::ApplyToStream => Steps::SetupTakeAggregatedKey,
-            Steps::SetupTakeAggregatedKey => Steps::SetupDisputeAggregatedKey,
-            Steps::SetupDisputeAggregatedKey => Steps::SetupDisputeCoreProtocol,
+            Steps::SetupTakeAggregatedKey => Steps::GetTakeAggregatedKey,
+            Steps::GetTakeAggregatedKey => Steps::SetupDisputeAggregatedKey,
+            Steps::SetupDisputeAggregatedKey => Steps::GetDisputeAggregatedKey,
+            Steps::GetDisputeAggregatedKey => Steps::SetupDisputeCoreProtocol,
             Steps::SetupDisputeCoreProtocol => Steps::Complete,
             Steps::Complete => {
                 bail!("Flow is already complete at {:?}", self)
@@ -113,6 +118,7 @@ enum StepData {
     UserRequest(ApplyToStream),
     CommInfo(P2PAddress),
     SignedPublicKey(SignedPublicKey),
+    PublicKey(PublicKey),
 }
 
 impl StepData {
@@ -134,6 +140,13 @@ impl StepData {
         match self {
             StepData::SignedPublicKey(pk) => Ok(pk),
             _ => bail!("Expected SignedPublicKey"),
+        }
+    }
+
+    fn into_pubkey(self) -> Result<PublicKey> {
+        match self {
+            StepData::PublicKey(pk) => Ok(pk),
+            _ => bail!("Expected PublicKey"),
         }
     }
 }
@@ -195,6 +208,30 @@ where
         }
     }
 
+    fn close_agg_key_req(
+        pub_key_req: &mut AggKeyReq,
+        flow_id: Uuid,
+        req_id: Option<Uuid>,
+        data: StepData,
+    ) -> Result<()> {
+        let req_id = req_id.with_context(|| {
+            format!("Missing request id on close_agg_key_req for flow {flow_id}",)
+        })?;
+
+        match pub_key_req {
+            Some(r) if req_id == r.0 => {
+                r.1 = Some(data.into_pubkey()?);
+                Ok(())
+            }
+            Some(r) => {
+                bail!("Request id {req_id} does not match expected {r:?} for flow {flow_id}",)
+            }
+            None => {
+                bail!("Missing request for agg-key in flow {flow_id} with req_id {req_id}",)
+            }
+        }
+    }
+
     fn add_my_comm_data(
         &self,
         communication_data: &mut HashMap<PublicKey, P2PAddress>,
@@ -225,7 +262,9 @@ where
 
     fn setup_aggregated_pubkey(&self, keys: Vec<PublicKey>) -> Result<()> {
         // TODO(Fairgate) confirm with Fairgate how to get this, if it's from the pending committee or how
-        let addresses = vec![];
+
+        // Use hardcoded operator addresses
+        let addresses = self.get_hardcoded_operators_addresses();
 
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetupKey(
             self.state.flow_id,
@@ -415,14 +454,14 @@ where
 
         let req_id = take_data.0;
 
-        let signed_pubkey = take_data.1.as_ref().with_context(|| {
+        let pubkey = take_data.1.as_ref().with_context(|| {
             format!(
                 "Missing response for Aggregated Take key for flow {} and req_id {req_id}",
                 self.state.flow_id
             )
         })?;
 
-        Ok(signed_pubkey.public_key)
+        Ok(*pubkey)
     }
 
     fn ctx_aggregated_dispute_key(&self) -> Result<PublicKey> {
@@ -435,14 +474,14 @@ where
 
         let req_id = dispute_data.0;
 
-        let signed_pubkey = dispute_data.1.as_ref().with_context(|| {
+        let pubkey = dispute_data.1.as_ref().with_context(|| {
             format!(
                 "Missing response for Aggregated Dispute key for flow {} and req_id {req_id}",
                 self.state.flow_id
             )
         })?;
 
-        Ok(signed_pubkey.public_key)
+        Ok(*pubkey)
     }
 
     fn send_bitvmx_msg(&self, msg: IncomingBitVMXApiMessages) {
@@ -543,6 +582,70 @@ where
             v: signed_pk.recovery_id + 27, // Convert to Ethereum's v format (27 or 28)
         }
     }
+
+    fn get_hardcoded_operators_addresses(&self) -> Vec<P2PAddress> {
+        // Hardcoded addresses for the 4 BitVMX operators
+        vec![
+            P2PAddress {
+                address: "/ip4/127.0.0.1/tcp/61180".to_string(),
+                peer_id: PeerId("30820122300d06092a864886f70d01010105000382010f003082010a0282010100b0595a239c455f955ac2617061fadc0f3c532056da4a4ab4111b6581a62143e6c00b3041a00c290232fa65794ea0a55ca5f2ed3310ecbcab06a721d66e99a27e0d1b8a6afd8e395b741fbcf6cb73294eaeff43118f828f0118a4b5fdc95d472bcadaf2bc4d665e535ccd70b8ee5b82624794351a82c9f819d9a53638122228d1800d7d6561ae98183ae53c6cf23964c7eceeae95807db49a164cfbbc1ddc87a975fbe3d43545e8ce1bad2043cfe6a9aa3a7538ebdab8e6b900c94a691c1321d7c2d7f1a1beb3c3ef03686f7805ce938c92c8d5057cb5101cd51c1d97d7d3d4b9f13b7cb28bc5c4c5c9983a3062efc606b9c440021e1d5257d88d9c3ced0ac38f0203010001".to_string()),
+            },
+            P2PAddress {
+                address: "/ip4/127.0.0.1/tcp/61181".to_string(),
+                peer_id: PeerId("30820122300d06092a864886f70d01010105000382010f003082010a0282010100c96872f74e913fbcf2e068d7f508e52dad5a278123ad6546d9735e3f35163e836427ef6ea14ff28d4ca30e7f0d4e251ddf4724668675052d6adb8581550b0adb11f0dcb78a4e9d6ad00f68bf21851d590d88d9fff1d8d7678454f9df4a1daad2f8ebfe69b4ea99160a9e2d43a98cdaaaf380bc4de9f9dec6bedc9351c89c43e4d5d89abbef98664f5d57cdf5c68d93e928203c84fd038fedddac5bbe2b243378141edec442e83c57f0bab437336586f6d6bc01bee222ee8f67dfacb2d94d7a4e406d05446c9f84de055d6175217de19d1005203674b1693f1df2d3dacd11839a782c343c33e86b952740812da624f2ddfd71edf9eb5e9ddf7944b9afc3a08b2f0203010001".to_string()),
+            },
+            P2PAddress {
+                address: "/ip4/127.0.0.1/tcp/61182".to_string(),
+                peer_id: PeerId("30820122300d06092a864886f70d01010105000382010f003082010a0282010100e602dadfc9a2b10e6c042e10ba19628e49132fba6197f817457bd8728e881b35dc107838437b562cb9c611c2666fe3492db881630cd917178d17d21d48e664f685d9cd2ea2658501b3eb51ac7d9832e4ec580a5822616b0b663a3fb05a5aae15881baddeb7d8d329f064b460637a28ed569b93074446cb4946720474950456c950b5ae00b5f8b5a490eb1fc9af0206178ab81d3ca81b74fca1d84da9db510c10be2df4624be64fed6a6e59dc90880dc6ed61d4908ddcaf9eb0b08b0d58c5741085da051c4a537d33a8602fc22c6bef5853208698752561afa02ce763fb2bc0b88db51c90735d72dbd0ef6895c77aead64d5fe43e4d7521ed5f8da50c96636e4b0203010001".to_string()),
+            },
+            P2PAddress {
+                address: "/ip4/127.0.0.1/tcp/61183".to_string(),
+                peer_id: PeerId("30820122300d06092a864886f70d01010105000382010f003082010a0282010100d1f76c66923556eaa6e9db0acf025fa96049e150cccd910ed6a36d6b32e1eb531620182c34b9ec04a00ba9e2f02f6f6f1493cf0dd42ffcafe60d81c7102f7b64f22a76ebe749dd285435a4d551ed03271062318e08efafbb1e9341aabe685a56cf81abf4af7437e60e9435a0a9682f8720b3ad017c29c517c3b25cc467f5f1ccd9ab791a206cef513141938491e5527df1e615088061a7bdc19622fd43323a74020870042ce33287f730fa5d17eb7f21b1dc6bb028d2a01850b9fb3c0ae40d5023dcdd2c888691a2c50d956f8e6d3d92c3cf893388f954781d1ee118b5840ef88a0d1cc8d218e535d706b044bf6c881ceafec982fd7ed516daaab60c4ea7d15b0203010001".to_string()),
+            },
+        ]
+    }
+
+    fn get_hardcoded_operators_keys(&self) -> Vec<PublicKey> {
+        // TODO: Replace with actual public keys obtained from each operator
+        // For now, using the current member's key repeated 4 times as placeholder
+        let placeholder_key = self.ctx_my_take_key().unwrap_or_else(|_| {
+            // Fallback placeholder key if we don't have one yet
+            PublicKey::from_slice(&[
+                0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x01,
+            ])
+            .unwrap()
+        });
+
+        vec![placeholder_key; 4] // Placeholder - should be actual keys from each operator
+    }
+
+    fn get_deterministic_take_key_id(&self) -> Uuid {
+        // Hardcoded UUID for take key - same on every run
+        Uuid::parse_str("12345678-1234-5678-9abc-123456789abc").unwrap()
+    }
+
+    fn get_deterministic_dispute_key_id(&self) -> Uuid {
+        // Hardcoded UUID for dispute key - same on every run
+        Uuid::parse_str("87654321-4321-8765-cba9-987654321cba").unwrap()
+    }
+
+    fn request_take_aggregated_key(&mut self) -> Result<()> {
+        let take_key_id = self.get_deterministic_take_key_id();
+        self.state.ctx.agg_take_key = Some((take_key_id, None));
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetAggregatedPubkey(take_key_id));
+        Ok(())
+    }
+
+    fn request_dispute_aggregated_key(&mut self) -> Result<()> {
+        let dispute_key_id = self.get_deterministic_dispute_key_id();
+        self.state.ctx.agg_dispute_key = Some((dispute_key_id, None));
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetAggregatedPubkey(
+            dispute_key_id,
+        ));
+        Ok(())
+    }
 }
 
 impl<CG, BC> SetupCommitteeFlowApi for SetupCommitteeFlow<CG, BC>
@@ -591,29 +694,36 @@ where
                     data,
                 )?;
                 self.apply_to_stream()?;
+
+                // TODO(agus) we are manually triggering the next step here because we are missing
+                // the tx confirmation logic. Remove this once we have it.
+                self.state.step = Steps::ApplyToStream;
+                self.setup_bitvmx_aggregated_take_pubkey()?;
             }
             Steps::ApplyToStream => {
                 // TODO(iago) process data received from contracts
                 self.setup_bitvmx_aggregated_take_pubkey()?;
             }
             Steps::SetupTakeAggregatedKey => {
-                Self::close_pub_key_req(
+                Self::close_agg_key_req(
                     &mut self.state.ctx.agg_take_key,
                     self.state.flow_id,
                     req_id,
                     data,
                 )?;
-                // start next
+            }
+            Steps::GetTakeAggregatedKey => {
                 self.setup_bitvmx_aggregated_dispute_pubkey()?;
             }
             Steps::SetupDisputeAggregatedKey => {
-                Self::close_pub_key_req(
+                Self::close_agg_key_req(
                     &mut self.state.ctx.agg_dispute_key,
                     self.state.flow_id,
                     req_id,
                     data,
                 )?;
-                // start next
+            }
+            Steps::GetDisputeAggregatedKey => {
                 self.setup_dispute_core_protocol()?;
             }
             Steps::SetupDisputeCoreProtocol => {
@@ -690,17 +800,39 @@ where
     }
 
     fn setup_bitvmx_aggregated_take_pubkey(&mut self) -> Result<()> {
-        let mut committee_take_keys = vec![]; // TODO(iago) contracts getMembersPublicKeys and filter for take
-        self.state.ctx.agg_take_key = Some((Uuid::new_v4(), None));
-        committee_take_keys.push(self.ctx_my_take_key()?);
-        self.setup_aggregated_pubkey(committee_take_keys)
+        let take_key_id = self.get_deterministic_take_key_id();
+        // Use hardcoded take keys from all operators
+        let committee_take_keys = self.get_hardcoded_operators_keys();
+
+        // Just setup the key, don't request the aggregated result yet
+        let addresses = self.get_hardcoded_operators_addresses();
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetupKey(
+            take_key_id,
+            addresses,
+            Some(committee_take_keys),
+            NO_LEADER_IDX,
+        ));
+
+        // Now request the aggregated key in the next step
+        self.request_take_aggregated_key()
     }
 
     fn setup_bitvmx_aggregated_dispute_pubkey(&mut self) -> Result<()> {
-        let mut committee_dispute_keys = vec![]; // TODO(iago) contracts getMembersPublicKeys and filter for dispute
-        self.state.ctx.agg_dispute_key = Some((Uuid::new_v4(), None));
-        committee_dispute_keys.push(self.ctx_my_dispute_key()?);
-        self.setup_aggregated_pubkey(committee_dispute_keys)
+        let dispute_key_id = self.get_deterministic_dispute_key_id();
+        // Use hardcoded dispute keys from all operators
+        let committee_dispute_keys = self.get_hardcoded_operators_keys();
+
+        // Just setup the key, don't request the aggregated result yet
+        let addresses = self.get_hardcoded_operators_addresses();
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetupKey(
+            dispute_key_id,
+            addresses,
+            Some(committee_dispute_keys),
+            NO_LEADER_IDX,
+        ));
+
+        // Now request the aggregated key in the next step
+        self.request_dispute_aggregated_key()
     }
 
     fn setup_dispute_core_protocol(&mut self) -> Result<()> {
@@ -851,6 +983,27 @@ where
                 } else {
                     bail!(
                         "No flow found for OutgoingBitVMXApiMessages::SignedPubKey and id {req_id}"
+                    );
+                }
+            }
+            OutgoingBitVMXApiMessages::AggregatedPubkey(req_id, pubkey) => {
+                // Handle successful aggregated pubkey response
+                if let Some(flow) = self.get_flow_for_request_id(req_id) {
+                    flow.complete_step_and_next(Some(*req_id), StepData::PublicKey(*pubkey))?;
+                } else {
+                    bail!(
+                        "No flow found for OutgoingBitVMXApiMessages::AggregatedPubkey and id {req_id}"
+                    );
+                }
+            }
+            OutgoingBitVMXApiMessages::AggregatedPubkeyNotReady(req_id) => {
+                // Key is not ready yet, retry the request
+                if let Some(flow) = self.get_flow_for_request_id(req_id) {
+                    // Retry the GetAggregatedPubkey request
+                    flow.send_bitvmx_msg(IncomingBitVMXApiMessages::GetAggregatedPubkey(*req_id));
+                } else {
+                    bail!(
+                        "No flow found for OutgoingBitVMXApiMessages::AggregatedPubkeyNotReady and id {req_id}"
                     );
                 }
             }
