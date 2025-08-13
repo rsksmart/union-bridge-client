@@ -79,10 +79,10 @@ Feature: Coordinator - Request Peg in process
   Scenario: Register peg-in request already registered
     When I send the PeginTransactionFound event
       | file                             |
-      | pf_unsupported_denomination.json |
+      | pegin_request_happy_path.json |
     And I send the SPV proof for pegin request
       | file                             | block_hash                                                         | merkle_hash                                                        | merkle_branch_path |
-      | pf_unsupported_denomination.json | 0x5ec8021cc5f6474b479d07f2b5736cba3a894fcd0438099996846379bff35106 | 0xcefbc931c000b2b2223e26472dae6ddafea0ace20a442f4ceefc61fe78f13f56 | 0x8325a0c5         |
+      | pegin_request_happy_path.json | 0x5ec8021cc5f6474b479d07f2b5736cba3a894fcd0438099996846379bff35106 | 0xcefbc931c000b2b2223e26472dae6ddafea0ace20a442f4ceefc61fe78f13f56 | 0x8325a0c5         |
     And I mine enough blocks to confirm the transaction
     Then the pegin request should fail with the error message "PeginAlreadyRequested"
 
