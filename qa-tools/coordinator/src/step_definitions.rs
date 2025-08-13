@@ -67,7 +67,6 @@ async fn bitvmx_accepts_pegin_request(world: &mut TestWorld, step: &Step) {
         )
         .unwrap();
     sleep(Duration::from_secs(3)).await;
-
 }
 #[then(expr = "the pegin request should be registered in the contract")]
 async fn pegin_request_should_be_registered(world: &mut TestWorld) {
@@ -81,7 +80,7 @@ async fn pegin_request_should_be_registered(world: &mut TestWorld) {
     let n_attempts = 5;
     for attempt in 1..=n_attempts {
         println!(
-            "🔍 Checking pegin registration (attempt {}/{})...",
+            "Checking pegin registration (attempt {}/{})...",
             attempt, n_attempts
         );
         let stream_position = peg_manager
@@ -134,7 +133,6 @@ async fn enough_confirmations_received(world: &mut TestWorld) {
     }
     println!("Successfully mined {} blocks.", blocks_to_mine);
     sleep(Duration::from_secs(3)).await;
-    
 }
 
 #[then(expr = "the pegin accept should be registered in the contract")]
@@ -149,7 +147,7 @@ async fn pegin_request_should_be_accepted(world: &mut TestWorld) {
     let n_attempts = 5;
     for attempt in 1..=n_attempts {
         println!(
-            "🔍 Checking pegin acceptance (attempt {}/{})...",
+            "Checking pegin acceptance (attempt {}/{})...",
             attempt, n_attempts
         );
         let stream_position = peg_manager
@@ -176,7 +174,7 @@ async fn pegin_request_should_be_registered_in_the_coordinator(world: &mut TestW
     let mut last_pegin_requested_flow_id = None;
     for attempt in 1..=n_attempts {
         println!(
-            "🔍 Checking pegin request in coordinator (attempt {}/{})...",
+            "Checking pegin request in coordinator (attempt {}/{})...",
             attempt, n_attempts
         );
         last_pegin_requested_flow_id = world
@@ -203,7 +201,7 @@ async fn pegin_process_should_be_completed(world: &mut TestWorld) {
     let mut last_pegin_accepted_flow_id = None;
     for attempt in 1..=n_attempts {
         println!(
-            "🔍 Checking pegin accept in coordinator (attempt {}/{})...",
+            "Checking pegin accept in coordinator (attempt {}/{})...",
             attempt, n_attempts
         );
         last_pegin_accepted_flow_id = world
@@ -236,7 +234,7 @@ async fn pegin_request_should_not_be_registered(world: &mut TestWorld) {
     let mut last_peg_status = 0;
     for attempt in 1..=n_attempts {
         println!(
-            "🔍 Checking pegin registration (attempt {}/{})...",
+            "Checking pegin registration (attempt {}/{})...",
             attempt, n_attempts
         );
         let stream_position = peg_manager
@@ -253,7 +251,10 @@ async fn pegin_request_should_not_be_registered(world: &mut TestWorld) {
             break;
         }
     }
-    assert_eq!(last_peg_status, 0, "Pegin registered in the contract, but it should not be.");
+    assert_eq!(
+        last_peg_status, 0,
+        "Pegin registered in the contract, but it should not be."
+    );
 }
 
 #[then(expr = "the pegin request should not be registered in the coordinator")]
@@ -262,10 +263,10 @@ async fn pegin_request_should_not_be_registered_in_the_coordinator(world: &mut T
     let mut last_pegin_requested_flow_id = None;
     for attempt in 1..=n_attempts {
         println!(
-            "🔍 Checking pegin request in coordinator (attempt {}/{})...",
+            "Checking pegin request in coordinator (attempt {}/{})...",
             attempt, n_attempts
         );
-       let pegin_requested_flow_id = world
+        let pegin_requested_flow_id = world
             .bitvmx_mock
             .as_ref()
             .unwrap()
