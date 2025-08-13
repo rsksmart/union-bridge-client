@@ -105,7 +105,7 @@ impl EventDecoder {
         );
         dispatcher.insert(
             NewPendingCommittee::SIGNATURE_HASH,
-            Self::decode_new_pending_committee_event as DecoderFn,
+            Self::decode_new_committee_pending_event as DecoderFn,
         );
         dispatcher.insert(
             NewCommittee::SIGNATURE_HASH,
@@ -324,7 +324,7 @@ impl EventDecoder {
         }
     }
 
-    fn decode_new_pending_committee_event(
+    fn decode_new_committee_pending_event(
         log_data: &LogData,
         block_number: BlockNumber,
         block_hash: BlockHash,
@@ -398,6 +398,33 @@ mod tests {
     use union_contracts::bindings::peg_manager::PegManager::{
         PrevoutData, RequestPeginTempInfo, StreamPosition,
     };
+
+    fn create_rsk_log_from_event<T: SolEvent>(
+        event: &T,
+        block_hash: H256,
+        block_number: u64,
+        removed: bool,
+    ) -> (Hash256, RskLog) {
+        let data = DataBytes::new(event.encode_log_data().data.to_vec());
+        let topics = event
+            .encode_topics()
+            .iter()
+            .map(|t| Hash256::from(B256::from(*t)))
+            .collect();
+
+        let log_event = LogEvent::new(data, topics);
+        let tx_hash = TxHash::from(H256::random());
+        let log_info = LogInfo::new(
+            generate_fake_address(1),
+            block_hash.into(),
+            block_number.into(),
+            tx_hash,
+            1,
+            removed,
+        );
+
+        (tx_hash, RskLog::new(log_info, log_event))
+    }
 
     #[test]
     fn test_decode_unknown_event() {
@@ -527,26 +554,13 @@ mod tests {
             acceptPeginSignatureMessage: alloy_primitives::Bytes::from("0xabcdef0123456789"),
         };
 
-        let data = DataBytes::new(expected_event.encode_log_data().data.to_vec());
-        let topics = expected_event
-            .encode_topics()
-            .iter()
-            .map(|t| Hash256::from(B256::from(*t)))
-            .collect();
-
-        let log_event = LogEvent::new(data, topics);
         let removed = false;
-        let expected_tx_hash = TxHash::from(H256::random());
-        let log_info = LogInfo::new(
-            generate_fake_address(1),
-            expected_block_hash.into(),
-            expected_block_num.into(),
-            expected_tx_hash,
-            1,
+        let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(
+            &expected_event,
+            expected_block_hash,
+            expected_block_num,
             removed,
         );
-
-        let rsk_log = RskLog::new(log_info, log_event);
 
         let decoder = EventDecoder::new();
         let result = decoder.decode(rsk_log);
@@ -588,26 +602,13 @@ mod tests {
             utxoScriptPubKey: Bytes::from("0xabcdef0123456789"),
         };
 
-        let data = DataBytes::new(expected_event.encode_log_data().data.to_vec());
-        let topics = expected_event
-            .encode_topics()
-            .iter()
-            .map(|t| Hash256::from(B256::from(*t)))
-            .collect();
-
-        let log_event = LogEvent::new(data, topics);
         let removed = false;
-        let expected_tx_hash = TxHash::from(H256::random());
-        let log_info = LogInfo::new(
-            generate_fake_address(1),
-            expected_block_hash.into(),
-            expected_block_num.into(),
-            expected_tx_hash,
-            1,
+        let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(
+            &expected_event,
+            expected_block_hash,
+            expected_block_num,
             removed,
         );
-
-        let rsk_log = RskLog::new(log_info, log_event);
         let decoder = EventDecoder::new();
         let result = decoder.decode(rsk_log);
         match result {
@@ -635,25 +636,12 @@ mod tests {
                 .expect("Failed to decode hashToSign"),
         };
 
-        let data: DataBytes = DataBytes::new(expected_event.encode_log_data().data.to_vec());
-        let topics = expected_event
-            .encode_topics()
-            .iter()
-            .map(|t| Hash256::from(B256::from(*t)))
-            .collect();
-
-        let log_event = LogEvent::new(data, topics);
-        let expected_tx_hash = TxHash::from(H256::random());
-        let log_info = LogInfo::new(
-            generate_fake_address(1),
-            expected_block_hash.into(),
-            expected_block_num.into(),
-            expected_tx_hash,
-            1,
+        let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(
+            &expected_event,
+            expected_block_hash,
+            expected_block_num,
             false,
         );
-
-        let rsk_log = RskLog::new(log_info, log_event);
 
         let decoder = EventDecoder::new();
         let result = decoder.decode(rsk_log);
@@ -681,25 +669,12 @@ mod tests {
                 .expect("Failed to decode hashToSign"),
         };
 
-        let data = DataBytes::new(expected_event.encode_log_data().data.to_vec());
-        let topics = expected_event
-            .encode_topics()
-            .iter()
-            .map(|t| Hash256::from(B256::from(*t)))
-            .collect();
-
-        let log_event = LogEvent::new(data, topics);
-        let expected_tx_hash = TxHash::from(H256::random());
-        let log_info = LogInfo::new(
-            generate_fake_address(1),
-            expected_block_hash.into(),
-            expected_block_num.into(),
-            expected_tx_hash,
-            1,
+        let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(
+            &expected_event,
+            expected_block_hash,
+            expected_block_num,
             true,
         );
-
-        let rsk_log = RskLog::new(log_info, log_event);
 
         let decoder = EventDecoder::new();
         let result = decoder.decode(rsk_log);
@@ -740,26 +715,13 @@ mod tests {
             _committee: committee,
         };
 
-        let data = DataBytes::new(expected_event.encode_log_data().data.to_vec());
-        let topics = expected_event
-            .encode_topics()
-            .iter()
-            .map(|t| Hash256::from(B256::from(*t)))
-            .collect();
-
-        let log_event = LogEvent::new(data, topics);
         let removed = false;
-        let expected_tx_hash = TxHash::from(H256::random());
-        let log_info = LogInfo::new(
-            generate_fake_address(1),
-            expected_block_hash.into(),
-            expected_block_num.into(),
-            expected_tx_hash,
-            1,
+        let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(
+            &expected_event,
+            expected_block_hash,
+            expected_block_num,
             removed,
         );
-
-        let rsk_log = RskLog::new(log_info, log_event);
 
         let decoder = EventDecoder::new();
         let result = decoder.decode(rsk_log);
@@ -808,26 +770,13 @@ mod tests {
             _committee: committee,
         };
 
-        let data = DataBytes::new(expected_event.encode_log_data().data.to_vec());
-        let topics = expected_event
-            .encode_topics()
-            .iter()
-            .map(|t| Hash256::from(B256::from(*t)))
-            .collect();
-
-        let log_event = LogEvent::new(data, topics);
         let removed = true;
-        let expected_tx_hash = TxHash::from(H256::random());
-        let log_info = LogInfo::new(
-            generate_fake_address(1),
-            expected_block_hash.into(),
-            expected_block_num.into(),
-            expected_tx_hash,
-            1,
+        let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(
+            &expected_event,
+            expected_block_hash,
+            expected_block_num,
             removed,
         );
-
-        let rsk_log = RskLog::new(log_info, log_event);
 
         let decoder = EventDecoder::new();
         let result = decoder.decode(rsk_log);
