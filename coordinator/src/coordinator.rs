@@ -289,10 +289,11 @@ pub(crate) mod tests {
     use transaction_dispatcher::types::{
         AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
         AddMemberSignatureInput, AddMemberSignatureOutput, ApplyToStreamInput, ApplyToStreamOutput,
-        GetCommitteeInput, GetCommitteeOutput, GetMemberCommunicationDataOutput,
-        GetMemberPublicKeysInput, GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput,
-        RegisterPegoutInput, RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput,
-        RequestPegoutInput, RequestPegoutOutput,
+        DepositCommunicationDataInput, DepositCommunicationDataOutput, GetCommitteeInput,
+        GetCommitteeOutput, GetMemberCommunicationDataOutput, GetMemberPublicKeysInput,
+        GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterPegoutInput,
+        RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
+        RequestPegoutOutput,
     };
 
     fn create_fake_request_event(pegout_id: &str) -> RequestAdvanceFunds {
@@ -643,6 +644,11 @@ pub(crate) mod tests {
                 &self,
                 stream_id: u64,
             ) -> Result<GetMemberCommunicationDataOutput, DomainErrors>;
+
+            async fn deposit_communication_data(
+                &self,
+                input: DepositCommunicationDataInput
+            ) -> Result<DepositCommunicationDataOutput, DomainErrors>;
         }
     }
 }

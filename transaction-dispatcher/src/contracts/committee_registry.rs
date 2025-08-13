@@ -13,6 +13,7 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
 use mockall::automock;
 
 pub(crate) use crate::contracts::interactions::apply_to_stream::ApplyToStreamInvoke;
+pub(crate) use crate::contracts::interactions::deposit_communication_data::DepositCommunicationDataInvoke;
 pub(crate) use crate::contracts::interactions::get_committee::GetCommitteeCall;
 pub(crate) use crate::contracts::interactions::get_member_communication_data::GetMemberCommunicationDataCall;
 pub(crate) use crate::contracts::interactions::get_member_public_keys::GetMemberPublicKeysCall;
@@ -44,6 +45,13 @@ pub trait CommitteeRegistryContractApi {
     ) -> alloy_contract::Result<U256>;
 
     async fn call_get_committee(&self, committee_id: U256) -> alloy_contract::Result<Committee>;
+
+    async fn invoke_deposit_communication_data(
+        &self,
+        stream_id: u64,
+        communication_data: Vec<CommitteeRegistry::CommunicationData>,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt>;
 }
 
 #[derive(Clone)]
@@ -118,6 +126,22 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
             .getCommittee(committee_id)
             .call()
             .await
+    }
+
+    async fn invoke_deposit_communication_data(
+        &self,
+        stream_id: u64,
+        communication_data: Vec<CommitteeRegistry::CommunicationData>,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt> {
+        send_tx_with_gas_bump(
+            || {
+                self.contract_instance
+                    .depositCommunicationData(stream_id, communication_data.clone())
+            },
+            gas_bumps,
+        )
+        .await
     }
 }
 
