@@ -2,7 +2,6 @@ use crate::types::RskPegManagerEvents::UnknownEvent;
 use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
 use alloy_primitives::{B256, LogData};
 use alloy_sol_types::SolEvent;
-use bitcoin::PublicKey;
 use common::msg_broker::bitvmx_types::PegOutAccepted;
 use common::types::{BlockHash, BlockNumber, Hash256, RskLog, TxHash};
 use log::{error, warn};

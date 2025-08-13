@@ -13,8 +13,9 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
 use mockall::automock;
 
 pub(crate) use crate::contracts::interactions::apply_to_stream::ApplyToStreamInvoke;
-pub(crate) use crate::contracts::interactions::get_member_public_keys::GetMemberPublicKeysCall;
 pub(crate) use crate::contracts::interactions::get_committee::GetCommitteeCall;
+pub(crate) use crate::contracts::interactions::get_member_communication_data::GetMemberCommunicationDataCall;
+pub(crate) use crate::contracts::interactions::get_member_public_keys::GetMemberPublicKeysCall;
 
 #[cfg_attr(test, automock)]
 pub trait CommitteeRegistryContractApi {
@@ -22,6 +23,12 @@ pub trait CommitteeRegistryContractApi {
         &self,
         member_address: Address,
     ) -> alloy_contract::Result<Vec<alloy_primitives::FixedBytes<32>>>;
+
+    async fn call_get_member_communication_data(
+        &self,
+        stream_id: u64,
+        member_address: Address,
+    ) -> alloy_contract::Result<Vec<CommitteeRegistry::CommunicationData>>;
 
     async fn invoke_apply_to_stream(
         &self,
@@ -62,6 +69,17 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
     ) -> alloy_contract::Result<Vec<alloy_primitives::FixedBytes<32>>> {
         self.contract_instance
             .getMemberPublicKeys(member_address)
+            .call()
+            .await
+    }
+
+    async fn call_get_member_communication_data(
+        &self,
+        stream_id: u64,
+        member_address: Address,
+    ) -> alloy_contract::Result<Vec<CommitteeRegistry::CommunicationData>> {
+        self.contract_instance
+            .getMemberCommunicationData(stream_id, member_address)
             .call()
             .await
     }

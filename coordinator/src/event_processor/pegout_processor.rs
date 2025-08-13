@@ -16,7 +16,7 @@ use common::msg_broker::bitvmx_types::{
     IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PegOutAccepted, VariableTypes,
 };
 use common::runtime_sync::RuntimeSync;
-use common::types::{Hash256, TxHash};
+use common::types::TxHash;
 use common::{
     msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi},
     types::RskBlockAndUncles,
