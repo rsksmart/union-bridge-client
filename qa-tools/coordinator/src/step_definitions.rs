@@ -39,7 +39,8 @@ async fn bitvmx_finds_a_pegin_request(world: &mut TestWorld, step: &Step) {
 #[when(expr = "bitvmx accepts a pegin request")]
 async fn bitvmx_accepts_pegin_request(world: &mut TestWorld, step: &Step) {
     let params = extract_params(step);
-    let btc_tx_file = format!("{}pa_happy_path.json", FIXTURES_PATH);
+    let file_name = params.get("file").unwrap().to_string();
+    let btc_tx_file = format!("{}{}.json", FIXTURES_PATH, file_name);
     let json_template = std::fs::read_to_string(&btc_tx_file)
         .with_context(|| format!("Failed to read accept pegin template file: {}", btc_tx_file))
         .unwrap();
