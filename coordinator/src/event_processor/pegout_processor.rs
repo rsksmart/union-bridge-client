@@ -194,11 +194,12 @@ where
         })?;
 
         let committee_bytes = event.committeeId.to_be_bytes_vec();
-        let uuid_bytes: [u8; 16] = committee_bytes
+        let uuid_bytes_slice = committee_bytes
             .get(..16)
-            .expect("Committee ID should have at least 16 bytes for tests")
+            .ok_or_else(|| anyhow!("Committee ID should have at least 16 bytes"))?;
+        let uuid_bytes: [u8; 16] = uuid_bytes_slice
             .try_into()
-            .expect("Slice of 16 bytes should convert to [u8; 16]");
+            .map_err(|_| anyhow!("Invalid Committee ID length; expected 16 bytes"))?;
         let committee_id = Uuid::from_bytes(uuid_bytes);
 
         // Convert user pubkey bytes to bitcoin::PublicKey
@@ -633,7 +634,8 @@ where
                         "Received BitVMX SPVProof for tx_id: {}, proof: {:?}",
                         tx_id, spv_proof
                     );
-                    let register_pegout_input = RegisterPegoutInput::from(spv_proof.clone());
+                    let register_pegout_input: transaction_dispatcher::types::BtcTxSPVProofInput =
+                        RegisterPegoutInput::from(spv_proof.clone());
                     self.handle_register_pegout(tx_id, register_pegout_input)?;
                 }
                 None => bail!(
