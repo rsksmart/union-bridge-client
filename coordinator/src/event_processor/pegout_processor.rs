@@ -407,7 +407,6 @@ where
         Ok(())
     }
 
-    //TODO define with FG about this parameters
     fn send_setup_to_bitvmx(bitvmx_broker: &BC, flow_id: Uuid) -> Result<()> {
         bitvmx_broker.send(
             BROKER_SERVER_ID,
@@ -421,17 +420,6 @@ where
         Ok(())
     }
 
-    //TODO To update data struct:
-    /*
-       #[derive(Debug, Clone, Serialize, Deserialize)]
-       pub struct PegOutRequest {
-           pub committee_id: Uuid,
-           pub slot_id: u32,
-           pub fee: u64,
-           pub user_pubkey: PublicKey,
-           pub take_aggregated_key: PublicKey,
-       }
-    */
     fn send_set_var_to_bitvmx<E: Serialize>(
         bitvmx_broker: &BC,
         flow_id: Uuid,
@@ -511,7 +499,6 @@ where
             );
         }
         if tx_status.confirmations >= MIN_TX_CONFIRMATIONS {
-            //TODO ask if TransactionBlockchainStatus::Confirmed is relevant
             debug!(
                 "Transaction confirmed with sufficient confirmations for flow_id: {}",
                 flow_id
@@ -702,7 +689,6 @@ where
             }
             RskPegManagerEvents::PegoutRegistered(data) => {
                 debug!("Handling Pegout Registered event {:?}", data);
-                //TODO ask about how to relate the pegout_requested event with the pegout_registered event
                 if data.removed {
                     self.untrack_pegout_registered(data.clone())?;
                     return Ok(());
