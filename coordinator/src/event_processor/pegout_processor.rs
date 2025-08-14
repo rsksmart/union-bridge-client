@@ -11,7 +11,8 @@ use crate::{
     types::{EventWithBlock, RskPegManagerEvents},
 };
 use anyhow::{Context, Result, anyhow, bail};
-use bitcoin::Txid;
+use bitcoin::key::Parity::Even;
+use bitcoin::{PublicKey, Txid, XOnlyPublicKey};
 use common::msg_broker::bitvmx_types::{
     IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PegOutAccepted, PegOutRequest,
     TransactionStatus, VariableTypes,
@@ -28,9 +29,11 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
+use transaction_dispatcher::types::GetCommitteeInput;
 use transaction_dispatcher::types::{RegisterPegoutInput, RegisterPegoutOutput};
 use union_contracts::bindings::peg_manager::PegManager::{PegoutRegistered, PegoutRequested};
 use uuid::Uuid;
+
 pub const USER_TAKE: &str = "USER_TAKE_TX";
 pub const PROGRAM_TYPE_REQUEST_PEGOUT: &str = "request_pegout";
 pub const PEGOUT_ACCEPTED_NAME: &str = "pegout_accepted";
@@ -144,15 +147,15 @@ where
     }
 
     fn notify_pegout_requested_to_bitvmx(
-        bitvmx_broker: &BC,
+        &mut self,
         flow_id: Uuid,
         pegout_requested: &PegoutRequested,
     ) -> Result<()> {
         let data_to_send: PegOutRequest =
-            Self::pegout_requested_to_bitvmx_request(pegout_requested)?;
+            self.pegout_requested_to_bitvmx_request(pegout_requested)?;
         //Set var must be sent first
         Self::send_set_var_to_bitvmx(
-            bitvmx_broker,
+            &self.bitvmx_broker,
             flow_id,
             PegOutRequest::name().as_str(),
             &data_to_send,
@@ -163,12 +166,33 @@ where
         ))?;
 
         //Setup must be sent after set_var
-        Self::send_setup_to_bitvmx(bitvmx_broker, flow_id)?;
+        Self::send_setup_to_bitvmx(&self.bitvmx_broker, flow_id)?;
 
         Ok(())
     }
 
-    fn pegout_requested_to_bitvmx_request(event: &PegoutRequested) -> Result<PegOutRequest> {
+    fn build_take_aggregated_key(
+        committee_response: &transaction_dispatcher::types::GetCommitteeOutput,
+    ) -> Result<PublicKey> {
+        let aggregated_xonly_key =
+            XOnlyPublicKey::from_slice(committee_response.committee.aggregatedKey.as_slice())
+                .context("Failed to parse aggregated public key from committee")?;
+        let aggregated_secp_key = aggregated_xonly_key.public_key(Even);
+        Ok(PublicKey::new(aggregated_secp_key))
+    }
+
+    fn pegout_requested_to_bitvmx_request(
+        &mut self,
+        event: &PegoutRequested,
+    ) -> Result<PegOutRequest> {
+        let committee_response = self.rt_sync.run(async {
+            self.contracts_gateway
+                .get_committee(GetCommitteeInput {
+                    committee_id: event.committeeId,
+                })
+                .await
+        })?;
+
         let committee_bytes = event.committeeId.to_be_bytes_vec();
         let uuid_bytes: [u8; 16] = committee_bytes
             .get(..16)
@@ -182,8 +206,7 @@ where
         let user_pubkey = bitcoin::PublicKey::from_slice(&user_pubkey_bytes)
             .context("Invalid userPubKey in PegoutRequested event")?;
 
-        //TODO take_aggregated_key
-        let take_aggregated_key = user_pubkey;
+        let take_aggregated_key = Self::build_take_aggregated_key(&committee_response)?;
 
         // Convert fixed-size hashes and ids to Vec<u8>
         let pegout_signature_hash: Vec<u8> = event.pegoutSignatureHash.as_slice().to_vec();
@@ -521,19 +544,19 @@ where
     }
 
     fn process_unhandled_confirmed_pegout_requested_events(&mut self) -> Result<()> {
+        let mut vec_to_process: Vec<(Uuid, PegoutEvent<PegoutRequested>)> = Vec::new();
         for (flow_id, state) in self.tracker.iter_mut() {
             let event = &mut state.pegout_requested;
             if !event.is_confirmed() || event.is_handled {
                 continue;
             }
-            info!("Confirmed pegout requested id: {}", flow_id);
-            Self::notify_pegout_requested_to_bitvmx(
-                &self.bitvmx_broker,
-                *flow_id,
-                &event.data.inner,
-            )?;
-
             event.mark_handled();
+            vec_to_process.push((*flow_id, event.clone()));
+        }
+
+        for (flow_id, event) in vec_to_process {
+            info!("Confirmed pegout requested id: {}", flow_id);
+            self.notify_pegout_requested_to_bitvmx(flow_id, &event.data.inner)?;
 
             let confirmations = event.confirmations.borrow();
             let observer_id = confirmations.get_id();
