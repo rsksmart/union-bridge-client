@@ -1,0 +1,6 @@
+key_store:
+  path: "/home/zava/dev/fairgate/.union-bridge-client/secret/ca9de428-ecb1-4f1c-a28f-72572b29306e"
+transaction:
+  gas_bumps_t1: 3
+server:
+  url: "0.0.0.0:3001"
