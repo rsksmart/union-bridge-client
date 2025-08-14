@@ -7,7 +7,7 @@ edition = "2024"
 check-fork = { path = "../check-fork" }
 common = { path = "../common" }
 actors-mocking = { path = "../actors-mocking" }
-check-fork-zkp = { path = "../check-fork/zkp" }
+check-fork-zkp = { path = "../check-fork/zkp", optional = true }
 transaction-dispatcher = { path = "../transaction-dispatcher", features = ["types"] }
 
 alloy-primitives = { workspace = true }
@@ -31,3 +31,4 @@ mockall = { workspace = true }
 
 [features]
 anvil = []
+zkp = ["check-fork-zkp"]

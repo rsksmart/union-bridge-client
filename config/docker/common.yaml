@@ -10,7 +10,9 @@ indexer:
 
 provider:
   rootstock:
-    url: "ws://172.25.0.14:8545"
+    url: "ws://host.docker.internal:8545" # if running anvil/node on host
+    # url: "ws://node-container:8545" # if running anvil/node in a container
+    # url: "ws://rskj-01.testnet.ub.iovlabs.net:4445/websocket" # if connecting to an external node
 
 contracts:
   - name: "TestContractDyn"

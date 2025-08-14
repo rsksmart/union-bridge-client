@@ -3,13 +3,16 @@ use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanc
 use alloy_primitives::{B256, LogData};
 use alloy_sol_types::SolEvent;
 use bitcoin::PublicKey;
-use common::msg_broker::bitvmx_types::ParticipantRole;
+use common::msg_broker::bitvmx_types::{ParticipantRole, PegOutAccepted};
 use common::types::{BlockHash, BlockNumber, Hash256, RskLog, TxHash};
 use log::{error, warn};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use transaction_dispatcher::types::{ApplyToStreamInput, CommitteePublicKey};
+use union_contracts::bindings::committee_registry::CommitteeRegistry::{
+    AllCommunicationDataReady, NewCommittee, NewPendingCommittee,
+};
 use union_contracts::bindings::peg_manager::PegManager::{
     PeginAccepted, PeginRequested, PegoutRegistered, PegoutRequested,
 };
@@ -32,6 +35,9 @@ pub enum RskPegManagerEvents {
     RemoveRegisteredPeginRequest(PeginRequestedEvent),
     AllNoncesReady(AllNoncesReadyEvent),
     AllSignaturesReady(AllSignaturesReadyEvent),
+    NewCommitteePending(NewCommitteePendingEvent),
+    NewCommitteeReady(NewCommitteeReadyEvent),
+    AllCommunicationDataReady(AllCommunicationDataReadyEvent),
     UnknownEvent,
 }
 
@@ -48,6 +54,9 @@ pub type AllNoncesReadyEvent = EventWithBlock<Hash256>;
 pub type AllSignaturesReadyEvent = EventWithBlock<Hash256>;
 pub type PegoutRequestedEvent = EventWithBlock<PegoutRequested>;
 pub type PegoutRegisteredEvent = EventWithBlock<PegoutRegistered>;
+pub type NewCommitteePendingEvent = EventWithBlock<NewPendingCommittee>;
+pub type NewCommitteeReadyEvent = EventWithBlock<NewCommittee>;
+pub type AllCommunicationDataReadyEvent = EventWithBlock<AllCommunicationDataReady>;
 
 pub type EventStatus = bool;
 type DecoderFn = fn(&LogData, BlockNumber, BlockHash, EventStatus, TxHash) -> RskPegManagerEvents;
@@ -99,6 +108,18 @@ impl EventDecoder {
         dispatcher.insert(
             PegoutRequested::SIGNATURE_HASH,
             Self::decode_pegout_requested_event as DecoderFn,
+        );
+        dispatcher.insert(
+            NewPendingCommittee::SIGNATURE_HASH,
+            Self::decode_new_committee_pending_event as DecoderFn,
+        );
+        dispatcher.insert(
+            NewCommittee::SIGNATURE_HASH,
+            Self::decode_new_committee_ready_event as DecoderFn,
+        );
+        dispatcher.insert(
+            AllCommunicationDataReady::SIGNATURE_HASH,
+            Self::decode_all_communication_data_ready_event as DecoderFn,
         );
         Self {
             dispatch: dispatcher,
@@ -312,18 +333,86 @@ impl EventDecoder {
             Err(_) => UnknownEvent,
         }
     }
+
+    fn decode_new_committee_pending_event(
+        log_data: &LogData,
+        block_number: BlockNumber,
+        block_hash: BlockHash,
+        removed: bool,
+        tx_hash: TxHash,
+    ) -> RskPegManagerEvents {
+        match NewPendingCommittee::decode_log_data(&log_data) {
+            Ok(event) => RskPegManagerEvents::NewCommitteePending(NewCommitteePendingEvent {
+                inner: event,
+                block_number,
+                block_hash,
+                removed,
+                tx_hash,
+            }),
+            Err(_) => UnknownEvent,
+        }
+    }
+
+    fn decode_new_committee_ready_event(
+        log_data: &LogData,
+        block_number: BlockNumber,
+        block_hash: BlockHash,
+        removed: bool,
+        tx_hash: TxHash,
+    ) -> RskPegManagerEvents {
+        match NewCommittee::decode_log_data(&log_data) {
+            Ok(event) => RskPegManagerEvents::NewCommitteeReady(NewCommitteeReadyEvent {
+                inner: event,
+                block_number,
+                block_hash,
+                removed,
+                tx_hash,
+            }),
+            Err(_) => UnknownEvent,
+        }
+    }
+
+    fn decode_all_communication_data_ready_event(
+        log_data: &LogData,
+        block_number: BlockNumber,
+        block_hash: BlockHash,
+        removed: bool,
+        tx_hash: TxHash,
+    ) -> RskPegManagerEvents {
+        match AllCommunicationDataReady::decode_log_data(&log_data) {
+            Ok(event) => {
+                RskPegManagerEvents::AllCommunicationDataReady(AllCommunicationDataReadyEvent {
+                    inner: event,
+                    block_number,
+                    block_hash,
+                    removed,
+                    tx_hash,
+                })
+            }
+            Err(_) => UnknownEvent,
+        }
+    }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct BitVmxSigningInfo {
-    pub protocol_name: String,
-    // TODO there not used for now
-    pub take_aggr_key: PublicKey,
-    // TODO there is a TODO on the BitVMX side suggesting it will be included, but for now we will have to store it ourselves
-    #[serde(default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterSignaturesBitVmxData {
     pub hash_to_sign: Hash256,
-    pub signature: PartialSignature,
     pub nonce: PubNonce,
+    pub signature: PartialSignature,
+}
+impl TryFrom<PegOutAccepted> for RegisterSignaturesBitVmxData {
+    type Error = anyhow::Error;
+
+    fn try_from(value: PegOutAccepted) -> Result<Self, Self::Error> {
+        Ok(RegisterSignaturesBitVmxData {
+            hash_to_sign: Hash256::from(alloy_primitives::FixedBytes::from(
+                <[u8; 32]>::try_from(value.user_take_sighash)
+                    .map_err(|_| anyhow::anyhow!("Hash must be exactly 32 bytes"))?,
+            )),
+            nonce: value.user_take_nonce,
+            signature: value.user_take_signature,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -334,9 +423,39 @@ mod tests {
     use common::test_utils::rsk_utils::generate_fake_address;
     use common::types::{BlockHash, DataBytes, Hash256, LogEvent, LogInfo, RskLog, TxHash};
     use primitive_types::H256;
+    use union_contracts::bindings::committee_registry::CommitteeRegistry::{
+        Committee, CommitteeMember,
+    };
     use union_contracts::bindings::peg_manager::PegManager::{
         PrevoutData, RequestPeginTempInfo, StreamPosition,
     };
+
+    fn create_rsk_log_from_event<T: SolEvent>(
+        event: &T,
+        block_hash: H256,
+        block_number: u64,
+        removed: bool,
+    ) -> (Hash256, RskLog) {
+        let data = DataBytes::new(event.encode_log_data().data.to_vec());
+        let topics = event
+            .encode_topics()
+            .iter()
+            .map(|t| Hash256::from(B256::from(*t)))
+            .collect();
+
+        let log_event = LogEvent::new(data, topics);
+        let tx_hash = TxHash::from(H256::random());
+        let log_info = LogInfo::new(
+            generate_fake_address(1),
+            block_hash.into(),
+            block_number.into(),
+            tx_hash,
+            1,
+            removed,
+        );
+
+        (tx_hash, RskLog::new(log_info, log_event))
+    }
 
     #[test]
     fn test_decode_unknown_event() {
@@ -466,26 +585,13 @@ mod tests {
             acceptPeginSignatureMessage: alloy_primitives::Bytes::from("0xabcdef0123456789"),
         };
 
-        let data = DataBytes::new(expected_event.encode_log_data().data.to_vec());
-        let topics = expected_event
-            .encode_topics()
-            .iter()
-            .map(|t| Hash256::from(B256::from(*t)))
-            .collect();
-
-        let log_event = LogEvent::new(data, topics);
         let removed = false;
-        let expected_tx_hash = TxHash::from(H256::random());
-        let log_info = LogInfo::new(
-            generate_fake_address(1),
-            expected_block_hash.into(),
-            expected_block_num.into(),
-            expected_tx_hash,
-            1,
+        let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(
+            &expected_event,
+            expected_block_hash,
+            expected_block_num,
             removed,
         );
-
-        let rsk_log = RskLog::new(log_info, log_event);
 
         let decoder = EventDecoder::new();
         let result = decoder.decode(rsk_log);
@@ -527,26 +633,13 @@ mod tests {
             utxoScriptPubKey: Bytes::from("0xabcdef0123456789"),
         };
 
-        let data = DataBytes::new(expected_event.encode_log_data().data.to_vec());
-        let topics = expected_event
-            .encode_topics()
-            .iter()
-            .map(|t| Hash256::from(B256::from(*t)))
-            .collect();
-
-        let log_event = LogEvent::new(data, topics);
         let removed = false;
-        let expected_tx_hash = TxHash::from(H256::random());
-        let log_info = LogInfo::new(
-            generate_fake_address(1),
-            expected_block_hash.into(),
-            expected_block_num.into(),
-            expected_tx_hash,
-            1,
+        let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(
+            &expected_event,
+            expected_block_hash,
+            expected_block_num,
             removed,
         );
-
-        let rsk_log = RskLog::new(log_info, log_event);
         let decoder = EventDecoder::new();
         let result = decoder.decode(rsk_log);
         match result {
@@ -574,25 +667,12 @@ mod tests {
                 .expect("Failed to decode hashToSign"),
         };
 
-        let data: DataBytes = DataBytes::new(expected_event.encode_log_data().data.to_vec());
-        let topics = expected_event
-            .encode_topics()
-            .iter()
-            .map(|t| Hash256::from(B256::from(*t)))
-            .collect();
-
-        let log_event = LogEvent::new(data, topics);
-        let expected_tx_hash = TxHash::from(H256::random());
-        let log_info = LogInfo::new(
-            generate_fake_address(1),
-            expected_block_hash.into(),
-            expected_block_num.into(),
-            expected_tx_hash,
-            1,
+        let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(
+            &expected_event,
+            expected_block_hash,
+            expected_block_num,
             false,
         );
-
-        let rsk_log = RskLog::new(log_info, log_event);
 
         let decoder = EventDecoder::new();
         let result = decoder.decode(rsk_log);
@@ -620,25 +700,12 @@ mod tests {
                 .expect("Failed to decode hashToSign"),
         };
 
-        let data = DataBytes::new(expected_event.encode_log_data().data.to_vec());
-        let topics = expected_event
-            .encode_topics()
-            .iter()
-            .map(|t| Hash256::from(B256::from(*t)))
-            .collect();
-
-        let log_event = LogEvent::new(data, topics);
-        let expected_tx_hash = TxHash::from(H256::random());
-        let log_info = LogInfo::new(
-            generate_fake_address(1),
-            expected_block_hash.into(),
-            expected_block_num.into(),
-            expected_tx_hash,
-            1,
+        let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(
+            &expected_event,
+            expected_block_hash,
+            expected_block_num,
             true,
         );
-
-        let rsk_log = RskLog::new(log_info, log_event);
 
         let decoder = EventDecoder::new();
         let result = decoder.decode(rsk_log);
@@ -651,6 +718,140 @@ mod tests {
                 assert_eq!(data.tx_hash, expected_tx_hash);
             }
             _ => panic!("Expected AllSignaturesReady event"),
+        }
+    }
+
+    #[test]
+    fn test_decode_new_committee_pending_event() {
+        let expected_block_hash = H256::from_low_u64_be(456);
+        let expected_block_num = 123;
+
+        // create a minimal committee structure
+        let committee = Committee {
+            aggregatedKey: FixedBytes::<32>::from_slice(H256::from_low_u64_be(12345).as_bytes()),
+            members: vec![CommitteeMember {
+                memberAddress: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
+                    .parse::<Address>()
+                    .expect("Invalid address"),
+                role: 1, // assuming role is u8, using 1 for operator or similar
+            }],
+            leaderAddress: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
+                .parse::<Address>()
+                .expect("Invalid address"),
+            operatorTakeIndex: U256::from(0),
+        };
+
+        let expected_event = NewPendingCommittee {
+            streamId: U256::from(42),
+            _committee: committee,
+        };
+
+        let removed = false;
+        let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(
+            &expected_event,
+            expected_block_hash,
+            expected_block_num,
+            removed,
+        );
+
+        let decoder = EventDecoder::new();
+        let result = decoder.decode(rsk_log);
+        match result {
+            RskPegManagerEvents::NewCommitteePending(data) => {
+                assert_eq!(data.inner, expected_event);
+                assert_eq!(data.block_number, expected_block_num);
+                assert_eq!(data.block_hash, expected_block_hash.into());
+                assert_eq!(data.removed, removed);
+                assert_eq!(data.tx_hash, expected_tx_hash);
+            }
+            _ => panic!("Expected NewCommitteePending event"),
+        }
+    }
+
+    #[test]
+    fn test_decode_new_committee_ready_event() {
+        let expected_block_hash = H256::from_low_u64_be(789);
+        let expected_block_num = 456;
+
+        // create a minimal committee structure
+        let committee = Committee {
+            aggregatedKey: FixedBytes::<32>::from_slice(H256::from_low_u64_be(67890).as_bytes()),
+            members: vec![
+                CommitteeMember {
+                    memberAddress: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
+                        .parse::<Address>()
+                        .expect("Invalid address"),
+                    role: 1, // operator role
+                },
+                CommitteeMember {
+                    memberAddress: "0x8ba1f109551bD432803012645aac136c22C57Bef"
+                        .parse::<Address>()
+                        .expect("Invalid address"),
+                    role: 2, // watchtower role
+                },
+            ],
+            leaderAddress: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
+                .parse::<Address>()
+                .expect("Invalid address"),
+            operatorTakeIndex: U256::from(1),
+        };
+
+        let expected_event = NewCommittee {
+            committeeId: U256::from(99),
+            _committee: committee,
+        };
+
+        let removed = true;
+        let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(
+            &expected_event,
+            expected_block_hash,
+            expected_block_num,
+            removed,
+        );
+
+        let decoder = EventDecoder::new();
+        let result = decoder.decode(rsk_log);
+        match result {
+            RskPegManagerEvents::NewCommitteeReady(data) => {
+                assert_eq!(data.inner, expected_event);
+                assert_eq!(data.block_number, expected_block_num);
+                assert_eq!(data.block_hash, expected_block_hash.into());
+                assert_eq!(data.removed, removed);
+                assert_eq!(data.tx_hash, expected_tx_hash);
+            }
+            _ => panic!("Expected NewCommitteeReady event"),
+        }
+    }
+
+    #[test]
+    fn test_decode_all_communication_data_ready_event() {
+        let expected_block_hash = H256::from_low_u64_be(333);
+        let expected_block_num = 777;
+        let expected_stream_id = 12345u64;
+
+        let expected_event = AllCommunicationDataReady {
+            streamId: expected_stream_id,
+        };
+
+        let removed = false;
+        let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(
+            &expected_event,
+            expected_block_hash,
+            expected_block_num,
+            removed,
+        );
+
+        let decoder = EventDecoder::new();
+        let result = decoder.decode(rsk_log);
+        match result {
+            RskPegManagerEvents::AllCommunicationDataReady(data) => {
+                assert_eq!(data.inner, expected_event);
+                assert_eq!(data.block_number, expected_block_num);
+                assert_eq!(data.block_hash, expected_block_hash.into());
+                assert_eq!(data.removed, removed);
+                assert_eq!(data.tx_hash, expected_tx_hash);
+            }
+            _ => panic!("Expected AllCommunicationDataReady event"),
         }
     }
 }

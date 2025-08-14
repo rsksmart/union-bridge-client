@@ -1,9 +1,9 @@
-# docker-compose.yml arg to specify the crate to build and run
-ARG CRATE
+# docker-compose.yml arg to specify the tag of union-contracts repository to use - if defined, contracts will be deployed for that service
+ARG UNION_CONTRACTS_TAG
+# docker-compose.yml arg to specify the Foundry version - if defined, Foundry will be installed for that service
+ARG FOUNDRY_VERSION
 # --build-arg to specify the Rust features to use (ie. anvil)
 ARG FEATURES
-# --build-arg to specify just one crate to build in the builder stage
-ARG JUST_CRATE
 
 # --- BUILDER STAGE ---
 
@@ -39,30 +39,19 @@ RUN apt-get update -y && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-ENV RUST_LOG=error
-ENV CARGO_TERM_QUIET=true
-
 # SSH mount for private repos
-RUN --mount=type=ssh,id=default mkdir -p .cargo && \
+RUN --mount=type=ssh,id=default mkdir -p .cargo .&& \
     echo '[net]\ngit-fetch-with-cli = true' > .cargo/config.toml && \
     cargo fetch --locked
 
-# two build modes:
-# 1) build the entire workspace and reuse among containers, to reduce build time
-# 2) build just one crate for speed
-# optionally builds with --features if provided
-# we also exclude key-manager, which is built always in the next step
-ARG EXCLUDES="--exclude check-fork --exclude check-fork-zkp --exclude key-manager --exclude actors-mocking"
-# when the zkp feature is re-enabled, use this to build coordinator in an image with amd64 support (required by Risc0 in Macs with M chips) via Dockerfile_coordinator
-# EXCLUDES="--exclude coordinator--exclude check-fork --exclude check-fork-zkp --exclude key-manager --exclude actors-mocking"
-RUN --mount=type=ssh,id=default cargo build --workspace --quiet --release ${EXCLUDES}${JUST_CRATE:+ -p $JUST_CRATE}${FEATURES:+ --features $FEATURES};
-# build key-manager always (even if $JUST_CRATE provided), as it might be used by other services
-RUN --mount=type=ssh,id=default cargo build --quiet --release -p key-manager;
+ENV RUST_LOG=error
+ENV CARGO_TERM_QUIET=true
+
+RUN --mount=type=ssh,id=default cargo build  --quiet --release -p actors-mocking${FEATURES:+ --features $FEATURES};
 
 # --- RUNTIME STAGE ---
 
 FROM debian:bookworm-slim AS runtime
-ARG CRATE
 
 # install runtime dependencies
 RUN apt-get update -y && \
@@ -73,9 +62,15 @@ RUN apt-get update -y && \
     && rm -rf /var/lib/apt/lists/*
 
 # copy the crate built binary
-COPY --from=builder /app/target/release/${CRATE} /app/${CRATE}
-# copy always, but only used by transaction-dispatcher
-COPY --from=builder /app/target/release/key-manager /app/key-manager
+COPY --from=builder /app/target/release/actors-mocking /app/actors-mocking
+
+# if contracts required (checked within the script): clone, build and deploy them
+ARG UNION_CONTRACTS_TAG
+ARG FOUNDRY_VERSION
+COPY docker/dockerfile_sh/actors-mocking-setup.sh /app/actors-mocking-setup.sh
+RUN --mount=type=ssh,id=default chmod +x /app/actors-mocking-setup.sh && /app/actors-mocking-setup.sh
+# required by contracts-setup and also by actors-mocking that spins up anvil
+ENV PATH="/opt/foundry/bin:$PATH"
 
 # set environment variables
 ENV RUST_BACKTRACE=1

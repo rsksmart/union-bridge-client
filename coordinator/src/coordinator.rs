@@ -2,7 +2,6 @@ use crate::flows::btc_signature::btc_signature_subflow::BtcSignatureSubFlowFacto
 use crate::flows::setup_committee_flow::{SetupCommitteeFlowFactory, SetupCommitteeProcessor};
 use crate::{
     event_processor::{EventProcessor, PeginProcessor, PegoutProcessor},
-    flows::advance_funds::advance_funds_processor::AdvanceFundsProcessor,
     monitor::MonitorApi,
 };
 use anyhow::{Context, Result};
@@ -22,6 +21,9 @@ use std::{
     time::{Duration, Instant},
 };
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
+
+#[cfg(feature = "zkp")]
+use crate::flows::advance_funds::advance_funds_processor::AdvanceFundsProcessor;
 
 const CHECK_PERIOD: Duration = Duration::from_secs(1);
 const BITVMX_NOT_RESPONDING_THRESHOLD: Duration = Duration::from_secs(30);
@@ -55,6 +57,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
             monitor,
             bitvmx_broker: bitvmx_broker.clone(),
             processors: vec![
+                #[cfg(feature = "zkp")]
                 Box::new(AdvanceFundsProcessor::new(
                     rt_sync.clone(),
                     contracts_arc.clone(),
@@ -293,6 +296,8 @@ pub(crate) mod tests {
     use transaction_dispatcher::types::{
         AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
         AddMemberSignatureInput, AddMemberSignatureOutput, ApplyToStreamInput, ApplyToStreamOutput,
+        DepositCommunicationDataInput, DepositCommunicationDataOutput, GetCommitteeInput,
+        GetCommitteeOutput, GetMemberCommunicationDataOutput, GetMemberPublicKeysInput,
         GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterPegoutInput,
         RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
         RequestPegoutOutput,
@@ -629,13 +634,28 @@ pub(crate) mod tests {
             ) -> Result<(), DomainErrors>;
 
            async fn get_member_public_keys(
-                &self,
+                &self, input: GetMemberPublicKeysInput
             ) -> Result<GetMemberPublicKeysOutput, DomainErrors>;
 
             async fn apply_to_stream(
                 &self,
                 input: ApplyToStreamInput,
             ) -> Result<ApplyToStreamOutput, DomainErrors>;
+
+            async fn get_committee(
+                &self,
+                input: GetCommitteeInput,
+            ) -> Result<GetCommitteeOutput, DomainErrors>;
+
+            async fn get_committee_communication_data(
+                &self,
+                stream_id: u64,
+            ) -> Result<GetMemberCommunicationDataOutput, DomainErrors>;
+
+            async fn deposit_communication_data(
+                &self,
+                input: DepositCommunicationDataInput
+            ) -> Result<DepositCommunicationDataOutput, DomainErrors>;
         }
     }
 }

@@ -1,6 +1,7 @@
 use crate::config::TransactionConfig;
 use crate::contracts::committee_registry::{
-    ApplyToStreamInvoke, CommitteeRegistryContract, GetMemberPublicKeysCall,
+    ApplyToStreamInvoke, CommitteeRegistryContract, DepositCommunicationDataInvoke,
+    GetCommitteeCall, GetMemberCommunicationDataCall, GetMemberPublicKeysCall,
 };
 use crate::contracts::peg_manager::{
     FakePegManagerContract, PegManagerContract, accept_pegin::AcceptPeginInvoke,
@@ -14,6 +15,8 @@ use crate::contracts::signature_manager::{
 use crate::types::{
     AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
     AddMemberSignatureInput, AddMemberSignatureOutput, ApplyToStreamInput, ApplyToStreamOutput,
+    DepositCommunicationDataInput, DepositCommunicationDataOutput, GetCommitteeInput,
+    GetCommitteeOutput, GetMemberCommunicationDataOutput, GetMemberPublicKeysInput,
     GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterPegoutInput,
     RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
     RequestPegoutOutput,
@@ -105,12 +108,28 @@ pub trait RskContractsGatewayApi {
 
     fn get_member_public_keys(
         &self,
+        input: GetMemberPublicKeysInput,
     ) -> impl Future<Output = Result<GetMemberPublicKeysOutput, DomainErrors>>;
 
     fn apply_to_stream(
         &self,
         input: ApplyToStreamInput,
     ) -> impl Future<Output = Result<ApplyToStreamOutput, DomainErrors>>;
+
+    fn get_committee(
+        &self,
+        input: GetCommitteeInput,
+    ) -> impl Future<Output = Result<GetCommitteeOutput, DomainErrors>>;
+
+    fn get_committee_communication_data(
+        &self,
+        stream_id: u64,
+    ) -> impl Future<Output = Result<GetMemberCommunicationDataOutput, DomainErrors>>;
+
+    fn deposit_communication_data(
+        &self,
+        input: DepositCommunicationDataInput,
+    ) -> impl Future<Output = Result<DepositCommunicationDataOutput, DomainErrors>>;
 }
 
 #[derive(Clone)]
@@ -123,13 +142,18 @@ pub struct RskContractsGateway<P: Provider> {
     add_member_signature_invoke: AddMemberSignatureInvoke<SignatureManagerContract<P>>,
     notify_check_fork_completion_invoke: NotifyCheckForkCompleteInvoke<FakePegManagerContract<P>>,
     get_member_public_keys_call: GetMemberPublicKeysCall<CommitteeRegistryContract<P>>,
+    get_member_communication_data_call:
+        GetMemberCommunicationDataCall<CommitteeRegistryContract<P>>,
     apply_to_stream_invoke: ApplyToStreamInvoke<CommitteeRegistryContract<P>, P>,
     request_pegout_invoke: TryPegoutInvoke<PegManagerContract<P>>,
     register_pegout_invoke: RegisterPegoutInvoke<PegManagerContract<P>>,
+    get_committee_call: GetCommitteeCall<CommitteeRegistryContract<P>>,
+    deposit_communication_data_invoke: DepositCommunicationDataInvoke<CommitteeRegistryContract<P>>,
 }
 
 impl<P: Provider + Clone> RskContractsGateway<P> {
     pub fn new(
+        // TODO make provider an Rc so we avoid more expensive cloning
         provider: P,
         managed_contracts: HashMap<String, ContractInfo>,
         tx_config: &TransactionConfig,
@@ -142,6 +166,8 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             Self::load_contract(SIGNATURE_MANAGER_CONTRACT_NAME, &managed_contracts)?;
         let committee_registry_address =
             Self::load_contract(COMMITTEE_REGISTRY_CONTRACT_NAME, &managed_contracts)?;
+
+        // TODO make these contracts Rc so we avoid more expensive cloning
 
         let peg_manager_contract =
             PegManagerContract::new(provider.clone(), contract_address.into());
@@ -187,6 +213,9 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             ),
             get_member_public_keys_call: GetMemberPublicKeysCall::new(
                 committee_registry_contract.clone(),
+            ),
+            get_member_communication_data_call: GetMemberCommunicationDataCall::new(
+                committee_registry_contract.clone(),
                 member_address.into(),
             ),
             apply_to_stream_invoke: ApplyToStreamInvoke::new(
@@ -194,6 +223,11 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
                 tx_config.gas_bumps_t1,
                 provider.clone(),
                 alloy_primitives::Address::from(member_address),
+            ),
+            get_committee_call: GetCommitteeCall::new(committee_registry_contract.clone()),
+            deposit_communication_data_invoke: DepositCommunicationDataInvoke::new(
+                committee_registry_contract.clone(),
+                tx_config.gas_bumps_t1,
             ),
         })
     }
@@ -336,16 +370,22 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
         })
     }
 
-    async fn get_member_public_keys(&self) -> Result<GetMemberPublicKeysOutput, DomainErrors> {
+    async fn get_member_public_keys(
+        &self,
+        input: GetMemberPublicKeysInput,
+    ) -> Result<GetMemberPublicKeysOutput, DomainErrors> {
         info!(
             "Interacting with CommitteeRegistry#getMemberPublicKeys @ {}",
             self.contract_address
         );
 
-        self.get_member_public_keys_call.run().await.map_err(|err| {
-            error!("Error on get_member_public_keys_call: {}", err);
-            err
-        })
+        self.get_member_public_keys_call
+            .run(input)
+            .await
+            .map_err(|err| {
+                error!("Error on get_member_public_keys_call: {}", err);
+                err
+            })
     }
 
     async fn apply_to_stream(
@@ -361,6 +401,57 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
             error!("Error on apply_to_stream_call: {}", err);
             err
         })
+    }
+
+    async fn get_committee(
+        &self,
+        input: GetCommitteeInput,
+    ) -> Result<GetCommitteeOutput, DomainErrors> {
+        info!(
+            "Interacting with CommitteeRegistry#getCommittee @ {}",
+            self.contract_address
+        );
+
+        self.get_committee_call.run(input).await.map_err(|err| {
+            error!("Error on get_committee_call: {}", err);
+            err
+        })
+    }
+
+    async fn get_committee_communication_data(
+        &self,
+        stream_id: u64,
+    ) -> Result<GetMemberCommunicationDataOutput, DomainErrors> {
+        info!(
+            "Interacting with CommitteeRegistry#getMemberCommunicationData @ {}",
+            self.contract_address
+        );
+
+        self.get_member_communication_data_call
+            .run(stream_id)
+            .await
+            .map_err(|err| {
+                error!("Error on get_member_communication_data_call: {}", err);
+                err
+            })
+    }
+
+    async fn deposit_communication_data(
+        &self,
+        input: DepositCommunicationDataInput,
+    ) -> Result<DepositCommunicationDataOutput, DomainErrors> {
+        info!(
+            "Interacting with CommitteeRegistry#depositCommunicationData @ {}",
+            self.contract_address
+        );
+
+        self.deposit_communication_data_invoke
+            .run(input)
+            .await
+            .map_err(|err| {
+                error!("Error on deposit_communication_data_invoke: {}", err);
+                err
+            })
     }
 }
 

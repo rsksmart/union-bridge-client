@@ -1,32 +1,30 @@
 use crate::contracts::committee_registry::CommitteeRegistryContractApi;
 use crate::rsk_gateway::DomainErrors;
-use crate::types::GetMemberPublicKeysOutput;
-use alloy_primitives::Address;
+use crate::types::{GetMemberPublicKeysInput, GetMemberPublicKeysOutput};
 use log::info;
 
 #[derive(Clone)]
 pub(crate) struct GetMemberPublicKeysCall<C: CommitteeRegistryContractApi> {
     contract: C,
-    member_address: Address,
 }
 
 impl<C: CommitteeRegistryContractApi> GetMemberPublicKeysCall<C> {
-    pub(crate) fn new(contract: C, member_address: Address) -> Self {
-        GetMemberPublicKeysCall {
-            contract,
-            member_address,
-        }
+    pub(crate) fn new(contract: C) -> Self {
+        GetMemberPublicKeysCall { contract }
     }
 
-    pub(crate) async fn run(&self) -> Result<GetMemberPublicKeysOutput, DomainErrors> {
+    pub(crate) async fn run(
+        &self,
+        input: GetMemberPublicKeysInput,
+    ) -> Result<GetMemberPublicKeysOutput, DomainErrors> {
         info!(
             "Init GetMemberPublicKeys for member: {:?}",
-            self.member_address
+            input.member_address
         );
 
         let public_keys = self
             .contract
-            .call_get_member_public_keys(self.member_address)
+            .call_get_member_public_keys(input.member_address)
             .await
             .map_err(|e| {
                 DomainErrors::UnhandledContractError(format!(
@@ -51,20 +49,25 @@ impl<C: CommitteeRegistryContractApi> GetMemberPublicKeysCall<C> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::contracts::committee_registry::MockCommitteeRegistryContractApi;
-    use crate::contracts::interactions::get_member_public_keys::GetMemberPublicKeysCall;
     use crate::rsk_gateway::DomainErrors;
+    use alloy_primitives::Address;
     use mockall::predicate::always;
 
     #[tokio::test]
     async fn test_get_member_public_keys_success() {
-        let mut mock_instance = MockCommitteeRegistryContractApi::new();
+        let member_address: Address = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+            .parse()
+            .expect("Invalid address");
+        let input = GetMemberPublicKeysInput { member_address };
 
         let expected_public_keys = vec![
             alloy_primitives::FixedBytes::from([1u8; 32]),
             alloy_primitives::FixedBytes::from([2u8; 32]),
         ];
 
+        let mut mock_instance = MockCommitteeRegistryContractApi::new();
         mock_instance
             .expect_call_get_member_public_keys()
             .with(always())
@@ -73,7 +76,7 @@ mod tests {
 
         let interaction = GetMemberPublicKeysCall::new_for_tests(mock_instance);
 
-        let result = interaction.run().await;
+        let result = interaction.run(input).await;
         assert!(result.is_ok());
 
         let output = result.unwrap();
@@ -90,8 +93,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_member_public_keys_contract_error() {
-        let mut mock_instance = MockCommitteeRegistryContractApi::new();
+        let member_address: Address = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+            .parse()
+            .expect("Invalid address");
+        let input = GetMemberPublicKeysInput { member_address };
 
+        let mut mock_instance = MockCommitteeRegistryContractApi::new();
         mock_instance
             .expect_call_get_member_public_keys()
             .with(always())
@@ -108,7 +115,7 @@ mod tests {
 
         let interaction = GetMemberPublicKeysCall::new_for_tests(mock_instance);
 
-        let result = interaction.run().await;
+        let result = interaction.run(input).await;
         assert!(result.is_err());
         matches!(
             result.err().unwrap(),
@@ -118,12 +125,7 @@ mod tests {
 
     impl GetMemberPublicKeysCall<MockCommitteeRegistryContractApi> {
         pub(crate) fn new_for_tests(contract: MockCommitteeRegistryContractApi) -> Self {
-            GetMemberPublicKeysCall {
-                contract,
-                member_address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
-                    .parse()
-                    .expect("Invalid address"),
-            }
+            GetMemberPublicKeysCall { contract }
         }
     }
 }

@@ -50,13 +50,12 @@ To find instructions on how to execute tests, search for the comments under scen
   the BitVMX messages, and the emission of the events that are expected to be processed by the coordinator.
 - In particular, actors-mocking provides a CLI tool to emit the mocked events:
     - RequestAdvanceFunds (raf): returns a pegout_id
-    - RemoveRequestAdvanceFunds (reraf pegout_id)
     - AdvanceFunds (kaf pegout_id)
-    - RemoveAdvanceFunds (reaf pegout_id)
-- The feature file includes useful comments with the necessary commands to run the tests.
+    - PeginRequested (pr)
+    - PeginAccepted (pf)
+- The feature files includes useful comments with the necessary commands to run the tests.
 - Remember to adjust the .env and config files accordingly (instructions are provided in the background section of the feature file).
 - The crate includes also a script to load useful commands for executing some test steps. Find the details in the feature file.
-
 
 ### Transaction dispatcher Tools (manual)
 

@@ -6,11 +6,6 @@ if [ -z "${KEY_STORE_PASSWORD:-}" ]; then
   exit 1
 fi
 
-if [ -z "${FUNDING_ADDRESS:-}" ]; then
-  echo "[key-setup] No FUNDING_ADDRESS provided, exiting."
-  exit 1
-fi
-
 RPC_URL="http://actors-mocking:8545"
 KEYSTORE_PATH="/keystore/key.json"
 
@@ -30,34 +25,7 @@ else
   echo "[key-setup] Key already exists at ${KEYSTORE_PATH}, skipping key generation."
 fi
 
-if ! pd_output=$(/app/key-manager derive-public-data -p "${KEY_STORE_PASSWORD}" -k "${KEYSTORE_PATH}" 2>&1) ; then
-  echo "[key-setup] Error: Failed to derive public data from key"
-  exit 1
-fi
-
-if ! address=$(echo "${pd_output}" | sed -n "s/.*address '\([^']*\)'.*/\1/p"); then
-  echo "[key-setup] Error: Failed to extract address from key"
-  exit 1
-fi
-
-if ! balance=$(RUST_LOG=error cast balance -e "${address}" --rpc-url "${RPC_URL}"); then
-  echo "[key-setup] Error: Failed to get balance for address ${address}"
-  exit 1
-fi
-
-if [ "$balance" = "0.000000000000000000" ]; then
-  echo "[key-setup] Funding address ${address} via cast..."
-  cast send \
-    --rpc-url ${RPC_URL} \
-    --from "${FUNDING_ADDRESS}" \
-    "${address}" \
-    --value 1ether \
-    --unlocked
-else
-  echo "[key-setup] Address ${address} has balance of ${balance}, skipping funding."
-fi
-
-echo "[key-setup] Using key at ${KEYSTORE_PATH} with address ${address}"
+echo "[key-setup] Using key at ${KEYSTORE_PATH}"
 
 # forward to command entry in docker-compose.yml
 exec "$@"
