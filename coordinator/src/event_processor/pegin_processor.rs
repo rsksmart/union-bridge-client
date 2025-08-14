@@ -5,7 +5,10 @@ use crate::{
     flows::btc_signature::btc_signature_subflow::{
         BtcSignatureSubFlowApi, BtcSignatureSubFlowFactoryApi,
     },
-    types::{AllOperatorTakeTxHashesAddedEvent, EventWithBlock, PeginAcceptedEvent, PeginRequestedEvent, RskPegManagerEvents},
+    types::{
+        AllOperatorTakeTxHashesAddedEvent, EventWithBlock, PeginAcceptedEvent, PeginRequestedEvent,
+        RskPegManagerEvents,
+    },
 };
 use alloy_primitives::FixedBytes;
 use anyhow::{Context, Result, anyhow, bail};
@@ -17,7 +20,8 @@ use bitcoin::{
 use common::{
     msg_broker::{
         bitvmx_types::{
-            BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, VariableTypes,
+            BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, P2PAddress,
+            VariableTypes,
         },
         broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi},
     },
@@ -33,7 +37,8 @@ use std::{cell::RefCell, collections::HashMap, fmt::Debug, future::Future, rc::R
 use transaction_dispatcher::{
     rsk_gateway::{DomainErrors, RskContractsGatewayApi},
     types::{
-        AcceptPeginInput, AddOperatorTakeTxHashInput, GetCommitteeInput, GetMemberPublicKeysInput,
+        AcceptPeginInput, AddOperatorTakeTxHashInput, GetCommitteeInput,
+        GetMemberCommunicationDataOutput, GetMemberPublicKeysInput, P2PAddressParser,
         RequestPeginInput,
     },
 };
@@ -43,6 +48,7 @@ use uuid::Uuid;
 const ACCEPT_PEGIN: &'static str = "accept-pegin";
 const PEGIN_REQUEST: &'static str = "PeginRequest";
 const PEGIN_ACCEPTED: &'static str = "pegin_accepted";
+const PROGRAM_TYPE_ACCEPT_PEGIN: &'static str = "accept_pegin";
 
 /// Data structure used to send pegin request information to the BitVMX client.
 /// This transforms raw blockchain events into a structured format with all necessary
@@ -373,6 +379,13 @@ where
                     tx_hash, flow_id
                 ))?;
 
+            // Send Setup message right after PeginRequestMessage
+            Self::send_setup_message(rt_sync, contracts, bitvmx_broker, flow_id, pegin_event)
+                .context(format!(
+                    "Error sending Setup message (tx_hash: {}, flow_id: {})",
+                    tx_hash, flow_id
+                ))?;
+
             // Mark event as handled and clean up
             event.mark_handled();
 
@@ -598,6 +611,38 @@ where
         bitvmx_broker.send(BROKER_SERVER_ID, message)?;
 
         Ok(())
+    }
+
+    fn send_setup_message(
+        rt_sync: &RuntimeSync,
+        contracts: &CG,
+        bitvmx_broker: &BC,
+        flow_id: Uuid,
+        pegin_event: &PeginRequested,
+    ) -> Result<()> {
+        let stream_id = pegin_event.streamId;
+        let communication_data_response =
+            Self::call_contract(rt_sync, "getMemberCommunicationData", || async {
+                contracts.get_committee_communication_data(stream_id).await
+            })?;
+
+        let p2p_addresses = communication_data_response
+            .communication_data
+            .into_iter()
+            .map(|comm_data| {
+                P2PAddressParser::contracts_to_bitvmx(comm_data)
+                    .context("Failed to convert communication data to P2P address")
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let setup_message = IncomingBitVMXApiMessages::Setup(
+            flow_id,                               // ProgramId - UUID of pegin flow
+            PROGRAM_TYPE_ACCEPT_PEGIN.to_string(), // Program type constant
+            p2p_addresses,                         // Vector of P2P addresses
+            0,                                     // Leader number
+        );
+
+        Self::send_to_bitvmx(bitvmx_broker, setup_message)
     }
 
     fn handle_contract_invoke(&self, method_name: &str, json_data: &Value) -> Result<()> {
@@ -1543,6 +1588,17 @@ mod tests {
             })
             .times(1);
 
+        // Mock get_committee_communication_data for Setup message
+        contracts
+            .expect_get_committee_communication_data()
+            .withf(|stream_id| *stream_id == 42)
+            .returning(|_| {
+                Ok(GetMemberCommunicationDataOutput {
+                    communication_data: vec![],
+                })
+            })
+            .times(1);
+
         let mut broker = MockBrokerClientApi::new();
         expect_bitvmx_subscription_success(&mut broker);
 
@@ -1553,6 +1609,7 @@ mod tests {
         );
         let expected_payload = json!(expected_pegin_request);
 
+        // Expect PeginRequest message
         broker
         .expect_send()
         .times(1)
@@ -1564,6 +1621,22 @@ mod tests {
                     IncomingBitVMXApiMessages::SetVar(_, var_name, VariableTypes::String(actual))
                         if var_name == PEGIN_REQUEST
                         && serde_json::from_str::<Value>(actual).ok() == Some(expected_payload.clone())
+                )
+            }),
+        )
+        .returning(|_, _| Ok(true));
+
+        // Expect Setup message
+        broker
+        .expect_send()
+        .times(1)
+        .with(
+            eq(BROKER_SERVER_ID),
+            function(|req: &IncomingBitVMXApiMessages| {
+                matches!(
+                    req,
+                    IncomingBitVMXApiMessages::Setup(_, program_type, p2p_addresses, leader)
+                        if program_type == PROGRAM_TYPE_ACCEPT_PEGIN && p2p_addresses.is_empty() && *leader == 0
                 )
             }),
         )
@@ -1982,7 +2055,8 @@ mod tests {
             .unwrap();
 
         // Create AllOperatorTakeTxHashesAdded event
-        let accept_pegin_tx_hash = FixedBytes::<32>::from_slice(H256::from_low_u64_be(222).as_bytes());
+        let accept_pegin_tx_hash =
+            FixedBytes::<32>::from_slice(H256::from_low_u64_be(222).as_bytes());
         let event_data = AllOperatorTakeTxHashesAddedEvent {
             inner: AllOperatorTakeTxHashesAdded {
                 acceptPeginTxHash: accept_pegin_tx_hash,
@@ -2021,7 +2095,8 @@ mod tests {
         );
 
         // Create AllOperatorTakeTxHashesAdded event with unknown accept_pegin_tx_hash
-        let unknown_accept_pegin_tx_hash = FixedBytes::<32>::from_slice(H256::from_low_u64_be(999).as_bytes());
+        let unknown_accept_pegin_tx_hash =
+            FixedBytes::<32>::from_slice(H256::from_low_u64_be(999).as_bytes());
         let event_data = AllOperatorTakeTxHashesAddedEvent {
             inner: AllOperatorTakeTxHashesAdded {
                 acceptPeginTxHash: unknown_accept_pegin_tx_hash,
