@@ -621,19 +621,27 @@ where
         pegin_event: &PeginRequested,
     ) -> Result<()> {
         let stream_id = pegin_event.streamId;
-        let communication_data_response =
-            Self::call_contract(rt_sync, "getMemberCommunicationData", || async {
-                contracts.get_committee_communication_data(stream_id).await
-            })?;
-
-        let p2p_addresses = communication_data_response
-            .communication_data
-            .into_iter()
-            .map(|comm_data| {
-                P2PAddressParser::contracts_to_bitvmx(comm_data)
-                    .context("Failed to convert communication data to P2P address")
-            })
-            .collect::<Result<Vec<_>>>()?;
+        let p2p_addresses = match Self::call_contract(rt_sync, "getMemberCommunicationData", || async {
+            contracts.get_committee_communication_data(stream_id).await
+        }) {
+            Ok(communication_data_response) => {
+                communication_data_response
+                    .communication_data
+                    .into_iter()
+                    .map(|comm_data| {
+                        P2PAddressParser::contracts_to_bitvmx(comm_data)
+                            .context("Failed to convert communication data to P2P address")
+                    })
+                    .collect::<Result<Vec<_>>>()?
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to get communication data for stream_id {}: {}. Using empty P2P addresses for Setup message.",
+                    stream_id, e
+                );
+                Vec::new()
+            }
+        };
 
         let setup_message = IncomingBitVMXApiMessages::Setup(
             flow_id,                               // ProgramId - UUID of pegin flow
