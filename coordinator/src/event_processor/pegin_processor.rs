@@ -24,7 +24,7 @@ use common::{
     runtime_sync::RuntimeSync,
     types::{RskBlockAndUncles, TxHash},
 };
-use log::{info, warn};
+use log::{debug, error, info, warn};
 use musig2::{PubNonce, secp::MaybeScalar};
 use serde::Deserialize;
 use serde::Serialize;
@@ -238,13 +238,13 @@ where
                 info!("Starting BTC signature flow for pegin flow_id: {}", flow_id);
                 state.btc_signatures_flow = Some(self.btc_sig_subflow_factory.create_flow(flow_id));
             } else {
-                warn!(
+                error!(
                     "BTC signature flow already started for pegin flow_id: {}",
                     flow_id
                 );
             }
         } else {
-            warn!(
+            debug!(
                 "Received AllOperatorTakeTxHashesAdded for unknown acceptPeginTxHash: {:?}",
                 accept_pegin_tx_hash
             );
@@ -617,51 +617,56 @@ where
     }
 
     fn handle_bitvmx_pegin_accepted(&mut self, flow_id: Uuid, data: &str) -> Result<()> {
-        info!(
-            "Processing BitVMX Variable pegin_accepted message for flow_id: {}",
-            flow_id
-        );
-
-        let pegin_accepted: PeginAcceptedMessage = serde_json::from_str(data)
-            .context("Failed to deserialize PeginAcceptedMessage from BitVMX message")?;
+        let pegin_accepted: PeginAcceptedMessage =
+            serde_json::from_str(data).with_context(|| {
+                format!("Failed to deserialize PeginAcceptedMessage from BitVMX message {data}")
+            })?;
 
         info!(
-            "Parsed PeginAcceptedMessage: committee_id={}, accept_pegin_txid={}",
+            "Processed PeginAcceptedMessage: committee_id={}, accept_pegin_txid={}",
             pegin_accepted.committee_id, pegin_accepted.accept_pegin_txid,
         );
 
         // Find the pegin state by flow_id and save the PeginAcceptedMessage data
-        for state in self.tracker.values_mut() {
-            if state.flow_id == flow_id {
-                state.bitvmx_pegin_accepted = Some(pegin_accepted.clone());
-                info!(
-                    "Successfully saved PeginAcceptedMessage data to pegin state for flow_id: {}",
-                    flow_id
-                );
+        let Some(state) = self
+            .tracker
+            .values_mut()
+            .find(|state| state.flow_id == flow_id)
+        else {
+            bail!(
+                "No pegin state found for flow_id: {}. Cannot save PeginAcceptedMessage data.",
+                flow_id
+            );
+        };
 
-                // Deposit the operator take tx hash as soon as we receive PeginAcceptedMessage
-                info!(
-                    "Calling addOperatorTakeTxHash for flow_id: {}, accept_pegin_txid: {}, operator_take_sighash_len: {}",
-                    flow_id,
-                    pegin_accepted.accept_pegin_txid,
-                    pegin_accepted.operator_take_sighash.len()
-                );
-                let input = AddOperatorTakeTxHashInput {
-                    accept_pegin_tx_hash: pegin_accepted.accept_pegin_txid,
-                    take_tx_hash: pegin_accepted.operator_take_sighash,
-                };
-                self.invoke_contract("addOperatorTakeTxHash", || async {
-                    self.contracts.add_operator_take_tx_hash(input).await
-                })?;
-
-                return Ok(());
-            }
-        }
-
-        bail!(
-            "No pegin state found for flow_id: {}. Cannot save PeginAcceptedMessage data.",
+        info!(
+            "Successfully saved PeginAcceptedMessage data to pegin state for flow_id: {}",
             flow_id
         );
+
+        let accept_pegin_tx_hash = pegin_accepted.accept_pegin_txid;
+        let take_tx_hash = pegin_accepted.operator_take_sighash.clone();
+
+        state.bitvmx_pegin_accepted = Some(pegin_accepted);
+
+        // Deposit the operator take tx hash as soon as we receive PeginAcceptedMessage
+        info!(
+            "Calling addOperatorTakeTxHash for flow_id: {}, accept_pegin_txid: {}, operator_take_sighash_len: {}",
+            flow_id,
+            accept_pegin_tx_hash,
+            take_tx_hash.len()
+        );
+
+        let input = AddOperatorTakeTxHashInput {
+            accept_pegin_tx_hash,
+            take_tx_hash,
+        };
+
+        self.invoke_contract("addOperatorTakeTxHash", || async {
+            self.contracts.add_operator_take_tx_hash(input).await
+        })?;
+
+        Ok(())
     }
 
     fn handle_request_pegin(&self, spv_proof: BtcTxSPVProof) -> Result<()> {
