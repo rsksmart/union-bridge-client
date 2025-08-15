@@ -130,7 +130,7 @@ occurrences with the path where you want to store the data (database, keystore, 
 
 Now you have to copy [fund_local_operators-template.sh](fund_local_operators-template.sh) to `fund_local_operators.sh`
 and replace all `OPERATOR_N_ADDRESS` with the addresses of the operators you want to fund. Tip: addresses are printed in
-Coordinator logs when it starts, so you can copy them from there. You can also derive it from the keystore, check
+Coordinator logs (`Got signer with address...`) when it starts, so you can copy them from there. You can also derive it from the keystore, check
 the [Create a Rootstock Key](#create-a-rootstock-key) section.
 
 Then, you will need to create a new keystore for each client and configure it in the corresponding
@@ -141,17 +141,17 @@ instructions on how to create a new keystore.
 
 1. Run BitVMX Client as described in the [Running BitVMX](#running-bitvmx) section. This runs 4 instances of the BitVMX
    Client with different ports (see logs).
-2. Run 4 Union Client instances in parallel with `./run-multi-client.sh <id>`. The `id` will determine which
+2. Run 4 Union Client instances in parallel with `./run-multi-client.sh <id> <features>`. The `id` will determine which
    configuration from `config/multi-client/<id>/` to use. These configurations ensure no collision between the different
-   clients (brokers, http servers, databases, keys, etc.).
+   clients (brokers, http servers, databases, keys, etc.). You can pass also features, e.g. `anvil`.
 
 Example of running multiple clients:
 
 ```
-./run-multi-client.sh 1
-./run-multi-client.sh 2
-./run-multi-client.sh 3
-./run-multi-client.sh 4
+./run-multi-client.sh 1 anvil
+./run-multi-client.sh 2 anvil
+./run-multi-client.sh 3 anvil
+./run-multi-client.sh 4 anvil
 ```
 
 #### Troubleshooting
