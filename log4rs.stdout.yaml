@@ -1,0 +1,18 @@
+appenders:
+  stdout:
+    kind: console
+    encoder:
+      pattern: "{d(%Y-%m-%d %H:%M:%S)} [{l}] {M} - {m}{n}"
+
+root:
+  level: debug
+  appenders:
+    - stdout
+
+loggers:
+  tarpc:
+    level: warn
+  alloy_provider:
+    level: warn
+  alloy_rpc-client:
+    level: warn

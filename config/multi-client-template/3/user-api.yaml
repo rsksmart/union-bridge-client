@@ -1,0 +1,3 @@
+coordinator_broker_client_id: 103
+broker_server_port: 30003
+http_server_port: 40003

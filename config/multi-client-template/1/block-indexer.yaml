@@ -1,0 +1,2 @@
+notifier:
+  broker_port: 10001

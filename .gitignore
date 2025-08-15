@@ -10,6 +10,7 @@
 .idea
 config/local
 config/qa-coordinator
+config/multi-client
 **/logs/*
 **/.db
 **/.union-bridge-contracts
@@ -17,3 +18,4 @@ config/qa-coordinator
 qa-tools/reports/**
 qa-tools/test_keystore/**
 qa-tools/coordinator/node_modules
+fund_local_operators.sh

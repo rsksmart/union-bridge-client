@@ -1,0 +1,32 @@
+indexer:
+  initial_block_hash: "0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c"
+  storage:
+    path: "/your_base_path/.union_bridge/database/multi-client-2"
+  cache:
+    size: 1000
+  sync:
+    finality_depth: 100
+    batch_size: 100
+
+provider:
+  rootstock:
+    url: "ws://127.0.0.1:8545"
+
+contracts:
+  - name: "TestContractDyn"
+    address: "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761"
+
+  - name: "TestContractCompiled"
+    address: "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc"
+
+  - name: "PegManager"
+    address: "0x0165878A594ca255338adfa4d48449f69242Eb8F"
+
+  - name: "SignatureManager"
+    address: "0x610178dA211FEF7D417bC0e6FeD39F05609AD788"
+
+  - name: "CommitteeRegistry"
+    address: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
+
+  - name: "FakePegManager"
+    address: "0x68B1D87F95878fE05B998F19b66F4baba5De1aed"
