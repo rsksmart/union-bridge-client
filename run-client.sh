@@ -3,20 +3,66 @@
 # start a new process group for this script
 set -meuo pipefail
 
-FEATURES=""
-if [[ -n "${1:-}" ]]; then
-    FEATURES="--features $1"
-fi
+# Usage function
+function usage() {
+    echo "Usage: $0 [OPTIONS]"
+    echo ""
+    echo "Options:"
+    echo "  --features FEATURES             Optional comma-separated list of Cargo features. No default."
+    echo "  --config CONFIG_NAME            Optional config directory name under ./config/. Defaults to 'local'."
+    echo "  --logger-path LOGGER_FILE       Optional logger configuration file path. Defaults to 'log4rs.yaml'."
+    echo "  --help, -h                      Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  $0                                                                        # Run with default settings"
+    echo "  $0 --features anvil                                                       # Run with 'debug' feature"
+    echo "  $0 --config config/qa-local                                               # Run with 'local' config"
+    echo "  $0 --logger-path log4rs.yaml                                              # Run with custom logger config"
+    echo "  $0 --features anvil --config config/qa-local --logger-path custom.yaml    # Run with all options"
+    exit 1
+}
 
-# get the config path from the second argument, default to "local" if not provided
-CONFIG_NAME=${2:-local}
-CONFIG_PARAM="-- --config-path ./config/$CONFIG_NAME"
+# Initialize variables with defaults
+FEATURES=""
+CONFIG_PARAM="--config-path ./config/local"     # Default config: local
+LOGGER_PARAM="--logger-path log4rs.stdout.yaml" # Default logger: stdout
+
+# Parse named parameters
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --features)
+            if [[ -n "${2:-}" ]]; then
+                FEATURES="--features $2"
+                shift 2
+            fi
+            ;;
+        --config)
+            if [[ -n "${2:-}" ]]; then
+                CONFIG_PARAM="--config-path $2"
+                shift 2
+            fi
+            ;;
+        --logger)
+            if [[ -n "${2:-}" ]]; then
+                LOGGER_PARAM="--logger-path $2"
+                shift 2
+            fi
+            ;;
+        --help|-h)
+            usage
+            ;;
+        *)
+            echo "Error: Unknown option $1"
+            usage
+            ;;
+    esac
+done
 
 SERVICE_PIDS=()
 SERVICE_NAMES=()
 
-# Define our services
-SERVICES=("block-indexer" "log-indexer" "transaction-dispatcher" "coordinator")
+# Define our services: order matters since some depend on others
+SERVICES=("block-indexer" "log-indexer" "transaction-dispatcher" "user-api" "coordinator")
 
 function cleanup() {
     # kill in reverse order
@@ -53,31 +99,13 @@ function is_service_running() {
     return 1 # false, not running
 }
 
-# Stop a running service, with force if needed
-function stop_service() {
-    local svc=$1
-    echo "WARNING: Service '$svc' is already running. Stopping it..."
-    pkill -f "target/debug/$svc"
-    sleep 1
-    # Force kill if still running
-    if is_service_running "$svc"; then
-        echo "Force stopping '$svc'..."
-        pkill -9 -f "target/debug/$svc"
-        sleep 1
-    fi
-}
-
 function run_service() {
     local svc=$1
 
-    # check if this service is already running
-    if is_service_running "$svc"; then
-        stop_service "$svc"
-    fi
+    cargo_run_cmd="cargo run --bin $svc $FEATURES -- $LOGGER_PARAM $CONFIG_PARAM"
+    echo "Starting $svc: $cargo_run_cmd"
+    $cargo_run_cmd &
 
-    echo "Starting $svc: cargo run --bin $svc $FEATURES $CONFIG_PARAM"
-
-    cargo run --bin $svc $FEATURES $CONFIG_PARAM &
     pid=$!
     SERVICE_PIDS+=("$pid")
     SERVICE_NAMES+=("$svc")
@@ -91,23 +119,19 @@ function run_service() {
     fi
 }
 
-# First, check if any of our services are already running before we start
-echo "Checking for existing service instances..."
-for svc in "${SERVICES[@]}"; do
-    if is_service_running "$svc"; then
-        stop_service "$svc"
-    fi
-done
 
 # Start services in the background
 echo "Starting services..."
-run_service "block-indexer"
-run_service "log-indexer"
-run_service "transaction-dispatcher"
-run_service "user-api"
-sleep 2 # give some time for indexers to initialize
-run_service "coordinator"
-sleep 2 # wait for the coordinator to finish
+for svc in "${SERVICES[@]}"; do
+    # coordinator depends on the others, so we wait a bit before starting it
+    if [[ "$svc" == "coordinator" ]]; then
+        sleep 2
+    fi
+    run_service "$svc"
+done
+
+# Give services a moment to stabilize
+sleep 2
 
 echo
 echo "All services launched. Monitoring for failures..."

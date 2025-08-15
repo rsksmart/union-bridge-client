@@ -1,0 +1,17 @@
+block_broker:
+  ip: "0.0.0.0"
+  port: 10002
+
+log_broker:
+  ip: "0.0.0.0"
+  port: 11002
+
+bitvmx_broker:
+  ip: "0.0.0.0"
+  port: 33333
+
+broker_client_id: 102
+
+user_broker:
+  ip: "0.0.0.0"
+  port: 30002
