@@ -1,7 +1,7 @@
 indexer:
   initial_block_hash: "0xa0a31811e13c2c9d6d6efda4c4edc82a6d358ccb9fa16dd8091612e49aae639c"
   storage:
-    path: "/home/zava/dev/fairgate/.union-bridge-client/database3"
+    path: "<DB_3_PATH>"
   cache:
     size: 1000
   sync:

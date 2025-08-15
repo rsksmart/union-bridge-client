@@ -1,5 +1,5 @@
 key_store:
-  path: "/home/zava/dev/fairgate/.union-bridge-client/secret/94f9291f-d45d-466e-8276-b25dc4e1301a"
+  path: "<KEY_4_PATH>"
 transaction:
   gas_bumps_t1: 3
 server:
