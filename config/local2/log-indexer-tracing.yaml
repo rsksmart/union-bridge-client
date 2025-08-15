@@ -1,0 +1,14 @@
+# log_directory: "./logs"
+logfile_prefix: "log-indexer"
+tracing_level: "DEBUG"
+date_time_format: "%Y-%m-%d %H:%M:%S%.3f"
+# Optional: specify crates and their log levels (defaults: tungstenite=off, tokio_tungstenite=off)
+filtered_crates:
+  tungstenite: "off"
+  tokio_tungstenite: "off"
+  alloy_transport_ws: "info"
+  alloy_rpc_client: "debug"
+  tarpc: "warn"
+
+enable_file_output: true
+enable_console_output: true

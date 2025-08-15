@@ -1,6 +1,6 @@
 use alloy_primitives::FixedBytes;
 use alloy_primitives::{Address, U256};
-use anyhow::{Context, Result, anyhow, ensure};
+use anyhow::{anyhow, ensure, Context, Result};
 use bitcoin::{Transaction, TxIn, TxOut, Txid};
 use common::msg_broker::bitvmx_types::{P2PAddress, PeerId};
 use common::{msg_broker::bitvmx_types::BtcTxSPVProof, types::Hash256};
@@ -161,7 +161,7 @@ pub struct GetMemberPublicKeysOutput {
 pub struct ApplyToStreamInput {
     pub stream_id: u8,
     pub role: u8,
-    pub committee_public_keys: Vec<CommitteePublicKey>, // TODO(iago) change to [CommitteePublicKey; 3] when ready
+    pub committee_public_keys: Vec<CommitteePublicKey>,
     pub funding_utxo: UTXO,
 }
 

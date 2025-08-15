@@ -1,4 +1,5 @@
 use crate::flows::btc_signature::btc_signature_subflow::BtcSignatureSubFlowFactory;
+use crate::flows::setup_committee_flow::{SetupCommitteeFlowFactory, SetupCommitteeProcessor};
 use crate::{
     event_processor::{EventProcessor, PeginProcessor, PegoutProcessor},
     monitor::MonitorApi,
@@ -47,6 +48,11 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
         let contracts_arc = Rc::new(contracts_gateway);
         let btc_sig_subflow_factory =
             BtcSignatureSubFlowFactory::new(contracts_arc.clone(), rt_sync.clone());
+        let setup_committee_flow_factory = SetupCommitteeFlowFactory::new(
+            contracts_arc.clone(),
+            rt_sync.clone(),
+            bitvmx_broker.clone(),
+        );
         Self {
             monitor,
             bitvmx_broker: bitvmx_broker.clone(),
@@ -65,9 +71,10 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
                 )),
                 Box::new(PegoutProcessor::new(
                     rt_sync.clone(),
-                    contracts_arc,
+                    contracts_arc.clone(),
                     bitvmx_broker.clone(),
                 )),
+                Box::new(SetupCommitteeProcessor::new(setup_committee_flow_factory)),
             ],
             check_period: CHECK_PERIOD,
             shutdown_flag,

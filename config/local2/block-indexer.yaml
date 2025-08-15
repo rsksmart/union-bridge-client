@@ -1,0 +1,9 @@
+indexer:
+  initial_block_hash: "0xb18d3dc08919c8f095fc781cae10879402d45531dfdc66524775e02be8c43dc7"
+
+provider:
+  rootstock:
+    url: "ws://localhost:8545"
+
+notifier:
+  broker_port: 12346

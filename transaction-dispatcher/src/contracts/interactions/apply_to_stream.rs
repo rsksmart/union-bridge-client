@@ -71,6 +71,7 @@ impl<C: CommitteeRegistryContractApi, BP: BalanceProvider> ApplyToStreamInvoke<C
                 public_keys_regs,
                 input.funding_utxo,
                 self.gas_bumps,
+                min_deposit,
             )
             .await?;
 
@@ -156,8 +157,9 @@ mod tests {
                 eq(convert_to_member_registration_keys(fake_pub_keys()).unwrap()),
                 eq(UTXO::default()),
                 eq(3u8),
+                eq(U256::from(100)),
             )
-            .returning(|_, _, _, _, _| {
+            .returning(|_, _, _, _, _, _| {
                 Ok(get_fake_receipt(
                     true,
                     "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
