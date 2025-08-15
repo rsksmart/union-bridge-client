@@ -45,6 +45,23 @@ use transaction_dispatcher::{
 use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
 use uuid::Uuid;
 
+/// The Pegin starts when there is PeginTrasactionFound. Automatically, the Union Client
+/// requests the SPV Proof of the request pegin tx to BitVMX Client. And, we receive a 
+/// SPV Proof message from the BitVMX Client for the request pegin tx. With this SPV Proof we
+/// deposit it to the requestPegin method in the PeginManager. Once this is done, we receive the
+/// PeginRequested event from the contracts and we wait X confirmations, and after it we send build
+/// PeginRequest message using the data from the previous event and some other misc calls to the contracts.
+/// The PeginRequestMessage goes in a Varible BitVMX message and we also send the Setup of the Accept Pegin Protocol.
+/// We will receive a message of type Variable with the signing info (PeginAcceptedMessage). Now once we receive this,
+/// we deposit the take tx hash to the contract as a means of comitting to the transaction something bad happens and ev ery
+/// member of the committee can see that indeed they are committing to the tx they signed offchain. 
+/// Next step would be that every member adds the nonce with the operator take tx hash (hash to sign) and once all the 
+/// operators / members do this, a AllNonceAdded is emitted and we do the same but with the siganature field. Once every member
+/// signs then an event AllSignaturesAdded is emmitted and we send a message to BitVMX DispatchTransaction with the txId 
+/// txHash of the Accept Pegin Tx because we want to get broadcasted in Bitcoin and mined. Waits for the tx to get mined,
+/// we ask for the SPV Proof for the acceptPeginTx and with that SPV Proof we call the acceptPegin method in the PegManager
+/// contract which mints rbtc for the user. It also emits a event which will send in a SetVar.
+
 const ACCEPT_PEGIN: &'static str = "accept-pegin";
 const PEGIN_REQUEST: &'static str = "PeginRequest";
 const PEGIN_ACCEPTED: &'static str = "pegin_accepted";
@@ -814,6 +831,7 @@ where
 
                 self.handle_bitvmx_pegin_accepted(*flow_id, data)?;
             }
+            // TODO: will be replaced by SPV Proof message
             OutgoingBitVMXApiMessages::Variable(flow_id, method, VariableTypes::String(data))
                 if matches!(method.as_str(), ACCEPT_PEGIN) =>
             {
