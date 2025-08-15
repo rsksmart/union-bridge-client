@@ -1,0 +1,31 @@
+{
+  "block_hash": "000000000000000000031234567890abcdef1234567890abcdef1234567890",
+  "btc_tx": {
+    "version": 2,
+    "lock_time": 0,
+    "input": [
+      {
+        "previous_output": "73d69e28cbe4ffc75b786b5dae8086a8112f6eb793d6891f2f900aac968a78ea:0",
+        "sequence": 4294967293,
+        "script_sig": "",
+        "witness": []
+      }
+    ],
+    "output": [
+      {
+        "value": 99000,
+        "script_pubkey": "00143fd2e14f4b448a071e074e1e1879318447f2a266"
+      },
+      {
+        "value": 300,
+        "script_pubkey": "0014298a0fe992f755152a81ee64bdc4cc96d3bb8969"
+      }
+    ]
+  },
+  "merkle_branch_path": "0x1234",
+  "merkle_branch_hashes": [
+    "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+    "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+    "567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234"
+  ]
+}

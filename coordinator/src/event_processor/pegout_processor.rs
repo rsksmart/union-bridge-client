@@ -14,8 +14,8 @@ use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::key::Parity::Even;
 use bitcoin::{PublicKey, Txid, XOnlyPublicKey};
 use common::msg_broker::bitvmx_types::{
-    IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PegOutAccepted, PegOutRequest,
-    TransactionStatus, VariableTypes,
+    IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, P2PAddress, PegOutAccepted,
+    PegOutRequest, TransactionStatus, VariableTypes,
 };
 use common::runtime_sync::RuntimeSync;
 use common::types::TxHash;
@@ -29,7 +29,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
-use transaction_dispatcher::types::GetCommitteeInput;
+use transaction_dispatcher::types::{GetCommitteeInput, P2PAddressParser};
 use transaction_dispatcher::types::{RegisterPegoutInput, RegisterPegoutOutput};
 use union_contracts::bindings::peg_manager::PegManager::{PegoutRegistered, PegoutRequested};
 use uuid::Uuid;
@@ -165,8 +165,11 @@ where
             flow_id
         ))?;
 
+        let p2p_addresses = self
+            .get_committee_member_address(pegout_requested.streamId)
+            .context("Failed to get committee member addresses")?;
         //Setup must be sent after set_var
-        Self::send_setup_to_bitvmx(&self.bitvmx_broker, flow_id)?;
+        Self::send_setup_to_bitvmx(&self.bitvmx_broker, flow_id, p2p_addresses)?;
 
         Ok(())
     }
@@ -179,6 +182,29 @@ where
                 .context("Failed to parse aggregated public key from committee")?;
         let aggregated_secp_key = aggregated_xonly_key.public_key(Even);
         Ok(PublicKey::new(aggregated_secp_key))
+    }
+
+    fn get_committee_member_address(&mut self, stream_id: u64) -> Result<Vec<P2PAddress>> {
+        let member_comm_data = self.rt_sync.run(async {
+            self.contracts_gateway
+                .get_committee_communication_data(stream_id)
+                .await
+        })?;
+
+        let addresses: Vec<P2PAddress> = member_comm_data
+            .communication_data
+            .into_iter()
+            .map(|comm_data| {
+                P2PAddressParser::contracts_to_bitvmx(comm_data)
+                    .context("Failed to convert communication data to P2P address")
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        if addresses.is_empty() {
+            bail!("No committee members found for stream ID: {}", stream_id);
+        }
+
+        Ok(addresses)
     }
 
     fn pegout_requested_to_bitvmx_request(
@@ -408,13 +434,17 @@ where
         Ok(())
     }
 
-    fn send_setup_to_bitvmx(bitvmx_broker: &BC, flow_id: Uuid) -> Result<()> {
+    fn send_setup_to_bitvmx(
+        bitvmx_broker: &BC,
+        flow_id: Uuid,
+        p2p_address: Vec<P2PAddress>,
+    ) -> Result<()> {
         bitvmx_broker.send(
             BROKER_SERVER_ID,
             IncomingBitVMXApiMessages::Setup(
                 flow_id,
                 PROGRAM_TYPE_REQUEST_PEGOUT.to_string(),
-                vec![], //TODO add the p2p address of the committee members.
+                p2p_address,
                 0,
             ),
         )?;
