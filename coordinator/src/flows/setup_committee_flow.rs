@@ -5,7 +5,7 @@ use anyhow::{Context, Result, bail};
 use bitcoin::PublicKey;
 use bitcoin::hex::DisplayHex;
 use common::runtime_sync::RuntimeSync;
-use log::{error, info};
+use log::{debug, error, info};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -114,6 +114,7 @@ impl Steps {
     }
 }
 
+#[derive(Debug)]
 enum StepData {
     UserRequest(ApplyToStream),
     CommInfo(P2PAddress),
@@ -236,8 +237,10 @@ where
         &self,
         communication_data: &mut HashMap<PublicKey, P2PAddress>,
     ) -> Result<()> {
+        info!("Adding my communication data");
+
         // TODO(Fairgate) awaiting Fairgate to add it to the API
-        let my_comm_pubkey = PublicKey::from_slice(&[])?;
+        let my_comm_pubkey = self.ctx_my_comm_key()?;
 
         let my_comm_address = self
             .state
@@ -256,6 +259,8 @@ where
         &self,
         _communication_data: &mut HashMap<PublicKey, P2PAddress>,
     ) -> Result<()> {
+        info!("Adding other members communication data");
+
         // TODO add other members data
         Ok(())
     }
@@ -306,6 +311,8 @@ where
     }
 
     fn setup_committee(&self) -> Result<Uuid> {
+        info!("Setting up committee");
+
         // TODO(iago) to be built by these two matching by address:
         //  - getMembersPublicKeys from the contract => pub keys
         //  - "NewPendingCommittee" event received before this step => roles
@@ -380,6 +387,8 @@ where
     }
 
     fn get_members_from_contract(&self) -> Result<Vec<Member>> {
+        info!("Getting members from contract");
+
         // TODO(iago) call contracts
         Ok(Vec::new())
     }
@@ -656,6 +665,9 @@ where
     fn complete_step_and_next(&mut self, req_id: Option<Uuid>, data: StepData) -> Result<()> {
         let current_step = self.state.step;
 
+        info!("Completing step {current_step:?} for req_id {req_id:?} and data {data:?}");
+        debug!("Flow Context: {:?}", self.state.ctx);
+
         match current_step {
             Steps::UserRequest => {
                 self.state.ctx.user_input = Some(data.into_user_input()?);
@@ -836,6 +848,8 @@ where
     }
 
     fn setup_dispute_core_protocol(&mut self) -> Result<()> {
+        info!("Setting up dispute core protocol");
+
         let committee_id = self.setup_committee()?;
 
         let members: Vec<Member> = self.get_members_from_contract()?;
