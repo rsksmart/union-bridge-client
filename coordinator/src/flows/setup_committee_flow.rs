@@ -22,6 +22,7 @@ use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 use crate::user_requests::ApplyToStream;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{CommitteeMember, UTXO};
 
+use common::types::RskBlockAndUncles;
 #[cfg(test)]
 use mockall::automock;
 use transaction_dispatcher::types::{ApplyToStreamInput, CommitteePublicKey};
@@ -121,6 +122,7 @@ enum StepData {
     CommInfo(P2PAddress),
     SignedPublicKey(SignedPublicKey),
     PublicKey(PublicKey),
+    ApplyToStreamConfirmed,
 }
 
 impl StepData {
@@ -716,11 +718,6 @@ where
                     data,
                 )?;
                 self.apply_to_stream()?;
-
-                // TODO(agus) we are manually triggering the next step here because we are missing
-                // the tx confirmation logic. Remove this once we have it.
-                self.state.step = Steps::ApplyToStream;
-                self.setup_bitvmx_aggregated_take_pubkey()?;
             }
             Steps::ApplyToStream => {
                 // TODO(iago) process data received from contracts
@@ -1038,6 +1035,18 @@ where
                 }
             }
             _ => {}
+        }
+
+        Ok(())
+    }
+
+    fn process_new_block(&mut self, _block: &RskBlockAndUncles) -> Result<()> {
+        // find flows in status ApplyToStream
+        for flow in self.flows.values_mut() {
+            if flow.state.step == Steps::ApplyToStream {
+                // TODO(iago) properly handle confirmations, now we assume confirmed immediately
+                flow.complete_step_and_next(None, StepData::ApplyToStreamConfirmed)?;
+            }
         }
 
         Ok(())
