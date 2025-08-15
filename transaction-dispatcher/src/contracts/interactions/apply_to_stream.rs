@@ -56,7 +56,7 @@ impl<C: CommitteeRegistryContractApi, BP: BalanceProvider> ApplyToStreamInvoke<C
         }
 
         let public_keys_regs = input
-            .committee_public_keys
+            .public_keys
             .iter()
             .cloned()
             .map(|key| {
@@ -78,6 +78,7 @@ impl<C: CommitteeRegistryContractApi, BP: BalanceProvider> ApplyToStreamInvoke<C
                 input.role,
                 public_keys_regs,
                 self.gas_bumps,
+                min_deposit,
             )
             .await?;
 
@@ -142,7 +143,7 @@ mod tests {
         let input = ApplyToStreamInput {
             stream_id: 123,
             role: 1,
-            committee_public_keys: fake_pub_keys(),
+            public_keys: fake_pub_keys(),
         };
 
         // expect get_minimum_deposit to be called
@@ -165,8 +166,9 @@ mod tests {
                     .collect::<Result<Vec<_>, _>>()
                     .unwrap()),
                 eq(3u8),
+                eq(U256::from(100)),
             )
-            .returning(|_, _, _, _| {
+            .returning(|_, _, _, _, _| {
                 Ok(get_fake_receipt(
                     true,
                     "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
@@ -199,7 +201,7 @@ mod tests {
         let input = ApplyToStreamInput {
             stream_id: 123,
             role: 1,
-            committee_public_keys: fake_pub_keys(),
+            public_keys: fake_pub_keys(),
         };
 
         // expect get_minimum_deposit to be called

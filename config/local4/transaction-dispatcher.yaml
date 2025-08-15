@@ -1,0 +1,6 @@
+key_store:
+  path: "<KEY_4_PATH>"
+transaction:
+  gas_bumps_t1: 3
+server:
+  url: "0.0.0.0:3003"
