@@ -10,6 +10,7 @@ use bitcoin::PublicKey;
 use bitcoin::hex::DisplayHex;
 use common::runtime_sync::RuntimeSync;
 use log::{debug, error, info};
+use sha2::{Digest, Sha256};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -80,6 +81,7 @@ struct FlowContext {
     my_take_key: PubKeyReq,
     my_dispute_key: PubKeyReq,
     my_comm_key: PubKeyReq,
+    committee_id: Option<Uuid>,
     agg_take_key: AggKeyReq,
     agg_dispute_key: AggKeyReq,
     setup_core: SetupCoreReq,
@@ -300,20 +302,24 @@ where
         Ok(())
     }
 
-    fn setup_aggregated_pubkey(&self, keys: Vec<PublicKey>) -> Result<()> {
-        // TODO(Fairgate) confirm with Fairgate how to get this, if it's from the pending committee or how
+    fn get_take_aggregated_key_id(&self, committee_id: Uuid) -> Uuid {
+        let mut hasher = Sha256::new();
+        hasher.update(committee_id.as_bytes());
+        hasher.update("take_aggregated_key");
+    
+        // Get the result as a byte array
+        let hash = hasher.finalize();
+        return Uuid::from_bytes(hash[0..16].try_into().unwrap());
+    }
 
-        // Use hardcoded operator addresses
-        let addresses = self.get_hardcoded_operators_addresses();
-
-        self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetupKey(
-            self.state.flow_id,
-            addresses,
-            Some(keys),
-            NO_LEADER_IDX,
-        ));
-
-        Ok(())
+    fn get_dispute_aggregated_key_id(&self, committee_id: Uuid) -> Uuid {
+        let mut hasher = Sha256::new();
+        hasher.update(committee_id.as_bytes());
+        hasher.update("dispute_aggregated_key");
+    
+        // Get the result as a byte array
+        let hash = hasher.finalize();
+        return Uuid::from_bytes(hash[0..16].try_into().unwrap());
     }
 
     fn setup_dispute_core_for_member(
@@ -716,32 +722,6 @@ where
 
         vec![placeholder_key; 4] // Placeholder - should be actual keys from each operator
     }
-
-    fn get_deterministic_take_key_id(&self) -> Uuid {
-        // Hardcoded UUID for take key - same on every run
-        Uuid::parse_str("12345678-1234-5678-9abc-123456789abc").unwrap()
-    }
-
-    fn get_deterministic_dispute_key_id(&self) -> Uuid {
-        // Hardcoded UUID for dispute key - same on every run
-        Uuid::parse_str("87654321-4321-8765-cba9-987654321cba").unwrap()
-    }
-
-    fn request_take_aggregated_key(&mut self) -> Result<()> {
-        let take_key_id = self.get_deterministic_take_key_id();
-        self.state.ctx.agg_take_key = Some((take_key_id, None));
-        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetAggregatedPubkey(take_key_id));
-        Ok(())
-    }
-
-    fn request_dispute_aggregated_key(&mut self) -> Result<()> {
-        let dispute_key_id = self.get_deterministic_dispute_key_id();
-        self.state.ctx.agg_dispute_key = Some((dispute_key_id, None));
-        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetAggregatedPubkey(
-            dispute_key_id,
-        ));
-        Ok(())
-    }
 }
 
 impl<CG, BC> SetupCommitteeFlowApi for SetupCommitteeFlow<CG, BC>
@@ -796,8 +776,11 @@ where
             }
             Steps::ApplyToStream => {
                 // TODO(iago) process data received from contracts
+        
+                // TODO replace hardcoded value once we have the real committee id from the event
+                self.state.ctx.committee_id = Some(Uuid::parse_str("12345678-1234-5678-9abc-123456789abc").unwrap());
+
                 self.setup_bitvmx_aggregated_take_pubkey()?;
-                // self.request_take_aggregated_key()?;
             }
             Steps::SetupTakeAggregatedKey => {
                 Self::close_agg_key_req(
@@ -808,7 +791,6 @@ where
                 )?;
 
                 self.setup_bitvmx_aggregated_dispute_pubkey()?;
-                // self.request_dispute_aggregated_key()?;
             }
             Steps::SetupDisputeAggregatedKey => {
                 Self::close_agg_key_req(
@@ -894,15 +876,15 @@ where
     }
 
     fn setup_bitvmx_aggregated_take_pubkey(&mut self) -> Result<()> {
-        // TODO(ask-Agus) do we need it to be always the same? cant' we generate an uuid and keep it in the flow state?
-        let take_key_id = self.get_deterministic_take_key_id();
-        self.state.ctx.agg_take_key = Some((take_key_id, None));
+        let committee_id = self.state.ctx.committee_id
+            .with_context(|| format!("Missing committee_id for flow {}", self.state.flow_id))?;
+        let take_key_id = self.get_take_aggregated_key_id(committee_id);
 
         // Use hardcoded take keys from all operators
         let committee_take_keys = self.get_hardcoded_operators_keys();
-
-        // Just setup the key, don't request the aggregated result yet
         let addresses = self.get_hardcoded_operators_addresses();
+
+        // Bitvmx responds with the aggregated key
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetupKey(
             take_key_id,
             addresses,
@@ -914,15 +896,15 @@ where
     }
 
     fn setup_bitvmx_aggregated_dispute_pubkey(&mut self) -> Result<()> {
-        // TODO(ask-Agus) do we need it to be always the same? cant' we generate an uuid and keep it in the flow state?
-        let dispute_key_id = self.get_deterministic_dispute_key_id();
-        self.state.ctx.agg_dispute_key = Some((dispute_key_id, None));
+        let committee_id = self.state.ctx.committee_id
+            .with_context(|| format!("Missing committee_id for flow {}", self.state.flow_id))?;
+        let dispute_key_id = self.get_dispute_aggregated_key_id(committee_id);
 
         // Use hardcoded dispute keys from all operators
         let committee_dispute_keys = self.get_hardcoded_operators_keys();
-
-        // Just setup the key, don't request the aggregated result yet
         let addresses = self.get_hardcoded_operators_addresses();
+
+        // Bitvmx responds with the aggregated key
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetupKey(
             dispute_key_id,
             addresses,

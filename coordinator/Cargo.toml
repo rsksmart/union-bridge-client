@@ -23,6 +23,7 @@ union-contracts = { workspace = true }
 primitive-types = { workspace = true }
 hex = { workspace = true }
 serde = { workspace = true }
+sha2 = "0.10.9"
 
 uuid = { version = "1.11.0", features = ["v4"] }
 

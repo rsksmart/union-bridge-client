@@ -1831,6 +1831,7 @@ dependencies = [
  "primitive-types 0.13.1",
  "serde",
  "serde_json",
+ "sha2",
  "transaction-dispatcher",
  "union-bridge-contracts",
  "uuid 1.17.0",
