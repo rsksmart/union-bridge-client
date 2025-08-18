@@ -4,7 +4,7 @@ use crate::types::{
     AllCommunicationDataReadyEvent, NewCommitteePendingEvent, NewCommitteeReadyEvent,
     RskPegManagerEvents, UserRequests,
 };
-use alloy_primitives::{Address, U256};
+use alloy_primitives::Address;
 use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::PublicKey;
 use bitcoin::hex::DisplayHex;
@@ -24,12 +24,13 @@ use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 
 use crate::user_requests::ApplyToStream;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
-    CommitteeMember, NewPendingCommittee,
+    AllCommunicationDataReady, CommitteeMember, CommunicationData, NewPendingCommittee,
 };
 
 use common::types::RskBlockAndUncles;
 #[cfg(test)]
 use mockall::automock;
+use primitive_types::U256;
 use transaction_dispatcher::types::{
     ApplyToStreamInput, CommitteePublicKey, DepositCommunicationDataInput,
     DepositCommunicationDataOutput, GetMemberCommunicationDataOutput, GetMemberPublicKeysInput,
@@ -37,8 +38,10 @@ use transaction_dispatcher::types::{
 };
 
 const NO_LEADER_IDX: u16 = 0;
+const TAKE_KEY_INDEX: usize = 0;
+const DISPUTE_KEY_INDEX: usize = 1;
 
-// TODO(iago) create proper type and mapping
+// TODO(iago-2) create proper type and mapping
 type Member = CommitteeMember;
 
 #[cfg_attr(test, automock)]
@@ -68,13 +71,14 @@ pub(crate) trait SetupCommitteeFlowFactoryApi<CG: RskContractsGatewayApi, BC: Bi
     fn create_flow(&self, flow_id: Uuid) -> SetupCommitteeFlow<CG, BC>;
 }
 
-// TODO(iago) improve with structs instead of tuples, using tuples for now for validation
+// TODO(iago-2) improve with structs instead of tuples, using tuples for now for validation
 type PubKeyReq = Option<(Uuid, Option<SignedPublicKey>)>; // request id, response data
 type AggKeyReq = Option<(Uuid, Option<PublicKey>)>; // request id, response data
-type SetupCoreReq = Option<(Uuid, Uuid, Option<String>)>; // request id, committee id, response data // TODO(iago) TBC what to store here in data
+type SetupCoreReq = Option<(Uuid, Uuid, Option<String>)>; // request id, committee id, response data // TODO(iago-2) TBC what to store here in data
 
 #[derive(Default, Debug)]
 struct FlowContext {
+    // stepped
     user_input: Option<ApplyToStream>,
     my_comm_info: Option<P2PAddress>,
     my_take_key: PubKeyReq,
@@ -83,6 +87,54 @@ struct FlowContext {
     agg_take_key: AggKeyReq,
     agg_dispute_key: AggKeyReq,
     setup_core: SetupCoreReq,
+    // async
+    committee_pending: Option<NewCommitteePendingEvent>,
+    communication_data_ready: Option<AllCommunicationDataReadyEvent>,
+    committee_ready: Option<NewCommitteeReadyEvent>,
+}
+
+impl FlowContext {
+    fn get_stream_id(&self) -> Result<u8> {
+        Ok(self
+            .user_input
+            .as_ref()
+            .context("Missing stream_id")?
+            .stream_id)
+    }
+
+    fn get_committee_id(&self) -> Result<Uuid> {
+        // TODO(iago-2) change to committee_pending when it includes the committee id
+        let committee_bytes: [u8; 16] = self
+            .committee_ready
+            .as_ref()
+            .context("Missing committee pending event")?
+            .inner
+            .committeeId
+            .to_be_bytes();
+
+        let uuid_bytes: [u8; 16] = committee_bytes
+            .get(..16)
+            .context("Committee ID should have at least 16 bytes")?
+            .try_into()
+            .context("Slice of 16 bytes should convert to [u8; 16]")?;
+
+        Ok(Uuid::from_bytes(uuid_bytes))
+    }
+
+    fn get_committee_addresses(&self) -> Result<Vec<Address>> {
+        let addresses = self
+            .committee_ready
+            .as_ref()
+            .context("Missing committee ready event")?
+            .inner
+            ._committee
+            .members
+            .iter()
+            .map(|m| m.memberAddress)
+            .collect::<Vec<_>>();
+
+        Ok(addresses)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,11 +145,14 @@ enum Steps {
     GetDisputeKey,
     GetMyCommKey,
     ApplyToStream,
+    DepositCommunicationData,
     SetupTakeAggregatedKey,
     SetupDisputeAggregatedKey,
+    DepositAggregatedKey,
     SetupDisputeCoreProtocol,
     //
     Complete,
+    // Optional steps
 }
 
 impl Steps {
@@ -108,7 +163,9 @@ impl Steps {
             Steps::GetMyTakeKey => Steps::GetDisputeKey,
             Steps::GetDisputeKey => Steps::GetMyCommKey,
             Steps::GetMyCommKey => Steps::ApplyToStream,
-            Steps::ApplyToStream => Steps::SetupTakeAggregatedKey,
+            Steps::ApplyToStream => Steps::DepositCommunicationData,
+            Steps::DepositCommunicationData => Steps::DepositAggregatedKey,
+            Steps::DepositAggregatedKey => Steps::SetupTakeAggregatedKey,
             Steps::SetupTakeAggregatedKey => Steps::SetupDisputeAggregatedKey,
             Steps::SetupDisputeAggregatedKey => Steps::SetupDisputeCoreProtocol,
             Steps::SetupDisputeCoreProtocol => Steps::Complete,
@@ -123,14 +180,16 @@ impl Steps {
 
 #[derive(Debug)]
 enum StepData {
+    // sync or member-dependent steps
     UserRequest(ApplyToStream),
     CommInfo(P2PAddress),
     SignedPublicKey(SignedPublicKey),
     PublicKey(PublicKey),
-    ApplyToStreamConfirmed,
-    NewCommitteePending(NewCommitteePendingEvent),
-    AllCommunicationDataReady(AllCommunicationDataReadyEvent),
-    NewCommitteeReady(NewCommitteeReadyEvent),
+
+    // async or collaborative steps
+    PendingCommittee(NewCommitteePendingEvent),
+    ReadyCommunication(AllCommunicationDataReadyEvent),
+    ReadyCommittee(NewCommitteeReadyEvent),
 }
 
 impl StepData {
@@ -163,27 +222,24 @@ impl StepData {
     }
 
     fn into_new_committee_pending(self) -> Result<NewCommitteePendingEvent> {
-        let event = match self {
-            StepData::NewCommitteePending(event) => event,
-            _ => return Err(anyhow!("Expected NewCommitteePending")),
-        };
+        match self {
+            StepData::PendingCommittee(ev) => Ok(ev),
+            _ => bail!("Expected NewCommitteePendingEvent"),
+        }
+    }
 
-        // TODO(iago) this will come from the event directly
-        let committee_id = format!("{}-{}", event.inner.streamId, event.block_number);
-
-        Ok(event)
+    fn into_all_comm_data_ready(self) -> Result<AllCommunicationDataReadyEvent> {
+        match self {
+            StepData::ReadyCommunication(ev) => Ok(ev),
+            _ => bail!("Expected AllCommunicationDataReadyEvent"),
+        }
     }
 
     fn into_new_committee_ready(self) -> Result<NewCommitteeReadyEvent> {
-        let event = match self {
-            StepData::NewCommitteeReady(event) => event,
-            _ => return Err(anyhow!("Expected NewCommitteeReady")),
-        };
-
-        // TODO(agus) we can use it to create the committee_id
-        let block_num = event.block_number;
-
-        Ok(event)
+        match self {
+            StepData::ReadyCommittee(ev) => Ok(ev),
+            _ => bail!("Expected NewCommitteeReadyEvent"),
+        }
     }
 }
 
@@ -300,22 +356,6 @@ where
         Ok(())
     }
 
-    fn setup_aggregated_pubkey(&self, keys: Vec<PublicKey>) -> Result<()> {
-        // TODO(Fairgate) confirm with Fairgate how to get this, if it's from the pending committee or how
-
-        // Use hardcoded operator addresses
-        let addresses = self.get_hardcoded_operators_addresses();
-
-        self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetupKey(
-            self.state.flow_id,
-            addresses,
-            Some(keys),
-            NO_LEADER_IDX,
-        ));
-
-        Ok(())
-    }
-
     fn setup_dispute_core_for_member(
         &mut self,
         member_idx: usize,
@@ -323,11 +363,11 @@ where
         member: &Member,
         addresses: &Vec<P2PAddress>,
     ) -> Result<()> {
-        // TODO(iago) see example of the calling loop from Diego as reference: https://rootstocklabs.slack.com/archives/D07SBTC8ECS/p1753981406212199
+        // TODO see example of the calling loop from Diego as reference: https://rootstocklabs.slack.com/archives/D07SBTC8ECS/p1753981406212199
 
         let my_utxos = self.get_my_funding_utxos()?;
 
-        // TODO(iago) SetVar of DisputeCoreData containing my utxos
+        // TODO SetVar of DisputeCoreData containing my utxos
 
         self.state.ctx.setup_core = Some((Uuid::new_v4(), comittee_id, None));
 
@@ -348,7 +388,7 @@ where
     fn setup_committee(&self) -> Result<Uuid> {
         info!("Setting up committee");
 
-        // TODO(iago) to be built by these two matching by address:
+        // TODO to be built by these two matching by address:
         //  - getMembersPublicKeys from the contract => pub keys
         //  - "NewPendingCommittee" event received before this step => roles
         let members: Vec<Member> = Vec::new();
@@ -380,7 +420,7 @@ where
         self.add_other_members_comm_data(&mut communication_data)?;
         self.add_my_comm_data(&mut communication_data)?;
 
-        /// TODO(iago) use this new committee struct
+        /// TODO use this new committee struct
         // #[derive(Debug, Clone, Serialize, Deserialize)]
         // pub struct Committee {
         //     pub members: Vec<MemberData>,
@@ -397,11 +437,11 @@ where
             addresses: communication_data,
             operator_count,
             watchtower_count,
-            // TODO(iago) implement new contract call to get it by stream_id, less prio than the other changes as it can be hardcoded to 100 for now
+            // TODO(iago-2) implement new contract call to get it by stream_id, less prio than the other changes as it can be hardcoded to 100 for now
             packet_size: 100,
         };
 
-        // TODO(iago) NewCommittee contains MemberData
+        // TODO NewCommittee contains MemberData
         // #[derive(Debug, Clone, Serialize, Deserialize)]
         // pub struct MemberData {
         //     pub role: ParticipantRole,
@@ -409,8 +449,11 @@ where
         //     pub dispute_key: PublicKey,
         // }
 
-        // TODO(iago) store it in the context of this step and use it to relate the response
-        let committee_id = Uuid::new_v4();
+        let committee_id = self
+            .state
+            .ctx
+            .get_committee_id()
+            .context("Setting up Committee")?;
 
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetVar(
             committee_id,
@@ -428,6 +471,7 @@ where
         Ok(Vec::new())
     }
 
+    // TODO(iago-2) move ctx_xxx methods to FlowContext struct
     fn ctx_my_take_key(&self) -> Result<PublicKey> {
         let take_data = self.state.ctx.my_take_key.as_ref().with_context(|| {
             format!(
@@ -555,10 +599,13 @@ where
         )
     }
 
-    fn get_my_communication_data_from_contracts(
-        &mut self,
-        stream_id: u64,
-    ) -> Result<Vec<P2PAddress>> {
+    fn get_my_communication_data_from_contracts(&self) -> Result<Vec<P2PAddress>> {
+        let stream_id = self
+            .state
+            .ctx
+            .get_stream_id()
+            .context("Get Communication Data")? as u64;
+
         let comm_data = self
             .rt_sync
             .run(self.contracts.get_committee_communication_data(stream_id))?;
@@ -576,15 +623,18 @@ where
         Ok(res)
     }
 
-    fn deposit_communication_data_from_contracts(
-        &self,
-        stream_id: u64,
-        p2p_addrs: Vec<P2PAddress>,
-    ) -> Result<DepositCommunicationDataOutput> {
-        let communication_data = p2p_addrs
-            .into_iter()
-            .map(|addr| P2PAddressParser::bitvmx_to_contracts(&addr))
-            .collect::<Result<Vec<_>>>()?;
+    fn deposit_communication_data(&self) -> Result<DepositCommunicationDataOutput> {
+        let stream_id = self
+            .state
+            .ctx
+            .get_stream_id()
+            .context("Deposit Communication Data")? as u64;
+
+        // get my communication data to communicate with the other members
+        let communication_data = self
+            .rt_sync
+            .run(self.contracts.get_committee_communication_data(stream_id))?
+            .communication_data;
 
         self.rt_sync.run(
             self.contracts
@@ -701,46 +751,52 @@ where
         ]
     }
 
-    fn get_hardcoded_operators_keys(&self) -> Vec<PublicKey> {
-        // TODO: Replace with actual public keys obtained from each operator
-        // For now, using the current member's key repeated 4 times as placeholder
-        let placeholder_key = self.ctx_my_take_key().unwrap_or_else(|_| {
-            // Fallback placeholder key if we don't have one yet
-            PublicKey::from_slice(&[
-                0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00, 0x00, 0x00, 0x01,
-            ])
-            .unwrap()
-        });
-
-        vec![placeholder_key; 4] // Placeholder - should be actual keys from each operator
-    }
+    // fn get_hardcoded_operators_keys(&self) -> Vec<PublicKey> {
+    //     // TODO: Replace with actual public keys obtained from each operator
+    //     // For now, using the current member's key repeated 4 times as placeholder
+    //     let placeholder_key = self.ctx_my_take_key().unwrap_or_else(|_| {
+    //         // Fallback placeholder key if we don't have one yet
+    //         PublicKey::from_slice(&[
+    //             0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    //             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    //             0x00, 0x00, 0x00, 0x00, 0x01,
+    //         ])
+    //         .unwrap()
+    //     });
+    //
+    //     vec![placeholder_key; 4] // Placeholder - should be actual keys from each operator
+    // }
 
     fn get_deterministic_take_key_id(&self) -> Uuid {
+        // TODO(agus) how to generate deterministic id for all clients?
         // Hardcoded UUID for take key - same on every run
         Uuid::parse_str("12345678-1234-5678-9abc-123456789abc").unwrap()
     }
 
     fn get_deterministic_dispute_key_id(&self) -> Uuid {
+        // TODO(agus) how to generate deterministic id for all clients?
         // Hardcoded UUID for dispute key - same on every run
         Uuid::parse_str("87654321-4321-8765-cba9-987654321cba").unwrap()
     }
 
-    fn request_take_aggregated_key(&mut self) -> Result<()> {
-        let take_key_id = self.get_deterministic_take_key_id();
-        self.state.ctx.agg_take_key = Some((take_key_id, None));
-        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetAggregatedPubkey(take_key_id));
-        Ok(())
-    }
+    fn get_committee_keys_by_type(&mut self, key_index: usize) -> Result<Vec<PublicKey>> {
+        let mut committee_take_keys = vec![];
 
-    fn request_dispute_aggregated_key(&mut self) -> Result<()> {
-        let dispute_key_id = self.get_deterministic_dispute_key_id();
-        self.state.ctx.agg_dispute_key = Some((dispute_key_id, None));
-        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetAggregatedPubkey(
-            dispute_key_id,
-        ));
-        Ok(())
+        for addr in self.state.ctx.get_committee_addresses()? {
+            let keys = self.get_member_public_keys_from_contracts(addr)?;
+            let take_key_str = keys
+                .public_keys
+                .get(key_index)
+                .with_context(|| format!("Take key not found on Committee for {addr}"))?;
+
+            let take_key = PublicKey::from_slice(take_key_str.as_bytes()).with_context(|| {
+                format!("Failed to parse {take_key_str} to Take Key for {addr}")
+            })?;
+
+            committee_take_keys.push(take_key);
+        }
+
+        Ok(committee_take_keys)
     }
 }
 
@@ -773,6 +829,7 @@ where
                     req_id,
                     data,
                 )?;
+                // start next
                 self.request_bitvmx_dispute_pub_key()?;
             }
             Steps::GetDisputeKey => {
@@ -792,12 +849,26 @@ where
                     req_id,
                     data,
                 )?;
+                // start next
                 self.apply_to_stream()?;
             }
             Steps::ApplyToStream => {
-                // TODO(iago) process data received from contracts
+                // TODO(iago-2) wait for CommitteePending confirmations!
+                self.state.ctx.committee_pending = Some(data.into_new_committee_pending()?);
+                // start next
+                self.deposit_communication_data()?;
+                // TODO(iago-2) also close the flow if not selected as committee member (check in addresses)
+            }
+            Steps::DepositCommunicationData => {
+                // TODO(iago-2) wait for AllCommDataReady confirmations!
+                self.state.ctx.communication_data_ready = Some(data.into_all_comm_data_ready()?);
+                // TODO(iago) deposit aggregated key to contracts
+            }
+            Steps::DepositAggregatedKey => {
+                // TODO(iago-2) wait for CommitteeReady confirmations!
+                self.state.ctx.committee_ready = Some(data.into_new_committee_ready()?);
+                // start next
                 self.setup_bitvmx_aggregated_take_pubkey()?;
-                // self.request_take_aggregated_key()?;
             }
             Steps::SetupTakeAggregatedKey => {
                 Self::close_agg_key_req(
@@ -808,7 +879,6 @@ where
                 )?;
 
                 self.setup_bitvmx_aggregated_dispute_pubkey()?;
-                // self.request_dispute_aggregated_key()?;
             }
             Steps::SetupDisputeAggregatedKey => {
                 Self::close_agg_key_req(
@@ -821,7 +891,7 @@ where
                 self.setup_dispute_core_protocol()?;
             }
             Steps::SetupDisputeCoreProtocol => {
-                // TODO(iago) continue flow here
+                // TODO continue flow here
             }
             Steps::Complete => {
                 info!("Setup committee flow complete")
@@ -894,18 +964,18 @@ where
     }
 
     fn setup_bitvmx_aggregated_take_pubkey(&mut self) -> Result<()> {
-        // TODO(ask-Agus) do we need it to be always the same? cant' we generate an uuid and keep it in the flow state?
         let take_key_id = self.get_deterministic_take_key_id();
         self.state.ctx.agg_take_key = Some((take_key_id, None));
 
-        // Use hardcoded take keys from all operators
-        let committee_take_keys = self.get_hardcoded_operators_keys();
+        let committee_take_keys = self.get_committee_keys_by_type(TAKE_KEY_INDEX)?;
 
-        // Just setup the key, don't request the aggregated result yet
-        let addresses = self.get_hardcoded_operators_addresses();
+        let comm_data = self
+            .get_my_communication_data_from_contracts()
+            .context("Setting Aggregated Take key")?;
+
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetupKey(
             take_key_id,
-            addresses,
+            comm_data,
             Some(committee_take_keys),
             NO_LEADER_IDX,
         ));
@@ -914,18 +984,18 @@ where
     }
 
     fn setup_bitvmx_aggregated_dispute_pubkey(&mut self) -> Result<()> {
-        // TODO(ask-Agus) do we need it to be always the same? cant' we generate an uuid and keep it in the flow state?
         let dispute_key_id = self.get_deterministic_dispute_key_id();
         self.state.ctx.agg_dispute_key = Some((dispute_key_id, None));
 
-        // Use hardcoded dispute keys from all operators
-        let committee_dispute_keys = self.get_hardcoded_operators_keys();
+        let committee_dispute_keys = self.get_committee_keys_by_type(DISPUTE_KEY_INDEX)?;
 
-        // Just setup the key, don't request the aggregated result yet
-        let addresses = self.get_hardcoded_operators_addresses();
+        let comm_data = self
+            .get_my_communication_data_from_contracts()
+            .context("Setting Aggregated Dispute Key")?;
+
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetupKey(
             dispute_key_id,
-            addresses,
+            comm_data,
             Some(committee_dispute_keys),
             NO_LEADER_IDX,
         ));
@@ -940,12 +1010,12 @@ where
 
         let members: Vec<Member> = self.get_members_from_contract()?;
 
-        // TODO(ask-Fairgate) is this ok?
         let addresses: Vec<P2PAddress> = members
             .iter()
             .map(|m| P2PAddress {
                 address: m.memberAddress.to_lower_hex_string(),
-                peer_id: PeerId("what goes here???".to_string()),
+                // TODO(ask-Agus) where to get the PeerId from?
+                peer_id: PeerId("TODO(ask-Agus)p".to_string()),
             })
             .collect();
 
@@ -994,17 +1064,30 @@ where
             .find(|f| f.state.step == Steps::GetMyCommInfo)
     }
 
-    fn get_flow_for_stream_id(&self, stream_id: u64) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
-        // TODO(ask-Fairgate) implement when clarified how to relate events with flows
-        None
-    }
+    fn get_flow_for_stream_id(&mut self, stream_id: u8) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
+        // TODO optimize this search by keeping convenient map of stream_id -> flow_id or alike
 
+        self.flows.values_mut().find(|f| {
+            f.state
+                .ctx
+                .user_input
+                .as_ref()
+                .map_or(false, |ui| ui.stream_id == stream_id)
+        })
+    }
     fn get_flow_for_committee_id(
-        &self,
-        committee_id: U256,
+        &mut self,
+        committee_id: alloy_primitives::U256,
     ) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
-        // TODO(ask-Fairgate) implement when clarified how to relate events with flows
-        None
+        // TODO optimize this search by keeping convenient map of committee_id -> flow_id or alike
+
+        self.flows.values_mut().find(|f| {
+            f.state
+                .ctx
+                .committee_ready
+                .as_ref()
+                .map_or(false, |ev| ev.inner.committeeId == committee_id)
+        })
     }
 
     fn get_flow_for_request_id(&mut self, uuid: &Uuid) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
@@ -1060,7 +1143,7 @@ where
         info!("Processing user request: {:?}", req);
         match req {
             UserRequests::ApplyToStream(input) => {
-                // TODO(iago) this won't be used by BitVMX, its' just for our logging, make that clear by changing its type maybe
+                // TODO(iago-2) this won't be used by BitVMX, its' just for our logging, make that clear by renaming it or changing its type maybe
                 let flow_id = Uuid::new_v4();
                 let mut flow = self.flow_factory.create_flow(flow_id);
                 flow.complete_step_and_next(None, StepData::UserRequest(input.clone()))?;
@@ -1074,46 +1157,52 @@ where
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         match event {
             RskPegManagerEvents::NewCommitteePending(new_committee_pending) => {
-                let data = &new_committee_pending.inner;
+                info!(
+                    "Processing NewCommitteePending event: {:?}",
+                    new_committee_pending
+                );
 
-                // TODO(ask-Fairgate) for some reason streamId is U256 for NewPendingCommittee but u64 for AllCommunicationDataReady
-                let stream_id = data.streamId.try_into().with_context(|| {
-                    format!(
-                        "could not parse streamId {} to u64 for NewCommitteePending event",
-                        data.streamId
-                    )
-                })?;
-
-                // TODO(ask-Fairgate) how to identify the matching flow with the provided data?
+                let stream_id = parse_stream_id_from_u256(&new_committee_pending.inner.streamId)?;
                 if let Some(first_flow) = self.get_flow_for_stream_id(stream_id) {
+                    // assume confirmed for now
                     first_flow.complete_step_and_next(
                         None,
-                        StepData::NewCommitteePending(new_committee_pending.clone()),
+                        StepData::PendingCommittee(new_committee_pending.clone()),
                     )?
                 } else {
                     bail!("No flow found for {new_committee_pending:?}")
                 }
             }
             RskPegManagerEvents::NewCommitteeReady(new_committee_ready) => {
-                let data = &new_committee_ready.inner;
+                info!(
+                    "Processing NewCommitteeReady event: {:?}",
+                    new_committee_ready
+                );
 
-                // TODO(ask-Fairgate) how to identify the matching flow with the provided data?
-                if let Some(first_flow) = self.get_flow_for_committee_id(data.committeeId) {
+                if let Some(first_flow) =
+                    self.get_flow_for_committee_id(new_committee_ready.inner.committeeId)
+                {
+                    // assume confirmed for now
                     first_flow.complete_step_and_next(
                         None,
-                        StepData::NewCommitteeReady(new_committee_ready.clone()),
+                        StepData::ReadyCommittee(new_committee_ready.clone()),
                     )?
                 } else {
                     bail!("No flow found for {new_committee_ready:?}")
                 }
             }
             RskPegManagerEvents::AllCommunicationDataReady(all_comm_data_ready) => {
-                let data = &all_comm_data_ready.inner;
+                info!(
+                    "Processing AllCommunicationDataReady event: {:?}",
+                    all_comm_data_ready
+                );
 
-                if let Some(first_flow) = self.get_flow_for_stream_id(data.streamId) {
+                let stream_id = parse_stream_id_from_u64(all_comm_data_ready.inner.streamId)?;
+                if let Some(first_flow) = self.get_flow_for_stream_id(stream_id) {
+                    // assume confirmed for now
                     first_flow.complete_step_and_next(
                         None,
-                        StepData::AllCommunicationDataReady(all_comm_data_ready.clone()),
+                        StepData::ReadyCommunication(all_comm_data_ready.clone()),
                     )?
                 } else {
                     bail!("No flow found for {all_comm_data_ready:?}")
@@ -1165,17 +1254,6 @@ where
                     );
                 }
             }
-            OutgoingBitVMXApiMessages::AggregatedPubkeyNotReady(req_id) => {
-                // Key is not ready yet, retry the request
-                if let Some(flow) = self.get_flow_for_request_id(req_id) {
-                    // Retry the GetAggregatedPubkey request
-                    flow.send_bitvmx_msg(IncomingBitVMXApiMessages::GetAggregatedPubkey(*req_id));
-                } else {
-                    bail!(
-                        "No flow found for OutgoingBitVMXApiMessages::AggregatedPubkeyNotReady and id {req_id}"
-                    );
-                }
-            }
             _ => {}
         }
 
@@ -1183,14 +1261,7 @@ where
     }
 
     fn process_new_block(&mut self, _block: &RskBlockAndUncles) -> Result<()> {
-        // find flows in status ApplyToStream
-        for flow in self.flows.values_mut() {
-            if flow.state.step == Steps::ApplyToStream {
-                // TODO(iago) properly handle confirmations, now we assume confirmed immediately
-                flow.complete_step_and_next(None, StepData::ApplyToStreamConfirmed)?;
-            }
-        }
-
+        // TODO(iago-2) properly handle confirmations, now we assume confirmed immediately
         Ok(())
     }
 
@@ -1241,4 +1312,20 @@ where
             flow_id,
         )
     }
+}
+
+// Utility functions for stream ID and U256 conversions
+
+fn parse_stream_id_from_u64(stream_id: u64) -> Result<u8> {
+    u8::try_from(stream_id)
+        .with_context(|| format!("Failed to convert stream_id {stream_id} to u8"))
+}
+
+fn parse_stream_id_from_u256(stream_id: &alloy_primitives::U256) -> Result<u8> {
+    u8::try_from(stream_id)
+        .with_context(|| format!("Failed to convert stream_id {stream_id} to u8"))
+}
+
+fn parse_u256(data: &alloy_primitives::U256) -> U256 {
+    U256::from_big_endian(&data.to_be_bytes_vec())
 }

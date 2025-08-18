@@ -152,7 +152,7 @@ pub struct GetMemberPublicKeysOutput {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ApplyToStreamInput {
-    pub stream_id: u8,
+    pub stream_id: u8, // Matches StreamDenomination enum in contracts
     pub role: u8,
     pub public_keys: Vec<CommitteePublicKey>, // TODO(iago) change to [CommitteePublicKey; 3] when ready
 }

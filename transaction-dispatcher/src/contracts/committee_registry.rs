@@ -4,7 +4,7 @@ use crate::rsk_gateway::DomainErrors;
 use alloy_primitives::U256;
 use alloy_provider::Provider;
 use log::info;
-use union_contracts::bindings::committee_registry::CommitteeRegistry::{self, Committee};
+use union_contracts::bindings::committee_registry::CommitteeRegistry::{self, Committee, Role};
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     CommitteeRegistryErrors, CommitteeRegistryInstance, StreamDenomination,
 };
@@ -33,8 +33,8 @@ pub trait CommitteeRegistryContractApi {
 
     async fn invoke_apply_to_stream(
         &self,
-        stream: u8,
-        role: u8,
+        denomination: StreamDenomination,
+        role: Role,
         public_keys: Vec<CommitteeRegistry::PublicKeyRegistration>,
         gas_bumps: u8,
         value: U256,
@@ -95,12 +95,15 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
 
     async fn invoke_apply_to_stream(
         &self,
-        stream: u8,
-        role: u8,
+        denomination: StreamDenomination,
+        role: Role,
         public_keys: Vec<CommitteeRegistry::PublicKeyRegistration>,
         gas_bumps: u8,
         value: U256,
     ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt> {
+        let stream = denomination.into_underlying();
+        let role = role.into_underlying();
+
         send_tx_with_gas_bump(
             || {
                 self.contract_instance
