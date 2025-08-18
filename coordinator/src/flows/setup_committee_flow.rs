@@ -10,6 +10,7 @@ use bitcoin::key::Parity::Even;
 use bitcoin::{PublicKey, XOnlyPublicKey};
 use common::runtime_sync::RuntimeSync;
 use log::{debug, error, info};
+use sha2::{Digest, Sha256};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -345,6 +346,34 @@ where
 
         // TODO add other members data
         Ok(())
+    }
+
+    fn get_take_aggregated_key_id(&self) -> Result<Uuid> {
+        let mut hasher = Sha256::new();
+
+        // TODO(iago) revert when committee_id received on committee ready event
+        //let committee_id = self.state.ctx.get_committee_id()?;
+        //hasher.update(committee_id.as_bytes());
+        hasher.update(self.state.ctx.get_stream_id()?.to_be_bytes());
+        hasher.update("take_aggregated_key");
+
+        // Get the result as a byte array
+        let hash = hasher.finalize();
+        Uuid::from_slice(&hash[0..16]).context("Failed to convert hash to Uuid")
+    }
+
+    fn get_dispute_aggregated_key_id(&self) -> Result<Uuid> {
+        let mut hasher = Sha256::new();
+
+        // TODO(iago) revert when committee_id received on committee ready event
+        // let committee_id = self.state.ctx.get_committee_id()?;
+        // hasher.update(committee_id.as_bytes());
+        hasher.update(self.state.ctx.get_stream_id()?.to_be_bytes());
+        hasher.update("dispute_aggregated_key");
+
+        // Get the result as a byte array
+        let hash = hasher.finalize();
+        Uuid::from_slice(&hash[0..16]).context("Failed to convert hash to Uuid")
     }
 
     fn setup_dispute_core_for_member(
@@ -762,18 +791,6 @@ where
         Ok(())
     }
 
-    fn get_deterministic_take_key_id(&self) -> Uuid {
-        // TODO(agus) how to generate deterministic id for all clients?
-        // Hardcoded UUID for take key - same on every run
-        Uuid::parse_str("12345678-1234-5678-9abc-123456789abc").unwrap()
-    }
-
-    fn get_deterministic_dispute_key_id(&self) -> Uuid {
-        // TODO(agus) how to generate deterministic id for all clients?
-        // Hardcoded UUID for dispute key - same on every run
-        Uuid::parse_str("87654321-4321-8765-cba9-987654321cba").unwrap()
-    }
-
     fn get_committee_keys_by_type(&mut self, key_index: usize) -> Result<Vec<PublicKey>> {
         let mut committee_take_keys = vec![];
 
@@ -995,12 +1012,13 @@ where
     fn setup_bitvmx_aggregated_take_pubkey(&mut self) -> Result<()> {
         info!("Setup BitVMX Aggregated Take key");
 
-        let take_key_id = self.get_deterministic_take_key_id();
+        let take_key_id = self.get_take_aggregated_key_id()?;
         self.state.ctx.agg_take_key = Some((take_key_id, None));
 
         let committee_take_keys = self.get_committee_keys_by_type(TAKE_KEY_INDEX)?;
         let communication_data = self.ctx_member_communication_data(self.my_address().into())?;
 
+        // Bitvmx responds with the aggregated key
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetupKey(
             take_key_id,
             communication_data,
@@ -1014,12 +1032,13 @@ where
     fn setup_bitvmx_aggregated_dispute_pubkey(&mut self) -> Result<()> {
         info!("Setup BitVMX Aggregated Dispute key");
 
-        let dispute_key_id = self.get_deterministic_dispute_key_id();
+        let dispute_key_id = self.get_dispute_aggregated_key_id()?;
         self.state.ctx.agg_dispute_key = Some((dispute_key_id, None));
 
         let committee_dispute_keys = self.get_committee_keys_by_type(DISPUTE_KEY_INDEX)?;
         let communication_data = self.ctx_member_communication_data(self.my_address().into())?;
 
+        // Bitvmx responds with the aggregated key
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetupKey(
             dispute_key_id,
             communication_data,
@@ -1101,11 +1120,11 @@ where
     }
     fn get_flow_for_committee_id(
         &mut self,
-        committee_id: alloy_primitives::U256,
+        _committee_id: alloy_primitives::U256,
     ) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
         // TODO optimize this search by keeping convenient map of committee_id -> flow_id or alike
 
-        // TODO(agus) for now return the first flow until NewPendingCommittee contains committeeId, we we are not testing with several committees so it will work
+        // TODO(agus) for now return the first flow until NewPendingCommittee contains committeeId, we are not testing with several committees so it will work
         self.flows.values_mut().next()
 
         // self.flows.values_mut().find(|f| {
