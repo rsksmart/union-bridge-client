@@ -122,7 +122,7 @@ async fn main() {
             .await;
     } else {
         TestWorld::cucumber()
-            .init_tracing()
+            // .init_tracing()
             .max_concurrent_scenarios(Some(1)) // Run in sequence to avoid conflicts between scenarios
             .before(|_, _, _, world: &mut TestWorld| {
                 Box::pin(async move {
