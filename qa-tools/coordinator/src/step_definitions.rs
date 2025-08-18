@@ -132,7 +132,7 @@ async fn enough_confirmations_received(world: &mut TestWorld) {
         sleep(Duration::from_millis(100)).await;
     }
     println!("Successfully mined {} blocks.", blocks_to_mine);
-    sleep(Duration::from_secs(3)).await;
+    sleep(Duration::from_secs(6)).await;
 }
 
 #[then(expr = "the pegin accept should be registered in the contract")]

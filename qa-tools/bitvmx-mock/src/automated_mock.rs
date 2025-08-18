@@ -36,17 +36,17 @@ pub struct PrevoutData {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct PeginRequestedPayload {
-    pub committeeId: String,
-    pub requestPeginTxHash: String,
-    pub acceptPeginTxHash: String,
-    pub vout: u64,
-    pub streamId: u64,
-    pub packetNumber: u64,
-    pub requestPeginInfo: RequestPeginTempInfo,
-    pub prevoutData: PrevoutData,
-    pub acceptPeginSignatureMessage: String,
+    pub txid: String,
+    pub amount: u64,
+    pub accept_pegin_sighash: Vec<u8>,
+    pub take_aggregated_key: String,
+    pub operators_take_key: Vec<String>,
+    pub slot_index: u64,
+    pub committee_id: String,
+    pub rootstock_address: String,
+    pub reimbursement_pubkey: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -157,11 +157,13 @@ impl AutomatedBitVmxMock {
                 };
             }
             IncomingBitVMXApiMessages::SetVar(flow_id, name, VariableTypes::String(data)) => {
+                println!("SetVar received: {}", name);
                 match name.as_str() {
-                    "PeginRequested" => {
+                    "PeginRequest" => {
+                        println!("PeginRequest received: {}", data);
                         let payload: PeginRequestedPayload = serde_json::from_str(&data)
-                            .context("Invalid PeginRequested JSON payload")?;
-                        info!("Pegin requested payload: {:?}", payload);
+                            .expect("Invalid PeginRequested JSON payload");
+                        println!("Pegin requested payload: {:?}", payload);
                         *self.last_pegin_requested_flow_id.lock().unwrap() = Some(flow_id);
                     }
                     "PeginAccepted" => {
@@ -170,7 +172,9 @@ impl AutomatedBitVmxMock {
                         info!("Pegin accepted payload: {:?}", payload);
                         *self.last_pegin_accepted_flow_id.lock().unwrap() = Some(flow_id);
                     }
-                    _ => {}
+                    _ => {
+                        info!("Unhandled SetVar name: {}", name);
+                    }
                 }
             }
             IncomingBitVMXApiMessages::GetSPVProof(_tx_id) => {
