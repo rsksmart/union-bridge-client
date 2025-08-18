@@ -16,7 +16,7 @@ use union_contracts::bindings::peg_manager::PegManager::{
     PeginAccepted, PeginRequested, PegoutRegistered, PegoutRequested,
 };
 use union_contracts::bindings::signature_manager::SignatureManager::{
-    AllNoncesReady, AllSignaturesReady,
+    AllNoncesReady, AllOperatorTakeTxHashesAdded, AllSignaturesReady
 };
 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-183
 
@@ -31,6 +31,7 @@ pub enum RskPegManagerEvents {
     RemoveRegisteredPeginRequest(PeginRequestedEvent),
     AllNoncesReady(AllNoncesReadyEvent),
     AllSignaturesReady(AllSignaturesReadyEvent),
+    AllOperatorTakeTxHashesAdded(AllOperatorTakeTxHashesAddedEvent),
     NewCommitteePending(NewCommitteePendingEvent),
     NewCommitteeReady(NewCommitteeReadyEvent),
     AllCommunicationDataReady(AllCommunicationDataReadyEvent),
@@ -48,6 +49,7 @@ pub type PeginRequestedEvent = EventWithBlock<PeginRequested>;
 pub type PeginAcceptedEvent = EventWithBlock<PeginAccepted>;
 pub type AllNoncesReadyEvent = EventWithBlock<Hash256>;
 pub type AllSignaturesReadyEvent = EventWithBlock<Hash256>;
+pub type AllOperatorTakeTxHashesAddedEvent = EventWithBlock<AllOperatorTakeTxHashesAdded>;
 pub type PegoutRequestedEvent = EventWithBlock<PegoutRequested>;
 pub type PegoutRegisteredEvent = EventWithBlock<PegoutRegistered>;
 pub type NewCommitteePendingEvent = EventWithBlock<NewPendingCommittee>;
@@ -96,6 +98,10 @@ impl EventDecoder {
         dispatcher.insert(
             AllSignaturesReady::SIGNATURE_HASH,
             Self::decode_all_signatures_ready_event as DecoderFn,
+        );
+        dispatcher.insert(
+            AllOperatorTakeTxHashesAdded::SIGNATURE_HASH,
+            Self::decode_all_operator_take_tx_hashes_added_event as DecoderFn,
         );
         dispatcher.insert(
             PegoutRegistered::SIGNATURE_HASH,
@@ -321,6 +327,25 @@ impl EventDecoder {
         match AllSignaturesReady::decode_log_data(&log_data) {
             Ok(event) => RskPegManagerEvents::AllSignaturesReady(AllSignaturesReadyEvent {
                 inner: Hash256::from(event.hashToSign),
+                block_number,
+                block_hash,
+                removed,
+                tx_hash,
+            }),
+            Err(_) => UnknownEvent,
+        }
+    }
+
+    fn decode_all_operator_take_tx_hashes_added_event(
+        log_data: &LogData,
+        block_number: BlockNumber,
+        block_hash: BlockHash,
+        removed: bool,
+        tx_hash: TxHash,
+    ) -> RskPegManagerEvents {
+        match AllOperatorTakeTxHashesAdded::decode_log_data(&log_data) {
+            Ok(event) => RskPegManagerEvents::AllOperatorTakeTxHashesAdded(AllOperatorTakeTxHashesAddedEvent {
+                inner: event,
                 block_number,
                 block_hash,
                 removed,
@@ -714,6 +739,53 @@ mod tests {
                 assert_eq!(data.tx_hash, expected_tx_hash);
             }
             _ => panic!("Expected AllSignaturesReady event"),
+        }
+    }
+
+    #[test]
+    fn test_decode_all_operator_take_tx_hashes_added_event() {
+        let expected_block_hash = H256::from_low_u64_be(777);
+        let expected_block_num = 333;
+        let expected_accept_pegin_tx_hash = H256::from_low_u64_be(555);
+
+        let expected_event = AllOperatorTakeTxHashesAdded {
+            acceptPeginTxHash: expected_accept_pegin_tx_hash
+                .as_bytes()
+                .try_into()
+                .expect("Failed to decode acceptPeginTxHash"),
+        };
+
+        let data = DataBytes::new(expected_event.encode_log_data().data.to_vec());
+        let topics = expected_event
+            .encode_topics()
+            .iter()
+            .map(|t| Hash256::from(B256::from(*t)))
+            .collect();
+
+        let log_event = LogEvent::new(data, topics);
+        let expected_tx_hash = TxHash::from(H256::random());
+        let log_info = LogInfo::new(
+            generate_fake_address(1),
+            expected_block_hash.into(),
+            expected_block_num.into(),
+            expected_tx_hash,
+            1,
+            true,
+        );
+
+        let rsk_log = RskLog::new(log_info, log_event);
+
+        let decoder = EventDecoder::new();
+        let result = decoder.decode(rsk_log);
+        match result {
+            RskPegManagerEvents::AllOperatorTakeTxHashesAdded(data) => {
+                assert_eq!(data.inner.acceptPeginTxHash.as_slice(), expected_accept_pegin_tx_hash.as_bytes());
+                assert_eq!(data.block_number, expected_block_num);
+                assert_eq!(data.block_hash, expected_block_hash.into());
+                assert_eq!(data.removed, true);
+                assert_eq!(data.tx_hash, expected_tx_hash);
+            }
+            _ => panic!("Expected AllOperatorTakeTxHashesAdded event"),
         }
     }
 

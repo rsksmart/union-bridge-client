@@ -10,6 +10,7 @@ use union_contracts::bindings::signature_manager::SignatureManager::SignatureMan
 
 pub(crate) use crate::contracts::interactions::add_member_nonce::AddMemberNonceInvoke;
 pub(crate) use crate::contracts::interactions::add_member_signature::AddMemberSignatureInvoke;
+pub(crate) use crate::contracts::interactions::add_operator_take_tx_hash::AddOperatorTakeTxHashInvoke;
 
 #[cfg_attr(test, automock)]
 pub trait SignatureManagerContractApi {
@@ -21,6 +22,13 @@ pub trait SignatureManagerContractApi {
     ) -> TransactionReceiptResult;
 
     async fn add_member_signature(
+        &self,
+        hash_to_sign: FixedBytes32,
+        signature: FixedBytes32,
+        gas_bumps: u8,
+    ) -> TransactionReceiptResult;
+
+    async fn add_operator_take_tx_hash(
         &self,
         hash_to_sign: FixedBytes32,
         signature: FixedBytes32,
@@ -71,6 +79,22 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
             || {
                 self.contract_instance
                     .addMemberSignature(hash_to_sign.clone(), signature.clone())
+            },
+            gas_bumps,
+        )
+        .await
+    }
+
+    async fn add_operator_take_tx_hash(
+        &self,
+        accept_pegin_tx_hash: FixedBytes32,
+        take_tx_hash: FixedBytes32,
+        gas_bumps: u8,
+    ) -> TransactionReceiptResult {
+        send_tx_with_gas_bump(
+            || {
+                self.contract_instance
+                    .addOperatorTakeTxHash(accept_pegin_tx_hash.clone(), take_tx_hash.clone())
             },
             gas_bumps,
         )

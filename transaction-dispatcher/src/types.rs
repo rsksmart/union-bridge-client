@@ -1,7 +1,7 @@
 use alloy_primitives::FixedBytes;
 use alloy_primitives::{Address, U256};
 use anyhow::{Context, Result, anyhow, ensure};
-use bitcoin::{Transaction, TxIn, TxOut};
+use bitcoin::{Transaction, TxIn, TxOut, Txid};
 use common::msg_broker::bitvmx_types::{P2PAddress, PeerId};
 use common::{msg_broker::bitvmx_types::BtcTxSPVProof, types::Hash256};
 use musig2::{PartialSignature, PubNonce};
@@ -79,6 +79,12 @@ pub struct AddMemberSignatureInput {
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+pub struct AddOperatorTakeTxHashInput {
+    pub accept_pegin_tx_hash: Txid,
+    pub take_tx_hash: Vec<u8>,
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct TxSentOutput {
     pub transaction_hash: String,
     pub success: bool,
@@ -86,6 +92,7 @@ pub struct TxSentOutput {
 
 pub type AddMemberNonceOutput = TxSentOutput;
 pub type AddMemberSignatureOutput = TxSentOutput;
+pub type AddOperatorTakeTxHashOutput = TxSentOutput;
 pub type RequestPeginInput = BtcTxSPVProofInput;
 pub type RegisterPegInInput = BtcTxSPVProofInput;
 pub type AcceptPeginInput = BtcTxSPVProofInput;
