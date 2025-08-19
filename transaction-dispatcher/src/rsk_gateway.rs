@@ -18,9 +18,10 @@ use crate::types::{
     AddMemberSignatureInput, AddMemberSignatureOutput, ApplyToStreamInput, ApplyToStreamOutput,
     DepositAggregatedKeyInput, DepositAggregatedKeyOutput, DepositCommunicationDataInput,
     DepositCommunicationDataOutput, GetCommitteeInput, GetCommitteeOutput,
-    GetMemberCommunicationDataOutput, GetMemberPublicKeysInput, GetMemberPublicKeysOutput,
-    PeginAddressInput, PeginAddressOutput, RegisterPegoutInput, RegisterPegoutOutput,
-    RequestPeginInput, RequestPeginOutput, RequestPegoutInput, RequestPegoutOutput,
+    GetCommunicationDataInput, GetCommunicationDataOutput, GetMemberPublicKeysInput,
+    GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterPegoutInput,
+    RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
+    RequestPegoutOutput,
 };
 use alloy_primitives::U256;
 use alloy_provider::Provider;
@@ -67,6 +68,8 @@ where
 }
 
 pub trait RskContractsGatewayApi {
+    fn my_address(&self) -> Address;
+
     fn get_temporary_pegin_address(
         &self,
         input: PeginAddressInput,
@@ -124,8 +127,8 @@ pub trait RskContractsGatewayApi {
 
     fn get_committee_communication_data(
         &self,
-        stream_id: u64,
-    ) -> impl Future<Output = Result<GetMemberCommunicationDataOutput, DomainErrors>>;
+        input: GetCommunicationDataInput,
+    ) -> impl Future<Output = Result<GetCommunicationDataOutput, DomainErrors>>;
 
     fn deposit_communication_data(
         &self,
@@ -140,6 +143,7 @@ pub trait RskContractsGatewayApi {
 
 #[derive(Clone)]
 pub struct RskContractsGateway<P: Provider> {
+    member_address: Address,
     contract_address: Address,
     get_temporary_pegin_address_call: GetTemporaryPeginAddressCall<PegManagerContract<P>>,
     request_pegin_invoke: RequestPeginInvoke<PegManagerContract<P>>,
@@ -186,6 +190,7 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             CommitteeRegistryContract::new(provider.clone(), committee_registry_address.into());
 
         Ok(RskContractsGateway {
+            member_address,
             contract_address,
             get_temporary_pegin_address_call: GetTemporaryPeginAddressCall::new(
                 peg_manager_contract.clone(),
@@ -223,7 +228,6 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             ),
             get_member_communication_data_call: GetMemberCommunicationDataCall::new(
                 committee_registry_contract.clone(),
-                member_address.into(),
             ),
             apply_to_stream_invoke: ApplyToStreamInvoke::new(
                 committee_registry_contract.clone(),
@@ -252,6 +256,10 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
 }
 
 impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
+    fn my_address(&self) -> Address {
+        self.member_address
+    }
+
     async fn get_temporary_pegin_address(
         &self,
         input: PeginAddressInput,
@@ -296,21 +304,6 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
 
         self.accept_pegin_invoke.run(input).await.map_err(|err| {
             error!("Error on accept_pegin_invoke: {}", err);
-            err
-        })
-    }
-
-    async fn request_pegout(
-        &self,
-        input: RequestPegoutInput,
-    ) -> Result<RequestPegoutOutput, DomainErrors> {
-        info!(
-            "Interacting with PegManager#tryPegoutRequest @ {}",
-            self.contract_address
-        );
-
-        self.request_pegout_invoke.run(input).await.map_err(|err| {
-            error!("Error on try_pegout_invoke: {}", err);
             err
         })
     }
@@ -364,6 +357,21 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
                 error!("Error on notify_check_fork_completion_invoke: {}", err);
                 err
             })
+    }
+
+    async fn request_pegout(
+        &self,
+        input: RequestPegoutInput,
+    ) -> Result<RequestPegoutOutput, DomainErrors> {
+        info!(
+            "Interacting with PegManager#tryPegoutRequest @ {}",
+            self.contract_address
+        );
+
+        self.request_pegout_invoke.run(input).await.map_err(|err| {
+            error!("Error on try_pegout_invoke: {}", err);
+            err
+        })
     }
 
     async fn register_pegout(
@@ -431,15 +439,15 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
 
     async fn get_committee_communication_data(
         &self,
-        stream_id: u64,
-    ) -> Result<GetMemberCommunicationDataOutput, DomainErrors> {
+        input: GetCommunicationDataInput,
+    ) -> Result<GetCommunicationDataOutput, DomainErrors> {
         info!(
             "Interacting with CommitteeRegistry#getMemberCommunicationData @ {}",
             self.contract_address
         );
 
         self.get_member_communication_data_call
-            .run(stream_id)
+            .run(input)
             .await
             .map_err(|err| {
                 error!("Error on get_member_communication_data_call: {}", err);

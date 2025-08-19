@@ -283,6 +283,7 @@ pub(crate) mod tests {
         test_utils::rsk_block_generator::{
             create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
         },
+        types,
         types::{RskBlockAndUncles, TxHash},
     };
     use mockall::mock;
@@ -298,9 +299,10 @@ pub(crate) mod tests {
         AddMemberSignatureInput, AddMemberSignatureOutput, ApplyToStreamInput, ApplyToStreamOutput,
         DepositAggregatedKeyInput, DepositAggregatedKeyOutput, DepositCommunicationDataInput,
         DepositCommunicationDataOutput, GetCommitteeInput, GetCommitteeOutput,
-        GetMemberCommunicationDataOutput, GetMemberPublicKeysInput, GetMemberPublicKeysOutput,
-        PeginAddressInput, PeginAddressOutput, RegisterPegoutInput, RegisterPegoutOutput,
-        RequestPeginInput, RequestPeginOutput, RequestPegoutInput, RequestPegoutOutput,
+        GetCommunicationDataInput, GetCommunicationDataOutput, GetMemberPublicKeysInput,
+        GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterPegoutInput,
+        RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
+        RequestPegoutOutput,
     };
 
     fn create_fake_request_event(pegout_id: &str) -> RequestAdvanceFunds {
@@ -593,6 +595,8 @@ pub(crate) mod tests {
         pub RskContractsGatewayApi {}
 
         impl RskContractsGatewayApi for RskContractsGatewayApi {
+            fn my_address(&self) -> types::Address;
+
             async fn get_temporary_pegin_address(
                 &self,
                 input: PeginAddressInput,
@@ -649,8 +653,8 @@ pub(crate) mod tests {
 
             async fn get_committee_communication_data(
                 &self,
-                stream_id: u64,
-            ) -> Result<GetMemberCommunicationDataOutput, DomainErrors>;
+                input: GetCommunicationDataInput,
+            ) -> Result<GetCommunicationDataOutput, DomainErrors>;
 
             async fn deposit_communication_data(
                 &self,

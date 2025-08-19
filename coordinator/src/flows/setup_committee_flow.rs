@@ -24,17 +24,17 @@ use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 
 use crate::user_requests::ApplyToStream;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
-    AllCommunicationDataReady, CommitteeMember, CommunicationData, NewPendingCommittee,
+    CommitteeMember, NewPendingCommittee,
 };
 
+use common::types;
 use common::types::RskBlockAndUncles;
 #[cfg(test)]
 use mockall::automock;
-use primitive_types::U256;
 use transaction_dispatcher::types::{
     ApplyToStreamInput, CommitteePublicKey, DepositAggregatedKeyInput,
-    DepositCommunicationDataInput, DepositCommunicationDataOutput, GetMemberPublicKeysInput,
-    GetMemberPublicKeysOutput, P2PAddressParser,
+    DepositCommunicationDataInput, DepositCommunicationDataOutput, GetCommunicationDataInput,
+    GetMemberPublicKeysInput, GetMemberPublicKeysOutput, P2PAddressParser,
 };
 
 const NO_LEADER_IDX: u16 = 0;
@@ -248,7 +248,7 @@ pub(crate) struct SetupCommitteeFlow<CG: RskContractsGatewayApi, BC: BitVmxBroke
     contracts: Rc<CG>,
     rt_sync: RuntimeSync,
     bitvmx_broker: Rc<BC>,
-    blockchain_view: Rc<RefCell<BlockchainView>>,
+    _blockchain_view: Rc<RefCell<BlockchainView>>,
     state: State,
 }
 
@@ -262,13 +262,17 @@ where
             contracts,
             rt_sync,
             bitvmx_broker,
-            blockchain_view: Rc::new(RefCell::new(BlockchainView::new())),
+            _blockchain_view: Rc::new(RefCell::new(BlockchainView::new())),
             state: State {
                 flow_id,
                 step: Steps::UserRequest,
                 ctx: FlowContext::default(),
             },
         }
+    }
+
+    fn my_address(&self) -> types::Address {
+        self.contracts.my_address()
     }
 
     fn close_pub_key_req(
@@ -353,14 +357,14 @@ where
 
     fn setup_dispute_core_for_member(
         &mut self,
-        member_idx: usize,
+        _member_idx: usize,
         comittee_id: Uuid,
-        member: &CommitteeMember,
+        _member: &CommitteeMember,
         addresses: &Vec<P2PAddress>,
     ) -> Result<()> {
         // TODO see example of the calling loop from Diego as reference: https://rootstocklabs.slack.com/archives/D07SBTC8ECS/p1753981406212199
 
-        let my_utxos = self.get_my_funding_utxos()?;
+        let _my_utxos = self.get_my_funding_utxos()?;
 
         // TODO SetVar of DisputeCoreData containing my utxos
 
@@ -380,7 +384,7 @@ where
         Ok(self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetSignedPubKey(req_id, true)))
     }
 
-    fn setup_committee(&self) -> Result<Uuid> {
+    fn setup_committee(&self) -> Result<()> {
         info!("Setting up committee");
 
         // TODO to be built by these two matching by address:
@@ -389,7 +393,7 @@ where
         let members: Vec<CommitteeMember> = Vec::new();
 
         // I will be added as the last member
-        let my_index = members.len();
+        let _my_index = members.len();
 
         let my_role = self
             .state
@@ -456,7 +460,7 @@ where
             VariableTypes::String(serde_json::to_string(&new_committee)?),
         ));
 
-        Ok(committee_id)
+        Ok(())
     }
 
     // TODO(iago-2) move ctx_xxx methods to FlowContext struct
@@ -586,16 +590,24 @@ where
         )
     }
 
-    fn get_my_communication_data_from_contracts(&self) -> Result<Vec<P2PAddress>> {
+    fn get_communication_data_from_contracts(
+        &self,
+        member_address: types::Address,
+    ) -> Result<Vec<P2PAddress>> {
         let stream_id = self
             .state
             .ctx
             .get_stream_id()
             .context("Get Communication Data")? as u64;
 
+        let input = GetCommunicationDataInput {
+            member_address: member_address.into(),
+            stream_id,
+        };
+
         let comm_data = self
             .rt_sync
-            .run(self.contracts.get_committee_communication_data(stream_id))?;
+            .run(self.contracts.get_committee_communication_data(input))?;
 
         let res = comm_data
             .communication_data
@@ -619,10 +631,15 @@ where
 
         info!("Depositing communication data for stream {stream_id}");
 
+        let input = GetCommunicationDataInput {
+            member_address: self.my_address().into(),
+            stream_id,
+        };
+
         // get my communication data to communicate with the other members
         let communication_data = self
             .rt_sync
-            .run(self.contracts.get_committee_communication_data(stream_id))?
+            .run(self.contracts.get_committee_communication_data(input))?
             .communication_data;
 
         self.rt_sync.run(
@@ -866,7 +883,7 @@ where
             .context("Setting Aggregated Take key")?;
 
         let comm_data = self
-            .get_my_communication_data_from_contracts()
+            .get_communication_data_from_contracts(self.my_address())
             .context("Setting Aggregated Take key")?;
 
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetupKey(
@@ -888,7 +905,7 @@ where
             .context("Setting Aggregated Dispute Key")?;
 
         let comm_data = self
-            .get_my_communication_data_from_contracts()
+            .get_communication_data_from_contracts(self.my_address())
             .context("Setting Aggregated Dispute Key")?;
 
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetupKey(
@@ -904,20 +921,17 @@ where
     fn setup_dispute_core_protocol(&mut self) -> Result<()> {
         info!("Setting up dispute core protocol");
 
-        let committee_id = self.setup_committee()?;
+        // TODO complete and validate
+
+        self.setup_committee()?;
 
         let members: Vec<CommitteeMember> = self.state.ctx.get_committee_members()?;
 
-        let addresses: Vec<P2PAddress> = members
-            .iter()
-            .map(|m| P2PAddress {
-                address: m.memberAddress.to_lower_hex_string(),
-                // TODO(iago) get_communication_data_from_contracts for all
-                peer_id: PeerId("TODO(iago)".to_string()),
-            })
-            .collect();
+        let committee_id = self.state.ctx.get_committee_id()?;
 
         for (idx, member) in members.iter().enumerate() {
+            let addresses =
+                self.get_communication_data_from_contracts(member.memberAddress.into())?;
             self.setup_dispute_core_for_member(idx, committee_id, member, &addresses)?;
         }
 
@@ -1224,10 +1238,6 @@ fn parse_stream_id_from_u64(stream_id: u64) -> Result<u8> {
 fn parse_stream_id_from_u256(stream_id: &alloy_primitives::U256) -> Result<u8> {
     u8::try_from(stream_id)
         .with_context(|| format!("Failed to convert stream_id {stream_id} to u8"))
-}
-
-fn parse_u256(data: &alloy_primitives::U256) -> U256 {
-    U256::from_big_endian(&data.to_be_bytes_vec())
 }
 
 fn signed_to_committee_public_key(signed_pk: SignedPublicKey) -> CommitteePublicKey {

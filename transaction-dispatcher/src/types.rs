@@ -183,7 +183,13 @@ pub struct GetCommitteeOutput {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct GetMemberCommunicationDataOutput {
+pub struct GetCommunicationDataInput {
+    pub stream_id: u64,
+    pub member_address: Address,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetCommunicationDataOutput {
     pub communication_data: Vec<CommunicationData>,
 }
 
