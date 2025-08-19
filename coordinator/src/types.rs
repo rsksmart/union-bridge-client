@@ -3,12 +3,15 @@ use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanc
 use alloy_primitives::{B256, LogData};
 use alloy_sol_types::SolEvent;
 use bitcoin::PublicKey;
-use common::msg_broker::bitvmx_types::{PartialUtxo, ParticipantRole, PegOutAccepted};
+use common::msg_broker::bitvmx_types::{
+    PartialUtxo, ParticipantRole, PegOutAccepted, PeginAcceptedMessage,
+};
 use common::types::{Address, BlockHash, BlockNumber, Hash256, RskLog, TxHash};
 use log::{error, warn};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::hash::Hash;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     AllCommunicationDataReady, MemberInfoDeposited, NewCommittee, NewPendingCommittee,
 };
@@ -464,6 +467,70 @@ impl TryFrom<PegOutAccepted> for RegisterSignaturesBitVmxData {
             nonce: value.user_take_nonce,
             signature: value.user_take_signature,
         })
+    }
+}
+
+impl TryFrom<PeginAcceptedMessage> for RegisterSignaturesBitVmxData {
+    type Error = anyhow::Error;
+
+    fn try_from(value: PeginAcceptedMessage) -> Result<Self, Self::Error> {
+        Ok(RegisterSignaturesBitVmxData {
+            hash_to_sign: Hash256::from(alloy_primitives::FixedBytes::from(
+                <[u8; 32]>::try_from(value.operator_take_sighash)
+                    .map_err(|_| anyhow::anyhow!("Hash must be exactly 32 bytes"))?,
+            )),
+            nonce: value.accept_pegin_nonce,
+            signature: value.accept_pegin_signature,
+        })
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub(crate) struct TickScheduler<K: Eq + Hash + Clone> {
+    pending: HashMap<K, u32>,
+}
+
+impl<K: Eq + Hash + Clone> TickScheduler<K> {
+    pub fn new() -> Self {
+        Self {
+            pending: HashMap::new(),
+        }
+    }
+
+    pub fn schedule(&mut self, id: K, delay_ticks: u32) {
+        self.pending.insert(id, delay_ticks);
+    }
+
+    pub fn cancel(&mut self, id: &K) {
+        self.pending.remove(id);
+    }
+
+    pub fn is_scheduled(&self, id: &K) -> bool {
+        self.pending.contains_key(id)
+    }
+
+    pub fn tick(&mut self) -> Vec<K> {
+        let mut ready: Vec<K> = Vec::new();
+        for (id, ticks) in self.pending.iter_mut() {
+            if *ticks > 0 {
+                *ticks -= 1;
+            }
+            if *ticks == 0 {
+                ready.push(id.clone());
+            }
+        }
+        for id in &ready {
+            self.pending.remove(id);
+        }
+        ready
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.pending.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.pending.clear();
     }
 }
 

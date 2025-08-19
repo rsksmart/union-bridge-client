@@ -128,7 +128,7 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
             },
             gas_bumps,
         )
-        .await
+            .await
     }
 
     async fn call_get_minimum_deposit(
