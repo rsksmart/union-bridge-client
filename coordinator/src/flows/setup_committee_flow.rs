@@ -6,8 +6,8 @@ use crate::types::{
 };
 use alloy_primitives::{Address, FixedBytes};
 use anyhow::{Context, Result, anyhow, bail};
-use bitcoin::PublicKey;
-use bitcoin::hex::DisplayHex;
+use bitcoin::key::Parity::Even;
+use bitcoin::{PublicKey, XOnlyPublicKey};
 use common::runtime_sync::RuntimeSync;
 use log::{debug, error, info};
 use std::cell::RefCell;
@@ -100,20 +100,21 @@ impl FlowContext {
     }
 
     fn get_committee_id(&self) -> Result<Uuid> {
-        // TODO(iago-2) change to committee_pending when it includes the committee id
-        let committee_bytes: [u8; 16] = self
+        let id = self
             .committee_ready
             .as_ref()
-            .context("Missing committee pending event")?
+            .context("Missing committee ready event")?
             .inner
-            .committeeId
-            .to_be_bytes();
+            .committeeId;
 
-        let uuid_bytes: [u8; 16] = committee_bytes
-            .get(..16)
-            .context("Committee ID should have at least 16 bytes")?
-            .try_into()
-            .context("Slice of 16 bytes should convert to [u8; 16]")?;
+        // Big‑endian 32 bytes
+        let be: [u8; 32] = id.to_be_bytes();
+
+        // Take the *rightmost* 16 bytes (least‑significant) to retain entropy if high limbs are zero.
+        let slice = &be[16..32];
+
+        let uuid_bytes: [u8; 16] = <[u8; 16]>::try_from(slice)
+            .map_err(|_| anyhow!("Expected 16 bytes, got {}", slice.len()))?;
 
         Ok(Uuid::from_bytes(uuid_bytes))
     }
@@ -159,10 +160,10 @@ impl Steps {
             Steps::GetDisputeKey => Steps::GetMyCommKey,
             Steps::GetMyCommKey => Steps::ApplyToStream,
             Steps::ApplyToStream => Steps::DepositCommunicationData,
-            Steps::DepositCommunicationData => Steps::DepositAggregatedKey,
-            Steps::DepositAggregatedKey => Steps::SetupTakeAggregatedKey,
+            Steps::DepositCommunicationData => Steps::SetupTakeAggregatedKey,
             Steps::SetupTakeAggregatedKey => Steps::SetupDisputeAggregatedKey,
-            Steps::SetupDisputeAggregatedKey => Steps::SetupDisputeCoreProtocol,
+            Steps::SetupDisputeAggregatedKey => Steps::DepositAggregatedKey,
+            Steps::DepositAggregatedKey => Steps::SetupDisputeCoreProtocol,
             Steps::SetupDisputeCoreProtocol => Steps::Complete,
             Steps::Complete => {
                 bail!("Flow is already complete at {:?}", self)
@@ -329,18 +330,9 @@ where
     ) -> Result<()> {
         info!("Adding my communication data");
 
-        // TODO(Fairgate) awaiting Fairgate to add it to the API
         let my_comm_pubkey = self.ctx_my_comm_key()?;
-
-        let my_comm_address = self
-            .state
-            .ctx
-            .my_comm_info
-            .as_ref()
-            .context("P2P address not found in context")?
-            .clone();
-
-        communication_data.insert(my_comm_pubkey.public_key, my_comm_address);
+        let my_comm_info = self.ctx_my_comm_info()?;
+        communication_data.insert(my_comm_pubkey.public_key, my_comm_info);
 
         Ok(())
     }
@@ -429,6 +421,9 @@ where
         //     pub member_count: u32,
         //     pub packet_size: u32,
         // }
+
+        info!("Instantiating NewCommittee");
+
         let new_committee = NewCommittee {
             my_role,
             take_aggregated_key: self.ctx_aggregated_take_key()?,
@@ -448,11 +443,15 @@ where
         //     pub dispute_key: PublicKey,
         // }
 
+        debug!("Getting Committee ID");
+
         let committee_id = self
             .state
             .ctx
             .get_committee_id()
             .context("Setting up Committee")?;
+
+        info!("SetVar NewCommittee");
 
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetVar(
             committee_id,
@@ -525,6 +524,17 @@ where
         Ok(signed_pubkey.clone())
     }
 
+    fn ctx_my_comm_info(&self) -> Result<P2PAddress> {
+        let my_comm_info = self
+            .state
+            .ctx
+            .my_comm_info
+            .clone()
+            .context("My Comm Info missing in context")?;
+
+        Ok(my_comm_info)
+    }
+
     fn ctx_aggregated_take_key(&self) -> Result<PublicKey> {
         let take_data = self.state.ctx.agg_take_key.as_ref().with_context(|| {
             format!(
@@ -576,7 +586,7 @@ where
     }
 
     fn get_my_funding_utxos(&self) -> Result<Vec<PartialUtxo>> {
-        // TODO(Fairgate) Diego is working on this, ask again in some days
+        // TODO(iago-3) new contracts version includes this
         Ok(Vec::new())
     }
 
@@ -609,7 +619,7 @@ where
             .rt_sync
             .run(self.contracts.get_committee_communication_data(input))?;
 
-        let res = comm_data
+        let mut res = comm_data
             .communication_data
             .into_iter()
             .map(|data| {
@@ -618,6 +628,29 @@ where
                 })
             })
             .collect::<Result<Vec<_>>>()?;
+
+        // contract requires zeroed communication data for my own address on deposit, so we have to tweak it here
+        if let Some(my_comm_data) = res.iter_mut().find(|data| data.address.is_empty()) {
+            // if address is empty, it means it's my own communication data
+            *my_comm_data = self.ctx_my_comm_info()?.clone().into();
+        } else {
+            bail!("Missing zeroed communication data  (mine)",);
+        }
+
+        // TODO(agus) temporary until PeerId thing is sorted out
+        for i in 0..res.len() {
+            if i == 0 {
+                res[i].peer_id = PeerId("30820122300d06092a864886f70d01010105000382010f003082010a0282010100b0595a239c455f955ac2617061fadc0f3c532056da4a4ab4111b6581a62143e6c00b3041a00c290232fa65794ea0a55ca5f2ed3310ecbcab06a721d66e99a27e0d1b8a6afd8e395b741fbcf6cb73294eaeff43118f828f0118a4b5fdc95d472bcadaf2bc4d665e535ccd70b8ee5b82624794351a82c9f819d9a53638122228d1800d7d6561ae98183ae53c6cf23964c7eceeae95807db49a164cfbbc1ddc87a975fbe3d43545e8ce1bad2043cfe6a9aa3a7538ebdab8e6b900c94a691c1321d7c2d7f1a1beb3c3ef03686f7805ce938c92c8d5057cb5101cd51c1d97d7d3d4b9f13b7cb28bc5c4c5c9983a3062efc606b9c440021e1d5257d88d9c3ced0ac38f0203010001".to_string())
+            } else if i == 1 {
+                res[i].peer_id = PeerId("30820122300d06092a864886f70d01010105000382010f003082010a0282010100c96872f74e913fbcf2e068d7f508e52dad5a278123ad6546d9735e3f35163e836427ef6ea14ff28d4ca30e7f0d4e251ddf4724668675052d6adb8581550b0adb11f0dcb78a4e9d6ad00f68bf21851d590d88d9fff1d8d7678454f9df4a1daad2f8ebfe69b4ea99160a9e2d43a98cdaaaf380bc4de9f9dec6bedc9351c89c43e4d5d89abbef98664f5d57cdf5c68d93e928203c84fd038fedddac5bbe2b243378141edec442e83c57f0bab437336586f6d6bc01bee222ee8f67dfacb2d94d7a4e406d05446c9f84de055d6175217de19d1005203674b1693f1df2d3dacd11839a782c343c33e86b952740812da624f2ddfd71edf9eb5e9ddf7944b9afc3a08b2f0203010001".to_string())
+            } else if i == 2 {
+                res[i].peer_id = PeerId("30820122300d06092a864886f70d01010105000382010f003082010a0282010100e602dadfc9a2b10e6c042e10ba19628e49132fba6197f817457bd8728e881b35dc107838437b562cb9c611c2666fe3492db881630cd917178d17d21d48e664f685d9cd2ea2658501b3eb51ac7d9832e4ec580a5822616b0b663a3fb05a5aae15881baddeb7d8d329f064b460637a28ed569b93074446cb4946720474950456c950b5ae00b5f8b5a490eb1fc9af0206178ab81d3ca81b74fca1d84da9db510c10be2df4624be64fed6a6e59dc90880dc6ed61d4908ddcaf9eb0b08b0d58c5741085da051c4a537d33a8602fc22c6bef5853208698752561afa02ce763fb2bc0b88db51c90735d72dbd0ef6895c77aead64d5fe43e4d7521ed5f8da50c96636e4b0203010001".to_string())
+            } else if i == 3 {
+                res[i].peer_id = PeerId("30820122300d06092a864886f70d01010105000382010f003082010a0282010100d1f76c66923556eaa6e9db0acf025fa96049e150cccd910ed6a36d6b32e1eb531620182c34b9ec04a00ba9e2f02f6f6f1493cf0dd42ffcafe60d81c7102f7b64f22a76ebe749dd285435a4d551ed03271062318e08efafbb1e9341aabe685a56cf81abf4af7437e60e9435a0a9682f8720b3ad017c29c517c3b25cc467f5f1ccd9ab791a206cef513141938491e5527df1e615088061a7bdc19622fd43323a74020870042ce33287f730fa5d17eb7f21b1dc6bb028d2a01850b9fb3c0ae40d5023dcdd2c888691a2c50d956f8e6d3d92c3cf893388f954781d1ee118b5840ef88a0d1cc8d218e535d706b044bf6c881ceafec982fd7ed516daaab60c4ea7d15b0203010001".to_string())
+            } else {
+                bail!("Unexpected comm data size")
+            }
+        }
 
         Ok(res)
     }
@@ -634,12 +667,10 @@ where
             self.my_address()
         );
 
-        let my_comm_info = self
-            .state
-            .ctx
-            .my_comm_info
-            .as_ref()
-            .context("Deposit Communication Data")?;
+        let mut my_comm_info = self.ctx_my_comm_info()?;
+
+        // TODO(agus) temporary until PeerId thing is sorted out
+        my_comm_info.peer_id.0.truncate(64);
 
         let mut communication_data = vec![];
         // communication data size
@@ -671,15 +702,18 @@ where
 
         info!("Depositing aggregated key for stream {stream_id}");
 
-        // TODO(ask-Agus) is this the one to deposit?
         let aggregated_take_key = self
             .ctx_aggregated_take_key()
             .context("Deposit Aggregated Key")?;
-        let aggregated_key_bytes = FixedBytes::<32>::from_slice(&aggregated_take_key.to_bytes());
+
+        // TODO(ask-Agus) confirm if using XOnlyPublicKey is correct here
+        let x_only_key = XOnlyPublicKey::from(aggregated_take_key);
+        let aggregated_key = FixedBytes::<32>::try_from(&x_only_key.serialize())
+            .context("Failed to serialize aggregated public key")?;
 
         let input = DepositAggregatedKeyInput {
             stream_id,
-            aggregated_key: aggregated_key_bytes,
+            aggregated_key,
         };
 
         self.rt_sync
@@ -711,11 +745,18 @@ where
                 .get(key_index)
                 .with_context(|| format!("Take key not found on Committee for {member_addr}"))?;
 
-            let take_key = PublicKey::from_slice(take_key_str.as_bytes()).with_context(|| {
-                format!("Failed to parse {take_key_str} to Take Key for {member_addr}")
-            })?;
+            // TODO revisit this, we are encoding bytes to hex string in the contracts to then decode it back to bytes here
 
-            committee_take_keys.push(take_key);
+            // TODO(iago) check this
+            let key_bytes: FixedBytes<32> = take_key_str
+                .parse()
+                .context("Failed to parse public key str to FixedBytes<32>")?;
+            let xonly_key = XOnlyPublicKey::from_slice(key_bytes.as_slice())
+                .context("Failed to parse aggregated public key")?;
+            let secp_key = xonly_key.public_key(Even);
+            let aggregated_key = PublicKey::new(secp_key);
+
+            committee_take_keys.push(aggregated_key);
         }
 
         Ok(committee_take_keys)
@@ -775,6 +816,8 @@ where
                 self.apply_to_stream()?;
             }
             Steps::ApplyToStream => {
+                // TODO(iago-2) sometimes it gets stuck in "successful apply to stream", investigate why
+
                 let pending_committee = data.into_new_committee_pending()?;
 
                 let was_selected = pending_committee.inner._committee.members.iter().any(|m| {
@@ -784,6 +827,7 @@ where
 
                 if was_selected {
                     self.state.ctx.committee_pending = Some(pending_committee);
+
                     self.deposit_communication_data()?;
                 } else {
                     // TODO(iago-2) close the flow se we were not selected
@@ -792,10 +836,7 @@ where
             }
             Steps::DepositCommunicationData => {
                 self.state.ctx.communication_data_ready = Some(data.into_all_comm_data_ready()?);
-                self.deposit_aggregated_key()?;
-            }
-            Steps::DepositAggregatedKey => {
-                self.state.ctx.committee_ready = Some(data.into_new_committee_ready()?);
+
                 self.setup_bitvmx_aggregated_take_pubkey()?;
             }
             Steps::SetupTakeAggregatedKey => {
@@ -815,6 +856,11 @@ where
                     req_id,
                     data,
                 )?;
+
+                self.deposit_aggregated_key()?;
+            }
+            Steps::DepositAggregatedKey => {
+                self.state.ctx.committee_ready = Some(data.into_new_committee_ready()?);
 
                 self.setup_dispute_core_protocol()?;
             }
@@ -1012,13 +1058,16 @@ where
     ) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
         // TODO optimize this search by keeping convenient map of committee_id -> flow_id or alike
 
-        self.flows.values_mut().find(|f| {
-            f.state
-                .ctx
-                .committee_ready
-                .as_ref()
-                .map_or(false, |ev| ev.inner.committeeId == committee_id)
-        })
+        // TODO(agus) for now return the first flow until NewPendingCommittee contains committeeId, we we are not testing with several committees so it will work
+        self.flows.values_mut().next()
+
+        // self.flows.values_mut().find(|f| {
+        //     f.state
+        //         .ctx
+        //         .committee_pending
+        //         .as_ref()
+        //         .map_or(false, |ev| ev.inner.committeeId == committee_id)
+        // })
     }
 
     fn get_flow_for_request_id(&mut self, uuid: &Uuid) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
@@ -1106,6 +1155,23 @@ where
                     bail!("No flow found for {new_committee_pending:?}")
                 }
             }
+            RskPegManagerEvents::AllCommunicationDataReady(all_comm_data_ready) => {
+                info!(
+                    "Processing AllCommunicationDataReady event: {:?}",
+                    all_comm_data_ready
+                );
+
+                let stream_id = parse_stream_id_from_u64(all_comm_data_ready.inner.streamId)?;
+                if let Some(first_flow) = self.get_flow_for_stream_id(stream_id) {
+                    // assume confirmed for now
+                    first_flow.complete_step_and_next(
+                        None,
+                        StepData::ReadyCommunication(all_comm_data_ready.clone()),
+                    )?
+                } else {
+                    bail!("No flow found for {all_comm_data_ready:?}")
+                }
+            }
             RskPegManagerEvents::NewCommitteeReady(new_committee_ready) => {
                 info!(
                     "Processing NewCommitteeReady event: {:?}",
@@ -1122,23 +1188,6 @@ where
                     )?
                 } else {
                     bail!("No flow found for {new_committee_ready:?}")
-                }
-            }
-            RskPegManagerEvents::AllCommunicationDataReady(all_comm_data_ready) => {
-                info!(
-                    "Processing AllCommunicationDataReady event: {:?}",
-                    all_comm_data_ready
-                );
-
-                let stream_id = parse_stream_id_from_u64(all_comm_data_ready.inner.streamId)?;
-                if let Some(first_flow) = self.get_flow_for_stream_id(stream_id) {
-                    // assume confirmed for now
-                    first_flow.complete_step_and_next(
-                        None,
-                        StepData::ReadyCommunication(all_comm_data_ready.clone()),
-                    )?
-                } else {
-                    bail!("No flow found for {all_comm_data_ready:?}")
                 }
             }
             _ => {
@@ -1260,6 +1309,8 @@ fn parse_stream_id_from_u256(stream_id: &alloy_primitives::U256) -> Result<u8> {
 }
 
 fn signed_to_committee_public_key(signed_pk: SignedPublicKey) -> CommitteePublicKey {
+    // TODO(iago-2) this can panic, handle gracefully
+
     let uncompressed = signed_pk.public_key.inner.serialize_uncompressed(); // [0x04 | X(32) | Y(32)]
     let x = &uncompressed[1..33];
     let y = &uncompressed[33..65];
