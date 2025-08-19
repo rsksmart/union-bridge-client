@@ -2,7 +2,7 @@ use crate::types::RskPegManagerEvents::UnknownEvent;
 use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
 use alloy_primitives::{B256, LogData};
 use alloy_sol_types::SolEvent;
-use common::msg_broker::bitvmx_types::PegOutAccepted;
+use common::msg_broker::bitvmx_types::{PegOutAccepted, PeginAcceptedMessage};
 use common::types::{BlockHash, BlockNumber, Hash256, RskLog, TxHash};
 use log::{error, warn};
 use musig2::{PartialSignature, PubNonce};
@@ -16,7 +16,7 @@ use union_contracts::bindings::peg_manager::PegManager::{
     PeginAccepted, PeginRequested, PegoutRegistered, PegoutRequested,
 };
 use union_contracts::bindings::signature_manager::SignatureManager::{
-    AllNoncesReady, AllOperatorTakeTxHashesAdded, AllSignaturesReady
+    AllNoncesReady, AllOperatorTakeTxHashesAdded, AllSignaturesReady,
 };
 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-183
 
@@ -344,13 +344,15 @@ impl EventDecoder {
         tx_hash: TxHash,
     ) -> RskPegManagerEvents {
         match AllOperatorTakeTxHashesAdded::decode_log_data(&log_data) {
-            Ok(event) => RskPegManagerEvents::AllOperatorTakeTxHashesAdded(AllOperatorTakeTxHashesAddedEvent {
-                inner: event,
-                block_number,
-                block_hash,
-                removed,
-                tx_hash,
-            }),
+            Ok(event) => RskPegManagerEvents::AllOperatorTakeTxHashesAdded(
+                AllOperatorTakeTxHashesAddedEvent {
+                    inner: event,
+                    block_number,
+                    block_hash,
+                    removed,
+                    tx_hash,
+                },
+            ),
             Err(_) => UnknownEvent,
         }
     }
@@ -432,6 +434,21 @@ impl TryFrom<PegOutAccepted> for RegisterSignaturesBitVmxData {
             )),
             nonce: value.user_take_nonce,
             signature: value.user_take_signature,
+        })
+    }
+}
+
+impl TryFrom<PeginAcceptedMessage> for RegisterSignaturesBitVmxData {
+    type Error = anyhow::Error;
+
+    fn try_from(value: PeginAcceptedMessage) -> Result<Self, Self::Error> {
+        Ok(RegisterSignaturesBitVmxData {
+            hash_to_sign: Hash256::from(alloy_primitives::FixedBytes::from(
+                <[u8; 32]>::try_from(value.operator_take_sighash)
+                    .map_err(|_| anyhow::anyhow!("Hash must be exactly 32 bytes"))?,
+            )),
+            nonce: value.accept_pegin_nonce,
+            signature: value.accept_pegin_signature,
         })
     }
 }
@@ -779,7 +796,10 @@ mod tests {
         let result = decoder.decode(rsk_log);
         match result {
             RskPegManagerEvents::AllOperatorTakeTxHashesAdded(data) => {
-                assert_eq!(data.inner.acceptPeginTxHash.as_slice(), expected_accept_pegin_tx_hash.as_bytes());
+                assert_eq!(
+                    data.inner.acceptPeginTxHash.as_slice(),
+                    expected_accept_pegin_tx_hash.as_bytes()
+                );
                 assert_eq!(data.block_number, expected_block_num);
                 assert_eq!(data.block_hash, expected_block_hash.into());
                 assert_eq!(data.removed, true);

@@ -288,7 +288,7 @@ pub(crate) mod tests {
     use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
     use transaction_dispatcher::types::{
         AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
-        AddMemberSignatureInput, AddMemberSignatureOutput, AddOperatorTakeTxHashInput, 
+        AddMemberSignatureInput, AddMemberSignatureOutput, AddOperatorTakeTxHashInput,
         AddOperatorTakeTxHashOutput, ApplyToStreamInput, ApplyToStreamOutput,
         DepositCommunicationDataInput, DepositCommunicationDataOutput, GetCommitteeInput,
         GetCommitteeOutput, GetMemberCommunicationDataOutput, GetMemberPublicKeysInput,

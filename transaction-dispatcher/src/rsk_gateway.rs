@@ -10,11 +10,12 @@ use crate::contracts::peg_manager::{
     register_pegout::RegisterPegoutInvoke, request_pegin::RequestPeginInvoke,
 };
 use crate::contracts::signature_manager::{
-    AddMemberNonceInvoke, AddMemberSignatureInvoke, AddOperatorTakeTxHashInvoke, SignatureManagerContract
+    AddMemberNonceInvoke, AddMemberSignatureInvoke, AddOperatorTakeTxHashInvoke,
+    SignatureManagerContract,
 };
 use crate::types::{
     AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
-    AddMemberSignatureInput, AddMemberSignatureOutput, AddOperatorTakeTxHashInput, 
+    AddMemberSignatureInput, AddMemberSignatureOutput, AddOperatorTakeTxHashInput,
     AddOperatorTakeTxHashOutput, ApplyToStreamInput, ApplyToStreamOutput,
     DepositCommunicationDataInput, DepositCommunicationDataOutput, GetCommitteeInput,
     GetCommitteeOutput, GetMemberCommunicationDataOutput, GetMemberPublicKeysInput,

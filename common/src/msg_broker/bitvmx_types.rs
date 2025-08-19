@@ -235,3 +235,16 @@ pub struct PegOutAccepted {
     pub user_take_nonce: PubNonce,
     pub user_take_signature: MaybeScalar,
 }
+
+/// Data structure received from BitVMX client containing pegin acceptance information.
+/// This is sent after BitVMX processes the pegin request and includes signature data
+/// and sighashes needed for the operator take and operator won transactions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeginAcceptedMessage {
+    pub committee_id: Uuid,
+    pub accept_pegin_txid: Txid,
+    pub accept_pegin_nonce: PubNonce,
+    pub accept_pegin_signature: MaybeScalar,
+    pub operator_take_sighash: Vec<u8>,
+    pub operator_won_sighash: Vec<u8>,
+}
