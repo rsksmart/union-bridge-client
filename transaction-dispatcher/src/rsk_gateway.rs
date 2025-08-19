@@ -1,7 +1,8 @@
 use crate::config::TransactionConfig;
 use crate::contracts::committee_registry::{
-    ApplyToStreamInvoke, CommitteeRegistryContract, DepositCommunicationDataInvoke,
-    GetCommitteeCall, GetMemberCommunicationDataCall, GetMemberPublicKeysCall,
+    ApplyToStreamInvoke, CommitteeRegistryContract, DepositAggregatedKeysInvoke,
+    DepositCommunicationDataInvoke, GetCommitteeCall, GetMemberCommunicationDataCall,
+    GetMemberPublicKeysCall,
 };
 use crate::contracts::peg_manager::{
     FakePegManagerContract, PegManagerContract, accept_pegin::AcceptPeginInvoke,
@@ -15,11 +16,11 @@ use crate::contracts::signature_manager::{
 use crate::types::{
     AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
     AddMemberSignatureInput, AddMemberSignatureOutput, ApplyToStreamInput, ApplyToStreamOutput,
-    DepositCommunicationDataInput, DepositCommunicationDataOutput, GetCommitteeInput,
-    GetCommitteeOutput, GetMemberCommunicationDataOutput, GetMemberPublicKeysInput,
-    GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterPegoutInput,
-    RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
-    RequestPegoutOutput,
+    DepositAggregatedKeyInput, DepositAggregatedKeyOutput, DepositCommunicationDataInput,
+    DepositCommunicationDataOutput, GetCommitteeInput, GetCommitteeOutput,
+    GetMemberCommunicationDataOutput, GetMemberPublicKeysInput, GetMemberPublicKeysOutput,
+    PeginAddressInput, PeginAddressOutput, RegisterPegoutInput, RegisterPegoutOutput,
+    RequestPeginInput, RequestPeginOutput, RequestPegoutInput, RequestPegoutOutput,
 };
 use alloy_primitives::U256;
 use alloy_provider::Provider;
@@ -130,6 +131,11 @@ pub trait RskContractsGatewayApi {
         &self,
         input: DepositCommunicationDataInput,
     ) -> impl Future<Output = Result<DepositCommunicationDataOutput, DomainErrors>>;
+
+    fn deposit_aggregated_key(
+        &self,
+        input: DepositAggregatedKeyInput,
+    ) -> impl Future<Output = Result<DepositAggregatedKeyOutput, DomainErrors>>;
 }
 
 #[derive(Clone)]
@@ -149,6 +155,7 @@ pub struct RskContractsGateway<P: Provider> {
     register_pegout_invoke: RegisterPegoutInvoke<PegManagerContract<P>>,
     get_committee_call: GetCommitteeCall<CommitteeRegistryContract<P>>,
     deposit_communication_data_invoke: DepositCommunicationDataInvoke<CommitteeRegistryContract<P>>,
+    deposit_aggregated_key_invoke: DepositAggregatedKeysInvoke<CommitteeRegistryContract<P>>,
 }
 
 impl<P: Provider + Clone> RskContractsGateway<P> {
@@ -226,6 +233,10 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             ),
             get_committee_call: GetCommitteeCall::new(committee_registry_contract.clone()),
             deposit_communication_data_invoke: DepositCommunicationDataInvoke::new(
+                committee_registry_contract.clone(),
+                tx_config.gas_bumps_t1,
+            ),
+            deposit_aggregated_key_invoke: DepositAggregatedKeysInvoke::new(
                 committee_registry_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
@@ -450,6 +461,24 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
             .await
             .map_err(|err| {
                 error!("Error on deposit_communication_data_invoke: {}", err);
+                err
+            })
+    }
+
+    async fn deposit_aggregated_key(
+        &self,
+        input: DepositAggregatedKeyInput,
+    ) -> Result<DepositAggregatedKeyOutput, DomainErrors> {
+        info!(
+            "Interacting with CommitteeRegistry#depositAggregatedKeys @ {}",
+            self.contract_address
+        );
+
+        self.deposit_aggregated_key_invoke
+            .run(input)
+            .await
+            .map_err(|err| {
+                error!("Error on deposit_aggregated_key_invoke: {}", err);
                 err
             })
     }

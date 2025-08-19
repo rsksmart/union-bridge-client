@@ -154,7 +154,7 @@ pub struct GetMemberPublicKeysOutput {
 pub struct ApplyToStreamInput {
     pub stream_id: u8, // Matches StreamDenomination enum in contracts
     pub role: u8,
-    pub public_keys: Vec<CommitteePublicKey>, // TODO(iago) change to [CommitteePublicKey; 3] when ready
+    pub public_keys: Vec<CommitteePublicKey>, // TODO(iago-2) change to [CommitteePublicKey; 3] when ready
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -195,6 +195,18 @@ pub struct DepositCommunicationDataInput {
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct DepositCommunicationDataOutput {
+    pub transaction_hash: String,
+    pub success: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DepositAggregatedKeyInput {
+    pub stream_id: u64,
+    pub aggregated_key: FixedBytes<32>,
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+pub struct DepositAggregatedKeyOutput {
     pub transaction_hash: String,
     pub success: bool,
 }
