@@ -24,7 +24,7 @@ use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 
 use crate::user_requests::ApplyToStream;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
-    CommitteeMember, NewPendingCommittee,
+    CommitteeMember, CommunicationData, NewPendingCommittee,
 };
 
 use common::types;
@@ -120,9 +120,9 @@ impl FlowContext {
 
     fn get_committee_members(&self) -> Result<Vec<CommitteeMember>> {
         let members = self
-            .committee_ready
+            .committee_pending
             .as_ref()
-            .context("Missing committee ready event")?
+            .context("Missing committee pending event")?
             .inner
             ._committee
             .members
@@ -629,18 +629,29 @@ where
             .get_stream_id()
             .context("Deposit Communication Data")? as u64;
 
-        info!("Depositing communication data for stream {stream_id}");
+        info!(
+            "Depositing member {} communication data for stream {stream_id}",
+            self.my_address()
+        );
 
-        let input = GetCommunicationDataInput {
-            member_address: self.my_address().into(),
-            stream_id,
-        };
+        let my_comm_info = self
+            .state
+            .ctx
+            .my_comm_info
+            .as_ref()
+            .context("Deposit Communication Data")?;
 
-        // get my communication data to communicate with the other members
-        let communication_data = self
-            .rt_sync
-            .run(self.contracts.get_committee_communication_data(input))?
-            .communication_data;
+        let mut communication_data = vec![];
+        // communication data size
+        for member in self.state.ctx.get_committee_members()? {
+            let my_address: Address = self.my_address().into();
+            if member.memberAddress == my_address {
+                // zeroed for my own communication data according to contracts
+                communication_data.push(CommunicationData::default())
+            } else {
+                communication_data.push(P2PAddressParser::bitvmx_to_contracts(&my_comm_info)?);
+            }
+        }
 
         self.rt_sync.run(
             self.contracts
@@ -725,12 +736,12 @@ where
         match current_step {
             Steps::UserRequest => {
                 self.state.ctx.user_input = Some(data.into_user_input()?);
-                // start next
+
                 self.request_bitvmx_comm_info();
             }
             Steps::GetMyCommInfo => {
                 self.state.ctx.my_comm_info = Some(data.into_p2p_address()?);
-                // start next
+
                 self.request_bitvmx_take_pub_key()?;
             }
             Steps::GetMyTakeKey => {
@@ -740,7 +751,7 @@ where
                     req_id,
                     data,
                 )?;
-                // start next
+
                 self.request_bitvmx_dispute_pub_key()?;
             }
             Steps::GetDisputeKey => {
@@ -750,7 +761,7 @@ where
                     req_id,
                     data,
                 )?;
-                // start next
+
                 self.request_bitvmx_comm_pub_key()?;
             }
             Steps::GetMyCommKey => {
@@ -760,25 +771,31 @@ where
                     req_id,
                     data,
                 )?;
-                // start next
+
                 self.apply_to_stream()?;
             }
             Steps::ApplyToStream => {
-                // TODO(iago-2) wait for CommitteePending confirmations!
-                self.state.ctx.committee_pending = Some(data.into_new_committee_pending()?);
-                // start next
-                self.deposit_communication_data()?;
-                // TODO(iago-2) also close the flow if not selected as committee member (check in addresses)
+                let pending_committee = data.into_new_committee_pending()?;
+
+                let was_selected = pending_committee.inner._committee.members.iter().any(|m| {
+                    let member_addr: types::Address = m.memberAddress.into();
+                    member_addr == self.my_address()
+                });
+
+                if was_selected {
+                    self.state.ctx.committee_pending = Some(pending_committee);
+                    self.deposit_communication_data()?;
+                } else {
+                    // TODO(iago-2) close the flow se we were not selected
+                    bail!("Not selected for committee, flow will not continue");
+                }
             }
             Steps::DepositCommunicationData => {
-                // TODO(iago-2) wait for AllCommDataReady confirmations!
                 self.state.ctx.communication_data_ready = Some(data.into_all_comm_data_ready()?);
                 self.deposit_aggregated_key()?;
             }
             Steps::DepositAggregatedKey => {
-                // TODO(iago-2) wait for CommitteeReady confirmations!
                 self.state.ctx.committee_ready = Some(data.into_new_committee_ready()?);
-                // start next
                 self.setup_bitvmx_aggregated_take_pubkey()?;
             }
             Steps::SetupTakeAggregatedKey => {
@@ -811,6 +828,8 @@ where
 
         let next_step = self.state.step.next()?;
         self.state.step = next_step;
+
+        info!("Next step: {:?}", self.state.step);
 
         Ok(())
     }
@@ -1175,7 +1194,7 @@ where
     }
 
     fn process_new_block(&mut self, _block: &RskBlockAndUncles) -> Result<()> {
-        // TODO(iago-2) properly handle confirmations, now we assume confirmed immediately
+        // TODO(iago-2) wait for confirmations for every event, now we assume confirmed immediately
         Ok(())
     }
 

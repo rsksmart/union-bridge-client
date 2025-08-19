@@ -1,7 +1,6 @@
 use crate::contracts::committee_registry::CommitteeRegistryContractApi;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{GetCommunicationDataInput, GetCommunicationDataOutput};
-use alloy_primitives::Address;
 use log::info;
 
 #[derive(Clone)]
