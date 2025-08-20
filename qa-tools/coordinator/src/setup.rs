@@ -1,4 +1,4 @@
-use qa_tools_common::common::{execute_command, execute_script_with_basedir, spawn_command};
+use qa_tools_common::common::{execute_command, execute_command_with_basedir, execute_script_with_basedir, spawn_command};
 use reqwest::Client;
 use std::process::Child;
 use std::time::Duration;
@@ -15,6 +15,11 @@ pub async fn setup_anvil(anvil_url: &str, anvil_port: u16, anvil_timeout: Durati
         anvil_child.id()
     );
     anvil_child
+}
+
+pub fn forge_clean(contracts_base_dir: &str) {
+    println!(" *** SETUP *** Cleaning forge artifacts");
+    execute_command_with_basedir(contracts_base_dir, "forge clean");
 }
 
 pub fn deploy_contracts(contracts_base_dir: &str, deploy_local_path: &str) {
