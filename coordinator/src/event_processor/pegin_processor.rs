@@ -267,19 +267,28 @@ where
         &mut self,
         data: &AllOperatorTakeTxHashesAddedEvent,
     ) -> Result<()> {
-        if data.removed {
-            self.untrack_all_operator_take_tx_hashes_added(data.inner.clone())?;
-        }
-
-        info!("Handling AllOperatorTakeTxHashesAdded event: {:?}", data);
         let tx_hash: TxHash = data.inner.acceptPeginTxHash.into();
 
-        let Some(state) = self.tracker.get(&tx_hash) else {
-            bail!(
+        // Check if the key exists first to avoid unnecessary operations
+        if !self.tracker.contains_key(&tx_hash) {
+            debug!(
                 "Received AllOperatorTakeTxHashesAdded for unknown acceptPeginTxHash: {:?}",
                 tx_hash
             );
+            return Ok(());
+        }
+
+        if data.removed {
+            self.untrack_all_operator_take_tx_hashes_added(data.inner.clone())?;
+            return Ok(()); // Stop here if removed
+        }
+
+        info!("Handling AllOperatorTakeTxHashesAdded event: {:?}", data);
+
+        let Some(state) = self.tracker.get(&tx_hash) else {
+            unreachable!("Key should exist after contains_key check");
         };
+
         let observer_id = format!("operator_take_tx_hashes_added-{}", state.flow_id);
         info!(
             "Adding AllOperatorTakeTxHashesAdded event to pegin event tracker. Event: {:?}",
@@ -656,10 +665,10 @@ where
     fn build_committee_id(pegin_event: &PeginRequested) -> Result<Uuid> {
         let committee_bytes = pegin_event.committeeId.to_be_bytes_vec();
         let uuid_bytes: [u8; 16] = committee_bytes
-            .get(..16)
-            .ok_or_else(|| anyhow!("Committee ID too short for UUID conversion: expected at least 16 bytes, got {}", committee_bytes.len()))?
-            .try_into()
-            .context("Failed to convert committee_id to UUID")?;
+        .get(..16)
+        .ok_or_else(|| anyhow!("Committee ID too short for UUID conversion: expected at least 16 bytes, got {}", committee_bytes.len()))?
+        .try_into()
+        .context("Failed to convert committee_id to UUID")?;
         Ok(Uuid::from_bytes(uuid_bytes))
     }
 
@@ -1810,36 +1819,36 @@ mod tests {
 
         // Expect PeginRequest message
         broker
-        .expect_send()
-        .times(1)
-        .with(
-            eq(BROKER_SERVER_ID),
-            function(move |req: &IncomingBitVMXApiMessages| {
-                matches!(
+            .expect_send()
+            .times(1)
+            .with(
+                eq(BROKER_SERVER_ID),
+                function(move |req: &IncomingBitVMXApiMessages| {
+                    matches!(
                     req,
                     IncomingBitVMXApiMessages::SetVar(_, var_name, VariableTypes::String(actual))
                         if var_name == PEGIN_REQUEST
                         && serde_json::from_str::<Value>(actual).ok() == Some(expected_payload.clone())
                 )
-            }),
-        )
-        .returning(|_, _| Ok(true));
+                }),
+            )
+            .returning(|_, _| Ok(true));
 
         // Expect Setup message
         broker
-        .expect_send()
-        .times(1)
-        .with(
-            eq(BROKER_SERVER_ID),
-            function(|req: &IncomingBitVMXApiMessages| {
-                matches!(
+            .expect_send()
+            .times(1)
+            .with(
+                eq(BROKER_SERVER_ID),
+                function(|req: &IncomingBitVMXApiMessages| {
+                    matches!(
                     req,
                     IncomingBitVMXApiMessages::Setup(_, program_type, p2p_addresses, leader)
                         if program_type == PROGRAM_TYPE_ACCEPT_PEGIN && p2p_addresses.is_empty() && *leader == 0
                 )
-            }),
-        )
-        .returning(|_, _| Ok(true));
+                }),
+            )
+            .returning(|_, _| Ok(true));
 
         let mock_btc_sig_subflow_factory = MockBtcSigSubFlowFactory::new();
 
