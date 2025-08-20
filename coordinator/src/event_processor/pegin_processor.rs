@@ -949,6 +949,18 @@ where
             }
         }
     }
+
+    fn process_unhandled_confirmed_sig_flow_events(
+        &mut self,
+        block: &RskBlockAndUncles,
+    ) -> Result<()> {
+        for (_, state) in self.tracker.iter_mut() {
+            if let Some(btc_flow) = state.btc_signatures_flow.as_mut() {
+                btc_flow.delegate_block(block)?;
+            }
+        }
+        Ok(())
+    }
 }
 
 impl<CG, BC, BSF, FactoryBSF> EventProcessor for PeginProcessor<CG, BC, BSF, FactoryBSF>
@@ -1056,8 +1068,7 @@ where
         self.process_unhandled_confirmed_pegin_accepted_events()?;
         self.process_unhandled_confirmed_all_operator_take_tx_hashes_added_events()?;
 
-        // TODO(signatures-4) delegate to BtcSignatureFlow::process_new_block
-
+        self.process_unhandled_confirmed_sig_flow_events(block)?;
         Ok(())
     }
 
