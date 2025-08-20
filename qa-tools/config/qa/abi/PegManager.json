@@ -1,0 +1,1611 @@
+[
+  {
+    "type": "function",
+    "name": "MAX_DENOMINATIONS_SIZE",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "UPGRADE_INTERFACE_VERSION",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "__BaseProxy_init",
+    "inputs": [
+      {
+        "name": "_initialOwner",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "__ProofValidator_init",
+    "inputs": [
+      {
+        "name": "_bridgeAddress",
+        "type": "address",
+        "internalType": "address payable"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "acceptPegInRequest",
+    "inputs": [
+      {
+        "name": "_pegInAcceptedTxSPVProof",
+        "type": "tuple",
+        "internalType": "struct BtcTxSPVProof",
+        "components": [
+          {
+            "name": "blockHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "btcTx",
+            "type": "tuple",
+            "internalType": "struct BtcTransaction",
+            "components": [
+              {
+                "name": "version",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "inputs",
+                "type": "tuple[]",
+                "internalType": "struct BtcTxIn[]",
+                "components": [
+                  {
+                    "name": "txId",
+                    "type": "bytes32",
+                    "internalType": "bytes32"
+                  },
+                  {
+                    "name": "vout",
+                    "type": "uint32",
+                    "internalType": "uint32"
+                  },
+                  {
+                    "name": "sequence",
+                    "type": "uint32",
+                    "internalType": "uint32"
+                  },
+                  {
+                    "name": "scriptSig",
+                    "type": "bytes",
+                    "internalType": "bytes"
+                  }
+                ]
+              },
+              {
+                "name": "outputs",
+                "type": "tuple[]",
+                "internalType": "struct BtcTxOut[]",
+                "components": [
+                  {
+                    "name": "amount",
+                    "type": "uint64",
+                    "internalType": "uint64"
+                  },
+                  {
+                    "name": "scriptPubKey",
+                    "type": "bytes",
+                    "internalType": "bytes"
+                  }
+                ]
+              },
+              {
+                "name": "locktime",
+                "type": "uint32",
+                "internalType": "uint32"
+              }
+            ]
+          },
+          {
+            "name": "merkleBranchPath",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "merkleBranchHashes",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          }
+        ]
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "bitcoinManager",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IBitcoinManager"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "bridge",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IBridge"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "committeeRegistry",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract ICommitteeRegistry"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "computePegOutTxHash",
+    "inputs": [
+      {
+        "name": "usrPubKey",
+        "type": "bytes",
+        "internalType": "bytes"
+      },
+      {
+        "name": "prevoutData",
+        "type": "tuple",
+        "internalType": "struct PrevoutData",
+        "components": [
+          {
+            "name": "txid",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "vout",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "value",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "scriptPubKey",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
+      },
+      {
+        "name": "amount",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "dust",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "createPacketsAndSlots",
+    "inputs": [
+      {
+        "name": "_committeePubKey",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "getFirstFilledSlot",
+    "inputs": [
+      {
+        "name": "_streamId",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "slot",
+        "type": "tuple",
+        "internalType": "struct Slot",
+        "components": [
+          {
+            "name": "slotId",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "state",
+            "type": "uint8",
+            "internalType": "enum SlotState"
+          },
+          {
+            "name": "scriptPubKey",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "acceptPegInTx",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "acceptPegInAmount",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "take0Tx",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "take1Tx",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          }
+        ]
+      },
+      {
+        "name": "packetNumber",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getImplementation",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getPacket",
+    "inputs": [
+      {
+        "name": "_streamId",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "_packetNumber",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct Packet",
+        "components": [
+          {
+            "name": "packetNumber",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "committeePubKey",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getPegInRequest",
+    "inputs": [
+      {
+        "name": "btcTxHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct StreamPosition",
+        "components": [
+          {
+            "name": "streamId",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "packetNumber",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "slotId",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "pegStatus",
+            "type": "uint8",
+            "internalType": "enum PegStatus"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getPegOutTxHash",
+    "inputs": [
+      {
+        "name": "key",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getPreparedSlotId",
+    "inputs": [
+      {
+        "name": "_streamId",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "_packetNumber",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getRequestPegInTempInfo",
+    "inputs": [
+      {
+        "name": "btcTxHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct RequestPegInTempInfo",
+        "components": [
+          {
+            "name": "outputAmount",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "rskDestinationAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "btcReimbursementPubKey",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "utxoScriptPubKey",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getSlot",
+    "inputs": [
+      {
+        "name": "_streamId",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "_packetNumber",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "_slotNumber",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct Slot",
+        "components": [
+          {
+            "name": "slotId",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "state",
+            "type": "uint8",
+            "internalType": "enum SlotState"
+          },
+          {
+            "name": "scriptPubKey",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "acceptPegInTx",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "acceptPegInAmount",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "take0Tx",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "take1Tx",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getStream",
+    "inputs": [
+      {
+        "name": "_denomination",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct Stream",
+        "components": [
+          {
+            "name": "streamId",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "denomination",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "peginPointer",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "pegoutPointer",
+            "type": "int8",
+            "internalType": "int8"
+          },
+          {
+            "name": "pegInConfirmations",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "securityBondValue",
+            "type": "uint64",
+            "internalType": "uint64"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getStreamById",
+    "inputs": [
+      {
+        "name": "_streamId",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct Stream",
+        "components": [
+          {
+            "name": "streamId",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "denomination",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "peginPointer",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "pegoutPointer",
+            "type": "int8",
+            "internalType": "int8"
+          },
+          {
+            "name": "pegInConfirmations",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "securityBondValue",
+            "type": "uint64",
+            "internalType": "uint64"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getStreamsLength",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getTemporaryPegInAddress",
+    "inputs": [
+      {
+        "name": "_rootstockDepositAddress",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_value",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "_btcReimbursementPubKey",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "bitcoinDepositAddress",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "initialize",
+    "inputs": [
+      {
+        "name": "_initialOwner",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_bridgeAddress",
+        "type": "address",
+        "internalType": "address payable"
+      },
+      {
+        "name": "_committeeRegistry",
+        "type": "address",
+        "internalType": "contract ICommitteeRegistry"
+      },
+      {
+        "name": "_bitcoinManager",
+        "type": "address",
+        "internalType": "contract IBitcoinManager"
+      },
+      {
+        "name": "_denominations",
+        "type": "uint64[]",
+        "internalType": "uint64[]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "owner",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "packets",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "packetNumber",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "committeePubKey",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "proxiableUUID",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "registerPegInRequest",
+    "inputs": [
+      {
+        "name": "_pegInRequestTxSPVProof",
+        "type": "tuple",
+        "internalType": "struct BtcTxSPVProof",
+        "components": [
+          {
+            "name": "blockHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "btcTx",
+            "type": "tuple",
+            "internalType": "struct BtcTransaction",
+            "components": [
+              {
+                "name": "version",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "inputs",
+                "type": "tuple[]",
+                "internalType": "struct BtcTxIn[]",
+                "components": [
+                  {
+                    "name": "txId",
+                    "type": "bytes32",
+                    "internalType": "bytes32"
+                  },
+                  {
+                    "name": "vout",
+                    "type": "uint32",
+                    "internalType": "uint32"
+                  },
+                  {
+                    "name": "sequence",
+                    "type": "uint32",
+                    "internalType": "uint32"
+                  },
+                  {
+                    "name": "scriptSig",
+                    "type": "bytes",
+                    "internalType": "bytes"
+                  }
+                ]
+              },
+              {
+                "name": "outputs",
+                "type": "tuple[]",
+                "internalType": "struct BtcTxOut[]",
+                "components": [
+                  {
+                    "name": "amount",
+                    "type": "uint64",
+                    "internalType": "uint64"
+                  },
+                  {
+                    "name": "scriptPubKey",
+                    "type": "bytes",
+                    "internalType": "bytes"
+                  }
+                ]
+              },
+              {
+                "name": "locktime",
+                "type": "uint32",
+                "internalType": "uint32"
+              }
+            ]
+          },
+          {
+            "name": "merkleBranchPath",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "merkleBranchHashes",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          }
+        ]
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "renounceOwnership",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "requestPegOut",
+    "inputs": [
+      {
+        "name": "_usrPubKey",
+        "type": "bytes",
+        "internalType": "bytes"
+      },
+      {
+        "name": "_batchFlag",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "transferOwnership",
+    "inputs": [
+      {
+        "name": "newOwner",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "upgradeToAndCall",
+    "inputs": [
+      {
+        "name": "newImplementation",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "data",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "event",
+    "name": "AcceptedPegInRequest",
+    "inputs": [
+      {
+        "name": "blockHash",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "txHash",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "pegInTxHash",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "vout",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      },
+      {
+        "name": "streamPosition",
+        "type": "tuple",
+        "indexed": false,
+        "internalType": "struct StreamPosition",
+        "components": [
+          {
+            "name": "streamId",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "packetNumber",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "slotId",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "pegStatus",
+            "type": "uint8",
+            "internalType": "enum PegStatus"
+          }
+        ]
+      },
+      {
+        "name": "speedUpPubKey",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "rskDestinationAddress",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "rbtcAmount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "utxoScriptPubKey",
+        "type": "bytes",
+        "indexed": false,
+        "internalType": "bytes"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Initialized",
+    "inputs": [
+      {
+        "name": "version",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "OwnershipTransferred",
+    "inputs": [
+      {
+        "name": "previousOwner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "newOwner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PegOutRequested",
+    "inputs": [
+      {
+        "name": "usrPubKey",
+        "type": "bytes",
+        "indexed": true,
+        "internalType": "bytes"
+      },
+      {
+        "name": "amount",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      },
+      {
+        "name": "pegOutTxHash",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "digest",
+        "type": "bytes",
+        "indexed": false,
+        "internalType": "bytes"
+      },
+      {
+        "name": "streamId",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      },
+      {
+        "name": "packetNumber",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      },
+      {
+        "name": "slotId",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "RegisteredPegInRequest",
+    "inputs": [
+      {
+        "name": "blockHash",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "txHash",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "vout",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      },
+      {
+        "name": "value",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      },
+      {
+        "name": "packetNumber",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "rskDestinationAddress",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "btcReimbursementPubKey",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "utxoScriptPubKey",
+        "type": "bytes",
+        "indexed": false,
+        "internalType": "bytes"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Upgraded",
+    "inputs": [
+      {
+        "name": "implementation",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "AddressEmptyCode",
+    "inputs": [
+      {
+        "name": "target",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "AlreadyRegisteredAcceptPegIn",
+    "inputs": [
+      {
+        "name": "btcTxHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "AlreadyRegisteredPegIn",
+    "inputs": [
+      {
+        "name": "btcTxHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "PeginAlreadyRequested",
+    "inputs": [
+      {
+        "name": "btcTxHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "BridgeAddressZero",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BridgeBtcBlockNotInBestChain",
+    "inputs": [
+      {
+        "name": "blockHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "BridgeBtcBlockTooOld",
+    "inputs": [
+      {
+        "name": "maxDepth",
+        "type": "int256",
+        "internalType": "int256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "BridgeBtcInconsistentBlock",
+    "inputs": [
+      {
+        "name": "blockHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "BridgeBtcInexistantBlockHash",
+    "inputs": [
+      {
+        "name": "blockHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "BridgeBtcTxInvalidMerkleBranch",
+    "inputs": [
+      {
+        "name": "txHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "merkleBranchPath",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "merkleBranchHashes",
+        "type": "bytes32[]",
+        "internalType": "bytes32[]"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "BridgeBtcUnknownError",
+    "inputs": [
+      {
+        "name": "errorCode",
+        "type": "int256",
+        "internalType": "int256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "BridgeExceededLockingCap",
+    "inputs": [
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "BridgeUnauthorizedCaller",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ERC1967InvalidImplementation",
+    "inputs": [
+      {
+        "name": "implementation",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC1967NonPayable",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "FailedCall",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "IncorrectInputsNumber",
+    "inputs": [
+      {
+        "name": "actual",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "expected",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "IncorrectOutputsNumber",
+    "inputs": [
+      {
+        "name": "actual",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "expected",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidBtcTxVersion",
+    "inputs": [
+      {
+        "name": "actual",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "expected",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidInitialization",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidLocktime",
+    "inputs": [
+      {
+        "name": "actual",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "expected",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidPubKeyLength",
+    "inputs": [
+      {
+        "name": "usrPubKeyLength",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidSequence",
+    "inputs": [
+      {
+        "name": "actual",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "expected",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidVout",
+    "inputs": [
+      {
+        "name": "actual",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "expected",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NoEmptySlot",
+    "inputs": [
+      {
+        "name": "streamId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "packetNumber",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NoFilledSlot",
+    "inputs": [
+      {
+        "name": "streamId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "packetNumber",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NonExistentSlot",
+    "inputs": [
+      {
+        "name": "streamId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "packetNumber",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "slotId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotEnoughConfirmations",
+    "inputs": [
+      {
+        "name": "actual",
+        "type": "int256",
+        "internalType": "int256"
+      },
+      {
+        "name": "expected",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotInitializing",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "OwnableInvalidOwner",
+    "inputs": [
+      {
+        "name": "owner",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "OwnableUnauthorizedAccount",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "PacketOutOfBound",
+    "inputs": [
+      {
+        "name": "packetNumber",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "PegoutRequestAmountExceedsUint64Limit",
+    "inputs": [
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "StreamNotFoundByDenomination",
+    "inputs": [
+      {
+        "name": "denomination",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "UUPSUnauthorizedCallContext",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UUPSUnsupportedProxiableUUID",
+    "inputs": [
+      {
+        "name": "slot",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "UnregisteredPegInRequest",
+    "inputs": [
+      {
+        "name": "btcTxHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "tooManyDenominations",
+    "inputs": [
+      {
+        "name": "maxDenominationsSize",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  }
+]

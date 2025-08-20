@@ -26,7 +26,7 @@ const FUNDS_AMOUNT_WEI: &str = "1000000000000000000"; // 1 ETH
 const ANVIL_TIMEOUT: Duration = Duration::from_secs(5);
 const TX_DISPATCHER_MANIFEST_RELATIVE_PATH: &str = "../transaction-dispatcher/Cargo.toml";
 const TX_DISPATCHER_URL_DEFAULT: &str = "http://localhost:3000";
-const TX_DISPATCHER_CONFIG_PATH_DEFAULT: &str = "../config/qa-local";
+const TX_DISPATCHER_CONFIG_PATH_DEFAULT: &str = "../config/qa";
 const TX_DISPATCHER_TIMEOUT: Duration = Duration::from_secs(300);
 
 lazy_static::lazy_static! {

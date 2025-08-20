@@ -4,7 +4,7 @@ indexer:
     finality_depth: 100
     batch_size: 100
   storage:
-    path: "/tmp/monitor-executions/common"
+    path: "/tmp/monitor-executions/default/storage"
   cache:
     size: 1000
 

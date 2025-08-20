@@ -30,19 +30,16 @@ const ANVIL_ADDRESS_DEFAULT: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
 const PEG_MANAGER_ADDRESS: &str = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
 const FUNDS_AMOUNT_WEI: &str = "1000000000000000000"; // 1 ETH
 const ANVIL_TIMEOUT: Duration = Duration::from_secs(5);
+const CONFIG_PATH_DEFAULT: &str = "../config/qa";
+
 const TX_DISPATCHER_MANIFEST_RELATIVE_PATH: &str = "../transaction-dispatcher/Cargo.toml";
 const TX_DISPATCHER_URL_DEFAULT: &str = "http://localhost:3000";
-const TX_DISPATCHER_CONFIG_PATH_DEFAULT: &str = "../config/qa-local";
 const TIMEOUT: Duration = Duration::from_secs(300);
 const BITVMX_PORT_DEFAULT: u16 = 9094;
 const BLOCK_INDEXER_MANIFEST_RELATIVE_PATH: &str = "../block-indexer/Cargo.toml";
-const BLOCK_INDEXER_CONFIG_PATH_DEFAULT: &str = "../config/qa-local";
 const LOG_INDEXER_MANIFEST_RELATIVE_PATH: &str = "../log-indexer/Cargo.toml";
-const LOG_INDEXER_CONFIG_PATH_DEFAULT: &str = "../config/qa-local";
 const COORDINATOR_MANIFEST_RELATIVE_PATH: &str = "../coordinator/Cargo.toml";
-const COORDINATOR_CONFIG_PATH_DEFAULT: &str = "../config/qa-local";
 const USER_API_MANIFEST_RELATIVE_PATH: &str = "../user-api/Cargo.toml";
-const USER_API_CONFIG_PATH_DEFAULT: &str = "../config/qa-local";
 
 lazy_static::lazy_static! {
     pub static ref DEPLOY_LOCAL_CONTRACTS_RELATIVE_PATH: String = env::var("DEPLOY_LOCAL_CONTRACTS_RELATIVE_PATH")
@@ -65,15 +62,15 @@ lazy_static::lazy_static! {
     pub static ref TX_DISPATCHER_URL: String = env::var("TX_DISPATCHER_URL")
         .unwrap_or_else(|_| TX_DISPATCHER_URL_DEFAULT.to_string());
     pub static ref TX_DISPATCHER_CONFIG_PATH: String = env::var("TX_DISPATCHER_CONFIG_PATH")
-        .unwrap_or_else(|_| TX_DISPATCHER_CONFIG_PATH_DEFAULT.to_string());
+        .unwrap_or_else(|_| CONFIG_PATH_DEFAULT.to_string());
     pub static ref BLOCK_INDEXER_CONFIG_PATH: String = env::var("BLOCK_INDEXER_CONFIG_PATH")
-        .unwrap_or_else(|_| BLOCK_INDEXER_CONFIG_PATH_DEFAULT.to_string());
+        .unwrap_or_else(|_| CONFIG_PATH_DEFAULT.to_string());
     pub static ref LOG_INDEXER_CONFIG_PATH: String = env::var("LOG_INDEXER_CONFIG_PATH")
-        .unwrap_or_else(|_| LOG_INDEXER_CONFIG_PATH_DEFAULT.to_string());
+        .unwrap_or_else(|_| CONFIG_PATH_DEFAULT.to_string());
     pub static ref COORDINATOR_CONFIG_PATH: String = env::var("COORDINATOR_CONFIG_PATH")
-        .unwrap_or_else(|_| COORDINATOR_CONFIG_PATH_DEFAULT.to_string());
+        .unwrap_or_else(|_| CONFIG_PATH_DEFAULT.to_string());
     pub static ref USER_API_CONFIG_PATH: String = env::var("USER_API_CONFIG_PATH")
-        .unwrap_or_else(|_| USER_API_CONFIG_PATH_DEFAULT.to_string());
+        .unwrap_or_else(|_| CONFIG_PATH_DEFAULT.to_string());
     pub static ref BITVMX_PORT: String = env::var("BITVMX_MOCK_PORT")
         .unwrap_or_else(|_| BITVMX_PORT_DEFAULT.to_string());
 }

@@ -4,6 +4,40 @@ A collection of tools for testing and validating the Union Bridge Monitor compon
 
 ## Initial setup
 
+### Direnv
+
+```bash
+# Install direnv
+brew install direnv
+
+# Enable the zsh hook
+echo 'eval "$(direnv hook zsh)"' >> ~/.zshrc
+
+# Reload shell so the hook takes effect
+exec zsh
+
+# Create your local .envrc (from the sample if provided)
+cp .envrc.sample .envrc
+
+# Allow it (trust contents of .envrc)
+direnv allow
+```
+
+### Setup config
+Go to the repo base directory and execute:
+```bash
+cp -R qa-tools/config/qa config/qa
+```
+
+### Setup .envrc
+Open this file: `qa-tools/.envrc` and substitute the placeholders with your values. Ask your colleagues 
+if you are not sure what values to use.
+Go to the repo base directory and execute:
+```bash
+cp -R qa-tools/config/qa config/qa
+```
+
+
 ### BitVMX Union Bridge contracts
 
 Before executing any tests, you will need to set up the BitVMX Union Bridge contracts in your local environment.
@@ -25,14 +59,14 @@ git submodule update --init --recursive
 - `block_indexer_validator`: Validates block indexer state after running
 - Features: backward sync, checkpoints, different cache sizes, long runs
 
-To find instructions on how to execute tests, search for the comments under scenarios within `features/` folder.
+To find instructions on how to execute tests, search for the comments under scenarios within `block-indexer/features/` folder.
 
 ### Log Indexer Tools (manual execution)
 - `log_indexer_runner`: Runs the log indexer with configurable parameters
 - `log_indexer_validator`: Validates log indexer state after running
 - Features: managed contracts monitoring, event tracking
 
-To find instructions on how to execute tests, search for the comments under scenarios within `features/` folder.
+To find instructions on how to execute tests, search for the comments under scenarios within `log-indexer/features/` folder.
 
 ### Utility Tools for block indexer and log indexer
 - `archiver`: Archives `/tmp/monitor-executions` with timestamps
@@ -42,8 +76,7 @@ To find instructions on how to execute tests, search for the comments under scen
 - `check_fork_runner`: Runs and validates the check fork with configurable parameters
 - Features: managed contracts monitoring, event tracking
 
-To find instructions on how to execute tests, search for the comments under scenarios within `features/` folder.
-
+To find instructions on how to execute tests, search for the comments under scenarios within `check-fork/features/` folder.
 
 ### Coordinator Tools (manual execution)
 - Coordinator manual testing relies on actors-mocking crate to simulate the deployment of the Union Bridge contracts,
