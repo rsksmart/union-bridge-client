@@ -417,7 +417,7 @@ where
                 let xonly_key = XOnlyPublicKey::from_slice(key_bytes.as_slice())
                     .context("Failed to parse operator public key")?;
 
-                // TODO(iago) we need to address this as it is not a valid approach to hardcode the parity
+                // BitVMX adjusts parity to Even, so we do the same here
                 let secp_key = xonly_key.public_key(Even);
                 let public_key = PublicKey::new(secp_key);
                 operators_take_key.push(public_key);

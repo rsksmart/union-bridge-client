@@ -283,7 +283,7 @@ where
         data: StepData,
     ) -> Result<()> {
         let req_id = req_id.with_context(|| {
-            format!("Missing request id on close_pub_key_req for flow {flow_id}",)
+            format!("Missing request id on close_pub_key_req for flow {flow_id}")
         })?;
 
         match pub_key_req {
@@ -307,7 +307,7 @@ where
         data: StepData,
     ) -> Result<()> {
         let req_id = req_id.with_context(|| {
-            format!("Missing request id on close_agg_key_req for flow {flow_id}",)
+            format!("Missing request id on close_agg_key_req for flow {flow_id}")
         })?;
 
         match pub_key_req {
@@ -655,13 +655,13 @@ where
 
         // TODO(agus) temporary until PeerId thing is sorted out
         for i in 0..res.len() {
-            if i == 0 {
+            if res[i].address.to_string() == "/ip4/127.0.0.1/tcp/61180" {
                 res[i].peer_id = PeerId("30820122300d06092a864886f70d01010105000382010f003082010a0282010100b0595a239c455f955ac2617061fadc0f3c532056da4a4ab4111b6581a62143e6c00b3041a00c290232fa65794ea0a55ca5f2ed3310ecbcab06a721d66e99a27e0d1b8a6afd8e395b741fbcf6cb73294eaeff43118f828f0118a4b5fdc95d472bcadaf2bc4d665e535ccd70b8ee5b82624794351a82c9f819d9a53638122228d1800d7d6561ae98183ae53c6cf23964c7eceeae95807db49a164cfbbc1ddc87a975fbe3d43545e8ce1bad2043cfe6a9aa3a7538ebdab8e6b900c94a691c1321d7c2d7f1a1beb3c3ef03686f7805ce938c92c8d5057cb5101cd51c1d97d7d3d4b9f13b7cb28bc5c4c5c9983a3062efc606b9c440021e1d5257d88d9c3ced0ac38f0203010001".to_string())
-            } else if i == 1 {
+            } else if res[i].address.to_string() == "/ip4/127.0.0.1/tcp/61181" {
                 res[i].peer_id = PeerId("30820122300d06092a864886f70d01010105000382010f003082010a0282010100c96872f74e913fbcf2e068d7f508e52dad5a278123ad6546d9735e3f35163e836427ef6ea14ff28d4ca30e7f0d4e251ddf4724668675052d6adb8581550b0adb11f0dcb78a4e9d6ad00f68bf21851d590d88d9fff1d8d7678454f9df4a1daad2f8ebfe69b4ea99160a9e2d43a98cdaaaf380bc4de9f9dec6bedc9351c89c43e4d5d89abbef98664f5d57cdf5c68d93e928203c84fd038fedddac5bbe2b243378141edec442e83c57f0bab437336586f6d6bc01bee222ee8f67dfacb2d94d7a4e406d05446c9f84de055d6175217de19d1005203674b1693f1df2d3dacd11839a782c343c33e86b952740812da624f2ddfd71edf9eb5e9ddf7944b9afc3a08b2f0203010001".to_string())
-            } else if i == 2 {
+            } else if res[i].address.to_string() == "/ip4/127.0.0.1/tcp/61182" {
                 res[i].peer_id = PeerId("30820122300d06092a864886f70d01010105000382010f003082010a0282010100e602dadfc9a2b10e6c042e10ba19628e49132fba6197f817457bd8728e881b35dc107838437b562cb9c611c2666fe3492db881630cd917178d17d21d48e664f685d9cd2ea2658501b3eb51ac7d9832e4ec580a5822616b0b663a3fb05a5aae15881baddeb7d8d329f064b460637a28ed569b93074446cb4946720474950456c950b5ae00b5f8b5a490eb1fc9af0206178ab81d3ca81b74fca1d84da9db510c10be2df4624be64fed6a6e59dc90880dc6ed61d4908ddcaf9eb0b08b0d58c5741085da051c4a537d33a8602fc22c6bef5853208698752561afa02ce763fb2bc0b88db51c90735d72dbd0ef6895c77aead64d5fe43e4d7521ed5f8da50c96636e4b0203010001".to_string())
-            } else if i == 3 {
+            } else if res[i].address.to_string() == "/ip4/127.0.0.1/tcp/61183" {
                 res[i].peer_id = PeerId("30820122300d06092a864886f70d01010105000382010f003082010a0282010100d1f76c66923556eaa6e9db0acf025fa96049e150cccd910ed6a36d6b32e1eb531620182c34b9ec04a00ba9e2f02f6f6f1493cf0dd42ffcafe60d81c7102f7b64f22a76ebe749dd285435a4d551ed03271062318e08efafbb1e9341aabe685a56cf81abf4af7437e60e9435a0a9682f8720b3ad017c29c517c3b25cc467f5f1ccd9ab791a206cef513141938491e5527df1e615088061a7bdc19622fd43323a74020870042ce33287f730fa5d17eb7f21b1dc6bb028d2a01850b9fb3c0ae40d5023dcdd2c888691a2c50d956f8e6d3d92c3cf893388f954781d1ee118b5840ef88a0d1cc8d218e535d706b044bf6c881ceafec982fd7ed516daaab60c4ea7d15b0203010001".to_string())
             } else {
                 bail!("Unexpected comm data size")
@@ -781,13 +781,13 @@ where
             let key_bytes: FixedBytes<32> = take_key_str
                 .parse()
                 .context("Failed to parse public key str to FixedBytes<32>")?;
-            let xonly_key = XOnlyPublicKey::from_slice(key_bytes.as_slice())
+            let x_only_key = XOnlyPublicKey::from_slice(key_bytes.as_slice())
                 .context("Failed to parse aggregated public key")?;
 
-            debug!("Member {member_addr} take key X: {xonly_key:?}");
+            debug!("Member {member_addr} take key X: {x_only_key:?}");
 
             // BitVMX adjusts parity to Even, so we do the same here
-            let secp_key = xonly_key.public_key(Even);
+            let secp_key = x_only_key.public_key(Even);
             let member_key = PublicKey::new(secp_key);
             committee_take_keys.push(member_key);
         }
@@ -804,7 +804,10 @@ where
     fn complete_step_and_next(&mut self, req_id: Option<Uuid>, data: StepData) -> Result<()> {
         let current_step = self.state.step;
 
-        info!("Completing step {current_step:?} for req_id {req_id:?} and data {data:?}");
+        info!(
+            "Completing step {current_step:?} for flow {} req_id {req_id:?} and data {data:?}",
+            self.state.flow_id
+        );
         debug!("Flow Context: {:?}", self.state.ctx);
 
         match current_step {
@@ -1070,6 +1073,8 @@ where
 
     fn get_flow_for_stream_id(&mut self, stream_id: u8) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
         // TODO optimize this search by keeping convenient map of stream_id -> flow_id or alike
+
+        // TODO(iago-2) we have an issue here if multiple flows are created for the same stream_id
 
         self.flows.values_mut().find(|f| {
             f.state
