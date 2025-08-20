@@ -24,7 +24,7 @@ use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 
 use crate::user_requests::ApplyToStream;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
-    CommitteeMember, CommunicationData, NewPendingCommittee,
+    CommitteeMember, CommunicationData,
 };
 
 use common::types;
@@ -86,7 +86,7 @@ struct FlowContext {
     setup_core: SetupCoreReq,
     // async
     committee_pending: Option<NewCommitteePendingEvent>,
-    communication_data_ready: Option<AllCommunicationDataReadyEvent>,
+    communication_data_ready: Option<HashMap<Address, Vec<P2PAddress>>>,
     committee_ready: Option<NewCommitteeReadyEvent>,
 }
 
@@ -184,7 +184,7 @@ enum StepData {
 
     // async or collaborative steps
     PendingCommittee(NewCommitteePendingEvent),
-    ReadyCommunication(AllCommunicationDataReadyEvent),
+    ReadyCommunicationData(AllCommunicationDataReadyEvent),
     ReadyCommittee(NewCommitteeReadyEvent),
 }
 
@@ -226,7 +226,7 @@ impl StepData {
 
     fn into_all_comm_data_ready(self) -> Result<AllCommunicationDataReadyEvent> {
         match self {
-            StepData::ReadyCommunication(ev) => Ok(ev),
+            StepData::ReadyCommunicationData(ev) => Ok(ev),
             _ => bail!("Expected AllCommunicationDataReadyEvent"),
         }
     }
@@ -575,6 +575,22 @@ where
         Ok(*pubkey)
     }
 
+    fn ctx_member_communication_data(&self, member_addr: Address) -> Result<Vec<P2PAddress>> {
+        let committee_comm_data = self
+            .state
+            .ctx
+            .communication_data_ready
+            .as_ref()
+            .context("Missing communication data in context")?;
+
+        committee_comm_data
+            .get(&member_addr)
+            .with_context(|| {
+                format!("Missing communication data for member {member_addr} in context")
+            })
+            .cloned()
+    }
+
     fn send_bitvmx_msg(&self, msg: IncomingBitVMXApiMessages) {
         info!("Sending {msg:?} to BitVMX");
 
@@ -602,7 +618,7 @@ where
 
     fn get_communication_data_from_contracts(
         &self,
-        member_address: types::Address,
+        member_address: Address,
     ) -> Result<Vec<P2PAddress>> {
         let stream_id = self
             .state
@@ -611,7 +627,7 @@ where
             .context("Get Communication Data")? as u64;
 
         let input = GetCommunicationDataInput {
-            member_address: member_address.into(),
+            member_address,
             stream_id,
         };
 
@@ -693,6 +709,22 @@ where
         )
     }
 
+    fn close_communication_data_step(&mut self) -> Result<()> {
+        let members: Vec<CommitteeMember> = self.state.ctx.get_committee_members()?;
+
+        let comm_data_by_member: HashMap<Address, Vec<P2PAddress>> = members
+            .iter()
+            .map(|m| {
+                let addrs = self.get_communication_data_from_contracts(m.memberAddress)?;
+                Ok((m.memberAddress, addrs))
+            })
+            .collect::<Result<HashMap<_, _>>>()?;
+
+        self.state.ctx.communication_data_ready = Some(comm_data_by_member);
+
+        Ok(())
+    }
+
     fn deposit_aggregated_key(&self) -> Result<()> {
         let stream_id = self
             .state
@@ -706,7 +738,6 @@ where
             .ctx_aggregated_take_key()
             .context("Deposit Aggregated Key")?;
 
-        // TODO(ask-Agus) confirm if using XOnlyPublicKey is correct here
         let x_only_key = XOnlyPublicKey::from(aggregated_take_key);
         let aggregated_key = FixedBytes::<32>::try_from(&x_only_key.serialize())
             .context("Failed to serialize aggregated public key")?;
@@ -747,16 +778,18 @@ where
 
             // TODO revisit this, we are encoding bytes to hex string in the contracts to then decode it back to bytes here
 
-            // TODO(iago) check this
             let key_bytes: FixedBytes<32> = take_key_str
                 .parse()
                 .context("Failed to parse public key str to FixedBytes<32>")?;
             let xonly_key = XOnlyPublicKey::from_slice(key_bytes.as_slice())
                 .context("Failed to parse aggregated public key")?;
-            let secp_key = xonly_key.public_key(Even);
-            let aggregated_key = PublicKey::new(secp_key);
 
-            committee_take_keys.push(aggregated_key);
+            debug!("Member {member_addr} take key X: {xonly_key:?}");
+
+            // BitVMX adjusts parity to Even, so we do the same here
+            let secp_key = xonly_key.public_key(Even);
+            let member_key = PublicKey::new(secp_key);
+            committee_take_keys.push(member_key);
         }
 
         Ok(committee_take_keys)
@@ -835,7 +868,9 @@ where
                 }
             }
             Steps::DepositCommunicationData => {
-                self.state.ctx.communication_data_ready = Some(data.into_all_comm_data_ready()?);
+                data.into_all_comm_data_ready()?;
+
+                self.close_communication_data_step()?;
 
                 self.setup_bitvmx_aggregated_take_pubkey()?;
             }
@@ -940,20 +975,17 @@ where
     }
 
     fn setup_bitvmx_aggregated_take_pubkey(&mut self) -> Result<()> {
+        info!("Setup BitVMX Aggregated Take key");
+
         let take_key_id = self.get_deterministic_take_key_id();
         self.state.ctx.agg_take_key = Some((take_key_id, None));
 
-        let committee_take_keys = self
-            .get_committee_keys_by_type(TAKE_KEY_INDEX)
-            .context("Setting Aggregated Take key")?;
-
-        let comm_data = self
-            .get_communication_data_from_contracts(self.my_address())
-            .context("Setting Aggregated Take key")?;
+        let committee_take_keys = self.get_committee_keys_by_type(TAKE_KEY_INDEX)?;
+        let communication_data = self.ctx_member_communication_data(self.my_address().into())?;
 
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetupKey(
             take_key_id,
-            comm_data,
+            communication_data,
             Some(committee_take_keys),
             NO_LEADER_IDX,
         ));
@@ -962,20 +994,17 @@ where
     }
 
     fn setup_bitvmx_aggregated_dispute_pubkey(&mut self) -> Result<()> {
+        info!("Setup BitVMX Aggregated Dispute key");
+
         let dispute_key_id = self.get_deterministic_dispute_key_id();
         self.state.ctx.agg_dispute_key = Some((dispute_key_id, None));
 
-        let committee_dispute_keys = self
-            .get_committee_keys_by_type(DISPUTE_KEY_INDEX)
-            .context("Setting Aggregated Dispute Key")?;
-
-        let comm_data = self
-            .get_communication_data_from_contracts(self.my_address())
-            .context("Setting Aggregated Dispute Key")?;
+        let committee_dispute_keys = self.get_committee_keys_by_type(DISPUTE_KEY_INDEX)?;
+        let communication_data = self.ctx_member_communication_data(self.my_address().into())?;
 
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetupKey(
             dispute_key_id,
-            comm_data,
+            communication_data,
             Some(committee_dispute_keys),
             NO_LEADER_IDX,
         ));
@@ -990,13 +1019,11 @@ where
 
         self.setup_committee()?;
 
+        let committee_id = self.state.ctx.get_committee_id()?;
         let members: Vec<CommitteeMember> = self.state.ctx.get_committee_members()?;
 
-        let committee_id = self.state.ctx.get_committee_id()?;
-
         for (idx, member) in members.iter().enumerate() {
-            let addresses =
-                self.get_communication_data_from_contracts(member.memberAddress.into())?;
+            let addresses = self.ctx_member_communication_data(member.memberAddress)?;
             self.setup_dispute_core_for_member(idx, committee_id, member, &addresses)?;
         }
 
@@ -1166,7 +1193,7 @@ where
                     // assume confirmed for now
                     first_flow.complete_step_and_next(
                         None,
-                        StepData::ReadyCommunication(all_comm_data_ready.clone()),
+                        StepData::ReadyCommunicationData(all_comm_data_ready.clone()),
                     )?
                 } else {
                     bail!("No flow found for {all_comm_data_ready:?}")
