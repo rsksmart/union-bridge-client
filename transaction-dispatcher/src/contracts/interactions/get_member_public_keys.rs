@@ -34,15 +34,14 @@ impl<C: CommitteeRegistryContractApi> GetMemberPublicKeysCall<C> {
             })?;
 
         info!(
-            "GetMemberPublicKeys successful, found {} public keys",
-            public_keys.len()
+            "GetMemberPublicKeys successful, retrieved member keys"
         );
 
         Ok(GetMemberPublicKeysOutput {
-            public_keys: public_keys
-                .into_iter()
-                .map(|key| format!("0x{:x}", key))
-                .collect(),
+            public_keys: vec![
+                format!("0x{:x}", public_keys.takePubKey),
+                format!("0x{:x}", public_keys.covenantPubKey),
+            ],
         })
     }
 }
@@ -52,8 +51,9 @@ mod tests {
     use super::*;
     use crate::contracts::committee_registry::MockCommitteeRegistryContractApi;
     use crate::rsk_gateway::DomainErrors;
-    use alloy_primitives::Address;
+    use alloy_primitives::{Address, FixedBytes};
     use mockall::predicate::always;
+    use union_contracts::bindings::committee_registry::CommitteeRegistry::{MemberKeys, RSAPublicKey};
 
     #[tokio::test]
     async fn test_get_member_public_keys_success() {
@@ -62,11 +62,16 @@ mod tests {
             .expect("Invalid address");
         let input = GetMemberPublicKeysInput { member_address };
 
-        let expected_public_keys = vec![
-            alloy_primitives::FixedBytes::from([1u8; 32]),
-            alloy_primitives::FixedBytes::from([2u8; 32]),
-        ];
-
+        let expected_public_keys = MemberKeys {
+            takePubKey: FixedBytes::from([1u8; 32]),
+            covenantPubKey: FixedBytes::from([2u8; 32]),
+            communicationPubKey:
+                RSAPublicKey {
+                    rsaPublicKey: [FixedBytes::from([0u8; 32]); 10],
+                },
+               
+        };    
+    
         let mut mock_instance = MockCommitteeRegistryContractApi::new();
         mock_instance
             .expect_call_get_member_public_keys()

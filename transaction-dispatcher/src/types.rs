@@ -7,7 +7,7 @@ use common::{msg_broker::bitvmx_types::BtcTxSPVProof, types::Hash256};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
-    Committee, CommunicationData,
+    Committee, CommunicationData, UTXO,
 };
 
 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-214
@@ -162,6 +162,7 @@ pub struct ApplyToStreamInput {
     pub stream_id: u8,
     pub role: u8,
     pub committee_public_keys: [CommitteePublicKey; 3],
+    pub funding_utxo: UTXO,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]

@@ -1,13 +1,11 @@
 use crate::contracts::committee_registry::CommitteeRegistryContractApi;
-use crate::contracts::types::Address;
+use crate::contracts::types::{Address, convert_to_member_registration_keys};
 use crate::rsk_gateway::{BalanceProvider, DomainErrors};
 use crate::types::{ApplyToStreamInput, ApplyToStreamOutput};
 
 use anyhow::Result;
 use log::{debug, error, info};
-use union_contracts::bindings::committee_registry::CommitteeRegistry::{
-    PublicKeyRegistration, StreamDenomination,
-};
+use union_contracts::bindings::committee_registry::CommitteeRegistry::StreamDenomination;
 
 #[derive(Clone)]
 pub(crate) struct ApplyToStreamInvoke<C: CommitteeRegistryContractApi, BP: BalanceProvider> {
@@ -55,19 +53,13 @@ impl<C: CommitteeRegistryContractApi, BP: BalanceProvider> ApplyToStreamInvoke<C
             ));
         }
 
-        let public_keys_regs = input
-            .committee_public_keys
-            .iter()
-            .cloned()
-            .map(|key| {
-                PublicKeyRegistration::try_from(key).map_err(|e| {
-                    DomainErrors::InvalidPublicKey(format!("Invalid public key: {}", e))
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let public_keys_regs = convert_to_member_registration_keys(
+            input.committee_public_keys.clone(),
+        )
+        .map_err(|e| DomainErrors::InvalidPublicKey(format!("Invalid public key: {}", e)))?;
 
         debug!(
-            "ApplyToStream with derived PublicKeyRegistrations {:?}",
+            "ApplyToStream with derived MemberRegistrationKeys {:?}",
             public_keys_regs
         );
 
@@ -77,6 +69,7 @@ impl<C: CommitteeRegistryContractApi, BP: BalanceProvider> ApplyToStreamInvoke<C
                 input.stream_id,
                 input.role,
                 public_keys_regs,
+                input.funding_utxo,
                 self.gas_bumps,
             )
             .await?;
@@ -111,6 +104,7 @@ mod tests {
     use crate::contracts::interactions::apply_to_stream::{
         ApplyToStreamInput, ApplyToStreamInvoke,
     };
+    use crate::contracts::types::convert_to_member_registration_keys;
     use crate::rsk_gateway::{DomainErrors, MockBalanceProvider};
     use crate::types::CommitteePublicKey;
     use alloy_primitives::{Address, Bloom, TxHash, U256};
@@ -118,7 +112,7 @@ mod tests {
     use mockall::predicate::eq;
     use std::str::FromStr;
     use union_contracts::bindings::committee_registry::CommitteeRegistry::{
-        PublicKeyRegistration, StreamDenomination,
+        StreamDenomination, UTXO,
     };
 
     impl ApplyToStreamInvoke<MockCommitteeRegistryContractApi, MockBalanceProvider> {
@@ -143,6 +137,7 @@ mod tests {
             stream_id: 123,
             role: 1,
             committee_public_keys: fake_pub_keys(),
+            funding_utxo: UTXO::default(),
         };
 
         // expect get_minimum_deposit to be called
@@ -158,15 +153,11 @@ mod tests {
             .with(
                 eq(input.stream_id),
                 eq(input.role),
-                eq(fake_pub_keys()
-                    .iter()
-                    .cloned()
-                    .map(PublicKeyRegistration::try_from)
-                    .collect::<Result<Vec<_>, _>>()
-                    .unwrap()),
+                eq(convert_to_member_registration_keys(fake_pub_keys()).unwrap()),
+                eq(UTXO::default()),
                 eq(3u8),
             )
-            .returning(|_, _, _, _| {
+            .returning(|_, _, _, _, _| {
                 Ok(get_fake_receipt(
                     true,
                     "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
@@ -200,6 +191,7 @@ mod tests {
             stream_id: 123,
             role: 1,
             committee_public_keys: fake_pub_keys(),
+            funding_utxo: UTXO::default(),
         };
 
         // expect get_minimum_deposit to be called

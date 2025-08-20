@@ -6,7 +6,7 @@ use alloy_provider::Provider;
 use log::info;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{self, Committee};
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
-    CommitteeRegistryErrors, CommitteeRegistryInstance, StreamDenomination,
+    CommitteeRegistryErrors, CommitteeRegistryInstance, StreamDenomination, MemberKeys, MemberRegistrationKeys, UTXO,
 };
 
 #[cfg(test)]
@@ -23,7 +23,7 @@ pub trait CommitteeRegistryContractApi {
     async fn call_get_member_public_keys(
         &self,
         member_address: Address,
-    ) -> alloy_contract::Result<Vec<alloy_primitives::FixedBytes<32>>>;
+    ) -> alloy_contract::Result<MemberKeys>;
 
     async fn call_get_member_communication_data(
         &self,
@@ -35,7 +35,8 @@ pub trait CommitteeRegistryContractApi {
         &self,
         stream: u8,
         role: u8,
-        public_keys: Vec<CommitteeRegistry::PublicKeyRegistration>,
+        public_keys: MemberRegistrationKeys,
+        funding_utxo: UTXO,
         gas_bumps: u8,
     ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt>;
 
@@ -74,7 +75,7 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
     async fn call_get_member_public_keys(
         &self,
         member_address: Address,
-    ) -> alloy_contract::Result<Vec<alloy_primitives::FixedBytes<32>>> {
+    ) -> alloy_contract::Result<MemberKeys> {
         self.contract_instance
             .getMemberPublicKeys(member_address)
             .call()
@@ -96,13 +97,14 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
         &self,
         stream: u8,
         role: u8,
-        public_keys: Vec<CommitteeRegistry::PublicKeyRegistration>,
+        public_keys: MemberRegistrationKeys,
+        funding_utxo: UTXO,
         gas_bumps: u8,
     ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt> {
         send_tx_with_gas_bump(
             || {
                 self.contract_instance
-                    .applyToStream(stream, role, public_keys.clone())
+                    .applyToStream(stream, role, public_keys.clone(), funding_utxo.clone())
             },
             gas_bumps,
         )

@@ -13,7 +13,7 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     AllCommunicationDataReady, NewCommittee, NewPendingCommittee,
 };
 use union_contracts::bindings::peg_manager::PegManager::{
-    PeginAccepted, PeginRequested, PegoutRegistered, PegoutRequested,
+    PeginAccepted, PeginRequested, PegoutRegistered, PegoutRequested, StreamPosition, PegStatus,
 };
 use union_contracts::bindings::signature_manager::SignatureManager::{
     AllNoncesReady, AllOperatorTakeTxHashesAdded, AllSignaturesReady
@@ -584,8 +584,12 @@ mod tests {
                 .try_into()
                 .expect("Failed to decode acceptPeginTxHash"),
             vout: 1,
-            streamId: 42,
-            packetNumber: 33,
+            streamPosition: StreamPosition {
+                streamId: 42,
+                packetNumber: 33,
+                slotId: 0,
+                pegStatus: 0.into(),
+            },
             requestPeginInfo: RequestPeginTempInfo {
                 rskDestinationAddress: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
                     .parse::<alloy_primitives::Address>()

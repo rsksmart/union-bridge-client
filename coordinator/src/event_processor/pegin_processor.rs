@@ -42,7 +42,7 @@ use transaction_dispatcher::{
         RequestPeginInput,
     },
 };
-use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
+use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested, StreamPosition, PegStatus};
 use uuid::Uuid;
 
 /// The Pegin starts when there is PeginTrasactionFound. Automatically, the Union Client
@@ -436,8 +436,7 @@ where
         let operators_take_key =
             Self::build_operators_take_key(rt_sync, contracts, &committee_response)?;
 
-        // TODO(contracts-upgrade-alpha4): get real slot index from contract when available
-        let slot_index: u64 = 0;
+        let slot_index: u64 = pegin_event.streamPosition.slotId;
 
         let rootstock_address = pegin_event
             .requestPeginInfo
@@ -1930,8 +1929,12 @@ mod tests {
                 .try_into()
                 .expect("Failed to decode acceptPeginTxHash"),
             vout: 1,
-            streamId: 42,
-            packetNumber: 33,
+            streamPosition: StreamPosition {
+                streamId: 42,
+                packetNumber: 33,
+                slotId: 0,
+                pegStatus: 0.into(),
+            },
             requestPeginInfo: RequestPeginTempInfo {
                 rskDestinationAddress: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
                     .parse::<alloy_primitives::Address>()
