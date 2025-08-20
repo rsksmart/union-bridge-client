@@ -1,6 +1,6 @@
 use alloy_primitives::FixedBytes;
 use alloy_primitives::{Address, U256};
-use anyhow::{anyhow, ensure, Context, Result};
+use anyhow::{Context, Result, anyhow, ensure};
 use bitcoin::{Transaction, TxIn, TxOut, Txid};
 use common::msg_broker::bitvmx_types::{P2PAddress, PeerId};
 use common::{msg_broker::bitvmx_types::BtcTxSPVProof, types::Hash256};
@@ -161,18 +161,22 @@ pub struct GetMemberPublicKeysOutput {
 pub struct ApplyToStreamInput {
     pub stream_id: u8, // Matches StreamDenomination enum in contracts
     pub role: u8,
-    pub committee_public_keys: Vec<CommitteePublicKey>,
+    pub take_key: CommitteeECDSA,
+    pub dispute_key: CommitteeECDSA,
+    pub communication_key: CommitteeRSA,
     pub funding_utxo: UTXO,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct CommitteePublicKey {
+pub struct CommitteeECDSA {
     pub x: String,
     pub y: String,
     pub r: String,
     pub s: String,
     pub v: u8,
 }
+
+pub type CommitteeRSA = String;
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct ApplyToStreamOutput {

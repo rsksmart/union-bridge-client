@@ -278,12 +278,3 @@ pub enum ParticipantRole {
     Prover,
     Verifier,
 }
-
-impl From<ParticipantRole> for u8 {
-    fn from(role: ParticipantRole) -> Self {
-        match role {
-            ParticipantRole::Prover => 1,
-            ParticipantRole::Verifier => 2,
-        }
-    }
-}

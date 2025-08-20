@@ -6,7 +6,8 @@ use alloy_provider::Provider;
 use log::info;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{self, Committee, Role};
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
-    CommitteeRegistryErrors, CommitteeRegistryInstance, StreamDenomination, MemberKeys, MemberRegistrationKeys, UTXO,
+    CommitteeRegistryErrors, CommitteeRegistryInstance, MemberKeys, MemberRegistrationKeys,
+    StreamDenomination, UTXO,
 };
 
 #[cfg(test)]
@@ -117,7 +118,8 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
         send_tx_with_gas_bump(
             || {
                 self.contract_instance
-                    .applyToStream(stream, role, public_keys.clone(), funding_utxo.clone()).value(value)
+                    .applyToStream(stream, role, public_keys.clone(), funding_utxo.clone())
+                    .value(value)
             },
             gas_bumps,
         )

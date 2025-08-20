@@ -54,7 +54,9 @@ impl<C: CommitteeRegistryContractApi, BP: BalanceProvider> ApplyToStreamInvoke<C
         }
 
         let public_keys_regs = convert_to_member_registration_keys(
-            input.committee_public_keys.clone(),
+            &input.take_key,
+            &input.dispute_key,
+            &input.communication_key,
         )
         .map_err(|e| DomainErrors::InvalidPublicKey(format!("Invalid public key: {}", e)))?;
 
@@ -107,7 +109,7 @@ mod tests {
     };
     use crate::contracts::types::convert_to_member_registration_keys;
     use crate::rsk_gateway::{DomainErrors, MockBalanceProvider};
-    use crate::types::CommitteePublicKey;
+    use crate::types::{CommitteeECDSA, CommitteeRSA};
     use alloy_primitives::{Address, Bloom, TxHash, U256};
     use alloy_rpc_types::{Log, Receipt, ReceiptEnvelope, ReceiptWithBloom, TransactionReceipt};
     use mockall::predicate::eq;
@@ -137,7 +139,9 @@ mod tests {
         let input = ApplyToStreamInput {
             stream_id: 123,
             role: 1,
-            committee_public_keys: fake_pub_keys(),
+            take_key: fake_take_key(),
+            dispute_key: fake_dispute_key(),
+            communication_key: fake_rsa_key(),
             funding_utxo: UTXO::default(),
         };
 
@@ -154,7 +158,12 @@ mod tests {
             .with(
                 eq(StreamDenomination::from(input.stream_id)),
                 eq(Role::from(input.role)),
-                eq(convert_to_member_registration_keys(fake_pub_keys()).unwrap()),
+                eq(convert_to_member_registration_keys(
+                    &fake_take_key(),
+                    &fake_dispute_key(),
+                    &fake_rsa_key(),
+                )
+                .unwrap()),
                 eq(UTXO::default()),
                 eq(3u8),
                 eq(U256::from(100)),
@@ -192,7 +201,9 @@ mod tests {
         let input = ApplyToStreamInput {
             stream_id: 123,
             role: 1,
-            committee_public_keys: fake_pub_keys(),
+            take_key: fake_take_key(),
+            dispute_key: fake_dispute_key(),
+            communication_key: fake_rsa_key(),
             funding_utxo: UTXO::default(),
         };
 
@@ -253,30 +264,33 @@ mod tests {
         }
     }
 
-    fn fake_pub_keys() -> Vec<CommitteePublicKey> {
-        [
-            CommitteePublicKey {
-                x: "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f".to_string(),
-                y: "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f".to_string(),
-                r: "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f".to_string(),
-                s: "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f".to_string(),
-                v: 27,
-            },
-            CommitteePublicKey {
-                x: "0x0f0e0d0c0b0a09080706050403020100fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0".to_string(),
-                y: "0x0f0e0d0c0b0a09080706050403020100fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0".to_string(),
-                r: "0x0f0e0d0c0b0a09080706050403020100fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0".to_string(),
-                s: "0x0f0e0d0c0b0a09080706050403020100fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0".to_string(),
-                v: 28,
-            },
-            CommitteePublicKey {
-                x: "0xff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00".to_string(),
-                y: "0xff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00".to_string(),
-                r: "0xff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00".to_string(),
-                s: "0xff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00".to_string(),
-                v: 28,
-            },
-        ]
-        .to_vec()
+    fn fake_take_key() -> CommitteeECDSA {
+        CommitteeECDSA {
+            x: "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f".to_string(),
+            y: "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f".to_string(),
+            r: "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f".to_string(),
+            s: "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f".to_string(),
+            v: 27,
+        }
+    }
+
+    fn fake_dispute_key() -> CommitteeECDSA {
+        CommitteeECDSA {
+            x: "0x0f0e0d0c0b0a09080706050403020100fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0".to_string(),
+            y: "0x0f0e0d0c0b0a09080706050403020100fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0".to_string(),
+            r: "0x0f0e0d0c0b0a09080706050403020100fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0".to_string(),
+            s: "0x0f0e0d0c0b0a09080706050403020100fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0".to_string(),
+            v: 28,
+        }
+    }
+
+    fn fake_rsa_key() -> CommitteeRSA {
+        "00c1e63f7b14e4e7a63b39f8445f9e30b4d6c92a08dc0240d49cf52c9a5d7f27f4b0a64226c04fbe3f63f6b0e9\
+        a7050e4c7a16a8c929e04afefdf55b10903a0f8c15b6b04a78b1c255871a82ffbfe483dd2099f1b72013f5c6f66\
+        f9e7d44c34c3b9f22b9bb09cc7a75e9eae1121f09e02b95ff9b12cfeb29f6f27bc2bcd43790c9c5896ac5947bb9\
+        2c8b1587c4237edc42b8a0611ab6a2c62c44129c03b7b271e1a5c5e6b60c56c5f9308a5b4203d8f749fdb7c75e0\
+        4b4dfd238a37e951bda7fa04b9e40f937cbfb72f83fc83a786c6d351b3a53d38fbdc721ff4dfc8a0a1a1143cf10\
+        dfe8944acbb61d674370dd408e9189a9332d308f0c8438f1a94afcb92d"
+            .to_string()
     }
 }

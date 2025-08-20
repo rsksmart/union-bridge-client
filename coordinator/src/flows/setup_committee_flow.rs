@@ -19,13 +19,13 @@ use uuid::Uuid;
 
 use common::msg_broker::bitvmx_types::{
     IncomingBitVMXApiMessages, NewCommittee, OutgoingBitVMXApiMessages, P2PAddress, PartialUtxo,
-    ParticipantRole, PeerId, SignedPublicKey, VariableTypes,
+    PeerId, SignedPublicKey, VariableTypes,
 };
 use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 
-use crate::user_requests::ApplyToStream;
+use crate::user_requests::{ApplyToStream, Role};
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
-    CommitteeMember, CommunicationData, UTXO,
+    CommitteeMember, CommunicationData,
 };
 
 use common::types;
@@ -33,9 +33,9 @@ use common::types::RskBlockAndUncles;
 #[cfg(test)]
 use mockall::automock;
 use transaction_dispatcher::types::{
-    ApplyToStreamInput, CommitteePublicKey, DepositAggregatedKeyInput,
-    DepositCommunicationDataInput, DepositCommunicationDataOutput, GetCommunicationDataInput,
-    GetMemberPublicKeysInput, GetMemberPublicKeysOutput, P2PAddressParser,
+    ApplyToStreamInput, CommitteeECDSA, DepositAggregatedKeyInput, DepositCommunicationDataInput,
+    DepositCommunicationDataOutput, GetCommunicationDataInput, GetMemberPublicKeysInput,
+    GetMemberPublicKeysOutput, P2PAddressParser,
 };
 
 const NO_LEADER_IDX: u16 = 0;
@@ -427,12 +427,12 @@ where
 
         let watchtower_count = members
             .iter()
-            .filter(|m| m.role == u8::from(ParticipantRole::Verifier))
+            .filter(|m| m.role == u8::from(Role::Verifier))
             .count() as u32;
 
         let operator_count = members
             .iter()
-            .filter(|m| m.role == u8::from(ParticipantRole::Prover))
+            .filter(|m| m.role == u8::from(Role::Prover))
             .count() as u32;
 
         // build a map of communication pubkeys to addresses
@@ -454,7 +454,7 @@ where
         info!("Instantiating NewCommittee");
 
         let new_committee = NewCommittee {
-            my_role,
+            my_role: my_role.into(),
             take_aggregated_key: self.ctx_aggregated_take_key()?,
             dispute_aggregated_key: self.ctx_aggregated_dispute_key()?,
             addresses: communication_data,
@@ -716,11 +716,6 @@ where
             .get_stream_id()
             .context("Deposit Communication Data")? as u64;
 
-        info!(
-            "Depositing member {} communication data for stream {stream_id}",
-            self.my_address()
-        );
-
         let mut my_comm_info = self.ctx_my_comm_info()?;
 
         // TODO(agus) temporary until PeerId thing is sorted out
@@ -737,6 +732,11 @@ where
                 communication_data.push(P2PAddressParser::bitvmx_to_contracts(&my_comm_info)?);
             }
         }
+
+        info!(
+            "Depositing member {} communication data for stream {stream_id}: {communication_data:?}",
+            self.my_address()
+        );
 
         self.rt_sync.run(
             self.contracts
@@ -764,17 +764,16 @@ where
     }
 
     fn deposit_aggregated_key(&self) -> Result<()> {
-        let stream_id = self
-            .state
-            .ctx
-            .get_stream_id()
-            .context("Deposit Aggregated Key")? as u64;
-
-        info!("Depositing aggregated key for stream {stream_id}");
-
         let aggregated_take_key = self
             .ctx_aggregated_take_key()
             .context("Deposit Aggregated Key")?;
+
+        let stream_id = self.state.ctx.get_stream_id()? as u64;
+
+        info!(
+            "Depositing aggregated key for stream {stream_id}: {}",
+            aggregated_take_key.to_string()
+        );
 
         let x_only_key = XOnlyPublicKey::from(aggregated_take_key);
         let aggregated_key = FixedBytes::<32>::try_from(&x_only_key.serialize())
@@ -978,22 +977,17 @@ where
             .role
             .clone();
 
+        let funding_utxo = self.ctx_user_input()?.utxo.try_into()?;
+
         let res = self
             .rt_sync
             .run(self.contracts.apply_to_stream(ApplyToStreamInput {
                 stream_id,
                 role: u8::from(role),
-                committee_public_keys: vec![
-                    signed_to_committee_public_key(self.ctx_my_take_key()?),
-                    signed_to_committee_public_key(self.ctx_my_dispute_key()?),
-                    signed_to_committee_public_key(self.ctx_my_comm_key()?),
-                ],
-                // TODO(iago) fix later
-                funding_utxo: UTXO {
-                    txid: FixedBytes::default(),
-                    outputIndex: 0,
-                    amount: 0,
-                },
+                take_key: signed_to_committee_public_key(self.ctx_my_take_key()?),
+                dispute_key: signed_to_committee_public_key(self.ctx_my_dispute_key()?),
+                communication_key: signed_to_rsa(self.ctx_my_comm_key()?),
+                funding_utxo,
             }));
 
         if res.is_err() {
@@ -1374,18 +1368,29 @@ fn parse_stream_id_from_u256(stream_id: &alloy_primitives::U256) -> Result<u8> {
         .with_context(|| format!("Failed to convert stream_id {stream_id} to u8"))
 }
 
-fn signed_to_committee_public_key(signed_pk: SignedPublicKey) -> CommitteePublicKey {
+fn signed_to_committee_public_key(signed_pk: SignedPublicKey) -> CommitteeECDSA {
     // TODO(iago-2) this can panic, handle gracefully
 
     let uncompressed = signed_pk.public_key.inner.serialize_uncompressed(); // [0x04 | X(32) | Y(32)]
     let x = &uncompressed[1..33];
     let y = &uncompressed[33..65];
 
-    CommitteePublicKey {
+    CommitteeECDSA {
         x: hex::encode(x),
         y: hex::encode(y),
         r: hex::encode(&signed_pk.signature_r),
         s: hex::encode(&signed_pk.signature_s),
         v: signed_pk.recovery_id + 27, // Convert to Ethereum's v format (27 or 28)
     }
+}
+
+// TODO(ask-Agus) is this correct?
+pub fn signed_to_rsa(signed_pk: SignedPublicKey) -> String {
+    let pk = &signed_pk.public_key.to_bytes();
+    let mut buf = Vec::with_capacity(pk.len() + 32 + 32 + 1);
+    buf.extend_from_slice(pk);
+    buf.extend_from_slice(&signed_pk.signature_r);
+    buf.extend_from_slice(&signed_pk.signature_s);
+    buf.push(signed_pk.recovery_id);
+    format!("0x{}", hex::encode(buf))
 }
