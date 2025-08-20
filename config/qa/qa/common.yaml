@@ -1,0 +1,23 @@
+indexer:
+  initial_block_hash: "0x8fd79c5989aaa44d8510c92bf860de91a1eb771387b9aa91b01436e4a8c38f28"
+  sync:
+    finality_depth: 100
+    batch_size: 100
+  storage:
+    path: "/tmp/monitor-executions/default/storage"
+  cache:
+    size: 1000
+
+provider:
+  rootstock:
+    url: "ws://127.0.0.1:8545"
+
+contracts:
+  - name: "PegManager"
+    address: "0x0165878A594ca255338adfa4d48449f69242Eb8F"
+  - name: "FakePegManager"
+    address: "0x3Aa5ebB10DC797CAC828524e59A333d0A371443c"
+  - name: "SignatureManager"
+    address: "0x610178dA211FEF7D417bC0e6FeD39F05609AD788"
+  - name: "CommitteeRegistry"
+    address: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
