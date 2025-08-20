@@ -159,7 +159,7 @@ pub struct GetMemberPublicKeysOutput {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ApplyToStreamInput {
-    pub stream_id: u8,
+    pub stream_id: u8, // Matches StreamDenomination enum in contracts
     pub role: u8,
     pub committee_public_keys: Vec<CommitteePublicKey>,
     pub funding_utxo: UTXO,
@@ -191,7 +191,13 @@ pub struct GetCommitteeOutput {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct GetMemberCommunicationDataOutput {
+pub struct GetCommunicationDataInput {
+    pub stream_id: u64,
+    pub member_address: Address,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetCommunicationDataOutput {
     pub communication_data: Vec<CommunicationData>,
 }
 
@@ -203,6 +209,18 @@ pub struct DepositCommunicationDataInput {
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct DepositCommunicationDataOutput {
+    pub transaction_hash: String,
+    pub success: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DepositAggregatedKeyInput {
+    pub stream_id: u64,
+    pub aggregated_key: FixedBytes<32>,
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+pub struct DepositAggregatedKeyOutput {
     pub transaction_hash: String,
     pub success: bool,
 }

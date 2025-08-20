@@ -5,7 +5,7 @@ use serde::Deserialize;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ApplyToStream {
-    pub stream_id: u8,
+    pub stream_id: u8, // Matches StreamDenomination in the contract
     pub role: ParticipantRole,
     pub utxo: Vec<PartialUtxo>, // 3: 1) speed up, 2) funding for initial tx of the dispute core, 3) for funds advancement on pegout
 }

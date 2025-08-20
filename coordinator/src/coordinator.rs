@@ -283,6 +283,7 @@ pub(crate) mod tests {
         test_utils::rsk_block_generator::{
             create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
         },
+        types,
         types::{RskBlockAndUncles, TxHash},
     };
     use mockall::mock;
@@ -295,10 +296,11 @@ pub(crate) mod tests {
     use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
     use transaction_dispatcher::types::{
         AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
-        AddMemberSignatureInput, AddMemberSignatureOutput, AddOperatorTakeTxHashInput, 
+        AddMemberSignatureInput, AddMemberSignatureOutput, AddOperatorTakeTxHashInput,
         AddOperatorTakeTxHashOutput, ApplyToStreamInput, ApplyToStreamOutput,
-        DepositCommunicationDataInput, DepositCommunicationDataOutput, GetCommitteeInput,
-        GetCommitteeOutput, GetMemberCommunicationDataOutput, GetMemberPublicKeysInput,
+        DepositAggregatedKeyInput, DepositAggregatedKeyOutput, DepositCommunicationDataInput,
+        DepositCommunicationDataOutput, GetCommitteeInput, GetCommitteeOutput,
+        GetCommunicationDataInput, GetCommunicationDataOutput, GetMemberPublicKeysInput,
         GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterPegoutInput,
         RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
         RequestPegoutOutput,
@@ -594,6 +596,8 @@ pub(crate) mod tests {
         pub RskContractsGatewayApi {}
 
         impl RskContractsGatewayApi for RskContractsGatewayApi {
+            fn my_address(&self) -> types::Address;
+
             async fn get_temporary_pegin_address(
                 &self,
                 input: PeginAddressInput,
@@ -650,13 +654,18 @@ pub(crate) mod tests {
 
             async fn get_committee_communication_data(
                 &self,
-                stream_id: u64,
-            ) -> Result<GetMemberCommunicationDataOutput, DomainErrors>;
+                input: GetCommunicationDataInput,
+            ) -> Result<GetCommunicationDataOutput, DomainErrors>;
 
             async fn deposit_communication_data(
                 &self,
                 input: DepositCommunicationDataInput
             ) -> Result<DepositCommunicationDataOutput, DomainErrors>;
+
+            async fn deposit_aggregated_key(
+                &self,
+                input: DepositAggregatedKeyInput
+            ) -> Result<DepositAggregatedKeyOutput, DomainErrors>;
 
             async fn add_operator_take_tx_hash(
                 &self,

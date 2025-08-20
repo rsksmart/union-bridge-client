@@ -66,8 +66,8 @@ impl<C: CommitteeRegistryContractApi, BP: BalanceProvider> ApplyToStreamInvoke<C
         let receipt = self
             .contract
             .invoke_apply_to_stream(
-                input.stream_id,
-                input.role,
+                input.stream_id.into(),
+                input.role.into(),
                 public_keys_regs,
                 input.funding_utxo,
                 self.gas_bumps,
@@ -113,7 +113,7 @@ mod tests {
     use mockall::predicate::eq;
     use std::str::FromStr;
     use union_contracts::bindings::committee_registry::CommitteeRegistry::{
-        StreamDenomination, UTXO,
+        Role, StreamDenomination, UTXO,
     };
 
     impl ApplyToStreamInvoke<MockCommitteeRegistryContractApi, MockBalanceProvider> {
@@ -152,8 +152,8 @@ mod tests {
         mock_instance
             .expect_invoke_apply_to_stream()
             .with(
-                eq(input.stream_id),
-                eq(input.role),
+                eq(StreamDenomination::from(input.stream_id)),
+                eq(Role::from(input.role)),
                 eq(convert_to_member_registration_keys(fake_pub_keys()).unwrap()),
                 eq(UTXO::default()),
                 eq(3u8),
