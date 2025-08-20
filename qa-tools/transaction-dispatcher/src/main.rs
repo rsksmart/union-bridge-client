@@ -4,10 +4,7 @@ mod step_definitions;
 mod steps;
 mod teardown;
 
-use crate::setup::{
-    deploy_contracts, packet_creation_flow, setup_anvil, setup_transaction_dispatcher,
-    transfer_funds,
-};
+use crate::setup::{deploy_contracts, forge_clean, packet_creation_flow, setup_anvil, setup_transaction_dispatcher, transfer_funds};
 use crate::teardown::{shutdown_anvil, shutdown_transaction_dispatcher};
 use cucumber::{World, writer::JUnit};
 use std::env;
@@ -119,6 +116,7 @@ async fn tx_dispatcher_setup(world: &mut TestWorld) {
     let anvil_port: u16 = ANVIL_PORT.parse().unwrap();
     let child_anvil: Child = setup_anvil(&ANVIL_URL, anvil_port, ANVIL_TIMEOUT).await;
     world.child_anvil = Some(child_anvil);
+    forge_clean(CONTRACTS_BASEDIR.as_str());
     deploy_contracts(
         CONTRACTS_BASEDIR.as_str(),
         DEPLOY_LOCAL_CONTRACTS_RELATIVE_PATH.as_str(),

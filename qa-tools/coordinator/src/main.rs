@@ -3,10 +3,7 @@ mod setup;
 mod step_definitions;
 mod teardown;
 
-use crate::setup::{
-    deploy_contracts, packet_creation_flow, setup_anvil, setup_block_indexer, setup_coordinator,
-    setup_log_indexer, setup_transaction_dispatcher, setup_user_api, transfer_funds,
-};
+use crate::setup::{deploy_contracts, forge_clean, packet_creation_flow, setup_anvil, setup_block_indexer, setup_coordinator, setup_log_indexer, setup_transaction_dispatcher, setup_user_api, transfer_funds};
 use crate::teardown::{
     shutdown_anvil, shutdown_bitvmx_mock, shutdown_block_indexer, shutdown_coordinator,
     shutdown_log_indexer, shutdown_transaction_dispatcher, shutdown_user_api,
@@ -146,6 +143,7 @@ async fn setup(world: &mut TestWorld) {
     let anvil_port: u16 = ANVIL_PORT.parse().unwrap();
     let child_anvil: Child = setup_anvil(&ANVIL_URL, anvil_port, ANVIL_TIMEOUT).await;
     world.child_anvil = Some(child_anvil);
+    forge_clean(CONTRACTS_BASEDIR.as_str());
     deploy_contracts(
         CONTRACTS_BASEDIR.as_str(),
         DEPLOY_LOCAL_CONTRACTS_RELATIVE_PATH.as_str(),
