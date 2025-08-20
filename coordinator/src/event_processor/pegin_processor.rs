@@ -1,3 +1,35 @@
+/**
+U: Union Bridge
+B: BitVMX
+RSK: RSK Blockchain Gateway
+
+Pegin steps:
+1. Subscribe to BitVMX pegin events (U -> B)
+2. Handle BitVMX PeginTransactionFound message received (B -> U)
+    a. Ask BitVMX for SPV proof (do we need to check if the transaction is confirmed?) (U -> B)
+3. Handle SPV proof received Request pegin step. (B -> U)
+    a. Invoke PegManager requestPegin. (U -> RSK)
+4. Handle PeguinRequested event from RSK (wait x confirmations) (RSK -> U)
+    a. Send PeginRequestMessage to BitVMX through SetVar (U -> B)
+    b. Send Setup to BitVMX //wait to setupCompleted?? (U -> B)
+5. Receive PeginAcceptedMsg (B -> U)
+    a AddOperatorTakeTxHash by calling SignatureManager (U -> RSK)
+6. Handle RSK Event AllOperatorTakeTxHashesAdded (RSK -> U)
+    a. AddMemberNonce by calling SignatureManager (U -> RSK)
+7. AllNoncesReady RSK Event  (RSK -> U)
+    a. AddMemberSignature by calling SignatureManager (U -> RSK)
+8. AllSignaturesReady RSK Event (RSK -> U)
+    a. Send DispatchTransaction to BitVMX (U -> B)
+    b. Send GetTransactionInfoByName to BitVMX (U -> B)
+9. Receive Transaction message containing the transaction status (B -> U)
+    a. If tx is not Confirmed, wait and ask for it again. (U -> B)
+    b. If tx is Confirmed ask for the SPV proof (U -> B)
+10. Handle SPV proof received Request pegin step. (B -> U)
+    a. Invoke PegManager acceptPegin. (U -> RSK)
+11. Handle PeginAccepted event from RSK (wait x confirmations) (RSK -> U)
+    b. Send SetVar to BitVMX with the PEG_IN_COMPLETED msg (U -> B)
+
+*/
 use crate::types::RegisterSignaturesBitVmxData;
 use crate::{
     blockchain_tracker::{BlockConfirmations, BlockchainObserver, BlockchainView},
@@ -240,12 +272,12 @@ where
         }
 
         info!("Handling AllOperatorTakeTxHashesAdded event: {:?}", data);
-        let tx_hahs: TxHash = data.inner.acceptPeginTxHash.into();
+        let tx_hash: TxHash = data.inner.acceptPeginTxHash.into();
 
-        let Some(state) = self.tracker.get(&tx_hahs) else {
+        let Some(state) = self.tracker.get(&tx_hash) else {
             bail!(
                 "Received AllOperatorTakeTxHashesAdded for unknown acceptPeginTxHash: {:?}",
-                tx_hahs
+                tx_hash
             );
         };
         let observer_id = format!("operator_take_tx_hashes_added-{}", state.flow_id);
@@ -989,11 +1021,11 @@ where
             RskPegManagerEvents::AllNoncesReady(data)
             | RskPegManagerEvents::AllSignaturesReady(data) => {
                 debug!("Handling signature event {:?}", data);
-                for (state) in self.tracker.values_mut() {
+                for state in self.tracker.values_mut() {
                     if let Some(btc_sig_flow) = &mut state.btc_signatures_flow {
                         // Delegate the event to the BTC signature flow
                         btc_sig_flow.delegate_rsk_event(state.flow_id, event)?;
-                        if (btc_sig_flow.is_done()) {
+                        if btc_sig_flow.is_done() {
                             //TODO implement next step after BTC signature flow is done
                         }
                     }
