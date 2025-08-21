@@ -14,6 +14,7 @@ use sha2::{Digest, Sha256};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use tiny_keccak::{Hasher, Keccak};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;
 
@@ -43,6 +44,39 @@ const NO_LEADER_IDX: u16 = 0;
 const TAKE_KEY_INDEX: usize = 0;
 const DISPUTE_KEY_INDEX: usize = 1;
 const COMM_KEY_INDEX: usize = 2;
+
+// Helper function to create keccak256 hash of uncompressed public key
+// TODO(ask Iago) what is the proper place for this function?
+fn create_pubkey_hash(public_key: &PublicKey) -> Result<[u8; 32]> {
+    // Get uncompressed public key coordinates
+    let mut pk = *public_key;
+    pk.compressed = false;
+    let uncompressed_pub_key = pk.to_bytes().split_off(1); // Remove the 0x04 prefix
+    
+    // Create keccak256 hash of the uncompressed public key
+    let mut keccak = Keccak::v256();
+    let mut pub_key_hash = [0u8; 32];
+    keccak.update(&uncompressed_pub_key);
+    keccak.finalize(&mut pub_key_hash);
+    
+    Ok(pub_key_hash)
+}
+
+// Helper function to construct SignedPublicKey from components
+// TODO(ask Iago) what is the proper place for this function?
+fn construct_signed_pubkey(
+    public_key: PublicKey,
+    signature_r: [u8; 32],
+    signature_s: [u8; 32],
+    recovery_id: u8,
+) -> SignedPublicKey {
+    SignedPublicKey {
+        public_key,
+        signature_r,
+        signature_s,
+        recovery_id,
+    }
+}
 
 #[cfg_attr(test, automock)]
 trait SetupCommitteeFlowApi {
@@ -81,6 +115,7 @@ struct FlowContext {
     // stepped
     user_input: Option<ApplyToStream>,
     my_comm_info: Option<P2PAddress>,
+    current_pubkey: Option<PublicKey>,
     my_take_key: PubKeyReq,
     my_dispute_key: PubKeyReq,
     my_comm_key: PubKeyReq,
@@ -133,8 +168,11 @@ enum Steps {
     UserRequest,
     GetMyCommInfo,
     GetMyTakeKey,
+    SignMyTakeKey,
     GetDisputeKey,
+    SignMyDisputeKey,
     GetMyCommKey,
+    SignMyCommKey,
     ApplyToStream,
     DepositCommunicationData,
     SetupTakeAggregatedKey,
@@ -151,9 +189,12 @@ impl Steps {
         let next = match self {
             Steps::UserRequest => Steps::GetMyCommInfo,
             Steps::GetMyCommInfo => Steps::GetMyTakeKey,
-            Steps::GetMyTakeKey => Steps::GetDisputeKey,
-            Steps::GetDisputeKey => Steps::GetMyCommKey,
-            Steps::GetMyCommKey => Steps::ApplyToStream,
+            Steps::GetMyTakeKey => Steps::SignMyTakeKey,
+            Steps::SignMyTakeKey => Steps::GetDisputeKey,
+            Steps::GetDisputeKey => Steps::SignMyDisputeKey,
+            Steps::SignMyDisputeKey => Steps::GetMyCommKey,
+            Steps::GetMyCommKey => Steps::SignMyCommKey,
+            Steps::SignMyCommKey => Steps::ApplyToStream,
             Steps::ApplyToStream => Steps::DepositCommunicationData,
             Steps::DepositCommunicationData => Steps::SetupTakeAggregatedKey,
             Steps::SetupTakeAggregatedKey => Steps::SetupDisputeAggregatedKey,
@@ -176,6 +217,7 @@ enum StepData {
     CommInfo(P2PAddress),
     SignedPublicKey(SignedPublicKey),
     PublicKey(PublicKey),
+    SignedMessage([u8; 32], [u8; 32], u8), // signature_r, signature_s, recovery_id
 
     // async or collaborative steps
     PendingCommittee(NewCommitteePendingEvent),
@@ -209,6 +251,13 @@ impl StepData {
         match self {
             StepData::PublicKey(pk) => Ok(pk),
             _ => bail!("Expected PublicKey"),
+        }
+    }
+
+    fn into_signed_payload(self) -> Result<([u8; 32], [u8; 32], u8)> {
+        match self {
+            StepData::SignedMessage(r, s, recovery_id) => Ok((r, s, recovery_id)),
+            _ => bail!("Expected SignedMessage"),
         }
     }
 
@@ -282,7 +331,7 @@ where
         })?;
 
         match pub_key_req {
-            Some(r) if req_id == r.0 => {
+            Some(r) if r.0 == req_id => {
                 r.1 = Some(data.into_signed_pubkey()?);
                 Ok(())
             }
@@ -306,7 +355,7 @@ where
         })?;
 
         match pub_key_req {
-            Some(r) if req_id == r.0 => {
+            Some(r) if r.0 == req_id => {
                 r.1 = Some(data.into_pubkey()?);
                 Ok(())
             }
@@ -396,7 +445,7 @@ where
     }
 
     fn request_bitvmx_member_pub_key(&self, req_id: Uuid) -> Result<()> {
-        Ok(self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetSignedPubKey(req_id, true)))
+        Ok(self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetPubKey(req_id, true)))
     }
 
     fn setup_committee(&self) -> Result<()> {
@@ -837,32 +886,77 @@ where
                 self.request_bitvmx_take_pub_key()?;
             }
             Steps::GetMyTakeKey => {
-                Self::close_pub_key_req(
-                    &mut self.state.ctx.my_take_key,
-                    self.state.flow_id,
+                let public_key = data.into_pubkey()?;
+                self.state.ctx.current_pubkey = Some(public_key);
+                
+                // Create hash and request signature
+                let hash = create_pubkey_hash(&public_key)?;
+                let req_id = Uuid::new_v4();
+                self.state.ctx.my_take_key = Some((req_id, None));
+                
+                self.send_bitvmx_msg(IncomingBitVMXApiMessages::SignMessage(
                     req_id,
-                    data,
-                )?;
+                    hash.to_vec(),
+                    public_key,
+                ));
+            }
+            Steps::SignMyTakeKey => {
+                let (signature_r, signature_s, recovery_id) = data.into_signed_payload()?;
+                let public_key = self.state.ctx.current_pubkey
+                    .context("Missing public key for signing")?;
+                let signed_pubkey = construct_signed_pubkey(public_key, signature_r, signature_s, recovery_id);
+                self.state.ctx.my_take_key.as_mut().unwrap().1 = Some(signed_pubkey);
+                self.state.ctx.current_pubkey = None;
 
                 self.request_bitvmx_dispute_pub_key()?;
             }
             Steps::GetDisputeKey => {
-                Self::close_pub_key_req(
-                    &mut self.state.ctx.my_dispute_key,
-                    self.state.flow_id,
+                let public_key = data.into_pubkey()?;
+                self.state.ctx.current_pubkey = Some(public_key);
+                
+                // Create hash and request signature
+                let hash = create_pubkey_hash(&public_key)?;
+                let req_id = Uuid::new_v4();
+                self.state.ctx.my_dispute_key = Some((req_id, None));
+                
+                self.send_bitvmx_msg(IncomingBitVMXApiMessages::SignMessage(
                     req_id,
-                    data,
-                )?;
+                    hash.to_vec(),
+                    public_key,
+                ));
+            }
+            Steps::SignMyDisputeKey => {
+                let (signature_r, signature_s, recovery_id) = data.into_signed_payload()?;
+                let public_key = self.state.ctx.current_pubkey
+                    .context("Missing public key for signing")?;
+                let signed_pubkey = construct_signed_pubkey(public_key, signature_r, signature_s, recovery_id);
+                self.state.ctx.my_dispute_key.as_mut().unwrap().1 = Some(signed_pubkey);
+                self.state.ctx.current_pubkey = None;
 
                 self.request_bitvmx_comm_pub_key()?;
             }
             Steps::GetMyCommKey => {
-                Self::close_pub_key_req(
-                    &mut self.state.ctx.my_comm_key,
-                    self.state.flow_id,
+                let public_key = data.into_pubkey()?;
+                self.state.ctx.current_pubkey = Some(public_key);
+                
+                // Create hash and request signature  
+                let hash = create_pubkey_hash(&public_key)?;
+                let req_id = Uuid::new_v4();
+                self.state.ctx.my_comm_key = Some((req_id, None));
+                
+                self.send_bitvmx_msg(IncomingBitVMXApiMessages::SignMessage(
                     req_id,
-                    data,
-                )?;
+                    hash.to_vec(),
+                    public_key,
+                ));
+            }
+            Steps::SignMyCommKey => {
+                let (signature_r, signature_s, recovery_id) = data.into_signed_payload()?;
+                let public_key = self.state.ctx.current_pubkey
+                    .context("Missing public key for signing")?;
+                let signed_pubkey = construct_signed_pubkey(public_key, signature_r, signature_s, recovery_id);
+                self.state.ctx.my_comm_key.as_mut().unwrap().1 = Some(signed_pubkey);
+                self.state.ctx.current_pubkey = None;
 
                 self.apply_to_stream()?;
             }
@@ -943,6 +1037,12 @@ where
         self.request_bitvmx_member_pub_key(req_id)
     }
 
+    fn request_bitvmx_dispute_pub_key(&mut self) -> Result<()> {
+        let req_id = Uuid::new_v4();
+        self.state.ctx.my_dispute_key = Some((req_id, None));
+        self.request_bitvmx_member_pub_key(req_id)
+    }
+
     fn request_bitvmx_comm_pub_key(&mut self) -> Result<()> {
         let req_id = Uuid::new_v4();
         self.state.ctx.my_comm_key = Some((req_id, None));
@@ -979,12 +1079,6 @@ where
         }
 
         Ok(())
-    }
-
-    fn request_bitvmx_dispute_pub_key(&mut self) -> Result<()> {
-        let req_id = Uuid::new_v4();
-        self.state.ctx.my_dispute_key = Some((req_id, None));
-        self.request_bitvmx_member_pub_key(req_id)
     }
 
     fn setup_bitvmx_aggregated_take_pubkey(&mut self) -> Result<()> {
@@ -1255,18 +1349,26 @@ where
                     bail!("No flow found for OutgoingBitVMXApiMessages::CommInfo")
                 }
             }
-            OutgoingBitVMXApiMessages::SignedPubKey(req_id, signed_key) => {
-                // here I cannot get the flow by uuid with self.flows.get(uuid) because one flow
-                // will have several uuids for different requests (ie. every PubKey is requested
-                // with one uuid)
+            OutgoingBitVMXApiMessages::PubKey(req_id, public_key) => {
+                // Handle PubKey response for GetKey steps
                 if let Some(flow) = self.get_flow_for_request_id(req_id) {
+                    flow.complete_step_and_next(Some(*req_id), StepData::PublicKey(*public_key))?;
+                } else {
+                    bail!(
+                        "No flow found for OutgoingBitVMXApiMessages::PubKey and id {req_id}"
+                    );
+                }
+            }
+            OutgoingBitVMXApiMessages::SignedMessage(sign_req_id, signature_r, signature_s, recovery_id) => {
+                // Handle SignedMessage response using the standard flow
+                if let Some(flow) = self.get_flow_for_request_id(sign_req_id) {
                     flow.complete_step_and_next(
-                        Some(*req_id),
-                        StepData::SignedPublicKey(signed_key.clone()),
+                        Some(*sign_req_id), 
+                        StepData::SignedMessage(*signature_r, *signature_s, *recovery_id)
                     )?;
                 } else {
                     bail!(
-                        "No flow found for OutgoingBitVMXApiMessages::SignedPubKey and id {req_id}"
+                        "No flow found for OutgoingBitVMXApiMessages::SignedMessage and id {sign_req_id}"
                     );
                 }
             }
