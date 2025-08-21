@@ -10,12 +10,11 @@ Feature: Coordinator - Advance Funds process
     And the Union Bridge client services are running
     And the account is funded
 
-    # Copy the qa-tools/config/qa-coordinator directory and paste it under union-bridge-client/config
-    # Set the needed variables in qa-tools/env/coordinator/env
-    # Copy the qa-tools/env/coordinator/env file and paste it as union-bridge-client/.env
+    # Check README.md in qa-tools (Initial setup) for the setup instructions
 
     # Terminal window 1:
-    # > source .env && ./run-mocking.sh
+
+    # > (cd ../bitvmx-union-bridge-contracts && forge clean); ./run-mocking.sh
 
     # Watch the logs in the terminal window, search for "deployed at" to set the contract addresses appropriately in the config/qa-coordinator
 
@@ -25,19 +24,9 @@ Feature: Coordinator - Advance Funds process
     # > node anvil_proxy.js
 
     # Terminal window 3:
-    # > export KEY_STORE_PASSWORD="=== REPLACE_WITH_PASSWORD ==="
-    # > ./run-client.sh anvil qa-coordinator
+    # > ./run-client.sh --features anvil,zkp --config config/qa --logger log4rs.yaml
 
     # Terminal window 4:
-    # > tail -100f logs/coordinator.log
-
-    # Optional - Terminal window 5:
-    # > tail -100f logs/log-indexer.log
-
-    # Optional - Terminal window 6:
-    # > tail -100f logs/block-indexer.log
-
-    # Terminal window 7:
     # > cd qa-tools/coordinator
     # > chmod +x commands.sh
     # > source ./commands.sh
