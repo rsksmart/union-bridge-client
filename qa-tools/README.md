@@ -4,6 +4,20 @@ A collection of tools for testing and validating the Union Bridge Monitor compon
 
 ## Initial setup
 
+### Install Anvil
+https://getfoundry.sh/anvil/overview/
+
+### Contracts 
+
+Go to `qa-tools/coordinator/Cargo.toml` and make sure the `union-bridge-contracts` dependency points to the correct tag/branch.
+Then, execute
+```bash
+cd qa-tools
+cargo clean
+cargo update -p union-bridge-contracts
+cargo build
+```
+
 ### Setup config
 Go to the repo base directory and execute:
 ```bash
@@ -101,7 +115,7 @@ To find instructions on how to execute tests, search for the comments under scen
 #### Execute automated tests locally
 ```bash
 cd qa-tools
-cargo run --bin qa-tools-transaction-dispatcher -- --tags @coordinator
+cargo run --bin qa-tools-coordinator -- --tags @coordinator
 ```
 Optional: add `JUNIT_REPORT` env variable to generate JUnit XML reports under `qa-tools/reports/` directory.
 ```bash
@@ -234,3 +248,6 @@ As mentioned above, be careful with this command, as it will impact the existing
 
 #### How to get project Reporting API key:
 Go to your Testomat.io project, navigate to Settings -> Reporting API and copy the key.
+
+## Troubleshooting
+In case of issues, attempt to `cargo clean` this repo (union-bridge-client) and/or `forge clean` the contracts repo (bitvmx-union-bridge-contracts).

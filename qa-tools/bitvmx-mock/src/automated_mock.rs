@@ -14,6 +14,7 @@ use serde::Deserialize;
 use serde_json::json;
 use std::fmt;
 use std::sync::{Arc, Mutex};
+use std::thread::sleep;
 use std::time::Duration;
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
@@ -277,6 +278,40 @@ impl AutomatedBitVmxMock {
         merkle_branch_path: String,
         merkle_branch_hashes: Vec<String>,
     ) -> Result<()> {
+        // First, send the pegin_accepted message with signature data
+        let flow_id = self.get_last_pegin_requested_flow_id().unwrap();
+        let pegin_accepted_payload = json!({
+            "committee_id": flow_id.to_string(),
+            "accept_pegin_txid": accept_tx.compute_txid().to_string(),
+            "accept_pegin_nonce": "0279BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798032DE2662628C90B03F5E720284EB52FF7D71F4284F627B68A853D78C78E1FFE93",
+            "accept_pegin_signature": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+            "operator_take_sighash": [
+                18, 52, 86, 120, 154, 188, 222, 240, 71, 33, 128, 91, 201, 124, 156, 78,
+                89, 67, 45, 12, 198, 233, 44, 167, 89, 123, 78, 90, 67, 189, 234, 112
+            ],
+            "operator_won_sighash": [
+                171, 205, 239, 18, 45, 67, 89, 123, 78, 90, 156, 188, 222, 240, 71, 33,
+                128, 91, 201, 124, 156, 78, 89, 67, 45, 12, 198, 233, 44, 167, 89, 123
+            ]
+        });
+
+        let flow_id_uuid =  Uuid::parse_str(&flow_id)
+            .context("Failed to parse flow_id as UUID")?;
+
+        let pegin_accepted_event = OutgoingBitVMXApiMessages::Variable(
+            flow_id_uuid,
+            "pegin_accepted".to_string(),
+            VariableTypes::String(pegin_accepted_payload.to_string()),
+        );
+
+        self.broker_server
+            .lock()
+            .unwrap()
+            .send(&pegin_accepted_event, BITVMX_L2_BROKER_CLIENT_ID)
+            .context("Failed to send pegin_accepted Variable event")?;
+
+        sleep(Duration::from_secs(3));
+
         let hashes: Vec<[u8; 32]> = merkle_branch_hashes
             .into_iter()
             .map(|hex_str| {
@@ -293,9 +328,8 @@ impl AutomatedBitVmxMock {
             merkle_branch_hashes: hashes,
         };
         let payload = json!(spv_proof);
-        let flow_id = Uuid::new_v4();
         let event = OutgoingBitVMXApiMessages::Variable(
-            flow_id,
+            flow_id_uuid,
             "accept-pegin".to_string(),
             VariableTypes::String(payload.to_string()),
         );

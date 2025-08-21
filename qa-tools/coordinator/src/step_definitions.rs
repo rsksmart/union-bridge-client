@@ -90,7 +90,6 @@ async fn pegin_request_should_be_registered(world: &mut TestWorld) {
             .expect("contract call failed");
         let peg_status = stream_position.pegStatus;
         println!("Stream position: {:?}", stream_position);
-        println!("Stream status: {:?}", peg_status);
         last_peg_status = peg_status;
         sleep(Duration::from_secs(2)).await;
         if peg_status == 1 {
@@ -137,6 +136,7 @@ async fn enough_confirmations_received(world: &mut TestWorld) {
 
 #[then(expr = "the pegin accept should be registered in the contract")]
 async fn pegin_request_should_be_accepted(world: &mut TestWorld) {
+    sleep(Duration::from_secs(6)).await;
     let provider = ProviderBuilder::new().connect_http(world.anvil_url.parse().unwrap());
     let peg_manager_address =
         Address::from_str(world.peg_manager_address.as_str()).expect("Invalid PegManager address");
@@ -158,7 +158,6 @@ async fn pegin_request_should_be_accepted(world: &mut TestWorld) {
         let peg_status = stream_position.pegStatus;
 
         println!("Stream position: {:?}", stream_position);
-        println!("Stream status: {:?}", peg_status);
         last_peg_status = peg_status;
         sleep(Duration::from_secs(2)).await;
         if peg_status == 2 {
@@ -244,7 +243,6 @@ async fn pegin_request_should_not_be_registered(world: &mut TestWorld) {
             .expect("contract call failed");
         let peg_status = stream_position.pegStatus;
         println!("Stream position: {:?}", stream_position);
-        println!("Stream status: {:?}", peg_status);
         sleep(Duration::from_secs(2)).await;
         if peg_status != 1 {
             last_peg_status = peg_status;
