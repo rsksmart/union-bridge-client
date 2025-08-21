@@ -5,7 +5,7 @@ use crate::types::{
     RskPegManagerEvents, UserRequests,
 };
 use alloy_primitives::{Address, FixedBytes};
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Error, Result, anyhow, bail};
 use bitcoin::key::Parity::Even;
 use bitcoin::{PublicKey, XOnlyPublicKey};
 use common::runtime_sync::RuntimeSync;
@@ -28,8 +28,9 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     CommitteeMember, CommunicationData,
 };
 
+use crate::flows::common::build_communication_data;
 use common::types;
-use common::types::{CommitteeId, RskBlockAndUncles};
+use common::types::{CommitteeId, RskBlockAndUncles, StreamId};
 #[cfg(test)]
 use mockall::automock;
 use transaction_dispatcher::types::{
@@ -41,6 +42,7 @@ use transaction_dispatcher::types::{
 const NO_LEADER_IDX: u16 = 0;
 const TAKE_KEY_INDEX: usize = 0;
 const DISPUTE_KEY_INDEX: usize = 1;
+const COMM_KEY_INDEX: usize = 2;
 
 #[cfg_attr(test, automock)]
 trait SetupCommitteeFlowApi {
@@ -92,12 +94,14 @@ struct FlowContext {
 }
 
 impl FlowContext {
-    fn get_stream_id(&self) -> Result<u8> {
+    fn get_stream_id(&self) -> Result<StreamId> {
         Ok(self
             .user_input
             .as_ref()
             .context("Missing stream_id")?
-            .stream_id)
+            .stream_id
+            .clone()
+            .into())
     }
 
     fn get_committee_id(&self) -> Result<CommitteeId> {
@@ -632,7 +636,7 @@ where
     }
 
     fn get_member_public_keys_from_contracts(
-        &mut self,
+        &self,
         member_address: Address,
     ) -> Result<GetMemberPublicKeysOutput> {
         self.rt_sync.run(
@@ -641,10 +645,7 @@ where
         )
     }
 
-    fn get_communication_data_from_contracts(
-        &self,
-        member_address: Address,
-    ) -> Result<Vec<P2PAddress>> {
+    fn get_member_communication_data(&self, member_address: Address) -> Result<Vec<P2PAddress>> {
         let committee_id = self
             .state
             .ctx
@@ -660,40 +661,18 @@ where
             .rt_sync
             .run(self.contracts.get_committee_communication_data(input))?;
 
-        let mut res = comm_data
+        let committee_addresses = comm_data
             .communication_data
             .into_iter()
-            .map(|data| {
-                P2PAddressParser::contracts_to_bitvmx(&data).map_err(|e| {
-                    anyhow!("Could not convert CommunicationData '{data:?}' to P2PAddress: {e}",)
-                })
-            })
+            .map(|data| P2PAddressParser::addr_from_contracts(&data))
             .collect::<Result<Vec<_>>>()?;
 
-        // contract requires zeroed communication data for my own address on deposit, so we have to tweak it here
-        if let Some(my_comm_data) = res.iter_mut().find(|data| data.address.is_empty()) {
-            // if address is empty, it means it's my own communication data
-            *my_comm_data = self.ctx_my_comm_info()?.clone().into();
-        } else {
-            bail!("Missing zeroed communication data  (mine)",);
-        }
+        let my_p2p_address = self.ctx_my_comm_info()?.address;
 
-        // TODO(agus) temporary until PeerId thing is sorted out
-        for i in 0..res.len() {
-            if res[i].address.to_string() == "/ip4/127.0.0.1/tcp/61180" {
-                res[i].peer_id = PeerId("30820122300d06092a864886f70d01010105000382010f003082010a0282010100b0595a239c455f955ac2617061fadc0f3c532056da4a4ab4111b6581a62143e6c00b3041a00c290232fa65794ea0a55ca5f2ed3310ecbcab06a721d66e99a27e0d1b8a6afd8e395b741fbcf6cb73294eaeff43118f828f0118a4b5fdc95d472bcadaf2bc4d665e535ccd70b8ee5b82624794351a82c9f819d9a53638122228d1800d7d6561ae98183ae53c6cf23964c7eceeae95807db49a164cfbbc1ddc87a975fbe3d43545e8ce1bad2043cfe6a9aa3a7538ebdab8e6b900c94a691c1321d7c2d7f1a1beb3c3ef03686f7805ce938c92c8d5057cb5101cd51c1d97d7d3d4b9f13b7cb28bc5c4c5c9983a3062efc606b9c440021e1d5257d88d9c3ced0ac38f0203010001".to_string())
-            } else if res[i].address.to_string() == "/ip4/127.0.0.1/tcp/61181" {
-                res[i].peer_id = PeerId("30820122300d06092a864886f70d01010105000382010f003082010a0282010100c96872f74e913fbcf2e068d7f508e52dad5a278123ad6546d9735e3f35163e836427ef6ea14ff28d4ca30e7f0d4e251ddf4724668675052d6adb8581550b0adb11f0dcb78a4e9d6ad00f68bf21851d590d88d9fff1d8d7678454f9df4a1daad2f8ebfe69b4ea99160a9e2d43a98cdaaaf380bc4de9f9dec6bedc9351c89c43e4d5d89abbef98664f5d57cdf5c68d93e928203c84fd038fedddac5bbe2b243378141edec442e83c57f0bab437336586f6d6bc01bee222ee8f67dfacb2d94d7a4e406d05446c9f84de055d6175217de19d1005203674b1693f1df2d3dacd11839a782c343c33e86b952740812da624f2ddfd71edf9eb5e9ddf7944b9afc3a08b2f0203010001".to_string())
-            } else if res[i].address.to_string() == "/ip4/127.0.0.1/tcp/61182" {
-                res[i].peer_id = PeerId("30820122300d06092a864886f70d01010105000382010f003082010a0282010100e602dadfc9a2b10e6c042e10ba19628e49132fba6197f817457bd8728e881b35dc107838437b562cb9c611c2666fe3492db881630cd917178d17d21d48e664f685d9cd2ea2658501b3eb51ac7d9832e4ec580a5822616b0b663a3fb05a5aae15881baddeb7d8d329f064b460637a28ed569b93074446cb4946720474950456c950b5ae00b5f8b5a490eb1fc9af0206178ab81d3ca81b74fca1d84da9db510c10be2df4624be64fed6a6e59dc90880dc6ed61d4908ddcaf9eb0b08b0d58c5741085da051c4a537d33a8602fc22c6bef5853208698752561afa02ce763fb2bc0b88db51c90735d72dbd0ef6895c77aead64d5fe43e4d7521ed5f8da50c96636e4b0203010001".to_string())
-            } else if res[i].address.to_string() == "/ip4/127.0.0.1/tcp/61183" {
-                res[i].peer_id = PeerId("30820122300d06092a864886f70d01010105000382010f003082010a0282010100d1f76c66923556eaa6e9db0acf025fa96049e150cccd910ed6a36d6b32e1eb531620182c34b9ec04a00ba9e2f02f6f6f1493cf0dd42ffcafe60d81c7102f7b64f22a76ebe749dd285435a4d551ed03271062318e08efafbb1e9341aabe685a56cf81abf4af7437e60e9435a0a9682f8720b3ad017c29c517c3b25cc467f5f1ccd9ab791a206cef513141938491e5527df1e615088061a7bdc19622fd43323a74020870042ce33287f730fa5d17eb7f21b1dc6bb028d2a01850b9fb3c0ae40d5023dcdd2c888691a2c50d956f8e6d3d92c3cf893388f954781d1ee118b5840ef88a0d1cc8d218e535d706b044bf6c881ceafec982fd7ed516daaab60c4ea7d15b0203010001".to_string())
-            } else {
-                bail!("Unexpected comm data size")
-            }
-        }
+        // temporarily stored PeerId as the communication key, agreed with Fairgate
+        let committee_peer_ids = self.get_committee_peer_ids()?;
 
-        Ok(res)
+        build_communication_data(my_p2p_address, committee_addresses, committee_peer_ids)
     }
 
     fn deposit_communication_data(&self) -> Result<DepositCommunicationDataOutput> {
@@ -703,20 +682,18 @@ where
             .get_committee_id()
             .context("Deposit Communication Data")?;
 
-        let mut my_comm_info = self.ctx_my_comm_info()?;
-
-        // TODO(agus) temporary until PeerId thing is sorted out
-        my_comm_info.peer_id.0.truncate(64);
+        let my_p2p_address = self.ctx_my_comm_info()?;
 
         let mut communication_data = vec![];
         // communication data size
         for member in self.state.ctx.get_committee_members()? {
             let my_address: Address = self.my_address().into();
             if member.memberAddress == my_address {
-                // zeroed for my own communication data according to contracts
+                // contracts require zeroed communication data for my own address on deposit
                 communication_data.push(CommunicationData::default())
             } else {
-                communication_data.push(P2PAddressParser::bitvmx_to_contracts(&my_comm_info)?);
+                let data = P2PAddressParser::addr_to_contracts(&my_p2p_address.address)?;
+                communication_data.push(data);
             }
         }
 
@@ -741,7 +718,7 @@ where
         let comm_data_by_member: HashMap<Address, Vec<P2PAddress>> = members
             .iter()
             .map(|m| {
-                let addrs = self.get_communication_data_from_contracts(m.memberAddress)?;
+                let addrs = self.get_member_communication_data(m.memberAddress)?;
                 Ok((m.memberAddress, addrs))
             })
             .collect::<Result<HashMap<_, _>>>()?;
@@ -779,34 +756,58 @@ where
         Ok(())
     }
 
-    fn get_committee_keys_by_type(&mut self, key_index: usize) -> Result<Vec<PublicKey>> {
-        let mut committee_take_keys = vec![];
+    fn get_committee_keys_by_type(&self, key_index: usize) -> Result<Vec<PublicKey>> {
+        let key_type = match key_index {
+            TAKE_KEY_INDEX => "Take",
+            DISPUTE_KEY_INDEX => "Dispute",
+            _ => bail!("Invalid key index: {key_index}, expected 0 (take) or 1 (dispute)"),
+        };
+
+        let mut committee_pub_keys = vec![];
 
         for member in self.state.ctx.get_committee_members()? {
             let member_addr = member.memberAddress;
             let keys = self.get_member_public_keys_from_contracts(member_addr)?;
-            let take_key_str = keys
-                .public_keys
-                .get(key_index)
-                .with_context(|| format!("Take key not found on Committee for {member_addr}"))?;
+            let key_str = keys.public_keys.get(key_index).with_context(|| {
+                format!("{key_type} Key not found on Committee for {member_addr}")
+            })?;
 
             // TODO revisit this, we are encoding bytes to hex string in the contracts to then decode it back to bytes here
 
-            let key_bytes: FixedBytes<32> = take_key_str
+            let key_bytes: FixedBytes<32> = key_str
                 .parse()
                 .context("Failed to parse public key str to FixedBytes<32>")?;
             let x_only_key = XOnlyPublicKey::from_slice(key_bytes.as_slice())
                 .context("Failed to parse aggregated public key")?;
 
-            debug!("Member {member_addr} take key X: {x_only_key:?}");
+            debug!("Got {key_type} Key for member {member_addr} with X: {x_only_key:?}");
 
             // BitVMX adjusts parity to Even, so we do the same here
             let secp_key = x_only_key.public_key(Even);
             let member_key = PublicKey::new(secp_key);
-            committee_take_keys.push(member_key);
+            committee_pub_keys.push(member_key);
         }
 
-        Ok(committee_take_keys)
+        Ok(committee_pub_keys)
+    }
+
+    fn get_committee_peer_ids(&self) -> Result<Vec<PeerId>> {
+        let mut peer_ids = vec![];
+
+        for member in self.state.ctx.get_committee_members()? {
+            let member_addr = member.memberAddress;
+            let keys = self.get_member_public_keys_from_contracts(member_addr)?;
+            let key_str = keys.public_keys.get(COMM_KEY_INDEX).with_context(|| {
+                format!("Communication key not found on Committee for {member_addr}")
+            })?;
+
+            debug!("Member {member_addr} PeerId: {key_str:?}");
+
+            // key_str already decoded
+            peer_ids.push(PeerId(key_str.to_string()));
+        }
+
+        Ok(peer_ids)
     }
 }
 
@@ -949,13 +950,7 @@ where
     }
 
     fn apply_to_stream(&self) -> Result<()> {
-        let stream_id = self
-            .state
-            .ctx
-            .user_input
-            .as_ref()
-            .with_context(|| format!("Missing user input for flow {}", self.state.flow_id))?
-            .stream_id;
+        let stream_id = self.state.ctx.get_stream_id()?;
 
         let role = self
             .state
@@ -968,16 +963,16 @@ where
 
         let funding_utxo = self.ctx_user_input()?.utxo.try_into()?;
 
-        let res = self
-            .rt_sync
-            .run(self.contracts.apply_to_stream(ApplyToStreamInput {
-                stream_id,
-                role: u8::from(role),
-                take_key: signed_to_committee_public_key(self.ctx_my_take_key()?),
-                dispute_key: signed_to_committee_public_key(self.ctx_my_dispute_key()?),
-                communication_key: signed_to_rsa(self.ctx_my_comm_key()?),
-                funding_utxo,
-            }));
+        let input = ApplyToStreamInput {
+            stream_id,
+            role: u8::from(role),
+            take_key: signed_to_committee_public_key(self.ctx_my_take_key()?),
+            dispute_key: signed_to_committee_public_key(self.ctx_my_dispute_key()?),
+            peer_id: self.ctx_my_comm_info()?.peer_id,
+            funding_utxo,
+        };
+
+        let res = self.rt_sync.run(self.contracts.apply_to_stream(input));
 
         if res.is_err() {
             bail!("Failed to apply to stream: {:?}", res);
@@ -1088,6 +1083,22 @@ where
             .find(|f| f.state.step == Steps::GetMyCommInfo)
     }
 
+    fn get_flow_for_stream_id(
+        &mut self,
+        stream_id: StreamId,
+    ) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
+        // TODO optimize this search by keeping convenient map of stream_id -> flow_id or alike
+
+        // TODO(iago-2) can multiple flows exist for the same stream_id?
+
+        self.flows.values_mut().find(|f| {
+            f.state
+                .ctx
+                .get_stream_id()
+                .map_or(false, |id| id == stream_id)
+        })
+    }
+
     fn get_flow_for_committee_id(
         &mut self,
         committee_id: CommitteeId,
@@ -1179,15 +1190,14 @@ where
 
                 // TODO(iago-2) review this situation: should a second NewCommitteePending restart the flow? (ie. if an unmatching aggregated key is deposited, Committee gets recreated)
 
-                let committee_id = new_committee_pending.inner.committeeId.into();
-                if let Some(first_flow) = self.get_flow_for_committee_id(committee_id) {
-                    // assume confirmed for now
+                let stream_id = new_committee_pending.inner._committee.streamId;
+                if let Some(first_flow) = self.get_flow_for_stream_id(stream_id.into()) {
                     first_flow.complete_step_and_next(
                         None,
                         StepData::PendingCommittee(new_committee_pending.clone()),
                     )?
                 } else {
-                    bail!("No flow found for {new_committee_pending:?}")
+                    bail!("No flow found for stream {stream_id}")
                 }
             }
             RskPegManagerEvents::AllCommunicationDataReady(all_comm_data_ready) => {
@@ -1330,18 +1340,6 @@ where
     }
 }
 
-// Utility functions for stream ID and U256 conversions
-
-fn parse_stream_id_from_u64(stream_id: u64) -> Result<u8> {
-    u8::try_from(stream_id)
-        .with_context(|| format!("Failed to convert stream_id {stream_id} to u8"))
-}
-
-fn parse_stream_id_from_u256(stream_id: &alloy_primitives::U256) -> Result<u8> {
-    u8::try_from(stream_id)
-        .with_context(|| format!("Failed to convert stream_id {stream_id} to u8"))
-}
-
 fn signed_to_committee_public_key(signed_pk: SignedPublicKey) -> CommitteeECDSA {
     // TODO(iago-2) this can panic, handle gracefully
 
@@ -1356,15 +1354,4 @@ fn signed_to_committee_public_key(signed_pk: SignedPublicKey) -> CommitteeECDSA 
         s: hex::encode(&signed_pk.signature_s),
         v: signed_pk.recovery_id + 27, // Convert to Ethereum's v format (27 or 28)
     }
-}
-
-// TODO(ask-Agus) is this correct?
-pub fn signed_to_rsa(signed_pk: SignedPublicKey) -> String {
-    let pk = &signed_pk.public_key.to_bytes();
-    let mut buf = Vec::with_capacity(pk.len() + 32 + 32 + 1);
-    buf.extend_from_slice(pk);
-    buf.extend_from_slice(&signed_pk.signature_r);
-    buf.extend_from_slice(&signed_pk.signature_s);
-    buf.push(signed_pk.recovery_id);
-    format!("0x{}", hex::encode(buf))
 }

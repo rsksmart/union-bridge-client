@@ -805,22 +805,46 @@ impl std::ops::Deref for CommitteeId {
     }
 }
 
-// contracts binding generates a U256 for the committeeId in some events (I think because it's indexed, for hashing), but in the contracts under the hood it is an u128
+// contracts binding generate a U256 for the committeeId in some events (when indexed, for the
+// required hashing I think), but under the hood in the contracts it is an u128
 impl TryFrom<alloy_primitives::Uint<256, 4>> for CommitteeId {
     type Error = anyhow::Error;
 
     fn try_from(value: alloy_primitives::Uint<256, 4>) -> Result<Self> {
         match value.try_into() {
             Ok(num) => Ok(CommitteeId(num)),
-            Err(e) => bail!(
-                "Failed to convert Uint<256, 4> {value:?} to CommitteeId: {}",
-                e
-            ),
+            Err(e) => bail!("Failed to convert Uint<256,4> {value:?} to CommitteeId: {e}"),
         }
     }
 }
 
-pub type StreamId = u64;
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone)]
+pub struct StreamId(u64);
+
+// contracts store streamId as u64, but only accept u8 on StreamDenomination struct
+impl StreamId {
+    pub fn as_u8(&self) -> Result<u8> {
+        let val = *self.clone();
+        let result = u8::try_from(val);
+        match result {
+            Ok(num) => Ok(num),
+            Err(e) => bail!("Failed to convert StreamId {val} to u8: {e}"),
+        }
+    }
+}
+
+impl From<u64> for StreamId {
+    fn from(value: u64) -> Self {
+        StreamId(value)
+    }
+}
+
+impl std::ops::Deref for StreamId {
+    type Target = u64;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 fn parse_hex_to_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
 where

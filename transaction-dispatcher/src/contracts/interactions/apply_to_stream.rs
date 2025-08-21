@@ -42,9 +42,14 @@ impl<C: CommitteeRegistryContractApi, BP: BalanceProvider> ApplyToStreamInvoke<C
             .await
             .map_err(|e| DomainErrors::InternalServerError(e.to_string()))?;
 
+        let stream_denomination: u8 = input
+            .stream_id
+            .as_u8()
+            .map_err(|_| DomainErrors::InvalidValue("Invalid Stream denomination".to_string()))?;
+
         let min_deposit = self
             .contract
-            .call_get_minimum_deposit(StreamDenomination::from(input.stream_id))
+            .call_get_minimum_deposit(StreamDenomination::from(stream_denomination))
             .await?;
 
         if min_deposit > member_balance {
@@ -56,7 +61,7 @@ impl<C: CommitteeRegistryContractApi, BP: BalanceProvider> ApplyToStreamInvoke<C
         let public_keys_regs = convert_to_member_registration_keys(
             &input.take_key,
             &input.dispute_key,
-            &input.communication_key,
+            &input.peer_id,
         )
         .map_err(|e| DomainErrors::InvalidPublicKey(format!("Invalid public key: {}", e)))?;
 
@@ -68,7 +73,7 @@ impl<C: CommitteeRegistryContractApi, BP: BalanceProvider> ApplyToStreamInvoke<C
         let receipt = self
             .contract
             .invoke_apply_to_stream(
-                input.stream_id.into(),
+                stream_denomination.into(),
                 input.role.into(),
                 public_keys_regs,
                 input.funding_utxo,
@@ -109,9 +114,10 @@ mod tests {
     };
     use crate::contracts::types::convert_to_member_registration_keys;
     use crate::rsk_gateway::{DomainErrors, MockBalanceProvider};
-    use crate::types::{CommitteeECDSA, CommitteeRSA};
+    use crate::types::CommitteeECDSA;
     use alloy_primitives::{Address, Bloom, TxHash, U256};
     use alloy_rpc_types::{Log, Receipt, ReceiptEnvelope, ReceiptWithBloom, TransactionReceipt};
+    use common::msg_broker::bitvmx_types::PeerId;
     use mockall::predicate::eq;
     use std::str::FromStr;
     use union_contracts::bindings::committee_registry::CommitteeRegistry::{
@@ -137,31 +143,35 @@ mod tests {
         let mut mock_instance = MockCommitteeRegistryContractApi::new();
 
         let input = ApplyToStreamInput {
-            stream_id: 123,
+            stream_id: 123.into(),
             role: 1,
             take_key: fake_take_key(),
             dispute_key: fake_dispute_key(),
-            communication_key: fake_rsa_key(),
+            peer_id: fake_peer_id(),
             funding_utxo: UTXO::default(),
         };
+
+        let stream_denomination = input.stream_id.as_u8().unwrap();
 
         // expect get_minimum_deposit to be called
         mock_instance
             .expect_call_get_minimum_deposit()
-            .with(eq(StreamDenomination::from(input.stream_id)))
+            .with(eq(StreamDenomination::from(stream_denomination)))
             .returning(|_| Ok(U256::from(100)))
             .times(1);
+
+        let stream_denomination = input.stream_id.as_u8().unwrap();
 
         // expect apply_to_stream_call to be called
         mock_instance
             .expect_invoke_apply_to_stream()
             .with(
-                eq(StreamDenomination::from(input.stream_id)),
+                eq(StreamDenomination::from(stream_denomination)),
                 eq(Role::from(input.role)),
                 eq(convert_to_member_registration_keys(
                     &fake_take_key(),
                     &fake_dispute_key(),
-                    &fake_rsa_key(),
+                    &fake_peer_id(),
                 )
                 .unwrap()),
                 eq(UTXO::default()),
@@ -199,18 +209,20 @@ mod tests {
         let mut mock_instance = MockCommitteeRegistryContractApi::new();
 
         let input = ApplyToStreamInput {
-            stream_id: 123,
+            stream_id: 123.into(),
             role: 1,
             take_key: fake_take_key(),
             dispute_key: fake_dispute_key(),
-            communication_key: fake_rsa_key(),
+            peer_id: fake_peer_id(),
             funding_utxo: UTXO::default(),
         };
 
-        // expect get_minimum_deposit to be called
+        let stream_denomination = input.stream_id.clone().as_u8().unwrap();
+
+        // contracts stores streamId as u64, but only accept u8 on StreamDenomination struct
         mock_instance
             .expect_call_get_minimum_deposit()
-            .with(eq(StreamDenomination::from(input.stream_id)))
+            .with(eq(StreamDenomination::from(stream_denomination)))
             .returning(|_| Ok(U256::from(100)))
             .times(1);
 
@@ -284,13 +296,8 @@ mod tests {
         }
     }
 
-    fn fake_rsa_key() -> CommitteeRSA {
-        "00c1e63f7b14e4e7a63b39f8445f9e30b4d6c92a08dc0240d49cf52c9a5d7f27f4b0a64226c04fbe3f63f6b0e9\
-        a7050e4c7a16a8c929e04afefdf55b10903a0f8c15b6b04a78b1c255871a82ffbfe483dd2099f1b72013f5c6f66\
-        f9e7d44c34c3b9f22b9bb09cc7a75e9eae1121f09e02b95ff9b12cfeb29f6f27bc2bcd43790c9c5896ac5947bb9\
-        2c8b1587c4237edc42b8a0611ab6a2c62c44129c03b7b271e1a5c5e6b60c56c5f9308a5b4203d8f749fdb7c75e0\
-        4b4dfd238a37e951bda7fa04b9e40f937cbfb72f83fc83a786c6d351b3a53d38fbdc721ff4dfc8a0a1a1143cf10\
-        dfe8944acbb61d674370dd408e9189a9332d308f0c8438f1a94afcb92d"
-            .to_string()
+    fn fake_peer_id() -> PeerId {
+        let x = "30820122300d06092a864886f70d01010105000382010f003082010a0282010100b0595a239c455f955ac2617061fadc0f3c532056da4a4ab4111b6581a62143e6c00b3041a00c290232fa65794ea0a55ca5f2ed3310ecbcab06a721d66e99a27e0d1b8a6afd8e395b741fbcf6cb73294eaeff43118f828f0118a4b5fdc95d472bcadaf2bc4d665e535ccd70b8ee5b82624794351a82c9f819d9a53638122228d1800d7d6561ae98183ae53c6cf23964c7eceeae95807db49a164cfbbc1ddc87a975fbe3d43545e8ce1bad2043cfe6a9aa3a7538ebdab8e6b900c94a691c1321d7c2d7f1a1beb3c3ef03686f7805ce938c92c8d5057cb5101cd51c1d97d7d3d4b9f13b7cb28bc5c4c5c9983a3062efc606b9c440021e1d5257d88d9c3ced0ac38f0203010001";
+        PeerId(x.to_string())
     }
 }

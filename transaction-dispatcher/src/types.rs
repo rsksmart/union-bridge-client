@@ -1,14 +1,15 @@
 use alloy_primitives::Address;
 use alloy_primitives::FixedBytes;
-use anyhow::{Context, Result, anyhow, ensure};
+use anyhow::{Context, Result, bail};
 use bitcoin::{Transaction, TxIn, TxOut, Txid};
-use common::msg_broker::bitvmx_types::{P2PAddress, PeerId};
-use common::types::CommitteeId;
+use common::msg_broker::bitvmx_types::PeerId;
+use common::types::{CommitteeId, StreamId};
 use common::{msg_broker::bitvmx_types::BtcTxSPVProof, types::Hash256};
+use multiaddr::Multiaddr;
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
-    Committee, CommunicationData, UTXO,
+    Committee, CommunicationData, RSAPublicKey, UTXO,
 };
 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-214
 
@@ -159,11 +160,11 @@ pub struct GetMemberPublicKeysOutput {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ApplyToStreamInput {
-    pub stream_id: u8, // Matches StreamDenomination enum in contracts
+    pub stream_id: StreamId, // Matches StreamDenomination enum in contracts
     pub role: u8,
     pub take_key: CommitteeECDSA,
     pub dispute_key: CommitteeECDSA,
-    pub communication_key: CommitteeRSA,
+    pub peer_id: PeerId,
     pub funding_utxo: UTXO,
 }
 
@@ -229,178 +230,71 @@ pub struct DepositAggregatedKeyOutput {
     pub success: bool,
 }
 
-/// Parser and encoder for converting between [`P2PAddress`] (BitVMX) and [`CommunicationData`] (Contracts Bindings)
-/// using a fixed-size 256-byte payload (`bytes32[8]` in Solidity terms).
-///
-/// ## Encoding format
-///
-/// The payload is **exactly 256 bytes**, laid out as:
-///
-/// ```text
-/// [ u16_BE addr_len ][ addr_bytes UTF-8 ][ u16_BE peer_len ][ peer_bytes UTF-8 ][ zero padding ... ]
-/// ```
-///
-/// - `addr_len` — 16-bit unsigned integer (big-endian) indicating the byte length of the UTF-8-encoded `address` string.
-/// - `addr_bytes` — Raw UTF-8 bytes of the `address` string.
-/// - `peer_len` — 16-bit unsigned integer (big-endian) indicating the byte length of the UTF-8-encoded `peer_id` string.
-/// - `peer_bytes` — Raw UTF-8 bytes of the `peer_id` string.
-/// - Padding — All remaining bytes up to a total of 256 bytes are zero-filled.
-/// - The final 256 bytes are split into **8 × 32-byte chunks** for ABI compatibility with Solidity's `bytes32[8]` type.
-///
-/// ## Constraints
-/// - `addr_bytes.len()` ≤ `u16::MAX`
-/// - `peer_bytes.len()` ≤ `u16::MAX`
-/// - `(2 + addr_bytes.len() + 2 + peer_bytes.len()) ≤ 256`
-///
-/// ## Example
-///
-/// For:
-///
-/// ```text
-/// address = "/ip4/192.168.0.1/tcp/8888"
-/// peer_id = "peer-abc"
-/// ```
-///
-/// The first bytes of the encoded payload are:
-///
-/// ```text
-/// 00 1D                                      # addr_len = 29 bytes (0x001D)
-/// 2F 69 70 34 2F 31 39 32 2E 31 36 38 2E 30  # "/ip4/192.168.0"
-/// 2E 31 2F 74 63 70 2F 38 38 38 38            # ".1/tcp/8888"
-/// 00 08                                      # peer_len = 8 bytes (0x0008)
-/// 70 65 65 72 2D 61 62 63                     # "peer-abc"
-/// 00 00 00 00 ... (zero padding until total length is 256 bytes)
-/// ```
-///
-/// This format is deterministic and round-trips between Rust ↔ Contracts Bindings.
+/// Flatten bytes → `[FixedBytes<32>; N]` (zero-pad if shorter; error if longer).
+fn bytes_to_fb_array<const N: usize>(bytes: &[u8]) -> Result<[FixedBytes<32>; N]> {
+    let cap = N * 32;
+    if bytes.len() > cap.saturating_sub(2) {
+        bail!("payload too large: {} > {}", bytes.len(), cap - 2);
+    }
+    if bytes.len() > u16::MAX as usize {
+        bail!("payload too large for u16 header: {}", bytes.len());
+    }
+
+    let mut buf = vec![0u8; cap];
+    let len_be = (bytes.len() as u16).to_be_bytes();
+    buf[0..2].copy_from_slice(&len_be);
+    buf[2..2 + bytes.len()].copy_from_slice(bytes);
+
+    let mut out: [FixedBytes<32>; N] = [FixedBytes([0u8; 32]); N];
+    for (i, chunk) in buf.chunks_exact(32).enumerate() {
+        out[i] = FixedBytes::<32>(chunk.try_into().context("chunk != 32")?);
+    }
+    Ok(out)
+}
+
+/// Flatten `[FixedBytes<32>; N]` → Vec<u8> and trim trailing zero padding.
+/// NOTE: If real payload could end with 0x00 bytes, prefer storing a length header.
+fn fb_array_to_bytes<const N: usize>(arr: &[FixedBytes<32>; N]) -> Result<Vec<u8>> {
+    let mut buf = Vec::with_capacity(N * 32);
+    for fb in arr.iter() {
+        buf.extend_from_slice(&fb.0);
+    }
+    if buf.len() < 2 {
+        bail!("buffer too small for length header");
+    }
+    let len = u16::from_be_bytes([buf[0], buf[1]]) as usize;
+    if len > buf.len().saturating_sub(2) {
+        bail!("invalid stored length {}", len);
+    }
+    Ok(buf[2..2 + len].to_vec())
+}
+
 pub struct P2PAddressParser;
 
 impl P2PAddressParser {
-    pub fn contracts_to_bitvmx(input: &CommunicationData) -> Result<P2PAddress> {
-        let mut buf = [0u8; 256];
-        for (dst, fb) in buf.chunks_mut(32).zip(input.data.iter()) {
-            let chunk: [u8; 32] = (*fb).into();
-            dst.copy_from_slice(&chunk);
-        }
-
-        let mut offset: usize = 0;
-
-        // Address length (2 bytes)
-        let next = offset.checked_add(2).context("address length overflow")?;
-        let addr_len_bytes = buf
-            .get(offset..next)
-            .context("address length out of bounds")?;
-        let addr_len = u16::from_be_bytes(
-            addr_len_bytes
-                .try_into()
-                .context("invalid address length bytes")?,
-        ) as usize;
-        offset = next;
-
-        // Address string
-        let next = offset
-            .checked_add(addr_len)
-            .context("address bytes length overflow")?;
-        let address_bytes = buf
-            .get(offset..next)
-            .context("address bytes out of bounds")?;
-        let address =
-            String::from_utf8(address_bytes.to_vec()).context("invalid utf8 in address")?;
-        offset = next;
-
-        // Peer ID length (2 bytes)
-        let next = offset.checked_add(2).context("peer id length overflow")?;
-        let peer_len_bytes = buf
-            .get(offset..next)
-            .context("peer id length out of bounds")?;
-        let peer_len = u16::from_be_bytes(
-            peer_len_bytes
-                .try_into()
-                .context("invalid peer id length bytes")?,
-        ) as usize;
-        offset = next;
-
-        // Peer ID string
-        let next = offset
-            .checked_add(peer_len)
-            .context("peer id bytes length overflow")?;
-        let peer_bytes = buf
-            .get(offset..next)
-            .context("peer id bytes out of bounds")?;
-        let peer_id = String::from_utf8(peer_bytes.to_vec()).context("invalid utf8 in peer id")?;
-
-        Ok(P2PAddress {
-            address,
-            peer_id: PeerId(peer_id),
-        })
-    }
-
-    pub fn bitvmx_to_contracts(p2p_address: &P2PAddress) -> Result<CommunicationData> {
-        let addr_bytes = p2p_address.address.as_bytes();
-        let peer_bytes = p2p_address.peer_id.0.as_bytes();
-
-        ensure!(addr_bytes.len() <= u16::MAX as usize, "Address too long");
-        ensure!(peer_bytes.len() <= u16::MAX as usize, "Peer ID too long");
-
-        // ensure total payload fits in 256 bytes to avoid out-of-bounds
-        let total_len = 0usize
-            .saturating_add(2)
-            .saturating_add(addr_bytes.len())
-            .saturating_add(2)
-            .saturating_add(peer_bytes.len());
-        ensure!(total_len <= 256, "Communication data too long");
-
-        let mut buf = [0u8; 256];
-        let mut offset: usize = 0;
-
-        // Address length
-        let next = offset
-            .checked_add(2)
-            .context("address length write overflow")?;
-        buf.get_mut(offset..next)
-            .context("address length write out of bounds")?
-            .copy_from_slice(&(addr_bytes.len() as u16).to_be_bytes());
-        offset = next;
-
-        // Address bytes
-        let next = offset
-            .checked_add(addr_bytes.len())
-            .context("address bytes write overflow")?;
-        buf.get_mut(offset..next)
-            .context("address bytes write out of bounds")?
-            .copy_from_slice(addr_bytes);
-        offset = next;
-
-        // Peer ID length
-        let next = offset
-            .checked_add(2)
-            .context("peer id length write overflow")?;
-        buf.get_mut(offset..next)
-            .context("peer id length write out of bounds")?
-            .copy_from_slice(&(peer_bytes.len() as u16).to_be_bytes());
-        offset = next;
-
-        // Peer ID bytes
-        let next = offset
-            .checked_add(peer_bytes.len())
-            .context("peer id bytes write overflow")?;
-        buf.get_mut(offset..next)
-            .context("peer id bytes write out of bounds")?
-            .copy_from_slice(peer_bytes);
-
-        Self::buf_to_comm(buf)
-    }
-
-    fn buf_to_comm(buf: [u8; 256]) -> Result<CommunicationData> {
-        let mut data = [FixedBytes::<32>::ZERO; 8];
-        for (i, chunk) in buf.chunks_exact(32).enumerate() {
-            let data_slot = data.get_mut(i).context("chunk index out of bounds")?;
-            *data_slot = FixedBytes::from(
-                *<&[u8; 32]>::try_from(chunk)
-                    .map_err(|e| anyhow!("Address field is not valid UTF-8: {}", e))?,
-            );
-        }
+    pub fn addr_to_contracts(address: &str) -> Result<CommunicationData> {
+        let multi_addr: Multiaddr = address.parse()?;
+        let multi_addr_bytes = multi_addr.to_vec();
+        let data = bytes_to_fb_array::<8>(&multi_addr_bytes)?;
         Ok(CommunicationData { data })
+    }
+
+    pub fn addr_from_contracts(comm_data: &CommunicationData) -> Result<String> {
+        let bytes = fb_array_to_bytes::<8>(&comm_data.data)?;
+        let multi_addr = Multiaddr::try_from(bytes)?;
+        Ok(multi_addr.to_string())
+    }
+
+    pub fn peer_id_to_contracts(peer_id: &str) -> Result<RSAPublicKey> {
+        let peer_id_hex = hex::decode(peer_id)
+            .with_context(|| format!("Failed to decode peer_id hex: {}", peer_id))?;
+        let data = bytes_to_fb_array::<10>(&peer_id_hex)?;
+        Ok(RSAPublicKey { rsaPublicKey: data })
+    }
+
+    pub fn peer_id_from_contracts(comm_data: &RSAPublicKey) -> Result<String> {
+        let bytes = fb_array_to_bytes(&comm_data.rsaPublicKey)?;
+        Ok(hex::encode(bytes))
     }
 }
 
@@ -408,141 +302,51 @@ impl P2PAddressParser {
 mod tests {
     use super::*;
 
-    fn roundtrip(addr: &str, peer: &str) {
-        let original = P2PAddress {
-            address: addr.to_string(),
-            peer_id: PeerId(peer.to_string()),
-        };
-        let comm = P2PAddressParser::bitvmx_to_contracts(&original).expect("encode should succeed");
-        let decoded = P2PAddressParser::contracts_to_bitvmx(&comm).expect("decode should succeed");
-        assert_eq!(decoded.address, original.address);
-        assert_eq!(decoded.peer_id.0, original.peer_id.0);
+    fn roundtrip_p2p_addr_parser(addr: &str) {
+        let encoded = P2PAddressParser::addr_to_contracts(addr).expect("encode should succeed");
+        let decoded =
+            P2PAddressParser::addr_from_contracts(&encoded).expect("decode should succeed");
+        assert_eq!(decoded, addr);
+    }
+
+    #[test]
+    fn roundtrip_peer_id() {
+        let peer = PeerId(
+            "30820122300d06092a864886f70d01010105000382010f003082010a0282010100c96872f74e913fbcf2e068d7f508e52dad5a278123ad6546d9735e3f35163e836427ef6ea14ff28d4ca30e7f0d4e251ddf4724668675052d6adb8581550b0adb11f0dcb78a4e9d6ad00f68bf21851d590d88d9fff1d8d7678454f9df4a1daad2f8ebfe69b4ea99160a9e2d43a98cdaaaf380bc4de9f9dec6bedc9351c89c43e4d5d89abbef98664f5d57cdf5c68d93e928203c84fd038fedddac5bbe2b243378141edec442e83c57f0bab437336586f6d6bc01bee222ee8f67dfacb2d94d7a4e406d05446c9f84de055d6175217de19d1005203674b1693f1df2d3dacd11839a782c343c33e86b952740812da624f2ddfd71edf9eb5e9ddf7944b9afc3a08b2f0203010001".to_string(),
+        );
+
+        let encoded = P2PAddressParser::peer_id_to_contracts(&peer.0).unwrap();
+        let decoded = P2PAddressParser::peer_id_from_contracts(&encoded).unwrap();
+        assert_eq!(decoded, peer.0);
+    }
+
+    #[test]
+    fn roundtrip_peer_id_ending_zero() {
+        let peer = PeerId(
+            "30820122300d06092a864886f70d01010105000382010f003082010a0282010100c96872f74e913fbcf2e068d7f508e52dad5a278123ad6546d9735e3f35163e836427ef6ea14ff28d4ca30e7f0d4e251ddf4724668675052d6adb8581550b0adb11f0dcb78a4e9d6ad00f68bf21851d590d88d9fff1d8d7678454f9df4a1daad2f8ebfe69b4ea99160a9e2d43a98cdaaaf380bc4de9f9dec6bedc9351c89c43e4d5d89abbef98664f5d57cdf5c68d93e928203c84fd038fedddac5bbe2b243378141edec442e83c57f0bab437336586f6d6bc01bee222ee8f67dfacb2d94d7a4e406d05446c9f84de055d6175217de19d1005203674b1693f1df2d3dacd11839a782c343c33e86b952740812da624f2ddfd71edf9eb5e9ddf7944b9afc3a08b2f0203010000".to_string(),
+        );
+
+        let encoded = P2PAddressParser::peer_id_to_contracts(&peer.0).unwrap();
+        let decoded = P2PAddressParser::peer_id_from_contracts(&encoded).unwrap();
+        assert_eq!(decoded, peer.0);
     }
 
     #[test]
     fn roundtrip_ipv4_tcp() {
-        roundtrip("/ip4/192.168.0.1/tcp/8888", "peer-abc-123");
+        roundtrip_p2p_addr_parser("/ip4/192.168.0.1/tcp/8888");
     }
 
     #[test]
     fn roundtrip_ipv6_tcp() {
-        roundtrip("/ip6/2001:db8::1/tcp/30303", "v6-peer");
+        roundtrip_p2p_addr_parser("/ip6/2001:db8::1/tcp/30303");
     }
 
     #[test]
     fn roundtrip_dns_udp() {
-        roundtrip("/dns4/example.com/udp/12000", "udp-peer-X");
+        roundtrip_p2p_addr_parser("/dns4/example.com/udp/12000");
     }
-
     #[test]
-    fn roundtrip_empty_peer() {
-        roundtrip("/ip4/10.0.0.5/tcp/8080", "");
-    }
-
-    #[test]
-    fn roundtrip_exact_256_boundary() {
-        // 2 + addr_len + 2 + peer_len must equal 256
-        let addr_len = 100usize;
-        let peer_len = 256 - 2 - addr_len - 2; // = 152
-        let addr = "a".repeat(addr_len);
-        let peer = "p".repeat(peer_len);
-
-        roundtrip(&addr, &peer);
-    }
-
-    #[test]
-    fn encode_returns_err_when_total_exceeds_256_bytes() {
-        let addr = "/ip4/127.0.0.1/tcp/12345"; // any smallish addr
-        let addr_len = addr.as_bytes().len();
-        // Need: 2 + addr_len + 2 + peer_len > 256 => peer_len > 252 - addr_len
-        let overflow_peer = "x".repeat(253 - addr_len);
-
-        let p2p = P2PAddress {
-            address: addr.to_string(),
-            peer_id: PeerId(overflow_peer),
-        };
-        let err = P2PAddressParser::bitvmx_to_contracts(&p2p).unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("Communication data too long"),
-            "unexpected error: {msg}"
-        );
-    }
-
-    #[test]
-    fn decode_err_when_addr_len_out_of_bounds() {
-        // addr_len = 300 (> 254 available after the first 2 bytes), triggers OOB
-        let mut buf = [0u8; 256];
-        buf[0..2].copy_from_slice(&(300u16.to_be_bytes())); // addr_len = 300
-        // No addr bytes filled; guard should trip
-        let comm = P2PAddressParser::buf_to_comm(buf).expect("buf_to_comm should succeed");
-        let err = P2PAddressParser::contracts_to_bitvmx(&comm).unwrap_err();
-        assert!(
-            err.to_string().contains("address bytes out of bounds"),
-            "unexpected error: {}",
-            err
-        );
-    }
-
-    #[test]
-    fn decode_err_when_peer_len_out_of_bounds() {
-        // Layout: [addr_len=1]['a'][peer_len=400](OOB)
-        let mut buf = [0u8; 256];
-        // addr_len = 1
-        buf[0..2].copy_from_slice(&(1u16.to_be_bytes()));
-        buf[2] = b'a'; // address content
-        // peer_len = 400 (0x0190)
-        buf[3..5].copy_from_slice(&(400u16.to_be_bytes()));
-        // Guard should trip
-        let comm = P2PAddressParser::buf_to_comm(buf).expect("buf_to_comm should succeed");
-        let err = P2PAddressParser::contracts_to_bitvmx(&comm).unwrap_err();
-        assert!(
-            err.to_string().contains("peer id bytes out of bounds"),
-            "unexpected error: {}",
-            err
-        );
-    }
-
-    #[test]
-    fn decode_err_when_address_is_invalid_utf8() {
-        // addr_len = 1, addr byte = 0xFF (invalid UTF-8)
-        let mut buf = [0u8; 256];
-        buf[0..2].copy_from_slice(&(1u16.to_be_bytes())); // addr_len = 1
-        buf[2] = 0xFF; // invalid UTF-8
-        // peer_len = 0
-        buf[3..5].copy_from_slice(&(0u16.to_be_bytes()));
-        let comm = P2PAddressParser::buf_to_comm(buf).expect("buf_to_comm should succeed");
-
-        let err = P2PAddressParser::contracts_to_bitvmx(&comm).unwrap_err();
-        assert!(
-            err.to_string()
-                .to_lowercase()
-                .contains("invalid utf8 in address"),
-            "unexpected error: {}",
-            err
-        );
-    }
-
-    #[test]
-    fn decode_err_when_peer_is_invalid_utf8() {
-        // addr_len = 1, addr = "a"; peer_len = 1, peer byte = 0xFF
-        let mut buf = [0u8; 256];
-        // addr
-        buf[0..2].copy_from_slice(&(1u16.to_be_bytes()));
-        buf[2] = b'a';
-        // peer_len
-        buf[3..5].copy_from_slice(&(1u16.to_be_bytes()));
-        // peer content
-        buf[5] = 0xFF; // invalid UTF-8
-        let comm = P2PAddressParser::buf_to_comm(buf).expect("buf_to_comm should succeed");
-
-        let err = P2PAddressParser::contracts_to_bitvmx(&comm).unwrap_err();
-        assert!(
-            err.to_string()
-                .to_lowercase()
-                .contains("invalid utf8 in peer id"),
-            "unexpected error: {}",
-            err
-        );
+    fn roundtrip_addr_ending_zero() {
+        roundtrip_p2p_addr_parser("/ip4/127.0.0.1/tcp/1024");
     }
 }

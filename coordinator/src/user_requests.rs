@@ -1,12 +1,13 @@
 use anyhow::Context;
 use common::msg_broker::bitvmx_types::ParticipantRole;
+use common::types::StreamId;
 use serde::{Deserialize, Serialize};
 use union_contracts::bindings::committee_registry::CommitteeRegistry::UTXO;
 // TODO create types mod and move this and types.rs (renamed to rsk_events.rs) there
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ApplyToStream {
-    pub stream_id: u8, // Matches StreamDenomination in the contract
+    pub stream_id: StreamId, // Matches StreamDenomination in the contract
     pub role: Role,
     pub utxo: Utxo,
 }

@@ -231,6 +231,12 @@ pub struct P2PAddress {
 #[derive(Clone, Hash, Default, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PeerId(pub String);
 
+impl PeerId {
+    pub fn from_der(public_key_der: Vec<u8>) -> Self {
+        PeerId(hex::encode(public_key_der))
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BtcTxSPVProof {
     pub block_hash: String,

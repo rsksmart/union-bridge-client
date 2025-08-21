@@ -1,7 +1,6 @@
 use crate::contracts::committee_registry::CommitteeRegistryContractApi;
-use crate::contracts::types::rsa_to_hex;
 use crate::rsk_gateway::DomainErrors;
-use crate::types::{GetMemberPublicKeysInput, GetMemberPublicKeysOutput};
+use crate::types::{GetMemberPublicKeysInput, GetMemberPublicKeysOutput, P2PAddressParser};
 use log::info;
 
 #[derive(Clone)]
@@ -36,11 +35,19 @@ impl<C: CommitteeRegistryContractApi> GetMemberPublicKeysCall<C> {
 
         info!("GetMemberPublicKeys successful, retrieved member keys");
 
+        // we store peer_id in communicationPubKey.rsaPublicKey, agreed with Fairgate
+        let peer_id_bytes = &public_keys.communicationPubKey;
+        let peer_id = P2PAddressParser::peer_id_from_contracts(peer_id_bytes).map_err(|e| {
+            DomainErrors::InvalidPublicKey(format!(
+                "Failed to convert communication public keys to hex: {e}"
+            ))
+        })?;
+
         Ok(GetMemberPublicKeysOutput {
             public_keys: vec![
                 format!("0x{:x}", public_keys.takePubKey),
                 format!("0x{:x}", public_keys.covenantPubKey),
-                rsa_to_hex(&public_keys.communicationPubKey.rsaPublicKey),
+                peer_id,
             ],
         })
     }
@@ -51,6 +58,7 @@ mod tests {
     use super::*;
     use crate::contracts::committee_registry::MockCommitteeRegistryContractApi;
     use crate::rsk_gateway::DomainErrors;
+    use crate::types::P2PAddressParser;
     use alloy_primitives::{Address, FixedBytes};
     use mockall::predicate::always;
     use union_contracts::bindings::committee_registry::CommitteeRegistry::{
@@ -64,11 +72,12 @@ mod tests {
             .expect("Invalid address");
         let input = GetMemberPublicKeysInput { member_address };
 
+        let encoded_key = P2PAddressParser::peer_id_to_contracts(&"30820122300d06092a864886f70d01010105000382010f003082010a0282010100b0595a239c455f955ac2617061fadc0f3c532056da4a4ab4111b6581a62143e6c00b3041a00c290232fa65794ea0a55ca5f2ed3310ecbcab06a721d66e99a27e0d1b8a6afd8e395b741fbcf6cb73294eaeff43118f828f0118a4b5fdc95d472bcadaf2bc4d665e535ccd70b8ee5b82624794351a82c9f819d9a53638122228d1800d7d6561ae98183ae53c6cf23964c7eceeae95807db49a164cfbbc1ddc87a975fbe3d43545e8ce1bad2043cfe6a9aa3a7538ebdab8e6b900c94a691c1321d7c2d7f1a1beb3c3ef03686f7805ce938c92c8d5057cb5101cd51c1d97d7d3d4b9f13b7cb28bc5c4c5c9983a3062efc606b9c440021e1d5257d88d9c3ced0ac38f0203010001").unwrap();
         let expected_public_keys = MemberKeys {
             takePubKey: FixedBytes::from([1u8; 32]),
             covenantPubKey: FixedBytes::from([2u8; 32]),
             communicationPubKey: RSAPublicKey {
-                rsaPublicKey: [FixedBytes::from([3u8; 32]); 10],
+                rsaPublicKey: encoded_key.rsaPublicKey,
             },
         };
 
@@ -96,14 +105,7 @@ mod tests {
         );
         assert_eq!(
             output.public_keys[2],
-            "0x030303030303030303030303030303030303030303030303030303030303030303030303030303030303\
-            030303030303030303030303030303030303030303030303030303030303030303030303030303030303030\
-            303030303030303030303030303030303030303030303030303030303030303030303030303030303030303\
-            030303030303030303030303030303030303030303030303030303030303030303030303030303030303030\
-            303030303030303030303030303030303030303030303030303030303030303030303030303030303030303\
-            030303030303030303030303030303030303030303030303030303030303030303030303030303030303030\
-            303030303030303030303030303030303030303030303030303030303030303030303030303030303030303\
-            0303030303030303030303030303030303"
+            "30820122300d06092a864886f70d01010105000382010f003082010a0282010100b0595a239c455f955ac2617061fadc0f3c532056da4a4ab4111b6581a62143e6c00b3041a00c290232fa65794ea0a55ca5f2ed3310ecbcab06a721d66e99a27e0d1b8a6afd8e395b741fbcf6cb73294eaeff43118f828f0118a4b5fdc95d472bcadaf2bc4d665e535ccd70b8ee5b82624794351a82c9f819d9a53638122228d1800d7d6561ae98183ae53c6cf23964c7eceeae95807db49a164cfbbc1ddc87a975fbe3d43545e8ce1bad2043cfe6a9aa3a7538ebdab8e6b900c94a691c1321d7c2d7f1a1beb3c3ef03686f7805ce938c92c8d5057cb5101cd51c1d97d7d3d4b9f13b7cb28bc5c4c5c9983a3062efc606b9c440021e1d5257d88d9c3ced0ac38f0203010001"
         );
     }
 
