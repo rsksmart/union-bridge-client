@@ -577,7 +577,7 @@ dependencies = [
  "alloy-rlp",
  "alloy-serde",
  "alloy-sol-types",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "serde",
  "serde_json",
  "thiserror 2.0.12",
@@ -3074,15 +3074,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "itertools"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
-dependencies = [
- "either",
-]
-
-[[package]]
 name = "itoa"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3232,7 +3223,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.53.2",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -5815,7 +5806,7 @@ checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
 [[package]]
 name = "union-bridge-contracts"
 version = "0.0.1-alpha.3"
-source = "git+ssh://git@github.com/temp-rsk/bitvmx-union-bridge-contracts.git?tag=v0.0.1-alpha.4#923d1b78f1feec8d59d50be43d135344968fdbc9"
+source = "git+ssh://git@github.com/temp-rsk/bitvmx-union-bridge-contracts.git?tag=v0.0.1-alpha.5#b0e8e64b960fd5392b77a1fde5fa7125965e4b3d"
 dependencies = [
  "alloy",
  "alloy-trie 0.8.1",

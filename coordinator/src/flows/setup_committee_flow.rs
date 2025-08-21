@@ -29,7 +29,7 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
 };
 
 use common::types;
-use common::types::RskBlockAndUncles;
+use common::types::{CommitteeId, RskBlockAndUncles};
 #[cfg(test)]
 use mockall::automock;
 use transaction_dispatcher::types::{
@@ -72,7 +72,7 @@ pub(crate) trait SetupCommitteeFlowFactoryApi<CG: RskContractsGatewayApi, BC: Bi
 // TODO(iago-2) improve with structs instead of tuples, using tuples for now for validation
 type PubKeyReq = Option<(Uuid, Option<SignedPublicKey>)>; // request id, response data
 type AggKeyReq = Option<(Uuid, Option<PublicKey>)>; // request id, response data
-type SetupCoreReq = Option<(Uuid, Uuid, Option<String>)>; // request id, committee id, response data // TODO(iago-2) TBC what to store here in data
+type SetupCoreReq = Option<(Uuid, CommitteeId, Option<String>)>; // request id, committee id, response data // TODO(iago-2) TBC what to store here in data
 
 #[derive(Default, Debug)]
 struct FlowContext {
@@ -100,24 +100,14 @@ impl FlowContext {
             .stream_id)
     }
 
-    fn get_committee_id(&self) -> Result<Uuid> {
-        let id = self
-            .committee_ready
+    fn get_committee_id(&self) -> Result<CommitteeId> {
+        Ok(self
+            .committee_pending
             .as_ref()
-            .context("Missing committee ready event")?
+            .context("Missing committee pending event")?
             .inner
-            .committeeId;
-
-        // Big‑endian 32 bytes
-        let be: [u8; 32] = id.to_be_bytes();
-
-        // Take the *rightmost* 16 bytes (least‑significant) to retain entropy if high limbs are zero.
-        let slice = &be[16..32];
-
-        let uuid_bytes: [u8; 16] = <[u8; 16]>::try_from(slice)
-            .map_err(|_| anyhow!("Expected 16 bytes, got {}", slice.len()))?;
-
-        Ok(Uuid::from_bytes(uuid_bytes))
+            .committeeId
+            .into())
     }
 
     fn get_committee_members(&self) -> Result<Vec<CommitteeMember>> {
@@ -379,7 +369,7 @@ where
     fn setup_dispute_core_for_member(
         &mut self,
         _member_idx: usize,
-        comittee_id: Uuid,
+        comittee_id: CommitteeId,
         _member: &CommitteeMember,
         addresses: &Vec<P2PAddress>,
     ) -> Result<()> {
@@ -474,16 +464,13 @@ where
 
         debug!("Getting Committee ID");
 
-        let committee_id = self
-            .state
-            .ctx
-            .get_committee_id()
-            .context("Setting up Committee")?;
+        // TODO(iago) clarify how to get this id
+        let id = Uuid::new_v4();
 
         info!("SetVar NewCommittee");
 
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetVar(
-            committee_id,
+            id,
             NewCommittee::name(),
             VariableTypes::String(serde_json::to_string(&new_committee)?),
         ));
@@ -658,15 +645,15 @@ where
         &self,
         member_address: Address,
     ) -> Result<Vec<P2PAddress>> {
-        let stream_id = self
+        let committee_id = self
             .state
             .ctx
-            .get_stream_id()
-            .context("Get Communication Data")? as u64;
+            .get_committee_id()
+            .context("Get Communication Data")?;
 
         let input = GetCommunicationDataInput {
             member_address,
-            stream_id,
+            committee_id,
         };
 
         let comm_data = self
@@ -710,11 +697,11 @@ where
     }
 
     fn deposit_communication_data(&self) -> Result<DepositCommunicationDataOutput> {
-        let stream_id = self
+        let committee_id = self
             .state
             .ctx
-            .get_stream_id()
-            .context("Deposit Communication Data")? as u64;
+            .get_committee_id()
+            .context("Deposit Communication Data")?;
 
         let mut my_comm_info = self.ctx_my_comm_info()?;
 
@@ -734,14 +721,15 @@ where
         }
 
         info!(
-            "Depositing member {} communication data for stream {stream_id}: {communication_data:?}",
-            self.my_address()
+            "Depositing member {} communication data for stream {}: {communication_data:?}",
+            self.my_address(),
+            *committee_id
         );
 
         self.rt_sync.run(
             self.contracts
                 .deposit_communication_data(DepositCommunicationDataInput {
-                    stream_id,
+                    committee_id,
                     communication_data,
                 }),
         )
@@ -768,11 +756,12 @@ where
             .ctx_aggregated_take_key()
             .context("Deposit Aggregated Key")?;
 
-        let stream_id = self.state.ctx.get_stream_id()? as u64;
+        let committee_id = self.state.ctx.get_committee_id()?;
 
         info!(
-            "Depositing aggregated key for stream {stream_id}: {}",
-            aggregated_take_key.to_string()
+            "Depositing aggregated key for stream {}: {}",
+            aggregated_take_key.to_string(),
+            *committee_id
         );
 
         let x_only_key = XOnlyPublicKey::from(aggregated_take_key);
@@ -780,7 +769,7 @@ where
             .context("Failed to serialize aggregated public key")?;
 
         let input = DepositAggregatedKeyInput {
-            stream_id,
+            committee_id,
             aggregated_key,
         };
 
@@ -1055,7 +1044,7 @@ where
 
         for (idx, member) in members.iter().enumerate() {
             let addresses = self.ctx_member_communication_data(member.memberAddress)?;
-            self.setup_dispute_core_for_member(idx, committee_id, member, &addresses)?;
+            self.setup_dispute_core_for_member(idx, committee_id.clone(), member, &addresses)?;
         }
 
         Ok(())
@@ -1099,35 +1088,21 @@ where
             .find(|f| f.state.step == Steps::GetMyCommInfo)
     }
 
-    fn get_flow_for_stream_id(&mut self, stream_id: u8) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
-        // TODO optimize this search by keeping convenient map of stream_id -> flow_id or alike
+    fn get_flow_for_committee_id(
+        &mut self,
+        committee_id: CommitteeId,
+    ) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
+        // TODO optimize this search by keeping convenient map of committee_id -> flow_id or alike
 
-        // TODO(iago-2) we have an issue here if multiple flows are created for the same stream_id
+        // TODO(iago-2) we have an issue here if multiple flows are created for the same committee_id
 
         self.flows.values_mut().find(|f| {
             f.state
                 .ctx
-                .user_input
+                .committee_pending
                 .as_ref()
-                .map_or(false, |ui| ui.stream_id == stream_id)
+                .map_or(false, |ev| ev.inner.committeeId == *committee_id)
         })
-    }
-    fn get_flow_for_committee_id(
-        &mut self,
-        _committee_id: alloy_primitives::U256,
-    ) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
-        // TODO optimize this search by keeping convenient map of committee_id -> flow_id or alike
-
-        // TODO(agus) for now return the first flow until NewPendingCommittee contains committeeId, we are not testing with several committees so it will work
-        self.flows.values_mut().next()
-
-        // self.flows.values_mut().find(|f| {
-        //     f.state
-        //         .ctx
-        //         .committee_pending
-        //         .as_ref()
-        //         .map_or(false, |ev| ev.inner.committeeId == committee_id)
-        // })
     }
 
     fn get_flow_for_request_id(&mut self, uuid: &Uuid) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
@@ -1204,8 +1179,8 @@ where
 
                 // TODO(iago-2) review this situation: should a second NewCommitteePending restart the flow? (ie. if an unmatching aggregated key is deposited, Committee gets recreated)
 
-                let stream_id = parse_stream_id_from_u256(&new_committee_pending.inner.streamId)?;
-                if let Some(first_flow) = self.get_flow_for_stream_id(stream_id) {
+                let committee_id = new_committee_pending.inner.committeeId.into();
+                if let Some(first_flow) = self.get_flow_for_committee_id(committee_id) {
                     // assume confirmed for now
                     first_flow.complete_step_and_next(
                         None,
@@ -1221,8 +1196,8 @@ where
                     all_comm_data_ready
                 );
 
-                let stream_id = parse_stream_id_from_u64(all_comm_data_ready.inner.streamId)?;
-                if let Some(first_flow) = self.get_flow_for_stream_id(stream_id) {
+                let committee_id = all_comm_data_ready.inner._committeeId.into();
+                if let Some(first_flow) = self.get_flow_for_committee_id(committee_id) {
                     // assume confirmed for now
                     first_flow.complete_step_and_next(
                         None,
@@ -1238,9 +1213,8 @@ where
                     new_committee_ready
                 );
 
-                if let Some(first_flow) =
-                    self.get_flow_for_committee_id(new_committee_ready.inner.committeeId)
-                {
+                let committee_id = new_committee_ready.inner.committeeId.into();
+                if let Some(first_flow) = self.get_flow_for_committee_id(committee_id) {
                     // assume confirmed for now
                     first_flow.complete_step_and_next(
                         None,

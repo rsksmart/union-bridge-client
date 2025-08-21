@@ -23,14 +23,14 @@ impl<C: CommitteeRegistryContractApi> DepositCommunicationDataInvoke<C> {
     ) -> Result<DepositCommunicationDataOutput, DomainErrors> {
         info!(
             "Init DepositCommunicationData for stream: {:?}, data count: {}",
-            input.stream_id,
+            input.committee_id,
             input.communication_data.len()
         );
 
         let receipt = self
             .contract
             .invoke_deposit_communication_data(
-                input.stream_id,
+                input.committee_id,
                 input.communication_data,
                 self.gas_bumps,
             )
@@ -83,7 +83,7 @@ mod tests {
         let interaction = DepositCommunicationDataInvoke::new(mock_instance, 3);
 
         let input = DepositCommunicationDataInput {
-            stream_id: 1,
+            committee_id: 1.into(),
             communication_data: vec![],
         };
 
@@ -111,7 +111,7 @@ mod tests {
         let interaction = DepositCommunicationDataInvoke::new(mock_instance, 3);
 
         let input = DepositCommunicationDataInput {
-            stream_id: 1,
+            committee_id: 1.into(),
             communication_data: vec![],
         };
 

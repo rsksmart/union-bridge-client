@@ -63,7 +63,7 @@ mod tests {
         let interaction = GetCommitteeCall::new(mock);
 
         let input = GetCommitteeInput {
-            committee_id: U256::from(123u64),
+            committee_id: 123.into(),
         };
 
         let result = interaction.run(input).await;
@@ -109,7 +109,7 @@ mod tests {
         let interaction = GetCommitteeCall::new(mock);
 
         let input = GetCommitteeInput {
-            committee_id: U256::from(456u64),
+            committee_id: 456.into(),
         };
 
         let result = interaction.run(input).await;
@@ -140,6 +140,11 @@ mod tests {
             members,
             leaderAddress: leader,
             operatorTakeIndex: operator_take_index,
+            createdAt: Default::default(),
+            missingData: 0,
+            missingCommunicationData: 0,
+            isPending: false,
+            streamId: 0,
         }
     }
 }
