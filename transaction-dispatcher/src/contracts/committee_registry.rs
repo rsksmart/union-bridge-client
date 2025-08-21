@@ -4,15 +4,17 @@ use crate::rsk_gateway::DomainErrors;
 use alloy_primitives::U256;
 use alloy_provider::Provider;
 use log::info;
-use union_contracts::bindings::committee_registry::CommitteeRegistry::{self, Committee};
+use union_contracts::bindings::committee_registry::CommitteeRegistry::{self, Committee, Role};
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
-    CommitteeRegistryErrors, CommitteeRegistryInstance, StreamDenomination, MemberKeys, MemberRegistrationKeys, UTXO,
+    CommitteeRegistryErrors, CommitteeRegistryInstance, MemberKeys, MemberRegistrationKeys,
+    StreamDenomination, UTXO,
 };
 
 #[cfg(test)]
 use mockall::automock;
 
 pub(crate) use crate::contracts::interactions::apply_to_stream::ApplyToStreamInvoke;
+pub(crate) use crate::contracts::interactions::deposit_aggregated_key::DepositAggregatedKeysInvoke;
 pub(crate) use crate::contracts::interactions::deposit_communication_data::DepositCommunicationDataInvoke;
 pub(crate) use crate::contracts::interactions::get_committee::GetCommitteeCall;
 pub(crate) use crate::contracts::interactions::get_member_communication_data::GetMemberCommunicationDataCall;
@@ -33,11 +35,12 @@ pub trait CommitteeRegistryContractApi {
 
     async fn invoke_apply_to_stream(
         &self,
-        stream: u8,
-        role: u8,
+        denomination: StreamDenomination,
+        role: Role,
         public_keys: MemberRegistrationKeys,
         funding_utxo: UTXO,
         gas_bumps: u8,
+        value: U256,
     ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt>;
 
     async fn call_get_minimum_deposit(
@@ -51,6 +54,13 @@ pub trait CommitteeRegistryContractApi {
         &self,
         stream_id: u64,
         communication_data: Vec<CommitteeRegistry::CommunicationData>,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt>;
+
+    async fn invoke_deposit_aggregated_key(
+        &self,
+        stream_id: u64,
+        aggregated_key: alloy_primitives::FixedBytes<32>,
         gas_bumps: u8,
     ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt>;
 }
@@ -95,16 +105,21 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
 
     async fn invoke_apply_to_stream(
         &self,
-        stream: u8,
-        role: u8,
+        denomination: StreamDenomination,
+        role: Role,
         public_keys: MemberRegistrationKeys,
         funding_utxo: UTXO,
         gas_bumps: u8,
+        value: U256,
     ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt> {
+        let stream = denomination.into_underlying();
+        let role = role.into_underlying();
+
         send_tx_with_gas_bump(
             || {
                 self.contract_instance
                     .applyToStream(stream, role, public_keys.clone(), funding_utxo.clone())
+                    .value(value)
             },
             gas_bumps,
         )
@@ -115,12 +130,15 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
         &self,
         _stream: StreamDenomination,
     ) -> alloy_contract::Result<U256> {
-        // TODO(207): Resolve to new getMinimumDeposit method from alpha3
+        // TODO(iago-2) fix this method to use the actual contract call
+
         // self.contract_instance.getMissingCommunicationDataCount
         //     .getMinimumDeposit(u8::from(stream))
         //     .call()
         //     .await
-        Ok(U256::default())
+
+        // Temporary hardcoded minimum deposit (0.025 RBTC = 25000000000000000 wei)
+        Ok(U256::from(25000000000000000u64))
     }
 
     async fn call_get_committee(&self, committee_id: U256) -> alloy_contract::Result<Committee> {
@@ -140,6 +158,22 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
             || {
                 self.contract_instance
                     .depositCommunicationData(stream_id, communication_data.clone())
+            },
+            gas_bumps,
+        )
+        .await
+    }
+
+    async fn invoke_deposit_aggregated_key(
+        &self,
+        stream_id: u64,
+        aggregated_key: alloy_primitives::FixedBytes<32>,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt> {
+        send_tx_with_gas_bump(
+            || {
+                self.contract_instance
+                    .depositAggregatedKey(stream_id, aggregated_key)
             },
             gas_bumps,
         )

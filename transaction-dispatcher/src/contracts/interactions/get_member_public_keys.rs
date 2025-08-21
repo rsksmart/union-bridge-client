@@ -1,4 +1,5 @@
 use crate::contracts::committee_registry::CommitteeRegistryContractApi;
+use crate::contracts::types::rsa_to_hex;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{GetMemberPublicKeysInput, GetMemberPublicKeysOutput};
 use log::info;
@@ -33,14 +34,13 @@ impl<C: CommitteeRegistryContractApi> GetMemberPublicKeysCall<C> {
                 ))
             })?;
 
-        info!(
-            "GetMemberPublicKeys successful, retrieved member keys"
-        );
+        info!("GetMemberPublicKeys successful, retrieved member keys");
 
         Ok(GetMemberPublicKeysOutput {
             public_keys: vec![
                 format!("0x{:x}", public_keys.takePubKey),
                 format!("0x{:x}", public_keys.covenantPubKey),
+                rsa_to_hex(&public_keys.communicationPubKey.rsaPublicKey),
             ],
         })
     }
@@ -53,7 +53,9 @@ mod tests {
     use crate::rsk_gateway::DomainErrors;
     use alloy_primitives::{Address, FixedBytes};
     use mockall::predicate::always;
-    use union_contracts::bindings::committee_registry::CommitteeRegistry::{MemberKeys, RSAPublicKey};
+    use union_contracts::bindings::committee_registry::CommitteeRegistry::{
+        MemberKeys, RSAPublicKey,
+    };
 
     #[tokio::test]
     async fn test_get_member_public_keys_success() {
@@ -65,13 +67,11 @@ mod tests {
         let expected_public_keys = MemberKeys {
             takePubKey: FixedBytes::from([1u8; 32]),
             covenantPubKey: FixedBytes::from([2u8; 32]),
-            communicationPubKey:
-                RSAPublicKey {
-                    rsaPublicKey: [FixedBytes::from([0u8; 32]); 10],
-                },
-               
-        };    
-    
+            communicationPubKey: RSAPublicKey {
+                rsaPublicKey: [FixedBytes::from([3u8; 32]); 10],
+            },
+        };
+
         let mut mock_instance = MockCommitteeRegistryContractApi::new();
         mock_instance
             .expect_call_get_member_public_keys()
@@ -85,7 +85,7 @@ mod tests {
         assert!(result.is_ok());
 
         let output = result.unwrap();
-        assert_eq!(output.public_keys.len(), 2);
+        assert_eq!(output.public_keys.len(), 3);
         assert_eq!(
             output.public_keys[0],
             "0x0101010101010101010101010101010101010101010101010101010101010101"
@@ -93,6 +93,17 @@ mod tests {
         assert_eq!(
             output.public_keys[1],
             "0x0202020202020202020202020202020202020202020202020202020202020202"
+        );
+        assert_eq!(
+            output.public_keys[2],
+            "0x030303030303030303030303030303030303030303030303030303030303030303030303030303030303\
+            030303030303030303030303030303030303030303030303030303030303030303030303030303030303030\
+            303030303030303030303030303030303030303030303030303030303030303030303030303030303030303\
+            030303030303030303030303030303030303030303030303030303030303030303030303030303030303030\
+            303030303030303030303030303030303030303030303030303030303030303030303030303030303030303\
+            030303030303030303030303030303030303030303030303030303030303030303030303030303030303030\
+            303030303030303030303030303030303030303030303030303030303030303030303030303030303030303\
+            0303030303030303030303030303030303"
         );
     }
 

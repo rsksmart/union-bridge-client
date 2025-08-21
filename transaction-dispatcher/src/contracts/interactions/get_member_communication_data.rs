@@ -1,35 +1,30 @@
 use crate::contracts::committee_registry::CommitteeRegistryContractApi;
 use crate::rsk_gateway::DomainErrors;
-use crate::types::GetMemberCommunicationDataOutput;
-use alloy_primitives::Address;
+use crate::types::{GetCommunicationDataInput, GetCommunicationDataOutput};
 use log::info;
 
 #[derive(Clone)]
 pub(crate) struct GetMemberCommunicationDataCall<C: CommitteeRegistryContractApi> {
     contract: C,
-    member_address: Address,
 }
 
 impl<C: CommitteeRegistryContractApi> GetMemberCommunicationDataCall<C> {
-    pub(crate) fn new(contract: C, member_address: Address) -> Self {
-        GetMemberCommunicationDataCall {
-            contract,
-            member_address,
-        }
+    pub(crate) fn new(contract: C) -> Self {
+        GetMemberCommunicationDataCall { contract }
     }
 
     pub(crate) async fn run(
         &self,
-        stream_id: u64,
-    ) -> Result<GetMemberCommunicationDataOutput, DomainErrors> {
+        input: GetCommunicationDataInput,
+    ) -> Result<GetCommunicationDataOutput, DomainErrors> {
         info!(
             "Init GetMemberCommunicationData for stream: {:?}, member: {:?}",
-            stream_id, self.member_address
+            input.stream_id, input.member_address
         );
 
         let communication_data = self
             .contract
-            .call_get_member_communication_data(stream_id, self.member_address)
+            .call_get_member_communication_data(input.stream_id, input.member_address)
             .await
             .map_err(|e| {
                 DomainErrors::UnhandledContractError(format!(
@@ -44,7 +39,7 @@ impl<C: CommitteeRegistryContractApi> GetMemberCommunicationDataCall<C> {
             count
         );
 
-        Ok(GetMemberCommunicationDataOutput { communication_data })
+        Ok(GetCommunicationDataOutput { communication_data })
     }
 }
 
@@ -53,6 +48,7 @@ mod tests {
     use super::GetMemberCommunicationDataCall;
     use crate::contracts::committee_registry::MockCommitteeRegistryContractApi;
     use crate::rsk_gateway::DomainErrors;
+    use crate::types::GetCommunicationDataInput;
     use mockall::predicate::always;
 
     #[tokio::test]
@@ -77,7 +73,14 @@ mod tests {
 
         let interaction = GetMemberCommunicationDataCall::new_for_tests(mock_instance);
 
-        let result = interaction.run(1u64).await;
+        let input = GetCommunicationDataInput {
+            stream_id: 1u64,
+            member_address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+                .parse()
+                .expect("Invalid address"),
+        };
+
+        let result = interaction.run(input).await;
         assert!(result.is_ok());
         let output = result.unwrap();
         assert_eq!(output.communication_data.len(), 0);
@@ -103,7 +106,14 @@ mod tests {
 
         let interaction = GetMemberCommunicationDataCall::new_for_tests(mock_instance);
 
-        let result = interaction.run(1u64).await;
+        let input = GetCommunicationDataInput {
+            stream_id: 1u64,
+            member_address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+                .parse()
+                .expect("Invalid address"),
+        };
+
+        let result = interaction.run(input).await;
         assert!(result.is_err());
         matches!(
             result.err().unwrap(),
@@ -113,12 +123,7 @@ mod tests {
 
     impl GetMemberCommunicationDataCall<MockCommitteeRegistryContractApi> {
         pub(crate) fn new_for_tests(contract: MockCommitteeRegistryContractApi) -> Self {
-            GetMemberCommunicationDataCall {
-                contract,
-                member_address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
-                    .parse()
-                    .expect("Invalid address"),
-            }
+            GetMemberCommunicationDataCall { contract }
         }
     }
 }

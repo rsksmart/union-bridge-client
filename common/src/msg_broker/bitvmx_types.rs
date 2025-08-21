@@ -14,6 +14,7 @@ pub enum IncomingBitVMXApiMessages {
     Ping(),
     SetVar(Uuid, String, VariableTypes),
     SetWitness(Uuid, String, WitnessTypes),
+    SetFundingUtxo(Utxo),
     GetVar(Uuid, String),
     GetWitness(Uuid, String),
     GetCommInfo(),
@@ -24,17 +25,25 @@ pub enum IncomingBitVMXApiMessages {
     SubscribeToTransaction(Uuid, Txid),
     SubscribeUTXO(),
     SubscribeToRskPegin(),
+    GetSPVProof(Txid),
     DispatchTransaction(Uuid, Transaction),
     DispatchTransactionName(Uuid, String),
-    SetupKey(Uuid, Vec<P2PAddress>, u16),
+    SetupKey(Uuid, Vec<P2PAddress>, Option<Vec<PublicKey>>, u16),
     GetAggregatedPubkey(Uuid),
     GetKeyPair(Uuid),
-    GenerateZKP(Uuid, Vec<u8>),
+    GetPubKey(Uuid, bool),
+    GetSignedPubKey(Uuid, bool),
+    GenerateZKP(Uuid, Vec<u8>, String),
     ProofReady(Uuid),
-    ExecuteZKP(),
-    GetZKPExecutionResult(),
-    Finalize(),
-    GetSPVProof(Txid),
+    GetZKPExecutionResult(Uuid),
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct SignedPublicKey {
+    pub public_key: PublicKey,
+    pub signature_r: [u8; 32],
+    pub signature_s: [u8; 32],
+    pub recovery_id: u8,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -54,16 +63,19 @@ pub enum OutgoingBitVMXApiMessages {
     AggregatedPubkey(Uuid, PublicKey),
     AggregatedPubkeyNotReady(Uuid),
     TransactionInfo(Uuid, String, Transaction),
-    ZKPResult(/* Add appropriate type */),
+    ZKPResult(Uuid, Vec<u8>, Vec<u8>),
     ExecutionResult(/* Add appropriate type */),
     CommInfo(P2PAddress),
     KeyPair(Uuid, PrivateKey, PublicKey),
+    PubKey(Uuid, PublicKey),
+    SignedPubKey(Uuid, SignedPublicKey),
     Variable(Uuid, String, VariableTypes),
     Witness(Uuid, String, WitnessTypes),
     NotFound(Uuid, String),
     HashedMessage(Uuid, String, u32, u32, String),
     ProofReady(Uuid),
     ProofNotReady(Uuid),
+    ProofGenerationError(Uuid, String),
     SPVProof(Txid, Option<BtcTxSPVProof>),
 }
 
@@ -234,4 +246,35 @@ pub struct PegOutAccepted {
     pub user_take_sighash: Vec<u8>,
     pub user_take_nonce: PubNonce,
     pub user_take_signature: MaybeScalar,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Utxo {
+    pub txid: Txid,
+    pub vout: u32,
+    pub amount: u64,
+    pub pub_key: PublicKey,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewCommittee {
+    pub my_role: ParticipantRole,
+    pub take_aggregated_key: PublicKey,
+    pub dispute_aggregated_key: PublicKey,
+    pub addresses: HashMap<PublicKey, P2PAddress>,
+    pub operator_count: u32,
+    pub watchtower_count: u32,
+    pub packet_size: u32,
+}
+
+impl NewCommittee {
+    pub fn name() -> String {
+        "new_committee".to_string()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ParticipantRole {
+    Prover,
+    Verifier,
 }

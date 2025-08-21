@@ -8,16 +8,18 @@ use log::{error, warn};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use transaction_dispatcher::types::ApplyToStreamInput;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     AllCommunicationDataReady, NewCommittee, NewPendingCommittee,
 };
 use union_contracts::bindings::peg_manager::PegManager::{
-    PeginAccepted, PeginRequested, PegoutRegistered, PegoutRequested, StreamPosition, PegStatus,
+    PegStatus, PeginAccepted, PeginRequested, PegoutRegistered, PegoutRequested, StreamPosition,
 };
 use union_contracts::bindings::signature_manager::SignatureManager::{
-    AllNoncesReady, AllOperatorTakeTxHashesAdded, AllSignaturesReady
+    AllNoncesReady, AllOperatorTakeTxHashesAdded, AllSignaturesReady,
 };
+
+use crate::user_requests::ApplyToStream;
+
 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-183
 
 #[derive(Eq, PartialEq, Debug)]
@@ -38,9 +40,9 @@ pub enum RskPegManagerEvents {
     UnknownEvent,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 pub enum UserRequests {
-    ApplyToStream(ApplyToStreamInput),
+    ApplyToStream(ApplyToStream),
 }
 
 pub type RequestAdvanceFundsEvent = EventWithBlock<RequestAdvanceFunds>;
@@ -344,13 +346,15 @@ impl EventDecoder {
         tx_hash: TxHash,
     ) -> RskPegManagerEvents {
         match AllOperatorTakeTxHashesAdded::decode_log_data(&log_data) {
-            Ok(event) => RskPegManagerEvents::AllOperatorTakeTxHashesAdded(AllOperatorTakeTxHashesAddedEvent {
-                inner: event,
-                block_number,
-                block_hash,
-                removed,
-                tx_hash,
-            }),
+            Ok(event) => RskPegManagerEvents::AllOperatorTakeTxHashesAdded(
+                AllOperatorTakeTxHashesAddedEvent {
+                    inner: event,
+                    block_number,
+                    block_hash,
+                    removed,
+                    tx_hash,
+                },
+            ),
             Err(_) => UnknownEvent,
         }
     }
@@ -783,7 +787,10 @@ mod tests {
         let result = decoder.decode(rsk_log);
         match result {
             RskPegManagerEvents::AllOperatorTakeTxHashesAdded(data) => {
-                assert_eq!(data.inner.acceptPeginTxHash.as_slice(), expected_accept_pegin_tx_hash.as_bytes());
+                assert_eq!(
+                    data.inner.acceptPeginTxHash.as_slice(),
+                    expected_accept_pegin_tx_hash.as_bytes()
+                );
                 assert_eq!(data.block_number, expected_block_num);
                 assert_eq!(data.block_hash, expected_block_hash.into());
                 assert_eq!(data.removed, true);

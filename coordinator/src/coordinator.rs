@@ -1,4 +1,5 @@
 use crate::flows::btc_signature::btc_signature_subflow::BtcSignatureSubFlowFactory;
+use crate::flows::setup_committee_flow::{SetupCommitteeFlowFactory, SetupCommitteeProcessor};
 use crate::{
     event_processor::{EventProcessor, PeginProcessor, PegoutProcessor},
     monitor::MonitorApi,
@@ -47,6 +48,11 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
         let contracts_arc = Rc::new(contracts_gateway);
         let btc_sig_subflow_factory =
             BtcSignatureSubFlowFactory::new(contracts_arc.clone(), rt_sync.clone());
+        let setup_committee_flow_factory = SetupCommitteeFlowFactory::new(
+            contracts_arc.clone(),
+            rt_sync.clone(),
+            bitvmx_broker.clone(),
+        );
         Self {
             monitor,
             bitvmx_broker: bitvmx_broker.clone(),
@@ -65,9 +71,10 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
                 )),
                 Box::new(PegoutProcessor::new(
                     rt_sync.clone(),
-                    contracts_arc,
+                    contracts_arc.clone(),
                     bitvmx_broker.clone(),
                 )),
+                Box::new(SetupCommitteeProcessor::new(setup_committee_flow_factory)),
             ],
             check_period: CHECK_PERIOD,
             shutdown_flag,
@@ -121,15 +128,15 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
 
                 let mut message_received = false;
 
-                if let Some(event) = self
+                if let Some(req) = self
                     .monitor
                     .try_user_request()
                     .context("Error getting User request")?
                 {
                     // each processor decides if the event is relevant
                     self.processors.iter_mut().for_each(|p| {
-                        if let Err(e) = p.process_user_request(&event) {
-                            error!("Error processing User request {:?}: {:?}", event, e);
+                        if let Err(e) = p.process_user_request(&req) {
+                            error!("Error processing User request {:?}: {:?}", req, e);
                         }
                     });
 
@@ -276,6 +283,7 @@ pub(crate) mod tests {
         test_utils::rsk_block_generator::{
             create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
         },
+        types,
         types::{RskBlockAndUncles, TxHash},
     };
     use mockall::mock;
@@ -288,10 +296,11 @@ pub(crate) mod tests {
     use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
     use transaction_dispatcher::types::{
         AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
-        AddMemberSignatureInput, AddMemberSignatureOutput, AddOperatorTakeTxHashInput, 
+        AddMemberSignatureInput, AddMemberSignatureOutput, AddOperatorTakeTxHashInput,
         AddOperatorTakeTxHashOutput, ApplyToStreamInput, ApplyToStreamOutput,
-        DepositCommunicationDataInput, DepositCommunicationDataOutput, GetCommitteeInput,
-        GetCommitteeOutput, GetMemberCommunicationDataOutput, GetMemberPublicKeysInput,
+        DepositAggregatedKeyInput, DepositAggregatedKeyOutput, DepositCommunicationDataInput,
+        DepositCommunicationDataOutput, GetCommitteeInput, GetCommitteeOutput,
+        GetCommunicationDataInput, GetCommunicationDataOutput, GetMemberPublicKeysInput,
         GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterPegoutInput,
         RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
         RequestPegoutOutput,
@@ -587,6 +596,8 @@ pub(crate) mod tests {
         pub RskContractsGatewayApi {}
 
         impl RskContractsGatewayApi for RskContractsGatewayApi {
+            fn my_address(&self) -> types::Address;
+
             async fn get_temporary_pegin_address(
                 &self,
                 input: PeginAddressInput,
@@ -643,13 +654,18 @@ pub(crate) mod tests {
 
             async fn get_committee_communication_data(
                 &self,
-                stream_id: u64,
-            ) -> Result<GetMemberCommunicationDataOutput, DomainErrors>;
+                input: GetCommunicationDataInput,
+            ) -> Result<GetCommunicationDataOutput, DomainErrors>;
 
             async fn deposit_communication_data(
                 &self,
                 input: DepositCommunicationDataInput
             ) -> Result<DepositCommunicationDataOutput, DomainErrors>;
+
+            async fn deposit_aggregated_key(
+                &self,
+                input: DepositAggregatedKeyInput
+            ) -> Result<DepositAggregatedKeyOutput, DomainErrors>;
 
             async fn add_operator_take_tx_hash(
                 &self,

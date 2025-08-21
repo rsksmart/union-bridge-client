@@ -1,7 +1,8 @@
 use crate::config::TransactionConfig;
 use crate::contracts::committee_registry::{
-    ApplyToStreamInvoke, CommitteeRegistryContract, DepositCommunicationDataInvoke,
-    GetCommitteeCall, GetMemberCommunicationDataCall, GetMemberPublicKeysCall,
+    ApplyToStreamInvoke, CommitteeRegistryContract, DepositAggregatedKeysInvoke,
+    DepositCommunicationDataInvoke, GetCommitteeCall, GetMemberCommunicationDataCall,
+    GetMemberPublicKeysCall,
 };
 use crate::contracts::peg_manager::{
     FakePegManagerContract, PegManagerContract, accept_pegin::AcceptPeginInvoke,
@@ -10,14 +11,16 @@ use crate::contracts::peg_manager::{
     register_pegout::RegisterPegoutInvoke, request_pegin::RequestPeginInvoke,
 };
 use crate::contracts::signature_manager::{
-    AddMemberNonceInvoke, AddMemberSignatureInvoke, AddOperatorTakeTxHashInvoke, SignatureManagerContract
+    AddMemberNonceInvoke, AddMemberSignatureInvoke, AddOperatorTakeTxHashInvoke,
+    SignatureManagerContract,
 };
 use crate::types::{
     AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
-    AddMemberSignatureInput, AddMemberSignatureOutput, AddOperatorTakeTxHashInput, 
+    AddMemberSignatureInput, AddMemberSignatureOutput, AddOperatorTakeTxHashInput,
     AddOperatorTakeTxHashOutput, ApplyToStreamInput, ApplyToStreamOutput,
-    DepositCommunicationDataInput, DepositCommunicationDataOutput, GetCommitteeInput,
-    GetCommitteeOutput, GetMemberCommunicationDataOutput, GetMemberPublicKeysInput,
+    DepositAggregatedKeyInput, DepositAggregatedKeyOutput, DepositCommunicationDataInput,
+    DepositCommunicationDataOutput, GetCommitteeInput, GetCommitteeOutput,
+    GetCommunicationDataInput, GetCommunicationDataOutput, GetMemberPublicKeysInput,
     GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterPegoutInput,
     RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
     RequestPegoutOutput,
@@ -67,6 +70,8 @@ where
 }
 
 pub trait RskContractsGatewayApi {
+    fn my_address(&self) -> Address;
+
     fn get_temporary_pegin_address(
         &self,
         input: PeginAddressInput,
@@ -129,17 +134,23 @@ pub trait RskContractsGatewayApi {
 
     fn get_committee_communication_data(
         &self,
-        stream_id: u64,
-    ) -> impl Future<Output = Result<GetMemberCommunicationDataOutput, DomainErrors>>;
+        input: GetCommunicationDataInput,
+    ) -> impl Future<Output = Result<GetCommunicationDataOutput, DomainErrors>>;
 
     fn deposit_communication_data(
         &self,
         input: DepositCommunicationDataInput,
     ) -> impl Future<Output = Result<DepositCommunicationDataOutput, DomainErrors>>;
+
+    fn deposit_aggregated_key(
+        &self,
+        input: DepositAggregatedKeyInput,
+    ) -> impl Future<Output = Result<DepositAggregatedKeyOutput, DomainErrors>>;
 }
 
 #[derive(Clone)]
 pub struct RskContractsGateway<P: Provider> {
+    member_address: Address,
     contract_address: Address,
     get_temporary_pegin_address_call: GetTemporaryPeginAddressCall<PegManagerContract<P>>,
     request_pegin_invoke: RequestPeginInvoke<PegManagerContract<P>>,
@@ -156,6 +167,7 @@ pub struct RskContractsGateway<P: Provider> {
     register_pegout_invoke: RegisterPegoutInvoke<PegManagerContract<P>>,
     get_committee_call: GetCommitteeCall<CommitteeRegistryContract<P>>,
     deposit_communication_data_invoke: DepositCommunicationDataInvoke<CommitteeRegistryContract<P>>,
+    deposit_aggregated_key_invoke: DepositAggregatedKeysInvoke<CommitteeRegistryContract<P>>,
 }
 
 impl<P: Provider + Clone> RskContractsGateway<P> {
@@ -186,6 +198,7 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             CommitteeRegistryContract::new(provider.clone(), committee_registry_address.into());
 
         Ok(RskContractsGateway {
+            member_address,
             contract_address,
             get_temporary_pegin_address_call: GetTemporaryPeginAddressCall::new(
                 peg_manager_contract.clone(),
@@ -227,7 +240,6 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             ),
             get_member_communication_data_call: GetMemberCommunicationDataCall::new(
                 committee_registry_contract.clone(),
-                member_address.into(),
             ),
             apply_to_stream_invoke: ApplyToStreamInvoke::new(
                 committee_registry_contract.clone(),
@@ -237,6 +249,10 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             ),
             get_committee_call: GetCommitteeCall::new(committee_registry_contract.clone()),
             deposit_communication_data_invoke: DepositCommunicationDataInvoke::new(
+                committee_registry_contract.clone(),
+                tx_config.gas_bumps_t1,
+            ),
+            deposit_aggregated_key_invoke: DepositAggregatedKeysInvoke::new(
                 committee_registry_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
@@ -252,6 +268,10 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
 }
 
 impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
+    fn my_address(&self) -> Address {
+        self.member_address
+    }
+
     async fn get_temporary_pegin_address(
         &self,
         input: PeginAddressInput,
@@ -296,21 +316,6 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
 
         self.accept_pegin_invoke.run(input).await.map_err(|err| {
             error!("Error on accept_pegin_invoke: {}", err);
-            err
-        })
-    }
-
-    async fn request_pegout(
-        &self,
-        input: RequestPegoutInput,
-    ) -> Result<RequestPegoutOutput, DomainErrors> {
-        info!(
-            "Interacting with PegManager#tryPegoutRequest @ {}",
-            self.contract_address
-        );
-
-        self.request_pegout_invoke.run(input).await.map_err(|err| {
-            error!("Error on try_pegout_invoke: {}", err);
             err
         })
     }
@@ -384,6 +389,21 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
             })
     }
 
+    async fn request_pegout(
+        &self,
+        input: RequestPegoutInput,
+    ) -> Result<RequestPegoutOutput, DomainErrors> {
+        info!(
+            "Interacting with PegManager#tryPegoutRequest @ {}",
+            self.contract_address
+        );
+
+        self.request_pegout_invoke.run(input).await.map_err(|err| {
+            error!("Error on try_pegout_invoke: {}", err);
+            err
+        })
+    }
+
     async fn register_pegout(
         &self,
         input: RegisterPegoutInput,
@@ -449,15 +469,15 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
 
     async fn get_committee_communication_data(
         &self,
-        stream_id: u64,
-    ) -> Result<GetMemberCommunicationDataOutput, DomainErrors> {
+        input: GetCommunicationDataInput,
+    ) -> Result<GetCommunicationDataOutput, DomainErrors> {
         info!(
             "Interacting with CommitteeRegistry#getMemberCommunicationData @ {}",
             self.contract_address
         );
 
         self.get_member_communication_data_call
-            .run(stream_id)
+            .run(input)
             .await
             .map_err(|err| {
                 error!("Error on get_member_communication_data_call: {}", err);
@@ -479,6 +499,24 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
             .await
             .map_err(|err| {
                 error!("Error on deposit_communication_data_invoke: {}", err);
+                err
+            })
+    }
+
+    async fn deposit_aggregated_key(
+        &self,
+        input: DepositAggregatedKeyInput,
+    ) -> Result<DepositAggregatedKeyOutput, DomainErrors> {
+        info!(
+            "Interacting with CommitteeRegistry#depositAggregatedKeys @ {}",
+            self.contract_address
+        );
+
+        self.deposit_aggregated_key_invoke
+            .run(input)
+            .await
+            .map_err(|err| {
+                error!("Error on deposit_aggregated_key_invoke: {}", err);
                 err
             })
     }

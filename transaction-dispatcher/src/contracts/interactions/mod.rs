@@ -3,6 +3,7 @@ pub(crate) mod add_member_nonce;
 pub(crate) mod add_member_signature;
 pub(crate) mod add_operator_take_tx_hash;
 pub(crate) mod apply_to_stream;
+pub(crate) mod deposit_aggregated_key;
 pub(crate) mod deposit_communication_data;
 pub(crate) mod get_committee;
 pub(crate) mod get_member_communication_data;
