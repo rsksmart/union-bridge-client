@@ -1,15 +1,15 @@
+use alloy_primitives::Address;
 use alloy_primitives::FixedBytes;
-use alloy_primitives::{Address, U256};
 use anyhow::{Context, Result, anyhow, ensure};
 use bitcoin::{Transaction, TxIn, TxOut, Txid};
 use common::msg_broker::bitvmx_types::{P2PAddress, PeerId};
+use common::types::CommitteeId;
 use common::{msg_broker::bitvmx_types::BtcTxSPVProof, types::Hash256};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     Committee, CommunicationData, UTXO,
 };
-
 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-214
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -186,7 +186,7 @@ pub struct ApplyToStreamOutput {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GetCommitteeInput {
-    pub committee_id: U256,
+    pub committee_id: CommitteeId,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -196,7 +196,7 @@ pub struct GetCommitteeOutput {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GetCommunicationDataInput {
-    pub stream_id: u64,
+    pub committee_id: CommitteeId,
     pub member_address: Address,
 }
 
@@ -207,7 +207,7 @@ pub struct GetCommunicationDataOutput {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DepositCommunicationDataInput {
-    pub stream_id: u64,
+    pub committee_id: CommitteeId,
     pub communication_data: Vec<CommunicationData>,
 }
 
@@ -219,7 +219,7 @@ pub struct DepositCommunicationDataOutput {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DepositAggregatedKeyInput {
-    pub stream_id: u64,
+    pub committee_id: CommitteeId,
     pub aggregated_key: FixedBytes<32>,
 }
 

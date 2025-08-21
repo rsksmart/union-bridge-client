@@ -19,12 +19,12 @@ impl<C: CommitteeRegistryContractApi> GetMemberCommunicationDataCall<C> {
     ) -> Result<GetCommunicationDataOutput, DomainErrors> {
         info!(
             "Init GetMemberCommunicationData for stream: {:?}, member: {:?}",
-            input.stream_id, input.member_address
+            input.committee_id, input.member_address
         );
 
         let communication_data = self
             .contract
-            .call_get_member_communication_data(input.stream_id, input.member_address)
+            .call_get_member_communication_data(input.committee_id, input.member_address)
             .await
             .map_err(|e| {
                 DomainErrors::UnhandledContractError(format!(
@@ -74,7 +74,7 @@ mod tests {
         let interaction = GetMemberCommunicationDataCall::new_for_tests(mock_instance);
 
         let input = GetCommunicationDataInput {
-            stream_id: 1u64,
+            committee_id: 1.into(),
             member_address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
                 .parse()
                 .expect("Invalid address"),
@@ -107,7 +107,7 @@ mod tests {
         let interaction = GetMemberCommunicationDataCall::new_for_tests(mock_instance);
 
         let input = GetCommunicationDataInput {
-            stream_id: 1u64,
+            committee_id: 1.into(),
             member_address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
                 .parse()
                 .expect("Invalid address"),

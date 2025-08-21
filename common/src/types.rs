@@ -1,6 +1,6 @@
 use alloy_json_abi::JsonAbi;
 use alloy_primitives::FixedBytes;
-use anyhow::Result;
+use anyhow::{Result, bail};
 use bitcoin::{blockdata::block::Header, consensus::encode::deserialize as btc_deserialize};
 use hex::FromHexError;
 use log::error;
@@ -788,6 +788,39 @@ pub struct RskRpcLog {
     topics: Vec<LogTopic>,
     // no "removed" field if coming from request (not subscription)
 }
+
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone)]
+pub struct CommitteeId(u128);
+
+impl From<u128> for CommitteeId {
+    fn from(value: u128) -> Self {
+        CommitteeId(value)
+    }
+}
+
+impl std::ops::Deref for CommitteeId {
+    type Target = u128;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+// contracts binding generates a U256 for the committeeId in some events (I think because it's indexed, for hashing), but in the contracts under the hood it is an u128
+impl TryFrom<alloy_primitives::Uint<256, 4>> for CommitteeId {
+    type Error = anyhow::Error;
+
+    fn try_from(value: alloy_primitives::Uint<256, 4>) -> Result<Self> {
+        match value.try_into() {
+            Ok(num) => Ok(CommitteeId(num)),
+            Err(e) => bail!(
+                "Failed to convert Uint<256, 4> {value:?} to CommitteeId: {}",
+                e
+            ),
+        }
+    }
+}
+
+pub type StreamId = u64;
 
 fn parse_hex_to_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
 where

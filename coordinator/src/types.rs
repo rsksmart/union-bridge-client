@@ -818,10 +818,15 @@ mod tests {
                 .parse::<Address>()
                 .expect("Invalid address"),
             operatorTakeIndex: U256::from(0),
+            createdAt: Default::default(),
+            missingData: 0,
+            missingCommunicationData: 0,
+            isPending: false,
+            streamId: 0,
         };
 
         let expected_event = NewPendingCommittee {
-            streamId: U256::from(42),
+            committeeId: 42,
             _committee: committee,
         };
 
@@ -873,10 +878,15 @@ mod tests {
                 .parse::<Address>()
                 .expect("Invalid address"),
             operatorTakeIndex: U256::from(1),
+            createdAt: Default::default(),
+            missingData: 0,
+            missingCommunicationData: 0,
+            isPending: false,
+            streamId: 0,
         };
 
         let expected_event = NewCommittee {
-            committeeId: U256::from(99),
+            committeeId: 99,
             _committee: committee,
         };
 
@@ -906,10 +916,10 @@ mod tests {
     fn test_decode_all_communication_data_ready_event() {
         let expected_block_hash = H256::from_low_u64_be(333);
         let expected_block_num = 777;
-        let expected_stream_id = 12345u64;
+        let expected_committee_id = 12345;
 
         let expected_event = AllCommunicationDataReady {
-            streamId: expected_stream_id,
+            _committeeId: expected_committee_id,
         };
 
         let removed = false;

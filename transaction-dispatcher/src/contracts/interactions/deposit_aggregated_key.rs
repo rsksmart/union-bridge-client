@@ -23,12 +23,12 @@ impl<C: CommitteeRegistryContractApi> DepositAggregatedKeysInvoke<C> {
     ) -> Result<DepositAggregatedKeyOutput, DomainErrors> {
         info!(
             "init depositaggregatedkeys for stream: {:?}",
-            input.stream_id
+            input.committee_id
         );
 
         let receipt = self
             .contract
-            .invoke_deposit_aggregated_key(input.stream_id, input.aggregated_key, self.gas_bumps)
+            .invoke_deposit_aggregated_key(input.committee_id, input.aggregated_key, self.gas_bumps)
             .await
             .map_err(|e| {
                 DomainErrors::UnhandledContractError(format!(
@@ -58,6 +58,7 @@ mod tests {
     use crate::contracts::committee_registry::MockCommitteeRegistryContractApi;
     use alloy_primitives::{Address, FixedBytes, TxHash};
     use alloy_rpc_types::{Log, Receipt, ReceiptEnvelope, ReceiptWithBloom, TransactionReceipt};
+    use common::types::CommitteeId;
     use mockall::predicate::*;
     use std::str::FromStr;
 
@@ -65,7 +66,7 @@ mod tests {
     async fn test_deposit_aggregated_key_success() {
         // arrange
         let mut mock_contract = MockCommitteeRegistryContractApi::new();
-        let stream_id = 1u64;
+        let committee_id: CommitteeId = 1.into();
         let aggregated_key = FixedBytes::<32>::from([1u8; 32]);
         let gas_bumps = 3u8;
 
@@ -75,13 +76,13 @@ mod tests {
         );
         mock_contract
             .expect_invoke_deposit_aggregated_key()
-            .with(eq(stream_id), eq(aggregated_key), eq(gas_bumps))
+            .with(eq(committee_id.clone()), eq(aggregated_key), eq(gas_bumps))
             .times(1)
             .returning(move |_, _, _| Ok(expected_receipt.clone()));
 
         let invoke = DepositAggregatedKeysInvoke::new(mock_contract, gas_bumps);
         let input = DepositAggregatedKeyInput {
-            stream_id,
+            committee_id,
             aggregated_key,
         };
 
@@ -99,13 +100,13 @@ mod tests {
     async fn test_deposit_aggregated_key_contract_error() {
         // arrange
         let mut mock_contract = MockCommitteeRegistryContractApi::new();
-        let stream_id = 1u64;
+        let committee_id: CommitteeId = 1.into();
         let aggregated_key = FixedBytes::<32>::from([1u8; 32]);
         let gas_bumps = 3u8;
 
         mock_contract
             .expect_invoke_deposit_aggregated_key()
-            .with(eq(stream_id), eq(aggregated_key), eq(gas_bumps))
+            .with(eq(committee_id.clone()), eq(aggregated_key), eq(gas_bumps))
             .times(1)
             .returning(|_, _, _| {
                 Err(alloy_contract::Error::TransportError(
@@ -115,7 +116,7 @@ mod tests {
 
         let invoke = DepositAggregatedKeysInvoke::new(mock_contract, gas_bumps);
         let input = DepositAggregatedKeyInput {
-            stream_id,
+            committee_id,
             aggregated_key,
         };
 

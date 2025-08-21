@@ -17,6 +17,7 @@ use bitcoin::{
     hashes::Hash,
     secp256k1::{Parity::Even, XOnlyPublicKey},
 };
+use common::types::CommitteeId;
 use common::{
     msg_broker::{
         bitvmx_types::{
@@ -425,12 +426,12 @@ where
         contracts: &CG,
         pegin_event: &PeginRequested,
     ) -> Result<PeginRequestMessage> {
+        // contracts binding generates a U256 for the committeeId in some events (I think because it's indexed, for hashing), but in the contracts under the hood it is an u128
+        let committee_id: CommitteeId = pegin_event.committeeId.try_into()?;
         // Get committee information
         let committee_response = Self::call_contract(rt_sync, "getCommittee", || async {
             contracts
-                .get_committee(GetCommitteeInput {
-                    committee_id: pegin_event.committeeId,
-                })
+                .get_committee(GetCommitteeInput { committee_id })
                 .await
         })?;
 
@@ -639,9 +640,10 @@ where
         flow_id: Uuid,
         pegin_event: &PeginRequested,
     ) -> Result<()> {
-        let stream_id = pegin_event.streamPosition.streamId;
+        // contracts binding generates a U256 for the committeeId in some events (I think because it's indexed, for hashing), but in the contracts under the hood it is an u128
+        let committee_id: CommitteeId = pegin_event.committeeId.try_into()?;
         let input = GetCommunicationDataInput {
-            stream_id,
+            committee_id: committee_id.clone(),
             member_address: contracts.my_address().into(),
         };
         let p2p_addresses = match Self::call_contract(
@@ -659,8 +661,8 @@ where
                 .collect::<Result<Vec<_>>>()?,
             Err(e) => {
                 warn!(
-                    "Failed to get communication data for stream_id {}: {}. Using empty P2P addresses for Setup message.",
-                    stream_id, e
+                    "Failed to get communication data for committee_id {}: {}. Using empty P2P addresses for Setup message.",
+                    *committee_id, e
                 );
                 Vec::new()
             }
@@ -1606,7 +1608,9 @@ mod tests {
 
         contracts
             .expect_get_committee()
-            .withf(move |inp: &GetCommitteeInput| inp.committee_id == pegin_requested.committeeId)
+            .withf(move |inp: &GetCommitteeInput| {
+                inp.committee_id == pegin_requested.committeeId.try_into().unwrap()
+            })
             .returning(move |_| {
                 Ok(GetCommitteeOutput {
                     committee: committee.clone(),
@@ -1634,7 +1638,9 @@ mod tests {
         // Mock get_committee_communication_data for Setup message
         contracts
             .expect_get_committee_communication_data()
-            .withf(|output| output.stream_id == 42)
+            .withf(move |output| {
+                output.committee_id == pegin_requested.committeeId.try_into().unwrap()
+            })
             .returning(|_| {
                 Ok(GetCommunicationDataOutput {
                     communication_data: vec![],
@@ -2010,6 +2016,11 @@ mod tests {
             ],
             leaderAddress: leader,
             operatorTakeIndex: U256::from(0u64),
+            createdAt: Default::default(),
+            missingData: 0,
+            missingCommunicationData: 0,
+            isPending: false,
+            streamId: 0,
         }
     }
 
