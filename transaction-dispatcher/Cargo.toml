@@ -25,6 +25,7 @@ env_logger = { workspace = true }
 hex = { workspace = true, features = ["serde"] }
 log = { workspace = true }
 musig2 = { workspace = true }
+multiaddr = "0.18.2"
 primitive-types = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

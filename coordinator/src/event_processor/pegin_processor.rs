@@ -426,7 +426,6 @@ where
         contracts: &CG,
         pegin_event: &PeginRequested,
     ) -> Result<PeginRequestMessage> {
-        // contracts binding generates a U256 for the committeeId in some events (I think because it's indexed, for hashing), but in the contracts under the hood it is an u128
         let committee_id: CommitteeId = pegin_event.committeeId.try_into()?;
         // Get committee information
         let committee_response = Self::call_contract(rt_sync, "getCommittee", || async {
@@ -640,7 +639,6 @@ where
         flow_id: Uuid,
         pegin_event: &PeginRequested,
     ) -> Result<()> {
-        // contracts binding generates a U256 for the committeeId in some events (I think because it's indexed, for hashing), but in the contracts under the hood it is an u128
         let committee_id: CommitteeId = pegin_event.committeeId.try_into()?;
         let input = GetCommunicationDataInput {
             committee_id: committee_id.clone(),
@@ -655,7 +653,7 @@ where
                 .communication_data
                 .into_iter()
                 .map(|comm_data| {
-                    P2PAddressParser::contracts_to_bitvmx(&comm_data)
+                    P2PAddressParser::addr_from_contracts(&comm_data)
                         .context("Failed to convert communication data to P2P address")
                 })
                 .collect::<Result<Vec<_>>>()?,
@@ -671,8 +669,9 @@ where
         let setup_message = IncomingBitVMXApiMessages::Setup(
             flow_id,                               // ProgramId - UUID of pegin flow
             PROGRAM_TYPE_ACCEPT_PEGIN.to_string(), // Program type constant
-            p2p_addresses,                         // Vector of P2P addresses
-            0,                                     // Leader number
+            // TODO build with coordinator/src/flows/common.rs#build_communication_data
+            vec![], // Vector of P2P addresses
+            0,      // Leader number
         );
 
         Self::send_to_bitvmx(bitvmx_broker, setup_message)
