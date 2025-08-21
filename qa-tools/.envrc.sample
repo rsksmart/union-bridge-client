@@ -5,6 +5,7 @@ export UNION_CONTRACTS_SETUP_SCRIPT="shell/script/integration-test/packet-creati
 
 # optional (with fallback)
 export CHECK_FORK_REQUIRED_NUM_BLOCKS=5
+export ANVIL_BLOCK_TIME=0
 
 # for transaction dispatcher
 export KEY_STORE_PASSWORD="<super-secret-password>"
