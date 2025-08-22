@@ -1,3 +1,26 @@
+/*
+U: Union Bridge
+B: BitVMX Client
+RSK: RSK Blockchain Gateway
+
+Step 1: PegoutRequested event is received (RSK -> U)
+    a: Send setVar
+    b: Send setup
+Step 2: PegoutAccepted event is received (B -> U)
+    a: Register nonces (U -> RSK)
+Step 3: AllNoncesReady event is received (RSK -> U)
+    a: Register signatures (U -> RSK)
+Step 4: AllSignaturesReady event is received (RSK -> U)
+    a: Dispatch transaction name (U -> B)
+    b: Ask for transaction status (U -> B)
+Step 5: Transaction status is received (B -> U)
+    a: If confirmations are not enough, schedule a new request for a newtransaction status
+    b: If confirmations are enough, request SPV proof (U -> B)
+Step 6: SPVProof is received (B -> U)
+    a: Register pegout calling the peg manager contract (U -> C)
+Step 7: Pegout Registered event is received (RSK -> U)
+    a: Confirm pegout registered and sending the confirmation to BitVMX with SetVar
+*/
 use crate::blockchain_tracker::{BlockConfirmations, BlockchainObserver, BlockchainView};
 use crate::flows::btc_signature::btc_signature_lifecycle::BtcSignatureLifeCycle;
 use crate::flows::btc_signature::btc_signature_subflow::{
@@ -10,7 +33,6 @@ use crate::{
     event_processor::EventProcessor,
     types::{EventWithBlock, RskPegManagerEvents},
 };
-use alloy_primitives::U256;
 use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::key::Parity;
 use bitcoin::{PublicKey, Txid, XOnlyPublicKey};
@@ -30,9 +52,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
-use transaction_dispatcher::types::{
-    GetCommitteeInput, GetCommunicationDataInput, P2PAddressParser,
-};
+use transaction_dispatcher::types::{GetCommitteeInput, GetCommunicationDataInput};
 use transaction_dispatcher::types::{RegisterPegoutInput, RegisterPegoutOutput};
 use union_contracts::bindings::peg_manager::PegManager::{PegoutRegistered, PegoutRequested};
 use uuid::Uuid;
@@ -156,7 +176,8 @@ where
     ) -> Result<()> {
         let data_to_send: PegOutRequest =
             self.pegout_requested_to_bitvmx_request(pegout_requested)?;
-        //Set var must be sent first
+        //Step 1a: Send setVar (U -> B)
+        //Set var must be sent before the setup
         Self::send_set_var_to_bitvmx(
             &self.bitvmx_broker,
             flow_id,
@@ -172,6 +193,7 @@ where
         let p2p_addresses = self
             .get_committee_member_address(committee_id)
             .context("Failed to get committee member addresses")?;
+        //Step 1b: Setup BitVMX (U -> B)
         //Setup must be sent after set_var
         Self::send_setup_to_bitvmx(&self.bitvmx_broker, flow_id, p2p_addresses)?;
 
@@ -347,6 +369,7 @@ where
             .iter_mut()
             .find(|(_, state)| state.spv_proof_tx_id == Some(*tx_id))
             .ok_or_else(|| anyhow!("Pegout state not found for tx_id: {}", tx_id))?;
+        // Step 6a: Register pegout calling the peg manager contract (U -> C)
         let result = self
             .rt_sync
             .run(async { self.contracts_gateway.register_pegout(input).await })?;
@@ -510,6 +533,7 @@ where
         Ok(())
     }
 
+    //Step 5b
     fn handle_request_spv_proof(&mut self, flow_id: &Uuid, tx_id: Txid) -> Result<()> {
         let state = self
             .tracker
@@ -549,8 +573,10 @@ where
                 );
                 self.scheduler.cancel(flow_id);
             }
+            // Step 5b: If confirmations are enough, request SPV proof (U -> B)
             self.handle_request_spv_proof(flow_id, tx_status.tx_id)?;
         } else {
+            // Step 5a: If confirmations are not enough, schedule a new request for a newtransaction status
             debug!(
                 "Transaction not confirmed with sufficient confirmations for flow_id: {}",
                 flow_id
@@ -576,6 +602,7 @@ where
         }
 
         for (flow_id, event) in vec_to_process {
+            // Step 1a: Notify BitVMX about the pegout request (U -> B)
             info!("Confirmed pegout requested id: {}", flow_id);
             self.notify_pegout_requested_to_bitvmx(flow_id, &event.data.inner)?;
 
@@ -592,6 +619,7 @@ where
         Ok(())
     }
 
+    //Step 7a confirm pegout registered and sending the confirmation to BitVMX with SetVar
     fn process_unhandled_confirmed_pegout_registered_events(&mut self) -> Result<()> {
         let mut flow_ids_to_remove: Vec<Uuid> = Vec::new();
 
@@ -661,6 +689,7 @@ where
 {
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
         match event {
+            // Step 6: SPVProof is received (B -> U)
             OutgoingBitVMXApiMessages::SPVProof(tx_id, spv_proof_opt) => match spv_proof_opt {
                 Some(spv_proof) => {
                     info!(
@@ -676,6 +705,7 @@ where
                     tx_id
                 ),
             },
+            // Step 2: PegoutAccepted event is received (B -> U)
             OutgoingBitVMXApiMessages::Variable(flow_id, method, VariableTypes::String(data))
                 if matches!(method.as_str(), PEGOUT_ACCEPTED_NAME) =>
             {
@@ -693,10 +723,12 @@ where
                     let input: PegOutAccepted = serde_json::from_str::<PegOutAccepted>(data)?;
                     state.pegout_accepted_tx = Some(input.user_take_txid);
                     let register_input = RegisterSignaturesBitVmxData::try_from(input)?;
+                    // Step 2a: Register nonces (U -> RSK)
                     btc_sig_subflow.start_signature_flow(*flow_id, &register_input)?;
                     state.btc_sig_flow = Some(btc_sig_subflow);
                 }
             }
+            // Step 5: Transaction status is received (B -> U)
             OutgoingBitVMXApiMessages::Transaction(flow_id, tx_status, _tx_opt) => {
                 debug!(
                     "Received BitVMX Transaction event. Flow Id: {}, Tx Status: {:?}",
@@ -713,6 +745,7 @@ where
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         trace!("Processing new event: {:?}", event);
         match event {
+            // Step 1: PegoutRequested event is received (RSK -> U)
             RskPegManagerEvents::PegoutRequested(data) => {
                 if data.removed {
                     info!("Handling Pegout Requested removed event: {:?}", data);
@@ -722,6 +755,7 @@ where
                 debug!("Handling Pegout Requested event {:?}", data);
                 self.track_pegout_requested(data.clone())?;
             }
+            // Step 7: Pegout Registered event is received (RSK -> U)
             RskPegManagerEvents::PegoutRegistered(data) => {
                 debug!("Handling Pegout Registered event {:?}", data);
                 if data.removed {
@@ -730,18 +764,23 @@ where
                 }
                 self.track_pegout_registered(data.clone())?;
             }
+            // Step 3: AllNoncesReady event is received (RSK -> U)
             RskPegManagerEvents::AllNoncesReady(data)
+            // Step 4: AllSignaturesReady event is received (RSK -> U)
             | RskPegManagerEvents::AllSignaturesReady(data) => {
                 debug!("Handling signature event {:?}", data);
 
                 for (flow_id, state) in self.tracker.iter_mut() {
                     if let Some(btc_flow) = state.btc_sig_flow.as_mut() {
+                        // Step 3a: Register signatures (U -> RSK)
                         btc_flow.delegate_rsk_event(*flow_id, event)?;
                         if btc_flow.is_done() {
+                            // Step 4a: Dispatch transaction name (U -> B)
                             Self::send_dispatch_transaction_name_msg_to_bitvmx(
                                 &self.bitvmx_broker,
                                 *flow_id,
                             )?;
+                            // Step 4b: Ask for transaction status (U -> B)
                             Self::send_get_transaction_info_by_name_to_bitvmx(
                                 &self.bitvmx_broker,
                                 *flow_id,
