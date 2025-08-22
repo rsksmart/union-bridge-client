@@ -128,7 +128,7 @@ struct FlowContext {
     setup_core: SetupCoreReq,
     // async
     committee_pending: Option<NewCommitteePendingEvent>,
-    communication_data_ready: Option<HashMap<Address, Vec<P2PAddress>>>,
+    communication_data_ready: Option<Vec<P2PAddress>>,
     committee_ready: Option<NewCommitteeReadyEvent>,
 }
 
@@ -219,7 +219,6 @@ enum StepData {
     // sync or member-dependent steps
     UserRequest(ApplyToStream),
     CommInfo(P2PAddress),
-    SignedPublicKey(SignedPublicKey),
     PublicKey(PublicKey),
     SignedMessage([u8; 32], [u8; 32], u8), // signature_r, signature_s, recovery_id
 
@@ -241,13 +240,6 @@ impl StepData {
         match self {
             StepData::CommInfo(addr) => Ok(addr),
             _ => bail!("Expected P2PAddress"),
-        }
-    }
-
-    fn into_signed_pubkey(self) -> Result<SignedPublicKey> {
-        match self {
-            StepData::SignedPublicKey(pk) => Ok(pk),
-            _ => bail!("Expected SignedPublicKey"),
         }
     }
 
@@ -324,30 +316,6 @@ where
         self.contracts.my_address()
     }
 
-    fn close_pub_key_req(
-        pub_key_req: &mut PubKeyReq,
-        flow_id: Uuid,
-        req_id: Option<Uuid>,
-        data: StepData,
-    ) -> Result<()> {
-        let req_id = req_id.with_context(|| {
-            format!("Missing request id on close_pub_key_req for flow {flow_id}")
-        })?;
-
-        match pub_key_req {
-            Some(r) if r.0 == req_id => {
-                r.1 = Some(data.into_signed_pubkey()?);
-                Ok(())
-            }
-            Some(r) => {
-                bail!("Request id {req_id} does not match expected {r:?} for flow {flow_id}",)
-            }
-            None => {
-                bail!("Missing request for pubkey in flow {flow_id} with req_id {req_id}",)
-            }
-        }
-    }
-
     fn close_agg_key_req(
         pub_key_req: &mut AggKeyReq,
         flow_id: Uuid,
@@ -370,29 +338,6 @@ where
                 bail!("Missing request for agg-key in flow {flow_id} with req_id {req_id}",)
             }
         }
-    }
-
-    fn add_my_comm_data(
-        &self,
-        communication_data: &mut HashMap<PublicKey, P2PAddress>,
-    ) -> Result<()> {
-        info!("Adding my communication data");
-
-        let my_comm_pubkey = self.ctx_my_comm_key()?;
-        let my_comm_info = self.ctx_my_comm_info()?;
-        communication_data.insert(my_comm_pubkey.public_key, my_comm_info);
-
-        Ok(())
-    }
-
-    fn add_other_members_comm_data(
-        &self,
-        _communication_data: &mut HashMap<PublicKey, P2PAddress>,
-    ) -> Result<()> {
-        info!("Adding other members communication data");
-
-        // TODO add other members data
-        Ok(())
     }
 
     fn get_take_aggregated_key_id(&self) -> Result<Uuid> {
@@ -424,6 +369,8 @@ where
     }
 
     // TODO(iago-3) move ctx_xxx methods to FlowContext struct
+
+    // TODO(iago-3) review the ctx_xxx methods we have and try to unify / optimize them
 
     fn ctx_my_take_key(&self) -> Result<SignedPublicKey> {
         let take_data = self.state.ctx.my_take_key.as_ref().with_context(|| {
@@ -458,26 +405,6 @@ where
         let signed_pubkey = dispute_data.1.as_ref().with_context(|| {
             format!(
                 "Missing response for My Dispute key for flow {} and req_id {req_id}",
-                self.state.flow_id
-            )
-        })?;
-
-        Ok(signed_pubkey.clone())
-    }
-
-    fn ctx_my_comm_key(&self) -> Result<SignedPublicKey> {
-        let comm_data = self.state.ctx.my_comm_key.as_ref().with_context(|| {
-            format!(
-                "Missing request for My Communications key for flow {}",
-                self.state.flow_id
-            )
-        })?;
-
-        let req_id = comm_data.0;
-
-        let signed_pubkey = comm_data.1.as_ref().with_context(|| {
-            format!(
-                "Missing response for My Communications key for flow {} and req_id {req_id}",
                 self.state.flow_id
             )
         })?;
@@ -536,63 +463,56 @@ where
         Ok(*pubkey)
     }
 
-    fn ctx_member_communication_data(&self, member_addr: Address) -> Result<Vec<P2PAddress>> {
-        let committee_comm_data = self
-            .state
+    fn ctx_my_communication_data(&self) -> Result<Vec<P2PAddress>> {
+        self.state
             .ctx
             .communication_data_ready
             .as_ref()
-            .context("Missing communication data in context")?;
-
-        committee_comm_data
-            .get(&member_addr)
-            .with_context(|| {
-                format!("Missing communication data for member {member_addr} in context")
-            })
             .cloned()
+            .context("Missing communication data in context")
     }
 
-    // TODO(iago-3) review the ctx_xxx methods we have and try to unify / optimize them
-    fn ctx_get_member_keys_by_type(
-        &self,
-        member_addr: Address,
-        key_index: usize,
-    ) -> Result<PublicKey> {
+    fn get_member_keys_by_type(&self, member_addr: Address, key_index: usize) -> Result<PublicKey> {
+        let member = self
+            .state
+            .ctx
+            .get_committee_members()?
+            .into_iter()
+            .find(|m| m.memberAddress == member_addr)
+            .with_context(|| format!("Member {member_addr} not found in committee members"))?;
+
+        self.get_member_key(key_index, member)
+    }
+
+    fn get_member_key(&self, key_index: usize, member: CommitteeMember) -> Result<PublicKey> {
         let key_type = match key_index {
             TAKE_KEY_INDEX => "Take",
             DISPUTE_KEY_INDEX => "Dispute",
             _ => bail!("Invalid key index: {key_index}, expected 0 (take) or 1 (dispute)"),
         };
 
-        for member in self.state.ctx.get_committee_members()? {
-            if member_addr != member.memberAddress {
-                continue;
-            }
+        let member_addr = member.memberAddress;
+        let keys = self.get_member_public_keys_from_contracts(member_addr)?;
+        let key_str = keys
+            .public_keys
+            .get(key_index)
+            .with_context(|| format!("{key_type} Key not found on Committee for {member_addr}"))?;
 
-            let member_addr = member.memberAddress;
-            let keys = self.get_member_public_keys_from_contracts(member_addr)?;
-            let key_str = keys.public_keys.get(key_index).with_context(|| {
-                format!("{key_type} Key not found on Committee for {member_addr}")
-            })?;
+        // TODO revisit this, we are encoding bytes to hex string in the contracts to then decode it back to bytes here
 
-            // TODO revisit this, we are encoding bytes to hex string in the contracts to then decode it back to bytes here
+        let key_bytes: FixedBytes<32> = key_str
+            .parse()
+            .context("Failed to parse public key str to FixedBytes<32>")?;
+        let x_only_key = XOnlyPublicKey::from_slice(key_bytes.as_slice())
+            .context("Failed to parse aggregated public key")?;
 
-            let key_bytes: FixedBytes<32> = key_str
-                .parse()
-                .context("Failed to parse public key str to FixedBytes<32>")?;
-            let x_only_key = XOnlyPublicKey::from_slice(key_bytes.as_slice())
-                .context("Failed to parse aggregated public key")?;
+        debug!("Got {key_type} Key for member {member_addr} with X: {x_only_key:?}");
 
-            debug!("Got {key_type} Key for member {member_addr} with X: {x_only_key:?}");
+        // BitVMX adjusts parity to Even, so we do the same here
+        let secp_key = x_only_key.public_key(Even);
+        let member_key = PublicKey::new(secp_key);
 
-            // BitVMX adjusts parity to Even, so we do the same here
-            let secp_key = x_only_key.public_key(Even);
-            let member_key = PublicKey::new(secp_key);
-
-            return Ok(member_key);
-        }
-
-        bail!("Member {member_addr} not found in committee members")
+        Ok(member_key)
     }
 
     fn get_member_funding_utxo(
@@ -646,15 +566,17 @@ where
         )
     }
 
-    fn get_member_communication_data(&self, member_address: Address) -> Result<Vec<P2PAddress>> {
+    fn build_my_communication_data(&self) -> Result<Vec<P2PAddress>> {
         let committee_id = self
             .state
             .ctx
             .get_committee_id()
             .context("Get Communication Data")?;
 
+        let my_address: Address = self.my_address().into();
         let input = GetCommunicationDataInput {
-            member_address,
+            // TODO rethink if this is needed or a member should only request its own communication data and therefore this param is not required
+            member_address: my_address,
             committee_id,
         };
 
@@ -714,18 +636,8 @@ where
     }
 
     fn close_communication_data_step(&mut self) -> Result<()> {
-        let members: Vec<CommitteeMember> = self.state.ctx.get_committee_members()?;
-
-        let comm_data_by_member: HashMap<Address, Vec<P2PAddress>> = members
-            .iter()
-            .map(|m| {
-                let addrs = self.get_member_communication_data(m.memberAddress)?;
-                Ok((m.memberAddress, addrs))
-            })
-            .collect::<Result<HashMap<_, _>>>()?;
-
-        self.state.ctx.communication_data_ready = Some(comm_data_by_member);
-
+        let my_comm_data = self.build_my_communication_data()?;
+        self.state.ctx.communication_data_ready = Some(my_comm_data);
         Ok(())
     }
 
@@ -758,34 +670,10 @@ where
     }
 
     fn get_committee_keys_by_type(&self, key_index: usize) -> Result<Vec<PublicKey>> {
-        let key_type = match key_index {
-            TAKE_KEY_INDEX => "Take",
-            DISPUTE_KEY_INDEX => "Dispute",
-            _ => bail!("Invalid key index: {key_index}, expected 0 (take) or 1 (dispute)"),
-        };
-
         let mut committee_pub_keys = vec![];
 
         for member in self.state.ctx.get_committee_members()? {
-            let member_addr = member.memberAddress;
-            let keys = self.get_member_public_keys_from_contracts(member_addr)?;
-            let key_str = keys.public_keys.get(key_index).with_context(|| {
-                format!("{key_type} Key not found on Committee for {member_addr}")
-            })?;
-
-            // TODO revisit this, we are encoding bytes to hex string in the contracts to then decode it back to bytes here
-
-            let key_bytes: FixedBytes<32> = key_str
-                .parse()
-                .context("Failed to parse public key str to FixedBytes<32>")?;
-            let x_only_key = XOnlyPublicKey::from_slice(key_bytes.as_slice())
-                .context("Failed to parse aggregated public key")?;
-
-            debug!("Got {key_type} Key for member {member_addr} with X: {x_only_key:?}");
-
-            // BitVMX adjusts parity to Even, so we do the same here
-            let secp_key = x_only_key.public_key(Even);
-            let member_key = PublicKey::new(secp_key);
+            let member_key = self.get_member_key(key_index, member)?;
             committee_pub_keys.push(member_key);
         }
 
@@ -1052,7 +940,7 @@ where
         self.state.ctx.agg_take_key = Some((take_key_id, None));
 
         let committee_take_keys = self.get_committee_keys_by_type(TAKE_KEY_INDEX)?;
-        let communication_data = self.ctx_member_communication_data(self.my_address().into())?;
+        let communication_data = self.ctx_my_communication_data()?;
 
         // Bitvmx responds with the aggregated key
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetupKey(
@@ -1072,7 +960,7 @@ where
         self.state.ctx.agg_dispute_key = Some((dispute_key_id, None));
 
         let committee_dispute_keys = self.get_committee_keys_by_type(DISPUTE_KEY_INDEX)?;
-        let communication_data = self.ctx_member_communication_data(self.my_address().into())?;
+        let communication_data = self.ctx_my_communication_data()?;
 
         // Bitvmx responds with the aggregated key
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetupKey(
@@ -1091,33 +979,33 @@ where
         let members = self.state.ctx.get_committee_members()?;
         let mut member_of_committee = vec![];
 
-        // TODO(iago-3) rethink how we store the committee member data in the context, we can unify it in a MemberOfCommittee struct and reduce the number of ctx_xxx methods
-        for m in members {
-            let p2p_addrs = self.ctx_member_communication_data(m.memberAddress.into())?;
+        let p2p_addrs = self.ctx_my_communication_data()?;
 
+        // TODO(iago-3) rethink how we store the committee member data in the context, we can unify it in a MemberOfCommittee struct and reduce the number of ctx_xxx methods
+        for cm in members {
             // TODO(iago-3) move it to a From trait impl
-            let role = if m.role == 1 {
+            let role = if cm.role == 1 {
                 ParticipantRole::Prover
-            } else if m.role == 2 {
+            } else if cm.role == 2 {
                 ParticipantRole::Verifier
             } else {
-                bail!("Invalid member role: {}", m.role);
+                bail!("Invalid member role: {}", cm.role);
             };
 
-            let stream_id = self.state.ctx.get_stream_id()?;
+            // TODO mini optimization: do not request my data, it is in context already
 
-            let take_key =
-                self.ctx_get_member_keys_by_type(m.memberAddress.into(), TAKE_KEY_INDEX)?;
+            let take_key = self.get_member_keys_by_type(cm.memberAddress.into(), TAKE_KEY_INDEX)?;
             let dispute_key =
-                self.ctx_get_member_keys_by_type(m.memberAddress.into(), DISPUTE_KEY_INDEX)?;
-            let funding_utxo = self.get_member_funding_utxo(stream_id, m.memberAddress)?;
+                self.get_member_keys_by_type(cm.memberAddress.into(), DISPUTE_KEY_INDEX)?;
+
+            let stream_id = self.state.ctx.get_stream_id()?;
+            let funding_utxo = self.get_member_funding_utxo(stream_id, cm.memberAddress)?;
 
             let moc = MemberOfCommittee {
-                address: m.memberAddress.into(),
+                address: cm.memberAddress.into(),
                 role,
                 take_key,
                 dispute_key,
-                p2p_addrs,
                 funding_utxo,
             };
 
@@ -1126,9 +1014,9 @@ where
 
         let dispute_core = DisputeCoreSetup::new(self.bitvmx_broker.clone());
         dispute_core.setup(
-            self.state.flow_id.to_string(),
             self.state.ctx.get_committee_id()?,
             member_of_committee,
+            p2p_addrs,
             self.ctx_aggregated_take_key()?,
             self.ctx_aggregated_dispute_key()?,
         )

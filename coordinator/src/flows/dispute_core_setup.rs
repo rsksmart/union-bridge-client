@@ -1,13 +1,11 @@
 use anyhow::{Context, Result};
-use bitcoin::{PublicKey, Txid};
+use bitcoin::PublicKey;
 use common::msg_broker::bitvmx_types::{
-    Committee, DisputeCoreData, IncomingBitVMXApiMessages, MemberData, P2PAddress, PartialUtxo,
-    ParticipantRole, VariableTypes,
+    Committee, DisputeCoreData, IncomingBitVMXApiMessages, MemberData, P2PAddress, ParticipantRole,
+    VariableTypes,
 };
-use log::info;
-use std::collections::HashMap;
+use log::{debug, info};
 use std::rc::Rc;
-use std::str::FromStr;
 use uuid::Uuid;
 
 use crate::flows::setup_committee_flow::NO_LEADER_IDX;
@@ -32,9 +30,9 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
 
     pub fn setup(
         &self,
-        my_id: String,
         committee_id_client: CommitteeId,
         members: Vec<MemberOfCommittee>,
+        p2p_addresses: Vec<P2PAddress>,
         take_aggr_key: PublicKey,
         dispute_aggr_key: PublicKey,
     ) -> Result<()> {
@@ -55,6 +53,10 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
 
         let committee_id = Uuid::from_u128(*committee_id_client);
 
+        info!("Setting up the BitVMX Committee {committee_id}");
+
+        debug!("Sending BitVMX Committee {committee:?}");
+
         self.send_set_var(
             committee_id,
             Committee::name(),
@@ -66,17 +68,21 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
                 let pubkey = member.take_key;
                 let protocol_id = get_dispute_core_pid(committee_id, &pubkey)?;
 
-                info!("Setting up the DisputeCore protocol handler {protocol_id} for {my_id}");
+                info!("Setting up the DisputeCore protocol {protocol_id}");
+
+                let dispute_core_data = &DisputeCoreData {
+                    committee_id,
+                    operator_index,
+                    operator_utxo: member.funding_utxo.clone(),
+                    operator_take_pubkey: pubkey,
+                };
+
+                debug!("Sending BitVMX DisputeCoreData {dispute_core_data:?}");
 
                 self.send_set_var(
                     protocol_id,
                     DisputeCoreData::name(),
-                    VariableTypes::String(serde_json::to_string(&DisputeCoreData {
-                        committee_id,
-                        operator_index,
-                        operator_utxo: member.funding_utxo.clone(),
-                        operator_take_pubkey: pubkey,
-                    })?),
+                    VariableTypes::String(serde_json::to_string(dispute_core_data)?),
                 )?;
 
                 self.send_set_var(
@@ -85,10 +91,12 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
                     VariableTypes::PubKey(pubkey),
                 )?;
 
+                debug!("Sending BitVMX Setup {p2p_addresses:?}");
+
                 self.send_setup(
                     protocol_id,
                     PROGRAM_TYPE_DISPUTE_CORE.to_string(),
-                    Self::get_addresses(&members.clone()),
+                    p2p_addresses.clone(),
                 )?;
             }
         }
@@ -101,10 +109,6 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
             .iter()
             .filter(|m| m.role == ParticipantRole::Prover)
             .count() as u32)
-    }
-
-    fn get_addresses(members: &[MemberOfCommittee]) -> Vec<P2PAddress> {
-        members.iter().flat_map(|m| m.p2p_addrs.clone()).collect()
     }
 
     fn send_set_var(

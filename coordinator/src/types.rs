@@ -448,7 +448,6 @@ pub struct MemberOfCommittee {
     pub role: ParticipantRole,
     pub take_key: PublicKey,
     pub dispute_key: PublicKey,
-    pub p2p_addrs: Vec<P2PAddress>,
     pub funding_utxo: PartialUtxo,
 }
 

@@ -198,6 +198,7 @@ pub struct GetCommitteeOutput {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GetCommunicationDataInput {
     pub committee_id: CommitteeId,
+    // TODO rethink if this is needed or a member should only request its own communication data and therefore this param is not required
     pub member_address: Address,
 }
 
