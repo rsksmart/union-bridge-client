@@ -1,8 +1,9 @@
 #!/bin/bash
 
-# RPC port
-RPC_PORT=8546
-RPC_URL=http://127.0.0.1:$RPC_PORT
+# Default RPC port
+DEFAULT_PORT=8545
+RPC_PORT="${1:-$DEFAULT_PORT}"
+RPC_URL="http://127.0.0.1:$RPC_PORT"
 
 # Get current block number
 function current_block() {

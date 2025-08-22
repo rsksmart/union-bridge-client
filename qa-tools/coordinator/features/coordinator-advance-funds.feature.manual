@@ -22,15 +22,25 @@ Feature: Coordinator - Advance Funds process
     # > cd qa-tools/coordinator
     # > npm install node-fetch@2 --save
     # > node anvil_proxy.js
+    # NOTE: anvil proxy injects POW in blocks (it is not possible to do it via the anvil config directly) so we can
+    # test reorg scenarios (block indexer weighs POW when deciding the canonical chain).
+    # It also temporarily modifies common.yaml to use anvil proxy port for the provider. In this way, services
+    # talk to the anvil proxy, which forwards requests to anvil and modifies the block responses to include POW.
 
     # Terminal window 3:
-    # > ./run-client.sh --features anvil,zkp --config config/qa --logger log4rs.yaml
+    # > ./run-client.sh --features anvil,zkp --config config/qa
 
     # Terminal window 4:
     # > cd qa-tools/coordinator
     # > chmod +x commands.sh
-    # > source ./commands.sh
+    # > source ./commands.sh 8546
+    # IMPORTANT!!!
     # > fund
+
+    # Other terminals:
+    # > tail -f logs/coordinator.log
+    # > tail -f logs/block-indexer.log
+    # > tail -f logs/log-indexer.log
 
   @TCRD01001
   Scenario: happy path

@@ -19,18 +19,19 @@ Feature: Coordinator - Request Peg in process
     # Watch the logs in the terminal window, search for "deployed at" to set the contract addresses appropriately in the config/qa-coordinator
 
     # Terminal window 2:
-    # > cd qa-tools/coordinator
-    # > npm install node-fetch@2 --save
-    # > node anvil_proxy.js
+    # > ./run-client.sh --features anvil,zkp --config config/qa
 
     # Terminal window 3:
-    # > ./run-client.sh --features anvil,zkp --config config/qa --logger log4rs.yaml
-
-    # Terminal window 4:
     # > cd qa-tools/coordinator
     # > chmod +x commands.sh
     # > source ./commands.sh
+    # IMPORTANT!!!
     # > fund
+
+    # Other terminals:
+    # > tail -f logs/coordinator.log
+    # > tail -f logs/block-indexer.log
+    # > tail -f logs/log-indexer.log
 
   @TCRD02001
   Scenario: Happy path
