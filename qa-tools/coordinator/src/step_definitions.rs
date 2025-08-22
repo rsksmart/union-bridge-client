@@ -34,7 +34,6 @@ async fn bitvmx_finds_a_pegin_request(world: &mut TestWorld, step: &Step) {
         .unwrap()
         .trigger_pegin_found(tx, block_hash, merkle_branch_path, merkle_branch_hashes)
         .unwrap();
-    sleep(Duration::from_secs(3)).await;
 }
 
 #[when(expr = "bitvmx accepts a pegin request")]
@@ -42,13 +41,9 @@ async fn bitvmx_accepts_pegin_request(world: &mut TestWorld, step: &Step) {
     let params = extract_params(step);
     let file_name = params.get("file").unwrap().to_string();
     let btc_tx_file = format!("{}{}.json", FIXTURES_PATH, file_name);
-    let json_template = std::fs::read_to_string(&btc_tx_file)
+    let json_str = std::fs::read_to_string(&btc_tx_file)
         .with_context(|| format!("Failed to read accept pegin template file: {}", btc_tx_file))
         .unwrap();
-    let json_str = json_template.replace(
-        "<REPLACE_WITH_peginRequestTxHash_FROM_PR_RESPONSE>",
-        &world.pegin_request_tx_id,
-    );
     let accept_tx: Transaction = serde_json::from_str(&json_str)
         .context("Failed to parse accept pegin BTC transaction JSON")
         .unwrap();
@@ -66,7 +61,6 @@ async fn bitvmx_accepts_pegin_request(world: &mut TestWorld, step: &Step) {
             merkle_branch_hashes,
         )
         .unwrap();
-    sleep(Duration::from_secs(3)).await;
 }
 #[then(expr = "the pegin request should be registered in the contract")]
 async fn pegin_request_should_be_registered(world: &mut TestWorld) {
@@ -132,7 +126,6 @@ async fn enough_confirmations_received(world: &mut TestWorld) {
         sleep(Duration::from_millis(100)).await;
     }
     println!("Successfully mined {} blocks.", blocks_to_mine);
-    sleep(Duration::from_secs(6)).await;
 }
 
 #[then(expr = "the pegin accept should be registered in the contract")]
