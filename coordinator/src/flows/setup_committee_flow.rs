@@ -1,11 +1,11 @@
 use crate::blockchain_tracker::BlockchainView;
 use crate::event_processor::EventProcessor;
 use crate::types::{
-    AllCommunicationDataReadyEvent, NewCommitteePendingEvent, NewCommitteeReadyEvent,
-    RskPegManagerEvents, UserRequests,
+    AllCommunicationDataReadyEvent, MemberOfCommittee, NewCommitteePendingEvent,
+    NewCommitteeReadyEvent, RskPegManagerEvents, UserRequests,
 };
 use alloy_primitives::{Address, FixedBytes};
-use anyhow::{Context, Error, Result, anyhow, bail};
+use anyhow::{Context, Result, bail};
 use bitcoin::key::Parity::Even;
 use bitcoin::{PublicKey, XOnlyPublicKey};
 use common::runtime_sync::RuntimeSync;
@@ -19,28 +19,31 @@ use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;
 
 use common::msg_broker::bitvmx_types::{
-    IncomingBitVMXApiMessages, NewCommittee, OutgoingBitVMXApiMessages, P2PAddress, PartialUtxo,
-    PeerId, SignedPublicKey, VariableTypes,
+    IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, P2PAddress, PartialUtxo, ParticipantRole,
+    PeerId, SignedPublicKey,
 };
 use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 
-use crate::user_requests::{ApplyToStream, Role};
+use crate::user_requests::ApplyToStream;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     CommitteeMember, CommunicationData,
 };
 
 use crate::flows::common::build_communication_data;
+use crate::flows::dispute_core_setup::DisputeCoreSetup;
 use common::types;
 use common::types::{CommitteeId, RskBlockAndUncles, StreamId};
-#[cfg(test)]
-use mockall::automock;
+
 use transaction_dispatcher::types::{
     ApplyToStreamInput, CommitteeECDSA, DepositAggregatedKeyInput, DepositCommunicationDataInput,
     DepositCommunicationDataOutput, GetCommunicationDataInput, GetMemberPublicKeysInput,
     GetMemberPublicKeysOutput, P2PAddressParser,
 };
 
-const NO_LEADER_IDX: u16 = 0;
+#[cfg(test)]
+use mockall::automock;
+
+pub(crate) const NO_LEADER_IDX: u16 = 0;
 const TAKE_KEY_INDEX: usize = 0;
 const DISPUTE_KEY_INDEX: usize = 1;
 const COMM_KEY_INDEX: usize = 2;
@@ -52,13 +55,13 @@ fn create_pubkey_hash(public_key: &PublicKey) -> Result<[u8; 32]> {
     let mut pk = *public_key;
     pk.compressed = false;
     let uncompressed_pub_key = pk.to_bytes().split_off(1); // Remove the 0x04 prefix
-    
+
     // Create keccak256 hash of the uncompressed public key
     let mut keccak = Keccak::v256();
     let mut pub_key_hash = [0u8; 32];
     keccak.update(&uncompressed_pub_key);
     keccak.finalize(&mut pub_key_hash);
-    
+
     Ok(pub_key_hash)
 }
 
@@ -394,10 +397,8 @@ where
     fn get_take_aggregated_key_id(&self) -> Result<Uuid> {
         let mut hasher = Sha256::new();
 
-        // TODO(iago) revert when committee_id received on committee ready event
-        //let committee_id = self.state.ctx.get_committee_id()?;
-        //hasher.update(committee_id.as_bytes());
-        hasher.update(self.state.ctx.get_stream_id()?.to_be_bytes());
+        let committee_id = *self.state.ctx.get_committee_id()?;
+        hasher.update(committee_id.to_be_bytes());
         hasher.update("take_aggregated_key");
 
         // Get the result as a byte array
@@ -408,10 +409,8 @@ where
     fn get_dispute_aggregated_key_id(&self) -> Result<Uuid> {
         let mut hasher = Sha256::new();
 
-        // TODO(iago) revert when committee_id received on committee ready event
-        // let committee_id = self.state.ctx.get_committee_id()?;
-        // hasher.update(committee_id.as_bytes());
-        hasher.update(self.state.ctx.get_stream_id()?.to_be_bytes());
+        let committee_id = self.state.ctx.get_committee_id()?;
+        hasher.update(committee_id.to_be_bytes());
         hasher.update("dispute_aggregated_key");
 
         // Get the result as a byte array
@@ -419,119 +418,11 @@ where
         Uuid::from_slice(&hash[0..16]).context("Failed to convert hash to Uuid")
     }
 
-    fn setup_dispute_core_for_member(
-        &mut self,
-        _member_idx: usize,
-        comittee_id: CommitteeId,
-        _member: &CommitteeMember,
-        addresses: &Vec<P2PAddress>,
-    ) -> Result<()> {
-        // TODO see example of the calling loop from Diego as reference: https://rootstocklabs.slack.com/archives/D07SBTC8ECS/p1753981406212199
-
-        let _my_utxos = self.get_my_funding_utxos()?;
-
-        // TODO SetVar of DisputeCoreData containing my utxos
-
-        self.state.ctx.setup_core = Some((Uuid::new_v4(), comittee_id, None));
-
-        self.send_bitvmx_msg(IncomingBitVMXApiMessages::Setup(
-            self.state.flow_id,
-            "dispute_core".to_string(),
-            addresses.clone(),
-            NO_LEADER_IDX,
-        ));
-
-        Ok(())
-    }
-
     fn request_bitvmx_member_pub_key(&self, req_id: Uuid) -> Result<()> {
         Ok(self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetPubKey(req_id, true)))
     }
 
-    fn setup_committee(&self) -> Result<()> {
-        info!("Setting up committee");
-
-        // TODO to be built by these two matching by address:
-        //  - getMembersPublicKeys from the contract => pub keys
-        //  - "NewPendingCommittee" event received before this step => roles
-        let members: Vec<CommitteeMember> = Vec::new();
-
-        // I will be added as the last member
-        let _my_index = members.len();
-
-        let my_role = self
-            .state
-            .ctx
-            .user_input
-            .as_ref()
-            .context("User input not found in context")?
-            .role
-            .clone();
-
-        let watchtower_count = members
-            .iter()
-            .filter(|m| m.role == u8::from(Role::Verifier))
-            .count() as u32;
-
-        let operator_count = members
-            .iter()
-            .filter(|m| m.role == u8::from(Role::Prover))
-            .count() as u32;
-
-        // build a map of communication pubkeys to addresses
-        let mut communication_data = HashMap::new();
-        self.add_other_members_comm_data(&mut communication_data)?;
-        self.add_my_comm_data(&mut communication_data)?;
-
-        /// TODO use this new committee struct
-        // #[derive(Debug, Clone, Serialize, Deserialize)]
-        // pub struct Committee {
-        //     pub members: Vec<MemberData>,
-        //     pub take_aggregated_key: PublicKey,
-        //     pub dispute_aggregated_key: PublicKey,
-        //     pub operator_count: u32,
-        //     pub member_count: u32,
-        //     pub packet_size: u32,
-        // }
-
-        info!("Instantiating NewCommittee");
-
-        let new_committee = NewCommittee {
-            my_role: my_role.into(),
-            take_aggregated_key: self.ctx_aggregated_take_key()?,
-            dispute_aggregated_key: self.ctx_aggregated_dispute_key()?,
-            addresses: communication_data,
-            operator_count,
-            watchtower_count,
-            // TODO(iago-2) implement new contract call to get it by stream_id, less prio than the other changes as it can be hardcoded to 100 for now
-            packet_size: 100,
-        };
-
-        // TODO NewCommittee contains MemberData
-        // #[derive(Debug, Clone, Serialize, Deserialize)]
-        // pub struct MemberData {
-        //     pub role: ParticipantRole,
-        //     pub take_key: PublicKey,
-        //     pub dispute_key: PublicKey,
-        // }
-
-        debug!("Getting Committee ID");
-
-        // TODO(iago) clarify how to get this id
-        let id = Uuid::new_v4();
-
-        info!("SetVar NewCommittee");
-
-        self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetVar(
-            id,
-            NewCommittee::name(),
-            VariableTypes::String(serde_json::to_string(&new_committee)?),
-        ));
-
-        Ok(())
-    }
-
-    // TODO(iago-2) move ctx_xxx methods to FlowContext struct
+    // TODO(iago-3) move ctx_xxx methods to FlowContext struct
 
     fn ctx_my_take_key(&self) -> Result<SignedPublicKey> {
         let take_data = self.state.ctx.my_take_key.as_ref().with_context(|| {
@@ -660,6 +551,49 @@ where
             .cloned()
     }
 
+    // TODO(iago-3) review the ctx_xxx methods we have and try to unify / optimize them
+    fn ctx_get_member_keys_by_type(
+        &self,
+        member_addr: Address,
+        key_index: usize,
+    ) -> Result<PublicKey> {
+        let key_type = match key_index {
+            TAKE_KEY_INDEX => "Take",
+            DISPUTE_KEY_INDEX => "Dispute",
+            _ => bail!("Invalid key index: {key_index}, expected 0 (take) or 1 (dispute)"),
+        };
+
+        for member in self.state.ctx.get_committee_members()? {
+            if member_addr != member.memberAddress {
+                continue;
+            }
+
+            let member_addr = member.memberAddress;
+            let keys = self.get_member_public_keys_from_contracts(member_addr)?;
+            let key_str = keys.public_keys.get(key_index).with_context(|| {
+                format!("{key_type} Key not found on Committee for {member_addr}")
+            })?;
+
+            // TODO revisit this, we are encoding bytes to hex string in the contracts to then decode it back to bytes here
+
+            let key_bytes: FixedBytes<32> = key_str
+                .parse()
+                .context("Failed to parse public key str to FixedBytes<32>")?;
+            let x_only_key = XOnlyPublicKey::from_slice(key_bytes.as_slice())
+                .context("Failed to parse aggregated public key")?;
+
+            debug!("Got {key_type} Key for member {member_addr} with X: {x_only_key:?}");
+
+            // BitVMX adjusts parity to Even, so we do the same here
+            let secp_key = x_only_key.public_key(Even);
+            let member_key = PublicKey::new(secp_key);
+
+            return Ok(member_key);
+        }
+
+        bail!("Member {member_addr} not found in committee members")
+    }
+
     fn send_bitvmx_msg(&self, msg: IncomingBitVMXApiMessages) {
         info!("Sending {msg:?} to BitVMX");
 
@@ -670,9 +604,9 @@ where
         }
     }
 
-    fn get_my_funding_utxos(&self) -> Result<Vec<PartialUtxo>> {
-        // TODO(iago-3) new contracts version includes this
-        Ok(Vec::new())
+    fn get_my_funding_utxos(&self) -> Result<HashMap<PublicKey, PartialUtxo>> {
+        // TODO(iago) new contracts version includes this
+        Ok(HashMap::new())
     }
 
     fn ctx_user_input(&self) -> Result<ApplyToStream> {
@@ -888,12 +822,12 @@ where
             Steps::GetMyTakeKey => {
                 let public_key = data.into_pubkey()?;
                 self.state.ctx.current_pubkey = Some(public_key);
-                
+
                 // Create hash and request signature
                 let hash = create_pubkey_hash(&public_key)?;
                 let req_id = Uuid::new_v4();
                 self.state.ctx.my_take_key = Some((req_id, None));
-                
+
                 self.send_bitvmx_msg(IncomingBitVMXApiMessages::SignMessage(
                     req_id,
                     hash.to_vec(),
@@ -902,9 +836,13 @@ where
             }
             Steps::SignMyTakeKey => {
                 let (signature_r, signature_s, recovery_id) = data.into_signed_payload()?;
-                let public_key = self.state.ctx.current_pubkey
+                let public_key = self
+                    .state
+                    .ctx
+                    .current_pubkey
                     .context("Missing public key for signing")?;
-                let signed_pubkey = construct_signed_pubkey(public_key, signature_r, signature_s, recovery_id);
+                let signed_pubkey =
+                    construct_signed_pubkey(public_key, signature_r, signature_s, recovery_id);
                 self.state.ctx.my_take_key.as_mut().unwrap().1 = Some(signed_pubkey);
                 self.state.ctx.current_pubkey = None;
 
@@ -913,12 +851,12 @@ where
             Steps::GetDisputeKey => {
                 let public_key = data.into_pubkey()?;
                 self.state.ctx.current_pubkey = Some(public_key);
-                
+
                 // Create hash and request signature
                 let hash = create_pubkey_hash(&public_key)?;
                 let req_id = Uuid::new_v4();
                 self.state.ctx.my_dispute_key = Some((req_id, None));
-                
+
                 self.send_bitvmx_msg(IncomingBitVMXApiMessages::SignMessage(
                     req_id,
                     hash.to_vec(),
@@ -927,9 +865,13 @@ where
             }
             Steps::SignMyDisputeKey => {
                 let (signature_r, signature_s, recovery_id) = data.into_signed_payload()?;
-                let public_key = self.state.ctx.current_pubkey
+                let public_key = self
+                    .state
+                    .ctx
+                    .current_pubkey
                     .context("Missing public key for signing")?;
-                let signed_pubkey = construct_signed_pubkey(public_key, signature_r, signature_s, recovery_id);
+                let signed_pubkey =
+                    construct_signed_pubkey(public_key, signature_r, signature_s, recovery_id);
                 self.state.ctx.my_dispute_key.as_mut().unwrap().1 = Some(signed_pubkey);
                 self.state.ctx.current_pubkey = None;
 
@@ -938,12 +880,12 @@ where
             Steps::GetMyCommKey => {
                 let public_key = data.into_pubkey()?;
                 self.state.ctx.current_pubkey = Some(public_key);
-                
-                // Create hash and request signature  
+
+                // Create hash and request signature
                 let hash = create_pubkey_hash(&public_key)?;
                 let req_id = Uuid::new_v4();
                 self.state.ctx.my_comm_key = Some((req_id, None));
-                
+
                 self.send_bitvmx_msg(IncomingBitVMXApiMessages::SignMessage(
                     req_id,
                     hash.to_vec(),
@@ -952,9 +894,13 @@ where
             }
             Steps::SignMyCommKey => {
                 let (signature_r, signature_s, recovery_id) = data.into_signed_payload()?;
-                let public_key = self.state.ctx.current_pubkey
+                let public_key = self
+                    .state
+                    .ctx
+                    .current_pubkey
                     .context("Missing public key for signing")?;
-                let signed_pubkey = construct_signed_pubkey(public_key, signature_r, signature_s, recovery_id);
+                let signed_pubkey =
+                    construct_signed_pubkey(public_key, signature_r, signature_s, recovery_id);
                 self.state.ctx.my_comm_key.as_mut().unwrap().1 = Some(signed_pubkey);
                 self.state.ctx.current_pubkey = None;
 
@@ -1124,19 +1070,47 @@ where
     fn setup_dispute_core_protocol(&mut self) -> Result<()> {
         info!("Setting up dispute core protocol");
 
-        // TODO complete and validate
+        let members = self.state.ctx.get_committee_members()?;
+        let mut member_of_committee = vec![];
 
-        self.setup_committee()?;
+        // TODO(iago-3) rethink how we store the committee member data in the context, we can unify it in a MemberOfCommittee struct and reduce the number of ctx_xxx methods
+        for m in members {
+            let p2p_addrs = self.ctx_member_communication_data(m.memberAddress.into())?;
 
-        let committee_id = self.state.ctx.get_committee_id()?;
-        let members: Vec<CommitteeMember> = self.state.ctx.get_committee_members()?;
+            // TODO(iago-3) move it to a From trait impl
+            let role = if m.role == 1 {
+                ParticipantRole::Prover
+            } else if m.role == 2 {
+                ParticipantRole::Verifier
+            } else {
+                bail!("Invalid member role: {}", m.role);
+            };
 
-        for (idx, member) in members.iter().enumerate() {
-            let addresses = self.ctx_member_communication_data(member.memberAddress)?;
-            self.setup_dispute_core_for_member(idx, committee_id.clone(), member, &addresses)?;
+            let take_key =
+                self.ctx_get_member_keys_by_type(m.memberAddress.into(), TAKE_KEY_INDEX)?;
+            let dispute_key =
+                self.ctx_get_member_keys_by_type(m.memberAddress.into(), DISPUTE_KEY_INDEX)?;
+
+            let moc = MemberOfCommittee {
+                address: m.memberAddress.into(),
+                role,
+                take_key,
+                dispute_key,
+                p2p_addrs,
+            };
+
+            member_of_committee.push(moc);
         }
 
-        Ok(())
+        let dispute_core = DisputeCoreSetup::new(self.bitvmx_broker.clone());
+        dispute_core.setup(
+            self.state.flow_id.to_string(),
+            self.state.ctx.get_committee_id()?,
+            member_of_committee,
+            self.ctx_aggregated_take_key()?,
+            self.ctx_aggregated_dispute_key()?,
+            &self.get_my_funding_utxos()?,
+        )
     }
 }
 
@@ -1181,7 +1155,7 @@ where
         &mut self,
         stream_id: StreamId,
     ) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
-        // TODO optimize this search by keeping convenient map of stream_id -> flow_id or alike
+        // TODO(iago-3) optimize this search by keeping convenient map of stream_id -> flow_id or alike
 
         // TODO(iago-2) can multiple flows exist for the same stream_id?
 
@@ -1197,7 +1171,7 @@ where
         &mut self,
         committee_id: CommitteeId,
     ) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
-        // TODO optimize this search by keeping convenient map of committee_id -> flow_id or alike
+        // TODO(iago-3) optimize this search by keeping convenient map of committee_id -> flow_id or alike
 
         // TODO(iago-2) we have an issue here if multiple flows are created for the same committee_id
 
@@ -1211,7 +1185,7 @@ where
     }
 
     fn get_flow_for_request_id(&mut self, uuid: &Uuid) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
-        // TODO super naive approach implemented here for now: find within the different flows and their step datas one with the req_id
+        // TODO(iago-3) super naive approach implemented here for now: find within the different flows and their step datas one with the req_id
         // an alternative could be storing all the requests (ids) for which the flow is waiting response
         // in a same array - but I find this super risky, as it will only work if a) we NEVER send 2
         // "concurrent request-id-depending" messages to BitVMX and b) BitVMX guarantees order in request/response;
@@ -1354,17 +1328,20 @@ where
                 if let Some(flow) = self.get_flow_for_request_id(req_id) {
                     flow.complete_step_and_next(Some(*req_id), StepData::PublicKey(*public_key))?;
                 } else {
-                    bail!(
-                        "No flow found for OutgoingBitVMXApiMessages::PubKey and id {req_id}"
-                    );
+                    bail!("No flow found for OutgoingBitVMXApiMessages::PubKey and id {req_id}");
                 }
             }
-            OutgoingBitVMXApiMessages::SignedMessage(sign_req_id, signature_r, signature_s, recovery_id) => {
+            OutgoingBitVMXApiMessages::SignedMessage(
+                sign_req_id,
+                signature_r,
+                signature_s,
+                recovery_id,
+            ) => {
                 // Handle SignedMessage response using the standard flow
                 if let Some(flow) = self.get_flow_for_request_id(sign_req_id) {
                     flow.complete_step_and_next(
-                        Some(*sign_req_id), 
-                        StepData::SignedMessage(*signature_r, *signature_s, *recovery_id)
+                        Some(*sign_req_id),
+                        StepData::SignedMessage(*signature_r, *signature_s, *recovery_id),
                     )?;
                 } else {
                     bail!(

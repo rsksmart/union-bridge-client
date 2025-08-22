@@ -263,19 +263,32 @@ pub struct Utxo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NewCommittee {
-    pub my_role: ParticipantRole,
+pub struct MemberData {
+    pub role: ParticipantRole,
+    pub take_key: PublicKey,
+    pub dispute_key: PublicKey,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Committee {
+    pub members: Vec<MemberData>,
     pub take_aggregated_key: PublicKey,
     pub dispute_aggregated_key: PublicKey,
-    pub addresses: HashMap<PublicKey, P2PAddress>,
     pub operator_count: u32,
-    pub watchtower_count: u32,
     pub packet_size: u32,
 }
 
-impl NewCommittee {
+impl Committee {
     pub fn name() -> String {
-        "new_committee".to_string()
+        "committee".to_string()
+    }
+
+    pub fn indexes_map(&self) -> HashMap<PublicKey, usize> {
+        self.members
+            .iter()
+            .enumerate()
+            .map(|(index, member)| (member.take_key, index))
+            .collect()
     }
 }
 
@@ -283,4 +296,18 @@ impl NewCommittee {
 pub enum ParticipantRole {
     Prover,
     Verifier,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DisputeCoreData {
+    pub committee_id: Uuid,
+    pub operator_index: usize,
+    pub operator_utxo: PartialUtxo,
+    pub operator_take_pubkey: PublicKey,
+}
+
+impl DisputeCoreData {
+    pub fn name() -> String {
+        "dispute_core_data".to_string()
+    }
 }

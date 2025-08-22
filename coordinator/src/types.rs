@@ -2,8 +2,9 @@ use crate::types::RskPegManagerEvents::UnknownEvent;
 use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
 use alloy_primitives::{B256, LogData};
 use alloy_sol_types::SolEvent;
-use common::msg_broker::bitvmx_types::PegOutAccepted;
-use common::types::{BlockHash, BlockNumber, Hash256, RskLog, TxHash};
+use bitcoin::PublicKey;
+use common::msg_broker::bitvmx_types::{P2PAddress, ParticipantRole, PegOutAccepted};
+use common::types::{Address, BlockHash, BlockNumber, Hash256, RskLog, TxHash};
 use log::{error, warn};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
@@ -425,6 +426,7 @@ pub struct RegisterSignaturesBitVmxData {
     pub nonce: PubNonce,
     pub signature: PartialSignature,
 }
+
 impl TryFrom<PegOutAccepted> for RegisterSignaturesBitVmxData {
     type Error = anyhow::Error;
 
@@ -438,6 +440,15 @@ impl TryFrom<PegOutAccepted> for RegisterSignaturesBitVmxData {
             signature: value.user_take_signature,
         })
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemberOfCommittee {
+    pub address: Address,
+    pub role: ParticipantRole,
+    pub take_key: PublicKey,
+    pub dispute_key: PublicKey,
+    pub p2p_addrs: Vec<P2PAddress>,
 }
 
 #[cfg(test)]
