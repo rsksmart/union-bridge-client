@@ -54,7 +54,7 @@ pub async fn call_endpoint(
         "/pegin-address" => generate_payload_pegin_address(params),
         "/accept-pegin" => generate_payload_accept_pegin(params, world),
         "/register-pegin" => generate_payload_register_pegin(params, world),
-        "/register-pegout" => generate_payload_register_pegout(params),
+        "/request-pegout" => generate_payload_register_pegout(params),
         _ => panic!("Unknown endpoint: {}", endpoint),
     };
 
@@ -185,6 +185,13 @@ fn generate_payload_accept_pegin(params: &HashMap<String, String>, world: &TestW
 
     let btc_tx = BtcTransaction {
         version: 2,
+        lock_time: 0,
+        inputs: vec![BtcInput {
+            tx_id: tx_id.clone(),
+            v_out,
+            sequence,
+            script_sig: DEFAULT_SCRIPT_SIG.to_string(),
+        }],
         outputs: vec![
             BtcOutput {
                 amount: amount_0,
@@ -195,13 +202,6 @@ fn generate_payload_accept_pegin(params: &HashMap<String, String>, world: &TestW
                 script_pub_key: script_pub_key_1.clone(),
             },
         ],
-        inputs: vec![BtcInput {
-            tx_id: tx_id.clone(),
-            v_out,
-            sequence,
-            script_sig: DEFAULT_SCRIPT_SIG.to_string(),
-        }],
-        lock_time: 0,
     };
 
     serde_json::json!({
