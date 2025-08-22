@@ -37,7 +37,6 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
         members: Vec<MemberOfCommittee>,
         take_aggr_key: PublicKey,
         dispute_aggr_key: PublicKey,
-        funding_utxos_per_member: &HashMap<PublicKey, PartialUtxo>,
     ) -> Result<()> {
         let committee = Committee {
             members: members
@@ -67,23 +66,6 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
                 let pubkey = member.take_key;
                 let protocol_id = get_dispute_core_pid(committee_id, &pubkey)?;
 
-                // let operator_utxo = funding_utxos_per_member
-                //     .get(&pubkey)
-                //     .with_context(|| {
-                //         format!("No funding UTXO found for operator with pubkey {pubkey}")
-                //     })?
-                //     .clone();
-
-                // TODO(iago) remove this hardcoding and use real UTXOs
-                let operator_utxo = (
-                    Txid::from_str(
-                        "4d1e7ba3b01e4fa813acbf66409c68d9c5dbceb8cd0013d307062f67da1b1598",
-                    )?,
-                    0,
-                    None,
-                    None,
-                );
-
                 info!("Setting up the DisputeCore protocol handler {protocol_id} for {my_id}");
 
                 self.send_set_var(
@@ -92,7 +74,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
                     VariableTypes::String(serde_json::to_string(&DisputeCoreData {
                         committee_id,
                         operator_index,
-                        operator_utxo,
+                        operator_utxo: member.funding_utxo.clone(),
                         operator_take_pubkey: pubkey,
                     })?),
                 )?;

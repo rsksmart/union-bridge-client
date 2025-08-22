@@ -3,7 +3,7 @@ use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanc
 use alloy_primitives::{B256, LogData};
 use alloy_sol_types::SolEvent;
 use bitcoin::PublicKey;
-use common::msg_broker::bitvmx_types::{P2PAddress, ParticipantRole, PegOutAccepted};
+use common::msg_broker::bitvmx_types::{P2PAddress, PartialUtxo, ParticipantRole, PegOutAccepted};
 use common::types::{Address, BlockHash, BlockNumber, Hash256, RskLog, TxHash};
 use log::{error, warn};
 use musig2::{PartialSignature, PubNonce};
@@ -449,6 +449,7 @@ pub struct MemberOfCommittee {
     pub take_key: PublicKey,
     pub dispute_key: PublicKey,
     pub p2p_addrs: Vec<P2PAddress>,
+    pub funding_utxo: PartialUtxo,
 }
 
 #[cfg(test)]

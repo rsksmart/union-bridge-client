@@ -15,8 +15,9 @@ pub(crate) use crate::contracts::interactions::deposit_aggregated_key::DepositAg
 pub(crate) use crate::contracts::interactions::deposit_communication_data::DepositCommunicationDataInvoke;
 pub(crate) use crate::contracts::interactions::get_committee::GetCommitteeCall;
 pub(crate) use crate::contracts::interactions::get_member_communication_data::GetMemberCommunicationDataCall;
+pub(crate) use crate::contracts::interactions::get_member_funding_utxo::GetMemberFundingUtxoCall;
 pub(crate) use crate::contracts::interactions::get_member_public_keys::GetMemberPublicKeysCall;
-use common::types::CommitteeId;
+use common::types::{CommitteeId, StreamId};
 #[cfg(test)]
 use mockall::automock;
 
@@ -32,6 +33,12 @@ pub trait CommitteeRegistryContractApi {
         committee_id: CommitteeId,
         member_address: Address,
     ) -> alloy_contract::Result<Vec<CommitteeRegistry::CommunicationData>>;
+
+    async fn call_get_member_funding_utxo(
+        &self,
+        committee_id: StreamId,
+        member_address: Address,
+    ) -> alloy_contract::Result<UTXO>;
 
     async fn invoke_apply_to_stream(
         &self,
@@ -102,6 +109,17 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
     ) -> alloy_contract::Result<Vec<CommitteeRegistry::CommunicationData>> {
         self.contract_instance
             .getMemberCommunicationData(*committee_id, member_address)
+            .call()
+            .await
+    }
+
+    async fn call_get_member_funding_utxo(
+        &self,
+        stream_id: StreamId,
+        member_address: Address,
+    ) -> alloy_contract::Result<UTXO> {
+        self.contract_instance
+            .getMemberFundingUTXO(*stream_id, member_address)
             .call()
             .await
     }

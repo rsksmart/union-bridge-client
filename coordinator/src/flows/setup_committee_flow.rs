@@ -6,8 +6,9 @@ use crate::types::{
 };
 use alloy_primitives::{Address, FixedBytes};
 use anyhow::{Context, Result, bail};
+use bitcoin::hashes::Hash;
 use bitcoin::key::Parity::Even;
-use bitcoin::{PublicKey, XOnlyPublicKey};
+use bitcoin::{PublicKey, Txid, XOnlyPublicKey};
 use common::runtime_sync::RuntimeSync;
 use log::{debug, error, info};
 use sha2::{Digest, Sha256};
@@ -36,8 +37,8 @@ use common::types::{CommitteeId, RskBlockAndUncles, StreamId};
 
 use transaction_dispatcher::types::{
     ApplyToStreamInput, CommitteeECDSA, DepositAggregatedKeyInput, DepositCommunicationDataInput,
-    DepositCommunicationDataOutput, GetCommunicationDataInput, GetMemberPublicKeysInput,
-    GetMemberPublicKeysOutput, P2PAddressParser,
+    DepositCommunicationDataOutput, GetCommunicationDataInput, GetMemberFundingUtxoInput,
+    GetMemberPublicKeysInput, GetMemberPublicKeysOutput, P2PAddressParser,
 };
 
 #[cfg(test)]
@@ -594,6 +595,28 @@ where
         bail!("Member {member_addr} not found in committee members")
     }
 
+    fn get_member_funding_utxo(
+        &self,
+        stream_id: StreamId,
+        member_addr: Address,
+    ) -> Result<PartialUtxo> {
+        let utxo = self
+            .rt_sync
+            .run(
+                self.contracts
+                    .get_member_funding_utxo(GetMemberFundingUtxoInput {
+                        stream_id,
+                        member_address: member_addr.into(),
+                    }),
+            )?
+            .utxo;
+
+        let tx_id = Txid::from_slice(utxo.txid.as_slice())
+            .context("Could not get Bitcoin TxId from contracts utxo")?;
+
+        Ok((tx_id, utxo.outputIndex, Some(utxo.amount), None))
+    }
+
     fn send_bitvmx_msg(&self, msg: IncomingBitVMXApiMessages) {
         info!("Sending {msg:?} to BitVMX");
 
@@ -602,11 +625,6 @@ where
             // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132
             error!("Failed to send msg to BitVMX: {:?}", result);
         }
-    }
-
-    fn get_my_funding_utxos(&self) -> Result<HashMap<PublicKey, PartialUtxo>> {
-        // TODO(iago) new contracts version includes this
-        Ok(HashMap::new())
     }
 
     fn ctx_user_input(&self) -> Result<ApplyToStream> {
@@ -1086,10 +1104,13 @@ where
                 bail!("Invalid member role: {}", m.role);
             };
 
+            let stream_id = self.state.ctx.get_stream_id()?;
+
             let take_key =
                 self.ctx_get_member_keys_by_type(m.memberAddress.into(), TAKE_KEY_INDEX)?;
             let dispute_key =
                 self.ctx_get_member_keys_by_type(m.memberAddress.into(), DISPUTE_KEY_INDEX)?;
+            let funding_utxo = self.get_member_funding_utxo(stream_id, m.memberAddress)?;
 
             let moc = MemberOfCommittee {
                 address: m.memberAddress.into(),
@@ -1097,6 +1118,7 @@ where
                 take_key,
                 dispute_key,
                 p2p_addrs,
+                funding_utxo,
             };
 
             member_of_committee.push(moc);
@@ -1109,7 +1131,6 @@ where
             member_of_committee,
             self.ctx_aggregated_take_key()?,
             self.ctx_aggregated_dispute_key()?,
-            &self.get_my_funding_utxos()?,
         )
     }
 }
