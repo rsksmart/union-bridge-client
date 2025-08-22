@@ -3,6 +3,10 @@ Feature: Check Fork
     I want to accept or reject a submitted Rootstock fork proof,
     So that the Union Bridge honours only peg-outs backed by a valid proof of work.
 
+# These tests rely mostly on fixture files located under check-fork/fixtures/
+# To execute the test commands, do
+# > cd qa-tools
+
 Scenario: Happy path
     Given the check_fork component is set with parameters:
         | utxo_id | pegout_id | operator_id | init_block_time | init_block_number | required_effort | required_num_blocks |
@@ -17,7 +21,7 @@ Scenario: First block has a timestamp lower than initial_block_timestamp
         | any     | any       | any         | 1741065665      | 6883221           | 123456789       | 100                 |
     When the check_fork component receives a fork proof from the fixture "original"
     Then the check_fork component should reject the fork proof
-# cargo run --bin check-fork-runner -- -o run -f original -t 1741065665
+# cargo run --bin check_fork_runner -- -o run -f original -t 1741065665
 
 Scenario: First block has a block number lower than initial_block_number
     Given the check_fork component is set with parameters:
