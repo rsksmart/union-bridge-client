@@ -137,6 +137,7 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
         let role = role.into_underlying();
 
         send_tx_with_gas_bump(
+            &self.contract_instance.provider(),
             || {
                 self.contract_instance
                     .applyToStream(stream, role, public_keys.clone(), funding_utxo.clone())
@@ -179,6 +180,7 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
         gas_bumps: u8,
     ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt> {
         send_tx_with_gas_bump(
+            &self.contract_instance.provider(),
             || {
                 self.contract_instance
                     .depositCommunicationData(*committee_id, communication_data.clone())
@@ -195,6 +197,7 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
         gas_bumps: u8,
     ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt> {
         send_tx_with_gas_bump(
+            &self.contract_instance.provider(),
             || {
                 self.contract_instance
                     .depositAggregatedKey(*committee_id, aggregated_key)
