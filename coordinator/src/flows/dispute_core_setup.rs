@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
-use bitcoin::{Amount, PublicKey, ScriptBuf};
+use bitcoin::PublicKey;
 use common::msg_broker::bitvmx_types::{
-    Committee, DisputeCoreData, IncomingBitVMXApiMessages, MemberData, OutputType, P2PAddress,
-    PartialUtxo, ParticipantRole, Utxo, VariableTypes,
+    Committee, DisputeCoreData, IncomingBitVMXApiMessages, MemberData, P2PAddress, ParticipantRole,
+    Utxo, VariableTypes,
 };
 use log::{debug, info};
 use std::rc::Rc;

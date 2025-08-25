@@ -36,11 +36,9 @@ where
     let mut receipt;
     let mut attempt = 0;
     loop {
-        let attempt_increment = 1 + (0.1 * (attempt + 1) as f64) as u64;
-
         // this works also as an eth_call that would check error types, etc., if not do a manual .call()
-        let estimated_gas = build_tx().estimate_gas().await?;
-        let gas_limit = estimated_gas * attempt_increment;
+        let estimated_gas = build_tx().estimate_gas().await? as u128;
+        let gas_limit = bumped_gas(estimated_gas, attempt) as u64; // or U256
 
         let tx_builder = build_tx().gas(gas_limit);
 
@@ -76,7 +74,21 @@ where
     Ok(receipt)
 }
 
-pub async fn debug_trace_tx<P: Provider>(provider: &P, tx_hash: String) -> TransportResult<Value> {
+// helper: apply headroom for proxies and add per-attempt bump
+fn bumped_gas(estimated: u128, attempt: u8) -> u128 {
+    // base headroom: 64/63 to undo the 63/64 rule + 10% for proxy prelude and variance
+    // = ~1.117. Use 1.20 to be safe and round up.
+    let base = (estimated as f64 * 1.20) as u128;
+
+    // per-attempt 10% bump (compounded or linear; choose one)
+    let factor = 1.10_f64.powi(attempt as i32);
+    let bumped = (base as f64 * factor).ceil() as u128;
+
+    // never go below estimated
+    bumped.max(estimated as u128)
+}
+
+async fn debug_trace_tx<P: Provider>(provider: &P, tx_hash: String) -> TransportResult<Value> {
     let params = serde_json::json!([
         tx_hash,
         { "tracer": "callTracer" }
