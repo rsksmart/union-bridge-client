@@ -100,6 +100,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         gas_bumps: u8,
     ) -> alloy_contract::Result<TransactionReceipt> {
         send_tx_with_gas_bump(
+            &self.contract_instance.provider(),
             || self.contract_instance.requestPegin(input.clone()),
             gas_bumps,
         )
@@ -112,6 +113,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         gas_bumps: u8,
     ) -> alloy_contract::Result<TransactionReceipt> {
         send_tx_with_gas_bump(
+            &self.contract_instance.provider(),
             || self.contract_instance.acceptPegin(input.clone()),
             gas_bumps,
         )
@@ -125,6 +127,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         gas_bumps: u8,
     ) -> alloy_contract::Result<TransactionReceipt> {
         send_tx_with_gas_bump(
+            &self.contract_instance.provider(),
             || {
                 self.contract_instance
                     .tryPegout(usr_pub_key.into())
@@ -141,6 +144,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         gas_bumps: u8,
     ) -> alloy_contract::Result<TransactionReceipt> {
         send_tx_with_gas_bump(
+            &self.contract_instance.provider(),
             || self.contract_instance.registerOperatorTake(input.clone()),
             gas_bumps,
         )
@@ -221,6 +225,7 @@ impl<P: Provider> PegManagerContractApi for FakePegManagerContract<P> {
         gas_bumps: u8,
     ) -> alloy_contract::Result<TransactionReceipt> {
         send_tx_with_gas_bump(
+            &self.contract_instance.provider(),
             || {
                 self.contract_instance
                     .checkForkComplete(pegout_id.to_string())

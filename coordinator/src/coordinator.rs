@@ -300,10 +300,10 @@ pub(crate) mod tests {
         AddOperatorTakeTxHashOutput, ApplyToStreamInput, ApplyToStreamOutput,
         DepositAggregatedKeyInput, DepositAggregatedKeyOutput, DepositCommunicationDataInput,
         DepositCommunicationDataOutput, GetCommitteeInput, GetCommitteeOutput,
-        GetCommunicationDataInput, GetCommunicationDataOutput, GetMemberPublicKeysInput,
-        GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterPegoutInput,
-        RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
-        RequestPegoutOutput,
+        GetCommunicationDataInput, GetCommunicationDataOutput, GetMemberFundingUtxoInput,
+        GetMemberFundingUtxoOutput, GetMemberPublicKeysInput, GetMemberPublicKeysOutput,
+        PeginAddressInput, PeginAddressOutput, RegisterPegoutInput, RegisterPegoutOutput,
+        RequestPeginInput, RequestPeginOutput, RequestPegoutInput, RequestPegoutOutput,
     };
 
     fn create_fake_request_event(pegout_id: &str) -> RequestAdvanceFunds {
@@ -638,7 +638,7 @@ pub(crate) mod tests {
                 input: &str,
             ) -> Result<(), DomainErrors>;
 
-           async fn get_member_public_keys(
+            async fn get_member_public_keys(
                 &self, input: GetMemberPublicKeysInput
             ) -> Result<GetMemberPublicKeysOutput, DomainErrors>;
 
@@ -651,6 +651,11 @@ pub(crate) mod tests {
                 &self,
                 input: GetCommitteeInput,
             ) -> Result<GetCommitteeOutput, DomainErrors>;
+
+            async fn get_member_funding_utxo(
+                &self,
+                input: GetMemberFundingUtxoInput,
+            ) -> Result<GetMemberFundingUtxoOutput, DomainErrors>;
 
             async fn get_committee_communication_data(
                 &self,

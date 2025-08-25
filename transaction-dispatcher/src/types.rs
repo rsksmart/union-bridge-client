@@ -198,12 +198,24 @@ pub struct GetCommitteeOutput {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GetCommunicationDataInput {
     pub committee_id: CommitteeId,
+    // TODO rethink if this is needed or a member should only request its own communication data and therefore this param is not required
     pub member_address: Address,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GetCommunicationDataOutput {
     pub communication_data: Vec<CommunicationData>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetMemberFundingUtxoInput {
+    pub stream_id: StreamId,
+    pub member_address: Address,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetMemberFundingUtxoOutput {
+    pub utxo: UTXO,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

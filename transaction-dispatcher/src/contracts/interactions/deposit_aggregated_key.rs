@@ -21,10 +21,7 @@ impl<C: CommitteeRegistryContractApi> DepositAggregatedKeysInvoke<C> {
         &self,
         input: DepositAggregatedKeyInput,
     ) -> Result<DepositAggregatedKeyOutput, DomainErrors> {
-        info!(
-            "init depositaggregatedkeys for stream: {:?}",
-            input.committee_id
-        );
+        info!("Init Deposit Aggregated Key for: {:?}", input.committee_id);
 
         let receipt = self
             .contract
@@ -41,7 +38,7 @@ impl<C: CommitteeRegistryContractApi> DepositAggregatedKeysInvoke<C> {
         let success = receipt.status();
 
         info!(
-            "depositaggregatedkeys completed with hash: {}, success: {}",
+            "Deposit Aggregated Key completed with hash: {}, success: {}",
             transaction_hash, success
         );
 

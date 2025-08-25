@@ -8,7 +8,9 @@ use alloy_provider::Provider;
 use alloy_provider::network::ReceiptResponse;
 use alloy_rpc_types::TransactionReceipt;
 use alloy_sol_types::SolCall;
+use alloy_transport::TransportResult;
 use log::{debug, error, warn};
+use serde_json::Value;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -22,6 +24,7 @@ pub enum ParseFieldError {
 
 // TODO(Jira): properly test this, creating a mockeable wrapper around SolCallBuilder - https://rsklabs.atlassian.net/browse/UB-109
 pub(super) async fn send_tx_with_gas_bump<P, D, F>(
+    provider: &P,
     build_tx: F,
     max_attempts: u8,
 ) -> alloy_contract::Result<TransactionReceipt>
@@ -30,18 +33,21 @@ where
     D: SolCall,
     F: Fn() -> SolCallBuilder<P, D>,
 {
-    // this works also as an eth_call, if not do a manual .call()
-    let estimated_gas = build_tx().estimate_gas().await?;
-
     let mut receipt;
     let mut attempt = 0;
     loop {
         let attempt_increment = 1 + (0.1 * (attempt + 1) as f64) as u64;
+
+        // this works also as an eth_call that would check error types, etc., if not do a manual .call()
+        let estimated_gas = build_tx().estimate_gas().await?;
         let gas_limit = estimated_gas * attempt_increment;
 
         let tx_builder = build_tx().gas(gas_limit);
 
-        debug!("Sending transaction: {:?}", tx_builder);
+        debug!(
+            "Sending transaction with estimated_gas {estimated_gas}: {:?}",
+            tx_builder
+        );
 
         receipt = tx_builder.send().await?.get_receipt().await?;
 
@@ -56,7 +62,12 @@ where
         if receipt.status() {
             debug!("Transaction succeeded: {:?}", receipt);
         } else {
-            error!("Transaction failed: {:?} - {:?}", receipt, tx_builder);
+            let trace_result =
+                debug_trace_tx(provider, receipt.transaction_hash().to_string()).await?;
+            error!(
+                "Transaction failed: {:?} - {:?} - {:?}",
+                receipt, tx_builder, trace_result
+            );
         }
 
         break;
@@ -65,9 +76,32 @@ where
     Ok(receipt)
 }
 
+pub async fn debug_trace_tx<P: Provider>(provider: &P, tx_hash: String) -> TransportResult<Value> {
+    let params = serde_json::json!([
+        tx_hash,
+        { "tracer": "callTracer" }
+    ]);
+
+    provider
+        .raw_request("debug_traceTransaction".into(), params)
+        .await
+}
+
 fn likely_oog(receipt: &TransactionReceipt, gas_limit: u64) -> bool {
     let oog_margin = gas_limit / 100;
-    !receipt.status() && receipt.gas_used() >= gas_limit.saturating_sub(oog_margin)
+    let oog_candidate =
+        !receipt.status() && receipt.gas_used() >= gas_limit.saturating_sub(oog_margin);
+
+    if oog_candidate {
+        warn!(
+            "Gas used: {}, Gas limit: {}, OOG margin: {}",
+            receipt.gas_used(),
+            gas_limit,
+            oog_margin
+        );
+    };
+
+    oog_candidate
 }
 
 impl From<alloy_contract::Error> for DomainErrors {

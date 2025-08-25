@@ -60,6 +60,7 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
         gas_bumps: u8,
     ) -> TransactionReceiptResult {
         send_tx_with_gas_bump(
+            &self.contract_instance.provider(),
             || {
                 self.contract_instance
                     .addMemberNonce(hash_to_sign.clone(), nonce.clone())
@@ -76,6 +77,7 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
         gas_bumps: u8,
     ) -> TransactionReceiptResult {
         send_tx_with_gas_bump(
+            &self.contract_instance.provider(),
             || {
                 self.contract_instance
                     .addMemberSignature(hash_to_sign.clone(), signature.clone())
@@ -92,6 +94,7 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
         gas_bumps: u8,
     ) -> TransactionReceiptResult {
         send_tx_with_gas_bump(
+            &self.contract_instance.provider(),
             || {
                 self.contract_instance
                     .addOperatorTakeTxHash(accept_pegin_tx_hash.clone(), take_tx_hash.clone())
