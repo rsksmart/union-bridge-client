@@ -8,7 +8,7 @@ use alloy_primitives::{Address, FixedBytes};
 use anyhow::{Context, Result, bail};
 use bitcoin::hashes::Hash;
 use bitcoin::key::Parity::Even;
-use bitcoin::{PublicKey, Txid, XOnlyPublicKey};
+use bitcoin::{Amount, PublicKey, ScriptBuf, Txid, XOnlyPublicKey};
 use common::runtime_sync::RuntimeSync;
 use log::{debug, error, info};
 use sha2::{Digest, Sha256};
@@ -20,8 +20,8 @@ use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;
 
 use common::msg_broker::bitvmx_types::{
-    IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, P2PAddress, PartialUtxo, ParticipantRole,
-    PeerId, SignedPublicKey,
+    IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, OutputType, P2PAddress, PartialUtxo,
+    ParticipantRole, PeerId, SignedPublicKey,
 };
 use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 
@@ -556,10 +556,31 @@ where
             )?
             .utxo;
 
+        debug!("Got funding UTXO from contracts for address {member_addr}: {utxo:?}");
+
         let tx_id = Txid::from_slice(utxo.txid.as_slice())
             .context("Could not get Bitcoin TxId from contracts utxo")?;
 
-        Ok((tx_id, utxo.outputIndex, Some(utxo.amount), None))
+        let dispute_pub_key = self.ctx_my_dispute_key()?.public_key;
+
+        let script_pubkey = ScriptBuf::new_p2wpkh(
+            &dispute_pub_key
+                .wpubkey_hash()
+                .context("Failed to get wpubkey_hash from dispute public key")?,
+        );
+
+        let output_type = OutputType::SegwitPublicKey {
+            value: Amount::from_sat(utxo.amount),
+            script_pubkey,
+            public_key: dispute_pub_key,
+        };
+
+        Ok((
+            tx_id,
+            utxo.outputIndex,
+            Some(utxo.amount),
+            Some(output_type),
+        ))
     }
 
     fn send_bitvmx_msg(&self, msg: IncomingBitVMXApiMessages) {
@@ -853,6 +874,10 @@ where
 
         let role = self.ctx_user_input()?.role.clone();
         let funding_utxo = self.ctx_user_input()?.utxo.try_into()?;
+
+        debug!(
+            "Applying to stream {stream_id:?} with role {role:?} and funding utxo {funding_utxo:?}"
+        );
 
         let input = ApplyToStreamInput {
             stream_id,
