@@ -4,6 +4,13 @@ Feature: Rootstock block monitoring and tracking
   so that I have the latest canonical chain information
   and I robustly handle network issues, shutdowns, different cache sizes and long runs
 
+# If we need anvil, we can use:
+# anvil --block-time 1
+# curl -s -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","method":"anvil_mine","params":[1000],"id":1}' http://127.0.0.1:8545
+
+# And all the cargo run --bin block_indexer_runner commands will need to add the anvil feature:
+# cargo run --bin block_indexer_runner --features anvil -- -f 100 -t happy-path-blk-indxr
+
 Scenario: happy path
 Given the initial best block is B (B = node best block height - 100)
 And the block indexer is started
@@ -12,7 +19,7 @@ When the block indexer is shut down
 Then the best block in storage should be the best from the node
 And there should be no gaps in storage
 
-# cargo run --bin block_indexer_runner -- -f 100 -t happy-path-blk-indxr
+# cargo run --bin block_indexer_runner --features anvil -- -f 100 -t happy-path-blk-indxr
 # tail  -1000f /tmp/monitor-executions/happy-path-blk-indxr/app.log
 # ... until subscribed -> shut down
 # cargo run --bin block_indexer_validator -- -t happy-path-blk-indxr
@@ -26,7 +33,7 @@ When the block indexer is shut down
 Then the storage should have a checkpoint
 Then the latest block in storage should be B, not the best one from the provider
 
-# cargo run --bin block_indexer_runner -- -f 5000 -t shutdown-sync-blk-indxr
+# cargo run --bin block_indexer_runner --features anvil -- -f 5000 -t shutdown-sync-blk-indxr
 # tail  -1000f /tmp/monitor-executions/shutdown-sync-blk-indxr/app.log
 # ... before finishes backward sync -> shut down
 # cargo run --bin block_indexer_validator -- -t shutdown-sync-blk-indxr
@@ -43,10 +50,10 @@ Then the best block in storage should be the best from the node
 And the storage should not have a checkpoint
 And there should be no gaps in storage
 
-# cargo run --bin block_indexer_runner -- -f 5000 -t shutdown-n-restart-blk-indxr
+# cargo run --bin block_indexer_runner --features anvil -- -f 5000 -t shutdown-n-restart-blk-indxr
 # tail  -1000f /tmp/monitor-executions/shutdown-n-restart-blk-indxr/app.log
 # ... before finishes backward sync -> shut down
-# cargo run --bin block_indexer_runner -- -t shutdown-n-restart-blk-indxr -c
+# cargo run --bin block_indexer_runner --features anvil -- -t shutdown-n-restart-blk-indxr -c
 # ... until subscribed -> shut down
 # cargo run --bin block_indexer_validator -- -t shutdown-n-restart-blk-indxr
 # cargo run --bin archiver -- -t shutdown-n-restart-blk-indxr
@@ -61,10 +68,10 @@ Then the block indexer should reach synced status again
 And the latest block in storage should be the latest from the node
 And there should be no gaps in storage
 
-# cargo run --bin block_indexer_runner -- -f 5000 -t shutdown-n-restart-more-recent-blk-indxr
+# cargo run --bin block_indexer_runner --features anvil -- -f 5000 -t shutdown-n-restart-more-recent-blk-indxr
 # tail  -1000f /tmp/monitor-executions/shutdown-n-restart-more-recent-blk-indxr/app.log
 # ... before finishes backward sync -> shut down
-# cargo run --bin block_indexer_runner -- -f 100 -t shutdown-n-restart-more-recent-blk-indxr
+# cargo run --bin block_indexer_runner --features anvil -- -f 100 -t shutdown-n-restart-more-recent-blk-indxr
 # ... until subscribed -> shut down
 # cargo run --bin block_indexer_validator -- -t shutdown-n-restart-more-recent-blk-indxr
 # cargo run --bin archiver -- -t shutdown-n-restart-more-recent-blk-indxr
@@ -78,7 +85,7 @@ Then the best block in storage should be the best from the node
 And the storage should not have a checkpoint
 And there should be no gaps in storage
 
-# tmux new-session -d -s long-run-subs-blk-indxr 'cargo run --bin block_indexer_runner -- -f 100 -t long-run-subs-blk-indxr'
+# tmux new-session -d -s long-run-subs-blk-indxr 'cargo run --bin block_indexer_runner --features anvil -- -f 100 -t long-run-subs-blk-indxr'
 # tmux attach-session -t long-run-subs-blk-indxr
 # detach: CTRL+b, d
 # ... 24 hours -> shut down
@@ -95,7 +102,7 @@ Then the best block in storage should be the best from the node
 And there should be no gaps in storage
 
 # Rootstock's genesis block is block height 1, not 0 as in Bitcoin
-# tmux new-session -d -s long-run-sync-blk-indxr 'cargo run --bin block_indexer_runner -- -b 1 -t long-run-sync-blk-indxr'
+# tmux new-session -d -s long-run-sync-blk-indxr 'cargo run --bin block_indexer_runner --features anvil -- -b 1 -t long-run-sync-blk-indxr'
 # tmux attach-session -t long-run-sync-blk-indxr
 # detach: CTRL+b, d
 # ... 24 hours -> shut down
@@ -112,7 +119,7 @@ When the block indexer is shut down
 Then the best block in storage should be the best from the node
 And there should be no gaps in storage
 
-# tmux new-session -d -s small-cache-blk-indxr 'cargo run --bin block_indexer_runner -- -f 100 -a 5 -t small-cache-blk-indxr'
+# tmux new-session -d -s small-cache-blk-indxr 'cargo run --bin block_indexer_runner --features anvil -- -f 100 -a 5 -t small-cache-blk-indxr'
 # tmux attach-session -t small-cache-blk-indxr
 # detach: CTRL+b, d
 # ... until subscribed, wait a bit longer (15 min) -> shut down
@@ -131,7 +138,7 @@ Then the best block in storage should be the best from the node
 And there should be no gaps in storage
 
 # Rootstock's genesis block is block height 1, not 0 as in Bitcoin
-# tmux new-session -d -s long-run-sync-large-cache-blk-indxr 'cargo run --bin block_indexer_runner -- -b 1 -t long-run-sync-large-cache-blk-indxr'
+# tmux new-session -d -s long-run-sync-large-cache-blk-indxr 'cargo run --bin block_indexer_runner --features anvil -- -b 1 -t long-run-sync-large-cache-blk-indxr'
 # tmux attach-session -t long-run-sync-large-cache-blk-indxr
 # detach: CTRL+b, d
 # ... 24 hours -> shut down
