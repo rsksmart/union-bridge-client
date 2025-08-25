@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
-use bitcoin::PublicKey;
+use bitcoin::{Amount, PublicKey, ScriptBuf};
 use common::msg_broker::bitvmx_types::{
-    Committee, DisputeCoreData, IncomingBitVMXApiMessages, MemberData, P2PAddress, ParticipantRole,
-    VariableTypes,
+    Committee, DisputeCoreData, IncomingBitVMXApiMessages, MemberData, OutputType, P2PAddress,
+    PartialUtxo, ParticipantRole, Utxo, VariableTypes,
 };
 use log::{debug, info};
 use std::rc::Rc;
@@ -57,6 +57,12 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
 
         debug!("Sending BitVMX Committee {committee:?}");
 
+        let my_funding_utxo = Self::get_my_speedup_funding_utxo(dispute_aggr_key)?;
+        self.broker_client.send(
+            BROKER_SERVER_ID,
+            IncomingBitVMXApiMessages::SetFundingUtxo(my_funding_utxo),
+        )?;
+
         self.send_set_var(
             committee_id,
             Committee::name(),
@@ -102,6 +108,15 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
         }
 
         Ok(())
+    }
+
+    fn get_my_speedup_funding_utxo(dispute_aggr_key: PublicKey) -> Result<Utxo> {
+        // TODO(iago) use contract ones when fixed
+        let amount = 10_000_000;
+        let vout = 0;
+        let txid = "4d5f11a0b73b61cbb2f5e21a09a0f1f0e9dbbdbff85f2a9dbe46e2c3b2e6b5d0".parse()?;
+
+        Ok(Utxo::new(txid, vout, amount, &dispute_aggr_key))
     }
 
     fn operator_count(members: &[MemberOfCommittee]) -> Result<u32> {

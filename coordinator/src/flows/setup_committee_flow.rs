@@ -545,7 +545,7 @@ where
         stream_id: StreamId,
         member_addr: Address,
     ) -> Result<PartialUtxo> {
-        let utxo = self
+        let mut utxo = self
             .rt_sync
             .run(
                 self.contracts
@@ -555,6 +555,10 @@ where
                     }),
             )?
             .utxo;
+
+        // TODO(iago) use contract ones when fixed
+        utxo.amount = 10_000_000;
+        utxo.txid = "4d5f11a0b73b61cbb2f5e21a09a0f1f0e9dbbdbff85f2a9dbe46e2c3b2e6b5d0".parse()?;
 
         debug!("Got funding UTXO from contracts for address {member_addr}: {utxo:?}");
 
