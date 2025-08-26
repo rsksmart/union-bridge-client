@@ -22,3 +22,5 @@ RUN set -e && \
 # setup SSH for private repositories
 RUN mkdir -p -m 0700 ~/.ssh && \
     ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+LABEL org.opencontainers.image.source=https://github.com/rsksmart/union-bridge-client

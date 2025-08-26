@@ -1,4 +1,4 @@
-# when the zkp feature is re-enabled, use this to build coordinator in an image with amd64 support (required by Risc0 in Macs with M chips)
+# TODO when the zkp feature is re-enabled, use this to build coordinator in an image with amd64 support (required by Risc0 in Macs with M chips)
 
 ## --build-arg to specify the Rust features to use (ie. anvil)
 #ARG FEATURES
@@ -62,4 +62,7 @@
 #ENV RUST_BACKTRACE=1
 #ENV RUST_LOG=debug
 #
+
+# LABEL org.opencontainers.image.source=https://github.com/rsksmart/union-bridge-client
+
 ## ENTRYPOINT is handled in docker-compose.yml
