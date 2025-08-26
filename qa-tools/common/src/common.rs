@@ -224,6 +224,27 @@ pub fn execute_script_with_basedir(script_basedir: &str, script_relative_path: &
     }
 }
 
+pub fn execute_command_with_basedir(script_basedir: &str, command: &str) {
+    println!(
+        "Executing command: `{}` in base dir: {}",
+        command, script_basedir
+    );
+    let output = Command::new("bash")
+        .current_dir(script_basedir)
+        .arg("-c")
+        .arg(command)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to execute `{}`: {}", command, e));
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        println!(
+            "`{}` failed (status: {}):\n{}",
+            command, output.status, stderr
+        );
+        panic!();
+    }
+}
+
 fn send_sigterm(pid: u32) {
     execute_command(&format!("kill -15 {}", pid));
 }

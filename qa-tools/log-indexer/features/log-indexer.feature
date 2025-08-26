@@ -4,6 +4,13 @@ Feature: Rootstock log monitoring and tracking
   so that I have an index of the logs I am interested in
   and I robustly handle network issues, shutdowns, different cache sizes and long runs
 
+# If we need anvil, we can use:
+# anvil --block-time 1
+# curl -s -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","method":"anvil_mine","params":[1000],"id":1}' http://127.0.0.1:8545
+
+# And all the cargo run --bin block_indexer_runner commands will need to add the anvil feature:
+# cargo run --bin log_indexer_runner --features anvil -- -f 100 -t happy-path-blk-indxr
+
 Scenario: happy path
 Given the initial best block is B (B = node best block height - 100)
 And the log subscription filter is configured to capture logs from the managed contracts (C.A..C.D)
@@ -15,7 +22,7 @@ And the logs stored should belong to blocks with height greater than B
 And the logs stored should belong to blocks with height greater than L (L = node best block height - 10)
 And the logs stored should appear in the order they were emitted without any missing events within that block range
 
-# tmux new-session -d -s happy-path-log-indxr 'cargo run --bin log_indexer_runner -- -f 100 -t happy-path-log-indxr'
+# tmux new-session -d -s happy-path-log-indxr 'cargo run --bin log_indexer_runner --features anvil -- -f 100 -t happy-path-log-indxr'
 # tmux attach-session -t happy-path-log-indxr
 # detach: CTRL+b, d
 # tail  -1000f /tmp/monitor-executions/happy-path-log-indxr/app.log

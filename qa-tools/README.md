@@ -4,6 +4,60 @@ A collection of tools for testing and validating the Union Bridge Monitor compon
 
 ## Initial setup
 
+### Install Anvil
+https://getfoundry.sh/anvil/overview/
+
+### Contracts 
+
+Go to `qa-tools/coordinator/Cargo.toml` and make sure the `union-bridge-contracts` dependency points to the correct tag/branch.
+Then, execute
+```bash
+cd qa-tools
+cargo clean
+cargo update -p union-bridge-contracts
+cargo build
+```
+
+### Setup config
+Go to the repo base directory and execute:
+```bash
+cp -R qa-tools/config/qa config/
+```
+
+### Setup keystore
+If you want to run the tests that require a keystore, you will need to set up your keystore file.
+Ask your colleagues for the keystore file (recommended), or create a new one with the help of the `keystore` crate.
+Place the kestore file in a permanent location outside of the repo.
+Then, set the `KEY_STORE_PATH` environment variable in .envrc to the path of your keystore file (see below).
+
+### Setup .envrc
+Go to the repo base directory and execute:
+```bash
+cp -R qa-tools/.envrc.sample .envrc
+```
+
+Then, open: `.envrc` and substitute the placeholders with your values. Ask your colleagues
+if you are not sure what values to use.
+
+### Direnv
+This tool will help you to automatically load the environment variables from `.envrc` file when you enter the repo directory.
+```bash
+# Install direnv
+brew install direnv
+
+# Enable the zsh hook
+echo 'eval "$(direnv hook zsh)"' >> ~/.zshrc
+
+# Reload shell so the hook takes effect
+exec zsh
+
+# Create your local .envrc (from the sample if provided)
+cp .envrc.sample .envrc
+
+# Allow it (trust contents of .envrc)
+direnv allow
+```
+
 ### BitVMX Union Bridge contracts
 
 Before executing any tests, you will need to set up the BitVMX Union Bridge contracts in your local environment.
@@ -14,7 +68,7 @@ In order to do that, follow these instructions:
 cd ..
 git clone git@github.com:temp-rsk/bitvmx-union-bridge-contracts.git 
 cd bitvmx-union-bridge-contracts   
-git checkout v0.0.1-alpha.2_tweaks
+git checkout v0.0.1-alpha.5 # or the latest tag
 git submodule update --init --recursive
 ```
 
@@ -25,14 +79,14 @@ git submodule update --init --recursive
 - `block_indexer_validator`: Validates block indexer state after running
 - Features: backward sync, checkpoints, different cache sizes, long runs
 
-To find instructions on how to execute tests, search for the comments under scenarios within `features/` folder.
+To find instructions on how to execute tests, search for the comments under scenarios within `block-indexer/features/` folder.
 
 ### Log Indexer Tools (manual execution)
 - `log_indexer_runner`: Runs the log indexer with configurable parameters
 - `log_indexer_validator`: Validates log indexer state after running
 - Features: managed contracts monitoring, event tracking
 
-To find instructions on how to execute tests, search for the comments under scenarios within `features/` folder.
+To find instructions on how to execute tests, search for the comments under scenarios within `log-indexer/features/` folder.
 
 ### Utility Tools for block indexer and log indexer
 - `archiver`: Archives `/tmp/monitor-executions` with timestamps
@@ -42,8 +96,7 @@ To find instructions on how to execute tests, search for the comments under scen
 - `check_fork_runner`: Runs and validates the check fork with configurable parameters
 - Features: managed contracts monitoring, event tracking
 
-To find instructions on how to execute tests, search for the comments under scenarios within `features/` folder.
-
+To find instructions on how to execute tests, search for the comments under scenarios within `check-fork/features/` folder.
 
 ### Coordinator Tools (manual execution)
 - Coordinator manual testing relies on actors-mocking crate to simulate the deployment of the Union Bridge contracts,
@@ -54,14 +107,26 @@ To find instructions on how to execute tests, search for the comments under scen
     - PeginRequested (pr)
     - PeginAccepted (pf)
 - The feature files includes useful comments with the necessary commands to run the tests.
-- Remember to adjust the .env and config files accordingly (instructions are provided in the background section of the feature file).
 - The crate includes also a script to load useful commands for executing some test steps. Find the details in the feature file.
 
-### Transaction dispatcher Tools (manual)
+### Coordinator Tools (automated execution)
 
-To find instructions on how to execute tests, search for the comments under scenarios within `features/` folder,
+#### Execute automated tests locally
+```bash
+cd qa-tools
+cargo run --bin qa-tools-coordinator -- --tags @coordinator
+```
+Optional: add `JUNIT_REPORT` env variable to generate JUnit XML reports under `qa-tools/reports/` directory.
+```bash
+... same setup as above ...
+JUNIT_REPORT="reports/coordinator.xml" cargo run --bin qa-tools-coordinator -- --tags @coordinator
+```
+
+### Transaction dispatcher Tools (manual) - DEPRECATED
+
+~~To find instructions on how to execute tests, search for the comments under scenarios within `features/` folder,
 in .feature.manual files. Keep in mind that these scenarios are not actively maintained anymore since the manual tests 
-are being replaced with automated tests.
+are being replaced with automated tests.~~
 
 ### Transaction dispatcher Tools (automated)
 
@@ -72,11 +137,6 @@ Currently the pipeline includes steps to execute the steps and upload the report
 #### Execute automated tests locally
 ```bash
 cd qa-tools
-export KEY_STORE_PASSWORD="=== REPLACE_WITH_PASSWORD ==="
-export KEY_STORE_ADDRESS="=== REPLACE_WITH_ADDRESS ==="
-export KEY_STORE_PATH="replace/with/path/to/your/keystore"
-KEY_STORE_FILE="$(cat "$KEY_STORE_PATH")"
-echo "${KEY_STORE_FILE}" > test_keystore/keyfile
 cargo run --bin qa-tools-transaction-dispatcher -- --tags @transaction-dispatcher
 ```
 Optional: add `JUNIT_REPORT` env variable to generate JUnit XML reports under `qa-tools/reports/` directory.
@@ -187,3 +247,6 @@ As mentioned above, be careful with this command, as it will impact the existing
 
 #### How to get project Reporting API key:
 Go to your Testomat.io project, navigate to Settings -> Reporting API and copy the key.
+
+## Troubleshooting
+In case of issues, attempt to `cargo clean` this repo (union-bridge-client) and/or `forge clean` the contracts repo (bitvmx-union-bridge-contracts).

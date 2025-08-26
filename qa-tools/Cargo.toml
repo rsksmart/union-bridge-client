@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["common", "block-indexer", "log-indexer", "transaction-dispatcher", "check-fork"]
+members = ["common", "block-indexer", "log-indexer", "transaction-dispatcher", "check-fork", "bitvmx-mock", "coordinator"]
 
 [workspace.dependencies]
 # Dependencies from the main workspace that qa-tools needs

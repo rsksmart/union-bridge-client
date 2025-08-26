@@ -1,0 +1,94 @@
+[
+  {
+    "type": "error",
+    "name": "BridgeBtcBlockNotInBestChain",
+    "inputs": [
+      {
+        "name": "blockHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "BridgeBtcBlockTooOld",
+    "inputs": [
+      {
+        "name": "maxDepth",
+        "type": "int256",
+        "internalType": "int256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "BridgeBtcInconsistentBlock",
+    "inputs": [
+      {
+        "name": "blockHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "BridgeBtcInexistantBlockHash",
+    "inputs": [
+      {
+        "name": "blockHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "BridgeBtcTxInvalidMerkleBranch",
+    "inputs": [
+      {
+        "name": "txHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "merkleBranchPath",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "merkleBranchHashes",
+        "type": "bytes32[]",
+        "internalType": "bytes32[]"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "BridgeBtcUnknownError",
+    "inputs": [
+      {
+        "name": "errorCode",
+        "type": "int256",
+        "internalType": "int256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotEnoughConfirmations",
+    "inputs": [
+      {
+        "name": "actual",
+        "type": "int256",
+        "internalType": "int256"
+      },
+      {
+        "name": "expected",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  }
+]

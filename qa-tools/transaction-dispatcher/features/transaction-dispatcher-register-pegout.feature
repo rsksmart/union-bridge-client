@@ -1,4 +1,4 @@
-@transaction-dispatcher @transaction-dispatcher-register-pegout @STXDISP04 @Sb1156630
+@transaction-dispatcher @transaction-dispatcher-request-pegout @STXDISP04 @Sb1156630
 Feature: Transaction dispatcher register pegout
 
   @TTXD04001
@@ -7,7 +7,7 @@ Feature: Transaction dispatcher register pegout
     Then the response code should be "200"
     When I POST to "/accept-pegin"
     Then the response code should be "200"
-    When I POST to "/register-pegout"
+    When I POST to "/request-pegout"
     Then the response code should be "200"
     And the response should contain a valid transaction hash
 
@@ -15,7 +15,7 @@ Feature: Transaction dispatcher register pegout
   Scenario: Unsupported denomination
     When I POST to "/register-pegin"
     When I POST to "/accept-pegin"
-    When I POST to "/register-pegout"
+    When I POST to "/request-pegout"
       | amount_in_wei |
       | 4565465465465 |
     Then the response code should be "404"
@@ -25,7 +25,7 @@ Feature: Transaction dispatcher register pegout
   Scenario: Bad user public key
     When I POST to "/register-pegin"
     When I POST to "/accept-pegin"
-    When I POST to "/register-pegout"
+    When I POST to "/request-pegout"
       | usr_pub_key |
       | 0xaaa777ccc |
     Then the response code should be "400"

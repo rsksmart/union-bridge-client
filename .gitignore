@@ -17,5 +17,6 @@ config/multi-client
 **/.llmignore
 qa-tools/reports/**
 qa-tools/test_keystore/**
+test_keystore
 qa-tools/coordinator/node_modules
 fund_local_operators.sh

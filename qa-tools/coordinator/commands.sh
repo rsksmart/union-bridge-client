@@ -1,9 +1,40 @@
 #!/bin/bash
 
-# RPC port
-RPC_PORT=8546
-RPC_URL=http://127.0.0.1:$RPC_PORT
+# Default RPC port
+DEFAULT_PORT=8545
+RPC_PORT="${1:-$DEFAULT_PORT}"
+RPC_URL="http://127.0.0.1:$RPC_PORT"
 
+# Get all data for a specific block (accepts decimal N or 0x-hex)
+function n_block_info() {
+  local number="$1"
+  if [[ -z "$number" ]]; then
+    echo "Usage: n_block_info <blockNumberDecimal|0xhex>" >&2
+    return 1
+  fi
+
+  local bn
+  if [[ "$number" =~ ^0x ]]; then
+    bn="$number"
+  else
+    bn=$(printf '0x%x' "$number")
+  fi
+
+  curl -s -X POST -H "Content-Type: application/json" \
+    -d "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getBlockByNumber\",\"params\":[\"$bn\", true],\"id\":1}" \
+    "$RPC_URL" | jq -r '.result'
+}
+
+# Get all data for the current (latest) block
+function current_block_info() {
+  local latest_hex=$(curl -s -X POST -H "Content-Type: application/json" \
+    -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
+    "$RPC_URL" | jq -r '.result')
+
+  curl -s -X POST -H "Content-Type: application/json" \
+    -d "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getBlockByNumber\",\"params\":[\"$latest_hex\", true],\"id\":1}" \
+    "$RPC_URL" | jq -r '.result'
+}
 # Get current block number
 function current_block() {
   local block_hex=$(curl -s -X POST -H "Content-Type: application/json" \
@@ -31,12 +62,13 @@ function save() {
   current_block
 }
 
-# Mine a block
+# Mine N blocks (default = 1)
 function mine() {
-  echo "[evm_mine]"
+  local n="${1:-1}"
+  echo "[anvil_mine $n block(s)]"
   curl -s -X POST -H "Content-Type: application/json" \
-    -d '{"jsonrpc":"2.0","method":"evm_mine","params":[],"id":1}' \
-    $RPC_URL | jq
+    -d "{\"jsonrpc\":\"2.0\",\"method\":\"anvil_mine\",\"params\":[$n],\"id\":1}" \
+    "$RPC_URL" | jq
   current_block
 }
 
@@ -53,5 +85,5 @@ function fund() {
 }
 
 # Export functions into current shell
-export -f save load mine fund current_block
-echo "Commands loaded: save, load, mine, fund"
+export -f save load mine fund current_block current_block_info n_block_info
+echo "Commands loaded: save, load, mine, fund, current_block, current_block_info, n_block_info"

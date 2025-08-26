@@ -10,14 +10,14 @@ function usage() {
     echo "Options:"
     echo "  --features FEATURES             Optional comma-separated list of Cargo features. No default."
     echo "  --config CONFIG_NAME            Optional config directory name under ./config/. Defaults to 'local'."
-    echo "  --logger-path LOGGER_FILE       Optional logger configuration file path. Defaults to 'log4rs.yaml'."
+    echo "  --logger LOGGER_FILE       Optional logger configuration file path. Defaults to 'log4rs.yaml'."
     echo "  --help, -h                      Show this help message"
     echo ""
     echo "Examples:"
     echo "  $0                                                                        # Run with default settings"
     echo "  $0 --features anvil                                                       # Run with 'debug' feature"
     echo "  $0 --config config/qa-local                                               # Run with 'local' config"
-    echo "  $0 --logger-path log4rs.yaml                                              # Run with custom logger config"
+    echo "  $0 --logger log4rs.yaml                                              # Run with custom logger config"
     echo "  $0 --features anvil --config config/qa-local --logger-path custom.yaml    # Run with all options"
     exit 1
 }

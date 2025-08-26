@@ -10,12 +10,11 @@ Feature: Coordinator - Advance Funds process
     And the Union Bridge client services are running
     And the account is funded
 
-    # Copy the qa-tools/config/qa-coordinator directory and paste it under union-bridge-client/config
-    # Set the needed variables in qa-tools/env/coordinator/env
-    # Copy the qa-tools/env/coordinator/env file and paste it as union-bridge-client/.env
+    # Check README.md in qa-tools (Initial setup) for the setup instructions
 
     # Terminal window 1:
-    # > source .env && ./run-mocking.sh
+
+    # > (cd ../bitvmx-union-bridge-contracts && forge clean); ./run-mocking.sh
 
     # Watch the logs in the terminal window, search for "deployed at" to set the contract addresses appropriately in the config/qa-coordinator
 
@@ -23,39 +22,41 @@ Feature: Coordinator - Advance Funds process
     # > cd qa-tools/coordinator
     # > npm install node-fetch@2 --save
     # > node anvil_proxy.js
+    # NOTE: anvil proxy injects POW in blocks (it is not possible to do it via the anvil config directly) so we can
+    # test reorg scenarios (block indexer weighs POW when deciding the canonical chain).
+    # It also temporarily modifies common.yaml to use anvil proxy port for the provider. In this way, services
+    # talk to the anvil proxy, which forwards requests to anvil and modifies the block responses to include POW.
 
     # Terminal window 3:
-    # > export KEY_STORE_PASSWORD="=== REPLACE_WITH_PASSWORD ==="
-    # > ./run-client.sh anvil qa-coordinator
+    # > ./run-client.sh --features anvil,zkp --config config/qa
 
     # Terminal window 4:
-    # > tail -100f logs/coordinator.log
-
-    # Optional - Terminal window 5:
-    # > tail -100f logs/log-indexer.log
-
-    # Optional - Terminal window 6:
-    # > tail -100f logs/block-indexer.log
-
-    # Terminal window 7:
     # > cd qa-tools/coordinator
     # > chmod +x commands.sh
-    # > source ./commands.sh
+    # > source ./commands.sh 8546
+    # IMPORTANT!!!
     # > fund
+
+    # Other terminals:
+    # > tail -f logs/coordinator.log
+    # > tail -f logs/block-indexer.log
+    # > tail -f logs/log-indexer.log
 
   @TCRD01001
   Scenario: happy path
     When I send the RequestAdvanceFunds event
-    And I send the AdvanceFunds event
-    And I wait for enough blocks for pow accumulation
-    And I wait for enough blocks for pow confirmation
-    Then the coordinator should trigger the check-fork process
-    And the check-fork process should be successful
-
     # > raf
     # copy pegout_id from response
+    And I send the AdvanceFunds event
     # > kaf pegout_id
-    # > mine
+    And I wait for enough blocks for pow accumulation
+    # > mine 5 blocks
+    And I wait for enough blocks for pow confirmation
+    # > mine 5 blocks
+    Then the coordinator should trigger the check-fork process
+    # coordinator logs should show process completion
+    And the check-fork process should be successful
+    # actors mocking window should display ZKP generation
 
   @TCRD01002
   Scenario: AdvanceFunds without RequestAdvanceFunds
@@ -139,12 +140,6 @@ Feature: Coordinator - Advance Funds process
     When I send the AdvanceFunds event
     Then it should log an error "No blocks received yet, cannot start advance funds"
 
-    # > raf
-    # copy pegout_id from response
-    # > mine
-    # > reraf pegout_id
-    # > kaf pegout_id
-
   # Scenario currently not supported, as the coordinator does not support RemoveRequestAdvanceFunds and RemoveAdvanceFunds events
   @TCRD01010
   Scenario: RemoveAdvanceFunds cancels the AdvanceFunds event
@@ -163,48 +158,55 @@ Feature: Coordinator - Advance Funds process
 
     #TODO: for release 2, make sure this is the desired behavior - we may not want pegout_id to be valid after RemoveAdvanceFunds
 
-    # > raf
-    # copy pegout_id from response
-    # > kaf pegout_id
-    # > mine
-    # > reaf pegout_id
-    # > mine
-    # > kaf pegout_id
-    # > mine
-
   @TCRD01011
   Scenario: reorg delays pow accumulation
     When I send the RequestAdvanceFunds event
+    # > raf
+    # copy pegout_id from response
     And I send the AdvanceFunds event
+    # > kaf pegout_id
     And I wait for 2 blocks
+    # save
+    # mine 2 blocks
     And a reorg happens for 2 last block
+    # load
     And I wait for 3 blocks
+    # mine 3 blocks
     Then it should resume pow accumulation
 
     When I wait for enough blocks for pow accumulation
+    # mine 2 blocks
     And I wait for enough blocks for pow confirmation
+    # mine 5 blocks
     Then the coordinator should trigger the check-fork process
     And the check-fork process should be successful
+    # in the actors mocking window, ZKP generation should be displayed
     And the blocks accumulated in the pow should be consistent with the reorg
-
-  # save snapshot:
-  # save
-
-  # load snapshot
-  # load
+    # check logs and inspect the block hashes in the pow to verify
 
   @TCRD01012
   Scenario: reorg delays pow confirmation
     When I send the RequestAdvanceFunds event
+    # > raf
+    # copy pegout_id from response
     And I send the AdvanceFunds event
+    # > kaf pegout_id
     And I wait for enough blocks for pow accumulation
+    # mine 5 blocks
     And I wait for 2 blocks
+    # save
+    # mine 2 blocks
     And a reorg happens for 2 last block
+    # load
     And I wait for 3 blocks
+    # mine 3 blocks
     Then it should resume pow confirmation
 
     When I wait for enough blocks for pow confirmation
+    # mine 2 blocks
     Then the coordinator should trigger the check-fork process
     And the check-fork process should be successful
+    # in the actors mocking window, ZKP generation should be displayed
     And the blocks accumulated in the pow should be consistent with the reorg
+    # check logs and inspect the block hashes in the pow to verify
 

@@ -1,0 +1,135 @@
+[
+  {
+    "type": "function",
+    "name": "requestAdvanceFunds",
+    "inputs": [
+      {
+        "name": "peg_out_id",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "amount",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "advanceFunds",
+    "inputs": [
+      {
+        "name": "peg_out_id",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "utxo_id",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "operator_id",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "required_effort",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "required_num_blocks",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkForkComplete",
+    "inputs": [
+      {
+        "name": "peg_out_id",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "event",
+    "name": "RequestAdvanceFunds",
+    "inputs": [
+      {
+        "name": "peg_out_id",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "amount",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "AdvanceFunds",
+    "inputs": [
+      {
+        "name": "peg_out_id",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "utxo_id",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "operator_id",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "required_effort",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "required_num_blocks",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "CheckForkComplete",
+    "inputs": [
+      {
+        "name": "peg_out_id",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      }
+    ],
+    "anonymous": false
+  }
+] 

@@ -22,6 +22,6 @@ serde_json = { workspace = true }
 hex = "0.4.3"
 primitive-types = { version = "0.13.1", features = ["std", "serde"] }
 methods = { path = "methods" }
-zkvm_cli_serde = { package = "cli_serde", git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-zk-proof.git", branch = "poc-generalise-host" }
+zkvm_cli_serde = { package = "cli_serde", git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-zk-proof.git", branch = "main" }
 reqwest = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
