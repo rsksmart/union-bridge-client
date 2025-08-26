@@ -2020,6 +2020,7 @@ mod tests {
             missingCommunicationData: 0,
             isPending: false,
             streamId: 0,
+            fundingUTXOs: vec![],
         }
     }
 

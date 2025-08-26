@@ -135,6 +135,17 @@ pub enum VariableTypes {
     Input(Vec<u8>),
 }
 
+impl Utxo {
+    pub fn new(txid: Txid, vout: u32, amount: u64, pub_key: &PublicKey) -> Self {
+        Utxo {
+            txid,
+            vout,
+            amount,
+            pub_key: *pub_key,
+        }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub enum WitnessTypes {
     Secret(Vec<u8>),

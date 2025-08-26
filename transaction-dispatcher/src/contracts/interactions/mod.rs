@@ -7,7 +7,6 @@ pub(crate) mod deposit_aggregated_key;
 pub(crate) mod deposit_communication_data;
 pub(crate) mod get_committee;
 pub(crate) mod get_member_communication_data;
-pub(crate) mod get_member_funding_utxo;
 pub(crate) mod get_member_public_keys;
 pub(crate) mod get_temporary_pegin_address;
 pub(crate) mod notify_check_fork_complete;

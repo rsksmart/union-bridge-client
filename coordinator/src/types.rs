@@ -859,6 +859,7 @@ mod tests {
             missingCommunicationData: 0,
             isPending: false,
             streamId: 0,
+            fundingUTXOs: vec![],
         };
 
         let expected_event = NewPendingCommittee {
@@ -919,6 +920,7 @@ mod tests {
             missingCommunicationData: 0,
             isPending: false,
             streamId: 0,
+            fundingUTXOs: vec![],
         };
 
         let expected_event = NewCommittee {
