@@ -10,6 +10,7 @@ x-log-config: &log-config
 
 # define base configuration for services
 x-base-service: &base-service
+  platform: linux/amd64
   build: &base-build
     context: ../
     dockerfile: docker/Dockerfile
@@ -96,12 +97,12 @@ services:
 
   coordinator:
     <<: *base-service
-    # when the zkp feature is re-enabled, use this to build coordinator in an image with amd64 support (required by Risc0 in Macs with M chips) via Dockerfile_coordinator
+    # TODO when the zkp feature is re-enabled, use this to build coordinator in an image with amd64 support (required by Risc0 in Macs with M chips) via Dockerfile_coordinator
     # platform: linux/amd64
     build:
       <<: *base-build
       dockerfile: docker/Dockerfile
-      # when the zkp feature is re-enabled, use this to build coordinator in an image with amd64 support (required by Risc0 in Macs with M chips)
+      # TODO when the zkp feature is re-enabled, use this to build coordinator in an image with amd64 support (required by Risc0 in Macs with M chips)
       # dockerfile: docker/Dockerfile_coordinator
       args:
         - CRATE=coordinator

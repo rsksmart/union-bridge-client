@@ -53,7 +53,7 @@ RUN --mount=type=ssh,id=default mkdir -p .cargo && \
 # optionally builds with --features if provided
 # we also exclude key-manager, which is built always in the next step
 ARG EXCLUDES="--exclude check-fork --exclude check-fork-zkp --exclude key-manager --exclude actors-mocking"
-# when the zkp feature is re-enabled, use this to build coordinator in an image with amd64 support (required by Risc0 in Macs with M chips) via Dockerfile_coordinator
+# TODO when the zkp feature is re-enabled, use this to build coordinator in an image with amd64 support (required by Risc0 in Macs with M chips) via Dockerfile_coordinator
 # EXCLUDES="--exclude coordinator--exclude check-fork --exclude check-fork-zkp --exclude key-manager --exclude actors-mocking"
 RUN --mount=type=ssh,id=default cargo build --workspace --quiet --release ${EXCLUDES}${JUST_CRATE:+ -p $JUST_CRATE}${FEATURES:+ --features $FEATURES};
 # build key-manager always (even if $JUST_CRATE provided), as it might be used by other services
@@ -80,5 +80,7 @@ COPY --from=builder /app/target/release/key-manager /app/key-manager
 # set environment variables
 ENV RUST_BACKTRACE=1
 ENV RUST_LOG=debug
+
+LABEL org.opencontainers.image.source=https://github.com/rsksmart/union-bridge-client
 
 # ENTRYPOINT is handled in docker-compose.yml

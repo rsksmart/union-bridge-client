@@ -12,3 +12,6 @@ export KEY_STORE_PASSWORD="<super-secret-password>"
 # CI/CD specific
 export FAIRGATE_GITHUB_TOKEN="<ask_your_colleagues>"
 export UNION_CONTRACTS_GITHUB_TOKEN="<ask_your_colleagues>"
+
+# PAT to interact with GitHub Container Registry
+export GITHUB_REGISTRY_TOKEN="<your_token_here>"
