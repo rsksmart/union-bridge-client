@@ -208,17 +208,6 @@ pub struct GetCommunicationDataOutput {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct GetMemberFundingUtxoInput {
-    pub stream_id: StreamId,
-    pub member_address: Address,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct GetMemberFundingUtxoOutput {
-    pub utxo: UTXO,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
 pub struct DepositCommunicationDataInput {
     pub committee_id: CommitteeId,
     pub communication_data: Vec<CommunicationData>,

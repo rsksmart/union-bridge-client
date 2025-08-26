@@ -27,7 +27,7 @@ use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 
 use crate::user_requests::ApplyToStream;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
-    CommitteeMember, CommunicationData,
+    Committee, CommitteeMember, CommunicationData, UTXO,
 };
 
 use crate::flows::common::build_communication_data;
@@ -37,8 +37,8 @@ use common::types::{CommitteeId, RskBlockAndUncles, StreamId};
 
 use transaction_dispatcher::types::{
     ApplyToStreamInput, CommitteeECDSA, DepositAggregatedKeyInput, DepositCommunicationDataInput,
-    DepositCommunicationDataOutput, GetCommunicationDataInput, GetMemberFundingUtxoInput,
-    GetMemberPublicKeysInput, GetMemberPublicKeysOutput, P2PAddressParser,
+    DepositCommunicationDataOutput, GetCommunicationDataInput, GetMemberPublicKeysInput,
+    GetMemberPublicKeysOutput, P2PAddressParser,
 };
 
 #[cfg(test)]
@@ -124,7 +124,7 @@ impl FlowContext {
             .into())
     }
 
-    fn get_committee_members(&self) -> Result<Vec<CommitteeMember>> {
+    fn get_committee_pending_members(&self) -> Result<Vec<CommitteeMember>> {
         let members = self
             .committee_pending
             .as_ref()
@@ -135,6 +135,18 @@ impl FlowContext {
             .clone();
 
         Ok(members)
+    }
+
+    fn get_committee_ready(&self) -> Result<Committee> {
+        let committee = self
+            .committee_ready
+            .as_ref()
+            .context("Missing committee ready event")?
+            .inner
+            ._committee
+            .clone();
+
+        Ok(committee)
     }
 }
 
@@ -228,7 +240,7 @@ impl StepData {
         }
     }
 
-    fn into_new_committee_pending(self) -> Result<NewCommitteePendingEvent> {
+    fn into_committee_pending(self) -> Result<NewCommitteePendingEvent> {
         match self {
             StepData::PendingCommittee(ev) => Ok(ev),
             _ => bail!("Expected NewCommitteePendingEvent"),
@@ -242,7 +254,7 @@ impl StepData {
         }
     }
 
-    fn into_new_committee_ready(self) -> Result<NewCommitteeReadyEvent> {
+    fn into_committee_ready(self) -> Result<NewCommitteeReadyEvent> {
         match self {
             StepData::ReadyCommittee(ev) => Ok(ev),
             _ => bail!("Expected NewCommitteeReadyEvent"),
@@ -501,7 +513,7 @@ where
         let member = self
             .state
             .ctx
-            .get_committee_members()?
+            .get_committee_pending_members()?
             .into_iter()
             .find(|m| m.memberAddress == member_addr)
             .with_context(|| format!("Member {member_addr} not found in committee members"))?;
@@ -540,28 +552,7 @@ where
         Ok(member_key)
     }
 
-    fn get_member_funding_utxo(
-        &self,
-        stream_id: StreamId,
-        member_addr: Address,
-    ) -> Result<PartialUtxo> {
-        let mut utxo = self
-            .rt_sync
-            .run(
-                self.contracts
-                    .get_member_funding_utxo(GetMemberFundingUtxoInput {
-                        stream_id,
-                        member_address: member_addr.into(),
-                    }),
-            )?
-            .utxo;
-
-        // TODO(iago) use contract ones when fixed
-        utxo.amount = 10_000_000;
-        utxo.txid = "4d5f11a0b73b61cbb2f5e21a09a0f1f0e9dbbdbff85f2a9dbe46e2c3b2e6b5d0".parse()?;
-
-        debug!("Got funding UTXO from contracts for address {member_addr}: {utxo:?}");
-
+    fn build_member_partial_utxo(&self, utxo: &UTXO) -> Result<PartialUtxo> {
         let tx_id = Txid::from_slice(utxo.txid.as_slice())
             .context("Could not get Bitcoin TxId from contracts utxo")?;
 
@@ -659,7 +650,7 @@ where
 
         let mut communication_data = vec![];
         // communication data size
-        for member in self.state.ctx.get_committee_members()? {
+        for member in self.state.ctx.get_committee_pending_members()? {
             let my_address: Address = self.my_address().into();
             if member.memberAddress == my_address {
                 // contracts require zeroed communication data for my own address on deposit
@@ -716,7 +707,7 @@ where
     fn get_committee_keys_by_type(&self, key_index: usize) -> Result<Vec<PublicKey>> {
         let mut committee_pub_keys = vec![];
 
-        for member in self.state.ctx.get_committee_members()? {
+        for member in self.state.ctx.get_committee_pending_members()? {
             let member_key = self.get_member_key(key_index, member)?;
             committee_pub_keys.push(member_key);
         }
@@ -727,7 +718,7 @@ where
     fn get_committee_peer_ids(&self) -> Result<Vec<PeerId>> {
         let mut peer_ids = vec![];
 
-        for member in self.state.ctx.get_committee_members()? {
+        for member in self.state.ctx.get_committee_pending_members()? {
             let member_addr = member.memberAddress;
             let keys = self.get_member_public_keys_from_contracts(member_addr)?;
             let key_str = keys.public_keys.get(COMM_KEY_INDEX).with_context(|| {
@@ -797,7 +788,7 @@ where
             Steps::ApplyToStream => {
                 // TODO(iago-2) sometimes it gets stuck in "successful apply to stream", investigate why
 
-                let pending_committee = data.into_new_committee_pending()?;
+                let pending_committee = data.into_committee_pending()?;
 
                 let was_selected = pending_committee.inner._committee.members.iter().any(|m| {
                     let member_addr: types::Address = m.memberAddress.into();
@@ -831,7 +822,7 @@ where
                 self.deposit_aggregated_key()?;
             }
             Steps::DepositAggregatedKey => {
-                self.state.ctx.committee_ready = Some(data.into_new_committee_ready()?);
+                self.state.ctx.committee_ready = Some(data.into_committee_ready()?);
 
                 self.setup_dispute_core_protocol()?;
             }
@@ -944,13 +935,15 @@ where
     fn setup_dispute_core_protocol(&mut self) -> Result<()> {
         info!("Setting up dispute core protocol");
 
-        let members = self.state.ctx.get_committee_members()?;
+        let committee = self.state.ctx.get_committee_ready()?;
         let mut member_of_committee = vec![];
 
         let p2p_addrs = self.ctx_my_communication_data()?;
 
         // TODO(iago-3) rethink how we store the committee member data in the context, we can unify it in a MemberOfCommittee struct and reduce the number of ctx_xxx methods
-        for cm in members {
+        for (idx, cm) in committee.members.iter().enumerate() {
+            debug!("Processing committee member {idx:?} {cm:?}");
+
             // TODO(iago-3) move it to a From trait impl
             let role = if cm.role == 1 {
                 ParticipantRole::Prover
@@ -966,8 +959,11 @@ where
             let dispute_key =
                 self.get_member_keys_by_type(cm.memberAddress.into(), DISPUTE_KEY_INDEX)?;
 
-            let stream_id = self.state.ctx.get_stream_id()?;
-            let funding_utxo = self.get_member_funding_utxo(stream_id, cm.memberAddress)?;
+            let contracts_utxo = committee
+                .fundingUTXOs
+                .get(idx)
+                .context("Missing utxo for committee member")?;
+            let funding_utxo = self.build_member_partial_utxo(contracts_utxo)?;
 
             let moc = MemberOfCommittee {
                 address: cm.memberAddress.into(),
