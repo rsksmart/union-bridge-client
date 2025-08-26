@@ -44,10 +44,11 @@ Feature: Coordinator - Request Peg in process
     And I mine enough blocks to confirm the transaction
     Then the pegin request should be processed successfully
 
-    # > cd qa-tools/coordinator
+    # Execute pf, pr, pa commands where actors mocking is running:
     # pf --btc-tx-file qa-tools/coordinator/fixtures/pegin_request_happy_path.json
     # pr 0x5ec8021cc5f6474b479d07f2b5736cba3a894fcd0438099996846379bff35106 --btc-tx-file qa-tools/coordinator/fixtures/pegin_request_happy_path.json 0x8325a0c5 0xcefbc931c000b2b2223e26472dae6ddafea0ace20a442f4ceefc61fe78f13f56
-    # mine
+    # mine 5 blocks
+    # you will see errors "Failed to get member communication data" related to committee members not being mocked, but that is fine for this test
 
   @TCRD02002
   Scenario: Unsupported denomination
@@ -60,10 +61,10 @@ Feature: Coordinator - Request Peg in process
     And I mine enough blocks to confirm the transaction
     Then the pegin request should fail with the error message "StreamNotFoundByDenomination"
 
-    # > cd qa-tools/coordinator
+    # Execute pf, pr, pa commands where actors mocking is running:
     # pf --btc-tx-file qa-tools/coordinator/fixtures/pf_unsupported_denomination.json
     # pr 0x5ec8021cc5f6474b479d07f2b5736cba3a894fcd0438099996846379bff35106 --btc-tx-file qa-tools/coordinator/fixtures/pf_unsupported_denomination.json 0x8325a0c5 0xcefbc931c000b2b2223e26472dae6ddafea0ace20a442f4ceefc61fe78f13f56
-    # mine
+    # mine 5 blocks
 
   @TTXD02003
   Scenario: Register peg-in request already registered
@@ -74,11 +75,17 @@ Feature: Coordinator - Request Peg in process
       | file                             | block_hash                                                         | merkle_hash                                                        | merkle_branch_path |
       | pegin_request_happy_path.json | 0x5ec8021cc5f6474b479d07f2b5736cba3a894fcd0438099996846379bff35106 | 0xcefbc931c000b2b2223e26472dae6ddafea0ace20a442f4ceefc61fe78f13f56 | 0x8325a0c5         |
     And I mine enough blocks to confirm the transaction
+    When I send the PeginTransactionFound event
+      | file                             |
+      | pf_unsupported_denomination.json |
+    And I send the SPV proof for pegin request
+      | file                             | block_hash                                                         | merkle_hash                                                        | merkle_branch_path |
+      | pf_unsupported_denomination.json | 0x5ec8021cc5f6474b479d07f2b5736cba3a894fcd0438099996846379bff35106 | 0xcefbc931c000b2b2223e26472dae6ddafea0ace20a442f4ceefc61fe78f13f56 | 0x8325a0c5         |
     Then the pegin request should fail with the error message "PeginAlreadyRequested"
 
-    # > cd qa-tools/coordinator
+    # Execute pf, pr, pa commands where actors mocking is running:
     # pf --btc-tx-file qa-tools/coordinator/fixtures/pegin_request_happy_path.json
     # pr 0x5ec8021cc5f6474b479d07f2b5736cba3a894fcd0438099996846379bff35106 --btc-tx-file qa-tools/coordinator/fixtures/pegin_request_happy_path.json 0x8325a0c5 0xcefbc931c000b2b2223e26472dae6ddafea0ace20a442f4ceefc61fe78f13f56
-    # mine
+    # mine 5 blocks
     # pf --btc-tx-file qa-tools/coordinator/fixtures/pegin_request_happy_path.json
     # pr 0x5ec8021cc5f6474b479d07f2b5736cba3a894fcd0438099996846379bff35106 --btc-tx-file qa-tools/coordinator/fixtures/pegin_request_happy_path.json 0x8325a0c5 0xcefbc931c000b2b2223e26472dae6ddafea0ace20a442f4ceefc61fe78f13f56

@@ -48,10 +48,14 @@ Feature: Coordinator - Accept Peg in process
     And I mine enough blocks to confirm the transaction
     Then the pegin accept should be processed successfully
 
-    # > cd qa-tools/coordinator
+    # Execute pf, pr, pa commands where actors mocking is running:
     # pf --btc-tx-file qa-tools/coordinator/fixtures/pegin_request_happy_path.json
     # pr 0x5ec8021cc5f6474b479d07f2b5736cba3a894fcd0438099996846379bff35106 --btc-tx-file qa-tools/coordinator/fixtures/pegin_request_happy_path.json 0x8325a0c5 0xcefbc931c000b2b2223e26472dae6ddafea0ace20a442f4ceefc61fe78f13f56
-    # replace <REPLACE_WITH_peginRequestTxHash_FROM_PR_RESPONSE> in pegin_accept_happy_path.json with the actual pegin request tx hash from the response of the previous command
-    # pa 0x5ec8021cc5f6474b479d07f2b5736cba3a894fcd0438099996846379bff35106 --btc-tx-file qa-tools/coordinator/fixtures/pegin_accept_happy_path.json 0x8325a0c5 0xcefbc931c000b2b2223e26472dae6ddafea0ace20a442f4ceefc61fe78f13f56
-    # mine
+    # mine 5 blocks
 
+    # you will see errors "Failed to get member communication data" related to committee members not being mocked, but that is fine for this test
+
+    # pa 0x5ec8021cc5f6474b479d07f2b5736cba3a894fcd0438099996846379bff35106 --btc-tx-file qa-tools/coordinator/fixtures/pegin_accept_happy_path.json 0x8325a0c5 0xcefbc931c000b2b2223e26472dae6ddafea0ace20a442f4ceefc61fe78f13f56
+    # mine 5 blocks
+
+    # you should see in the logs that the pegin accept was successful "Successfully processed confirmed PeginAccepted event: 0199f6e7-52fc-4ee0-985c-92835195eff9"

@@ -45,16 +45,18 @@ Feature: Coordinator - Advance Funds process
   @TCRD01001
   Scenario: happy path
     When I send the RequestAdvanceFunds event
-    And I send the AdvanceFunds event
-    And I wait for enough blocks for pow accumulation
-    And I wait for enough blocks for pow confirmation
-    Then the coordinator should trigger the check-fork process
-    And the check-fork process should be successful
-
     # > raf
     # copy pegout_id from response
+    And I send the AdvanceFunds event
     # > kaf pegout_id
-    # > mine
+    And I wait for enough blocks for pow accumulation
+    # > mine 5 blocks
+    And I wait for enough blocks for pow confirmation
+    # > mine 5 blocks
+    Then the coordinator should trigger the check-fork process
+    # coordinator logs should show process completion
+    And the check-fork process should be successful
+    # actors mocking window should display ZKP generation
 
   @TCRD01002
   Scenario: AdvanceFunds without RequestAdvanceFunds
@@ -138,12 +140,6 @@ Feature: Coordinator - Advance Funds process
     When I send the AdvanceFunds event
     Then it should log an error "No blocks received yet, cannot start advance funds"
 
-    # > raf
-    # copy pegout_id from response
-    # > mine
-    # > reraf pegout_id
-    # > kaf pegout_id
-
   # Scenario currently not supported, as the coordinator does not support RemoveRequestAdvanceFunds and RemoveAdvanceFunds events
   @TCRD01010
   Scenario: RemoveAdvanceFunds cancels the AdvanceFunds event
@@ -162,48 +158,55 @@ Feature: Coordinator - Advance Funds process
 
     #TODO: for release 2, make sure this is the desired behavior - we may not want pegout_id to be valid after RemoveAdvanceFunds
 
-    # > raf
-    # copy pegout_id from response
-    # > kaf pegout_id
-    # > mine
-    # > reaf pegout_id
-    # > mine
-    # > kaf pegout_id
-    # > mine
-
   @TCRD01011
   Scenario: reorg delays pow accumulation
     When I send the RequestAdvanceFunds event
+    # > raf
+    # copy pegout_id from response
     And I send the AdvanceFunds event
+    # > kaf pegout_id
     And I wait for 2 blocks
+    # save
+    # mine 2 blocks
     And a reorg happens for 2 last block
+    # load
     And I wait for 3 blocks
+    # mine 3 blocks
     Then it should resume pow accumulation
 
     When I wait for enough blocks for pow accumulation
+    # mine 2 blocks
     And I wait for enough blocks for pow confirmation
+    # mine 5 blocks
     Then the coordinator should trigger the check-fork process
     And the check-fork process should be successful
+    # in the actors mocking window, ZKP generation should be displayed
     And the blocks accumulated in the pow should be consistent with the reorg
-
-  # save snapshot:
-  # save
-
-  # load snapshot
-  # load
+    # check logs and inspect the block hashes in the pow to verify
 
   @TCRD01012
   Scenario: reorg delays pow confirmation
     When I send the RequestAdvanceFunds event
+    # > raf
+    # copy pegout_id from response
     And I send the AdvanceFunds event
+    # > kaf pegout_id
     And I wait for enough blocks for pow accumulation
+    # mine 5 blocks
     And I wait for 2 blocks
+    # save
+    # mine 2 blocks
     And a reorg happens for 2 last block
+    # load
     And I wait for 3 blocks
+    # mine 3 blocks
     Then it should resume pow confirmation
 
     When I wait for enough blocks for pow confirmation
+    # mine 2 blocks
     Then the coordinator should trigger the check-fork process
     And the check-fork process should be successful
+    # in the actors mocking window, ZKP generation should be displayed
     And the blocks accumulated in the pow should be consistent with the reorg
+    # check logs and inspect the block hashes in the pow to verify
 
