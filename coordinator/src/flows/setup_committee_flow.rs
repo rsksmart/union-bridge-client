@@ -962,7 +962,7 @@ where
     fn apply_to_stream(&self) -> Result<()> {
         let user_input = self.ctx_user_input()?;
 
-        let utxo_val = user_input.utxo.value;
+        let utxo_val = user_input.funding_utxo.value;
         let (tx_id, output) = self
             .generate_my_utxo_regtest(utxo_val)
             .context("Generating funding UTXO")?;
@@ -1043,7 +1043,7 @@ where
 
         let dispute_core = DisputeCoreSetup::new(self.bitvmx_broker.clone());
 
-        let utxo_val = 10000; // TODO(iago) get from user input
+        let utxo_val = self.ctx_user_input()?.speed_up_utxo.value;
         let (tx_id, output) = self
             .generate_my_utxo_regtest(utxo_val)
             .context("Generating speedup UTXO")?;

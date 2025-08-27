@@ -63,8 +63,6 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
             IncomingBitVMXApiMessages::SetFundingUtxo(my_speedup_funding_utxo),
         )?;
 
-        debug!("Sending BitVMX Committee {committee:?}");
-
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetVar(
             committee_id,
             Committee::name(),
