@@ -21,8 +21,6 @@ pub struct DisputeCoreSetup<BC: BitVmxBrokerClientApi> {
     broker_client: Rc<BC>,
 }
 
-// TODO(iago-3) search for possible panics on this file
-
 impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
     pub fn new(broker_client: Rc<BC>) -> Self {
         Self { broker_client }

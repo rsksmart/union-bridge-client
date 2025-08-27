@@ -78,7 +78,7 @@ trait SetupCommitteeFlowApi {
 #[cfg_attr(test, automock)]
 pub(crate) trait SetupCommitteeFlowFactoryApi<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi>
 {
-    fn create_flow(&self, flow_id: Uuid) -> SetupCommitteeFlow<CG, BC>;
+    fn create_flow(&self, internal_id: Uuid) -> SetupCommitteeFlow<CG, BC>;
 }
 
 // TODO(iago-2) improve with structs instead of tuples, using tuples for now for validation
@@ -267,7 +267,7 @@ impl StepData {
 }
 
 pub(crate) struct State {
-    flow_id: Uuid,
+    internal_id: Uuid,
     step: Steps,
     ctx: FlowContext,
 }
@@ -292,7 +292,7 @@ where
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
-        flow_id: Uuid,
+        internal_id: Uuid,
     ) -> Self {
         Self {
             contracts,
@@ -300,7 +300,7 @@ where
             bitvmx_broker,
             _blockchain_view: Rc::new(RefCell::new(BlockchainView::new())),
             state: State {
-                flow_id,
+                internal_id,
                 step: Steps::UserRequest,
                 ctx: FlowContext::default(),
             },
@@ -819,7 +819,7 @@ where
 
         info!(
             "Completing step {current_step:?} for flow {} with data {data:?}",
-            self.state.flow_id
+            self.state.internal_id
         );
 
         debug!("Flow Context: {:?}", self.state.ctx);
@@ -1104,9 +1104,7 @@ where
         &mut self,
         stream_id: StreamId,
     ) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
-        // TODO(iago-3) optimize this search by keeping convenient map of stream_id -> flow_id or alike
-
-        // TODO(iago-2) can multiple flows exist for the same stream_id?
+        // TODO(iago-3) optimize this search by keeping convenient map of stream_id -> internal_id or alike
 
         self.flows.values_mut().find(|f| {
             f.state
@@ -1120,7 +1118,7 @@ where
         &mut self,
         committee_id: CommitteeId,
     ) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
-        // TODO(iago-3) optimize this search by keeping convenient map of committee_id -> flow_id or alike
+        // TODO(iago-3) optimize this search by keeping convenient map of committee_id -> internal_id or alike
 
         let im_member = self.global_context.my_committees().im_member(&committee_id);
         if !im_member {
@@ -1215,11 +1213,10 @@ where
         info!("Processing user request: {:?}", req);
         match req {
             UserRequests::ApplyToStream(input) => {
-                // TODO(iago-2) this won't be used by BitVMX, its' just for our logging, make that clear by renaming it or changing its type maybe
-                let flow_id = Uuid::new_v4();
-                let mut flow = self.flow_factory.create_flow(flow_id);
+                let internal_id = Uuid::new_v4();
+                let mut flow = self.flow_factory.create_flow(internal_id);
                 flow.complete_step(StepData::UserRequest(input.clone()))?;
-                self.flows.insert(flow_id, flow);
+                self.flows.insert(internal_id, flow);
             }
         }
 
@@ -1382,13 +1379,13 @@ where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
 {
-    fn create_flow(&self, flow_id: Uuid) -> SetupCommitteeFlow<CG, BC> {
+    fn create_flow(&self, internal_id: Uuid) -> SetupCommitteeFlow<CG, BC> {
         SetupCommitteeFlow::new(
             self.contracts_gateway.clone(),
             self.rt_sync.clone(),
             self.bitvmx_broker.clone(),
             self.global_context.clone(),
-            flow_id,
+            internal_id,
         )
     }
 }
