@@ -32,7 +32,7 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     Committee, CommitteeMember, CommunicationData, UTXO,
 };
 
-use crate::flows::common::build_communication_data;
+use crate::flows::common::{GlobalContext, build_communication_data};
 use crate::flows::dispute_core_setup::DisputeCoreSetup;
 use common::types;
 use common::types::{CommitteeId, RskBlockAndUncles, StreamId};
@@ -56,7 +56,8 @@ const REGTEST: Network = Network::Regtest;
 
 #[cfg_attr(test, automock)]
 trait SetupCommitteeFlowApi {
-    fn complete_step_and_next(&mut self, req_id: Option<Uuid>, data: StepData) -> Result<()>;
+    // TODO(iago) it should not be needed to receive ref_id as we find the flow by req_id already
+    fn complete_step(&mut self, ref_id: Option<Uuid>, data: StepData) -> Result<()>;
 
     fn request_bitvmx_comm_info(&self);
 
@@ -171,9 +172,7 @@ enum Steps {
     SetupDisputeAggregatedKey,
     DepositAggregatedKey,
     SetupDisputeCoreProtocol,
-    //
     Complete,
-    // Optional steps
 }
 
 impl Steps {
@@ -280,6 +279,7 @@ pub(crate) struct SetupCommitteeFlow<CG: RskContractsGatewayApi, BC: BitVmxBroke
     _blockchain_view: Rc<RefCell<BlockchainView>>,
     state: State,
     bitcoin_client: BitcoinClient,
+    global_context: GlobalContext,
 }
 
 impl<CG, BC> SetupCommitteeFlow<CG, BC>
@@ -287,7 +287,13 @@ where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
 {
-    fn new(contracts: Rc<CG>, rt_sync: RuntimeSync, bitvmx_broker: Rc<BC>, flow_id: Uuid) -> Self {
+    fn new(
+        contracts: Rc<CG>,
+        rt_sync: RuntimeSync,
+        bitvmx_broker: Rc<BC>,
+        global_context: GlobalContext,
+        flow_id: Uuid,
+    ) -> Self {
         Self {
             contracts,
             rt_sync,
@@ -299,6 +305,7 @@ where
                 ctx: FlowContext::default(),
             },
             bitcoin_client: Self::build_bitcoin_client_regtest(),
+            global_context,
         }
     }
 
@@ -835,14 +842,17 @@ where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
 {
-    fn complete_step_and_next(&mut self, req_id: Option<Uuid>, data: StepData) -> Result<()> {
+    // TODO(iago) this should not be needed, we are searching the flow by request id so we can directly close it without passing the id to complete_step
+    fn complete_step(&mut self, ref_id: Option<Uuid>, data: StepData) -> Result<()> {
         let current_step = self.state.step;
 
         info!(
-            "Completing step {current_step:?} for flow {} with req_id {req_id:?} and data {data:?}",
+            "Completing step {current_step:?} for flow {} with data {data:?}",
             self.state.flow_id
         );
+
         debug!("Flow Context: {:?}", self.state.ctx);
+        debug!("Global Context: {:?}", self.global_context);
 
         match current_step {
             Steps::UserRequest => {
@@ -855,35 +865,39 @@ where
             }
             Steps::GetMyTakeKey => {
                 let sign_req_id =
-                    Self::close_pub_key_req(&mut self.state.ctx.my_take_key, req_id, data)?;
+                    Self::close_pub_key_req(&mut self.state.ctx.my_take_key, ref_id, data)?;
                 self.request_bitvmx_pub_key_signing(sign_req_id, &self.state.ctx.my_take_key)?;
             }
             Steps::SignMyTakeKey => {
-                Self::close_pub_key_signing_req(&mut self.state.ctx.my_take_key, req_id, data)?;
+                Self::close_pub_key_signing_req(&mut self.state.ctx.my_take_key, ref_id, data)?;
                 self.request_bitvmx_dispute_pub_key()?;
             }
             Steps::GetMyDisputeKey => {
                 let sign_req_id =
-                    Self::close_pub_key_req(&mut self.state.ctx.my_dispute_key, req_id, data)?;
+                    Self::close_pub_key_req(&mut self.state.ctx.my_dispute_key, ref_id, data)?;
                 self.request_bitvmx_pub_key_signing(sign_req_id, &self.state.ctx.my_dispute_key)?;
             }
             Steps::SignMyDisputeKey => {
-                Self::close_pub_key_signing_req(&mut self.state.ctx.my_dispute_key, req_id, data)?;
+                Self::close_pub_key_signing_req(&mut self.state.ctx.my_dispute_key, ref_id, data)?;
                 self.request_bitvmx_comm_pub_key()?;
             }
             Steps::GetMyCommKey => {
                 let sign_req_id =
-                    Self::close_pub_key_req(&mut self.state.ctx.my_comm_key, req_id, data)?;
+                    Self::close_pub_key_req(&mut self.state.ctx.my_comm_key, ref_id, data)?;
                 self.request_bitvmx_pub_key_signing(sign_req_id, &self.state.ctx.my_comm_key)?;
             }
             Steps::SignMyCommKey => {
-                Self::close_pub_key_signing_req(&mut self.state.ctx.my_comm_key, req_id, data)?;
+                Self::close_pub_key_signing_req(&mut self.state.ctx.my_comm_key, ref_id, data)?;
                 self.apply_to_stream()?;
             }
             Steps::ApplyToStream => {
-                // TODO(iago-2) sometimes it gets stuck in "successful apply to stream", investigate why
-
                 let pending_committee = data.into_committee_pending()?;
+
+                let committee_id: CommitteeId = pending_committee.inner.committeeId.into();
+
+                if self.global_context.my_committees().im_member(&committee_id) {
+                    bail!("Already part of committee {committee_id}");
+                }
 
                 let was_selected = pending_committee.inner._committee.members.iter().any(|m| {
                     let member_addr: types::Address = m.memberAddress.into();
@@ -891,12 +905,15 @@ where
                 });
 
                 if was_selected {
+                    info!("I was selected for committee {committee_id} :)");
                     self.state.ctx.committee_pending = Some(pending_committee);
-
+                    let role = self.ctx_user_input()?.role;
+                    self.global_context.my_committees().add(committee_id, role);
                     self.deposit_communication_data()?;
                 } else {
-                    // TODO(iago-2) close the flow se we were not selected
-                    bail!("Not selected for committee, flow will not continue");
+                    info!("I was not selected for committee {committee_id} :(. Closing flow.");
+                    self.state.step = Steps::Complete;
+                    return Ok(());
                 }
             }
             Steps::DepositCommunicationData => {
@@ -907,12 +924,12 @@ where
                 self.setup_bitvmx_aggregated_take_pubkey()?;
             }
             Steps::SetupTakeAggregatedKey => {
-                Self::close_agg_key_req(&mut self.state.ctx.agg_take_key, req_id, data)?;
+                Self::close_agg_key_req(&mut self.state.ctx.agg_take_key, ref_id, data)?;
 
                 self.setup_bitvmx_aggregated_dispute_pubkey()?;
             }
             Steps::SetupDisputeAggregatedKey => {
-                Self::close_agg_key_req(&mut self.state.ctx.agg_dispute_key, req_id, data)?;
+                Self::close_agg_key_req(&mut self.state.ctx.agg_dispute_key, ref_id, data)?;
 
                 self.deposit_aggregated_key()?;
             }
@@ -920,19 +937,29 @@ where
                 self.state.ctx.committee_ready = Some(data.into_committee_ready()?);
 
                 self.setup_dispute_core_protocol()?;
+
+                // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-254
+                //  temporary move to SetupDisputeCoreProtocol to then move to Complete
+                self.state.step.next()?;
             }
             Steps::SetupDisputeCoreProtocol => {
-                // TODO continue flow here
+                // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-254
+                //  temporary move to SetupDisputeCoreProtocol to then move to Complete
+                // for now just go to next step
+                self.state.step.next()?;
             }
             Steps::Complete => {
-                info!("Setup committee flow complete")
+                bail!("Complete shouldn't be reached");
             }
         };
 
-        let next_step = self.state.step.next()?;
-        self.state.step = next_step;
+        self.state.step = self.state.step.next()?;
 
-        info!("Next step: {:?}", self.state.step);
+        if self.state.step == Steps::Complete {
+            info!("Setup Committee flow complete");
+        } else {
+            info!("Setup Committee flow next step: {:?}", self.state.step);
+        }
 
         Ok(())
     }
@@ -1076,6 +1103,7 @@ where
 {
     flow_factory: FactoryBSF,
     flows: HashMap<Uuid, SetupCommitteeFlow<CG, BC>>,
+    global_context: GlobalContext,
 }
 
 impl<CG, BC, FactoryBSF> SetupCommitteeProcessor<CG, BC, FactoryBSF>
@@ -1084,10 +1112,11 @@ where
     BC: BitVmxBrokerClientApi,
     FactoryBSF: SetupCommitteeFlowFactoryApi<CG, BC>,
 {
-    pub(crate) fn new(flow_factory: FactoryBSF) -> Self {
+    pub(crate) fn new(flow_factory: FactoryBSF, global_context: GlobalContext) -> Self {
         Self {
             flow_factory,
             flows: HashMap::new(),
+            global_context,
         }
     }
 }
@@ -1121,21 +1150,36 @@ where
         })
     }
 
-    fn get_flow_for_committee_id(
+    fn get_flow_for_committee_pending(
         &mut self,
         committee_id: CommitteeId,
     ) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
         // TODO(iago-3) optimize this search by keeping convenient map of committee_id -> flow_id or alike
 
-        // TODO(iago-2) we have an issue here if multiple flows are created for the same committee_id
+        let im_member = self.global_context.my_committees().im_member(&committee_id);
+        if !im_member {
+            debug!("Not my committee {committee_id}");
+            return None;
+        }
 
-        self.flows.values_mut().find(|f| {
-            f.state
-                .ctx
-                .committee_pending
-                .as_ref()
-                .map_or(false, |ev| ev.inner.committeeId == *committee_id)
-        })
+        let pending_committee_flows: Vec<_> = self
+            .flows
+            .values_mut()
+            .filter(|f| {
+                f.state
+                    .ctx
+                    .committee_pending
+                    .as_ref()
+                    .map_or(false, |ev| ev.inner.committeeId == *committee_id)
+            })
+            .collect();
+
+        if pending_committee_flows.len() > 1 {
+            error!("Multiple flows in status committee_pending for committee {committee_id}");
+            None
+        } else {
+            pending_committee_flows.into_iter().next()
+        }
     }
 
     fn get_flow_for_request_id(&mut self, uuid: &Uuid) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
@@ -1179,6 +1223,20 @@ where
             false
         })
     }
+
+    fn close_completed_flows(&mut self) {
+        let completed: Vec<_> = self
+            .flows
+            .iter()
+            .filter(|(_, flow)| flow.state.step == Steps::Complete)
+            .map(|(k, _)| *k)
+            .collect();
+
+        for key in completed {
+            info!("Removing Completed flow: {key:?}");
+            self.flows.remove(&key);
+        }
+    }
 }
 
 impl<CG, BC, FactoryBSF> EventProcessor for SetupCommitteeProcessor<CG, BC, FactoryBSF>
@@ -1194,7 +1252,7 @@ where
                 // TODO(iago-2) this won't be used by BitVMX, its' just for our logging, make that clear by renaming it or changing its type maybe
                 let flow_id = Uuid::new_v4();
                 let mut flow = self.flow_factory.create_flow(flow_id);
-                flow.complete_step_and_next(None, StepData::UserRequest(input.clone()))?;
+                flow.complete_step(None, StepData::UserRequest(input.clone()))?;
                 self.flows.insert(flow_id, flow);
             }
         }
@@ -1203,63 +1261,44 @@ where
     }
 
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
-        match event {
+        // assume events are confirmed for now
+        let flow_data = match event {
             RskPegManagerEvents::NewCommitteePending(new_committee_pending) => {
-                info!(
-                    "Processing NewCommitteePending event: {:?}",
-                    new_committee_pending
-                );
-
-                // TODO(iago-2) review this situation: should a second NewCommitteePending restart the flow? (ie. if an unmatching aggregated key is deposited, Committee gets recreated)
-
                 let stream_id = new_committee_pending.inner._committee.streamId;
-                if let Some(first_flow) = self.get_flow_for_stream_id(stream_id.into()) {
-                    first_flow.complete_step_and_next(
-                        None,
-                        StepData::PendingCommittee(new_committee_pending.clone()),
-                    )?
-                } else {
-                    bail!("No flow found for stream {stream_id}")
-                }
+                let found_flow = self.get_flow_for_stream_id(stream_id.into());
+                found_flow.map(|f| (f, StepData::PendingCommittee(new_committee_pending.clone())))
             }
             RskPegManagerEvents::AllCommunicationDataReady(all_comm_data_ready) => {
-                info!(
-                    "Processing AllCommunicationDataReady event: {:?}",
-                    all_comm_data_ready
-                );
-
                 let committee_id = all_comm_data_ready.inner._committeeId.into();
-                if let Some(first_flow) = self.get_flow_for_committee_id(committee_id) {
-                    // assume confirmed for now
-                    first_flow.complete_step_and_next(
-                        None,
+                let found_flow = self.get_flow_for_committee_pending(committee_id);
+                found_flow.map(|f| {
+                    (
+                        f,
                         StepData::ReadyCommunicationData(all_comm_data_ready.clone()),
-                    )?
-                } else {
-                    bail!("No flow found for {all_comm_data_ready:?}")
-                }
+                    )
+                })
             }
             RskPegManagerEvents::NewCommitteeReady(new_committee_ready) => {
-                info!(
-                    "Processing NewCommitteeReady event: {:?}",
-                    new_committee_ready
-                );
-
                 let committee_id = new_committee_ready.inner.committeeId.into();
-                if let Some(first_flow) = self.get_flow_for_committee_id(committee_id) {
-                    // assume confirmed for now
-                    first_flow.complete_step_and_next(
-                        None,
-                        StepData::ReadyCommittee(new_committee_ready.clone()),
-                    )?
-                } else {
-                    bail!("No flow found for {new_committee_ready:?}")
-                }
+                let found_flow = self.get_flow_for_committee_pending(committee_id);
+                found_flow.map(|f| (f, StepData::ReadyCommittee(new_committee_ready.clone())))
             }
             _ => {
                 info!("Ignoring RSK event: {:?}", event);
+                return Ok(());
+            }
+        };
+
+        match flow_data {
+            Some((flow, step_data)) => {
+                flow.complete_step(None, step_data)?;
+            }
+            None => {
+                info!("Received {event:?} but it's not mine");
             }
         }
+
+        self.close_completed_flows();
 
         Ok(())
     }
@@ -1271,8 +1310,7 @@ where
                 // committee (the one running the client), but BitVMX will always respond with the
                 // same info - so for now we send it to the first flow waiting for it
                 if let Some(first_flow) = self.get_first_flow_waiting_comm_info() {
-                    first_flow
-                        .complete_step_and_next(None, StepData::CommInfo(comm_info.clone()))?
+                    first_flow.complete_step(None, StepData::CommInfo(comm_info.clone()))?
                 } else {
                     bail!("No flow found for OutgoingBitVMXApiMessages::CommInfo")
                 }
@@ -1280,7 +1318,7 @@ where
             OutgoingBitVMXApiMessages::PubKey(req_id, public_key) => {
                 // Handle PubKey response for GetKey steps
                 if let Some(flow) = self.get_flow_for_request_id(req_id) {
-                    flow.complete_step_and_next(Some(*req_id), StepData::PublicKey(*public_key))?;
+                    flow.complete_step(Some(*req_id), StepData::PublicKey(*public_key))?;
                 } else {
                     bail!("No flow found for OutgoingBitVMXApiMessages::PubKey and id {req_id}");
                 }
@@ -1293,7 +1331,7 @@ where
             ) => {
                 // Handle SignedMessage response using the standard flow
                 if let Some(flow) = self.get_flow_for_request_id(sign_req_id) {
-                    flow.complete_step_and_next(
+                    flow.complete_step(
                         Some(*sign_req_id),
                         StepData::SignedMessage(*signature_r, *signature_s, *recovery_id),
                     )?;
@@ -1306,21 +1344,32 @@ where
             OutgoingBitVMXApiMessages::AggregatedPubkey(req_id, pubkey) => {
                 // Handle successful aggregated pubkey response
                 if let Some(flow) = self.get_flow_for_request_id(req_id) {
-                    flow.complete_step_and_next(Some(*req_id), StepData::PublicKey(*pubkey))?;
+                    flow.complete_step(Some(*req_id), StepData::PublicKey(*pubkey))?;
                 } else {
                     bail!(
                         "No flow found for OutgoingBitVMXApiMessages::AggregatedPubkey and id {req_id}"
                     );
                 }
             }
-            _ => {}
+            OutgoingBitVMXApiMessages::Pong() => {
+                // just skip, do not log it's ignored
+            }
+            _ => {
+                debug!("Ignoring BitVMX event: {:?}", event);
+            }
         }
+
+        self.close_completed_flows();
 
         Ok(())
     }
 
     fn process_new_block(&mut self, _block: &RskBlockAndUncles) -> Result<()> {
         // TODO(iago-2) wait for confirmations for every event, now we assume confirmed immediately
+
+        // blocks allow periodic cleanup of completed flows, we can improve it with a cleanup task if needed
+        self.close_completed_flows();
+
         Ok(())
     }
 
@@ -1337,6 +1386,7 @@ where
     contracts_gateway: Rc<CG>,
     rt_sync: RuntimeSync,
     bitvmx_broker: Rc<BC>,
+    global_context: GlobalContext,
 }
 
 impl<CG, BC> SetupCommitteeFlowFactory<CG, BC>
@@ -1348,11 +1398,13 @@ where
         contracts_gateway: Rc<CG>,
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
+        global_context: GlobalContext,
     ) -> Self {
         Self {
             contracts_gateway,
             rt_sync,
             bitvmx_broker,
+            global_context,
         }
     }
 }
@@ -1368,6 +1420,7 @@ where
             self.contracts_gateway.clone(),
             self.rt_sync.clone(),
             self.bitvmx_broker.clone(),
+            self.global_context.clone(),
             flow_id,
         )
     }

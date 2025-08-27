@@ -1,6 +1,6 @@
-use common::msg_broker::bitvmx_types::ParticipantRole;
+use crate::types::{Role, Utxo};
 use common::types::StreamId;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 // TODO create types mod and move this and types.rs (renamed to rsk_events.rs) there
 
 #[derive(Clone, Debug, Deserialize)]
@@ -9,53 +9,4 @@ pub struct ApplyToStream {
     pub role: Role,
     pub funding_utxo: Utxo,
     pub speed_up_utxo: Utxo,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Utxo {
-    // temporarily omitted for Regtest stage
-    // pub txid: String,
-    // temporarily omitted for Regtest stage
-    // pub vout: u32,
-    pub value: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Role {
-    Prover,
-    Verifier,
-}
-
-// temporarily omitted for Regtest stage
-// impl TryFrom<Utxo> for UTXO {
-//     type Error = anyhow::Error;
-//
-//     fn try_from(utxo: Utxo) -> Result<Self, Self::Error> {
-//         Ok(UTXO {
-//             txid: utxo
-//                 .txid
-//                 .parse()
-//                 .context("Failed to parse String txid to FixedBytes<32>")?,
-//             outputIndex: utxo.vout,
-//             amount: utxo.value,
-//         })
-//     }
-// }
-
-impl From<Role> for ParticipantRole {
-    fn from(role: Role) -> Self {
-        match role {
-            Role::Prover => ParticipantRole::Prover,
-            Role::Verifier => ParticipantRole::Verifier,
-        }
-    }
-}
-
-impl From<Role> for u8 {
-    fn from(role: Role) -> Self {
-        match role {
-            Role::Prover => 1,
-            Role::Verifier => 2,
-        }
-    }
 }

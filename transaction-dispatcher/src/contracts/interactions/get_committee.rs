@@ -19,10 +19,7 @@ impl<C: CommitteeRegistryContractApi> GetCommitteeCall<C> {
         &self,
         input: GetCommitteeInput,
     ) -> Result<GetCommitteeOutput, DomainErrors> {
-        info!(
-            "Init GetCommittee for committee_id: {:?}",
-            input.committee_id
-        );
+        info!("Init GetCommittee for committee_id: {}", input.committee_id);
 
         let committee = self
             .contract

@@ -1,6 +1,58 @@
+use crate::types::Role;
 use anyhow::{Result, bail};
 use common::msg_broker::bitvmx_types::{P2PAddress, PeerId};
+use common::types::CommitteeId;
 use log::info;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+
+#[derive(Default, Debug, Clone)]
+pub(crate) struct GlobalContext {
+    my_committees: MyCommittees,
+}
+
+#[derive(Default, Debug, Clone)]
+pub(crate) struct MyCommittees {
+    committees: Rc<RefCell<HashMap<CommitteeId, Role>>>,
+}
+
+impl MyCommittees {
+    pub fn new() -> Self {
+        Self {
+            committees: Rc::new(RefCell::new(HashMap::new())),
+        }
+    }
+
+    pub fn add(&mut self, committee_id: CommitteeId, role: Role) {
+        self.committees.borrow_mut().insert(committee_id, role);
+    }
+
+    // TODO call when leaving a committee or when a committee is disbanded
+    pub fn remove(&mut self, committee_id: CommitteeId) {
+        self.committees.borrow_mut().remove(&committee_id);
+    }
+
+    pub fn im_member(&self, committee_id: &CommitteeId) -> bool {
+        self.committees.borrow().contains_key(committee_id)
+    }
+
+    pub fn my_role(&self, committee_id: &CommitteeId) -> Option<Role> {
+        self.committees.borrow().get(committee_id).cloned()
+    }
+}
+
+impl GlobalContext {
+    pub fn new() -> Self {
+        Self {
+            my_committees: MyCommittees::new(),
+        }
+    }
+
+    pub fn my_committees(&mut self) -> &mut MyCommittees {
+        &mut self.my_committees
+    }
+}
 
 /// We need this function because we are temporarily:
 /// - storing PeerId as the communication key on applyToStream

@@ -18,7 +18,7 @@ impl<C: CommitteeRegistryContractApi> GetMemberCommunicationDataCall<C> {
         input: GetCommunicationDataInput,
     ) -> Result<GetCommunicationDataOutput, DomainErrors> {
         info!(
-            "Init GetMemberCommunicationData for stream: {:?}, member: {:?}",
+            "Init GetMemberCommunicationData for stream: {}, member: {:?}",
             input.committee_id, input.member_address
         );
 

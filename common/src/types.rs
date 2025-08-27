@@ -789,8 +789,14 @@ pub struct RskRpcLog {
     // no "removed" field if coming from request (not subscription)
 }
 
-#[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Hash, Clone)]
 pub struct CommitteeId(u128);
+
+impl std::fmt::Display for CommitteeId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 impl From<u128> for CommitteeId {
     fn from(value: u128) -> Self {
