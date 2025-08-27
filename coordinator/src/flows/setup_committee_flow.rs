@@ -5,7 +5,7 @@ use crate::types::{
     NewCommitteeReadyEvent, RskPegManagerEvents, UserRequests,
 };
 use alloy_primitives::{Address, FixedBytes};
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use bitcoin::hashes::Hash;
 use bitcoin::key::Parity::Even;
 use bitcoin::{Amount, CompressedPublicKey, Network, PublicKey, ScriptBuf, Txid, XOnlyPublicKey};
@@ -81,7 +81,7 @@ pub(crate) trait SetupCommitteeFlowFactoryApi<CG: RskContractsGatewayApi, BC: Bi
     fn create_flow(&self, internal_id: Uuid) -> SetupCommitteeFlow<CG, BC>;
 }
 
-// TODO(iago-2) improve with structs instead of tuples, using tuples for now for validation
+// TODO improve with structs instead of tuples, using tuples for now for validation
 type PubKeyReq = Option<(
     Uuid,
     Option<PublicKey>,
@@ -89,7 +89,8 @@ type PubKeyReq = Option<(
     Option<SignedPublicKey>,
 )>; // request id key, raw pub key, req id signing, signed pub key
 type AggKeyReq = Option<(Uuid, Option<PublicKey>)>; // request id, response data
-type SetupCoreReq = Option<(Uuid, CommitteeId, Option<String>)>; // request id, committee id, response data // TODO(iago-2) TBC what to store here in data
+// TODO TBC what to store here in data
+type SetupCoreReq = Option<(Uuid, CommitteeId, Option<String>)>; // request id, committee id, response data
 
 #[derive(Default, Debug)]
 struct FlowContext {
@@ -176,6 +177,7 @@ enum Steps {
 }
 
 impl Steps {
+    // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: try to unify this with complete_step
     fn next(&self) -> Result<Steps> {
         let next = match self {
             Steps::UserRequest => Steps::GetMyCommInfo,
@@ -436,9 +438,9 @@ where
         Ok(self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetPubKey(req_id, true)))
     }
 
-    // TODO(iago-3) move ctx_xxx methods to FlowContext struct
+    // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: move ctx_xxx methods to FlowContext struct
 
-    // TODO(iago-3) review the ctx_xxx methods we have and try to unify / optimize them
+    // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: review the ctx_xxx methods we have and try to unify / optimize them
 
     fn ctx_my_take_key(&self) -> Result<SignedPublicKey> {
         let signed_pubkey = self
@@ -769,11 +771,11 @@ where
     ) -> Result<Vec<MemberOfCommittee>> {
         let mut member_of_committee = vec![];
 
-        // TODO(iago-3) rethink how we store the committee member data in the context, we can unify it in a MemberOfCommittee struct and reduce the number of ctx_xxx methods
+        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: rethink how we store the committee member data in the context, we can unify it in a MemberOfCommittee struct and reduce the number of ctx_xxx methods
         for (idx, cm) in committee.members.iter().enumerate() {
             debug!("Processing committee member {idx:?} {cm:?}");
 
-            // TODO(iago-3) move it to a From trait impl
+            // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: move it to a From trait impl
             let role = if cm.role == 1 {
                 ParticipantRole::Prover
             } else if cm.role == 2 {
@@ -782,7 +784,7 @@ where
                 bail!("Invalid member role: {}", cm.role);
             };
 
-            // TODO mini optimization: do not request my data, it is in context already
+            // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: mini optimization: do not request my data, it is in context already
 
             let take_key = self.get_member_keys_by_type(cm.memberAddress.into(), TAKE_KEY_INDEX)?;
             let dispute_key =
@@ -825,6 +827,7 @@ where
         debug!("Flow Context: {:?}", self.state.ctx);
         debug!("Global Context: {:?}", self.global_context);
 
+        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: try to make each step aligned with what will be executed (entering step instead of finishing step)
         match current_step {
             Steps::UserRequest => {
                 self.state.ctx.user_input = Some(data.into_user_input()?);
@@ -968,11 +971,14 @@ where
 
         let stream_id = self.state.ctx.get_stream_id()?;
 
+        let my_take_key = &self.ctx_my_take_key()?;
+        let my_dispute_key = &self.ctx_my_dispute_key()?;
+
         let input = ApplyToStreamInput {
             stream_id: stream_id.clone(),
             role: u8::from(user_input.role),
-            take_key: signed_to_committee_public_key(self.ctx_my_take_key()?),
-            dispute_key: signed_to_committee_public_key(self.ctx_my_dispute_key()?),
+            take_key: signed_to_committee_public_key(my_take_key)?,
+            dispute_key: signed_to_committee_public_key(my_dispute_key)?,
             peer_id: self.ctx_my_comm_info()?.peer_id,
             funding_utxo: utxo,
         };
@@ -1104,7 +1110,7 @@ where
         &mut self,
         stream_id: StreamId,
     ) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
-        // TODO(iago-3) optimize this search by keeping convenient map of stream_id -> internal_id or alike
+        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: optimize this search by keeping convenient map of stream_id -> internal_id or alike
 
         self.flows.values_mut().find(|f| {
             f.state
@@ -1118,7 +1124,7 @@ where
         &mut self,
         committee_id: CommitteeId,
     ) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
-        // TODO(iago-3) optimize this search by keeping convenient map of committee_id -> internal_id or alike
+        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: optimize this search by keeping convenient map of committee_id -> internal_id or alike
 
         let im_member = self.global_context.my_committees().im_member(&committee_id);
         if !im_member {
@@ -1147,7 +1153,7 @@ where
     }
 
     fn get_flow_for_request_id(&mut self, uuid: &Uuid) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
-        // TODO(iago-3) super naive approach implemented here for now: find within the different flows and their step datas one with the req_id
+        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: super naive approach implemented here for now, find within the different flows and their step datas one with the received req_id
         // an alternative could be storing all the requests (ids) for which the flow is waiting response
         // in a same array - but I find this super risky, as it will only work if a) we NEVER send 2
         // "concurrent request-id-depending" messages to BitVMX and b) BitVMX guarantees order in request/response;
@@ -1329,7 +1335,7 @@ where
     }
 
     fn process_new_block(&mut self, _block: &RskBlockAndUncles) -> Result<()> {
-        // TODO(iago-2) wait for confirmations for every event, now we assume confirmed immediately
+        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-238: wait for confirmations for every event, now we assume confirmed immediately
 
         // blocks allow periodic cleanup of completed flows, we can improve it with a cleanup task if needed
         self.close_completed_flows();
@@ -1390,20 +1396,28 @@ where
     }
 }
 
-fn signed_to_committee_public_key(signed_pk: SignedPublicKey) -> CommitteeECDSA {
-    // TODO(iago-2) this can panic, handle gracefully
+fn signed_to_committee_public_key(spk: &SignedPublicKey) -> Result<CommitteeECDSA> {
+    let b = spk.public_key.inner.serialize_uncompressed(); // expect 65 bytes: 0x04 || X(32) || Y(32)
+    ensure!(b.len() == 65 && b[0] == 0x04, "invalid uncompressed pubkey");
+    let (x, y) = b[1..].split_at(32);
 
-    let uncompressed = signed_pk.public_key.inner.serialize_uncompressed(); // [0x04 | X(32) | Y(32)]
-    let x = &uncompressed[1..33];
-    let y = &uncompressed[33..65];
+    let r = &spk.signature_r;
+    let s = &spk.signature_s;
+    ensure!(r.len() == 32 && s.len() == 32, "invalid signature length");
 
-    CommitteeECDSA {
+    let v = match spk.recovery_id {
+        0 | 1 => 27 + spk.recovery_id,
+        27 | 28 => spk.recovery_id,
+        _ => bail!("invalid recovery_id (expected 0/1 or 27/28)"),
+    };
+
+    Ok(CommitteeECDSA {
         x: hex::encode(x),
         y: hex::encode(y),
-        r: hex::encode(&signed_pk.signature_r),
-        s: hex::encode(&signed_pk.signature_s),
-        v: signed_pk.recovery_id + 27, // Convert to Ethereum's v format (27 or 28)
-    }
+        r: hex::encode(r),
+        s: hex::encode(s),
+        v,
+    })
 }
 
 // Helper function to create keccak256 hash of uncompressed public key
