@@ -56,8 +56,7 @@ const REGTEST: Network = Network::Regtest;
 
 #[cfg_attr(test, automock)]
 trait SetupCommitteeFlowApi {
-    // TODO(iago) it should not be needed to receive ref_id as we find the flow by req_id already
-    fn complete_step(&mut self, ref_id: Option<Uuid>, data: StepData) -> Result<()>;
+    fn complete_step(&mut self, data: StepData) -> Result<()>;
 
     fn request_bitvmx_comm_info(&self);
 
@@ -102,6 +101,7 @@ struct FlowContext {
     my_comm_key: PubKeyReq,
     agg_take_key: AggKeyReq,
     agg_dispute_key: AggKeyReq,
+    // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-254: fill when processing the setup confirmation and implement the close_core_setup_req method like the other close_xxx ones
     setup_core: SetupCoreReq,
     // async
     committee_pending: Option<NewCommitteePendingEvent>,
@@ -348,16 +348,9 @@ where
         Ok(())
     }
 
-    fn close_pub_key_req(
-        pub_key_req: &mut PubKeyReq,
-        key_req_id: Option<Uuid>,
-        data: StepData,
-    ) -> Result<Uuid> {
-        let key_req_id =
-            key_req_id.context("Missing request id on close_pub_key_req".to_string())?;
-
+    fn close_pub_key_req(pub_key_req: &mut PubKeyReq, data: StepData) -> Result<Uuid> {
         match pub_key_req {
-            Some(r) if r.0 == key_req_id => {
+            Some(r) => {
                 let pub_key = data.into_pubkey()?;
                 r.1 = Some(pub_key);
 
@@ -371,26 +364,17 @@ where
 
                 Ok(sign_req_id)
             }
-            Some(r) => {
-                bail!("Request id {key_req_id} does not match expected {r:?}")
-            }
             None => {
                 bail!("Public Key request missing in context")
             }
         }
     }
 
-    fn close_pub_key_signing_req(
-        pub_key_req: &mut PubKeyReq,
-        req_id: Option<Uuid>,
-        data: StepData,
-    ) -> Result<()> {
-        let req_id = req_id.context("Missing request id on close_pub_key_signing_req")?;
-
+    fn close_pub_key_signing_req(pub_key_req: &mut PubKeyReq, data: StepData) -> Result<()> {
         let (signature_r, signature_s, recovery_id) = data.into_signed_payload()?;
 
         match pub_key_req {
-            Some(r) if r.2 == Some(req_id) => {
+            Some(r) => {
                 let public_key = r.1.context("Missing Public Key to sign")?;
 
                 let signed_pubkey =
@@ -400,29 +384,17 @@ where
 
                 Ok(())
             }
-            Some(r) => {
-                bail!("Request id {req_id} does not match expected {r:?}")
-            }
             None => {
                 bail!("Public Key request missing in context")
             }
         }
     }
 
-    fn close_agg_key_req(
-        pub_key_req: &mut AggKeyReq,
-        req_id: Option<Uuid>,
-        data: StepData,
-    ) -> Result<()> {
-        let req_id = req_id.context("Missing request id on close_agg_key_req".to_string())?;
-
+    fn close_agg_key_req(pub_key_req: &mut AggKeyReq, data: StepData) -> Result<()> {
         match pub_key_req {
-            Some(r) if r.0 == req_id => {
+            Some(r) => {
                 r.1 = Some(data.into_pubkey()?);
                 Ok(())
-            }
-            Some(r) => {
-                bail!("Request id {req_id} does not match expected {r:?}")
             }
             None => {
                 bail!("Aggregated Key request missing in context")
@@ -842,8 +814,7 @@ where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
 {
-    // TODO(iago) this should not be needed, we are searching the flow by request id so we can directly close it without passing the id to complete_step
-    fn complete_step(&mut self, ref_id: Option<Uuid>, data: StepData) -> Result<()> {
+    fn complete_step(&mut self, data: StepData) -> Result<()> {
         let current_step = self.state.step;
 
         info!(
@@ -864,30 +835,28 @@ where
                 self.request_bitvmx_take_pub_key()?;
             }
             Steps::GetMyTakeKey => {
-                let sign_req_id =
-                    Self::close_pub_key_req(&mut self.state.ctx.my_take_key, ref_id, data)?;
+                let sign_req_id = Self::close_pub_key_req(&mut self.state.ctx.my_take_key, data)?;
                 self.request_bitvmx_pub_key_signing(sign_req_id, &self.state.ctx.my_take_key)?;
             }
             Steps::SignMyTakeKey => {
-                Self::close_pub_key_signing_req(&mut self.state.ctx.my_take_key, ref_id, data)?;
+                Self::close_pub_key_signing_req(&mut self.state.ctx.my_take_key, data)?;
                 self.request_bitvmx_dispute_pub_key()?;
             }
             Steps::GetMyDisputeKey => {
                 let sign_req_id =
-                    Self::close_pub_key_req(&mut self.state.ctx.my_dispute_key, ref_id, data)?;
+                    Self::close_pub_key_req(&mut self.state.ctx.my_dispute_key, data)?;
                 self.request_bitvmx_pub_key_signing(sign_req_id, &self.state.ctx.my_dispute_key)?;
             }
             Steps::SignMyDisputeKey => {
-                Self::close_pub_key_signing_req(&mut self.state.ctx.my_dispute_key, ref_id, data)?;
+                Self::close_pub_key_signing_req(&mut self.state.ctx.my_dispute_key, data)?;
                 self.request_bitvmx_comm_pub_key()?;
             }
             Steps::GetMyCommKey => {
-                let sign_req_id =
-                    Self::close_pub_key_req(&mut self.state.ctx.my_comm_key, ref_id, data)?;
+                let sign_req_id = Self::close_pub_key_req(&mut self.state.ctx.my_comm_key, data)?;
                 self.request_bitvmx_pub_key_signing(sign_req_id, &self.state.ctx.my_comm_key)?;
             }
             Steps::SignMyCommKey => {
-                Self::close_pub_key_signing_req(&mut self.state.ctx.my_comm_key, ref_id, data)?;
+                Self::close_pub_key_signing_req(&mut self.state.ctx.my_comm_key, data)?;
                 self.apply_to_stream()?;
             }
             Steps::ApplyToStream => {
@@ -924,12 +893,12 @@ where
                 self.setup_bitvmx_aggregated_take_pubkey()?;
             }
             Steps::SetupTakeAggregatedKey => {
-                Self::close_agg_key_req(&mut self.state.ctx.agg_take_key, ref_id, data)?;
+                Self::close_agg_key_req(&mut self.state.ctx.agg_take_key, data)?;
 
                 self.setup_bitvmx_aggregated_dispute_pubkey()?;
             }
             Steps::SetupDisputeAggregatedKey => {
-                Self::close_agg_key_req(&mut self.state.ctx.agg_dispute_key, ref_id, data)?;
+                Self::close_agg_key_req(&mut self.state.ctx.agg_dispute_key, data)?;
 
                 self.deposit_aggregated_key()?;
             }
@@ -938,14 +907,11 @@ where
 
                 self.setup_dispute_core_protocol()?;
 
-                // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-254
-                //  temporary move to SetupDisputeCoreProtocol to then move to Complete
+                // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-254: temporary move to SetupDisputeCoreProtocol to then move to Complete
                 self.state.step.next()?;
             }
             Steps::SetupDisputeCoreProtocol => {
-                // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-254
-                //  temporary move to SetupDisputeCoreProtocol to then move to Complete
-                // for now just go to next step
+                // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-254: temporary move to Complete
                 self.state.step.next()?;
             }
             Steps::Complete => {
@@ -1252,7 +1218,7 @@ where
                 // TODO(iago-2) this won't be used by BitVMX, its' just for our logging, make that clear by renaming it or changing its type maybe
                 let flow_id = Uuid::new_v4();
                 let mut flow = self.flow_factory.create_flow(flow_id);
-                flow.complete_step(None, StepData::UserRequest(input.clone()))?;
+                flow.complete_step(StepData::UserRequest(input.clone()))?;
                 self.flows.insert(flow_id, flow);
             }
         }
@@ -1291,7 +1257,7 @@ where
 
         match flow_data {
             Some((flow, step_data)) => {
-                flow.complete_step(None, step_data)?;
+                flow.complete_step(step_data)?;
             }
             None => {
                 info!("Received {event:?} but it's not mine");
@@ -1310,7 +1276,7 @@ where
                 // committee (the one running the client), but BitVMX will always respond with the
                 // same info - so for now we send it to the first flow waiting for it
                 if let Some(first_flow) = self.get_first_flow_waiting_comm_info() {
-                    first_flow.complete_step(None, StepData::CommInfo(comm_info.clone()))?
+                    first_flow.complete_step(StepData::CommInfo(comm_info.clone()))?
                 } else {
                     bail!("No flow found for OutgoingBitVMXApiMessages::CommInfo")
                 }
@@ -1318,7 +1284,7 @@ where
             OutgoingBitVMXApiMessages::PubKey(req_id, public_key) => {
                 // Handle PubKey response for GetKey steps
                 if let Some(flow) = self.get_flow_for_request_id(req_id) {
-                    flow.complete_step(Some(*req_id), StepData::PublicKey(*public_key))?;
+                    flow.complete_step(StepData::PublicKey(*public_key))?;
                 } else {
                     bail!("No flow found for OutgoingBitVMXApiMessages::PubKey and id {req_id}");
                 }
@@ -1331,10 +1297,11 @@ where
             ) => {
                 // Handle SignedMessage response using the standard flow
                 if let Some(flow) = self.get_flow_for_request_id(sign_req_id) {
-                    flow.complete_step(
-                        Some(*sign_req_id),
-                        StepData::SignedMessage(*signature_r, *signature_s, *recovery_id),
-                    )?;
+                    flow.complete_step(StepData::SignedMessage(
+                        *signature_r,
+                        *signature_s,
+                        *recovery_id,
+                    ))?;
                 } else {
                     bail!(
                         "No flow found for OutgoingBitVMXApiMessages::SignedMessage and id {sign_req_id}"
@@ -1344,7 +1311,7 @@ where
             OutgoingBitVMXApiMessages::AggregatedPubkey(req_id, pubkey) => {
                 // Handle successful aggregated pubkey response
                 if let Some(flow) = self.get_flow_for_request_id(req_id) {
-                    flow.complete_step(Some(*req_id), StepData::PublicKey(*pubkey))?;
+                    flow.complete_step(StepData::PublicKey(*pubkey))?;
                 } else {
                     bail!(
                         "No flow found for OutgoingBitVMXApiMessages::AggregatedPubkey and id {req_id}"
