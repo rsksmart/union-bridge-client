@@ -4,7 +4,7 @@ use common::msg_broker::bitvmx_types::{
     Committee, DisputeCoreData, IncomingBitVMXApiMessages, MemberData, P2PAddress, ParticipantRole,
     Utxo, VariableTypes,
 };
-use log::{debug, info};
+use log::{debug, error, info};
 use std::rc::Rc;
 use uuid::Uuid;
 
@@ -35,6 +35,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
         p2p_addresses: Vec<P2PAddress>,
         take_aggr_key: PublicKey,
         dispute_aggr_key: PublicKey,
+        my_speedup_funding_utxo: Utxo,
     ) -> Result<()> {
         let committee = Committee {
             members: members
@@ -57,17 +58,18 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
 
         debug!("Sending BitVMX Committee {committee:?}");
 
-        let my_funding_utxo = Self::get_my_speedup_funding_utxo(dispute_aggr_key)?;
         self.broker_client.send(
             BROKER_SERVER_ID,
-            IncomingBitVMXApiMessages::SetFundingUtxo(my_funding_utxo),
+            IncomingBitVMXApiMessages::SetFundingUtxo(my_speedup_funding_utxo),
         )?;
 
-        self.send_set_var(
+        debug!("Sending BitVMX Committee {committee:?}");
+
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetVar(
             committee_id,
             Committee::name(),
             VariableTypes::String(serde_json::to_string(&committee)?),
-        )?;
+        ));
 
         for (operator_index, member) in members.iter().enumerate() {
             if member.role == ParticipantRole::Prover {
@@ -83,40 +85,28 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
                     operator_take_pubkey: pubkey,
                 };
 
-                debug!("Sending BitVMX DisputeCoreData {dispute_core_data:?}");
-
-                self.send_set_var(
+                self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetVar(
                     protocol_id,
                     DisputeCoreData::name(),
                     VariableTypes::String(serde_json::to_string(dispute_core_data)?),
-                )?;
+                ));
 
-                self.send_set_var(
+                self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetVar(
                     protocol_id,
                     MONITORED_OPERATOR_KEY.to_string(),
                     VariableTypes::PubKey(pubkey),
-                )?;
+                ));
 
-                debug!("Sending BitVMX Setup {p2p_addresses:?}");
-
-                self.send_setup(
+                self.send_bitvmx_msg(IncomingBitVMXApiMessages::Setup(
                     protocol_id,
                     PROGRAM_TYPE_DISPUTE_CORE.to_string(),
                     p2p_addresses.clone(),
-                )?;
+                    NO_LEADER_IDX,
+                ));
             }
         }
 
         Ok(())
-    }
-
-    fn get_my_speedup_funding_utxo(dispute_aggr_key: PublicKey) -> Result<Utxo> {
-        // TODO(iago) use contract ones when fixed
-        let amount = 10_000_000;
-        let vout = 0;
-        let txid = "4d5f11a0b73b61cbb2f5e21a09a0f1f0e9dbbdbff85f2a9dbe46e2c3b2e6b5d0".parse()?;
-
-        Ok(Utxo::new(txid, vout, amount, &dispute_aggr_key))
     }
 
     fn operator_count(members: &[MemberOfCommittee]) -> Result<u32> {
@@ -126,32 +116,14 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
             .count() as u32)
     }
 
-    fn send_set_var(
-        &self,
-        protocol_id: Uuid,
-        protocol_name: String,
-        var: VariableTypes,
-    ) -> Result<()> {
-        self.broker_client.send(
-            BROKER_SERVER_ID,
-            IncomingBitVMXApiMessages::SetVar(protocol_id, protocol_name, var),
-        )?;
+    fn send_bitvmx_msg(&self, msg: IncomingBitVMXApiMessages) {
+        info!("Sending {msg:?} to BitVMX");
 
-        Ok(())
-    }
-
-    fn send_setup(
-        &self,
-        protocol_id: Uuid,
-        protocol_name: String,
-        addresses: Vec<P2PAddress>,
-    ) -> Result<()> {
-        self.broker_client.send(
-            BROKER_SERVER_ID,
-            IncomingBitVMXApiMessages::Setup(protocol_id, protocol_name, addresses, NO_LEADER_IDX),
-        )?;
-
-        Ok(())
+        let result = self.broker_client.send(BROKER_SERVER_ID, msg);
+        if result.is_err() {
+            // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132
+            error!("Failed to send msg to BitVMX: {:?}", result);
+        }
     }
 }
 

@@ -22,7 +22,7 @@ alloy-transport = "1.0.12"
 anyhow = "1.0.94"
 axum = "0.8.1"
 bincode = { version = "2.0.1", features = ["serde"] }
-bitcoin = { version = "0.32.4", features = ["std", "rand-std", "serde"] }
+bitcoin = { version = "0.32.6", features = ["std", "rand-std", "serde"] }
 clap = "4.5.30"
 config = "0.15.8"
 hex = "0.4.3"

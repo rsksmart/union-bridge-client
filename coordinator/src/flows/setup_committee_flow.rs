@@ -8,7 +8,15 @@ use alloy_primitives::{Address, FixedBytes};
 use anyhow::{Context, Result, bail};
 use bitcoin::hashes::Hash;
 use bitcoin::key::Parity::Even;
-use bitcoin::{Amount, PublicKey, ScriptBuf, Txid, XOnlyPublicKey};
+use bitcoin::{Amount, CompressedPublicKey, Network, PublicKey, ScriptBuf, Txid, XOnlyPublicKey};
+use bitvmx_bitcoin_rpc;
+use bitvmx_bitcoin_rpc::bitcoin_client::{BitcoinClient, BitcoinClientApi};
+use bitvmx_bitcoin_rpc::rpc_config::RpcConfig;
+use common::msg_broker::bitvmx_types::{
+    IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, OutputType, P2PAddress, PartialUtxo,
+    ParticipantRole, PeerId, SignedPublicKey, Utxo,
+};
+use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 use common::runtime_sync::RuntimeSync;
 use log::{debug, error, info};
 use sha2::{Digest, Sha256};
@@ -18,12 +26,6 @@ use std::rc::Rc;
 use tiny_keccak::{Hasher, Keccak};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;
-
-use common::msg_broker::bitvmx_types::{
-    IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, OutputType, P2PAddress, PartialUtxo,
-    ParticipantRole, PeerId, SignedPublicKey,
-};
-use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 
 use crate::user_requests::ApplyToStream;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
@@ -48,6 +50,9 @@ pub(crate) const NO_LEADER_IDX: u16 = 0;
 const TAKE_KEY_INDEX: usize = 0;
 const DISPUTE_KEY_INDEX: usize = 1;
 const COMM_KEY_INDEX: usize = 2;
+
+// TODO temporary for Regtest stage
+const REGTEST: Network = Network::Regtest;
 
 #[cfg_attr(test, automock)]
 trait SetupCommitteeFlowApi {
@@ -274,6 +279,7 @@ pub(crate) struct SetupCommitteeFlow<CG: RskContractsGatewayApi, BC: BitVmxBroke
     bitvmx_broker: Rc<BC>,
     _blockchain_view: Rc<RefCell<BlockchainView>>,
     state: State,
+    bitcoin_client: BitcoinClient,
 }
 
 impl<CG, BC> SetupCommitteeFlow<CG, BC>
@@ -292,7 +298,24 @@ where
                 step: Steps::UserRequest,
                 ctx: FlowContext::default(),
             },
+            bitcoin_client: Self::build_bitcoin_client_regtest(),
         }
+    }
+
+    // this is temporary for Regtest stage, required for utxo generation
+    fn build_bitcoin_client_regtest() -> BitcoinClient {
+        let config_bitcoin_client = RpcConfig::new(
+            REGTEST,
+            "http://127.0.0.1:18443".to_string(),
+            "foo".to_string(),
+            "rpcpassword".to_string(),
+            "test_wallet".to_string(),
+        );
+
+        let bitcoin_client = BitcoinClient::new_from_config(&config_bitcoin_client)
+            .expect("Cannot create Setup Committee Flow without a Bitcoin Client");
+
+        bitcoin_client
     }
 
     fn my_address(&self) -> types::Address {
@@ -324,12 +347,17 @@ where
         data: StepData,
     ) -> Result<Uuid> {
         let key_req_id =
-            key_req_id.context("Missing request id on close_agg_key_req".to_string())?;
+            key_req_id.context("Missing request id on close_pub_key_req".to_string())?;
 
         match pub_key_req {
             Some(r) if r.0 == key_req_id => {
                 let pub_key = data.into_pubkey()?;
                 r.1 = Some(pub_key);
+
+                info!(
+                    "Got Public Key: {}",
+                    hex::encode(pub_key.inner.serialize_uncompressed())
+                );
 
                 let sign_req_id = Uuid::new_v4();
                 r.2 = Some(sign_req_id);
@@ -552,14 +580,16 @@ where
         Ok(member_key)
     }
 
-    fn build_member_partial_utxo(&self, utxo: &UTXO) -> Result<PartialUtxo> {
+    fn build_member_funding_utxo(
+        &self,
+        member_dispute_key: &PublicKey,
+        utxo: &UTXO,
+    ) -> Result<PartialUtxo> {
         let tx_id = Txid::from_slice(utxo.txid.as_slice())
             .context("Could not get Bitcoin TxId from contracts utxo")?;
 
-        let dispute_pub_key = self.ctx_my_dispute_key()?.public_key;
-
         let script_pubkey = ScriptBuf::new_p2wpkh(
-            &dispute_pub_key
+            &member_dispute_key
                 .wpubkey_hash()
                 .context("Failed to get wpubkey_hash from dispute public key")?,
         );
@@ -567,7 +597,7 @@ where
         let output_type = OutputType::SegwitPublicKey {
             value: Amount::from_sat(utxo.amount),
             script_pubkey,
-            public_key: dispute_pub_key,
+            public_key: *member_dispute_key,
         };
 
         Ok((
@@ -605,6 +635,26 @@ where
             self.contracts
                 .get_member_public_keys(GetMemberPublicKeysInput { member_address }),
         )
+    }
+
+    // this is temporary for Regtest stage, required for utxo generation
+    fn generate_my_utxo_regtest(&self, utxo_val: u64) -> Result<(Txid, u32)> {
+        let pub_key = self.ctx_my_dispute_key()?.public_key;
+        let compressed =
+            CompressedPublicKey::try_from(pub_key).context("Failed to compress public key")?;
+        let funding_wallet = bitcoin::Address::p2wpkh(&compressed, REGTEST);
+
+        let fund_res = &self
+            .bitcoin_client
+            .fund_address(&funding_wallet, Amount::from_sat(utxo_val))
+            .context("Failed to fund address on fake utxo generation")?;
+
+        debug!("Generated regtest UTXO: {:?}", fund_res);
+
+        let utxo_tx_id = fund_res.0.compute_txid();
+        let output = fund_res.1;
+
+        Ok((utxo_tx_id, output))
     }
 
     fn build_my_communication_data(&self) -> Result<Vec<P2PAddress>> {
@@ -732,6 +782,51 @@ where
         }
 
         Ok(peer_ids)
+    }
+
+    fn build_members_of_committee(
+        &mut self,
+        committee: Committee,
+    ) -> Result<Vec<MemberOfCommittee>> {
+        let mut member_of_committee = vec![];
+
+        // TODO(iago-3) rethink how we store the committee member data in the context, we can unify it in a MemberOfCommittee struct and reduce the number of ctx_xxx methods
+        for (idx, cm) in committee.members.iter().enumerate() {
+            debug!("Processing committee member {idx:?} {cm:?}");
+
+            // TODO(iago-3) move it to a From trait impl
+            let role = if cm.role == 1 {
+                ParticipantRole::Prover
+            } else if cm.role == 2 {
+                ParticipantRole::Verifier
+            } else {
+                bail!("Invalid member role: {}", cm.role);
+            };
+
+            // TODO mini optimization: do not request my data, it is in context already
+
+            let take_key = self.get_member_keys_by_type(cm.memberAddress.into(), TAKE_KEY_INDEX)?;
+            let dispute_key =
+                self.get_member_keys_by_type(cm.memberAddress.into(), DISPUTE_KEY_INDEX)?;
+
+            let contracts_utxo = committee
+                .fundingUTXOs
+                .get(idx)
+                .context("Missing utxo for committee member")?;
+
+            let funding_utxo = self.build_member_funding_utxo(&dispute_key, contracts_utxo)?;
+
+            let moc = MemberOfCommittee {
+                address: cm.memberAddress.into(),
+                role,
+                take_key,
+                dispute_key,
+                funding_utxo,
+            };
+
+            member_of_committee.push(moc);
+        }
+        Ok(member_of_committee)
     }
 }
 
@@ -865,23 +960,31 @@ where
     }
 
     fn apply_to_stream(&self) -> Result<()> {
+        let user_input = self.ctx_user_input()?;
+
+        let utxo_val = user_input.utxo.value;
+        let (tx_id, output) = self
+            .generate_my_utxo_regtest(utxo_val)
+            .context("Generating funding UTXO")?;
+
+        let utxo = UTXO {
+            txid: FixedBytes::from(tx_id.to_byte_array()),
+            outputIndex: output,
+            amount: utxo_val,
+        };
+
         let stream_id = self.state.ctx.get_stream_id()?;
 
-        let role = self.ctx_user_input()?.role.clone();
-        let funding_utxo = self.ctx_user_input()?.utxo.try_into()?;
-
-        debug!(
-            "Applying to stream {stream_id:?} with role {role:?} and funding utxo {funding_utxo:?}"
-        );
-
         let input = ApplyToStreamInput {
-            stream_id,
-            role: u8::from(role),
+            stream_id: stream_id.clone(),
+            role: u8::from(user_input.role),
             take_key: signed_to_committee_public_key(self.ctx_my_take_key()?),
             dispute_key: signed_to_committee_public_key(self.ctx_my_dispute_key()?),
             peer_id: self.ctx_my_comm_info()?.peer_id,
-            funding_utxo,
+            funding_utxo: utxo,
         };
+
+        debug!("Applying to stream with {input:?}");
 
         let res = self.rt_sync.run(self.contracts.apply_to_stream(input));
 
@@ -936,53 +1039,31 @@ where
         info!("Setting up dispute core protocol");
 
         let committee = self.state.ctx.get_committee_ready()?;
-        let mut member_of_committee = vec![];
+        let members = self.build_members_of_committee(committee)?;
+
+        let dispute_core = DisputeCoreSetup::new(self.bitvmx_broker.clone());
+
+        let utxo_val = 10000; // TODO(iago) get from user input
+        let (tx_id, output) = self
+            .generate_my_utxo_regtest(utxo_val)
+            .context("Generating speedup UTXO")?;
+
+        let my_speedup_utxo = Utxo {
+            txid: tx_id,
+            vout: output,
+            amount: utxo_val,
+            pub_key: self.ctx_my_dispute_key()?.public_key,
+        };
 
         let p2p_addrs = self.ctx_my_communication_data()?;
 
-        // TODO(iago-3) rethink how we store the committee member data in the context, we can unify it in a MemberOfCommittee struct and reduce the number of ctx_xxx methods
-        for (idx, cm) in committee.members.iter().enumerate() {
-            debug!("Processing committee member {idx:?} {cm:?}");
-
-            // TODO(iago-3) move it to a From trait impl
-            let role = if cm.role == 1 {
-                ParticipantRole::Prover
-            } else if cm.role == 2 {
-                ParticipantRole::Verifier
-            } else {
-                bail!("Invalid member role: {}", cm.role);
-            };
-
-            // TODO mini optimization: do not request my data, it is in context already
-
-            let take_key = self.get_member_keys_by_type(cm.memberAddress.into(), TAKE_KEY_INDEX)?;
-            let dispute_key =
-                self.get_member_keys_by_type(cm.memberAddress.into(), DISPUTE_KEY_INDEX)?;
-
-            let contracts_utxo = committee
-                .fundingUTXOs
-                .get(idx)
-                .context("Missing utxo for committee member")?;
-            let funding_utxo = self.build_member_partial_utxo(contracts_utxo)?;
-
-            let moc = MemberOfCommittee {
-                address: cm.memberAddress.into(),
-                role,
-                take_key,
-                dispute_key,
-                funding_utxo,
-            };
-
-            member_of_committee.push(moc);
-        }
-
-        let dispute_core = DisputeCoreSetup::new(self.bitvmx_broker.clone());
         dispute_core.setup(
             self.state.ctx.get_committee_id()?,
-            member_of_committee,
+            members,
             p2p_addrs,
             self.ctx_aggregated_take_key()?,
             self.ctx_aggregated_dispute_key()?,
+            my_speedup_utxo,
         )
     }
 }
