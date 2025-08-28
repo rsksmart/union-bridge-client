@@ -21,7 +21,7 @@ impl<C: CommitteeRegistryContractApi> DepositAggregatedKeysInvoke<C> {
         &self,
         input: DepositAggregatedKeyInput,
     ) -> Result<DepositAggregatedKeyOutput, DomainErrors> {
-        info!("Init Deposit Aggregated Key for: {:?}", input.committee_id);
+        info!("Init Deposit Aggregated Key for: {}", input.committee_id);
 
         let receipt = self
             .contract

@@ -24,6 +24,7 @@ use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 
 #[cfg(feature = "zkp")]
 use crate::flows::advance_funds::advance_funds_processor::AdvanceFundsProcessor;
+use crate::flows::common::GlobalContext;
 
 const CHECK_PERIOD: Duration = Duration::from_secs(1);
 const BITVMX_NOT_RESPONDING_THRESHOLD: Duration = Duration::from_secs(30);
@@ -48,11 +49,16 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
         let contracts_arc = Rc::new(contracts_gateway);
         let btc_sig_subflow_factory =
             BtcSignatureSubFlowFactory::new(contracts_arc.clone(), rt_sync.clone());
+
+        let global_context = GlobalContext::new();
+
         let setup_committee_flow_factory = SetupCommitteeFlowFactory::new(
             contracts_arc.clone(),
             rt_sync.clone(),
             bitvmx_broker.clone(),
+            global_context.clone(),
         );
+
         Self {
             monitor,
             bitvmx_broker: bitvmx_broker.clone(),
@@ -74,7 +80,10 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
                     contracts_arc.clone(),
                     bitvmx_broker.clone(),
                 )),
-                Box::new(SetupCommitteeProcessor::new(setup_committee_flow_factory)),
+                Box::new(SetupCommitteeProcessor::new(
+                    setup_committee_flow_factory,
+                    global_context.clone(),
+                )),
             ],
             check_period: CHECK_PERIOD,
             shutdown_flag,

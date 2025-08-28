@@ -135,7 +135,7 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
         &self,
         _stream: StreamDenomination,
     ) -> alloy_contract::Result<U256> {
-        // TODO(iago-2) fix this method to use the actual contract call
+        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-255: fix this method to use the actual contract call
 
         // self.contract_instance.getMissingCommunicationDataCount
         //     .getMinimumDeposit(u8::from(stream))

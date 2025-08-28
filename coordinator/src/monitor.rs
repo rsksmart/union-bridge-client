@@ -206,7 +206,7 @@ where
 
         match self.log_broker.try_recv()? {
             Some(FromServer::Log(log)) => {
-                info!("Received new Log {:?}", log);
+                trace!("Received new Log {:?}", log);
                 let event: RskPegManagerEvents = self.event_decoder.decode(log);
                 Ok(Some(event))
             }
@@ -228,7 +228,7 @@ where
         // TODO(Jira) do not simply fail on broker error, do some retries - https://rsklabs.atlassian.net/browse/UB-132
         match self.block_broker.try_recv()? {
             Some(FromServer::Block(bau)) => {
-                debug!("Received new Block {:?}", bau);
+                trace!("Received new Block {:?}", bau);
                 Ok(Some(bau))
             }
             Some(other) => bail!("Unexpected response type from Block broker: {:?}", other),

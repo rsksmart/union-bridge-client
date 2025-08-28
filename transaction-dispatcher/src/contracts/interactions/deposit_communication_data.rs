@@ -22,7 +22,7 @@ impl<C: CommitteeRegistryContractApi> DepositCommunicationDataInvoke<C> {
         input: DepositCommunicationDataInput,
     ) -> Result<DepositCommunicationDataOutput, DomainErrors> {
         info!(
-            "Init DepositCommunicationData for stream: {:?}, data count: {}",
+            "Init DepositCommunicationData for stream: {}, data count: {}",
             input.committee_id,
             input.communication_data.len()
         );

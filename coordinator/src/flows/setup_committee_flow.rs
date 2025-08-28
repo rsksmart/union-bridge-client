@@ -5,7 +5,7 @@ use crate::types::{
     NewCommitteeReadyEvent, RskPegManagerEvents, UserRequests,
 };
 use alloy_primitives::{Address, FixedBytes};
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use bitcoin::hashes::Hash;
 use bitcoin::key::Parity::Even;
 use bitcoin::{Amount, CompressedPublicKey, Network, PublicKey, ScriptBuf, Txid, XOnlyPublicKey};
@@ -32,7 +32,7 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     Committee, CommitteeMember, CommunicationData, UTXO,
 };
 
-use crate::flows::common::build_communication_data;
+use crate::flows::common::{GlobalContext, build_communication_data};
 use crate::flows::dispute_core_setup::DisputeCoreSetup;
 use common::types;
 use common::types::{CommitteeId, RskBlockAndUncles, StreamId};
@@ -56,7 +56,7 @@ const REGTEST: Network = Network::Regtest;
 
 #[cfg_attr(test, automock)]
 trait SetupCommitteeFlowApi {
-    fn complete_step_and_next(&mut self, req_id: Option<Uuid>, data: StepData) -> Result<()>;
+    fn complete_step(&mut self, data: StepData) -> Result<()>;
 
     fn request_bitvmx_comm_info(&self);
 
@@ -78,10 +78,10 @@ trait SetupCommitteeFlowApi {
 #[cfg_attr(test, automock)]
 pub(crate) trait SetupCommitteeFlowFactoryApi<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi>
 {
-    fn create_flow(&self, flow_id: Uuid) -> SetupCommitteeFlow<CG, BC>;
+    fn create_flow(&self, internal_id: Uuid) -> SetupCommitteeFlow<CG, BC>;
 }
 
-// TODO(iago-2) improve with structs instead of tuples, using tuples for now for validation
+// TODO improve with structs instead of tuples, using tuples for now for validation
 type PubKeyReq = Option<(
     Uuid,
     Option<PublicKey>,
@@ -89,7 +89,7 @@ type PubKeyReq = Option<(
     Option<SignedPublicKey>,
 )>; // request id key, raw pub key, req id signing, signed pub key
 type AggKeyReq = Option<(Uuid, Option<PublicKey>)>; // request id, response data
-type SetupCoreReq = Option<(Uuid, CommitteeId, Option<String>)>; // request id, committee id, response data // TODO(iago-2) TBC what to store here in data
+type SetupCoreReq = Vec<(Uuid, CommitteeId, bool)>; // request id, committee id, response data
 
 #[derive(Default, Debug)]
 struct FlowContext {
@@ -171,14 +171,13 @@ enum Steps {
     SetupDisputeAggregatedKey,
     DepositAggregatedKey,
     SetupDisputeCoreProtocol,
-    //
     Complete,
-    // Optional steps
 }
 
 impl Steps {
-    fn next(&self) -> Result<Steps> {
-        let next = match self {
+    // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: try to unify this with complete_step
+    fn next(&mut self) -> Result<()> {
+        *self = match self {
             Steps::UserRequest => Steps::GetMyCommInfo,
             Steps::GetMyCommInfo => Steps::GetMyTakeKey,
             Steps::GetMyTakeKey => Steps::SignMyTakeKey,
@@ -198,7 +197,7 @@ impl Steps {
             }
         };
 
-        Ok(next)
+        Ok(())
     }
 }
 
@@ -209,6 +208,7 @@ enum StepData {
     CommInfo(P2PAddress),
     PublicKey(PublicKey),
     SignedMessage([u8; 32], [u8; 32], u8), // signature_r, signature_s, recovery_id
+    SetupCompleted(Uuid),
 
     // async or collaborative steps
     PendingCommittee(NewCommitteePendingEvent),
@@ -220,55 +220,62 @@ impl StepData {
     fn into_user_input(self) -> Result<ApplyToStream> {
         match self {
             StepData::UserRequest(input) => Ok(input),
-            _ => bail!("Expected ApplyToStreamInput"),
+            _ => bail!("Expected UserRequest data"),
         }
     }
 
     fn into_p2p_address(self) -> Result<P2PAddress> {
         match self {
             StepData::CommInfo(addr) => Ok(addr),
-            _ => bail!("Expected P2PAddress"),
+            _ => bail!("Expected P2PAddress data"),
         }
     }
 
     fn into_pubkey(self) -> Result<PublicKey> {
         match self {
             StepData::PublicKey(pk) => Ok(pk),
-            _ => bail!("Expected PublicKey"),
+            _ => bail!("Expected PublicKey data"),
         }
     }
 
     fn into_signed_payload(self) -> Result<([u8; 32], [u8; 32], u8)> {
         match self {
             StepData::SignedMessage(r, s, recovery_id) => Ok((r, s, recovery_id)),
-            _ => bail!("Expected SignedMessage"),
+            _ => bail!("Expected SignedMessage data"),
         }
     }
 
     fn into_committee_pending(self) -> Result<NewCommitteePendingEvent> {
         match self {
             StepData::PendingCommittee(ev) => Ok(ev),
-            _ => bail!("Expected NewCommitteePendingEvent"),
+            _ => bail!("Expected PendingCommittee data"),
         }
     }
 
     fn into_all_comm_data_ready(self) -> Result<AllCommunicationDataReadyEvent> {
         match self {
             StepData::ReadyCommunicationData(ev) => Ok(ev),
-            _ => bail!("Expected AllCommunicationDataReadyEvent"),
+            _ => bail!("Expected ReadyCommunicationData data"),
         }
     }
 
     fn into_committee_ready(self) -> Result<NewCommitteeReadyEvent> {
         match self {
             StepData::ReadyCommittee(ev) => Ok(ev),
-            _ => bail!("Expected NewCommitteeReadyEvent"),
+            _ => bail!("Expected ReadyCommittee data"),
+        }
+    }
+
+    fn into_setup_completed(self) -> Result<Uuid> {
+        match self {
+            StepData::SetupCompleted(ev) => Ok(ev),
+            _ => bail!("Expected SetupCompleted data"),
         }
     }
 }
 
 pub(crate) struct State {
-    flow_id: Uuid,
+    internal_id: Uuid,
     step: Steps,
     ctx: FlowContext,
 }
@@ -280,6 +287,7 @@ pub(crate) struct SetupCommitteeFlow<CG: RskContractsGatewayApi, BC: BitVmxBroke
     _blockchain_view: Rc<RefCell<BlockchainView>>,
     state: State,
     bitcoin_client: BitcoinClient,
+    global_context: GlobalContext,
 }
 
 impl<CG, BC> SetupCommitteeFlow<CG, BC>
@@ -287,18 +295,25 @@ where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
 {
-    fn new(contracts: Rc<CG>, rt_sync: RuntimeSync, bitvmx_broker: Rc<BC>, flow_id: Uuid) -> Self {
+    fn new(
+        contracts: Rc<CG>,
+        rt_sync: RuntimeSync,
+        bitvmx_broker: Rc<BC>,
+        global_context: GlobalContext,
+        internal_id: Uuid,
+    ) -> Self {
         Self {
             contracts,
             rt_sync,
             bitvmx_broker,
             _blockchain_view: Rc::new(RefCell::new(BlockchainView::new())),
             state: State {
-                flow_id,
+                internal_id,
                 step: Steps::UserRequest,
                 ctx: FlowContext::default(),
             },
             bitcoin_client: Self::build_bitcoin_client_regtest(),
+            global_context,
         }
     }
 
@@ -341,16 +356,9 @@ where
         Ok(())
     }
 
-    fn close_pub_key_req(
-        pub_key_req: &mut PubKeyReq,
-        key_req_id: Option<Uuid>,
-        data: StepData,
-    ) -> Result<Uuid> {
-        let key_req_id =
-            key_req_id.context("Missing request id on close_pub_key_req".to_string())?;
-
+    fn close_pub_key_req(pub_key_req: &mut PubKeyReq, data: StepData) -> Result<Uuid> {
         match pub_key_req {
-            Some(r) if r.0 == key_req_id => {
+            Some(r) => {
                 let pub_key = data.into_pubkey()?;
                 r.1 = Some(pub_key);
 
@@ -364,26 +372,17 @@ where
 
                 Ok(sign_req_id)
             }
-            Some(r) => {
-                bail!("Request id {key_req_id} does not match expected {r:?}")
-            }
             None => {
                 bail!("Public Key request missing in context")
             }
         }
     }
 
-    fn close_pub_key_signing_req(
-        pub_key_req: &mut PubKeyReq,
-        req_id: Option<Uuid>,
-        data: StepData,
-    ) -> Result<()> {
-        let req_id = req_id.context("Missing request id on close_pub_key_signing_req")?;
-
+    fn close_pub_key_signing_req(pub_key_req: &mut PubKeyReq, data: StepData) -> Result<()> {
         let (signature_r, signature_s, recovery_id) = data.into_signed_payload()?;
 
         match pub_key_req {
-            Some(r) if r.2 == Some(req_id) => {
+            Some(r) => {
                 let public_key = r.1.context("Missing Public Key to sign")?;
 
                 let signed_pubkey =
@@ -393,29 +392,17 @@ where
 
                 Ok(())
             }
-            Some(r) => {
-                bail!("Request id {req_id} does not match expected {r:?}")
-            }
             None => {
                 bail!("Public Key request missing in context")
             }
         }
     }
 
-    fn close_agg_key_req(
-        pub_key_req: &mut AggKeyReq,
-        req_id: Option<Uuid>,
-        data: StepData,
-    ) -> Result<()> {
-        let req_id = req_id.context("Missing request id on close_agg_key_req".to_string())?;
-
+    fn close_agg_key_req(pub_key_req: &mut AggKeyReq, data: StepData) -> Result<()> {
         match pub_key_req {
-            Some(r) if r.0 == req_id => {
+            Some(r) => {
                 r.1 = Some(data.into_pubkey()?);
                 Ok(())
-            }
-            Some(r) => {
-                bail!("Request id {req_id} does not match expected {r:?}")
             }
             None => {
                 bail!("Aggregated Key request missing in context")
@@ -427,6 +414,20 @@ where
         let my_comm_data = self.build_my_communication_data()?;
         self.state.ctx.communication_data_ready = Some(my_comm_data);
         Ok(())
+    }
+
+    fn close_setup_core_req(setup_core_req: &mut SetupCoreReq, data: StepData) -> Result<bool> {
+        let recv_protocol_id = data.into_setup_completed()?;
+
+        for setup_core in setup_core_req.iter_mut() {
+            if setup_core.0 == recv_protocol_id {
+                setup_core.2 = true; // mark as completed
+            }
+        }
+
+        let missing_responses = setup_core_req.iter().any(|r| !r.2); // false == not completed
+
+        Ok(missing_responses)
     }
 
     fn get_take_aggregated_key_id(&self) -> Result<Uuid> {
@@ -457,9 +458,9 @@ where
         Ok(self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetPubKey(req_id, true)))
     }
 
-    // TODO(iago-3) move ctx_xxx methods to FlowContext struct
+    // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: move ctx_xxx methods to FlowContext struct
 
-    // TODO(iago-3) review the ctx_xxx methods we have and try to unify / optimize them
+    // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: review the ctx_xxx methods we have and try to unify / optimize them
 
     fn ctx_my_take_key(&self) -> Result<SignedPublicKey> {
         let signed_pubkey = self
@@ -790,11 +791,11 @@ where
     ) -> Result<Vec<MemberOfCommittee>> {
         let mut member_of_committee = vec![];
 
-        // TODO(iago-3) rethink how we store the committee member data in the context, we can unify it in a MemberOfCommittee struct and reduce the number of ctx_xxx methods
+        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: rethink how we store the committee member data in the context, we can unify it in a MemberOfCommittee struct and reduce the number of ctx_xxx methods
         for (idx, cm) in committee.members.iter().enumerate() {
             debug!("Processing committee member {idx:?} {cm:?}");
 
-            // TODO(iago-3) move it to a From trait impl
+            // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: move it to a From trait impl
             let role = if cm.role == 1 {
                 ParticipantRole::Prover
             } else if cm.role == 2 {
@@ -803,7 +804,7 @@ where
                 bail!("Invalid member role: {}", cm.role);
             };
 
-            // TODO mini optimization: do not request my data, it is in context already
+            // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: mini optimization: do not request my data, it is in context already
 
             let take_key = self.get_member_keys_by_type(cm.memberAddress.into(), TAKE_KEY_INDEX)?;
             let dispute_key =
@@ -822,6 +823,7 @@ where
                 take_key,
                 dispute_key,
                 funding_utxo,
+                committee_idx: idx,
             };
 
             member_of_committee.push(moc);
@@ -835,15 +837,18 @@ where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
 {
-    fn complete_step_and_next(&mut self, req_id: Option<Uuid>, data: StepData) -> Result<()> {
+    fn complete_step(&mut self, data: StepData) -> Result<()> {
         let current_step = self.state.step;
 
         info!(
-            "Completing step {current_step:?} for flow {} with req_id {req_id:?} and data {data:?}",
-            self.state.flow_id
+            "Completing step {current_step:?} for flow {} with data {data:?}",
+            self.state.internal_id
         );
-        debug!("Flow Context: {:?}", self.state.ctx);
 
+        debug!("Flow Context: {:?}", self.state.ctx);
+        debug!("Global Context: {:?}", self.global_context);
+
+        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: try to make each step aligned with what will be executed (entering step instead of finishing step)
         match current_step {
             Steps::UserRequest => {
                 self.state.ctx.user_input = Some(data.into_user_input()?);
@@ -854,36 +859,38 @@ where
                 self.request_bitvmx_take_pub_key()?;
             }
             Steps::GetMyTakeKey => {
-                let sign_req_id =
-                    Self::close_pub_key_req(&mut self.state.ctx.my_take_key, req_id, data)?;
+                let sign_req_id = Self::close_pub_key_req(&mut self.state.ctx.my_take_key, data)?;
                 self.request_bitvmx_pub_key_signing(sign_req_id, &self.state.ctx.my_take_key)?;
             }
             Steps::SignMyTakeKey => {
-                Self::close_pub_key_signing_req(&mut self.state.ctx.my_take_key, req_id, data)?;
+                Self::close_pub_key_signing_req(&mut self.state.ctx.my_take_key, data)?;
                 self.request_bitvmx_dispute_pub_key()?;
             }
             Steps::GetMyDisputeKey => {
                 let sign_req_id =
-                    Self::close_pub_key_req(&mut self.state.ctx.my_dispute_key, req_id, data)?;
+                    Self::close_pub_key_req(&mut self.state.ctx.my_dispute_key, data)?;
                 self.request_bitvmx_pub_key_signing(sign_req_id, &self.state.ctx.my_dispute_key)?;
             }
             Steps::SignMyDisputeKey => {
-                Self::close_pub_key_signing_req(&mut self.state.ctx.my_dispute_key, req_id, data)?;
+                Self::close_pub_key_signing_req(&mut self.state.ctx.my_dispute_key, data)?;
                 self.request_bitvmx_comm_pub_key()?;
             }
             Steps::GetMyCommKey => {
-                let sign_req_id =
-                    Self::close_pub_key_req(&mut self.state.ctx.my_comm_key, req_id, data)?;
+                let sign_req_id = Self::close_pub_key_req(&mut self.state.ctx.my_comm_key, data)?;
                 self.request_bitvmx_pub_key_signing(sign_req_id, &self.state.ctx.my_comm_key)?;
             }
             Steps::SignMyCommKey => {
-                Self::close_pub_key_signing_req(&mut self.state.ctx.my_comm_key, req_id, data)?;
+                Self::close_pub_key_signing_req(&mut self.state.ctx.my_comm_key, data)?;
                 self.apply_to_stream()?;
             }
             Steps::ApplyToStream => {
-                // TODO(iago-2) sometimes it gets stuck in "successful apply to stream", investigate why
-
                 let pending_committee = data.into_committee_pending()?;
+
+                let committee_id: CommitteeId = pending_committee.inner.committeeId.into();
+
+                if self.global_context.my_committees().im_member(&committee_id) {
+                    bail!("Already part of committee {committee_id}");
+                }
 
                 let was_selected = pending_committee.inner._committee.members.iter().any(|m| {
                     let member_addr: types::Address = m.memberAddress.into();
@@ -891,12 +898,15 @@ where
                 });
 
                 if was_selected {
+                    info!("I was selected for committee {committee_id} :)");
                     self.state.ctx.committee_pending = Some(pending_committee);
-
+                    let role = self.ctx_user_input()?.role;
+                    self.global_context.my_committees().add(committee_id, role);
                     self.deposit_communication_data()?;
                 } else {
-                    // TODO(iago-2) close the flow se we were not selected
-                    bail!("Not selected for committee, flow will not continue");
+                    info!("I was not selected for committee {committee_id} :(. Closing flow.");
+                    self.state.step = Steps::Complete;
+                    return Ok(());
                 }
             }
             Steps::DepositCommunicationData => {
@@ -907,12 +917,12 @@ where
                 self.setup_bitvmx_aggregated_take_pubkey()?;
             }
             Steps::SetupTakeAggregatedKey => {
-                Self::close_agg_key_req(&mut self.state.ctx.agg_take_key, req_id, data)?;
+                Self::close_agg_key_req(&mut self.state.ctx.agg_take_key, data)?;
 
                 self.setup_bitvmx_aggregated_dispute_pubkey()?;
             }
             Steps::SetupDisputeAggregatedKey => {
-                Self::close_agg_key_req(&mut self.state.ctx.agg_dispute_key, req_id, data)?;
+                Self::close_agg_key_req(&mut self.state.ctx.agg_dispute_key, data)?;
 
                 self.deposit_aggregated_key()?;
             }
@@ -922,17 +932,25 @@ where
                 self.setup_dispute_core_protocol()?;
             }
             Steps::SetupDisputeCoreProtocol => {
-                // TODO continue flow here
+                let setup_core_state = &mut self.state.ctx.setup_core;
+                let missing_responses = Self::close_setup_core_req(setup_core_state, data)?;
+                if missing_responses {
+                    info!("Waiting for more SetupCoreProtocol responses, stay in the same step...");
+                    return Ok(());
+                }
             }
             Steps::Complete => {
-                info!("Setup committee flow complete")
+                bail!("Complete shouldn't be reached");
             }
         };
 
-        let next_step = self.state.step.next()?;
-        self.state.step = next_step;
+        self.state.step.next()?;
 
-        info!("Next step: {:?}", self.state.step);
+        if self.state.step == Steps::Complete {
+            info!("Setup Committee flow complete");
+        } else {
+            info!("Setup Committee flow next step: {:?}", self.state.step);
+        }
 
         Ok(())
     }
@@ -975,11 +993,14 @@ where
 
         let stream_id = self.state.ctx.get_stream_id()?;
 
+        let my_take_key = self.ctx_my_take_key()?;
+        let my_dispute_key = self.ctx_my_dispute_key()?;
+
         let input = ApplyToStreamInput {
             stream_id: stream_id.clone(),
             role: u8::from(user_input.role),
-            take_key: signed_to_committee_public_key(self.ctx_my_take_key()?),
-            dispute_key: signed_to_committee_public_key(self.ctx_my_dispute_key()?),
+            take_key: signed_to_committee_public_key(my_take_key)?,
+            dispute_key: signed_to_committee_public_key(my_dispute_key)?,
             peer_id: self.ctx_my_comm_info()?.peer_id,
             funding_utxo: utxo,
         };
@@ -1057,14 +1078,25 @@ where
 
         let p2p_addrs = self.ctx_my_communication_data()?;
 
-        dispute_core.setup(
-            self.state.ctx.get_committee_id()?,
+        let committee_id = self.state.ctx.get_committee_id()?;
+
+        let protocol_ids = dispute_core.setup(
+            committee_id.clone(),
             members,
             p2p_addrs,
             self.ctx_aggregated_take_key()?,
             self.ctx_aggregated_dispute_key()?,
             my_speedup_utxo,
-        )
+        )?;
+
+        for pid in protocol_ids {
+            self.state
+                .ctx
+                .setup_core
+                .push((pid, committee_id.clone(), false))
+        }
+
+        Ok(())
     }
 }
 
@@ -1076,6 +1108,7 @@ where
 {
     flow_factory: FactoryBSF,
     flows: HashMap<Uuid, SetupCommitteeFlow<CG, BC>>,
+    global_context: GlobalContext,
 }
 
 impl<CG, BC, FactoryBSF> SetupCommitteeProcessor<CG, BC, FactoryBSF>
@@ -1084,10 +1117,11 @@ where
     BC: BitVmxBrokerClientApi,
     FactoryBSF: SetupCommitteeFlowFactoryApi<CG, BC>,
 {
-    pub(crate) fn new(flow_factory: FactoryBSF) -> Self {
+    pub(crate) fn new(flow_factory: FactoryBSF, global_context: GlobalContext) -> Self {
         Self {
             flow_factory,
             flows: HashMap::new(),
+            global_context,
         }
     }
 }
@@ -1109,9 +1143,7 @@ where
         &mut self,
         stream_id: StreamId,
     ) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
-        // TODO(iago-3) optimize this search by keeping convenient map of stream_id -> flow_id or alike
-
-        // TODO(iago-2) can multiple flows exist for the same stream_id?
+        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: optimize this search by keeping convenient map of stream_id -> internal_id or alike
 
         self.flows.values_mut().find(|f| {
             f.state
@@ -1121,63 +1153,119 @@ where
         })
     }
 
-    fn get_flow_for_committee_id(
+    fn get_flow_for_committee_pending(
         &mut self,
         committee_id: CommitteeId,
     ) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
-        // TODO(iago-3) optimize this search by keeping convenient map of committee_id -> flow_id or alike
+        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: optimize this search by keeping convenient map of committee_id -> internal_id or alike
 
-        // TODO(iago-2) we have an issue here if multiple flows are created for the same committee_id
+        let im_member = self.global_context.my_committees().im_member(&committee_id);
+        if !im_member {
+            debug!("Not my committee {committee_id}");
+            return None;
+        }
 
-        self.flows.values_mut().find(|f| {
-            f.state
-                .ctx
-                .committee_pending
-                .as_ref()
-                .map_or(false, |ev| ev.inner.committeeId == *committee_id)
-        })
+        let pending_committee_flows: Vec<_> = self
+            .flows
+            .values_mut()
+            .filter(|f| {
+                f.state
+                    .ctx
+                    .committee_pending
+                    .as_ref()
+                    .map_or(false, |ev| ev.inner.committeeId == *committee_id)
+            })
+            .collect();
+
+        if pending_committee_flows.len() > 1 {
+            error!("Multiple flows in status committee_pending for committee {committee_id}");
+            None
+        } else {
+            pending_committee_flows.into_iter().next()
+        }
     }
 
-    fn get_flow_for_request_id(&mut self, uuid: &Uuid) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
-        // TODO(iago-3) super naive approach implemented here for now: find within the different flows and their step datas one with the req_id
+    fn get_flow_for_bitvmx_response(
+        &mut self,
+        req_id: &Uuid,
+    ) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
+        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: super naive approach implemented here for now, find within the different flows and their step datas one with the received req_id
         // an alternative could be storing all the requests (ids) for which the flow is waiting response
         // in a same array - but I find this super risky, as it will only work if a) we NEVER send 2
         // "concurrent request-id-depending" messages to BitVMX and b) BitVMX guarantees order in request/response;
         // in addition to that, any change in the code could break it and end up mixing requests/responses/steps
 
         self.flows.values_mut().find(|flow| {
-            if let Some((pk_req_id, _, sign_req_id, _)) = &flow.state.ctx.my_take_key {
-                if pk_req_id == uuid || sign_req_id.map_or(false, |id| id == *uuid) {
-                    return true;
-                }
-            }
-            if let Some((pk_req_id, _, sign_req_id, _)) = &flow.state.ctx.my_dispute_key {
-                if pk_req_id == uuid || sign_req_id.map_or(false, |id| id == *uuid) {
-                    return true;
-                }
-            }
-            if let Some((pk_req_id, _, sign_req_id, _)) = &flow.state.ctx.my_comm_key {
-                if pk_req_id == uuid || sign_req_id.map_or(false, |id| id == *uuid) {
-                    return true;
-                }
-            }
-            if let Some((req_id, _)) = &flow.state.ctx.agg_take_key {
-                if req_id == uuid {
-                    return true;
-                }
-            }
-            if let Some((req_id, _)) = &flow.state.ctx.agg_dispute_key {
-                if req_id == uuid {
-                    return true;
-                }
-            }
-            if let Some((req_id, _, _)) = &flow.state.ctx.setup_core {
-                if req_id == uuid {
-                    return true;
-                }
-            }
-            false
+            Self::pubkey_request_matches(&flow.state.ctx.my_take_key, req_id)
+                || Self::pubkey_request_matches(&flow.state.ctx.my_dispute_key, req_id)
+                || Self::pubkey_request_matches(&flow.state.ctx.my_comm_key, req_id)
+                || Self::aggregated_key_request_matches(&flow.state.ctx.agg_take_key, req_id)
+                || Self::aggregated_key_request_matches(&flow.state.ctx.agg_dispute_key, req_id)
+                || Self::setup_core_request_matches(
+                    &flow.state.ctx.setup_core,
+                    req_id,
+                    &flow.state.ctx.get_committee_id(),
+                )
         })
+    }
+
+    /// checks if a pubkey request (either for key generation or signing) matches the given request id
+    fn pubkey_request_matches(pubkey_req: &PubKeyReq, req_id: &Uuid) -> bool {
+        if let Some((pk_req_id, _, sign_req_id, _)) = pubkey_req {
+            pk_req_id == req_id || sign_req_id.map_or(false, |id| id == *req_id)
+        } else {
+            false
+        }
+    }
+
+    /// checks if an aggregated key request matches the given request id
+    fn aggregated_key_request_matches(agg_key_req: &AggKeyReq, req_id: &Uuid) -> bool {
+        if let Some((key_req_id, _)) = agg_key_req {
+            key_req_id == req_id
+        } else {
+            false
+        }
+    }
+
+    /// checks if any setup core protocol matches the given request id
+    fn setup_core_request_matches(
+        setup_core: &SetupCoreReq,
+        req_id: &Uuid,
+        flow_committee_id: &Result<CommitteeId>,
+    ) -> bool {
+        for (protocol_id, committee_id, _) in setup_core {
+            let flow_committee_id = match flow_committee_id {
+                Ok(id) => id.clone(),
+                Err(_) => {
+                    error!("committee_id must exist in setup_core at this step");
+                    return false;
+                }
+            };
+
+            if protocol_id == req_id {
+                return if flow_committee_id == *committee_id {
+                    true
+                } else {
+                    error!("Mismatching protocol_id & committee_id in setup_core step");
+                    false
+                };
+            }
+        }
+        false
+    }
+
+    fn close_completed_flows(&mut self) {
+        let completed: Vec<_> = self
+            .flows
+            .iter()
+            .filter(|(_, flow)| flow.state.step == Steps::Complete)
+            .map(|(k, _)| *k)
+            .collect();
+
+        for key in completed {
+            info!("Removing Completed flow: {key:?}");
+            self.flows.remove(&key);
+        }
     }
 }
 
@@ -1191,11 +1279,10 @@ where
         info!("Processing user request: {:?}", req);
         match req {
             UserRequests::ApplyToStream(input) => {
-                // TODO(iago-2) this won't be used by BitVMX, its' just for our logging, make that clear by renaming it or changing its type maybe
-                let flow_id = Uuid::new_v4();
-                let mut flow = self.flow_factory.create_flow(flow_id);
-                flow.complete_step_and_next(None, StepData::UserRequest(input.clone()))?;
-                self.flows.insert(flow_id, flow);
+                let internal_id = Uuid::new_v4();
+                let mut flow = self.flow_factory.create_flow(internal_id);
+                flow.complete_step(StepData::UserRequest(input.clone()))?;
+                self.flows.insert(internal_id, flow);
             }
         }
 
@@ -1203,63 +1290,44 @@ where
     }
 
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
-        match event {
+        // assume events are confirmed for now
+        let flow_data = match event {
             RskPegManagerEvents::NewCommitteePending(new_committee_pending) => {
-                info!(
-                    "Processing NewCommitteePending event: {:?}",
-                    new_committee_pending
-                );
-
-                // TODO(iago-2) review this situation: should a second NewCommitteePending restart the flow? (ie. if an unmatching aggregated key is deposited, Committee gets recreated)
-
                 let stream_id = new_committee_pending.inner._committee.streamId;
-                if let Some(first_flow) = self.get_flow_for_stream_id(stream_id.into()) {
-                    first_flow.complete_step_and_next(
-                        None,
-                        StepData::PendingCommittee(new_committee_pending.clone()),
-                    )?
-                } else {
-                    bail!("No flow found for stream {stream_id}")
-                }
+                let found_flow = self.get_flow_for_stream_id(stream_id.into());
+                found_flow.map(|f| (f, StepData::PendingCommittee(new_committee_pending.clone())))
             }
             RskPegManagerEvents::AllCommunicationDataReady(all_comm_data_ready) => {
-                info!(
-                    "Processing AllCommunicationDataReady event: {:?}",
-                    all_comm_data_ready
-                );
-
                 let committee_id = all_comm_data_ready.inner._committeeId.into();
-                if let Some(first_flow) = self.get_flow_for_committee_id(committee_id) {
-                    // assume confirmed for now
-                    first_flow.complete_step_and_next(
-                        None,
+                let found_flow = self.get_flow_for_committee_pending(committee_id);
+                found_flow.map(|f| {
+                    (
+                        f,
                         StepData::ReadyCommunicationData(all_comm_data_ready.clone()),
-                    )?
-                } else {
-                    bail!("No flow found for {all_comm_data_ready:?}")
-                }
+                    )
+                })
             }
             RskPegManagerEvents::NewCommitteeReady(new_committee_ready) => {
-                info!(
-                    "Processing NewCommitteeReady event: {:?}",
-                    new_committee_ready
-                );
-
                 let committee_id = new_committee_ready.inner.committeeId.into();
-                if let Some(first_flow) = self.get_flow_for_committee_id(committee_id) {
-                    // assume confirmed for now
-                    first_flow.complete_step_and_next(
-                        None,
-                        StepData::ReadyCommittee(new_committee_ready.clone()),
-                    )?
-                } else {
-                    bail!("No flow found for {new_committee_ready:?}")
-                }
+                let found_flow = self.get_flow_for_committee_pending(committee_id);
+                found_flow.map(|f| (f, StepData::ReadyCommittee(new_committee_ready.clone())))
             }
             _ => {
                 info!("Ignoring RSK event: {:?}", event);
+                return Ok(());
+            }
+        };
+
+        match flow_data {
+            Some((flow, step_data)) => {
+                flow.complete_step(step_data)?;
+            }
+            None => {
+                info!("Received {event:?} but it's not mine");
             }
         }
+
+        self.close_completed_flows();
 
         Ok(())
     }
@@ -1271,16 +1339,15 @@ where
                 // committee (the one running the client), but BitVMX will always respond with the
                 // same info - so for now we send it to the first flow waiting for it
                 if let Some(first_flow) = self.get_first_flow_waiting_comm_info() {
-                    first_flow
-                        .complete_step_and_next(None, StepData::CommInfo(comm_info.clone()))?
+                    first_flow.complete_step(StepData::CommInfo(comm_info.clone()))?
                 } else {
                     bail!("No flow found for OutgoingBitVMXApiMessages::CommInfo")
                 }
             }
             OutgoingBitVMXApiMessages::PubKey(req_id, public_key) => {
                 // Handle PubKey response for GetKey steps
-                if let Some(flow) = self.get_flow_for_request_id(req_id) {
-                    flow.complete_step_and_next(Some(*req_id), StepData::PublicKey(*public_key))?;
+                if let Some(flow) = self.get_flow_for_bitvmx_response(req_id) {
+                    flow.complete_step(StepData::PublicKey(*public_key))?;
                 } else {
                     bail!("No flow found for OutgoingBitVMXApiMessages::PubKey and id {req_id}");
                 }
@@ -1292,11 +1359,12 @@ where
                 recovery_id,
             ) => {
                 // Handle SignedMessage response using the standard flow
-                if let Some(flow) = self.get_flow_for_request_id(sign_req_id) {
-                    flow.complete_step_and_next(
-                        Some(*sign_req_id),
-                        StepData::SignedMessage(*signature_r, *signature_s, *recovery_id),
-                    )?;
+                if let Some(flow) = self.get_flow_for_bitvmx_response(sign_req_id) {
+                    flow.complete_step(StepData::SignedMessage(
+                        *signature_r,
+                        *signature_s,
+                        *recovery_id,
+                    ))?;
                 } else {
                     bail!(
                         "No flow found for OutgoingBitVMXApiMessages::SignedMessage and id {sign_req_id}"
@@ -1305,22 +1373,42 @@ where
             }
             OutgoingBitVMXApiMessages::AggregatedPubkey(req_id, pubkey) => {
                 // Handle successful aggregated pubkey response
-                if let Some(flow) = self.get_flow_for_request_id(req_id) {
-                    flow.complete_step_and_next(Some(*req_id), StepData::PublicKey(*pubkey))?;
+                if let Some(flow) = self.get_flow_for_bitvmx_response(req_id) {
+                    flow.complete_step(StepData::PublicKey(*pubkey))?;
                 } else {
                     bail!(
                         "No flow found for OutgoingBitVMXApiMessages::AggregatedPubkey and id {req_id}"
                     );
                 }
             }
-            _ => {}
+            OutgoingBitVMXApiMessages::SetupCompleted(req_id) => {
+                if let Some(flow) = self.get_flow_for_bitvmx_response(req_id) {
+                    flow.complete_step(StepData::SetupCompleted(req_id.clone()))?;
+                } else {
+                    bail!(
+                        "No flow found for OutgoingBitVMXApiMessages::SetupCompleted and id {req_id}"
+                    );
+                }
+            }
+            OutgoingBitVMXApiMessages::Pong() => {
+                // just skip, do not log it's ignored
+            }
+            _ => {
+                debug!("Ignoring BitVMX event: {:?}", event);
+            }
         }
+
+        self.close_completed_flows();
 
         Ok(())
     }
 
     fn process_new_block(&mut self, _block: &RskBlockAndUncles) -> Result<()> {
-        // TODO(iago-2) wait for confirmations for every event, now we assume confirmed immediately
+        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-238: wait for confirmations for every event, now we assume confirmed immediately
+
+        // blocks allow periodic cleanup of completed flows, we can improve it with a cleanup task if needed
+        self.close_completed_flows();
+
         Ok(())
     }
 
@@ -1337,6 +1425,7 @@ where
     contracts_gateway: Rc<CG>,
     rt_sync: RuntimeSync,
     bitvmx_broker: Rc<BC>,
+    global_context: GlobalContext,
 }
 
 impl<CG, BC> SetupCommitteeFlowFactory<CG, BC>
@@ -1348,11 +1437,13 @@ where
         contracts_gateway: Rc<CG>,
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
+        global_context: GlobalContext,
     ) -> Self {
         Self {
             contracts_gateway,
             rt_sync,
             bitvmx_broker,
+            global_context,
         }
     }
 }
@@ -1363,30 +1454,39 @@ where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
 {
-    fn create_flow(&self, flow_id: Uuid) -> SetupCommitteeFlow<CG, BC> {
+    fn create_flow(&self, internal_id: Uuid) -> SetupCommitteeFlow<CG, BC> {
         SetupCommitteeFlow::new(
             self.contracts_gateway.clone(),
             self.rt_sync.clone(),
             self.bitvmx_broker.clone(),
-            flow_id,
+            self.global_context.clone(),
+            internal_id,
         )
     }
 }
 
-fn signed_to_committee_public_key(signed_pk: SignedPublicKey) -> CommitteeECDSA {
-    // TODO(iago-2) this can panic, handle gracefully
+fn signed_to_committee_public_key(spk: SignedPublicKey) -> Result<CommitteeECDSA> {
+    let b = spk.public_key.inner.serialize_uncompressed(); // expect 65 bytes: 0x04 || X(32) || Y(32)
+    ensure!(b.len() == 65 && b[0] == 0x04, "invalid uncompressed pubkey");
+    let (x, y) = b[1..].split_at(32);
 
-    let uncompressed = signed_pk.public_key.inner.serialize_uncompressed(); // [0x04 | X(32) | Y(32)]
-    let x = &uncompressed[1..33];
-    let y = &uncompressed[33..65];
+    let r = &spk.signature_r;
+    let s = &spk.signature_s;
+    ensure!(r.len() == 32 && s.len() == 32, "invalid signature length");
 
-    CommitteeECDSA {
+    let v = match spk.recovery_id {
+        0 | 1 => 27 + spk.recovery_id,
+        27 | 28 => spk.recovery_id,
+        _ => bail!("invalid recovery_id (expected 0/1 or 27/28)"),
+    };
+
+    Ok(CommitteeECDSA {
         x: hex::encode(x),
         y: hex::encode(y),
-        r: hex::encode(&signed_pk.signature_r),
-        s: hex::encode(&signed_pk.signature_s),
-        v: signed_pk.recovery_id + 27, // Convert to Ethereum's v format (27 or 28)
-    }
+        r: hex::encode(r),
+        s: hex::encode(s),
+        v,
+    })
 }
 
 // Helper function to create keccak256 hash of uncompressed public key
