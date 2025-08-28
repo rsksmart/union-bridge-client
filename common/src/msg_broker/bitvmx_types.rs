@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
 
+pub const ACCEPT_PEGIN_TX: &str = "ACCEPT_PEGIN_TX";
+
 type ProgramId = Uuid;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -307,6 +309,19 @@ impl Committee {
 pub enum ParticipantRole {
     Prover,
     Verifier,
+}
+
+/// Data structure received from BitVMX client containing pegin acceptance information.
+/// This is sent after BitVMX processes the pegin request and includes signature data
+/// and sighashes needed for the operator take and operator won transactions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeginAcceptedMessage {
+    pub committee_id: Uuid,
+    pub accept_pegin_txid: Txid,
+    pub accept_pegin_nonce: PubNonce,
+    pub accept_pegin_signature: MaybeScalar,
+    pub operator_take_sighash: Vec<u8>,
+    pub operator_won_sighash: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

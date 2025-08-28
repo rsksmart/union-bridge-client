@@ -1,3 +1,38 @@
+/**
+U: Union Bridge
+B: BitVMX
+RSK: RSK Blockchain Gateway
+
+Pegin steps:
+1. Subscribe to BitVMX pegin events (U -> B)
+2. Handle BitVMX PeginTransactionFound message received (B -> U)
+    a. Ask BitVMX for SPV proof (do we need to check if the transaction is confirmed?) (U -> B)
+3. Handle SPV proof received Request pegin step. (B -> U)
+    a. Invoke PegManager requestPegin. (U -> RSK)
+4. Handle PeguinRequested event from RSK (wait x confirmations) (RSK -> U)
+    a. Send PeginRequestMessage to BitVMX through SetVar (U -> B)
+    b. Send Setup to BitVMX //wait to setupCompleted?? (U -> B)
+        i. It is needed to obtain p2p address of the committee members to be sent into the setup message.
+           This info is being obtained from the SignatureManager.(U -> RSK)
+5. Receive PeginAccepted message (B -> U)
+    a Invoke AddOperatorTakeTxHash by calling SignatureManager (U -> RSK)
+6. Handle RSK Event AllOperatorTakeTxHashesAdded (RSK -> U)
+    a. AddMemberNonce by calling SignatureManager (U -> RSK)
+7. AllNoncesReady RSK Event  (RSK -> U)
+    a. AddMemberSignature by calling SignatureManager (U -> RSK)
+8. AllSignaturesReady RSK Event (RSK -> U)
+    a. Send DispatchTransaction to BitVMX (U -> B)
+    b. Send GetTransactionInfoByName to BitVMX (U -> B)
+9. Receive Transaction message containing the transaction status (B -> U)
+    a. If tx is not Confirmed, wait and ask for it again. (U -> B)
+    b. If tx is Confirmed ask for the SPV proof (U -> B)
+10. Handle SPV proof received Request pegin step. (B -> U)
+    a. Invoke PegManager acceptPegin. (U -> RSK)
+11. Handle PeginAccepted event from RSK (wait x confirmations) (RSK -> U)
+    b. Send SetVar to BitVMX with the PEG_IN_COMPLETED msg (U -> B)
+
+ */
+use crate::types::{RegisterSignaturesBitVmxData, TickScheduler};
 use crate::{
     blockchain_tracker::{BlockConfirmations, BlockchainObserver, BlockchainView},
     config::REQUIRED_CONFIRMATIONS,
@@ -17,6 +52,7 @@ use bitcoin::{
     hashes::Hash,
     secp256k1::{Parity::Even, XOnlyPublicKey},
 };
+use common::msg_broker::bitvmx_types::{ACCEPT_PEGIN_TX, PeginAcceptedMessage, TransactionStatus};
 use common::types::CommitteeId;
 use common::{
     msg_broker::{
@@ -29,22 +65,18 @@ use common::{
     types::{RskBlockAndUncles, TxHash},
 };
 use log::{debug, error, info, warn};
-use musig2::{PubNonce, secp::MaybeScalar};
-use serde::Deserialize;
 use serde::Serialize;
-use serde_json::Value;
 use std::{cell::RefCell, collections::HashMap, fmt::Debug, future::Future, rc::Rc};
 use transaction_dispatcher::types::GetCommunicationDataInput;
 use transaction_dispatcher::{
     rsk_gateway::{DomainErrors, RskContractsGatewayApi},
     types::{
-        AcceptPeginInput, AddOperatorTakeTxHashInput, GetCommitteeInput, GetMemberPublicKeysInput,
-        P2PAddressParser, RequestPeginInput,
+        AddOperatorTakeTxHashInput, GetCommitteeInput, GetMemberPublicKeysInput, P2PAddressParser,
+        RequestPeginInput,
     },
 };
-use union_contracts::bindings::peg_manager::PegManager::{
-    PegStatus, PeginAccepted, PeginRequested, StreamPosition,
-};
+use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
+use union_contracts::bindings::signature_manager::SignatureManager::AllOperatorTakeTxHashesAdded;
 use uuid::Uuid;
 
 /// The Pegin starts when there is PeginTrasactionFound. Automatically, the Union Client
@@ -66,8 +98,10 @@ use uuid::Uuid;
 
 const ACCEPT_PEGIN: &'static str = "accept-pegin";
 const PEGIN_REQUEST: &'static str = "PeginRequest";
-const PEGIN_ACCEPTED: &'static str = "pegin_accepted";
+const PEGIN_ACCEPTED_INPUT_MSG: &'static str = "pegin_accepted";
 const PROGRAM_TYPE_ACCEPT_PEGIN: &'static str = "accept_pegin";
+pub const MIN_TX_CONFIRMATIONS: u32 = 1; //TODO agree on this value for alphanet.
+pub const BLOCKS_DELAY_FOR_TX_CHECK: u32 = 20;
 
 /// Data structure used to send pegin request information to the BitVMX client.
 /// This transforms raw blockchain events into a structured format with all necessary
@@ -84,20 +118,6 @@ struct PeginRequestMessage {
     rootstock_address: String,
     reimbursement_pubkey: PublicKey,
 }
-
-/// Data structure received from BitVMX client containing pegin acceptance information.
-/// This is sent after BitVMX processes the pegin request and includes signature data
-/// and sighashes needed for the operator take and operator won transactions.
-#[derive(Debug, Clone, Deserialize)]
-pub struct PeginAcceptedMessage {
-    committee_id: Uuid,
-    accept_pegin_txid: Txid,
-    accept_pegin_nonce: PubNonce,
-    accept_pegin_signature: MaybeScalar,
-    operator_take_sighash: Vec<u8>,
-    operator_won_sighash: Vec<u8>,
-}
-
 #[derive(Debug, Clone)]
 struct PeginEvent<T: Clone> {
     data: EventWithBlock<T>,
@@ -132,6 +152,7 @@ struct PeginState<BSF: BtcSignatureSubFlowApi> {
     pegin_accepted: Option<PeginEvent<PeginAccepted>>,
     bitvmx_pegin_accepted: Option<PeginAcceptedMessage>,
     btc_signatures_flow: Option<BSF>,
+    all_operators_take_tx_hashes_added: Option<PeginEvent<AllOperatorTakeTxHashesAdded>>,
 }
 
 impl<BSF: BtcSignatureSubFlowApi> PeginState<BSF> {
@@ -142,6 +163,7 @@ impl<BSF: BtcSignatureSubFlowApi> PeginState<BSF> {
             pegin_accepted: None,
             bitvmx_pegin_accepted: None,
             btc_signatures_flow: None,
+            all_operators_take_tx_hashes_added: None,
         }
     }
 }
@@ -159,6 +181,7 @@ where
     blockchain: BlockchainView,
     tracker: HashMap<TxHash, PeginState<BSF>>,
     btc_sig_subflow_factory: FactoryBSF,
+    scheduler: TickScheduler<Uuid>,
 }
 
 impl<CG, BC, BSF, FactoryBSF> PeginProcessor<CG, BC, BSF, FactoryBSF>
@@ -174,6 +197,7 @@ where
         bitvmx_broker: Rc<BC>,
         factory: FactoryBSF,
     ) -> Self {
+        // Step 1: Subscribe to BitVMX pegin events
         Self::subscribe_to_bitvmx_pegin_events(&bitvmx_broker)
             .expect("Failed to subscribe to BitVMX pegin events");
 
@@ -186,7 +210,23 @@ where
             blockchain: BlockchainView::new(),
             tracker: HashMap::new(),
             btc_sig_subflow_factory: factory,
+            scheduler: TickScheduler::new(),
         }
+    }
+
+    fn handle_tick(&mut self) -> Result<()> {
+        if self.scheduler.is_empty() {
+            return Ok(());
+        }
+        let ready = self.scheduler.tick();
+        for flow_id in ready {
+            debug!(
+                "Sending delayed get transaction info by name to bitvmx with id: {}",
+                flow_id
+            );
+            Self::send_get_transaction_info_by_name(&self.bitvmx_broker, flow_id)?;
+        }
+        Ok(())
     }
 
     fn handle_pegin_requested(&mut self, data: &PeginRequestedEvent) -> Result<()> {
@@ -210,7 +250,7 @@ where
             "Adding PeginRequested event to pegin event tracker. Event: {:?}",
             pegin_requested
         );
-
+        // We need to wait for the event to be confirmed before processing it
         self.track_pegin_requested(pegin_flow_id, pegin_requested)
     }
 
@@ -246,22 +286,131 @@ where
         self.track_pegin_accepted(pegin_accepted)
     }
 
-    fn handle_all_operator_take_tx_hashes_added(
+    fn handle_all_operator_take_tx_hashes_added_event(
         &mut self,
         data: &AllOperatorTakeTxHashesAddedEvent,
     ) -> Result<()> {
+        let tx_hash: TxHash = data.inner.acceptPeginTxHash.into();
+
+        // Check if the key exists first to avoid unnecessary operations
+        if !self.tracker.contains_key(&tx_hash) {
+            debug!(
+                "Received AllOperatorTakeTxHashesAdded for unknown acceptPeginTxHash: {:?}",
+                tx_hash
+            );
+            return Ok(());
+        }
+
+        if data.removed {
+            self.untrack_all_operator_take_tx_hashes_added(data.inner.clone())?;
+            return Ok(()); // Stop here if removed
+        }
+
         info!("Handling AllOperatorTakeTxHashesAdded event: {:?}", data);
 
+        let Some(state) = self.tracker.get(&tx_hash) else {
+            bail!("Key should exist after contains_key check");
+        };
+
+        let observer_id = format!("operator_take_tx_hashes_added-{}", state.flow_id);
+        info!(
+            "Adding AllOperatorTakeTxHashesAdded event to pegin event tracker. Event: {:?}",
+            data
+        );
+        let confirmations =
+            BlockConfirmations::new(observer_id, data.block_number, REQUIRED_CONFIRMATIONS);
+        let operator_take_tx_hashes_added = PeginEvent::new(data.clone(), confirmations);
+        self.track_all_operator_take_tx_hashes_added(operator_take_tx_hashes_added.clone())?;
+
+        self.blockchain
+            .add_observer(operator_take_tx_hashes_added.confirmations);
+
+        Ok(())
+    }
+
+    fn track_all_operator_take_tx_hashes_added(
+        &mut self,
+        event: PeginEvent<AllOperatorTakeTxHashesAdded>,
+    ) -> Result<()> {
+        let tx_hash: TxHash = event.data.inner.acceptPeginTxHash.into();
+
+        if let Some(state) = self.tracker.get_mut(&tx_hash) {
+            state.all_operators_take_tx_hashes_added = Some(event);
+            Ok(())
+        } else {
+            bail!("AllOperatorTakeTxHashesAdded cannot be found for tx_hash: {tx_hash:?}");
+        }
+    }
+
+    fn untrack_all_operator_take_tx_hashes_added(
+        &mut self,
+        event: AllOperatorTakeTxHashesAdded,
+    ) -> Result<()> {
+        let tx_hash: TxHash = event.acceptPeginTxHash.into();
+        match self.tracker.get_mut(&tx_hash) {
+            Some(state) => {
+                if let Some(operators_take_tx_hashes) = &state.all_operators_take_tx_hashes_added {
+                    let confirmations = operators_take_tx_hashes.confirmations.borrow();
+                    let observer_id = confirmations.get_id();
+                    self.blockchain.remove_observer(observer_id.as_str());
+                } else {
+                    bail!(
+                        "Trying to untrack AllOperatorTakeTxHashesAdded event, but tracker entry for tx_hash: {:?} has no AllOperatorTakeTxHashesAdded event",
+                        tx_hash
+                    );
+                }
+                state.all_operators_take_tx_hashes_added = None;
+                info!(
+                    "Untracked AllOperatorTakeTxHashesAdded event. tx_hash: {:?}, pegin_flow_id: {}",
+                    tx_hash, state.flow_id
+                );
+                Ok(())
+            }
+            None => {
+                bail!(
+                    "Expected to untrack AllOperatorTakeTxHashesAdded event but no entry found for tx_hash: {:?}",
+                    tx_hash
+                );
+            }
+        }
+    }
+
+    fn handle_all_operator_take_tx_hashes_added(&mut self, tx_hash: &TxHash) -> Result<()> {
+        let event: AllOperatorTakeTxHashesAdded = self
+            .tracker
+            .get(tx_hash)
+            .and_then(|state| state.all_operators_take_tx_hashes_added.as_ref())
+            .ok_or_else(|| {
+                anyhow!(
+                    "AllOperatorTakeTxHashesAdded event not found for tx_hash: {:?}",
+                    tx_hash
+                )
+            })?
+            .data
+            .inner
+            .clone();
+
+        info!("Handling AllOperatorTakeTxHashesAdded event: {:?}", event);
         // Find the pegin state using the accept_pegin_tx_hash from the event
-        let accept_pegin_tx_hash: TxHash = data.inner.acceptPeginTxHash.into();
+        let accept_pegin_tx_hash: TxHash = event.acceptPeginTxHash.into();
 
         if let Some(state) = self.tracker.get_mut(&accept_pegin_tx_hash) {
             let flow_id = state.flow_id;
 
-            // Start the signatures sub-flow if not already started
+            // Step 6a Start the signatures sub-flow if not already started
             if state.btc_signatures_flow.is_none() {
                 info!("Starting BTC signature flow for pegin flow_id: {}", flow_id);
-                state.btc_signatures_flow = Some(self.btc_sig_subflow_factory.create_flow(flow_id));
+                let mut btc_sig_subflow = self.btc_sig_subflow_factory.create_flow(flow_id);
+
+                let pegin_accepted = state.bitvmx_pegin_accepted.as_ref().ok_or_else(|| {
+                    anyhow!("PeginAcceptedMessage not found for flow_id: {}.", flow_id)
+                })?;
+
+                let register_input =
+                    RegisterSignaturesBitVmxData::try_from(pegin_accepted.clone())?;
+                btc_sig_subflow.start_signature_flow(flow_id, &register_input)?;
+
+                state.btc_signatures_flow = Some(btc_sig_subflow);
             } else {
                 error!(
                     "BTC signature flow already started for pegin flow_id: {}",
@@ -391,14 +540,14 @@ where
             let pegin_request =
                 Self::build_pegin_request_bitvmx_message(rt_sync, contracts, pegin_event)?;
 
-            // Send to BitVMX
+            // Step 4a Send to BitVMX
             Self::send_bitvmx_variable(bitvmx_broker, flow_id, PEGIN_REQUEST, &pegin_request)
                 .context(format!(
                     "Error processing confirmed PeginRequested event (tx_hash: {}, flow_id: {})",
                     tx_hash, flow_id
                 ))?;
 
-            // Send Setup message right after PeginRequestMessage
+            // Step 4b Send Setup message right after PeginRequestMessage
             Self::send_setup_message(rt_sync, contracts, bitvmx_broker, flow_id, pegin_event)
                 .context(format!(
                     "Error sending Setup message (tx_hash: {}, flow_id: {})",
@@ -536,13 +685,14 @@ where
     fn build_committee_id(pegin_event: &PeginRequested) -> Result<Uuid> {
         let committee_bytes = pegin_event.committeeId.to_be_bytes_vec();
         let uuid_bytes: [u8; 16] = committee_bytes
-            .get(..16)
-            .ok_or_else(|| anyhow!("Committee ID too short for UUID conversion: expected at least 16 bytes, got {}", committee_bytes.len()))?
-            .try_into()
-            .context("Failed to convert committee_id to UUID")?;
+        .get(..16)
+        .ok_or_else(|| anyhow!("Committee ID too short for UUID conversion: expected at least 16 bytes, got {}", committee_bytes.len()))?
+        .try_into()
+        .context("Failed to convert committee_id to UUID")?;
         Ok(Uuid::from_bytes(uuid_bytes))
     }
 
+    //Step 10 after confirmation of the pegin accepted event, we need to send the
     fn process_unhandled_confirmed_pegin_accepted_events(&mut self) -> Result<()> {
         let mut to_remove = Vec::new();
 
@@ -587,6 +737,42 @@ where
                 tx_hash, flow_id
             );
             self.tracker.remove(&tx_hash);
+            if self.tracker.is_empty() {
+                debug!("No more pegin events to track, stopping the processor.");
+                self.scheduler.clear();
+                self.blockchain.clear();
+            }
+        }
+
+        Ok(())
+    }
+
+    fn process_unhandled_confirmed_all_operator_take_tx_hashes_added_events(
+        &mut self,
+    ) -> Result<()> {
+        let mut to_handle = Vec::new();
+
+        for (tx_hash, state) in self.tracker.iter_mut() {
+            let event = match state.all_operators_take_tx_hashes_added.as_mut() {
+                None => continue,
+                Some(event) if !event.is_confirmed() || event.is_handled => continue,
+                Some(event) => event,
+            };
+
+            event.mark_handled();
+
+            let confirmations = event.confirmations.borrow();
+            let observer_id = confirmations.get_id();
+            self.blockchain.remove_observer(observer_id.as_str());
+            info!(
+                "Successfully processed confirmed AllOperatorTakeTxHashesAdded event: {}",
+                state.flow_id
+            );
+            to_handle.push(*tx_hash);
+        }
+        // Process the collected tx_hashes after the loop to avoid borrowing conflicts
+        for tx_hash in to_handle {
+            self.handle_all_operator_take_tx_hashes_added(&tx_hash)?;
         }
 
         Ok(())
@@ -624,6 +810,26 @@ where
         );
 
         Self::send_to_bitvmx(bitvmx_broker, message)
+    }
+
+    fn send_dispatch_transaction_name(bitvmx_broker: &BC, flow_id: Uuid) -> Result<()> {
+        let message = IncomingBitVMXApiMessages::DispatchTransactionName(
+            flow_id,
+            ACCEPT_PEGIN_TX.to_string(),
+        );
+        Self::send_to_bitvmx(bitvmx_broker, message)
+    }
+
+    fn send_get_transaction_info_by_name(bitvmx_broker: &BC, flow_id: Uuid) -> Result<()> {
+        let message = IncomingBitVMXApiMessages::GetTransactionInfoByName(
+            flow_id,
+            ACCEPT_PEGIN_TX.to_string(),
+        );
+        Self::send_to_bitvmx(bitvmx_broker, message)
+    }
+    fn send_get_spv_proof_to_bitvmx(bitvmx_broker: &BC, tx_id: Txid) -> Result<()> {
+        let msg = IncomingBitVMXApiMessages::GetSPVProof(tx_id);
+        Self::send_to_bitvmx(bitvmx_broker, msg)
     }
 
     fn send_to_bitvmx(bitvmx_broker: &BC, message: IncomingBitVMXApiMessages) -> Result<()> {
@@ -665,7 +871,7 @@ where
                 Vec::new()
             }
         };
-
+        debug!("P2P addresses for Setup message: {:?}", p2p_addresses);
         let setup_message = IncomingBitVMXApiMessages::Setup(
             flow_id,                               // ProgramId - UUID of pegin flow
             PROGRAM_TYPE_ACCEPT_PEGIN.to_string(), // Program type constant
@@ -673,32 +879,26 @@ where
             vec![], // Vector of P2P addresses
             0,      // Leader number
         );
-
+        debug!(" Setup message: {:?}", setup_message);
         Self::send_to_bitvmx(bitvmx_broker, setup_message)
     }
 
-    fn handle_contract_invoke(&self, method_name: &str, json_data: &Value) -> Result<()> {
-        match method_name {
-            ACCEPT_PEGIN => {
-                let spv_proof: BtcTxSPVProof = serde_json::from_value(json_data.clone())
-                    .context("Failed to deserialize BtcTxSPVProof")?;
-                let input: AcceptPeginInput = spv_proof.into();
+    fn register_spv_proof(&self, spv_proof: BtcTxSPVProof) -> Result<()> {
+        info!("Registering SPV proof: {:?}", spv_proof);
 
-                self.invoke_contract(ACCEPT_PEGIN, || async {
-                    self.contracts.accept_pegin(input).await
-                })
-            }
+        let input = spv_proof.into();
 
-            _ => bail!("Unsupported method: {}", method_name),
-        }
+        // Step 10a Call the contract to register the SPV proof
+        self.invoke_contract(ACCEPT_PEGIN, || async {
+            self.contracts.accept_pegin(input).await
+        })
     }
 
-    fn handle_bitvmx_pegin_accepted(&mut self, flow_id: Uuid, data: &str) -> Result<()> {
-        let pegin_accepted: PeginAcceptedMessage =
-            serde_json::from_str(data).with_context(|| {
-                format!("Failed to deserialize PeginAcceptedMessage from BitVMX message {data}")
-            })?;
-
+    fn handle_bitvmx_pegin_accepted(
+        &mut self,
+        flow_id: Uuid,
+        pegin_accepted: PeginAcceptedMessage,
+    ) -> Result<()> {
         info!(
             "Processed PeginAcceptedMessage: committee_id={}, accept_pegin_txid={}",
             pegin_accepted.committee_id, pegin_accepted.accept_pegin_txid,
@@ -716,15 +916,14 @@ where
             );
         };
 
-        info!(
-            "Successfully saved PeginAcceptedMessage data to pegin state for flow_id: {}",
-            flow_id
-        );
-
         let accept_pegin_tx_hash = pegin_accepted.accept_pegin_txid;
         let take_tx_hash = pegin_accepted.operator_take_sighash.clone();
 
         state.bitvmx_pegin_accepted = Some(pegin_accepted);
+        info!(
+            "Successfully saved PeginAcceptedMessage data to pegin state for flow_id: {}",
+            flow_id
+        );
 
         // Deposit the operator take tx hash as soon as we receive PeginAcceptedMessage
         info!(
@@ -738,7 +937,7 @@ where
             accept_pegin_tx_hash,
             take_tx_hash,
         };
-
+        // Step 5a Call the addOperatorTakeTxHash contract method
         self.invoke_contract("addOperatorTakeTxHash", || async {
             self.contracts.add_operator_take_tx_hash(input).await
         })?;
@@ -748,7 +947,7 @@ where
 
     fn handle_request_pegin(&self, spv_proof: BtcTxSPVProof) -> Result<()> {
         let input: RequestPeginInput = spv_proof.into();
-
+        //Step 3a Call the requestPegin contract method
         self.invoke_contract("requestPegin", || async {
             self.contracts.request_pegin(input).await
         })
@@ -795,6 +994,77 @@ where
             }
         }
     }
+
+    fn handle_transaction_status_received(
+        &mut self,
+        flow_id: &Uuid,
+        tx_status: TransactionStatus,
+    ) -> Result<()> {
+        //find the pegin event state for the given flow_id
+        let Some(state) = self
+            .tracker
+            .values_mut()
+            .find(|state| state.flow_id == *flow_id)
+        else {
+            debug!(
+                "No pegin state found for flow_id: {}, skipping transaction status handling",
+                flow_id
+            );
+            return Ok(());
+        };
+
+        if let Some(pegin_accepted) = state.bitvmx_pegin_accepted.as_ref() {
+            if pegin_accepted.accept_pegin_txid != tx_status.tx_id {
+                bail!(
+                    "Pegin state for flow_id: {} does not match tx_id: {}",
+                    flow_id,
+                    tx_status.tx_id
+                );
+            }
+        } else {
+            bail!("No pegin accepted message found for flow_id: {}", flow_id);
+        }
+
+        if tx_status.confirmations >= MIN_TX_CONFIRMATIONS {
+            // Step 9b confirmation enough, send the SPV proof to BitVMX
+            debug!(
+                "Transaction confirmed with sufficient confirmations for flow_id: {}",
+                flow_id
+            );
+            if self.scheduler.is_scheduled(flow_id) {
+                debug!(
+                    "Unscheduling get transaction info by name to bitvmx with id: {}",
+                    flow_id
+                );
+                self.scheduler.cancel(flow_id);
+            }
+            Self::send_get_spv_proof_to_bitvmx(&self.bitvmx_broker, tx_status.tx_id)?;
+        } else {
+            //step 9a confirmation not enough, reschedule the check
+            debug!(
+                "Transaction not confirmed with sufficient confirmations for flow_id: {}",
+                flow_id
+            );
+            debug!(
+                "Scheduling get transaction info by name to bitvmx with id: {}",
+                flow_id
+            );
+            self.scheduler.schedule(*flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
+        }
+        Ok(())
+    }
+
+    fn process_unhandled_confirmed_sig_flow_events(
+        &mut self,
+        block: &RskBlockAndUncles,
+    ) -> Result<()> {
+        for (_, state) in self.tracker.iter_mut() {
+            if let Some(btc_flow) = state.btc_signatures_flow.as_mut() {
+                btc_flow.delegate_block(block)?;
+            }
+        }
+        Ok(())
+    }
 }
 
 impl<CG, BC, BSF, FactoryBSF> EventProcessor for PeginProcessor<CG, BC, BSF, FactoryBSF>
@@ -806,53 +1076,77 @@ where
 {
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
         match event {
-            OutgoingBitVMXApiMessages::PeginTransactionFound(tx_id, _) => {
+            // Step 2: Handle PeginRequested event from BitVMX
+            OutgoingBitVMXApiMessages::PeginTransactionFound(tx_id, _tx_status) => {
                 info!(
                     "Received BitVMX PeginTransactionFound event with tx_id: {}",
                     tx_id
                 );
 
                 self.handle_pegin_transaction_found(tx_id.clone())?;
+                //TODO in the future we need to validate the tx_statos.confirmations number.
             }
+            // Step 3: Handle SPVProof event from BitVMX to call requestPegin
+            // Step 10: Handle SPVProof event from BitVMX to call acceptPegin
             OutgoingBitVMXApiMessages::SPVProof(tx_id, spv_proof_opt) => match spv_proof_opt {
                 Some(spv_proof) => {
                     info!(
                         "Received BitVMX SPVProof for tx_id: {}, proof: {:?}",
                         tx_id, spv_proof
                     );
+                    // Find state by matching accept_pegin_txid from bitvmx_pegin_accepted
+                    let matching_state = self.tracker.iter_mut().find(|(_, state)| {
+                        state
+                            .bitvmx_pegin_accepted
+                            .as_ref()
+                            .map(|accepted| accepted.accept_pegin_txid == *tx_id)
+                            .unwrap_or(false)
+                    });
 
-                    self.handle_request_pegin(spv_proof.clone())?;
+                    if let Some((_, state)) = matching_state {
+                        // Step 10 Handle accept pegin SPV proof
+                        debug!(
+                            "Handling accept pegin SPV proof for flow_id: {} and tx_id {}",
+                            state.flow_id, tx_id
+                        );
+                        self.register_spv_proof(spv_proof.clone())?;
+                    } else {
+                        // Step 3 if no matching state found we are assuming this is a request pegin SPV proof
+                        debug!("Handling request pegin SPV proof for tx_id: {}", tx_id);
+                        self.handle_request_pegin(spv_proof.clone())?;
+                    }
                 }
                 None => bail!(
                     "Received BitVMX SPVProof event for tx_id: {}, but no SPV proof was included.",
                     tx_id
                 ),
             },
+            // Step 5: Handle PeginAccepted event from BitVMX
             OutgoingBitVMXApiMessages::Variable(flow_id, method, VariableTypes::String(data))
-                if matches!(method.as_str(), PEGIN_ACCEPTED) =>
+                if matches!(method.as_str(), PEGIN_ACCEPTED_INPUT_MSG) =>
             {
                 info!(
                     "Received BitVMX Variable pegin_accepted event. Flow Id: {}, Method: {}, Payload: {:?}",
                     flow_id, method, data
                 );
 
-                self.handle_bitvmx_pegin_accepted(*flow_id, data)?;
+                let pegin_accepted: PeginAcceptedMessage = serde_json::from_str(data)
+                    .with_context(|| {
+                        format!(
+                            "Failed to deserialize PeginAcceptedMessage from BitVMX message {data}"
+                        )
+                    })?;
+
+                self.handle_bitvmx_pegin_accepted(*flow_id, pegin_accepted)?;
             }
-            // TODO: will be replaced by SPV Proof message
-            OutgoingBitVMXApiMessages::Variable(flow_id, method, VariableTypes::String(data))
-                if matches!(method.as_str(), ACCEPT_PEGIN) =>
-            {
-                info!(
-                    "Received BitVMX Variable Event. Flow Id: {}, Method: {}, Payload: {:?}",
-                    flow_id, method, data
+            // Step 9: Handle Transaction event from BitVMX and check confirmation status
+            OutgoingBitVMXApiMessages::Transaction(flow_id, tx_status, _tx_opt) => {
+                debug!(
+                    "Received BitVMX Transaction event. Flow Id: {}, Tx Status: {:?}",
+                    flow_id, tx_status
                 );
-
-                let json_data: Value = serde_json::from_str(data)?;
-
-                self.handle_contract_invoke(method, &json_data)?;
+                self.handle_transaction_status_received(flow_id, tx_status.clone())?;
             }
-            // TODO(signatures-2) delegate SIGNATURE_MESSAGE message to BtcSignatureFlow::process_new_bitvmx_event, it is the response to request-pegin event we send them
-            //  it looks like for now they do not include hash_to_sign in the message (see TODO in BitVmxSigningInfo), so we need to inject it in the OutgoingBitVMXApiMessages from the calling flow
             _ => {}
         }
 
@@ -861,13 +1155,32 @@ where
 
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         match event {
+            // Step 4: Handle PeginRequested event from RSK
             RskPegManagerEvents::PeginRequested(data) => self.handle_pegin_requested(data),
+            //Step 11: Handle PeginAccepted event from RSK
             RskPegManagerEvents::PeginAccepted(data) => self.handle_pegin_accepted(data),
+            //Step 6: Handle AllOperatorTakeTxHashesAdded event from RSK
             RskPegManagerEvents::AllOperatorTakeTxHashesAdded(data) => {
-                self.handle_all_operator_take_tx_hashes_added(data)
+                self.handle_all_operator_take_tx_hashes_added_event(data)
             }
-
-            // TODO(signatures-3) delegate AllNoncesReady and AllSignaturesReady to BtcSignatureFlow::process_new_rsk_event
+            //Step 7: Handle AllNoncesReady and AllSignaturesReady event from RSK
+            RskPegManagerEvents::AllNoncesReady(data)
+            //Step 8: Handle AllSignaturesReady event from RSK
+            | RskPegManagerEvents::AllSignaturesReady(data) => {
+                debug!("Handling signature event {:?}", data);
+                for state in self.tracker.values_mut() {
+                    if let Some(btc_sig_flow) = &mut state.btc_signatures_flow {
+                        // Delegate the event to the BTC signature flow
+                        btc_sig_flow.delegate_rsk_event(state.flow_id, event)?;
+                        if btc_sig_flow.is_done() {
+                            //#Step 8a: Send DispatchTransaction to BitVMX
+                            Self::send_dispatch_transaction_name(&self.bitvmx_broker, state.flow_id)?;
+                            //#Step 8b: Send GetTransactionInfoByName to BitVMX
+                            Self::send_get_transaction_info_by_name(&self.bitvmx_broker, state.flow_id)?;                        }
+                    }
+                }
+                Ok(())
+            }
             _ => Ok(()),
         }
     }
@@ -881,8 +1194,9 @@ where
 
         self.process_unhandled_confirmed_pegin_requested_events()?;
         self.process_unhandled_confirmed_pegin_accepted_events()?;
-
-        // TODO(signatures-4) delegate to BtcSignatureFlow::process_new_block
+        self.process_unhandled_confirmed_all_operator_take_tx_hashes_added_events()?;
+        self.process_unhandled_confirmed_sig_flow_events(block)?;
+        self.handle_tick()?;
 
         Ok(())
     }
@@ -890,6 +1204,7 @@ where
     fn shutdown(&mut self) {
         info!("Shutting down PeginProcessor");
 
+        self.scheduler.clear();
         self.blockchain.clear();
         self.tracker.clear();
     }
@@ -898,10 +1213,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::flows::btc_signature::btc_signature_subflow::{
-        MockBtcSigSubFlowFactory, MockBtcSignatureSubFlowApi,
-    };
-    use crate::types::AllOperatorTakeTxHashesAddedEvent;
+    use crate::flows::btc_signature::btc_signature_subflow::MockBtcSigSubFlowFactory;
     use crate::{
         coordinator::tests::MockRskContractsGatewayApi,
         event_processor::EventProcessor,
@@ -926,12 +1238,11 @@ mod tests {
     use hex::FromHex;
     use mockall::predicate::{eq, function};
     use primitive_types::H256;
-    use serde_json::json;
-    use transaction_dispatcher::types::{GetCommitteeOutput, GetCommunicationDataOutput};
-    use transaction_dispatcher::types::{GetMemberPublicKeysOutput, TxSentOutput};
+    use serde_json::{Value, json};
+    use transaction_dispatcher::types::GetCommunicationDataOutput;
     use transaction_dispatcher::{
         rsk_gateway::DomainErrors,
-        types::{AcceptPeginOutput, RequestPeginOutput},
+        types::{GetCommitteeOutput, GetMemberPublicKeysOutput, RequestPeginOutput, TxSentOutput},
     };
     use union_contracts::bindings::committee_registry::CommitteeRegistry::{
         Committee, CommitteeMember, Role,
@@ -939,7 +1250,6 @@ mod tests {
     use union_contracts::bindings::peg_manager::PegManager::{
         PeginRequested, PrevoutData, RequestPeginTempInfo, StreamPosition,
     };
-    use union_contracts::bindings::signature_manager::SignatureManager::AllOperatorTakeTxHashesAdded;
 
     #[test]
     fn subscribe_to_bitvmx_pegin_events_succeeds() {
@@ -1098,82 +1408,6 @@ mod tests {
     }
 
     #[test]
-    fn process_new_bitvmx_pegin_accepted_event_does_not_send_response() {
-        // Prepare the mocked contracts gateway
-        let mut contracts = MockRskContractsGatewayApi::new();
-        let expected_receipt = AcceptPeginOutput {
-            transaction_hash: "0x7e8f27d21c8a0cfebfd2c647db4687e51eae3eaecdbf9f247c9057be682176a3"
-                .to_string(),
-            success: true,
-        };
-        contracts
-            .expect_accept_pegin()
-            .times(1)
-            .returning(move |_| Ok(expected_receipt.clone()));
-
-        // Prepare broker and assert it doesn't send anything except pegin subscription
-        let mut broker = MockBrokerClientApi::new();
-        expect_bitvmx_subscription_success(&mut broker);
-
-        let rt_sync = RuntimeSync::new().unwrap();
-        let mut processor = PeginProcessor::new(
-            rt_sync,
-            contracts.into(),
-            broker.into(),
-            MockBtcSigSubFlowFactory::new(),
-        );
-
-        // Simulate event payload
-        let spv_proof = dummy_spv_proof();
-        let payload = serde_json::to_string(&spv_proof).unwrap();
-        let uuid = Uuid::new_v4();
-        let event = OutgoingBitVMXApiMessages::Variable(
-            uuid,
-            "accept-pegin".to_string(),
-            VariableTypes::String(payload),
-        );
-
-        let result = processor.process_new_bitvmx_event(&event);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn process_new_bitvmx_pegin_accepted_event_fails_on_dispatcher_error() {
-        // Set up the mocked contracts gateway with an error
-        let mut contracts = MockRskContractsGatewayApi::new();
-        contracts
-            .expect_accept_pegin()
-            .times(1)
-            .returning(|_| Err(DomainErrors::UnknownContractError("simulated error".into())));
-
-        // Prepare broker and assert it doesn't send anything except pegin subscription
-        let mut broker = MockBrokerClientApi::new();
-        expect_bitvmx_subscription_success(&mut broker);
-
-        // Runtime and processor initialization
-        let rt_sync = RuntimeSync::new().unwrap();
-        let mut processor = PeginProcessor::new(
-            rt_sync,
-            contracts.into(),
-            broker.into(),
-            MockBtcSigSubFlowFactory::new(),
-        );
-
-        // Payload
-        let spv_proof = dummy_spv_proof();
-        let payload = serde_json::to_string(&spv_proof).unwrap();
-        let uuid = Uuid::new_v4();
-        let event = OutgoingBitVMXApiMessages::Variable(
-            uuid,
-            "accept-pegin".to_string(),
-            VariableTypes::String(payload),
-        );
-
-        let result = processor.process_new_bitvmx_event(&event);
-        assert!(result.is_err());
-    }
-
-    #[test]
     fn process_new_bitvmx_pegin_accepted_message_saves_data_and_calls_contract() {
         // Set up the mocked contracts gateway
         let mut contracts = MockRskContractsGatewayApi::new();
@@ -1235,7 +1469,7 @@ mod tests {
 
         let event = OutgoingBitVMXApiMessages::Variable(
             flow_id,
-            PEGIN_ACCEPTED.to_string(),
+            PEGIN_ACCEPTED_INPUT_MSG.to_string(),
             VariableTypes::String(pegin_accepted_payload.to_string()),
         );
 
@@ -1292,7 +1526,7 @@ mod tests {
 
         let event = OutgoingBitVMXApiMessages::Variable(
             non_existent_flow_id,
-            PEGIN_ACCEPTED.to_string(),
+            PEGIN_ACCEPTED_INPUT_MSG.to_string(),
             VariableTypes::String(pegin_accepted_payload.to_string()),
         );
 
@@ -1659,36 +1893,36 @@ mod tests {
 
         // Expect PeginRequest message
         broker
-        .expect_send()
-        .times(1)
-        .with(
-            eq(BROKER_SERVER_ID),
-            function(move |req: &IncomingBitVMXApiMessages| {
-                matches!(
+            .expect_send()
+            .times(1)
+            .with(
+                eq(BROKER_SERVER_ID),
+                function(move |req: &IncomingBitVMXApiMessages| {
+                    matches!(
                     req,
                     IncomingBitVMXApiMessages::SetVar(_, var_name, VariableTypes::String(actual))
                         if var_name == PEGIN_REQUEST
                         && serde_json::from_str::<Value>(actual).ok() == Some(expected_payload.clone())
                 )
-            }),
-        )
-        .returning(|_, _| Ok(true));
+                }),
+            )
+            .returning(|_, _| Ok(true));
 
         // Expect Setup message
         broker
-        .expect_send()
-        .times(1)
-        .with(
-            eq(BROKER_SERVER_ID),
-            function(|req: &IncomingBitVMXApiMessages| {
-                matches!(
+            .expect_send()
+            .times(1)
+            .with(
+                eq(BROKER_SERVER_ID),
+                function(|req: &IncomingBitVMXApiMessages| {
+                    matches!(
                     req,
                     IncomingBitVMXApiMessages::Setup(_, program_type, p2p_addresses, leader)
                         if program_type == PROGRAM_TYPE_ACCEPT_PEGIN && p2p_addresses.is_empty() && *leader == 0
                 )
-            }),
-        )
-        .returning(|_, _| Ok(true));
+                }),
+            )
+            .returning(|_, _| Ok(true));
 
         let mock_btc_sig_subflow_factory = MockBtcSigSubFlowFactory::new();
 
@@ -2074,101 +2308,5 @@ mod tests {
                 PublicKey::new(secp_key)
             },
         }
-    }
-
-    #[test]
-    fn handle_all_operator_take_tx_hashes_added_starts_signature_flow() {
-        let mut broker = MockBrokerClientApi::new();
-        expect_bitvmx_subscription_success(&mut broker);
-
-        let mut mock_btc_sig_subflow_factory = MockBtcSigSubFlowFactory::new();
-        mock_btc_sig_subflow_factory
-            .expect_create_flow()
-            .times(1)
-            .returning(|_| MockBtcSignatureSubFlowApi::new());
-
-        let mut processor = PeginProcessor::new(
-            RuntimeSync::new().unwrap(),
-            MockRskContractsGatewayApi::new().into(),
-            broker.into(),
-            mock_btc_sig_subflow_factory,
-        );
-
-        // First add a pegin state to track
-        let flow_id = Uuid::new_v4();
-        let pegin_requested = dummy_pegin_requested_event();
-        let confirmations = BlockConfirmations::new(flow_id.to_string(), 1.into(), 0);
-        let pegin_event = PeginEvent::new(
-            PeginRequestedEvent {
-                inner: pegin_requested,
-                block_number: 1.into(),
-                block_hash: BlockHash::from(H256::from([0xaa; 32])),
-                removed: false,
-                tx_hash: TxHash::from(H256::from_low_u64_be(1)),
-            },
-            confirmations,
-        );
-        processor
-            .track_pegin_requested(flow_id, pegin_event)
-            .unwrap();
-
-        // Create AllOperatorTakeTxHashesAdded event
-        let accept_pegin_tx_hash =
-            FixedBytes::<32>::from_slice(H256::from_low_u64_be(222).as_bytes());
-        let event_data = AllOperatorTakeTxHashesAddedEvent {
-            inner: AllOperatorTakeTxHashesAdded {
-                acceptPeginTxHash: accept_pegin_tx_hash,
-            },
-            block_number: 100.into(),
-            block_hash: BlockHash::from(H256::from([0xbb; 32])),
-            removed: false,
-            tx_hash: TxHash::from(H256::from_low_u64_be(100)),
-        };
-
-        let result = processor.handle_all_operator_take_tx_hashes_added(&event_data);
-        assert!(result.is_ok());
-
-        // Verify that the signature flow was started
-        let tx_hash: TxHash = accept_pegin_tx_hash.into();
-        let state = processor
-            .tracker
-            .get(&tx_hash)
-            .expect("Should find state with matching tx_hash");
-        assert!(state.btc_signatures_flow.is_some());
-    }
-
-    #[test]
-    fn handle_all_operator_take_tx_hashes_added_unknown_accept_pegin_tx_hash_warns() {
-        let mut broker = MockBrokerClientApi::new();
-        expect_bitvmx_subscription_success(&mut broker);
-
-        let mock_btc_sig_subflow_factory = MockBtcSigSubFlowFactory::new();
-        // Should not call create_flow since no matching state found
-
-        let mut processor = PeginProcessor::new(
-            RuntimeSync::new().unwrap(),
-            MockRskContractsGatewayApi::new().into(),
-            broker.into(),
-            mock_btc_sig_subflow_factory,
-        );
-
-        // Create AllOperatorTakeTxHashesAdded event with unknown accept_pegin_tx_hash
-        let unknown_accept_pegin_tx_hash =
-            FixedBytes::<32>::from_slice(H256::from_low_u64_be(999).as_bytes());
-        let event_data = AllOperatorTakeTxHashesAddedEvent {
-            inner: AllOperatorTakeTxHashesAdded {
-                acceptPeginTxHash: unknown_accept_pegin_tx_hash,
-            },
-            block_number: 100.into(),
-            block_hash: BlockHash::from(H256::from([0xbb; 32])),
-            removed: false,
-            tx_hash: TxHash::from(H256::from_low_u64_be(100)),
-        };
-
-        let result = processor.handle_all_operator_take_tx_hashes_added(&event_data);
-        assert!(result.is_ok()); // Should not fail, just log a warning
-
-        // Verify no state was modified (tracker should be empty)
-        assert!(processor.tracker.is_empty());
     }
 }
