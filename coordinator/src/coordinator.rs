@@ -74,6 +74,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
                     contracts_arc.clone(),
                     bitvmx_broker.clone(),
                     btc_sig_subflow_factory,
+                    global_context.clone(),
                 )),
                 Box::new(PegoutProcessor::new(
                     rt_sync.clone(),
