@@ -72,12 +72,10 @@ use transaction_dispatcher::{
     rsk_gateway::{DomainErrors, RskContractsGatewayApi},
     types::{
         AddOperatorTakeTxHashInput, GetCommitteeInput, GetMemberPublicKeysInput, P2PAddressParser,
-        RequestPeginInput
+        RequestPeginInput,
     },
 };
-use union_contracts::bindings::peg_manager::PegManager::{
-    PeginAccepted, PeginRequested, 
-};
+use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
 use union_contracts::bindings::signature_manager::SignatureManager::AllOperatorTakeTxHashesAdded;
 use uuid::Uuid;
 
@@ -311,7 +309,7 @@ where
         info!("Handling AllOperatorTakeTxHashesAdded event: {:?}", data);
 
         let Some(state) = self.tracker.get(&tx_hash) else {
-            unreachable!("Key should exist after contains_key check");
+            bail!("Key should exist after contains_key check");
         };
 
         let observer_id = format!("operator_take_tx_hashes_added-{}", state.flow_id);
@@ -340,10 +338,7 @@ where
             state.all_operators_take_tx_hashes_added = Some(event);
             Ok(())
         } else {
-            bail!(
-                "AllOperatorTakeTxHashesAdded cannot be found for tx_hash: {:?}",
-                tx_hash
-            );
+            bail!("AllOperatorTakeTxHashesAdded cannot be found for tx_hash: {tx_hash:?}");
         }
     }
 
@@ -891,8 +886,7 @@ where
     fn register_spv_proof(&self, spv_proof: BtcTxSPVProof) -> Result<()> {
         info!("Registering SPV proof: {:?}", spv_proof);
 
-        // Convert the SPV proof into a RequestPeginInput
-        let input: RequestPeginInput = spv_proof.into();
+        let input = spv_proof.into();
 
         // Step 10a Call the contract to register the SPV proof
         self.invoke_contract(ACCEPT_PEGIN, || async {
@@ -1245,9 +1239,10 @@ mod tests {
     use mockall::predicate::{eq, function};
     use primitive_types::H256;
     use serde_json::{Value, json};
+    use transaction_dispatcher::types::GetCommunicationDataOutput;
     use transaction_dispatcher::{
         rsk_gateway::DomainErrors,
-        types::{ RequestPeginOutput, GetCommitteeOutput, GetMemberPublicKeysOutput, TxSentOutput},
+        types::{GetCommitteeOutput, GetMemberPublicKeysOutput, RequestPeginOutput, TxSentOutput},
     };
     use union_contracts::bindings::committee_registry::CommitteeRegistry::{
         Committee, CommitteeMember, Role,
@@ -1255,7 +1250,6 @@ mod tests {
     use union_contracts::bindings::peg_manager::PegManager::{
         PeginRequested, PrevoutData, RequestPeginTempInfo, StreamPosition,
     };
-    use transaction_dispatcher::types::GetCommunicationDataOutput;
 
     #[test]
     fn subscribe_to_bitvmx_pegin_events_succeeds() {
