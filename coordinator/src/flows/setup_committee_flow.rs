@@ -89,8 +89,7 @@ type PubKeyReq = Option<(
     Option<SignedPublicKey>,
 )>; // request id key, raw pub key, req id signing, signed pub key
 type AggKeyReq = Option<(Uuid, Option<PublicKey>)>; // request id, response data
-// TODO TBC what to store here in data
-type SetupCoreReq = Option<(Uuid, CommitteeId, Option<String>)>; // request id, committee id, response data
+type SetupCoreReq = Vec<(Uuid, CommitteeId, bool)>; // request id, committee id, response data
 
 #[derive(Default, Debug)]
 struct FlowContext {
@@ -102,7 +101,6 @@ struct FlowContext {
     my_comm_key: PubKeyReq,
     agg_take_key: AggKeyReq,
     agg_dispute_key: AggKeyReq,
-    // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-254: fill when processing the setup confirmation and implement the close_core_setup_req method like the other close_xxx ones
     setup_core: SetupCoreReq,
     // async
     committee_pending: Option<NewCommitteePendingEvent>,
@@ -178,8 +176,8 @@ enum Steps {
 
 impl Steps {
     // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: try to unify this with complete_step
-    fn next(&self) -> Result<Steps> {
-        let next = match self {
+    fn next(&mut self) -> Result<()> {
+        *self = match self {
             Steps::UserRequest => Steps::GetMyCommInfo,
             Steps::GetMyCommInfo => Steps::GetMyTakeKey,
             Steps::GetMyTakeKey => Steps::SignMyTakeKey,
@@ -199,7 +197,7 @@ impl Steps {
             }
         };
 
-        Ok(next)
+        Ok(())
     }
 }
 
@@ -210,6 +208,7 @@ enum StepData {
     CommInfo(P2PAddress),
     PublicKey(PublicKey),
     SignedMessage([u8; 32], [u8; 32], u8), // signature_r, signature_s, recovery_id
+    SetupCompleted(Uuid),
 
     // async or collaborative steps
     PendingCommittee(NewCommitteePendingEvent),
@@ -221,49 +220,56 @@ impl StepData {
     fn into_user_input(self) -> Result<ApplyToStream> {
         match self {
             StepData::UserRequest(input) => Ok(input),
-            _ => bail!("Expected ApplyToStreamInput"),
+            _ => bail!("Expected UserRequest data"),
         }
     }
 
     fn into_p2p_address(self) -> Result<P2PAddress> {
         match self {
             StepData::CommInfo(addr) => Ok(addr),
-            _ => bail!("Expected P2PAddress"),
+            _ => bail!("Expected P2PAddress data"),
         }
     }
 
     fn into_pubkey(self) -> Result<PublicKey> {
         match self {
             StepData::PublicKey(pk) => Ok(pk),
-            _ => bail!("Expected PublicKey"),
+            _ => bail!("Expected PublicKey data"),
         }
     }
 
     fn into_signed_payload(self) -> Result<([u8; 32], [u8; 32], u8)> {
         match self {
             StepData::SignedMessage(r, s, recovery_id) => Ok((r, s, recovery_id)),
-            _ => bail!("Expected SignedMessage"),
+            _ => bail!("Expected SignedMessage data"),
         }
     }
 
     fn into_committee_pending(self) -> Result<NewCommitteePendingEvent> {
         match self {
             StepData::PendingCommittee(ev) => Ok(ev),
-            _ => bail!("Expected NewCommitteePendingEvent"),
+            _ => bail!("Expected PendingCommittee data"),
         }
     }
 
     fn into_all_comm_data_ready(self) -> Result<AllCommunicationDataReadyEvent> {
         match self {
             StepData::ReadyCommunicationData(ev) => Ok(ev),
-            _ => bail!("Expected AllCommunicationDataReadyEvent"),
+            _ => bail!("Expected ReadyCommunicationData data"),
         }
     }
 
     fn into_committee_ready(self) -> Result<NewCommitteeReadyEvent> {
         match self {
             StepData::ReadyCommittee(ev) => Ok(ev),
-            _ => bail!("Expected NewCommitteeReadyEvent"),
+            _ => bail!("Expected ReadyCommittee data"),
+        }
+    }
+
+    fn into_setup_completed(self) -> Result<Uuid> {
+        match self {
+            StepData::SetupCompleted(ev) => Ok(ev),
+            _ => bail!("Expected SetupCompleted data"),
         }
     }
 }
@@ -408,6 +414,20 @@ where
         let my_comm_data = self.build_my_communication_data()?;
         self.state.ctx.communication_data_ready = Some(my_comm_data);
         Ok(())
+    }
+
+    fn close_setup_core_req(setup_core_req: &mut SetupCoreReq, data: StepData) -> Result<bool> {
+        let recv_protocol_id = data.into_setup_completed()?;
+
+        for setup_core in setup_core_req.iter_mut() {
+            if setup_core.0 == recv_protocol_id {
+                setup_core.2 = true; // mark as completed
+            }
+        }
+
+        let missing_responses = setup_core_req.iter().any(|r| !r.2); // false == not completed
+
+        Ok(missing_responses)
     }
 
     fn get_take_aggregated_key_id(&self) -> Result<Uuid> {
@@ -909,20 +929,21 @@ where
                 self.state.ctx.committee_ready = Some(data.into_committee_ready()?);
 
                 self.setup_dispute_core_protocol()?;
-
-                // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-254: temporary move to SetupDisputeCoreProtocol to then move to Complete
-                self.state.step.next()?;
             }
             Steps::SetupDisputeCoreProtocol => {
-                // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-254: temporary move to Complete
-                self.state.step.next()?;
+                let setup_core_state = &mut self.state.ctx.setup_core;
+                let missing_responses = Self::close_setup_core_req(setup_core_state, data)?;
+                if missing_responses {
+                    info!("Waiting for more SetupCoreProtocol responses, stay in the same step...");
+                    return Ok(());
+                }
             }
             Steps::Complete => {
                 bail!("Complete shouldn't be reached");
             }
         };
 
-        self.state.step = self.state.step.next()?;
+        self.state.step.next()?;
 
         if self.state.step == Steps::Complete {
             info!("Setup Committee flow complete");
@@ -1056,14 +1077,25 @@ where
 
         let p2p_addrs = self.ctx_my_communication_data()?;
 
-        dispute_core.setup(
-            self.state.ctx.get_committee_id()?,
+        let committee_id = self.state.ctx.get_committee_id()?;
+
+        let protocol_ids = dispute_core.setup(
+            committee_id.clone(),
             members,
             p2p_addrs,
             self.ctx_aggregated_take_key()?,
             self.ctx_aggregated_dispute_key()?,
             my_speedup_utxo,
-        )
+        )?;
+
+        for pid in protocol_ids {
+            self.state
+                .ctx
+                .setup_core
+                .push((pid, committee_id.clone(), false))
+        }
+
+        Ok(())
     }
 }
 
@@ -1152,7 +1184,10 @@ where
         }
     }
 
-    fn get_flow_for_request_id(&mut self, uuid: &Uuid) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
+    fn get_flow_for_bitvmx_response(
+        &mut self,
+        req_id: &Uuid,
+    ) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
         // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: super naive approach implemented here for now, find within the different flows and their step datas one with the received req_id
         // an alternative could be storing all the requests (ids) for which the flow is waiting response
         // in a same array - but I find this super risky, as it will only work if a) we NEVER send 2
@@ -1160,38 +1195,62 @@ where
         // in addition to that, any change in the code could break it and end up mixing requests/responses/steps
 
         self.flows.values_mut().find(|flow| {
-            if let Some((pk_req_id, _, sign_req_id, _)) = &flow.state.ctx.my_take_key {
-                if pk_req_id == uuid || sign_req_id.map_or(false, |id| id == *uuid) {
-                    return true;
-                }
-            }
-            if let Some((pk_req_id, _, sign_req_id, _)) = &flow.state.ctx.my_dispute_key {
-                if pk_req_id == uuid || sign_req_id.map_or(false, |id| id == *uuid) {
-                    return true;
-                }
-            }
-            if let Some((pk_req_id, _, sign_req_id, _)) = &flow.state.ctx.my_comm_key {
-                if pk_req_id == uuid || sign_req_id.map_or(false, |id| id == *uuid) {
-                    return true;
-                }
-            }
-            if let Some((req_id, _)) = &flow.state.ctx.agg_take_key {
-                if req_id == uuid {
-                    return true;
-                }
-            }
-            if let Some((req_id, _)) = &flow.state.ctx.agg_dispute_key {
-                if req_id == uuid {
-                    return true;
-                }
-            }
-            if let Some((req_id, _, _)) = &flow.state.ctx.setup_core {
-                if req_id == uuid {
-                    return true;
-                }
-            }
-            false
+            Self::pubkey_request_matches(&flow.state.ctx.my_take_key, req_id)
+                || Self::pubkey_request_matches(&flow.state.ctx.my_dispute_key, req_id)
+                || Self::pubkey_request_matches(&flow.state.ctx.my_comm_key, req_id)
+                || Self::aggregated_key_request_matches(&flow.state.ctx.agg_take_key, req_id)
+                || Self::aggregated_key_request_matches(&flow.state.ctx.agg_dispute_key, req_id)
+                || Self::setup_core_request_matches(
+                    &flow.state.ctx.setup_core,
+                    req_id,
+                    &flow.state.ctx.get_committee_id(),
+                )
         })
+    }
+
+    /// checks if a pubkey request (either for key generation or signing) matches the given request id
+    fn pubkey_request_matches(pubkey_req: &PubKeyReq, req_id: &Uuid) -> bool {
+        if let Some((pk_req_id, _, sign_req_id, _)) = pubkey_req {
+            pk_req_id == req_id || sign_req_id.map_or(false, |id| id == *req_id)
+        } else {
+            false
+        }
+    }
+
+    /// checks if an aggregated key request matches the given request id
+    fn aggregated_key_request_matches(agg_key_req: &AggKeyReq, req_id: &Uuid) -> bool {
+        if let Some((key_req_id, _)) = agg_key_req {
+            key_req_id == req_id
+        } else {
+            false
+        }
+    }
+
+    /// checks if any setup core protocol matches the given request id
+    fn setup_core_request_matches(
+        setup_core: &SetupCoreReq,
+        req_id: &Uuid,
+        flow_committee_id: &Result<CommitteeId>,
+    ) -> bool {
+        for (protocol_id, committee_id, _) in setup_core {
+            let flow_committee_id = match flow_committee_id {
+                Ok(id) => id.clone(),
+                Err(_) => {
+                    error!("committee_id must exist in setup_core at this step");
+                    return false;
+                }
+            };
+
+            if protocol_id == req_id {
+                return if flow_committee_id == *committee_id {
+                    true
+                } else {
+                    error!("Mismatching protocol_id & committee_id in setup_core step");
+                    false
+                };
+            }
+        }
+        false
     }
 
     fn close_completed_flows(&mut self) {
@@ -1286,7 +1345,7 @@ where
             }
             OutgoingBitVMXApiMessages::PubKey(req_id, public_key) => {
                 // Handle PubKey response for GetKey steps
-                if let Some(flow) = self.get_flow_for_request_id(req_id) {
+                if let Some(flow) = self.get_flow_for_bitvmx_response(req_id) {
                     flow.complete_step(StepData::PublicKey(*public_key))?;
                 } else {
                     bail!("No flow found for OutgoingBitVMXApiMessages::PubKey and id {req_id}");
@@ -1299,7 +1358,7 @@ where
                 recovery_id,
             ) => {
                 // Handle SignedMessage response using the standard flow
-                if let Some(flow) = self.get_flow_for_request_id(sign_req_id) {
+                if let Some(flow) = self.get_flow_for_bitvmx_response(sign_req_id) {
                     flow.complete_step(StepData::SignedMessage(
                         *signature_r,
                         *signature_s,
@@ -1313,11 +1372,20 @@ where
             }
             OutgoingBitVMXApiMessages::AggregatedPubkey(req_id, pubkey) => {
                 // Handle successful aggregated pubkey response
-                if let Some(flow) = self.get_flow_for_request_id(req_id) {
+                if let Some(flow) = self.get_flow_for_bitvmx_response(req_id) {
                     flow.complete_step(StepData::PublicKey(*pubkey))?;
                 } else {
                     bail!(
                         "No flow found for OutgoingBitVMXApiMessages::AggregatedPubkey and id {req_id}"
+                    );
+                }
+            }
+            OutgoingBitVMXApiMessages::SetupCompleted(req_id) => {
+                if let Some(flow) = self.get_flow_for_bitvmx_response(req_id) {
+                    flow.complete_step(StepData::SetupCompleted(req_id.clone()))?;
+                } else {
+                    bail!(
+                        "No flow found for OutgoingBitVMXApiMessages::SetupCompleted and id {req_id}"
                     );
                 }
             }

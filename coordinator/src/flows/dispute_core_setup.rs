@@ -34,7 +34,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
         take_aggr_key: PublicKey,
         dispute_aggr_key: PublicKey,
         my_speedup_funding_utxo: Utxo,
-    ) -> Result<()> {
+    ) -> Result<Vec<Uuid>> {
         let committee = Committee {
             members: members
                 .iter()
@@ -67,42 +67,48 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
             VariableTypes::String(serde_json::to_string(&committee)?),
         ));
 
+        let mut protocol_ids = vec![];
+
         for (operator_index, member) in members.iter().enumerate() {
-            if member.role == ParticipantRole::Prover {
-                let pubkey = member.take_key;
-                let protocol_id = get_dispute_core_pid(committee_id, &pubkey)?;
-
-                info!("Setting up the DisputeCore protocol {protocol_id}");
-
-                let dispute_core_data = &DisputeCoreData {
-                    committee_id,
-                    operator_index,
-                    operator_utxo: member.funding_utxo.clone(),
-                    operator_take_pubkey: pubkey,
-                };
-
-                self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetVar(
-                    protocol_id,
-                    DisputeCoreData::name(),
-                    VariableTypes::String(serde_json::to_string(dispute_core_data)?),
-                ));
-
-                self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetVar(
-                    protocol_id,
-                    MONITORED_OPERATOR_KEY.to_string(),
-                    VariableTypes::PubKey(pubkey),
-                ));
-
-                self.send_bitvmx_msg(IncomingBitVMXApiMessages::Setup(
-                    protocol_id,
-                    PROGRAM_TYPE_DISPUTE_CORE.to_string(),
-                    p2p_addresses.clone(),
-                    NO_LEADER_IDX,
-                ));
+            if member.role != ParticipantRole::Prover {
+                continue;
             }
+
+            let pubkey = member.take_key;
+            let protocol_id = get_dispute_core_pid(committee_id, &pubkey)?;
+
+            protocol_ids.push(protocol_id);
+
+            info!("Setting up the DisputeCore protocol {protocol_id}");
+
+            let dispute_core_data = &DisputeCoreData {
+                committee_id,
+                operator_index,
+                operator_utxo: member.funding_utxo.clone(),
+                operator_take_pubkey: pubkey,
+            };
+
+            self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetVar(
+                protocol_id,
+                DisputeCoreData::name(),
+                VariableTypes::String(serde_json::to_string(dispute_core_data)?),
+            ));
+
+            self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetVar(
+                protocol_id,
+                MONITORED_OPERATOR_KEY.to_string(),
+                VariableTypes::PubKey(pubkey),
+            ));
+
+            self.send_bitvmx_msg(IncomingBitVMXApiMessages::Setup(
+                protocol_id,
+                PROGRAM_TYPE_DISPUTE_CORE.to_string(),
+                p2p_addresses.clone(),
+                NO_LEADER_IDX,
+            ));
         }
 
-        Ok(())
+        Ok(protocol_ids)
     }
 
     fn operator_count(members: &[MemberOfCommittee]) -> Result<u32> {
