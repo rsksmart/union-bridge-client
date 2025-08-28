@@ -823,6 +823,7 @@ where
                 take_key,
                 dispute_key,
                 funding_utxo,
+                committee_idx: idx,
             };
 
             member_of_committee.push(moc);
@@ -992,8 +993,8 @@ where
 
         let stream_id = self.state.ctx.get_stream_id()?;
 
-        let my_take_key = &self.ctx_my_take_key()?;
-        let my_dispute_key = &self.ctx_my_dispute_key()?;
+        let my_take_key = self.ctx_my_take_key()?;
+        let my_dispute_key = self.ctx_my_dispute_key()?;
 
         let input = ApplyToStreamInput {
             stream_id: stream_id.clone(),
@@ -1464,7 +1465,7 @@ where
     }
 }
 
-fn signed_to_committee_public_key(spk: &SignedPublicKey) -> Result<CommitteeECDSA> {
+fn signed_to_committee_public_key(spk: SignedPublicKey) -> Result<CommitteeECDSA> {
     let b = spk.public_key.inner.serialize_uncompressed(); // expect 65 bytes: 0x04 || X(32) || Y(32)
     ensure!(b.len() == 65 && b[0] == 0x04, "invalid uncompressed pubkey");
     let (x, y) = b[1..].split_at(32);

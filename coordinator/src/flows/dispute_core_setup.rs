@@ -69,12 +69,14 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
 
         let mut protocol_ids = vec![];
 
-        for (operator_index, member) in members.iter().enumerate() {
-            if member.role != ParticipantRole::Prover {
-                continue;
-            }
+        let provers = members
+            .iter()
+            .filter(|m| m.role == ParticipantRole::Prover)
+            .cloned()
+            .collect::<Vec<_>>();
 
-            let pubkey = member.take_key;
+        for prover in provers {
+            let pubkey = prover.take_key;
             let protocol_id = get_dispute_core_pid(committee_id, &pubkey)?;
 
             protocol_ids.push(protocol_id);
@@ -83,8 +85,8 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
 
             let dispute_core_data = &DisputeCoreData {
                 committee_id,
-                operator_index,
-                operator_utxo: member.funding_utxo.clone(),
+                operator_index: prover.committee_idx,
+                operator_utxo: prover.funding_utxo.clone(),
                 operator_take_pubkey: pubkey,
             };
 

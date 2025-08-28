@@ -523,6 +523,7 @@ pub struct MemberOfCommittee {
     pub take_key: PublicKey,
     pub dispute_key: PublicKey,
     pub funding_utxo: PartialUtxo,
+    pub committee_idx: usize,
 }
 
 #[cfg(test)]
