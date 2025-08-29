@@ -1,0 +1,31 @@
+# this file is intended to be used together with docker-compose.yml
+
+services:
+  block-indexer:
+    networks:
+      union-bridge:
+        ipv4_address: 172.25.2.10
+
+  log-indexer:
+    networks:
+      union-bridge:
+        ipv4_address: 172.25.2.11
+
+  transaction-dispatcher:
+    networks:
+      union-bridge:
+        ipv4_address: 172.25.2.12
+
+  coordinator:
+    networks:
+      union-bridge:
+        ipv4_address: 172.25.2.13
+
+  user-api:
+    networks:
+      union-bridge:
+        ipv4_address: 172.25.2.15
+
+networks:
+  union-bridge:
+    external: true

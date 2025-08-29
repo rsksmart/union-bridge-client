@@ -5,6 +5,7 @@ set -e
 CMD=""
 FEATURES=""
 SERVICE=""
+PLATFORM=""  # Will be set only if explicitly provided
 HELP=0
 
 show_help() {
@@ -24,6 +25,7 @@ Commands:
 Options:
   --feature-anvil     For "build" only: this builds the workspace with anvil feature, applying some tweaks in the code to improve Rootstock compatibility. An "up" will therefore run with that feature unless rebuilt without it.
   --service=<name>    For "build" only: this builds a specific service/crate, useful if you want to test a change in a specific service.
+  --platform=<arch>   Specify the target platform for Docker builds
   --help, -h          Show this help
 
 Notes on certain options:
@@ -33,6 +35,7 @@ Examples:
   $(basename "$0") build_builder                                    Build the Builder images
   $(basename "$0") build                                            Build all services
   $(basename "$0") build --service=log-indexer                      Build a specific service
+  $(basename "$0") build --platform=linux/arm64                     Build for ARM64 platform
   $(basename "$0") up                                               Start all services
   $(basename "$0") down                                             Stop all services
 
@@ -56,6 +59,9 @@ while [[ $# -gt 0 ]]; do
     --service=*)
       SERVICE="${1#*=}"
       ;;
+    --platform=*)
+      PLATFORM="${1#*=}"
+      ;;
     -h|--help)
       HELP=1
       ;;
@@ -73,12 +79,16 @@ fi
 
 # Build builder images
 build_builder() {
-  cmd=(docker build --ssh default --platform linux/amd64 -t union-client-builder:rust-1.86-v1 -f Dockerfile_builder .)
+  cmd=(docker build --ssh default)
+  [[ -n $PLATFORM ]] && cmd+=(--platform "$PLATFORM")
+  cmd+=(-t union-client-builder:rust-1.86-v1 -f Dockerfile_builder .)
   echo "🔨 Building Standard Builder image with command: ${cmd[@]}"
   "${cmd[@]}"
 
 # TODO when the zkp feature is re-enabled, use this to build coordinator in an image with amd64 support (required by Risc0 in Macs with M chips) via Dockerfile_coordinator
-#  cmd=(docker build --ssh default --platform linux/amd64 -t union-client-builder:rust-1.86-risc0-v1 -f Dockerfile_builder_risc0 .)
+#  cmd=(docker build --ssh default)
+#  [[ -n $PLATFORM ]] && cmd+=(--platform "$PLATFORM")
+#  cmd+=(-t union-client-builder:rust-1.86-risc0-v1 -f Dockerfile_builder_risc0 .)
 #  echo "🔨 Building Risc0 Builder image with command: ${cmd[@]}"
 #  "${cmd[@]}"
 
@@ -89,12 +99,19 @@ build_builder() {
 build_services() {
   echo "🔨 Building service container(s)..."
 
+  # Export PLATFORM only if explicitly provided
+  [[ -n $PLATFORM ]] && export PLATFORM
+
   cmd=(docker compose build)
 
   [[ -n $SERVICE ]] && cmd+=("$SERVICE" --build-arg JUST_CRATE="$SERVICE")
   [[ -n $FEATURES ]] && cmd+=(--build-arg FEATURES="$FEATURES")
 
-  echo "Building with command: ${cmd[@]}"
+  if [[ -n $PLATFORM ]]; then
+    echo "Building with command: ${cmd[@]} (PLATFORM=$PLATFORM)"
+  else
+    echo "Building with command: ${cmd[@]}"
+  fi
   "${cmd[@]}"
   echo "✅ Build completed"
 }
@@ -103,9 +120,16 @@ build_services() {
 start_services() {
   echo "🚀 Starting services..."
 
+  # Export PLATFORM only if explicitly provided
+  [[ -n $PLATFORM ]] && export PLATFORM
+
   cmd=(docker compose up)
 
-  echo "Running with command: ${cmd[@]}"
+  if [[ -n $PLATFORM ]]; then
+    echo "Running with command: ${cmd[@]} (PLATFORM=$PLATFORM)"
+  else
+    echo "Running with command: ${cmd[@]}"
+  fi
   "${cmd[@]}"
 }
 

@@ -2,122 +2,121 @@
 # DISCLAIMER: This docker-compose file is intended for development and testing purposes only, not for production use. ###############
 #####################################################################################################################################
 
-# define common config
-x-common-config: &common-config
-                   ../config/docker:/app/config:ro
-x-log-config: &log-config
-                ./log4rs.yaml:/app/log4rs.yaml:ro
-
-# define base configuration for services
-x-base-service: &base-service
-  platform: linux/amd64
-  build: &base-build
-    context: ../
-    dockerfile: docker/Dockerfile
-    ssh:
-      - default=${SSH_AUTH_SOCK}
-  volumes:
-    - *common-config
-    - *log-config
-  restart: no
-  # healthcheck base configuration
-  healthcheck: &base-healthcheck
-    interval: 30s
-    timeout: 10s
-    retries: 3
-    start_period: 10s
-
 services:
   block-indexer:
-    <<: *base-service
+    platform: ${PLATFORM}
+    image: ghcr.io/rsksmart/union-client-block-indexer:${REPO_VERSION:-latest}
     build:
-      <<: *base-build
-      args:
-        - CRATE=block-indexer
-    container_name: block-indexer
+      context: ../
+      dockerfile: docker/Dockerfile
+      ssh:
+        - default=${SSH_AUTH_SOCK}
     volumes:
-      - *common-config
-      - *log-config
-      - ./.db/block-indexer:/app/db/blocks
+      - ${CONFIG_PATH:-../config/docker}:/app/config:ro
+      - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
+      - ./.db/${COMPOSE_PROJECT_NAME}/block-indexer:/app/db/blocks
+    restart: no
     ports:
-      - "12345:12345"  # broker server port from the configuration
+      - "12345"  # broker server port from the configuration
     networks:
-      internal:
+      union-bridge:
         ipv4_address: 172.25.0.10
+    environment:
+      - UB__notifier__broker_host=${BLOCK_BROKER_HOST}
     healthcheck:
-      <<: *base-healthcheck
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
       test: [ "CMD", "pgrep", "-f", "block-indexer" ] # TODO improve with health endpoint
     entrypoint: [ "/app/block-indexer", "--config-path", "/app/config" ]
 
   log-indexer:
-    <<: *base-service
+    platform: ${PLATFORM}
+    image: ghcr.io/rsksmart/union-client-log-indexer:${REPO_VERSION:-latest}
     build:
-      <<: *base-build
-      args:
-        - CRATE=log-indexer
-    container_name: log-indexer
+      context: ../
+      dockerfile: docker/Dockerfile
+      ssh:
+        - default=${SSH_AUTH_SOCK}
     volumes:
-      - *common-config
-      - *log-config
-      - ./.db/log-indexer:/app/db/logs
+      - ${CONFIG_PATH:-../config/docker}:/app/config:ro
+      - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
+      - ./.db/${COMPOSE_PROJECT_NAME}/log-indexer:/app/db/logs
+    restart: no
     ports:
-      - "56789:56789"  # broker server port from the configuration
+      - "56789"  # broker server port from the configuration
     networks:
-      internal:
+      union-bridge:
         ipv4_address: 172.25.0.11
+    environment:
+      - UB__notifier__broker_host=${LOG_BROKER_HOST}
     healthcheck:
-      <<: *base-healthcheck
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
       test: [ "CMD", "pgrep", "-f", "log-indexer" ] # TODO improve with health endpoint
     entrypoint: [ "/app/log-indexer", "--config-path", "/app/config" ]
 
   transaction-dispatcher:
-    <<: *base-service
+    platform: ${PLATFORM}
+    image: ghcr.io/rsksmart/union-client-transaction-dispatcher:${REPO_VERSION:-latest}
     build:
-      <<: *base-build
-      args:
-        - CRATE=transaction-dispatcher
-    container_name: transaction-dispatcher
+      context: ../
+      dockerfile: docker/Dockerfile
+      ssh:
+        - default=${SSH_AUTH_SOCK}
     volumes:
-      - *common-config
-      - *log-config
+      - ${CONFIG_PATH:-../config/docker}:/app/config:ro
+      - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - ./entrypoint_sh/key-setup.sh:/app/key-setup.sh:ro
       - keystore:/keystore
+    restart: no
     ports:
-      - "3000:3000"  # http server port from the configuration
+      - "3000"  # http server port from the configuration
     networks:
-      internal:
+      union-bridge:
         ipv4_address: 172.25.0.12
     environment:
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
     healthcheck:
-      <<: *base-healthcheck
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
       test: [ "CMD", "pgrep", "-f", "transaction-dispatcher" ]
     entrypoint: [ "sh", "/app/key-setup.sh" ]
     command: [ "/app/transaction-dispatcher", "--config-path", "/app/config" ]
 
   coordinator:
-    <<: *base-service
-    # TODO when the zkp feature is re-enabled, use this to build coordinator in an image with amd64 support (required by Risc0 in Macs with M chips) via Dockerfile_coordinator
-    # platform: linux/amd64
+    platform: ${PLATFORM}
+    image: ghcr.io/rsksmart/union-client-coordinator:${REPO_VERSION:-latest}
     build:
-      <<: *base-build
+      context: ../
       dockerfile: docker/Dockerfile
-      # TODO when the zkp feature is re-enabled, use this to build coordinator in an image with amd64 support (required by Risc0 in Macs with M chips)
-      # dockerfile: docker/Dockerfile_coordinator
-      args:
-        - CRATE=coordinator
-    container_name: coordinator
+      ssh:
+        - default=${SSH_AUTH_SOCK}
     volumes:
-      - *common-config
-      - *log-config
+      - ${CONFIG_PATH:-../config/docker}:/app/config:ro
+      - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - keystore:/keystore
+    restart: no
     networks:
-      internal:
+      union-bridge:
         ipv4_address: 172.25.0.13
     environment:
+      - UB__bitvmx_broker__ip=${BITVMX_HOST}
+      - UB__bitvmx_broker__port=${BITVMX_PORT}
+      - UB__block_broker__ip=${BLOCK_BROKER_HOST}
+      - UB__log_broker__ip=${LOG_BROKER_HOST}
+      - UB__user_broker__ip=${USER_BROKER_HOST}
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
     healthcheck:
-      <<: *base-healthcheck
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
       test: [ "CMD", "pgrep", "-f", "coordinator" ]
     entrypoint: [ "/app/coordinator", "--config-path", "/app/config" ]
     depends_on:
@@ -131,28 +130,34 @@ services:
         condition: service_healthy
 
   user-api:
-    <<: *base-service
+    platform: ${PLATFORM}
+    image: ghcr.io/rsksmart/union-client-user-api:${REPO_VERSION:-latest}
     build:
-      <<: *base-build
-      args:
-        - CRATE=user-api
-    container_name: user-api
+      context: ../
+      dockerfile: docker/Dockerfile
+      ssh:
+        - default=${SSH_AUTH_SOCK}
     volumes:
-      - *common-config
-      - *log-config
+      - ${CONFIG_PATH:-../config/docker}:/app/config:ro
+      - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
+    restart: no
     ports:
-      - "5551:5551"  # http server port from the configuration
+      - "5551"  # http server port from the configuration
     networks:
-      internal:
+      union-bridge:
         ipv4_address: 172.25.0.15
+    environment:
+      - UB__block_broker__ip=${USER_BROKER_HOST}
     healthcheck:
-      <<: *base-healthcheck
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
       test: [ "CMD", "pgrep", "-f", "user-api" ]
     entrypoint: [ "/app/user-api", "--config-path", "/app/config" ]
 
-
 networks:
-  internal:
+  union-bridge:
     driver: bridge
     ipam:
       config:
