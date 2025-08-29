@@ -103,7 +103,6 @@ mod tests {
 
         assert_eq!("TestContractDyn", contract_info.name);
         assert_eq!(address, contract_info.address);
-        assert!(!contract_info.abi.as_ref().unwrap().is_empty());
 
         // second contract
         let key = "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc";
@@ -112,7 +111,6 @@ mod tests {
 
         assert_eq!("TestContractCompiled", contract_info.name);
         assert_eq!(address, contract_info.address);
-        assert!(contract_info.abi.is_none());
     }
 
     #[test]

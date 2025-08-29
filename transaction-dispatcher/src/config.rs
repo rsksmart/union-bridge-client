@@ -146,7 +146,6 @@ mod tests {
             Address::try_from("0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761").unwrap(),
             contract_info.address
         );
-        assert!(contract_info.abi.is_none());
 
         // second contract
         let key = "TestContractCompiled";
@@ -157,7 +156,6 @@ mod tests {
             Address::try_from("0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc").unwrap(),
             contract_info.address
         );
-        assert!(contract_info.abi.is_none());
     }
 
     #[test]
