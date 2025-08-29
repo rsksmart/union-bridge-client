@@ -45,23 +45,25 @@ fn main() -> Result<()> {
     let tx_dispatcher_config: ConfigAsLib =
         ConfigAsLib::load(config_path).expect("Failed to load transaction dispatcher config");
 
+    let contract_addresses = config.get_contract_addresses();
+
     let block_broker = BrokerClient::new(
-        config.block_broker.ip,
+        config.block_broker.host,
         config.block_broker.port,
         config.broker_client_id,
     );
     let log_broker = BrokerClient::new(
-        config.log_broker.ip,
+        config.log_broker.host,
         config.log_broker.port,
         config.broker_client_id,
     );
     let user_broker = BrokerClient::new(
-        config.user_broker.ip,
+        config.user_broker.host,
         config.user_broker.port,
         config.broker_client_id,
     );
     let bitvmx_broker = Rc::new(BitVmxBrokerClient::new(
-        config.bitvmx_broker.ip,
+        config.bitvmx_broker.host,
         config.bitvmx_broker.port,
         BITVMX_L2_BROKER_CLIENT_ID,
     ));
@@ -71,7 +73,7 @@ fn main() -> Result<()> {
         block_broker,
         user_broker,
         bitvmx_broker.clone(),
-        config.get_peg_manager_contract_addresses(),
+        contract_addresses,
     );
 
     let shutdown_flag = ShutdownFlag::init();

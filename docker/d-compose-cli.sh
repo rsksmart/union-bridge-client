@@ -154,7 +154,6 @@ case "$CMD" in
     build_services
     ;;
   up)
-    build_services
     start_services
     ;;
   *)

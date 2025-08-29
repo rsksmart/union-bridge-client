@@ -2,7 +2,6 @@ use common::config::{CommonConfig, ContractConfig};
 use common::errors::ConfigError;
 use common::types::Address;
 use serde::Deserialize;
-use std::net::IpAddr;
 
 // TODO this should be event-type-dependent, therefore for now we use a constant - it makes no sense adding it to the config
 pub const REQUIRED_CONFIRMATIONS: u32 = 5;
@@ -24,7 +23,7 @@ pub struct Config {
 
 #[derive(Debug, Deserialize)]
 pub struct BrokerConfig {
-    pub ip: IpAddr,
+    pub host: String,
     pub port: u16,
 }
 
@@ -33,7 +32,7 @@ impl Config {
         CommonConfig::load_config::<Self>(base_path, CARGO_PKG_NAME)
     }
 
-    pub fn get_peg_manager_contract_addresses(&self) -> Vec<Address> {
+    pub fn get_contract_addresses(&self) -> Vec<Address> {
         self.contracts
             .iter()
             .filter(|contract| Self::get_contracts_to_subscribe_to(contract))

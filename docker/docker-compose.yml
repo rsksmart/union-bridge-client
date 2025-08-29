@@ -20,11 +20,6 @@ services:
     restart: no
     ports:
       - "12345"  # broker server port from the configuration
-    networks:
-      union-bridge:
-        ipv4_address: 172.25.0.10
-    environment:
-      - UB__notifier__broker_host=${BLOCK_BROKER_HOST}
     healthcheck:
       interval: 30s
       timeout: 10s
@@ -50,11 +45,6 @@ services:
     restart: no
     ports:
       - "56789"  # broker server port from the configuration
-    networks:
-      union-bridge:
-        ipv4_address: 172.25.0.11
-    environment:
-      - UB__notifier__broker_host=${LOG_BROKER_HOST}
     healthcheck:
       interval: 30s
       timeout: 10s
@@ -81,9 +71,6 @@ services:
     restart: no
     ports:
       - "3000"  # http server port from the configuration
-    networks:
-      union-bridge:
-        ipv4_address: 172.25.0.12
     environment:
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
     healthcheck:
@@ -110,15 +97,9 @@ services:
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - keystore:/keystore
     restart: no
-    networks:
-      union-bridge:
-        ipv4_address: 172.25.0.13
     environment:
-      - UB__bitvmx_broker__ip=${BITVMX_HOST}
-      - UB__bitvmx_broker__port=${BITVMX_PORT}
-      - UB__block_broker__ip=${BLOCK_BROKER_HOST}
-      - UB__log_broker__ip=${LOG_BROKER_HOST}
-      - UB__user_broker__ip=${USER_BROKER_HOST}
+      - UB__bitvmx_broker__host=${BITVMX_HOST:-host.docker.internal}
+      - UB__bitvmx_broker__port=${BITVMX_PORT:-61180}
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
     healthcheck:
       interval: 30s
@@ -153,11 +134,6 @@ services:
     restart: no
     ports:
       - "5551"  # http server port from the configuration
-    networks:
-      union-bridge:
-        ipv4_address: 172.25.0.15
-    environment:
-      - UB__block_broker__ip=${USER_BROKER_HOST}
     healthcheck:
       interval: 30s
       timeout: 10s
@@ -165,13 +141,6 @@ services:
       start_period: 10s
       test: [ "CMD", "pgrep", "-f", "user-api" ]
     entrypoint: [ "/app/user-api", "--config-path", "/app/config" ]
-
-networks:
-  union-bridge:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 172.25.0.0/16
 
 volumes:
   keystore:
