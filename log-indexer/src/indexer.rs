@@ -16,9 +16,9 @@ pub struct LogIndexer<P: RskProvider, S: LogStore> {
     rsk_provider: P,
     new_log_sender: Option<mpsc::Sender<RskLog>>,
     initial_block_number: BlockNumber,
-    #[cfg_attr(feature = "anvil", allow(dead_code))]
+    #[cfg_attr(feature = "fresh_node", allow(dead_code))]
     sync_batch_size: usize,
-    #[cfg_attr(feature = "anvil", allow(dead_code))]
+    #[cfg_attr(feature = "fresh_node", allow(dead_code))]
     sync_finality_depth: usize,
     should_validate_logs: bool,
     managed_contracts: HashMap<Address, ContractInfo>,
@@ -75,7 +75,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         })
     }
 
-    #[cfg(not(feature = "anvil"))]
+    #[cfg(not(feature = "fresh_node"))]
     fn check_initial_block(rsk_provider: &P, initial_block_hash: BlockHash) -> Result<BlockNumber> {
         let initial_block_number = rsk_provider
             .get_block_by_hash(initial_block_hash)
@@ -85,7 +85,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         Ok(initial_block_number)
     }
 
-    #[cfg(feature = "anvil")]
+    #[cfg(feature = "fresh_node")]
     fn check_initial_block(
         rsk_provider: &P,
         _initial_block_hash: BlockHash,
@@ -140,7 +140,7 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
 }
 
 impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
-    #[cfg(not(feature = "anvil"))]
+    #[cfg(not(feature = "fresh_node"))]
     fn recover_logs(&self, addrs: &Vec<Address>) -> Result<BlockNumber> {
         let checkpoint = self.store.get_sync_checkpoint()?;
         let mut start = match checkpoint {
@@ -232,12 +232,12 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         Ok(end)
     }
 
-    #[cfg(feature = "anvil")]
+    #[cfg(feature = "fresh_node")]
     fn recover_logs(&self, _addrs: &Vec<Address>) -> Result<BlockNumber> {
         return Ok(BlockNumber::from(self.initial_block_number));
     }
 
-    #[cfg_attr(feature = "anvil", allow(dead_code))]
+    #[cfg_attr(feature = "fresh_node", allow(dead_code))]
     fn save_logs_and_checkpoint(&self, logs: &[RskLog]) -> Result<()> {
         if logs.is_empty() {
             return Ok(());
