@@ -68,15 +68,52 @@ composition of the following files in the defined order:
 
 ### Environment Variables
 
-The project also uses some environment variables for private properties.
+The project uses environment variables for both private properties and configuration overrides.
 
-We recommend using `direnv` to manage them. Then you can set them up by:
+#### Private Properties
+
+We recommend using `direnv` to manage private environment variables. Then you can set them up by:
 
 1. copying `[.envrc.sample](.envrc.sample)`) in the project root as `.envrc`
 2. modifying what you need
 3. and running `direnv allow` (every time you do a change)
 
 This will automatically load the environment variables defined in the `.envrc` on the services that require them.
+
+#### Configuration Overrides
+
+Any configuration value in the YAML files can be overridden using environment variables with the `UB__` prefix. The environment variable name should match the nested structure of the configuration, using double underscores (`__`) to separate levels.
+
+**Mapping Rules:**
+
+- Nested structures use double underscores (`__`) as separators
+- Arrays/lists use semicolon (`;`) as separator in environment variables
+
+**Example YAML to Environment Variable Mapping:**
+
+```yaml
+# config/common.yaml
+block_broker:
+  ip: "127.0.0.1"
+  port: 5672
+  username: "guest"
+  
+coordinator:
+  database:
+    url: "sqlite://coordinator.db"
+    max_connections: 10
+```
+
+Corresponding environment variables:
+```bash
+UB__block_broker__ip=127.0.0.1
+UB__block_broker__port=5672
+UB__block_broker__username=guest
+UB__coordinator__database__url=sqlite://coordinator.db
+UB__coordinator__database__max_connections=10
+```
+
+This approach allows for flexible configuration management across different deployment environments without modifying configuration files.
 
 ## Running the Union Client
 
