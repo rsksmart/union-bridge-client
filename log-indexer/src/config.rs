@@ -12,15 +12,11 @@ pub struct Config {
     pub provider: ProviderConfig,
     pub notifier: NotifierConfig,
     pub contracts: Vec<ContractConfig>,
-    #[serde(skip)]
-    pub path: String,
 }
 
 impl Config {
     pub fn load(base_path: Option<&String>) -> Result<Self, ConfigError> {
-        let (mut cfg, path) = CommonConfig::load_config::<Self>(base_path, CARGO_PKG_NAME)?;
-        cfg.path = path;
-        Ok(cfg)
+        CommonConfig::load_config::<Self>(base_path, CARGO_PKG_NAME)
     }
 
     pub fn load_managed_contracts(&self) -> HashMap<Address, ContractInfo> {
@@ -29,16 +25,12 @@ impl Config {
             .map(|c| {
                 let address = Address::try_from(c.address.as_str())
                     .expect(&format!("Invalid address: {}", c.address));
-
-                let abi_path = format!("{}/abi/{}.json", self.path, c.name);
-                let abi = CommonConfig::load_abi_from_path(&abi_path);
-
                 (
                     address,
                     ContractInfo {
                         name: c.name.to_owned(),
                         address,
-                        abi,
+                        abi: None, // TODO(Jira) cleanup in scope of https://rsklabs.atlassian.net/browse/UB-215
                     },
                 )
             })

@@ -2,7 +2,8 @@ use crate::errors::ConfigError;
 use alloy_json_abi::JsonAbi;
 use anyhow::{Context, Result};
 use config;
-use log::debug;
+use config::{Environment, Source};
+use log::{debug, trace};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use std::{fs, path::Path};
@@ -66,7 +67,7 @@ impl CommonConfig {
     pub fn load_config<T: DeserializeOwned>(
         path_opt: Option<&String>,
         crate_name: &str,
-    ) -> Result<(T, String), ConfigError> {
+    ) -> Result<T, ConfigError> {
         let config_path = match path_opt {
             Some(config_path) => config_path,
             None => &Self::get_default_config_path(),
@@ -76,7 +77,7 @@ impl CommonConfig {
         let crate_config = &format!("{config_path}/{crate_name}.yaml");
 
         println!(
-            "Loading config from {:?} and {:?}",
+            "Loading config from {:?}, {:?} and environment variables with prefix UB__",
             Path::new(common_config),
             Path::new(crate_config),
         );
@@ -84,12 +85,23 @@ impl CommonConfig {
         let cfg = config::Config::builder()
             .add_source(config::File::with_name(common_config).required(false)) // must exist if crate one does not
             .add_source(config::File::with_name(crate_config).required(false)) // must exist if common one does not
+            .add_source(
+                Environment::with_prefix("UB")
+                    .prefix_separator("__")
+                    .separator("__")
+                    .try_parsing(false)
+                    .list_separator(";"),
+            )
             .build()
-            .map_err(ConfigError::ConfigFileError)?
+            .map_err(ConfigError::ConfigFileError)?;
+
+        trace!("Loaded config {:#?}", cfg.collect()?);
+
+        let cfg_as_t = cfg
             .try_deserialize::<T>()
             .map_err(ConfigError::ConfigFileError)?;
 
-        Ok((cfg, config_path.to_string()))
+        Ok(cfg_as_t)
     }
 
     pub fn get_default_config_path() -> String {
