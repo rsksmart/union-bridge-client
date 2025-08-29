@@ -15,7 +15,7 @@ function usage() {
     echo ""
     echo "Examples:"
     echo "  $0                                                                        # Run with default settings"
-    echo "  $0 --features anvil                                                       # Run with 'debug' feature"
+    echo "  $0 --features anvil                                                       # Run with 'anvil' feature"
     echo "  $0 --config config/qa-local                                               # Run with 'local' config"
     echo "  $0 --logger log4rs.yaml                                              # Run with custom logger config"
     echo "  $0 --features anvil --config config/qa-local --logger-path custom.yaml    # Run with all options"
