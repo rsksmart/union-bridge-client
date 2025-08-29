@@ -9,6 +9,8 @@ services:
     build:
       context: ../
       dockerfile: docker/Dockerfile
+      args:
+        - CRATE=block-indexer
       ssh:
         - default=${SSH_AUTH_SOCK}
     volumes:
@@ -37,6 +39,8 @@ services:
     build:
       context: ../
       dockerfile: docker/Dockerfile
+      args:
+        - CRATE=log-indexer
       ssh:
         - default=${SSH_AUTH_SOCK}
     volumes:
@@ -65,6 +69,8 @@ services:
     build:
       context: ../
       dockerfile: docker/Dockerfile
+      args:
+        - CRATE=transaction-dispatcher
       ssh:
         - default=${SSH_AUTH_SOCK}
     volumes:
@@ -95,6 +101,8 @@ services:
     build:
       context: ../
       dockerfile: docker/Dockerfile
+      args:
+        - CRATE=coordinator
       ssh:
         - default=${SSH_AUTH_SOCK}
     volumes:
@@ -135,6 +143,8 @@ services:
     build:
       context: ../
       dockerfile: docker/Dockerfile
+      args:
+        - CRATE=user-api
       ssh:
         - default=${SSH_AUTH_SOCK}
     volumes:

@@ -5,7 +5,7 @@
 #
 ## --- BUILDER STAGE ---
 #
-#FROM union-client-builder:rust-1.86-risc0-v1 AS builder
+#FROM ghcr.io/rsksmart/union-client-builder:rust-1.86-risc0-v1 AS builder
 #ARG FEATURES
 #
 ## setup SSH for private repositories
