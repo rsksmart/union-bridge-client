@@ -29,7 +29,7 @@ const SPEEDUP_VALUE: u64 = 540;
 pub struct User {
     pub public_key: PublicKey,
     pub bitcoin_client: Arc<BitcoinClient>,
-    pub address: BitcoinAddress,
+    pub bitcoin_address: BitcoinAddress,
     secret_key: SecretKey,
     pub network: Network,
     pub secp: Secp256k1<All>,
@@ -47,7 +47,7 @@ impl User {
         Ok(Self {
             bitcoin_client: Arc::new(bitcoin_client),
             public_key: user_pubkey,
-            address: user_address,
+            bitcoin_address: user_address,
             secret_key: user_sk,
             network: REGTEST,
             secp,
@@ -106,7 +106,7 @@ impl User {
 
         // Mine blocks to include the transaction
         self.bitcoin_client
-            .mine_blocks_to_address(1, &self.address)?;
+            .mine_blocks_to_address(1, &self.bitcoin_address)?;
 
         Ok(request_pegin_tx)
     }
@@ -123,7 +123,7 @@ impl User {
     fn get_funding_utxo(&self, amount: u64) -> Result<PartialUtxo> {
         let (funding_tx, vout) = self
             .bitcoin_client
-            .fund_address(&self.address, Amount::from_sat(amount))?;
+            .fund_address(&self.bitcoin_address, Amount::from_sat(amount))?;
         Ok((funding_tx.compute_txid(), vout, Some(amount), None))
     }
 
@@ -147,7 +147,7 @@ impl User {
         // Fund the user address with enough to cover the taproot output + fees
         let (funding_tx, vout) = self
             .bitcoin_client
-            .fund_address(&self.address, Amount::from_sat(total_amount))?;
+            .fund_address(&self.bitcoin_address, Amount::from_sat(total_amount))?;
 
         // RSK Pegin values
         debug!(
@@ -238,7 +238,7 @@ impl User {
         let total_in = funding_utxo.2.context("Funding UTXO missing amount")?;
         let output = TxOut {
             value: Amount::from_sat(total_in - fee),
-            script_pubkey: self.address.script_pubkey(),
+            script_pubkey: self.bitcoin_address.script_pubkey(),
         };
 
         let mut transaction = Transaction {

@@ -41,14 +41,8 @@ impl Server {
         contracts_gateway: CG,
         bitcoin_client: BitcoinClient,
     ) -> Self {
-        // TODO(iago) should match the address used by getTemporaryAddress
-        let user = User::new(
-            "e49f8edd018329f77037b58fcd98bc719798da49"
-                .try_into()
-                .expect("Invalid address"),
-            bitcoin_client,
-        )
-        .expect("Failed to create user");
+        let user = User::new(contracts_gateway.my_address(), bitcoin_client)
+            .expect("Failed to create user");
 
         // Create sync wrapper that can work in any runtime context
         // NOTE: This uses a thread::spawn hack - should only be used in user-api
@@ -117,8 +111,6 @@ impl Server {
     ) -> impl IntoResponse {
         info!("Received request_pegin request: {:?}", payload);
 
-        let rsk_address = contracts.my_address();
-
         let stream_value = payload.stream_amount;
         // TODO how does the user know which packet number to use? it's not part of getTemporaryAddress response
         let packet_number = payload.packet_number.unwrap_or(0);
@@ -126,7 +118,7 @@ impl Server {
         let x_only_key = XOnlyPublicKey::from(user.public_key);
 
         let tmp_addr_call = contracts.get_temporary_pegin_address(PeginAddressInput {
-            rootstock_deposit_address: rsk_address.to_hex_string(),
+            rootstock_deposit_address: user.rsk_address.to_hex_string(),
             value: stream_value,
             btc_reimbursement_pub_key: format!("0x{}", x_only_key),
         });
