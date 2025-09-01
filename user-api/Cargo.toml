@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 axum = { workspace = true }
+bitcoin = { workspace = true, features = ["std", "rand-std", "serde"] }
 tower-http = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 anyhow = { workspace = true }
@@ -15,3 +16,7 @@ log = { workspace = true }
 common = { path = "../common" }
 transaction-dispatcher = { path = "../transaction-dispatcher", features = ["types"] }
 serde = { version = "1.0.219", features = ["derive"] }
+hex = "0.4.3"
+
+bitvmx_bitcoin_rpc = { package = "bitvmx-bitcoin-rpc", git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-bitcoin-rpc.git", rev = "0f63157" }
+bitcoin-scriptexec = { git = "https://github.com/FairgateLabs/rust-bitcoin-scriptexec/", branch = "bitvmx" }

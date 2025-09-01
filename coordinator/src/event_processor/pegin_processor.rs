@@ -211,7 +211,7 @@ where
             info!("Handling {data:?}, as member I should respond");
             true
         } else {
-            // TODO(iago) do we need to remove it from tracker if we are not part of the committee?
+            // TODO do we need to remove it from tracker if we are not part of the committee?
             info!("Handling {data:?}, I am NOT member so I skip");
             false
         }
@@ -1178,6 +1178,8 @@ where
 
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         let my_committees = self.global_context.my_committees().clone();
+
+        info!("My committees: {:?}", my_committees);
 
         match event {
             // Step 4: Handle PeginRequested event from RSK

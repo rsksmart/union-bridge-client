@@ -1,19 +1,21 @@
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
 use common::msg_broker::broker::{BrokerServer, BrokerServerApi};
+use common::runtime_sync::RuntimeSync;
 use common::shutdown_flag::ShutdownFlag;
 use log::{error, info};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
+use transaction_dispatcher::config::ConfigAsLib;
+use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use user_api::config::{Config, Logger};
 use user_api::Server;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const CONFIG_CLI_FLAG: &str = "config-path";
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let matches = Command::new("Union Bridge User API")
         .arg(
             Arg::new(LOGGER_CLI_FLAG)
@@ -37,8 +39,33 @@ async fn main() -> Result<()> {
     let config_path = matches.get_one::<String>(CONFIG_CLI_FLAG);
     let config: Config = Config::load(config_path).expect("Failed to load config");
 
+    // Load transaction dispatcher configuration
+    let tx_dispatcher_config: ConfigAsLib =
+        ConfigAsLib::load(config_path).expect("Failed to load transaction dispatcher config");
+
+    // just for creating the contracts_gateway, the other pieces of this crate are async
+    let rt_sync = RuntimeSync::new().context("Failed to create runtime sync")?;
+
+    let contracts_gateway = transaction_dispatcher::get_contracts_gateway_as_lib(
+        rt_sync.clone(),
+        tx_dispatcher_config,
+    )?;
+
     info!("Starting user-api server");
 
+    // Create BitcoinClient outside of async context to avoid runtime drop panic
+    let bitcoin_client = user_api::bitcoin::build_bitcoin_client_regtest();
+
+    // Create and run the async runtime
+    let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+    rt.block_on(async_main(config, contracts_gateway, bitcoin_client))
+}
+
+async fn async_main<CG: RskContractsGatewayApi + Send + Sync + 'static>(
+    config: Config,
+    contracts_gateway: CG,
+    bitcoin_client: user_api::bitcoin::BitcoinClient,
+) -> Result<()> {
     let shutdown_flag = ShutdownFlag::init();
 
     let broker_port = config.broker_server_port;
@@ -54,6 +81,8 @@ async fn main() -> Result<()> {
         broker_server.clone(),
         shutdown_flag.clone(),
         config.coordinator_broker_client_id,
+        contracts_gateway,
+        bitcoin_client,
     )
     .await;
     info!("Http Server started, listening on {http_addr}");
