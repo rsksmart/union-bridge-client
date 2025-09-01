@@ -39,8 +39,11 @@ pub struct User {
 impl User {
     pub fn new(rsk_address: Address, bitcoin_client: BitcoinClient) -> Result<Self> {
         let secp = Secp256k1::new();
+
+        // For simplicity, we generate a new keypair for the user every time since this is a temporary approach
         let (user_address, user_pubkey, user_sk) =
             Self::emulated_user_keypair(&secp, &bitcoin_client, REGTEST)?;
+
         Ok(Self {
             bitcoin_client: Arc::new(bitcoin_client),
             public_key: user_pubkey,

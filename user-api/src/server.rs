@@ -17,8 +17,14 @@ use tokio::net::TcpListener;
 use tower_http::timeout::TimeoutLayer;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 
-use crate::bitcoin::KeyType::XOnlyKey;
+use serde::{Deserialize, Serialize};
 use transaction_dispatcher::types::PeginAddressInput;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RequestPeginInput {
+    pub stream_amount: u64,
+    pub packet_number: Option<u64>,
+}
 
 pub struct Server {
     listener: TcpListener,
@@ -102,28 +108,27 @@ impl Server {
         }
     }
 
-    // NOTE: this is a temporary implementation, just to have something working
     async fn request_pegin(
         Extension(user): Extension<User>,
         Extension(contracts): Extension<
             Arc<dyn crate::sync_contracts_gateway::SyncContractsGatewayApi>,
         >,
+        Json(payload): Json<RequestPeginInput>,
     ) -> impl IntoResponse {
-        info!("Received request_pegin request for destination");
+        info!("Received request_pegin request: {:?}", payload);
 
         let rsk_address = contracts.my_address();
 
-        // TODO(iago) get from user input
-        let stream_value = 1_000_000;
+        let stream_value = payload.stream_amount;
         // TODO how does the user know which packet number to use? it's not part of getTemporaryAddress response
-        let packet_number = 0;
+        let packet_number = payload.packet_number.unwrap_or(0);
 
-        let xonly = XOnlyPublicKey::from(user.public_key);
+        let x_only_key = XOnlyPublicKey::from(user.public_key);
 
         let tmp_addr_call = contracts.get_temporary_pegin_address(PeginAddressInput {
             rootstock_deposit_address: rsk_address.to_hex_string(),
             value: stream_value,
-            btc_reimbursement_pub_key: format!("0x{}", xonly),
+            btc_reimbursement_pub_key: format!("0x{}", x_only_key),
         });
 
         let tmp_addr = match tmp_addr_call {
