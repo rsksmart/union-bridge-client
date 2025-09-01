@@ -4,7 +4,7 @@ use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use transaction_dispatcher::types::{PeginAddressInput, PeginAddressOutput};
 
 // Synchronous wrapper trait that is dyn-compatible
-// NOTE: This uses a thread::spawn hack to avoid runtime nesting issues
+// NOTE: This uses Handle::current().block_on() to call async code from sync contexts
 // This should only be used in user-api where we need to call async code from axum handlers
 pub trait SyncContractsGatewayApi: Send + Sync {
     fn my_address(&self) -> Address;
@@ -14,9 +14,9 @@ pub trait SyncContractsGatewayApi: Send + Sync {
     ) -> Result<PeginAddressOutput, DomainErrors>;
 }
 
-// Runtime-agnostic wrapper that can work in any context
-// WARNING: This uses thread::spawn as a workaround for runtime nesting issues
-// This is a hack and should not be used outside of user-api
+// Runtime-agnostic wrapper that can work in async contexts
+// Uses the current runtime's Handle to execute async operations synchronously
+// This should only be used in user-api where Axum handlers need sync interfaces
 pub struct SyncContractsGateway<T> {
     gateway: Arc<T>,
 }
@@ -44,17 +44,9 @@ impl<T: RskContractsGatewayApi + Send + Sync + 'static> SyncContractsGatewayApi
         &self,
         input: PeginAddressInput,
     ) -> Result<PeginAddressOutput, DomainErrors> {
-        // HACK: Create a new thread-local runtime just for this operation
-        // This avoids the nested runtime issue but is not ideal
-        // This should only be used in user-api
-        let gateway = self.gateway.clone();
-        std::thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().map_err(|e| {
-                DomainErrors::InternalServerError(format!("Failed to create runtime: {}", e))
-            })?;
-            rt.block_on(gateway.get_temporary_pegin_address(input))
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current()
+                .block_on(self.gateway.get_temporary_pegin_address(input))
         })
-        .join()
-        .map_err(|e| DomainErrors::InternalServerError(format!("Thread panic: {:?}", e)))?
     }
 }

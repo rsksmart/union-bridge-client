@@ -1,21 +1,20 @@
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
 use common::msg_broker::broker::{BrokerServer, BrokerServerApi};
-use common::runtime_sync::RuntimeSync;
 use common::shutdown_flag::ShutdownFlag;
 use log::{error, info};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use transaction_dispatcher::config::ConfigAsLib;
-use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use user_api::config::{Config, Logger};
 use user_api::Server;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const CONFIG_CLI_FLAG: &str = "config-path";
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let matches = Command::new("Union Bridge User API")
         .arg(
             Arg::new(LOGGER_CLI_FLAG)
@@ -43,29 +42,19 @@ fn main() -> Result<()> {
     let tx_dispatcher_config: ConfigAsLib =
         ConfigAsLib::load(config_path).expect("Failed to load transaction dispatcher config");
 
-    // just for creating the contracts_gateway, the other pieces of this crate are async
-    let rt_sync = RuntimeSync::new().context("Failed to create runtime sync")?;
-
-    let contracts_gateway = transaction_dispatcher::get_contracts_gateway_as_lib(
-        rt_sync.clone(),
-        tx_dispatcher_config,
-    )?;
+    let contracts_gateway =
+        transaction_dispatcher::get_contracts_gateway_as_lib(tx_dispatcher_config)
+            .await
+            .expect("Failed to get contracts gateway");
 
     info!("Starting user-api server");
 
-    // Create BitcoinClient outside of async context to avoid runtime drop panic
-    let bitcoin_client = user_api::bitcoin::build_bitcoin_client_regtest();
+    // Create BitcoinClient in blocking context to avoid runtime drop panic (we are in a Tokio context)
+    let bitcoin_client =
+        tokio::task::spawn_blocking(|| user_api::bitcoin::build_bitcoin_client_regtest())
+            .await
+            .expect("Failed to spawn blocking task for Bitcoin client creation");
 
-    // Create and run the async runtime
-    let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
-    rt.block_on(async_main(config, contracts_gateway, bitcoin_client))
-}
-
-async fn async_main<CG: RskContractsGatewayApi + Send + Sync + 'static>(
-    config: Config,
-    contracts_gateway: CG,
-    bitcoin_client: user_api::bitcoin::BitcoinClient,
-) -> Result<()> {
     let shutdown_flag = ShutdownFlag::init();
 
     let broker_port = config.broker_server_port;
@@ -85,6 +74,7 @@ async fn async_main<CG: RskContractsGatewayApi + Send + Sync + 'static>(
         bitcoin_client,
     )
     .await;
+
     info!("Http Server started, listening on {http_addr}");
     if let Err(err) = server.start().await {
         error!("Server error: {}", err);
