@@ -91,10 +91,18 @@ impl User {
         // We'll create a transaction that will be detected as RSK pegin by the transaction monitor.
         let signed_transaction =
             self.create_request_pegin_tx(stream_value, packet_number, tmp_addr)?;
+
+        info!("Sending RSK pegin transaction {signed_transaction:?}");
+
         let txid = self.bitcoin_client.send_transaction(&signed_transaction)?;
 
+        info!("Sent RSK pegin transaction with txid: {txid}");
+
         // Get the transaction and verify it was created
-        let request_pegin_tx = self.bitcoin_client.get_transaction(&txid)?.unwrap();
+        let request_pegin_tx = self
+            .bitcoin_client
+            .get_transaction(&txid)?
+            .context("Could not retrieve sent transaction")?;
 
         // Mine blocks to include the transaction
         self.bitcoin_client
@@ -227,7 +235,7 @@ impl User {
         };
 
         // Output: all funds (minus fee) to user address
-        let total_in = funding_utxo.2.unwrap(); // You may want to add the value of tx_output if known
+        let total_in = funding_utxo.2.context("Funding UTXO missing amount")?;
         let output = TxOut {
             value: Amount::from_sat(total_in - fee),
             script_pubkey: self.address.script_pubkey(),
@@ -295,7 +303,10 @@ impl User {
         let uncompressed_pk = secp256k1::PublicKey::from_slice(&user_comp_pubkey.to_bytes())?;
 
         // Sign the transactions inputs
-        let wpkh = self.public_key.wpubkey_hash().expect("key is compressed");
+        let wpkh = self
+            .public_key
+            .wpubkey_hash()
+            .context("key is compressed")?;
         let script_pubkey = ScriptBuf::new_p2wpkh(&wpkh);
         let mut sighasher = SighashCache::new(transaction);
 
@@ -308,7 +319,7 @@ impl User {
                     Amount::from_sat(value),
                     sighash_type,
                 )
-                .expect("failed to create rsk request pegin input sighash");
+                .context("failed to create rsk request pegin input sighash")?;
 
             let signature = bitcoin::ecdsa::Signature {
                 signature: self
@@ -317,7 +328,7 @@ impl User {
                 sighash_type,
             };
 
-            *sighasher.witness_mut(input_index).unwrap() =
+            *sighasher.witness_mut(input_index).context("No witness")? =
                 Witness::p2wpkh(&signature, &uncompressed_pk);
         }
 
@@ -360,7 +371,7 @@ impl User {
         let user_address: bitcoin::Address = bitcoin_client.get_new_address(user_pubkey, network);
         info!(
             "User Address({}): {:?}",
-            user_address.address_type().unwrap(),
+            user_address.address_type().context("No address type")?,
             user_address
         );
         Ok((user_address, user_pubkey, user_sk))
