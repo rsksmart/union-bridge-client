@@ -110,8 +110,7 @@ README instructions to set it up. Once done, you can run the BitVMX client by fo
 
 ```bash
 cd <path_to_bitvmx_workspace_repo>/rust-bitvmx-client
-cargo run --example union setup_bitcoin_node # this requires Docker to be running
-RUST_BACKTRACE=1 cargo run all # this spins up the BitVMX client
+bash run_union_example.sh # this spins up the BitVMX client and Docker to be running
 ```
 
 ### Running Committee Collaboration
