@@ -12,7 +12,7 @@ use coordinator::{
 };
 use log::{error, info};
 use std::rc::Rc;
-use transaction_dispatcher::config::ConfigAsLib;
+use transaction_dispatcher::config::ConfigAsLib as TxDispatcherConfig;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const CONFIG_CLI_FLAG: &str = "config-path";
@@ -42,8 +42,8 @@ fn main() -> Result<()> {
     let config: Config = Config::load(config_path).expect("Failed to load config");
 
     // Load transaction dispatcher configuration
-    let tx_dispatcher_config: ConfigAsLib =
-        ConfigAsLib::load(config_path).expect("Failed to load transaction dispatcher config");
+    let tx_dispatcher_config: TxDispatcherConfig = TxDispatcherConfig::load(config_path)
+        .expect("Failed to load transaction dispatcher config");
 
     let contract_addresses = config.get_contract_addresses();
 
