@@ -53,7 +53,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         }
     }
 
-    #[cfg(not(feature = "anvil"))]
+    #[cfg(not(feature = "fresh_node"))]
     fn get_initial_block(&self, provider: &P) -> RskBlock {
         let opt_block = provider
             .get_block_by_hash(self.initial_block_hash)
@@ -70,11 +70,11 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         })
     }
 
-    #[cfg(feature = "anvil")]
+    #[cfg(feature = "fresh_node")]
     fn get_initial_block(&self, provider: &P) -> RskBlock {
         provider
             .get_best_block()
-            .expect("Precondition failed: error fetching best block on anvil")
+            .expect("Precondition failed: error fetching best block")
     }
 
     fn is_running(&self) -> bool {

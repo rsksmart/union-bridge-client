@@ -136,6 +136,8 @@ where
         self.request_cancel_event_monitoring()
             .context("Cleaning up potentially stalled log connection")?;
 
+        info!("Starting Logs monitoring");
+
         let addresses = self.peg_manager_addresses.clone();
         for addr in addresses {
             let result = self

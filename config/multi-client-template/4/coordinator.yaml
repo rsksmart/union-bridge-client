@@ -1,17 +1,17 @@
 block_broker:
-  ip: "0.0.0.0"
+  host: "0.0.0.0"
   port: 10004
 
 log_broker:
-  ip: "0.0.0.0"
+  host: "0.0.0.0"
   port: 11004
 
-bitvmx_broker:
-  ip: "0.0.0.0"
+bitvmx_broker: # can be overriden with env vars UB_bitvmx_broker__ip and UB_bitvmx_broker__port
+  host: "0.0.0.0"
   port: 55554
 
 broker_client_id: 104
 
 user_broker:
-  ip: "0.0.0.0"
+  host: "0.0.0.0"
   port: 30004

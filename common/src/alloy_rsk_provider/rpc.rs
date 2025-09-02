@@ -37,6 +37,8 @@ impl AlloyProvider {
         // Set up the sync-runtime
         let rt_sync = RuntimeSync::new().context("On AlloyProvider")?;
 
+        println!("Connecting to Rootstock node at {url}");
+
         // Prepare the WS transport
         let ws = WsConnect::new(url);
 

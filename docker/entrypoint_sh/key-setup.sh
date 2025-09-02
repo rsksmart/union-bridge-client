@@ -6,7 +6,6 @@ if [ -z "${KEY_STORE_PASSWORD:-}" ]; then
   exit 1
 fi
 
-RPC_URL="http://actors-mocking:8545"
 KEYSTORE_PATH="/keystore/key.json"
 
 if [ ! -f "${KEYSTORE_PATH}" ]; then

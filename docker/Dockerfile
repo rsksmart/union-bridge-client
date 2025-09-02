@@ -5,9 +5,10 @@ ARG FEATURES
 # --build-arg to specify just one crate to build in the builder stage
 ARG JUST_CRATE
 
+
 # --- BUILDER STAGE ---
 
-FROM union-client-builder:rust-1.86-v1 AS builder
+FROM ghcr.io/rsksmart/union-client-builder:rust-1.86-v1 AS builder
 ARG JUST_CRATE=""
 ARG FEATURES=""
 
@@ -51,13 +52,13 @@ RUN --mount=type=ssh,id=default mkdir -p .cargo && \
 # 1) build the entire workspace and reuse among containers, to reduce build time
 # 2) build just one crate for speed
 # optionally builds with --features if provided
-# we also exclude key-manager, which is built always in the next step
+# we also exclude key-manager, which is built always in the next step even if only a couple of crates require it
 ARG EXCLUDES="--exclude check-fork --exclude check-fork-zkp --exclude key-manager --exclude actors-mocking"
 # TODO when the zkp feature is re-enabled, use this to build coordinator in an image with amd64 support (required by Risc0 in Macs with M chips) via Dockerfile_coordinator
 # EXCLUDES="--exclude coordinator--exclude check-fork --exclude check-fork-zkp --exclude key-manager --exclude actors-mocking"
 RUN --mount=type=ssh,id=default cargo build --workspace --quiet --release ${EXCLUDES}${JUST_CRATE:+ -p $JUST_CRATE}${FEATURES:+ --features $FEATURES};
-# build key-manager always (even if $JUST_CRATE provided), as it might be used by other services
-RUN --mount=type=ssh,id=default cargo build --quiet --release -p key-manager;
+# build key-manager always, even if only a couple of crates require it
+RUN --mount=type=ssh,id=default cargo build --quiet --release -p key-manager
 
 # --- RUNTIME STAGE ---
 
@@ -74,7 +75,7 @@ RUN apt-get update -y && \
 
 # copy the crate built binary
 COPY --from=builder /app/target/release/${CRATE} /app/${CRATE}
-# copy always, but only used by transaction-dispatcher
+# copy key-manager always, even if only a couple of crates require it
 COPY --from=builder /app/target/release/key-manager /app/key-manager
 
 # set environment variables

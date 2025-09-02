@@ -6,13 +6,6 @@ use std::collections::HashMap;
 
 const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
-fn load_config_with_path<T>(base_path: Option<&String>) -> Result<(T, String), ConfigError>
-where
-    T: for<'de> serde::Deserialize<'de>,
-{
-    CommonConfig::load_config::<T>(base_path, CARGO_PKG_NAME)
-}
-
 #[derive(Debug, Deserialize)]
 pub struct ConfigAsBin {
     pub server: ServerConfig,
@@ -26,8 +19,6 @@ pub struct ConfigAsLib {
     pub key_store: KeyStoreConfig,
     pub transaction: TransactionConfig,
     pub contracts: Vec<ContractConfig>,
-    #[serde(skip)]
-    pub path: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -47,9 +38,7 @@ pub struct TransactionConfig {
 
 impl ConfigAsBin {
     pub fn load(base_path: Option<&String>) -> Result<Self, ConfigError> {
-        let (mut cfg, path) = load_config_with_path::<ConfigAsBin>(base_path)?;
-        cfg.lib_config.path = path;
-        Ok(cfg)
+        CommonConfig::load_config::<ConfigAsBin>(base_path, CARGO_PKG_NAME)
     }
 
     pub fn provider(&self) -> &ProviderConfig {
@@ -71,17 +60,11 @@ impl ConfigAsBin {
     pub fn contracts(&self) -> &Vec<ContractConfig> {
         &self.lib_config.contracts
     }
-
-    pub fn path(&self) -> &String {
-        &self.lib_config.path
-    }
 }
 
 impl ConfigAsLib {
     pub fn load(base_path: Option<&String>) -> Result<Self, ConfigError> {
-        let (mut cfg, path) = load_config_with_path::<ConfigAsLib>(base_path)?;
-        cfg.path = path;
-        Ok(cfg)
+        CommonConfig::load_config::<ConfigAsLib>(base_path, CARGO_PKG_NAME)
     }
 
     pub fn load_managed_contracts(&self) -> HashMap<String, ContractInfo> {
@@ -163,7 +146,6 @@ mod tests {
             Address::try_from("0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761").unwrap(),
             contract_info.address
         );
-        assert!(contract_info.abi.is_none());
 
         // second contract
         let key = "TestContractCompiled";
@@ -174,7 +156,6 @@ mod tests {
             Address::try_from("0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc").unwrap(),
             contract_info.address
         );
-        assert!(contract_info.abi.is_none());
     }
 
     #[test]

@@ -20,5 +20,8 @@ primitive-types = { workspace = true }
 tempfile = { workspace = true }
 
 [features]
+default = ["fresh_node"] # temporary, for dev convenience
+
 test-utils = ["common/test-utils"]
 anvil = ["common/anvil"]
+fresh_node = []

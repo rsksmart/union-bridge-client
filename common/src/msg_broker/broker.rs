@@ -8,7 +8,7 @@ use message_broker::rpc::sync_server::BrokerSync;
 use mockall::automock;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, ToSocketAddrs};
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
@@ -95,8 +95,11 @@ pub struct BrokerClient {
 }
 
 impl BrokerClient {
-    pub fn new(ip: IpAddr, port: u16, my_id: u32) -> Self {
-        debug!("Starting BrokerClient on {ip}:{port} with id {my_id}");
+    pub fn new(host: String, port: u16, my_id: u32) -> Self {
+        debug!("Starting BrokerClient on {host}:{port} with id {my_id}");
+
+        let ip = resolve_ip(host, port).expect("Unable to resolve IP");
+
         let broker_config = BrokerConfig::new(port, Some(ip));
         let client = DualChannel::new(&broker_config, my_id);
         Self { channel: client }
@@ -197,8 +200,11 @@ pub struct BitVmxBrokerClient {
 }
 
 impl BitVmxBrokerClient {
-    pub fn new(ip: IpAddr, port: u16, my_id: u32) -> Self {
-        debug!("Starting BitVmxBrokerClient on {ip}:{port} with id {my_id}");
+    pub fn new(host: String, port: u16, my_id: u32) -> Self {
+        debug!("Starting BitVmxBrokerClient on {host}:{port} with id {my_id}");
+
+        let ip = resolve_ip(host, port).expect("Unable to resolve IP");
+
         let broker_config = BrokerConfig::new(port, Some(ip));
         let client = DualChannel::new(&broker_config, my_id);
         Self { channel: client }
@@ -230,4 +236,13 @@ pub enum BrokerError {
     SerializationError(#[from] serde_json::Error),
     #[error("Unknown error on Broker: {0}")]
     UnknownError(#[from] anyhow::Error),
+}
+
+fn resolve_ip(name: String, port: u16) -> std::io::Result<IpAddr> {
+    // ToSocketAddrs triggers DNS lookup via /etc/resolv.conf inside the container
+    (name, port)
+        .to_socket_addrs()?
+        .find(|a| a.is_ipv4()) // pick IPv4 if you need IpAddr::V4
+        .map(|a| a.ip())
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "no A record"))
 }
