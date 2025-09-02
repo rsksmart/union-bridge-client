@@ -1,3 +1,4 @@
+use crate::rsk_gateway::DomainErrors;
 use crate::rsk_gateway::RskContractsGateway;
 use alloy_provider::network::EthereumWallet;
 use alloy_provider::{Provider, ProviderBuilder, WsConnect};
@@ -30,14 +31,29 @@ pub fn get_contracts_gateway<P: Provider + Clone>(
     .context("Could not instantiate RskContractsGateway")
 }
 
-pub fn get_contracts_gateway_as_lib(
+pub fn get_contracts_gateway_as_lib_sync(
     rt_sync: RuntimeSync,
     config: config::ConfigAsLib,
 ) -> Result<RskContractsGateway<impl Provider + Clone>> {
+    rt_sync.run(create_contracts_gateway_impl(config))
+}
+
+pub async fn get_contracts_gateway_as_lib(
+    config: config::ConfigAsLib,
+) -> Result<RskContractsGateway<impl Provider + Clone>> {
+    create_contracts_gateway_impl(config)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to create contracts gateway: {}", e))
+}
+
+async fn create_contracts_gateway_impl(
+    config: config::ConfigAsLib,
+) -> Result<RskContractsGateway<impl Provider + Clone>, DomainErrors> {
     let key_store_path = Path::new(&config.key_store.path);
 
     info!("Getting signer from key at {}", key_store_path.display());
-    let signer = KeyManager::get_signer(key_store_path)?;
+    let signer = KeyManager::get_signer(key_store_path)
+        .map_err(|e| DomainErrors::InternalServerError(format!("Failed to get signer: {}", e)))?;
     info!("Got signer with address {}", signer.address());
 
     let signer_address = signer.address().into();
@@ -46,12 +62,17 @@ pub fn get_contracts_gateway_as_lib(
     let rsk_url = &config.provider.rootstock.url;
     let ws = WsConnect::new(rsk_url);
 
-    let provider =
-        rt_sync.run(async { ProviderBuilder::new().wallet(wallet).connect_ws(ws).await })?;
+    let provider = ProviderBuilder::new()
+        .wallet(wallet)
+        .connect_ws(ws)
+        .await
+        .map_err(|e| {
+            DomainErrors::InternalServerError(format!("Failed to connect to provider: {}", e))
+        })?;
 
     info!(
-        "Connected to Rootstock at {} with address {}",
-        &config.provider.rootstock.url, rsk_url
+        "Connected to Rootstock at {}",
+        &config.provider.rootstock.url
     );
 
     RskContractsGateway::new(
@@ -60,5 +81,5 @@ pub fn get_contracts_gateway_as_lib(
         &config.transaction,
         signer_address,
     )
-    .context("Could not instantiate RskContractsGateway")
+    .map_err(|e| DomainErrors::InternalServerError(format!("Failed to create gateway: {}", e)))
 }

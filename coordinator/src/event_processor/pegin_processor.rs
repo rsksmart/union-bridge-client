@@ -1,3 +1,51 @@
+use crate::flows::common::{GlobalContext, MyCommittees};
+use crate::types::{RegisterSignaturesBitVmxData, TickScheduler};
+use crate::{
+    blockchain_tracker::{BlockConfirmations, BlockchainObserver, BlockchainView},
+    config::REQUIRED_CONFIRMATIONS,
+    event_processor::EventProcessor,
+    flows::btc_signature::btc_signature_subflow::{
+        BtcSignatureSubFlowApi, BtcSignatureSubFlowFactoryApi,
+    },
+    types::{
+        AllOperatorTakeTxHashesAddedEvent, EventWithBlock, PeginAcceptedEvent, PeginRequestedEvent,
+        RskPegManagerEvents,
+    },
+};
+use alloy_primitives::{FixedBytes, U256};
+use anyhow::{Context, Result, anyhow, bail};
+use bitcoin::{
+    PublicKey, Txid,
+    hashes::Hash,
+    secp256k1::{Parity::Even, XOnlyPublicKey},
+};
+use common::msg_broker::bitvmx_types::{ACCEPT_PEGIN_TX, PeginAcceptedMessage, TransactionStatus};
+use common::types::CommitteeId;
+use common::{
+    msg_broker::{
+        bitvmx_types::{
+            BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, VariableTypes,
+        },
+        broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi},
+    },
+    runtime_sync::RuntimeSync,
+    types::{RskBlockAndUncles, TxHash},
+};
+use log::{debug, error, info, warn};
+use serde::Serialize;
+use std::{cell::RefCell, collections::HashMap, fmt::Debug, future::Future, rc::Rc};
+use transaction_dispatcher::types::GetCommunicationDataInput;
+use transaction_dispatcher::{
+    rsk_gateway::{DomainErrors, RskContractsGatewayApi},
+    types::{
+        AddOperatorTakeTxHashInput, GetCommitteeInput, GetMemberPublicKeysInput, P2PAddressParser,
+        RequestPeginInput,
+    },
+};
+use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
+use union_contracts::bindings::signature_manager::SignatureManager::AllOperatorTakeTxHashesAdded;
+use uuid::Uuid;
+
 /**
 U: Union Bridge
 B: BitVMX
@@ -32,69 +80,6 @@ Pegin steps:
     b. Send SetVar to BitVMX with the PEG_IN_COMPLETED msg (U -> B)
 
  */
-use crate::types::{RegisterSignaturesBitVmxData, TickScheduler};
-use crate::{
-    blockchain_tracker::{BlockConfirmations, BlockchainObserver, BlockchainView},
-    config::REQUIRED_CONFIRMATIONS,
-    event_processor::EventProcessor,
-    flows::btc_signature::btc_signature_subflow::{
-        BtcSignatureSubFlowApi, BtcSignatureSubFlowFactoryApi,
-    },
-    types::{
-        AllOperatorTakeTxHashesAddedEvent, EventWithBlock, PeginAcceptedEvent, PeginRequestedEvent,
-        RskPegManagerEvents,
-    },
-};
-use alloy_primitives::FixedBytes;
-use anyhow::{Context, Result, anyhow, bail};
-use bitcoin::{
-    PublicKey, Txid,
-    hashes::Hash,
-    secp256k1::{Parity::Even, XOnlyPublicKey},
-};
-use common::msg_broker::bitvmx_types::{ACCEPT_PEGIN_TX, PeginAcceptedMessage, TransactionStatus};
-use common::types::CommitteeId;
-use common::{
-    msg_broker::{
-        bitvmx_types::{
-            BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, VariableTypes,
-        },
-        broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi},
-    },
-    runtime_sync::RuntimeSync,
-    types::{RskBlockAndUncles, TxHash},
-};
-use log::{debug, error, info, warn};
-use serde::Serialize;
-use std::{cell::RefCell, collections::HashMap, fmt::Debug, future::Future, rc::Rc};
-use transaction_dispatcher::types::GetCommunicationDataInput;
-use transaction_dispatcher::{
-    rsk_gateway::{DomainErrors, RskContractsGatewayApi},
-    types::{
-        AddOperatorTakeTxHashInput, GetCommitteeInput, GetMemberPublicKeysInput, P2PAddressParser,
-        RequestPeginInput,
-    },
-};
-use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
-use union_contracts::bindings::signature_manager::SignatureManager::AllOperatorTakeTxHashesAdded;
-use uuid::Uuid;
-
-/// The Pegin starts when there is PeginTrasactionFound. Automatically, the Union Client
-/// requests the SPV Proof of the request pegin tx to BitVMX Client. And, we receive a
-/// SPV Proof message from the BitVMX Client for the request pegin tx. With this SPV Proof we
-/// deposit it to the requestPegin method in the PeginManager. Once this is done, we receive the
-/// PeginRequested event from the contracts and we wait X confirmations, and after it we send build
-/// PeginRequest message using the data from the previous event and some other misc calls to the contracts.
-/// The PeginRequestMessage goes in a Varible BitVMX message and we also send the Setup of the Accept Pegin Protocol.
-/// We will receive a message of type Variable with the signing info (PeginAcceptedMessage). Now once we receive this,
-/// we deposit the take tx hash to the contract as a means of comitting to the transaction something bad happens and ev ery
-/// member of the committee can see that indeed they are committing to the tx they signed offchain.
-/// Next step would be that every member adds the nonce with the operator take tx hash (hash to sign) and once all the
-/// operators / members do this, a AllNonceAdded is emitted and we do the same but with the siganature field. Once every member
-/// signs then an event AllSignaturesAdded is emmitted and we send a message to BitVMX DispatchTransaction with the txId
-/// txHash of the Accept Pegin Tx because we want to get broadcasted in Bitcoin and mined. Waits for the tx to get mined,
-/// we ask for the SPV Proof for the acceptPeginTx and with that SPV Proof we call the acceptPegin method in the PegManager
-/// contract which mints rbtc for the user. It also emits a event which will send in a SetVar.
 
 const ACCEPT_PEGIN: &'static str = "accept-pegin";
 const PEGIN_REQUEST: &'static str = "PeginRequest";
@@ -182,6 +167,7 @@ where
     tracker: HashMap<TxHash, PeginState<BSF>>,
     btc_sig_subflow_factory: FactoryBSF,
     scheduler: TickScheduler<Uuid>,
+    global_context: GlobalContext,
 }
 
 impl<CG, BC, BSF, FactoryBSF> PeginProcessor<CG, BC, BSF, FactoryBSF>
@@ -196,6 +182,7 @@ where
         contracts: Rc<CG>,
         bitvmx_broker: Rc<BC>,
         factory: FactoryBSF,
+        global_context: GlobalContext,
     ) -> Self {
         // Step 1: Subscribe to BitVMX pegin events
         Self::subscribe_to_bitvmx_pegin_events(&bitvmx_broker)
@@ -211,6 +198,22 @@ where
             tracker: HashMap::new(),
             btc_sig_subflow_factory: factory,
             scheduler: TickScheduler::new(),
+            global_context,
+        }
+    }
+
+    fn is_my_committee<T: Debug>(
+        my_committees: &MyCommittees,
+        committee_id: &CommitteeId,
+        data: &EventWithBlock<T>,
+    ) -> bool {
+        if my_committees.im_member(&committee_id) {
+            info!("Handling {data:?}, as member I should respond");
+            true
+        } else {
+            // TODO do we need to remove it from tracker if we are not part of the committee?
+            info!("Handling {data:?}, I am NOT member so I skip");
+            false
         }
     }
 
@@ -235,7 +238,13 @@ where
             return self.untrack_pegin_requested(data.clone());
         }
 
-        info!("Handling PeginRequested event: {:?}", data);
+        let committee_id = &data.inner.committeeId.try_into()?;
+        let is_event_from_my_committee =
+            Self::is_my_committee(self.global_context.my_committees(), committee_id, data);
+
+        if !is_event_from_my_committee {
+            return Ok(());
+        }
 
         let pegin_flow_id = Uuid::new_v4();
         let observer_id = format!("pegin_requested-{}", pegin_flow_id);
@@ -260,8 +269,6 @@ where
             return self.untrack_pegin_accepted(data.clone());
         }
 
-        info!("Handling PeginAccepted event: {:?}", data);
-
         let tx_hash: TxHash = data.inner.acceptPeginTxHash.into();
         let Some(state) = self.tracker.get(&tx_hash) else {
             bail!(
@@ -269,6 +276,14 @@ where
                 tx_hash
             );
         };
+
+        let committee_id: CommitteeId = state.pegin_requested.data.inner.committeeId.try_into()?;
+        let is_event_from_my_committee =
+            Self::is_my_committee(self.global_context.my_committees(), &committee_id, data);
+
+        if !is_event_from_my_committee {
+            return Ok(());
+        }
 
         let observer_id = format!("pegin_accepted-{}", state.flow_id);
         let confirmations =
@@ -309,8 +324,16 @@ where
         info!("Handling AllOperatorTakeTxHashesAdded event: {:?}", data);
 
         let Some(state) = self.tracker.get(&tx_hash) else {
-            bail!("Key should exist after contains_key check");
+            bail!("State should exist for tx_hash {tx_hash:?} after AllOperatorTakeTxHashesAdded");
         };
+
+        let committee_id: CommitteeId = state.pegin_requested.data.inner.committeeId.try_into()?;
+        let is_event_from_my_committee =
+            Self::is_my_committee(self.global_context.my_committees(), &committee_id, data);
+
+        if !is_event_from_my_committee {
+            return Ok(());
+        }
 
         let observer_id = format!("operator_take_tx_hashes_added-{}", state.flow_id);
         info!(
@@ -602,7 +625,7 @@ where
         let txid = Txid::from_slice(pegin_event.requestPeginTxHash.as_slice())
             .context("Failed to parse transaction ID from pegin event")?;
 
-        let committee_id = Self::build_committee_id(pegin_event)?;
+        let committee_id = Self::build_committee_id(pegin_event.committeeId)?;
 
         Ok(PeginRequestMessage {
             txid,
@@ -682,13 +705,13 @@ where
         Ok(PublicKey::new(reimbursement_secp_key))
     }
 
-    fn build_committee_id(pegin_event: &PeginRequested) -> Result<Uuid> {
-        let committee_bytes = pegin_event.committeeId.to_be_bytes_vec();
+    fn build_committee_id(committee_id: U256) -> Result<Uuid> {
+        let committee_bytes = committee_id.to_be_bytes_vec();
         let uuid_bytes: [u8; 16] = committee_bytes
-        .get(..16)
-        .ok_or_else(|| anyhow!("Committee ID too short for UUID conversion: expected at least 16 bytes, got {}", committee_bytes.len()))?
-        .try_into()
-        .context("Failed to convert committee_id to UUID")?;
+            .get(..16)
+            .ok_or_else(|| anyhow!("Committee ID too short for UUID conversion: expected at least 16 bytes, got {}", committee_bytes.len()))?
+            .try_into()
+            .context("Failed to convert committee_id to UUID")?;
         Ok(Uuid::from_bytes(uuid_bytes))
     }
 
@@ -1154,6 +1177,10 @@ where
     }
 
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
+        let my_committees = self.global_context.my_committees().clone();
+
+        info!("My committees: {:?}", my_committees);
+
         match event {
             // Step 4: Handle PeginRequested event from RSK
             RskPegManagerEvents::PeginRequested(data) => self.handle_pegin_requested(data),
@@ -1167,8 +1194,13 @@ where
             RskPegManagerEvents::AllNoncesReady(data)
             //Step 8: Handle AllSignaturesReady event from RSK
             | RskPegManagerEvents::AllSignaturesReady(data) => {
-                debug!("Handling signature event {:?}", data);
                 for state in self.tracker.values_mut() {
+                    let committee_id: &CommitteeId = &state.pegin_requested.data.inner.committeeId.try_into()?;
+                    let is_event_for_my_committees = Self::is_my_committee(&my_committees, committee_id, data);
+                    if !is_event_for_my_committees {
+                        continue;
+                    }
+
                     if let Some(btc_sig_flow) = &mut state.btc_signatures_flow {
                         // Delegate the event to the BTC signature flow
                         btc_sig_flow.delegate_rsk_event(state.flow_id, event)?;
@@ -1176,7 +1208,8 @@ where
                             //#Step 8a: Send DispatchTransaction to BitVMX
                             Self::send_dispatch_transaction_name(&self.bitvmx_broker, state.flow_id)?;
                             //#Step 8b: Send GetTransactionInfoByName to BitVMX
-                            Self::send_get_transaction_info_by_name(&self.bitvmx_broker, state.flow_id)?;                        }
+                            Self::send_get_transaction_info_by_name(&self.bitvmx_broker, state.flow_id)?;
+                        }
                     }
                 }
                 Ok(())
@@ -1263,6 +1296,7 @@ mod tests {
             MockRskContractsGatewayApi::new().into(),
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
+            GlobalContext::new(),
         );
     }
 
@@ -1289,6 +1323,7 @@ mod tests {
             MockRskContractsGatewayApi::new().into(),
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
+            GlobalContext::new(),
         );
     }
 
@@ -1314,6 +1349,7 @@ mod tests {
             MockRskContractsGatewayApi::new().into(),
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
+            GlobalContext::new(),
         );
 
         let event = OutgoingBitVMXApiMessages::PeginTransactionFound(txid, status);
@@ -1332,6 +1368,7 @@ mod tests {
             MockRskContractsGatewayApi::new().into(),
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
+            GlobalContext::new(),
         );
 
         let tx_id = dummy_spv_proof().tx.compute_txid();
@@ -1366,6 +1403,7 @@ mod tests {
             contracts.into(),
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
+            GlobalContext::new(),
         );
 
         let spv_proof = dummy_spv_proof();
@@ -1396,6 +1434,7 @@ mod tests {
             contracts.into(),
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
+            GlobalContext::new(),
         );
 
         let spv_proof = dummy_spv_proof();
@@ -1436,6 +1475,7 @@ mod tests {
             contracts.into(),
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
+            GlobalContext::new(),
         );
 
         // First add a pegin state to track
@@ -1510,6 +1550,7 @@ mod tests {
             contracts.into(),
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
+            GlobalContext::new(),
         );
 
         // Create a PegInAcceptedMessage payload with a random flow_id (not tracked)
@@ -1549,12 +1590,19 @@ mod tests {
             MockRskContractsGatewayApi::new().into(),
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
+            GlobalContext::new(),
         );
 
         let pegin_requested = dummy_pegin_requested_event();
+
+        add_to_my_committees(
+            &mut processor.global_context.my_committees(),
+            &pegin_requested,
+        );
+
         let tx_hash: TxHash = pegin_requested.acceptPeginTxHash.into();
         let event = RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
-            inner: pegin_requested,
+            inner: pegin_requested.clone(),
             block_number: 123.into(),
             block_hash: BlockHash::from(H256::from([0xaa; 32])),
             removed: false,
@@ -1584,9 +1632,16 @@ mod tests {
             MockRskContractsGatewayApi::new().into(),
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
+            GlobalContext::new(),
         );
 
         let pegin_requested = dummy_pegin_requested_event();
+
+        add_to_my_committees(
+            &mut processor.global_context.my_committees(),
+            &pegin_requested,
+        );
+
         let tx_hash: TxHash = pegin_requested.acceptPeginTxHash.into();
         let event = RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
             inner: pegin_requested.clone(),
@@ -1621,6 +1676,41 @@ mod tests {
     }
 
     #[test]
+    fn process_new_event_pegin_requested_event_not_my_committee() {
+        let mut broker = MockBrokerClientApi::new();
+        expect_bitvmx_subscription_success(&mut broker);
+
+        let mut processor = PeginProcessor::new(
+            RuntimeSync::new().unwrap(),
+            MockRskContractsGatewayApi::new().into(),
+            broker.into(),
+            MockBtcSigSubFlowFactory::new(),
+            GlobalContext::new(),
+        );
+
+        let pegin_requested = dummy_pegin_requested_event();
+
+        // note: we intentionally do NOT add the committee to my_committees
+        // add_to_my_committees(&mut processor.global_context.my_committees(), &pegin_requested);
+
+        let tx_hash: TxHash = pegin_requested.acceptPeginTxHash.into();
+        let event = RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
+            inner: pegin_requested.clone(),
+            block_number: 123.into(),
+            block_hash: BlockHash::from(H256::from([0xaa; 32])),
+            removed: false,
+            tx_hash: tx_hash.clone(),
+        });
+
+        let result = processor.process_new_rsk_event(&event);
+        assert!(result.is_ok());
+
+        // event should be ignored since committee is not in my_committees
+        assert_eq!(processor.tracker.len(), 0);
+        assert!(!processor.blockchain.has_observer("pegin_requested-"));
+    }
+
+    #[test]
     fn process_new_event_pegin_accepted_event_and_observer() {
         let mut broker = MockBrokerClientApi::new();
         expect_bitvmx_subscription_success(&mut broker);
@@ -1630,16 +1720,24 @@ mod tests {
             MockRskContractsGatewayApi::new().into(),
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
+            GlobalContext::new(),
         );
 
         let pegin_requested = dummy_pegin_requested_event();
+
+        add_to_my_committees(
+            &mut processor.global_context.my_committees(),
+            &pegin_requested,
+        );
+
         let event = RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
-            inner: pegin_requested,
+            inner: pegin_requested.clone(),
             block_number: 122.into(),
             block_hash: BlockHash::from(H256::from([0xba; 32])),
             removed: false,
             tx_hash: TxHash::from(H256::from_low_u64_be(122)),
         });
+
         let result = processor.process_new_rsk_event(&event);
         assert!(result.is_ok());
 
@@ -1677,9 +1775,16 @@ mod tests {
             MockRskContractsGatewayApi::new().into(),
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
+            GlobalContext::new(),
         );
 
         let pegin_requested = dummy_pegin_requested_event();
+
+        add_to_my_committees(
+            &mut processor.global_context.my_committees(),
+            &pegin_requested,
+        );
+
         let event = RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
             inner: pegin_requested,
             block_number: 122.into(),
@@ -1687,6 +1792,7 @@ mod tests {
             removed: false,
             tx_hash: TxHash::from(H256::from_low_u64_be(9)),
         });
+
         let result = processor.process_new_rsk_event(&event);
         assert!(result.is_ok());
 
@@ -1737,6 +1843,7 @@ mod tests {
             MockRskContractsGatewayApi::new().into(),
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
+            GlobalContext::new(),
         );
 
         let result = processor.process_new_rsk_event(&RskPegManagerEvents::UnknownEvent);
@@ -1754,6 +1861,7 @@ mod tests {
             MockRskContractsGatewayApi::new().into(),
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
+            GlobalContext::new(),
         );
 
         let (block_1, _, _) = create_block_and_uncles();
@@ -1773,6 +1881,7 @@ mod tests {
             MockRskContractsGatewayApi::new().into(),
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
+            GlobalContext::new(),
         );
 
         let (block_1, _, _) = create_block_and_uncles();
@@ -1931,6 +2040,7 @@ mod tests {
             contracts.into(),
             broker.into(),
             mock_btc_sig_subflow_factory,
+            GlobalContext::new(),
         );
 
         processor
@@ -1961,6 +2071,7 @@ mod tests {
             MockRskContractsGatewayApi::new().into(),
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
+            GlobalContext::new(),
         );
 
         let (block_1, block_2, _) = create_block_and_uncles();
@@ -2042,6 +2153,7 @@ mod tests {
             MockRskContractsGatewayApi::new().into(),
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
+            GlobalContext::new(),
         );
 
         let pegin_requested = dummy_pegin_requested_event();
@@ -2256,6 +2368,17 @@ mod tests {
             streamId: 0,
             fundingUTXOs: vec![],
         }
+    }
+
+    /// helper method to add committee to my_committees for testing
+    fn add_to_my_committees(my_committees: &mut MyCommittees, pegin_requested: &PeginRequested) {
+        my_committees.add(
+            pegin_requested
+                .committeeId
+                .try_into()
+                .expect("Valid committee id"),
+            crate::types::Role::Verifier,
+        );
     }
 
     fn dummy_pegin_request(

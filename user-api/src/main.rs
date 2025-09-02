@@ -6,6 +6,7 @@ use log::{error, info};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
+use transaction_dispatcher::config::ConfigAsLib;
 use user_api::config::{Config, Logger};
 use user_api::Server;
 
@@ -37,7 +38,22 @@ async fn main() -> Result<()> {
     let config_path = matches.get_one::<String>(CONFIG_CLI_FLAG);
     let config: Config = Config::load(config_path).expect("Failed to load config");
 
+    // Load transaction dispatcher configuration
+    let tx_dispatcher_config: ConfigAsLib =
+        ConfigAsLib::load(config_path).expect("Failed to load transaction dispatcher config");
+
+    let contracts_gateway =
+        transaction_dispatcher::get_contracts_gateway_as_lib(tx_dispatcher_config)
+            .await
+            .expect("Failed to get contracts gateway");
+
     info!("Starting user-api server");
+
+    // Create BitcoinClient in blocking context to avoid runtime drop panic (we are in a Tokio context)
+    let bitcoin_client =
+        tokio::task::spawn_blocking(|| user_api::bitcoin::build_bitcoin_client_regtest())
+            .await
+            .expect("Failed to spawn blocking task for Bitcoin client creation");
 
     let shutdown_flag = ShutdownFlag::init();
 
@@ -54,8 +70,11 @@ async fn main() -> Result<()> {
         broker_server.clone(),
         shutdown_flag.clone(),
         config.coordinator_broker_client_id,
+        contracts_gateway,
+        bitcoin_client,
     )
     .await;
+
     info!("Http Server started, listening on {http_addr}");
     if let Err(err) = server.start().await {
         error!("Server error: {}", err);

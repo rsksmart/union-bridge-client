@@ -49,6 +49,7 @@ impl GlobalContext {
         }
     }
 
+    // TODO(iago) rethink this mutable access
     pub fn my_committees(&mut self) -> &mut MyCommittees {
         &mut self.my_committees
     }
