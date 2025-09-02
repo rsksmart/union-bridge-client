@@ -1,5 +1,7 @@
 use crate::flows::btc_signature::btc_signature_subflow::BtcSignatureSubFlowFactory;
-use crate::flows::setup_committee_flow::{SetupCommitteeFlowFactory, SetupCommitteeProcessor};
+use crate::flows::committee::setup_committee_flow::{
+    SetupCommitteeFlowFactory, SetupCommitteeProcessor,
+};
 use crate::{
     event_processor::{EventProcessor, PeginProcessor, PegoutProcessor},
     monitor::MonitorApi,

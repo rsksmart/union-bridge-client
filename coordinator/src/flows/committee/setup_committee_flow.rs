@@ -32,8 +32,8 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     Committee, CommitteeMember, CommunicationData, UTXO,
 };
 
+use crate::flows::committee::dispute_core_setup::DisputeCoreSetup;
 use crate::flows::common::{GlobalContext, build_communication_data};
-use crate::flows::dispute_core_setup::DisputeCoreSetup;
 use common::types;
 use common::types::{CommitteeId, RskBlockAndUncles, StreamId};
 
