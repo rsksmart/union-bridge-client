@@ -6,7 +6,7 @@ use log::{error, info};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use transaction_dispatcher::config::ConfigAsLib;
+use transaction_dispatcher::config::ConfigAsLib as TxDispatcherConfig;
 use user_api::config::{Config, Logger};
 use user_api::Server;
 
@@ -39,8 +39,8 @@ async fn main() -> Result<()> {
     let config: Config = Config::load(config_path).expect("Failed to load config");
 
     // Load transaction dispatcher configuration
-    let tx_dispatcher_config: ConfigAsLib =
-        ConfigAsLib::load(config_path).expect("Failed to load transaction dispatcher config");
+    let tx_dispatcher_config: TxDispatcherConfig = TxDispatcherConfig::load(config_path)
+        .expect("Failed to load transaction dispatcher config");
 
     let contracts_gateway =
         transaction_dispatcher::get_contracts_gateway_as_lib(tx_dispatcher_config)

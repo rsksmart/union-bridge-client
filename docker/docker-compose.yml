@@ -17,6 +17,8 @@ services:
       - ${CONFIG_PATH:-../config/docker}:/app/config:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - ./.db/${COMPOSE_PROJECT_NAME}/block-indexer:/app/db/blocks
+    environment:
+      - UB__provider__rootstock__url=${ROOTSTOCK_URL:-ws://host.docker.internal:8545}
     restart: no
     ports:
       - "12345"  # broker server port from the configuration
@@ -42,6 +44,8 @@ services:
       - ${CONFIG_PATH:-../config/docker}:/app/config:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - ./.db/${COMPOSE_PROJECT_NAME}/log-indexer:/app/db/logs
+    environment:
+      - UB__provider__rootstock__url=${ROOTSTOCK_URL:-ws://host.docker.internal:8545}
     restart: no
     ports:
       - "56789"  # broker server port from the configuration
@@ -73,6 +77,7 @@ services:
       - "3000"  # http server port from the configuration
     environment:
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
+      - UB__provider__rootstock__url=${ROOTSTOCK_URL:-ws://host.docker.internal:8545}
     healthcheck:
       interval: 30s
       timeout: 10s
@@ -100,6 +105,7 @@ services:
     environment:
       - UB__bitvmx_broker__host=${BITVMX_HOST:-host.docker.internal}
       - UB__bitvmx_broker__port=${BITVMX_PORT:-61180}
+      - UB__provider__rootstock__url=${ROOTSTOCK_URL:-ws://host.docker.internal:8545}
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
     healthcheck:
       interval: 30s
@@ -131,6 +137,8 @@ services:
     volumes:
       - ${CONFIG_PATH:-../config/docker}:/app/config:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
+    environment:
+      - UB__provider__rootstock__url=${ROOTSTOCK_URL:-ws://host.docker.internal:8545}
     restart: no
     ports:
       - "5551"  # http server port from the configuration
