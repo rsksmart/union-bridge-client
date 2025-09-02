@@ -1,4 +1,4 @@
-use crate::flows::common::{GlobalContext, MyCommittees};
+use crate::flows::common::{GlobalContext, MyCommittees, build_communication_data};
 use crate::types::{RegisterSignaturesBitVmxData, TickScheduler};
 use crate::{
     blockchain_tracker::{BlockConfirmations, BlockchainObserver, BlockchainView},
@@ -19,7 +19,9 @@ use bitcoin::{
     hashes::Hash,
     secp256k1::{Parity::Even, XOnlyPublicKey},
 };
-use common::msg_broker::bitvmx_types::{ACCEPT_PEGIN_TX, PeginAcceptedMessage, TransactionStatus};
+use common::msg_broker::bitvmx_types::{
+    ACCEPT_PEGIN_TX, P2PAddress, PeerId, PeginAcceptedMessage, TransactionStatus,
+};
 use common::types::CommitteeId;
 use common::{
     msg_broker::{
@@ -34,11 +36,13 @@ use common::{
 use log::{debug, error, info, warn};
 use serde::Serialize;
 use std::{cell::RefCell, collections::HashMap, fmt::Debug, future::Future, rc::Rc};
-use transaction_dispatcher::types::GetCommunicationDataInput;
+use transaction_dispatcher::types::{
+    self, GetCommitteeInput, GetCommitteeOutput, GetCommunicationDataInput, GetMemberPublicKeysInput
+};
 use transaction_dispatcher::{
     rsk_gateway::{DomainErrors, RskContractsGatewayApi},
     types::{
-        AddOperatorTakeTxHashInput, GetCommitteeInput, GetMemberPublicKeysInput, P2PAddressParser,
+        AddOperatorTakeTxHashInput, P2PAddressParser,
         RequestPeginInput,
     },
 };
@@ -138,6 +142,7 @@ struct PeginState<BSF: BtcSignatureSubFlowApi> {
     bitvmx_pegin_accepted: Option<PeginAcceptedMessage>,
     btc_signatures_flow: Option<BSF>,
     all_operators_take_tx_hashes_added: Option<PeginEvent<AllOperatorTakeTxHashesAdded>>,
+    my_p2p_address: Option<P2PAddress>,
 }
 
 impl<BSF: BtcSignatureSubFlowApi> PeginState<BSF> {
@@ -149,6 +154,7 @@ impl<BSF: BtcSignatureSubFlowApi> PeginState<BSF> {
             bitvmx_pegin_accepted: None,
             btc_signatures_flow: None,
             all_operators_take_tx_hashes_added: None,
+            my_p2p_address: None,
         }
     }
 }
@@ -446,6 +452,12 @@ where
         self.tracker
             .insert(tx_hash, PeginState::new(pegin_flow_id, event));
 
+        // Send GetCommInfo message to get my P2P address
+        Self::send_to_bitvmx(
+            &self.bitvmx_broker,
+            IncomingBitVMXApiMessages::GetCommInfo(),
+        )?;
+
         Ok(())
     }
 
@@ -553,11 +565,18 @@ where
                 ))?;
 
             // Step 4b Send Setup message right after PeginRequestMessage
-            Self::send_setup_message(rt_sync, contracts, bitvmx_broker, flow_id, pegin_event)
-                .context(format!(
-                    "Error sending Setup message (tx_hash: {}, flow_id: {})",
-                    tx_hash, flow_id
-                ))?;
+            Self::send_setup_message(
+                rt_sync,
+                contracts,
+                bitvmx_broker,
+                flow_id,
+                pegin_event,
+                state.my_p2p_address.as_ref(),
+            )
+            .context(format!(
+                "Error sending Setup message (tx_hash: {}, flow_id: {})",
+                tx_hash, flow_id
+            ))?;
 
             // Mark event as handled and clean up
             event.mark_handled();
@@ -625,7 +644,7 @@ where
     fn build_operators_take_key(
         rt_sync: &RuntimeSync,
         contracts: &CG,
-        committee_response: &transaction_dispatcher::types::GetCommitteeOutput,
+        committee_response: &GetCommitteeOutput,
     ) -> Result<Vec<PublicKey>> {
         const OPERATOR_ROLE: u8 = 1;
         let mut operators_take_key = Vec::new();
@@ -666,7 +685,7 @@ where
     }
 
     fn build_take_aggregated_key(
-        committee_response: &transaction_dispatcher::types::GetCommitteeOutput,
+        committee_response: &GetCommitteeOutput,
     ) -> Result<PublicKey> {
         let aggregated_xonly_key =
             XOnlyPublicKey::from_slice(committee_response.committee.aggregatedKey.as_slice())
@@ -832,15 +851,85 @@ where
         );
         Self::send_to_bitvmx(bitvmx_broker, message)
     }
+
     fn send_get_spv_proof_to_bitvmx(bitvmx_broker: &BC, tx_id: Txid) -> Result<()> {
         let msg = IncomingBitVMXApiMessages::GetSPVProof(tx_id);
         Self::send_to_bitvmx(bitvmx_broker, msg)
     }
 
     fn send_to_bitvmx(bitvmx_broker: &BC, message: IncomingBitVMXApiMessages) -> Result<()> {
+        debug!("Sending to BitVMX message: {:?}", message);
+
         bitvmx_broker.send(BROKER_SERVER_ID, message)?;
 
         Ok(())
+    }
+
+    fn get_committee_addresses(
+        rt_sync: &RuntimeSync,
+        contracts: &CG,
+        committee_id: &CommitteeId,
+    ) -> Result<Vec<String>> {
+        let input = GetCommunicationDataInput {
+            committee_id: committee_id.clone(),
+            member_address: contracts.my_address().into(),
+        };
+        let communication_data_response =
+            Self::call_contract(rt_sync, "getMemberCommunicationData", || async {
+                contracts.get_committee_communication_data(input).await
+            })?;
+
+        let committee_addresses = communication_data_response
+            .communication_data
+            .into_iter()
+            .map(|comm_data| {
+                P2PAddressParser::addr_from_contracts(&comm_data)
+                    .context("Failed to convert communication data to P2P address")
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(committee_addresses)
+    }
+
+    fn get_committee_peer_ids(
+        rt_sync: &RuntimeSync,
+        contracts: &CG,
+        committee_id: &CommitteeId,
+    ) -> Result<Vec<PeerId>> {
+        let committee_input = GetCommitteeInput {
+            committee_id: committee_id.clone(),
+        };
+        let committee_response = Self::call_contract(rt_sync, "getCommittee", || async {
+            contracts.get_committee(committee_input).await
+        })?;
+
+        let mut peer_ids = Vec::new();
+        const COMM_KEY_INDEX: usize = 2; // Communication key is at index 2
+
+        for member in committee_response.committee.members {
+            // Get the member's public keys
+            let keys_input = GetMemberPublicKeysInput {
+                member_address: member.memberAddress,
+            };
+
+            let keys_response = Self::call_contract(rt_sync, "getMemberPublicKeys", || async {
+                contracts.get_member_public_keys(keys_input).await
+            })?;
+
+            // Get the communication key (at index 2)
+            let key_str = keys_response
+                .public_keys
+                .get(COMM_KEY_INDEX)
+                .context(format!(
+                    "Communication key not found for member {}",
+                    member.memberAddress
+                ))?;
+
+            debug!("Member {} PeerId: {:?}", member.memberAddress, key_str);
+            peer_ids.push(PeerId(key_str.to_string()));
+        }
+
+        Ok(peer_ids)
     }
 
     fn send_setup_message(
@@ -849,42 +938,40 @@ where
         bitvmx_broker: &BC,
         flow_id: Uuid,
         pegin_event: &PeginRequested,
+        my_p2p_address: Option<&P2PAddress>,
     ) -> Result<()> {
+        // Ensure my_p2p_address is available
+        let my_addr = my_p2p_address.ok_or_else(|| {
+            anyhow!(
+                "my_p2p_address not yet available for flow_id {}. Cannot send Setup message.",
+                flow_id
+            )
+        })?;
+
         let committee_id: CommitteeId = pegin_event.committeeId.try_into()?;
-        let input = GetCommunicationDataInput {
-            committee_id: committee_id.clone(),
-            member_address: contracts.my_address().into(),
-        };
-        let p2p_addresses = match Self::call_contract(
-            rt_sync,
-            "getMemberCommunicationData",
-            || async { contracts.get_committee_communication_data(input).await },
-        ) {
-            Ok(communication_data_response) => communication_data_response
-                .communication_data
-                .into_iter()
-                .map(|comm_data| {
-                    P2PAddressParser::addr_from_contracts(&comm_data)
-                        .context("Failed to convert communication data to P2P address")
-                })
-                .collect::<Result<Vec<_>>>()?,
-            Err(e) => {
-                warn!(
-                    "Failed to get communication data for committee_id {}: {}. Using empty P2P addresses for Setup message.",
-                    *committee_id, e
-                );
-                Vec::new()
-            }
-        };
+
+        // Get committee addresses
+        let committee_addresses = Self::get_committee_addresses(rt_sync, contracts, &committee_id)?;
+
+        // Get committee peer IDs
+        let committee_peer_ids = Self::get_committee_peer_ids(rt_sync, contracts, &committee_id)?;
+
+        // Use build_communication_data to construct the P2P addresses
+        let p2p_addresses = build_communication_data(
+            my_addr.address.clone(),
+            committee_addresses,
+            committee_peer_ids,
+        )?;
+
         debug!("P2P addresses for Setup message: {:?}", p2p_addresses);
+
         let setup_message = IncomingBitVMXApiMessages::Setup(
             flow_id,                               // ProgramId - UUID of pegin flow
             PROGRAM_TYPE_ACCEPT_PEGIN.to_string(), // Program type constant
-            // TODO build with coordinator/src/flows/common.rs#build_communication_data
-            vec![], // Vector of P2P addresses
-            0,      // Leader number
+            p2p_addresses,                         // Vector of P2P addresses
+            0,                                     // Leader number
         );
-        debug!(" Setup message: {:?}", setup_message);
+
         Self::send_to_bitvmx(bitvmx_broker, setup_message)
     }
 
@@ -1151,6 +1238,23 @@ where
                     flow_id, tx_status
                 );
                 self.handle_transaction_status_received(flow_id, tx_status.clone())?;
+            }
+            OutgoingBitVMXApiMessages::CommInfo(p2p_address) => {
+                debug!("Received CommInfo from BitVMX: {:?}", p2p_address);
+                // Find the first pegin state that doesn't have my_p2p_address set yet
+                if let Some((_, state)) = self
+                    .tracker
+                    .iter_mut()
+                    .find(|(_, state)| state.my_p2p_address.is_none())
+                {
+                    state.my_p2p_address = Some(p2p_address.clone());
+                    info!(
+                        "Set my_p2p_address for flow_id {}: {:?}",
+                        state.flow_id, p2p_address
+                    );
+                } else {
+                    debug!("All pegin states already have my_p2p_address set");
+                }
             }
             _ => {}
         }
@@ -1447,6 +1551,7 @@ mod tests {
         // Prepare broker and assert it doesn't send anything except pegin subscription
         let mut broker = MockBrokerClientApi::new();
         expect_bitvmx_subscription_success(&mut broker);
+        expect_get_comm_info(&mut broker);
 
         let rt_sync = RuntimeSync::new().unwrap();
         let mut processor = PeginProcessor::new(
@@ -1563,6 +1668,7 @@ mod tests {
     fn process_new_event_pegin_requested_event_and_observer() {
         let mut broker = MockBrokerClientApi::new();
         expect_bitvmx_subscription_success(&mut broker);
+        expect_get_comm_info(&mut broker);
 
         let mut processor = PeginProcessor::new(
             RuntimeSync::new().unwrap(),
@@ -1602,6 +1708,7 @@ mod tests {
     fn process_removed_pegin_requested_event() {
         let mut broker = MockBrokerClientApi::new();
         expect_bitvmx_subscription_success(&mut broker);
+        expect_get_comm_info(&mut broker);
 
         let mut processor = PeginProcessor::new(
             RuntimeSync::new().unwrap(),
@@ -1691,6 +1798,7 @@ mod tests {
     fn process_new_event_pegin_accepted_event_and_observer() {
         let mut broker = MockBrokerClientApi::new();
         expect_bitvmx_subscription_success(&mut broker);
+        expect_get_comm_info(&mut broker);
 
         let mut processor = PeginProcessor::new(
             RuntimeSync::new().unwrap(),
@@ -1743,6 +1851,7 @@ mod tests {
     fn process_removed_event_pegin_accepted_event() {
         let mut broker = MockBrokerClientApi::new();
         expect_bitvmx_subscription_success(&mut broker);
+        expect_get_comm_info(&mut broker);
 
         let mut processor = PeginProcessor::new(
             RuntimeSync::new().unwrap(),
@@ -1846,6 +1955,7 @@ mod tests {
     fn process_new_block_adds_confirmations_for_register_pegin_but_event_not_confirmed() {
         let mut broker = MockBrokerClientApi::new();
         expect_bitvmx_subscription_success(&mut broker);
+        expect_get_comm_info(&mut broker);
 
         let mut processor = PeginProcessor::new(
             RuntimeSync::new().unwrap(),
@@ -1929,7 +2039,7 @@ mod tests {
                     committee: committee.clone(),
                 })
             })
-            .times(1);
+            .times(2); // Called twice: once for build_pegin_request_bitvmx_message and once for get_committee_peer_ids
 
         contracts
             .expect_my_address()
@@ -1942,11 +2052,15 @@ mod tests {
                 Ok(GetMemberPublicKeysOutput {
                     public_keys: vec![
                         "0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
-                            .to_string(),
+                            .to_string(), // take key
+                        "0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799"
+                            .to_string(), // dispute key
+                        "0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f8179a"
+                            .to_string(), // communication key at index 2
                     ],
                 })
             })
-            .times(1);
+            .times(3); // Called once for build_operators_take_key and twice for get_committee_peer_ids (2 members)
 
         // Mock get_committee_communication_data for Setup message
         contracts
@@ -1956,13 +2070,17 @@ mod tests {
             })
             .returning(|_| {
                 Ok(GetCommunicationDataOutput {
-                    communication_data: vec![],
+                    communication_data: vec![
+                        P2PAddressParser::addr_to_contracts("/ip4/127.0.0.1/tcp/8080").unwrap(),
+                        P2PAddressParser::addr_to_contracts("/ip4/127.0.0.1/tcp/8081").unwrap(),
+                    ],
                 })
             })
             .times(1);
 
         let mut broker = MockBrokerClientApi::new();
         expect_bitvmx_subscription_success(&mut broker);
+        expect_get_comm_info(&mut broker);
 
         let expected_pegin_request = dummy_pegin_request(
             pegin_requested_clone,
@@ -1998,7 +2116,7 @@ mod tests {
                     matches!(
                     req,
                     IncomingBitVMXApiMessages::Setup(_, program_type, p2p_addresses, leader)
-                        if program_type == PROGRAM_TYPE_ACCEPT_PEGIN && p2p_addresses.is_empty() && *leader == 0
+                        if program_type == PROGRAM_TYPE_ACCEPT_PEGIN && p2p_addresses.len() == 2 && *leader == 0
                 )
                 }),
             )
@@ -2019,6 +2137,14 @@ mod tests {
             .add_observer(pegin_event.confirmations.clone());
         let _ = processor.track_pegin_requested(pegin_flow_id, pegin_event);
 
+        // Simulate receiving CommInfo response
+        let dummy_p2p_address = P2PAddress {
+            address: "127.0.0.1:8080".to_string(),
+            peer_id: PeerId("dummy_peer_id".to_string()),
+        };
+        let comm_info_event = OutgoingBitVMXApiMessages::CommInfo(dummy_p2p_address);
+        let _ = processor.process_new_bitvmx_event(&comm_info_event);
+
         let block = RskBlockAndUncles::new_no_uncles(block_1);
 
         let result = processor.process_new_block(&block);
@@ -2036,6 +2162,7 @@ mod tests {
     fn process_new_block_adds_confirmations_for_pegin_accepted_event_not_confirmed() {
         let mut broker = MockBrokerClientApi::new();
         expect_bitvmx_subscription_success(&mut broker);
+        expect_get_comm_info(&mut broker);
 
         let mut processor = PeginProcessor::new(
             RuntimeSync::new().unwrap(),
@@ -2107,6 +2234,7 @@ mod tests {
     fn process_new_block_confirms_and_removes_pegin_accepted_event() {
         let mut broker = MockBrokerClientApi::new();
         expect_bitvmx_subscription_success(&mut broker);
+        expect_get_comm_info(&mut broker);
         broker
             .expect_send()
             .withf(|dest, msg| {
@@ -2187,6 +2315,18 @@ mod tests {
             .withf(|id, msg| {
                 *id == BROKER_SERVER_ID
                     && matches!(msg, IncomingBitVMXApiMessages::SubscribeToRskPegin())
+            })
+            .returning(|_, _| Ok(true));
+    }
+
+    fn expect_get_comm_info(
+        broker: &mut MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>,
+    ) {
+        broker
+            .expect_send()
+            .times(1)
+            .withf(|id, msg| {
+                *id == BROKER_SERVER_ID && matches!(msg, IncomingBitVMXApiMessages::GetCommInfo())
             })
             .returning(|_, _| Ok(true));
     }
