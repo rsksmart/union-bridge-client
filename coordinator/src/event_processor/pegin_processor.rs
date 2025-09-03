@@ -35,6 +35,7 @@ use common::{
 };
 use log::{debug, error, info, warn};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use std::{cell::RefCell, collections::HashMap, fmt::Debug, future::Future, rc::Rc};
 use transaction_dispatcher::{
     rsk_gateway::{DomainErrors, RskContractsGatewayApi},
@@ -221,6 +222,17 @@ where
         Ok(())
     }
 
+    pub fn get_accept_pegin_pid(committee_id: Uuid, slot_index: usize) -> Uuid {
+        let mut hasher = Sha256::new();
+        hasher.update(committee_id.as_bytes());
+        hasher.update(&slot_index.to_be_bytes());
+        hasher.update("accept_pegin");
+
+        // Get the result as a byte array
+        let hash = hasher.finalize();
+        return Uuid::from_bytes(hash[0..16].try_into().unwrap());
+    }
+
     fn handle_pegin_requested(&mut self, data: &PeginRequestedEvent) -> Result<()> {
         if data.removed {
             info!("Handling PeginRequested removed event: {:?}", data);
@@ -234,7 +246,10 @@ where
         }
         info!("Handling {data:?}, as member I should respond");
 
-        let pegin_flow_id = Uuid::new_v4();
+        let committee_id = Uuid::from_u128(**committee_id);
+        let slot_index = data.inner.streamPosition.slotId as usize;
+
+        let pegin_flow_id = Self::get_accept_pegin_pid(committee_id, slot_index);
         let observer_id = format!("pegin_requested-{}", pegin_flow_id);
         let confirmations =
             BlockConfirmations::new(observer_id, data.block_number, REQUIRED_CONFIRMATIONS);
