@@ -83,7 +83,7 @@ Pegin steps:
  */
 
 const ACCEPT_PEGIN: &'static str = "accept-pegin";
-const PEGIN_REQUEST: &'static str = "PeginRequest";
+const PEGIN_REQUEST: &'static str = "pegin_request";
 const PEGIN_ACCEPTED_INPUT_MSG: &'static str = "pegin_accepted";
 const PROGRAM_TYPE_ACCEPT_PEGIN: &'static str = "accept_pegin";
 pub const MIN_TX_CONFIRMATIONS: u32 = 1; //TODO agree on this value for alphanet.
@@ -98,12 +98,13 @@ struct PeginRequestMessage {
     amount: u64,
     accept_pegin_sighash: Vec<u8>, // acceptPeginSignatureMessage
     take_aggregated_key: PublicKey,
-    operators_take_key: Vec<PublicKey>,
+    operator_indexes: Vec<usize>,
     slot_index: u64,
     committee_id: Uuid,
     rootstock_address: String,
     reimbursement_pubkey: PublicKey,
 }
+
 #[derive(Debug, Clone)]
 struct PeginEvent<T: Clone> {
     data: EventWithBlock<T>,
@@ -604,8 +605,7 @@ where
                 .await
         })?;
 
-        let operators_take_key =
-            Self::build_operators_take_key(rt_sync, contracts, &committee_response)?;
+        let operator_indexes = Self::build_operator_indexes(&committee_response)?;
 
         let slot_index: u64 = pegin_event.streamPosition.slotId;
 
@@ -630,7 +630,7 @@ where
             amount: pegin_event.prevoutData.value,
             accept_pegin_sighash,
             take_aggregated_key,
-            operators_take_key,
+            operator_indexes,
             slot_index,
             committee_id,
             rootstock_address,
@@ -638,47 +638,19 @@ where
         })
     }
 
-    fn build_operators_take_key(
-        rt_sync: &RuntimeSync,
-        contracts: &CG,
-        committee_response: &GetCommitteeOutput,
-    ) -> Result<Vec<PublicKey>> {
+    fn build_operator_indexes(committee_response: &GetCommitteeOutput) -> Result<Vec<usize>> {
         const OPERATOR_ROLE: u8 = 1;
-        let mut operators_take_key = Vec::new();
+        let mut operator_indexes = Vec::new();
 
-        for member in &committee_response.committee.members {
+        for (i, member) in committee_response.committee.members.iter().enumerate() {
             if member.role != OPERATOR_ROLE {
                 continue;
             }
 
-            let public_keys_response =
-                Self::call_contract(rt_sync, "getMemberPublicKeys", || async {
-                    contracts
-                        .get_member_public_keys(GetMemberPublicKeysInput {
-                            member_address: member.memberAddress,
-                        })
-                        .await
-                })?;
-
-            // The first key represents the operator's take public key
-            if let Some(first_key) = public_keys_response.public_keys.first() {
-                let key_bytes: FixedBytes<32> = first_key.parse()?;
-                let xonly_key = XOnlyPublicKey::from_slice(key_bytes.as_slice())
-                    .context("Failed to parse operator public key")?;
-
-                // BitVMX adjusts parity to Even, so we do the same here
-                let secp_key = xonly_key.public_key(Even);
-                let public_key = PublicKey::new(secp_key);
-                operators_take_key.push(public_key);
-            } else {
-                warn!(
-                    "No public keys found for operator {}, skipping operator",
-                    member.memberAddress
-                );
-            }
+            operator_indexes.push(i);
         }
 
-        Ok(operators_take_key)
+        Ok(operator_indexes)
     }
 
     fn build_take_aggregated_key(committee_response: &GetCommitteeOutput) -> Result<PublicKey> {
@@ -1247,7 +1219,9 @@ where
                         state.flow_id, p2p_address
                     );
                 } else {
-                    bail!("Received CommInfo but all pegin states already have my_p2p_address set. This should not happen.");
+                    bail!(
+                        "Received CommInfo but all pegin states already have my_p2p_address set. This should not happen."
+                    );
                 }
             }
             _ => {}
@@ -2501,7 +2475,7 @@ mod tests {
                 let secp_key = xonly_key.public_key(Even);
                 PublicKey::new(secp_key)
             },
-            operators_take_key: operator_keys
+            operator_indexes: operator_keys
                 .into_iter()
                 .map(|key_str| {
                     let key_bytes: FixedBytes<32> = key_str.parse().unwrap();
