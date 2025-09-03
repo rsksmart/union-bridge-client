@@ -691,7 +691,7 @@ where
     fn build_committee_id(committee_id: U256) -> Result<Uuid> {
         let committee_bytes = committee_id.to_be_bytes_vec();
         let uuid_bytes: [u8; 16] = committee_bytes
-            .get(..16)
+            .get(16..)
             .ok_or_else(|| anyhow!("Committee ID too short for UUID conversion: expected at least 16 bytes, got {}", committee_bytes.len()))?
             .try_into()
             .context("Failed to convert committee_id to UUID")?;
