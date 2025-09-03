@@ -624,10 +624,10 @@ where
 
         let slot_index: u64 = pegin_event.streamPosition.slotId;
 
-        let rootstock_address = pegin_event
+        let rootstock_address = &pegin_event
             .requestPeginInfo
             .rskDestinationAddress
-            .to_checksum(None);
+            .to_checksum(None)[2..];
 
         let accept_pegin_sighash = pegin_event.acceptPeginSignatureMessage.to_vec();
 
@@ -648,7 +648,7 @@ where
             operator_indexes,
             slot_index,
             committee_id,
-            rootstock_address,
+            rootstock_address: rootstock_address.to_string(),
             reimbursement_pubkey,
         })
     }
