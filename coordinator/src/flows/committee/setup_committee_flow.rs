@@ -32,7 +32,7 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
 };
 
 use crate::flows::committee::dispute_core_setup::DisputeCoreSetup;
-use crate::flows::common::{GlobalContext, build_communication_data};
+use crate::flows::common::{GlobalContext, build_communication_data, TAKE_KEY_INDEX, DISPUTE_KEY_INDEX, COMM_KEY_INDEX};
 use common::types;
 use common::types::{BlockNumber, CommitteeId, RskBlockAndUncles, StreamId};
 
@@ -47,9 +47,6 @@ use crate::config::REQUIRED_CONFIRMATIONS;
 use mockall::automock;
 
 pub(crate) const NO_LEADER_IDX: u16 = 0;
-const TAKE_KEY_INDEX: usize = 0;
-const DISPUTE_KEY_INDEX: usize = 1;
-const COMM_KEY_INDEX: usize = 2;
 
 // TODO temporary for Regtest stage
 const REGTEST: Network = Network::Regtest;

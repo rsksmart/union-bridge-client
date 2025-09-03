@@ -1,4 +1,4 @@
-use crate::flows::common::{GlobalContext, MyCommittees, build_communication_data};
+use crate::flows::common::{COMM_KEY_INDEX, GlobalContext, MyCommittees, build_communication_data};
 use crate::types::{RegisterSignaturesBitVmxData, TickScheduler};
 use crate::{
     blockchain_tracker::{BlockConfirmations, BlockchainObserver, BlockchainView},
@@ -36,14 +36,11 @@ use common::{
 use log::{debug, error, info, warn};
 use serde::Serialize;
 use std::{cell::RefCell, collections::HashMap, fmt::Debug, future::Future, rc::Rc};
-use transaction_dispatcher::types::{
-    self, GetCommitteeInput, GetCommitteeOutput, GetCommunicationDataInput, GetMemberPublicKeysInput
-};
 use transaction_dispatcher::{
     rsk_gateway::{DomainErrors, RskContractsGatewayApi},
     types::{
-        AddOperatorTakeTxHashInput, P2PAddressParser,
-        RequestPeginInput,
+        AddOperatorTakeTxHashInput, GetCommitteeInput, GetCommitteeOutput,
+        GetCommunicationDataInput, GetMemberPublicKeysInput, P2PAddressParser, RequestPeginInput,
     },
 };
 use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
@@ -684,9 +681,7 @@ where
         Ok(operators_take_key)
     }
 
-    fn build_take_aggregated_key(
-        committee_response: &GetCommitteeOutput,
-    ) -> Result<PublicKey> {
+    fn build_take_aggregated_key(committee_response: &GetCommitteeOutput) -> Result<PublicKey> {
         let aggregated_xonly_key =
             XOnlyPublicKey::from_slice(committee_response.committee.aggregatedKey.as_slice())
                 .context("Failed to parse aggregated public key from committee")?;
@@ -904,7 +899,6 @@ where
         })?;
 
         let mut peer_ids = Vec::new();
-        const COMM_KEY_INDEX: usize = 2; // Communication key is at index 2
 
         for member in committee_response.committee.members {
             // Get the member's public keys
@@ -1253,7 +1247,7 @@ where
                         state.flow_id, p2p_address
                     );
                 } else {
-                    debug!("All pegin states already have my_p2p_address set");
+                    bail!("Received CommInfo but all pegin states already have my_p2p_address set. This should not happen.");
                 }
             }
             _ => {}
