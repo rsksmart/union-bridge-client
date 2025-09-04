@@ -1513,7 +1513,7 @@ where
                 );
                 // properly cleanup the observer before processing the event
                 if let Err(e) = event.stop_confirming() {
-                    error!("Failed to stop confirming for event {}: {}", key, e);
+                    warn!("Failed to stop confirming for event {}: {}", key, e);
                 }
                 self.process_confirmed_rsk_event(event.get_data())?;
             }
