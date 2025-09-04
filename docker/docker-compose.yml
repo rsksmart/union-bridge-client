@@ -137,8 +137,10 @@ services:
     volumes:
       - ${CONFIG_PATH:-../config/docker}:/app/config:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
+      - keystore:/keystore
     environment:
       - UB__provider__rootstock__url=${ROOTSTOCK_URL:-ws://host.docker.internal:8545}
+      - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
     restart: no
     ports:
       - "5551"  # http server port from the configuration
