@@ -103,7 +103,7 @@ async fn debug_trace_tx<P: Provider>(provider: &P, tx_hash: String) -> Transport
 }
 
 fn likely_oog(receipt: &TransactionReceipt, gas_limit: u64) -> bool {
-    let oog_margin = gas_limit / 100;
+    let oog_margin = gas_limit / 50; // 2% margin
     let oog_candidate =
         !receipt.status() && receipt.gas_used() >= gas_limit.saturating_sub(oog_margin);
 

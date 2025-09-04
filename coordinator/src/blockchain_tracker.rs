@@ -75,7 +75,7 @@ impl BlockchainObserver for BlockConfirmations {
     }
 }
 
-// TODO(iago) make fields Rc::RefCell instead of doing it on BlockchainView
+// TODO make fields Rc::RefCell instead of doing it on BlockchainView
 pub struct BlockchainView {
     blocks: BTreeMap<BlockNumber, RskBlockAndUncles>,
     observers: HashMap<String, Rc<RefCell<dyn BlockchainObserver>>>,
