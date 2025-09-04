@@ -222,7 +222,7 @@ where
         Ok(())
     }
 
-    pub fn get_accept_pegin_pid(committee_id: Uuid, slot_index: usize) -> Uuid {
+    pub fn get_accept_pegin_pid(committee_id: Uuid, slot_index: usize) -> Result<Uuid> {
         let mut hasher = Sha256::new();
         hasher.update(committee_id.as_bytes());
         hasher.update(&slot_index.to_be_bytes());
@@ -230,11 +230,13 @@ where
 
         // Get the result as a byte array
         let hash = hasher.finalize();
-        // SHA256 always produces 32 bytes, so taking the first 16 is safe
-        let uuid_bytes: [u8; 16] = hash.as_slice()[..16]
+        let slice = hash.as_slice()
+            .get(..16)
+            .ok_or_else(|| anyhow!("SHA256 hash too short for UUID generation"))?;
+        let uuid_bytes: [u8; 16] = slice
             .try_into()
-            .expect("SHA256 hash should have at least 16 bytes");
-        return Uuid::from_bytes(uuid_bytes);
+            .context("Failed to convert hash slice to UUID bytes")?;
+        Ok(Uuid::from_bytes(uuid_bytes))
     }
 
     fn handle_pegin_requested(&mut self, data: &PeginRequestedEvent) -> Result<()> {
@@ -253,7 +255,7 @@ where
         let committee_id = Uuid::from_u128(**committee_id);
         let slot_index = data.inner.streamPosition.slotId as usize;
 
-        let pegin_flow_id = Self::get_accept_pegin_pid(committee_id, slot_index);
+        let pegin_flow_id = Self::get_accept_pegin_pid(committee_id, slot_index)?;
         let observer_id = format!("pegin_requested-{}", pegin_flow_id);
         let confirmations =
             BlockConfirmations::new(observer_id, data.block_number, REQUIRED_CONFIRMATIONS);
