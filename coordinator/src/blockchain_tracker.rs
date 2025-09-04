@@ -1,10 +1,10 @@
+use crate::types::RskPegManagerEvents;
 use anyhow::Result;
 use common::types::{BlockNumber, RskBlock, RskBlockAndUncles};
 use log::{debug, info, warn};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
-use uuid::Uuid;
 
 pub trait BlockchainObserver {
     fn get_id(&self) -> String;
@@ -75,6 +75,7 @@ impl BlockchainObserver for BlockConfirmations {
     }
 }
 
+// TODO(iago) make fields Rc::RefCell instead of doing it on BlockchainView
 pub struct BlockchainView {
     blocks: BTreeMap<BlockNumber, RskBlockAndUncles>,
     observers: HashMap<String, Rc<RefCell<dyn BlockchainObserver>>>,
@@ -245,7 +246,7 @@ impl BlockchainView {
     }
 
     #[cfg(test)]
-    pub fn has_observer(&self, id: &str) -> bool {
+    pub fn has_observer(&self, id: &String) -> bool {
         self.observers.contains_key(id)
     }
 
@@ -270,14 +271,57 @@ impl BlockchainView {
 
 // TODO use this type for all confirmable events in the Coordinator
 pub struct ConfirmableEvent {
-    id: Uuid,
+    id: String,
     chain_view: Rc<RefCell<BlockchainView>>,
     req_confirmations: u32,
     confirmations: Option<Rc<RefCell<BlockConfirmations>>>,
 }
 
+pub struct ConfirmableEventWithData {
+    confirmation: ConfirmableEvent,
+    data: RskPegManagerEvents,
+}
+
+impl ConfirmableEventWithData {
+    pub fn new(
+        id: String,
+        req_confirmations: u32,
+        chain_view: Rc<RefCell<BlockchainView>>,
+        data: RskPegManagerEvents,
+    ) -> Self {
+        Self {
+            confirmation: ConfirmableEvent::new(id, req_confirmations, chain_view),
+            data,
+        }
+    }
+
+    pub fn id(&self) -> String {
+        self.confirmation.id.clone()
+    }
+
+    pub fn start_confirming(&mut self, block_number: BlockNumber) -> Result<()> {
+        self.confirmation.start_confirming(block_number)
+    }
+
+    pub fn stop_confirming(&mut self) -> Result<()> {
+        self.confirmation.stop_confirming()
+    }
+
+    pub fn is_confirmed(&self) -> bool {
+        self.confirmation.is_confirmed()
+    }
+
+    pub fn get_data(&self) -> &RskPegManagerEvents {
+        &self.data
+    }
+}
+
 impl ConfirmableEvent {
-    pub fn new(id: Uuid, req_confirmations: u32, chain_view: Rc<RefCell<BlockchainView>>) -> Self {
+    pub fn new(
+        id: String,
+        req_confirmations: u32,
+        chain_view: Rc<RefCell<BlockchainView>>,
+    ) -> Self {
         ConfirmableEvent {
             id,
             chain_view,
@@ -334,9 +378,7 @@ impl ConfirmableEvent {
     }
 
     fn remove_observer(&mut self) {
-        self.chain_view
-            .borrow_mut()
-            .remove_observer(&self.id.to_string());
+        self.chain_view.borrow_mut().remove_observer(&self.id);
     }
 }
 
@@ -687,12 +729,12 @@ mod confirmable_event_tests {
     #[test]
     fn test_confirmable_event_happy_path_flow() {
         // setup
-        let id = Uuid::new_v4();
+        let id = Uuid::new_v4().to_string();
         let req_confirmations = 3;
         let chain_view = Rc::new(RefCell::new(BlockchainView::new()));
 
         let mut confirmable_event =
-            ConfirmableEvent::new(id, req_confirmations, chain_view.clone());
+            ConfirmableEvent::new(id.clone(), req_confirmations, chain_view.clone());
 
         // step 1: start_confirming() - should succeed and add observer
         let block_number = BlockNumber::from(100);
@@ -700,7 +742,7 @@ mod confirmable_event_tests {
         assert!(result.is_ok(), "start_confirming() should succeed");
 
         // verify observer was added to blockchain view
-        assert!(chain_view.borrow().has_observer(&id.to_string()));
+        assert!(chain_view.borrow().has_observer(&id));
 
         // step 2: should not be confirmed yet (no blocks processed)
         assert!(
@@ -725,7 +767,7 @@ mod confirmable_event_tests {
     #[test]
     fn test_confirmable_event_stop_confirming_and_resuming() {
         // setup
-        let id = Uuid::new_v4();
+        let id = Uuid::new_v4().to_string();
 
         let req_confirmations = 3;
         let chain_view = Rc::new(RefCell::new(BlockchainView::new()));
@@ -739,7 +781,7 @@ mod confirmable_event_tests {
             .expect("Failed to start confirming");
 
         // step 1: verify observer was added
-        assert!(chain_view.borrow().has_observer(&id.to_string()));
+        assert!(chain_view.borrow().has_observer(&confirmable_event.id));
 
         // step 2: stop_confirming() should succeed and remove observer
         let result = confirmable_event.stop_confirming();
@@ -747,7 +789,7 @@ mod confirmable_event_tests {
 
         // step 3: observer should be removed from the blockchain view
         assert!(
-            !chain_view.borrow().has_observer(&id.to_string()),
+            !chain_view.borrow().has_observer(&confirmable_event.id),
             "Observer should be removed from blockchain view after stop_confirming"
         );
 
@@ -761,7 +803,7 @@ mod confirmable_event_tests {
     #[test]
     fn test_confirmable_event_stop_confirming_without_start_does_not_fail() {
         // setup
-        let id = Uuid::new_v4();
+        let id = Uuid::new_v4().to_string();
 
         let req_confirmations = 3;
         let chain_view = Rc::new(RefCell::new(BlockchainView::new()));
@@ -780,7 +822,7 @@ mod confirmable_event_tests {
     #[test]
     fn test_confirmable_event_blocks_removed_reduces_confirmations() {
         // setup
-        let id = Uuid::new_v4();
+        let id = Uuid::new_v4().to_string();
 
         let req_confirmations = 3;
         let chain_view = Rc::new(RefCell::new(BlockchainView::new()));
@@ -822,7 +864,7 @@ mod confirmable_event_tests {
     #[test]
     fn test_confirmable_event_is_confirmed_when_confirmations_none() {
         // setup
-        let id = Uuid::new_v4();
+        let id = Uuid::new_v4().to_string();
 
         let req_confirmations = 3;
         let chain_view = Rc::new(RefCell::new(BlockchainView::new()));
@@ -839,7 +881,7 @@ mod confirmable_event_tests {
     #[test]
     fn test_confirmable_event_start_confirming_twice_fails() {
         // setup
-        let id = Uuid::new_v4();
+        let id = Uuid::new_v4().to_string();
 
         let req_confirmations = 3;
         let chain_view = Rc::new(RefCell::new(BlockchainView::new()));
@@ -866,7 +908,7 @@ mod confirmable_event_tests {
     #[test]
     fn test_confirmable_event_stop_confirming_twice_does_not_fail() {
         // setup
-        let id = Uuid::new_v4();
+        let id = Uuid::new_v4().to_string();
         let req_confirmations = 3;
         let chain_view = Rc::new(RefCell::new(BlockchainView::new()));
 
@@ -890,7 +932,7 @@ mod confirmable_event_tests {
     #[test]
     fn test_confirmable_event_restart_confirming_after_stopping() {
         // setup
-        let id = Uuid::new_v4();
+        let id = Uuid::new_v4().to_string();
 
         let req_confirmations = 3;
         let chain_view = Rc::new(RefCell::new(BlockchainView::new()));
@@ -951,7 +993,7 @@ mod confirmable_event_tests {
     #[test]
     fn test_confirmable_event_zero_confirmations_required() {
         // setup
-        let id = Uuid::new_v4();
+        let id = Uuid::new_v4().to_string();
 
         let req_confirmations = 0; // Edge case: zero confirmations
         let chain_view = Rc::new(RefCell::new(BlockchainView::new()));
@@ -974,7 +1016,7 @@ mod confirmable_event_tests {
     #[test]
     fn test_confirmable_event_one_confirmation_required() {
         // setup
-        let id = Uuid::new_v4();
+        let id = Uuid::new_v4().to_string();
 
         let req_confirmations = 1; // Edge case: one confirmation
         let chain_view = Rc::new(RefCell::new(BlockchainView::new()));
@@ -1005,7 +1047,7 @@ mod confirmable_event_tests {
     #[test]
     fn test_confirmable_event_observer_cleanup_after_stop_confirming() {
         // setup
-        let id = Uuid::new_v4();
+        let id = Uuid::new_v4().to_string();
 
         let req_confirmations = 3;
         let chain_view = Rc::new(RefCell::new(BlockchainView::new()));
@@ -1020,7 +1062,7 @@ mod confirmable_event_tests {
 
         // step 1: verify observer was added
         assert!(
-            chain_view.borrow().has_observer(&id.to_string()),
+            chain_view.borrow().has_observer(&confirmable_event.id),
             "Observer should be added after start_confirming"
         );
 
@@ -1037,7 +1079,7 @@ mod confirmable_event_tests {
 
         // step 4: observer should be removed from the blockchain view
         assert!(
-            !chain_view.borrow().has_observer(&id.to_string()),
+            !chain_view.borrow().has_observer(&confirmable_event.id),
             "Observer should be removed from blockchain view after stop_confirming"
         );
 
