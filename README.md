@@ -60,13 +60,87 @@ The Union Bridge Client is responsible for:
 
 ## Configuration
 
-Configuration files are located under the `config` directory, organized in environment folders. The final config is the
-composition of the following files in the defined order:
+### First Time Setup
 
-- `common.yaml`: common configuration for all environments.
-- `{crate_name}.yaml`: specific configuration for each crate.
+Before running the Union Bridge Client for the first time, you need to complete the following setup steps:
 
-### Environment Variables
+1. **Clone the repository with SSH** (required for submodules access)
+2. **Set up environment variables** using `direnv`
+3. **Create a Rootstock key** for transaction signing
+4. **Configure the client** for your environment
+
+### Clone the repository
+
+**Important**: You must clone the repository using SSH because the project uses private submodules that require SSH authentication.
+
+```bash
+git clone --recurse-submodules git@github.com:rsksmart/union-bridge-client.git
+```
+
+The `--recurse-submodules` flag is essential as it automatically initializes and updates all required submodules.
+
+### Tooling
+
+Before running the Union Bridge Client, you need to install and set up the following tools and repositories:
+
+#### Required Tools
+
+1. **Rust and Cargo** - The project is built in Rust
+   ```bash
+   # Install from https://www.rust-lang.org/tools/install
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   ```
+
+2. **direnv** - For managing environment variables
+   ```bash
+   # macOS
+   brew install direnv
+   
+   # Add to your shell profile (~/.zshrc or ~/.bashrc)
+   eval "$(direnv hook zsh)"  # or bash
+   ```
+
+3. **Foundry** - Ethereum development toolkit (includes Anvil)
+   ```bash
+   # Install Foundry
+   curl -L https://foundry.paradigm.xyz | bash
+   foundryup
+   ```
+
+#### Required Repositories
+
+1. **BitVMX Workspace** - Contains the BitVMX client
+   
+   You have to clone the [BitVMX Workspace](https://github.com/FairgateLabs/rust-bitvmx-workspace) repository and follow
+   the README instructions to set it up. Once done, you can run the BitVMX client by following the next steps:
+   
+   ```bash
+   git clone git@github.com:FairgateLabs/rust-bitvmx-workspace.git
+   cd <path_to_bitvmx_workspace_repo>/rust-bitvmx-client
+   bash run_union_example.sh # this spins up the BitVMX client and make sure to have docker running on your machine
+   ```
+   
+   **Note**: Make sure to have Docker running on your machine before executing the script.
+
+2. **Union Bridge Contracts** - Smart contracts for the Union Bridge protocol
+   ```bash
+   git clone git@github.com:rsksmart/bitvmx-union-bridge-contracts.git
+   ```
+
+3. **ZK Proof Repository** (for advanced usage)
+   ```bash
+   git clone -b poc-generalise-host git@github.com:FairgateLabs/rust-bitvmx-zk-proof.git
+   ```
+
+#### Optional Tools
+
+- **Docker** - For containerized deployment (see [docker/README.md](docker/README.md))
+- **act** - For running GitHub Actions locally
+  ```bash
+  brew install act
+  ```
+
+### Environment Variables Setup
 
 The project uses environment variables for both private properties and configuration overrides.
 
@@ -79,6 +153,88 @@ We recommend using `direnv` to manage private environment variables. Then you ca
 3. and running `direnv allow` (every time you do a change)
 
 This will automatically load the environment variables defined in the `.envrc` on the services that require them.
+
+### Create a Rootstock Key
+
+This is required for the **Transaction Dispatcher** crate to be able to sign transactions and send them to Rootstock.
+
+To create a key run:
+
+```
+cd key-manager
+cargo run --bin key-manager new-key -p <YOUR_PASSWORD> -d <PATH_TO_STORE_IT>
+```
+
+This will output:
+
+- the local path to your key: you will have to set it in the corresponding `transaction-dispatcher.yaml` config file
+- the public key
+- the address: you may want to set it in [fund_local_operators.sh](fund_local_operators-template.sh) if using this script
+
+Keep track of the password you used, as you will need to set it up in `KEY_STORE_PASSWORD` env var. Check the
+[Environment Variables Setup](#environment-variables-setup) section for more information on how to set it up.
+
+You can always derive the public information of the key afterward if you remember the password by running the following
+command:
+
+```
+cd key-manager
+cargo run derive-public-data -p <YOUR_PASSWORD> -k <PATH_TO_FILE>
+```
+
+### Running Committee Collaboration
+
+Some sub-flows in the main flows require committee collaboration. To achieve this locally, you can run several instances
+of Union Client and BitVMX Client.
+
+#### Setup
+
+_NOTE: This is to be run the first time you want to run multiple Union Client instances or whenever the configuration
+changes._
+
+You have to copy the [multi-client-template](config/multi-client-template) folder to `config/multi-client` and replace
+all `your_base_path`
+occurrences with the path where you want to store the data (database, keystore, etc.).
+
+Now you have to copy [fund_local_operators-template.sh](fund_local_operators-template.sh) to `fund_local_operators.sh`
+and replace all `OPERATOR_N_ADDRESS` with the addresses of the operators you want to fund. Tip: addresses are printed in
+Coordinator logs (`Got signer with address...`) when it starts, so you can copy them from there. You can also derive it from the keystore, check
+the [Create a Rootstock Key](#create-a-rootstock-key) section.
+
+Then, you will need to create a new keystore for each client and configure it in the corresponding
+`transaction-dispatcher.yaml` config file. Check the [Create a Rootstock Key](#create-a-rootstock-key) section for
+instructions on how to create a new keystore.
+
+#### Running
+
+1. Run BitVMX Client as described in the [Running BitVMX](#running-bitvmx) section. This runs 4 instances of the BitVMX
+   Client with different ports (see logs).
+2. Start up anvil on a fresh terminal, cd into the union bridge contracts repo and run the deploy script
+3. Run 4 Union Client instances in parallel with `./run-multi-client.sh <id> <features>`. The `id` will determine which
+   configuration from `config/multi-client/<id>/` to use. These configurations ensure no collision between the different
+   clients (brokers, http servers, databases, keys, etc.). You can pass also features, e.g. `anvil`.
+
+Example of running multiple clients:
+
+```
+./run-multi-client.sh 1 anvil
+./run-multi-client.sh 2 anvil
+./run-multi-client.sh 3 anvil
+./run-multi-client.sh 4 anvil
+```
+
+#### Troubleshooting
+
+If some services fail to start, it may be due to some remaining processes from previous runs. An easy fix is to run
+`pkill -f "target/debug/" 2>/dev/null`, but take into account that this will kill all Rust processes running.
+
+### Configuration Files
+
+Configuration files are located under the `config` directory, organized in environment folders. The final config is the
+composition of the following files in the defined order:
+
+- `common.yaml`: common configuration for all environments.
+- `{crate_name}.yaml`: specific configuration for each crate.
 
 #### Configuration Overrides
 
@@ -150,78 +306,7 @@ cd <path_to_bitvmx_workspace_repo>/rust-bitvmx-client
 bash run_union_example.sh # this spins up the BitVMX client and Docker to be running
 ```
 
-### Running Committee Collaboration
 
-Some sub-flows in the main flows require committee collaboration. To achieve this locally, you can run several instances
-of Union Client and BitVMX Client.
-
-#### Setup
-
-_NOTE: This is to be run the first time you want to run multiple Union Client instances or whenever the configuration
-changes._
-
-You have to copy the [multi-client-template](config/multi-client-template) folder to `config/multi-client` and replace
-all `your_base_path`
-occurrences with the path where you want to store the data (database, keystore, etc.).
-
-Now you have to copy [fund_local_operators-template.sh](fund_local_operators-template.sh) to `fund_local_operators.sh`
-and replace all `OPERATOR_N_ADDRESS` with the addresses of the operators you want to fund. Tip: addresses are printed in
-Coordinator logs (`Got signer with address...`) when it starts, so you can copy them from there. You can also derive it from the keystore, check
-the [Create a Rootstock Key](#create-a-rootstock-key) section.
-
-Then, you will need to create a new keystore for each client and configure it in the corresponding
-`transaction-dispatcher.yaml` config file. Check the [Create a Rootstock Key](#create-a-rootstock-key) section for
-instructions on how to create a new keystore.
-
-#### Running
-
-1. Run BitVMX Client as described in the [Running BitVMX](#running-bitvmx) section. This runs 4 instances of the BitVMX
-   Client with different ports (see logs).
-2. Run 4 Union Client instances in parallel with `./run-multi-client.sh <id> <features>`. The `id` will determine which
-   configuration from `config/multi-client/<id>/` to use. These configurations ensure no collision between the different
-   clients (brokers, http servers, databases, keys, etc.). You can pass also features, e.g. `anvil`.
-
-Example of running multiple clients:
-
-```
-./run-multi-client.sh 1 anvil
-./run-multi-client.sh 2 anvil
-./run-multi-client.sh 3 anvil
-./run-multi-client.sh 4 anvil
-```
-
-#### Troubleshooting
-
-If some services fail to start, it may be due to some remaining processes from previous runs. An easy fix is to run
-`pkill -f "target/debug/" 2>/dev/null`, but take into account that this will kill all Rust processes running.
-
-## Create a Rootstock Key
-
-This is required for the **Transaction Dispatcher** crate to be able to sign transactions and send them to Rootstock
-
-To create a key run:
-
-```
-cd key-manager
-cargo run --bin key-manager new-key -p <YOUR_PASSWORD> -d <PATH_TO_STORE_IT>
-```
-
-This will output:
-
-- the local path to your key: you will have to set it in the corresponding `transaction-dispatcher.yaml` config file
-- the public key
-- the address: you may want to set it in [fund_local_operators.sh](fund_local_operators.sh) if using this script
-
-Keep track of the password you used, as you will need to set it up in `KEY_STORE_PASSWORD` env var. Check the
-[Environment Variables](#environment-variables) section for more information on how to set it up.
-
-You can always derive the public information of the key afterward if you remember the password by running the following
-command:
-
-```
-cd key-manager
-cargo run derive-public-data -p <YOUR_PASSWORD> -k <PATH_TO_FILE>
-```
 
 ## QA-tools/Generate ELF Demo
 
@@ -303,13 +388,6 @@ rusty-hook init
 
 The file [rusty-hook.toml](rusty-hook.toml) will be used for hook configuration.
 
-### Clone the repository
-
-Clone the repository:
-
-```bash
-git clone --recurse-submodules git@github.com:rsksmart/union-bridge-client.git
-```
 
 ### GitHub Actions
 
