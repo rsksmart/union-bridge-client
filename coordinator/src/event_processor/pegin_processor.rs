@@ -230,7 +230,8 @@ where
 
         // Get the result as a byte array
         let hash = hasher.finalize();
-        let slice = hash.as_slice()
+        let slice = hash
+            .as_slice()
             .get(..16)
             .ok_or_else(|| anyhow!("SHA256 hash too short for UUID generation"))?;
         let uuid_bytes: [u8; 16] = slice
@@ -622,7 +623,7 @@ where
         // Get committee information
         let committee_response = Self::call_contract(rt_sync, "getCommittee", || async {
             contracts
-                .get_committee(GetCommitteeInput { committee_id })
+                .get_committee(GetCommitteeInput { committee_id: committee_id.clone() })
                 .await
         })?;
 
@@ -647,7 +648,7 @@ where
         let txid = Txid::from_slice(pegin_event.requestPeginTxHash.as_slice())
             .context("Failed to parse transaction ID from pegin event")?;
 
-        let committee_id = Self::build_committee_id(pegin_event.committeeId)?;
+        let committee_uuid = Self::build_committee_id(committee_id)?;
 
         Ok(PeginRequestMessage {
             txid,
@@ -656,7 +657,7 @@ where
             take_aggregated_key,
             operator_indexes,
             slot_index,
-            committee_id,
+            committee_id: committee_uuid,
             rootstock_address: rootstock_address.to_string(),
             reimbursement_pubkey,
         })
@@ -697,14 +698,8 @@ where
         Ok(PublicKey::new(reimbursement_secp_key))
     }
 
-    fn build_committee_id(committee_id: U256) -> Result<Uuid> {
-        let committee_bytes = committee_id.to_be_bytes_vec();
-        let uuid_bytes: [u8; 16] = committee_bytes
-            .get(16..)
-            .ok_or_else(|| anyhow!("Committee ID too short for UUID conversion: expected at least 16 bytes, got {}", committee_bytes.len()))?
-            .try_into()
-            .context("Failed to convert committee_id to UUID")?;
-        Ok(Uuid::from_bytes(uuid_bytes))
+    fn build_committee_id(committee_id: CommitteeId) -> Result<Uuid> {
+        Ok(Uuid::from_u128(*committee_id))
     }
 
     //Step 10 after confirmation of the pegin accepted event, we need to send the
