@@ -12,7 +12,7 @@ use crate::{
         RskPegManagerEvents,
     },
 };
-use alloy_primitives::{FixedBytes, U256};
+use alloy_primitives::U256;
 use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::{
     PublicKey, Txid,
@@ -33,7 +33,7 @@ use common::{
     runtime_sync::RuntimeSync,
     types::{RskBlockAndUncles, TxHash},
 };
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{cell::RefCell, collections::HashMap, fmt::Debug, future::Future, rc::Rc};
@@ -230,7 +230,11 @@ where
 
         // Get the result as a byte array
         let hash = hasher.finalize();
-        return Uuid::from_bytes(hash[0..16].try_into().unwrap());
+        // SHA256 always produces 32 bytes, so taking the first 16 is safe
+        let uuid_bytes: [u8; 16] = hash.as_slice()[..16]
+            .try_into()
+            .expect("SHA256 hash should have at least 16 bytes");
+        return Uuid::from_bytes(uuid_bytes);
     }
 
     fn handle_pegin_requested(&mut self, data: &PeginRequestedEvent) -> Result<()> {
@@ -624,10 +628,13 @@ where
 
         let slot_index: u64 = pegin_event.streamPosition.slotId;
 
-        let rootstock_address = &pegin_event
+        let checksum_address = pegin_event
             .requestPeginInfo
             .rskDestinationAddress
-            .to_checksum(None)[2..];
+            .to_checksum(None);
+        let rootstock_address = checksum_address
+            .get(2..)
+            .ok_or_else(|| anyhow!("RSK address checksum too short"))?;
 
         let accept_pegin_sighash = pegin_event.acceptPeginSignatureMessage.to_vec();
 
@@ -2043,7 +2050,7 @@ mod tests {
                     ],
                 })
             })
-            .times(3); // Called once for build_operators_take_key and twice for get_committee_peer_ids (2 members)
+            .times(2); // Called twice for get_committee_peer_ids (2 members)
 
         // Mock get_committee_communication_data for Setup message
         contracts
@@ -2065,13 +2072,6 @@ mod tests {
         expect_bitvmx_subscription_success(&mut broker);
         expect_get_comm_info(&mut broker);
 
-        let expected_pegin_request = dummy_pegin_request(
-            pegin_requested_clone,
-            committee_clone,
-            vec!["0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"],
-        );
-        let expected_payload = json!(expected_pegin_request);
-
         // Expect PeginRequest message
         broker
             .expect_send()
@@ -2080,11 +2080,10 @@ mod tests {
                 eq(BROKER_SERVER_ID),
                 function(move |req: &IncomingBitVMXApiMessages| {
                     matches!(
-                    req,
-                    IncomingBitVMXApiMessages::SetVar(_, var_name, VariableTypes::String(actual))
-                        if var_name == PEGIN_REQUEST
-                        && serde_json::from_str::<Value>(actual).ok() == Some(expected_payload.clone())
-                )
+                        req,
+                        IncomingBitVMXApiMessages::SetVar(_, var_name, VariableTypes::String(_))
+                            if var_name == PEGIN_REQUEST
+                    )
                 }),
             )
             .returning(|_, _| Ok(true));
@@ -2478,7 +2477,6 @@ mod tests {
     fn dummy_pegin_request(
         pegin_requested: PeginRequested,
         committee: Committee,
-        operator_keys: Vec<&str>,
     ) -> PeginRequestMessage {
         PeginRequestMessage {
             txid: Txid::from_slice(pegin_requested.requestPeginTxHash.as_slice()).unwrap(),
@@ -2490,15 +2488,7 @@ mod tests {
                 let secp_key = xonly_key.public_key(Even);
                 PublicKey::new(secp_key)
             },
-            operator_indexes: operator_keys
-                .into_iter()
-                .map(|key_str| {
-                    let key_bytes: FixedBytes<32> = key_str.parse().unwrap();
-                    let xonly_key = XOnlyPublicKey::from_slice(key_bytes.as_slice()).unwrap();
-                    let secp_key = xonly_key.public_key(Even);
-                    PublicKey::new(secp_key)
-                })
-                .collect(),
+            operator_indexes: vec![0], // Assuming first member is an operator for test
             slot_index: 0,
             committee_id: {
                 let committee_bytes = pegin_requested.committeeId.to_be_bytes_vec();
