@@ -7,12 +7,12 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct GlobalContext {
     my_committees: MyCommittees,
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct MyCommittees {
     committees: Rc<RefCell<HashMap<CommitteeId, Role>>>,
 }
@@ -24,13 +24,14 @@ impl MyCommittees {
         }
     }
 
-    pub fn add(&mut self, committee_id: CommitteeId, role: Role) {
+    // NOTE: &self is enough thanks to RefCell
+    pub fn add(&self, committee_id: CommitteeId, role: Role) {
         self.committees.borrow_mut().insert(committee_id, role);
     }
 
     // TODO call when leaving a committee or when a committee is disbanded
-    pub fn remove(&mut self, committee_id: CommitteeId) {
-        self.committees.borrow_mut().remove(&committee_id);
+    pub fn _remove(&self, committee_id: &CommitteeId) {
+        self.committees.borrow_mut().remove(committee_id);
     }
 
     pub fn im_member(&self, committee_id: &CommitteeId) -> bool {
@@ -49,9 +50,8 @@ impl GlobalContext {
         }
     }
 
-    // TODO rethink this mutable access
-    pub fn my_committees(&mut self) -> &mut MyCommittees {
-        &mut self.my_committees
+    pub fn my_committees(&self) -> &MyCommittees {
+        &self.my_committees
     }
 }
 

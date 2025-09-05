@@ -1161,8 +1161,7 @@ where
     ) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
         // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: optimize this search by keeping convenient map of committee_id -> internal_id or alike
 
-        let im_member = self.global_context.my_committees().im_member(&committee_id);
-        if !im_member {
+        if !self.global_context.my_committees().im_member(&committee_id) {
             debug!("Not my committee {committee_id}");
             return None;
         }

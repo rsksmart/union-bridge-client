@@ -110,7 +110,7 @@ impl BlockchainView {
         // Check for duplicates with defensive borrowing
         {
             let observers = self.observers.try_borrow()
-            .expect("BlockchainView observers already borrowed during add_observer - reentrancy detected! This violates the BlockchainObserver contract and indicates a programming bug.");
+                .expect("BlockchainView observers already borrowed during add_observer - reentrancy detected! This violates the BlockchainObserver contract and indicates a programming bug.");
             if observers.contains_key(&observer_id) {
                 // TODO improve error handling, for now just halt for us to realise
                 panic!(
