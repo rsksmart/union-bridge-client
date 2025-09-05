@@ -112,10 +112,7 @@ where
 
     fn delegate_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
         // update blockchain view
-        self.lifecycle
-            .blockchain_view()
-            .borrow_mut()
-            .update(block.clone());
+        self.lifecycle.blockchain_view().update(block.clone());
 
         // check if nonces are ready and send signature
         if self.lifecycle.is_all_nonces_ready_confirmed()? {
@@ -125,7 +122,7 @@ where
         // check if signatures are ready and close flow
         if self.lifecycle.is_all_signatures_ready_confirmed()? {
             self.is_done = true;
-            self.lifecycle.blockchain_view().borrow_mut().clear();
+            self.lifecycle.blockchain_view().clear();
         }
 
         Ok(())
@@ -175,8 +172,6 @@ mod tests {
     use mockall::predicate::*;
     use musig2::PubNonce;
     use primitive_types::H256;
-    use std::cell::RefCell;
-    use std::rc::Rc;
 
     type MockBtcSignatureSubFlow = BaseBtcSignatureSubFlow<MockBtcSignatureLifecycleApi>;
 
@@ -217,7 +212,7 @@ mod tests {
             .returning(|_| Ok(()));
         mock_flow
             .expect_blockchain_view()
-            .returning(|| Rc::new(RefCell::new(BlockchainView::new())));
+            .return_const(BlockchainView::new());
 
         mock_flow.expect_flow_id().returning(move || flow_id);
 
@@ -285,7 +280,7 @@ mod tests {
             .returning(|_| Ok(()));
         mock_flow
             .expect_blockchain_view()
-            .returning(|| Rc::new(RefCell::new(BlockchainView::new())));
+            .return_const(BlockchainView::new());
 
         let mut sub_flow = MockBtcSignatureSubFlow::new(mock_flow);
 
@@ -325,7 +320,7 @@ mod tests {
             .returning(|| Ok(()));
         mock_flow
             .expect_blockchain_view()
-            .returning(|| Rc::new(RefCell::new(BlockchainView::new())));
+            .return_const(BlockchainView::new());
 
         let mut sub_flow = MockBtcSignatureSubFlow::new(mock_flow);
 
@@ -366,7 +361,7 @@ mod tests {
             .returning(|_| Ok(()));
         mock_flow
             .expect_blockchain_view()
-            .returning(|| Rc::new(RefCell::new(BlockchainView::new())));
+            .return_const(BlockchainView::new());
 
         let mut sub_flow = MockBtcSignatureSubFlow::new(mock_flow);
 
@@ -406,7 +401,7 @@ mod tests {
             .returning(|| Ok(()));
         mock_flow
             .expect_blockchain_view()
-            .returning(|| Rc::new(RefCell::new(BlockchainView::new())));
+            .return_const(BlockchainView::new());
 
         let mut sub_flow = MockBtcSignatureSubFlow::new(mock_flow);
 
@@ -452,7 +447,7 @@ mod tests {
         mock_flow
             .expect_blockchain_view()
             .times(1)
-            .returning(|| Rc::new(RefCell::new(BlockchainView::new())));
+            .return_const(BlockchainView::new());
         mock_flow
             .expect_is_all_nonces_ready_confirmed()
             .times(1)
@@ -480,7 +475,7 @@ mod tests {
         mock_flow
             .expect_blockchain_view()
             .times(1)
-            .returning(|| Rc::new(RefCell::new(BlockchainView::new())));
+            .return_const(BlockchainView::new());
         mock_flow
             .expect_is_all_nonces_ready_confirmed()
             .times(1)
@@ -514,7 +509,7 @@ mod tests {
         mock_flow
             .expect_blockchain_view()
             .times(3) // one on process_new_block, one on close_flow and one to check if empty in this test
-            .returning(|| Rc::new(RefCell::new(BlockchainView::new())));
+            .return_const(BlockchainView::new());
         mock_flow
             .expect_is_all_nonces_ready_confirmed()
             .times(1)
@@ -530,7 +525,7 @@ mod tests {
 
         assert!(result.is_ok());
         assert!(sub_flow.is_done);
-        assert!(sub_flow.lifecycle.blockchain_view().borrow().is_empty());
+        assert!(sub_flow.lifecycle.blockchain_view().is_empty());
     }
 
     #[test]
@@ -547,7 +542,7 @@ mod tests {
         mock_flow
             .expect_blockchain_view()
             .times(2) // will be called twice, once for each block
-            .returning(|| Rc::new(RefCell::new(BlockchainView::new())));
+            .return_const(BlockchainView::new());
 
         // first block: no confirmations yet
         mock_flow
@@ -650,7 +645,7 @@ mod tests {
             .returning(|_| Err(anyhow!("Failed to set nonces ready")));
         mock_flow
             .expect_blockchain_view()
-            .returning(|| Rc::new(RefCell::new(BlockchainView::new())));
+            .return_const(BlockchainView::new());
 
         let mut sub_flow = MockBtcSignatureSubFlow::new(mock_flow);
 
@@ -681,7 +676,7 @@ mod tests {
         mock_flow
             .expect_blockchain_view()
             .times(3) // one on process_new_block, one on close_flow and one to check if empty in this test
-            .returning(|| Rc::new(RefCell::new(BlockchainView::new())));
+            .return_const(BlockchainView::new());
         mock_flow
             .expect_is_all_nonces_ready_confirmed()
             .times(1)
@@ -701,7 +696,7 @@ mod tests {
 
         assert!(result.is_ok());
         // flow should be closed because signatures are confirmed
-        assert!(sub_flow.lifecycle.blockchain_view().borrow().is_empty());
+        assert!(sub_flow.lifecycle.blockchain_view().is_empty());
     }
 
     #[test]
@@ -714,7 +709,7 @@ mod tests {
         mock_flow
             .expect_blockchain_view()
             .times(1)
-            .returning(|| Rc::new(RefCell::new(BlockchainView::new())));
+            .return_const(BlockchainView::new());
         mock_flow
             .expect_is_all_nonces_ready_confirmed()
             .times(1)
@@ -747,7 +742,7 @@ mod tests {
         mock_flow
             .expect_blockchain_view()
             .times(1)
-            .returning(|| Rc::new(RefCell::new(BlockchainView::new())));
+            .return_const(BlockchainView::new());
         mock_flow
             .expect_is_all_nonces_ready_confirmed()
             .times(1)

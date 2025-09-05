@@ -565,21 +565,21 @@ mod tests {
                 .chain_view
                 .get_at(&request_block.number())
                 .expect("Should exist"),
-            &request_block
+            request_block
         );
         assert_eq!(
             processor
                 .chain_view
                 .get_at(&any_block.number())
                 .expect("Should exist"),
-            &any_block
+            any_block
         );
         assert_eq!(
             processor
                 .chain_view
                 .get_at(&advance_funds_block.number())
                 .expect("Should exist"),
-            &advance_funds_block
+            advance_funds_block
         );
     }
 
@@ -672,21 +672,21 @@ mod tests {
                 .chain_view
                 .get_at(&request_block_1.number())
                 .expect("Should exist"),
-            &request_block_1
+            request_block_1
         );
         assert_eq!(
             processor
                 .chain_view
                 .get_at(&request_block_2.number())
                 .expect("Should exist"),
-            &request_block_2
+            request_block_2
         );
         assert_eq!(
             processor
                 .chain_view
                 .get_at(&advance_funds_block.number())
                 .expect("Should exist"),
-            &advance_funds_block
+            advance_funds_block
         );
     }
 
@@ -765,7 +765,7 @@ mod tests {
         assert_eq!(processor.chain_view.len(), 1);
         assert_eq!(
             processor.chain_view.get_at(&request_block.number()),
-            Some(&request_block)
+            Some(request_block.clone())
         );
     }
 
@@ -810,7 +810,7 @@ mod tests {
         );
         assert_eq!(
             processor.chain_view.get_at(&request_block.number()),
-            Some(&request_block)
+            Some(request_block.clone())
         );
 
         let advance_funds_event = create_fake_advance_funds_event(pegout_id);
@@ -858,7 +858,7 @@ mod tests {
         assert!(processor.chain_view.has_observer(pegout_id));
 
         let advance_funds_sibling = create_block_from_template(
-            &advance_funds_block.block(),
+            advance_funds_block.block(),
             "0xa7b3f84f619c302a11892a379ac5a3a0bfbf8a3dce946a3db31cfb4c2f5cd909",
             advance_funds_block.parent(),
             vec![],
@@ -962,7 +962,7 @@ mod tests {
         );
         assert_eq!(
             processor.chain_view.get_at(&request_block.number()),
-            Some(&request_block)
+            Some(request_block.clone())
         );
 
         let advance_funds_event = create_fake_advance_funds_event(pegout_id);
@@ -1010,7 +1010,7 @@ mod tests {
         assert!(processor.chain_view.has_observer(pegout_id));
 
         let advance_funds_sibling = create_block_from_template(
-            &advance_funds_block.block(),
+            advance_funds_block.block(),
             "0xa7b3f84f619c302a11892a379ac5a3a0bfbf8a3dce946a3db31cfb4c2f5cd909",
             advance_funds_block.parent(),
             vec![],
@@ -1348,7 +1348,7 @@ mod tests {
         let advance_funds_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(110.into(), U256::from(50)));
         let advance_funds_block_2 = RskBlockAndUncles::new_no_uncles(create_advance_funds_block(
-            &advance_funds_block.block(),
+            advance_funds_block.block(),
         ));
 
         let pegout_id = "peg123";
