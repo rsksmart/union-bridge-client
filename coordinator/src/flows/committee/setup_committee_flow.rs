@@ -1260,7 +1260,6 @@ where
     fn process_confirmed_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         info!("Processing confirmed RSK event: {:?}", event);
 
-        // assume events are confirmed for now
         let flow_data = match event {
             RskPegManagerEvents::NewCommitteePending(new_committee_pending) => {
                 let stream_id = new_committee_pending.inner._committee.streamId;
@@ -1514,7 +1513,7 @@ where
                 );
                 // properly cleanup the observer before processing the event
                 if let Err(e) = event.stop_confirming() {
-                    warn!("Failed to stop confirming for event {}: {}", key, e);
+                    error!("Failed to stop confirming for event {}: {}", key, e);
                 }
                 self.process_confirmed_rsk_event(event.get_data())?;
             }
