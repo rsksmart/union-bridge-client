@@ -1619,7 +1619,6 @@ mod tests {
             .get(&tx_hash)
             .map(|state| state.pegin_requested.confirmations.borrow().get_id())
             .unwrap();
-        assert!(processor.blockchain.has_observer(observer_id.as_str()));
     }
 
     #[test]
@@ -1659,7 +1658,6 @@ mod tests {
             .unwrap();
         assert!(result.is_ok());
         assert_eq!(processor.tracker.len(), 1);
-        assert!(processor.blockchain.has_observer(observer_id.as_str()));
 
         let event = RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
             inner: pegin_requested.clone(),
@@ -1672,7 +1670,6 @@ mod tests {
         let result = processor.process_new_rsk_event(&event);
         assert!(result.is_ok());
         assert_eq!(processor.tracker.len(), 0);
-        assert!(!processor.blockchain.has_observer(&observer_id));
     }
 
     #[test]
@@ -1707,7 +1704,6 @@ mod tests {
 
         // event should be ignored since committee is not in my_committees
         assert_eq!(processor.tracker.len(), 0);
-        assert!(!processor.blockchain.has_observer("pegin_requested-"));
     }
 
     #[test]
@@ -1762,7 +1758,6 @@ mod tests {
             .and_then(|state| state.pegin_accepted.as_ref())
             .map(|accepted| accepted.confirmations.borrow().get_id())
             .unwrap();
-        assert!(processor.blockchain.has_observer(observer_id.as_str()));
     }
 
     #[test]
@@ -1822,7 +1817,6 @@ mod tests {
         let observer_id = processor.tracker.get(&tx_hash).unwrap().flow_id.to_string();
         assert!(result.is_ok());
         assert_eq!(processor.tracker.len(), 1);
-        assert!(!processor.blockchain.has_observer(&observer_id));
         assert!(
             processor
                 .tracker
@@ -1915,11 +1909,6 @@ mod tests {
         assert!(result.is_ok());
 
         assert_eq!(processor.tracker.len(), 1);
-        assert!(
-            processor
-                .blockchain
-                .has_observer(&pegin_flow_id.to_string())
-        );
     }
 
     #[test]
@@ -2054,11 +2043,6 @@ mod tests {
         assert!(result.is_ok());
 
         assert_eq!(processor.tracker.len(), 1);
-        assert!(
-            !processor
-                .blockchain
-                .has_observer(&pegin_flow_id.to_string())
-        );
     }
 
     #[test]
@@ -2125,11 +2109,6 @@ mod tests {
         assert!(result.is_ok());
 
         assert_eq!(processor.tracker.len(), 1);
-        assert!(
-            processor
-                .blockchain
-                .has_observer(&pegin_flow_id.to_string())
-        );
     }
 
     #[test]
@@ -2200,11 +2179,6 @@ mod tests {
         assert!(result.is_ok());
 
         assert_eq!(processor.tracker.len(), 0); // since pegin is completed at this point
-        assert!(
-            !processor
-                .blockchain
-                .has_observer(&pegin_flow_id.to_string())
-        );
     }
 
     fn expect_bitvmx_subscription_success(

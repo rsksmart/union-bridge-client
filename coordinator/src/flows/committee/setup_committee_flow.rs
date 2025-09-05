@@ -1,7 +1,7 @@
-use crate::blockchain_tracker::BlockchainView;
+use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
 use crate::event_processor::EventProcessor;
 use crate::types::{
-    AllCommunicationDataReadyEvent, MemberOfCommittee, NewCommitteePendingEvent,
+    AllCommunicationDataReadyEvent, EventStatus, MemberOfCommittee, NewCommitteePendingEvent,
     NewCommitteeReadyEvent, RskPegManagerEvents, UserRequests,
 };
 use alloy_primitives::{Address, FixedBytes};
@@ -18,7 +18,7 @@ use common::msg_broker::bitvmx_types::{
 };
 use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 use common::runtime_sync::RuntimeSync;
-use log::{debug, error, info};
+use log::{debug, error, info, trace, warn};
 use sha2::{Digest, Sha256};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -32,10 +32,10 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     Committee, CommitteeMember, CommunicationData, UTXO,
 };
 
+use crate::flows::committee::dispute_core_setup::DisputeCoreSetup;
 use crate::flows::common::{GlobalContext, build_communication_data};
-use crate::flows::dispute_core_setup::DisputeCoreSetup;
 use common::types;
-use common::types::{CommitteeId, RskBlockAndUncles, StreamId};
+use common::types::{BlockNumber, CommitteeId, RskBlockAndUncles, StreamId};
 
 use transaction_dispatcher::types::{
     ApplyToStreamInput, CommitteeECDSA, DepositAggregatedKeyInput, DepositCommunicationDataInput,
@@ -43,6 +43,7 @@ use transaction_dispatcher::types::{
     GetMemberPublicKeysOutput, P2PAddressParser,
 };
 
+use crate::config::REQUIRED_CONFIRMATIONS;
 #[cfg(test)]
 use mockall::automock;
 
@@ -284,7 +285,6 @@ pub(crate) struct SetupCommitteeFlow<CG: RskContractsGatewayApi, BC: BitVmxBroke
     contracts: Rc<CG>,
     rt_sync: RuntimeSync,
     bitvmx_broker: Rc<BC>,
-    _blockchain_view: Rc<RefCell<BlockchainView>>,
     state: State,
     bitcoin_client: BitcoinClient,
     global_context: GlobalContext,
@@ -306,7 +306,6 @@ where
             contracts,
             rt_sync,
             bitvmx_broker,
-            _blockchain_view: Rc::new(RefCell::new(BlockchainView::new())),
             state: State {
                 internal_id,
                 step: Steps::UserRequest,
@@ -1109,6 +1108,8 @@ where
     flow_factory: FactoryBSF,
     flows: HashMap<Uuid, SetupCommitteeFlow<CG, BC>>,
     global_context: GlobalContext,
+    blockchain_view: Rc<RefCell<BlockchainView>>,
+    events_confirming: HashMap<String, ConfirmableEventWithData>,
 }
 
 impl<CG, BC, FactoryBSF> SetupCommitteeProcessor<CG, BC, FactoryBSF>
@@ -1122,6 +1123,8 @@ where
             flow_factory,
             flows: HashMap::new(),
             global_context,
+            events_confirming: HashMap::new(),
+            blockchain_view: Rc::new(RefCell::new(BlockchainView::new())),
         }
     }
 }
@@ -1254,43 +1257,9 @@ where
         false
     }
 
-    fn close_completed_flows(&mut self) {
-        let completed: Vec<_> = self
-            .flows
-            .iter()
-            .filter(|(_, flow)| flow.state.step == Steps::Complete)
-            .map(|(k, _)| *k)
-            .collect();
+    fn process_confirmed_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
+        info!("Processing confirmed RSK event: {:?}", event);
 
-        for key in completed {
-            info!("Removing Completed flow: {key:?}");
-            self.flows.remove(&key);
-        }
-    }
-}
-
-impl<CG, BC, FactoryBSF> EventProcessor for SetupCommitteeProcessor<CG, BC, FactoryBSF>
-where
-    CG: RskContractsGatewayApi,
-    BC: BitVmxBrokerClientApi,
-    FactoryBSF: SetupCommitteeFlowFactoryApi<CG, BC>,
-{
-    fn process_user_request(&mut self, req: &UserRequests) -> Result<()> {
-        info!("Processing user request: {:?}", req);
-        match req {
-            UserRequests::ApplyToStream(input) => {
-                let internal_id = Uuid::new_v4();
-                let mut flow = self.flow_factory.create_flow(internal_id);
-                flow.complete_step(StepData::UserRequest(input.clone()))?;
-                self.flows.insert(internal_id, flow);
-            }
-        }
-
-        Ok(())
-    }
-
-    fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
-        // assume events are confirmed for now
         let flow_data = match event {
             RskPegManagerEvents::NewCommitteePending(new_committee_pending) => {
                 let stream_id = new_committee_pending.inner._committee.streamId;
@@ -1328,6 +1297,123 @@ where
         }
 
         self.close_completed_flows();
+
+        Ok(())
+    }
+
+    fn build_new_committee_ready_event_info(
+        event: &NewCommitteeReadyEvent,
+    ) -> (String, EventStatus, BlockNumber, RskPegManagerEvents) {
+        (
+            format!("{}-ready", event.inner.committeeId),
+            event.removed,
+            event.block_number,
+            RskPegManagerEvents::NewCommitteeReady(event.clone()),
+        )
+    }
+    fn build_all_comm_data_ready_event_info(
+        event: &AllCommunicationDataReadyEvent,
+    ) -> (String, EventStatus, BlockNumber, RskPegManagerEvents) {
+        (
+            format!("{}-data-ready", event.inner._committeeId),
+            event.removed,
+            event.block_number,
+            RskPegManagerEvents::AllCommunicationDataReady(event.clone()),
+        )
+    }
+    fn build_new_pending_committee_event_info(
+        event: &NewCommitteePendingEvent,
+    ) -> (String, EventStatus, BlockNumber, RskPegManagerEvents) {
+        (
+            format!("{}-pending", event.inner.committeeId),
+            event.removed,
+            event.block_number,
+            RskPegManagerEvents::NewCommitteePending(event.clone()),
+        )
+    }
+
+    fn close_completed_flows(&mut self) {
+        let completed: Vec<_> = self
+            .flows
+            .iter()
+            .filter(|(_, flow)| flow.state.step == Steps::Complete)
+            .map(|(k, _)| *k)
+            .collect();
+
+        for key in completed {
+            info!("Removing Completed flow: {key:?}");
+            self.flows.remove(&key);
+        }
+    }
+}
+
+impl<CG, BC, FactoryBSF> EventProcessor for SetupCommitteeProcessor<CG, BC, FactoryBSF>
+where
+    CG: RskContractsGatewayApi,
+    BC: BitVmxBrokerClientApi,
+    FactoryBSF: SetupCommitteeFlowFactoryApi<CG, BC>,
+{
+    fn process_user_request(&mut self, req: &UserRequests) -> Result<()> {
+        info!("Processing user request: {:?}", req);
+        match req {
+            UserRequests::ApplyToStream(input) => {
+                let internal_id = Uuid::new_v4();
+                let mut flow = self.flow_factory.create_flow(internal_id);
+                flow.complete_step(StepData::UserRequest(input.clone()))?;
+                self.flows.insert(internal_id, flow);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
+        let (id, is_removal, block_num, managed_event) = match event {
+            RskPegManagerEvents::NewCommitteePending(e) => {
+                Self::build_new_pending_committee_event_info(e)
+            }
+            RskPegManagerEvents::AllCommunicationDataReady(e) => {
+                Self::build_all_comm_data_ready_event_info(e)
+            }
+            RskPegManagerEvents::NewCommitteeReady(e) => {
+                Self::build_new_committee_ready_event_info(e)
+            }
+            _ => {
+                info!("Ignoring RSK event: {:?}", event);
+                return Ok(());
+            }
+        };
+
+        if is_removal {
+            warn!("Removing pending RSK event: {:?}", event);
+
+            // properly clean up the observer before removing the event
+            if let Some(mut removed_ev) = self.events_confirming.remove(&id) {
+                if let Err(e) = removed_ev.stop_confirming() {
+                    error!("Failed to stop confirming for removed event {id}: {e}");
+                }
+            } else {
+                warn!("Tried to remove non-existing pending event with id {id}");
+            }
+        } else {
+            debug!("Adding new pending {event:?}, start confirming at block {block_num}");
+
+            let mut confirmable_event = ConfirmableEventWithData::new(
+                id.clone(),
+                REQUIRED_CONFIRMATIONS,
+                self.blockchain_view.clone(),
+                managed_event,
+            );
+
+            confirmable_event
+                .start_confirming(block_num)
+                .context("Starting confirming")?;
+
+            self.events_confirming
+                .insert(confirmable_event.id(), confirmable_event);
+
+            info!("Waiting for confirmations for {id}");
+        }
 
         Ok(())
     }
@@ -1403,8 +1489,40 @@ where
         Ok(())
     }
 
-    fn process_new_block(&mut self, _block: &RskBlockAndUncles) -> Result<()> {
-        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-238: wait for confirmations for every event, now we assume confirmed immediately
+    fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
+        if self.events_confirming.is_empty() {
+            trace!("No events left to confirm, skipping block");
+            return Ok(());
+        }
+
+        self.blockchain_view.borrow_mut().update(block.clone());
+
+        // process confirmed events while removing them from the hashmap
+        // collect the keys of confirmed events first to avoid mutating while iterating
+        let confirmed_keys: Vec<_> = self
+            .events_confirming
+            .iter()
+            .filter_map(|(key, event)| event.is_confirmed().then(|| key.clone()))
+            .collect();
+
+        for key in confirmed_keys {
+            if let Some(mut event) = self.events_confirming.remove(&key) {
+                info!(
+                    "RSK event confirmed: {:?}, removing pending {key}",
+                    event.get_data()
+                );
+                // properly cleanup the observer before processing the event
+                if let Err(e) = event.stop_confirming() {
+                    error!("Failed to stop confirming for event {}: {}", key, e);
+                }
+                self.process_confirmed_rsk_event(event.get_data())?;
+            }
+        }
+
+        if self.events_confirming.is_empty() {
+            debug!("No events left to confirm, clearing blockchain view");
+            self.blockchain_view.borrow_mut().clear();
+        }
 
         // blocks allow periodic cleanup of completed flows, we can improve it with a cleanup task if needed
         self.close_completed_flows();

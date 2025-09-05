@@ -8,7 +8,7 @@ use log::{debug, error, info};
 use std::rc::Rc;
 use uuid::Uuid;
 
-use crate::flows::setup_committee_flow::NO_LEADER_IDX;
+use crate::flows::committee::setup_committee_flow::NO_LEADER_IDX;
 use crate::types::MemberOfCommittee;
 use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 use common::types::CommitteeId;
