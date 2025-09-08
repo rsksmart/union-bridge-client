@@ -20,7 +20,6 @@ use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 use common::runtime_sync::RuntimeSync;
 use log::{debug, error, info, trace, warn};
 use sha2::{Digest, Sha256};
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use tiny_keccak::{Hasher, Keccak};
@@ -1108,7 +1107,7 @@ where
     flow_factory: FactoryBSF,
     flows: HashMap<Uuid, SetupCommitteeFlow<CG, BC>>,
     global_context: GlobalContext,
-    blockchain_view: Rc<RefCell<BlockchainView>>,
+    blockchain_view: BlockchainView,
     events_confirming: HashMap<String, ConfirmableEventWithData>,
 }
 
@@ -1124,7 +1123,7 @@ where
             flows: HashMap::new(),
             global_context,
             events_confirming: HashMap::new(),
-            blockchain_view: Rc::new(RefCell::new(BlockchainView::new())),
+            blockchain_view: BlockchainView::new(),
         }
     }
 }
@@ -1162,8 +1161,7 @@ where
     ) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
         // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: optimize this search by keeping convenient map of committee_id -> internal_id or alike
 
-        let im_member = self.global_context.my_committees().im_member(&committee_id);
-        if !im_member {
+        if !self.global_context.my_committees().im_member(&committee_id) {
             debug!("Not my committee {committee_id}");
             return None;
         }
@@ -1495,7 +1493,7 @@ where
             return Ok(());
         }
 
-        self.blockchain_view.borrow_mut().update(block.clone());
+        self.blockchain_view.update(block.clone());
 
         // process confirmed events while removing them from the hashmap
         // collect the keys of confirmed events first to avoid mutating while iterating
@@ -1513,7 +1511,7 @@ where
                 );
                 // properly cleanup the observer before processing the event
                 if let Err(e) = event.stop_confirming() {
-                    error!("Failed to stop confirming for event {}: {}", key, e);
+                    warn!("Failed to stop confirming for event {}: {}", key, e);
                 }
                 self.process_confirmed_rsk_event(event.get_data())?;
             }
@@ -1521,7 +1519,7 @@ where
 
         if self.events_confirming.is_empty() {
             debug!("No events left to confirm, clearing blockchain view");
-            self.blockchain_view.borrow_mut().clear();
+            self.blockchain_view.clear();
         }
 
         // blocks allow periodic cleanup of completed flows, we can improve it with a cleanup task if needed

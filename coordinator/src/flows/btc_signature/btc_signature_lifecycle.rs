@@ -4,7 +4,6 @@ use anyhow::{Context, Result, anyhow, bail};
 use common::runtime_sync::RuntimeSync;
 use common::types::{BlockNumber, Hash256};
 use log::info;
-use std::cell::RefCell;
 use std::rc::Rc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::{AddMemberNonceInput, AddMemberSignatureInput};
@@ -36,7 +35,7 @@ pub(crate) trait BtcSignatureLifecycleApi {
 
     fn get_hash_to_sign(&self) -> Option<Hash256>;
 
-    fn blockchain_view(&self) -> Rc<RefCell<BlockchainView>>;
+    fn blockchain_view(&self) -> &BlockchainView;
 
     // TODO implement auto-clean after inactivity to cover cases where .close_flow() is not called
 }
@@ -51,7 +50,7 @@ pub(crate) struct State {
 pub(crate) struct BtcSignatureLifeCycle<CG: RskContractsGatewayApi> {
     contracts: Rc<CG>,
     rt_sync: RuntimeSync,
-    blockchain_view: Rc<RefCell<BlockchainView>>,
+    blockchain_view: BlockchainView,
     state: State,
 }
 
@@ -67,7 +66,7 @@ where
         BtcSignatureLifeCycle {
             contracts: contracts_gateway,
             rt_sync,
-            blockchain_view: Rc::new(RefCell::new(BlockchainView::new())),
+            blockchain_view: BlockchainView::new(),
             state: State {
                 flow_id,
                 data: None,
@@ -81,7 +80,7 @@ where
     pub(in crate::flows::btc_signature) fn new_for_tests(
         contracts_gateway: Rc<CG>,
         rt_sync: RuntimeSync,
-        blockchain_view: Rc<RefCell<BlockchainView>>,
+        blockchain_view: BlockchainView,
         flow_id: Uuid,
     ) -> Self {
         BtcSignatureLifeCycle {
@@ -319,8 +318,8 @@ where
         self.state.data.as_ref().map(|s| s.hash_to_sign.clone())
     }
 
-    fn blockchain_view(&self) -> Rc<RefCell<BlockchainView>> {
-        self.blockchain_view.clone()
+    fn blockchain_view(&self) -> &BlockchainView {
+        &self.blockchain_view
     }
 }
 
@@ -337,7 +336,6 @@ mod tests {
     use musig2::{PartialSignature, PubNonce};
     use primitive_types::H256;
     use serde_json::json;
-    use std::cell::RefCell;
     use std::rc::Rc;
 
     use crate::types::RegisterSignaturesBitVmxData;
@@ -367,7 +365,7 @@ mod tests {
         // step 3: add blocks but not enough for confirmation
         for i in 0..(REQUIRED_CONFIRMATIONS - 1) {
             let block = create_test_block(start_block + i.into());
-            blockchain_view.borrow_mut().update(block);
+            blockchain_view.update(block);
         }
 
         // verify not yet confirmed
@@ -383,7 +381,7 @@ mod tests {
         // step 5: add enough blocks to confirm
         for i in 0..REQUIRED_CONFIRMATIONS {
             let block = create_test_block(start_block + i.into());
-            blockchain_view.borrow_mut().update(block);
+            blockchain_view.update(block);
         }
 
         // check that confirmations don't accumulate after unsetting nonces
@@ -402,7 +400,7 @@ mod tests {
         // add enough blocks to reach confirmation for nonces
         for i in 0..REQUIRED_CONFIRMATIONS {
             let block = create_test_block(start_block + i.into());
-            blockchain_view.borrow_mut().update(block);
+            blockchain_view.update(block);
         }
 
         // step 7: verify confirmed after enough blocks
@@ -435,7 +433,7 @@ mod tests {
         // step 3: add blocks but not enough for confirmation
         for i in 0..(REQUIRED_CONFIRMATIONS - 1) {
             let block = create_test_block(start_block + i.into());
-            blockchain_view.borrow_mut().update(block);
+            blockchain_view.update(block);
         }
 
         // verify not yet confirmed
@@ -446,7 +444,7 @@ mod tests {
 
         // step 4: add missing block to confirm
         let block = create_test_block(start_block + (REQUIRED_CONFIRMATIONS - 1).into());
-        blockchain_view.borrow_mut().update(block);
+        blockchain_view.update(block);
 
         // verify confirmed after enough blocks
         let is_confirmed = flow
@@ -504,7 +502,7 @@ mod tests {
         // step 5: add blocks but not enough for confirmation
         for i in 0..(REQUIRED_CONFIRMATIONS - 1) {
             let block = create_test_block(signature_start_block + i.into());
-            blockchain_view.borrow_mut().update(block);
+            blockchain_view.update(block);
         }
 
         // verify not yet confirmed
@@ -515,7 +513,7 @@ mod tests {
 
         // step 6: add missing block to confirm
         let block = create_test_block(signature_start_block + (REQUIRED_CONFIRMATIONS - 1).into());
-        blockchain_view.borrow_mut().update(block);
+        blockchain_view.update(block);
 
         // verify confirmed after enough blocks
         let is_confirmed = flow
@@ -551,7 +549,7 @@ mod tests {
         // step 4: add blocks but not enough for confirmation
         for i in 0..(REQUIRED_CONFIRMATIONS - 1) {
             let block = create_test_block(start_block + i.into());
-            blockchain_view.borrow_mut().update(block);
+            blockchain_view.update(block);
         }
 
         // verify not yet confirmed
@@ -567,7 +565,7 @@ mod tests {
         // step 6: add enough blocks to confirm
         for i in 0..REQUIRED_CONFIRMATIONS {
             let block = create_test_block(start_block + i.into());
-            blockchain_view.borrow_mut().update(block);
+            blockchain_view.update(block);
         }
 
         // check that confirmations don't accumulate after unsetting signatures
@@ -586,7 +584,7 @@ mod tests {
         // add enough blocks to reach confirmation for signatures
         for i in 0..REQUIRED_CONFIRMATIONS {
             let block = create_test_block(start_block + i.into());
-            blockchain_view.borrow_mut().update(block);
+            blockchain_view.update(block);
         }
 
         // step 8: verify confirmed after enough blocks
@@ -617,7 +615,7 @@ mod tests {
         // step 4: add blocks but not enough for confirmation
         for i in 0..(REQUIRED_CONFIRMATIONS - 1) {
             let block = create_test_block(start_block + i.into());
-            blockchain_view.borrow_mut().update(block);
+            blockchain_view.update(block);
         }
 
         // verify not yet confirmed
@@ -679,7 +677,7 @@ mod tests {
 
         // set up runtime sync and blockchain view
         let rt_sync = RuntimeSync::new().expect("failed to create runtime sync");
-        let blockchain_view = Rc::new(RefCell::new(BlockchainView::new()));
+        let blockchain_view = BlockchainView::new();
 
         // create a signature flow instance
         let mut flow = BtcSignatureLifeCycle::new_for_tests(
@@ -714,7 +712,7 @@ mod tests {
 
         // set up runtime sync and blockchain view
         let rt_sync = RuntimeSync::new().expect("failed to create runtime sync");
-        let blockchain_view = Rc::new(RefCell::new(BlockchainView::new()));
+        let blockchain_view = BlockchainView::new();
 
         // create a signature flow instance
         let mut flow = BtcSignatureLifeCycle::new_for_tests(
@@ -782,7 +780,7 @@ mod tests {
 
         // set up runtime sync and blockchain view
         let rt_sync = RuntimeSync::new().expect("failed to create runtime sync");
-        let blockchain_view = Rc::new(RefCell::new(BlockchainView::new()));
+        let blockchain_view = BlockchainView::new();
 
         // create a signature flow instance
         let mut flow = BtcSignatureLifeCycle::new_for_tests(
@@ -914,7 +912,7 @@ mod tests {
     ) -> (
         RegisterSignaturesBitVmxData,
         BtcSignatureLifeCycle<MockRskContractsGatewayApi>,
-        Rc<RefCell<BlockchainView>>,
+        BlockchainView,
     ) {
         // setup test data
         let flow_id = Uuid::new_v4();
@@ -941,7 +939,7 @@ mod tests {
 
         // set up runtime sync and blockchain view
         let rt_sync = RuntimeSync::new().expect("failed to create runtime sync");
-        let blockchain_view = Rc::new(RefCell::new(BlockchainView::new()));
+        let blockchain_view = BlockchainView::new();
 
         // create a signature flow instance
         let flow = BtcSignatureLifeCycle::new_for_tests(
@@ -958,7 +956,7 @@ mod tests {
         flow: &mut BtcSignatureLifeCycle<CG>,
         signature_input: &RegisterSignaturesBitVmxData,
         start_block: BlockNumber,
-        blockchain_view: &Rc<RefCell<BlockchainView>>,
+        blockchain_view: &BlockchainView,
     ) -> Result<()> {
         flow.send_nonce_to_contracts(signature_input)?;
         flow.set_all_nonces_ready(start_block)?;
@@ -966,7 +964,7 @@ mod tests {
         // add enough blocks for nonce confirmation
         for i in 0..REQUIRED_CONFIRMATIONS {
             let block = create_test_block(start_block + i.into());
-            blockchain_view.borrow_mut().update(block);
+            blockchain_view.update(block);
         }
 
         // verify confirmed after enough blocks
@@ -984,7 +982,7 @@ mod tests {
     pub(in crate::flows::btc_signature) fn complete_signature_step<CG: RskContractsGatewayApi>(
         flow: &mut BtcSignatureLifeCycle<CG>,
         start_block: BlockNumber,
-        blockchain_view: &Rc<RefCell<BlockchainView>>,
+        blockchain_view: &BlockchainView,
     ) -> Result<()> {
         flow.send_signature_to_contracts()?;
         flow.set_all_signatures_ready(start_block)?;
@@ -992,7 +990,7 @@ mod tests {
         // add enough blocks for signature confirmation
         for i in 0..REQUIRED_CONFIRMATIONS {
             let block = create_test_block(start_block + i.into());
-            blockchain_view.borrow_mut().update(block);
+            blockchain_view.update(block);
         }
 
         // verify confirmed after enough blocks

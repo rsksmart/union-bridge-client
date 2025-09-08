@@ -202,21 +202,6 @@ where
         }
     }
 
-    fn is_my_committee<T: Debug>(
-        my_committees: &MyCommittees,
-        committee_id: &CommitteeId,
-        data: &EventWithBlock<T>,
-    ) -> bool {
-        if my_committees.im_member(&committee_id) {
-            info!("Handling {data:?}, as member I should respond");
-            true
-        } else {
-            // TODO do we need to remove it from tracker if we are not part of the committee?
-            info!("Handling {data:?}, I am NOT member so I skip");
-            false
-        }
-    }
-
     fn handle_tick(&mut self) -> Result<()> {
         if self.scheduler.is_empty() {
             return Ok(());
@@ -239,12 +224,11 @@ where
         }
 
         let committee_id = &data.inner.committeeId.try_into()?;
-        let is_event_from_my_committee =
-            Self::is_my_committee(self.global_context.my_committees(), committee_id, data);
-
-        if !is_event_from_my_committee {
+        if !self.global_context.my_committees().im_member(&committee_id) {
+            info!("Handling {data:?}, I am NOT member so I skip");
             return Ok(());
         }
+        info!("Handling {data:?}, as member I should respond");
 
         let pegin_flow_id = Uuid::new_v4();
         let observer_id = format!("pegin_requested-{}", pegin_flow_id);
@@ -278,12 +262,11 @@ where
         };
 
         let committee_id: CommitteeId = state.pegin_requested.data.inner.committeeId.try_into()?;
-        let is_event_from_my_committee =
-            Self::is_my_committee(self.global_context.my_committees(), &committee_id, data);
-
-        if !is_event_from_my_committee {
+        if !self.global_context.my_committees().im_member(&committee_id) {
+            info!("Handling {data:?}, I am NOT member so I skip");
             return Ok(());
         }
+        info!("Handling {data:?}, as member I should respond");
 
         let observer_id = format!("pegin_accepted-{}", state.flow_id);
         let confirmations =
@@ -328,12 +311,11 @@ where
         };
 
         let committee_id: CommitteeId = state.pegin_requested.data.inner.committeeId.try_into()?;
-        let is_event_from_my_committee =
-            Self::is_my_committee(self.global_context.my_committees(), &committee_id, data);
-
-        if !is_event_from_my_committee {
+        if !self.global_context.my_committees().im_member(&committee_id) {
+            info!("Handling {data:?}, I am NOT member so I skip");
             return Ok(());
         }
+        info!("Handling {data:?}, as member I should respond");
 
         let observer_id = format!("operator_take_tx_hashes_added-{}", state.flow_id);
         info!(
@@ -1177,9 +1159,7 @@ where
     }
 
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
-        let my_committees = self.global_context.my_committees().clone();
-
-        info!("My committees: {:?}", my_committees);
+        info!("My committees: {:?}", self.global_context.my_committees());
 
         match event {
             // Step 4: Handle PeginRequested event from RSK
@@ -1196,8 +1176,7 @@ where
             | RskPegManagerEvents::AllSignaturesReady(data) => {
                 for state in self.tracker.values_mut() {
                     let committee_id: &CommitteeId = &state.pegin_requested.data.inner.committeeId.try_into()?;
-                    let is_event_for_my_committees = Self::is_my_committee(&my_committees, committee_id, data);
-                    if !is_event_for_my_committees {
+                    if !self.global_context.my_committees().im_member(&committee_id) {
                         continue;
                     }
 
@@ -1595,10 +1574,7 @@ mod tests {
 
         let pegin_requested = dummy_pegin_requested_event();
 
-        add_to_my_committees(
-            &mut processor.global_context.my_committees(),
-            &pegin_requested,
-        );
+        add_to_my_committees(processor.global_context.my_committees(), &pegin_requested);
 
         let tx_hash: TxHash = pegin_requested.acceptPeginTxHash.into();
         let event = RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
@@ -1619,6 +1595,7 @@ mod tests {
             .get(&tx_hash)
             .map(|state| state.pegin_requested.confirmations.borrow().get_id())
             .unwrap();
+        assert!(processor.blockchain.has_observer(&observer_id));
     }
 
     #[test]
@@ -1636,10 +1613,7 @@ mod tests {
 
         let pegin_requested = dummy_pegin_requested_event();
 
-        add_to_my_committees(
-            &mut processor.global_context.my_committees(),
-            &pegin_requested,
-        );
+        add_to_my_committees(processor.global_context.my_committees(), &pegin_requested);
 
         let tx_hash: TxHash = pegin_requested.acceptPeginTxHash.into();
         let event = RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
@@ -1658,6 +1632,7 @@ mod tests {
             .unwrap();
         assert!(result.is_ok());
         assert_eq!(processor.tracker.len(), 1);
+        assert!(processor.blockchain.has_observer(&observer_id));
 
         let event = RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
             inner: pegin_requested.clone(),
@@ -1670,6 +1645,7 @@ mod tests {
         let result = processor.process_new_rsk_event(&event);
         assert!(result.is_ok());
         assert_eq!(processor.tracker.len(), 0);
+        assert!(!processor.blockchain.has_observer(&observer_id));
     }
 
     #[test]
@@ -1688,7 +1664,7 @@ mod tests {
         let pegin_requested = dummy_pegin_requested_event();
 
         // note: we intentionally do NOT add the committee to my_committees
-        // add_to_my_committees(&mut processor.global_context.my_committees(), &pegin_requested);
+        // add_to_my_committees(processor.global_context.my_committees(), &pegin_requested);
 
         let tx_hash: TxHash = pegin_requested.acceptPeginTxHash.into();
         let event = RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
@@ -1704,6 +1680,11 @@ mod tests {
 
         // event should be ignored since committee is not in my_committees
         assert_eq!(processor.tracker.len(), 0);
+        assert!(
+            !processor
+                .blockchain
+                .has_observer(&"pegin_requested-".to_string())
+        );
     }
 
     #[test]
@@ -1721,10 +1702,7 @@ mod tests {
 
         let pegin_requested = dummy_pegin_requested_event();
 
-        add_to_my_committees(
-            &mut processor.global_context.my_committees(),
-            &pegin_requested,
-        );
+        add_to_my_committees(processor.global_context.my_committees(), &pegin_requested);
 
         let event = RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
             inner: pegin_requested.clone(),
@@ -1758,6 +1736,7 @@ mod tests {
             .and_then(|state| state.pegin_accepted.as_ref())
             .map(|accepted| accepted.confirmations.borrow().get_id())
             .unwrap();
+        assert!(processor.blockchain.has_observer(&observer_id));
     }
 
     #[test]
@@ -1775,10 +1754,7 @@ mod tests {
 
         let pegin_requested = dummy_pegin_requested_event();
 
-        add_to_my_committees(
-            &mut processor.global_context.my_committees(),
-            &pegin_requested,
-        );
+        add_to_my_committees(processor.global_context.my_committees(), &pegin_requested);
 
         let event = RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
             inner: pegin_requested,
@@ -1817,6 +1793,7 @@ mod tests {
         let observer_id = processor.tracker.get(&tx_hash).unwrap().flow_id.to_string();
         assert!(result.is_ok());
         assert_eq!(processor.tracker.len(), 1);
+        assert!(!processor.blockchain.has_observer(&observer_id));
         assert!(
             processor
                 .tracker
@@ -1909,6 +1886,11 @@ mod tests {
         assert!(result.is_ok());
 
         assert_eq!(processor.tracker.len(), 1);
+        assert!(
+            processor
+                .blockchain
+                .has_observer(&pegin_flow_id.to_string())
+        );
     }
 
     #[test]
@@ -2043,6 +2025,11 @@ mod tests {
         assert!(result.is_ok());
 
         assert_eq!(processor.tracker.len(), 1);
+        assert!(
+            !processor
+                .blockchain
+                .has_observer(&pegin_flow_id.to_string())
+        );
     }
 
     #[test]
@@ -2109,6 +2096,11 @@ mod tests {
         assert!(result.is_ok());
 
         assert_eq!(processor.tracker.len(), 1);
+        assert!(
+            processor
+                .blockchain
+                .has_observer(&pegin_flow_id.to_string())
+        );
     }
 
     #[test]
@@ -2179,6 +2171,11 @@ mod tests {
         assert!(result.is_ok());
 
         assert_eq!(processor.tracker.len(), 0); // since pegin is completed at this point
+        assert!(
+            !processor
+                .blockchain
+                .has_observer(&pegin_flow_id.to_string())
+        );
     }
 
     fn expect_bitvmx_subscription_success(
@@ -2345,7 +2342,7 @@ mod tests {
     }
 
     /// helper method to add committee to my_committees for testing
-    fn add_to_my_committees(my_committees: &mut MyCommittees, pegin_requested: &PeginRequested) {
+    fn add_to_my_committees(my_committees: &MyCommittees, pegin_requested: &PeginRequested) {
         my_committees.add(
             pegin_requested
                 .committeeId
