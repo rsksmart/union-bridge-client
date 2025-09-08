@@ -1,4 +1,5 @@
 use crate::flows::common::{COMM_KEY_INDEX, GlobalContext, MyCommittees, build_communication_data};
+use crate::types::Role::Prover;
 use crate::types::{RegisterSignaturesBitVmxData, TickScheduler};
 use crate::{
     blockchain_tracker::{BlockConfirmations, BlockchainObserver, BlockchainView},
@@ -12,7 +13,6 @@ use crate::{
         RskPegManagerEvents,
     },
 };
-use alloy_primitives::U256;
 use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::{
     PublicKey, Txid,
@@ -623,7 +623,9 @@ where
         // Get committee information
         let committee_response = Self::call_contract(rt_sync, "getCommittee", || async {
             contracts
-                .get_committee(GetCommitteeInput { committee_id: committee_id.clone() })
+                .get_committee(GetCommitteeInput {
+                    committee_id: committee_id.clone(),
+                })
                 .await
         })?;
 
@@ -664,11 +666,11 @@ where
     }
 
     fn build_operator_indexes(committee_response: &GetCommitteeOutput) -> Result<Vec<usize>> {
-        const OPERATOR_ROLE: u8 = 1;
+        let operator_role: u8 = Prover.into();
         let mut operator_indexes = Vec::new();
 
         for (i, member) in committee_response.committee.members.iter().enumerate() {
-            if member.role != OPERATOR_ROLE {
+            if member.role != operator_role {
                 continue;
             }
 
@@ -2442,11 +2444,11 @@ mod tests {
             members: vec![
                 CommitteeMember {
                     memberAddress: leader,
-                    role: Role::from(1u8).into(), // Operator
+                    role: Role::from(1u8).into(), // Prover
                 },
                 CommitteeMember {
                     memberAddress: address!("0x0000000000000000000000000000000000000001"),
-                    role: Role::from(2u8).into(), // Non-operator, should be filtered out
+                    role: Role::from(2u8).into(), // Verifier
                 },
             ],
             leaderAddress: leader,

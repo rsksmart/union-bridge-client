@@ -22,6 +22,12 @@ pub(crate) struct MyCommittees {
     committees: Rc<RefCell<HashMap<CommitteeId, Role>>>,
 }
 
+impl Default for MyCommittees {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MyCommittees {
     pub fn new() -> Self {
         Self {

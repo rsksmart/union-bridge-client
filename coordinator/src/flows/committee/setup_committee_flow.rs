@@ -729,15 +729,15 @@ where
 
         let committee_id = self.state.ctx.get_committee_id()?;
 
-        info!(
-            "Depositing aggregated key for stream {}: {}",
-            aggregated_take_key.to_string(),
-            *committee_id
-        );
-
         let x_only_key = XOnlyPublicKey::from(aggregated_take_key);
         let aggregated_key = FixedBytes::<32>::try_from(&x_only_key.serialize())
             .context("Failed to serialize aggregated public key")?;
+
+        info!(
+            "Depositing aggregated key for stream {}: {}",
+            aggregated_key.to_string(),
+            *committee_id
+        );
 
         let input = DepositAggregatedKeyInput {
             committee_id,
