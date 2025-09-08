@@ -51,6 +51,7 @@ N/B: Please note that you would need to have anvil and the bitvmx-workspace runn
 #### Usage
 
 ```bash
+bash d-compose-cli.sh build --features=anvil
 bash d-multi-client.sh
 ```
 
