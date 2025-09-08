@@ -37,6 +37,13 @@ For detailed usage, commands, options, and examples:
 bash d-compose-cli.sh --help
 ```
 
+### First time docker setup pre-requisite 
+Inside the docker directory, copy the contents of the `.env.sample` file into a new `.env` file (not to be confused with `.envrc` which the project uses in the root directory). 
+
+set a value for the `KEY_STORE_PASSWORD` variable, it doesn't need to be the same as the equivalent var in the `.envrc` of the project's root directory.
+
+N/B: Please note that you would need to have anvil and the bitvmx-workspace running before running the docker build command then any subsequent command to start up the services using docker.
+
 ### d-multi-client.sh - Multi-Client Automation
 
 `d-multi-client.sh` automatically starts all 4 Union client instances with different BitVMX broker ports.
