@@ -42,7 +42,7 @@ Inside the docker directory, copy the contents of the `.env.sample` file into a 
 
 Set a value for the `KEY_STORE_PASSWORD` variable, it doesn't need to be the same as the equivalent var in the `.envrc` of the project's root directory.
 
-N/B: Please note that you would need to have anvil and the bitvmx-workspace running before running the docker build command then any subsequent command to start up the services using docker.
+N.B.: Please note that you need to have both Anvil and the bitvmx-workspace running before executing the Docker build command. Ensure these services are running before starting up the Union client services with Docker.
 
 ### d-multi-client.sh - Multi-Client Automation
 
