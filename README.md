@@ -122,7 +122,7 @@ Before running the Union Bridge Client, you need to install and set up the follo
    
    **Note**: Make sure to have Docker running on your machine before executing the script.
 
-2. **Union Bridge Contracts** - Smart contracts for the Union Bridge protocol
+2. **BitVMX Union Bridge Contracts** - Smart contracts for the Union Bridge protocol
    ```bash
    git clone git@github.com:rsksmart/bitvmx-union-bridge-contracts.git
    ```
@@ -140,7 +140,7 @@ Before running the Union Bridge Client, you need to install and set up the follo
    committeeMemberCount = 4;
    ```
 
-   this is to enable the running of the multiclient workflows. 
+   this is to enable the running of the multiclient workflows.
 
 3. **ZK Proof Repository** (for advanced usage)
    ```bash
@@ -204,7 +204,7 @@ Once you have gone through the initial setup steps, the order to start up the pr
 1. Have docker running on your local machine.
 2. Start up the rust-bitvmx-client-workspace
 3. Start anvil
-4. Deploy the union-bridge-contracts
+4. Deploy the bitvmx-union-bridge-contracts
 5. Run the union bride client using any of the available scripts/commands 
 
 ### Running Committee Collaboration
@@ -234,7 +234,7 @@ instructions on how to create a new keystore.
 
 1. Run BitVMX Client as described in the [Running BitVMX](#running-bitvmx) section. This runs 4 instances of the BitVMX
    Client with different ports (see logs).
-2. Start up anvil on a fresh terminal, cd into the union bridge contracts repo and run the deploy script
+2. Start up anvil on a fresh terminal, cd into the bitvmx union bridge contracts repo and run the deploy script
 3. Run 4 Union Client instances in parallel with `./run-multi-client.sh <id> <features>`. The `id` will determine which
    configuration from `config/multi-client/<id>/` to use. These configurations ensure no collision between the different
    clients (brokers, http servers, databases, keys, etc.). You can pass also features, e.g. `anvil`.
@@ -308,7 +308,7 @@ Optionally, you can run `./run-mocks.sh` in another terminal before `./run-clien
 
 - spin up a mocked BitVMX client
 - spin up an anvil node to simulate the Rootstock blockchain
-- deploy the Union Bridge contracts on the anvil node
+- deploy the BitVMX Union Bridge contracts on the anvil node
 
 ### Using Docker
 
