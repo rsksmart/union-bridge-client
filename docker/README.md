@@ -13,6 +13,7 @@ By default, the compose will use:
     - see the main [README.md](../README.md#configuration-overrides) for detailed examples and mapping rules
 - the `docker/.env` for `docker-compose` file environment variables
 
+
 ## Build Builder Images
 
 ### d-build-builder.sh - Builder Image Script
@@ -23,6 +24,22 @@ For detailed usage and examples:
 ```bash
 bash d-build-builder.sh --help
 ```
+
+## Using Anvil (Optional)
+
+The Docker Compose setup includes an optional Anvil service for local development. Anvil is configured to auto-mine blocks every 2 seconds.
+
+To start with Anvil:
+
+```bash
+# Single client with Anvil
+docker compose --profile anvil up
+
+# Multi-client with Anvil
+bash d-multi-client.sh --profile anvil
+```
+
+When using the anvil profile, the ROOTSTOCK_URL is automatically set to `ws://anvil:8545` to connect to the local Anvil service.
 
 ## Build & Run Services
 
@@ -44,7 +61,11 @@ bash d-compose-cli.sh --help
 #### Usage
 
 ```bash
+# Start without Anvil
 bash d-multi-client.sh
+
+# Start with Anvil
+bash d-multi-client.sh --profile anvil
 ```
 
 This script will start clients 1-4 in detached mode with the following BitVMX broker configuration:

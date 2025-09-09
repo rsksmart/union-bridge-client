@@ -3,6 +3,15 @@
 #####################################################################################################################################
 
 services:
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:latest
+    command: anvil --host 0.0.0.0 --port 8545 --auto-mine --block-time 2
+    ports:
+      - "8545:8545"
+    profiles:
+      - anvil
+    restart: unless-stopped
+
   block-indexer:
     platform: ${PLATFORM}
     image: ghcr.io/rsksmart/union-client-block-indexer:${REPO_VERSION:-latest}
@@ -77,7 +86,7 @@ services:
       - "3000"  # http server port from the configuration
     environment:
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
-      - UB__provider__rootstock__url=${ROOTSTOCK_URL:-ws://host.docker.internal:8545}
+      - UB__provider__rootstock__url=${ROOTSTOCK_URL:-ws://anvil:8545}
     healthcheck:
       interval: 30s
       timeout: 10s
@@ -105,7 +114,7 @@ services:
     environment:
       - UB__bitvmx_broker__host=${BITVMX_HOST:-host.docker.internal}
       - UB__bitvmx_broker__port=${BITVMX_PORT:-61180}
-      - UB__provider__rootstock__url=${ROOTSTOCK_URL:-ws://host.docker.internal:8545}
+      - UB__provider__rootstock__url=${ROOTSTOCK_URL:-ws://anvil:8545}
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
     healthcheck:
       interval: 30s

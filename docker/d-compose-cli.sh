@@ -4,6 +4,7 @@ set -e
 
 FEATURES=""
 PLATFORM=""
+PROFILE=""
 HELP=0
 
 show_help() {
@@ -21,6 +22,7 @@ Commands:
 Options:
   --features=<list>   Build the workspace with specified features (comma-separated list)
   --platform=<arch>   Specify the target platform (sets PLATFORM environment variable for docker-compose.yml)
+  --profile=<name>    Specify Docker Compose profile (e.g., anvil)
   --help, -h          Show this help
 
 Service Names (optional):
@@ -41,9 +43,11 @@ Examples:
   $(basename "$0") build --features=anvil                           Build with anvil feature  
   $(basename "$0") build --features=anvil,debug                     Build with multiple features
   $(basename "$0") build --platform=linux/arm64                     Build for ARM64 platform
+  $(basename "$0") build --profile=anvil                            Build with anvil profile
   $(basename "$0") build coordinator --no-cache                     Build coordinator without cache
   $(basename "$0") up                                               Start all services
   $(basename "$0") up --features=anvil                              Start all services with anvil feature
+  $(basename "$0") up --profile=anvil                               Start all services including Anvil
   $(basename "$0") up coordinator -d                                Start only coordinator in background
   $(basename "$0") up coordinator user-api --scale coordinator=2    Start coordinator and user-api, scaling coordinator to 2 instances
 
@@ -80,6 +84,9 @@ while [[ $# -gt 0 ]]; do
     --platform=*)
       PLATFORM="${1#*=}"
       ;;
+    --profile=*)
+      PROFILE="${1#*=}"
+      ;;
     -h|--help)
       HELP=1
       ;;
@@ -101,7 +108,9 @@ build_services() {
 
   use_env_vars
 
-  cmd=(docker compose build)
+  cmd=(docker compose)
+  [[ -n $PROFILE ]] && cmd+=(--profile "$PROFILE")
+  cmd+=(build)
 
   # Get actual service names from docker-compose.yml and check if any argument matches
   local service_found=""
@@ -138,7 +147,9 @@ start_services() {
 
   use_env_vars
 
-  cmd=(docker compose up)
+  cmd=(docker compose)
+  [[ -n $PROFILE ]] && cmd+=(--profile "$PROFILE")
+  cmd+=(up)
 
   # Add any additional docker compose arguments
   cmd+=("${DOCKER_ARGS[@]}")
