@@ -126,6 +126,21 @@ Before running the Union Bridge Client, you need to install and set up the follo
    ```bash
    git clone git@github.com:rsksmart/bitvmx-union-bridge-contracts.git
    ```
+   N/B: For local setup, you will need to manually adjust these values in the `.sol` contract from:
+   ```
+   minCommitteeWatchtowers = 3;
+   minCommitteeOperators = 3;
+   committeeMemberCount = 10;
+   ```
+
+   to:
+   ```
+   minCommitteeWatchtowers = 2;
+   minCommitteeOperators = 2;
+   committeeMemberCount = 4;
+   ```
+
+   this is to enable the running of the multiclient workflows. 
 
 3. **ZK Proof Repository** (for advanced usage)
    ```bash
@@ -181,6 +196,16 @@ command:
 cd key-manager
 cargo run derive-public-data -p <YOUR_PASSWORD> -k <PATH_TO_FILE>
 ```
+
+### General Startup Procedure
+
+Once you have gone through the initial setup steps, the order to start up the project suite is
+
+1. Have docker running on your local machine.
+2. Start up the rust-bitvmx-client-workspace
+3. Start anvil
+4. Deploy the union-bridge-contracts
+5. Run the union bride client using any of the available scripts/commands 
 
 ### Running Committee Collaboration
 
