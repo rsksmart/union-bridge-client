@@ -601,7 +601,7 @@ impl TxIdBE {
     }
 
     pub fn from_bitvmx(txid: Txid) -> Self {
-        let mut bytes = txid.clone().to_byte_array();
+        let mut bytes = txid.to_byte_array();
         bytes.reverse();
         let txid = Txid::from_byte_array(bytes);
         TxIdBE(txid)
@@ -1175,7 +1175,7 @@ mod tests {
         let original_bytes: [u8; 32] = [1u8; 32];
         let txid = Txid::from_byte_array(original_bytes);
         // TxIdBE: from_bitvmx should reverse bytes
-        let txid_be = TxIdBE::from_bitvmx(txid.clone());
+        let txid_be = TxIdBE::from_bitvmx(txid);
         let mut reversed_bytes = original_bytes;
         reversed_bytes.reverse();
         assert_eq!(txid_be.txid().to_byte_array(), reversed_bytes);
