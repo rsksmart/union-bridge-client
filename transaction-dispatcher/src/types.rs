@@ -182,7 +182,7 @@ pub struct GetCommitteeInput {
     pub committee_id: CommitteeId,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GetCommitteeOutput {
     pub committee: Committee,
 }

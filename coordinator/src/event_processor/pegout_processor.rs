@@ -27,6 +27,7 @@ use crate::flows::btc_signature::btc_signature_subflow::{
     BaseBtcSignatureSubFlow, BtcSignatureSubFlowApi, BtcSignatureSubFlowFactory,
     BtcSignatureSubFlowFactoryApi,
 };
+use crate::flows::common::{COMM_KEY_INDEX, build_communication_data};
 use crate::types::{RegisterSignaturesBitVmxData, TickScheduler};
 use crate::{
     config::REQUIRED_CONFIRMATIONS,
@@ -37,7 +38,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::key::Parity;
 use bitcoin::{PublicKey, Txid, XOnlyPublicKey};
 use common::msg_broker::bitvmx_types::{
-    IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, P2PAddress, PegOutAccepted,
+    IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, P2PAddress, PeerId, PegOutAccepted,
     PegOutRequest, TransactionStatus, VariableTypes,
 };
 use common::runtime_sync::RuntimeSync;
@@ -52,7 +53,10 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
-use transaction_dispatcher::types::{GetCommitteeInput, GetCommunicationDataInput};
+use transaction_dispatcher::types::{
+    GetCommitteeInput, GetCommitteeOutput, GetCommunicationDataInput, GetMemberPublicKeysInput,
+    P2PAddressParser,
+};
 use transaction_dispatcher::types::{RegisterPegoutInput, RegisterPegoutOutput};
 use union_contracts::bindings::peg_manager::PegManager::{PegoutRegistered, PegoutRequested};
 use uuid::Uuid;
@@ -129,6 +133,7 @@ where
     tracker: HashMap<Uuid, PegoutEventState<BSF>>,
     btc_sig_subflow_factory: FactoryBSF,
     scheduler: TickScheduler<Uuid>,
+    my_p2p_address: Option<P2PAddress>,
 }
 
 impl<CG, BC>
@@ -151,6 +156,7 @@ where
             tracker: HashMap::new(),
             btc_sig_subflow_factory: BtcSignatureSubFlowFactory::new(contracts_gateway, rt_sync),
             scheduler: TickScheduler::new(),
+            my_p2p_address: None,
         }
     }
 
@@ -174,8 +180,14 @@ where
         flow_id: Uuid,
         pegout_requested: &PegoutRequested,
     ) -> Result<()> {
+        let committee_id: CommitteeId = pegout_requested.committeeId.try_into()?;
+        let committee_output = self.get_committee_output(committee_id.clone())?;
+
         let data_to_send: PegOutRequest =
-            self.pegout_requested_to_bitvmx_request(pegout_requested)?;
+            self.pegout_requested_to_bitvmx_request(pegout_requested, &committee_output)?;
+
+        let committee_peer_ids = self.get_committee_peer_ids(committee_output)?;
+
         //Step 1a: Send setVar (U -> B)
         //Set var must be sent before the setup
         Self::send_set_var_to_bitvmx(
@@ -189,10 +201,16 @@ where
             flow_id
         ))?;
 
-        let committee_id = pegout_requested.committeeId.try_into()?;
-        let p2p_addresses = self
-            .get_committee_member_address(committee_id)
-            .context("Failed to get committee member addresses")?;
+        let committee_addresses = self.get_committee_member_address(committee_id)?;
+        let my_addr = self
+            .my_p2p_address
+            .as_ref()
+            .ok_or_else(|| anyhow!("My P2P address not found"))?;
+        let p2p_addresses = build_communication_data(
+            my_addr.address.clone(),
+            committee_addresses,
+            committee_peer_ids,
+        )?;
         //Step 1b: Setup BitVMX (U -> B)
         //Setup must be sent after set_var
         Self::send_setup_to_bitvmx(&self.bitvmx_broker, flow_id, p2p_addresses)?;
@@ -200,9 +218,7 @@ where
         Ok(())
     }
 
-    fn build_take_aggregated_key(
-        committee_response: &transaction_dispatcher::types::GetCommitteeOutput,
-    ) -> Result<PublicKey> {
+    fn build_take_aggregated_key(committee_response: &GetCommitteeOutput) -> Result<PublicKey> {
         let aggregated_xonly_key =
             XOnlyPublicKey::from_slice(committee_response.committee.aggregatedKey.as_slice())
                 .context("Failed to parse aggregated public key from committee")?;
@@ -210,10 +226,7 @@ where
         Ok(PublicKey::new(aggregated_secp_key))
     }
 
-    fn get_committee_member_address(
-        &mut self,
-        committee_id: CommitteeId,
-    ) -> Result<Vec<P2PAddress>> {
+    fn get_committee_member_address(&mut self, committee_id: CommitteeId) -> Result<Vec<String>> {
         let input = GetCommunicationDataInput {
             committee_id: committee_id.clone(),
             member_address: self.contracts_gateway.my_address().into(),
@@ -224,31 +237,67 @@ where
                 .await
         })?;
 
-        //TODO clarify how this data is going to be retrieved
-        let addresses: Vec<P2PAddress> = vec![];
+        let committee_addresses = member_comm_data
+            .communication_data
+            .into_iter()
+            .map(|comm_data| {
+                P2PAddressParser::addr_from_contracts(&comm_data)
+                    .context("Failed to convert communication data to P2P address")
+            })
+            .collect::<Result<Vec<_>>>()?;
 
-        //TODO
-        // if addresses.is_empty() {
-        //     bail!("No committee members found for stream ID: {}", stream_id);
-        // }
-
-        Ok(addresses)
+        Ok(committee_addresses)
     }
-
-    fn pegout_requested_to_bitvmx_request(
-        &mut self,
-        event: &PegoutRequested,
-    ) -> Result<PegOutRequest> {
-        let committee_id = event.committeeId.try_into()?;
-
+    fn get_committee_output(&mut self, committee_id: CommitteeId) -> Result<GetCommitteeOutput> {
         let committee_response = self.rt_sync.run(async {
             self.contracts_gateway
                 .get_committee(GetCommitteeInput { committee_id })
                 .await
         })?;
+        Ok(committee_response)
+    }
 
+    fn get_committee_peer_ids(
+        &mut self,
+        committee_output: GetCommitteeOutput,
+    ) -> Result<Vec<PeerId>> {
+        let mut peer_ids = Vec::new();
+
+        for member in committee_output.committee.members {
+            // Get the member's public keys
+            let keys_input = GetMemberPublicKeysInput {
+                member_address: member.memberAddress,
+            };
+
+            let keys_response = self.rt_sync.run(async {
+                self.contracts_gateway
+                    .get_member_public_keys(keys_input)
+                    .await
+            })?;
+
+            // Get the communication key (at index 2)
+            let key_str = keys_response
+                .public_keys
+                .get(COMM_KEY_INDEX)
+                .context(format!(
+                    "Communication key not found for member {}",
+                    member.memberAddress
+                ))?;
+
+            debug!("Member {} PeerId: {:?}", member.memberAddress, key_str);
+            peer_ids.push(PeerId(key_str.to_string()));
+        }
+
+        Ok(peer_ids)
+    }
+
+    fn pegout_requested_to_bitvmx_request(
+        &mut self,
+        event: &PegoutRequested,
+        committee_output: &GetCommitteeOutput,
+    ) -> Result<PegOutRequest> {
         //TODO it is pending to decide the exact conversion from U256 coming from the contract to Uuid
-        // AS ferist solution it was decided to take the first 16 bytes of the U256
+        // AS first solution it was decided to take the first 16 bytes of the U256
         let committee_bytes = event.committeeId.to_be_bytes_vec();
         let uuid_bytes_slice = committee_bytes
             .get(..16)
@@ -263,7 +312,7 @@ where
         let user_pubkey = bitcoin::PublicKey::from_slice(&user_pubkey_bytes)
             .context("Invalid userPubKey in PegoutRequested event")?;
 
-        let take_aggregated_key = Self::build_take_aggregated_key(&committee_response)?;
+        let take_aggregated_key = Self::build_take_aggregated_key(&committee_output)?;
 
         // Convert fixed-size hashes and ids to Vec<u8>
         let pegout_signature_hash: Vec<u8> = event.pegoutSignatureHash.as_slice().to_vec();
@@ -502,6 +551,11 @@ where
         Ok(())
     }
 
+    fn send_get_comm_info_to_bitvmx(bitvmx_broker: &BC) -> Result<()> {
+        bitvmx_broker.send(BROKER_SERVER_ID, IncomingBitVMXApiMessages::GetCommInfo())?;
+        Ok(())
+    }
+
     fn send_dispatch_transaction_name_msg_to_bitvmx(
         bitvmx_broker: &BC,
         flow_id: Uuid,
@@ -689,6 +743,10 @@ where
 {
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
         match event {
+            OutgoingBitVMXApiMessages::CommInfo(p2p_address) => {
+                debug!("Received CommInfo from BitVMX: {:?}", p2p_address);
+                self.my_p2p_address = Some(p2p_address.clone());
+            }
             // Step 6: SPVProof is received (B -> U)
             OutgoingBitVMXApiMessages::SPVProof(tx_id, spv_proof_opt) => match spv_proof_opt {
                 Some(spv_proof) => {
@@ -752,6 +810,7 @@ where
                     self.untrack_pegout_requested(data)?;
                     return Ok(());
                 }
+                Self::send_get_comm_info_to_bitvmx(&self.bitvmx_broker);
                 debug!("Handling Pegout Requested event {:?}", data);
                 self.track_pegout_requested(data.clone())?;
             }
