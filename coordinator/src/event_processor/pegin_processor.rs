@@ -1,6 +1,6 @@
-use crate::flows::common::{COMM_KEY_INDEX, GlobalContext, MyCommittees, build_communication_data};
+use crate::flows::common::{COMM_KEY_INDEX, GlobalContext, build_communication_data};
 use crate::types::Role::Prover;
-use crate::types::{RegisterSignaturesBitVmxData, TickScheduler};
+use crate::types::{RegisterSignaturesBitVmxData, TickScheduler, TxIdReverser};
 use crate::{
     blockchain_tracker::{BlockConfirmations, BlockchainObserver, BlockchainView},
     config::REQUIRED_CONFIRMATIONS,
@@ -16,7 +16,6 @@ use crate::{
 use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::{
     PublicKey, Txid,
-    hashes::Hash,
     secp256k1::{Parity::Even, XOnlyPublicKey},
 };
 use common::msg_broker::bitvmx_types::{
@@ -647,8 +646,7 @@ where
 
         let reimbursement_pubkey = Self::build_reimbursement_pubkey(pegin_event)?;
 
-        let txid = Txid::from_slice(pegin_event.requestPeginTxHash.as_slice())
-            .context("Failed to parse transaction ID from pegin event")?;
+        let txid = TxIdReverser::reverse_fb32(pegin_event.requestPeginTxHash).txid();
 
         let committee_uuid = Self::build_committee_id(committee_id)?;
 
@@ -995,7 +993,9 @@ where
             );
         };
 
-        let accept_pegin_tx_hash = pegin_accepted.accept_pegin_txid;
+        let accept_pegin_tx_hash =
+            TxIdReverser::reverse_txid(pegin_accepted.accept_pegin_txid).txid();
+
         let take_tx_hash = pegin_accepted.operator_take_sighash.clone();
 
         state.bitvmx_pegin_accepted = Some(pegin_accepted);
@@ -1319,6 +1319,7 @@ where
 mod tests {
     use super::*;
     use crate::flows::btc_signature::btc_signature_subflow::MockBtcSigSubFlowFactory;
+    use crate::flows::common::MyCommittees;
     use crate::{
         coordinator::tests::MockRskContractsGatewayApi,
         event_processor::EventProcessor,
@@ -1343,7 +1344,7 @@ mod tests {
     use hex::FromHex;
     use mockall::predicate::{eq, function};
     use primitive_types::H256;
-    use serde_json::{Value, json};
+    use serde_json::json;
     use transaction_dispatcher::types::GetCommunicationDataOutput;
     use transaction_dispatcher::{
         rsk_gateway::DomainErrors,

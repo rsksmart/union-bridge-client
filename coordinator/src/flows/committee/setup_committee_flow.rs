@@ -1480,6 +1480,11 @@ where
     }
 
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
+        // useful for testing purposes
+        if REQUIRED_CONFIRMATIONS == 0 {
+            return self.process_confirmed_rsk_event(event);
+        }
+
         let (id, is_removal, block_num, managed_event) = match event {
             RskPegManagerEvents::NewCommitteePending(e) => {
                 Self::build_new_pending_committee_event_info(e)
