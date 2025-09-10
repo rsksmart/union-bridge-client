@@ -1,0 +1,17 @@
+block_broker:
+  host: "0.0.0.0"
+  port: 10001 # read from env UB__BLOCK_BROKER__PORT
+
+log_broker:
+  host: "0.0.0.0"
+  port: 11001 # read from env UB__LOG_BROKER__PORT
+
+user_broker:
+  host: "0.0.0.0"
+  port: 30001 # read from env UB__USER_BROKER__PORT
+
+bitvmx_broker:
+  host: "0.0.0.0"
+  port: 22222 # read from env UB__BITVMX_BROKER__PORT
+
+broker_client_id: 101 # read from env UB__BROKER_CLIENT_ID

@@ -1,6 +1,0 @@
-key_store:
-  path: "/your_base_path/.union_bridge/keystore/multi-client-3"
-transaction:
-  gas_bumps_t1: 3
-server:
-  url: "0.0.0.0:9003"

@@ -1,0 +1,6 @@
+key_store:
+  path: "/your_base_path/.union_bridge/keystore/multi-client-1" # read from env UB__KEY_STORE__PATH
+transaction:
+  gas_bumps_t1: 3
+server:
+  url: "0.0.0.0:9001" # read from env UB__SERVER__URL

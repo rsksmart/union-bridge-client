@@ -1,7 +1,7 @@
 indexer:
   initial_block_hash: "0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c"
   storage:
-    path: "/your_base_path/.union_bridge/database/multi-client-2"
+    path: "/your_base_path/.union_bridge/database/multi-client-1" # read from env UB__INDEXER__STORAGE__PATH
   cache:
     size: 1000
   sync:

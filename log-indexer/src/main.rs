@@ -70,7 +70,7 @@ fn main() -> Result<()> {
 
     let mut notifier = Notifier::new(
         rx,
-        BrokerServer::new(config.notifier.broker_port),
+        BrokerServer::new(config.log_notifier.broker_port),
         shutdown_flag.clone(),
     );
 

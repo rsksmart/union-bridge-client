@@ -15,3 +15,6 @@ export UNION_CONTRACTS_GITHUB_TOKEN="<ask_your_colleagues>"
 
 # PAT to interact with GitHub Container Registry
 export GITHUB_REGISTRY_TOKEN="<your_token_here>"
+
+# Path where keystore, databases and other persistent data will be stored
+export BASE_STORAGE_PATH="<path/to/your/storage>"

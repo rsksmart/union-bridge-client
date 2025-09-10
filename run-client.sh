@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # start a new process group for this script
-set -meuo pipefail
+set -euo pipefail
 
 # Usage function
 function usage() {

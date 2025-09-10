@@ -8,7 +8,7 @@ const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub struct Config {
     pub indexer: IndexerConfig,
     pub provider: ProviderConfig,
-    pub notifier: NotifierConfig,
+    pub block_notifier: NotifierConfig,
 }
 
 impl Config {
