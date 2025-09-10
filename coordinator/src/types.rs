@@ -593,27 +593,33 @@ pub struct MemberOfCommittee {
     pub committee_idx: usize,
 }
 
-pub struct TxIdReverser(Txid);
-impl TxIdReverser {
+// Big-endian representation of Txid, as stored in contracts
+pub struct TxIdBE(Txid);
+impl TxIdBE {
     pub fn txid(&self) -> Txid {
         self.0
     }
 
-    pub fn reverse_fb32(bytes: FixedBytes<32>) -> Self {
-        let le_bytes: [u8; 32] = bytes.into();
-        Self::reverse_and_txid(le_bytes)
-    }
-
-    // this might not be needed if the contracts accept big-endian txids on check methods
-    pub fn reverse_txid(txid: Txid) -> Self {
-        let hash_bytes = txid.clone().to_byte_array();
-        Self::reverse_and_txid(hash_bytes)
-    }
-
-    fn reverse_and_txid(mut bytes: [u8; 32]) -> Self {
+    pub fn from_bitvmx(txid: Txid) -> Self {
+        let mut bytes = txid.clone().to_byte_array();
         bytes.reverse();
         let txid = Txid::from_byte_array(bytes);
-        TxIdReverser(txid)
+        TxIdBE(txid)
+    }
+}
+
+// Little-endian representation of Txid, as used in BitVMX
+pub struct TxIdLE(Txid);
+impl TxIdLE {
+    pub fn txid(&self) -> Txid {
+        self.0
+    }
+
+    pub fn from_contracts(be_bytes: FixedBytes<32>) -> Self {
+        let mut bytes: [u8; 32] = be_bytes.into();
+        bytes.reverse();
+        let txid = Txid::from_byte_array(bytes);
+        TxIdLE(txid)
     }
 }
 
@@ -1163,46 +1169,27 @@ mod tests {
     }
 
     #[test]
-    fn test_txid_reverser_reverse_fb32() {
+    fn test_txid_be() {
         use bitcoin::Txid;
-        // Create a known byte array
-        let original_bytes: [u8; 32] = [1; 32];
-        let fb = FixedBytes::<32>::from_slice(&original_bytes);
-        let reversed = TxIdReverser::reverse_fb32(fb);
-        let mut expected_bytes = original_bytes;
-        expected_bytes.reverse();
-        let expected_txid = Txid::from_byte_array(expected_bytes);
-        assert_eq!(reversed.txid(), expected_txid);
+        // Create a Txid from a known byte array
+        let original_bytes: [u8; 32] = [1u8; 32];
+        let txid = Txid::from_byte_array(original_bytes);
+        // TxIdBE: from_bitvmx should reverse bytes
+        let txid_be = TxIdBE::from_bitvmx(txid.clone());
+        let mut reversed_bytes = original_bytes;
+        reversed_bytes.reverse();
+        assert_eq!(txid_be.txid().to_byte_array(), reversed_bytes);
     }
 
     #[test]
-    fn test_txid_reverser_reverse_txid() {
-        use bitcoin::Txid;
-        let original_bytes: [u8; 32] = [2; 32];
-        let txid = Txid::from_byte_array(original_bytes);
-        let reversed = TxIdReverser::reverse_txid(txid.clone());
-        let mut expected_bytes = original_bytes;
-        expected_bytes.reverse();
-        let expected_txid = Txid::from_byte_array(expected_bytes);
-        assert_eq!(reversed.txid(), expected_txid);
-    }
-
-    #[test]
-    fn test_txid_reverser_double_reverse_restores_original() {
-        use bitcoin::Txid;
-        let original_bytes: [u8; 32] = [3; 32];
-        let txid = Txid::from_byte_array(original_bytes);
-        let reversed = TxIdReverser::reverse_txid(txid.clone());
-        let double_reversed = TxIdReverser::reverse_txid(reversed.txid());
-        assert_eq!(double_reversed.txid(), txid);
-    }
-
-    #[test]
-    fn test_txid_reverser_txid_method() {
-        use bitcoin::Txid;
-        let original_bytes: [u8; 32] = [4; 32];
-        let txid = Txid::from_byte_array(original_bytes);
-        let reverser = TxIdReverser(txid.clone());
-        assert_eq!(reverser.txid(), txid);
+    fn test_txid_le() {
+        use alloy_primitives::FixedBytes;
+        // Create a BE byte array
+        let original_bytes: [u8; 32] = [2u8; 32];
+        let mut reversed_bytes = original_bytes;
+        reversed_bytes.reverse();
+        let be_bytes = FixedBytes::<32>::from(reversed_bytes);
+        let txid_le = TxIdLE::from_contracts(be_bytes);
+        assert_eq!(txid_le.txid().to_byte_array(), original_bytes);
     }
 }

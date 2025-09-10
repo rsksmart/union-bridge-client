@@ -1,6 +1,6 @@
 use crate::flows::common::{COMM_KEY_INDEX, GlobalContext, build_communication_data};
 use crate::types::Role::Prover;
-use crate::types::{RegisterSignaturesBitVmxData, TickScheduler, TxIdReverser};
+use crate::types::{RegisterSignaturesBitVmxData, TickScheduler, TxIdBE, TxIdLE};
 use crate::{
     blockchain_tracker::{BlockConfirmations, BlockchainObserver, BlockchainView},
     config::REQUIRED_CONFIRMATIONS,
@@ -646,7 +646,7 @@ where
 
         let reimbursement_pubkey = Self::build_reimbursement_pubkey(pegin_event)?;
 
-        let txid = TxIdReverser::reverse_fb32(pegin_event.requestPeginTxHash).txid();
+        let txid = TxIdLE::from_contracts(pegin_event.requestPeginTxHash).txid();
 
         let committee_uuid = Self::build_committee_id(committee_id)?;
 
@@ -993,8 +993,7 @@ where
             );
         };
 
-        let accept_pegin_tx_hash =
-            TxIdReverser::reverse_txid(pegin_accepted.accept_pegin_txid).txid();
+        let accept_pegin_tx_hash = TxIdBE::from_bitvmx(pegin_accepted.accept_pegin_txid).txid();
 
         let take_tx_hash = pegin_accepted.operator_take_sighash.clone();
 
