@@ -60,11 +60,17 @@ done
 
 SERVICE_PIDS=()
 SERVICE_NAMES=()
+CLEANING_UP=false
 
 # Define our services: order matters since some depend on others
 SERVICES=("block-indexer" "log-indexer" "transaction-dispatcher" "user-api" "coordinator")
 
 function cleanup() {
+    if $CLEANING_UP; then
+        return
+    fi
+    
+    CLEANING_UP=true
     # kill in reverse order
     for ((i=${#SERVICE_PIDS[@]}-1; i>=0; i--)); do
         pid=${SERVICE_PIDS[$i]}
@@ -86,18 +92,11 @@ function cleanup() {
     pkill -9 -P $$ &>/dev/null || true
 
     echo "All services stopped."
+
+    exit 130
 }
 
 trap cleanup INT TERM EXIT
-
-function is_service_running() {
-    local svc=$1
-    # Look for exact binary name in process list
-    if pgrep -f "target/debug/$svc" &>/dev/null; then
-        return 0 # true, already running
-    fi
-    return 1 # false, not running
-}
 
 function run_service() {
     local svc=$1
@@ -143,7 +142,8 @@ while true; do
         pid=${SERVICE_PIDS[$i]}
         name=${SERVICE_NAMES[$i]}
         if ! kill -0 "$pid" &>/dev/null; then
-            echo "ERROR: $name (PID $pid) exited unexpectedly."
+            echo "At least one service finished unexpectedly, stopping all..." >&2
+            cleanup
             exit 1
         fi
     done

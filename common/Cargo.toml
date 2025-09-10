@@ -27,6 +27,7 @@ config = { workspace = true }
 log = { workspace = true }
 message-broker = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
+shellexpand = "2.1.0"
 serde_yaml = "0.9.33"
 lru = "0.13.0"
 signal-hook = "0.3"
