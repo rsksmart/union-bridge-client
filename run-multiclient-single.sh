@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Source common multi-client environment setup
-source multi-client-env.sh
+source multiclient-env-cfg.sh
 
 # Validate CLIENT_ID is provided and is one of [1-10]
 CLIENT_ID=${1:-}

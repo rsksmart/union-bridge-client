@@ -153,7 +153,7 @@ function cleanup() {
 }
 
 # Source common multi-client environment setup
-source multi-client-env.sh
+source multiclient-env-cfg.sh
 
 # Debug: Let's add some verbose trap debugging
 trap cleanup INT TERM EXIT

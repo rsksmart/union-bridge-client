@@ -8,17 +8,20 @@ function usage() {
     echo "Usage: $0 [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  --features FEATURES             Optional comma-separated list of Cargo features. No default."
-    echo "  --config CONFIG_NAME            Optional config directory name under ./config/. Defaults to 'local'."
-    echo "  --logger LOGGER_FILE       Optional logger configuration file path. Defaults to 'log4rs.yaml'."
-    echo "  --help, -h                      Show this help message"
+    echo "  -f, --features FEATURES         Optional comma-separated list of Cargo features. No default."
+    echo "  -c, --config CONFIG_NAME        Optional config directory name under ./config/. Defaults to 'local'."
+    echo "  -l, --logger LOGGER_FILE        Optional logger configuration file path. Defaults to 'log4rs.yaml'."
+    echo "  -h, --help                      Show this help message"
     echo ""
     echo "Examples:"
-    echo "  $0                                                                        # Run with default settings"
-    echo "  $0 --features anvil                                                       # Run with 'anvil' feature"
-    echo "  $0 --config config/qa-local                                               # Run with 'local' config"
-    echo "  $0 --logger log4rs.yaml                                              # Run with custom logger config"
-    echo "  $0 --features anvil --config config/qa-local --logger-path custom.yaml    # Run with all options"
+    echo "  $0                                              # Run with default settings"
+    echo "  $0 --features anvil                             # Run with 'anvil' feature"
+    echo "  $0 -f anvil                                     # Run with 'anvil' feature (short flag)"
+    echo "  $0 --config config/qa-local                     # Run with 'local' config"
+    echo "  $0 -c config/qa-local                           # Run with 'local' config (short flag)"
+    echo "  $0 --logger log4rs.yaml                         # Run with custom logger config"
+    echo "  $0 -l log4rs.yaml                               # Run with custom logger config (short flag)"
+    echo "  $0 -f anvil -c config/qa-local -l custom.yaml   # Run with all options (short flags)"
     exit 1
 }
 
@@ -30,25 +33,25 @@ LOGGER_PARAM="--logger-path log4rs.stdout.yaml" # Default logger: stdout
 # Parse named parameters
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --features)
+        -f|--features)
             if [[ -n "${2:-}" ]]; then
                 FEATURES="--features $2"
                 shift 2
             fi
             ;;
-        --config)
+        -c|--config)
             if [[ -n "${2:-}" ]]; then
                 CONFIG_PARAM="--config-path $2"
                 shift 2
             fi
             ;;
-        --logger)
+        -l|--logger)
             if [[ -n "${2:-}" ]]; then
                 LOGGER_PARAM="--logger-path $2"
                 shift 2
             fi
             ;;
-        --help|-h)
+        -h|--help)
             usage
             ;;
         *)
