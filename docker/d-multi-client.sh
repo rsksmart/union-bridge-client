@@ -2,6 +2,9 @@
 
 set -e
 
+# Change to the docker directory where docker-compose.yml is located
+cd "$(dirname "$0")"
+
 # Parse command line arguments
 PROFILE=""
 ROOTSTOCK_URL="ws://host.docker.internal:8545"
@@ -12,15 +15,11 @@ if [[ "$1" == "--profile" && -n "$2" ]]; then
     if [[ "$2" == "anvil" ]]; then
         ROOTSTOCK_URL="ws://host.docker.internal:8545"  # Connect to Docker anvil service via host
 
-        # Build Docker anvil image first
-        echo "Building Docker Anvil image..."
-        bash d-compose-cli.sh build --features=anvil
-
-        # Start Docker anvil
-        echo "Starting Docker Anvil service..."
+        # Start Docker anvil first (it will build if needed)
+        echo "Starting Docker Anvil service (will build if needed)..."
         docker compose --profile anvil up anvil -d
 
-        # Wait for Docker anvil to be ready
+        # Wait for Docker anvil to be completely ready
         echo "Waiting for Docker Anvil to be ready..."
         for i in {1..30}; do
             if curl -s -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' http://localhost:8545 > /dev/null 2>&1; then
@@ -29,6 +28,12 @@ if [[ "$1" == "--profile" && -n "$2" ]]; then
             fi
             sleep 1
         done
+
+
+        # Now build client images (anvil is fully ready)
+        echo "Building client images..."
+        bash d-compose-cli.sh build --features=anvil
+        echo "Client images built successfully!"
     fi
     shift 2
 elif [[ "$1" == "--local-anvil" ]]; then
@@ -62,34 +67,42 @@ trap cleanup EXIT
 
 # Start all 4 clients with the specified profile
 if [[ "$PROFILE" == "--profile anvil" ]]; then
-    # Start clients without anvil service (Docker anvil is already running)
+    # Start clients without anvil service (Docker anvil is already running and images are built)
     echo "Starting clients with Docker Anvil..."
-    PLATFORM=${PLATFORM:-} ROOTSTOCK_URL=$ROOTSTOCK_URL BITVMX_HOST=host.docker.internal BITVMX_PORT=22222 docker compose -p uc-1 -f docker-compose-no-anvil.yml up -d
-    PLATFORM=${PLATFORM:-} ROOTSTOCK_URL=$ROOTSTOCK_URL BITVMX_HOST=host.docker.internal BITVMX_PORT=33333 docker compose -p uc-2 -f docker-compose-no-anvil.yml up -d
-    PLATFORM=${PLATFORM:-} ROOTSTOCK_URL=$ROOTSTOCK_URL BITVMX_HOST=host.docker.internal BITVMX_PORT=44444 docker compose -p uc-3 -f docker-compose-no-anvil.yml up -d
-    PLATFORM=${PLATFORM:-} ROOTSTOCK_URL=$ROOTSTOCK_URL BITVMX_HOST=host.docker.internal BITVMX_PORT=55554 docker compose -p uc-4 -f docker-compose-no-anvil.yml up -d
+    PLATFORM=${PLATFORM:-} ROOTSTOCK_URL=$ROOTSTOCK_URL BITVMX_HOST=host.docker.internal BITVMX_PORT=22222 docker compose -p uc-1 -f docker-compose-no-anvil.yml up -d || echo "Failed to start uc-1"
+    PLATFORM=${PLATFORM:-} ROOTSTOCK_URL=$ROOTSTOCK_URL BITVMX_HOST=host.docker.internal BITVMX_PORT=33333 docker compose -p uc-2 -f docker-compose-no-anvil.yml up -d || echo "Failed to start uc-2"
+    PLATFORM=${PLATFORM:-} ROOTSTOCK_URL=$ROOTSTOCK_URL BITVMX_HOST=host.docker.internal BITVMX_PORT=44444 docker compose -p uc-3 -f docker-compose-no-anvil.yml up -d || echo "Failed to start uc-3"
+    PLATFORM=${PLATFORM:-} ROOTSTOCK_URL=$ROOTSTOCK_URL BITVMX_HOST=host.docker.internal BITVMX_PORT=55554 docker compose -p uc-4 -f docker-compose-no-anvil.yml up -d || echo "Failed to start uc-4"
 elif [[ "$USE_LOCAL_ANVIL" == "true" ]]; then
     # Start clients with local anvil (no anvil service in compose)
     echo "Starting clients with local Anvil..."
-    PLATFORM=${PLATFORM:-} ROOTSTOCK_URL=$ROOTSTOCK_URL BITVMX_HOST=host.docker.internal BITVMX_PORT=22222 docker compose -p uc-1 -f docker-compose-no-anvil.yml up -d
-    PLATFORM=${PLATFORM:-} ROOTSTOCK_URL=$ROOTSTOCK_URL BITVMX_HOST=host.docker.internal BITVMX_PORT=33333 docker compose -p uc-2 -f docker-compose-no-anvil.yml up -d
-    PLATFORM=${PLATFORM:-} ROOTSTOCK_URL=$ROOTSTOCK_URL BITVMX_HOST=host.docker.internal BITVMX_PORT=44444 docker compose -p uc-3 -f docker-compose-no-anvil.yml up -d
-    PLATFORM=${PLATFORM:-} ROOTSTOCK_URL=$ROOTSTOCK_URL BITVMX_HOST=host.docker.internal BITVMX_PORT=55554 docker compose -p uc-4 -f docker-compose-no-anvil.yml up -d
+    PLATFORM=${PLATFORM:-} ROOTSTOCK_URL=$ROOTSTOCK_URL BITVMX_HOST=host.docker.internal BITVMX_PORT=22222 docker compose -p uc-1 -f docker-compose-no-anvil.yml up -d || echo "Failed to start uc-1"
+    PLATFORM=${PLATFORM:-} ROOTSTOCK_URL=$ROOTSTOCK_URL BITVMX_HOST=host.docker.internal BITVMX_PORT=33333 docker compose -p uc-2 -f docker-compose-no-anvil.yml up -d || echo "Failed to start uc-2"
+    PLATFORM=${PLATFORM:-} ROOTSTOCK_URL=$ROOTSTOCK_URL BITVMX_HOST=host.docker.internal BITVMX_PORT=44444 docker compose -p uc-3 -f docker-compose-no-anvil.yml up -d || echo "Failed to start uc-3"
+    PLATFORM=${PLATFORM:-} ROOTSTOCK_URL=$ROOTSTOCK_URL BITVMX_HOST=host.docker.internal BITVMX_PORT=55554 docker compose -p uc-4 -f docker-compose-no-anvil.yml up -d || echo "Failed to start uc-4"
 else
     # Regular startup (no anvil)
     echo "Starting clients without Anvil..."
-    PLATFORM=${PLATFORM:-} ROOTSTOCK_URL=$ROOTSTOCK_URL BITVMX_HOST=host.docker.internal BITVMX_PORT=22222 docker compose -p uc-1 -f docker-compose.yml $PROFILE up -d
-    PLATFORM=${PLATFORM:-} ROOTSTOCK_URL=$ROOTSTOCK_URL BITVMX_HOST=host.docker.internal BITVMX_PORT=33333 docker compose -p uc-2 -f docker-compose.yml $PROFILE up -d
-    PLATFORM=${PLATFORM:-} ROOTSTOCK_URL=$ROOTSTOCK_URL BITVMX_HOST=host.docker.internal BITVMX_PORT=44444 docker compose -p uc-3 -f docker-compose.yml $PROFILE up -d
-    PLATFORM=${PLATFORM:-} ROOTSTOCK_URL=$ROOTSTOCK_URL BITVMX_HOST=host.docker.internal BITVMX_PORT=55554 docker compose -p uc-4 -f docker-compose.yml $PROFILE up -d
+    PLATFORM=${PLATFORM:-} ROOTSTOCK_URL=$ROOTSTOCK_URL BITVMX_HOST=host.docker.internal BITVMX_PORT=22222 docker compose -p uc-1 -f docker-compose.yml $PROFILE up -d || echo "Failed to start uc-1"
+    PLATFORM=${PLATFORM:-} ROOTSTOCK_URL=$ROOTSTOCK_URL BITVMX_HOST=host.docker.internal BITVMX_PORT=33333 docker compose -p uc-2 -f docker-compose.yml $PROFILE up -d || echo "Failed to start uc-2"
+    PLATFORM=${PLATFORM:-} ROOTSTOCK_URL=$ROOTSTOCK_URL BITVMX_HOST=host.docker.internal BITVMX_PORT=44444 docker compose -p uc-3 -f docker-compose.yml $PROFILE up -d || echo "Failed to start uc-3"
+    PLATFORM=${PLATFORM:-} ROOTSTOCK_URL=$ROOTSTOCK_URL BITVMX_HOST=host.docker.internal BITVMX_PORT=55554 docker compose -p uc-4 -f docker-compose.yml $PROFILE up -d || echo "Failed to start uc-4"
+fi
+
+# Check if any clients are actually running
+RUNNING_CLIENTS=$(docker ps --filter "name=uc-" --format "{{.Names}}" | wc -l)
+if [[ $RUNNING_CLIENTS -eq 0 ]]; then
+    echo "❌ No clients are running. Check the logs above for errors."
+    echo "Anvil will be stopped due to client startup failure."
+    exit 1
 fi
 
 if [[ "$PROFILE" == "--profile anvil" ]]; then
-    echo "All clients started with Docker Anvil. Press Ctrl+C to stop all services and Anvil."
+    echo "✅ All clients started with Docker Anvil. Press Ctrl+C to stop all services and Anvil."
 elif [[ "$USE_LOCAL_ANVIL" == "true" ]]; then
-    echo "All clients started with local Anvil. Press Ctrl+C to stop all services (Anvil will keep running)."
+    echo "✅ All clients started with local Anvil. Press Ctrl+C to stop all services (Anvil will keep running)."
 else
-    echo "All clients started. Press Ctrl+C to stop all services."
+    echo "✅ All clients started. Press Ctrl+C to stop all services."
 fi
 
 # Keep the script running until interrupted
