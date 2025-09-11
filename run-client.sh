@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # start a new process group for this script
 set -euo pipefail
@@ -29,6 +29,11 @@ function usage() {
 FEATURES=""
 CONFIG_PARAM="--config-path ./config/local"     # Default config: local
 LOGGER_PARAM="--logger-path log4rs.stdout.yaml" # Default logger: stdout
+
+# Set default CLIENT_ID if not already set
+if [[ -z "${CLIENT_ID:-}" ]]; then
+    export CLIENT_ID="0"
+fi
 
 # Parse named parameters
 while [[ $# -gt 0 ]]; do
