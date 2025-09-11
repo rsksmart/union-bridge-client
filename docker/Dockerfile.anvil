@@ -1,0 +1,12 @@
+# syntax=docker/dockerfile:1.4
+FROM ghcr.io/foundry-rs/foundry:latest
+
+WORKDIR /anvil
+
+# Create a custom entrypoint script that forces host binding
+RUN echo '#!/bin/bash\n\
+# Force Anvil to bind to 0.0.0.0 instead of 127.0.0.1\n\
+exec anvil --host 0.0.0.0 --port 8545 --block-time 2 "$@"' > /anvil/entrypoint.sh && \
+    chmod +x /anvil/entrypoint.sh
+
+ENTRYPOINT ["/anvil/entrypoint.sh"]

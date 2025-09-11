@@ -27,19 +27,61 @@ bash d-build-builder.sh --help
 
 ## Using Anvil (Optional)
 
-The Docker Compose setup includes an optional Anvil service for local development. Anvil is configured to auto-mine blocks every 2 seconds.
+The Union Bridge Client supports using Anvil (local Ethereum development blockchain) for testing and development. it is configured to auto-mine blocks every 2 seconds.
 
-To start with Anvil:
+### Docker Anvil Integration (Recommended)
+
+The `d-multi-client.sh` script automatically manages a Docker Anvil instance when using the `--profile anvil` option:
 
 ```bash
-# Single client with Anvil
-docker compose --profile anvil up
-
-# Multi-client with Anvil
+# This will automatically start Docker Anvil and all Docker services
 bash d-multi-client.sh --profile anvil
 ```
 
-When using the anvil profile, the ROOTSTOCK_URL is automatically set to `ws://anvil:8545` to connect to the local Anvil service.
+### Local Anvil Integration
+
+If you prefer to use your local Anvil installation:
+
+```bash
+# Start Anvil locally first in a new terminal
+anvil
+
+# Then start clients with local Anvil
+bash d-multi-client.sh --local-anvil
+```
+
+**How it works**:
+
+**Docker Anvil (`--profile anvil`)**:
+- Automatically builds the custom Docker Anvil image (if not already built)
+- Starts a custom Docker Anvil container with proper host binding
+- Waits for Anvil to be ready before starting Docker services
+- Uses `host.docker.internal:8545` for Docker containers to connect to Anvil
+- Automatically stops Anvil when you press Ctrl+C
+- All services run in Docker for a consistent development environment
+
+**Local Anvil (`--local-anvil`)**:
+- Checks if local Anvil is running at `localhost:8545`
+- Uses `host.docker.internal:8545` for Docker containers to connect to local Anvil
+- Does not stop local Anvil when you press Ctrl+C (you manage it manually)
+- Perfect for development workflows where you want full control over Anvil
+
+### Docker Anvil Technical Details
+
+The Docker Anvil integration uses a custom `Dockerfile.anvil` that:
+- Forces Anvil to bind to `0.0.0.0:8545` instead of `127.0.0.1:8545`
+- Enables auto-mining with 2-second block times
+- Provides a consistent, containerized development environment
+
+### Manual Anvil Image Building
+
+If you intend to use a local installation of anvil instead of the one provided by this docker workflow, you would have to include the anvil flag when building the images:
+
+```bash
+
+# Or use the CLI script
+bash d-compose-cli.sh build --features=anvil
+```
 
 ## Build & Run Services
 
