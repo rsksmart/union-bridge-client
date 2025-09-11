@@ -87,14 +87,18 @@ pub struct TxSentOutput {
 pub type AddMemberNonceOutput = TxSentOutput;
 pub type AddMemberSignatureOutput = TxSentOutput;
 pub type AddOperatorTakeTxHashOutput = TxSentOutput;
+pub type RequestPeginOutput = TxSentOutput;
+pub type AcceptPeginOutput = TxSentOutput;
+pub type RegisterPegoutOutput = TxSentOutput;
+pub type RequestPegoutOutput = TxSentOutput;
+pub type ApplyToStreamOutput = TxSentOutput;
+pub type DepositCommunicationDataOutput = TxSentOutput;
+pub type DepositAggregatedKeyOutput = TxSentOutput;
+
 pub type RequestPeginInput = BtcTxSPVProofInput;
 pub type RegisterPegInInput = BtcTxSPVProofInput;
 pub type AcceptPeginInput = BtcTxSPVProofInput;
-pub type RequestPeginOutput = TxSentOutput;
-pub type AcceptPeginOutput = TxSentOutput;
 pub type RegisterPegoutInput = BtcTxSPVProofInput;
-pub type RegisterPegoutOutput = TxSentOutput;
-pub type RequestPegoutOutput = TxSentOutput;
 
 impl From<TxIn> for BitcoinTransactionIn {
     fn from(input: TxIn) -> Self {
@@ -173,8 +177,6 @@ pub struct CommitteeECDSA {
 
 pub type CommitteeRSA = String;
 
-pub type ApplyToStreamOutput = TxSentOutput;
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GetCommitteeInput {
     pub committee_id: CommitteeId,
@@ -203,15 +205,11 @@ pub struct DepositCommunicationDataInput {
     pub communication_data: Vec<CommunicationData>,
 }
 
-pub type DepositCommunicationDataOutput = TxSentOutput;
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DepositAggregatedKeyInput {
     pub committee_id: CommitteeId,
     pub aggregated_key: FixedBytes<32>,
 }
-
-pub type DepositAggregatedKeyOutput = TxSentOutput;
 
 /// Flatten bytes → `[FixedBytes<32>; N]` (zero-pad if shorter; error if longer).
 fn bytes_to_fb_array<const N: usize>(bytes: &[u8]) -> Result<[FixedBytes<32>; N]> {
