@@ -27,7 +27,7 @@ use crate::flows::btc_signature::btc_signature_subflow::{
     BaseBtcSignatureSubFlow, BtcSignatureSubFlowApi, BtcSignatureSubFlowFactory,
     BtcSignatureSubFlowFactoryApi,
 };
-use crate::flows::common::{COMM_KEY_INDEX, build_communication_data};
+use crate::flows::common::{COMM_KEY_INDEX, GlobalContext, build_communication_data};
 use crate::types::{RegisterSignaturesBitVmxData, TickScheduler};
 use crate::{
     config::REQUIRED_CONFIRMATIONS,
@@ -49,6 +49,7 @@ use common::{
 };
 use log::{debug, info, trace};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -134,6 +135,7 @@ where
     btc_sig_subflow_factory: FactoryBSF,
     scheduler: TickScheduler<Uuid>,
     my_p2p_address: Option<P2PAddress>,
+    global_context: GlobalContext,
 }
 
 impl<CG, BC>
@@ -147,7 +149,12 @@ where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
 {
-    pub fn new(rt_sync: RuntimeSync, contracts_gateway: Rc<CG>, bitvmx_broker: Rc<BC>) -> Self {
+    pub fn new(
+        rt_sync: RuntimeSync,
+        contracts_gateway: Rc<CG>,
+        bitvmx_broker: Rc<BC>,
+        global_context: GlobalContext,
+    ) -> Self {
         Self {
             rt_sync: rt_sync.clone(),
             contracts_gateway: contracts_gateway.clone(),
@@ -157,7 +164,19 @@ where
             btc_sig_subflow_factory: BtcSignatureSubFlowFactory::new(contracts_gateway, rt_sync),
             scheduler: TickScheduler::new(),
             my_p2p_address: None,
+            global_context,
         }
+    }
+
+    pub fn get_user_take_pid(committee_id: Uuid, slot_index: usize) -> Uuid {
+        let mut hasher = Sha256::new();
+        hasher.update(committee_id.as_bytes());
+        hasher.update(&slot_index.to_be_bytes());
+        hasher.update("user_take");
+
+        // Get the result as a byte array
+        let hash = hasher.finalize();
+        Uuid::from_bytes(hash[0..16].try_into().unwrap())
     }
 
     fn handle_tick(&mut self) -> Result<()> {
@@ -202,10 +221,12 @@ where
         ))?;
 
         let committee_addresses = self.get_committee_member_address(committee_id)?;
+        //TODO if there were a delay in the reposne from bitvmx the first time it is possible that the p2p address is not available yet, so we need to handle that case.
         let my_addr = self
             .my_p2p_address
             .as_ref()
             .ok_or_else(|| anyhow!("My P2P address not found"))?;
+
         let p2p_addresses = build_communication_data(
             my_addr.address.clone(),
             committee_addresses,
@@ -296,16 +317,7 @@ where
         event: &PegoutRequested,
         committee_output: &GetCommitteeOutput,
     ) -> Result<PegOutRequest> {
-        //TODO it is pending to decide the exact conversion from U256 coming from the contract to Uuid
-        // AS first solution it was decided to take the first 16 bytes of the U256
-        let committee_bytes = event.committeeId.to_be_bytes_vec();
-        let uuid_bytes_slice = committee_bytes
-            .get(..16)
-            .ok_or_else(|| anyhow!("Committee ID should have at least 16 bytes"))?;
-        let uuid_bytes: [u8; 16] = uuid_bytes_slice
-            .try_into()
-            .map_err(|_| anyhow!("Invalid Committee ID length; expected 16 bytes"))?;
-        let committee_id = Uuid::from_bytes(uuid_bytes);
+        let committee_id: Uuid = Uuid::from_u128(event.committeeId.try_into()?);
 
         // Convert user pubkey bytes to bitcoin::PublicKey
         let user_pubkey_bytes: Vec<u8> = event.userPubKey.clone().to_vec();
@@ -318,12 +330,13 @@ where
         let pegout_signature_hash: Vec<u8> = event.pegoutSignatureHash.as_slice().to_vec();
         let pegout_id: Vec<u8> = event.pegoutId.as_slice().to_vec();
         let pegout_signature_message: Vec<u8> = event.pegoutSignatureMessage.clone().to_vec();
-
+        //todo ask if slot_index corresponds to contracts PegoutRequested.slotId
+        let slot_index = event.slotId as usize;
         Ok(PegOutRequest {
             committee_id,
             stream_id: event.streamId,
             packet_number: event.packetNumber,
-            slot_id: event.slotId,
+            slot_index,
             amount: event.amount,
             pegout_id,
             pegout_signature_hash,
@@ -345,8 +358,23 @@ where
                 event.tx_hash
             );
         }
+        let committee_id: CommitteeId = event.inner.committeeId.try_into()?;
 
-        let flow_id = Uuid::new_v4();
+        if !self.global_context.my_committees().im_member(&committee_id) {
+            info!(
+                "Handling PegoutRequested event with committee id {}, I am NOT member so I skip",
+                committee_id
+            );
+            return Ok(());
+        }
+        debug!(
+            "Handling PegoutRequested event with committee id {}, as member I should respond",
+            committee_id
+        );
+
+        let slot_index = event.inner.slotId as usize;
+        let committee_uuid: Uuid = Uuid::from_u128(event.inner.committeeId.try_into()?);
+        let flow_id = Self::get_user_take_pid(committee_uuid, slot_index);
         let tx_hash = event.tx_hash.clone();
 
         let observer_id = format!("pegout_requested-{}", flow_id);
@@ -588,6 +616,7 @@ where
     }
 
     //Step 5b
+    //TODO check if we need to convert the tx_id to TxIdLE
     fn handle_request_spv_proof(&mut self, flow_id: &Uuid, tx_id: Txid) -> Result<()> {
         let state = self
             .tracker
@@ -721,9 +750,21 @@ where
         &mut self,
         block: &RskBlockAndUncles,
     ) -> Result<()> {
-        for (_, state) in self.tracker.iter_mut() {
+        for (flow_id, state) in self.tracker.iter_mut() {
             if let Some(btc_flow) = state.btc_sig_flow.as_mut() {
                 btc_flow.delegate_block(block)?;
+                if btc_flow.is_done() {
+                    // Step 4a: Dispatch transaction name (U -> B)
+                    Self::send_dispatch_transaction_name_msg_to_bitvmx(
+                        &self.bitvmx_broker,
+                        *flow_id,
+                    )?;
+                    // Step 4b: Ask for transaction status (U -> B)
+                    Self::send_get_transaction_info_by_name_to_bitvmx(
+                        &self.bitvmx_broker,
+                        *flow_id,
+                    )?;
+                }
             }
         }
         Ok(())
@@ -810,7 +851,7 @@ where
                     self.untrack_pegout_requested(data)?;
                     return Ok(());
                 }
-                Self::send_get_comm_info_to_bitvmx(&self.bitvmx_broker);
+                Self::send_get_comm_info_to_bitvmx(&self.bitvmx_broker)?;
                 debug!("Handling Pegout Requested event {:?}", data);
                 self.track_pegout_requested(data.clone())?;
             }
@@ -833,18 +874,6 @@ where
                     if let Some(btc_flow) = state.btc_sig_flow.as_mut() {
                         // Step 3a: Register signatures (U -> RSK)
                         btc_flow.delegate_rsk_event(*flow_id, event)?;
-                        if btc_flow.is_done() {
-                            // Step 4a: Dispatch transaction name (U -> B)
-                            Self::send_dispatch_transaction_name_msg_to_bitvmx(
-                                &self.bitvmx_broker,
-                                *flow_id,
-                            )?;
-                            // Step 4b: Ask for transaction status (U -> B)
-                            Self::send_get_transaction_info_by_name_to_bitvmx(
-                                &self.bitvmx_broker,
-                                *flow_id,
-                            )?;
-                        }
                     }
                 }
             }

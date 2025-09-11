@@ -13,7 +13,6 @@ use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::hash::Hash;
-use transaction_dispatcher::types::ApplyToStreamInput;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     AllCommunicationDataReady, MemberInfoDeposited, NewCommittee, NewPendingCommittee,
 };
