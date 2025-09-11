@@ -1,7 +1,7 @@
 use crate::contracts::committee_registry::CommitteeRegistryContractApi;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{DepositCommunicationDataInput, DepositCommunicationDataOutput};
-use log::info;
+use log::{error, info};
 
 #[derive(Clone)]
 pub(crate) struct DepositCommunicationDataInvoke<C: CommitteeRegistryContractApi> {
@@ -43,17 +43,23 @@ impl<C: CommitteeRegistryContractApi> DepositCommunicationDataInvoke<C> {
             })?;
 
         let transaction_hash = format!("0x{:x}", receipt.transaction_hash);
-        let success = receipt.status();
 
-        info!(
-            "DepositCommunicationData completed with hash: {}, success: {}",
-            transaction_hash, success
-        );
-
-        Ok(DepositCommunicationDataOutput {
-            transaction_hash,
-            success,
-        })
+        match receipt.status() {
+            true => {
+                info!(
+                    "DepositCommunicationData successful at tx {}",
+                    transaction_hash
+                );
+                Ok(DepositCommunicationDataOutput { transaction_hash })
+            }
+            false => {
+                error!("DepositCommunicationData failed at tx {}", transaction_hash);
+                Err(DomainErrors::TransactionFailed(format!(
+                    "DepositCommunicationData transaction failed with receipt status false at tx {}",
+                    transaction_hash
+                )))
+            }
+        }
     }
 }
 
@@ -91,7 +97,7 @@ mod tests {
         assert!(result.is_ok());
         let output = result.unwrap();
         assert_eq!(output.transaction_hash, expected_tx_hash);
-        assert!(output.success);
+        // success field removed
     }
 
     #[tokio::test]

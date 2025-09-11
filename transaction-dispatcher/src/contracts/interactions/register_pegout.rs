@@ -37,23 +37,27 @@ impl<C: PegManagerContractApi> RegisterPegoutInvoke<C> {
             .invoke_register_pegout(parsed_input, self.gas_bumps)
             .await?;
 
-        let result = RegisterPegoutOutput {
-            transaction_hash: receipt.transaction_hash.to_string(),
-            success: receipt.status(),
-        };
-
-        if result.success {
-            info!(
-                "invoke_register_pegout successful at tx {}",
-                receipt.transaction_hash
-            );
-        } else {
-            error!(
-                "invoke_register_pegout failed at tx {}",
-                receipt.transaction_hash
-            );
+        match receipt.status() {
+            true => {
+                info!(
+                    "invoke_register_pegout successful at tx {}",
+                    receipt.transaction_hash
+                );
+                Ok(RegisterPegoutOutput {
+                    transaction_hash: receipt.transaction_hash.to_string(),
+                })
+            }
+            false => {
+                error!(
+                    "invoke_register_pegout failed at tx {}",
+                    receipt.transaction_hash
+                );
+                Err(DomainErrors::TransactionFailed(format!(
+                    "RegisterPegout transaction failed with receipt status false at tx {}",
+                    receipt.transaction_hash
+                )))
+            }
         }
-        Ok(result)
     }
 }
 

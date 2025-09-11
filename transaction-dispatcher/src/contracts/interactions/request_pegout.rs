@@ -44,24 +44,24 @@ impl<C: PegManagerContractApi> TryPegoutInvoke<C> {
             .invoke_request_pegout(msg_value, usr_pub_key, self.gas_bumps)
             .await?;
 
-        let result = if receipt.status() {
-            info!(
-                "Pegout Request successful at tx {}",
-                receipt.transaction_hash
-            );
-            RequestPegoutOutput {
-                transaction_hash: receipt.transaction_hash.to_string(),
-                success: true,
+        match receipt.status() {
+            true => {
+                info!(
+                    "Pegout Request successful at tx {}",
+                    receipt.transaction_hash
+                );
+                Ok(RequestPegoutOutput {
+                    transaction_hash: receipt.transaction_hash.to_string(),
+                })
             }
-        } else {
-            error!("Pegout request failed at tx {}", receipt.transaction_hash);
-            RequestPegoutOutput {
-                transaction_hash: receipt.transaction_hash.to_string(),
-                success: false,
+            false => {
+                error!("Pegout request failed at tx {}", receipt.transaction_hash);
+                Err(DomainErrors::TransactionFailed(format!(
+                    "RequestPegout transaction failed with receipt status false at tx {}",
+                    receipt.transaction_hash
+                )))
             }
-        };
-
-        Ok(result)
+        }
     }
 }
 
@@ -96,7 +96,6 @@ mod tests {
         let expected = RequestPegoutOutput {
             transaction_hash: "0xfeedfacecafebeef000000000000000000000000000000000000000000000000"
                 .to_string(),
-            success: true,
         };
         let receipt_return = expected.clone();
 
@@ -116,22 +115,23 @@ mod tests {
         let mut mock = MockPegManagerContractApi::new();
         let input = get_base_input();
 
-        let expected = RequestPegoutOutput {
-            transaction_hash: "0xdeadbeefdeadbeef000000000000000000000000000000000000000000000000"
-                .to_string(),
-            success: false,
-        };
-        let receipt_return = expected.clone();
+        let expected_tx_hash = "0xdeadbeefdeadbeef000000000000000000000000000000000000000000000000";
 
         mock.expect_invoke_request_pegout()
-            .returning(move |_, _, _| Ok(get_fake_receipt(false, &receipt_return.transaction_hash)))
+            .returning(move |_, _, _| Ok(get_fake_receipt(false, expected_tx_hash)))
             .times(1);
 
         let invoke = TryPegoutInvoke::new_for_tests(mock);
         let result = invoke.run(input).await;
 
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), expected);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            DomainErrors::TransactionFailed(msg) => {
+                assert!(msg.contains("RequestPegout transaction failed"));
+                assert!(msg.contains(expected_tx_hash));
+            }
+            _ => panic!("Expected TransactionFailed error"),
+        }
     }
 
     #[tokio::test]

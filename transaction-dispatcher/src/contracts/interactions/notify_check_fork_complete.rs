@@ -27,18 +27,24 @@ impl<C: PegManagerContractApi> NotifyCheckForkCompleteInvoke<C> {
             .notify_check_fork_completion(input, self.gas_bumps)
             .await?;
 
-        if receipt.status() {
-            info!(
-                "NotifyCheckForkComplete successful at tx {}",
-                receipt.transaction_hash
-            );
-        } else {
-            error!(
-                "NotifyCheckForkComplete failed at tx {}",
-                receipt.transaction_hash
-            );
-        };
-
-        Ok(())
+        match receipt.status() {
+            true => {
+                info!(
+                    "NotifyCheckForkComplete successful at tx {}",
+                    receipt.transaction_hash
+                );
+                Ok(())
+            }
+            false => {
+                error!(
+                    "NotifyCheckForkComplete failed at tx {}",
+                    receipt.transaction_hash
+                );
+                Err(DomainErrors::TransactionFailed(format!(
+                    "NotifyCheckForkComplete transaction failed with receipt status false at tx {}",
+                    receipt.transaction_hash
+                )))
+            }
+        }
     }
 }

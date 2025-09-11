@@ -36,24 +36,21 @@ impl<C: PegManagerContractApi> AcceptPeginInvoke<C> {
             .invoke_accept_pegin(parsed_input, self.gas_bumps)
             .await?;
 
-        let result = match receipt.status() {
+        match receipt.status() {
             true => {
                 info!("AcceptPegin successful at tx {}", receipt.transaction_hash);
-                AcceptPeginOutput {
+                Ok(AcceptPeginOutput {
                     transaction_hash: receipt.transaction_hash.to_string(),
-                    success: true,
-                }
+                })
             }
             false => {
                 error!("AcceptPegin failed at tx {}", receipt.transaction_hash);
-                AcceptPeginOutput {
-                    transaction_hash: receipt.transaction_hash.to_string(),
-                    success: false,
-                }
+                Err(DomainErrors::TransactionFailed(format!(
+                    "AcceptPegin transaction failed with receipt status false at tx {}",
+                    receipt.transaction_hash
+                )))
             }
-        };
-
-        Ok(result)
+        }
     }
 }
 
@@ -93,7 +90,6 @@ mod tests {
         let expected_receipt = AcceptPeginOutput {
             transaction_hash: "0x4e3f8a2d39c1b872b77e8a5c9a24be8f1d489ea7cf2d38375f18b5b54e7df662"
                 .to_string(),
-            success: true,
         };
 
         let receipt_to_return = expected_receipt.clone();
@@ -152,30 +148,24 @@ mod tests {
 
         let input = get_base_input();
 
-        let expected_receipt = AcceptPeginOutput {
-            transaction_hash: "0x4e3f8a2d39c1b872b77e8a5c9a24be8f1d489ea7cf2d38375f18b5b54e7df662"
-                .to_string(),
-            success: false,
-        };
-
-        let receipt_to_return = expected_receipt.clone();
+        let transaction_hash = "0x4e3f8a2d39c1b872b77e8a5c9a24be8f1d489ea7cf2d38375f18b5b54e7df662";
 
         mock.expect_invoke_accept_pegin()
-            .returning(move |_, _| {
-                Ok(get_fake_receipt(
-                    false,
-                    receipt_to_return.transaction_hash.as_str(),
-                ))
-            })
+            .returning(move |_, _| Ok(get_fake_receipt(false, transaction_hash)))
             .times(1);
 
         let invoke = AcceptPeginInvoke::new_for_tests(mock);
 
         let result = invoke.run(input).await;
-        assert!(result.is_ok());
+        assert!(result.is_err());
 
-        let result_receipt = result.unwrap();
-        assert_eq!(result_receipt, expected_receipt);
+        match result.err().unwrap() {
+            DomainErrors::TransactionFailed(msg) => {
+                assert!(msg.contains("AcceptPegin transaction failed"));
+                assert!(msg.contains(transaction_hash));
+            }
+            _ => panic!("Expected TransactionFailed error"),
+        }
     }
 
     fn get_base_input() -> AcceptPeginInput {

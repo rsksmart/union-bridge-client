@@ -1,7 +1,7 @@
 use crate::contracts::committee_registry::CommitteeRegistryContractApi;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{DepositAggregatedKeyInput, DepositAggregatedKeyOutput};
-use log::info;
+use log::{error, info};
 
 #[derive(Clone)]
 pub(crate) struct DepositAggregatedKeysInvoke<C: CommitteeRegistryContractApi> {
@@ -35,17 +35,23 @@ impl<C: CommitteeRegistryContractApi> DepositAggregatedKeysInvoke<C> {
             })?;
 
         let transaction_hash = format!("0x{:x}", receipt.transaction_hash);
-        let success = receipt.status();
 
-        info!(
-            "Deposit Aggregated Key completed with hash: {}, success: {}",
-            transaction_hash, success
-        );
-
-        Ok(DepositAggregatedKeyOutput {
-            transaction_hash,
-            success,
-        })
+        match receipt.status() {
+            true => {
+                info!(
+                    "Deposit Aggregated Key successful at tx {}",
+                    transaction_hash
+                );
+                Ok(DepositAggregatedKeyOutput { transaction_hash })
+            }
+            false => {
+                error!("Deposit Aggregated Key failed at tx {}", transaction_hash);
+                Err(DomainErrors::TransactionFailed(format!(
+                    "DepositAggregatedKey transaction failed with receipt status false at tx {}",
+                    transaction_hash
+                )))
+            }
+        }
     }
 }
 
@@ -89,7 +95,6 @@ mod tests {
         // assert
         assert!(result.is_ok());
         let output = result.unwrap();
-        assert!(output.success);
         assert!(output.transaction_hash.starts_with("0x"));
     }
 
