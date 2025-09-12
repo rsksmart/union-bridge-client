@@ -13,7 +13,7 @@ fi
 NUM_CLIENTS=""
 CLIENT_ID=""
 FEATURES=""
-CONFIG_PARAM="--config-path ./config/multi-client-template" # Default config: multi-client-template
+CONFIG_PARAM="--config-path ./config/multi-client-template"     # Default config: multi-client-template
 LOGGER_PARAM="--logger-path log4rs.stdout.yaml" # Default logger: stdout
 
 # Function to show help
@@ -239,170 +239,172 @@ run_single_client() {
     done
 }
 
-# Mode-specific logic
-case "$MODE" in
-    "multi")
-        # Multi-client mode
-        if [[ -z "${BASE_STORAGE_PATH:-}" ]]; then
-            echo "Error: BASE_STORAGE_PATH environment variable is required for multi-client mode."
-            echo ""
-            echo "Please set the BASE_STORAGE_PATH environment variable before running this script:"
-            echo "  export BASE_STORAGE_PATH=/Users/username"
-            echo ""
-            echo "Use --help for more information and examples."
-            exit 1
+# Function to run multiple clients
+run_multi_client_mode() {
+    # Validate BASE_STORAGE_PATH
+    if [[ -z "${BASE_STORAGE_PATH:-}" ]]; then
+        echo "Error: BASE_STORAGE_PATH environment variable is required for multi-client mode."
+        echo ""
+        echo "Please set the BASE_STORAGE_PATH environment variable before running this script:"
+        echo "  export BASE_STORAGE_PATH=/Users/username"
+        echo ""
+        echo "Use --help for more information and examples."
+        exit 1
+    fi
+
+    # Validate NUM_CLIENTS
+    if [[ ! "$NUM_CLIENTS" =~ ^([1-9]|10)$ ]]; then
+        echo "Error: NUM_CLIENTS must be between 1 and 10."
+        echo "Use --help for usage information."
+        exit 1
+    fi
+
+    readonly NUM_CLIENTS
+
+    CLIENT_PIDS=()
+    CLIENT_NAMES=()
+    CLEANING_UP=false
+
+    function cleanup() {
+        if $CLEANING_UP; then
+            return
         fi
 
-        if [[ ! "$NUM_CLIENTS" =~ ^([1-9]|10)$ ]]; then
-            echo "Error: NUM_CLIENTS must be between 1 and 10."
-            echo "Use --help for usage information."
-            exit 1
-        fi
+        CLEANING_UP=true
 
-        readonly NUM_CLIENTS
-
-        CLIENT_PIDS=()
-        CLIENT_NAMES=()
-        CLEANING_UP=false
-
-        function cleanup() {
-            if $CLEANING_UP; then
-                return
+        echo "Shutting down ${#CLIENT_PIDS[@]} clients..."
+        
+        # Step 1: Send SIGTERM to all clients for graceful shutdown
+        for ((i=0; i<${#CLIENT_PIDS[@]}; i++)); do
+            pid=${CLIENT_PIDS[$i]}
+            name=${CLIENT_NAMES[$i]}
+            if kill -0 "$pid" &>/dev/null; then
+                echo "Stopping $name (PID $pid)..."
+                kill -TERM "$pid" &>/dev/null || true
+            else
+                echo "$name (PID $pid) already stopped"
             fi
-
-            CLEANING_UP=true
-
-            echo "Shutting down ${#CLIENT_PIDS[@]} clients..."
-            
-            # Step 1: Send SIGTERM to all clients for graceful shutdown
-            for ((i=0; i<${#CLIENT_PIDS[@]}; i++)); do
-                pid=${CLIENT_PIDS[$i]}
-                name=${CLIENT_NAMES[$i]}
-                if kill -0 "$pid" &>/dev/null; then
-                    echo "Stopping $name (PID $pid)..."
-                    kill -TERM "$pid" &>/dev/null || true
-                else
-                    echo "$name (PID $pid) already stopped"
-                fi
-            done
-            
-            # Step 2: Wait for graceful shutdown - check PIDs until they're gone or timeout
-            echo "Waiting for graceful shutdown..."
-            for i in {1..30}; do
-                # Check if any PIDs are still running
-                still_running=false
-                for ((j=0; j<${#CLIENT_PIDS[@]}; j++)); do
-                    pid=${CLIENT_PIDS[$j]}
-                    if kill -0 "$pid" &>/dev/null; then
-                        still_running=true
-                        break
-                    fi
-                done
-                
-                # If no PIDs are running, we're done!
-                if [[ "$still_running" == false ]]; then
-                    # give some extra time
-                    sleep 5
-                    echo "All clients shut down gracefully"
-                    exit 130
-                fi
-
-                sleep 1
-            done
-
-            echo "Some clients didn't shut down gracefully"
-            
-            # Step 3: Force kill any remaining processes
-            for ((i=0; i<${#CLIENT_PIDS[@]}; i++)); do
-                pid=${CLIENT_PIDS[$i]}
-                name=${CLIENT_NAMES[$i]}
-                if kill -0 "$pid" &>/dev/null; then
-                    echo "Force stopping $name (PID $pid)..."
-                    kill -9 "$pid" &>/dev/null || true
-                fi
-            done
-            
-            echo "Some clients were force-stopped, you may need to clean database manually."
-            exit 1
-        }
-
-        # Set up trap for cleanup
-        trap cleanup INT TERM EXIT
-
-        # Override config and logger for multi-client mode
-        CONFIG_PARAM="--config-path ./config/multi-client-template"
-        LOGGER_PARAM="--logger-path log4rs.stdout.yaml"
-
-        # Run the clients
-        echo "Starting clients..." >&2
-        for ((ID=1; ID<=NUM_CLIENTS; ID++)); do
-            # Set environment variables for this client in a subshell and run directly
-            (
-                set_multi_client_env "$ID" "$BASE_STORAGE_PATH"
-                run_single_client
-            ) &
-            CLIENT_PIDS+=($!)
-            CLIENT_NAMES+=("client-$ID")
-            echo "Started client-$ID with PID ${CLIENT_PIDS[-1]}" >&2
         done
-
-        echo "All clients started"
-        echo "Press Ctrl+C to shut down cleanly."
-
-        # Monitor clients
-        echo "Waiting for clients to finish (or Ctrl+C to stop)..." >&2
-
-        # Use a loop that can be easily interrupted
-        while true; do
-            # Check if any client has finished
-            all_running=true
-            for pid in "${CLIENT_PIDS[@]}"; do
-                if ! kill -0 "$pid" &>/dev/null; then
-                    echo "Client with PID $pid has finished" >&2
-                    all_running=false
+        
+        # Step 2: Wait for graceful shutdown - check PIDs until they're gone or timeout
+        echo "Waiting for graceful shutdown..."
+        for i in {1..30}; do
+            # Check if any PIDs are still running
+            still_running=false
+            for ((j=0; j<${#CLIENT_PIDS[@]}; j++)); do
+                pid=${CLIENT_PIDS[$j]}
+                if kill -0 "$pid" &>/dev/null; then
+                    still_running=true
                     break
                 fi
             done
             
-            if [[ "$all_running" == false ]]; then
-                echo "At least one client finished unexpectedly, stopping all..." >&2
-                cleanup
+            # If no PIDs are running, we're done!
+            if [[ "$still_running" == false ]]; then
+                # give some extra time
+                sleep 5
+                echo "All clients shut down gracefully"
+                exit 130
             fi
-            
-            # Use a very short sleep so signals can be processed quickly
-            sleep 0.05
+
+            sleep 1
         done
-        ;;
 
+        echo "Some clients didn't shut down gracefully"
+        
+        # Step 3: Force kill any remaining processes
+        for ((i=0; i<${#CLIENT_PIDS[@]}; i++)); do
+            pid=${CLIENT_PIDS[$i]}
+            name=${CLIENT_NAMES[$i]}
+            if kill -0 "$pid" &>/dev/null; then
+                echo "Force stopping $name (PID $pid)..."
+                kill -9 "$pid" &>/dev/null || true
+            fi
+        done
+        
+        echo "Some clients were force-stopped, you may need to clean database manually."
+        exit 1
+    }
+
+    # Set up trap for cleanup
+    trap cleanup INT TERM EXIT
+
+    # Run the clients
+    echo "Starting clients..." >&2
+    for ((ID=1; ID<=NUM_CLIENTS; ID++)); do
+        # Set environment variables for this client in a subshell and run directly
+        (
+            set_multi_client_env "$ID" "$BASE_STORAGE_PATH"
+            run_single_client
+        ) &
+        CLIENT_PIDS+=($!)
+        CLIENT_NAMES+=("client-$ID")
+        echo "Started client-$ID with PID ${CLIENT_PIDS[-1]}" >&2
+    done
+
+    echo "All clients started"
+    echo "Press Ctrl+C to shut down cleanly."
+
+    # Monitor clients
+    echo "Waiting for clients to finish (or Ctrl+C to stop)..." >&2
+
+    # Use a loop that can be easily interrupted
+    while true; do
+        # Check if any client has finished
+        all_running=true
+        for pid in "${CLIENT_PIDS[@]}"; do
+            if ! kill -0 "$pid" &>/dev/null; then
+                echo "Client with PID $pid has finished" >&2
+                all_running=false
+                break
+            fi
+        done
+        
+        if [[ "$all_running" == false ]]; then
+            echo "At least one client finished unexpectedly, stopping all..." >&2
+            cleanup
+        fi
+        
+        # Use a very short sleep so signals can be processed quickly
+        sleep 0.05
+    done
+}
+
+# Function to run single client
+run_single_client_mode() {
+    # Validate BASE_STORAGE_PATH
+    if [[ -z "${BASE_STORAGE_PATH:-}" ]]; then
+        echo "Error: BASE_STORAGE_PATH environment variable is required for single client mode."
+        echo ""
+        echo "Please set the BASE_STORAGE_PATH environment variable before running this script:"
+        echo "  export BASE_STORAGE_PATH=/Users/username"
+        echo ""
+        echo "Use --help for more information and examples."
+        exit 1
+    fi
+
+    # Validate CLIENT_ID
+    if [[ ! "$CLIENT_ID" =~ ^([1-9]|10)$ ]]; then
+        echo "Error: CLIENT_ID must be between 1 and 10."
+        echo "Current CLIENT_ID: $CLIENT_ID"
+        exit 1
+    fi
+
+    # Set environment variables for this client
+    set_multi_client_env "$CLIENT_ID" "$BASE_STORAGE_PATH"
+
+    # Run the single client
+    run_single_client
+}
+
+# Mode-specific logic
+case "$MODE" in
+    "multi")
+        run_multi_client_mode
+        ;;
     "single")
-        # Single client mode (with optional specific ID)
-        if [[ -z "${BASE_STORAGE_PATH:-}" ]]; then
-            echo "Error: BASE_STORAGE_PATH environment variable is required for single client mode."
-            echo ""
-            echo "Please set the BASE_STORAGE_PATH environment variable before running this script:"
-            echo "  export BASE_STORAGE_PATH=/Users/username"
-            echo ""
-            echo "Use --help for more information and examples."
-            exit 1
-        fi
-
-        if [[ ! "$CLIENT_ID" =~ ^([1-9]|10)$ ]]; then
-            echo "Error: CLIENT_ID must be between 1 and 10."
-            echo "Current CLIENT_ID: $CLIENT_ID"
-            exit 1
-        fi
-
-        # Set environment variables for this client
-        set_multi_client_env "$CLIENT_ID" "$BASE_STORAGE_PATH"
-
-        # Override config and logger for multi-client mode
-        CONFIG_PARAM="--config-path ./config/multi-client-template"
-        LOGGER_PARAM="--logger-path log4rs.stdout.yaml"
-
-        # Run the single client
-        run_single_client
+        run_single_client_mode
         ;;
-
     *)
         echo "Error: Invalid mode '$MODE'"
         echo "Use --help for usage information."
