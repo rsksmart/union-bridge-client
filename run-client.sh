@@ -13,7 +13,7 @@ fi
 NUM_CLIENTS=""
 CLIENT_ID=""
 FEATURES=""
-CONFIG_PARAM="--config-path ./config/local"     # Default config: local
+CONFIG_PARAM="--config-path ./config/multi-client-template" # Default config: multi-client-template
 LOGGER_PARAM="--logger-path log4rs.stdout.yaml" # Default logger: stdout
 
 # Function to show help
@@ -33,30 +33,25 @@ OPTIONS:
 
 MODES (automatically determined):
     Multiple clients: When --num-clients is specified
-    Single client:    When --id is specified  
-    Default mode:     When no mode flags are specified (runs single instance with default config)
+    Single client:    When --id is specified or no mode flags are used (defaults to CLIENT_ID=1)
 
 ENVIRONMENT VARIABLES:
-    BASE_STORAGE_PATH             Required for multi-client mode. Base path for client data storage
+    BASE_STORAGE_PATH             Required. Base path for client data storage
     CLIENT_ID                     Optional. Client ID for single client mode (can also be set via --id)
 
 EXAMPLES:
-    # Default single client mode
-    $0                                              # Run single client with local config
-    $0 --features anvil                             # Run single client with anvil feature
-    $0 --config ./config/qa                         # Run single client with qa config
+    # Single client mode (defaults to CLIENT_ID=1)
+    $0                                              # Run client 1
+    $0 --features anvil                             # Run client 1 with anvil feature
+    $0 --id 2 --features anvil                      # Run client 2 with anvil feature
     
     # Multi-client mode
     $0 --num-clients 4                              # Run 4 clients
-    $0 -n 6 --features anvil                        # Run 6 clients with anvil feature
-    
-    # Specific client ID mode
-    $0 --id 1                                       # Run client 1 (requires BASE_STORAGE_PATH)
-    $0 -i 2 --features anvil                        # Run client 2 with anvil feature
+    $0 --num-clients 6 --features anvil             # Run 6 clients with anvil feature
     
     # With environment variable:
-    BASE_STORAGE_PATH=/Users/username $0 --num-clients 4
-    BASE_STORAGE_PATH=/Users/username $0 --id 1 --features anvil
+    BASE_STORAGE_PATH=/Users/username $0
+    BASE_STORAGE_PATH=/Users/username $0 --num-clients 4 --features anvil
 
 EOF
 }
@@ -109,10 +104,12 @@ if [[ -n "$NUM_CLIENTS" && -n "$CLIENT_ID" ]]; then
     exit 1
 elif [[ -n "$NUM_CLIENTS" ]]; then
     MODE="multi"
-elif [[ -n "$CLIENT_ID" ]]; then
-    MODE="single-id"
 else
-    MODE="single-default"
+    MODE="single"
+    # Set default CLIENT_ID if not already set
+    if [[ -z "${CLIENT_ID:-}" ]]; then
+        export CLIENT_ID="1"
+    fi
 fi
 
 # Function to set environment variables for multi-client setup
@@ -377,10 +374,10 @@ case "$MODE" in
         done
         ;;
 
-    "single-id")
-        # Single client with specific ID mode
+    "single")
+        # Single client mode (with optional specific ID)
         if [[ -z "${BASE_STORAGE_PATH:-}" ]]; then
-            echo "Error: BASE_STORAGE_PATH environment variable is required when using --id."
+            echo "Error: BASE_STORAGE_PATH environment variable is required for single client mode."
             echo ""
             echo "Please set the BASE_STORAGE_PATH environment variable before running this script:"
             echo "  export BASE_STORAGE_PATH=/Users/username"
@@ -391,7 +388,7 @@ case "$MODE" in
 
         if [[ ! "$CLIENT_ID" =~ ^([1-9]|10)$ ]]; then
             echo "Error: CLIENT_ID must be between 1 and 10."
-            echo "Usage: $0 --id <CLIENT_ID> [--features FEATURES]"
+            echo "Current CLIENT_ID: $CLIENT_ID"
             exit 1
         fi
 
@@ -403,17 +400,6 @@ case "$MODE" in
         LOGGER_PARAM="--logger-path log4rs.stdout.yaml"
 
         # Run the single client
-        run_single_client
-        ;;
-
-    "single-default")
-        # Default single client mode
-        # Set default CLIENT_ID if not already set
-        if [[ -z "${CLIENT_ID:-}" ]]; then
-            export CLIENT_ID="1"
-        fi
-
-        # Run the single client with provided or default configuration
         run_single_client
         ;;
 

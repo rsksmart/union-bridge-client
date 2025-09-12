@@ -232,11 +232,11 @@ Once you have gone through the initial setup steps, the order to start up the pr
 You can run a single instance of the Union Client using:
 
 ```bash
-# Default single client mode (uses local config)
+# Single client mode (defaults to CLIENT_ID=1
 ./run-client.sh --features anvil
 
-# Single client with specific ID (uses multi-client config and requires BASE_STORAGE_PATH)
-./run-client.sh --id 1 --features anvil
+# Single client with specific ID
+./run-client.sh --id 2 --features anvil
 ```
 
 #### Running Multi Client (Committee Collaboration)

@@ -1,0 +1,6 @@
+key_store:
+  path: "/Users/illuque/.union_bridge/keystore/5bbdc4df-950a-47b2-aff8-9fbd25841c4a"
+transaction:
+  gas_bumps_t1: 3
+server:
+  url: "0.0.0.0:3000"

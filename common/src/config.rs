@@ -111,7 +111,7 @@ impl CommonConfig {
             .and_then(|p| p.to_str())
             .expect("Failed to get default_config_path")
             .to_string();
-        format!("{}/config/local", project_root)
+        format!("{}/config/multi-client-template", project_root)
     }
 
     pub fn load_abi_from_path(abi_path: &String) -> Option<JsonAbi> {
