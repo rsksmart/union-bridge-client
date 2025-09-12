@@ -224,7 +224,7 @@ Once you have gone through the initial setup steps, the order to start up the pr
    `bash ./shell/script/deploy/deploy-local.sh`)
 5. Make available `BASE_STORAGE_PATH` and `KEY_STORE_PASSWORD` environment variables (you can set them in your
    `.envrc` file)
-6. Run the Union Client in the mode you want. Run `./run-multiclient.sh --help` to better understand the available
+6. Run the Union Client in the mode you want. Run `./run-client.sh --help` to better understand the available
    options.
 
 #### Running Single Client
@@ -232,7 +232,11 @@ Once you have gone through the initial setup steps, the order to start up the pr
 You can run a single instance of the Union Client using:
 
 ```bash
-./run-multiclient.sh -i 1 -f anvil # or ./run-multiclient.sh --id 1 --features anvil
+# Default single client mode (uses local config)
+./run-client.sh --features anvil
+
+# Single client with specific ID (uses multi-client config and requires BASE_STORAGE_PATH)
+./run-client.sh --id 1 --features anvil
 ```
 
 #### Running Multi Client (Committee Collaboration)
@@ -249,10 +253,10 @@ instance (1-10). This ensures no collisions between different clients for:
 - Keystore paths
 - BitVMX broker ports
 
-You can run up to 10 clients using the `./run-multiclient.sh` script.
+You can run up to 10 clients using the `./run-client.sh` script.
 
 ```bash
-./run-multiclient.sh -n 4 -f anvil # or ./run-multiclient.sh --num-clients 4 --features anvil
+./run-client.sh --num-clients 4 --features anvil
 ```
 
 #### Complete Workflow Example
@@ -268,11 +272,11 @@ cd <path_to_bitvmx_workspace_repo>/rust-bitvmx-client
 anvil
 # Deploy contracts in another terminal
 
-# 3. Set up multiclient
-./multiclient-setup.sh --fund-wallets --committee-setup 4
+# 3. Run the clients
+./run-client.sh --num-clients 4 --features anvil
 
-# 4. Run the clients
-./run-multiclient.sh --num-clients 4 --features anvil
+# 4. Set up multiclient
+./multiclient-setup.sh --fund-wallets --committee-setup 4
 ```
 
 #### Troubleshooting
