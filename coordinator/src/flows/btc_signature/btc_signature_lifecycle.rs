@@ -797,18 +797,11 @@ mod tests {
         complete_signature_step(&mut flow, signature_start_block, &blockchain_view)
             .expect("failed to complete Signatures step");
 
-        // a second request to send_signature_to_contracts for the same flow ID should fail
+        // a second request to send_signature_to_contracts for the same flow ID should succeed (idempotent)
         let result = flow.send_signature_to_contracts();
         assert!(
-            result.is_err(),
-            "should fail when calling send_signature_to_contracts twice"
-        );
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("already in Signatures step"),
-            "error should mention already in Signatures step"
+            result.is_ok(),
+            "should succeed when calling send_signature_to_contracts twice (idempotent)"
         );
     }
 
