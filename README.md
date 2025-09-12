@@ -210,7 +210,7 @@ This funds the wallets created in the previous step to be able to send transacti
 This creates a Committee so of 4 members (by default) so you can test the committee collaboration flows.
 
 ```bash
-./multiclient-setup.sh --committee-setup 4  # for 4 clients
+./multiclient-setup.sh --committee-setup 4  # for 4 clients (hint: the clients need to be running for the `--committee-setup` flag to execute)
 ```
 
 Note that each RSK event in the flow (3 atm) needs to reach the required confirmations. If you started anvil with auto
