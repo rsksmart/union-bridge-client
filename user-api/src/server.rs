@@ -55,6 +55,7 @@ impl Server {
             .route("/health", get(Self::health_check))
             .route("/apply-stream", post(Self::apply_stream))
             .route("/request-pegin", post(Self::request_pegin))
+            .route("/pegin-address", post(Self::pegin_address))
             .layer((
                 TimeoutLayer::new(Duration::from_secs(10)),
                 Extension(broker_server.clone()),
@@ -157,6 +158,26 @@ impl Server {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(json!({ "error": format!("Task join error: {}", e) })),
+                )
+            }
+        }
+    }
+
+    async fn pegin_address(
+        Extension(contracts): Extension<
+            Arc<dyn crate::sync_contracts_gateway::SyncContractsGatewayApi>,
+        >,
+        Json(payload): Json<PeginAddressInput>,
+    ) -> impl IntoResponse {
+        info!("Received pegin-address request: {:?}", payload);
+
+        match contracts.get_temporary_pegin_address(payload) {
+            Ok(data) => (StatusCode::OK, Json(json!(data))),
+            Err(e) => {
+                error!("Error getting temporary pegin address: {e}");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": e.to_string() })),
                 )
             }
         }

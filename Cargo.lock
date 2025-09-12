@@ -6126,9 +6126,7 @@ dependencies = [
  "alloy-sol-types",
  "alloy-transport",
  "anyhow",
- "axum",
  "bitcoin",
- "clap",
  "common",
  "env_logger",
  "hex",
@@ -6143,7 +6141,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.12",
  "tokio",
- "tower-http",
  "union-bridge-contracts",
 ]
 
