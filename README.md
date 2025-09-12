@@ -184,6 +184,9 @@ to:
 
 Then you can use `multiclient-setup.sh` script for the rest of the setup.
 
+**N.B**
+Please note that the `committeeMemberCount` value should always match the number of clients you intend to spin up
+
 **1. Create Wallets (first time only)**
 
 This creates 10 wallets (by default), one for each of the potential Union Client instances.
