@@ -139,17 +139,23 @@ Before running the Union Bridge Client, you need to install and set up the follo
 
 ### Environment Variables Setup
 
-The project uses environment variables for both private properties and configuration overrides (
-see [Configuration Files](#configuration-files) section).
+The project uses environment variables for both private properties and configuration overrides (see
+[Configuration Files](#configuration-files) section).
 
 #### Private Properties
+
+The most important environment variables that need to be exported when using the scripts mentioned in this README (and
+the Union Client) are:
+
+- `KEY_STORE_PASSWORD`: password that will be used to create the Rootstock wallets (automatic) and to
+  unlock the corresponding keystore files when running the client (see [Multi Client Setup](#Multi-Client-Setup) below)
+- `BASE_STORAGE_PATH`: base path where the client will store its data (databases, keystore files, etc.). Pick a path
+  that is writable and accessible by the user running the client. Then create the directory `.union_bridge` under it.
 
 We recommend using `direnv` to manage private environment variables. Then you can set them up by:
 
 1. copying `[.envrc.sample](.envrc.sample)`) in the project root as `.envrc`
-2. modifying what you need. The most important ones are:
-    - `KEY_STORE_PASSWORD`: password to unlock the Rootstock wallets
-    - `BASE_STORAGE_PATH`: base path where the client will store its data (databases, keystore files, etc.)
+2. modifying what you need. You can initially focus on the section _For local client running_.
 3. and running `direnv allow` (every time you do a change)
 
 This will automatically load the environment variables defined in the `.envrc` on the services that require them.
@@ -158,7 +164,8 @@ This will automatically load the environment variables defined in the `.envrc` o
 
 The Multi Client setup is mostly automated using the `multiclient-setup.sh` script. The only required manual step is
 tweaking the committee size and requirements according to the committee you want to run. For example, to use a committee
-of 4 members, 2 Watchtowers (aka Verifiers) and 2 Operators (aka Provers) like mentioned in **Combined Setup**, you will need to edit
+of 4 members, 2 Watchtowers (aka Verifiers) and 2 Operators (aka Provers) like mentioned in **Combined Setup**, you will
+need to edit
 `bitvmx-union-bridge-contracts/src/CommitteeRegistry.sol` and change:
 
    ```
@@ -203,6 +210,9 @@ This creates a Committee so of 4 members (by default) so you can test the commit
 ./multiclient-setup.sh --committee-setup 4  # for 4 clients
 ```
 
+Note that each RSK event in the flow (3 atm) needs to reach the required confirmations. If you started anvil with auto
+mining, it will happen at some point; otherwise you can manually mine blocks with `cast rpc anvil_mine N`.
+
 **Combined Setup**
 
 This combines the previous steps to have a setup ready to initiate a Pegin.
@@ -219,7 +229,7 @@ Once you have gone through the initial setup steps, the order to start up the pr
 
 1. Have docker running on your local machine.
 2. Start up the rust-bitvmx-client-workspace
-3. Start anvil
+3. Start anvil, opt. with auto mining with `anvil --block-time N` (where `N` is the number of seconds between blocks)
 4. Deploy the `bitvmx-union-bridge-contracts`. See corresponding `README.md`. (Hint: for local regtest deployment use
    `bash ./shell/script/deploy/deploy-local.sh`)
 5. Make available `BASE_STORAGE_PATH` and `KEY_STORE_PASSWORD` environment variables (you can set them in your
@@ -227,7 +237,7 @@ Once you have gone through the initial setup steps, the order to start up the pr
 6. Run the Union Client in the mode you want. Run `./run-client.sh --help` to better understand the available
    options.
 
-#### Running Single Client
+#### Running a Single Client
 
 You can run a single instance of the Union Client using:
 
@@ -239,7 +249,7 @@ You can run a single instance of the Union Client using:
 ./run-client.sh --id 2 --features anvil
 ```
 
-#### Running Multi Client (Committee Collaboration)
+#### Running Multiple Clients (Committee Collaboration)
 
 Some sub-flows in the main flows require committee collaboration. To achieve this locally, you can run several instances
 of Union Client and BitVMX Client using the automated multiclient setup.
@@ -369,7 +379,7 @@ This will output:
 
 - the local path to your key: you will have to set it in the corresponding `transaction-dispatcher.yaml` config file
 - the public key
-- the address: this will be automatically used by the multiclient setup scripts
+- the address (this will be automatically used by the `multiclient-setup.sh` script)
 
 Keep track of the password you used, as you will need to set it up in `KEY_STORE_PASSWORD` env var. Check the
 [Environment Variables Setup](#environment-variables-setup) section for more information on how to set it up.
