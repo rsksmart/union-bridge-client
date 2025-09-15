@@ -16,7 +16,7 @@ services:
     volumes:
       - ${CONFIG_PATH:-../config/docker}:/app/config:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
-      - ./.db/${COMPOSE_PROJECT_NAME}/block-indexer:/app/db/blocks
+      - db-blocks:/app/db/blocks
     environment:
       - UB__provider__rootstock__url=${ROOTSTOCK_URL:-ws://host.docker.internal:8545}
     restart: no
@@ -43,7 +43,7 @@ services:
     volumes:
       - ${CONFIG_PATH:-../config/docker}:/app/config:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
-      - ./.db/${COMPOSE_PROJECT_NAME}/log-indexer:/app/db/logs
+      - db-logs:/app/db/logs
     environment:
       - UB__provider__rootstock__url=${ROOTSTOCK_URL:-ws://host.docker.internal:8545}
     restart: no
@@ -122,3 +122,5 @@ services:
 
 volumes:
   keystore:
+  db-blocks:
+  db-logs:
