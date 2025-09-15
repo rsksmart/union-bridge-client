@@ -1139,6 +1139,12 @@ where
         for (_, state) in self.tracker.iter_mut() {
             if let Some(btc_flow) = state.btc_signatures_flow.as_mut() {
                 btc_flow.delegate_block(block)?;
+                if btc_flow.is_done() {
+                    //#Step 8a: Send DispatchTransaction to BitVMX
+                    Self::send_dispatch_transaction_name(&self.bitvmx_broker, state.flow_id)?;
+                    //#Step 8b: Send GetTransactionInfoByName to BitVMX
+                    Self::send_get_transaction_info_by_name(&self.bitvmx_broker, state.flow_id)?;
+                }
             }
         }
         Ok(())
@@ -1275,12 +1281,6 @@ where
                     if let Some(btc_sig_flow) = &mut state.btc_signatures_flow {
                         // Delegate the event to the BTC signature flow
                         btc_sig_flow.delegate_rsk_event(state.flow_id, event)?;
-                        if btc_sig_flow.is_done() {
-                            //#Step 8a: Send DispatchTransaction to BitVMX
-                            Self::send_dispatch_transaction_name(&self.bitvmx_broker, state.flow_id)?;
-                            //#Step 8b: Send GetTransactionInfoByName to BitVMX
-                            Self::send_get_transaction_info_by_name(&self.bitvmx_broker, state.flow_id)?;
-                        }
                     }
                 }
                 Ok(())

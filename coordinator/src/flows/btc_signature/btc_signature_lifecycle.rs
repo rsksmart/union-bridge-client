@@ -3,7 +3,7 @@ use crate::config::REQUIRED_CONFIRMATIONS;
 use anyhow::{Context, Result, anyhow, bail};
 use common::runtime_sync::RuntimeSync;
 use common::types::{BlockNumber, Hash256};
-use log::info;
+use log::{debug, info};
 use std::rc::Rc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::{AddMemberNonceInput, AddMemberSignatureInput};
@@ -190,8 +190,7 @@ where
             nonce: data.nonce.clone(),
         };
 
-        let send_nonce_result = self
-            .rt_sync
+        self.rt_sync
             .run(self.contracts.add_member_nonce(nonce.clone()))
             .with_context(|| {
                 format!(
@@ -230,6 +229,11 @@ where
     }
 
     fn send_signature_to_contracts(&mut self) -> Result<()> {
+        if self.state.signature_step.is_some() {
+            debug!("flow {} already in Signatures step", self.state.flow_id);
+            return Ok(());
+        }
+
         info!(
             "Sending signatures to contract for flow {}",
             self.state.flow_id
@@ -241,10 +245,6 @@ where
                 self.state.flow_id
             );
         };
-
-        if self.state.signature_step.is_some() {
-            bail!("flow {} already in Signatures step", self.state.flow_id);
-        }
 
         let member_signature = self
             .state
@@ -259,8 +259,7 @@ where
             signature: member_signature.signature,
         };
 
-        let send_sig_result = self
-            .rt_sync
+        self.rt_sync
             .run(self.contracts.add_member_signature(signature_input.clone()))
             .with_context(|| {
                 format!(
@@ -798,18 +797,11 @@ mod tests {
         complete_signature_step(&mut flow, signature_start_block, &blockchain_view)
             .expect("failed to complete Signatures step");
 
-        // a second request to send_signature_to_contracts for the same flow ID should fail
+        // a second request to send_signature_to_contracts for the same flow ID should succeed (idempotent)
         let result = flow.send_signature_to_contracts();
         assert!(
-            result.is_err(),
-            "should fail when calling send_signature_to_contracts twice"
-        );
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("already in Signatures step"),
-            "error should mention already in Signatures step"
+            result.is_ok(),
+            "should succeed when calling send_signature_to_contracts twice (idempotent)"
         );
     }
 
