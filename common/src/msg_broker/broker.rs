@@ -48,6 +48,9 @@ impl<T> UnionBrokerClientApi for T where T: BrokerClientApi<ToServer, FromServer
 impl BrokerServer {
     pub fn new(port: u16) -> Self {
         // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - change to disk storage (broker feature)
+
+        debug!("Starting BrokerServer on port {port}");
+
         let broker_storage = Arc::new(Mutex::new(MemStorage::new()));
         let broker_config = BrokerConfig::new(port, Some(IpAddr::from(Ipv4Addr::new(0, 0, 0, 0))));
         let broker = BrokerSync::new(&broker_config, broker_storage.clone());
@@ -150,6 +153,8 @@ pub struct BitVmxBrokerServer {
 
 impl BitVmxBrokerServer {
     pub fn new(port: u16) -> Self {
+        debug!("Starting BitVmxBrokerServer on port {port}");
+
         let broker_storage = Arc::new(Mutex::new(MemStorage::new()));
         let broker_config = BrokerConfig::new(port, Some(IpAddr::from(Ipv4Addr::new(0, 0, 0, 0))));
         let broker = BrokerSync::new(&broker_config, broker_storage.clone());

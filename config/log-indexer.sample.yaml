@@ -12,7 +12,7 @@ provider:
   rootstock:
     url: "wss://public-node.testnet.rsk.co/websocket"
 
-notifier:
+log_notifier:
   broker_port: 12345
 
 contracts:

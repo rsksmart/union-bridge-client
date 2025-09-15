@@ -1,17 +1,27 @@
-# mandatory for actors-mocking crate
+############################################################
+# Mocking crate
+############################################################
 export UNION_CONTRACTS_PATH="path/to/your/contracts"
 export UNION_CONTRACTS_DEPLOY_SCRIPT="shell/script/deploy/deploy-local.sh"
 export UNION_CONTRACTS_SETUP_SCRIPT="shell/script/integration-test/packet-creation-flow.sh"
 
-# optional (with fallback)
-export CHECK_FORK_REQUIRED_NUM_BLOCKS=25
-
-# for transaction dispatcher
-export KEY_STORE_PASSWORD="<super-secret-password>"
-
-# CI/CD specific
+############################################################
+# Local Github Actions (Act)
+############################################################
 export FAIRGATE_GITHUB_TOKEN="<ask_your_colleagues>"
 export UNION_CONTRACTS_GITHUB_TOKEN="<ask_your_colleagues>"
 
-# PAT to interact with GitHub Container Registry
+############################################################
+# For GitHub Container Registry
+############################################################
 export GITHUB_REGISTRY_TOKEN="<your_token_here>"
+
+############################################################
+# For local client running
+############################################################
+# Path where keystore, databases and other persistent data will be stored
+export BASE_STORAGE_PATH="<path/to/your/storage>"
+# for transaction dispatcher
+export KEY_STORE_PASSWORD="<super-secret-password>"
+# optional (with fallback)
+export CHECK_FORK_REQUIRED_NUM_BLOCKS=25

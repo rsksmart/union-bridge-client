@@ -1,2 +1,2 @@
-notifier:
+block_notifier:
   broker_port: 12345

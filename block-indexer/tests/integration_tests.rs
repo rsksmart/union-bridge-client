@@ -1,3 +1,5 @@
+#![cfg(not(feature = "fresh_node"))]
+
 use anyhow::Result;
 use block_indexer::indexer::BlockIndexer;
 use block_indexer::store::{BlockStore, CachedBlockStore};

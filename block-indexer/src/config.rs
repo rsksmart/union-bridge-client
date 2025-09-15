@@ -8,7 +8,7 @@ const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub struct Config {
     pub indexer: IndexerConfig,
     pub provider: ProviderConfig,
-    pub notifier: NotifierConfig,
+    pub block_notifier: NotifierConfig,
 }
 
 impl Config {
@@ -69,7 +69,7 @@ appenders:
     kind: rolling_file
     path: "{TO_REPLACE}.log"
     encoder:
-      pattern: "{d(%Y-%m-%d %H:%M:%S%.3f)} - {l} - {m}{n}"
+      pattern: "{d(%Y-%m-%d %H:%M:%S%.3f)} - {l:>5} - {m}{n}"
     policy:
       trigger:
         kind: size

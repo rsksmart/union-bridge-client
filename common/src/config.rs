@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use config;
 use config::{Environment, Source};
 use log::{debug, trace};
+use log4rs::config::RawConfig;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use std::{fs, path::Path};
@@ -110,7 +111,7 @@ impl CommonConfig {
             .and_then(|p| p.to_str())
             .expect("Failed to get default_config_path")
             .to_string();
-        format!("{}/config/local", project_root)
+        format!("{}/config/multi-client-template", project_root)
     }
 
     pub fn load_abi_from_path(abi_path: &String) -> Option<JsonAbi> {
@@ -133,13 +134,15 @@ impl CommonConfig {
 
     pub fn init_logger(logger_file_opt: Option<&String>, crate_name: &str) -> Result<()> {
         // provided => use it as is
-        if logger_file_opt.is_some() {
-            let logger_file = logger_file_opt.unwrap();
-
+        if let Some(logger_file) = logger_file_opt {
             println!("Logging to destination defined by {logger_file}");
 
-            log4rs::init_file(logger_file, Default::default())
-                .context("Failed to load log4rs config")?;
+            let contents = fs::read_to_string(logger_file)?;
+            let expanded = shellexpand::env(&contents)?.into_owned();
+            let raw = serde_yaml::from_str::<RawConfig>(&expanded)?;
+
+            log4rs::init_raw_config(raw).context("Failed to load log4rs config")?;
+
             return Ok(());
         }
 

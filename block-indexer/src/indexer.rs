@@ -654,6 +654,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fresh_node"))]
     #[should_panic(expected = "Precondition failed: initial block")]
     fn panics_when_initial_block_hash_not_found() {
         // Given a random hash that the provider won't find...

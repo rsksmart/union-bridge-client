@@ -12,5 +12,5 @@ provider:
   rootstock:
     url: "wss://public-node.testnet.rsk.co/websocket"
 
-notifier:
+block_notifier:
   broker_port: 56789
