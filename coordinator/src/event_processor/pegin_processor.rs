@@ -1,6 +1,6 @@
 use crate::flows::common::{COMM_KEY_INDEX, GlobalContext, build_communication_data};
 use crate::types::Role::Prover;
-use crate::types::{RegisterSignaturesBitVmxData, TickScheduler, TxIdBE, TxIdLE};
+use crate::types::{RegisterSignaturesBitVmxData, TickScheduler};
 use crate::{
     blockchain_tracker::{BlockConfirmations, BlockchainObserver, BlockchainView},
     config::REQUIRED_CONFIRMATIONS,
@@ -21,7 +21,7 @@ use bitcoin::{
 use common::msg_broker::bitvmx_types::{
     ACCEPT_PEGIN_TX, P2PAddress, PeerId, PeginAcceptedMessage, TransactionStatus,
 };
-use common::types::CommitteeId;
+use common::types::{CommitteeId, TxIdParser};
 use common::{
     msg_broker::{
         bitvmx_types::{
@@ -646,7 +646,7 @@ where
 
         let reimbursement_pubkey = Self::build_reimbursement_pubkey(pegin_event)?;
 
-        let txid = TxIdLE::from_contracts(pegin_event.requestPeginTxHash).txid();
+        let txid = TxIdParser::fb_32_to_txid(pegin_event.requestPeginTxHash);
 
         let committee_uuid = Self::build_committee_id(committee_id)?;
 
@@ -993,7 +993,7 @@ where
             );
         };
 
-        let accept_pegin_tx_hash = TxIdBE::from_bitvmx(pegin_accepted.accept_pegin_txid).txid();
+        let accept_pegin_tx_hash = pegin_accepted.accept_pegin_txid;
 
         let take_tx_hash = pegin_accepted.operator_take_sighash.clone();
 
@@ -1522,7 +1522,7 @@ mod tests {
     fn process_new_bitvmx_pegin_accepted_message_saves_data_and_calls_contract() {
         // Set up the mocked contracts gateway
         let mut contracts = MockRskContractsGatewayApi::new();
-        let expected_txid = Txid::from_byte_array([0x11; 32]);
+        let expected_txid = TxIdParser::fb_32_to_txid([0x11; 32].into());
         contracts
             .expect_add_operator_take_tx_hash()
             .times(1)
@@ -1570,7 +1570,7 @@ mod tests {
             .unwrap();
 
         // Create a PeginAcceptedMessage payload
-        let dummy_txid = Txid::from_byte_array([0x11; 32]);
+        let dummy_txid = TxIdParser::fb_32_to_txid([0x11; 32].into());
         let pegin_accepted_payload = json!({
             "committee_id": flow_id.to_string(),
             "accept_pegin_txid": dummy_txid.to_string(),
@@ -1628,7 +1628,7 @@ mod tests {
 
         // Create a PegInAcceptedMessage payload with a random flow_id (not tracked)
         let non_existent_flow_id = Uuid::new_v4();
-        let dummy_txid = Txid::from_byte_array([0x11; 32]);
+        let dummy_txid = TxIdParser::fb_32_to_txid([0x11; 32].into());
         let pegin_accepted_payload = json!({
             "committee_id": non_existent_flow_id.to_string(),
             "accept_pegin_txid": dummy_txid.to_string(),
@@ -2337,11 +2337,12 @@ mod tests {
             lock_time: LockTime::from_consensus(0),
             input: vec![TxIn {
                 previous_output: OutPoint {
-                    txid: Txid::from_byte_array(
+                    txid: TxIdParser::fb_32_to_txid(
                         <[u8; 32]>::from_hex(
                             "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                         )
-                        .unwrap(),
+                        .unwrap()
+                        .into(),
                     ),
                     vout: 0,
                 },
@@ -2471,48 +2472,5 @@ mod tests {
                 .expect("Valid committee id"),
             crate::types::Role::Verifier,
         );
-    }
-
-    fn dummy_pegin_request(
-        pegin_requested: PeginRequested,
-        committee: Committee,
-    ) -> PeginRequestMessage {
-        PeginRequestMessage {
-            txid: Txid::from_slice(pegin_requested.requestPeginTxHash.as_slice()).unwrap(),
-            amount: pegin_requested.prevoutData.value,
-            accept_pegin_sighash: pegin_requested.acceptPeginSignatureMessage.to_vec(),
-            take_aggregated_key: {
-                let xonly_key =
-                    XOnlyPublicKey::from_slice(committee.aggregatedKey.as_slice()).unwrap();
-                let secp_key = xonly_key.public_key(Even);
-                PublicKey::new(secp_key)
-            },
-            operator_indexes: vec![0], // Assuming first member is an operator for test
-            slot_index: 0,
-            committee_id: {
-                let committee_bytes = pegin_requested.committeeId.to_be_bytes_vec();
-                let uuid_bytes: [u8; 16] = committee_bytes
-                    .get(..16)
-                    .expect("Committee ID should have at least 16 bytes for tests")
-                    .try_into()
-                    .expect("Slice of 16 bytes should convert to [u8; 16]");
-                Uuid::from_bytes(uuid_bytes)
-            },
-            rootstock_address: pegin_requested
-                .requestPeginInfo
-                .rskDestinationAddress
-                .to_checksum(None),
-            reimbursement_pubkey: {
-                let xonly_key = XOnlyPublicKey::from_slice(
-                    pegin_requested
-                        .requestPeginInfo
-                        .btcReimbursementPubKey
-                        .as_slice(),
-                )
-                .unwrap();
-                let secp_key = xonly_key.public_key(Even);
-                PublicKey::new(secp_key)
-            },
-        }
     }
 }

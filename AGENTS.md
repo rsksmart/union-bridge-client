@@ -41,6 +41,12 @@
 - Check for integer overflow in arithmetic operations (use checked arithmetic where needed)
 - Audit dependencies regularly with `cargo audit`
 
+## Bitcoin-Specific Considerations
+- **Critical**: Avoid `TxId::from_slice`, `TxId::from_byte_array`, or any other method that relies on `hashes::hash_newtype!` - these reverse the byte order
+- Any calls to those methods should be encapsulated in `common::types::TxIdParser` struct so it handles the reversal properly
+- If importing `use bitcoin::hashes::Hash;`, be extra cautious with its usage due to potential byte order reversal issues
+- When working with transaction IDs, be extremely careful about byte ordering to prevent silent data corruption
+
 ## Performance Considerations
 - Identify unnecessary heap allocations and excessive cloning in hot paths
 - Check for long-held mutex locks that could cause contention

@@ -1,8 +1,8 @@
 use crate::types::RskPegManagerEvents::UnknownEvent;
 use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
-use alloy_primitives::{B256, FixedBytes, LogData};
+use alloy_primitives::{B256, LogData};
 use alloy_sol_types::SolEvent;
-use bitcoin::{PublicKey, Txid, hashes::Hash as BitcoinHash};
+use bitcoin::PublicKey;
 use common::msg_broker::bitvmx_types::{
     PartialUtxo, ParticipantRole, PegOutAccepted, PeginAcceptedMessage,
 };
@@ -593,36 +593,6 @@ pub struct MemberOfCommittee {
     pub committee_idx: usize,
 }
 
-// Big-endian representation of Txid, as stored in contracts
-pub struct TxIdBE(Txid);
-impl TxIdBE {
-    pub fn txid(&self) -> Txid {
-        self.0
-    }
-
-    pub fn from_bitvmx(txid: Txid) -> Self {
-        let mut bytes = txid.to_byte_array();
-        bytes.reverse();
-        let txid = Txid::from_byte_array(bytes);
-        TxIdBE(txid)
-    }
-}
-
-// Little-endian representation of Txid, as used in BitVMX
-pub struct TxIdLE(Txid);
-impl TxIdLE {
-    pub fn txid(&self) -> Txid {
-        self.0
-    }
-
-    pub fn from_contracts(be_bytes: FixedBytes<32>) -> Self {
-        let mut bytes: [u8; 32] = be_bytes.into();
-        bytes.reverse();
-        let txid = Txid::from_byte_array(bytes);
-        TxIdLE(txid)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1166,30 +1136,5 @@ mod tests {
             }
             _ => panic!("expected memberinfodeposited event"),
         }
-    }
-
-    #[test]
-    fn test_txid_be() {
-        use bitcoin::Txid;
-        // Create a Txid from a known byte array
-        let original_bytes: [u8; 32] = [1u8; 32];
-        let txid = Txid::from_byte_array(original_bytes);
-        // TxIdBE: from_bitvmx should reverse bytes
-        let txid_be = TxIdBE::from_bitvmx(txid);
-        let mut reversed_bytes = original_bytes;
-        reversed_bytes.reverse();
-        assert_eq!(txid_be.txid().to_byte_array(), reversed_bytes);
-    }
-
-    #[test]
-    fn test_txid_le() {
-        use alloy_primitives::FixedBytes;
-        // Create a BE byte array
-        let original_bytes: [u8; 32] = [2u8; 32];
-        let mut reversed_bytes = original_bytes;
-        reversed_bytes.reverse();
-        let be_bytes = FixedBytes::<32>::from(reversed_bytes);
-        let txid_le = TxIdLE::from_contracts(be_bytes);
-        assert_eq!(txid_le.txid().to_byte_array(), original_bytes);
     }
 }
