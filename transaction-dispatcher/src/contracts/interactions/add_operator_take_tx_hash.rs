@@ -2,7 +2,7 @@ use crate::contracts::signature_manager::SignatureManagerContractApi;
 use crate::contracts::types::FixedBytes32;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{AddOperatorTakeTxHashInput, AddOperatorTakeTxHashOutput};
-use bitcoin::hashes::Hash;
+use common::types::TxIdParser;
 use log::{error, info};
 
 #[derive(Clone)]
@@ -25,8 +25,7 @@ impl<C: SignatureManagerContractApi> AddOperatorTakeTxHashInvoke<C> {
     ) -> Result<AddOperatorTakeTxHashOutput, DomainErrors> {
         info!("Init AddOperatorTakeTxHash for: {:?}", input);
 
-        let accept_pegin_tx_hash =
-            FixedBytes32::from_slice(input.accept_pegin_tx_hash.as_raw_hash().as_byte_array());
+        let accept_pegin_tx_hash = TxIdParser::txid_to_fb_32(input.accept_pegin_tx_hash);
         let take_tx_hash = FixedBytes32::from_slice(input.take_tx_hash.as_slice());
 
         let receipt = self

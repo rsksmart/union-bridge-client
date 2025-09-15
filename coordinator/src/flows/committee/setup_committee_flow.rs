@@ -6,7 +6,6 @@ use crate::types::{
 };
 use alloy_primitives::{Address, FixedBytes};
 use anyhow::{Context, Result, bail, ensure};
-use bitcoin::hashes::Hash;
 use bitcoin::key::Parity::Even;
 use bitcoin::{Amount, CompressedPublicKey, Network, PublicKey, ScriptBuf, Txid, XOnlyPublicKey};
 use bitvmx_bitcoin_rpc;
@@ -36,7 +35,7 @@ use crate::flows::common::{
     COMM_KEY_INDEX, DISPUTE_KEY_INDEX, GlobalContext, TAKE_KEY_INDEX, build_communication_data,
 };
 use common::types;
-use common::types::{BlockNumber, CommitteeId, RskBlockAndUncles, StreamId};
+use common::types::{BlockNumber, CommitteeId, RskBlockAndUncles, StreamId, TxIdParser};
 
 use transaction_dispatcher::types::{
     ApplyToStreamInput, CommitteeECDSA, DepositAggregatedKeyInput, DepositCommunicationDataInput,
@@ -595,8 +594,7 @@ where
         member_dispute_key: &PublicKey,
         utxo: &UTXO,
     ) -> Result<PartialUtxo> {
-        let tx_id = Txid::from_slice(utxo.txid.as_slice())
-            .context("Could not get Bitcoin TxId from contracts utxo")?;
+        let tx_id = TxIdParser::fb_32_to_txid(utxo.txid);
 
         let script_pubkey = ScriptBuf::new_p2wpkh(
             &member_dispute_key
@@ -972,7 +970,7 @@ where
             .context("Generating funding UTXO")?;
 
         let utxo = UTXO {
-            txid: FixedBytes::from(tx_id.to_byte_array()),
+            txid: TxIdParser::txid_to_fb_32(tx_id),
             outputIndex: output,
             amount: utxo_val,
         };

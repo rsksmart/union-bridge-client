@@ -1,7 +1,8 @@
 use alloy_json_abi::JsonAbi;
 use alloy_primitives::FixedBytes;
 use anyhow::{Result, bail};
-use bitcoin::{blockdata::block::Header, consensus::encode::deserialize as btc_deserialize};
+use bitcoin::hashes::Hash;
+use bitcoin::{Txid, blockdata::block::Header, consensus::encode::deserialize as btc_deserialize};
 use hex::FromHexError;
 use log::error;
 use musig2::PubNonce;
@@ -1084,5 +1085,22 @@ impl RskBlockAndUncles {
 
     pub fn uncles(&self) -> &[RskBlock] {
         &self.uncles
+    }
+}
+
+/// bitcoin / bitcoin_hashes crates reverse the byte order of Txid when calling from_byte_array, from_slice, etc.
+/// this utility struct provides conversion methods to handle that, so no other occurrence of those methods should be used outside this struct
+pub struct TxIdParser;
+impl TxIdParser {
+    pub fn fb_32_to_txid(tx_id: FixedBytes<32>) -> Txid {
+        let mut bytes: [u8; 32] = tx_id.into();
+        bytes.reverse();
+        Txid::from_byte_array(bytes)
+    }
+
+    pub fn txid_to_fb_32(txid: Txid) -> FixedBytes<32> {
+        let mut bytes = txid.to_byte_array();
+        bytes.reverse();
+        FixedBytes::<32>::from_slice(&bytes)
     }
 }
