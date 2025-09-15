@@ -82,27 +82,24 @@ impl<C: CommitteeRegistryContractApi, BP: BalanceProvider> ApplyToStreamInvoke<C
             )
             .await?;
 
-        let result = match receipt.status() {
+        match receipt.status() {
             true => {
                 info!(
                     "ApplyToStream successful at tx {}",
                     receipt.transaction_hash
                 );
-                ApplyToStreamOutput {
+                Ok(ApplyToStreamOutput {
                     transaction_hash: receipt.transaction_hash.to_string(),
-                    success: true,
-                }
+                })
             }
             false => {
                 error!("ApplyToStream failed at tx {}", receipt.transaction_hash);
-                ApplyToStreamOutput {
-                    transaction_hash: receipt.transaction_hash.to_string(),
-                    success: false,
-                }
+                Err(DomainErrors::TransactionFailed(format!(
+                    "ApplyToStream transaction failed with receipt status false at tx {}",
+                    receipt.transaction_hash
+                )))
             }
-        };
-
-        Ok(result)
+        }
     }
 }
 
@@ -201,7 +198,6 @@ mod tests {
             output.transaction_hash,
             "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
         );
-        assert!(output.success);
     }
 
     #[tokio::test]

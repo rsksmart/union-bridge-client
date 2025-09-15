@@ -55,12 +55,6 @@ pub struct BtcTxSPVProofInput {
     pub merkle_branch_hashes: Vec<String>,
 }
 
-#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
-pub struct RequestPeginOutput {
-    pub transaction_hash: String,
-    pub success: bool,
-}
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RequestPegoutInput {
     pub amount_in_wei: u64,
@@ -88,19 +82,23 @@ pub struct AddOperatorTakeTxHashInput {
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct TxSentOutput {
     pub transaction_hash: String,
-    pub success: bool,
 }
 
 pub type AddMemberNonceOutput = TxSentOutput;
 pub type AddMemberSignatureOutput = TxSentOutput;
 pub type AddOperatorTakeTxHashOutput = TxSentOutput;
+pub type RequestPeginOutput = TxSentOutput;
+pub type AcceptPeginOutput = TxSentOutput;
+pub type RegisterPegoutOutput = TxSentOutput;
+pub type RequestPegoutOutput = TxSentOutput;
+pub type ApplyToStreamOutput = TxSentOutput;
+pub type DepositCommunicationDataOutput = TxSentOutput;
+pub type DepositAggregatedKeyOutput = TxSentOutput;
+
 pub type RequestPeginInput = BtcTxSPVProofInput;
 pub type RegisterPegInInput = BtcTxSPVProofInput;
 pub type AcceptPeginInput = BtcTxSPVProofInput;
-pub type AcceptPeginOutput = RequestPeginOutput;
 pub type RegisterPegoutInput = BtcTxSPVProofInput;
-pub type RegisterPegoutOutput = TxSentOutput;
-pub type RequestPegoutOutput = TxSentOutput;
 
 impl From<TxIn> for BitcoinTransactionIn {
     fn from(input: TxIn) -> Self {
@@ -179,12 +177,6 @@ pub struct CommitteeECDSA {
 
 pub type CommitteeRSA = String;
 
-#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
-pub struct ApplyToStreamOutput {
-    pub transaction_hash: String,
-    pub success: bool,
-}
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GetCommitteeInput {
     pub committee_id: CommitteeId,
@@ -213,22 +205,10 @@ pub struct DepositCommunicationDataInput {
     pub communication_data: Vec<CommunicationData>,
 }
 
-#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
-pub struct DepositCommunicationDataOutput {
-    pub transaction_hash: String,
-    pub success: bool,
-}
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DepositAggregatedKeyInput {
     pub committee_id: CommitteeId,
     pub aggregated_key: FixedBytes<32>,
-}
-
-#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
-pub struct DepositAggregatedKeyOutput {
-    pub transaction_hash: String,
-    pub success: bool,
 }
 
 /// Flatten bytes → `[FixedBytes<32>; N]` (zero-pad if shorter; error if longer).

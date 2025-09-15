@@ -34,29 +34,26 @@ impl<C: SignatureManagerContractApi> AddOperatorTakeTxHashInvoke<C> {
             .add_operator_take_tx_hash(accept_pegin_tx_hash, take_tx_hash, self.gas_bumps)
             .await?;
 
-        let result = match receipt.status() {
+        match receipt.status() {
             true => {
                 info!(
                     "AddOperatorTakeTxHash successful at tx {}",
                     receipt.transaction_hash
                 );
-                AddOperatorTakeTxHashOutput {
+                Ok(AddOperatorTakeTxHashOutput {
                     transaction_hash: receipt.transaction_hash.to_string(),
-                    success: true,
-                }
+                })
             }
             false => {
                 error!(
-                    "AddMemberSignature failed at tx {}",
+                    "AddOperatorTakeTxHash failed at tx {}",
                     receipt.transaction_hash
                 );
-                AddOperatorTakeTxHashOutput {
-                    transaction_hash: receipt.transaction_hash.to_string(),
-                    success: false,
-                }
+                Err(DomainErrors::TransactionFailed(format!(
+                    "AddOperatorTakeTxHash transaction failed with receipt status false at tx {}",
+                    receipt.transaction_hash
+                )))
             }
-        };
-
-        Ok(result)
+        }
     }
 }

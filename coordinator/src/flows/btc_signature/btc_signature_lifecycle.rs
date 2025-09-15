@@ -200,14 +200,6 @@ where
                 )
             })?;
 
-        if !send_nonce_result.success {
-            bail!(
-                "Tx {} rejected on send nonce {nonce:?} for flow {}",
-                send_nonce_result.transaction_hash,
-                self.state.flow_id
-            );
-        }
-
         // move to the Nonces step
         let confirmable = ConfirmableEvent::new(
             self.state.flow_id.to_string(),
@@ -276,14 +268,6 @@ where
                     self.state.flow_id
                 )
             })?;
-
-        if !send_sig_result.success {
-            bail!(
-                "Tx {} rejected on send signature {signature_input:?} for flow {}",
-                send_sig_result.transaction_hash,
-                self.state.flow_id
-            );
-        }
 
         // move to the Signatures step
         let confirmable = ConfirmableEvent::new(

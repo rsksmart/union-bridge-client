@@ -568,4 +568,7 @@ pub enum DomainErrors {
 
     #[error("Internal non-contract error: {0}")]
     InternalServerError(String),
+
+    #[error("Transaction failed: {0}")]
+    TransactionFailed(String),
 }

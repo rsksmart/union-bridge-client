@@ -1458,7 +1458,6 @@ mod tests {
         let expected_receipt = RequestPeginOutput {
             transaction_hash: "0x4e3f8a2d39c1b872b77e8a5c9a24be8f1d489ea7cf2d38375f18b5b54e7df662"
                 .to_string(),
-            success: true,
         };
         contracts
             .expect_request_pegin()
@@ -1533,7 +1532,6 @@ mod tests {
             .returning(|_| {
                 Ok(TxSentOutput {
                     transaction_hash: "0xabcdef".to_string(),
-                    success: true,
                 })
             });
 

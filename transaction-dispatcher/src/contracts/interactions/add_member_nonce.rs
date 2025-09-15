@@ -32,26 +32,23 @@ impl<C: SignatureManagerContractApi> AddMemberNonceInvoke<C> {
             .add_member_nonce(hash_to_sign, nonce, self.gas_bumps)
             .await?;
 
-        let result = match receipt.status() {
+        match receipt.status() {
             true => {
                 info!(
                     "AddMemberNonce successful at tx {}",
                     receipt.transaction_hash
                 );
-                AddMemberNonceOutput {
+                Ok(AddMemberNonceOutput {
                     transaction_hash: receipt.transaction_hash.to_string(),
-                    success: true,
-                }
+                })
             }
             false => {
                 error!("AddMemberNonce failed at tx {}", receipt.transaction_hash);
-                AddMemberNonceOutput {
-                    transaction_hash: receipt.transaction_hash.to_string(),
-                    success: false,
-                }
+                Err(DomainErrors::TransactionFailed(format!(
+                    "AddMemberNonce transaction failed with receipt status false at tx {}",
+                    receipt.transaction_hash
+                )))
             }
-        };
-
-        Ok(result)
+        }
     }
 }

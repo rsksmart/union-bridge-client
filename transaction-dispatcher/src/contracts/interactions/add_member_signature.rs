@@ -32,29 +32,26 @@ impl<C: SignatureManagerContractApi> AddMemberSignatureInvoke<C> {
             .add_member_signature(hash_to_sign, signature, self.gas_bumps)
             .await?;
 
-        let result = match receipt.status() {
+        match receipt.status() {
             true => {
                 info!(
                     "AddMemberSignature successful at tx {}",
                     receipt.transaction_hash
                 );
-                AddMemberSignatureOutput {
+                Ok(AddMemberSignatureOutput {
                     transaction_hash: receipt.transaction_hash.to_string(),
-                    success: true,
-                }
+                })
             }
             false => {
                 error!(
                     "AddMemberSignature failed at tx {}",
                     receipt.transaction_hash
                 );
-                AddMemberSignatureOutput {
-                    transaction_hash: receipt.transaction_hash.to_string(),
-                    success: false,
-                }
+                Err(DomainErrors::TransactionFailed(format!(
+                    "AddMemberSignature transaction failed with receipt status false at tx {}",
+                    receipt.transaction_hash
+                )))
             }
-        };
-
-        Ok(result)
+        }
     }
 }
