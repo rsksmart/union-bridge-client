@@ -169,15 +169,12 @@ impl Server {
         >,
         Json(payload): Json<PeginAddressInput>,
     ) -> impl IntoResponse {
-        info!(
-            "Received pegin-address request: amount={}, packet_number={:?}",
-            payload.amount, payload.packet_number
-        );
+        info!("Received pegin-address request: {payload:?}");
 
         match contracts.get_temporary_pegin_address(payload) {
             Ok(data) => (StatusCode::OK, Json(json!(data))),
             Err(e) => {
-                error!("Error getting temporary pegin address: {e}");
+                error!("Error requesting pegin: {e}");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(json!({ "error": e.to_string() })),
