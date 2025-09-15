@@ -169,7 +169,10 @@ impl Server {
         >,
         Json(payload): Json<PeginAddressInput>,
     ) -> impl IntoResponse {
-        info!("Received pegin-address request: {:?}", payload);
+        info!(
+            "Received pegin-address request: amount={}, packet_number={:?}",
+            payload.amount, payload.packet_number
+        );
 
         match contracts.get_temporary_pegin_address(payload) {
             Ok(data) => (StatusCode::OK, Json(json!(data))),
