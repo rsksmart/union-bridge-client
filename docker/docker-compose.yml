@@ -57,36 +57,6 @@ services:
       test: [ "CMD", "pgrep", "-f", "log-indexer" ] # TODO improve with health endpoint
     entrypoint: [ "/app/log-indexer", "--config-path", "/app/config" ]
 
-  transaction-dispatcher:
-    platform: ${PLATFORM}
-    image: ghcr.io/rsksmart/union-client-transaction-dispatcher:${REPO_VERSION:-latest}
-    build:
-      context: ../
-      dockerfile: docker/Dockerfile
-      args:
-        - CRATE=transaction-dispatcher
-      ssh:
-        - default=${SSH_AUTH_SOCK}
-    volumes:
-      - ${CONFIG_PATH:-../config/docker}:/app/config:ro
-      - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
-      - ./entrypoint_sh/key-setup.sh:/app/key-setup.sh:ro
-      - keystore:/keystore
-    restart: no
-    ports:
-      - "3000"  # http server port from the configuration
-    environment:
-      - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
-      - UB__provider__rootstock__url=${ROOTSTOCK_URL:-ws://host.docker.internal:8545}
-    healthcheck:
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-      test: [ "CMD", "pgrep", "-f", "transaction-dispatcher" ]
-    entrypoint: [ "sh", "/app/key-setup.sh" ]
-    command: [ "/app/transaction-dispatcher", "--config-path", "/app/config" ]
-
   coordinator:
     platform: ${PLATFORM}
     image: ghcr.io/rsksmart/union-client-coordinator:${REPO_VERSION:-latest}
@@ -118,8 +88,6 @@ services:
       block-indexer:
         condition: service_healthy
       log-indexer:
-        condition: service_healthy
-      transaction-dispatcher:
         condition: service_healthy
       user-api:
         condition: service_healthy

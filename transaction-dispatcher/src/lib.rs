@@ -12,7 +12,6 @@ use std::path::Path;
 pub mod config;
 mod contracts;
 pub mod rsk_gateway;
-pub mod server;
 
 #[cfg(feature = "types")]
 pub mod types;

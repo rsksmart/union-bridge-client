@@ -265,7 +265,7 @@ run_single_client() {
     CLEANING_UP=false
 
     # Define our services: order matters since some depend on others
-    SERVICES=("block-indexer" "log-indexer" "transaction-dispatcher" "user-api" "coordinator")
+    SERVICES=("block-indexer" "log-indexer" "user-api" "coordinator")
 
     function cleanup() {
         generic_cleanup "SERVICE_PIDS" "SERVICE_NAMES" "services"
