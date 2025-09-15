@@ -82,6 +82,9 @@ COPY --from=builder /app/target/release/key-manager /app/key-manager
 ENV RUST_BACKTRACE=1
 ENV RUST_LOG=debug
 
+# copy always even if only needed for one crate, as it's cheap
+COPY docker/entrypoint_sh/key-setup.sh /app/key-setup.sh
+
 LABEL org.opencontainers.image.source=https://github.com/rsksmart/union-bridge-client
 
 # ENTRYPOINT is handled in docker-compose.yml
