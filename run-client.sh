@@ -279,8 +279,48 @@ run_service() {
     fi
 }
 
+# Global function to monitor services and trigger cleanup on failure
+monitor_services() {
+    local client_id="${1:-}"
+    local monitor_log_prefix=""
+
+    if [[ -n "$client_id" ]]; then
+        monitor_log_prefix="[op-$client_id]"
+    fi
+
+    while [[ "${MONITOR_RUNNING:-true}" == "true" ]]; do
+        local cleaning_up=false
+
+        # Check each service
+        for i in "${!SERVICE_PIDS[@]}"; do
+            local pid="${SERVICE_PIDS[$i]}"
+            local name="${SERVICE_NAMES[$i]}"
+
+            if ! kill -0 "$pid" &>/dev/null; then
+                echo "${monitor_log_prefix} Service $name (PID $pid) has stopped"
+                cleanup_services
+                cleaning_up=true
+            fi
+        done
+
+        if ! $cleaning_up; then
+            # Check every 5 seconds
+            sleep 5
+        fi
+    done
+}
+
 # Global function to cleanup services
 cleanup_services() {
+    # Stop monitoring if it's running
+    MONITOR_RUNNING=false
+
+    # Clean up monitor process if it's still running
+    if [[ -n "${MONITOR_PID:-}" ]] && kill -0 "$MONITOR_PID" &>/dev/null; then
+        echo "Stopping service monitor..."
+        kill -TERM "$MONITOR_PID" &>/dev/null || true
+    fi
+
     generic_cleanup "SERVICE_PIDS" "SERVICE_NAMES" "services"
 }
 
@@ -294,6 +334,7 @@ run_single_client() {
     SERVICE_PIDS=()
     SERVICE_NAMES=()
     CLEANING_UP=false
+    MONITOR_RUNNING=true
 
     # Define our services: order matters since some depend on others
     SERVICES=("block-indexer" "log-indexer" "user-api" "coordinator")
@@ -314,12 +355,23 @@ run_single_client() {
     # Give services a moment to stabilize
     sleep 2
 
+    # Start the service monitor in the background
+    echo "Starting service monitor..."
+    monitor_services "${CLIENT_ID:-}" &
+    MONITOR_PID=$!
+
     echo
     echo "All services launched. Press Ctrl+C to shut down cleanly."
-    echo "Services are running in the background."
+    echo "Services are running in the background with active monitoring."
 
     # Wait for services to finish or signal
+    # The monitor will trigger cleanup if any service fails
     wait
+
+    # Clean up monitor process if it's still running
+    if [[ -n "${MONITOR_PID:-}" ]] && kill -0 "$MONITOR_PID" &>/dev/null; then
+        kill -TERM "$MONITOR_PID" &>/dev/null || true
+    fi
 }
 
 # Function to run multiple clients
@@ -345,6 +397,7 @@ run_multi_client_mode() {
         # Set environment variables for this client in a subshell and run directly
         (
             set_multi_client_env "$ID" "$BASE_STORAGE_PATH"
+            echo "[CLIENT-$ID] Starting client with service monitoring enabled"
             run_single_client
         ) &
         CLIENT_PIDS+=($!)
