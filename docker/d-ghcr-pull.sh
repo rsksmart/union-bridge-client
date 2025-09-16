@@ -80,12 +80,23 @@ else
   echo "📥 Pulling images with tag: $TAG for platform: $PLATFORM"
 
   # order seems to matter (same order as defined in compose file)
-  docker pull ghcr.io/rsksmart/union-client-builder:rust-1.86-v1 --platform $PLATFORM
-  docker pull ghcr.io/rsksmart/union-client-block-indexer:$TAG --platform $PLATFORM
-  docker pull ghcr.io/rsksmart/union-client-log-indexer:$TAG --platform $PLATFORM
-  docker pull ghcr.io/rsksmart/union-client-transaction-dispatcher:$TAG --platform $PLATFORM
-  docker pull ghcr.io/rsksmart/union-client-coordinator:$TAG --platform $PLATFORM
-  docker pull ghcr.io/rsksmart/union-client-user-api:$TAG --platform $PLATFORM
+  if [[ "$PLATFORM" == "linux/amd64" ]]; then
+    # Default platform - don't specify platform parameter
+    docker pull ghcr.io/rsksmart/union-client-builder:rust-1.86-v1
+    docker pull ghcr.io/rsksmart/union-client-block-indexer:$TAG
+    docker pull ghcr.io/rsksmart/union-client-log-indexer:$TAG
+    docker pull ghcr.io/rsksmart/union-client-transaction-dispatcher:$TAG
+    docker pull ghcr.io/rsksmart/union-client-coordinator:$TAG
+    docker pull ghcr.io/rsksmart/union-client-user-api:$TAG
+  else
+    # Custom platform - specify platform parameter
+    docker pull ghcr.io/rsksmart/union-client-builder:rust-1.86-v1 --platform $PLATFORM
+    docker pull ghcr.io/rsksmart/union-client-block-indexer:$TAG --platform $PLATFORM
+    docker pull ghcr.io/rsksmart/union-client-log-indexer:$TAG --platform $PLATFORM
+    docker pull ghcr.io/rsksmart/union-client-transaction-dispatcher:$TAG --platform $PLATFORM
+    docker pull ghcr.io/rsksmart/union-client-coordinator:$TAG --platform $PLATFORM
+    docker pull ghcr.io/rsksmart/union-client-user-api:$TAG --platform $PLATFORM
+  fi
 
   echo "✅ All images pulled successfully"
 fi
