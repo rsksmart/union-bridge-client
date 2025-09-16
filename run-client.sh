@@ -258,6 +258,37 @@ set_multi_client_env() {
     export CLIENT_ID=$ID
 }
 
+# Global function to run a single service
+run_service() {
+    local svc=$1
+
+    cargo_run_cmd="cargo run --bin $svc $FEATURES -- $LOGGER_PARAM $CONFIG_PARAM"
+    echo "Starting $svc: $cargo_run_cmd"
+    $cargo_run_cmd &
+
+    pid=$!
+    SERVICE_PIDS+=("$pid")
+    SERVICE_NAMES+=("$svc")
+    echo "$svc started (PID $pid)"
+
+    # Quick check: did it exit immediately?
+    sleep 1
+    if ! kill -0 "$pid" &>/dev/null; then
+        echo "ERROR: $svc failed to start"
+        exit 1
+    fi
+}
+
+# Global function to cleanup services
+cleanup_services() {
+    generic_cleanup "SERVICE_PIDS" "SERVICE_NAMES" "services"
+}
+
+# Global function to cleanup clients
+cleanup_clients() {
+    generic_cleanup "CLIENT_PIDS" "CLIENT_NAMES" "clients"
+}
+
 # Function to run services for a single client instance
 run_single_client() {
     SERVICE_PIDS=()
@@ -267,32 +298,8 @@ run_single_client() {
     # Define our services: order matters since some depend on others
     SERVICES=("block-indexer" "log-indexer" "user-api" "coordinator")
 
-    function cleanup() {
-        generic_cleanup "SERVICE_PIDS" "SERVICE_NAMES" "services"
-    }
-
     # Set up trap to handle signals and clean up
-    trap cleanup INT TERM
-
-    function run_service() {
-        local svc=$1
-
-        cargo_run_cmd="cargo run --bin $svc $FEATURES -- $LOGGER_PARAM $CONFIG_PARAM"
-        echo "Starting $svc: $cargo_run_cmd"
-        $cargo_run_cmd &
-
-        pid=$!
-        SERVICE_PIDS+=("$pid")
-        SERVICE_NAMES+=("$svc")
-        echo "$svc started (PID $pid)"
-
-        # Quick check: did it exit immediately?
-        sleep 1
-        if ! kill -0 "$pid" &>/dev/null; then
-            echo "ERROR: $svc failed to start"
-            exit 1
-        fi
-    }
+    trap cleanup_services INT TERM
 
     # Start services in the background
     echo "Starting services..."
@@ -329,12 +336,8 @@ run_multi_client_mode() {
     CLIENT_NAMES=()
     CLEANING_UP=false
 
-    function cleanup() {
-        generic_cleanup "CLIENT_PIDS" "CLIENT_NAMES" "clients"
-    }
-
     # Set up trap to handle signals and clean up
-    trap cleanup INT TERM
+    trap cleanup_clients INT TERM
 
     # Run the clients
     echo "Starting clients..." >&2
