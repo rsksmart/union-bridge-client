@@ -25,7 +25,7 @@ This script starts 4 instances of the union client with different ports:
 
 Examples:
   $(basename "$0")                           Start 4 clients for linux/amd64
-  $(basename "$0") --platform=macos/arm64    Start 4 clients for macos/arm64
+  $(basename "$0") --platform=linux/arm64    Start 4 clients for linux/arm64
 
 EOF
   exit 0
