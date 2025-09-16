@@ -212,11 +212,27 @@ where
         }
         let ready = self.scheduler.tick();
         for flow_id in ready {
+            // Find the state with the matching flow_id
+            let state = self
+                .tracker
+                .values()
+                .find(|s| s.flow_id == flow_id)
+                .ok_or_else(|| anyhow!("State not found for flow_id: {}", flow_id))?;
+
+            // Get the accept_pegin_txid from bitvmx_pegin_accepted
+            let pegin_accepted = state
+                .bitvmx_pegin_accepted
+                .as_ref()
+                .ok_or_else(|| anyhow!("bitvmx_pegin_accepted is None for flow_id: {}", flow_id))?;
+
+            let accept_pegin_tx_hash = pegin_accepted.accept_pegin_txid;
+
             debug!(
-                "Sending delayed get transaction info by name to bitvmx with id: {}",
-                flow_id
+                "Sending delayed get transaction to bitvmx with id: {} and tx_hash: {}",
+                flow_id, accept_pegin_tx_hash
             );
-            Self::send_get_transaction_info_by_name(&self.bitvmx_broker, flow_id)?;
+
+            Self::send_get_transaction(&self.bitvmx_broker, flow_id, accept_pegin_tx_hash)?;
         }
         Ok(())
     }
@@ -828,11 +844,8 @@ where
         Self::send_to_bitvmx(bitvmx_broker, message)
     }
 
-    fn send_get_transaction_info_by_name(bitvmx_broker: &BC, flow_id: Uuid) -> Result<()> {
-        let message = IncomingBitVMXApiMessages::GetTransactionInfoByName(
-            flow_id,
-            ACCEPT_PEGIN_TX.to_string(),
-        );
+    fn send_get_transaction(bitvmx_broker: &BC, flow_id: Uuid, tx_id: Txid) -> Result<()> {
+        let message = IncomingBitVMXApiMessages::GetTransaction(flow_id, tx_id);
         Self::send_to_bitvmx(bitvmx_broker, message)
     }
 
@@ -1076,7 +1089,7 @@ where
         flow_id: &Uuid,
         tx_status: TransactionStatus,
     ) -> Result<()> {
-        //find the pegin event state for the given flow_id
+        // find the pegin event state for the given flow_id
         let Some(state) = self
             .tracker
             .values_mut()
@@ -1140,8 +1153,19 @@ where
                 if btc_flow.is_done() {
                     //#Step 8a: Send DispatchTransaction to BitVMX
                     Self::send_dispatch_transaction_name(&self.bitvmx_broker, state.flow_id)?;
-                    //#Step 8b: Send GetTransactionInfoByName to BitVMX
-                    Self::send_get_transaction_info_by_name(&self.bitvmx_broker, state.flow_id)?;
+
+                    //#Step 8b: Send GetTransaction to BitVMX
+                    let pegin_accepted = state
+                        .bitvmx_pegin_accepted
+                        .as_ref()
+                        .ok_or_else(|| anyhow!("bitvmx_pegin_accepted is None"))?;
+                    let accept_pegin_tx_hash = pegin_accepted.accept_pegin_txid;
+                    Self::send_get_transaction(
+                        &self.bitvmx_broker,
+                        state.flow_id,
+                        accept_pegin_tx_hash,
+                    )?;
+
                     //Signature flow is done, we can clear it from state
                     state.btc_signatures_flow = None;
                 }
