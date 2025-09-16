@@ -68,11 +68,19 @@ if [[ $DRY_RUN -eq 1 ]]; then
   echo "🔍 DRY RUN: Would pull images with tag: $TAG for platform: $PLATFORM"
   echo ""
   echo "Commands that would be executed:"
-  echo "  docker pull ghcr.io/rsksmart/union-client-builder:rust-1.86-v1 --platform $PLATFORM"
-  echo "  docker pull ghcr.io/rsksmart/union-client-block-indexer:$TAG --platform $PLATFORM"
-  echo "  docker pull ghcr.io/rsksmart/union-client-log-indexer:$TAG --platform $PLATFORM"
-  echo "  docker pull ghcr.io/rsksmart/union-client-coordinator:$TAG --platform $PLATFORM"
-  echo "  docker pull ghcr.io/rsksmart/union-client-user-api:$TAG --platform $PLATFORM"
+  if [[ "$PLATFORM" == "linux/amd64" ]]; then
+    echo "  docker pull ghcr.io/rsksmart/union-client-builder:rust-1.86-v1"
+    echo "  docker pull ghcr.io/rsksmart/union-client-block-indexer:$TAG"
+    echo "  docker pull ghcr.io/rsksmart/union-client-log-indexer:$TAG"
+    echo "  docker pull ghcr.io/rsksmart/union-client-coordinator:$TAG"
+    echo "  docker pull ghcr.io/rsksmart/union-client-user-api:$TAG"
+  else
+    echo "  docker pull ghcr.io/rsksmart/union-client-builder:rust-1.86-v1 --platform $PLATFORM"
+    echo "  docker pull ghcr.io/rsksmart/union-client-block-indexer:$TAG --platform $PLATFORM"
+    echo "  docker pull ghcr.io/rsksmart/union-client-log-indexer:$TAG --platform $PLATFORM"
+    echo "  docker pull ghcr.io/rsksmart/union-client-coordinator:$TAG --platform $PLATFORM"
+    echo "  docker pull ghcr.io/rsksmart/union-client-user-api:$TAG --platform $PLATFORM"
+  fi
   echo ""
   echo "✅ Dry run completed - no images were actually pulled"
 else
