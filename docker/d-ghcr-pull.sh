@@ -71,7 +71,6 @@ if [[ $DRY_RUN -eq 1 ]]; then
   echo "  docker pull ghcr.io/rsksmart/union-client-builder:rust-1.86-v1 --platform $PLATFORM"
   echo "  docker pull ghcr.io/rsksmart/union-client-block-indexer:$TAG --platform $PLATFORM"
   echo "  docker pull ghcr.io/rsksmart/union-client-log-indexer:$TAG --platform $PLATFORM"
-  echo "  docker pull ghcr.io/rsksmart/union-client-transaction-dispatcher:$TAG --platform $PLATFORM"
   echo "  docker pull ghcr.io/rsksmart/union-client-coordinator:$TAG --platform $PLATFORM"
   echo "  docker pull ghcr.io/rsksmart/union-client-user-api:$TAG --platform $PLATFORM"
   echo ""
@@ -85,7 +84,6 @@ else
     docker pull ghcr.io/rsksmart/union-client-builder:rust-1.86-v1
     docker pull ghcr.io/rsksmart/union-client-block-indexer:$TAG
     docker pull ghcr.io/rsksmart/union-client-log-indexer:$TAG
-    docker pull ghcr.io/rsksmart/union-client-transaction-dispatcher:$TAG
     docker pull ghcr.io/rsksmart/union-client-coordinator:$TAG
     docker pull ghcr.io/rsksmart/union-client-user-api:$TAG
   else
@@ -93,7 +91,6 @@ else
     docker pull ghcr.io/rsksmart/union-client-builder:rust-1.86-v1 --platform $PLATFORM
     docker pull ghcr.io/rsksmart/union-client-block-indexer:$TAG --platform $PLATFORM
     docker pull ghcr.io/rsksmart/union-client-log-indexer:$TAG --platform $PLATFORM
-    docker pull ghcr.io/rsksmart/union-client-transaction-dispatcher:$TAG --platform $PLATFORM
     docker pull ghcr.io/rsksmart/union-client-coordinator:$TAG --platform $PLATFORM
     docker pull ghcr.io/rsksmart/union-client-user-api:$TAG --platform $PLATFORM
   fi

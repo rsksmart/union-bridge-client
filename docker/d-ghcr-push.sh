@@ -67,8 +67,6 @@ if [[ $DRY_RUN -eq 1 ]]; then
   echo "  docker push ghcr.io/rsksmart/union-client-block-indexer:$TAG"
   echo "  docker tag ghcr.io/rsksmart/union-client-log-indexer:latest ghcr.io/rsksmart/union-client-log-indexer:$TAG"
   echo "  docker push ghcr.io/rsksmart/union-client-log-indexer:$TAG"
-  echo "  docker tag ghcr.io/rsksmart/union-client-transaction-dispatcher:latest ghcr.io/rsksmart/union-client-transaction-dispatcher:$TAG"
-  echo "  docker push ghcr.io/rsksmart/union-client-transaction-dispatcher:$TAG"
   echo "  docker tag ghcr.io/rsksmart/union-client-coordinator:latest ghcr.io/rsksmart/union-client-coordinator:$TAG"
   echo "  docker push ghcr.io/rsksmart/union-client-coordinator:$TAG"
   echo "  docker tag ghcr.io/rsksmart/union-client-user-api:latest ghcr.io/rsksmart/union-client-user-api:$TAG"
@@ -89,8 +87,6 @@ else
   docker tag ghcr.io/rsksmart/union-client-log-indexer:latest ghcr.io/rsksmart/union-client-log-indexer:$TAG
   docker push ghcr.io/rsksmart/union-client-log-indexer:$TAG
 
-  docker tag ghcr.io/rsksmart/union-client-transaction-dispatcher:latest ghcr.io/rsksmart/union-client-transaction-dispatcher:$TAG
-  docker push ghcr.io/rsksmart/union-client-transaction-dispatcher:$TAG
 
   docker tag ghcr.io/rsksmart/union-client-coordinator:latest ghcr.io/rsksmart/union-client-coordinator:$TAG
   docker push ghcr.io/rsksmart/union-client-coordinator:$TAG
