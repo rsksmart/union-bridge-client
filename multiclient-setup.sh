@@ -17,6 +17,7 @@ CREATE_WALLETS=false
 FUND_WALLETS=false
 SETUP_COMMITTEE=false
 NUM_CLIENTS=""
+STREAM_ID=""
 
 # Constants
 ANVIL_ADDRESS="0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
@@ -32,6 +33,7 @@ OPTIONS:
     -w, --create-wallets          Create wallets (keystores) - only needed first time or to recreate
     -f, --fund-wallets            Fund existing wallets
     -c, --committee-setup NUM     Setup committee by applying to stream for NUM clients (1-10)
+    --stream_id ID                REQUIRED: Set the stream ID for committee setup (when using --committee-setup)
     -h, --help                    Show this help message
 
 ENVIRONMENT VARIABLES:
@@ -48,8 +50,11 @@ EXAMPLES:
     # Create and fund wallets
     $0 --create-wallets --fund-wallets
 
-    # Setup committee for existing clients
-    $0 --committee-setup 4
+    # Setup committee for existing clients (stream_id is required)
+    $0 --committee-setup 4 --stream_id 1
+
+    # Setup committee for existing clients with custom stream ID
+    $0 --committee-setup 4 --stream_id 5
 
     # With environment variables:
     KEY_STORE_PASSWORD=mypass BASE_STORAGE_PATH=/Users/username $0 --create-wallets --fund-wallets
@@ -71,6 +76,10 @@ while [[ $# -gt 0 ]]; do
         -c|--committee-setup)
             SETUP_COMMITTEE=true
             NUM_CLIENTS="$2"
+            shift 2
+            ;;
+        --stream_id)
+            STREAM_ID="$2"
             shift 2
             ;;
         -h|--help)
@@ -223,7 +232,7 @@ setup_committee() {
         echo "[setup-committee] Setting up client $i on port $port as $role..."
         
         local curl_output
-        local json_payload='{"ApplyToStream":{"stream_id":1,"role":"'$role'","funding_utxo":{"value":10000000},"speed_up_utxo":{"value":10000000}}}'
+        local json_payload='{"ApplyToStream":{"stream_id":'$STREAM_ID',"role":"'$role'","funding_utxo":{"value":10000000},"speed_up_utxo":{"value":10000000}}}'
         
         echo "[setup-committee] Sending request: $json_payload"
         
@@ -340,6 +349,19 @@ if [[ "$SETUP_COMMITTEE" == true ]]; then
 
     if [[ ! "$NUM_CLIENTS" =~ ^([1-9]|10)$ ]]; then
         echo "Error: Number of clients must be between 1 and 10."
+        echo "Use --help for usage information."
+        exit 1
+    fi
+
+    # Validate STREAM_ID is provided and is a positive integer
+    if [[ -z "$STREAM_ID" ]]; then
+        echo "Error: --stream_id is required when using --committee-setup."
+        echo "Use --help for usage information."
+        exit 1
+    fi
+
+    if [[ ! "$STREAM_ID" =~ ^[1-9][0-9]*$ ]]; then
+        echo "Error: Stream ID must be a positive integer."
         echo "Use --help for usage information."
         exit 1
     fi

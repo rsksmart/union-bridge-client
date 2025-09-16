@@ -113,9 +113,9 @@ struct FlowContext {
     // stepped
     user_input: Option<ApplyToStream>,
     my_comm_info: Option<P2PAddress>,
-    my_take_key: PubKeyReq,
-    my_dispute_key: PubKeyReq,
-    my_comm_key: PubKeyReq,
+    my_take_key_req: PubKeyReq,
+    my_dispute_key_req: PubKeyReq,
+    my_comm_key_req: PubKeyReq,
     agg_take_key: AggKeyReq,
     agg_dispute_key: AggKeyReq,
     setup_core: SetupCoreReq,
@@ -191,7 +191,7 @@ enum Steps {
     Done,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum StepData {
     // sync or member-dependent steps
     UserRequest(ApplyToStream),
@@ -471,31 +471,58 @@ where
     // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: review the ctx_xxx methods we have and try to unify / optimize them
 
     fn ctx_my_take_key(&self) -> Result<SignedPublicKey> {
-        let signed_pubkey = self
-            .state
-            .ctx
-            .my_take_key
-            .as_ref()
-            .context("Missing request for My Take Key")?
-            .3
-            .as_ref()
-            .context("Missing My Signed Take Key in context")?;
+        let signed_pubkey = match self.global_context.my_keys().take_key() {
+            Some(key) => key,
+            None => self
+                .state
+                .ctx
+                .my_take_key_req
+                .as_ref()
+                .context("Missing request for My Take Key")?
+                .3
+                .as_ref()
+                .context("Missing My Signed Take Key in context")?
+                .clone(),
+        };
 
-        Ok(signed_pubkey.clone())
+        Ok(signed_pubkey)
     }
 
     fn ctx_my_dispute_key(&self) -> Result<SignedPublicKey> {
-        let signed_pubkey = self
-            .state
-            .ctx
-            .my_dispute_key
-            .as_ref()
-            .context("My Dispute Key request missing in context")?
-            .3
-            .as_ref()
-            .context("My Signed Dispute Key missing in context")?;
+        let signed_pubkey = match self.global_context.my_keys().dispute_key() {
+            Some(key) => key,
+            None => self
+                .state
+                .ctx
+                .my_dispute_key_req
+                .as_ref()
+                .context("My Dispute Key request missing in context")?
+                .3
+                .as_ref()
+                .context("My Signed Dispute Key missing in context")?
+                .clone(),
+        };
 
-        Ok(signed_pubkey.clone())
+        Ok(signed_pubkey)
+    }
+
+    #[allow(unused)]
+    fn ctx_my_comm_key(&self) -> Result<SignedPublicKey> {
+        let signed_pubkey = match self.global_context.my_keys().comm_key() {
+            Some(key) => key,
+            None => self
+                .state
+                .ctx
+                .my_comm_key_req
+                .as_ref()
+                .context("My Communication Key request missing in context")?
+                .3
+                .as_ref()
+                .context("My Signed Communication Key missing in context")?
+                .clone(),
+        };
+
+        Ok(signed_pubkey)
     }
 
     fn ctx_my_comm_info(&self) -> Result<P2PAddress> {
@@ -792,24 +819,30 @@ where
             Steps::GetMyCommInfo => {
                 self.request_bitvmx_comm_info();
             }
-            Steps::GetMyTakeKey => {
-                self.request_bitvmx_take_pub_key()?;
-            }
-            Steps::SignMyTakeKey => {
-                self.request_bitvmx_take_pub_key_signing()?;
-            }
-            Steps::GetMyDisputeKey => {
-                self.request_bitvmx_dispute_pub_key()?;
-            }
-            Steps::SignMyDisputeKey => {
-                self.request_bitvmx_dispute_pub_key_signing()?;
-            }
-            Steps::GetMyCommKey => {
-                self.request_bitvmx_comm_pub_key()?;
-            }
-            Steps::SignMyCommKey => {
-                self.request_bitvmx_comm_pub_key_signing()?;
-            }
+            Steps::GetMyTakeKey => match self.global_context.my_keys().is_set() {
+                false => self.request_bitvmx_take_pub_key()?,
+                true => panic!("Running GetMyTakeKey when MyKeys are already set"),
+            },
+            Steps::SignMyTakeKey => match self.global_context.my_keys().is_set() {
+                false => self.request_bitvmx_take_pub_key_signing()?,
+                true => panic!("Running SignMyTakeKey when MyKeys are already set"),
+            },
+            Steps::GetMyDisputeKey => match self.global_context.my_keys().is_set() {
+                false => self.request_bitvmx_dispute_pub_key()?,
+                true => panic!("Running GetMyDisputeKey when MyKeys are already set"),
+            },
+            Steps::SignMyDisputeKey => match self.global_context.my_keys().is_set() {
+                false => self.request_bitvmx_dispute_pub_key_signing()?,
+                true => panic!("Running SignMyDisputeKey when MyKeys are already set"),
+            },
+            Steps::GetMyCommKey => match self.global_context.my_keys().is_set() {
+                false => self.request_bitvmx_comm_pub_key()?,
+                true => panic!("Running GetMyCommKey when MyKeys are already set"),
+            },
+            Steps::SignMyCommKey => match self.global_context.my_keys().is_set() {
+                false => self.request_bitvmx_comm_pub_key_signing()?,
+                true => panic!("Running SignMyCommKey when MyKeys are already set"),
+            },
             Steps::ApplyToStream => {
                 self.apply_to_stream()?;
             }
@@ -853,30 +886,35 @@ where
             }
             Steps::GetMyCommInfo => {
                 self.state.ctx.my_comm_info = Some(data.into_p2p_address()?);
-                self.start_step(Steps::GetMyTakeKey)?;
+                if self.global_context.my_keys().is_set() {
+                    debug!("My Keys already set, jumping to ApplyToStream step");
+                    self.start_step(Steps::ApplyToStream)?;
+                } else {
+                    self.start_step(Steps::GetMyTakeKey)?;
+                }
             }
             Steps::GetMyTakeKey => {
-                Self::close_pub_key_req(&mut self.state.ctx.my_take_key, data)?;
+                Self::close_pub_key_req(&mut self.state.ctx.my_take_key_req, data)?;
                 self.start_step(Steps::SignMyTakeKey)?;
             }
             Steps::SignMyTakeKey => {
-                Self::close_pub_key_signing_req(&mut self.state.ctx.my_take_key, data)?;
+                Self::close_pub_key_signing_req(&mut self.state.ctx.my_take_key_req, data)?;
                 self.start_step(Steps::GetMyDisputeKey)?;
             }
             Steps::GetMyDisputeKey => {
-                Self::close_pub_key_req(&mut self.state.ctx.my_dispute_key, data)?;
+                Self::close_pub_key_req(&mut self.state.ctx.my_dispute_key_req, data)?;
                 self.start_step(Steps::SignMyDisputeKey)?;
             }
             Steps::SignMyDisputeKey => {
-                Self::close_pub_key_signing_req(&mut self.state.ctx.my_dispute_key, data)?;
+                Self::close_pub_key_signing_req(&mut self.state.ctx.my_dispute_key_req, data)?;
                 self.start_step(Steps::GetMyCommKey)?;
             }
             Steps::GetMyCommKey => {
-                Self::close_pub_key_req(&mut self.state.ctx.my_comm_key, data)?;
+                Self::close_pub_key_req(&mut self.state.ctx.my_comm_key_req, data)?;
                 self.start_step(Steps::SignMyCommKey)?;
             }
             Steps::SignMyCommKey => {
-                Self::close_pub_key_signing_req(&mut self.state.ctx.my_comm_key, data)?;
+                Self::close_pub_key_signing_req(&mut self.state.ctx.my_comm_key_req, data)?;
                 self.start_step(Steps::ApplyToStream)?;
             }
             Steps::ApplyToStream => {
@@ -933,32 +971,35 @@ where
 
     fn request_bitvmx_take_pub_key(&mut self) -> Result<()> {
         let req_id = Uuid::new_v4();
-        self.state.ctx.my_take_key = Some((req_id, None, None, None));
+        self.state.ctx.my_take_key_req = Some((req_id, None, None, None));
         self.request_bitvmx_member_pub_key(req_id)
     }
 
     fn request_bitvmx_take_pub_key_signing(&mut self) -> Result<()> {
-        Self::request_bitvmx_key_signing(&mut self.state.ctx.my_take_key, &self.bitvmx_broker)
+        Self::request_bitvmx_key_signing(&mut self.state.ctx.my_take_key_req, &self.bitvmx_broker)
     }
 
     fn request_bitvmx_dispute_pub_key(&mut self) -> Result<()> {
         let req_id = Uuid::new_v4();
-        self.state.ctx.my_dispute_key = Some((req_id, None, None, None));
+        self.state.ctx.my_dispute_key_req = Some((req_id, None, None, None));
         self.request_bitvmx_member_pub_key(req_id)
     }
 
     fn request_bitvmx_dispute_pub_key_signing(&mut self) -> Result<()> {
-        Self::request_bitvmx_key_signing(&mut self.state.ctx.my_dispute_key, &self.bitvmx_broker)
+        Self::request_bitvmx_key_signing(
+            &mut self.state.ctx.my_dispute_key_req,
+            &self.bitvmx_broker,
+        )
     }
 
     fn request_bitvmx_comm_pub_key(&mut self) -> Result<()> {
         let req_id = Uuid::new_v4();
-        self.state.ctx.my_comm_key = Some((req_id, None, None, None));
+        self.state.ctx.my_comm_key_req = Some((req_id, None, None, None));
         self.request_bitvmx_member_pub_key(req_id)
     }
 
     fn request_bitvmx_comm_pub_key_signing(&mut self) -> Result<()> {
-        Self::request_bitvmx_key_signing(&mut self.state.ctx.my_comm_key, &self.bitvmx_broker)
+        Self::request_bitvmx_key_signing(&mut self.state.ctx.my_comm_key_req, &self.bitvmx_broker)
     }
 
     fn apply_to_stream(&self) -> Result<()> {
@@ -983,21 +1024,34 @@ where
         let input = ApplyToStreamInput {
             stream_id: stream_id.clone(),
             role: u8::from(user_input.role),
-            take_key: signed_to_committee_public_key(my_take_key)?,
-            dispute_key: signed_to_committee_public_key(my_dispute_key)?,
+            take_key: signed_to_committee_public_key(my_take_key.clone())?,
+            dispute_key: signed_to_committee_public_key(my_dispute_key.clone())?,
             peer_id: self.ctx_my_comm_info()?.peer_id,
             funding_utxo: utxo,
         };
 
         debug!("Applying to stream with {input:?}");
 
-        let res = self.rt_sync.run(self.contracts.apply_to_stream(input));
+        match self.rt_sync.run(self.contracts.apply_to_stream(input)) {
+            Ok(_) => {
+                info!("Applied to stream {stream_id:?} successfully");
 
-        if res.is_err() {
-            bail!("Failed to apply to stream: {:?}", res);
+                // once a member is selected, public keys should be the same, so we set them in the
+                // global context (reset for convenience as it should be idempotent)
+                self.global_context.my_keys().set_take_key(my_take_key);
+                self.global_context
+                    .my_keys()
+                    .set_dispute_key(my_dispute_key);
+                self.global_context
+                    .my_keys()
+                    .set_comm_key(self.ctx_my_comm_key()?);
+
+                Ok(())
+            }
+            Err(e) => {
+                bail!("Failed to apply to stream {stream_id:?}: {e}");
+            }
         }
-
-        Ok(())
     }
 
     fn deposit_communication_data(&self) -> Result<DepositCommunicationDataOutput> {
@@ -1262,9 +1316,9 @@ where
         // in addition to that, any change in the code could break it and end up mixing requests/responses/steps
 
         self.flows.values_mut().find(|flow| {
-            Self::pubkey_request_matches(&flow.state.ctx.my_take_key, req_id)
-                || Self::pubkey_request_matches(&flow.state.ctx.my_dispute_key, req_id)
-                || Self::pubkey_request_matches(&flow.state.ctx.my_comm_key, req_id)
+            Self::pubkey_request_matches(&flow.state.ctx.my_take_key_req, req_id)
+                || Self::pubkey_request_matches(&flow.state.ctx.my_dispute_key_req, req_id)
+                || Self::pubkey_request_matches(&flow.state.ctx.my_comm_key_req, req_id)
                 || Self::aggregated_key_request_matches(&flow.state.ctx.agg_take_key, req_id)
                 || Self::aggregated_key_request_matches(&flow.state.ctx.agg_dispute_key, req_id)
                 || Self::setup_core_request_matches(
