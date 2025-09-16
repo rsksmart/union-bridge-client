@@ -139,7 +139,7 @@ derive_address_from_keystore() {
     local keystore_file="$1"
     
     if [ ! -f "$keystore_file" ]; then
-        echo "[fund-operators] Warning: Keystore file not found: $keystore_file" >&2
+        echo "[fund-operators] Warning: Keystore file not found: $keystore_file"
         return 1
     fi
     
@@ -158,13 +158,13 @@ derive_address_from_keystore() {
             echo "$address"
             return 0
         else
-            echo "[fund-operators] Warning: Could not extract address from keystore: $keystore_file" >&2
-            echo "[fund-operators] Key-manager output was: $output" >&2
+            echo "[fund-operators] Warning: Could not extract address from keystore: $keystore_file"
+            echo "[fund-operators] Key-manager output was: $output"
             return 1
         fi
     else
-        echo "[fund-operators] Error deriving address from keystore: $keystore_file" >&2
-        echo "[fund-operators] Key-manager error: $output" >&2
+        echo "[fund-operators] Error deriving address from keystore: $keystore_file"
+        echo "[fund-operators] Key-manager error: $output"
         return 1
     fi
 }
@@ -182,8 +182,8 @@ fund_operator() {
         sleep 0.1
         return 0
     else
-        echo "[fund-operators] Error: Failed to fund operator $operator_id at address $address" >&2
-        echo "[fund-operators] Cast error: $cast_output" >&2
+        echo "[fund-operators] Error: Failed to fund operator $operator_id at address $address"
+        echo "[fund-operators] Cast error: $cast_output"
         return 1
     fi
 }
@@ -193,7 +193,7 @@ setup_committee() {
     local num_clients=$1
     
     if [[ -z "$num_clients" ]]; then
-        echo "Error: setup_committee requires number of clients as parameter" >&2
+        echo "Error: setup_committee requires number of clients as parameter"
         return 1
     fi
     
@@ -234,9 +234,9 @@ setup_committee() {
             success_count=$((success_count + 1))
         else
             if [[ -z "$curl_output" ]]; then
-                echo "[setup-committee] Error: Failed to setup client $i. Connection timeout - client may not be running on port $port" >&2
+                echo "[setup-committee] Error: Failed to setup client $i. Connection timeout - client may not be running on port $port"
             else
-                echo "[setup-committee] Error: Failed to setup client $i. Curl error: $curl_output" >&2
+                echo "[setup-committee] Error: Failed to setup client $i. Curl error: $curl_output"
             fi
             failed_count=$((failed_count + 1))
         fi

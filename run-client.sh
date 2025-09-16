@@ -223,19 +223,19 @@ set_multi_client_env() {
     local BASE_STORAGE_PATH=$2
     
     if [[ -z "${ID:-}" ]]; then
-        echo "Error: set_multi_client_env requires CLIENT_ID to be provided" >&2
+        echo "Error: set_multi_client_env requires CLIENT_ID to be provided"
         return 1
     fi
 
     # Validate CLIENT_ID range
     if [[ ! "$ID" =~ ^([1-9]|10)$ ]]; then
-        echo "Error: CLIENT_ID must be between 1 and 10." >&2
-        echo "Current CLIENT_ID: $ID" >&2
+        echo "Error: CLIENT_ID must be between 1 and 10."
+        echo "Current CLIENT_ID: $ID"
         return 1
     fi
 
     if [[ -z "${BASE_STORAGE_PATH:-}" ]]; then
-        echo "Error: set_multi_client_env requires BASE_STORAGE_PATH argument" >&2
+        echo "Error: set_multi_client_env requires BASE_STORAGE_PATH argument"
         return 1
     fi
     
@@ -392,7 +392,7 @@ run_multi_client_mode() {
     trap cleanup_clients INT TERM
 
     # Run the clients
-    echo "Starting clients..." >&2
+    echo "Starting clients..."
     for ((ID=1; ID<=NUM_CLIENTS; ID++)); do
         # Set environment variables for this client in a subshell and run directly
         (
@@ -402,7 +402,7 @@ run_multi_client_mode() {
         ) &
         CLIENT_PIDS+=($!)
         CLIENT_NAMES+=("client-$ID")
-        echo "Started client-$ID with PID ${CLIENT_PIDS[-1]}" >&2
+        echo "Started client-$ID with PID ${CLIENT_PIDS[-1]}"
     done
 
     echo "All clients started"
