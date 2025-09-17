@@ -3,7 +3,7 @@
 set -e
 
 # Default tag
-TAG="rust-1.86-v1"
+TAG="latest"
 
 show_help() {
   cat << EOF
@@ -14,7 +14,7 @@ Usage:
   $(basename "$0") [options] [docker build arguments...]
 
 Options:
-  --tag=TAG                       Tag for the builder image (default: rust-1.86-v1)
+  --tag=TAG                       Tag for the builder image (default: latest)
   --help, -h                      Show this help message
 
 This script builds the Union Client builder images.

@@ -4,7 +4,7 @@ set -e
 
 FEATURES=""
 PLATFORM="linux/amd64"
-TAG=""
+TAG="latest"
 HELP=0
 
 show_help() {
@@ -22,7 +22,7 @@ Commands:
 Options:
   --features=<list>   Build the workspace with specified features (comma-separated list)
   --platform=<arch>   Specify the target platform (sets PLATFORM environment variable for docker-compose.yml) [default: linux/amd64]
-  --tag=<tag>         Specify the image tag for building images
+  --tag=<tag>         Specify the image tag for building images (default: latest)
   --help, -h          Show this help
 
 Service Names (optional):
@@ -35,7 +35,7 @@ Notes:
   - --features: You can specify multiple features separated by commas (e.g., --features=anvil,debug). You may need to rebuild to reflect feature changes.
   - Service names: When a service is specified, the build process is optimized to build only that service's crate.
   - --platform: Sets the PLATFORM environment variable used by docker-compose.yml, not passed as a command flag. Defaults to linux/amd64.
-  - --tag: Sets the image tag for building images. If not specified, uses default tags from docker-compose.yml.
+  - --tag: Sets the image tag for building images. Defaults to 'latest' if not specified.
   - Standard docker compose arguments like --no-cache, -d, etc. are fully supported.
 
 Examples:
