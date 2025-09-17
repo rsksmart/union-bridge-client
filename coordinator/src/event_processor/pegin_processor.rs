@@ -1144,6 +1144,8 @@ where
                     Self::send_dispatch_transaction_name(&self.bitvmx_broker, state.flow_id)?;
                     //#Step 8b: Send GetTransactionInfoByName to BitVMX
                     Self::send_get_transaction_info_by_name(&self.bitvmx_broker, state.flow_id)?;
+                    //Signature flow is done, we can clear it from state
+                    state.btc_signatures_flow = None;
                 }
             }
         }
@@ -1571,6 +1573,7 @@ mod tests {
         let pegin_accepted_payload = json!({
             "committee_id": flow_id.to_string(),
             "accept_pegin_txid": dummy_txid.to_string(),
+            "accept_pegin_sighash": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32],
             "accept_pegin_nonce": "0279BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798032DE2662628C90B03F5E720284EB52FF7D71F4284F627B68A853D78C78E1FFE93",
             "accept_pegin_signature": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
             "operator_take_sighash": [18, 52, 86, 120],
@@ -1629,6 +1632,7 @@ mod tests {
         let pegin_accepted_payload = json!({
             "committee_id": non_existent_flow_id.to_string(),
             "accept_pegin_txid": dummy_txid.to_string(),
+            "accept_pegin_sighash": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32],
             "accept_pegin_nonce": "0279BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798032DE2662628C90B03F5E720284EB52FF7D71F4284F627B68A853D78C78E1FFE93",
             "accept_pegin_signature": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
             "operator_take_sighash": [18, 52, 86, 120],

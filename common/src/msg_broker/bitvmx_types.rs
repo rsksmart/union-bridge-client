@@ -318,6 +318,7 @@ pub enum ParticipantRole {
 pub struct PeginAcceptedMessage {
     pub committee_id: Uuid,
     pub accept_pegin_txid: Txid,
+    pub accept_pegin_sighash: Vec<u8>,
     pub accept_pegin_nonce: PubNonce,
     pub accept_pegin_signature: MaybeScalar,
     pub operator_take_sighash: Vec<u8>,
