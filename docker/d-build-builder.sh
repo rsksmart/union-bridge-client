@@ -2,19 +2,27 @@
 
 set -e
 
+# Default tag
+TAG="latest"
+
 show_help() {
   cat << EOF
 
 🔨 Union Builder Image Build Script
 
 Usage: 
-  $(basename "$0") [docker build arguments...]
+  $(basename "$0") [options] [docker build arguments...]
+
+Options:
+  --tag=TAG                       Tag for the builder image (default: latest)
+  --help, -h                      Show this help message
 
 This script builds the Union Client builder images.
 All arguments are passed directly to 'docker build'.
 
 Examples:
   $(basename "$0")                                              Build with default settings
+  $(basename "$0") --tag=rust-1.87-v1                          Build with custom tag
   $(basename "$0") --platform=linux/arm64                       Build for ARM64 platform
   $(basename "$0") --no-cache                                   Build without cache
   $(basename "$0") --platform=linux/amd64,linux/arm64 --push    Build multi-platform and push
@@ -23,16 +31,29 @@ EOF
   exit 0
 }
 
-# Check for help
-if [[ "$1" == "--help" ]] || [[ "$1" == "-h" ]]; then
-  show_help
-fi
+# Parse arguments
+DOCKER_ARGS=()
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --tag=*)
+      TAG="${1#*=}"
+      shift
+      ;;
+    --help|-h)
+      show_help
+      ;;
+    *)
+      DOCKER_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
 
 # Build builder images
-echo "🔨 Building Union Client Builder images..."
+echo "🔨 Building Union Client Builder images with tag: $TAG"
 
 # Build standard builder image
-cmd=(docker build --ssh default "$@" -t ghcr.io/rsksmart/union-client-builder:rust-1.86-v1 -f Dockerfile_builder .)
+cmd=(docker build --ssh default "${DOCKER_ARGS[@]}" -t "ghcr.io/rsksmart/union-client-builder:$TAG" -f Dockerfile_builder .)
 echo "🔨 Building Standard Builder image with command: ${cmd[@]}"
 "${cmd[@]}"
 
