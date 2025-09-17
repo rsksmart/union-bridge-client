@@ -150,7 +150,7 @@ the Union Client) are:
 - `KEY_STORE_PASSWORD`: password that will be used to create the Rootstock wallets (automatic) and to
   unlock the corresponding keystore files when running the client (see [Multi Client Setup](#Multi-Client-Setup) below)
 - `BASE_STORAGE_PATH`: base path where the client will store its data (databases, keystore files, etc.). Pick a path
-  that is writable and accessible by the user running the client. Then create the directory `.union_bridge` under it.
+  that is writable and accessible by the user running the client.
 
 We recommend using `direnv` to manage private environment variables. Then you can set them up by:
 
@@ -162,8 +162,18 @@ This will automatically load the environment variables defined in the `.envrc` o
 
 ### Multi Client Setup
 
-The Multi Client setup is mostly automated using the `multiclient-setup.sh` script. The only required manual step is
-tweaking the committee size and requirements according to the committee you want to run. For example, to use a committee
+The Multi Client setup is mostly automated using the `multiclient-setup.sh` script. But we need to run 2 manual steps.
+
+#### Creating the base directory
+
+Under the directory specified in the `BASE_STORAGE_PATH` env, run the following command to create the base directory and also the `keystore` subdirectory:
+```
+mkdir -p .union_bridge/keystore
+```
+
+#### Configuring the Committee
+
+You will need to tweak the committee size and requirements according to the committee you want to run. For example, to use a committee
 of 4 members, 2 Watchtowers (aka Verifiers) and 2 Operators (aka Provers) like mentioned in **Combined Setup**, you will
 need to edit
 `bitvmx-union-bridge-contracts/src/CommitteeRegistry.sol` and change:
