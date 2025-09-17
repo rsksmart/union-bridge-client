@@ -493,6 +493,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 impl<P: RskProvider, S: BlockStore> RskIndexer<P, S> for BlockIndexer<P, S> {
     fn run(&self) -> Result<()> {
         self.init_db_if_required(self.get_initial_block(&self.rsk_provider))?;
+        #[cfg(not(feature = "fresh_node"))]
         self.startup_backward_sync()?;
         self.start_block_subscription()
     }
