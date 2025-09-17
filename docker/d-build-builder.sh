@@ -3,7 +3,7 @@
 set -e
 
 # Default tag and platform
-TAG="latest"
+TAG="rust-1.86-v1"
 PLATFORM="linux/amd64"
 
 show_help() {
@@ -15,7 +15,7 @@ Usage:
   $(basename "$0") [options] [docker build arguments...]
 
 Options:
-  --tag=TAG                       Tag for the builder image (default: latest)
+  --tag=TAG                       Tag for the builder image (default: rust-1.86-v1)
   --platform=PLATFORM             Target platform (default: linux/amd64)
   --help, -h                      Show this help message
 
