@@ -62,15 +62,10 @@ if [[ $DRY_RUN -eq 1 ]]; then
   echo "🔍 DRY RUN: Would push images with tag: $TAG"
   echo ""
   echo "Commands that would be executed:"
-  echo "  docker tag union-client-builder:rust-1.86-v1 ghcr.io/rsksmart/union-client-builder:rust-1.86-v1"
   echo "  docker push ghcr.io/rsksmart/union-client-builder:rust-1.86-v1"
-  echo "  docker tag union-client-block-indexer:$TAG ghcr.io/rsksmart/union-client-block-indexer:$TAG"
   echo "  docker push ghcr.io/rsksmart/union-client-block-indexer:$TAG"
-  echo "  docker tag union-client-log-indexer:$TAG ghcr.io/rsksmart/union-client-log-indexer:$TAG"
   echo "  docker push ghcr.io/rsksmart/union-client-log-indexer:$TAG"
-  echo "  docker tag union-client-coordinator:$TAG ghcr.io/rsksmart/union-client-coordinator:$TAG"
   echo "  docker push ghcr.io/rsksmart/union-client-coordinator:$TAG"
-  echo "  docker tag union-client-user-api:$TAG ghcr.io/rsksmart/union-client-user-api:$TAG"
   echo "  docker push ghcr.io/rsksmart/union-client-user-api:$TAG"
   echo ""
   echo "✅ Dry run completed - no images were actually pushed"
@@ -78,19 +73,11 @@ else
   echo "🚀 Pushing images with tag: $TAG"
 
   # order seems to matter (same order as defined in compose file)
-  docker tag union-client-builder:rust-1.86-v1 ghcr.io/rsksmart/union-client-builder:rust-1.86-v1
+  # Note: Images should already be tagged by the build scripts
   docker push ghcr.io/rsksmart/union-client-builder:rust-1.86-v1
-
-  docker tag union-client-block-indexer:$TAG ghcr.io/rsksmart/union-client-block-indexer:$TAG
   docker push ghcr.io/rsksmart/union-client-block-indexer:$TAG
-
-  docker tag union-client-log-indexer:$TAG ghcr.io/rsksmart/union-client-log-indexer:$TAG
   docker push ghcr.io/rsksmart/union-client-log-indexer:$TAG
-
-  docker tag union-client-coordinator:$TAG ghcr.io/rsksmart/union-client-coordinator:$TAG
   docker push ghcr.io/rsksmart/union-client-coordinator:$TAG
-
-  docker tag union-client-user-api:$TAG ghcr.io/rsksmart/union-client-user-api:$TAG
   docker push ghcr.io/rsksmart/union-client-user-api:$TAG
 
   echo "✅ All images pushed successfully"

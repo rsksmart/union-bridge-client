@@ -2,8 +2,9 @@
 
 set -e
 
-# Default tag
+# Default tag and platform
 TAG="latest"
+PLATFORM="linux/amd64"
 
 show_help() {
   cat << EOF
@@ -15,6 +16,7 @@ Usage:
 
 Options:
   --tag=TAG                       Tag for the builder image (default: latest)
+  --platform=PLATFORM             Target platform (default: linux/amd64)
   --help, -h                      Show this help message
 
 This script builds the Union Client builder images.
@@ -39,6 +41,10 @@ while [[ $# -gt 0 ]]; do
       TAG="${1#*=}"
       shift
       ;;
+    --platform=*)
+      PLATFORM="${1#*=}"
+      shift
+      ;;
     --help|-h)
       show_help
       ;;
@@ -50,10 +56,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Build builder images
-echo "🔨 Building Union Client Builder images with tag: $TAG"
+echo "🔨 Building Union Client Builder images with tag: $TAG and platform: $PLATFORM"
 
 # Build standard builder image
-cmd=(docker build --ssh default "${DOCKER_ARGS[@]}" -t "ghcr.io/rsksmart/union-client-builder:$TAG" -f Dockerfile_builder .)
+cmd=(docker build --platform "$PLATFORM" --ssh default "${DOCKER_ARGS[@]}" -t "ghcr.io/rsksmart/union-client-builder:$TAG" -f Dockerfile_builder .)
 echo "🔨 Building Standard Builder image with command: ${cmd[@]}"
 "${cmd[@]}"
 
