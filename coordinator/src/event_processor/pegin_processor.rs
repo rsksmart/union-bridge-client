@@ -1144,6 +1144,8 @@ where
                     Self::send_dispatch_transaction_name(&self.bitvmx_broker, state.flow_id)?;
                     //#Step 8b: Send GetTransactionInfoByName to BitVMX
                     Self::send_get_transaction_info_by_name(&self.bitvmx_broker, state.flow_id)?;
+                    //Signature flow is done, we can clear it from state
+                    state.btc_signatures_flow = None;
                 }
             }
         }
