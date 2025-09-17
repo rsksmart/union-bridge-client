@@ -1,7 +1,8 @@
 use crate::types::RskPegManagerEvents::UnknownEvent;
 use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
-use alloy_primitives::{B256, LogData};
+use alloy_primitives::{B256, FixedBytes, LogData};
 use alloy_sol_types::SolEvent;
+use anyhow::anyhow;
 use bitcoin::PublicKey;
 use common::msg_broker::bitvmx_types::{
     PartialUtxo, ParticipantRole, PegOutAccepted, PeginAcceptedMessage,
@@ -460,9 +461,9 @@ impl TryFrom<PegOutAccepted> for RegisterSignaturesBitVmxData {
 
     fn try_from(value: PegOutAccepted) -> Result<Self, Self::Error> {
         Ok(RegisterSignaturesBitVmxData {
-            hash_to_sign: Hash256::from(alloy_primitives::FixedBytes::from(
+            hash_to_sign: Hash256::from(FixedBytes::from(
                 <[u8; 32]>::try_from(value.user_take_sighash)
-                    .map_err(|_| anyhow::anyhow!("Hash must be exactly 32 bytes"))?,
+                    .map_err(|_| anyhow!("Hash must be exactly 32 bytes"))?,
             )),
             nonce: value.user_take_nonce,
             signature: value.user_take_signature,
@@ -475,9 +476,9 @@ impl TryFrom<PeginAcceptedMessage> for RegisterSignaturesBitVmxData {
 
     fn try_from(value: PeginAcceptedMessage) -> Result<Self, Self::Error> {
         Ok(RegisterSignaturesBitVmxData {
-            hash_to_sign: Hash256::from(alloy_primitives::FixedBytes::from(
-                <[u8; 32]>::try_from(value.operator_take_sighash)
-                    .map_err(|_| anyhow::anyhow!("Hash must be exactly 32 bytes"))?,
+            hash_to_sign: Hash256::from(FixedBytes::from(
+                <[u8; 32]>::try_from(value.accept_pegin_sighash)
+                    .map_err(|_| anyhow!("Hash must be exactly 32 bytes"))?,
             )),
             nonce: value.accept_pegin_nonce,
             signature: value.accept_pegin_signature,
