@@ -5,7 +5,7 @@
 services:
   block-indexer:
     platform: ${PLATFORM}
-    image: ghcr.io/rsksmart/union-client-block-indexer:${REPO_VERSION:-latest}
+    image: ghcr.io/rsksmart/union-client-block-indexer:${TAG:-latest}
     build:
       context: ../
       dockerfile: docker/Dockerfile
@@ -32,7 +32,7 @@ services:
 
   log-indexer:
     platform: ${PLATFORM}
-    image: ghcr.io/rsksmart/union-client-log-indexer:${REPO_VERSION:-latest}
+    image: ghcr.io/rsksmart/union-client-log-indexer:${TAG:-latest}
     build:
       context: ../
       dockerfile: docker/Dockerfile
@@ -59,7 +59,7 @@ services:
 
   coordinator:
     platform: ${PLATFORM}
-    image: ghcr.io/rsksmart/union-client-coordinator:${REPO_VERSION:-latest}
+    image: ghcr.io/rsksmart/union-client-coordinator:${TAG:-latest}
     build:
       context: ../
       dockerfile: docker/Dockerfile
@@ -94,7 +94,7 @@ services:
 
   user-api:
     platform: ${PLATFORM}
-    image: ghcr.io/rsksmart/union-client-user-api:${REPO_VERSION:-latest}
+    image: ghcr.io/rsksmart/union-client-user-api:${TAG:-latest}
     build:
       context: ../
       dockerfile: docker/Dockerfile

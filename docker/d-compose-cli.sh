@@ -3,7 +3,8 @@
 set -e
 
 FEATURES=""
-PLATFORM=""
+PLATFORM="linux/amd64"
+TAG="latest"
 HELP=0
 
 show_help() {
@@ -20,7 +21,8 @@ Commands:
 
 Options:
   --features=<list>   Build the workspace with specified features (comma-separated list)
-  --platform=<arch>   Specify the target platform (sets PLATFORM environment variable for docker-compose.yml)
+  --platform=<arch>   Specify the target platform (sets PLATFORM environment variable for docker-compose.yml) [default: linux/amd64]
+  --tag=<tag>         Specify the image tag for building images (default: latest)
   --help, -h          Show this help
 
 Service Names (optional):
@@ -32,7 +34,8 @@ All additional arguments (including --no-cache, -d, etc.) are passed directly to
 Notes:
   - --features: You can specify multiple features separated by commas (e.g., --features=anvil,debug). You may need to rebuild to reflect feature changes.
   - Service names: When a service is specified, the build process is optimized to build only that service's crate.
-  - --platform: Sets the PLATFORM environment variable used by docker-compose.yml, not passed as a command flag.
+  - --platform: Sets the PLATFORM environment variable used by docker-compose.yml, not passed as a command flag. Defaults to linux/amd64.
+  - --tag: Sets the image tag for building images. Defaults to 'latest' if not specified.
   - Standard docker compose arguments like --no-cache, -d, etc. are fully supported.
 
 Examples:
@@ -41,6 +44,7 @@ Examples:
   $(basename "$0") build --features=anvil                           Build with anvil feature  
   $(basename "$0") build --features=anvil,debug                     Build with multiple features
   $(basename "$0") build --platform=linux/arm64                     Build for ARM64 platform
+  $(basename "$0") build --tag=v1.0.0                               Build with custom tag
   $(basename "$0") build coordinator --no-cache                     Build coordinator without cache
   $(basename "$0") up                                               Start all services
   $(basename "$0") up --features=anvil                              Start all services with anvil feature
@@ -55,6 +59,7 @@ EOF
 use_env_vars() {
   local vars_to_export=()
   [[ -n $PLATFORM ]] && vars_to_export+=(PLATFORM)
+  [[ -n $TAG ]] && vars_to_export+=(TAG)
   
   if [[ ${#vars_to_export[@]} -gt 0 ]]; then
     echo "Using environment variables: ${vars_to_export[*]}"
@@ -79,6 +84,9 @@ while [[ $# -gt 0 ]]; do
       ;;
     --platform=*)
       PLATFORM="${1#*=}"
+      ;;
+    --tag=*)
+      TAG="${1#*=}"
       ;;
     -h|--help)
       HELP=1
@@ -122,6 +130,7 @@ build_services() {
   # Add build arguments
   [[ -n $service_found ]] && cmd+=(--build-arg JUST_CRATE="$service_found")
   [[ -n $FEATURES ]] && cmd+=(--build-arg FEATURES="$FEATURES")
+  [[ -n $TAG ]] && cmd+=(--build-arg TAG="$TAG")
 
   # Add any additional docker compose arguments
   cmd+=("${DOCKER_ARGS[@]}")
