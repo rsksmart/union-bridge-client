@@ -1326,10 +1326,9 @@ mod tests {
     };
     use alloy_primitives::{Address, Bytes, FixedBytes, U256, address};
     use anyhow::anyhow;
-    use bitcoin::Txid;
     use bitcoin::{
         Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, absolute::LockTime,
-        hashes::Hash, transaction::Version,
+        transaction::Version,
     };
     use common::{
         msg_broker::{
