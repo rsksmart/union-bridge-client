@@ -82,10 +82,15 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
     }
 
     fn init_db_if_required(&self, initial_block_node: RskBlock) -> Result<()> {
-        let best_block: Option<RskBlock> =
-            self.store.get_best_block().context("Initialising DB")?;
-        if best_block.is_some() {
-            return Ok(());
+        // always initialize DB if the fresh_node feature is set
+
+        #[cfg(not(feature = "fresh_node"))]
+        {
+            let best_block: Option<RskBlock> =
+                self.store.get_best_block().context("Initialising DB")?;
+            if best_block.is_some() {
+                return Ok(());
+            }
         }
 
         info!(
@@ -493,8 +498,10 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 impl<P: RskProvider, S: BlockStore> RskIndexer<P, S> for BlockIndexer<P, S> {
     fn run(&self) -> Result<()> {
         self.init_db_if_required(self.get_initial_block(&self.rsk_provider))?;
+
         #[cfg(not(feature = "fresh_node"))]
         self.startup_backward_sync()?;
+
         self.start_block_subscription()
     }
 }
