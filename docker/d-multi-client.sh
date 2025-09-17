@@ -3,6 +3,7 @@
 set -e
 
 PLATFORM="linux/amd64"
+TAG="latest"
 HELP=0
 
 show_help() {
@@ -15,6 +16,7 @@ Usage:
 
 Options:
   --platform=<arch>   Specify the target platform [default: linux/amd64]
+  --tag=<tag>         Specify the docker image tag [default: latest]
   --help, -h          Show this help
 
 This script starts 4 instances of the union client with different ports:
@@ -26,6 +28,7 @@ This script starts 4 instances of the union client with different ports:
 Examples:
   $(basename "$0")                           Start 4 clients for linux/amd64
   $(basename "$0") --platform=linux/arm64    Start 4 clients for linux/arm64
+  $(basename "$0") --tag=dev                 Start 4 clients with image tag 'dev'
 
 EOF
   exit 0
@@ -36,6 +39,9 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --platform=*)
       PLATFORM="${1#*=}"
+      ;;
+    --tag=*)
+      TAG="${1#*=}"
       ;;
     -h|--help)
       HELP=1
@@ -52,11 +58,11 @@ if [[ $HELP -eq 1 ]]; then
   show_help
 fi
 
-echo "🚀 Starting 4 union client instances for platform: $PLATFORM"
+echo "🚀 Starting 4 union client instances for platform: $PLATFORM, tag: $TAG"
 
-ROOTSTOCK_URL=ws://host.docker.internal:8545 BITVMX_HOST=host.docker.internal BITVMX_PORT=22222 PLATFORM=$PLATFORM docker compose -p uc-1 -f docker-compose.yml up -d
-ROOTSTOCK_URL=ws://host.docker.internal:8545 BITVMX_HOST=host.docker.internal BITVMX_PORT=33333 PLATFORM=$PLATFORM docker compose -p uc-2 -f docker-compose.yml up -d
-ROOTSTOCK_URL=ws://host.docker.internal:8545 BITVMX_HOST=host.docker.internal BITVMX_PORT=44444 PLATFORM=$PLATFORM docker compose -p uc-3 -f docker-compose.yml up -d
-ROOTSTOCK_URL=ws://host.docker.internal:8545 BITVMX_HOST=host.docker.internal BITVMX_PORT=55554 PLATFORM=$PLATFORM docker compose -p uc-4 -f docker-compose.yml up -d
+ROOTSTOCK_URL=ws://host.docker.internal:8545 BITVMX_HOST=host.docker.internal BITVMX_PORT=22222 PLATFORM=$PLATFORM TAG=$TAG docker compose -p uc-1 -f docker-compose.yml up -d
+ROOTSTOCK_URL=ws://host.docker.internal:8545 BITVMX_HOST=host.docker.internal BITVMX_PORT=33333 PLATFORM=$PLATFORM TAG=$TAG docker compose -p uc-2 -f docker-compose.yml up -d
+ROOTSTOCK_URL=ws://host.docker.internal:8545 BITVMX_HOST=host.docker.internal BITVMX_PORT=44444 PLATFORM=$PLATFORM TAG=$TAG docker compose -p uc-3 -f docker-compose.yml up -d
+ROOTSTOCK_URL=ws://host.docker.internal:8545 BITVMX_HOST=host.docker.internal BITVMX_PORT=55554 PLATFORM=$PLATFORM TAG=$TAG docker compose -p uc-4 -f docker-compose.yml up -d
 
 echo "✅ All 4 union client instances started successfully"
