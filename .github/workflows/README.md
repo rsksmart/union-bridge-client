@@ -6,17 +6,27 @@ This directory contains GitHub Actions workflows for the Union Bridge Client pro
 
 ### Docker Release (`docker-release.yml`)
 
-**Purpose**: Automatically builds and pushes Docker images to GitHub Container Registry (GHCR) when a new Git tag is created.
+**Purpose**: Automatically builds and pushes multi-platform Docker images to GitHub Container Registry (GHCR) when a new Git tag is created.
 
 **Triggers**:
 - Push to tags matching `v*` pattern (e.g., `v1.0.0`, `v2.1.3`)
 - Manual workflow dispatch with custom tag input
 
+**Features**:
+- **Multi-platform builds**: Supports both `linux/amd64` and `linux/arm64` architectures
+- **Comprehensive metadata**: Rich OCI labels with service descriptions and vendor information
+- **Automatic tagging**: Version tags and latest tags handled automatically
+- **Private repository access**: Uses GitHub tokens for secure access to private dependencies
+- **Security optimized**: Tokens are cleared after use to prevent exposure
+
 **What it does**:
-1. Builds 4 Docker images: `block-indexer`, `log-indexer`, `coordinator`, `user-api`
-2. Tags images with the Git tag name (e.g., `v1.0.0`)
-3. Pushes images to `ghcr.io/rsksmart/union-client-*`
-4. Updates `latest` tags for the new version
+1. **Builds 4 Docker images**: `block-indexer`, `log-indexer`, `coordinator`, `user-api`
+2. **Multi-platform support**: Creates images for both Intel and ARM architectures
+3. **Smart tagging**: 
+   - Version tags: `v1.0.0` (from Git tag)
+   - Latest tags: `latest` (when pushing to main branch)
+4. **Pushes to GHCR**: `ghcr.io/rsksmart/union-client-*`
+5. **Rich metadata**: Service-specific labels and descriptions
 
 **Required Secrets**:
 - `FAIRGATE_GITHUB_TOKEN`: GitHub token for accessing FairgateLabs repositories
@@ -38,12 +48,31 @@ This directory contains GitHub Actions workflows for the Union Bridge Client pro
    - Enter custom tag name
 
 **Images created**:
-- `ghcr.io/rsksmart/union-client-block-indexer:v1.0.0`
-- `ghcr.io/rsksmart/union-client-log-indexer:v1.0.0`
-- `ghcr.io/rsksmart/union-client-coordinator:v1.0.0`
-- `ghcr.io/rsksmart/union-client-user-api:v1.0.0`
+- `ghcr.io/rsksmart/union-client-block-indexer:v1.0.0` (multi-platform)
+- `ghcr.io/rsksmart/union-client-log-indexer:v1.0.0` (multi-platform)
+- `ghcr.io/rsksmart/union-client-coordinator:v1.0.0` (multi-platform)
+- `ghcr.io/rsksmart/union-client-user-api:v1.0.0` (multi-platform)
 
-Plus `latest` tags for each image.
+Plus `latest` tags for each image when pushing to main branch.
+
+**Dockerfile**: Uses `docker/Dockerfile.github-actions` - a GitHub Actions optimized version that uses HTTPS authentication instead of SSH for private repository access.
+
+### Local Testing
+
+The workflow can be tested locally using `act`:
+
+```bash
+# Install act (if not already installed)
+brew install act
+
+# Test the workflow locally
+./test-docker-workflow.sh
+
+# Or run specific tests
+act push --workflows .github/workflows/docker-release.yml --dryrun
+```
+
+**Note**: Local testing requires Docker to be running and may not fully replicate the GitHub Actions environment, especially for private repository access.
 
 ### Other Workflows
 
@@ -71,16 +100,31 @@ The workflow uses `GITHUB_TOKEN` for GHCR authentication, which is automatically
 
 ### Build Failures
 
-- Check that SSH key has access to required private repositories
-- Verify that all dependencies are properly specified in `Cargo.toml`
-- Check GitHub Actions logs for specific error messages
+- **Authentication issues**: Verify `FAIRGATE_GITHUB_TOKEN` and `UNION_CONTRACTS_GITHUB_TOKEN` are properly configured
+- **Dependency issues**: Check that all dependencies are properly specified in `Cargo.toml`
+- **Docker build issues**: Check GitHub Actions logs for specific error messages
+- **Private repository access**: Ensure tokens have access to `FairgateLabs` and `temp-rsk` repositories
 
 ### Permission Issues
 
-- Ensure the repository has `packages: write` permission
-- Verify that the GitHub token has sufficient permissions
+- **GHCR push failures**: Ensure the repository has `packages: write` and `id-token: write` permissions
+- **Token permissions**: Verify that GitHub tokens have sufficient permissions for private repository access
+- **Organization settings**: Check that the `rsksmart` organization allows package publishing
 
 ### Tag Issues
 
-- Use semantic versioning format: `v1.0.0`, `v2.1.3`, etc.
-- Avoid using `latest` as a tag name (reserved for automatic latest updates)
+- **Version format**: Use semantic versioning format: `v1.0.0`, `v2.1.3`, etc.
+- **Reserved names**: Avoid using `latest` as a tag name (reserved for automatic latest updates)
+- **Tag pattern**: Ensure tags match the `v*` pattern to trigger the workflow
+
+### Multi-Platform Build Issues
+
+- **Architecture support**: The workflow builds for both `linux/amd64` and `linux/arm64`
+- **Build time**: Multi-platform builds take longer (typically 20-30 minutes)
+- **Resource limits**: Ensure GitHub Actions has sufficient resources for multi-platform builds
+
+### Security Considerations
+
+- **Token exposure**: Tokens are automatically cleared after use in the Dockerfile
+- **Secret management**: All sensitive data is passed via GitHub Secrets
+- **Docker security**: Images are built with minimal attack surface using Debian slim base
