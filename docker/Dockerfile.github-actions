@@ -44,10 +44,14 @@ ENV RUST_LOG=error
 ENV CARGO_TERM_QUIET=true
 
 # Configure Git to use HTTPS with tokens instead of SSH
+# Note: The actual tokens will be provided via build args from the GitHub Actions workflow
+ARG FAIRGATE_GITHUB_TOKEN
+ARG UNION_CONTRACTS_GITHUB_TOKEN
+
 RUN mkdir -p .cargo && \
     echo '[net]\ngit-fetch-with-cli = true' > .cargo/config.toml && \
-    git config --global url."https://github.com/FairgateLabs".insteadOf "ssh://git@github.com/FairgateLabs" && \
-    git config --global url."https://github.com/temp-rsk".insteadOf "ssh://git@github.com/temp-rsk" && \
+    git config --global url."https://${FAIRGATE_GITHUB_TOKEN}@github.com/FairgateLabs".insteadOf "ssh://git@github.com/FairgateLabs" && \
+    git config --global url."https://${UNION_CONTRACTS_GITHUB_TOKEN}@github.com/temp-rsk".insteadOf "ssh://git@github.com/temp-rsk" && \
     cargo fetch --locked
 
 # two build modes:
