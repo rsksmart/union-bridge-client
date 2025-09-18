@@ -19,7 +19,8 @@ This directory contains GitHub Actions workflows for the Union Bridge Client pro
 4. Updates `latest` tags for the new version
 
 **Required Secrets**:
-- `SSH_PRIVATE_KEY`: SSH private key for accessing private repositories
+- `FAIRGATE_GITHUB_TOKEN`: GitHub token for accessing FairgateLabs repositories
+- `UNION_CONTRACTS_GITHUB_TOKEN`: GitHub token for accessing temp-rsk contracts repository
 - `GITHUB_TOKEN`: Automatically provided by GitHub for GHCR authentication
 
 **Usage**:
@@ -53,22 +54,14 @@ Plus `latest` tags for each image.
 
 ## Setup Requirements
 
-### SSH Key Setup
+### GitHub Token Setup
 
-The Docker build process requires access to private repositories. Set up an SSH key:
+The Docker build process requires access to private repositories using GitHub tokens (same as other workflows in this project):
 
-1. Generate SSH key pair:
-   ```bash
-   ssh-keygen -t ed25519 -C "github-actions@rsksmart.com" -f ~/.ssh/github_actions
-   ```
+1. **FAIRGATE_GITHUB_TOKEN**: Already configured for FairgateLabs repositories
+2. **UNION_CONTRACTS_GITHUB_TOKEN**: Already configured for temp-rsk contracts repository
 
-2. Add public key to GitHub:
-   - Go to repository Settings → Deploy keys
-   - Add the public key (`github_actions.pub`)
-
-3. Add private key to GitHub Secrets:
-   - Go to repository Settings → Secrets and variables → Actions
-   - Add secret `SSH_PRIVATE_KEY` with the private key content
+These tokens are already set up and used by other workflows in the project.
 
 ### GHCR Authentication
 
