@@ -32,7 +32,7 @@ use common::{
     runtime_sync::RuntimeSync,
     types::{RskBlockAndUncles, TxHash},
 };
-use log::{debug, error, info};
+use log::{debug, error, info, trace};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{cell::RefCell, collections::HashMap, fmt::Debug, future::Future, rc::Rc};
@@ -1234,7 +1234,6 @@ where
                 self.handle_transaction_status_received(flow_id, tx_status.clone())?;
             }
             OutgoingBitVMXApiMessages::CommInfo(p2p_address) => {
-                debug!("Received CommInfo from BitVMX: {:?}", p2p_address);
                 // Find the first pegin state that doesn't have my_p2p_address set yet
                 if let Some((_, state)) = self
                     .tracker
@@ -1247,9 +1246,7 @@ where
                         state.flow_id, p2p_address
                     );
                 } else {
-                    bail!(
-                        "Received CommInfo but all pegin states already have my_p2p_address set. This should not happen."
-                    );
+                    trace!("Ignoring BitVMX CommInfo that is not mine")
                 }
             }
             _ => {}

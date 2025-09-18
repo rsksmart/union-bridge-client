@@ -1494,7 +1494,7 @@ where
                 first_flow.complete_step(StepData::CommInfo(comm_info.clone()))?;
                 return Ok(());
             } else {
-                bail!("No flow found for OutgoingBitVMXApiMessages::CommInfo")
+                trace!("Ignoring BitVMX CommInfo that is not mine")
             };
         }
 
