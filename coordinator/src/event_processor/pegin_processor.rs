@@ -679,7 +679,7 @@ where
     }
 
     fn build_take_aggregated_key(committee_response: &GetCommitteeOutput) -> Result<PublicKey> {
-        // aggregatedKey now comes with parity (33 bytes), parse directly as PublicKey
+        // aggregatedKey comes with parity (33 bytes), parse directly as PublicKey
         PublicKey::from_slice(&committee_response.committee.aggregatedKey)
             .context("Failed to parse aggregated public key from committee")
     }

@@ -9,7 +9,6 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     CommitteeRegistryErrors, CommitteeRegistryInstance, MemberRegistrationKeys,
     StreamDenomination, UTXO,
 };
-// MemberKeys was removed in v0.1.2-alpha - moved to MemberRegistry
 
 pub(crate) use crate::contracts::interactions::apply_to_stream::ApplyToStreamInvoke;
 pub(crate) use crate::contracts::interactions::deposit_aggregated_key::DepositAggregatedKeysInvoke;
@@ -23,11 +22,6 @@ use mockall::automock;
 
 #[cfg_attr(test, automock)]
 pub trait CommitteeRegistryContractApi {
-    // TODO: MemberKeys removed in v0.1.2-alpha - needs to be reimplemented with MemberRegistry
-    // async fn call_get_member_public_keys(
-    //     &self,
-    //     member_address: Address,
-    // ) -> alloy_contract::Result<MemberKeys>;
 
     async fn call_get_member_communication_data(
         &self,
@@ -87,16 +81,6 @@ impl<P: Provider> CommitteeRegistryContract<P> {
 }
 
 impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> {
-    // TODO: getMemberPublicKeys removed in v0.1.2-alpha - needs to be reimplemented with MemberRegistry
-    // async fn call_get_member_public_keys(
-    //     &self,
-    //     member_address: Address,
-    // ) -> alloy_contract::Result<MemberKeys> {
-    //     self.contract_instance
-    //         .getMemberPublicKeys(member_address)
-    //         .call()
-    //         .await
-    // }
 
     async fn call_get_member_communication_data(
         &self,
