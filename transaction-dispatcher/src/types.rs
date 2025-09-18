@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     Committee, CommunicationData, RSAPublicKey, UTXO,
 };
+use union_contracts::bindings::member_registry::MemberRegistry::RSAPublicKey as MemberRSAPublicKey;
 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-214
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -274,6 +275,12 @@ impl P2PAddressParser {
     }
 
     pub fn peer_id_from_contracts(comm_data: &RSAPublicKey) -> Result<String> {
+        let bytes = fb_array_to_bytes(&comm_data.rsaPublicKey)?;
+        Ok(hex::encode(bytes))
+    }
+
+    // Overload for MemberRegistry RSAPublicKey (same structure, different type)
+    pub fn peer_id_from_member_contracts(comm_data: &MemberRSAPublicKey) -> Result<String> {
         let bytes = fb_array_to_bytes(&comm_data.rsaPublicKey)?;
         Ok(hex::encode(bytes))
     }

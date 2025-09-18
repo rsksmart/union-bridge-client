@@ -133,7 +133,7 @@ mod tests {
         let operator_take_index = U256::from(42u64);
 
         Committee {
-            aggregatedKey: aggregated_key,
+            aggregatedKey: aggregated_key.into(),
             members,
             leaderAddress: leader,
             operatorTakeIndex: operator_take_index,

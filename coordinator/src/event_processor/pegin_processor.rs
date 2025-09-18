@@ -679,11 +679,9 @@ where
     }
 
     fn build_take_aggregated_key(committee_response: &GetCommitteeOutput) -> Result<PublicKey> {
-        let aggregated_xonly_key =
-            XOnlyPublicKey::from_slice(committee_response.committee.aggregatedKey.as_slice())
-                .context("Failed to parse aggregated public key from committee")?;
-        let aggregated_secp_key = aggregated_xonly_key.public_key(Even);
-        Ok(PublicKey::new(aggregated_secp_key))
+        // aggregatedKey now comes with parity (33 bytes), parse directly as PublicKey
+        PublicKey::from_slice(&committee_response.committee.aggregatedKey)
+            .context("Failed to parse aggregated public key from committee")
     }
 
     fn build_reimbursement_pubkey(pegin_event: &PeginRequested) -> Result<PublicKey> {
@@ -2440,7 +2438,7 @@ mod tests {
     fn dummy_committee() -> Committee {
         let leader: Address = address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
         Committee {
-            aggregatedKey: "0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+            aggregatedKey: "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
                 .parse()
                 .unwrap(),
             members: vec![
