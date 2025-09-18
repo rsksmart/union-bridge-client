@@ -40,19 +40,69 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
-        id: meta
+      - name: Extract metadata for block-indexer
+        id: meta-block-indexer
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-block-indexer
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-log-indexer
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-coordinator
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-user-api
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-block-indexer
           tags: |
             type=ref,event=tag
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=${{ github.ref_name }},enable=${{ startsWith(github.ref, 'refs/tags/') }}
+          flavor: |
+            latest=true
+          labels: |
+            org.opencontainers.image.title=Union Client Block Indexer
+            org.opencontainers.image.description=Union Bridge Client Block Indexer Service
+            org.opencontainers.image.vendor=RSK
+
+      - name: Extract metadata for log-indexer
+        id: meta-log-indexer
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-log-indexer
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=${{ github.ref_name }},enable=${{ startsWith(github.ref, 'refs/tags/') }}
+          flavor: |
+            latest=true
+          labels: |
+            org.opencontainers.image.title=Union Client Log Indexer
+            org.opencontainers.image.description=Union Bridge Client Log Indexer Service
+            org.opencontainers.image.vendor=RSK
+
+      - name: Extract metadata for coordinator
+        id: meta-coordinator
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-coordinator
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=${{ github.ref_name }},enable=${{ startsWith(github.ref, 'refs/tags/') }}
+          flavor: |
+            latest=true
+          labels: |
+            org.opencontainers.image.title=Union Client Coordinator
+            org.opencontainers.image.description=Union Bridge Client Coordinator Service
+            org.opencontainers.image.vendor=RSK
+
+      - name: Extract metadata for user-api
+        id: meta-user-api
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-user-api
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=${{ github.ref_name }},enable=${{ startsWith(github.ref, 'refs/tags/') }}
+          flavor: |
+            latest=true
+          labels: |
+            org.opencontainers.image.title=Union Client User API
+            org.opencontainers.image.description=Union Bridge Client User API Service
+            org.opencontainers.image.vendor=RSK
 
       - name: Configure Git for private repositories
         run: |
@@ -68,9 +118,10 @@ jobs:
         with:
           context: .
           file: ./docker/Dockerfile.github-actions
+          platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-block-indexer:${{ github.ref_name }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta-block-indexer.outputs.tags }}
+          labels: ${{ steps.meta-block-indexer.outputs.labels }}
           build-args: |
             CRATE=block-indexer
             FAIRGATE_GITHUB_TOKEN=${{ secrets.FAIRGATE_GITHUB_TOKEN }}
@@ -81,9 +132,10 @@ jobs:
         with:
           context: .
           file: ./docker/Dockerfile.github-actions
+          platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-log-indexer:${{ github.ref_name }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta-log-indexer.outputs.tags }}
+          labels: ${{ steps.meta-log-indexer.outputs.labels }}
           build-args: |
             CRATE=log-indexer
             FAIRGATE_GITHUB_TOKEN=${{ secrets.FAIRGATE_GITHUB_TOKEN }}
@@ -94,9 +146,10 @@ jobs:
         with:
           context: .
           file: ./docker/Dockerfile.github-actions
+          platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-coordinator:${{ github.ref_name }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta-coordinator.outputs.tags }}
+          labels: ${{ steps.meta-coordinator.outputs.labels }}
           build-args: |
             CRATE=coordinator
             FAIRGATE_GITHUB_TOKEN=${{ secrets.FAIRGATE_GITHUB_TOKEN }}
@@ -107,40 +160,11 @@ jobs:
         with:
           context: .
           file: ./docker/Dockerfile.github-actions
+          platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-user-api:${{ github.ref_name }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta-user-api.outputs.tags }}
+          labels: ${{ steps.meta-user-api.outputs.labels }}
           build-args: |
             CRATE=user-api
             FAIRGATE_GITHUB_TOKEN=${{ secrets.FAIRGATE_GITHUB_TOKEN }}
             UNION_CONTRACTS_GITHUB_TOKEN=${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}
-
-      - name: Update latest tags
-        if: github.ref_name != 'latest'
-        run: |
-          # Tag and push latest versions
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-block-indexer:${{ github.ref_name }}
-          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-block-indexer:${{ github.ref_name }} ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-block-indexer:latest
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-block-indexer:latest
-          
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-log-indexer:${{ github.ref_name }}
-          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-log-indexer:${{ github.ref_name }} ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-log-indexer:latest
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-log-indexer:latest
-          
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-coordinator:${{ github.ref_name }}
-          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-coordinator:${{ github.ref_name }} ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-coordinator:latest
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-coordinator:latest
-          
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-user-api:${{ github.ref_name }}
-          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-user-api:${{ github.ref_name }} ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-user-api:latest
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-user-api:latest
-
-      - name: Summary
-        run: |
-          echo "✅ Successfully built and pushed Docker images:"
-          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-block-indexer:${{ github.ref_name }}"
-          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-log-indexer:${{ github.ref_name }}"
-          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-coordinator:${{ github.ref_name }}"
-          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-user-api:${{ github.ref_name }}"
-          echo ""
-          echo "🔗 View images at: https://github.com/${{ github.repository }}/pkgs/container/union-client-block-indexer"
