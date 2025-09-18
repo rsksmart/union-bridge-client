@@ -308,15 +308,14 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 
             info!("[subscribe_logs] Processed log: {:?}", new_log);
 
-            let Some(_managed_contract) = self.managed_contracts.get(&new_log.info().address())
-            else {
+            if !self.managed_contracts.contains_key(&new_log.info().address()) {
                 error!(
                     "[subscribe_logs] Received unmanaged contract log {} [{:?}]",
                     new_log.info().address(),
                     self.managed_contracts
                 );
                 continue;
-            };
+            }
 
             self.store.save_log(&new_log).context("Saving new log")?;
             // TODO(Jira) avoid double writes for sync checkpoint in log indexer listener: https://rsklabs.atlassian.net/browse/UB-111
