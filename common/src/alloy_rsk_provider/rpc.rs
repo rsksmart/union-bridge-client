@@ -1,12 +1,11 @@
 use crate::{
     alloy_rsk_provider::{
-        event_processor::{event_processor_abi, event_processor_typed},
         sub::AlloySubscription,
     },
     rsk_provider::{RskProvider, RskSubscriptionFilter},
     shutdown_flag::ShutdownFlag,
     types::{
-        Address, BlockHash, BlockNumber, ContractInfo, RskBlock, RskEvent, RskLog, RskRpcBlock,
+        Address, BlockHash, BlockNumber, RskBlock, RskLog, RskRpcBlock,
         RskRpcLog, ToHexString,
     },
 };
@@ -229,29 +228,6 @@ impl RskProvider for AlloyProvider {
             .and_then(|response| Self::parse_logs_provider_response(response))
     }
 
-    fn decode_log(
-        &self,
-        new_log: RskLog,
-        contract_info: &ContractInfo,
-    ) -> Result<Option<RskEvent>> {
-        let rsk_event_result;
-
-        if let Some(abi) = &contract_info.abi {
-            debug!(
-                "Dynamic event processing for contract {}",
-                contract_info.address
-            );
-            rsk_event_result = event_processor_abi::process(contract_info.address, new_log, &abi);
-        } else {
-            debug!(
-                "Static event processing for contract {}",
-                contract_info.address
-            );
-            rsk_event_result = event_processor_typed::process(new_log);
-        }
-
-        rsk_event_result.context("Decoding log")
-    }
 
     fn disconnect(&self) -> Result<()> {
         // nothing to do for this rsk_provider

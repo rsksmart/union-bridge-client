@@ -1,4 +1,3 @@
-use alloy_json_abi::JsonAbi;
 use alloy_primitives::FixedBytes;
 use anyhow::{Result, bail};
 use bitcoin::hashes::Hash;
@@ -563,30 +562,6 @@ impl From<RskRpcLog> for RskLog {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct RskEvent {
-    name: String,
-    info: LogInfo,
-    input: Value,
-}
-
-impl RskEvent {
-    pub fn new(name: String, info: LogInfo, input: Value) -> Self {
-        Self { name, info, input }
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub fn info(&self) -> &LogInfo {
-        &self.info
-    }
-
-    pub fn input(&self) -> &Value {
-        &self.input
-    }
-}
 
 #[derive(Serialize, Deserialize, Eq, PartialEq, Debug, Clone)]
 pub struct LogInfo {
@@ -715,7 +690,6 @@ impl LogEvent {
 pub struct ContractInfo {
     pub address: Address,
     pub name: String,
-    pub abi: Option<JsonAbi>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

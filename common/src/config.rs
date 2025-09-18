@@ -1,9 +1,8 @@
 use crate::errors::ConfigError;
-use alloy_json_abi::JsonAbi;
 use anyhow::{Context, Result};
 use config;
 use config::{Environment, Source};
-use log::{debug, trace};
+use log::trace;
 use log4rs::config::RawConfig;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -114,23 +113,6 @@ impl CommonConfig {
         format!("{}/config/multi-client-template", project_root)
     }
 
-    pub fn load_abi_from_path(abi_path: &String) -> Option<JsonAbi> {
-        if Path::new(&abi_path).exists() {
-            let abi_full_path = Path::new(abi_path);
-            let abi_data = fs::read_to_string(&abi_path)
-                .expect(&format!("Failed to read ABI file: {:?}", abi_full_path));
-            Some(
-                serde_json::from_str::<JsonAbi>(&abi_data)
-                    .expect(&format!("Failed to parse ABI file: {:?}", abi_full_path)),
-            )
-        } else {
-            debug!(
-                "ABI file not found: {:?}. ABI will not be loaded.",
-                abi_path
-            );
-            None
-        }
-    }
 
     pub fn init_logger(logger_file_opt: Option<&String>, crate_name: &str) -> Result<()> {
         // provided => use it as is

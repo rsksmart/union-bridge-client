@@ -5,7 +5,7 @@ use crate::shutdown_flag::ShutdownFlag;
 use crate::test_utils::rsk_block_generator::FakeBlockGenerator;
 use crate::test_utils::rsk_log_generator::FakeLogGenerator;
 use crate::test_utils::rsk_utils::{UncleBlockInfo, from_hex_to_block_hash};
-use crate::types::{BlockHash, BlockNumber, ContractInfo, LogInfo, RskBlock, RskEvent, RskLog};
+use crate::types::{BlockHash, BlockNumber, LogInfo, RskBlock, RskLog};
 use anyhow::anyhow;
 use log::info;
 use std::cell::RefCell;
@@ -270,19 +270,6 @@ impl<'a> MockRskProviderHandler<'a> {
             .times(1);
     }
 
-    pub fn set_provider_expect_decode_log(&mut self) {
-        self.provider
-            .expect_decode_log()
-            .withf(|_log: &RskLog, _contract: &ContractInfo| true)
-            .returning(move |log: RskLog, _contract: &ContractInfo| {
-                Ok(Some(RskEvent::new(
-                    "TestEvent".to_string(),
-                    log.info().clone(),
-                    serde_json::Value::Null,
-                )))
-            })
-            .times(1..);
-    }
 }
 
 fn provide_block(

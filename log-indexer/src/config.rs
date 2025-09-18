@@ -30,7 +30,6 @@ impl Config {
                     ContractInfo {
                         name: c.name.to_owned(),
                         address,
-                        abi: None, // TODO(Jira) cleanup in scope of https://rsklabs.atlassian.net/browse/UB-215
                     },
                 )
             })
