@@ -13,7 +13,7 @@ This directory contains GitHub Actions workflows for the Union Bridge Client pro
 - Manual workflow dispatch with custom tag input
 
 **Features**:
-- **Multi-platform builds**: Supports both `linux/amd64` and `linux/arm64` architectures
+- **AMD64 builds**: Currently builds for `linux/amd64` architecture (ARM64 support pending base image update)
 - **Comprehensive metadata**: Rich OCI labels with service descriptions and vendor information
 - **Automatic tagging**: Version tags and latest tags handled automatically
 - **Private repository access**: Uses GitHub tokens for secure access to private dependencies
@@ -21,7 +21,7 @@ This directory contains GitHub Actions workflows for the Union Bridge Client pro
 
 **What it does**:
 1. **Builds 4 Docker images**: `block-indexer`, `log-indexer`, `coordinator`, `user-api`
-2. **Multi-platform support**: Creates images for both Intel and ARM architectures
+2. **AMD64 architecture**: Creates images for Intel/AMD x86_64 architecture
 3. **Smart tagging**: 
    - Version tags: `v1.0.0` (from Git tag)
    - Latest tags: `latest` (when pushing to main branch)
@@ -48,10 +48,10 @@ This directory contains GitHub Actions workflows for the Union Bridge Client pro
    - Enter custom tag name
 
 **Images created**:
-- `ghcr.io/rsksmart/union-client-block-indexer:v1.0.0` (multi-platform)
-- `ghcr.io/rsksmart/union-client-log-indexer:v1.0.0` (multi-platform)
-- `ghcr.io/rsksmart/union-client-coordinator:v1.0.0` (multi-platform)
-- `ghcr.io/rsksmart/union-client-user-api:v1.0.0` (multi-platform)
+- `ghcr.io/rsksmart/union-client-block-indexer:v1.0.0` (AMD64)
+- `ghcr.io/rsksmart/union-client-log-indexer:v1.0.0` (AMD64)
+- `ghcr.io/rsksmart/union-client-coordinator:v1.0.0` (AMD64)
+- `ghcr.io/rsksmart/union-client-user-api:v1.0.0` (AMD64)
 
 Plus `latest` tags for each image when pushing to main branch.
 

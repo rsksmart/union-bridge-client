@@ -118,7 +118,7 @@ jobs:
         with:
           context: .
           file: ./docker/Dockerfile.github-actions
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta-block-indexer.outputs.tags }}
           labels: ${{ steps.meta-block-indexer.outputs.labels }}
@@ -132,7 +132,7 @@ jobs:
         with:
           context: .
           file: ./docker/Dockerfile.github-actions
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta-log-indexer.outputs.tags }}
           labels: ${{ steps.meta-log-indexer.outputs.labels }}
@@ -146,7 +146,7 @@ jobs:
         with:
           context: .
           file: ./docker/Dockerfile.github-actions
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta-coordinator.outputs.tags }}
           labels: ${{ steps.meta-coordinator.outputs.labels }}
@@ -160,7 +160,7 @@ jobs:
         with:
           context: .
           file: ./docker/Dockerfile.github-actions
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta-user-api.outputs.tags }}
           labels: ${{ steps.meta-user-api.outputs.labels }}
