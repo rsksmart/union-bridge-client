@@ -10,6 +10,7 @@ const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 const PEG_MANAGER_CONTRACT_NAME: &str = "PegManager";
 const SIGNATURE_CONTRACT_NAME: &str = "SignatureManager";
 const COMMITTEE_REGISTRY_CONTRACT_NAME: &str = "CommitteeRegistry";
+const MEMBER_REGISTRY_CONTRACT_NAME: &str = "MemberRegistry";
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -49,6 +50,7 @@ impl Config {
             || contract.name == "FakePegManager"
             || contract.name == SIGNATURE_CONTRACT_NAME
             || contract.name == COMMITTEE_REGISTRY_CONTRACT_NAME
+            || contract.name == MEMBER_REGISTRY_CONTRACT_NAME
     }
 
     #[cfg(not(feature = "anvil"))]
@@ -56,6 +58,7 @@ impl Config {
         contract.name == PEG_MANAGER_CONTRACT_NAME
             || contract.name == SIGNATURE_CONTRACT_NAME
             || contract.name == COMMITTEE_REGISTRY_CONTRACT_NAME
+            || contract.name == MEMBER_REGISTRY_CONTRACT_NAME
     }
 }
 
