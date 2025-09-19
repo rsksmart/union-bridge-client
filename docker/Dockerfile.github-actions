@@ -47,18 +47,14 @@ ENV CARGO_TERM_QUIET=true
 # Note: The actual tokens will be provided via build args from the GitHub Actions workflow
 ARG FAIRGATE_GITHUB_TOKEN
 ARG UNION_CONTRACTS_GITHUB_TOKEN
-ARG REGISTRY_TOKEN
-ARG GITHUB_ACTOR
 
 RUN mkdir -p .cargo && \
     echo '[net]\ngit-fetch-with-cli = true' > .cargo/config.toml && \
     git config --global url."https://${FAIRGATE_GITHUB_TOKEN}@github.com/FairgateLabs".insteadOf "ssh://git@github.com/FairgateLabs" && \
     git config --global url."https://${UNION_CONTRACTS_GITHUB_TOKEN}@github.com/temp-rsk".insteadOf "ssh://git@github.com/temp-rsk" && \
-    # Configure Docker registry authentication for GHCR
-    echo "${REGISTRY_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin && \
     cargo fetch --locked && \
     # Clear the tokens from build args to avoid security warnings
-    unset FAIRGATE_GITHUB_TOKEN UNION_CONTRACTS_GITHUB_TOKEN REGISTRY_TOKEN
+    unset FAIRGATE_GITHUB_TOKEN UNION_CONTRACTS_GITHUB_TOKEN
 
 # two build modes:
 # 1) build the entire workspace and reuse among containers, to reduce build time
