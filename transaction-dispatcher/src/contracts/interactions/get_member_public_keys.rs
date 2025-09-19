@@ -1,14 +1,14 @@
-use crate::contracts::committee_registry::CommitteeRegistryContractApi;
+use crate::contracts::member_registry::MemberRegistryContractApi;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{GetMemberPublicKeysInput, GetMemberPublicKeysOutput, P2PAddressParser};
 use log::info;
 
 #[derive(Clone)]
-pub(crate) struct GetMemberPublicKeysCall<C: CommitteeRegistryContractApi> {
+pub(crate) struct GetMemberPublicKeysCall<C: MemberRegistryContractApi> {
     contract: C,
 }
 
-impl<C: CommitteeRegistryContractApi> GetMemberPublicKeysCall<C> {
+impl<C: MemberRegistryContractApi> GetMemberPublicKeysCall<C> {
     pub(crate) fn new(contract: C) -> Self {
         GetMemberPublicKeysCall { contract }
     }
@@ -37,7 +37,7 @@ impl<C: CommitteeRegistryContractApi> GetMemberPublicKeysCall<C> {
 
         // we store peer_id in communicationPubKey.rsaPublicKey, agreed with Fairgate
         let peer_id_bytes = &public_keys.communicationPubKey;
-        let peer_id = P2PAddressParser::peer_id_from_contracts(peer_id_bytes).map_err(|e| {
+        let peer_id = P2PAddressParser::peer_id_from_member_contracts(peer_id_bytes).map_err(|e| {
             DomainErrors::InvalidPublicKey(format!(
                 "Failed to convert communication public keys to hex: {e}"
             ))
@@ -56,12 +56,12 @@ impl<C: CommitteeRegistryContractApi> GetMemberPublicKeysCall<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contracts::committee_registry::MockCommitteeRegistryContractApi;
+    use crate::contracts::member_registry::MockMemberRegistryContractApi;
     use crate::rsk_gateway::DomainErrors;
     use crate::types::P2PAddressParser;
     use alloy_primitives::{Address, FixedBytes};
     use mockall::predicate::always;
-    use union_contracts::bindings::committee_registry::CommitteeRegistry::{
+    use union_contracts::bindings::member_registry::MemberRegistry::{
         MemberKeys, RSAPublicKey,
     };
 
@@ -81,7 +81,7 @@ mod tests {
             },
         };
 
-        let mut mock_instance = MockCommitteeRegistryContractApi::new();
+        let mut mock_instance = MockMemberRegistryContractApi::new();
         mock_instance
             .expect_call_get_member_public_keys()
             .with(always())
@@ -116,7 +116,7 @@ mod tests {
             .expect("Invalid address");
         let input = GetMemberPublicKeysInput { member_address };
 
-        let mut mock_instance = MockCommitteeRegistryContractApi::new();
+        let mut mock_instance = MockMemberRegistryContractApi::new();
         mock_instance
             .expect_call_get_member_public_keys()
             .with(always())
@@ -141,8 +141,8 @@ mod tests {
         );
     }
 
-    impl GetMemberPublicKeysCall<MockCommitteeRegistryContractApi> {
-        pub(crate) fn new_for_tests(contract: MockCommitteeRegistryContractApi) -> Self {
+    impl GetMemberPublicKeysCall<MockMemberRegistryContractApi> {
+        pub(crate) fn new_for_tests(contract: MockMemberRegistryContractApi) -> Self {
             GetMemberPublicKeysCall { contract }
         }
     }

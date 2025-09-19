@@ -2,7 +2,9 @@ use crate::config::TransactionConfig;
 use crate::contracts::committee_registry::{
     ApplyToStreamInvoke, CommitteeRegistryContract, DepositAggregatedKeysInvoke,
     DepositCommunicationDataInvoke, GetCommitteeCall, GetMemberCommunicationDataCall,
-    GetMemberPublicKeysCall,
+};
+use crate::contracts::member_registry::{
+    GetMemberPublicKeysCall, MemberRegistryContract,
 };
 use crate::contracts::peg_manager::{
     FakePegManagerContract, PegManagerContract, accept_pegin::AcceptPeginInvoke,
@@ -44,6 +46,7 @@ const PEG_MANAGER_CONTRACT_NAME: &str = "PegManager";
 const FAKE_PEG_MANAGER_CONTRACT_NAME: &str = "FakePegManager";
 const SIGNATURE_MANAGER_CONTRACT_NAME: &str = "SignatureManager";
 const COMMITTEE_REGISTRY_CONTRACT_NAME: &str = "CommitteeRegistry";
+const MEMBER_REGISTRY_CONTRACT_NAME: &str = "MemberRegistry";
 
 #[cfg_attr(test, automock)]
 pub trait BalanceProvider {
@@ -159,7 +162,7 @@ pub struct RskContractsGateway<P: Provider> {
     add_member_signature_invoke: AddMemberSignatureInvoke<SignatureManagerContract<P>>,
     add_operator_take_tx_hash_invoke: AddOperatorTakeTxHashInvoke<SignatureManagerContract<P>>,
     notify_check_fork_completion_invoke: NotifyCheckForkCompleteInvoke<FakePegManagerContract<P>>,
-    get_member_public_keys_call: GetMemberPublicKeysCall<CommitteeRegistryContract<P>>,
+    get_member_public_keys_call: GetMemberPublicKeysCall<MemberRegistryContract<P>>,
     get_member_communication_data_call:
         GetMemberCommunicationDataCall<CommitteeRegistryContract<P>>,
     apply_to_stream_invoke: ApplyToStreamInvoke<CommitteeRegistryContract<P>, P>,
@@ -185,6 +188,8 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             Self::load_contract(SIGNATURE_MANAGER_CONTRACT_NAME, &managed_contracts)?;
         let committee_registry_address =
             Self::load_contract(COMMITTEE_REGISTRY_CONTRACT_NAME, &managed_contracts)?;
+        let member_registry_address =
+            Self::load_contract(MEMBER_REGISTRY_CONTRACT_NAME, &managed_contracts)?;
 
         // TODO make these contracts Rc so we avoid more expensive cloning
 
@@ -196,6 +201,8 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             SignatureManagerContract::new(provider.clone(), signature_manager_address.into());
         let committee_registry_contract =
             CommitteeRegistryContract::new(provider.clone(), committee_registry_address.into());
+        let member_registry_contract =
+            MemberRegistryContract::new(provider.clone(), member_registry_address.into());
 
         Ok(RskContractsGateway {
             member_address,
@@ -236,7 +243,7 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
                 tx_config.gas_bumps_t1,
             ),
             get_member_public_keys_call: GetMemberPublicKeysCall::new(
-                committee_registry_contract.clone(),
+                member_registry_contract.clone(),
             ),
             get_member_communication_data_call: GetMemberCommunicationDataCall::new(
                 committee_registry_contract.clone(),
@@ -551,6 +558,8 @@ pub enum DomainErrors {
     PacketOutOfBound(String),
     #[error("Error interacting with Committee: {0}")]
     CommitteeError(String),
+    #[error("Error interacting with MemberRegistry: {0}")]
+    MemberRegistryError(String),
     #[error("Error collecting signatures: {0}")]
     SignaturesError(String),
 

@@ -1,5 +1,5 @@
 use crate::contracts::{
-    bitcoin_manager, committee_registry, peg_manager, signature_manager, stream_manager,
+    bitcoin_manager, committee_registry, member_registry, peg_manager, signature_manager, stream_manager,
 };
 use crate::rsk_gateway::DomainErrors;
 use alloy_contract::SolCallBuilder;
@@ -126,6 +126,7 @@ impl From<alloy_contract::Error> for DomainErrors {
             .or_else(|| stream_manager::decode_error(&err))
             .or_else(|| signature_manager::decode_error(&err))
             .or_else(|| committee_registry::decode_error(&err))
+            .or_else(|| member_registry::decode_error(&err))
             .unwrap_or_else(|| DomainErrors::NoRevertError(format!("{:?}", err)))
     }
 }

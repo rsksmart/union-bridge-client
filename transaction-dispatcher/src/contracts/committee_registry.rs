@@ -6,7 +6,7 @@ use alloy_provider::Provider;
 use log::info;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{self, Committee, Role};
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
-    CommitteeRegistryErrors, CommitteeRegistryInstance, MemberKeys, MemberRegistrationKeys,
+    CommitteeRegistryErrors, CommitteeRegistryInstance, MemberRegistrationKeys,
     StreamDenomination, UTXO,
 };
 
@@ -15,7 +15,6 @@ pub(crate) use crate::contracts::interactions::deposit_aggregated_key::DepositAg
 pub(crate) use crate::contracts::interactions::deposit_communication_data::DepositCommunicationDataInvoke;
 pub(crate) use crate::contracts::interactions::get_committee::GetCommitteeCall;
 pub(crate) use crate::contracts::interactions::get_member_communication_data::GetMemberCommunicationDataCall;
-pub(crate) use crate::contracts::interactions::get_member_public_keys::GetMemberPublicKeysCall;
 use common::types::CommitteeId;
 
 #[cfg(test)]
@@ -23,10 +22,6 @@ use mockall::automock;
 
 #[cfg_attr(test, automock)]
 pub trait CommitteeRegistryContractApi {
-    async fn call_get_member_public_keys(
-        &self,
-        member_address: Address,
-    ) -> alloy_contract::Result<MemberKeys>;
 
     async fn call_get_member_communication_data(
         &self,
@@ -64,7 +59,7 @@ pub trait CommitteeRegistryContractApi {
     async fn invoke_deposit_aggregated_key(
         &self,
         committee_id: CommitteeId,
-        aggregated_key: alloy_primitives::FixedBytes<32>,
+        aggregated_key: alloy_primitives::Bytes,
         gas_bumps: u8,
     ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt>;
 }
@@ -86,15 +81,6 @@ impl<P: Provider> CommitteeRegistryContract<P> {
 }
 
 impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> {
-    async fn call_get_member_public_keys(
-        &self,
-        member_address: Address,
-    ) -> alloy_contract::Result<MemberKeys> {
-        self.contract_instance
-            .getMemberPublicKeys(member_address)
-            .call()
-            .await
-    }
 
     async fn call_get_member_communication_data(
         &self,
@@ -176,14 +162,14 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
     async fn invoke_deposit_aggregated_key(
         &self,
         committee_id: CommitteeId,
-        aggregated_key: alloy_primitives::FixedBytes<32>,
+        aggregated_key: alloy_primitives::Bytes,
         gas_bumps: u8,
     ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
             || {
                 self.contract_instance
-                    .depositAggregatedKey(*committee_id, aggregated_key)
+                    .depositAggregatedKey(*committee_id, aggregated_key.clone())
             },
             gas_bumps,
         )

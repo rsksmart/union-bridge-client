@@ -4,7 +4,7 @@ use crate::types::{
     AllCommunicationDataReadyEvent, EventStatus, MemberOfCommittee, NewCommitteePendingEvent,
     NewCommitteeReadyEvent, RskPegManagerEvents, UserRequests,
 };
-use alloy_primitives::{Address, FixedBytes};
+use alloy_primitives::{Address, Bytes, FixedBytes};
 use anyhow::{Context, Result, bail, ensure};
 use bitcoin::key::Parity::Even;
 use bitcoin::{Amount, CompressedPublicKey, Network, PublicKey, ScriptBuf, Txid, XOnlyPublicKey};
@@ -1152,13 +1152,11 @@ where
 
         let committee_id = self.state.ctx.get_committee_id()?;
 
-        let x_only_key = XOnlyPublicKey::from(aggregated_take_key);
-        let aggregated_key = FixedBytes::<32>::try_from(&x_only_key.serialize())
-            .context("Failed to serialize aggregated public key")?;
+        let aggregated_key = Bytes::from(aggregated_take_key.to_bytes().to_vec());
 
         info!(
             "Depositing aggregated key for stream {}: {}",
-            aggregated_key.to_string(),
+            hex::encode(&aggregated_key),
             *committee_id
         );
 
