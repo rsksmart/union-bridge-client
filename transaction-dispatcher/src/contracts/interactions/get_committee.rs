@@ -39,7 +39,7 @@ impl<C: CommitteeRegistryContractApi> GetCommitteeCall<C> {
 mod tests {
     use super::*;
     use crate::contracts::committee_registry::MockCommitteeRegistryContractApi;
-    use alloy_primitives::{Address, FixedBytes, U256, address};
+    use alloy_primitives::{Address, U256, address};
     use mockall::predicate::always;
     use union_contracts::bindings::committee_registry::CommitteeRegistry::{
         Committee, CommitteeMember,
@@ -124,7 +124,7 @@ mod tests {
     }
 
     fn sample_committee() -> Committee {
-        let aggregated_key = FixedBytes::<32>::from([0x11u8; 32]);
+        let aggregated_key = alloy_primitives::Bytes::from([0x11u8; 33].to_vec());
         let leader: Address = address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
         let members = vec![CommitteeMember {
             memberAddress: leader,
@@ -133,7 +133,7 @@ mod tests {
         let operator_take_index = U256::from(42u64);
 
         Committee {
-            aggregatedKey: aggregated_key.into(),
+            aggregatedKey: aggregated_key,
             members,
             leaderAddress: leader,
             operatorTakeIndex: operator_take_index,

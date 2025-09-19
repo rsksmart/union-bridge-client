@@ -59,7 +59,7 @@ pub trait CommitteeRegistryContractApi {
     async fn invoke_deposit_aggregated_key(
         &self,
         committee_id: CommitteeId,
-        aggregated_key: alloy_primitives::FixedBytes<32>,
+        aggregated_key: alloy_primitives::Bytes,
         gas_bumps: u8,
     ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt>;
 }
@@ -162,14 +162,14 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
     async fn invoke_deposit_aggregated_key(
         &self,
         committee_id: CommitteeId,
-        aggregated_key: alloy_primitives::FixedBytes<32>,
+        aggregated_key: alloy_primitives::Bytes,
         gas_bumps: u8,
     ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
             || {
                 self.contract_instance
-                    .depositAggregatedKey(*committee_id, alloy_primitives::Bytes::from(aggregated_key.to_vec()))
+                    .depositAggregatedKey(*committee_id, aggregated_key.clone())
             },
             gas_bumps,
         )

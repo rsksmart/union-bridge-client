@@ -1,5 +1,4 @@
-use alloy_primitives::Address;
-use alloy_primitives::FixedBytes;
+use alloy_primitives::{Address, Bytes, FixedBytes};
 use anyhow::{Context, Result, bail};
 use bitcoin::{Transaction, TxIn, TxOut, Txid};
 use common::msg_broker::bitvmx_types::PeerId;
@@ -209,7 +208,7 @@ pub struct DepositCommunicationDataInput {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DepositAggregatedKeyInput {
     pub committee_id: CommitteeId,
-    pub aggregated_key: FixedBytes<32>,
+    pub aggregated_key: Bytes,
 }
 
 /// Flatten bytes → `[FixedBytes<32>; N]` (zero-pad if shorter; error if longer).
@@ -274,12 +273,6 @@ impl P2PAddressParser {
         Ok(RSAPublicKey { rsaPublicKey: data })
     }
 
-    pub fn peer_id_from_contracts(comm_data: &RSAPublicKey) -> Result<String> {
-        let bytes = fb_array_to_bytes(&comm_data.rsaPublicKey)?;
-        Ok(hex::encode(bytes))
-    }
-
-    // Overload for MemberRegistry RSAPublicKey (same structure, different type)
     pub fn peer_id_from_member_contracts(comm_data: &MemberRSAPublicKey) -> Result<String> {
         let bytes = fb_array_to_bytes(&comm_data.rsaPublicKey)?;
         Ok(hex::encode(bytes))
@@ -304,7 +297,8 @@ mod tests {
         );
 
         let encoded = P2PAddressParser::peer_id_to_contracts(&peer.0).unwrap();
-        let decoded = P2PAddressParser::peer_id_from_contracts(&encoded).unwrap();
+        let member_encoded = MemberRSAPublicKey { rsaPublicKey: encoded.rsaPublicKey };
+        let decoded = P2PAddressParser::peer_id_from_member_contracts(&member_encoded).unwrap();
         assert_eq!(decoded, peer.0);
     }
 
@@ -315,7 +309,8 @@ mod tests {
         );
 
         let encoded = P2PAddressParser::peer_id_to_contracts(&peer.0).unwrap();
-        let decoded = P2PAddressParser::peer_id_from_contracts(&encoded).unwrap();
+        let member_encoded = MemberRSAPublicKey { rsaPublicKey: encoded.rsaPublicKey };
+        let decoded = P2PAddressParser::peer_id_from_member_contracts(&member_encoded).unwrap();
         assert_eq!(decoded, peer.0);
     }
 

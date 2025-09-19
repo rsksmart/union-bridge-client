@@ -59,7 +59,7 @@ impl<C: CommitteeRegistryContractApi> DepositAggregatedKeysInvoke<C> {
 mod tests {
     use super::*;
     use crate::contracts::committee_registry::MockCommitteeRegistryContractApi;
-    use alloy_primitives::{Address, FixedBytes, TxHash};
+    use alloy_primitives::{Address, TxHash};
     use alloy_rpc_types::{Log, Receipt, ReceiptEnvelope, ReceiptWithBloom, TransactionReceipt};
     use common::types::CommitteeId;
     use mockall::predicate::*;
@@ -70,7 +70,7 @@ mod tests {
         // arrange
         let mut mock_contract = MockCommitteeRegistryContractApi::new();
         let committee_id: CommitteeId = 1.into();
-        let aggregated_key = FixedBytes::<32>::from([1u8; 32]);
+        let aggregated_key = alloy_primitives::Bytes::from([1u8; 33].to_vec());
         let gas_bumps = 3u8;
 
         let expected_receipt = get_fake_receipt(
@@ -79,7 +79,7 @@ mod tests {
         );
         mock_contract
             .expect_invoke_deposit_aggregated_key()
-            .with(eq(committee_id.clone()), eq(aggregated_key), eq(gas_bumps))
+            .with(eq(committee_id.clone()), eq(aggregated_key.clone()), eq(gas_bumps))
             .times(1)
             .returning(move |_, _, _| Ok(expected_receipt.clone()));
 
@@ -103,12 +103,12 @@ mod tests {
         // arrange
         let mut mock_contract = MockCommitteeRegistryContractApi::new();
         let committee_id: CommitteeId = 1.into();
-        let aggregated_key = FixedBytes::<32>::from([1u8; 32]);
+        let aggregated_key = alloy_primitives::Bytes::from([1u8; 33].to_vec());
         let gas_bumps = 3u8;
 
         mock_contract
             .expect_invoke_deposit_aggregated_key()
-            .with(eq(committee_id.clone()), eq(aggregated_key), eq(gas_bumps))
+            .with(eq(committee_id.clone()), eq(aggregated_key.clone()), eq(gas_bumps))
             .times(1)
             .returning(|_, _, _| {
                 Err(alloy_contract::Error::TransportError(
