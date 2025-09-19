@@ -38,7 +38,7 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.REGISTRY_TOKEN }}
 
       - name: Extract metadata for block-indexer
         id: meta-block-indexer
@@ -126,6 +126,8 @@ jobs:
             CRATE=block-indexer
             FAIRGATE_GITHUB_TOKEN=${{ secrets.FAIRGATE_GITHUB_TOKEN }}
             UNION_CONTRACTS_GITHUB_TOKEN=${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}
+            REGISTRY_TOKEN=${{ secrets.REGISTRY_TOKEN }}
+            GITHUB_ACTOR=${{ github.actor }}
 
       - name: Build and push log-indexer
         uses: docker/build-push-action@v5
@@ -140,6 +142,8 @@ jobs:
             CRATE=log-indexer
             FAIRGATE_GITHUB_TOKEN=${{ secrets.FAIRGATE_GITHUB_TOKEN }}
             UNION_CONTRACTS_GITHUB_TOKEN=${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}
+            REGISTRY_TOKEN=${{ secrets.REGISTRY_TOKEN }}
+            GITHUB_ACTOR=${{ github.actor }}
 
       - name: Build and push coordinator
         uses: docker/build-push-action@v5
@@ -154,6 +158,8 @@ jobs:
             CRATE=coordinator
             FAIRGATE_GITHUB_TOKEN=${{ secrets.FAIRGATE_GITHUB_TOKEN }}
             UNION_CONTRACTS_GITHUB_TOKEN=${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}
+            REGISTRY_TOKEN=${{ secrets.REGISTRY_TOKEN }}
+            GITHUB_ACTOR=${{ github.actor }}
 
       - name: Build and push user-api
         uses: docker/build-push-action@v5
@@ -168,3 +174,5 @@ jobs:
             CRATE=user-api
             FAIRGATE_GITHUB_TOKEN=${{ secrets.FAIRGATE_GITHUB_TOKEN }}
             UNION_CONTRACTS_GITHUB_TOKEN=${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}
+            REGISTRY_TOKEN=${{ secrets.REGISTRY_TOKEN }}
+            GITHUB_ACTOR=${{ github.actor }}
