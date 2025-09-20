@@ -31,7 +31,7 @@ This directory contains GitHub Actions workflows for the Union Bridge Client pro
 **Required Secrets**:
 - `FAIRGATE_GITHUB_TOKEN`: GitHub token for accessing FairgateLabs repositories
 - `UNION_CONTRACTS_GITHUB_TOKEN`: GitHub token for accessing temp-rsk contracts repository
-- `GITHUB_TOKEN`: Automatically provided by GitHub for GHCR authentication
+- `REGISTRY_TOKEN`: Personal Access Token with `write:packages` scope for GHCR authentication
 
 **Usage**:
 
@@ -94,7 +94,7 @@ These tokens are already set up and used by other workflows in the project.
 
 ### GHCR Authentication
 
-The workflow uses `GITHUB_TOKEN` for GHCR authentication, which is automatically provided by GitHub Actions. No additional setup required.
+The workflow uses `REGISTRY_TOKEN` for GHCR authentication. This must be a Personal Access Token with `write:packages` scope. The token should be configured as a repository secret.
 
 ## Troubleshooting
 
@@ -108,7 +108,7 @@ The workflow uses `GITHUB_TOKEN` for GHCR authentication, which is automatically
 ### Permission Issues
 
 - **GHCR push failures**: Ensure the repository has `packages: write` and `id-token: write` permissions
-- **Token permissions**: Verify that GitHub tokens have sufficient permissions for private repository access
+- **Token permissions**: Verify that `REGISTRY_TOKEN` has `write:packages` scope and other GitHub tokens have sufficient permissions for private repository access
 - **Organization settings**: Check that the `rsksmart` organization allows package publishing
 
 ### Tag Issues
