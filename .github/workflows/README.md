@@ -24,7 +24,6 @@ This directory contains GitHub Actions workflows for the Union Bridge Client pro
 2. **AMD64 architecture**: Creates images for Intel/AMD x86_64 architecture
 3. **Smart tagging**: 
    - Version tags: `v1.0.0` (from Git tag)
-   - Latest tags: `latest` (when pushing to main branch)
 4. **Pushes to GHCR**: `ghcr.io/rsksmart/union-client-*`
 5. **Rich metadata**: Service-specific labels and descriptions
 
@@ -52,8 +51,6 @@ This directory contains GitHub Actions workflows for the Union Bridge Client pro
 - `ghcr.io/rsksmart/union-client-log-indexer:v1.0.0` (AMD64)
 - `ghcr.io/rsksmart/union-client-coordinator:v1.0.0` (AMD64)
 - `ghcr.io/rsksmart/union-client-user-api:v1.0.0` (AMD64)
-
-Plus `latest` tags for each image when pushing to main branch.
 
 **Dockerfile**: Uses `docker/Dockerfile.github-actions` - a GitHub Actions optimized version that uses HTTPS authentication instead of SSH for private repository access.
 

@@ -47,10 +47,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-block-indexer
           tags: |
             type=ref,event=tag
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=${{ github.ref_name }},enable=${{ startsWith(github.ref, 'refs/tags/') }}
-          flavor: |
-            latest=true
           labels: |
             org.opencontainers.image.title=Union Client Block Indexer
             org.opencontainers.image.description=Union Bridge Client Block Indexer Service
@@ -63,10 +60,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-log-indexer
           tags: |
             type=ref,event=tag
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=${{ github.ref_name }},enable=${{ startsWith(github.ref, 'refs/tags/') }}
-          flavor: |
-            latest=true
           labels: |
             org.opencontainers.image.title=Union Client Log Indexer
             org.opencontainers.image.description=Union Bridge Client Log Indexer Service
@@ -79,10 +73,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-coordinator
           tags: |
             type=ref,event=tag
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=${{ github.ref_name }},enable=${{ startsWith(github.ref, 'refs/tags/') }}
-          flavor: |
-            latest=true
           labels: |
             org.opencontainers.image.title=Union Client Coordinator
             org.opencontainers.image.description=Union Bridge Client Coordinator Service
@@ -95,10 +86,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-user-api
           tags: |
             type=ref,event=tag
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=${{ github.ref_name }},enable=${{ startsWith(github.ref, 'refs/tags/') }}
-          flavor: |
-            latest=true
           labels: |
             org.opencontainers.image.title=Union Client User API
             org.opencontainers.image.description=Union Bridge Client User API Service
