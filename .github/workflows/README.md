@@ -119,7 +119,7 @@ The workflow uses `REGISTRY_TOKEN` for GHCR authentication. This must be a Perso
 
 ### Multi-Platform Build Issues
 
-- **Architecture support**: The workflow builds for both `linux/amd64` and `linux/arm64`
+- **Architecture support**: The workflow currently builds for `linux/amd64` only (ARM64 support pending base image update)
 - **Build time**: Multi-platform builds take longer (typically 20-30 minutes)
 - **Resource limits**: Ensure GitHub Actions has sufficient resources for multi-platform builds
 
