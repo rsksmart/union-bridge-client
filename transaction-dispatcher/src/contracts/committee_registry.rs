@@ -6,8 +6,8 @@ use alloy_provider::Provider;
 use log::info;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{self, Committee, Role};
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
-    CommitteeRegistryErrors, CommitteeRegistryInstance, MemberRegistrationKeys,
-    StreamDenomination, UTXO,
+    CommitteeRegistryErrors, CommitteeRegistryInstance, MemberRegistrationKeys, StreamDenomination,
+    UTXO,
 };
 
 pub(crate) use crate::contracts::interactions::apply_to_stream::ApplyToStreamInvoke;
@@ -22,7 +22,6 @@ use mockall::automock;
 
 #[cfg_attr(test, automock)]
 pub trait CommitteeRegistryContractApi {
-
     async fn call_get_member_communication_data(
         &self,
         committee_id: CommitteeId,
@@ -81,7 +80,6 @@ impl<P: Provider> CommitteeRegistryContract<P> {
 }
 
 impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> {
-
     async fn call_get_member_communication_data(
         &self,
         committee_id: CommitteeId,
