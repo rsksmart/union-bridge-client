@@ -297,7 +297,10 @@ where
             .as_ref()
             .map(|step| step.is_confirmed())
             .unwrap_or_else(|| {
-                trace!("flow {} is not at Signatures step", self.state.flow_id);
+                trace!(
+                    "flow {} has not completed the Signatures step",
+                    self.state.flow_id
+                );
                 false
             })
     }
@@ -443,7 +446,7 @@ mod tests {
             result
                 .unwrap_err()
                 .to_string()
-                .contains("is not at Nonces step"),
+                .contains("has not completed the Nonces step yet"),
             "error should mention flow is not at Nonces step"
         );
     }
@@ -704,13 +707,13 @@ mod tests {
         // test 4: try to check confirmations before setting ready
         let result = flow.is_all_nonces_ready_confirmed();
         assert!(
-            result,
+            !result,
             "should be false when checking nonce confirmation before setting ready"
         );
 
         let result = flow.is_all_signatures_ready_confirmed();
         assert!(
-            result,
+            !result,
             "should be false when checking signature confirmation before setting ready"
         );
     }

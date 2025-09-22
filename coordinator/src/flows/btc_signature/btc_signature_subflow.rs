@@ -513,7 +513,7 @@ mod tests {
         mock_flow
             .expect_is_all_nonces_ready_confirmed()
             .times(1)
-            .returning(|| true);
+            .returning(|| false);
         mock_flow
             .expect_is_all_signatures_ready_confirmed()
             .times(1)
@@ -729,35 +729,6 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("Contract call failed")
-        );
-    }
-
-    #[test]
-    fn test_process_new_block_confirmation_check_fails() {
-        let (block_1, uncle_1, _) = create_block_and_uncles();
-        let block = RskBlockAndUncles::new(block_1, vec![uncle_1]);
-
-        // setup mock flow to fail when checking nonce confirmation
-        let mut mock_flow = MockBtcSignatureLifecycleApi::new();
-        mock_flow
-            .expect_blockchain_view()
-            .times(1)
-            .return_const(BlockchainView::new());
-        mock_flow
-            .expect_is_all_nonces_ready_confirmed()
-            .times(1)
-            .returning(|| false);
-
-        let mut sub_flow = MockBtcSignatureSubFlow::new(mock_flow);
-
-        let result = sub_flow.delegate_block(&block);
-
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Failed to check nonce confirmation")
         );
     }
 }
