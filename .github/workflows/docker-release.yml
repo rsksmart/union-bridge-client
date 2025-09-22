@@ -1,0 +1,158 @@
+name: Build and Push Docker Images on Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Triggers on version tags like v1.0.0, v2.1.3, etc.
+  workflow_dispatch:  # Allow manual triggering
+    inputs:
+      tag:
+        description: 'Tag to use for Docker images'
+        required: true
+        default: 'latest'
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME_PREFIX: rsksmart/union-client
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Needed for git describe
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.REGISTRY_TOKEN }}
+
+      - name: Extract metadata for block-indexer
+        id: meta-block-indexer
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-block-indexer
+          tags: |
+            type=ref,event=tag
+            type=raw,value=${{ github.ref_name }},enable=${{ startsWith(github.ref, 'refs/tags/') }}
+          labels: |
+            org.opencontainers.image.title=Union Client Block Indexer
+            org.opencontainers.image.description=Union Bridge Client Block Indexer Service
+            org.opencontainers.image.vendor=RSK
+
+      - name: Extract metadata for log-indexer
+        id: meta-log-indexer
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-log-indexer
+          tags: |
+            type=ref,event=tag
+            type=raw,value=${{ github.ref_name }},enable=${{ startsWith(github.ref, 'refs/tags/') }}
+          labels: |
+            org.opencontainers.image.title=Union Client Log Indexer
+            org.opencontainers.image.description=Union Bridge Client Log Indexer Service
+            org.opencontainers.image.vendor=RSK
+
+      - name: Extract metadata for coordinator
+        id: meta-coordinator
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-coordinator
+          tags: |
+            type=ref,event=tag
+            type=raw,value=${{ github.ref_name }},enable=${{ startsWith(github.ref, 'refs/tags/') }}
+          labels: |
+            org.opencontainers.image.title=Union Client Coordinator
+            org.opencontainers.image.description=Union Bridge Client Coordinator Service
+            org.opencontainers.image.vendor=RSK
+
+      - name: Extract metadata for user-api
+        id: meta-user-api
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-user-api
+          tags: |
+            type=ref,event=tag
+            type=raw,value=${{ github.ref_name }},enable=${{ startsWith(github.ref, 'refs/tags/') }}
+          labels: |
+            org.opencontainers.image.title=Union Client User API
+            org.opencontainers.image.description=Union Bridge Client User API Service
+            org.opencontainers.image.vendor=RSK
+
+      - name: Configure Git for private repositories
+        run: |
+          git config --global \
+            url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf \
+            "ssh://git@github.com/FairgateLabs"
+          git config --global \
+            url."https://${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}@github.com/temp-rsk".insteadOf \
+            "ssh://git@github.com/temp-rsk"
+
+      - name: Build and push block-indexer
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.github-actions
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta-block-indexer.outputs.tags }}
+          labels: ${{ steps.meta-block-indexer.outputs.labels }}
+          build-args: |
+            CRATE=block-indexer
+            FAIRGATE_GITHUB_TOKEN=${{ secrets.FAIRGATE_GITHUB_TOKEN }}
+            UNION_CONTRACTS_GITHUB_TOKEN=${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}
+
+      - name: Build and push log-indexer
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.github-actions
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta-log-indexer.outputs.tags }}
+          labels: ${{ steps.meta-log-indexer.outputs.labels }}
+          build-args: |
+            CRATE=log-indexer
+            FAIRGATE_GITHUB_TOKEN=${{ secrets.FAIRGATE_GITHUB_TOKEN }}
+            UNION_CONTRACTS_GITHUB_TOKEN=${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}
+
+      - name: Build and push coordinator
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.github-actions
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta-coordinator.outputs.tags }}
+          labels: ${{ steps.meta-coordinator.outputs.labels }}
+          build-args: |
+            CRATE=coordinator
+            FAIRGATE_GITHUB_TOKEN=${{ secrets.FAIRGATE_GITHUB_TOKEN }}
+            UNION_CONTRACTS_GITHUB_TOKEN=${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}
+
+      - name: Build and push user-api
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.github-actions
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta-user-api.outputs.tags }}
+          labels: ${{ steps.meta-user-api.outputs.labels }}
+          build-args: |
+            CRATE=user-api
+            FAIRGATE_GITHUB_TOKEN=${{ secrets.FAIRGATE_GITHUB_TOKEN }}
+            UNION_CONTRACTS_GITHUB_TOKEN=${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}
