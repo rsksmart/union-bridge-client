@@ -1014,7 +1014,8 @@ mod tests {
 
         // create a minimal committee structure
         let committee = Committee {
-            aggregatedKey: FixedBytes::<32>::from_slice(H256::from_low_u64_be(67890).as_bytes()).into(),
+            aggregatedKey: FixedBytes::<32>::from_slice(H256::from_low_u64_be(67890).as_bytes())
+                .into(),
             members: vec![
                 CommitteeMember {
                     memberAddress: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
@@ -1114,7 +1115,8 @@ mod tests {
             member: expected_member_address,
             aggregatedKey: alloy_primitives::FixedBytes::<32>::from_slice(
                 H256::from_low_u64_be(12345).as_bytes(),
-            ).into(),
+            )
+            .into(),
         };
 
         let removed = true;

@@ -1397,7 +1397,7 @@ where
                 found_flow.map(|f| (f, StepData::ReadyCommittee(new_committee_ready.clone())))
             }
             _ => {
-                info!("Ignoring RSK event: {:?}", event);
+                trace!("Ignoring RSK event: {:?}", event);
                 return Ok(());
             }
         };
@@ -1546,7 +1546,7 @@ where
                 Self::build_new_committee_ready_event_info(e)
             }
             _ => {
-                info!("Ignoring RSK event: {:?}", event);
+                trace!("Ignoring RSK event: {:?}", event);
                 return Ok(());
             }
         };

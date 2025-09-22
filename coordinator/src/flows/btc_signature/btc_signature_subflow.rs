@@ -115,12 +115,12 @@ where
         self.lifecycle.blockchain_view().update(block.clone());
 
         // check if nonces are ready and send signature
-        if self.lifecycle.is_all_nonces_ready_confirmed()? {
+        if self.lifecycle.is_all_nonces_ready_confirmed() {
             self.lifecycle.send_signature_to_contracts()?;
         }
 
         // check if signatures are ready and close flow
-        if self.lifecycle.is_all_signatures_ready_confirmed()? {
+        if self.lifecycle.is_all_signatures_ready_confirmed() {
             self.is_done = true;
             self.lifecycle.blockchain_view().clear();
         }
@@ -451,11 +451,11 @@ mod tests {
         mock_flow
             .expect_is_all_nonces_ready_confirmed()
             .times(1)
-            .returning(|| Ok(false));
+            .returning(|| false);
         mock_flow
             .expect_is_all_signatures_ready_confirmed()
             .times(1)
-            .returning(|| Ok(false));
+            .returning(|| false);
 
         let mut sub_flow = MockBtcSignatureSubFlow::new(mock_flow);
 
@@ -479,11 +479,11 @@ mod tests {
         mock_flow
             .expect_is_all_nonces_ready_confirmed()
             .times(1)
-            .returning(|| Ok(true));
+            .returning(|| true);
         mock_flow
             .expect_is_all_signatures_ready_confirmed()
             .times(1)
-            .returning(|| Ok(false));
+            .returning(|| false);
         mock_flow
             .expect_send_signature_to_contracts()
             .times(1)
@@ -513,11 +513,11 @@ mod tests {
         mock_flow
             .expect_is_all_nonces_ready_confirmed()
             .times(1)
-            .returning(|| Ok(false));
+            .returning(|| true);
         mock_flow
             .expect_is_all_signatures_ready_confirmed()
             .times(1)
-            .returning(|| Ok(true));
+            .returning(|| true);
 
         let mut sub_flow = MockBtcSignatureSubFlow::new(mock_flow);
 
@@ -548,21 +548,21 @@ mod tests {
         mock_flow
             .expect_is_all_nonces_ready_confirmed()
             .times(1)
-            .returning(|| Ok(false));
+            .returning(|| false);
         mock_flow
             .expect_is_all_signatures_ready_confirmed()
             .times(1)
-            .returning(|| Ok(false));
+            .returning(|| false);
 
         // second block: nonces are confirmed
         mock_flow
             .expect_is_all_nonces_ready_confirmed()
             .times(1)
-            .returning(|| Ok(true));
+            .returning(|| true);
         mock_flow
             .expect_is_all_signatures_ready_confirmed()
             .times(1)
-            .returning(|| Ok(false));
+            .returning(|| false);
         mock_flow
             .expect_send_signature_to_contracts()
             .times(1)
@@ -680,11 +680,11 @@ mod tests {
         mock_flow
             .expect_is_all_nonces_ready_confirmed()
             .times(1)
-            .returning(|| Ok(true));
+            .returning(|| true);
         mock_flow
             .expect_is_all_signatures_ready_confirmed()
             .times(1)
-            .returning(|| Ok(true));
+            .returning(|| true);
         mock_flow
             .expect_send_signature_to_contracts()
             .times(1)
@@ -713,7 +713,7 @@ mod tests {
         mock_flow
             .expect_is_all_nonces_ready_confirmed()
             .times(1)
-            .returning(|| Ok(true));
+            .returning(|| true);
         mock_flow
             .expect_send_signature_to_contracts()
             .times(1)
@@ -746,7 +746,7 @@ mod tests {
         mock_flow
             .expect_is_all_nonces_ready_confirmed()
             .times(1)
-            .returning(|| Err(anyhow!("Failed to check nonce confirmation")));
+            .returning(|| false);
 
         let mut sub_flow = MockBtcSignatureSubFlow::new(mock_flow);
 

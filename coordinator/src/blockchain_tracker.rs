@@ -389,7 +389,6 @@ impl ConfirmableEvent {
 
         self.remove_observer();
         self.confirmations = None;
-        // state.sent remains true because the transaction is again Pending and will be mined again, so all_signatures_processed will be called again
 
         Ok(())
     }
@@ -400,7 +399,7 @@ impl ConfirmableEvent {
             .map(|c| c.borrow().is_confirmed())
             .unwrap_or_else(|| {
                 warn!(
-                    "Confirmations not set for protocol {} but is_event_confirmed called",
+                    "Confirmations not set for protocol {} but is_confirmed called",
                     self.id
                 );
                 false
