@@ -104,6 +104,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
             .context("Initialising DB")
     }
 
+    #[cfg(not(feature = "fresh_node"))]
     fn startup_backward_sync(&self) -> Result<()> {
         // In case of an interrupted backward_sync, a back_sync_checkpoint will be created.
         // If it is still canonical when we restart the application, we will run:
@@ -350,6 +351,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         Ok(())
     }
 
+    #[cfg(not(feature = "fresh_node"))]
     fn resume_pending_backward_sync(&self) -> Result<()> {
         if let Some(checkpoint) = self
             .store
@@ -377,6 +379,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         Ok(())
     }
 
+    #[cfg(not(feature = "fresh_node"))]
     fn full_sync_backward_syncs(&self) -> Result<()> {
         let max_attempts = 10;
         for i in 1..max_attempts {
