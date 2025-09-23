@@ -14,7 +14,7 @@ services:
       ssh:
         - default=${SSH_AUTH_SOCK}
     volumes:
-      - ${CONFIG_PATH:-../config/docker}:/app/config:ro
+      - ${CONFIG_PATH:-../config/docker/anvil}:/app/config:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - db-blocks:/app/db/blocks
     environment:
@@ -41,7 +41,7 @@ services:
       ssh:
         - default=${SSH_AUTH_SOCK}
     volumes:
-      - ${CONFIG_PATH:-../config/docker}:/app/config:ro
+      - ${CONFIG_PATH:-../config/docker/anvil}:/app/config:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - db-logs:/app/db/logs
     environment:
@@ -68,7 +68,7 @@ services:
       ssh:
         - default=${SSH_AUTH_SOCK}
     volumes:
-      - ${CONFIG_PATH:-../config/docker}:/app/config:ro
+      - ${CONFIG_PATH:-../config/docker/anvil}:/app/config:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - keystore:/keystore
     restart: no
@@ -104,7 +104,7 @@ services:
       ssh:
         - default=${SSH_AUTH_SOCK}
     volumes:
-      - ${CONFIG_PATH:-../config/docker}:/app/config:ro
+      - ${CONFIG_PATH:-../config/docker/anvil}:/app/config:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - keystore:/keystore
     environment:
