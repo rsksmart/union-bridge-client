@@ -37,11 +37,12 @@ impl<C: MemberRegistryContractApi> GetMemberPublicKeysCall<C> {
 
         // we store peer_id in communicationPubKey.rsaPublicKey, agreed with Fairgate
         let peer_id_bytes = &public_keys.communicationPubKey;
-        let peer_id = P2PAddressParser::peer_id_from_member_contracts(peer_id_bytes).map_err(|e| {
-            DomainErrors::InvalidPublicKey(format!(
-                "Failed to convert communication public keys to hex: {e}"
-            ))
-        })?;
+        let peer_id =
+            P2PAddressParser::peer_id_from_member_contracts(peer_id_bytes).map_err(|e| {
+                DomainErrors::InvalidPublicKey(format!(
+                    "Failed to convert communication public keys to hex: {e}"
+                ))
+            })?;
 
         Ok(GetMemberPublicKeysOutput {
             public_keys: vec![
@@ -61,9 +62,7 @@ mod tests {
     use crate::types::P2PAddressParser;
     use alloy_primitives::{Address, FixedBytes};
     use mockall::predicate::always;
-    use union_contracts::bindings::member_registry::MemberRegistry::{
-        MemberKeys, RSAPublicKey,
-    };
+    use union_contracts::bindings::member_registry::MemberRegistry::{MemberKeys, RSAPublicKey};
 
     #[tokio::test]
     async fn test_get_member_public_keys_success() {

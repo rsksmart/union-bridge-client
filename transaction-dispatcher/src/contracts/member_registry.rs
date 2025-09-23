@@ -2,9 +2,7 @@ use crate::contracts::types::Address;
 use crate::rsk_gateway::DomainErrors;
 use alloy_provider::Provider;
 use log::info;
-use union_contracts::bindings::member_registry::MemberRegistry::{
-    self, MemberKeys,
-};
+use union_contracts::bindings::member_registry::MemberRegistry::{self, MemberKeys};
 use union_contracts::bindings::member_registry::MemberRegistry::{
     MemberRegistryErrors, MemberRegistryInstance,
 };

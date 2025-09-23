@@ -1,5 +1,6 @@
 use crate::contracts::{
-    bitcoin_manager, committee_registry, member_registry, peg_manager, signature_manager, stream_manager,
+    bitcoin_manager, committee_registry, member_registry, peg_manager, signature_manager,
+    stream_manager,
 };
 use crate::rsk_gateway::DomainErrors;
 use alloy_contract::SolCallBuilder;
@@ -103,7 +104,7 @@ async fn debug_trace_tx<P: Provider>(provider: &P, tx_hash: String) -> Transport
 }
 
 fn likely_oog(receipt: &TransactionReceipt, gas_limit: u64) -> bool {
-    let oog_margin = gas_limit / 50; // 2% margin
+    let oog_margin = gas_limit / 20; // 5% margin
     let oog_candidate =
         !receipt.status() && receipt.gas_used() >= gas_limit.saturating_sub(oog_margin);
 

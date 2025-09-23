@@ -32,7 +32,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "union-bridge-contracts 0.0.1-alpha.3",
+ "union-bridge-contracts 0.1.2-alpha",
  "uuid 1.17.0",
 ]
 
@@ -1962,7 +1962,7 @@ dependencies = [
  "sha2",
  "tiny-keccak",
  "transaction-dispatcher",
- "union-bridge-contracts 0.0.1-alpha.3",
+ "union-bridge-contracts 0.1.2-alpha",
  "uuid 1.17.0",
 ]
 
@@ -7482,7 +7482,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.12",
  "tokio",
- "union-bridge-contracts 0.0.1-alpha.3",
+ "union-bridge-contracts 0.1.2-alpha",
 ]
 
 [[package]]
@@ -7674,8 +7674,8 @@ dependencies = [
 
 [[package]]
 name = "union-bridge-contracts"
-version = "0.0.1-alpha.3"
-source = "git+ssh://git@github.com/temp-rsk/bitvmx-union-bridge-contracts.git?tag=v0.1.1-alpha#d62cb65d615870243ef9de59d115520735825589"
+version = "0.1.2-alpha"
+source = "git+ssh://git@github.com/temp-rsk/bitvmx-union-bridge-contracts.git?tag=v0.1.2-alpha#43807d62d0d073c1b5a78feb30e810dbc90c6523"
 dependencies = [
  "alloy",
  "alloy-trie 0.8.1",

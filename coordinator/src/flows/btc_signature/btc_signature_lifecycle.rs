@@ -3,7 +3,7 @@ use crate::config::REQUIRED_CONFIRMATIONS;
 use anyhow::{Context, Result, anyhow, bail};
 use common::runtime_sync::RuntimeSync;
 use common::types::{BlockNumber, Hash256};
-use log::{debug, info};
+use log::{debug, info, trace};
 use std::rc::Rc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::{AddMemberNonceInput, AddMemberSignatureInput};
@@ -23,7 +23,7 @@ pub(crate) trait BtcSignatureLifecycleApi {
 
     fn unset_all_nonces_ready(&mut self) -> Result<()>;
 
-    fn is_all_nonces_ready_confirmed(&self) -> Result<bool>;
+    fn is_all_nonces_ready_confirmed(&self) -> bool;
 
     fn send_signature_to_contracts(&mut self) -> Result<()>;
 
@@ -31,7 +31,7 @@ pub(crate) trait BtcSignatureLifecycleApi {
 
     fn unset_all_signatures_ready(&mut self) -> Result<()>;
 
-    fn is_all_signatures_ready_confirmed(&self) -> Result<bool>;
+    fn is_all_signatures_ready_confirmed(&self) -> bool;
 
     fn get_hash_to_sign(&self) -> Option<Hash256>;
 
@@ -218,14 +218,18 @@ where
         self.modify_nonces_confirmation_status(None)
     }
 
-    fn is_all_nonces_ready_confirmed(&self) -> Result<bool> {
-        let nonce_step = self
-            .state
+    fn is_all_nonces_ready_confirmed(&self) -> bool {
+        self.state
             .nonce_step
             .as_ref()
-            .ok_or_else(|| anyhow!("flow {} is not at Nonces step", self.state.flow_id))?;
-
-        Ok(nonce_step.is_confirmed())
+            .map(|step| step.is_confirmed())
+            .unwrap_or_else(|| {
+                trace!(
+                    "flow {} has not completed the Nonces step yet",
+                    self.state.flow_id
+                );
+                false
+            })
     }
 
     fn send_signature_to_contracts(&mut self) -> Result<()> {
@@ -239,7 +243,7 @@ where
             self.state.flow_id
         );
 
-        if !self.is_all_nonces_ready_confirmed()? {
+        if !self.is_all_nonces_ready_confirmed() {
             bail!(
                 "flow {} has not completed the Nonces step yet",
                 self.state.flow_id
@@ -287,14 +291,18 @@ where
         self.modify_signatures_confirmation_status(None)
     }
 
-    fn is_all_signatures_ready_confirmed(&self) -> Result<bool> {
-        let signature_step = self
-            .state
+    fn is_all_signatures_ready_confirmed(&self) -> bool {
+        self.state
             .signature_step
             .as_ref()
-            .ok_or_else(|| anyhow!("flow {} is not at Signatures step", self.state.flow_id))?;
-
-        Ok(signature_step.is_confirmed())
+            .map(|step| step.is_confirmed())
+            .unwrap_or_else(|| {
+                trace!(
+                    "flow {} has not completed the Signatures step",
+                    self.state.flow_id
+                );
+                false
+            })
     }
 
     fn get_hash_to_sign(&self) -> Option<Hash256> {
@@ -340,9 +348,7 @@ mod tests {
             .expect("failed to set nonces ready");
 
         // verify not confirmed initially
-        let is_confirmed = flow
-            .is_all_nonces_ready_confirmed()
-            .expect("failed to check confirmation status");
+        let is_confirmed = flow.is_all_nonces_ready_confirmed();
         assert!(!is_confirmed, "should not be confirmed yet");
 
         // step 3: add blocks but not enough for confirmation
@@ -352,9 +358,7 @@ mod tests {
         }
 
         // verify not yet confirmed
-        let is_confirmed = flow
-            .is_all_nonces_ready_confirmed()
-            .expect("failed to check confirmation status");
+        let is_confirmed = flow.is_all_nonces_ready_confirmed();
         assert!(!is_confirmed, "should not be confirmed yet");
 
         // step 4: unset nonces ready
@@ -368,9 +372,7 @@ mod tests {
         }
 
         // check that confirmations don't accumulate after unsetting nonces
-        let is_confirmed = flow
-            .is_all_nonces_ready_confirmed()
-            .expect("failed to check confirmation status");
+        let is_confirmed = flow.is_all_nonces_ready_confirmed();
         assert!(
             !is_confirmed,
             "confirmations should not accumulate after unsetting nonces"
@@ -387,9 +389,7 @@ mod tests {
         }
 
         // step 7: verify confirmed after enough blocks
-        let is_confirmed = flow
-            .is_all_nonces_ready_confirmed()
-            .expect("failed to check confirmation status");
+        let is_confirmed = flow.is_all_nonces_ready_confirmed();
         assert!(is_confirmed, "should be confirmed after enough blocks");
     }
 
@@ -408,9 +408,7 @@ mod tests {
             .expect("failed to set nonces ready");
 
         // verify not confirmed initially
-        let is_confirmed = flow
-            .is_all_nonces_ready_confirmed()
-            .expect("failed to check confirmation status");
+        let is_confirmed = flow.is_all_nonces_ready_confirmed();
         assert!(!is_confirmed, "should not be confirmed yet");
 
         // step 3: add blocks but not enough for confirmation
@@ -420,9 +418,7 @@ mod tests {
         }
 
         // verify not yet confirmed
-        let is_confirmed = flow
-            .is_all_nonces_ready_confirmed()
-            .expect("failed to check confirmation status");
+        let is_confirmed = flow.is_all_nonces_ready_confirmed();
         assert!(!is_confirmed, "should not be confirmed yet");
 
         // step 4: add missing block to confirm
@@ -430,9 +426,7 @@ mod tests {
         blockchain_view.update(block);
 
         // verify confirmed after enough blocks
-        let is_confirmed = flow
-            .is_all_nonces_ready_confirmed()
-            .expect("failed to check confirmation status");
+        let is_confirmed = flow.is_all_nonces_ready_confirmed();
         assert!(is_confirmed, "should be confirmed after enough blocks");
     }
 
@@ -452,7 +446,7 @@ mod tests {
             result
                 .unwrap_err()
                 .to_string()
-                .contains("is not at Nonces step"),
+                .contains("has not completed the Nonces step yet"),
             "error should mention flow is not at Nonces step"
         );
     }
@@ -477,9 +471,7 @@ mod tests {
             .expect("failed to set signatures ready");
 
         // verify not confirmed initially
-        let is_confirmed = flow
-            .is_all_signatures_ready_confirmed()
-            .expect("failed to check confirmation status");
+        let is_confirmed = flow.is_all_signatures_ready_confirmed();
         assert!(!is_confirmed, "should not be confirmed initially");
 
         // step 5: add blocks but not enough for confirmation
@@ -489,9 +481,7 @@ mod tests {
         }
 
         // verify not yet confirmed
-        let is_confirmed = flow
-            .is_all_signatures_ready_confirmed()
-            .expect("failed to check confirmation status");
+        let is_confirmed = flow.is_all_signatures_ready_confirmed();
         assert!(!is_confirmed, "should not be confirmed yet");
 
         // step 6: add missing block to confirm
@@ -499,9 +489,7 @@ mod tests {
         blockchain_view.update(block);
 
         // verify confirmed after enough blocks
-        let is_confirmed = flow
-            .is_all_signatures_ready_confirmed()
-            .expect("failed to check confirmation status");
+        let is_confirmed = flow.is_all_signatures_ready_confirmed();
         assert!(is_confirmed, "should be confirmed after enough blocks");
     }
 
@@ -524,9 +512,7 @@ mod tests {
             .expect("failed to set signatures ready");
 
         // verify not confirmed initially
-        let is_confirmed = flow
-            .is_all_signatures_ready_confirmed()
-            .expect("failed to check confirmation status");
+        let is_confirmed = flow.is_all_signatures_ready_confirmed();
         assert!(!is_confirmed, "should not be confirmed initially");
 
         // step 4: add blocks but not enough for confirmation
@@ -536,9 +522,7 @@ mod tests {
         }
 
         // verify not yet confirmed
-        let is_confirmed = flow
-            .is_all_signatures_ready_confirmed()
-            .expect("failed to check confirmation status");
+        let is_confirmed = flow.is_all_signatures_ready_confirmed();
         assert!(!is_confirmed, "should not be confirmed yet");
 
         // step 5: unset signatures ready
@@ -552,9 +536,7 @@ mod tests {
         }
 
         // check that confirmations don't accumulate after unsetting signatures
-        let is_confirmed = flow
-            .is_all_signatures_ready_confirmed()
-            .expect("failed to check confirmation status");
+        let is_confirmed = flow.is_all_signatures_ready_confirmed();
         assert!(
             !is_confirmed,
             "confirmations should not accumulate after unsetting signatures"
@@ -571,9 +553,7 @@ mod tests {
         }
 
         // step 8: verify confirmed after enough blocks
-        let is_confirmed = flow
-            .is_all_signatures_ready_confirmed()
-            .expect("failed to check confirmation status");
+        let is_confirmed = flow.is_all_signatures_ready_confirmed();
         assert!(is_confirmed, "should be confirmed after enough blocks");
     }
 
@@ -602,9 +582,7 @@ mod tests {
         }
 
         // verify not yet confirmed
-        let is_confirmed = flow
-            .is_all_signatures_ready_confirmed()
-            .expect("failed to check confirmation status");
+        let is_confirmed = flow.is_all_signatures_ready_confirmed();
         assert!(!is_confirmed, "should not be confirmed yet");
 
         // step 5: unset nonces ready while in signature step
@@ -638,7 +616,7 @@ mod tests {
             .expect("failed to complete Signatures step");
 
         assert!(
-            flow.is_all_signatures_ready_confirmed().unwrap(),
+            flow.is_all_signatures_ready_confirmed(),
             "Signatures should be confirmed"
         );
     }
@@ -729,14 +707,14 @@ mod tests {
         // test 4: try to check confirmations before setting ready
         let result = flow.is_all_nonces_ready_confirmed();
         assert!(
-            result.is_err(),
-            "should fail when checking nonce confirmation before setting ready"
+            !result,
+            "should be false when checking nonce confirmation before setting ready"
         );
 
         let result = flow.is_all_signatures_ready_confirmed();
         assert!(
-            result.is_err(),
-            "should fail when checking signature confirmation before setting ready"
+            !result,
+            "should be false when checking signature confirmation before setting ready"
         );
     }
 
@@ -944,12 +922,10 @@ mod tests {
         }
 
         // verify confirmed after enough blocks
-        let is_confirmed = flow
-            .is_all_nonces_ready_confirmed()
-            .expect("failed to check confirmation status");
+        let is_confirmed = flow.is_all_nonces_ready_confirmed();
         assert!(
             is_confirmed,
-            "nonces should be confirmed after enough blocks"
+            "nonces should not be confirmed before enough blocks"
         );
 
         Ok(())
@@ -970,9 +946,7 @@ mod tests {
         }
 
         // verify confirmed after enough blocks
-        let is_confirmed = flow
-            .is_all_signatures_ready_confirmed()
-            .expect("failed to check confirmation status");
+        let is_confirmed = flow.is_all_signatures_ready_confirmed();
         assert!(
             is_confirmed,
             "signatures should be confirmed after enough blocks"
