@@ -78,7 +78,6 @@ impl ConfigAsLib {
                     ContractInfo {
                         name: c.name.to_owned(),
                         address,
-                        abi: None,
                     },
                 )
             })

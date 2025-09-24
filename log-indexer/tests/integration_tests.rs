@@ -85,7 +85,6 @@ fn test_when_log_indexer_runs_should_store_logs_from_subscription() -> Result<()
         EVENT_SIGNATURE.to_string(),
         log_info_tuples.clone(),
     );
-    // mock_rsk_provider_handler.set_provider_expect_decode_log();
     let managed_contracts = generate_fake_managed_contracts(addresses);
     cycle_indexer(
         store,
@@ -174,7 +173,6 @@ fn test_when_log_before_initial_height_should_not_store_log() -> Result<()> {
         EVENT_SIGNATURE.to_string(),
         log_info_tuples_with_bad_log.clone(),
     );
-    // mock_rsk_provider_handler.set_provider_expect_decode_log();
     let managed_contracts = generate_fake_managed_contracts(addresses);
     cycle_indexer(
         store,

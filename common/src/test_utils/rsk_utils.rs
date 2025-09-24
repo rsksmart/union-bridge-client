@@ -77,7 +77,6 @@ pub fn generate_fake_managed_contract(address: Address) -> (Address, ContractInf
         ContractInfo {
             name: format!("contract_{}", address.to_string()),
             address,
-            abi: None,
         },
     )
 }

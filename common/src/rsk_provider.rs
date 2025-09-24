@@ -1,4 +1,4 @@
-use crate::types::{Address, BlockHash, BlockNumber, ContractInfo, RskBlock, RskEvent, RskLog};
+use crate::types::{Address, BlockHash, BlockNumber, RskBlock, RskLog};
 use anyhow::Result;
 use thiserror::Error;
 
@@ -57,8 +57,6 @@ pub trait RskProvider {
         to: BlockNumber,
         addrs: &Vec<Address>,
     ) -> Result<Vec<RskLog>>;
-    fn decode_log(&self, new_log: RskLog, contract_info: &ContractInfo)
-    -> Result<Option<RskEvent>>;
     fn disconnect(&self) -> Result<()>;
 }
 
