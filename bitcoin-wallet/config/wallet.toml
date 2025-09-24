@@ -4,8 +4,8 @@
 network = "regtest"
 sats_per_byte = 5
 
-# Compressed WIF for a regtest/testnet key (replace with your own secret)
-private_key_wif = ""
+# Compressed WIF for a regtest/testnet key => use WALLET_PRIVATE_KEY env var instead
+# private_key_wif = "<do_not_use>"
 
 # Default local regtest node settings for bitcoind node run inside docker container using bitcoind.rs 
 rpc_url = "http://127.0.0.1:18443/"

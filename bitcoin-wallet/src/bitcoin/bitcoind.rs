@@ -12,10 +12,10 @@ use bollard::image::CreateImageOptions;
 use bollard::models::{ContainerCreateResponse, HostConfig};
 use futures_util::stream::StreamExt;
 use tokio::runtime::Runtime;
-use tracing::{self, info};
 
 use bitcoin::Network;
 use bitcoincore_rpc::{Auth, Client};
+use log::info;
 use serde::Deserialize;
 
 #[derive(Clone, Debug, Deserialize)]

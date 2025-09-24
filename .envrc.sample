@@ -20,8 +20,14 @@ export GITHUB_REGISTRY_TOKEN="<your_token_here>"
 # For local client running
 ############################################################
 # Path where keystore, databases and other persistent data will be stored
+# When not using --utxo-db / WALLET_UTXO_DB, the wallet will use "$BASE_STORAGE_PATH/<utxo_db_path from config>"
 export BASE_STORAGE_PATH="<path/to/your/storage>"
 # for transaction dispatcher
 export KEY_STORE_PASSWORD="<super-secret-password>"
 # optional (with fallback)
 export CHECK_FORK_REQUIRED_NUM_BLOCKS=25
+
+############################################################
+# Bitcoin
+############################################################
+export WALLET_PRIVATE_KEY="<your_wif_private_key>"

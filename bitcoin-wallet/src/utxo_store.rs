@@ -1,13 +1,11 @@
 use std::path::Path;
-use std::sync::{Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, anyhow};
 use bitcoin::Address;
 use bitcoin::OutPoint;
-use bitcoin::hashes::Hash;
-use rusty_leveldb::{DB, LdbIterator, Options};
 use serde::{Deserialize, Serialize};
+use storage_backend::storage::{KeyValueStore, Storage};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredUtxo {
@@ -18,15 +16,14 @@ pub struct StoredUtxo {
 }
 
 pub struct UtxoStore {
-    db: Mutex<DB>,
+    db: Storage,
 }
 
 impl UtxoStore {
     pub fn open(path: &Path) -> Result<Self> {
-        let mut options = Options::default();
-        options.create_if_missing = true;
-        let db = DB::open(path, options).map_err(|e| anyhow!("failed to open LevelDB: {e}"))?;
-        Ok(Self { db: Mutex::new(db) })
+        let db = Storage::new_with_path(&path.to_path_buf())
+            .map_err(|e| anyhow!("failed to open storage backend: {e}"))?;
+        Ok(Self { db })
     }
 
     pub fn insert(&self, outpoint: &OutPoint, value_sat: u64, address: &Address) -> Result<()> {
@@ -46,46 +43,39 @@ impl UtxoStore {
             timestamp,
             address: Some(address.to_string()),
         };
-        let bytes = serde_json::to_vec(&stored).context("serialize utxo")?;
-        let mut db = self.lock_db()?;
-        db.put(&key, &bytes)
-            .map_err(|e| anyhow!("failed to write utxo: {e}"))?;
-        db.flush()
-            .map_err(|e| anyhow!("failed to flush utxo store: {e}"))
+        self.db
+            .set(&key, &stored, None)
+            .map_err(|e| anyhow!("failed to write utxo: {e}"))
     }
 
     pub fn remove(&self, outpoint: &OutPoint) -> Result<()> {
         let key = utxo_key(outpoint);
-        let mut db = self.lock_db()?;
-        db.delete(&key)
-            .map_err(|e| anyhow!("failed to delete utxo: {e}"))?;
-        db.flush()
-            .map_err(|e| anyhow!("failed to flush utxo store: {e}"))
+        self.db
+            .delete(&key)
+            .map_err(|e| anyhow!("failed to delete utxo: {e}"))
     }
 
     pub fn load_all(&self) -> Result<Vec<(OutPoint, StoredUtxo)>> {
-        let mut db = self.lock_db()?;
-        let mut iter = db
-            .new_iter()
-            .map_err(|e| anyhow!("failed to create iterator: {e}"))?;
+        let entries: std::collections::HashMap<String, StoredUtxo> = self
+            .db
+            .get_all()
+            .map_err(|e| anyhow!("failed to iterate utxos: {e}"))?;
         let mut utxos = Vec::new();
-        while let Some((key, value)) = iter.next() {
+        for (key, value) in entries.into_iter() {
             let outpoint = key_to_outpoint(&key)?;
-            let stored: StoredUtxo = serde_json::from_slice(&value).context("parse stored utxo")?;
-            utxos.push((outpoint, stored));
+            utxos.push((outpoint, value));
         }
         Ok(utxos)
     }
 
     pub fn load_by_address(&self, address: &Address) -> Result<Vec<(OutPoint, StoredUtxo)>> {
         let address_str = address.to_string();
-        let mut db = self.lock_db()?;
-        let mut iter = db
-            .new_iter()
-            .map_err(|e| anyhow!("failed to create iterator: {e}"))?;
+        let entries: std::collections::HashMap<String, StoredUtxo> = self
+            .db
+            .get_all()
+            .map_err(|e| anyhow!("failed to iterate utxos: {e}"))?;
         let mut utxos = Vec::new();
-        while let Some((key, value)) = iter.next() {
-            let stored: StoredUtxo = serde_json::from_slice(&value).context("parse stored utxo")?;
+        for (key, stored) in entries.into_iter() {
             if stored
                 .address
                 .as_deref()
@@ -100,49 +90,45 @@ impl UtxoStore {
 
     pub fn contains(&self, outpoint: &OutPoint) -> Result<bool> {
         let key = utxo_key(outpoint);
-        let mut db = self.lock_db()?;
-        Ok(db.get(&key).is_some())
+        let exists: Option<StoredUtxo> = self
+            .db
+            .get(&key)
+            .map_err(|e| anyhow!("failed to read utxo: {e}"))?;
+        Ok(exists.is_some())
     }
 
     pub fn clear(&self) -> Result<()> {
-        let mut db = self.lock_db()?;
-        let mut iter = db
-            .new_iter()
-            .map_err(|e| anyhow!("failed to create iterator: {e}"))?;
-        let mut keys = Vec::new();
-        while let Some((key, _)) = iter.next() {
-            keys.push(key);
-        }
-        for key in keys {
-            db.delete(&key)
+        let entries: std::collections::HashMap<String, StoredUtxo> = self
+            .db
+            .get_all()
+            .map_err(|e| anyhow!("failed to iterate utxos: {e}"))?;
+        for (key, _) in entries.into_iter() {
+            self.db
+                .delete(&key)
                 .map_err(|e| anyhow!("failed to delete utxo: {e}"))?;
         }
-        db.flush()
-            .map_err(|e| anyhow!("failed to flush utxo store: {e}"))
-    }
-
-    fn lock_db(&self) -> Result<MutexGuard<'_, DB>> {
-        self.db
-            .lock()
-            .map_err(|_| anyhow!("UTXO database mutex poisoned"))
+        Ok(())
     }
 }
 
-fn utxo_key(outpoint: &OutPoint) -> Vec<u8> {
-    let mut key = Vec::with_capacity(36);
-    key.extend_from_slice(&outpoint.txid.to_byte_array());
-    key.extend_from_slice(&outpoint.vout.to_le_bytes());
-    key
+fn utxo_key(outpoint: &OutPoint) -> String {
+    format!("utxo/{:?}:{}", outpoint.txid, outpoint.vout)
 }
 
-fn key_to_outpoint(key: &[u8]) -> Result<OutPoint> {
-    anyhow::ensure!(key.len() == 36, "invalid UTXO key len {}", key.len());
-    let mut txid_bytes = [0u8; 32];
-    txid_bytes.copy_from_slice(&key[0..32]);
-    let txid = bitcoin::Txid::from_byte_array(txid_bytes);
-    let mut vout_bytes = [0u8; 4];
-    vout_bytes.copy_from_slice(&key[32..36]);
-    let vout = u32::from_le_bytes(vout_bytes);
+fn key_to_outpoint(key: &str) -> Result<OutPoint> {
+    // Expected format: "utxo/<txid>:<vout>"
+    let parts: Vec<&str> = key.split('/').collect();
+    anyhow::ensure!(
+        parts.len() == 2 && parts[0] == "utxo",
+        "invalid UTXO key '{}': wrong prefix",
+        key
+    );
+    let pair = parts[1];
+    let mut iter = pair.rsplitn(2, ':');
+    let vout_str = iter.next().context("missing vout in key")?;
+    let txid_str = iter.next().context("missing txid in key")?;
+    let txid = txid_str.parse().context("invalid txid in key")?;
+    let vout: u32 = vout_str.parse().context("invalid vout in key")?;
     Ok(OutPoint::new(txid, vout))
 }
 
