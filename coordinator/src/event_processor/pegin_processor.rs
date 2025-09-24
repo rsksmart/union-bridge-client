@@ -85,7 +85,7 @@ const ACCEPT_PEGIN: &'static str = "accept-pegin";
 const PEGIN_REQUEST: &'static str = "pegin_request";
 const PEGIN_ACCEPTED_INPUT_MSG: &'static str = "pegin_accepted";
 const PROGRAM_TYPE_ACCEPT_PEGIN: &'static str = "accept_pegin";
-pub const MIN_TX_CONFIRMATIONS: u32 = 1; //TODO agree on this value for alphanet.
+pub const MIN_TX_CONFIRMATIONS: u32 = 6;
 pub const BLOCKS_DELAY_FOR_TX_CHECK: u32 = 20;
 
 /// Data structure used to send pegin request information to the BitVMX client.

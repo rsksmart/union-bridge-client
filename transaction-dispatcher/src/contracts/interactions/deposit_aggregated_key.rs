@@ -79,7 +79,11 @@ mod tests {
         );
         mock_contract
             .expect_invoke_deposit_aggregated_key()
-            .with(eq(committee_id.clone()), eq(aggregated_key.clone()), eq(gas_bumps))
+            .with(
+                eq(committee_id.clone()),
+                eq(aggregated_key.clone()),
+                eq(gas_bumps),
+            )
             .times(1)
             .returning(move |_, _, _| Ok(expected_receipt.clone()));
 
@@ -108,7 +112,11 @@ mod tests {
 
         mock_contract
             .expect_invoke_deposit_aggregated_key()
-            .with(eq(committee_id.clone()), eq(aggregated_key.clone()), eq(gas_bumps))
+            .with(
+                eq(committee_id.clone()),
+                eq(aggregated_key.clone()),
+                eq(gas_bumps),
+            )
             .times(1)
             .returning(|_, _, _| {
                 Err(alloy_contract::Error::TransportError(

@@ -3,9 +3,7 @@ use crate::contracts::committee_registry::{
     ApplyToStreamInvoke, CommitteeRegistryContract, DepositAggregatedKeysInvoke,
     DepositCommunicationDataInvoke, GetCommitteeCall, GetMemberCommunicationDataCall,
 };
-use crate::contracts::member_registry::{
-    GetMemberPublicKeysCall, MemberRegistryContract,
-};
+use crate::contracts::member_registry::{GetMemberPublicKeysCall, MemberRegistryContract};
 use crate::contracts::peg_manager::{
     FakePegManagerContract, PegManagerContract, accept_pegin::AcceptPeginInvoke,
     get_temporary_pegin_address::GetTemporaryPeginAddressCall,

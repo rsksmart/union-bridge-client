@@ -297,7 +297,9 @@ mod tests {
         );
 
         let encoded = P2PAddressParser::peer_id_to_contracts(&peer.0).unwrap();
-        let member_encoded = MemberRSAPublicKey { rsaPublicKey: encoded.rsaPublicKey };
+        let member_encoded = MemberRSAPublicKey {
+            rsaPublicKey: encoded.rsaPublicKey,
+        };
         let decoded = P2PAddressParser::peer_id_from_member_contracts(&member_encoded).unwrap();
         assert_eq!(decoded, peer.0);
     }
@@ -309,7 +311,9 @@ mod tests {
         );
 
         let encoded = P2PAddressParser::peer_id_to_contracts(&peer.0).unwrap();
-        let member_encoded = MemberRSAPublicKey { rsaPublicKey: encoded.rsaPublicKey };
+        let member_encoded = MemberRSAPublicKey {
+            rsaPublicKey: encoded.rsaPublicKey,
+        };
         let decoded = P2PAddressParser::peer_id_from_member_contracts(&member_encoded).unwrap();
         assert_eq!(decoded, peer.0);
     }

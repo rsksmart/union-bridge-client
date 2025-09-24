@@ -1,5 +1,6 @@
 use crate::contracts::{
-    bitcoin_manager, committee_registry, member_registry, peg_manager, signature_manager, stream_manager,
+    bitcoin_manager, committee_registry, member_registry, peg_manager, signature_manager,
+    stream_manager,
 };
 use crate::rsk_gateway::DomainErrors;
 use alloy_contract::SolCallBuilder;
