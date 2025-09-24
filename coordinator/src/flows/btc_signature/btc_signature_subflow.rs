@@ -4,7 +4,7 @@ use anyhow::{Result, bail};
 use common::types::RskBlockAndUncles;
 
 use common::runtime_sync::RuntimeSync;
-use log::info;
+use log::{debug, info};
 use std::rc::Rc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;
@@ -37,6 +37,7 @@ pub(crate) type MockBtcSigSubFlowFactory =
 pub(crate) struct BaseBtcSignatureSubFlow<BSF: BtcSignatureLifecycleApi> {
     lifecycle: BSF,
     is_done: bool,
+    is_nonces_step_done: bool,
 }
 
 impl<CG> BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<CG>>
@@ -50,6 +51,7 @@ where
         Self {
             lifecycle,
             is_done: false,
+            is_nonces_step_done: false,
         }
     }
 }
@@ -81,7 +83,7 @@ where
         match event {
             RskPegManagerEvents::AllNoncesReady(event) => {
                 if let Some(hash) = self.lifecycle.get_hash_to_sign() {
-                    //the hash is used to check if the event is for the current flow if not, it is ignored
+                    // the hash is used to check if the event is for the current flow if not, it is ignored
                     if hash == event.inner {
                         if event.removed {
                             self.lifecycle.unset_all_nonces_ready()?;
@@ -94,7 +96,7 @@ where
             }
             RskPegManagerEvents::AllSignaturesReady(event) => {
                 if let Some(hash) = self.lifecycle.get_hash_to_sign() {
-                    //the hash is used to check if the event is for the current flow if not, it is ignored
+                    // the hash is used to check if the event is for the current flow if not, it is ignored
                     if hash == event.inner {
                         if event.removed {
                             self.lifecycle.unset_all_signatures_ready()?;
@@ -114,15 +116,23 @@ where
         // update blockchain view
         self.lifecycle.blockchain_view().update(block.clone());
 
+        if !self.lifecycle.blockchain_view().has_observers() {
+            debug!("No observers have been added to BTC Signature flow yet");
+            return Ok(());
+        }
+
         // check if nonces are ready and send signature
-        if self.lifecycle.is_all_nonces_ready_confirmed() {
+        if !self.is_nonces_step_done && self.lifecycle.is_all_nonces_ready_confirmed() {
+            self.is_nonces_step_done = true;
             self.lifecycle.send_signature_to_contracts()?;
+            return Ok(());
         }
 
         // check if signatures are ready and close flow
         if self.lifecycle.is_all_signatures_ready_confirmed() {
             self.is_done = true;
             self.lifecycle.blockchain_view().clear();
+            return Ok(());
         }
 
         Ok(())
