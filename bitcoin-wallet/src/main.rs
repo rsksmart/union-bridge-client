@@ -16,7 +16,7 @@ use rustyline::error::ReadlineError;
 use serde_json::json;
 use ub_wallet::bitcoin::utils::{find_vout_for_address, start_client};
 use ub_wallet::cli::{CliOpts, setup_editor};
-use ub_wallet::config::{self, Config};
+use ub_wallet::config::Config;
 use ub_wallet::wallet::{CreatedTransaction, Wallet};
 
 fn main() -> Result<()> {
@@ -138,7 +138,7 @@ fn check_transaction_status(wallet: &Wallet, txid: &Txid) -> Result<TxConfirmati
     })
 }
 
-fn handle_command(wallet: &mut Wallet, config: &Config, line: &str) -> Result<CommandOutcome> {
+fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
     let mut parts = line.split_whitespace();
     let command = parts.next().unwrap();
 
@@ -148,43 +148,6 @@ fn handle_command(wallet: &mut Wallet, config: &Config, line: &str) -> Result<Co
             Ok(CommandOutcome::Continue)
         }
         "exit" | "quit" => Ok(CommandOutcome::Exit),
-        "set_network" => {
-            let name = parts
-                .next()
-                .context("expected network name (bitcoin|testnet|signet|regtest)")?;
-            let network = config::parse_network(name)?;
-            let had_in_memory_private_keys = !wallet.imported_addresses().is_empty();
-            let previous_network = wallet.network();
-            let changed = wallet.set_network(network)?;
-            if changed {
-                println!(
-                    "Network set to {}. In-memory state reset; UTXO data is per network.",
-                    network_name(wallet.network())
-                );
-                if let Some(wif) = config.private_key_wif.as_deref() {
-                    if matches!(
-                        wallet.network(),
-                        Network::Regtest | Network::Testnet | Network::Testnet4 | Network::Signet
-                    ) {
-                        let address = wallet
-                            .import_private_key(wif)
-                            .with_context(|| "failed to load private key from config")?;
-                        println!(
-                            "Loaded private key from config. Default P2WPKH address: {address}"
-                        );
-                    }
-                }
-                if wallet.network() == Network::Bitcoin && had_in_memory_private_keys {
-                    println!(
-                        "Unloaded in-memory {} private keys before connecting to mainnet.",
-                        network_name(previous_network)
-                    );
-                }
-            } else {
-                println!("Network unchanged ({}).", network_name(wallet.network()));
-            }
-            Ok(CommandOutcome::Continue)
-        }
         "import_private_key" => {
             let wif = parts.next().context("expected WIF string")?;
             let address = wallet.import_private_key(wif)?;
@@ -239,19 +202,6 @@ fn handle_command(wallet: &mut Wallet, config: &Config, line: &str) -> Result<Co
                 })?;
             wallet.switch_active_address(checked.clone())?;
             println!("Active address set to {checked}");
-            Ok(CommandOutcome::Continue)
-        }
-        "set_rpc" => {
-            let url = parts.next().context("expected RPC URL")?;
-            let user = parts.next();
-            let pass = parts.next();
-            wallet.configure_rpc(url, user, pass)?;
-            println!("RPC client configured (URL: {url}).");
-            Ok(CommandOutcome::Continue)
-        }
-        "clear_rpc" => {
-            wallet.clear_rpc_client();
-            println!("RPC client cleared.");
             Ok(CommandOutcome::Continue)
         }
         "start_regtest_client" => {
@@ -391,9 +341,7 @@ fn handle_command(wallet: &mut Wallet, config: &Config, line: &str) -> Result<Co
                 wallet.network()
             );
             let Some(client) = wallet.rpc_client() else {
-                println!(
-                    "RPC not configured; use start_regtest_client or set_rpc to enable mining."
-                );
+                println!("RPC not configured; use start_regtest_client to enable mining.");
                 return Ok(CommandOutcome::Continue);
             };
             let miner_address: String = client
@@ -430,9 +378,7 @@ fn handle_command(wallet: &mut Wallet, config: &Config, line: &str) -> Result<Co
                 return Ok(CommandOutcome::Continue);
             };
             let Some(client) = wallet.rpc_client() else {
-                println!(
-                    "RPC not configured; use start_regtest_client or set_rpc to enable mining."
-                );
+                println!("RPC not configured; use start_regtest_client to enable mining.");
                 return Ok(CommandOutcome::Continue);
             };
 
@@ -660,9 +606,6 @@ fn print_help(sats_per_byte: u64) {
     println!("  help                                  - Show this message");
     println!("  exit | quit                           - Leave the wallet");
     println!(
-        "  set_network <name>                    - Select network (bitcoin|testnet|testnet4|signet|regtest)"
-    );
-    println!(
         "  import_private_key <wif>              - Import compressed WIF for the current network kind"
     );
     println!(
@@ -672,8 +615,6 @@ fn print_help(sats_per_byte: u64) {
     println!(
         "  switch_address <addr>                 - Make an imported address the active wallet address"
     );
-    println!("  set_rpc <url> [user] [pass]           - Configure RPC endpoint for broadcasting");
-    println!("  clear_rpc                             - Remove configured RPC client");
     println!(
         "  start_regtest_client                  - Launch regtest bitcoind via Docker and configure RPC"
     );

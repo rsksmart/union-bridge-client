@@ -38,13 +38,10 @@ const COMMANDS: &[&str] = &[
     "help",
     "exit",
     "quit",
-    "set_network",
     "import_private_key",
     "generate_address",
     "list_addresses",
     "switch_address",
-    "set_rpc",
-    "clear_rpc",
     "start_regtest_client",
     "register_utxo",
     "list_funds",
@@ -54,10 +51,6 @@ const COMMANDS: &[&str] = &[
     "mine_utxo",
     "tx_status",
     "clear_db",
-];
-
-const NETWORK_NAMES: &[&str] = &[
-    "bitcoin", "mainnet", "testnet", "testnet3", "testnet4", "signet", "regtest",
 ];
 
 #[derive(Default)]
@@ -80,7 +73,6 @@ impl CliHelper {
         }
 
         match tokens[0] {
-            "set_network" => Self::command_pairs(NETWORK_NAMES.iter().copied(), prefix),
             "list_funds" if tokens.len() == 1 => {
                 const LIST_FUNDS_ARGS: [&str; 1] = ["all"];
                 Self::command_pairs(LIST_FUNDS_ARGS.iter().copied(), prefix)

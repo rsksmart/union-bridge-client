@@ -6,13 +6,10 @@ Simple interactive command-line wallet for crafting P2WPKH transactions using th
 
 - `help` – show available commands
 - `exit` / `quit` – leave the wallet
-- `set_network <bitcoin|testnet|testnet4|signet|regtest>` – select the active network (defaults to `regtest`)
 - `import_private_key <wif>` – import a compressed WIF private key for the active network kind
 - `generate_address` – create a new P2WPKH key pair and keep the current active address (use `switch_address` to activate it)
 - `list_addresses` – list imported wallet addresses (marking the active one)
 - `switch_address <bech32>` – switch the active address when multiple private keys are loaded
-- `set_rpc <url> [user] [pass]` – configure a Bitcoin Core RPC endpoint used to broadcast transactions (leave user/password blank for cookie or unauthenticated setups)
-- `clear_rpc` – remove the configured RPC client
 - `start_regtest_client` – launch a regtest `bitcoind` via Docker and configure RPC automatically (requires Docker)
 - `register_utxo <txid> <vout> [satoshis]` – register a spendable P2WPKH UTXO; if the amount is omitted the wallet queries the RPC node for the output value
 - `list_funds [all]` – show registered UTXOs for the active address or for every address with `all`
