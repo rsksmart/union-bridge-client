@@ -6,6 +6,8 @@ use std::str::FromStr;
 
 use crate::bitcoin::reqwest_https::ReqwestHttpsTransport;
 use crate::bitcoin::utils::fetch_utxo_amount;
+use crate::config::Config;
+use crate::utxo_store::UtxoStore;
 use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::absolute;
 use bitcoin::address::{Address, NetworkUnchecked};
@@ -19,9 +21,7 @@ use bitcoin::secp256k1::{self, Message, Secp256k1, SecretKey};
 use bitcoin::sighash::{EcdsaSighashType, SighashCache};
 use bitcoin::{Amount, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness};
 use bitcoincore_rpc::{Client, RpcApi, jsonrpc};
-
-use crate::config::Config;
-use crate::utxo_store::UtxoStore;
+use log::info;
 
 pub const DEFAULT_SATS_PER_BYTE: u64 = 5;
 const P2WPKH_DUST_LIMIT_SATS: u64 = 330;
@@ -214,6 +214,14 @@ impl Wallet {
         if let Err(err) = self.commit_spend(created) {
             eprintln!("  warning: failed to commit local UTXO changes: {err}");
         }
+
+        let url = match self.network {
+            Network::Testnet => format!("https://mempool.space/testnet/tx/{}", txid),
+            Network::Bitcoin => format!("https://mempool.space/tx/{}", txid),
+            _ => "Unsupported network".to_string(),
+        };
+        info!("View transaction at: {}", url);
+
         Ok(txid)
     }
 
