@@ -85,6 +85,59 @@ enum CommandOutcome {
     Exit,
 }
 
+#[derive(Debug, Clone)]
+struct TxConfirmationInfo {
+    confirmations: u64,
+    block_hash: Option<String>,
+    block_height: Option<i64>,
+    total_value_btc: f64,
+}
+
+fn check_transaction_status(wallet: &Wallet, txid: &Txid) -> Result<TxConfirmationInfo> {
+    let client = wallet
+        .rpc_client()
+        .context("RPC client required to check transaction status")?;
+    let verbose: serde_json::Value = client
+        .call("getrawtransaction", &[json!(txid.to_string()), json!(true)])
+        .context("failed to fetch transaction details")?;
+
+    let confirmations = verbose
+        .get("confirmations")
+        .and_then(|c| c.as_u64())
+        .unwrap_or(0);
+
+    let total_value_btc: f64 = verbose
+        .get("vout")
+        .and_then(|outs| outs.as_array())
+        .map(|outs| {
+            outs.iter()
+                .filter_map(|out| out.get("value").and_then(|val| val.as_f64()))
+                .sum()
+        })
+        .unwrap_or(0.0);
+
+    let block_hash = verbose
+        .get("blockhash")
+        .and_then(|h| h.as_str())
+        .map(|s| s.to_string());
+
+    let block_height = if let Some(ref hash) = block_hash {
+        let block_json: serde_json::Value = client
+            .call("getblock", &[json!(hash)])
+            .context("failed to fetch block information")?;
+        block_json.get("height").and_then(|h| h.as_i64())
+    } else {
+        None
+    };
+
+    Ok(TxConfirmationInfo {
+        confirmations,
+        block_hash,
+        block_height,
+        total_value_btc,
+    })
+}
+
 fn handle_command(wallet: &mut Wallet, config: &Config, line: &str) -> Result<CommandOutcome> {
     let mut parts = line.split_whitespace();
     let command = parts.next().unwrap();
@@ -393,6 +446,34 @@ fn handle_command(wallet: &mut Wallet, config: &Config, line: &str) -> Result<Co
 
             Ok(CommandOutcome::Continue)
         }
+        "tx_status" => {
+            let txid_str = parts.next().context("expected txid")?;
+            let txid = Txid::from_str(txid_str).context("invalid txid format")?;
+            match check_transaction_status(wallet, &txid) {
+                Ok(info) => {
+                    let mined = if info.confirmations > 0 { "yes" } else { "no" };
+                    match (info.block_hash.as_deref(), info.block_height) {
+                        (Some(hash), Some(height)) => println!(
+                            "Tx {}: mined={} confirmations={} block_hash={} height={} total_outputs={:.8} BTC",
+                            txid, mined, info.confirmations, hash, height, info.total_value_btc
+                        ),
+                        (Some(hash), None) => println!(
+                            "Tx {}: mined={} confirmations={} block_hash={} total_outputs={:.8} BTC",
+                            txid, mined, info.confirmations, hash, info.total_value_btc
+                        ),
+                        (None, _) => println!(
+                            "Tx {}: mined={} confirmations={} total_outputs={:.8} BTC",
+                            txid, mined, info.confirmations, info.total_value_btc
+                        ),
+                    };
+                    Ok(CommandOutcome::Continue)
+                }
+                Err(err) => {
+                    eprintln!("failed to query transaction status: {err}");
+                    Ok(CommandOutcome::Continue)
+                }
+            }
+        }
 
         other => Err(anyhow!(
             "unknown command '{other}'. Type 'help' for a list of commands."
@@ -561,6 +642,9 @@ fn print_help(sats_per_byte: u64) {
     println!("  mine_block                            - Regtest only: mine a single block via RPC");
     println!(
         "  mine_utxo [sats]                      - Regtest only: mine and fund the active address with given amount (default 21000000 sat), then register the UTXO"
+    );
+    println!(
+        "  tx_status <txid>                      - Query node for a tx: mined?, confirmations, block hash/height, total outputs"
     );
     println!("Fees target {sats_per_byte} sat per virtual byte.");
 }

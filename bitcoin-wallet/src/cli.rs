@@ -52,6 +52,7 @@ const COMMANDS: &[&str] = &[
     "send_to_address",
     "mine_block",
     "mine_utxo",
+    "tx_status",
 ];
 
 const NETWORK_NAMES: &[&str] = &[
