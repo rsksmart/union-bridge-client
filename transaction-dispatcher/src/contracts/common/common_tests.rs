@@ -1,5 +1,5 @@
 use crate::contracts::common::{bumped_gas, likely_oog};
-use alloy_primitives::{TxHash, Bloom};
+use alloy_primitives::{Bloom, TxHash};
 use alloy_rpc_types::{Receipt, ReceiptEnvelope, ReceiptWithBloom, TransactionReceipt};
 
 // Helper function to create a fake receipt for testing
@@ -38,7 +38,7 @@ mod tests {
         // Test base case with no attempts
         let estimated = 100000u64;
         let result = bumped_gas(estimated, 0);
-        
+
         // Should be 120% of estimated (base headroom)
         assert_eq!(result, 120000);
     }
@@ -48,7 +48,7 @@ mod tests {
         // Test with 1 attempt (10% bump on top of 20% base)
         let estimated = 100000u64;
         let result = bumped_gas(estimated, 1);
-        
+
         // Base: 100000 * 1.20 = 120000
         // Attempt 1: 120000 * 1.10 = 132000
         assert_eq!(result, 132000);
@@ -59,7 +59,7 @@ mod tests {
         // Test with 3 attempts
         let estimated = 100000u64;
         let result = bumped_gas(estimated, 3);
-        
+
         // Base: 100000 * 1.20 = 120000
         // Attempt 1: 120000 * 1.10 = 132000
         // Attempt 2: 132000 * 1.10 = 145200
@@ -72,7 +72,7 @@ mod tests {
         // Test edge case where calculation might go below estimated
         let estimated = 1000u64;
         let result = bumped_gas(estimated, 0);
-        
+
         // Should never be below estimated
         assert!(result >= estimated);
     }
@@ -82,7 +82,7 @@ mod tests {
         // Test with very large numbers to ensure no overflow
         let estimated = u64::MAX;
         let result = bumped_gas(estimated, 10);
-        
+
         // Should not panic and should handle overflow gracefully
         assert!(result >= estimated);
     }
@@ -92,7 +92,7 @@ mod tests {
         let gas_limit = 200000u64;
         let gas_used = 150000u64; // Well below limit
         let receipt = create_fake_receipt(true, gas_used, gas_limit);
-        
+
         let result = likely_oog(&receipt, gas_limit);
         assert!(!result); // Should not be OOG
     }
@@ -102,7 +102,7 @@ mod tests {
         let gas_limit = 200000u64;
         let gas_used = 195000u64; // Close to limit (within 5% margin)
         let receipt = create_fake_receipt(false, gas_used, gas_limit);
-        
+
         let result = likely_oog(&receipt, gas_limit);
         assert!(result); // Should be OOG
     }
@@ -113,7 +113,7 @@ mod tests {
         let oog_margin = gas_limit / 20; // 5% margin = 10000
         let gas_used = gas_limit - oog_margin + 1; // Just above margin
         let receipt = create_fake_receipt(false, gas_used, gas_limit);
-        
+
         let result = likely_oog(&receipt, gas_limit);
         assert!(result); // Should be OOG
     }
@@ -124,7 +124,7 @@ mod tests {
         let oog_margin = gas_limit / 20; // 5% margin = 10000
         let gas_used = gas_limit - oog_margin - 1; // Just below margin
         let receipt = create_fake_receipt(false, gas_used, gas_limit);
-        
+
         let result = likely_oog(&receipt, gas_limit);
         assert!(!result); // Should not be OOG
     }
@@ -135,7 +135,7 @@ mod tests {
         let gas_limit = 200000u64;
         let gas_used = 200000u64; // Used all gas but succeeded
         let receipt = create_fake_receipt(true, gas_used, gas_limit);
-        
+
         let result = likely_oog(&receipt, gas_limit);
         assert!(!result); // Should not be OOG
     }
@@ -158,7 +158,11 @@ mod tests {
 
         for (estimated, attempts, expected) in test_cases {
             let result = bumped_gas(estimated, attempts);
-            assert_eq!(result, expected, "Failed for estimated={}, attempts={}", estimated, attempts);
+            assert_eq!(
+                result, expected,
+                "Failed for estimated={}, attempts={}",
+                estimated, attempts
+            );
         }
     }
 
@@ -174,7 +178,7 @@ mod tests {
         // Test with maximum u8 attempts
         let estimated = 100000u64;
         let result = bumped_gas(estimated, u8::MAX);
-        
+
         // Should not panic and should be >= estimated
         assert!(result >= estimated);
     }
@@ -183,12 +187,12 @@ mod tests {
     fn test_oog_detection_edge_cases() {
         // Test OOG detection with edge cases
         let gas_limit = 100000u64;
-        
+
         // Exactly at the margin
         let gas_used = gas_limit - (gas_limit / 20);
         let receipt = create_fake_receipt(false, gas_used, gas_limit);
         assert!(likely_oog(&receipt, gas_limit));
-        
+
         // Just below the margin
         let gas_used = gas_limit - (gas_limit / 20) - 1;
         let receipt = create_fake_receipt(false, gas_used, gas_limit);
@@ -198,25 +202,27 @@ mod tests {
     // Integration tests for send_tx_with_gas_bump
     // Note: These tests focus on the mathematical correctness of the gas bumping logic
     // Full integration tests would require complex mocking of the Provider and SolCallBuilder
-    
+
     #[test]
     fn test_gas_bump_algorithm_correctness() {
         // Test that the gas bumping algorithm produces expected results
         let test_cases = vec![
             // (estimated, attempt, expected)
-            (100000u64, 0u8, 120000u64),  // Base case: 20% headroom
-            (100000u64, 1u8, 132000u64),  // First retry: 20% + 10% = 32%
-            (100000u64, 2u8, 145200u64),  // Second retry: 20% + 10% + 10% = 45.2%
-            (100000u64, 3u8, 159720u64),  // Third retry: 20% + 10% + 10% + 10% = 59.72%
-            (50000u64, 0u8, 60000u64),    // Different base amount
-            (50000u64, 1u8, 66000u64),    // Different base amount with retry
+            (100000u64, 0u8, 120000u64), // Base case: 20% headroom
+            (100000u64, 1u8, 132000u64), // First retry: 20% + 10% = 32%
+            (100000u64, 2u8, 145200u64), // Second retry: 20% + 10% + 10% = 45.2%
+            (100000u64, 3u8, 159720u64), // Third retry: 20% + 10% + 10% + 10% = 59.72%
+            (50000u64, 0u8, 60000u64),   // Different base amount
+            (50000u64, 1u8, 66000u64),   // Different base amount with retry
         ];
 
         for (estimated, attempt, expected) in test_cases {
             let result = bumped_gas(estimated, attempt);
-            assert_eq!(result, expected, 
-                "Gas bump failed for estimated={}, attempt={}, expected={}, got={}", 
-                estimated, attempt, expected, result);
+            assert_eq!(
+                result, expected,
+                "Gas bump failed for estimated={}, attempt={}, expected={}, got={}",
+                estimated, attempt, expected, result
+            );
         }
     }
 
@@ -234,9 +240,13 @@ mod tests {
 
         for (estimated, attempt) in test_cases {
             let result = bumped_gas(estimated, attempt);
-            assert!(result >= estimated, 
-                "Gas bump went below estimated: estimated={}, attempt={}, result={}", 
-                estimated, attempt, result);
+            assert!(
+                result >= estimated,
+                "Gas bump went below estimated: estimated={}, attempt={}, result={}",
+                estimated,
+                attempt,
+                result
+            );
         }
     }
 
@@ -245,19 +255,17 @@ mod tests {
         // Test OOG detection accuracy with various scenarios
         let gas_limit = 200000u64;
         let oog_margin = gas_limit / 20; // 5% margin = 10000
-        
+
         // Test cases: (gas_used, status, expected_oog)
         let test_cases = vec![
             // Successful transactions should never be OOG
             (gas_limit, true, false),
             (gas_limit - 1, true, false),
             (gas_limit - oog_margin, true, false),
-            
             // Failed transactions near the limit should be OOG
             (gas_limit, false, true),
             (gas_limit - 1, false, true),
             (gas_limit - oog_margin + 1, false, true),
-            
             // Failed transactions well below limit should not be OOG
             (gas_limit - oog_margin - 1, false, false),
             (gas_limit / 2, false, false),
@@ -266,9 +274,11 @@ mod tests {
         for (gas_used, status, expected_oog) in test_cases {
             let receipt = create_fake_receipt(status, gas_used, gas_limit);
             let result = likely_oog(&receipt, gas_limit);
-            assert_eq!(result, expected_oog, 
-                "OOG detection failed: gas_used={}, status={}, expected={}, got={}", 
-                gas_used, status, expected_oog, result);
+            assert_eq!(
+                result, expected_oog,
+                "OOG detection failed: gas_used={}, status={}, expected={}, got={}",
+                gas_used, status, expected_oog, result
+            );
         }
     }
 
@@ -276,14 +286,18 @@ mod tests {
     fn test_gas_bump_overflow_protection() {
         // Test that gas bumping handles overflow gracefully
         let large_estimated = u64::MAX / 2; // Large but not max to allow for multiplication
-        
+
         // Test with various attempt counts
         for attempt in 0..=10 {
             let result = bumped_gas(large_estimated, attempt);
             // Should not panic and should be >= estimated
-            assert!(result >= large_estimated, 
-                "Gas bump overflow protection failed: estimated={}, attempt={}, result={}", 
-                large_estimated, attempt, result);
+            assert!(
+                result >= large_estimated,
+                "Gas bump overflow protection failed: estimated={}, attempt={}, result={}",
+                large_estimated,
+                attempt,
+                result
+            );
         }
     }
 
@@ -291,23 +305,31 @@ mod tests {
     fn test_gas_bump_mathematical_properties() {
         // Test mathematical properties of gas bumping
         let base_estimated = 100000u64;
-        
+
         // Property 1: Each attempt should increase gas (when not at overflow)
         let mut prev_gas = bumped_gas(base_estimated, 0);
         for attempt in 1..=5 {
             let current_gas = bumped_gas(base_estimated, attempt);
-            assert!(current_gas >= prev_gas, 
-                "Gas should not decrease between attempts: attempt={}, prev={}, current={}", 
-                attempt, prev_gas, current_gas);
+            assert!(
+                current_gas >= prev_gas,
+                "Gas should not decrease between attempts: attempt={}, prev={}, current={}",
+                attempt,
+                prev_gas,
+                current_gas
+            );
             prev_gas = current_gas;
         }
-        
+
         // Property 2: Gas bump should be monotonically increasing with attempts
         for attempt in 0..=10 {
             let gas = bumped_gas(base_estimated, attempt);
-            assert!(gas >= base_estimated, 
-                "Gas should never be below estimated: attempt={}, estimated={}, gas={}", 
-                attempt, base_estimated, gas);
+            assert!(
+                gas >= base_estimated,
+                "Gas should never be below estimated: attempt={}, estimated={}, gas={}",
+                attempt,
+                base_estimated,
+                gas
+            );
         }
     }
 }

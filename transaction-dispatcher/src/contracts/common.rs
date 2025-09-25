@@ -36,18 +36,12 @@ pub enum ParseFieldError {
 pub enum GasBumpError {
     #[error("Gas estimation failed: {0}")]
     GasEstimationFailed(String),
-    
+
     #[error("Transaction timeout after {0} seconds")]
     Timeout(u64),
-    
+
     #[error("Maximum gas limit exceeded: {0} > {1}")]
     MaxGasLimitExceeded(u64, u64),
-    
-    #[error("Maximum attempts exceeded: {0}")]
-    MaxAttemptsExceeded(u8),
-    
-    #[error("Invalid max_attempts: {0}")]
-    InvalidMaxAttempts(u8),
 }
 
 // Enhanced send_tx_with_gas_bump with timeout, error handling, and security improvements
@@ -61,32 +55,26 @@ where
     D: SolCall,
     F: Fn() -> SolCallBuilder<P, D>,
 {
-    // Input validation
-    if max_attempts == 0 {
-        return Err(alloy_contract::Error::TransportError(
-            alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
-                code: -32602,
-                message: GasBumpError::InvalidMaxAttempts(max_attempts).to_string().into(),
-                data: None,
-            })
-        ));
-    }
+    // Input validation - max_attempts represents retries, so 0 is valid (1 attempt, 0 retries)
+    // No validation needed as max_attempts = 0 means "no retries, just one attempt"
 
     let start_time = Instant::now();
     let timeout_duration = Duration::from_secs(DEFAULT_TIMEOUT_SECONDS);
-    
+
     let mut receipt;
     let mut attempt = 0;
-    
+
     loop {
         // Check timeout
         if start_time.elapsed() > timeout_duration {
             return Err(alloy_contract::Error::TransportError(
                 alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
                     code: -32603,
-                    message: GasBumpError::Timeout(DEFAULT_TIMEOUT_SECONDS).to_string().into(),
+                    message: GasBumpError::Timeout(DEFAULT_TIMEOUT_SECONDS)
+                        .to_string()
+                        .into(),
                     data: None,
-                })
+                }),
             ));
         }
 
@@ -94,36 +82,45 @@ where
         // this works also as an eth_call that would check error types, etc., if not do a manual .call()
         let estimated_gas = match timeout(
             Duration::from_secs(30), // 30 second timeout for gas estimation
-            build_tx().estimate_gas()
-        ).await {
+            build_tx().estimate_gas(),
+        )
+        .await
+        {
             Ok(Ok(gas)) => gas,
             Ok(Err(e)) => {
                 error!("Gas estimation failed: {:?}", e);
                 return Err(e);
-            },
+            }
             Err(_) => {
                 error!("Gas estimation timeout");
                 return Err(alloy_contract::Error::TransportError(
                     alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
                         code: -32603,
-                        message: GasBumpError::GasEstimationFailed("Timeout".to_string()).to_string().into(),
+                        message: GasBumpError::GasEstimationFailed("Timeout".to_string())
+                            .to_string()
+                            .into(),
                         data: None,
-                    })
+                    }),
                 ));
             }
         };
 
         let gas_limit = bumped_gas(estimated_gas, attempt);
-        
+
         // Security check: prevent excessive gas usage
         if gas_limit > MAX_GAS_LIMIT {
-            error!("Gas limit {} exceeds maximum allowed {}", gas_limit, MAX_GAS_LIMIT);
+            error!(
+                "Gas limit {} exceeds maximum allowed {}",
+                gas_limit, MAX_GAS_LIMIT
+            );
             return Err(alloy_contract::Error::TransportError(
                 alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
                     code: -32602,
-                    message: GasBumpError::MaxGasLimitExceeded(gas_limit, MAX_GAS_LIMIT).to_string().into(),
+                    message: GasBumpError::MaxGasLimitExceeded(gas_limit, MAX_GAS_LIMIT)
+                        .to_string()
+                        .into(),
                     data: None,
-                })
+                }),
             ));
         }
 
@@ -133,21 +130,24 @@ where
 
         debug!(
             "Sending transaction attempt {} with estimated_gas {} and gas_limit {}",
-            attempt + 1, estimated_gas, gas_limit
+            attempt + 1,
+            estimated_gas,
+            gas_limit
         );
 
         // Send transaction with timeout
         let send_result = timeout(
             Duration::from_secs(60), // 60 second timeout for transaction sending
-            tx_builder.send()
-        ).await;
+            tx_builder.send(),
+        )
+        .await;
 
         let pending_tx = match send_result {
             Ok(Ok(tx)) => tx,
             Ok(Err(e)) => {
                 error!("Transaction send failed: {:?}", e);
                 return Err(e);
-            },
+            }
             Err(_) => {
                 error!("Transaction send timeout");
                 return Err(alloy_contract::Error::TransportError(
@@ -155,7 +155,7 @@ where
                         code: -32603,
                         message: "Transaction send timeout".to_string().into(),
                         data: None,
-                    })
+                    }),
                 ));
             }
         };
@@ -163,8 +163,9 @@ where
         // Get receipt with timeout
         let receipt_result = timeout(
             Duration::from_secs(120), // 2 minute timeout for receipt
-            pending_tx.get_receipt()
-        ).await;
+            pending_tx.get_receipt(),
+        )
+        .await;
 
         receipt = match receipt_result {
             Ok(Ok(rec)) => rec,
@@ -175,9 +176,9 @@ where
                         code: -32603,
                         message: format!("Failed to get receipt: {:?}", e).into(),
                         data: None,
-                    })
+                    }),
                 ));
-            },
+            }
             Err(_) => {
                 error!("Receipt timeout");
                 return Err(alloy_contract::Error::TransportError(
@@ -185,36 +186,44 @@ where
                         code: -32603,
                         message: "Receipt timeout".to_string().into(),
                         data: None,
-                    })
+                    }),
                 ));
             }
         };
 
-        let should_retry = !receipt.status() 
-            && attempt < max_attempts 
+        let should_retry = !receipt.status()
+            && attempt < max_attempts.saturating_sub(1)
             && likely_oog(&receipt, gas_limit);
-            
+
         if should_retry {
             warn!(
                 "Transaction failed with OOG, retrying with higher gas. Attempt {}/{}",
-                attempt + 1, max_attempts
+                attempt + 1,
+                max_attempts
             );
             attempt += 1;
             continue;
         }
 
         if receipt.status() {
-            debug!("Transaction succeeded after {} attempts: {:?}", attempt + 1, receipt);
+            debug!(
+                "Transaction succeeded after {} attempts: {:?}",
+                attempt + 1,
+                receipt
+            );
         } else {
             // Enhanced error reporting
             let trace_result = timeout(
                 Duration::from_secs(30),
-                debug_trace_tx(provider, receipt.transaction_hash().to_string())
-            ).await.unwrap_or_else(|_| Ok(serde_json::Value::Null));
-            
+                debug_trace_tx(provider, receipt.transaction_hash().to_string()),
+            )
+            .await;
+
             error!(
                 "Transaction failed after {} attempts: {:?} - Trace: {:?}",
-                attempt + 1, receipt, trace_result
+                attempt + 1,
+                receipt,
+                trace_result
             );
         }
 
@@ -228,12 +237,16 @@ where
 fn bumped_gas(estimated: u64, attempt: u8) -> u64 {
     // Base headroom: 64/63 to undo the 63/64 rule + 10% for proxy prelude and variance
     // = ~1.117. Use 1.20 to be safe and round up.
-    let base = estimated.saturating_mul(BASE_GAS_HEADROOM_PERCENT).saturating_div(100);
+    let base = estimated
+        .saturating_mul(BASE_GAS_HEADROOM_PERCENT)
+        .saturating_div(100);
 
     // Per-attempt bump (compounded)
     let mut bumped = base;
     for _ in 0..attempt {
-        bumped = bumped.saturating_mul(PER_ATTEMPT_BUMP_PERCENT).saturating_div(100);
+        bumped = bumped
+            .saturating_mul(PER_ATTEMPT_BUMP_PERCENT)
+            .saturating_div(100);
     }
 
     // never go below estimated
@@ -253,7 +266,9 @@ async fn debug_trace_tx<P: Provider>(provider: &P, tx_hash: String) -> Transport
 
 // Enhanced OOG detection with configurable margin
 fn likely_oog(receipt: &TransactionReceipt, gas_limit: u64) -> bool {
-    let oog_margin = gas_limit.saturating_mul(OOG_DETECTION_MARGIN_PERCENT).saturating_div(100);
+    let oog_margin = gas_limit
+        .saturating_mul(OOG_DETECTION_MARGIN_PERCENT)
+        .saturating_div(100);
     let oog_candidate =
         !receipt.status() && receipt.gas_used() >= gas_limit.saturating_sub(oog_margin);
 
