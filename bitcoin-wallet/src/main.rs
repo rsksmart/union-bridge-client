@@ -55,7 +55,7 @@ fn main() -> Result<()> {
 
                 let _ = editor.add_history_entry(history_entry.as_ref());
 
-                match handle_command(&mut wallet, &config, trimmed) {
+                match handle_command(&mut wallet, trimmed) {
                     Ok(CommandOutcome::Continue) => {}
                     Ok(CommandOutcome::Exit) => break,
                     Err(err) => eprintln!("Error: {:#}", err),
@@ -636,7 +636,7 @@ fn print_help(sats_per_byte: u64) {
         "  tx_status <txid>                      - Query node for a tx: mined?, confirmations, block hash/height, total outputs"
     );
     println!(
-        "  clear_db                              - Regtest only: clear the UTXO database folder for the current network"
+        "  clear_db                              - Regtest only: clear the UTXO database for the current network"
     );
     println!("Fees target {sats_per_byte} sat per virtual byte.");
 }

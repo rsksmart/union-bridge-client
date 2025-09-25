@@ -42,22 +42,24 @@ pub struct UtxoEntry {
 
 impl Config {
     pub fn load(cli: &CliOpts) -> Result<(Self, Option<PathBuf>)> {
-        let (file_config, config_path) =
-            load_file(cli.config.as_deref(), cli.config_dir.as_deref())?;
+        let (file_config, config_path) = load_file(cli.config.as_deref())?;
         let mut file_config = file_config;
 
         // Resolve utxo_db_path with precedence:
         // 1) --utxo-db flag or WALLET_UTXO_DB env (clap maps env to this opt) → use as absolute/as-is
         // 2) Otherwise, build from config
-        let utxo_db_path = cli.utxo_db.clone().or_else(|| {
-            Self::build_db_path_from_conf(&mut file_config)
-        }).ok_or_else(|| anyhow!(
-            "UTXO database path must be provided via --utxo-db (or WALLET_UTXO_DB), or set utxo_db_path in config together with BASE_STORAGE_PATH env"
-        ))?;
+        let utxo_db_path = cli
+            .utxo_db
+            .clone()
+            .or_else(|| Self::build_db_path_from_conf(&mut file_config))
+            .ok_or_else(|| anyhow!(
+                "UTXO database path must be provided via --utxo-db (or WALLET_UTXO_DB), or set utxo_db_path in config together with BASE_STORAGE_PATH env"
+            ))?;
 
         let sats_per_byte = cli.sats_per_byte.or(file_config.sats_per_byte);
 
-        let network = match cli.network.as_deref().or(file_config.network.as_deref()) {
+        // Network is read only from the config file now
+        let network = match file_config.network.as_deref() {
             Some(name) => Some(parse_network(name)?),
             None => None,
         };
@@ -70,6 +72,13 @@ impl Config {
         let rpc_url = cli.rpc_url.clone().or(file_config.rpc_url.take());
         let rpc_user = cli.rpc_user.clone().or(file_config.rpc_user.take());
         let rpc_password = cli.rpc_password.clone().or(file_config.rpc_password.take());
+
+        // Enforce RPC configuration must be provided (via config or env mapped by clap)
+        if rpc_url.is_none() || rpc_user.is_none() || rpc_password.is_none() {
+            bail!(
+                "RPC configuration missing: please set WALLET_RPC_URL, WALLET_RPC_USER, and WALLET_RPC_PASSWORD environment variables or define rpc_url, rpc_user, and rpc_password in the selected config file"
+            );
+        }
 
         let config = Config {
             utxo_db_path,
@@ -96,45 +105,37 @@ impl Config {
     }
 }
 
-fn load_file(
-    explicit_file: Option<&Path>,
-    config_dir: Option<&Path>,
-) -> Result<(FileConfig, Option<PathBuf>)> {
-    if let Some(path) = explicit_file {
-        if !path.exists() {
-            bail!("config file {} not found", path.display());
-        }
-        let config = read_config_file(path)?;
-        return Ok((config, Some(path.to_path_buf())));
-    }
-
-    let dir_path = if let Some(dir) = config_dir {
-        PathBuf::from(dir)
+fn load_file(config_name: Option<&str>) -> Result<(FileConfig, Option<PathBuf>)> {
+    // Resolve config directory relative to executable, then fallback to CWD
+    let exe_path = env::current_exe().context("failed to determine executable path")?;
+    let exe_dir = exe_path
+        .parent()
+        .context("failed to determine executable directory")?;
+    let exe_config = exe_dir.join("config");
+    let dir_path = if exe_config.exists() {
+        exe_config
     } else {
-        let exe_path = env::current_exe().context("failed to determine executable path")?;
-        let exe_dir = exe_path
-            .parent()
-            .context("failed to determine executable directory")?;
-        let exe_config = exe_dir.join("config");
-        if exe_config.exists() {
-            exe_config
-        } else {
-            let cwd = env::current_dir().context("failed to determine current directory")?;
-            cwd.join("config")
-        }
+        let cwd = env::current_dir().context("failed to determine current directory")?;
+        cwd.join("config")
     };
 
     if !dir_path.exists() {
         bail!("config directory {} not found", dir_path.display());
     }
 
-    let default_path = dir_path.join("wallet.toml");
-    if !default_path.exists() {
-        bail!("config file {} not found", default_path.display());
+    let path = if let Some(name) = config_name {
+        dir_path.join(format!("{}.toml", name))
+    } else {
+        // Backward-compatible default
+        dir_path.join("wallet.toml")
+    };
+
+    if !path.exists() {
+        bail!("config file {} not found", path.display());
     }
 
-    let config = read_config_file(&default_path)?;
-    Ok((config, Some(default_path)))
+    let config = read_config_file(&path)?;
+    Ok((config, Some(path)))
 }
 
 fn read_config_file(path: &Path) -> Result<FileConfig> {

@@ -14,14 +14,11 @@ use rustyline::{Context as RustyContext, Editor, Helper, Result as RustyResult};
 #[derive(Parser, Debug, Clone, Default)]
 #[command(author, version, about = "Simple P2WPKH wallet CLI", long_about = None)]
 pub struct CliOpts {
-    #[arg(long, env = "WALLET_CONFIG", value_name = "PATH")]
-    pub config: Option<PathBuf>,
-    #[arg(long, env = "WALLET_CONFIG_DIR", value_name = "DIR")]
-    pub config_dir: Option<PathBuf>,
+    // Config name (without path), e.g. "testnet" will load config/testnet.toml
+    #[arg(long, env = "WALLET_CONFIG", value_name = "NAME")]
+    pub config: Option<String>,
     #[arg(long, env = "WALLET_UTXO_DB", value_name = "PATH")]
     pub utxo_db: Option<PathBuf>,
-    #[arg(long, env = "WALLET_NETWORK", value_name = "NETWORK")]
-    pub network: Option<String>,
     #[arg(long, env = "WALLET_SATS_PER_BYTE", value_name = "SAT_PER_BYTE")]
     pub sats_per_byte: Option<u64>,
     #[arg(long = "private-key", env = "WALLET_PRIVATE_KEY", value_name = "WIF")]
