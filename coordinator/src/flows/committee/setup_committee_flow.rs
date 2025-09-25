@@ -176,7 +176,7 @@ impl FlowContext {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Steps {
+pub enum Steps {
     Init,
     GetMyCommInfo,
     GetMyTakeKey,
@@ -196,7 +196,7 @@ enum Steps {
 }
 
 #[derive(Debug, Clone)]
-enum StepData {
+pub enum StepData {
     // sync or member-dependent steps
     UserRequest(ApplyToStream),
     CommInfo(P2PAddress),
@@ -212,56 +212,56 @@ enum StepData {
 }
 
 impl StepData {
-    fn into_user_input(self) -> Result<ApplyToStream> {
+    pub fn into_user_input(self) -> Result<ApplyToStream> {
         match self {
             StepData::UserRequest(input) => Ok(input),
             _ => bail!("Expected UserRequest data"),
         }
     }
 
-    fn into_p2p_address(self) -> Result<P2PAddress> {
+    pub fn into_p2p_address(self) -> Result<P2PAddress> {
         match self {
             StepData::CommInfo(addr) => Ok(addr),
             _ => bail!("Expected P2PAddress data"),
         }
     }
 
-    fn into_pubkey(self) -> Result<PublicKey> {
+    pub fn into_pubkey(self) -> Result<PublicKey> {
         match self {
             StepData::PublicKey(pk) => Ok(pk),
             _ => bail!("Expected PublicKey data"),
         }
     }
 
-    fn into_signed_payload(self) -> Result<([u8; 32], [u8; 32], u8)> {
+    pub fn into_signed_payload(self) -> Result<([u8; 32], [u8; 32], u8)> {
         match self {
             StepData::SignedMessage(r, s, recovery_id) => Ok((r, s, recovery_id)),
             _ => bail!("Expected SignedMessage data"),
         }
     }
 
-    fn into_committee_pending(self) -> Result<NewCommitteePendingEvent> {
+    pub fn into_committee_pending(self) -> Result<NewCommitteePendingEvent> {
         match self {
             StepData::PendingCommittee(ev) => Ok(ev),
             _ => bail!("Expected PendingCommittee data"),
         }
     }
 
-    fn into_all_comm_data_ready(self) -> Result<AllCommunicationDataReadyEvent> {
+    pub fn into_all_comm_data_ready(self) -> Result<AllCommunicationDataReadyEvent> {
         match self {
             StepData::ReadyCommunicationData(ev) => Ok(ev),
             _ => bail!("Expected ReadyCommunicationData data"),
         }
     }
 
-    fn into_committee_ready(self) -> Result<NewCommitteeReadyEvent> {
+    pub fn into_committee_ready(self) -> Result<NewCommitteeReadyEvent> {
         match self {
             StepData::ReadyCommittee(ev) => Ok(ev),
             _ => bail!("Expected ReadyCommittee data"),
         }
     }
 
-    fn into_setup_completed(self) -> Result<Uuid> {
+    pub fn into_setup_completed(self) -> Result<Uuid> {
         match self {
             StepData::SetupCompleted(ev) => Ok(ev),
             _ => bail!("Expected SetupCompleted data"),
@@ -1767,7 +1767,7 @@ where
     }
 }
 
-fn signed_to_committee_public_key(spk: SignedPublicKey) -> Result<CommitteeECDSA> {
+pub fn signed_to_committee_public_key(spk: SignedPublicKey) -> Result<CommitteeECDSA> {
     let b = spk.public_key.inner.serialize_uncompressed(); // expect 65 bytes: 0x04 || X(32) || Y(32)
     ensure!(b.len() == 65 && b[0] == 0x04, "invalid uncompressed pubkey");
     let (x, y) = b[1..].split_at(32);
@@ -1792,7 +1792,7 @@ fn signed_to_committee_public_key(spk: SignedPublicKey) -> Result<CommitteeECDSA
 }
 
 // Helper function to create keccak256 hash of uncompressed public key
-fn create_pubkey_hash(public_key: &PublicKey) -> Result<[u8; 32]> {
+pub fn create_pubkey_hash(public_key: &PublicKey) -> Result<[u8; 32]> {
     // Get uncompressed public key coordinates
     let mut pk = *public_key;
     pk.compressed = false;
@@ -1808,7 +1808,7 @@ fn create_pubkey_hash(public_key: &PublicKey) -> Result<[u8; 32]> {
 }
 
 // Helper function to construct SignedPublicKey from components
-fn construct_signed_pubkey(
+pub fn construct_signed_pubkey(
     public_key: PublicKey,
     signature_r: [u8; 32],
     signature_s: [u8; 32],

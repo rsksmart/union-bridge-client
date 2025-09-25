@@ -131,7 +131,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
     }
 }
 
-fn get_dispute_core_pid(committee_id: Uuid, pubkey: &PublicKey) -> Result<Uuid> {
+pub fn get_dispute_core_pid(committee_id: Uuid, pubkey: &PublicKey) -> Result<Uuid> {
     let mut hasher = Sha256::new();
     hasher.update(committee_id.as_bytes());
     hasher.update(pubkey.to_bytes());
