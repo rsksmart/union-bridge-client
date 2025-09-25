@@ -103,20 +103,6 @@ impl Wallet {
             println!("Loaded private key. Default P2WPKH address: {address}");
         }
 
-        for utxo_cfg in &config.utxos {
-            let txid = Txid::from_str(&utxo_cfg.txid)
-                .with_context(|| format!("invalid txid '{}' in config", utxo_cfg.txid))?;
-            let outpoint = OutPoint::new(txid, utxo_cfg.vout);
-            wallet
-                .register_utxo(outpoint, utxo_cfg.value_sat)
-                .with_context(|| {
-                    format!(
-                        "failed to register config UTXO {}:{}",
-                        utxo_cfg.txid, utxo_cfg.vout
-                    )
-                })?;
-        }
-
         if let Some(url) = config.rpc_url.as_deref() {
             wallet.configure_rpc(
                 url,

@@ -1,5 +1,4 @@
-# Sample configuration for ub-wallet (defaults to regtest)
-# Replace the private key and UTXO details with values that match your setup.
+# configuration for regtest
 
 network = "regtest"
 sats_per_byte = 5
@@ -11,9 +10,3 @@ rpc_password = "rpcpassword"
 
 # Path to LevelDB databases for storing UTXOs (one db per network)
 utxo_db_path = ".union_bridge/bitcoin-wallet/utxo-db"
-
-# Uncomment and edit the section below to pre-register known UTXOs.
-# [[utxos]]
-# txid = "0000000000000000000000000000000000000000000000000000000000000000"
-# vout = 0
-# value_sat = 0

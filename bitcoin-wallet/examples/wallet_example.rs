@@ -38,7 +38,6 @@ fn main() -> Result<()> {
         rpc_url: Some(wallet_rpc_url),
         rpc_user: Some(rpc_cfg.username),
         rpc_password: Some(rpc_cfg.password),
-        utxos: Vec::new(),
     };
 
     // 3. Create and exercise the wallet.

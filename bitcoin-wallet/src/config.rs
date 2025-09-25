@@ -17,7 +17,6 @@ pub struct Config {
     pub rpc_url: Option<String>,
     pub rpc_user: Option<String>,
     pub rpc_password: Option<String>,
-    pub utxos: Vec<UtxoEntry>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -30,7 +29,6 @@ struct FileConfig {
     rpc_user: Option<String>,
     rpc_password: Option<String>,
     utxo_db_path: Option<PathBuf>,
-    utxos: Vec<UtxoEntry>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -88,7 +86,6 @@ impl Config {
             rpc_url,
             rpc_user,
             rpc_password,
-            utxos: file_config.utxos,
         };
 
         Ok((config, config_path))
