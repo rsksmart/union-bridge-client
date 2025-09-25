@@ -726,8 +726,8 @@ fn open_network_store(root: &Path, network: Network) -> Result<UtxoStore> {
 }
 
 fn utxo_db_path(root: &Path, network: Network) -> PathBuf {
-    let suffix = network_suffix(network);
-    root.join(format!("utxo-db.{suffix}"))
+    let nw = network_suffix(network);
+    root.join(nw)
 }
 
 fn network_suffix(network: Network) -> &'static str {

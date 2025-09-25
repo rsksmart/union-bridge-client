@@ -72,7 +72,7 @@ fn load_by_address_returns_only_matching_entries() {
 
     drop(wallet);
 
-    let store_path = db_root.join(format!("utxo-db.{}", Network::Regtest.to_string()));
+    let store_path = db_root.join(Network::Regtest.to_string());
     let store = UtxoStore::open(&store_path).expect("re-open store");
     let addr_one_str = addr_one.to_string();
     let entries_one = store

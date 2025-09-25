@@ -1,9 +1,8 @@
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use clap::Parser;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use rustyline::completion::{Completer, Pair};
 use rustyline::config::{CompletionType, Config as RustyConfig, EditMode};
 use rustyline::highlight::Highlighter;
@@ -124,22 +123,14 @@ impl Completer for CliHelper {
 }
 
 pub fn setup_editor(
-    opts: CliOpts,
-    config_path: Option<PathBuf>,
-) -> Result<(PathBuf, Editor<CliHelper, rustyline::history::FileHistory>), anyhow::Error> {
-    let history_root = resolve_history_dir(&opts, config_path.as_deref());
-    fs::create_dir_all(&history_root).with_context(|| {
-        format!(
-            "failed to prepare history directory {}",
-            history_root.display()
-        )
-    })?;
-    let history_path = history_root.join("wallet.history");
+    history_path: &PathBuf,
+) -> Result<Editor<CliHelper, rustyline::history::FileHistory>, anyhow::Error> {
     let rl_config = RustyConfig::builder()
         .history_ignore_space(true)
         .completion_type(CompletionType::List)
         .edit_mode(EditMode::Emacs)
         .auto_add_history(false)
+        .max_history_size(100)?
         .build();
     let mut editor: Editor<CliHelper, DefaultHistory> = Editor::with_config(rl_config)?;
     editor.set_helper(Some(CliHelper::default()));
@@ -148,22 +139,5 @@ pub fn setup_editor(
             eprintln!("Failed to load command history: {err}");
         }
     }
-    Ok((history_path, editor))
-}
-
-pub fn resolve_history_dir(opts: &CliOpts, config_path: Option<&Path>) -> PathBuf {
-    if let Some(dir) = opts.config_dir.clone() {
-        if dir.as_os_str().is_empty() {
-            PathBuf::from("config")
-        } else {
-            dir
-        }
-    } else if let Some(path) = config_path {
-        match path.parent() {
-            Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
-            _ => PathBuf::from("config"),
-        }
-    } else {
-        PathBuf::from("config")
-    }
+    Ok(editor)
 }

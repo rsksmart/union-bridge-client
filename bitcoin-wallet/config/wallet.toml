@@ -13,7 +13,7 @@ rpc_user = "foo"
 rpc_password = "rpcpassword"
 
 # Path to LevelDB databases for storing UTXOs (one db per network)
-utxo_db_path = "config/utxo-db" # TODO(iago) change default path, probably through env var
+utxo_db_path = ".union_bridge/bitcoin-wallet/utxo-db"
 
 # Uncomment and edit the section below to pre-register known UTXOs.
 # [[utxos]]

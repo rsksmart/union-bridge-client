@@ -46,15 +46,14 @@ impl Config {
             load_file(cli.config.as_deref(), cli.config_dir.as_deref())?;
         let mut file_config = file_config;
 
-        let utxo_db_path = cli
-            .utxo_db
-            .clone()
-            .or_else(|| file_config.utxo_db_path.take())
-            .ok_or_else(|| {
-                anyhow!(
-                    "UTXO database path must be provided via --utxo-db, WALLET_UTXO_DB, or config.utxo_db_path"
-                )
-            })?;
+        // Resolve utxo_db_path with precedence:
+        // 1) --utxo-db flag or WALLET_UTXO_DB env (clap maps env to this opt) → use as absolute/as-is
+        // 2) Otherwise, build from config
+        let utxo_db_path = cli.utxo_db.clone().or_else(|| {
+            Self::build_db_path_from_conf(&mut file_config)
+        }).ok_or_else(|| anyhow!(
+            "UTXO database path must be provided via --utxo-db (or WALLET_UTXO_DB), or set utxo_db_path in config together with BASE_STORAGE_PATH env"
+        ))?;
 
         let sats_per_byte = cli.sats_per_byte.or(file_config.sats_per_byte);
 
@@ -84,6 +83,16 @@ impl Config {
         };
 
         Ok((config, config_path))
+    }
+
+    // read utxo_db_path from config file and resolve under BASE_STORAGE_PATH env var
+    fn build_db_path_from_conf(file_config: &FileConfig) -> Option<PathBuf> {
+        file_config.utxo_db_path.as_ref().map(|rel_from_config| {
+            let base = env::var("BASE_STORAGE_PATH").with_context(||
+                "BASE_STORAGE_PATH environment variable must be set when using utxo_db_path from config file"
+            ).unwrap();
+            PathBuf::from(base).join(rel_from_config)
+        })
     }
 }
 

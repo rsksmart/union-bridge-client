@@ -22,7 +22,9 @@ use ub_wallet::wallet::{CreatedTransaction, Wallet};
 fn main() -> Result<()> {
     let opts = CliOpts::parse();
     let (config, config_path) = Config::load(&opts)?;
-    let (history_path, mut editor) = setup_editor(opts, config_path.clone())?;
+    // store history as db sibling
+    let history_path = &config.utxo_db_path.parent().unwrap().join("cli_history");
+    let mut editor = setup_editor(history_path)?;
 
     if let Some(path) = config_path.as_ref() {
         println!("Loaded config from {}", path.display());

@@ -31,7 +31,12 @@ utxo_db_path = "custom-utxo-db"
     assert_eq!(config.network, Some(Network::Regtest));
     assert_eq!(config.sats_per_byte, Some(8));
     assert_eq!(config.rpc_user.as_deref(), Some("alice"));
-    assert_eq!(config.utxo_db_path, PathBuf::from("custom-utxo-db"));
+
+    let db_path = std::env::var("BASE_STORAGE_PATH").expect("BASE_STORAGE_PATH env var");
+    assert_eq!(
+        config.utxo_db_path,
+        PathBuf::from(db_path).join("custom-utxo-db")
+    );
 }
 
 #[test]

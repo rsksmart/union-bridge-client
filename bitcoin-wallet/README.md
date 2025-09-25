@@ -22,7 +22,9 @@ Simple interactive command-line wallet for crafting P2WPKH transactions using th
 Each transaction estimates its fee using the configured satoshis-per-byte rate and returns any change to the wallet key as a new registered UTXO (change smaller than the dust limit is added to the miner fee).
 When an RPC endpoint is configured the wallet will broadcast each crafted transaction via `sendrawtransaction`.
 Multiple compressed WIF keys can be imported at once. Each address keeps its own set of registered UTXOs and you can move between them with `switch_address` without clearing the store.
-Registered UTXOs are persisted in a RocksDB database at the path you provide via `--utxo-db`, `WALLET_UTXO_DB`, or the `utxo_db_path` config setting.
+Registered UTXOs are persisted in a RocksDB database at a path determined as follows:
+- If you pass `--utxo-db` or set `WALLET_UTXO_DB` (env), that absolute path is used as-is.
+- Otherwise, the path is `BASE_STORAGE_PATH` (env) joined with the relative `utxo_db_path` from the `toml` config file.
 
 ## Configuration
 
