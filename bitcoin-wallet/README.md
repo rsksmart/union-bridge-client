@@ -5,6 +5,7 @@ Simple interactive command-line wallet for crafting P2WPKH transactions using th
 ## Commands
 
 - `help` – show available commands
+- `exit` / `quit` – leave the wallet
 - `set_network <bitcoin|testnet|testnet4|signet|regtest>` – select the active network (defaults to `regtest`)
 - `import_private_key <wif>` – import a compressed WIF private key for the active network kind
 - `generate_address` – create a new P2WPKH key pair and keep the current active address (use `switch_address` to activate it)
@@ -17,7 +18,10 @@ Simple interactive command-line wallet for crafting P2WPKH transactions using th
 - `list_funds [all]` – show registered UTXOs for the active address or for every address with `all`
 - `send_to_pubkey <hex> <satoshis> [count]` – craft one or more spends to a compressed public key (P2WPKH)
 - `send_to_address <bech32> <satoshis> [count]` – craft one or more spends to a bech32 P2WPKH address
-- `exit` / `quit` – leave the wallet
+- `mine_block` – Regtest only: mine a single block via RPC
+- `mine_utxo [satoshis]` – Regtest only: mine and fund the active address with given amount (default 21,000,000 sat), then register the UTXO
+- `tx_status <txid>` – query the node for a transaction: mined?, confirmations, block hash/height, total outputs
+- `clear_db` – Regtest only: clear the UTXO database folder for the current network
 
 Each transaction estimates its fee using the configured satoshis-per-byte rate and returns any change to the wallet key as a new registered UTXO (change smaller than the dust limit is added to the miner fee).
 When an RPC endpoint is configured the wallet will broadcast each crafted transaction via `sendrawtransaction`.

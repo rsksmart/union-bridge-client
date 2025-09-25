@@ -228,6 +228,12 @@ impl Wallet {
         )
     }
 
+    pub fn clear_db(&mut self) -> Result<()> {
+        self.utxo_store.clear()?;
+        self.utxos.clear();
+        Ok(())
+    }
+
     fn reload_active_utxos(&mut self) -> Result<()> {
         if let Some(address) = &self.active_address {
             let entries = self.utxo_store.load_by_address(address)?;
@@ -721,6 +727,8 @@ fn open_network_store(root: &Path, network: Network) -> Result<UtxoStore> {
             path.display()
         )
     })?;
+
+    println!("Opening UTXO database at {} ", path.display());
 
     UtxoStore::open(&path)
 }

@@ -53,6 +53,7 @@ const COMMANDS: &[&str] = &[
     "mine_block",
     "mine_utxo",
     "tx_status",
+    "clear_db",
 ];
 
 const NETWORK_NAMES: &[&str] = &[

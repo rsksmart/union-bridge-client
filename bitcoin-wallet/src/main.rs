@@ -474,6 +474,16 @@ fn handle_command(wallet: &mut Wallet, config: &Config, line: &str) -> Result<Co
                 }
             }
         }
+        "clear_db" => {
+            anyhow::ensure!(
+                wallet.network() == Network::Regtest,
+                "clear_db is only available on regtest (current: {:?})",
+                wallet.network()
+            );
+            wallet.clear_db()?;
+            println!("Cleared UTXO database for regtest.");
+            Ok(CommandOutcome::Continue)
+        }
 
         other => Err(anyhow!(
             "unknown command '{other}'. Type 'help' for a list of commands."
@@ -645,6 +655,9 @@ fn print_help(sats_per_byte: u64) {
     );
     println!(
         "  tx_status <txid>                      - Query node for a tx: mined?, confirmations, block hash/height, total outputs"
+    );
+    println!(
+        "  clear_db                              - Regtest only: clear the UTXO database folder for the current network"
     );
     println!("Fees target {sats_per_byte} sat per virtual byte.");
 }
