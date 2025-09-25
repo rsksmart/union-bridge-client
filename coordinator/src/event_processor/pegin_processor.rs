@@ -71,7 +71,6 @@ Pegin steps:
     a. AddMemberSignature by calling SignatureManager (U -> RSK)
 8. AllSignaturesReady RSK Event (RSK -> U)
     a. Send DispatchTransaction to BitVMX (U -> B)
-    b. Send GetTransactionInfoByName to BitVMX (U -> B)
 9. Receive Transaction message containing the transaction status (B -> U)
     a. If tx is not Confirmed, wait and ask for it again. (U -> B)
     b. If tx is Confirmed ask for the SPV proof (U -> B)
@@ -86,7 +85,7 @@ const ACCEPT_PEGIN: &'static str = "accept-pegin";
 const PEGIN_REQUEST: &'static str = "pegin_request";
 const PEGIN_ACCEPTED_INPUT_MSG: &'static str = "pegin_accepted";
 const PROGRAM_TYPE_ACCEPT_PEGIN: &'static str = "accept_pegin";
-pub const MIN_TX_CONFIRMATIONS: u32 = 1; //TODO agree on this value for alphanet.
+pub const MIN_TX_CONFIRMATIONS: u32 = 6;
 pub const BLOCKS_DELAY_FOR_TX_CHECK: u32 = 20;
 
 /// Data structure used to send pegin request information to the BitVMX client.
@@ -207,16 +206,33 @@ where
     }
 
     fn handle_tick(&mut self) -> Result<()> {
+        trace!("PeginProcessor handling tick");
         if self.scheduler.is_empty() {
             return Ok(());
         }
         let ready = self.scheduler.tick();
         for flow_id in ready {
-            debug!(
-                "Sending delayed get transaction info by name to bitvmx with id: {}",
-                flow_id
+            // Find the state with the matching flow_id
+            let state = self
+                .tracker
+                .values()
+                .find(|s| s.flow_id == flow_id)
+                .ok_or_else(|| anyhow!("State not found for flow_id: {}", flow_id))?;
+
+            // Get the accept_pegin_txid from bitvmx_pegin_accepted
+            let pegin_accepted = state
+                .bitvmx_pegin_accepted
+                .as_ref()
+                .ok_or_else(|| anyhow!("bitvmx_pegin_accepted is None for flow_id: {}", flow_id))?;
+
+            let accept_pegin_tx_hash = pegin_accepted.accept_pegin_txid;
+
+            trace!(
+                "Sending delayed get transaction to bitvmx with id: {} and tx_hash: {}",
+                flow_id, accept_pegin_tx_hash
             );
-            Self::send_get_transaction_info_by_name(&self.bitvmx_broker, flow_id)?;
+
+            Self::send_get_transaction(&self.bitvmx_broker, flow_id, accept_pegin_tx_hash)?;
         }
         Ok(())
     }
@@ -828,15 +844,13 @@ where
         Self::send_to_bitvmx(bitvmx_broker, message)
     }
 
-    fn send_get_transaction_info_by_name(bitvmx_broker: &BC, flow_id: Uuid) -> Result<()> {
-        let message = IncomingBitVMXApiMessages::GetTransactionInfoByName(
-            flow_id,
-            ACCEPT_PEGIN_TX.to_string(),
-        );
+    fn send_get_transaction(bitvmx_broker: &BC, flow_id: Uuid, tx_id: Txid) -> Result<()> {
+        let message = IncomingBitVMXApiMessages::GetTransaction(flow_id, tx_id);
         Self::send_to_bitvmx(bitvmx_broker, message)
     }
 
     fn send_get_spv_proof_to_bitvmx(bitvmx_broker: &BC, tx_id: Txid) -> Result<()> {
+        debug!("Requesting SPV proof for tx_id: {}", tx_id);
         let msg = IncomingBitVMXApiMessages::GetSPVProof(tx_id);
         Self::send_to_bitvmx(bitvmx_broker, msg)
     }
@@ -1076,7 +1090,11 @@ where
         flow_id: &Uuid,
         tx_status: TransactionStatus,
     ) -> Result<()> {
-        //find the pegin event state for the given flow_id
+        debug!(
+            "Handling transaction status: {:?} for id: {}",
+            tx_status, flow_id
+        );
+        // find the pegin event state for the given flow_id
         let Some(state) = self
             .tracker
             .values_mut()
@@ -1104,8 +1122,8 @@ where
         if tx_status.confirmations >= MIN_TX_CONFIRMATIONS {
             // Step 9b confirmation enough, send the SPV proof to BitVMX
             debug!(
-                "Transaction confirmed with sufficient confirmations for flow_id: {}",
-                flow_id
+                "Transaction confirmed with {} confirmations for flow_id: {}",
+                tx_status.confirmations, flow_id
             );
             if self.scheduler.is_scheduled(flow_id) {
                 debug!(
@@ -1140,8 +1158,9 @@ where
                 if btc_flow.is_done() {
                     //#Step 8a: Send DispatchTransaction to BitVMX
                     Self::send_dispatch_transaction_name(&self.bitvmx_broker, state.flow_id)?;
-                    //#Step 8b: Send GetTransactionInfoByName to BitVMX
-                    Self::send_get_transaction_info_by_name(&self.bitvmx_broker, state.flow_id)?;
+                    debug!(
+                        "Dispatch tx sent. It is expected to receive Transaction Status from Bitvmx after Tx be mined"
+                    );
                     //Signature flow is done, we can clear it from state
                     state.btc_signatures_flow = None;
                 }
@@ -1196,7 +1215,10 @@ where
                         self.register_spv_proof(spv_proof.clone())?;
                     } else {
                         // Step 3 if no matching state found we are assuming this is a request pegin SPV proof
-                        debug!("Handling request pegin SPV proof for tx_id: {}", tx_id);
+                        debug!(
+                            "No state found for tx_id: {} Starting request pegin step.",
+                            tx_id
+                        );
                         self.handle_request_pegin(spv_proof.clone())?;
                     }
                 }
@@ -1266,9 +1288,9 @@ where
                 self.handle_all_operator_take_tx_hashes_added_event(data)
             }
             //Step 7: Handle AllNoncesReady and AllSignaturesReady event from RSK
-            RskPegManagerEvents::AllNoncesReady(data)
+            RskPegManagerEvents::AllNoncesReady(_data)
             //Step 8: Handle AllSignaturesReady event from RSK
-            | RskPegManagerEvents::AllSignaturesReady(data) => {
+            | RskPegManagerEvents::AllSignaturesReady(_data) => {
                 for state in self.tracker.values_mut() {
                     let committee_id: &CommitteeId = &state.pegin_requested.data.inner.committeeId.try_into()?;
                     if !self.global_context.my_committees().im_member(&committee_id) {
@@ -2011,8 +2033,6 @@ mod tests {
 
         let mut contracts = MockRskContractsGatewayApi::new();
         let committee = dummy_committee();
-        let committee_clone = committee.clone();
-        let pegin_requested_clone = pegin_requested.clone();
 
         contracts
             .expect_get_committee()
