@@ -15,7 +15,19 @@ use std::time::Duration;
 use tokio::net::TcpListener;
 use tower_http::timeout::TimeoutLayer;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
-use transaction_dispatcher::types::PeginAddressInput;
+use serde::{Deserialize, Serialize};
+use transaction_dispatcher::types::{PeginAddressInput, RequestPegoutInput};
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RequestPeginInput {
+    pub stream_amount: u64,
+    pub packet_number: Option<u64>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct UserRequestPegoutInput {
+    pub amount_in_wei: u64,
+}
 
 pub struct Server {
     listener: TcpListener,
@@ -48,6 +60,7 @@ impl Server {
             .route("/bitvmx-address", get(Self::bitvmx_address))
             .route("/apply-stream", post(Self::apply_stream))
             .route("/pegin-address", post(Self::pegin_address))
+            .route("/request-pegout", post(Self::request_pegout))
             .layer((
                 TimeoutLayer::new(Duration::from_secs(10)),
                 Extension(broker_server.clone()),
@@ -131,6 +144,38 @@ impl Server {
             Ok(data) => (StatusCode::OK, Json(json!(data))),
             Err(e) => {
                 error!("Error requesting pegin: {e}");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": e.to_string() })),
+                )
+            }
+        }
+    }
+
+    async fn request_pegout(
+        Extension(user): Extension<User>,
+        Extension(contracts): Extension<
+            Arc<dyn crate::sync_contracts_gateway::SyncContractsGatewayApi>,
+        >,
+        Json(payload): Json<UserRequestPegoutInput>,
+    ) -> impl IntoResponse {
+        info!("Received request_pegout request: {:?}", payload);
+        let usr_pub_key = format!("0x{}", user.public_key);
+
+        let amount_in_wei = payload.amount_in_wei;
+        info!(
+            "Request pegout -> usr_pub_key: {} amount_in_wei: {}",
+            usr_pub_key, amount_in_wei
+        );
+        let input = RequestPegoutInput {
+            amount_in_wei,
+            usr_pub_key,
+        };
+        let res = contracts.request_pegout(input);
+        match res {
+            Ok(_tx_sent_output) => (StatusCode::OK, Json(json!({ "result": "ok" }))),
+            Err(e) => {
+                error!("Error requesting pegout: {e}");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(json!({ "error": e.to_string() })),

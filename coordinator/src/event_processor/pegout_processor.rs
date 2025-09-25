@@ -35,8 +35,7 @@ use crate::{
     types::{EventWithBlock, RskPegManagerEvents},
 };
 use anyhow::{Context, Result, anyhow, bail};
-use bitcoin::key::Parity;
-use bitcoin::{PublicKey, Txid, XOnlyPublicKey};
+use bitcoin::{PublicKey, Txid};
 use common::msg_broker::bitvmx_types::{
     IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, P2PAddress, PeerId, PegOutAccepted,
     PegOutRequest, TransactionStatus, VariableTypes,
@@ -240,11 +239,8 @@ where
     }
 
     fn build_take_aggregated_key(committee_response: &GetCommitteeOutput) -> Result<PublicKey> {
-        let aggregated_xonly_key =
-            XOnlyPublicKey::from_slice(committee_response.committee.aggregatedKey.as_slice())
-                .context("Failed to parse aggregated public key from committee")?;
-        let aggregated_secp_key = aggregated_xonly_key.public_key(Parity::Even);
-        Ok(PublicKey::new(aggregated_secp_key))
+        PublicKey::from_slice(&committee_response.committee.aggregatedKey)
+            .context("Failed to parse aggregated public key from committee")
     }
 
     fn get_committee_member_address(&mut self, committee_id: CommitteeId) -> Result<Vec<String>> {
@@ -446,17 +442,22 @@ where
             .iter_mut()
             .find(|(_, state)| state.spv_proof_tx_id == Some(*tx_id))
             .ok_or_else(|| anyhow!("Pegout state not found for tx_id: {}", tx_id))?;
+
         // Step 6a: Register pegout calling the peg manager contract (U -> C)
-        let result = self
+        match self
             .rt_sync
-            .run(async { self.contracts_gateway.register_pegout(input).await })?;
-        if result.success {
-            info!("Pegout registered successfully for tx_id: {}", tx_id);
-            state.pegout_registered_tx = Some(TxHash::try_from(result.transaction_hash.as_str())?);
-        } else {
-            bail!("Pegout registration failed for tx_id: {}", tx_id);
+            .run(self.contracts_gateway.register_pegout(input))
+        {
+            Ok(result) => {
+                info!("Pegout registered successfully for tx_id: {}", tx_id);
+                state.pegout_registered_tx =
+                    Some(TxHash::try_from(result.transaction_hash.as_str())?);
+                return Ok(result);
+            }
+            Err(e) => {
+                bail!("Pegout registration failed for tx_id: {tx_id} - {e}");
+            }
         }
-        Ok(result)
     }
 
     fn track_pegout_registered(&mut self, event: EventWithBlock<PegoutRegistered>) -> Result<()> {
