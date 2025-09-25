@@ -203,9 +203,7 @@ impl Wallet {
     pub fn broadcast_transaction(&self, created: &CreatedTransaction) -> Result<Txid> {
         let client = self.require_rpc_client()?;
         let raw_hex = serialize_hex(&created.transaction);
-        let rpc_txid = client
-            .send_raw_transaction(raw_hex)
-            .context("failed to broadcast transaction")?;
+        let rpc_txid = client.send_raw_transaction(raw_hex)?;
         let txid =
             Txid::from_str(&rpc_txid.to_string()).context("failed to convert broadcast txid")?;
         Ok(txid)

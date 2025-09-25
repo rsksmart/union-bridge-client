@@ -17,13 +17,12 @@ Simple interactive command-line wallet for crafting P2WPKH transactions using th
 - `list_funds [all]` – show registered UTXOs for the active address or for every address with `all`
 - `send_to_pubkey <hex> <satoshis> [count]` – craft one or more spends to a compressed public key (P2WPKH)
 - `send_to_address <bech32> <satoshis> [count]` – craft one or more spends to a bech32 P2WPKH address
-- `send_test_funds` – on regtest, mine blocks and fund the wallet through the configured RPC endpoint
 - `exit` / `quit` – leave the wallet
 
 Each transaction estimates its fee using the configured satoshis-per-byte rate and returns any change to the wallet key as a new registered UTXO (change smaller than the dust limit is added to the miner fee).
 When an RPC endpoint is configured the wallet will broadcast each crafted transaction via `sendrawtransaction`.
 Multiple compressed WIF keys can be imported at once. Each address keeps its own set of registered UTXOs and you can move between them with `switch_address` without clearing the store.
-Registered UTXOs are persisted in a LevelDB database at the path you provide via `--utxo-db`, `WALLET_UTXO_DB`, or the `utxo_db_path` config setting.
+Registered UTXOs are persisted in a RocksDB database at the path you provide via `--utxo-db`, `WALLET_UTXO_DB`, or the `utxo_db_path` config setting.
 
 ## Configuration
 
@@ -59,7 +58,7 @@ Environment variable shortcuts:
 - `WALLET_RPC_URL`
 - `WALLET_RPC_USER` (optional)
 - `WALLET_RPC_PASSWORD` (optional)
-- `WALLET_UTXO_DB` (optional path to LevelDB store)
+- `WALLET_UTXO_DB` (optional path to RocksDB store)
 - `WALLET_CONFIG_DIR`
 
 Use `ub-wallet --help` to see the available command-line overrides.

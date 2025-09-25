@@ -51,7 +51,8 @@ const COMMANDS: &[&str] = &[
     "list_funds",
     "send_to_pubkey",
     "send_to_address",
-    "send_test_funds",
+    "mine_block",
+    "mine_utxo",
 ];
 
 const NETWORK_NAMES: &[&str] = &[

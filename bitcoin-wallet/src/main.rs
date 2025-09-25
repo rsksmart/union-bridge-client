@@ -9,10 +9,12 @@ use bitcoin::hashes::hex::FromHex;
 use bitcoin::key::PublicKey;
 use bitcoin::network::Network;
 use bitcoin::{OutPoint, ScriptBuf, Txid};
+use bitcoincore_rpc::RpcApi;
 use chrono::{DateTime, Utc};
 use clap::Parser;
 use rustyline::error::ReadlineError;
-use ub_wallet::bitcoin::utils::{send_test_funds, start_client};
+use serde_json::json;
+use ub_wallet::bitcoin::utils::{find_vout_for_address, start_client};
 use ub_wallet::cli::{CliOpts, setup_editor};
 use ub_wallet::config::{self, Config};
 use ub_wallet::wallet::{CreatedTransaction, Wallet};
@@ -289,8 +291,104 @@ fn handle_command(wallet: &mut Wallet, config: &Config, line: &str) -> Result<Co
             maybe_broadcast(wallet, &created)?;
             Ok(CommandOutcome::Continue)
         }
-        "send_test_funds" => {
-            send_test_funds(wallet)?;
+        "mine_block" => {
+            anyhow::ensure!(
+                wallet.network() == Network::Regtest,
+                "mine_block is only available on regtest (current: {:?})",
+                wallet.network()
+            );
+            let Some(client) = wallet.rpc_client() else {
+                println!(
+                    "RPC not configured; use start_regtest_client or set_rpc to enable mining."
+                );
+                return Ok(CommandOutcome::Continue);
+            };
+            let miner_address: String = client
+                .call("getnewaddress", &[json!("miner"), json!("bech32")])
+                .context("failed to obtain mining address")?;
+            let blocks: Vec<String> = client
+                .call(
+                    "generatetoaddress",
+                    &[json!(1), json!(miner_address.clone())],
+                )
+                .context("failed to mine block on regtest")?;
+            if let Some(hash) = blocks.first() {
+                let block_json: serde_json::Value = client
+                    .call("getblock", &[json!(hash)])
+                    .context("failed to fetch block info")?;
+                if let Some(height) = block_json.get("height").and_then(|v| v.as_i64()) {
+                    println!("Mined block {} at height {}", hash, height);
+                } else {
+                    println!("Mined block {}", hash);
+                }
+            } else {
+                println!("No block hash returned by generatetoaddress");
+            }
+            Ok(CommandOutcome::Continue)
+        }
+        "mine_utxo" => {
+            anyhow::ensure!(
+                wallet.network() == Network::Regtest,
+                "mine_utxo is only available on regtest (current: {:?})",
+                wallet.network()
+            );
+            let Some(active_addr) = wallet.active_address().cloned() else {
+                println!("No active address. Import or switch to an address before mining a UTXO.");
+                return Ok(CommandOutcome::Continue);
+            };
+            let Some(client) = wallet.rpc_client() else {
+                println!(
+                    "RPC not configured; use start_regtest_client or set_rpc to enable mining."
+                );
+                return Ok(CommandOutcome::Continue);
+            };
+
+            // Optional amount in satoshis (default to 21_000_000 sat = 0.21 BTC)
+            let amount_sat: u64 = match parts.next() {
+                Some(s) => s.parse().context("invalid amount (satoshis)")?,
+                None => 21_000_000,
+            };
+            let send_amount_btc = (amount_sat as f64) / 100_000_000.0;
+
+            // Pre-mine 101 blocks to mature coinbase and have spendable balance
+            let miner_address: String = client
+                .call("getnewaddress", &[json!("miner"), json!("bech32")])
+                .context("failed to obtain mining address")?;
+            client
+                .call::<Vec<String>>(
+                    "generatetoaddress",
+                    &[json!(101), json!(miner_address.clone())],
+                )
+                .context("failed to pre-mine regtest blocks")?;
+
+            // Send requested amount to the active address
+            let txid_hex: String = client
+                .call(
+                    "sendtoaddress",
+                    &[json!(active_addr.to_string()), json!(send_amount_btc)],
+                )
+                .context("failed to fund active address")?;
+
+            // Mine one block to confirm the transaction
+            client
+                .call::<Vec<String>>("generatetoaddress", &[json!(1), json!(miner_address)])
+                .context("failed to confirm funding transaction")?;
+
+            // Find the vout for our address and register the UTXO
+            let funding_txid =
+                Txid::from_str(&txid_hex).context("invalid txid returned by bitcoind")?;
+            let funding_vout = find_vout_for_address(client, &txid_hex, &active_addr)
+                .context("failed to locate vout for wallet address")?;
+            let funding_amount = wallet.fetch_utxo_amount(funding_txid, funding_vout)?;
+
+            let outpoint = OutPoint::new(funding_txid, funding_vout);
+            wallet.register_utxo(outpoint, funding_amount)?;
+
+            println!(
+                "Mined and registered UTXO {}:{} with value {} sat for {} (txid {}).",
+                outpoint.txid, outpoint.vout, funding_amount, active_addr, funding_txid
+            );
+
             Ok(CommandOutcome::Continue)
         }
 
@@ -458,8 +556,9 @@ fn print_help(sats_per_byte: u64) {
     println!(
         "  send_to_address <addr> <sats> [count] - Create count (default 1) txs to a Bech32 address"
     );
+    println!("  mine_block                            - Regtest only: mine a single block via RPC");
     println!(
-        "  send_test_funds                       - Regtest only: mine and fund the active wallet via RPC"
+        "  mine_utxo [sats]                      - Regtest only: mine and fund the active address with given amount (default 21000000 sat), then register the UTXO"
     );
     println!("Fees target {sats_per_byte} sat per virtual byte.");
 }

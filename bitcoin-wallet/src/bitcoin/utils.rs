@@ -3,12 +3,11 @@ use std::str::FromStr;
 use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::consensus::encode::deserialize;
 use bitcoin::hashes::hex::FromHex;
-use bitcoin::{Network, OutPoint, Transaction, Txid};
+use bitcoin::{Network, Transaction, Txid};
 use bitcoincore_rpc::bitcoin::Txid as RpcTxid;
 use bitcoincore_rpc::{Client, RpcApi};
 
 use crate::bitcoin::bitcoind::{Bitcoind, RpcConfig};
-use crate::wallet::Wallet;
 
 pub trait RawTxProvider {
     fn raw_transaction_hex(&self, txid: &RpcTxid) -> bitcoincore_rpc::Result<String>;
@@ -33,94 +32,6 @@ pub fn fetch_utxo_amount(provider: &impl RawTxProvider, txid: Txid, vout: u32) -
         .get(vout as usize)
         .context("specified vout not found in transaction")?;
     Ok(tx_out.value.to_sat())
-}
-
-// Regtest only
-pub fn send_test_funds(wallet: &mut Wallet) -> Result<()> {
-    let private_key = wallet
-        .private_key()
-        .cloned()
-        .context("wallet must have a loaded private key to send test funds")?;
-
-    let wallet_network = wallet.network();
-    anyhow::ensure!(
-        wallet_network == Network::Regtest,
-        "wallet network ({:?}) must be regtest to mine test funds",
-        wallet_network
-    );
-
-    let Some(wallet_client) = wallet.rpc_client() else {
-        println!("RPC not configured; skipping test fund generation.");
-        return Ok(());
-    };
-
-    let miner_address: String = wallet_client
-        .call(
-            "getnewaddress",
-            &[serde_json::json!("miner"), serde_json::json!("bech32")],
-        )
-        .context("failed to obtain mining address")?;
-    wallet_client
-        .call::<Vec<String>>(
-            "generatetoaddress",
-            &[
-                serde_json::json!(101),
-                serde_json::json!(miner_address.clone()),
-            ],
-        )
-        .context("failed to pre-mine regtest blocks")?;
-
-    let target_kind = bitcoin::NetworkKind::from(Network::Regtest);
-    if private_key.network != target_kind {
-        bail!(
-            "private key network ({:?}) does not match current wallet network ({:?}).",
-            private_key.network,
-            wallet_network
-        );
-    }
-
-    let public_key = private_key.public_key(&bitcoin::key::Secp256k1::new());
-    let compressed = bitcoin::CompressedPublicKey::try_from(public_key)
-        .map_err(|_| anyhow!("private key must correspond to a compressed public key"))?;
-    let address = bitcoin::address::Address::p2wpkh(&compressed, Network::Regtest);
-
-    let send_amount_btc = 0.002_f64;
-    let txid_hex: String = wallet_client
-        .call(
-            "sendtoaddress",
-            &[
-                serde_json::json!(address.to_string().clone()),
-                serde_json::json!(send_amount_btc),
-            ],
-        )
-        .context("failed to send funds to wallet address")?;
-
-    wallet_client
-        .call::<Vec<String>>(
-            "generatetoaddress",
-            &[
-                serde_json::json!(1),
-                serde_json::json!(miner_address.clone()),
-            ],
-        )
-        .context("failed to confirm funding transaction")?;
-
-    let funding_txid = Txid::from_str(&txid_hex).context("invalid txid from sendtoaddress")?;
-    let funding_vout = find_vout_for_address(wallet_client, &txid_hex, &address)
-        .context("failed to locate wallet output in funding transaction")?;
-    let funding_amount = wallet.fetch_utxo_amount(funding_txid, funding_vout)?;
-
-    let outpoint = OutPoint::new(funding_txid, funding_vout);
-    wallet
-        .register_utxo(outpoint, funding_amount)
-        .context("failed to store mined test funds")?;
-
-    println!(
-        "Sent {} BTC to address {} in txid {} (vout {}). Received {} sat.",
-        send_amount_btc, address, funding_txid, funding_vout, funding_amount
-    );
-
-    Ok(())
 }
 
 // Local dockerized bitcoin client
