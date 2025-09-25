@@ -21,7 +21,6 @@ use bitcoin::secp256k1::{self, Message, Secp256k1, SecretKey};
 use bitcoin::sighash::{EcdsaSighashType, SighashCache};
 use bitcoin::{Amount, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness};
 use bitcoincore_rpc::{Client, RpcApi, jsonrpc};
-use log::info;
 
 pub const DEFAULT_SATS_PER_BYTE: u64 = 5;
 const P2WPKH_DUST_LIMIT_SATS: u64 = 330;
@@ -206,7 +205,7 @@ impl Wallet {
             Network::Bitcoin => format!("https://mempool.space/tx/{}", txid),
             _ => "Unsupported network".to_string(),
         };
-        info!("View transaction at: {}", url);
+        println!("View transaction at: {}", url);
 
         Ok(txid)
     }

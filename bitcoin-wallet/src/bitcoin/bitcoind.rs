@@ -15,7 +15,6 @@ use tokio::runtime::Runtime;
 
 use bitcoin::Network;
 use bitcoincore_rpc::{Auth, Client};
-use log::info;
 use serde::Deserialize;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -95,7 +94,7 @@ impl Bitcoind {
     }
 
     pub fn start(&self) -> Result<(), Error> {
-        info!("Checking if Docker daemon is active");
+        println!("Checking if Docker daemon is active");
         let ping_result = self.runtime.block_on(async { self.docker.ping().await });
 
         if ping_result.is_err() {
@@ -106,7 +105,7 @@ impl Bitcoind {
             });
         }
 
-        info!("Starting bitcoind container");
+        println!("Starting bitcoind container");
         self.runtime.block_on(async {
             self.internal_stop().await?;
 
@@ -125,7 +124,7 @@ impl Bitcoind {
     }
 
     pub fn stop(&self) -> Result<(), Error> {
-        info!("Stopping bitcoind container");
+        println!("Stopping bitcoind container");
         self.runtime.block_on(async {
             self.internal_stop().await?;
             Ok(())
@@ -159,7 +158,7 @@ impl Bitcoind {
 
     async fn internal_stop(&self) -> Result<(), Error> {
         if self.is_running().await? {
-            info!("Container was running. Stopping bitcoind container");
+            println!("Container was running. Stopping bitcoind container");
             self.docker
                 .remove_container(
                     &self.container_name,
@@ -174,7 +173,7 @@ impl Bitcoind {
                     break;
                 }
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                info!("Waiting for bitcoind container to stop");
+                println!("Waiting for bitcoind container to stop");
             }
         }
         Ok(())
@@ -199,7 +198,7 @@ impl Bitcoind {
     }
 
     async fn pull_image_if_not_present(&self) -> Result<(), Error> {
-        info!("Image not found locally. Pulling image: {}", self.image);
+        println!("Image not found locally. Pulling image: {}", self.image);
         let options = Some(CreateImageOptions {
             from_image: self.image.clone(),
             tag: "latest".to_string(),
@@ -210,7 +209,7 @@ impl Bitcoind {
         while let Some(result) = stream.next().await {
             match result {
                 Ok(progress) => {
-                    info!("Progress: {:?}", progress.progress);
+                    println!("Progress: {:?}", progress.progress);
                 }
                 Err(error) => {
                     return Err(error);
@@ -222,7 +221,7 @@ impl Bitcoind {
     }
 
     async fn create_and_start_container(&self) -> Result<(), Error> {
-        info!("Creating and starting bitcoind container");
+        println!("Creating and starting bitcoind container");
 
         let min_relay_tx_fee = format!("-minrelaytxfee={}", self.flags.min_relay_tx_fee);
         let block_min_tx_fee = format!("-blockmintxfee={}", self.flags.block_min_tx_fee);

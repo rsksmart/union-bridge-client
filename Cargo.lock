@@ -6647,8 +6647,6 @@ dependencies = [
  "chrono",
  "clap",
  "futures-util",
- "log",
- "log4rs",
  "reqwest",
  "rust-bitvmx-storage-backend",
  "rustyline",
