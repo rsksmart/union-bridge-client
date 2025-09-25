@@ -16,8 +16,8 @@ Simple interactive command-line wallet for crafting P2WPKH transactions using th
 - `start_regtest_client` – launch a regtest `bitcoind` via Docker and configure RPC automatically (requires Docker)
 - `register_utxo <txid> <vout> [satoshis]` – register a spendable P2WPKH UTXO; if the amount is omitted the wallet queries the RPC node for the output value
 - `list_funds [all]` – show registered UTXOs for the active address or for every address with `all`
-- `send_to_pubkey <hex> <satoshis> [count]` – craft one or more spends to a compressed public key (P2WPKH)
-- `send_to_address <bech32> <satoshis> [count]` – craft one or more spends to a bech32 P2WPKH address
+- `send_to_pubkey <hex_csv> <satoshis> [count]` – create a single transaction paying the specified amount to each compressed public key (hex) in the comma-separated list (P2WPKH); repeat the whole transaction by `count` (default 1)
+- `send_to_address <bech32_csv> <satoshis> [count]` – create a single transaction paying the specified amount to each bech32 P2WPKH address in the comma-separated list; repeat the whole transaction by `count` (default 1)
 - `mine_block` – Regtest only: mine a single block via RPC
 - `mine_utxo [satoshis]` – Regtest only: mine and fund the active address with given amount (default 21,000,000 sat), then register the UTXO
 - `tx_status <txid>` – query the node for a transaction: mined?, confirmations, block hash/height, total outputs

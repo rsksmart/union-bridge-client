@@ -45,7 +45,7 @@ fn create_transaction_does_not_consume_utxo_and_creates_change_until_broadcasted
 
     let tx_amount = 20_000;
     let txs = wallet
-        .create_transactions(target_script.clone(), 20_000, 1)
+        .create_transactions(vec![target_script.clone()], 20_000, 1)
         .expect("create tx");
 
     assert_eq!(txs.len(), 1);
@@ -113,7 +113,7 @@ fn dust_change_is_added_to_fee() {
     let send_value = 49_800_u64;
 
     let txs = wallet
-        .create_transactions(target_script, send_value, 1)
+        .create_transactions(vec![target_script], send_value, 1)
         .expect("create tx");
 
     assert_eq!(txs.len(), 1);

@@ -134,7 +134,7 @@ fn wallet_end_to_end_over_regtest_rpc() -> Result<()> {
     let target_script = recipient_script();
     let spend_amount_sat = 50_000_u64;
     let created = wallet
-        .create_transactions(target_script, spend_amount_sat, 1)
+        .create_transactions(vec![target_script], spend_amount_sat, 1)
         .context("wallet failed to build transaction")?;
     assert_eq!(created.len(), 1, "expected a single created transaction");
 

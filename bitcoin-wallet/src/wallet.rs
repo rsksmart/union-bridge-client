@@ -410,24 +410,27 @@ impl Wallet {
         })
     }
 
+    /// Create one or more transactions that pay the same amount to each provided target script in a single transaction.
+    /// If `count` > 1, the whole multi-output payment is repeated `count` times (i.e., `count` separate transactions).
     pub fn create_transactions(
         &mut self,
-        target_script: ScriptBuf,
+        target_scripts: Vec<ScriptBuf>,
         amount_sat: u64,
         count: usize,
     ) -> Result<Vec<CreatedTransaction>> {
         if count == 0 {
             bail!("count must be at least 1");
         }
-
+        if target_scripts.is_empty() {
+            bail!("at least one target script is required");
+        }
         self.require_active_private_key()?;
 
         let mut created = Vec::with_capacity(count);
         for _ in 0..count {
-            let tx = self.create_transaction_once(target_script.clone(), amount_sat)?;
+            let tx = self.create_transaction_once(target_scripts.clone(), amount_sat)?;
             created.push(tx);
         }
-
         Ok(created)
     }
 
@@ -460,7 +463,7 @@ impl Wallet {
 
     fn create_transaction_once(
         &mut self,
-        target_script: ScriptBuf,
+        target_scripts: Vec<ScriptBuf>,
         amount_sat: u64,
     ) -> Result<CreatedTransaction> {
         let private_key = self.require_active_private_key()?;
@@ -471,14 +474,21 @@ impl Wallet {
             .map_err(|_| anyhow!("private key must correspond to a compressed public key"))?;
         let change_script = ScriptBuf::new_p2wpkh(&wpkh);
 
-        let mut required = amount_sat;
+        if target_scripts.is_empty() {
+            bail!("at least one target script is required");
+        }
+        let outputs_count = target_scripts.len() as u64;
+        let total_amount = amount_sat
+            .checked_mul(outputs_count)
+            .context("total amount overflowed")?;
+        let mut required = total_amount;
 
         'select: loop {
             let (selected_indices, selected_utxos, total_input) = self.select_utxos(required)?;
 
             let mut include_change =
-                total_input.saturating_sub(amount_sat) >= P2WPKH_DUST_LIMIT_SATS;
-            let mut change_value = total_input.saturating_sub(amount_sat);
+                total_input.saturating_sub(total_amount) >= P2WPKH_DUST_LIMIT_SATS;
+            let mut change_value = total_input.saturating_sub(total_amount);
             let result;
 
             'build: loop {
@@ -494,10 +504,13 @@ impl Wallet {
                             witness: Witness::default(),
                         })
                         .collect(),
-                    output: vec![TxOut {
-                        value: Amount::from_sat(amount_sat),
-                        script_pubkey: target_script.clone(),
-                    }],
+                    output: target_scripts
+                        .iter()
+                        .map(|script| TxOut {
+                            value: Amount::from_sat(amount_sat),
+                            script_pubkey: script.clone(),
+                        })
+                        .collect(),
                 };
 
                 if include_change {
@@ -512,7 +525,7 @@ impl Wallet {
                 let fee = vsize
                     .checked_mul(self.sats_per_byte)
                     .context("fee computation overflowed")?;
-                let total_required = amount_sat
+                let total_required = total_amount
                     .checked_add(fee)
                     .context("amount plus fee overflowed")?;
 
@@ -521,7 +534,7 @@ impl Wallet {
                     continue 'select;
                 }
 
-                let new_change_value = total_input - amount_sat - fee;
+                let new_change_value = total_input - total_amount - fee;
                 let should_include_change = new_change_value >= P2WPKH_DUST_LIMIT_SATS;
 
                 if should_include_change != include_change {
@@ -540,7 +553,7 @@ impl Wallet {
                 }
 
                 let effective_fee = total_input
-                    .checked_sub(amount_sat)
+                    .checked_sub(total_amount)
                     .and_then(|value| value.checked_sub(change_value))
                     .context("fee computation underflow")?;
 
@@ -550,7 +563,6 @@ impl Wallet {
 
             let (signed_tx, fee_sat, final_change) = result;
 
-            // Prepare a non-persisted change preview (do not mutate UTXO store yet)
             let change_preview = if final_change > 0 {
                 let txid = signed_tx.compute_txid();
                 let change_vout = (signed_tx.output.len() - 1) as u32; // change is last output
@@ -566,7 +578,6 @@ impl Wallet {
                 transaction: signed_tx,
                 change: change_preview,
                 fee_sat,
-                // Plan for committing after successful broadcast
                 spent_indices: selected_indices,
                 spent_utxos: selected_utxos,
                 change_value: final_change,

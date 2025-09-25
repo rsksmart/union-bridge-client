@@ -70,7 +70,7 @@ fn main() -> Result<()> {
     // 3.3 Send funds to the generated address
     let send_amount_sat = 60_000;
     let created_to_address = wallet.create_transactions(
-        recipient_generated.address.script_pubkey(),
+        vec![recipient_generated.address.script_pubkey()],
         send_amount_sat,
         1,
     )?;
@@ -96,7 +96,8 @@ fn main() -> Result<()> {
             .map_err(|_| anyhow::anyhow!("public key must be compressed"))?,
     );
 
-    let created_to_pubkey = wallet.create_transactions(pubkey_script, pubkey_amount_sat, 1)?;
+    let created_to_pubkey =
+        wallet.create_transactions(vec![pubkey_script], pubkey_amount_sat, 1)?;
     let pubkey_txid = wallet.broadcast_transaction(&created_to_pubkey[0])?;
     println!(
         "Broadcasted transaction {} sending {} sat to public key {}",

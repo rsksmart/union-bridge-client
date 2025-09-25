@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::convert::TryFrom;
 use std::str::FromStr;
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use bitcoin::address::{Address, NetworkUnchecked};
 use bitcoin::consensus::encode::serialize_hex;
 use bitcoin::hashes::hex::FromHex;
@@ -305,49 +305,86 @@ fn handle_command(wallet: &mut Wallet, config: &Config, line: &str) -> Result<Co
             Ok(CommandOutcome::Continue)
         }
         "send_to_pubkey" => {
-            let pubkey_hex = parts.next().context("expected public key hex")?;
+            // Syntax: send_to_pubkey <hex_csv> <satoshis> [count]
+            // <hex_csv> is a comma-separated list of compressed public keys in hex (no spaces)
+            let hex_csv = parts
+                .next()
+                .context("expected comma-separated list of public keys (hex)")?;
             let amount_str = parts.next().context("expected amount in satoshis")?;
             let amount: u64 = amount_str.parse().context("invalid amount (satoshis)")?;
             let count = parse_count(parts.next())?;
 
-            let pubkey_bytes = Vec::from_hex(pubkey_hex).context("public key must be hex")?;
-            let pk = PublicKey::from_slice(&pubkey_bytes).context("invalid public key")?;
-            let wpkh = pk
-                .wpubkey_hash()
-                .map_err(|_| anyhow!("public key must be compressed for P2WPKH"))?;
-            let target_script = ScriptBuf::new_p2wpkh(&wpkh);
+            let pubkeys: Vec<&str> = hex_csv
+                .split(',')
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .collect();
+            ensure!(
+                !pubkeys.is_empty(),
+                "expected at least one public key (hex) in the comma-separated list"
+            );
 
-            let created = wallet.create_transactions(target_script, amount, count)?;
+            let mut scripts: Vec<ScriptBuf> = Vec::new();
+            for pk_hex in pubkeys {
+                let pubkey_bytes = Vec::from_hex(pk_hex).context("public key must be hex")?;
+                let pk = PublicKey::from_slice(&pubkey_bytes).context("invalid public key")?;
+                let wpkh = pk
+                    .wpubkey_hash()
+                    .map_err(|_| anyhow!("public key must be compressed for P2WPKH"))?;
+                let target_script = ScriptBuf::new_p2wpkh(&wpkh);
+                scripts.push(target_script);
+            }
+
+            let created = wallet.create_transactions(scripts, amount, count)?;
             print_transactions(&created);
             maybe_broadcast(wallet, &created)?;
             Ok(CommandOutcome::Continue)
         }
         "send_to_address" => {
-            let address_str = parts.next().context("expected bech32 address")?;
+            // Syntax: send_to_address <addr_csv> <satoshis> [count]
+            // <addr_csv> is a comma-separated list of Bech32 P2WPKH addresses (no spaces)
+            let addr_csv = parts
+                .next()
+                .context("expected comma-separated bech32 address list")?;
             let amount_str = parts.next().context("expected amount in satoshis")?;
             let amount: u64 = amount_str.parse().context("invalid amount (satoshis)")?;
             let count = parse_count(parts.next())?;
 
-            let address: Address<NetworkUnchecked> =
-                Address::from_str(address_str).context("invalid address format")?;
-            let checked = address.require_network(wallet.network()).map_err(|_| {
-                anyhow!(
-                    "address does not match current network {:?}",
-                    wallet.network()
-                )
-            })?;
-            let script = checked.script_pubkey();
-            if !script.is_p2wpkh() {
-                bail!("only native segwit (P2WPKH) addresses are supported");
+            let addresses: Vec<&str> = addr_csv
+                .split(',')
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .collect();
+            ensure!(
+                !addresses.is_empty(),
+                "expected at least one bech32 address in the comma-separated list"
+            );
+
+            let mut scripts: Vec<ScriptBuf> = Vec::new();
+            for address_str in addresses {
+                let address: Address<NetworkUnchecked> =
+                    Address::from_str(address_str).context("invalid address format")?;
+                let checked = address.require_network(wallet.network()).map_err(|_| {
+                    anyhow!(
+                        "address does not match current network {:?}",
+                        wallet.network()
+                    )
+                })?;
+                let script = checked.script_pubkey();
+                if !script.is_p2wpkh() {
+                    bail!("only native segwit (P2WPKH) addresses are supported");
+                }
+                scripts.push(script);
             }
 
-            let created = wallet.create_transactions(script, amount, count)?;
+            let created = wallet.create_transactions(scripts, amount, count)?;
+
             print_transactions(&created);
             maybe_broadcast(wallet, &created)?;
             Ok(CommandOutcome::Continue)
         }
         "mine_block" => {
-            anyhow::ensure!(
+            ensure!(
                 wallet.network() == Network::Regtest,
                 "mine_block is only available on regtest (current: {:?})",
                 wallet.network()
@@ -382,7 +419,7 @@ fn handle_command(wallet: &mut Wallet, config: &Config, line: &str) -> Result<Co
             Ok(CommandOutcome::Continue)
         }
         "mine_utxo" => {
-            anyhow::ensure!(
+            ensure!(
                 wallet.network() == Network::Regtest,
                 "mine_utxo is only available on regtest (current: {:?})",
                 wallet.network()
@@ -475,7 +512,7 @@ fn handle_command(wallet: &mut Wallet, config: &Config, line: &str) -> Result<Co
             }
         }
         "clear_db" => {
-            anyhow::ensure!(
+            ensure!(
                 wallet.network() == Network::Regtest,
                 "clear_db is only available on regtest (current: {:?})",
                 wallet.network()
@@ -644,10 +681,10 @@ fn print_help(sats_per_byte: u64) {
         "  list_funds [all]                      - List UTXOs for the active address or every address"
     );
     println!(
-        "  send_to_pubkey <hex> <sats> [count]   - Create count (default 1) txs to a P2WPKH pubkey"
+        "  send_to_pubkey <hex_csv> <sats> [count]   - <hex_csv> is comma-separated compressed pubkeys (hex); create a single tx paying <sats> to each; repeat the whole tx by count (default 1)"
     );
     println!(
-        "  send_to_address <addr> <sats> [count] - Create count (default 1) txs to a Bech32 address"
+        "  send_to_address <addr_csv> <sats> [count] - <addr_csv> is comma-separated Bech32 P2WPKH addresses; create a single tx paying <sats> to each; repeat the whole tx by count (default 1)"
     );
     println!("  mine_block                            - Regtest only: mine a single block via RPC");
     println!(
