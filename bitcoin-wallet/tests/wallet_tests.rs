@@ -4,6 +4,10 @@ use bitcoin::network::Network;
 use bitcoin::script::ScriptBuf;
 use bitcoin::secp256k1::{self, Secp256k1};
 use bitcoin::{Amount, OutPoint, Txid};
+use bitcoincore_rpc::jsonrpc;
+use bitcoincore_rpc::jsonrpc::{Error, Request, Response};
+use std::fmt::Formatter;
+use std::sync::{Arc, Mutex};
 use tempfile::tempdir;
 
 use ub_wallet::utxo_store::UtxoStore;
@@ -18,7 +22,7 @@ fn recipient_script() -> ScriptBuf {
 }
 
 #[test]
-fn create_transaction_consumes_utxo_and_creates_change() {
+fn create_transaction_does_not_consume_utxo_and_creates_change_until_broadcasted() {
     let temp = tempdir().expect("temp dir");
     let db_root = temp.path().join("utxo-db");
     let mut wallet = Wallet::new(db_root).expect("wallet");
@@ -29,13 +33,17 @@ fn create_transaction_consumes_utxo_and_creates_change() {
         .import_private_key(&wallet_wif)
         .expect("import private key");
 
+    set_fake_rpc_client(&mut wallet);
+
     let input_txid = Txid::from_slice(&[0x11; 32]).expect("txid");
+    let utxo_amount = 50_000;
     wallet
-        .register_utxo(OutPoint::new(input_txid, 0), 50_000)
+        .register_utxo(OutPoint::new(input_txid, 0), utxo_amount)
         .expect("register utxo");
 
     let target_script = recipient_script();
 
+    let tx_amount = 20_000;
     let txs = wallet
         .create_transactions(target_script.clone(), 20_000, 1)
         .expect("create tx");
@@ -46,7 +54,7 @@ fn create_transaction_consumes_utxo_and_creates_change() {
     assert_eq!(created.transaction.output.len(), 2);
     assert_eq!(
         created.transaction.output[0].value,
-        Amount::from_sat(20_000)
+        Amount::from_sat(tx_amount)
     );
     assert_eq!(created.transaction.output[0].script_pubkey, target_script);
 
@@ -57,12 +65,23 @@ fn create_transaction_consumes_utxo_and_creates_change() {
     );
 
     let change_amount = created.transaction.output[1].value.to_sat();
-    let expected_change = 50_000 - 20_000 - expected_fee;
+    let expected_change = utxo_amount - tx_amount - expected_fee;
     assert_eq!(change_amount, expected_change);
 
     let change_entry = created.change.as_ref().expect("change output");
     assert_eq!(change_entry.value_sat, expected_change);
 
+    // before broadcast, original utxo still present, change utxo not yet created
+    let utxos = wallet.utxos();
+    assert_eq!(utxos.len(), 1);
+    assert_eq!(utxos[0].value_sat, utxo_amount);
+    assert_eq!(utxos[0].outpoint.txid, input_txid);
+
+    wallet
+        .broadcast_transaction(&created)
+        .expect("broadcast tx");
+
+    // after broadcast, original utxo consumed, change utxo created
     let utxos = wallet.utxos();
     assert_eq!(utxos.len(), 1);
     assert_eq!(utxos[0].value_sat, expected_change);
@@ -75,6 +94,8 @@ fn dust_change_is_added_to_fee() {
     let db_root = temp.path().join("utxo-db");
     let mut wallet = Wallet::new(db_root).expect("wallet");
     wallet.set_sats_per_byte(1); // keep target fee low to exercise dust logic
+
+    set_fake_rpc_client(&mut wallet);
 
     let wallet_secret = secp256k1::SecretKey::from_slice(&[13u8; 32]).expect("wallet secret");
     let wallet_key = PrivateKey::new(wallet_secret, Network::Regtest);
@@ -99,6 +120,15 @@ fn dust_change_is_added_to_fee() {
     let created = &txs[0];
     assert!(created.change.is_none(), "dust change should be skipped");
     assert_eq!(created.fee_sat, input_value - send_value);
+
+    // before broadcast, original utxo still present, no change utxo created
+    assert!(!wallet.utxos().is_empty(), "no change UTXO should remain");
+
+    wallet
+        .broadcast_transaction(&created)
+        .expect("broadcast tx");
+
+    // after broadcast, original utxo consumed, no change utxo created
     assert!(wallet.utxos().is_empty(), "no change UTXO should remain");
 }
 
@@ -287,7 +317,7 @@ fn utxo_listings_are_sorted_by_timestamp() {
     let address = setup_wallet.import_private_key(&wif).expect("import key");
     drop(setup_wallet);
 
-    let store_path = db_root.join(format!("utxo-db.{}", Network::Regtest.to_string()));
+    let store_path = db_root.join(Network::Regtest.to_string());
     let store = UtxoStore::open(&store_path).expect("reopen store for inserts");
     let txid_newer = Txid::from_slice(&[0x88; 32]).expect("txid newer");
     let txid_older = Txid::from_slice(&[0x99; 32]).expect("txid older");
@@ -323,4 +353,61 @@ fn utxo_listings_are_sorted_by_timestamp() {
     let timestamps_reloaded: Vec<u64> =
         aggregated_reloaded[0].1.iter().map(|(_, ts)| *ts).collect();
     assert_eq!(timestamps_reloaded, vec![200, 100]);
+}
+
+// Minimal fake JSON-RPC transport that returns a canned txid for sendrawtransaction
+struct FakeTransport {
+    // capture the last method called for debugging/validation if you want
+    last_method: Arc<Mutex<Option<String>>>,
+}
+
+impl FakeTransport {
+    fn new() -> Self {
+        Self {
+            last_method: Arc::new(Mutex::new(None)),
+        }
+    }
+}
+
+impl jsonrpc::Transport for FakeTransport {
+    fn send_request(&self, req: Request) -> Result<Response, Error> {
+        let method = req.method.to_string();
+        *self.last_method.lock().expect("lock last_method") = Some(method.clone());
+
+        // Craft a canned txid string for sendrawtransaction
+        let result = if method == "sendrawtransaction" {
+            // 64 hex chars (little-endian txid string)
+            let txid_hex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+            Some(
+                serde_json::value::RawValue::from_string(format!("\"{}\"", txid_hex))
+                    .expect("raw value"),
+            )
+        } else {
+            // Default to null
+            None
+        };
+
+        Ok(Response {
+            result,
+            error: None,
+            id: req.id,
+            jsonrpc: Some("2.0".to_string()),
+        })
+    }
+
+    fn send_batch(&self, reqs: &[Request]) -> Result<Vec<Response>, Error> {
+        reqs.iter().map(|r| self.send_request(r.clone())).collect()
+    }
+
+    fn fmt_target(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "FakeTransport")
+    }
+}
+
+fn set_fake_rpc_client(wallet: &mut Wallet) {
+    // Install fake RPC client
+    let transport = FakeTransport::new();
+    let json_client = jsonrpc::Client::with_transport(transport);
+    let client = bitcoincore_rpc::Client::from_jsonrpc(json_client);
+    wallet.set_rpc_client(client);
 }

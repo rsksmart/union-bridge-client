@@ -509,7 +509,7 @@ fn print_transactions(txs: &[CreatedTransaction]) {
     }
 }
 
-fn maybe_broadcast(wallet: &Wallet, txs: &[CreatedTransaction]) -> Result<()> {
+fn maybe_broadcast(wallet: &mut Wallet, txs: &[CreatedTransaction]) -> Result<()> {
     if wallet.rpc_client().is_none() {
         println!("RPC not configured; transaction hex printed only.");
         return Ok(());

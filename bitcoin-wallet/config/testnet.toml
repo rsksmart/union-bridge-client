@@ -1,0 +1,22 @@
+# Sample configuration for ub-wallet (defaults to regtest)
+# Replace the private key and UTXO details with values that match your setup.
+
+network = "regtest"
+sats_per_byte = 5
+
+# Compressed WIF for a regtest/testnet key => use WALLET_PRIVATE_KEY env var instead
+# private_key_wif = "<do_not_use>"
+
+# Default local regtest node settings for bitcoind node run inside docker container using bitcoind.rs 
+rpc_url = "http://127.0.0.1:18443/"
+rpc_user = "foo"
+rpc_password = "rpcpassword"
+
+# Path to LevelDB databases for storing UTXOs (one db per network)
+utxo_db_path = ".union_bridge/bitcoin-wallet/utxo-db"
+
+# Uncomment and edit the section below to pre-register known UTXOs.
+# [[utxos]]
+# txid = "0000000000000000000000000000000000000000000000000000000000000000"
+# vout = 0
+# value_sat = 0

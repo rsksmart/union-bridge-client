@@ -37,6 +37,11 @@ pub struct CreatedTransaction {
     pub transaction: Transaction,
     pub change: Option<Utxo>,
     pub fee_sat: u64,
+    // Plan data for committing UTXO changes after successful broadcast
+    pub spent_indices: Vec<usize>,
+    pub spent_utxos: Vec<Utxo>,
+    pub change_value: u64,
+    pub change_address: Address,
 }
 
 #[derive(Debug, Clone)]
@@ -200,13 +205,27 @@ impl Wallet {
         fetch_utxo_amount(client, txid, vout)
     }
 
-    pub fn broadcast_transaction(&self, created: &CreatedTransaction) -> Result<Txid> {
+    pub fn broadcast_transaction(&mut self, created: &CreatedTransaction) -> Result<Txid> {
         let client = self.require_rpc_client()?;
         let raw_hex = serialize_hex(&created.transaction);
         let rpc_txid = client.send_raw_transaction(raw_hex)?;
         let txid =
             Txid::from_str(&rpc_txid.to_string()).context("failed to convert broadcast txid")?;
+        if let Err(err) = self.commit_spend(created) {
+            eprintln!("  warning: failed to commit local UTXO changes: {err}");
+        }
         Ok(txid)
+    }
+
+    // Apply UTXO mutations only after a successful broadcast
+    pub fn commit_spend(&mut self, created: &CreatedTransaction) -> Result<Option<Utxo>> {
+        self.update_utxos_after_spend(
+            created.spent_indices.clone(),
+            &created.spent_utxos,
+            &created.transaction,
+            created.change_value,
+            &created.change_address,
+        )
     }
 
     fn reload_active_utxos(&mut self) -> Result<()> {
@@ -524,18 +543,28 @@ impl Wallet {
             }
 
             let (signed_tx, fee_sat, final_change) = result;
-            let change = self.update_utxos_after_spend(
-                selected_indices,
-                &selected_utxos,
-                &signed_tx,
-                final_change,
-                &address,
-            )?;
+
+            // Prepare a non-persisted change preview (do not mutate UTXO store yet)
+            let change_preview = if final_change > 0 {
+                let txid = signed_tx.compute_txid();
+                let change_vout = (signed_tx.output.len() - 1) as u32; // change is last output
+                Some(Utxo {
+                    outpoint: OutPoint::new(txid, change_vout),
+                    value_sat: final_change,
+                })
+            } else {
+                None
+            };
 
             return Ok(CreatedTransaction {
                 transaction: signed_tx,
-                change,
+                change: change_preview,
                 fee_sat,
+                // Plan for committing after successful broadcast
+                spent_indices: selected_indices,
+                spent_utxos: selected_utxos,
+                change_value: final_change,
+                change_address: address,
             });
         }
     }
