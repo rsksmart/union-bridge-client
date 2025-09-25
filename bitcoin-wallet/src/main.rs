@@ -342,10 +342,11 @@ fn handle_command(wallet: &mut Wallet, config: &Config, line: &str) -> Result<Co
         }
         "send_to_address" => {
             // Syntax: send_to_address <addr_csv> <satoshis> [count]
-            // <addr_csv> is a comma-separated list of Bech32 P2WPKH addresses (no spaces)
+            // <addr_csv> is a comma-separated list of recipient addresses (no spaces)
+            // Supports: Bech32 P2WPKH and Base58 P2PKH on the current network
             let addr_csv = parts
                 .next()
-                .context("expected comma-separated bech32 address list")?;
+                .context("expected comma-separated address list")?;
             let amount_str = parts.next().context("expected amount in satoshis")?;
             let amount: u64 = amount_str.parse().context("invalid amount (satoshis)")?;
             let count = parse_count(parts.next())?;
@@ -357,7 +358,7 @@ fn handle_command(wallet: &mut Wallet, config: &Config, line: &str) -> Result<Co
                 .collect();
             ensure!(
                 !addresses.is_empty(),
-                "expected at least one bech32 address in the comma-separated list"
+                "expected at least one address in the comma-separated list"
             );
 
             let mut scripts: Vec<ScriptBuf> = Vec::new();
@@ -371,8 +372,8 @@ fn handle_command(wallet: &mut Wallet, config: &Config, line: &str) -> Result<Co
                     )
                 })?;
                 let script = checked.script_pubkey();
-                if !script.is_p2wpkh() {
-                    bail!("only native segwit (P2WPKH) addresses are supported");
+                if !(script.is_p2wpkh() || script.is_p2pkh()) {
+                    bail!("only P2WPKH (bech32) and P2PKH (base58) addresses are supported");
                 }
                 scripts.push(script);
             }
@@ -684,7 +685,7 @@ fn print_help(sats_per_byte: u64) {
         "  send_to_pubkey <hex_csv> <sats> [count]   - <hex_csv> is comma-separated compressed pubkeys (hex); create a single tx paying <sats> to each; repeat the whole tx by count (default 1)"
     );
     println!(
-        "  send_to_address <addr_csv> <sats> [count] - <addr_csv> is comma-separated Bech32 P2WPKH addresses; create a single tx paying <sats> to each; repeat the whole tx by count (default 1)"
+        "  send_to_address <addr_csv> <sats> [count] - <addr_csv> is comma-separated addresses (P2WPKH bech32 or P2PKH base58); create a single tx paying <sats> to each; repeat the whole tx by count (default 1)"
     );
     println!("  mine_block                            - Regtest only: mine a single block via RPC");
     println!(
