@@ -60,9 +60,9 @@ fi
 
 echo "🚀 Starting 4 union client instances for platform: $PLATFORM, tag: $TAG"
 
-ROOTSTOCK_URL=ws://host.docker.internal:8545 BITVMX_HOST=host.docker.internal BITVMX_PORT=22222 PLATFORM=$PLATFORM TAG=$TAG docker compose -p uc-1 -f docker-compose.yml up -d
-ROOTSTOCK_URL=ws://host.docker.internal:8545 BITVMX_HOST=host.docker.internal BITVMX_PORT=33333 PLATFORM=$PLATFORM TAG=$TAG docker compose -p uc-2 -f docker-compose.yml up -d
-ROOTSTOCK_URL=ws://host.docker.internal:8545 BITVMX_HOST=host.docker.internal BITVMX_PORT=44444 PLATFORM=$PLATFORM TAG=$TAG docker compose -p uc-3 -f docker-compose.yml up -d
-ROOTSTOCK_URL=ws://host.docker.internal:8545 BITVMX_HOST=host.docker.internal BITVMX_PORT=55554 PLATFORM=$PLATFORM TAG=$TAG docker compose -p uc-4 -f docker-compose.yml up -d
+USER_API_PORT=40001 ROOTSTOCK_URL=ws://host.docker.internal:8545 BITVMX_HOST=host.docker.internal BITVMX_PORT=22222 PLATFORM=$PLATFORM TAG=$TAG docker compose -p uc-1 -f docker-compose.yml up -d
+USER_API_PORT=40002 ROOTSTOCK_URL=ws://host.docker.internal:8545 BITVMX_HOST=host.docker.internal BITVMX_PORT=33333 PLATFORM=$PLATFORM TAG=$TAG docker compose -p uc-2 -f docker-compose.yml up -d
+USER_API_PORT=40003 ROOTSTOCK_URL=ws://host.docker.internal:8545 BITVMX_HOST=host.docker.internal BITVMX_PORT=44444 PLATFORM=$PLATFORM TAG=$TAG docker compose -p uc-3 -f docker-compose.yml up -d
+USER_API_PORT=40004 ROOTSTOCK_URL=ws://host.docker.internal:8545 BITVMX_HOST=host.docker.internal BITVMX_PORT=55554 PLATFORM=$PLATFORM TAG=$TAG docker compose -p uc-4 -f docker-compose.yml up -d
 
 echo "✅ All 4 union client instances started successfully"
