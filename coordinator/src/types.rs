@@ -1,30 +1,34 @@
 use crate::types::RskPegManagerEvents::UnknownEvent;
 use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
-use alloy_primitives::{B256, FixedBytes, LogData};
-use alloy_sol_types::SolEvent;
+use alloy_primitives::{B256, FixedBytes, Log, LogData};
+use alloy_sol_types::{SolEvent, SolEventInterface};
 use anyhow::anyhow;
 use bitcoin::PublicKey;
 use common::msg_broker::bitvmx_types::{
     PartialUtxo, ParticipantRole, PegOutAccepted, PeginAcceptedMessage,
 };
-use common::types::{Address, BlockHash, BlockNumber, Hash256, RskLog, TxHash};
-use log::{error, warn};
+use common::types::{Address, BlockHash, BlockNumber, Hash256, RskLog, RskRpcLog, TxHash};
+use log::{error, info, warn};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::hash::Hash;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
-    AllCommunicationDataReady, MemberInfoDeposited, NewCommittee, NewPendingCommittee,
+    AllCommunicationDataReady, CommitteeRegistryEvents, MemberInfoDeposited, NewCommittee,
+    NewPendingCommittee,
 };
 use union_contracts::bindings::peg_manager::PegManager::{
-    PeginAccepted, PeginRequested, PegoutRegistered, PegoutRequested,
+    PegManagerEvents, PeginAccepted, PeginRequested, PegoutRegistered, PegoutRequested,
 };
 use union_contracts::bindings::signature_manager::SignatureManager::{
-    AllNoncesReady, AllOperatorTakeTxHashesAdded, AllSignaturesReady,
+    AllNoncesReady, AllOperatorTakeTxHashesAdded, AllSignaturesReady, SignatureManagerEvents,
 };
 
 use crate::user_requests::ApplyToStream;
-
+use anyhow::Result;
+use union_contracts::bindings::bitcoin_manager::BitcoinManager::BitcoinManagerEvents;
+use union_contracts::bindings::member_registry::MemberRegistry::MemberRegistryEvents;
+use union_contracts::bindings::stream_manager::StreamManager::StreamManagerEvents;
 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-183
 
 #[derive(Eq, PartialEq, Debug)]
@@ -160,7 +164,11 @@ impl EventDecoder {
                 tx_hash,
             ),
             None => {
-                warn!("Unknown event type for log: {:?}", log);
+                warn!(
+                    "Unknown event type for log {topic0} from {}, known topics: {:?}",
+                    log.info().address(),
+                    self.dispatch.keys()
+                );
                 UnknownEvent
             }
         }
@@ -174,9 +182,51 @@ impl EventDecoder {
             .map(|topic| B256::from(*topic))
             .collect();
 
-        let hex_data = log.event().data().as_bytes().to_vec();
+        let data = log.event().data().as_bytes().to_vec();
 
-        let log_data = match LogData::new(parsed_topics, hex_data.into()) {
+        match PegManagerEvents::decode_raw_log(&parsed_topics, &data) {
+            Ok(pm) => {
+                info!("Decoded PegManagerEvents successfully {pm:?}");
+            }
+            Err(_) => {}
+        }
+
+        match CommitteeRegistryEvents::decode_raw_log(&parsed_topics, &data) {
+            Ok(pm) => {
+                info!("Decoded CommitteeRegistryEvents successfully {pm:?}");
+            }
+            Err(_) => {}
+        }
+
+        match MemberRegistryEvents::decode_raw_log(&parsed_topics, &data) {
+            Ok(pm) => {
+                info!("Decoded MemberRegistryEvents successfully {pm:?}");
+            }
+            Err(_) => {}
+        }
+
+        match StreamManagerEvents::decode_raw_log(&parsed_topics, &data) {
+            Ok(pm) => {
+                info!("Decoded StreamManagerEvents successfully {pm:?}");
+            }
+            Err(_) => {}
+        }
+
+        match SignatureManagerEvents::decode_raw_log(&parsed_topics, &data) {
+            Ok(pm) => {
+                info!("Decoded SignatureManagerEvents successfully {pm:?}");
+            }
+            Err(_) => {}
+        }
+
+        match BitcoinManagerEvents::decode_raw_log(&parsed_topics, &data) {
+            Ok(pm) => {
+                info!("Decoded BitcoinManagerEvents successfully {pm:?}");
+            }
+            Err(_) => {}
+        }
+
+        let log_data = match LogData::new(parsed_topics, data.into()) {
             Some(data) => data,
             None => {
                 error!("Failed to create Alloy LogData from rsk_log");
