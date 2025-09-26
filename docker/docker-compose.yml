@@ -112,7 +112,7 @@ services:
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
     restart: no
     ports:
-      - "5551"  # http server port from the configuration
+      - "${USER_API_PORT:-40001}:5551" # internal: http server port from the configuration
     healthcheck:
       interval: 30s
       timeout: 10s
