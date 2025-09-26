@@ -200,12 +200,17 @@ impl Wallet {
             eprintln!("  warning: failed to commit local UTXO changes: {err}");
         }
 
-        let url = match self.network {
-            Network::Testnet => format!("https://mempool.space/testnet/tx/{}", txid),
-            Network::Bitcoin => format!("https://mempool.space/tx/{}", txid),
-            _ => "Unsupported network".to_string(),
+        match self.network {
+            Network::Testnet => {
+                let url = format!("https://mempool.space/testnet/tx/{}", txid);
+                println!("View transaction at: {}", url);
+            }
+            Network::Bitcoin => {
+                let url = format!("https://mempool.space/tx/{}", txid);
+                println!("View transaction at: {}", url);
+            }
+            _ => { /* no-op */ }
         };
-        println!("View transaction at: {}", url);
 
         Ok(txid)
     }
