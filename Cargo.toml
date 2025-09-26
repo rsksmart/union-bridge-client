@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["common", "block-indexer", "log-indexer", "transaction-dispatcher", "key-manager", "check-fork", "check-fork/zkp", "coordinator", "actors-mocking", "user-api", "bitcoin-wallet"]
+members = ["common", "block-indexer", "log-indexer", "transaction-dispatcher", "key-manager", "check-fork", "check-fork/zkp", "coordinator", "actors-mocking", "user-api"]
 
 [workspace.dependencies]
 # alloy-rs-core
