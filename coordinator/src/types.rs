@@ -48,6 +48,7 @@ pub enum RskPegManagerEvents {
 
 #[derive(Debug, Deserialize)]
 pub enum UserRequests {
+    GetBitVMXFundingAddress,
     ApplyToStream(ApplyToStream),
 }
 

@@ -7,13 +7,10 @@ use crate::types::{
 use alloy_primitives::{Address, Bytes, FixedBytes};
 use anyhow::{Context, Result, bail, ensure};
 use bitcoin::key::Parity::Even;
-use bitcoin::{Amount, CompressedPublicKey, Network, PublicKey, ScriptBuf, Txid, XOnlyPublicKey};
-use bitvmx_bitcoin_rpc;
-use bitvmx_bitcoin_rpc::bitcoin_client::{BitcoinClient, BitcoinClientApi};
-use bitvmx_bitcoin_rpc::rpc_config::RpcConfig;
+use bitcoin::{Amount, Network, PublicKey, ScriptBuf, Txid, XOnlyPublicKey};
 use common::msg_broker::bitvmx_types::{
-    IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, OutputType, P2PAddress, PartialUtxo,
-    ParticipantRole, PeerId, SignedPublicKey, Utxo,
+    Destination, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, OutputType, P2PAddress,
+    PartialUtxo, ParticipantRole, PeerId, SignedPublicKey, Utxo,
 };
 use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 use common::runtime_sync::RuntimeSync;
@@ -51,7 +48,7 @@ use mockall::automock;
 pub(crate) const NO_LEADER_IDX: u16 = 0;
 
 // TODO temporary for Regtest stage
-const REGTEST: Network = Network::Regtest;
+const NETWORK: Network = Network::Regtest;
 
 #[cfg_attr(test, automock)]
 trait SetupCommitteeFlowApi {
@@ -107,6 +104,13 @@ type PubKeyReq = Option<(
 )>; // request id key, raw pub key, req id signing, signed pub key
 type AggKeyReq = Option<(Uuid, Option<PublicKey>)>; // request id, response data
 type SetupCoreReq = Vec<(Uuid, CommitteeId, bool)>; // request id, committee id, response data
+type SendFundsReq = Option<(Uuid, Option<Txid>)>; // request id, funding utxo, speedup utxo
+
+pub(crate) struct FundingUtxos {
+    pub speedup: PartialUtxo,
+    pub protocol_funding: PartialUtxo,
+    // pub advance_funds: PartialUtxo,
+}
 
 #[derive(Default, Debug)]
 struct FlowContext {
@@ -116,6 +120,7 @@ struct FlowContext {
     my_take_key_req: PubKeyReq,
     my_dispute_key_req: PubKeyReq,
     my_comm_key_req: PubKeyReq,
+    send_funds_req: SendFundsReq,
     agg_take_key: AggKeyReq,
     agg_dispute_key: AggKeyReq,
     setup_core: SetupCoreReq,
@@ -182,6 +187,7 @@ enum Steps {
     SignMyDisputeKey,
     GetMyCommKey,
     SignMyCommKey,
+    FundMyBitVmxAccount,
     ApplyToStream,
     DepositP2PData,
     SetupTakeAggregatedKey,
@@ -199,6 +205,7 @@ enum StepData {
     PublicKey(PublicKey),
     SignedMessage([u8; 32], [u8; 32], u8), // signature_r, signature_s, recovery_id
     SetupCompleted(Uuid),
+    FundsSent(Txid),
 
     // async or collaborative steps
     PendingCommittee(NewCommitteePendingEvent),
@@ -262,6 +269,13 @@ impl StepData {
             _ => bail!("Expected SetupCompleted data"),
         }
     }
+
+    fn into_funds_sent(self) -> Result<Txid> {
+        match self {
+            StepData::FundsSent(tx_id) => Ok(tx_id),
+            _ => bail!("Expected FundsSent data"),
+        }
+    }
 }
 
 pub(crate) struct State {
@@ -275,7 +289,6 @@ pub(crate) struct SetupCommitteeFlow<CG: RskContractsGatewayApi, BC: BitVmxBroke
     rt_sync: RuntimeSync,
     bitvmx_broker: Rc<BC>,
     state: State,
-    bitcoin_client: BitcoinClient,
     global_context: GlobalContext,
 }
 
@@ -300,25 +313,8 @@ where
                 step: Steps::Init,
                 ctx: FlowContext::default(),
             },
-            bitcoin_client: Self::build_bitcoin_client_regtest(),
             global_context,
         }
-    }
-
-    // this is temporary for Regtest stage, required for utxo generation
-    fn build_bitcoin_client_regtest() -> BitcoinClient {
-        let config_bitcoin_client = RpcConfig::new(
-            REGTEST,
-            "http://127.0.0.1:18443".to_string(),
-            "foo".to_string(),
-            "rpcpassword".to_string(),
-            "test_wallet".to_string(),
-        );
-
-        let bitcoin_client = BitcoinClient::new_from_config(&config_bitcoin_client)
-            .expect("Cannot create Setup Committee Flow without a Bitcoin Client");
-
-        bitcoin_client
     }
 
     fn my_address(&self) -> types::Address {
@@ -405,6 +401,20 @@ where
         let my_comm_data = self.build_my_communication_data()?;
         self.state.ctx.communication_data_ready = Some(my_comm_data);
         Ok(())
+    }
+
+    fn close_send_funds_req(send_funds_req: &mut SendFundsReq, data: StepData) -> Result<()> {
+        let tx_id = data.into_funds_sent()?;
+
+        match send_funds_req {
+            Some(r) => {
+                r.1 = Some(tx_id);
+                Ok(())
+            }
+            None => {
+                bail!("Send Funds request missing in context")
+            }
+        }
     }
 
     fn close_setup_core_req(setup_core_req: &mut SetupCoreReq, data: StepData) -> Result<bool> {
@@ -506,7 +516,6 @@ where
         Ok(signed_pubkey)
     }
 
-    #[allow(unused)]
     fn ctx_my_comm_key(&self) -> Result<SignedPublicKey> {
         let signed_pubkey = match self.global_context.my_keys().comm_key() {
             Some(key) => key,
@@ -571,6 +580,44 @@ where
             .as_ref()
             .cloned()
             .context("Missing Communication Data in context")
+    }
+
+    fn ctx_my_protocol_utxos(&self) -> Result<FundingUtxos> {
+        let txid = self
+            .state
+            .ctx
+            .send_funds_req
+            .as_ref()
+            .context("Missing Send Funds Request")?
+            .1
+            .context("Missing Send Funds Request TxId")?;
+
+        info!("Funded. Txid: {}", txid);
+        print_link(NETWORK, txid);
+
+        let public_key = self.ctx_my_dispute_key()?.public_key;
+
+        let funding_utxo_val = self.ctx_user_input()?.funding_utxo.value;
+        let speedup_utxo_val = self.ctx_user_input()?.funding_utxo.value;
+
+        let wpkh = public_key.wpubkey_hash().expect("key is compressed");
+        let script_pubkey = ScriptBuf::new_p2wpkh(&wpkh);
+        let speedup_ot = OutputType::SegwitPublicKey {
+            value: Amount::from_sat(speedup_utxo_val),
+            script_pubkey: script_pubkey.clone(),
+            public_key,
+        };
+        let protocol_funding_ot = OutputType::SegwitPublicKey {
+            value: Amount::from_sat(funding_utxo_val),
+            script_pubkey: script_pubkey.clone(),
+            public_key,
+        };
+
+        // Output indexes should match the order in the Destination::Batch used in IncomingBitVMXApiMessages::SendFunds
+        Ok(FundingUtxos {
+            speedup: (txid, 0, Some(speedup_utxo_val), Some(speedup_ot)),
+            protocol_funding: (txid, 1, Some(funding_utxo_val), Some(protocol_funding_ot)),
+        })
     }
 
     fn get_member_keys_by_type(&self, member_addr: Address, key_index: usize) -> Result<PublicKey> {
@@ -672,24 +719,42 @@ where
         )
     }
 
-    // this is temporary for Regtest stage, required for utxo generation
-    fn generate_my_utxo_regtest(&self, utxo_val: u64) -> Result<(Txid, u32)> {
-        let pub_key = self.ctx_my_dispute_key()?.public_key;
-        let compressed =
-            CompressedPublicKey::try_from(pub_key).context("Failed to compress public key")?;
-        let funding_wallet = bitcoin::Address::p2wpkh(&compressed, REGTEST);
+    pub fn set_utxos(&mut self) -> Result<()> {
+        let req_id = Uuid::new_v4();
+        let fee_rate = if NETWORK == Network::Regtest { 10 } else { 1 }; // TODO copied from get_fee_rate on BitVMX client
 
-        let fund_res = &self
-            .bitcoin_client
-            .fund_address(&funding_wallet, Amount::from_sat(utxo_val))
-            .context("Failed to fund address on fake utxo generation")?;
+        let public_key = self.ctx_my_dispute_key()?.public_key;
 
-        debug!("Generated regtest UTXO: {:?}", fund_res);
+        let funding_utxo_val = self.ctx_user_input()?.funding_utxo.value;
+        let speedup_utxo_val = self.ctx_user_input()?.funding_utxo.value;
 
-        let utxo_tx_id = fund_res.0.compute_txid();
-        let output = fund_res.1;
+        info!(
+            "Funding dispute pubkey of {} with: {}",
+            req_id,
+            speedup_utxo_val + funding_utxo_val
+        );
 
-        Ok((utxo_tx_id, output))
+        self.state.ctx.send_funds_req = Some((req_id, None));
+
+        let result = self.bitvmx_broker.send(
+            BROKER_SERVER_ID,
+            IncomingBitVMXApiMessages::SendFunds(
+                req_id,
+                Destination::Batch(vec![
+                    Destination::P2WPKH(public_key, speedup_utxo_val),
+                    Destination::P2WPKH(public_key, funding_utxo_val),
+                    // Destination::P2WPKH(public_key, amounts.advance_funds),
+                ]),
+                Some(fee_rate),
+            ),
+        );
+
+        if result.is_err() {
+            // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132
+            error!("Failed to send msg to BitVMX: {:?}", result);
+        }
+
+        Ok(())
     }
 
     fn build_my_communication_data(&self) -> Result<Vec<P2PAddress>> {
@@ -843,6 +908,9 @@ where
                 false => self.request_bitvmx_comm_pub_key_signing()?,
                 true => panic!("Running SignMyCommKey when MyKeys are already set"),
             },
+            Steps::FundMyBitVmxAccount => {
+                self.set_utxos()?;
+            }
             Steps::ApplyToStream => {
                 self.apply_to_stream()?;
             }
@@ -887,8 +955,8 @@ where
             Steps::GetMyCommInfo => {
                 self.state.ctx.my_comm_info = Some(data.into_p2p_address()?);
                 if self.global_context.my_keys().is_set() {
-                    debug!("My Keys already set, jumping to ApplyToStream step");
-                    self.start_step(Steps::ApplyToStream)?;
+                    debug!("My Keys already set, jumping to FundMyBitVmxAccount step");
+                    self.start_step(Steps::FundMyBitVmxAccount)?;
                 } else {
                     self.start_step(Steps::GetMyTakeKey)?;
                 }
@@ -915,6 +983,10 @@ where
             }
             Steps::SignMyCommKey => {
                 Self::close_pub_key_signing_req(&mut self.state.ctx.my_comm_key_req, data)?;
+                self.start_step(Steps::FundMyBitVmxAccount)?;
+            }
+            Steps::FundMyBitVmxAccount => {
+                Self::close_send_funds_req(&mut self.state.ctx.send_funds_req, data)?;
                 self.start_step(Steps::ApplyToStream)?;
             }
             Steps::ApplyToStream => {
@@ -1003,23 +1075,19 @@ where
     }
 
     fn apply_to_stream(&self) -> Result<()> {
-        let user_input = self.ctx_user_input()?;
-
-        let utxo_val = user_input.funding_utxo.value;
-        let (tx_id, output) = self
-            .generate_my_utxo_regtest(utxo_val)
-            .context("Generating funding UTXO")?;
-
+        let funding_utxo = self.ctx_my_protocol_utxos()?.protocol_funding;
         let utxo = UTXO {
-            txid: TxIdParser::txid_to_fb_32(tx_id),
-            outputIndex: output,
-            amount: utxo_val,
+            txid: TxIdParser::txid_to_fb_32(funding_utxo.0),
+            outputIndex: funding_utxo.1,
+            amount: funding_utxo.2.context("Missing funding UTXO amount")?,
         };
 
         let stream_id = self.state.ctx.get_stream_id()?;
 
         let my_take_key = self.ctx_my_take_key()?;
         let my_dispute_key = self.ctx_my_dispute_key()?;
+
+        let user_input = self.ctx_user_input()?;
 
         let input = ApplyToStreamInput {
             stream_id: stream_id.clone(),
@@ -1179,15 +1247,11 @@ where
 
         let dispute_core = DisputeCoreSetup::new(self.bitvmx_broker.clone());
 
-        let utxo_val = self.ctx_user_input()?.speed_up_utxo.value;
-        let (tx_id, output) = self
-            .generate_my_utxo_regtest(utxo_val)
-            .context("Generating speedup UTXO")?;
-
+        let partial_utxo = self.ctx_my_protocol_utxos()?.speedup;
         let my_speedup_utxo = Utxo {
-            txid: tx_id,
-            vout: output,
-            amount: utxo_val,
+            txid: partial_utxo.0,
+            vout: partial_utxo.1,
+            amount: partial_utxo.2.context("Missing speedup UTXO amount")?,
             pub_key: self.ctx_my_dispute_key()?.public_key,
         };
 
@@ -1319,6 +1383,7 @@ where
                 || Self::pubkey_request_matches(&flow.state.ctx.my_comm_key_req, req_id)
                 || Self::aggregated_key_request_matches(&flow.state.ctx.agg_take_key, req_id)
                 || Self::aggregated_key_request_matches(&flow.state.ctx.agg_dispute_key, req_id)
+                || Self::fund_bitvmx_request_matches(&flow.state.ctx.send_funds_req, req_id)
                 || Self::setup_core_request_matches(
                     &flow.state.ctx.setup_core,
                     req_id,
@@ -1340,6 +1405,14 @@ where
     fn aggregated_key_request_matches(agg_key_req: &AggKeyReq, req_id: &Uuid) -> bool {
         if let Some((key_req_id, _)) = agg_key_req {
             key_req_id == req_id
+        } else {
+            false
+        }
+    }
+
+    fn fund_bitvmx_request_matches(send_funds_req: &SendFundsReq, req_id: &Uuid) -> bool {
+        if let Some((fund_req_id, _)) = send_funds_req {
+            fund_req_id == req_id
         } else {
             false
         }
@@ -1374,7 +1447,6 @@ where
 
     fn process_confirmed_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         info!("Processing confirmed RSK event: {:?}", event);
-
         let flow_data = match event {
             RskPegManagerEvents::NewCommitteePending(new_committee_pending) => {
                 let stream_id = new_committee_pending.inner._committee.streamId;
@@ -1477,8 +1549,10 @@ where
                 flow.complete_step(StepData::UserRequest(input.clone()))?;
                 self.flows.insert(internal_id, flow);
             }
+            _ => {
+                trace!("Ignoring user request: {:?}", req);
+            }
         }
-
         Ok(())
     }
 
@@ -1510,10 +1584,19 @@ where
             OutgoingBitVMXApiMessages::SetupCompleted(req_id) => {
                 (req_id, StepData::SetupCompleted(req_id.clone()))
             }
+            OutgoingBitVMXApiMessages::FundsSent(req_id, tx_id) => {
+                (req_id, StepData::FundsSent(tx_id.clone()))
+            }
+            OutgoingBitVMXApiMessages::WalletError(req_id, tx_id) => {
+                bail!("BitVMX WalletError for request {req_id}, tx {tx_id}");
+            }
+            OutgoingBitVMXApiMessages::WalletNotReady(req_id) => {
+                bail!("BitVMX WalletNotReady for request {req_id}");
+            }
             // events that do not trigger a flow step are handled here.
             OutgoingBitVMXApiMessages::Pong() => return Ok(()), // ignored
             _ => {
-                debug!("Ignoring BitVMX event: {:?}", event);
+                trace!("Ignoring BitVMX event: {:?}", event);
                 return Ok(());
             }
         };
@@ -1732,4 +1815,17 @@ fn construct_signed_pubkey(
         signature_s,
         recovery_id,
     }
+}
+
+fn print_link(network: Network, txid: Txid) {
+    if network == Network::Regtest {
+        return;
+    }
+
+    let url = match network {
+        Network::Testnet => format!("https://mempool.space/testnet/tx/{}", txid),
+        Network::Bitcoin => format!("https://mempool.space/tx/{}", txid),
+        _ => "Unsupported network".to_string(),
+    };
+    info!("View transaction at: {}", url);
 }

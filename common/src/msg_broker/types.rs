@@ -25,6 +25,7 @@ pub enum FromServer {
 
     // User API
     UserRequest(Value),
+    MemberRequest,
 
     // fake bitvmx incoming messages
     RegisterPegout(Value),
