@@ -562,7 +562,6 @@ impl From<RskRpcLog> for RskLog {
     }
 }
 
-
 #[derive(Serialize, Deserialize, Eq, PartialEq, Debug, Clone)]
 pub struct LogInfo {
     address: Address,

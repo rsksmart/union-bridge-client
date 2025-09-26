@@ -113,7 +113,6 @@ impl CommonConfig {
         format!("{}/config/multi-client-template", project_root)
     }
 
-
     pub fn init_logger(logger_file_opt: Option<&String>, crate_name: &str) -> Result<()> {
         // provided => use it as is
         if let Some(logger_file) = logger_file_opt {

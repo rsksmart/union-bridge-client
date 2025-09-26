@@ -13,13 +13,13 @@ pub const DISPUTE_KEY_INDEX: usize = 1;
 pub const COMM_KEY_INDEX: usize = 2;
 
 #[derive(Default, Debug, Clone)]
-pub(crate) struct GlobalContext {
+pub struct GlobalContext {
     my_committees: MyCommittees,
     my_keys: MyKeys,
 }
 
 #[derive(Default, Debug, Clone)]
-pub(crate) struct MyKeys {
+pub struct MyKeys {
     take_key: Rc<RefCell<Option<SignedPublicKey>>>,
     dispute_key: Rc<RefCell<Option<SignedPublicKey>>>,
     comm_key: Rc<RefCell<Option<SignedPublicKey>>>, // use a proper type when used
@@ -66,7 +66,7 @@ impl MyKeys {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct MyCommittees {
+pub struct MyCommittees {
     committees: Rc<RefCell<HashMap<CommitteeId, Role>>>,
 }
 
@@ -86,6 +86,10 @@ impl MyCommittees {
     // NOTE: &self is enough thanks to RefCell
     pub fn add(&self, committee_id: CommitteeId, role: Role) {
         self.committees.borrow_mut().insert(committee_id, role);
+    }
+
+    pub fn all_cloned(&self) -> HashMap<CommitteeId, Role> {
+        self.committees.borrow().clone()
     }
 
     // TODO call when leaving a committee or when a committee is disbanded

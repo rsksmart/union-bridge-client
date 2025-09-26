@@ -23,6 +23,7 @@ union-contracts = { workspace = true }
 primitive-types = { workspace = true }
 hex = { workspace = true }
 serde = { workspace = true }
+storage-backend = { workspace = true }
 sha2 = "0.10.9"
 tiny-keccak = "2.0.2"
 bitvmx_bitcoin_rpc = { package = "bitvmx-bitcoin-rpc", git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-bitcoin-rpc.git", rev = "0f63157"}
