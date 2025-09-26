@@ -1,0 +1,13 @@
+# configuration for testnet
+
+network = "testnet"
+sats_per_byte = 5
+
+# Default local regtest node settings for bitcoind node run inside docker container using bitcoind.rs 
+rpc_url = "http://bitcoind-testnet-use1.alphanet.rskcomputing.net:18332"
+# rpc_user = "bitcoin"
+# rpc_password = "39048j03@slk"
+
+# Path to LevelDB databases for storing UTXOs (one db per network)
+utxo_db_path = ".union_bridge/bitcoin-wallet/utxo-db"
+

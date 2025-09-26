@@ -1,0 +1,12 @@
+# configuration for regtest
+
+network = "regtest"
+sats_per_byte = 5
+
+# Default local regtest node settings for bitcoind node run inside docker container using bitcoind.rs
+rpc_url = "http://127.0.0.1:18443/"
+rpc_user = "foo"
+rpc_password = "rpcpassword"
+
+# Path to LevelDB databases for storing UTXOs (one db per network)
+utxo_db_path = ".union_bridge/bitcoin-wallet/utxo-db"
