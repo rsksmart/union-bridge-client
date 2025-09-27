@@ -131,7 +131,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
     }
 }
 
-pub fn get_dispute_core_pid(committee_id: Uuid, pubkey: &PublicKey) -> Result<Uuid> {
+fn get_dispute_core_pid(committee_id: Uuid, pubkey: &PublicKey) -> Result<Uuid> {
     let mut hasher = Sha256::new();
     hasher.update(committee_id.as_bytes());
     hasher.update(pubkey.to_bytes());
@@ -144,4 +144,44 @@ pub fn get_dispute_core_pid(committee_id: Uuid, pubkey: &PublicKey) -> Result<Uu
         .context("UUID slice conversion failed")?;
 
     Ok(Uuid::from_bytes(bytes))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bitcoin::PublicKey;
+    use std::str::FromStr;
+
+    fn create_test_public_key() -> PublicKey {
+        // Create a test public key using a known valid key
+        PublicKey::from_str("02a1633cafcc01ebfb6d78e39f687a1f0995c62fc95f51ead10a02ee0be551b5dc")
+            .unwrap()
+    }
+
+    // Test DisputeCoreSetup
+    #[test]
+    fn test_get_dispute_core_pid() {
+        let committee_id = Uuid::new_v4();
+        let pubkey = create_test_public_key();
+
+        let protocol_id = get_dispute_core_pid(committee_id, &pubkey).unwrap();
+        assert_ne!(protocol_id, committee_id);
+
+        // Test that same inputs produce same output
+        let protocol_id2 = get_dispute_core_pid(committee_id, &pubkey).unwrap();
+        assert_eq!(protocol_id, protocol_id2);
+    }
+
+    #[test]
+    fn test_get_dispute_core_pid_different_inputs() {
+        let committee_id1 = Uuid::new_v4();
+        let committee_id2 = Uuid::new_v4();
+        let pubkey1 = create_test_public_key();
+        let pubkey2 = create_test_public_key();
+
+        let protocol_id1 = get_dispute_core_pid(committee_id1, &pubkey1).unwrap();
+        let protocol_id2 = get_dispute_core_pid(committee_id2, &pubkey2).unwrap();
+
+        assert_ne!(protocol_id1, protocol_id2);
+    }
 }
