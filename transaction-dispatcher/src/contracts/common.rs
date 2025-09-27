@@ -199,35 +199,47 @@ where
         // Store the receipt for return
         receipt = Some(current_receipt);
 
-        if receipt.as_ref().unwrap().status() {
-            debug!(
-                "Transaction succeeded after {} attempts: {:?}",
-                attempt + 1,
-                receipt
-            );
-        } else {
-            // Enhanced error reporting
-            let trace_result = timeout(
-                Duration::from_secs(30),
-                debug_trace_tx(
-                    provider,
-                    receipt.as_ref().unwrap().transaction_hash().to_string(),
-                ),
-            )
-            .await;
+        if let Some(ref receipt_ref) = receipt {
+            if receipt_ref.status() {
+                debug!(
+                    "Transaction succeeded after {} attempts: {:?}",
+                    attempt + 1,
+                    receipt_ref
+                );
+            } else {
+                // Enhanced error reporting
+                let trace_result = timeout(
+                    Duration::from_secs(30),
+                    debug_trace_tx(provider, receipt_ref.transaction_hash().to_string()),
+                )
+                .await;
 
-            error!(
-                "Transaction failed after {} attempts: {:?} - Trace: {:?}",
-                attempt + 1,
-                receipt,
-                trace_result
-            );
+                error!(
+                    "Transaction failed after {} attempts: {:?} - Trace: {:?}",
+                    attempt + 1,
+                    receipt_ref,
+                    trace_result
+                );
+            }
         }
 
         break;
     }
 
-    Ok(receipt.unwrap())
+    // Safe unwrap since we know receipt is Some at this point
+    // (we break out of the loop only after assigning it)
+    match receipt {
+        Some(r) => Ok(r),
+        None => Err(alloy_contract::Error::TransportError(
+            alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
+                code: -32603,
+                message: "No receipt available after transaction attempts"
+                    .to_string()
+                    .into(),
+                data: None,
+            }),
+        )),
+    }
 }
 
 // Enhanced gas bumping with constants and better documentation
