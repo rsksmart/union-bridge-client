@@ -58,10 +58,9 @@ where
     let start_time = Instant::now();
     let timeout_duration = Duration::from_secs(DEFAULT_TIMEOUT_SECONDS);
 
-    let mut receipt;
-    let mut attempt = 0;
+    let mut receipt = None;
 
-    loop {
+    for attempt in 0..=max_attempts {
         // Check timeout
         if start_time.elapsed() > timeout_duration {
             return Err(alloy_contract::Error::TransportError(
@@ -160,7 +159,7 @@ where
         )
         .await;
 
-        receipt = match receipt_result {
+        let current_receipt = match receipt_result {
             Ok(Ok(rec)) => rec,
             Ok(Err(e)) => {
                 error!("Failed to get receipt: {:?}", e);
@@ -184,21 +183,23 @@ where
             }
         };
 
-        let should_retry = !receipt.status()
-            && attempt < max_attempts.saturating_sub(1)
-            && likely_oog(&receipt, gas_limit);
+        let should_retry = !current_receipt.status()
+            && attempt < max_attempts
+            && likely_oog(&current_receipt, gas_limit);
 
         if should_retry {
             warn!(
                 "Transaction failed with OOG, retrying with higher gas. Attempt {}/{}",
                 attempt + 1,
-                max_attempts
+                max_attempts + 1
             );
-            attempt += 1;
             continue;
         }
 
-        if receipt.status() {
+        // Store the receipt for return
+        receipt = Some(current_receipt);
+
+        if receipt.as_ref().unwrap().status() {
             debug!(
                 "Transaction succeeded after {} attempts: {:?}",
                 attempt + 1,
@@ -208,7 +209,10 @@ where
             // Enhanced error reporting
             let trace_result = timeout(
                 Duration::from_secs(30),
-                debug_trace_tx(provider, receipt.transaction_hash().to_string()),
+                debug_trace_tx(
+                    provider,
+                    receipt.as_ref().unwrap().transaction_hash().to_string(),
+                ),
             )
             .await;
 
@@ -223,7 +227,7 @@ where
         break;
     }
 
-    Ok(receipt)
+    Ok(receipt.unwrap())
 }
 
 // Enhanced gas bumping with constants and better documentation
