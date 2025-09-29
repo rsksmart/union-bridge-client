@@ -1316,10 +1316,10 @@ where
         self.blockchain.update(block.clone());
 
         self.process_unhandled_confirmed_pegin_requested_events()?;
-        self.process_unhandled_confirmed_pegin_accepted_events()?;
         self.process_unhandled_confirmed_all_operator_take_tx_hashes_added_events()?;
         self.process_unhandled_confirmed_sig_flow_events(block)?;
         self.handle_tick()?;
+        self.process_unhandled_confirmed_pegin_accepted_events()?;
 
         Ok(())
     }

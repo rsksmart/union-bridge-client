@@ -268,6 +268,10 @@ impl BlockchainView {
         }
     }
 
+    pub fn has_observers(&self) -> bool {
+        !self.observers.borrow().is_empty()
+    }
+
     #[cfg(test)]
     pub fn get_at(&self, number: &BlockNumber) -> Option<RskBlockAndUncles> {
         self.blocks.borrow().get(number).cloned()
@@ -276,11 +280,6 @@ impl BlockchainView {
     #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.blocks.borrow().is_empty()
-    }
-
-    #[cfg(test)]
-    pub fn is_observed(&self) -> bool {
-        !self.observers.borrow().is_empty()
     }
 
     #[cfg(test)]

@@ -4,7 +4,7 @@ use anyhow::{Result, bail};
 use common::types::RskBlockAndUncles;
 
 use common::runtime_sync::RuntimeSync;
-use log::info;
+use log::{debug, info};
 use std::rc::Rc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;
@@ -37,6 +37,7 @@ pub(crate) type MockBtcSigSubFlowFactory =
 pub(crate) struct BaseBtcSignatureSubFlow<BSF: BtcSignatureLifecycleApi> {
     lifecycle: BSF,
     is_done: bool,
+    is_nonces_step_done: bool,
 }
 
 impl<CG> BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<CG>>
@@ -50,6 +51,7 @@ where
         Self {
             lifecycle,
             is_done: false,
+            is_nonces_step_done: false,
         }
     }
 }
@@ -81,7 +83,7 @@ where
         match event {
             RskPegManagerEvents::AllNoncesReady(event) => {
                 if let Some(hash) = self.lifecycle.get_hash_to_sign() {
-                    //the hash is used to check if the event is for the current flow if not, it is ignored
+                    // the hash is used to check if the event is for the current flow if not, it is ignored
                     if hash == event.inner {
                         if event.removed {
                             self.lifecycle.unset_all_nonces_ready()?;
@@ -94,7 +96,7 @@ where
             }
             RskPegManagerEvents::AllSignaturesReady(event) => {
                 if let Some(hash) = self.lifecycle.get_hash_to_sign() {
-                    //the hash is used to check if the event is for the current flow if not, it is ignored
+                    // the hash is used to check if the event is for the current flow if not, it is ignored
                     if hash == event.inner {
                         if event.removed {
                             self.lifecycle.unset_all_signatures_ready()?;
@@ -114,15 +116,23 @@ where
         // update blockchain view
         self.lifecycle.blockchain_view().update(block.clone());
 
+        if !self.lifecycle.blockchain_view().has_observers() {
+            debug!("No observers have been added to BTC Signature flow yet");
+            return Ok(());
+        }
+
         // check if nonces are ready and send signature
-        if self.lifecycle.is_all_nonces_ready_confirmed() {
+        if !self.is_nonces_step_done && self.lifecycle.is_all_nonces_ready_confirmed() {
+            self.is_nonces_step_done = true;
             self.lifecycle.send_signature_to_contracts()?;
+            return Ok(());
         }
 
         // check if signatures are ready and close flow
         if self.lifecycle.is_all_signatures_ready_confirmed() {
             self.is_done = true;
             self.lifecycle.blockchain_view().clear();
+            return Ok(());
         }
 
         Ok(())
@@ -180,6 +190,7 @@ mod tests {
             Self {
                 lifecycle: mock,
                 is_done: false,
+                is_nonces_step_done: false,
             }
         }
     }
@@ -443,19 +454,10 @@ mod tests {
 
         // setup mock flow to verify blockchain view is updated
         let mut mock_flow = MockBtcSignatureLifecycleApi::new();
-        // create a new blockchain view for each call
         mock_flow
             .expect_blockchain_view()
-            .times(1)
+            .times(2)  // called twice: once for update, once for has_observers check
             .return_const(BlockchainView::new());
-        mock_flow
-            .expect_is_all_nonces_ready_confirmed()
-            .times(1)
-            .returning(|| false);
-        mock_flow
-            .expect_is_all_signatures_ready_confirmed()
-            .times(1)
-            .returning(|| false);
 
         let mut sub_flow = MockBtcSignatureSubFlow::new(mock_flow);
 
@@ -472,17 +474,26 @@ mod tests {
 
         // setup mock flow to simulate confirmed nonces
         let mut mock_flow = MockBtcSignatureLifecycleApi::new();
+        // Create a view with an observer to proceed past early return
+        let view = BlockchainView::new();
+        let mut event = crate::blockchain_tracker::ConfirmableEvent::new(
+            "test".to_string(),
+            1,
+            view.clone()
+        );
+        event.start_confirming(1.into()).ok();
+
         mock_flow
             .expect_blockchain_view()
-            .times(1)
-            .return_const(BlockchainView::new());
+            .times(2)  // called twice: once for update, once for has_observers check
+            .return_const(view);
         mock_flow
             .expect_is_all_nonces_ready_confirmed()
             .times(1)
             .returning(|| true);
         mock_flow
             .expect_is_all_signatures_ready_confirmed()
-            .times(1)
+            .times(0)  // Won't be called because we return after sending signature
             .returning(|| false);
         mock_flow
             .expect_send_signature_to_contracts()
@@ -506,10 +517,19 @@ mod tests {
 
         // setup mock flow to simulate confirmed signatures
         let mut mock_flow = MockBtcSignatureLifecycleApi::new();
+        // Create a view with an observer to proceed past early return
+        let view = BlockchainView::new();
+        let mut event = crate::blockchain_tracker::ConfirmableEvent::new(
+            "test".to_string(),
+            1,
+            view.clone()
+        );
+        event.start_confirming(1.into()).ok();
+
         mock_flow
             .expect_blockchain_view()
-            .times(3) // one on process_new_block, one on close_flow and one to check if empty in this test
-            .return_const(BlockchainView::new());
+            .times(4) // update, has_observers, clear, and is_empty check in test
+            .return_const(view);
         mock_flow
             .expect_is_all_nonces_ready_confirmed()
             .times(1)
@@ -538,30 +558,34 @@ mod tests {
         let block_1_with_uncles = RskBlockAndUncles::new_no_uncles(block_1.clone());
 
         let mut mock_flow = MockBtcSignatureLifecycleApi::new();
+        let mut nonce_confirmed_count = 0;
+
+        // Create a view with an observer to proceed past early return
+        let view = BlockchainView::new();
+        let mut event = crate::blockchain_tracker::ConfirmableEvent::new(
+            "test".to_string(),
+            1,
+            view.clone()
+        );
+        event.start_confirming(1.into()).ok();
+
         // set up expectations for the first block
         mock_flow
             .expect_blockchain_view()
-            .times(2) // will be called twice, once for each block
-            .return_const(BlockchainView::new());
+            .times(4) // 2 calls per block (update + has_observers), 2 blocks total
+            .return_const(view);
 
-        // first block: no confirmations yet
         mock_flow
             .expect_is_all_nonces_ready_confirmed()
-            .times(1)
-            .returning(|| false);
+            .times(2)
+            .returning(move || {
+                nonce_confirmed_count += 1;
+                // First call returns false, second call returns true
+                nonce_confirmed_count == 2
+            });
         mock_flow
             .expect_is_all_signatures_ready_confirmed()
-            .times(1)
-            .returning(|| false);
-
-        // second block: nonces are confirmed
-        mock_flow
-            .expect_is_all_nonces_ready_confirmed()
-            .times(1)
-            .returning(|| true);
-        mock_flow
-            .expect_is_all_signatures_ready_confirmed()
-            .times(1)
+            .times(1)  // Only called on first block, second block returns after sending signature
             .returning(|| false);
         mock_flow
             .expect_send_signature_to_contracts()
@@ -673,18 +697,25 @@ mod tests {
 
         // setup mock flow where both nonces and signatures are confirmed
         let mut mock_flow = MockBtcSignatureLifecycleApi::new();
+        // Create a view with an observer to proceed past early return
+        let view = BlockchainView::new();
+        let mut event = crate::blockchain_tracker::ConfirmableEvent::new(
+            "test".to_string(),
+            1,
+            view.clone()
+        );
+        event.start_confirming(1.into()).ok();
+
         mock_flow
             .expect_blockchain_view()
-            .times(3) // one on process_new_block, one on close_flow and one to check if empty in this test
-            .return_const(BlockchainView::new());
+            .times(2) // update, has_observers - returns after sending signature, doesn't check signatures
+            .return_const(view);
         mock_flow
             .expect_is_all_nonces_ready_confirmed()
             .times(1)
             .returning(|| true);
-        mock_flow
-            .expect_is_all_signatures_ready_confirmed()
-            .times(1)
-            .returning(|| true);
+        // Since nonces are already confirmed and not yet marked as done,
+        // it will send signature and return, not checking signature confirmation
         mock_flow
             .expect_send_signature_to_contracts()
             .times(1)
@@ -695,8 +726,8 @@ mod tests {
         let result = sub_flow.delegate_block(&block);
 
         assert!(result.is_ok());
-        // flow should be closed because signatures are confirmed
-        assert!(sub_flow.lifecycle.blockchain_view().is_empty());
+        // After sending signature, is_nonces_step_done is set to true
+        assert!(sub_flow.is_nonces_step_done);
     }
 
     #[test]
@@ -706,10 +737,19 @@ mod tests {
 
         // setup mock flow to simulate confirmed nonces but signature sending fails
         let mut mock_flow = MockBtcSignatureLifecycleApi::new();
+        // Create a view with an observer to proceed past early return
+        let view = BlockchainView::new();
+        let mut event = crate::blockchain_tracker::ConfirmableEvent::new(
+            "test".to_string(),
+            1,
+            view.clone()
+        );
+        event.start_confirming(1.into()).ok();
+
         mock_flow
             .expect_blockchain_view()
-            .times(1)
-            .return_const(BlockchainView::new());
+            .times(2)  // called twice: once for update, once for has_observers check
+            .return_const(view);
         mock_flow
             .expect_is_all_nonces_ready_confirmed()
             .times(1)

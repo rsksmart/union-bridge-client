@@ -243,12 +243,20 @@ where
             self.state.flow_id
         );
 
+        // stop confirming nonce step
+
         if !self.is_all_nonces_ready_confirmed() {
             bail!(
                 "flow {} has not completed the Nonces step yet",
                 self.state.flow_id
             );
         };
+
+        if let Some(nonce_step) = &mut self.state.nonce_step {
+            nonce_step.stop_confirming()?;
+        } else {
+            bail!("Nonce step is not found for flow {}", self.state.flow_id);
+        }
 
         let member_signature = self
             .state
@@ -273,11 +281,13 @@ where
             })?;
 
         // move to the Signatures step
+
         let confirmable = ConfirmableEvent::new(
             self.state.flow_id.to_string(),
             REQUIRED_CONFIRMATIONS,
             self.blockchain_view.clone(),
         );
+
         self.state.signature_step = Some(confirmable);
 
         Ok(())
