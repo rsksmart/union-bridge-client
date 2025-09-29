@@ -61,7 +61,10 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi>
         let global_context = store
             .load_context()
             .expect("Failed to load context from DB")
-            .unwrap_or_else(|| GlobalContext::new());
+            .unwrap_or_else(|| {
+                warn!("No context found in DB, starting with empty one");
+                GlobalContext::new()
+            });
 
         let setup_committee_flow_factory = SetupCommitteeFlowFactory::new(
             contracts_arc.clone(),
