@@ -4,7 +4,7 @@ set -e
 
 # TODO Improve receiving parameters and using "docker buildx bake"
 
-TAG="latest"
+UC_TAG="latest"
 DRY_RUN=0
 HELP=0
 
@@ -38,7 +38,7 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --tag=*)
-      TAG="${1#*=}"
+      UC_TAG="${1#*=}"
       ;;
     --dry-run)
       DRY_RUN=1
@@ -59,26 +59,26 @@ if [[ $HELP -eq 1 ]]; then
 fi
 
 if [[ $DRY_RUN -eq 1 ]]; then
-  echo "🔍 DRY RUN: Would push images with tag: $TAG"
+  echo "🔍 DRY RUN: Would push images with tag: $UC_TAG"
   echo ""
   echo "Commands that would be executed:"
   echo "  docker push ghcr.io/rsksmart/union-client-builder:rust-1.86-v1"
-  echo "  docker push ghcr.io/rsksmart/union-client-block-indexer:$TAG"
-  echo "  docker push ghcr.io/rsksmart/union-client-log-indexer:$TAG"
-  echo "  docker push ghcr.io/rsksmart/union-client-coordinator:$TAG"
-  echo "  docker push ghcr.io/rsksmart/union-client-user-api:$TAG"
+  echo "  docker push ghcr.io/rsksmart/union-client-block-indexer:$UC_TAG"
+  echo "  docker push ghcr.io/rsksmart/union-client-log-indexer:$UC_TAG"
+  echo "  docker push ghcr.io/rsksmart/union-client-coordinator:$UC_TAG"
+  echo "  docker push ghcr.io/rsksmart/union-client-user-api:$UC_TAG"
   echo ""
   echo "✅ Dry run completed - no images were actually pushed"
 else
-  echo "🚀 Pushing images with tag: $TAG"
+  echo "🚀 Pushing images with tag: $UC_TAG"
 
   # order seems to matter (same order as defined in compose file)
   # Note: Images should already be tagged by the build scripts
   docker push ghcr.io/rsksmart/union-client-builder:rust-1.86-v1
-  docker push ghcr.io/rsksmart/union-client-block-indexer:$TAG
-  docker push ghcr.io/rsksmart/union-client-log-indexer:$TAG
-  docker push ghcr.io/rsksmart/union-client-coordinator:$TAG
-  docker push ghcr.io/rsksmart/union-client-user-api:$TAG
+  docker push ghcr.io/rsksmart/union-client-block-indexer:$UC_TAG
+  docker push ghcr.io/rsksmart/union-client-log-indexer:$UC_TAG
+  docker push ghcr.io/rsksmart/union-client-coordinator:$UC_TAG
+  docker push ghcr.io/rsksmart/union-client-user-api:$UC_TAG
 
   echo "✅ All images pushed successfully"
 fi

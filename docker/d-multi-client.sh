@@ -3,7 +3,7 @@
 set -e
 
 PLATFORM="linux/amd64"
-TAG="latest"
+UC_TAG="latest"
 HELP=0
 
 show_help() {
@@ -41,7 +41,7 @@ while [[ $# -gt 0 ]]; do
       PLATFORM="${1#*=}"
       ;;
     --tag=*)
-      TAG="${1#*=}"
+      UC_TAG="${1#*=}"
       ;;
     -h|--help)
       HELP=1
@@ -58,11 +58,11 @@ if [[ $HELP -eq 1 ]]; then
   show_help
 fi
 
-echo "🚀 Starting 4 union client instances for platform: $PLATFORM, tag: $TAG"
+echo "🚀 Starting 4 union client instances for platform: $PLATFORM, tag: $UC_TAG"
 
-USER_API_PORT=40001 ROOTSTOCK_URL=ws://host.docker.internal:8545 BITVMX_HOST=host.docker.internal BITVMX_PORT=22222 PLATFORM=$PLATFORM TAG=$TAG docker compose -p uc-1 -f docker-compose.yml up -d
-USER_API_PORT=40002 ROOTSTOCK_URL=ws://host.docker.internal:8545 BITVMX_HOST=host.docker.internal BITVMX_PORT=33333 PLATFORM=$PLATFORM TAG=$TAG docker compose -p uc-2 -f docker-compose.yml up -d
-USER_API_PORT=40003 ROOTSTOCK_URL=ws://host.docker.internal:8545 BITVMX_HOST=host.docker.internal BITVMX_PORT=44444 PLATFORM=$PLATFORM TAG=$TAG docker compose -p uc-3 -f docker-compose.yml up -d
-USER_API_PORT=40004 ROOTSTOCK_URL=ws://host.docker.internal:8545 BITVMX_HOST=host.docker.internal BITVMX_PORT=55554 PLATFORM=$PLATFORM TAG=$TAG docker compose -p uc-4 -f docker-compose.yml up -d
+USER_API_PORT=40001 ROOTSTOCK_URL=ws://host.docker.internal:8545 BITVMX_HOST=host.docker.internal BITVMX_PORT=22222 PLATFORM=$PLATFORM UC_TAG=$UC_TAG docker compose -p uc-1 -f docker-compose.yml up -d
+USER_API_PORT=40002 ROOTSTOCK_URL=ws://host.docker.internal:8545 BITVMX_HOST=host.docker.internal BITVMX_PORT=33333 PLATFORM=$PLATFORM UC_TAG=$UC_TAG docker compose -p uc-2 -f docker-compose.yml up -d
+USER_API_PORT=40003 ROOTSTOCK_URL=ws://host.docker.internal:8545 BITVMX_HOST=host.docker.internal BITVMX_PORT=44444 PLATFORM=$PLATFORM UC_TAG=$UC_TAG docker compose -p uc-3 -f docker-compose.yml up -d
+USER_API_PORT=40004 ROOTSTOCK_URL=ws://host.docker.internal:8545 BITVMX_HOST=host.docker.internal BITVMX_PORT=55554 PLATFORM=$PLATFORM UC_TAG=$UC_TAG docker compose -p uc-4 -f docker-compose.yml up -d
 
 echo "✅ All 4 union client instances started successfully"
