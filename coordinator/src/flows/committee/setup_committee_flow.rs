@@ -30,6 +30,7 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
 use crate::flows::committee::dispute_core_setup::DisputeCoreSetup;
 use crate::flows::common::{
     COMM_KEY_INDEX, DISPUTE_KEY_INDEX, GlobalContext, TAKE_KEY_INDEX, build_communication_data,
+    get_bitcoin_network,
 };
 use common::types;
 use common::types::{BlockNumber, CommitteeId, RskBlockAndUncles, StreamId, TxIdParser};
@@ -46,9 +47,6 @@ use crate::config::REQUIRED_CONFIRMATIONS;
 use mockall::automock;
 
 pub(crate) const NO_LEADER_IDX: u16 = 0;
-
-// TODO temporary for Regtest stage
-const NETWORK: Network = Network::Regtest;
 
 #[cfg_attr(test, automock)]
 trait SetupCommitteeFlowApi {
@@ -593,7 +591,7 @@ where
             .context("Missing Send Funds Request TxId")?;
 
         info!("Funded. Txid: {}", txid);
-        print_link(NETWORK, txid);
+        print_link(txid);
 
         let public_key = self.ctx_my_dispute_key()?.public_key;
 
@@ -721,7 +719,11 @@ where
 
     pub fn set_utxos(&mut self) -> Result<()> {
         let req_id = Uuid::new_v4();
-        let fee_rate = if NETWORK == Network::Regtest { 10 } else { 1 }; // TODO copied from get_fee_rate on BitVMX client
+        let fee_rate = if get_bitcoin_network() == Network::Regtest {
+            10
+        } else {
+            1
+        }; // TODO copied from get_fee_rate on BitVMX client
 
         let public_key = self.ctx_my_dispute_key()?.public_key;
 
@@ -1817,7 +1819,9 @@ fn construct_signed_pubkey(
     }
 }
 
-fn print_link(network: Network, txid: Txid) {
+fn print_link(txid: Txid) {
+    let network = get_bitcoin_network();
+
     if network == Network::Regtest {
         return;
     }

@@ -1,6 +1,7 @@
 use crate::event_processor::EventProcessor;
+use crate::flows::common::get_bitcoin_network;
 use crate::types::UserRequests;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
 use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 use log::{info, trace};
@@ -46,7 +47,13 @@ where
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
         match event {
             OutgoingBitVMXApiMessages::FundingAddress(_req_id, addr) => {
-                info!("=== Received BitVMX Funding Address: {addr:?} ===");
+                info!(
+                    "Received BitVMX Funding Address: {}",
+                    addr.clone()
+                        .require_network(get_bitcoin_network())
+                        .with_context(|| format!("Unexpected Bitcoin network for {addr:?}"))?
+                        .to_string()
+                );
                 // a webhook to the user app would be sent here
             }
             _ => {
