@@ -4,11 +4,11 @@ use crate::rsk_gateway::DomainErrors;
 use alloy_primitives::U256;
 use alloy_provider::Provider;
 use log::info;
-use union_contracts::bindings::committee_registry::CommitteeRegistry::{self, Committee, Role};
+use union_contracts::bindings::committee_registry::CommitteeRegistry::{self, Committee};
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
-    CommitteeRegistryErrors, CommitteeRegistryInstance, MemberRegistrationKeys, StreamDenomination,
-    UTXO,
+    CommitteeRegistryErrors, CommitteeRegistryInstance, MemberRegistrationKeys, UTXO,
 };
+use union_contracts::bindings::stream_manager::StreamManager::{Role, StreamDenomination};
 
 pub(crate) use crate::contracts::interactions::apply_to_stream::ApplyToStreamInvoke;
 pub(crate) use crate::contracts::interactions::deposit_aggregated_key::DepositAggregatedKeysInvoke;
@@ -37,11 +37,6 @@ pub trait CommitteeRegistryContractApi {
         gas_bumps: u8,
         value: U256,
     ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt>;
-
-    async fn call_get_minimum_deposit(
-        &self,
-        stream: StreamDenomination,
-    ) -> alloy_contract::Result<U256>;
 
     async fn call_get_committee(
         &self,
@@ -113,21 +108,6 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
             gas_bumps,
         )
         .await
-    }
-
-    async fn call_get_minimum_deposit(
-        &self,
-        _stream: StreamDenomination,
-    ) -> alloy_contract::Result<U256> {
-        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-255: fix this method to use the actual contract call
-
-        // self.contract_instance.getMissingCommunicationDataCount
-        //     .getMinimumDeposit(u8::from(stream))
-        //     .call()
-        //     .await
-
-        // Temporary hardcoded minimum deposit (0.025 RBTC = 25000000000000000 wei)
-        Ok(U256::from(25000000000000000u64))
     }
 
     async fn call_get_committee(

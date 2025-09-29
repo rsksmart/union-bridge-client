@@ -29,3 +29,6 @@ contracts:
 
   - name: "MemberRegistry"
     address: "0xbe76D7dEf8088047D67d70Fc9e47c659C12E180C"
+
+  - name: "StreamManager"
+    address: "0x610178dA211FEF7D417bC0e6FeD39F05609AD788"

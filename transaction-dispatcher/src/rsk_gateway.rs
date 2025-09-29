@@ -14,6 +14,7 @@ use crate::contracts::signature_manager::{
     AddMemberNonceInvoke, AddMemberSignatureInvoke, AddOperatorTakeTxHashInvoke,
     SignatureManagerContract,
 };
+use crate::contracts::stream_manager::StreamManagerContract;
 use crate::types::{
     AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
     AddMemberSignatureInput, AddMemberSignatureOutput, AddOperatorTakeTxHashInput,
@@ -45,6 +46,7 @@ const FAKE_PEG_MANAGER_CONTRACT_NAME: &str = "FakePegManager";
 const SIGNATURE_MANAGER_CONTRACT_NAME: &str = "SignatureManager";
 const COMMITTEE_REGISTRY_CONTRACT_NAME: &str = "CommitteeRegistry";
 const MEMBER_REGISTRY_CONTRACT_NAME: &str = "MemberRegistry";
+const STREAM_MANAGER_CONTRACT_NAME: &str = "StreamManager";
 
 #[cfg_attr(test, automock)]
 pub trait BalanceProvider {
@@ -163,7 +165,8 @@ pub struct RskContractsGateway<P: Provider> {
     get_member_public_keys_call: GetMemberPublicKeysCall<MemberRegistryContract<P>>,
     get_member_communication_data_call:
         GetMemberCommunicationDataCall<CommitteeRegistryContract<P>>,
-    apply_to_stream_invoke: ApplyToStreamInvoke<CommitteeRegistryContract<P>, P>,
+    apply_to_stream_invoke:
+        ApplyToStreamInvoke<CommitteeRegistryContract<P>, StreamManagerContract<P>, P>,
     request_pegout_invoke: TryPegoutInvoke<PegManagerContract<P>>,
     register_pegout_invoke: RegisterPegoutInvoke<PegManagerContract<P>>,
     get_committee_call: GetCommitteeCall<CommitteeRegistryContract<P>>,
@@ -188,6 +191,8 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             Self::load_contract(COMMITTEE_REGISTRY_CONTRACT_NAME, &managed_contracts)?;
         let member_registry_address =
             Self::load_contract(MEMBER_REGISTRY_CONTRACT_NAME, &managed_contracts)?;
+        let stream_manager_address =
+            Self::load_contract(STREAM_MANAGER_CONTRACT_NAME, &managed_contracts)?;
 
         // TODO make these contracts Rc so we avoid more expensive cloning
 
@@ -201,6 +206,8 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             CommitteeRegistryContract::new(provider.clone(), committee_registry_address.into());
         let member_registry_contract =
             MemberRegistryContract::new(provider.clone(), member_registry_address.into());
+        let stream_manager_contract =
+            StreamManagerContract::new(provider.clone(), stream_manager_address.into());
 
         Ok(RskContractsGateway {
             member_address,
@@ -248,6 +255,7 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             ),
             apply_to_stream_invoke: ApplyToStreamInvoke::new(
                 committee_registry_contract.clone(),
+                stream_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
                 provider.clone(),
                 alloy_primitives::Address::from(member_address),
@@ -554,6 +562,8 @@ pub enum DomainErrors {
     StreamNotFoundByDenomination(String),
     #[error("Packet out of bound: {0}")]
     PacketOutOfBound(String),
+    #[error("Invalid role: {0}")]
+    InvalidRole(String),
     #[error("Error interacting with Committee: {0}")]
     CommitteeError(String),
     #[error("Error interacting with MemberRegistry: {0}")]
