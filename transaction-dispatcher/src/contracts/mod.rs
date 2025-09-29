@@ -5,5 +5,5 @@ mod interactions;
 pub(super) mod member_registry;
 pub(super) mod peg_manager;
 pub(super) mod signature_manager;
-mod stream_manager;
+pub(super) mod stream_manager;
 mod types;

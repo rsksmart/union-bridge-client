@@ -1,29 +1,39 @@
 use crate::contracts::committee_registry::CommitteeRegistryContractApi;
+use crate::contracts::stream_manager::StreamManagerContractApi;
 use crate::contracts::types::{Address, convert_to_member_registration_keys};
 use crate::rsk_gateway::{BalanceProvider, DomainErrors};
 use crate::types::{ApplyToStreamInput, ApplyToStreamOutput};
 
 use anyhow::Result;
 use log::{debug, error, info};
-use union_contracts::bindings::committee_registry::CommitteeRegistry::StreamDenomination;
+use union_contracts::bindings::stream_manager::StreamManager::{Role, StreamDenomination};
 
 #[derive(Clone)]
-pub(crate) struct ApplyToStreamInvoke<C: CommitteeRegistryContractApi, BP: BalanceProvider> {
-    contract: C,
+pub(crate) struct ApplyToStreamInvoke<
+    C: CommitteeRegistryContractApi,
+    S: StreamManagerContractApi,
+    BP: BalanceProvider,
+> {
+    committee_registry: C,
+    stream_manager: S,
     gas_bumps: u8,
     balance_provider: BP,
     member_address: Address,
 }
 
-impl<C: CommitteeRegistryContractApi, BP: BalanceProvider> ApplyToStreamInvoke<C, BP> {
+impl<C: CommitteeRegistryContractApi, S: StreamManagerContractApi, BP: BalanceProvider>
+    ApplyToStreamInvoke<C, S, BP>
+{
     pub(crate) fn new(
-        contract: C,
+        committee_registry: C,
+        stream_manager: S,
         gas_bumps: u8,
         balance_provider: BP,
         member_address: Address,
     ) -> Self {
         ApplyToStreamInvoke {
-            contract,
+            committee_registry,
+            stream_manager,
             gas_bumps,
             balance_provider,
             member_address,
@@ -48,8 +58,11 @@ impl<C: CommitteeRegistryContractApi, BP: BalanceProvider> ApplyToStreamInvoke<C
             .map_err(|_| DomainErrors::InvalidValue("Invalid Stream denomination".to_string()))?;
 
         let min_deposit = self
-            .contract
-            .call_get_minimum_deposit(StreamDenomination::from(stream_denomination))
+            .stream_manager
+            .call_get_minimum_deposit(
+                StreamDenomination::from(stream_denomination),
+                Role::from(input.role),
+            )
             .await?;
 
         if min_deposit > member_balance {
@@ -71,7 +84,7 @@ impl<C: CommitteeRegistryContractApi, BP: BalanceProvider> ApplyToStreamInvoke<C
         );
 
         let receipt = self
-            .contract
+            .committee_registry
             .invoke_apply_to_stream(
                 stream_denomination.into(),
                 input.role.into(),
@@ -109,6 +122,7 @@ mod tests {
     use crate::contracts::interactions::apply_to_stream::{
         ApplyToStreamInput, ApplyToStreamInvoke,
     };
+    use crate::contracts::stream_manager::MockStreamManagerContractApi;
     use crate::contracts::types::convert_to_member_registration_keys;
     use crate::rsk_gateway::{DomainErrors, MockBalanceProvider};
     use crate::types::CommitteeECDSA;
@@ -117,17 +131,24 @@ mod tests {
     use common::msg_broker::bitvmx_types::PeerId;
     use mockall::predicate::eq;
     use std::str::FromStr;
-    use union_contracts::bindings::committee_registry::CommitteeRegistry::{
-        Role, StreamDenomination, UTXO,
-    };
+    use union_contracts::bindings::committee_registry::CommitteeRegistry::UTXO;
+    use union_contracts::bindings::stream_manager::StreamManager::{Role, StreamDenomination};
 
-    impl ApplyToStreamInvoke<MockCommitteeRegistryContractApi, MockBalanceProvider> {
+    impl
+        ApplyToStreamInvoke<
+            MockCommitteeRegistryContractApi,
+            MockStreamManagerContractApi,
+            MockBalanceProvider,
+        >
+    {
         pub(crate) fn new_for_tests(
-            contract: MockCommitteeRegistryContractApi,
+            committee_registry: MockCommitteeRegistryContractApi,
+            stream_manager: MockStreamManagerContractApi,
             balance_provider: MockBalanceProvider,
         ) -> Self {
             ApplyToStreamInvoke {
-                contract,
+                committee_registry,
+                stream_manager,
                 gas_bumps: 3,
                 balance_provider,
                 member_address: Address::from([0u8; 20]),
@@ -137,7 +158,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_apply_to_stream_success() {
-        let mut mock_instance = MockCommitteeRegistryContractApi::new();
+        let mut mock_committee_registry = MockCommitteeRegistryContractApi::new();
+        let mut mock_stream_manager = MockStreamManagerContractApi::new();
 
         let input = ApplyToStreamInput {
             stream_id: 123.into(),
@@ -151,16 +173,19 @@ mod tests {
         let stream_denomination = input.stream_id.as_u8().unwrap();
 
         // expect get_minimum_deposit to be called
-        mock_instance
+        mock_stream_manager
             .expect_call_get_minimum_deposit()
-            .with(eq(StreamDenomination::from(stream_denomination)))
-            .returning(|_| Ok(U256::from(100)))
+            .with(
+                eq(StreamDenomination::from(stream_denomination)),
+                eq(Role::from(input.role)),
+            )
+            .returning(|_, _| Ok(U256::from(100)))
             .times(1);
 
         let stream_denomination = input.stream_id.as_u8().unwrap();
 
         // expect apply_to_stream_call to be called
-        mock_instance
+        mock_committee_registry
             .expect_invoke_apply_to_stream()
             .with(
                 eq(StreamDenomination::from(stream_denomination)),
@@ -188,7 +213,11 @@ mod tests {
             .expect_get_balance()
             .returning(|_| Ok(U256::from(1000))); // enough balance
 
-        let interaction = ApplyToStreamInvoke::new_for_tests(mock_instance, mock_balance_provider);
+        let interaction = ApplyToStreamInvoke::new_for_tests(
+            mock_committee_registry,
+            mock_stream_manager,
+            mock_balance_provider,
+        );
 
         let result = interaction.run(input).await;
         assert!(result.is_ok());
@@ -202,7 +231,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_apply_to_stream_insufficient_balance() {
-        let mut mock_instance = MockCommitteeRegistryContractApi::new();
+        let mut mock_committee_registry = MockCommitteeRegistryContractApi::new();
+        let mut mock_stream_manager = MockStreamManagerContractApi::new();
 
         let input = ApplyToStreamInput {
             stream_id: 123.into(),
@@ -216,10 +246,13 @@ mod tests {
         let stream_denomination = input.stream_id.clone().as_u8().unwrap();
 
         // contracts stores streamId as u64, but only accept u8 on StreamDenomination struct
-        mock_instance
+        mock_stream_manager
             .expect_call_get_minimum_deposit()
-            .with(eq(StreamDenomination::from(stream_denomination)))
-            .returning(|_| Ok(U256::from(100)))
+            .with(
+                eq(StreamDenomination::from(stream_denomination)),
+                eq(Role::from(input.role)),
+            )
+            .returning(|_, _| Ok(U256::from(100)))
             .times(1);
 
         let mut mock_balance_provider = MockBalanceProvider::new();
@@ -228,7 +261,8 @@ mod tests {
             .returning(|_| Ok(U256::from(50))); // low balance
 
         let interaction = ApplyToStreamInvoke {
-            contract: mock_instance,
+            committee_registry: mock_committee_registry,
+            stream_manager: mock_stream_manager,
             gas_bumps: 3,
             balance_provider: mock_balance_provider,
             member_address: Address::from([0u8; 20]),
