@@ -269,7 +269,6 @@ impl<'a> MockRskProviderHandler<'a> {
             })
             .times(1);
     }
-
 }
 
 fn provide_block(

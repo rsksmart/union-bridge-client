@@ -18,6 +18,7 @@ CLIENT_ID=""
 FEATURES=""
 CONFIG_PARAM="--config-path ./config/$DEFAULT_CONFIG"
 LOGGER_PARAM="--logger-path $DEFAULT_LOGGER"
+FRESH=false
 
 # Function to validate BASE_STORAGE_PATH
 validate_base_storage_path() {
@@ -77,6 +78,7 @@ OPTIONS:
     -f, --features FEATURES       Optional features flag for clients
     -c, --config CONFIG_NAME      Optional config directory name under ./config/. Defaults to 'multi-client-template'
     -l, --logger LOGGER_FILE      Optional logger configuration file path. Defaults to 'log4rs.stdout.yaml'
+        --fresh                   Start with clear databases (removes existing)
     -h, --help                    Show this help message
 
 MODES (automatically determined):
@@ -127,6 +129,10 @@ while [[ $# -gt 0 ]]; do
             parse_arg_value "logger" "LOGGER_PARAM" "--logger-path " "$2"
             shift 2
             ;;
+        --fresh)
+            FRESH=true
+            shift 1
+            ;;
         -h|--help)
             show_help
             exit 0
@@ -138,6 +144,32 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# If requested, clear databases
+if [[ "$FRESH" == true ]]; then
+    validate_base_storage_path
+
+    DB_DIR="${BASE_STORAGE_PATH}/.union_bridge/database"
+    BITVMX_REGTEST_DIR="/tmp/regtest"
+
+    echo "Clearing databases..."
+
+    if [[ -e "$DB_DIR" ]]; then
+        echo "Removing $DB_DIR"
+        rm -rf "$DB_DIR"
+    else
+        echo "Not found: $DB_DIR (nothing to remove)"
+    fi
+
+    if [[ -e "$BITVMX_REGTEST_DIR" ]]; then
+        echo "Removing $BITVMX_REGTEST_DIR"
+        rm -rf "$BITVMX_REGTEST_DIR"
+    else
+        echo "Not found: $BITVMX_REGTEST_DIR (nothing to remove)"
+    fi
+
+    echo "Database directories cleared."
+fi
 
 # Determine mode based on arguments
 if [[ -n "$NUM_CLIENTS" && -n "$CLIENT_ID" ]]; then
@@ -247,7 +279,8 @@ set_multi_client_env() {
     var_name="LOG_BROKER_PORT_$ID" && export UB__LOG_BROKER__PORT="${!var_name}"
     var_name="USER_BROKER_PORT_$ID" && export UB__USER_BROKER__PORT="${!var_name}"
     var_name="BROKER_CLIENT_ID_$ID" && export UB__BROKER_CLIENT_ID="${!var_name}"
-    var_name="INDEXER_STORAGE_PATH_$ID" && export UB__INDEXER__STORAGE__PATH="${BASE_STORAGE_PATH}/.union_bridge/database/${!var_name}"
+    var_name="STORAGE_PATH_$ID" && export UB__INDEXER__STORAGE__PATH="${BASE_STORAGE_PATH}/.union_bridge/database/${!var_name}"
+    var_name="STORAGE_PATH_$ID" && export UB__STORAGE_PATH="${BASE_STORAGE_PATH}/.union_bridge/database/${!var_name}"
     var_name="KEY_STORE_PATH_$ID" && export UB__KEY_STORE__PATH="${BASE_STORAGE_PATH}/.union_bridge/keystore/${!var_name}"
     var_name="SERVER_URL_$ID" && export UB__SERVER__URL="${!var_name}"
     var_name="COORDINATOR_BROKER_CLIENT_ID_$ID" && export UB__COORDINATOR_BROKER_CLIENT_ID="${!var_name}"

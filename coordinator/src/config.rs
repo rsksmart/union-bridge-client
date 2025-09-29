@@ -20,6 +20,7 @@ pub struct Config {
     pub bitvmx_broker: BrokerConfig,
     pub broker_client_id: u32,
     pub contracts: Vec<ContractConfig>,
+    pub storage_path: String,
 }
 
 #[derive(Debug, Deserialize)]

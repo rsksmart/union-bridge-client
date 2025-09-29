@@ -308,7 +308,10 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 
             info!("[subscribe_logs] Processed log: {:?}", new_log);
 
-            if !self.managed_contracts.contains_key(&new_log.info().address()) {
+            if !self
+                .managed_contracts
+                .contains_key(&new_log.info().address())
+            {
                 error!(
                     "[subscribe_logs] Received unmanaged contract log {} [{:?}]",
                     new_log.info().address(),
@@ -332,7 +335,6 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 
         Ok(())
     }
-
 }
 
 #[cfg(test)]

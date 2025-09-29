@@ -27,32 +27,44 @@ use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 #[cfg(feature = "zkp")]
 use crate::flows::advance_funds::advance_funds_processor::AdvanceFundsProcessor;
 use crate::flows::common::GlobalContext;
+use crate::store::CoordinatorStoreApi;
 
 const CHECK_PERIOD: Duration = Duration::from_secs(1);
 const BITVMX_NOT_RESPONDING_THRESHOLD: Duration = Duration::from_secs(30);
 const BITVMX_PING_AFTER_SILENCE: Duration = Duration::from_secs(15);
 
-pub struct Coordinator<M: MonitorApi, BC: BitVmxBrokerClientApi> {
+pub struct Coordinator<M: MonitorApi, BC: BitVmxBrokerClientApi, S: CoordinatorStoreApi> {
     monitor: M,
     bitvmx_broker: Rc<BC>,
     processors: Vec<Box<dyn EventProcessor>>,
     check_period: Duration,
+    store: S,
+    global_context: GlobalContext,
     shutdown_flag: ShutdownFlag,
 }
 
-impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
+impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi>
+    Coordinator<M, BC, S>
+{
     pub fn new<CG: RskContractsGatewayApi + 'static>(
         rt_sync: RuntimeSync,
         monitor: M,
         contracts_gateway: CG,
         bitvmx_broker: Rc<BC>,
+        store: S,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
         let contracts_arc = Rc::new(contracts_gateway);
         let btc_sig_subflow_factory =
             BtcSignatureSubFlowFactory::new(contracts_arc.clone(), rt_sync.clone());
 
-        let global_context = GlobalContext::new();
+        let global_context = store
+            .load_context()
+            .expect("Failed to load context from DB")
+            .unwrap_or_else(|| {
+                warn!("No context found in DB, starting with empty one");
+                GlobalContext::new()
+            });
 
         let setup_committee_flow_factory = SetupCommitteeFlowFactory::new(
             contracts_arc.clone(),
@@ -90,6 +102,8 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
             ],
             check_period: CHECK_PERIOD,
             shutdown_flag,
+            store,
+            global_context: global_context.clone(),
         }
     }
 
@@ -98,12 +112,15 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
         bitvmx_broker: BC,
         processors: Vec<Box<dyn EventProcessor>>,
         shutdown_flag: ShutdownFlag,
+        store: S,
     ) -> Self {
         Self {
             monitor,
             bitvmx_broker: Rc::new(bitvmx_broker),
             processors,
             check_period: Duration::from_millis(1),
+            store,
+            global_context: GlobalContext::new(),
             shutdown_flag,
         }
     }
@@ -208,6 +225,10 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static> Coordinator<M, BC> {
                     message_received = true;
                 }
 
+                self.store
+                    .save_context(self.global_context.clone())
+                    .context("Storing context in DB")?;
+
                 if !message_received {
                     thread::sleep(self.check_period);
                 }
@@ -282,6 +303,7 @@ pub(crate) mod tests {
     use crate::{
         coordinator::Coordinator,
         monitor::MockMonitorApi,
+        store::MockCoordinatorStoreApi,
         types::{AdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents},
     };
     use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
@@ -299,7 +321,7 @@ pub(crate) mod tests {
         types::{RskBlockAndUncles, TxHash},
     };
     use mockall::mock;
-    use mockall::predicate::{eq, function};
+    use mockall::predicate::{always, eq, function};
     use primitive_types::H256;
     use std::{
         thread::{self, JoinHandle, sleep},
@@ -425,11 +447,18 @@ pub(crate) mod tests {
             )
             .return_once(|_, _| Ok(true));
 
+        let mut mock_store = MockCoordinatorStoreApi::new();
+        mock_store
+            .expect_save_context()
+            .with(always())
+            .returning(|_| Ok(()));
+
         let mut coordinator = Coordinator::new_for_tests(
             mock_monitor,
             bitvmx_broker,
             generate_ok_processors(),
             shutdown_flag,
+            mock_store,
         );
         let result = coordinator.run();
 
@@ -526,11 +555,18 @@ pub(crate) mod tests {
             )
             .return_once(|_, _| Ok(true));
 
+        let mut mock_store = MockCoordinatorStoreApi::new();
+        mock_store
+            .expect_save_context()
+            .with(always())
+            .returning(|_| Ok(()));
+
         let mut coordinator = Coordinator::new_for_tests(
             mock_monitor,
             bitvmx_broker,
             generate_ok_processors(),
             shutdown_flag,
+            mock_store,
         );
         let result = coordinator.run();
 

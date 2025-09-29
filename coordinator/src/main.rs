@@ -5,12 +5,13 @@ use common::{
     runtime_sync::RuntimeSync,
     shutdown_flag::ShutdownFlag,
 };
+use coordinator::store::CoordinatorStore;
 use coordinator::{
     config::{Config, Logger},
     coordinator::Coordinator,
     monitor::Monitor,
 };
-use log::{error, info};
+use log::{debug, error, info};
 use std::rc::Rc;
 use transaction_dispatcher::config::ConfigAsLib as TxDispatcherConfig;
 
@@ -85,11 +86,16 @@ fn main() -> Result<()> {
         tx_dispatcher_config,
     )?;
 
+    let store_path = &format!("{}/coordinator", config.storage_path);
+    debug!("Creating coordinator store at: {}", store_path);
+    let store = CoordinatorStore::new(store_path).context("Failed to create context store")?;
+
     let mut coordinator = Coordinator::new(
         rt_sync,
         monitor,
         contracts_gateway,
         bitvmx_broker,
+        store,
         shutdown_flag.clone(),
     );
     coordinator.run().inspect_err(|e| {

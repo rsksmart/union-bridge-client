@@ -71,6 +71,7 @@ services:
       - ${CONFIG_PATH:-../config/docker/anvil}:/app/config:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - keystore:/keystore
+      - db-coordinator:/app/db/coordinator
     restart: no
     environment:
       - UB__bitvmx_broker__host=${BITVMX_HOST:-host.docker.internal}
@@ -126,3 +127,4 @@ volumes:
   keystore:
   db-blocks:
   db-logs:
+  db-coordinator:

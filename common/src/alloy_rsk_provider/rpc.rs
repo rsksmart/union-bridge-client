@@ -1,12 +1,9 @@
 use crate::{
-    alloy_rsk_provider::{
-        sub::AlloySubscription,
-    },
+    alloy_rsk_provider::sub::AlloySubscription,
     rsk_provider::{RskProvider, RskSubscriptionFilter},
     shutdown_flag::ShutdownFlag,
     types::{
-        Address, BlockHash, BlockNumber, RskBlock, RskLog, RskRpcBlock,
-        RskRpcLog, ToHexString,
+        Address, BlockHash, BlockNumber, RskBlock, RskLog, RskRpcBlock, RskRpcLog, ToHexString,
     },
 };
 
@@ -227,7 +224,6 @@ impl RskProvider for AlloyProvider {
             ))
             .and_then(|response| Self::parse_logs_provider_response(response))
     }
-
 
     fn disconnect(&self) -> Result<()> {
         // nothing to do for this rsk_provider
