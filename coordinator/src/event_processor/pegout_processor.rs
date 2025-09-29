@@ -35,7 +35,8 @@ use crate::{
     types::{EventWithBlock, RskPegManagerEvents},
 };
 use anyhow::{Context, Result, anyhow, bail};
-use bitcoin::{PublicKey, Txid};
+use bitcoin::key::Parity::Even;
+use bitcoin::{PublicKey, Txid, XOnlyPublicKey};
 use common::msg_broker::bitvmx_types::{
     IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, P2PAddress, PeerId, PegOutAccepted,
     PegOutRequest, TransactionStatus, VariableTypes,
@@ -62,7 +63,7 @@ use union_contracts::bindings::peg_manager::PegManager::{PegoutRegistered, Pegou
 use uuid::Uuid;
 
 pub const USER_TAKE_TX: &str = "USER_TAKE_TX";
-pub const PROGRAM_TYPE_REQUEST_PEGOUT: &str = "request_pegout";
+pub const PROGRAM_TYPE_USER_TAKE: &str = "take";
 pub const PEGOUT_ACCEPTED_NAME: &str = "pegout_accepted";
 pub const MIN_TX_CONFIRMATIONS: u32 = 4;
 pub const BLOCKS_DELAY_FOR_TX_CHECK: u32 = 20; // Number of blocks to wait before rechecking transaction status
@@ -198,6 +199,10 @@ where
         flow_id: Uuid,
         pegout_requested: &PegoutRequested,
     ) -> Result<()> {
+        debug!(
+            "Notifying pegout requested to bitvmx with flow_id: {}",
+            flow_id
+        );
         let committee_id: CommitteeId = pegout_requested.committeeId.try_into()?;
         let committee_output = self.get_committee_output(committee_id.clone())?;
 
@@ -220,7 +225,7 @@ where
         ))?;
 
         let committee_addresses = self.get_committee_member_address(committee_id)?;
-        //TODO if there were a delay in the reposne from bitvmx the first time it is possible that the p2p address is not available yet, so we need to handle that case.
+        //TODO if there were a delay in the response from bitvmx the first time it is possible that the p2p address is not available yet, so we need to handle that case.
         let my_addr = self
             .my_p2p_address
             .as_ref()
@@ -233,6 +238,7 @@ where
         )?;
         //Step 1b: Setup BitVMX (U -> B)
         //Setup must be sent after set_var
+        debug!("sending setup to bitvmx with id: {}", flow_id);
         Self::send_setup_to_bitvmx(&self.bitvmx_broker, flow_id, p2p_addresses)?;
 
         Ok(())
@@ -313,12 +319,17 @@ where
         event: &PegoutRequested,
         committee_output: &GetCommitteeOutput,
     ) -> Result<PegOutRequest> {
+        debug!(
+            "Preparing PegOutRequest for BitVMX from PegoutRequested event: {:?}",
+            event
+        );
+
         let committee_id: Uuid = Uuid::from_u128(event.committeeId.try_into()?);
 
         // Convert user pubkey bytes to bitcoin::PublicKey
-        let user_pubkey_bytes: Vec<u8> = event.userPubKey.clone().to_vec();
-        let user_pubkey = bitcoin::PublicKey::from_slice(&user_pubkey_bytes)
-            .context("Invalid userPubKey in PegoutRequested event")?;
+        let user_pub_key_xonly = XOnlyPublicKey::from_slice(event.userPubKey.as_slice())?;
+        let user_pubkey_secp_key = user_pub_key_xonly.public_key(Even);
+        let user_pubkey = PublicKey::new(user_pubkey_secp_key);
 
         let take_aggregated_key = Self::build_take_aggregated_key(&committee_output)?;
 
@@ -552,7 +563,7 @@ where
             BROKER_SERVER_ID,
             IncomingBitVMXApiMessages::Setup(
                 flow_id,
-                PROGRAM_TYPE_REQUEST_PEGOUT.to_string(),
+                PROGRAM_TYPE_USER_TAKE.to_string(),
                 p2p_address,
                 0,
             ),
