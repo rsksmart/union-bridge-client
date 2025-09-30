@@ -66,6 +66,10 @@ impl<C: CommitteeRegistryContractApi, S: StreamManagerContractApi, BP: BalancePr
             .await?;
 
         if min_deposit > member_balance {
+            error!(
+                "Member has not enough balance to apply to committee. Balance: {}, Minimum: {}",
+                member_balance, min_deposit
+            );
             return Err(DomainErrors::CommitteeError(
                 "Member has not enough balance to apply to committee".to_string(),
             ));
