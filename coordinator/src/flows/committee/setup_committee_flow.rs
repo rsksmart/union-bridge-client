@@ -861,7 +861,7 @@ where
                 self.setup_dispute_core_protocol()?;
             }
             Steps::Done => {
-                info!("Committee setup complete for flow {}", self.internal_id);
+                info!("Committee setup complete for flow {}", self.state.internal_id);
             }
         }
         Ok(())
@@ -1027,7 +1027,7 @@ where
             funding_utxo: utxo,
         };
 
-        debug!("Applying to stream {}", input.stream_id);
+        debug!("Applying to stream {:?}", input.stream_id);
 
         match self.rt_sync.run(self.contracts.apply_to_stream(input)) {
             Ok(_) => {
