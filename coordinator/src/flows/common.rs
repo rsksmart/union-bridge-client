@@ -164,7 +164,7 @@ pub fn build_communication_data(
     Ok(p2p_addresses)
 }
 
-// TODO(iago) temporary approach
+// TODO(iago): Temporary approach. Currently, the Bitcoin network is selected via the BITCOIN_NETWORK environment variable.
 pub(crate) fn get_bitcoin_network() -> Network {
     use std::env;
     match env::var("BITCOIN_NETWORK")

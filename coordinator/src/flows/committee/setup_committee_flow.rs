@@ -290,6 +290,9 @@ pub(crate) struct SetupCommitteeFlow<CG: RskContractsGatewayApi, BC: BitVmxBroke
     global_context: GlobalContext,
 }
 
+const REGTEST_FEE_RATE: u64 = 10;
+const DEFAULT_FEE_RATE: u64 = 1;
+
 impl<CG, BC> SetupCommitteeFlow<CG, BC>
 where
     CG: RskContractsGatewayApi,
@@ -596,7 +599,7 @@ where
         let public_key = self.ctx_my_dispute_key()?.public_key;
 
         let funding_utxo_val = self.ctx_user_input()?.funding_utxo.value;
-        let speedup_utxo_val = self.ctx_user_input()?.funding_utxo.value;
+        let speedup_utxo_val = self.ctx_user_input()?.speed_up_utxo.value;
 
         let wpkh = public_key.wpubkey_hash().expect("key is compressed");
         let script_pubkey = ScriptBuf::new_p2wpkh(&wpkh);
@@ -720,9 +723,9 @@ where
     pub fn set_utxos(&mut self) -> Result<()> {
         let req_id = Uuid::new_v4();
         let fee_rate = if get_bitcoin_network() == Network::Regtest {
-            10
+            REGTEST_FEE_RATE
         } else {
-            1
+            DEFAULT_FEE_RATE
         }; // TODO copied from get_fee_rate on BitVMX client
 
         let public_key = self.ctx_my_dispute_key()?.public_key;
