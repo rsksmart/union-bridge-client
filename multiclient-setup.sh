@@ -359,8 +359,7 @@ if [[ "$SETUP_COMMITTEE" == true ]]; then
         echo "Use --help for usage information."
         exit 1
     fi
-
-    if [[ ! "$STREAM_ID" =~ ^[1-9][0-9]*$ ]]; then
+    if [[ ! "$STREAM_ID" =~ ^[0-9]+$ ]]; then
         echo "Error: Stream ID must be a positive integer."
         echo "Use --help for usage information."
         exit 1

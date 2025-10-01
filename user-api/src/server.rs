@@ -53,6 +53,7 @@ impl Server {
 
         let app = Router::new()
             .route("/health", get(Self::health_check))
+            .route("/bitvmx-address", get(Self::bitvmx_address))
             .route("/apply-stream", post(Self::apply_stream))
             .route("/request-pegin", post(Self::request_pegin))
             .route("/pegin-address", post(Self::pegin_address))
@@ -80,6 +81,23 @@ impl Server {
 
     async fn health_check() -> impl IntoResponse {
         (StatusCode::OK, Json(json!({ "status": "ok" })))
+    }
+
+    async fn bitvmx_address(
+        Extension(broker): Extension<Arc<BrokerServer>>,
+        Extension(destination): Extension<u32>,
+    ) -> impl IntoResponse {
+        info!("Received bitvmx_address for destination: {destination}",);
+
+        // TODO(Jira) send a proper type in scope of https://rsklabs.atlassian.net/browse/UB-214
+        let res = broker.send(&FromServer::MemberRequest, destination);
+        match res {
+            Ok(_) => (StatusCode::OK, Json(json!({ "result": "ok" }))),
+            Err(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            ),
+        }
     }
 
     async fn apply_stream(

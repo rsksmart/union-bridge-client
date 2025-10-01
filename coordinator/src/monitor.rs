@@ -313,6 +313,8 @@ where
                     }
                 }
             }
+            // TODO(Jira) this should not be needed after https://rsklabs.atlassian.net/browse/UB-213
+            Some(FromServer::MemberRequest) => Ok(Some(UserRequests::GetBitVMXFundingAddress)),
             Some(br) => {
                 bail!("Unexpected request from User {:?}", br)
             }

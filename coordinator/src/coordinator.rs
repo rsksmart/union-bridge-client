@@ -27,6 +27,7 @@ use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 #[cfg(feature = "zkp")]
 use crate::flows::advance_funds::advance_funds_processor::AdvanceFundsProcessor;
 use crate::flows::common::GlobalContext;
+use crate::flows::fund_bitvmx_flow::FundBitvmxProcessor;
 use crate::store::CoordinatorStoreApi;
 
 const CHECK_PERIOD: Duration = Duration::from_secs(1);
@@ -99,6 +100,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi>
                     setup_committee_flow_factory,
                     global_context.clone(),
                 )),
+                Box::new(FundBitvmxProcessor::new(bitvmx_broker.clone())),
             ],
             check_period: CHECK_PERIOD,
             shutdown_flag,

@@ -456,7 +456,7 @@ mod tests {
         let mut mock_flow = MockBtcSignatureLifecycleApi::new();
         mock_flow
             .expect_blockchain_view()
-            .times(2)  // called twice: once for update, once for has_observers check
+            .times(2) // called twice: once for update, once for has_observers check
             .return_const(BlockchainView::new());
 
         let mut sub_flow = MockBtcSignatureSubFlow::new(mock_flow);
@@ -476,16 +476,13 @@ mod tests {
         let mut mock_flow = MockBtcSignatureLifecycleApi::new();
         // Create a view with an observer to proceed past early return
         let view = BlockchainView::new();
-        let mut event = crate::blockchain_tracker::ConfirmableEvent::new(
-            "test".to_string(),
-            1,
-            view.clone()
-        );
+        let mut event =
+            crate::blockchain_tracker::ConfirmableEvent::new("test".to_string(), 1, view.clone());
         event.start_confirming(1.into()).ok();
 
         mock_flow
             .expect_blockchain_view()
-            .times(2)  // called twice: once for update, once for has_observers check
+            .times(2) // called twice: once for update, once for has_observers check
             .return_const(view);
         mock_flow
             .expect_is_all_nonces_ready_confirmed()
@@ -493,7 +490,7 @@ mod tests {
             .returning(|| true);
         mock_flow
             .expect_is_all_signatures_ready_confirmed()
-            .times(0)  // Won't be called because we return after sending signature
+            .times(0) // Won't be called because we return after sending signature
             .returning(|| false);
         mock_flow
             .expect_send_signature_to_contracts()
@@ -519,11 +516,8 @@ mod tests {
         let mut mock_flow = MockBtcSignatureLifecycleApi::new();
         // Create a view with an observer to proceed past early return
         let view = BlockchainView::new();
-        let mut event = crate::blockchain_tracker::ConfirmableEvent::new(
-            "test".to_string(),
-            1,
-            view.clone()
-        );
+        let mut event =
+            crate::blockchain_tracker::ConfirmableEvent::new("test".to_string(), 1, view.clone());
         event.start_confirming(1.into()).ok();
 
         mock_flow
@@ -562,11 +556,8 @@ mod tests {
 
         // Create a view with an observer to proceed past early return
         let view = BlockchainView::new();
-        let mut event = crate::blockchain_tracker::ConfirmableEvent::new(
-            "test".to_string(),
-            1,
-            view.clone()
-        );
+        let mut event =
+            crate::blockchain_tracker::ConfirmableEvent::new("test".to_string(), 1, view.clone());
         event.start_confirming(1.into()).ok();
 
         // set up expectations for the first block
@@ -585,7 +576,7 @@ mod tests {
             });
         mock_flow
             .expect_is_all_signatures_ready_confirmed()
-            .times(1)  // Only called on first block, second block returns after sending signature
+            .times(1) // Only called on first block, second block returns after sending signature
             .returning(|| false);
         mock_flow
             .expect_send_signature_to_contracts()
@@ -699,11 +690,8 @@ mod tests {
         let mut mock_flow = MockBtcSignatureLifecycleApi::new();
         // Create a view with an observer to proceed past early return
         let view = BlockchainView::new();
-        let mut event = crate::blockchain_tracker::ConfirmableEvent::new(
-            "test".to_string(),
-            1,
-            view.clone()
-        );
+        let mut event =
+            crate::blockchain_tracker::ConfirmableEvent::new("test".to_string(), 1, view.clone());
         event.start_confirming(1.into()).ok();
 
         mock_flow
@@ -739,16 +727,13 @@ mod tests {
         let mut mock_flow = MockBtcSignatureLifecycleApi::new();
         // Create a view with an observer to proceed past early return
         let view = BlockchainView::new();
-        let mut event = crate::blockchain_tracker::ConfirmableEvent::new(
-            "test".to_string(),
-            1,
-            view.clone()
-        );
+        let mut event =
+            crate::blockchain_tracker::ConfirmableEvent::new("test".to_string(), 1, view.clone());
         event.start_confirming(1.into()).ok();
 
         mock_flow
             .expect_blockchain_view()
-            .times(2)  // called twice: once for update, once for has_observers check
+            .times(2) // called twice: once for update, once for has_observers check
             .return_const(view);
         mock_flow
             .expect_is_all_nonces_ready_confirmed()

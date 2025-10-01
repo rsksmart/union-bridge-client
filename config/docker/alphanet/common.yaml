@@ -19,16 +19,16 @@ contracts:
     address: "0x3Aa5ebB10DC797CAC828524e59A333d0A371443c"
 
   - name: "PegManager"
-    address: "0x7095448569952ab73FeCE387056A0777F8F4D20b"
+    address: "0x3A2330364700f36fD711a9d90ec38ba9cc4173b2"
 
   - name: "SignatureManager"
-    address: "0x07b3C35764f0CC9DaF3061E03D0c7854E7054693"
+    address: "0x30b88Ad64250A9174483270274e1CA7FbbD81DaE"
 
   - name: "CommitteeRegistry"
-    address: "0x7625e95644f393f70586411FfD86C2ecaC988567"
+    address: "0xC789E0a607542AFD6243DC529a1F7b86a481C6d8"
 
   - name: "MemberRegistry"
-    address: "0xbe76D7dEf8088047D67d70Fc9e47c659C12E180C"
+    address: "0xFAa86EA07825d95ac4a619E4D3bBAbDE2Ab1C923"
 
   - name: "StreamManager"
-    address: "0x610178dA211FEF7D417bC0e6FeD39F05609AD788"
+    address: "0x7F8Eef5586D5e35115638bB9Cf7185E7F236dC25"

@@ -4,7 +4,7 @@ set -e
 
 FEATURES=""
 PLATFORM="linux/amd64"
-TAG="latest"
+UC_TAG="latest"
 HELP=0
 
 show_help() {
@@ -59,7 +59,7 @@ EOF
 use_env_vars() {
   local vars_to_export=()
   [[ -n $PLATFORM ]] && vars_to_export+=(PLATFORM)
-  [[ -n $TAG ]] && vars_to_export+=(TAG)
+  [[ -n $UC_TAG ]] && vars_to_export+=(UC_TAG)
   
   if [[ ${#vars_to_export[@]} -gt 0 ]]; then
     echo "Using environment variables: ${vars_to_export[*]}"
@@ -86,7 +86,7 @@ while [[ $# -gt 0 ]]; do
       PLATFORM="${1#*=}"
       ;;
     --tag=*)
-      TAG="${1#*=}"
+      UC_TAG="${1#*=}"
       ;;
     -h|--help)
       HELP=1
@@ -130,7 +130,7 @@ build_services() {
   # Add build arguments
   [[ -n $service_found ]] && cmd+=(--build-arg JUST_CRATE="$service_found")
   [[ -n $FEATURES ]] && cmd+=(--build-arg FEATURES="$FEATURES")
-  [[ -n $TAG ]] && cmd+=(--build-arg TAG="$TAG")
+  [[ -n $UC_TAG ]] && cmd+=(--build-arg UC_TAG="$UC_TAG")
 
   # Add any additional docker compose arguments
   cmd+=("${DOCKER_ARGS[@]}")
