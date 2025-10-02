@@ -1964,13 +1964,14 @@ mod tests {
         assert_eq!(Steps::SignMyDisputeKey as u8, 5);
         assert_eq!(Steps::GetMyCommKey as u8, 6);
         assert_eq!(Steps::SignMyCommKey as u8, 7);
-        assert_eq!(Steps::ApplyToStream as u8, 8);
-        assert_eq!(Steps::DepositP2PData as u8, 9);
-        assert_eq!(Steps::SetupTakeAggregatedKey as u8, 10);
-        assert_eq!(Steps::SetupDisputeAggregatedKey as u8, 11);
-        assert_eq!(Steps::DepositAggregatedKey as u8, 12);
-        assert_eq!(Steps::SetupDisputeCore as u8, 13);
-        assert_eq!(Steps::Done as u8, 14);
+        assert_eq!(Steps::FundMyBitVmxAccount as u8, 8);
+        assert_eq!(Steps::ApplyToStream as u8, 9);
+        assert_eq!(Steps::DepositP2PData as u8, 10);
+        assert_eq!(Steps::SetupTakeAggregatedKey as u8, 11);
+        assert_eq!(Steps::SetupDisputeAggregatedKey as u8, 12);
+        assert_eq!(Steps::DepositAggregatedKey as u8, 13);
+        assert_eq!(Steps::SetupDisputeCore as u8, 14);
+        assert_eq!(Steps::Done as u8, 15);
     }
 
     #[test]
@@ -1988,7 +1989,8 @@ mod tests {
         assert!((Steps::SignMyTakeKey as u8) < (Steps::GetMyDisputeKey as u8));
         assert!((Steps::SignMyDisputeKey as u8) < (Steps::GetMyCommKey as u8));
         assert!((Steps::GetMyCommKey as u8) < (Steps::SignMyCommKey as u8));
-        assert!((Steps::SignMyCommKey as u8) < (Steps::ApplyToStream as u8));
+        assert!((Steps::SignMyCommKey as u8) < (Steps::FundMyBitVmxAccount as u8));
+        assert!((Steps::FundMyBitVmxAccount as u8) < (Steps::ApplyToStream as u8));
         assert!((Steps::ApplyToStream as u8) < (Steps::DepositP2PData as u8));
         assert!((Steps::DepositP2PData as u8) < (Steps::SetupTakeAggregatedKey as u8));
         assert!((Steps::SetupTakeAggregatedKey as u8) < (Steps::SetupDisputeAggregatedKey as u8));
@@ -2097,5 +2099,4 @@ mod tests {
         let step_data7 = StepData::CommInfo(p2p_addr);
         assert!(step_data7.into_setup_completed().is_err());
     }
-}
 }
