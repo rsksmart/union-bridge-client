@@ -68,8 +68,16 @@ Use `ub-wallet --help` to see the available command-line overrides.
 
 ## Running
 
+Within the `bitcoin-wallet/` directory, build and run the wallet in release mode:
 ```bash
 cargo run --release
 ```
 
 The program is interactive; type commands at the `ub-wallet>` prompt. Use `Ctrl+D` (EOF) or `exit` to leave.
+
+## Troubleshooting
+
+### Misaligned UTXOs
+If the wallet complains about misaligned UTXOs, you can clear the local UTXO database. At the ub-wallet prompt run: `clear_db`.
+
+Important: This operation is Regtest only and must never be used on mainnet or testnet (it will be prevented by the wallet itself). It clears the local RocksDB for the active network so you can re-register UTXOs from the node.
