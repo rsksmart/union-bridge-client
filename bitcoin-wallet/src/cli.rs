@@ -14,13 +14,8 @@ use rustyline::{Context as RustyContext, Editor, Helper, Result as RustyResult};
 #[derive(Parser, Debug, Clone, Default)]
 #[command(author, version, about = "Simple P2WPKH wallet CLI", long_about = None)]
 pub struct CliOpts {
-    // Config name (without path), e.g. "testnet" will load config/testnet.toml
-    #[arg(
-        long,
-        env = "WALLET_CONFIG",
-        value_name = "NAME",
-        default_value = "regtest"
-    )]
+    // Environment name (without path), e.g. "testnet" will load config/testnet.toml
+    #[arg(long = "env", value_name = "NAME", default_value = "regtest")]
     pub config: Option<String>,
     #[arg(long, env = "WALLET_UTXO_DB", value_name = "PATH")]
     pub utxo_db: Option<PathBuf>,
@@ -44,7 +39,6 @@ const COMMANDS: &[&str] = &[
     "generate_address",
     "list_addresses",
     "switch_address",
-    "start_regtest_client",
     "register_utxo",
     "list_funds",
     "send_to_pubkey",

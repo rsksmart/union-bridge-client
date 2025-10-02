@@ -14,7 +14,7 @@ use chrono::{DateTime, Utc};
 use clap::Parser;
 use rustyline::error::ReadlineError;
 use serde_json::json;
-use ub_wallet::bitcoin::utils::{find_vout_for_address, start_client};
+use ub_wallet::bitcoin::utils::find_vout_for_address;
 use ub_wallet::cli::{CliOpts, setup_editor};
 use ub_wallet::config::Config;
 use ub_wallet::wallet::{CreatedTransaction, Wallet};
@@ -204,12 +204,6 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
             println!("Active address set to {checked}");
             Ok(CommandOutcome::Continue)
         }
-        "start_regtest_client" => {
-            let client = start_client()?;
-            wallet.set_rpc_client(client);
-            println!("Regtest RPC client started and configured.");
-            Ok(CommandOutcome::Continue)
-        }
         "register_utxo" => {
             if wallet.active_address().is_none() {
                 bail!("import or switch to an address before registering UTXOs");
@@ -341,7 +335,9 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
                 wallet.network()
             );
             let Some(client) = wallet.rpc_client() else {
-                println!("RPC not configured; use start_regtest_client to enable mining.");
+                println!(
+                    "RPC not configured; mining requires an RPC node. Configure RPC in config (rpc_url) or via env."
+                );
                 return Ok(CommandOutcome::Continue);
             };
             let miner_address: String = client
@@ -378,7 +374,9 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
                 return Ok(CommandOutcome::Continue);
             };
             let Some(client) = wallet.rpc_client() else {
-                println!("RPC not configured; use start_regtest_client to enable mining.");
+                println!(
+                    "RPC not configured; mining requires an RPC node. Configure RPC in config (rpc_url) or via env."
+                );
                 return Ok(CommandOutcome::Continue);
             };
 
@@ -614,9 +612,6 @@ fn print_help(sats_per_byte: u64) {
     println!("  list_addresses                        - Show imported wallet addresses");
     println!(
         "  switch_address <addr>                 - Make an imported address the active wallet address"
-    );
-    println!(
-        "  start_regtest_client                  - Launch regtest bitcoind via Docker and configure RPC"
     );
     println!("  register_utxo <txid> <vout> [sats]    - Register a spendable P2WPKH UTXO");
     println!(
