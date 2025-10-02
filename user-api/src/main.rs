@@ -42,10 +42,22 @@ async fn main() -> Result<()> {
     let tx_dispatcher_config: TxDispatcherConfig = TxDispatcherConfig::load(config_path)
         .expect("Failed to load transaction dispatcher config");
 
-    let contracts_gateway =
-        transaction_dispatcher::get_contracts_gateway_as_lib(tx_dispatcher_config)
-            .await
-            .expect("Failed to get contracts gateway");
+    let contracts_gateway = transaction_dispatcher::get_contracts_gateway_as_lib(
+        tx_dispatcher_config,
+    )
+    .await
+    .map_err(|e| {
+        error!("❌ USER API STARTUP FAILED: Cannot initialize contracts gateway");
+        error!("🔍 Reason: {}", e);
+        error!("💡 This usually means:");
+        error!("   • Contract addresses in config point to addresses without deployed contracts");
+        error!("   • Blockchain node is not running or contracts haven't been deployed");
+        error!("   • Network connectivity issues");
+        error!(
+            "🛠️  Solution: Verify contract addresses in config and ensure contracts are deployed"
+        );
+        e
+    })?;
 
     info!("Starting user-api server");
 

@@ -16,7 +16,7 @@ pub mod rsk_gateway;
 #[cfg(feature = "types")]
 pub mod types;
 
-pub fn get_contracts_gateway<P: Provider + Clone>(
+pub async fn get_contracts_gateway<P: Provider + Clone>(
     provider: P,
     config: config::ConfigAsBin,
     member_address: Address,
@@ -27,6 +27,7 @@ pub fn get_contracts_gateway<P: Provider + Clone>(
         config.transaction(),
         member_address,
     )
+    .await
     .context("Could not instantiate RskContractsGateway")
 }
 
@@ -80,5 +81,6 @@ async fn create_contracts_gateway_impl(
         &config.transaction,
         signer_address,
     )
+    .await
     .map_err(|e| DomainErrors::InternalServerError(format!("Failed to create gateway: {}", e)))
 }
