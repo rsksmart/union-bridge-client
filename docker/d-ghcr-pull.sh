@@ -4,7 +4,7 @@ set -e
 
 # TODO Improve receiving parameters and using "docker buildx bake"
 
-TAG="latest"
+UC_TAG="latest"
 PLATFORM="linux/amd64"
 DRY_RUN=0
 HELP=0
@@ -41,7 +41,7 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --tag=*)
-      TAG="${1#*=}"
+      UC_TAG="${1#*=}"
       ;;
     --platform=*)
       PLATFORM="${1#*=}"
@@ -65,42 +65,42 @@ if [[ $HELP -eq 1 ]]; then
 fi
 
 if [[ $DRY_RUN -eq 1 ]]; then
-  echo "🔍 DRY RUN: Would pull images with tag: $TAG for platform: $PLATFORM"
+  echo "🔍 DRY RUN: Would pull images with tag: $UC_TAG for platform: $PLATFORM"
   echo ""
   echo "Commands that would be executed:"
   if [[ "$PLATFORM" == "linux/amd64" ]]; then
     echo "  docker pull ghcr.io/rsksmart/union-client-builder:rust-1.86-v1"
-    echo "  docker pull ghcr.io/rsksmart/union-client-block-indexer:$TAG"
-    echo "  docker pull ghcr.io/rsksmart/union-client-log-indexer:$TAG"
-    echo "  docker pull ghcr.io/rsksmart/union-client-coordinator:$TAG"
-    echo "  docker pull ghcr.io/rsksmart/union-client-user-api:$TAG"
+    echo "  docker pull ghcr.io/rsksmart/union-client-block-indexer:$UC_TAG"
+    echo "  docker pull ghcr.io/rsksmart/union-client-log-indexer:$UC_TAG"
+    echo "  docker pull ghcr.io/rsksmart/union-client-coordinator:$UC_TAG"
+    echo "  docker pull ghcr.io/rsksmart/union-client-user-api:$UC_TAG"
   else
     echo "  docker pull ghcr.io/rsksmart/union-client-builder:rust-1.86-v1 --platform $PLATFORM"
-    echo "  docker pull ghcr.io/rsksmart/union-client-block-indexer:$TAG --platform $PLATFORM"
-    echo "  docker pull ghcr.io/rsksmart/union-client-log-indexer:$TAG --platform $PLATFORM"
-    echo "  docker pull ghcr.io/rsksmart/union-client-coordinator:$TAG --platform $PLATFORM"
-    echo "  docker pull ghcr.io/rsksmart/union-client-user-api:$TAG --platform $PLATFORM"
+    echo "  docker pull ghcr.io/rsksmart/union-client-block-indexer:$UC_TAG --platform $PLATFORM"
+    echo "  docker pull ghcr.io/rsksmart/union-client-log-indexer:$UC_TAG --platform $PLATFORM"
+    echo "  docker pull ghcr.io/rsksmart/union-client-coordinator:$UC_TAG --platform $PLATFORM"
+    echo "  docker pull ghcr.io/rsksmart/union-client-user-api:$UC_TAG --platform $PLATFORM"
   fi
   echo ""
   echo "✅ Dry run completed - no images were actually pulled"
 else
-  echo "📥 Pulling images with tag: $TAG for platform: $PLATFORM"
+  echo "📥 Pulling images with tag: $UC_TAG for platform: $PLATFORM"
 
   # order seems to matter (same order as defined in compose file)
   if [[ "$PLATFORM" == "linux/amd64" ]]; then
     # Default platform - don't specify platform parameter
     docker pull ghcr.io/rsksmart/union-client-builder:rust-1.86-v1
-    docker pull ghcr.io/rsksmart/union-client-block-indexer:$TAG
-    docker pull ghcr.io/rsksmart/union-client-log-indexer:$TAG
-    docker pull ghcr.io/rsksmart/union-client-coordinator:$TAG
-    docker pull ghcr.io/rsksmart/union-client-user-api:$TAG
+    docker pull ghcr.io/rsksmart/union-client-block-indexer:$UC_TAG
+    docker pull ghcr.io/rsksmart/union-client-log-indexer:$UC_TAG
+    docker pull ghcr.io/rsksmart/union-client-coordinator:$UC_TAG
+    docker pull ghcr.io/rsksmart/union-client-user-api:$UC_TAG
   else
     # Custom platform - specify platform parameter
     docker pull ghcr.io/rsksmart/union-client-builder:rust-1.86-v1 --platform $PLATFORM
-    docker pull ghcr.io/rsksmart/union-client-block-indexer:$TAG --platform $PLATFORM
-    docker pull ghcr.io/rsksmart/union-client-log-indexer:$TAG --platform $PLATFORM
-    docker pull ghcr.io/rsksmart/union-client-coordinator:$TAG --platform $PLATFORM
-    docker pull ghcr.io/rsksmart/union-client-user-api:$TAG --platform $PLATFORM
+    docker pull ghcr.io/rsksmart/union-client-block-indexer:$UC_TAG --platform $PLATFORM
+    docker pull ghcr.io/rsksmart/union-client-log-indexer:$UC_TAG --platform $PLATFORM
+    docker pull ghcr.io/rsksmart/union-client-coordinator:$UC_TAG --platform $PLATFORM
+    docker pull ghcr.io/rsksmart/union-client-user-api:$UC_TAG --platform $PLATFORM
   fi
 
   echo "✅ All images pulled successfully"

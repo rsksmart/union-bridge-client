@@ -1,5 +1,6 @@
 use crate::types::Role;
 use anyhow::{Result, bail};
+use bitcoin::Network;
 use common::msg_broker::bitvmx_types::{P2PAddress, PeerId, SignedPublicKey};
 use common::types::CommitteeId;
 use log::info;
@@ -161,4 +162,17 @@ pub fn build_communication_data(
     info!("Built communication data: {:?}", p2p_addresses);
 
     Ok(p2p_addresses)
+}
+
+// TODO(iago): Temporary approach. Currently, the Bitcoin network is selected via the BITCOIN_NETWORK environment variable.
+pub(crate) fn get_bitcoin_network() -> Network {
+    use std::env;
+    match env::var("BITCOIN_NETWORK")
+        .unwrap_or_else(|_| "regtest".to_string())
+        .as_str()
+    {
+        "bitcoin" | "mainnet" => Network::Bitcoin,
+        "testnet" => Network::Testnet,
+        _ => Network::Regtest,
+    }
 }

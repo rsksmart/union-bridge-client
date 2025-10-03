@@ -154,7 +154,6 @@ pub trait RskContractsGatewayApi {
 #[derive(Clone)]
 pub struct RskContractsGateway<P: Provider> {
     member_address: Address,
-    contract_address: Address,
     get_temporary_pegin_address_call: GetTemporaryPeginAddressCall<PegManagerContract<P>>,
     request_pegin_invoke: RequestPeginInvoke<PegManagerContract<P>>,
     accept_pegin_invoke: AcceptPeginInvoke<PegManagerContract<P>>,
@@ -211,7 +210,6 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
 
         Ok(RskContractsGateway {
             member_address,
-            contract_address,
             get_temporary_pegin_address_call: GetTemporaryPeginAddressCall::new(
                 peg_manager_contract.clone(),
             ),
@@ -289,10 +287,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: PeginAddressInput,
     ) -> Result<PeginAddressOutput, DomainErrors> {
-        info!(
-            "Interacting with PegManager#getTemporaryPeginAddress @ {}",
-            self.contract_address
-        );
+        info!("Interacting with PegManager#getTemporaryPeginAddress",);
 
         self.get_temporary_pegin_address_call
             .run(input)
@@ -307,10 +302,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: RequestPeginInput,
     ) -> Result<RequestPeginOutput, DomainErrors> {
-        info!(
-            "Interacting with PegManager#requestPegin @ {}",
-            self.contract_address
-        );
+        info!("Interacting with PegManager#requestPegin",);
 
         self.request_pegin_invoke.run(input).await.map_err(|err| {
             error!("Error on request_pegin_invoke: {}", err);
@@ -322,10 +314,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: AcceptPeginInput,
     ) -> Result<AcceptPeginOutput, DomainErrors> {
-        info!(
-            "Interacting with PegManager#acceptPegin @ {}",
-            self.contract_address
-        );
+        info!("Interacting with PegManager#acceptPegin",);
 
         self.accept_pegin_invoke.run(input).await.map_err(|err| {
             error!("Error on accept_pegin_invoke: {}", err);
@@ -337,10 +326,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: AddMemberNonceInput,
     ) -> Result<AddMemberNonceOutput, DomainErrors> {
-        info!(
-            "Interacting with SignatureManager#addMemberNonce @ {}",
-            self.contract_address
-        );
+        info!("Interacting with SignatureManager#addMemberNonce",);
 
         self.add_member_nonce_invoke
             .run(input)
@@ -355,10 +341,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: AddMemberSignatureInput,
     ) -> Result<AddMemberSignatureOutput, DomainErrors> {
-        info!(
-            "Interacting with SignatureManager#addMemberSignature @ {}",
-            self.contract_address
-        );
+        info!("Interacting with SignatureManager#addMemberSignature");
 
         self.add_member_signature_invoke
             .run(input)
@@ -373,10 +356,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: AddOperatorTakeTxHashInput,
     ) -> Result<AddMemberNonceOutput, DomainErrors> {
-        info!(
-            "Interacting with SignatureManager#addOperatorTakeTxHash @ {}",
-            self.contract_address
-        );
+        info!("Interacting with SignatureManager#addOperatorTakeTxHash",);
 
         self.add_operator_take_tx_hash_invoke
             .run(input)
@@ -388,10 +368,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
     }
 
     async fn notify_check_fork_completion(&self, input: &str) -> Result<(), DomainErrors> {
-        info!(
-            "Interacting with PegManager#notifyCheckForkCompletion @ {}",
-            self.contract_address
-        );
+        info!("Interacting with PegManager#notifyCheckForkCompletion",);
 
         self.notify_check_fork_completion_invoke
             .run(input)
@@ -406,10 +383,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: RequestPegoutInput,
     ) -> Result<RequestPegoutOutput, DomainErrors> {
-        info!(
-            "Interacting with PegManager#tryPegoutRequest @ {}",
-            self.contract_address
-        );
+        info!("Interacting with PegManager#tryPegoutRequest",);
 
         self.request_pegout_invoke.run(input).await.map_err(|err| {
             error!("Error on try_pegout_invoke: {}", err);
@@ -421,10 +395,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: RegisterPegoutInput,
     ) -> Result<RegisterPegoutOutput, DomainErrors> {
-        info!(
-            "Interacting with PegManager#register_pegout @ {}",
-            self.contract_address
-        );
+        info!("Interacting with PegManager#register_pegout");
 
         self.register_pegout_invoke.run(input).await.map_err(|err| {
             error!("Error on register_pegout_invoke: {}", err);
@@ -436,10 +407,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: GetMemberPublicKeysInput,
     ) -> Result<GetMemberPublicKeysOutput, DomainErrors> {
-        info!(
-            "Interacting with CommitteeRegistry#getMemberPublicKeys @ {}",
-            self.contract_address
-        );
+        info!("Interacting with CommitteeRegistry#getMemberPublicKeys",);
 
         self.get_member_public_keys_call
             .run(input)
@@ -454,13 +422,10 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: ApplyToStreamInput,
     ) -> Result<ApplyToStreamOutput, DomainErrors> {
-        info!(
-            "Interacting with CommitteeRegistry#applyToStream @ {}",
-            self.contract_address
-        );
+        info!("Interacting with CommitteeRegistry#applyToStream",);
 
         self.apply_to_stream_invoke.run(input).await.map_err(|err| {
-            error!("Error on apply_to_stream_call: {}", err);
+            error!("Error on apply_to_stream_invoke: {}", err);
             err
         })
     }
@@ -469,10 +434,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: GetCommitteeInput,
     ) -> Result<GetCommitteeOutput, DomainErrors> {
-        info!(
-            "Interacting with CommitteeRegistry#getCommittee @ {}",
-            self.contract_address
-        );
+        info!("Interacting with CommitteeRegistry#getCommittee");
 
         self.get_committee_call.run(input).await.map_err(|err| {
             error!("Error on get_committee_call: {}", err);
@@ -484,10 +446,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: GetCommunicationDataInput,
     ) -> Result<GetCommunicationDataOutput, DomainErrors> {
-        info!(
-            "Interacting with CommitteeRegistry#getMemberCommunicationData @ {}",
-            self.contract_address
-        );
+        info!("Interacting with CommitteeRegistry#getMemberCommunicationData",);
 
         self.get_member_communication_data_call
             .run(input)
@@ -502,10 +461,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: DepositCommunicationDataInput,
     ) -> Result<DepositCommunicationDataOutput, DomainErrors> {
-        info!(
-            "Interacting with CommitteeRegistry#depositCommunicationData @ {}",
-            self.contract_address
-        );
+        info!("Interacting with CommitteeRegistry#depositCommunicationData");
 
         self.deposit_communication_data_invoke
             .run(input)
@@ -520,10 +476,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: DepositAggregatedKeyInput,
     ) -> Result<DepositAggregatedKeyOutput, DomainErrors> {
-        info!(
-            "Interacting with CommitteeRegistry#depositAggregatedKeys @ {}",
-            self.contract_address
-        );
+        info!("Interacting with CommitteeRegistry#depositAggregatedKeys",);
 
         self.deposit_aggregated_key_invoke
             .run(input)

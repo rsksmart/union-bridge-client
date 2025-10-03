@@ -39,9 +39,11 @@ where
     loop {
         // this works also as an eth_call that would check error types, etc., if not do a manual .call()
         let estimated_gas = build_tx().estimate_gas().await?;
-        let gas_limit = bumped_gas(estimated_gas, attempt);
 
-        let tx_builder = build_tx().gas(gas_limit);
+        let gas_limit = bumped_gas(estimated_gas, attempt);
+        let gas_price = provider.get_gas_price().await?;
+        // let tx_builder = build_tx().gas(gas_limit).gas_price(gas_price).legacy();
+        let tx_builder = build_tx().gas(gas_limit).gas_price(gas_price);
 
         debug!(
             "Sending transaction with estimated_gas {estimated_gas}: {:?}",

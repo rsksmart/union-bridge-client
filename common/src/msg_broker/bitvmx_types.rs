@@ -1,6 +1,9 @@
 // TODO(jira) https://rsklabs.atlassian.net/browse/ub-176
 
-use bitcoin::{Amount, BlockHash, PrivateKey, PublicKey, ScriptBuf, Transaction, Txid};
+use bitcoin::address::NetworkUnchecked;
+use bitcoin::{
+    Address, Amount, BlockHash, PrivateKey, PublicKey, ScriptBuf, Transaction, Txid, XOnlyPublicKey,
+};
 use musig2::PubNonce;
 use musig2::secp::MaybeScalar;
 use serde::{Deserialize, Serialize};
@@ -38,6 +41,9 @@ pub enum IncomingBitVMXApiMessages {
     GenerateZKP(Uuid, Vec<u8>, String),
     ProofReady(Uuid),
     GetZKPExecutionResult(Uuid),
+    GetFundingAddress(Uuid),
+    GetFundingBalance(Uuid),
+    SendFunds(Uuid, Destination, Option<u64>),
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -79,6 +85,11 @@ pub enum OutgoingBitVMXApiMessages {
     ProofNotReady(Uuid),
     ProofGenerationError(Uuid, String),
     SPVProof(Txid, Option<BtcTxSPVProof>),
+    FundsSent(Uuid, Txid),
+    FundingAddress(Uuid, Address<NetworkUnchecked>),
+    FundingBalance(Uuid, u64),
+    WalletNotReady(Uuid),
+    WalletError(Uuid, String),
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -337,4 +348,12 @@ impl DisputeCoreData {
     pub fn name() -> String {
         "dispute_core_data".to_string()
     }
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub enum Destination {
+    Address(String, u64),   // (address, amount in sats)
+    P2WPKH(PublicKey, u64), // (pubkey, amount in sats)
+    Batch(Vec<Destination>),
+    P2TR(XOnlyPublicKey, Vec<ProtocolScript>, u64), // (xpubkey, tap_leaves, amount in sats)
 }
