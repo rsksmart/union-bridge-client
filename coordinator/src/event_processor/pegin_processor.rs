@@ -274,7 +274,7 @@ where
             return Ok(());
         }
         info!(
-            "Processing PeginRequested: committee_member=true, requestPeginTxHash={}, acceptPeginTxHash={}",
+            "Processing PeginRequested: requestPeginTxHash={}, acceptPeginTxHash={}",
             data.inner.requestPeginTxHash, data.inner.acceptPeginTxHash
         );
 
@@ -324,7 +324,7 @@ where
             return Ok(());
         }
         info!(
-            "Processing PeginAccepted: committee_member=true, acceptPeginTxHash={}",
+            "Processing PeginAccepted: acceptPeginTxHash={}",
             data.inner.acceptPeginTxHash
         );
 
@@ -382,7 +382,7 @@ where
             return Ok(());
         }
         info!(
-            "Processing AllOperatorTakeTxHashesAdded: committee_member=true, acceptPeginTxHash={}",
+            "Processing AllOperatorTakeTxHashesAdded: acceptPeginTxHash={}",
             data.inner.acceptPeginTxHash
         );
 
@@ -784,7 +784,7 @@ where
             );
             self.tracker.remove(&tx_hash);
             if self.tracker.is_empty() {
-                debug!("Stopping processor: no_more_events=true");
+                debug!("Stopping processor no more events");
                 self.scheduler.clear();
                 self.blockchain.clear();
             }
@@ -1118,7 +1118,7 @@ where
             .find(|state| state.flow_id == *flow_id)
         else {
             debug!(
-                "No pegin state found: flow_id={}, skipping_transaction_status=true",
+                "No pegin state found: flow_id={}",
                 flow_id
             );
             return Ok(());
@@ -1169,7 +1169,7 @@ where
                 if btc_flow.is_done() {
                     //#Step 8a: Send DispatchTransaction to BitVMX
                     Self::send_dispatch_transaction_name(&self.bitvmx_broker, state.flow_id)?;
-                    debug!("Dispatch tx sent: awaiting_transaction_status=true");
+                    debug!("Dispatch tx sent for accept pegin: flow_id={}", state.flow_id);
                     //Signature flow is done, we can clear it from state
                     state.btc_signatures_flow = None;
                 }
@@ -1222,7 +1222,7 @@ where
                     } else {
                         // Step 3 if no matching state found we are assuming this is a request pegin SPV proof
                         debug!(
-                            "No state found: tx_id={}, starting_request_pegin=true",
+                            "No state found starting request pegin: tx_id={}",
                             tx_id
                         );
                         self.handle_request_pegin(spv_proof.clone())?;
