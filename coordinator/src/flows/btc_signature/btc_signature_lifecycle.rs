@@ -3,7 +3,7 @@ use crate::config::REQUIRED_CONFIRMATIONS;
 use anyhow::{Context, Result, anyhow, bail};
 use common::runtime_sync::RuntimeSync;
 use common::types::{BlockNumber, Hash256};
-use log::{debug, info, trace};
+use log::{debug, trace};
 use std::rc::Rc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::{AddMemberNonceInput, AddMemberSignatureInput};
@@ -105,9 +105,9 @@ where
     ) -> Result<()> {
         let flow_id = self.state.flow_id;
         if block_number.is_some() {
-            info!("Start confirming Nonces {flow_id}");
+            debug!("Start confirming Nonces: flow_id={flow_id}");
         } else {
-            info!("Stop confirming Nonces {flow_id}");
+            debug!("Stop confirming Nonces: flow_id={flow_id}");
         }
 
         if self.state.signature_step.is_some() {
@@ -132,9 +132,9 @@ where
     ) -> Result<()> {
         let flow_id = self.state.flow_id;
         if block_number.is_some() {
-            info!("Start confirming Signatures {flow_id}");
+            debug!("Start confirming Signatures: flow_id={flow_id}");
         } else {
-            info!("Stop confirming Signatures {flow_id}");
+            debug!("Stop confirming Signatures: flow_id={flow_id}");
         }
 
         let signature_event = self
@@ -174,7 +174,7 @@ where
     }
 
     fn send_nonce_to_contracts(&mut self, data: &RegisterSignaturesBitVmxData) -> Result<()> {
-        info!("Sending nonce to contract for flow {}", self.state.flow_id);
+        debug!("Sending nonce to contract: flow_id={}", self.state.flow_id);
 
         if self.state.nonce_step.is_some() || self.state.data.is_some() {
             bail!("flow {} is already in Nonces step", self.state.flow_id);
@@ -224,22 +224,19 @@ where
             .as_ref()
             .map(|step| step.is_confirmed())
             .unwrap_or_else(|| {
-                trace!(
-                    "flow {} has not completed the Nonces step yet",
-                    self.state.flow_id
-                );
+                trace!("Nonces step not completed: flow_id={}", self.state.flow_id);
                 false
             })
     }
 
     fn send_signature_to_contracts(&mut self) -> Result<()> {
         if self.state.signature_step.is_some() {
-            debug!("flow {} already in Signatures step", self.state.flow_id);
+            debug!("Already in Signatures step: flow_id={}", self.state.flow_id);
             return Ok(());
         }
 
-        info!(
-            "Sending signatures to contract for flow {}",
+        debug!(
+            "Sending signatures to contract: flow_id={}",
             self.state.flow_id
         );
 
@@ -308,7 +305,7 @@ where
             .map(|step| step.is_confirmed())
             .unwrap_or_else(|| {
                 trace!(
-                    "flow {} has not completed the Signatures step",
+                    "Signatures step not completed: flow_id={}",
                     self.state.flow_id
                 );
                 false
