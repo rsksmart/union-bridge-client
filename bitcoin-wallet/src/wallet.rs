@@ -14,12 +14,15 @@ use bitcoin::address::{Address, NetworkUnchecked};
 use bitcoin::blockdata::transaction::{Sequence, Version};
 use bitcoin::consensus::encode::serialize_hex;
 use bitcoin::ecdsa;
+use bitcoin::hashes::hex::FromHex;
 use bitcoin::key::{CompressedPublicKey, PrivateKey, PublicKey};
 use bitcoin::network::{Network, NetworkKind};
+use bitcoin::opcodes::all::OP_RETURN;
+use bitcoin::script::{Builder as ScriptBuilder, PushBytesBuf};
 use bitcoin::secp256k1::rand::rngs::OsRng;
 use bitcoin::secp256k1::{self, Message, Secp256k1, SecretKey};
 use bitcoin::sighash::{EcdsaSighashType, SighashCache};
-use bitcoin::{Amount, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness};
+use bitcoin::{Amount, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness, XOnlyPublicKey};
 use bitcoincore_rpc::{Client, RpcApi, jsonrpc};
 
 pub const DEFAULT_SATS_PER_BYTE: u64 = 5;
@@ -718,6 +721,157 @@ impl Wallet {
             .collect();
         utxos.sort_by_key(|(_, timestamp)| std::cmp::Reverse(*timestamp));
         Ok(utxos)
+    }
+
+    pub fn create_pegin_transaction(
+        &mut self,
+        stream_value: u64,
+        packet_number: u64,
+        tmp_addr: String,
+        rsk_address_hex: String,
+    ) -> Result<CreatedTransaction> {
+        // Constants matching user-api
+        const KEY_SPEND_FEE: u64 = 335;
+        const OP_RETURN_FEE: u64 = 300;
+        const EXTRA_FEE: u64 = 1000;
+
+        let private_key = self.require_active_private_key()?;
+        let address = self.require_active_address()?.clone();
+        let pubkey = private_key.public_key(&self.secp);
+
+        // Parse the destination address
+        let dest_addr: Address<NetworkUnchecked> =
+            Address::from_str(&tmp_addr).context("invalid destination address")?;
+        let checked_addr = dest_addr
+            .require_network(self.network)
+            .context("destination address network mismatch")?;
+
+        // Parse RSK address (20 bytes)
+        let rsk_address_clean = rsk_address_hex.trim_start_matches("0x");
+        let rsk_address_bytes = Vec::<u8>::from_hex(rsk_address_clean)
+            .context("invalid RSK address hex")?;
+        if rsk_address_bytes.len() != 20 {
+            bail!("RSK address must be 20 bytes, got {}", rsk_address_bytes.len());
+        }
+        let mut rsk_address = [0u8; 20];
+        rsk_address.copy_from_slice(&rsk_address_bytes);
+
+        // Get reimbursement X-only public key from current public key
+        let (reimbursement_xpk, _) = pubkey.inner.x_only_public_key();
+
+        // Calculate total amount needed
+        let fee = KEY_SPEND_FEE + EXTRA_FEE;
+        let total_amount = stream_value + fee + OP_RETURN_FEE;
+
+        // Select UTXOs
+        let (selected_indices, selected_utxos, total_input) = self.select_utxos(total_amount)?;
+
+        // Create OP_RETURN data
+        let op_return_data = Self::create_pegin_op_return_data(
+            packet_number,
+            rsk_address,
+            reimbursement_xpk,
+        )?;
+
+        // Build transaction
+        let mut tx = Transaction {
+            version: Version::TWO,
+            lock_time: absolute::LockTime::ZERO,
+            input: selected_utxos
+                .iter()
+                .map(|u| TxIn {
+                    previous_output: u.outpoint,
+                    script_sig: ScriptBuf::new(),
+                    sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+                    witness: Witness::default(),
+                })
+                .collect(),
+            output: vec![
+                // Taproot output
+                TxOut {
+                    value: Amount::from_sat(stream_value),
+                    script_pubkey: checked_addr.script_pubkey(),
+                },
+                // OP_RETURN output
+                TxOut {
+                    value: Amount::from_sat(0),
+                    script_pubkey: Self::create_op_return_script(op_return_data)?,
+                },
+            ],
+        };
+
+        // Add change output if necessary
+        let change_value = total_input.saturating_sub(total_amount);
+        if change_value >= P2WPKH_DUST_LIMIT_SATS {
+            let wpkh = pubkey
+                .wpubkey_hash()
+                .context("key must be compressed")?;
+            let change_script = ScriptBuf::new_p2wpkh(&wpkh);
+            tx.output.push(TxOut {
+                value: Amount::from_sat(change_value),
+                script_pubkey: change_script.clone(),
+            });
+        }
+
+        // Sign the transaction
+        let wpkh = pubkey
+            .wpubkey_hash()
+            .context("key must be compressed")?;
+        let script_code = ScriptBuf::new_p2wpkh(&wpkh);
+        let signed = self.sign_transaction(tx, &selected_utxos, &pubkey, &script_code)?;
+
+        // Calculate actual fee
+        let final_change = if change_value >= P2WPKH_DUST_LIMIT_SATS {
+            change_value
+        } else {
+            0
+        };
+        let fee_sat = total_input.saturating_sub(stream_value).saturating_sub(final_change);
+
+        // Create change UTXO info if applicable
+        let change_preview = if final_change > 0 {
+            let txid = signed.compute_txid();
+            let change_vout = (signed.output.len() - 1) as u32;
+            Some(Utxo {
+                outpoint: OutPoint::new(txid, change_vout),
+                value_sat: final_change,
+            })
+        } else {
+            None
+        };
+
+        Ok(CreatedTransaction {
+            transaction: signed,
+            change: change_preview,
+            fee_sat,
+            spent_indices: selected_indices,
+            spent_utxos: selected_utxos,
+            change_value: final_change,
+            change_address: address,
+        })
+    }
+
+    fn create_pegin_op_return_data(
+        packet_number: u64,
+        rsk_address: [u8; 20],
+        reimbursement_xpk: XOnlyPublicKey,
+    ) -> Result<Vec<u8>> {
+        let mut data = Vec::with_capacity(69);
+        data.extend_from_slice(b"RSK_PEGIN");
+        data.extend_from_slice(&packet_number.to_be_bytes());
+        data.extend_from_slice(&rsk_address);
+        data.extend_from_slice(&reimbursement_xpk.serialize());
+        Ok(data)
+    }
+
+    fn create_op_return_script(data: Vec<u8>) -> Result<ScriptBuf> {
+        let push_bytes = PushBytesBuf::try_from(data)
+            .context("OP_RETURN data too large")?;
+        let script = ScriptBuilder::new()
+            .push_opcode(OP_RETURN)
+            .push_slice(push_bytes)
+            .into_script();
+        Ok(script)
     }
 }
 

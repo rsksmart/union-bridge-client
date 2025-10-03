@@ -468,6 +468,60 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
             println!("Cleared UTXO database for regtest.");
             Ok(CommandOutcome::Continue)
         }
+        "create_pegin_tx" => {
+            // Syntax: create_pegin_tx <stream_value> <packet_number> <dest_addr> <rsk_address>
+            let stream_value_str = parts.next().context("expected stream value in satoshis")?;
+            let stream_value: u64 = stream_value_str
+                .parse()
+                .context("invalid stream value (satoshis)")?;
+
+            let packet_number_str = parts.next().context("expected packet number")?;
+            let packet_number: u64 = packet_number_str
+                .parse()
+                .context("invalid packet number")?;
+
+            let dest_addr = parts.next().context("expected destination address")?;
+            let rsk_address = parts.next().context("expected RSK address (hex)")?;
+
+            // Create the pegin transaction
+            let created = wallet.create_pegin_transaction(
+                stream_value,
+                packet_number,
+                dest_addr.to_string(),
+                rsk_address.to_string(),
+            )?;
+
+            // Display transaction details
+            let tx = &created.transaction;
+            let txid = tx.compute_txid();
+            let vsize = tx.vsize();
+            let hex = serialize_hex(tx);
+
+            println!("Pegin Transaction created:");
+            println!("  txid={}", txid);
+            println!("  vsize={}", vsize);
+            println!("  fee={} sat", created.fee_sat);
+            println!("  raw={}", hex);
+
+            if let Some(change) = &created.change {
+                println!(
+                    "  change -> {} sat back to wallet (outpoint {}:{})",
+                    change.value_sat, change.outpoint.txid, change.outpoint.vout
+                );
+            }
+
+            // Broadcast if RPC is configured
+            if wallet.rpc_client().is_some() {
+                match wallet.broadcast_transaction(&created) {
+                    Ok(txid) => println!("  Transaction broadcasted successfully: {}", txid),
+                    Err(err) => eprintln!("  Failed to broadcast transaction: {err}"),
+                }
+            } else {
+                println!("  RPC not configured; transaction hex printed only.");
+            }
+
+            Ok(CommandOutcome::Continue)
+        }
 
         other => Err(anyhow!(
             "unknown command '{other}'. Type 'help' for a list of commands."
@@ -637,6 +691,9 @@ fn print_help(sats_per_byte: u64) {
     );
     println!(
         "  clear_db                              - Regtest only: clear the UTXO database for the current network"
+    );
+    println!(
+        "  create_pegin_tx <value> <packet> <addr> <rsk>  - Create RSK pegin transaction (value in sats, packet number, dest address, RSK address hex)"
     );
     println!("Fees target {sats_per_byte} sat per virtual byte.");
 }

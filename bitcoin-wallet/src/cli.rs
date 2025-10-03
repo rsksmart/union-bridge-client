@@ -53,6 +53,7 @@ const COMMANDS: &[&str] = &[
     "mine_utxo",
     "tx_status",
     "clear_db",
+    "create_pegin_tx",
 ];
 
 #[derive(Default)]
