@@ -142,7 +142,7 @@ if [[ "${IS_UP_COMMAND}" == true && ("${FRESH}" == true || "${REBUILD_DEPLOY_CON
   sleep 5
 
   # concrete filename, to avoid SC1090 complain
-  source ".env.local"
+  source "${SCRIPT_DIR}/.env.local"
 
   # Create wallet
   echo "Creating wallet 'mainwallet' in ${BITCOIND_CONTAINER}..."

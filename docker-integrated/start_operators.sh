@@ -2,6 +2,8 @@
 
 #!/bin/bash
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 UC_TAG=""
 DOCKER_COMPOSE_ARGS=()
 
@@ -51,14 +53,14 @@ while [[ $# -gt 0 ]]; do
     --env)
       if [[ "$2" == "alphanet" ]]; then
         OP_PREFIX="testnet_"
-        ENV_FILE=".env.alphanet"
+        ENV_FILE="${SCRIPT_DIR}/.env.alphanet"
         if [[ -z "$UC_TAG" ]]; then
           UC_TAG="latest-alphanet"
         fi
-        
+
       elif [[ "$2" == "local" ]]; then
         OP_PREFIX=""
-        ENV_FILE=".env.local"
+        ENV_FILE="${SCRIPT_DIR}/.env.local"
         if [[ -z "$UC_TAG" ]]; then
           UC_TAG="latest-anvil"
         fi

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Setup BitVMX docker
 # Usage:
 #   ./check_bitvmx_updates.sh [-r|--ref <branch-or-tag>]
@@ -52,7 +54,7 @@ done
 
 echo "Setting up BitVMX... (ref=${REF})"
 
-BC_PATH="bitvmx-client"
+BC_PATH="${SCRIPT_DIR}/bitvmx-client"
 BC_REPO="docker-bitvmx"
 BC_URL="https://github.com/FairgateLabs/${BC_REPO}.git"
 
@@ -60,14 +62,14 @@ BC_URL="https://github.com/FairgateLabs/${BC_REPO}.git"
 mkdir -p "${BC_PATH}"
 
 # Clone the specified branch or tag (shallow)
-rm -rf "${BC_REPO}" || true
-git clone --depth 1 --branch "${REF}" --single-branch "${BC_URL}" "${BC_REPO}"
+rm -rf "${SCRIPT_DIR:?}/${BC_REPO:?}" || true
+git clone --depth 1 --branch "${REF}" --single-branch "${BC_URL}" "${SCRIPT_DIR}/${BC_REPO}"
 
 # Copy compose file into place
-cp "${BC_REPO}/docker-compose.yml" "${BC_PATH}/docker-compose.fetched.yml"
+cp "${SCRIPT_DIR}/${BC_REPO}/docker-compose.yml" "${BC_PATH}/docker-compose.fetched.yml"
 
 # Cleanup
-rm -rf "${BC_REPO}"
+rm -rf "${SCRIPT_DIR:?}/${BC_REPO:?}"
 
 echo "BitVMX compose updated from ${BC_REPO}@${REF}."
 
