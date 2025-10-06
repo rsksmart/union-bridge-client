@@ -84,17 +84,7 @@ fn main() -> Result<()> {
     let contracts_gateway = transaction_dispatcher::get_contracts_gateway_as_lib_sync(
         rt_sync.clone(),
         tx_dispatcher_config,
-    )
-    .map_err(|e| {
-        error!("COORDINATOR STARTUP FAILED: Cannot initialize contracts gateway");
-        error!("Reason: {}", e);
-        error!("Possible causes:");
-        error!("  - Contract addresses in config point to addresses without deployed contracts");
-        error!("  - Blockchain node is not running or contracts haven't been deployed");
-        error!("  - Network connectivity issues");
-        error!("Solution: Verify contract addresses in config and ensure contracts are deployed");
-        e
-    })?;
+    )?;
 
     let store_path = &format!("{}/coordinator", config.storage_path);
     debug!("Creating coordinator store at: {}", store_path);
