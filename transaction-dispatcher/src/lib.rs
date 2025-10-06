@@ -34,7 +34,7 @@ pub async fn get_contracts_gateway<P: Provider + Clone>(
 pub fn get_contracts_gateway_as_lib_sync(
     rt_sync: RuntimeSync,
     config: config::ConfigAsLib,
-) -> Result<RskContractsGateway<impl Provider + Clone>> {
+) -> Result<RskContractsGateway<impl Provider + Clone>, DomainErrors> {
     rt_sync.run(create_contracts_gateway_impl(config))
 }
 
@@ -83,4 +83,75 @@ async fn create_contracts_gateway_impl(
     )
     .await
     .map_err(|e| DomainErrors::InternalServerError(format!("Failed to create gateway: {}", e)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use common::runtime_sync::RuntimeSync;
+
+    #[test]
+    fn test_get_contracts_gateway_as_lib_sync_returns_domain_errors() {
+        // This test verifies that RuntimeSync properly propagates DomainErrors
+        // without shadowing them as anyhow::Error
+
+        let rt_sync = RuntimeSync::new().expect("Failed to create RuntimeSync");
+
+        // Create a future that returns DomainErrors
+        let test_future = async {
+            Err::<(), DomainErrors>(DomainErrors::InternalServerError(
+                "Test error propagation".to_string(),
+            ))
+        };
+
+        let result: Result<(), DomainErrors> = rt_sync.run(test_future);
+
+        // Verify the error type is preserved
+        match result {
+            Err(DomainErrors::InternalServerError(msg)) => {
+                assert_eq!(msg, "Test error propagation");
+            }
+            _ => panic!("Expected DomainErrors::InternalServerError"),
+        }
+    }
+
+    #[test]
+    fn test_runtime_sync_preserves_different_domain_error_variants() {
+        let rt_sync = RuntimeSync::new().expect("Failed to create RuntimeSync");
+
+        // Test InvalidAddress variant
+        let result: Result<(), DomainErrors> =
+            rt_sync.run(async { Err(DomainErrors::InvalidAddress("0x123".to_string())) });
+
+        match result {
+            Err(DomainErrors::InvalidAddress(addr)) => {
+                assert_eq!(addr, "0x123");
+            }
+            _ => panic!("Expected DomainErrors::InvalidAddress"),
+        }
+
+        // Test PeginAlreadyRequested variant
+        let result: Result<(), DomainErrors> =
+            rt_sync.run(async { Err(DomainErrors::PeginAlreadyRequested("tx123".to_string())) });
+
+        match result {
+            Err(DomainErrors::PeginAlreadyRequested(tx)) => {
+                assert_eq!(tx, "tx123");
+            }
+            _ => panic!("Expected DomainErrors::PeginAlreadyRequested"),
+        }
+    }
+
+    #[test]
+    fn test_runtime_sync_preserves_success_with_complex_types() {
+        let rt_sync = RuntimeSync::new().expect("Failed to create RuntimeSync");
+
+        // Test with a success case
+        let result: Result<String, DomainErrors> = rt_sync.run(async { Ok("success".to_string()) });
+
+        match result {
+            Ok(val) => assert_eq!(val, "success"),
+            Err(_) => panic!("Expected Ok result"),
+        }
+    }
 }
