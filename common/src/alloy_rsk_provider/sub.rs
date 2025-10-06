@@ -11,7 +11,7 @@ use alloy_pubsub::{Subscription, SubscriptionItem};
 use alloy_rpc_types::{FilterBlockOption, Header, Log, Topic};
 use anyhow::Result;
 use anyhow::{Context, anyhow};
-use log::debug;
+use log::trace;
 use serde::de::DeserializeOwned;
 use tokio::sync::broadcast::error::RecvError;
 
@@ -92,7 +92,7 @@ impl RskSubscription<RskBlock> for AlloySubscription<Header> {
     fn next(&mut self) -> Result<RskBlock, RskSubscriptionError> {
         let header = self.next()?;
 
-        debug!("Received header: {:?}", header);
+        trace!("Received header: {:?}", header);
 
         let new_block_hash = Self::get_block_hash(header)?;
 
@@ -169,7 +169,7 @@ impl RskSubscription<RskLog> for AlloySubscription<Log> {
     fn next(&mut self) -> Result<RskLog, RskSubscriptionError> {
         let log = self.next()?;
 
-        debug!("Received log: {:?}", log);
+        trace!("Received log: {:?}", log);
 
         let new_log = match log {
             SubscriptionItem::Item(log) => log,

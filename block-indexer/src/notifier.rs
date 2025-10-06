@@ -4,7 +4,7 @@ use common::msg_broker::broker::UnionBrokerServerApi;
 pub use common::msg_broker::types::{FromServer, ToServer};
 use common::shutdown_flag::ShutdownFlag;
 use common::types::RskBlockAndUncles;
-use log::{debug, info, trace, warn};
+use log::{info, trace, warn};
 use std::collections::HashSet;
 use std::sync::mpsc;
 use std::sync::mpsc::RecvTimeoutError;
@@ -95,7 +95,7 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
     fn wait_for_block(&mut self, timeout: Duration) -> Result<Option<RskBlockAndUncles>> {
         match self.new_block_channel.recv_timeout(timeout) {
             Ok(block) => {
-                debug!("New block received by notifier {:?}", block);
+                trace!("New block received by notifier {:?}", block);
                 Ok(Some(block))
             }
             Err(RecvTimeoutError::Timeout) => {
@@ -115,7 +115,7 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
         let response = FromServer::Block(new_block);
 
         for c_id in &self.consumers {
-            debug!("Notifying consumer {c_id} about new block {number} ({hash})");
+            trace!("Notifying consumer {c_id} about new block {number} ({hash})");
 
             self.msg_broker.send(&response, *c_id).context(format!(
                 "Sending block {} ({}) to consumer {}",

@@ -15,7 +15,7 @@ use common::{
     runtime_sync::RuntimeSync,
     shutdown_flag::ShutdownFlag,
 };
-use log::{error, info, warn};
+use log::{debug, error, info, trace, warn};
 use std::{
     ops::Sub,
     rc::Rc,
@@ -272,7 +272,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi>
     }
 
     fn send_bitvmx_ping(&self) {
-        info!("Sending Ping to BitVMX");
+        debug!("Sending Ping to BitVMX");
 
         let result = self
             .bitvmx_broker
@@ -287,7 +287,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi>
     fn check_bitvmx_pong(&mut self, event: &OutgoingBitVMXApiMessages) -> bool {
         match event {
             OutgoingBitVMXApiMessages::Pong() => {
-                info!("Received Pong from BitVMX");
+                debug!("Received Pong from BitVMX");
                 true
             }
             _ => false,

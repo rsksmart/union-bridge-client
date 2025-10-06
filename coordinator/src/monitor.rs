@@ -248,7 +248,16 @@ where
 
         match self.bitvmx_broker.try_recv()? {
             Some(response) => {
-                debug!("Received BitVMX response: {:?}", response);
+                match response {
+                    OutgoingBitVMXApiMessages::SignedMessage(uuid, _, _, _) => {
+                        // SignedMessage prints a byte array, which is not very useful
+                        debug!("Received BitVMX response: SignedMessage({uuid}, ...)");
+                    }
+                    _ => {
+                        debug!("Received BitVMX response: {:?}", response);
+                    }
+                }
+
                 Ok(Some(response))
             }
             None => {

@@ -16,5 +16,5 @@ loggers:
     level: warn
   alloy_provider:
     level: warn
-  alloy_rpc-client:
+  alloy_rpc_client:
     level: warn

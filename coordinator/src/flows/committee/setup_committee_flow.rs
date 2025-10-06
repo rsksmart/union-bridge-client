@@ -16,6 +16,7 @@ use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 use common::runtime_sync::RuntimeSync;
 use log::{debug, error, info, trace, warn};
 use sha2::{Digest, Sha256};
+use std::any::type_name_of_val;
 use std::collections::HashMap;
 use std::rc::Rc;
 use tiny_keccak::{Hasher, Keccak};
@@ -353,8 +354,9 @@ where
                 let pub_key = data.into_pubkey()?;
                 r.1 = Some(pub_key);
 
-                info!(
-                    "Got Public Key: {}",
+                debug!("Got public key for signing");
+                trace!(
+                    "Key: {}",
                     hex::encode(pub_key.inner.serialize_uncompressed())
                 );
 
@@ -655,7 +657,7 @@ where
         let x_only_key = XOnlyPublicKey::from_slice(key_bytes.as_slice())
             .context("Failed to parse aggregated public key")?;
 
-        debug!("Got {key_type} Key for member {member_addr} with X: {x_only_key:?}");
+        trace!("Got {key_type} key for member {member_addr}");
 
         // BitVMX adjusts parity to Even, so we do the same here
         let secp_key = x_only_key.public_key(Even);
@@ -692,7 +694,7 @@ where
     }
 
     fn send_bitvmx_msg(&self, msg: IncomingBitVMXApiMessages) {
-        info!("Sending {msg:?} to BitVMX");
+        trace!("Sending message to BitVMX: {msg:?}");
 
         let result = self.bitvmx_broker.send(BROKER_SERVER_ID, msg);
         if result.is_err() {
@@ -815,7 +817,7 @@ where
                 format!("Communication key not found on Committee for {member_addr}")
             })?;
 
-            debug!("Member {member_addr} PeerId: {key_str:?}");
+            trace!("Registered member {member_addr}");
 
             // key_str already decoded
             peer_ids.push(PeerId(key_str.to_string()));
@@ -832,7 +834,7 @@ where
 
         // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: rethink how we store the committee member data in the context, we can unify it in a MemberOfCommittee struct and reduce the number of ctx_xxx methods
         for (idx, cm) in committee.members.iter().enumerate() {
-            debug!("Processing committee member {idx:?} {cm:?}");
+            trace!("Processing member {idx}");
 
             // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: move it to a From trait impl
             let role = if cm.role == 1 {
@@ -877,7 +879,7 @@ where
     BC: BitVmxBrokerClientApi,
 {
     fn start_step(&mut self, next_step: Steps) -> Result<()> {
-        info!("Starting step {:?}", next_step);
+        debug!("Starting step {:?}", next_step);
 
         self.state.step = next_step;
 
@@ -935,7 +937,10 @@ where
                 self.setup_dispute_core_protocol()?;
             }
             Steps::Done => {
-                info!("Setup Committee flow complete");
+                info!(
+                    "Committee setup complete for flow {}",
+                    self.state.internal_id
+                );
             }
         }
         Ok(())
@@ -944,13 +949,14 @@ where
     fn complete_step(&mut self, data: StepData) -> Result<()> {
         let current_step = self.state.step;
 
-        info!(
-            "Completing step {current_step:?} for flow {} with data {data:?}",
+        debug!(
+            "Completing step {current_step:?} for flow {}",
             self.state.internal_id
         );
+        trace!("Step data: {data:?}");
 
-        debug!("Flow Context: {:?}", self.state.ctx);
-        debug!("Global Context: {:?}", self.global_context);
+        trace!("Flow Context: {:?}", self.state.ctx);
+        trace!("Global Context: {:?}", self.global_context);
 
         match current_step {
             Steps::Init => {
@@ -1004,7 +1010,7 @@ where
                     self.update_my_committees(pending_committee, &committee_id)?;
                     self.start_step(Steps::DepositP2PData)?;
                 } else {
-                    info!("I was not selected for committee {committee_id} :(. Closing flow.");
+                    debug!("Not selected for committee {committee_id}");
                     self.start_step(Steps::Done)?;
                 }
             }
@@ -1029,7 +1035,7 @@ where
                 let setup_core_state = &mut self.state.ctx.setup_core;
                 let missing_responses = Self::close_setup_core_req(setup_core_state, data)?;
                 if missing_responses {
-                    info!("Waiting SetupDisputeCore completion, staying in the same step...");
+                    trace!("Waiting for dispute core setup");
                     self.state.step = Steps::SetupDisputeCore;
                 } else {
                     self.start_step(Steps::Done)?;
@@ -1103,7 +1109,7 @@ where
             funding_utxo: utxo,
         };
 
-        debug!("Applying to stream with {input:?}");
+        debug!("Applying to stream {:?}", input.stream_id);
 
         match self.rt_sync.run(self.contracts.apply_to_stream(input)) {
             Ok(_) => {
@@ -1149,11 +1155,11 @@ where
             }
         }
 
-        info!(
-            "Depositing member {} communication data for stream {}: {communication_data:?}",
-            self.my_address(),
+        debug!(
+            "Depositing communication data for committee {}",
             *committee_id
         );
+        trace!("Communication data: {communication_data:?}");
 
         self.rt_sync.run(
             self.contracts
@@ -1169,7 +1175,7 @@ where
         pending_committee: NewCommitteePendingEvent,
         committee_id: &CommitteeId,
     ) -> Result<()> {
-        info!("I was selected for committee {committee_id} :)");
+        info!("Selected for committee {committee_id}");
         self.state.ctx.committee_pending = Some(pending_committee);
         let role = self.ctx_user_input()?.role;
         self.global_context
@@ -1179,7 +1185,7 @@ where
     }
 
     fn setup_bitvmx_aggregated_take_pubkey(&mut self) -> Result<()> {
-        info!("Setup BitVMX Aggregated Take key");
+        debug!("Setting up aggregated take key");
 
         let take_key_id = self.get_take_aggregated_key_id()?;
         self.state.ctx.agg_take_key = Some((take_key_id, None));
@@ -1199,7 +1205,7 @@ where
     }
 
     fn setup_bitvmx_aggregated_dispute_pubkey(&mut self) -> Result<()> {
-        info!("Setup BitVMX Aggregated Dispute key");
+        debug!("Setting up aggregated dispute key");
 
         let dispute_key_id = self.get_dispute_aggregated_key_id()?;
         self.state.ctx.agg_dispute_key = Some((dispute_key_id, None));
@@ -1227,8 +1233,8 @@ where
 
         let aggregated_key = Bytes::from(aggregated_take_key.to_bytes().to_vec());
 
-        info!(
-            "Depositing aggregated key for stream {}: {}",
+        debug!(
+            "Depositing aggregated key {} for committee {}",
             hex::encode(&aggregated_key),
             *committee_id
         );
@@ -1245,7 +1251,7 @@ where
     }
 
     fn setup_dispute_core_protocol(&mut self) -> Result<()> {
-        info!("Setting up dispute core protocol");
+        debug!("Setting up dispute core protocol");
 
         let committee = self.state.ctx.get_committee_ready()?;
         let members = self.build_members_of_committee(committee)?;
@@ -1348,7 +1354,7 @@ where
         // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: optimize this search by keeping convenient map of committee_id -> internal_id or alike
 
         if !self.global_context.my_committees().im_member(&committee_id) {
-            debug!("Not my committee {committee_id}");
+            trace!("Skipping committee {committee_id} - not mine");
             return None;
         }
 
@@ -1474,7 +1480,7 @@ where
                 found_flow.map(|f| (f, StepData::ReadyCommittee(new_committee_ready.clone())))
             }
             _ => {
-                trace!("Ignoring RSK event: {:?}", event);
+                trace!("Ignoring RSK event: {}", type_name_of_val(event));
                 return Ok(());
             }
         };
@@ -1484,7 +1490,7 @@ where
                 flow.complete_step(step_data)?;
             }
             None => {
-                info!("Received {event:?} but it's not mine");
+                debug!("Received {event:?} but not mine");
             }
         }
 
@@ -1533,7 +1539,7 @@ where
             .collect();
 
         for key in completed {
-            info!("Removing Completed flow: {key:?}");
+            debug!("Removing completed flow: {key:?}");
             self.flows.remove(&key);
         }
     }
@@ -1571,7 +1577,7 @@ where
                 first_flow.complete_step(StepData::CommInfo(comm_info.clone()))?;
                 return Ok(());
             } else {
-                trace!("Ignoring BitVMX CommInfo that is not mine")
+                trace!("Ignoring CommInfo - not mine")
             };
         }
 
@@ -1601,7 +1607,8 @@ where
             // events that do not trigger a flow step are handled here.
             OutgoingBitVMXApiMessages::Pong() => return Ok(()), // ignored
             _ => {
-                trace!("Ignoring BitVMX event: {:?}", event);
+                trace!("Ignoring BitVMX event: {}", type_name_of_val(event));
+
                 return Ok(());
             }
         };
@@ -1634,7 +1641,7 @@ where
                 Self::build_new_committee_ready_event_info(e)
             }
             _ => {
-                trace!("Ignoring RSK event: {:?}", event);
+                trace!("Ignoring RSK event: {}", type_name_of_val(event));
                 return Ok(());
             }
         };
@@ -1667,7 +1674,7 @@ where
             self.events_confirming
                 .insert(confirmable_event.id(), confirmable_event);
 
-            info!("Waiting for confirmations for {id}");
+            debug!("Waiting for confirmations for {id}");
         }
 
         Ok(())
@@ -1691,10 +1698,8 @@ where
 
         for key in confirmed_keys {
             if let Some(mut event) = self.events_confirming.remove(&key) {
-                info!(
-                    "RSK event confirmed: {:?}, removing pending {key}",
-                    event.get_data()
-                );
+                debug!("RSK event confirmed, removing pending {key}");
+                trace!("Event data: {:?}", event.get_data());
                 // properly cleanup the observer before processing the event
                 if let Err(e) = event.stop_confirming() {
                     error!("Failed to stop confirming for event {}: {}", key, e)
