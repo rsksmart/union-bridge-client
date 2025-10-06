@@ -43,9 +43,7 @@ async fn main() -> Result<()> {
         .expect("Failed to load transaction dispatcher config");
 
     let contracts_gateway =
-        transaction_dispatcher::get_contracts_gateway_as_lib(tx_dispatcher_config)
-            .await
-            .expect("Failed to get contracts gateway");
+        transaction_dispatcher::get_contracts_gateway_as_lib(tx_dispatcher_config).await?;
 
     info!("Starting user-api server");
 

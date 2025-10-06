@@ -174,7 +174,7 @@ pub struct RskContractsGateway<P: Provider> {
 }
 
 impl<P: Provider + Clone> RskContractsGateway<P> {
-    pub fn new(
+    pub async fn new(
         // TODO make provider an Rc so we avoid more expensive cloning
         provider: P,
         managed_contracts: HashMap<String, ContractInfo>,
@@ -192,6 +192,31 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             Self::load_contract(MEMBER_REGISTRY_CONTRACT_NAME, &managed_contracts)?;
         let stream_manager_address =
             Self::load_contract(STREAM_MANAGER_CONTRACT_NAME, &managed_contracts)?;
+
+        // Validate that all contract addresses have deployed code
+        let addresses_to_validate = vec![
+            (PEG_MANAGER_CONTRACT_NAME, contract_address),
+            (FAKE_PEG_MANAGER_CONTRACT_NAME, fake_contract_address),
+            (SIGNATURE_MANAGER_CONTRACT_NAME, signature_manager_address),
+            (COMMITTEE_REGISTRY_CONTRACT_NAME, committee_registry_address),
+            (MEMBER_REGISTRY_CONTRACT_NAME, member_registry_address),
+            (STREAM_MANAGER_CONTRACT_NAME, stream_manager_address),
+        ];
+
+        for (contract_name, address) in &addresses_to_validate {
+            let code = provider
+                .get_code_at((*address).into())
+                .await
+                .map_err(|e| anyhow!("Failed to get code for contract {}: {}", contract_name, e))?;
+
+            if code.is_empty() {
+                return Err(anyhow!(
+                    "Contract {} at address {} has no deployed code (0x)",
+                    contract_name,
+                    address
+                ));
+            }
+        }
 
         // TODO make these contracts Rc so we avoid more expensive cloning
 
