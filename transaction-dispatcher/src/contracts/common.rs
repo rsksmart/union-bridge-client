@@ -3,7 +3,7 @@ use crate::contracts::{
     stream_manager,
 };
 use crate::rsk_gateway::DomainErrors;
-use alloy_contract::SolCallBuilder;
+use alloy_contract::{CallBuilder, SolCallBuilder};
 use alloy_primitives::{hex::FromHexError, ruint::ParseError};
 use alloy_provider::Provider;
 use alloy_provider::network::ReceiptResponse;
@@ -12,6 +12,7 @@ use alloy_sol_types::SolCall;
 use alloy_transport::TransportResult;
 use log::{debug, error, warn};
 use serde_json::Value;
+use std::marker::PhantomData;
 use std::time::{Duration, Instant};
 use thiserror::Error;
 use tokio::time::timeout;
@@ -20,8 +21,11 @@ use tokio::time::timeout;
 const BASE_GAS_HEADROOM_PERCENT: u64 = 120; // 20% base headroom
 const PER_ATTEMPT_BUMP_PERCENT: u64 = 110; // 10% per attempt
 const OOG_DETECTION_MARGIN_PERCENT: u64 = 5; // 5% margin for OOG detection
-const MAX_GAS_LIMIT: u64 = 30_000_000; // Maximum gas limit to prevent resource exhaustion
-const DEFAULT_TIMEOUT_SECONDS: u64 = 300; // 5 minutes timeout
+const MAX_GAS_LIMIT: u64 = 5_000_000; // 6.8 million block limit in Rootstock
+// Ethereum JSON-RPC error codes
+const ETH_RPC_INTERNAL_ERROR: i64 = -32603;
+const ETH_RPC_INVALID_PARAMS: i64 = -32602;
+const ETH_RPC_TIMEOUT: i64 = -32002;
 
 #[derive(Debug, Error)]
 pub enum ParseFieldError {
@@ -56,17 +60,17 @@ where
     // No validation needed as max_attempts = 0 means "no retries, just one attempt"
 
     let start_time = Instant::now();
-    let timeout_duration = Duration::from_secs(DEFAULT_TIMEOUT_SECONDS);
 
     let mut receipt = None;
 
     for attempt in 0..=max_attempts {
         // Check timeout
-        if start_time.elapsed() > timeout_duration {
+        let timeout_dur = timeout_5min();
+        if start_time.elapsed() > timeout_dur {
             return Err(alloy_contract::Error::TransportError(
                 alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
-                    code: -32603,
-                    message: GasBumpError::Timeout(DEFAULT_TIMEOUT_SECONDS)
+                    code: ETH_RPC_INTERNAL_ERROR,
+                    message: GasBumpError::Timeout(timeout_dur.as_secs())
                         .to_string()
                         .into(),
                     data: None,
@@ -74,47 +78,9 @@ where
             ));
         }
 
-        // Enhanced gas estimation with error handling
-        // this works also as an eth_call that would check error types, etc., if not do a manual .call()
-        let gas_estimation_timeout = Duration::from_secs(30); // 30 second timeout for gas estimation
-        let estimated_gas = match timeout(gas_estimation_timeout, build_tx().estimate_gas()).await {
-            Ok(Ok(gas)) => gas,
-            Ok(Err(e)) => {
-                error!("Gas estimation failed: {:?}", e);
-                return Err(e);
-            }
-            Err(_elapsed) => {
-                let timeout_seconds = gas_estimation_timeout.as_secs();
-                error!("Gas estimation timeout after {} seconds", timeout_seconds);
-                return Err(alloy_contract::Error::TransportError(
-                    alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
-                        code: -32002, // Different code for timeout
-                        message: format!("Gas estimation timeout after {}s", timeout_seconds)
-                            .into(),
-                        data: None,
-                    }),
-                ));
-            }
-        };
+        let estimated_gas = estimate_gas_with_timeout::<P, D, F>(&build_tx).await?;
 
-        let gas_limit = bumped_gas(estimated_gas, attempt);
-
-        // Security check: prevent excessive gas usage
-        if gas_limit > MAX_GAS_LIMIT {
-            error!(
-                "Gas limit {} exceeds maximum allowed {}",
-                gas_limit, MAX_GAS_LIMIT
-            );
-            return Err(alloy_contract::Error::TransportError(
-                alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
-                    code: -32602,
-                    message: GasBumpError::MaxGasLimitExceeded(gas_limit, MAX_GAS_LIMIT)
-                        .to_string()
-                        .into(),
-                    data: None,
-                }),
-            ));
-        }
+        let gas_limit = calculate_gas_limit_with_cap(estimated_gas, attempt)?;
 
         let gas_price = provider.get_gas_price().await?;
         // let tx_builder = build_tx().gas(gas_limit).gas_price(gas_price).legacy();
@@ -127,61 +93,7 @@ where
             gas_limit
         );
 
-        // Send transaction with timeout
-        let send_result = timeout(
-            Duration::from_secs(60), // 60 second timeout for transaction sending
-            tx_builder.send(),
-        )
-        .await;
-
-        let pending_tx = match send_result {
-            Ok(Ok(tx)) => tx,
-            Ok(Err(e)) => {
-                error!("Transaction send failed: {:?}", e);
-                return Err(e);
-            }
-            Err(_) => {
-                error!("Transaction send timeout");
-                return Err(alloy_contract::Error::TransportError(
-                    alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
-                        code: -32603,
-                        message: "Transaction send timeout".to_string().into(),
-                        data: None,
-                    }),
-                ));
-            }
-        };
-
-        // Get receipt with timeout
-        let receipt_result = timeout(
-            Duration::from_secs(120), // 2 minute timeout for receipt
-            pending_tx.get_receipt(),
-        )
-        .await;
-
-        let current_receipt = match receipt_result {
-            Ok(Ok(rec)) => rec,
-            Ok(Err(e)) => {
-                error!("Failed to get receipt: {:?}", e);
-                return Err(alloy_contract::Error::TransportError(
-                    alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
-                        code: -32603,
-                        message: format!("Failed to get receipt: {:?}", e).into(),
-                        data: None,
-                    }),
-                ));
-            }
-            Err(_) => {
-                error!("Receipt timeout");
-                return Err(alloy_contract::Error::TransportError(
-                    alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
-                        code: -32603,
-                        message: "Receipt timeout".to_string().into(),
-                        data: None,
-                    }),
-                ));
-            }
-        };
+        let current_receipt = send_transaction(tx_builder).await?;
 
         let should_retry = !current_receipt.status()
             && attempt < max_attempts
@@ -199,29 +111,7 @@ where
         // Store the receipt for return
         receipt = Some(current_receipt);
 
-        if let Some(ref receipt_ref) = receipt {
-            if receipt_ref.status() {
-                debug!(
-                    "Transaction succeeded after {} attempts: {:?}",
-                    attempt + 1,
-                    receipt_ref
-                );
-            } else {
-                // Enhanced error reporting
-                let trace_result = timeout(
-                    Duration::from_secs(30),
-                    debug_trace_tx(provider, receipt_ref.transaction_hash().to_string()),
-                )
-                .await;
-
-                error!(
-                    "Transaction failed after {} attempts: {:?} - Trace: {:?}",
-                    attempt + 1,
-                    receipt_ref,
-                    trace_result
-                );
-            }
-        }
+        check_receipt(provider, &mut receipt, attempt).await;
 
         break;
     }
@@ -232,7 +122,7 @@ where
         Some(r) => Ok(r),
         None => Err(alloy_contract::Error::TransportError(
             alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
-                code: -32603,
+                code: ETH_RPC_INTERNAL_ERROR,
                 message: "No receipt available after transaction attempts"
                     .to_string()
                     .into(),
@@ -240,6 +130,153 @@ where
             }),
         )),
     }
+}
+
+fn timeout_30sec() -> Duration {
+    Duration::from_secs(30)
+}
+
+fn timeout_1min() -> Duration {
+    Duration::from_secs(60)
+}
+
+fn timeout_2min() -> Duration {
+    Duration::from_secs(120)
+}
+
+fn timeout_5min() -> Duration {
+    Duration::from_secs(300)
+}
+
+async fn check_receipt<P: Provider>(
+    provider: &P,
+    receipt: &mut Option<TransactionReceipt>,
+    attempt: u8,
+) {
+    if let Some(receipt_ref) = receipt {
+        if receipt_ref.status() {
+            debug!(
+                "Transaction succeeded after {} attempts: {:?}",
+                attempt + 1,
+                receipt_ref
+            );
+        } else {
+            // Enhanced error reporting
+            let trace_result = timeout(
+                timeout_30sec(),
+                debug_trace_tx(provider, receipt_ref.transaction_hash().to_string()),
+            )
+            .await;
+
+            error!(
+                "Transaction failed after {} attempts: {:?} - Trace: {:?}",
+                attempt + 1,
+                receipt_ref,
+                trace_result
+            );
+        }
+    }
+}
+
+async fn send_transaction<P, D>(
+    tx_builder: CallBuilder<P, PhantomData<D>>,
+) -> alloy_contract::Result<TransactionReceipt>
+where
+    P: Provider,
+    D: SolCall,
+{
+    // Send transaction with timeout
+    let pending_tx = match timeout(timeout_1min(), tx_builder.send()).await {
+        Ok(result) => result?,
+        Err(_) => {
+            error!("Transaction send timeout");
+            return Err(alloy_contract::Error::TransportError(
+                alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
+                    code: ETH_RPC_INTERNAL_ERROR,
+                    message: "Transaction send timeout".to_string().into(),
+                    data: None,
+                }),
+            ));
+        }
+    };
+
+    // Get receipt with timeout
+    let receipt_result = timeout(timeout_2min(), pending_tx.get_receipt()).await;
+
+    let current_receipt = match receipt_result {
+        Ok(Ok(rec)) => rec,
+        Ok(Err(e)) => {
+            error!("Failed to get receipt: {:?}", e);
+            return Err(alloy_contract::Error::TransportError(
+                alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
+                    code: ETH_RPC_INTERNAL_ERROR,
+                    message: format!("Failed to get receipt: {:?}", e).into(),
+                    data: None,
+                }),
+            ));
+        }
+        Err(_) => {
+            error!("Receipt timeout");
+            return Err(alloy_contract::Error::TransportError(
+                alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
+                    code: ETH_RPC_INTERNAL_ERROR,
+                    message: "Receipt timeout".to_string().into(),
+                    data: None,
+                }),
+            ));
+        }
+    };
+
+    Ok(current_receipt)
+}
+
+async fn estimate_gas_with_timeout<P, D, F>(build_tx: &F) -> alloy_contract::Result<u64>
+where
+    P: Provider,
+    D: SolCall,
+    F: Fn() -> SolCallBuilder<P, D>,
+{
+    let timeout_dur = timeout_30sec();
+    match timeout(timeout_dur, build_tx().estimate_gas()).await {
+        Ok(Ok(gas)) => Ok(gas),
+        Ok(Err(e)) => {
+            error!("Gas estimation failed: {:?}", e);
+            Err(e)
+        }
+        Err(_elapsed) => {
+            let timeout_seconds = timeout_dur.as_secs();
+            error!("Gas estimation timeout after {} seconds", timeout_seconds);
+            Err(alloy_contract::Error::TransportError(
+                alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
+                    code: ETH_RPC_TIMEOUT,
+                    message: format!("Gas estimation timeout after {}s", timeout_seconds).into(),
+                    data: None,
+                }),
+            ))
+        }
+    }
+}
+
+fn calculate_gas_limit_with_cap(estimated_gas: u64, attempt: u8) -> alloy_contract::Result<u64> {
+    let gas_limit = bumped_gas(estimated_gas, attempt);
+
+    if gas_limit > MAX_GAS_LIMIT {
+        error!(
+            "Gas limit {} exceeds maximum allowed {}",
+            gas_limit, MAX_GAS_LIMIT
+        );
+        return Err(alloy_contract::Error::TransportError(
+            alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
+                code: ETH_RPC_INVALID_PARAMS,
+                message: GasBumpError::MaxGasLimitExceeded(gas_limit, MAX_GAS_LIMIT)
+                    .to_string()
+                    .into(),
+                data: None,
+            }),
+        ));
+    }
+
+    Ok(gas_limit)
 }
 
 // Enhanced gas bumping with constants and better documentation
