@@ -211,7 +211,7 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
 
             if code.is_empty() {
                 return Err(anyhow!(
-                    "Contract {} at address {} has no deployed code (0x). Cannot start Coordinator.",
+                    "Contract {} at address {} has no deployed code (0x)",
                     contract_name,
                     address
                 ));

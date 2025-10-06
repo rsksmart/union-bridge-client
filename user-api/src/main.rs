@@ -47,15 +47,13 @@ async fn main() -> Result<()> {
     )
     .await
     .map_err(|e| {
-        error!("❌ USER API STARTUP FAILED: Cannot initialize contracts gateway");
-        error!("🔍 Reason: {}", e);
-        error!("💡 This usually means:");
-        error!("   • Contract addresses in config point to addresses without deployed contracts");
-        error!("   • Blockchain node is not running or contracts haven't been deployed");
-        error!("   • Network connectivity issues");
-        error!(
-            "🛠️  Solution: Verify contract addresses in config and ensure contracts are deployed"
-        );
+        error!("USER API STARTUP FAILED: Cannot initialize contracts gateway");
+        error!("Reason: {}", e);
+        error!("Possible causes:");
+        error!("  - Contract addresses in config point to addresses without deployed contracts");
+        error!("  - Blockchain node is not running or contracts haven't been deployed");
+        error!("  - Network connectivity issues");
+        error!("Solution: Verify contract addresses in config and ensure contracts are deployed");
         e
     })?;
 
