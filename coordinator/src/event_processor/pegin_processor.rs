@@ -1117,10 +1117,7 @@ where
             .values_mut()
             .find(|state| state.flow_id == *flow_id)
         else {
-            debug!(
-                "No pegin state found: flow_id={}",
-                flow_id
-            );
+            debug!("No pegin state found: flow_id={}", flow_id);
             return Ok(());
         };
 
@@ -1169,7 +1166,10 @@ where
                 if btc_flow.is_done() {
                     //#Step 8a: Send DispatchTransaction to BitVMX
                     Self::send_dispatch_transaction_name(&self.bitvmx_broker, state.flow_id)?;
-                    debug!("Dispatch tx sent for accept pegin: flow_id={}", state.flow_id);
+                    debug!(
+                        "Dispatch tx sent for accept pegin: flow_id={}",
+                        state.flow_id
+                    );
                     //Signature flow is done, we can clear it from state
                     state.btc_signatures_flow = None;
                 }
@@ -1221,10 +1221,7 @@ where
                         self.register_spv_proof(spv_proof.clone())?;
                     } else {
                         // Step 3 if no matching state found we are assuming this is a request pegin SPV proof
-                        debug!(
-                            "No state found starting request pegin: tx_id={}",
-                            tx_id
-                        );
+                        debug!("No state found starting request pegin: tx_id={}", tx_id);
                         self.handle_request_pegin(spv_proof.clone())?;
                     }
                 }
@@ -1282,7 +1279,7 @@ where
     }
 
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
-        debug!(
+        trace!(
             "Committee membership: committees={:?}",
             self.global_context.my_committees()
         );
@@ -1303,6 +1300,10 @@ where
                 for state in self.tracker.values_mut() {
                     let committee_id: &CommitteeId = &state.pegin_requested.data.inner.committeeId.try_into()?;
                     if !self.global_context.my_committees().im_member(&committee_id) {
+                        debug!(
+                            "Skipping signature flow delegation: not a member of committee_id={:?}",
+                            committee_id
+                        );
                         continue;
                     }
 
