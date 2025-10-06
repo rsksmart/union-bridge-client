@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-#!/bin/bash
-
 # This script manages the local blockchain stack defined in docker-compose.blockchains.yaml
 # It intentionally focuses ONLY on the blockchains stack (bitcoind, anvil, deploy-contracts).
 # Operators should be managed with start_operators.sh.
