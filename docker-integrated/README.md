@@ -45,9 +45,10 @@ The script clones `FairgateLabs/docker-bitvmx` at the chosen ref, saves the fetc
 This repository now provides a dedicated script to manage the local blockchain stack (bitcoind + anvil + contracts
 deploy):
 
-- Script: start_blockchains.sh
+- Script: `start_blockchains.sh`
 - Scope: **LOCAL ONLY**. It manages the local dev stack. It does nothing for alphanet/testnet environments.
 - Operators are started separately with `start_operators.sh`.
+- Note: if running for the first time, use the `--fresh` flag, this will create the bitcoin wallet, see below.
 
 Examples:
 
@@ -86,7 +87,7 @@ If the contracts code changes (eg. new tag), you must rebuild the `deploy-contra
 
 ```bash
 # Rebuild the deploy-contracts image and start
-bash start_blockchains.sh --env local --rebuild-deploy-contracts up -d
+bash start_blockchains.sh --env local --new-contracts-version up -d
 ```
 
 ### 3) Start or stop the 4 operator stacks

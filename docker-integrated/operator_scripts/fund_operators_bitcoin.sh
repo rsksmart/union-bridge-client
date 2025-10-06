@@ -87,7 +87,7 @@ if [[ "$ENVIRONMENT" == "local" ]]; then
   cat <<EOF
 Run the following commands in the bitcoin-wallet CLI (Regtest):
 1 =>    clear_db   (if you see a misaligned utxos error)
-1 =>    mine_utxo 9000000000
+1 =>    mine_utxo 900000000
 2 =>    send_to_address $addr_array 25000000
 3 =>    mine_block
 

@@ -20,7 +20,7 @@ print_help() {
   echo "  --help                        Display this help message"
   echo "  --env <ENV>                   Set environment (local only)"
   echo "  --fresh                       Tear down local blockchains (and volumes). Can be used standalone or with 'up'"
-  echo "  --rebuild-deploy-contracts    Force rebuild of the 'deploy-contracts' image before running"
+  echo "  --new-contracts-version    Force rebuild of the 'deploy-contracts' image before running"
   echo ""
   echo "Common Docker Compose Arguments can be used, examples:"
   echo "  up                            Create and start containers"
@@ -33,7 +33,7 @@ print_help() {
   echo "Examples:"
   echo "  $0 --env local up -d                               # Start local blockchains"
   echo "  $0 --env local --fresh up -d                       # Clean and start local blockchains"
-  echo "  $0 --env local --rebuild-deploy-contracts up -d    # Rebuild deploy-contracts image and start"
+  echo "  $0 --env local --new-contracts-version up -d    # Rebuild deploy-contracts image and start"
   echo "  $0 --env local down                                # Stop blockchains"
   echo "  $0 --env local ps                                  # Check status"
   echo ""
@@ -42,7 +42,7 @@ print_help() {
 }
 
 FRESH=false
-REBUILD_DEPLOY_CONTRACTS=false
+NEW_CONTRACTS_VERSION=false
 
 # Parse args
 while [[ $# -gt 0 ]]; do
@@ -63,8 +63,8 @@ while [[ $# -gt 0 ]]; do
       FRESH=true
       shift
       ;;
-    --rebuild-deploy-contracts)
-      REBUILD_DEPLOY_CONTRACTS=true
+    --new-contracts-version)
+      NEW_CONTRACTS_VERSION=true
       shift
       ;;
     *)
@@ -104,7 +104,7 @@ for arg in "${DOCKER_COMPOSE_ARGS[@]}"; do
   fi
 done
 
-echo "IS_UP_COMMAND: ${IS_UP_COMMAND} | FRESH: ${FRESH} | REBUILD_DEPLOY_CONTRACTS: ${REBUILD_DEPLOY_CONTRACTS}"
+echo "IS_UP_COMMAND: ${IS_UP_COMMAND} | FRESH: ${FRESH} | NEW_CONTRACTS_VERSION: ${NEW_CONTRACTS_VERSION}"
 
 # If requested, clean local blockchains regardless of the main command
 if [[ "${FRESH}" == true ]]; then
@@ -115,7 +115,7 @@ if [[ "${FRESH}" == true ]]; then
 fi
 
 # Optionally rebuild the deploy-contracts image before proceeding
-if [[ "${REBUILD_DEPLOY_CONTRACTS}" == true ]]; then
+if [[ "${NEW_CONTRACTS_VERSION}" == true ]]; then
   echo "Forcing rebuild of 'deploy-contracts' image..."
   cmd="docker compose --env-file \"$ENV_PATH\" -f \"$COMPOSE_FILE\" down || true"
   echo "Running: $cmd"
@@ -129,7 +129,7 @@ RUNNING_COUNT=$(docker compose --env-file "$ENV_PATH" -f "$COMPOSE_FILE" --profi
 
 echo "Detected $RUNNING_COUNT running containers in the local blockchains stack."
 
-if [[ "${REBUILD_DEPLOY_CONTRACTS}" == false && "${IS_UP_COMMAND}" == true && "${RUNNING_COUNT}" -ge 2 ]]; then
+if [[ "${NEW_CONTRACTS_VERSION}" == false && "${IS_UP_COMMAND}" == true && "${RUNNING_COUNT}" -ge 2 ]]; then
   echo "Local blockchains stack already running; skipping 'up'. Run 'down' to start again" && exit 0
 fi
 
@@ -137,7 +137,7 @@ fi
 docker compose --env-file "$ENV_PATH" -f "$COMPOSE_FILE" --profile local "${DOCKER_COMPOSE_ARGS[@]}"
 
 # If using 'up' command after a fresh teardown, create the Bitcoin wallet and deploy contracts
-if [[ "${IS_UP_COMMAND}" == true && ("${FRESH}" == true || "${REBUILD_DEPLOY_CONTRACTS}" == true) ]]; then
+if [[ "${IS_UP_COMMAND}" == true && "${FRESH}" == true ]]; then
   echo "Waiting 5 seconds for bitcoind initialization..."
   sleep 5
 
