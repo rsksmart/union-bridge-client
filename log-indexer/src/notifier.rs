@@ -130,7 +130,7 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
     fn wait_for_log(&mut self, timeout: Duration) -> Result<Option<RskLog>> {
         match self.new_log_channel.recv_timeout(timeout) {
             Ok(log) => {
-                debug!("New log received by notifier {:?}", log);
+                trace!("New log received by notifier {:?}", log);
                 Ok(Some(log))
             }
             Err(RecvTimeoutError::Timeout) => {
@@ -163,7 +163,7 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
 
         if let Some(consumers_for_contract) = self.contracts_with_consumers.get(&address) {
             for c_id in consumers_for_contract {
-                debug!("Notifying {selector} to consumer {c_id}");
+                trace!("Notifying {selector} to consumer {c_id}");
 
                 self.msg_broker
                     .send(&response, *c_id)

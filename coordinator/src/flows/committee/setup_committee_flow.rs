@@ -355,7 +355,10 @@ where
                 r.1 = Some(pub_key);
 
                 debug!("Got public key for signing");
-                trace!("Key: {}", hex::encode(pub_key.inner.serialize_uncompressed()));
+                trace!(
+                    "Key: {}",
+                    hex::encode(pub_key.inner.serialize_uncompressed())
+                );
 
                 Ok(())
             }
@@ -934,7 +937,10 @@ where
                 self.setup_dispute_core_protocol()?;
             }
             Steps::Done => {
-                info!("Committee setup complete for flow {}", self.state.internal_id);
+                info!(
+                    "Committee setup complete for flow {}",
+                    self.state.internal_id
+                );
             }
         }
         Ok(())
@@ -948,6 +954,9 @@ where
             self.state.internal_id
         );
         trace!("Step data: {data:?}");
+
+        trace!("Flow Context: {:?}", self.state.ctx);
+        trace!("Global Context: {:?}", self.global_context);
 
         match current_step {
             Steps::Init => {
@@ -1224,8 +1233,11 @@ where
 
         let aggregated_key = Bytes::from(aggregated_take_key.to_bytes().to_vec());
 
-        debug!("Depositing aggregated key {} for committee {}",
-            hex::encode(&aggregated_key), *committee_id);
+        debug!(
+            "Depositing aggregated key {} for committee {}",
+            hex::encode(&aggregated_key),
+            *committee_id
+        );
 
         let input = DepositAggregatedKeyInput {
             committee_id,
