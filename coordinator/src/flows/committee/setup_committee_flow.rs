@@ -714,10 +714,12 @@ where
         &self,
         member_address: Address,
     ) -> Result<GetMemberPublicKeysOutput> {
-        self.rt_sync.run(
-            self.contracts
-                .get_member_public_keys(GetMemberPublicKeysInput { member_address }),
-        )
+        self.rt_sync
+            .run(
+                self.contracts
+                    .get_member_public_keys(GetMemberPublicKeysInput { member_address }),
+            )
+            .map_err(|e| anyhow::anyhow!("Failed to get member public keys: {}", e))
     }
 
     pub fn set_utxos(&mut self) -> Result<()> {
@@ -1155,13 +1157,15 @@ where
             *committee_id
         );
 
-        self.rt_sync.run(
-            self.contracts
-                .deposit_communication_data(DepositCommunicationDataInput {
-                    committee_id,
-                    communication_data,
-                }),
-        )
+        self.rt_sync
+            .run(
+                self.contracts
+                    .deposit_communication_data(DepositCommunicationDataInput {
+                        committee_id,
+                        communication_data,
+                    }),
+            )
+            .map_err(|e| anyhow::anyhow!("Failed to deposit communication data: {}", e))
     }
 
     fn update_my_committees(
