@@ -1340,25 +1340,26 @@ where
     fn get_flow_for_stream_id(
         &mut self,
         stream_id: StreamId,
+        expected_step: Steps,
     ) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
         // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: optimize this search by keeping convenient map of stream_id -> internal_id or alike
 
         self.flows.values_mut().find(|f| {
-            f.state
-                .ctx
-                .get_stream_id()
-                .map_or(false, |id| id == stream_id)
+            let is_in_expected_step = f.state.step == expected_step;
+            let is_flow_for_stream = Self::is_flow_for_stream(f, &stream_id);
+            is_in_expected_step && is_flow_for_stream
         })
     }
 
     fn get_flow_for_committee_pending(
         &mut self,
         committee_id: CommitteeId,
+        expected_step: Steps,
     ) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
         // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: optimize this search by keeping convenient map of committee_id -> internal_id or alike
 
         if !self.global_context.my_committees().im_member(&committee_id) {
-            trace!("Skipping committee {committee_id} - not mine");
+            debug!("Skipping committee {committee_id} - not mine");
             return None;
         }
 
@@ -1366,11 +1367,9 @@ where
             .flows
             .values_mut()
             .filter(|f| {
-                f.state
-                    .ctx
-                    .committee_pending
-                    .as_ref()
-                    .map_or(false, |ev| ev.inner.committeeId == *committee_id)
+                let is_in_expected_step = f.state.step == expected_step;
+                let is_flow_for_committee = Self::is_flow_for_committee(f, &committee_id);
+                is_in_expected_step && is_flow_for_committee
             })
             .collect();
 
@@ -1380,6 +1379,17 @@ where
         } else {
             pending_committee_flows.into_iter().next()
         }
+    }
+
+    fn is_flow_for_committee(
+        f: &&mut SetupCommitteeFlow<CG, BC>,
+        committee_id: &CommitteeId,
+    ) -> bool {
+        f.state
+            .ctx
+            .committee_pending
+            .as_ref()
+            .map_or(false, |ev| ev.inner.committeeId == **committee_id)
     }
 
     fn get_flow_for_bitvmx_response(
@@ -1463,25 +1473,23 @@ where
     fn process_confirmed_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         info!("Processing confirmed RSK event: {:?}", event);
         let flow_data = match event {
-            RskPegManagerEvents::NewCommitteePending(new_committee_pending) => {
-                let stream_id = new_committee_pending.inner._committee.streamId;
-                let found_flow = self.get_flow_for_stream_id(stream_id.into());
-                found_flow.map(|f| (f, StepData::PendingCommittee(new_committee_pending.clone())))
+            RskPegManagerEvents::NewCommitteePending(ncp) => {
+                let stream_id = ncp.inner._committee.streamId;
+                let found_flow =
+                    self.get_flow_for_stream_id(stream_id.into(), Steps::ApplyToStream);
+                found_flow.map(|f| (f, StepData::PendingCommittee(ncp.clone())))
             }
-            RskPegManagerEvents::AllCommunicationDataReady(all_comm_data_ready) => {
-                let committee_id = all_comm_data_ready.inner._committeeId.into();
-                let found_flow = self.get_flow_for_committee_pending(committee_id);
-                found_flow.map(|f| {
-                    (
-                        f,
-                        StepData::ReadyCommunicationData(all_comm_data_ready.clone()),
-                    )
-                })
+            RskPegManagerEvents::AllCommunicationDataReady(acdr) => {
+                let committee_id = acdr.inner._committeeId.into();
+                let found_flow =
+                    self.get_flow_for_committee_pending(committee_id, Steps::DepositP2PData);
+                found_flow.map(|f| (f, StepData::ReadyCommunicationData(acdr.clone())))
             }
-            RskPegManagerEvents::NewCommitteeReady(new_committee_ready) => {
-                let committee_id = new_committee_ready.inner.committeeId.into();
-                let found_flow = self.get_flow_for_committee_pending(committee_id);
-                found_flow.map(|f| (f, StepData::ReadyCommittee(new_committee_ready.clone())))
+            RskPegManagerEvents::NewCommitteeReady(ncr) => {
+                let committee_id = ncr.inner.committeeId.into();
+                let found_flow =
+                    self.get_flow_for_committee_pending(committee_id, Steps::DepositAggregatedKey);
+                found_flow.map(|f| (f, StepData::ReadyCommittee(ncr.clone())))
             }
             _ => {
                 trace!("Ignoring RSK event: {}", type_name_of_val(event));
@@ -1494,7 +1502,7 @@ where
                 flow.complete_step(step_data)?;
             }
             None => {
-                debug!("Received {event:?} but not mine");
+                warn!("Received {event:?} but no matching flow found");
             }
         }
 
@@ -1546,6 +1554,13 @@ where
             debug!("Removing completed flow: {key:?}");
             self.flows.remove(&key);
         }
+    }
+
+    fn is_flow_for_stream(f: &&mut SetupCommitteeFlow<CG, BC>, stream_id: &StreamId) -> bool {
+        f.state
+            .ctx
+            .get_stream_id()
+            .map_or(false, |id| &id == stream_id)
     }
 }
 
