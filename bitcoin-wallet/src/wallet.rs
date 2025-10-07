@@ -729,6 +729,7 @@ impl Wallet {
         packet_number: u64,
         tmp_addr: String,
         rsk_address_hex: String,
+        reimbursement_pubkey_hex: String,
     ) -> Result<CreatedTransaction> {
         // Constants matching user-api
         const KEY_SPEND_FEE: u64 = 335;
@@ -756,8 +757,10 @@ impl Wallet {
         let mut rsk_address = [0u8; 20];
         rsk_address.copy_from_slice(&rsk_address_bytes);
 
-        // Get reimbursement X-only public key from current public key
-        let (reimbursement_xpk, _) = pubkey.inner.x_only_public_key();
+        // Parse the provided reimbursement public key
+        let reimbursement_pubkey_clean = reimbursement_pubkey_hex.trim_start_matches("0x");
+        let reimbursement_xpk = XOnlyPublicKey::from_str(reimbursement_pubkey_clean)
+            .context("invalid reimbursement public key hex")?;
 
         // Calculate total amount needed
         let fee = KEY_SPEND_FEE + EXTRA_FEE;

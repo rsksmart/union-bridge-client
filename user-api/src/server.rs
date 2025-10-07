@@ -57,6 +57,7 @@ impl Server {
             .route("/apply-stream", post(Self::apply_stream))
             .route("/request-pegin", post(Self::request_pegin))
             .route("/pegin-address", post(Self::pegin_address))
+            .route("/bitcoin-info", get(Self::bitcoin_info))
             .layer((
                 TimeoutLayer::new(Duration::from_secs(10)),
                 Extension(broker_server.clone()),
@@ -199,6 +200,19 @@ impl Server {
                 )
             }
         }
+    }
+
+    async fn bitcoin_info(Extension(user): Extension<User>) -> impl IntoResponse {
+        let x_only_key = XOnlyPublicKey::from(user.public_key);
+
+        let info = json!({
+            "bitcoin_address": user.bitcoin_address.to_string(),
+            "rsk_address": user.rsk_address.to_hex_string(),
+            "btc_compressed_pubkey": format!("0x{}", user.public_key),
+            "btc_xonly_pubkey": format!("0x{}", x_only_key)
+        });
+
+        (StatusCode::OK, Json(info))
     }
 
     pub fn get_random_pubkey() -> PublicKey {
