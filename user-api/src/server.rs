@@ -20,11 +20,6 @@ use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use serde::{Deserialize, Serialize};
 use transaction_dispatcher::types::PeginAddressInput;
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct RequestPeginInput {
-    pub stream_amount: u64,
-    pub packet_number: Option<u64>,
-}
 
 pub struct Server {
     listener: TcpListener,
@@ -55,7 +50,6 @@ impl Server {
             .route("/health", get(Self::health_check))
             .route("/bitvmx-address", get(Self::bitvmx_address))
             .route("/apply-stream", post(Self::apply_stream))
-            .route("/request-pegin", post(Self::request_pegin))
             .route("/pegin-address", post(Self::pegin_address))
             .route("/bitcoin-info", get(Self::bitcoin_info))
             .layer((
@@ -122,65 +116,6 @@ impl Server {
         }
     }
 
-    async fn request_pegin(
-        Extension(user): Extension<User>,
-        Extension(contracts): Extension<
-            Arc<dyn crate::sync_contracts_gateway::SyncContractsGatewayApi>,
-        >,
-        Json(payload): Json<RequestPeginInput>,
-    ) -> impl IntoResponse {
-        info!("Received request_pegin request: {:?}", payload);
-
-        let stream_value = payload.stream_amount;
-        // TODO how does the user know which packet number to use? it's not part of getTemporaryAddress response
-        let packet_number = payload.packet_number.unwrap_or(0);
-
-        let x_only_key = XOnlyPublicKey::from(user.public_key);
-
-        let tmp_addr_call = contracts.get_temporary_pegin_address(PeginAddressInput {
-            rootstock_deposit_address: user.rsk_address.to_hex_string(),
-            value: stream_value,
-            btc_reimbursement_pub_key: format!("0x{}", x_only_key),
-        });
-
-        let tmp_addr = match tmp_addr_call {
-            Ok(res) => {
-                info!("Got temporary pegin address");
-                res.address
-            }
-            Err(e) => {
-                error!("Error getting temporary pegin address: {e}");
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({ "error": e.to_string() })),
-                );
-            }
-        };
-
-        // Run Bitcoin RPC calls in a blocking context to avoid runtime drop panic
-        let res = tokio::task::spawn_blocking(move || {
-            user.request_pegin(stream_value, packet_number, tmp_addr)
-        })
-        .await;
-
-        match res {
-            Ok(Ok(_)) => (StatusCode::OK, Json(json!({ "result": "ok" }))),
-            Ok(Err(e)) => {
-                error!("Error requesting pegin: {e}");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({ "error": e.to_string() })),
-                )
-            }
-            Err(e) => {
-                error!("Error requesting pegin: {e}");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({ "error": format!("Task join error: {}", e) })),
-                )
-            }
-        }
-    }
 
     async fn pegin_address(
         Extension(contracts): Extension<

@@ -11,12 +11,11 @@ use bitcoin::{
     transaction, Address as BitcoinAddress, Amount, Network, OutPoint, PrivateKey, PublicKey,
     ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness, XOnlyPublicKey,
 };
-use bitcoin_scriptexec::treepp::*;
 pub use bitvmx_bitcoin_rpc::bitcoin_client::{BitcoinClient, BitcoinClientApi};
 use bitvmx_bitcoin_rpc::rpc_config::RpcConfig;
 use common::msg_broker::bitvmx_types::{PartialUtxo, SignMode};
 use common::types::{Address, ToHexString};
-use log::{debug, info};
+use log::info;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -59,57 +58,11 @@ impl User {
         self.rsk_address
     }
 
-    pub fn request_pegin(
-        &self,
-        stream_value: u64,
-        packet_num: u64,
-        tmp_addr: String,
-    ) -> Result<Txid> {
-        info!("Requesting pegin");
-
-        // Create a proper RSK pegin transaction and send it as if it was a user transaction
-        let request_pegin_tx =
-            self.create_and_send_request_pegin_tx(stream_value, packet_num, tmp_addr)?;
-
-        info!("Sent RSK pegin transaction to bitcoind {request_pegin_tx:?}");
-
-        Ok(request_pegin_tx.compute_txid())
-    }
 
     pub fn public_key(&self) -> Result<PublicKey> {
         Ok(self.public_key)
     }
 
-    fn create_and_send_request_pegin_tx(
-        &self,
-        stream_value: u64,
-        packet_number: u64,
-        tmp_addr: String,
-    ) -> Result<Transaction> {
-        info!("Creating RSK pegin transaction");
-
-        // We'll create a transaction that will be detected as RSK pegin by the transaction monitor.
-        let signed_transaction =
-            self.create_request_pegin_tx(stream_value, packet_number, tmp_addr)?;
-
-        info!("Sending RSK pegin transaction {signed_transaction:?}");
-
-        let txid = self.bitcoin_client.send_transaction(&signed_transaction)?;
-
-        info!("Sent RSK pegin transaction with txid: {txid}");
-
-        // Get the transaction and verify it was created
-        let request_pegin_tx = self
-            .bitcoin_client
-            .get_transaction(&txid)?
-            .context("Could not retrieve sent transaction")?;
-
-        // Mine blocks to include the transaction
-        self.bitcoin_client
-            .mine_blocks_to_address(1, &self.bitcoin_address)?;
-
-        Ok(request_pegin_tx)
-    }
 
     fn dispatch_tx(&self, tx: Transaction) -> Result<Txid> {
         let txid = self
@@ -127,86 +80,6 @@ impl User {
         Ok((funding_tx.compute_txid(), vout, Some(amount), None))
     }
 
-    fn create_request_pegin_tx(
-        &self,
-        stream_value: u64,
-        packet_number: u64,
-        tmp_addr: String,
-    ) -> Result<Transaction> {
-        // RSK Pegin constants
-        pub const KEY_SPEND_FEE: u64 = 335;
-        pub const OP_RETURN_FEE: u64 = 300;
-        // TODO: This should be based on the actual fee rate from the Bitcoin network
-        pub const EXTRA_FEE: u64 = 1000;
-
-        let value = stream_value;
-        let fee = KEY_SPEND_FEE + EXTRA_FEE;
-        let op_return_fee = OP_RETURN_FEE;
-        let total_amount = value + fee + op_return_fee;
-
-        // Fund the user address with enough to cover the taproot output + fees
-        let (funding_tx, vout) = self
-            .bitcoin_client
-            .fund_address(&self.bitcoin_address, Amount::from_sat(total_amount))?;
-
-        // RSK Pegin values
-        debug!(
-            "Roostock address: {}",
-            self.rsk_address.to_string().as_str()
-        );
-        let rootstock_address =
-            self.address_to_bytes(self.rsk_address.to_hex_string().trim_start_matches("0x"))?;
-        let reimbursement_xpk = self.public_key.into();
-
-        // Create the Request pegin transaction
-        // Inputs
-        let funds_input = TxIn {
-            previous_output: OutPoint::new(funding_tx.compute_txid(), vout),
-            script_sig: ScriptBuf::default(), // For a p2wpkh script_sig is empty.
-            sequence: Sequence::ENABLE_RBF_NO_LOCKTIME, // we want to be able to replace this transaction
-            witness: Witness::default(),                // Filled in after, at signing time.
-        };
-
-        // Outputs
-        // 1) Taproot output
-        let addr = bitcoin::Address::from_str(&tmp_addr)
-            .context("Parsing tmp_addr to Bitcoin")?
-            .require_network(REGTEST)
-            .context("Requiring network for tmp_addr")?;
-        let dest_spk: ScriptBuf = addr.script_pubkey();
-
-        let taproot_output = TxOut {
-            value: Amount::from_sat(value),
-            script_pubkey: dest_spk,
-        };
-
-        // 2) OP_RETURN output
-        let op_return_data = User::request_pegin_op_return_data(
-            packet_number,
-            rootstock_address,
-            reimbursement_xpk,
-        )?;
-
-        let op_return_output = TxOut {
-            value: Amount::from_sat(0), // OP_RETURN outputs should have 0 value
-            script_pubkey: op_return_script(op_return_data)?.get_script().clone(),
-        };
-
-        let mut request_pegin_transaction = Transaction {
-            version: transaction::Version::TWO,  // Post BIP-68.
-            lock_time: absolute::LockTime::ZERO, // Ignore the transaction lvl absolute locktime.
-            input: vec![funds_input],
-            output: vec![taproot_output, op_return_output],
-        };
-
-        let signed_transaction = self.sign_p2wpkh_transaction(
-            &mut request_pegin_transaction,
-            [(0usize, total_amount)].to_vec(),
-        )?;
-        info!("Request pegin txid: {}", signed_transaction.compute_txid());
-
-        Ok(signed_transaction)
-    }
 
     pub fn create_and_dispatch_speedup(&self, tx_output: OutPoint, fee: u64) -> Result<()> {
         let speedup_tx = self.create_speedup_tx(tx_output, fee)?;
@@ -262,24 +135,6 @@ impl User {
         Ok(signed_transaction)
     }
 
-    fn request_pegin_op_return_data(
-        packet_number: u64,
-        rootstock_address: [u8; 20],
-        reimbursement_xpk: XOnlyPublicKey,
-    ) -> Result<Vec<u8>> {
-        let mut user_data = [0u8; 69];
-        user_data.copy_from_slice(
-            [
-                b"RSK_PEGIN".as_slice(),
-                &packet_number.to_be_bytes(),
-                &rootstock_address,
-                &reimbursement_xpk.serialize(),
-            ]
-            .concat()
-            .as_slice(),
-        );
-        Ok(user_data.to_vec())
-    }
 
     fn address_to_bytes(&self, address: &str) -> Result<[u8; 20]> {
         let mut address_bytes = [0u8; 20];
@@ -382,7 +237,7 @@ impl User {
 pub fn build_bitcoin_client_regtest() -> BitcoinClient {
     let config_bitcoin_client = RpcConfig::new(
         REGTEST,
-        "http://127.0.0.1:18443".to_string(),
+        "http://172.17.0.3:18443".to_string(),
         "foo".to_string(),
         "rpcpassword".to_string(),
         "test_wallet".to_string(),
@@ -454,12 +309,6 @@ pub fn build_taproot_spend_info(
         .map_err(|e| anyhow!("ScriptError::TapTreeFinalizeError: {e:?}"))
 }
 
-fn op_return_script(data: Vec<u8>) -> Result<ProtocolScript> {
-    let script = script!(OP_RETURN { data });
-
-    let protocol_script = ProtocolScript::new_unspendable(script);
-    Ok(protocol_script)
-}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProtocolScript {

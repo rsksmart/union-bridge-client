@@ -695,7 +695,7 @@ fn print_help(sats_per_byte: u64) {
         "  clear_db                              - Regtest only: clear the UTXO database for the current network"
     );
     println!(
-        "  create_pegin_tx <value> <packet> <addr> <rsk>  - Create RSK pegin transaction (value in sats, packet number, dest address, RSK address hex)"
+        "  create_pegin_tx <value> <packet> <addr> <rsk> <pubkey>  - Create RSK pegin transaction (value in sats, packet number, dest address, RSK address hex, reimbursement pubkey hex)"
     );
     println!("Fees target {sats_per_byte} sat per virtual byte.");
 }

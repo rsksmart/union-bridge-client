@@ -19,4 +19,3 @@ serde = { version = "1.0.219", features = ["derive"] }
 hex = "0.4.3"
 
 bitvmx_bitcoin_rpc = { package = "bitvmx-bitcoin-rpc", git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-bitcoin-rpc.git", rev = "0f63157" }
-bitcoin-scriptexec = { git = "https://github.com/FairgateLabs/rust-bitcoin-scriptexec/", branch = "bitvmx" }
