@@ -237,7 +237,7 @@ impl User {
 pub fn build_bitcoin_client_regtest() -> BitcoinClient {
     let config_bitcoin_client = RpcConfig::new(
         REGTEST,
-        "http://172.17.0.3:18443".to_string(),
+        "http://127.0.0.1:18443".to_string(),
         "foo".to_string(),
         "rpcpassword".to_string(),
         "test_wallet".to_string(),
