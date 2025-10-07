@@ -1,24 +1,19 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use bitcoin::key::rand::rngs::OsRng;
-use bitcoin::key::{Parity, UntweakedPublicKey};
-use bitcoin::taproot::{TaprootBuilder, TaprootSpendInfo};
+use bitcoin::key::Parity;
 use bitcoin::{
     absolute,
-    hex::FromHex,
     key::Secp256k1,
     secp256k1::{self, All, Message, PublicKey as SecpPublicKey, SecretKey},
     sighash::SighashCache,
     transaction, Address as BitcoinAddress, Amount, Network, OutPoint, PrivateKey, PublicKey,
-    ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness, XOnlyPublicKey,
+    ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
 };
 pub use bitvmx_bitcoin_rpc::bitcoin_client::{BitcoinClient, BitcoinClientApi};
 use bitvmx_bitcoin_rpc::rpc_config::RpcConfig;
-use common::msg_broker::bitvmx_types::{PartialUtxo, SignMode};
-use common::types::{Address, ToHexString};
+use common::msg_broker::bitvmx_types::PartialUtxo;
+use common::types::Address;
 use log::info;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::str::FromStr;
 use std::sync::Arc;
 
 const REGTEST: Network = Network::Regtest;
@@ -136,11 +131,6 @@ impl User {
     }
 
 
-    fn address_to_bytes(&self, address: &str) -> Result<[u8; 20]> {
-        let mut address_bytes = [0u8; 20];
-        address_bytes.copy_from_slice(Vec::from_hex(address)?.as_slice());
-        Ok(address_bytes)
-    }
 
     fn sign_p2wpkh_transaction(
         &self,
@@ -249,182 +239,6 @@ pub fn build_bitcoin_client_regtest() -> BitcoinClient {
     bitcoin_client
 }
 
-pub fn build_taproot_spend_info(
-    secp: &Secp256k1<All>,
-    internal_key: &UntweakedPublicKey,
-    leaves: &[ProtocolScript],
-) -> Result<TaprootSpendInfo> {
-    let scripts_count = leaves.len();
-
-    let mut tr_builder = TaprootBuilder::new();
-
-    // For empty scripts finalize the tree
-    if scripts_count == 0 {
-        return tr_builder
-            .finalize(secp, *internal_key)
-            .map_err(|e| anyhow!("ScriptError::TapTreeFinalizeError: {e:?}"));
-    }
-
-    // For a single script, add it at depth 0
-    if scripts_count == 1 {
-        tr_builder = tr_builder.add_leaf(0, leaves[0].get_script().clone())?;
-        return tr_builder
-            .finalize(secp, *internal_key)
-            .map_err(|_| anyhow!("ScriptError::TapTreeFinalizeError"));
-    }
-
-    // For multiple scripts, build a balanced tree
-    //
-    // Example tree structure for 7 scripts:
-    //
-    //           [Root]
-    //          /      \
-    //      [1-3]      [4-7]
-    //     /     \     /    \
-    //   [1-2]  [3]  [4-5] [6-7]
-    //   /  \         /  \   /  \
-    // [1] [2]     [4] [5] [6] [7]
-    //
-    // The algorithm calculates the minimum depth needed to hold all scripts
-    // and then distributes the scripts between that depth and the next one
-    // to maintain a balanced tree structure.
-
-    // Calculate the minimum depth needed to hold all scripts
-    let min_depth = (scripts_count as f32 - 1.0).log2().floor() as u8;
-    // Calculate how many nodes go at the minimum depth vs minimum depth + 1
-    let total_slots = 1 << (min_depth + 1); // 2^(min_depth + 1)
-    let nodes_at_min_depth = total_slots - scripts_count;
-    // Add leaves at minimum depth
-    for i in 0..nodes_at_min_depth {
-        tr_builder = tr_builder.add_leaf(min_depth, leaves[i].get_script().clone())?;
-    }
-
-    // Add remaining leaves at minimum depth + 1
-    for i in nodes_at_min_depth..scripts_count {
-        tr_builder = tr_builder.add_leaf(min_depth + 1, leaves[i].get_script().clone())?;
-    }
-
-    tr_builder
-        .finalize(secp, *internal_key)
-        .map_err(|e| anyhow!("ScriptError::TapTreeFinalizeError: {e:?}"))
-}
 
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ProtocolScript {
-    script: ScriptBuf,
-    keys: HashMap<String, ScriptKey>,
-    verifying_key: Option<PublicKey>,
-    sign_mode: SignMode,
-    items: Vec<StackItem>,
-}
 
-impl ProtocolScript {
-    pub fn new(script: ScriptBuf, verifying_key: &PublicKey, sign_mode: SignMode) -> Self {
-        Self {
-            script,
-            keys: HashMap::new(),
-            verifying_key: Some(*verifying_key),
-            sign_mode,
-            items: Vec::new(),
-        }
-    }
-
-    pub fn new_unspendable(script: ScriptBuf) -> Self {
-        Self {
-            script,
-            keys: HashMap::new(),
-            verifying_key: None,
-            sign_mode: SignMode::Skip,
-            items: Vec::new(),
-        }
-    }
-
-    pub fn get_key(&self, name: &str) -> Option<ScriptKey> {
-        self.keys.get(name).cloned()
-    }
-
-    pub fn get_verifying_key(&self) -> Option<PublicKey> {
-        self.verifying_key
-    }
-
-    pub fn get_script(&self) -> &ScriptBuf {
-        &self.script
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ScriptKey {
-    name: String,
-    key_type: KeyType,
-    key_position: u32,
-    derivation_index: u32,
-}
-
-impl ScriptKey {
-    pub fn new(name: &str, derivation_index: u32, key_type: KeyType, key_position: u32) -> Self {
-        Self {
-            name: name.to_string(),
-            key_type,
-            key_position,
-            derivation_index,
-        }
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub fn derivation_index(&self) -> u32 {
-        self.derivation_index
-    }
-
-    pub fn key_type(&self) -> KeyType {
-        self.key_type.clone()
-    }
-
-    pub fn key_position(&self) -> u32 {
-        self.key_position
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub enum KeyType {
-    EcdsaKey,
-    XOnlyKey,
-}
-
-impl KeyType {
-    pub fn ecdsa() -> Self {
-        KeyType::EcdsaKey
-    }
-
-    pub fn x_only() -> Self {
-        KeyType::XOnlyKey
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum StackItem {
-    /// Schnorr signature (64 bytes +1 if non-default sighash).
-    SchnorrSig { non_default_sighash: bool },
-    /// DER-encoded ECDSA signature (use 73B worst case) +1 if non-default sighash.
-    EcdsaSig { non_default_sighash: bool },
-    /// Winternitz signature (size depends on the key type).
-    WinternitzSig { size: usize },
-    /// Raw item of a known length (e.g., pubkeys, data pushes).
-    Raw { size: usize },
-}
-
-pub fn timelock(blocks: u16, timelock_key: &PublicKey, sign_mode: SignMode) -> ProtocolScript {
-    let script = script!(
-        // If blocks have passed since this transaction has been confirmed, the timelocked public key can spend the funds
-        { blocks as u32 }
-        OP_CSV
-        OP_DROP
-        { XOnlyPublicKey::from(*timelock_key).serialize().to_vec() }
-        OP_CHECKSIG
-    );
-
-    ProtocolScript::new(script, timelock_key, sign_mode)
-}

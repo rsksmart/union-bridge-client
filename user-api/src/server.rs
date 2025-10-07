@@ -17,7 +17,6 @@ use tokio::net::TcpListener;
 use tower_http::timeout::TimeoutLayer;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 
-use serde::{Deserialize, Serialize};
 use transaction_dispatcher::types::PeginAddressInput;
 
 
