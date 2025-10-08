@@ -31,3 +31,5 @@ export CHECK_FORK_REQUIRED_NUM_BLOCKS=25
 # Bitcoin
 ############################################################
 export WALLET_PRIVATE_KEY="<your_wif_private_key>"
+
+export RSK_ADDRESS="<your_rsk_address>"
