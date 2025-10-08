@@ -9,6 +9,12 @@ pub struct Config {
     pub coordinator_broker_client_id: u32, // TODO(Jira) for now just one client ID until we unify the brokers in scope of https://rsklabs.atlassian.net/browse/UB-215
     pub broker_server_port: u16,
     pub http_server_port: u16,
+    #[serde(default = "default_bitcoin_network")]
+    pub bitcoin_network: String, // "regtest", "testnet", or "mainnet"
+}
+
+fn default_bitcoin_network() -> String {
+    "regtest".to_string()
 }
 
 impl Config {

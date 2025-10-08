@@ -47,12 +47,6 @@ async fn main() -> Result<()> {
 
     info!("Starting user-api server");
 
-    // Create BitcoinClient in blocking context to avoid runtime drop panic (we are in a Tokio context)
-    let bitcoin_client =
-        tokio::task::spawn_blocking(|| user_api::bitcoin::build_bitcoin_client_regtest())
-            .await
-            .expect("Failed to spawn blocking task for Bitcoin client creation");
-
     let shutdown_flag = ShutdownFlag::init();
 
     let broker_port = config.broker_server_port;
@@ -63,13 +57,29 @@ async fn main() -> Result<()> {
     let listener = TcpListener::bind(http_addr)
         .await
         .context("Failed to bind to address")?;
+    // Parse the Bitcoin network
+    let network = match config.bitcoin_network.as_str() {
+        "regtest" => bitcoin::Network::Regtest,
+        "testnet" => bitcoin::Network::Testnet,
+        "mainnet" => bitcoin::Network::Bitcoin,
+        _ => {
+            error!("Invalid bitcoin_network config: {}. Must be 'regtest', 'testnet', or 'mainnet'", config.bitcoin_network);
+            return Err(anyhow::anyhow!("Invalid bitcoin_network configuration"));
+        }
+    };
+
+    // Get wallet private key from environment variable (same as bitcoin-wallet)
+    let wallet_private_key = std::env::var("WALLET_PRIVATE_KEY")
+        .context("WALLET_PRIVATE_KEY environment variable not set")?;
+
     let server = Server::new(
         listener,
         broker_server.clone(),
         shutdown_flag.clone(),
         config.coordinator_broker_client_id,
         contracts_gateway,
-        bitcoin_client,
+        &wallet_private_key,
+        network,
     )
     .await;
 

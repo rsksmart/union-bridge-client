@@ -1,4 +1,4 @@
-use crate::bitcoin::{BitcoinClient, User};
+use crate::bitcoin::User;
 use anyhow::{Context, Result};
 use axum::routing::post;
 use axum::{http::StatusCode, response::IntoResponse, routing::get, Extension, Json, Router};
@@ -16,15 +16,7 @@ use std::time::Duration;
 use tokio::net::TcpListener;
 use tower_http::timeout::TimeoutLayer;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
-
-use serde::{Deserialize, Serialize};
 use transaction_dispatcher::types::PeginAddressInput;
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct RequestPeginInput {
-    pub stream_amount: u64,
-    pub packet_number: Option<u64>,
-}
 
 pub struct Server {
     listener: TcpListener,
@@ -39,9 +31,10 @@ impl Server {
         shutdown_flag: ShutdownFlag,
         coordinator_client_id: u32,
         contracts_gateway: CG,
-        bitcoin_client: BitcoinClient,
+        wallet_private_key: &str,
+        network: bitcoin::Network,
     ) -> Self {
-        let user = User::new(contracts_gateway.my_address(), bitcoin_client)
+        let user = User::new(contracts_gateway.my_address(), wallet_private_key, network)
             .expect("Failed to create user");
 
         // Create sync wrapper that can work in any runtime context
@@ -55,7 +48,6 @@ impl Server {
             .route("/health", get(Self::health_check))
             .route("/bitvmx-address", get(Self::bitvmx_address))
             .route("/apply-stream", post(Self::apply_stream))
-            .route("/request-pegin", post(Self::request_pegin))
             .route("/pegin-address", post(Self::pegin_address))
             .layer((
                 TimeoutLayer::new(Duration::from_secs(10)),
@@ -121,73 +113,20 @@ impl Server {
         }
     }
 
-    async fn request_pegin(
+    async fn pegin_address(
         Extension(user): Extension<User>,
         Extension(contracts): Extension<
             Arc<dyn crate::sync_contracts_gateway::SyncContractsGatewayApi>,
         >,
-        Json(payload): Json<RequestPeginInput>,
-    ) -> impl IntoResponse {
-        info!("Received request_pegin request: {:?}", payload);
-
-        let stream_value = payload.stream_amount;
-        // TODO how does the user know which packet number to use? it's not part of getTemporaryAddress response
-        let packet_number = payload.packet_number.unwrap_or(0);
-
-        let x_only_key = XOnlyPublicKey::from(user.public_key);
-
-        let tmp_addr_call = contracts.get_temporary_pegin_address(PeginAddressInput {
-            rootstock_deposit_address: user.rsk_address.to_hex_string(),
-            value: stream_value,
-            btc_reimbursement_pub_key: format!("0x{}", x_only_key),
-        });
-
-        let tmp_addr = match tmp_addr_call {
-            Ok(res) => {
-                info!("Got temporary pegin address");
-                res.address
-            }
-            Err(e) => {
-                error!("Error getting temporary pegin address: {e}");
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({ "error": e.to_string() })),
-                );
-            }
-        };
-
-        // Run Bitcoin RPC calls in a blocking context to avoid runtime drop panic
-        let res = tokio::task::spawn_blocking(move || {
-            user.request_pegin(stream_value, packet_number, tmp_addr)
-        })
-        .await;
-
-        match res {
-            Ok(Ok(_)) => (StatusCode::OK, Json(json!({ "result": "ok" }))),
-            Ok(Err(e)) => {
-                error!("Error requesting pegin: {e}");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({ "error": e.to_string() })),
-                )
-            }
-            Err(e) => {
-                error!("Error requesting pegin: {e}");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({ "error": format!("Task join error: {}", e) })),
-                )
-            }
-        }
-    }
-
-    async fn pegin_address(
-        Extension(contracts): Extension<
-            Arc<dyn crate::sync_contracts_gateway::SyncContractsGatewayApi>,
-        >,
-        Json(payload): Json<PeginAddressInput>,
+        Json(mut payload): Json<PeginAddressInput>,
     ) -> impl IntoResponse {
         info!("Received pegin-address request: {payload:?}");
+
+        // Use our own X-only public key if not provided
+        if payload.btc_reimbursement_pub_key.is_empty() {
+            let x_only_key = XOnlyPublicKey::from(user.public_key);
+            payload.btc_reimbursement_pub_key = format!("0x{}", x_only_key);
+        }
 
         match contracts.get_temporary_pegin_address(payload) {
             Ok(data) => (StatusCode::OK, Json(json!(data))),
@@ -200,6 +139,7 @@ impl Server {
             }
         }
     }
+
 
     pub fn get_random_pubkey() -> PublicKey {
         let secp = secp256k1::Secp256k1::new();
