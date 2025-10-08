@@ -6218,7 +6218,6 @@ dependencies = [
  "anyhow",
  "axum",
  "bitcoin",
- "bitvmx-bitcoin-rpc",
  "clap",
  "common",
  "hex",

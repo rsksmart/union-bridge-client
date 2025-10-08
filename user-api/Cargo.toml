@@ -18,4 +18,3 @@ transaction-dispatcher = { path = "../transaction-dispatcher", features = ["type
 serde = { version = "1.0.219", features = ["derive"] }
 hex = "0.4.3"
 
-bitvmx_bitcoin_rpc = { package = "bitvmx-bitcoin-rpc", git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-bitcoin-rpc.git", rev = "0f63157" }

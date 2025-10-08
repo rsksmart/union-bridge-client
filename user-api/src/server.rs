@@ -1,4 +1,4 @@
-use crate::bitcoin::{BitcoinClient, User};
+use crate::bitcoin::User;
 use anyhow::{Context, Result};
 use axum::routing::post;
 use axum::{http::StatusCode, response::IntoResponse, routing::get, Extension, Json, Router};
@@ -8,7 +8,6 @@ use bitcoin::{secp256k1, PublicKey, XOnlyPublicKey};
 use common::msg_broker::broker::{BrokerServer, BrokerServerApi};
 use common::msg_broker::types::FromServer;
 use common::shutdown_flag::ShutdownFlag;
-use common::types::ToHexString;
 use log::{error, info};
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -16,9 +15,7 @@ use std::time::Duration;
 use tokio::net::TcpListener;
 use tower_http::timeout::TimeoutLayer;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
-
 use transaction_dispatcher::types::PeginAddressInput;
-
 
 pub struct Server {
     listener: TcpListener,
@@ -33,9 +30,10 @@ impl Server {
         shutdown_flag: ShutdownFlag,
         coordinator_client_id: u32,
         contracts_gateway: CG,
-        bitcoin_client: BitcoinClient,
+        wallet_private_key: &str,
+        network: bitcoin::Network,
     ) -> Self {
-        let user = User::new(contracts_gateway.my_address(), bitcoin_client)
+        let user = User::new(contracts_gateway.my_address(), wallet_private_key, network)
             .expect("Failed to create user");
 
         // Create sync wrapper that can work in any runtime context
@@ -50,7 +48,6 @@ impl Server {
             .route("/bitvmx-address", get(Self::bitvmx_address))
             .route("/apply-stream", post(Self::apply_stream))
             .route("/pegin-address", post(Self::pegin_address))
-            .route("/bitcoin-info", get(Self::bitcoin_info))
             .layer((
                 TimeoutLayer::new(Duration::from_secs(10)),
                 Extension(broker_server.clone()),
@@ -115,14 +112,20 @@ impl Server {
         }
     }
 
-
     async fn pegin_address(
+        Extension(user): Extension<User>,
         Extension(contracts): Extension<
             Arc<dyn crate::sync_contracts_gateway::SyncContractsGatewayApi>,
         >,
-        Json(payload): Json<PeginAddressInput>,
+        Json(mut payload): Json<PeginAddressInput>,
     ) -> impl IntoResponse {
         info!("Received pegin-address request: {payload:?}");
+
+        // Use our own X-only public key if not provided
+        if payload.btc_reimbursement_pub_key.is_empty() {
+            let x_only_key = XOnlyPublicKey::from(user.public_key);
+            payload.btc_reimbursement_pub_key = format!("0x{}", x_only_key);
+        }
 
         match contracts.get_temporary_pegin_address(payload) {
             Ok(data) => (StatusCode::OK, Json(json!(data))),
@@ -136,18 +139,6 @@ impl Server {
         }
     }
 
-    async fn bitcoin_info(Extension(user): Extension<User>) -> impl IntoResponse {
-        let x_only_key = XOnlyPublicKey::from(user.public_key);
-
-        let info = json!({
-            "bitcoin_address": user.bitcoin_address.to_string(),
-            "rsk_address": user.rsk_address.to_hex_string(),
-            "btc_compressed_pubkey": format!("0x{}", user.public_key),
-            "btc_xonly_pubkey": format!("0x{}", x_only_key)
-        });
-
-        (StatusCode::OK, Json(info))
-    }
 
     pub fn get_random_pubkey() -> PublicKey {
         let secp = secp256k1::Secp256k1::new();
