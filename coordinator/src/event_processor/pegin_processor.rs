@@ -206,11 +206,12 @@ where
     }
 
     fn handle_tick(&mut self) -> Result<()> {
-        trace!("PeginProcessor handling tick");
         if self.scheduler.is_empty() {
             return Ok(());
         }
+
         let ready = self.scheduler.tick();
+
         for flow_id in ready {
             // Find the state with the matching flow_id
             let state = self
@@ -227,9 +228,9 @@ where
 
             let accept_pegin_tx_hash = pegin_accepted.accept_pegin_txid;
 
-            trace!(
-                "Sending delayed get transaction to bitvmx with id: {} and tx_hash: {}",
-                flow_id, accept_pegin_tx_hash
+            debug!(
+                "Requesting transaction: acceptPeginTxHash={}, flow_id={}",
+                accept_pegin_tx_hash, flow_id
             );
 
             Self::send_get_transaction(&self.bitvmx_broker, flow_id, accept_pegin_tx_hash)?;
@@ -257,16 +258,25 @@ where
 
     fn handle_pegin_requested(&mut self, data: &PeginRequestedEvent) -> Result<()> {
         if data.removed {
-            info!("Handling PeginRequested removed event: {:?}", data);
+            debug!(
+                "Removing PeginRequested: requestPeginTxHash={}, acceptPeginTxHash={}",
+                data.inner.requestPeginTxHash, data.inner.acceptPeginTxHash
+            );
             return self.untrack_pegin_requested(data.clone());
         }
 
         let committee_id = &data.inner.committeeId.try_into()?;
         if !self.global_context.my_committees().im_member(&committee_id) {
-            info!("Handling {data:?}, I am NOT member so I skip");
+            trace!(
+                "Skipping PeginRequested: not_committee_member, requestPeginTxHash={}",
+                data.inner.requestPeginTxHash
+            );
             return Ok(());
         }
-        info!("Handling {data:?}, as member I should respond");
+        info!(
+            "Processing PeginRequested: requestPeginTxHash={}, acceptPeginTxHash={}",
+            data.inner.requestPeginTxHash, data.inner.acceptPeginTxHash
+        );
 
         let committee_id = Uuid::from_u128(**committee_id);
         let slot_index = data.inner.streamPosition.slotId as usize;
@@ -280,9 +290,9 @@ where
         self.blockchain
             .add_observer(pegin_requested.confirmations.clone());
 
-        info!(
-            "Adding PeginRequested event to pegin event tracker. Event: {:?}",
-            pegin_requested
+        debug!(
+            "Tracking PeginRequested: flow_id={}, requestPeginTxHash={}, acceptPeginTxHash={}",
+            pegin_flow_id, data.inner.requestPeginTxHash, data.inner.acceptPeginTxHash
         );
         // We need to wait for the event to be confirmed before processing it
         self.track_pegin_requested(pegin_flow_id, pegin_requested)
@@ -290,7 +300,10 @@ where
 
     fn handle_pegin_accepted(&mut self, data: &PeginAcceptedEvent) -> Result<()> {
         if data.removed {
-            info!("Handling PeginAccepted removed event: {:?}", data);
+            debug!(
+                "Removing PeginAccepted: acceptPeginTxHash={}",
+                data.inner.acceptPeginTxHash
+            );
             return self.untrack_pegin_accepted(data.clone());
         }
 
@@ -304,10 +317,16 @@ where
 
         let committee_id: CommitteeId = state.pegin_requested.data.inner.committeeId.try_into()?;
         if !self.global_context.my_committees().im_member(&committee_id) {
-            info!("Handling {data:?}, I am NOT member so I skip");
+            trace!(
+                "Skipping PeginAccepted: not_committee_member, acceptPeginTxHash={}",
+                data.inner.acceptPeginTxHash
+            );
             return Ok(());
         }
-        info!("Handling {data:?}, as member I should respond");
+        info!(
+            "Processing PeginAccepted: acceptPeginTxHash={}",
+            data.inner.acceptPeginTxHash
+        );
 
         let observer_id = format!("pegin_accepted-{}", state.flow_id);
         let confirmations =
@@ -317,9 +336,9 @@ where
         self.blockchain
             .add_observer(pegin_accepted.confirmations.clone());
 
-        info!(
-            "Adding PeginAccepted event to pegin event tracker. Event: {:?}",
-            pegin_accepted
+        debug!(
+            "Tracking PeginAccepted: flow_id={}, acceptPeginTxHash={}",
+            state.flow_id, data.inner.acceptPeginTxHash
         );
 
         self.track_pegin_accepted(pegin_accepted)
@@ -334,7 +353,7 @@ where
         // Check if the key exists first to avoid unnecessary operations
         if !self.tracker.contains_key(&tx_hash) {
             debug!(
-                "Received AllOperatorTakeTxHashesAdded for unknown acceptPeginTxHash: {:?}",
+                "Received AllOperatorTakeTxHashesAdded: unknown_acceptPeginTxHash={:?}",
                 tx_hash
             );
             return Ok(());
@@ -345,7 +364,10 @@ where
             return Ok(()); // Stop here if removed
         }
 
-        info!("Handling AllOperatorTakeTxHashesAdded event: {:?}", data);
+        debug!(
+            "Processing AllOperatorTakeTxHashesAdded: acceptPeginTxHash={}",
+            data.inner.acceptPeginTxHash
+        );
 
         let Some(state) = self.tracker.get(&tx_hash) else {
             bail!("State should exist for tx_hash {tx_hash:?} after AllOperatorTakeTxHashesAdded");
@@ -353,15 +375,21 @@ where
 
         let committee_id: CommitteeId = state.pegin_requested.data.inner.committeeId.try_into()?;
         if !self.global_context.my_committees().im_member(&committee_id) {
-            info!("Handling {data:?}, I am NOT member so I skip");
+            trace!(
+                "Skipping AllOperatorTakeTxHashesAdded: not_committee_member, acceptPeginTxHash={}",
+                data.inner.acceptPeginTxHash
+            );
             return Ok(());
         }
-        info!("Handling {data:?}, as member I should respond");
+        info!(
+            "Processing AllOperatorTakeTxHashesAdded: acceptPeginTxHash={}",
+            data.inner.acceptPeginTxHash
+        );
 
         let observer_id = format!("operator_take_tx_hashes_added-{}", state.flow_id);
-        info!(
-            "Adding AllOperatorTakeTxHashesAdded event to pegin event tracker. Event: {:?}",
-            data
+        debug!(
+            "Tracking AllOperatorTakeTxHashesAdded: flow_id={}, acceptPeginTxHash={}",
+            state.flow_id, data.inner.acceptPeginTxHash
         );
         let confirmations =
             BlockConfirmations::new(observer_id, data.block_number, REQUIRED_CONFIRMATIONS);
@@ -406,8 +434,8 @@ where
                     );
                 }
                 state.all_operators_take_tx_hashes_added = None;
-                info!(
-                    "Untracked AllOperatorTakeTxHashesAdded event. tx_hash: {:?}, pegin_flow_id: {}",
+                debug!(
+                    "Untracked AllOperatorTakeTxHashesAdded: tx_hash={:?}, flow_id={}",
                     tx_hash, state.flow_id
                 );
                 Ok(())
@@ -436,7 +464,10 @@ where
             .inner
             .clone();
 
-        info!("Handling AllOperatorTakeTxHashesAdded event: {:?}", event);
+        debug!(
+            "Processing AllOperatorTakeTxHashesAdded event: acceptPeginTxHash={}",
+            event.acceptPeginTxHash
+        );
         // Find the pegin state using the accept_pegin_tx_hash from the event
         let accept_pegin_tx_hash: TxHash = event.acceptPeginTxHash.into();
 
@@ -445,7 +476,7 @@ where
 
             // Step 6a Start the signatures sub-flow if not already started
             if state.btc_signatures_flow.is_none() {
-                info!("Starting BTC signature flow for pegin flow_id: {}", flow_id);
+                info!("Starting BTC signature flow: flow_id={}", flow_id);
                 let mut btc_sig_subflow = self.btc_sig_subflow_factory.create_flow(flow_id);
 
                 let pegin_accepted = state.bitvmx_pegin_accepted.as_ref().ok_or_else(|| {
@@ -458,14 +489,11 @@ where
 
                 state.btc_signatures_flow = Some(btc_sig_subflow);
             } else {
-                error!(
-                    "BTC signature flow already started for pegin flow_id: {}",
-                    flow_id
-                );
+                error!("BTC signature flow already started: flow_id={}", flow_id);
             }
         } else {
             debug!(
-                "Received AllOperatorTakeTxHashesAdded for unknown acceptPeginTxHash: {:?}",
+                "Received AllOperatorTakeTxHashesAdded: unknown_acceptPeginTxHash={:?}",
                 accept_pegin_tx_hash
             );
         }
@@ -525,8 +553,8 @@ where
                 let observer_id = confirmations.get_id();
                 self.blockchain.remove_observer(observer_id.as_str());
 
-                info!(
-                    "Untracked PeginRequested event. tx_hash: {:?}, pegin_flow_id: {}",
+                debug!(
+                    "Untracked PeginRequested: tx_hash={:?}, flow_id={}",
                     tx_hash, state.flow_id
                 );
 
@@ -557,8 +585,8 @@ where
 
                 state.pegin_accepted = None;
 
-                info!(
-                    "Untracked PeginAccepted event. tx_hash: {:?}, pegin_flow_id: {}",
+                debug!(
+                    "Untracked PeginAccepted: tx_hash={:?}, flow_id={}",
                     tx_hash, state.flow_id
                 );
 
@@ -620,10 +648,7 @@ where
             let observer_id = confirmations.get_id();
             self.blockchain.remove_observer(observer_id.as_str());
 
-            info!(
-                "Successfully processed confirmed PeginRequested event for flow {}",
-                flow_id
-            );
+            debug!("Processed confirmed PeginRequested: flow_id={}", flow_id);
         }
 
         Ok(())
@@ -746,10 +771,7 @@ where
             let observer_id = confirmations.get_id();
             self.blockchain.remove_observer(observer_id.as_str());
 
-            info!(
-                "Successfully processed confirmed PeginAccepted event: {}",
-                flow_id
-            );
+            debug!("Processed confirmed PeginAccepted: flow_id={}", flow_id);
 
             to_remove.push((*tx_hash, flow_id));
         }
@@ -757,12 +779,12 @@ where
         // Pegin completed so we can remove the state in tracker
         for (tx_hash, flow_id) in to_remove {
             info!(
-                "Pegin completed. Removing pegin event state. tx_hash: {:?}, flow_id: {}",
+                "Pegin completed: tx_hash={:?}, flow_id={}",
                 tx_hash, flow_id
             );
             self.tracker.remove(&tx_hash);
             if self.tracker.is_empty() {
-                debug!("No more pegin events to track, stopping the processor.");
+                debug!("Stopping processor no more events");
                 self.scheduler.clear();
                 self.blockchain.clear();
             }
@@ -788,8 +810,8 @@ where
             let confirmations = event.confirmations.borrow();
             let observer_id = confirmations.get_id();
             self.blockchain.remove_observer(observer_id.as_str());
-            info!(
-                "Successfully processed confirmed AllOperatorTakeTxHashesAdded event: {}",
+            debug!(
+                "Processed confirmed AllOperatorTakeTxHashesAdded: flow_id={}",
                 state.flow_id
             );
             to_handle.push(*tx_hash);
@@ -850,13 +872,13 @@ where
     }
 
     fn send_get_spv_proof_to_bitvmx(bitvmx_broker: &BC, tx_id: Txid) -> Result<()> {
-        debug!("Requesting SPV proof for tx_id: {}", tx_id);
+        trace!("Requesting SPV proof: tx_id={}", tx_id);
         let msg = IncomingBitVMXApiMessages::GetSPVProof(tx_id);
         Self::send_to_bitvmx(bitvmx_broker, msg)
     }
 
     fn send_to_bitvmx(bitvmx_broker: &BC, message: IncomingBitVMXApiMessages) -> Result<()> {
-        debug!("Sending to BitVMX message: {:?}", message);
+        trace!("Sending BitVMX message: type={:?}", message);
 
         bitvmx_broker.send(BROKER_SERVER_ID, message)?;
 
@@ -922,7 +944,10 @@ where
                     member.memberAddress
                 ))?;
 
-            debug!("Member {} PeerId: {:?}", member.memberAddress, key_str);
+            debug!(
+                "Member PeerId: address={}, peer_id={:?}",
+                member.memberAddress, key_str
+            );
             peer_ids.push(PeerId(key_str.to_string()));
         }
 
@@ -960,7 +985,7 @@ where
             committee_peer_ids,
         )?;
 
-        debug!("P2P addresses for Setup message: {:?}", p2p_addresses);
+        debug!("P2P addresses for Setup: addresses={:?}", p2p_addresses);
 
         let setup_message = IncomingBitVMXApiMessages::Setup(
             flow_id,                               // ProgramId - UUID of pegin flow
@@ -973,7 +998,7 @@ where
     }
 
     fn register_spv_proof(&self, spv_proof: BtcTxSPVProof) -> Result<()> {
-        info!("Registering SPV proof: {:?}", spv_proof);
+        debug!("Registering SPV proof: spv_proof={:?}", spv_proof);
 
         let input = spv_proof.into();
 
@@ -988,9 +1013,9 @@ where
         flow_id: Uuid,
         pegin_accepted: PeginAcceptedMessage,
     ) -> Result<()> {
-        info!(
-            "Processed PeginAcceptedMessage: committee_id={}, accept_pegin_txid={}",
-            pegin_accepted.committee_id, pegin_accepted.accept_pegin_txid,
+        debug!(
+            "Processing PeginAcceptedMessage: flow_id={}, acceptPeginTxHash={}",
+            flow_id, pegin_accepted.accept_pegin_txid
         );
 
         // Find the pegin state by flow_id and save the PeginAcceptedMessage data
@@ -1010,17 +1035,12 @@ where
         let take_tx_hash = pegin_accepted.operator_take_sighash.clone();
 
         state.bitvmx_pegin_accepted = Some(pegin_accepted);
-        info!(
-            "Successfully saved PeginAcceptedMessage data to pegin state for flow_id: {}",
-            flow_id
-        );
+        debug!("Saved PeginAcceptedMessage: flow_id={}", flow_id);
 
         // Deposit the operator take tx hash as soon as we receive PeginAcceptedMessage
-        info!(
-            "Calling addOperatorTakeTxHash for flow_id: {}, accept_pegin_txid: {}, operator_take_sighash_len: {}",
-            flow_id,
-            accept_pegin_tx_hash,
-            take_tx_hash.len()
+        debug!(
+            "Adding operator take tx: flow_id={}, acceptPeginTxHash={}",
+            flow_id, accept_pegin_tx_hash
         );
 
         let input = AddOperatorTakeTxHashInput {
@@ -1049,14 +1069,11 @@ where
         Fut: Future<Output = Result<T, DomainErrors>>,
         T: Debug,
     {
-        info!(
-            "Submitting contract transaction: method = '{}'",
-            method_name
-        );
+        debug!("Submitting contract transaction: method={}", method_name);
 
         match self.rt_sync.run(invoke()) {
             Ok(_) => {
-                info!("Successfully executed '{}'", method_name);
+                debug!("Contract method executed: method={}", method_name);
                 Ok(())
             }
             Err(domain_err) => bail!("Error executing '{}': {:?}", method_name, domain_err),
@@ -1069,12 +1086,12 @@ where
         Fut: Future<Output = Result<T, DomainErrors>>,
         T: Debug,
     {
-        info!("Calling contract method: '{}'", method_name);
+        debug!("Calling contract method: method={}", method_name);
 
         match rt_sync.run(call()) {
             Ok(result) => {
-                info!(
-                    "Successfully called '{}', result: {:?}",
+                debug!(
+                    "Contract method called: method={}, result={:?}",
                     method_name, result
                 );
                 Ok(result)
@@ -1091,7 +1108,7 @@ where
         tx_status: TransactionStatus,
     ) -> Result<()> {
         debug!(
-            "Handling transaction status: {:?} for id: {}",
+            "Handling transaction status: status={:?}, flow_id={}",
             tx_status, flow_id
         );
         // find the pegin event state for the given flow_id
@@ -1100,10 +1117,7 @@ where
             .values_mut()
             .find(|state| state.flow_id == *flow_id)
         else {
-            debug!(
-                "No pegin state found for flow_id: {}, skipping transaction status handling",
-                flow_id
-            );
+            debug!("No pegin state found: flow_id={}", flow_id);
             return Ok(());
         };
 
@@ -1122,27 +1136,21 @@ where
         if tx_status.confirmations >= MIN_TX_CONFIRMATIONS {
             // Step 9b confirmation enough, send the SPV proof to BitVMX
             debug!(
-                "Transaction confirmed with {} confirmations for flow_id: {}",
+                "Transaction confirmed: confirmations={}, flow_id={}",
                 tx_status.confirmations, flow_id
             );
             if self.scheduler.is_scheduled(flow_id) {
-                debug!(
-                    "Unscheduling get transaction info by name to bitvmx with id: {}",
-                    flow_id
-                );
+                debug!("Unscheduling get transaction: flow_id={}", flow_id);
                 self.scheduler.cancel(flow_id);
             }
             Self::send_get_spv_proof_to_bitvmx(&self.bitvmx_broker, tx_status.tx_id)?;
         } else {
             //step 9a confirmation not enough, reschedule the check
             debug!(
-                "Transaction not confirmed with sufficient confirmations for flow_id: {}",
+                "Transaction insufficient confirmations: flow_id={}",
                 flow_id
             );
-            debug!(
-                "Scheduling get transaction info by name to bitvmx with id: {}",
-                flow_id
-            );
+            debug!("Scheduling get transaction: flow_id={}", flow_id);
             self.scheduler.schedule(*flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
         }
         Ok(())
@@ -1159,7 +1167,8 @@ where
                     //#Step 8a: Send DispatchTransaction to BitVMX
                     Self::send_dispatch_transaction_name(&self.bitvmx_broker, state.flow_id)?;
                     debug!(
-                        "Dispatch tx sent. It is expected to receive Transaction Status from Bitvmx after Tx be mined"
+                        "Dispatch tx sent for accept pegin: flow_id={}",
+                        state.flow_id
                     );
                     //Signature flow is done, we can clear it from state
                     state.btc_signatures_flow = None;
@@ -1181,10 +1190,7 @@ where
         match event {
             // Step 2: Handle PeginRequested event from BitVMX
             OutgoingBitVMXApiMessages::PeginTransactionFound(tx_id, _tx_status) => {
-                info!(
-                    "Received BitVMX PeginTransactionFound event with tx_id: {}",
-                    tx_id
-                );
+                debug!("Received BitVMX PeginTransactionFound: tx_id={}", tx_id);
 
                 self.handle_pegin_transaction_found(tx_id.clone())?;
                 //TODO in the future we need to validate the tx_statos.confirmations number.
@@ -1193,8 +1199,8 @@ where
             // Step 10: Handle SPVProof event from BitVMX to call acceptPegin
             OutgoingBitVMXApiMessages::SPVProof(tx_id, spv_proof_opt) => match spv_proof_opt {
                 Some(spv_proof) => {
-                    info!(
-                        "Received BitVMX SPVProof for tx_id: {}, proof: {:?}",
+                    debug!(
+                        "Received BitVMX SPVProof: tx_id={}, proof={:?}",
                         tx_id, spv_proof
                     );
                     // Find state by matching accept_pegin_txid from bitvmx_pegin_accepted
@@ -1209,16 +1215,13 @@ where
                     if let Some((_, state)) = matching_state {
                         // Step 10 Handle accept pegin SPV proof
                         debug!(
-                            "Handling accept pegin SPV proof for flow_id: {} and tx_id {}",
+                            "Handling accept pegin SPV proof: flow_id={}, tx_id={}",
                             state.flow_id, tx_id
                         );
                         self.register_spv_proof(spv_proof.clone())?;
                     } else {
                         // Step 3 if no matching state found we are assuming this is a request pegin SPV proof
-                        debug!(
-                            "No state found for tx_id: {} Starting request pegin step.",
-                            tx_id
-                        );
+                        debug!("No state found starting request pegin: tx_id={}", tx_id);
                         self.handle_request_pegin(spv_proof.clone())?;
                     }
                 }
@@ -1231,8 +1234,8 @@ where
             OutgoingBitVMXApiMessages::Variable(flow_id, method, VariableTypes::String(data))
                 if matches!(method.as_str(), PEGIN_ACCEPTED_INPUT_MSG) =>
             {
-                info!(
-                    "Received BitVMX Variable pegin_accepted event. Flow Id: {}, Method: {}, Payload: {:?}",
+                debug!(
+                    "Received BitVMX Variable pegin_accepted: flow_id={}, method={}, payload={:?}",
                     flow_id, method, data
                 );
 
@@ -1248,7 +1251,7 @@ where
             // Step 9: Handle Transaction event from BitVMX and check confirmation status
             OutgoingBitVMXApiMessages::Transaction(flow_id, tx_status, _tx_opt) => {
                 debug!(
-                    "Received BitVMX Transaction event. Flow Id: {}, Tx Status: {:?}",
+                    "Received BitVMX Transaction event: flow_id={}, tx_status={:?}",
                     flow_id, tx_status
                 );
                 self.handle_transaction_status_received(flow_id, tx_status.clone())?;
@@ -1261,12 +1264,12 @@ where
                     .find(|(_, state)| state.my_p2p_address.is_none())
                 {
                     state.my_p2p_address = Some(p2p_address.clone());
-                    info!(
-                        "Set my_p2p_address for flow_id {}: {:?}",
+                    debug!(
+                        "Set my_p2p_address: flow_id={}, address={:?}",
                         state.flow_id, p2p_address
                     );
                 } else {
-                    trace!("Ignoring BitVMX CommInfo that is not mine")
+                    trace!("Ignoring BitVMX CommInfo")
                 }
             }
             _ => {}
@@ -1276,7 +1279,10 @@ where
     }
 
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
-        info!("My committees: {:?}", self.global_context.my_committees());
+        trace!(
+            "Committee membership: committees={:?}",
+            self.global_context.my_committees()
+        );
 
         match event {
             // Step 4: Handle PeginRequested event from RSK
@@ -1294,6 +1300,10 @@ where
                 for state in self.tracker.values_mut() {
                     let committee_id: &CommitteeId = &state.pegin_requested.data.inner.committeeId.try_into()?;
                     if !self.global_context.my_committees().im_member(&committee_id) {
+                        debug!(
+                            "Skipping signature flow delegation: not a member of committee_id={:?}",
+                            committee_id
+                        );
                         continue;
                     }
 

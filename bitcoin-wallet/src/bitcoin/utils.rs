@@ -3,11 +3,11 @@ use std::str::FromStr;
 use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::consensus::encode::deserialize;
 use bitcoin::hashes::hex::FromHex;
-use bitcoin::{Network, Transaction, Txid};
+use bitcoin::{Transaction, Txid};
 use bitcoincore_rpc::bitcoin::Txid as RpcTxid;
 use bitcoincore_rpc::{Client, RpcApi};
 
-use crate::bitcoin::bitcoind::{Bitcoind, RpcConfig};
+use crate::bitcoin::bitcoind::Bitcoind;
 
 pub trait RawTxProvider {
     fn raw_transaction_hex(&self, txid: &RpcTxid) -> bitcoincore_rpc::Result<String>;
@@ -32,37 +32,6 @@ pub fn fetch_utxo_amount(provider: &impl RawTxProvider, txid: Txid, vout: u32) -
         .get(vout as usize)
         .context("specified vout not found in transaction")?;
     Ok(tx_out.value.to_sat())
-}
-
-// Local dockerized bitcoin client
-pub fn start_client() -> Result<Client> {
-    let bitcoin_client = Bitcoind::new(
-        "bitcoin-regtest",
-        "ruimarinho/bitcoin-core",
-        RpcConfig {
-            username: "foo".to_string(),
-            password: "rpcpassword".to_string(),
-            url: "http://127.0.0.1:18443".to_string(),
-            wallet: "mywallet".to_string(),
-            network: Network::Regtest,
-        },
-    );
-
-    match bitcoin_client.start() {
-        Ok(()) => {}
-        Err(bollard::errors::Error::DockerResponseNotFoundError { message }) => {
-            eprintln!("Skipping regtest RPC test: {message}");
-            return Err(anyhow!("failed to start bitcoind container: {message}"));
-        }
-        Err(err) => return Err(anyhow!("failed to start bitcoind container: {err}")),
-    }
-
-    println!("Starting bitcoind in Regtest mode...");
-    wait_for_ready(&bitcoin_client)?;
-    println!("Bitcoind is ready");
-
-    let wallet_client = ensure_wallet(&bitcoin_client)?;
-    Ok(wallet_client)
 }
 
 pub fn wait_for_ready(bitcoind: &Bitcoind) -> Result<()> {

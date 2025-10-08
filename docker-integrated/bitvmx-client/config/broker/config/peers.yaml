@@ -1,0 +1,15 @@
+- key: op_1.pem
+  broker_id: 1
+  address: /ip4/172.20.0.11/tcp/61180
+
+- key: op_2.pem
+  broker_id: 2
+  address: /ip4/172.20.0.12/tcp/61181
+
+- key: op_3.pem
+  broker_id: 3
+  address: /ip4/172.20.0.13/tcp/61182
+
+- key: op_4.pem
+  broker_id: 4
+  address: /ip4/172.20.0.14/tcp/61183

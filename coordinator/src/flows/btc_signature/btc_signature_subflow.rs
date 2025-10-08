@@ -4,7 +4,7 @@ use anyhow::{Result, bail};
 use common::types::RskBlockAndUncles;
 
 use common::runtime_sync::RuntimeSync;
-use log::{debug, info};
+use log::debug;
 use std::rc::Rc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;
@@ -78,7 +78,7 @@ where
             return Ok(()); // not mine
         }
 
-        info!("Handling delegated event {event:?} for flow {flow_id} and event");
+        debug!("Processing delegated event for flow_id={flow_id}");
 
         match event {
             RskPegManagerEvents::AllNoncesReady(event) => {
@@ -117,7 +117,7 @@ where
         self.lifecycle.blockchain_view().update(block.clone());
 
         if !self.lifecycle.blockchain_view().has_observers() {
-            debug!("No observers have been added to BTC Signature flow yet");
+            debug!("No observers added");
             return Ok(());
         }
 

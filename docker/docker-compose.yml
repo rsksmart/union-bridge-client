@@ -78,6 +78,7 @@ services:
       - UB__bitvmx_broker__port=${BITVMX_PORT:-61180}
       - UB__provider__rootstock__url=${ROOTSTOCK_URL:-ws://host.docker.internal:8545}
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
+      - BITCOIN_NETWORK=${BITCOIN_NETWORK}
     healthcheck:
       interval: 30s
       timeout: 10s

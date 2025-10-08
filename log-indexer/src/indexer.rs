@@ -6,7 +6,7 @@ use common::{
     shutdown_flag::ShutdownFlag,
     types::{Address, BlockHash, BlockNumber, ContractInfo, RskLog},
 };
-use log::{debug, error, info, warn};
+use log::{debug, error, info, trace, warn};
 use std::collections::HashMap;
 use std::sync::mpsc;
 
@@ -306,7 +306,17 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                 continue;
             }
 
-            info!("[subscribe_logs] Processed log: {:?}", new_log);
+            info!(
+                "[subscribe_logs] Processed log {} @ {}",
+                new_log
+                    .event()
+                    .topics()
+                    .first()
+                    .map(|t| t.to_string())
+                    .unwrap_or("none".to_string()),
+                new_log.info().address(),
+            );
+            trace!("[subscribe_logs] Log: {:?}", new_log);
 
             if !self
                 .managed_contracts

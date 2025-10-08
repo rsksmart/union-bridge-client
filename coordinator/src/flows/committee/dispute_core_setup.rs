@@ -4,7 +4,7 @@ use common::msg_broker::bitvmx_types::{
     Committee, DisputeCoreData, IncomingBitVMXApiMessages, MemberData, P2PAddress, ParticipantRole,
     Utxo, VariableTypes,
 };
-use log::{debug, error, info};
+use log::{debug, error, info, trace};
 use std::rc::Rc;
 use uuid::Uuid;
 
@@ -52,9 +52,9 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
 
         let committee_id = Uuid::from_u128(*committee_id_client);
 
-        info!("Setting up the BitVMX Committee {committee_id}");
+        info!("Setting up BitVMX committee {committee_id}");
 
-        debug!("Sending BitVMX Committee {committee:?}");
+        trace!("Committee details: {committee:?}");
 
         self.broker_client.send(
             BROKER_SERVER_ID,
@@ -81,7 +81,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
 
             protocol_ids.push(protocol_id);
 
-            info!("Setting up the DisputeCore protocol {protocol_id}");
+            debug!("Setting up dispute core protocol {protocol_id}");
 
             let dispute_core_data = &DisputeCoreData {
                 committee_id,
@@ -121,7 +121,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
     }
 
     fn send_bitvmx_msg(&self, msg: IncomingBitVMXApiMessages) {
-        info!("Sending {msg:?} to BitVMX");
+        trace!("Sending to BitVMX: {msg:?}");
 
         let result = self.broker_client.send(BROKER_SERVER_ID, msg);
         if result.is_err() {
