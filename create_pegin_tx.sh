@@ -1,11 +1,16 @@
 #!/bin/bash
 
 # Script to create a pegin transaction using bitcoin-wallet
-# Usage: ./create_pegin_tx.sh [stream_amount] [packet_number]
+# Usage: RSK_ADDRESS=0x... ./create_pegin_tx.sh [stream_amount] [packet_number]
+
+if [ -z "$RSK_ADDRESS" ]; then
+    echo "Error: RSK_ADDRESS environment variable not set"
+    echo "Usage: RSK_ADDRESS=0x... $0 [stream_amount] [packet_number]"
+    exit 1
+fi
 
 STREAM_AMOUNT=${1:-1000000}
 PACKET_NUMBER=${2:-0}
-RSK_ADDRESS="0xF16a1C4c4F261561D8287aC08b0A2059B09A82D6"
 
 echo "Getting pegin address from user-api..."
 RESPONSE=$(curl -s -X POST http://localhost:40001/pegin-address \

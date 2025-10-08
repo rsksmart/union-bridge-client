@@ -1,7 +1,5 @@
 coordinator_broker_client_id: 333
 broker_server_port: 5550
 http_server_port: 5551
-# WIF format private key for the Bitcoin wallet
-wallet_private_key: "YOUR_WIF_PRIVATE_KEY_HERE"
-# Bitcoin network: "regtest", "testnet", or "mainnet" (defaults to "regtest" if not specified)
-bitcoin_network: "regtest"
+bitcoin_network: "regtest" # "regtest", "testnet", or "mainnet"
+# NOTE: Set WALLET_PRIVATE_KEY env var (same as bitcoin-wallet)

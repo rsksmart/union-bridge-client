@@ -70,13 +70,17 @@ async fn main() -> Result<()> {
         }
     };
 
+    // Get wallet private key from environment variable (same as bitcoin-wallet)
+    let wallet_private_key = std::env::var("WALLET_PRIVATE_KEY")
+        .context("WALLET_PRIVATE_KEY environment variable not set")?;
+
     let server = Server::new(
         listener,
         broker_server.clone(),
         shutdown_flag.clone(),
         config.coordinator_broker_client_id,
         contracts_gateway,
-        &config.wallet_private_key,
+        &wallet_private_key,
         network,
     )
     .await;
