@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use bitcoin::Network;
 use clap::{Arg, Command};
 use common::{
     msg_broker::broker::{BITVMX_L2_BROKER_CLIENT_ID, BitVmxBrokerClient, BrokerClient},
@@ -41,6 +42,8 @@ fn main() -> Result<()> {
 
     let config_path = matches.get_one::<String>(CONFIG_CLI_FLAG);
     let config: Config = Config::load(config_path).expect("Failed to load config");
+
+    let bitcoin_network = config.get_bitcoin_network()?;
 
     // Load transaction dispatcher configuration
     let tx_dispatcher_config: TxDispatcherConfig = TxDispatcherConfig::load(config_path)
@@ -86,7 +89,7 @@ fn main() -> Result<()> {
         tx_dispatcher_config,
     )?;
 
-    let store_path = &format!("{}/coordinator", config.storage_path);
+    let store_path = &format!("{}/coordinator", config.storage_path.clone());
     debug!("Creating coordinator store at: {}", store_path);
     let store = CoordinatorStore::new(store_path).context("Failed to create context store")?;
 
@@ -97,6 +100,7 @@ fn main() -> Result<()> {
         bitvmx_broker,
         store,
         shutdown_flag.clone(),
+        bitcoin_network,
     );
     coordinator.run().inspect_err(|e| {
         error!("Unrecoverable error running coordinator: {:?}", e);
