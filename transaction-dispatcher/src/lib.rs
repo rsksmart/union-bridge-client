@@ -63,6 +63,8 @@ async fn create_contracts_gateway_impl(
     let ws = WsConnect::new(rsk_url);
 
     let provider = ProviderBuilder::new()
+        //TODO to be removed when no op accounts would be used from the user-api
+        .with_simple_nonce_management()
         .wallet(wallet)
         .connect_ws(ws)
         .await

@@ -35,8 +35,7 @@ use crate::{
     types::{EventWithBlock, RskPegManagerEvents},
 };
 use anyhow::{Context, Result, anyhow, bail};
-use bitcoin::key::Parity::Even;
-use bitcoin::{PublicKey, Txid, XOnlyPublicKey};
+use bitcoin::{PublicKey, Txid};
 use common::msg_broker::bitvmx_types::{
     IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, P2PAddress, PeerId, PegOutAccepted,
     PegOutRequest, TransactionStatus, VariableTypes,
@@ -99,11 +98,10 @@ impl<T: Clone> PegoutEvent<T> {
 struct PegoutEventState<BSF: BtcSignatureSubFlowApi> {
     pegout_requested_tx: TxHash,
     pegout_requested: PegoutEvent<PegoutRequested>,
-    pegout_accepted_tx: Option<Txid>,
+    user_take_tx_id: Option<Txid>,
     pegout_registered_tx: Option<TxHash>,
     pegout_registered: Option<PegoutEvent<PegoutRegistered>>,
     btc_sig_flow: Option<BSF>,
-    spv_proof_tx_id: Option<Txid>,
 }
 
 impl<BSF: BtcSignatureSubFlowApi> PegoutEventState<BSF> {
@@ -111,11 +109,10 @@ impl<BSF: BtcSignatureSubFlowApi> PegoutEventState<BSF> {
         Self {
             pegout_requested_tx,
             pegout_requested,
-            pegout_accepted_tx: None,
+            user_take_tx_id: None,
             pegout_registered_tx: None,
             pegout_registered: None,
             btc_sig_flow: None,
-            spv_proof_tx_id: None,
         }
     }
 }
@@ -327,9 +324,17 @@ where
         let committee_id: Uuid = Uuid::from_u128(event.committeeId.try_into()?);
 
         // Convert user pubkey bytes to bitcoin::PublicKey
-        let user_pub_key_xonly = XOnlyPublicKey::from_slice(event.userPubKey.as_slice())?;
-        let user_pubkey_secp_key = user_pub_key_xonly.public_key(Even);
-        let user_pubkey = PublicKey::new(user_pubkey_secp_key);
+        let user_pubkey = if event.userPubKey.len() == 33 {
+            // Try parsing as compressed public key (33 bytes with prefix)
+            debug!("Attempting to parse as compressed public key (33 bytes)");
+            PublicKey::from_slice(event.userPubKey.as_ref())
+                .context("Failed to parse user public key as compressed public key")?
+        } else {
+            bail!(
+                "Invalid user public key length: {}, expected 33",
+                event.userPubKey.len()
+            );
+        };
 
         let take_aggregated_key = Self::build_take_aggregated_key(&committee_output)?;
 
@@ -368,7 +373,7 @@ where
         let committee_id: CommitteeId = event.inner.committeeId.try_into()?;
 
         if !self.global_context.my_committees().im_member(&committee_id) {
-            info!(
+            debug!(
                 "Handling PegoutRequested event with committee id {}, I am NOT member so I skip",
                 committee_id
             );
@@ -443,22 +448,15 @@ where
         Ok(())
     }
 
-    fn handle_register_pegout(
-        &mut self,
+    fn handle_register_pegout_with_state(
+        rt_sync: &RuntimeSync,
+        contracts_gateway: &CG,
+        state: &mut PegoutEventState<BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<CG>>>,
         tx_id: &Txid,
         input: RegisterPegoutInput,
     ) -> Result<RegisterPegoutOutput> {
-        let (_flow_id, state) = self
-            .tracker
-            .iter_mut()
-            .find(|(_, state)| state.spv_proof_tx_id == Some(*tx_id))
-            .ok_or_else(|| anyhow!("Pegout state not found for tx_id: {}", tx_id))?;
-
         // Step 6a: Register pegout calling the peg manager contract (U -> C)
-        match self
-            .rt_sync
-            .run(self.contracts_gateway.register_pegout(input))
-        {
+        match rt_sync.run(async { contracts_gateway.register_pegout(input).await }) {
             Ok(result) => {
                 info!("Pegout registered successfully for tx_id: {}", tx_id);
                 state.pegout_registered_tx =
@@ -627,18 +625,6 @@ where
         Ok(())
     }
 
-    //Step 5b
-    //TODO check if we need to convert the tx_id to TxIdLE
-    fn handle_request_spv_proof(&mut self, flow_id: &Uuid, tx_id: Txid) -> Result<()> {
-        let state = self
-            .tracker
-            .get_mut(flow_id)
-            .ok_or_else(|| anyhow!("Pegout state not found for flow_id: {}", flow_id))?;
-        state.spv_proof_tx_id = Some(tx_id);
-        Self::send_get_spv_proof_to_bitvmx(&self.bitvmx_broker, tx_id)?;
-        Ok(())
-    }
-
     fn handle_transaction_status_received(
         &mut self,
         flow_id: &Uuid,
@@ -649,7 +635,7 @@ where
             .tracker
             .get_mut(flow_id)
             .ok_or_else(|| anyhow!("Pegout state not found for flow_id: {}", flow_id))?;
-        if state.spv_proof_tx_id != Some(tx_status.tx_id) {
+        if state.user_take_tx_id != Some(tx_status.tx_id) {
             bail!(
                 "Pegout state for flow_id: {} does not match tx_id: {}",
                 flow_id,
@@ -669,7 +655,7 @@ where
                 self.scheduler.cancel(flow_id);
             }
             // Step 5b: If confirmations are enough, request SPV proof (U -> B)
-            self.handle_request_spv_proof(flow_id, tx_status.tx_id)?;
+            Self::send_get_spv_proof_to_bitvmx(&self.bitvmx_broker, tx_status.tx_id)?;
         } else {
             // Step 5a: If confirmations are not enough, schedule a new request for a newtransaction status
             debug!(
@@ -807,9 +793,32 @@ where
                         "Received BitVMX SPVProof for tx_id: {}, proof: {:?}",
                         tx_id, spv_proof
                     );
+
+                    // Find the matching state with this user_take_tx_id
+                    let (_, state) = match self
+                        .tracker
+                        .iter_mut()
+                        .find(|(_, state)| state.user_take_tx_id == Some(*tx_id))
+                    {
+                        Some(result) => result,
+                        None => {
+                            debug!(
+                                "No pending user take transaction found for tx_id: {}",
+                                tx_id
+                            );
+                            return Ok(());
+                        }
+                    };
+
                     let register_pegout_input: transaction_dispatcher::types::BtcTxSPVProofInput =
                         RegisterPegoutInput::from(spv_proof.clone());
-                    self.handle_register_pegout(tx_id, register_pegout_input)?;
+                    Self::handle_register_pegout_with_state(
+                        &self.rt_sync,
+                        &self.contracts_gateway,
+                        state,
+                        tx_id,
+                        register_pegout_input,
+                    )?;
                 }
                 None => bail!(
                     "Received BitVMX SPVProof event for tx_id: {}, but no SPV proof was included.",
@@ -832,7 +841,7 @@ where
                 } else {
                     let mut btc_sig_subflow = self.btc_sig_subflow_factory.create_flow(*flow_id);
                     let input: PegOutAccepted = serde_json::from_str::<PegOutAccepted>(data)?;
-                    state.pegout_accepted_tx = Some(input.user_take_txid);
+                    state.user_take_tx_id = Some(input.user_take_txid);
                     let register_input = RegisterSignaturesBitVmxData::try_from(input)?;
                     // Step 2a: Register nonces (U -> RSK)
                     btc_sig_subflow.start_signature_flow(*flow_id, &register_input)?;
