@@ -112,6 +112,7 @@ services:
     environment:
       - UB__provider__rootstock__url=${ROOTSTOCK_URL:-ws://host.docker.internal:8545}
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
+      - WALLET_PRIVATE_KEY=${WALLET_PRIVATE_KEY}
     restart: no
     ports:
       - "${USER_API_PORT:-40001}:5551" # internal: http server port from the configuration

@@ -38,6 +38,12 @@ print_help() {
   exit 0
 }
 
+# TODO(iago) properly name WALLET_PRIVATE_KEY env var
+if [[ -z "${WALLET_PRIVATE_KEY}" ]]; then
+  echo "Error: WALLET_PRIVATE_KEY environment variable is not set."
+  exit 1
+fi
+
 # Parse args
 while [[ $# -gt 0 ]]; do
   case $1 in

@@ -8,7 +8,6 @@ use bitcoin::{secp256k1, PublicKey, XOnlyPublicKey};
 use common::msg_broker::broker::{BrokerServer, BrokerServerApi};
 use common::msg_broker::types::FromServer;
 use common::shutdown_flag::ShutdownFlag;
-use common::types::ToHexString;
 use log::{error, info};
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -124,7 +123,7 @@ impl Server {
 
         // Use our own X-only public key if not provided
         if payload.btc_reimbursement_pub_key.is_empty() {
-            let x_only_key = XOnlyPublicKey::from(user.public_key);
+            let x_only_key = XOnlyPublicKey::from(user.bitcoin_public_key);
             payload.btc_reimbursement_pub_key = format!("0x{}", x_only_key);
         }
 
