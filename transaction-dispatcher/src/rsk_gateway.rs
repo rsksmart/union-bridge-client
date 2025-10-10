@@ -196,7 +196,7 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
         // Validate that all contract addresses have deployed code
         let addresses_to_validate = vec![
             (PEG_MANAGER_CONTRACT_NAME, contract_address),
-            (FAKE_PEG_MANAGER_CONTRACT_NAME, fake_contract_address),
+            // intentionally not validating fake peg manager contract
             (SIGNATURE_MANAGER_CONTRACT_NAME, signature_manager_address),
             (COMMITTEE_REGISTRY_CONTRACT_NAME, committee_registry_address),
             (MEMBER_REGISTRY_CONTRACT_NAME, member_registry_address),
