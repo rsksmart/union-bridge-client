@@ -5,11 +5,12 @@ FROM ghcr.io/foundry-rs/foundry:v1.2.3
 USER root
 ENV NODE_VERSION=22.14.0
 ENV NVM_DIR=/root/.nvm
-RUN apt-get install -y curl \
+RUN apt-get update && apt-get install -y curl \
     && curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.2/install.sh | bash \
     && \. $NVM_DIR/nvm.sh \
     && nvm install $NODE_VERSION \
-    && npm install -g @openzeppelin/upgrades-core@1.44.0
+    && npm install -g @openzeppelin/upgrades-core@1.44.0 \
+    && apt-get clean and rm -rf /var/lib/apt/lists/*
 # Update the $PATH to make your installed `node` and `npm` available!
 ENV PATH=$NVM_DIR/versions/node/v$NODE_VERSION/bin:$PATH
 
