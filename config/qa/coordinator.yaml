@@ -15,3 +15,5 @@ user_broker:
   port: 5550
 
 broker_client_id: 100
+
+bitcoin_network: "regtest"

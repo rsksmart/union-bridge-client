@@ -89,7 +89,7 @@ fn main() -> Result<()> {
         tx_dispatcher_config,
     )?;
 
-    let store_path = &format!("{}/coordinator", config.storage_path.clone());
+    let store_path = &format!("{}/coordinator", config.storage_path);
     debug!("Creating coordinator store at: {}", store_path);
     let store = CoordinatorStore::new(store_path).context("Failed to create context store")?;
 
