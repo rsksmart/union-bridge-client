@@ -294,6 +294,7 @@ cd <path_to_bitvmx_workspace_repo>/rust-bitvmx-client
 # 2. Start Anvil and deploy contracts (in separate terminal)
 anvil
 # Deploy contracts in another terminal
+# Fund bitcoin wallets (checkout docker-integrated/ README)
 
 # 3. Run the clients
 ./run-client.sh --num-clients 4 --features anvil
