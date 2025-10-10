@@ -267,18 +267,10 @@ impl BtcTxSPVProofInput {
                 e
             })?;
 
-        let merkle_branch_path =
-            U256::from_str_radix(&self.merkle_branch_path.trim_start_matches("0x"), 16).map_err(
-                |e| {
-                    error!("Failed to convert merkle_branch_path: {:?}", e);
-                    e
-                },
-            )?;
-
         Ok(BtcTxSPVProof {
             blockHash: block_hash,
             btcTx: btc_tx,
-            merkleBranchPath: merkle_branch_path,
+            merkleBranchPath: self.merkle_branch_path.parse()?,
             merkleBranchHashes: merkle_branches_hashes,
         })
     }
