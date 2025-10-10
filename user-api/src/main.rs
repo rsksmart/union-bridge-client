@@ -63,7 +63,10 @@ async fn main() -> Result<()> {
         "testnet" => bitcoin::Network::Testnet,
         "mainnet" => bitcoin::Network::Bitcoin,
         _ => {
-            error!("Invalid bitcoin_network config: {}. Must be 'regtest', 'testnet', or 'mainnet'", config.bitcoin_network);
+            error!(
+                "Invalid bitcoin_network config: {}. Must be 'regtest', 'testnet', or 'mainnet'",
+                config.bitcoin_network
+            );
             return Err(anyhow::anyhow!("Invalid bitcoin_network configuration"));
         }
     };
