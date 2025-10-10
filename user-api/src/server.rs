@@ -140,7 +140,6 @@ impl Server {
         }
     }
 
-
     pub fn get_random_pubkey() -> PublicKey {
         let secp = secp256k1::Secp256k1::new();
         let mut rng = OsRng;
