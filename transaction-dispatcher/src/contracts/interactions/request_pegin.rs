@@ -4,7 +4,7 @@ use crate::{
     types::{RequestPeginInput, RequestPeginOutput},
 };
 use anyhow::Result;
-use log::{error, info};
+use log::{debug, error, info};
 use union_contracts::bindings::peg_manager::PegManager::BtcTxSPVProof;
 
 #[derive(Clone)]

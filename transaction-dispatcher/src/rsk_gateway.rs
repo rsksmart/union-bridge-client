@@ -532,8 +532,6 @@ pub enum DomainErrors {
     InvalidValue(String),
     #[error("Not Owner: {0}")]
     NotOwner(String),
-    #[error("Not Enough Confirmations: {0}")]
-    NotEnoughConfirmations(String),
     #[error("Pegout Request Amount Exceeds u64 Limit: {0}")]
     PegoutRequestAmountExceedsUint64Limit(String),
     #[error("Stream not found by denomination: {0}")]
@@ -548,6 +546,8 @@ pub enum DomainErrors {
     MemberRegistryError(String),
     #[error("Error collecting signatures: {0}")]
     SignaturesError(String),
+    #[error("Missing confirmations on native bridge: {0}")]
+    MissingConfirmationsOnNativeBridge(String),
 
     // unhandled smart contract errors
     #[error("Unhandled Contract Error: {0}")]

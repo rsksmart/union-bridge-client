@@ -305,15 +305,24 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
         PegManagerErrors::InvalidLocktime(e) => {
             DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
         }
-        PegManagerErrors::NotEnoughConfirmations(e) => {
-            DomainErrors::NotEnoughConfirmations(format!("{:?}", e))
-        }
         PegManagerErrors::InvalidCompressedPubKey(e) => {
             DomainErrors::InvalidCompressedPubKey(format!("{:?}", e))
         }
         PegManagerErrors::PegoutRequestAmountExceedsUint64Limit(e) => {
             DomainErrors::PegoutRequestAmountExceedsUint64Limit(format!("{:?}", e))
         }
+        // Native Bridge Errors
+        PegManagerErrors::BridgeBtcBlockNotInBestChain(e) => {
+            // we consider this reversible, so we map it to MissingConfirmationsOnNativeBridge
+            DomainErrors::MissingConfirmationsOnNativeBridge(format!("{:?}", e))
+        }
+        PegManagerErrors::BridgeBtcInexistantBlockHash(e) => {
+            DomainErrors::MissingConfirmationsOnNativeBridge(format!("{:?}", e))
+        }
+        PegManagerErrors::NotEnoughConfirmations(e) => {
+            DomainErrors::MissingConfirmationsOnNativeBridge(format!("{:?}", e))
+        }
+        // Unhandled
         _ => DomainErrors::UnhandledContractError(format!("{:?}", e)),
     })
 }
