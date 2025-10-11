@@ -95,10 +95,6 @@ bash start_blockchains.sh --env local --new-contracts-version up -d
 A `WALLET_PRIVATE_KEY` needs to be exported in the environment. It is the Bitcoin private key (WIF) of the end user (used by `user-api`).
 The `bitcoin-wallet` wallet needs to be using this key when generating the pegin transaction.
 
-TODO(iago) document the committee setup procedure in the other README.md.
-TODO(iago) document the pegin procedure in the other README.md.
-TODO(iago) improve/unify running documentation
-
 Show script help:
 
 ```bash

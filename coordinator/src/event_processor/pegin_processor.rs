@@ -1097,13 +1097,6 @@ where
                     spv_proof.block_hash
                 );
 
-                // TODO(iago) ticket for:
-                //  1) implement mechanism to query required confirmations from native bridge
-                //  2) request the SPV proof again until we get the required confirmations
-                //  3) only call the contract if we have the required confirmations
-                //  4) if still the contract call fails, it can be due to delay on the native bridge, re-schedule contract call for later
-                //  5) restore ignored tests
-
                 // Native bridge has not yet enough confirmations, we need to retry later
                 self.schedule_pegin_requested_to_contracts(spv_proof, attempt + 1);
 
