@@ -1451,16 +1451,15 @@ where
                                         event,
                                     );
                                     // Start confirming from original block (will restart from 0 confirmations)
-                                    if let Err(e) = confirmable.start_confirming(pending_conf.block_number) {
-                                        error!("Failed to restart confirmation for {}: {}", event_id, e);
-                                    } else {
-                                        self.events_confirming.insert(event_id, confirmable);
-                                        debug!("Restored confirmation for flow {} event {:?} at block {}",
-                                            id, pending_conf.event_type, pending_conf.block_number);
-                                    }
+                                    confirmable.start_confirming(pending_conf.block_number)
+                                        .expect("Failed to restart confirmation for restored event");
+
+                                    self.events_confirming.insert(event_id, confirmable);
+                                    debug!("Restored confirmation for flow {} event {:?} at block {}",
+                                        id, pending_conf.event_type, pending_conf.block_number);
                                 }
                                 Err(e) => {
-                                    error!("Failed to deserialize pending event for flow {}: {}", id, e);
+                                    panic!("Failed to deserialize pending event for flow {}: {}", id, e);
                                 }
                             }
                         }
@@ -1656,9 +1655,9 @@ where
 
         match flow_data {
             Some((flow, step_data)) => {
-                // Clear pending_confirmation since event is now confirmed
-                flow.state.ctx.pending_confirmation = None;
                 flow.complete_step(step_data)?;
+                // Clear pending_confirmation after successful step completion
+                flow.state.ctx.pending_confirmation = None;
             }
             None => {
                 warn!("Received {event:?} but no matching flow found");
