@@ -3,8 +3,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use storage_backend::storage::{KeyValueStore, Storage};
+use uuid::Uuid;
 
-use crate::flows::common::GlobalContext;
+use crate::flows::common::{GlobalContext, CommitteeSetupFlowState};
 use crate::types::Role;
 use common::msg_broker::bitvmx_types::SignedPublicKey;
 use common::types::CommitteeId;
@@ -29,16 +30,22 @@ struct PersistentGlobalContext {
     take_key: Option<SignedPublicKey>,
     dispute_key: Option<SignedPublicKey>,
     comm_key: Option<SignedPublicKey>,
+    committee_setup_flows: HashMap<Uuid, CommitteeSetupFlowState>,
 }
 
 impl PersistentGlobalContext {
     fn from_memory(ctx: &GlobalContext) -> Self {
         let keys = ctx.my_keys();
+        let flows = ctx.committee_setup_flows().lock()
+            .expect("Failed to lock flows for persistence")
+            .clone();
+
         Self {
             committees: ctx.my_committees().all_cloned(),
             take_key: keys.take_key(),
             dispute_key: keys.dispute_key(),
             comm_key: keys.comm_key(),
+            committee_setup_flows: flows,
         }
     }
 
@@ -58,6 +65,12 @@ impl PersistentGlobalContext {
         if let Some(k) = self.comm_key {
             ctx.my_keys().set_comm_key(k);
         }
+        // restore flows
+        let mut flows = ctx.committee_setup_flows().lock()
+            .expect("Failed to lock flows for restoration");
+        *flows = self.committee_setup_flows;
+        drop(flows); // explicitly drop the lock
+
         ctx
     }
 }

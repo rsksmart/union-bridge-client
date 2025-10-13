@@ -69,7 +69,7 @@ pub type MemberInfoDepositedEvent = EventWithBlock<MemberInfoDeposited>;
 pub type EventStatus = bool;
 type DecoderFn = fn(&LogData, BlockNumber, BlockHash, EventStatus, TxHash) -> RskPegManagerEvents;
 
-#[derive(Eq, PartialEq, Debug, Clone)]
+#[derive(Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct EventWithBlock<T> {
     pub inner: T,
     pub block_number: BlockNumber,
