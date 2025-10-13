@@ -186,7 +186,16 @@ where
                 "Sending delayed get transaction info by name to bitvmx with id: {}",
                 flow_id
             );
-            Self::send_get_transaction_info_by_name_to_bitvmx(&self.bitvmx_broker, flow_id)?;
+            let tx_id = {
+                let state = self
+                    .tracker
+                    .get(&flow_id)
+                    .ok_or_else(|| anyhow!("Pegout state not found for flow_id: {}", flow_id))?;
+                state
+                    .user_take_tx_id
+                    .ok_or_else(|| anyhow!("User take tx id not found for flow_id: {}", flow_id))?
+            };
+            Self::send_get_transaction(&self.bitvmx_broker, flow_id, tx_id)?;
         }
         Ok(())
     }
@@ -609,13 +618,9 @@ where
         Ok(())
     }
 
-    fn send_get_transaction_info_by_name_to_bitvmx(
-        bitvmx_broker: &BC,
-        flow_id: Uuid,
-    ) -> Result<()> {
-        let msg =
-            IncomingBitVMXApiMessages::GetTransactionInfoByName(flow_id, USER_TAKE_TX.to_string());
-        bitvmx_broker.send(BROKER_SERVER_ID, msg)?;
+    fn send_get_transaction(bitvmx_broker: &BC, flow_id: Uuid, tx_id: Txid) -> Result<()> {
+        let message = IncomingBitVMXApiMessages::GetTransaction(flow_id, tx_id);
+        bitvmx_broker.send(BROKER_SERVER_ID, message)?;
         Ok(())
     }
 
@@ -757,11 +762,10 @@ where
                         &self.bitvmx_broker,
                         *flow_id,
                     )?;
-                    // Step 4b: Ask for transaction status (U -> B)
-                    Self::send_get_transaction_info_by_name_to_bitvmx(
-                        &self.bitvmx_broker,
-                        *flow_id,
-                    )?;
+                    debug!(
+                        "Pegout Dispatch tx sent. It is expected to receive Transaction Status from Bitvmx after Tx be mined"
+                    );
+                    state.btc_sig_flow = None;
                 }
             }
         }
@@ -911,9 +915,9 @@ where
         self.blockchain.update(block.clone());
 
         self.process_unhandled_confirmed_pegout_requested_events()?;
-        self.process_unhandled_confirmed_pegout_registered_events()?;
         self.process_unhandled_confirmed_sig_flow_events(block)?;
         self.handle_tick()?;
+        self.process_unhandled_confirmed_pegout_registered_events()?;
         Ok(())
     }
 
