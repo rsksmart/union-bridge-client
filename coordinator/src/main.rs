@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
-use bitcoin::Network;
 use clap::{Arg, Command};
 use common::{
+    config::CommonConfig,
     msg_broker::broker::{BITVMX_L2_BROKER_CLIENT_ID, BitVmxBrokerClient, BrokerClient},
     runtime_sync::RuntimeSync,
     shutdown_flag::ShutdownFlag,
@@ -43,7 +43,7 @@ fn main() -> Result<()> {
     let config_path = matches.get_one::<String>(CONFIG_CLI_FLAG);
     let config: Config = Config::load(config_path).expect("Failed to load config");
 
-    let bitcoin_network = config.get_bitcoin_network()?;
+    let bitcoin_network = CommonConfig::parse_bitcoin_network(&config.bitcoin_network)?;
 
     // Load transaction dispatcher configuration
     let tx_dispatcher_config: TxDispatcherConfig = TxDispatcherConfig::load(config_path)

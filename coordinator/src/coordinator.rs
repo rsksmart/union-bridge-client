@@ -103,7 +103,10 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi>
                     setup_committee_flow_factory,
                     global_context.clone(),
                 )),
-                Box::new(FundBitvmxProcessor::new(bitvmx_broker.clone(), bitcoin_network)),
+                Box::new(FundBitvmxProcessor::new(
+                    bitvmx_broker.clone(),
+                    bitcoin_network,
+                )),
             ],
             check_period: CHECK_PERIOD,
             shutdown_flag,

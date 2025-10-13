@@ -1,5 +1,6 @@
 use crate::errors::ConfigError;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
+use bitcoin::Network;
 use config;
 use config::{Environment, Source};
 use log::trace;
@@ -15,6 +16,7 @@ pub struct CommonConfig {
     pub indexer: IndexerConfig,
     pub provider: ProviderConfig,
     pub contracts: Vec<ContractConfig>,
+    pub bitcoin_network: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -64,6 +66,16 @@ pub struct ContractConfig {
 }
 
 impl CommonConfig {
+    pub fn parse_bitcoin_network(network_str: &str) -> Result<Network> {
+        let res = match network_str {
+            "bitcoin" | "mainnet" => Network::Bitcoin,
+            "testnet" => Network::Testnet,
+            "regtest" => Network::Regtest,
+            _ => bail!("Invalid bitcoin network: {}", network_str),
+        };
+        Ok(res)
+    }
+
     pub fn load_config<T: DeserializeOwned>(
         path_opt: Option<&String>,
         crate_name: &str,

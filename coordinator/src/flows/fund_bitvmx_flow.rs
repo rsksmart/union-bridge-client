@@ -21,7 +21,10 @@ where
     BC: BitVmxBrokerClientApi,
 {
     pub fn new(bitvmx_broker: Rc<BC>, bitcoin_network: Network) -> Self {
-        Self { bitvmx_broker, bitcoin_network }
+        Self {
+            bitvmx_broker,
+            bitcoin_network,
+        }
     }
 }
 
