@@ -17,5 +17,3 @@ bitvmx_broker:
 broker_client_id: 101 # read from env UB__BROKER_CLIENT_ID
 
 storage_path: "/your_base_path/.union_bridge/database/multi-client-1" # read from env UB__STORAGE_PATH
-
-bitcoin_network: "regtest"

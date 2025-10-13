@@ -8,6 +8,8 @@ indexer:
   cache:
     size: 1000
 
+bitcoin_network: "regtest"
+
 contracts:
   - name: "TestContractDyn"
     address: "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761"

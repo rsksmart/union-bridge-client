@@ -17,5 +17,3 @@ bitvmx_broker: # can be overriden with env vars UB_bitvmx_broker__ip and UB_bitv
 broker_client_id: 333
 
 storage_path: "/app/db/" # This should match the volume mount in docker-compose
-
-bitcoin_network: "regtest"

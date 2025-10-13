@@ -58,7 +58,7 @@ async fn main() -> Result<()> {
     let listener = TcpListener::bind(http_addr)
         .await
         .context("Failed to bind to address")?;
-    // Parse the Bitcoin network
+
     let network = CommonConfig::parse_bitcoin_network(&config.bitcoin_network)
         .context("Failed to parse bitcoin_network")?;
 

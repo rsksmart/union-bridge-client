@@ -66,16 +66,6 @@ pub struct ContractConfig {
 }
 
 impl CommonConfig {
-    pub fn parse_bitcoin_network(network_str: &str) -> Result<Network> {
-        let res = match network_str {
-            "bitcoin" | "mainnet" => Network::Bitcoin,
-            "testnet" => Network::Testnet,
-            "regtest" => Network::Regtest,
-            _ => bail!("Invalid bitcoin network: {}", network_str),
-        };
-        Ok(res)
-    }
-
     pub fn load_config<T: DeserializeOwned>(
         path_opt: Option<&String>,
         crate_name: &str,
@@ -161,5 +151,16 @@ impl CommonConfig {
 
         let config = serde_yaml::from_str(&config_str).context("Failed to parse log4rs config")?;
         log4rs::init_raw_config(config).context("Failed to initialize log4rs")
+    }
+
+    pub fn parse_bitcoin_network(network_str: &str) -> Result<Network> {
+        let res = match network_str {
+            "bitcoin" | "mainnet" => Network::Bitcoin,
+            "testnet" => Network::Testnet,
+            "regtest" => Network::Regtest,
+            _ => bail!("Invalid bitcoin network: {}", network_str),
+        };
+
+        Ok(res)
     }
 }

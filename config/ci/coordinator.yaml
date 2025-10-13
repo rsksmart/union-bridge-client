@@ -15,5 +15,3 @@ bitvmx_broker: # can be overriden with env vars UB_bitvmx_broker__ip and UB_bitv
   port: 9094
 
 broker_client_id: 333
-
-bitcoin_network: "regtest"

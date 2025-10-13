@@ -12,6 +12,8 @@ provider:
   rootstock:
     url: "ws://127.0.0.1:8546"
 
+bitcoin_network: "regtest"
+
 contracts:
   - name: "PegManager"
     address: "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6"
