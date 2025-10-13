@@ -220,6 +220,8 @@ See the `bitcoin-wallet` [README](../bitcoin-wallet/README.md) for more info.
   export `BITVMX_P2P_HOST` addresses accordingly in `start_operators.sh`.
 - **Healthchecks**: services wait for each other; if something is stuck, try bringing stacks down as mentioned above,
   re-check env files, and start again.
+- **Personal Access Token**: Docker (when pushing or pulling to a private GitHub container registry) asks for a personal access token. You can generate one on GitHub using this [link](https://github.com/settings/tokens/new).
+  - You can directly setup the token in the terminal by doing `echo "$GITHUB_REGISTRY_TOKEN" | docker login ghcr.io -u "user" --password-stdin`
 
 ### BitVMX error logs
 
