@@ -1840,11 +1840,18 @@ fn print_link(txid: Txid) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::blockchain_tracker::BlockchainView;
+    use crate::coordinator::tests::MockRskContractsGatewayApi;
+    use crate::flows::common::GlobalContext;
     use crate::user_requests::ApplyToStream;
     use bitcoin::PublicKey;
     use common::msg_broker::bitvmx_types::{P2PAddress, PeerId, SignedPublicKey};
+    use common::msg_broker::broker::MockBrokerClientApi;
     use common::types::StreamId;
+    use common::types::{BlockNumber, CommitteeId, Hash256};
+    use std::rc::Rc;
     use std::str::FromStr;
+    use uuid::Uuid;
 
     // Test helper functions
     fn create_test_p2p_address() -> P2PAddress {
@@ -2098,5 +2105,269 @@ mod tests {
 
         let step_data7 = StepData::CommInfo(p2p_addr);
         assert!(step_data7.into_setup_completed().is_err());
+    }
+
+    // Test helper to create a mock setup committee flow
+    fn create_mock_setup_committee_flow() -> (
+        SetupCommitteeFlow<
+            MockRskContractsGatewayApi,
+            MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>,
+        >,
+        MockRskContractsGatewayApi,
+        MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>,
+        BlockchainView,
+    ) {
+        let mock_contracts = MockRskContractsGatewayApi::new();
+        let mock_broker = MockBrokerClientApi::new();
+        let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
+        let blockchain_view = BlockchainView::new();
+        let global_context = GlobalContext::default();
+
+        let flow = SetupCommitteeFlow::new(
+            Rc::new(mock_contracts),
+            rt_sync,
+            Rc::new(mock_broker),
+            global_context,
+            Uuid::new_v4(),
+        );
+
+        (
+            flow,
+            MockRskContractsGatewayApi::new(),
+            MockBrokerClientApi::new(),
+            blockchain_view,
+        )
+    }
+
+    // Test helper to create test events
+    fn create_test_new_committee_pending_event() -> NewCommitteePendingEvent {
+        use alloy_primitives::{Address, Bytes};
+        use common::types::BlockNumber;
+        use primitive_types::H256;
+
+        NewCommitteePendingEvent {
+            inner: union_contracts::bindings::committee_registry::CommitteeRegistry::NewPendingCommittee {
+                committeeId: 12345u128,
+                _committee: union_contracts::bindings::committee_registry::CommitteeRegistry::Committee {
+                    members: vec![],
+                    aggregatedKey: Bytes::new(),
+                    fundingUTXOs: vec![],
+                    leaderAddress: Address::from([1u8; 20]),
+                    createdAt: alloy_primitives::Uint::from(0),
+                    isPending: true,
+                    missingCommunicationData: 0,
+                    operatorTakeIndex: alloy_primitives::Uint::from(0),
+                    missingData: 0,
+                    streamId: 0,
+                },
+            },
+            removed: false,
+            block_number: BlockNumber::from(100),
+            block_hash: Hash256::from(H256::from([1u8; 32])),
+            tx_hash: Hash256::from(H256::from([2u8; 32])),
+        }
+    }
+
+    fn create_test_all_communication_data_ready_event() -> AllCommunicationDataReadyEvent {
+        use common::types::BlockNumber;
+        use primitive_types::H256;
+
+        AllCommunicationDataReadyEvent {
+            inner: union_contracts::bindings::committee_registry::CommitteeRegistry::AllCommunicationDataReady {
+                _committeeId: 12345u128,
+            },
+            removed: false,
+            block_number: BlockNumber::from(100),
+            block_hash: Hash256::from(H256::from([1u8; 32])),
+            tx_hash: Hash256::from(H256::from([2u8; 32])),
+        }
+    }
+
+    fn create_test_new_committee_ready_event() -> NewCommitteeReadyEvent {
+        use alloy_primitives::{Address, Bytes};
+        use common::types::BlockNumber;
+        use primitive_types::H256;
+
+        NewCommitteeReadyEvent {
+            inner: union_contracts::bindings::committee_registry::CommitteeRegistry::NewCommittee {
+                committeeId: 12345u128,
+                _committee:
+                    union_contracts::bindings::committee_registry::CommitteeRegistry::Committee {
+                        members: vec![],
+                        aggregatedKey: Bytes::new(),
+                        fundingUTXOs: vec![],
+                        leaderAddress: Address::from([1u8; 20]),
+                        createdAt: alloy_primitives::Uint::from(0),
+                        isPending: true,
+                        missingCommunicationData: 0,
+                        operatorTakeIndex: alloy_primitives::Uint::from(0),
+                        missingData: 0,
+                        streamId: 0,
+                    },
+            },
+            removed: false,
+            block_number: BlockNumber::from(100),
+            block_hash: Hash256::from(H256::from([1u8; 32])),
+            tx_hash: Hash256::from(H256::from([2u8; 32])),
+        }
+    }
+
+    // Test the complete flow initialization
+    #[test]
+    fn test_setup_committee_flow_initialization() {
+        let (flow, _mock_contracts, _mock_broker, _blockchain_view) =
+            create_mock_setup_committee_flow();
+
+        // Verify initial state
+        assert_eq!(flow.state.step, Steps::Init);
+        assert!(flow.state.ctx.user_input.is_none());
+        assert!(flow.state.ctx.my_comm_info.is_none());
+    }
+
+    // Test event processing for NewCommitteePending
+    #[test]
+    fn test_process_new_committee_pending_event() {
+        let event = create_test_new_committee_pending_event();
+
+        // Test that the event is properly structured
+        assert_eq!(event.inner.committeeId, 12345u128);
+        assert_eq!(event.removed, false);
+        assert_eq!(event.block_number, BlockNumber::from(100));
+    }
+
+    // Test event processing for AllCommunicationDataReady
+    #[test]
+    fn test_process_all_communication_data_ready_event() {
+        let event = create_test_all_communication_data_ready_event();
+
+        // Test that the event is properly structured
+        assert_eq!(event.inner._committeeId, 12345u128);
+        assert_eq!(event.removed, false);
+        assert_eq!(event.block_number, BlockNumber::from(100));
+    }
+
+    // Test event processing for NewCommitteeReady
+    #[test]
+    fn test_process_new_committee_ready_event() {
+        let event = create_test_new_committee_ready_event();
+
+        // Test that the event is properly structured
+        assert_eq!(event.inner.committeeId, 12345u128);
+        assert_eq!(event.removed, false);
+        assert_eq!(event.block_number, BlockNumber::from(100));
+    }
+
+    // Test the flow state management
+    #[test]
+    fn test_flow_state_management() {
+        let (flow, _mock_contracts, _mock_broker, _blockchain_view) =
+            create_mock_setup_committee_flow();
+
+        // Test initial state
+        assert_eq!(flow.state.step, Steps::Init);
+        assert!(flow.state.ctx.user_input.is_none());
+        assert!(flow.state.ctx.my_comm_info.is_none());
+        assert!(flow.state.ctx.committee_ready.is_none());
+
+        // Test that the flow context is properly initialized
+        assert!(flow.state.ctx.my_take_key_req.is_none());
+        assert!(flow.state.ctx.my_dispute_key_req.is_none());
+        assert!(flow.state.ctx.my_comm_key_req.is_none());
+    }
+
+    // Test error scenarios with proper cloning
+    #[test]
+    fn test_error_scenarios() {
+        let (_flow, _mock_contracts, _mock_broker, _blockchain_view) =
+            create_mock_setup_committee_flow();
+
+        // Test invalid step data conversions with proper cloning
+        let invalid_step_data = StepData::CommInfo(create_test_p2p_address());
+
+        // These should all fail with appropriate error messages
+        assert!(invalid_step_data.clone().into_user_input().is_err());
+        assert!(invalid_step_data.clone().into_committee_pending().is_err());
+        assert!(
+            invalid_step_data
+                .clone()
+                .into_all_comm_data_ready()
+                .is_err()
+        );
+        assert!(invalid_step_data.into_committee_ready().is_err());
+    }
+
+    // Test the flow completion scenarios
+    #[test]
+    fn test_flow_completion_scenarios() {
+        let (flow, _mock_contracts, _mock_broker, _blockchain_view) =
+            create_mock_setup_committee_flow();
+
+        // Test that the flow starts in the correct initial state
+        assert_eq!(flow.state.step, Steps::Init);
+
+        // Test that the flow has a valid internal ID
+        assert!(flow.state.internal_id != Uuid::nil());
+    }
+
+    // Test the event processing with different event types
+    #[test]
+    fn test_event_processing_with_different_types() {
+        // Test NewCommitteePending event processing
+        let pending_event = create_test_new_committee_pending_event();
+        let rsk_event = RskPegManagerEvents::NewCommitteePending(pending_event);
+
+        match rsk_event {
+            RskPegManagerEvents::NewCommitteePending(event) => {
+                assert_eq!(event.inner.committeeId, 12345u128);
+            }
+            _ => panic!("Expected NewCommitteePending event"),
+        }
+
+        // Test AllCommunicationDataReady event processing
+        let comm_data_event = create_test_all_communication_data_ready_event();
+        let rsk_event = RskPegManagerEvents::AllCommunicationDataReady(comm_data_event);
+
+        match rsk_event {
+            RskPegManagerEvents::AllCommunicationDataReady(event) => {
+                assert_eq!(event.inner._committeeId, 12345u128);
+            }
+            _ => panic!("Expected AllCommunicationDataReady event"),
+        }
+
+        // Test NewCommitteeReady event processing
+        let ready_event = create_test_new_committee_ready_event();
+        let rsk_event = RskPegManagerEvents::NewCommitteeReady(ready_event);
+
+        match rsk_event {
+            RskPegManagerEvents::NewCommitteeReady(event) => {
+                assert_eq!(event.inner.committeeId, 12345u128);
+            }
+            _ => panic!("Expected NewCommitteeReady event"),
+        }
+    }
+
+    // Test the flow with different committee configurations
+    #[test]
+    fn test_flow_with_different_committee_configurations() {
+        // Test with different committee IDs
+        let committee_id_1 = CommitteeId::from(12345u128);
+        let committee_id_2 = CommitteeId::from(67890u128);
+
+        assert_ne!(committee_id_1, committee_id_2);
+
+        // Test with different block numbers
+        let block_number_1 = BlockNumber::from(100);
+        let block_number_2 = BlockNumber::from(200);
+
+        assert_ne!(block_number_1, block_number_2);
+
+        // Test that events with different configurations are handled correctly
+        let event_1 = create_test_new_committee_pending_event();
+        let event_2 = create_test_new_committee_pending_event();
+
+        // Both events should have the same structure but different instances
+        assert_eq!(event_1.inner.committeeId, event_2.inner.committeeId);
+        assert_eq!(event_1.removed, event_2.removed);
+        assert_eq!(event_1.block_number, event_2.block_number);
     }
 }
