@@ -22,6 +22,7 @@ Step 7: Pegout Registered event is received (RSK -> U)
     a: Confirm pegout registered and sending the confirmation to BitVMX with SetVar
 */
 use crate::blockchain_tracker::{BlockConfirmations, BlockchainObserver, BlockchainView};
+use crate::config::SPV_PROOF_MIN_CONFIRMATIONS;
 use crate::flows::btc_signature::btc_signature_lifecycle::BtcSignatureLifeCycle;
 use crate::flows::btc_signature::btc_signature_subflow::{
     BaseBtcSignatureSubFlow, BtcSignatureSubFlowApi, BtcSignatureSubFlowFactory,
@@ -64,7 +65,6 @@ use uuid::Uuid;
 pub const USER_TAKE_TX: &str = "USER_TAKE_TX";
 pub const PROGRAM_TYPE_USER_TAKE: &str = "take";
 pub const PEGOUT_ACCEPTED_NAME: &str = "pegout_accepted";
-pub const MIN_TX_CONFIRMATIONS: u32 = 4;
 pub const BLOCKS_DELAY_FOR_TX_CHECK: u32 = 20; // Number of blocks to wait before rechecking transaction status
 
 #[derive(Debug, Clone)]
@@ -647,7 +647,7 @@ where
                 tx_status.tx_id
             );
         }
-        if tx_status.confirmations >= MIN_TX_CONFIRMATIONS {
+        if tx_status.confirmations >= SPV_PROOF_MIN_CONFIRMATIONS {
             debug!(
                 "Transaction confirmed with sufficient confirmations for flow_id: {}",
                 flow_id
