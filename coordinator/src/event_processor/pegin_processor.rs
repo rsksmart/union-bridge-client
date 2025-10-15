@@ -1272,6 +1272,24 @@ where
                     trace!("Ignoring BitVMX CommInfo")
                 }
             }
+            OutgoingBitVMXApiMessages::SetupCompleted(program_id) => {
+                // Check if there is any UUID in the state matching the ProgramId
+                if let Some((_, state)) = self
+                    .tracker
+                    .iter()
+                    .find(|(_, state)| state.flow_id == *program_id)
+                {
+                    info!(
+                        "BitVMX setup for pegin was completed: flow_id={}",
+                        state.flow_id
+                    );
+                } else {
+                    trace!(
+                        "Ignoring BitVMX SetupCompleted for unknown program_id: {}",
+                        program_id
+                    );
+                }
+            }
             _ => {}
         }
 
