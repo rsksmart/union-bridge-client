@@ -1022,7 +1022,7 @@ where
         Self::send_to_bitvmx(bitvmx_broker, setup_message)
     }
 
-    fn register_spv_proof(&self, spv_proof: BtcTxSPVProof) -> Result<()> {
+    fn send_accept_pegin_contracts(&self, spv_proof: BtcTxSPVProof) -> Result<()> {
         debug!("Registering SPV proof: spv_proof={:?}", spv_proof);
 
         let input = spv_proof.into();
@@ -1193,13 +1193,14 @@ where
         } else {
             //step 9a confirmation not enough, reschedule the check
             debug!(
-                "Transaction insufficient confirmations: flow_id={}",
-                flow_id
+                "Transaction {} has not enough confirmations [{}/{MIN_TX_CONFIRMATIONS}] for flow_id={flow_id}",
+                tx_status.tx_id, tx_status.confirmations
             );
             debug!("Scheduling get transaction: flow_id={}", flow_id);
             self.scheduler
                 .schedule(action_key, BLOCKS_DELAY_FOR_TX_CHECK);
         }
+
         Ok(())
     }
 
@@ -1276,11 +1277,11 @@ where
                             "Handling accept pegin SPV proof: flow_id={}, tx_id={}",
                             state.flow_id, tx_id
                         );
-                        self.register_spv_proof(spv_proof.clone())?;
+                        self.send_accept_pegin_contracts(spv_proof.clone())?;
                     } else {
                         // Step 3 if no matching state found we are assuming this is a request pegin SPV proof
                         debug!(
-                            "Bitcon Request Pegin received: tx_id={tx_id} @ block={}",
+                            "Bitcon Request Pegin received: tx_id={tx_id} @ block={}. Scheduling contracts request.",
                             spv_proof.block_hash
                         );
 
