@@ -92,7 +92,7 @@ trait SetupCommitteeFlowApi {
 pub(crate) trait SetupCommitteeFlowFactoryApi<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi>
 {
     fn create_flow(&self, internal_id: Uuid) -> SetupCommitteeFlow<CG, BC>;
-    fn create_flow_from_saved_state(&self, saved_state: CommitteeSetupFlowState) -> Result<SetupCommitteeFlow<CG, BC>>;
+    fn create_flow_from_saved_state(&self, saved_state: State) -> SetupCommitteeFlow<CG, BC>;
 }
 
 // TODO improve with structs instead of tuples, using tuples for now for validation
@@ -112,21 +112,7 @@ pub(crate) struct FundingUtxos {
     // pub advance_funds: PartialUtxo,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct PendingEventConfirmation {
-    event_type: EventType,
-    block_number: BlockNumber,
-    event_data: Option<Vec<u8>>, // Serialized event for restart recovery
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) enum EventType {
-    NewCommitteePending,
-    AllCommunicationDataReady,
-    NewCommitteeReady,
-}
-
-#[derive(Default, Debug, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 struct FlowContext {
     // stepped
     user_input: Option<ApplyToStream>,
@@ -142,8 +128,6 @@ struct FlowContext {
     committee_pending: Option<NewCommitteePendingEvent>,
     communication_data_ready: Option<Vec<P2PAddress>>,
     committee_ready: Option<NewCommitteeReadyEvent>,
-    // confirmation tracking
-    pending_confirmation: Option<PendingEventConfirmation>,
 }
 
 impl FlowContext {
@@ -294,8 +278,8 @@ impl StepData {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct State {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct State {
     internal_id: Uuid,
     step: Steps,
     ctx: FlowContext,
@@ -318,19 +302,11 @@ where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
 {
-    fn persist_state(&self) -> Result<()> {
-        // Serialize the FlowContext
-        let ctx_bytes = serde_json::to_vec(&self.state.ctx)?;
-
-        let flow_state = CommitteeSetupFlowState {
-            internal_id: self.state.internal_id,
-            step: format!("{:?}", self.state.step),
-            ctx: ctx_bytes,
-        };
-
+    fn update_state_in_context(&self) -> Result<()> {
         let mut flows = self.global_context.committee_setup_flows().lock()
             .map_err(|e| anyhow::anyhow!("Failed to lock flows: {}", e))?;
-        flows.insert(self.state.internal_id, flow_state);
+
+        flows.insert(self.state.internal_id, self.state.clone());
 
         Ok(())
     }
@@ -340,43 +316,17 @@ where
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
-        saved_state: CommitteeSetupFlowState,
-    ) -> Result<Self> {
-        // Deserialize the FlowContext
-        let ctx: FlowContext = serde_json::from_slice(&saved_state.ctx)?;
-
-        // Parse the step from string back to enum
-        let step = match saved_state.step.as_str() {
-            "Init" => Steps::Init,
-            "GetMyCommInfo" => Steps::GetMyCommInfo,
-            "GetMyTakeKey" => Steps::GetMyTakeKey,
-            "SignMyTakeKey" => Steps::SignMyTakeKey,
-            "GetMyDisputeKey" => Steps::GetMyDisputeKey,
-            "SignMyDisputeKey" => Steps::SignMyDisputeKey,
-            "GetMyCommKey" => Steps::GetMyCommKey,
-            "SignMyCommKey" => Steps::SignMyCommKey,
-            "FundMyBitVmxAccount" => Steps::FundMyBitVmxAccount,
-            "ApplyToStream" => Steps::ApplyToStream,
-            "DepositP2PData" => Steps::DepositP2PData,
-            "SetupTakeAggregatedKey" => Steps::SetupTakeAggregatedKey,
-            "SetupDisputeAggregatedKey" => Steps::SetupDisputeAggregatedKey,
-            "DepositAggregatedKey" => Steps::DepositAggregatedKey,
-            "SetupDisputeCore" => Steps::SetupDisputeCore,
-            "Done" => Steps::Done,
-            _ => bail!("Unknown step: {}", saved_state.step),
-        };
-
-        Ok(Self {
+        state: State,
+        bitcoin_network: Network,
+    ) -> Self {
+        Self {
             contracts,
             rt_sync,
             bitvmx_broker,
-            state: State {
-                internal_id: saved_state.internal_id,
-                step,
-                ctx,
-            },
+            state,
             global_context,
-        })
+            bitcoin_network,
+        }
     }
 
     fn new(
@@ -1027,6 +977,10 @@ where
                 );
             }
         }
+
+        // Update state in GlobalContext after successful step completion
+        self.update_state_in_context()?;
+
         Ok(())
     }
 
@@ -1130,9 +1084,6 @@ where
                 unreachable!("Done step should not be reached in complete_step");
             }
         }
-
-        // Persist state after successful step completion
-        self.persist_state()?;
 
         Ok(())
     }
@@ -1420,58 +1371,9 @@ where
             .expect("Failed to lock flows for restoration");
 
         for (id, saved_state) in saved_flows.iter() {
-            match self.flow_factory.create_flow_from_saved_state(saved_state.clone()) {
-                Ok(flow) => {
-                    // Check if flow was waiting for RSK event confirmation
-                    if let Some(pending_conf) = &flow.state.ctx.pending_confirmation {
-                        if let Some(event_data) = &pending_conf.event_data {
-                            // Deserialize the specific event type and recreate RskPegManagerEvents
-                            let event_result = match pending_conf.event_type {
-                                EventType::NewCommitteePending => {
-                                    serde_json::from_slice::<NewCommitteePendingEvent>(event_data)
-                                        .map(RskPegManagerEvents::NewCommitteePending)
-                                }
-                                EventType::AllCommunicationDataReady => {
-                                    serde_json::from_slice::<AllCommunicationDataReadyEvent>(event_data)
-                                        .map(RskPegManagerEvents::AllCommunicationDataReady)
-                                }
-                                EventType::NewCommitteeReady => {
-                                    serde_json::from_slice::<NewCommitteeReadyEvent>(event_data)
-                                        .map(RskPegManagerEvents::NewCommitteeReady)
-                                }
-                            };
-
-                            match event_result {
-                                Ok(event) => {
-                                    let event_id = format!("{}-restored", id);
-                                    let mut confirmable = ConfirmableEventWithData::new(
-                                        event_id.clone(),
-                                        REQUIRED_CONFIRMATIONS,
-                                        self.blockchain_view.clone(),
-                                        event,
-                                    );
-                                    // Start confirming from original block (will restart from 0 confirmations)
-                                    confirmable.start_confirming(pending_conf.block_number)
-                                        .expect("Failed to restart confirmation for restored event");
-
-                                    self.events_confirming.insert(event_id, confirmable);
-                                    debug!("Restored confirmation for flow {} event {:?} at block {}",
-                                        id, pending_conf.event_type, pending_conf.block_number);
-                                }
-                                Err(e) => {
-                                    panic!("Failed to deserialize pending event for flow {}: {}", id, e);
-                                }
-                            }
-                        }
-                    }
-
-                    self.flows.insert(*id, flow);
-                    info!("Restored flow {}", id);
-                }
-                Err(e) => {
-                    error!("Failed to restore flow {}: {}", id, e);
-                }
-            }
+            let flow = self.flow_factory.create_flow_from_saved_state(saved_state.clone());
+            self.flows.insert(*id, flow);
+            info!("Restored flow {}", id);
         }
 
         if !self.flows.is_empty() {
@@ -1656,8 +1558,6 @@ where
         match flow_data {
             Some((flow, step_data)) => {
                 flow.complete_step(step_data)?;
-                // Clear pending_confirmation after successful step completion
-                flow.state.ctx.pending_confirmation = None;
             }
             None => {
                 warn!("Received {event:?} but no matching flow found");
@@ -1711,28 +1611,6 @@ where
         for key in completed {
             debug!("Removing completed flow: {key:?}");
             self.flows.remove(&key);
-        }
-    }
-
-    fn get_flow_waiting_for_event(
-        &mut self,
-        event_type: &EventType,
-        event: &RskPegManagerEvents,
-    ) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
-        match (event_type, event) {
-            (EventType::NewCommitteePending, RskPegManagerEvents::NewCommitteePending(e)) => {
-                let stream_id = e.inner._committee.streamId.into();
-                self.get_flow_for_stream_id(stream_id, Steps::ApplyToStream)
-            }
-            (EventType::AllCommunicationDataReady, RskPegManagerEvents::AllCommunicationDataReady(e)) => {
-                let committee_id = e.inner._committeeId.into();
-                self.get_flow_for_committee_pending(committee_id, Steps::DepositP2PData)
-            }
-            (EventType::NewCommitteeReady, RskPegManagerEvents::NewCommitteeReady(e)) => {
-                let committee_id = e.inner.committeeId.into();
-                self.get_flow_for_committee_pending(committee_id, Steps::DepositAggregatedKey)
-            }
-            _ => None,
         }
     }
 
@@ -1859,38 +1737,6 @@ where
         } else {
             debug!("Adding new pending {event:?}, start confirming at block {block_num}");
 
-            // Save the event in the appropriate flow's pending_confirmation for restart recovery
-            let event_type = match event {
-                RskPegManagerEvents::NewCommitteePending(_) => EventType::NewCommitteePending,
-                RskPegManagerEvents::AllCommunicationDataReady(_) => EventType::AllCommunicationDataReady,
-                RskPegManagerEvents::NewCommitteeReady(_) => EventType::NewCommitteeReady,
-                _ => unreachable!("Already filtered above"),
-            };
-
-            if let Some(flow) = self.get_flow_waiting_for_event(&event_type, event) {
-                // Only serialize the events we need for committee setup flows
-                let event_data = match &managed_event {
-                    RskPegManagerEvents::NewCommitteePending(e) => {
-                        Some(serde_json::to_vec(e)?)
-                    }
-                    RskPegManagerEvents::AllCommunicationDataReady(e) => {
-                        Some(serde_json::to_vec(e)?)
-                    }
-                    RskPegManagerEvents::NewCommitteeReady(e) => {
-                        Some(serde_json::to_vec(e)?)
-                    }
-                    _ => None, // Other events don't need serialization
-                };
-
-                flow.state.ctx.pending_confirmation = Some(PendingEventConfirmation {
-                    event_type,
-                    block_number: block_num,
-                    event_data,
-                });
-                // Persist the updated state
-                flow.persist_state()?;
-            }
-
             let mut confirmable_event = ConfirmableEventWithData::new(
                 id.clone(),
                 REQUIRED_CONFIRMATIONS,
@@ -2006,13 +1852,14 @@ where
         )
     }
 
-    fn create_flow_from_saved_state(&self, saved_state: CommitteeSetupFlowState) -> Result<SetupCommitteeFlow<CG, BC>> {
+    fn create_flow_from_saved_state(&self, saved_state: State) -> SetupCommitteeFlow<CG, BC> {
         SetupCommitteeFlow::from_saved_state(
             self.contracts_gateway.clone(),
             self.rt_sync.clone(),
             self.bitvmx_broker.clone(),
             self.global_context.clone(),
             saved_state,
+            self.bitcoin_network,
         )
     }
 }

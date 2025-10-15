@@ -3,7 +3,6 @@ use anyhow::{Result, bail};
 use common::msg_broker::bitvmx_types::{P2PAddress, PeerId, SignedPublicKey};
 use common::types::CommitteeId;
 use log::info;
-use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -19,15 +18,7 @@ pub const COMM_KEY_INDEX: usize = 2;
 pub struct GlobalContext {
     my_committees: MyCommittees,
     my_keys: MyKeys,
-    committee_setup_flows: Arc<Mutex<HashMap<Uuid, CommitteeSetupFlowState>>>,
-}
-
-/// Serializable state for committee setup flows
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CommitteeSetupFlowState {
-    pub internal_id: Uuid,
-    pub step: String,  // Will be converted from Steps enum
-    pub ctx: Vec<u8>,  // Serialized FlowContext
+    committee_setup_flows: Arc<Mutex<HashMap<Uuid, crate::flows::committee::setup_committee_flow::State>>>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -128,7 +119,7 @@ impl GlobalContext {
         }
     }
 
-    pub fn committee_setup_flows(&self) -> &Arc<Mutex<HashMap<Uuid, CommitteeSetupFlowState>>> {
+    pub fn committee_setup_flows(&self) -> &Arc<Mutex<HashMap<Uuid, crate::flows::committee::setup_committee_flow::State>>> {
         &self.committee_setup_flows
     }
 

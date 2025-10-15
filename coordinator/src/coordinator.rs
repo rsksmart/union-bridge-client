@@ -246,6 +246,11 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi>
 
         self.processors.iter_mut().for_each(|p| p.shutdown());
 
+        // Final persistence save during shutdown to ensure no state is lost
+        self.store
+            .save_context(self.global_context.clone())
+            .context("Final context save during shutdown")?;
+
         self.monitor
             .cancel_bitvmx_monitoring()
             .context("Failed to cancel BitVMX event monitoring")?;

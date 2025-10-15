@@ -5,7 +5,8 @@ use std::path::PathBuf;
 use storage_backend::storage::{KeyValueStore, Storage};
 use uuid::Uuid;
 
-use crate::flows::common::{GlobalContext, CommitteeSetupFlowState};
+use crate::flows::common::GlobalContext;
+use crate::flows::committee::setup_committee_flow::State as SetupCommitteeFlowState;
 use crate::types::Role;
 use common::msg_broker::bitvmx_types::SignedPublicKey;
 use common::types::CommitteeId;
@@ -30,7 +31,7 @@ struct PersistentGlobalContext {
     take_key: Option<SignedPublicKey>,
     dispute_key: Option<SignedPublicKey>,
     comm_key: Option<SignedPublicKey>,
-    committee_setup_flows: HashMap<Uuid, CommitteeSetupFlowState>,
+    committee_setup_flows: HashMap<Uuid, SetupCommitteeFlowState>,
 }
 
 impl PersistentGlobalContext {
