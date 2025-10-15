@@ -31,7 +31,6 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
 use crate::flows::committee::dispute_core_setup::DisputeCoreSetup;
 use crate::flows::common::{
     COMM_KEY_INDEX, DISPUTE_KEY_INDEX, GlobalContext, TAKE_KEY_INDEX, build_communication_data,
-    get_bitcoin_network,
 };
 use common::types;
 use common::types::{BlockNumber, CommitteeId, RskBlockAndUncles, StreamId, TxIdParser};
@@ -289,6 +288,7 @@ pub(crate) struct SetupCommitteeFlow<CG: RskContractsGatewayApi, BC: BitVmxBroke
     bitvmx_broker: Rc<BC>,
     state: State,
     global_context: GlobalContext,
+    bitcoin_network: Network,
 }
 
 const REGTEST_FEE_RATE: u64 = 10;
@@ -305,6 +305,7 @@ where
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
         internal_id: Uuid,
+        bitcoin_network: Network,
     ) -> Self {
         Self {
             contracts,
@@ -316,6 +317,7 @@ where
                 ctx: FlowContext::default(),
             },
             global_context,
+            bitcoin_network,
         }
     }
 
@@ -596,7 +598,7 @@ where
             .context("Missing Send Funds Request TxId")?;
 
         info!("Funded. Txid: {}", txid);
-        print_link(txid);
+        print_link(txid, self.bitcoin_network);
 
         let public_key = self.ctx_my_dispute_key()?.public_key;
 
@@ -726,7 +728,7 @@ where
 
     pub fn set_utxos(&mut self) -> Result<()> {
         let req_id = Uuid::new_v4();
-        let fee_rate = if get_bitcoin_network() == Network::Regtest {
+        let fee_rate = if self.bitcoin_network == Network::Regtest {
             REGTEST_FEE_RATE
         } else {
             DEFAULT_FEE_RATE
@@ -1752,6 +1754,7 @@ where
     rt_sync: RuntimeSync,
     bitvmx_broker: Rc<BC>,
     global_context: GlobalContext,
+    bitcoin_network: Network,
 }
 
 impl<CG, BC> SetupCommitteeFlowFactory<CG, BC>
@@ -1764,12 +1767,14 @@ where
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
+        bitcoin_network: Network,
     ) -> Self {
         Self {
             contracts_gateway,
             rt_sync,
             bitvmx_broker,
             global_context,
+            bitcoin_network,
         }
     }
 }
@@ -1787,6 +1792,7 @@ where
             self.bitvmx_broker.clone(),
             self.global_context.clone(),
             internal_id,
+            self.bitcoin_network,
         )
     }
 }
@@ -1846,14 +1852,12 @@ fn construct_signed_pubkey(
     }
 }
 
-fn print_link(txid: Txid) {
-    let network = get_bitcoin_network();
-
-    if network == Network::Regtest {
+fn print_link(txid: Txid, bitcoin_network: Network) {
+    if bitcoin_network == Network::Regtest {
         return;
     }
 
-    let url = match network {
+    let url = match bitcoin_network {
         Network::Testnet => format!("https://mempool.space/testnet/tx/{}", txid),
         Network::Bitcoin => format!("https://mempool.space/tx/{}", txid),
         _ => "Unsupported network".to_string(),

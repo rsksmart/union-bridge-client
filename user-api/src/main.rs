@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
+use common::config::CommonConfig;
 use common::msg_broker::broker::{BrokerServer, BrokerServerApi};
 use common::shutdown_flag::ShutdownFlag;
 use log::{error, info};
@@ -57,19 +58,9 @@ async fn main() -> Result<()> {
     let listener = TcpListener::bind(http_addr)
         .await
         .context("Failed to bind to address")?;
-    // Parse the Bitcoin network
-    let network = match config.bitcoin_network.as_str() {
-        "regtest" => bitcoin::Network::Regtest,
-        "testnet" => bitcoin::Network::Testnet,
-        "mainnet" => bitcoin::Network::Bitcoin,
-        _ => {
-            error!(
-                "Invalid bitcoin_network config: {}. Must be 'regtest', 'testnet', or 'mainnet'",
-                config.bitcoin_network
-            );
-            return Err(anyhow::anyhow!("Invalid bitcoin_network configuration"));
-        }
-    };
+
+    let network = CommonConfig::parse_bitcoin_network(&config.bitcoin_network)
+        .context("Failed to parse bitcoin_network")?;
 
     // Get wallet private key from environment variable (same as bitcoin-wallet)
     let wallet_private_key = std::env::var("WALLET_PRIVATE_KEY")

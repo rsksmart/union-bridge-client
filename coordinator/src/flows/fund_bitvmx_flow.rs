@@ -1,7 +1,7 @@
 use crate::event_processor::EventProcessor;
-use crate::flows::common::get_bitcoin_network;
 use crate::types::UserRequests;
 use anyhow::{Context, Result};
+use bitcoin::Network;
 use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
 use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 use log::{info, trace};
@@ -13,14 +13,18 @@ where
     BC: BitVmxBrokerClientApi,
 {
     bitvmx_broker: Rc<BC>,
+    bitcoin_network: Network,
 }
 
 impl<BC> FundBitvmxProcessor<BC>
 where
     BC: BitVmxBrokerClientApi,
 {
-    pub fn new(bitvmx_broker: Rc<BC>) -> Self {
-        Self { bitvmx_broker }
+    pub fn new(bitvmx_broker: Rc<BC>, bitcoin_network: Network) -> Self {
+        Self {
+            bitvmx_broker,
+            bitcoin_network,
+        }
     }
 }
 
@@ -50,7 +54,7 @@ where
                 info!(
                     "Received BitVMX Funding Address: {}",
                     addr.clone()
-                        .require_network(get_bitcoin_network())
+                        .require_network(self.bitcoin_network)
                         .with_context(|| format!("Unexpected Bitcoin network for {addr:?}"))?
                         .to_string()
                 );

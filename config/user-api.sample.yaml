@@ -1,5 +1,4 @@
 coordinator_broker_client_id: 333
 broker_server_port: 5550
 http_server_port: 5551
-bitcoin_network: "regtest" # "regtest", "testnet", or "mainnet"
 # NOTE: Set WALLET_PRIVATE_KEY env var (same as bitcoin-wallet)

@@ -21,6 +21,7 @@ pub struct Config {
     pub broker_client_id: u32,
     pub contracts: Vec<ContractConfig>,
     pub storage_path: String,
+    pub bitcoin_network: String, // loaded from common.yaml
 }
 
 #[derive(Debug, Deserialize)]
@@ -68,5 +69,25 @@ pub struct Logger {}
 impl Logger {
     pub fn init(logger_file_opt: Option<&String>) -> anyhow::Result<()> {
         CommonConfig::init_logger(logger_file_opt, CARGO_PKG_NAME)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::config::Config;
+    use bitcoin::Network;
+    use common::config::CommonConfig;
+
+    #[test]
+    fn test_parse_bitcoin_network() -> anyhow::Result<()> {
+        const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
+
+        let config_path = &format!("{}/../config/multi-client-template", CARGO_MANIFEST_DIR);
+        let config = Config::load(Some(config_path))?;
+        assert_eq!(
+            Network::Regtest,
+            CommonConfig::parse_bitcoin_network(&config.bitcoin_network)?
+        );
+        Ok(())
     }
 }

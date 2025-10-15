@@ -7,6 +7,7 @@ use crate::{
     monitor::MonitorApi,
 };
 use anyhow::{Context, Result};
+use bitcoin::Network;
 use common::{
     msg_broker::{
         bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages},
@@ -15,7 +16,7 @@ use common::{
     runtime_sync::RuntimeSync,
     shutdown_flag::ShutdownFlag,
 };
-use log::{debug, error, info, trace, warn};
+use log::{debug, error, warn};
 use std::{
     ops::Sub,
     rc::Rc,
@@ -54,6 +55,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi>
         bitvmx_broker: Rc<BC>,
         store: S,
         shutdown_flag: ShutdownFlag,
+        bitcoin_network: Network,
     ) -> Self {
         let contracts_arc = Rc::new(contracts_gateway);
         let btc_sig_subflow_factory =
@@ -72,6 +74,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi>
             rt_sync.clone(),
             bitvmx_broker.clone(),
             global_context.clone(),
+            bitcoin_network,
         );
 
         Self {
@@ -100,7 +103,10 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi>
                     setup_committee_flow_factory,
                     global_context.clone(),
                 )),
-                Box::new(FundBitvmxProcessor::new(bitvmx_broker.clone())),
+                Box::new(FundBitvmxProcessor::new(
+                    bitvmx_broker.clone(),
+                    bitcoin_network,
+                )),
             ],
             check_period: CHECK_PERIOD,
             shutdown_flag,
