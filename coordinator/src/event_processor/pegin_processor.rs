@@ -1085,7 +1085,6 @@ where
         spv_proof: BtcTxSPVProof,
         attempt: i16,
     ) -> Result<()> {
-        // TODO this needs to be properly handled, not with a new thread
         let input: RequestPeginInput = spv_proof.clone().into();
         //Step 3a Call the requestPegin contract method
         let res = self.rt_sync.run(self.contracts.request_pegin(input));
@@ -1281,7 +1280,7 @@ where
                     } else {
                         // Step 3 if no matching state found we are assuming this is a request pegin SPV proof
                         debug!(
-                            "Bitcon Request Pegin received: tx_id={tx_id} @ block={}. Scheduling contracts request.",
+                            "Bitcoin Request Pegin received: tx_id={tx_id} @ block={}. Scheduling contracts request.",
                             spv_proof.block_hash
                         );
 
