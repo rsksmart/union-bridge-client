@@ -209,8 +209,10 @@ where
         match self.log_broker.try_recv()? {
             Some(FromServer::Log(log)) => {
                 trace!("Received new Log {:?}", log);
-                let event: RskPegManagerEvents = self.event_decoder.decode(log);
-                Ok(Some(event))
+                match self.event_decoder.decode(log) {
+                    Some(event) => Ok(Some(event)),
+                    None => Ok(None), // Event not recognized or not handled
+                }
             }
             Some(br) => {
                 bail!("Unexpected response type from Log Notifier {:?}", br)
@@ -627,7 +629,9 @@ mod tests {
 
         let event_decoder = EventDecoder::new();
 
-        let expected_event: RskPegManagerEvents = event_decoder.decode(log.clone());
+        // For unknown events, the decoder should return None
+        let decode_result = event_decoder.decode(log.clone());
+        assert_eq!(decode_result, None);
 
         let mut log_broker = MockBrokerClientApi::new();
         log_broker
@@ -644,7 +648,8 @@ mod tests {
         monitor.log_monitoring_active = true;
 
         let result = monitor.try_event().expect("Failed to receive event");
-        assert_eq!(result, Some(expected_event));
+        // For unknown events, the monitor should return None
+        assert_eq!(result, None);
     }
 
     #[test]
