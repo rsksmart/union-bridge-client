@@ -235,7 +235,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_apply_to_stream_insufficient_balance() {
-        let mut mock_committee_registry = MockCommitteeRegistryContractApi::new();
+        let mock_committee_registry = MockCommitteeRegistryContractApi::new();
         let mut mock_stream_manager = MockStreamManagerContractApi::new();
 
         let input = ApplyToStreamInput {
