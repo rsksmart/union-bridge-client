@@ -7,6 +7,15 @@ With this setup you get:
   `coordinator`).
 - A shared Docker network for BitVMX P2P across stacks.
 
+## Pre-requisites
+
+When pushing or pulling to a private GitHub container registry, Docker asks for a personal access token. You can generate one on GitHub using this [link](https://github.com/settings/tokens/new).
+. You can set up the token by running the following command:
+
+```bash
+echo "$GITHUB_REGISTRY_TOKEN" | docker login ghcr.io -u "user" --password-stdin.
+
+```
 ## How to run it
 
 ### 1) Check and fetch BitVMX compose (re-run as needed)
