@@ -1366,6 +1366,8 @@ where
     }
 
     fn restore_flows_from_context(&mut self, global_context: &GlobalContext) {
+        debug!("Checking for committee setup flows to restore from persistence");
+
         // Get saved flows from GlobalContext
         let saved_flows = global_context.committee_setup_flows().lock()
             .expect("Failed to lock flows for restoration");
@@ -1373,7 +1375,13 @@ where
         for (id, saved_state) in saved_flows.iter() {
             let flow = self.flow_factory.create_flow_from_saved_state(saved_state.clone());
             self.flows.insert(*id, flow);
-            info!("Restored flow {}", id);
+            let inserted_flow = self.flows.get(id).expect("Just inserted flow");
+            info!("Restored flow {} at step {:?} for stream_id {:?}",
+                id,
+                inserted_flow.state.step,
+                inserted_flow.state.ctx.get_stream_id()
+            );
+            debug!("Restored flow {} context: {:?}", id, inserted_flow.state.ctx);
         }
 
         if !self.flows.is_empty() {
@@ -1611,6 +1619,12 @@ where
         for key in completed {
             debug!("Removing completed flow: {key:?}");
             self.flows.remove(&key);
+
+            // Also remove from GlobalContext persistence
+            let mut persisted_flows = self.global_context.committee_setup_flows().lock()
+                .expect("Failed to lock flows for removal");
+            persisted_flows.remove(&key);
+            debug!("Removed completed flow {} from persistence", key);
         }
     }
 
