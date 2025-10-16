@@ -70,7 +70,6 @@ pub type AllCommunicationDataReadyEvent = EventWithBlock<AllCommunicationDataRea
 pub type MemberInfoDepositedEvent = EventWithBlock<MemberInfoDeposited>;
 
 pub type EventStatus = bool;
-type DecoderFn = fn(&LogData, BlockNumber, BlockHash, EventStatus, TxHash) -> RskPegManagerEvents;
 
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub struct EventWithBlock<T> {
@@ -81,18 +80,21 @@ pub struct EventWithBlock<T> {
     pub tx_hash: TxHash,
 }
 
-pub struct EventDecoder {
-    dispatch: HashMap<B256, DecoderFn>,
-}
+pub struct EventDecoder;
 
 impl EventDecoder {
     pub fn new() -> Self {
-        Self {
-            dispatch: HashMap::new(), // Not used anymore, but keeping for compatibility
-        }
+        Self
     }
 
-    pub fn decode(&self, log: RskLog) -> Option<RskPegManagerEvents> {
+    /// Decodes an RSK log into a RskPegManagerEvents.
+    ///
+    /// Returns:
+    /// - `RskPegManagerEvents::UnknownEvent` for malformed logs (no topics)
+    /// - `RskPegManagerEvents::UnknownEvent` for logs that don't match any known contract event types
+    /// - `RskPegManagerEvents::UnknownEvent` for events that match contract types but have no handler
+    /// - Specific event variant for successfully decoded and handled events
+    pub fn decode(&self, log: RskLog) -> RskPegManagerEvents {
         let block_num = log.info().block_number();
         let block_hash = log.info().block_hash();
         let tx_hash = log.info().tx_hash();
@@ -103,6 +105,16 @@ impl EventDecoder {
             .iter()
             .map(|topic| B256::from(*topic))
             .collect();
+
+        // Early validation for malformed logs
+        if parsed_topics.is_empty() {
+            warn!(
+                "[EXHAUSTIVE-DECODER] Log has no topics (malformed or not an event): block_number={:?}, tx_hash={:?}",
+                block_num, tx_hash
+            );
+            return RskPegManagerEvents::UnknownEvent;
+        }
+
         let data = log.event().data().as_bytes().to_vec();
 
         // Try each contract event type and use the first successful decode
@@ -119,7 +131,7 @@ impl EventDecoder {
                 log.info().removed(),
                 tx_hash,
             ) {
-                return Some(event);
+                return event;
             }
         }
 
@@ -135,7 +147,7 @@ impl EventDecoder {
                 log.info().removed(),
                 tx_hash,
             ) {
-                return Some(event);
+                return event;
             }
         }
 
@@ -151,7 +163,7 @@ impl EventDecoder {
                 log.info().removed(),
                 tx_hash,
             ) {
-                return Some(event);
+                return event;
             }
         }
 
@@ -167,7 +179,7 @@ impl EventDecoder {
                 log.info().removed(),
                 tx_hash,
             ) {
-                return Some(event);
+                return event;
             }
         }
 
@@ -183,7 +195,7 @@ impl EventDecoder {
                 log.info().removed(),
                 tx_hash,
             ) {
-                return Some(event);
+                return event;
             }
         }
 
@@ -199,16 +211,18 @@ impl EventDecoder {
                 log.info().removed(),
                 tx_hash,
             ) {
-                return Some(event);
+                return event;
             }
         }
 
         // No exhaustive decoder succeeded
-        error!(
-            "[EXHAUSTIVE-DECODER] No exhaustive decoder succeeded for log from {}",
-            log.info().address()
+        warn!(
+            "[EXHAUSTIVE-DECODER] No exhaustive decoder succeeded for log from {}. topic0: {:?}, tx_hash: {:?}",
+            log.info().address(),
+            parsed_topics.get(0),
+            tx_hash
         );
-        None
+        RskPegManagerEvents::UnknownEvent
     }
 
     fn convert_peg_manager_event(
@@ -311,11 +325,24 @@ impl EventDecoder {
         removed: bool,
         tx_hash: TxHash,
     ) -> Option<RskPegManagerEvents> {
-        warn!(
-            "Unhandled MemberRegistry event: {:?} (block: {}, tx: {})",
-            event, block_num, tx_hash
-        );
-        None
+        match event {
+            MemberRegistryEvents::NewSecurityBondDeposit(inner) => {
+                // TODO: Add NewSecurityBondDeposit to RskPegManagerEvents enum if needed
+                // This is a new event that wasn't handled in the original implementation
+                warn!(
+                    "Unhandled MemberRegistry event: NewSecurityBondDeposit {:?} (block: {}, tx: {})",
+                    inner, block_num, tx_hash
+                );
+                None
+            }
+            _ => {
+                warn!(
+                    "Unhandled MemberRegistry event: {:?} (block: {}, tx: {})",
+                    event, block_num, tx_hash
+                );
+                None
+            }
+        }
     }
 
     fn convert_stream_manager_event(
@@ -325,6 +352,8 @@ impl EventDecoder {
         removed: bool,
         tx_hash: TxHash,
     ) -> Option<RskPegManagerEvents> {
+        // StreamManager events don't have specific handlers yet
+        // TODO: Implement proper conversion when event variants are identified
         warn!(
             "Unhandled StreamManager event: {:?} (block: {}, tx: {})",
             event, block_num, tx_hash
@@ -339,11 +368,44 @@ impl EventDecoder {
         removed: bool,
         tx_hash: TxHash,
     ) -> Option<RskPegManagerEvents> {
-        warn!(
-            "Unhandled SignatureManager event: {:?} (block: {}, tx: {})",
-            event, block_num, tx_hash
-        );
-        None
+        match event {
+            SignatureManagerEvents::AllNoncesReady(inner) => {
+                Some(RskPegManagerEvents::AllNoncesReady(AllNoncesReadyEvent {
+                    inner: Hash256::from(inner.hashToSign),
+                    block_number: block_num,
+                    block_hash,
+                    removed,
+                    tx_hash,
+                }))
+            }
+            SignatureManagerEvents::AllSignaturesReady(inner) => Some(
+                RskPegManagerEvents::AllSignaturesReady(AllSignaturesReadyEvent {
+                    inner: Hash256::from(inner.hashToSign),
+                    block_number: block_num,
+                    block_hash,
+                    removed,
+                    tx_hash,
+                }),
+            ),
+            SignatureManagerEvents::AllOperatorTakeTxHashesAdded(inner) => {
+                Some(RskPegManagerEvents::AllOperatorTakeTxHashesAdded(
+                    AllOperatorTakeTxHashesAddedEvent {
+                        inner,
+                        block_number: block_num,
+                        block_hash,
+                        removed,
+                        tx_hash,
+                    },
+                ))
+            }
+            _ => {
+                warn!(
+                    "Unhandled SignatureManager event: {:?} (block: {}, tx: {})",
+                    event, block_num, tx_hash
+                );
+                None
+            }
+        }
     }
 
     fn convert_bitcoin_manager_event(
@@ -353,6 +415,8 @@ impl EventDecoder {
         removed: bool,
         tx_hash: TxHash,
     ) -> Option<RskPegManagerEvents> {
+        // BitcoinManager events don't have specific handlers yet
+        // TODO: Implement proper conversion when event variants are identified
         warn!(
             "Unhandled BitcoinManager event: {:?} (block: {}, tx: {})",
             event, block_num, tx_hash
@@ -565,7 +629,7 @@ mod tests {
 
         // Should successfully decode using exhaustive method
         match result {
-            Some(RskPegManagerEvents::AllCommunicationDataReady(event)) => {
+            RskPegManagerEvents::AllCommunicationDataReady(event) => {
                 assert_eq!(event.inner._committeeId, 12345);
             }
             _ => panic!("Expected AllCommunicationDataReady event"),
@@ -621,7 +685,7 @@ mod tests {
 
         // Should successfully decode using exhaustive method
         match result {
-            Some(RskPegManagerEvents::PeginRequested(event)) => {
+            RskPegManagerEvents::PeginRequested(event) => {
                 assert_eq!(event.inner.committeeId, U256::from(99));
             }
             _ => panic!("Expected PeginRequested event"),
@@ -639,7 +703,7 @@ mod tests {
         let result = decoder.decode(log);
 
         // Should fall back to topic-based decoding and return UnknownEvent
-        assert!(matches!(result, None));
+        assert!(matches!(result, RskPegManagerEvents::UnknownEvent));
     }
 
     #[test]
@@ -651,7 +715,7 @@ mod tests {
         );
 
         let result = decoder.decode(log);
-        assert_eq!(result, None);
+        assert_eq!(result, RskPegManagerEvents::UnknownEvent);
     }
 
     #[test]
@@ -676,7 +740,7 @@ mod tests {
 
         let decoder = EventDecoder::new();
         let result = decoder.decode(log);
-        assert_eq!(result, None);
+        assert_eq!(result, RskPegManagerEvents::UnknownEvent);
     }
 
     #[test]
@@ -699,7 +763,7 @@ mod tests {
 
         let decoder = EventDecoder::new();
         let result = decoder.decode(log);
-        assert_eq!(result, None);
+        assert_eq!(result, RskPegManagerEvents::UnknownEvent);
     }
 
     #[test]
@@ -729,7 +793,7 @@ mod tests {
 
         let decoder = EventDecoder::new();
         let result = decoder.decode(log);
-        assert_eq!(result, None);
+        assert_eq!(result, RskPegManagerEvents::UnknownEvent);
     }
 
     #[test]
@@ -785,7 +849,7 @@ mod tests {
         let decoder = EventDecoder::new();
         let result = decoder.decode(rsk_log);
         match result {
-            Some(RskPegManagerEvents::PeginRequested(data)) => {
+            RskPegManagerEvents::PeginRequested(data) => {
                 assert_eq!(data.inner, expected_event);
                 assert_eq!(data.block_number, expected_block_num);
                 assert_eq!(data.block_hash, expected_block_hash.into());
@@ -832,7 +896,7 @@ mod tests {
         let decoder = EventDecoder::new();
         let result = decoder.decode(rsk_log);
         match result {
-            Some(RskPegManagerEvents::PeginAccepted(data)) => {
+            RskPegManagerEvents::PeginAccepted(data) => {
                 assert_eq!(data.inner, expected_event);
                 assert_eq!(data.block_number, expected_block_num);
                 assert_eq!(data.block_hash, expected_block_hash.into());
@@ -865,9 +929,17 @@ mod tests {
 
         let decoder = EventDecoder::new();
         let result = decoder.decode(rsk_log);
-        // Since StreamManager events don't have proper converter handlers yet,
-        // the exhaustive decoder should return None
-        assert_eq!(result, None);
+        // Now these events are properly handled through SignatureManagerEvents enum
+        match result {
+            RskPegManagerEvents::AllNoncesReady(data) => {
+                assert_eq!(data.inner, Hash256::from(expected_hash_to_sign));
+                assert_eq!(data.block_number, expected_block_num);
+                assert_eq!(data.block_hash, expected_block_hash.into());
+                assert_eq!(data.removed, false);
+                assert_eq!(data.tx_hash, expected_tx_hash);
+            }
+            _ => panic!("Expected AllNoncesReady event"),
+        }
     }
 
     #[test]
@@ -892,9 +964,17 @@ mod tests {
 
         let decoder = EventDecoder::new();
         let result = decoder.decode(rsk_log);
-        // Since SignatureManager events don't have proper converter handlers yet,
-        // the exhaustive decoder should return None
-        assert_eq!(result, None);
+        // Now these events are properly handled through SignatureManagerEvents enum
+        match result {
+            RskPegManagerEvents::AllSignaturesReady(data) => {
+                assert_eq!(data.inner, Hash256::from(expected_hash_to_sign));
+                assert_eq!(data.block_number, expected_block_num);
+                assert_eq!(data.block_hash, expected_block_hash.into());
+                assert_eq!(data.removed, true);
+                assert_eq!(data.tx_hash, expected_tx_hash);
+            }
+            _ => panic!("Expected AllSignaturesReady event"),
+        }
     }
 
     #[test]
@@ -932,9 +1012,17 @@ mod tests {
 
         let decoder = EventDecoder::new();
         let result = decoder.decode(rsk_log);
-        // Since BitcoinManager events don't have proper converter handlers yet,
-        // the exhaustive decoder should return None
-        assert_eq!(result, None);
+        // Now these events are properly handled through SignatureManagerEvents enum
+        match result {
+            RskPegManagerEvents::AllOperatorTakeTxHashesAdded(data) => {
+                assert_eq!(data.inner, expected_event);
+                assert_eq!(data.block_number, expected_block_num);
+                assert_eq!(data.block_hash, expected_block_hash.into());
+                assert_eq!(data.removed, true);
+                assert_eq!(data.tx_hash, expected_tx_hash);
+            }
+            _ => panic!("Expected AllOperatorTakeTxHashesAdded event"),
+        }
     }
 
     #[test]
@@ -1061,7 +1149,7 @@ mod tests {
         let decoder = EventDecoder::new();
         let result = decoder.decode(rsk_log);
         match result {
-            Some(RskPegManagerEvents::NewCommitteePending(data)) => {
+            RskPegManagerEvents::NewCommitteePending(data) => {
                 assert_eq!(data.inner, expected_event);
                 assert_eq!(data.block_number, expected_block_num);
                 assert_eq!(data.block_hash, expected_block_hash.into());
@@ -1123,7 +1211,7 @@ mod tests {
         let decoder = EventDecoder::new();
         let result = decoder.decode(rsk_log);
         match result {
-            Some(RskPegManagerEvents::NewCommitteeReady(data)) => {
+            RskPegManagerEvents::NewCommitteeReady(data) => {
                 assert_eq!(data.inner, expected_event);
                 assert_eq!(data.block_number, expected_block_num);
                 assert_eq!(data.block_hash, expected_block_hash.into());
@@ -1155,7 +1243,7 @@ mod tests {
         let decoder = EventDecoder::new();
         let result = decoder.decode(rsk_log);
         match result {
-            Some(RskPegManagerEvents::AllCommunicationDataReady(data)) => {
+            RskPegManagerEvents::AllCommunicationDataReady(data) => {
                 assert_eq!(data.inner, expected_event);
                 assert_eq!(data.block_number, expected_block_num);
                 assert_eq!(data.block_hash, expected_block_hash.into());
@@ -1196,6 +1284,6 @@ mod tests {
         let result = decoder.decode(rsk_log);
         // Since MemberRegistry events don't have proper converter handlers yet,
         // the exhaustive decoder should return None
-        assert_eq!(result, None);
+        assert_eq!(result, RskPegManagerEvents::UnknownEvent);
     }
 }

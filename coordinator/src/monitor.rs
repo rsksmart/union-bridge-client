@@ -210,8 +210,8 @@ where
             Some(FromServer::Log(log)) => {
                 trace!("Received new Log {:?}", log);
                 match self.event_decoder.decode(log) {
-                    Some(event) => Ok(Some(event)),
-                    None => Ok(None), // Event not recognized or not handled
+                    RskPegManagerEvents::UnknownEvent => Ok(None), // Event not recognized or not handled
+                    event => Ok(Some(event)),
                 }
             }
             Some(br) => {
@@ -629,9 +629,9 @@ mod tests {
 
         let event_decoder = EventDecoder::new();
 
-        // For unknown events, the decoder should return None
+        // For unknown events, the decoder should return UnknownEvent
         let decode_result = event_decoder.decode(log.clone());
-        assert_eq!(decode_result, None);
+        assert_eq!(decode_result, RskPegManagerEvents::UnknownEvent);
 
         let mut log_broker = MockBrokerClientApi::new();
         log_broker
