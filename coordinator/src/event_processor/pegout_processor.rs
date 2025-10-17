@@ -22,7 +22,6 @@ Step 7: Pegout Registered event is received (RSK -> U)
     a: Confirm pegout registered and sending the confirmation to BitVMX with SetVar
 */
 use crate::blockchain_tracker::{BlockConfirmations, BlockchainObserver, BlockchainView};
-use crate::config::SPV_PROOF_MIN_CONFIRMATIONS;
 use crate::flows::btc_signature::btc_signature_lifecycle::BtcSignatureLifeCycle;
 use crate::flows::btc_signature::btc_signature_subflow::{
     BaseBtcSignatureSubFlow, BtcSignatureSubFlowApi, BtcSignatureSubFlowFactory,
@@ -66,6 +65,8 @@ pub const USER_TAKE_TX: &str = "USER_TAKE_TX";
 pub const PROGRAM_TYPE_USER_TAKE: &str = "take";
 pub const PEGOUT_ACCEPTED_NAME: &str = "pegout_accepted";
 pub const BLOCKS_DELAY_FOR_TX_CHECK: u32 = 20; // Number of blocks to wait before rechecking transaction status
+//TODO (JIRA) https://rsklabs.atlassian.net/browse/UB-328 pending to improve how these confirmations are handled
+pub const SPV_PROOF_MIN_CONFIRMATIONS: u32 = 10;
 
 #[derive(Debug, Clone)]
 struct PegoutEvent<T: Clone> {
@@ -165,7 +166,7 @@ where
         }
     }
 
-    pub fn get_user_take_pid(committee_id: Uuid, slot_index: usize) -> Uuid {
+    pub fn get_user_take_pid(committee_id: Uuid, slot_index: usize) -> Result<Uuid> {
         let mut hasher = Sha256::new();
         hasher.update(committee_id.as_bytes());
         hasher.update(&slot_index.to_be_bytes());
@@ -173,7 +174,14 @@ where
 
         // Get the result as a byte array
         let hash = hasher.finalize();
-        Uuid::from_bytes(hash[0..16].try_into().unwrap())
+        let slice = hash
+            .as_slice()
+            .get(..16)
+            .ok_or_else(|| anyhow!("SHA256 hash too short for UUID generation"))?;
+        let uuid_bytes: [u8; 16] = slice
+            .try_into()
+            .context("Failed to convert hash slice to UUID bytes")?;
+        Ok(Uuid::from_bytes(uuid_bytes))
     }
 
     fn handle_tick(&mut self) -> Result<()> {
@@ -231,8 +239,9 @@ where
         ))?;
 
         let committee_addresses = self.get_committee_member_address(committee_id)?;
-        //TODO if there were a delay in the response from bitvmx the first time it is possible that the p2p address is not available yet, so we need to handle that case.
-        let my_addr = self
+        //TODO(JIRA) https://rsklabs.atlassian.net/browse/UB-315 if there were a delay in the response from bitvmx the first time it is possible that the p2p address is not available yet, so we need to handle that case.
+        // is expected to be modified in the refactor. The flow would wait for the get_comm_info_response to be received before continuing.
+        let my_addr: &P2PAddress = self
             .my_p2p_address
             .as_ref()
             .ok_or_else(|| anyhow!("My P2P address not found"))?;
@@ -351,8 +360,8 @@ where
         let pegout_signature_hash: Vec<u8> = event.pegoutSignatureHash.as_slice().to_vec();
         let pegout_id: Vec<u8> = event.pegoutId.as_slice().to_vec();
         let pegout_signature_message: Vec<u8> = event.pegoutSignatureMessage.clone().to_vec();
-        //todo ask if slot_index corresponds to contracts PegoutRequested.slotId
         let slot_index = event.slotId as usize;
+
         Ok(PegOutRequest {
             committee_id,
             stream_id: event.streamId,
@@ -395,7 +404,7 @@ where
 
         let slot_index = event.inner.slotId as usize;
         let committee_uuid: Uuid = Uuid::from_u128(event.inner.committeeId.try_into()?);
-        let flow_id = Self::get_user_take_pid(committee_uuid, slot_index);
+        let flow_id = Self::get_user_take_pid(committee_uuid, slot_index)?;
         let tx_hash = event.tx_hash.clone();
 
         let observer_id = format!("pegout_requested-{}", flow_id);
