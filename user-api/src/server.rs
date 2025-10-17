@@ -161,7 +161,7 @@ impl Server {
         Json(payload): Json<UserRequestPegoutInput>,
     ) -> impl IntoResponse {
         info!("Received request_pegout request: {:?}", payload);
-        let usr_pub_key = format!("0x{}", user.public_key);
+        let usr_pub_key = format!("0x{}", user.bitcoin_public_key);
 
         let amount_in_wei = payload.amount_in_wei;
         info!(
