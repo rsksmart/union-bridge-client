@@ -85,6 +85,7 @@ const ACCEPT_PEGIN: &'static str = "accept-pegin";
 const PEGIN_REQUEST: &'static str = "pegin_request";
 const PEGIN_ACCEPTED_INPUT_MSG: &'static str = "pegin_accepted";
 const PROGRAM_TYPE_ACCEPT_PEGIN: &'static str = "accept_pegin";
+// TODO(Jira) https://rsklabs.atlassian.net/browse/UB-328
 pub const MIN_TX_CONFIRMATIONS: u32 = 6 + 4; // +4 to give time to the Native Bridge to get up to date with Bitcoin Node
 pub const BLOCKS_DELAY_FOR_TX_CHECK: u32 = 20;
 
@@ -1284,6 +1285,7 @@ where
                             spv_proof.block_hash
                         );
 
+                        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-328
                         self.schedule_pegin_requested_to_contracts(spv_proof.clone(), 1);
                     }
                 }
