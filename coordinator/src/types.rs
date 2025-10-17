@@ -1,5 +1,5 @@
 use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
-use alloy_primitives::{B256, FixedBytes, LogData};
+use alloy_primitives::{B256, FixedBytes};
 use alloy_sol_types::{SolEvent, SolEventInterface};
 use anyhow::anyhow;
 use bitcoin::PublicKey;
@@ -7,7 +7,7 @@ use common::msg_broker::bitvmx_types::{
     PartialUtxo, ParticipantRole, PegOutAccepted, PeginAcceptedMessage,
 };
 use common::types::{Address, BlockHash, BlockNumber, Hash256, RskLog, TxHash};
-use log::{error, info, warn};
+use log::{info, warn};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -46,6 +46,7 @@ pub enum RskPegManagerEvents {
     NewCommitteeReady(NewCommitteeReadyEvent),
     AllCommunicationDataReady(AllCommunicationDataReadyEvent),
     MemberInfoDeposited(MemberInfoDepositedEvent),
+    UnhandledEvent(UnhandledEventData),
     UnknownEvent,
 }
 
@@ -68,6 +69,16 @@ pub type NewCommitteePendingEvent = EventWithBlock<NewPendingCommittee>;
 pub type NewCommitteeReadyEvent = EventWithBlock<NewCommittee>;
 pub type AllCommunicationDataReadyEvent = EventWithBlock<AllCommunicationDataReady>;
 pub type MemberInfoDepositedEvent = EventWithBlock<MemberInfoDeposited>;
+
+#[derive(Eq, PartialEq, Debug, Clone)]
+pub struct UnhandledEventData {
+    pub event_name: String,
+    pub contract_address: Address,
+    pub block_number: BlockNumber,
+    pub block_hash: BlockHash,
+    pub removed: EventStatus,
+    pub tx_hash: TxHash,
+}
 
 pub type EventStatus = bool;
 
@@ -130,6 +141,7 @@ impl EventDecoder {
                 block_hash,
                 log.info().removed(),
                 tx_hash,
+                log.info().address(),
             ) {
                 return event;
             }
@@ -146,6 +158,7 @@ impl EventDecoder {
                 block_hash,
                 log.info().removed(),
                 tx_hash,
+                log.info().address(),
             ) {
                 return event;
             }
@@ -162,6 +175,7 @@ impl EventDecoder {
                 block_hash,
                 log.info().removed(),
                 tx_hash,
+                log.info().address(),
             ) {
                 return event;
             }
@@ -178,6 +192,7 @@ impl EventDecoder {
                 block_hash,
                 log.info().removed(),
                 tx_hash,
+                log.info().address(),
             ) {
                 return event;
             }
@@ -194,6 +209,7 @@ impl EventDecoder {
                 block_hash,
                 log.info().removed(),
                 tx_hash,
+                log.info().address(),
             ) {
                 return event;
             }
@@ -210,6 +226,7 @@ impl EventDecoder {
                 block_hash,
                 log.info().removed(),
                 tx_hash,
+                log.info().address(),
             ) {
                 return event;
             }
@@ -231,6 +248,7 @@ impl EventDecoder {
         block_hash: BlockHash,
         removed: bool,
         tx_hash: TxHash,
+        contract_address: Address,
     ) -> Option<RskPegManagerEvents> {
         match event {
             PegManagerEvents::PeginRequested(inner) => {
@@ -271,7 +289,14 @@ impl EventDecoder {
             }
             _ => {
                 warn!("Unhandled PegManager event: {:?}", event);
-                None
+                Some(RskPegManagerEvents::UnhandledEvent(UnhandledEventData {
+                    event_name: format!("{:?}", event),
+                    contract_address,
+                    block_number: block_num,
+                    block_hash,
+                    removed,
+                    tx_hash,
+                }))
             }
         }
     }
@@ -282,6 +307,7 @@ impl EventDecoder {
         block_hash: BlockHash,
         removed: bool,
         tx_hash: TxHash,
+        contract_address: Address,
     ) -> Option<RskPegManagerEvents> {
         match event {
             CommitteeRegistryEvents::NewPendingCommittee(inner) => Some(
@@ -313,7 +339,14 @@ impl EventDecoder {
             ),
             _ => {
                 warn!("Unhandled CommitteeRegistry event: {:?}", event);
-                None
+                Some(RskPegManagerEvents::UnhandledEvent(UnhandledEventData {
+                    event_name: format!("{:?}", event),
+                    contract_address,
+                    block_number: block_num,
+                    block_hash,
+                    removed,
+                    tx_hash,
+                }))
             }
         }
     }
@@ -324,25 +357,20 @@ impl EventDecoder {
         block_hash: BlockHash,
         removed: bool,
         tx_hash: TxHash,
+        contract_address: Address,
     ) -> Option<RskPegManagerEvents> {
-        match event {
-            MemberRegistryEvents::NewSecurityBondDeposit(inner) => {
-                // TODO: Add NewSecurityBondDeposit to RskPegManagerEvents enum if needed
-                // This is a new event that wasn't handled in the original implementation
-                warn!(
-                    "Unhandled MemberRegistry event: NewSecurityBondDeposit {:?} (block: {}, tx: {})",
-                    inner, block_num, tx_hash
-                );
-                None
-            }
-            _ => {
-                warn!(
-                    "Unhandled MemberRegistry event: {:?} (block: {}, tx: {})",
-                    event, block_num, tx_hash
-                );
-                None
-            }
-        }
+        warn!(
+            "Unhandled MemberRegistry event: {:?} (block: {}, tx: {})",
+            event, block_num, tx_hash
+        );
+        Some(RskPegManagerEvents::UnhandledEvent(UnhandledEventData {
+            event_name: format!("{:?}", event),
+            contract_address,
+            block_number: block_num,
+            block_hash,
+            removed,
+            tx_hash,
+        }))
     }
 
     fn convert_stream_manager_event(
@@ -351,6 +379,7 @@ impl EventDecoder {
         block_hash: BlockHash,
         removed: bool,
         tx_hash: TxHash,
+        contract_address: Address,
     ) -> Option<RskPegManagerEvents> {
         // StreamManager events don't have specific handlers yet
         // TODO: Implement proper conversion when event variants are identified
@@ -358,7 +387,14 @@ impl EventDecoder {
             "Unhandled StreamManager event: {:?} (block: {}, tx: {})",
             event, block_num, tx_hash
         );
-        None
+        Some(RskPegManagerEvents::UnhandledEvent(UnhandledEventData {
+            event_name: format!("{:?}", event),
+            contract_address,
+            block_number: block_num,
+            block_hash,
+            removed,
+            tx_hash,
+        }))
     }
 
     fn convert_signature_manager_event(
@@ -367,6 +403,7 @@ impl EventDecoder {
         block_hash: BlockHash,
         removed: bool,
         tx_hash: TxHash,
+        contract_address: Address,
     ) -> Option<RskPegManagerEvents> {
         match event {
             SignatureManagerEvents::AllNoncesReady(inner) => {
@@ -403,7 +440,14 @@ impl EventDecoder {
                     "Unhandled SignatureManager event: {:?} (block: {}, tx: {})",
                     event, block_num, tx_hash
                 );
-                None
+                Some(RskPegManagerEvents::UnhandledEvent(UnhandledEventData {
+                    event_name: format!("{:?}", event),
+                    contract_address: contract_address,
+                    block_number: block_num,
+                    block_hash,
+                    removed,
+                    tx_hash,
+                }))
             }
         }
     }
@@ -414,6 +458,7 @@ impl EventDecoder {
         block_hash: BlockHash,
         removed: bool,
         tx_hash: TxHash,
+        contract_address: Address,
     ) -> Option<RskPegManagerEvents> {
         // BitcoinManager events don't have specific handlers yet
         // TODO: Implement proper conversion when event variants are identified
@@ -421,7 +466,14 @@ impl EventDecoder {
             "Unhandled BitcoinManager event: {:?} (block: {}, tx: {})",
             event, block_num, tx_hash
         );
-        None
+        Some(RskPegManagerEvents::UnhandledEvent(UnhandledEventData {
+            event_name: format!("{:?}", event),
+            contract_address,
+            block_number: block_num,
+            block_hash,
+            removed,
+            tx_hash,
+        }))
     }
 }
 
@@ -1282,8 +1334,16 @@ mod tests {
 
         let decoder = EventDecoder::new();
         let result = decoder.decode(rsk_log);
-        // Since MemberRegistry events don't have proper converter handlers yet,
-        // the exhaustive decoder should return None
-        assert_eq!(result, RskPegManagerEvents::UnknownEvent);
+        // MemberInfoDeposited is a CommitteeRegistry event but has no handler, so it should return UnhandledEvent
+        match result {
+            RskPegManagerEvents::UnhandledEvent(data) => {
+                assert!(data.event_name.contains("MemberInfoDeposited"));
+                assert_eq!(data.block_number, expected_block_num);
+                assert_eq!(data.block_hash, expected_block_hash.into());
+                assert_eq!(data.removed, removed);
+                assert_eq!(data.tx_hash, expected_tx_hash);
+            }
+            _ => panic!("Expected UnhandledEvent for MemberInfoDeposited"),
+        }
     }
 }
