@@ -192,7 +192,7 @@ to:
    committeeMemberCount = 4;
    ```
 
-Then you can use `multiclient-setup.sh` script for the rest of the setup.
+Then you should deploy the contracts, and you can use `multiclient-setup.sh` script for the rest of the setup.
 
 **N.B**
 Please note that the `committeeMemberCount` value should always match the number of clients you intend to spin up
@@ -216,6 +216,8 @@ This funds the wallets created in the previous step to be able to send transacti
 ```
 
 **3. Setup Committee (optional)**
+
+See this [section](#temporary-bitvmx-funding-process-for-cargo-running-mode) for more information on a temporary approach to fund BitVMX.
 
 This creates a Committee so of 4 members (by default) so you can test the committee collaboration flows.
 
@@ -524,3 +526,21 @@ NOTE: Uploading and downloading artifacts is slow locally, but fast on the CI.
 NOTE: You can add `--reuse` to reuse previous Docker containers to speed up execution by skipping setup and preserving
 cache, filesystem, and environment state.
 NOTE: If you find concurrency errors, try running with `--concurrent-jobs 1` to run the actions sequentially.
+
+## Temporary BitVMX funding process for cargo running mode
+This is a temporary process to fund the BitVMX Bitcoin wallets for the Committee Setup.
+
+With the 4 clients started, run in bash:
+```
+for port in 40001 40002 40003 40004; do
+  echo "GET http://0.0.0.0:$port/bitvmx-address"
+  curl -sS -X GET "http://0.0.0.0:$port/bitvmx-address"
+  echo
+done
+```
+This will print in the logs 4 Bitcoin addresses (one per operator) that you will use in the next steps.
+
+Then, through the `bitcoin-wallet` crate (started with `cargo run --release`) you should run:
+1. `clear_db`
+2. `mine_utxo 9000000000`
+3. `send_to_address <btc_addr_1>,<btc_addr_2>,<btc_addr_3>,<btc_addr_4> 25000000`
