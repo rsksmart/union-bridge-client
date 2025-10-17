@@ -726,7 +726,7 @@ where
             .map_err(|e| anyhow::anyhow!("Failed to get member public keys: {}", e))
     }
 
-    pub fn set_utxos(&mut self) -> Result<()> {
+    pub fn fund_protocol(&mut self) -> Result<()> {
         let req_id = Uuid::new_v4();
         let fee_rate = if self.bitcoin_network == Network::Regtest {
             REGTEST_FEE_RATE
@@ -920,7 +920,8 @@ where
                 true => panic!("Running SignMyCommKey when MyKeys are already set"),
             },
             Steps::FundMyBitVmxAccount => {
-                self.set_utxos()?;
+                // here we are funding the BitVMX Bitcoin account to complete this protocol
+                self.fund_protocol()?;
             }
             Steps::ApplyToStream => {
                 self.apply_to_stream()?;

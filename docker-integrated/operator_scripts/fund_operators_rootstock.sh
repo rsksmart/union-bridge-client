@@ -93,7 +93,10 @@ print_only() {
   while read -r project addr; do
     echo "  $project -> $addr"
   done < <(get_signers)
-  echo "Done. Please fund the above addresses on the '$ENVIRONMENT' network."
+  while read -r project addr; do
+    echo "cast send $addr --value 0.25ether --private-key <priv_key> --rpc-url <rpc_url>"
+  done < <(get_signers)
+
 }
 
 if [[ "$ENVIRONMENT" == "local" ]]; then

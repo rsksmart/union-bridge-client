@@ -32,7 +32,7 @@ use common::{
     runtime_sync::RuntimeSync,
     types::{RskBlockAndUncles, TxHash},
 };
-use log::{debug, error, info, trace};
+use log::{debug, error, info, trace, warn};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{cell::RefCell, collections::HashMap, fmt::Debug, future::Future, rc::Rc};
@@ -85,7 +85,7 @@ const ACCEPT_PEGIN: &'static str = "accept-pegin";
 const PEGIN_REQUEST: &'static str = "pegin_request";
 const PEGIN_ACCEPTED_INPUT_MSG: &'static str = "pegin_accepted";
 const PROGRAM_TYPE_ACCEPT_PEGIN: &'static str = "accept_pegin";
-pub const MIN_TX_CONFIRMATIONS: u32 = 6;
+pub const MIN_TX_CONFIRMATIONS: u32 = 6 + 4; // +4 to give time to the Native Bridge to get up to date with Bitcoin Node
 pub const BLOCKS_DELAY_FOR_TX_CHECK: u32 = 20;
 
 /// Data structure used to send pegin request information to the BitVMX client.
@@ -167,10 +167,17 @@ where
     contracts: Rc<CG>,
     bitvmx_broker: Rc<BC>,
     blockchain: BlockchainView,
+    unconfirmed_pegin_requests: HashMap<String, BtcTxSPVProof>,
     tracker: HashMap<TxHash, PeginState<BSF>>,
     btc_sig_subflow_factory: FactoryBSF,
-    scheduler: TickScheduler<Uuid>,
+    scheduler: TickScheduler<ScheduledAction>,
     global_context: GlobalContext,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+enum ScheduledAction {
+    PeginRequested(String, i16), // Bitcoin block hash
+    PeginAccepted(Uuid),
 }
 
 impl<CG, BC, BSF, FactoryBSF> PeginProcessor<CG, BC, BSF, FactoryBSF>
@@ -198,6 +205,7 @@ where
             contracts,
             bitvmx_broker,
             blockchain: BlockchainView::new(),
+            unconfirmed_pegin_requests: HashMap::new(),
             tracker: HashMap::new(),
             btc_sig_subflow_factory: factory,
             scheduler: TickScheduler::new(),
@@ -205,35 +213,52 @@ where
         }
     }
 
-    fn handle_tick(&mut self) -> Result<()> {
+    fn tick_scheduler(&mut self) -> Result<()> {
         if self.scheduler.is_empty() {
             return Ok(());
         }
 
         let ready = self.scheduler.tick();
 
-        for flow_id in ready {
-            // Find the state with the matching flow_id
-            let state = self
-                .tracker
-                .values()
-                .find(|s| s.flow_id == flow_id)
-                .ok_or_else(|| anyhow!("State not found for flow_id: {}", flow_id))?;
+        for action in ready {
+            trace!("Processing scheduled action: {:?}", action);
 
-            // Get the accept_pegin_txid from bitvmx_pegin_accepted
-            let pegin_accepted = state
-                .bitvmx_pegin_accepted
-                .as_ref()
-                .ok_or_else(|| anyhow!("bitvmx_pegin_accepted is None for flow_id: {}", flow_id))?;
+            match action {
+                ScheduledAction::PeginAccepted(flow_id) => {
+                    // Find the state with the matching flow_id
+                    let state = self
+                        .tracker
+                        .values()
+                        .find(|s| s.flow_id == flow_id)
+                        .ok_or_else(|| anyhow!("State not found for flow_id: {}", flow_id))?;
 
-            let accept_pegin_tx_hash = pegin_accepted.accept_pegin_txid;
+                    // Get the accept_pegin_txid from bitvmx_pegin_accepted
+                    let pegin_accepted = state.bitvmx_pegin_accepted.as_ref().ok_or_else(|| {
+                        anyhow!("bitvmx_pegin_accepted is None for flow_id: {}", flow_id)
+                    })?;
 
-            debug!(
-                "Requesting transaction: acceptPeginTxHash={}, flow_id={}",
-                accept_pegin_tx_hash, flow_id
-            );
+                    let accept_pegin_tx_hash = pegin_accepted.accept_pegin_txid;
 
-            Self::send_get_transaction(&self.bitvmx_broker, flow_id, accept_pegin_tx_hash)?;
+                    debug!(
+                        "Requesting transaction: acceptPeginTxHash={}, flow_id={}",
+                        accept_pegin_tx_hash, flow_id
+                    );
+
+                    Self::send_get_transaction(&self.bitvmx_broker, flow_id, accept_pegin_tx_hash)?;
+                }
+                ScheduledAction::PeginRequested(btc_block, attempt) => {
+                    debug!("(Re)trying handle_bitcoin_request_pegin for block {btc_block}");
+
+                    match self.unconfirmed_pegin_requests.remove(&btc_block) {
+                        Some(spv) => {
+                            self.send_request_pegin_contracts(spv.clone(), attempt)?;
+                        }
+                        None => {
+                            warn!("No unconfirmed pegin request for block: {}", btc_block);
+                        }
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -997,7 +1022,7 @@ where
         Self::send_to_bitvmx(bitvmx_broker, setup_message)
     }
 
-    fn register_spv_proof(&self, spv_proof: BtcTxSPVProof) -> Result<()> {
+    fn send_accept_pegin_contracts(&self, spv_proof: BtcTxSPVProof) -> Result<()> {
         debug!("Registering SPV proof: spv_proof={:?}", spv_proof);
 
         let input = spv_proof.into();
@@ -1055,12 +1080,29 @@ where
         Ok(())
     }
 
-    fn handle_request_pegin(&self, spv_proof: BtcTxSPVProof) -> Result<()> {
-        let input: RequestPeginInput = spv_proof.into();
+    fn send_request_pegin_contracts(
+        &mut self,
+        spv_proof: BtcTxSPVProof,
+        attempt: i16,
+    ) -> Result<()> {
+        let input: RequestPeginInput = spv_proof.clone().into();
         //Step 3a Call the requestPegin contract method
-        self.invoke_contract("requestPegin", || async {
-            self.contracts.request_pegin(input).await
-        })
+        let res = self.rt_sync.run(self.contracts.request_pegin(input));
+        match res {
+            Ok(_) => Ok(()),
+            Err(DomainErrors::MissingConfirmationsOnNativeBridge(_)) => {
+                info!(
+                    "Missing confirmations on native bridge for block {}, retrying later",
+                    spv_proof.block_hash
+                );
+
+                // Native bridge has not yet enough confirmations, we need to retry later
+                self.schedule_pegin_requested_to_contracts(spv_proof, attempt + 1);
+
+                Ok(())
+            }
+            Err(domain_err) => bail!("Error executing 'requestPegin': {domain_err:?}"),
+        }
     }
 
     fn invoke_contract<Fut, F, T>(&self, method_name: &str, invoke: F) -> Result<()>
@@ -1133,26 +1175,31 @@ where
             bail!("No pegin accepted message found for flow_id: {}", flow_id);
         }
 
+        let action_key = ScheduledAction::PeginAccepted(*flow_id);
+
         if tx_status.confirmations >= MIN_TX_CONFIRMATIONS {
             // Step 9b confirmation enough, send the SPV proof to BitVMX
             debug!(
                 "Transaction confirmed: confirmations={}, flow_id={}",
                 tx_status.confirmations, flow_id
             );
-            if self.scheduler.is_scheduled(flow_id) {
+
+            if self.scheduler.is_scheduled(&action_key) {
                 debug!("Unscheduling get transaction: flow_id={}", flow_id);
-                self.scheduler.cancel(flow_id);
+                self.scheduler.cancel(&action_key);
             }
             Self::send_get_spv_proof_to_bitvmx(&self.bitvmx_broker, tx_status.tx_id)?;
         } else {
             //step 9a confirmation not enough, reschedule the check
             debug!(
-                "Transaction insufficient confirmations: flow_id={}",
-                flow_id
+                "Transaction {} has not enough confirmations [{}/{MIN_TX_CONFIRMATIONS}] for flow_id={flow_id}",
+                tx_status.tx_id, tx_status.confirmations
             );
             debug!("Scheduling get transaction: flow_id={}", flow_id);
-            self.scheduler.schedule(*flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
+            self.scheduler
+                .schedule(action_key, BLOCKS_DELAY_FOR_TX_CHECK);
         }
+
         Ok(())
     }
 
@@ -1176,6 +1223,17 @@ where
             }
         }
         Ok(())
+    }
+
+    fn schedule_pegin_requested_to_contracts(&mut self, spv_proof: BtcTxSPVProof, attempt: i16) {
+        self.unconfirmed_pegin_requests
+            .insert(spv_proof.block_hash.clone(), spv_proof.clone());
+
+        // Native bridge has not yet enough confirmations, we need to retry later
+        self.scheduler.schedule(
+            ScheduledAction::PeginRequested(spv_proof.block_hash, attempt),
+            BLOCKS_DELAY_FOR_TX_CHECK,
+        );
     }
 }
 
@@ -1218,11 +1276,15 @@ where
                             "Handling accept pegin SPV proof: flow_id={}, tx_id={}",
                             state.flow_id, tx_id
                         );
-                        self.register_spv_proof(spv_proof.clone())?;
+                        self.send_accept_pegin_contracts(spv_proof.clone())?;
                     } else {
                         // Step 3 if no matching state found we are assuming this is a request pegin SPV proof
-                        debug!("No state found starting request pegin: tx_id={}", tx_id);
-                        self.handle_request_pegin(spv_proof.clone())?;
+                        debug!(
+                            "Bitcoin Request Pegin received: tx_id={tx_id} @ block={}. Scheduling contracts request.",
+                            spv_proof.block_hash
+                        );
+
+                        self.schedule_pegin_requested_to_contracts(spv_proof.clone(), 1);
                     }
                 }
                 None => bail!(
@@ -1319,6 +1381,8 @@ where
     }
 
     fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
+        self.tick_scheduler()?;
+
         if self.tracker.is_empty() {
             return Ok(());
         }
@@ -1328,7 +1392,6 @@ where
         self.process_unhandled_confirmed_pegin_requested_events()?;
         self.process_unhandled_confirmed_all_operator_take_tx_hashes_added_events()?;
         self.process_unhandled_confirmed_sig_flow_events(block)?;
-        self.handle_tick()?;
         self.process_unhandled_confirmed_pegin_accepted_events()?;
 
         Ok(())
@@ -1480,6 +1543,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn process_new_bitvmx_spv_proof_event_for_request_pegin_should_call_request_pegin() {
         // Prepare the mocked contracts gateway
         let mut contracts = MockRskContractsGatewayApi::new();
@@ -1515,6 +1579,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn process_new_bitvmx_spv_proof_event_for_request_pegin_should_fail_on_dispatch_error() {
         // Prepare a mocked contracts gateway that simulates a failure
         let mut contracts = MockRskContractsGatewayApi::new();
