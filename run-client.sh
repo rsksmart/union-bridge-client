@@ -10,13 +10,12 @@ if [ -f "multiclient.env" ]; then
 fi
 
 # Default values and constants
-readonly DEFAULT_CONFIG="multi-client-template"
 readonly DEFAULT_LOGGER="log4rs.stdout.yaml"
 
 NUM_CLIENTS=""
 CLIENT_ID=""
 FEATURES=""
-CONFIG_PARAM="--config-path ./config/$DEFAULT_CONFIG"
+ENV_NAME=""
 LOGGER_PARAM="--logger-path $DEFAULT_LOGGER"
 FRESH=false
 
@@ -76,7 +75,7 @@ OPTIONS:
     -n, --num-clients NUM         Number of clients to run simultaneously (1-10)
     -i, --id CLIENT_ID            Run a single client with the specified ID (1-10)
     -f, --features FEATURES       Optional features flag for clients
-    -c, --config CONFIG_NAME      Optional config directory name under ./config/. Defaults to 'multi-client-template'
+    -e, --env ENV_NAME            Environment name (e.g., anvil, alphanet, stage). Optional.
     -l, --logger LOGGER_FILE      Optional logger configuration file path. Defaults to 'log4rs.stdout.yaml'
         --fresh                   Start with clear databases (removes existing)
     -h, --help                    Show this help message
@@ -93,15 +92,15 @@ EXAMPLES:
     # Single client mode (defaults to CLIENT_ID=1)
     $0                                              # Run client 1
     $0 --features anvil                             # Run client 1 with anvil feature
-    $0 --id 2 --features anvil                      # Run client 2 with anvil feature
-    
+    $0 --id 2 --features anvil --env anvil # Run client 2 with specific config
+
     # Multi-client mode
     $0 --num-clients 4                              # Run 4 clients
-    $0 --num-clients 6 --features anvil             # Run 6 clients with anvil feature
-    
+    $0 --num-clients 6 --features anvil --env anvil # Run 6 clients with config
+
     # With environment variable:
     BASE_STORAGE_PATH=/Users/username $0
-    BASE_STORAGE_PATH=/Users/username $0 --num-clients 4 --features anvil
+    BASE_STORAGE_PATH=/Users/username $0 --num-clients 4 --features anvil --env stage
 
 EOF
 }
@@ -121,11 +120,11 @@ while [[ $# -gt 0 ]]; do
             parse_arg_value "features" "FEATURES" "--features " "$2"
             shift 2
             ;;
-        -c|--config)
-            parse_arg_value "config" "CONFIG_PARAM" "--config-path " "$2"
+        -e|--env)
+            ENV_NAME="$2"
             shift 2
             ;;
-        -l|--logger)
+          -l|--logger)
             parse_arg_value "logger" "LOGGER_PARAM" "--logger-path " "$2"
             shift 2
             ;;
@@ -295,7 +294,14 @@ set_multi_client_env() {
 run_service() {
     local svc=$1
 
-    cargo_run_cmd="cargo run --bin $svc $FEATURES -- $LOGGER_PARAM $CONFIG_PARAM"
+    # Build the command with optional env
+    local env_param=""
+
+    if [[ -n "$ENV_NAME" ]]; then
+        env_param="--env $ENV_NAME"
+    fi
+
+    cargo_run_cmd="cargo run --bin $svc $FEATURES -- $LOGGER_PARAM $env_param"
     echo "Starting $svc: $cargo_run_cmd"
     $cargo_run_cmd &
 
