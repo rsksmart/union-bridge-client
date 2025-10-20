@@ -38,13 +38,6 @@ fn main() -> Result<()> {
                 .value_name("ENV")
                 .help("Environment name (e.g., anvil, alphanet, stage)"),
         )
-        .arg(
-            Arg::new("deployment")
-                .short('d')
-                .long("deployment")
-                .value_name("DEPLOYMENT")
-                .help("Deployment type (e.g., docker, local)"),
-        )
         .get_matches();
 
     let logger_cfg_path = matches.get_one::<String>(LOGGER_CLI_FLAG);

@@ -157,15 +157,6 @@ impl CommonConfig {
         format!("{project_root}/config/new/environment/multi-client.yaml")
     }
 
-    pub fn get_default_deploy_path() -> String {
-        let project_root = Path::new(CARGO_MANIFEST_DIR)
-            .parent()
-            .and_then(|p| p.to_str())
-            .expect("Failed to get default_config_path")
-            .to_string();
-        format!("{project_root}/config/new/deployment/local.yaml")
-    }
-
     pub fn init_logger(logger_file_opt: Option<&String>, crate_name: &str) -> Result<()> {
         // provided => use it as is
         if let Some(logger_file) = logger_file_opt {
