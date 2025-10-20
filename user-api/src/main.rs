@@ -31,17 +31,28 @@ async fn main() -> Result<()> {
                 .value_name("PATH")
                 .help("Sets the path to the configuration directory"),
         )
+        .arg(
+            Arg::new("env")
+                .short('e')
+                .long("env")
+                .value_name("ENV")
+                .help("Environment name (e.g., anvil, alphanet, stage)"),
+        )
         .get_matches();
 
     let logger_cfg_path = matches.get_one::<String>(LOGGER_CLI_FLAG);
     Logger::init(logger_cfg_path).expect("Failed to load logger");
 
-    let config_path = matches.get_one::<String>(CONFIG_CLI_FLAG);
-    let config: Config = Config::load(config_path).expect("Failed to load config");
+    let env_name = matches.get_one::<String>("env").cloned();
+
+    info!("Loading configuration from environment files");
+    info!("Environment variables with prefix UB__ will override config values");
+
+    let config: Config = Config::load(env_name.clone()).expect("Failed to load config");
 
     // Load transaction dispatcher configuration
-    let tx_dispatcher_config: TxDispatcherConfig = TxDispatcherConfig::load(config_path)
-        .expect("Failed to load transaction dispatcher config");
+    let tx_dispatcher_config: TxDispatcherConfig =
+        TxDispatcherConfig::load(env_name).expect("Failed to load transaction dispatcher config");
 
     let contracts_gateway =
         transaction_dispatcher::get_contracts_gateway_as_lib(tx_dispatcher_config).await?;

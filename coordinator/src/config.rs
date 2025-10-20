@@ -30,8 +30,8 @@ pub struct BrokerConfig {
 }
 
 impl Config {
-    pub fn load(base_path: Option<&String>) -> Result<Self, ConfigError> {
-        CommonConfig::load_config::<Self>(base_path, CARGO_PKG_NAME)
+    pub fn load(env_name: Option<String>) -> Result<Self, ConfigError> {
+        CommonConfig::load_config_2::<Self>(env_name)
     }
 
     pub fn get_contract_addresses(&self) -> Vec<Address> {
@@ -73,16 +73,15 @@ impl Logger {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::Config;
+    use crate::config::{CARGO_PKG_NAME, Config};
     use bitcoin::Network;
     use common::config::CommonConfig;
 
     #[test]
     fn test_parse_bitcoin_network() -> anyhow::Result<()> {
         const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
-
         let config_path = &format!("{}/../config/multi-client-template", CARGO_MANIFEST_DIR);
-        let config = Config::load(Some(config_path))?;
+        let config = CommonConfig::load_config::<Config>(Some(config_path), CARGO_PKG_NAME)?;
         assert_eq!(
             Network::Regtest,
             CommonConfig::parse_bitcoin_network(&config.bitcoin_network)?

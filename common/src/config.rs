@@ -66,6 +66,39 @@ pub struct ContractConfig {
 }
 
 impl CommonConfig {
+    pub fn load_config_2<T: DeserializeOwned>(env: Option<String>) -> Result<T, ConfigError> {
+        let env = env.unwrap_or_else(Self::get_default_env_path);
+
+        // todo(fede) replace the /new folder with the final folder
+        let base_config = "config/new/base.yaml";
+        let env_config = format!("config/new/environment/{env}.yaml");
+
+        trace!(
+            "Loading config: base.yaml -> environment/{env}.yaml -> environment variables with prefix UB__"
+        );
+
+        let cfg = config::Config::builder()
+            .add_source(config::File::with_name(base_config).required(true))
+            .add_source(config::File::with_name(&env_config).required(false))
+            .add_source(
+                Environment::with_prefix("UB")
+                    .prefix_separator("__")
+                    .separator("__")
+                    .try_parsing(false)
+                    .list_separator(";"),
+            )
+            .build()
+            .map_err(ConfigError::ConfigFileError)?;
+
+        trace!("Loaded config {:#?}", cfg.collect()?);
+
+        let cfg_as_t = cfg
+            .try_deserialize::<T>()
+            .map_err(ConfigError::ConfigFileError)?;
+
+        Ok(cfg_as_t)
+    }
+
     pub fn load_config<T: DeserializeOwned>(
         path_opt: Option<&String>,
         crate_name: &str,
@@ -78,7 +111,7 @@ impl CommonConfig {
         let common_config = &format!("{config_path}/common.yaml");
         let crate_config = &format!("{config_path}/{crate_name}.yaml");
 
-        println!(
+        trace!(
             "Loading config from {:?}, {:?} and environment variables with prefix UB__",
             Path::new(common_config),
             Path::new(crate_config),
@@ -115,10 +148,28 @@ impl CommonConfig {
         format!("{}/config/multi-client-template", project_root)
     }
 
+    pub fn get_default_env_path() -> String {
+        let project_root = Path::new(CARGO_MANIFEST_DIR)
+            .parent()
+            .and_then(|p| p.to_str())
+            .expect("Failed to get default_config_path")
+            .to_string();
+        format!("{project_root}/config/new/environment/multi-client.yaml")
+    }
+
+    pub fn get_default_deploy_path() -> String {
+        let project_root = Path::new(CARGO_MANIFEST_DIR)
+            .parent()
+            .and_then(|p| p.to_str())
+            .expect("Failed to get default_config_path")
+            .to_string();
+        format!("{project_root}/config/new/deployment/local.yaml")
+    }
+
     pub fn init_logger(logger_file_opt: Option<&String>, crate_name: &str) -> Result<()> {
         // provided => use it as is
         if let Some(logger_file) = logger_file_opt {
-            println!("Logging to destination defined by {logger_file}");
+            trace!("Logging to destination defined by {logger_file}");
 
             let contents = fs::read_to_string(logger_file)?;
             let expanded = shellexpand::env(&contents)?.into_owned();
@@ -144,7 +195,7 @@ impl CommonConfig {
         config_str = config_str.replace("{CRATE_NAME}", crate_name);
         config_str = config_str.replace("{DESTINATION}", default_destination);
 
-        println!(
+        trace!(
             "Logging to {:?}",
             format!("{}/{}.log", default_destination, crate_name)
         );

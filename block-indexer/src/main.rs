@@ -31,13 +31,24 @@ fn main() -> Result<()> {
                 .value_name("PATH")
                 .help("Sets the path to the configuration directory"),
         )
+        .arg(
+            Arg::new("env")
+                .short('e')
+                .long("env")
+                .value_name("ENV")
+                .help("Environment name (e.g., docker-anvil, docker-alphanet, stage)"),
+        )
         .get_matches();
 
     let logger_cfg_path = matches.get_one::<String>(LOGGER_CLI_FLAG);
     Logger::init(logger_cfg_path).expect("Failed to load logger");
 
-    let config_path = matches.get_one::<String>(CONFIG_CLI_FLAG);
-    let config: Config = Config::load(config_path).expect("Failed to load config");
+    let env_name = matches.get_one::<String>("env").cloned();
+
+    info!("Loading configuration from environment config");
+    info!("Environment variables with prefix UB__ will override config values");
+
+    let config: Config = Config::load(env_name).expect("Failed to load config");
 
     let shutdown_flag = ShutdownFlag::init();
 
