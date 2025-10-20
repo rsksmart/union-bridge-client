@@ -7,9 +7,11 @@ use log::trace;
 use log4rs::config::RawConfig;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use std::path::PathBuf;
 use std::{fs, path::Path};
 
 const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
+const BASE_CONFIG_PATH: &str = "config/new/base.yaml";
 
 #[derive(Debug, Deserialize)]
 pub struct CommonConfig {
@@ -67,19 +69,17 @@ pub struct ContractConfig {
 
 impl CommonConfig {
     pub fn load_config_2<T: DeserializeOwned>(env: Option<String>) -> Result<T, ConfigError> {
-        let env = env.unwrap_or_else(Self::get_default_env_path);
-
+        let env = env.unwrap_or_else(|| "".to_string());
         // todo(fede) replace the /new folder with the final folder
-        let base_config = "config/new/base.yaml";
-        let env_config = format!("config/new/environment/{env}.yaml");
+        let env_config_path = Self::config_path_for(&env);
 
         trace!(
             "Loading config: base.yaml -> environment/{env}.yaml -> environment variables with prefix UB__"
         );
 
         let cfg = config::Config::builder()
-            .add_source(config::File::with_name(base_config).required(true))
-            .add_source(config::File::with_name(&env_config).required(false))
+            .add_source(config::File::with_name(BASE_CONFIG_PATH).required(true))
+            .add_source(config::File::with_name(&env_config_path).required(false))
             .add_source(
                 Environment::with_prefix("UB")
                     .prefix_separator("__")
@@ -97,6 +97,13 @@ impl CommonConfig {
             .map_err(ConfigError::ConfigFileError)?;
 
         Ok(cfg_as_t)
+    }
+
+    fn config_path_for(env_name: &str) -> String {
+        if env_name == "" {
+            trace!("Empty environment name");
+        }
+        format!("config/new/environment/{env_name}.yaml")
     }
 
     pub fn load_config<T: DeserializeOwned>(
@@ -146,15 +153,6 @@ impl CommonConfig {
             .expect("Failed to get default_config_path")
             .to_string();
         format!("{}/config/multi-client-template", project_root)
-    }
-
-    pub fn get_default_env_path() -> String {
-        let project_root = Path::new(CARGO_MANIFEST_DIR)
-            .parent()
-            .and_then(|p| p.to_str())
-            .expect("Failed to get default_config_path")
-            .to_string();
-        format!("{project_root}/config/new/environment/multi-client.yaml")
     }
 
     pub fn init_logger(logger_file_opt: Option<&String>, crate_name: &str) -> Result<()> {
