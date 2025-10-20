@@ -1,0 +1,90 @@
+# =============================================================================
+# ANVIL ENVIRONMENT - Overrides to base.yaml
+# =============================================================================
+
+# =============================================================================
+# COMMON CONFIGURATION
+# =============================================================================
+
+indexer:
+  initial_block_hash: "0x27de5a07c7e9b812c3e7ee4c7c51fa131280ed9e16f1d70b5751034943d75c47"
+  storage:
+    path: "/app/db/" # This should match the volume mount in docker-compose
+
+provider:
+  rootstock:
+    url: "ws://host.docker.internal:8545" # if running anvil/node on host
+    # url: "ws://node-container:8545" # if running anvil/node in a container
+    # url: "ws://rskj-01.testnet.ub.iovlabs.net:4445/websocket" # if connecting to an external node
+
+contracts:
+  - name: "FakePegManager"
+    address: "0x3Aa5ebB10DC797CAC828524e59A333d0A371443c"
+  - name: "PegManager"
+    address: "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6"
+  - name: "SignatureManager"
+    address: "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0"
+  - name: "CommitteeRegistry"
+    address: "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9"
+  - name: "MemberRegistry"
+    address: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
+  - name: "StreamManager"
+    address: "0x610178dA211FEF7D417bC0e6FeD39F05609AD788"
+
+# =============================================================================
+# BLOCK INDEXER SERVICE
+# =============================================================================
+
+block_notifier:
+  broker_port: 12345
+
+# =============================================================================
+# LOG INDEXER SERVICE
+# =============================================================================
+
+log_notifier:
+  broker_port: 56789
+
+# =============================================================================
+# COORDINATOR SERVICE
+# =============================================================================
+
+block_broker:
+  host: "block-indexer"
+  port: 12345
+
+log_broker:
+  host: "log-indexer"
+  port: 56789
+
+user_broker:
+  host: "user-api"
+  port: 5550
+
+bitvmx_broker: # can be overriden with env vars UB_bitvmx_broker__ip and UB_bitvmx_broker__port
+  host: "172.25.0.14"
+  port: 9094
+
+broker_client_id: 333
+
+storage_path: "/app/db/" # This should match the volume mount in docker-compose# =============================================================================
+
+# =============================================================================
+# USER API SERVICE
+# =============================================================================
+
+coordinator_broker_client_id: 333
+
+broker_server_port: 5550
+
+http_server_port: 5551
+
+# =============================================================================
+# TRANSACTION DISPATCHER SERVICE
+# =============================================================================
+
+key_store:
+  path: "/keystore/key.json"
+
+server:
+  url: "0.0.0.0:3000"
