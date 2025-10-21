@@ -22,7 +22,9 @@ use bitcoin::script::{Builder as ScriptBuilder, PushBytesBuf};
 use bitcoin::secp256k1::rand::rngs::OsRng;
 use bitcoin::secp256k1::{self, Message, Secp256k1, SecretKey};
 use bitcoin::sighash::{EcdsaSighashType, SighashCache};
-use bitcoin::{Amount, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness, XOnlyPublicKey};
+use bitcoin::{
+    Amount, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness, XOnlyPublicKey,
+};
 use bitcoincore_rpc::{Client, RpcApi, jsonrpc};
 
 pub const DEFAULT_SATS_PER_BYTE: u64 = 5;
@@ -748,10 +750,13 @@ impl Wallet {
 
         // Parse RSK address (20 bytes)
         let rsk_address_clean = rsk_address_hex.trim_start_matches("0x");
-        let rsk_address_bytes = Vec::<u8>::from_hex(rsk_address_clean)
-            .context("invalid RSK address hex")?;
+        let rsk_address_bytes =
+            Vec::<u8>::from_hex(rsk_address_clean).context("invalid RSK address hex")?;
         if rsk_address_bytes.len() != 20 {
-            bail!("RSK address must be 20 bytes, got {}", rsk_address_bytes.len());
+            bail!(
+                "RSK address must be 20 bytes, got {}",
+                rsk_address_bytes.len()
+            );
         }
         let mut rsk_address = [0u8; 20];
         rsk_address.copy_from_slice(&rsk_address_bytes);
@@ -767,11 +772,8 @@ impl Wallet {
         let (selected_indices, selected_utxos, total_input) = self.select_utxos(total_amount)?;
 
         // Create OP_RETURN data
-        let op_return_data = Self::create_pegin_op_return_data(
-            packet_number,
-            rsk_address,
-            reimbursement_xpk,
-        )?;
+        let op_return_data =
+            Self::create_pegin_op_return_data(packet_number, rsk_address, reimbursement_xpk)?;
 
         // Build transaction
         let mut tx = Transaction {
@@ -803,9 +805,7 @@ impl Wallet {
         // Add change output if necessary
         let change_value = total_input.saturating_sub(total_amount);
         if change_value >= P2WPKH_DUST_LIMIT_SATS {
-            let wpkh = pubkey
-                .wpubkey_hash()
-                .context("key must be compressed")?;
+            let wpkh = pubkey.wpubkey_hash().context("key must be compressed")?;
             let change_script = ScriptBuf::new_p2wpkh(&wpkh);
             tx.output.push(TxOut {
                 value: Amount::from_sat(change_value),
@@ -814,9 +814,7 @@ impl Wallet {
         }
 
         // Sign the transaction
-        let wpkh = pubkey
-            .wpubkey_hash()
-            .context("key must be compressed")?;
+        let wpkh = pubkey.wpubkey_hash().context("key must be compressed")?;
         let script_code = ScriptBuf::new_p2wpkh(&wpkh);
         let signed = self.sign_transaction(tx, &selected_utxos, &pubkey, &script_code)?;
 
@@ -826,7 +824,9 @@ impl Wallet {
         } else {
             0
         };
-        let fee_sat = total_input.saturating_sub(stream_value).saturating_sub(final_change);
+        let fee_sat = total_input
+            .saturating_sub(stream_value)
+            .saturating_sub(final_change);
 
         // Create change UTXO info if applicable
         let change_preview = if final_change > 0 {
@@ -865,8 +865,7 @@ impl Wallet {
     }
 
     fn create_op_return_script(data: Vec<u8>) -> Result<ScriptBuf> {
-        let push_bytes = PushBytesBuf::try_from(data)
-            .context("OP_RETURN data too large")?;
+        let push_bytes = PushBytesBuf::try_from(data).context("OP_RETURN data too large")?;
         let script = ScriptBuilder::new()
             .push_opcode(OP_RETURN)
             .push_slice(push_bytes)

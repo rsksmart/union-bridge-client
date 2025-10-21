@@ -120,7 +120,7 @@ impl EventDecoder {
         // Early validation for malformed logs
         if parsed_topics.is_empty() {
             warn!(
-                "[EXHAUSTIVE-DECODER] Log has no topics (malformed or not an event): block_number={:?}, tx_hash={:?}",
+                "Log has no topics (malformed or not an event): block_number={:?}, tx_hash={:?}",
                 block_num, tx_hash
             );
             return RskPegManagerEvents::UnknownEvent;
@@ -129,117 +129,230 @@ impl EventDecoder {
         let data = log.event().data().as_bytes().to_vec();
 
         // Try each contract event type and use the first successful decode
-        if let Ok(pm) = PegManagerEvents::decode_raw_log(&parsed_topics, &data) {
-            info!(
-                "[EXHAUSTIVE-DECODER] Decoded PegManagerEvents successfully: {:?}",
-                pm
-            );
-            // Convert the contract binding event to our internal event type
-            if let Some(event) = Self::convert_peg_manager_event(
-                pm,
-                block_num,
-                block_hash,
-                log.info().removed(),
-                tx_hash,
-                log.info().address(),
-            ) {
-                return event;
-            }
+        if let Some(event) = self.try_peg_manager_events(
+            &parsed_topics,
+            &data,
+            block_num,
+            block_hash,
+            log.info().removed(),
+            tx_hash,
+            log.info().address(),
+        ) {
+            return event;
         }
 
-        if let Ok(cr) = CommitteeRegistryEvents::decode_raw_log(&parsed_topics, &data) {
-            info!(
-                "[EXHAUSTIVE-DECODER] Decoded CommitteeRegistryEvents successfully: {:?}",
-                cr
-            );
-            if let Some(event) = Self::convert_committee_registry_event(
-                cr,
-                block_num,
-                block_hash,
-                log.info().removed(),
-                tx_hash,
-                log.info().address(),
-            ) {
-                return event;
-            }
+        if let Some(event) = self.try_committee_registry_events(
+            &parsed_topics,
+            &data,
+            block_num,
+            block_hash,
+            log.info().removed(),
+            tx_hash,
+            log.info().address(),
+        ) {
+            return event;
         }
 
-        if let Ok(mr) = MemberRegistryEvents::decode_raw_log(&parsed_topics, &data) {
-            info!(
-                "[EXHAUSTIVE-DECODER] Decoded MemberRegistryEvents successfully: {:?}",
-                mr
-            );
-            if let Some(event) = Self::convert_member_registry_event(
-                mr,
-                block_num,
-                block_hash,
-                log.info().removed(),
-                tx_hash,
-                log.info().address(),
-            ) {
-                return event;
-            }
+        if let Some(event) = self.try_member_registry_events(
+            &parsed_topics,
+            &data,
+            block_num,
+            block_hash,
+            log.info().removed(),
+            tx_hash,
+            log.info().address(),
+        ) {
+            return event;
         }
 
-        if let Ok(sm) = StreamManagerEvents::decode_raw_log(&parsed_topics, &data) {
-            info!(
-                "[EXHAUSTIVE-DECODER] Decoded StreamManagerEvents successfully: {:?}",
-                sm
-            );
-            if let Some(event) = Self::convert_stream_manager_event(
-                sm,
-                block_num,
-                block_hash,
-                log.info().removed(),
-                tx_hash,
-                log.info().address(),
-            ) {
-                return event;
-            }
+        if let Some(event) = self.try_stream_manager_events(
+            &parsed_topics,
+            &data,
+            block_num,
+            block_hash,
+            log.info().removed(),
+            tx_hash,
+            log.info().address(),
+        ) {
+            return event;
         }
 
-        if let Ok(sig) = SignatureManagerEvents::decode_raw_log(&parsed_topics, &data) {
-            info!(
-                "[EXHAUSTIVE-DECODER] Decoded SignatureManagerEvents successfully: {:?}",
-                sig
-            );
-            if let Some(event) = Self::convert_signature_manager_event(
-                sig,
-                block_num,
-                block_hash,
-                log.info().removed(),
-                tx_hash,
-                log.info().address(),
-            ) {
-                return event;
-            }
+        if let Some(event) = self.try_signature_manager_events(
+            &parsed_topics,
+            &data,
+            block_num,
+            block_hash,
+            log.info().removed(),
+            tx_hash,
+            log.info().address(),
+        ) {
+            return event;
         }
 
-        if let Ok(bm) = BitcoinManagerEvents::decode_raw_log(&parsed_topics, &data) {
-            info!(
-                "[EXHAUSTIVE-DECODER] Decoded BitcoinManagerEvents successfully: {:?}",
-                bm
-            );
-            if let Some(event) = Self::convert_bitcoin_manager_event(
-                bm,
-                block_num,
-                block_hash,
-                log.info().removed(),
-                tx_hash,
-                log.info().address(),
-            ) {
-                return event;
-            }
+        if let Some(event) = self.try_bitcoin_manager_events(
+            &parsed_topics,
+            &data,
+            block_num,
+            block_hash,
+            log.info().removed(),
+            tx_hash,
+            log.info().address(),
+        ) {
+            return event;
         }
 
-        // No exhaustive decoder succeeded
+        // No decoding succeeded
         warn!(
-            "[EXHAUSTIVE-DECODER] No exhaustive decoder succeeded for log from {}. topic0: {:?}, tx_hash: {:?}",
+            "No decoding succeeded for log from {}. topic0: {:?}, tx_hash: {:?}, check if the contract is subscribed to for event decoding in the coordinator",
             log.info().address(),
             parsed_topics.get(0),
             tx_hash
         );
         RskPegManagerEvents::UnknownEvent
+    }
+
+    fn try_peg_manager_events(
+        &self,
+        parsed_topics: &[B256],
+        data: &[u8],
+        block_num: BlockNumber,
+        block_hash: BlockHash,
+        removed: bool,
+        tx_hash: TxHash,
+        contract_address: Address,
+    ) -> Option<RskPegManagerEvents> {
+        if let Ok(pm) = PegManagerEvents::decode_raw_log(parsed_topics, data) {
+            info!("Decoded PegManagerEvents successfully: {:?}", pm);
+            return Self::convert_peg_manager_event(
+                pm,
+                block_num,
+                block_hash,
+                removed,
+                tx_hash,
+                contract_address,
+            );
+        }
+        None
+    }
+
+    fn try_committee_registry_events(
+        &self,
+        parsed_topics: &[B256],
+        data: &[u8],
+        block_num: BlockNumber,
+        block_hash: BlockHash,
+        removed: bool,
+        tx_hash: TxHash,
+        contract_address: Address,
+    ) -> Option<RskPegManagerEvents> {
+        if let Ok(cr) = CommitteeRegistryEvents::decode_raw_log(parsed_topics, data) {
+            info!("Decoded CommitteeRegistryEvents successfully: {:?}", cr);
+            return Self::convert_committee_registry_event(
+                cr,
+                block_num,
+                block_hash,
+                removed,
+                tx_hash,
+                contract_address,
+            );
+        }
+        None
+    }
+
+    fn try_member_registry_events(
+        &self,
+        parsed_topics: &[B256],
+        data: &[u8],
+        block_num: BlockNumber,
+        block_hash: BlockHash,
+        removed: bool,
+        tx_hash: TxHash,
+        contract_address: Address,
+    ) -> Option<RskPegManagerEvents> {
+        if let Ok(mr) = MemberRegistryEvents::decode_raw_log(parsed_topics, data) {
+            info!("Decoded MemberRegistryEvents successfully: {:?}", mr);
+            return Self::convert_member_registry_event(
+                mr,
+                block_num,
+                block_hash,
+                removed,
+                tx_hash,
+                contract_address,
+            );
+        }
+        None
+    }
+
+    fn try_stream_manager_events(
+        &self,
+        parsed_topics: &[B256],
+        data: &[u8],
+        block_num: BlockNumber,
+        block_hash: BlockHash,
+        removed: bool,
+        tx_hash: TxHash,
+        contract_address: Address,
+    ) -> Option<RskPegManagerEvents> {
+        if let Ok(sm) = StreamManagerEvents::decode_raw_log(parsed_topics, data) {
+            info!("Decoded StreamManagerEvents successfully: {:?}", sm);
+            return Self::convert_stream_manager_event(
+                sm,
+                block_num,
+                block_hash,
+                removed,
+                tx_hash,
+                contract_address,
+            );
+        }
+        None
+    }
+
+    fn try_signature_manager_events(
+        &self,
+        parsed_topics: &[B256],
+        data: &[u8],
+        block_num: BlockNumber,
+        block_hash: BlockHash,
+        removed: bool,
+        tx_hash: TxHash,
+        contract_address: Address,
+    ) -> Option<RskPegManagerEvents> {
+        if let Ok(sig) = SignatureManagerEvents::decode_raw_log(parsed_topics, data) {
+            info!("Decoded SignatureManagerEvents successfully: {:?}", sig);
+            return Self::convert_signature_manager_event(
+                sig,
+                block_num,
+                block_hash,
+                removed,
+                tx_hash,
+                contract_address,
+            );
+        }
+        None
+    }
+
+    fn try_bitcoin_manager_events(
+        &self,
+        parsed_topics: &[B256],
+        data: &[u8],
+        block_num: BlockNumber,
+        block_hash: BlockHash,
+        removed: bool,
+        tx_hash: TxHash,
+        contract_address: Address,
+    ) -> Option<RskPegManagerEvents> {
+        if let Ok(bm) = BitcoinManagerEvents::decode_raw_log(parsed_topics, data) {
+            info!("Decoded BitcoinManagerEvents successfully: {:?}", bm);
+            return Self::convert_bitcoin_manager_event(
+                bm,
+                block_num,
+                block_hash,
+                removed,
+                tx_hash,
+                contract_address,
+            );
+        }
+        None
     }
 
     fn convert_peg_manager_event(
