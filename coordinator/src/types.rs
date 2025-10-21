@@ -609,6 +609,7 @@ mod tests {
     use union_contracts::bindings::peg_manager::PegManager::{
         PrevoutData, RequestPeginTempInfo, StreamPosition,
     };
+    use uuid::Uuid;
 
     fn create_rsk_log_from_event<T: SolEvent>(
         event: &T,
@@ -953,6 +954,88 @@ mod tests {
             }
             _ => panic!("Expected AllOperatorTakeTxHashesAdded event"),
         }
+    }
+
+    #[test]
+    fn test_tick_scheduler_schedule_and_tick_ready() {
+        let mut sched: TickScheduler<Uuid> = TickScheduler::new();
+        let id = Uuid::new_v4();
+        assert!(sched.is_empty());
+        sched.schedule(id, 3);
+        assert!(sched.is_scheduled(&id));
+
+        // Tick 1: not ready
+        let ready = sched.tick();
+        assert!(ready.is_empty());
+
+        // Tick 2: not ready
+        let ready = sched.tick();
+        assert!(ready.is_empty());
+
+        // Tick 3: now ready
+        let ready = sched.tick();
+        assert_eq!(ready, vec![id]);
+        assert!(!sched.is_scheduled(&id));
+    }
+
+    #[test]
+    fn test_tick_scheduler_reschedule_overwrites() {
+        let mut sched: TickScheduler<Uuid> = TickScheduler::new();
+        let id = Uuid::new_v4();
+        sched.schedule(id, 5);
+        // Overwrite with a shorter delay
+        sched.schedule(id, 2);
+
+        // After two ticks it should be ready (not five)
+        assert!(sched.tick().is_empty());
+        let ready = sched.tick();
+        assert_eq!(ready, vec![id]);
+    }
+
+    #[test]
+    fn test_tick_scheduler_cancel_prevents_ready() {
+        let mut sched: TickScheduler<Uuid> = TickScheduler::new();
+        let id = Uuid::new_v4();
+        sched.schedule(id, 1);
+        assert!(sched.is_scheduled(&id));
+        sched.cancel(&id);
+        assert!(!sched.is_scheduled(&id));
+        let ready = sched.tick();
+        assert!(ready.is_empty());
+    }
+
+    #[test]
+    fn test_tick_scheduler_multiple_ids_independent() {
+        let mut sched: TickScheduler<Uuid> = TickScheduler::new();
+        let id_a = Uuid::new_v4();
+        let id_b = Uuid::new_v4();
+        let id_c = Uuid::new_v4();
+        sched.schedule(id_a, 1);
+        sched.schedule(id_b, 3);
+        sched.schedule(id_c, 2);
+
+        // After 1st tick: A ready
+        let ready = sched.tick();
+        assert_eq!(ready, vec![id_a]);
+
+        // After 2nd tick: C ready
+        let ready = sched.tick();
+        assert_eq!(ready, vec![id_c]);
+
+        // After 3rd tick: B ready
+        let ready = sched.tick();
+        assert_eq!(ready, vec![id_b]);
+    }
+
+    #[test]
+    fn test_tick_scheduler_is_empty_and_clear() {
+        let mut sched: TickScheduler<Uuid> = TickScheduler::new();
+        assert!(sched.is_empty());
+        let id = Uuid::new_v4();
+        sched.schedule(id, 10);
+        assert!(!sched.is_empty());
+        sched.clear();
+        assert!(sched.is_empty());
     }
 
     #[test]

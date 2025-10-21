@@ -1,7 +1,9 @@
 use common::types::Address;
 use std::sync::Arc;
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
-use transaction_dispatcher::types::{PeginAddressInput, PeginAddressOutput};
+use transaction_dispatcher::types::{
+    PeginAddressInput, PeginAddressOutput, RequestPegoutInput, RequestPegoutOutput,
+};
 
 // Synchronous wrapper trait that is dyn-compatible
 // NOTE: This uses Handle::current().block_on() to call async code from sync contexts
@@ -12,6 +14,11 @@ pub trait SyncContractsGatewayApi: Send + Sync {
         &self,
         input: PeginAddressInput,
     ) -> Result<PeginAddressOutput, DomainErrors>;
+
+    fn request_pegout(
+        &self,
+        input: RequestPegoutInput,
+    ) -> Result<RequestPegoutOutput, DomainErrors>;
 }
 
 // Runtime-agnostic wrapper that can work in async contexts
@@ -47,6 +54,15 @@ impl<T: RskContractsGatewayApi + Send + Sync + 'static> SyncContractsGatewayApi
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current()
                 .block_on(self.gateway.get_temporary_pegin_address(input))
+        })
+    }
+
+    fn request_pegout(
+        &self,
+        input: RequestPegoutInput,
+    ) -> Result<RequestPegoutOutput, DomainErrors> {
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(self.gateway.request_pegout(input))
         })
     }
 }

@@ -145,7 +145,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
     ) -> alloy_contract::Result<TransactionReceipt> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
-            || self.contract_instance.registerOperatorTake(input.clone()),
+            || self.contract_instance.registerUserTake(input.clone()),
             gas_bumps,
         )
         .await
