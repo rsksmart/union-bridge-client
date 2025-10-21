@@ -65,7 +65,7 @@ while [[ $# -gt 0 ]]; do
       elif [[ "$2" == "local" ]]; then
         OP_PREFIX=""
         ENV_FILE="${SCRIPT_DIR}/.env.local"
-        ENV_NAME="docker-anvil"
+        ENV_NAME="docker-local"
         if [[ -z "$UC_TAG" ]]; then
           UC_TAG="latest-anvil"
         fi

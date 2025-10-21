@@ -5,7 +5,7 @@
 indexer:
   initial_block_hash: "0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c"
   storage:
-    path: "/your_base_path/.union_bridge/database/multi-client-1" # read from env UB__INDEXER__STORAGE__PATH
+    path: "/your_base_path/.union_bridge/database/multi-client-1"
   cache:
     size: 1000
   sync:
@@ -41,14 +41,14 @@ contracts:
 # =============================================================================
 
 block_notifier:
-  broker_port: 10001 # read from env UB__BLOCK_NOTIFIER__BROKER_PORT
+  broker_port: 10001
 
 # =============================================================================
 # LOG INDEXER SERVICE
 # =============================================================================
 
 log_notifier:
-  broker_port: 11001 # read from env UB__LOG_NOTIFIER__BROKER_PORT
+  broker_port: 11001
 
 # =============================================================================
 # COORDINATOR SERVICE
@@ -56,43 +56,43 @@ log_notifier:
 
 block_broker:
   host: "0.0.0.0"
-  port: 10001 # read from env UB__BLOCK_BROKER__PORT
+  port: 10001
 
 log_broker:
   host: "0.0.0.0"
-  port: 11001 # read from env UB__LOG_BROKER__PORT
+  port: 11001
 
 user_broker:
   host: "0.0.0.0"
-  port: 30001 # read from env UB__USER_BROKER__PORT
+  port: 30001
 
 bitvmx_broker:
   host: "0.0.0.0"
-  port: 22222 # read from env UB__BITVMX_BROKER__PORT
+  port: 22222
 
-broker_client_id: 101 # read from env UB__BROKER_CLIENT_ID
+broker_client_id: 101
 
-storage_path: "/your_base_path/.union_bridge/database/multi-client-1" # read from env UB__STORAGE_PATH
+storage_path: "/your_base_path/.union_bridge/database/multi-client-1"
 
 # =============================================================================
 # USER API SERVICE
 # =============================================================================
 
-coordinator_broker_client_id: 101 # read from env UB__COORDINATOR_BROKER_CLIENT_ID
+coordinator_broker_client_id: 101
 
-broker_server_port: 30001 # read from env UB__BROKER_SERVER_PORT
+broker_server_port: 30001
 
-http_server_port: 40001 # read from env UB__HTTP_SERVER_PORT
+http_server_port: 40001
 
 # =============================================================================
 # TRANSACTION DISPATCHER SERVICE
 # =============================================================================
 
 key_store:
-  path: "/your_base_path/.union_bridge/keystore/multi-client-1" # read from env UB__KEY_STORE__PATH
+  path: "/your_base_path/.union_bridge/keystore/multi-client-1"
 
 transaction:
   gas_bumps_t1: 3
 
 server:
-  url: "0.0.0.0:9001" # read from env UB__SERVER__URL
+  url: "0.0.0.0:9001"

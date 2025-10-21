@@ -40,7 +40,7 @@ fn main() -> Result<()> {
                 .short('e')
                 .long("env")
                 .value_name("ENV")
-                .help("Environment name (e.g., anvil, alphanet, stage)"),
+                .help("Environment name (e.g., local, alphanet, stage)"),
         )
         .get_matches();
 
@@ -49,7 +49,10 @@ fn main() -> Result<()> {
 
     let env_name = matches.get_one::<String>("env").cloned();
 
-    info!("Loading configuration from environment and deployment files");
+    info!(
+        "Loading configuration for environment: {}",
+        env_name.clone().unwrap_or_else(|| "NONE".to_string())
+    );
     info!("Environment variables with prefix UB__ will override config values");
 
     let config: Config = Config::load(env_name.clone()).expect("Failed to load config");

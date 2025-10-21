@@ -75,7 +75,7 @@ OPTIONS:
     -n, --num-clients NUM         Number of clients to run simultaneously (1-10)
     -i, --id CLIENT_ID            Run a single client with the specified ID (1-10)
     -f, --features FEATURES       Optional features flag for clients
-    -e, --env ENV_NAME            Environment name (e.g., anvil, alphanet, stage). Optional.
+    -e, --env ENV_NAME            Environment name (e.g., local, alphanet, stage). Optional.
     -l, --logger LOGGER_FILE      Optional logger configuration file path. Defaults to 'log4rs.stdout.yaml'
         --fresh                   Start with clear databases (removes existing)
     -h, --help                    Show this help message
@@ -91,12 +91,12 @@ ENVIRONMENT VARIABLES:
 EXAMPLES:
     # Single client mode (defaults to CLIENT_ID=1)
     $0                                              # Run client 1
-    $0 --features anvil                             # Run client 1 with anvil feature
-    $0 --id 2 --features anvil --env anvil # Run client 2 with specific config
+    $0 --features anvil                             # Run client 1 with local feature
+    $0 --id 2 --features anvil --env local # Run client 2 with specific config
 
     # Multi-client mode
     $0 --num-clients 4                              # Run 4 clients
-    $0 --num-clients 6 --features anvil --env anvil # Run 6 clients with config
+    $0 --num-clients 6 --features anvil --env local # Run 6 clients with config
 
     # With environment variable:
     BASE_STORAGE_PATH=/Users/username $0
