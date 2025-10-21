@@ -39,6 +39,11 @@ async fn main() -> Result<()> {
     let config_path = matches.get_one::<String>(CONFIG_CLI_FLAG);
     let config: Config = Config::load(config_path).expect("Failed to load config");
 
+    // Get wallet private key from environment variable (same as bitcoin-wallet)
+    // Check this early to avoid creating resources that need cleanup
+    let wallet_private_key = std::env::var("WALLET_PRIVATE_KEY")
+        .context("WALLET_PRIVATE_KEY environment variable not set")?;
+
     // Load transaction dispatcher configuration
     let tx_dispatcher_config: TxDispatcherConfig = TxDispatcherConfig::load(config_path)
         .expect("Failed to load transaction dispatcher config");
@@ -61,10 +66,6 @@ async fn main() -> Result<()> {
 
     let network = CommonConfig::parse_bitcoin_network(&config.bitcoin_network)
         .context("Failed to parse bitcoin_network")?;
-
-    // Get wallet private key from environment variable (same as bitcoin-wallet)
-    let wallet_private_key = std::env::var("WALLET_PRIVATE_KEY")
-        .context("WALLET_PRIVATE_KEY environment variable not set")?;
 
     let server = Server::new(
         listener,
