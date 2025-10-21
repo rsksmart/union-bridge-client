@@ -35,7 +35,13 @@ use common::{
 use log::{debug, error, info, trace, warn};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::{cell::RefCell, collections::HashMap, fmt::Debug, future::Future, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+    future::Future,
+    rc::Rc,
+};
 use transaction_dispatcher::{
     rsk_gateway::{DomainErrors, RskContractsGatewayApi},
     types::{
@@ -170,6 +176,7 @@ where
     blockchain: BlockchainView,
     unconfirmed_pegin_requests: HashMap<String, BtcTxSPVProof>,
     tracker: HashMap<TxHash, PeginState<BSF>>,
+    pegin_request_tracker: HashSet<Txid>,
     btc_sig_subflow_factory: FactoryBSF,
     scheduler: TickScheduler<ScheduledAction>,
     global_context: GlobalContext,
@@ -208,6 +215,7 @@ where
             blockchain: BlockchainView::new(),
             unconfirmed_pegin_requests: HashMap::new(),
             tracker: HashMap::new(),
+            pegin_request_tracker: HashSet::new(),
             btc_sig_subflow_factory: factory,
             scheduler: TickScheduler::new(),
             global_context,
@@ -859,7 +867,12 @@ where
         )
     }
 
-    fn handle_pegin_transaction_found(&self, tx_id: Txid) -> Result<()> {
+    fn is_pegin_request_tracked(&self, tx_id: &Txid) -> bool {
+        self.pegin_request_tracker.contains(tx_id)
+    }
+
+    fn handle_pegin_transaction_found(&mut self, tx_id: Txid) -> Result<()> {
+        self.pegin_request_tracker.insert(tx_id);
         // When notified of a new pegin tx found, the client will immediately
         // request the SPV proof of such transaction to notify the contract
         Self::send_to_bitvmx(
@@ -1251,17 +1264,27 @@ where
             OutgoingBitVMXApiMessages::PeginTransactionFound(tx_id, _tx_status) => {
                 debug!("Received BitVMX PeginTransactionFound: tx_id={}", tx_id);
 
-                self.handle_pegin_transaction_found(tx_id.clone())?;
+                self.handle_pegin_transaction_found(*tx_id)?;
                 //TODO in the future we need to validate the tx_statos.confirmations number.
             }
             // Step 3: Handle SPVProof event from BitVMX to call requestPegin
             // Step 10: Handle SPVProof event from BitVMX to call acceptPegin
             OutgoingBitVMXApiMessages::SPVProof(tx_id, spv_proof_opt) => match spv_proof_opt {
                 Some(spv_proof) => {
-                    debug!(
-                        "Received BitVMX SPVProof: tx_id={}, proof={:?}",
+                    debug!("Received BitVMX SPVProof: tx_id={}", tx_id);
+                    trace!(
+                        "Received spv_proof_data for tx_id={}: {:?}",
                         tx_id, spv_proof
                     );
+                    // Step 3.1: Handle request pegin SPV proof
+                    if self.is_pegin_request_tracked(tx_id) {
+                        info!("Handling request pegin SPV proof: tx_id={}", tx_id);
+                        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-328
+                        self.schedule_pegin_requested_to_contracts(spv_proof.clone(), 1);                        // Remove from tracking set after successful processing
+                        self.pegin_request_tracker.remove(tx_id);
+                        debug!("Removed request_pegin_txid from tracking: tx_id={}", tx_id);
+                        return Ok(());
+                    }
                     // Find state by matching accept_pegin_txid from bitvmx_pegin_accepted
                     let matching_state = self.tracker.iter_mut().find(|(_, state)| {
                         state
@@ -1273,21 +1296,17 @@ where
 
                     if let Some((_, state)) = matching_state {
                         // Step 10 Handle accept pegin SPV proof
-                        debug!(
+                        info!(
                             "Handling accept pegin SPV proof: flow_id={}, tx_id={}",
                             state.flow_id, tx_id
                         );
                         self.send_accept_pegin_contracts(spv_proof.clone())?;
-                    } else {
-                        // Step 3 if no matching state found we are assuming this is a request pegin SPV proof
-                        debug!(
-                            "Bitcoin Request Pegin received: tx_id={tx_id} @ block={}. Scheduling contracts request.",
-                            spv_proof.block_hash
-                        );
-
-                        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-328
-                        self.schedule_pegin_requested_to_contracts(spv_proof.clone(), 1);
+                        return Ok(());
                     }
+                    debug!(
+                        "SPV proof for tx_id: {} is not related to a pegin flow",
+                        tx_id
+                    );
                 }
                 None => bail!(
                     "Received BitVMX SPVProof event for tx_id: {}, but no SPV proof was included.",
@@ -1541,6 +1560,42 @@ mod tests {
     }
 
     #[test]
+    fn process_new_bitvmx_pegin_transaction_found_should_add_tx_id_to_tracker() {
+        let status = dummy_transaction_status();
+        let txid = status.tx_id;
+
+        let mut broker = MockBrokerClientApi::new();
+        expect_bitvmx_subscription_success(&mut broker);
+
+        broker
+            .expect_send()
+            .withf(move |to, msg| {
+                *to == BROKER_SERVER_ID
+                    && matches!(msg, IncomingBitVMXApiMessages::GetSPVProof(id) if id == &txid)
+            })
+            .times(1)
+            .returning(|_, _| Ok(true));
+
+        let mut processor = PeginProcessor::new(
+            RuntimeSync::new().unwrap(),
+            MockRskContractsGatewayApi::new().into(),
+            broker.into(),
+            MockBtcSigSubFlowFactory::new(),
+            GlobalContext::new(),
+        );
+
+        // Verify tx_id is not tracked initially
+        assert!(!processor.is_pegin_request_tracked(&txid));
+
+        let event = OutgoingBitVMXApiMessages::PeginTransactionFound(txid, status);
+        let result = processor.process_new_bitvmx_event(&event);
+        assert!(result.is_ok());
+
+        // Verify tx_id is now tracked
+        assert!(processor.is_pegin_request_tracked(&txid));
+    }
+
+    #[test]
     fn process_new_bitvmx_empty_spv_proof_event_should_return_error() {
         // Prepare broker and assert it doesn't send anything except pegin subscription
         let mut broker = MockBrokerClientApi::new();
@@ -1576,12 +1631,32 @@ mod tests {
             .times(1)
             .returning(move |_| Ok(expected_receipt.clone()));
 
-        // Prepare broker and assert it doesn't send anything except pegin subscription
+        // Prepare broker - expects subscription and GetSPVProof request
         let mut broker = MockBrokerClientApi::new();
         expect_bitvmx_subscription_success(&mut broker);
 
+        let spv_proof = dummy_spv_proof();
+        let tx_id = spv_proof.tx.compute_txid();
+
+        // Expect GetSPVProof to be sent when PeginTransactionFound is received
+        broker
+            .expect_send()
+            .withf(move |to, msg| {
+                *to == BROKER_SERVER_ID
+                    && matches!(msg, IncomingBitVMXApiMessages::GetSPVProof(id) if id == &tx_id)
+            })
+            .times(1)
+            .returning(|_, _| Ok(true));
+
         let rt_sync = RuntimeSync::new().unwrap();
-        let mut processor = PeginProcessor::new(
+        let mut processor: PeginProcessor<
+            MockRskContractsGatewayApi,
+            MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>,
+            crate::flows::btc_signature::btc_signature_subflow::MockBtcSignatureSubFlowApi,
+            crate::flows::btc_signature::btc_signature_subflow::MockBtcSignatureSubFlowFactoryApi<
+                crate::flows::btc_signature::btc_signature_subflow::MockBtcSignatureSubFlowApi,
+            >,
+        > = PeginProcessor::new(
             rt_sync,
             contracts.into(),
             broker.into(),
@@ -1589,13 +1664,23 @@ mod tests {
             GlobalContext::new(),
         );
 
-        let spv_proof = dummy_spv_proof();
-        let tx_id = spv_proof.tx.compute_txid();
-        let event = OutgoingBitVMXApiMessages::SPVProof(tx_id, Some(spv_proof));
+        // First send PeginTransactionFound to add tx_id to tracker
+        let status = dummy_transaction_status();
+        let pegin_found_event: OutgoingBitVMXApiMessages =
+            OutgoingBitVMXApiMessages::PeginTransactionFound(tx_id, status);
+        let result = processor.process_new_bitvmx_event(&pegin_found_event);
+        assert!(result.is_ok());
+        assert!(processor.is_pegin_request_tracked(&tx_id));
+
+        // Then send SPV proof event
+        let spv_proof_event = OutgoingBitVMXApiMessages::SPVProof(tx_id, Some(spv_proof));
 
         // Run and assert
-        let result = processor.process_new_bitvmx_event(&event);
+        let result = processor.process_new_bitvmx_event(&spv_proof_event);
         assert!(result.is_ok());
+
+        // Verify tx_id was removed from tracker after successful processing
+        assert!(!processor.is_pegin_request_tracked(&tx_id));
     }
 
     #[test]
@@ -1608,9 +1693,22 @@ mod tests {
             .times(1)
             .returning(|_| Err(DomainErrors::UnknownContractError("simulated error".into())));
 
-        // Prepare broker and assert it doesn't send anything except pegin subscription
+        // Prepare broker - expects subscription and GetSPVProof request
         let mut broker = MockBrokerClientApi::new();
         expect_bitvmx_subscription_success(&mut broker);
+
+        let spv_proof = dummy_spv_proof();
+        let tx_id = spv_proof.tx.compute_txid();
+
+        // Expect GetSPVProof to be sent when PeginTransactionFound is received
+        broker
+            .expect_send()
+            .withf(move |to, msg| {
+                *to == BROKER_SERVER_ID
+                    && matches!(msg, IncomingBitVMXApiMessages::GetSPVProof(id) if id == &tx_id)
+            })
+            .times(1)
+            .returning(|_, _| Ok(true));
 
         let rt_sync = RuntimeSync::new().unwrap();
         let mut processor = PeginProcessor::new(
@@ -1621,12 +1719,18 @@ mod tests {
             GlobalContext::new(),
         );
 
-        let spv_proof = dummy_spv_proof();
-        let tx_id = spv_proof.tx.compute_txid();
-        let event = OutgoingBitVMXApiMessages::SPVProof(tx_id, Some(spv_proof));
+        // First send PeginTransactionFound to add tx_id to tracker
+        let status = dummy_transaction_status();
+        let pegin_found_event = OutgoingBitVMXApiMessages::PeginTransactionFound(tx_id, status);
+        let result = processor.process_new_bitvmx_event(&pegin_found_event);
+        assert!(result.is_ok());
+        assert!(processor.is_pegin_request_tracked(&tx_id));
+
+        // Then send SPV proof event
+        let spv_proof_event = OutgoingBitVMXApiMessages::SPVProof(tx_id, Some(spv_proof));
 
         // We expect an error due to contract dispatch failure
-        let result = processor.process_new_bitvmx_event(&event);
+        let result = processor.process_new_bitvmx_event(&spv_proof_event);
         assert!(result.is_err());
     }
 
