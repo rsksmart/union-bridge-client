@@ -66,7 +66,7 @@ pub const PROGRAM_TYPE_USER_TAKE: &str = "take";
 pub const PEGOUT_ACCEPTED_NAME: &str = "pegout_accepted";
 pub const BLOCKS_DELAY_FOR_TX_CHECK: u32 = 10; // Number of blocks to wait before rechecking transaction status
 //TODO (JIRA) https://rsklabs.atlassian.net/browse/UB-328 pending to improve how these confirmations are handled
-pub const SPV_PROOF_MIN_CONFIRMATIONS: u32 = 2 + 1; // +2 from Contracts, +1 to give time to the Native Bridge to get up to date with Bitcoin Node
+pub const SPV_PROOF_MIN_CONFIRMATIONS: u32 = 1 + 1; // +1 from Contracts, +1 to give time to the Native Bridge to get up to date with Bitcoin Node
 
 #[derive(Debug, Clone)]
 struct PegoutEvent<T: Clone> {

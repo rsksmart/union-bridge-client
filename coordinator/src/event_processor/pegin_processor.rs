@@ -86,7 +86,7 @@ const PEGIN_REQUEST: &'static str = "pegin_request";
 const PEGIN_ACCEPTED_INPUT_MSG: &'static str = "pegin_accepted";
 const PROGRAM_TYPE_ACCEPT_PEGIN: &'static str = "accept_pegin";
 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-328
-pub const MIN_TX_CONFIRMATIONS: u32 = 2 + 1; // +2 from Contracts, +1 to give time to the Native Bridge to get up to date with Bitcoin Node
+pub const MIN_TX_CONFIRMATIONS: u32 = 1 + 1; // +1 from Contracts, +1 to give time to the Native Bridge to get up to date with Bitcoin Node
 pub const BLOCKS_DELAY_FOR_TX_CHECK: u32 = 10;
 
 /// Data structure used to send pegin request information to the BitVMX client.
