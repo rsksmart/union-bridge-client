@@ -293,6 +293,7 @@ pub(crate) struct SetupCommitteeFlow<CG: RskContractsGatewayApi, BC: BitVmxBroke
     state: State,
     global_context: GlobalContext,
     bitcoin_network: Network,
+    store: Rc<dyn CoordinatorStoreApi>,
 }
 
 const REGTEST_FEE_RATE: u64 = 10;
@@ -303,14 +304,30 @@ where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
 {
-    fn get_internal_id(&self) -> Uuid {
-        self.state.internal_id
-    }
 
     fn get_state(&self) -> &State {
         &self.state
     }
 
+    fn persist_state(&self) {
+        // Load current flows from store
+        let mut current_flows = match self.store.load_setup_committee_flows() {
+            Ok(Some(flows)) => flows,
+            Ok(None) => HashMap::new(),
+            Err(e) => {
+                error!("Failed to load flows for persistence: {}", e);
+                return;
+            }
+        };
+
+        // Update this flow's state
+        current_flows.insert(self.state.internal_id, self.state.clone());
+
+        // Save back to store
+        if let Err(e) = self.store.save_setup_committee_flows(current_flows) {
+            error!("Failed to persist flow state: {}", e);
+        }
+    }
 
     fn from_saved_state(
         contracts: Rc<CG>,
@@ -319,6 +336,7 @@ where
         global_context: GlobalContext,
         state: State,
         bitcoin_network: Network,
+        store: Rc<dyn CoordinatorStoreApi>,
     ) -> Self {
         Self {
             contracts,
@@ -327,6 +345,7 @@ where
             state,
             global_context,
             bitcoin_network,
+            store,
         }
     }
 
@@ -337,6 +356,7 @@ where
         global_context: GlobalContext,
         internal_id: Uuid,
         bitcoin_network: Network,
+        store: Rc<dyn CoordinatorStoreApi>,
     ) -> Self {
         Self {
             contracts,
@@ -349,6 +369,7 @@ where
             },
             global_context,
             bitcoin_network,
+            store,
         }
     }
 
@@ -979,6 +1000,9 @@ where
             }
         }
 
+        // Persist state after successful step completion
+        self.persist_state();
+
         Ok(())
     }
 
@@ -1339,7 +1363,6 @@ where
 {
     flow_factory: FactoryBSF,
     flows: HashMap<Uuid, SetupCommitteeFlow<CG, BC>>,
-    flow_states: HashMap<Uuid, State>,
     global_context: GlobalContext,
     blockchain_view: BlockchainView,
     events_confirming: HashMap<String, ConfirmableEventWithData>,
@@ -1357,7 +1380,6 @@ where
         let mut processor = Self {
             flow_factory,
             flows: HashMap::new(),
-            flow_states: HashMap::new(),
             global_context: global_context.clone(),
             events_confirming: HashMap::new(),
             blockchain_view: BlockchainView::new(),
@@ -1378,7 +1400,6 @@ where
                 for (id, saved_state) in saved_flows.iter() {
                     let flow = self.flow_factory.create_flow_from_saved_state(saved_state.clone());
                     self.flows.insert(*id, flow);
-                    self.flow_states.insert(*id, saved_state.clone());
                     let inserted_flow = self.flows.get(id).expect("Just inserted flow");
                     info!("Restored flow {} at step {:?} for stream_id {:?}",
                         id,
@@ -1393,22 +1414,19 @@ where
                 }
             },
             Ok(None) => debug!("No setup committee flows to restore"),
-            Err(e) => error!("Failed to restore setup committee flows: {}", e),
+            Err(e) => panic!("Failed to restore setup committee flows: {}", e),
         }
     }
 
     fn persist_flows(&self) -> Result<()> {
-        self.store.save_setup_committee_flows(self.flow_states.clone())
+        let flow_states: HashMap<Uuid, State> = self.flows
+            .iter()
+            .map(|(id, flow)| (*id, flow.get_state().clone()))
+            .collect();
+        self.store.save_setup_committee_flows(flow_states)
             .context("Failed to persist setup committee flows")
     }
 
-    fn update_flow_state_and_persist(&mut self, flow_id: Uuid, flow_state: State) -> Result<()> {
-        // Update the flow state in our tracking
-        self.flow_states.insert(flow_id, flow_state);
-
-        // Persist the updated flows
-        self.persist_flows()
-    }
 }
 
 impl<CG, BC, FactoryBSF, S> SetupCommitteeProcessor<CG, BC, FactoryBSF, S>
@@ -1588,12 +1606,6 @@ where
         match flow_data {
             Some((flow, step_data)) => {
                 flow.complete_step(step_data)?;
-                // Update and persist flow state
-                let flow_id = flow.get_internal_id();
-                let flow_state = flow.get_state().clone();
-                if let Err(e) = self.update_flow_state_and_persist(flow_id, flow_state) {
-                    error!("Failed to persist flow after processing event: {}", e);
-                }
             }
             None => {
                 warn!("Received {event:?} but no matching flow found");
@@ -1647,7 +1659,6 @@ where
         for key in &completed {
             debug!("Removing completed flow: {key:?}");
             self.flows.remove(key);
-            self.flow_states.remove(key);
             debug!("Removed completed flow {} from persistence", key);
         }
 
@@ -1681,15 +1692,7 @@ where
                 let internal_id = Uuid::new_v4();
                 let mut flow = self.flow_factory.create_flow(internal_id);
                 flow.complete_step(StepData::UserRequest(input.clone()))?;
-
-                // Store flow and persist
-                self.flow_states.insert(internal_id, flow.state.clone());
                 self.flows.insert(internal_id, flow);
-
-                // Persist after creating new flow
-                if let Err(e) = self.persist_flows() {
-                    error!("Failed to persist new flow: {}", e);
-                }
             }
             _ => {
                 trace!("Ignoring user request: {:?}", req);
@@ -1706,12 +1709,6 @@ where
             // same info - so for now we send it to the first flow waiting for it
             if let Some(first_flow) = self.get_first_flow_waiting_comm_info() {
                 first_flow.complete_step(StepData::CommInfo(comm_info.clone()))?;
-                // Update and persist flow state
-                let flow_id = first_flow.get_internal_id();
-                let flow_state = first_flow.get_state().clone();
-                if let Err(e) = self.update_flow_state_and_persist(flow_id, flow_state) {
-                    error!("Failed to persist flow after CommInfo: {}", e);
-                }
                 return Ok(());
             } else {
                 trace!("Ignoring CommInfo - not mine")
@@ -1752,12 +1749,6 @@ where
 
         if let Some(flow_for_req_id) = self.get_flow_for_bitvmx_response(req_id) {
             flow_for_req_id.complete_step(step_data)?;
-            // Update and persist flow state
-            let flow_id = flow_for_req_id.get_internal_id();
-            let flow_state = flow_for_req_id.get_state().clone();
-            if let Err(e) = self.update_flow_state_and_persist(flow_id, flow_state) {
-                error!("Failed to persist flow after BitVMX event: {}", e);
-            }
         } else {
             bail!("No flow found for BitVMX event with id {req_id}");
         }
@@ -1877,6 +1868,7 @@ where
     bitvmx_broker: Rc<BC>,
     global_context: GlobalContext,
     bitcoin_network: Network,
+    store: Rc<dyn CoordinatorStoreApi>,
 }
 
 impl<CG, BC> SetupCommitteeFlowFactory<CG, BC>
@@ -1890,6 +1882,7 @@ where
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
         bitcoin_network: Network,
+        store: Rc<dyn CoordinatorStoreApi>,
     ) -> Self {
         Self {
             contracts_gateway,
@@ -1897,6 +1890,7 @@ where
             bitvmx_broker,
             global_context,
             bitcoin_network,
+            store,
         }
     }
 }
@@ -1915,6 +1909,7 @@ where
             self.global_context.clone(),
             internal_id,
             self.bitcoin_network,
+            self.store.clone(),
         )
     }
 
@@ -1926,6 +1921,7 @@ where
             self.global_context.clone(),
             saved_state,
             self.bitcoin_network,
+            self.store.clone(),
         )
     }
 }

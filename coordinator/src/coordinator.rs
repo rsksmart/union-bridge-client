@@ -76,6 +76,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
             bitvmx_broker.clone(),
             global_context.clone(),
             bitcoin_network,
+            store_rc.clone(),
         );
 
         Self {
