@@ -342,11 +342,11 @@ crate.
 
 ## Configuration Files
 
-Configuration files are located under the `config` directory, organized in environment folders. The final config is the
+Configuration files are located under the `config/new/` directory, organized in environment files. The final config is the
 composition of the following files in the defined order:
 
-- `common.yaml`: common configuration for all environments.
-- `{crate_name}.yaml`: specific configuration for each crate.
+- `base.yaml`: common configuration for all environments.
+- `{ENVIRONMENT_NAME}.yaml`: specific configuration for each crate.
 
 ### Configuration Overrides
 
@@ -362,7 +362,7 @@ separate levels.
 **Example YAML to Environment Variable Mapping:**
 
 ```yaml
-# config/common.yaml
+# config/new/base.yaml
 block_broker:
   ip: "127.0.0.1"
   port: 5672
