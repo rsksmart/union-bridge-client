@@ -1,6 +1,6 @@
 services:
   bitvmx-client:
-    image: ghcr.io/fairgatelabs/rust-bitvmx-workspace/bitvmx-client:v0.1.2-alpha
+    image: ghcr.io/fairgatelabs/rust-bitvmx-workspace/bitvmx-client:v0.1.3-alpha
     # container_name: bitvmx-client-container
     restart: unless-stopped
     entrypoint: [ "./run.sh" ]
