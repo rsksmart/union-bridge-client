@@ -218,7 +218,8 @@ where
             flow_id
         );
         let committee_id: CommitteeId = pegout_requested.committeeId.try_into()?;
-        let committee_output = self.get_committee_output(committee_id.clone())?;
+        let committee_output: GetCommitteeOutput =
+            self.get_committee_output(committee_id.clone())?;
 
         let data_to_send: PegOutRequest =
             self.pegout_requested_to_bitvmx_request(pegout_requested, &committee_output)?;

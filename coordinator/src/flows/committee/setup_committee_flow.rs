@@ -1675,7 +1675,8 @@ where
         match req {
             UserRequests::ApplyToStream(input) => {
                 let internal_id = Uuid::new_v4();
-                let mut flow = self.flow_factory.create_flow(internal_id);
+                let mut flow: SetupCommitteeFlow<CG, BC> =
+                    self.flow_factory.create_flow(internal_id);
                 flow.complete_step(StepData::UserRequest(input.clone()))?;
                 self.flows.insert(internal_id, flow);
             }
