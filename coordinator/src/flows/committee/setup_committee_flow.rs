@@ -33,6 +33,7 @@ use crate::flows::committee::dispute_core_setup::DisputeCoreSetup;
 use crate::flows::common::{
     COMM_KEY_INDEX, DISPUTE_KEY_INDEX, GlobalContext, TAKE_KEY_INDEX, build_communication_data,
 };
+use crate::store::CoordinatorStoreApi;
 use common::types;
 use common::types::{BlockNumber, CommitteeId, RskBlockAndUncles, StreamId, TxIdParser};
 
@@ -302,14 +303,14 @@ where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
 {
-    fn update_state_in_context(&self) -> Result<()> {
-        let mut flows = self.global_context.committee_setup_flows().lock()
-            .map_err(|e| anyhow::anyhow!("Failed to lock flows: {}", e))?;
-
-        flows.insert(self.state.internal_id, self.state.clone());
-
-        Ok(())
+    fn get_internal_id(&self) -> Uuid {
+        self.state.internal_id
     }
+
+    fn get_state(&self) -> &State {
+        &self.state
+    }
+
 
     fn from_saved_state(
         contracts: Rc<CG>,
@@ -978,9 +979,6 @@ where
             }
         }
 
-        // Update state in GlobalContext after successful step completion
-        self.update_state_in_context()?;
-
         Ok(())
     }
 
@@ -1332,69 +1330,93 @@ where
     }
 }
 
-pub(crate) struct SetupCommitteeProcessor<CG, BC, FactoryBSF>
+pub(crate) struct SetupCommitteeProcessor<CG, BC, FactoryBSF, S>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
     FactoryBSF: SetupCommitteeFlowFactoryApi<CG, BC>,
+    S: CoordinatorStoreApi,
 {
     flow_factory: FactoryBSF,
     flows: HashMap<Uuid, SetupCommitteeFlow<CG, BC>>,
+    flow_states: HashMap<Uuid, State>,
     global_context: GlobalContext,
     blockchain_view: BlockchainView,
     events_confirming: HashMap<String, ConfirmableEventWithData>,
+    store: Rc<S>,
 }
 
-impl<CG, BC, FactoryBSF> SetupCommitteeProcessor<CG, BC, FactoryBSF>
+impl<CG, BC, FactoryBSF, S> SetupCommitteeProcessor<CG, BC, FactoryBSF, S>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
     FactoryBSF: SetupCommitteeFlowFactoryApi<CG, BC>,
+    S: CoordinatorStoreApi + 'static,
 {
-    pub(crate) fn new(flow_factory: FactoryBSF, global_context: GlobalContext) -> Self {
+    pub(crate) fn new(flow_factory: FactoryBSF, global_context: GlobalContext, store: Rc<S>) -> Self {
         let mut processor = Self {
             flow_factory,
             flows: HashMap::new(),
+            flow_states: HashMap::new(),
             global_context: global_context.clone(),
             events_confirming: HashMap::new(),
             blockchain_view: BlockchainView::new(),
+            store,
         };
 
-        // Restore flows from GlobalContext
-        processor.restore_flows_from_context(&global_context);
+        // Restore flows from store
+        processor.restore_flows_from_store();
         processor
     }
 
-    fn restore_flows_from_context(&mut self, global_context: &GlobalContext) {
+    fn restore_flows_from_store(&mut self) {
         debug!("Checking for committee setup flows to restore from persistence");
 
-        // Get saved flows from GlobalContext
-        let saved_flows = global_context.committee_setup_flows().lock()
-            .expect("Failed to lock flows for restoration");
+        // Get saved flows from store
+        match self.store.load_setup_committee_flows() {
+            Ok(Some(saved_flows)) => {
+                for (id, saved_state) in saved_flows.iter() {
+                    let flow = self.flow_factory.create_flow_from_saved_state(saved_state.clone());
+                    self.flows.insert(*id, flow);
+                    self.flow_states.insert(*id, saved_state.clone());
+                    let inserted_flow = self.flows.get(id).expect("Just inserted flow");
+                    info!("Restored flow {} at step {:?} for stream_id {:?}",
+                        id,
+                        inserted_flow.state.step,
+                        inserted_flow.state.ctx.get_stream_id()
+                    );
+                    debug!("Restored flow {} context: {:?}", id, inserted_flow.state.ctx);
+                }
 
-        for (id, saved_state) in saved_flows.iter() {
-            let flow = self.flow_factory.create_flow_from_saved_state(saved_state.clone());
-            self.flows.insert(*id, flow);
-            let inserted_flow = self.flows.get(id).expect("Just inserted flow");
-            info!("Restored flow {} at step {:?} for stream_id {:?}",
-                id,
-                inserted_flow.state.step,
-                inserted_flow.state.ctx.get_stream_id()
-            );
-            debug!("Restored flow {} context: {:?}", id, inserted_flow.state.ctx);
+                if !self.flows.is_empty() {
+                    info!("Restored {} flows from persistence", self.flows.len());
+                }
+            },
+            Ok(None) => debug!("No setup committee flows to restore"),
+            Err(e) => error!("Failed to restore setup committee flows: {}", e),
         }
+    }
 
-        if !self.flows.is_empty() {
-            info!("Restored {} flows from persistence", self.flows.len());
-        }
+    fn persist_flows(&self) -> Result<()> {
+        self.store.save_setup_committee_flows(self.flow_states.clone())
+            .context("Failed to persist setup committee flows")
+    }
+
+    fn update_flow_state_and_persist(&mut self, flow_id: Uuid, flow_state: State) -> Result<()> {
+        // Update the flow state in our tracking
+        self.flow_states.insert(flow_id, flow_state);
+
+        // Persist the updated flows
+        self.persist_flows()
     }
 }
 
-impl<CG, BC, FactoryBSF> SetupCommitteeProcessor<CG, BC, FactoryBSF>
+impl<CG, BC, FactoryBSF, S> SetupCommitteeProcessor<CG, BC, FactoryBSF, S>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
     FactoryBSF: SetupCommitteeFlowFactoryApi<CG, BC>,
+    S: CoordinatorStoreApi + 'static,
 {
     fn get_first_flow_waiting_comm_info(&mut self) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
         // CommInfo
@@ -1566,6 +1588,12 @@ where
         match flow_data {
             Some((flow, step_data)) => {
                 flow.complete_step(step_data)?;
+                // Update and persist flow state
+                let flow_id = flow.get_internal_id();
+                let flow_state = flow.get_state().clone();
+                if let Err(e) = self.update_flow_state_and_persist(flow_id, flow_state) {
+                    error!("Failed to persist flow after processing event: {}", e);
+                }
             }
             None => {
                 warn!("Received {event:?} but no matching flow found");
@@ -1616,15 +1644,18 @@ where
             .map(|(k, _)| *k)
             .collect();
 
-        for key in completed {
+        for key in &completed {
             debug!("Removing completed flow: {key:?}");
-            self.flows.remove(&key);
-
-            // Also remove from GlobalContext persistence
-            let mut persisted_flows = self.global_context.committee_setup_flows().lock()
-                .expect("Failed to lock flows for removal");
-            persisted_flows.remove(&key);
+            self.flows.remove(key);
+            self.flow_states.remove(key);
             debug!("Removed completed flow {} from persistence", key);
+        }
+
+        // Persist the updated flows
+        if !completed.is_empty() {
+            if let Err(e) = self.persist_flows() {
+                error!("Failed to persist flows after removing completed: {}", e);
+            }
         }
     }
 
@@ -1636,11 +1667,12 @@ where
     }
 }
 
-impl<CG, BC, FactoryBSF> EventProcessor for SetupCommitteeProcessor<CG, BC, FactoryBSF>
+impl<CG, BC, FactoryBSF, S> EventProcessor for SetupCommitteeProcessor<CG, BC, FactoryBSF, S>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
     FactoryBSF: SetupCommitteeFlowFactoryApi<CG, BC>,
+    S: CoordinatorStoreApi + 'static,
 {
     fn process_user_request(&mut self, req: &UserRequests) -> Result<()> {
         info!("Processing user request: {:?}", req);
@@ -1649,7 +1681,15 @@ where
                 let internal_id = Uuid::new_v4();
                 let mut flow = self.flow_factory.create_flow(internal_id);
                 flow.complete_step(StepData::UserRequest(input.clone()))?;
+
+                // Store flow and persist
+                self.flow_states.insert(internal_id, flow.state.clone());
                 self.flows.insert(internal_id, flow);
+
+                // Persist after creating new flow
+                if let Err(e) = self.persist_flows() {
+                    error!("Failed to persist new flow: {}", e);
+                }
             }
             _ => {
                 trace!("Ignoring user request: {:?}", req);
@@ -1666,6 +1706,12 @@ where
             // same info - so for now we send it to the first flow waiting for it
             if let Some(first_flow) = self.get_first_flow_waiting_comm_info() {
                 first_flow.complete_step(StepData::CommInfo(comm_info.clone()))?;
+                // Update and persist flow state
+                let flow_id = first_flow.get_internal_id();
+                let flow_state = first_flow.get_state().clone();
+                if let Err(e) = self.update_flow_state_and_persist(flow_id, flow_state) {
+                    error!("Failed to persist flow after CommInfo: {}", e);
+                }
                 return Ok(());
             } else {
                 trace!("Ignoring CommInfo - not mine")
@@ -1706,6 +1752,12 @@ where
 
         if let Some(flow_for_req_id) = self.get_flow_for_bitvmx_response(req_id) {
             flow_for_req_id.complete_step(step_data)?;
+            // Update and persist flow state
+            let flow_id = flow_for_req_id.get_internal_id();
+            let flow_state = flow_for_req_id.get_state().clone();
+            if let Err(e) = self.update_flow_state_and_persist(flow_id, flow_state) {
+                error!("Failed to persist flow after BitVMX event: {}", e);
+            }
         } else {
             bail!("No flow found for BitVMX event with id {req_id}");
         }

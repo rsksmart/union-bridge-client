@@ -6,8 +6,6 @@ use log::info;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
-use uuid::Uuid;
 
 // Key indices for committee member public keys
 pub const TAKE_KEY_INDEX: usize = 0;
@@ -18,7 +16,6 @@ pub const COMM_KEY_INDEX: usize = 2;
 pub struct GlobalContext {
     my_committees: MyCommittees,
     my_keys: MyKeys,
-    committee_setup_flows: Arc<Mutex<HashMap<Uuid, crate::flows::committee::setup_committee_flow::State>>>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -115,12 +112,7 @@ impl GlobalContext {
         Self {
             my_committees: MyCommittees::new(),
             my_keys: MyKeys::new(),
-            committee_setup_flows: Arc::new(Mutex::new(HashMap::new())),
         }
-    }
-
-    pub fn committee_setup_flows(&self) -> &Arc<Mutex<HashMap<Uuid, crate::flows::committee::setup_committee_flow::State>>> {
-        &self.committee_setup_flows
     }
 
     pub fn my_committees(&self) -> &MyCommittees {

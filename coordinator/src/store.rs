@@ -11,15 +11,17 @@ use crate::types::Role;
 use common::msg_broker::bitvmx_types::SignedPublicKey;
 use common::types::CommitteeId;
 
-/// Key used to persist Coordinator global context
+/// Key used to persist Coordinator data
 enum StoreKey {
     GlobalContext,
+    SetupCommitteeFlows,
 }
 
 impl StoreKey {
     fn value(&self) -> String {
         match self {
             StoreKey::GlobalContext => "global_context".to_string(),
+            StoreKey::SetupCommitteeFlows => "setup_committee_flows".to_string(),
         }
     }
 }
@@ -31,22 +33,17 @@ struct PersistentGlobalContext {
     take_key: Option<SignedPublicKey>,
     dispute_key: Option<SignedPublicKey>,
     comm_key: Option<SignedPublicKey>,
-    committee_setup_flows: HashMap<Uuid, SetupCommitteeFlowState>,
 }
 
 impl PersistentGlobalContext {
     fn from_memory(ctx: &GlobalContext) -> Self {
         let keys = ctx.my_keys();
-        let flows = ctx.committee_setup_flows().lock()
-            .expect("Failed to lock flows for persistence")
-            .clone();
 
         Self {
             committees: ctx.my_committees().all_cloned(),
             take_key: keys.take_key(),
             dispute_key: keys.dispute_key(),
             comm_key: keys.comm_key(),
-            committee_setup_flows: flows,
         }
     }
 
@@ -66,11 +63,6 @@ impl PersistentGlobalContext {
         if let Some(k) = self.comm_key {
             ctx.my_keys().set_comm_key(k);
         }
-        // restore flows
-        let mut flows = ctx.committee_setup_flows().lock()
-            .expect("Failed to lock flows for restoration");
-        *flows = self.committee_setup_flows;
-        drop(flows); // explicitly drop the lock
 
         ctx
     }
@@ -84,6 +76,8 @@ use mockall::automock;
 pub trait CoordinatorStoreApi {
     fn load_context(&self) -> Result<Option<GlobalContext>>;
     fn save_context(&self, context: GlobalContext) -> Result<()>;
+    fn save_setup_committee_flows(&self, flows: HashMap<Uuid, SetupCommitteeFlowState>) -> Result<()>;
+    fn load_setup_committee_flows(&self) -> Result<Option<HashMap<Uuid, SetupCommitteeFlowState>>>;
 }
 
 pub struct CoordinatorStore {
@@ -113,6 +107,14 @@ impl CoordinatorStore {
         let maybe: Option<PersistentGlobalContext> = self.get(&StoreKey::GlobalContext.value())?;
         Ok(maybe.map(|p| p.to_memory()))
     }
+
+    pub fn save_setup_committee_flows(&self, flows: HashMap<Uuid, SetupCommitteeFlowState>) -> Result<()> {
+        self.set(&StoreKey::SetupCommitteeFlows.value(), &flows)
+    }
+
+    pub fn load_setup_committee_flows(&self) -> Result<Option<HashMap<Uuid, SetupCommitteeFlowState>>> {
+        self.get(&StoreKey::SetupCommitteeFlows.value())
+    }
 }
 
 impl CoordinatorStoreApi for CoordinatorStore {
@@ -122,5 +124,13 @@ impl CoordinatorStoreApi for CoordinatorStore {
 
     fn save_context(&self, context: GlobalContext) -> Result<()> {
         self.save_context(context)
+    }
+
+    fn save_setup_committee_flows(&self, flows: HashMap<Uuid, SetupCommitteeFlowState>) -> Result<()> {
+        self.save_setup_committee_flows(flows)
+    }
+
+    fn load_setup_committee_flows(&self) -> Result<Option<HashMap<Uuid, SetupCommitteeFlowState>>> {
+        self.load_setup_committee_flows()
     }
 }
