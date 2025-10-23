@@ -12,7 +12,7 @@ use user_api::config::{Config, Logger};
 use user_api::Server;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
-const CONFIG_CLI_FLAG: &str = "config-path";
+const ENV_CLI_FLAG: &str = "env";
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -25,16 +25,9 @@ async fn main() -> Result<()> {
                 .help("Sets the path to the log4rs configuration file"),
         )
         .arg(
-            Arg::new(CONFIG_CLI_FLAG)
-                .short('c')
-                .long(CONFIG_CLI_FLAG)
-                .value_name("PATH")
-                .help("Sets the path to the configuration directory"),
-        )
-        .arg(
-            Arg::new("env")
+            Arg::new(ENV_CLI_FLAG)
                 .short('e')
-                .long("env")
+                .long(ENV_CLI_FLAG)
                 .value_name("ENV")
                 .help("Environment name (e.g., local, alphanet, stage)"),
         )
@@ -43,7 +36,7 @@ async fn main() -> Result<()> {
     let logger_cfg_path = matches.get_one::<String>(LOGGER_CLI_FLAG);
     Logger::init(logger_cfg_path).expect("Failed to load logger");
 
-    let env_name = matches.get_one::<String>("env").cloned();
+    let env_name = matches.get_one::<String>(ENV_CLI_FLAG).cloned();
 
     info!(
         "Loading configuration for environment: {}",
