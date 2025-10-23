@@ -10,7 +10,10 @@ use serde::de::DeserializeOwned;
 use std::{fs, path::Path};
 
 const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
+// todo(fede) replace the /new folder with the final folder
 const BASE_CONFIG_PATH: &str = "config/new/base.yaml";
+const ENV_CONFIG_PATH: &str = "config/new/environment";
+// const ENV_CONFIG_PATH: &str = "new/environment/";
 
 #[derive(Debug, Deserialize)]
 pub struct CommonConfig {
@@ -68,16 +71,15 @@ pub struct ContractConfig {
 
 impl CommonConfig {
     pub fn load_config<T: DeserializeOwned>(env: Option<String>) -> Result<T, ConfigError> {
-        let env = env.unwrap_or_else(|| "".to_string());
-        // todo(fede) replace the /new folder with the final folder
-        let env_config_path = Self::config_path_for(&env);
+        let env = env.unwrap_or("".to_string());
+        let (base_config_path, env_config_path) = Self::config_path_for(&env);
 
         trace!(
             "Loading config: base.yaml -> environment/{env}.yaml -> environment variables with prefix UB__"
         );
 
         let cfg = config::Config::builder()
-            .add_source(config::File::with_name(BASE_CONFIG_PATH).required(true))
+            .add_source(config::File::with_name(&base_config_path).required(true))
             .add_source(config::File::with_name(&env_config_path).required(false))
             .add_source(
                 Environment::with_prefix("UB")
@@ -98,11 +100,20 @@ impl CommonConfig {
         Ok(cfg_as_t)
     }
 
-    fn config_path_for(env_name: &str) -> String {
-        if env_name == "" {
+    fn config_path_for(env_name: &str) -> (String, String) {
+        if env_name.is_empty() {
             trace!("Empty environment name");
         }
-        format!("config/new/environment/{env_name}.yaml")
+
+        let project_root = std::path::Path::new(CARGO_MANIFEST_DIR)
+            .parent()
+            .expect("Failed to get project root");
+        let env_config = format!("{ENV_CONFIG_PATH}/{env_name}.yaml");
+
+        (
+            project_root.join(BASE_CONFIG_PATH).display().to_string(),
+            project_root.join(&env_config).display().to_string(),
+        )
     }
 
     pub fn init_logger(logger_file_opt: Option<&String>, crate_name: &str) -> Result<()> {
