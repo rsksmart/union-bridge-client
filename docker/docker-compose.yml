@@ -82,7 +82,6 @@ services:
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
       - BITCOIN_NETWORK=${BITCOIN_NETWORK}
       - ENV_NAME=${ENV_NAME:-}
-      - DEPLOYMENT_TYPE=${DEPLOYMENT_TYPE:-}
     healthcheck:
       interval: 30s
       timeout: 10s
