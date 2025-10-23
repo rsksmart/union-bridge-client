@@ -6,64 +6,17 @@
 # COMMON CONFIGURATION
 # =============================================================================
 
-indexer:
-  initial_block_hash: "0xf6e292fd22f1dc5a1ef4022b7fe4a959f90ec0b9f5fc0869af64b99195511b22"
-  storage:
-    path: "/tmp/monitor-executions/default/storage"
-
-contracts:
-  - name: "TestContractDyn"
-    address: "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761"
-  - name: "TestContractCompiled"
-    address: "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc"
-  - name: "PegManager"
-    address: "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6"
-  - name: "FakePegManager"
-    address: "0x3Aa5ebB10DC797CAC828524e59A333d0A371443c"
-  - name: "SignatureManager"
-    address: "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0"
-  - name: "CommitteeRegistry"
-    address: "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9"
-  - name: "MemberRegistry"
-    address: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
-  - name: "StreamManager"
-    address: "0x610178dA211FEF7D417bC0e6FeD39F05609AD788"
-
 # =============================================================================
 # COORDINATOR SERVICE
 # =============================================================================
-
-block_broker:
-  host: "0.0.0.0"
-  port: 12345
-
-log_broker:
-  host: "0.0.0.0"
-  port: 56789
-
-user_broker:
-  host: "0.0.0.0"
-  port: 5550
-
-bitvmx_broker: # can be overriden with env vars UB_bitvmx_broker__ip and UB_bitvmx_broker__port
-  host: "0.0.0.0"
-  port: 9094
-
-broker_client_id: 333
 
 # =============================================================================
 # BLOCK INDEXER SERVICE
 # =============================================================================
 
-block_notifier:
-  broker_port: 12345
-
 # =============================================================================
 # LOG INDEXER SERVICE
 # =============================================================================
-
-log_notifier:
-  broker_port: 56789
 
 # =============================================================================
 # TRANSACTION DISPATCHER SERVICE
@@ -71,6 +24,3 @@ log_notifier:
 
 key_store:
   path: "test_keystore/keyfile"
-
-server:
-  url: "0.0.0.0:3000"
