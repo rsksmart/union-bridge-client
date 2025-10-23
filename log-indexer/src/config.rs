@@ -16,7 +16,7 @@ pub struct Config {
 
 impl Config {
     pub fn load(env_name: Option<String>) -> Result<Self, ConfigError> {
-        CommonConfig::load_config_2::<Self>(env_name)
+        CommonConfig::load_config::<Self>(env_name)
     }
 
     pub fn load_managed_contracts(&self) -> HashMap<Address, ContractInfo> {
@@ -57,7 +57,7 @@ mod tests {
     #[test]
     fn test_config_load_when_stage_config_set_should_load_config_successfully() {
         let config: Config =
-            CommonConfig::load_config_2::<Config>(None).expect("Failed to load config");
+            CommonConfig::load_config::<Config>(None).expect("Failed to load config");
 
         // indexer
         assert_eq!(
@@ -90,7 +90,7 @@ mod tests {
     #[test]
     fn test_load_contracts_when_stage_config_set_should_load_contracts_successfully() {
         let config: Config =
-            CommonConfig::load_config_2::<Config>(None).expect("Failed to load config");
+            CommonConfig::load_config::<Config>(None).expect("Failed to load config");
         let contracts = config.load_managed_contracts();
 
         assert_eq!(2, contracts.len());

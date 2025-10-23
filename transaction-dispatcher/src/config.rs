@@ -38,7 +38,7 @@ pub struct TransactionConfig {
 
 impl ConfigAsBin {
     pub fn load(env_name: Option<String>) -> Result<Self, ConfigError> {
-        CommonConfig::load_config_2::<ConfigAsBin>(env_name)
+        CommonConfig::load_config::<ConfigAsBin>(env_name)
     }
 
     pub fn provider(&self) -> &ProviderConfig {
@@ -64,7 +64,7 @@ impl ConfigAsBin {
 
 impl ConfigAsLib {
     pub fn load(env_name: Option<String>) -> Result<Self, ConfigError> {
-        CommonConfig::load_config_2::<ConfigAsLib>(env_name)
+        CommonConfig::load_config::<ConfigAsLib>(env_name)
     }
 
     pub fn load_managed_contracts(&self) -> HashMap<String, ContractInfo> {
@@ -105,7 +105,7 @@ mod tests {
     #[test]
     fn test_config_load_when_custom_config_set_should_load_config_successfully() {
         let config: ConfigAsBin =
-            CommonConfig::load_config_2::<ConfigAsBin>(None).expect("Failed to load config");
+            CommonConfig::load_config::<ConfigAsBin>(None).expect("Failed to load config");
 
         // provider
         assert_eq!(
@@ -129,7 +129,7 @@ mod tests {
     #[test]
     fn test_load_contracts_when_stage_config_set_should_load_contracts_successfully() {
         let config: ConfigAsBin =
-            CommonConfig::load_config_2::<ConfigAsBin>(None).expect("Failed to load config");
+            CommonConfig::load_config::<ConfigAsBin>(None).expect("Failed to load config");
         let contracts = config.load_managed_contracts();
 
         assert_eq!(2, contracts.len());

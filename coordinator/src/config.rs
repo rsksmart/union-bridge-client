@@ -31,7 +31,7 @@ pub struct BrokerConfig {
 
 impl Config {
     pub fn load(env_name: Option<String>) -> Result<Self, ConfigError> {
-        CommonConfig::load_config_2::<Self>(env_name)
+        CommonConfig::load_config::<Self>(env_name)
     }
 
     pub fn get_contract_addresses(&self) -> Vec<Address> {
@@ -79,7 +79,7 @@ mod tests {
 
     #[test]
     fn test_parse_bitcoin_network() -> anyhow::Result<()> {
-        let config = CommonConfig::load_config_2::<Config>(None)?;
+        let config = CommonConfig::load_config::<Config>(None)?;
         assert_eq!(
             Network::Regtest,
             CommonConfig::parse_bitcoin_network(&config.bitcoin_network)?

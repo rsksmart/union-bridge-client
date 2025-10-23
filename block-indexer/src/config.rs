@@ -13,7 +13,7 @@ pub struct Config {
 
 impl Config {
     pub fn load(env_name: Option<String>) -> Result<Self, ConfigError> {
-        CommonConfig::load_config_2::<Self>(env_name)
+        CommonConfig::load_config::<Self>(env_name)
     }
 }
 
@@ -38,7 +38,7 @@ mod tests {
     #[test]
     fn test_config_load_when_custom_config_set_should_load_config_successfully() {
         let config: Config =
-            CommonConfig::load_config_2::<Config>(None).expect("Failed to load config");
+            CommonConfig::load_config::<Config>(None).expect("Failed to load config");
 
         // indexer
         assert_eq!(

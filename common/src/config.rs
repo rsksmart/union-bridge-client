@@ -67,7 +67,7 @@ pub struct ContractConfig {
 }
 
 impl CommonConfig {
-    pub fn load_config_2<T: DeserializeOwned>(env: Option<String>) -> Result<T, ConfigError> {
+    pub fn load_config<T: DeserializeOwned>(env: Option<String>) -> Result<T, ConfigError> {
         let env = env.unwrap_or_else(|| "".to_string());
         // todo(fede) replace the /new folder with the final folder
         let env_config_path = Self::config_path_for(&env);
