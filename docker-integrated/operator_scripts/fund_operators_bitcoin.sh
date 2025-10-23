@@ -50,7 +50,7 @@ for port in 40001 40002 40003 40004; do
   echo
 done
 
-sleep 5
+sleep 10
 
 # -------- Collect BitVMX funding addresses from logs --------
 addresses=()

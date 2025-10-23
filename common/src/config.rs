@@ -7,7 +7,6 @@ use log::trace;
 use log4rs::config::RawConfig;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
-use std::path::PathBuf;
 use std::{fs, path::Path};
 
 const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");

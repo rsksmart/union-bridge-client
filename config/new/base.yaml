@@ -48,7 +48,7 @@ block_notifier:
 # =============================================================================
 
 log_notifier:
-  broker_port: 11001
+  broker_port: 10002
 
 # =============================================================================
 # COORDINATOR SERVICE
@@ -60,11 +60,11 @@ block_broker:
 
 log_broker:
   host: "0.0.0.0"
-  port: 11001
+  port: 10002
 
 user_broker:
   host: "0.0.0.0"
-  port: 30001
+  port: 10003
 
 bitvmx_broker:
   host: "0.0.0.0"
@@ -80,7 +80,7 @@ storage_path: "/your_base_path/.union_bridge/database/multi-client-1"
 
 coordinator_broker_client_id: 101
 
-broker_server_port: 30001
+broker_server_port: 10003
 
 http_server_port: 40001
 

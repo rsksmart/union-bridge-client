@@ -45,7 +45,16 @@ contracts:
 # COORDINATOR SERVICE
 # =============================================================================
 
-storage_path: "/app/db/" # This should match the volume mount in docker-compose# =============================================================================
+block_broker:
+  host: "block-indexer"
+
+log_broker:
+  host: "log-indexer"
+
+user_broker:
+  host: "user-api"
+
+storage_path: "/app/db/" # This should match the volume mount in docker-compose
 
 # =============================================================================
 # USER API SERVICE

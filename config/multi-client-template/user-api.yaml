@@ -1,4 +1,4 @@
 coordinator_broker_client_id: 101 # read from env UB__COORDINATOR_BROKER_CLIENT_ID
-broker_server_port: 30001 # read from env UB__BROKER_SERVER_PORT
+broker_server_port: 10003 # read from env UB__BROKER_SERVER_PORT
 http_server_port: 40001 # read from env UB__HTTP_SERVER_PORT
 # NOTE: Set WALLET_PRIVATE_KEY env var (same as bitcoin-wallet)
