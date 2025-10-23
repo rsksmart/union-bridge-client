@@ -1,2 +1,0 @@
-block_notifier:
-  broker_port: 10001 # read from env UB__BLOCK_NOTIFIER__BROKER_PORT

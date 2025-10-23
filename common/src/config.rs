@@ -11,8 +11,8 @@ use std::{fs, path::Path};
 
 const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 // todo(fede) replace the /new folder with the final folder
-const BASE_CONFIG_PATH: &str = "config/new/base.yaml";
-const ENV_CONFIG_PATH: &str = "config/new/environment";
+const BASE_CONFIG_PATH: &str = "config/base.yaml";
+const ENV_CONFIG_PATH: &str = "config/environment";
 // const ENV_CONFIG_PATH: &str = "new/environment/";
 
 #[derive(Debug, Deserialize)]
