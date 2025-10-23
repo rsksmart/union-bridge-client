@@ -16,6 +16,12 @@ pub mod rsk_gateway;
 #[cfg(feature = "types")]
 pub mod types;
 
+#[derive(Debug)]
+pub enum GatewayRole {
+    User,
+    Member,
+}
+
 pub async fn get_contracts_gateway<P: Provider + Clone>(
     provider: P,
     config: config::ConfigAsBin,
@@ -31,30 +37,50 @@ pub async fn get_contracts_gateway<P: Provider + Clone>(
     .context("Could not instantiate RskContractsGateway")
 }
 
-pub fn get_contracts_gateway_as_lib_sync(
+pub fn get_contracts_gateway_as_lib_sync_with_role(
     rt_sync: RuntimeSync,
     config: config::ConfigAsLib,
+    role: GatewayRole,
 ) -> Result<RskContractsGateway<impl Provider + Clone>, DomainErrors> {
-    rt_sync.run(create_contracts_gateway_impl(config))
+    rt_sync.run(create_contracts_gateway_impl_with_role(config, role))
 }
 
-pub async fn get_contracts_gateway_as_lib(
+pub async fn get_contracts_gateway_as_lib_with_role(
     config: config::ConfigAsLib,
+    role: GatewayRole,
 ) -> Result<RskContractsGateway<impl Provider + Clone>> {
-    create_contracts_gateway_impl(config)
+    create_contracts_gateway_impl_with_role(config, role)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to create contracts gateway: {}", e))
 }
 
-async fn create_contracts_gateway_impl(
+async fn create_contracts_gateway_impl_with_role(
     config: config::ConfigAsLib,
+    role: GatewayRole,
 ) -> Result<RskContractsGateway<impl Provider + Clone>, DomainErrors> {
-    let key_store_path = Path::new(&config.key_store.path);
+    let key_path = match role {
+        GatewayRole::User => &config.key_store.user_path,
+        GatewayRole::Member => &config.key_store.member_path,
+    };
 
-    info!("Getting signer from key at {}", key_store_path.display());
+    let key_store_path = Path::new(key_path);
+
+    info!("Getting {} signer from key at {}",
+        match role {
+            GatewayRole::User => "user",
+            GatewayRole::Member => "member"
+        },
+        key_store_path.display()
+    );
+
     let signer = KeyManager::get_signer(key_store_path)
-        .map_err(|e| DomainErrors::InternalServerError(format!("Failed to get signer: {}", e)))?;
-    info!("Got signer with address {}", signer.address());
+        .map_err(|e| DomainErrors::InternalServerError(format!("Failed to get {:?} signer: {}", role, e)))?;
+    info!("Got {} signer with address {}",
+        match role {
+            GatewayRole::User => "user",
+            GatewayRole::Member => "member"
+        },
+        signer.address());
 
     let signer_address = signer.address().into();
 
@@ -73,8 +99,8 @@ async fn create_contracts_gateway_impl(
         })?;
 
     info!(
-        "Connected to Rootstock at {}",
-        &config.provider.rootstock.url
+        "Connected to Rootstock at {} as {:?} with address {}",
+        &config.provider.rootstock.url, role, signer_address
     );
 
     RskContractsGateway::new(

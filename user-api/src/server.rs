@@ -37,37 +37,68 @@ pub struct Server {
 }
 
 impl Server {
-    pub async fn new<CG: RskContractsGatewayApi + Send + Sync + 'static>(
+    pub async fn new<UCG, MCG>(
         listener: TcpListener,
         broker_server: Arc<BrokerServer>,
         shutdown_flag: ShutdownFlag,
         coordinator_client_id: u32,
-        contracts_gateway: CG,
-        wallet_private_key: &str,
+        user_contracts_gateway: UCG,
+        member_contracts_gateway: MCG,
+        user_bitcoin_wif: &str,
+        member_bitcoin_wif: &str,
         network: bitcoin::Network,
-    ) -> Self {
-        let user = User::new(contracts_gateway.my_address(), wallet_private_key, network)
-            .expect("Failed to create user");
+    ) -> Self
+    where
+        UCG: RskContractsGatewayApi + Send + Sync + 'static,
+        MCG: RskContractsGatewayApi + Send + Sync + 'static,
+    {
+        // Create two Bitcoin wallet instances
+        let user_wallet = User::new(
+            user_contracts_gateway.my_address(),
+            user_bitcoin_wif,
+            network
+        ).expect("Failed to create user wallet");
 
-        // Create sync wrapper that can work in any runtime context
-        // NOTE: This uses a thread::spawn hack - should only be used in user-api
-        let sync_gateway =
-            crate::sync_contracts_gateway::SyncContractsGateway::new(contracts_gateway);
-        let sync_gateway_arc: Arc<dyn crate::sync_contracts_gateway::SyncContractsGatewayApi> =
-            Arc::new(sync_gateway);
+        let member_wallet = User::new(
+            member_contracts_gateway.my_address(),
+            member_bitcoin_wif,
+            network
+        ).expect("Failed to create member wallet");
+
+        // Wrap gateways for sync access
+        let user_sync_gateway: Arc<dyn crate::sync_contracts_gateway::SyncContractsGatewayApi> = Arc::new(
+            crate::sync_contracts_gateway::SyncContractsGateway::new(user_contracts_gateway)
+        );
+        let member_sync_gateway: Arc<dyn crate::sync_contracts_gateway::SyncContractsGatewayApi> = Arc::new(
+            crate::sync_contracts_gateway::SyncContractsGateway::new(member_contracts_gateway)
+        );
 
         let app = Router::new()
             .route("/health", get(Self::health_check))
-            .route("/bitvmx-address", get(Self::bitvmx_address))
-            .route("/apply-stream", post(Self::apply_stream))
-            .route("/pegin-address", post(Self::pegin_address))
-            .route("/request-pegout", post(Self::request_pegout))
+            // User endpoints
+            .nest("/user",
+                Router::new()
+                    .route("/pegin-address", post(Self::pegin_address))
+                    .route("/request-pegout", post(Self::request_pegout))
+                    .layer((
+                        Extension(user_sync_gateway.clone()),
+                        Extension(user_wallet),
+                    ))
+            )
+            // Member endpoints
+            .nest("/member",
+                Router::new()
+                    .route("/apply-stream", post(Self::apply_stream))
+                    .route("/bitvmx-address", post(Self::bitvmx_address))
+                    .layer((
+                        Extension(member_sync_gateway.clone()),
+                        Extension(member_wallet),
+                    ))
+            )
             .layer((
                 TimeoutLayer::new(Duration::from_secs(10)),
                 Extension(broker_server.clone()),
                 Extension(coordinator_client_id),
-                Extension(sync_gateway_arc),
-                Extension(user),
             ));
 
         Self {

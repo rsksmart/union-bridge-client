@@ -50,8 +50,16 @@ async fn main() -> Result<()> {
     let tx_dispatcher_config: TxDispatcherConfig =
         TxDispatcherConfig::load(env_name).expect("Failed to load transaction dispatcher config");
 
-    let contracts_gateway =
-        transaction_dispatcher::get_contracts_gateway_as_lib(tx_dispatcher_config).await?;
+    // Create two contract gateways with different roles
+    let user_contracts_gateway = transaction_dispatcher::get_contracts_gateway_as_lib_with_role(
+        tx_dispatcher_config.clone(),
+        transaction_dispatcher::GatewayRole::User
+    ).await?;
+
+    let member_contracts_gateway = transaction_dispatcher::get_contracts_gateway_as_lib_with_role(
+        tx_dispatcher_config,
+        transaction_dispatcher::GatewayRole::Member
+    ).await?;
 
     info!("Starting user-api server");
 
@@ -86,17 +94,22 @@ async fn main() -> Result<()> {
     let network = CommonConfig::parse_bitcoin_network(&config.bitcoin_network)
         .context("Failed to parse bitcoin_network")?;
 
-    // Get wallet private key from environment variable (same as bitcoin-wallet)
-    let wallet_private_key = std::env::var("WALLET_PRIVATE_KEY")
-        .context("WALLET_PRIVATE_KEY environment variable not set")?;
+    // Get WIF keys from environment - REQUIRED
+    let user_bitcoin_wif = std::env::var("USER_BITCOIN_WIF")
+        .context("USER_BITCOIN_WIF environment variable not set")?;
+
+    let member_bitcoin_wif = std::env::var("MEMBER_BITCOIN_WIF")
+        .context("MEMBER_BITCOIN_WIF environment variable not set")?;
 
     let server = Server::new(
         listener,
         broker_server.clone(),
         shutdown_flag.clone(),
         config.coordinator_broker_client_id,
-        contracts_gateway,
-        &wallet_private_key,
+        user_contracts_gateway,
+        member_contracts_gateway,
+        &user_bitcoin_wif,
+        &member_bitcoin_wif,
         network,
     )
     .await;

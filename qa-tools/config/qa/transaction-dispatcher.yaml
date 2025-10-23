@@ -1,5 +1,6 @@
 key_store:
-  path: "test_keystore/keyfile"
+  user_path: "test_keystore/user-keyfile"
+  member_path: "test_keystore/member-keyfile"
 transaction:
   gas_bumps_t1: 3
 server:
