@@ -12,7 +12,6 @@ Step 3: AllNoncesReady event is received (RSK -> U)
     a: Register signatures (U -> RSK)
 Step 4: AllSignaturesReady event is received (RSK -> U)
     a: Dispatch transaction name (U -> B)
-    b: Ask for transaction status (U -> B)
 Step 5: Transaction status is received (B -> U)
     a: If confirmations are not enough, schedule a new request for a newtransaction status
     b: If confirmations are enough, request SPV proof (U -> B)
@@ -883,7 +882,8 @@ where
                         flow_id
                     );
                 } else {
-                    let mut btc_sig_subflow = self.btc_sig_subflow_factory.create_flow(*flow_id);
+                    let mut btc_sig_subflow: BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<CG>> =
+                        self.btc_sig_subflow_factory.create_flow(*flow_id);
                     let input: PegOutAccepted = serde_json::from_str::<PegOutAccepted>(data)?;
                     state.user_take_tx_id = Some(input.user_take_txid);
                     let register_input = RegisterSignaturesBitVmxData::try_from(input)?;

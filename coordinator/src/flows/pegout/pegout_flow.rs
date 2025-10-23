@@ -4,6 +4,7 @@ use crate::flows::common::build_communication_data;
 use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::PublicKey;
 use common::msg_broker::bitvmx_types::PeerId;
+use common::msg_broker::bitvmx_types::PegOutAccepted;
 use common::msg_broker::bitvmx_types::PegOutRequest;
 use common::msg_broker::bitvmx_types::VariableTypes;
 use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, P2PAddress};
@@ -23,19 +24,18 @@ use uuid::Uuid;
 
 pub const PROGRAM_TYPE_USER_TAKE: &str = "take";
 pub const USER_TAKE_TX: &str = "USER_TAKE_TX";
-pub const PEGOUT_ACCEPTED_NAME: &str = "pegout_accepted";
 
 /// Steps for the pegout state machine flow
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Steps {
-    Init,
+    PegoutRequested,
     GetCommInfo,
     SendSetVarToBitvmx,
     SendSetupToBitvmx,
+    //TODO Check with FG about the setupCompted received and the PegoutAccepted logic. Should we wait? Check logs.
+    //Process setup completed
     ProcessPegoutAccepted,
-    // SendNoncesToRSK,
-    // SendSignaturesToRSK,
-    // DispatchTransaction,
+    DispatchTransaction,
     // ConfirmBitvmxTransaction,
     // RequestSPVProof,
     // RegisterPegout,
@@ -44,62 +44,40 @@ pub enum Steps {
 
 impl Default for Steps {
     fn default() -> Self {
-        Steps::Init
+        Steps::PegoutRequested
     }
 }
 
 /// Data passed between steps in the pegout flow
 #[derive(Debug, Clone)]
 pub enum StepData {
-    // Sync or member-dependent steps
-    PegoutRequested(PegoutRequested),
+    PegoutRequested,
     CommInfo(P2PAddress),
     PegOutRequest(PegOutRequest),
     CommitteeAddresses(Vec<P2PAddress>),
-    // PegoutAccepted(PegoutAccepted),
+    PegoutAccepted(PegOutAccepted),
+    DispatchTransaction,
     // AllNoncesReady,
     // AllSignaturesReady,
-}
-
-impl StepData {
-    fn into_pegout_requested(self) -> Result<PegoutRequested> {
-        match self {
-            StepData::PegoutRequested(event) => Ok(event),
-            _ => anyhow::bail!("Expected PegoutRequested data"),
-        }
-    }
-    fn into_comm_info(self) -> Result<P2PAddress> {
-        match self {
-            StepData::CommInfo(addr) => Ok(addr),
-            _ => anyhow::bail!("Expected CommInfo data"),
-        }
-    }
-    fn into_peg_out_request(self) -> Result<PegOutRequest> {
-        match self {
-            StepData::PegOutRequest(request) => Ok(request),
-            _ => anyhow::bail!("Expected PegOutRequest data"),
-        }
-    }
-    fn into_committee_addresses(self) -> Result<Vec<P2PAddress>> {
-        match self {
-            StepData::CommitteeAddresses(addresses) => Ok(addresses),
-            _ => anyhow::bail!("Expected CommitteeAddresses data"),
-        }
-    }
 }
 
 /// Context for the pegout flow state machine
 #[derive(Debug, Default)]
 pub struct FlowContext {
-    pub internal_id: Uuid,
+    pub flow_id: Uuid,
     pub step: Steps,
     pub pegout_requested: PegoutRequested,
     pub my_p2p_address: Option<P2PAddress>,
     pub committee_output: Option<GetCommitteeOutput>,
+    pub peg_out_accepted: Option<PegOutAccepted>,
 }
 
 /// State machine for handling pegout flow
-pub struct PegoutFlow<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> {
+pub struct PegoutFlow<CG, BC>
+where
+    CG: RskContractsGatewayApi,
+    BC: BitVmxBrokerClientApi,
+{
     contracts: Rc<CG>,
     rt_sync: RuntimeSync,
     bitvmx_broker: Rc<BC>,
@@ -107,13 +85,13 @@ pub struct PegoutFlow<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> {
     global_context: GlobalContext,
 }
 
-impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> std::fmt::Debug for PegoutFlow<CG, BC> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PegoutFlow")
-            .field("state", &self.state)
-            .finish()
-    }
-}
+// impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi, BSF: BtcSignatureSubFlowApi, FactoryBSF> std::fmt::Debug for PegoutFlow<CG, BC, BSF, FactoryBSF>{
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         f.debug_struct("PegoutFlow")
+//             .field("state", &self.state)
+//             .finish()
+//     }
+// }
 
 impl<CG, BC> PegoutFlow<CG, BC>
 where
@@ -133,11 +111,12 @@ where
             rt_sync,
             bitvmx_broker,
             state: FlowContext {
-                internal_id,
-                step: Steps::Init,
+                flow_id: internal_id,
+                step: Steps::PegoutRequested,
                 pegout_requested: pegout_requested.clone(),
                 my_p2p_address: None,
                 committee_output: None,
+                peg_out_accepted: None,
             },
             global_context,
         }
@@ -150,14 +129,14 @@ where
 
         debug!(
             "PegoutFlow {}: {} -> {}",
-            self.state.internal_id,
+            self.state.flow_id,
             format_step(previous_step),
             format_step(next_step)
         );
 
         // Execute the entry action for the new state
         match next_step {
-            Steps::Init => {
+            Steps::PegoutRequested => {
                 unreachable!("Init step should not be reached in start_step");
             }
             Steps::GetCommInfo => {
@@ -172,17 +151,87 @@ where
             Steps::ProcessPegoutAccepted => {
                 self.wait_for_pegout_accepted();
             }
+            Steps::DispatchTransaction => {
+                info!(
+                    "Waiting for signatures to be ready to dispatch transaction for flow_id: {}",
+                    self.state.flow_id
+                );
+            }
             Steps::Done => {
-                info!("PegoutFlow {}: Done", self.state.internal_id);
+                info!("PegoutFlow {}: Done", self.state.flow_id);
             }
         }
         Ok(())
     }
 
+    /// Complete the current step with data and advance to the next
+    pub fn complete_step(&mut self, data: StepData) -> Result<()> {
+        let current_step = self.state.step;
+
+        info!(
+            "PegoutFlow {}: Completing step {} with data: {:?} for flow_id {}",
+            self.state.flow_id,
+            format_step(current_step),
+            data,
+            self.state.flow_id
+        );
+
+        // Process data and determine next state
+        let next_step = self.process_step_data(current_step, &data)?;
+
+        // Transition to the next state
+        self.start_step(next_step)?;
+
+        Ok(())
+    }
+
+    /// Process the current step data and determine the next state
+    fn process_step_data(&mut self, current_step: Steps, data: &StepData) -> Result<Steps> {
+        match (current_step, data) {
+            (Steps::PegoutRequested, StepData::PegoutRequested) => Ok(Steps::GetCommInfo),
+            (Steps::GetCommInfo, StepData::CommInfo(comm_info)) => {
+                self.state.my_p2p_address = Some(comm_info.clone());
+                Ok(Steps::SendSetVarToBitvmx)
+            }
+            (Steps::SendSetVarToBitvmx, StepData::PegOutRequest(request)) => {
+                let msg = IncomingBitVMXApiMessages::SetVar(
+                    self.state.flow_id,
+                    PegOutRequest::name().to_string(),
+                    VariableTypes::String(serde_json::to_string(&request)?),
+                );
+                self.send_bitvmx_msg(msg);
+                Ok(Steps::SendSetupToBitvmx)
+            }
+            (Steps::SendSetupToBitvmx, StepData::CommitteeAddresses(addresses)) => {
+                let msg = IncomingBitVMXApiMessages::Setup(
+                    self.state.flow_id,
+                    PROGRAM_TYPE_USER_TAKE.to_string(),
+                    addresses.clone(),
+                    0,
+                );
+                self.send_bitvmx_msg(msg)?;
+                Ok(Steps::ProcessPegoutAccepted)
+            }
+            (Steps::ProcessPegoutAccepted, StepData::PegoutAccepted(accepted)) => {
+                self.state.peg_out_accepted = Some(accepted.clone());
+                Ok(Steps::DispatchTransaction)
+            }
+            (Steps::DispatchTransaction, StepData::DispatchTransaction) => {
+                self.dispatch_transaction()?;
+                Ok(Steps::Done)
+            }
+            _ => Err(anyhow::anyhow!(
+                "Invalid state transition: {:?} with data {:?}",
+                current_step,
+                data
+            )),
+        }
+    }
+
     fn wait_for_pegout_accepted(&mut self) -> Result<()> {
         debug!(
             "Waiting for pegout accepted msg from bitvmx with flow_id: {}",
-            self.state.internal_id
+            self.state.flow_id
         );
         Ok(())
     }
@@ -217,14 +266,7 @@ where
             committee_peer_ids,
         )?;
 
-        let msg = IncomingBitVMXApiMessages::Setup(
-            self.state.internal_id,
-            PROGRAM_TYPE_USER_TAKE.to_string(),
-            p2p_addresses,
-            0,
-        );
-        self.send_bitvmx_msg(msg)?;
-        Ok(())
+        self.complete_step(StepData::CommitteeAddresses(p2p_addresses))
     }
 
     fn get_committee_member_address(&mut self, committee_id: CommitteeId) -> Result<Vec<String>> {
@@ -283,7 +325,7 @@ where
     fn send_set_var_to_bitvmx(&mut self) -> Result<()> {
         debug!(
             "Notifying pegout requested to bitvmx with flow_id: {}",
-            self.state.internal_id
+            self.state.flow_id
         );
 
         let committee_id: CommitteeId = self.state.pegout_requested.committeeId.try_into()?;
@@ -361,60 +403,17 @@ where
         Ok(())
     }
 
-    /// Complete the current step with data and advance to the next
-    pub fn complete_step(&mut self, data: StepData) -> Result<()> {
-        let current_step = self.state.step;
-
+    fn dispatch_transaction(&self) -> Result<()> {
         info!(
-            "PegoutFlow {}: Completing step {} with data: {:?} for flow_id {}",
-            self.state.internal_id,
-            format_step(current_step),
-            data,
-            self.state.internal_id
+            "Dispatching transaction name {} for flow_id: {}",
+            USER_TAKE_TX, self.state.flow_id
         );
-
-        // Process data and determine next state
-        let next_step = self.process_step_data(current_step, &data)?;
-
-        // Transition to the next state
-        self.start_step(next_step)?;
-
+        let msg = IncomingBitVMXApiMessages::DispatchTransactionName(
+            self.state.flow_id,
+            USER_TAKE_TX.to_string(),
+        );
+        self.send_bitvmx_msg(msg)?;
         Ok(())
-    }
-
-    /// Process the current step data and determine the next state
-    fn process_step_data(&mut self, current_step: Steps, data: &StepData) -> Result<Steps> {
-        match (current_step, data) {
-            (Steps::Init, StepData::PegoutRequested(event)) => Ok(Steps::GetCommInfo),
-            (Steps::GetCommInfo, StepData::CommInfo(comm_info)) => {
-                self.state.my_p2p_address = Some(comm_info.clone());
-                Ok(Steps::SendSetVarToBitvmx)
-            }
-            (Steps::SendSetVarToBitvmx, StepData::PegOutRequest(request)) => {
-                let msg = IncomingBitVMXApiMessages::SetVar(
-                    self.state.internal_id,
-                    PegOutRequest::name().to_string(),
-                    VariableTypes::String(serde_json::to_string(&request)?),
-                );
-                self.send_bitvmx_msg(msg);
-                Ok(Steps::SendSetupToBitvmx)
-            }
-            (Steps::SendSetupToBitvmx, StepData::CommitteeAddresses(addresses)) => {
-                let msg = IncomingBitVMXApiMessages::Setup(
-                    self.state.internal_id,
-                    PROGRAM_TYPE_USER_TAKE.to_string(),
-                    addresses.clone(),
-                    0,
-                );
-                self.send_bitvmx_msg(msg)?;
-                Ok(Steps::ProcessPegoutAccepted)
-            }
-            _ => Err(anyhow::anyhow!(
-                "Invalid state transition: {:?} with data {:?}",
-                current_step,
-                data
-            )),
-        }
     }
 
     /// Check if the flow is completed
@@ -423,8 +422,8 @@ where
     }
 
     /// Get the internal ID of the flow
-    pub fn internal_id(&self) -> Uuid {
-        self.state.internal_id
+    pub fn flow_id(&self) -> Uuid {
+        self.state.flow_id
     }
 
     /// Get the current step
@@ -436,11 +435,12 @@ where
 /// Helper function to format step names
 fn format_step(step: Steps) -> &'static str {
     match step {
-        Steps::Init => "Init",
+        Steps::PegoutRequested => "Init",
         Steps::GetCommInfo => "GetCommInfo",
         Steps::SendSetVarToBitvmx => "SendSetVarToBitvmx",
         Steps::SendSetupToBitvmx => "SendSetupToBitvmx",
         Steps::ProcessPegoutAccepted => "ProcessPegoutAccepted",
+        Steps::DispatchTransaction => "DispatchTransaction",
         Steps::Done => "Done",
     }
 }

@@ -143,6 +143,7 @@ where
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct BtcSignatureSubFlowFactory<CG: RskContractsGatewayApi> {
     contracts_gateway: Rc<CG>,
     rt_sync: RuntimeSync,
