@@ -14,8 +14,7 @@ services:
       ssh:
         - default=${SSH_AUTH_SOCK}
     volumes:
-      # todo(fede) this will be changed befroe merge
-      - ../config/new/:/config/new/:ro
+      - ../config/:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - db-blocks:/app/db/blocks
     environment:
@@ -42,8 +41,7 @@ services:
       ssh:
         - default=${SSH_AUTH_SOCK}
     volumes:
-      # todo(fede) this will be changed befroe merge
-      - ../config/new/:/config/new/:ro
+      - ../config/:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - db-logs:/app/db/logs
     environment:
@@ -70,8 +68,7 @@ services:
       ssh:
         - default=${SSH_AUTH_SOCK}
     volumes:
-      # todo(fede) this will be changed befroe merge
-      - ../config/new/:/config/new/:ro
+      - ../config/:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - keystore:/keystore
       - db-coordinator:/app/db/coordinator
@@ -109,8 +106,7 @@ services:
       ssh:
         - default=${SSH_AUTH_SOCK}
     volumes:
-      # todo(fede) this will be changed befroe merge
-      - ../config/new/:/config/new/:ro
+      - ../config/:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - keystore:/keystore
     environment:
