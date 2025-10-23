@@ -292,6 +292,17 @@ where
                 self.signature_flows
                     .insert(flow_id.clone(), btc_sig_subflow);
             }
+            OutgoingBitVMXApiMessages::SetupCompleted(program_id) => {
+                // Check if there is any UUID in the state matching the ProgramId
+                if self.pegout_flows.contains_key(program_id) {
+                    info!("Pegout setup was completed: flow_id={}", program_id);
+                } else {
+                    trace!(
+                        "Ignoring BitVMX SetupCompleted for unknown program_id: {}",
+                        program_id
+                    );
+                }
+            }
             _ => {
                 trace!("Ignoring BitVMX event: {:?}", event);
             }
