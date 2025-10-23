@@ -5,4 +5,6 @@ use thiserror::Error;
 pub enum ConfigError {
     #[error("Error while trying to build configuration")]
     ConfigFileError(#[from] config::ConfigError),
+    #[error("Invalid environment name")]
+    ConfigEnvError(String),
 }

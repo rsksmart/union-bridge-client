@@ -72,7 +72,7 @@ pub struct ContractConfig {
 impl CommonConfig {
     pub fn load_config<T: DeserializeOwned>(env: Option<String>) -> Result<T, ConfigError> {
         let env = env.unwrap_or("".to_string());
-        let (base_config_path, env_config_path) = Self::config_path_for(&env);
+        let (base_config_path, env_config_path) = Self::config_path_for(&env)?;
 
         trace!(
             "Loading config: base.yaml -> environment/{env}.yaml -> environment variables with prefix UB__"
@@ -100,9 +100,13 @@ impl CommonConfig {
         Ok(cfg_as_t)
     }
 
-    fn config_path_for(env_name: &str) -> (String, String) {
+    fn config_path_for(env_name: &str) -> Result<(String, String), ConfigError> {
         if env_name.is_empty() {
             trace!("Empty environment name");
+        }
+
+        if env_name.contains("..") || env_name.contains('/') || env_name.contains('\\') {
+            Err("{env_name}").map_err(|e| ConfigError::ConfigEnvError(e.to_string()))?;
         }
 
         let project_root = std::path::Path::new(CARGO_MANIFEST_DIR)
@@ -110,10 +114,10 @@ impl CommonConfig {
             .expect("Failed to get project root");
         let env_config = format!("{ENV_CONFIG_PATH}/{env_name}.yaml");
 
-        (
+        Ok((
             project_root.join(BASE_CONFIG_PATH).display().to_string(),
             project_root.join(&env_config).display().to_string(),
-        )
+        ))
     }
 
     pub fn init_logger(logger_file_opt: Option<&String>, crate_name: &str) -> Result<()> {
