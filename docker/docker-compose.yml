@@ -22,7 +22,7 @@ services:
       - ENV_NAME=${ENV_NAME:-}
     restart: no
     ports:
-      - "12345" # broker server port from the configuration
+      - "10001"
     healthcheck:
       interval: 30s
       timeout: 10s
@@ -50,7 +50,7 @@ services:
       - ENV_NAME=${ENV_NAME:-}
     restart: no
     ports:
-      - "56789" # broker server port from the configuration
+      - "10002"
     healthcheck:
       interval: 30s
       timeout: 10s
@@ -120,7 +120,7 @@ services:
       - ENV_NAME=${ENV_NAME:-}
     restart: no
     ports:
-      - "${USER_API_PORT:-40001}:5551" # internal: http server port from the configuration
+      - "${USER_API_PORT:-40001}:40001"
     healthcheck:
       interval: 30s
       timeout: 10s
