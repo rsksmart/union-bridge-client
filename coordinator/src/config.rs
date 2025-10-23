@@ -79,9 +79,7 @@ mod tests {
 
     #[test]
     fn test_parse_bitcoin_network() -> anyhow::Result<()> {
-        const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
-        let config_path = &format!("{}/../config/multi-client-template", CARGO_MANIFEST_DIR);
-        let config = CommonConfig::load_config::<Config>(Some(config_path), CARGO_PKG_NAME)?;
+        let config = CommonConfig::load_config_2::<Config>(None)?;
         assert_eq!(
             Network::Regtest,
             CommonConfig::parse_bitcoin_network(&config.bitcoin_network)?

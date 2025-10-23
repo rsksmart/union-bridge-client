@@ -105,55 +105,6 @@ impl CommonConfig {
         format!("config/new/environment/{env_name}.yaml")
     }
 
-    pub fn load_config<T: DeserializeOwned>(
-        path_opt: Option<&String>,
-        crate_name: &str,
-    ) -> Result<T, ConfigError> {
-        let config_path = match path_opt {
-            Some(config_path) => config_path,
-            None => &Self::get_default_config_path(),
-        };
-
-        let common_config = &format!("{config_path}/common.yaml");
-        let crate_config = &format!("{config_path}/{crate_name}.yaml");
-
-        trace!(
-            "Loading config from {:?}, {:?} and environment variables with prefix UB__",
-            Path::new(common_config),
-            Path::new(crate_config),
-        );
-
-        let cfg = config::Config::builder()
-            .add_source(config::File::with_name(common_config).required(false)) // must exist if crate one does not
-            .add_source(config::File::with_name(crate_config).required(false)) // must exist if common one does not
-            .add_source(
-                Environment::with_prefix("UB")
-                    .prefix_separator("__")
-                    .separator("__")
-                    .try_parsing(false)
-                    .list_separator(";"),
-            )
-            .build()
-            .map_err(ConfigError::ConfigFileError)?;
-
-        trace!("Loaded config {:#?}", cfg.collect()?);
-
-        let cfg_as_t = cfg
-            .try_deserialize::<T>()
-            .map_err(ConfigError::ConfigFileError)?;
-
-        Ok(cfg_as_t)
-    }
-
-    pub fn get_default_config_path() -> String {
-        let project_root = Path::new(CARGO_MANIFEST_DIR)
-            .parent()
-            .and_then(|p| p.to_str())
-            .expect("Failed to get default_config_path")
-            .to_string();
-        format!("{}/config/multi-client-template", project_root)
-    }
-
     pub fn init_logger(logger_file_opt: Option<&String>, crate_name: &str) -> Result<()> {
         // provided => use it as is
         if let Some(logger_file) = logger_file_opt {

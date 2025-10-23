@@ -104,10 +104,8 @@ mod tests {
 
     #[test]
     fn test_config_load_when_custom_config_set_should_load_config_successfully() {
-        let config_path = &format!("{}/tests/config", CARGO_MANIFEST_DIR);
         let config: ConfigAsBin =
-            CommonConfig::load_config::<ConfigAsBin>(Some(config_path), CARGO_PKG_NAME)
-                .expect("Failed to load config");
+            CommonConfig::load_config_2::<ConfigAsBin>(None).expect("Failed to load config");
 
         // provider
         assert_eq!(
@@ -130,10 +128,8 @@ mod tests {
 
     #[test]
     fn test_load_contracts_when_stage_config_set_should_load_contracts_successfully() {
-        let config_path = &format!("{}/tests/config", CARGO_MANIFEST_DIR);
         let config: ConfigAsBin =
-            CommonConfig::load_config::<ConfigAsBin>(Some(config_path), CARGO_PKG_NAME)
-                .expect("Failed to load config");
+            CommonConfig::load_config_2::<ConfigAsBin>(None).expect("Failed to load config");
         let contracts = config.load_managed_contracts();
 
         assert_eq!(2, contracts.len());
