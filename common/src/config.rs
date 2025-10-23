@@ -109,14 +109,17 @@ impl CommonConfig {
             Err("{env_name}").map_err(|e| ConfigError::ConfigEnvError(e.to_string()))?;
         }
 
-        let project_root = std::path::Path::new(CARGO_MANIFEST_DIR)
+        let project_root = Path::new(CARGO_MANIFEST_DIR)
             .parent()
-            .expect("Failed to get project root");
+            .and_then(|p| p.to_str())
+            .expect("Failed to get default_config_path")
+            .to_string();
+
         let env_config = format!("{ENV_CONFIG_PATH}/{env_name}.yaml");
 
         Ok((
-            project_root.join(BASE_CONFIG_PATH).display().to_string(),
-            project_root.join(&env_config).display().to_string(),
+            format!("{project_root}/{BASE_CONFIG_PATH}"),
+            format!("{project_root}/{env_config}"),
         ))
     }
 
