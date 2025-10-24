@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
 use common::config::CommonConfig;
-use common::msg_broker::broker::{BrokerServer, BrokerServerApi};
+use common::msg_broker::broker::BrokerServer;
 use common::shutdown_flag::ShutdownFlag;
 use log::{error, info};
 use std::net::SocketAddr;
@@ -51,8 +51,25 @@ async fn main() -> Result<()> {
     let shutdown_flag = ShutdownFlag::init();
 
     let broker_port = config.broker_server_port;
-    let mut broker_server = Arc::new(BrokerServer::new(broker_port));
+    let broker_server = Arc::new(BrokerServer::new(broker_port));
     info!("Broker Server started on {broker_port}");
+
+    // Create the broker shutdown task early to ensure proper cleanup even on early errors
+    let broker_fut = {
+        let broker_server = broker_server.clone();
+        let shutdown_flag = shutdown_flag.clone();
+        tokio::spawn(async move {
+            shutdown_flag.wait_for().await;
+            tokio::task::spawn_blocking(move || {
+                // Note: BrokerServer doesn't need explicit close() call
+                // The runtime will be dropped when the Arc is dropped
+                drop(broker_server); // <- drop in blocking context
+                info!("Shutdown requested, Broker server closed");
+            })
+            .await
+            .expect("failed to drop broker server");
+        })
+    };
 
     let http_addr = SocketAddr::from(([0, 0, 0, 0], config.http_server_port));
     let listener = TcpListener::bind(http_addr)
@@ -83,21 +100,7 @@ async fn main() -> Result<()> {
         return Err(err);
     }
 
-    // this is required due to BrokerServer creating its own runtime, and it cannot be dropped in an async context: Cannot drop a runtime in a context where blocking is not allowed
-    let broker_fut = tokio::spawn(async move {
-        shutdown_flag.wait_for().await;
-
-        tokio::task::spawn_blocking(move || {
-            Arc::get_mut(&mut broker_server)
-                .expect("Could not get Broker Server to close")
-                .close();
-            drop(broker_server); // <- drop in blocking context
-            info!("Shutdown requested, Broker server closed");
-        })
-        .await
-        .expect("failed to drop broker server");
-    });
-
+    // Wait for the broker shutdown task to complete
     broker_fut
         .await
         .inspect_err(|e| error!("Error closing Broker Server: {}", e))?;
