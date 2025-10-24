@@ -171,11 +171,6 @@ impl Server {
     ) -> impl IntoResponse {
         info!("Received pegin-address request: {payload:?}");
 
-        // Use our own RSK address if not provided
-        if payload.rootstock_deposit_address.is_empty() {
-            payload.rootstock_deposit_address = user.rsk_address.to_string();
-        }
-
         // Use our own X-only public key if not provided
         if payload.btc_reimbursement_pub_key.is_empty() {
             let x_only_key = XOnlyPublicKey::from(user.bitcoin_public_key);
