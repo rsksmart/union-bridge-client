@@ -22,15 +22,15 @@ contracts:
   - name: "FakePegManager"
     address: "0x3Aa5ebB10DC797CAC828524e59A333d0A371443c"
   - name: "PegManager"
-    address: "0x3A2330364700f36fD711a9d90ec38ba9cc4173b2"
+    address: "0xe7369CE3e195056666167d369dcaE7Dfb8506224"
   - name: "SignatureManager"
-    address: "0x30b88Ad64250A9174483270274e1CA7FbbD81DaE"
+    address: "0xa5519ad0ee760DE721709a4774247fD8253cFf2F"
   - name: "CommitteeRegistry"
-    address: "0xC789E0a607542AFD6243DC529a1F7b86a481C6d8"
+    address: "0x8d6a43b73662A1ffe875F72C90d2831371fe1992"
   - name: "MemberRegistry"
-    address: "0xFAa86EA07825d95ac4a619E4D3bBAbDE2Ab1C923"
+    address: "0xF009e6EFe57abE75e810a0c8C8E10b60FCf0F004"
   - name: "StreamManager"
-    address: "0x7F8Eef5586D5e35115638bB9Cf7185E7F236dC25"
+    address: "0x26f6c30944a3f1fEab347C0f003A67050cb9c8d5"
 
 # =============================================================================
 # BLOCK INDEXER SERVICE
