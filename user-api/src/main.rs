@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
 use common::config::CommonConfig;
-use common::msg_broker::broker::{BrokerServer, BrokerServerApi};
+use common::msg_broker::broker::BrokerServer;
 use common::shutdown_flag::ShutdownFlag;
 use log::{error, info};
 use std::net::SocketAddr;

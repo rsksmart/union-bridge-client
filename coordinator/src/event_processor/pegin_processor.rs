@@ -1280,7 +1280,7 @@ where
                     if self.is_pegin_request_tracked(tx_id) {
                         info!("Handling request pegin SPV proof: tx_id={}", tx_id);
                         // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-328
-                        self.schedule_pegin_requested_to_contracts(spv_proof.clone(), 1);                        // Remove from tracking set after successful processing
+                        self.schedule_pegin_requested_to_contracts(spv_proof.clone(), 1); // Remove from tracking set after successful processing
                         self.pegin_request_tracker.remove(tx_id);
                         debug!("Removed request_pegin_txid from tracking: tx_id={}", tx_id);
                         return Ok(());
