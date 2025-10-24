@@ -7,12 +7,14 @@ use crate::flows::btc_signature::btc_signature_subflow::{
 use crate::flows::common::GlobalContext;
 use crate::flows::pegout::pegout_flow::Steps;
 use crate::flows::pegout::pegout_flow::{PegoutFlow, StepData};
-use crate::types::{EventStatus, RegisterSignaturesBitVmxData, RskPegManagerEvents, UserRequests};
+use crate::types::{
+    EventStatus, RegisterSignaturesBitVmxData, RskPegManagerEvents, TickScheduler, UserRequests,
+};
 use anyhow::anyhow;
-use anyhow::{Context, Result};
-use common::msg_broker::bitvmx_types::OutgoingBitVMXApiMessages;
-use common::msg_broker::bitvmx_types::PegOutAccepted;
-use common::msg_broker::bitvmx_types::VariableTypes;
+use anyhow::{Context, Result, bail};
+use common::msg_broker::bitvmx_types::{
+    OutgoingBitVMXApiMessages, PegOutAccepted, TransactionStatus, VariableTypes,
+};
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::types::{BlockNumber, CommitteeId, RskBlockAndUncles};
@@ -26,6 +28,8 @@ use union_contracts::bindings::peg_manager::PegManager::PegoutRequested;
 use uuid::Uuid;
 
 pub const PEGOUT_ACCEPTED_NAME: &str = "pegout_accepted";
+pub const BLOCKS_DELAY_FOR_TX_CHECK: u32 = 20;
+pub const SPV_PROOF_MIN_CONFIRMATIONS: u32 = 10;
 
 /// Processor that manages multiple pegout flow state machines
 pub struct PegoutFlowProcessor<CG, BC, BSF, FactoryBSF>
@@ -44,6 +48,7 @@ where
     global_context: GlobalContext,
     blockchain_view: BlockchainView,
     events_confirming: HashMap<String, ConfirmableEventWithData>,
+    tx_status_scheduler: TickScheduler<Uuid>,
 }
 
 impl<CG, BC, BSF, FactoryBSF> PegoutFlowProcessor<CG, BC, BSF, FactoryBSF>
@@ -70,6 +75,7 @@ where
             blockchain_view: BlockchainView::new(),
             events_confirming: HashMap::new(),
             signature_flows: HashMap::new(),
+            tx_status_scheduler: TickScheduler::new(),
         }
     }
 
@@ -113,7 +119,6 @@ where
             self.contracts_gateway.clone(),
             self.rt_sync.clone(),
             self.bitvmx_broker.clone(),
-            self.global_context.clone(),
             flow_id,
             event.clone(),
         );
@@ -156,6 +161,14 @@ where
 
         match event {
             RskPegManagerEvents::PegoutRequested(pr) => {
+                let committee_id = pr.inner.committeeId.try_into()?;
+                if !self.global_context.my_committees().im_member(&committee_id) {
+                    debug!(
+                        "Handling PegoutRequested event with committee id {}, I am NOT member so I skip",
+                        committee_id
+                    );
+                    return Ok(());
+                }
                 info!("Processing confirmed PegoutRequested event: {:?}", pr);
                 self.create_flow_for_pegout_requested(&pr.inner)?;
             }
@@ -206,6 +219,100 @@ where
         for flow_id in flows_to_dispatch {
             self.signature_flows.remove(&flow_id);
         }
+        Ok(())
+    }
+
+    fn handle_transaction_status_received(
+        &mut self,
+        flow_id: &Uuid,
+        tx_status: TransactionStatus,
+    ) -> Result<()> {
+        let flow = match self.pegout_flows.get_mut(&flow_id) {
+            Some(flow) => flow,
+            None => {
+                trace!(
+                    "Ignoring BitVMX Transaction event for unknown flow_id: {}",
+                    flow_id
+                );
+                return Ok(());
+            }
+        };
+
+        let TransactionStatus {
+            tx_id,
+            confirmations,
+            ..
+        } = tx_status;
+        let flow_id = flow.flow_id();
+        let expected_txid = flow
+            .get_user_take_txid()
+            .ok_or_else(|| anyhow!("Expected user take tx_id not found"))?;
+        if expected_txid != tx_id {
+            bail!(
+                "Pegout state for flow_id: {} does not match received tx_id: {} from tx status message",
+                flow_id,
+                tx_id
+            );
+        }
+
+        if flow.current_step() != Steps::ConfirmTransaction {
+            bail!(
+                "Mismatch current step for flow {} expected {:?} having {:?}",
+                flow_id,
+                Steps::ConfirmTransaction,
+                flow.current_step()
+            );
+        }
+
+        if confirmations >= SPV_PROOF_MIN_CONFIRMATIONS {
+            debug!(
+                "Transaction confirmed with sufficient confirmations for flow_id: {}",
+                flow_id
+            );
+            flow.complete_step(StepData::TransactionConfirmed(tx_status))?;
+            if self.tx_status_scheduler.is_scheduled(&flow_id) {
+                self.tx_status_scheduler.cancel(&flow_id);
+            }
+        } else {
+            debug!(
+                "Transaction not confirmed with sufficient confirmations for flow_id: {}",
+                flow_id
+            );
+            self.tx_status_scheduler
+                .schedule(flow_id.clone(), BLOCKS_DELAY_FOR_TX_CHECK);
+        }
+        Ok(())
+    }
+
+    fn handle_transaction_status_tick(&mut self) -> Result<()> {
+        if self.tx_status_scheduler.is_empty() {
+            return Ok(());
+        }
+
+        let ready = self.tx_status_scheduler.tick();
+        for flow_id in ready {
+            match self.pegout_flows.get_mut(&flow_id) {
+                Some(flow) => {
+                    if flow.current_step() == Steps::ConfirmTransaction {
+                        flow.request_transaction_status()?;
+                    } else {
+                        warn!(
+                            "Mismatch current step for flow {} expected {:?} having {:?}",
+                            flow_id,
+                            Steps::ConfirmTransaction,
+                            flow.current_step()
+                        );
+                    }
+                }
+                None => {
+                    warn!(
+                        "Skipping delayed transaction status request for unknown flow {}",
+                        flow_id
+                    );
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -264,8 +371,6 @@ where
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
         trace!("Processing BitVMX event: {:?}", event);
 
-        // TODO: Implement BitVMX event handling
-        // For now, just log the events
         match event {
             OutgoingBitVMXApiMessages::CommInfo(comm_info) => {
                 info!("Received CommInfo from BitVMX");
@@ -280,20 +385,25 @@ where
             OutgoingBitVMXApiMessages::Variable(flow_id, method, VariableTypes::String(data))
                 if matches!(method.as_str(), PEGOUT_ACCEPTED_NAME) =>
             {
+                info!(
+                    "Received PegOutAccepted variable from BitVMX for flow_id: {}",
+                    flow_id
+                );
+                debug!("PegOutAccepted data: {}", data);
                 let input: PegOutAccepted = serde_json::from_str::<PegOutAccepted>(data)?;
                 let flow = self
                     .pegout_flows
                     .get_mut(flow_id)
                     .ok_or_else(|| anyhow!("Flow not found for flow_id: {}", flow_id))?;
-                flow.complete_step(StepData::PegoutAccepted(input.clone()))?;
+                let register_input = RegisterSignaturesBitVmxData::try_from(input.clone())?;
+                flow.complete_step(StepData::PegoutAccepted(input))?;
+
                 let mut btc_sig_subflow = self.btc_sig_subflow_factory.create_flow(*flow_id);
-                let register_input = RegisterSignaturesBitVmxData::try_from(input)?;
                 btc_sig_subflow.start_signature_flow(flow_id.clone(), &register_input)?;
                 self.signature_flows
                     .insert(flow_id.clone(), btc_sig_subflow);
             }
             OutgoingBitVMXApiMessages::SetupCompleted(program_id) => {
-                // Check if there is any UUID in the state matching the ProgramId
                 if self.pegout_flows.contains_key(program_id) {
                     info!("Pegout setup was completed: flow_id={}", program_id);
                 } else {
@@ -302,6 +412,38 @@ where
                         program_id
                     );
                 }
+            }
+            OutgoingBitVMXApiMessages::SPVProof(tx_id, spv_proof_opt) => {
+                let spv_proof = spv_proof_opt.clone().ok_or_else(|| {
+                    anyhow!("Received SPVProof event for tx_id {} without proof", tx_id)
+                })?;
+
+                let (flow_id, flow) =
+                    match self.pegout_flows.iter_mut().find_map(|(flow_id, flow)| {
+                        (flow.get_user_take_txid() == Some(*tx_id)).then_some((*flow_id, flow))
+                    }) {
+                        Some((flow_id, flow)) => (flow_id, flow),
+                        None => {
+                            debug!(
+                                "Ignoring SPV proof for flow {} while at step {:?}",
+                                "unknown", "unknown"
+                            );
+                            return Ok(());
+                        }
+                    };
+                if flow.current_step() != Steps::RequestSpvProof {
+                    bail!(
+                        "Mismatch current step for flow {} expected {:?} having {:?}",
+                        flow_id,
+                        Steps::RequestSpvProof,
+                        flow.current_step()
+                    );
+                } else {
+                    flow.complete_step(StepData::SpvProof(spv_proof))?;
+                }
+            }
+            OutgoingBitVMXApiMessages::Transaction(flow_id, tx_status, _tx_opt) => {
+                self.handle_transaction_status_received(flow_id, tx_status.clone())?;
             }
             _ => {
                 trace!("Ignoring BitVMX event: {:?}", event);
@@ -375,6 +517,7 @@ where
 
     fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
         self.process_unhandled_confirmed_sig_flow_events(block)?;
+        self.handle_transaction_status_tick()?;
         self.process_block_confirmations(block)?;
 
         Ok(())

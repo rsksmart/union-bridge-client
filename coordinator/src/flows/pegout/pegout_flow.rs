@@ -1,13 +1,12 @@
 use crate::flows::common::COMM_KEY_INDEX;
-use crate::flows::common::GlobalContext;
 use crate::flows::common::build_communication_data;
-use anyhow::{Context, Result, anyhow, bail};
-use bitcoin::PublicKey;
-use common::msg_broker::bitvmx_types::PeerId;
+use anyhow::{Context, Result, anyhow, bail, ensure};
+use bitcoin::{PublicKey, Txid};
 use common::msg_broker::bitvmx_types::PegOutAccepted;
 use common::msg_broker::bitvmx_types::PegOutRequest;
 use common::msg_broker::bitvmx_types::VariableTypes;
-use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, P2PAddress};
+use common::msg_broker::bitvmx_types::{BtcTxSPVProof, IncomingBitVMXApiMessages, P2PAddress};
+use common::msg_broker::bitvmx_types::{PeerId, TransactionStatus};
 use common::msg_broker::broker::BROKER_SERVER_ID;
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
@@ -18,12 +17,16 @@ use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::GetCommunicationDataInput;
 use transaction_dispatcher::types::GetMemberPublicKeysInput;
 use transaction_dispatcher::types::P2PAddressParser;
-use transaction_dispatcher::types::{GetCommitteeInput, GetCommitteeOutput};
+use transaction_dispatcher::types::{
+    GetCommitteeInput, GetCommitteeOutput, RegisterPegoutInput, RegisterPegoutOutput,
+};
 use union_contracts::bindings::peg_manager::PegManager::PegoutRequested;
 use uuid::Uuid;
 
 pub const PROGRAM_TYPE_USER_TAKE: &str = "take";
 pub const USER_TAKE_TX: &str = "USER_TAKE_TX";
+
+//TODO check before finish if we should add flow transition validation for each step.
 
 /// Steps for the pegout state machine flow
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,9 +39,8 @@ pub enum Steps {
     //Process setup completed
     ProcessPegoutAccepted,
     DispatchTransaction,
-    // ConfirmBitvmxTransaction,
-    // RequestSPVProof,
-    // RegisterPegout,
+    ConfirmTransaction,
+    RequestSpvProof,
     Done,
 }
 
@@ -57,8 +59,8 @@ pub enum StepData {
     CommitteeAddresses(Vec<P2PAddress>),
     PegoutAccepted(PegOutAccepted),
     DispatchTransaction,
-    // AllNoncesReady,
-    // AllSignaturesReady,
+    TransactionConfirmed(TransactionStatus),
+    SpvProof(BtcTxSPVProof),
 }
 
 /// Context for the pegout flow state machine
@@ -70,6 +72,8 @@ pub struct FlowContext {
     pub my_p2p_address: Option<P2PAddress>,
     pub committee_output: Option<GetCommitteeOutput>,
     pub peg_out_accepted: Option<PegOutAccepted>,
+    pub pegout_registered_tx: Option<String>,
+    pub transaction_status: Option<TransactionStatus>,
 }
 
 /// State machine for handling pegout flow
@@ -82,16 +86,7 @@ where
     rt_sync: RuntimeSync,
     bitvmx_broker: Rc<BC>,
     state: FlowContext,
-    global_context: GlobalContext,
 }
-
-// impl<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi, BSF: BtcSignatureSubFlowApi, FactoryBSF> std::fmt::Debug for PegoutFlow<CG, BC, BSF, FactoryBSF>{
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         f.debug_struct("PegoutFlow")
-//             .field("state", &self.state)
-//             .finish()
-//     }
-// }
 
 impl<CG, BC> PegoutFlow<CG, BC>
 where
@@ -102,7 +97,6 @@ where
         contracts: Rc<CG>,
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
-        global_context: GlobalContext,
         internal_id: Uuid,
         pegout_requested: PegoutRequested,
     ) -> Self {
@@ -117,8 +111,9 @@ where
                 my_p2p_address: None,
                 committee_output: None,
                 peg_out_accepted: None,
+                pegout_registered_tx: None,
+                transaction_status: None,
             },
-            global_context,
         }
     }
 
@@ -140,22 +135,37 @@ where
                 unreachable!("Init step should not be reached in start_step");
             }
             Steps::GetCommInfo => {
-                self.request_bitvmx_comm_info();
+                self.request_bitvmx_comm_info()?;
             }
             Steps::SendSetVarToBitvmx => {
                 self.send_set_var_to_bitvmx()?;
             }
             Steps::SendSetupToBitvmx => {
-                self.send_setup_to_bitvmx();
+                self.send_setup_to_bitvmx()?;
             }
             Steps::ProcessPegoutAccepted => {
-                self.wait_for_pegout_accepted();
+                self.wait_for_pegout_accepted()?;
             }
             Steps::DispatchTransaction => {
                 info!(
                     "Waiting for signatures to be ready to dispatch transaction for flow_id: {}",
                     self.state.flow_id
                 );
+            }
+            Steps::ConfirmTransaction => {
+                info!(
+                    "Waiting for transaction confirmations for flow_id: {} and tx_id: {:?}",
+                    self.state.flow_id,
+                    self.get_user_take_txid()
+                );
+            }
+            Steps::RequestSpvProof => {
+                info!(
+                    "Requesting SPV proof for flow_id: {} and tx_id: {:?}",
+                    self.state.flow_id,
+                    self.get_user_take_txid()
+                );
+                self.request_spv_proof()?;
             }
             Steps::Done => {
                 info!("PegoutFlow {}: Done", self.state.flow_id);
@@ -166,7 +176,7 @@ where
 
     /// Complete the current step with data and advance to the next
     pub fn complete_step(&mut self, data: StepData) -> Result<()> {
-        let current_step = self.state.step;
+        let current_step: Steps = self.state.step;
 
         info!(
             "PegoutFlow {}: Completing step {} with data: {:?} for flow_id {}",
@@ -199,7 +209,7 @@ where
                     PegOutRequest::name().to_string(),
                     VariableTypes::String(serde_json::to_string(&request)?),
                 );
-                self.send_bitvmx_msg(msg);
+                self.send_bitvmx_msg(msg)?;
                 Ok(Steps::SendSetupToBitvmx)
             }
             (Steps::SendSetupToBitvmx, StepData::CommitteeAddresses(addresses)) => {
@@ -218,6 +228,25 @@ where
             }
             (Steps::DispatchTransaction, StepData::DispatchTransaction) => {
                 self.dispatch_transaction()?;
+                Ok(Steps::ConfirmTransaction)
+            }
+            (Steps::ConfirmTransaction, StepData::TransactionConfirmed(tx_status)) => {
+                let expected_tx_id = self
+                    .get_user_take_txid()
+                    .ok_or_else(|| anyhow!("Expected user take txid not found"))?;
+                ensure!(
+                    tx_status.tx_id == expected_tx_id,
+                    "Transaction status txId mismatch: got {:?}, expected {:?}",
+                    tx_status.tx_id,
+                    expected_tx_id
+                );
+                self.state.transaction_status = Some(tx_status.clone());
+                //validato tx_status.txId == self.get_user_take_txid()
+                Ok(Steps::RequestSpvProof)
+            }
+            (Steps::RequestSpvProof, StepData::SpvProof(spv_proof)) => {
+                let output = self.register_pegout(spv_proof.clone())?;
+                self.state.pegout_registered_tx = Some(output.transaction_hash);
                 Ok(Steps::Done)
             }
             _ => Err(anyhow::anyhow!(
@@ -393,8 +422,8 @@ where
             .context("Failed to parse aggregated public key from committee")
     }
 
-    fn request_bitvmx_comm_info(&self) {
-        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo());
+    fn request_bitvmx_comm_info(&self) -> Result<()> {
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo())
     }
 
     fn send_bitvmx_msg(&self, msg: IncomingBitVMXApiMessages) -> Result<()> {
@@ -413,6 +442,49 @@ where
             USER_TAKE_TX.to_string(),
         );
         self.send_bitvmx_msg(msg)?;
+        Ok(())
+    }
+
+    pub fn get_user_take_txid(&self) -> Option<Txid> {
+        self.state
+            .peg_out_accepted
+            .as_ref()
+            .map(|accepted| accepted.user_take_txid)
+    }
+
+    fn register_pegout(&self, spv_proof: BtcTxSPVProof) -> Result<RegisterPegoutOutput> {
+        let input = RegisterPegoutInput::from(spv_proof);
+        let output = self
+            .rt_sync
+            .run(async { self.contracts.register_pegout(input).await })
+            .context("Failed to register pegout with provided SPV proof")?;
+        info!(
+            "Pegout registration sent for flow_id {} with tx hash {}",
+            self.state.flow_id, output.transaction_hash
+        );
+        Ok(output)
+    }
+
+    pub fn request_transaction_status(&self) -> Result<()> {
+        let tx_id = self
+            .get_user_take_txid()
+            .ok_or_else(|| anyhow!("Expected user take tx_id not found"))?;
+        info!(
+            "Requesting transaction status for flow_id: {} and tx_id: {:?}",
+            self.state.flow_id, tx_id
+        );
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetTransaction(
+            self.state.flow_id,
+            tx_id,
+        ))?;
+        Ok(())
+    }
+
+    pub fn request_spv_proof(&self) -> Result<()> {
+        let tx_id = self
+            .get_user_take_txid()
+            .ok_or_else(|| anyhow!("Expected user take tx_id not found"))?;
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetSPVProof(tx_id))?;
         Ok(())
     }
 
@@ -441,6 +513,8 @@ fn format_step(step: Steps) -> &'static str {
         Steps::SendSetupToBitvmx => "SendSetupToBitvmx",
         Steps::ProcessPegoutAccepted => "ProcessPegoutAccepted",
         Steps::DispatchTransaction => "DispatchTransaction",
+        Steps::ConfirmTransaction => "ValidateTransactionStatus",
+        Steps::RequestSpvProof => "RequestSpvProof",
         Steps::Done => "Done",
     }
 }

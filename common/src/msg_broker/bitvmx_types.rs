@@ -101,6 +101,15 @@ pub struct TransactionStatus {
     pub status: TransactionBlockchainStatus,
 }
 
+impl TransactionStatus {
+    pub fn get_info(&self) -> String {
+        format!(
+            "TransactionStatus {{ tx_id: {}, confirmations: {} }}",
+            self.tx_id, self.confirmations
+        )
+    }
+}
+
 pub type BlockHeight = u32;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
