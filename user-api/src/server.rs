@@ -8,7 +8,6 @@ use bitcoin::{secp256k1, PublicKey, XOnlyPublicKey};
 use common::msg_broker::broker::{BrokerServer, BrokerServerApi};
 use common::msg_broker::types::FromServer;
 use common::shutdown_flag::ShutdownFlag;
-use common::types::ToHexString;
 use log::{error, info};
 use serde_json::{json, Value};
 use std::sync::Arc;
