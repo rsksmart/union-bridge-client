@@ -474,9 +474,7 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
                 .context("invalid stream value (satoshis)")?;
 
             let packet_number_str = parts.next().context("expected packet number")?;
-            let packet_number: u64 = packet_number_str
-                .parse()
-                .context("invalid packet number")?;
+            let packet_number: u64 = packet_number_str.parse().context("invalid packet number")?;
 
             let dest_addr = parts.next().context("expected destination address")?;
             let rsk_address = parts.next().context("expected RSK address (hex)")?;
