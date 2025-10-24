@@ -54,46 +54,51 @@ impl Server {
     {
         // Create two Bitcoin wallet instances
         let user_wallet = User::new(
+            "User",
             user_contracts_gateway.my_address(),
             user_bitcoin_wif,
-            network
-        ).expect("Failed to create user wallet");
+            network,
+        )
+        .expect("Failed to create user wallet");
 
         let member_wallet = User::new(
+            "Member",
             member_contracts_gateway.my_address(),
             member_bitcoin_wif,
-            network
-        ).expect("Failed to create member wallet");
+            network,
+        )
+        .expect("Failed to create member wallet");
 
         // Wrap gateways for sync access
-        let user_sync_gateway: Arc<dyn crate::sync_contracts_gateway::SyncContractsGatewayApi> = Arc::new(
-            crate::sync_contracts_gateway::SyncContractsGateway::new(user_contracts_gateway)
-        );
-        let member_sync_gateway: Arc<dyn crate::sync_contracts_gateway::SyncContractsGatewayApi> = Arc::new(
-            crate::sync_contracts_gateway::SyncContractsGateway::new(member_contracts_gateway)
-        );
+        let user_sync_gateway: Arc<dyn crate::sync_contracts_gateway::SyncContractsGatewayApi> =
+            Arc::new(crate::sync_contracts_gateway::SyncContractsGateway::new(
+                user_contracts_gateway,
+            ));
+        let member_sync_gateway: Arc<dyn crate::sync_contracts_gateway::SyncContractsGatewayApi> =
+            Arc::new(crate::sync_contracts_gateway::SyncContractsGateway::new(
+                member_contracts_gateway,
+            ));
 
         let app = Router::new()
             .route("/health", get(Self::health_check))
             // User endpoints
-            .nest("/user",
+            .nest(
+                "/user",
                 Router::new()
                     .route("/pegin-address", post(Self::pegin_address))
                     .route("/request-pegout", post(Self::request_pegout))
-                    .layer((
-                        Extension(user_sync_gateway.clone()),
-                        Extension(user_wallet),
-                    ))
+                    .layer((Extension(user_sync_gateway.clone()), Extension(user_wallet))),
             )
             // Member endpoints
-            .nest("/member",
+            .nest(
+                "/member",
                 Router::new()
                     .route("/apply-stream", post(Self::apply_stream))
-                    .route("/bitvmx-address", post(Self::bitvmx_address))
+                    .route("/bitvmx-address", get(Self::bitvmx_address))
                     .layer((
                         Extension(member_sync_gateway.clone()),
                         Extension(member_wallet),
-                    ))
+                    )),
             )
             .layer((
                 TimeoutLayer::new(Duration::from_secs(10)),
@@ -165,6 +170,11 @@ impl Server {
         Json(mut payload): Json<PeginAddressInput>,
     ) -> impl IntoResponse {
         info!("Received pegin-address request: {payload:?}");
+
+        // Use our own RSK address if not provided
+        if payload.rootstock_deposit_address.is_empty() {
+            payload.rootstock_deposit_address = user.rsk_address.to_string();
+        }
 
         // Use our own X-only public key if not provided
         if payload.btc_reimbursement_pub_key.is_empty() {
