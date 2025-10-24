@@ -1,6 +1,8 @@
 use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
 use alloy_primitives::{B256, FixedBytes};
-use alloy_sol_types::{SolEvent, SolEventInterface};
+#[cfg(test)]
+use alloy_sol_types::SolEvent;
+use alloy_sol_types::SolEventInterface;
 use anyhow::anyhow;
 use bitcoin::PublicKey;
 use common::msg_broker::bitvmx_types::{
@@ -19,8 +21,12 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
 use union_contracts::bindings::peg_manager::PegManager::{
     PegManagerEvents, PeginAccepted, PeginRequested, PegoutRegistered, PegoutRequested,
 };
+#[cfg(test)]
 use union_contracts::bindings::signature_manager::SignatureManager::{
-    AllNoncesReady, AllOperatorTakeTxHashesAdded, AllSignaturesReady, SignatureManagerEvents,
+    AllNoncesReady, AllSignaturesReady,
+};
+use union_contracts::bindings::signature_manager::SignatureManager::{
+    AllOperatorTakeTxHashesAdded, SignatureManagerEvents,
 };
 
 use crate::user_requests::ApplyToStream;
@@ -191,7 +197,7 @@ impl EventDecoder {
     }
 
     fn try_member_registry_events(&self, log: &RskLog) -> Option<RskPegManagerEvents> {
-        let (parsed_topics, data, block_num, block_hash, removed, tx_hash) =
+        let (parsed_topics, data, block_num, _block_hash, _removed, tx_hash) =
             Self::extract_log_fields(log);
 
         if let Ok(mr) = MemberRegistryEvents::decode_raw_log(&parsed_topics, &data) {
@@ -202,7 +208,7 @@ impl EventDecoder {
     }
 
     fn try_stream_manager_events(&self, log: &RskLog) -> Option<RskPegManagerEvents> {
-        let (parsed_topics, data, block_num, block_hash, removed, tx_hash) =
+        let (parsed_topics, data, block_num, _block_hash, _removed, tx_hash) =
             Self::extract_log_fields(log);
 
         if let Ok(sm) = StreamManagerEvents::decode_raw_log(&parsed_topics, &data) {
@@ -226,7 +232,7 @@ impl EventDecoder {
     }
 
     fn try_bitcoin_manager_events(&self, log: &RskLog) -> Option<RskPegManagerEvents> {
-        let (parsed_topics, data, block_num, block_hash, removed, tx_hash) =
+        let (parsed_topics, data, block_num, _block_hash, _removed, tx_hash) =
             Self::extract_log_fields(log);
 
         if let Ok(bm) = BitcoinManagerEvents::decode_raw_log(&parsed_topics, &data) {
@@ -1265,7 +1271,7 @@ mod tests {
         };
 
         let removed = true;
-        let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(
+        let (_expected_tx_hash, rsk_log) = create_rsk_log_from_event(
             &expected_event,
             expected_block_hash,
             expected_block_num,
