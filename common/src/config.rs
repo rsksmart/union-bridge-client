@@ -124,40 +124,43 @@ impl CommonConfig {
     }
 
     pub fn init_logger(logger_file_opt: Option<&String>, crate_name: &str) -> Result<()> {
-        // provided => use it as is
-        if let Some(logger_file) = logger_file_opt {
-            trace!("Logging to destination defined by {logger_file}");
-
-            let contents = fs::read_to_string(logger_file)?;
-            let expanded = shellexpand::env(&contents)?.into_owned();
-            let raw = serde_yaml::from_str::<RawConfig>(&expanded)?;
-
-            log4rs::init_raw_config(raw).context("Failed to load log4rs config")?;
-
-            return Ok(());
-        }
-
-        // otherwise, use the default template and tweak it (mostly for local)
         let project_root = Path::new(CARGO_MANIFEST_DIR)
             .parent()
             .and_then(|p| p.to_str())
             .expect("Failed to get default_destination");
 
-        let base_yaml = format!("{project_root}/log4rs.yaml");
-        let mut config_str = fs::read_to_string(&base_yaml)
-            .context(format!("Failed to read base log4rs config: {base_yaml}"))?;
+        let logger_spec = match logger_file_opt {
+            Some(path) => {
+                println!("Using custom logger defined @ {path}");
+                path.to_string()
+            }
+            None => {
+                println!("Using default logger");
+                format!("{project_root}/log4rs.yaml")
+            }
+        };
+
+        // Read and optionally expand env vars in the template
+        let mut config_str = fs::read_to_string(&logger_spec)
+            .context(format!("Failed to read base log4rs config: {logger_spec}"))?;
+
+        // Replace placeholders if any in the spec
+        config_str = config_str.replace("{CRATE_NAME}", crate_name);
 
         let default_destination = &format!("{project_root}/logs");
-
-        config_str = config_str.replace("{CRATE_NAME}", crate_name);
         config_str = config_str.replace("{DESTINATION}", default_destination);
 
-        trace!(
+        let client_id = std::env::var("CLIENT_ID").unwrap_or_else(|_| "0".to_string());
+        config_str = config_str.replace("{CLIENT_ID}", &client_id);
+
+        println!(
             "Logging to {:?}",
-            format!("{}/{}.log", default_destination, crate_name)
+            format!("{}/{}-{}.log", default_destination, crate_name, client_id)
         );
 
-        let config = serde_yaml::from_str(&config_str).context("Failed to parse log4rs config")?;
+        // Parse and initialize log4rs
+        let config = serde_yaml::from_str::<RawConfig>(&config_str)
+            .context("Failed to parse log4rs config")?;
         log4rs::init_raw_config(config).context("Failed to initialize log4rs")
     }
 

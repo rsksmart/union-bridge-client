@@ -1,7 +1,7 @@
 use alloy_primitives::hex;
 use alloy_signer::k256::ecdsa::{SigningKey, VerifyingKey};
 use alloy_signer_local::LocalSigner;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use rand::rngs::OsRng;
 use rand::thread_rng;
 use std::path::Path;
@@ -41,7 +41,8 @@ impl KeyManager {
     pub fn get_signer(location: &Path) -> Result<LocalSigner<SigningKey>> {
         let password = std::env::var("KEY_STORE_PASSWORD")
             .context("KEY_STORE_PASSWORD environment variable not found")?;
-        LocalSigner::decrypt_keystore(location, password).context("Getting signer")
+        LocalSigner::decrypt_keystore(location, password)
+            .map_err(|e| anyhow!("Failed to decrypt keystore: {}", e))
     }
 
     pub fn derive_public_key_and_address(

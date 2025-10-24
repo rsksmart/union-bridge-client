@@ -1,0 +1,521 @@
+use anyhow::{anyhow, bail, Context, Result};
+use clap::{ArgAction, Parser};
+use nix::sys::signal::{kill, Signal};
+use nix::unistd::Pid;
+use std::collections::HashMap;
+use std::fs;
+use std::os::unix::process::CommandExt;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use tokio::signal;
+use tokio::sync::broadcast;
+
+#[derive(Debug, Parser, Clone)]
+#[command(name = "run-cli", about = "Run Union Bridge Operators")]
+struct Cli {
+    /// Number of clients to run (1-10). If provided, multi-client mode is used.
+    #[arg(short = 'n', long = "num-clients")]
+    num_clients: Option<u8>,
+
+    /// Run a single client with the specified ID (1-10). Defaults to 1 if neither mode flag is passed.
+    #[arg(short = 'i', long = "id")]
+    client_id: Option<u8>,
+
+    /// Optional features to pass to cargo (e.g. "anvil").
+    #[arg(short = 'f', long = "features")]
+    features: Option<String>,
+
+    /// Start with clear databases (removes existing)
+    #[arg(long = "fresh", action = ArgAction::SetTrue)]
+    fresh: bool,
+
+    /// Path to multiclient.env. Defaults to ./multiclient.env if it exists
+    #[arg(long = "env-file")]
+    env_file: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Service {
+    BlockIndexer,
+    LogIndexer,
+    UserApi,
+    Coordinator,
+}
+
+impl Service {
+    fn name(&self) -> &'static str {
+        match self {
+            Service::BlockIndexer => "block-indexer",
+            Service::LogIndexer => "log-indexer",
+            Service::UserApi => "user-api",
+            Service::Coordinator => "coordinator",
+        }
+    }
+}
+
+const UNION_CLIENT_SERVICES: [Service; 4] = [
+    Service::BlockIndexer,
+    Service::LogIndexer,
+    Service::UserApi,
+    Service::Coordinator,
+];
+
+#[derive(Debug, Clone)]
+struct ManagedService {
+    service: String,
+    pid: u32,
+    child: Arc<Mutex<Child>>,
+}
+
+#[derive(Debug, Clone)]
+struct ManagedClient {
+    client_id: String,
+    services: Vec<ManagedService>,
+}
+
+#[tokio::main(flavor = "multi_thread")]
+async fn main() -> Result<()> {
+    let cli = Cli::parse();
+
+    if cli.num_clients.is_some() && cli.client_id.is_some() {
+        return Err(anyhow!(
+            "Cannot specify both --num-clients and --id at the same time"
+        ));
+    }
+
+    let base_storage_path = std::env::var("BASE_STORAGE_PATH").context(
+        "BASE_STORAGE_PATH environment variable is required (e.g., export BASE_STORAGE_PATH=/Users/username)",
+    )?;
+
+    if cli.fresh {
+        fresh_cleanup(&base_storage_path)?;
+    }
+
+    let env_file = resolve_env_file(cli.env_file.as_deref());
+    let env_map = if let Some(path) = env_file {
+        load_env_file(&path).with_context(|| format!("Failed to parse {}", path.display()))?
+    } else {
+        HashMap::new()
+    };
+
+    let (shutdown_tx, mut shutdown_rx) = broadcast::channel::<()>(1);
+
+    // Keep all clients and join handles for monitors
+    let mut clients: Vec<ManagedClient> = Vec::new();
+
+    let total = cli.num_clients.unwrap_or(1);
+    for id in 1..=total {
+        let envs = build_env_for_client(id, &env_map, &base_storage_path)?;
+        let client_id = format!("client-{}", id);
+
+        println!("============================================================================");
+        println!("Launching client {}...", client_id);
+        println!("============================================================================");
+
+        match launch_client_services(&cli, envs, &client_id, &shutdown_tx) {
+            Ok(services) => {
+                let client = ManagedClient {
+                    client_id: client_id.to_string(),
+                    services,
+                };
+                clients.push(client);
+            }
+            Err(_) => {
+                println!("Failed to launch all services for {client_id}");
+                break;
+            }
+        }
+    }
+
+    // Ctrl+C handler
+    let ctrlc_tx = shutdown_tx.clone();
+    let ctrlc_handle = tokio::spawn(async move {
+        let _ = signal::ctrl_c().await;
+        let _ = ctrlc_tx.send(());
+    });
+
+    // Wait for one of: a) any monitor triggers shutdown, b) Ctrl+C
+    tokio::select! {
+        _ = shutdown_rx.recv() => {
+            // shutdown requested
+        }
+    }
+
+    println!("Shutdown requested");
+
+    // Teardown everything
+    teardown_all(clients).await;
+
+    println!("All clients shut down");
+
+    // Stop the Ctrl+C handler to avoid keeping the runtime alive
+    ctrlc_handle.abort();
+
+    println!("Done");
+
+    Ok(())
+}
+
+fn validate_1_10(value: u8, name: &str) -> Result<()> {
+    if !(1..=10).contains(&value) {
+        return Err(anyhow!("{} must be between 1 and 10", name));
+    }
+    Ok(())
+}
+
+fn resolve_env_file(opt: Option<&Path>) -> Option<PathBuf> {
+    if let Some(p) = opt {
+        return Some(p.to_path_buf());
+    }
+    let default = PathBuf::from("./multiclient.env");
+    if default.exists() {
+        Some(default)
+    } else {
+        None
+    }
+}
+
+fn load_env_file(path: &Path) -> Result<HashMap<String, String>> {
+    let content = fs::read_to_string(path)?;
+    let mut map = HashMap::new();
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some((k, v)) = line.split_once('=') {
+            let key = k.trim().to_string();
+            let mut val = v.trim().to_string();
+            // Strip optional quotes
+            if (val.starts_with('"') && val.ends_with('"'))
+                || (val.starts_with('\'') && val.ends_with('\''))
+            {
+                val = val[1..val.len() - 1].to_string();
+            }
+            map.insert(key, val);
+        }
+    }
+    Ok(map)
+}
+
+fn build_env_for_client(
+    id: u8,
+    env_map: &HashMap<String, String>,
+    base_storage_path: &str,
+) -> Result<Vec<(String, String)>> {
+    validate_1_10(id, "CLIENT_ID")?;
+    let get = |key: String| -> Result<String> {
+        env_map
+            .get(&key)
+            .cloned()
+            .ok_or_else(|| anyhow!("Missing {} in multiclient.env", key))
+    };
+
+    let envs: Vec<(String, String)> = vec![
+        (
+            "UB__BLOCK_NOTIFIER__BROKER_PORT".into(),
+            get(format!("BLOCK_NOTIFIER_BROKER_PORT_{}", id))?,
+        ),
+        (
+            "UB__LOG_NOTIFIER__BROKER_PORT".into(),
+            get(format!("LOG_NOTIFIER_BROKER_PORT_{}", id))?,
+        ),
+        (
+            "UB__BLOCK_BROKER__PORT".into(),
+            get(format!("BLOCK_BROKER_PORT_{}", id))?,
+        ),
+        (
+            "UB__LOG_BROKER__PORT".into(),
+            get(format!("LOG_BROKER_PORT_{}", id))?,
+        ),
+        (
+            "UB__USER_BROKER__PORT".into(),
+            get(format!("USER_BROKER_PORT_{}", id))?,
+        ),
+        (
+            "UB__BROKER_CLIENT_ID".into(),
+            get(format!("BROKER_CLIENT_ID_{}", id))?,
+        ),
+        (
+            "UB__INDEXER__STORAGE__PATH".into(),
+            format!(
+                "{}/.union_bridge/database/{}",
+                base_storage_path,
+                get(format!("STORAGE_PATH_{}", id))?,
+            ),
+        ),
+        (
+            "UB__STORAGE_PATH".into(),
+            format!(
+                "{}/.union_bridge/database/{}",
+                base_storage_path,
+                get(format!("STORAGE_PATH_{}", id))?,
+            ),
+        ),
+        (
+            "UB__KEY_STORE__PATH".into(),
+            format!(
+                "{}/.union_bridge/keystore/{}",
+                base_storage_path,
+                get(format!("KEY_STORE_PATH_{}", id))?,
+            ),
+        ),
+        ("UB__SERVER__URL".into(), get(format!("SERVER_URL_{}", id))?),
+        (
+            "UB__COORDINATOR_BROKER_CLIENT_ID".into(),
+            get(format!("COORDINATOR_BROKER_CLIENT_ID_{}", id))?,
+        ),
+        (
+            "UB__BROKER_SERVER_PORT".into(),
+            get(format!("BROKER_SERVER_PORT_{}", id))?,
+        ),
+        (
+            "UB__HTTP_SERVER_PORT".into(),
+            get(format!("HTTP_SERVER_PORT_{}", id))?,
+        ),
+        (
+            "UB__BITVMX_BROKER__PORT".into(),
+            get(format!("BITVMX_BROKER_PORT_{}", id))?,
+        ),
+        ("CLIENT_ID".into(), id.to_string()),
+    ];
+
+    Ok(envs)
+}
+
+fn fresh_cleanup(base_storage_path: &str) -> Result<()> {
+    let union_client_db_dir = format!("{}/.union_bridge/database/multi-client", base_storage_path);
+    let bitvmx_db_dir = "/tmp/regtest";
+    let bitvmx_p2p_dir = "/tmp/broker_p2p";
+
+    // Remove Union Bridge database directory
+    if Path::new(&union_client_db_dir).exists() {
+        fs::remove_dir_all(&union_client_db_dir)
+            .with_context(|| format!("Failed to remove {}", union_client_db_dir))?;
+    }
+
+    // Remove BitVMX db dir
+    if Path::new(bitvmx_db_dir).exists() {
+        fs::remove_dir_all(bitvmx_db_dir)
+            .with_context(|| format!("Failed to remove {}", bitvmx_db_dir))?;
+    }
+
+    // Remove BitVMX p2p dir
+    if Path::new(bitvmx_p2p_dir).exists() {
+        fs::remove_dir_all(bitvmx_p2p_dir)
+            .with_context(|| format!("Failed to remove {}", bitvmx_p2p_dir))?;
+    }
+
+    Ok(())
+}
+
+fn cargo_args_for_service(cli: &Cli, svc: &Service) -> Vec<String> {
+    let mut args: Vec<String> = vec!["run".into(), "--bin".into(), svc.name().into()];
+    if let Some(f) = &cli.features {
+        args.push("--features".into());
+        args.push(f.clone());
+    }
+    args.push("--".into());
+    // Always use fixed logger and config paths as per requirements
+    // args.push("--logger-path".into());
+    //    args.push("log4rs.yaml".into());
+    args.push("--config-path".into());
+    args.push("./config/multi-client-template".into());
+    args
+}
+
+fn launch_client_services(
+    cli: &Cli,
+    envs: Vec<(String, String)>,
+    client_id: &str,
+    shutdown_tx: &broadcast::Sender<()>,
+) -> Result<Vec<ManagedService>> {
+    let mut services: Vec<ManagedService> = Vec::new();
+
+    for svc in UNION_CLIENT_SERVICES {
+        // Coordinator depends loosely on others, wait a little before starting it
+        if svc == Service::Coordinator {
+            std::thread::sleep(Duration::from_secs(2));
+        }
+
+        let mut cmd = Command::new("cargo");
+        let args = cargo_args_for_service(cli, &svc);
+        cmd.args(&args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .process_group(0); // create new process group to avoid receiving parent's SIGINT
+
+        // Per-client envs
+        for (k, v) in envs.iter() {
+            cmd.env(k, v);
+        }
+
+        let child = cmd
+            .spawn()
+            .with_context(|| format!("Failed to start {} for {}", svc.name(), client_id))?;
+        let pid = child.id();
+        let child = Arc::new(Mutex::new(child));
+        let mgd_child = ManagedService {
+            service: svc.name().to_string(),
+            pid,
+            child,
+        };
+        services.push(mgd_child);
+    }
+
+    // Quick small delay to see if any exited immediately
+    std::thread::sleep(Duration::from_secs(2));
+
+    // Verify none exited immediately
+    for ms in services.iter() {
+        let name = format!("{}:{}", client_id, ms.service);
+        let mut guard = ms
+            .child
+            .lock()
+            .expect(format!("Failed to lock {}", name).as_str());
+        if let Ok(Some(status)) = guard.try_wait() {
+            println!("ERROR: {} exited immediately with status {}", name, status);
+            let _ = shutdown_tx.send(());
+            bail!("Failed to launch all services for {}", client_id);
+        }
+    }
+
+    // Spawn monitors
+    for ms in services.iter() {
+        let tx = shutdown_tx.clone();
+        let monitor_name = format!("{}:{}", client_id, ms.service);
+        let child_for_monitor = ms.child.clone();
+        tokio::spawn(async move {
+            // Blocking wait in a blocking thread so as not to block runtime
+            let status = tokio::task::spawn_blocking(move || {
+                let mut g = child_for_monitor.lock().expect("Failed to lock");
+                g.wait()
+            })
+            .await
+            .ok()
+            .and_then(|r| r.ok());
+            if let Some(status) = status {
+                eprintln!(
+                    "Process {} exited with status {}. Initiating shutdown...",
+                    monitor_name, status
+                );
+            } else {
+                eprintln!(
+                    "Process {} wait failed. Initiating shutdown...",
+                    monitor_name
+                );
+            }
+            let _ = tx.send(());
+        });
+    }
+
+    Ok(services)
+}
+
+async fn teardown_all(clients: Vec<ManagedClient>) {
+    // teardown all clients simultaneously, but within each client, stop services with proper ordering
+    let mut handles = Vec::new();
+
+    for client in clients {
+        let handle = tokio::spawn(async move {
+            println!("Tearing down {}", client.client_id);
+
+            // shutdown coordinator first and wait for it to exit completely
+            // this ensures it can properly unsubscribe from brokers before they shut down
+            if let Some(coordinator) = client
+                .services
+                .iter()
+                .rev()
+                .find(|s| s.service == "coordinator")
+            {
+                let pid = Pid::from_raw(coordinator.pid as i32);
+                let _ = kill(pid, Signal::SIGTERM);
+
+                // wait for coordinator to exit (up to 10 seconds)
+                let start = std::time::Instant::now();
+                let coordinator_timeout = Duration::from_secs(10);
+                loop {
+                    if let Ok(mut guard) = coordinator.child.lock() {
+                        if let Ok(Some(_)) = guard.try_wait() {
+                            // coordinator has exited
+                            break;
+                        }
+                    }
+                    if start.elapsed() >= coordinator_timeout {
+                        // timeout, force kill
+                        let _ = kill(pid, Signal::SIGKILL);
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+
+                // additional delay after coordinator exits to ensure all cleanup operations complete
+                // this allows network messages (broker unsubscription) to be sent and acknowledged
+                // before indexers start shutting down their broker servers
+                tokio::time::sleep(Duration::from_secs(4)).await;
+            }
+
+            // now shutdown remaining services (in reverse order, skipping coordinator)
+            for svc in client.services.iter().rev() {
+                if svc.service == "coordinator" {
+                    continue; // already handled
+                }
+                let pid = Pid::from_raw(svc.pid as i32);
+                let _ = kill(pid, Signal::SIGTERM);
+                // small delay between signals to stagger shutdown
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+
+            // poll for up to 3 seconds to allow graceful exit of remaining services
+            let start = std::time::Instant::now();
+            let graceful_timeout = Duration::from_secs(3);
+            loop {
+                let mut remaining = 0usize;
+                for svc in client.services.iter() {
+                    if svc.service == "coordinator" {
+                        continue; // already exited
+                    }
+                    if let Ok(mut guard) = svc.child.lock() {
+                        if let Ok(None) = guard.try_wait() {
+                            remaining += 1;
+                        }
+                    } else {
+                        remaining += 1;
+                    }
+                }
+                if remaining == 0 {
+                    break;
+                }
+                if start.elapsed() >= graceful_timeout {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+
+            // SIGKILL any stragglers
+            for svc in client.services.iter().rev() {
+                let pid = Pid::from_raw(svc.pid as i32);
+                if let Ok(mut guard) = svc.child.lock() {
+                    if let Ok(None) = guard.try_wait() {
+                        let _ = kill(pid, Signal::SIGKILL);
+                    }
+                } else {
+                    let _ = kill(pid, Signal::SIGKILL);
+                }
+            }
+
+            // brief final wait for monitors to reap
+            tokio::time::sleep(Duration::from_millis(300)).await;
+        });
+        handles.push(handle);
+    }
+
+    // wait for all client teardowns to complete
+    for h in handles {
+        let _ = h.await;
+    }
+}

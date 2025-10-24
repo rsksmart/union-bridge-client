@@ -10,7 +10,7 @@ if [ -f "multiclient.env" ]; then
 fi
 
 # Default values and constants
-readonly DEFAULT_LOGGER="log4rs.stdout.yaml"
+readonly DEFAULT_LOGGER="log4rs.yaml"
 
 NUM_CLIENTS=""
 CLIENT_ID=""
@@ -150,6 +150,7 @@ if [[ "$FRESH" == true ]]; then
 
     DB_DIR="${BASE_STORAGE_PATH}/.union_bridge/database"
     BITVMX_REGTEST_DIR="/tmp/regtest"
+    BROKER_P2P_GLOB="/tmp/broker_p2p*"
 
     echo "Clearing databases..."
 
@@ -165,6 +166,14 @@ if [[ "$FRESH" == true ]]; then
         rm -rf "$BITVMX_REGTEST_DIR"
     else
         echo "Not found: $BITVMX_REGTEST_DIR (nothing to remove)"
+    fi
+
+    # Remove any /tmp/broker_p2p* entries
+    if compgen -G "$BROKER_P2P_GLOB" > /dev/null; then
+        echo "Removing $BROKER_P2P_GLOB"
+        rm -rf $BROKER_P2P_GLOB
+    else
+        echo "Not found: $BROKER_P2P_GLOB (nothing to remove)"
     fi
 
     echo "Database directories cleared."
