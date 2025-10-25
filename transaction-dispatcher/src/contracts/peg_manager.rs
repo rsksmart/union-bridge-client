@@ -73,13 +73,17 @@ pub trait PegManagerContractApi {
 #[derive(Clone)]
 pub struct PegManagerContract<P: Provider> {
     contract_instance: PegManagerInstance<P>,
+    rpc_url: String,
 }
 
 impl<P: Provider> PegManagerContract<P> {
-    pub fn new(provider: P, contract_address: Address) -> Self {
+    pub fn new(provider: P, contract_address: Address, rpc_url: String) -> Self {
         info!("Connecting to PegManagerContract @ {}", contract_address);
         let contract_instance = PegManager::new(contract_address, provider);
-        PegManagerContract { contract_instance }
+        PegManagerContract {
+            contract_instance,
+            rpc_url,
+        }
     }
 }
 
@@ -105,6 +109,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
             &self.contract_instance.provider(),
             || self.contract_instance.requestPegin(input.clone()),
             gas_bumps,
+            &self.rpc_url,
         )
         .await
     }
@@ -118,6 +123,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
             &self.contract_instance.provider(),
             || self.contract_instance.acceptPegin(input.clone()),
             gas_bumps,
+            &self.rpc_url,
         )
         .await
     }
@@ -136,6 +142,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
                     .value(U256::from(msg_value))
             },
             gas_bumps,
+            &self.rpc_url,
         )
         .await
     }
@@ -149,6 +156,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
             &self.contract_instance.provider(),
             || self.contract_instance.registerUserTake(input.clone()),
             gas_bumps,
+            &self.rpc_url,
         )
         .await
     }
@@ -166,16 +174,20 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
 #[derive(Clone)]
 pub struct FakePegManagerContract<P: Provider> {
     contract_instance: FakePegManagerInstance<P>,
+    rpc_url: String,
 }
 
 impl<P: Provider> FakePegManagerContract<P> {
-    pub fn new(provider: P, contract_address: Address) -> Self {
+    pub fn new(provider: P, contract_address: Address, rpc_url: String) -> Self {
         info!(
             "Connecting to FakePegManagerContract @ {}",
             contract_address
         );
         let contract_instance = FakePegManager::new(contract_address, provider);
-        FakePegManagerContract { contract_instance }
+        FakePegManagerContract {
+            contract_instance,
+            rpc_url,
+        }
     }
 }
 
@@ -233,6 +245,7 @@ impl<P: Provider> PegManagerContractApi for FakePegManagerContract<P> {
                     .checkForkComplete(pegout_id.to_string())
             },
             gas_bumps,
+            &self.rpc_url,
         )
         .await
     }

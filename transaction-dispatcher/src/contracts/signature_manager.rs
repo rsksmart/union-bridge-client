@@ -39,16 +39,20 @@ pub trait SignatureManagerContractApi {
 #[derive(Clone)]
 pub struct SignatureManagerContract<P: Provider> {
     contract_instance: SignatureManagerInstance<P>,
+    rpc_url: String,
 }
 
 impl<P: Provider> SignatureManagerContract<P> {
-    pub fn new(provider: P, contract_address: Address) -> Self {
+    pub fn new(provider: P, contract_address: Address, rpc_url: String) -> Self {
         info!(
             "Connecting to SignatureManager Contract @ {}",
             contract_address
         );
         let contract_instance = SignatureManager::new(contract_address, provider);
-        SignatureManagerContract { contract_instance }
+        SignatureManagerContract {
+            contract_instance,
+            rpc_url,
+        }
     }
 }
 
@@ -66,6 +70,7 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
                     .addMemberNonce(hash_to_sign.clone(), nonce.clone())
             },
             gas_bumps,
+            &self.rpc_url,
         )
         .await
     }
@@ -83,6 +88,7 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
                     .addMemberSignature(hash_to_sign.clone(), signature.clone())
             },
             gas_bumps,
+            &self.rpc_url,
         )
         .await
     }
@@ -100,6 +106,7 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
                     .addOperatorTakeTxid(accept_pegin_tx_hash.clone(), take_tx_hash.clone())
             },
             gas_bumps,
+            &self.rpc_url,
         )
         .await
     }

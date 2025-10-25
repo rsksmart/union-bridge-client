@@ -75,8 +75,6 @@ where
 pub trait RskContractsGatewayApi {
     fn my_address(&self) -> Address;
 
-    fn get_balance(&self) -> impl Future<Output = Result<U256, DomainErrors>>;
-
     fn get_temporary_pegin_address(
         &self,
         input: PeginAddressInput,
@@ -156,7 +154,8 @@ pub trait RskContractsGatewayApi {
 #[derive(Clone)]
 pub struct RskContractsGateway<P: Provider> {
     member_address: Address,
-    provider: P,
+    #[allow(dead_code)] // Used by individual contracts for HTTP receipt fetching
+    rpc_url: String,
     get_temporary_pegin_address_call: GetTemporaryPeginAddressCall<PegManagerContract<P>>,
     request_pegin_invoke: RequestPeginInvoke<PegManagerContract<P>>,
     accept_pegin_invoke: AcceptPeginInvoke<PegManagerContract<P>>,
@@ -183,6 +182,7 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
         managed_contracts: HashMap<String, ContractInfo>,
         tx_config: &TransactionConfig,
         member_address: Address,
+        rpc_url: String,
     ) -> Result<Self> {
         let contract_address = Self::load_contract(PEG_MANAGER_CONTRACT_NAME, &managed_contracts)?;
         let fake_contract_address =
@@ -224,13 +224,22 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
         // TODO make these contracts Rc so we avoid more expensive cloning
 
         let peg_manager_contract =
-            PegManagerContract::new(provider.clone(), contract_address.into());
-        let fake_peg_manager_contract =
-            FakePegManagerContract::new(provider.clone(), fake_contract_address.into());
-        let signature_manager_contract =
-            SignatureManagerContract::new(provider.clone(), signature_manager_address.into());
-        let committee_registry_contract =
-            CommitteeRegistryContract::new(provider.clone(), committee_registry_address.into());
+            PegManagerContract::new(provider.clone(), contract_address.into(), rpc_url.clone());
+        let fake_peg_manager_contract = FakePegManagerContract::new(
+            provider.clone(),
+            fake_contract_address.into(),
+            rpc_url.clone(),
+        );
+        let signature_manager_contract = SignatureManagerContract::new(
+            provider.clone(),
+            signature_manager_address.into(),
+            rpc_url.clone(),
+        );
+        let committee_registry_contract = CommitteeRegistryContract::new(
+            provider.clone(),
+            committee_registry_address.into(),
+            rpc_url.clone(),
+        );
         let member_registry_contract =
             MemberRegistryContract::new(provider.clone(), member_registry_address.into());
         let stream_manager_contract =
@@ -238,7 +247,7 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
 
         Ok(RskContractsGateway {
             member_address,
-            provider: provider.clone(),
+            rpc_url,
             get_temporary_pegin_address_call: GetTemporaryPeginAddressCall::new(
                 peg_manager_contract.clone(),
             ),
@@ -310,13 +319,6 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
 impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
     fn my_address(&self) -> Address {
         self.member_address
-    }
-
-    async fn get_balance(&self) -> Result<U256, DomainErrors> {
-        self.provider
-            .get_balance(self.member_address.into())
-            .await
-            .map_err(|e| DomainErrors::InternalServerError(format!("Failed to get balance: {}", e)))
     }
 
     async fn get_temporary_pegin_address(
@@ -553,20 +555,12 @@ pub enum DomainErrors {
     InvalidRole(String),
     #[error("Error interacting with Committee: {0}")]
     CommitteeError(String),
-    #[error("Member already deposited communication data: {0}")]
-    MemberAlreadyDepositedCommunicationData(String),
-    #[error("Member already registered for stream: {0}")]
-    MemberAlreadyRegisteredForStream(String),
-    #[error("Member info already deposited: {0}")]
-    MemberInfoAlreadyDeposited(String),
     #[error("Error interacting with MemberRegistry: {0}")]
     MemberRegistryError(String),
     #[error("Error collecting signatures: {0}")]
     SignaturesError(String),
     #[error("Missing confirmations on native bridge: {0}")]
     MissingConfirmationsOnNativeBridge(String),
-    #[error("Invalid slot state: expected {expected}, actual {actual}")]
-    InvalidSlotState { expected: u8, actual: u8 },
 
     // unhandled smart contract errors
     #[error("Unhandled Contract Error: {0}")]

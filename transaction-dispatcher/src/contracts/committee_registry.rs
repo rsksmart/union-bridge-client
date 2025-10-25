@@ -61,16 +61,20 @@ pub trait CommitteeRegistryContractApi {
 #[derive(Clone)]
 pub struct CommitteeRegistryContract<P: Provider> {
     contract_instance: CommitteeRegistryInstance<P>,
+    rpc_url: String,
 }
 
 impl<P: Provider> CommitteeRegistryContract<P> {
-    pub fn new(provider: P, contract_address: Address) -> Self {
+    pub fn new(provider: P, contract_address: Address, rpc_url: String) -> Self {
         info!(
             "Connecting to CommitteeRegistry Contract @ {}",
             contract_address
         );
         let contract_instance = CommitteeRegistry::new(contract_address, provider);
-        CommitteeRegistryContract { contract_instance }
+        CommitteeRegistryContract {
+            contract_instance,
+            rpc_url,
+        }
     }
 }
 
@@ -106,6 +110,7 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
                     .value(value)
             },
             gas_bumps,
+            &self.rpc_url,
         )
         .await
     }
@@ -133,6 +138,7 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
                     .depositCommunicationData(*committee_id, communication_data.clone())
             },
             gas_bumps,
+            &self.rpc_url,
         )
         .await
     }
@@ -150,6 +156,7 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
                     .depositAggregatedKey(*committee_id, aggregated_key.clone())
             },
             gas_bumps,
+            &self.rpc_url,
         )
         .await
     }

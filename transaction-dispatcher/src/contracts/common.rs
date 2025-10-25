@@ -10,6 +10,7 @@ use alloy_provider::network::ReceiptResponse;
 use alloy_rpc_types::TransactionReceipt;
 use alloy_sol_types::SolCall;
 use alloy_transport::TransportResult;
+use common::alloy_rsk_provider::receipt_client::ReceiptClient;
 use log::{debug, error, warn};
 use serde_json::Value;
 use std::marker::PhantomData;
@@ -50,6 +51,7 @@ pub(super) async fn send_tx_with_gas_bump<P, D, F>(
     provider: &P,
     build_tx: F,
     max_attempts: u8,
+    rpc_url: &str,
 ) -> alloy_contract::Result<TransactionReceipt>
 where
     P: Provider,
@@ -93,7 +95,7 @@ where
             gas_limit
         );
 
-        let current_receipt = send_transaction(tx_builder).await?;
+        let current_receipt = send_transaction(tx_builder, rpc_url).await?;
 
         let should_retry = !current_receipt.status()
             && attempt < max_attempts
@@ -180,6 +182,7 @@ async fn check_receipt<P: Provider>(
 
 async fn send_transaction<P, D>(
     tx_builder: CallBuilder<P, PhantomData<D>>,
+    rpc_url: &str,
 ) -> alloy_contract::Result<TransactionReceipt>
 where
     P: Provider,
@@ -200,27 +203,37 @@ where
         }
     };
 
-    // Get receipt with timeout
-    let receipt_result = timeout(timeout_2min(), pending_tx.get_receipt()).await;
+    // Register transaction and get hash (no subscriptions created)
+    let tx_hash = *pending_tx.register().await?.tx_hash();
+
+    // Get or create HTTP receipt client (singleton pattern - avoids creating new clients)
+    let receipt_client = ReceiptClient::get_or_create(rpc_url).map_err(|e| {
+        alloy_contract::Error::TransportError(alloy_json_rpc::RpcError::ErrorResp(
+            alloy_json_rpc::ErrorPayload {
+                code: ETH_RPC_INTERNAL_ERROR,
+                message: format!("Failed to get/create HTTP receipt client: {}", e).into(),
+                data: None,
+            },
+        ))
+    })?;
+
+    // Use HTTP-based receipt fetching with polling (no subscriptions!)
+    let receipt_result = receipt_client
+        .get_receipt_with_polling(
+            tx_hash,
+            timeout_2min(),         // Maximum wait time
+            Duration::from_secs(2), // Poll every 2 seconds
+        )
+        .await;
 
     let current_receipt = match receipt_result {
-        Ok(Ok(rec)) => rec,
-        Ok(Err(e)) => {
-            error!("Failed to get receipt: {:?}", e);
+        Ok(rec) => rec,
+        Err(e) => {
+            error!("Failed to get receipt via HTTP: {:?}", e);
             return Err(alloy_contract::Error::TransportError(
                 alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
                     code: ETH_RPC_INTERNAL_ERROR,
-                    message: format!("Failed to get receipt: {:?}", e).into(),
-                    data: None,
-                }),
-            ));
-        }
-        Err(_) => {
-            error!("Receipt timeout");
-            return Err(alloy_contract::Error::TransportError(
-                alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
-                    code: ETH_RPC_INTERNAL_ERROR,
-                    message: "Receipt timeout".to_string().into(),
+                    message: format!("Failed to get receipt via HTTP: {:?}", e).into(),
                     data: None,
                 }),
             ));
