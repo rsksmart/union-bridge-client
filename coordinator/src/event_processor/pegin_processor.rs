@@ -1420,13 +1420,13 @@ where
     }
 
     fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
+        self.blockchain.update(block.clone());
+
         self.tick_scheduler()?;
 
         if self.tracker.is_empty() {
             return Ok(());
         }
-
-        self.blockchain.update(block.clone());
 
         self.process_unhandled_confirmed_pegin_requested_events()?;
         self.process_unhandled_confirmed_all_operator_take_tx_hashes_added_events()?;
