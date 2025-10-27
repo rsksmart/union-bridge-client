@@ -15,6 +15,7 @@ use common::msg_broker::bitvmx_types::{
 use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 use common::runtime_sync::RuntimeSync;
 use log::{debug, error, info, trace, warn};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::any::type_name_of_val;
 use std::collections::HashMap;
@@ -32,6 +33,7 @@ use crate::flows::committee::dispute_core_setup::DisputeCoreSetup;
 use crate::flows::common::{
     COMM_KEY_INDEX, DISPUTE_KEY_INDEX, GlobalContext, TAKE_KEY_INDEX, build_communication_data,
 };
+use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix};
 use common::types;
 use common::types::{BlockNumber, CommitteeId, RskBlockAndUncles, StreamId, TxIdParser};
 
@@ -88,9 +90,14 @@ trait SetupCommitteeFlowApi {
 }
 
 #[cfg_attr(test, automock)]
-pub(crate) trait SetupCommitteeFlowFactoryApi<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi>
+pub(crate) trait SetupCommitteeFlowFactoryApi<
+    CG: RskContractsGatewayApi,
+    BC: BitVmxBrokerClientApi,
+    S: CoordinatorStoreApi,
+>
 {
-    fn create_flow(&self, internal_id: Uuid) -> SetupCommitteeFlow<CG, BC>;
+    fn create_flow(&self, internal_id: Uuid) -> SetupCommitteeFlow<CG, BC, S>;
+    fn create_flow_from_saved_state(&self, saved_state: State) -> SetupCommitteeFlow<CG, BC, S>;
 }
 
 // TODO improve with structs instead of tuples, using tuples for now for validation
@@ -110,7 +117,7 @@ pub(crate) struct FundingUtxos {
     // pub advance_funds: PartialUtxo,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 struct FlowContext {
     // stepped
     user_input: Option<ApplyToStream>,
@@ -175,7 +182,7 @@ impl FlowContext {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum Steps {
     Init,
     GetMyCommInfo,
@@ -195,7 +202,7 @@ enum Steps {
     Done,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 enum StepData {
     // sync or member-dependent steps
     UserRequest(ApplyToStream),
@@ -276,29 +283,63 @@ impl StepData {
     }
 }
 
-pub(crate) struct State {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct State {
     internal_id: Uuid,
     step: Steps,
     ctx: FlowContext,
 }
 
-pub(crate) struct SetupCommitteeFlow<CG: RskContractsGatewayApi, BC: BitVmxBrokerClientApi> {
+pub(crate) struct SetupCommitteeFlow<
+    CG: RskContractsGatewayApi,
+    BC: BitVmxBrokerClientApi,
+    S: CoordinatorStoreApi,
+> {
     contracts: Rc<CG>,
     rt_sync: RuntimeSync,
     bitvmx_broker: Rc<BC>,
     state: State,
     global_context: GlobalContext,
     bitcoin_network: Network,
+    store: Rc<S>,
 }
 
 const REGTEST_FEE_RATE: u64 = 10;
 const DEFAULT_FEE_RATE: u64 = 1;
 
-impl<CG, BC> SetupCommitteeFlow<CG, BC>
+impl<CG, BC, S> SetupCommitteeFlow<CG, BC, S>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
+    S: CoordinatorStoreApi,
 {
+    fn persist_state(&self) -> Result<()> {
+        self.store.save_flow(
+            StoreKey::SetupCommitteeFlow(self.state.internal_id),
+            self.state.clone(),
+        )
+    }
+
+    fn from_saved_state(
+        contracts: Rc<CG>,
+        rt_sync: RuntimeSync,
+        bitvmx_broker: Rc<BC>,
+        global_context: GlobalContext,
+        state: State,
+        bitcoin_network: Network,
+        store: Rc<S>,
+    ) -> Self {
+        Self {
+            contracts,
+            rt_sync,
+            bitvmx_broker,
+            state,
+            global_context,
+            bitcoin_network,
+            store,
+        }
+    }
+
     fn new(
         contracts: Rc<CG>,
         rt_sync: RuntimeSync,
@@ -306,6 +347,7 @@ where
         global_context: GlobalContext,
         internal_id: Uuid,
         bitcoin_network: Network,
+        store: Rc<S>,
     ) -> Self {
         Self {
             contracts,
@@ -318,6 +360,7 @@ where
             },
             global_context,
             bitcoin_network,
+            store,
         }
     }
 
@@ -877,10 +920,11 @@ where
     }
 }
 
-impl<CG, BC> SetupCommitteeFlowApi for SetupCommitteeFlow<CG, BC>
+impl<CG, BC, S> SetupCommitteeFlowApi for SetupCommitteeFlow<CG, BC, S>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
+    S: CoordinatorStoreApi,
 {
     fn start_step(&mut self, next_step: Steps) -> Result<()> {
         debug!("Starting step {:?}", next_step);
@@ -948,6 +992,10 @@ where
                 );
             }
         }
+
+        // Persist state after successful step completion
+        self.persist_state()?;
+
         Ok(())
     }
 
@@ -963,6 +1011,7 @@ where
         trace!("Flow Context: {:?}", self.state.ctx);
         trace!("Global Context: {:?}", self.global_context);
 
+        // Process the step
         match current_step {
             Steps::Init => {
                 self.state.ctx.user_input = Some(data.into_user_input()?);
@@ -1050,6 +1099,7 @@ where
                 unreachable!("Done step should not be reached in complete_step");
             }
         }
+
         Ok(())
     }
 
@@ -1297,43 +1347,83 @@ where
     }
 }
 
-pub(crate) struct SetupCommitteeProcessor<CG, BC, FactoryBSF>
+pub(crate) struct SetupCommitteeProcessor<CG, BC, FactoryBSF, S>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
-    FactoryBSF: SetupCommitteeFlowFactoryApi<CG, BC>,
+    FactoryBSF: SetupCommitteeFlowFactoryApi<CG, BC, S>,
+    S: CoordinatorStoreApi,
 {
     flow_factory: FactoryBSF,
-    flows: HashMap<Uuid, SetupCommitteeFlow<CG, BC>>,
+    flows: HashMap<Uuid, SetupCommitteeFlow<CG, BC, S>>,
     global_context: GlobalContext,
     blockchain_view: BlockchainView,
     events_confirming: HashMap<String, ConfirmableEventWithData>,
+    store: Rc<S>,
 }
 
-impl<CG, BC, FactoryBSF> SetupCommitteeProcessor<CG, BC, FactoryBSF>
+impl<CG, BC, FactoryBSF, S> SetupCommitteeProcessor<CG, BC, FactoryBSF, S>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
-    FactoryBSF: SetupCommitteeFlowFactoryApi<CG, BC>,
+    FactoryBSF: SetupCommitteeFlowFactoryApi<CG, BC, S>,
+    S: CoordinatorStoreApi + 'static,
 {
-    pub(crate) fn new(flow_factory: FactoryBSF, global_context: GlobalContext) -> Self {
-        Self {
+    pub(crate) fn new(
+        flow_factory: FactoryBSF,
+        global_context: GlobalContext,
+        store: Rc<S>,
+    ) -> Self {
+        let mut processor = Self {
             flow_factory,
             flows: HashMap::new(),
-            global_context,
+            global_context: global_context.clone(),
             events_confirming: HashMap::new(),
             blockchain_view: BlockchainView::new(),
+            store,
+        };
+
+        // Restore flows from store
+        processor.restore_flows_from_store();
+        processor
+    }
+
+    fn restore_flows_from_store(&mut self) {
+        debug!("Checking for committee setup flows to restore from persistence");
+
+        let saved_flows: HashMap<Uuid, State> = self
+            .store
+            .load_all_flows(StorePrefix::SetupCommitteeFlow)
+            .expect("Failed to load flows from store");
+
+        for (id, saved_state) in saved_flows.iter() {
+            let flow = self
+                .flow_factory
+                .create_flow_from_saved_state(saved_state.clone());
+            self.flows.insert(*id, flow);
+            let inserted_flow = self.flows.get(id).expect("Just inserted flow");
+            info!(
+                "Restored flow {id} at step {:?} for stream_id {:?}",
+                inserted_flow.state.step,
+                inserted_flow.state.ctx.get_stream_id()
+            );
+            debug!("Restored flow {id} context: {:?}", inserted_flow.state.ctx);
+        }
+
+        if !self.flows.is_empty() {
+            info!("Restored {} flows from persistence", self.flows.len());
         }
     }
 }
 
-impl<CG, BC, FactoryBSF> SetupCommitteeProcessor<CG, BC, FactoryBSF>
+impl<CG, BC, FactoryBSF, S> SetupCommitteeProcessor<CG, BC, FactoryBSF, S>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
-    FactoryBSF: SetupCommitteeFlowFactoryApi<CG, BC>,
+    FactoryBSF: SetupCommitteeFlowFactoryApi<CG, BC, S>,
+    S: CoordinatorStoreApi + 'static,
 {
-    fn get_first_flow_waiting_comm_info(&mut self) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
+    fn get_first_flow_waiting_comm_info(&mut self) -> Option<&mut SetupCommitteeFlow<CG, BC, S>> {
         // CommInfo
         self.flows
             .values_mut()
@@ -1344,7 +1434,7 @@ where
         &mut self,
         stream_id: StreamId,
         expected_step: Steps,
-    ) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
+    ) -> Option<&mut SetupCommitteeFlow<CG, BC, S>> {
         // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: optimize this search by keeping convenient map of stream_id -> internal_id or alike
 
         self.flows.values_mut().find(|f| {
@@ -1358,7 +1448,7 @@ where
         &mut self,
         committee_id: CommitteeId,
         expected_step: Steps,
-    ) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
+    ) -> Option<&mut SetupCommitteeFlow<CG, BC, S>> {
         // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: optimize this search by keeping convenient map of committee_id -> internal_id or alike
 
         if !self.global_context.my_committees().im_member(&committee_id) {
@@ -1385,7 +1475,7 @@ where
     }
 
     fn is_flow_for_committee(
-        f: &&mut SetupCommitteeFlow<CG, BC>,
+        f: &&mut SetupCommitteeFlow<CG, BC, S>,
         committee_id: &CommitteeId,
     ) -> bool {
         f.state
@@ -1398,7 +1488,7 @@ where
     fn get_flow_for_bitvmx_response(
         &mut self,
         req_id: &Uuid,
-    ) -> Option<&mut SetupCommitteeFlow<CG, BC>> {
+    ) -> Option<&mut SetupCommitteeFlow<CG, BC, S>> {
         // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: super naive approach implemented here for now, find within the different flows and their step datas one with the received req_id
         // an alternative could be storing all the requests (ids) for which the flow is waiting response
         // in a same array - but I find this super risky, as it will only work if a) we NEVER send 2
@@ -1553,13 +1643,19 @@ where
             .map(|(k, _)| *k)
             .collect();
 
-        for key in completed {
+        for key in &completed {
             debug!("Removing completed flow: {key:?}");
-            self.flows.remove(&key);
+            self.flows.remove(key);
+
+            self.store
+                .delete_flow(StoreKey::SetupCommitteeFlow(*key))
+                .unwrap_or_else(|e| {
+                    error!("Failed to remove completed flow {key} from persistence: {e}")
+                });
         }
     }
 
-    fn is_flow_for_stream(f: &&mut SetupCommitteeFlow<CG, BC>, stream_id: &StreamId) -> bool {
+    fn is_flow_for_stream(f: &&mut SetupCommitteeFlow<CG, BC, S>, stream_id: &StreamId) -> bool {
         f.state
             .ctx
             .get_stream_id()
@@ -1567,11 +1663,12 @@ where
     }
 }
 
-impl<CG, BC, FactoryBSF> EventProcessor for SetupCommitteeProcessor<CG, BC, FactoryBSF>
+impl<CG, BC, FactoryBSF, S> EventProcessor for SetupCommitteeProcessor<CG, BC, FactoryBSF, S>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
-    FactoryBSF: SetupCommitteeFlowFactoryApi<CG, BC>,
+    FactoryBSF: SetupCommitteeFlowFactoryApi<CG, BC, S>,
+    S: CoordinatorStoreApi + 'static,
 {
     fn process_user_request(&mut self, req: &UserRequests) -> Result<()> {
         info!("Processing user request: {:?}", req);
@@ -1746,22 +1843,25 @@ where
     }
 }
 
-pub(crate) struct SetupCommitteeFlowFactory<CG, BC>
+pub(crate) struct SetupCommitteeFlowFactory<CG, BC, S>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
+    S: CoordinatorStoreApi,
 {
     contracts_gateway: Rc<CG>,
     rt_sync: RuntimeSync,
     bitvmx_broker: Rc<BC>,
     global_context: GlobalContext,
     bitcoin_network: Network,
+    store: Rc<S>,
 }
 
-impl<CG, BC> SetupCommitteeFlowFactory<CG, BC>
+impl<CG, BC, S> SetupCommitteeFlowFactory<CG, BC, S>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
+    S: CoordinatorStoreApi,
 {
     pub(crate) fn new(
         contracts_gateway: Rc<CG>,
@@ -1769,6 +1869,7 @@ where
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
         bitcoin_network: Network,
+        store: Rc<S>,
     ) -> Self {
         Self {
             contracts_gateway,
@@ -1776,17 +1877,19 @@ where
             bitvmx_broker,
             global_context,
             bitcoin_network,
+            store,
         }
     }
 }
 
 // TODO commonize with other flows
-impl<CG, BC> SetupCommitteeFlowFactoryApi<CG, BC> for SetupCommitteeFlowFactory<CG, BC>
+impl<CG, BC, S> SetupCommitteeFlowFactoryApi<CG, BC, S> for SetupCommitteeFlowFactory<CG, BC, S>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
+    S: CoordinatorStoreApi,
 {
-    fn create_flow(&self, internal_id: Uuid) -> SetupCommitteeFlow<CG, BC> {
+    fn create_flow(&self, internal_id: Uuid) -> SetupCommitteeFlow<CG, BC, S> {
         SetupCommitteeFlow::new(
             self.contracts_gateway.clone(),
             self.rt_sync.clone(),
@@ -1794,6 +1897,19 @@ where
             self.global_context.clone(),
             internal_id,
             self.bitcoin_network,
+            self.store.clone(),
+        )
+    }
+
+    fn create_flow_from_saved_state(&self, saved_state: State) -> SetupCommitteeFlow<CG, BC, S> {
+        SetupCommitteeFlow::from_saved_state(
+            self.contracts_gateway.clone(),
+            self.rt_sync.clone(),
+            self.bitvmx_broker.clone(),
+            self.global_context.clone(),
+            saved_state,
+            self.bitcoin_network,
+            self.store.clone(),
         )
     }
 }

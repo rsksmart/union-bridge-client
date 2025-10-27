@@ -78,7 +78,7 @@ pub type MemberInfoDepositedEvent = EventWithBlock<MemberInfoDeposited>;
 
 pub type EventStatus = bool;
 
-#[derive(Eq, PartialEq, Debug, Clone)]
+#[derive(Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct EventWithBlock<T> {
     pub inner: T,
     pub block_number: BlockNumber,

@@ -40,12 +40,12 @@ pub struct Coordinator<M: MonitorApi, BC: BitVmxBrokerClientApi, S: CoordinatorS
     bitvmx_broker: Rc<BC>,
     processors: Vec<Box<dyn EventProcessor>>,
     check_period: Duration,
-    store: S,
+    store: Rc<S>,
     global_context: GlobalContext,
     shutdown_flag: ShutdownFlag,
 }
 
-impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi>
+impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi + 'static>
     Coordinator<M, BC, S>
 {
     pub fn new<CG: RskContractsGatewayApi + 'static>(
@@ -58,10 +58,11 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi>
         bitcoin_network: Network,
     ) -> Self {
         let contracts_arc = Rc::new(contracts_gateway);
+        let store_rc = Rc::new(store);
         let btc_sig_subflow_factory =
             BtcSignatureSubFlowFactory::new(contracts_arc.clone(), rt_sync.clone());
 
-        let global_context = store
+        let global_context = store_rc
             .load_context()
             .expect("Failed to load context from DB")
             .unwrap_or_else(|| {
@@ -75,6 +76,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi>
             bitvmx_broker.clone(),
             global_context.clone(),
             bitcoin_network,
+            store_rc.clone(),
         );
 
         Self {
@@ -103,6 +105,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi>
                 Box::new(SetupCommitteeProcessor::new(
                     setup_committee_flow_factory,
                     global_context.clone(),
+                    store_rc.clone(),
                 )),
                 Box::new(FundBitvmxProcessor::new(
                     bitvmx_broker.clone(),
@@ -111,7 +114,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi>
             ],
             check_period: CHECK_PERIOD,
             shutdown_flag,
-            store,
+            store: store_rc,
             global_context: global_context.clone(),
         }
     }
@@ -128,7 +131,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi>
             bitvmx_broker: Rc::new(bitvmx_broker),
             processors,
             check_period: Duration::from_millis(1),
-            store,
+            store: Rc::new(store),
             global_context: GlobalContext::new(),
             shutdown_flag,
         }
@@ -246,6 +249,11 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi>
         })();
 
         self.processors.iter_mut().for_each(|p| p.shutdown());
+
+        // Final persistence save during shutdown to ensure no state is lost
+        self.store
+            .save_context(self.global_context.clone())
+            .context("Final context save during shutdown")?;
 
         self.monitor
             .cancel_bitvmx_monitoring()
