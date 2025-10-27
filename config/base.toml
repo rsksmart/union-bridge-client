@@ -1,0 +1,78 @@
+bitcoin_network = "regtest"
+
+[indexer]
+initial_block_hash = "0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c"
+
+[indexer.storage]
+path = "/your_base_path/.union_bridge/database/multi-client-1"
+
+[indexer.cache]
+size = 1000
+
+[indexer.sync]
+finality_depth = 100
+batch_size = 100
+
+[provider.rootstock]
+url = "ws://127.0.0.1:8545"
+
+[[contracts]]
+name = "PegManager"
+address = "0x1234567890123456789012345678901234567890"
+
+[[contracts]]
+name = "SignatureManager"
+address = "0x2345678901234567890123456789012345678901"
+
+[[contracts]]
+name = "CommitteeRegistry"
+address = "0x3456789012345678901234567890123456789012"
+
+[[contracts]]
+name = "MemberRegistry"
+address = "0x4567890123456789012345678901234567890123"
+
+[[contracts]]
+name = "FakePegManager"
+address = "0x5678901234567890123456789012345678901234"
+
+[[contracts]]
+name = "FakeSignatureManager"
+address = "0x6789012345678901234567890123456789012345"
+
+[[contracts]]
+name = "FakeCommitteeRegistry"
+address = "0x7890123456789012345678901234567890123456"
+
+[[contracts]]
+name = "FakeMemberRegistry"
+address = "0x8901234567890123456789012345678901234567"
+
+# coordinator
+log_broker= { host = "127.0.0.1", port = 9002}
+block_broker= { host = "127.0.0.1", port = 9003}
+user_broker= { host = "127.0.0.1", port = 9004}
+bitvmx_broker= { host = "127.0.0.1", port = 9005}
+broker_client_id = 1
+storage_path = "/your_base_path/.union_bridge/coordinator"
+
+# log-indexer
+[log_notifier]
+broker_port = 9006
+
+# block-indexer
+[block_notifier]
+broker_port = 9001
+
+# transaction-dispatcher
+[server]
+url = "0.0.0.0:9001"
+[key_store]
+path = "/your_base_path/.union_bridge/keystore/multi-client-1"
+[transaction]
+gas_bumps_t1 = 3
+
+# user-api
+coordinator_broker_client_id = 1
+broker_server_port = 9007
+http_server_port = 8080

@@ -1,0 +1,25 @@
+bitcoin_network = "testnet"
+
+[provider.rootstock]
+url = "ws://127.0.0.1:8545"
+
+contracts = [
+  { name = "FakePegManager", address = "0x3Aa5ebB10DC797CAC828524e59A333d0A371443c" },
+  { name = "PegManager", address = "0xf8E11D0551ceC2F4CBC0b0151Ec5C97076dDbe4e" },
+  { name = "SignatureManager", address = "0x225A1708FdF868c3d8a30eb23851D174d27Ab003" },
+  { name = "CommitteeRegistry", address = "0xd0857eE00B5DC14b1D33995a3dA155235D416839" },
+  { name = "MemberRegistry", address = "0x30Af1031e33986c104438ECEA42aB33D69Fbe795" },
+  { name = "StreamManager", address = "0xf54ea8E611c58D54EbC5b9cc20e8F85841367fB5" },
+]
+
+[common.indexer.storage]
+path = "/app/db/"
+
+# coordinator
+block_broker = { host = "block-indexer" }
+log_broker = { host = "log-indexer" }
+user_broker = { host = "user-api" }
+storage_path = "/app/db/"                 # This should match the volume mount in docker-compose
+
+# transaction_dispatcher
+key_store.path = "/keystore/key.json"
