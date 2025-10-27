@@ -73,7 +73,7 @@ impl Logger {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{CARGO_PKG_NAME, Config};
+    use crate::config::Config;
     use bitcoin::Network;
     use common::config::CommonConfig;
 

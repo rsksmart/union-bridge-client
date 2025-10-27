@@ -21,7 +21,7 @@ WORKDIR /app
 COPY . .
 
 # Ensure out directory exists with proper permissions
-RUN mkdir -p out && chmod -R 755 out
+RUN mkdir out && chmod -R 777 out
 
 # Install dependencies
 RUN forge install

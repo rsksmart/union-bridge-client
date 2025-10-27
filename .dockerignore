@@ -1,6 +1,7 @@
 # Build artifacts
 **/target/
 **.cargo/
+**/out/
 
 #logs
 **/logs/
