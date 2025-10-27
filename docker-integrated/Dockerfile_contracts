@@ -12,13 +12,18 @@ RUN apt-get update && apt-get install -y curl \
     && npm install -g @openzeppelin/upgrades-core@1.44.0 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
 # Update the $PATH to make your installed `node` and `npm` available!
 ENV PATH=$NVM_DIR/versions/node/v$NODE_VERSION/bin:$PATH
 
 # Copy our source code into the container
 WORKDIR /app
 COPY . .
-# "======= Install dependencies ======="
+
+# Ensure out directory exists with proper permissions
+RUN mkdir -p out && chmod -R 755 out
+
+# Install dependencies
 RUN forge install
 
 ENTRYPOINT ["/bin/sh", "-c"]

@@ -96,7 +96,7 @@ If the contracts code changes (eg. new tag), you must rebuild the `deploy-contra
 
 ```bash
 # Rebuild the deploy-contracts image and start
-bash start_blockchains.sh --env local --new-contracts-version up -d
+bash start_blockchains.sh --env local --new-contracts-version --fresh up -d
 ```
 
 ### 3) Start or stop the 4 operator stacks
