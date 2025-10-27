@@ -20,8 +20,6 @@ services:
     environment:
       - ENV_NAME=${ENV_NAME:-}
     restart: no
-    ports:
-      - "10001"
     healthcheck:
       interval: 30s
       timeout: 10s
@@ -47,8 +45,6 @@ services:
     environment:
       - ENV_NAME=${ENV_NAME:-}
     restart: no
-    ports:
-      - "10002"
     healthcheck:
       interval: 30s
       timeout: 10s
