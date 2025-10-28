@@ -438,11 +438,11 @@ where
                     .pegout_flows
                     .get_mut(flow_id)
                     .ok_or_else(|| anyhow!("Flow not found for flow_id: {}", flow_id))?;
-                if flow.current_step() != Steps::ProcessPegoutAccepted {
+                if flow.current_step() != Steps::PrepareUserTakeSetup {
                     bail!(
                         "Mismatch current step for flow {} expected {:?} having {:?}",
                         flow_id,
-                        Steps::ProcessPegoutAccepted,
+                        Steps::PrepareUserTakeSetup,
                         flow.current_step()
                     );
                 }

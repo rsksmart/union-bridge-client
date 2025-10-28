@@ -27,18 +27,13 @@ pub const PROGRAM_TYPE_USER_TAKE: &str = "take";
 pub const USER_TAKE_TX: &str = "USER_TAKE_TX";
 const PEOGUT_COMPLETED_VAR_NAME: &str = "PEG_OUT_COMPLETED";
 
-//TODO check before finish if we should add flow transition validation for each step.
-
 /// Steps for the pegout state machine flow
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Steps {
     PegoutRequested,
     GetCommInfo,
-    SendSetVarToBitvmx,
-    SendSetupToBitvmx,
-    //TODO Check with FG about the setupCompted received and the PegoutAccepted logic. Should we wait? Check logs.
-    //Process setup completed
-    ProcessPegoutAccepted,
+    PrepareUserTakeSetup,
+    //The signature flow is being executed Between these two steps and outside the flow.
     DispatchTransaction,
     ConfirmTransaction,
     RequestSpvProof,
@@ -57,8 +52,6 @@ impl Default for Steps {
 pub enum StepData {
     PegoutRequested,
     CommInfo(P2PAddress),
-    PegOutRequest(PegOutRequest),
-    CommitteeAddresses(Vec<P2PAddress>),
     PegoutAccepted(PegOutAccepted),
     DispatchTransaction,
     TransactionConfirmed(TransactionStatus),
@@ -142,15 +135,11 @@ where
             Steps::GetCommInfo => {
                 self.request_bitvmx_comm_info()?;
             }
-            Steps::SendSetVarToBitvmx => {
-                self.send_pegout_requested_to_bitvmx()?;
+            //This step will prepare the user take setup by sending the setVar and setup to bitvmx in a single step to make bitvmx complete the pegout setup step.
+            Steps::PrepareUserTakeSetup => {
+                self.communicate_pegout_requested_to_bitvmx()?;
             }
-            Steps::SendSetupToBitvmx => {
-                self.send_setup_to_bitvmx()?;
-            }
-            Steps::ProcessPegoutAccepted => {
-                self.wait_for_pegout_accepted()?;
-            }
+            //In the middle of these steps the signature flow is being executed outside the flow.
             Steps::DispatchTransaction => {
                 info!(
                     "Waiting for signatures to be ready to dispatch transaction for flow_id: {}",
@@ -217,28 +206,9 @@ where
             (Steps::PegoutRequested, StepData::PegoutRequested) => Ok(Steps::GetCommInfo),
             (Steps::GetCommInfo, StepData::CommInfo(comm_info)) => {
                 self.state.my_p2p_address = Some(comm_info.clone());
-                Ok(Steps::SendSetVarToBitvmx)
+                Ok(Steps::PrepareUserTakeSetup)
             }
-            (Steps::SendSetVarToBitvmx, StepData::PegOutRequest(request)) => {
-                let msg = IncomingBitVMXApiMessages::SetVar(
-                    self.state.flow_id,
-                    PegOutRequest::name().to_string(),
-                    VariableTypes::String(serde_json::to_string(&request)?),
-                );
-                self.send_bitvmx_msg(msg)?;
-                Ok(Steps::SendSetupToBitvmx)
-            }
-            (Steps::SendSetupToBitvmx, StepData::CommitteeAddresses(addresses)) => {
-                let msg = IncomingBitVMXApiMessages::Setup(
-                    self.state.flow_id,
-                    PROGRAM_TYPE_USER_TAKE.to_string(),
-                    addresses.clone(),
-                    0,
-                );
-                self.send_bitvmx_msg(msg)?;
-                Ok(Steps::ProcessPegoutAccepted)
-            }
-            (Steps::ProcessPegoutAccepted, StepData::PegoutAccepted(accepted)) => {
+            (Steps::PrepareUserTakeSetup, StepData::PegoutAccepted(accepted)) => {
                 self.state.peg_out_accepted = Some(accepted.clone());
                 Ok(Steps::DispatchTransaction)
             }
@@ -295,6 +265,19 @@ where
         Ok(())
     }
 
+    //This step will send the setVar and setup to bitvmx in a single step to make bitvmx complete the pegout setup step.
+    fn communicate_pegout_requested_to_bitvmx(&mut self) -> Result<()> {
+        info!(
+            "Communicating pegout requested to bitvmx with flow_id: {}",
+            self.state.flow_id
+        );
+        let committee_id: CommitteeId = self.state.pegout_requested.committeeId.try_into()?;
+
+        self.send_pegout_requested_to_bitvmx(&committee_id)?;
+        self.send_setup_to_bitvmx(&committee_id)?;
+        Ok(())
+    }
+
     fn get_committee_output(&mut self, committee_id: CommitteeId) -> Result<GetCommitteeOutput> {
         let committee_response = self.rt_sync.run(async {
             self.contracts
@@ -303,9 +286,11 @@ where
         })?;
         Ok(committee_response)
     }
-
-    fn send_setup_to_bitvmx(&mut self) -> Result<()> {
-        let committee_id: CommitteeId = self.state.pegout_requested.committeeId.try_into()?;
+    fn send_setup_to_bitvmx(&mut self, committee_id: &CommitteeId) -> Result<()> {
+        debug!(
+            "Sending setup to bitvmx with flow_id: {}",
+            self.state.flow_id
+        );
         let committee_peer_ids = self.get_committee_peer_ids(
             self.state
                 .committee_output
@@ -325,10 +310,16 @@ where
             committee_peer_ids,
         )?;
 
-        self.complete_step(StepData::CommitteeAddresses(p2p_addresses))
+        let msg = IncomingBitVMXApiMessages::Setup(
+            self.state.flow_id,
+            PROGRAM_TYPE_USER_TAKE.to_string(),
+            p2p_addresses,
+            0,
+        );
+        self.send_bitvmx_msg(msg)
     }
 
-    fn get_committee_member_address(&mut self, committee_id: CommitteeId) -> Result<Vec<String>> {
+    fn get_committee_member_address(&mut self, committee_id: &CommitteeId) -> Result<Vec<String>> {
         let input = GetCommunicationDataInput {
             committee_id: committee_id.clone(),
             member_address: self.contracts.my_address().into(),
@@ -381,13 +372,11 @@ where
         Ok(peer_ids)
     }
 
-    fn send_pegout_requested_to_bitvmx(&mut self) -> Result<()> {
+    fn send_pegout_requested_to_bitvmx(&mut self, committee_id: &CommitteeId) -> Result<()> {
         debug!(
             "Notifying pegout requested to bitvmx with flow_id: {}",
             self.state.flow_id
         );
-
-        let committee_id: CommitteeId = self.state.pegout_requested.committeeId.try_into()?;
         let committee_output: GetCommitteeOutput =
             self.get_committee_output(committee_id.clone())?;
         self.state.committee_output = Some(committee_output.clone());
@@ -395,8 +384,14 @@ where
             self.state.pegout_requested.clone(),
             &committee_output,
         )?;
-        //TODO think about -> The step calls itself complete_step to send the PegOutRequest to BitVMX, does it have sense?
-        self.complete_step(StepData::PegOutRequest(data_to_send))?;
+
+        let msg = IncomingBitVMXApiMessages::SetVar(
+            self.state.flow_id,
+            PegOutRequest::name().to_string(),
+            VariableTypes::String(serde_json::to_string(&data_to_send)?),
+        );
+        self.send_bitvmx_msg(msg)?;
+
         Ok(())
     }
 
@@ -471,6 +466,10 @@ where
     }
 
     fn request_bitvmx_comm_info(&self) -> Result<()> {
+        info!(
+            "Requesting bitvmx comm info for flow_id: {}",
+            self.state.flow_id
+        );
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo())
     }
 
@@ -557,9 +556,7 @@ fn format_step(step: Steps) -> &'static str {
     match step {
         Steps::PegoutRequested => "Init",
         Steps::GetCommInfo => "GetCommInfo",
-        Steps::SendSetVarToBitvmx => "SendSetVarToBitvmx",
-        Steps::SendSetupToBitvmx => "SendSetupToBitvmx",
-        Steps::ProcessPegoutAccepted => "ProcessPegoutAccepted",
+        Steps::PrepareUserTakeSetup => "PrepareUserTakeSetup",
         Steps::DispatchTransaction => "DispatchTransaction",
         Steps::ConfirmTransaction => "ValidateTransactionStatus",
         Steps::RequestSpvProof => "RequestSpvProof",
