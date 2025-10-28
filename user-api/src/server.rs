@@ -44,30 +44,34 @@ impl Server {
         coordinator_client_id: u32,
         user_contracts_gateway: UCG,
         member_contracts_gateway: MCG,
-        user_bitcoin_wif: &str,
-        member_bitcoin_wif: &str,
+        user_bitcoin_wif: Option<&str>,
+        member_bitcoin_wif: Option<&str>,
         network: bitcoin::Network,
     ) -> Self
     where
         UCG: RskContractsGatewayApi + Send + Sync + 'static,
         MCG: RskContractsGatewayApi + Send + Sync + 'static,
     {
-        // Create two Bitcoin wallet instances
-        let user_wallet = User::new(
-            "User",
-            user_contracts_gateway.my_address(),
-            user_bitcoin_wif,
-            network,
-        )
-        .expect("Failed to create user wallet");
+        // Create Bitcoin wallet instances based on provided WIFs
+        let user_wallet = user_bitcoin_wif.map(|wif| {
+            User::new(
+                "User",
+                user_contracts_gateway.my_address(),
+                wif,
+                network,
+            )
+            .expect("Failed to create user wallet")
+        });
 
-        let member_wallet = User::new(
-            "Member",
-            member_contracts_gateway.my_address(),
-            member_bitcoin_wif,
-            network,
-        )
-        .expect("Failed to create member wallet");
+        let member_wallet = member_bitcoin_wif.map(|wif| {
+            User::new(
+                "Member",
+                member_contracts_gateway.my_address(),
+                wif,
+                network,
+            )
+            .expect("Failed to create member wallet")
+        });
 
         // Wrap gateways for sync access
         let user_sync_gateway: Arc<dyn crate::sync_contracts_gateway::SyncContractsGatewayApi> =
@@ -79,18 +83,23 @@ impl Server {
                 member_contracts_gateway,
             ));
 
-        let app = Router::new()
-            .route("/health", get(Self::health_check))
-            // User endpoints
-            .nest(
+        let mut app = Router::new()
+            .route("/health", get(Self::health_check));
+
+        // Conditionally add user endpoints if user wallet is available
+        if let Some(user_wallet) = user_wallet {
+            app = app.nest(
                 "/user",
                 Router::new()
                     .route("/pegin-address", post(Self::pegin_address))
                     .route("/request-pegout", post(Self::request_pegout))
                     .layer((Extension(user_sync_gateway.clone()), Extension(user_wallet))),
-            )
-            // Member endpoints
-            .nest(
+            );
+        }
+
+        // Conditionally add member endpoints if member wallet is available
+        if let Some(member_wallet) = member_wallet {
+            app = app.nest(
                 "/member",
                 Router::new()
                     .route("/apply-stream", post(Self::apply_stream))
@@ -99,7 +108,10 @@ impl Server {
                         Extension(member_sync_gateway.clone()),
                         Extension(member_wallet),
                     )),
-            )
+            );
+        }
+
+        app = app
             .layer((
                 TimeoutLayer::new(Duration::from_secs(10)),
                 Extension(broker_server.clone()),

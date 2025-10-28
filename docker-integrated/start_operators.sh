@@ -38,8 +38,8 @@ print_help() {
   exit 0
 }
 
-if [[ -z "${WALLET_PRIVATE_KEY}" ]]; then
-  echo "Error: WALLET_PRIVATE_KEY environment variable is not set."
+if [[ -z "${MEMBER_BITCOIN_WIF}" ]]; then
+  echo "Error: MEMBER_BITCOIN_WIF environment variable is not set."
   exit 1
 fi
 
