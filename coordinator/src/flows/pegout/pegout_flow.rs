@@ -257,14 +257,6 @@ where
         }
     }
 
-    fn wait_for_pegout_accepted(&mut self) -> Result<()> {
-        debug!(
-            "Waiting for pegout accepted msg from bitvmx with flow_id: {}",
-            self.state.flow_id
-        );
-        Ok(())
-    }
-
     //This step will send the setVar and setup to bitvmx in a single step to make bitvmx complete the pegout setup step.
     fn communicate_pegout_requested_to_bitvmx(&mut self) -> Result<()> {
         info!(

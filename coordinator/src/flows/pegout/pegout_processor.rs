@@ -145,11 +145,6 @@ where
         Ok(())
     }
 
-    /// Get the number of active flows
-    pub fn active_flows_count(&self) -> usize {
-        self.pegout_flows.len()
-    }
-
     /// Clean up completed flows
     pub fn cleanup_completed_flows(&mut self) {
         let completed: Vec<_> = self
