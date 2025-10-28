@@ -1,6 +1,10 @@
 use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
 use crate::config::REQUIRED_CONFIRMATIONS;
 use crate::event_processor::EventProcessor;
+use crate::flows::btc_signature::btc_signature_lifecycle::BtcSignatureLifeCycle;
+use crate::flows::btc_signature::btc_signature_subflow::{
+    BaseBtcSignatureSubFlow, BtcSignatureSubFlowFactory,
+};
 use crate::flows::btc_signature::btc_signature_subflow::{
     BtcSignatureSubFlowApi, BtcSignatureSubFlowFactoryApi,
 };
@@ -24,7 +28,7 @@ use std::any::type_name_of_val;
 use std::collections::HashMap;
 use std::rc::Rc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
-use union_contracts::bindings::peg_manager::PegManager::PegoutRequested;
+use union_contracts::bindings::peg_manager::PegManager::{PegoutRegistered, PegoutRequested};
 use uuid::Uuid;
 
 pub const PEGOUT_ACCEPTED_NAME: &str = "pegout_accepted";
@@ -37,7 +41,7 @@ where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
     BSF: BtcSignatureSubFlowApi,
-    FactoryBSF: BtcSignatureSubFlowFactoryApi<BSF> + Clone,
+    FactoryBSF: BtcSignatureSubFlowFactoryApi<BSF>,
 {
     contracts_gateway: Rc<CG>,
     rt_sync: RuntimeSync,
@@ -51,27 +55,31 @@ where
     tx_status_scheduler: TickScheduler<Uuid>,
 }
 
-impl<CG, BC, BSF, FactoryBSF> PegoutFlowProcessor<CG, BC, BSF, FactoryBSF>
+impl<CG, BC>
+    PegoutFlowProcessor<
+        CG,
+        BC,
+        BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<CG>>,
+        BtcSignatureSubFlowFactory<CG>,
+    >
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
-    BSF: BtcSignatureSubFlowApi,
-    FactoryBSF: BtcSignatureSubFlowFactoryApi<BSF> + Clone,
 {
     pub fn new(
         contracts_gateway: Rc<CG>,
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
-        btc_sig_subflow_factory: FactoryBSF,
         global_context: GlobalContext,
     ) -> Self {
+        let factory = BtcSignatureSubFlowFactory::new(contracts_gateway.clone(), rt_sync.clone());
         Self {
             contracts_gateway,
             rt_sync,
             bitvmx_broker,
-            btc_sig_subflow_factory,
-            pegout_flows: HashMap::new(),
             global_context,
+            btc_sig_subflow_factory: factory,
+            pegout_flows: HashMap::new(),
             blockchain_view: BlockchainView::new(),
             events_confirming: HashMap::new(),
             signature_flows: HashMap::new(),
@@ -172,6 +180,23 @@ where
                 info!("Processing confirmed PegoutRequested event: {:?}", pr);
                 self.create_flow_for_pegout_requested(&pr.inner)?;
             }
+            RskPegManagerEvents::PegoutRegistered(pr) => {
+                info!("Processing confirmed PegoutRegistered event: {:?}", pr);
+                // Find the flow corresponding to this pegout registration using event tx_hash with  flow.state.pegout_registered_tx
+                let flow_opt = self
+                    .pegout_flows
+                    .values_mut()
+                    .find(|flow| flow.get_pegout_registered_tx() == Some(pr.tx_hash.to_string()));
+
+                if let Some(flow) = flow_opt {
+                    flow.complete_step(StepData::PegoutRegistered(pr.inner.clone()))?;
+                } else {
+                    warn!(
+                        "No matching pegout flow found for PegoutRegistered event: {:?}",
+                        pr
+                    );
+                }
+            }
             _ => {
                 trace!("Ignoring confirmed RSK event: {}", type_name_of_val(event));
             }
@@ -193,6 +218,17 @@ where
         )
     }
 
+    fn build_pegout_registered_event_info(
+        event: &crate::types::EventWithBlock<PegoutRegistered>,
+    ) -> (String, EventStatus, BlockNumber, RskPegManagerEvents) {
+        (
+            format!("pegout-registered-{}", event.tx_hash),
+            event.removed,
+            event.block_number,
+            RskPegManagerEvents::PegoutRegistered(event.clone()),
+        )
+    }
+
     fn process_unhandled_confirmed_sig_flow_events(
         &mut self,
         block: &RskBlockAndUncles,
@@ -208,6 +244,7 @@ where
         for flow_id in &flows_to_dispatch {
             if let Some(flow) = self.pegout_flows.get_mut(flow_id) {
                 flow.complete_step(StepData::DispatchTransaction)?;
+                self.signature_flows.remove(&flow_id);
             } else {
                 warn!(
                     "Signature flow done for unknown pegout flow_id: {}. Skipping dispatch step",
@@ -216,9 +253,6 @@ where
             }
         }
 
-        for flow_id in flows_to_dispatch {
-            self.signature_flows.remove(&flow_id);
-        }
         Ok(())
     }
 
@@ -356,12 +390,16 @@ where
     }
 }
 
-impl<CG, BC, BSF, FactoryBSF> EventProcessor for PegoutFlowProcessor<CG, BC, BSF, FactoryBSF>
+impl<CG, BC> EventProcessor
+    for PegoutFlowProcessor<
+        CG,
+        BC,
+        BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<CG>>,
+        BtcSignatureSubFlowFactory<CG>,
+    >
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
-    BSF: BtcSignatureSubFlowApi,
-    FactoryBSF: BtcSignatureSubFlowFactoryApi<BSF> + Clone,
 {
     fn process_user_request(&mut self, _req: &UserRequests) -> Result<()> {
         // Pegout flows are created from RSK events, not from user requests
@@ -373,7 +411,7 @@ where
 
         match event {
             OutgoingBitVMXApiMessages::CommInfo(comm_info) => {
-                info!("Received CommInfo from BitVMX");
+                trace!("Received CommInfo from BitVMX: {:?}", comm_info);
                 //for any flow in flows having active step GetCommInfo, complete the step with the CommInfo
                 for (flow_id, flow) in self.pegout_flows.iter_mut() {
                     if flow.current_step() == Steps::GetCommInfo {
@@ -395,6 +433,14 @@ where
                     .pegout_flows
                     .get_mut(flow_id)
                     .ok_or_else(|| anyhow!("Flow not found for flow_id: {}", flow_id))?;
+                if flow.current_step() != Steps::ProcessPegoutAccepted {
+                    bail!(
+                        "Mismatch current step for flow {} expected {:?} having {:?}",
+                        flow_id,
+                        Steps::ProcessPegoutAccepted,
+                        flow.current_step()
+                    );
+                }
                 let register_input = RegisterSignaturesBitVmxData::try_from(input.clone())?;
                 flow.complete_step(StepData::PegoutAccepted(input))?;
 
@@ -475,6 +521,7 @@ where
 
         let (id, is_removal, block_num, managed_event) = match event {
             RskPegManagerEvents::PegoutRequested(e) => Self::build_pegout_requested_event_info(e),
+            RskPegManagerEvents::PegoutRegistered(e) => Self::build_pegout_registered_event_info(e),
             _ => {
                 trace!("Ignoring RSK event: {}", type_name_of_val(event));
                 return Ok(());

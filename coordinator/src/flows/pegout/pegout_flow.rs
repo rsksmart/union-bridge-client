@@ -20,11 +20,12 @@ use transaction_dispatcher::types::P2PAddressParser;
 use transaction_dispatcher::types::{
     GetCommitteeInput, GetCommitteeOutput, RegisterPegoutInput, RegisterPegoutOutput,
 };
-use union_contracts::bindings::peg_manager::PegManager::PegoutRequested;
+use union_contracts::bindings::peg_manager::PegManager::{PegoutRegistered, PegoutRequested};
 use uuid::Uuid;
 
 pub const PROGRAM_TYPE_USER_TAKE: &str = "take";
 pub const USER_TAKE_TX: &str = "USER_TAKE_TX";
+const PEOGUT_COMPLETED_VAR_NAME: &str = "PEG_OUT_COMPLETED";
 
 //TODO check before finish if we should add flow transition validation for each step.
 
@@ -41,6 +42,7 @@ pub enum Steps {
     DispatchTransaction,
     ConfirmTransaction,
     RequestSpvProof,
+    RegisterPegout,
     Done,
 }
 
@@ -61,6 +63,7 @@ pub enum StepData {
     DispatchTransaction,
     TransactionConfirmed(TransactionStatus),
     SpvProof(BtcTxSPVProof),
+    PegoutRegistered(PegoutRegistered),
 }
 
 /// Context for the pegout flow state machine
@@ -72,6 +75,7 @@ pub struct FlowContext {
     pub my_p2p_address: Option<P2PAddress>,
     pub committee_output: Option<GetCommitteeOutput>,
     pub peg_out_accepted: Option<PegOutAccepted>,
+    pub spv_proof: Option<BtcTxSPVProof>,
     pub pegout_registered_tx: Option<String>,
     pub transaction_status: Option<TransactionStatus>,
 }
@@ -112,6 +116,7 @@ where
                 committee_output: None,
                 peg_out_accepted: None,
                 pegout_registered_tx: None,
+                spv_proof: None,
                 transaction_status: None,
             },
         }
@@ -138,7 +143,7 @@ where
                 self.request_bitvmx_comm_info()?;
             }
             Steps::SendSetVarToBitvmx => {
-                self.send_set_var_to_bitvmx()?;
+                self.send_pegout_requested_to_bitvmx()?;
             }
             Steps::SendSetupToBitvmx => {
                 self.send_setup_to_bitvmx()?;
@@ -166,6 +171,17 @@ where
                     self.get_user_take_txid()
                 );
                 self.request_spv_proof()?;
+            }
+            Steps::RegisterPegout => {
+                info!("Registering pegout for flow_id: {}", self.state.flow_id);
+                let spv_proof = self.state.spv_proof.clone().ok_or_else(|| {
+                    anyhow!(
+                        "SPV proof not available for pegout registration - flow_id {}",
+                        self.state.flow_id
+                    )
+                })?;
+                let output = self.register_pegout(spv_proof.clone())?;
+                self.state.pegout_registered_tx = Some(output.transaction_hash);
             }
             Steps::Done => {
                 info!("PegoutFlow {}: Done", self.state.flow_id);
@@ -231,6 +247,11 @@ where
                 Ok(Steps::ConfirmTransaction)
             }
             (Steps::ConfirmTransaction, StepData::TransactionConfirmed(tx_status)) => {
+                info!(
+                    "Transaction confirmed for flow_id: {} and tx_id: {:?}",
+                    self.state.flow_id, tx_status.tx_id
+                );
+                trace!("Transaction status data: {:?}", tx_status);
                 let expected_tx_id = self
                     .get_user_take_txid()
                     .ok_or_else(|| anyhow!("Expected user take txid not found"))?;
@@ -241,12 +262,21 @@ where
                     expected_tx_id
                 );
                 self.state.transaction_status = Some(tx_status.clone());
-                //validato tx_status.txId == self.get_user_take_txid()
                 Ok(Steps::RequestSpvProof)
             }
             (Steps::RequestSpvProof, StepData::SpvProof(spv_proof)) => {
-                let output = self.register_pegout(spv_proof.clone())?;
-                self.state.pegout_registered_tx = Some(output.transaction_hash);
+                info!("Received SPV proof for flow_id: {}", self.state.flow_id);
+                trace!("SPV Proof data: {:?}", spv_proof);
+                self.state.spv_proof = Some(spv_proof.clone());
+                Ok(Steps::RegisterPegout)
+            }
+            (Steps::RegisterPegout, StepData::PegoutRegistered(pegout_registered)) => {
+                info!(
+                    "Pegout registered successfully for flow_id: {}",
+                    self.state.flow_id
+                );
+                trace!("PegoutRegistered data: {:?}", pegout_registered);
+                self.send_pegout_completed_to_bitvmx(pegout_registered.clone())?;
                 Ok(Steps::Done)
             }
             _ => Err(anyhow::anyhow!(
@@ -351,7 +381,7 @@ where
         Ok(peer_ids)
     }
 
-    fn send_set_var_to_bitvmx(&mut self) -> Result<()> {
+    fn send_pegout_requested_to_bitvmx(&mut self) -> Result<()> {
         debug!(
             "Notifying pegout requested to bitvmx with flow_id: {}",
             self.state.flow_id
@@ -368,6 +398,24 @@ where
         //TODO think about -> The step calls itself complete_step to send the PegOutRequest to BitVMX, does it have sense?
         self.complete_step(StepData::PegOutRequest(data_to_send))?;
         Ok(())
+    }
+
+    fn send_pegout_completed_to_bitvmx(
+        &mut self,
+        pegout_registered: PegoutRegistered,
+    ) -> Result<()> {
+        debug!(
+            "Notifying pegout completed to bitvmx with flow_id: {}",
+            self.state.flow_id
+        );
+        let data = serde_json::to_string(&pegout_registered)?;
+        let msg = IncomingBitVMXApiMessages::SetVar(
+            self.state.flow_id,
+            PEOGUT_COMPLETED_VAR_NAME.to_string(),
+            VariableTypes::String(data),
+        );
+
+        self.send_bitvmx_msg(msg)
     }
 
     fn pegout_requested_to_bitvmx_request(
@@ -502,6 +550,10 @@ where
     pub fn current_step(&self) -> Steps {
         self.state.step
     }
+
+    pub fn get_pegout_registered_tx(&self) -> Option<String> {
+        self.state.pegout_registered_tx.clone()
+    }
 }
 
 /// Helper function to format step names
@@ -515,6 +567,7 @@ fn format_step(step: Steps) -> &'static str {
         Steps::DispatchTransaction => "DispatchTransaction",
         Steps::ConfirmTransaction => "ValidateTransactionStatus",
         Steps::RequestSpvProof => "RequestSpvProof",
+        Steps::RegisterPegout => "RegisterPegout",
         Steps::Done => "Done",
     }
 }
