@@ -550,10 +550,6 @@ where
     pub fn current_step(&self) -> Steps {
         self.state.step
     }
-
-    pub fn get_pegout_registered_tx(&self) -> Option<String> {
-        self.state.pegout_registered_tx.clone()
-    }
 }
 
 /// Helper function to format step names

@@ -16,11 +16,13 @@ use crate::types::{
 };
 use anyhow::anyhow;
 use anyhow::{Context, Result, bail};
+use bitcoin::Txid;
 use common::msg_broker::bitvmx_types::{
     OutgoingBitVMXApiMessages, PegOutAccepted, TransactionStatus, VariableTypes,
 };
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
+use common::types::TxIdParser;
 use common::types::{BlockNumber, CommitteeId, RskBlockAndUncles};
 use log::{debug, error, info, trace, warn};
 use sha2::{Digest, Sha256};
@@ -183,13 +185,16 @@ where
             RskPegManagerEvents::PegoutRegistered(pr) => {
                 info!("Processing confirmed PegoutRegistered event: {:?}", pr);
                 // Find the flow corresponding to this pegout registration using event tx_hash with  flow.state.pegout_registered_tx
+                let pegout_registered = pr.inner.clone();
+                let pegout_registered_txid: Txid =
+                    TxIdParser::fb_32_to_txid(pegout_registered.txHash);
                 let flow_opt = self
                     .pegout_flows
                     .values_mut()
-                    .find(|flow| flow.get_pegout_registered_tx() == Some(pr.tx_hash.to_string()));
+                    .find(|flow| flow.get_user_take_txid() == Some(pegout_registered_txid));
 
                 if let Some(flow) = flow_opt {
-                    flow.complete_step(StepData::PegoutRegistered(pr.inner.clone()))?;
+                    flow.complete_step(StepData::PegoutRegistered(pegout_registered))?;
                 } else {
                     warn!(
                         "No matching pegout flow found for PegoutRegistered event: {:?}",
