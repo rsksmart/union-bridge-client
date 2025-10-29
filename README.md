@@ -554,3 +554,24 @@ Then, through the `bitcoin-wallet` crate (started with `cargo run --release`) yo
 1. `clear_db`
 2. `mine_utxo 9000000000`
 3. `send_to_address <btc_addr_1>,<btc_addr_2>,<btc_addr_3>,<btc_addr_4> 25000000`
+
+## Creating Pegin Transactions
+
+To create a pegin transaction, you can use the `create_pegin_tx.sh` helper script:
+
+```bash
+# Set your RSK address and run the script
+RSK_ADDRESS=0x... ./create_pegin_tx.sh [stream_amount] [packet_number]
+```
+
+The script will:
+1. Query the user-api to get a pegin address
+2. Display the command to run in the bitcoin-wallet CLI
+
+After the script provides the command, open the bitcoin-wallet CLI and run:
+```
+create_pegin_tx <stream_amount> <packet_number> <pegin_address> <rsk_address>
+mine_block
+```
+
+**Important**: You must mine one block after creating the pegin transaction to confirm it on the Bitcoin network.

@@ -25,6 +25,7 @@ Simple interactive command-line wallet for crafting P2WPKH transactions using th
   then register the UTXO
 - `tx_status <txid>` – query the node for a transaction: mined?, confirmations, block hash/height, total outputs
 - `clear_db` – Regtest only: clear the UTXO database folder for the current network
+- `create_pegin_tx <stream_amount> <packet_number> <pegin_address> <rsk_address>` – create a pegin transaction for the Union Bridge protocol. **Note**: After executing this command, you need to mine one block using `mine_block` to confirm the transaction
 
 Each transaction estimates its fee using the configured satoshis-per-byte rate and returns any change to the wallet key
 as a new registered UTXO (change smaller than the dust limit is added to the miner fee).
