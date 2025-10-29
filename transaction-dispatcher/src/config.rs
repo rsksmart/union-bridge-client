@@ -37,8 +37,8 @@ pub struct TransactionConfig {
 }
 
 impl ConfigAsBin {
-    pub fn load(base_path: Option<&String>) -> Result<Self, ConfigError> {
-        CommonConfig::load_config::<ConfigAsBin>(base_path, CARGO_PKG_NAME)
+    pub fn load(env_name: Option<String>) -> Result<Self, ConfigError> {
+        CommonConfig::load_config::<ConfigAsBin>(env_name)
     }
 
     pub fn provider(&self) -> &ProviderConfig {
@@ -63,8 +63,8 @@ impl ConfigAsBin {
 }
 
 impl ConfigAsLib {
-    pub fn load(base_path: Option<&String>) -> Result<Self, ConfigError> {
-        CommonConfig::load_config::<ConfigAsLib>(base_path, CARGO_PKG_NAME)
+    pub fn load(env_name: Option<String>) -> Result<Self, ConfigError> {
+        CommonConfig::load_config::<ConfigAsLib>(env_name)
     }
 
     pub fn load_managed_contracts(&self) -> HashMap<String, ContractInfo> {
@@ -100,61 +100,30 @@ mod tests {
     use std::path::Path;
     use tempfile::TempDir;
 
-    const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
-
     #[test]
     fn test_config_load_when_custom_config_set_should_load_config_successfully() {
-        let config_path = &format!("{}/tests/config", CARGO_MANIFEST_DIR);
+        // using base.yaml
         let config: ConfigAsBin =
-            ConfigAsBin::load(Some(config_path)).expect("Failed to load config");
+            CommonConfig::load_config::<ConfigAsBin>(None).expect("Failed to load config");
 
-        // provider
+        // provider - using values from base.yaml
+        assert_eq!("ws://127.0.0.1:8545", config.provider().rootstock.url);
+        assert_eq!("0.0.0.0:9001", config.server.url);
         assert_eq!(
-            "ws://fake-server:4445/websocket",
-            config.provider().rootstock.url
-        );
-
-        // server
-        assert_eq!("0.0.0.0:3000", config.server.url);
-
-        // key store
-        assert_eq!(
-            "/fake/path/.union_bridge/keystore/ab98c3c8-a772-4c44-b3a7-99864663b8cb",
+            "/your_base_path/.union_bridge/keystore/multi-client-1",
             config.key_store().path
         );
-
-        // transaction
         assert_eq!(3, config.transaction().gas_bumps_t1);
     }
 
     #[test]
     fn test_load_contracts_when_stage_config_set_should_load_contracts_successfully() {
-        let config_path = &format!("{}/tests/config", CARGO_MANIFEST_DIR);
+        // using base.yaml
         let config: ConfigAsBin =
-            ConfigAsBin::load(Some(config_path)).expect("Failed to load config");
+            CommonConfig::load_config::<ConfigAsBin>(None).expect("Failed to load config");
         let contracts = config.load_managed_contracts();
 
-        assert_eq!(2, contracts.len());
-
-        // first contract
-        let key = "TestContractDyn";
-        let contract_info = contracts.get(key).unwrap();
-
-        assert_eq!(key, contract_info.name);
-        assert_eq!(
-            Address::try_from("0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761").unwrap(),
-            contract_info.address
-        );
-
-        // second contract
-        let key = "TestContractCompiled";
-        let contract_info = contracts.get(key).unwrap();
-
-        assert_eq!(key, contract_info.name);
-        assert_eq!(
-            Address::try_from("0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc").unwrap(),
-            contract_info.address
-        );
+        assert_eq!(8, contracts.len());
     }
 
     #[test]

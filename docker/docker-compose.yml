@@ -14,21 +14,19 @@ services:
       ssh:
         - default=${SSH_AUTH_SOCK}
     volumes:
-      - ${CONFIG_PATH:-../config/docker/anvil}:/app/config:ro
+      - ../config/:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - db-blocks:/app/db/blocks
     environment:
-      - UB__provider__rootstock__url=${ROOTSTOCK_URL:-ws://host.docker.internal:8545}
+      - ENV_NAME=${ENV_NAME:-}
     restart: no
-    ports:
-      - "12345"  # broker server port from the configuration
     healthcheck:
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
-      test: [ "CMD", "pgrep", "-f", "block-indexer" ] # TODO improve with health endpoint
-    entrypoint: [ "/app/block-indexer", "--config-path", "/app/config" ]
+      test: ["CMD", "pgrep", "-f", "block-indexer"] # TODO improve with health endpoint
+    entrypoint: ["sh", "-c", "/app/block-indexer --env $ENV_NAME"]
 
   log-indexer:
     platform: ${PLATFORM}
@@ -41,21 +39,19 @@ services:
       ssh:
         - default=${SSH_AUTH_SOCK}
     volumes:
-      - ${CONFIG_PATH:-../config/docker/anvil}:/app/config:ro
+      - ../config/:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - db-logs:/app/db/logs
     environment:
-      - UB__provider__rootstock__url=${ROOTSTOCK_URL:-ws://host.docker.internal:8545}
+      - ENV_NAME=${ENV_NAME:-}
     restart: no
-    ports:
-      - "56789"  # broker server port from the configuration
     healthcheck:
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
-      test: [ "CMD", "pgrep", "-f", "log-indexer" ] # TODO improve with health endpoint
-    entrypoint: [ "/app/log-indexer", "--config-path", "/app/config" ]
+      test: ["CMD", "pgrep", "-f", "log-indexer"] # TODO improve with health endpoint
+    entrypoint: ["sh", "-c", "/app/log-indexer --env $ENV_NAME"]
 
   coordinator:
     platform: ${PLATFORM}
@@ -68,7 +64,7 @@ services:
       ssh:
         - default=${SSH_AUTH_SOCK}
     volumes:
-      - ${CONFIG_PATH:-../config/docker/anvil}:/app/config:ro
+      - ../config/:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - keystore:/keystore
       - db-coordinator:/app/db/coordinator
@@ -76,17 +72,17 @@ services:
     environment:
       - UB__bitvmx_broker__host=${BITVMX_HOST:-host.docker.internal}
       - UB__bitvmx_broker__port=${BITVMX_PORT:-61180}
-      - UB__provider__rootstock__url=${ROOTSTOCK_URL:-ws://host.docker.internal:8545}
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
       - BITCOIN_NETWORK=${BITCOIN_NETWORK}
+      - ENV_NAME=${ENV_NAME:-}
     healthcheck:
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
-      test: [ "CMD", "pgrep", "-f", "coordinator" ]
-    entrypoint: [ "sh", "/app/key-setup.sh" ]
-    command: [ "/app/coordinator", "--config-path", "/app/config" ]
+      test: ["CMD", "pgrep", "-f", "coordinator"]
+    entrypoint: ["sh", "/app/key-setup.sh"]
+    command: ["sh", "-c", "/app/coordinator --env $ENV_NAME"]
     depends_on:
       block-indexer:
         condition: service_healthy
@@ -106,24 +102,24 @@ services:
       ssh:
         - default=${SSH_AUTH_SOCK}
     volumes:
-      - ${CONFIG_PATH:-../config/docker/anvil}:/app/config:ro
+      - ../config/:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - keystore:/keystore
     environment:
-      - UB__provider__rootstock__url=${ROOTSTOCK_URL:-ws://host.docker.internal:8545}
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
       - WALLET_PRIVATE_KEY=${WALLET_PRIVATE_KEY}
+      - ENV_NAME=${ENV_NAME:-}
     restart: no
     ports:
-      - "${USER_API_PORT:-40001}:5551" # internal: http server port from the configuration
+      - "${USER_API_PORT:-40001}:40001"
     healthcheck:
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
-      test: [ "CMD", "pgrep", "-f", "user-api" ]
-    entrypoint: [ "sh", "/app/key-setup.sh" ]
-    command: [ "/app/user-api", "--config-path", "/app/config" ]
+      test: ["CMD", "pgrep", "-f", "user-api"]
+    entrypoint: ["sh", "/app/key-setup.sh"]
+    command: ["sh", "-c", "/app/user-api --env $ENV_NAME"]
 
 volumes:
   keystore:

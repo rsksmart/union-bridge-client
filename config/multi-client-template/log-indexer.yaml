@@ -1,2 +1,0 @@
-log_notifier:
-  broker_port: 11001 # read from env UB__LOG_NOTIFIER__BROKER_PORT

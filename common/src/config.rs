@@ -10,6 +10,10 @@ use serde::de::DeserializeOwned;
 use std::{fs, path::Path};
 
 const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
+// todo(fede) replace the /new folder with the final folder
+const BASE_CONFIG_PATH: &str = "config/base.yaml";
+const ENV_CONFIG_PATH: &str = "config/environment";
+// const ENV_CONFIG_PATH: &str = "new/environment/";
 
 #[derive(Debug, Deserialize)]
 pub struct CommonConfig {
@@ -66,27 +70,17 @@ pub struct ContractConfig {
 }
 
 impl CommonConfig {
-    pub fn load_config<T: DeserializeOwned>(
-        path_opt: Option<&String>,
-        crate_name: &str,
-    ) -> Result<T, ConfigError> {
-        let config_path = match path_opt {
-            Some(config_path) => config_path,
-            None => &Self::get_default_config_path(),
-        };
+    pub fn load_config<T: DeserializeOwned>(env: Option<String>) -> Result<T, ConfigError> {
+        let env = env.unwrap_or("".to_string());
+        let (base_config_path, env_config_path) = Self::config_path_for(&env)?;
 
-        let common_config = &format!("{config_path}/common.yaml");
-        let crate_config = &format!("{config_path}/{crate_name}.yaml");
-
-        println!(
-            "Loading config from {:?}, {:?} and environment variables with prefix UB__",
-            Path::new(common_config),
-            Path::new(crate_config),
+        trace!(
+            "Loading config: base.yaml -> environment/{env}.yaml -> environment variables with prefix UB__"
         );
 
         let cfg = config::Config::builder()
-            .add_source(config::File::with_name(common_config).required(false)) // must exist if crate one does not
-            .add_source(config::File::with_name(crate_config).required(false)) // must exist if common one does not
+            .add_source(config::File::with_name(&base_config_path).required(true))
+            .add_source(config::File::with_name(&env_config_path).required(false))
             .add_source(
                 Environment::with_prefix("UB")
                     .prefix_separator("__")
@@ -106,19 +100,33 @@ impl CommonConfig {
         Ok(cfg_as_t)
     }
 
-    pub fn get_default_config_path() -> String {
+    fn config_path_for(env_name: &str) -> Result<(String, String), ConfigError> {
+        if env_name.is_empty() {
+            trace!("Empty environment name");
+        }
+
+        if env_name.contains("..") || env_name.contains('/') || env_name.contains('\\') {
+            Err("{env_name}").map_err(|e| ConfigError::ConfigEnvError(e.to_string()))?;
+        }
+
         let project_root = Path::new(CARGO_MANIFEST_DIR)
             .parent()
             .and_then(|p| p.to_str())
             .expect("Failed to get default_config_path")
             .to_string();
-        format!("{}/config/multi-client-template", project_root)
+
+        let env_config = format!("{ENV_CONFIG_PATH}/{env_name}.yaml");
+
+        Ok((
+            format!("{project_root}/{BASE_CONFIG_PATH}"),
+            format!("{project_root}/{env_config}"),
+        ))
     }
 
     pub fn init_logger(logger_file_opt: Option<&String>, crate_name: &str) -> Result<()> {
         // provided => use it as is
         if let Some(logger_file) = logger_file_opt {
-            println!("Logging to destination defined by {logger_file}");
+            trace!("Logging to destination defined by {logger_file}");
 
             let contents = fs::read_to_string(logger_file)?;
             let expanded = shellexpand::env(&contents)?.into_owned();
@@ -144,7 +152,7 @@ impl CommonConfig {
         config_str = config_str.replace("{CRATE_NAME}", crate_name);
         config_str = config_str.replace("{DESTINATION}", default_destination);
 
-        println!(
+        trace!(
             "Logging to {:?}",
             format!("{}/{}.log", default_destination, crate_name)
         );

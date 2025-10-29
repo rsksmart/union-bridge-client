@@ -50,7 +50,7 @@ for port in 40001 40002 40003 40004; do
   echo
 done
 
-sleep 5
+sleep 10
 
 # -------- Collect BitVMX funding addresses from logs --------
 addresses=()
@@ -88,7 +88,7 @@ if [[ "$ENVIRONMENT" == "local" ]]; then
 Run the following commands in the bitcoin-wallet CLI (Regtest):
 1 =>    clear_db   (if you see a misaligned utxos error)
 1 =>    mine_utxo 900000000
-2 =>    send_to_address $addr_array 20001000
+2 =>    send_to_address $addr_array 20010000
 3 =>    mine_block
 
 Note: See the bitcoin-wallet README for how to start and use the CLI: ../bitcoin-wallet/README.md
@@ -96,7 +96,7 @@ EOF
 else
   cat <<EOF
 Run the following command in your bitcoin-wallet or wallet tooling for '$ENVIRONMENT':
-send_to_address $addr_array 20001000
+send_to_address $addr_array 20010000
 
 Note: On non-local environments you should not attempt to mine_utxo or mine_block.
 EOF

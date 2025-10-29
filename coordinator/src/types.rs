@@ -9,7 +9,7 @@ use common::msg_broker::bitvmx_types::{
     PartialUtxo, ParticipantRole, PegOutAccepted, PeginAcceptedMessage,
 };
 use common::types::{Address, BlockHash, BlockNumber, Hash256, RskLog, TxHash};
-use log::{info, warn};
+use log::{info, trace, warn};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -177,7 +177,7 @@ impl EventDecoder {
             Self::extract_log_fields(log);
 
         if let Ok(pm) = PegManagerEvents::decode_raw_log(&parsed_topics, &data) {
-            info!("Decoded PegManagerEvents: {:?}", pm);
+            trace!("Decoded PegManagerEvents: {:?}", pm);
             return Self::convert_peg_manager_event(pm, block_num, block_hash, removed, tx_hash);
         }
         None
@@ -188,7 +188,7 @@ impl EventDecoder {
             Self::extract_log_fields(log);
 
         if let Ok(cr) = CommitteeRegistryEvents::decode_raw_log(&parsed_topics, &data) {
-            info!("Decoded CommitteeRegistryEvents: {:?}", cr);
+            trace!("Decoded CommitteeRegistryEvents: {:?}", cr);
             return Self::convert_committee_registry_event(
                 cr, block_num, block_hash, removed, tx_hash,
             );
@@ -201,7 +201,7 @@ impl EventDecoder {
             Self::extract_log_fields(log);
 
         if let Ok(mr) = MemberRegistryEvents::decode_raw_log(&parsed_topics, &data) {
-            info!("Decoded MemberRegistryEvents: {:?}", mr);
+            trace!("Decoded MemberRegistryEvents: {:?}", mr);
             return Self::convert_member_registry_event(mr, block_num, tx_hash);
         }
         None
@@ -212,7 +212,7 @@ impl EventDecoder {
             Self::extract_log_fields(log);
 
         if let Ok(sm) = StreamManagerEvents::decode_raw_log(&parsed_topics, &data) {
-            info!("Decoded StreamManagerEvents: {:?}", sm);
+            trace!("Decoded StreamManagerEvents: {:?}", sm);
             return Self::convert_stream_manager_event(sm, block_num, tx_hash);
         }
         None
@@ -223,7 +223,7 @@ impl EventDecoder {
             Self::extract_log_fields(log);
 
         if let Ok(sig) = SignatureManagerEvents::decode_raw_log(&parsed_topics, &data) {
-            info!("Decoded SignatureManagerEvents: {:?}", sig);
+            trace!("Decoded SignatureManagerEvents: {:?}", sig);
             return Self::convert_signature_manager_event(
                 sig, block_num, block_hash, removed, tx_hash,
             );
@@ -236,7 +236,7 @@ impl EventDecoder {
             Self::extract_log_fields(log);
 
         if let Ok(bm) = BitcoinManagerEvents::decode_raw_log(&parsed_topics, &data) {
-            info!("Decoded BitcoinManagerEvents: {:?}", bm);
+            trace!("Decoded BitcoinManagerEvents: {:?}", bm);
             return Self::convert_bitcoin_manager_event(bm, block_num, tx_hash);
         }
         None

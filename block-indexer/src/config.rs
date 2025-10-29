@@ -12,8 +12,8 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn load(base_path: Option<&String>) -> Result<Self, ConfigError> {
-        CommonConfig::load_config::<Self>(base_path, CARGO_PKG_NAME)
+    pub fn load(env_name: Option<String>) -> Result<Self, ConfigError> {
+        CommonConfig::load_config::<Self>(env_name)
     }
 }
 
@@ -33,26 +33,22 @@ mod tests {
     use std::path::Path;
     use tempfile::TempDir;
 
-    const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
-
     #[test]
     fn test_config_load_when_custom_config_set_should_load_config_successfully() {
-        let config_path = &format!("{}/tests/config", CARGO_MANIFEST_DIR);
-        let config: Config = Config::load(Some(config_path)).expect("Failed to load config");
+        // using base.yaml
+        let config: Config =
+            CommonConfig::load_config::<Config>(None).expect("Failed to load config");
 
-        // indexer
         assert_eq!(
-            "0xf6e292fd22f1dc5a1ef4022b7fe4a959f90ec0b9f5fc0869af64b99195511b22",
+            "0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c",
             config.indexer.initial_block_hash
         );
-        assert_eq!("/fake/storage", config.indexer.storage.path);
-        assert_eq!(1000, config.indexer.cache.size);
-
-        // provider
         assert_eq!(
-            "ws://fake-server:4445/websocket",
-            config.provider.rootstock.url
+            "/your_base_path/.union_bridge/database/multi-client-1",
+            config.indexer.storage.path
         );
+        assert_eq!(1000, config.indexer.cache.size);
+        assert_eq!("ws://127.0.0.1:8545", config.provider.rootstock.url);
     }
 
     #[test]

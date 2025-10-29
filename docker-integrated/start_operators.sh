@@ -57,6 +57,7 @@ while [[ $# -gt 0 ]]; do
       if [[ "$2" == "alphanet" ]]; then
         OP_PREFIX="testnet_"
         ENV_FILE="${SCRIPT_DIR}/.env.alphanet"
+        ENV_NAME="docker-alphanet"
         if [[ -z "$UC_TAG" ]]; then
           UC_TAG="latest-alphanet"
         fi
@@ -64,6 +65,7 @@ while [[ $# -gt 0 ]]; do
       elif [[ "$2" == "local" ]]; then
         OP_PREFIX=""
         ENV_FILE="${SCRIPT_DIR}/.env.local"
+        ENV_NAME="docker-local"
         if [[ -z "$UC_TAG" ]]; then
           UC_TAG="latest-anvil"
         fi
@@ -128,7 +130,7 @@ for i in "${!USER_API_PORTS[@]}"; do
   BITVMX_P2P_PORT=${BITVMX_P2P_PORTS[$i]}
   CLIENT_OP=${CLIENT_OPS[$i]}
   
-  DOCKER_CMD="USER_API_PORT=${USER_API_PORT} BITVMX_PORT=${BITVMX_PORT} BITVMX_P2P_HOST=${BITVMX_P2P_HOST} BITVMX_P2P_PORT=${BITVMX_P2P_PORT} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose -p op_$((i+1)) --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
+  DOCKER_CMD="USER_API_PORT=${USER_API_PORT} BITVMX_PORT=${BITVMX_PORT} BITVMX_P2P_HOST=${BITVMX_P2P_HOST} BITVMX_P2P_PORT=${BITVMX_P2P_PORT} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} ENV_NAME=${ENV_NAME} docker compose -p op_$((i+1)) --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
   echo
   echo "Starting operator $((i+1)) with command: '${DOCKER_CMD}'"
   eval "${DOCKER_CMD}"

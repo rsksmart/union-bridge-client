@@ -1380,7 +1380,7 @@ where
     }
 
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
-        trace!(
+        info!(
             "Committee membership: committees={:?}",
             self.global_context.my_committees()
         );

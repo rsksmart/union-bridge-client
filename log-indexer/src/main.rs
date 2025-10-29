@@ -13,7 +13,7 @@ use log_indexer::{indexer::LogIndexer, store::RawLogStore};
 use std::sync::mpsc;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
-const CONFIG_CLI_FLAG: &str = "config-path";
+const ENV_CLI_FLAG: &str = "env";
 
 fn main() -> Result<()> {
     let matches = Command::new("Union Bridge Log Indexer")
@@ -25,19 +25,26 @@ fn main() -> Result<()> {
                 .help("Sets the path to the log4rs configuration file"),
         )
         .arg(
-            Arg::new(CONFIG_CLI_FLAG)
-                .short('c')
-                .long(CONFIG_CLI_FLAG)
-                .value_name("PATH")
-                .help("Sets the path to the configuration directory"),
+            Arg::new(ENV_CLI_FLAG)
+                .short('e')
+                .long(ENV_CLI_FLAG)
+                .value_name("ENV")
+                .help("Environment name (e.g., local, alphanet, stage)"),
         )
         .get_matches();
 
     let logger_cfg_path = matches.get_one::<String>(LOGGER_CLI_FLAG);
     Logger::init(logger_cfg_path).expect("Failed to load logger");
 
-    let config_path = matches.get_one::<String>(CONFIG_CLI_FLAG);
-    let config: Config = Config::load(config_path).expect("Failed to load config");
+    let env_name = matches.get_one::<String>(ENV_CLI_FLAG).cloned();
+
+    info!(
+        "Loading configuration for environment: {}",
+        env_name.clone().unwrap_or_else(|| "NONE".to_string())
+    );
+    info!("Environment variables with prefix UB__ will override config values");
+
+    let config: Config = Config::load(env_name).expect("Failed to load config");
 
     let shutdown_flag = ShutdownFlag::init();
 
