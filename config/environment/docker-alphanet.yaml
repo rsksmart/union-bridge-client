@@ -12,6 +12,7 @@ indexer:
 
 provider:
   rootstock:
+    # ESTO
     url: "ws://10.1.0.53:4445" # if running in AWS and accessed from AWS
     # url: "ws://rskj-01.testnet.ub.iovlabs.net:4445/websocket" # if running in AWS and accessed from outside
 
@@ -20,6 +21,7 @@ bitcoin_network: "testnet"
 contracts:
   - name: "FakePegManager"
     address: "0x3Aa5ebB10DC797CAC828524e59A333d0A371443c"
+    # ESTO
   - name: "PegManager"
     address: "0xAB058E8E6963B62B1E091a452e44a4f5e3C8B879"
   - name: "SignatureManager"
@@ -63,5 +65,6 @@ storage_path: "/app/db/" # This should match the volume mount in docker-compose
 # =============================================================================
 
 key_store:
+  # ESTO
   user_path: "/keystore/user-key.json" # should match the one configured in key-setup.sh
   member_path: "/keystore/member-key.json"

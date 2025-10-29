@@ -1,3 +1,13 @@
+# coordinator
+broker_client_id = 1
+storage_path = "/your_base_path/.union_bridge/coordinator"
+
+# user-api
+coordinator_broker_client_id = 1
+broker_server_port = 9007
+http_server_port = 8080
+
+# common
 bitcoin_network = "regtest"
 
 [indexer]
@@ -49,12 +59,22 @@ name = "FakeMemberRegistry"
 address = "0x8901234567890123456789012345678901234567"
 
 # coordinator
-log_broker= { host = "127.0.0.1", port = 9002}
-block_broker= { host = "127.0.0.1", port = 9003}
-user_broker= { host = "127.0.0.1", port = 9004}
-bitvmx_broker= { host = "127.0.0.1", port = 9005}
-broker_client_id = 1
-storage_path = "/your_base_path/.union_bridge/coordinator"
+
+[log_broker]
+host = "127.0.0.1"
+port = 9002
+
+[block_broker]
+host = "127.0.0.1"
+port = 9003
+
+[user_broker]
+host = "127.0.0.1"
+port = 9004
+
+[bitvmx_broker]
+host = "127.0.0.1"
+port = 9005
 
 # log-indexer
 [log_notifier]
@@ -71,8 +91,3 @@ url = "0.0.0.0:9001"
 path = "/your_base_path/.union_bridge/keystore/multi-client-1"
 [transaction]
 gas_bumps_t1 = 3
-
-# user-api
-coordinator_broker_client_id = 1
-broker_server_port = 9007
-http_server_port = 8080

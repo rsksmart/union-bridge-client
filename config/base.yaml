@@ -89,6 +89,7 @@ http_server_port: 40001
 # =============================================================================
 
 key_store:
+  # ESTO
   user_path: "/your_base_path/.union_bridge/keystore/multi-client-1-user"
   member_path: "/your_base_path/.union_bridge/keystore/multi-client-1-member"
 

@@ -23,5 +23,6 @@
 # =============================================================================
 
 key_store:
+  # ESTO
   user_path: "test_keystore/user-keyfile"
   member_path: "test_keystore/member-keyfile"

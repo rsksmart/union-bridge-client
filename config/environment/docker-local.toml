@@ -1,14 +1,17 @@
+# coordinator
+storage_path = "/app/db/"                 # This should match the volume mount in docker-compose
+[block_broker]
+host = "block-indexer"
+[log_broker]
+host = "log-indexer"
+[user_broker]
+host = "user-api"
+
 [provider.rootstock]
 url = "ws://127.0.0.1:8545"
 
 [indexer.storage]
 path = "/app/db/"
-
-# coordinator
-block_broker = { host = "block-indexer" }
-log_broker = { host = "log-indexer" }
-user_broker = { host = "user-api" }
-storage_path = "/app/db/"                 # This should match the volume mount in docker-compose
 
 # transaction_dispatcher
 [key_store]

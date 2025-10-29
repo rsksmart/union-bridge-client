@@ -1,7 +1,5 @@
+#common
 bitcoin_network = "testnet"
-
-[provider.rootstock]
-url = "ws://127.0.0.1:8545"
 
 contracts = [
   { name = "FakePegManager", address = "0x3Aa5ebB10DC797CAC828524e59A333d0A371443c" },
@@ -12,14 +10,22 @@ contracts = [
   { name = "StreamManager", address = "0xf54ea8E611c58D54EbC5b9cc20e8F85841367fB5" },
 ]
 
+# coordinator
+storage_path = "/app/db/"                 # This should match the volume mount in docker-compose
+[block_broker]
+host = "block-indexer"
+[log_broker]
+host = "log-indexer"
+[user_broker]
+host = "user-api"
+
+# common
+[provider.rootstock]
+url = "ws://127.0.0.1:8545"
+
 [common.indexer.storage]
 path = "/app/db/"
 
-# coordinator
-block_broker = { host = "block-indexer" }
-log_broker = { host = "log-indexer" }
-user_broker = { host = "user-api" }
-storage_path = "/app/db/"                 # This should match the volume mount in docker-compose
-
 # transaction_dispatcher
-key_store.path = "/keystore/key.json"
+[key_store]
+path = "/keystore/key.json"

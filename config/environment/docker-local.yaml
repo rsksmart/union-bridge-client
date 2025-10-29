@@ -46,5 +46,6 @@ storage_path: "/app/db/" # This should match the volume mount in docker-compose
 # =============================================================================
 
 key_store:
+  # ESTO
   user_path: "/keystore/user-key.json"
   member_path: "/keystore/member-key.json"
