@@ -314,6 +314,14 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
         PegManagerErrors::NotEnoughConfirmations(e) => {
             DomainErrors::MissingConfirmationsOnNativeBridge(format!("{:?}", e))
         }
+        PegManagerErrors::InvalidSlotState(e) => {
+            // Extract actual and expected values from the error
+            // The InvalidSlotState error typically contains actual and expected slot states
+            DomainErrors::InvalidSlotState {
+                expected: e.expected as u8,
+                actual: e.actual as u8
+            }
+        }
         // Unhandled
         _ => DomainErrors::UnhandledContractError(format!("{:?}", e)),
     })
