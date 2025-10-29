@@ -869,6 +869,10 @@ where
                 );
                 self.handle_transaction_status_received(flow_id, tx_status.clone())?;
             }
+            // Handle SetupCompleted message from BitVMX
+            OutgoingBitVMXApiMessages::SetupCompleted(program_id) => {
+                info!("BitVMX setup completed for program_id: {}", program_id);
+            }
             _ => {}
         }
 
