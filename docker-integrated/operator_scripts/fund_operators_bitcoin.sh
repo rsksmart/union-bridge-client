@@ -2,10 +2,8 @@
 set -euo pipefail
 
 # Prepare Bitcoin funding for operator stacks.
-# - If --env local: shows mine_utxo and mine_block steps (for Regtest/local).
-# - Otherwise: only shows the send_to_address step.
-# This script queries each user-api for the BitVMX funding address and prints
-# the exact commands to run inside the bitcoin-wallet CLI.
+# - If --env local: fetches all 4 operators, shows mine_utxo and mine_block steps (for Regtest/local).
+# - If --env alphanet: fetches the single operator running on this host.
 
 ENVIRONMENT=""
 
@@ -14,8 +12,12 @@ usage() {
 Usage: $(basename "$0") --env <env>
 
 Options:
-  -e, --env <env>   Environment name (mandatory). If 'local', includes mine_utxo/mine_block; otherwise only send_to_address.
+  -e, --env <env>   Environment name (mandatory). Use 'local' or 'alphanet'.
   -h, --help        Show this help and exit.
+
+Examples:
+  $(basename "$0") --env local                  # Fund all 4 operators locally
+  $(basename "$0") --env alphanet               # Fund the operator on this alphanet host
 USAGE
 }
 
@@ -44,7 +46,20 @@ if [[ -z "$ENVIRONMENT" ]]; then
   exit 1
 fi
 
-for port in 40001 40002 40003 40004; do
+# Determine which operators to query
+if [[ "$ENVIRONMENT" == "local" ]]; then
+  PORTS=(40001 40002 40003 40004)
+  PROJECTS=(op_1 op_2 op_3 op_4)
+  EXPECTED_COUNT=4
+else
+  # alphanet: single operator on this host (always uses port 40001 and docker-integrated project)
+  PORTS=(40001)
+  PROJECTS=(docker-integrated)
+  EXPECTED_COUNT=1
+fi
+
+# Query user-api endpoints
+for port in "${PORTS[@]}"; do
   echo "GET http://0.0.0.0:$port/member/bitvmx-address"
   curl -sS -X GET "http://0.0.0.0:$port/member/bitvmx-address"
   echo
@@ -54,8 +69,8 @@ sleep 10
 
 # -------- Collect BitVMX funding addresses from logs --------
 addresses=()
-found_projects=()
-for project in op_1 op_2 op_3 op_4; do
+
+for project in "${PROJECTS[@]}"; do
   addr=$(
     docker compose -p "$project" logs 2>/dev/null \
     | grep "Received BitVMX Funding Address:" \
@@ -64,22 +79,25 @@ for project in op_1 op_2 op_3 op_4; do
     | tail -n 1
   )
   if [ -n "${addr:-}" ]; then
-    echo "$project -> $addr" >&2
+    if [[ "$ENVIRONMENT" == "local" ]]; then
+      echo "$project -> $addr" >&2
+    else
+      echo "operator -> $addr" >&2
+    fi
     addresses+=("$addr")
-    found_projects+=("$project")
   else
     echo "No BitVMX funding address found in $project logs" >&2
   fi
 done
 
-expected=4
 found=${#addresses[@]}
 if (( found == 0 )); then
-  echo "Error: could not fetch any BitVMX funding addresses from operator logs. Ensure the operator stacks are running and that bitcoind is up (start_blockchains.sh --env local)." >&2
+  echo "Error: could not fetch any BitVMX funding addresses from operator logs. Ensure the operator stack(s) are running." >&2
   exit 1
 fi
-if (( found < expected )); then
-  echo "Error: expected $expected BitVMX funding addresses but found $found. Ensure all operator stacks are running and have emitted the funding address log line." >&2
+if (( found < EXPECTED_COUNT )); then
+  echo "Error: expected $EXPECTED_COUNT BitVMX funding address(es) but found $found. Ensure all required operator stacks are running and have emitted the funding address log line." >&2
+  exit 1
 fi
 
 # Join addresses with commas
@@ -90,16 +108,21 @@ if [[ "$ENVIRONMENT" == "local" ]]; then
 Run the following commands in the bitcoin-wallet CLI (Regtest):
 1 =>    clear_db   (if you see a misaligned utxos error)
 1 =>    mine_utxo 900000000
-2 =>    send_to_address $addr_array 20010000
+2 =>    send_to_address $addr_array 20002000
 3 =>    mine_block
 
 Note: See the bitcoin-wallet README for how to start and use the CLI: ../bitcoin-wallet/README.md
 EOF
+elif [[ "$ENVIRONMENT" == "alphanet" ]]; then
+  cat <<EOF
+Run the following command in your bitcoin-wallet or wallet tooling for alphanet:
+send_to_address $addr_array 20002000
+
+Address: ${addresses[0]}
+EOF
 else
   cat <<EOF
 Run the following command in your bitcoin-wallet or wallet tooling for '$ENVIRONMENT':
-send_to_address $addr_array 20010000
-
-Note: On non-local environments you should not attempt to mine_utxo or mine_block.
+send_to_address $addr_array 20002000
 EOF
 fi
