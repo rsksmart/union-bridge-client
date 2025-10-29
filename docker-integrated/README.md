@@ -13,8 +13,8 @@ When pushing or pulling to a private GitHub container registry, Docker asks for 
 Make sure you create the token with registry access. You can set up the token by running the following command:
 
 ```bash
+export GITHUB_REGISTRY_TOKEN=<your-token>
 echo "$GITHUB_REGISTRY_TOKEN" | docker login ghcr.io -u "user" --password-stdin.
-
 ```
 ## How to run it
 
@@ -99,7 +99,7 @@ If the contracts code changes (eg. new tag), you must rebuild the `deploy-contra
 bash start_blockchains.sh --env local --new-contracts-version --fresh up -d
 ```
 
-### 3) Start or stop the 4 operator stacks
+### 3) Start or stop operator stacks
 
 A `MEMBER_BITCOIN_WIF` needs to be exported in the environment. It is the Bitcoin private key (WIF) of the member/operator (used by BitVMX operations).
 The `bitcoin-wallet` wallet needs to be using this key when generating operator transactions. You can generate one via the `bitcoin-wallet` with `generate_address`.
@@ -113,20 +113,37 @@ bash start_operators.sh --help
 
 #### 3.1) Start local/dev (local bitcoind + anvil) using published images:
 
+Start a single operator (operator 1):
+
 ```bash
-bash start_operators.sh --env local up -d
+bash start_operators.sh --op one --env local up -d
 ```
 
-or explicitly specify the tag:
+Start all 4 operators:
 
 ```bash
-bash start_operators.sh --env local --tag latest-anvil up -d
+bash start_operators.sh --op all --env local up -d
+```
+
+Or explicitly specify the tag:
+
+```bash
+bash start_operators.sh --op one --env local --tag latest-anvil up -d
+bash start_operators.sh --op all --env local --tag latest-anvil up -d
 ```
 
 #### 3.2) Start alphanet:
 
+Start a single operator (operator 1):
+
 ```bash
-bash start_operators.sh --env alphanet --tag latest-alphanet up -d
+bash start_operators.sh --op one --env alphanet --tag latest-alphanet up -d
+```
+
+Start all 4 operators:
+
+```bash
+bash start_operators.sh --op all --env alphanet --tag latest-alphanet up -d
 ```
 
 #### 3.3) Fund operator accounts (Rootstock and BitVMX Bitcoin accounts)
@@ -169,18 +186,31 @@ bash operator_scripts/fund_operators_bitcoin.sh --env alphanet
 Stop and remove everything (example for local/dev):
 
 ```bash
-bash start_operators.sh --env local down --volumes
+# Stop single operator (operator 1)
+bash start_operators.sh --op one --env local down --volumes
+
+# Stop all operators
+bash start_operators.sh --op all --env local down --volumes
 ```
 
 ### 4) Viewing logs per operator project
 
-You can tail logs per operator project name (`op_1`..`op_4`):
+You can tail logs per operator project name (`op_1`..`op_4`) using either docker compose directly or the `start_operators.sh` script:
+
+Using docker compose directly:
 
 ```bash
 docker compose -p op_1 logs -f
 docker compose -p op_2 logs -f
 docker compose -p op_3 logs -f
 docker compose -p op_4 logs -f
+```
+
+Using the start_operators.sh script:
+
+```bash
+bash start_operators.sh --op one --env local logs -f
+bash start_operators.sh --op all --env local logs
 ```
 
 ### 5) Interacting with the user-api
@@ -209,7 +239,8 @@ Currently, there are two main tags for the Docker images used in this setup:
 
 ## Notes
 
-- `start_operators.sh` forwards standard docker compose arguments to docker compose (e.g., up, down, logs, ps, -d,
+- `start_operators.sh` requires the `--op` flag to specify which operator(s) to manage: use `one` to run operator 1, or `all` to run all 4 operators.
+- The script forwards standard docker compose arguments to docker compose (e.g., up, down, logs, ps, -d,
   --force-recreate). However, build is explicitly forbidden; use published images from the registry by tag instead.
 - The script intentionally forbids building from source (build args are blocked). It is designed to consume registry
   images by tag.
@@ -247,10 +278,14 @@ Restart clean blockchains
 bash start_blockchains.sh --env local --fresh up -d
 ```
 
-Restart clean operators
+Restart clean operators:
 
 ```bash
-bash start_operators.sh --env local --fresh up -d
+# Single operator (operator 1)
+bash start_operators.sh --op one --env local --fresh up -d
+
+# All operators
+bash start_operators.sh --op all --env local --fresh up -d
 ```
 
 And now you can start operators as explained above.

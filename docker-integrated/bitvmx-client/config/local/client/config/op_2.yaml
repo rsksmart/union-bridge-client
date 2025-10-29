@@ -10,15 +10,15 @@ key_manager:
   key_derivation_path: m/101/1/0/0/
 
 key_storage:
-  password: secret_password_2
-  path: /tmp/regtest/op_1/keys.db
+  password: secret_password_3
+  path: /tmp/regtest/op_2/keys.db
 
 storage:
-  path: /tmp/regtest/op_1/storage.db
+  path: /tmp/regtest/op_2/storage.db
 
 p2p:
-  address: /ip4/172.20.0.11/tcp/61180
-  key: config/keys/op_1.key
+  address: /ip4/0.0.0.0/tcp/61181
+  key: config/keys/op_2.key
   peer_id_file: peer_id
   timeout: 5
 
@@ -28,9 +28,9 @@ coordinator:
 #  estimate_fee: 8
 
 broker_storage: 
-  path: /tmp/regtest/op_1/broker.db
+  path: /tmp/regtest/op_2/broker.db
 
-broker_port: 22222
+broker_port: 33333
 
 client: 
   # Number of retries for requests
@@ -39,6 +39,5 @@ client:
   retry_delay: 1000
 
 wallet:
-  db_path: /tmp/regtest/op_1/wallet.db
+  db_path: /tmp/regtest/op_2/wallet.db
   start_height: 0
-

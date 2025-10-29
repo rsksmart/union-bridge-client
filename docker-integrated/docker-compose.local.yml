@@ -1,0 +1,18 @@
+#####################################################################################################################################
+# LOCAL ENVIRONMENT OVERRIDE: Adds BitVMX P2P shared network for multi-operator communication
+#####################################################################################################################################
+
+services:
+  bitvmx-client:
+    networks:
+      bitvmx-union-network:
+      # for bitvmx p2p communication between operators (only needed in local with all 4 operators)
+      bitvmx-shared-network:
+        ipv4_address: ${BITVMX_P2P_HOST}
+
+networks:
+  # for bitvmx p2p communication (union-client does not need to be in this network as its communication is project-network internal)
+  bitvmx-shared-network:
+    external: true
+    name: bitvmx-shared-network
+

@@ -20,8 +20,8 @@ services:
       # for bitvmx-client -> bitvmx-client communication (through shared network)
       - ${BITVMX_P2P_PORT}:${BITVMX_P2P_PORT}
     volumes:
-      - ./config/client/config:/app/config
-      - ./config/broker/config:/app/rust-bitvmx-workspace/rust-fakep2p/broker/config
+      - ./config/${ENVIRONMENT}/client/config:/app/config
+      - ./config/${ENVIRONMENT}/broker/config:/app/rust-bitvmx-workspace/rust-fakep2p/broker/config
       - db-bitvmx:/tmp
 
 volumes:
