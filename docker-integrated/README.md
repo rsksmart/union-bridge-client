@@ -239,12 +239,22 @@ Currently, there are two main tags for the Docker images used in this setup:
 
 ## Notes
 
-- `start_operators.sh` requires the `--op` flag to specify which operator(s) to manage: use `one` to run operator 1, or `all` to run all 4 operators.
-- The script forwards standard docker compose arguments to docker compose (e.g., up, down, logs, ps, -d,
-  --force-recreate). However, build is explicitly forbidden; use published images from the registry by tag instead.
-- The script intentionally forbids building from source (build args are blocked). It is designed to consume registry
-  images by tag.
-- It will create the external Docker network `bitvmx-shared-network` (`172.20.0.0/16`) if it doesn't exist.
+- **`start_operators.sh` environment-specific behavior:**
+  - **Local**: Runs all 4 operators on one host. The `--op` flag is not allowed.
+    - Uses `CLIENT_OP` values: `op_1`, `op_2`, `op_3`, `op_4`
+    - Config location: `bitvmx-client/config/local/client/config/op_X.yaml`
+  - **Alphanet**: Runs one operator per host. The `--op <ID>` flag (1-4) is required for startup commands (up, restart, start, create) but not allowed for other commands (logs, ps, down, etc.).
+    - Uses `CLIENT_OP` value: `testnet_op_X` (where X is the operator ID from `--op` flag)
+    - Config location: `bitvmx-client/config/alphanet/client/config/testnet_op_X.yaml`
+    - The operator ID determines which BitVMX configuration file is loaded
+- **Funding scripts** (`fund_operators_bitcoin.sh` and `fund_operators_rootstock.sh`):
+  - Only require `--env` flag
+  - Automatically detect which operator(s) to query based on environment
+  - **Local**: Query all 4 operators
+  - **Alphanet**: Query the single operator on this host using the `docker-integrated` project name
+- The script forwards standard docker compose arguments (e.g., up, down, logs, ps, -d, --force-recreate). However, build is explicitly forbidden; use published images from the registry by tag instead.
+- The script intentionally forbids building from source (build args are blocked). It is designed to consume registry images by tag.
+- For local environment, it will create the external Docker network `bitvmx-shared-network` (`172.20.0.0/16`) if it doesn't exist.
 
 ## Troubleshooting
 
