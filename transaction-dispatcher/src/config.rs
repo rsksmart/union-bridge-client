@@ -110,21 +110,18 @@ mod tests {
         // provider - using values from base.yaml
         assert_eq!("ws://127.0.0.1:8545", config.provider().rootstock.url);
         assert_eq!("0.0.0.0:9001", config.server.url);
-        assert_eq!(
-            "ws://fake-server:4445/websocket",
-            config.provider().rootstock.url
-        );
+        assert_eq!("ws://127.0.0.1:8545", config.provider().rootstock.url);
 
         // server
-        assert_eq!("0.0.0.0:3000", config.server.url);
+        assert_eq!("0.0.0.0:9001", config.server.url);
 
         // key store
         assert_eq!(
-            "/fake/path/.union_bridge/keystore/user-key.json",
+            "/your_base_path/.union_bridge/keystore/multi-client-1-user",
             config.key_store().user_path
         );
         assert_eq!(
-            "/fake/path/.union_bridge/keystore/member-key.json",
+            "/your_base_path/.union_bridge/keystore/multi-client-1-member",
             config.key_store().member_path
         );
         assert_eq!(3, config.transaction().gas_bumps_t1);
