@@ -36,4 +36,4 @@ thiserror = "2.0.12"
 lazy_static = "1.5.0"
 alloy-primitives = "1.2.1"
 alloy-provider = { version = "1.0.13"}
-union-contracts = { package = "union-bridge-contracts", git = "ssh://git@github.com/temp-rsk/bitvmx-union-bridge-contracts.git", branch = "v0.0.1-alpha.2_tweaks" }
+union-contracts = { package = "union-bridge-contracts", git = "ssh://git@github.com/temp-rsk/bitvmx-union-bridge-contracts.git", tag = "v0.1.5-alpha" }
