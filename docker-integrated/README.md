@@ -215,20 +215,36 @@ bash start_operators.sh --op all --env local logs
 
 ### 5) Interacting with the user-api
 
-Each stack exposes a user-api:
+**Local environment:** Each operator stack exposes a user-api on different ports:
 
 - `op_1` -> http://localhost:40001
 - `op_2` -> http://localhost:40002
 - `op_3` -> http://localhost:40003
 - `op_4` -> http://localhost:40004
 
-Example: apply 4 operators to a stream (Provers ×2, Verifiers ×2):
+**Alphanet environment:** Each host runs one operator, accessible at:
+
+- http://localhost:40001 (or your host's IP/domain)
+
+#### Applying operators to a stream
+
+Use the `committee_setup.sh` script to apply operators to a stream:
+
+**Local:** Apply all 4 operators (2 Provers, 2 Verifiers):
 
 ```bash
-bash operator_scripts/committee_setup.sh --stream-id <STREAM_ID>
+bash operator_scripts/committee_setup.sh --stream-id <STREAM_ID> --env local
 ```
 
-The script issues POSTs to `/apply-stream` on each user-api port.
+**Alphanet:** Apply the single operator on this host with a specific role:
+
+```bash
+# As Prover
+bash operator_scripts/committee_setup.sh --stream-id <STREAM_ID> --env alphanet --role Prover
+
+# As Verifier
+bash operator_scripts/committee_setup.sh --stream-id <STREAM_ID> --env alphanet --role Verifier
+```
 
 ## Tags and images
 
@@ -252,6 +268,10 @@ Currently, there are two main tags for the Docker images used in this setup:
   - Automatically detect which operator(s) to query based on environment
   - **Local**: Query all 4 operators
   - **Alphanet**: Query the single operator on this host using the `docker-integrated` project name
+- **Committee setup script** (`committee_setup.sh`):
+  - Requires `--env` and `--stream-id` flags
+  - **Local**: Applies all 4 operators (2 Provers, 2 Verifiers) to the stream
+  - **Alphanet**: Requires `--role` flag (Prover or Verifier) and applies only the single operator on this host
 - The script forwards standard docker compose arguments (e.g., up, down, logs, ps, -d, --force-recreate). However, build is explicitly forbidden; use published images from the registry by tag instead.
 - The script intentionally forbids building from source (build args are blocked). It is designed to consume registry images by tag.
 - For local environment, it will create the external Docker network `bitvmx-shared-network` (`172.20.0.0/16`) if it doesn't exist.
