@@ -103,12 +103,9 @@ mod tests {
 
     #[test]
     fn test_config_load_when_custom_config_set_should_load_config_successfully() {
-        // using base.yaml
         let config: ConfigAsBin =
             CommonConfig::load_config::<ConfigAsBin>(None).expect("Failed to load config");
 
-        // provider - using values from base.yaml
-        assert_eq!("ws://127.0.0.1:8545", config.provider().rootstock.url);
         assert_eq!("0.0.0.0:9001", config.server.url);
         assert_eq!("ws://127.0.0.1:8545", config.provider().rootstock.url);
 

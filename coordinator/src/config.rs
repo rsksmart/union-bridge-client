@@ -86,4 +86,26 @@ mod tests {
         );
         Ok(())
     }
+
+    #[test]
+    fn test_load_base_toml_config() {
+        let config: Config =
+            CommonConfig::load_config::<Config>(None).expect("Failed to load base config");
+
+        assert_eq!("127.0.0.1", config.log_broker.host);
+        assert_eq!(9002, config.log_broker.port);
+        assert_eq!("127.0.0.1", config.block_broker.host);
+        assert_eq!(9003, config.block_broker.port);
+        assert_eq!("127.0.0.1", config.user_broker.host);
+        assert_eq!(9004, config.user_broker.port);
+        assert_eq!("127.0.0.1", config.bitvmx_broker.host);
+        assert_eq!(9005, config.bitvmx_broker.port);
+        assert_eq!(1, config.broker_client_id);
+        assert_eq!(
+            "/your_base_path/.union_bridge/coordinator",
+            config.storage_path
+        );
+        assert_eq!("regtest", config.bitcoin_network);
+        assert_eq!(8, config.contracts.len());
+    }
 }

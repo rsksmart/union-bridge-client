@@ -58,17 +58,7 @@ mod tests {
         let config: Config =
             CommonConfig::load_config::<Config>(None).expect("Failed to load config");
 
-        assert_eq!(
-            "0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c",
-            config.indexer.initial_block_hash
-        );
-        assert_eq!(
-            "/your_base_path/.union_bridge/database/multi-client-1",
-            config.indexer.storage.path
-        );
-        assert_eq!(1000, config.indexer.cache.size);
-        assert_eq!("ws://127.0.0.1:8545", config.provider.rootstock.url);
-        assert_eq!(8, config.contracts.len());
+        assert_eq!(9006, config.log_notifier.broker_port);
     }
 
     #[test]
@@ -77,7 +67,6 @@ mod tests {
             CommonConfig::load_config::<Config>(None).expect("Failed to load config");
         let contracts = config.load_managed_contracts();
 
-        // using values from base.yaml (8 contracts)
         assert_eq!(8, contracts.len());
     }
 
@@ -123,7 +112,7 @@ root:
             "test_crate",
         );
 
-        println!("result: {:?}", result);
+        println!("result: {result:?}");
 
         assert!(result.is_ok());
         assert!(Path::new(&format!("{log_file}.log")).exists());
