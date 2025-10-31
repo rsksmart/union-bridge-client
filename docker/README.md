@@ -9,7 +9,7 @@ By default, the compose will use:
 
 - the `config/docker` folder for the Union Client config files
     - you can override any configuration value using environment variables prefixed with `UB__` matching the config structure, e.g.
-      `UB__block_broker__ip=192.168.1.100`
+      `UB__COORDINATOR__BLOCK_BROKER__HOST=192.168.1.100`
     - see the main [README.md](../README.md#configuration-overrides) for detailed examples and mapping rules
 - the `docker/.env` for `docker-compose` file environment variables
 

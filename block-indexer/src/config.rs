@@ -8,7 +8,7 @@ const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub struct Config {
     pub indexer: IndexerConfig,
     pub provider: ProviderConfig,
-    #[serde(rename = "block-indexer")]
+    #[serde(rename = "block_indexer")]
     pub block_indexer_config: BlockIndexerConfig,
 }
 #[derive(Debug, Deserialize)]

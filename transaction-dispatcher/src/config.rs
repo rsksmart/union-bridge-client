@@ -17,7 +17,7 @@ pub struct ConfigAsBin {
 pub struct ConfigAsLib {
     pub provider: ProviderConfig,
     pub contracts: Vec<ContractConfig>,
-    #[serde(rename = "transaction-dispatcher")]
+    #[serde(rename = "transaction_dispatcher")]
     pub tx_dispatcher_config: TxDispatcherConfig,
 }
 

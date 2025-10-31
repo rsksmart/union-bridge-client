@@ -271,13 +271,14 @@ set_multi_client_env() {
     fi
     
     # Use indirect variable expansion to get values from multiclient.env
+    # Note: Variable names follow the nested TOML structure (e.g., [transaction-dispatcher], [coordinator], etc.)
     local var_name
-    var_name="BLOCK_NOTIFIER_BROKER_PORT_$ID" && export UB__BLOCK_NOTIFIER__BROKER_PORT="${!var_name}"
-    var_name="LOG_NOTIFIER_BROKER_PORT_$ID" && export UB__LOG_NOTIFIER__BROKER_PORT="${!var_name}"
-    var_name="BLOCK_BROKER_PORT_$ID" && export UB__BLOCK_BROKER__PORT="${!var_name}"
-    var_name="LOG_BROKER_PORT_$ID" && export UB__LOG_BROKER__PORT="${!var_name}"
-    var_name="USER_BROKER_PORT_$ID" && export UB__USER_BROKER__PORT="${!var_name}"
-    var_name="BROKER_CLIENT_ID_$ID" && export UB__BROKER_CLIENT_ID="${!var_name}"
+    var_name="BLOCK_NOTIFIER_BROKER_PORT_$ID" && export UB__BLOCK_INDEXER__BLOCK_NOTIFIER__BROKER_PORT="${!var_name}"
+    var_name="LOG_NOTIFIER_BROKER_PORT_$ID" && export UB__LOG_INDEXER__LOG_NOTIFIER__BROKER_PORT="${!var_name}"
+    var_name="BLOCK_BROKER_PORT_$ID" && export UB__COORDINATOR__BLOCK_BROKER__PORT="${!var_name}"
+    var_name="LOG_BROKER_PORT_$ID" && export UB__COORDINATOR__LOG_BROKER__PORT="${!var_name}"
+    var_name="USER_BROKER_PORT_$ID" && export UB__COORDINATOR__USER_BROKER__PORT="${!var_name}"
+    var_name="BROKER_CLIENT_ID_$ID" && export UB__COORDINATOR__BROKER_CLIENT_ID="${!var_name}"
     var_name="STORAGE_PATH_$ID" && export UB__INDEXER__STORAGE__PATH="${BASE_STORAGE_PATH}/.union_bridge/database/${!var_name}"
     var_name="STORAGE_PATH_$ID" && export UB__STORAGE_PATH="${BASE_STORAGE_PATH}/.union_bridge/database/${!var_name}"
     var_name="KEY_STORE_PATH_$ID" && export UB__KEY_STORE__USER_PATH="${BASE_STORAGE_PATH}/.union_bridge/keystore/${!var_name}-user"
@@ -286,8 +287,8 @@ set_multi_client_env() {
     var_name="COORDINATOR_BROKER_CLIENT_ID_$ID" && export UB__COORDINATOR_BROKER_CLIENT_ID="${!var_name}"
     var_name="BROKER_SERVER_PORT_$ID" && export UB__BROKER_SERVER_PORT="${!var_name}"
     var_name="HTTP_SERVER_PORT_$ID" && export UB__HTTP_SERVER_PORT="${!var_name}"
-    var_name="BITVMX_BROKER_PORT_$ID" && export UB__BITVMX_BROKER__PORT="${!var_name}"
-    
+    var_name="BITVMX_BROKER_PORT_$ID" && export UB__COORDINATOR__BITVMX_BROKER__PORT="${!var_name}"
+
     export CLIENT_ID=$ID
 }
 

@@ -11,7 +11,7 @@ pub struct Config {
     pub indexer: IndexerConfig,
     pub provider: ProviderConfig,
     pub contracts: Vec<ContractConfig>,
-    #[serde(rename = "log-indexer")]
+    #[serde(rename = "log_indexer")]
     pub log_indexer_config: LogIndexerConfig,
 }
 

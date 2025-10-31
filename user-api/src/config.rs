@@ -7,7 +7,7 @@ const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 #[derive(Debug, Deserialize)]
 pub struct Config {
     pub bitcoin_network: String,
-    #[serde(rename = "user-api")]
+    #[serde(rename = "user_api")]
     pub user_api_config: UserApiConfig,
 }
 

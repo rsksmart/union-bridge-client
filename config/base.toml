@@ -53,20 +53,20 @@ bitvmx_broker.port = 9005
 broker_client_id = 1
 storage_path = "/your_base_path/.union_bridge/coordinator"
 
-[block-indexer]
+[block_indexer]
 
 block_notifier.broker_port = 9001
 
-[log-indexer]
+[log_indexer]
 
 log_notifier.broker_port = 9006
 
-[transaction-dispatcher]
+[transaction_dispatcher]
 
 key_store.path = "/your_base_path/.union_bridge/keystore/multi-client-1"
 transaction.gas_bumps_t1 = 3
 
-[user-api]
+[user_api]
 
 coordinator_broker_client_id = 1
 broker_server_port = 9007

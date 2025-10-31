@@ -33,5 +33,5 @@ block_broker.host = "block-indexer"
 log_broker.host = "log-indexer"
 user_broker.host = "user-api"
 
-[transaction-dispatcher]
+[transaction_dispatcher]
 key_store.path = "/keystore/key.json"
