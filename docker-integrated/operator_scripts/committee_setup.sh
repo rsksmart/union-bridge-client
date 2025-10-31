@@ -22,9 +22,9 @@ print_usage() {
   echo "  -h, --help         Show this help and exit"
   echo ""
   echo "Examples:"
-  echo "  $0 --stream-id 123 --env local                      # Apply all 4 operators locally"
-  echo "  $0 --stream-id 123 --env alphanet --role Prover     # Apply operator on alphanet as Prover"
-  echo "  $0 --stream-id 123 --env alphanet --role Verifier   # Apply operator on alphanet as Verifier"
+  echo "  $0 --stream-id 0 --env local                      # Apply all 4 operators locally"
+  echo "  $0 --stream-id 0 --env alphanet --role Prover     # Apply operator on alphanet as Prover"
+  echo "  $0 --stream-id 0 --env alphanet --role Verifier   # Apply operator on alphanet as Verifier"
 }
 
 while [[ $# -gt 0 ]]; do

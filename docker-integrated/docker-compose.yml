@@ -8,6 +8,8 @@ services:
   # ================================
   bitvmx-client:
     platform: linux/amd64
+    environment:
+      RUST_LOG: debug
     extends:
       file: ./bitvmx-client/docker-compose.yml
       service: bitvmx-client
