@@ -57,7 +57,7 @@ use transaction_dispatcher::types::{
     GetCommitteeInput, GetCommitteeOutput, GetCommunicationDataInput, GetMemberPublicKeysInput,
     P2PAddressParser,
 };
-use transaction_dispatcher::types::{RegisterPegoutInput, RegisterPegoutOutput};
+use transaction_dispatcher::types::RegisterPegoutInput;
 use union_contracts::bindings::peg_manager::PegManager::{PegoutRegistered, PegoutRequested};
 use uuid::Uuid;
 
@@ -481,19 +481,27 @@ where
                     Some(TxHash::try_from(result.transaction_hash.as_str())?);
             }
             Err(e) => {
-                // Check if it's an InvalidSlotState error (pegout already registered)
-                if let DomainErrors::InvalidSlotState { expected, actual } = &e {
-                    // This is expected when another committee member already registered the pegout
-                    info!(
-                        "Pegout already registered by another committee member for tx_id: {} \
-                         (slot state: expected={}, actual={} - this is expected behavior)",
-                        tx_id, expected, actual
-                    );
-                } else {
-                    bail!("Pegout registration failed for tx_id: {tx_id} - {e}");
+                // Check if it's an InvalidSlotState error
+                if let DomainErrors::InvalidSlotState { expected, actual } = e {
+                    const SLOT_STATE_LOCKED: u8 = 2;
+                    const SLOT_STATE_COMPLETED: u8 = 4;
+
+                    // Only consider it valid if we expected LOCKED but found COMPLETED
+                    // This means another committee member already completed the pegout registration
+                    if expected == SLOT_STATE_LOCKED && actual == SLOT_STATE_COMPLETED {
+                        info!(
+                            "Pegout already registered by another committee member for tx_id: {} \
+                             (expected slot state LOCKED, found COMPLETED - this is expected behavior)",
+                            tx_id
+                        );
+                        return Ok(());
+                    }
                 }
+
+                bail!("Pegout registration failed for tx_id: {tx_id} - {e}");
             }
         }
+
         Ok(())
     }
 
