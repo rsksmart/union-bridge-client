@@ -8,6 +8,11 @@ const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub struct Config {
     pub indexer: IndexerConfig,
     pub provider: ProviderConfig,
+    #[serde(rename = "block-indexer")]
+    pub block_indexer_config: BlockIndexerConfig,
+}
+#[derive(Debug, Deserialize)]
+pub struct BlockIndexerConfig {
     pub block_notifier: NotifierConfig,
 }
 
@@ -38,7 +43,7 @@ mod tests {
         let config: Config =
             CommonConfig::load_config::<Config>(None).expect("Failed to load config");
 
-        assert_eq!(9001, config.block_notifier.broker_port);
+        assert_eq!(9001, config.block_indexer_config.block_notifier.broker_port);
     }
 
     #[test]

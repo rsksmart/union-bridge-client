@@ -10,8 +10,14 @@ const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub struct Config {
     pub indexer: IndexerConfig,
     pub provider: ProviderConfig,
-    pub log_notifier: NotifierConfig,
     pub contracts: Vec<ContractConfig>,
+    #[serde(rename = "log-indexer")]
+    pub log_indexer_config: LogIndexerConfig,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LogIndexerConfig {
+    pub log_notifier: NotifierConfig,
 }
 
 impl Config {
@@ -58,7 +64,7 @@ mod tests {
         let config: Config =
             CommonConfig::load_config::<Config>(None).expect("Failed to load config");
 
-        assert_eq!(9006, config.log_notifier.broker_port);
+        assert_eq!(9006, config.log_indexer_config.log_notifier.broker_port);
     }
 
     #[test]

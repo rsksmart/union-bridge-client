@@ -1,12 +1,3 @@
-# coordinator
-storage_path = "/app/db/"                 # This should match the volume mount in docker-compose
-block_broker.host = "block-indexer"
-log_broker.host = "log-indexer"
-user_broker.host = "user-api"
-
-# transaction_dispatcher
-key_store.path = "/keystore/key.json"
-
 # common
 provider.rootstock.url = "ws://127.0.0.1:8545"
 indexer.storage.path = "/app/db/"
@@ -35,3 +26,12 @@ address = "0x30Af1031e33986c104438ECEA42aB33D69Fbe795"
 [[contracts]]
 name = "StreamManager"
 address = "0xf54ea8E611c58D54EbC5b9cc20e8F85841367fB5"
+
+[coordinator]
+storage_path = "/app/db/"                 # This should match the volume mount in docker-compose
+block_broker.host = "block-indexer"
+log_broker.host = "log-indexer"
+user_broker.host = "user-api"
+
+[transaction_dispatcher]
+key_store.path = "/keystore/key.json"

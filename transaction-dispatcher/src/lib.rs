@@ -110,7 +110,7 @@ async fn create_contracts_gateway_impl_with_role(
     RskContractsGateway::new(
         provider,
         config.load_managed_contracts(),
-        &config.transaction,
+        &config.tx_dispatcher_config.transaction,
         signer_address,
     )
     .await

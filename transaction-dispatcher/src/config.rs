@@ -16,9 +16,16 @@ pub struct ConfigAsBin {
 #[derive(Debug, Deserialize, Clone)]
 pub struct ConfigAsLib {
     pub provider: ProviderConfig,
+    pub contracts: Vec<ContractConfig>,
+    #[serde(rename = "transaction-dispatcher")]
+    pub tx_dispatcher_config: TxDispatcherConfig,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename = "transaction-dispatcher")]
+pub struct TxDispatcherConfig {
     pub key_store: KeyStoreConfig,
     pub transaction: TransactionConfig,
-    pub contracts: Vec<ContractConfig>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -51,11 +58,11 @@ impl ConfigAsBin {
     }
 
     pub fn key_store(&self) -> &KeyStoreConfig {
-        &self.lib_config.key_store
+        &self.lib_config.tx_dispatcher_config.key_store
     }
 
     pub fn transaction(&self) -> &TransactionConfig {
-        &self.lib_config.transaction
+        &self.lib_config.tx_dispatcher_config.transaction
     }
 
     pub fn contracts(&self) -> &Vec<ContractConfig> {

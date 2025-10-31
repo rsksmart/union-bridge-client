@@ -13,14 +13,21 @@ const MEMBER_REGISTRY_CONTRACT_NAME: &str = "MemberRegistry";
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
+    pub contracts: Vec<ContractConfig>,
+    pub bitcoin_network: String, // loaded from common.yaml
+    #[serde(rename = "coordinator")]
+    pub coordinator_config: CoordinatorConfig,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename = "coordinator")]
+pub struct CoordinatorConfig {
     pub log_broker: BrokerConfig,
     pub block_broker: BrokerConfig,
     pub user_broker: BrokerConfig,
     pub bitvmx_broker: BrokerConfig,
     pub broker_client_id: u32,
-    pub contracts: Vec<ContractConfig>,
     pub storage_path: String,
-    pub bitcoin_network: String, // loaded from common.yaml
 }
 
 #[derive(Debug, Deserialize)]
@@ -92,18 +99,18 @@ mod tests {
         let config: Config =
             CommonConfig::load_config::<Config>(None).expect("Failed to load base config");
 
-        assert_eq!("127.0.0.1", config.log_broker.host);
-        assert_eq!(9002, config.log_broker.port);
-        assert_eq!("127.0.0.1", config.block_broker.host);
-        assert_eq!(9003, config.block_broker.port);
-        assert_eq!("127.0.0.1", config.user_broker.host);
-        assert_eq!(9004, config.user_broker.port);
-        assert_eq!("127.0.0.1", config.bitvmx_broker.host);
-        assert_eq!(9005, config.bitvmx_broker.port);
-        assert_eq!(1, config.broker_client_id);
+        assert_eq!("127.0.0.1", config.coordinator_config.log_broker.host);
+        assert_eq!(9002, config.coordinator_config.log_broker.port);
+        assert_eq!("127.0.0.1", config.coordinator_config.block_broker.host);
+        assert_eq!(9003, config.coordinator_config.block_broker.port);
+        assert_eq!("127.0.0.1", config.coordinator_config.user_broker.host);
+        assert_eq!(9004, config.coordinator_config.user_broker.port);
+        assert_eq!("127.0.0.1", config.coordinator_config.bitvmx_broker.host);
+        assert_eq!(9005, config.coordinator_config.bitvmx_broker.port);
+        assert_eq!(1, config.coordinator_config.broker_client_id);
         assert_eq!(
             "/your_base_path/.union_bridge/coordinator",
-            config.storage_path
+            config.coordinator_config.storage_path
         );
         assert_eq!("regtest", config.bitcoin_network);
         assert_eq!(8, config.contracts.len());
