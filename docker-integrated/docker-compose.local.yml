@@ -5,7 +5,7 @@
 services:
   bitvmx-client:
     networks:
-      bitvmx-union-network:
+      union-network:
       # for bitvmx p2p communication between operators (only needed in local with all 4 operators)
       bitvmx-shared-network:
         ipv4_address: ${BITVMX_P2P_HOST}

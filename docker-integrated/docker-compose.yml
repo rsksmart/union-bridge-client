@@ -10,11 +10,11 @@ services:
     platform: linux/amd64
     environment:
       RUST_LOG: debug
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     extends:
       file: ./bitvmx-client/docker-compose.yml
       service: bitvmx-client
-    networks:
-      bitvmx-union-network:
 
   # ================================
   # Union Bridge Client Services
@@ -24,37 +24,39 @@ services:
       file: ../docker/docker-compose.yml
       service: block-indexer
     networks:
-      - bitvmx-union-network
+      - union-network
 
   log-indexer:
     extends:
       file: ../docker/docker-compose.yml
       service: log-indexer
     networks:
-      - bitvmx-union-network
+      - union-network
 
   user-api:
     extends:
       file: ../docker/docker-compose.yml
       service: user-api
     networks:
-      - bitvmx-union-network
+      - union-network
 
   coordinator:
     extends:
       file: ../docker/docker-compose.yml
       service: coordinator
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       bitvmx-client:
         condition: service_healthy
     networks:
-      bitvmx-union-network:
+      union-network:
 
 # ================================
 # Networks and Volumes
 # ================================
 networks:
-  bitvmx-union-network:
+  union-network:
     driver: bridge
 
 volumes:
