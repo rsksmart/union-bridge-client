@@ -9,36 +9,36 @@ bitcoin_network = "regtest"
 tx_dispatcher_server.url = "0.0.0.0:9001"                                                         # transaction-dispatcher
 
 [[contracts]]
+name = "TestContractDyn"
+address = "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761"
+
+[[contracts]]
+name = "TestContractCompiled"
+address = "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc"
+
+[[contracts]]
 name = "PegManager"
-address = "0x1234567890123456789012345678901234567890"
+address = "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6"
 
 [[contracts]]
 name = "SignatureManager"
-address = "0x2345678901234567890123456789012345678901"
+address = "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0"
 
 [[contracts]]
 name = "CommitteeRegistry"
-address = "0x3456789012345678901234567890123456789012"
+address = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9"
 
 [[contracts]]
 name = "MemberRegistry"
-address = "0x4567890123456789012345678901234567890123"
+address = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
 
 [[contracts]]
 name = "FakePegManager"
-address = "0x5678901234567890123456789012345678901234"
+address = "0x68B1D87F95878fE05B998F19b66F4baba5De1aed"
 
 [[contracts]]
-name = "FakeSignatureManager"
-address = "0x6789012345678901234567890123456789012345"
-
-[[contracts]]
-name = "FakeCommitteeRegistry"
-address = "0x7890123456789012345678901234567890123456"
-
-[[contracts]]
-name = "FakeMemberRegistry"
-address = "0x8901234567890123456789012345678901234567"
+name = "StreamManager"
+address = "0x610178dA211FEF7D417bC0e6FeD39F05609AD788"
 
 [coordinator]
 

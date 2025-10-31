@@ -212,9 +212,11 @@ mod tests {
         assert_eq!(100, config.indexer.sync.batch_size);
         assert_eq!("ws://127.0.0.1:8545", config.provider.rootstock.url);
         assert_eq!("regtest", config.bitcoin_network);
-        assert_eq!(8, config.contracts.len());
+        assert_eq!(10, config.contracts.len());
         let contract_names: Vec<&String> = config.contracts.iter().map(|c| &c.name).collect();
         let expected_names = vec![
+            "TestContractDyn",
+            "TestContractCompiled",
             "PegManager",
             "SignatureManager",
             "CommitteeRegistry",
@@ -226,36 +228,44 @@ mod tests {
         ];
         assert_eq!(expected_names, contract_names);
         assert_eq!(
-            "0x1234567890123456789012345678901234567890",
+            "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761",
             config.contracts[0].address
         );
         assert_eq!(
-            "0x2345678901234567890123456789012345678901",
+            "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc",
             config.contracts[1].address
         );
         assert_eq!(
-            "0x3456789012345678901234567890123456789012",
+            "0x1234567890123456789012345678901234567890",
             config.contracts[2].address
         );
         assert_eq!(
-            "0x4567890123456789012345678901234567890123",
+            "0x2345678901234567890123456789012345678901",
             config.contracts[3].address
         );
         assert_eq!(
-            "0x5678901234567890123456789012345678901234",
+            "0x3456789012345678901234567890123456789012",
             config.contracts[4].address
         );
         assert_eq!(
-            "0x6789012345678901234567890123456789012345",
+            "0x4567890123456789012345678901234567890123",
             config.contracts[5].address
         );
         assert_eq!(
-            "0x7890123456789012345678901234567890123456",
+            "0x5678901234567890123456789012345678901234",
             config.contracts[6].address
         );
         assert_eq!(
-            "0x8901234567890123456789012345678901234567",
+            "0x6789012345678901234567890123456789012345",
             config.contracts[7].address
+        );
+        assert_eq!(
+            "0x7890123456789012345678901234567890123456",
+            config.contracts[8].address
+        );
+        assert_eq!(
+            "0x8901234567890123456789012345678901234567",
+            config.contracts[9].address
         );
     }
 
