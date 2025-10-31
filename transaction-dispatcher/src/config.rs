@@ -8,7 +8,7 @@ const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
 #[derive(Debug, Deserialize)]
 pub struct ConfigAsBin {
-    pub server: ServerConfig,
+    pub tx_dispatcher_server: TxDispatcherServerConfig,
     #[serde(flatten)]
     pub lib_config: ConfigAsLib,
 }
@@ -35,7 +35,7 @@ pub struct KeyStoreConfig {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ServerConfig {
+pub struct TxDispatcherServerConfig {
     pub url: String,
 }
 

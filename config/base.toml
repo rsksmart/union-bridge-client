@@ -1,6 +1,3 @@
-# transaction-dispatcher
-server.url = "0.0.0.0:9001"
-
 # common
 provider.rootstock.url = "ws://127.0.0.1:8545"
 indexer.initial_block_hash = "0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c"
@@ -9,6 +6,7 @@ indexer.cache.size = 1000
 indexer.sync.finality_depth = 100
 indexer.sync.batch_size = 100
 bitcoin_network = "regtest"
+tx_dispatcher_server.url = "0.0.0.0:9001"                                                         # transaction-dispatcher
 
 [[contracts]]
 name = "PegManager"
@@ -73,4 +71,3 @@ transaction.gas_bumps_t1 = 3
 coordinator_broker_client_id = 1
 broker_server_port = 9007
 http_server_port = 8080
-
