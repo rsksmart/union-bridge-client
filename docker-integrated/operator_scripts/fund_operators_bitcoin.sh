@@ -52,9 +52,9 @@ if [[ "$ENVIRONMENT" == "local" ]]; then
   PROJECTS=(op_1 op_2 op_3 op_4)
   EXPECTED_COUNT=4
 else
-  # alphanet: single operator on this host (always uses port 40001 and docker-integrated project)
+  # alphanet: single operator on this host (always uses port 40001 and union-operator project)
   PORTS=(40001)
-  PROJECTS=(docker-integrated)
+  PROJECTS=(union-operator)
   EXPECTED_COUNT=1
 fi
 
