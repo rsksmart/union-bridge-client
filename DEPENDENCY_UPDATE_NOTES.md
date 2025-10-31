@@ -6,6 +6,8 @@ Updated `rust-bitvmx-storage-backend` dependency from version `v0.1.0` (rev `7f4
 ## Breaking Changes
 
 ### API Changes
+
+#### 1. Storage Initialization
 The `Storage` API has been refactored to use a `StorageConfig` structure instead of direct path parameters:
 
 **Before:**
@@ -18,9 +20,30 @@ let db = Storage::new_with_path(&PathBuf::from(path))?;
 use storage_backend::storage_config::StorageConfig;
 
 let config = StorageConfig::new(path.to_string(), None);
-let db = Storage::new(&config)?;  // For new databases
+let db = Storage::new(&config)?;  // For new databases (creates if missing)
 // or
-let db = Storage::open(&config)?; // For existing databases
+let db = Storage::open(&config)?; // For existing databases only
+```
+
+#### 2. Iteration API
+The `get_all()` method has been removed. Use `partial_compare()` or `partial_compare_keys()` instead:
+
+**Before:**
+```rust
+let entries: HashMap<String, T> = db.get_all()?;
+```
+
+**After:**
+```rust
+// For key-value pairs
+let entries: Vec<(String, String)> = db.partial_compare("prefix/")?;
+for (key, value_str) in entries {
+    let value: T = serde_json::from_str(&value_str)?;
+    // process...
+}
+
+// For keys only
+let keys: Vec<String> = db.partial_compare_keys("prefix/")?;
 ```
 
 ### New Dependencies
@@ -47,6 +70,8 @@ All files using `Storage::new_with_path()` have been updated:
    - Added import: `use storage_backend::storage_config::StorageConfig;`
    - Changed `Storage::new_with_path()` to `Storage::new(&StorageConfig::new(...))`
    - Removed unused `PathBuf` import
+   - Replaced `get_all()` with `partial_compare("")` in `get_all_logs()` test utility
+   - Added manual JSON deserialization for values returned from `partial_compare()`
 
 2. **block-indexer/src/store.rs**
    - Added import: `use storage_backend::storage_config::StorageConfig;`
@@ -62,6 +87,9 @@ All files using `Storage::new_with_path()` have been updated:
    - Added import: `use storage_backend::storage_config::StorageConfig;`
    - Changed `Storage::new_with_path()` to `Storage::new(&StorageConfig::new(...))`
    - Used `Storage::new()` to preserve the original semantics (create database if it doesn't exist)
+   - Replaced `get_all()` calls with `partial_compare("utxo/")` for iteration
+   - Replaced `get_all()` in `clear()` with `partial_compare_keys("utxo/")` for key-only iteration
+   - Added manual JSON deserialization for values returned from `partial_compare()`
 
 ## Testing Status
 

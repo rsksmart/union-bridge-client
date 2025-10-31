@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use storage_backend::storage::{KeyValueStore, Storage};
 use storage_backend::storage_config::StorageConfig;
 
+const UTXO_PREFIX: &str = "utxo/";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredUtxo {
     pub value_sat: u64,
@@ -57,37 +59,43 @@ impl UtxoStore {
             .map_err(|e| anyhow!("failed to delete utxo: {e}"))
     }
 
-    pub fn load_all(&self) -> Result<Vec<(OutPoint, StoredUtxo)>> {
-        let entries: std::collections::HashMap<String, StoredUtxo> = self
+    /// Iterates over all UTXOs in the store, yielding (OutPoint, StoredUtxo) pairs.
+    /// Filters can be applied to the yielded items via the predicate.
+    fn iter_utxos(
+        &self,
+        predicate: impl Fn(&StoredUtxo) -> bool,
+    ) -> Result<Vec<(OutPoint, StoredUtxo)>> {
+        let entries = self
             .db
-            .get_all()
+            .partial_compare(UTXO_PREFIX)
             .map_err(|e| anyhow!("failed to iterate utxos: {e}"))?;
         let mut utxos = Vec::new();
         for (key, value) in entries.into_iter() {
-            let outpoint = key_to_outpoint(&key)?;
-            utxos.push((outpoint, value));
-        }
-        Ok(utxos)
-    }
-
-    pub fn load_by_address(&self, address: &Address) -> Result<Vec<(OutPoint, StoredUtxo)>> {
-        let address_str = address.to_string();
-        let entries: std::collections::HashMap<String, StoredUtxo> = self
-            .db
-            .get_all()
-            .map_err(|e| anyhow!("failed to iterate utxos: {e}"))?;
-        let mut utxos = Vec::new();
-        for (key, stored) in entries.into_iter() {
-            if stored
-                .address
-                .as_deref()
-                .map_or(false, |addr| addr == address_str)
-            {
+            let stored: StoredUtxo = serde_json::from_str(&value)
+                .map_err(|e| anyhow!("failed to deserialize utxo: {e}"))?;
+            if predicate(&stored) {
                 let outpoint = key_to_outpoint(&key)?;
                 utxos.push((outpoint, stored));
             }
         }
         Ok(utxos)
+    }
+
+    pub fn load_all(&self) -> Result<Vec<(OutPoint, StoredUtxo)>> {
+        self.iter_utxos(|_| true)
+    }
+
+    pub fn load_by_address(&self, address: &Address) -> Result<Vec<(OutPoint, StoredUtxo)>> {
+        let address_str = address.to_string();
+        // Note: Currently filters client-side by scanning all UTXOs. If the storage backend
+        // supports address-specific prefix scanning (e.g., "utxo/{address}/"), we could optimize
+        // this by storing UTXOs under an address-specific prefix structure.
+        self.iter_utxos(|stored| {
+            stored
+                .address
+                .as_deref()
+                .map_or(false, |addr| addr == address_str)
+        })
     }
 
     pub fn contains(&self, outpoint: &OutPoint) -> Result<bool> {
@@ -100,11 +108,11 @@ impl UtxoStore {
     }
 
     pub fn clear(&self) -> Result<()> {
-        let entries: std::collections::HashMap<String, StoredUtxo> = self
+        let entries = self
             .db
-            .get_all()
+            .partial_compare_keys(UTXO_PREFIX)
             .map_err(|e| anyhow!("failed to iterate utxos: {e}"))?;
-        for (key, _) in entries.into_iter() {
+        for key in entries.into_iter() {
             self.db
                 .delete(&key)
                 .map_err(|e| anyhow!("failed to delete utxo: {e}"))?;
@@ -114,7 +122,7 @@ impl UtxoStore {
 }
 
 fn utxo_key(outpoint: &OutPoint) -> String {
-    format!("utxo/{:?}:{}", outpoint.txid, outpoint.vout)
+    format!("{}{:?}:{}", UTXO_PREFIX, outpoint.txid, outpoint.vout)
 }
 
 fn key_to_outpoint(key: &str) -> Result<OutPoint> {
