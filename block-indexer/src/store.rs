@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use common::cache::{Cache, LruCache};
 use common::types::{BlockHash, BlockNumber, RskBlock};
-use std::path::PathBuf;
 use storage_backend::storage::{KeyValueStore, Storage};
+use storage_backend::storage_config::StorageConfig;
 
 #[cfg(test)]
 use mockall::automock;
@@ -154,7 +154,8 @@ impl<C: Cache<RskBlock>> CachedBlockStore<C> {
 
 impl CachedBlockStore<LruCache<RskBlock>> {
     pub fn new(path: &str, cache_size: usize) -> Result<Self> {
-        let db = Storage::new_with_path(&PathBuf::from(path))?;
+        let config = StorageConfig::new(path.to_string(), None);
+        let db = Storage::new(&config)?;
         Ok(Self {
             db,
             block_cache: LruCache::new(cache_size),

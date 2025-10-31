@@ -6,6 +6,7 @@ use bitcoin::Address;
 use bitcoin::OutPoint;
 use serde::{Deserialize, Serialize};
 use storage_backend::storage::{KeyValueStore, Storage};
+use storage_backend::storage_config::StorageConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredUtxo {
@@ -21,7 +22,8 @@ pub struct UtxoStore {
 
 impl UtxoStore {
     pub fn open(path: &Path) -> Result<Self> {
-        let db = Storage::new_with_path(&path.to_path_buf())
+        let config = StorageConfig::new(path.to_string_lossy().to_string(), None);
+        let db = Storage::new(&config)
             .map_err(|e| anyhow!("failed to open storage backend: {e}"))?;
         Ok(Self { db })
     }
