@@ -548,6 +548,8 @@ pub enum DomainErrors {
     SignaturesError(String),
     #[error("Missing confirmations on native bridge: {0}")]
     MissingConfirmationsOnNativeBridge(String),
+    #[error("Invalid slot state: expected {expected}, actual {actual}")]
+    InvalidSlotState { expected: u8, actual: u8 },
 
     // unhandled smart contract errors
     #[error("Unhandled Contract Error: {0}")]

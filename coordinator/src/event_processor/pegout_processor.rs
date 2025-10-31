@@ -52,12 +52,12 @@ use sha2::{Digest, Sha256};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
+use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use transaction_dispatcher::types::{
     GetCommitteeInput, GetCommitteeOutput, GetCommunicationDataInput, GetMemberPublicKeysInput,
     P2PAddressParser,
 };
-use transaction_dispatcher::types::{RegisterPegoutInput, RegisterPegoutOutput};
+use transaction_dispatcher::types::RegisterPegoutInput;
 use union_contracts::bindings::peg_manager::PegManager::{PegoutRegistered, PegoutRequested};
 use uuid::Uuid;
 
@@ -472,31 +472,61 @@ where
         state: &mut PegoutEventState<BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<CG>>>,
         tx_id: &Txid,
         input: RegisterPegoutInput,
-    ) -> Result<RegisterPegoutOutput> {
+    ) -> Result<()> {
         // Step 6a: Register pegout calling the peg manager contract (U -> C)
         match rt_sync.run(async { contracts_gateway.register_pegout(input).await }) {
             Ok(result) => {
                 info!("Pegout registered successfully for tx_id: {}", tx_id);
                 state.pegout_registered_tx =
                     Some(TxHash::try_from(result.transaction_hash.as_str())?);
-                return Ok(result);
             }
             Err(e) => {
+                // Check if it's an InvalidSlotState error
+                if let DomainErrors::InvalidSlotState { expected, actual } = e {
+                    const SLOT_STATE_LOCKED: u8 = 2;
+                    const SLOT_STATE_COMPLETED: u8 = 4;
+
+                    // Only consider it valid if we expected LOCKED but found COMPLETED
+                    // This means another committee member already completed the pegout registration
+                    if expected == SLOT_STATE_LOCKED && actual == SLOT_STATE_COMPLETED {
+                        info!(
+                            "Pegout already registered by another committee member for tx_id: {} \
+                             (expected slot state LOCKED, found COMPLETED - this is expected behavior)",
+                            tx_id
+                        );
+                        return Ok(());
+                    }
+                }
+
                 bail!("Pegout registration failed for tx_id: {tx_id} - {e}");
             }
         }
+
+        Ok(())
     }
 
     fn track_pegout_registered(&mut self, event: EventWithBlock<PegoutRegistered>) -> Result<()> {
-        let (flow_id, pegout_event_state) = self
-            .tracker
-            .iter_mut()
-            .find(|(_, value)| {
-                value
-                    .pegout_registered_tx
-                    .map_or(false, |tx| tx == event.tx_hash)
-            })
-            .ok_or_else(|| anyhow!("Pegout registered not found for tx_hash: {}", event.tx_hash))?;
+        // Try to find the pegout state by our own registration tx_hash
+        let result = self.tracker.iter_mut().find(|(_, value)| {
+            value
+                .pegout_registered_tx
+                .map_or(false, |tx| tx == event.tx_hash)
+        });
+
+        // If not found, it could be registered by another committee member
+        let (flow_id, pegout_event_state) = match result {
+            Some(found) => found,
+            None => {
+                // This pegout was registered by another committee member
+                // We can safely ignore it as we're not tracking it
+                debug!(
+                    "Pegout registered event for tx_hash: {} not tracked by this node \
+                     (likely registered by another committee member)",
+                    event.tx_hash
+                );
+                return Ok(());
+            }
+        };
 
         let observer_id = format!("pegout_registered-{}", flow_id);
 
