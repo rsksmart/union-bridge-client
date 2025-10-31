@@ -22,7 +22,6 @@ pub struct ConfigAsLib {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename = "transaction-dispatcher")]
 pub struct TxDispatcherConfig {
     pub key_store: KeyStoreConfig,
     pub transaction: TransactionConfig,

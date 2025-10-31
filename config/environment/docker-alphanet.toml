@@ -28,10 +28,10 @@ name = "StreamManager"
 address = "0xf54ea8E611c58D54EbC5b9cc20e8F85841367fB5"
 
 [coordinator]
-storage_path = "/app/db/"                 # This should match the volume mount in docker-compose
+storage_path = "/app/db/"           # This should match the volume mount in docker-compose
 block_broker.host = "block-indexer"
 log_broker.host = "log-indexer"
 user_broker.host = "user-api"
 
-[transaction_dispatcher]
+[transaction-dispatcher]
 key_store.path = "/keystore/key.json"
