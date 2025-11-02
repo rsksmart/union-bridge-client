@@ -6,6 +6,7 @@ use common::shutdown_flag::ShutdownFlag;
 use log::{error, info};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::thread;
 use tokio::net::TcpListener;
 use transaction_dispatcher::config::ConfigAsLib as TxDispatcherConfig;
 use user_api::config::{Config, Logger};
@@ -13,6 +14,31 @@ use user_api::Server;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const ENV_CLI_FLAG: &str = "env";
+
+struct BrokerDropGuard(Option<Arc<BrokerServer>>);
+
+impl BrokerDropGuard {
+    fn new(broker: Arc<BrokerServer>) -> Self {
+        Self(Some(broker))
+    }
+
+    fn clone_arc(&self) -> Option<Arc<BrokerServer>> {
+        self.0.as_ref().map(Arc::clone)
+    }
+}
+
+impl Drop for BrokerDropGuard {
+    fn drop(&mut self) {
+        if let Some(broker) = self.0.take() {
+            let spawn_result = thread::Builder::new()
+                .name("broker-drop".into())
+                .spawn(move || drop(broker));
+            if let Err(err) = spawn_result {
+                error!("Failed to spawn broker drop thread: {}", err);
+            }
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -46,47 +72,13 @@ async fn main() -> Result<()> {
 
     let config: Config = Config::load(env_name.clone()).expect("Failed to load config");
 
-    // Load transaction dispatcher configuration
-    let tx_dispatcher_config: TxDispatcherConfig =
-        TxDispatcherConfig::load(env_name).expect("Failed to load transaction dispatcher config");
-
-    // Create two contract gateways with different roles
-    let user_contracts_gateway = transaction_dispatcher::get_contracts_gateway_as_lib_with_role(
-        tx_dispatcher_config.clone(),
-        transaction_dispatcher::GatewayRole::User,
-    )
-    .await?;
-
-    let member_contracts_gateway = transaction_dispatcher::get_contracts_gateway_as_lib_with_role(
-        tx_dispatcher_config,
-        transaction_dispatcher::GatewayRole::Member,
-    )
-    .await?;
-
     info!("Starting user-api server");
 
     let shutdown_flag = ShutdownFlag::init();
 
     let broker_port = config.broker_server_port;
-    let broker_server = Arc::new(BrokerServer::new(broker_port));
+    let broker_drop_guard = BrokerDropGuard::new(Arc::new(BrokerServer::new(broker_port)));
     info!("Broker Server started on {broker_port}");
-
-    // Create the broker shutdown task early to ensure proper cleanup even on early errors
-    let broker_fut = {
-        let broker_server = broker_server.clone();
-        let shutdown_flag = shutdown_flag.clone();
-        tokio::spawn(async move {
-            shutdown_flag.wait_for().await;
-            tokio::task::spawn_blocking(move || {
-                // Note: BrokerServer doesn't need explicit close() call
-                // The runtime will be dropped when the Arc is dropped
-                drop(broker_server); // <- drop in blocking context
-                info!("Shutdown requested, Broker server closed");
-            })
-            .await
-            .expect("failed to drop broker server");
-        })
-    };
 
     let http_addr = SocketAddr::from(([0, 0, 0, 0], config.http_server_port));
     let listener = TcpListener::bind(http_addr)
@@ -105,9 +97,29 @@ async fn main() -> Result<()> {
         info!("USER_BITCOIN_WIF not set - user endpoints will be disabled");
     }
 
+    // Load transaction dispatcher configuration
+    let tx_dispatcher_config: TxDispatcherConfig =
+        TxDispatcherConfig::load(env_name).expect("Failed to load transaction dispatcher config");
+
+    // Create two contract gateways with different roles
+    let user_contracts_gateway = transaction_dispatcher::get_contracts_gateway_as_lib_with_role(
+        tx_dispatcher_config.clone(),
+        transaction_dispatcher::GatewayRole::User,
+    )
+        .await?;
+
+    let member_contracts_gateway = transaction_dispatcher::get_contracts_gateway_as_lib_with_role(
+        tx_dispatcher_config,
+        transaction_dispatcher::GatewayRole::Member,
+    )
+        .await?;
+
+
     let server = Server::new(
         listener,
-        broker_server.clone(),
+        broker_drop_guard
+            .clone_arc()
+            .context("failed to clone broker server handle")?,
         shutdown_flag.clone(),
         config.coordinator_broker_client_id,
         user_contracts_gateway,
@@ -118,15 +130,14 @@ async fn main() -> Result<()> {
     .await;
 
     info!("Http Server started, listening on {http_addr}");
-    if let Err(err) = server.start().await {
+    let server_result = server.start().await;
+
+    drop(broker_drop_guard);
+
+    if let Err(err) = server_result {
         error!("Server error: {}", err);
         return Err(err);
     }
-
-    // Wait for the broker shutdown task to complete
-    broker_fut
-        .await
-        .inspect_err(|e| error!("Error closing Broker Server: {}", e))?;
 
     info!("Shutdown complete");
 
