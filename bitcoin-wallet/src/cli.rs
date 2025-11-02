@@ -26,6 +26,12 @@ impl std::fmt::Display for WalletMode {
     }
 }
 
+impl Default for WalletMode {
+    fn default() -> Self {
+        WalletMode::User
+    }
+}
+
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about = "Simple P2WPKH wallet CLI", long_about = None)]
 pub struct CliOpts {
@@ -45,6 +51,20 @@ pub struct CliOpts {
     pub rpc_user: Option<String>,
     #[arg(long, env = "WALLET_RPC_PASSWORD", value_name = "PASS")]
     pub rpc_password: Option<String>,
+}
+
+impl Default for CliOpts {
+    fn default() -> Self {
+        Self {
+            mode: WalletMode::default(),
+            config: Some("regtest".to_string()),
+            utxo_db: None,
+            sats_per_byte: None,
+            rpc_url: None,
+            rpc_user: None,
+            rpc_password: None,
+        }
+    }
 }
 
 const COMMANDS: &[&str] = &[

@@ -188,9 +188,14 @@ impl Wallet {
         self.rpc_client.as_ref()
     }
 
-    pub fn fetch_utxo_amount(&self, txid: Txid, vout: u32) -> Result<u64> {
+    pub fn fetch_utxo_amount(
+        &self,
+        txid: Txid,
+        block_hash: Option<&bitcoincore_rpc::bitcoin::BlockHash>,
+        vout: u32,
+    ) -> Result<u64> {
         let client = self.require_rpc_client()?;
-        fetch_utxo_amount(client, txid, vout)
+        fetch_utxo_amount(client, txid, block_hash, vout)
     }
 
     pub fn broadcast_transaction(&mut self, created: &CreatedTransaction) -> Result<Txid> {

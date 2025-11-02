@@ -34,7 +34,8 @@ fn main() -> Result<()> {
 
     println!(
         "Simple P2WPKH wallet (mode: {}, network: {}). Type 'help' for commands.",
-        config.mode, wallet.network()
+        config.mode,
+        wallet.network()
     );
 
     loop {
@@ -209,6 +210,7 @@ fn handle_command(wallet: &mut Wallet, mode: &WalletMode, line: &str) -> Result<
                 bail!("import or switch to an address before registering UTXOs");
             }
             let txid_str = parts.next().context("expected txid")?;
+            let block_hash_str = parts.next().context("expected block hash")?;
             let vout_str = parts.next().context("expected vout")?;
             let amount = match parts.next() {
                 Some(value) => Some(value.parse().context("invalid amount (satoshis)")?),
@@ -216,12 +218,14 @@ fn handle_command(wallet: &mut Wallet, mode: &WalletMode, line: &str) -> Result<
             };
 
             let txid = Txid::from_str(txid_str).context("invalid txid provided")?;
+            let block_hash = bitcoincore_rpc::bitcoin::BlockHash::from_str(block_hash_str)
+                .context("invalid block hash")?;
             let vout: u32 = vout_str.parse().context("invalid vout index")?;
 
             let amount_sat = match amount {
                 Some(value) => value,
                 None => wallet
-                    .fetch_utxo_amount(txid, vout)
+                    .fetch_utxo_amount(txid, Some(&block_hash), vout)
                     .context("RPC client required to fetch UTXO amount")?,
             };
 
@@ -416,7 +420,7 @@ fn handle_command(wallet: &mut Wallet, mode: &WalletMode, line: &str) -> Result<
                 Txid::from_str(&txid_hex).context("invalid txid returned by bitcoind")?;
             let funding_vout = find_vout_for_address(client, &txid_hex, &active_addr)
                 .context("failed to locate vout for wallet address")?;
-            let funding_amount = wallet.fetch_utxo_amount(funding_txid, funding_vout)?;
+            let funding_amount = wallet.fetch_utxo_amount(funding_txid, None, funding_vout)?;
 
             let outpoint = OutPoint::new(funding_txid, funding_vout);
             wallet.register_utxo(outpoint, funding_amount)?;
@@ -666,7 +670,9 @@ fn print_help(sats_per_byte: u64) {
     println!(
         "  switch_address <addr>                 - Make an imported address the active wallet address"
     );
-    println!("  register_utxo <txid> <vout> [sats]    - Register a spendable P2WPKH UTXO");
+    println!(
+        "  register_utxo <txid> <block_hash> <vout> [sats] - Register a spendable P2WPKH UTXO"
+    );
     println!(
         "  list_funds [all]                      - List UTXOs for the active address or every address"
     );

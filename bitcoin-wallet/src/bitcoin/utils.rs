@@ -10,20 +10,33 @@ use bitcoincore_rpc::{Client, RpcApi};
 use crate::bitcoin::bitcoind::Bitcoind;
 
 pub trait RawTxProvider {
-    fn raw_transaction_hex(&self, txid: &RpcTxid) -> bitcoincore_rpc::Result<String>;
+    fn raw_transaction_hex(
+        &self,
+        txid: &RpcTxid,
+        block_hash: Option<&bitcoincore_rpc::bitcoin::BlockHash>,
+    ) -> bitcoincore_rpc::Result<String>;
 }
 
 impl RawTxProvider for Client {
-    fn raw_transaction_hex(&self, txid: &RpcTxid) -> bitcoincore_rpc::Result<String> {
-        self.get_raw_transaction_hex(txid, None)
+    fn raw_transaction_hex(
+        &self,
+        txid: &RpcTxid,
+        block_hash: Option<&bitcoincore_rpc::bitcoin::BlockHash>,
+    ) -> bitcoincore_rpc::Result<String> {
+        self.get_raw_transaction_hex(txid, block_hash)
     }
 }
 
-pub fn fetch_utxo_amount(provider: &impl RawTxProvider, txid: Txid, vout: u32) -> Result<u64> {
+pub fn fetch_utxo_amount(
+    provider: &impl RawTxProvider,
+    txid: Txid,
+    block_hash: Option<&bitcoincore_rpc::bitcoin::BlockHash>,
+    vout: u32,
+) -> Result<u64> {
     let rpc_txid =
         RpcTxid::from_str(&txid.to_string()).context("failed to convert txid for RPC call")?;
     let tx_hex = provider
-        .raw_transaction_hex(&rpc_txid)
+        .raw_transaction_hex(&rpc_txid, block_hash)
         .context("failed to fetch transaction from RPC")?;
     let raw = Vec::<u8>::from_hex(&tx_hex).context("invalid transaction hex from RPC")?;
     let tx: Transaction = deserialize(&raw).context("failed to decode transaction")?;

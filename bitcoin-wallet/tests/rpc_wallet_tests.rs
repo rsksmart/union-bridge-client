@@ -121,7 +121,7 @@ fn wallet_end_to_end_over_regtest_rpc() -> Result<()> {
         find_vout_for_address(client, &txid_hex, &wallet_address)
             .context("failed to locate wallet output in funding transaction")?
     };
-    let funding_amount = wallet.fetch_utxo_amount(funding_txid, funding_vout)?;
+    let funding_amount = wallet.fetch_utxo_amount(funding_txid, None, funding_vout)?;
     wallet.register_utxo(OutPoint::new(funding_txid, funding_vout), funding_amount)?;
 
     assert_eq!(
@@ -167,7 +167,8 @@ fn wallet_end_to_end_over_regtest_rpc() -> Result<()> {
         .call::<Vec<String>>("generatetoaddress", &[json!(1), json!(miner_address)])
         .context("failed to confirm wallet transaction")?;
 
-    let change_amount = wallet.fetch_utxo_amount(change.outpoint.txid, change.outpoint.vout)?;
+    let change_amount =
+        wallet.fetch_utxo_amount(change.outpoint.txid, None, change.outpoint.vout)?;
     assert_eq!(change_amount, change.value_sat);
 
     Ok(())
