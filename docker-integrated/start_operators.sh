@@ -4,7 +4,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 UC_TAG=""
 DOCKER_COMPOSE_ARGS=()
-OPERATOR_ID=""
+OPERATOR_ARG=""
 ENVIRONMENT=""
 
 # Display help message
@@ -57,8 +57,8 @@ while [[ $# -gt 0 ]]; do
       print_help
       ;;
     --op)
-      OPERATOR_ID="$2"
-      if ! [[ "$OPERATOR_ID" =~ ^[1-4]$ ]]; then
+      OPERATOR_ARG="$2"
+      if ! [[ "$OPERATOR_ARG" =~ ^[1-4]$ ]]; then
         echo "Error: --op must be 1, 2, 3, or 4"
         exit 1
       fi
@@ -124,38 +124,29 @@ for arg in "${DOCKER_COMPOSE_ARGS[@]}"; do
   fi
 done
 
-# Reject --op flag when not allowed
-if [[ -n "$OPERATOR_ID" ]]; then
-  # Case 1: --op is never allowed in local environment
-  if [[ "$ENVIRONMENT" == "local" ]]; then
-    echo "Error: --op is not allowed in local environment. All operators will be deployed."
-    exit 1
-  fi
-
-  # Case 2: --op is not allowed with non-startup commands in alphanet
-  if [[ "$ENVIRONMENT" == "alphanet" && "${IS_STARTUP_COMMAND}" == false ]]; then
-    echo "Error: --op can only be used with startup commands (up, restart, start, create)."
-    echo "For other commands, the script will target the operator on this host automatically."
-    exit 1
-  fi
+# Validate --op flag usage
+if [[ "$ENVIRONMENT" == "local" && -n "$OPERATOR_ARG" ]]; then
+  echo "Error: --op is not allowed in local environment. All operators will be deployed."
+  exit 1
+elif [[ "$ENVIRONMENT" == "alphanet" && "${IS_STARTUP_COMMAND}" == false && -n "$OPERATOR_ARG" ]]; then
+  echo "Error: --op can only be used with startup commands (up, restart, start, create)."
+  echo "For other commands, the script will target the operator on this host automatically."
+  exit 1
+elif [[ "$ENVIRONMENT" == "alphanet" && "${IS_STARTUP_COMMAND}" == true && -z "$OPERATOR_ARG" ]]; then
+  echo "Error: --op <ID> is required when using --env alphanet with startup commands (up, restart, start, create)."
+  echo "Run '$0 --help' for usage information."
+  exit 1
 fi
 
-# Set OPERATOR_ID based on environment
-if [[ "$ENVIRONMENT" == "local" ]]; then
-  OPERATOR_ID="all"
-elif [[ "$ENVIRONMENT" == "alphanet" ]]; then
-  if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
-    # Startup commands: --op is required
-    if [[ -z "$OPERATOR_ID" ]]; then
-      echo "Error: --op <ID> is required when using --env alphanet with startup commands (up, restart, start, create)."
-      echo "Run '$0 --help' for usage information."
-      exit 1
-    fi
-  else
-    # Non-startup commands: default to all
-    OPERATOR_ID="all"
-  fi
+# Set OPERATORS_TO_RUN based on environment
+if [[ "$ENVIRONMENT" == "alphanet" && "${IS_STARTUP_COMMAND}" == true ]]; then
+  # Alphanet startup: use the single operator from --op
+  OPERATORS_TO_RUN=("$OPERATOR_ARG")
+elif [[ "$ENVIRONMENT" == "local" ]]; then
+  # Local: run all operators
+  OPERATORS_TO_RUN=(1 2 3 4)
 fi
+# For alphanet non-startup commands, OPERATORS_TO_RUN is not used
 
 # Prompt for WALLET_PRIVATE_KEY if running startup commands
 if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
@@ -173,25 +164,27 @@ if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
   fi
 fi
 
-# Determine which operators to process
-if [[ "$OPERATOR_ID" == "all" ]]; then
-  OPERATORS_TO_RUN=(1 2 3 4)
-else
-  OPERATORS_TO_RUN=("$OPERATOR_ID")
-fi
-
 # If requested, clean operator stacks regardless of the main command
 if [[ "${FRESH}" == true ]]; then
-  if [[ "$OPERATOR_ID" == "all" ]]; then
-    echo "Cleaning operator stacks (down --volumes) for projects op_1..op_4..."
-    for i in 1 2 3 4; do
-      cmd="docker compose -p op_${i} --env-file ${ENV_FILE} down --volumes || true"
+  echo "WARNING: --fresh will tear down operators and DELETE ALL VOLUMES (including data)."
+  read -p "Are you sure you want to continue? (yes/no): " confirmation
+
+  if [[ "$confirmation" != "yes" ]]; then
+    echo "Aborted."
+    exit 1
+  fi
+
+  if [[ "$ENVIRONMENT" == "local" ]]; then
+    echo "Cleaning operator stacks (down --volumes)..."
+    for op_num in "${OPERATORS_TO_RUN[@]}"; do
+      cmd="docker compose -p op_${op_num} --env-file ${ENV_FILE} down --volumes"
       echo "Running: ${cmd}"
       eval "${cmd}"
     done
   else
-    echo "Cleaning operator stack (down --volumes) for project op_${OPERATOR_ID}..."
-    cmd="docker compose -p op_${OPERATOR_ID} --env-file ${ENV_FILE} down --volumes || true"
+    # alphanet always uses union-operator project name
+    echo "Cleaning operator stack (down --volumes) for project union-operator..."
+    cmd="docker compose -p union-operator --env-file ${ENV_FILE} down --volumes"
     echo "Running: ${cmd}"
     eval "${cmd}"
   fi
