@@ -8,8 +8,8 @@ services:
   # ================================
   bitvmx-client:
     platform: linux/amd64
-    environment:
-      RUST_LOG: debug
+    # environment:
+      # RUST_LOG: debug
     extra_hosts:
       - "host.docker.internal:host-gateway"
     extends:
