@@ -2,8 +2,18 @@
 set -euo pipefail
 
 # Prepare Bitcoin funding for operator stacks.
-# - If --env local: fetches all 4 operators, shows mine_utxo and mine_block steps (for Regtest/local).
-# - If --env alphanet: fetches the single operator running on this host.
+# - If --env local: fetches all 4 operators locally (0.0.0.0), shows mine_utxo and mine_block steps (for Regtest/local).
+# - If --env alphanet: fetches all 4 operators from their respective alphanet hosts.
+
+# Host configuration
+ALPHANET_ENDPOINTS=("union-bridge-use1-1.alphanet.rskcomputing.net:40001" "union-bridge-use1-2.alphanet.rskcomputing.net:40001" "union-bridge-use1-3.alphanet.rskcomputing.net:40001" "union-bridge-use1-4.alphanet.rskcomputing.net:40001")
+LOCAL_ENDPOINTS=("0.0.0.0:40001" "0.0.0.0:40002" "0.0.0.0:40003" "0.0.0.0:40004")
+
+ALPHANET_PROJECT_NAME="union-operator"
+ALPHANET_PROJECTS=("$ALPHANET_PROJECT_NAME" "$ALPHANET_PROJECT_NAME" "$ALPHANET_PROJECT_NAME" "$ALPHANET_PROJECT_NAME")
+LOCAL_PROJECTS=(op_1 op_2 op_3 op_4)
+
+FUND_AMOUNT=20002000
 
 ENVIRONMENT=""
 
@@ -17,7 +27,7 @@ Options:
 
 Examples:
   $(basename "$0") --env local                  # Fund all 4 operators locally
-  $(basename "$0") --env alphanet               # Fund the operator on this alphanet host
+  $(basename "$0") --env alphanet               # Fund all 4 operators on alphanet hosts
 USAGE
 }
 
@@ -48,20 +58,18 @@ fi
 
 # Determine which operators to query
 if [[ "$ENVIRONMENT" == "local" ]]; then
-  PORTS=(40001 40002 40003 40004)
-  PROJECTS=(op_1 op_2 op_3 op_4)
-  EXPECTED_COUNT=4
+  ENDPOINTS=("${LOCAL_ENDPOINTS[@]}")
+  PROJECTS=("${LOCAL_PROJECTS[@]}")
 else
-  # alphanet: single operator on this host (always uses port 40001 and union-operator project)
-  PORTS=(40001)
-  PROJECTS=(union-operator)
-  EXPECTED_COUNT=1
+  # alphanet: 4 operators on different hosts (all use port 40001 and union-operator project)
+  ENDPOINTS=("${ALPHANET_ENDPOINTS[@]}")
+  PROJECTS=("${ALPHANET_PROJECTS[@]}")
 fi
 
 # Query user-api endpoints
-for port in "${PORTS[@]}"; do
-  echo "GET http://0.0.0.0:$port/member/bitvmx-address"
-  curl -sS -X GET "http://0.0.0.0:$port/member/bitvmx-address"
+for endpoint in "${ENDPOINTS[@]}"; do
+  echo "GET http://$endpoint/member/bitvmx-address"
+  curl -sS -X GET "http://$endpoint/member/bitvmx-address"
   echo
 done
 
@@ -70,14 +78,20 @@ sleep 10
 # -------- Collect BitVMX funding addresses from logs --------
 addresses=()
 
-for project in "${PROJECTS[@]}"; do
-  addr=$(
-    docker compose -p "$project" logs 2>/dev/null \
-    | grep "Received BitVMX Funding Address:" \
-    | sed -nE 's/.*Received BitVMX Funding Address:[[:space:]]*([a-zA-Z0-9]+).*/\1/p' \
-    | sort -u \
-    | tail -n 1
-  )
+for i in "${!PROJECTS[@]}"; do
+  project="${PROJECTS[$i]}"
+  endpoint="${ENDPOINTS[$i]}"
+  host="${endpoint%:*}"
+
+  if [[ "$ENVIRONMENT" == "local" ]]; then
+    cmd="docker compose -p \"$project\" logs 2>/dev/null | sed -nE 's/.*Received BitVMX Funding Address:[[:space:]]*([a-z0-9]+).*/\1/p' | tail -n 1"
+    echo "Running: $cmd" >&2
+    addr=$(eval "$cmd")
+  else
+    remote_cmd="docker compose -p '$project' logs 2>/dev/null | sed -nE 's/.*Received BitVMX Funding Address:[[:space:]]*([a-z0-9]+).*/\1/p' | tail -n 1"
+    echo "Running: ssh ubuntu@$host \"$remote_cmd\"" >&2
+    addr=$(ssh ubuntu@$host "$remote_cmd")
+  fi
   if [ -n "${addr:-}" ]; then
     if [[ "$ENVIRONMENT" == "local" ]]; then
       echo "$project -> $addr" >&2
@@ -91,12 +105,13 @@ for project in "${PROJECTS[@]}"; do
 done
 
 found=${#addresses[@]}
+expected=${#PROJECTS[@]}
 if (( found == 0 )); then
   echo "Error: could not fetch any BitVMX funding addresses from operator logs. Ensure the operator stack(s) are running." >&2
   exit 1
 fi
-if (( found < EXPECTED_COUNT )); then
-  echo "Error: expected $EXPECTED_COUNT BitVMX funding address(es) but found $found. Ensure all required operator stacks are running and have emitted the funding address log line." >&2
+if (( found < expected )); then
+  echo "Error: expected $expected BitVMX funding address(es) but found $found. Ensure all required operator stacks are running and have emitted the funding address log line." >&2
   exit 1
 fi
 
@@ -105,24 +120,19 @@ addr_array=$(IFS=,; echo "${addresses[*]}")
 
 if [[ "$ENVIRONMENT" == "local" ]]; then
   cat <<EOF
+Note: See the bitcoin-wallet README for how to start and use the CLI: ../bitcoin-wallet/README.md
+
 Run the following commands in the bitcoin-wallet CLI (Regtest):
 1 =>    clear_db   (if you see a misaligned utxos error)
-1 =>    mine_utxo 900000000
-2 =>    send_to_address $addr_array 20002000
-3 =>    mine_block
-
-Note: See the bitcoin-wallet README for how to start and use the CLI: ../bitcoin-wallet/README.md
-EOF
-elif [[ "$ENVIRONMENT" == "alphanet" ]]; then
-  cat <<EOF
-Run the following command in your bitcoin-wallet or wallet tooling for alphanet:
-send_to_address $addr_array 20002000
-
-Address: ${addresses[0]}
+2 =>    mine_utxo 900000000
+3 =>    send_to_address $addr_array $FUND_AMOUNT
+4 =>    mine_block
 EOF
 else
   cat <<EOF
-Run the following command in your bitcoin-wallet or wallet tooling for '$ENVIRONMENT':
-send_to_address $addr_array 20002000
+Note: See the bitcoin-wallet README for how to start and use the CLI: ../bitcoin-wallet/README.md
+
+Run the following command in your bitcoin-wallet or wallet tooling for $ENVIRONMENT:
+send_to_address $addr_array $FUND_AMOUNT
 EOF
 fi
