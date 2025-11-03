@@ -236,7 +236,7 @@ setup_committee() {
         
         echo "[setup-committee] Sending request: $json_payload"
         
-        if curl_output=$(curl -s --connect-timeout 5 --max-time 10 -X POST "http://localhost:$port/apply-stream" \
+        if curl_output=$(curl -s --connect-timeout 5 --max-time 10 -X POST "http://localhost:$port/member/apply-stream" \
             -H "Content-Type: application/json" \
             -d "$json_payload" 2>&1); then
             echo "[setup-committee] Successfully setup client $i. Response: $curl_output"
