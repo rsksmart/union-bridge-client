@@ -675,10 +675,15 @@ where
         tx_status: TransactionStatus,
     ) -> Result<()> {
         //find the pegout event state for the given flow_id
-        let state = self
-            .tracker
-            .get_mut(flow_id)
-            .ok_or_else(|| anyhow!("Pegout state not found for flow_id: {}", flow_id))?;
+        let state = self.tracker.get_mut(flow_id);
+        if state.is_none() {
+            debug!(
+                "Ignoring tx {}, Pegout state not found for flow_id {flow_id}",
+                tx_status.tx_id
+            );
+            return Ok(());
+        }
+        let state = state.unwrap();
         if state.user_take_tx_id != Some(tx_status.tx_id) {
             bail!(
                 "Pegout state for flow_id: {} does not match tx_id: {}",
