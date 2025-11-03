@@ -1115,6 +1115,16 @@ where
 
                 Ok(())
             }
+            Err(DomainErrors::PeginAlreadyRequested(msg)) => {
+                // This is expected if the same pegin is requested multiple times
+                // We should treat it as a success case
+                let tx_id = spv_proof.tx.compute_txid();
+                info!(
+                    "Pegin already requested for tx_id={}, treating as expected: {}",
+                    tx_id, msg
+                );
+                Ok(())
+            }
             Err(domain_err) => bail!("Error executing 'requestPegin': {domain_err:?}"),
         }
     }
