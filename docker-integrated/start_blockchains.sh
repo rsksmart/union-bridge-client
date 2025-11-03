@@ -107,7 +107,7 @@ echo "IS_UP_COMMAND: ${IS_UP_COMMAND} | FRESH: ${FRESH} | NEW_CONTRACTS_VERSION:
 # If requested, clean local blockchains regardless of the main command
 if [[ "${FRESH}" == true ]]; then
   echo "Cleaning local blockchains stack (down -v)..."
-  cmd="docker compose --env-file \"$ENV_PATH\" -f \"$COMPOSE_FILE\" down --volumes || true"
+  cmd="docker compose -p blockchains --env-file \"$ENV_PATH\" -f \"$COMPOSE_FILE\" down --volumes || true"
   echo "Running: $cmd"
   eval "$cmd"
 fi
@@ -115,7 +115,7 @@ fi
 # Optionally rebuild the deploy-contracts image before proceeding
 if [[ "${NEW_CONTRACTS_VERSION}" == true ]]; then
   echo "Forcing rebuild of 'deploy-contracts' image..."
-  cmd="docker compose --env-file \"$ENV_PATH\" -f \"$COMPOSE_FILE\" down || true"
+  cmd="docker compose -p blockchains --env-file \"$ENV_PATH\" -f \"$COMPOSE_FILE\" down || true"
   echo "Running: $cmd"
   eval "$cmd"
   echo "Removing blockchains-deploy-contracts image"
@@ -123,7 +123,7 @@ if [[ "${NEW_CONTRACTS_VERSION}" == true ]]; then
 fi
 
 BITCOIND_CONTAINER="bitcoind"
-RUNNING_COUNT=$(docker compose --env-file "$ENV_PATH" -f "$COMPOSE_FILE" --profile local ps --status running -q ${BITCOIND_CONTAINER} anvil | wc -l | tr -d ' ')
+RUNNING_COUNT=$(docker compose -p blockchains --env-file "$ENV_PATH" -f "$COMPOSE_FILE" --profile local ps --status running -q ${BITCOIND_CONTAINER} anvil | wc -l | tr -d ' ')
 
 echo "Detected $RUNNING_COUNT running containers in the local blockchains stack."
 
@@ -132,7 +132,7 @@ if [[ "${NEW_CONTRACTS_VERSION}" == false && "${IS_UP_COMMAND}" == true && "${RU
 fi
 
 # Finally, run the requested docker compose command
-docker compose --env-file "$ENV_PATH" -f "$COMPOSE_FILE" --profile local "${DOCKER_COMPOSE_ARGS[@]}"
+docker compose -p blockchains --env-file "$ENV_PATH" -f "$COMPOSE_FILE" --profile local "${DOCKER_COMPOSE_ARGS[@]}"
 
 # If using 'up' command after a fresh teardown, create the Bitcoin wallet and deploy contracts
 if [[ "${IS_UP_COMMAND}" == true && "${FRESH}" == true ]]; then

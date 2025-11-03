@@ -106,6 +106,13 @@ if [[ -z "$ENVIRONMENT" ]]; then
   exit 1
 fi
 
+# Validate --fresh flag usage
+if [[ "${FRESH}" == true && "$ENVIRONMENT" != "local" ]]; then
+  echo "Error: --fresh is only allowed with --env local."
+  echo "For alphanet, manually tear down the operator if needed."
+  exit 1
+fi
+
 # Check if build command is being used
 for arg in "${DOCKER_COMPOSE_ARGS[@]}"; do
   if [[ "$arg" == "build" || "$arg" == "--build" || "$arg" == "-b" ]]; then
@@ -200,7 +207,6 @@ fi
 run_local_operators() {
   # LOCAL ENVIRONMENT: All 4 operators on one host
   # Each operator uses different ports to avoid conflicts
-  # Static IPs assigned via docker-compose.local.yml overlay
 
   # Create shared network for P2P communication between operators if missing
   local NETWORK_NAME="bitvmx-shared-network"
@@ -215,7 +221,7 @@ run_local_operators() {
   # should match docker-integrated/bitvmx-client/config/local/broker/config/peers.yaml
   local BITVMX_P2P_HOSTS=("172.20.0.11" "172.20.0.12" "172.20.0.13" "172.20.0.14")
   local CLIENT_OPS=("op_1" "op_2" "op_3" "op_4")
-  local COMPOSE_FILE_ARG="-f docker-compose.yml -f docker-compose.local.yml"
+  local COMPOSE_FILE_ARG="-f docker-compose.yml"
 
   for op_num in "${OPERATORS_TO_RUN[@]}"; do
     local i=$((op_num - 1))

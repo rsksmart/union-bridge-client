@@ -319,7 +319,7 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
             // The InvalidSlotState error typically contains actual and expected slot states
             DomainErrors::InvalidSlotState {
                 expected: e.expected as u8,
-                actual: e.actual as u8
+                actual: e.actual as u8,
             }
         }
         // Unhandled
