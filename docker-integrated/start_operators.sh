@@ -141,27 +141,18 @@ fi
 # Set OPERATORS_TO_RUN based on environment
 if [[ "$ENVIRONMENT" == "alphanet" && "${IS_STARTUP_COMMAND}" == true ]]; then
   # Alphanet startup: use the single operator from --op
+  echo "You are about to start operator ${OPERATOR_ARG} on alphanet."
+  read -p "Is this correct? (yes/no): " confirmation
+
+  if [[ "$confirmation" != "yes" ]]; then
+    echo "Aborted."
+    exit 1
+  fi
+
   OPERATORS_TO_RUN=("$OPERATOR_ARG")
 elif [[ "$ENVIRONMENT" == "local" ]]; then
   # Local: run all operators
   OPERATORS_TO_RUN=(1 2 3 4)
-fi
-# For alphanet non-startup commands, OPERATORS_TO_RUN is not used
-
-# Prompt for WALLET_PRIVATE_KEY if running startup commands
-if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
-  if [[ -z "${WALLET_PRIVATE_KEY}" ]]; then
-    echo "Please enter WALLET_PRIVATE_KEY (input will be hidden):"
-    read -s WALLET_PRIVATE_KEY
-    echo ""
-
-    if [[ -z "${WALLET_PRIVATE_KEY}" ]]; then
-      echo "Error: WALLET_PRIVATE_KEY is required for 'up' or 'restart' commands."
-      exit 1
-    fi
-
-    export WALLET_PRIVATE_KEY
-  fi
 fi
 
 # If requested, clean operator stacks regardless of the main command
@@ -187,6 +178,22 @@ if [[ "${FRESH}" == true ]]; then
     cmd="docker compose -p union-operator --env-file ${ENV_FILE} down --volumes"
     echo "Running: ${cmd}"
     eval "${cmd}"
+  fi
+fi
+
+# Prompt for WALLET_PRIVATE_KEY if running startup commands
+if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
+  if [[ -z "${WALLET_PRIVATE_KEY}" ]]; then
+    echo "Please enter WALLET_PRIVATE_KEY (input will be hidden):"
+    read -s WALLET_PRIVATE_KEY
+    echo ""
+
+    if [[ -z "${WALLET_PRIVATE_KEY}" ]]; then
+      echo "Error: WALLET_PRIVATE_KEY is required for 'up' or 'restart' commands."
+      exit 1
+    fi
+
+    export WALLET_PRIVATE_KEY
   fi
 fi
 
