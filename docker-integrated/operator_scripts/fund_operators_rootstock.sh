@@ -48,8 +48,8 @@ get_signers() {
   for project in op_1 op_2 op_3 op_4; do
     # Use a guard around grep to avoid failing the whole script under set -o pipefail when no match is found
     docker compose -p "$project" logs \
-      | { grep "Got signer with address" || true; } \
-      | sed 's/.*Got signer with address //' \
+      | { grep "Got member signer with address" || true; } \
+      | sed 's/.*Got member signer with address //' \
       | sort -u \
       | while read -r addr; do
           [ -z "$addr" ] && continue

@@ -70,7 +70,7 @@ post_apply() {
 }
 EOF
 )
-  curl -sS -X POST "http://localhost:${port}/apply-stream" \
+  curl -sS -X POST "http://localhost:${port}/member/apply-stream" \
     -H "Content-Type: application/json" \
     -d "${data}"
 }
