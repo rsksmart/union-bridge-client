@@ -1,3 +1,6 @@
-# transaction_dispatcher
+# ═══════════════════════════════════════════════════════
+# Transaction Dispatcher
+# ═══════════════════════════════════════════════════════
+
 [key_store]
 path = "test_keystore/keyfile"

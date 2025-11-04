@@ -1,11 +1,17 @@
-# common
+# ═══════════════════════════════════════════════════════
+# Common Configuration
+# ═══════════════════════════════════════════════════════
+
 provider.rootstock.url = "ws://127.0.0.1:8545"
-indexer.initial_block_hash = "0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c"
-indexer.storage.path = "/your_base_path/.union_bridge/database/multi-client-1"
-indexer.cache.size = 1000
-indexer.sync.finality_depth = 100
-indexer.sync.batch_size = 100
 bitcoin_network = "regtest"
+
+[indexer]
+
+initial_block_hash = "0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c"
+storage.path = "/your_base_path/.union_bridge/database/multi-client-1"
+cache.size = 1000
+sync.finality_depth = 100
+sync.batch_size = 100
 
 [[contracts]]
 name = "TestContractDyn"
@@ -39,6 +45,10 @@ address = "0x68B1D87F95878fE05B998F19b66F4baba5De1aed"
 name = "StreamManager"
 address = "0x610178dA211FEF7D417bC0e6FeD39F05609AD788"
 
+# ═══════════════════════════════════════════════════════
+# Coordinator
+# ═══════════════════════════════════════════════════════
+
 [coordinator]
 
 log_broker.host = "127.0.0.1"
@@ -52,18 +62,34 @@ bitvmx_broker.port = 9005
 broker_client_id = 1
 storage_path = "/your_base_path/.union_bridge/coordinator"
 
+# ═══════════════════════════════════════════════════════
+# Block Indexer
+# ═══════════════════════════════════════════════════════
+
 [block_indexer]
 
 block_notifier.broker_port = 9001
+
+# ═══════════════════════════════════════════════════════
+# Log Indexer
+# ═══════════════════════════════════════════════════════
 
 [log_indexer]
 
 log_notifier.broker_port = 9006
 
+# ═══════════════════════════════════════════════════════
+# Transaction Dispatcher
+# ═══════════════════════════════════════════════════════
+
 [transaction_dispatcher]
 
 key_store.path = "/your_base_path/.union_bridge/keystore/multi-client-1"
 transaction.gas_bumps_t1 = 3
+
+# ═══════════════════════════════════════════════════════
+# User API
+# ═══════════════════════════════════════════════════════
 
 [user_api]
 

@@ -1,11 +1,23 @@
+# ═══════════════════════════════════════════════════════
+# Common Configuration
+# ═══════════════════════════════════════════════════════
+
 provider.rootstock.url = "ws://127.0.0.1:8545"
 indexer.storage.path = "/app/db/"
+
+# ═══════════════════════════════════════════════════════
+# Coordinator
+# ═══════════════════════════════════════════════════════
 
 [coordinator]
 storage_path = "/app/db/"           # This should match the volume mount in docker-compose
 block_broker.host = "block-indexer"
 log_broker.host = "log-indexer"
 user_broker.host = "user-api"
+
+# ═══════════════════════════════════════════════════════
+# Transaction Dispatcher
+# ═══════════════════════════════════════════════════════
 
 [transaction_dispatcher]
 key_store.path = "/keystore/key.json"
