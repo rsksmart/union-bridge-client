@@ -24,7 +24,7 @@ pub enum GatewayRole {
 
 pub async fn get_contracts_gateway<P: Provider + Clone>(
     provider: P,
-    config: config::ConfigAsBin,
+    config: config::Config,
     member_address: Address,
 ) -> Result<RskContractsGateway<P>> {
     RskContractsGateway::new(
@@ -39,14 +39,13 @@ pub async fn get_contracts_gateway<P: Provider + Clone>(
 
 pub fn get_contracts_gateway_as_lib_sync_with_role(
     rt_sync: RuntimeSync,
-    config: config::ConfigAsLib,
-    role: GatewayRole,
+    config: config::Config,
 ) -> Result<RskContractsGateway<impl Provider + Clone>, DomainErrors> {
     rt_sync.run(create_contracts_gateway_impl_with_role(config, role))
 }
 
-pub async fn get_contracts_gateway_as_lib_with_role(
-    config: config::ConfigAsLib,
+pub async fn get_contracts_gateway_as_lib(
+    config: config::Config,
     role: GatewayRole,
 ) -> Result<RskContractsGateway<impl Provider + Clone>> {
     create_contracts_gateway_impl_with_role(config, role)
@@ -54,8 +53,8 @@ pub async fn get_contracts_gateway_as_lib_with_role(
         .map_err(|e| anyhow::anyhow!("Failed to create contracts gateway: {}", e))
 }
 
-async fn create_contracts_gateway_impl_with_role(
-    config: config::ConfigAsLib,
+async fn create_contracts_gateway_impl(
+    config: config::Config,
     role: GatewayRole,
 ) -> Result<RskContractsGateway<impl Provider + Clone>, DomainErrors> {
     let key_path = match role {

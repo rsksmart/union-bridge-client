@@ -14,7 +14,7 @@ use coordinator::{
 };
 use log::{debug, error, info};
 use std::rc::Rc;
-use transaction_dispatcher::config::ConfigAsLib as TxDispatcherConfig;
+use transaction_dispatcher::config::Config as TxDispatcherConfig;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const ENV_CLI_FLAG: &str = "env";

@@ -8,7 +8,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::thread;
 use tokio::net::TcpListener;
-use transaction_dispatcher::config::ConfigAsLib as TxDispatcherConfig;
+use transaction_dispatcher::config::Config as TxDispatcherConfig;
 use user_api::config::{Config, Logger};
 use user_api::Server;
 

@@ -7,13 +7,7 @@ use std::collections::HashMap;
 const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
 #[derive(Debug, Deserialize)]
-pub struct ConfigAsBin {
-    #[serde(flatten)]
-    pub lib_config: ConfigAsLib,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct ConfigAsLib {
+pub struct Config {
     pub provider: ProviderConfig,
     pub contracts: Vec<ContractConfig>,
     #[serde(rename = "transaction_dispatcher")]
@@ -37,35 +31,9 @@ pub struct TransactionConfig {
     pub gas_bumps_t1: u8,
 }
 
-impl ConfigAsBin {
+impl Config {
     pub fn load(env_name: Option<String>) -> Result<Self, ConfigError> {
-        CommonConfig::load_config::<ConfigAsBin>(env_name)
-    }
-
-    pub fn provider(&self) -> &ProviderConfig {
-        &self.lib_config.provider
-    }
-
-    pub fn load_managed_contracts(&self) -> HashMap<String, ContractInfo> {
-        self.lib_config.load_managed_contracts()
-    }
-
-    pub fn key_store(&self) -> &KeyStoreConfig {
-        &self.lib_config.tx_dispatcher_config.key_store
-    }
-
-    pub fn transaction(&self) -> &TransactionConfig {
-        &self.lib_config.tx_dispatcher_config.transaction
-    }
-
-    pub fn contracts(&self) -> &Vec<ContractConfig> {
-        &self.lib_config.contracts
-    }
-}
-
-impl ConfigAsLib {
-    pub fn load(env_name: Option<String>) -> Result<Self, ConfigError> {
-        CommonConfig::load_config::<ConfigAsLib>(env_name)
+        CommonConfig::load_config::<Config>(env_name)
     }
 
     pub fn load_managed_contracts(&self) -> HashMap<String, ContractInfo> {
@@ -83,6 +51,14 @@ impl ConfigAsLib {
                 )
             })
             .collect()
+    }
+
+    pub fn key_store(&self) -> &KeyStoreConfig {
+        &self.tx_dispatcher_config.key_store
+    }
+
+    pub fn transaction(&self) -> &TransactionConfig {
+        &self.tx_dispatcher_config.transaction
     }
 }
 
@@ -103,8 +79,8 @@ mod tests {
 
     #[test]
     fn test_config_load_when_custom_config_set_should_load_config_successfully() {
-        let config: ConfigAsBin =
-            CommonConfig::load_config::<ConfigAsBin>(None).expect("Failed to load config");
+        let config: Config =
+            CommonConfig::load_config::<Config>(None).expect("Failed to load config");
 
         assert_eq!(
             "/your_base_path/.union_bridge/keystore/multi-client-1-user",
@@ -120,8 +96,8 @@ mod tests {
     #[test]
     fn test_load_contracts_when_stage_config_set_should_load_contracts_successfully() {
         // using base.yaml
-        let config: ConfigAsBin =
-            CommonConfig::load_config::<ConfigAsBin>(None).expect("Failed to load config");
+        let config: Config =
+            CommonConfig::load_config::<Config>(None).expect("Failed to load config");
         let contracts = config.load_managed_contracts();
 
         assert_eq!(8, contracts.len());
