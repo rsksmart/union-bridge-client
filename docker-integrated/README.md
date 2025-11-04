@@ -274,7 +274,6 @@ Currently, there are two main tags for the Docker images used in this setup:
   - **Alphanet**: Requires `--role` flag (Prover or Verifier) and applies only the single operator on this host
 - The script forwards standard docker compose arguments (e.g., up, down, logs, ps, -d, --force-recreate). However, build is explicitly forbidden; use published images from the registry by tag instead.
 - The script intentionally forbids building from source (build args are blocked). It is designed to consume registry images by tag.
-- For local environment, it will create the external Docker network `bitvmx-shared-network` (`172.20.0.0/16`) if it doesn't exist.
 
 ## Troubleshooting
 
@@ -290,7 +289,6 @@ See the `bitcoin-wallet` [README](../bitcoin-wallet/README.md) for more info.
 ### Resource conflicts
 
 - **Port conflicts**: ensure ports `40001–40004`, `61180–61183`, and `22222/33333/44444/55554` are free.
-- **Network conflict**: if `172.20.0.0/16` is in use, recreate the `bitvmx-shared-network` with a different subnet and
   export `BITVMX_P2P_HOST` addresses accordingly in `start_operators.sh`.
 - **Healthchecks**: services wait for each other; if something is stuck, try bringing stacks down as mentioned above,
   re-check env files, and start again.

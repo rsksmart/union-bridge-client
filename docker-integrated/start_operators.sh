@@ -188,32 +188,23 @@ if [[ "${FRESH}" == true ]]; then
   fi
 fi
 
-# Prompt for WALLET_PRIVATE_KEY if running startup commands
+# Prompt for USER_WALLET_PRIVATE_KEY if running startup commands
 if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
-  if [[ -z "${WALLET_PRIVATE_KEY}" ]]; then
-    echo "Please enter WALLET_PRIVATE_KEY (input will be hidden):"
-    read -s WALLET_PRIVATE_KEY
+  if [[ -z "${USER_WALLET_PRIVATE_KEY}" ]]; then
+    echo "Please enter USER_WALLET_PRIVATE_KEY (input will be hidden):"
+    read -s USER_WALLET_PRIVATE_KEY
     echo ""
 
-    if [[ -z "${WALLET_PRIVATE_KEY}" ]]; then
-      echo "Error: WALLET_PRIVATE_KEY is required for 'up' or 'restart' commands."
+    if [[ -z "${USER_WALLET_PRIVATE_KEY}" ]]; then
+      echo "Error: USER_WALLET_PRIVATE_KEY is required for 'up' or 'restart' commands."
       exit 1
     fi
-
-    export WALLET_PRIVATE_KEY
   fi
 fi
 
 run_local_operators() {
   # LOCAL ENVIRONMENT: All 4 operators on one host
   # Each operator uses different ports to avoid conflicts
-
-  # Create shared network for P2P communication between operators if missing
-  local NETWORK_NAME="bitvmx-shared-network"
-  if ! docker network inspect $NETWORK_NAME >/dev/null 2>&1; then
-    echo "Creating docker network '$NETWORK_NAME'..."
-    docker network create --driver bridge --subnet=172.20.0.0/16 $NETWORK_NAME
-  fi
   
   local USER_API_PORTS=(40001 40002 40003 40004)
   local BITVMX_PORTS=(22222 33333 44444 55554)
@@ -231,10 +222,10 @@ run_local_operators() {
     local BITVMX_P2P_PORT=${BITVMX_P2P_PORTS[$i]}
     local CLIENT_OP=${CLIENT_OPS[$i]}
 
-    local DOCKER_CMD="USER_API_PORT=${USER_API_PORT} BITVMX_PORT=${BITVMX_PORT} BITVMX_P2P_HOST=${BITVMX_P2P_HOST} BITVMX_P2P_PORT=${BITVMX_P2P_PORT} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${COMPOSE_FILE_ARG} -p op_${op_num} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
+    local DOCKER_CMD="WALLET_PRIVATE_KEY=${USER_WALLET_PRIVATE_KEY} USER_API_PORT=${USER_API_PORT} BITVMX_PORT=${BITVMX_PORT} BITVMX_P2P_HOST=${BITVMX_P2P_HOST} BITVMX_P2P_PORT=${BITVMX_P2P_PORT} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${COMPOSE_FILE_ARG} -p op_${op_num} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
 
     echo
-    echo "Starting operator ${op_num} with command: '${DOCKER_CMD}'"
+    echo "Starting operator ${op_num} with command: '$(echo "${DOCKER_CMD}" | sed "s/WALLET_PRIVATE_KEY=[^ ]*/WALLET_PRIVATE_KEY=******/")'"
     eval "${DOCKER_CMD}"
   done
 }
@@ -259,8 +250,8 @@ run_alphanet_operators() {
     echo "Running command on alphanet operator:"
   fi
 
-  local DOCKER_CMD="USER_API_PORT=40001 BITVMX_PORT=22222 BITVMX_P2P_PORT=61180 CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose -f docker-compose.yml --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
-  echo "'${DOCKER_CMD}'"
+  local DOCKER_CMD="WALLET_PRIVATE_KEY=${USER_WALLET_PRIVATE_KEY} USER_API_PORT=40001 BITVMX_PORT=22222 BITVMX_P2P_PORT=61180 CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose -f docker-compose.yml --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
+  echo "'$(echo "${DOCKER_CMD}" | sed "s/WALLET_PRIVATE_KEY=[^ ]*/WALLET_PRIVATE_KEY=******/")'"
   eval "${DOCKER_CMD}"
 }
 
