@@ -13,7 +13,7 @@ pub struct ConfigAsBin {
     pub lib_config: ConfigAsLib,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct ConfigAsLib {
     pub provider: ProviderConfig,
     pub key_store: KeyStoreConfig,
@@ -21,9 +21,10 @@ pub struct ConfigAsLib {
     pub contracts: Vec<ContractConfig>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct KeyStoreConfig {
-    pub path: String,
+    pub user_path: String,
+    pub member_path: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -31,7 +32,7 @@ pub struct ServerConfig {
     pub url: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct TransactionConfig {
     pub gas_bumps_t1: u8,
 }
@@ -109,9 +110,19 @@ mod tests {
         // provider - using values from base.yaml
         assert_eq!("ws://127.0.0.1:8545", config.provider().rootstock.url);
         assert_eq!("0.0.0.0:9001", config.server.url);
+        assert_eq!("ws://127.0.0.1:8545", config.provider().rootstock.url);
+
+        // server
+        assert_eq!("0.0.0.0:9001", config.server.url);
+
+        // key store
         assert_eq!(
-            "/your_base_path/.union_bridge/keystore/multi-client-1",
-            config.key_store().path
+            "/your_base_path/.union_bridge/keystore/multi-client-1-user",
+            config.key_store().user_path
+        );
+        assert_eq!(
+            "/your_base_path/.union_bridge/keystore/multi-client-1-member",
+            config.key_store().member_path
         );
         assert_eq!(3, config.transaction().gas_bumps_t1);
     }

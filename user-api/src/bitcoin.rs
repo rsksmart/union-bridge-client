@@ -16,6 +16,7 @@ pub struct User {
 
 impl User {
     pub fn new(
+        role: &str,
         rsk_address: Address,
         bitcoin_wallet_private_wif: &str,
         bitcoin_network: Network,
@@ -42,8 +43,8 @@ impl User {
             .context("Failed to get compressed public key")?;
         let bitcoin_address = BitcoinAddress::p2wpkh(&compressed_pubkey, bitcoin_network);
 
-        info!("User Bitcoin Address: {:?}", bitcoin_address);
-        info!("User RSK Address: {:?}", rsk_address);
+        info!("{} Bitcoin Address: {:?}", role, bitcoin_address);
+        info!("{} RSK Address: {:?}", role, rsk_address);
 
         Ok(Self {
             bitcoin_public_key,

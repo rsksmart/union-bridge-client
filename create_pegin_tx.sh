@@ -13,7 +13,7 @@ STREAM_AMOUNT=${1:-1000000}
 PACKET_NUMBER=${2:-0}
 
 echo "Getting pegin address from user-api..."
-RESPONSE=$(curl -s -X POST http://localhost:40001/pegin-address \
+RESPONSE=$(curl -s -X POST http://localhost:40001/user/pegin-address \
   -H "Content-Type: application/json" \
   -d "{
     \"rootstock_deposit_address\": \"$RSK_ADDRESS\",
@@ -41,6 +41,6 @@ echo "  Packet number: $PACKET_NUMBER"
 echo "  RSK address: $RSK_ADDRESS"
 echo "  Pegin address: $PEGIN_ADDRESS"
 echo ""
-echo "Now run the following command in bitcoin-wallet CLI:"
+echo "Now run the following command in bitcoin-wallet CLI (user mode):"
 echo ""
 echo "create_pegin_tx $STREAM_AMOUNT $PACKET_NUMBER $PEGIN_ADDRESS $RSK_ADDRESS"

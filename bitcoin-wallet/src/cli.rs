@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 
 use anyhow::Result;
 use rustyline::completion::{Completer, Pair};
@@ -11,9 +11,27 @@ use rustyline::history::DefaultHistory;
 use rustyline::validate::Validator;
 use rustyline::{Context as RustyContext, Editor, Helper, Result as RustyResult};
 
-#[derive(Parser, Debug, Clone, Default)]
+#[derive(Debug, Clone, ValueEnum, PartialEq)]
+pub enum WalletMode {
+    User,
+    Member,
+}
+
+impl std::fmt::Display for WalletMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WalletMode::User => write!(f, "user"),
+            WalletMode::Member => write!(f, "member"),
+        }
+    }
+}
+
+#[derive(Parser, Debug, Clone)]
 #[command(author, version, about = "Simple P2WPKH wallet CLI", long_about = None)]
 pub struct CliOpts {
+    /// Wallet mode: user for peg-in/peg-out operations, member for BitVMX operations
+    #[arg(long, value_enum)]
+    pub mode: WalletMode,
     // Environment name (without path), e.g. "testnet" will load config/testnet.toml
     #[arg(long = "env", value_name = "NAME", default_value = "regtest")]
     pub config: Option<String>,
@@ -21,8 +39,6 @@ pub struct CliOpts {
     pub utxo_db: Option<PathBuf>,
     #[arg(long, env = "WALLET_SATS_PER_BYTE", value_name = "SAT_PER_BYTE")]
     pub sats_per_byte: Option<u64>,
-    #[arg(long = "private-key", env = "WALLET_PRIVATE_KEY", value_name = "WIF")]
-    pub private_key_wif: Option<String>,
     #[arg(long, env = "WALLET_RPC_URL", value_name = "URL")]
     pub rpc_url: Option<String>,
     #[arg(long, env = "WALLET_RPC_USER", value_name = "USER")]

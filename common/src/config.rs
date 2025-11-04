@@ -52,17 +52,17 @@ pub struct CacheConfig {
     pub size: usize,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct ProviderConfig {
     pub rootstock: RootstockConfig,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct RootstockConfig {
     pub url: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct ContractConfig {
     // TODO(Jira-RethinkContractHandling) convert into a map
     pub name: String,

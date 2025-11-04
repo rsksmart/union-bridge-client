@@ -15,7 +15,7 @@ use clap::Parser;
 use rustyline::error::ReadlineError;
 use serde_json::json;
 use ub_wallet::bitcoin::utils::find_vout_for_address;
-use ub_wallet::cli::{CliOpts, setup_editor};
+use ub_wallet::cli::{CliOpts, WalletMode, setup_editor};
 use ub_wallet::config::Config;
 use ub_wallet::wallet::{CreatedTransaction, Wallet};
 
@@ -33,12 +33,12 @@ fn main() -> Result<()> {
     let mut wallet = Wallet::from_config(&config)?;
 
     println!(
-        "Simple P2WPKH wallet (network: {}). Type 'help' for commands.",
-        wallet.network()
+        "Simple P2WPKH wallet (mode: {}, network: {}). Type 'help' for commands.",
+        config.mode, wallet.network()
     );
 
     loop {
-        let prompt = prompt_for(wallet.network());
+        let prompt = prompt_for(&config.mode, wallet.network());
         match editor.readline(&prompt) {
             Ok(line) => {
                 let trimmed = line.trim();
@@ -55,7 +55,7 @@ fn main() -> Result<()> {
 
                 let _ = editor.add_history_entry(history_entry.as_ref());
 
-                match handle_command(&mut wallet, trimmed) {
+                match handle_command(&mut wallet, &config.mode, trimmed) {
                     Ok(CommandOutcome::Continue) => {}
                     Ok(CommandOutcome::Exit) => break,
                     Err(err) => eprintln!("Error: {:#}", err),
@@ -138,7 +138,7 @@ fn check_transaction_status(wallet: &Wallet, txid: &Txid) -> Result<TxConfirmati
     })
 }
 
-fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
+fn handle_command(wallet: &mut Wallet, mode: &WalletMode, line: &str) -> Result<CommandOutcome> {
     let mut parts = line.split_whitespace();
     let command = parts.next().unwrap();
 
@@ -467,6 +467,11 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
             Ok(CommandOutcome::Continue)
         }
         "create_pegin_tx" => {
+            // Restrict to user mode only
+            if *mode != WalletMode::User {
+                bail!("create_pegin_tx command is only available in user mode");
+            }
+
             // Syntax: create_pegin_tx <stream_value> <packet_number> <dest_addr> <rsk_address>
             let stream_value_str = parts.next().context("expected stream value in satoshis")?;
             let stream_value: u64 = stream_value_str
@@ -525,15 +530,11 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
     }
 }
 
-fn prompt_for(network: Network) -> String {
+fn prompt_for(mode: &WalletMode, network: Network) -> String {
     let name = network_name(network);
     let prompt_color = "\x1b[36m";
-    let network_color = match network {
-        Network::Bitcoin => "\x1b[31m",
-        _ => prompt_color,
-    };
     let reset = "\x1b[0m";
-    format!("{prompt_color}ub-wallet ({network_color}{name}{prompt_color})>{reset} ",)
+    format!("{prompt_color}{mode}@{name}>{reset} ",)
 }
 
 fn network_name(network: Network) -> &'static str {

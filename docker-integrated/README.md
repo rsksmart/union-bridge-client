@@ -9,8 +9,8 @@ With this setup you get:
 
 ## Pre-requisites
 
-When pushing or pulling to a private GitHub container registry, Docker asks for a personal access token. You can generate one on GitHub using this [link](https://github.com/settings/tokens/new).
-. You can set up the token by running the following command:
+When pushing or pulling to a private GitHub container registry, Docker asks for a personal access token. You can generate one on GitHub using this [link](https://github.com/settings/tokens/new). 
+Make sure you create the token with registry access. You can set up the token by running the following command:
 
 ```bash
 echo "$GITHUB_REGISTRY_TOKEN" | docker login ghcr.io -u "user" --password-stdin.
@@ -101,8 +101,8 @@ bash start_blockchains.sh --env local --new-contracts-version --fresh up -d
 
 ### 3) Start or stop the 4 operator stacks
 
-A `WALLET_PRIVATE_KEY` needs to be exported in the environment. It is the Bitcoin private key (WIF) of the end user (used by `user-api`).
-The `bitcoin-wallet` wallet needs to be using this key when generating the pegin transaction. You can generate one via the `bitcoin-wallet` with `generate_address`.
+A `MEMBER_BITCOIN_WIF` needs to be exported in the environment. It is the Bitcoin private key (WIF) of the member/operator (used by BitVMX operations).
+The `bitcoin-wallet` wallet needs to be using this key when generating operator transactions. You can generate one via the `bitcoin-wallet` with `generate_address`.
 See [bitcoin-wallet README](bitcoin-wallet/README.md) for more info.
 
 Show script help:

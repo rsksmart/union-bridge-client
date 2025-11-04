@@ -45,8 +45,8 @@ if [[ -z "$ENVIRONMENT" ]]; then
 fi
 
 for port in 40001 40002 40003 40004; do
-  echo "GET http://0.0.0.0:$port/bitvmx-address"
-  curl -sS -X GET "http://0.0.0.0:$port/bitvmx-address"
+  echo "GET http://0.0.0.0:$port/member/bitvmx-address"
+  curl -sS -X GET "http://0.0.0.0:$port/member/bitvmx-address"
   echo
 done
 
@@ -58,7 +58,9 @@ found_projects=()
 for project in op_1 op_2 op_3 op_4; do
   addr=$(
     docker compose -p "$project" logs 2>/dev/null \
-    | sed -nE 's/.*Received BitVMX Funding Address:[[:space:]]*([a-z0-9]+).*/\1/p' \
+    | grep "Received BitVMX Funding Address:" \
+    | sed -nE 's/.*Received BitVMX Funding Address:[[:space:]]*([a-zA-Z0-9]+).*/\1/p' \
+    | sort -u \
     | tail -n 1
   )
   if [ -n "${addr:-}" ]; then

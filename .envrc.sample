@@ -26,11 +26,14 @@ export BASE_STORAGE_PATH="<path/to/your/storage>"
 export KEY_STORE_PASSWORD="<super-secret-password>"
 # optional (with fallback)
 export CHECK_FORK_REQUIRED_NUM_BLOCKS=25
-# temporary user rsk address, until we split user-api in 2
+# user rsk address
 export RSK_ADDRESS="<your_rsk_address>"
 
 ############################################################
 # Bitcoin
 ############################################################
-export WALLET_PRIVATE_KEY="<your_wif_private_key>"
+# User WIF for peg-in/peg-out operations
+export USER_BITCOIN_WIF="<user_wif_private_key>"
+# Member/Operator WIF for BitVMX operations
+export MEMBER_BITCOIN_WIF="<member_wif_private_key>"
 export BITCOIN_NETWORK=regtest
