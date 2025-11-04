@@ -8,7 +8,6 @@ const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
 #[derive(Debug, Deserialize)]
 pub struct ConfigAsBin {
-    pub tx_dispatcher_server: TxDispatcherServerConfig,
     #[serde(flatten)]
     pub lib_config: ConfigAsLib,
 }
@@ -34,11 +33,6 @@ pub struct KeyStoreConfig {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct TxDispatcherServerConfig {
-    pub url: String,
-}
-
-#[derive(Debug, Deserialize, Clone)]
 pub struct TransactionConfig {
     pub gas_bumps_t1: u8,
 }
@@ -112,13 +106,6 @@ mod tests {
         let config: ConfigAsBin =
             CommonConfig::load_config::<ConfigAsBin>(None).expect("Failed to load config");
 
-        assert_eq!("0.0.0.0:9001", config.server.url);
-        assert_eq!("ws://127.0.0.1:8545", config.provider().rootstock.url);
-
-        // server
-        assert_eq!("0.0.0.0:9001", config.server.url);
-
-        // key store
         assert_eq!(
             "/your_base_path/.union_bridge/keystore/multi-client-1-user",
             config.key_store().user_path
