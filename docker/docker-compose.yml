@@ -70,8 +70,8 @@ services:
       - db-coordinator:/app/db/coordinator
     restart: no
     environment:
-      - UB__bitvmx_broker__host=${BITVMX_HOST:-host.docker.internal}
-      - UB__bitvmx_broker__port=${BITVMX_PORT:-61180}
+      - UB__bitvmx_broker__host=${BITVMX_HOST}
+      - UB__bitvmx_broker__port=${BITVMX_PORT}
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
       - BITCOIN_NETWORK=${BITCOIN_NETWORK}
       - ENV_NAME=${ENV_NAME:-}

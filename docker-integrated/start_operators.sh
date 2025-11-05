@@ -72,13 +72,11 @@ while [[ $# -gt 0 ]]; do
       ENVIRONMENT="$2"
       if [[ "$ENVIRONMENT" == "alphanet" ]]; then
         ENV_FILE="${SCRIPT_DIR}/.env.alphanet"
-        ENV_NAME="docker-alphanet"
         if [[ -z "$UC_TAG" ]]; then
           UC_TAG="latest-alphanet"
         fi
       elif [[ "$ENVIRONMENT" == "local" ]]; then
         ENV_FILE="${SCRIPT_DIR}/.env.local"
-        ENV_NAME="docker-local"
         if [[ -z "$UC_TAG" ]]; then
           UC_TAG="latest-anvil"
         fi
@@ -205,6 +203,13 @@ fi
 run_local_operators() {
   # LOCAL ENVIRONMENT: All 4 operators on one host
   # Each operator uses different ports to avoid conflicts
+
+  # Create shared network for P2P communication between operators if missing
+  local NETWORK_NAME="bitvmx-shared-network"
+  if ! docker network inspect $NETWORK_NAME >/dev/null 2>&1; then
+    echo "Creating docker network '$NETWORK_NAME'..."
+    docker network create --driver bridge --subnet=172.20.0.0/16 $NETWORK_NAME
+  fi
   
   local USER_API_PORTS=(40001 40002 40003 40004)
   local BITVMX_PORTS=(22222 33333 44444 55554)
@@ -212,7 +217,7 @@ run_local_operators() {
   # should match docker-integrated/bitvmx-client/config/local/broker/config/peers.yaml
   local BITVMX_P2P_HOSTS=("172.20.0.11" "172.20.0.12" "172.20.0.13" "172.20.0.14")
   local CLIENT_OPS=("op_1" "op_2" "op_3" "op_4")
-  local COMPOSE_FILE_ARG="-f docker-compose.yml"
+  local COMPOSE_FILE_ARG="-f docker-compose.yml -f docker-compose.op_all.yml"
 
   for op_num in "${OPERATORS_TO_RUN[@]}"; do
     local i=$((op_num - 1))
@@ -232,10 +237,8 @@ run_local_operators() {
 
 run_alphanet_operators() {
   # ALPHANET ENVIRONMENT: Each operator on separate host
-  # All operators use same ports since each is on its own host
-  # No static IPs needed - bind to 0.0.0.0 in config
-  # For startup commands: OPERATORS_TO_RUN will contain a single operator ID
-  # For non-startup commands: CLIENT_OP doesn't matter (not creating containers)
+
+  local COMPOSE_FILE_ARG="-f docker-compose.yml -f docker-compose.op_one.yml"
 
   local CLIENT_OP
   if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
@@ -250,7 +253,7 @@ run_alphanet_operators() {
     echo "Running command on alphanet operator:"
   fi
 
-  local DOCKER_CMD="WALLET_PRIVATE_KEY=${USER_WALLET_PRIVATE_KEY} USER_API_PORT=40001 BITVMX_PORT=22222 BITVMX_P2P_PORT=61180 CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose -f docker-compose.yml --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
+  local DOCKER_CMD="WALLET_PRIVATE_KEY=${USER_WALLET_PRIVATE_KEY} USER_API_PORT=40001 BITVMX_PORT=22222 CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${COMPOSE_FILE_ARG} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
   echo "'$(echo "${DOCKER_CMD}" | sed "s/WALLET_PRIVATE_KEY=[^ ]*/WALLET_PRIVATE_KEY=******/")'"
   eval "${DOCKER_CMD}"
 }

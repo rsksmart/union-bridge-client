@@ -17,7 +17,7 @@ storage:
   path: /tmp/regtest/op_1/storage.db
 
 p2p:
-  address: /ip4/0.0.0.0/tcp/61180
+  address: /ip4/172.20.0.11/tcp/61180
   key: config/keys/op_1.key
   peer_id_file: peer_id
   timeout: 5

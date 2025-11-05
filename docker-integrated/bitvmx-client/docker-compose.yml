@@ -14,7 +14,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
-    network_mode: host
     volumes:
       - ./config/${ENVIRONMENT}/client/config:/app/config
       - ./config/${ENVIRONMENT}/broker/config:/app/rust-bitvmx-workspace/rust-fakep2p/broker/config
