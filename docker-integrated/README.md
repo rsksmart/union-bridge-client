@@ -65,7 +65,6 @@ The BitVMX client requires different Docker network configurations depending on 
 - The BitVMX client binds P2P ports directly to the host's network interfaces
 - Required because BitVMX advertises its P2P address to other operators, and must be reachable at the host's actual IP address
 - In a distributed deployment, operators on different physical machines need to connect to each other using real network addresses, not Docker internal IPs
-- The P2P port (configured via `BITVMX_P2P_PORT`) must be accessible from other operators across the internet or private network
 
 ### 3) Start local blockchains (LOCAL ONLY)
 

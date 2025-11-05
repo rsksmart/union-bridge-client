@@ -232,7 +232,6 @@ run_local_operators() {
   
   local USER_API_PORTS=(40001 40002 40003 40004)
   local BITVMX_PORTS=(22222 33333 44444 55554)
-  local BITVMX_P2P_PORTS=(61180 61181 61182 61183)
   # should match docker-integrated/bitvmx-client/config/local/broker/config/peers.yaml
   local BITVMX_P2P_HOSTS=("172.20.0.11" "172.20.0.12" "172.20.0.13" "172.20.0.14")
   local CLIENT_OPS=("op_1" "op_2" "op_3" "op_4")
@@ -243,10 +242,9 @@ run_local_operators() {
     local USER_API_PORT=${USER_API_PORTS[$i]}
     local BITVMX_PORT=${BITVMX_PORTS[$i]}
     local BITVMX_P2P_HOST=${BITVMX_P2P_HOSTS[$i]}
-    local BITVMX_P2P_PORT=${BITVMX_P2P_PORTS[$i]}
     local CLIENT_OP=${CLIENT_OPS[$i]}
 
-    local DOCKER_CMD="MEMBER_BITCOIN_WIF=${MEMBER_BITCOIN_WIF} USER_BITCOIN_WIF=${USER_BITCOIN_WIF} USER_API_PORT=${USER_API_PORT} BITVMX_PORT=${BITVMX_PORT} BITVMX_P2P_HOST=${BITVMX_P2P_HOST} BITVMX_P2P_PORT=${BITVMX_P2P_PORT} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${COMPOSE_FILE_ARG} -p op_${op_num} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
+    local DOCKER_CMD="MEMBER_BITCOIN_WIF=${MEMBER_BITCOIN_WIF} USER_BITCOIN_WIF=${USER_BITCOIN_WIF} USER_API_PORT=${USER_API_PORT} BITVMX_PORT=${BITVMX_PORT} BITVMX_P2P_HOST=${BITVMX_P2P_HOST} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${COMPOSE_FILE_ARG} -p op_${op_num} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
 
     echo
     echo "Starting operator ${op_num} with command: '$(echo "${DOCKER_CMD}" | sed "s/USER_BITCOIN_WIF=[^ ]*/USER_BITCOIN_WIF=******/")'"
@@ -272,7 +270,7 @@ run_alphanet_operators() {
     echo "Running command on alphanet operator:"
   fi
 
-  local DOCKER_CMD="MEMBER_BITCOIN_WIF=${MEMBER_BITCOIN_WIF} USER_BITCOIN_WIF=${USER_BITCOIN_WIF} USER_API_PORT=${USER_API_PORT} BITVMX_PORT=${BITVMX_PORT} BITVMX_P2P_HOST=${BITVMX_P2P_HOST} BITVMX_P2P_PORT=${BITVMX_P2P_PORT} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${COMPOSE_FILE_ARG} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
+  local DOCKER_CMD="MEMBER_BITCOIN_WIF=${MEMBER_BITCOIN_WIF} USER_BITCOIN_WIF=${USER_BITCOIN_WIF} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${COMPOSE_FILE_ARG} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
   echo "'$(echo "${DOCKER_CMD}" | sed "s/USER_BITCOIN_WIF=[^ ]*/USER_BITCOIN_WIF=******/")'"
   eval "${DOCKER_CMD}"
 }
