@@ -1735,7 +1735,7 @@ where
         if let Some(flow_for_req_id) = self.get_flow_for_bitvmx_response(req_id) {
             flow_for_req_id.complete_step(step_data)?;
         } else {
-            bail!("No flow found for BitVMX event with id {req_id}");
+            debug!("No flow found for BitVMX event with id {req_id}");
         }
 
         self.close_completed_flows();

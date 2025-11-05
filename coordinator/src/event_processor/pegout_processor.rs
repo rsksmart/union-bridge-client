@@ -683,14 +683,14 @@ where
             );
             return Ok(());
         }
-        let state = state.unwrap();
-        if state.user_take_tx_id != Some(tx_status.tx_id) {
-            bail!(
-                "Pegout state for flow_id: {} does not match tx_id: {}",
-                flow_id,
+        let Some(_) = self.tracker.get_mut(flow_id) else {
+            debug!(
+                "Ignoring tx {}, Pegout state not found for flow_id {flow_id}",
                 tx_status.tx_id
             );
-        }
+            return Ok(());
+        };
+
         if tx_status.confirmations >= SPV_PROOF_MIN_CONFIRMATIONS {
             debug!(
                 "Transaction confirmed with sufficient confirmations for flow_id: {}",
