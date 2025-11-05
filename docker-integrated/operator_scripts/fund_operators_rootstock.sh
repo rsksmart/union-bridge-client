@@ -75,14 +75,14 @@ get_signers() {
     host="${HOSTS[$i]}"
 
     if [[ "$ENVIRONMENT" == "local" ]]; then
-      cmd="docker compose -p \"$project\" logs | { grep 'Got member signer with address' || true; } | sed 's/.*Got signer with address //' | sort -u"
+      cmd="docker compose -p \"$project\" logs | { grep 'Got member signer with address' || true; } | sed 's/.*Got member signer with address //' | sort -u"
       echo "Running: $cmd" >&2
       eval "$cmd" | while read -r addr; do
         [ -z "$addr" ] && continue
         echo "$project $addr"
       done
     else
-      remote_cmd="docker compose -p '$project' logs | { grep 'Got member signer with address' || true; } | sed 's/.*Got signer with address //' | sort -u"
+      remote_cmd="docker compose -p '$project' logs | { grep 'Got member signer with address' || true; } | sed 's/.*Got member signer with address //' | sort -u"
       echo "Running: ssh ubuntu@$host \"$remote_cmd\"" >&2
       ssh ubuntu@$host "$remote_cmd" | while read -r addr; do
         [ -z "$addr" ] && continue
@@ -109,9 +109,9 @@ fund_local() {
   while read -r project addr; do
     echo "Processing $project"
     echo "  Funding RSK address: $addr"
-    cast send --rpc-url http://127.0.0.1:8545 \
-      --from $LOCAL_ANVIL_ADDRESS \
-      "$addr" --value 1ether --unlocked >/dev/null
+    cmd="cast send --rpc-url http://127.0.0.1:8545 --from $LOCAL_ANVIL_ADDRESS \"$addr\" --value 1ether --unlocked"
+    echo "  Running: $cmd" >&2
+    eval "$cmd" >/dev/null
   done < <(get_signers)
   echo "Done. Funded operator RSK addresses on local Anvil."
 }

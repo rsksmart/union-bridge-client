@@ -151,7 +151,8 @@ the Union Client) are:
   unlock the corresponding keystore files when running the client (see [Multi Client Setup](#Multi-Client-Setup) below)
 - `BASE_STORAGE_PATH`: base path where the client will store its data (databases, keystore files, etc.). Pick a path
   that is writable and accessible by the user running the client.
-- `WALLET_PRIVATE_KEY`: a Bitcoin private key WIF. You can generate one via the `bitcoin-wallet` with `generate_address`.
+- `USER_BITCOIN_WIF`: a Bitcoin private key WIF for an user. You can generate one via the `bitcoin-wallet` with `generate_address`.
+- `MEMBER_BITCOIN_WIF`: a Bitcoin private key WIF for a member. You can generate one via the `bitcoin-wallet` with `generate_address`.
   See [bitcoin-wallet README](bitcoin-wallet/README.md) for more info.
 
 We recommend using `direnv` to manage private environment variables. Then you can set them up by:

@@ -58,11 +58,6 @@ print_help() {
   exit 0
 }
 
-if [[ -z "${MEMBER_BITCOIN_WIF}" ]]; then
-  echo "Error: MEMBER_BITCOIN_WIF environment variable is not set."
-  exit 1
-fi
-
 # Parse args
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -199,15 +194,26 @@ if [[ "${FRESH}" == true ]]; then
   fi
 fi
 
-# Prompt for USER_WALLET_PRIVATE_KEY if running startup commands
 if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
-  if [[ -z "${USER_WALLET_PRIVATE_KEY}" ]]; then
-    echo "Please enter USER_WALLET_PRIVATE_KEY (input will be hidden):"
-    read -s USER_WALLET_PRIVATE_KEY
+  # Prompt for USER_BITCOIN_WIF if running startup commands if not present on env
+  if [[ -z "${USER_BITCOIN_WIF}" ]]; then
+    echo "Please enter USER_BITCOIN_WIF (input will be hidden):"
+    read -s USER_BITCOIN_WIF
     echo ""
 
-    if [[ -z "${USER_WALLET_PRIVATE_KEY}" ]]; then
-      echo "Error: USER_WALLET_PRIVATE_KEY is required for 'up' or 'restart' commands."
+    if [[ -z "${USER_BITCOIN_WIF}" ]]; then
+      echo "Error: USER_BITCOIN_WIF is required for 'up' or 'restart' commands."
+      exit 1
+    fi
+  fi
+  # Prompt for MEMBER_BITCOIN_WIF if running startup commands if not present on env
+  if [[ -z "${MEMBER_BITCOIN_WIF}" ]]; then
+    echo "Please enter MEMBER_BITCOIN_WIF (input will be hidden):"
+    read -s MEMBER_BITCOIN_WIF
+    echo ""
+
+    if [[ -z "${MEMBER_BITCOIN_WIF}" ]]; then
+      echo "Error: MEMBER_BITCOIN_WIF is required for 'up' or 'restart' commands."
       exit 1
     fi
   fi
@@ -240,10 +246,10 @@ run_local_operators() {
     local BITVMX_P2P_PORT=${BITVMX_P2P_PORTS[$i]}
     local CLIENT_OP=${CLIENT_OPS[$i]}
 
-    local DOCKER_CMD="WALLET_PRIVATE_KEY=${USER_WALLET_PRIVATE_KEY} USER_API_PORT=${USER_API_PORT} BITVMX_PORT=${BITVMX_PORT} BITVMX_P2P_HOST=${BITVMX_P2P_HOST} BITVMX_P2P_PORT=${BITVMX_P2P_PORT} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${COMPOSE_FILE_ARG} -p op_${op_num} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
+    local DOCKER_CMD="MEMBER_BITCOIN_WIF=${MEMBER_BITCOIN_WIF} USER_BITCOIN_WIF=${USER_BITCOIN_WIF} USER_API_PORT=${USER_API_PORT} BITVMX_PORT=${BITVMX_PORT} BITVMX_P2P_HOST=${BITVMX_P2P_HOST} BITVMX_P2P_PORT=${BITVMX_P2P_PORT} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${COMPOSE_FILE_ARG} -p op_${op_num} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
 
     echo
-    echo "Starting operator ${op_num} with command: '$(echo "${DOCKER_CMD}" | sed "s/WALLET_PRIVATE_KEY=[^ ]*/WALLET_PRIVATE_KEY=******/")'"
+    echo "Starting operator ${op_num} with command: '$(echo "${DOCKER_CMD}" | sed "s/USER_BITCOIN_WIF=[^ ]*/USER_BITCOIN_WIF=******/")'"
     eval "${DOCKER_CMD}"
   done
 }
@@ -266,8 +272,8 @@ run_alphanet_operators() {
     echo "Running command on alphanet operator:"
   fi
 
-  local DOCKER_CMD="WALLET_PRIVATE_KEY=${USER_WALLET_PRIVATE_KEY} USER_API_PORT=40001 BITVMX_PORT=22222 CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${COMPOSE_FILE_ARG} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
-  echo "'$(echo "${DOCKER_CMD}" | sed "s/WALLET_PRIVATE_KEY=[^ ]*/WALLET_PRIVATE_KEY=******/")'"
+  local DOCKER_CMD="MEMBER_BITCOIN_WIF=${MEMBER_BITCOIN_WIF} USER_BITCOIN_WIF=${USER_BITCOIN_WIF} USER_API_PORT=${USER_API_PORT} BITVMX_PORT=${BITVMX_PORT} BITVMX_P2P_HOST=${BITVMX_P2P_HOST} BITVMX_P2P_PORT=${BITVMX_P2P_PORT} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${COMPOSE_FILE_ARG} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
+  echo "'$(echo "${DOCKER_CMD}" | sed "s/USER_BITCOIN_WIF=[^ ]*/USER_BITCOIN_WIF=******/")'"
   eval "${DOCKER_CMD}"
 }
 
