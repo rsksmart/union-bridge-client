@@ -1,11 +1,10 @@
 # Docker-integrated: BitVMX + Union Bridge Client
 
-With this setup you get:
+This setup provides flexible operator deployment configurations:
 
-- 4 independent operator stacks in parallel (`op_1`..`op_4`) to simulate a committee.
-- Each stack includes: BitVMX client + Union Client services (`user-api`, `block-indexer`, `log-indexer`,
-  `coordinator`).
-- A shared Docker network for BitVMX P2P across stacks.
+- **Local environment**: Run all 4 independent operator stacks in parallel (`op_1`..`op_4`) on a single host to simulate a committee, using a shared Docker bridge network for BitVMX P2P communication
+- **Alphanet environment**: Run a single operator per host, allowing distributed committee deployment across multiple machines, using host network mode for BitVMX P2P connectivity
+- Each stack includes: BitVMX client + Union Client services (`user-api`, `block-indexer`, `log-indexer`, `coordinator`)
 
 ## Pre-requisites
 
@@ -46,10 +45,29 @@ The script clones `FairgateLabs/docker-bitvmx` at the chosen ref, saves the fetc
 
 ### 2) Choose your environment
 
-- Local uses `.env.local`
-- Alphanet uses `.env.alphanet`
+This setup supports two deployment environments:
 
-### Start local blockchains (LOCAL ONLY)
+- **Local** (`.env.local`): Development environment that runs all 4 operators on a single host with local Bitcoin and RSK nodes
+- **Alphanet** (`.env.alphanet`): Production-like environment where each host runs a single operator, connecting to the Alphanet testnet
+
+#### BitVMX Network Modes
+
+The BitVMX client requires different Docker network configurations depending on the deployment environment:
+
+**Local environment (Bridge Network)**:
+- Uses a shared Docker bridge network (`bitvmx-network`) for P2P communication between operators
+- All 4 operators run on the same host and communicate through Docker's internal network
+- Each operator binds to different P2P ports (22222, 33333, 44444, 55554) on the Docker bridge
+- This isolated network allows multiple BitVMX clients to communicate without exposing ports to the host
+
+**Alphanet environment (Host Network)**:
+- Uses Docker's host network mode (`network_mode: host`)
+- The BitVMX client binds P2P ports directly to the host's network interfaces
+- Required because BitVMX advertises its P2P address to other operators, and must be reachable at the host's actual IP address
+- In a distributed deployment, operators on different physical machines need to connect to each other using real network addresses, not Docker internal IPs
+- The P2P port (configured via `BITVMX_P2P_PORT`) must be accessible from other operators across the internet or private network
+
+### 3) Start local blockchains (LOCAL ONLY)
 
 This repository now provides a dedicated script to manage the local blockchain stack (bitcoind + anvil + contracts
 deploy):
@@ -99,7 +117,7 @@ If the contracts code changes (eg. new tag), you must rebuild the `deploy-contra
 bash start_blockchains.sh --env local --new-contracts-version --fresh up -d
 ```
 
-### 3) Start or stop operator stacks
+### 4) Start or stop operator stacks
 
 A `MEMBER_BITCOIN_WIF` needs to be exported in the environment. It is the Bitcoin private key (WIF) of the member/operator (used by BitVMX operations).
 The `bitcoin-wallet` wallet needs to be using this key when generating operator transactions. You can generate one via the `bitcoin-wallet` with `generate_address`.
@@ -111,42 +129,40 @@ Show script help:
 bash start_operators.sh --help
 ```
 
-#### 3.1) Start local/dev (local bitcoind + anvil) using published images:
+#### 4.1) Start local/dev (local bitcoind + anvil) using published images:
 
-Start a single operator (operator 1):
-
-```bash
-bash start_operators.sh --op one --env local up -d
-```
-
-Start all 4 operators:
+Start all 4 operators (no `--op` flag for local):
 
 ```bash
-bash start_operators.sh --op all --env local up -d
+bash start_operators.sh --env local up -d
 ```
 
 Or explicitly specify the tag:
 
 ```bash
-bash start_operators.sh --op one --env local --tag latest-anvil up -d
-bash start_operators.sh --op all --env local --tag latest-anvil up -d
+bash start_operators.sh --env local --tag latest-anvil up -d
 ```
 
-#### 3.2) Start alphanet:
+#### 4.2) Start alphanet:
 
-Start a single operator (operator 1):
+On alphanet, each host runs a single operator. You must specify which operator (1-4) using `--op <ID>`:
 
 ```bash
-bash start_operators.sh --op one --env alphanet --tag latest-alphanet up -d
-```
+# Start operator 1 on this host
+bash start_operators.sh --op 1 --env alphanet up -d
 
-Start all 4 operators:
+# Start operator 2 on this host
+bash start_operators.sh --op 2 --env alphanet up -d
+
+# And so on for operators 3 and 4...
+
+Or explicitly specify the tag:
 
 ```bash
-bash start_operators.sh --op all --env alphanet --tag latest-alphanet up -d
+bash start_operators.sh --env local --tag latest-alphanet up -d
 ```
 
-#### 3.3) Fund operator accounts (Rootstock and BitVMX Bitcoin accounts)
+#### 4.3) Fund operator accounts (Rootstock and BitVMX Bitcoin accounts)
 
 After the stacks are up, you can fund the operators' accounts on both Rootstock and Bitcoin (BitVMX internal operator
 accounts).
@@ -183,21 +199,19 @@ bash operator_scripts/fund_operators_bitcoin.sh --env local
 bash operator_scripts/fund_operators_bitcoin.sh --env alphanet
 ```
 
-Stop and remove everything (example for local/dev):
+Stop and remove everything:
 
 ```bash
-# Stop single operator (operator 1)
-bash start_operators.sh --op one --env local down --volumes
+# Local: stop all operators (no --op flag)
+bash start_operators.sh --env local down --volumes
 
-# Stop all operators
-bash start_operators.sh --op all --env local down --volumes
+# Alphanet: stop the operator on this host (no --op flag for down command)
+bash start_operators.sh --env alphanet down --volumes
 ```
 
-### 4) Viewing logs per operator project
+### 5) Viewing logs per operator project
 
-You can tail logs per operator project name (`op_1`..`op_4`) using either docker compose directly or the `start_operators.sh` script:
-
-Using docker compose directly:
+**Local environment:** You can tail logs per operator project name (`op_1`..`op_4`) using docker compose directly:
 
 ```bash
 docker compose -p op_1 logs -f
@@ -206,14 +220,24 @@ docker compose -p op_3 logs -f
 docker compose -p op_4 logs -f
 ```
 
-Using the start_operators.sh script:
+Using the `start_operators.sh` script:
 
 ```bash
-bash start_operators.sh --op one --env local logs -f
-bash start_operators.sh --op all --env local logs
+bash start_operators.sh --env local logs -f
 ```
 
-### 5) Interacting with the user-api
+**Alphanet environment:** View logs for the single operator on this host:
+
+```bash
+docker compose -p union-operator logs -f
+```
+
+Using the `start_operators.sh` script:
+```bash
+bash start_operators.sh --env alphanet logs -f
+```
+
+### 6) Interacting with the user-api
 
 **Local environment:** Each operator stack exposes a user-api on different ports:
 
@@ -253,28 +277,6 @@ Currently, there are two main tags for the Docker images used in this setup:
 - `latest-anvil`: local/dev images aligned with anvil usage.
 - `latest-alphanet`: alphanet images aligned with the Alphanet infra.
 
-## Notes
-
-- **`start_operators.sh` environment-specific behavior:**
-  - **Local**: Runs all 4 operators on one host. The `--op` flag is not allowed.
-    - Uses `CLIENT_OP` values: `op_1`, `op_2`, `op_3`, `op_4`
-    - Config location: `bitvmx-client/config/local/client/config/op_X.yaml`
-  - **Alphanet**: Runs one operator per host. The `--op <ID>` flag (1-4) is required for startup commands (up, restart, start, create) but not allowed for other commands (logs, ps, down, etc.).
-    - Uses `CLIENT_OP` value: `testnet_op_X` (where X is the operator ID from `--op` flag)
-    - Config location: `bitvmx-client/config/alphanet/client/config/testnet_op_X.yaml`
-    - The operator ID determines which BitVMX configuration file is loaded
-- **Funding scripts** (`fund_operators_bitcoin.sh` and `fund_operators_rootstock.sh`):
-  - Only require `--env` flag
-  - Automatically detect which operator(s) to query based on environment
-  - **Local**: Query all 4 operators
-  - **Alphanet**: Query the single operator on this host using the `docker-integrated` project name
-- **Committee setup script** (`committee_setup.sh`):
-  - Requires `--env` and `--stream-id` flags
-  - **Local**: Applies all 4 operators (2 Provers, 2 Verifiers) to the stream
-  - **Alphanet**: Requires `--role` flag (Prover or Verifier) and applies only the single operator on this host
-- The script forwards standard docker compose arguments (e.g., up, down, logs, ps, -d, --force-recreate). However, build is explicitly forbidden; use published images from the registry by tag instead.
-- The script intentionally forbids building from source (build args are blocked). It is designed to consume registry images by tag.
-
 ## Troubleshooting
 
 ### Coordinator container doesn't start
@@ -309,11 +311,9 @@ bash start_blockchains.sh --env local --fresh up -d
 Restart clean operators:
 
 ```bash
-# Single operator (operator 1)
-bash start_operators.sh --op one --env local --fresh up -d
+# Local: restart all operators (no --op flag)
+bash start_operators.sh --env local --fresh up -d
 
-# All operators
-bash start_operators.sh --op all --env local --fresh up -d
+# Alphanet: restart the operator on this host (requires --op for startup)
+bash start_operators.sh --op 1 --env alphanet --fresh up -d
 ```
-
-And now you can start operators as explained above.
