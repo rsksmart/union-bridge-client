@@ -145,6 +145,31 @@ where
         Ok(())
     }
 
+    /// Handle confirmed PegoutRegistered event
+    fn handle_pegout_registered(
+        &mut self,
+        pr: &crate::types::EventWithBlock<PegoutRegistered>,
+    ) -> Result<()> {
+        info!("Processing confirmed PegoutRegistered event: {:?}", pr);
+        // Find the flow corresponding to this pegout registration using event tx_hash with  flow.state.pegout_registered_tx
+        let pegout_registered = pr.inner.clone();
+        let pegout_registered_txid: Txid = TxIdParser::fb_32_to_txid(pegout_registered.txHash);
+        let flow_opt = self
+            .pegout_flows
+            .values_mut()
+            .find(|flow| flow.get_user_take_txid() == Some(pegout_registered_txid));
+
+        if let Some(flow) = flow_opt {
+            flow.complete_step(StepData::PegoutRegistered(pegout_registered))?;
+        } else {
+            warn!(
+                "No matching pegout flow found for PegoutRegistered event: {:?}",
+                pr
+            );
+        }
+        Ok(())
+    }
+
     /// Clean up completed flows
     pub fn cleanup_completed_flows(&mut self) {
         let completed: Vec<_> = self
@@ -178,24 +203,7 @@ where
                 self.create_flow_for_pegout_requested(&pr.inner)?;
             }
             RskPegManagerEvents::PegoutRegistered(pr) => {
-                info!("Processing confirmed PegoutRegistered event: {:?}", pr);
-                // Find the flow corresponding to this pegout registration using event tx_hash with  flow.state.pegout_registered_tx
-                let pegout_registered = pr.inner.clone();
-                let pegout_registered_txid: Txid =
-                    TxIdParser::fb_32_to_txid(pegout_registered.txHash);
-                let flow_opt = self
-                    .pegout_flows
-                    .values_mut()
-                    .find(|flow| flow.get_user_take_txid() == Some(pegout_registered_txid));
-
-                if let Some(flow) = flow_opt {
-                    flow.complete_step(StepData::PegoutRegistered(pegout_registered))?;
-                } else {
-                    warn!(
-                        "No matching pegout flow found for PegoutRegistered event: {:?}",
-                        pr
-                    );
-                }
+                self.handle_pegout_registered(pr)?;
             }
             _ => {
                 trace!("Ignoring confirmed RSK event: {}", type_name_of_val(event));
@@ -289,11 +297,11 @@ where
             );
         }
 
-        if flow.current_step() != Steps::ConfirmTransaction {
+        if flow.current_step() != Steps::ConfirmUserTakeTransaction {
             bail!(
                 "Mismatch current step for flow {} expected {:?} having {:?}",
                 flow_id,
-                Steps::ConfirmTransaction,
+                Steps::ConfirmUserTakeTransaction,
                 flow.current_step()
             );
         }
@@ -327,13 +335,13 @@ where
         for flow_id in ready {
             match self.pegout_flows.get_mut(&flow_id) {
                 Some(flow) => {
-                    if flow.current_step() == Steps::ConfirmTransaction {
+                    if flow.current_step() == Steps::ConfirmUserTakeTransaction {
                         flow.request_transaction_status()?;
                     } else {
                         warn!(
                             "Mismatch current step for flow {} expected {:?} having {:?}",
                             flow_id,
-                            Steps::ConfirmTransaction,
+                            Steps::ConfirmUserTakeTransaction,
                             flow.current_step()
                         );
                     }
@@ -477,11 +485,11 @@ where
                             return Ok(());
                         }
                     };
-                if flow.current_step() != Steps::RequestSpvProof {
+                if flow.current_step() != Steps::RequestUserTakeSpvProof {
                     bail!(
                         "Mismatch current step for flow {} expected {:?} having {:?}",
                         flow_id,
-                        Steps::RequestSpvProof,
+                        Steps::RequestUserTakeSpvProof,
                         flow.current_step()
                     );
                 } else {

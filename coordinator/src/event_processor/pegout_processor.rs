@@ -13,13 +13,14 @@ Step 3: AllNoncesReady event is received (RSK -> U)
 Step 4: AllSignaturesReady event is received (RSK -> U)
     a: Dispatch transaction name (U -> B)
 Step 5: Transaction status is received (B -> U)
-    a: If confirmations are not enough, schedule a new request for a newtransaction status
+    a: If confirmations are not enough, schedule a new request for a new transaction status
     b: If confirmations are enough, request SPV proof (U -> B)
 Step 6: SPVProof is received (B -> U)
     a: Register pegout calling the peg manager contract (U -> C)
 Step 7: Pegout Registered event is received (RSK -> U)
     a: Confirm pegout registered and sending the confirmation to BitVMX with SetVar
 */
+#![allow(unused)]
 use crate::blockchain_tracker::{BlockConfirmations, BlockchainObserver, BlockchainView};
 use crate::flows::btc_signature::btc_signature_lifecycle::BtcSignatureLifeCycle;
 use crate::flows::btc_signature::btc_signature_subflow::{
@@ -66,6 +67,7 @@ pub const PEGOUT_ACCEPTED_NAME: &str = "pegout_accepted";
 pub const BLOCKS_DELAY_FOR_TX_CHECK: u32 = 10; // Number of blocks to wait before rechecking transaction status
 //TODO (JIRA) https://rsklabs.atlassian.net/browse/UB-328 pending to improve how these confirmations are handled
 pub const SPV_PROOF_MIN_CONFIRMATIONS: u32 = 1 + 1; // +1 from Contracts, +1 to give time to the Native Bridge to get up to date with Bitcoin Node
+pub const COMPRESSED_PUBLIC_KEY_LENGTH: usize = 33;
 
 #[derive(Debug, Clone)]
 struct PegoutEvent<T: Clone> {
@@ -342,15 +344,19 @@ where
         let committee_id: Uuid = Uuid::from_u128(event.committeeId.try_into()?);
 
         // Convert user pubkey bytes to bitcoin::PublicKey
-        let user_pubkey = if event.userPubKey.len() == 33 {
+        let user_pubkey = if event.userPubKey.len() == COMPRESSED_PUBLIC_KEY_LENGTH {
             // Try parsing as compressed public key (33 bytes with prefix)
-            debug!("Attempting to parse as compressed public key (33 bytes)");
+            debug!(
+                "Attempting to parse as compressed public key ({} bytes)",
+                COMPRESSED_PUBLIC_KEY_LENGTH
+            );
             PublicKey::from_slice(event.userPubKey.as_ref())
                 .context("Failed to parse user public key as compressed public key")?
         } else {
             bail!(
-                "Invalid user public key length: {}, expected 33",
-                event.userPubKey.len()
+                "Invalid user public key length: {}, expected {}",
+                event.userPubKey.len(),
+                COMPRESSED_PUBLIC_KEY_LENGTH
             );
         };
 

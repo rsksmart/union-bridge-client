@@ -25,7 +25,7 @@ use uuid::Uuid;
 
 pub const PROGRAM_TYPE_USER_TAKE: &str = "take";
 pub const USER_TAKE_TX: &str = "USER_TAKE_TX";
-const PEOGUT_COMPLETED_VAR_NAME: &str = "PEG_OUT_COMPLETED";
+const PEGOUT_COMPLETED_VAR_NAME: &str = "PEG_OUT_COMPLETED";
 
 /// Steps for the pegout state machine flow
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,8 +35,8 @@ pub enum Steps {
     PrepareUserTakeSetup,
     //The signature flow is being executed Between these two steps and outside the flow.
     DispatchTransaction,
-    ConfirmTransaction,
-    RequestSpvProof,
+    ConfirmUserTakeTransaction,
+    RequestUserTakeSpvProof,
     RegisterPegout,
     Done,
 }
@@ -146,14 +146,14 @@ where
                     self.state.flow_id
                 );
             }
-            Steps::ConfirmTransaction => {
+            Steps::ConfirmUserTakeTransaction => {
                 info!(
                     "Waiting for transaction confirmations for flow_id: {} and tx_id: {:?}",
                     self.state.flow_id,
                     self.get_user_take_txid()
                 );
             }
-            Steps::RequestSpvProof => {
+            Steps::RequestUserTakeSpvProof => {
                 info!(
                     "Requesting SPV proof for flow_id: {} and tx_id: {:?}",
                     self.state.flow_id,
@@ -214,9 +214,9 @@ where
             }
             (Steps::DispatchTransaction, StepData::DispatchTransaction) => {
                 self.dispatch_transaction()?;
-                Ok(Steps::ConfirmTransaction)
+                Ok(Steps::ConfirmUserTakeTransaction)
             }
-            (Steps::ConfirmTransaction, StepData::TransactionConfirmed(tx_status)) => {
+            (Steps::ConfirmUserTakeTransaction, StepData::TransactionConfirmed(tx_status)) => {
                 info!(
                     "Transaction confirmed for flow_id: {} and tx_id: {:?}",
                     self.state.flow_id, tx_status.tx_id
@@ -232,9 +232,9 @@ where
                     expected_tx_id
                 );
                 self.state.transaction_status = Some(tx_status.clone());
-                Ok(Steps::RequestSpvProof)
+                Ok(Steps::RequestUserTakeSpvProof)
             }
-            (Steps::RequestSpvProof, StepData::SpvProof(spv_proof)) => {
+            (Steps::RequestUserTakeSpvProof, StepData::SpvProof(spv_proof)) => {
                 info!("Received SPV proof for flow_id: {}", self.state.flow_id);
                 trace!("SPV Proof data: {:?}", spv_proof);
                 self.state.spv_proof = Some(spv_proof.clone());
@@ -398,7 +398,7 @@ where
         let data = serde_json::to_string(&pegout_registered)?;
         let msg = IncomingBitVMXApiMessages::SetVar(
             self.state.flow_id,
-            PEOGUT_COMPLETED_VAR_NAME.to_string(),
+            PEGOUT_COMPLETED_VAR_NAME.to_string(),
             VariableTypes::String(data),
         );
 
@@ -550,8 +550,8 @@ fn format_step(step: Steps) -> &'static str {
         Steps::GetCommInfo => "GetCommInfo",
         Steps::PrepareUserTakeSetup => "PrepareUserTakeSetup",
         Steps::DispatchTransaction => "DispatchTransaction",
-        Steps::ConfirmTransaction => "ValidateTransactionStatus",
-        Steps::RequestSpvProof => "RequestSpvProof",
+        Steps::ConfirmUserTakeTransaction => "ValidateTransactionStatus",
+        Steps::RequestUserTakeSpvProof => "RequestSpvProof",
         Steps::RegisterPegout => "RegisterPegout",
         Steps::Done => "Done",
     }
