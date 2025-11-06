@@ -56,7 +56,7 @@ fn main() -> Result<()> {
 
                 let _ = editor.add_history_entry(history_entry.as_ref());
 
-                match handle_command(&mut wallet, &config.mode, trimmed) {
+                match handle_command(&mut wallet, trimmed) {
                     Ok(CommandOutcome::Continue) => {}
                     Ok(CommandOutcome::Exit) => break,
                     Err(err) => eprintln!("Error: {:#}", err),
@@ -139,7 +139,7 @@ fn check_transaction_status(wallet: &Wallet, txid: &Txid) -> Result<TxConfirmati
     })
 }
 
-fn handle_command(wallet: &mut Wallet, mode: &WalletMode, line: &str) -> Result<CommandOutcome> {
+fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
     let mut parts = line.split_whitespace();
     let command = parts.next().unwrap();
 
@@ -471,11 +471,6 @@ fn handle_command(wallet: &mut Wallet, mode: &WalletMode, line: &str) -> Result<
             Ok(CommandOutcome::Continue)
         }
         "create_pegin_tx" => {
-            // Restrict to user mode only
-            if *mode != WalletMode::User {
-                bail!("create_pegin_tx command is only available in user mode");
-            }
-
             // Syntax: create_pegin_tx <stream_value> <packet_number> <dest_addr> <rsk_address>
             let stream_value_str = parts.next().context("expected stream value in satoshis")?;
             let stream_value: u64 = stream_value_str
