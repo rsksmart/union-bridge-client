@@ -118,9 +118,11 @@ bash start_blockchains.sh --env local --new-contracts-version --fresh up -d
 
 ### 4) Start or stop operator stacks
 
-A `MEMBER_BITCOIN_WIF` needs to be exported in the environment. It is the Bitcoin private key (WIF) of the member/operator (used by BitVMX operations).
-The `bitcoin-wallet` wallet needs to be using this key when generating operator transactions. You can generate one via the `bitcoin-wallet` with `generate_address`.
+A `USER_BITCOIN_WIF` needs to be exported in the environment. It is the Bitcoin private key (WIF) used by the user-api for user endpoints (pegin/pegout operations).
+You can generate one via the `bitcoin-wallet` with `generate_address`.
 See [bitcoin-wallet README](bitcoin-wallet/README.md) for more info.
+
+Note: The `bitcoin-wallet` component separately uses `MEMBER_BITCOIN_WIF` for member/operator BitVMX operations, but this is not required for starting operators via `start_operators.sh`.
 
 Show script help:
 

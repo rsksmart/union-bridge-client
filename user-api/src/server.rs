@@ -45,27 +45,16 @@ impl Server {
         user_contracts_gateway: UCG,
         member_contracts_gateway: MCG,
         user_bitcoin_wif: Option<&str>,
-        member_bitcoin_wif: Option<&str>,
         network: bitcoin::Network,
     ) -> Self
     where
         UCG: RskContractsGatewayApi + Send + Sync + 'static,
         MCG: RskContractsGatewayApi + Send + Sync + 'static,
     {
-        // Create Bitcoin wallet instances based on provided WIFs
+        // Create Bitcoin wallet instance for user endpoints
         let user_wallet = user_bitcoin_wif.map(|wif| {
             User::new("User", user_contracts_gateway.my_address(), wif, network)
                 .expect("Failed to create user wallet")
-        });
-
-        let member_wallet = member_bitcoin_wif.map(|wif| {
-            User::new(
-                "Member",
-                member_contracts_gateway.my_address(),
-                wif,
-                network,
-            )
-            .expect("Failed to create member wallet")
         });
 
         // Wrap gateways for sync access
@@ -91,19 +80,14 @@ impl Server {
             );
         }
 
-        // Conditionally add member endpoints if member wallet is available
-        if let Some(member_wallet) = member_wallet {
-            app = app.nest(
-                "/member",
-                Router::new()
-                    .route("/apply-stream", post(Self::apply_stream))
-                    .route("/bitvmx-address", get(Self::bitvmx_address))
-                    .layer((
-                        Extension(member_sync_gateway.clone()),
-                        Extension(member_wallet),
-                    )),
-            );
-        }
+        // Member endpoints - no bitcoin wallet needed, only broker communication
+        app = app.nest(
+            "/member",
+            Router::new()
+                .route("/apply-stream", post(Self::apply_stream))
+                .route("/bitvmx-address", get(Self::bitvmx_address))
+                .layer(Extension(member_sync_gateway.clone())),
+        );
 
         app = app.layer((
             TimeoutLayer::new(Duration::from_secs(10)),

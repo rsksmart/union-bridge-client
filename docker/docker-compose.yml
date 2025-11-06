@@ -109,7 +109,6 @@ services:
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
       - ENV_NAME=${ENV_NAME:-}
       - USER_BITCOIN_WIF=${USER_BITCOIN_WIF:-}
-      - MEMBER_BITCOIN_WIF=${MEMBER_BITCOIN_WIF:-}
     restart: no
     ports:
       - "${USER_API_PORT:-40001}:40001"
