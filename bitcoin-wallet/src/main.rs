@@ -522,6 +522,90 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
 
             Ok(CommandOutcome::Continue)
         }
+        "list_pending" => {
+            let pending = wallet.pending_transaction_ids();
+            if pending.is_empty() {
+                println!("No pending transactions.");
+            } else {
+                println!("Pending transactions:");
+                for txid in pending {
+                    if let Some(created) = wallet.get_pending_transaction(&txid) {
+                        println!(
+                            "  {} - fee: {} sat, vsize: {} bytes",
+                            txid,
+                            created.fee_sat,
+                            created.transaction.vsize()
+                        );
+                    } else {
+                        println!("  {}", txid);
+                    }
+                }
+            }
+            Ok(CommandOutcome::Continue)
+        }
+        "replace_tx" => {
+            let txid_str = parts.next().context("expected txid")?;
+            let new_fee_str = parts.next().context("expected new fee rate (sats/byte)")?;
+
+            let txid = Txid::from_str(txid_str).context("invalid txid format")?;
+            let new_sats_per_byte: u64 = new_fee_str
+                .parse()
+                .context("invalid fee rate (must be positive integer)")?;
+
+            println!(
+                "Replacing transaction {} with fee rate {} sat/byte...",
+                txid, new_sats_per_byte
+            );
+
+            let replacement = wallet.replace_transaction(txid, new_sats_per_byte)?;
+
+            let new_txid = replacement.transaction.compute_txid();
+            let vsize = replacement.transaction.vsize();
+            let hex = serialize_hex(&replacement.transaction);
+
+            println!("Replacement transaction created:");
+            println!("  new_txid={}", new_txid);
+            println!("  vsize={}", vsize);
+            println!(
+                "  fee={} sat (was {} sat)",
+                replacement.fee_sat,
+                wallet
+                    .get_pending_transaction(&txid)
+                    .map(|t| t.fee_sat)
+                    .unwrap_or(0)
+            );
+            println!("  raw={}", hex);
+
+            if let Some(change) = &replacement.change {
+                println!(
+                    "  change -> {} sat back to wallet (outpoint {}:{})",
+                    change.value_sat, change.outpoint.txid, change.outpoint.vout
+                );
+            }
+
+            // broadcast the replacement
+            if wallet.rpc_client().is_some() {
+                match wallet.broadcast_transaction(&replacement) {
+                    Ok(txid) => println!(
+                        "  Replacement transaction broadcasted successfully: {}",
+                        txid
+                    ),
+                    Err(err) => eprintln!("  Failed to broadcast replacement transaction: {err}"),
+                }
+            } else {
+                println!("  RPC not configured; replacement transaction hex printed only.");
+            }
+
+            Ok(CommandOutcome::Continue)
+        }
+        "confirm_tx" => {
+            let txid_str = parts.next().context("expected txid")?;
+            let txid = Txid::from_str(txid_str).context("invalid txid format")?;
+
+            wallet.confirm_transaction(txid)?;
+            println!("Transaction {} confirmed and finalized.", txid);
+            Ok(CommandOutcome::Continue)
+        }
 
         other => Err(anyhow!(
             "unknown command '{other}'. Type 'help' for a list of commands."
@@ -665,9 +749,7 @@ fn print_help(sats_per_byte: u64) {
     println!(
         "  switch_address <addr>                 - Make an imported address the active wallet address"
     );
-    println!(
-        "  register_utxo <txid> <block_hash> <vout> [sats] - Register a spendable P2WPKH UTXO"
-    );
+    println!("  register_utxo <txid> <vout> [sats]    - Register a spendable P2WPKH UTXO");
     println!(
         "  list_funds [all]                      - List UTXOs for the active address or every address"
     );
@@ -690,6 +772,18 @@ fn print_help(sats_per_byte: u64) {
     println!(
         "  create_pegin_tx <value> <packet> <addr> <rsk>  - Create RSK pegin transaction (value in sats, packet number, dest address, RSK address hex)"
     );
+    println!();
+    println!("RBF (Replace-By-Fee) commands:");
+    println!(
+        "  list_pending                          - Show all pending (unconfirmed) transactions"
+    );
+    println!(
+        "  replace_tx <txid> <new_sats/byte>     - Replace pending transaction with higher fee"
+    );
+    println!(
+        "  confirm_tx <txid>                     - Manually confirm a pending transaction (after on-chain confirmation)"
+    );
+    println!();
     println!("Fees target {sats_per_byte} sat per virtual byte.");
 }
 

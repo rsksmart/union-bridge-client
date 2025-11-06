@@ -7,7 +7,8 @@ use std::str::FromStr;
 use crate::bitcoin::reqwest_https::ReqwestHttpsTransport;
 use crate::bitcoin::utils::fetch_utxo_amount;
 use crate::config::Config;
-use crate::utxo_store::UtxoStore;
+use crate::pending_tx_store::PendingTransactionStore;
+use crate::utxo_store::{UtxoState, UtxoStore};
 use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::absolute;
 use bitcoin::address::{Address, NetworkUnchecked};
@@ -65,6 +66,8 @@ pub struct Wallet {
     utxo_db_root: PathBuf,
     utxo_store: UtxoStore,
     rpc_client: Option<Client>,
+    pending_transactions: HashMap<Txid, CreatedTransaction>,
+    pending_tx_store: PendingTransactionStore,
 }
 
 impl Wallet {
@@ -75,6 +78,11 @@ impl Wallet {
     pub fn new_with_network(utxo_db_root: impl Into<PathBuf>, network: Network) -> Result<Self> {
         let utxo_db_root = utxo_db_root.into();
         let utxo_store = open_network_store(&utxo_db_root, network)?;
+        let pending_tx_store = open_pending_tx_store(&utxo_db_root, network)?;
+
+        // load pending transactions from storage
+        let pending_transactions: HashMap<Txid, CreatedTransaction> =
+            pending_tx_store.load_all(network)?.into_iter().collect();
 
         Ok(Self {
             network,
@@ -86,6 +94,8 @@ impl Wallet {
             utxo_db_root,
             utxo_store,
             rpc_client: None,
+            pending_transactions,
+            pending_tx_store,
         })
     }
 
@@ -204,7 +214,9 @@ impl Wallet {
         let rpc_txid = client.send_raw_transaction(raw_hex)?;
         let txid =
             Txid::from_str(&rpc_txid.to_string()).context("failed to convert broadcast txid")?;
-        if let Err(err) = self.commit_spend(created) {
+
+        // mark UTXOs as spent-unconfirmed and track the transaction
+        if let Err(err) = self.commit_spend_pending(created) {
             eprintln!("  warning: failed to commit local UTXO changes: {err}");
         }
 
@@ -223,7 +235,7 @@ impl Wallet {
         Ok(txid)
     }
 
-    // Apply UTXO mutations only after a successful broadcast
+    // Apply UTXO mutations only after a successful broadcast (for backwards compatibility)
     pub fn commit_spend(&mut self, created: &CreatedTransaction) -> Result<Option<Utxo>> {
         self.update_utxos_after_spend(
             created.spent_indices.clone(),
@@ -232,6 +244,169 @@ impl Wallet {
             created.change_value,
             &created.change_address,
         )
+    }
+
+    // mark UTXOs as pending and track the transaction (for RBF support)
+    fn commit_spend_pending(&mut self, created: &CreatedTransaction) -> Result<()> {
+        let txid = created.transaction.compute_txid();
+
+        // mark spent UTXOs as spent-unconfirmed in the database
+        for utxo in &created.spent_utxos {
+            self.utxo_store.mark_spent_unconfirmed(&utxo.outpoint)?;
+        }
+
+        // remove from in-memory available list based on outpoints (not indices, which may be stale)
+        let spent_outpoints: Vec<OutPoint> =
+            created.spent_utxos.iter().map(|u| u.outpoint).collect();
+        self.utxos
+            .retain(|u| !spent_outpoints.contains(&u.outpoint));
+
+        // add change output as available UTXO immediately (0-conf change is spendable)
+        if created.change_value > 0 {
+            let change_outpoint =
+                OutPoint::new(txid, (created.transaction.output.len() - 1) as u32);
+            self.utxo_store.insert(
+                &change_outpoint,
+                created.change_value,
+                &created.change_address,
+            )?;
+            self.utxos.push(Utxo {
+                outpoint: change_outpoint,
+                value_sat: created.change_value,
+            });
+        }
+
+        // track pending transaction in memory and persist to database
+        self.pending_transactions.insert(txid, created.clone());
+        self.pending_tx_store.save(&txid, created)?;
+
+        Ok(())
+    }
+
+    /// Replace an unconfirmed transaction with a new one using the same inputs but higher fee
+    /// The new transaction must pay at least the RBF minimum fee increase
+    pub fn replace_transaction(
+        &mut self,
+        original_txid: Txid,
+        new_sats_per_byte: u64,
+    ) -> Result<CreatedTransaction> {
+        // retrieve the original pending transaction
+        let original = self
+            .pending_transactions
+            .get(&original_txid)
+            .ok_or_else(|| anyhow!("transaction {} is not pending", original_txid))?
+            .clone();
+
+        if new_sats_per_byte <= self.sats_per_byte {
+            bail!(
+                "new fee rate ({} sats/byte) must be higher than current ({} sats/byte)",
+                new_sats_per_byte,
+                self.sats_per_byte
+            );
+        }
+
+        // temporarily mark the original spent UTXOs as available again
+        for utxo in &original.spent_utxos {
+            self.utxo_store.mark_available(&utxo.outpoint)?;
+        }
+
+        // clear current UTXOs and use ONLY the original inputs for replacement
+        let saved_utxos = self.utxos.clone();
+        self.utxos = original.spent_utxos.clone();
+
+        // temporarily increase fee rate
+        let old_sats_per_byte = self.sats_per_byte;
+        self.sats_per_byte = new_sats_per_byte;
+
+        // reconstruct the outputs (without the change from original)
+        let original_outputs: Vec<TxOut> = original
+            .transaction
+            .output
+            .iter()
+            .take(original.transaction.output.len() - if original.change_value > 0 { 1 } else { 0 })
+            .cloned()
+            .collect();
+
+        // calculate total output amount (excluding change)
+        let total_output_amount: u64 = original_outputs.iter().map(|out| out.value.to_sat()).sum();
+
+        // create replacement transaction with higher fee
+        let replacement =
+            self.build_transaction_with_outputs(original_outputs, total_output_amount);
+
+        // restore original fee rate
+        self.sats_per_byte = old_sats_per_byte;
+
+        let replacement = replacement?;
+
+        // restore saved UTXOs and fee rate
+        self.utxos = saved_utxos;
+
+        // verify the replacement pays more fee
+        if replacement.fee_sat <= original.fee_sat {
+            // rollback: mark as spent-unconfirmed again
+            for utxo in &original.spent_utxos {
+                self.utxo_store.mark_spent_unconfirmed(&utxo.outpoint)?;
+            }
+
+            bail!(
+                "replacement transaction fee ({} sats) must be higher than original ({} sats)",
+                replacement.fee_sat,
+                original.fee_sat
+            );
+        }
+
+        // remove the old pending transaction from memory and storage
+        self.pending_transactions.remove(&original_txid);
+        self.pending_tx_store.remove(&original_txid)?;
+
+        // remove the old change UTXO if it exists (it's now invalid)
+        if original.change_value > 0 {
+            let old_change_outpoint = OutPoint::new(
+                original_txid,
+                (original.transaction.output.len() - 1) as u32,
+            );
+            // remove from database
+            let _ = self.utxo_store.remove(&old_change_outpoint); // ignore error if not found
+            // remove from in-memory list
+            self.utxos.retain(|u| u.outpoint != old_change_outpoint);
+        }
+
+        // the UTXOs are already marked as spent-unconfirmed from the rollback-attempt
+        // but we need to ensure they stay that way for the new transaction
+        Ok(replacement)
+    }
+
+    /// Confirm a transaction, permanently removing its spent UTXOs
+    /// Call this after a transaction has been confirmed on-chain
+    /// Note: change UTXO was already added when transaction was broadcast
+    pub fn confirm_transaction(&mut self, txid: Txid) -> Result<()> {
+        let created = self
+            .pending_transactions
+            .remove(&txid)
+            .ok_or_else(|| anyhow!("transaction {} is not pending", txid))?;
+
+        // remove from storage
+        self.pending_tx_store.remove(&txid)?;
+
+        // permanently delete spent UTXOs
+        for utxo in &created.spent_utxos {
+            self.utxo_store.remove(&utxo.outpoint)?;
+        }
+
+        // change UTXO was already added when transaction was broadcast, so nothing to do here
+
+        Ok(())
+    }
+
+    /// Get list of pending (unconfirmed) transaction IDs
+    pub fn pending_transaction_ids(&self) -> Vec<Txid> {
+        self.pending_transactions.keys().copied().collect()
+    }
+
+    /// Get details of a pending transaction
+    pub fn get_pending_transaction(&self, txid: &Txid) -> Option<&CreatedTransaction> {
+        self.pending_transactions.get(txid)
     }
 
     pub fn clear_db(&mut self) -> Result<()> {
@@ -245,6 +420,7 @@ impl Wallet {
             let entries = self.utxo_store.load_by_address(address)?;
             self.utxos = entries
                 .into_iter()
+                .filter(|(_, stored)| stored.state == UtxoState::Available)
                 .map(|(outpoint, stored)| Utxo {
                     outpoint,
                     value_sat: stored.value_sat,
@@ -342,9 +518,18 @@ impl Wallet {
         }
 
         let new_store = open_network_store(&self.utxo_db_root, network)?;
+        let new_pending_tx_store = open_pending_tx_store(&self.utxo_db_root, network)?;
+
+        // load pending transactions for the new network
+        let pending_transactions: HashMap<Txid, CreatedTransaction> = new_pending_tx_store
+            .load_all(network)?
+            .into_iter()
+            .collect();
 
         self.network = network;
         self.utxo_store = new_store;
+        self.pending_tx_store = new_pending_tx_store;
+        self.pending_transactions = pending_transactions;
         self.utxos.clear();
         self.private_keys.clear();
         self.active_address = None;
@@ -837,9 +1022,33 @@ fn open_network_store(root: &Path, network: Network) -> Result<UtxoStore> {
     UtxoStore::open(&path)
 }
 
+fn open_pending_tx_store(root: &Path, network: Network) -> Result<PendingTransactionStore> {
+    fs::create_dir_all(root).with_context(|| {
+        format!(
+            "failed to create pending transaction database root directory {}",
+            root.display()
+        )
+    })?;
+
+    let path = pending_tx_db_path(root, network);
+    fs::create_dir_all(&path).with_context(|| {
+        format!(
+            "failed to create pending transaction database directory {}",
+            path.display()
+        )
+    })?;
+
+    PendingTransactionStore::open(&path)
+}
+
 fn utxo_db_path(root: &Path, network: Network) -> PathBuf {
     let nw = network_suffix(network);
     root.join(nw)
+}
+
+fn pending_tx_db_path(root: &Path, network: Network) -> PathBuf {
+    let nw = network_suffix(network);
+    root.join(format!("{}_pending_tx", nw))
 }
 
 fn network_suffix(network: Network) -> &'static str {
@@ -930,6 +1139,212 @@ mod tests {
                 .imported_addresses()
                 .contains(&generated.address.to_string())
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn rbf_tracking_and_replacement() -> Result<()> {
+        use bitcoin::hashes::Hash;
+
+        let temp = tempdir()?;
+        let root = temp.path().join("utxo-db");
+        let mut wallet = Wallet::new(root)?;
+
+        // import a key
+        let secret = secp256k1::SecretKey::from_slice(&[1u8; 32]).expect("secret");
+        let private_key = PrivateKey::new(secret, Network::Regtest);
+        wallet.import_private_key(&private_key.to_wif())?;
+
+        // register a UTXO
+        let txid = Txid::from_byte_array([2u8; 32]);
+        let outpoint = OutPoint::new(txid, 0);
+        wallet.register_utxo(outpoint, 100_000)?;
+
+        // create a transaction
+        let dest_addr = wallet.active_address().unwrap().clone();
+        let target_scripts = vec![dest_addr.script_pubkey()];
+        let mut txs = wallet.create_transactions(target_scripts, 10_000, 1)?;
+        let created = txs.remove(0);
+
+        // simulate broadcast by calling commit_spend_pending directly
+        wallet.commit_spend_pending(&created)?;
+        let tx_id = created.transaction.compute_txid();
+
+        // verify the transaction is tracked as pending
+        assert_eq!(wallet.pending_transaction_ids().len(), 1);
+        assert!(wallet.get_pending_transaction(&tx_id).is_some());
+
+        // verify change was added immediately (0-conf change is spendable)
+        let expected_utxos = if created.change_value > 0 { 1 } else { 0 };
+        assert_eq!(wallet.utxos().len(), expected_utxos);
+
+        // verify original UTXO is marked as spent-unconfirmed, change is available
+        let stored_entries = wallet.utxo_store.load_all()?;
+        let expected_stored = if created.change_value > 0 { 2 } else { 1 };
+        assert_eq!(stored_entries.len(), expected_stored);
+
+        // find the spent-unconfirmed entry
+        let spent_entry = stored_entries
+            .iter()
+            .find(|(_, stored)| stored.state == crate::utxo_store::UtxoState::SpentUnconfirmed);
+        assert!(spent_entry.is_some());
+
+        // replace the transaction with higher fee
+        let original_fee = created.fee_sat;
+        // replace with 10 sats/byte (current is 5)
+        let replacement = wallet.replace_transaction(tx_id, 10)?;
+
+        // verify replacement has higher fee
+        assert!(replacement.fee_sat > original_fee);
+
+        // verify original transaction is no longer pending
+        assert!(wallet.get_pending_transaction(&tx_id).is_none());
+
+        // verify replacement is using the same inputs
+        assert_eq!(replacement.spent_utxos.len(), created.spent_utxos.len());
+        assert_eq!(
+            replacement.spent_utxos[0].outpoint,
+            created.spent_utxos[0].outpoint
+        );
+
+        // simulate broadcasting the replacement
+        wallet.commit_spend_pending(&replacement)?;
+        let replacement_txid = replacement.transaction.compute_txid();
+
+        // verify replacement is now tracked
+        assert_eq!(wallet.pending_transaction_ids().len(), 1);
+        assert!(wallet.get_pending_transaction(&replacement_txid).is_some());
+
+        // verify change was added immediately after broadcast
+        assert_eq!(
+            wallet.utxos().len(),
+            if replacement.change_value > 0 { 1 } else { 0 }
+        );
+
+        // confirm the replacement transaction
+        wallet.confirm_transaction(replacement_txid)?;
+
+        // verify no pending transactions remain
+        assert_eq!(wallet.pending_transaction_ids().len(), 0);
+
+        // verify spent UTXOs were permanently removed, change still available
+        let stored_entries = wallet.utxo_store.load_all()?;
+        if replacement.change_value > 0 {
+            // only change UTXO should remain
+            assert_eq!(stored_entries.len(), 1);
+            assert_eq!(
+                stored_entries[0].1.state,
+                crate::utxo_store::UtxoState::Available
+            );
+            assert_eq!(stored_entries[0].1.value_sat, replacement.change_value);
+        } else {
+            assert_eq!(stored_entries.len(), 0);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn pending_tx_persistence_across_restart() -> Result<()> {
+        use bitcoin::hashes::Hash;
+
+        let temp = tempdir()?;
+        let root = temp.path().join("utxo-db");
+
+        // create wallet and transaction
+        let txid = {
+            let mut wallet = Wallet::new(root.clone())?;
+
+            // import a key
+            let secret = secp256k1::SecretKey::from_slice(&[1u8; 32]).expect("secret");
+            let private_key = PrivateKey::new(secret, Network::Regtest);
+            wallet.import_private_key(&private_key.to_wif())?;
+
+            // register a UTXO
+            let input_txid = Txid::from_byte_array([2u8; 32]);
+            let outpoint = OutPoint::new(input_txid, 0);
+            wallet.register_utxo(outpoint, 100_000)?;
+
+            // create a transaction
+            let dest_addr = wallet.active_address().unwrap().clone();
+            let target_scripts = vec![dest_addr.script_pubkey()];
+            let mut txs = wallet.create_transactions(target_scripts, 10_000, 1)?;
+            let created = txs.remove(0);
+
+            // simulate broadcast
+            wallet.commit_spend_pending(&created)?;
+            let tx_id = created.transaction.compute_txid();
+
+            // verify pending transaction is tracked
+            assert_eq!(wallet.pending_transaction_ids().len(), 1);
+            assert!(wallet.get_pending_transaction(&tx_id).is_some());
+
+            tx_id
+        }; // wallet dropped here
+
+        // create new wallet instance (simulating restart)
+        {
+            let secret = secp256k1::SecretKey::from_slice(&[1u8; 32]).expect("secret");
+            let private_key = PrivateKey::new(secret, Network::Regtest);
+            let mut wallet = Wallet::new(root.clone())?;
+            wallet.import_private_key(&private_key.to_wif())?;
+
+            // verify pending transaction was loaded from storage
+            assert_eq!(wallet.pending_transaction_ids().len(), 1);
+            let restored_tx = wallet.get_pending_transaction(&txid);
+            assert!(restored_tx.is_some());
+
+            // verify transaction details match
+            let restored = restored_tx.unwrap();
+            assert_eq!(restored.transaction.compute_txid(), txid);
+            assert_eq!(restored.spent_utxos.len(), 1);
+            let original_fee = restored.fee_sat;
+
+            // verify original UTXO is still marked as spent-unconfirmed, plus change UTXO
+            let stored_entries = wallet.utxo_store.load_all()?;
+            assert_eq!(stored_entries.len(), 2); // spent input + change
+
+            // one should be spent-unconfirmed, one should be available (change)
+            let spent_count = stored_entries
+                .iter()
+                .filter(|(_, s)| s.state == crate::utxo_store::UtxoState::SpentUnconfirmed)
+                .count();
+            let available_count = stored_entries
+                .iter()
+                .filter(|(_, s)| s.state == crate::utxo_store::UtxoState::Available)
+                .count();
+            assert_eq!(spent_count, 1);
+            assert_eq!(available_count, 1);
+
+            // can replace the transaction after restart
+            let replacement = wallet.replace_transaction(txid, 10)?;
+            assert!(replacement.fee_sat > original_fee);
+
+            // save replacement
+            wallet.commit_spend_pending(&replacement)?;
+            let replacement_txid = replacement.transaction.compute_txid();
+
+            // original should be gone
+            assert!(wallet.get_pending_transaction(&txid).is_none());
+            assert!(wallet.get_pending_transaction(&replacement_txid).is_some());
+        } // wallet dropped again
+
+        // verify replacement persisted
+        {
+            let secret = secp256k1::SecretKey::from_slice(&[1u8; 32]).expect("secret");
+            let private_key = PrivateKey::new(secret, Network::Regtest);
+            let mut wallet = Wallet::new(root)?;
+            wallet.import_private_key(&private_key.to_wif())?;
+
+            // original tx should not exist
+            assert!(wallet.get_pending_transaction(&txid).is_none());
+
+            // only replacement should exist
+            assert_eq!(wallet.pending_transaction_ids().len(), 1);
+            let pending_ids = wallet.pending_transaction_ids();
+            assert_ne!(pending_ids[0], txid);
+        }
 
         Ok(())
     }

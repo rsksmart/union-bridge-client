@@ -7,12 +7,24 @@ use bitcoin::OutPoint;
 use serde::{Deserialize, Serialize};
 use storage_backend::storage::{KeyValueStore, Storage};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UtxoState {
+    Available,
+    SpentUnconfirmed,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredUtxo {
     pub value_sat: u64,
     pub timestamp: u64,
     #[serde(default)]
     pub address: Option<String>,
+    #[serde(default = "default_state")]
+    pub state: UtxoState,
+}
+
+fn default_state() -> UtxoState {
+    UtxoState::Available
 }
 
 pub struct UtxoStore {
@@ -42,10 +54,37 @@ impl UtxoStore {
             value_sat,
             timestamp,
             address: Some(address.to_string()),
+            state: UtxoState::Available,
         };
         self.db
             .set(&key, &stored, None)
             .map_err(|e| anyhow!("failed to write utxo: {e}"))
+    }
+
+    pub fn mark_spent_unconfirmed(&self, outpoint: &OutPoint) -> Result<()> {
+        let key = utxo_key(outpoint);
+        let mut stored: StoredUtxo = self
+            .db
+            .get(&key)
+            .map_err(|e| anyhow!("failed to read utxo: {e}"))?
+            .ok_or_else(|| anyhow!("utxo not found: {}", outpoint))?;
+        stored.state = UtxoState::SpentUnconfirmed;
+        self.db
+            .set(&key, &stored, None)
+            .map_err(|e| anyhow!("failed to update utxo state: {e}"))
+    }
+
+    pub fn mark_available(&self, outpoint: &OutPoint) -> Result<()> {
+        let key = utxo_key(outpoint);
+        let mut stored: StoredUtxo = self
+            .db
+            .get(&key)
+            .map_err(|e| anyhow!("failed to read utxo: {e}"))?
+            .ok_or_else(|| anyhow!("utxo not found: {}", outpoint))?;
+        stored.state = UtxoState::Available;
+        self.db
+            .set(&key, &stored, None)
+            .map_err(|e| anyhow!("failed to update utxo state: {e}"))
     }
 
     pub fn remove(&self, outpoint: &OutPoint) -> Result<()> {

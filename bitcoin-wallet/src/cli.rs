@@ -84,6 +84,9 @@ const COMMANDS: &[&str] = &[
     "tx_status",
     "clear_db",
     "create_pegin_tx",
+    "list_pending",
+    "replace_tx",
+    "confirm_tx",
 ];
 
 #[derive(Default)]
