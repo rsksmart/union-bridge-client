@@ -20,4 +20,5 @@ user_broker.host = "user-api"
 # ═══════════════════════════════════════════════════════
 
 [transaction_dispatcher]
-key_store.path = "/keystore/key.json"
+key_stroe.user_path = "/keystore/user-key.json"
+key_store.member_path = "/keystore/member-key.json"

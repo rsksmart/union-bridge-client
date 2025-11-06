@@ -2,7 +2,9 @@
 # Common Configuration
 # ═══════════════════════════════════════════════════════
 
-provider.rootstock.url = "ws://127.0.0.1:8545"
+provider.rootstock.url = "ws://10.1.0.53:4445" # if running in AWS and accessed from AWS
+# url: "ws://rskj-01.testnet.ub.iovlabs.net:4445/websocket" # if running in AWS and accessed from outside
+
 indexer.storage.path = "/app/db/"
 bitcoin_network = "testnet"
 
@@ -12,23 +14,23 @@ address = "0x3Aa5ebB10DC797CAC828524e59A333d0A371443c"
 
 [[contracts]]
 name = "PegManager"
-address = "0xf8E11D0551ceC2F4CBC0b0151Ec5C97076dDbe4e"
+address = "0xAB058E8E6963B62B1E091a452e44a4f5e3C8B879"
 
 [[contracts]]
 name = "SignatureManager"
-address = "0x225A1708FdF868c3d8a30eb23851D174d27Ab003"
+address = "0x7128826DD95Af75ACdED0CE803DD8Fc0d9819337"
 
 [[contracts]]
 name = "CommitteeRegistry"
-address = "0xd0857eE00B5DC14b1D33995a3dA155235D416839"
+address = "0x26f97e32B548715d7D7073BD1A34C65F12ca13CC"
 
 [[contracts]]
 name = "MemberRegistry"
-address = "0x30Af1031e33986c104438ECEA42aB33D69Fbe795"
+address = "0xc5D96270cE96DF6865d518a9beF3298323881DBC"
 
 [[contracts]]
 name = "StreamManager"
-address = "0xf54ea8E611c58D54EbC5b9cc20e8F85841367fB5"
+address = "0xc4bD69eBDb7AAf864D66ecc33C60Cb9a4F7D2a91"
 
 # ═══════════════════════════════════════════════════════
 # Coordinator
@@ -45,4 +47,5 @@ user_broker.host = "user-api"
 # ═══════════════════════════════════════════════════════
 
 [transaction_dispatcher]
-key_store.path = "/keystore/key.json"
+key_store.user_path = "/keystore/user-key.json"     # should match the one configured in key-setup.sh
+key_store.member_path = "/keystore/member-key.json"

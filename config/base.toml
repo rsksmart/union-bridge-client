@@ -84,7 +84,8 @@ log_notifier.broker_port = 9006
 
 [transaction_dispatcher]
 
-key_store.path = "/your_base_path/.union_bridge/keystore/multi-client-1"
+key_store.user_path = "/your_base_path/.union_bridge/keystore/multi-client-1-user"
+key_store.member_path = "/your_base_path/.union_bridge/keystore/multi-client-1-member"
 transaction.gas_bumps_t1 = 3
 
 # ═══════════════════════════════════════════════════════
