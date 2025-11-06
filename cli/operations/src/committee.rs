@@ -61,6 +61,7 @@ struct ApplyToStream {
     role: String,
     funding_utxo: Funding,
     speed_up_utxo: Funding,
+    advance_funds: Funding,
 }
 
 #[derive(Debug, Serialize)]
@@ -150,6 +151,7 @@ async fn post_apply(
             role: role.as_str().to_string(),
             funding_utxo: Funding { value: 10_000_000 },
             speed_up_utxo: Funding { value: 10_000_000 },
+            advance_funds: Funding { value: 10_000_000 },
         },
     };
 

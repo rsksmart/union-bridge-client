@@ -3,7 +3,7 @@ use std::rc::Rc;
 use anyhow::{Result, bail};
 use common::runtime_sync::RuntimeSync;
 use common::types::RskBlockAndUncles;
-use log::debug;
+use log::{debug, trace};
 #[cfg(test)]
 use mockall::automock;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
@@ -107,7 +107,7 @@ where
         self.lifecycle.blockchain_view().update(block);
 
         if !self.lifecycle.blockchain_view().has_observers() {
-            debug!("No observers added");
+            trace!("No observers added");
             return Ok(());
         }
 

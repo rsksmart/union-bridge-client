@@ -8,7 +8,7 @@ use bitcoin::key::Parity::Even;
 use bitcoin::{Amount, Network, PublicKey, ScriptBuf, Txid, XOnlyPublicKey};
 use common::msg_broker::bitvmx_types::{
     Destination, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, OutputType, P2PAddress,
-    PartialUtxo, PeerId, SignedPublicKey, Utxo,
+    PartialUtxo, PeerId, SignedPublicKey, Utxo, VariableTypes
 };
 use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 use common::runtime_sync::RuntimeSync;
@@ -112,7 +112,7 @@ type SendFundsReq = Option<(Uuid, Option<Txid>)>; // request id, funding utxo, s
 pub(crate) struct FundingUtxos {
     pub speedup: PartialUtxo,
     pub protocol_funding: PartialUtxo,
-    // pub advance_funds: PartialUtxo,
+    pub advance_funds: PartialUtxo,
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
@@ -128,6 +128,7 @@ struct FlowContext {
     agg_take_key_req: AggKeyReq,
     agg_dispute_key_req: AggKeyReq,
     setup_core_req: SetupCoreReq,
+    advance_funds_utxo: Option<PartialUtxo>,
     // async
     committee_pending_ev: Option<NewCommitteePendingEvent>,
     communication_data_ready_ev: Option<Vec<P2PAddress>>,
@@ -279,6 +280,8 @@ impl FlowContext {
 
         let funding_utxo_val = self.get_user_input()?.funding_utxo.value;
         let speedup_utxo_val = self.get_user_input()?.speed_up_utxo.value;
+        let advance_funds_utxo_val =
+            self.get_advance_funds_value(self.get_user_input()?.advance_funds.value);
 
         let wpkh = public_key.wpubkey_hash().expect("key is compressed");
         let script_pubkey = ScriptBuf::new_p2wpkh(&wpkh);
@@ -292,12 +295,27 @@ impl FlowContext {
             script_pubkey: script_pubkey.clone(),
             public_key,
         };
+        let advance_funds_ot = OutputType::SegwitPublicKey {
+            value: Amount::from_sat(advance_funds_utxo_val),
+            script_pubkey: script_pubkey.clone(),
+            public_key,
+        };
 
         // Output indexes should match the order in the Destination::Batch used in IncomingBitVMXApiMessages::SendFunds
         Ok(FundingUtxos {
             speedup: (txid, 0, Some(speedup_utxo_val), Some(speedup_ot)),
             protocol_funding: (txid, 1, Some(funding_utxo_val), Some(protocol_funding_ot)),
+            advance_funds: (
+                txid,
+                2,
+                Some(advance_funds_utxo_val),
+                Some(advance_funds_ot),
+            ),
         })
+    }
+
+    fn get_advance_funds_value(&self, advance_funds_user_input: u64) -> u64 {
+        advance_funds_user_input * 12 / 10
     }
 }
 
@@ -435,6 +453,7 @@ pub(crate) struct SetupCommitteeFlow<
 
 const REGTEST_FEE_RATE: u64 = 10;
 const DEFAULT_FEE_RATE: u64 = 1;
+pub const ADVANCE_FUNDS_INPUT: &str = "advance_funds_input";
 
 impl<CG, BC, S> SetupCommitteeFlow<CG, BC, S>
 where
@@ -776,6 +795,7 @@ where
 
         let funding_utxo_val = self.state.ctx.get_user_input()?.funding_utxo.value;
         let speedup_utxo_val = self.state.ctx.get_user_input()?.funding_utxo.value;
+        let advance_funds_utxo_val = self.state.ctx.get_user_input()?.advance_funds.value;
 
         info!("Funding dispute pubkey of {} with: {}", req_id, speedup_utxo_val + funding_utxo_val);
 
@@ -788,7 +808,7 @@ where
                 Destination::Batch(vec![
                     Destination::P2WPKH(public_key, speedup_utxo_val),
                     Destination::P2WPKH(public_key, funding_utxo_val),
-                    // Destination::P2WPKH(public_key, amounts.advance_funds),
+                    Destination::P2WPKH(public_key, advance_funds_utxo_val),
                 ]),
                 Some(fee_rate),
             ),
@@ -1378,6 +1398,19 @@ where
         for pid in protocol_ids {
             self.state.ctx.setup_core_req.push((pid, committee_id.clone(), false));
         }
+
+        let committee_uuid = Uuid::from_u128(*committee_id);
+        let advance_funds_utxo = self
+            .state
+            .ctx
+            .get_my_protocol_utxos(&self.global_context, self.bitcoin_network)?
+            .advance_funds;
+
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetVar(
+            committee_uuid,
+            ADVANCE_FUNDS_INPUT.to_string(),
+            VariableTypes::Utxo(advance_funds_utxo),
+        ));
 
         Ok(())
     }

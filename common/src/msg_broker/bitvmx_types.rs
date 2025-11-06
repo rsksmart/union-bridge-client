@@ -295,6 +295,22 @@ impl PegOutRequest {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvanceFundsRequest {
+    pub committee_id: Uuid,
+    pub slot_index: usize,
+    pub pegout_id: Vec<u8>,
+    pub fee: u64,
+    pub user_pubkey: PublicKey,
+    pub my_take_pubkey: PublicKey,
+}
+
+impl AdvanceFundsRequest {
+    pub fn name() -> String {
+        "advance_funds_request".to_string()
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Utxo {
     pub txid: Txid,
@@ -391,4 +407,24 @@ pub enum Destination {
     P2WPKH(PublicKey, u64), // (pubkey, amount in sats)
     Batch(Vec<Destination>),
     P2TR(XOnlyPublicKey, Vec<ProtocolScript>, u64), // (xpubkey, tap_leaves, amount in sats)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum OperatorChallengeResult {
+    OperatorTake,
+    OperatorWon,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReimbursementResult {
+    pub committee_id: Uuid,
+    pub slot_index: usize,
+    pub txid: Txid,
+    pub challenge_result: OperatorChallengeResult,
+}
+
+impl ReimbursementResult {
+    pub fn name() -> String {
+        "reimbursement_result".to_string()
+    }
 }

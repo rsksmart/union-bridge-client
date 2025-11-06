@@ -11,4 +11,5 @@ pub struct ApplyToStream {
     pub role: ParticipantRole,
     pub funding_utxo: Utxo,
     pub speed_up_utxo: Utxo,
+    pub advance_funds: Utxo,
 }

@@ -23,6 +23,8 @@ use crate::contracts::peg_manager::register_pegout::RegisterPegoutInvoke;
 use crate::contracts::peg_manager::request_pegin::RequestPeginInvoke;
 use crate::contracts::peg_manager::request_pegout::TryPegoutInvoke;
 use crate::contracts::peg_manager::{FakePegManagerContract, PegManagerContract};
+use crate::contracts::peg_manager::register_operator_take::RegisterOperatorTakeInvoke;
+use crate::contracts::peg_manager::trigger_operator_take::TriggerOperatorTakeInvoke;
 use crate::contracts::signature_manager::{
     AddMemberNonceInvoke, AddMemberSignatureInvoke, AddOperatorTakeTxHashInvoke,
     SignatureManagerContract,
@@ -35,9 +37,10 @@ use crate::types::{
     DepositAggregatedKeyInput, DepositAggregatedKeyOutput, DepositCommunicationDataInput,
     DepositCommunicationDataOutput, GetCommitteeInput, GetCommitteeOutput,
     GetCommunicationDataInput, GetCommunicationDataOutput, GetMemberPublicKeysInput,
-    GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterPegoutInput,
-    RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
-    RequestPegoutOutput,
+    GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterOperatorTakeInput,
+    RegisterOperatorTakeOutput, RegisterPegoutInput, RegisterPegoutOutput, RequestPeginInput,
+    RequestPeginOutput, RequestPegoutInput, RequestPegoutOutput, TriggerOperatorTakeInput,
+    TriggerOperatorTakeOutput,
 };
 
 /// Must match the contract name in the config file
@@ -120,6 +123,16 @@ pub trait RskContractsGatewayApi {
         input: RegisterPegoutInput,
     ) -> impl Future<Output = Result<RegisterPegoutOutput, DomainErrors>>;
 
+    fn register_operator_take(
+        &self,
+        input: RegisterOperatorTakeInput,
+    ) -> impl Future<Output = Result<RegisterOperatorTakeOutput, DomainErrors>>;
+
+    fn trigger_operator_take(
+        &self,
+        input: TriggerOperatorTakeInput,
+    ) -> impl Future<Output = Result<TriggerOperatorTakeOutput, DomainErrors>>;
+
     fn get_member_public_keys(
         &self,
         input: GetMemberPublicKeysInput,
@@ -169,6 +182,8 @@ pub struct RskContractsGateway<P: Provider + Clone> {
         ApplyToStreamInvoke<CommitteeRegistryContract<P>, StreamManagerContract<P>, P>,
     request_pegout_invoke: TryPegoutInvoke<PegManagerContract<P>>,
     register_pegout_invoke: RegisterPegoutInvoke<PegManagerContract<P>>,
+    register_operator_take_invoke: RegisterOperatorTakeInvoke<PegManagerContract<P>>,
+    trigger_operator_take_invoke: TriggerOperatorTakeInvoke<PegManagerContract<P>>,
     get_committee_call: GetCommitteeCall<CommitteeRegistryContract<P>>,
     deposit_communication_data_invoke: DepositCommunicationDataInvoke<CommitteeRegistryContract<P>>,
     deposit_aggregated_key_invoke: DepositAggregatedKeysInvoke<CommitteeRegistryContract<P>>,
@@ -261,6 +276,14 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
                 tx_config.gas_bumps_t1,
             ),
             register_pegout_invoke: RegisterPegoutInvoke::new(
+                peg_manager_contract.clone(),
+                tx_config.gas_bumps_t1,
+            ),
+            register_operator_take_invoke: RegisterOperatorTakeInvoke::new(
+                peg_manager_contract.clone(),
+                tx_config.gas_bumps_t1,
+            ),
+            trigger_operator_take_invoke: TriggerOperatorTakeInvoke::new(
                 peg_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
@@ -424,6 +447,36 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
             error!("Error on register_pegout_invoke: {err}");
             err
         })
+    }
+
+    async fn register_operator_take(
+        &self,
+        input: RegisterOperatorTakeInput,
+    ) -> Result<RegisterOperatorTakeOutput, DomainErrors> {
+        info!("Interacting with PegManager#registerOperatorTake");
+
+        self.register_operator_take_invoke
+            .run(input)
+            .await
+            .map_err(|err| {
+                error!("Error on register_operator_take_invoke: {}", err);
+                err
+            })
+    }
+
+    async fn trigger_operator_take(
+        &self,
+        input: TriggerOperatorTakeInput,
+    ) -> Result<TriggerOperatorTakeOutput, DomainErrors> {
+        info!("Interacting with PegManager#triggerOperatorTake");
+
+        self.trigger_operator_take_invoke
+            .run(input)
+            .await
+            .map_err(|err| {
+                error!("Error on trigger_operator_take_invoke: {}", err);
+                err
+            })
     }
 
     async fn get_member_public_keys(

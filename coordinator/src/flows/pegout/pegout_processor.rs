@@ -27,13 +27,12 @@ use crate::flows::btc_signature::btc_signature_subflow::{
 use crate::flows::common::GlobalContext;
 use crate::flows::pegout::pegout_flow::{PegoutFlow, State, StepData, Steps};
 use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix};
-use crate::types::{
-    EventStatus, RegisterSignaturesBitVmxData, RskPegManagerEvents, TickScheduler, UserRequests,
-};
+use crate::types::{EventStatus, RegisterSignaturesBitVmxData, RskPegManagerEvents, TickScheduler, TimeBasedScheduler, UserRequests};
 
 pub const PEGOUT_ACCEPTED_NAME: &str = "pegout_accepted";
 pub const BLOCKS_DELAY_FOR_TX_CHECK: u32 = 20;
 pub const SPV_PROOF_MIN_CONFIRMATIONS: u32 = 1 + 1; // +1 from Contracts, +1 to give time to the Native Bridge to get up to date with Bitcoin Node
+pub const ADVANCE_FUNDS_TIMEOUT_SECONDS: u64 = 60; // 1 minute for testing, in production should be 2 * 60 * 60 (2 hours)
 
 /// Processor that manages multiple pegout flow state machines
 pub struct PegoutFlowProcessor<CG, BC, BSF, FactoryBSF, S>
@@ -54,6 +53,8 @@ where
     blockchain_view: BlockchainView,
     events_confirming: HashMap<String, ConfirmableEventWithData>,
     tx_status_scheduler: TickScheduler<Uuid>,
+    advance_funds_timeout_scheduler: TimeBasedScheduler<Uuid>,
+    flows_pending_timeout: HashMap<Uuid, ()>, // Flows that need timeout scheduled on next block
     store: Rc<S>,
 }
 
@@ -89,6 +90,8 @@ where
             events_confirming: HashMap::new(),
             signature_flows: HashMap::new(),
             tx_status_scheduler: TickScheduler::new(),
+            advance_funds_timeout_scheduler: TimeBasedScheduler::new(),
+            flows_pending_timeout: HashMap::new(),
             store,
         }
     }
@@ -296,6 +299,15 @@ where
             if let Some(flow) = self.pegout_flows.get_mut(flow_id) {
                 flow.complete_step(&StepData::DispatchTransaction)?;
                 self.signature_flows.remove(flow_id);
+
+                // Cancel advance funds timeout since signatures completed successfully
+                if self.advance_funds_timeout_scheduler.is_scheduled(flow_id) {
+                    debug!(
+                        "Cancelling advance funds timeout for flow_id: {} - signatures completed",
+                        flow_id
+                    );
+                    self.advance_funds_timeout_scheduler.cancel(flow_id);
+                }
             } else {
                 warn!(
                     "Signature flow done for unknown pegout flow_id: {flow_id}. Skipping dispatch step"
@@ -419,6 +431,97 @@ where
 
         Ok(())
     }
+
+    /// Schedule timeouts for flows that received pegout_accepted but didn't have block timestamp yet
+    fn schedule_pending_timeouts(&mut self, block: &RskBlockAndUncles) -> Result<()> {
+        if self.flows_pending_timeout.is_empty() {
+            return Ok(());
+        }
+
+        let current_timestamp = block.block().timestamp().value();
+        let pending_flows: Vec<Uuid> = self.flows_pending_timeout.keys().cloned().collect();
+
+        for flow_id in pending_flows {
+            if let Some(flow) = self.pegout_flows.get(&flow_id) {
+                // Only schedule if flow is still waiting for signatures (not yet dispatched)
+                if flow.current_step() == Steps::DispatchTransaction {
+                    self.advance_funds_timeout_scheduler.schedule(
+                        flow_id,
+                        current_timestamp,
+                        ADVANCE_FUNDS_TIMEOUT_SECONDS,
+                    );
+                    info!(
+                        "Scheduled advance funds timeout for flow_id: {} at timestamp: {} (expires at: {})",
+                        flow_id,
+                        current_timestamp,
+                        current_timestamp + ADVANCE_FUNDS_TIMEOUT_SECONDS
+                    );
+                }
+            }
+            self.flows_pending_timeout.remove(&flow_id);
+        }
+
+        Ok(())
+    }
+
+    /// Check for expired advance funds timeouts and trigger operator take
+    fn handle_advance_funds_timeout_expired(&mut self, block: &RskBlockAndUncles) -> Result<()> {
+        if self.advance_funds_timeout_scheduler.is_empty() {
+            return Ok(());
+        }
+
+        let current_timestamp = block.block().timestamp().value();
+        let expired_flows = self
+            .advance_funds_timeout_scheduler
+            .check_expired(current_timestamp);
+
+        for flow_id in expired_flows {
+            info!(
+                "Advance funds timeout expired for flow_id: {} at timestamp: {}",
+                flow_id, current_timestamp
+            );
+            self.trigger_operator_take_for_flow(flow_id)?;
+        }
+
+        Ok(())
+    }
+
+    /// Trigger operator take for a flow when timeout expires
+    /// This completes the DispatchTransaction step with TriggerOperatorTakeTimeout data
+    fn trigger_operator_take_for_flow(&mut self, flow_id: Uuid) -> Result<()> {
+        let flow = self
+            .pegout_flows
+            .get_mut(&flow_id)
+            .ok_or_else(|| anyhow!("Flow not found for flow_id: {}", flow_id))?;
+
+        // Verify flow is still in the expected state
+        if flow.current_step() != Steps::DispatchTransaction {
+            warn!(
+                "Cannot trigger operator take for flow_id: {} - flow is at step {:?}, expected {:?}",
+                flow_id,
+                flow.current_step(),
+                Steps::DispatchTransaction
+            );
+            return Ok(());
+        }
+
+        info!(
+            "Timeout expired for flow_id: {}, completing DispatchTransaction step with TriggerOperatorTakeTimeout",
+            flow_id
+        );
+
+        // Complete the DispatchTransaction step with timeout data
+        // This will transition to TriggerOperatorTake step, which will call trigger_operator_take
+        flow.complete_step(&StepData::TriggerOperatorTakeTimeout)?;
+
+        // After trigger_operator_take completes in start_step, complete TriggerOperatorTake step
+        // to transition to Done
+        if flow.current_step() == Steps::TriggerOperatorTake {
+            flow.complete_step(&StepData::TriggerOperatorTakeTimeout)?;
+        }
+
+        Ok(())
+    }
 }
 
 impl<CG, BC, S> EventProcessor
@@ -484,6 +587,14 @@ where
                 let mut btc_sig_subflow = self.btc_sig_subflow_factory.create_flow(*flow_id);
                 btc_sig_subflow.start_signature_flow(*flow_id, &register_input)?;
                 self.signature_flows.insert(*flow_id, btc_sig_subflow);
+
+                // Schedule advance funds timeout: 2 hours from now
+                // We'll schedule it when we process the next block with its timestamp
+                info!(
+                    "Pegout accepted for flow_id: {}, will schedule advance funds timeout on next block",
+                    flow_id
+                );
+                self.flows_pending_timeout.insert(*flow_id, ());
             }
             OutgoingBitVMXApiMessages::SetupCompleted(program_id) => {
                 if self.pegout_flows.contains_key(program_id) {
@@ -590,6 +701,12 @@ where
     }
 
     fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
+        // Schedule pending timeouts for flows that received pegout_accepted
+        self.schedule_pending_timeouts(block)?;
+
+        // Check for expired timeouts
+        self.handle_advance_funds_timeout_expired(block)?;
+
         self.process_unhandled_confirmed_sig_flow_events(block)?;
         self.handle_transaction_status_tick()?;
         self.process_block_confirmations(block)?;
@@ -600,7 +717,11 @@ where
     fn shutdown(&mut self) {
         info!("Shutting down PegoutFlowProcessor");
         self.pegout_flows.clear();
+        self.signature_flows.clear();
         self.events_confirming.clear();
         self.blockchain_view.clear();
+        self.tx_status_scheduler.clear();
+        self.advance_funds_timeout_scheduler.clear();
+        self.flows_pending_timeout.clear();
     }
 }
