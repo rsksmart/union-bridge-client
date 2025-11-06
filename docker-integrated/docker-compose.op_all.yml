@@ -1,0 +1,24 @@
+############################
+# ONE OP PER HOST OVERRIDE
+############################
+
+services:
+  bitvmx-client:
+    networks:
+      # so each op coordinator can access bitvmx-client via service name
+      union-network:
+      # for bitvmx p2p communication between operators (only needed in local with all 4 operators)
+      bitvmx-shared-network:
+        ipv4_address: ${BITVMX_P2P_HOST}
+
+networks:
+  bitvmx-union-network:
+    driver: bridge
+  # for bitvmx p2p communication (union-client does not need to be in this network as its communication is project-network internal)
+  bitvmx-shared-network:
+    external: true
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+

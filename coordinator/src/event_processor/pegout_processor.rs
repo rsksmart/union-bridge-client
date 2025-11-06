@@ -53,11 +53,11 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
+use transaction_dispatcher::types::RegisterPegoutInput;
 use transaction_dispatcher::types::{
     GetCommitteeInput, GetCommitteeOutput, GetCommunicationDataInput, GetMemberPublicKeysInput,
     P2PAddressParser,
 };
-use transaction_dispatcher::types::RegisterPegoutInput;
 use union_contracts::bindings::peg_manager::PegManager::{PegoutRegistered, PegoutRequested};
 use uuid::Uuid;
 
@@ -675,17 +675,22 @@ where
         tx_status: TransactionStatus,
     ) -> Result<()> {
         //find the pegout event state for the given flow_id
-        let state = self
-            .tracker
-            .get_mut(flow_id)
-            .ok_or_else(|| anyhow!("Pegout state not found for flow_id: {}", flow_id))?;
-        if state.user_take_tx_id != Some(tx_status.tx_id) {
-            bail!(
-                "Pegout state for flow_id: {} does not match tx_id: {}",
-                flow_id,
+        let state = self.tracker.get_mut(flow_id);
+        if state.is_none() {
+            debug!(
+                "Ignoring tx {}, Pegout state not found for flow_id {flow_id}",
                 tx_status.tx_id
             );
+            return Ok(());
         }
+        let Some(_) = self.tracker.get_mut(flow_id) else {
+            debug!(
+                "Ignoring tx {}, Pegout state not found for flow_id {flow_id}",
+                tx_status.tx_id
+            );
+            return Ok(());
+        };
+
         if tx_status.confirmations >= SPV_PROOF_MIN_CONFIRMATIONS {
             debug!(
                 "Transaction confirmed with sufficient confirmations for flow_id: {}",

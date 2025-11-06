@@ -13,7 +13,7 @@ key_storage:
 storage:
   path: /tmp/op_3/storage.db
 p2p:
-  address: /ip4/172.20.0.13/tcp/61182
+  address: /ip4/10.1.2.130/tcp/61180
   key: config/keys/op_3.key
   peer_id_file: peer_id
   timeout: 5
@@ -21,13 +21,13 @@ coordinator_settings:
   max_feerate_sat_vb: 2
   monitor_settings:
     indexer_settings:
-      checkpoint_height: 4744327
+      checkpoint_height: 4750503
 coordinator:
   throtthle_bitcoin_updates_until_sync: 1
   throtthle_bitcoin_updates: 1
 broker_storage:
   path: /tmp/op_3/broker.db
-broker_port: 44444
+broker_port: 22222
 client:
   retry: 1
   # Delay between retries in milliseconds
@@ -35,4 +35,4 @@ client:
 
 wallet:
   db_path: /tmp/testnet/op_3/wallet.db
-  start_height: 4744327
+  start_height: 4750503

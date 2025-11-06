@@ -53,13 +53,15 @@ async fn main() -> Result<()> {
     // Create two contract gateways with different roles
     let user_contracts_gateway = transaction_dispatcher::get_contracts_gateway_as_lib_with_role(
         tx_dispatcher_config.clone(),
-        transaction_dispatcher::GatewayRole::User
-    ).await?;
+        transaction_dispatcher::GatewayRole::User,
+    )
+    .await?;
 
     let member_contracts_gateway = transaction_dispatcher::get_contracts_gateway_as_lib_with_role(
         tx_dispatcher_config,
-        transaction_dispatcher::GatewayRole::Member
-    ).await?;
+        transaction_dispatcher::GatewayRole::Member,
+    )
+    .await?;
 
     info!("Starting user-api server");
 
@@ -94,22 +96,13 @@ async fn main() -> Result<()> {
     let network = CommonConfig::parse_bitcoin_network(&config.bitcoin_network)
         .context("Failed to parse bitcoin_network")?;
 
-    // Get WIF keys from environment - at least one is required
-    let user_bitcoin_wif = std::env::var("USER_BITCOIN_WIF").ok().filter(|s| !s.is_empty());
-    let member_bitcoin_wif = std::env::var("MEMBER_BITCOIN_WIF").ok().filter(|s| !s.is_empty());
-
-    // Ensure at least one WIF is provided
-    if user_bitcoin_wif.is_none() && member_bitcoin_wif.is_none() {
-        return Err(anyhow::anyhow!(
-            "At least one of USER_BITCOIN_WIF or MEMBER_BITCOIN_WIF must be set"
-        ));
-    }
+    // Get WIF key from environment - required for user endpoints
+    let user_bitcoin_wif = std::env::var("USER_BITCOIN_WIF")
+        .ok()
+        .filter(|s| !s.is_empty());
 
     if user_bitcoin_wif.is_none() {
         info!("USER_BITCOIN_WIF not set - user endpoints will be disabled");
-    }
-    if member_bitcoin_wif.is_none() {
-        info!("MEMBER_BITCOIN_WIF not set - member endpoints will be disabled");
     }
 
     let server = Server::new(
@@ -120,7 +113,6 @@ async fn main() -> Result<()> {
         user_contracts_gateway,
         member_contracts_gateway,
         user_bitcoin_wif.as_deref(),
-        member_bitcoin_wif.as_deref(),
         network,
     )
     .await;

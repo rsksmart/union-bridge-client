@@ -46,8 +46,7 @@ If the chosen config file is missing the CLI aborts.
 All configuration values can also be provided via environment variables or command-line flags, with the following
 precedence:
 
-1. Command-line options (`ub-wallet --network testnet ...`)
-2. Environment variables (e.g. `WALLET_RPC_URL`, `WALLET_PRIVATE_KEY`)
+1. Environment variables (check in `main.rs`)
 3. Values from the TOML config file
 
 Example `config/wallet.toml`:
@@ -67,17 +66,7 @@ vout = 0
 value_sat = 150000
 ```
 
-Environment variable shortcuts:
-
-- `WALLET_NETWORK`
-- `WALLET_SATS_PER_BYTE`
-- `WALLET_PRIVATE_KEY`
-- `WALLET_RPC_URL`
-- `WALLET_RPC_USER` (optional)
-- `WALLET_RPC_PASSWORD` (optional)
-- `WALLET_UTXO_DB` (optional path to RocksDB store)
-
-Use `ub-wallet --help` to see the available command-line overrides.
+Environment variable shortcuts: See `cli.rs` or use `ub-wallet --help` to see the available command-line overrides.
 
 ## Running
 

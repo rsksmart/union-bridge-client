@@ -14,14 +14,9 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
-    ports:
-      # for union-client -> bitvmx-client communication (through internal network)
-      - ${BITVMX_PORT}:${BITVMX_PORT}
-      # for bitvmx-client -> bitvmx-client communication (through shared network)
-      - ${BITVMX_P2P_PORT}:${BITVMX_P2P_PORT}
     volumes:
-      - ./config/client/config:/app/config
-      - ./config/broker/config:/app/rust-bitvmx-workspace/rust-fakep2p/broker/config
+      - ./config/${ENVIRONMENT}/client/config:/app/config
+      - ./config/${ENVIRONMENT}/broker/config:/app/rust-bitvmx-workspace/rust-fakep2p/broker/config
       - db-bitvmx:/tmp
 
 volumes:
