@@ -100,7 +100,6 @@ pub struct TransactionStatus {
     pub confirmations: u32,
     pub status: TransactionBlockchainStatus,
 }
-
 pub type BlockHeight = u32;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]

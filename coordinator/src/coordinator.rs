@@ -3,7 +3,7 @@ use crate::flows::committee::setup_committee_flow::{
     SetupCommitteeFlowFactory, SetupCommitteeProcessor,
 };
 use crate::{
-    event_processor::{EventProcessor, PeginProcessor, PegoutProcessor},
+    event_processor::{EventProcessor, PeginProcessor},
     monitor::MonitorApi,
 };
 use anyhow::{Context, Result};
@@ -29,6 +29,7 @@ use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use crate::flows::advance_funds::advance_funds_processor::AdvanceFundsProcessor;
 use crate::flows::common::GlobalContext;
 use crate::flows::fund_bitvmx_flow::FundBitvmxProcessor;
+use crate::flows::pegout::pegout_processor::PegoutFlowProcessor;
 use crate::store::CoordinatorStoreApi;
 
 const CHECK_PERIOD: Duration = Duration::from_secs(1);
@@ -96,9 +97,9 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                     btc_sig_subflow_factory,
                     global_context.clone(),
                 )),
-                Box::new(PegoutProcessor::new(
-                    rt_sync.clone(),
+                Box::new(PegoutFlowProcessor::new(
                     contracts_arc.clone(),
+                    rt_sync.clone(),
                     bitvmx_broker.clone(),
                     global_context.clone(),
                 )),
