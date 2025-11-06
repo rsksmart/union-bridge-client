@@ -321,8 +321,8 @@ fn cargo_args_for_service(cli: &Cli, svc: &Service) -> Vec<String> {
     // Always use fixed logger and config paths as per requirements
     // args.push("--logger-path".into());
     //    args.push("log4rs.yaml".into());
-    args.push("--config-path".into());
-    args.push("./config/multi-client-template".into());
+    args.push("--env".into());
+    args.push("local".into());
     args
 }
 

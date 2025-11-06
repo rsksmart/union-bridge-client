@@ -53,13 +53,15 @@ async fn main() -> Result<()> {
     // Create two contract gateways with different roles
     let user_contracts_gateway = transaction_dispatcher::get_contracts_gateway_as_lib_with_role(
         tx_dispatcher_config.clone(),
-        transaction_dispatcher::GatewayRole::User
-    ).await?;
+        transaction_dispatcher::GatewayRole::User,
+    )
+    .await?;
 
     let member_contracts_gateway = transaction_dispatcher::get_contracts_gateway_as_lib_with_role(
         tx_dispatcher_config,
-        transaction_dispatcher::GatewayRole::Member
-    ).await?;
+        transaction_dispatcher::GatewayRole::Member,
+    )
+    .await?;
 
     info!("Starting user-api server");
 
@@ -95,8 +97,12 @@ async fn main() -> Result<()> {
         .context("Failed to parse bitcoin_network")?;
 
     // Get WIF keys from environment - at least one is required
-    let user_bitcoin_wif = std::env::var("USER_BITCOIN_WIF").ok().filter(|s| !s.is_empty());
-    let member_bitcoin_wif = std::env::var("MEMBER_BITCOIN_WIF").ok().filter(|s| !s.is_empty());
+    let user_bitcoin_wif = std::env::var("USER_BITCOIN_WIF")
+        .ok()
+        .filter(|s| !s.is_empty());
+    let member_bitcoin_wif = std::env::var("MEMBER_BITCOIN_WIF")
+        .ok()
+        .filter(|s| !s.is_empty());
 
     // Ensure at least one WIF is provided
     if user_bitcoin_wif.is_none() && member_bitcoin_wif.is_none() {

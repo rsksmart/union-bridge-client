@@ -53,11 +53,11 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
+use transaction_dispatcher::types::RegisterPegoutInput;
 use transaction_dispatcher::types::{
     GetCommitteeInput, GetCommitteeOutput, GetCommunicationDataInput, GetMemberPublicKeysInput,
     P2PAddressParser,
 };
-use transaction_dispatcher::types::RegisterPegoutInput;
 use union_contracts::bindings::peg_manager::PegManager::{PegoutRegistered, PegoutRequested};
 use uuid::Uuid;
 

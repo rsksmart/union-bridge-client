@@ -54,13 +54,8 @@ impl Server {
     {
         // Create Bitcoin wallet instances based on provided WIFs
         let user_wallet = user_bitcoin_wif.map(|wif| {
-            User::new(
-                "User",
-                user_contracts_gateway.my_address(),
-                wif,
-                network,
-            )
-            .expect("Failed to create user wallet")
+            User::new("User", user_contracts_gateway.my_address(), wif, network)
+                .expect("Failed to create user wallet")
         });
 
         let member_wallet = member_bitcoin_wif.map(|wif| {
@@ -83,8 +78,7 @@ impl Server {
                 member_contracts_gateway,
             ));
 
-        let mut app = Router::new()
-            .route("/health", get(Self::health_check));
+        let mut app = Router::new().route("/health", get(Self::health_check));
 
         // Conditionally add user endpoints if user wallet is available
         if let Some(user_wallet) = user_wallet {
@@ -111,12 +105,11 @@ impl Server {
             );
         }
 
-        app = app
-            .layer((
-                TimeoutLayer::new(Duration::from_secs(10)),
-                Extension(broker_server.clone()),
-                Extension(coordinator_client_id),
-            ));
+        app = app.layer((
+            TimeoutLayer::new(Duration::from_secs(10)),
+            Extension(broker_server.clone()),
+            Extension(coordinator_client_id),
+        ));
 
         Self {
             listener,

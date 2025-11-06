@@ -65,22 +65,26 @@ async fn create_contracts_gateway_impl_with_role(
 
     let key_store_path = Path::new(key_path);
 
-    info!("Getting {} signer from key at {}",
+    info!(
+        "Getting {} signer from key at {}",
         match role {
             GatewayRole::User => "user",
-            GatewayRole::Member => "member"
+            GatewayRole::Member => "member",
         },
         key_store_path.display()
     );
 
-    let signer = KeyManager::get_signer(key_store_path)
-        .map_err(|e| DomainErrors::InternalServerError(format!("Failed to get {:?} signer: {}", role, e)))?;
-    info!("Got {} signer with address {}",
+    let signer = KeyManager::get_signer(key_store_path).map_err(|e| {
+        DomainErrors::InternalServerError(format!("Failed to get {:?} signer: {}", role, e))
+    })?;
+    info!(
+        "Got {} signer with address {}",
         match role {
             GatewayRole::User => "user",
-            GatewayRole::Member => "member"
+            GatewayRole::Member => "member",
         },
-        signer.address());
+        signer.address()
+    );
 
     let signer_address = signer.address().into();
 
