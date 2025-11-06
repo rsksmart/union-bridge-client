@@ -244,6 +244,7 @@ run_local_operators() {
 run_alphanet_operators() {
   # ALPHANET ENVIRONMENT: Each operator on separate host
 
+  local ALPHANET_PROJECT_NAME="-p union-operator"
   local COMPOSE_FILE_ARG="-f docker-compose.yml -f docker-compose.op_one.yml"
 
   local CLIENT_OP
@@ -259,7 +260,7 @@ run_alphanet_operators() {
     echo "Running command on alphanet operator:"
   fi
 
-  local DOCKER_CMD="USER_BITCOIN_WIF=${USER_BITCOIN_WIF} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${COMPOSE_FILE_ARG} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
+  local DOCKER_CMD="USER_BITCOIN_WIF=${USER_BITCOIN_WIF} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${ALPHANET_PROJECT_NAME} ${COMPOSE_FILE_ARG} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
   echo "'$(echo "${DOCKER_CMD}" | sed "s/USER_BITCOIN_WIF=[^ ]*/USER_BITCOIN_WIF=******/")'"
   eval "${DOCKER_CMD}"
 }
