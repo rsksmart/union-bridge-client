@@ -472,6 +472,30 @@ impl Wallet {
         target_scripts: Vec<ScriptBuf>,
         amount_sat: u64,
     ) -> Result<CreatedTransaction> {
+        if target_scripts.is_empty() {
+            bail!("at least one target script is required");
+        }
+        let outputs_count = target_scripts.len() as u64;
+        let total_amount = amount_sat
+            .checked_mul(outputs_count)
+            .context("total amount overflowed")?;
+
+        let outputs: Vec<TxOut> = target_scripts
+            .iter()
+            .map(|script| TxOut {
+                value: Amount::from_sat(amount_sat),
+                script_pubkey: script.clone(),
+            })
+            .collect();
+
+        self.build_transaction_with_outputs(outputs, total_amount)
+    }
+
+    fn build_transaction_with_outputs(
+        &mut self,
+        outputs: Vec<TxOut>,
+        total_output_amount: u64,
+    ) -> Result<CreatedTransaction> {
         let private_key = self.require_active_private_key()?;
         let address = self.require_active_address()?.clone();
         let pubkey = private_key.public_key(&self.secp);
@@ -480,21 +504,14 @@ impl Wallet {
             .map_err(|_| anyhow!("private key must correspond to a compressed public key"))?;
         let change_script = ScriptBuf::new_p2wpkh(&wpkh);
 
-        if target_scripts.is_empty() {
-            bail!("at least one target script is required");
-        }
-        let outputs_count = target_scripts.len() as u64;
-        let total_amount = amount_sat
-            .checked_mul(outputs_count)
-            .context("total amount overflowed")?;
-        let mut required = total_amount;
+        let mut required = total_output_amount;
 
         'select: loop {
             let (selected_indices, selected_utxos, total_input) = self.select_utxos(required)?;
 
             let mut include_change =
-                total_input.saturating_sub(total_amount) >= P2WPKH_DUST_LIMIT_SATS;
-            let mut change_value = total_input.saturating_sub(total_amount);
+                total_input.saturating_sub(total_output_amount) >= P2WPKH_DUST_LIMIT_SATS;
+            let mut change_value = total_input.saturating_sub(total_output_amount);
             let result;
 
             'build: loop {
@@ -510,13 +527,7 @@ impl Wallet {
                             witness: Witness::default(),
                         })
                         .collect(),
-                    output: target_scripts
-                        .iter()
-                        .map(|script| TxOut {
-                            value: Amount::from_sat(amount_sat),
-                            script_pubkey: script.clone(),
-                        })
-                        .collect(),
+                    output: outputs.clone(),
                 };
 
                 if include_change {
@@ -531,7 +542,7 @@ impl Wallet {
                 let fee = vsize
                     .checked_mul(self.sats_per_byte)
                     .context("fee computation overflowed")?;
-                let total_required = total_amount
+                let total_required = total_output_amount
                     .checked_add(fee)
                     .context("amount plus fee overflowed")?;
 
@@ -540,7 +551,7 @@ impl Wallet {
                     continue 'select;
                 }
 
-                let new_change_value = total_input - total_amount - fee;
+                let new_change_value = total_input - total_output_amount - fee;
                 let should_include_change = new_change_value >= P2WPKH_DUST_LIMIT_SATS;
 
                 if should_include_change != include_change {
@@ -559,7 +570,7 @@ impl Wallet {
                 }
 
                 let effective_fee = total_input
-                    .checked_sub(total_amount)
+                    .checked_sub(total_output_amount)
                     .and_then(|value| value.checked_sub(change_value))
                     .context("fee computation underflow")?;
 
@@ -735,13 +746,7 @@ impl Wallet {
         tmp_addr: String,
         rsk_address_hex: String,
     ) -> Result<CreatedTransaction> {
-        // Constants matching user-api
-        const KEY_SPEND_FEE: u64 = 335;
-        const OP_RETURN_FEE: u64 = 300;
-        const EXTRA_FEE: u64 = 1000;
-
         let private_key = self.require_active_private_key()?;
-        let address = self.require_active_address()?.clone();
         let pubkey = private_key.public_key(&self.secp);
 
         // Parse the destination address
@@ -767,91 +772,25 @@ impl Wallet {
         // Derive the reimbursement X-only public key from wallet's own key
         let (reimbursement_xpk, _) = pubkey.inner.x_only_public_key();
 
-        // Calculate total amount needed
-        let fee = KEY_SPEND_FEE + EXTRA_FEE;
-        let total_amount = stream_value + fee + OP_RETURN_FEE;
-
-        // Select UTXOs
-        let (selected_indices, selected_utxos, total_input) = self.select_utxos(total_amount)?;
-
         // Create OP_RETURN data
         let op_return_data =
             Self::create_pegin_op_return_data(packet_number, rsk_address, reimbursement_xpk)?;
 
-        // Build transaction
-        let mut tx = Transaction {
-            version: Version::TWO,
-            lock_time: absolute::LockTime::ZERO,
-            input: selected_utxos
-                .iter()
-                .map(|u| TxIn {
-                    previous_output: u.outpoint,
-                    script_sig: ScriptBuf::new(),
-                    sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
-                    witness: Witness::default(),
-                })
-                .collect(),
-            output: vec![
-                // Taproot output
-                TxOut {
-                    value: Amount::from_sat(stream_value),
-                    script_pubkey: checked_addr.script_pubkey(),
-                },
-                // OP_RETURN output
-                TxOut {
-                    value: Amount::from_sat(0),
-                    script_pubkey: Self::create_op_return_script(op_return_data)?,
-                },
-            ],
-        };
+        // Build outputs for pegin transaction
+        let outputs = vec![
+            // Taproot output
+            TxOut {
+                value: Amount::from_sat(stream_value),
+                script_pubkey: checked_addr.script_pubkey(),
+            },
+            // OP_RETURN output
+            TxOut {
+                value: Amount::from_sat(0),
+                script_pubkey: Self::create_op_return_script(op_return_data)?,
+            },
+        ];
 
-        // Add change output if necessary
-        let change_value = total_input.saturating_sub(total_amount);
-        if change_value >= P2WPKH_DUST_LIMIT_SATS {
-            let wpkh = pubkey.wpubkey_hash().context("key must be compressed")?;
-            let change_script = ScriptBuf::new_p2wpkh(&wpkh);
-            tx.output.push(TxOut {
-                value: Amount::from_sat(change_value),
-                script_pubkey: change_script.clone(),
-            });
-        }
-
-        // Sign the transaction
-        let wpkh = pubkey.wpubkey_hash().context("key must be compressed")?;
-        let script_code = ScriptBuf::new_p2wpkh(&wpkh);
-        let signed = self.sign_transaction(tx, &selected_utxos, &pubkey, &script_code)?;
-
-        // Calculate actual fee
-        let final_change = if change_value >= P2WPKH_DUST_LIMIT_SATS {
-            change_value
-        } else {
-            0
-        };
-        let fee_sat = total_input
-            .saturating_sub(stream_value)
-            .saturating_sub(final_change);
-
-        // Create change UTXO info if applicable
-        let change_preview = if final_change > 0 {
-            let txid = signed.compute_txid();
-            let change_vout = (signed.output.len() - 1) as u32;
-            Some(Utxo {
-                outpoint: OutPoint::new(txid, change_vout),
-                value_sat: final_change,
-            })
-        } else {
-            None
-        };
-
-        Ok(CreatedTransaction {
-            transaction: signed,
-            change: change_preview,
-            fee_sat,
-            spent_indices: selected_indices,
-            spent_utxos: selected_utxos,
-            change_value: final_change,
-            change_address: address,
-        })
+        self.build_transaction_with_outputs(outputs, stream_value)
     }
 
     fn create_pegin_op_return_data(
