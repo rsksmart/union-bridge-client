@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Config {
     pub provider: ProviderConfig,
     pub contracts: Vec<ContractConfig>,
@@ -14,7 +14,7 @@ pub struct Config {
     pub tx_dispatcher_config: TxDispatcherConfig,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct TxDispatcherConfig {
     pub key_store: KeyStoreConfig,
     pub transaction: TransactionConfig,
@@ -26,7 +26,7 @@ pub struct KeyStoreConfig {
     pub member_path: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct TransactionConfig {
     pub gas_bumps_t1: u8,
 }
@@ -53,9 +53,9 @@ impl Config {
             .collect()
     }
 
-    pub fn key_store(&self) -> &KeyStoreConfig {
-        &self.tx_dispatcher_config.key_store
-    }
+    // pub fn key_store(&self) -> &KeyStoreConfig {
+    //     &self.tx_dispatcher_config.key_store
+    // }
 
     pub fn transaction(&self) -> &TransactionConfig {
         &self.tx_dispatcher_config.transaction
@@ -84,18 +84,17 @@ mod tests {
 
         assert_eq!(
             "/your_base_path/.union_bridge/keystore/multi-client-1-user",
-            config.key_store().user_path
+            config.tx_dispatcher_config.key_store.user_path
         );
         assert_eq!(
             "/your_base_path/.union_bridge/keystore/multi-client-1-member",
-            config.key_store().member_path
+            config.tx_dispatcher_config.key_store.member_path
         );
         assert_eq!(3, config.transaction().gas_bumps_t1);
     }
 
     #[test]
     fn test_load_contracts_when_stage_config_set_should_load_contracts_successfully() {
-        // using base.yaml
         let config: Config =
             CommonConfig::load_config::<Config>(None).expect("Failed to load config");
         let contracts = config.load_managed_contracts();

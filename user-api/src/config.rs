@@ -42,8 +42,8 @@ mod tests {
         let config: Config =
             CommonConfig::load_config::<Config>(None).expect("Failed to load base config");
 
-        assert_eq!(1, config.user_api_config.coordinator_broker_client_id);
-        assert_eq!(9007, config.user_api_config.broker_server_port);
-        assert_eq!(8080, config.user_api_config.http_server_port);
+        assert_eq!(101, config.user_api_config.coordinator_broker_client_id);
+        assert_eq!(30001, config.user_api_config.broker_server_port);
+        assert_eq!(40001, config.user_api_config.http_server_port);
     }
 }

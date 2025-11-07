@@ -273,7 +273,10 @@ mod tests {
         );
         assert_eq!("/app/db/", config.indexer.storage.path); // override
         assert_eq!(1000, config.indexer.cache.size);
-        assert_eq!("ws://127.0.0.1:8545", config.provider.rootstock.url);
+        assert_eq!(
+            "ws://host.docker.internal:8545",
+            config.provider.rootstock.url
+        );
         assert_eq!("regtest", config.bitcoin_network);
         assert_eq!(8, config.contracts.len());
     }

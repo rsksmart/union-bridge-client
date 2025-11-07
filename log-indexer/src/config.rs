@@ -60,11 +60,10 @@ mod tests {
 
     #[test]
     fn test_config_load_when_stage_config_set_should_load_config_successfully() {
-        // using base.yaml
         let config: Config =
             CommonConfig::load_config::<Config>(None).expect("Failed to load config");
 
-        assert_eq!(9006, config.log_indexer_config.log_notifier.broker_port);
+        assert_eq!(20001, config.log_indexer_config.log_notifier.broker_port);
     }
 
     #[test]

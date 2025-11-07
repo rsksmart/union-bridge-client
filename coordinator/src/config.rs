@@ -99,17 +99,17 @@ mod tests {
         let config: Config =
             CommonConfig::load_config::<Config>(None).expect("Failed to load base config");
 
-        assert_eq!("127.0.0.1", config.coordinator_config.log_broker.host);
-        assert_eq!(9002, config.coordinator_config.log_broker.port);
-        assert_eq!("127.0.0.1", config.coordinator_config.block_broker.host);
-        assert_eq!(9003, config.coordinator_config.block_broker.port);
-        assert_eq!("127.0.0.1", config.coordinator_config.user_broker.host);
-        assert_eq!(9004, config.coordinator_config.user_broker.port);
-        assert_eq!("127.0.0.1", config.coordinator_config.bitvmx_broker.host);
-        assert_eq!(9005, config.coordinator_config.bitvmx_broker.port);
-        assert_eq!(1, config.coordinator_config.broker_client_id);
+        assert_eq!("0.0.0.0", config.coordinator_config.log_broker.host);
+        assert_eq!(20001, config.coordinator_config.log_broker.port);
+        assert_eq!("0.0.0.0", config.coordinator_config.block_broker.host);
+        assert_eq!(10001, config.coordinator_config.block_broker.port);
+        assert_eq!("0.0.0.0", config.coordinator_config.user_broker.host);
+        assert_eq!(30001, config.coordinator_config.user_broker.port);
+        assert_eq!("0.0.0.0", config.coordinator_config.bitvmx_broker.host);
+        assert_eq!(22222, config.coordinator_config.bitvmx_broker.port);
+        assert_eq!(101, config.coordinator_config.broker_client_id);
         assert_eq!(
-            "/your_base_path/.union_bridge/coordinator",
+            "/your_base_path/.union_bridge/database/multi-client-1",
             config.coordinator_config.storage_path
         );
         assert_eq!("regtest", config.bitcoin_network);
