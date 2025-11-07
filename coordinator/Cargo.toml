@@ -25,6 +25,7 @@ hex = { workspace = true }
 serde = { workspace = true }
 storage-backend = { workspace = true }
 sha2 = "0.10.9"
+thiserror = { workspace = true }
 tiny-keccak = "2.0.2"
 bitvmx_bitcoin_rpc = { package = "bitvmx-bitcoin-rpc", git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-bitcoin-rpc.git", rev = "0f63157"}
 

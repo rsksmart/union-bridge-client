@@ -156,6 +156,16 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
 }
 
 pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> {
-    let decoded_err = err.as_decoded_interface_error::<CommitteeRegistryErrors>();
-    decoded_err.map(|e| DomainErrors::CommitteeError(format!("{:?}", e)))
+    let decoded_err = err.as_decoded_interface_error::<CommitteeRegistryErrors>()?;
+
+    Some(match decoded_err {
+        CommitteeRegistryErrors::MemberAlreadyDepositedCommunicationData(e) => {
+            DomainErrors::MemberAlreadyDepositedCommunicationData(format!("{:?}", e))
+        }
+        CommitteeRegistryErrors::MemberInfoAlreadyDeposited(e) => {
+            DomainErrors::MemberInfoAlreadyDeposited(format!("{:?}", e))
+        }
+        // Add other specific mappings here as needed
+        _ => DomainErrors::CommitteeError(format!("{:?}", decoded_err)),
+    })
 }

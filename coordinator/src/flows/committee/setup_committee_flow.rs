@@ -21,7 +21,7 @@ use std::any::type_name_of_val;
 use std::collections::HashMap;
 use std::rc::Rc;
 use tiny_keccak::{Hasher, Keccak};
-use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
+use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use uuid::Uuid;
 
 use crate::user_requests::ApplyToStream;
@@ -33,14 +33,16 @@ use crate::flows::committee::dispute_core_setup::DisputeCoreSetup;
 use crate::flows::common::{
     COMM_KEY_INDEX, DISPUTE_KEY_INDEX, GlobalContext, TAKE_KEY_INDEX, build_communication_data,
 };
+use crate::flows::errors::{FlowError, FlowResultExt};
 use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix};
 use common::types;
 use common::types::{BlockNumber, CommitteeId, RskBlockAndUncles, StreamId, TxIdParser};
 
 use transaction_dispatcher::types::{
-    ApplyToStreamInput, CommitteeECDSA, DepositAggregatedKeyInput, DepositCommunicationDataInput,
-    DepositCommunicationDataOutput, GetCommunicationDataInput, GetMemberPublicKeysInput,
-    GetMemberPublicKeysOutput, P2PAddressParser,
+    ApplyToStreamInput, ApplyToStreamOutput, CommitteeECDSA, DepositAggregatedKeyInput,
+    DepositAggregatedKeyOutput, DepositCommunicationDataInput, DepositCommunicationDataOutput,
+    GetCommunicationDataInput, GetMemberPublicKeysInput, GetMemberPublicKeysOutput,
+    P2PAddressParser,
 };
 
 use crate::config::REQUIRED_CONFIRMATIONS;
@@ -200,6 +202,7 @@ enum Steps {
     DepositAggregatedKey,
     SetupDisputeCore,
     Done,
+    Failed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -991,6 +994,9 @@ where
                     self.state.internal_id
                 );
             }
+            Steps::Failed => {
+                unreachable!("Failed step should not be reached in start_step");
+            }
         }
 
         // Persist state after successful step completion
@@ -1098,6 +1104,9 @@ where
             Steps::Done => {
                 unreachable!("Done step should not be reached in complete_step");
             }
+            Steps::Failed => {
+                unreachable!("Failed step should not be reached in complete_step");
+            }
         }
 
         Ok(())
@@ -1166,26 +1175,34 @@ where
 
         debug!("Applying to stream {:?}", input.stream_id);
 
-        match self.rt_sync.run(self.contracts.apply_to_stream(input)) {
-            Ok(_) => {
-                info!("Applied to stream {stream_id:?} successfully");
+        self.rt_sync
+            .run(self.contracts.apply_to_stream(input))
+            .or_else(|e| match e {
+                DomainErrors::MemberAlreadyRegisteredForStream(_) => {
+                    info!(
+                        "Member already registered for stream {:?} - treating as success",
+                        stream_id
+                    );
+                    Ok(ApplyToStreamOutput {
+                        transaction_hash: "already_registered".to_string(),
+                    })
+                }
+                _ => Err(e),
+            })?;
 
-                // once a member is selected, public keys should be the same, so we set them in the
-                // global context (reset for convenience as it should be idempotent)
-                self.global_context.my_keys().set_take_key(my_take_key);
-                self.global_context
-                    .my_keys()
-                    .set_dispute_key(my_dispute_key);
-                self.global_context
-                    .my_keys()
-                    .set_comm_key(self.ctx_my_comm_key()?);
+        info!("Applied to stream {stream_id:?} successfully");
 
-                Ok(())
-            }
-            Err(e) => {
-                bail!("Failed to apply to stream {stream_id:?}: {e}");
-            }
-        }
+        // once a member is selected, public keys should be the same, so we set them in the
+        // global context (reset for convenience as it should be idempotent)
+        self.global_context.my_keys().set_take_key(my_take_key);
+        self.global_context
+            .my_keys()
+            .set_dispute_key(my_dispute_key);
+        self.global_context
+            .my_keys()
+            .set_comm_key(self.ctx_my_comm_key()?);
+
+        Ok(())
     }
 
     fn deposit_communication_data(&self) -> Result<DepositCommunicationDataOutput> {
@@ -1216,15 +1233,27 @@ where
         );
         trace!("Communication data: {communication_data:?}");
 
-        self.rt_sync
-            .run(
-                self.contracts
-                    .deposit_communication_data(DepositCommunicationDataInput {
-                        committee_id,
-                        communication_data,
-                    }),
-            )
-            .map_err(|e| anyhow::anyhow!("Failed to deposit communication data: {}", e))
+        let result = self.rt_sync.run(self.contracts.deposit_communication_data(
+            DepositCommunicationDataInput {
+                committee_id: committee_id.clone(),
+                communication_data,
+            },
+        )).or_else(|e| {
+            match e {
+                DomainErrors::MemberAlreadyDepositedCommunicationData(_) => {
+                    info!(
+                        "Member already deposited communication data for committee {} - treating as success",
+                        *committee_id
+                    );
+                    Ok(DepositCommunicationDataOutput {
+                        transaction_hash: "already_deposited".to_string(),
+                    })
+                }
+                _ => Err(e),
+            }
+        })?;
+
+        Ok(result)
     }
 
     fn update_my_committees(
@@ -1297,12 +1326,24 @@ where
         );
 
         let input = DepositAggregatedKeyInput {
-            committee_id,
+            committee_id: committee_id.clone(),
             aggregated_key,
         };
 
         self.rt_sync
-            .run(self.contracts.deposit_aggregated_key(input))?;
+            .run(self.contracts.deposit_aggregated_key(input))
+            .or_else(|e| match e {
+                DomainErrors::MemberInfoAlreadyDeposited(_) => {
+                    info!(
+                        "Member info already deposited for committee {} - treating as success",
+                        *committee_id
+                    );
+                    Ok(DepositAggregatedKeyOutput {
+                        transaction_hash: "already_deposited".to_string(),
+                    })
+                }
+                _ => Err(e),
+            })?;
 
         Ok(())
     }
@@ -1423,6 +1464,92 @@ where
     FactoryBSF: SetupCommitteeFlowFactoryApi<CG, BC, S>,
     S: CoordinatorStoreApi + 'static,
 {
+    /// Central error handler that processes a step and handles any FlowErrors
+    fn complete_step_and_handle_errors(&mut self, flow_id: Uuid, data: StepData) -> Result<()> {
+        let current_step = if let Some(flow) = self.flows.get(&flow_id) {
+            flow.state.step
+        } else {
+            error!("Flow {} not found", flow_id);
+            bail!("Flow {} not found", flow_id);
+        };
+
+        debug!("Processing step {:?} for flow {}", current_step, flow_id);
+
+        let result = if let Some(flow) = self.flows.get_mut(&flow_id) {
+            flow.complete_step(data).or_fail_flow(flow_id)
+        } else {
+            error!("Flow {} not found", flow_id);
+            bail!("Flow {} not found", flow_id);
+        };
+
+        match result {
+            Ok(_) => {
+                trace!(
+                    "Step {:?} completed successfully for flow {}",
+                    current_step, flow_id
+                );
+            }
+            Err(flow_error) => {
+                match &flow_error {
+                    FlowError::Fatal {
+                        flow_id: error_flow_id,
+                        message,
+                        ..
+                    } => {
+                        error!(
+                            "Fatal error in flow {} at step {:?}: {}",
+                            error_flow_id, current_step, message
+                        );
+                        self.mark_flow_as_failed(flow_id);
+                    }
+                    FlowError::Transient {
+                        flow_id: error_flow_id,
+                        message,
+                        retry_count,
+                        ..
+                    } => {
+                        error!(
+                            "Transient error in flow {} at step {:?} (attempt {}): {}",
+                            error_flow_id, current_step, retry_count, message
+                        );
+                        // TODO: Implement retry logic in the future
+                        // Don't mark as failed - transient errors could be retried
+                    }
+                }
+                return Err(flow_error.into());
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Helper method to handle fatal error messages from BitVMX
+    fn handle_bitvmx_fatal_error_message(
+        &mut self,
+        req_id: &Uuid,
+        error_message: String,
+    ) -> Result<()> {
+        if let Some(flow) = self.get_flow_for_bitvmx_response(req_id) {
+            let flow_id = flow.state.internal_id;
+            error!("BitVMX fatal error for flow {}: {}", flow_id, error_message);
+            self.mark_flow_as_failed(flow_id);
+            bail!(error_message);
+        } else {
+            bail!("No flow found for BitVMX error with request id {req_id}");
+        }
+    }
+
+    /// Helper method to mark a flow as failed and clean up
+    fn mark_flow_as_failed(&mut self, flow_id: Uuid) {
+        info!("Marking flow {} as failed and cleaning up", flow_id);
+
+        if let Some(flow) = self.flows.get_mut(&flow_id) {
+            flow.state.step = Steps::Failed;
+        }
+
+        self.close_completed_flows();
+    }
+
     fn get_first_flow_waiting_comm_info(&mut self) -> Option<&mut SetupCommitteeFlow<CG, BC, S>> {
         // CommInfo
         self.flows
@@ -1590,13 +1717,11 @@ where
             }
         };
 
-        match flow_data {
-            Some((flow, step_data)) => {
-                flow.complete_step(step_data)?;
-            }
-            None => {
-                warn!("Received {event:?} but no matching flow found");
-            }
+        if let Some((flow, step_data)) = flow_data {
+            let flow_id = flow.state.internal_id;
+            self.complete_step_and_handle_errors(flow_id, step_data)?;
+        } else {
+            warn!("Received {event:?} but no matching flow found");
         }
 
         self.close_completed_flows();
@@ -1639,18 +1764,18 @@ where
         let completed: Vec<_> = self
             .flows
             .iter()
-            .filter(|(_, flow)| flow.state.step == Steps::Done)
+            .filter(|(_, flow)| flow.state.step == Steps::Done || flow.state.step == Steps::Failed)
             .map(|(k, _)| *k)
             .collect();
 
         for key in &completed {
-            debug!("Removing completed flow: {key:?}");
+            debug!("Removing flow: {key:?}");
             self.flows.remove(key);
 
             self.store
                 .delete_flow(StoreKey::SetupCommitteeFlow(*key))
                 .unwrap_or_else(|e| {
-                    error!("Failed to remove completed flow {key} from persistence: {e}")
+                    error!("Failed to remove flow {key} from persistence: {e}")
                 });
         }
     }
@@ -1675,9 +1800,12 @@ where
         match req {
             UserRequests::ApplyToStream(input) => {
                 let internal_id = Uuid::new_v4();
-                let mut flow = self.flow_factory.create_flow(internal_id);
-                flow.complete_step(StepData::UserRequest(input.clone()))?;
+                let flow = self.flow_factory.create_flow(internal_id);
                 self.flows.insert(internal_id, flow);
+                self.complete_step_and_handle_errors(
+                    internal_id,
+                    StepData::UserRequest(input.clone()),
+                )?;
             }
             _ => {
                 trace!("Ignoring user request: {:?}", req);
@@ -1692,8 +1820,17 @@ where
             // we can receive multiple CommInfo events but always for the same member of the
             // committee (the one running the client), but BitVMX will always respond with the
             // same info - so for now we send it to the first flow waiting for it
-            if let Some(first_flow) = self.get_first_flow_waiting_comm_info() {
-                first_flow.complete_step(StepData::CommInfo(comm_info.clone()))?;
+            let flow_id = if let Some(first_flow) = self.get_first_flow_waiting_comm_info() {
+                Some(first_flow.state.internal_id)
+            } else {
+                None
+            };
+
+            if let Some(flow_id) = flow_id {
+                self.complete_step_and_handle_errors(
+                    flow_id,
+                    StepData::CommInfo(comm_info.clone()),
+                )?;
                 return Ok(());
             } else {
                 trace!("Ignoring CommInfo - not mine")
@@ -1718,10 +1855,22 @@ where
                 (req_id, StepData::FundsSent(tx_id.clone()))
             }
             OutgoingBitVMXApiMessages::WalletError(req_id, tx_id) => {
-                bail!("BitVMX WalletError for request {req_id}, tx {tx_id}");
+                return self.handle_bitvmx_fatal_error_message(
+                    req_id,
+                    format!("BitVMX WalletError for request {req_id}, tx {tx_id}"),
+                );
             }
             OutgoingBitVMXApiMessages::WalletNotReady(req_id) => {
-                bail!("BitVMX WalletNotReady for request {req_id}");
+                return self.handle_bitvmx_fatal_error_message(
+                    req_id,
+                    format!("BitVMX WalletNotReady for request {req_id}"),
+                );
+            }
+            OutgoingBitVMXApiMessages::AggregatedPubkeyNotReady(req_id) => {
+                return self.handle_bitvmx_fatal_error_message(
+                    req_id,
+                    format!("BitVMX cannot aggregate dispute keys for request {req_id}"),
+                );
             }
             // events that do not trigger a flow step are handled here.
             OutgoingBitVMXApiMessages::Pong() => return Ok(()), // ignored
@@ -1732,8 +1881,9 @@ where
             }
         };
 
-        if let Some(flow_for_req_id) = self.get_flow_for_bitvmx_response(req_id) {
-            flow_for_req_id.complete_step(step_data)?;
+        if let Some(flow) = self.get_flow_for_bitvmx_response(req_id) {
+            let flow_id = flow.state.internal_id;
+            self.complete_step_and_handle_errors(flow_id, step_data)?;
         } else {
             debug!("No flow found for BitVMX event with id {req_id}");
         }
