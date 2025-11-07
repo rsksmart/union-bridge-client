@@ -9,6 +9,7 @@ edition = "2021"
 anyhow = "1.0.94"
 clap = { version = "4.5.30", features = ["derive"] }
 nix = { version = "0.29", features = ["signal", "process"] }
+key-manager = { path = "../key-manager" }
 
 [dependencies.tokio]
 version = "1"

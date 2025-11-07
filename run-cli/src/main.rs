@@ -1,5 +1,40 @@
+//! union bridge client launcher and wallet setup utility
+//!
+//! this tool provides two main subcommands:
+//!
+//! 1. **run**: launches union bridge client services
+//!    - use --num-clients to run multiple clients
+//!    - use --id to run a single client
+//!
+//! 2. **setup-wallets**: creates and funds wallets for multi-client deployments
+//!    - subcommands: create, fund, both
+//!    - each client gets TWO wallets:
+//!      * multi-client-N-member: for committee member operations
+//!      * multi-client-N-user: for user/transaction operations
+//!    - specify --num-wallets to control how many clients to setup (1-10)
+//!
+//! example usage:
+//! ```bash
+//! # create wallets for 4 clients (8 wallets total: 4 member + 4 user)
+//! cargo run -- setup-wallets create --num-wallets 4
+//!
+//! # fund wallets for 4 clients
+//! cargo run -- setup-wallets fund --num-wallets 4
+//!
+//! # create and fund wallets in one command
+//! cargo run -- setup-wallets both --num-wallets 4
+//!
+//! # run 4 clients
+//! cargo run -- run --num-clients 4
+//!
+//! # run with fresh databases
+//! cargo run -- run --num-clients 4 --fresh
+//! ```
+
+mod wallet_setup;
+
 use anyhow::{anyhow, bail, Context, Result};
-use clap::{ArgAction, Parser};
+use clap::{ArgAction, Parser, Subcommand};
 use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
 use std::collections::HashMap;
@@ -13,27 +48,67 @@ use tokio::signal;
 use tokio::sync::broadcast;
 
 #[derive(Debug, Parser, Clone)]
-#[command(name = "run-cli", about = "Run Union Bridge Operators")]
+#[command(
+    name = "run-cli",
+    about = "Union Bridge Client Launcher and Wallet Setup"
+)]
 struct Cli {
-    /// Number of clients to run (1-10). If provided, multi-client mode is used.
-    #[arg(short = 'n', long = "num-clients")]
-    num_clients: Option<u8>,
+    #[command(subcommand)]
+    command: Commands,
+}
 
-    /// Run a single client with the specified ID (1-10). Defaults to 1 if neither mode flag is passed.
-    #[arg(short = 'i', long = "id")]
-    client_id: Option<u8>,
+#[derive(Debug, Subcommand, Clone)]
+enum Commands {
+    /// Run Union Bridge client services
+    Run {
+        /// Number of clients to run (1-10). If provided, multi-client mode is used.
+        #[arg(short = 'n', long = "num-clients")]
+        num_clients: Option<u8>,
 
-    /// Optional features to pass to cargo (e.g. "anvil").
-    #[arg(short = 'f', long = "features")]
-    features: Option<String>,
+        /// Run a single client with the specified ID (1-10). Defaults to 1 if neither mode flag is passed.
+        #[arg(short = 'i', long = "id")]
+        client_id: Option<u8>,
 
-    /// Start with clear databases (removes existing)
-    #[arg(long = "fresh", action = ArgAction::SetTrue)]
-    fresh: bool,
+        /// Optional features to pass to cargo (e.g. "anvil").
+        #[arg(short = 'f', long = "features")]
+        features: Option<String>,
 
-    /// Path to multiclient.env. Defaults to ./multiclient.env if it exists
-    #[arg(long = "env-file")]
-    env_file: Option<PathBuf>,
+        /// Start with clear databases (removes existing)
+        #[arg(long = "fresh", action = ArgAction::SetTrue)]
+        fresh: bool,
+
+        /// Path to multiclient.env. Defaults to ./multiclient.env if it exists
+        #[arg(long = "env-file")]
+        env_file: Option<PathBuf>,
+    },
+    /// Setup wallets for multi-client deployment
+    #[command(name = "setup-wallets")]
+    SetupWallets {
+        #[command(subcommand)]
+        action: WalletAction,
+    },
+}
+
+#[derive(Debug, Subcommand, Clone)]
+enum WalletAction {
+    /// Create new wallets (member + user for each client)
+    Create {
+        /// Number of multi-clients to create wallets for (1-10)
+        #[arg(long = "num-wallets", default_value = "10")]
+        num_wallets: u8,
+    },
+    /// Fund existing wallets
+    Fund {
+        /// Number of multi-clients to fund wallets for (1-10)
+        #[arg(long = "num-wallets", default_value = "10")]
+        num_wallets: u8,
+    },
+    /// Create and fund wallets in one step
+    Both {
+        /// Number of multi-clients to setup wallets for (1-10)
+        #[arg(long = "num-wallets", default_value = "10")]
+        num_wallets: u8,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -79,21 +154,56 @@ struct ManagedClient {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    if cli.num_clients.is_some() && cli.client_id.is_some() {
+    let base_storage_path = std::env::var("BASE_STORAGE_PATH").context(
+        "BASE_STORAGE_PATH environment variable is required (e.g., export BASE_STORAGE_PATH=/Users/username)",
+    )?;
+
+    match &cli.command {
+        Commands::SetupWallets { action } => {
+            wallet_setup::handle_wallet_setup(action, &base_storage_path)?;
+        }
+        Commands::Run {
+            num_clients,
+            client_id,
+            features,
+            fresh,
+            env_file,
+        } => {
+            let run_config = RunConfig {
+                num_clients: *num_clients,
+                client_id: *client_id,
+                features: features.clone(),
+                fresh: *fresh,
+                env_file: env_file.clone(),
+            };
+            run_clients(run_config, &base_storage_path).await?;
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Clone)]
+struct RunConfig {
+    num_clients: Option<u8>,
+    client_id: Option<u8>,
+    features: Option<String>,
+    fresh: bool,
+    env_file: Option<PathBuf>,
+}
+
+async fn run_clients(config: RunConfig, base_storage_path: &str) -> Result<()> {
+    if config.num_clients.is_some() && config.client_id.is_some() {
         return Err(anyhow!(
             "Cannot specify both --num-clients and --id at the same time"
         ));
     }
 
-    let base_storage_path = std::env::var("BASE_STORAGE_PATH").context(
-        "BASE_STORAGE_PATH environment variable is required (e.g., export BASE_STORAGE_PATH=/Users/username)",
-    )?;
-
-    if cli.fresh {
-        fresh_cleanup(&base_storage_path)?;
+    if config.fresh {
+        fresh_cleanup(base_storage_path)?;
     }
 
-    let env_file = resolve_env_file(cli.env_file.as_deref());
+    let env_file = resolve_env_file(config.env_file.as_deref());
     let env_map = if let Some(path) = env_file {
         load_env_file(&path).with_context(|| format!("Failed to parse {}", path.display()))?
     } else {
@@ -105,16 +215,16 @@ async fn main() -> Result<()> {
     // Keep all clients and join handles for monitors
     let mut clients: Vec<ManagedClient> = Vec::new();
 
-    let total = cli.num_clients.unwrap_or(1);
+    let total = config.num_clients.unwrap_or(1);
     for id in 1..=total {
-        let envs = build_env_for_client(id, &env_map, &base_storage_path)?;
+        let envs = build_env_for_client(id, &env_map, base_storage_path)?;
         let client_id = format!("client-{}", id);
 
         println!("============================================================================");
         println!("Launching client {} with env {:?}...", client_id, envs);
         println!("============================================================================");
 
-        match launch_client_services(&cli, envs, &client_id, &shutdown_tx) {
+        match launch_client_services(&config, envs, &client_id, &shutdown_tx) {
             Ok(services) => {
                 let client = ManagedClient {
                     client_id: client_id.to_string(),
@@ -158,7 +268,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn validate_1_10(value: u8, name: &str) -> Result<()> {
+pub(crate) fn validate_1_10(value: u8, name: &str) -> Result<()> {
     if !(1..=10).contains(&value) {
         return Err(anyhow!("{} must be between 1 and 10", name));
     }
@@ -318,9 +428,9 @@ fn fresh_cleanup(base_storage_path: &str) -> Result<()> {
     Ok(())
 }
 
-fn cargo_args_for_service(cli: &Cli, svc: &Service) -> Vec<String> {
+fn cargo_args_for_service(config: &RunConfig, svc: &Service) -> Vec<String> {
     let mut args: Vec<String> = vec!["run".into(), "--bin".into(), svc.name().into()];
-    if let Some(f) = &cli.features {
+    if let Some(f) = &config.features {
         args.push("--features".into());
         args.push(f.clone());
     }
@@ -331,7 +441,7 @@ fn cargo_args_for_service(cli: &Cli, svc: &Service) -> Vec<String> {
 }
 
 fn launch_client_services(
-    cli: &Cli,
+    config: &RunConfig,
     envs: Vec<(String, String)>,
     client_id: &str,
     shutdown_tx: &broadcast::Sender<()>,
@@ -347,7 +457,7 @@ fn launch_client_services(
         }
 
         let mut cmd = Command::new("cargo");
-        let args = cargo_args_for_service(cli, &svc);
+        let args = cargo_args_for_service(config, &svc);
         cmd.args(&args)
             .stdin(Stdio::null())
             .stdout(Stdio::inherit())

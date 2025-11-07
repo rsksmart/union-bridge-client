@@ -151,8 +151,7 @@ the Union Client) are:
   unlock the corresponding keystore files when running the client (see [Multi Client Setup](#Multi-Client-Setup) below)
 - `BASE_STORAGE_PATH`: base path where the client will store its data (databases, keystore files, etc.). Pick a path
   that is writable and accessible by the user running the client.
-- `USER_BITCOIN_WIF`: a Bitcoin private key WIF for an user. You can generate one via the `bitcoin-wallet` with `generate_address`.
-- `MEMBER_BITCOIN_WIF`: a Bitcoin private key WIF for a member. You can generate one via the `bitcoin-wallet` with `generate_address`.
+- `WALLET_PRIVATE_KEY`: a Bitcoin private key WIF. You can generate one via the `bitcoin-wallet` with `generate_address`.
   See [bitcoin-wallet README](bitcoin-wallet/README.md) for more info.
 
 We recommend using `direnv` to manage private environment variables. Then you can set them up by:
@@ -165,16 +164,17 @@ This will automatically load the environment variables defined in the `.envrc` o
 
 ### Multi Client Setup
 
-The Multi Client setup is mostly automated using the `multiclient-setup.sh` script. But we need to run 2 manual steps.
+The Multi Client setup is mostly automated using the `run-cli` tool. But we need to run 2 manual steps.
 
 #### Creating the base directory
 
-Under the directory specified in the `BASE_STORAGE_PATH` env, run the following command to create the base directory and
-also the `keystore` subdirectory:
+Under the directory specified in the `BASE_STORAGE_PATH` env, run the following command to create the base directory:
 
 ```
-mkdir -p .union_bridge/keystore
+mkdir -p .union_bridge
 ```
+
+Note: The `keystore` subdirectory will be created automatically when you create wallets.
 
 #### Configuring the Committee
 
@@ -198,27 +198,29 @@ to:
    committeeMemberCount = 4;
    ```
 
-Then you should deploy the contracts, and you can use `multiclient-setup.sh` script for the rest of the setup.
+Then you should deploy the contracts, and you can use `run-cli` wallet setup for the rest of the setup.
 
 **N.B**
 Please note that the `committeeMemberCount` value should always match the number of clients you intend to spin up
 
 **1. Create Wallets (first time only)**
 
-This creates 10 wallets (by default), one for each of the potential Union Client instances.
+This creates wallets for each multi-client instance. Each client gets **two wallets**: one for member operations and one for user operations.
+
+By default, this creates wallets for 10 clients (20 wallets total). You can specify a different number with `--num-wallets`.
 
 This is required for the **Transaction Dispatcher** crate to be able to sign transactions and send them to Rootstock.
 
 ```bash
-./multiclient-setup.sh --create-wallets
+./run-cli.sh setup-wallets create --num-wallets 10
 ```
 
 **2. Fund Wallets (every time you restart Anvil or if you run out of funds)**
 
-This funds the wallets created in the previous step to be able to send transactions to Rootstock.
+This funds both the member and user wallets for each client created in the previous step.
 
 ```bash
-./multiclient-setup.sh --fund-wallets
+./run-cli.sh setup-wallets fund --num-wallets 10
 ```
 
 **3. Setup Committee (optional)**
@@ -229,7 +231,7 @@ approach to fund BitVMX.
 This creates a Committee so of 4 members (by default) so you can test the committee collaboration flows.
 
 ```bash
-./multiclient-setup.sh --committee-setup 4  # for 4 clients (hint: the clients need to be running for the `--committee-setup` flag to execute)
+./multiclient-setup.sh --committee-setup 4 --stream_id 1  # for 4 clients (hint: the clients need to be running for the `--committee-setup` flag to execute)
 ```
 
 Note that each RSK event in the flow (3 atm) needs to reach the required confirmations. If you started anvil with auto
@@ -237,10 +239,10 @@ mining, it will happen at some point; otherwise you can manually mine blocks wit
 
 **Combined Setup**
 
-This combines the previous steps to have a setup ready to initiate a Pegin.
+This combines the wallet creation and funding steps to have wallets ready for your clients.
 
 ```bash
-./multiclient-setup.sh --fund-wallets --committee-setup 4
+./run-cli.sh setup-wallets both --num-wallets 4
 ```
 
 ## Running the Union Client
@@ -308,15 +310,18 @@ anvil
 # 3. Run the clients
 ./run-client.sh --num-clients 4 --features anvil
 
-# 4. Set up multiclient
-./multiclient-setup.sh --fund-wallets --committee-setup 4
+# 4. Set up multiclient wallets
+./run-cli.sh setup-wallets both --num-wallets 4
+
+# 5. Set up committee (optional, requires clients to be running)
+./multiclient-setup.sh --committee-setup 4 --stream_id 1
 ```
 
 #### Troubleshooting
 
 - **Port Conflicts**: Each client uses unique ports defined in `multiclient.env`, take this into account if you edit it
   or create more clients
-- **Wallet Issues**: Use `./multiclient-setup.sh --fund-wallets` to refund wallets if needed
+- **Wallet Issues**: Use `./run-cli.sh setup-wallets fund --num-wallets 4` to refund wallets if needed
 - **Process Cleanup**: If services fail to start due to port conflicts or corrupt database, run
   `pkill -f "target/debug/" && rm -rf ${BASE_STORAGE_PATH}/.union_bridge/database` to clean up processes, but take into
   account that this
@@ -343,11 +348,11 @@ crate.
 
 ## Configuration Files
 
-Configuration files are located under the `config/new/` directory, organized in environment files. The final config is the
+Configuration files are located under the `config` directory, organized in environment folders. The final config is the
 composition of the following files in the defined order:
 
-- `base.yaml`: common configuration for all environments.
-- `{ENVIRONMENT_NAME}.yaml`: specific configuration for each crate.
+- `common.yaml`: common configuration for all environments.
+- `{crate_name}.yaml`: specific configuration for each crate.
 
 ### Configuration Overrides
 
@@ -363,7 +368,7 @@ separate levels.
 **Example YAML to Environment Variable Mapping:**
 
 ```yaml
-# config/new/base.yaml
+# config/common.yaml
 block_broker:
   ip: "127.0.0.1"
   port: 5672
@@ -390,7 +395,7 @@ configuration files.
 
 ## Rootstock Wallet creation (manual)
 
-This is automated in `multiclient-setup.sh` script, but if you want to create a wallet manually, you can use the
+This is automated in the `run-cli` wallet setup commands, but if you want to create a wallet manually, you can use the
 `key-manager` crate for that.
 
 ```
@@ -402,7 +407,7 @@ This will output:
 
 - the local path to your key: you will have to set it in the corresponding `transaction-dispatcher.yaml` config file
 - the public key
-- the address (this will be automatically used by the `multiclient-setup.sh` script)
+- the address (this will be automatically used by the wallet setup commands)
 
 Keep track of the password you used, as you will need to set it up in `KEY_STORE_PASSWORD` env var. Check the
 [Environment Variables Setup](#environment-variables-setup) section for more information on how to set it up.
@@ -555,24 +560,3 @@ Then, through the `bitcoin-wallet` crate (started with `cargo run --release`) yo
 1. `clear_db`
 2. `mine_utxo 9000000000`
 3. `send_to_address <btc_addr_1>,<btc_addr_2>,<btc_addr_3>,<btc_addr_4> 25000000`
-
-## Creating Pegin Transactions
-
-To create a pegin transaction, you can use the `create_pegin_tx.sh` helper script:
-
-```bash
-# Set your RSK address and run the script
-RSK_ADDRESS=0x... ./create_pegin_tx.sh [stream_amount] [packet_number]
-```
-
-The script will:
-1. Query the user-api to get a pegin address
-2. Display the command to run in the bitcoin-wallet CLI
-
-After the script provides the command, open the bitcoin-wallet CLI and run:
-```
-create_pegin_tx <stream_amount> <packet_number> <pegin_address> <rsk_address>
-mine_block
-```
-
-**Important**: You must mine one block after creating the pegin transaction to confirm it on the Bitcoin network.
