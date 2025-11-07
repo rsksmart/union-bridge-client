@@ -2,14 +2,19 @@
 # Common Configuration
 # ═══════════════════════════════════════════════════════
 
-provider.rootstock.url = "ws://127.0.0.1:8545"
-indexer.storage.path = "/app/db/"
+provider.rootstock.url = "ws://host.docker.internal:8545"
+# url: "ws://node-container:8545" # if running anvil/node in a container
+# url: "ws://rskj-01.testnet.ub.iovlabs.net:4445/websocket" # if connecting to an external node
+[indexer]
+
+storage.path = "/app/db/"
 
 # ═══════════════════════════════════════════════════════
 # Coordinator
 # ═══════════════════════════════════════════════════════
 
 [coordinator]
+
 storage_path = "/app/db/"           # This should match the volume mount in docker-compose
 block_broker.host = "block-indexer"
 log_broker.host = "log-indexer"
@@ -20,5 +25,6 @@ user_broker.host = "user-api"
 # ═══════════════════════════════════════════════════════
 
 [transaction_dispatcher]
-key_stroe.user_path = "/keystore/user-key.json"
+
+key_store.user_path = "/keystore/user-key.json"
 key_store.member_path = "/keystore/member-key.json"

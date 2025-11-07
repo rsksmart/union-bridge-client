@@ -4,8 +4,6 @@
 
 provider.rootstock.url = "ws://10.1.0.53:4445" # if running in AWS and accessed from AWS
 # url: "ws://rskj-01.testnet.ub.iovlabs.net:4445/websocket" # if running in AWS and accessed from outside
-
-indexer.storage.path = "/app/db/"
 bitcoin_network = "testnet"
 
 [[contracts]]
@@ -31,6 +29,10 @@ address = "0xc5D96270cE96DF6865d518a9beF3298323881DBC"
 [[contracts]]
 name = "StreamManager"
 address = "0xc4bD69eBDb7AAf864D66ecc33C60Cb9a4F7D2a91"
+
+[indexer]
+
+storage.path = "/app/db/"
 
 # ═══════════════════════════════════════════════════════
 # Coordinator

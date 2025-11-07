@@ -51,16 +51,16 @@ address = "0x610178dA211FEF7D417bC0e6FeD39F05609AD788"
 
 [coordinator]
 
-log_broker.host = "127.0.0.1"
-log_broker.port = 9002
-block_broker.host = "127.0.0.1"
-block_broker.port = 9003
-user_broker.host = "127.0.0.1"
-user_broker.port = 9004
-bitvmx_broker.host = "127.0.0.1"
-bitvmx_broker.port = 9005
-broker_client_id = 1
-storage_path = "/your_base_path/.union_bridge/coordinator"
+log_broker.host = "0.0.0.0"
+log_broker.port = 20001
+block_broker.host = "0.0.0.0"
+block_broker.port = 10001
+user_broker.host = "0.0.0.0"
+user_broker.port = 30001
+bitvmx_broker.host = "0.0.0.0"
+bitvmx_broker.port = 22222
+broker_client_id = 101
+storage_path = "/your_base_path/.union_bridge/database/multi-client-1"
 
 # ═══════════════════════════════════════════════════════
 # Block Indexer
@@ -68,7 +68,7 @@ storage_path = "/your_base_path/.union_bridge/coordinator"
 
 [block_indexer]
 
-block_notifier.broker_port = 9001
+block_notifier.broker_port = 10001
 
 # ═══════════════════════════════════════════════════════
 # Log Indexer
@@ -76,7 +76,7 @@ block_notifier.broker_port = 9001
 
 [log_indexer]
 
-log_notifier.broker_port = 9006
+log_notifier.broker_port = 20001
 
 # ═══════════════════════════════════════════════════════
 # Transaction Dispatcher
@@ -94,6 +94,6 @@ transaction.gas_bumps_t1 = 3
 
 [user_api]
 
-coordinator_broker_client_id = 1
-broker_server_port = 9007
-http_server_port = 8080
+coordinator_broker_client_id = 101
+broker_server_port = 30001
+http_server_port = 40001
