@@ -3,6 +3,7 @@ use crate::contracts::committee_registry::{
     ApplyToStreamInvoke, CommitteeRegistryContract, DepositAggregatedKeysInvoke,
     DepositCommunicationDataInvoke, GetCommitteeCall, GetMemberCommunicationDataCall,
 };
+use crate::contracts::interactions::get_btc_transaction_confirmations::GetBtcTransactionConfirmationsCall;
 use crate::contracts::member_registry::{GetMemberPublicKeysCall, MemberRegistryContract};
 use crate::contracts::peg_manager::{
     FakePegManagerContract, PegManagerContract, accept_pegin::AcceptPeginInvoke,
@@ -10,6 +11,7 @@ use crate::contracts::peg_manager::{
     notify_check_fork_complete::NotifyCheckForkCompleteInvoke,
     register_pegout::RegisterPegoutInvoke, request_pegin::RequestPeginInvoke,
 };
+use crate::contracts::powpeg_bridge::PowpegBridgeContract;
 use crate::contracts::signature_manager::{
     AddMemberNonceInvoke, AddMemberSignatureInvoke, AddOperatorTakeTxHashInvoke,
     SignatureManagerContract,
@@ -20,7 +22,8 @@ use crate::types::{
     AddMemberSignatureInput, AddMemberSignatureOutput, AddOperatorTakeTxHashInput,
     AddOperatorTakeTxHashOutput, ApplyToStreamInput, ApplyToStreamOutput,
     DepositAggregatedKeyInput, DepositAggregatedKeyOutput, DepositCommunicationDataInput,
-    DepositCommunicationDataOutput, GetCommitteeInput, GetCommitteeOutput,
+    DepositCommunicationDataOutput, GetBtcTransactionConfirmationsInput,
+    GetBtcTransactionConfirmationsOutput, GetCommitteeInput, GetCommitteeOutput,
     GetCommunicationDataInput, GetCommunicationDataOutput, GetMemberPublicKeysInput,
     GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterPegoutInput,
     RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
@@ -47,6 +50,7 @@ const SIGNATURE_MANAGER_CONTRACT_NAME: &str = "SignatureManager";
 const COMMITTEE_REGISTRY_CONTRACT_NAME: &str = "CommitteeRegistry";
 const MEMBER_REGISTRY_CONTRACT_NAME: &str = "MemberRegistry";
 const STREAM_MANAGER_CONTRACT_NAME: &str = "StreamManager";
+const POWPEG_BRIDGE_CONTRACT_NAME: &str = "PowpegBridge";
 
 #[cfg_attr(test, automock)]
 pub trait BalanceProvider {
@@ -74,6 +78,11 @@ where
 
 pub trait RskContractsGatewayApi {
     fn my_address(&self) -> Address;
+
+    fn get_btc_confirmations(
+        &self,
+        input: GetBtcTransactionConfirmationsInput,
+    ) -> impl Future<Output = Result<GetBtcTransactionConfirmationsOutput, DomainErrors>>;
 
     fn get_temporary_pegin_address(
         &self,
@@ -171,6 +180,7 @@ pub struct RskContractsGateway<P: Provider> {
     get_committee_call: GetCommitteeCall<CommitteeRegistryContract<P>>,
     deposit_communication_data_invoke: DepositCommunicationDataInvoke<CommitteeRegistryContract<P>>,
     deposit_aggregated_key_invoke: DepositAggregatedKeysInvoke<CommitteeRegistryContract<P>>,
+    get_btc_confirmations_call: GetBtcTransactionConfirmationsCall<PowpegBridgeContract<P>>,
 }
 
 impl<P: Provider + Clone> RskContractsGateway<P> {
@@ -192,6 +202,8 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             Self::load_contract(MEMBER_REGISTRY_CONTRACT_NAME, &managed_contracts)?;
         let stream_manager_address =
             Self::load_contract(STREAM_MANAGER_CONTRACT_NAME, &managed_contracts)?;
+        let powpeg_bridge_address =
+            Self::load_contract(POWPEG_BRIDGE_CONTRACT_NAME, &managed_contracts)?;
 
         // Validate that all contract addresses have deployed code
         let addresses_to_validate = vec![
@@ -232,6 +244,8 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             MemberRegistryContract::new(provider.clone(), member_registry_address.into());
         let stream_manager_contract =
             StreamManagerContract::new(provider.clone(), stream_manager_address.into());
+        let powpeg_bridge_contract =
+            PowpegBridgeContract::new(provider.clone(), powpeg_bridge_address.into());
 
         Ok(RskContractsGateway {
             member_address,
@@ -292,6 +306,9 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
                 committee_registry_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
+            get_btc_confirmations_call: GetBtcTransactionConfirmationsCall::new(
+                powpeg_bridge_contract.clone(),
+            ),
         })
     }
 
@@ -306,6 +323,21 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
 impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
     fn my_address(&self) -> Address {
         self.member_address
+    }
+
+    async fn get_btc_confirmations(
+        &self,
+        input: GetBtcTransactionConfirmationsInput,
+    ) -> Result<GetBtcTransactionConfirmationsOutput, DomainErrors> {
+        info!("Interacting with PowpegBridge#getBitcoinConfirmations");
+
+        self.get_btc_confirmations_call
+            .run(input)
+            .await
+            .map_err(|err| {
+                error!("Error on get_bitcoin_confirmations_call: {}", err);
+                err
+            })
     }
 
     async fn get_temporary_pegin_address(
