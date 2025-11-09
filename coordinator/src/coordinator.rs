@@ -356,7 +356,8 @@ pub(crate) mod tests {
         AddMemberSignatureInput, AddMemberSignatureOutput, AddOperatorTakeTxHashInput,
         AddOperatorTakeTxHashOutput, ApplyToStreamInput, ApplyToStreamOutput,
         DepositAggregatedKeyInput, DepositAggregatedKeyOutput, DepositCommunicationDataInput,
-        DepositCommunicationDataOutput, GetCommitteeInput, GetCommitteeOutput,
+        DepositCommunicationDataOutput, GetBtcTransactionConfirmationsInput,
+        GetBtcTransactionConfirmationsOutput, GetCommitteeInput, GetCommitteeOutput,
         GetCommunicationDataInput, GetCommunicationDataOutput, GetMemberPublicKeysInput,
         GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterPegoutInput,
         RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
@@ -744,6 +745,11 @@ pub(crate) mod tests {
                 &self,
                 input: AddOperatorTakeTxHashInput,
             ) -> Result<AddOperatorTakeTxHashOutput, DomainErrors>;
+
+            async fn get_btc_confirmations(
+                &self,
+                input: GetBtcTransactionConfirmationsInput,
+            ) -> Result<GetBtcTransactionConfirmationsOutput, DomainErrors>;
         }
     }
 }

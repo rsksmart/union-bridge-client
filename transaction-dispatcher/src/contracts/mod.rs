@@ -1,9 +1,10 @@
 pub(super) mod bitcoin_manager;
 pub(super) mod committee_registry;
 pub(super) mod common;
-mod interactions;
+pub(crate) mod interactions;
 pub(super) mod member_registry;
 pub(super) mod peg_manager;
+pub(super) mod powpeg_bridge;
 pub(super) mod signature_manager;
 pub(super) mod stream_manager;
 mod types;
