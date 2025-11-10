@@ -42,10 +42,6 @@ struct Cli {
     /// Start with clear databases (removes existing)
     #[arg(long = "fresh", action = ArgAction::SetTrue)]
     fresh: bool,
-
-    /// Path to multiclient.env. Defaults to ./multiclient.env if it exists
-    #[arg(long = "env-file")]
-    env_file: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -122,7 +118,6 @@ async fn main() -> Result<()> {
         client_id: cli.client_id,
         features: cli.features,
         fresh: cli.fresh,
-        env_file: cli.env_file,
     };
 
     let result = run_clients(run_config).await;
@@ -140,7 +135,6 @@ struct RunConfig {
     client_id: Option<u8>,
     features: Option<String>,
     fresh: bool,
-    env_file: Option<PathBuf>,
 }
 
 async fn run_clients(config: RunConfig) -> Result<()> {
@@ -148,12 +142,12 @@ async fn run_clients(config: RunConfig) -> Result<()> {
         fresh_cleanup()?;
     }
 
-    let env_file = resolve_env_file(config.env_file.as_deref());
-    let env_map = if let Some(path) = env_file {
-        load_env_file(&path).with_context(|| format!("Failed to parse {}", path.display()))?
-    } else {
-        HashMap::new()
-    };
+    let env_file = PathBuf::from("./multiclient.env");
+    if !env_file.exists() {
+        bail!("multiclient.env not found in current directory");
+    }
+    let env_map = load_env_file(&env_file)
+        .with_context(|| format!("Failed to parse {}", env_file.display()))?;
 
     let (shutdown_tx, mut shutdown_rx) = broadcast::channel::<()>(1);
 
@@ -236,18 +230,6 @@ fn validate_1_4(value: u8, name: &str) -> Result<()> {
         return Err(anyhow!("{} must be between 1 and 4", name));
     }
     Ok(())
-}
-
-fn resolve_env_file(opt: Option<&Path>) -> Option<PathBuf> {
-    if let Some(p) = opt {
-        return Some(p.to_path_buf());
-    }
-    let default = PathBuf::from("./multiclient.env");
-    if default.exists() {
-        Some(default)
-    } else {
-        None
-    }
 }
 
 fn load_env_file(path: &Path) -> Result<HashMap<String, String>> {
