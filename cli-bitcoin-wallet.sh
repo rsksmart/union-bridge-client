@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Bitcoin Wallet Launcher
-# Usage: ./wallet.sh <user|member> [additional_args...]
+# Usage: ./cli-bitcoin-wallet.sh <user|member> [additional_args...]
 
 set -e
 
