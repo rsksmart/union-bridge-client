@@ -13,8 +13,7 @@
 //!
 //! ## operator
 //! commands for managing committee members and funding
-//! - `fund-bitcoin`: collects bitcoin funding addresses for operators
-//! - `fund-rootstock`: funds rootstock wallets for operator stacks
+//! - `fund`: collects bitcoin addresses and funds rootstock wallets for operators
 //! - `apply-to-stream`: applies operator to a stream for committee setup
 //!   - for local: applies all 4 operators automatically
 //!   - for alphanet/testnet: requires `--operator-id` (1-4) and `--role` (prover/verifier)
@@ -28,8 +27,7 @@
 //! ```bash
 //! cargo run -- run --id 1 --fresh
 //! cargo run -- setup create-rootstock-wallets
-//! cargo run -- operator fund-rootstock --env local-docker
-//! cargo run -- operator fund-bitcoin --env local
+//! cargo run -- operator fund --env local-docker
 //! cargo run -- operator apply-to-stream -s 1 --env alphanet -o 1 -r prover
 //! cargo run -- user pegin -a 0x1234...cdef -s 2_000_000 -p 7
 //! cargo run -- user pegout -a 1000000
@@ -116,18 +114,10 @@ enum SetupCommands {
 
 #[derive(Debug, Subcommand, Clone)]
 enum OperatorCommands {
-    /// Collect BitVMX funding addresses for operators
-    #[command(name = "fund-bitcoin")]
-    FundBitcoin {
+    /// Fund operators
+    Fund {
         /// Environment to target (local, local-docker, alphanet, testnet)
         #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local)]
-        env: Environment,
-    },
-    /// Fund Rootstock wallets for operator stacks
-    #[command(name = "fund-rootstock")]
-    FundRootstock {
-        /// Environment to target (local-docker, alphanet, testnet)
-        #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::LocalDocker)]
         env: Environment,
     },
     /// Apply operator to a stream for committee setup
@@ -264,10 +254,10 @@ async fn main() -> Result<()> {
             }
         },
         Commands::Operator { command } => match command {
-            OperatorCommands::FundBitcoin { env } => {
+            OperatorCommands::Fund { env } => {
+                println!("=== Funding Bitcoin addresses ===");
                 bitcoin_wallet::handle_bitcoin_funding(env).await?;
-            }
-            OperatorCommands::FundRootstock { env } => {
+                println!("\n=== Funding Rootstock wallets ===");
                 rsk_wallet::handle_operator_funding(env).await?;
             }
             OperatorCommands::ApplyToStream {
