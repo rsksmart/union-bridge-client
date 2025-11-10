@@ -87,7 +87,8 @@ struct ManagedClient {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let base_storage_path = std::env::var("BASE_STORAGE_PATH").context(
+    // validate BASE_STORAGE_PATH is set
+    std::env::var("BASE_STORAGE_PATH").context(
         "BASE_STORAGE_PATH environment variable is required (e.g., export BASE_STORAGE_PATH=/Users/username)",
     )?;
 
@@ -98,7 +99,7 @@ async fn main() -> Result<()> {
         env_file: cli.env_file,
     };
 
-    run_clients(run_config, &base_storage_path).await?;
+    run_clients(run_config).await?;
 
     Ok(())
 }
@@ -111,9 +112,9 @@ struct RunConfig {
     env_file: Option<PathBuf>,
 }
 
-async fn run_clients(config: RunConfig, base_storage_path: &str) -> Result<()> {
+async fn run_clients(config: RunConfig) -> Result<()> {
     if config.fresh {
-        fresh_cleanup(base_storage_path)?;
+        fresh_cleanup()?;
     }
 
     let env_file = resolve_env_file(config.env_file.as_deref());
@@ -132,7 +133,7 @@ async fn run_clients(config: RunConfig, base_storage_path: &str) -> Result<()> {
         .client_id
         .map_or_else(|| vec![1, 2, 3, 4], |id| vec![id]);
     for id in ids {
-        let envs = build_env_for_client(id, &env_map, base_storage_path)?;
+        let envs = build_env_for_client(id, &env_map)?;
         let client_id = format!("client-{}", id);
 
         println!("============================================================================");
@@ -228,7 +229,6 @@ fn load_env_file(path: &Path) -> Result<HashMap<String, String>> {
 fn build_env_for_client(
     id: u8,
     env_map: &HashMap<String, String>,
-    base_storage_path: &str,
 ) -> Result<Vec<(String, String)>> {
     validate_1_4(id, "CLIENT_ID")?;
     let get = |key: String| -> Result<String> {
@@ -237,6 +237,9 @@ fn build_env_for_client(
             .cloned()
             .ok_or_else(|| anyhow!("Missing {} in multiclient.env", key))
     };
+
+    let base_storage_path = std::env::var("BASE_STORAGE_PATH")
+        .context("BASE_STORAGE_PATH environment variable is required")?;
 
     let storage_rel = get(format!("STORAGE_PATH_{}", id))?;
     let storage_path = format!(
@@ -317,7 +320,9 @@ fn derive_key_store_names(raw: &str) -> (String, String) {
     (format!("{base}-member"), format!("{base}-user"))
 }
 
-fn fresh_cleanup(base_storage_path: &str) -> Result<()> {
+fn fresh_cleanup() -> Result<()> {
+    let base_storage_path = std::env::var("BASE_STORAGE_PATH")
+        .context("BASE_STORAGE_PATH environment variable is required")?;
     let union_client_db_dir = format!("{}/.union_bridge/database/multi-client", base_storage_path);
     let bitvmx_db_dir = "/tmp/regtest";
     let bitvmx_p2p_dir = "/tmp/broker_p2p";
