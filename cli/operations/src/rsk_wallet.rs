@@ -13,7 +13,8 @@ use crate::environments::*;
 use crate::utils::{command_to_string, confirm_operation};
 use crate::validate_1_4;
 
-const LOG_MARKER: &str = "Got member signer with address";
+const MEMBER_LOG_MARKER: &str = "Got member signer with address";
+const USER_LOG_MARKER: &str = "Got user signer with address";
 
 /// handles creating local rootstock wallets for multi-client deployments
 pub fn handle_wallet_creation(num_wallets: u8, base_storage_path: Option<&str>) -> Result<()> {
@@ -132,47 +133,81 @@ fn setup_wallets_create(num_wallets: u8, base_storage_path: &str) -> Result<()> 
 
 fn fund_local() -> Result<()> {
     println!("[cargo-fund] funding operator wallets via local anvil");
-    let signers = collect_local_signers_from_logs()?;
-    let unique = unique_addresses(&signers);
+    let member_signers = collect_local_signers_from_logs(MEMBER_LOG_MARKER)?;
+    let unique_members = unique_addresses(&member_signers);
     let expected = OPERATOR_IDS.len();
-    if unique.len() < expected {
+    if unique_members.len() < expected {
         bail!(
-            "expected {} RSK address(es) but found {}. ensure all required operator services are running and have emitted signer addresses.",
+            "expected {} member RSK address(es) but found {}. ensure all required operator services are running and have emitted signer addresses.",
             expected,
-            unique.len()
+            unique_members.len()
         );
     }
 
-    for (operator_id, address) in signers {
+    for (operator_id, address) in &member_signers {
         println!("Processing coordinator-{}", operator_id);
-        println!("  Funding RSK address: {}", address);
+        println!("  Funding member RSK address: {}", address);
         run_cast_send_local(&address)?;
     }
 
-    println!("Done. Funded operator RSK addresses on local Anvil.");
+    println!("\n[cargo-fund] funding user wallets via local anvil");
+    let user_signers = collect_local_signers_from_logs(USER_LOG_MARKER)?;
+    let unique_users = unique_addresses(&user_signers);
+    if unique_users.len() < expected {
+        bail!(
+            "expected {} user RSK address(es) but found {}. ensure all required operator services are running and have emitted signer addresses.",
+            expected,
+            unique_users.len()
+        );
+    }
+
+    for (operator_id, address) in &user_signers {
+        println!("Processing user-api-{}", operator_id);
+        println!("  Funding user RSK address: {}", address);
+        run_cast_send_local(&address)?;
+    }
+
+    println!("\nDone. Funded operator and user RSK addresses on local Anvil.");
     Ok(())
 }
 
 fn fund_local_docker() -> Result<()> {
     println!("[docker-fund] funding operator wallets via local anvil");
-    let signers = collect_local_signers()?;
-    let unique = unique_addresses(&signers);
+    let member_signers = collect_local_signers(MEMBER_LOG_MARKER)?;
+    let unique_members = unique_addresses(&member_signers);
     let expected = OPERATOR_IDS.len();
-    if unique.len() < expected {
+    if unique_members.len() < expected {
         bail!(
-            "expected {} RSK address(es) but found {}. ensure all required operator stacks are running and have emitted signer addresses.",
+            "expected {} member RSK address(es) but found {}. ensure all required operator stacks are running and have emitted signer addresses.",
             expected,
-            unique.len()
+            unique_members.len()
         );
     }
 
-    for (project, address) in signers {
+    for (project, address) in &member_signers {
         println!("Processing {}", project);
-        println!("  Funding RSK address: {}", address);
+        println!("  Funding member RSK address: {}", address);
         run_cast_send_local(&address)?;
     }
 
-    println!("Done. Funded operator RSK addresses on local Anvil.");
+    println!("\n[docker-fund] funding user wallets via local anvil");
+    let user_signers = collect_local_signers(USER_LOG_MARKER)?;
+    let unique_users = unique_addresses(&user_signers);
+    if unique_users.len() < expected {
+        bail!(
+            "expected {} user RSK address(es) but found {}. ensure all required operator stacks are running and have emitted signer addresses.",
+            expected,
+            unique_users.len()
+        );
+    }
+
+    for (project, address) in &user_signers {
+        println!("Processing {} (user)", project);
+        println!("  Funding user RSK address: {}", address);
+        run_cast_send_local(&address)?;
+    }
+
+    println!("\nDone. Funded operator and user RSK addresses on local Anvil.");
     Ok(())
 }
 
@@ -224,30 +259,39 @@ fn print_instructions(env: Environment) -> Result<()> {
     Ok(())
 }
 
-fn collect_local_signers_from_logs() -> Result<Vec<(String, String)>> {
+fn collect_local_signers_from_logs(marker: &str) -> Result<Vec<(String, String)>> {
     let logs_dir = cargo_logs_dir()?;
     let mut signers = Vec::new();
 
+    let log_type = if marker == MEMBER_LOG_MARKER {
+        "coordinator"
+    } else {
+        "user-api"
+    };
+
     for operator_id in OPERATOR_IDS {
-        let log_path = logs_dir.join(format!("coordinator-{}.log", operator_id));
+        let log_path = logs_dir.join(format!("{}-{}.log", log_type, operator_id));
         if !log_path.exists() {
             bail!(
-                "expected coordinator log at {} but it does not exist. ensure the services have been started via `cargo run -- run`.",
+                "expected {} log at {} but it does not exist. ensure the services have been started via `cargo run -- run`.",
+                log_type,
                 log_path.display()
             );
         }
 
         let contents = fs::read_to_string(&log_path)
             .with_context(|| format!("failed to read {}", log_path.display()))?;
-        let mut addresses = extract_signer_addresses(&contents);
+        let mut addresses = extract_signer_addresses(&contents, marker);
         if addresses.is_empty() {
             bail!(
-                "no signer addresses found in {}. wait for the coordinator to emit the log line and try again.",
-                log_path.display()
+                "no {} signer addresses found in {}. wait for the {} to emit the log line and try again.",
+                log_type,
+                log_path.display(),
+                log_type
             );
         } else {
             for address in addresses.drain(..) {
-                println!("cargo coordinator-{} -> {}", operator_id, address);
+                println!("cargo {}-{} -> {}", log_type, operator_id, address);
                 signers.push((operator_id.to_string(), address));
             }
         }
@@ -256,8 +300,14 @@ fn collect_local_signers_from_logs() -> Result<Vec<(String, String)>> {
     Ok(signers)
 }
 
-fn collect_local_signers() -> Result<Vec<(String, String)>> {
+fn collect_local_signers(marker: &str) -> Result<Vec<(String, String)>> {
     let mut signers = Vec::new();
+    let address_type = if marker == MEMBER_LOG_MARKER {
+        "member"
+    } else {
+        "user"
+    };
+
     for id in OPERATOR_IDS {
         let project = format!("op_{}", id);
         eprintln!("[docker-fund] running: docker compose -p {} logs", &project);
@@ -275,11 +325,11 @@ fn collect_local_signers() -> Result<Vec<(String, String)>> {
         }
         let stdout = String::from_utf8(output.stdout)
             .context("docker compose logs output is not valid utf-8")?;
-        let mut addresses = extract_signer_addresses(&stdout);
+        let mut addresses = extract_signer_addresses(&stdout, marker);
         if addresses.is_empty() {
             println!(
-                "[docker-fund] no signer addresses found for project {}",
-                project
+                "[docker-fund] no {} signer addresses found for project {}",
+                address_type, project
             );
         } else {
             for address in addresses.drain(..) {
@@ -320,7 +370,7 @@ fn collect_remote_member_addresses(hosts: &[String]) -> Result<Vec<(String, Stri
             bail!("`{}` failed with: {}", cmd_str, stderr.trim());
         }
         let stdout = String::from_utf8(output.stdout).context("ssh output is not valid utf-8")?;
-        let mut addresses = extract_signer_addresses(&stdout);
+        let mut addresses = extract_signer_addresses(&stdout, MEMBER_LOG_MARKER);
         if addresses.is_empty() {
             println!("[docker-fund] no signer addresses found on host {}", host);
         } else {
@@ -333,11 +383,11 @@ fn collect_remote_member_addresses(hosts: &[String]) -> Result<Vec<(String, Stri
     Ok(signers)
 }
 
-fn extract_signer_addresses(log_content: &str) -> Vec<String> {
+fn extract_signer_addresses(log_content: &str, marker: &str) -> Vec<String> {
     let mut unique = HashSet::new();
     for line in log_content.lines() {
-        if let Some(idx) = line.find(LOG_MARKER) {
-            let after_marker = &line[idx + LOG_MARKER.len()..];
+        if let Some(idx) = line.find(marker) {
+            let after_marker = &line[idx + marker.len()..];
             if let Some(candidate) = after_marker
                 .split_whitespace()
                 .find(|token| token.starts_with("0x"))
