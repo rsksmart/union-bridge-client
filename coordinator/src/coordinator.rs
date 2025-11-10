@@ -3,7 +3,7 @@ use crate::flows::committee::setup_committee_flow::{
     SetupCommitteeFlowFactory, SetupCommitteeProcessor,
 };
 use crate::{
-    event_processor::{EventProcessor, PeginProcessor},
+    event_processor::{EventProcessor, NativeBridgeVerifier, PeginProcessor},
     monitor::MonitorApi,
 };
 use anyhow::{Context, Result};
@@ -57,6 +57,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
         store: S,
         shutdown_flag: ShutdownFlag,
         bitcoin_network: Network,
+        env_name: Option<String>,
     ) -> Self {
         let contracts_arc = Rc::new(contracts_gateway);
         let store_rc = Rc::new(store);
@@ -80,6 +81,23 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
             store_rc.clone(),
         );
 
+        let native_bridge_verifier = match env_name {
+            Some(s) if s.as_str() == "alphanet" => {
+                log::info!("Environment: alphanet → Using Real Native Bridge Verifier");
+                NativeBridgeVerifier::Real {
+                    contracts: contracts_arc.clone(),
+                    rt_sync: rt_sync.clone(),
+                }
+            }
+            _ => {
+                log::info!(
+                    "Environment: {} → Using Dummy Native Bridge Verifier (BitVMX confirmations only)",
+                    env_name.as_deref().unwrap_or("NONE")
+                );
+                NativeBridgeVerifier::Dummy
+            }
+        };
+
         Self {
             monitor,
             bitvmx_broker: bitvmx_broker.clone(),
@@ -96,6 +114,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                     bitvmx_broker.clone(),
                     btc_sig_subflow_factory,
                     global_context.clone(),
+                    native_bridge_verifier,
                 )),
                 Box::new(PegoutFlowProcessor::new(
                     contracts_arc.clone(),
