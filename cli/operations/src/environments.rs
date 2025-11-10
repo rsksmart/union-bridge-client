@@ -50,7 +50,7 @@ impl Environment {
     /// returns the RPC URL for this environment
     pub fn rpc_url(&self) -> String {
         match self {
-            Environment::Local | Environment::LocalDocker => "http://localhost:4444".to_string(),
+            Environment::Local | Environment::LocalDocker => "http://localhost:8545".to_string(),
             Environment::Alphanet => "http://node-use1-1.alphanet.rskcomputing.net".to_string(),
             Environment::Testnet => "TBD".to_string(),
         }

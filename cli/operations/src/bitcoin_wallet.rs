@@ -204,7 +204,9 @@ fn cargo_logs_dir() -> Result<PathBuf> {
     let run_cli_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let project_root = run_cli_dir
         .parent()
-        .ok_or_else(|| anyhow!("failed to resolve project root"))?;
+        .expect("failed to get logs dir")
+        .parent()
+        .ok_or_else(|| anyhow!("led to get logs dir"))?;
     Ok(project_root.join("logs"))
 }
 

@@ -29,7 +29,7 @@ pub fn handle_wallet_creation(num_wallets: u8, base_storage_path: Option<&str>) 
 /// handles funding rootstock wallets for operator stacks
 pub async fn handle_operator_funding(env: Environment) -> Result<()> {
     match env {
-        Environment::LocalDocker => {
+        Environment::Local | Environment::LocalDocker => {
             fund_local_docker()?;
         }
         Environment::Alphanet => {
@@ -37,9 +37,6 @@ pub async fn handle_operator_funding(env: Environment) -> Result<()> {
         }
         Environment::Testnet => {
             print_instructions(Environment::Testnet)?;
-        }
-        Environment::Local => {
-            bail!("Environment::Local is not supported for funding rootstock operators. Use LocalDocker, Alphanet, or Testnet.");
         }
     }
     Ok(())
