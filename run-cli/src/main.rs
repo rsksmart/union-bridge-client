@@ -31,6 +31,7 @@
 //! cargo run -- run --num-clients 4 --fresh
 //! ```
 
+mod pegin;
 mod wallet_setup;
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -80,6 +81,31 @@ enum Commands {
         /// Path to multiclient.env. Defaults to ./multiclient.env if it exists
         #[arg(long = "env-file")]
         env_file: Option<PathBuf>,
+    },
+    /// Request a pegin address and print bitcoin-wallet CLI instructions
+    #[command(name = "create-pegin-tx")]
+    CreatePeginTx {
+        /// Rootstock deposit address
+        #[arg(short = 'a', long = "rsk-address", value_name = "RSK_ADDRESS")]
+        rsk_address: String,
+
+        /// Amount (in satoshis) to stream into the pegin transaction
+        #[arg(
+            short = 's',
+            long = "stream-amount",
+            value_name = "STREAM_AMOUNT",
+            default_value_t = 1_000_000u64
+        )]
+        stream_amount: u64,
+
+        /// Packet number used when creating the pegin transaction
+        #[arg(
+            short = 'p',
+            long = "packet-number",
+            value_name = "PACKET_NUMBER",
+            default_value_t = 0u64
+        )]
+        packet_number: u64,
     },
     /// Setup wallets for multi-client deployment
     #[command(name = "setup-wallets")]
@@ -154,13 +180,19 @@ struct ManagedClient {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let base_storage_path = std::env::var("BASE_STORAGE_PATH").context(
-        "BASE_STORAGE_PATH environment variable is required (e.g., export BASE_STORAGE_PATH=/Users/username)",
-    )?;
-
-    match &cli.command {
+    match cli.command {
+        Commands::CreatePeginTx {
+            rsk_address,
+            stream_amount,
+            packet_number,
+        } => {
+            pegin::create_pegin_tx(rsk_address, stream_amount, packet_number).await?;
+        }
         Commands::SetupWallets { action } => {
-            wallet_setup::handle_wallet_setup(action, &base_storage_path)?;
+            let base_storage_path = std::env::var("BASE_STORAGE_PATH").context(
+                "BASE_STORAGE_PATH environment variable is required (e.g., export BASE_STORAGE_PATH=/Users/username)",
+            )?;
+            wallet_setup::handle_wallet_setup(&action, &base_storage_path)?;
         }
         Commands::Run {
             num_clients,
@@ -169,12 +201,15 @@ async fn main() -> Result<()> {
             fresh,
             env_file,
         } => {
+            let base_storage_path = std::env::var("BASE_STORAGE_PATH").context(
+                "BASE_STORAGE_PATH environment variable is required (e.g., export BASE_STORAGE_PATH=/Users/username)",
+            )?;
             let run_config = RunConfig {
-                num_clients: *num_clients,
-                client_id: *client_id,
-                features: features.clone(),
-                fresh: *fresh,
-                env_file: env_file.clone(),
+                num_clients,
+                client_id,
+                features,
+                fresh,
+                env_file,
             };
             run_clients(run_config, &base_storage_path).await?;
         }

@@ -3,6 +3,8 @@
 # wrapper script for run-cli to avoid typing the full cargo command
 # usage: ./run-cli.sh run --num-clients 4
 #        ./run-cli.sh setup-wallets create --num-wallets 4
+#        ./run-cli.sh create-pegin-tx 1000000 0
+#        ./run-cli.sh --help
 
 set -euo pipefail
 
