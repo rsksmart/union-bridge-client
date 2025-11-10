@@ -1,5 +1,4 @@
 use anyhow::{anyhow, bail, Context, Result};
-use clap::ValueEnum;
 use key_manager::key_manager::KeyManager;
 use rpassword::prompt_password;
 use std::collections::HashSet;
@@ -7,21 +6,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::config::*;
 use crate::validate_1_10;
-
-const LOCAL_PROJECT_NAMES: [&str; 4] = ["op_1", "op_2", "op_3", "op_4"];
-const AWS_PROJECT_NAME: &str = "union-operator";
-
-const ALPHANET_HOSTS: [&str; 4] = [
-    "union-bridge-use1-1.alphanet.rskcomputing.net",
-    "union-bridge-use1-2.alphanet.rskcomputing.net",
-    "union-bridge-use1-3.alphanet.rskcomputing.net",
-    "union-bridge-use1-4.alphanet.rskcomputing.net",
-];
-
-const SSH_USER: &str = "ubuntu";
-
-const LOCAL_ANVIL_ADDRESS: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 
 const LOG_MARKER: &str = "Got member signer with address";
 
@@ -37,19 +23,6 @@ impl std::fmt::Display for RpcUrl {
     }
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
-#[value(rename_all = "kebab-case")]
-pub enum RootstockFundingEnv {
-    LocalDocker,
-    Alphanet,
-}
-
-impl Default for RootstockFundingEnv {
-    fn default() -> Self {
-        RootstockFundingEnv::LocalDocker
-    }
-}
-
 /// handles creating local rootstock wallets for multi-client deployments
 pub fn handle_wallet_creation(num_wallets: u8, base_storage_path: Option<&str>) -> Result<()> {
     let base = require_base_storage_path(base_storage_path)?;
@@ -62,13 +35,16 @@ pub fn handle_wallet_creation(num_wallets: u8, base_storage_path: Option<&str>) 
 }
 
 /// handles funding rootstock wallets for operator stacks
-pub async fn handle_operator_funding(env: RootstockFundingEnv) -> Result<()> {
+pub async fn handle_operator_funding(env: Environment) -> Result<()> {
     match env {
-        RootstockFundingEnv::LocalDocker => {
-            fund_docker_local()?;
+        Environment::LocalDocker => {
+            fund_local_docker()?;
         }
-        RootstockFundingEnv::Alphanet => {
+        Environment::Alphanet => {
             print_instructions()?;
+        }
+        Environment::Local => {
+            bail!("Environment::Local is not supported for funding rootstock operators. Use LocalDocker or Alphanet.");
         }
     }
     Ok(())
@@ -159,11 +135,11 @@ fn setup_wallets_create(num_wallets: u8, base_storage_path: &str) -> Result<()> 
     Ok(())
 }
 
-fn fund_docker_local() -> Result<()> {
+fn fund_local_docker() -> Result<()> {
     println!("[docker-fund] funding operator wallets via local anvil");
     let signers = collect_local_signers()?;
     let unique = unique_addresses(&signers);
-    let expected = LOCAL_PROJECT_NAMES.len();
+    let expected = ALL_OPS_COMPOSE_PROJECTS.len();
     if unique.len() < expected {
         bail!(
             "expected {} RSK address(es) but found {}. ensure all required operator stacks are running and have emitted signer addresses.",
@@ -226,7 +202,7 @@ fn print_instructions() -> Result<()> {
 
 fn collect_local_signers() -> Result<Vec<(String, String)>> {
     let mut signers = Vec::new();
-    for project in LOCAL_PROJECT_NAMES {
+    for project in ALL_OPS_COMPOSE_PROJECTS {
         eprintln!("[docker-fund] running: docker compose -p {} logs", project);
         let output = Command::new("docker")
             .args(["compose", "-p", project, "logs"])
@@ -264,16 +240,16 @@ fn collect_alphanet_signers() -> Result<Vec<(String, String)>> {
         let target = format!("{}@{}", SSH_USER, host);
         eprintln!(
             "[docker-fund] running: ssh {} docker compose -p {} logs",
-            target, AWS_PROJECT_NAME
+            target, ONE_OP_COMPOSE_PROJECT
         );
         let output = Command::new("ssh")
             .arg(&target)
-            .args(["docker", "compose", "-p", AWS_PROJECT_NAME, "logs"])
+            .args(["docker", "compose", "-p", ONE_OP_COMPOSE_PROJECT, "logs"])
             .output()
             .with_context(|| {
                 format!(
                     "failed to run `ssh {} docker compose -p {} logs`",
-                    target, AWS_PROJECT_NAME
+                    target, ONE_OP_COMPOSE_PROJECT
                 )
             })?;
         if !output.status.success() {
@@ -281,7 +257,7 @@ fn collect_alphanet_signers() -> Result<Vec<(String, String)>> {
             bail!(
                 "`ssh {} docker compose -p {} logs` failed with: {}",
                 target,
-                AWS_PROJECT_NAME,
+                ONE_OP_COMPOSE_PROJECT,
                 stderr.trim()
             );
         }

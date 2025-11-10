@@ -8,18 +8,7 @@ use reqwest::Client;
 use serde::Serialize;
 use tokio::time::sleep;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
-#[value(rename_all = "lowercase")]
-pub enum CommitteeEnv {
-    Local,
-    Alphanet,
-}
-
-impl Default for CommitteeEnv {
-    fn default() -> Self {
-        CommitteeEnv::Local
-    }
-}
+use crate::config::Environment;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
 #[value(rename_all = "lowercase")]
@@ -79,51 +68,65 @@ struct Funding {
 
 pub async fn run_committee_setup(
     stream_id: u64,
-    environment: CommitteeEnv,
+    environment: Environment,
     role: Option<CommitteeRole>,
 ) -> Result<()> {
     let client = Client::new();
 
+    let endpoints = environment.user_api_endpoints();
+
     match environment {
-        CommitteeEnv::Local => {
+        Environment::Local => {
             if role.is_some() {
                 eprintln!("Warning: --role is ignored in local environment");
             }
 
-            let steps = [
-                (40001u16, CommitteeRole::Prover),
-                (40002u16, CommitteeRole::Prover),
-                (40003u16, CommitteeRole::Verifier),
-                (40004u16, CommitteeRole::Verifier),
-            ];
+            for (idx, endpoint) in endpoints.iter().enumerate() {
+                let role = if idx % 2 == 0 {
+                    CommitteeRole::Prover
+                } else {
+                    CommitteeRole::Verifier
+                };
 
-            for (idx, (port, role)) in steps.iter().enumerate() {
-                post_apply(&client, stream_id, *port, *role).await?;
+                post_apply(&client, stream_id, endpoint, role).await?;
 
-                if idx + 1 != steps.len() {
+                if idx + 1 != environment.user_api_endpoints().len() {
                     sleep(Duration::from_secs(5)).await;
                 }
             }
 
             println!(
-                "Done. Applied 4 operators to stream {} (2 Provers, 2 Verifiers)",
+                "Done. Applied {} operators to stream {} (2 Provers, 2 Verifiers)",
+                environment.user_api_endpoints().len(),
                 stream_id
             );
         }
-        CommitteeEnv::Alphanet => {
+        Environment::Alphanet => {
             let role =
                 role.ok_or_else(|| anyhow!("--role is required when using --env alphanet"))?;
 
-            post_apply(&client, stream_id, 40001, role).await?;
+            let endpoint = endpoints
+                .first()
+                .expect("No local user-api endpoints configured; please review your config");
+
+            post_apply(&client, stream_id, endpoint, role).await?;
 
             println!("Done. Applied operator to stream {} as {}", stream_id, role);
+        }
+        Environment::LocalDocker => {
+            bail!("Environment::LocalDocker is not supported for committee setup. Use Local or Alphanet.");
         }
     }
 
     Ok(())
 }
 
-async fn post_apply(client: &Client, stream_id: u64, port: u16, role: CommitteeRole) -> Result<()> {
+async fn post_apply(
+    client: &Client,
+    stream_id: u64,
+    endpoint: &str,
+    role: CommitteeRole,
+) -> Result<()> {
     let request = ApplyStreamRequest {
         apply_to_stream: ApplyToStream {
             stream_id,
@@ -133,14 +136,15 @@ async fn post_apply(client: &Client, stream_id: u64, port: u16, role: CommitteeR
         },
     };
 
-    println!("Applying operator on port {} as {}...", port, role);
+    println!("Applying operator on {} as {}...", endpoint, role);
 
+    let url = format!("http://{}/member/apply-stream", endpoint);
     let response = client
-        .post(format!("http://localhost:{}/member/apply-stream", port))
+        .post(&url)
         .json(&request)
         .send()
         .await
-        .with_context(|| format!("Failed to connect to operator on port {}", port))?;
+        .with_context(|| format!("Failed to connect to operator at {}", endpoint))?;
 
     let status = response.status();
     if !status.is_success() {
@@ -149,8 +153,8 @@ async fn post_apply(client: &Client, stream_id: u64, port: u16, role: CommitteeR
             .await
             .unwrap_or_else(|_| String::from("<failed to read response body>"));
         bail!(
-            "Operator on port {} responded with status {}: {}",
-            port,
+            "Operator at {} responded with status {}: {}",
+            endpoint,
             status,
             body
         );

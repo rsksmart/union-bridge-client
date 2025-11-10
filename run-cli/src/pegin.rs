@@ -2,7 +2,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-const USER_API_PEGIN_ENDPOINT: &str = "http://localhost:40001/user/pegin-address";
+use crate::config::Environment;
 
 #[derive(Debug, Serialize)]
 struct PeginAddressRequest {
@@ -31,8 +31,19 @@ pub async fn create_pegin_tx(
     };
 
     let client = Client::new();
+
+    let environment = Environment::Local;
+
+    let user_api_base = environment
+        .user_api_endpoints()
+        .first()
+        .expect("No local user-api endpoints configured; please review your config")
+        .to_string();
+
+    let endpoint = format!("{}/user/pegin-address", user_api_base);
+
     let response = client
-        .post(USER_API_PEGIN_ENDPOINT)
+        .post(&endpoint)
         .json(&request)
         .send()
         .await
@@ -40,10 +51,10 @@ pub async fn create_pegin_tx(
 
     let status = response.status();
     if !status.is_success() {
-        let body = match response.text().await {
-            Ok(body) => body,
-            Err(_) => String::from("<failed to read response body>"),
-        };
+        let body = response
+            .text()
+            .await
+            .unwrap_or_else(|_| String::from("<failed to read response body>"));
         bail!("user-api responded with status {}: {}", status, body);
     }
 

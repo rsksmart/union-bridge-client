@@ -4,7 +4,7 @@
 //! - `run`: orchestrates the four union bridge services for one or many clients.
 //!   use `-n` for multi-client mode, `--id` for a single client,
 //!   `--features` to pass cargo feature flags, and `--fresh` to wipe local state.
-//! - `create-rootstock-wallets`: creates 4 rootstock keystores for local multi-client
+//! - `create-rootstock-wallets`: creates rootstock keystores for local multi-client
 //!   deployments.
 //! - `fund-ops-rootstock`: funds rootstock wallets for operator stacks.
 //!   use `--env local-docker` (default) for local docker compose stacks, or
@@ -31,12 +31,12 @@
 
 mod bitcoin_wallet;
 mod committee;
+mod config;
 mod pegin;
 mod rsk_wallet;
 
-use crate::bitcoin_wallet::BitcoinFundingEnv;
-use crate::committee::{CommitteeEnv, CommitteeRole};
-use crate::rsk_wallet::RootstockFundingEnv;
+use crate::committee::CommitteeRole;
+use crate::config::{Environment, OPERATOR_IDS};
 use anyhow::{anyhow, bail, Context, Result};
 use clap::{ArgAction, Parser, Subcommand};
 use nix::sys::signal::{kill, Signal};
@@ -110,22 +110,22 @@ enum Commands {
         )]
         packet_number: u64,
     },
-    /// Create Rootstock wallets for local multi-client deployment (creates 4 wallets)
+    /// Create Rootstock wallets for local multi-client deployment
     #[command(name = "create-rootstock-wallets")]
     CreateRootstockWallets,
     /// Collect BitVMX funding addresses for operators
     #[command(name = "fund-ops-bitcoin")]
     FundOperatorsBitcoin {
         /// Environment to target (local, local-docker, alphanet)
-        #[arg(long = "env", short = 'e', value_enum, default_value_t = BitcoinFundingEnv::Local)]
-        env: BitcoinFundingEnv,
+        #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local)]
+        env: Environment,
     },
     /// Fund Rootstock wallets for operator stacks
     #[command(name = "fund-ops-rootstock")]
     FundOperatorsRootstock {
         /// Environment to target (local-docker, alphanet)
-        #[arg(long = "env", short = 'e', value_enum, default_value_t = RootstockFundingEnv::LocalDocker)]
-        env: RootstockFundingEnv,
+        #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::LocalDocker)]
+        env: Environment,
     },
     /// Apply operators to a stream for committee setup
     #[command(name = "setup-committee")]
@@ -135,8 +135,8 @@ enum Commands {
         stream_id: u64,
 
         /// Target environment (`local` or `alphanet`)
-        #[arg(long = "env", value_enum, default_value_t = CommitteeEnv::Local)]
-        env: CommitteeEnv,
+        #[arg(long = "env", value_enum, default_value_t = Environment::Local)]
+        env: Environment,
 
         /// Operator role when applying on alphanet
         #[arg(long = "role", value_enum)]
@@ -197,7 +197,10 @@ async fn main() -> Result<()> {
         }
         Commands::CreateRootstockWallets => {
             let base_storage_path = std::env::var("BASE_STORAGE_PATH").ok();
-            rsk_wallet::handle_wallet_creation(4, base_storage_path.as_deref())?;
+            rsk_wallet::handle_wallet_creation(
+                OPERATOR_IDS.len() as u8,
+                base_storage_path.as_deref(),
+            )?;
         }
         Commands::FundOperatorsBitcoin { env } => {
             bitcoin_wallet::handle_bitcoin_funding(env).await?;
