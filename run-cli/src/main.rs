@@ -15,6 +15,8 @@
 //! - `create-pegin-tx`: requests a pegin address and prints bitcoin-wallet
 //!   instructions. requires `--rsk-address/-a`, with optional stream and packet
 //!   overrides via `--stream-amount/-s` and `--packet-number/-p`.
+//! - `request-pegout`: requests a pegout (withdrawal from Rootstock to Bitcoin).
+//!   requires `--amount/-a` in satoshis, defaults to local environment.
 //! - `setup-committee`: applies operators to a stream. requires `--stream-id/-s`,
 //!   defaults to the local environment, and accepts `--env` (`local` or `alphanet`)
 //!   plus optional `--role` when targeting alphanet.
@@ -26,6 +28,7 @@
 //! cargo run -- fund-ops-rootstock --env local-docker
 //! cargo run -- fund-ops-bitcoin --env local
 //! cargo run -- create-pegin-tx -a 0x1234...cdef -s 2_000_000 -p 7
+//! cargo run -- request-pegout -a 1000000
 //! cargo run -- setup-committee -s 1
 //! ```
 
@@ -34,6 +37,7 @@ mod committee;
 mod constants;
 mod environments;
 mod pegin;
+mod pegout;
 mod rsk_wallet;
 
 use crate::committee::CommitteeRole;
@@ -111,6 +115,17 @@ enum Commands {
             default_value_t = 0u64
         )]
         packet_number: u64,
+    },
+    /// Request a pegout (withdraw from Rootstock to Bitcoin)
+    #[command(name = "request-pegout")]
+    RequestPegout {
+        /// Environment to target (local, local-docker, alphanet)
+        #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local)]
+        env: Environment,
+
+        /// Amount in satoshis to withdraw
+        #[arg(short = 'a', long = "amount", value_name = "AMOUNT_SATS")]
+        amount_sats: u64,
     },
     /// Create Rootstock wallets for local multi-client deployment
     #[command(name = "create-rootstock-wallets")]
@@ -197,6 +212,9 @@ async fn main() -> Result<()> {
             packet_number,
         } => {
             pegin::create_pegin_tx(env, rsk_address, stream_amount, packet_number).await?;
+        }
+        Commands::RequestPegout { env, amount_sats } => {
+            pegout::request_pegout(env, amount_sats).await?;
         }
         Commands::CreateRootstockWallets => {
             let base_storage_path = std::env::var("BASE_STORAGE_PATH").ok();
