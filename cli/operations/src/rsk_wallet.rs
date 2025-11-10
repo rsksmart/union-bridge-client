@@ -29,7 +29,10 @@ pub fn handle_wallet_creation(num_wallets: u8, base_storage_path: Option<&str>) 
 /// handles funding rootstock wallets for operator stacks
 pub async fn handle_operator_funding(env: Environment) -> Result<()> {
     match env {
-        Environment::Local | Environment::LocalDocker => {
+        Environment::Local => {
+            fund_local()?;
+        }
+        Environment::LocalDocker => {
             fund_local_docker()?;
         }
         Environment::Alphanet => {
@@ -127,6 +130,29 @@ fn setup_wallets_create(num_wallets: u8, base_storage_path: &str) -> Result<()> 
     Ok(())
 }
 
+fn fund_local() -> Result<()> {
+    println!("[cargo-fund] funding operator wallets via local anvil");
+    let signers = collect_local_signers_from_logs()?;
+    let unique = unique_addresses(&signers);
+    let expected = OPERATOR_IDS.len();
+    if unique.len() < expected {
+        bail!(
+            "expected {} RSK address(es) but found {}. ensure all required operator services are running and have emitted signer addresses.",
+            expected,
+            unique.len()
+        );
+    }
+
+    for (operator_id, address) in signers {
+        println!("Processing coordinator-{}", operator_id);
+        println!("  Funding RSK address: {}", address);
+        run_cast_send_local(&address)?;
+    }
+
+    println!("Done. Funded operator RSK addresses on local Anvil.");
+    Ok(())
+}
+
 fn fund_local_docker() -> Result<()> {
     println!("[docker-fund] funding operator wallets via local anvil");
     let signers = collect_local_signers()?;
@@ -196,6 +222,38 @@ fn print_instructions(env: Environment) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn collect_local_signers_from_logs() -> Result<Vec<(String, String)>> {
+    let logs_dir = cargo_logs_dir()?;
+    let mut signers = Vec::new();
+
+    for operator_id in OPERATOR_IDS {
+        let log_path = logs_dir.join(format!("coordinator-{}.log", operator_id));
+        if !log_path.exists() {
+            bail!(
+                "expected coordinator log at {} but it does not exist. ensure the services have been started via `cargo run -- run`.",
+                log_path.display()
+            );
+        }
+
+        let contents = fs::read_to_string(&log_path)
+            .with_context(|| format!("failed to read {}", log_path.display()))?;
+        let mut addresses = extract_signer_addresses(&contents);
+        if addresses.is_empty() {
+            bail!(
+                "no signer addresses found in {}. wait for the coordinator to emit the log line and try again.",
+                log_path.display()
+            );
+        } else {
+            for address in addresses.drain(..) {
+                println!("cargo coordinator-{} -> {}", operator_id, address);
+                signers.push((operator_id.to_string(), address));
+            }
+        }
+    }
+
+    Ok(signers)
 }
 
 fn collect_local_signers() -> Result<Vec<(String, String)>> {
@@ -306,6 +364,15 @@ fn unique_addresses(records: &[(String, String)]) -> Vec<String> {
         }
     }
     unique
+}
+
+fn cargo_logs_dir() -> Result<PathBuf> {
+    let operations_cli_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let project_root = operations_cli_dir
+        .parent()
+        .and_then(|p| p.parent())
+        .ok_or_else(|| anyhow!("failed to resolve project root"))?;
+    Ok(project_root.join("logs"))
 }
 
 fn run_cast_send_local(address: &str) -> Result<()> {
