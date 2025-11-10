@@ -10,8 +10,14 @@ const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub struct Config {
     pub indexer: IndexerConfig,
     pub provider: ProviderConfig,
-    pub log_notifier: NotifierConfig,
     pub contracts: Vec<ContractConfig>,
+    #[serde(rename = "log_indexer")]
+    pub log_indexer_config: LogIndexerConfig,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LogIndexerConfig {
+    pub log_notifier: NotifierConfig,
 }
 
 impl Config {
@@ -54,21 +60,10 @@ mod tests {
 
     #[test]
     fn test_config_load_when_stage_config_set_should_load_config_successfully() {
-        // using base.yaml
         let config: Config =
             CommonConfig::load_config::<Config>(None).expect("Failed to load config");
 
-        assert_eq!(
-            "0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c",
-            config.indexer.initial_block_hash
-        );
-        assert_eq!(
-            "/your_base_path/.union_bridge/database/multi-client-1",
-            config.indexer.storage.path
-        );
-        assert_eq!(1000, config.indexer.cache.size);
-        assert_eq!("ws://127.0.0.1:8545", config.provider.rootstock.url);
-        assert_eq!(8, config.contracts.len());
+        assert_eq!(20001, config.log_indexer_config.log_notifier.broker_port);
     }
 
     #[test]
@@ -77,7 +72,6 @@ mod tests {
             CommonConfig::load_config::<Config>(None).expect("Failed to load config");
         let contracts = config.load_managed_contracts();
 
-        // using values from base.yaml (8 contracts)
         assert_eq!(8, contracts.len());
     }
 
@@ -123,7 +117,7 @@ root:
             "test_crate",
         );
 
-        println!("result: {:?}", result);
+        println!("result: {result:?}");
 
         assert!(result.is_ok());
         assert!(Path::new(&format!("{log_file}.log")).exists());

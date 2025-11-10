@@ -6,19 +6,18 @@ use std::collections::HashMap;
 
 const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
-#[derive(Debug, Deserialize)]
-pub struct ConfigAsBin {
-    pub server: ServerConfig,
-    #[serde(flatten)]
-    pub lib_config: ConfigAsLib,
+#[derive(Debug, Deserialize, Clone)]
+pub struct Config {
+    pub provider: ProviderConfig,
+    pub contracts: Vec<ContractConfig>,
+    #[serde(rename = "transaction_dispatcher")]
+    pub tx_dispatcher_config: TxDispatcherConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct ConfigAsLib {
-    pub provider: ProviderConfig,
+pub struct TxDispatcherConfig {
     pub key_store: KeyStoreConfig,
     pub transaction: TransactionConfig,
-    pub contracts: Vec<ContractConfig>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -27,45 +26,14 @@ pub struct KeyStoreConfig {
     pub member_path: String,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct ServerConfig {
-    pub url: String,
-}
-
 #[derive(Debug, Deserialize, Clone)]
 pub struct TransactionConfig {
     pub gas_bumps_t1: u8,
 }
 
-impl ConfigAsBin {
+impl Config {
     pub fn load(env_name: Option<String>) -> Result<Self, ConfigError> {
-        CommonConfig::load_config::<ConfigAsBin>(env_name)
-    }
-
-    pub fn provider(&self) -> &ProviderConfig {
-        &self.lib_config.provider
-    }
-
-    pub fn load_managed_contracts(&self) -> HashMap<String, ContractInfo> {
-        self.lib_config.load_managed_contracts()
-    }
-
-    pub fn key_store(&self) -> &KeyStoreConfig {
-        &self.lib_config.key_store
-    }
-
-    pub fn transaction(&self) -> &TransactionConfig {
-        &self.lib_config.transaction
-    }
-
-    pub fn contracts(&self) -> &Vec<ContractConfig> {
-        &self.lib_config.contracts
-    }
-}
-
-impl ConfigAsLib {
-    pub fn load(env_name: Option<String>) -> Result<Self, ConfigError> {
-        CommonConfig::load_config::<ConfigAsLib>(env_name)
+        CommonConfig::load_config::<Config>(env_name)
     }
 
     pub fn load_managed_contracts(&self) -> HashMap<String, ContractInfo> {
@@ -83,6 +51,14 @@ impl ConfigAsLib {
                 )
             })
             .collect()
+    }
+
+    // pub fn key_store(&self) -> &KeyStoreConfig {
+    //     &self.tx_dispatcher_config.key_store
+    // }
+
+    pub fn transaction(&self) -> &TransactionConfig {
+        &self.tx_dispatcher_config.transaction
     }
 }
 
@@ -103,35 +79,24 @@ mod tests {
 
     #[test]
     fn test_config_load_when_custom_config_set_should_load_config_successfully() {
-        // using base.yaml
-        let config: ConfigAsBin =
-            CommonConfig::load_config::<ConfigAsBin>(None).expect("Failed to load config");
+        let config: Config =
+            CommonConfig::load_config::<Config>(None).expect("Failed to load config");
 
-        // provider - using values from base.yaml
-        assert_eq!("ws://127.0.0.1:8545", config.provider().rootstock.url);
-        assert_eq!("0.0.0.0:9001", config.server.url);
-        assert_eq!("ws://127.0.0.1:8545", config.provider().rootstock.url);
-
-        // server
-        assert_eq!("0.0.0.0:9001", config.server.url);
-
-        // key store
         assert_eq!(
             "/your_base_path/.union_bridge/keystore/multi-client-1-user",
-            config.key_store().user_path
+            config.tx_dispatcher_config.key_store.user_path
         );
         assert_eq!(
             "/your_base_path/.union_bridge/keystore/multi-client-1-member",
-            config.key_store().member_path
+            config.tx_dispatcher_config.key_store.member_path
         );
         assert_eq!(3, config.transaction().gas_bumps_t1);
     }
 
     #[test]
     fn test_load_contracts_when_stage_config_set_should_load_contracts_successfully() {
-        // using base.yaml
-        let config: ConfigAsBin =
-            CommonConfig::load_config::<ConfigAsBin>(None).expect("Failed to load config");
+        let config: Config =
+            CommonConfig::load_config::<Config>(None).expect("Failed to load config");
         let contracts = config.load_managed_contracts();
 
         assert_eq!(8, contracts.len());

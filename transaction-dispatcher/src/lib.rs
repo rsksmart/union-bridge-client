@@ -24,7 +24,7 @@ pub enum GatewayRole {
 
 pub async fn get_contracts_gateway<P: Provider + Clone>(
     provider: P,
-    config: config::ConfigAsBin,
+    config: config::Config,
     member_address: Address,
 ) -> Result<RskContractsGateway<P>> {
     RskContractsGateway::new(
@@ -39,14 +39,14 @@ pub async fn get_contracts_gateway<P: Provider + Clone>(
 
 pub fn get_contracts_gateway_as_lib_sync_with_role(
     rt_sync: RuntimeSync,
-    config: config::ConfigAsLib,
+    config: config::Config,
     role: GatewayRole,
 ) -> Result<RskContractsGateway<impl Provider + Clone>, DomainErrors> {
     rt_sync.run(create_contracts_gateway_impl_with_role(config, role))
 }
 
-pub async fn get_contracts_gateway_as_lib_with_role(
-    config: config::ConfigAsLib,
+pub async fn get_contracts_gateway_as_lib(
+    config: config::Config,
     role: GatewayRole,
 ) -> Result<RskContractsGateway<impl Provider + Clone>> {
     create_contracts_gateway_impl_with_role(config, role)
@@ -55,12 +55,12 @@ pub async fn get_contracts_gateway_as_lib_with_role(
 }
 
 async fn create_contracts_gateway_impl_with_role(
-    config: config::ConfigAsLib,
+    config: config::Config,
     role: GatewayRole,
 ) -> Result<RskContractsGateway<impl Provider + Clone>, DomainErrors> {
     let key_path = match role {
-        GatewayRole::User => &config.key_store.user_path,
-        GatewayRole::Member => &config.key_store.member_path,
+        GatewayRole::User => &config.tx_dispatcher_config.key_store.user_path,
+        GatewayRole::Member => &config.tx_dispatcher_config.key_store.member_path,
     };
 
     let key_store_path = Path::new(key_path);
@@ -110,7 +110,7 @@ async fn create_contracts_gateway_impl_with_role(
     RskContractsGateway::new(
         provider,
         config.load_managed_contracts(),
-        &config.transaction,
+        &config.tx_dispatcher_config.transaction,
         signer_address,
     )
     .await

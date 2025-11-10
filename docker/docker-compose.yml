@@ -18,7 +18,7 @@ services:
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - db-blocks:/app/db/blocks
     environment:
-      - ENV_NAME=${ENV_NAME:-}
+      - ENV_NAME=${ENV_NAME:-dummy-env-name}
     restart: no
     healthcheck:
       interval: 30s
@@ -43,7 +43,7 @@ services:
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - db-logs:/app/db/logs
     environment:
-      - ENV_NAME=${ENV_NAME:-}
+      - ENV_NAME=${ENV_NAME:-dummy-env-name}
     restart: no
     healthcheck:
       interval: 30s
@@ -70,11 +70,11 @@ services:
       - db-coordinator:/app/db/coordinator
     restart: no
     environment:
-      - UB__bitvmx_broker__host=${BITVMX_HOST}
-      - UB__bitvmx_broker__port=${BITVMX_PORT}
+      - UB__coordinator__bitvmx_broker__host=${BITVMX_HOST:-dummy-bitvmx-host}
+      - UB__coordinator__bitvmx_broker__port=${BITVMX_PORT:-dummy-bitvmx-port}
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
-      - BITCOIN_NETWORK=${BITCOIN_NETWORK}
-      - ENV_NAME=${ENV_NAME:-}
+      - BITCOIN_NETWORK=${BITCOIN_NETWORK:-dummy-bitcoin-network}
+      - ENV_NAME=${ENV_NAME:-dummy-env-name}
     healthcheck:
       interval: 30s
       timeout: 10s
@@ -107,7 +107,7 @@ services:
       - keystore:/keystore
     environment:
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
-      - ENV_NAME=${ENV_NAME:-}
+      - ENV_NAME=${ENV_NAME:-dummy-env-name}
       - USER_BITCOIN_WIF=${USER_BITCOIN_WIF:-}
     restart: no
     ports:

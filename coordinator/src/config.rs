@@ -13,14 +13,21 @@ const MEMBER_REGISTRY_CONTRACT_NAME: &str = "MemberRegistry";
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
+    pub contracts: Vec<ContractConfig>,
+    pub bitcoin_network: String, // loaded from common.yaml
+    #[serde(rename = "coordinator")]
+    pub coordinator_config: CoordinatorConfig,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename = "coordinator")]
+pub struct CoordinatorConfig {
     pub log_broker: BrokerConfig,
     pub block_broker: BrokerConfig,
     pub user_broker: BrokerConfig,
     pub bitvmx_broker: BrokerConfig,
     pub broker_client_id: u32,
-    pub contracts: Vec<ContractConfig>,
     pub storage_path: String,
-    pub bitcoin_network: String, // loaded from common.yaml
 }
 
 #[derive(Debug, Deserialize)]
@@ -85,5 +92,27 @@ mod tests {
             CommonConfig::parse_bitcoin_network(&config.bitcoin_network)?
         );
         Ok(())
+    }
+
+    #[test]
+    fn test_load_base_toml_config() {
+        let config: Config =
+            CommonConfig::load_config::<Config>(None).expect("Failed to load base config");
+
+        assert_eq!("0.0.0.0", config.coordinator_config.log_broker.host);
+        assert_eq!(20001, config.coordinator_config.log_broker.port);
+        assert_eq!("0.0.0.0", config.coordinator_config.block_broker.host);
+        assert_eq!(10001, config.coordinator_config.block_broker.port);
+        assert_eq!("0.0.0.0", config.coordinator_config.user_broker.host);
+        assert_eq!(30001, config.coordinator_config.user_broker.port);
+        assert_eq!("0.0.0.0", config.coordinator_config.bitvmx_broker.host);
+        assert_eq!(22222, config.coordinator_config.bitvmx_broker.port);
+        assert_eq!(101, config.coordinator_config.broker_client_id);
+        assert_eq!(
+            "/your_base_path/.union_bridge/database/multi-client-1",
+            config.coordinator_config.storage_path
+        );
+        assert_eq!("regtest", config.bitcoin_network);
+        assert_eq!(8, config.contracts.len());
     }
 }

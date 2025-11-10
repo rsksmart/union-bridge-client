@@ -8,6 +8,11 @@ const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub struct Config {
     pub indexer: IndexerConfig,
     pub provider: ProviderConfig,
+    #[serde(rename = "block_indexer")]
+    pub block_indexer_config: BlockIndexerConfig,
+}
+#[derive(Debug, Deserialize)]
+pub struct BlockIndexerConfig {
     pub block_notifier: NotifierConfig,
 }
 
@@ -35,20 +40,13 @@ mod tests {
 
     #[test]
     fn test_config_load_when_custom_config_set_should_load_config_successfully() {
-        // using base.yaml
         let config: Config =
             CommonConfig::load_config::<Config>(None).expect("Failed to load config");
 
         assert_eq!(
-            "0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c",
-            config.indexer.initial_block_hash
+            10001,
+            config.block_indexer_config.block_notifier.broker_port
         );
-        assert_eq!(
-            "/your_base_path/.union_bridge/database/multi-client-1",
-            config.indexer.storage.path
-        );
-        assert_eq!(1000, config.indexer.cache.size);
-        assert_eq!("ws://127.0.0.1:8545", config.provider.rootstock.url);
     }
 
     #[test]

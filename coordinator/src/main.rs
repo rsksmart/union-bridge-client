@@ -14,7 +14,7 @@ use coordinator::{
 };
 use log::{debug, error, info};
 use std::rc::Rc;
-use transaction_dispatcher::config::ConfigAsLib as TxDispatcherConfig;
+use transaction_dispatcher::config::Config as TxDispatcherConfig;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const ENV_CLI_FLAG: &str = "env";
@@ -59,23 +59,23 @@ fn main() -> Result<()> {
     let contract_addresses = config.get_contract_addresses();
 
     let block_broker = BrokerClient::new(
-        config.block_broker.host,
-        config.block_broker.port,
-        config.broker_client_id,
+        config.coordinator_config.block_broker.host,
+        config.coordinator_config.block_broker.port,
+        config.coordinator_config.broker_client_id,
     );
     let log_broker = BrokerClient::new(
-        config.log_broker.host,
-        config.log_broker.port,
-        config.broker_client_id,
+        config.coordinator_config.log_broker.host,
+        config.coordinator_config.log_broker.port,
+        config.coordinator_config.broker_client_id,
     );
     let user_broker = BrokerClient::new(
-        config.user_broker.host,
-        config.user_broker.port,
-        config.broker_client_id,
+        config.coordinator_config.user_broker.host,
+        config.coordinator_config.user_broker.port,
+        config.coordinator_config.broker_client_id,
     );
     let bitvmx_broker = Rc::new(BitVmxBrokerClient::new(
-        config.bitvmx_broker.host,
-        config.bitvmx_broker.port,
+        config.coordinator_config.bitvmx_broker.host,
+        config.coordinator_config.bitvmx_broker.port,
         BITVMX_L2_BROKER_CLIENT_ID,
     ));
 
@@ -97,7 +97,7 @@ fn main() -> Result<()> {
         transaction_dispatcher::GatewayRole::Member, // Coordinator uses member role
     )?;
 
-    let store_path = &format!("{}/coordinator", config.storage_path);
+    let store_path = &format!("{}/coordinator", config.coordinator_config.storage_path);
     debug!("Creating coordinator store at: {}", store_path);
     let store = CoordinatorStore::new(store_path).context("Failed to create context store")?;
 

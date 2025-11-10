@@ -11,9 +11,9 @@ use std::{fs, path::Path};
 
 const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 // todo(fede) replace the /new folder with the final folder
-const BASE_CONFIG_PATH: &str = "config/base.yaml";
+const BASE_CONFIG_PATH: &str = "config/base";
 const ENV_CONFIG_PATH: &str = "config/environment";
-// const ENV_CONFIG_PATH: &str = "new/environment/";
+const EXTENSION_TYPE: &str = "toml";
 
 #[derive(Debug, Deserialize)]
 pub struct CommonConfig {
@@ -75,7 +75,7 @@ impl CommonConfig {
         let (base_config_path, env_config_path) = Self::config_path_for(&env)?;
 
         trace!(
-            "Loading config: base.yaml -> environment/{env}.yaml -> environment variables with prefix UB__"
+            "Loading config: base.toml -> environment/{env}.toml -> environment variables with prefix UB__"
         );
 
         let cfg = config::Config::builder()
@@ -109,16 +109,11 @@ impl CommonConfig {
             Err("{env_name}").map_err(|e| ConfigError::ConfigEnvError(e.to_string()))?;
         }
 
-        let project_root = Path::new(CARGO_MANIFEST_DIR)
-            .parent()
-            .and_then(|p| p.to_str())
-            .expect("Failed to get default_config_path")
-            .to_string();
-
-        let env_config = format!("{ENV_CONFIG_PATH}/{env_name}.yaml");
+        let project_root = Self::project_root();
+        let env_config = format!("{ENV_CONFIG_PATH}/{env_name}.{EXTENSION_TYPE}");
 
         Ok((
-            format!("{project_root}/{BASE_CONFIG_PATH}"),
+            format!("{project_root}/{BASE_CONFIG_PATH}.{EXTENSION_TYPE}"),
             format!("{project_root}/{env_config}"),
         ))
     }
@@ -138,10 +133,7 @@ impl CommonConfig {
         }
 
         // otherwise, use the default template and tweak it (mostly for local)
-        let project_root = Path::new(CARGO_MANIFEST_DIR)
-            .parent()
-            .and_then(|p| p.to_str())
-            .expect("Failed to get default_destination");
+        let project_root = Self::project_root();
 
         let base_yaml = format!("{project_root}/log4rs.yaml");
         let mut config_str = fs::read_to_string(&base_yaml)
@@ -161,6 +153,14 @@ impl CommonConfig {
         log4rs::init_raw_config(config).context("Failed to initialize log4rs")
     }
 
+    fn project_root() -> String {
+        let project_root = Path::new(CARGO_MANIFEST_DIR)
+            .parent()
+            .and_then(|p| p.to_str())
+            .expect("Failed to get default_destination");
+        project_root.to_string()
+    }
+
     pub fn parse_bitcoin_network(network_str: &str) -> Result<Network> {
         let res = match network_str {
             "bitcoin" | "mainnet" => Network::Bitcoin,
@@ -170,5 +170,162 @@ impl CommonConfig {
         };
 
         Ok(res)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env::remove_var;
+    use std::env::set_var;
+    use std::sync::Mutex;
+
+    // used to syncs tests that uses UB__ variables
+    static TEST_MUTEX: Mutex<()> = Mutex::new(());
+
+    fn cleanup_env_vars() {
+        unsafe {
+            let _ = remove_var("UB__INDEXER__STORAGE__PATH");
+            let _ = remove_var("UB__INDEXER__CACHE__SIZE");
+            let _ = remove_var("UB__PROVIDER__ROOTSTOCK__URL");
+            let _ = remove_var("UB__BITCOIN_NETWORK");
+        }
+    }
+
+    #[test]
+    fn test_load_base_toml_config() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+
+        let config: CommonConfig =
+            CommonConfig::load_config::<CommonConfig>(None).expect("Failed to load base config");
+
+        assert_eq!(
+            "0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c",
+            config.indexer.initial_block_hash
+        );
+        assert_eq!(
+            "/your_base_path/.union_bridge/database/multi-client-1",
+            config.indexer.storage.path
+        );
+        assert_eq!(1000, config.indexer.cache.size);
+        assert_eq!(100, config.indexer.sync.finality_depth);
+        assert_eq!(100, config.indexer.sync.batch_size);
+        assert_eq!("ws://127.0.0.1:8545", config.provider.rootstock.url);
+        assert_eq!("regtest", config.bitcoin_network);
+        assert_eq!(8, config.contracts.len());
+        let contract_names: Vec<&String> = config.contracts.iter().map(|c| &c.name).collect();
+        let expected_names = vec![
+            "TestContractDyn",
+            "TestContractCompiled",
+            "PegManager",
+            "SignatureManager",
+            "CommitteeRegistry",
+            "MemberRegistry",
+            "FakePegManager",
+            "StreamManager",
+        ];
+        assert_eq!(expected_names, contract_names);
+        assert_eq!(
+            "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761",
+            config.contracts[0].address
+        );
+        assert_eq!(
+            "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc",
+            config.contracts[1].address
+        );
+        assert_eq!(
+            "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+            config.contracts[2].address
+        );
+        assert_eq!(
+            "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+            config.contracts[3].address
+        );
+        assert_eq!(
+            "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9",
+            config.contracts[4].address
+        );
+        assert_eq!(
+            "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+            config.contracts[5].address
+        );
+        assert_eq!(
+            "0x68B1D87F95878fE05B998F19b66F4baba5De1aed",
+            config.contracts[6].address
+        );
+        assert_eq!(
+            "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+            config.contracts[7].address
+        );
+    }
+
+    #[test]
+    fn test_docker_local_environment_overrides() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+
+        let config: CommonConfig =
+            CommonConfig::load_config::<CommonConfig>(Some("docker-local".to_string()))
+                .expect("Failed to load config with docker-local environment");
+
+        assert_eq!(
+            "0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c",
+            config.indexer.initial_block_hash
+        );
+        assert_eq!("/app/db/", config.indexer.storage.path); // override
+        assert_eq!(1000, config.indexer.cache.size);
+        assert_eq!(
+            "ws://host.docker.internal:8545",
+            config.provider.rootstock.url
+        );
+        assert_eq!("regtest", config.bitcoin_network);
+        assert_eq!(8, config.contracts.len());
+    }
+
+    #[test]
+    fn test_environment_variables_override_config_files() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+
+        unsafe {
+            set_var("UB__INDEXER__STORAGE__PATH", "/test/env/path");
+            set_var("UB__INDEXER__CACHE__SIZE", "3000");
+            set_var("UB__PROVIDER__ROOTSTOCK__URL", "ws://127.0.0.1:8888");
+            set_var("UB__BITCOIN_NETWORK", "mainnet");
+        }
+
+        let config: CommonConfig = CommonConfig::load_config::<CommonConfig>(None)
+            .expect("Failed to load config with environment variables");
+
+        assert_eq!(
+            "0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c",
+            config.indexer.initial_block_hash
+        );
+
+        // override
+        assert_eq!("/test/env/path", config.indexer.storage.path);
+        assert_eq!(3000, config.indexer.cache.size);
+        assert_eq!("ws://127.0.0.1:8888", config.provider.rootstock.url);
+        assert_eq!("mainnet", config.bitcoin_network);
+
+        cleanup_env_vars();
+    }
+
+    #[test]
+    fn test_priority_order_base_env_file_env_vars() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+
+        unsafe {
+            set_var("UB__INDEXER__CACHE__SIZE", "3000");
+            set_var("UB__BITCOIN_NETWORK", "mainnet");
+        }
+
+        let config: CommonConfig =
+            CommonConfig::load_config::<CommonConfig>(Some("docker-local".to_string()))
+                .expect("Failed to load config with all overrides");
+
+        assert_eq!("/app/db/", config.indexer.storage.path); // environment override
+        assert_eq!(3000, config.indexer.cache.size); // UB__ override
+        assert_eq!("mainnet", config.bitcoin_network); // UB__ override
+
+        cleanup_env_vars();
     }
 }

@@ -8,7 +8,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::thread;
 use tokio::net::TcpListener;
-use transaction_dispatcher::config::ConfigAsLib as TxDispatcherConfig;
+use transaction_dispatcher::config::Config as TxDispatcherConfig;
 use user_api::config::{Config, Logger};
 use user_api::Server;
 
@@ -76,11 +76,11 @@ async fn main() -> Result<()> {
 
     let shutdown_flag = ShutdownFlag::init();
 
-    let broker_port = config.broker_server_port;
+    let broker_port = config.user_api_config.broker_server_port;
     let broker_drop_guard = BrokerDropGuard::new(Arc::new(BrokerServer::new(broker_port)));
     info!("Broker Server started on {broker_port}");
 
-    let http_addr = SocketAddr::from(([0, 0, 0, 0], config.http_server_port));
+    let http_addr = SocketAddr::from(([0, 0, 0, 0], config.user_api_config.http_server_port));
     let listener = TcpListener::bind(http_addr)
         .await
         .context("Failed to bind to address")?;
@@ -102,18 +102,17 @@ async fn main() -> Result<()> {
         TxDispatcherConfig::load(env_name).expect("Failed to load transaction dispatcher config");
 
     // Create two contract gateways with different roles
-    let user_contracts_gateway = transaction_dispatcher::get_contracts_gateway_as_lib_with_role(
+    let user_contracts_gateway = transaction_dispatcher::get_contracts_gateway_as_lib(
         tx_dispatcher_config.clone(),
         transaction_dispatcher::GatewayRole::User,
     )
-        .await?;
+    .await?;
 
-    let member_contracts_gateway = transaction_dispatcher::get_contracts_gateway_as_lib_with_role(
+    let member_contracts_gateway = transaction_dispatcher::get_contracts_gateway_as_lib(
         tx_dispatcher_config,
         transaction_dispatcher::GatewayRole::Member,
     )
-        .await?;
-
+    .await?;
 
     let server = Server::new(
         listener,
@@ -121,7 +120,7 @@ async fn main() -> Result<()> {
             .clone_arc()
             .context("failed to clone broker server handle")?,
         shutdown_flag.clone(),
-        config.coordinator_broker_client_id,
+        config.user_api_config.coordinator_broker_client_id,
         user_contracts_gateway,
         member_contracts_gateway,
         user_bitcoin_wif.as_deref(),
