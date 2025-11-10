@@ -1,39 +1,31 @@
-//! union bridge client launcher and wallet setup utility
+//! union bridge client launcher and utility toolkit
 //!
-//! this tool provides two main subcommands:
+//! subcommands:
+//! - `run`: orchestrates the four union bridge services for one or many clients.
+//!   use `-n` for multi-client mode, `--id` for a single client,
+//!   `--features` to pass cargo feature flags, and `--fresh` to wipe local state.
+//! - `setup-wallets`: manages rootstock keystores for multi-client deployments.
+//!   supports `create`, `fund`, or `both`, each taking `--num-wallets 1-10`.
+//! - `create-pegin-tx`: requests a pegin address and prints bitcoin-wallet
+//!   instructions. requires `--rsk-address/-a`, with optional stream and packet
+//!   overrides via `--stream-amount/-s` and `--packet-number/-p`.
+//! - `setup-committee`: applies operators to a stream. requires `--stream-id/-s`,
+//!   defaults to the local environment, and accepts `--env` (`local` or `alphanet`)
+//!   plus optional `--role` when targeting alphanet.
 //!
-//! 1. **run**: launches union bridge client services
-//!    - use --num-clients to run multiple clients
-//!    - use --id to run a single client
-//!
-//! 2. **setup-wallets**: creates and funds wallets for multi-client deployments
-//!    - subcommands: create, fund, both
-//!    - each client gets TWO wallets:
-//!      * multi-client-N-member: for committee member operations
-//!      * multi-client-N-user: for user/transaction operations
-//!    - specify --num-wallets to control how many clients to setup (1-10)
-//!
-//! example usage:
+//! quick examples:
 //! ```bash
-//! # create wallets for 4 clients (8 wallets total: 4 member + 4 user)
-//! cargo run -- setup-wallets create --num-wallets 4
-//!
-//! # fund wallets for 4 clients
-//! cargo run -- setup-wallets fund --num-wallets 4
-//!
-//! # create and fund wallets in one command
+//! cargo run -- run -n 4 --fresh
 //! cargo run -- setup-wallets both --num-wallets 4
-//!
-//! # run 4 clients
-//! cargo run -- run --num-clients 4
-//!
-//! # run with fresh databases
-//! cargo run -- run --num-clients 4 --fresh
+//! cargo run -- create-pegin-tx -a 0x1234...cdef -s 2_000_000 -p 7
+//! cargo run -- setup-committee -s 1
 //! ```
 
+mod committee;
 mod pegin;
-mod wallet_setup;
+mod rsk_wallet;
 
+use crate::committee::{CommitteeEnvironment, CommitteeRole};
 use anyhow::{anyhow, bail, Context, Result};
 use clap::{ArgAction, Parser, Subcommand};
 use nix::sys::signal::{kill, Signal};
@@ -112,6 +104,21 @@ enum Commands {
     SetupWallets {
         #[command(subcommand)]
         action: WalletAction,
+    },
+    /// Apply operators to a stream for committee setup
+    #[command(name = "setup-committee")]
+    SetupCommittee {
+        /// Stream identifier to configure
+        #[arg(short = 's', long = "stream-id", value_name = "STREAM_ID")]
+        stream_id: u64,
+
+        /// Target environment (`local` or `alphanet`)
+        #[arg(long = "env", value_enum, default_value_t = CommitteeEnvironment::Local)]
+        env: CommitteeEnvironment,
+
+        /// Operator role when applying on alphanet
+        #[arg(long = "role", value_enum)]
+        role: Option<CommitteeRole>,
     },
 }
 
@@ -192,7 +199,7 @@ async fn main() -> Result<()> {
             let base_storage_path = std::env::var("BASE_STORAGE_PATH").context(
                 "BASE_STORAGE_PATH environment variable is required (e.g., export BASE_STORAGE_PATH=/Users/username)",
             )?;
-            wallet_setup::handle_wallet_setup(&action, &base_storage_path)?;
+            rsk_wallet::handle_wallet_setup(&action, &base_storage_path)?;
         }
         Commands::Run {
             num_clients,
@@ -213,6 +220,13 @@ async fn main() -> Result<()> {
             };
             run_clients(run_config, &base_storage_path).await?;
         }
+        Commands::SetupCommittee {
+            stream_id,
+            env,
+            role,
+        } => {
+            committee::run_committee_setup(stream_id, env, role).await?;
+        }
     }
 
     Ok(())
@@ -229,9 +243,7 @@ struct RunConfig {
 
 async fn run_clients(config: RunConfig, base_storage_path: &str) -> Result<()> {
     if config.num_clients.is_some() && config.client_id.is_some() {
-        return Err(anyhow!(
-            "Cannot specify both --num-clients and --id at the same time"
-        ));
+        return Err(anyhow!("Cannot specify both -n and --id at the same time"));
     }
 
     if config.fresh {

@@ -290,7 +290,7 @@ instance (1-10). This ensures no collisions between different clients for:
 You can run up to 10 clients using the `./run-client.sh` script.
 
 ```bash
-./run-client.sh --num-clients 4 --features anvil
+./run-client.sh -n 4 --features anvil
 ```
 
 #### Complete Workflow Example
@@ -308,7 +308,7 @@ anvil
 # Fund bitcoin wallets (checkout docker-integrated/ README)
 
 # 3. Run the clients
-./run-client.sh --num-clients 4 --features anvil
+./run-client.sh -n 4 --features anvil
 
 # 4. Set up multiclient wallets
 ./run-cli.sh setup-wallets both --num-wallets 4
