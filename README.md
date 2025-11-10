@@ -557,18 +557,23 @@ Then, through the `bitcoin-wallet` crate (started with `cargo run --release`) yo
 
 ## Creating Pegin Transactions
 
-To create a pegin transaction, you can use the `create_pegin_tx.sh` helper script:
+To create a pegin transaction, use the `run-cli` crate:
 
 ```bash
-# Set your RSK address and run the script
-RSK_ADDRESS=0x... ./create_pegin_tx.sh [stream_amount] [packet_number]
+cargo run -p run-cli -- create-pegin-tx \
+  --rsk-address 0x... \
+  --stream-amount [stream_amount] \
+  --packet-number [packet_number] \
+  [--user-api-url http://localhost:40001]
 ```
 
-The script will:
+The optional `--user-api-url` flag (or `USER_API_URL` environment variable) lets you point the CLI to a different user-api instance if you are not using the default `http://localhost:40001`.
+
+The command will:
 1. Query the user-api to get a pegin address
 2. Display the command to run in the bitcoin-wallet CLI
 
-After the script provides the command, open the bitcoin-wallet CLI and run:
+After the CLI prints the command, open the bitcoin-wallet CLI and run:
 ```
 create_pegin_tx <stream_amount> <packet_number> <pegin_address> <rsk_address>
 mine_block

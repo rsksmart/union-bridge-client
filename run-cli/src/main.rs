@@ -1,5 +1,5 @@
-use anyhow::{anyhow, bail, Context, Result};
-use clap::{ArgAction, Parser};
+use anyhow::{anyhow, Context, Result};
+use clap::{ArgAction, Args, Parser, Subcommand};
 use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
 use std::collections::HashMap;
@@ -12,9 +12,20 @@ use std::time::Duration;
 use tokio::signal;
 use tokio::sync::broadcast;
 
+mod pegin;
+
 #[derive(Debug, Parser, Clone)]
 #[command(name = "run-cli", about = "Run Union Bridge Operators")]
 struct Cli {
+    #[command(flatten)]
+    run_args: RunArgs,
+
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Debug, Args, Clone)]
+struct RunArgs {
     /// Number of clients to run (1-10). If provided, multi-client mode is used.
     #[arg(short = 'n', long = "num-clients")]
     num_clients: Option<u8>,
@@ -34,6 +45,12 @@ struct Cli {
     /// Path to multiclient.env. Defaults to ./multiclient.env if it exists
     #[arg(long = "env-file")]
     env_file: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Subcommand)]
+enum Command {
+    /// Fetch a pegin address and print the command to create the transaction
+    CreatePeginTx(pegin::CreatePeginTxArgs),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -78,7 +95,15 @@ struct ManagedClient {
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+    let Cli { run_args, command } = cli;
 
+    match command {
+        Some(Command::CreatePeginTx(args)) => pegin::create_pegin_tx(args).await,
+        None => run_clients(run_args).await,
+    }
+}
+
+async fn run_clients(cli: RunArgs) -> Result<()> {
     if cli.num_clients.is_some() && cli.client_id.is_some() {
         return Err(anyhow!(
             "Cannot specify both --num-clients and --id at the same time"
@@ -311,7 +336,7 @@ fn fresh_cleanup(base_storage_path: &str) -> Result<()> {
     Ok(())
 }
 
-fn cargo_args_for_service(cli: &Cli, svc: &Service) -> Vec<String> {
+fn cargo_args_for_service(cli: &RunArgs, svc: &Service) -> Vec<String> {
     let mut args: Vec<String> = vec!["run".into(), "--bin".into(), svc.name().into()];
     if let Some(f) = &cli.features {
         args.push("--features".into());
@@ -327,7 +352,7 @@ fn cargo_args_for_service(cli: &Cli, svc: &Service) -> Vec<String> {
 }
 
 fn launch_client_services(
-    cli: &Cli,
+    cli: &RunArgs,
     envs: Vec<(String, String)>,
     client_id: &str,
     shutdown_tx: &broadcast::Sender<()>,
