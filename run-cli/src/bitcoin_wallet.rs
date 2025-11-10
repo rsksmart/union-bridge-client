@@ -1,10 +1,3 @@
-//! bitcoin funding helper for operator stacks
-//!
-//! supports three environments:
-//! - cargo: read addresses from local coordinator logs
-//! - docker-local: query local docker compose projects
-//! - docker-alphanet: query remote alphanet docker compose projects
-
 use anyhow::{anyhow, bail, Context, Result};
 use clap::ValueEnum;
 use std::fs;

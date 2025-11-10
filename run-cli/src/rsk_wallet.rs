@@ -1,10 +1,3 @@
-//! wallet setup functionality for multi-client deployments
-//!
-//! this module handles creating and funding wallets for multi-client setups.
-//! each client gets two wallets:
-//! - multi-client-N-member: for committee member operations
-//! - multi-client-N-user: for user/transaction operations
-
 use anyhow::{anyhow, bail, Context, Result};
 use clap::ValueEnum;
 use key_manager::key_manager::KeyManager;
@@ -13,9 +6,8 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::Duration;
 
-use crate::{validate_1_10, WalletAction};
+use crate::validate_1_10;
 
 const LOCAL_PROJECT_NAMES: [&str; 4] = ["op_1", "op_2", "op_3", "op_4"];
 const AWS_PROJECT_NAME: &str = "union-operator";
@@ -47,47 +39,36 @@ impl std::fmt::Display for RpcUrl {
 
 #[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
 #[value(rename_all = "kebab-case")]
-pub enum WalletEnv {
-    Cargo,
-    DockerLocal,
-    DockerAlphanet,
+pub enum RootstockFundingEnv {
+    LocalDocker,
+    Alphanet,
 }
 
-impl Default for WalletEnv {
+impl Default for RootstockFundingEnv {
     fn default() -> Self {
-        WalletEnv::Cargo
+        RootstockFundingEnv::LocalDocker
     }
 }
 
-/// handles wallet setup based on the requested action
-pub fn handle_wallet_setup(action: &WalletAction, base_storage_path: Option<&str>) -> Result<()> {
-    match action {
-        WalletAction::Create { num_wallets } => {
-            let base = require_base_storage_path(base_storage_path)?;
-            validate_1_10(*num_wallets, "num-wallets")?;
-            setup_wallets_create(*num_wallets, base)?;
-            print_wallet_summary("create", *num_wallets);
+/// handles creating local rootstock wallets for multi-client deployments
+pub fn handle_wallet_creation(num_wallets: u8, base_storage_path: Option<&str>) -> Result<()> {
+    let base = require_base_storage_path(base_storage_path)?;
+    validate_1_10(num_wallets, "num-wallets")?;
+
+    setup_wallets_create(num_wallets, base)?;
+    print_wallet_summary("create", num_wallets);
+
+    Ok(())
+}
+
+/// handles funding rootstock wallets for operator stacks
+pub async fn handle_operator_funding(env: RootstockFundingEnv) -> Result<()> {
+    match env {
+        RootstockFundingEnv::LocalDocker => {
+            fund_docker_local()?;
         }
-        WalletAction::Fund { num_wallets, env } => match env.unwrap_or_default() {
-            WalletEnv::Cargo => {
-                let base = require_base_storage_path(base_storage_path)?;
-                validate_1_10(*num_wallets, "num-wallets")?;
-                setup_wallets_fund(*num_wallets, base)?;
-                print_wallet_summary("fund", *num_wallets);
-            }
-            WalletEnv::DockerLocal => {
-                fund_docker_local()?;
-            }
-            WalletEnv::DockerAlphanet => {
-                print_instructions()?;
-            }
-        },
-        WalletAction::Both { num_wallets } => {
-            let base = require_base_storage_path(base_storage_path)?;
-            validate_1_10(*num_wallets, "num-wallets")?;
-            setup_wallets_create(*num_wallets, base)?;
-            setup_wallets_fund(*num_wallets, base)?;
-            print_wallet_summary("both", *num_wallets);
+        RootstockFundingEnv::Alphanet => {
+            print_instructions()?;
         }
     }
     Ok(())
@@ -152,59 +133,6 @@ fn create_or_use_keystore(keystore_path: &Path, file_name: &str, password: &str)
     Ok(())
 }
 
-fn derive_address_from_keystore(keystore_file: &Path, password: &str) -> Result<String> {
-    if !keystore_file.exists() {
-        bail!("keystore file not found: {}", keystore_file.display());
-    }
-
-    // derive address using KeyManager directly
-    let (_public_key, address) = KeyManager::derive_public_key_and_address(keystore_file, password)
-        .context("failed to derive address from keystore")?;
-
-    // add 0x prefix if not present
-    let address = if address.starts_with("0x") {
-        address
-    } else {
-        format!("0x{}", address)
-    };
-
-    Ok(address)
-}
-
-fn fund_wallet(wallet_name: &str, address: &str) -> Result<()> {
-    println!(
-        "[fund-wallets] funding {} at address {}",
-        wallet_name, address
-    );
-
-    let anvil_address = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
-
-    let output = Command::new("cast")
-        .args([
-            "send",
-            "--unlocked",
-            "--from",
-            anvil_address,
-            address,
-            "--value",
-            "1000000000000000000",
-            "--rpc-url",
-            "http://127.0.0.1:8545",
-        ])
-        .output()
-        .context("failed to execute cast")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("cast send failed: {}", stderr);
-    }
-
-    println!("[fund-wallets] successfully funded {}", wallet_name);
-    std::thread::sleep(Duration::from_millis(100));
-
-    Ok(())
-}
-
 fn setup_wallets_create(num_wallets: u8, base_storage_path: &str) -> Result<()> {
     let password = std::env::var("KEY_STORE_PASSWORD")
         .context("KEY_STORE_PASSWORD environment variable is required")?;
@@ -229,93 +157,6 @@ fn setup_wallets_create(num_wallets: u8, base_storage_path: &str) -> Result<()> 
 
     println!("[wallet-setup] wallet creation complete! all keystores have been created.");
     Ok(())
-}
-
-fn setup_wallets_fund(num_wallets: u8, base_storage_path: &str) -> Result<()> {
-    let password = std::env::var("KEY_STORE_PASSWORD")
-        .context("KEY_STORE_PASSWORD environment variable is required")?;
-
-    let keystore_base_path = PathBuf::from(base_storage_path)
-        .join(".union_bridge")
-        .join("keystore");
-
-    if !keystore_base_path.exists() {
-        bail!(
-            "keystore directory not found: {}. make sure you've created wallets first.",
-            keystore_base_path.display()
-        );
-    }
-
-    println!("[fund-wallets] starting to fund wallets...");
-    println!(
-        "[fund-wallets] using keystores from: {}",
-        keystore_base_path.display()
-    );
-
-    let mut funded_count = 0;
-    let mut failed_count = 0;
-
-    for i in 1..=num_wallets {
-        let (funded, failed) = fund_member_wallet(i, &keystore_base_path, &password)?;
-        funded_count += funded;
-        failed_count += failed;
-    }
-
-    println!("[fund-wallets] funding complete!");
-    println!(
-        "[fund-wallets] successfully funded: {} wallets",
-        funded_count
-    );
-    println!("[fund-wallets] user wallets were skipped");
-
-    if failed_count > 0 {
-        println!("[fund-wallets] failed to fund: {} wallets", failed_count);
-        bail!("some wallets failed to fund");
-    } else {
-        println!("[fund-wallets] all wallets funded successfully!");
-    }
-
-    Ok(())
-}
-
-fn fund_member_wallet(
-    client_index: u8,
-    keystore_base_path: &Path,
-    password: &str,
-) -> Result<(usize, usize)> {
-    let wallet_name = format!("multi-client-{}-member", client_index);
-    let wallet_path = keystore_base_path.join(&wallet_name);
-    let mut funded_count = 0usize;
-    let mut failed_count = 0usize;
-
-    if wallet_path.exists() {
-        match derive_address_from_keystore(&wallet_path, password) {
-            Ok(address) => match fund_wallet(&wallet_name, &address) {
-                Ok(_) => {
-                    funded_count += 1;
-                    println!("[fund-wallets] {} funded successfully", wallet_name);
-                }
-                Err(e) => {
-                    failed_count += 1;
-                    eprintln!("[fund-wallets] failed to fund {}: {}", wallet_name, e);
-                }
-            },
-            Err(e) => {
-                failed_count += 1;
-                eprintln!(
-                    "[fund-wallets] failed to derive address for {}: {}",
-                    wallet_name, e
-                );
-            }
-        }
-    } else {
-        eprintln!("[fund-wallets] wallet not found: {}", wallet_path.display());
-        failed_count += 1;
-    }
-
-    println!("[fund-wallets] ---");
-
-    Ok((funded_count, failed_count))
 }
 
 fn fund_docker_local() -> Result<()> {

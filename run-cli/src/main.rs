@@ -4,10 +4,14 @@
 //! - `run`: orchestrates the four union bridge services for one or many clients.
 //!   use `-n` for multi-client mode, `--id` for a single client,
 //!   `--features` to pass cargo feature flags, and `--fresh` to wipe local state.
-//! - `setup-wallets`: manages rootstock keystores for multi-client deployments.
-//!   use `create`, `fund`, or `both` (each taking `--num-wallets 1-10` in cargo
-//!   mode). `fund` accepts `--env cargo` (default) for local keystores, or
-//!   `--env docker-local` / `--env docker-alphanet` for operator stacks.
+//! - `create-rootstock-wallets`: creates 4 rootstock keystores for local multi-client
+//!   deployments.
+//! - `fund-ops-rootstock`: funds rootstock wallets for operator stacks.
+//!   use `--env local-docker` (default) for local docker compose stacks, or
+//!   `--env alphanet` for remote alphanet stacks.
+//! - `fund-ops-bitcoin`: collects bitcoin funding addresses for operators.
+//!   use `--env local` (default) for cargo-run coordinators, `--env local-docker`
+//!   for local docker compose stacks, or `--env alphanet` for remote stacks.
 //! - `create-pegin-tx`: requests a pegin address and prints bitcoin-wallet
 //!   instructions. requires `--rsk-address/-a`, with optional stream and packet
 //!   overrides via `--stream-amount/-s` and `--packet-number/-p`.
@@ -18,8 +22,9 @@
 //! quick examples:
 //! ```bash
 //! cargo run -- run -n 4 --fresh
-//! cargo run -- setup-wallets both --num-wallets 4
-//! cargo run -- setup-wallets fund --env docker-local
+//! cargo run -- create-rootstock-wallets
+//! cargo run -- fund-ops-rootstock --env local-docker
+//! cargo run -- fund-ops-bitcoin --env local
 //! cargo run -- create-pegin-tx -a 0x1234...cdef -s 2_000_000 -p 7
 //! cargo run -- setup-committee -s 1
 //! ```
@@ -31,7 +36,7 @@ mod rsk_wallet;
 
 use crate::bitcoin_wallet::BitcoinFundingEnv;
 use crate::committee::{CommitteeEnv, CommitteeRole};
-use crate::rsk_wallet::WalletEnv;
+use crate::rsk_wallet::RootstockFundingEnv;
 use anyhow::{anyhow, bail, Context, Result};
 use clap::{ArgAction, Parser, Subcommand};
 use nix::sys::signal::{kill, Signal};
@@ -105,18 +110,22 @@ enum Commands {
         )]
         packet_number: u64,
     },
-    /// Setup wallets for multi-client deployment
-    #[command(name = "setup-wallets")]
-    SetupWallets {
-        #[command(subcommand)]
-        action: WalletAction,
-    },
+    /// Create Rootstock wallets for local multi-client deployment (creates 4 wallets)
+    #[command(name = "create-rootstock-wallets")]
+    CreateRootstockWallets,
     /// Collect BitVMX funding addresses for operators
-    #[command(name = "fund-operators-bitcoin")]
+    #[command(name = "fund-ops-bitcoin")]
     FundOperatorsBitcoin {
-        /// Environment to target (local, docker-local, alphanet)
+        /// Environment to target (local, local-docker, alphanet)
         #[arg(long = "env", short = 'e', value_enum, default_value_t = BitcoinFundingEnv::Local)]
         env: BitcoinFundingEnv,
+    },
+    /// Fund Rootstock wallets for operator stacks
+    #[command(name = "fund-ops-rootstock")]
+    FundOperatorsRootstock {
+        /// Environment to target (local-docker, alphanet)
+        #[arg(long = "env", short = 'e', value_enum, default_value_t = RootstockFundingEnv::LocalDocker)]
+        env: RootstockFundingEnv,
     },
     /// Apply operators to a stream for committee setup
     #[command(name = "setup-committee")]
@@ -132,32 +141,6 @@ enum Commands {
         /// Operator role when applying on alphanet
         #[arg(long = "role", value_enum)]
         role: Option<CommitteeRole>,
-    },
-}
-
-#[derive(Debug, Subcommand, Clone)]
-enum WalletAction {
-    /// Create new wallets (member + user for each client)
-    Create {
-        /// Number of multi-clients to create wallets for (1-10)
-        #[arg(short = 'n', long = "num-wallets", default_value = "10")]
-        num_wallets: u8,
-    },
-    /// Fund existing wallets
-    Fund {
-        /// Number of multi-clients to fund wallets for (1-10)
-        #[arg(short = 'n', long = "num-wallets", default_value = "10")]
-        num_wallets: u8,
-
-        /// Funding environment (cargo, docker-local, docker-alphanet)
-        #[arg(long = "env", short = 'e', value_enum)]
-        env: Option<WalletEnv>,
-    },
-    /// Create and fund wallets in one step
-    Both {
-        /// Number of multi-clients to setup wallets for (1-10)
-        #[arg(short = 'n', long = "num-wallets", default_value = "10")]
-        num_wallets: u8,
     },
 }
 
@@ -212,12 +195,15 @@ async fn main() -> Result<()> {
         } => {
             pegin::create_pegin_tx(rsk_address, stream_amount, packet_number).await?;
         }
-        Commands::SetupWallets { action } => {
+        Commands::CreateRootstockWallets => {
             let base_storage_path = std::env::var("BASE_STORAGE_PATH").ok();
-            rsk_wallet::handle_wallet_setup(&action, base_storage_path.as_deref())?;
+            rsk_wallet::handle_wallet_creation(4, base_storage_path.as_deref())?;
         }
         Commands::FundOperatorsBitcoin { env } => {
             bitcoin_wallet::handle_bitcoin_funding(env).await?;
+        }
+        Commands::FundOperatorsRootstock { env } => {
+            rsk_wallet::handle_operator_funding(env).await?;
         }
         Commands::Run {
             num_clients,
