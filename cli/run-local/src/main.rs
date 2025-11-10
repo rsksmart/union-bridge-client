@@ -21,8 +21,12 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tokio::runtime::Runtime;
 use tokio::signal;
 use tokio::sync::broadcast;
+
+// global state for panic handling
+static ACTIVE_CLIENTS: Mutex<Option<Vec<ManagedClient>>> = Mutex::new(None);
 
 #[derive(Debug, Parser, Clone)]
 #[command(name = "run-local", about = "Union Bridge Local Client Launcher")]
@@ -85,6 +89,28 @@ struct ManagedClient {
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
+    // install panic hook to ensure cleanup on panic
+    let default_panic = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        eprintln!("PANIC detected: {}", panic_info);
+        eprintln!("Attempting to shut down all services...");
+
+        // try to get clients from global state
+        if let Ok(mut guard) = ACTIVE_CLIENTS.lock() {
+            if let Some(clients) = guard.take() {
+                eprintln!("Found {} client(s) to shut down", clients.len());
+                // create a runtime for async cleanup since we're in a panic context
+                if let Ok(rt) = Runtime::new() {
+                    rt.block_on(teardown_all(clients));
+                    eprintln!("Emergency shutdown complete");
+                }
+            }
+        }
+
+        // call the default panic handler
+        default_panic(panic_info);
+    }));
+
     let cli = Cli::parse();
 
     // validate BASE_STORAGE_PATH is set
@@ -99,9 +125,14 @@ async fn main() -> Result<()> {
         env_file: cli.env_file,
     };
 
-    run_clients(run_config).await?;
+    let result = run_clients(run_config).await;
 
-    Ok(())
+    // cleanup global state on normal exit
+    if let Ok(mut guard) = ACTIVE_CLIENTS.lock() {
+        let _ = guard.take();
+    }
+
+    result
 }
 
 #[derive(Clone)]
@@ -132,6 +163,9 @@ async fn run_clients(config: RunConfig) -> Result<()> {
     let ids: Vec<u8> = config
         .client_id
         .map_or_else(|| vec![1, 2, 3, 4], |id| vec![id]);
+
+    // launch clients and store in global state immediately
+    let mut launch_error = None;
     for id in ids {
         let envs = build_env_for_client(id, &env_map)?;
         let client_id = format!("client-{}", id);
@@ -146,13 +180,26 @@ async fn run_clients(config: RunConfig) -> Result<()> {
                     client_id: client_id.to_string(),
                     services,
                 };
-                clients.push(client);
+                clients.push(client.clone());
+
+                // store in global state for panic handler
+                if let Ok(mut guard) = ACTIVE_CLIENTS.lock() {
+                    *guard = Some(clients.clone());
+                }
             }
-            Err(_) => {
+            Err(e) => {
                 println!("Failed to launch all services for {client_id}");
+                launch_error = Some(e);
                 break;
             }
         }
+    }
+
+    // if launch failed, teardown and return error
+    if let Some(err) = launch_error {
+        eprintln!("Launch failed, tearing down already-started clients...");
+        teardown_all(clients).await;
+        return Err(err);
     }
 
     // Ctrl+C handler
