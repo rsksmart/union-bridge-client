@@ -65,16 +65,12 @@ struct Cli {
 enum Commands {
     /// Run Union Bridge client services
     Run {
-        /// Number of clients to run (1-10). If provided, multi-client mode is used.
-        #[arg(short = 'n', long = "num-clients")]
-        num_clients: Option<u8>,
-
-        /// Run a single client with the specified ID (1-10). Defaults to 1 if neither mode flag is passed.
+        /// Run a single client with the specified ID (1-4). If not provided, runs 4 clients.
         #[arg(short = 'i', long = "id")]
         client_id: Option<u8>,
 
         /// Optional features to pass to cargo (e.g. "anvil").
-        #[arg(short = 'f', long = "features")]
+        #[arg(short = 'f', long = "features", default_value = "anvil")]
         features: Option<String>,
 
         /// Start with clear databases (removes existing)
@@ -209,7 +205,6 @@ async fn main() -> Result<()> {
             rsk_wallet::handle_operator_funding(env).await?;
         }
         Commands::Run {
-            num_clients,
             client_id,
             features,
             fresh,
@@ -219,7 +214,6 @@ async fn main() -> Result<()> {
                 "BASE_STORAGE_PATH environment variable is required (e.g., export BASE_STORAGE_PATH=/Users/username)",
             )?;
             let run_config = RunConfig {
-                num_clients,
                 client_id,
                 features,
                 fresh,
@@ -241,7 +235,6 @@ async fn main() -> Result<()> {
 
 #[derive(Clone)]
 struct RunConfig {
-    num_clients: Option<u8>,
     client_id: Option<u8>,
     features: Option<String>,
     fresh: bool,
@@ -249,10 +242,6 @@ struct RunConfig {
 }
 
 async fn run_clients(config: RunConfig, base_storage_path: &str) -> Result<()> {
-    if config.num_clients.is_some() && config.client_id.is_some() {
-        return Err(anyhow!("Cannot specify both -n and --id at the same time"));
-    }
-
     if config.fresh {
         fresh_cleanup(base_storage_path)?;
     }
@@ -269,8 +258,10 @@ async fn run_clients(config: RunConfig, base_storage_path: &str) -> Result<()> {
     // Keep all clients and join handles for monitors
     let mut clients: Vec<ManagedClient> = Vec::new();
 
-    let total = config.num_clients.unwrap_or(1);
-    for id in 1..=total {
+    let ids: Vec<u8> = config
+        .client_id
+        .map_or_else(|| vec![1, 2, 3, 4], |id| vec![id]);
+    for id in ids {
         let envs = build_env_for_client(id, &env_map, base_storage_path)?;
         let client_id = format!("client-{}", id);
 
@@ -322,9 +313,9 @@ async fn run_clients(config: RunConfig, base_storage_path: &str) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn validate_1_10(value: u8, name: &str) -> Result<()> {
-    if !(1..=10).contains(&value) {
-        return Err(anyhow!("{} must be between 1 and 10", name));
+pub(crate) fn validate_1_4(value: u8, name: &str) -> Result<()> {
+    if !(1..=4).contains(&value) {
+        return Err(anyhow!("{} must be between 1 and 4", name));
     }
     Ok(())
 }
@@ -369,7 +360,7 @@ fn build_env_for_client(
     env_map: &HashMap<String, String>,
     base_storage_path: &str,
 ) -> Result<Vec<(String, String)>> {
-    validate_1_10(id, "CLIENT_ID")?;
+    validate_1_4(id, "CLIENT_ID")?;
     let get = |key: String| -> Result<String> {
         env_map
             .get(&key)

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::config::*;
-use crate::validate_1_10;
+use crate::validate_1_4;
 
 const LOG_MARKER: &str = "Got member signer with address";
 
@@ -26,7 +26,7 @@ impl std::fmt::Display for RpcUrl {
 /// handles creating local rootstock wallets for multi-client deployments
 pub fn handle_wallet_creation(num_wallets: u8, base_storage_path: Option<&str>) -> Result<()> {
     let base = require_base_storage_path(base_storage_path)?;
-    validate_1_10(num_wallets, "num-wallets")?;
+    validate_1_4(num_wallets, "num-wallets")?;
 
     setup_wallets_create(num_wallets, base)?;
     print_wallet_summary("create", num_wallets);
