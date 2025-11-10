@@ -2,7 +2,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use crate::config::Environment;
+use crate::environments::Environment;
 
 #[derive(Debug, Serialize)]
 struct PeginAddressRequest {

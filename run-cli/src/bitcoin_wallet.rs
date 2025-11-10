@@ -5,7 +5,8 @@ use std::process::Command;
 use std::time::Duration;
 use tokio::time::sleep;
 
-use crate::config::*;
+use crate::constants::{AWS_SSH_USER, ONE_OPERATOR_COMPOSE_PROJECT, OPERATOR_IDS};
+use crate::environments::*;
 
 const FUND_AMOUNT: &str = "20002000";
 const LOG_MARKER: &str = "Received BitVMX Funding Address:";
@@ -61,35 +62,36 @@ async fn collect_local_addresses() -> Result<Vec<String>> {
 async fn collect_local_docker_addresses() -> Result<Vec<String>> {
     trigger_user_api_endpoints(Environment::LocalDocker).await?;
 
-    collect_addresses_from_logs(ALL_OPS_COMPOSE_PROJECTS.iter().copied(), |project| {
-        run_docker_compose_logs(project)
-    })
+    let projects: Vec<String> = OPERATOR_IDS.iter().map(|id| format!("op_{}", id)).collect();
+    collect_addresses_from_logs(projects, |project| run_docker_compose_logs(project))
 }
 
 async fn collect_alphanet_addresses() -> Result<Vec<String>> {
     trigger_user_api_endpoints(Environment::Alphanet).await?;
 
     collect_addresses_from_logs(ALPHANET_HOSTS.iter().copied(), |host| {
-        let target = format!("{}@{}", SSH_USER, host);
-        run_ssh_docker_compose_logs(&target, ONE_OP_COMPOSE_PROJECT)
+        let target = format!("{}@{}", AWS_SSH_USER, host);
+        run_ssh_docker_compose_logs(&target, ONE_OPERATOR_COMPOSE_PROJECT)
     })
 }
 
-fn collect_addresses_from_logs<T, F>(items: T, mut get_logs: F) -> Result<Vec<String>>
+fn collect_addresses_from_logs<T, I, F>(items: T, mut get_logs: F) -> Result<Vec<String>>
 where
-    T: Iterator<Item = &'static str>,
+    T: IntoIterator<Item = I>,
+    I: AsRef<str>,
     F: FnMut(&str) -> Result<String>,
 {
     let mut addresses = Vec::new();
     for item in items {
-        let logs = get_logs(item)?;
+        let item_ref = item.as_ref();
+        let logs = get_logs(item_ref)?;
         if let Some(address) = extract_last_bitvmx_address(&logs) {
-            println!("{} -> {}", item, address);
+            println!("{} -> {}", item_ref, address);
             addresses.push(address);
         } else {
             bail!(
                 "no BitVMX funding address found in docker logs for {}. ensure the stack is running and has emitted the log line.",
-                item
+                item_ref
             );
         }
     }

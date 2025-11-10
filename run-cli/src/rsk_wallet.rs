@@ -6,7 +6,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::config::*;
+use crate::constants::{
+    AWS_SSH_USER, LOCAL_ANVIL_ADDRESS, ONE_OPERATOR_COMPOSE_PROJECT, OPERATOR_IDS,
+};
+use crate::environments::*;
 use crate::validate_1_4;
 
 const LOG_MARKER: &str = "Got member signer with address";
@@ -139,7 +142,7 @@ fn fund_local_docker() -> Result<()> {
     println!("[docker-fund] funding operator wallets via local anvil");
     let signers = collect_local_signers()?;
     let unique = unique_addresses(&signers);
-    let expected = ALL_OPS_COMPOSE_PROJECTS.len();
+    let expected = OPERATOR_IDS.len();
     if unique.len() < expected {
         bail!(
             "expected {} RSK address(es) but found {}. ensure all required operator stacks are running and have emitted signer addresses.",
@@ -202,17 +205,18 @@ fn print_instructions() -> Result<()> {
 
 fn collect_local_signers() -> Result<Vec<(String, String)>> {
     let mut signers = Vec::new();
-    for project in ALL_OPS_COMPOSE_PROJECTS {
-        eprintln!("[docker-fund] running: docker compose -p {} logs", project);
+    for id in OPERATOR_IDS {
+        let project = format!("op_{}", id);
+        eprintln!("[docker-fund] running: docker compose -p {} logs", &project);
         let output = Command::new("docker")
-            .args(["compose", "-p", project, "logs"])
+            .args(["compose", "-p", &project, "logs"])
             .output()
-            .with_context(|| format!("failed to run `docker compose -p {} logs`", project))?;
+            .with_context(|| format!("failed to run `docker compose -p {} logs`", &project))?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!(
                 "`docker compose -p {} logs` failed with: {}",
-                project,
+                &project,
                 stderr.trim()
             );
         }
@@ -237,19 +241,25 @@ fn collect_local_signers() -> Result<Vec<(String, String)>> {
 fn collect_alphanet_signers() -> Result<Vec<(String, String)>> {
     let mut signers = Vec::new();
     for host in ALPHANET_HOSTS {
-        let target = format!("{}@{}", SSH_USER, host);
+        let target = format!("{}@{}", AWS_SSH_USER, host);
         eprintln!(
             "[docker-fund] running: ssh {} docker compose -p {} logs",
-            target, ONE_OP_COMPOSE_PROJECT
+            target, ONE_OPERATOR_COMPOSE_PROJECT
         );
         let output = Command::new("ssh")
             .arg(&target)
-            .args(["docker", "compose", "-p", ONE_OP_COMPOSE_PROJECT, "logs"])
+            .args([
+                "docker",
+                "compose",
+                "-p",
+                ONE_OPERATOR_COMPOSE_PROJECT,
+                "logs",
+            ])
             .output()
             .with_context(|| {
                 format!(
                     "failed to run `ssh {} docker compose -p {} logs`",
-                    target, ONE_OP_COMPOSE_PROJECT
+                    target, ONE_OPERATOR_COMPOSE_PROJECT
                 )
             })?;
         if !output.status.success() {
@@ -257,7 +267,7 @@ fn collect_alphanet_signers() -> Result<Vec<(String, String)>> {
             bail!(
                 "`ssh {} docker compose -p {} logs` failed with: {}",
                 target,
-                ONE_OP_COMPOSE_PROJECT,
+                ONE_OPERATOR_COMPOSE_PROJECT,
                 stderr.trim()
             );
         }

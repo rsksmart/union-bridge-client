@@ -31,12 +31,14 @@
 
 mod bitcoin_wallet;
 mod committee;
-mod config;
+mod constants;
+mod environments;
 mod pegin;
 mod rsk_wallet;
 
 use crate::committee::CommitteeRole;
-use crate::config::{Environment, OPERATOR_IDS};
+use crate::constants::OPERATOR_IDS;
+use crate::environments::Environment;
 use anyhow::{anyhow, bail, Context, Result};
 use clap::{ArgAction, Parser, Subcommand};
 use nix::sys::signal::{kill, Signal};

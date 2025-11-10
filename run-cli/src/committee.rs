@@ -8,7 +8,7 @@ use reqwest::Client;
 use serde::Serialize;
 use tokio::time::sleep;
 
-use crate::config::Environment;
+use crate::environments::Environment;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
 #[value(rename_all = "lowercase")]
