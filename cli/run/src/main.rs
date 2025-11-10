@@ -29,7 +29,7 @@ use tokio::sync::broadcast;
 static ACTIVE_CLIENTS: Mutex<Option<Vec<ManagedClient>>> = Mutex::new(None);
 
 #[derive(Debug, Parser, Clone)]
-#[command(name = "run-local", about = "Union Bridge Local Client Launcher")]
+#[command(name = "run", about = "Union Bridge Local Client Launcher")]
 struct Cli {
     /// Run a single client with the specified ID (1-4). If not provided, runs 4 clients.
     #[arg(short = 'i', long = "id")]

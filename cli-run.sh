@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 
-# wrapper script for run-local to run local operators
-# usage: ./run-local.sh --id 1 --fresh
-#        ./run-local.sh --features anvil
-#        ./run-local.sh --help
+# wrapper script for run to run local operators
+# usage: ./cli-run.sh --id 1 --fresh
+#        ./cli-run.sh --features anvil
+#        ./cli-run.sh --help
 
 set -euo pipefail
 
 # change to script directory to ensure relative paths work
 cd "$(dirname "$0")"
 
-# forward all arguments to run-local
-RUST_BACKTRACE=0 exec cargo run --manifest-path cli/run-local/Cargo.toml -- "$@"
+# forward all arguments to run
+RUST_BACKTRACE=0 exec cargo run --manifest-path cli/run/Cargo.toml -- "$@"

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["run-local", "operations"]
+members = ["run", "operations"]
 
 [workspace.dependencies]
 anyhow = "1.0.94"
