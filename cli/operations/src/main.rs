@@ -172,10 +172,10 @@ async fn main() -> Result<()> {
         },
         Commands::Operator { command } => match command {
             OperatorCommands::Fund { env } => {
-                println!("=== Funding Bitcoin addresses ===");
-                bitcoin_wallet::handle_bitcoin_funding(env).await?;
                 println!("\n=== Funding Rootstock wallets ===");
                 rsk_wallet::handle_operator_funding(env).await?;
+                println!("=== Funding Bitcoin addresses ===");
+                bitcoin_wallet::handle_bitcoin_funding(env).await?;
             }
             OperatorCommands::ApplyToStream {
                 stream_id,
