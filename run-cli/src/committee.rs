@@ -9,6 +9,7 @@ use serde::Serialize;
 use tokio::time::sleep;
 
 use crate::environments::Environment;
+use crate::validate_1_4;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
 #[value(rename_all = "lowercase")]
@@ -69,6 +70,7 @@ struct Funding {
 pub async fn run_committee_setup(
     stream_id: u64,
     environment: Environment,
+    operator_id: Option<u8>,
     role: Option<CommitteeRole>,
 ) -> Result<()> {
     let client = Client::new();
@@ -76,7 +78,7 @@ pub async fn run_committee_setup(
     let endpoints = environment.user_api_endpoints();
 
     match environment {
-        Environment::Local => {
+        Environment::Local | Environment::LocalDocker => {
             if role.is_some() {
                 eprintln!("Warning: --role is ignored in local environment");
             }
@@ -109,16 +111,25 @@ pub async fn run_committee_setup(
                 )
             })?;
 
+            let op_id = operator_id.ok_or_else(|| {
+                anyhow!(
+                    "--operator-id is required when using --env {}",
+                    environment.get_name()
+                )
+            })?;
+
+            validate_1_4(op_id, "operator-id")?;
+
             let endpoint = endpoints
-                .first()
-                .expect("No user-api endpoints configured; please review your config");
+                .get((op_id - 1) as usize)
+                .ok_or_else(|| anyhow!("Invalid operator-id {}", op_id))?;
 
             post_apply(&client, stream_id, endpoint, role).await?;
 
-            println!("Done. Applied operator to stream {} as {}", stream_id, role);
-        }
-        Environment::LocalDocker => {
-            bail!("Environment::LocalDocker is not supported for committee setup. Use Local, Alphanet, or Testnet.");
+            println!(
+                "Done. Applied operator {} to stream {} as {}",
+                op_id, stream_id, role
+            );
         }
     }
 

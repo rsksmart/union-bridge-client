@@ -18,8 +18,8 @@
 //! - `request-pegout`: requests a pegout (withdrawal from Rootstock to Bitcoin).
 //!   requires `--amount/-a` in satoshis, defaults to local environment.
 //! - `setup-committee`: applies operators to a stream. requires `--stream-id/-s`,
-//!   defaults to the local environment, and accepts `--env` (`local`, `alphanet`, or `testnet`)
-//!   plus optional `--role` when targeting alphanet or testnet.
+//!   defaults to the local environment, and accepts `--env` (`local`, `alphanet`, or `testnet`).
+//!   For alphanet/testnet, requires `--operator-id` (1-4) and `--role` (prover/verifier).
 //!
 //! quick examples:
 //! ```bash
@@ -152,11 +152,15 @@ enum Commands {
         stream_id: u64,
 
         /// Target environment (local, alphanet, testnet)
-        #[arg(long = "env", value_enum, default_value_t = Environment::Local)]
+        #[arg(short = 'e', long = "env", value_enum, default_value_t = Environment::Local)]
         env: Environment,
 
+        /// Operator ID (1-4) when applying on alphanet or testnet
+        #[arg(short = 'o', long = "operator-id", value_name = "OPERATOR_ID")]
+        operator_id: Option<u8>,
+
         /// Operator role when applying on alphanet or testnet
-        #[arg(long = "role", value_enum)]
+        #[arg(short = 'r', long = "role", value_enum)]
         role: Option<CommitteeRole>,
     },
 }
@@ -249,9 +253,10 @@ async fn main() -> Result<()> {
         Commands::SetupCommittee {
             stream_id,
             env,
+            operator_id,
             role,
         } => {
-            committee::run_committee_setup(stream_id, env, role).await?;
+            committee::run_committee_setup(stream_id, env, operator_id, role).await?;
         }
     }
 
