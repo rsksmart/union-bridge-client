@@ -9,6 +9,7 @@ use serde::Serialize;
 use tokio::time::sleep;
 
 use crate::environments::Environment;
+use crate::utils::{confirm_operation, request_to_string};
 use crate::validate_1_4;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
@@ -90,7 +91,7 @@ pub async fn run_committee_setup(
                     CommitteeRole::Verifier
                 };
 
-                post_apply(&client, stream_id, endpoint, role).await?;
+                post_apply(&client, stream_id, endpoint, role, environment).await?;
 
                 if idx + 1 != environment.user_api_endpoints().len() {
                     sleep(Duration::from_secs(5)).await;
@@ -124,7 +125,7 @@ pub async fn run_committee_setup(
                 .get((op_id - 1) as usize)
                 .ok_or_else(|| anyhow!("Invalid operator-id {}", op_id))?;
 
-            post_apply(&client, stream_id, endpoint, role).await?;
+            post_apply(&client, stream_id, endpoint, role, environment).await?;
 
             println!(
                 "Done. Applied operator {} to stream {} as {}",
@@ -141,8 +142,9 @@ async fn post_apply(
     stream_id: u64,
     endpoint: &str,
     role: CommitteeRole,
+    environment: Environment,
 ) -> Result<()> {
-    let request = ApplyStreamRequest {
+    let payload = ApplyStreamRequest {
         apply_to_stream: ApplyToStream {
             stream_id,
             role: role.as_str().to_string(),
@@ -151,13 +153,21 @@ async fn post_apply(
         },
     };
 
-    println!("Applying operator on {} as {}...", endpoint, role);
-
     let url = format!("http://{}/member/apply-stream", endpoint);
+
+    let request = client.post(&url).json(&payload).build()?;
+
+    if environment.is_remote() {
+        let description = request_to_string(&request);
+        if !confirm_operation(&description)? {
+            bail!("Operation cancelled by user");
+        }
+    } else {
+        println!("Applying operator on {} as {}...", endpoint, role);
+    }
+
     let response = client
-        .post(&url)
-        .json(&request)
-        .send()
+        .execute(request)
         .await
         .with_context(|| format!("Failed to connect to operator at {}", endpoint))?;
 

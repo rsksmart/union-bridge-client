@@ -3,6 +3,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 use crate::environments::Environment;
+use crate::utils::{confirm_operation, request_to_string};
 
 #[derive(Debug, Serialize)]
 struct PeginAddressRequest {
@@ -25,7 +26,7 @@ pub async fn create_pegin_tx(
     validate_rsk_address(&rsk_address)?;
     println!("Getting pegin address for {rsk_address}...");
 
-    let request = PeginAddressRequest {
+    let payload = PeginAddressRequest {
         rootstock_deposit_address: rsk_address.clone(),
         value: stream_amount,
         btc_reimbursement_pub_key: String::new(),
@@ -40,10 +41,17 @@ pub async fn create_pegin_tx(
     let endpoint = format!("http://{}/user/pegin-address", user_api_base);
 
     let client = Client::new();
+    let request = client.post(&endpoint).json(&payload).build()?;
+
+    if environment.is_remote() {
+        let description = request_to_string(&request);
+        if !confirm_operation(&description)? {
+            bail!("Operation cancelled by user");
+        }
+    }
+
     let response = client
-        .post(&endpoint)
-        .json(&request)
-        .send()
+        .execute(request)
         .await
         .context("Failed to connect to user-api")?;
 

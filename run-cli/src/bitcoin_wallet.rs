@@ -5,8 +5,9 @@ use std::process::Command;
 use std::time::Duration;
 use tokio::time::sleep;
 
-use crate::constants::{AWS_SSH_USER, ONE_OPERATOR_COMPOSE_PROJECT, OPERATOR_IDS};
+use crate::constants::{ONE_OPERATOR_COMPOSE_PROJECT, OPERATOR_IDS, REMOTE_SSH_USER};
 use crate::environments::*;
+use crate::utils::{command_to_string, confirm_operation, request_to_string};
 
 const FUND_AMOUNT: &str = "20002000";
 const LOG_MARKER: &str = "Received BitVMX Funding Address:";
@@ -15,7 +16,7 @@ pub async fn handle_bitcoin_funding(env: Environment) -> Result<()> {
     let addresses = match env {
         Environment::Local => collect_local_addresses().await?,
         Environment::LocalDocker => collect_local_docker_addresses().await?,
-        Environment::Alphanet | Environment::Testnet => collect_aws_addresses(env).await?,
+        Environment::Alphanet | Environment::Testnet => collect_remote_addresses(env).await?,
     };
 
     if addresses.is_empty() {
@@ -29,7 +30,7 @@ pub async fn handle_bitcoin_funding(env: Environment) -> Result<()> {
 }
 
 async fn collect_local_addresses() -> Result<Vec<String>> {
-    trigger_user_api_endpoints(Environment::Local).await?;
+    request_bitvmx_address_user_api(Environment::Local).await?;
 
     let logs_dir = cargo_logs_dir()?;
     let mut addresses = Vec::new();
@@ -60,19 +61,19 @@ async fn collect_local_addresses() -> Result<Vec<String>> {
 }
 
 async fn collect_local_docker_addresses() -> Result<Vec<String>> {
-    trigger_user_api_endpoints(Environment::LocalDocker).await?;
+    request_bitvmx_address_user_api(Environment::LocalDocker).await?;
 
     let projects: Vec<String> = OPERATOR_IDS.iter().map(|id| format!("op_{}", id)).collect();
     collect_addresses_from_logs(projects, |project| run_docker_compose_logs(project))
 }
 
-async fn collect_aws_addresses(env: Environment) -> Result<Vec<String>> {
-    trigger_user_api_endpoints(env).await?;
+async fn collect_remote_addresses(env: Environment) -> Result<Vec<String>> {
+    request_bitvmx_address_user_api(env).await?;
 
     let hosts = env.hosts();
 
     collect_addresses_from_logs(hosts, |host| {
-        let target = format!("{}@{}", AWS_SSH_USER, host);
+        let target = format!("{}@{}", REMOTE_SSH_USER, host);
         run_ssh_docker_compose_logs(&target, ONE_OPERATOR_COMPOSE_PROJECT)
     })
 }
@@ -100,8 +101,9 @@ where
     Ok(addresses)
 }
 
-async fn trigger_user_api_endpoints(env: Environment) -> Result<()> {
+async fn request_bitvmx_address_user_api(env: Environment) -> Result<()> {
     let endpoints = env.user_api_endpoints();
+
     println!("Triggering BitVMX endpoints: {} ...", endpoints.join(", "));
 
     sleep(Duration::from_secs(10)).await;
@@ -113,10 +115,20 @@ async fn trigger_user_api_endpoints(env: Environment) -> Result<()> {
 
     for endpoint in &endpoints {
         let url = format!("http://{}/member/bitvmx-address", endpoint);
-        println!("GET {}", url);
+
+        let request = client.get(&url).build()?;
+
+        if env.is_remote() {
+            let description = request_to_string(&request);
+            if !confirm_operation(&description)? {
+                bail!("Operation cancelled by user");
+            }
+        } else {
+            println!("GET {}", url);
+        }
+
         let response = client
-            .get(&url)
-            .send()
+            .execute(request)
             .await
             .with_context(|| format!("failed to fetch {}", url))?;
 
@@ -162,10 +174,14 @@ fn run_ssh_docker_compose_logs(target: &str, project: &str) -> Result<String> {
     let mut cmd = Command::new("ssh");
     cmd.arg(target)
         .args(["docker", "compose", "-p", project, "logs"]);
-    run_command_get_stdout(
-        cmd,
-        &format!("`ssh {} docker compose -p {} logs`", target, project),
-    )
+
+    let cmd_str = command_to_string(&cmd);
+
+    if !confirm_operation(&cmd_str)? {
+        bail!("Operation cancelled by user");
+    }
+
+    run_command_get_stdout(cmd, &format!("`{}`", cmd_str))
 }
 
 fn extract_last_bitvmx_address(log_content: &str) -> Option<String> {

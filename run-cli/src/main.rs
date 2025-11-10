@@ -14,7 +14,7 @@
 //! ## operator
 //! commands for managing committee members and funding
 //! - `fund`: collects bitcoin addresses and funds rootstock wallets for operators
-//! - `apply-to-stream`: applies operator to a stream for committee setup
+//! - `apply-stream`: applies operator to a stream for committee setup
 //!   - for local: applies all 4 operators automatically
 //!   - for alphanet/testnet: requires `--operator-id` (1-4) and `--role` (prover/verifier)
 //!
@@ -28,7 +28,7 @@
 //! cargo run -- run --id 1 --fresh
 //! cargo run -- setup create-rootstock-wallets
 //! cargo run -- operator fund --env local-docker
-//! cargo run -- operator apply-to-stream -s 1 --env alphanet -o 1 -r prover
+//! cargo run -- operator apply-stream -s 1 --env alphanet -o 1 -r prover
 //! cargo run -- user pegin -a 0x1234...cdef -s 2_000_000 -p 7
 //! cargo run -- user pegout -a 1000000
 //! ```
@@ -40,6 +40,7 @@ mod environments;
 mod pegin;
 mod pegout;
 mod rsk_wallet;
+mod utils;
 
 use crate::committee::CommitteeRole;
 use crate::constants::OPERATOR_IDS;
@@ -121,7 +122,7 @@ enum OperatorCommands {
         env: Environment,
     },
     /// Apply operator to a stream for committee setup
-    #[command(name = "apply-to-stream")]
+    #[command(name = "apply-stream")]
     ApplyToStream {
         /// Stream identifier to configure
         #[arg(short = 's', long = "stream-id", value_name = "STREAM_ID")]

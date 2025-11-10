@@ -2713,6 +2713,7 @@ dependencies = [
  "reqwest",
  "rpassword",
  "serde",
+ "serde_json",
  "tokio",
 ]
 

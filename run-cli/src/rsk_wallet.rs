@@ -7,9 +7,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::constants::{
-    AWS_SSH_USER, LOCAL_ANVIL_ADDRESS, ONE_OPERATOR_COMPOSE_PROJECT, OPERATOR_IDS,
+    LOCAL_ANVIL_ADDRESS, ONE_OPERATOR_COMPOSE_PROJECT, OPERATOR_IDS, REMOTE_SSH_USER,
 };
 use crate::environments::*;
+use crate::utils::{command_to_string, confirm_operation};
 use crate::validate_1_4;
 
 const LOG_MARKER: &str = "Got member signer with address";
@@ -162,7 +163,7 @@ fn print_instructions(env: Environment) -> Result<()> {
         "[docker-fund] gathering operator wallets from {} hosts",
         env_name
     );
-    let signers = collect_aws_signers(&hosts)?;
+    let signers = collect_remote_member_addresses(&hosts)?;
     let unique = unique_addresses(&signers);
     let expected = hosts.len();
     if unique.len() < expected {
@@ -235,38 +236,33 @@ fn collect_local_signers() -> Result<Vec<(String, String)>> {
     Ok(signers)
 }
 
-fn collect_aws_signers(hosts: &[String]) -> Result<Vec<(String, String)>> {
+fn collect_remote_member_addresses(hosts: &[String]) -> Result<Vec<(String, String)>> {
     let mut signers = Vec::new();
     for host in hosts {
-        let target = format!("{}@{}", AWS_SSH_USER, host);
-        eprintln!(
-            "[docker-fund] running: ssh {} docker compose -p {} logs",
-            target, ONE_OPERATOR_COMPOSE_PROJECT
-        );
-        let output = Command::new("ssh")
-            .arg(&target)
-            .args([
-                "docker",
-                "compose",
-                "-p",
-                ONE_OPERATOR_COMPOSE_PROJECT,
-                "logs",
-            ])
+        let target = format!("{}@{}", REMOTE_SSH_USER, host);
+
+        let mut cmd = Command::new("ssh");
+        cmd.arg(&target).args([
+            "docker",
+            "compose",
+            "-p",
+            ONE_OPERATOR_COMPOSE_PROJECT,
+            "logs",
+        ]);
+
+        let cmd_str = command_to_string(&cmd);
+
+        if !confirm_operation(&cmd_str)? {
+            bail!("Operation cancelled by user");
+        }
+
+        let output = cmd
             .output()
-            .with_context(|| {
-                format!(
-                    "failed to run `ssh {} docker compose -p {} logs`",
-                    target, ONE_OPERATOR_COMPOSE_PROJECT
-                )
-            })?;
+            .with_context(|| format!("failed to run `{}`", cmd_str))?;
+
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!(
-                "`ssh {} docker compose -p {} logs` failed with: {}",
-                target,
-                ONE_OPERATOR_COMPOSE_PROJECT,
-                stderr.trim()
-            );
+            bail!("`{}` failed with: {}", cmd_str, stderr.trim());
         }
         let stdout = String::from_utf8(output.stdout).context("ssh output is not valid utf-8")?;
         let mut addresses = extract_signer_addresses(&stdout);

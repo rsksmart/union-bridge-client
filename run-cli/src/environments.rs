@@ -31,13 +31,18 @@ impl Environment {
         }
     }
 
-    /// returns the remote hosts for AWS-based environments (Alphanet, Testnet)
+    /// returns true if this is a remote environment (alphanet or testnet)
+    pub fn is_remote(&self) -> bool {
+        matches!(self, Environment::Alphanet | Environment::Testnet)
+    }
+
+    /// returns the remote hosts for remote environments (Alphanet, Testnet)
     pub fn hosts(&self) -> Vec<String> {
         match self {
             Environment::Alphanet => ALPHANET_HOSTS.iter().map(|&s| s.to_string()).collect(),
             Environment::Testnet => TESTNET_HOSTS.iter().map(|&s| s.to_string()).collect(),
             Environment::Local | Environment::LocalDocker => {
-                unreachable!("hosts() only called for AWS environments")
+                unreachable!("hosts() only called for remote environments")
             }
         }
     }

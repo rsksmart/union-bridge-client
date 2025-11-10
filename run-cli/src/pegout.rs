@@ -3,6 +3,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 use crate::environments::Environment;
+use crate::utils::{confirm_operation, request_to_string};
 
 #[derive(Debug, Serialize)]
 struct RequestPegoutPayload {
@@ -40,10 +41,17 @@ pub async fn request_pegout(environment: Environment, amount_sats: u64) -> Resul
     let payload = RequestPegoutPayload { amount_in_wei };
 
     let client = Client::new();
+    let request = client.post(&endpoint).json(&payload).build()?;
+
+    if environment.is_remote() {
+        let description = request_to_string(&request);
+        if !confirm_operation(&description)? {
+            bail!("Operation cancelled by user");
+        }
+    }
+
     let response = client
-        .post(&endpoint)
-        .json(&payload)
-        .send()
+        .execute(request)
         .await
         .with_context(|| format!("Failed to connect to user-api at {}", endpoint))?;
 
