@@ -127,19 +127,19 @@ enum WalletAction {
     /// Create new wallets (member + user for each client)
     Create {
         /// Number of multi-clients to create wallets for (1-10)
-        #[arg(long = "num-wallets", default_value = "10")]
+        #[arg(short = 'n', long = "num-wallets", default_value = "10")]
         num_wallets: u8,
     },
     /// Fund existing wallets
     Fund {
         /// Number of multi-clients to fund wallets for (1-10)
-        #[arg(long = "num-wallets", default_value = "10")]
+        #[arg(short = 'n', long = "num-wallets", default_value = "10")]
         num_wallets: u8,
     },
     /// Create and fund wallets in one step
     Both {
         /// Number of multi-clients to setup wallets for (1-10)
-        #[arg(long = "num-wallets", default_value = "10")]
+        #[arg(short = 'n', long = "num-wallets", default_value = "10")]
         num_wallets: u8,
     },
 }

@@ -192,65 +192,13 @@ fn setup_wallets_fund(num_wallets: u8, base_storage_path: &str) -> Result<()> {
     let mut failed_count = 0;
 
     for i in 1..=num_wallets {
-        // fund member wallet
-        let member_name = format!("multi-client-{}-member", i);
-        let member_path = keystore_base_path.join(&member_name);
-        if member_path.exists() {
-            match derive_address_from_keystore(&member_path, &password) {
-                Ok(address) => match fund_wallet(&member_name, &address) {
-                    Ok(_) => {
-                        funded_count += 1;
-                        println!("[fund-wallets] {} funded successfully", member_name);
-                    }
-                    Err(e) => {
-                        failed_count += 1;
-                        eprintln!("[fund-wallets] failed to fund {}: {}", member_name, e);
-                    }
-                },
-                Err(e) => {
-                    failed_count += 1;
-                    eprintln!(
-                        "[fund-wallets] failed to derive address for {}: {}",
-                        member_name, e
-                    );
-                }
-            }
-        } else {
-            eprintln!("[fund-wallets] wallet not found: {}", member_path.display());
-            failed_count += 1;
-        }
+        let (funded, failed) = fund_wallet_for_type(i, "member", &keystore_base_path, &password)?;
+        funded_count += funded;
+        failed_count += failed;
 
-        println!("[fund-wallets] ---");
-
-        // fund user wallet
-        let user_name = format!("multi-client-{}-user", i);
-        let user_path = keystore_base_path.join(&user_name);
-        if user_path.exists() {
-            match derive_address_from_keystore(&user_path, &password) {
-                Ok(address) => match fund_wallet(&user_name, &address) {
-                    Ok(_) => {
-                        funded_count += 1;
-                        println!("[fund-wallets] {} funded successfully", user_name);
-                    }
-                    Err(e) => {
-                        failed_count += 1;
-                        eprintln!("[fund-wallets] failed to fund {}: {}", user_name, e);
-                    }
-                },
-                Err(e) => {
-                    failed_count += 1;
-                    eprintln!(
-                        "[fund-wallets] failed to derive address for {}: {}",
-                        user_name, e
-                    );
-                }
-            }
-        } else {
-            eprintln!("[fund-wallets] wallet not found: {}", user_path.display());
-            failed_count += 1;
-        }
-
-        println!("[fund-wallets] ---");
+        let (funded, failed) = fund_wallet_for_type(i, "user", &keystore_base_path, &password)?;
+        funded_count += funded;
+        failed_count += failed;
     }
 
     println!("[fund-wallets] funding complete!");
@@ -267,4 +215,45 @@ fn setup_wallets_fund(num_wallets: u8, base_storage_path: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn fund_wallet_for_type(
+    client_index: u8,
+    wallet_type: &str,
+    keystore_base_path: &Path,
+    password: &str,
+) -> Result<(usize, usize)> {
+    let wallet_name = format!("multi-client-{}-{}", client_index, wallet_type);
+    let wallet_path = keystore_base_path.join(&wallet_name);
+    let mut funded_count = 0usize;
+    let mut failed_count = 0usize;
+
+    if wallet_path.exists() {
+        match derive_address_from_keystore(&wallet_path, password) {
+            Ok(address) => match fund_wallet(&wallet_name, &address) {
+                Ok(_) => {
+                    funded_count += 1;
+                    println!("[fund-wallets] {} funded successfully", wallet_name);
+                }
+                Err(e) => {
+                    failed_count += 1;
+                    eprintln!("[fund-wallets] failed to fund {}: {}", wallet_name, e);
+                }
+            },
+            Err(e) => {
+                failed_count += 1;
+                eprintln!(
+                    "[fund-wallets] failed to derive address for {}: {}",
+                    wallet_name, e
+                );
+            }
+        }
+    } else {
+        eprintln!("[fund-wallets] wallet not found: {}", wallet_path.display());
+        failed_count += 1;
+    }
+
+    println!("[fund-wallets] ---");
+
+    Ok((funded_count, failed_count))
 }
