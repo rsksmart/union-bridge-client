@@ -84,6 +84,10 @@ enum Commands {
     /// Request a pegin address and print bitcoin-wallet CLI instructions
     #[command(name = "create-pegin-tx")]
     CreatePeginTx {
+        /// Environment to target (local, local-docker, alphanet)
+        #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local)]
+        env: Environment,
+
         /// Rootstock deposit address
         #[arg(short = 'a', long = "rsk-address", value_name = "RSK_ADDRESS")]
         rsk_address: String,
@@ -185,11 +189,12 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::CreatePeginTx {
+            env,
             rsk_address,
             stream_amount,
             packet_number,
         } => {
-            pegin::create_pegin_tx(rsk_address, stream_amount, packet_number).await?;
+            pegin::create_pegin_tx(env, rsk_address, stream_amount, packet_number).await?;
         }
         Commands::CreateRootstockWallets => {
             let base_storage_path = std::env::var("BASE_STORAGE_PATH").ok();

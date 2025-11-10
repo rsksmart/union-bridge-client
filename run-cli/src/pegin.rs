@@ -17,12 +17,13 @@ struct PeginAddressResponse {
 }
 
 pub async fn create_pegin_tx(
+    environment: Environment,
     rsk_address: String,
     stream_amount: u64,
     packet_number: u64,
 ) -> Result<()> {
     validate_rsk_address(&rsk_address)?;
-    println!("Getting pegin address from user-api...");
+    println!("Getting pegin address for {rsk_address}...");
 
     let request = PeginAddressRequest {
         rootstock_deposit_address: rsk_address.clone(),
@@ -30,18 +31,15 @@ pub async fn create_pegin_tx(
         btc_reimbursement_pub_key: String::new(),
     };
 
-    let client = Client::new();
-
-    let environment = Environment::Local;
-
     let user_api_base = environment
         .user_api_endpoints()
         .first()
         .expect("No local user-api endpoints configured; please review your config")
         .to_string();
 
-    let endpoint = format!("{}/user/pegin-address", user_api_base);
+    let endpoint = format!("http://{}/user/pegin-address", user_api_base);
 
+    let client = Client::new();
     let response = client
         .post(&endpoint)
         .json(&request)
