@@ -255,12 +255,12 @@ where
 
                     Self::send_get_transaction(&self.bitvmx_broker, flow_id, accept_pegin_tx_hash)?;
                 }
-                ScheduledAction::PeginRequested(btc_block, attempt) => {
+                ScheduledAction::PeginRequested(btc_block, _attempt) => {
                     debug!("(Re)trying handle_bitcoin_request_pegin for block {btc_block}");
 
                     match self.unconfirmed_pegin_requests.remove(&btc_block) {
                         Some(spv) => {
-                            self.send_request_pegin_contracts(spv.clone(), attempt)?;
+                            self.send_request_pegin_contracts(spv.clone())?;
                         }
                         None => {
                             warn!("No unconfirmed pegin request for block: {}", btc_block);
@@ -1042,9 +1042,11 @@ where
         let input = spv_proof.into();
 
         // Step 10a Call the contract to register the SPV proof
-        self.invoke_contract(ACCEPT_PEGIN, || async {
+        self.invoke_contract_with_result(ACCEPT_PEGIN, || async {
             self.contracts.accept_pegin(input).await
-        })
+        })?;
+
+        Ok(())
     }
 
     fn handle_bitvmx_pegin_accepted(
@@ -1087,34 +1089,21 @@ where
             take_tx_hash,
         };
         // Step 5a Call the addOperatorTakeTxHash contract method
-        self.invoke_contract("addOperatorTakeTxHash", || async {
+        self.invoke_contract_with_result("addOperatorTakeTxHash", || async {
             self.contracts.add_operator_take_tx_hash(input).await
         })?;
 
         Ok(())
     }
 
-    fn send_request_pegin_contracts(
-        &mut self,
-        spv_proof: BtcTxSPVProof,
-        attempt: i16,
-    ) -> Result<()> {
+    fn send_request_pegin_contracts(&mut self, spv_proof: BtcTxSPVProof) -> Result<()> {
         let input: RequestPeginInput = spv_proof.clone().into();
+        let res = self.invoke_contract_with_result("requestPegin", || async {
+            self.contracts.request_pegin(input).await
+        });
         //Step 3a Call the requestPegin contract method
-        let res = self.rt_sync.run(self.contracts.request_pegin(input));
         match res {
             Ok(_) => Ok(()),
-            Err(DomainErrors::MissingConfirmationsOnNativeBridge(_)) => {
-                info!(
-                    "Missing confirmations on native bridge for block {}, retrying later",
-                    spv_proof.block_hash
-                );
-
-                // Native bridge has not yet enough confirmations, we need to retry later
-                self.schedule_pegin_requested_to_contracts(spv_proof, attempt + 1);
-
-                Ok(())
-            }
             Err(DomainErrors::PeginAlreadyRequested(msg)) => {
                 // This is expected if the same pegin is requested multiple times
                 // We should treat it as a success case
@@ -1125,7 +1114,7 @@ where
                 );
                 Ok(())
             }
-            Err(domain_err) => bail!("Error executing 'requestPegin': {domain_err:?}"),
+            Err(domain_err) => bail!("Error executing 'requestPegin': {:?}", domain_err),
         }
     }
 
@@ -1143,6 +1132,26 @@ where
                 Ok(())
             }
             Err(domain_err) => bail!("Error executing '{}': {:?}", method_name, domain_err),
+        }
+    }
+
+    fn invoke_contract_with_result<Fut, F, T>(
+        &self,
+        method_name: &str,
+        invoke: F,
+    ) -> Result<T, DomainErrors>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<T, DomainErrors>>,
+    {
+        debug!("Submitting contract transaction: method={}", method_name);
+
+        match self.rt_sync.run(invoke()) {
+            Ok(value) => {
+                debug!("Contract method executed: method={}", method_name);
+                Ok(value)
+            }
+            Err(domain_err) => Err(domain_err),
         }
     }
 
