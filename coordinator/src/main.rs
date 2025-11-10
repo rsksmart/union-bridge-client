@@ -53,8 +53,8 @@ fn main() -> Result<()> {
     let bitcoin_network = CommonConfig::parse_bitcoin_network(&config.bitcoin_network)?;
 
     // Load transaction dispatcher configuration
-    let tx_dispatcher_config: TxDispatcherConfig =
-        TxDispatcherConfig::load(env_name).expect("Failed to load transaction dispatcher config");
+    let tx_dispatcher_config: TxDispatcherConfig = TxDispatcherConfig::load(env_name.clone())
+        .expect("Failed to load transaction dispatcher config");
 
     let contract_addresses = config.get_contract_addresses();
 
@@ -109,6 +109,7 @@ fn main() -> Result<()> {
         store,
         shutdown_flag.clone(),
         bitcoin_network,
+        env_name.clone(),
     );
     coordinator.run().inspect_err(|e| {
         error!("Unrecoverable error running coordinator: {e:?}");

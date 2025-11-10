@@ -177,17 +177,20 @@ where
     bitvmx_broker: Rc<BC>,
     blockchain: BlockchainView,
     unconfirmed_pegin_requests: HashMap<String, BtcTxSPVProof>,
+    unconfirmed_pegin_accepts: HashMap<Uuid, BtcTxSPVProof>,
     tracker: HashMap<TxHash, PeginState<BSF>>,
     pegin_request_tracker: HashSet<Txid>,
     btc_sig_subflow_factory: FactoryBSF,
     scheduler: TickScheduler<ScheduledAction>,
     global_context: GlobalContext,
+    native_bridge_verifier: NativeBridgeVerifier<CG>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 enum ScheduledAction {
-    PeginRequested(String, i16), // Bitcoin block hash
+    PeginRequested(String, i16), // Bitcoin block hash, attempt
     PeginAccepted(Uuid),
+    PeginAcceptRetry(Uuid, i16), // flow_id, attempt
 }
 
 impl<CG, BC, BSF, FactoryBSF> PeginProcessor<CG, BC, BSF, FactoryBSF>
@@ -203,6 +206,7 @@ where
         bitvmx_broker: Rc<BC>,
         factory: FactoryBSF,
         global_context: GlobalContext,
+        native_bridge_verifier: NativeBridgeVerifier<CG>,
     ) -> Self {
         // Step 1: Subscribe to BitVMX pegin events
         Self::subscribe_to_bitvmx_pegin_events(&bitvmx_broker)
@@ -216,11 +220,13 @@ where
             bitvmx_broker,
             blockchain: BlockchainView::new(),
             unconfirmed_pegin_requests: HashMap::new(),
+            unconfirmed_pegin_accepts: HashMap::new(),
             tracker: HashMap::new(),
             pegin_request_tracker: HashSet::new(),
             btc_sig_subflow_factory: factory,
             scheduler: TickScheduler::new(),
             global_context,
+            native_bridge_verifier,
         }
     }
 
@@ -257,17 +263,44 @@ where
 
                     Self::send_get_transaction(&self.bitvmx_broker, flow_id, accept_pegin_tx_hash)?;
                 }
-                ScheduledAction::PeginRequested(btc_block, _attempt) => {
-                    debug!("(Re)trying handle_bitcoin_request_pegin for block {btc_block}");
+                ScheduledAction::PeginRequested(btc_block, attempt) => {
+                    debug!(
+                        "(Re)trying handle_bitcoin_request_pegin for block {}, attempt={}",
+                        btc_block, attempt
+                    );
 
-                    match self.unconfirmed_pegin_requests.remove(&btc_block) {
-                        Some(spv) => {
-                            self.send_request_pegin_contracts(spv.clone())?;
-                        }
-                        None => {
-                            warn!("No unconfirmed pegin request for block: {}", btc_block);
-                        }
-                    }
+                    let Some(spv_proof) = self.unconfirmed_pegin_requests.get(&btc_block).cloned()
+                    else {
+                        info!(
+                            "Skipping retry for block {}: no pending SPV proof found",
+                            btc_block
+                        );
+                        continue;
+                    };
+
+                    self.send_request_pegin_contracts(
+                        spv_proof,
+                        attempt,
+                        None,
+                        Some(btc_block.clone()),
+                    )?;
+                }
+                ScheduledAction::PeginAcceptRetry(flow_id, attempt) => {
+                    debug!(
+                        "(Re)trying accept_pegin for flow_id={}, attempt={}",
+                        flow_id, attempt
+                    );
+
+                    let Some(spv_proof) = self.unconfirmed_pegin_accepts.get(&flow_id).cloned()
+                    else {
+                        info!(
+                            "Skipping retry for flow_id={}: no pending SPV proof found",
+                            flow_id
+                        );
+                        continue;
+                    };
+
+                    self.send_accept_pegin_contracts(spv_proof, flow_id, attempt)?;
                 }
             }
         }
@@ -1038,17 +1071,36 @@ where
         Self::send_to_bitvmx(bitvmx_broker, setup_message)
     }
 
-    fn send_accept_pegin_contracts(&self, spv_proof: BtcTxSPVProof) -> Result<()> {
+    fn send_accept_pegin_contracts(
+        &mut self,
+        spv_proof: BtcTxSPVProof,
+        flow_id: Uuid,
+        attempt: i16,
+    ) -> Result<()> {
         debug!("Registering SPV proof: spv_proof={:?}", spv_proof);
 
-        let input = spv_proof.into();
+        let input = spv_proof.clone().into();
 
         // Step 10a Call the contract to register the SPV proof
-        self.invoke_contract_with_result(ACCEPT_PEGIN, || async {
+        match self.invoke_contract_safe(ACCEPT_PEGIN, &spv_proof, || async {
             self.contracts.accept_pegin(input).await
-        })?;
-
-        Ok(())
+        }) {
+            Ok(_) => {
+                // Remove from unconfirmed (idempotent - no-op if not present)
+                self.unconfirmed_pegin_accepts.remove(&flow_id);
+                debug!(
+                    "Removed from unconfirmed_pegin_accepts: flow_id={}",
+                    flow_id
+                );
+                Ok(())
+            }
+            Err(DomainErrors::MissingConfirmationsOnNativeBridge(_)) => {
+                // Schedule retry and return error
+                self.schedule_pegin_accept_retry(flow_id, spv_proof, attempt + 1);
+                bail!("Insufficient confirmations, retry scheduled")
+            }
+            Err(e) => Err(e.into()),
+        }
     }
 
     fn handle_bitvmx_pegin_accepted(
@@ -1091,21 +1143,56 @@ where
             take_tx_hash,
         };
         // Step 5a Call the addOperatorTakeTxHash contract method
-        self.invoke_contract_with_result("addOperatorTakeTxHash", || async {
+        // todo(fede) do we need to check for confirmations here?
+        self.invoke_contract("addOperatorTakeTxHash", || async {
             self.contracts.add_operator_take_tx_hash(input).await
         })?;
 
         Ok(())
     }
 
-    fn send_request_pegin_contracts(&mut self, spv_proof: BtcTxSPVProof) -> Result<()> {
+    fn send_request_pegin_contracts(
+        &mut self,
+        spv_proof: BtcTxSPVProof,
+        attempt: i16,
+        tx_id_to_track: Option<&Txid>,
+        btc_block_to_unconfirm: Option<String>,
+    ) -> Result<()> {
         let input: RequestPeginInput = spv_proof.clone().into();
-        let res = self.invoke_contract_with_result("requestPegin", || async {
+
+        // Step 3a Call the requestPegin contract method
+        match self.invoke_contract_safe("requestPegin", &spv_proof, || async {
             self.contracts.request_pegin(input).await
-        });
-        //Step 3a Call the requestPegin contract method
-        match res {
-            Ok(_) => Ok(()),
+        }) {
+            Ok(_) => {
+                // Remove from tracker if provided
+                if let Some(tx_id) = tx_id_to_track {
+                    self.pegin_request_tracker.remove(tx_id);
+                    debug!("Removed request_pegin_txid from tracking: tx_id={}", tx_id);
+                }
+                // Remove from unconfirmed if provided
+                if let Some(btc_block) = btc_block_to_unconfirm {
+                    self.unconfirmed_pegin_requests.remove(&btc_block);
+                    debug!(
+                        "Removed from unconfirmed_pegin_requests: btc_block={}",
+                        btc_block
+                    );
+                }
+                Ok(())
+            }
+            Err(DomainErrors::MissingConfirmationsOnNativeBridge(_)) => {
+                // Schedule retry
+                self.schedule_pegin_requested_to_contracts(spv_proof, attempt + 1);
+                // Remove from tracker if provided (retry is now in scheduler)
+                if let Some(tx_id) = tx_id_to_track {
+                    self.pegin_request_tracker.remove(tx_id);
+                    debug!(
+                        "Removed request_pegin_txid from tracking: tx_id={}, retry scheduled",
+                        tx_id
+                    );
+                }
+                bail!("Insufficient confirmations, retry scheduled")
+            }
             Err(DomainErrors::PeginAlreadyRequested(msg)) => {
                 // This is expected if the same pegin is requested multiple times
                 // We should treat it as a success case
@@ -1114,13 +1201,26 @@ where
                     "Pegin already requested for tx_id={}, treating as expected: {}",
                     tx_id, msg
                 );
+                // Remove from tracker if provided
+                if let Some(tx_id) = tx_id_to_track {
+                    self.pegin_request_tracker.remove(tx_id);
+                    debug!("Removed request_pegin_txid from tracking: tx_id={}", tx_id);
+                }
+                // Remove from unconfirmed if provided
+                if let Some(btc_block) = btc_block_to_unconfirm {
+                    self.unconfirmed_pegin_requests.remove(&btc_block);
+                    debug!(
+                        "Removed from unconfirmed_pegin_requests: btc_block={}",
+                        btc_block
+                    );
+                }
                 Ok(())
             }
             Err(domain_err) => bail!("Error executing 'requestPegin': {:?}", domain_err),
         }
     }
 
-    fn invoke_contract<Fut, F, T>(&self, method_name: &str, invoke: F) -> Result<()>
+    fn _invoke_contract<Fut, F, T>(&self, method_name: &str, invoke: F) -> Result<()>
     where
         F: FnOnce() -> Fut,
         Fut: Future<Output = Result<T, DomainErrors>>,
@@ -1137,11 +1237,7 @@ where
         }
     }
 
-    fn invoke_contract_with_result<Fut, F, T>(
-        &self,
-        method_name: &str,
-        invoke: F,
-    ) -> Result<T, DomainErrors>
+    fn invoke_contract<Fut, F, T>(&self, method_name: &str, invoke: F) -> Result<T, DomainErrors>
     where
         F: FnOnce() -> Fut,
         Fut: Future<Output = Result<T, DomainErrors>>,
@@ -1154,6 +1250,46 @@ where
                 Ok(value)
             }
             Err(domain_err) => Err(domain_err),
+        }
+    }
+
+    // verifies that the native bridge has enough confirmations
+    // for the given spv proof and then invokes a contract
+    fn invoke_contract_safe<Fut, F, T>(
+        &self,
+        method_name: &str,
+        spv_proof: &BtcTxSPVProof,
+        invoke: F,
+    ) -> Result<T, DomainErrors>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<T, DomainErrors>>,
+    {
+        debug!(
+            "Verifying Native Bridge confirmations before invoking: method={}",
+            method_name
+        );
+
+        // Verify confirmations on Native Bridge
+        match self
+            .native_bridge_verifier
+            .verify_confirmations(spv_proof, MIN_TX_CONFIRMATIONS)?
+        {
+            VerificationStatus::Verified => {
+                // Proceed with contract call
+                self.invoke_contract(method_name, invoke)
+            }
+            VerificationStatus::InsufficientConfirmations { required, actual } => {
+                // Don't call contract, return error (caller will handle reschedule)
+                debug!(
+                    "Insufficient Native Bridge confirmations for {}: {}/{} - needs retry",
+                    method_name, actual, required
+                );
+                Err(DomainErrors::MissingConfirmationsOnNativeBridge(format!(
+                    "{}/{} confirmations",
+                    actual, required
+                )))
+            }
         }
     }
 
@@ -1270,6 +1406,26 @@ where
             BLOCKS_DELAY_FOR_TX_CHECK,
         );
     }
+
+    fn schedule_pegin_accept_retry(
+        &mut self,
+        flow_id: Uuid,
+        spv_proof: BtcTxSPVProof,
+        attempt: i16,
+    ) {
+        self.unconfirmed_pegin_accepts
+            .insert(flow_id, spv_proof.clone());
+
+        info!(
+            "Scheduling accept_pegin retry for flow_id={}, attempt={}",
+            flow_id, attempt
+        );
+
+        self.scheduler.schedule(
+            ScheduledAction::PeginAcceptRetry(flow_id, attempt),
+            BLOCKS_DELAY_FOR_TX_CHECK,
+        );
+    }
 }
 
 impl<CG, BC, BSF, FactoryBSF> EventProcessor for PeginProcessor<CG, BC, BSF, FactoryBSF>
@@ -1300,11 +1456,7 @@ where
                     // Step 3.1: Handle request pegin SPV proof
                     if self.is_pegin_request_tracked(tx_id) {
                         info!("Handling request pegin SPV proof: tx_id={}", tx_id);
-                        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-328
-                        self.schedule_pegin_requested_to_contracts(spv_proof.clone(), 1); // Remove from tracking set after successful processing
-                        self.pegin_request_tracker.remove(tx_id);
-                        debug!("Removed request_pegin_txid from tracking: tx_id={}", tx_id);
-                        return Ok(());
+                        self.send_request_pegin_contracts(spv_proof.clone(), 1, Some(tx_id), None)?;
                     }
                     // Find state by matching accept_pegin_txid from bitvmx_pegin_accepted
                     let matching_state = self.tracker.iter_mut().find(|(_, state)| {
@@ -1316,13 +1468,14 @@ where
                     });
 
                     if let Some((_, state)) = matching_state {
+                        let flow_id = state.flow_id;
                         // Step 10 Handle accept pegin SPV proof
                         info!(
                             "Handling accept pegin SPV proof: flow_id={}, tx_id={}",
-                            state.flow_id, tx_id
+                            flow_id, tx_id
                         );
-                        self.send_accept_pegin_contracts(spv_proof.clone())?;
-                        return Ok(());
+
+                        self.send_accept_pegin_contracts(spv_proof.clone(), flow_id, 1)?
                     }
                     debug!(
                         "SPV proof for tx_id: {} is not related to a pegin flow",
@@ -1466,6 +1619,101 @@ where
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum VerificationStatus {
+    Verified,
+    InsufficientConfirmations { required: u32, actual: u32 },
+}
+
+pub enum NativeBridgeVerifier<CG: RskContractsGatewayApi> {
+    Real {
+        contracts: Rc<CG>,
+        rt_sync: RuntimeSync,
+    },
+    Dummy, // used in local/test environments
+}
+
+impl<CG: RskContractsGatewayApi> NativeBridgeVerifier<CG> {
+    fn verify_confirmations(
+        &self,
+        spv_proof: &BtcTxSPVProof,
+        required_confirmations: u32,
+    ) -> Result<VerificationStatus, DomainErrors> {
+        match self {
+            NativeBridgeVerifier::Real { contracts, rt_sync } => {
+                use transaction_dispatcher::types::GetBtcTransactionConfirmationsInput;
+
+                // todo(fede) review this
+                let block_hash: common::types::BlockHash =
+                    match spv_proof.block_hash.parse::<primitive_types::H256>() {
+                        Ok(h) => h.into(),
+                        Err(e) => {
+                            warn!("Failed to parse block hash: {}", e);
+                            return Err(DomainErrors::InvalidBtcTxSpvProof(format!(
+                                "Invalid block hash: {}",
+                                e
+                            )));
+                        }
+                    };
+
+                let tx_id = spv_proof.tx.compute_txid();
+                let tx_hash_fb = TxIdParser::txid_to_fb_32(tx_id);
+                let tx_hash: common::types::TxHash = common::types::Hash256::from(
+                    primitive_types::H256::from_slice(tx_hash_fb.as_slice()),
+                );
+
+                let merkle_branch_hashes: Vec<String> = spv_proof
+                    .merkle_branch_hashes
+                    .iter()
+                    .map(|hash| hex::encode(hash))
+                    .collect();
+
+                let input = GetBtcTransactionConfirmationsInput {
+                    tx_hash,
+                    block_hash,
+                    merkle_branch_path: spv_proof.merkle_branch_path.clone(),
+                    merkle_branch_hashes,
+                };
+
+                // query native bridge
+                // todo(fede) change this with invoke_contract
+                match rt_sync.run(contracts.get_btc_confirmations(input)) {
+                    Ok(output) => {
+                        let confirmations = output.confirmations;
+                        if confirmations >= required_confirmations {
+                            debug!(
+                                "Native Bridge verification passed: {}/{} confirmations",
+                                confirmations, required_confirmations
+                            );
+                            Ok(VerificationStatus::Verified)
+                        } else {
+                            info!(
+                                "Native Bridge has insufficient confirmations: {}/{}, will retry later",
+                                confirmations, required_confirmations
+                            );
+                            // Insufficient confirmations is NOT an error, it's an expected state
+                            Ok(VerificationStatus::InsufficientConfirmations {
+                                required: required_confirmations,
+                                actual: confirmations,
+                            })
+                        }
+                    }
+                    Err(e) => {
+                        warn!("Native Bridge query failed: {}", e);
+                        Err(e)
+                    }
+                }
+            }
+            NativeBridgeVerifier::Dummy => {
+                trace!(
+                    "Using dummy verifier: skipping Native Bridge verification (local environment)"
+                );
+                Ok(VerificationStatus::Verified)
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1520,6 +1768,7 @@ mod tests {
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
             GlobalContext::new(),
+            NativeBridgeVerifier::Dummy,
         );
     }
 
@@ -1547,6 +1796,7 @@ mod tests {
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
             GlobalContext::new(),
+            NativeBridgeVerifier::Dummy,
         );
     }
 
@@ -1573,6 +1823,7 @@ mod tests {
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
             GlobalContext::new(),
+            NativeBridgeVerifier::Dummy,
         );
 
         let event = OutgoingBitVMXApiMessages::PeginTransactionFound(txid, status);
@@ -1603,6 +1854,7 @@ mod tests {
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
             GlobalContext::new(),
+            NativeBridgeVerifier::Dummy,
         );
 
         // Verify tx_id is not tracked initially
@@ -1628,6 +1880,7 @@ mod tests {
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
             GlobalContext::new(),
+            NativeBridgeVerifier::Dummy,
         );
 
         let tx_id = dummy_spv_proof().tx.compute_txid();
@@ -1639,7 +1892,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn process_new_bitvmx_spv_proof_event_for_request_pegin_should_call_request_pegin() {
         // Prepare the mocked contracts gateway
         let mut contracts = MockRskContractsGatewayApi::new();
@@ -1651,6 +1903,18 @@ mod tests {
             .expect_request_pegin()
             .times(1)
             .returning(move |_| Ok(expected_receipt.clone()));
+
+        // Mock Native Bridge confirmations
+        contracts
+            .expect_get_btc_confirmations()
+            .times(1)
+            .returning(|_| {
+                Ok(
+                    transaction_dispatcher::types::GetBtcTransactionConfirmationsOutput {
+                        confirmations: 2,
+                    },
+                )
+            });
 
         // Prepare broker - expects subscription and GetSPVProof request
         let mut broker = MockBrokerClientApi::new();
@@ -1670,6 +1934,7 @@ mod tests {
             .returning(|_, _| Ok(true));
 
         let rt_sync = RuntimeSync::new().unwrap();
+        let contracts_rc = Rc::new(contracts);
         let mut processor: PeginProcessor<
             MockRskContractsGatewayApi,
             MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>,
@@ -1678,11 +1943,15 @@ mod tests {
                 crate::flows::btc_signature::btc_signature_subflow::MockBtcSignatureSubFlowApi,
             >,
         > = PeginProcessor::new(
-            rt_sync,
-            contracts.into(),
+            rt_sync.clone(),
+            contracts_rc.clone(),
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
             GlobalContext::new(),
+            NativeBridgeVerifier::Real {
+                contracts: contracts_rc,
+                rt_sync,
+            },
         );
 
         // First send PeginTransactionFound to add tx_id to tracker
@@ -1705,7 +1974,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn process_new_bitvmx_spv_proof_event_for_request_pegin_should_fail_on_dispatch_error() {
         // Prepare a mocked contracts gateway that simulates a failure
         let mut contracts = MockRskContractsGatewayApi::new();
@@ -1713,6 +1981,18 @@ mod tests {
             .expect_request_pegin()
             .times(1)
             .returning(|_| Err(DomainErrors::UnknownContractError("simulated error".into())));
+
+        // Mock Native Bridge confirmations
+        contracts
+            .expect_get_btc_confirmations()
+            .times(1)
+            .returning(|_| {
+                Ok(
+                    transaction_dispatcher::types::GetBtcTransactionConfirmationsOutput {
+                        confirmations: 2,
+                    },
+                )
+            });
 
         // Prepare broker - expects subscription and GetSPVProof request
         let mut broker = MockBrokerClientApi::new();
@@ -1732,12 +2012,17 @@ mod tests {
             .returning(|_, _| Ok(true));
 
         let rt_sync = RuntimeSync::new().unwrap();
+        let contracts_rc = Rc::new(contracts);
         let mut processor = PeginProcessor::new(
-            rt_sync,
-            contracts.into(),
+            rt_sync.clone(),
+            contracts_rc.clone(),
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
             GlobalContext::new(),
+            NativeBridgeVerifier::Real {
+                contracts: contracts_rc,
+                rt_sync,
+            },
         );
 
         // First send PeginTransactionFound to add tx_id to tracker
@@ -1785,6 +2070,7 @@ mod tests {
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
             GlobalContext::new(),
+            NativeBridgeVerifier::Dummy,
         );
 
         // First add a pegin state to track
@@ -1861,6 +2147,7 @@ mod tests {
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
             GlobalContext::new(),
+            NativeBridgeVerifier::Dummy,
         );
 
         // Create a PegInAcceptedMessage payload with a random flow_id (not tracked)
@@ -1903,6 +2190,7 @@ mod tests {
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
             GlobalContext::new(),
+            NativeBridgeVerifier::Dummy,
         );
 
         let pegin_requested = dummy_pegin_requested_event();
@@ -1943,6 +2231,7 @@ mod tests {
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
             GlobalContext::new(),
+            NativeBridgeVerifier::Dummy,
         );
 
         let pegin_requested = dummy_pegin_requested_event();
@@ -1993,6 +2282,7 @@ mod tests {
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
             GlobalContext::new(),
+            NativeBridgeVerifier::Dummy,
         );
 
         let pegin_requested = dummy_pegin_requested_event();
@@ -2033,6 +2323,7 @@ mod tests {
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
             GlobalContext::new(),
+            NativeBridgeVerifier::Dummy,
         );
 
         let pegin_requested = dummy_pegin_requested_event();
@@ -2086,6 +2377,7 @@ mod tests {
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
             GlobalContext::new(),
+            NativeBridgeVerifier::Dummy,
         );
 
         let pegin_requested = dummy_pegin_requested_event();
@@ -2151,6 +2443,7 @@ mod tests {
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
             GlobalContext::new(),
+            NativeBridgeVerifier::Dummy,
         );
 
         let result = processor.process_new_rsk_event(&RskPegManagerEvents::UnknownEvent);
@@ -2169,6 +2462,7 @@ mod tests {
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
             GlobalContext::new(),
+            NativeBridgeVerifier::Dummy,
         );
 
         let (block_1, _, _) = create_block_and_uncles();
@@ -2190,6 +2484,7 @@ mod tests {
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
             GlobalContext::new(),
+            NativeBridgeVerifier::Dummy,
         );
 
         let (block_1, _, _) = create_block_and_uncles();
@@ -2347,6 +2642,7 @@ mod tests {
             broker.into(),
             mock_btc_sig_subflow_factory,
             GlobalContext::new(),
+            NativeBridgeVerifier::Dummy,
         );
 
         processor
@@ -2387,6 +2683,7 @@ mod tests {
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
             GlobalContext::new(),
+            NativeBridgeVerifier::Dummy,
         );
 
         let (block_1, block_2, _) = create_block_and_uncles();
@@ -2470,6 +2767,7 @@ mod tests {
             broker.into(),
             MockBtcSigSubFlowFactory::new(),
             GlobalContext::new(),
+            NativeBridgeVerifier::Dummy,
         );
 
         let pegin_requested = dummy_pegin_requested_event();
