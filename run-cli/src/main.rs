@@ -24,10 +24,12 @@
 //! cargo run -- setup-committee -s 1
 //! ```
 
+mod bitcoin_wallet;
 mod committee;
 mod pegin;
 mod rsk_wallet;
 
+use crate::bitcoin_wallet::BitcoinFundingEnv;
 use crate::committee::{CommitteeEnv, CommitteeRole};
 use crate::rsk_wallet::WalletEnv;
 use anyhow::{anyhow, bail, Context, Result};
@@ -108,6 +110,13 @@ enum Commands {
     SetupWallets {
         #[command(subcommand)]
         action: WalletAction,
+    },
+    /// Collect BitVMX funding addresses for operators
+    #[command(name = "fund-operators-bitcoin")]
+    FundOperatorsBitcoin {
+        /// Environment to target (local, docker-local, alphanet)
+        #[arg(long = "env", short = 'e', value_enum, default_value_t = BitcoinFundingEnv::Local)]
+        env: BitcoinFundingEnv,
     },
     /// Apply operators to a stream for committee setup
     #[command(name = "setup-committee")]
@@ -206,6 +215,9 @@ async fn main() -> Result<()> {
         Commands::SetupWallets { action } => {
             let base_storage_path = std::env::var("BASE_STORAGE_PATH").ok();
             rsk_wallet::handle_wallet_setup(&action, base_storage_path.as_deref())?;
+        }
+        Commands::FundOperatorsBitcoin { env } => {
+            bitcoin_wallet::handle_bitcoin_funding(env).await?;
         }
         Commands::Run {
             num_clients,

@@ -27,6 +27,12 @@ const ALPHANET_HOSTS: [&str; 4] = [
     "union-bridge-use1-4.alphanet.rskcomputing.net",
 ];
 
+const SSH_USER: &str = "ubuntu";
+
+const LOCAL_ANVIL_ADDRESS: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+
+const LOG_MARKER: &str = "Got member signer with address";
+
 #[derive(Debug, Clone)]
 pub enum RpcUrl {
     Local,
@@ -412,8 +418,6 @@ fn collect_local_signers() -> Result<Vec<(String, String)>> {
 }
 
 fn collect_alphanet_signers() -> Result<Vec<(String, String)>> {
-    const SSH_USER: &str = "ubuntu";
-
     let mut signers = Vec::new();
     for host in ALPHANET_HOSTS {
         let target = format!("{}@{}", SSH_USER, host);
@@ -455,12 +459,10 @@ fn collect_alphanet_signers() -> Result<Vec<(String, String)>> {
 }
 
 fn extract_signer_addresses(log_content: &str) -> Vec<String> {
-    const MEMBER_LOG_MARKER: &str = "Got member signer with address";
-
     let mut unique = HashSet::new();
     for line in log_content.lines() {
-        if let Some(idx) = line.find(MEMBER_LOG_MARKER) {
-            let after_marker = &line[idx + MEMBER_LOG_MARKER.len()..];
+        if let Some(idx) = line.find(LOG_MARKER) {
+            let after_marker = &line[idx + LOG_MARKER.len()..];
             if let Some(candidate) = after_marker
                 .split_whitespace()
                 .find(|token| token.starts_with("0x"))
@@ -490,8 +492,6 @@ fn unique_addresses(records: &[(String, String)]) -> Vec<String> {
 }
 
 fn run_cast_send_local(address: &str) -> Result<()> {
-    const LOCAL_ANVIL_ADDRESS: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
-
     eprintln!(
         "  Running: cast send --rpc-url {} --from {} {} --value 1ether --unlocked",
         RpcUrl::Local,
