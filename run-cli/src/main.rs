@@ -1,35 +1,38 @@
 //! union bridge client launcher and utility toolkit
 //!
-//! subcommands:
-//! - `run`: orchestrates the four union bridge services for one or many clients.
-//!   use `-n` for multi-client mode, `--id` for a single client,
-//!   `--features` to pass cargo feature flags, and `--fresh` to wipe local state.
-//! - `create-rootstock-wallets`: creates rootstock keystores for local multi-client
-//!   deployments.
-//! - `fund-ops-rootstock`: funds rootstock wallets for operator stacks.
-//!   use `--env local-docker` (default) for local docker compose stacks,
-//!   `--env alphanet` for remote alphanet, or `--env testnet` for remote testnet.
-//! - `fund-ops-bitcoin`: collects bitcoin funding addresses for operators.
-//!   use `--env local` (default) for cargo-run coordinators, `--env local-docker`
-//!   for local docker compose stacks, `--env alphanet` for alphanet, or `--env testnet` for testnet.
-//! - `create-pegin-tx`: requests a pegin address and prints bitcoin-wallet
-//!   instructions. requires `--rsk-address/-a`, with optional stream and packet
-//!   overrides via `--stream-amount/-s` and `--packet-number/-p`.
-//! - `request-pegout`: requests a pegout (withdrawal from Rootstock to Bitcoin).
-//!   requires `--amount/-a` in satoshis, defaults to local environment.
-//! - `setup-committee`: applies operators to a stream. requires `--stream-id/-s`,
-//!   defaults to the local environment, and accepts `--env` (`local`, `alphanet`, or `testnet`).
-//!   For alphanet/testnet, requires `--operator-id` (1-4) and `--role` (prover/verifier).
+//! organized into four main command groups:
+//!
+//! ## run
+//! orchestrates the union bridge services for one or many clients.
+//! - use `--id` for a single client, defaults to running 4 clients
+//! - `--features` to pass cargo feature flags, `--fresh` to wipe local state
+//!
+//! ## setup
+//! initial configuration commands
+//! - `create-rootstock-wallets`: creates rootstock keystores for local multi-client deployments
+//!
+//! ## operator
+//! commands for managing committee members and funding
+//! - `fund-bitcoin`: collects bitcoin funding addresses for operators
+//! - `fund-rootstock`: funds rootstock wallets for operator stacks
+//! - `apply-to-stream`: applies operator to a stream for committee setup
+//!   - for local: applies all 4 operators automatically
+//!   - for alphanet/testnet: requires `--operator-id` (1-4) and `--role` (prover/verifier)
+//!
+//! ## user
+//! pegin/pegout operations
+//! - `pegin`: requests a pegin address and prints bitcoin-wallet instructions
+//! - `pegout`: requests a pegout (withdrawal from Rootstock to Bitcoin)
 //!
 //! quick examples:
 //! ```bash
-//! cargo run -- run -n 4 --fresh
-//! cargo run -- create-rootstock-wallets
-//! cargo run -- fund-ops-rootstock --env local-docker
-//! cargo run -- fund-ops-bitcoin --env local
-//! cargo run -- create-pegin-tx -a 0x1234...cdef -s 2_000_000 -p 7
-//! cargo run -- request-pegout -a 1000000
-//! cargo run -- setup-committee -s 1
+//! cargo run -- run --id 1 --fresh
+//! cargo run -- setup create-rootstock-wallets
+//! cargo run -- operator fund-rootstock --env local-docker
+//! cargo run -- operator fund-bitcoin --env local
+//! cargo run -- operator apply-to-stream -s 1 --env alphanet -o 1 -r prover
+//! cargo run -- user pegin -a 0x1234...cdef -s 2_000_000 -p 7
+//! cargo run -- user pegout -a 1000000
 //! ```
 
 mod bitcoin_wallet;
@@ -87,9 +90,71 @@ enum Commands {
         #[arg(long = "env-file")]
         env_file: Option<PathBuf>,
     },
+    /// Setup commands for initial configuration
+    SetupLocal {
+        #[command(subcommand)]
+        command: SetupCommands,
+    },
+    /// Operator commands for managing committee members
+    Operator {
+        #[command(subcommand)]
+        command: OperatorCommands,
+    },
+    /// User commands
+    User {
+        #[command(subcommand)]
+        command: UserCommands,
+    },
+}
+
+#[derive(Debug, Subcommand, Clone)]
+enum SetupCommands {
+    /// Create Rootstock wallets for local multi-client deployment
+    #[command(name = "create-rootstock-wallets")]
+    CreateRootstockWallets,
+}
+
+#[derive(Debug, Subcommand, Clone)]
+enum OperatorCommands {
+    /// Collect BitVMX funding addresses for operators
+    #[command(name = "fund-bitcoin")]
+    FundBitcoin {
+        /// Environment to target (local, local-docker, alphanet, testnet)
+        #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local)]
+        env: Environment,
+    },
+    /// Fund Rootstock wallets for operator stacks
+    #[command(name = "fund-rootstock")]
+    FundRootstock {
+        /// Environment to target (local-docker, alphanet, testnet)
+        #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::LocalDocker)]
+        env: Environment,
+    },
+    /// Apply operator to a stream for committee setup
+    #[command(name = "apply-to-stream")]
+    ApplyToStream {
+        /// Stream identifier to configure
+        #[arg(short = 's', long = "stream-id", value_name = "STREAM_ID")]
+        stream_id: u64,
+
+        /// Target environment (local, alphanet, testnet)
+        #[arg(short = 'e', long = "env", value_enum, default_value_t = Environment::Local)]
+        env: Environment,
+
+        /// Operator ID (1-4) when applying on alphanet or testnet
+        #[arg(short = 'o', long = "operator-id", value_name = "OPERATOR_ID")]
+        operator_id: Option<u8>,
+
+        /// Operator role when applying on alphanet or testnet
+        #[arg(short = 'r', long = "role", value_enum)]
+        role: Option<CommitteeRole>,
+    },
+}
+
+#[derive(Debug, Subcommand, Clone)]
+enum UserCommands {
     /// Request a pegin address and print bitcoin-wallet CLI instructions
-    #[command(name = "create-pegin-tx")]
-    CreatePeginTx {
+    Pegin {
         /// Environment to target (local, local-docker, alphanet, testnet)
         #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local)]
         env: Environment,
@@ -117,8 +182,7 @@ enum Commands {
         packet_number: u64,
     },
     /// Request a pegout (withdraw from Rootstock to Bitcoin)
-    #[command(name = "request-pegout")]
-    RequestPegout {
+    Pegout {
         /// Environment to target (local, local-docker, alphanet, testnet)
         #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local)]
         env: Environment,
@@ -126,42 +190,6 @@ enum Commands {
         /// Amount in satoshis to withdraw
         #[arg(short = 'a', long = "amount", value_name = "AMOUNT_SATS")]
         amount_sats: u64,
-    },
-    /// Create Rootstock wallets for local multi-client deployment
-    #[command(name = "create-rootstock-wallets")]
-    CreateRootstockWallets,
-    /// Collect BitVMX funding addresses for operators
-    #[command(name = "fund-ops-bitcoin")]
-    FundOperatorsBitcoin {
-        /// Environment to target (local, local-docker, alphanet, testnet)
-        #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local)]
-        env: Environment,
-    },
-    /// Fund Rootstock wallets for operator stacks
-    #[command(name = "fund-ops-rootstock")]
-    FundOperatorsRootstock {
-        /// Environment to target (local-docker, alphanet, testnet)
-        #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::LocalDocker)]
-        env: Environment,
-    },
-    /// Apply operators to a stream for committee setup
-    #[command(name = "setup-committee")]
-    SetupCommittee {
-        /// Stream identifier to configure
-        #[arg(short = 's', long = "stream-id", value_name = "STREAM_ID")]
-        stream_id: u64,
-
-        /// Target environment (local, alphanet, testnet)
-        #[arg(short = 'e', long = "env", value_enum, default_value_t = Environment::Local)]
-        env: Environment,
-
-        /// Operator ID (1-4) when applying on alphanet or testnet
-        #[arg(short = 'o', long = "operator-id", value_name = "OPERATOR_ID")]
-        operator_id: Option<u8>,
-
-        /// Operator role when applying on alphanet or testnet
-        #[arg(short = 'r', long = "role", value_enum)]
-        role: Option<CommitteeRole>,
     },
 }
 
@@ -209,30 +237,6 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::CreatePeginTx {
-            env,
-            rsk_address,
-            stream_amount,
-            packet_number,
-        } => {
-            pegin::create_pegin_tx(env, rsk_address, stream_amount, packet_number).await?;
-        }
-        Commands::RequestPegout { env, amount_sats } => {
-            pegout::request_pegout(env, amount_sats).await?;
-        }
-        Commands::CreateRootstockWallets => {
-            let base_storage_path = std::env::var("BASE_STORAGE_PATH").ok();
-            rsk_wallet::handle_wallet_creation(
-                OPERATOR_IDS.len() as u8,
-                base_storage_path.as_deref(),
-            )?;
-        }
-        Commands::FundOperatorsBitcoin { env } => {
-            bitcoin_wallet::handle_bitcoin_funding(env).await?;
-        }
-        Commands::FundOperatorsRootstock { env } => {
-            rsk_wallet::handle_operator_funding(env).await?;
-        }
         Commands::Run {
             client_id,
             features,
@@ -250,14 +254,44 @@ async fn main() -> Result<()> {
             };
             run_clients(run_config, &base_storage_path).await?;
         }
-        Commands::SetupCommittee {
-            stream_id,
-            env,
-            operator_id,
-            role,
-        } => {
-            committee::run_committee_setup(stream_id, env, operator_id, role).await?;
-        }
+        Commands::SetupLocal { command } => match command {
+            SetupCommands::CreateRootstockWallets => {
+                let base_storage_path = std::env::var("BASE_STORAGE_PATH").ok();
+                rsk_wallet::handle_wallet_creation(
+                    OPERATOR_IDS.len() as u8,
+                    base_storage_path.as_deref(),
+                )?;
+            }
+        },
+        Commands::Operator { command } => match command {
+            OperatorCommands::FundBitcoin { env } => {
+                bitcoin_wallet::handle_bitcoin_funding(env).await?;
+            }
+            OperatorCommands::FundRootstock { env } => {
+                rsk_wallet::handle_operator_funding(env).await?;
+            }
+            OperatorCommands::ApplyToStream {
+                stream_id,
+                env,
+                operator_id,
+                role,
+            } => {
+                committee::run_committee_setup(stream_id, env, operator_id, role).await?;
+            }
+        },
+        Commands::User { command } => match command {
+            UserCommands::Pegin {
+                env,
+                rsk_address,
+                stream_amount,
+                packet_number,
+            } => {
+                pegin::create_pegin_tx(env, rsk_address, stream_amount, packet_number).await?;
+            }
+            UserCommands::Pegout { env, amount_sats } => {
+                pegout::request_pegout(env, amount_sats).await?;
+            }
+        },
     }
 
     Ok(())
