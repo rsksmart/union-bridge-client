@@ -5,7 +5,9 @@
 //!   use `-n` for multi-client mode, `--id` for a single client,
 //!   `--features` to pass cargo feature flags, and `--fresh` to wipe local state.
 //! - `setup-wallets`: manages rootstock keystores for multi-client deployments.
-//!   supports `create`, `fund`, or `both`, each taking `--num-wallets 1-10`.
+//!   use `create`, `fund`, or `both` (each taking `--num-wallets 1-10` in cargo
+//!   mode). `fund` accepts `--env cargo` (default) for local keystores, or
+//!   `--env docker-local` / `--env docker-alphanet` for operator stacks.
 //! - `create-pegin-tx`: requests a pegin address and prints bitcoin-wallet
 //!   instructions. requires `--rsk-address/-a`, with optional stream and packet
 //!   overrides via `--stream-amount/-s` and `--packet-number/-p`.
@@ -17,6 +19,7 @@
 //! ```bash
 //! cargo run -- run -n 4 --fresh
 //! cargo run -- setup-wallets both --num-wallets 4
+//! cargo run -- setup-wallets fund --env docker-local
 //! cargo run -- create-pegin-tx -a 0x1234...cdef -s 2_000_000 -p 7
 //! cargo run -- setup-committee -s 1
 //! ```
@@ -25,7 +28,8 @@ mod committee;
 mod pegin;
 mod rsk_wallet;
 
-use crate::committee::{CommitteeEnvironment, CommitteeRole};
+use crate::committee::{CommitteeEnv, CommitteeRole};
+use crate::rsk_wallet::WalletEnv;
 use anyhow::{anyhow, bail, Context, Result};
 use clap::{ArgAction, Parser, Subcommand};
 use nix::sys::signal::{kill, Signal};
@@ -113,8 +117,8 @@ enum Commands {
         stream_id: u64,
 
         /// Target environment (`local` or `alphanet`)
-        #[arg(long = "env", value_enum, default_value_t = CommitteeEnvironment::Local)]
-        env: CommitteeEnvironment,
+        #[arg(long = "env", value_enum, default_value_t = CommitteeEnv::Local)]
+        env: CommitteeEnv,
 
         /// Operator role when applying on alphanet
         #[arg(long = "role", value_enum)]
@@ -135,6 +139,10 @@ enum WalletAction {
         /// Number of multi-clients to fund wallets for (1-10)
         #[arg(short = 'n', long = "num-wallets", default_value = "10")]
         num_wallets: u8,
+
+        /// Funding environment (cargo, docker-local, docker-alphanet)
+        #[arg(long = "env", short = 'e', value_enum)]
+        env: Option<WalletEnv>,
     },
     /// Create and fund wallets in one step
     Both {
@@ -196,10 +204,8 @@ async fn main() -> Result<()> {
             pegin::create_pegin_tx(rsk_address, stream_amount, packet_number).await?;
         }
         Commands::SetupWallets { action } => {
-            let base_storage_path = std::env::var("BASE_STORAGE_PATH").context(
-                "BASE_STORAGE_PATH environment variable is required (e.g., export BASE_STORAGE_PATH=/Users/username)",
-            )?;
-            rsk_wallet::handle_wallet_setup(&action, &base_storage_path)?;
+            let base_storage_path = std::env::var("BASE_STORAGE_PATH").ok();
+            rsk_wallet::handle_wallet_setup(&action, base_storage_path.as_deref())?;
         }
         Commands::Run {
             num_clients,

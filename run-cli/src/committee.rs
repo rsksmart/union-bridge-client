@@ -10,14 +10,14 @@ use tokio::time::sleep;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
 #[value(rename_all = "lowercase")]
-pub enum CommitteeEnvironment {
+pub enum CommitteeEnv {
     Local,
     Alphanet,
 }
 
-impl Default for CommitteeEnvironment {
+impl Default for CommitteeEnv {
     fn default() -> Self {
-        CommitteeEnvironment::Local
+        CommitteeEnv::Local
     }
 }
 
@@ -79,13 +79,13 @@ struct Funding {
 
 pub async fn run_committee_setup(
     stream_id: u64,
-    environment: CommitteeEnvironment,
+    environment: CommitteeEnv,
     role: Option<CommitteeRole>,
 ) -> Result<()> {
     let client = Client::new();
 
     match environment {
-        CommitteeEnvironment::Local => {
+        CommitteeEnv::Local => {
             if role.is_some() {
                 eprintln!("Warning: --role is ignored in local environment");
             }
@@ -110,7 +110,7 @@ pub async fn run_committee_setup(
                 stream_id
             );
         }
-        CommitteeEnvironment::Alphanet => {
+        CommitteeEnv::Alphanet => {
             let role =
                 role.ok_or_else(|| anyhow!("--role is required when using --env alphanet"))?;
 

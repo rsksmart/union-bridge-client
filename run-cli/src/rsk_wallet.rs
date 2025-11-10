@@ -5,8 +5,11 @@
 //! - multi-client-N-member: for committee member operations
 //! - multi-client-N-user: for user/transaction operations
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
+use clap::ValueEnum;
 use key_manager::key_manager::KeyManager;
+use rpassword::prompt_password;
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -14,27 +17,82 @@ use std::time::Duration;
 
 use crate::{validate_1_10, WalletAction};
 
+const LOCAL_PROJECT_NAMES: [&str; 4] = ["op_1", "op_2", "op_3", "op_4"];
+const AWS_PROJECT_NAME: &str = "union-operator";
+
+const ALPHANET_HOSTS: [&str; 4] = [
+    "union-bridge-use1-1.alphanet.rskcomputing.net",
+    "union-bridge-use1-2.alphanet.rskcomputing.net",
+    "union-bridge-use1-3.alphanet.rskcomputing.net",
+    "union-bridge-use1-4.alphanet.rskcomputing.net",
+];
+
+#[derive(Debug, Clone)]
+pub enum RpcUrl {
+    Local,
+    Alphanet,
+}
+
+impl std::fmt::Display for RpcUrl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_string())
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
+#[value(rename_all = "kebab-case")]
+pub enum WalletEnv {
+    Cargo,
+    DockerLocal,
+    DockerAlphanet,
+}
+
+impl Default for WalletEnv {
+    fn default() -> Self {
+        WalletEnv::Cargo
+    }
+}
+
 /// handles wallet setup based on the requested action
-pub fn handle_wallet_setup(action: &WalletAction, base_storage_path: &str) -> Result<()> {
+pub fn handle_wallet_setup(action: &WalletAction, base_storage_path: Option<&str>) -> Result<()> {
     match action {
         WalletAction::Create { num_wallets } => {
+            let base = require_base_storage_path(base_storage_path)?;
             validate_1_10(*num_wallets, "num-wallets")?;
-            setup_wallets_create(*num_wallets, base_storage_path)?;
+            setup_wallets_create(*num_wallets, base)?;
             print_wallet_summary("create", *num_wallets);
         }
-        WalletAction::Fund { num_wallets } => {
-            validate_1_10(*num_wallets, "num-wallets")?;
-            setup_wallets_fund(*num_wallets, base_storage_path)?;
-            print_wallet_summary("fund", *num_wallets);
-        }
+        WalletAction::Fund { num_wallets, env } => match env.unwrap_or_default() {
+            WalletEnv::Cargo => {
+                let base = require_base_storage_path(base_storage_path)?;
+                validate_1_10(*num_wallets, "num-wallets")?;
+                setup_wallets_fund(*num_wallets, base)?;
+                print_wallet_summary("fund", *num_wallets);
+            }
+            WalletEnv::DockerLocal => {
+                fund_docker_local()?;
+            }
+            WalletEnv::DockerAlphanet => {
+                print_instructions()?;
+            }
+        },
         WalletAction::Both { num_wallets } => {
+            let base = require_base_storage_path(base_storage_path)?;
             validate_1_10(*num_wallets, "num-wallets")?;
-            setup_wallets_create(*num_wallets, base_storage_path)?;
-            setup_wallets_fund(*num_wallets, base_storage_path)?;
+            setup_wallets_create(*num_wallets, base)?;
+            setup_wallets_fund(*num_wallets, base)?;
             print_wallet_summary("both", *num_wallets);
         }
     }
     Ok(())
+}
+
+fn require_base_storage_path(base_storage_path: Option<&str>) -> Result<&str> {
+    base_storage_path.ok_or_else(|| {
+        anyhow!(
+            "BASE_STORAGE_PATH environment variable is required (e.g., export BASE_STORAGE_PATH=/Users/username)"
+        )
+    })
 }
 
 fn print_wallet_summary(mode: &str, num_wallets: u8) {
@@ -192,11 +250,7 @@ fn setup_wallets_fund(num_wallets: u8, base_storage_path: &str) -> Result<()> {
     let mut failed_count = 0;
 
     for i in 1..=num_wallets {
-        let (funded, failed) = fund_wallet_for_type(i, "member", &keystore_base_path, &password)?;
-        funded_count += funded;
-        failed_count += failed;
-
-        let (funded, failed) = fund_wallet_for_type(i, "user", &keystore_base_path, &password)?;
+        let (funded, failed) = fund_member_wallet(i, &keystore_base_path, &password)?;
         funded_count += funded;
         failed_count += failed;
     }
@@ -206,6 +260,7 @@ fn setup_wallets_fund(num_wallets: u8, base_storage_path: &str) -> Result<()> {
         "[fund-wallets] successfully funded: {} wallets",
         funded_count
     );
+    println!("[fund-wallets] user wallets were skipped");
 
     if failed_count > 0 {
         println!("[fund-wallets] failed to fund: {} wallets", failed_count);
@@ -217,13 +272,12 @@ fn setup_wallets_fund(num_wallets: u8, base_storage_path: &str) -> Result<()> {
     Ok(())
 }
 
-fn fund_wallet_for_type(
+fn fund_member_wallet(
     client_index: u8,
-    wallet_type: &str,
     keystore_base_path: &Path,
     password: &str,
 ) -> Result<(usize, usize)> {
-    let wallet_name = format!("multi-client-{}-{}", client_index, wallet_type);
+    let wallet_name = format!("multi-client-{}-member", client_index);
     let wallet_path = keystore_base_path.join(&wallet_name);
     let mut funded_count = 0usize;
     let mut failed_count = 0usize;
@@ -256,4 +310,211 @@ fn fund_wallet_for_type(
     println!("[fund-wallets] ---");
 
     Ok((funded_count, failed_count))
+}
+
+fn fund_docker_local() -> Result<()> {
+    println!("[docker-fund] funding operator wallets via local anvil");
+    let signers = collect_local_signers()?;
+    let unique = unique_addresses(&signers);
+    let expected = LOCAL_PROJECT_NAMES.len();
+    if unique.len() < expected {
+        bail!(
+            "expected {} RSK address(es) but found {}. ensure all required operator stacks are running and have emitted signer addresses.",
+            expected,
+            unique.len()
+        );
+    }
+
+    for (project, address) in signers {
+        println!("Processing {}", project);
+        println!("  Funding RSK address: {}", address);
+        run_cast_send_local(&address)?;
+    }
+
+    println!("Done. Funded operator RSK addresses on local Anvil.");
+    Ok(())
+}
+
+fn print_instructions() -> Result<()> {
+    println!("[docker-fund] gathering operator wallets from alphanet hosts");
+    let signers = collect_alphanet_signers()?;
+    let unique = unique_addresses(&signers);
+    let expected = ALPHANET_HOSTS.len();
+    if unique.len() < expected {
+        bail!(
+            "expected {} RSK address(es) but found {}. ensure all remote operator stacks are running and have emitted signer addresses.",
+            expected,
+            unique.len()
+        );
+    }
+
+    println!("Operator RSK addresses to fund on alphanet:");
+    for address in &unique {
+        println!("  operator -> {}", address);
+    }
+    println!();
+
+    let private_key = prompt_password("Enter Cow Private Key: ")
+        .context("failed to read private key")?
+        .trim()
+        .to_string();
+    println!();
+
+    if private_key.is_empty() {
+        bail!("private key is required");
+    }
+
+    println!("Fund using:");
+    for address in unique {
+        println!(
+            "  cast send {} --value 0.25ether --private-key {} --rpc-url {}",
+            address,
+            private_key,
+            RpcUrl::Alphanet
+        );
+    }
+
+    Ok(())
+}
+
+fn collect_local_signers() -> Result<Vec<(String, String)>> {
+    let mut signers = Vec::new();
+    for project in LOCAL_PROJECT_NAMES {
+        eprintln!("[docker-fund] running: docker compose -p {} logs", project);
+        let output = Command::new("docker")
+            .args(["compose", "-p", project, "logs"])
+            .output()
+            .with_context(|| format!("failed to run `docker compose -p {} logs`", project))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!(
+                "`docker compose -p {} logs` failed with: {}",
+                project,
+                stderr.trim()
+            );
+        }
+        let stdout = String::from_utf8(output.stdout)
+            .context("docker compose logs output is not valid utf-8")?;
+        let mut addresses = extract_signer_addresses(&stdout);
+        if addresses.is_empty() {
+            println!(
+                "[docker-fund] no signer addresses found for project {}",
+                project
+            );
+        } else {
+            for address in addresses.drain(..) {
+                signers.push((project.to_string(), address));
+            }
+        }
+    }
+
+    Ok(signers)
+}
+
+fn collect_alphanet_signers() -> Result<Vec<(String, String)>> {
+    const SSH_USER: &str = "ubuntu";
+
+    let mut signers = Vec::new();
+    for host in ALPHANET_HOSTS {
+        let target = format!("{}@{}", SSH_USER, host);
+        eprintln!(
+            "[docker-fund] running: ssh {} docker compose -p {} logs",
+            target, AWS_PROJECT_NAME
+        );
+        let output = Command::new("ssh")
+            .arg(&target)
+            .args(["docker", "compose", "-p", AWS_PROJECT_NAME, "logs"])
+            .output()
+            .with_context(|| {
+                format!(
+                    "failed to run `ssh {} docker compose -p {} logs`",
+                    target, AWS_PROJECT_NAME
+                )
+            })?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!(
+                "`ssh {} docker compose -p {} logs` failed with: {}",
+                target,
+                AWS_PROJECT_NAME,
+                stderr.trim()
+            );
+        }
+        let stdout = String::from_utf8(output.stdout).context("ssh output is not valid utf-8")?;
+        let mut addresses = extract_signer_addresses(&stdout);
+        if addresses.is_empty() {
+            println!("[docker-fund] no signer addresses found on host {}", host);
+        } else {
+            for address in addresses.drain(..) {
+                signers.push((host.to_string(), address));
+            }
+        }
+    }
+
+    Ok(signers)
+}
+
+fn extract_signer_addresses(log_content: &str) -> Vec<String> {
+    const MEMBER_LOG_MARKER: &str = "Got member signer with address";
+
+    let mut unique = HashSet::new();
+    for line in log_content.lines() {
+        if let Some(idx) = line.find(MEMBER_LOG_MARKER) {
+            let after_marker = &line[idx + MEMBER_LOG_MARKER.len()..];
+            if let Some(candidate) = after_marker
+                .split_whitespace()
+                .find(|token| token.starts_with("0x"))
+            {
+                let cleaned = candidate
+                    .trim_end_matches(|c: char| c == ',' || c == ';' || c == '.')
+                    .to_string();
+                unique.insert(cleaned);
+            }
+        }
+    }
+
+    let mut addresses: Vec<String> = unique.into_iter().collect();
+    addresses.sort();
+    addresses
+}
+
+fn unique_addresses(records: &[(String, String)]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut unique = Vec::new();
+    for (_, address) in records {
+        if seen.insert(address.clone()) {
+            unique.push(address.clone());
+        }
+    }
+    unique
+}
+
+fn run_cast_send_local(address: &str) -> Result<()> {
+    const LOCAL_ANVIL_ADDRESS: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+
+    eprintln!(
+        "  Running: cast send --rpc-url {} --from {} {} --value 1ether --unlocked",
+        RpcUrl::Local,
+        LOCAL_ANVIL_ADDRESS,
+        address
+    );
+    let output = Command::new("cast")
+        .arg("send")
+        .arg("--rpc-url")
+        .arg(RpcUrl::Local.to_string())
+        .arg("--from")
+        .arg(LOCAL_ANVIL_ADDRESS)
+        .arg(address)
+        .arg("--value")
+        .arg("1ether")
+        .arg("--unlocked")
+        .output()
+        .context("failed to execute cast send")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("cast send failed for {}: {}", address, stderr.trim());
+    }
+
+    Ok(())
 }
