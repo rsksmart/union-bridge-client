@@ -14,18 +14,6 @@ use crate::validate_1_4;
 
 const LOG_MARKER: &str = "Got member signer with address";
 
-#[derive(Debug, Clone)]
-pub enum RpcUrl {
-    Local,
-    Alphanet,
-}
-
-impl std::fmt::Display for RpcUrl {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_string())
-    }
-}
-
 /// handles creating local rootstock wallets for multi-client deployments
 pub fn handle_wallet_creation(num_wallets: u8, base_storage_path: Option<&str>) -> Result<()> {
     let base = require_base_storage_path(base_storage_path)?;
@@ -44,10 +32,13 @@ pub async fn handle_operator_funding(env: Environment) -> Result<()> {
             fund_local_docker()?;
         }
         Environment::Alphanet => {
-            print_instructions()?;
+            print_instructions(Environment::Alphanet)?;
+        }
+        Environment::Testnet => {
+            print_instructions(Environment::Testnet)?;
         }
         Environment::Local => {
-            bail!("Environment::Local is not supported for funding rootstock operators. Use LocalDocker or Alphanet.");
+            bail!("Environment::Local is not supported for funding rootstock operators. Use LocalDocker, Alphanet, or Testnet.");
         }
     }
     Ok(())
@@ -161,11 +152,19 @@ fn fund_local_docker() -> Result<()> {
     Ok(())
 }
 
-fn print_instructions() -> Result<()> {
-    println!("[docker-fund] gathering operator wallets from alphanet hosts");
-    let signers = collect_alphanet_signers()?;
+fn print_instructions(env: Environment) -> Result<()> {
+    let env_name = env.get_name();
+
+    let hosts = env.hosts();
+    let rpc_url = env.rpc_url();
+
+    println!(
+        "[docker-fund] gathering operator wallets from {} hosts",
+        env_name
+    );
+    let signers = collect_aws_signers(&hosts)?;
     let unique = unique_addresses(&signers);
-    let expected = ALPHANET_HOSTS.len();
+    let expected = hosts.len();
     if unique.len() < expected {
         bail!(
             "expected {} RSK address(es) but found {}. ensure all remote operator stacks are running and have emitted signer addresses.",
@@ -174,7 +173,7 @@ fn print_instructions() -> Result<()> {
         );
     }
 
-    println!("Operator RSK addresses to fund on alphanet:");
+    println!("Operator RSK addresses to fund on {}:", env_name);
     for address in &unique {
         println!("  operator -> {}", address);
     }
@@ -194,9 +193,7 @@ fn print_instructions() -> Result<()> {
     for address in unique {
         println!(
             "  cast send {} --value 0.25ether --private-key {} --rpc-url {}",
-            address,
-            private_key,
-            RpcUrl::Alphanet
+            address, private_key, rpc_url
         );
     }
 
@@ -238,9 +235,9 @@ fn collect_local_signers() -> Result<Vec<(String, String)>> {
     Ok(signers)
 }
 
-fn collect_alphanet_signers() -> Result<Vec<(String, String)>> {
+fn collect_aws_signers(hosts: &[String]) -> Result<Vec<(String, String)>> {
     let mut signers = Vec::new();
-    for host in ALPHANET_HOSTS {
+    for host in hosts {
         let target = format!("{}@{}", AWS_SSH_USER, host);
         eprintln!(
             "[docker-fund] running: ssh {} docker compose -p {} logs",
@@ -319,16 +316,15 @@ fn unique_addresses(records: &[(String, String)]) -> Vec<String> {
 }
 
 fn run_cast_send_local(address: &str) -> Result<()> {
+    let rpc_url = Environment::Local.rpc_url();
     eprintln!(
         "  Running: cast send --rpc-url {} --from {} {} --value 1ether --unlocked",
-        RpcUrl::Local,
-        LOCAL_ANVIL_ADDRESS,
-        address
+        rpc_url, LOCAL_ANVIL_ADDRESS, address
     );
     let output = Command::new("cast")
         .arg("send")
         .arg("--rpc-url")
-        .arg(RpcUrl::Local.to_string())
+        .arg(rpc_url)
         .arg("--from")
         .arg(LOCAL_ANVIL_ADDRESS)
         .arg(address)

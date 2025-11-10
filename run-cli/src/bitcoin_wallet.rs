@@ -15,7 +15,7 @@ pub async fn handle_bitcoin_funding(env: Environment) -> Result<()> {
     let addresses = match env {
         Environment::Local => collect_local_addresses().await?,
         Environment::LocalDocker => collect_local_docker_addresses().await?,
-        Environment::Alphanet => collect_alphanet_addresses().await?,
+        Environment::Alphanet | Environment::Testnet => collect_aws_addresses(env).await?,
     };
 
     if addresses.is_empty() {
@@ -66,10 +66,12 @@ async fn collect_local_docker_addresses() -> Result<Vec<String>> {
     collect_addresses_from_logs(projects, |project| run_docker_compose_logs(project))
 }
 
-async fn collect_alphanet_addresses() -> Result<Vec<String>> {
-    trigger_user_api_endpoints(Environment::Alphanet).await?;
+async fn collect_aws_addresses(env: Environment) -> Result<Vec<String>> {
+    trigger_user_api_endpoints(env).await?;
 
-    collect_addresses_from_logs(ALPHANET_HOSTS.iter().copied(), |host| {
+    let hosts = env.hosts();
+
+    collect_addresses_from_logs(hosts, |host| {
         let target = format!("{}@{}", AWS_SSH_USER, host);
         run_ssh_docker_compose_logs(&target, ONE_OPERATOR_COMPOSE_PROJECT)
     })
@@ -195,9 +197,10 @@ fn print_instructions(env: Environment, addresses: &[String]) {
     println!("Note: See the bitcoin-wallet README for how to start and use the CLI: ../bitcoin-wallet/README.md\n");
 
     match env {
-        Environment::Alphanet => {
+        Environment::Alphanet | Environment::Testnet => {
             println!(
-                "Run the following command in your bitcoin-wallet or wallet tooling for alphanet: send_to_address {} {}\n",
+                "Run the following command in your bitcoin-wallet or wallet tooling for {}: send_to_address {} {}\n",
+                env.get_name(),
                 joined, FUND_AMOUNT
             );
         }

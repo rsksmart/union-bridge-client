@@ -101,20 +101,24 @@ pub async fn run_committee_setup(
                 stream_id
             );
         }
-        Environment::Alphanet => {
-            let role =
-                role.ok_or_else(|| anyhow!("--role is required when using --env alphanet"))?;
+        Environment::Alphanet | Environment::Testnet => {
+            let role = role.ok_or_else(|| {
+                anyhow!(
+                    "--role is required when using --env {}",
+                    environment.get_name()
+                )
+            })?;
 
             let endpoint = endpoints
                 .first()
-                .expect("No local user-api endpoints configured; please review your config");
+                .expect("No user-api endpoints configured; please review your config");
 
             post_apply(&client, stream_id, endpoint, role).await?;
 
             println!("Done. Applied operator to stream {} as {}", stream_id, role);
         }
         Environment::LocalDocker => {
-            bail!("Environment::LocalDocker is not supported for committee setup. Use Local or Alphanet.");
+            bail!("Environment::LocalDocker is not supported for committee setup. Use Local, Alphanet, or Testnet.");
         }
     }
 

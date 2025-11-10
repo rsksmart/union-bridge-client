@@ -7,19 +7,19 @@
 //! - `create-rootstock-wallets`: creates rootstock keystores for local multi-client
 //!   deployments.
 //! - `fund-ops-rootstock`: funds rootstock wallets for operator stacks.
-//!   use `--env local-docker` (default) for local docker compose stacks, or
-//!   `--env alphanet` for remote alphanet stacks.
+//!   use `--env local-docker` (default) for local docker compose stacks,
+//!   `--env alphanet` for remote alphanet, or `--env testnet` for remote testnet.
 //! - `fund-ops-bitcoin`: collects bitcoin funding addresses for operators.
 //!   use `--env local` (default) for cargo-run coordinators, `--env local-docker`
-//!   for local docker compose stacks, or `--env alphanet` for remote stacks.
+//!   for local docker compose stacks, `--env alphanet` for alphanet, or `--env testnet` for testnet.
 //! - `create-pegin-tx`: requests a pegin address and prints bitcoin-wallet
 //!   instructions. requires `--rsk-address/-a`, with optional stream and packet
 //!   overrides via `--stream-amount/-s` and `--packet-number/-p`.
 //! - `request-pegout`: requests a pegout (withdrawal from Rootstock to Bitcoin).
 //!   requires `--amount/-a` in satoshis, defaults to local environment.
 //! - `setup-committee`: applies operators to a stream. requires `--stream-id/-s`,
-//!   defaults to the local environment, and accepts `--env` (`local` or `alphanet`)
-//!   plus optional `--role` when targeting alphanet.
+//!   defaults to the local environment, and accepts `--env` (`local`, `alphanet`, or `testnet`)
+//!   plus optional `--role` when targeting alphanet or testnet.
 //!
 //! quick examples:
 //! ```bash
@@ -90,7 +90,7 @@ enum Commands {
     /// Request a pegin address and print bitcoin-wallet CLI instructions
     #[command(name = "create-pegin-tx")]
     CreatePeginTx {
-        /// Environment to target (local, local-docker, alphanet)
+        /// Environment to target (local, local-docker, alphanet, testnet)
         #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local)]
         env: Environment,
 
@@ -119,7 +119,7 @@ enum Commands {
     /// Request a pegout (withdraw from Rootstock to Bitcoin)
     #[command(name = "request-pegout")]
     RequestPegout {
-        /// Environment to target (local, local-docker, alphanet)
+        /// Environment to target (local, local-docker, alphanet, testnet)
         #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local)]
         env: Environment,
 
@@ -133,14 +133,14 @@ enum Commands {
     /// Collect BitVMX funding addresses for operators
     #[command(name = "fund-ops-bitcoin")]
     FundOperatorsBitcoin {
-        /// Environment to target (local, local-docker, alphanet)
+        /// Environment to target (local, local-docker, alphanet, testnet)
         #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local)]
         env: Environment,
     },
     /// Fund Rootstock wallets for operator stacks
     #[command(name = "fund-ops-rootstock")]
     FundOperatorsRootstock {
-        /// Environment to target (local-docker, alphanet)
+        /// Environment to target (local-docker, alphanet, testnet)
         #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::LocalDocker)]
         env: Environment,
     },
@@ -151,11 +151,11 @@ enum Commands {
         #[arg(short = 's', long = "stream-id", value_name = "STREAM_ID")]
         stream_id: u64,
 
-        /// Target environment (`local` or `alphanet`)
+        /// Target environment (local, alphanet, testnet)
         #[arg(long = "env", value_enum, default_value_t = Environment::Local)]
         env: Environment,
 
-        /// Operator role when applying on alphanet
+        /// Operator role when applying on alphanet or testnet
         #[arg(long = "role", value_enum)]
         role: Option<CommitteeRole>,
     },
