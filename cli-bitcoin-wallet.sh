@@ -48,4 +48,4 @@ case "$MODE" in
 esac
 
 # Launch bitcoin-wallet with the specified mode
-exec cargo run --bin ub-wallet -- --mode "$MODE" "$@"
+exec cargo run --manifest-path ./bitcoin-wallet/Cargo.toml --bin ub-wallet -- --mode "$MODE" "$@"
