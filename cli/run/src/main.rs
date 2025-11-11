@@ -1,14 +1,56 @@
 //! union bridge local client launcher
 //!
-//! orchestrates the union bridge services for one or many clients.
-//! - use `--id` for a single client, defaults to running 4 clients
-//! - `--features` to pass cargo feature flags, `--fresh` to wipe local state
+//! orchestrates multiple union bridge client instances for local development and testing.
+//! each client runs four services: block-indexer, log-indexer, coordinator, and user-api.
 //!
-//! quick examples:
+//! ## usage
+//!
+//! run all 4 clients (simulates a 4-operator committee):
 //! ```bash
-//! cargo run -- --id 1 --fresh
+//! cargo run
+//! ```
+//!
+//! run a single client by id (1-4):
+//! ```bash
+//! cargo run -- --id 1
+//! ```
+//!
+//! start with fresh databases (wipes all existing state):
+//! ```bash
+//! cargo run -- --fresh
+//! ```
+//!
+//! pass custom cargo features:
+//! ```bash
 //! cargo run -- --features anvil
 //! ```
+//!
+//! ## what it does
+//!
+//! for each client (1-4):
+//! 1. creates separate databases for block-indexer, log-indexer, and coordinator
+//! 2. launches block-indexer (monitors bitcoin blockchain)
+//! 3. launches log-indexer (monitors rootstock smart contract events)
+//! 4. launches coordinator (orchestrates bitvmx protocol operations)
+//! 5. launches user-api (provides http api for pegin/pegout requests)
+//!
+//! each service reads from `config/base.yaml` and environment-specific overrides
+//! in `config/environment/*.yaml`.
+//!
+//! ## process management
+//!
+//! - graceful shutdown: press ctrl+c to stop all services
+//! - all child processes are properly terminated on exit
+//! - databases persist between runs unless `--fresh` is specified
+//!
+//! ## default ports (for client 1)
+//!
+//! - block-indexer: 50001
+//! - log-indexer: 60001  
+//! - coordinator: 40001
+//! - user-api: 30001
+//!
+//! subsequent clients use incremental ports (e.g., client 2 uses 50002, 60002, 40002, 30002)
 
 use anyhow::{anyhow, bail, Context, Result};
 use clap::{ArgAction, Parser};

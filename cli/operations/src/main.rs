@@ -1,30 +1,62 @@
 //! union bridge operator and user operations toolkit
 //!
+//! provides commands for setting up and interacting with the union bridge protocol.
 //! organized into three main command groups:
 //!
 //! ## setup
-//! initial configuration commands
+//! initial configuration commands for local development
 //! - `create-rootstock-wallets`: creates rootstock keystores for local multi-client deployments
 //!
 //! ## operator
-//! commands for managing committee members and funding
-//! - `fund`: collects bitcoin addresses and funds rootstock wallets for operators
-//! - `apply-stream`: applies operator to a stream for committee setup
-//!   - for local: applies all 4 operators automatically
-//!   - for alphanet/testnet: requires `--operator-id` (1-4) and `--role` (prover/verifier)
+//! commands for operator wallet management and committee registration
+//! - `fund`: displays operator bitcoin addresses and funds rootstock wallets
+//!   - prints bitcoin addresses that need to be funded manually in bitcoin-wallet cli
+//!   - automatically funds rootstock addresses via anvil (local) or faucet (testnet/alphanet)
+//! - `apply-stream`: registers operator(s) to a stream for committee participation
+//!   - local: applies all 4 operators automatically
+//!   - alphanet/testnet: requires `--operator-id` (1-4) and `--role` (prover/verifier)
 //!
 //! ## user
-//! pegin/pegout operations
-//! - `pegin`: requests a pegin address and prints bitcoin-wallet instructions
-//! - `pegout`: requests a pegout (withdrawal from Rootstock to Bitcoin)
+//! pegin and pegout transaction commands
+//! - `pegin`: initiates a bitcoin → rootstock transfer
+//!   - prints bitcoin-wallet cli command to execute the pegin transaction
+//!   - requires: rootstock address, value in satoshis, packet number
+//! - `pegout`: initiates a rootstock → bitcoin withdrawal
+//!   - executes the pegout request on the rootstock side
+//!   - requires: amount in satoshis
 //!
-//! quick examples:
+//! ## examples
+//!
+//! setup local environment:
 //! ```bash
 //! cargo run -- setup create-rootstock-wallets
-//! cargo run -- operator fund --env local-docker
+//! ```
+//!
+//! fund operator wallets (local):
+//! ```bash
+//! cargo run -- operator fund --env local
+//! # copy displayed bitcoin addresses and fund them in bitcoin-wallet cli
+//! ```
+//!
+//! apply operators to stream (local - all 4 operators):
+//! ```bash
+//! cargo run -- operator apply-stream -s 0 --env local
+//! ```
+//!
+//! apply operator to stream (alphanet - single operator):
+//! ```bash
 //! cargo run -- operator apply-stream -s 1 --env alphanet -o 1 -r prover
-//! cargo run -- user pegin -a 0x1234...cdef -s 2_000_000 -p 7
-//! cargo run -- user pegout -a 1000000
+//! ```
+//!
+//! request pegin (bitcoin → rootstock):
+//! ```bash
+//! cargo run -- user pegin -a 0x1234...cdef -v 100000 -p 0 --env local
+//! # execute the printed bitcoin-wallet cli command
+//! ```
+//!
+//! request pegout (rootstock → bitcoin):
+//! ```bash
+//! cargo run -- user pegout -a 100000 --env local
 //! ```
 
 mod bitcoin_wallet;
