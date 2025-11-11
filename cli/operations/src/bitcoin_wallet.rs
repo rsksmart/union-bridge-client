@@ -106,8 +106,6 @@ async fn request_bitvmx_address_user_api(env: Environment) -> Result<()> {
 
     println!("Triggering BitVMX endpoints: {} ...", endpoints.join(", "));
 
-    sleep(Duration::from_secs(10)).await;
-
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()
@@ -146,6 +144,8 @@ async fn request_bitvmx_address_user_api(env: Environment) -> Result<()> {
             .with_context(|| format!("failed to read response body from {}", url))?;
         println!("{}", body.trim());
     }
+
+    sleep(Duration::from_secs(10)).await;
 
     Ok(())
 }
