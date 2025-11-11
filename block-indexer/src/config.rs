@@ -47,6 +47,16 @@ mod tests {
             10001,
             config.block_indexer_config.block_notifier.broker_port
         );
+        assert!(!config.indexer.storage.path.contains("{BASE_STORAGE_PATH}"));
+        assert!(
+            config
+                .indexer
+                .storage
+                .path
+                .ends_with("/.union_bridge/database/multi-client-1")
+        );
+        assert_eq!(1000, config.indexer.cache.size);
+        assert_eq!("ws://127.0.0.1:8545", config.provider.rootstock.url);
     }
 
     #[test]

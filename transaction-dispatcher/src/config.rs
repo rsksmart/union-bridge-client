@@ -82,13 +82,24 @@ mod tests {
         let config: Config =
             CommonConfig::load_config::<Config>(None).expect("Failed to load config");
 
-        assert_eq!(
-            "/your_base_path/.union_bridge/keystore/multi-client-1-user",
-            config.tx_dispatcher_config.key_store.user_path
+        // key store
+        assert!(!config.tx_dispatcher_config.key_store.user_path.contains("{BASE_STORAGE_PATH}"));
+        assert!(
+            config
+                .tx_dispatcher_config.key_store.user_path
+                .ends_with("/.union_bridge/keystore/multi-client-1-user")
         );
-        assert_eq!(
-            "/your_base_path/.union_bridge/keystore/multi-client-1-member",
-            config.tx_dispatcher_config.key_store.member_path
+        assert!(
+            !config
+                .tx_dispatcher_config.key_store
+                .member_path
+                .contains("{BASE_STORAGE_PATH}")
+        );
+        assert!(
+            config
+                .tx_dispatcher_config.key_store
+                .member_path
+                .ends_with("/.union_bridge/keystore/multi-client-1-member")
         );
         assert_eq!(3, config.transaction().gas_bumps_t1);
     }

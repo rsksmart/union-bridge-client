@@ -63,7 +63,21 @@ mod tests {
         let config: Config =
             CommonConfig::load_config::<Config>(None).expect("Failed to load config");
 
-        assert_eq!(20001, config.log_indexer_config.log_notifier.broker_port);
+        assert_eq!(
+            "0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c",
+            config.indexer.initial_block_hash
+        );
+        assert!(!config.indexer.storage.path.contains("{BASE_STORAGE_PATH}"));
+        assert!(
+            config
+                .indexer
+                .storage
+                .path
+                .ends_with("/.union_bridge/database/multi-client-1")
+        );
+        assert_eq!(1000, config.indexer.cache.size);
+        assert_eq!("ws://127.0.0.1:8545", config.provider.rootstock.url);
+        assert_eq!(8, config.contracts.len());
     }
 
     #[test]
