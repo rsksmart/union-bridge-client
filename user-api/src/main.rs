@@ -76,11 +76,11 @@ async fn main() -> Result<()> {
 
     let shutdown_flag = ShutdownFlag::init();
 
-    let broker_port = config.user_api_config.broker_server_port;
+    let broker_port = config.user_api_config.notifier.port;
     let broker_drop_guard = BrokerDropGuard::new(Arc::new(BrokerServer::new(broker_port)));
     info!("Broker Server started on {broker_port}");
 
-    let http_addr = SocketAddr::from(([0, 0, 0, 0], config.user_api_config.http_server_port));
+    let http_addr = SocketAddr::from(([0, 0, 0, 0], config.user_api_config.http.port));
     let listener = TcpListener::bind(http_addr)
         .await
         .context("Failed to bind to address")?;
@@ -120,7 +120,7 @@ async fn main() -> Result<()> {
             .clone_arc()
             .context("failed to clone broker server handle")?,
         shutdown_flag.clone(),
-        config.user_api_config.coordinator_broker_client_id,
+        config.user_api_config.coordinator.broker.client_id,
         user_contracts_gateway,
         member_contracts_gateway,
         user_bitcoin_wif.as_deref(),

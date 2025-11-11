@@ -17,7 +17,7 @@ pub struct Config {
 
 #[derive(Debug, Deserialize)]
 pub struct LogIndexerConfig {
-    pub log_notifier: NotifierConfig,
+    pub notifier: NotifierConfig,
 }
 
 impl Config {

@@ -3,7 +3,7 @@ use anyhow::{Context, Result, bail};
 use bitcoin::Network;
 use config;
 use config::{Environment, Source};
-use log::{debug, trace};
+use log::trace;
 use log4rs::config::RawConfig;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -33,7 +33,7 @@ pub struct IndexerConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct NotifierConfig {
-    pub broker_port: u16,
+    pub port: u16,
 }
 
 #[derive(Debug, Deserialize)]
@@ -236,9 +236,13 @@ mod tests {
             "0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c",
             config.indexer.initial_block_hash
         );
-        assert_eq!(
-            "/{BASE_STORAGE_PATH}/.union_bridge/database/multi-client-1",
-            config.indexer.storage.path
+        assert!(!config.indexer.storage.path.contains("{BASE_STORAGE_PATH}"));
+        assert!(
+            config
+                .indexer
+                .storage
+                .path
+                .ends_with("/.union_bridge/database/multi-client-1")
         );
         assert_eq!(1000, config.indexer.cache.size);
         assert_eq!(100, config.indexer.sync.finality_depth);

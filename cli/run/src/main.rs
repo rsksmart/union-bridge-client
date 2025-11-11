@@ -302,108 +302,44 @@ fn build_env_for_client(
     env_map: &HashMap<String, String>,
 ) -> Result<Vec<(String, String)>> {
     validate_1_4(id, "CLIENT_ID")?;
-    let get = |key: String| -> Result<String> {
-        env_map
-            .get(&key)
-            .cloned()
-            .ok_or_else(|| anyhow!("Missing {} in multiclient.env", key))
-    };
 
     let base_storage_path = std::env::var("BASE_STORAGE_PATH")
         .context("BASE_STORAGE_PATH environment variable is required")?;
 
-    let storage_rel = get(format!("STORAGE_PATH_{}", id))?;
-    let storage_path = format!(
-        "{}/.union_bridge/database/{}",
-        base_storage_path, storage_rel
-    );
+    let suffix = format!("_{}", id);
+    let mut envs: Vec<(String, String)> = Vec::new();
 
-    let key_store_base = get(format!("KEY_STORE_PATH_{}", id))?;
-    let (key_store_member_name, key_store_user_name) = derive_key_store_names(&key_store_base);
-    let key_store_member_path = format!(
-        "{}/.union_bridge/keystore/{}",
-        base_storage_path, key_store_member_name
-    );
-    let key_store_user_path = format!(
-        "{}/.union_bridge/keystore/{}",
-        base_storage_path, key_store_user_name
-    );
+    // iterate through all vars starting with UB__ and ending with the client suffix
+    for (key, value) in env_map {
+        if key.starts_with("UB__") && key.ends_with(&suffix) {
+            // strip the _N suffix to get the base env var name
+            let base_key = key.strip_suffix(&suffix).unwrap().to_string();
 
-    let envs: Vec<(String, String)> = vec![
-        (
-            "UB__BLOCK_INDEXER__BLOCK_NOTIFIER__BROKER_PORT".into(),
-            get(format!("BLOCK_NOTIFIER_BROKER_PORT_{}", id))?,
-        ),
-        (
-            "UB__LOG_INDEXER__LOG_NOTIFIER__BROKER_PORT".into(),
-            get(format!("LOG_NOTIFIER_BROKER_PORT_{}", id))?,
-        ),
-        (
-            "UB__COORDINATOR__BLOCK_BROKER__PORT".into(),
-            get(format!("BLOCK_BROKER_PORT_{}", id))?,
-        ),
-        (
-            "UB__COORDINATOR__LOG_BROKER__PORT".into(),
-            get(format!("LOG_BROKER_PORT_{}", id))?,
-        ),
-        (
-            "UB__COORDINATOR__USER_BROKER__PORT".into(),
-            get(format!("USER_BROKER_PORT_{}", id))?,
-        ),
-        (
-            "UB__COORDINATOR__BROKER_CLIENT_ID".into(),
-            get(format!("BROKER_CLIENT_ID_{}", id))?,
-        ),
-        ("UB__INDEXER__STORAGE__PATH".into(), storage_path.clone()),
-        ("UB__COORDINATOR__STORAGE_PATH".into(), storage_path.clone()),
-        (
-            "UB__TRANSACTION_DISPATCHER__KEY_STORE__USER_PATH".into(),
-            format!(
-                "{}/.union_bridge/keystore/{}-user",
-                base_storage_path, key_store_base
-            ),
-        ),
-        (
-            "UB__TRANSACTION_DISPATCHER__KEY_STORE__MEMBER_PATH".into(),
-            format!(
-                "{}/.union_bridge/keystore/{}-member",
-                base_storage_path, key_store_base
-            ),
-        ),
-        (
-            "UB__USER_API__SERVER__URL".into(),
-            get(format!("SERVER_URL_{}", id))?,
-        ),
-        (
-            "UB__USER_API__COORDINATOR_BROKER_CLIENT_ID".into(),
-            get(format!("COORDINATOR_BROKER_CLIENT_ID_{}", id))?,
-        ),
-        (
-            "UB__USER_API__BROKER_SERVER_PORT".into(),
-            get(format!("BROKER_SERVER_PORT_{}", id))?,
-        ),
-        (
-            "UB__USER_API__HTTP_SERVER_PORT".into(),
-            get(format!("HTTP_SERVER_PORT_{}", id))?,
-        ),
-        (
-            "UB__COORDINATOR__BITVMX_BROKER__PORT".into(),
-            get(format!("BITVMX_BROKER_PORT_{}", id))?,
-        ),
-        ("CLIENT_ID".into(), id.to_string()),
-    ];
+            // handle paths that need BASE_STORAGE_PATH prepended
+            let final_value = if base_key == "UB__INDEXER__STORAGE__PATH" {
+                format!("{}/.union_bridge/database/{}", base_storage_path, value)
+            } else if base_key == "UB__COORDINATOR__STORAGE_PATH" {
+                format!("{}/.union_bridge/database/{}", base_storage_path, value)
+            } else if base_key == "UB__TRANSACTION_DISPATCHER__KEY_STORE__MEMBER_PATH" {
+                format!("{}/.union_bridge/keystore/{}", base_storage_path, value)
+            } else if base_key == "UB__TRANSACTION_DISPATCHER__KEY_STORE__USER_PATH" {
+                format!("{}/.union_bridge/keystore/{}", base_storage_path, value)
+            } else {
+                value.clone()
+            };
+
+            envs.push((base_key, final_value));
+        }
+    }
+
+    // add CLIENT_ID
+    let client_id = env_map
+        .get(&format!("CLIENT_ID_{}", id))
+        .cloned()
+        .unwrap_or_else(|| id.to_string());
+    envs.push(("CLIENT_ID".into(), client_id));
 
     Ok(envs)
-}
-
-fn derive_key_store_names(raw: &str) -> (String, String) {
-    let base = raw
-        .strip_suffix("-member")
-        .or_else(|| raw.strip_suffix("-user"))
-        .unwrap_or(raw)
-        .to_string();
-
-    (format!("{base}-member"), format!("{base}-user"))
 }
 
 fn fresh_cleanup() -> Result<()> {
