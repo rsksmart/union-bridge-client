@@ -9,7 +9,11 @@ struct StubRpc {
 }
 
 impl RawTxProvider for StubRpc {
-    fn raw_transaction_hex(&self, _txid: &RpcTxid) -> bitcoincore_rpc::Result<String> {
+    fn raw_transaction_hex(
+        &self,
+        _txid: &RpcTxid,
+        _blockhash: Option<&bitcoincore_rpc::bitcoin::BlockHash>,
+    ) -> bitcoincore_rpc::Result<String> {
         Ok(self.hex.clone())
     }
 }
@@ -29,7 +33,7 @@ fn fetch_utxo_amount_returns_value_from_hex() {
         hex: bitcoin::consensus::encode::serialize_hex(&tx),
     };
     let txid = Txid::from_slice(&[0x33; 32]).expect("txid");
-    let amount = fetch_utxo_amount(&stub, txid, 0).expect("amount");
+    let amount = fetch_utxo_amount(&stub, txid, None, 0).expect("amount");
     assert_eq!(amount, 21_000);
 }
 
@@ -48,6 +52,6 @@ fn fetch_utxo_amount_errors_when_vout_missing() {
         hex: bitcoin::consensus::encode::serialize_hex(&tx),
     };
     let txid = Txid::from_slice(&[0x44; 32]).expect("txid");
-    let err = fetch_utxo_amount(&stub, txid, 2).expect_err("should error");
+    let err = fetch_utxo_amount(&stub, txid, None, 2).expect_err("should error");
     assert!(err.to_string().contains("vout"));
 }

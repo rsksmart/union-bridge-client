@@ -34,7 +34,8 @@ fn main() -> Result<()> {
 
     println!(
         "Simple P2WPKH wallet (mode: {}, network: {}). Type 'help' for commands.",
-        config.mode, wallet.network()
+        config.mode,
+        wallet.network()
     );
 
     loop {
@@ -55,7 +56,7 @@ fn main() -> Result<()> {
 
                 let _ = editor.add_history_entry(history_entry.as_ref());
 
-                match handle_command(&mut wallet, &config.mode, trimmed) {
+                match handle_command(&mut wallet, trimmed) {
                     Ok(CommandOutcome::Continue) => {}
                     Ok(CommandOutcome::Exit) => break,
                     Err(err) => eprintln!("Error: {:#}", err),
@@ -138,7 +139,7 @@ fn check_transaction_status(wallet: &Wallet, txid: &Txid) -> Result<TxConfirmati
     })
 }
 
-fn handle_command(wallet: &mut Wallet, mode: &WalletMode, line: &str) -> Result<CommandOutcome> {
+fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
     let mut parts = line.split_whitespace();
     let command = parts.next().unwrap();
 
@@ -209,6 +210,7 @@ fn handle_command(wallet: &mut Wallet, mode: &WalletMode, line: &str) -> Result<
                 bail!("import or switch to an address before registering UTXOs");
             }
             let txid_str = parts.next().context("expected txid")?;
+            let block_hash_str = parts.next().context("expected block hash")?;
             let vout_str = parts.next().context("expected vout")?;
             let amount = match parts.next() {
                 Some(value) => Some(value.parse().context("invalid amount (satoshis)")?),
@@ -216,12 +218,14 @@ fn handle_command(wallet: &mut Wallet, mode: &WalletMode, line: &str) -> Result<
             };
 
             let txid = Txid::from_str(txid_str).context("invalid txid provided")?;
+            let block_hash = bitcoincore_rpc::bitcoin::BlockHash::from_str(block_hash_str)
+                .context("invalid block hash")?;
             let vout: u32 = vout_str.parse().context("invalid vout index")?;
 
             let amount_sat = match amount {
                 Some(value) => value,
                 None => wallet
-                    .fetch_utxo_amount(txid, vout)
+                    .fetch_utxo_amount(txid, Some(&block_hash), vout)
                     .context("RPC client required to fetch UTXO amount")?,
             };
 
@@ -416,7 +420,7 @@ fn handle_command(wallet: &mut Wallet, mode: &WalletMode, line: &str) -> Result<
                 Txid::from_str(&txid_hex).context("invalid txid returned by bitcoind")?;
             let funding_vout = find_vout_for_address(client, &txid_hex, &active_addr)
                 .context("failed to locate vout for wallet address")?;
-            let funding_amount = wallet.fetch_utxo_amount(funding_txid, funding_vout)?;
+            let funding_amount = wallet.fetch_utxo_amount(funding_txid, None, funding_vout)?;
 
             let outpoint = OutPoint::new(funding_txid, funding_vout);
             wallet.register_utxo(outpoint, funding_amount)?;
@@ -467,11 +471,6 @@ fn handle_command(wallet: &mut Wallet, mode: &WalletMode, line: &str) -> Result<
             Ok(CommandOutcome::Continue)
         }
         "create_pegin_tx" => {
-            // Restrict to user mode only
-            if *mode != WalletMode::User {
-                bail!("create_pegin_tx command is only available in user mode");
-            }
-
             // Syntax: create_pegin_tx <stream_value> <packet_number> <dest_addr> <rsk_address>
             let stream_value_str = parts.next().context("expected stream value in satoshis")?;
             let stream_value: u64 = stream_value_str
@@ -521,6 +520,90 @@ fn handle_command(wallet: &mut Wallet, mode: &WalletMode, line: &str) -> Result<
                 println!("  RPC not configured; transaction hex printed only.");
             }
 
+            Ok(CommandOutcome::Continue)
+        }
+        "list_pending" => {
+            let pending = wallet.pending_transaction_ids();
+            if pending.is_empty() {
+                println!("No pending transactions.");
+            } else {
+                println!("Pending transactions:");
+                for txid in pending {
+                    if let Some(created) = wallet.get_pending_transaction(&txid) {
+                        println!(
+                            "  {} - fee: {} sat, vsize: {} bytes",
+                            txid,
+                            created.fee_sat,
+                            created.transaction.vsize()
+                        );
+                    } else {
+                        println!("  {}", txid);
+                    }
+                }
+            }
+            Ok(CommandOutcome::Continue)
+        }
+        "replace_tx" => {
+            let txid_str = parts.next().context("expected txid")?;
+            let new_fee_str = parts.next().context("expected new fee rate (sats/byte)")?;
+
+            let txid = Txid::from_str(txid_str).context("invalid txid format")?;
+            let new_sats_per_byte: u64 = new_fee_str
+                .parse()
+                .context("invalid fee rate (must be positive integer)")?;
+
+            println!(
+                "Replacing transaction {} with fee rate {} sat/byte...",
+                txid, new_sats_per_byte
+            );
+
+            let replacement = wallet.replace_transaction(txid, new_sats_per_byte)?;
+
+            let new_txid = replacement.transaction.compute_txid();
+            let vsize = replacement.transaction.vsize();
+            let hex = serialize_hex(&replacement.transaction);
+
+            println!("Replacement transaction created:");
+            println!("  new_txid={}", new_txid);
+            println!("  vsize={}", vsize);
+            println!(
+                "  fee={} sat (was {} sat)",
+                replacement.fee_sat,
+                wallet
+                    .get_pending_transaction(&txid)
+                    .map(|t| t.fee_sat)
+                    .unwrap_or(0)
+            );
+            println!("  raw={}", hex);
+
+            if let Some(change) = &replacement.change {
+                println!(
+                    "  change -> {} sat back to wallet (outpoint {}:{})",
+                    change.value_sat, change.outpoint.txid, change.outpoint.vout
+                );
+            }
+
+            // broadcast the replacement
+            if wallet.rpc_client().is_some() {
+                match wallet.broadcast_transaction(&replacement) {
+                    Ok(txid) => println!(
+                        "  Replacement transaction broadcasted successfully: {}",
+                        txid
+                    ),
+                    Err(err) => eprintln!("  Failed to broadcast replacement transaction: {err}"),
+                }
+            } else {
+                println!("  RPC not configured; replacement transaction hex printed only.");
+            }
+
+            Ok(CommandOutcome::Continue)
+        }
+        "confirm_tx" => {
+            let txid_str = parts.next().context("expected txid")?;
+            let txid = Txid::from_str(txid_str).context("invalid txid format")?;
+
+            wallet.confirm_transaction(txid)?;
+            println!("Transaction {} confirmed and finalized.", txid);
             Ok(CommandOutcome::Continue)
         }
 
@@ -689,6 +772,18 @@ fn print_help(sats_per_byte: u64) {
     println!(
         "  create_pegin_tx <value> <packet> <addr> <rsk>  - Create RSK pegin transaction (value in sats, packet number, dest address, RSK address hex)"
     );
+    println!();
+    println!("RBF (Replace-By-Fee) commands:");
+    println!(
+        "  list_pending                          - Show all pending (unconfirmed) transactions"
+    );
+    println!(
+        "  replace_tx <txid> <new_sats/byte>     - Replace pending transaction with higher fee"
+    );
+    println!(
+        "  confirm_tx <txid>                     - Manually confirm a pending transaction (after on-chain confirmation)"
+    );
+    println!();
     println!("Fees target {sats_per_byte} sat per virtual byte.");
 }
 
