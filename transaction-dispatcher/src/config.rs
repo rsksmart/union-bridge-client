@@ -83,21 +83,31 @@ mod tests {
             CommonConfig::load_config::<Config>(None).expect("Failed to load config");
 
         // key store
-        assert!(!config.tx_dispatcher_config.key_store.user_path.contains("{BASE_STORAGE_PATH}"));
+        assert!(
+            !config
+                .tx_dispatcher_config
+                .key_store
+                .user_path
+                .contains("{BASE_STORAGE_PATH}")
+        );
         assert!(
             config
-                .tx_dispatcher_config.key_store.user_path
+                .tx_dispatcher_config
+                .key_store
+                .user_path
                 .ends_with("/.union_bridge/keystore/multi-client-1-user")
         );
         assert!(
             !config
-                .tx_dispatcher_config.key_store
+                .tx_dispatcher_config
+                .key_store
                 .member_path
                 .contains("{BASE_STORAGE_PATH}")
         );
         assert!(
             config
-                .tx_dispatcher_config.key_store
+                .tx_dispatcher_config
+                .key_store
                 .member_path
                 .ends_with("/.union_bridge/keystore/multi-client-1-member")
         );

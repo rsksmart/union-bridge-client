@@ -3,7 +3,7 @@ use anyhow::{Context, Result, bail};
 use bitcoin::Network;
 use config;
 use config::{Environment, Source};
-use log::trace;
+use log::{debug, trace};
 use log4rs::config::RawConfig;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -71,34 +71,31 @@ pub struct ContractConfig {
 
 impl CommonConfig {
     pub fn load_config<T: DeserializeOwned>(env: Option<String>) -> Result<T, ConfigError> {
-        let env = env.unwrap_or("".to_string());
+        let env = env.unwrap_or_default();
         let (base_config_path, env_config_path) = Self::config_path_for(&env)?;
 
         trace!(
             "Loading config: base.toml -> environment/{env}.toml -> environment variables with prefix UB__"
         );
 
-        // read base config file and replace placeholders
-        let base_config_str = fs::read_to_string(&base_config_path).map_err(|e| {
-            ConfigError::ConfigEnvError(format!("Failed to read base config: {}", e))
-        })?;
-        let base_config_str = Self::replace_config_placeholders(base_config_str);
-
-        // read env config file if it exists and replace placeholders
-        let env_config_str = fs::read_to_string(&env_config_path).ok();
-        let env_config_str = env_config_str.map(|s| Self::replace_config_placeholders(s));
-
+        // load base config file with placeholder replacement
+        let base_config = Self::read_and_process_config(&base_config_path)?;
         let mut builder = config::Config::builder().add_source(config::File::from_str(
-            &base_config_str,
-            config::FileFormat::Yaml,
+            &base_config,
+            config::FileFormat::Toml,
         ));
 
-        if let Some(env_str) = env_config_str {
-            builder =
-                builder.add_source(config::File::from_str(&env_str, config::FileFormat::Yaml));
+        // add environment-specific config if it exists
+        if Path::new(&env_config_path).exists() {
+            let env_config = Self::read_and_process_config(&env_config_path)?;
+            builder = builder.add_source(config::File::from_str(
+                &env_config,
+                config::FileFormat::Toml,
+            ));
         }
 
-        let cfg = builder
+        // add environment variables and deserialize
+        builder
             .add_source(
                 Environment::with_prefix("UB")
                     .prefix_separator("__")
@@ -107,15 +104,19 @@ impl CommonConfig {
                     .list_separator(";"),
             )
             .build()
-            .map_err(ConfigError::ConfigFileError)?;
+            .and_then(|cfg| {
+                trace!("Loaded config {:#?}", cfg.collect().ok());
+                cfg.try_deserialize::<T>()
+            })
+            .map_err(ConfigError::ConfigFileError)
+    }
 
-        trace!("Loaded config {:#?}", cfg.collect()?);
-
-        let cfg_as_t = cfg
-            .try_deserialize::<T>()
-            .map_err(ConfigError::ConfigFileError)?;
-
-        Ok(cfg_as_t)
+    fn read_and_process_config(path: &str) -> Result<String, ConfigError> {
+        fs::read_to_string(path)
+            .map(Self::replace_config_placeholders)
+            .map_err(|e| {
+                ConfigError::ConfigEnvError(format!("Failed to read config from {path}: {e}"))
+            })
     }
 
     fn replace_config_placeholders(mut config_str: String) -> String {
@@ -236,7 +237,7 @@ mod tests {
             config.indexer.initial_block_hash
         );
         assert_eq!(
-            "/your_base_path/.union_bridge/database/multi-client-1",
+            "/{BASE_STORAGE_PATH}/.union_bridge/database/multi-client-1",
             config.indexer.storage.path
         );
         assert_eq!(1000, config.indexer.cache.size);

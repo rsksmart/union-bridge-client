@@ -8,7 +8,7 @@ bitcoin_network = "regtest"
 [indexer]
 
 initial_block_hash = "0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c"
-storage.path = "/your_base_path/.union_bridge/database/multi-client-1"
+storage.path = "/{BASE_STORAGE_PATH}/.union_bridge/database/multi-client-1"
 cache.size = 1000
 sync.finality_depth = 100
 sync.batch_size = 100
@@ -60,7 +60,7 @@ user_broker.port = 30001
 bitvmx_broker.host = "0.0.0.0"
 bitvmx_broker.port = 22222
 broker_client_id = 101
-storage_path = "/your_base_path/.union_bridge/database/multi-client-1"
+storage_path = "/{BASE_STORAGE_PATH}/.union_bridge/database/multi-client-1"
 
 # ═══════════════════════════════════════════════════════
 # Block Indexer
@@ -84,8 +84,8 @@ log_notifier.broker_port = 20001
 
 [transaction_dispatcher]
 
-key_store.user_path = "/your_base_path/.union_bridge/keystore/multi-client-1-user"
-key_store.member_path = "/your_base_path/.union_bridge/keystore/multi-client-1-member"
+key_store.user_path = "/{BASE_STORAGE_PATH}/.union_bridge/keystore/multi-client-1-user"
+key_store.member_path = "/{BASE_STORAGE_PATH}/.union_bridge/keystore/multi-client-1-member"
 transaction.gas_bumps_t1 = 3
 
 # ═══════════════════════════════════════════════════════

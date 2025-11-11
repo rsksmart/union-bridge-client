@@ -11,4 +11,4 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 # forward all arguments to run
-RUST_BACKTRACE=0 exec cargo run --manifest-path cli/run/Cargo.toml -- "$@"
+RUST_BACKTRACE=1 exec cargo run --manifest-path cli/run/Cargo.toml -- "$@"

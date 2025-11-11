@@ -110,7 +110,7 @@ mod tests {
         assert_eq!(22222, config.coordinator_config.bitvmx_broker.port);
         assert_eq!(101, config.coordinator_config.broker_client_id);
         assert_eq!(
-            "/your_base_path/.union_bridge/database/multi-client-1",
+            "/{BASE_STORAGE_PATH}/.union_bridge/database/multi-client-1",
             config.coordinator_config.storage_path
         );
         assert_eq!("regtest", config.bitcoin_network);
