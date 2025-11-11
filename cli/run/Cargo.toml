@@ -7,4 +7,5 @@ edition = "2021"
 anyhow = { workspace = true }
 clap = { workspace = true }
 nix = { workspace = true }
+sysinfo = "0.32"
 tokio = { workspace = true }

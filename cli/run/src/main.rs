@@ -63,6 +63,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, RefreshKind, System};
 use tokio::runtime::Runtime;
 use tokio::signal;
 use tokio::sync::broadcast;
@@ -180,6 +181,9 @@ struct RunConfig {
 }
 
 async fn run_clients(config: RunConfig) -> Result<()> {
+    // detect and kill any running services before starting
+    detect_and_kill_existing_services()?;
+
     if config.fresh {
         fresh_cleanup()?;
     }
@@ -263,6 +267,128 @@ async fn run_clients(config: RunConfig) -> Result<()> {
     ctrlc_handle.abort();
 
     println!("Done");
+
+    Ok(())
+}
+
+fn detect_and_kill_existing_services() -> Result<()> {
+    println!("Checking for existing services...");
+
+    // initialize system and refresh process list
+    let mut sys =
+        System::new_with_specifics(RefreshKind::new().with_processes(ProcessRefreshKind::new()));
+    sys.refresh_processes(ProcessesToUpdate::All, true);
+
+    let mut found_pids: Vec<(String, u32)> = Vec::new();
+
+    // find all matching processes
+    for service in &UNION_CLIENT_SERVICES {
+        let service_name = service.name();
+
+        for (pid, process) in sys.processes() {
+            // check if the process name matches the service
+            // the actual running process will be "target/debug/<service-name>" or just "<service-name>"
+            if let Some(process_name) = process.name().to_str() {
+                if process_name == service_name {
+                    found_pids.push((service_name.to_string(), pid.as_u32()));
+                }
+            }
+        }
+    }
+
+    if !found_pids.is_empty() {
+        println!("Found {} running service instance(s)", found_pids.len());
+
+        // group by service for better output
+        let mut by_service: HashMap<String, Vec<u32>> = HashMap::new();
+        for (service, pid) in &found_pids {
+            by_service.entry(service.clone()).or_default().push(*pid);
+        }
+
+        for (service, pids) in &by_service {
+            println!("  {}: PIDs {:?}", service, pids);
+        }
+
+        // shutdown coordinators first to allow them to unsubscribe from brokers gracefully
+        let coordinator_name = Service::Coordinator.name();
+        if let Some(coordinator_pids) = by_service.get(coordinator_name) {
+            println!("Shutting down coordinators first...");
+            for pid in coordinator_pids {
+                let pid_val = Pid::from_raw(*pid as i32);
+                if kill(pid_val, Signal::SIGTERM).is_ok() {
+                    println!("  Sent SIGTERM to {} (PID {})", coordinator_name, pid);
+                }
+            }
+
+            // wait for coordinators to exit (up to 10 seconds)
+            let start = std::time::Instant::now();
+            let coordinator_timeout = Duration::from_secs(10);
+            loop {
+                sys.refresh_processes(ProcessesToUpdate::All, true);
+                let still_alive: Vec<_> = coordinator_pids
+                    .iter()
+                    .filter(|&&pid| sys.process(sysinfo::Pid::from_u32(pid)).is_some())
+                    .collect();
+
+                if still_alive.is_empty() {
+                    break;
+                }
+
+                if start.elapsed() >= coordinator_timeout {
+                    // force kill any that didn't exit
+                    for &&pid in &still_alive {
+                        let pid_val = Pid::from_raw(pid as i32);
+                        let _ = kill(pid_val, Signal::SIGKILL);
+                        println!("  Force killed {} (PID {}, timeout)", coordinator_name, pid);
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                    break;
+                }
+
+                std::thread::sleep(Duration::from_millis(100));
+            }
+
+            // additional delay after coordinators exit to ensure cleanup completes
+            println!("Coordinators stopped, waiting for cleanup...");
+            std::thread::sleep(Duration::from_secs(2));
+        }
+
+        // now shutdown remaining services
+        println!("Shutting down remaining services...");
+        for (service, pid) in &found_pids {
+            if service == coordinator_name {
+                continue; // already handled
+            }
+            let pid_val = Pid::from_raw(*pid as i32);
+            if kill(pid_val, Signal::SIGTERM).is_ok() {
+                println!("  Sent SIGTERM to {} (PID {})", service, pid);
+            }
+        }
+
+        // wait for graceful exit
+        println!("Waiting for services to shut down...");
+        std::thread::sleep(Duration::from_secs(2));
+
+        // check which processes are still alive and force kill them
+        sys.refresh_processes(ProcessesToUpdate::All, true);
+        for (service, pid) in &found_pids {
+            if service == coordinator_name {
+                continue; // already handled
+            }
+            let pid_val = Pid::from_raw(*pid as i32);
+            if sys.process(sysinfo::Pid::from_u32(*pid)).is_some() {
+                let _ = kill(pid_val, Signal::SIGKILL);
+                println!(
+                    "  Force killed {} (PID {}, didn't exit gracefully)",
+                    service, pid
+                );
+            }
+        }
+
+        println!("All existing services cleaned up");
+    } else {
+        println!("No existing services found");
+    }
 
     Ok(())
 }
