@@ -1,7 +1,9 @@
 use anyhow::Result;
 use common::types::{Address, RskLog};
-use std::path::PathBuf;
 use storage_backend::storage::{KeyValueStore, Storage};
+use storage_backend::storage_config::StorageConfig;
+
+const LOG_PREFIX: &str = "logs/";
 
 #[cfg(test)]
 use mockall::automock;
@@ -23,7 +25,7 @@ impl StoreKey {
     pub fn value(&self) -> String {
         match self {
             StoreKey::LogId(address, tx_hash, log_index) => {
-                format!("logs/{}/{}/{}", address, tx_hash, log_index)
+                format!("{}{}/{}/{}", LOG_PREFIX, address, tx_hash, log_index)
             }
             StoreKey::LogSyncCheckpoint => "meta/sync_checkpoint".to_string(),
         }
@@ -36,7 +38,8 @@ pub struct RawLogStore {
 
 impl RawLogStore {
     pub fn new(path: &str) -> Result<Self> {
-        let db = Storage::new_with_path(&PathBuf::from(path))?;
+        let config = StorageConfig::new(path.to_string(), None);
+        let db = Storage::new(&config)?;
         Ok(Self { db })
     }
 
@@ -51,11 +54,10 @@ impl RawLogStore {
     /// Ideally, this method should be used only for testing purposes
     #[cfg(feature = "test-utils")]
     pub fn get_all_logs(&self) -> Result<Vec<RskLog>> {
-        Ok(self
-            .db
-            .get_all()?
+        let all_entries = self.db.partial_compare(LOG_PREFIX)?;
+        Ok(all_entries
             .into_iter()
-            .filter_map(|(key, log)| key.starts_with("logs/").then_some(log))
+            .filter_map(|(_, value)| serde_json::from_str::<RskLog>(&value).ok())
             .collect())
     }
 }
