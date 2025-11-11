@@ -82,13 +82,11 @@ impl CommonConfig {
         let base_config_str = fs::read_to_string(&base_config_path).map_err(|e| {
             ConfigError::ConfigEnvError(format!("Failed to read base config: {}", e))
         })?;
-        let base_config_str = Self::replace_config_placeholders(base_config_str)?;
+        let base_config_str = Self::replace_config_placeholders(base_config_str);
 
         // read env config file if it exists and replace placeholders
         let env_config_str = fs::read_to_string(&env_config_path).ok();
-        let env_config_str = env_config_str
-            .map(|s| Self::replace_config_placeholders(s))
-            .transpose()?;
+        let env_config_str = env_config_str.map(|s| Self::replace_config_placeholders(s));
 
         let mut builder = config::Config::builder().add_source(config::File::from_str(
             &base_config_str,
@@ -120,16 +118,14 @@ impl CommonConfig {
         Ok(cfg_as_t)
     }
 
-    fn replace_config_placeholders(mut config_str: String) -> Result<String, ConfigError> {
+    fn replace_config_placeholders(mut config_str: String) -> String {
         // replace {BASE_STORAGE_PATH} with the environment variable value
         if config_str.contains("{BASE_STORAGE_PATH}") {
-            let base_storage_path = std::env::var("BASE_STORAGE_PATH")
-                .map_err(|_| ConfigError::ConfigEnvError(
-                    "BASE_STORAGE_PATH environment variable is required when config contains {BASE_STORAGE_PATH} placeholder".to_string()
-                ))?;
+            let base_storage_path =
+                std::env::var("BASE_STORAGE_PATH").unwrap_or_else(|_| ".".to_string());
             config_str = config_str.replace("{BASE_STORAGE_PATH}", &base_storage_path);
         }
-        Ok(config_str)
+        config_str
     }
 
     fn config_path_for(env_name: &str) -> Result<(String, String), ConfigError> {

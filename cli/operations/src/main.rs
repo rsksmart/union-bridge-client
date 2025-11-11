@@ -119,13 +119,8 @@ enum UserCommands {
         #[arg(short = 'a', long = "rsk-address", value_name = "RSK_ADDRESS")]
         rsk_address: String,
 
-        /// Amount (in satoshis) to stream into the pegin transaction
-        #[arg(
-            short = 's',
-            long = "stream-amount",
-            value_name = "STREAM_AMOUNT",
-            default_value_t = 1_000_000u64
-        )]
+        /// Value (in satoshis) to stream into the pegin transaction
+        #[arg(short = 'v', long = "value", value_name = "VALUE")]
         stream_amount: u64,
 
         /// Packet number used when creating the pegin transaction
