@@ -23,7 +23,7 @@
 //!   - requires: rootstock address, value in satoshis, packet number
 //! - `pegout`: initiates a rootstock → bitcoin withdrawal
 //!   - executes the pegout request on the rootstock side
-//!   - requires: amount in satoshis
+//!   - requires: value in satoshis
 //!
 //! ## examples
 //!
@@ -56,7 +56,7 @@
 //!
 //! request pegout (rootstock → bitcoin):
 //! ```bash
-//! cargo run -- user pegout -a 100000 --env local
+//! cargo run -- user pegout -v 100000 --env local
 //! ```
 
 mod bitcoin_wallet;
@@ -151,9 +151,9 @@ enum UserCommands {
         #[arg(short = 'a', long = "rsk-address", value_name = "RSK_ADDRESS")]
         rsk_address: String,
 
-        /// Value (in satoshis) to stream into the pegin transaction
+        /// Value in satoshis
         #[arg(short = 'v', long = "value", value_name = "VALUE")]
-        stream_amount: u64,
+        value: u64,
 
         /// Packet number used when creating the pegin transaction
         #[arg(
@@ -170,9 +170,9 @@ enum UserCommands {
         #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local)]
         env: Environment,
 
-        /// Amount in satoshis to withdraw
-        #[arg(short = 'a', long = "amount", value_name = "AMOUNT_SATS")]
-        amount_sats: u64,
+        /// Value in satoshis
+        #[arg(short = 'v', long = "value", value_name = "VALUE")]
+        value: u64,
     },
 }
 
@@ -217,13 +217,13 @@ async fn main() -> Result<()> {
             UserCommands::Pegin {
                 env,
                 rsk_address,
-                stream_amount,
+                value,
                 packet_number,
             } => {
-                pegin::create_pegin_tx(env, rsk_address, stream_amount, packet_number).await?;
+                pegin::create_pegin_tx(env, rsk_address, value, packet_number).await?;
             }
-            UserCommands::Pegout { env, amount_sats } => {
-                pegout::request_pegout(env, amount_sats).await?;
+            UserCommands::Pegout { env, value } => {
+                pegout::request_pegout(env, value).await?;
             }
         },
     }

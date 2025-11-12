@@ -22,13 +22,10 @@ fn sats_to_wei(sats: u64) -> u64 {
     sats.saturating_mul(10_000_000_000)
 }
 
-pub async fn request_pegout(environment: Environment, amount_sats: u64) -> Result<()> {
-    let amount_in_wei = sats_to_wei(amount_sats);
+pub async fn request_pegout(environment: Environment, value: u64) -> Result<()> {
+    let amount_in_wei = sats_to_wei(value);
 
-    println!(
-        "Requesting pegout: {} sats ({} wei)",
-        amount_sats, amount_in_wei
-    );
+    println!("Requesting pegout: {} sats ({} wei)", value, amount_in_wei);
 
     let user_api_base = environment
         .user_api_endpoints()

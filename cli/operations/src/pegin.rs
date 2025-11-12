@@ -20,7 +20,7 @@ struct PeginAddressResponse {
 pub async fn create_pegin_tx(
     environment: Environment,
     rsk_address: String,
-    stream_amount: u64,
+    value: u64,
     packet_number: u64,
 ) -> Result<()> {
     validate_rsk_address(&rsk_address)?;
@@ -28,7 +28,7 @@ pub async fn create_pegin_tx(
 
     let payload = PeginAddressRequest {
         rootstock_deposit_address: rsk_address.clone(),
-        value: stream_amount,
+        value,
         btc_reimbursement_pub_key: String::new(),
     };
 
@@ -75,7 +75,7 @@ pub async fn create_pegin_tx(
         .ok_or_else(|| anyhow!("user-api response did not contain a pegin address"))?;
 
     println!("Parameters:");
-    println!("  Stream amount: {}", stream_amount);
+    println!("  Value: {}", value);
     println!("  Packet number: {}", packet_number);
     println!("  RSK address: {}", rsk_address);
     println!("  Pegin address: {}", pegin_address);
@@ -84,7 +84,7 @@ pub async fn create_pegin_tx(
     println!();
     println!(
         "create_pegin_tx {} {} {} {}",
-        stream_amount, packet_number, pegin_address, rsk_address
+        value, packet_number, pegin_address, rsk_address
     );
 
     Ok(())

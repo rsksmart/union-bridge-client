@@ -45,10 +45,10 @@ Handles setup, operator operations, and user operations across different environ
 ./cli-operations.sh operator apply-stream --stream-id 1 --env alphanet --operator-id 1 --role prover
 
 # User: Create pegin transaction
-./cli-operations.sh user pegin --address 0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb --satoshis 2000000 --protocol-version 7 --env local
+./cli-operations.sh user pegin --rsk-address 0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb --value 1000000 --packet-number 0 --env local
 
 # User: Request pegout
-./cli-operations.sh user pegout --satoshis 1000000 --env local
+./cli-operations.sh user pegout --value 1000000 --env local
 ```
 
 ### Command Structure
@@ -123,10 +123,10 @@ The CLI workspace is independent from the main Union Bridge workspace, allowing 
 ./cli-operations.sh operator apply-stream --stream-id 1 --env alphanet --operator-id 1 --role prover
 
 # Create pegin transaction
-./cli-operations.sh user pegin --address 0x742d35... --satoshis 2000000 --protocol-version 7 --env alphanet
+./cli-operations.sh user pegin --rsk-address 0x742d35... --value 1000000 --packet-number 0 --env alphanet
 
 # Request pegout
-./cli-operations.sh user pegout --satoshis 1000000 --env alphanet
+./cli-operations.sh user pegout --value 1000000 --env alphanet
 ```
 
 ## Docker Integration
