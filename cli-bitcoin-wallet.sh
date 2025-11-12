@@ -107,4 +107,9 @@ esac
 # Launch bitcoin-wallet with the specified mode
 # If no additional arguments, opens interactive mode
 # If arguments provided, executes command and exits
-exec cargo run --manifest-path ./bitcoin-wallet/Cargo.toml --bin ub-wallet -- --mode "$MODE" "$@"
+
+# Build release binary (fast if already built, ~1-2s check)
+cargo build --release --manifest-path ./cli/bitcoin-wallet/Cargo.toml --quiet
+
+# Run release binary directly (much faster than cargo run)
+exec ./target/release/ub-wallet --mode "$MODE" "$@"
