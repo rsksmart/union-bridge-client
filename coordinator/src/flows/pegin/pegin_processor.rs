@@ -24,8 +24,8 @@ use bitcoin::Txid;
 use common::{
     msg_broker::{
         bitvmx_types::{
-            IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PeginAcceptedMessage,
-            TransactionStatus, VariableTypes,
+            BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages,
+            PeginAcceptedMessage, TransactionStatus, VariableTypes,
         },
         broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi},
     },
@@ -67,8 +67,7 @@ where
     tx_status_scheduler: TickScheduler<Uuid>,
     pegin_request_tracker: HashSet<Txid>,
     // For retry logic when native bridge lacks confirmations
-    unconfirmed_pegin_requests:
-        HashMap<String, (common::msg_broker::bitvmx_types::BtcTxSPVProof, i16)>,
+    unconfirmed_pegin_requests: HashMap<String, (BtcTxSPVProof, i16)>,
     pegin_retry_scheduler: TickScheduler<String>,
 }
 
@@ -567,7 +566,7 @@ where
     fn handle_spv_proof_for_request_pegin(
         &mut self,
         tx_id: &Txid,
-        spv_proof: common::msg_broker::bitvmx_types::BtcTxSPVProof,
+        spv_proof: BtcTxSPVProof,
     ) -> Result<()> {
         if !self.pegin_request_tracker.contains(tx_id) {
             return Ok(()); // Not a tracked pegin request
@@ -620,7 +619,7 @@ where
     fn handle_spv_proof_for_accept_pegin(
         &mut self,
         tx_id: &Txid,
-        spv_proof: common::msg_broker::bitvmx_types::BtcTxSPVProof,
+        spv_proof: BtcTxSPVProof,
     ) -> Result<()> {
         // Find state by matching accept_pegin_txid from bitvmx_pegin_accepted
         let flow_opt = self
