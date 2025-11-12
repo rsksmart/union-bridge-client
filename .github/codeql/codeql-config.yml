@@ -4,3 +4,5 @@ name: "CodeQL Config"
 paths-ignore:
   - 'actors-mocking/**'
   - 'qa-tools/**'
+  - 'cli/**'
+  - 'bitcoin-wallet/**'
