@@ -25,6 +25,10 @@ pub async fn create_pegin_tx(
     packet_number: u64,
     execute: bool,
 ) -> Result<()> {
+    if execute && environment.is_remote() {
+        bail!("--execute flag is only supported for local environments (local/local-docker). For remote environments, please run the wallet commands manually.");
+    }
+
     validate_rsk_address(&rsk_address)?;
     println!("Getting pegin address for {rsk_address}...");
 

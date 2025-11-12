@@ -12,11 +12,17 @@ use crate::utils::{command_to_string, confirm_operation, request_to_string};
 const FUND_AMOUNT: &str = "20002000";
 const LOG_MARKER: &str = "Received BitVMX Funding Address:";
 
-pub async fn handle_bitcoin_funding(env: Environment, execute: bool) -> Result<()> {
-    let addresses = match env {
+pub async fn handle_bitcoin_funding(environment: Environment, execute: bool) -> Result<()> {
+    if execute && environment.is_remote() {
+        bail!("--execute flag is only supported for local environments (local/local-docker). For remote environments, please run the wallet commands manually.");
+    }
+
+    let addresses = match environment {
         Environment::Local => collect_local_addresses().await?,
         Environment::LocalDocker => collect_local_docker_addresses().await?,
-        Environment::Alphanet | Environment::Testnet => collect_remote_addresses(env).await?,
+        Environment::Alphanet | Environment::Testnet => {
+            collect_remote_addresses(environment).await?
+        }
     };
 
     if addresses.is_empty() {
@@ -28,9 +34,9 @@ pub async fn handle_bitcoin_funding(env: Environment, execute: bool) -> Result<(
     if execute {
         println!("Executing wallet commands programmatically...");
         println!();
-        execute_wallet_command(env, &addresses)?;
+        execute_wallet_command(&addresses)?;
     } else {
-        print_instructions(env, &addresses);
+        print_instructions(environment, &addresses);
     }
 
     Ok(())
@@ -108,8 +114,8 @@ where
     Ok(addresses)
 }
 
-async fn request_bitvmx_address_user_api(env: Environment) -> Result<()> {
-    let endpoints = env.user_api_endpoints();
+async fn request_bitvmx_address_user_api(environment: Environment) -> Result<()> {
+    let endpoints = environment.user_api_endpoints();
 
     println!("Triggering BitVMX endpoints: {} ...", endpoints.join(", "));
 
@@ -123,7 +129,7 @@ async fn request_bitvmx_address_user_api(env: Environment) -> Result<()> {
 
         let request = client.get(&url).build()?;
 
-        if env.is_remote() {
+        if environment.is_remote() {
             let description = request_to_string(&request);
             if !confirm_operation(&description)? {
                 bail!("Operation cancelled by user");
@@ -239,7 +245,7 @@ fn print_instructions(env: Environment, addresses: &[String]) {
     }
 }
 
-fn execute_wallet_command(_env: Environment, addresses: &[String]) -> Result<()> {
+fn execute_wallet_command(addresses: &[String]) -> Result<()> {
     let wallet_script = "./cli-bitcoin-wallet.sh";
     let joined = addresses.join(",");
 
