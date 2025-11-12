@@ -58,11 +58,12 @@ use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
 use std::collections::HashMap;
 use std::fs;
+use std::net::TcpStream;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, RefreshKind, System};
 use tokio::runtime::Runtime;
 use tokio::signal;
@@ -530,6 +531,36 @@ fn cargo_args_for_service(config: &RunConfig, svc: &Service) -> Vec<String> {
     args
 }
 
+/// check if a port is listening
+fn is_port_listening(port: u16) -> bool {
+    TcpStream::connect(("127.0.0.1", port))
+        .map(|_| true)
+        .unwrap_or(false)
+}
+
+/// wait for a port to be listening, up to timeout
+fn wait_for_port(port: u16, timeout: Duration) -> Result<()> {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if is_port_listening(port) {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    bail!(
+        "Port {} did not become available within {:?}",
+        port,
+        timeout
+    )
+}
+
+/// extract port number from environment variables
+fn get_port_from_envs(envs: &[(String, String)], key: &str) -> Option<u16> {
+    envs.iter()
+        .find(|(k, _)| k == key)
+        .and_then(|(_, v)| v.parse().ok())
+}
+
 fn launch_client_services(
     config: &RunConfig,
     envs: Vec<(String, String)>,
@@ -541,9 +572,29 @@ fn launch_client_services(
     for svc in UNION_CLIENT_SERVICES {
         println!("Launching {} for {}", svc.name(), client_id);
 
-        // Coordinator depends loosely on others, wait a little before starting it
+        // coordinator depends on indexers being ready, wait for their broker ports
         if svc == Service::Coordinator {
-            std::thread::sleep(Duration::from_secs(2));
+            let block_port = get_port_from_envs(&envs, "UB__BLOCK_INDEXER__NOTIFIER__PORT");
+            let log_port = get_port_from_envs(&envs, "UB__LOG_INDEXER__NOTIFIER__PORT");
+
+            println!(
+                "Waiting for indexers to be ready for {} (block port: {:?}, log port: {:?})...",
+                client_id, block_port, log_port
+            );
+
+            // wait for both indexer broker ports to be listening (up to 60 seconds)
+            if let Some(port) = block_port {
+                wait_for_port(port, Duration::from_secs(60))
+                    .with_context(|| format!("block-indexer broker not ready for {}", client_id))?;
+                println!("  block-indexer broker ready on port {}", port);
+            }
+            if let Some(port) = log_port {
+                wait_for_port(port, Duration::from_secs(60))
+                    .with_context(|| format!("log-indexer broker not ready for {}", client_id))?;
+                println!("  log-indexer broker ready on port {}", port);
+            }
+
+            println!("All indexers ready for {}, starting coordinator", client_id);
         }
 
         let mut cmd = Command::new("cargo");
