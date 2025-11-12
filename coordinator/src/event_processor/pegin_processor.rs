@@ -1080,9 +1080,13 @@ where
         let input = spv_proof.clone().into();
 
         // Step 10a Call the contract to register the SPV proof
-        match self.invoke_contract_safe(ACCEPT_PEGIN, &spv_proof, || async {
-            self.contracts.accept_pegin(input).await
-        }) {
+        match invoke_contract_safe(
+            &self.rt_sync,
+            ACCEPT_PEGIN,
+            &spv_proof,
+            &self.native_bridge_verifier,
+            || async { self.contracts.accept_pegin(input).await },
+        ) {
             Ok(_) => {
                 // Remove from unconfirmed (idempotent - no-op if not present)
                 self.unconfirmed_pegin_accepts.remove(&flow_id);
@@ -1141,8 +1145,7 @@ where
             take_tx_hash,
         };
         // Step 5a Call the addOperatorTakeTxHash contract method
-        // todo(fede) do we need to check for confirmations here?
-        self.invoke_contract("addOperatorTakeTxHash", || async {
+        invoke_contract(&self.rt_sync, "addOperatorTakeTxHash", || async {
             self.contracts.add_operator_take_tx_hash(input).await
         })?;
 
@@ -1159,38 +1162,26 @@ where
         let input: RequestPeginInput = spv_proof.clone().into();
 
         // Step 3a Call the requestPegin contract method
-        match self.invoke_contract_safe("requestPegin", &spv_proof, || async {
-            self.contracts.request_pegin(input).await
-        }) {
+        match invoke_contract_safe(
+            &self.rt_sync,
+            "requestPegin",
+            &spv_proof,
+            &self.native_bridge_verifier,
+            || async { self.contracts.request_pegin(input).await },
+        ) {
             Ok(_) => {
-                // Remove from tracker if provided
-                if let Some(tx_id) = tx_id_to_track {
-                    self.pegin_request_tracker.remove(tx_id);
-                    debug!("Removed request_pegin_txid from tracking: tx_id={}", tx_id);
-                }
-                // Remove from unconfirmed if provided
-                if let Some(btc_block) = btc_block_to_unconfirm {
-                    self.unconfirmed_pegin_requests.remove(&btc_block);
-                    debug!(
-                        "Removed from unconfirmed_pegin_requests: btc_block={}",
-                        btc_block
-                    );
-                }
+                self.cleanup_request_pegin_tracking(tx_id_to_track, btc_block_to_unconfirm);
                 Ok(())
             }
-            Err(DomainErrors::MissingConfirmationsOnNativeBridge(_)) => {
-                // Schedule retry
-                self.schedule_pegin_requested_to_contracts(spv_proof, attempt + 1);
-                // Remove from tracker if provided (retry is now in scheduler)
-                if let Some(tx_id) = tx_id_to_track {
-                    self.pegin_request_tracker.remove(tx_id);
-                    debug!(
-                        "Removed request_pegin_txid from tracking: tx_id={}, retry scheduled",
-                        tx_id
-                    );
-                }
-                bail!("Insufficient confirmations, retry scheduled")
-            }
+            // todo(fede) i decided to comment this and will remove it when we confirm that is ok to
+            // remove it
+            // Err(DomainErrors::MissingConfirmationsOnNativeBridge(_)) => {
+            //     // Schedule retry
+            //     self.schedule_pegin_requested_to_contracts(spv_proof, attempt + 1);
+            //     // Remove from tracker if provided (retry is now in scheduler)
+            //     self.cleanup_request_pegin_tracking(tx_id_to_track, None);
+            //     bail!("Insufficient confirmations, retry scheduled")
+            // }
             Err(DomainErrors::PeginAlreadyRequested(msg)) => {
                 // This is expected if the same pegin is requested multiple times
                 // We should treat it as a success case
@@ -1199,95 +1190,25 @@ where
                     "Pegin already requested for tx_id={}, treating as expected: {}",
                     tx_id, msg
                 );
-                // Remove from tracker if provided
-                if let Some(tx_id) = tx_id_to_track {
-                    self.pegin_request_tracker.remove(tx_id);
-                    debug!("Removed request_pegin_txid from tracking: tx_id={}", tx_id);
-                }
-                // Remove from unconfirmed if provided
-                if let Some(btc_block) = btc_block_to_unconfirm {
-                    self.unconfirmed_pegin_requests.remove(&btc_block);
-                    debug!(
-                        "Removed from unconfirmed_pegin_requests: btc_block={}",
-                        btc_block
-                    );
-                }
+                self.cleanup_request_pegin_tracking(tx_id_to_track, btc_block_to_unconfirm);
                 Ok(())
             }
             Err(domain_err) => bail!("Error executing 'requestPegin': {:?}", domain_err),
         }
     }
 
-    fn _invoke_contract<Fut, F, T>(&self, method_name: &str, invoke: F) -> Result<()>
-    where
-        F: FnOnce() -> Fut,
-        Fut: Future<Output = Result<T, DomainErrors>>,
-        T: Debug,
-    {
-        debug!("Submitting contract transaction: method={}", method_name);
-
-        match self.rt_sync.run(invoke()) {
-            Ok(_) => {
-                debug!("Contract method executed: method={}", method_name);
-                Ok(())
-            }
-            Err(domain_err) => bail!("Error executing '{}': {:?}", method_name, domain_err),
+    fn cleanup_request_pegin_tracking(
+        &mut self,
+        tx_id_to_track: Option<&Txid>,
+        btc_block_to_unconfirm: Option<String>,
+    ) {
+        if let Some(tx_id) = tx_id_to_track {
+            self.pegin_request_tracker.remove(tx_id);
+            trace!("Removed request_pegin_txid from tracking: tx_id={tx_id}");
         }
-    }
-
-    fn invoke_contract<Fut, F, T>(&self, method_name: &str, invoke: F) -> Result<T, DomainErrors>
-    where
-        F: FnOnce() -> Fut,
-        Fut: Future<Output = Result<T, DomainErrors>>,
-    {
-        debug!("Submitting contract transaction: method={}", method_name);
-
-        match self.rt_sync.run(invoke()) {
-            Ok(value) => {
-                debug!("Contract method executed: method={}", method_name);
-                Ok(value)
-            }
-            Err(domain_err) => Err(domain_err),
-        }
-    }
-
-    // verifies that the native bridge has enough confirmations
-    // for the given spv proof and then invokes a contract
-    fn invoke_contract_safe<Fut, F, T>(
-        &self,
-        method_name: &str,
-        spv_proof: &BtcTxSPVProof,
-        invoke: F,
-    ) -> Result<T, DomainErrors>
-    where
-        F: FnOnce() -> Fut,
-        Fut: Future<Output = Result<T, DomainErrors>>,
-    {
-        debug!(
-            "Verifying Native Bridge confirmations before invoking: method={}",
-            method_name
-        );
-
-        // Verify confirmations on Native Bridge
-        match self
-            .native_bridge_verifier
-            .verify_confirmations(spv_proof, MIN_TX_CONFIRMATIONS)?
-        {
-            VerificationStatus::Verified => {
-                // Proceed with contract call
-                self.invoke_contract(method_name, invoke)
-            }
-            VerificationStatus::InsufficientConfirmations { required, actual } => {
-                // Don't call contract, return error (caller will handle reschedule)
-                debug!(
-                    "Insufficient Native Bridge confirmations for {}: {}/{} - needs retry",
-                    method_name, actual, required
-                );
-                Err(DomainErrors::MissingConfirmationsOnNativeBridge(format!(
-                    "{}/{} confirmations",
-                    actual, required
-                )))
-            }
+        if let Some(btc_block) = btc_block_to_unconfirm {
+            self.unconfirmed_pegin_requests.remove(&btc_block);
+            trace!("Removed from unconfirmed_pegin_requests: btc_block={btc_block}",);
         }
     }
 
@@ -1617,6 +1538,60 @@ where
     }
 }
 
+fn invoke_contract<Fut, F, T>(
+    rt_sync: &RuntimeSync,
+    method_name: &str,
+    invoke: F,
+) -> Result<T, DomainErrors>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<T, DomainErrors>>,
+{
+    debug!("Submitting contract transaction: method={}", method_name);
+
+    match rt_sync.run(invoke()) {
+        Ok(value) => {
+            debug!("Contract method executed: method={}", method_name);
+            Ok(value)
+        }
+        Err(domain_err) => Err(domain_err),
+    }
+}
+
+// verifies that the native bridge has enough confirmations
+// for the given spv proof and then invokes a contract
+fn invoke_contract_safe<Fut, F, T, CG>(
+    rt_sync: &RuntimeSync,
+    method_name: &str,
+    spv_proof: &BtcTxSPVProof,
+    native_bridge_verifier: &NativeBridgeVerifier<CG>,
+    invoke: F,
+) -> Result<T, DomainErrors>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<T, DomainErrors>>,
+    CG: RskContractsGatewayApi,
+{
+    debug!(
+        "Verifying Native Bridge confirmations before invoking: method={}",
+        method_name
+    );
+
+    match native_bridge_verifier.verify_confirmations(spv_proof, MIN_TX_CONFIRMATIONS)? {
+        VerificationStatus::Verified => invoke_contract(rt_sync, method_name, invoke),
+        VerificationStatus::InsufficientConfirmations { required, actual } => {
+            debug!(
+                "Insufficient Native Bridge confirmations for {}: {}/{} - needs retry",
+                method_name, actual, required
+            );
+            Err(DomainErrors::MissingConfirmationsOnNativeBridge(format!(
+                "{}/{} confirmations",
+                actual, required
+            )))
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum VerificationStatus {
     Verified,
@@ -1639,68 +1614,7 @@ impl<CG: RskContractsGatewayApi> NativeBridgeVerifier<CG> {
     ) -> Result<VerificationStatus, DomainErrors> {
         match self {
             NativeBridgeVerifier::Real { contracts, rt_sync } => {
-                use transaction_dispatcher::types::GetBtcTransactionConfirmationsInput;
-
-                // todo(fede) review this
-                let block_hash: common::types::BlockHash =
-                    match spv_proof.block_hash.parse::<primitive_types::H256>() {
-                        Ok(h) => h.into(),
-                        Err(e) => {
-                            warn!("Failed to parse block hash: {}", e);
-                            return Err(DomainErrors::InvalidBtcTxSpvProof(format!(
-                                "Invalid block hash: {}",
-                                e
-                            )));
-                        }
-                    };
-
-                let tx_id = spv_proof.tx.compute_txid();
-                let tx_hash_fb = TxIdParser::txid_to_fb_32(tx_id);
-                let tx_hash: common::types::TxHash = common::types::Hash256::from(
-                    primitive_types::H256::from_slice(tx_hash_fb.as_slice()),
-                );
-
-                let merkle_branch_hashes: Vec<String> = spv_proof
-                    .merkle_branch_hashes
-                    .iter()
-                    .map(|hash| hex::encode(hash))
-                    .collect();
-
-                let input = GetBtcTransactionConfirmationsInput {
-                    tx_hash,
-                    block_hash,
-                    merkle_branch_path: spv_proof.merkle_branch_path.clone(),
-                    merkle_branch_hashes,
-                };
-
-                // query native bridge
-                // todo(fede) change this with invoke_contract
-                match rt_sync.run(contracts.get_btc_confirmations(input)) {
-                    Ok(output) => {
-                        let confirmations = output.confirmations;
-                        if confirmations >= required_confirmations {
-                            debug!(
-                                "Native Bridge verification passed: {}/{} confirmations",
-                                confirmations, required_confirmations
-                            );
-                            Ok(VerificationStatus::Verified)
-                        } else {
-                            info!(
-                                "Native Bridge has insufficient confirmations: {}/{}, will retry later",
-                                confirmations, required_confirmations
-                            );
-                            // Insufficient confirmations is NOT an error, it's an expected state
-                            Ok(VerificationStatus::InsufficientConfirmations {
-                                required: required_confirmations,
-                                actual: confirmations,
-                            })
-                        }
-                    }
-                    Err(e) => {
-                        warn!("Native Bridge query failed: {}", e);
-                        Err(e)
-                    }
-                }
+                verify_btc_confirmations(spv_proof, required_confirmations, contracts, rt_sync)
             }
             NativeBridgeVerifier::Dummy => {
                 trace!(
@@ -1708,6 +1622,79 @@ impl<CG: RskContractsGatewayApi> NativeBridgeVerifier<CG> {
                 );
                 Ok(VerificationStatus::Verified)
             }
+        }
+    }
+}
+
+fn verify_btc_confirmations<CG>(
+    spv_proof: &BtcTxSPVProof,
+    required_confirmations: u32,
+    contracts: &Rc<CG>,
+    rt_sync: &RuntimeSync,
+) -> std::result::Result<VerificationStatus, DomainErrors>
+where
+    CG: RskContractsGatewayApi,
+{
+    use transaction_dispatcher::types::GetBtcTransactionConfirmationsInput;
+
+    // todo(fede) review this
+    let block_hash: common::types::BlockHash =
+        match spv_proof.block_hash.parse::<primitive_types::H256>() {
+            Ok(h) => h.into(),
+            Err(e) => {
+                warn!("Failed to parse block hash: {}", e);
+                return Err(DomainErrors::InvalidBtcTxSpvProof(format!(
+                    "Invalid block hash: {}",
+                    e
+                )));
+            }
+        };
+
+    let tx_id = spv_proof.tx.compute_txid();
+    let tx_hash_fb = TxIdParser::txid_to_fb_32(tx_id);
+    let tx_hash: common::types::TxHash =
+        common::types::Hash256::from(primitive_types::H256::from_slice(tx_hash_fb.as_slice()));
+
+    let merkle_branch_hashes: Vec<String> = spv_proof
+        .merkle_branch_hashes
+        .iter()
+        .map(|hash| hex::encode(hash))
+        .collect();
+
+    let input = GetBtcTransactionConfirmationsInput {
+        tx_hash,
+        block_hash,
+        merkle_branch_path: spv_proof.merkle_branch_path.clone(),
+        merkle_branch_hashes,
+    };
+
+    // query native bridge
+    match invoke_contract(rt_sync, "getBtcConfirmations", || async {
+        contracts.get_btc_confirmations(input).await
+    }) {
+        Ok(output) => {
+            let confirmations = output.confirmations;
+            if confirmations >= required_confirmations {
+                debug!(
+                    "Native Bridge verification passed: {}/{} confirmations",
+                    confirmations, required_confirmations
+                );
+                Ok(VerificationStatus::Verified)
+            } else {
+                info!(
+                    "Native Bridge has insufficient confirmations: {}/{}, will retry later",
+                    confirmations, required_confirmations
+                );
+                // Insufficient confirmations is NOT an error, it's an expected state
+                Ok(VerificationStatus::InsufficientConfirmations {
+                    required: required_confirmations,
+                    actual: confirmations,
+                })
+            }
+        }
+        Err(e) => {
+            warn!("Native Bridge query failed: {}", e);
+            Err(e)
         }
     }
 }
