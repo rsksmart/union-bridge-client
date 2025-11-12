@@ -10,6 +10,7 @@ const PEG_MANAGER_CONTRACT_NAME: &str = "PegManager";
 const SIGNATURE_CONTRACT_NAME: &str = "SignatureManager";
 const COMMITTEE_REGISTRY_CONTRACT_NAME: &str = "CommitteeRegistry";
 const MEMBER_REGISTRY_CONTRACT_NAME: &str = "MemberRegistry";
+const STREAM_MANAGER_CONTRACT_NAME: &str = "StreamManager";
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -64,6 +65,7 @@ impl Config {
             || contract.name == SIGNATURE_CONTRACT_NAME
             || contract.name == COMMITTEE_REGISTRY_CONTRACT_NAME
             || contract.name == MEMBER_REGISTRY_CONTRACT_NAME
+            || contract.name == STREAM_MANAGER_CONTRACT_NAME
     }
 
     #[cfg(not(feature = "anvil"))]
@@ -73,6 +75,7 @@ impl Config {
             || contract.name == COMMITTEE_REGISTRY_CONTRACT_NAME
             || contract.name == MEMBER_REGISTRY_CONTRACT_NAME
             || contract.name == SIGNATURE_CONTRACT_NAME
+            || contract.name == STREAM_MANAGER_CONTRACT_NAME
     }
 }
 
