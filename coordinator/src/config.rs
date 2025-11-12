@@ -113,6 +113,6 @@ mod tests {
             config.coordinator_config.storage_path
         );
         assert_eq!("regtest", config.bitcoin_network);
-        assert_eq!(8, config.contracts.len());
+        assert_eq!(9, config.contracts.len());
     }
 }

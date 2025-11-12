@@ -45,6 +45,10 @@ address = "0x68B1D87F95878fE05B998F19b66F4baba5De1aed"
 name = "StreamManager"
 address = "0x610178dA211FEF7D417bC0e6FeD39F05609AD788"
 
+[[contracts]]
+name = "PowpegBridge"
+address = "0x0000000000000000000000000000000001000006"
+
 # ═══════════════════════════════════════════════════════
 # Coordinator
 # ═══════════════════════════════════════════════════════
