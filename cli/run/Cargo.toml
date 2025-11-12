@@ -1,0 +1,11 @@
+[package]
+name = "run"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+nix = { workspace = true }
+sysinfo = "0.32"
+tokio = { workspace = true }

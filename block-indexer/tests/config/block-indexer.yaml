@@ -12,5 +12,5 @@ provider:
   rootstock:
     url: "ws://fake-server:4445/websocket"
 
-block_notifier:
-  broker_port: 56789
+notifier:
+  port: 56789

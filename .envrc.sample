@@ -26,8 +26,6 @@ export BASE_STORAGE_PATH="<path/to/your/storage>"
 export KEY_STORE_PASSWORD="<super-secret-password>"
 # optional (with fallback)
 export CHECK_FORK_REQUIRED_NUM_BLOCKS=25
-# user rsk address
-export RSK_ADDRESS="<your_rsk_address>"
 
 ############################################################
 # Bitcoin

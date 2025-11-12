@@ -8,6 +8,8 @@ use serde::Deserialize;
 
 use crate::cli::{CliOpts, WalletMode};
 
+const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub utxo_db_path: PathBuf,
@@ -114,13 +116,10 @@ impl Config {
 
 fn load_file(config_name: Option<&str>) -> Result<(FileConfig, Option<PathBuf>)> {
     // Resolve config directory relative to executable, then fallback to CWD
-    let exe_path = env::current_exe().context("failed to determine executable path")?;
-    let exe_dir = exe_path
-        .parent()
-        .context("failed to determine executable directory")?;
-    let exe_config = exe_dir.join("config");
-    let dir_path = if exe_config.exists() {
-        exe_config
+    let project_root = Path::new(CARGO_MANIFEST_DIR);
+    let config_path = project_root.join("config");
+    let dir_path = if config_path.exists() {
+        config_path
     } else {
         let cwd = env::current_dir().context("failed to determine current directory")?;
         cwd.join("config")

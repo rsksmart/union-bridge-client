@@ -7,8 +7,11 @@ use bitcoin::hashes::hex::FromHex;
 use bitcoin::{Address, OutPoint, Transaction, Txid};
 use serde::{Deserialize, Serialize};
 use storage_backend::storage::{KeyValueStore, Storage};
+use storage_backend::storage_config::StorageConfig;
 
 use crate::wallet::{CreatedTransaction, Utxo};
+
+const PENDING_TX_PREFIX: &str = "pending_tx/";
 
 /// Serializable version of CreatedTransaction for storage
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,7 +100,8 @@ pub struct PendingTransactionStore {
 
 impl PendingTransactionStore {
     pub fn open(path: &Path) -> Result<Self> {
-        let db = Storage::new_with_path(&path.to_path_buf())
+        let config = StorageConfig::new(path.to_string_lossy().to_string(), None);
+        let db = Storage::new(&config)
             .map_err(|e| anyhow!("failed to open pending transaction storage: {e}"))?;
         Ok(Self { db })
     }
@@ -128,13 +132,15 @@ impl PendingTransactionStore {
     }
 
     pub fn load_all(&self, network: bitcoin::Network) -> Result<Vec<(Txid, CreatedTransaction)>> {
-        let entries: std::collections::HashMap<String, StoredTransaction> = self
+        let entries = self
             .db
-            .get_all()
+            .partial_compare(PENDING_TX_PREFIX)
             .map_err(|e| anyhow!("failed to iterate pending transactions: {e}"))?;
 
         let mut transactions = Vec::new();
-        for (key, stored) in entries.into_iter() {
+        for (key, value) in entries.into_iter() {
+            let stored: StoredTransaction = serde_json::from_str(&value)
+                .map_err(|e| anyhow!("failed to deserialize stored transaction: {e}"))?;
             let txid = key_to_txid(&key)?;
             let created = stored.to_created(network)?;
             transactions.push((txid, created));
@@ -150,11 +156,11 @@ impl PendingTransactionStore {
     }
 
     pub fn clear(&self) -> Result<()> {
-        let entries: std::collections::HashMap<String, StoredTransaction> = self
+        let entries = self
             .db
-            .get_all()
+            .partial_compare_keys(PENDING_TX_PREFIX)
             .map_err(|e| anyhow!("failed to iterate pending transactions: {e}"))?;
-        for (key, _) in entries.into_iter() {
+        for key in entries.into_iter() {
             self.db
                 .delete(&key)
                 .map_err(|e| anyhow!("failed to delete pending transaction: {e}"))?;

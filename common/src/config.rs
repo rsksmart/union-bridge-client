@@ -33,7 +33,7 @@ pub struct IndexerConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct NotifierConfig {
-    pub broker_port: u16,
+    pub port: u16,
 }
 
 #[derive(Debug, Deserialize)]
@@ -71,16 +71,31 @@ pub struct ContractConfig {
 
 impl CommonConfig {
     pub fn load_config<T: DeserializeOwned>(env: Option<String>) -> Result<T, ConfigError> {
-        let env = env.unwrap_or("".to_string());
+        let env = env.unwrap_or_default();
         let (base_config_path, env_config_path) = Self::config_path_for(&env)?;
 
         trace!(
             "Loading config: base.toml -> environment/{env}.toml -> environment variables with prefix UB__"
         );
 
-        let cfg = config::Config::builder()
-            .add_source(config::File::with_name(&base_config_path).required(true))
-            .add_source(config::File::with_name(&env_config_path).required(false))
+        // load base config file with placeholder replacement
+        let base_config = Self::read_and_process_config(&base_config_path)?;
+        let mut builder = config::Config::builder().add_source(config::File::from_str(
+            &base_config,
+            config::FileFormat::Toml,
+        ));
+
+        // add environment-specific config if it exists
+        if Path::new(&env_config_path).exists() {
+            let env_config = Self::read_and_process_config(&env_config_path)?;
+            builder = builder.add_source(config::File::from_str(
+                &env_config,
+                config::FileFormat::Toml,
+            ));
+        }
+
+        // add environment variables and deserialize
+        builder
             .add_source(
                 Environment::with_prefix("UB")
                     .prefix_separator("__")
@@ -89,15 +104,29 @@ impl CommonConfig {
                     .list_separator(";"),
             )
             .build()
-            .map_err(ConfigError::ConfigFileError)?;
+            .and_then(|cfg| {
+                trace!("Loaded config {:#?}", cfg.collect().ok());
+                cfg.try_deserialize::<T>()
+            })
+            .map_err(ConfigError::ConfigFileError)
+    }
 
-        trace!("Loaded config {:#?}", cfg.collect()?);
+    fn read_and_process_config(path: &str) -> Result<String, ConfigError> {
+        fs::read_to_string(path)
+            .map(Self::replace_config_placeholders)
+            .map_err(|e| {
+                ConfigError::ConfigEnvError(format!("Failed to read config from {path}: {e}"))
+            })
+    }
 
-        let cfg_as_t = cfg
-            .try_deserialize::<T>()
-            .map_err(ConfigError::ConfigFileError)?;
-
-        Ok(cfg_as_t)
+    fn replace_config_placeholders(mut config_str: String) -> String {
+        // replace {BASE_STORAGE_PATH} with the environment variable value
+        if config_str.contains("{BASE_STORAGE_PATH}") {
+            let base_storage_path =
+                std::env::var("BASE_STORAGE_PATH").unwrap_or_else(|_| ".".to_string());
+            config_str = config_str.replace("{BASE_STORAGE_PATH}", &base_storage_path);
+        }
+        config_str
     }
 
     fn config_path_for(env_name: &str) -> Result<(String, String), ConfigError> {
@@ -119,37 +148,41 @@ impl CommonConfig {
     }
 
     pub fn init_logger(logger_file_opt: Option<&String>, crate_name: &str) -> Result<()> {
-        // provided => use it as is
-        if let Some(logger_file) = logger_file_opt {
-            trace!("Logging to destination defined by {logger_file}");
-
-            let contents = fs::read_to_string(logger_file)?;
-            let expanded = shellexpand::env(&contents)?.into_owned();
-            let raw = serde_yaml::from_str::<RawConfig>(&expanded)?;
-
-            log4rs::init_raw_config(raw).context("Failed to load log4rs config")?;
-
-            return Ok(());
-        }
-
         // otherwise, use the default template and tweak it (mostly for local)
         let project_root = Self::project_root();
 
-        let base_yaml = format!("{project_root}/log4rs.yaml");
-        let mut config_str = fs::read_to_string(&base_yaml)
-            .context(format!("Failed to read base log4rs config: {base_yaml}"))?;
+        let logger_spec = match logger_file_opt {
+            Some(path) => {
+                println!("Using custom logger defined @ {path}");
+                path.to_string()
+            }
+            None => {
+                println!("Using default logger");
+                format!("{project_root}/log4rs.yaml")
+            }
+        };
+
+        // Read and optionally expand env vars in the template
+        let mut config_str = fs::read_to_string(&logger_spec)
+            .context(format!("Failed to read base log4rs config: {logger_spec}"))?;
+
+        // Replace placeholders if any in the spec
+        config_str = config_str.replace("{CRATE_NAME}", crate_name);
 
         let default_destination = &format!("{project_root}/logs");
-
-        config_str = config_str.replace("{CRATE_NAME}", crate_name);
         config_str = config_str.replace("{DESTINATION}", default_destination);
 
-        trace!(
+        let client_id = std::env::var("CLIENT_ID").unwrap_or_else(|_| "0".to_string());
+        config_str = config_str.replace("{CLIENT_ID}", &client_id);
+
+        println!(
             "Logging to {:?}",
-            format!("{}/{}.log", default_destination, crate_name)
+            format!("{}/{}-{}.log", default_destination, crate_name, client_id)
         );
 
-        let config = serde_yaml::from_str(&config_str).context("Failed to parse log4rs config")?;
+        // Parse and initialize log4rs
+        let config = serde_yaml::from_str::<RawConfig>(&config_str)
+            .context("Failed to parse log4rs config")?;
         log4rs::init_raw_config(config).context("Failed to initialize log4rs")
     }
 
@@ -203,9 +236,13 @@ mod tests {
             "0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c",
             config.indexer.initial_block_hash
         );
-        assert_eq!(
-            "/your_base_path/.union_bridge/database/multi-client-1",
-            config.indexer.storage.path
+        assert!(!config.indexer.storage.path.contains("{BASE_STORAGE_PATH}"));
+        assert!(
+            config
+                .indexer
+                .storage
+                .path
+                .ends_with("/.union_bridge/database/multi-client-1")
         );
         assert_eq!(1000, config.indexer.cache.size);
         assert_eq!(100, config.indexer.sync.finality_depth);

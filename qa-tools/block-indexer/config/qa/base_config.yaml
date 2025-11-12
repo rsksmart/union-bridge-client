@@ -1,5 +1,5 @@
-block_notifier:
-  broker_port: 56789
+notifier:
+  port: 56789
 
 indexer:
   initial_block_hash: "0x9dfc314e8f2b3c81a96bef025d4b57ffdecc169010ecf170116603d5b6b565af"

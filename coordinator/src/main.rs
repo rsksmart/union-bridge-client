@@ -59,23 +59,23 @@ fn main() -> Result<()> {
     let contract_addresses = config.get_contract_addresses();
 
     let block_broker = BrokerClient::new(
-        config.coordinator_config.block_broker.host,
-        config.coordinator_config.block_broker.port,
-        config.coordinator_config.broker_client_id,
+        config.coordinator.blocks.host,
+        config.coordinator.blocks.port,
+        config.coordinator.broker.client_id,
     );
     let log_broker = BrokerClient::new(
-        config.coordinator_config.log_broker.host,
-        config.coordinator_config.log_broker.port,
-        config.coordinator_config.broker_client_id,
+        config.coordinator.logs.host,
+        config.coordinator.logs.port,
+        config.coordinator.broker.client_id,
     );
     let user_broker = BrokerClient::new(
-        config.coordinator_config.user_broker.host,
-        config.coordinator_config.user_broker.port,
-        config.coordinator_config.broker_client_id,
+        config.coordinator.user.host,
+        config.coordinator.user.port,
+        config.coordinator.broker.client_id,
     );
     let bitvmx_broker = Rc::new(BitVmxBrokerClient::new(
-        config.coordinator_config.bitvmx_broker.host,
-        config.coordinator_config.bitvmx_broker.port,
+        config.coordinator.bitvmx.host,
+        config.coordinator.bitvmx.port,
         BITVMX_L2_BROKER_CLIENT_ID,
     ));
 
@@ -97,7 +97,7 @@ fn main() -> Result<()> {
         transaction_dispatcher::GatewayRole::Member, // Coordinator uses member role
     )?;
 
-    let store_path = &format!("{}/coordinator", config.coordinator_config.storage_path);
+    let store_path = &format!("{}/coordinator", config.coordinator.storage_path);
     debug!("Creating coordinator store at: {}", store_path);
     let store = CoordinatorStore::new(store_path).context("Failed to create context store")?;
 

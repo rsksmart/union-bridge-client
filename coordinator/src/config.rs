@@ -10,24 +10,30 @@ const PEG_MANAGER_CONTRACT_NAME: &str = "PegManager";
 const SIGNATURE_CONTRACT_NAME: &str = "SignatureManager";
 const COMMITTEE_REGISTRY_CONTRACT_NAME: &str = "CommitteeRegistry";
 const MEMBER_REGISTRY_CONTRACT_NAME: &str = "MemberRegistry";
+const STREAM_MANAGER_CONTRACT_NAME: &str = "StreamManager";
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
     pub contracts: Vec<ContractConfig>,
     pub bitcoin_network: String, // loaded from common.yaml
     #[serde(rename = "coordinator")]
-    pub coordinator_config: CoordinatorConfig,
+    pub coordinator: CoordinatorConfig,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename = "coordinator")]
 pub struct CoordinatorConfig {
-    pub log_broker: BrokerConfig,
-    pub block_broker: BrokerConfig,
-    pub user_broker: BrokerConfig,
-    pub bitvmx_broker: BrokerConfig,
-    pub broker_client_id: u32,
+    pub logs: BrokerConfig,
+    pub blocks: BrokerConfig,
+    pub user: BrokerConfig,
+    pub bitvmx: BrokerConfig,
+    pub broker: BrokerClientConfig,
     pub storage_path: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BrokerClientConfig {
+    pub client_id: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -59,6 +65,7 @@ impl Config {
             || contract.name == SIGNATURE_CONTRACT_NAME
             || contract.name == COMMITTEE_REGISTRY_CONTRACT_NAME
             || contract.name == MEMBER_REGISTRY_CONTRACT_NAME
+            || contract.name == STREAM_MANAGER_CONTRACT_NAME
     }
 
     #[cfg(not(feature = "anvil"))]
@@ -67,6 +74,8 @@ impl Config {
             || contract.name == SIGNATURE_CONTRACT_NAME
             || contract.name == COMMITTEE_REGISTRY_CONTRACT_NAME
             || contract.name == MEMBER_REGISTRY_CONTRACT_NAME
+            || contract.name == SIGNATURE_CONTRACT_NAME
+            || contract.name == STREAM_MANAGER_CONTRACT_NAME
     }
 }
 
@@ -99,18 +108,26 @@ mod tests {
         let config: Config =
             CommonConfig::load_config::<Config>(None).expect("Failed to load base config");
 
-        assert_eq!("0.0.0.0", config.coordinator_config.log_broker.host);
-        assert_eq!(20001, config.coordinator_config.log_broker.port);
-        assert_eq!("0.0.0.0", config.coordinator_config.block_broker.host);
-        assert_eq!(10001, config.coordinator_config.block_broker.port);
-        assert_eq!("0.0.0.0", config.coordinator_config.user_broker.host);
-        assert_eq!(30001, config.coordinator_config.user_broker.port);
-        assert_eq!("0.0.0.0", config.coordinator_config.bitvmx_broker.host);
-        assert_eq!(22222, config.coordinator_config.bitvmx_broker.port);
-        assert_eq!(101, config.coordinator_config.broker_client_id);
-        assert_eq!(
-            "/your_base_path/.union_bridge/database/multi-client-1",
-            config.coordinator_config.storage_path
+        assert_eq!("0.0.0.0", config.coordinator.logs.host);
+        assert_eq!(20001, config.coordinator.logs.port);
+        assert_eq!("0.0.0.0", config.coordinator.blocks.host);
+        assert_eq!(10001, config.coordinator.blocks.port);
+        assert_eq!("0.0.0.0", config.coordinator.user.host);
+        assert_eq!(30001, config.coordinator.user.port);
+        assert_eq!("0.0.0.0", config.coordinator.bitvmx.host);
+        assert_eq!(22222, config.coordinator.bitvmx.port);
+        assert_eq!(101, config.coordinator.broker.client_id);
+        assert!(
+            !config
+                .coordinator
+                .storage_path
+                .contains("{BASE_STORAGE_PATH}")
+        );
+        assert!(
+            config
+                .coordinator
+                .storage_path
+                .ends_with("/.union_bridge/database/multi-client-1")
         );
         assert_eq!("regtest", config.bitcoin_network);
         assert_eq!(8, config.contracts.len());

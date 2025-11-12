@@ -151,8 +151,7 @@ the Union Client) are:
   unlock the corresponding keystore files when running the client (see [Multi Client Setup](#Multi-Client-Setup) below)
 - `BASE_STORAGE_PATH`: base path where the client will store its data (databases, keystore files, etc.). Pick a path
   that is writable and accessible by the user running the client.
-- `USER_BITCOIN_WIF`: a Bitcoin private key WIF for an user. You can generate one via the `bitcoin-wallet` with `generate_address`.
-- `MEMBER_BITCOIN_WIF`: a Bitcoin private key WIF for a member. You can generate one via the `bitcoin-wallet` with `generate_address`.
+- `WALLET_PRIVATE_KEY`: a Bitcoin private key WIF. You can generate one via the `bitcoin-wallet` with `generate_address`.
   See [bitcoin-wallet README](bitcoin-wallet/README.md) for more info.
 
 We recommend using `direnv` to manage private environment variables. Then you can set them up by:
@@ -165,83 +164,80 @@ This will automatically load the environment variables defined in the `.envrc` o
 
 ### Multi Client Setup
 
-The Multi Client setup is mostly automated using the `multiclient-setup.sh` script. But we need to run 2 manual steps.
+The Multi Client setup is mostly automated using the `cli-operations.sh` tool. You need to complete a few manual steps first.
 
 #### Creating the base directory
 
-Under the directory specified in the `BASE_STORAGE_PATH` env, run the following command to create the base directory and
-also the `keystore` subdirectory:
+Under the directory specified in the `BASE_STORAGE_PATH` env, run the following command to create the base directory:
 
+```bash
+mkdir -p .union_bridge
 ```
-mkdir -p .union_bridge/keystore
-```
+
+Note: The `keystore` subdirectory will be created automatically when you create wallets.
 
 #### Configuring the Committee
 
 You will need to tweak the committee size and requirements according to the committee you want to run. For example, to
-use a committee
-of 4 members, 2 Watchtowers (aka Verifiers) and 2 Operators (aka Provers) like mentioned in **Combined Setup**, you will
-need to edit
+use a committee of 4 members, 2 Watchtowers (aka Verifiers) and 2 Operators (aka Provers), you will need to edit
 `bitvmx-union-bridge-contracts/src/CommitteeRegistry.sol` and change:
 
-   ```
-   minCommitteeWatchtowers = 3;
-   minCommitteeOperators = 3;
-   committeeMemberCount = 10;
-   ```
+```solidity
+minCommitteeWatchtowers = 3;
+minCommitteeOperators = 3;
+committeeMemberCount = 10;
+```
 
 to:
 
-   ```
-   minCommitteeWatchtowers = 2;
-   minCommitteeOperators = 2;
-   committeeMemberCount = 4;
-   ```
+```solidity
+minCommitteeWatchtowers = 2;
+minCommitteeOperators = 2;
+committeeMemberCount = 4;
+```
 
-Then you should deploy the contracts, and you can use `multiclient-setup.sh` script for the rest of the setup.
+Then you should deploy the contracts, and you can use the operations CLI for the rest of the setup.
 
-**N.B**
-Please note that the `committeeMemberCount` value should always match the number of clients you intend to spin up
+**Note:** The `committeeMemberCount` value should always match the number of clients you intend to run (currently hardcoded to 4 in the CLI).
+
+#### Wallet and Committee Setup
 
 **1. Create Wallets (first time only)**
 
-This creates 10 wallets (by default), one for each of the potential Union Client instances.
+Creates Rootstock wallets for 4 operators. Each operator gets **two wallets**: one for member operations and one for user operations (8 wallets total).
 
-This is required for the **Transaction Dispatcher** crate to be able to sign transactions and send them to Rootstock.
-
-```bash
-./multiclient-setup.sh --create-wallets
-```
-
-**2. Fund Wallets (every time you restart Anvil or if you run out of funds)**
-
-This funds the wallets created in the previous step to be able to send transactions to Rootstock.
+This is required for the **Transaction Dispatcher** to sign and send transactions to Rootstock.
 
 ```bash
-./multiclient-setup.sh --fund-wallets
+./cli-operations.sh setup create-rootstock-wallets
 ```
 
-**3. Setup Committee (optional)**
+**2. Fund Operators (every time you restart Anvil or run out of funds)**
 
-See this [section](#temporary-bitvmx-funding-process-for-cargo-running-mode) for more information on a temporary
-approach to fund BitVMX.
-
-This creates a Committee so of 4 members (by default) so you can test the committee collaboration flows.
+Funds both Bitcoin addresses and Rootstock wallets for all operators.
 
 ```bash
-./multiclient-setup.sh --committee-setup 4  # for 4 clients (hint: the clients need to be running for the `--committee-setup` flag to execute)
+./cli-operations.sh operator fund
 ```
 
-Note that each RSK event in the flow (3 atm) needs to reach the required confirmations. If you started anvil with auto
-mining, it will happen at some point; otherwise you can manually mine blocks with `cast rpc anvil_mine N`.
+**3. Apply to Stream (committee setup)**
 
-**Combined Setup**
-
-This combines the previous steps to have a setup ready to initiate a Pegin.
+Applies all 4 operators to a stream to form the committee. The clients must be running before executing this command.
 
 ```bash
-./multiclient-setup.sh --fund-wallets --committee-setup 4
+./cli-operations.sh operator apply-stream -s 1
 ```
+
+**Note:** Each Rootstock event in the flow requires confirmations. With anvil auto-mining, this happens automatically. Otherwise, manually mine blocks with `cast rpc anvil_mine N`.
+
+## CLI Tools
+
+The project includes two CLI tools for local development and operations:
+
+- **`cli-run.sh`**: Local client launcher for development and testing
+- **`cli-operations.sh`**: Operations toolkit for setup, operator, and user operations
+
+For detailed documentation, usage examples, and command references, see [cli/README.md](cli/README.md).
 
 ## Running the Union Client
 
@@ -256,7 +252,7 @@ Once you have gone through the initial setup steps, the order to start up the pr
    `bash ./shell/script/deploy/deploy-local.sh`)
 5. Make available `BASE_STORAGE_PATH` and `KEY_STORE_PASSWORD` environment variables (you can set them in your
    `.envrc` file)
-6. Run the Union Client in the mode you want. Run `./run-client.sh --help` to better understand the available
+6. Run the Union Client in the mode you want. Run `./cli-run.sh -h` to better understand the available
    options.
 
 #### Running a Single Client
@@ -264,11 +260,11 @@ Once you have gone through the initial setup steps, the order to start up the pr
 You can run a single instance of the Union Client using:
 
 ```bash
-# Single client mode (defaults to CLIENT_ID=1
-./run-client.sh --features anvil
+# Single client mode (defaults to CLIENT_ID=1)
+./cli-run.sh
 
 # Single client with specific ID
-./run-client.sh --id 2 --features anvil
+./cli-run.sh -i 2
 ```
 
 #### Running Multiple Clients (Committee Collaboration)
@@ -277,7 +273,7 @@ Some sub-flows in the main flows require committee collaboration. To achieve thi
 of Union Client and BitVMX Client using the automated multiclient setup.
 
 The project includes a `multiclient.env` file that defines unique port numbers and configuration paths for each client
-instance (1-10). This ensures no collisions between different clients for:
+instance (1-4). This ensures no collisions between different clients for:
 
 - Broker ports (block, log, user)
 - HTTP server ports
@@ -285,10 +281,10 @@ instance (1-10). This ensures no collisions between different clients for:
 - Keystore paths
 - BitVMX broker ports
 
-You can run up to 10 clients using the `./run-client.sh` script.
+You can run 4 clients simultaneously using the `./cli-run.sh` script:
 
 ```bash
-./run-client.sh --num-clients 4 --features anvil
+./cli-run.sh
 ```
 
 #### Complete Workflow Example
@@ -298,30 +294,37 @@ Here's the complete workflow to set up and run 4 clients:
 ```bash
 # 1. Start BitVMX client (in separate terminal)
 cd <path_to_bitvmx_workspace_repo>/rust-bitvmx-client
-./run_union_example.sh
+rm -rf /tmp/broker_p2p* ; rm -rf /tmp/regtest ; bash run_union_example.sh
 
-# 2. Start Anvil and deploy contracts (in separate terminal)
-anvil
-# Deploy contracts in another terminal
-# Fund bitcoin wallets (checkout docker-integrated/ README)
+# 2. Start Anvil (in separate terminal)
+anvil --block-time 2  # optional: auto-mine every 2 seconds
 
-# 3. Run the clients
-./run-client.sh --num-clients 4 --features anvil
+# 3. Deploy contracts (in another terminal)
+cd <path_to_bitvmx_union_bridge_contracts>
+bash ./shell/script/deploy/deploy-local.sh
 
-# 4. Set up multiclient
-./multiclient-setup.sh --fund-wallets --committee-setup 4
+# 4. Create and fund wallets
+./cli-operations.sh setup create-rootstock-wallets
+./cli-operations.sh operator fund
+
+# 5. Run the 4 clients
+./cli-run.sh --fresh
+
+# 6. Apply operators to stream (requires clients to be running)
+./cli-operations.sh operator apply-stream -s 0
 ```
 
 #### Troubleshooting
 
-- **Port Conflicts**: Each client uses unique ports defined in `multiclient.env`, take this into account if you edit it
-  or create more clients
-- **Wallet Issues**: Use `./multiclient-setup.sh --fund-wallets` to refund wallets if needed
-- **Process Cleanup**: If services fail to start due to port conflicts or corrupt database, run
-  `pkill -f "target/debug/" && rm -rf ${BASE_STORAGE_PATH}/.union_bridge/database` to clean up processes, but take into
-  account that this
-  will kill all Rust processes running and prune your database
-- **Local Setup Issues**: Check that `BASE_STORAGE_PATH` env var is correctly set and accessible
+- **Port Conflicts**: Each client uses unique ports defined in `multiclient.env`. Check this file if you encounter port issues.
+- **Wallet Issues**: Re-fund wallets with `./cli-operations.sh operator fund` if needed
+- **Process Cleanup**: If services fail to start due to port conflicts or corrupt database, run:
+  ```bash
+  pkill -f "target/debug/"
+  rm -rf ${BASE_STORAGE_PATH}/.union_bridge/database
+  ```
+  **Warning:** This kills all Rust processes and prunes your database.
+- **Local Setup Issues**: Verify `BASE_STORAGE_PATH` and `KEY_STORE_PASSWORD` environment variables are set correctly
 
 ### With Docker
 
@@ -330,7 +333,7 @@ information on how to build and run the client using Docker.
 
 ### Development/Testing Setup
 
-Optionally, you can run `./run-mocks.sh` in another terminal before `./run-client.sh ...`. This will:
+Optionally, you can run `./run-mocking.sh` in another terminal before starting the clients with `./cli-run.sh`. This will:
 
 - spin up a mocked BitVMX client
 - spin up an anvil node to simulate the Rootstock blockchain
@@ -338,16 +341,15 @@ Optionally, you can run `./run-mocks.sh` in another terminal before `./run-clien
 
 ### Individual Crates using Cargo
 
-Alternatively, you can run every crate individually, just check `./run-client.sh` for the commands used to run each
-crate.
+Alternatively, you can run every crate individually. Check the `cli/run/src/main.rs` file for the cargo commands used to launch each service.
 
 ## Configuration Files
 
-Configuration files are located under the `config/new/` directory, organized in environment files. The final config is the
+Configuration files are located under the `config` directory, organized in environment folders. The final config is the
 composition of the following files in the defined order:
 
-- `base.yaml`: common configuration for all environments.
-- `{ENVIRONMENT_NAME}.yaml`: specific configuration for each crate.
+- `common.yaml`: common configuration for all environments.
+- `{crate_name}.yaml`: specific configuration for each crate.
 
 ### Configuration Overrides
 
@@ -363,7 +365,7 @@ separate levels.
 **Example YAML to Environment Variable Mapping:**
 
 ```yaml
-# config/new/base.yaml
+# config/common.yaml
 block_broker:
   ip: "127.0.0.1"
   port: 5672
@@ -390,8 +392,7 @@ configuration files.
 
 ## Rootstock Wallet creation (manual)
 
-This is automated in `multiclient-setup.sh` script, but if you want to create a wallet manually, you can use the
-`key-manager` crate for that.
+This is automated in the `cli-operations.sh setup create-rootstock-wallets` command, but if you want to create a wallet manually, you can use the `key-manager` crate for that.
 
 ```
 cd key-manager
@@ -402,7 +403,7 @@ This will output:
 
 - the local path to your key: you will have to set it in the corresponding `transaction-dispatcher.yaml` config file
 - the public key
-- the address (this will be automatically used by the `multiclient-setup.sh` script)
+- the address (this will be automatically used by the wallet setup commands)
 
 Keep track of the password you used, as you will need to set it up in `KEY_STORE_PASSWORD` env var. Check the
 [Environment Variables Setup](#environment-variables-setup) section for more information on how to set it up.
@@ -533,46 +534,3 @@ NOTE: Uploading and downloading artifacts is slow locally, but fast on the CI.
 NOTE: You can add `--reuse` to reuse previous Docker containers to speed up execution by skipping setup and preserving
 cache, filesystem, and environment state.
 NOTE: If you find concurrency errors, try running with `--concurrent-jobs 1` to run the actions sequentially.
-
-## Temporary BitVMX funding process for cargo running mode
-
-This is a temporary process to fund the BitVMX Bitcoin wallets for the Committee Setup.
-
-With the 4 clients started, run in bash:
-
-```
-for port in 40001 40002 40003 40004; do
-  echo "GET http://0.0.0.0:$port/bitvmx-address"
-  curl -sS -X GET "http://0.0.0.0:$port/bitvmx-address"
-  echo
-done
-```
-
-This will print in the logs 4 Bitcoin addresses (one per operator) that you will use in the next steps.
-
-Then, through the `bitcoin-wallet` crate (started with `cargo run --release`) you should run:
-
-1. `clear_db`
-2. `mine_utxo 9000000000`
-3. `send_to_address <btc_addr_1>,<btc_addr_2>,<btc_addr_3>,<btc_addr_4> 25000000`
-
-## Creating Pegin Transactions
-
-To create a pegin transaction, you can use the `create_pegin_tx.sh` helper script:
-
-```bash
-# Set your RSK address and run the script
-RSK_ADDRESS=0x... ./create_pegin_tx.sh [stream_amount] [packet_number]
-```
-
-The script will:
-1. Query the user-api to get a pegin address
-2. Display the command to run in the bitcoin-wallet CLI
-
-After the script provides the command, open the bitcoin-wallet CLI and run:
-```
-create_pegin_tx <stream_amount> <packet_number> <pegin_address> <rsk_address>
-mine_block
-```
-
-**Important**: You must mine one block after creating the pegin transaction to confirm it on the Bitcoin network.

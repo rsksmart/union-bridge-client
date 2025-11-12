@@ -32,22 +32,22 @@ address = "0xc4bD69eBDb7AAf864D66ecc33C60Cb9a4F7D2a91"
 
 [indexer]
 
-storage.path = "/app/db/"
+storage.path = "/app/db/" # This should match the volume mount in docker-compose
 
 # ═══════════════════════════════════════════════════════
 # Coordinator
 # ═══════════════════════════════════════════════════════
 
 [coordinator]
-storage_path = "/app/db/"           # This should match the volume mount in docker-compose
-block_broker.host = "block-indexer"
-log_broker.host = "log-indexer"
-user_broker.host = "user-api"
+storage_path = "/app/db/" # This should match the volume mount in docker-compose
+blocks.host = "block-indexer"
+logs.host = "log-indexer"
+user.host = "user-api"
 
 # ═══════════════════════════════════════════════════════
 # Transaction Dispatcher
 # ═══════════════════════════════════════════════════════
 
 [transaction_dispatcher]
-key_store.user_path = "/keystore/user-key.json"     # should match the one configured in key-setup.sh
-key_store.member_path = "/keystore/member-key.json"
+key_store.user_path = "/keystore/user-key.json" # should match the one configured in key-setup.sh
+key_store.member_path = "/keystore/member-key.json" # should match the one configured in key-setup.sh

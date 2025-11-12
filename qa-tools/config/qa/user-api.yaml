@@ -1,3 +1,7 @@
-coordinator_broker_client_id: 333
-broker_server_port: 5550
-http_server_port: 5551
+coordinator:
+  broker:
+    client_id: 333
+notifier:
+  port: 5550
+http:
+  port: 5551

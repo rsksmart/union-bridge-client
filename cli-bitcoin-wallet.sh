@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Bitcoin Wallet Launcher
-# Usage: ./wallet.sh <user|member> [additional_args...]
+# Usage: ./cli-bitcoin-wallet.sh <user|member> [additional_args...]
 
 set -e
 
@@ -48,4 +48,4 @@ case "$MODE" in
 esac
 
 # Launch bitcoin-wallet with the specified mode
-exec cargo run --bin ub-wallet -- --mode "$MODE" "$@"
+exec cargo run --manifest-path ./bitcoin-wallet/Cargo.toml --bin ub-wallet -- --mode "$MODE" "$@"

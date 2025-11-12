@@ -50,6 +50,7 @@ jobs:
           --exclude user-api \
           --exclude actors-mocking \
           --exclude bitcoin-wallet \
+          --exclude cli \
           --exclude "test*" \
           .
       continue-on-error: true

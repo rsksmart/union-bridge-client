@@ -13,7 +13,7 @@ pub struct Config {
 }
 #[derive(Debug, Deserialize)]
 pub struct BlockIndexerConfig {
-    pub block_notifier: NotifierConfig,
+    pub notifier: NotifierConfig,
 }
 
 impl Config {
@@ -43,10 +43,17 @@ mod tests {
         let config: Config =
             CommonConfig::load_config::<Config>(None).expect("Failed to load config");
 
-        assert_eq!(
-            10001,
-            config.block_indexer_config.block_notifier.broker_port
+        assert_eq!(10001, config.block_indexer_config.notifier.port);
+        assert!(!config.indexer.storage.path.contains("{BASE_STORAGE_PATH}"));
+        assert!(
+            config
+                .indexer
+                .storage
+                .path
+                .ends_with("/.union_bridge/database/multi-client-1")
         );
+        assert_eq!(1000, config.indexer.cache.size);
+        assert_eq!("ws://127.0.0.1:8545", config.provider.rootstock.url);
     }
 
     #[test]

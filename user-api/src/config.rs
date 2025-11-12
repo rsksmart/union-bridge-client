@@ -13,9 +13,29 @@ pub struct Config {
 
 #[derive(Debug, Deserialize)]
 pub struct UserApiConfig {
-    pub coordinator_broker_client_id: u32, // TODO(Jira) for now just one client ID until we unify the brokers in scope of https://rsklabs.atlassian.net/browse/UB-215
-    pub broker_server_port: u16,
-    pub http_server_port: u16,
+    pub coordinator: CoordinatorConfig,
+    pub notifier: NotifierConfig,
+    pub http: HttpConfig,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CoordinatorConfig {
+    pub broker: BrokerConfig,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BrokerConfig {
+    pub client_id: u32, // TODO(Jira) for now just one client ID until we unify the brokers in scope of https://rsklabs.atlassian.net/browse/UB-215
+}
+
+#[derive(Debug, Deserialize)]
+pub struct NotifierConfig {
+    pub port: u16,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct HttpConfig {
+    pub port: u16,
 }
 
 impl Config {
@@ -42,8 +62,8 @@ mod tests {
         let config: Config =
             CommonConfig::load_config::<Config>(None).expect("Failed to load base config");
 
-        assert_eq!(101, config.user_api_config.coordinator_broker_client_id);
-        assert_eq!(30001, config.user_api_config.broker_server_port);
-        assert_eq!(40001, config.user_api_config.http_server_port);
+        assert_eq!(101, config.user_api_config.coordinator.broker.client_id);
+        assert_eq!(30001, config.user_api_config.notifier.port);
+        assert_eq!(40001, config.user_api_config.http.port);
     }
 }
