@@ -79,7 +79,7 @@ struct Cli {
     client_id: Option<u8>,
 
     /// Optional features to pass to cargo (e.g. "anvil").
-    #[arg(short = 'f', long = "features", default_value = "anvil")]
+    #[arg(short = 'f', long = "features")]
     features: Option<String>,
 
     /// Start with clear databases (removes existing)
@@ -505,10 +505,25 @@ fn fresh_cleanup() -> Result<()> {
 
 fn cargo_args_for_service(config: &RunConfig, svc: &Service) -> Vec<String> {
     let mut args: Vec<String> = vec!["run".into(), "--bin".into(), svc.name().into()];
-    if let Some(f) = &config.features {
+
+    // pass features flag if provided, otherwise default to anvil for services that support it
+    let features = if let Some(f) = &config.features {
+        Some(f.clone())
+    } else {
+        // default to anvil for local development on services that support it
+        match svc {
+            Service::BlockIndexer | Service::LogIndexer | Service::Coordinator => {
+                Some("anvil".into())
+            }
+            Service::UserApi => None,
+        }
+    };
+
+    if let Some(f) = features {
         args.push("--features".into());
-        args.push(f.clone());
+        args.push(f);
     }
+
     args.push("--".into());
     args.push("--env".into());
     args.push("local".into());

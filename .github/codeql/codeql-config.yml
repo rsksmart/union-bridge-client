@@ -6,3 +6,4 @@ paths-ignore:
   - 'qa-tools/**'
   - 'cli/**'
   - 'bitcoin-wallet/**'
+  - 'user-api/**'
