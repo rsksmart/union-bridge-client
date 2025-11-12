@@ -255,7 +255,7 @@ mod tests {
         assert_eq!(100, config.indexer.sync.batch_size);
         assert_eq!("ws://127.0.0.1:8545", config.provider.rootstock.url);
         assert_eq!("regtest", config.bitcoin_network);
-        assert_eq!(8, config.contracts.len());
+        assert_eq!(9, config.contracts.len());
         let contract_names: Vec<&String> = config.contracts.iter().map(|c| &c.name).collect();
         let expected_names = vec![
             "TestContractDyn",
@@ -266,6 +266,7 @@ mod tests {
             "MemberRegistry",
             "FakePegManager",
             "StreamManager",
+            "PowpegBridge",
         ];
         assert_eq!(expected_names, contract_names);
         assert_eq!(
@@ -300,7 +301,13 @@ mod tests {
             "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
             config.contracts[7].address
         );
+        assert_eq!(
+            "0x0000000000000000000000000000000001000006",
+            config.contracts[8].address
+        );
     }
+
+    // preguntar lo de los dos pegout processor, cual es el que se usa?
 
     #[test]
     fn test_docker_local_environment_overrides() {
@@ -321,7 +328,7 @@ mod tests {
             config.provider.rootstock.url
         );
         assert_eq!("regtest", config.bitcoin_network);
-        assert_eq!(8, config.contracts.len());
+        assert_eq!(9, config.contracts.len());
     }
 
     #[test]

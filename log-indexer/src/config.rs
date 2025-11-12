@@ -93,7 +93,7 @@ mod tests {
         );
         assert_eq!(1000, config.indexer.cache.size);
         assert_eq!("ws://127.0.0.1:8545", config.provider.rootstock.url);
-        assert_eq!(8, config.contracts.len());
+        assert_eq!(9, config.contracts.len());
     }
 
     #[test]
@@ -102,7 +102,7 @@ mod tests {
             CommonConfig::load_config::<Config>(None).expect("Failed to load config");
         let contracts = config.load_managed_contracts();
 
-        assert_eq!(8, contracts.len());
+        assert_eq!(9, contracts.len());
     }
 
     #[test]
