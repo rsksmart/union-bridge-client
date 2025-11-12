@@ -11,6 +11,7 @@
 //! commands for operator wallet management and committee registration
 //! - `fund`: displays operator bitcoin addresses and funds rootstock wallets
 //!   - prints bitcoin addresses that need to be funded manually in bitcoin-wallet cli
+//!   - with `--execute` flag: runs the wallet commands programmatically via cli-bitcoin-wallet.sh
 //!   - automatically funds rootstock addresses via anvil (local) or faucet (testnet/alphanet)
 //! - `apply-stream`: registers operator(s) to a stream for committee participation
 //!   - local: applies all 4 operators automatically
@@ -20,6 +21,7 @@
 //! pegin and pegout transaction commands
 //! - `pegin`: initiates a bitcoin → rootstock transfer
 //!   - prints bitcoin-wallet cli command to execute the pegin transaction
+//!   - with `--execute` flag: runs the wallet command programmatically via cli-bitcoin-wallet.sh
 //!   - requires: rootstock address, value in satoshis, packet number
 //! - `pegout`: initiates a rootstock → bitcoin withdrawal
 //!   - executes the pegout request on the rootstock side
@@ -36,6 +38,8 @@
 //! ```bash
 //! cargo run -- operator fund --env local
 //! # copy displayed bitcoin addresses and fund them in bitcoin-wallet cli
+//! # or use --execute to run the wallet commands automatically:
+//! cargo run -- operator fund --env local --execute
 //! ```
 //!
 //! apply operators to stream (local - all 4 operators):
@@ -52,6 +56,8 @@
 //! ```bash
 //! cargo run -- user pegin -a 0x1234...cdef -v 100000 -p 0 --env local
 //! # execute the printed bitcoin-wallet cli command
+//! # or use --execute to run the wallet command automatically:
+//! cargo run -- user pegin -a 0x1234...cdef -v 100000 -p 0 --env local --execute
 //! ```
 //!
 //! request pegout (rootstock → bitcoin):
@@ -117,6 +123,10 @@ enum OperatorCommands {
         /// Environment to target (local, local-docker, alphanet, testnet)
         #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local)]
         env: Environment,
+
+        /// Execute the wallet commands programmatically instead of just printing them
+        #[arg(long = "execute", default_value_t = false)]
+        execute: bool,
     },
     /// Apply operator to a stream for committee setup
     #[command(name = "apply-stream")]
@@ -163,6 +173,10 @@ enum UserCommands {
             default_value_t = 0u64
         )]
         packet_number: u64,
+
+        /// Execute the wallet command programmatically instead of just printing it
+        #[arg(long = "execute", default_value_t = false)]
+        execute: bool,
     },
     /// Request a pegout (withdraw from Rootstock to Bitcoin)
     Pegout {
@@ -198,11 +212,11 @@ async fn main() -> Result<()> {
             }
         },
         Commands::Operator { command } => match command {
-            OperatorCommands::Fund { env } => {
+            OperatorCommands::Fund { env, execute } => {
                 println!("\n=== Funding Rootstock wallets ===");
                 rsk_wallet::handle_operator_funding(env).await?;
                 println!("=== Funding Bitcoin addresses ===");
-                bitcoin_wallet::handle_bitcoin_funding(env).await?;
+                bitcoin_wallet::handle_bitcoin_funding(env, execute).await?;
             }
             OperatorCommands::ApplyToStream {
                 stream_id,
@@ -219,8 +233,10 @@ async fn main() -> Result<()> {
                 rsk_address,
                 value,
                 packet_number,
+                execute,
             } => {
-                pegin::create_pegin_tx(env, rsk_address, value, packet_number).await?;
+                pegin::create_pegin_tx(env, rsk_address, value, packet_number, execute)
+                    .await?;
             }
             UserCommands::Pegout { env, value } => {
                 pegout::request_pegout(env, value).await?;

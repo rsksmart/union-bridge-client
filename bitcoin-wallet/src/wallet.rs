@@ -58,12 +58,13 @@ pub struct GeneratedAddress {
 
 pub struct Wallet {
     network: Network,
+    mode: crate::cli::WalletMode,
     private_keys: HashMap<String, PrivateKey>,
     active_address: Option<Address>,
     utxos: Vec<Utxo>,
     secp: Secp256k1<secp256k1::All>,
     sats_per_byte: u64,
-    utxo_db_root: PathBuf,
+    db_root: PathBuf,
     utxo_store: UtxoStore,
     rpc_client: Option<Client>,
     pending_transactions: HashMap<Txid, CreatedTransaction>,
@@ -71,14 +72,18 @@ pub struct Wallet {
 }
 
 impl Wallet {
-    pub fn new(utxo_db_root: impl Into<PathBuf>) -> Result<Self> {
-        Self::new_with_network(utxo_db_root, Network::Regtest)
+    pub fn new(db_root: impl Into<PathBuf>, mode: crate::cli::WalletMode) -> Result<Self> {
+        Self::new_with_network(db_root, Network::Regtest, mode)
     }
 
-    pub fn new_with_network(utxo_db_root: impl Into<PathBuf>, network: Network) -> Result<Self> {
-        let utxo_db_root = utxo_db_root.into();
-        let utxo_store = open_network_store(&utxo_db_root, network)?;
-        let pending_tx_store = open_pending_tx_store(&utxo_db_root, network)?;
+    pub fn new_with_network(
+        db_root: impl Into<PathBuf>,
+        network: Network,
+        mode: crate::cli::WalletMode,
+    ) -> Result<Self> {
+        let db_root = db_root.into();
+        let utxo_store = open_network_store(&db_root, network, &mode)?;
+        let pending_tx_store = open_pending_tx_store(&db_root, network, &mode)?;
 
         // load pending transactions from storage
         let pending_transactions: HashMap<Txid, CreatedTransaction> =
@@ -86,12 +91,13 @@ impl Wallet {
 
         Ok(Self {
             network,
+            mode,
             private_keys: HashMap::new(),
             active_address: None,
             utxos: Vec::new(),
             secp: Secp256k1::new(),
             sats_per_byte: DEFAULT_SATS_PER_BYTE,
-            utxo_db_root,
+            db_root,
             utxo_store,
             rpc_client: None,
             pending_transactions,
@@ -101,9 +107,9 @@ impl Wallet {
 
     pub fn from_config(config: &Config) -> Result<Self> {
         let mut wallet = if let Some(network) = config.network {
-            Wallet::new_with_network(config.utxo_db_path.clone(), network)?
+            Wallet::new_with_network(config.db_path.clone(), network, config.mode.clone())?
         } else {
-            Wallet::new(config.utxo_db_path.clone())?
+            Wallet::new(config.db_path.clone(), config.mode.clone())?
         };
 
         if let Some(sats_per_byte) = config.sats_per_byte {
@@ -517,8 +523,8 @@ impl Wallet {
             return Ok(false);
         }
 
-        let new_store = open_network_store(&self.utxo_db_root, network)?;
-        let new_pending_tx_store = open_pending_tx_store(&self.utxo_db_root, network)?;
+        let new_store = open_network_store(&self.db_root, network, &self.mode)?;
+        let new_pending_tx_store = open_pending_tx_store(&self.db_root, network, &self.mode)?;
 
         // load pending transactions for the new network
         let pending_transactions: HashMap<Txid, CreatedTransaction> = new_pending_tx_store
@@ -910,6 +916,7 @@ impl Wallet {
         let entries = self.utxo_store.load_by_address(address)?;
         let mut utxos: Vec<(Utxo, u64)> = entries
             .into_iter()
+            .filter(|(_, stored)| stored.state == UtxoState::Available)
             .map(|(outpoint, stored)| {
                 (
                     Utxo {
@@ -1001,7 +1008,11 @@ impl Wallet {
     }
 }
 
-fn open_network_store(root: &Path, network: Network) -> Result<UtxoStore> {
+fn open_network_store(
+    root: &Path,
+    network: Network,
+    mode: &crate::cli::WalletMode,
+) -> Result<UtxoStore> {
     fs::create_dir_all(root).with_context(|| {
         format!(
             "failed to create UTXO database root directory {}",
@@ -1009,7 +1020,7 @@ fn open_network_store(root: &Path, network: Network) -> Result<UtxoStore> {
         )
     })?;
 
-    let path = utxo_db_path(root, network);
+    let path = utxo_db_path(root, network, mode);
     fs::create_dir_all(&path).with_context(|| {
         format!(
             "failed to create UTXO database directory {}",
@@ -1022,7 +1033,11 @@ fn open_network_store(root: &Path, network: Network) -> Result<UtxoStore> {
     UtxoStore::open(&path)
 }
 
-fn open_pending_tx_store(root: &Path, network: Network) -> Result<PendingTransactionStore> {
+fn open_pending_tx_store(
+    root: &Path,
+    network: Network,
+    mode: &crate::cli::WalletMode,
+) -> Result<PendingTransactionStore> {
     fs::create_dir_all(root).with_context(|| {
         format!(
             "failed to create pending transaction database root directory {}",
@@ -1030,7 +1045,7 @@ fn open_pending_tx_store(root: &Path, network: Network) -> Result<PendingTransac
         )
     })?;
 
-    let path = pending_tx_db_path(root, network);
+    let path = pending_tx_db_path(root, network, mode);
     fs::create_dir_all(&path).with_context(|| {
         format!(
             "failed to create pending transaction database directory {}",
@@ -1041,17 +1056,27 @@ fn open_pending_tx_store(root: &Path, network: Network) -> Result<PendingTransac
     PendingTransactionStore::open(&path)
 }
 
-fn utxo_db_path(root: &Path, network: Network) -> PathBuf {
-    let nw = network_suffix(network);
-    root.join(nw)
+fn utxo_db_path(root: &Path, network: Network, mode: &crate::cli::WalletMode) -> PathBuf {
+    let mode_name = match mode {
+        crate::cli::WalletMode::User => "user",
+        crate::cli::WalletMode::Member => "member",
+    };
+    let network_name = network_suffix(network);
+    root.join(mode_name).join(network_name).join("utxo_db")
 }
 
-fn pending_tx_db_path(root: &Path, network: Network) -> PathBuf {
-    let nw = network_suffix(network);
-    root.join(format!("{}_pending_tx", nw))
+fn pending_tx_db_path(root: &Path, network: Network, mode: &crate::cli::WalletMode) -> PathBuf {
+    let mode_name = match mode {
+        crate::cli::WalletMode::User => "user",
+        crate::cli::WalletMode::Member => "member",
+    };
+    let network_name = network_suffix(network);
+    root.join(mode_name)
+        .join(network_name)
+        .join("pending_tx_db")
 }
 
-fn network_suffix(network: Network) -> &'static str {
+pub fn network_suffix(network: Network) -> &'static str {
     match network {
         Network::Bitcoin => "bitcoin",
         Network::Testnet => "testnet",
@@ -1070,7 +1095,7 @@ mod tests {
     fn generate_address_sets_new_active_address() -> Result<()> {
         let temp = tempdir()?;
         let root = temp.path().join("utxo-db");
-        let mut wallet = Wallet::new(root)?;
+        let mut wallet = Wallet::new(root, crate::cli::WalletMode::User)?;
         assert!(wallet.active_address().is_none());
 
         let generated = wallet.generate_address()?;
@@ -1096,7 +1121,7 @@ mod tests {
     fn generate_address_twice_yields_unique_keys() -> Result<()> {
         let temp = tempdir()?;
         let root = temp.path().join("utxo-db");
-        let mut wallet = Wallet::new(root)?;
+        let mut wallet = Wallet::new(root, crate::cli::WalletMode::User)?;
 
         let first = wallet.generate_address()?;
         let second = wallet.generate_address()?;
@@ -1121,7 +1146,7 @@ mod tests {
     fn generate_address_preserves_existing_active() -> Result<()> {
         let temp = tempdir()?;
         let root = temp.path().join("utxo-db");
-        let mut wallet = Wallet::new(root)?;
+        let mut wallet = Wallet::new(root, crate::cli::WalletMode::User)?;
 
         let secret = secp256k1::SecretKey::from_slice(&[9u8; 32]).expect("secret");
         let imported = PrivateKey::new(secret, Network::Regtest);
@@ -1149,7 +1174,7 @@ mod tests {
 
         let temp = tempdir()?;
         let root = temp.path().join("utxo-db");
-        let mut wallet = Wallet::new(root)?;
+        let mut wallet = Wallet::new(root, crate::cli::WalletMode::User)?;
 
         // import a key
         let secret = secp256k1::SecretKey::from_slice(&[1u8; 32]).expect("secret");
@@ -1254,7 +1279,7 @@ mod tests {
 
         // create wallet and transaction
         let txid = {
-            let mut wallet = Wallet::new(root.clone())?;
+            let mut wallet = Wallet::new(root.clone(), crate::cli::WalletMode::User)?;
 
             // import a key
             let secret = secp256k1::SecretKey::from_slice(&[1u8; 32]).expect("secret");
@@ -1287,7 +1312,7 @@ mod tests {
         {
             let secret = secp256k1::SecretKey::from_slice(&[1u8; 32]).expect("secret");
             let private_key = PrivateKey::new(secret, Network::Regtest);
-            let mut wallet = Wallet::new(root.clone())?;
+            let mut wallet = Wallet::new(root.clone(), crate::cli::WalletMode::User)?;
             wallet.import_private_key(&private_key.to_wif())?;
 
             // verify pending transaction was loaded from storage
@@ -1334,7 +1359,7 @@ mod tests {
         {
             let secret = secp256k1::SecretKey::from_slice(&[1u8; 32]).expect("secret");
             let private_key = PrivateKey::new(secret, Network::Regtest);
-            let mut wallet = Wallet::new(root)?;
+            let mut wallet = Wallet::new(root, crate::cli::WalletMode::User)?;
             wallet.import_private_key(&private_key.to_wif())?;
 
             // original tx should not exist

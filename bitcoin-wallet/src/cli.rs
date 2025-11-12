@@ -41,8 +41,8 @@ pub struct CliOpts {
     // Environment name (without path), e.g. "testnet" will load config/testnet.toml
     #[arg(long = "env", value_name = "NAME", default_value = "regtest")]
     pub config: Option<String>,
-    #[arg(long, env = "WALLET_UTXO_DB", value_name = "PATH")]
-    pub utxo_db: Option<PathBuf>,
+    #[arg(long = "db-path", env = "WALLET_DB_PATH", value_name = "PATH")]
+    pub db_path: Option<PathBuf>,
     #[arg(long, env = "WALLET_SATS_PER_BYTE", value_name = "SAT_PER_BYTE")]
     pub sats_per_byte: Option<u64>,
     #[arg(long, env = "WALLET_RPC_URL", value_name = "URL")]
@@ -51,6 +51,9 @@ pub struct CliOpts {
     pub rpc_user: Option<String>,
     #[arg(long, env = "WALLET_RPC_PASSWORD", value_name = "PASS")]
     pub rpc_password: Option<String>,
+    /// Command to execute in non-interactive mode (e.g., "mine_block", "send_to_address <addr> <amount>")
+    #[arg(trailing_var_arg = true)]
+    pub command: Vec<String>,
 }
 
 impl Default for CliOpts {
@@ -58,11 +61,12 @@ impl Default for CliOpts {
         Self {
             mode: WalletMode::default(),
             config: Some("regtest".to_string()),
-            utxo_db: None,
+            db_path: None,
             sats_per_byte: None,
             rpc_url: None,
             rpc_user: None,
             rpc_password: None,
+            command: Vec::new(),
         }
     }
 }
@@ -87,6 +91,7 @@ const COMMANDS: &[&str] = &[
     "list_pending",
     "replace_tx",
     "confirm_tx",
+    "block_height",
 ];
 
 #[derive(Default)]

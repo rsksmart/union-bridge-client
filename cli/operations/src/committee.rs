@@ -94,7 +94,7 @@ pub async fn run_committee_setup(
                 post_apply(&client, stream_id, endpoint, role, environment).await?;
 
                 if idx + 1 != environment.user_api_endpoints().len() {
-                    sleep(Duration::from_secs(5)).await;
+                    sleep(Duration::from_secs(2)).await;
                 }
             }
 

@@ -17,20 +17,119 @@ use serde_json::json;
 use ub_wallet::bitcoin::utils::find_vout_for_address;
 use ub_wallet::cli::{CliOpts, WalletMode, setup_editor};
 use ub_wallet::config::Config;
-use ub_wallet::wallet::{CreatedTransaction, Wallet};
+use ub_wallet::wallet::{CreatedTransaction, Wallet, network_suffix};
 
 fn main() -> Result<()> {
     let opts = CliOpts::parse();
     let (config, config_path) = Config::load(&opts)?;
-    // store history as db sibling
-    let history_path = &config.utxo_db_path.parent().unwrap().join("cli_history");
-    let mut editor = setup_editor(history_path)?;
 
     if let Some(path) = config_path.as_ref() {
         println!("Loaded config from {}", path.display());
     }
 
-    let mut wallet = Wallet::from_config(&config)?;
+    let mut wallet = Wallet::from_config(&config).map_err(|err| {
+        let err_msg = format!("{:#}", err);
+        
+        // detect database lock errors (RocksDB can't acquire lock)
+        let is_lock_error = err_msg.to_lowercase().contains("lock") 
+            || err_msg.contains("Error creating storage")
+            || err_msg.contains("IO error")
+            || err_msg.contains("Resource temporarily unavailable");
+        
+        if is_lock_error {
+            let network = config.network.unwrap_or(Network::Regtest);
+            let network_suffix_str = network_suffix(network);
+            let mode_name = match config.mode {
+                WalletMode::User => "user",
+                WalletMode::Member => "member",
+            };
+            let utxo_db_path = config.db_path.join(mode_name).join(network_suffix_str).join("utxo_db");
+            let pending_tx_db_path = config.db_path.join(mode_name).join(network_suffix_str).join("pending_tx_db");
+            
+            eprintln!("Error: Cannot open wallet - database is locked by another process.");
+            eprintln!();
+            eprintln!("This means another wallet instance ({} mode) is currently running.", 
+                match config.mode {
+                    WalletMode::User => "user",
+                    WalletMode::Member => "member",
+                }
+            );
+            eprintln!();
+            eprintln!("Common causes:");
+            eprintln!("  1. Wallet is open in interactive mode in another terminal");
+            eprintln!("  2. Another command is currently executing");
+            eprintln!("  3. Previous instance crashed leaving stale locks");
+            eprintln!();
+            eprintln!("What to do:");
+            eprintln!("  1. Close any interactive wallet sessions (type 'exit' or press Ctrl+D)");
+            eprintln!("  2. Wait for running commands to complete");
+            eprintln!("  3. Check for zombie processes:");
+            eprintln!("     ps aux | grep 'ub-wallet.*--mode {}'", 
+                match config.mode {
+                    WalletMode::User => "user",
+                    WalletMode::Member => "member",
+                }
+            );
+            eprintln!("  4. If nothing is running, remove stale LOCK files:");
+            eprintln!("     rm -f {}/LOCK", utxo_db_path.display());
+            eprintln!("     rm -f {}/LOCK", pending_tx_db_path.display());
+            eprintln!();
+            eprintln!("Note: User and member modes use separate databases, so both can run simultaneously.");
+        } else {
+            // not a lock error, show original error
+            eprintln!("Error: {}", err_msg);
+        }
+        
+        err
+    })?;
+
+    // check if a command was provided for non-interactive execution
+    if !opts.command.is_empty() {
+        // programmatic/command mode is only allowed in regtest for safety
+        if wallet.network() != Network::Regtest {
+            eprintln!("Error: Command mode is only available on regtest network.");
+            eprintln!();
+            eprintln!("Current network: {:?}", wallet.network());
+            eprintln!();
+            eprintln!("Reason: Programmatic access is restricted to regtest for safety.");
+            eprintln!("For testnet/mainnet operations, please use interactive mode:");
+            eprintln!(
+                "  ./cli-bitcoin-wallet.sh {} --env {}",
+                match config.mode {
+                    WalletMode::User => "user",
+                    WalletMode::Member => "member",
+                },
+                match wallet.network() {
+                    Network::Bitcoin => "bitcoin",
+                    Network::Testnet => "testnet",
+                    Network::Testnet4 => "testnet4",
+                    Network::Signet => "signet",
+                    Network::Regtest => "regtest",
+                }
+            );
+            bail!("Command mode not allowed on network: {:?}", wallet.network());
+        }
+
+        let command_line = opts.command.join(" ");
+        return match handle_command(&mut wallet, &command_line) {
+            Ok(_) => Ok(()),
+            Err(err) => {
+                eprintln!("Error: {:#}", err);
+                bail!("Command failed");
+            }
+        };
+    }
+
+    // interactive mode
+    // store history file in mode/network directory
+    let network = config.network.unwrap_or(Network::Regtest);
+    let mode_name = match config.mode {
+        WalletMode::User => "user",
+        WalletMode::Member => "member",
+    };
+    let network_name = network_suffix(network);
+    let history_path = &config.db_path.join(mode_name).join(network_name).join("cli_history");
+    let mut editor = setup_editor(history_path)?;
 
     println!(
         "Simple P2WPKH wallet (mode: {}, network: {}). Type 'help' for commands.",
@@ -606,6 +705,17 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
             println!("Transaction {} confirmed and finalized.", txid);
             Ok(CommandOutcome::Continue)
         }
+        "block_height" => {
+            let Some(client) = wallet.rpc_client() else {
+                println!("RPC not configured; block height query requires an RPC node.");
+                return Ok(CommandOutcome::Continue);
+            };
+            let height: u64 = client
+                .get_block_count()
+                .context("failed to query block height")?;
+            println!("{}", height);
+            Ok(CommandOutcome::Continue)
+        }
 
         other => Err(anyhow!(
             "unknown command '{other}'. Type 'help' for a list of commands."
@@ -782,6 +892,11 @@ fn print_help(sats_per_byte: u64) {
     );
     println!(
         "  confirm_tx <txid>                     - Manually confirm a pending transaction (after on-chain confirmation)"
+    );
+    println!();
+    println!("Blockchain queries:");
+    println!(
+        "  block_height                          - Get current blockchain height from RPC node"
     );
     println!();
     println!("Fees target {sats_per_byte} sat per virtual byte.");

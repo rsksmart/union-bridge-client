@@ -14,6 +14,7 @@ use tempfile::tempdir;
 
 use ub_wallet::bitcoin::bitcoind::{Bitcoind, RpcConfig};
 use ub_wallet::bitcoin::utils::{ensure_wallet, find_vout_for_address, wait_for_ready};
+use ub_wallet::cli::WalletMode;
 use ub_wallet::wallet::Wallet;
 
 const RPC_USER: &str = "walletcli";
@@ -92,7 +93,7 @@ fn wallet_end_to_end_over_regtest_rpc() -> Result<()> {
     // Initialise CLI wallet backed by LevelDB store.
     let temp = tempdir().context("temp dir")?;
     let db_root = temp.path().join("utxo-db");
-    let mut wallet = Wallet::new(db_root)?;
+    let mut wallet = Wallet::new(db_root, WalletMode::User)?;
     let wallet_address = wallet.import_private_key(&test_wallet_wif)?;
     let wallet_address_str = wallet_address.to_string();
 

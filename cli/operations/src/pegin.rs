@@ -1,6 +1,7 @@
 use anyhow::{anyhow, bail, Context, Result};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::process::Command;
 
 use crate::environments::Environment;
 use crate::utils::{confirm_operation, request_to_string};
@@ -22,6 +23,7 @@ pub async fn create_pegin_tx(
     rsk_address: String,
     value: u64,
     packet_number: u64,
+    execute: bool,
 ) -> Result<()> {
     validate_rsk_address(&rsk_address)?;
     println!("Getting pegin address for {rsk_address}...");
@@ -80,12 +82,61 @@ pub async fn create_pegin_tx(
     println!("  RSK address: {}", rsk_address);
     println!("  Pegin address: {}", pegin_address);
     println!();
-    println!("Now run the following command in bitcoin-wallet CLI (user mode):");
-    println!();
+
+    if execute {
+        println!("Executing wallet command programmatically...");
+        println!();
+        execute_wallet_command(value, packet_number, &pegin_address, &rsk_address)?;
+    } else {
+        println!("Now run the following command in bitcoin-wallet CLI (user mode):");
+        println!();
+        println!(
+            "create_pegin_tx {} {} {} {}",
+            value, packet_number, pegin_address, rsk_address
+        );
+    }
+
+    Ok(())
+}
+
+fn execute_wallet_command(
+    stream_amount: u64,
+    packet_number: u64,
+    pegin_address: &str,
+    rsk_address: &str,
+) -> Result<()> {
+    let wallet_script = "./cli-bitcoin-wallet.sh";
+
+    let mut cmd = Command::new(wallet_script);
+    cmd.arg("user")
+        .arg("create_pegin_tx")
+        .arg(stream_amount.to_string())
+        .arg(packet_number.to_string())
+        .arg(pegin_address)
+        .arg(rsk_address);
+
     println!(
-        "create_pegin_tx {} {} {} {}",
-        value, packet_number, pegin_address, rsk_address
+        "Running: {} user create_pegin_tx {} {} {} {}",
+        wallet_script, stream_amount, packet_number, pegin_address, rsk_address
     );
+
+    let output = cmd
+        .output()
+        .context("failed to execute cli-bitcoin-wallet.sh")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        bail!(
+            "wallet command failed with status {}:\nstdout: {}\nstderr: {}",
+            output.status,
+            stdout.trim(),
+            stderr.trim()
+        );
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    println!("{}", stdout);
 
     Ok(())
 }
