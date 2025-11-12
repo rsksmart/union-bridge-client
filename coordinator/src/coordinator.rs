@@ -1,9 +1,8 @@
-use crate::flows::btc_signature::btc_signature_subflow::BtcSignatureSubFlowFactory;
 use crate::flows::committee::setup_committee_flow::{
     SetupCommitteeFlowFactory, SetupCommitteeProcessor,
 };
 use crate::{
-    event_processor::{EventProcessor, PeginProcessor},
+    event_processor::EventProcessor,
     monitor::MonitorApi,
 };
 use anyhow::{Context, Result};
@@ -29,6 +28,7 @@ use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use crate::flows::advance_funds::advance_funds_processor::AdvanceFundsProcessor;
 use crate::flows::common::GlobalContext;
 use crate::flows::fund_bitvmx_flow::FundBitvmxProcessor;
+use crate::flows::pegin::pegin_processor::PeginFlowProcessor;
 use crate::flows::pegout::pegout_processor::PegoutFlowProcessor;
 use crate::store::CoordinatorStoreApi;
 
@@ -60,8 +60,6 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
     ) -> Self {
         let contracts_arc = Rc::new(contracts_gateway);
         let store_rc = Rc::new(store);
-        let btc_sig_subflow_factory =
-            BtcSignatureSubFlowFactory::new(contracts_arc.clone(), rt_sync.clone());
 
         let global_context = store_rc
             .load_context()
@@ -90,11 +88,10 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                     contracts_arc.clone(),
                     bitvmx_broker.clone(),
                 )),
-                Box::new(PeginProcessor::new(
-                    rt_sync.clone(),
+                Box::new(PeginFlowProcessor::new(
                     contracts_arc.clone(),
+                    rt_sync.clone(),
                     bitvmx_broker.clone(),
-                    btc_sig_subflow_factory,
                     global_context.clone(),
                 )),
                 Box::new(PegoutFlowProcessor::new(
