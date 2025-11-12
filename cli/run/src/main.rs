@@ -480,25 +480,11 @@ fn fresh_cleanup() -> Result<()> {
     let base_storage_path = std::env::var("BASE_STORAGE_PATH")
         .context("BASE_STORAGE_PATH environment variable is required")?;
     let union_client_db_dir = format!("{}/.union_bridge/database/multi-client", base_storage_path);
-    let bitvmx_db_dir = "/tmp/regtest";
-    let bitvmx_p2p_dir = "/tmp/broker_p2p";
 
     // Remove Union Bridge database directory
     if Path::new(&union_client_db_dir).exists() {
         fs::remove_dir_all(&union_client_db_dir)
             .with_context(|| format!("Failed to remove {}", union_client_db_dir))?;
-    }
-
-    // Remove BitVMX db dir
-    if Path::new(bitvmx_db_dir).exists() {
-        fs::remove_dir_all(bitvmx_db_dir)
-            .with_context(|| format!("Failed to remove {}", bitvmx_db_dir))?;
-    }
-
-    // Remove BitVMX p2p dir
-    if Path::new(bitvmx_p2p_dir).exists() {
-        fs::remove_dir_all(bitvmx_p2p_dir)
-            .with_context(|| format!("Failed to remove {}", bitvmx_p2p_dir))?;
     }
 
     Ok(())
