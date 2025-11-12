@@ -74,10 +74,8 @@ Before running the Union Bridge Client for the first time, you need to complete 
 authentication.
 
 ```bash
-git clone --recurse-submodules git@github.com:rsksmart/union-bridge-client.git
+git clone git@github.com:rsksmart/union-bridge-client.git
 ```
-
-The `--recurse-submodules` flag is essential as it automatically initializes and updates all required submodules.
 
 ### Tooling
 
@@ -152,7 +150,7 @@ the Union Client) are:
 - `BASE_STORAGE_PATH`: base path where the client will store its data (databases, keystore files, etc.). Pick a path
   that is writable and accessible by the user running the client.
 - `WALLET_PRIVATE_KEY`: a Bitcoin private key WIF. You can generate one via the `bitcoin-wallet` with `generate_address`.
-  See [bitcoin-wallet README](bitcoin-wallet/README.md) for more info.
+  See [bitcoin-wallet README](cli/bitcoin-wallet/README.md) for more info.
 
 We recommend using `direnv` to manage private environment variables. Then you can set them up by:
 
@@ -313,6 +311,32 @@ bash ./shell/script/deploy/deploy-local.sh
 # 6. Apply operators to stream (requires clients to be running)
 ./cli-operations.sh operator apply-stream -s 0
 ```
+
+#### Automated Happy Path Test
+
+Once you have the setup running (steps 1-3 above), you can run a fully automated end-to-end test that exercises the complete flow:
+
+```bash
+# Prerequisites:
+# - BitVMX client running
+# - Anvil running (no auto-mining needed, test handles it)
+# - Bitcoin regtest node running with RPC enabled
+# - Contracts deployed
+# - USER_BITCOIN_WIF and MEMBER_BITCOIN_WIF environment variables set
+
+# Run automated happy path test
+bash tests/run-happy-path.sh
+```
+
+This test will automatically:
+1. Prepare wallets (clear databases, mine initial UTXOs)
+2. Fund operator wallets (Bitcoin + Rootstock)
+3. Apply operators to stream
+4. Execute a pegin transaction (Bitcoin → Rootstock)
+5. Execute a pegout transaction (Rootstock → Bitcoin)
+6. Verify pegout completion in coordinator logs
+
+The test includes background block mining and comprehensive health checks to detect issues early.
 
 #### Troubleshooting
 

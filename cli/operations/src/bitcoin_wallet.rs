@@ -219,7 +219,7 @@ fn cargo_logs_dir() -> Result<PathBuf> {
 
 fn print_instructions(env: Environment, addresses: &[String]) {
     let joined = addresses.join(",");
-    println!("Note: See the bitcoin-wallet README for how to start and use the CLI: ../bitcoin-wallet/README.md\n");
+    println!("Note: See the bitcoin-wallet README for how to start and use the CLI: ../cli/bitcoin-wallet/README.md\n");
 
     match env {
         Environment::Alphanet | Environment::Testnet => {

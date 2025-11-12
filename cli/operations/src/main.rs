@@ -235,8 +235,7 @@ async fn main() -> Result<()> {
                 packet_number,
                 execute,
             } => {
-                pegin::create_pegin_tx(env, rsk_address, value, packet_number, execute)
-                    .await?;
+                pegin::create_pegin_tx(env, rsk_address, value, packet_number, execute).await?;
             }
             UserCommands::Pegout { env, value } => {
                 pegout::request_pegout(env, value).await?;

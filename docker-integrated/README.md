@@ -120,7 +120,7 @@ bash start_blockchains.sh --env local --new-contracts-version --fresh up -d
 
 A `USER_BITCOIN_WIF` needs to be exported in the environment. It is the Bitcoin private key (WIF) used by the user-api for user endpoints (pegin/pegout operations).
 You can generate one via the `bitcoin-wallet` with `generate_address`.
-See [bitcoin-wallet README](bitcoin-wallet/README.md) for more info.
+See [bitcoin-wallet README](../cli/bitcoin-wallet/README.md) for more info.
 
 Note: The `bitcoin-wallet` component separately uses `MEMBER_BITCOIN_WIF` for member/operator BitVMX operations, but this is not required for starting operators via `start_operators.sh`.
 
@@ -186,7 +186,7 @@ bash operator_scripts/fund_operators_rootstock.sh --env alphanet
 ##### Fund BitVMX Bitcoin accounts
 
 We use the `bitcoin-wallet` crate (CLI) included in this repository to interact with Bitcoin node (funding addresses,
-inspecting UTXOs, etc.). See the [`bitcoin-wallet` README](../bitcoin-wallet/README.md) for how to start and use the
+inspecting UTXOs, etc.). See the [`bitcoin-wallet` README](../cli/bitcoin-wallet/README.md) for how to start and use the
 CLI.
 
 Use the helper script below to collect addresses and get ready-to-run `bitcoin-wallet` CLI commands. You must pass
@@ -287,7 +287,7 @@ the up command.
 
 ### Bitcoin Wallet issues
 
-See the `bitcoin-wallet` [README](../bitcoin-wallet/README.md) for more info.
+See the `bitcoin-wallet` [README](../cli/bitcoin-wallet/README.md) for more info.
 
 ### Resource conflicts
 
