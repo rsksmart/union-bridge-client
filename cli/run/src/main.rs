@@ -166,9 +166,12 @@ async fn main() -> Result<()> {
     let result = run_clients(run_config).await;
 
     // cleanup global state on normal exit
-    if let Ok(mut guard) = ACTIVE_CLIENTS.lock() {
-        let _ = guard.take();
-    }
+    let _ = tokio::task::spawn_blocking(|| {
+        if let Ok(mut guard) = ACTIVE_CLIENTS.lock() {
+            let _ = guard.take();
+        }
+    })
+    .await;
 
     result
 }
@@ -223,9 +226,13 @@ async fn run_clients(config: RunConfig) -> Result<()> {
                 clients.push(client.clone());
 
                 // store in global state for panic handler
-                if let Ok(mut guard) = ACTIVE_CLIENTS.lock() {
-                    *guard = Some(clients.clone());
-                }
+                let clients_for_storage = clients.clone();
+                let _ = tokio::task::spawn_blocking(move || {
+                    if let Ok(mut guard) = ACTIVE_CLIENTS.lock() {
+                        *guard = Some(clients_for_storage);
+                    }
+                })
+                .await;
             }
             Err(e) => {
                 println!("Failed to launch all services for {client_id}");
