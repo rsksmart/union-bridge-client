@@ -1607,7 +1607,7 @@ pub enum NativeBridgeVerifier<CG: RskContractsGatewayApi> {
 }
 
 impl<CG: RskContractsGatewayApi> NativeBridgeVerifier<CG> {
-    fn verify_confirmations(
+    pub fn verify_confirmations(
         &self,
         spv_proof: &BtcTxSPVProof,
         required_confirmations: u32,

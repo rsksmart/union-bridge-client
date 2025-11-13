@@ -81,22 +81,8 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
             store_rc.clone(),
         );
 
-        let native_bridge_verifier = match env_name {
-            Some(s) if s.as_str() == "alphanet" => {
-                log::info!("Environment: alphanet → Using Real Native Bridge Verifier");
-                NativeBridgeVerifier::Real {
-                    contracts: contracts_arc.clone(),
-                    rt_sync: rt_sync.clone(),
-                }
-            }
-            _ => {
-                log::info!(
-                    "Environment: {} → Using Dummy Native Bridge Verifier (BitVMX confirmations only)",
-                    env_name.as_deref().unwrap_or("NONE")
-                );
-                NativeBridgeVerifier::Dummy
-            }
-        };
+        let pegin_verifier = get_confirmations_verifier(&rt_sync, &env_name, &contracts_arc);
+        let pegout_verifier = get_confirmations_verifier(&rt_sync, &env_name, &contracts_arc);
 
         Self {
             monitor,
@@ -114,13 +100,14 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                     bitvmx_broker.clone(),
                     btc_sig_subflow_factory,
                     global_context.clone(),
-                    native_bridge_verifier,
+                    pegin_verifier,
                 )),
                 Box::new(PegoutFlowProcessor::new(
                     contracts_arc.clone(),
                     rt_sync.clone(),
                     bitvmx_broker.clone(),
                     global_context.clone(),
+                    pegout_verifier,
                 )),
                 Box::new(SetupCommitteeProcessor::new(
                     setup_committee_flow_factory,
@@ -332,6 +319,30 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
     fn is_running(&self) -> bool {
         !self.shutdown_flag.is_on()
     }
+}
+
+fn get_confirmations_verifier<CG: RskContractsGatewayApi>(
+    rt_sync: &RuntimeSync,
+    env_name: &Option<String>,
+    contracts_arc: &Rc<CG>,
+) -> NativeBridgeVerifier<CG> {
+    let native_bridge_verifier = match env_name {
+        Some(s) if s.as_str() == "alphanet" => {
+            log::info!("Environment: alphanet → Using Real Native Bridge Verifier");
+            NativeBridgeVerifier::Real {
+                contracts: contracts_arc.clone(),
+                rt_sync: rt_sync.clone(),
+            }
+        }
+        _ => {
+            log::info!(
+                "Environment: {} → Using Dummy Native Bridge Verifier (BitVMX confirmations only)",
+                env_name.as_deref().unwrap_or("NONE")
+            );
+            NativeBridgeVerifier::Dummy
+        }
+    };
+    native_bridge_verifier
 }
 
 #[cfg(test)]

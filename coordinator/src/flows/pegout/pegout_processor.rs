@@ -1,6 +1,6 @@
 use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
 use crate::config::REQUIRED_CONFIRMATIONS;
-use crate::event_processor::EventProcessor;
+use crate::event_processor::{EventProcessor, NativeBridgeVerifier, VerificationStatus};
 use crate::flows::btc_signature::btc_signature_lifecycle::BtcSignatureLifeCycle;
 use crate::flows::btc_signature::btc_signature_subflow::{
     BaseBtcSignatureSubFlow, BtcSignatureSubFlowFactory,
@@ -18,7 +18,7 @@ use anyhow::anyhow;
 use anyhow::{Context, Result, bail};
 use bitcoin::Txid;
 use common::msg_broker::bitvmx_types::{
-    OutgoingBitVMXApiMessages, PegOutAccepted, TransactionStatus, VariableTypes,
+    BtcTxSPVProof, OutgoingBitVMXApiMessages, PegOutAccepted, TransactionStatus, VariableTypes,
 };
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
@@ -29,7 +29,7 @@ use sha2::{Digest, Sha256};
 use std::any::type_name_of_val;
 use std::collections::HashMap;
 use std::rc::Rc;
-use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
+use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use union_contracts::bindings::peg_manager::PegManager::{PegoutRegistered, PegoutRequested};
 use uuid::Uuid;
 
@@ -55,6 +55,7 @@ where
     blockchain_view: BlockchainView,
     events_confirming: HashMap<String, ConfirmableEventWithData>,
     tx_status_scheduler: TickScheduler<Uuid>,
+    native_bridge_verifier: NativeBridgeVerifier<CG>,
 }
 
 impl<CG, BC>
@@ -73,6 +74,7 @@ where
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
+        native_bridge_verifier: NativeBridgeVerifier<CG>,
     ) -> Self {
         let factory = BtcSignatureSubFlowFactory::new(contracts_gateway.clone(), rt_sync.clone());
         Self {
@@ -86,6 +88,7 @@ where
             events_confirming: HashMap::new(),
             signature_flows: HashMap::new(),
             tx_status_scheduler: TickScheduler::new(),
+            native_bridge_verifier,
         }
     }
 
@@ -396,6 +399,34 @@ where
 
         Ok(())
     }
+
+    fn verify_native_bridge_confirmations(
+        &mut self,
+        spv_proof: &BtcTxSPVProof,
+        flow_id: &Uuid,
+    ) -> Result<()>
+    where
+        CG: RskContractsGatewayApi,
+        BC: BitVmxBrokerClientApi,
+    {
+        self.native_bridge_verifier
+            .verify_confirmations(spv_proof, REQUIRED_CONFIRMATIONS)
+            .and_then(|op| match op {
+                VerificationStatus::Verified => Ok(()),
+                VerificationStatus::InsufficientConfirmations { required, actual } => {
+                    // todo(fede) tis is duplicated code from the other flows, we should refactor
+                    debug!(
+                        "Transaction not confirmed with sufficient confirmations for flow_id: {}. Rescheduling for {} blocks",
+                        flow_id,
+                        BLOCKS_DELAY_FOR_TX_CHECK
+                    );
+                    self.tx_status_scheduler
+                        .schedule(flow_id.clone(), BLOCKS_DELAY_FOR_TX_CHECK);
+                    Result::Ok(())
+                }
+            })?;
+        Result::Ok(())
+    }
 }
 
 impl<CG, BC> EventProcessor
@@ -468,23 +499,31 @@ where
                 }
             }
             OutgoingBitVMXApiMessages::SPVProof(tx_id, spv_proof_opt) => {
-                let spv_proof = spv_proof_opt.clone().ok_or_else(|| {
-                    anyhow!("Received SPVProof event for tx_id {} without proof", tx_id)
-                })?;
+                let Some(spv_proof) = spv_proof_opt else {
+                    bail!("Received SPVProof event for tx_id {} without proof", tx_id)
+                };
 
-                let (flow_id, flow) =
-                    match self.pegout_flows.iter_mut().find_map(|(flow_id, flow)| {
-                        (flow.get_user_take_txid() == Some(*tx_id)).then_some((*flow_id, flow))
-                    }) {
-                        Some((flow_id, flow)) => (flow_id, flow),
-                        None => {
-                            debug!(
-                                "Ignoring SPV proof for flow {} while at step {:?}",
-                                "unknown", "unknown"
-                            );
-                            return Ok(());
-                        }
-                    };
+                let flow_id = self
+                    .pegout_flows
+                    .iter()
+                    .find_map(|(id, flow)| {
+                        (flow.get_user_take_txid() == Some(*tx_id)).then_some(*id)
+                    })
+                    .ok_or_else(|| anyhow!("Flow not found"))?;
+
+                self.verify_native_bridge_confirmations(&spv_proof, &flow_id)?;
+
+                let flow = match self.pegout_flows.get_mut(&flow_id) {
+                    Some(flow) => flow,
+                    None => {
+                        debug!(
+                            "Ignoring SPV proof for flow {} while at step {:?}",
+                            "unknown", "unknown"
+                        );
+                        return Ok(());
+                    }
+                };
+
                 if flow.current_step() != Steps::RequestUserTakeSpvProof {
                     bail!(
                         "Mismatch current step for flow {} expected {:?} having {:?}",
@@ -492,9 +531,10 @@ where
                         Steps::RequestUserTakeSpvProof,
                         flow.current_step()
                     );
-                } else {
-                    flow.complete_step(StepData::SpvProof(spv_proof))?;
                 }
+
+                // self.verify_native_bridge_confirmations(&spv_proof)?;
+                flow.complete_step(StepData::SpvProof(spv_proof.clone()))?;
             }
             OutgoingBitVMXApiMessages::Transaction(flow_id, tx_status, _tx_opt) => {
                 self.handle_transaction_status_received(flow_id, tx_status.clone())?;
