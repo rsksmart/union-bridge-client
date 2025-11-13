@@ -6,6 +6,7 @@ use bitcoin::secp256k1::SecretKey;
 use bitcoin::{OutPoint, Txid};
 use tempfile::tempdir;
 
+use ub_wallet::cli::WalletMode;
 use ub_wallet::utxo_store::UtxoStore;
 use ub_wallet::wallet::Wallet;
 
@@ -16,7 +17,7 @@ fn utxos_persist_across_wallet_instances() {
 
     // First wallet registers a UTXO.
     {
-        let mut wallet = Wallet::new(db_root.clone()).expect("wallet init");
+        let mut wallet = Wallet::new(db_root.clone(), WalletMode::User).expect("wallet init");
 
         let secret = secp256k1::SecretKey::from_slice(&[42u8; 32]).expect("secret");
         let key = PrivateKey::new(secret, Network::Regtest);
@@ -31,7 +32,7 @@ fn utxos_persist_across_wallet_instances() {
     }
 
     // New wallet instance using the same store should see the previously registered UTXO.
-    let mut wallet = Wallet::new(db_root).expect("wallet init");
+    let mut wallet = Wallet::new(db_root, WalletMode::User).expect("wallet init");
     let secret = secp256k1::SecretKey::from_slice(&[42u8; 32]).expect("secret");
     let key = PrivateKey::new(secret, Network::Regtest);
     wallet
@@ -48,7 +49,7 @@ fn load_by_address_returns_only_matching_entries() {
     let temp = tempdir().expect("temp dir");
     let db_root = temp.path().join("utxo-db");
 
-    let mut wallet = Wallet::new(db_root.clone()).expect("wallet init");
+    let mut wallet = Wallet::new(db_root.clone(), WalletMode::User).expect("wallet init");
 
     let secret_one = secp256k1::SecretKey::from_slice(&[10u8; 32]).expect("secret one");
     let key_one = PrivateKey::new(secret_one, Network::Regtest);
@@ -72,7 +73,8 @@ fn load_by_address_returns_only_matching_entries() {
 
     drop(wallet);
 
-    let store_path = db_root.join(Network::Regtest.to_string());
+    // path structure is now: db_root/mode/network/utxo_db
+    let store_path = db_root.join("user").join("regtest").join("utxo_db");
     let store = UtxoStore::open(&store_path).expect("re-open store");
     let addr_one_str = addr_one.to_string();
     let entries_one = store
@@ -108,7 +110,7 @@ fn switching_networks_preserves_utxos_per_network() {
     let temp = tempdir().expect("temp dir");
     let db_root = temp.path().join("utxo-db");
 
-    let mut wallet = Wallet::new(db_root.clone()).expect("wallet init");
+    let mut wallet = Wallet::new(db_root.clone(), WalletMode::User).expect("wallet init");
     let secret = SecretKey::from_slice(&[12u8; 32]).expect("secret");
     let key = PrivateKey::new(secret, Network::Regtest);
     let address = wallet

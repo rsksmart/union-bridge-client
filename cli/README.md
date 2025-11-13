@@ -38,6 +38,9 @@ Handles setup, operator operations, and user operations across different environ
 # Operator: Fund operators on local-docker environment
 ./cli-operations.sh operator fund --env local-docker
 
+# Operator: Fund operators and execute wallet commands automatically
+./cli-operations.sh operator fund --env local-docker --execute
+
 # Operator: Apply to stream (local auto-applies all 4 operators)
 ./cli-operations.sh operator apply-stream --stream-id 1
 
@@ -45,7 +48,10 @@ Handles setup, operator operations, and user operations across different environ
 ./cli-operations.sh operator apply-stream --stream-id 1 --env alphanet --operator-id 1 --role prover
 
 # User: Create pegin transaction
-./cli-operations.sh user pegin --rsk-address 0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb --value 1000000 --packet-number 0 --env local
+./cli-operations.sh user pegin --rsk-address 0x742d35... --value 1000000 --packet-number 0 --env local
+
+# User: Create pegin transaction and execute wallet command automatically
+./cli-operations.sh user pegin --rsk-address 0x742d35... --value 1000000 --packet-number 0 --env alphanet --execute
 
 # User: Request pegout
 ./cli-operations.sh user pegout --value 1000000 --env local
@@ -55,7 +61,9 @@ Handles setup, operator operations, and user operations across different environ
 
 - **`setup`**: Initial configuration (create wallets)
 - **`operator`**: Operator management (fund, apply-stream)
+  - `fund`: Display bitcoin addresses and optionally execute wallet commands with `--execute`
 - **`user`**: User operations (pegin, pegout)
+  - `pegin`: Display pegin command and optionally execute wallet command with `--execute`
 
 ### Supported Environments
 
@@ -104,7 +112,11 @@ The CLI workspace is independent from the main Union Bridge workspace, allowing 
 ./cli-operations.sh setup create-rootstock-wallets
 
 # 2. Fund operators (Bitcoin + Rootstock)
+# Option A: Print commands to run manually
 ./cli-operations.sh operator fund
+
+# Option B: Execute wallet commands automatically
+./cli-operations.sh operator fund --execute
 
 # 3. Run all 4 clients
 ./cli-run.sh --features anvil
@@ -119,11 +131,17 @@ The CLI workspace is independent from the main Union Bridge workspace, allowing 
 # Fund operators (prints addresses to fund manually)
 ./cli-operations.sh operator fund --env alphanet
 
+# Fund operators and execute wallet commands automatically
+./cli-operations.sh operator fund --env alphanet --execute
+
 # Apply specific operator to stream
 ./cli-operations.sh operator apply-stream --stream-id 1 --env alphanet --operator-id 1 --role prover
 
-# Create pegin transaction
+# Create pegin transaction (prints command to run manually)
 ./cli-operations.sh user pegin --rsk-address 0x742d35... --value 1000000 --packet-number 0 --env alphanet
+
+# Create pegin transaction and execute wallet command automatically
+./cli-operations.sh user pegin --rsk-address 0x742d35... --value 1000000 --packet-number 0 --env alphanet --execute
 
 # Request pegout
 ./cli-operations.sh user pegout --value 1000000 --env alphanet

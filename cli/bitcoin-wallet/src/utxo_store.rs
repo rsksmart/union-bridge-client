@@ -37,8 +37,8 @@ pub struct UtxoStore {
 impl UtxoStore {
     pub fn open(path: &Path) -> Result<Self> {
         let config = StorageConfig::new(path.to_string_lossy().to_string(), None);
-        let db = Storage::new(&config)
-            .map_err(|e| anyhow!("failed to open storage backend: {e}"))?;
+        let db =
+            Storage::new(&config).map_err(|e| anyhow!("failed to open storage backend: {e}"))?;
         Ok(Self { db })
     }
 

@@ -12,7 +12,7 @@ const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub utxo_db_path: PathBuf,
+    pub db_path: PathBuf,
     pub sats_per_byte: Option<u64>,
     pub network: Option<Network>,
     pub mode: WalletMode,
@@ -31,7 +31,7 @@ struct FileConfig {
     rpc_url: Option<String>,
     rpc_user: Option<String>,
     rpc_password: Option<String>,
-    utxo_db_path: Option<PathBuf>,
+    db_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -46,15 +46,15 @@ impl Config {
         let (file_config, config_path) = load_file(cli.config.as_deref())?;
         let mut file_config = file_config;
 
-        // Resolve utxo_db_path with precedence:
-        // 1) --utxo-db flag or WALLET_UTXO_DB env (clap maps env to this opt) → use as absolute/as-is
+        // Resolve db_path with precedence:
+        // 1) --db-path flag or WALLET_DB_PATH env (clap maps env to this opt) → use as absolute/as-is
         // 2) Otherwise, build from config
-        let utxo_db_path = cli
-            .utxo_db
+        let db_path = cli
+            .db_path
             .clone()
             .or_else(|| Self::build_db_path_from_conf(&mut file_config))
             .ok_or_else(|| anyhow!(
-                "UTXO database path must be provided via --utxo-db (or WALLET_UTXO_DB), or set utxo_db_path in config together with BASE_STORAGE_PATH env"
+                "Database path must be provided via --db-path (or WALLET_DB_PATH), or set db_path in config together with BASE_STORAGE_PATH env"
             ))?;
 
         let sats_per_byte = cli.sats_per_byte.or(file_config.sats_per_byte);
@@ -90,7 +90,7 @@ impl Config {
         }
 
         let config = Config {
-            utxo_db_path,
+            db_path,
             sats_per_byte,
             network,
             mode: cli.mode.clone(),
@@ -103,11 +103,11 @@ impl Config {
         Ok((config, config_path))
     }
 
-    // read utxo_db_path from config file and resolve under BASE_STORAGE_PATH env var
+    // read db_path from config file and resolve under BASE_STORAGE_PATH env var
     fn build_db_path_from_conf(file_config: &FileConfig) -> Option<PathBuf> {
-        file_config.utxo_db_path.as_ref().map(|rel_from_config| {
+        file_config.db_path.as_ref().map(|rel_from_config| {
             let base = env::var("BASE_STORAGE_PATH").with_context(||
-                "BASE_STORAGE_PATH environment variable must be set when using utxo_db_path from config file"
+                "BASE_STORAGE_PATH environment variable must be set when using db_path from config file"
             ).unwrap();
             PathBuf::from(base).join(rel_from_config)
         })

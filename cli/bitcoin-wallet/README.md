@@ -26,6 +26,7 @@ Simple interactive command-line wallet for crafting P2WPKH transactions using th
 - `tx_status <txid>` – query the node for a transaction: mined?, confirmations, block hash/height, total outputs
 - `clear_db` – Regtest only: clear the UTXO database folder for the current network
 - `create_pegin_tx <stream_amount> <packet_number> <pegin_address> <rsk_address>` – create a pegin transaction for the Union Bridge protocol. **Note**: After executing this command, you need to mine one block using `mine_block` to confirm the transaction
+- `block_height` – query the current blockchain height from the RPC node
 
 Each transaction estimates its fee using the configured satoshis-per-byte rate and returns any change to the wallet key
 as a new registered UTXO (change smaller than the dust limit is added to the miner fee).
@@ -34,8 +35,8 @@ Multiple compressed WIF keys can be imported at once. Each address keeps its own
 move between them with `switch_address` without clearing the store.
 Registered UTXOs are persisted in a RocksDB database at a path determined as follows:
 
-- If you pass `--utxo-db` or set `WALLET_UTXO_DB` (env), that absolute path is used as-is.
-- Otherwise, the path is `BASE_STORAGE_PATH` (env) joined with the relative `utxo_db_path` from the `toml` config file.
+- If you pass `--db-path` or set `WALLET_DB_PATH` (env), that absolute path is used as-is.
+- Otherwise, the path is `BASE_STORAGE_PATH` (env) joined with the relative `db_path` from the `toml` config file.
 
 ## Configuration
 
@@ -58,7 +59,7 @@ private_key_wif = "L1..."
 rpc_url = "http://127.0.0.1:18443"
 rpc_user = "user"
 rpc_password = "password"
-utxo_db_path = "./wallet-utxo-db"
+db_path = "./wallet-db"
 
 [[utxos]]
 txid = "e3d9..."
@@ -69,6 +70,8 @@ value_sat = 150000
 Environment variable shortcuts: See `cli.rs` or use `ub-wallet --help` to see the available command-line overrides.
 
 ## Running
+
+### Interactive Mode
 
 Within the `bitcoin-wallet/` directory, build and run the wallet in release mode:
 
@@ -86,10 +89,79 @@ cargo run --release -- --env testnet
 
 The program is interactive; type commands at the `ub-wallet>` prompt. Use `Ctrl+D` (EOF) or `exit` to leave.
 
-## Important notice
+### Command Mode (Programmatic Access)
 
-It's important to close the wallet as soon as you are done with it to avoid the wrong wallet shutdown which leaves the
-database locked. Check the [Troubleshooting](#troubleshooting) section below.
+⚠️ **Command mode is restricted to regtest only for safety.** For testnet/mainnet operations, use interactive mode.
+
+The same script supports command mode for programmatic/scripted execution by passing the command as arguments:
+
+```bash
+# mine a block
+./cli-bitcoin-wallet.sh user mine_block
+
+# mine a utxo with custom amount
+./cli-bitcoin-wallet.sh user mine_utxo 50000000
+
+# send to address
+./cli-bitcoin-wallet.sh user send_to_address bcrt1q... 10000
+
+# create pegin transaction
+./cli-bitcoin-wallet.sh user create_pegin_tx 50000000 1 bcrt1p... 0x1234...
+
+# list funds
+./cli-bitcoin-wallet.sh user list_funds
+```
+
+You can also use `cargo run` directly:
+
+```bash
+cargo run --release --bin ub-wallet -- --mode user mine_block
+```
+
+#### Testing Script
+
+A testing script with practical examples is provided:
+
+**bitcoin-wallet-test-examples.sh** - Demonstrates various command mode operations:
+```bash
+# requires USER_BITCOIN_WIF environment variable
+./bitcoin-wallet-test-examples.sh
+```
+
+The script requires the appropriate environment variable (`USER_BITCOIN_WIF` for user mode, `MEMBER_BITCOIN_WIF` for member mode).
+
+## Important Notice
+
+### Database Locking
+
+The wallet uses RocksDB which allows only **one instance at a time** per database. This means:
+
+- ❌ You **cannot** have an interactive session open while running commands
+- ❌ You **cannot** run multiple commands simultaneously
+- ✅ You **can** run multiple commands sequentially (they open/close the database)
+- ✅ You **can** switch between interactive and command mode (but not simultaneously)
+
+**Example of what doesn't work:**
+```bash
+# Terminal 1: Opens interactive mode
+./cli-bitcoin-wallet.sh user
+user@regtest> # keeps database locked while prompt is open
+
+# Terminal 2: This will fail with a clear error message
+./cli-bitcoin-wallet.sh user mine_block  # ERROR: Database is locked
+```
+
+**Example of what works:**
+```bash
+# Sequential commands work fine
+./cli-bitcoin-wallet.sh user mine_block    # opens, executes, closes
+./cli-bitcoin-wallet.sh user list_funds    # opens, executes, closes
+./cli-bitcoin-wallet.sh user mine_block    # opens, executes, closes
+```
+
+If you see a "Database is locked" error, the wallet will provide helpful suggestions on how to resolve it.
+
+It's important to close the wallet (type `exit` or press `Ctrl+D`) as soon as you are done with interactive mode to avoid leaving the database locked. Check the [Troubleshooting](#troubleshooting) section below.
 
 ## Troubleshooting
 
@@ -100,7 +172,25 @@ UTXO database. At the ub-wallet prompt run: `clear_db`.  **Important**: This ope
 used on mainnet or testnet (it will be prevented by the wallet itself). It clears the local RocksDB for the active
 network so you can re-register UTXOs from the node.
 
-### Database access error
+### Database locked error
 
-If you see an error like _Error: failed to open storage backend: Error creating storage_, it means another instance of
-the wallet is already running and has locked the database. Only one wallet instance can run at a time.
+If you see an error like:
+```
+Error: Database is locked by another wallet instance.
+```
+
+This means another wallet instance is currently using the database. The error message will provide:
+- The reason (interactive mode open, command running, or crashed process)
+- Solutions to resolve the issue
+- The database path being locked
+
+**Common solutions:**
+1. **Close interactive sessions**: If you have the wallet open in interactive mode, type `exit` or press `Ctrl+D`
+2. **Wait for commands to complete**: If a command is running in another terminal, wait for it to finish
+3. **Kill zombie processes**: If a previous instance crashed, find and kill it:
+   ```bash
+   ps aux | grep ub-wallet
+   kill <pid>
+   ```
+
+Only one wallet instance can access the database at a time.

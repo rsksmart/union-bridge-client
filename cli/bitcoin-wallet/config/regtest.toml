@@ -8,5 +8,5 @@ rpc_url = "http://127.0.0.1:18443/"
 rpc_user = "foo"
 rpc_password = "rpcpassword"
 
-# Path to LevelDB databases for storing UTXOs (one db per network)
-utxo_db_path = ".union_bridge/bitcoin-wallet/utxo-db"
+# Root path for wallet databases (UTXOs and pending transactions)
+db_path = ".union_bridge/bitcoin-wallet"

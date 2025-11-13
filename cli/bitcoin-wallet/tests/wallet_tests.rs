@@ -10,6 +10,7 @@ use std::fmt::Formatter;
 use std::sync::{Arc, Mutex};
 use tempfile::tempdir;
 
+use ub_wallet::cli::WalletMode;
 use ub_wallet::utxo_store::UtxoStore;
 use ub_wallet::wallet::Wallet;
 
@@ -25,7 +26,7 @@ fn recipient_script() -> ScriptBuf {
 fn create_transaction_does_not_consume_utxo_and_creates_change_until_broadcasted() {
     let temp = tempdir().expect("temp dir");
     let db_root = temp.path().join("utxo-db");
-    let mut wallet = Wallet::new(db_root).expect("wallet");
+    let mut wallet = Wallet::new(db_root, WalletMode::User).expect("wallet");
     let wallet_secret = secp256k1::SecretKey::from_slice(&[1u8; 32]).expect("wallet secret");
     let wallet_key = PrivateKey::new(wallet_secret, Network::Regtest);
     let wallet_wif = wallet_key.to_wif();
@@ -92,7 +93,7 @@ fn create_transaction_does_not_consume_utxo_and_creates_change_until_broadcasted
 fn dust_change_is_added_to_fee() {
     let temp = tempdir().expect("temp dir");
     let db_root = temp.path().join("utxo-db");
-    let mut wallet = Wallet::new(db_root).expect("wallet");
+    let mut wallet = Wallet::new(db_root, WalletMode::User).expect("wallet");
     wallet.set_sats_per_byte(1); // keep target fee low to exercise dust logic
 
     set_fake_rpc_client(&mut wallet);
@@ -136,7 +137,7 @@ fn dust_change_is_added_to_fee() {
 fn switching_addresses_reloads_corresponding_utxos() {
     let temp = tempdir().expect("temp dir");
     let db_root = temp.path().join("utxo-db");
-    let mut wallet = Wallet::new(db_root).expect("wallet");
+    let mut wallet = Wallet::new(db_root, WalletMode::User).expect("wallet");
 
     let secret_one = secp256k1::SecretKey::from_slice(&[3u8; 32]).expect("secret one");
     let key_one = PrivateKey::new(secret_one, Network::Regtest);
@@ -197,7 +198,7 @@ fn switching_addresses_reloads_corresponding_utxos() {
 fn switching_networks_with_mismatched_keys_succeeds() {
     let temp = tempdir().expect("temp dir");
     let db_root = temp.path().join("utxo-db");
-    let mut wallet = Wallet::new(db_root).expect("wallet");
+    let mut wallet = Wallet::new(db_root, WalletMode::User).expect("wallet");
 
     let secret = secp256k1::SecretKey::from_slice(&[12u8; 32]).expect("secret");
     let key = PrivateKey::new(secret, Network::Regtest);
@@ -217,7 +218,7 @@ fn switching_networks_with_mismatched_keys_succeeds() {
 fn utxos_with_timestamps_all_lists_active_first() {
     let temp = tempdir().expect("temp dir");
     let db_root = temp.path().join("utxo-db");
-    let mut wallet = Wallet::new(db_root).expect("wallet");
+    let mut wallet = Wallet::new(db_root, WalletMode::User).expect("wallet");
 
     let secret_one = secp256k1::SecretKey::from_slice(&[5u8; 32]).expect("secret one");
     let key_one = PrivateKey::new(secret_one, Network::Regtest);
@@ -277,7 +278,7 @@ fn utxos_with_timestamps_all_includes_store_only_addresses() {
     let temp = tempdir().expect("temp dir");
     let db_root = temp.path().join("utxo-db");
     let address_string = {
-        let mut wallet = Wallet::new(db_root.clone()).expect("wallet");
+        let mut wallet = Wallet::new(db_root.clone(), WalletMode::User).expect("wallet");
 
         let secret = secp256k1::SecretKey::from_slice(&[7u8; 32]).expect("secret");
         let key = PrivateKey::new(secret, Network::Regtest);
@@ -293,7 +294,7 @@ fn utxos_with_timestamps_all_includes_store_only_addresses() {
         address.to_string()
     };
 
-    let wallet = Wallet::new(db_root).expect("wallet reload");
+    let wallet = Wallet::new(db_root, WalletMode::User).expect("wallet reload");
 
     let entries = wallet
         .utxos_with_timestamps_all()
@@ -309,7 +310,7 @@ fn utxos_with_timestamps_all_includes_store_only_addresses() {
 fn utxo_listings_are_sorted_by_timestamp() {
     let temp = tempdir().expect("temp dir");
     let db_root = temp.path().join("utxo-db");
-    let mut setup_wallet = Wallet::new(db_root.clone()).expect("setup wallet");
+    let mut setup_wallet = Wallet::new(db_root.clone(), WalletMode::User).expect("setup wallet");
 
     let secret = secp256k1::SecretKey::from_slice(&[8u8; 32]).expect("secret");
     let key = PrivateKey::new(secret, Network::Regtest);
@@ -317,7 +318,8 @@ fn utxo_listings_are_sorted_by_timestamp() {
     let address = setup_wallet.import_private_key(&wif).expect("import key");
     drop(setup_wallet);
 
-    let store_path = db_root.join(Network::Regtest.to_string());
+    // path structure is now: db_root/mode/network/utxo_db
+    let store_path = db_root.join("user").join("regtest").join("utxo_db");
     let store = UtxoStore::open(&store_path).expect("reopen store for inserts");
     let txid_newer = Txid::from_slice(&[0x88; 32]).expect("txid newer");
     let txid_older = Txid::from_slice(&[0x99; 32]).expect("txid older");
@@ -329,7 +331,7 @@ fn utxo_listings_are_sorted_by_timestamp() {
         .expect("insert older utxo");
     drop(store);
 
-    let mut wallet = Wallet::new(db_root.clone()).expect("wallet");
+    let mut wallet = Wallet::new(db_root.clone(), WalletMode::User).expect("wallet");
     wallet
         .import_private_key(&wif)
         .expect("reimport key for listing");
@@ -346,7 +348,7 @@ fn utxo_listings_are_sorted_by_timestamp() {
 
     drop(wallet);
 
-    let wallet_reloaded = Wallet::new(db_root).expect("wallet reload");
+    let wallet_reloaded = Wallet::new(db_root, WalletMode::User).expect("wallet reload");
     let aggregated_reloaded = wallet_reloaded
         .utxos_with_timestamps_all()
         .expect("aggregate utxos after reload");

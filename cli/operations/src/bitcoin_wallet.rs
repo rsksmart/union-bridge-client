@@ -12,11 +12,17 @@ use crate::utils::{command_to_string, confirm_operation, request_to_string};
 const FUND_AMOUNT: &str = "20002000";
 const LOG_MARKER: &str = "Received BitVMX Funding Address:";
 
-pub async fn handle_bitcoin_funding(env: Environment) -> Result<()> {
-    let addresses = match env {
+pub async fn handle_bitcoin_funding(environment: Environment, execute: bool) -> Result<()> {
+    if execute && environment.is_remote() {
+        bail!("--execute flag is only supported for local environments (local/local-docker). For remote environments, please run the wallet commands manually.");
+    }
+
+    let addresses = match environment {
         Environment::Local => collect_local_addresses().await?,
         Environment::LocalDocker => collect_local_docker_addresses().await?,
-        Environment::Alphanet | Environment::Testnet => collect_remote_addresses(env).await?,
+        Environment::Alphanet | Environment::Testnet => {
+            collect_remote_addresses(environment).await?
+        }
     };
 
     if addresses.is_empty() {
@@ -24,7 +30,14 @@ pub async fn handle_bitcoin_funding(env: Environment) -> Result<()> {
     }
 
     println!();
-    print_instructions(env, &addresses);
+
+    if execute {
+        println!("Executing wallet commands programmatically...");
+        println!();
+        execute_wallet_command(&addresses)?;
+    } else {
+        print_instructions(environment, &addresses);
+    }
 
     Ok(())
 }
@@ -101,8 +114,8 @@ where
     Ok(addresses)
 }
 
-async fn request_bitvmx_address_user_api(env: Environment) -> Result<()> {
-    let endpoints = env.user_api_endpoints();
+async fn request_bitvmx_address_user_api(environment: Environment) -> Result<()> {
+    let endpoints = environment.user_api_endpoints();
 
     println!("Triggering BitVMX endpoints: {} ...", endpoints.join(", "));
 
@@ -116,7 +129,7 @@ async fn request_bitvmx_address_user_api(env: Environment) -> Result<()> {
 
         let request = client.get(&url).build()?;
 
-        if env.is_remote() {
+        if environment.is_remote() {
             let description = request_to_string(&request);
             if !confirm_operation(&description)? {
                 bail!("Operation cancelled by user");
@@ -212,15 +225,15 @@ fn cargo_logs_dir() -> Result<PathBuf> {
 
 fn print_instructions(env: Environment, addresses: &[String]) {
     let joined = addresses.join(",");
-    println!("Note: See the bitcoin-wallet README for how to start and use the CLI: ../bitcoin-wallet/README.md\n");
+    println!("Note: See the bitcoin-wallet README for how to start and use the CLI: ../cli/bitcoin-wallet/README.md\n");
 
     match env {
         Environment::Alphanet | Environment::Testnet => {
             println!(
-                "Run the following command in your bitcoin-wallet or wallet tooling for {}: send_to_address {} {}\n",
-                env.get_name(),
-                joined, FUND_AMOUNT
+                "Run the following command in your bitcoin-wallet or wallet tooling for {}:",
+                env.get_name()
             );
+            println!("  send_to_address {} {}\n", joined, FUND_AMOUNT);
         }
         Environment::LocalDocker | Environment::Local => {
             println!("Run the following commands in the bitcoin-wallet CLI (Regtest):");
@@ -230,4 +243,41 @@ fn print_instructions(env: Environment, addresses: &[String]) {
             println!("4 =>    mine_block");
         }
     }
+}
+
+fn execute_wallet_command(addresses: &[String]) -> Result<()> {
+    let wallet_script = "./cli-bitcoin-wallet.sh";
+    let joined = addresses.join(",");
+
+    // just send to addresses - utxo mining and block mining handled externally
+    let mut cmd = Command::new(wallet_script);
+    cmd.arg("member")
+        .arg("send_to_address")
+        .arg(&joined)
+        .arg(FUND_AMOUNT);
+
+    println!(
+        "Running: {} member send_to_address {} {}",
+        wallet_script, joined, FUND_AMOUNT
+    );
+
+    let output = cmd
+        .output()
+        .context("failed to execute cli-bitcoin-wallet.sh")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        bail!(
+            "wallet command failed with status {}:\nstdout: {}\nstderr: {}",
+            output.status,
+            stdout.trim(),
+            stderr.trim()
+        );
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    println!("{}", stdout);
+
+    Ok(())
 }
