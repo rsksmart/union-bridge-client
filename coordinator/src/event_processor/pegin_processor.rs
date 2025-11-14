@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use crate::flows::common::{COMM_KEY_INDEX, GlobalContext, build_communication_data};
 use crate::types::Role::Prover;
 use crate::types::{RegisterSignaturesBitVmxData, TickScheduler};

@@ -6,8 +6,6 @@ use common::types::RskBlockAndUncles;
 mod pegin_processor;
 mod pegout_processor;
 
-pub use pegin_processor::*;
-
 #[cfg(test)]
 use mockall::automock;
 
