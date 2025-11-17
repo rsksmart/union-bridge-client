@@ -374,6 +374,26 @@ step "Step 5: Verify Pegout Completion"
 TIME_MARGIN=300
 MIN_TIME=$((PEGOUT_START_TIME - TIME_MARGIN))
 
+find_recent_pegout_completion() {
+    local log_content="$1"
+    local timestamp_pattern="$2"  # '^' prefix for file logs, no prefix for docker logs
+    
+    echo "$log_content" | grep -E "PegoutFlow [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}: Done" | while read -r line; do
+        local log_timestamp=$(echo "$line" | grep -oE "${timestamp_pattern}[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}")
+        
+        if [ -n "$log_timestamp" ]; then
+            # convert to epoch seconds (macOS and Linux compatible)
+            local log_time=$(date -j -f "%Y-%m-%d %H:%M:%S" "$log_timestamp" +%s 2>/dev/null || date -d "$log_timestamp" +%s 2>/dev/null || echo "0")
+            
+            # check if log is recent (after MIN_TIME)
+            if [ "$log_time" -ge "$MIN_TIME" ]; then
+                echo "$line"
+                break
+            fi
+        fi
+    done | tail -1
+}
+
 MATCHING_LINE=""
 MATCHING_SOURCE=""
 
@@ -381,34 +401,15 @@ if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
   log "Checking Docker logs from all operators for PegoutFlow completion..."
   echo ""
 
-  operator_ids=(1 2 3 4)
-  for op_id in "${operator_ids[@]}"; do
+  for op_id in 1 2 3 4; do
     project="op_${op_id}"
-
-    docker_logs=""
-    if docker_logs=$(docker compose -p "${project}" logs coordinator 2>/dev/null); then
-      found_line=""
-      found_line=$(echo "$docker_logs" | grep -E "PegoutFlow [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}: Done" | while read -r line; do
-        # extract timestamp from log line (format: "2025-11-12 16:54:39")
-        LOG_TIMESTAMP=$(echo "$line" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}')
-
-        if [ -n "$LOG_TIMESTAMP" ]; then
-          # convert to epoch seconds (macOS and Linux compatible)
-          LOG_TIME=$(date -j -f "%Y-%m-%d %H:%M:%S" "$LOG_TIMESTAMP" +%s 2>/dev/null || date -d "$LOG_TIMESTAMP" +%s 2>/dev/null || echo "0")
-
-          # check if log is recent (after MIN_TIME)
-          if [ "$LOG_TIME" -ge "$MIN_TIME" ]; then
-            echo "$line"
-            break
-          fi
-        fi
-      done | tail -1)
-
-      if [ -n "$found_line" ]; then
-        MATCHING_LINE="$found_line"
-        MATCHING_SOURCE="${project}"
-        break
-      fi
+    docker_logs=$(docker compose -p "${project}" logs coordinator 2>/dev/null) || continue
+    
+    found_line=$(find_recent_pegout_completion "$docker_logs" "")
+    if [ -n "$found_line" ]; then
+      MATCHING_LINE="$found_line"
+      MATCHING_SOURCE="${project}"
+      break
     fi
   done
 else
@@ -416,32 +417,15 @@ else
   echo ""
 
   shopt -s nullglob
-  log_files=(logs/coordinator-*.log)
-
-  for log_file in "${log_files[@]}"; do
-    if [[ -f "$log_file" ]]; then
-      found_line=""
-      found_line=$(grep -E "PegoutFlow [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}: Done" "$log_file" 2>/dev/null | while read -r line; do
-        # extract timestamp from log line (format: "2025-11-12 16:54:39")
-        LOG_TIMESTAMP=$(echo "$line" | grep -oE '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}')
-
-        if [ -n "$LOG_TIMESTAMP" ]; then
-          # convert to epoch seconds (macOS and Linux compatible)
-          LOG_TIME=$(date -j -f "%Y-%m-%d %H:%M:%S" "$LOG_TIMESTAMP" +%s 2>/dev/null || date -d "$LOG_TIMESTAMP" +%s 2>/dev/null || echo "0")
-
-          # check if log is recent (after MIN_TIME)
-          if [ "$LOG_TIME" -ge "$MIN_TIME" ]; then
-            echo "$line"
-            break
-          fi
-        fi
-      done | tail -1)
-
-      if [ -n "$found_line" ]; then
-        MATCHING_LINE="$found_line"
-        MATCHING_SOURCE="$log_file"
-        break
-      fi
+  for log_file in logs/coordinator-*.log; do
+    [[ -f "$log_file" ]] || continue
+    
+    log_content=$(cat "$log_file")
+    found_line=$(find_recent_pegout_completion "$log_content" "^")
+    if [ -n "$found_line" ]; then
+      MATCHING_LINE="$found_line"
+      MATCHING_SOURCE="$log_file"
+      break
     fi
   done
 fi
