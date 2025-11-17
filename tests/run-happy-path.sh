@@ -15,7 +15,7 @@ set -euo pipefail
 SCRIPT_ENV="local"
 
 usage() {
-  echo "Usage: $0 [--env <local|docker-local>]"
+  echo "Usage: $0 [--env <local|local-docker>]"
   exit 1
 }
 
@@ -42,6 +42,7 @@ STREAM_ID=0
 RSK_ADDRESS="0x$(openssl rand -hex 20)" # random address each run
 VALUE=100000
 PACKET_NUMBER=0
+BITVMX_FUNDING_AMOUNT=25000000
 
 # colors
 GREEN='\033[0;32m'
@@ -49,8 +50,6 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 PURPLE='\033[0;35m'
 NC='\033[0m'
-
-BITVMX_FUNDING_AMOUNT=20002000
 
 log() { echo -e "${BLUE}[INFO]${NC} $1"; }
 success() { echo -e "${GREEN}[✓]${NC} $1"; }
@@ -62,8 +61,8 @@ step() {
 }
 
 collect_bitvmx_addresses_from_logs() {
-  if [[ "$SCRIPT_ENV" == "docker-local" ]]; then
-    # In docker-local mode, read logs from Docker containers
+  if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
+    # In local-docker mode, read logs from Docker containers
     local addresses=()
     local operator_ids=(1 2 3 4)
 
@@ -252,66 +251,60 @@ sleep 1 # give mining a moment to start
 
 # step 1: fund operator wallets
 step "Step 1: Fund Operator Wallets"
-CLI_ENV="local"
-if [[ "$SCRIPT_ENV" == "docker-local" ]]; then
-  CLI_ENV="local-docker"
-fi
+CLI_ENV="$SCRIPT_ENV"
 log "Command: bash cli-operations.sh operator fund --env $CLI_ENV --execute"
 echo ""
 if ! bash cli-operations.sh operator fund --env "$CLI_ENV" --execute; then
-  warn "Command failed!"
-  exit 1
+    warn "Command failed!"
+    exit 1
 fi
 success "Operator wallets funded"
-if [[ "$SCRIPT_ENV" == "docker-local" ]]; then
-  log "Waiting for coordinators to request BitVMX funding addresses..."
-
-  max_attempts=60
-  attempt=0
-  from_logs=""
-
-  while [[ $attempt -lt $max_attempts ]]; do
-    if from_logs=$(collect_bitvmx_addresses_from_logs); then
-      break
+if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
+    log "Waiting for coordinators to request BitVMX funding addresses..."
+    
+    max_attempts=60
+    attempt=0
+    from_logs=""
+    
+    while [[ $attempt -lt $max_attempts ]]; do
+        if from_logs=$(collect_bitvmx_addresses_from_logs); then
+            break
+        fi
+        attempt=$((attempt + 1))
+        if [[ $((attempt % 10)) -eq 0 ]]; then
+            log "Still waiting for BitVMX addresses... (attempt $attempt/$max_attempts)"
+        fi
+        sleep 1
+    done
+    
+    if [[ -z "$from_logs" ]]; then
+        warn "Unable to collect BitVMX addresses for local-docker environment after ${max_attempts} attempts"
+        exit 1
     fi
-    attempt=$((attempt + 1))
-    if [[ $((attempt % 10)) -eq 0 ]]; then
-      log "Still waiting for BitVMX addresses... (attempt $attempt/$max_attempts)"
+    
+    collected=()
+    while IFS= read -r addr; do
+        [[ -n "$addr" ]] && collected+=("$addr")
+    done <<<"$from_logs"
+    
+    unique=()
+    declare -A seen=()
+    for addr in "${collected[@]}"; do
+        if [[ -z "${seen[$addr]:-}" ]]; then
+            unique+=("$addr")
+            seen["$addr"]=1
+        fi
+    done
+    
+    joined=$(IFS=','; echo "${unique[*]}")
+    
+    log "Funding BitVMX addresses detected in local-docker mode: $joined"
+    if ! bash cli-bitcoin-wallet.sh member send_to_address "$joined" "$BITVMX_FUNDING_AMOUNT"; then
+        warn "Funding BitVMX addresses failed"
+        exit 1
     fi
-    sleep 1
-  done
-
-  if [[ -z "$from_logs" ]]; then
-    warn "Unable to collect BitVMX addresses for docker-local environment after ${max_attempts} attempts"
-    exit 1
-  fi
-
-  collected=()
-  while IFS= read -r addr; do
-    [[ -n "$addr" ]] && collected+=("$addr")
-  done <<<"$from_logs"
-
-  unique=()
-  declare -A seen=()
-  for addr in "${collected[@]}"; do
-    if [[ -z "${seen[$addr]:-}" ]]; then
-      unique+=("$addr")
-      seen["$addr"]=1
-    fi
-  done
-
-  joined=$(
-    IFS=','
-    echo "${unique[*]}"
-  )
-
-  log "Funding BitVMX addresses detected in docker-local mode: $joined"
-  if ! bash cli-bitcoin-wallet.sh member send_to_address "$joined" "$BITVMX_FUNDING_AMOUNT"; then
-    warn "Funding BitVMX addresses failed"
-    exit 1
-  fi
-
-  success "BitVMX addresses funded for docker-local environment"
+    
+    success "BitVMX addresses funded for local-docker environment"
 fi
 echo ""
 log "Allowing time (blocks) for BitVMX to detect confirmed transactions..."
@@ -322,11 +315,11 @@ echo ""
 step "Step 2: Apply Operators to Stream"
 log "Command: bash cli-operations.sh operator apply-stream -s $STREAM_ID --env $CLI_ENV"
 echo ""
-if ! bash cli-operations.sh operator apply-stream -s $STREAM_ID --env "$CLI_ENV" >/tmp/apply-operators-$$ 2>&1; then
-  warn "Command failed! Output:"
-  cat /tmp/apply-operators-$$
-  rm -f /tmp/apply-operators-$$
-  exit 1
+if ! bash cli-operations.sh operator apply-stream -s $STREAM_ID --env "$CLI_ENV" > /tmp/apply-operators-$$ 2>&1; then
+    warn "Command failed! Output:"
+    cat /tmp/apply-operators-$$
+    rm -f /tmp/apply-operators-$$
+    exit 1
 fi
 rm -f /tmp/apply-operators-$$
 success "Operators applied to stream $STREAM_ID"
@@ -342,8 +335,8 @@ log "Packet: $PACKET_NUMBER"
 log "Command: bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -p $PACKET_NUMBER --env $CLI_ENV --execute"
 echo ""
 if ! bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -p $PACKET_NUMBER --env "$CLI_ENV" --execute; then
-  warn "Command failed!"
-  exit 1
+    warn "Command failed!"
+    exit 1
 fi
 success "Pegin transaction created"
 echo ""
@@ -359,11 +352,11 @@ echo ""
 # capture current time (with margin for clock differences)
 PEGOUT_START_TIME=$(date +%s)
 
-if ! bash cli-operations.sh user pegout -v $VALUE --env "$CLI_ENV" >/tmp/pegout-$$ 2>&1; then
-  warn "Command failed! Output:"
-  cat /tmp/pegout-$$
-  rm -f /tmp/pegout-$$
-  exit 1
+if ! bash cli-operations.sh user pegout -v $VALUE --env "$CLI_ENV" > /tmp/pegout-$$ 2>&1; then
+    warn "Command failed! Output:"
+    cat /tmp/pegout-$$
+    rm -f /tmp/pegout-$$
+    exit 1
 fi
 rm -f /tmp/pegout-$$
 success "Pegout requested"
@@ -384,7 +377,7 @@ MIN_TIME=$((PEGOUT_START_TIME - TIME_MARGIN))
 MATCHING_LINE=""
 MATCHING_SOURCE=""
 
-if [[ "$SCRIPT_ENV" == "docker-local" ]]; then
+if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
   log "Checking Docker logs from all operators for PegoutFlow completion..."
   echo ""
 
@@ -461,7 +454,7 @@ if [ -n "$MATCHING_LINE" ]; then
   SUCCESS=true
 else
   warn "PegoutFlow completion not detected in any operator logs"
-  if [[ "$SCRIPT_ENV" == "docker-local" ]]; then
+  if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
     warn "Check Docker logs manually: docker compose -p op_{1..4} logs coordinator"
   else
     warn "Check logs/coordinator-*.log manually"
