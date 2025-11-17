@@ -1,10 +1,7 @@
 use crate::flows::committee::setup_committee_flow::{
     SetupCommitteeFlowFactory, SetupCommitteeProcessor,
 };
-use crate::{
-    event_processor::EventProcessor,
-    monitor::MonitorApi,
-};
+use crate::{event_processor::EventProcessor, monitor::MonitorApi};
 use anyhow::{Context, Result};
 use bitcoin::Network;
 use common::{
@@ -70,12 +67,12 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
             });
 
         let setup_committee_flow_factory = SetupCommitteeFlowFactory::new(
-            contracts_arc.clone(),
+            Rc::clone(&contracts_arc),
             rt_sync.clone(),
             bitvmx_broker.clone(),
             global_context.clone(),
             bitcoin_network,
-            store_rc.clone(),
+            Rc::clone(&store_rc),
         );
 
         Self {
@@ -85,17 +82,18 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                 #[cfg(feature = "zkp")]
                 Box::new(AdvanceFundsProcessor::new(
                     rt_sync.clone(),
-                    contracts_arc.clone(),
+                    Rc::clone(&contracts_arc),
                     bitvmx_broker.clone(),
                 )),
                 Box::new(PeginFlowProcessor::new(
-                    contracts_arc.clone(),
+                    Rc::clone(&contracts_arc),
                     rt_sync.clone(),
                     bitvmx_broker.clone(),
                     global_context.clone(),
+                    Rc::clone(&store_rc),
                 )),
                 Box::new(PegoutFlowProcessor::new(
-                    contracts_arc.clone(),
+                    Rc::clone(&contracts_arc),
                     rt_sync.clone(),
                     bitvmx_broker.clone(),
                     global_context.clone(),
@@ -103,7 +101,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                 Box::new(SetupCommitteeProcessor::new(
                     setup_committee_flow_factory,
                     global_context.clone(),
-                    store_rc.clone(),
+                    Rc::clone(&store_rc),
                 )),
                 Box::new(FundBitvmxProcessor::new(
                     bitvmx_broker.clone(),
