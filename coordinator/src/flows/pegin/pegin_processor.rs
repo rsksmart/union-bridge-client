@@ -11,8 +11,9 @@ use crate::{
             },
         },
         common::GlobalContext,
-        pegin::pegin_flow::{PeginFlow, StepData, Steps},
+        pegin::pegin_flow::{PeginFlow, State, StepData, Steps},
     },
+    store::{CoordinatorStoreApi, StoreKey, StorePrefix},
     types::{
         AllOperatorTakeTxidsAddedEvent, EventStatus, PeginAcceptedEvent, PeginRequestedEvent,
         RegisterSignaturesBitVmxData, RskPegManagerEvents, TickScheduler, UserRequests,
@@ -48,18 +49,19 @@ pub const MIN_TX_CONFIRMATIONS: u32 = 1 + 1; // +1 from Contracts, +1 to give ti
 pub const BLOCKS_DELAY_FOR_TX_CHECK: u32 = 20;
 
 /// Processor that manages multiple pegin flow state machines
-pub struct PeginFlowProcessor<CG, BC, BSF, FactoryBSF>
+pub struct PeginFlowProcessor<CG, BC, BSF, FactoryBSF, S>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
     BSF: BtcSignatureSubFlowApi,
     FactoryBSF: BtcSignatureSubFlowFactoryApi<BSF>,
+    S: CoordinatorStoreApi,
 {
     contracts_gateway: Rc<CG>,
     rt_sync: RuntimeSync,
     bitvmx_broker: Rc<BC>,
     btc_sig_subflow_factory: FactoryBSF,
-    pegin_flows: HashMap<Uuid, PeginFlow<CG, BC>>,
+    pegin_flows: HashMap<Uuid, PeginFlow<CG, BC, S>>,
     signature_flows: HashMap<Uuid, BSF>,
     global_context: GlobalContext,
     blockchain_view: BlockchainView,
@@ -69,26 +71,31 @@ where
     // For retry logic when native bridge lacks confirmations
     unconfirmed_pegin_requests: HashMap<String, (BtcTxSPVProof, i16)>,
     pegin_retry_scheduler: TickScheduler<String>,
+    store: Rc<S>,
 }
 
-impl<CG, BC>
+impl<CG, BC, S>
     PeginFlowProcessor<
         CG,
         BC,
         BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<CG>>,
         BtcSignatureSubFlowFactory<CG>,
+        S,
     >
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
+    S: CoordinatorStoreApi + 'static,
 {
     pub fn new(
         contracts_gateway: Rc<CG>,
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
+        store: Rc<S>,
     ) -> Self {
-        let factory = BtcSignatureSubFlowFactory::new(contracts_gateway.clone(), rt_sync.clone());
+        let factory =
+            BtcSignatureSubFlowFactory::new(Rc::clone(&contracts_gateway), rt_sync.clone());
 
         // Subscribe to BitVMX pegin events
         Self::subscribe_to_bitvmx_pegin_events(&bitvmx_broker)
@@ -96,7 +103,7 @@ where
 
         info!("Successfully subscribed to BitVMX pegin events");
 
-        Self {
+        let mut processor = Self {
             contracts_gateway,
             rt_sync,
             bitvmx_broker,
@@ -110,6 +117,47 @@ where
             pegin_request_tracker: HashSet::new(),
             unconfirmed_pegin_requests: HashMap::new(),
             pegin_retry_scheduler: TickScheduler::new(),
+            store,
+        };
+
+        // Restore flows from store
+        processor.restore_flows_from_store();
+        processor
+    }
+
+    fn restore_flows_from_store(&mut self) {
+        debug!("Checking for pegin flows to restore from persistence");
+
+        let saved_flows: HashMap<Uuid, State> = self
+            .store
+            .load_all_flows(StorePrefix::PeginFlow)
+            .expect("Failed to load flows from store");
+
+        for (id, saved_state) in saved_flows.iter() {
+            let flow = PeginFlow::from_saved_state(
+                Rc::clone(&self.contracts_gateway),
+                self.rt_sync.clone(),
+                Rc::clone(&self.bitvmx_broker),
+                saved_state.clone(),
+                Rc::clone(&self.store),
+            );
+            self.pegin_flows.insert(*id, flow);
+            let inserted_flow = self.pegin_flows.get(id).expect("Just inserted flow");
+            info!(
+                "Restored pegin flow {id} at step {:?}",
+                inserted_flow.current_step(),
+            );
+            debug!(
+                "Restored flow {id} context: {:?}",
+                inserted_flow.get_state()
+            );
+        }
+
+        if !self.pegin_flows.is_empty() {
+            info!(
+                "Restored {} pegin flows from persistence",
+                self.pegin_flows.len()
+            );
         }
     }
 
@@ -150,11 +198,12 @@ where
         let flow_id = Self::get_accept_pegin_pid(committee_uuid, slot_index)?;
 
         let mut flow = PeginFlow::new(
-            self.contracts_gateway.clone(),
+            Rc::clone(&self.contracts_gateway),
             self.rt_sync.clone(),
-            self.bitvmx_broker.clone(),
+            Rc::clone(&self.bitvmx_broker),
             flow_id,
             event.clone(),
+            Rc::clone(&self.store),
         );
 
         // Initialize the flow with the PeginRequested event
@@ -200,9 +249,15 @@ where
             .map(|(k, _)| *k)
             .collect();
 
-        for internal_id in completed {
+        for internal_id in &completed {
             debug!("Removing completed flow: {internal_id}");
-            self.pegin_flows.remove(&internal_id);
+            self.pegin_flows.remove(internal_id);
+
+            self.store
+                .delete_flow(StoreKey::PeginFlow(*internal_id))
+                .unwrap_or_else(|e| {
+                    error!("Failed to remove completed flow {internal_id} from persistence: {e}")
+                });
         }
     }
 
@@ -261,10 +316,9 @@ where
             if !self.signature_flows.contains_key(&flow_id) {
                 info!("Starting BTC signature flow: flow_id={}", flow_id);
 
-                let pegin_accepted =
-                    flow.state.bitvmx_pegin_accepted.as_ref().ok_or_else(|| {
-                        anyhow!("PeginAcceptedMessage not found for flow_id: {}.", flow_id)
-                    })?;
+                let pegin_accepted = flow.get_bitvmx_pegin_accepted().ok_or_else(|| {
+                    anyhow!("PeginAcceptedMessage not found for flow_id: {}.", flow_id)
+                })?;
 
                 // Note: v0.2.0 contracts - initSignatures is called with acceptPeginTxid (the transaction ID),
                 // not the signatureHash. So we must use acceptPeginTxid for addMemberNonce.
@@ -654,16 +708,18 @@ where
     }
 }
 
-impl<CG, BC> EventProcessor
+impl<CG, BC, S> EventProcessor
     for PeginFlowProcessor<
         CG,
         BC,
         BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<CG>>,
         BtcSignatureSubFlowFactory<CG>,
+        S,
     >
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
+    S: CoordinatorStoreApi + 'static,
 {
     fn process_user_request(&mut self, _req: &UserRequests) -> Result<()> {
         // Pegin flows are created from RSK events, not from user requests

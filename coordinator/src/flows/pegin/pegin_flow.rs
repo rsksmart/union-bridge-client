@@ -1,4 +1,5 @@
 use crate::flows::common::{COMM_KEY_INDEX, build_communication_data};
+use crate::store::{CoordinatorStoreApi, StoreKey};
 
 use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::{
@@ -17,7 +18,7 @@ use common::{
     types::{CommitteeId, TxIdParser},
 };
 use log::{debug, info, trace};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::rc::Rc;
 use transaction_dispatcher::{
     rsk_gateway::RskContractsGatewayApi,
@@ -34,7 +35,7 @@ const PEGIN_ACCEPTED_VAR_NAME: &str = "PeginAccepted";
 const PROGRAM_TYPE_ACCEPT_PEGIN: &str = "accept_pegin";
 
 /// Steps for the pegin state machine flow
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Steps {
     // Initial state when pegin is requested
     PeginRequested,
@@ -63,7 +64,7 @@ impl Default for Steps {
 }
 
 /// Data passed between steps in the pegin flow
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum StepData {
     PeginRequested,
     CommInfo(P2PAddress),
@@ -90,7 +91,7 @@ pub struct PeginRequestMessage {
 }
 
 /// Context for the pegin flow state machine
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlowContext {
     pub flow_id: Uuid,
     pub step: Steps,
@@ -102,22 +103,32 @@ pub struct FlowContext {
     pub transaction_status: Option<TransactionStatus>,
 }
 
+/// Serializable state for persistence
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct State {
+    pub flow_id: Uuid,
+    pub ctx: FlowContext,
+}
+
 /// State machine for handling pegin flow
-pub struct PeginFlow<CG, BC>
+pub struct PeginFlow<CG, BC, S>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
+    S: CoordinatorStoreApi,
 {
     contracts: Rc<CG>,
     rt_sync: RuntimeSync,
     bitvmx_broker: Rc<BC>,
-    pub state: FlowContext,
+    state: State,
+    store: Rc<S>,
 }
 
-impl<CG, BC> PeginFlow<CG, BC>
+impl<CG, BC, S> PeginFlow<CG, BC, S>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
+    S: CoordinatorStoreApi,
 {
     pub fn new(
         contracts: Rc<CG>,
@@ -125,28 +136,54 @@ where
         bitvmx_broker: Rc<BC>,
         internal_id: Uuid,
         pegin_requested: PeginRequested,
+        store: Rc<S>,
     ) -> Self {
         Self {
             contracts,
             rt_sync,
             bitvmx_broker,
-            state: FlowContext {
+            state: State {
                 flow_id: internal_id,
-                step: Steps::PeginRequested,
-                pegin_requested: pegin_requested.clone(),
-                my_p2p_address: None,
-                committee_output: None,
-                bitvmx_pegin_accepted: None,
-                spv_proof: None,
-                transaction_status: None,
+                ctx: FlowContext {
+                    flow_id: internal_id,
+                    step: Steps::PeginRequested,
+                    pegin_requested: pegin_requested.clone(),
+                    my_p2p_address: None,
+                    committee_output: None,
+                    bitvmx_pegin_accepted: None,
+                    spv_proof: None,
+                    transaction_status: None,
+                },
             },
+            store,
         }
+    }
+
+    pub fn from_saved_state(
+        contracts: Rc<CG>,
+        rt_sync: RuntimeSync,
+        bitvmx_broker: Rc<BC>,
+        state: State,
+        store: Rc<S>,
+    ) -> Self {
+        Self {
+            contracts,
+            rt_sync,
+            bitvmx_broker,
+            state,
+            store,
+        }
+    }
+
+    fn persist_state(&self) -> Result<()> {
+        self.store
+            .save_flow(StoreKey::PeginFlow(self.state.flow_id), self.state.clone())
     }
 
     /// Start the next step and log the transition
     pub fn start_step(&mut self, next_step: Steps) -> Result<()> {
-        let previous_step = self.state.step;
-        self.state.step = next_step;
+        let previous_step = self.state.ctx.step;
+        self.state.ctx.step = next_step;
 
         debug!(
             "PeginFlow {}: {} -> {}",
@@ -192,7 +229,7 @@ where
             }
             Steps::AcceptPegin => {
                 info!("Accepting pegin for flow_id: {}", self.state.flow_id);
-                let spv_proof = self.state.spv_proof.clone().ok_or_else(|| {
+                let spv_proof = self.state.ctx.spv_proof.clone().ok_or_else(|| {
                     anyhow!(
                         "SPV proof not available for pegin acceptance - flow_id {}",
                         self.state.flow_id
@@ -204,12 +241,16 @@ where
                 info!("PeginFlow {}: Done", self.state.flow_id);
             }
         }
+
+        // Persist state after successful step completion
+        self.persist_state()?;
+
         Ok(())
     }
 
     /// Complete the current step with data and advance to the next
     pub fn complete_step(&mut self, data: StepData) -> Result<()> {
-        let current_step = self.state.step;
+        let current_step = self.state.ctx.step;
 
         info!(
             "PeginFlow {}: Completing step {} with data: {:?}",
@@ -232,11 +273,11 @@ where
         match (current_step, data) {
             (Steps::PeginRequested, StepData::PeginRequested) => Ok(Steps::GetCommInfo),
             (Steps::GetCommInfo, StepData::CommInfo(comm_info)) => {
-                self.state.my_p2p_address = Some(comm_info.clone());
+                self.state.ctx.my_p2p_address = Some(comm_info.clone());
                 Ok(Steps::PreparePeginSetup)
             }
             (Steps::PreparePeginSetup, StepData::BitvmxPeginAccepted(accepted)) => {
-                self.state.bitvmx_pegin_accepted = Some(accepted.clone());
+                self.state.ctx.bitvmx_pegin_accepted = Some(accepted.clone());
                 Ok(Steps::AddOperatorTakeHash)
             }
             (Steps::AddOperatorTakeHash, StepData::OperatorTakeHashAdded) => {
@@ -263,13 +304,13 @@ where
                         expected_tx_id
                     );
                 }
-                self.state.transaction_status = Some(tx_status.clone());
+                self.state.ctx.transaction_status = Some(tx_status.clone());
                 Ok(Steps::RequestAcceptPeginSpvProof)
             }
             (Steps::RequestAcceptPeginSpvProof, StepData::SpvProof(spv_proof)) => {
                 info!("Received SPV proof for flow_id: {}", self.state.flow_id);
                 trace!("SPV Proof data: {:?}", spv_proof);
-                self.state.spv_proof = Some(spv_proof.clone());
+                self.state.ctx.spv_proof = Some(spv_proof.clone());
                 Ok(Steps::AcceptPegin)
             }
             (Steps::AcceptPegin, StepData::PeginAccepted(pegin_accepted)) => {
@@ -294,7 +335,7 @@ where
             "Preparing pegin setup for BitVMX with flow_id: {}",
             self.state.flow_id
         );
-        let committee_id: CommitteeId = self.state.pegin_requested.committeeId.try_into()?;
+        let committee_id: CommitteeId = self.state.ctx.pegin_requested.committeeId.try_into()?;
 
         self.send_pegin_request_to_bitvmx(&committee_id)?;
         self.send_setup_to_bitvmx(&committee_id)?;
@@ -308,10 +349,10 @@ where
         );
 
         let committee_output = self.get_committee_output(committee_id.clone())?;
-        self.state.committee_output = Some(committee_output.clone());
+        self.state.ctx.committee_output = Some(committee_output.clone());
 
         let pegin_request =
-            self.build_pegin_request_message(&self.state.pegin_requested, &committee_output)?;
+            self.build_pegin_request_message(&self.state.ctx.pegin_requested, &committee_output)?;
 
         let msg = IncomingBitVMXApiMessages::SetVar(
             self.state.flow_id,
@@ -334,6 +375,7 @@ where
 
         let p2p_addresses = build_communication_data(
             self.state
+                .ctx
                 .my_p2p_address
                 .as_ref()
                 .ok_or_else(|| anyhow!("P2P address not available for setup"))?
@@ -357,6 +399,7 @@ where
     fn add_operator_take_hash(&self) -> Result<()> {
         let pegin_accepted = self
             .state
+            .ctx
             .bitvmx_pegin_accepted
             .as_ref()
             .ok_or_else(|| anyhow!("BitVMX pegin accepted message not found"))?;
@@ -595,6 +638,7 @@ where
 
     pub fn get_accept_pegin_txid(&self) -> Option<Txid> {
         self.state
+            .ctx
             .bitvmx_pegin_accepted
             .as_ref()
             .map(|accepted| accepted.accept_pegin_txid)
@@ -602,7 +646,7 @@ where
 
     /// Check if the flow is completed
     pub fn is_done(&self) -> bool {
-        self.state.step == Steps::Done
+        self.state.ctx.step == Steps::Done
     }
 
     /// Get the internal ID of the flow
@@ -612,7 +656,17 @@ where
 
     /// Get the current step
     pub fn current_step(&self) -> Steps {
-        self.state.step
+        self.state.ctx.step
+    }
+
+    /// Get the state for debugging
+    pub fn get_state(&self) -> &State {
+        &self.state
+    }
+
+    /// Get the BitVMX pegin accepted message if available
+    pub fn get_bitvmx_pegin_accepted(&self) -> Option<&PeginAcceptedMessage> {
+        self.state.ctx.bitvmx_pegin_accepted.as_ref()
     }
 }
 

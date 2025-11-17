@@ -14,10 +14,12 @@ use common::types::CommitteeId;
 pub enum StoreKey {
     GlobalContext,
     SetupCommitteeFlow(Uuid),
+    PeginFlow(Uuid),
 }
 
 pub enum StorePrefix {
     SetupCommitteeFlow,
+    PeginFlow,
 }
 
 impl StoreKey {
@@ -27,6 +29,9 @@ impl StoreKey {
             StoreKey::SetupCommitteeFlow(id) => {
                 format!("{}/{}", StorePrefix::SetupCommitteeFlow.value(), id)
             }
+            StoreKey::PeginFlow(id) => {
+                format!("{}/{}", StorePrefix::PeginFlow.value(), id)
+            }
         }
     }
 }
@@ -35,6 +40,7 @@ impl StorePrefix {
     fn value(&self) -> String {
         match self {
             StorePrefix::SetupCommitteeFlow => "setup_committee_flows".to_string(),
+            StorePrefix::PeginFlow => "pegin_flows".to_string(),
         }
     }
 
