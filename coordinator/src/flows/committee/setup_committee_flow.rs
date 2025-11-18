@@ -4,7 +4,7 @@ use crate::types::{
     AllCommunicationDataReadyEvent, EventStatus, MemberOfCommittee, NewCommitteePendingEvent,
     NewCommitteeReadyEvent, RskPegManagerEvents, UserRequests,
 };
-use alloy_primitives::{Address, Bytes, FixedBytes};
+use alloy_primitives::{Address, Bytes, FixedBytes, U256};
 use anyhow::{Context, Result, bail, ensure};
 use bitcoin::key::Parity::Even;
 use bitcoin::{Amount, Network, PublicKey, ScriptBuf, Txid, XOnlyPublicKey};
@@ -33,7 +33,7 @@ use crate::flows::committee::dispute_core_setup::DisputeCoreSetup;
 use crate::flows::common::{
     COMM_KEY_INDEX, DISPUTE_KEY_INDEX, GlobalContext, TAKE_KEY_INDEX, build_communication_data,
 };
-use crate::flows::errors::{FailableFlow, FlowError};
+use crate::flows::errors::{FailableFlow, FlowError, FlowResultExt};
 use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix};
 use common::types;
 use common::types::{BlockNumber, CommitteeId, RskBlockAndUncles, StreamId, TxIdParser};
@@ -51,12 +51,16 @@ use crate::config::REQUIRED_CONFIRMATIONS;
 use mockall::automock;
 
 pub(crate) const NO_LEADER_IDX: u16 = 0;
+const MIN_FUNDING_BALANCE: u64 = 20_002_000; // Setup Committee estimated cost
+const MIN_RSK_BALANCE: u64 = 100_000 * 10_000_000_000 + 500_000; // min stream (sats) to wei + fees, hardcoded for now
 
 #[cfg_attr(test, automock)]
 trait SetupCommitteeFlowApi {
     fn start_step(&mut self, next_step: Steps) -> Result<(), FlowError>;
 
     fn complete_step(&mut self, data: StepData) -> Result<(), FlowError>;
+
+    fn request_bitvmx_funding_balance(&mut self);
 
     fn request_bitvmx_comm_info(&self);
 
@@ -123,6 +127,7 @@ pub(crate) struct FundingUtxos {
 struct FlowContext {
     // stepped
     user_input: Option<ApplyToStream>,
+    funding_balance_req: Option<(Uuid, Option<u64>)>, // request id, balance
     my_comm_info: Option<P2PAddress>,
     my_take_key_req: PubKeyReq,
     my_dispute_key_req: PubKeyReq,
@@ -187,6 +192,7 @@ impl FlowContext {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum Steps {
     Init,
+    ValidateBalances,
     GetMyCommInfo,
     GetMyTakeKey,
     SignMyTakeKey,
@@ -209,6 +215,7 @@ enum Steps {
 enum StepData {
     // sync or member-dependent steps
     UserRequest(ApplyToStream),
+    BitVmxFundingBalance(u64),
     CommInfo(P2PAddress),
     PublicKey(PublicKey),
     SignedMessage([u8; 32], [u8; 32], u8), // signature_r, signature_s, recovery_id
@@ -227,6 +234,13 @@ impl StepData {
         match self {
             StepData::UserRequest(input) => Ok(input),
             _ => bail!("Expected UserRequest data"),
+        }
+    }
+
+    fn into_bitvmx_funding_balance(self) -> Result<u64> {
+        match self {
+            StepData::BitVmxFundingBalance(balance) => Ok(balance),
+            _ => bail!("Expected FundingBalance data"),
         }
     }
 
@@ -392,6 +406,49 @@ where
 
         if result.is_err() {
             error!("Failed to send msg to BitVMX: {:?}", result);
+        }
+
+        Ok(())
+    }
+
+    fn validate_bitvmx_balance(&mut self, data: StepData) -> Result<()> {
+        let balance = data.into_bitvmx_funding_balance()?;
+
+        let r = self
+            .state
+            .ctx
+            .funding_balance_req
+            .as_mut()
+            .context("Funding balance request missing in context")?;
+        r.1 = Some(balance);
+
+        if balance < MIN_FUNDING_BALANCE {
+            bail!(
+                "Insufficient funding balance: {} < {}",
+                balance,
+                MIN_FUNDING_BALANCE
+            )
+        }
+
+        debug!("Funding balance check passed: {}", balance);
+
+        Ok(())
+    }
+
+    fn validate_rsk_balance(&mut self) -> Result<()> {
+        let my_address: Address = self.my_address().into();
+
+        debug!("Requesting RSK balance for address: {}", my_address);
+
+        let balance_wei = self.rt_sync.run(self.contracts.get_balance())?;
+
+        // convert wei to a u64 (this is safe for reasonable balance values)
+        if balance_wei < U256::from(MIN_RSK_BALANCE) {
+            bail!(
+                "Insufficient RSK balance: {} < {}",
+                balance_wei,
+                MIN_RSK_BALANCE
+            )
         }
 
         Ok(())
@@ -954,6 +1011,10 @@ where
             Steps::Init => {
                 unreachable!("Init step should not be reached in start_step");
             }
+            Steps::ValidateBalances => {
+                self.validate_rsk_balance().or_transient()?;
+                self.request_bitvmx_funding_balance();
+            }
             Steps::GetMyCommInfo => {
                 self.request_bitvmx_comm_info();
             }
@@ -1036,6 +1097,10 @@ where
         match current_step {
             Steps::Init => {
                 self.state.ctx.user_input = Some(data.into_user_input()?);
+                self.start_step(Steps::ValidateBalances)?;
+            }
+            Steps::ValidateBalances => {
+                self.validate_bitvmx_balance(data)?;
                 self.start_step(Steps::GetMyCommInfo)?;
             }
             Steps::GetMyCommInfo => {
@@ -1125,6 +1190,12 @@ where
         }
 
         Ok(())
+    }
+
+    fn request_bitvmx_funding_balance(&mut self) {
+        let req_id = Uuid::new_v4();
+        self.state.ctx.funding_balance_req = Some((req_id, None));
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetFundingBalance(req_id));
     }
 
     fn request_bitvmx_comm_info(&self) {
@@ -1601,7 +1672,8 @@ where
         // in addition to that, any change in the code could break it and end up mixing requests/responses/steps
 
         self.flows.values_mut().find(|flow| {
-            Self::pubkey_request_matches(&flow.state.ctx.my_take_key_req, req_id)
+            Self::funding_balance_request_matches(&flow.state.ctx.funding_balance_req, req_id)
+                || Self::pubkey_request_matches(&flow.state.ctx.my_take_key_req, req_id)
                 || Self::pubkey_request_matches(&flow.state.ctx.my_dispute_key_req, req_id)
                 || Self::pubkey_request_matches(&flow.state.ctx.my_comm_key_req, req_id)
                 || Self::aggregated_key_request_matches(&flow.state.ctx.agg_take_key, req_id)
@@ -1636,6 +1708,17 @@ where
     fn fund_bitvmx_request_matches(send_funds_req: &SendFundsReq, req_id: &Uuid) -> bool {
         if let Some((fund_req_id, _)) = send_funds_req {
             fund_req_id == req_id
+        } else {
+            false
+        }
+    }
+
+    fn funding_balance_request_matches(
+        funding_balance_req: &Option<(Uuid, Option<u64>)>,
+        req_id: &Uuid,
+    ) -> bool {
+        if let Some((balance_req_id, _)) = funding_balance_req {
+            balance_req_id == req_id
         } else {
             false
         }
@@ -1804,6 +1887,9 @@ where
 
         // now process all messages with request ID
         let (req_id, step_data) = match event {
+            OutgoingBitVMXApiMessages::FundingBalance(req_id, balance) => {
+                (req_id, StepData::BitVmxFundingBalance(*balance))
+            }
             OutgoingBitVMXApiMessages::PubKey(req_id, public_key) => {
                 (req_id, StepData::PublicKey(*public_key))
             }
