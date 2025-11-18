@@ -71,7 +71,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         })
     }
 
-    #[cfg(not(feature = "fresh_node"))]
+    #[cfg(not(any(feature = "fresh_node", feature = "anvil")))]
     fn check_initial_block(rsk_provider: &P, initial_block_hash: BlockHash) -> Result<BlockNumber> {
         let initial_block_number = rsk_provider
             .get_block_by_hash(initial_block_hash)
@@ -81,7 +81,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         Ok(initial_block_number)
     }
 
-    #[cfg(feature = "fresh_node")]
+    #[cfg(any(feature = "fresh_node", feature = "anvil"))]
     fn check_initial_block(
         rsk_provider: &P,
         _initial_block_hash: BlockHash,
@@ -162,7 +162,11 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         // storage that were later on reorganized
         let finality_depth = self.sync_finality_depth as u64;
         let original_start = start;
-        start = start - finality_depth;
+        start = if start > BlockNumber::from(finality_depth) {
+            start - finality_depth
+        } else {
+            BlockNumber::from(0)  // Don't go below block 0
+        };
         info!(
             "Adjusted start block for finality: original = {}, finality_depth = {}, adjusted = {}",
             original_start, finality_depth, start

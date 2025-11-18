@@ -15,7 +15,15 @@
 //! cargo run -- --id 1
 //! ```
 //!
-//! start with fresh databases (wipes all existing state):
+//! run multiple clients in parallel (in different terminals):
+//! ```bash
+//! # Terminal 1
+//! cargo run -- -i 1
+//! # Terminal 2
+//! cargo run -- -i 2
+//! ```
+//!
+//! start fresh (kills all existing services and wipes databases):
 //! ```bash
 //! cargo run -- --fresh
 //! ```
@@ -83,7 +91,8 @@ struct Cli {
     #[arg(short = 'f', long = "features")]
     features: Option<String>,
 
-    /// Start with clear databases (removes existing)
+    /// Start with clear databases and kill any existing services (removes existing).
+    /// Without this flag, new clients can run alongside existing ones.
     #[arg(long = "fresh", action = ArgAction::SetTrue)]
     fresh: bool,
 }
@@ -185,10 +194,10 @@ struct RunConfig {
 }
 
 async fn run_clients(config: RunConfig) -> Result<()> {
-    // detect and kill any running services before starting
-    detect_and_kill_existing_services()?;
-
+    // only kill existing services if --fresh flag is provided
+    // this allows running multiple independent clients in parallel
     if config.fresh {
+        detect_and_kill_existing_services()?;
         fresh_cleanup()?;
     }
 
