@@ -176,6 +176,11 @@ where
     }
 
     fn persist_state(&self) -> Result<()> {
+        debug!(
+            "PeginFlow {}: Persisting state for step: {:?}",
+            self.state.flow_id,
+            self.state.ctx.step
+        );
         self.store
             .save_flow(StoreKey::PeginFlow(self.state.flow_id), self.state.clone())
     }

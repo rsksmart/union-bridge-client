@@ -287,7 +287,14 @@ instance (1-4). This ensures no collisions between different clients for:
 You can run 4 clients simultaneously using the `./cli-run.sh` script:
 
 ```bash
-./cli-run.sh
+# Run all 4 clients at once (requires --fresh on first run or when resetting)
+./cli-run.sh --fresh
+
+# Or run clients individually in separate terminals (no --fresh needed)
+# Terminal 1: ./cli-run.sh -i 1
+# Terminal 2: ./cli-run.sh -i 2
+# Terminal 3: ./cli-run.sh -i 3
+# Terminal 4: ./cli-run.sh -i 4
 ```
 
 #### Complete Workflow Example
