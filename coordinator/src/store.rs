@@ -15,11 +15,13 @@ pub enum StoreKey {
     GlobalContext,
     SetupCommitteeFlow(Uuid),
     PeginFlow(Uuid),
+    PegoutFlow(Uuid),
 }
 
 pub enum StorePrefix {
     SetupCommitteeFlow,
     PeginFlow,
+    PegoutFlow,
 }
 
 impl StoreKey {
@@ -32,6 +34,9 @@ impl StoreKey {
             StoreKey::PeginFlow(id) => {
                 format!("{}/{}", StorePrefix::PeginFlow.value(), id)
             }
+            StoreKey::PegoutFlow(id) => {
+                format!("{}/{}", StorePrefix::PegoutFlow.value(), id)
+            }
         }
     }
 }
@@ -41,6 +46,7 @@ impl StorePrefix {
         match self {
             StorePrefix::SetupCommitteeFlow => "setup_committee_flows".to_string(),
             StorePrefix::PeginFlow => "pegin_flows".to_string(),
+            StorePrefix::PegoutFlow => "pegout_flows".to_string(),
         }
     }
 
