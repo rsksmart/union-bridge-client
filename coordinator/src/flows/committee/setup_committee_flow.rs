@@ -33,7 +33,7 @@ use crate::flows::committee::dispute_core_setup::DisputeCoreSetup;
 use crate::flows::common::{
     COMM_KEY_INDEX, DISPUTE_KEY_INDEX, GlobalContext, TAKE_KEY_INDEX, build_communication_data,
 };
-use crate::flows::errors::{FlowError, FlowResultExt};
+use crate::flows::errors::{FailableFlow, FlowError};
 use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix};
 use common::types;
 use common::types::{BlockNumber, CommitteeId, RskBlockAndUncles, StreamId, TxIdParser};
@@ -54,9 +54,9 @@ pub(crate) const NO_LEADER_IDX: u16 = 0;
 
 #[cfg_attr(test, automock)]
 trait SetupCommitteeFlowApi {
-    fn start_step(&mut self, next_step: Steps) -> Result<()>;
+    fn start_step(&mut self, next_step: Steps) -> Result<(), FlowError>;
 
-    fn complete_step(&mut self, data: StepData) -> Result<()>;
+    fn complete_step(&mut self, data: StepData) -> Result<(), FlowError>;
 
     fn request_bitvmx_comm_info(&self);
 
@@ -214,6 +214,7 @@ enum StepData {
     SignedMessage([u8; 32], [u8; 32], u8), // signature_r, signature_s, recovery_id
     SetupCompleted(Uuid),
     FundsSent(Txid),
+    WalletError(String),
 
     // async or collaborative steps
     PendingCommittee(NewCommitteePendingEvent),
@@ -807,8 +808,7 @@ where
         );
 
         if result.is_err() {
-            // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132
-            error!("Failed to send msg to BitVMX: {:?}", result);
+            bail!("Failed to send msg to BitVMX: {:?}", result);
         }
 
         Ok(())
@@ -923,13 +923,28 @@ where
     }
 }
 
+impl<CG, BC, S> FailableFlow for SetupCommitteeFlow<CG, BC, S>
+where
+    CG: RskContractsGatewayApi,
+    BC: BitVmxBrokerClientApi,
+    S: CoordinatorStoreApi,
+{
+    fn fail(&mut self) -> () {
+        error!(
+            "Marking flow {} as failed and cleaning up",
+            self.state.internal_id
+        );
+        self.state.step = Steps::Failed
+    }
+}
+
 impl<CG, BC, S> SetupCommitteeFlowApi for SetupCommitteeFlow<CG, BC, S>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
     S: CoordinatorStoreApi,
 {
-    fn start_step(&mut self, next_step: Steps) -> Result<()> {
+    fn start_step(&mut self, next_step: Steps) -> Result<(), FlowError> {
         debug!("Starting step {:?}", next_step);
 
         self.state.step = next_step;
@@ -1005,7 +1020,7 @@ where
         Ok(())
     }
 
-    fn complete_step(&mut self, data: StepData) -> Result<()> {
+    fn complete_step(&mut self, data: StepData) -> Result<(), FlowError> {
         let current_step = self.state.step;
 
         debug!(
@@ -1150,12 +1165,7 @@ where
     }
 
     fn apply_to_stream(&self) -> Result<()> {
-        let funding_utxo = self.ctx_my_protocol_utxos()?.protocol_funding;
-        let utxo = UTXO {
-            txid: TxIdParser::txid_to_fb_32(funding_utxo.0),
-            outputIndex: funding_utxo.1,
-            amount: funding_utxo.2.context("Missing funding UTXO amount")?,
-        };
+        let utxo = self.build_funding_utxo()?;
 
         let stream_id = self.state.ctx.get_stream_id()?;
 
@@ -1187,7 +1197,11 @@ where
                         transaction_hash: "already_registered".to_string(),
                     })
                 }
-                _ => Err(e),
+                DomainErrors::NoRevertError(e) => {
+                    // insuf. funds candidate
+                    Err(FlowError::transient(e))
+                }
+                _ => Err(anyhow::Error::from(e))?,
             })?;
 
         info!("Applied to stream {stream_id:?} successfully");
@@ -1249,7 +1263,11 @@ where
                         transaction_hash: "already_deposited".to_string(),
                     })
                 }
-                _ => Err(e),
+                DomainErrors::NoRevertError(e) => {
+                    // insuf. funds candidate
+                    Err(FlowError::transient(e))
+                }
+                _ => Err(anyhow::Error::from(e))?,
             }
         })?;
 
@@ -1342,7 +1360,11 @@ where
                         transaction_hash: "already_deposited".to_string(),
                     })
                 }
-                _ => Err(e),
+                DomainErrors::NoRevertError(e) => {
+                    // insuf. funds candidate
+                    Err(FlowError::transient(e))
+                }
+                _ => Err(anyhow::Error::from(e))?,
             })?;
 
         Ok(())
@@ -1385,6 +1407,23 @@ where
         }
 
         Ok(())
+    }
+}
+
+impl<CG, BC, S> SetupCommitteeFlow<CG, BC, S>
+where
+    BC: BitVmxBrokerClientApi,
+    CG: RskContractsGatewayApi,
+    S: CoordinatorStoreApi,
+{
+    fn build_funding_utxo(&self) -> Result<UTXO> {
+        let funding_utxo = self.ctx_my_protocol_utxos()?.protocol_funding;
+        let utxo = UTXO {
+            txid: TxIdParser::txid_to_fb_32(funding_utxo.0),
+            outputIndex: funding_utxo.1,
+            amount: funding_utxo.2.context("Missing funding UTXO amount")?,
+        };
+        Ok(utxo)
     }
 }
 
@@ -1464,90 +1503,29 @@ where
     FactoryBSF: SetupCommitteeFlowFactoryApi<CG, BC, S>,
     S: CoordinatorStoreApi + 'static,
 {
-    /// Central error handler that processes a step and handles any FlowErrors
-    fn complete_step_and_handle_errors(&mut self, flow_id: Uuid, data: StepData) -> Result<()> {
-        let current_step = if let Some(flow) = self.flows.get(&flow_id) {
-            flow.state.step
-        } else {
-            error!("Flow {} not found", flow_id);
-            bail!("Flow {} not found", flow_id);
-        };
-
-        debug!("Processing step {:?} for flow {}", current_step, flow_id);
-
-        let result = if let Some(flow) = self.flows.get_mut(&flow_id) {
-            flow.complete_step(data).or_fail_flow(flow_id)
-        } else {
-            error!("Flow {} not found", flow_id);
-            bail!("Flow {} not found", flow_id);
-        };
-
-        match result {
+    fn continue_flow(flow: &mut SetupCommitteeFlow<CG, BC, S>, data: StepData) {
+        match flow.complete_step(data) {
             Ok(_) => {
                 trace!(
                     "Step {:?} completed successfully for flow {}",
-                    current_step, flow_id
+                    flow.state.step, flow.state.internal_id
                 );
             }
-            Err(flow_error) => {
-                match &flow_error {
-                    FlowError::Fatal {
-                        flow_id: error_flow_id,
-                        message,
-                        ..
-                    } => {
-                        error!(
-                            "Fatal error in flow {} at step {:?}: {}",
-                            error_flow_id, current_step, message
-                        );
-                        self.mark_flow_as_failed(flow_id);
-                    }
-                    FlowError::Transient {
-                        flow_id: error_flow_id,
-                        message,
-                        retry_count,
-                        ..
-                    } => {
-                        error!(
-                            "Transient error in flow {} at step {:?} (attempt {}): {}",
-                            error_flow_id, current_step, retry_count, message
-                        );
-                        // TODO: Implement retry logic in the future
-                        // Don't mark as failed - transient errors could be retried
-                    }
-                }
-                return Err(flow_error.into());
+            Err(FlowError::Fatal { message, .. }) => {
+                error!(
+                    "Fatal error in flow {} at step {:?}: {}",
+                    flow.state.internal_id, flow.state.step, message
+                );
+                flow.fail();
+            }
+            Err(FlowError::Transient { message, .. }) => {
+                error!(
+                    "Transient error in flow {} at step {:?}: {}",
+                    flow.state.internal_id, flow.state.step, message
+                );
+                // TODO: Implement retry logic in the future
             }
         }
-
-        Ok(())
-    }
-
-    /// Helper method to handle fatal error messages from BitVMX
-    fn handle_bitvmx_fatal_error_message(
-        &mut self,
-        req_id: &Uuid,
-        error_message: String,
-    ) -> Result<()> {
-        if let Some(flow) = self.get_flow_for_bitvmx_response(req_id) {
-            let flow_id = flow.state.internal_id;
-            error!("BitVMX fatal error for flow {}: {}", flow_id, error_message);
-            self.mark_flow_as_failed(flow_id);
-            bail!(error_message);
-        } else {
-            bail!("No flow found for BitVMX error with request id {req_id}");
-        }
-    }
-
-    /// Helper method to mark a flow as failed and clean up
-    fn mark_flow_as_failed(&mut self, flow_id: Uuid) {
-        info!("Marking flow {} as failed and cleaning up", flow_id);
-
-        if let Some(flow) = self.flows.get_mut(&flow_id) {
-            flow.state.step = Steps::Failed;
-        }
-
-        self.close_completed_flows();
     }
 
     fn get_first_flow_waiting_comm_info(&mut self) -> Option<&mut SetupCommitteeFlow<CG, BC, S>> {
@@ -1717,14 +1695,14 @@ where
             }
         };
 
-        if let Some((flow, step_data)) = flow_data {
-            let flow_id = flow.state.internal_id;
-            self.complete_step_and_handle_errors(flow_id, step_data)?;
-        } else {
-            warn!("Received {event:?} but no matching flow found");
+        match flow_data {
+            Some((flow, step_data)) => {
+                Self::continue_flow(flow, step_data);
+            }
+            None => {
+                warn!("Received {event:?} but no matching flow found");
+            }
         }
-
-        self.close_completed_flows();
 
         Ok(())
     }
@@ -1774,9 +1752,7 @@ where
 
             self.store
                 .delete_flow(StoreKey::SetupCommitteeFlow(*key))
-                .unwrap_or_else(|e| {
-                    error!("Failed to remove flow {key} from persistence: {e}")
-                });
+                .unwrap_or_else(|e| error!("Failed to remove flow {key} from persistence: {e}"));
         }
     }
 
@@ -1800,12 +1776,11 @@ where
         match req {
             UserRequests::ApplyToStream(input) => {
                 let internal_id = Uuid::new_v4();
-                let flow = self.flow_factory.create_flow(internal_id);
+                let mut flow = self.flow_factory.create_flow(internal_id);
+
+                Self::continue_flow(&mut flow, StepData::UserRequest(input.clone()));
+
                 self.flows.insert(internal_id, flow);
-                self.complete_step_and_handle_errors(
-                    internal_id,
-                    StepData::UserRequest(input.clone()),
-                )?;
             }
             _ => {
                 trace!("Ignoring user request: {:?}", req);
@@ -1820,18 +1795,8 @@ where
             // we can receive multiple CommInfo events but always for the same member of the
             // committee (the one running the client), but BitVMX will always respond with the
             // same info - so for now we send it to the first flow waiting for it
-            let flow_id = if let Some(first_flow) = self.get_first_flow_waiting_comm_info() {
-                Some(first_flow.state.internal_id)
-            } else {
-                None
-            };
-
-            if let Some(flow_id) = flow_id {
-                self.complete_step_and_handle_errors(
-                    flow_id,
-                    StepData::CommInfo(comm_info.clone()),
-                )?;
-                return Ok(());
+            if let Some(first_flow) = self.get_first_flow_waiting_comm_info() {
+                Self::continue_flow(first_flow, StepData::CommInfo(comm_info.clone()));
             } else {
                 trace!("Ignoring CommInfo - not mine")
             };
@@ -1854,24 +1819,22 @@ where
             OutgoingBitVMXApiMessages::FundsSent(req_id, tx_id) => {
                 (req_id, StepData::FundsSent(tx_id.clone()))
             }
-            OutgoingBitVMXApiMessages::WalletError(req_id, tx_id) => {
-                return self.handle_bitvmx_fatal_error_message(
-                    req_id,
-                    format!("BitVMX WalletError for request {req_id}, tx {tx_id}"),
-                );
-            }
-            OutgoingBitVMXApiMessages::WalletNotReady(req_id) => {
-                return self.handle_bitvmx_fatal_error_message(
-                    req_id,
-                    format!("BitVMX WalletNotReady for request {req_id}"),
-                );
-            }
-            OutgoingBitVMXApiMessages::AggregatedPubkeyNotReady(req_id) => {
-                return self.handle_bitvmx_fatal_error_message(
-                    req_id,
-                    format!("BitVMX cannot aggregate dispute keys for request {req_id}"),
-                );
-            }
+            OutgoingBitVMXApiMessages::WalletError(req_id, tx_id) => (
+                req_id,
+                StepData::WalletError(format!(
+                    "BitVMX WalletError for request {req_id}, tx {tx_id}"
+                )),
+            ),
+            OutgoingBitVMXApiMessages::WalletNotReady(req_id) => (
+                req_id,
+                StepData::WalletError(format!("BitVMX WalletNotReady for request {req_id}")),
+            ),
+            OutgoingBitVMXApiMessages::AggregatedPubkeyNotReady(req_id) => (
+                req_id,
+                StepData::WalletError(format!(
+                    "BitVMX cannot aggregate dispute keys for request {req_id}"
+                )),
+            ),
             // events that do not trigger a flow step are handled here.
             OutgoingBitVMXApiMessages::Pong() => return Ok(()), // ignored
             _ => {
@@ -1882,13 +1845,10 @@ where
         };
 
         if let Some(flow) = self.get_flow_for_bitvmx_response(req_id) {
-            let flow_id = flow.state.internal_id;
-            self.complete_step_and_handle_errors(flow_id, step_data)?;
+            Self::continue_flow(flow, step_data);
         } else {
             debug!("No flow found for BitVMX event with id {req_id}");
         }
-
-        self.close_completed_flows();
 
         Ok(())
     }

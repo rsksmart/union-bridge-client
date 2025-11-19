@@ -1,10 +1,7 @@
 use crate::flows::committee::setup_committee_flow::{
     SetupCommitteeFlowFactory, SetupCommitteeProcessor,
 };
-use crate::{
-    event_processor::EventProcessor,
-    monitor::MonitorApi,
-};
+use crate::{event_processor::EventProcessor, monitor::MonitorApi};
 use anyhow::{Context, Result};
 use bitcoin::Network;
 use common::{

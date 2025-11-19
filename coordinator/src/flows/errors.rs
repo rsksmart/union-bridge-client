@@ -1,72 +1,80 @@
 use thiserror::Error;
-use uuid::Uuid;
+
+#[cfg(test)]
+use mockall::automock;
+
+#[cfg_attr(test, automock)]
+pub trait FailableFlow {
+    fn fail(&mut self) -> ();
+}
 
 /// Generic error type for flow operations
 #[derive(Error, Debug)]
 pub enum FlowError {
     /// Fatal error that requires flow termination
-    #[error("Fatal error in flow {flow_id}: {message}")]
+    #[error("Fatal error: {message}")]
     Fatal {
-        flow_id: Uuid,
         message: String,
         #[source]
-        source: anyhow::Error,
+        source: Option<anyhow::Error>,
     },
 
     /// Transient error that could potentially be retried
-    #[error("Transient error in flow {flow_id} (attempt {retry_count}): {message}")]
+    #[error("Transient error: {message}")]
     Transient {
-        flow_id: Uuid,
         message: String,
-        retry_count: u8,
         #[source]
-        source: anyhow::Error,
+        source: Option<anyhow::Error>,
     },
+}
+
+impl FlowError {
+    /// Create a transient error without a source
+    pub fn transient(message: impl Into<String>) -> Self {
+        FlowError::Transient {
+            message: message.into(),
+            source: None,
+        }
+    }
 }
 
 /// Extension trait for Result types to easily convert to FlowError
 pub trait FlowResultExt<T> {
     /// Convert any error to a fatal FlowError
-    fn or_fail_flow(self, flow_id: Uuid) -> Result<T, FlowError>;
+    #[allow(unused)]
+    fn or_fatal(self) -> Result<T, FlowError>;
 
-    /// Convert any error to a transient FlowError with retry count
-    fn or_retry_flow(self, flow_id: Uuid, retry_count: u8) -> Result<T, FlowError>;
+    /// Convert any error to a transient FlowError
+    fn or_transient(self) -> Result<T, FlowError>;
 }
 
 impl<T, E> FlowResultExt<T> for Result<T, E>
 where
     E: Into<anyhow::Error>,
 {
-    fn or_fail_flow(self, flow_id: Uuid) -> Result<T, FlowError> {
+    fn or_fatal(self) -> Result<T, FlowError> {
         self.map_err(|e| {
-            let err = e.into();
-
-            // Try to downcast to FlowError first
-            match err.downcast::<FlowError>() {
-                Ok(flow_error) => flow_error,
-                Err(original_err) => FlowError::Fatal {
-                    flow_id,
-                    message: original_err.to_string(),
-                    source: original_err,
-                },
-            }
+            let anyhow_err: anyhow::Error = e.into();
+            anyhow_err.into() // uses From<anyhow::Error> which defaults to Fatal
         })
     }
 
-    fn or_retry_flow(self, flow_id: Uuid, retry_count: u8) -> Result<T, FlowError> {
+    fn or_transient(self) -> Result<T, FlowError> {
         self.map_err(|e| {
-            let err = e.into();
-
-            // Try to downcast to FlowError first
-            match err.downcast::<FlowError>() {
-                Ok(flow_error) => flow_error,
-                Err(original_err) => FlowError::Transient {
-                    flow_id,
-                    message: original_err.to_string(),
-                    retry_count,
-                    source: original_err,
-                },
-            }
+            let anyhow_err: anyhow::Error = e.into();
+            // always convert to Transient, even if it's already a FlowError
+            FlowError::transient(anyhow_err.to_string())
         })
+    }
+}
+
+impl From<anyhow::Error> for FlowError {
+    fn from(err: anyhow::Error) -> Self {
+        // try to downcast to FlowError first, otherwise default to Fatal
+        err.downcast::<FlowError>()
+            .unwrap_or_else(|original_err| FlowError::Fatal {
+                message: original_err.to_string(),
+                source: Some(original_err),
+            })
     }
 }
