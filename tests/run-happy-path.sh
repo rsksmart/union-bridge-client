@@ -271,25 +271,61 @@ step "Step 5: Verify Pegout Completion"
 TIME_MARGIN=300
 MIN_TIME=$((PEGOUT_START_TIME - TIME_MARGIN))
 
-find_recent_pegout_completion() {
-    local log_content="$1"
-    local timestamp_pattern="$2"  # '^' prefix for file logs, no prefix for docker logs
+# Helper function to extract timestamp from log line
+extract_log_timestamp() {
+    local line="$1"
+    local mode="$2"  # "docker" or "file"
+    
+    if [ "$mode" = "docker" ]; then
+        # Docker logs format: "2025-11-19 20:22:10.394 | 2025-11-19 23:22:10.394 [INFO] ..."
+        # We want the second timestamp (after the pipe)
+        echo "$line" | grep -oE '\| [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}'
+    else
+        # File logs format: "^2025-11-19 23:22:10.394 [INFO] ..."
+        echo "$line" | grep -oE '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}'
+    fi
+}
 
-    echo "$log_content" | grep -E "PegoutFlow [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}: Done" | while read -r line; do
-        local log_timestamp=$(echo "$line" | grep -oE "${timestamp_pattern}[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}")
+# Helper function to convert timestamp to epoch (macOS and Linux compatible)
+timestamp_to_epoch() {
+    local timestamp="$1"
+    date -j -f "%Y-%m-%d %H:%M:%S" "$timestamp" +%s 2>/dev/null || \
+    date -d "$timestamp" +%s 2>/dev/null || \
+    echo "0"
+}
 
+# Unified function to find recent log matches
+# Uses pipes to avoid loading entire logs into memory
+find_recent_log_match() {
+    local pattern="$1"
+    local source="$2"
+    local min_time="$3"
+    local mode="${4:-file}"  # default to file mode
+    
+    local log_stream
+    if [ "$mode" = "docker" ]; then
+        log_stream=$(docker compose -p "$source" logs coordinator 2>/dev/null) || return 1
+    else
+        log_stream=$(cat "$source" 2>/dev/null) || return 1
+    fi
+    
+    echo "$log_stream" | grep -E "$pattern" | while read -r line; do
+        local log_timestamp=$(extract_log_timestamp "$line" "$mode")
+        
         if [ -n "$log_timestamp" ]; then
-            # convert to epoch seconds (macOS and Linux compatible)
-            local log_time=$(date -j -f "%Y-%m-%d %H:%M:%S" "$log_timestamp" +%s 2>/dev/null || date -d "$log_timestamp" +%s 2>/dev/null || echo "0")
-
-            # check if log is recent (after MIN_TIME)
-            if [ "$log_time" -ge "$MIN_TIME" ]; then
+            local log_time=$(timestamp_to_epoch "$log_timestamp")
+            
+            # check if log is recent (after min_time)
+            if [ "$log_time" -ge "$min_time" ]; then
                 echo "$line"
                 break
             fi
         fi
     done | tail -1
 }
+
+# Pattern for PegoutFlow completion
+PEGOUT_PATTERN="PegoutFlow [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}: Done"
 
 MATCHING_LINE=""
 MATCHING_SOURCE=""
@@ -300,9 +336,7 @@ if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
 
     for op_id in 1 2 3 4; do
         project="op_${op_id}"
-        docker_logs=$(docker compose -p "${project}" logs coordinator 2>/dev/null) || continue
-
-        found_line=$(find_recent_pegout_completion "$docker_logs" "")
+        found_line=$(find_recent_log_match "$PEGOUT_PATTERN" "$project" "$MIN_TIME" "docker")
         if [ -n "$found_line" ]; then
             MATCHING_LINE="$found_line"
             MATCHING_SOURCE="${project}"
@@ -317,8 +351,7 @@ else
     for log_file in logs/coordinator-*.log; do
         [[ -f "$log_file" ]] || continue
 
-        log_content=$(cat "$log_file")
-        found_line=$(find_recent_pegout_completion "$log_content" "^")
+        found_line=$(find_recent_log_match "$PEGOUT_PATTERN" "$log_file" "$MIN_TIME" "file")
         if [ -n "$found_line" ]; then
             MATCHING_LINE="$found_line"
             MATCHING_SOURCE="$log_file"
