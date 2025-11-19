@@ -129,12 +129,12 @@ trap cleanup EXIT INT TERM
 clear
 log "Configuration: stream=$STREAM_ID, rsk=$RSK_ADDRESS, amount=$VALUE"
 log "Background mining: Anvil (every 1s) | Bitcoin (every 5s) - runs until Ctrl+C"
-log "Note: First run compiles release binaries (~1 min), subsequent runs are fast"
 echo ""
 
 # prepare wallets
 step "Step 0: Prepare Wallets"
 log "Clearing wallet databases and mining initial UTXOs..."
+log "Note: First run compiles release binaries for bitcoin-wallet (~1 min), subsequent runs are fast"
 echo ""
 
 log "User wallet: clear_db"
