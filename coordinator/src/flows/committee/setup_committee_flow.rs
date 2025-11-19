@@ -356,7 +356,6 @@ enum StepData {
     SignedMessage([u8; 32], [u8; 32], u8), // signature_r, signature_s, recovery_id
     SetupCompleted(Uuid),
     FundsSent(Txid),
-    WalletError(String),
 
     // async or collaborative steps
     PendingCommittee(NewCommitteePendingEvent),
@@ -1585,7 +1584,6 @@ where
                     "Transient error in flow {} at step {:?}: {}",
                     flow.state.internal_id, flow.state.step, message
                 );
-                // TODO: Implement retry logic in the future
             }
         }
     }
@@ -1890,33 +1888,25 @@ where
             OutgoingBitVMXApiMessages::AggregatedPubkey(req_id, pubkey) => {
                 (req_id, StepData::PublicKey(*pubkey))
             }
+            OutgoingBitVMXApiMessages::AggregatedPubkeyNotReady(req_id) => {
+                bail!("BitVMX cannot aggregate dispute keys for request {req_id}")
+            }
             OutgoingBitVMXApiMessages::SetupCompleted(req_id) => {
                 (req_id, StepData::SetupCompleted(req_id.clone()))
             }
             OutgoingBitVMXApiMessages::FundsSent(req_id, tx_id) => {
                 (req_id, StepData::FundsSent(tx_id.clone()))
             }
-            OutgoingBitVMXApiMessages::WalletError(req_id, tx_id) => (
-                req_id,
-                StepData::WalletError(format!(
-                    "BitVMX WalletError for request {req_id}, tx {tx_id}"
-                )),
-            ),
-            OutgoingBitVMXApiMessages::WalletNotReady(req_id) => (
-                req_id,
-                StepData::WalletError(format!("BitVMX WalletNotReady for request {req_id}")),
-            ),
-            OutgoingBitVMXApiMessages::AggregatedPubkeyNotReady(req_id) => (
-                req_id,
-                StepData::WalletError(format!(
-                    "BitVMX cannot aggregate dispute keys for request {req_id}"
-                )),
-            ),
+            OutgoingBitVMXApiMessages::WalletError(req_id, tx_id) => {
+                bail!("BitVMX WalletError for request {req_id}, tx {tx_id}")
+            }
+            OutgoingBitVMXApiMessages::WalletNotReady(req_id) => {
+                bail!("BitVMX WalletNotReady for request {req_id}")
+            }
             // events that do not trigger a flow step are handled here.
             OutgoingBitVMXApiMessages::Pong() => return Ok(()), // ignored
             _ => {
                 trace!("Ignoring BitVMX event: {}", type_name_of_val(event));
-
                 return Ok(());
             }
         };
