@@ -4,9 +4,9 @@ use anyhow::Result;
 use clap::{CommandFactory, Parser};
 use key_manager;
 use key_manager::key_manager::KeyManager;
-use std::io::Write;
+use rustyline::DefaultEditor;
+use rustyline::error::ReadlineError;
 use std::path::PathBuf;
-use tokio::io::{self, AsyncBufReadExt, BufReader};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -50,7 +50,7 @@ async fn main() -> Result<()> {
         .await
         .expect("Could not set up provider");
 
-    let mut lines = BufReader::new(io::stdin()).lines();
+    let mut rl = DefaultEditor::new()?;
 
     println!("Connected to Blockchain @ {}", ws.url().to_string());
     let events_executor = events::Executor::new(anvil_provider, ws.url()).await?;
@@ -58,14 +58,32 @@ async fn main() -> Result<()> {
     print_help()?;
 
     loop {
-        println!();
-        print!("> ");
-        std::io::stdout().flush().expect("Failed to flush stdout");
+        let readline = rl.readline("\n> ");
 
-        let line = match lines.next_line().await? {
-            Some(l) => l.trim().to_string(),
-            None => break, // EOF
+        let line = match readline {
+            Ok(line) => {
+                rl.add_history_entry(&line)?;
+                line.trim().to_string()
+            }
+            Err(ReadlineError::Interrupted) => {
+                // ctrl-c
+                println!("CTRL-C");
+                break;
+            }
+            Err(ReadlineError::Eof) => {
+                // ctrl-d
+                println!("CTRL-D");
+                break;
+            }
+            Err(err) => {
+                eprintln!("Error: {:?}", err);
+                break;
+            }
         };
+
+        if line.is_empty() {
+            continue;
+        }
 
         // build argv: program name + words of the line
         let argv = std::iter::once("app")

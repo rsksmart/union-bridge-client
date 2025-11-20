@@ -368,9 +368,7 @@ information on how to build and run the client using Docker.
 Optionally, you can run `./run-mocking.sh` in another terminal before starting the clients with `./cli-run.sh`. This
 will:
 
-- spin up a mocked BitVMX client
-- spin up an anvil node to simulate the Rootstock blockchain
-- deploy the BitVMX Union Bridge contracts on the anvil node
+- deploy fake contracts with useful methods for testing (eg. advance funds flow)
 
 ### Individual Crates using Cargo
 
