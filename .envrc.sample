@@ -25,7 +25,7 @@ export BASE_STORAGE_PATH="<path/to/your/storage>"
 # for transaction dispatcher
 export KEY_STORE_PASSWORD="<super-secret-password>"
 # optional (with fallback)
-export CHECK_FORK_REQUIRED_NUM_BLOCKS=25
+export CHECK_FORK_REQUIRED_NUM_BLOCKS=5
 
 ############################################################
 # Bitcoin
