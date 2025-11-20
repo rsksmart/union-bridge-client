@@ -13,10 +13,7 @@ config/qa-coordinator
 **/.db
 **/.union-bridge-contracts
 **/.llmignore
-qa-tools/reports/**
-qa-tools/test_keystore/**
 test_keystore
-qa-tools/coordinator/node_modules
 *.log
 docker-integrated/docker-bitvmx
 docker-integrated/union-bridge-client

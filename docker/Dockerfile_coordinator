@@ -16,7 +16,7 @@
 #
 ## copy only dependency files for better caching
 #COPY Cargo.toml ./
-#COPY Cargo.lock ./
+#COPY Cargo.lock_old ./
 #
 ## TODO create crates folder and move crates there, so we can copy it instead of the individual crates
 ## copy workspace members:

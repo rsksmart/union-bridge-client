@@ -1,11 +1,13 @@
 use check_fork::CheckForkArgs;
+
+use check_fork_tester::get_blocks;
 use clap::Parser;
 use methods::{CHECK_FORK_GUEST_ID, CHECK_FORK_GUEST_PATH};
 use primitive_types::U256;
 use std::error::Error;
 use zkvm_cli_serde::serialize_guest_input;
+
 // use zkvm_host::prove_stark_no_cli;
-use qa_tools_check_fork::{FIXTURES_BASE_DIR, get_blocks, get_blocks_from_fixture};
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -16,10 +18,6 @@ struct Args {
     //
     // Fetch parameters
     //
-
-    // Use a fixture file instead of fetching blocks
-    #[arg(short = 'f', long = "fixture")]
-    fixture: Option<String>,
 
     // Adds a bridge event to the first block
     #[arg(short = 'g', long = "bridge-event", action = clap::ArgAction::Set, default_value_t = true)]
@@ -62,23 +60,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let log_super_block = cli_args.operation == "sb";
 
-    let blocks = match &cli_args.fixture {
-        Some(path) => {
-            let fixture_path = format!("{}/{}.json", FIXTURES_BASE_DIR, path);
-            let json = std::fs::read_to_string(fixture_path)?;
-            get_blocks_from_fixture(json, cli_args.bridge_event)?
-        }
-
-        None => {
-            get_blocks(
-                cli_args.fetch_start_block,
-                cli_args.fetch_block_count,
-                log_super_block,
-                cli_args.bridge_event,
-            )
-            .await?
-        }
-    };
+    let blocks = get_blocks(
+        cli_args.fetch_start_block,
+        cli_args.fetch_block_count,
+        log_super_block,
+        cli_args.bridge_event,
+    )
+    .await?;
 
     let check_fork_args = CheckForkArgs {
         utxo_id: "FAKE_UTXO_ID".to_string(),         // tmp

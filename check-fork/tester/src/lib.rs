@@ -12,7 +12,6 @@ use std::string::ToString;
 const RSK_RPC_URL: &str = "https://public-node.rsk.co";
 
 const SUPERBLOCK_THRESHOLD_FACTOR: u64 = 20;
-pub const FIXTURES_BASE_DIR: &str = "check-fork/fixtures";
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct RskBlock {
@@ -36,9 +35,9 @@ struct RskBlock {
         deserialize_with = "parse_bitcoin_header_to_pow"
     )]
     pow: H256,
-    bridge_event: Option<BridgeEvent>, // TODO(Jira) implement: https://rsklabs.atlassian.net/browse/UB-3
+    bridge_event: Option<BridgeEvent>,
     #[serde(default)]
-    uncles: Vec<RskBlock>, // TODO(Jira) test with some: https://rsklabs.atlassian.net/browse/UB-16
+    uncles: Vec<RskBlock>,
 }
 
 impl From<&RskBlock> for Block {
@@ -50,8 +49,8 @@ impl From<&RskBlock> for Block {
             difficulty: rsk_block.difficulty,
             timestamp: rsk_block.timestamp,
             pow: rsk_block.pow,
-            bridge_event: rsk_block.bridge_event.clone(), // TODO(Jira) implement: https://rsklabs.atlassian.net/browse/UB-3
-            uncles: rsk_block.uncles.iter().map(Block::from).collect(), // TODO(Jira) test with some: https://rsklabs.atlassian.net/browse/UB-16
+            bridge_event: rsk_block.bridge_event.clone(),
+            uncles: rsk_block.uncles.iter().map(Block::from).collect(),
         }
     }
 }
@@ -103,7 +102,6 @@ pub async fn get_blocks(
 
     // // Write blocks to the output file
     // let serialized_blocks = serde_json::to_string(&blocks)?;
-    // std::fs::write("fixturefile", serialized_blocks)?;
     if has_bridge_event {
         let result: Vec<Block> = add_bridge_event(&blocks)?;
         Ok(result)
@@ -130,20 +128,6 @@ fn add_bridge_event(blocks: &[RskBlock]) -> Result<Vec<Block>, Box<dyn Error>> {
             input_block
         })
         .collect())
-}
-
-pub fn get_blocks_from_fixture(
-    fixture: String,
-    has_bridge_event: bool,
-) -> Result<Vec<Block>, Box<dyn Error>> {
-    let blocks: Vec<RskBlock> = serde_json::from_str(&fixture)?;
-    if has_bridge_event {
-        let result: Vec<Block> = add_bridge_event(&blocks)?;
-        Ok(result)
-    } else {
-        let result: Vec<Block> = blocks.iter().map(|b| Block::from(b)).collect();
-        Ok(result)
-    }
 }
 
 fn log_if_superblock(block: &RskBlock) -> Result<(), Box<dyn Error>> {

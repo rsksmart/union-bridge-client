@@ -149,7 +149,8 @@ the Union Client) are:
   unlock the corresponding keystore files when running the client (see [Multi Client Setup](#Multi-Client-Setup) below)
 - `BASE_STORAGE_PATH`: base path where the client will store its data (databases, keystore files, etc.). Pick a path
   that is writable and accessible by the user running the client.
-- `WALLET_PRIVATE_KEY`: a Bitcoin private key WIF. You can generate one via the `bitcoin-wallet` with `generate_address`.
+- `WALLET_PRIVATE_KEY`: a Bitcoin private key WIF. You can generate one via the `bitcoin-wallet` with
+  `generate_address`.
   See [bitcoin-wallet README](cli/bitcoin-wallet/README.md) for more info.
 
 We recommend using `direnv` to manage private environment variables. Then you can set them up by:
@@ -162,7 +163,8 @@ This will automatically load the environment variables defined in the `.envrc` o
 
 ### Multi Client Setup
 
-The Multi Client setup is mostly automated using the `cli-operations.sh` tool. You need to complete a few manual steps first.
+The Multi Client setup is mostly automated using the `cli-operations.sh` tool. You need to complete a few manual steps
+first.
 
 #### Creating the base directory
 
@@ -196,13 +198,15 @@ committeeMemberCount = 4;
 
 Then you should deploy the contracts, and you can use the operations CLI for the rest of the setup.
 
-**Note:** The `committeeMemberCount` value should always match the number of clients you intend to run (currently hardcoded to 4 in the CLI).
+**Note:** The `committeeMemberCount` value should always match the number of clients you intend to run (currently
+hardcoded to 4 in the CLI).
 
 #### Wallet and Committee Setup
 
 **1. Create Wallets (first time only)**
 
-Creates Rootstock wallets for 4 operators. Each operator gets **two wallets**: one for member operations and one for user operations (8 wallets total).
+Creates Rootstock wallets for 4 operators. Each operator gets **two wallets**: one for member operations and one for
+user operations (8 wallets total).
 
 This is required for the **Transaction Dispatcher** to sign and send transactions to Rootstock.
 
@@ -226,7 +230,8 @@ Applies all 4 operators to a stream to form the committee. The clients must be r
 ./cli-operations.sh operator apply-stream -s 1
 ```
 
-**Note:** Each Rootstock event in the flow requires confirmations. With anvil auto-mining, this happens automatically. Otherwise, manually mine blocks with `cast rpc anvil_mine N`.
+**Note:** Each Rootstock event in the flow requires confirmations. With anvil auto-mining, this happens automatically.
+Otherwise, manually mine blocks with `cast rpc anvil_mine N`.
 
 ## CLI Tools
 
@@ -314,7 +319,8 @@ bash ./shell/script/deploy/deploy-local.sh
 
 #### Automated Happy Path Test
 
-Once you have the setup running (steps 1-3 above), you can run a fully automated end-to-end test that exercises the complete flow:
+Once you have the setup running (steps 1-3 above), you can run a fully automated end-to-end test that exercises the
+complete flow:
 
 ```bash
 # Prerequisites:
@@ -329,6 +335,7 @@ bash tests/run-happy-path.sh
 ```
 
 This test will automatically:
+
 1. Prepare wallets (clear databases, mine initial UTXOs)
 2. Fund operator wallets (Bitcoin + Rootstock)
 3. Apply operators to stream
@@ -340,7 +347,8 @@ The test includes background block mining and comprehensive health checks to det
 
 #### Troubleshooting
 
-- **Port Conflicts**: Each client uses unique ports defined in `multiclient.env`. Check this file if you encounter port issues.
+- **Port Conflicts**: Each client uses unique ports defined in `multiclient.env`. Check this file if you encounter port
+  issues.
 - **Wallet Issues**: Re-fund wallets with `./cli-operations.sh operator fund` if needed
 - **Process Cleanup**: If services fail to start due to port conflicts or corrupt database, run:
   ```bash
@@ -357,7 +365,8 @@ information on how to build and run the client using Docker.
 
 ### Development/Testing Setup
 
-Optionally, you can run `./run-mocking.sh` in another terminal before starting the clients with `./cli-run.sh`. This will:
+Optionally, you can run `./run-mocking.sh` in another terminal before starting the clients with `./cli-run.sh`. This
+will:
 
 - spin up a mocked BitVMX client
 - spin up an anvil node to simulate the Rootstock blockchain
@@ -365,7 +374,8 @@ Optionally, you can run `./run-mocking.sh` in another terminal before starting t
 
 ### Individual Crates using Cargo
 
-Alternatively, you can run every crate individually. Check the `cli/run/src/main.rs` file for the cargo commands used to launch each service.
+Alternatively, you can run every crate individually. Check the `cli/run/src/main.rs` file for the cargo commands used to
+launch each service.
 
 ## Configuration Files
 
@@ -416,7 +426,8 @@ configuration files.
 
 ## Rootstock Wallet creation (manual)
 
-This is automated in the `cli-operations.sh setup create-rootstock-wallets` command, but if you want to create a wallet manually, you can use the `key-manager` crate for that.
+This is automated in the `cli-operations.sh setup create-rootstock-wallets` command, but if you want to create a wallet
+manually, you can use the `key-manager` crate for that.
 
 ```
 cd key-manager
@@ -440,10 +451,12 @@ cd key-manager
 cargo run derive-public-data -p <YOUR_PASSWORD> -k <PATH_TO_FILE>
 ```
 
-## QA-tools/Generate ELF Demo
+## CheckFork Tester - Generate ELF Demo
 
 This utility shows how to generate the input for the _CheckFork_ function and its Stark Proof. Its purpose is just to
-serve as reference for the integration of the new Client with _CheckFork_ and the ZKVM CLI. To be determined how.
+serve as a reference for the integration of the new Client with _CheckFork_ and the ZKVM CLI. In a real scenario, we
+won't use the CLI but a programmatic approach via BitVMX Api (see `IncomingBitVMXApiMessages::GenerateZKP` usages in
+Coordinator crate).
 
 ### 1) Generate `check_fork_args.bin` (input to the CheckFork function)
 
@@ -451,32 +464,32 @@ This is the input to the _CheckFork_ function that will be executed by the `zkvm
 generate it run:
 
 ```bash
-cd qa-tools/check-fork
-cargo run --bin check_fork_runner -- -o elf
+cd check-fork/tester
+cargo run --bin check-fork-tester -- -o elf
 ```
 
-Some instructions on how to use this file and other parameters will be printed to the console. Example:
+Some instructions on how to use this file and other parameters will be printed in the console. Example:
 
 ```
 CLI Args { operation: "elf", fixture: None, bridge_event: true, fetch_start_block: 6883222, fetch_block_count: 100, cf_required_blocks: 100, cf_required_effort: 4886718345, cf_init_block: 6883221, cf_init_timestamp: 1701129600 }
-CheckForkArgs serialized to file: /path/to/repo/union-bridge-client/qa-tools/check_fork_args.bin. Total time: 3.741667ms
+CheckForkArgs serialized to file: /Users/illuque/workspace/union-bridge/union-bridge-client/check-fork/tester/check_fork_args.bin. Total time: 1.79725ms
 GetBlocks executed and CheckForkArgs generated. Relevant parameters for the interaction with the ZKVM CLI:
-    - input: /path/to/repo/union-bridge-client/qa-tools/check_fork_args.bin
-    - elf: /path/to/repo/union-bridge-client/qa-tools/target/riscv-guest/methods/check-fork-guest/riscv32im-risc0-zkvm-elf/release/check-fork-guest.bin
-    - image_id: c24b36840af78835ddca7eb7ddc933d2b1bcc01656133b2c110b42102fc71f3c
+    - input: /Users/illuque/workspace/union-bridge/union-bridge-client/check-fork/tester/check_fork_args.bin
+    - elf: /Users/illuque/workspace/union-bridge/union-bridge-client/target/riscv-guest/check-fork-zkp/check-fork-guest/riscv32im-risc0-zkvm-elf/release/check-fork-guest.bin
+    - image_id: 18a4bad2542ac900b0681125ac38385d03139104e535590b67c473ac5465c078
 
 ```
 
 ### 2) Generate the Stark Proof
 
 With the previous output, we can now generate the Stark Proof
-Clone Fairgate's [ZK Proof](https://github.com/FairgateLabs/rust-bitvmx-zk-proof/) repo, for now at
-`poc-generalise-host` branch.
+Clone Fairgate's [ZK Proof](https://github.com/FairgateLabs/rust-bitvmx-zk-proof/) repo or use Workspace one - main
+branch works ATM.
 
 Then run the following command where:
 
 ```bash
-cargo run --release --bin host -- prove-stark --input /Users/illuque/workspace/rootstock/union_bridge/union-bridge-client/util/check-fork-demo.old/check_fork_args.bin --elf /Users/illuque/workspace/rootstock/union_bridge/union-bridge-client/target/riscv-guest/zkvm_guest/check_fork_guest/riscv32im-risc0-zkvm-elf/release/check_fork_guest --output stark-proof.bin
+cargo run --release --bin host -- prove-stark --input /Users/illuque/workspace/union-bridge/union-bridge-client/check-fork/tester/check_fork_args.bin --elf /Users/illuque/workspace/union-bridge/union-bridge-client/target/riscv-guest/check-fork-zkp/check-fork-guest/riscv32im-risc0-zkvm-elf/release/check-fork-guest.bin --output stark-proof.bin
 ```
 
 An output like the following will be printed, showing _CheckFork_ execution result and the path to the resulting stark

@@ -46,7 +46,6 @@ jobs:
           --sarif \
           --output=semgrep.sarif \
           --verbose \
-          --exclude qa-tools \
           --exclude user-api \
           --exclude actors-mocking \
           --exclude bitcoin-wallet \
