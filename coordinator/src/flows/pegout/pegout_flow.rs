@@ -544,6 +544,10 @@ where
     pub fn current_step(&self) -> Steps {
         self.state.step
     }
+
+    pub fn pegout_requested(&self) -> &PegoutRequested {
+        &self.state.pegout_requested
+    }
 }
 
 /// Helper function to format step names

@@ -19,6 +19,7 @@ use crate::{
     },
 };
 
+use alloy_primitives::FixedBytes;
 use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::Txid;
 use common::{
@@ -30,7 +31,7 @@ use common::{
         broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi},
     },
     runtime_sync::RuntimeSync,
-    types::{BlockNumber, CommitteeId, RskBlockAndUncles},
+    types::{BlockNumber, CommitteeId, Hash256, RskBlockAndUncles},
 };
 use log::{debug, error, info, trace, warn};
 use sha2::{Digest, Sha256};
@@ -266,8 +267,19 @@ where
                         anyhow!("PeginAcceptedMessage not found for flow_id: {}.", flow_id)
                     })?;
 
-                let register_input =
-                    RegisterSignaturesBitVmxData::try_from(pegin_accepted.clone())?;
+                // Note: v0.2.0 contracts - initSignatures is called with acceptPeginTxid (the transaction ID),
+                // not the signatureHash. So we must use acceptPeginTxid for addMemberNonce.
+                let accept_pegin_txid = flow
+                    .get_accept_pegin_txid()
+                    .ok_or_else(|| anyhow!("acceptPeginTxid not found for flow_id: {}", flow_id))?;
+                let hash_to_sign = Hash256::from(FixedBytes::from(
+                    common::types::TxIdParser::txid_to_fb_32(accept_pegin_txid),
+                ));
+                let register_input = RegisterSignaturesBitVmxData {
+                    hash_to_sign,
+                    nonce: pegin_accepted.accept_pegin_nonce.clone(),
+                    signature: pegin_accepted.accept_pegin_signature.clone(),
+                };
 
                 let mut btc_sig_subflow = self.btc_sig_subflow_factory.create_flow(flow_id);
                 btc_sig_subflow.start_signature_flow(flow_id, &register_input)?;
