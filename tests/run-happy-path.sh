@@ -205,14 +205,11 @@ log "Allowing time (blocks) for BitVMX to detect confirmed transactions..."
 wait_for_bitcoin_blocks 6
 echo ""
 
-# Set CLI_ENV for subsequent commands
-CLI_ENV="$SCRIPT_ENV"
-
 # step 2: apply operators
 step "Step 2: Apply Operators to Stream"
-log "Command: bash cli-operations.sh operator apply-stream -s $STREAM_ID --env $CLI_ENV"
+log "Command: bash cli-operations.sh operator apply-stream -s $STREAM_ID --env $SCRIPT_ENV"
 echo ""
-if ! bash cli-operations.sh operator apply-stream -s $STREAM_ID --env "$CLI_ENV" > /tmp/apply-operators-$$ 2>&1; then
+if ! bash cli-operations.sh operator apply-stream -s $STREAM_ID --env "$SCRIPT_ENV" > /tmp/apply-operators-$$ 2>&1; then
     warn "Command failed! Output:"
     cat /tmp/apply-operators-$$
     rm -f /tmp/apply-operators-$$
@@ -229,9 +226,9 @@ step "Step 3: Request Pegin"
 log "RSK Address: $RSK_ADDRESS"
 log "Amount: $VALUE sats"
 log "Packet: $PACKET_NUMBER"
-log "Command: bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -p $PACKET_NUMBER --env $CLI_ENV --execute"
+log "Command: bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -p $PACKET_NUMBER --env $SCRIPT_ENV --execute"
 echo ""
-if ! bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -p $PACKET_NUMBER --env "$CLI_ENV" --execute; then
+if ! bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -p $PACKET_NUMBER --env "$SCRIPT_ENV" --execute; then
     warn "Command failed!"
     exit 1
 fi
@@ -242,14 +239,14 @@ echo ""
 
 # step 4: request pegout
 step "Step 4: Request Pegout"
-log "Command: bash cli-operations.sh user pegout -v $VALUE --env $CLI_ENV"
+log "Command: bash cli-operations.sh user pegout -v $VALUE --env $SCRIPT_ENV"
 log "Amount: $VALUE sats"
 echo ""
 
 # capture current time (with margin for clock differences)
 PEGOUT_START_TIME=$(date +%s)
 
-if ! bash cli-operations.sh user pegout -v $VALUE --env "$CLI_ENV" > /tmp/pegout-$$ 2>&1; then
+if ! bash cli-operations.sh user pegout -v $VALUE --env "$SCRIPT_ENV" > /tmp/pegout-$$ 2>&1; then
     warn "Command failed! Output:"
     cat /tmp/pegout-$$
     rm -f /tmp/pegout-$$
