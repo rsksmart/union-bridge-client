@@ -336,22 +336,7 @@ where
                 Ok(Steps::PeginRequested)
             }
             (Steps::PeginRequested, StepData::PeginRequested(pegin_requested)) => {
-                // Migrate to official flow ID when PeginRequested is received
-                let committee_id: CommitteeId = pegin_requested.committeeId.try_into()?;
-                let committee_uuid: Uuid = Uuid::from_u128(*committee_id);
-                let official_flow_id = get_accept_pegin_pid(
-                    committee_uuid,
-                    pegin_requested.streamPosition.slotId as usize,
-                )?;
-
-                // Update flow context with official ID and PeginRequested data
-                self.state.ctx.official_flow_id = Some(official_flow_id);
-                self.state.ctx.pegin_requested = Some(pegin_requested.clone());
-                self.state.flow_id = official_flow_id;
-
-                // Persist with new official ID
-                self.persist_state()?;
-
+                self.migrate_to_official_flow_id(pegin_requested)?;
                 Ok(Steps::GetCommInfo)
             }
             (Steps::GetCommInfo, StepData::CommInfo(comm_info)) => {
@@ -569,6 +554,28 @@ where
             btc_tx_id
         );
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetSPVProof(btc_tx_id))?;
+        Ok(())
+    }
+
+    fn migrate_to_official_flow_id(&mut self, pegin_requested: &PeginRequested) -> Result<()> {
+        // Calculate official flow ID from committee and slot information
+        let committee_id: CommitteeId = pegin_requested.committeeId.try_into()?;
+        let committee_uuid: Uuid = Uuid::from_u128(*committee_id);
+        let official_flow_id = get_accept_pegin_pid(
+            committee_uuid,
+            pegin_requested.streamPosition.slotId as usize,
+        )?;
+
+        info!(
+            "Migrating flow from temp ID {} to official ID {}",
+            self.state.flow_id, official_flow_id
+        );
+
+        // Update flow context with official ID and PeginRequested data
+        self.state.ctx.official_flow_id = Some(official_flow_id);
+        self.state.ctx.pegin_requested = Some(pegin_requested.clone());
+        self.state.flow_id = official_flow_id;
+
         Ok(())
     }
 
