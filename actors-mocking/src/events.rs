@@ -1,28 +1,21 @@
 use crate::fake_contracts::FakePegManager;
 use crate::fake_contracts::FakePegManager::FakePegManagerInstance;
 use alloy_eips::BlockNumberOrTag;
-use alloy_primitives::{Address, U256};
+use alloy_primitives::U256;
 use alloy_provider::Provider;
 use anyhow::{Context, Result, anyhow};
 use common::types::BlockPow;
 use std::env;
-use std::io::{BufRead, BufReader};
-use std::process::{Command, Stdio};
 use std::time::SystemTime;
-use union_contracts::bindings::peg_manager::PegManager::PegManagerInstance;
 
 pub struct Executor<P: Provider> {
     provider: P,
-    #[allow(dead_code)]
-    real_peg_manager: Option<PegManagerInstance<P>>, // TODO use it to call methods from CLI if we want
     fake_peg_manager: FakePegManagerInstance<P>,
 }
 
 impl<P: Provider + Clone> Executor<P> {
     pub async fn new(provider: P, provider_url: &str) -> Result<Self> {
         println!("Deploying FakePegManager to {}...", provider_url);
-
-        let real_peg_manager = Self::deploy_real_peg_manager(&provider)?;
 
         // deploy FakePegManager: must go after real PegManager deployment to not affect generated addresses
         let fake_peg_manager = FakePegManager::deploy(provider.clone())
@@ -33,92 +26,8 @@ impl<P: Provider + Clone> Executor<P> {
 
         Ok(Self {
             provider,
-            real_peg_manager: Some(real_peg_manager),
             fake_peg_manager,
         })
-    }
-
-    // TODO check with Pedro if we can improve the deployment via Rust (alloy) directly, not via sh script
-    fn deploy_real_peg_manager(provider: &P) -> Result<PegManagerInstance<P>> {
-        println!("Deploying real PegManager");
-
-        let contracts_path =
-            env::var("UNION_CONTRACTS_PATH").context("UNION_CONTRACTS_PATH not set")?;
-        let deploy_script = env::var("UNION_CONTRACTS_DEPLOY_SCRIPT")
-            .context("UNION_CONTRACTS_DEPLOY_SCRIPT not set")?;
-        let setup_script = env::var("UNION_CONTRACTS_SETUP_SCRIPT")
-            .context("UNION_CONTRACTS_SETUP_SCRIPT not set")?;
-
-        // Run deployment script
-        let output_lines = Self::run_script(&contracts_path, &deploy_script)
-            .context("Failed to execute deploy script")?;
-
-        // Find PegManager address in deploy script output
-        let peg_manager_address = output_lines
-            .iter()
-            .find_map(|line| Self::try_get_real_contract_address(line.clone(), "PegManager"))
-            .ok_or_else(|| anyhow!("PegManager address not found in output"))?
-            .parse::<Address>()?;
-
-        println!("Real PegManager deployed at {}", peg_manager_address);
-
-        // Find SignatureManager address in deploy script output
-        let signature_manager_address = output_lines
-            .iter()
-            .find_map(|line| Self::try_get_real_contract_address(line.clone(), "SignatureManager"))
-            .ok_or_else(|| anyhow!("SignatureManager address not found in output"))?
-            .parse::<Address>()?;
-
-        println!(
-            "Real SignatureManager deployed at {}",
-            signature_manager_address
-        );
-
-        // Find CommitteeRegistry address in deploy script output
-        let committee_registry_address = output_lines
-            .iter()
-            .find_map(|line| Self::try_get_real_contract_address(line.clone(), "CommitteeRegistry"))
-            .ok_or_else(|| anyhow!("CommitteeRegistry address not found in output"))?
-            .parse::<Address>()?;
-
-        println!(
-            "Real CommitteeRegistry deployed at {}",
-            committee_registry_address
-        );
-
-        // Run setup script
-        println!("Running setup script...");
-        Self::run_script(&contracts_path, &setup_script)
-            .context("Failed to execute setup script")?;
-
-        Ok(PegManagerInstance::new(
-            peg_manager_address,
-            provider.clone(),
-        ))
-    }
-
-    fn run_script(contracts_path: &str, script_path: &str) -> Result<Vec<String>> {
-        let script_full_path = format!("{}/{}", contracts_path, script_path);
-
-        let mut child = Command::new("bash")
-            .current_dir(contracts_path)
-            .arg(script_full_path)
-            .stdout(Stdio::piped())
-            .spawn()
-            .with_context(|| format!("Failed to spawn script: {}", script_path))?;
-
-        let stdout = child.stdout.take().context("Failed to capture stdout")?;
-        let reader = BufReader::new(stdout);
-
-        let mut output_lines = Vec::new();
-        for line_res in reader.lines() {
-            let line = line_res.context("Failed to read line from script output")?;
-            println!("{}", line);
-            output_lines.push(line);
-        }
-
-        child.wait().context("Failed to wait for script")?;
-        Ok(output_lines)
     }
 
     pub async fn request_advance_funds(&self) -> Result<()> {
@@ -206,18 +115,5 @@ impl<P: Provider + Clone> Executor<P> {
     #[cfg(not(feature = "anvil"))]
     fn get_effort() -> BlockPow {
         panic!("This crate should be used with 'anvil' feature enabled");
-    }
-
-    fn try_get_real_contract_address(line: String, contract_name: &str) -> Option<String> {
-        let pat = format!("{contract_name}.sol  address");
-        if line.contains(pat.as_str()) {
-            // Expect format: "...PegManager.sol  address:  0x..."
-            let parts: Vec<&str> = line.split("address:").collect();
-            if parts.len() == 2 {
-                let address = parts[1].trim().to_string();
-                return Some(address);
-            }
-        }
-        None
     }
 }
