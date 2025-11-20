@@ -28,7 +28,7 @@
 #COPY check-fork check-fork
 #COPY coordinator coordinator
 #COPY user-api user-api
-#COPY actors-mocking actors-mocking
+#COPY cli/mocks cli/mocks
 #
 ## SSH mount for private repos
 #RUN --mount=type=ssh,id=default mkdir -p .cargo && \

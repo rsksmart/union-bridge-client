@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 check-fork = { path = "../check-fork" }
 common = { path = "../common" }
-actors-mocking = { path = "../actors-mocking" }
+mocks = { path = "../cli/mocks" }
 check-fork-zkp = { path = "../check-fork/zkp", optional = true }
 transaction-dispatcher = { path = "../transaction-dispatcher", features = ["types"] }
 

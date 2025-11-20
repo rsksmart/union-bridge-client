@@ -21,10 +21,10 @@ pub(crate) use crate::contracts::interactions::request_pegin;
 pub(crate) use crate::contracts::interactions::request_pegout;
 
 use crate::rsk_gateway::DomainErrors;
-use actors_mocking::fake_contracts::FakePegManager;
-use actors_mocking::fake_contracts::FakePegManager::FakePegManagerInstance;
 #[cfg(test)]
 use mockall::automock;
+use mocks::fake_contracts::FakePegManager;
+use mocks::fake_contracts::FakePegManager::FakePegManagerInstance;
 
 #[cfg_attr(test, automock)]
 pub trait PegManagerContractApi {

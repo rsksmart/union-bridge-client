@@ -375,7 +375,6 @@ mod tests {
     use crate::coordinator::tests::MockRskContractsGatewayApi;
     use crate::flows::advance_funds::tests::create_fake_block;
     use crate::types::EventWithBlock;
-    use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
     use alloy_primitives::U256 as AlloyU256;
     use common::msg_broker::bitvmx_types::OutgoingBitVMXApiMessages;
     use common::msg_broker::broker::MockBrokerClientApi;
@@ -383,6 +382,7 @@ mod tests {
     use common::types::TxHash;
     use common::types::{BlockHash, RskBlock};
     use mockall::predicate::{eq, function};
+    use mocks::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
     use primitive_types::{H256, U256};
 
     fn create_fake_request_event(pegout_id: &str) -> RequestAdvanceFunds {

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["run", "operations", "bitcoin-wallet"]
+members = ["run", "operations", "bitcoin-wallet", "mocks"]
 
 [workspace.dependencies]
 anyhow = "1.0.94"
@@ -15,4 +15,3 @@ key-manager = { path = "../key-manager" }
 [workspace.dependencies.tokio]
 version = "1"
 features = ["rt-multi-thread", "macros", "signal", "sync", "time"]
-

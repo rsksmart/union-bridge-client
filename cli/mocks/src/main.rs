@@ -1,9 +1,9 @@
-use actors_mocking::events;
 use alloy_provider::{ProviderBuilder, WsConnect, network::EthereumWallet};
 use anyhow::Result;
 use clap::{CommandFactory, Parser};
 use key_manager;
 use key_manager::key_manager::KeyManager;
+use mocks::events;
 use rustyline::DefaultEditor;
 use rustyline::error::ReadlineError;
 use std::path::PathBuf;
@@ -11,21 +11,28 @@ use std::path::PathBuf;
 #[derive(Debug, Parser)]
 #[command(
     name = "Mock Union Bridge Contracts and BitVMX Client",
-    about = "This CLI allows us to emit mocked Union Bridge contract events (invoking mocked UB Contracts) and to emulate BitVMX client requests to the Union Client",
+    about = "This CLI allows us to emit mocked Union Bridge contract events (invoking mocked UB Contracts)",
     arg_required_else_help = true
 )]
 enum Menu {
+    /// exit the CLI
     Exit,
 
-    //
-    // Emit mocked Union Bridge contract events (by invoking mocked UB Contracts)
-    //
-    #[command(visible_alias = "raf")]
+    /// emits RequestAdvanceFunds event, which triggers coordinator to start monitoring blocks for advance funds event
+    #[command(
+        visible_alias = "raf",
+        about = "start monitoring blocks for advance funds (emits RequestAdvanceFunds event)"
+    )]
     InvokeRequestAdvanceFunds,
 
-    #[command(visible_alias = "kaf")]
+    /// generate a fake advance-funds event that triggers the advance_funds_processor flow
+    #[command(
+        visible_alias = "kaf",
+        about = "generate a fake advance-funds event",
+        long_about = "generate a fake advance-funds event that triggers the advance_funds_processor flow\n\nUsage: kaf <PEGOUT_ID>"
+    )]
     InvokeAdvanceFunds {
-        #[arg(help = "The ID of the pegout")]
+        #[arg(help = "the ID of the pegout to advance funds for")]
         pegout_id: String,
     },
 }
@@ -116,8 +123,37 @@ async fn main() -> Result<()> {
 }
 
 fn print_help() -> Result<()> {
-    Menu::command().print_help()?;
-    println!();
+    let mut cmd = Menu::command();
+
+    // print main header
+    println!("{}", cmd.get_name());
+    if let Some(about) = cmd.get_about() {
+        println!("{}\n", about);
+    }
+
+    println!("Commands:");
+
+    // iterate through subcommands and print with usage
+    for subcommand in cmd.get_subcommands() {
+        // get the usage string from clap
+        let usage = subcommand.clone().render_usage().to_string();
+
+        // extract just the command part (remove "Usage: " prefix if present)
+        let usage_line = usage
+            .strip_prefix("Usage: ")
+            .unwrap_or(&usage)
+            .split('\n')
+            .next()
+            .unwrap_or(&usage);
+
+        println!("  {}", usage_line);
+
+        if let Some(about) = subcommand.get_about() {
+            println!("      {}", about);
+        }
+        println!();
+    }
+
     println!("Ctrl+C or `exit` to quit the service (and anvil)");
     println!(
         "If attached in Docker, use [Ctrl + P, then Ctrl + Q] to detach without stopping the container"

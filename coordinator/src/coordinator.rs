@@ -318,7 +318,6 @@ pub(crate) mod tests {
         store::MockCoordinatorStoreApi,
         types::{AdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents},
     };
-    use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
     use alloy_primitives::U256;
     use common::{
         msg_broker::{
@@ -334,6 +333,7 @@ pub(crate) mod tests {
     };
     use mockall::mock;
     use mockall::predicate::{always, eq, function};
+    use mocks::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
     use primitive_types::H256;
     use std::{
         thread::{self, JoinHandle, sleep},

@@ -245,8 +245,8 @@ impl CheckForkAccumulator {
 mod tests {
     use super::*;
     use crate::flows::advance_funds::tests::create_fake_block;
-    use actors_mocking::fake_contracts::FakePegManager::AdvanceFunds;
     use common::types::{BlockHash, BlockNumber, RskBlockAndUncles, TxHash};
+    use mocks::fake_contracts::FakePegManager::AdvanceFunds;
     use primitive_types::H256;
 
     fn create_fake_advance_funds_event(

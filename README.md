@@ -365,10 +365,13 @@ information on how to build and run the client using Docker.
 
 ### Development/Testing Setup
 
-Optionally, you can run `./run-mocking.sh` in another terminal before starting the clients with `./cli-run.sh`. This
+Optionally, you can run `./cli-mocking.sh` in another terminal before starting the clients with `./cli-run.sh`. This
 will:
 
-- deploy fake contracts with useful methods for testing (eg. advance funds flow)
+#### Mocking Advance Funds Events
+(check cli help for more info)
+- `raf` or `invoke-request-advance-funds`
+- `kaf` or `invoke-advance-funds`
 
 ### Individual Crates using Cargo
 
