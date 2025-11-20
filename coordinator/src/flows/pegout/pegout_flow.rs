@@ -213,6 +213,10 @@ where
                 info!("PegoutFlow {}: Done", self.state.flow_id);
             }
         }
+
+        // Persist state after successful step completion
+        self.persist_state()?;
+
         Ok(())
     }
 
