@@ -287,7 +287,7 @@ mod tests {
             config.contracts[5].address
         );
         assert_eq!(
-            "0x68B1D87F95878fE05B998F19b66F4baba5De1aed",
+            "0x77F3E2396f43cC3160D40A18Fcb9EB6eFBA2AD30",
             config.contracts[6].address
         );
         assert_eq!(

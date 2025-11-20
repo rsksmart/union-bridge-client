@@ -4,12 +4,14 @@ use alloy_sol_types::SolEvent;
 use alloy_sol_types::SolEventInterface;
 use anyhow::anyhow;
 use bitcoin::PublicKey;
+use common::mocks::fake_contracts::FakePegManager::{
+    AdvanceFunds, FakePegManagerEvents, RequestAdvanceFunds,
+};
 use common::msg_broker::bitvmx_types::{
     PartialUtxo, ParticipantRole, PegOutAccepted, PeginAcceptedMessage,
 };
 use common::types::{Address, BlockHash, BlockNumber, Hash256, RskLog, TxHash};
 use log::{info, trace, warn};
-use mocks::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -34,6 +36,7 @@ use anyhow::Result;
 use union_contracts::bindings::bitcoin_manager::BitcoinManager::BitcoinManagerEvents;
 use union_contracts::bindings::member_registry::MemberRegistry::MemberRegistryEvents;
 use union_contracts::bindings::stream_manager::StreamManager::StreamManagerEvents;
+
 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-183
 
 #[derive(Eq, PartialEq, Debug)]
@@ -120,6 +123,10 @@ impl EventDecoder {
         }
 
         // Try each contract event type and use the first successful decode
+        if let Some(event) = self.try_fake_peg_manager_events(&log) {
+            return event;
+        }
+
         if let Some(event) = self.try_peg_manager_events(&log) {
             return event;
         }
@@ -170,6 +177,19 @@ impl EventDecoder {
         let removed = log.info().removed();
         let tx_hash = log.info().tx_hash();
         (parsed_topics, data, block_num, block_hash, removed, tx_hash)
+    }
+
+    fn try_fake_peg_manager_events(&self, log: &RskLog) -> Option<RskPegManagerEvents> {
+        let (parsed_topics, data, block_num, block_hash, removed, tx_hash) =
+            Self::extract_log_fields(log);
+
+        if let Ok(fpm) = FakePegManagerEvents::decode_raw_log(&parsed_topics, &data) {
+            trace!("Decoded FakePegManagerEvents: {:?}", fpm);
+            return Self::convert_fake_peg_manager_event(
+                fpm, block_num, block_hash, removed, tx_hash,
+            );
+        }
+        None
     }
 
     fn try_peg_manager_events(&self, log: &RskLog) -> Option<RskPegManagerEvents> {
@@ -288,6 +308,39 @@ impl EventDecoder {
             }
             _ => {
                 info!("Ignored PegManager event: {:?}", event);
+                Some(RskPegManagerEvents::IgnoredEvent)
+            }
+        }
+    }
+
+    fn convert_fake_peg_manager_event(
+        event: FakePegManagerEvents,
+        block_num: BlockNumber,
+        block_hash: BlockHash,
+        removed: bool,
+        tx_hash: TxHash,
+    ) -> Option<RskPegManagerEvents> {
+        match event {
+            FakePegManagerEvents::RequestAdvanceFunds(inner) => Some(
+                RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFundsEvent {
+                    inner,
+                    block_number: block_num,
+                    block_hash,
+                    removed,
+                    tx_hash,
+                }),
+            ),
+            FakePegManagerEvents::AdvanceFunds(inner) => {
+                Some(RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
+                    inner,
+                    block_number: block_num,
+                    block_hash,
+                    removed,
+                    tx_hash,
+                }))
+            }
+            FakePegManagerEvents::CheckForkComplete(_inner) => {
+                info!("Ignored FakePegManager CheckForkComplete event");
                 Some(RskPegManagerEvents::IgnoredEvent)
             }
         }

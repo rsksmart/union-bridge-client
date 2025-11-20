@@ -1,9 +1,9 @@
-use crate::fake_contracts::FakePegManager;
-use crate::fake_contracts::FakePegManager::FakePegManagerInstance;
 use alloy_eips::BlockNumberOrTag;
 use alloy_primitives::U256;
 use alloy_provider::Provider;
 use anyhow::{Context, Result, anyhow};
+use common::mocks::fake_contracts::FakePegManager;
+use common::mocks::fake_contracts::FakePegManager::FakePegManagerInstance;
 use common::types::BlockPow;
 use std::env;
 use std::time::SystemTime;

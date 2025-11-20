@@ -283,8 +283,13 @@ impl BlockchainView {
     }
 
     #[cfg(test)]
-    pub fn has_observer(&self, id: &String) -> bool {
+    pub fn has_observer(&self, id: &str) -> bool {
         self.observers.borrow().contains_key(id)
+    }
+
+    #[cfg(test)]
+    pub fn is_observed(&self) -> bool {
+        self.observers.borrow().len() > 0
     }
 
     #[cfg(test)]

@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-alloy-contract = "1.0.37"
-alloy-sol-types = "1.4.1"
 alloy-primitives = "1.4.1"
 alloy-provider = "1.0.38"
 alloy-eips = "1.0.38"
+alloy-signer = "1.0.37"
+alloy-signer-local = "1.0.37"
 anyhow = { workspace = true }
 clap = { workspace = true }
 rustyline = "17.0.2"

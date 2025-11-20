@@ -1,12 +1,12 @@
+use alloy_primitives::hex;
 use alloy_provider::{ProviderBuilder, WsConnect, network::EthereumWallet};
+use alloy_signer::k256::ecdsa::SigningKey;
+use alloy_signer_local::LocalSigner;
 use anyhow::Result;
 use clap::{CommandFactory, Parser};
-use key_manager;
-use key_manager::key_manager::KeyManager;
 use mocks::events;
 use rustyline::DefaultEditor;
 use rustyline::error::ReadlineError;
-use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -28,8 +28,7 @@ enum Menu {
     /// generate a fake advance-funds event that triggers the advance_funds_processor flow
     #[command(
         visible_alias = "kaf",
-        about = "generate a fake advance-funds event",
-        long_about = "generate a fake advance-funds event that triggers the advance_funds_processor flow\n\nUsage: kaf <PEGOUT_ID>"
+        about = "generate a fake advance-funds event that triggers the advance_funds_processor flow. Usage: kaf <PEGOUT_ID>"
     )]
     InvokeAdvanceFunds {
         #[arg(help = "the ID of the pegout to advance funds for")]
@@ -39,13 +38,21 @@ enum Menu {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let base_storage_path = std::env::var("BASE_STORAGE_PATH").expect("BASE_STORAGE_PATH not set");
-    let key_path = PathBuf::from(format!(
-        "{}/.union_bridge/keystore/multi-client-1-user",
-        base_storage_path
-    ));
+    // use anvil default account
+    const ANVIL_PRIVATE_KEY: &str =
+        "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 
-    let signer = KeyManager::get_signer(&key_path)?;
+    println!("Using Anvil default signer");
+
+    // decode the hex private key (strip 0x prefix if present)
+    let private_key_hex = ANVIL_PRIVATE_KEY
+        .strip_prefix("0x")
+        .unwrap_or(ANVIL_PRIVATE_KEY);
+    let private_key_bytes = hex::decode(private_key_hex)?;
+
+    // create signing key from private key bytes
+    let signing_key = SigningKey::from_slice(&private_key_bytes)?;
+    let signer = LocalSigner::from_signing_key(signing_key);
 
     let ws = WsConnect::new("ws://127.0.0.1:8545");
 
@@ -123,7 +130,7 @@ async fn main() -> Result<()> {
 }
 
 fn print_help() -> Result<()> {
-    let mut cmd = Menu::command();
+    let cmd = Menu::command();
 
     // print main header
     println!("{}", cmd.get_name());

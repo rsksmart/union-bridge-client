@@ -31,7 +31,6 @@ COPY key-manager key-manager
 COPY check-fork check-fork
 COPY coordinator coordinator
 COPY user-api user-api
-COPY cli/mocks cli/mocks
 
 RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \

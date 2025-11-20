@@ -117,7 +117,7 @@ where
             return;
         }
 
-        let post_advance_funds_blocks: Vec<&RskBlockAndUncles> =
+        let post_advance_funds_blocks: Vec<RskBlockAndUncles> =
             self.chain_view.get_from(event2.block_number);
 
         info!("Init advance funds with {event2:?} and {post_advance_funds_blocks:?}");
@@ -376,13 +376,13 @@ mod tests {
     use crate::flows::advance_funds::tests::create_fake_block;
     use crate::types::EventWithBlock;
     use alloy_primitives::U256 as AlloyU256;
+    use common::mocks::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
     use common::msg_broker::bitvmx_types::OutgoingBitVMXApiMessages;
     use common::msg_broker::broker::MockBrokerClientApi;
     use common::test_utils::rsk_block_generator::create_block_from_template;
     use common::types::TxHash;
     use common::types::{BlockHash, RskBlock};
     use mockall::predicate::{eq, function};
-    use mocks::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
     use primitive_types::{H256, U256};
 
     fn create_fake_request_event(pegout_id: &str) -> RequestAdvanceFunds {
@@ -855,7 +855,7 @@ mod tests {
         assert!(processor.first_block_to_process.is_some());
         assert!(!processor.chain_view.is_empty());
         assert!(processor.chain_view.is_observed());
-        assert!(processor.chain_view.has_observer(pegout_id));
+        assert!(processor.chain_view.has_observer(&pegout_id.to_string()));
 
         let advance_funds_sibling = create_block_from_template(
             advance_funds_block.block(),
@@ -1575,7 +1575,10 @@ mod tests {
 
         for (expected_block, description) in expected_blocks {
             assert_eq!(
-                processor.chain_view.get_at(&expected_block.number()),
+                processor
+                    .chain_view
+                    .get_at(&expected_block.number())
+                    .as_ref(),
                 Some(expected_block),
                 "{} should be present",
                 description
@@ -1740,7 +1743,10 @@ mod tests {
 
         for (expected_block, description) in expected_blocks {
             assert_eq!(
-                processor.chain_view.get_at(&expected_block.number()),
+                processor
+                    .chain_view
+                    .get_at(&expected_block.number())
+                    .as_ref(),
                 Some(expected_block),
                 "{} should be present",
                 description
