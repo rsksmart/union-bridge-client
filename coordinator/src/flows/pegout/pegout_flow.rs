@@ -43,26 +43,6 @@ pub enum Steps {
     Done,
 }
 
-impl Steps {
-    fn persist_step<CG, BC, S>(&self, pegout_flow: &mut PegoutFlow<CG, BC, S>) -> Result<()>
-    where
-        CG: RskContractsGatewayApi,
-        BC: BitVmxBrokerClientApi,
-        S: CoordinatorStoreApi,
-    {
-        match self {
-            Self::DispatchTransaction | Self::ConfirmUserTakeTransaction => {
-                trace!("Step {self:?} is not persistable");
-                Ok(())
-            }
-            _ => {
-                trace!("Persisting step {self:?}");
-                pegout_flow.persist_state()
-            }
-        }
-    }
-}
-
 impl Default for Steps {
     fn default() -> Self {
         Steps::PegoutRequested
@@ -184,7 +164,6 @@ where
             format_step(next_step)
         );
 
-        // Execute the entry action for the new state
         match next_step {
             Steps::PegoutRequested => {
                 unreachable!("Init step should not be reached in start_step");
@@ -234,8 +213,7 @@ where
             }
         }
 
-        // checkpoint (if possible) after successful step completion
-        next_step.persist_step(self)?;
+        self.persist_state()?;
 
         Ok(())
     }
