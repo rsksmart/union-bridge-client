@@ -289,7 +289,7 @@ impl BlockchainView {
 
     #[cfg(test)]
     pub fn is_observed(&self) -> bool {
-        self.observers.borrow().len() > 0
+        !self.observers.borrow().is_empty()
     }
 
     #[cfg(test)]
