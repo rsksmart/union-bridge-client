@@ -1,12 +1,9 @@
-use bincode::config::standard;
 use check_fork::{CheckForkArgs, check_fork};
 use risc0_zkvm::guest::env;
 
 fn main() {
     let args: Vec<u8> = env::read();
-    let args_des: CheckForkArgs = bincode::serde::decode_from_slice(&args, standard())
-        .expect("Failed to deserialize args")
-        .0;
+    let args_des: CheckForkArgs = bincode::deserialize(&args).expect("Failed to deserialize args");
 
     let output = check_fork(&args_des);
 

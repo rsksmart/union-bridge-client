@@ -50,16 +50,6 @@ impl RawLogStore {
     pub fn get<T: serde::de::DeserializeOwned>(&self, key: &str) -> Result<Option<T>> {
         Ok(self.db.get(key)?)
     }
-
-    /// Ideally, this method should be used only for testing purposes
-    #[cfg(feature = "test-utils")]
-    pub fn get_all_logs(&self) -> Result<Vec<RskLog>> {
-        let all_entries = self.db.partial_compare(LOG_PREFIX)?;
-        Ok(all_entries
-            .into_iter()
-            .filter_map(|(_, value)| serde_json::from_str::<RskLog>(&value).ok())
-            .collect())
-    }
 }
 
 impl LogStore for RawLogStore {

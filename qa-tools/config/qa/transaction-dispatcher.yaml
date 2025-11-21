@@ -1,7 +1,0 @@
-key_store:
-  user_path: "test_keystore/user-keyfile"
-  member_path: "test_keystore/member-keyfile"
-transaction:
-  gas_bumps_t1: 3
-server:
-  url: "0.0.0.0:3000"

@@ -1,1 +1,0 @@
-// This crate contains QA tools for testing the block-indexer component

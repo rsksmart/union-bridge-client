@@ -34,5 +34,4 @@ sha3 = "0.10"
 uuid = { version = "1.11.0", features = ["v4", "serde"] }
 
 [features]
-test-utils = []
 anvil = []

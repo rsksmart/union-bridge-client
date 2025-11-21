@@ -1,7 +1,0 @@
-coordinator:
-  broker:
-    client_id: 333
-notifier:
-  port: 5550
-http:
-  port: 5551

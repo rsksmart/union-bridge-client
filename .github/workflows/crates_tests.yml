@@ -34,4 +34,4 @@ jobs:
 
       - name: Test
         run: |
-          RUN_MODE=ci cargo test --no-default-features --features test-utils --locked
+          RUN_MODE=ci cargo test --no-default-features --locked
