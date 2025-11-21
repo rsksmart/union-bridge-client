@@ -49,6 +49,13 @@ impl<P: Provider> MemberRegistryContractApi for MemberRegistryContract<P> {
 }
 
 pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> {
-    let decoded_err = err.as_decoded_interface_error::<MemberRegistryErrors>();
-    decoded_err.map(|e| DomainErrors::MemberRegistryError(format!("{:?}", e)))
+    let decoded_err = err.as_decoded_interface_error::<MemberRegistryErrors>()?;
+
+    Some(match decoded_err {
+        MemberRegistryErrors::MemberAlreadyRegisteredForStream(e) => {
+            DomainErrors::MemberAlreadyRegisteredForStream(format!("{:?}", e))
+        }
+        // Add other specific mappings here as needed
+        _ => DomainErrors::MemberRegistryError(format!("{:?}", decoded_err)),
+    })
 }

@@ -658,6 +658,8 @@ pub(crate) mod tests {
         impl RskContractsGatewayApi for RskContractsGatewayApi {
             fn my_address(&self) -> types::Address;
 
+            async fn get_balance(&self) -> Result<alloy_primitives::Uint<256, 4>, DomainErrors>;
+
             async fn get_temporary_pegin_address(
                 &self,
                 input: PeginAddressInput,
