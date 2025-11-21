@@ -5,7 +5,6 @@ ARG FEATURES
 # --build-arg to specify just one crate to build in the builder stage
 ARG JUST_CRATE
 
-
 # --- BUILDER STAGE ---
 
 FROM ghcr.io/rsksmart/union-client-builder:rust-1.86-v1 AS builder
@@ -17,6 +16,13 @@ RUN mkdir -p -m 0700 ~/.ssh && \
     ssh-keyscan github.com >> ~/.ssh/known_hosts
 
 WORKDIR /app
+
+RUN apt-get update -y && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ca-certificates \
+        procps \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # copy only dependency files for better caching
 COPY Cargo.toml Cargo.lock ./
@@ -31,13 +37,6 @@ COPY key-manager key-manager
 COPY check-fork check-fork
 COPY coordinator coordinator
 COPY user-api user-api
-
-RUN apt-get update -y && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        ca-certificates \
-        procps \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
 
 ENV RUST_LOG=error
 ENV CARGO_TERM_QUIET=true
@@ -80,6 +79,9 @@ COPY --from=builder /app/target/release/key-manager /app/key-manager
 # set environment variables
 ENV RUST_BACKTRACE=1
 ENV RUST_LOG=debug
+# [coordinator Specific] Required by Risc0, otherwise it points to ~/.risc0
+# it does not harm to have it always defined, so we leave it common
+ENV RISC0_HOME=/opt/risc0
 
 # copy always even if only needed for one crate, as it's cheap
 COPY docker/entrypoint_sh/key-setup.sh /app/key-setup.sh
