@@ -154,8 +154,6 @@ pub trait RskContractsGatewayApi {
 #[derive(Clone)]
 pub struct RskContractsGateway<P: Provider> {
     member_address: Address,
-    #[allow(dead_code)] // Used by individual contracts for HTTP receipt fetching
-    rpc_url: String,
     get_temporary_pegin_address_call: GetTemporaryPeginAddressCall<PegManagerContract<P>>,
     request_pegin_invoke: RequestPeginInvoke<PegManagerContract<P>>,
     accept_pegin_invoke: AcceptPeginInvoke<PegManagerContract<P>>,
@@ -182,7 +180,6 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
         managed_contracts: HashMap<String, ContractInfo>,
         tx_config: &TransactionConfig,
         member_address: Address,
-        rpc_url: String,
     ) -> Result<Self> {
         let contract_address = Self::load_contract(PEG_MANAGER_CONTRACT_NAME, &managed_contracts)?;
         let fake_contract_address =
@@ -224,22 +221,13 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
         // TODO make these contracts Rc so we avoid more expensive cloning
 
         let peg_manager_contract =
-            PegManagerContract::new(provider.clone(), contract_address.into(), rpc_url.clone());
-        let fake_peg_manager_contract = FakePegManagerContract::new(
-            provider.clone(),
-            fake_contract_address.into(),
-            rpc_url.clone(),
-        );
-        let signature_manager_contract = SignatureManagerContract::new(
-            provider.clone(),
-            signature_manager_address.into(),
-            rpc_url.clone(),
-        );
-        let committee_registry_contract = CommitteeRegistryContract::new(
-            provider.clone(),
-            committee_registry_address.into(),
-            rpc_url.clone(),
-        );
+            PegManagerContract::new(provider.clone(), contract_address.into());
+        let fake_peg_manager_contract =
+            FakePegManagerContract::new(provider.clone(), fake_contract_address.into());
+        let signature_manager_contract =
+            SignatureManagerContract::new(provider.clone(), signature_manager_address.into());
+        let committee_registry_contract =
+            CommitteeRegistryContract::new(provider.clone(), committee_registry_address.into());
         let member_registry_contract =
             MemberRegistryContract::new(provider.clone(), member_registry_address.into());
         let stream_manager_contract =
@@ -247,7 +235,6 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
 
         Ok(RskContractsGateway {
             member_address,
-            rpc_url,
             get_temporary_pegin_address_call: GetTemporaryPeginAddressCall::new(
                 peg_manager_contract.clone(),
             ),

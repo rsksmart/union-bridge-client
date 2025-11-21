@@ -26,14 +26,12 @@ pub async fn get_contracts_gateway<P: Provider + Clone>(
     provider: P,
     config: config::Config,
     member_address: Address,
-    rpc_url: String,
 ) -> Result<RskContractsGateway<P>> {
     RskContractsGateway::new(
         provider,
         config.load_managed_contracts(),
         config.transaction(),
         member_address,
-        rpc_url,
     )
     .await
     .context("Could not instantiate RskContractsGateway")
@@ -114,7 +112,6 @@ async fn create_contracts_gateway_impl_with_role(
         config.load_managed_contracts(),
         &config.tx_dispatcher_config.transaction,
         signer_address,
-        config.provider.rootstock.url.clone(),
     )
     .await
     .map_err(|e| DomainErrors::InternalServerError(format!("Failed to create gateway: {}", e)))
