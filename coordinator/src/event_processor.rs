@@ -3,9 +3,6 @@ use anyhow::Result;
 use common::msg_broker::bitvmx_types::OutgoingBitVMXApiMessages;
 use common::types::RskBlockAndUncles;
 
-mod pegin_processor;
-mod pegout_processor;
-
 #[cfg(test)]
 use mockall::automock;
 
