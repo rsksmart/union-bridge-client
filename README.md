@@ -365,12 +365,23 @@ information on how to build and run the client using Docker.
 
 ### Development/Testing Setup
 
-Optionally, you can run `./run-mocking.sh` in another terminal before starting the clients with `./cli-run.sh`. This
+Optionally, you can run `./cli-mocking.sh` in another terminal before starting the clients with `./cli-run.sh`. This
 will:
 
-- spin up a mocked BitVMX client
-- spin up an anvil node to simulate the Rootstock blockchain
-- deploy the BitVMX Union Bridge contracts on the anvil node
+#### Mocking Advance Funds Events via FakePegManager
+
+If you run it right after the real contracts deployment (on a clean _anvil_ instance), the correct address should be
+already set in the config. Otherwise, check the `FakePegManager deployed at 0x...` message printed in the terminal to
+get the address of the deployed contract and configure it accordingly (under `FakePegManager` entry).
+
+You will have the following commands available:
+
+- `raf` or `invoke-request-advance-funds`: start monitoring blocks for advance funds (emits RequestAdvanceFunds event)
+    - copy the printed `pegout_id`, you will need it for the next step
+- `kaf` or `invoke-advance-funds`: generate a fake advance-funds event that triggers the advance funds in Coordinator
+    - you need to provide the `pegout_id` from the previous step
+
+(check cli help for more info)
 
 ### Individual Crates using Cargo
 

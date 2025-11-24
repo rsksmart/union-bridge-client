@@ -64,7 +64,7 @@ impl BlockchainObserver for CheckForkAccumulator {
 impl CheckForkAccumulator {
     pub(super) fn new(
         event: AdvanceFundsEvent,
-        post_advance_funds_blocks: Vec<&RskBlockAndUncles>,
+        post_advance_funds_blocks: Vec<RskBlockAndUncles>,
     ) -> Self {
         let check_fork_args = CheckForkArgs {
             // coming from the AdvanceFunds event
@@ -245,7 +245,7 @@ impl CheckForkAccumulator {
 mod tests {
     use super::*;
     use crate::flows::advance_funds::tests::create_fake_block;
-    use actors_mocking::fake_contracts::FakePegManager::AdvanceFunds;
+    use common::mocks::fake_contracts::FakePegManager::AdvanceFunds;
     use common::types::{BlockHash, BlockNumber, RskBlockAndUncles, TxHash};
     use primitive_types::H256;
 
@@ -347,7 +347,7 @@ mod tests {
         let block2_number = 102;
         let block1 = create_fake_block_with_uncles(block1_number, U256::from(300), vec![]);
         let block2 = create_fake_block_with_uncles(block2_number, U256::from(400), vec![]);
-        let post_advance_funds_blocks = vec![&block1, &block2];
+        let post_advance_funds_blocks = vec![block1, block2];
 
         let checker = CheckForkAccumulator::new(event, post_advance_funds_blocks);
 

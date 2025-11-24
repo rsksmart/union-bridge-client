@@ -17,4 +17,11 @@ RUN apt-get update && apt-get install -y \
 RUN mkdir -p -m 0700 ~/.ssh && \
     ssh-keyscan github.com >> ~/.ssh/known_hosts
 
+# [coordinator Specific] Install Risc0 toolchain
+# Just needed for build stage, so it won't impact the final runtime image size, therefore is safe to install it always
+RUN set -e && \
+    curl -L https://risczero.com/install | bash && \
+    ~/.risc0/bin/rzup install && \
+    cp -r ~/.risc0 /opt/risc0
+
 LABEL org.opencontainers.image.source=https://github.com/rsksmart/union-bridge-client

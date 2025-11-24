@@ -21,8 +21,10 @@ pub(crate) use crate::contracts::interactions::request_pegin;
 pub(crate) use crate::contracts::interactions::request_pegout;
 
 use crate::rsk_gateway::DomainErrors;
-use actors_mocking::fake_contracts::FakePegManager;
-use actors_mocking::fake_contracts::FakePegManager::FakePegManagerInstance;
+
+use common::mocks::fake_contracts::FakePegManager;
+use common::mocks::fake_contracts::FakePegManager::FakePegManagerInstance;
+
 #[cfg(test)]
 use mockall::automock;
 

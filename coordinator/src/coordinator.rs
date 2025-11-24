@@ -21,7 +21,6 @@ use std::{
 };
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 
-#[cfg(feature = "zkp")]
 use crate::flows::advance_funds::advance_funds_processor::AdvanceFundsProcessor;
 use crate::flows::common::GlobalContext;
 use crate::flows::fund_bitvmx_flow::FundBitvmxProcessor;
@@ -79,7 +78,6 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
             monitor,
             bitvmx_broker: bitvmx_broker.clone(),
             processors: vec![
-                #[cfg(feature = "zkp")]
                 Box::new(AdvanceFundsProcessor::new(
                     rt_sync.clone(),
                     contracts_arc.clone(),
@@ -318,8 +316,8 @@ pub(crate) mod tests {
         store::MockCoordinatorStoreApi,
         types::{AdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents},
     };
-    use actors_mocking::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
     use alloy_primitives::U256;
+    use common::mocks::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
     use common::{
         msg_broker::{
             bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages},

@@ -6,8 +6,7 @@ edition = "2024"
 [dependencies]
 check-fork = { path = "../check-fork" }
 common = { path = "../common" }
-actors-mocking = { path = "../actors-mocking" }
-check-fork-zkp = { path = "../check-fork/zkp", optional = true }
+check-fork-zkp = { path = "../check-fork/zkp" }
 transaction-dispatcher = { path = "../transaction-dispatcher", features = ["types"] }
 
 alloy-primitives = { workspace = true }
@@ -27,7 +26,6 @@ storage-backend = { workspace = true }
 sha2 = "0.10.9"
 thiserror = { workspace = true }
 tiny-keccak = "2.0.2"
-bitvmx_bitcoin_rpc = { package = "bitvmx-bitcoin-rpc", git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-bitcoin-rpc.git", rev = "0f63157"}
 
 uuid = { version = "1.11.0", features = ["v4"] }
 
@@ -36,4 +34,3 @@ mockall = { workspace = true }
 
 [features]
 anvil = []
-zkp = ["check-fork-zkp"]

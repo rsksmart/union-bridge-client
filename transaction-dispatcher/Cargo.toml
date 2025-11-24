@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-actors-mocking = { path = "../actors-mocking" }
 common = { path = "../common" }
 key-manager = { path = "../key-manager" }
 

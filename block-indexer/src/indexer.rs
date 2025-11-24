@@ -520,7 +520,6 @@ mod tests {
         },
     };
     use mockall::predicate::eq;
-    use primitive_types::H256;
 
     #[test]
     fn returns_ok_if_no_uncles() {
@@ -669,6 +668,7 @@ mod tests {
     #[should_panic(expected = "Precondition failed: initial block")]
     fn panics_when_initial_block_hash_not_found() {
         // Given a random hash that the provider won't find...
+        use primitive_types::H256;
         let missing_hash = BlockHash::from(H256::random());
 
         // Provider that returns Ok(None) for our missing hash

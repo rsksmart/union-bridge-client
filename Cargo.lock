@@ -3,30 +3,6 @@
 version = 4
 
 [[package]]
-name = "actors-mocking"
-version = "0.1.0"
-dependencies = [
- "alloy-contract",
- "alloy-eips",
- "alloy-node-bindings",
- "alloy-primitives",
- "alloy-provider",
- "alloy-signer-local",
- "alloy-sol-types",
- "anyhow",
- "bitcoin",
- "chrono",
- "clap",
- "common",
- "hex",
- "serde",
- "serde_json",
- "tokio",
- "union-bridge-contracts",
- "uuid 1.18.1",
-]
-
-[[package]]
 name = "addr2line"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -301,19 +277,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "alloy-hardforks"
-version = "0.2.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3165210652f71dfc094b051602bafd691f506c54050a174b1cba18fb5ef706a3"
-dependencies = [
- "alloy-chains",
- "alloy-eip2124",
- "alloy-primitives",
- "auto_impl",
- "dyn-clone",
-]
-
-[[package]]
 name = "alloy-json-abi"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -377,27 +340,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-serde",
  "serde",
-]
-
-[[package]]
-name = "alloy-node-bindings"
-version = "1.0.38"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3652a65bacfba0a169755090d4ecd7d3c63fa534b21d09b8e604dc2609760da6"
-dependencies = [
- "alloy-genesis",
- "alloy-hardforks",
- "alloy-network",
- "alloy-primitives",
- "alloy-signer",
- "alloy-signer-local",
- "k256",
- "rand 0.8.5",
- "serde_json",
- "tempfile",
- "thiserror 2.0.17",
- "tracing",
- "url",
 ]
 
 [[package]]
@@ -1280,12 +1222,6 @@ dependencies = [
 
 [[package]]
 name = "base64"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e1b586273c5702936fe7b7d6896644d8be71e6314cfe09d3167c95f712589e8"
-
-[[package]]
-name = "base64"
 version = "0.21.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
@@ -1431,30 +1367,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bitcoincore-rpc"
-version = "0.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aedd23ae0fd321affb4bbbc36126c6f49a32818dc6b979395d24da8c9d4e80ee"
-dependencies = [
- "bitcoincore-rpc-json",
- "jsonrpc",
- "log",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "bitcoincore-rpc-json"
-version = "0.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8909583c5fab98508e80ef73e5592a651c954993dc6b7739963257d19f0e71a"
-dependencies = [
- "bitcoin",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1479,20 +1391,6 @@ dependencies = [
  "radium",
  "tap",
  "wyz",
-]
-
-[[package]]
-name = "bitvmx-bitcoin-rpc"
-version = "0.1.0"
-source = "git+ssh://git@github.com/FairgateLabs/rust-bitvmx-bitcoin-rpc.git?rev=0f63157#0f63157d08c3c01982d62306b591d9c000e9cd1c"
-dependencies = [
- "bitcoin",
- "bitcoincore-rpc",
- "mockall",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -1920,6 +1818,7 @@ checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 name = "common"
 version = "0.1.0"
 dependencies = [
+ "alloy-contract",
  "alloy-primitives",
  "alloy-provider",
  "alloy-pubsub",
@@ -2046,13 +1945,11 @@ dependencies = [
 name = "coordinator"
 version = "0.1.0"
 dependencies = [
- "actors-mocking",
  "alloy-primitives",
  "alloy-sol-types",
  "anyhow",
  "bincode 2.0.1",
  "bitcoin",
- "bitvmx-bitcoin-rpc",
  "check-fork",
  "check-fork-zkp",
  "clap",
@@ -3595,18 +3492,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "jsonrpc"
-version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3662a38d341d77efecb73caf01420cfa5aa63c0253fd7bc05289ef9f6616e1bf"
-dependencies = [
- "base64 0.13.1",
- "minreq",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "jsonwebtoken"
 version = "9.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3934,16 +3819,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
 dependencies = [
  "adler2",
-]
-
-[[package]]
-name = "minreq"
-version = "2.14.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05015102dad0f7d61691ca347e9d9d9006685a64aefb3d79eecf62665de2153d"
-dependencies = [
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -4950,9 +4825,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "encoding_rs",
- "futures-channel",
  "futures-core",
- "futures-util",
  "h2",
  "http",
  "http-body",
@@ -6489,7 +6362,6 @@ dependencies = [
 name = "transaction-dispatcher"
 version = "0.1.0"
 dependencies = [
- "actors-mocking",
  "alloy-contract",
  "alloy-json-rpc",
  "alloy-primitives",
