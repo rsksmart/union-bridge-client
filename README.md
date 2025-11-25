@@ -517,8 +517,9 @@ The proof was executed, and the receipt saved to the file: stark-proof.bin. Tota
 
 ### 3) Generate the Snark Proof (from the Stark) & Verify the Snark Proof
 
-Please check the [ZKVM CLI documentation](https://github.com/FairgateLabs/rust-bitvmx-zk-proof/tree/poc-generalise-host)
-for the remaining steps. Note that this doc is pointing to a WIP branch.
+Please check
+the [SNARK proof section](https://github.com/FairgateLabs/rust-bitvmx-zk-proof?tab=readme-ov-file#snark-proof) on 
+**rust-bitvmx-zk-proof** repository README for the remaining steps. Please note this is a WIP project.
 
 ## Developer setup & team conventions
 
