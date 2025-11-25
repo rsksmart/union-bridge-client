@@ -74,7 +74,7 @@ pub enum StepData {
     // Initial Bitcoin transaction found
     PeginTransactionFound,
     // SPV proof for request pegin
-    PeginRequestSpvProof(BtcTxSPVProof),
+    RequestPeginSpvProof(BtcTxSPVProof),
     // Pegin requested
     PeginRequested(PeginRequested),
     // Communication info
@@ -329,10 +329,8 @@ where
             (Steps::PeginTransactionFound, StepData::PeginTransactionFound) => {
                 Ok(Steps::RequestPeginSpvProof)
             }
-            (Steps::RequestPeginSpvProof, StepData::PeginRequestSpvProof(spv_proof)) => {
+            (Steps::RequestPeginSpvProof, StepData::RequestPeginSpvProof(spv_proof)) => {
                 self.state.ctx.request_pegin_spv_proof = Some(spv_proof.clone());
-                // Here we would call request_pegin with the SPV proof
-                // For now, we wait for PeginRequested event
                 Ok(Steps::PeginRequested)
             }
             (Steps::PeginRequested, StepData::PeginRequested(pegin_requested)) => {

@@ -702,7 +702,7 @@ where
                 flow.flow_id(),
                 tx_id
             );
-            flow.complete_step(StepData::PeginRequestSpvProof(spv_proof))?;
+            flow.complete_step(StepData::RequestPeginSpvProof(spv_proof))?;
         }
 
         Ok(())
