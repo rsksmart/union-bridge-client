@@ -2343,7 +2343,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -2552,7 +2552,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -5123,7 +5123,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -5915,7 +5915,7 @@ dependencies = [
  "getrandom 0.3.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -6492,8 +6492,8 @@ checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
 
 [[package]]
 name = "union-bridge-contracts"
-version = "0.1.5-alpha"
-source = "git+ssh://git@github.com/temp-rsk/bitvmx-union-bridge-contracts.git?tag=v0.1.5-alpha#d2274b6a92926a8f76044969841849c3e396e570"
+version = "0.2.0-alpha"
+source = "git+ssh://git@github.com/temp-rsk/bitvmx-union-bridge-contracts.git?tag=v0.2.0-alpha#ce96b74c6db35d5810370fcb2d119dce59233c5a"
 dependencies = [
  "alloy",
  "alloy-trie 0.8.1",

@@ -153,7 +153,7 @@ where
         info!("Processing confirmed PegoutRegistered event: {:?}", pr);
         // Find the flow corresponding to this pegout registration using event tx_hash with  flow.state.pegout_registered_tx
         let pegout_registered = pr.inner.clone();
-        let pegout_registered_txid: Txid = TxIdParser::fb_32_to_txid(pegout_registered.txHash);
+        let pegout_registered_txid: Txid = TxIdParser::fb_32_to_txid(pegout_registered.txid);
         let flow_opt = self
             .pegout_flows
             .values_mut()

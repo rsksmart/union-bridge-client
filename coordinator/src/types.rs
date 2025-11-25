@@ -28,7 +28,7 @@ use union_contracts::bindings::signature_manager::SignatureManager::{
     AllNoncesReady, AllSignaturesReady,
 };
 use union_contracts::bindings::signature_manager::SignatureManager::{
-    AllOperatorTakeTxHashesAdded, SignatureManagerEvents,
+    AllOperatorTakeTxidsAdded, SignatureManagerEvents,
 };
 
 use crate::user_requests::ApplyToStream;
@@ -50,7 +50,7 @@ pub enum RskPegManagerEvents {
     RemoveRegisteredPeginRequest(PeginRequestedEvent),
     AllNoncesReady(AllNoncesReadyEvent),
     AllSignaturesReady(AllSignaturesReadyEvent),
-    AllOperatorTakeTxHashesAdded(AllOperatorTakeTxHashesAddedEvent),
+    AllOperatorTakeTxidsAdded(AllOperatorTakeTxidsAddedEvent),
     NewCommitteePending(NewCommitteePendingEvent),
     NewCommitteeReady(NewCommitteeReadyEvent),
     AllCommunicationDataReady(AllCommunicationDataReadyEvent),
@@ -71,7 +71,7 @@ pub type PeginRequestedEvent = EventWithBlock<PeginRequested>;
 pub type PeginAcceptedEvent = EventWithBlock<PeginAccepted>;
 pub type AllNoncesReadyEvent = EventWithBlock<Hash256>;
 pub type AllSignaturesReadyEvent = EventWithBlock<Hash256>;
-pub type AllOperatorTakeTxHashesAddedEvent = EventWithBlock<AllOperatorTakeTxHashesAdded>;
+pub type AllOperatorTakeTxidsAddedEvent = EventWithBlock<AllOperatorTakeTxidsAdded>;
 pub type PegoutRequestedEvent = EventWithBlock<PegoutRequested>;
 pub type PegoutRegisteredEvent = EventWithBlock<PegoutRegistered>;
 pub type NewCommitteePendingEvent = EventWithBlock<NewPendingCommittee>;
@@ -440,17 +440,15 @@ impl EventDecoder {
                     tx_hash,
                 }),
             ),
-            SignatureManagerEvents::AllOperatorTakeTxHashesAdded(inner) => {
-                Some(RskPegManagerEvents::AllOperatorTakeTxHashesAdded(
-                    AllOperatorTakeTxHashesAddedEvent {
-                        inner,
-                        block_number: block_num,
-                        block_hash,
-                        removed,
-                        tx_hash,
-                    },
-                ))
-            }
+            SignatureManagerEvents::AllOperatorTakeTxidsAdded(inner) => Some(
+                RskPegManagerEvents::AllOperatorTakeTxidsAdded(AllOperatorTakeTxidsAddedEvent {
+                    inner,
+                    block_number: block_num,
+                    block_hash,
+                    removed,
+                    tx_hash,
+                }),
+            ),
             _ => {
                 info!(
                     "Ignored SignatureManager event: {:?} (block: {}, tx: {})",
@@ -693,15 +691,15 @@ mod tests {
 
         // Create a pegin event
         let expected_event = PeginRequested {
-            committeeId: U256::from(99),
-            requestPeginTxHash: H256::from_low_u64_be(111)
+            committeeId: 99u128,
+            requestPeginTxid: H256::from_low_u64_be(111)
                 .as_bytes()
                 .try_into()
-                .expect("Failed to decode requestPeginTxHash"),
-            acceptPeginTxHash: H256::from_low_u64_be(222)
+                .expect("Failed to decode requestPeginTxid"),
+            acceptPeginTxid: H256::from_low_u64_be(222)
                 .as_bytes()
                 .try_into()
-                .expect("Failed to decode acceptPeginTxHash"),
+                .expect("Failed to decode acceptPeginTxid"),
             vout: 1,
             streamPosition: StreamPosition {
                 streamId: 42,
@@ -737,7 +735,7 @@ mod tests {
         // Should successfully decode using exhaustive method
         match result {
             RskPegManagerEvents::PeginRequested(event) => {
-                assert_eq!(event.inner.committeeId, U256::from(99));
+                assert_eq!(event.inner.committeeId, 99u128);
             }
             _ => panic!("Expected PeginRequested event"),
         }
@@ -853,15 +851,15 @@ mod tests {
         let expected_block_num = 789;
 
         let expected_event = PeginRequested {
-            committeeId: U256::from(99),
-            requestPeginTxHash: H256::from_low_u64_be(111)
+            committeeId: 99u128,
+            requestPeginTxid: H256::from_low_u64_be(111)
                 .as_bytes()
                 .try_into()
-                .expect("Failed to decode requestPeginTxHash"),
-            acceptPeginTxHash: H256::from_low_u64_be(222)
+                .expect("Failed to decode requestPeginTxid"),
+            acceptPeginTxid: H256::from_low_u64_be(222)
                 .as_bytes()
                 .try_into()
-                .expect("Failed to decode acceptPeginTxHash"),
+                .expect("Failed to decode acceptPeginTxid"),
             vout: 1,
             streamPosition: StreamPosition {
                 streamId: 42,
@@ -918,8 +916,8 @@ mod tests {
 
         let expected_event = PeginAccepted {
             blockHash: FixedBytes::<32>::from_slice(H256::from_low_u64_be(1).as_bytes()),
-            acceptPeginTxHash: FixedBytes::<32>::from_slice(H256::from_low_u64_be(2).as_bytes()),
-            peginRequestTxHash: FixedBytes::<32>::from_slice(H256::from_low_u64_be(3).as_bytes()),
+            acceptPeginTxid: FixedBytes::<32>::from_slice(H256::from_low_u64_be(2).as_bytes()),
+            peginRequestTxid: FixedBytes::<32>::from_slice(H256::from_low_u64_be(3).as_bytes()),
             vout: 0,
             streamPosition: StreamPosition {
                 streamId: 42,
@@ -1034,11 +1032,11 @@ mod tests {
         let expected_block_num = 333;
         let expected_accept_pegin_tx_hash = H256::from_low_u64_be(555);
 
-        let expected_event = AllOperatorTakeTxHashesAdded {
-            acceptPeginTxHash: expected_accept_pegin_tx_hash
+        let expected_event = AllOperatorTakeTxidsAdded {
+            acceptPeginTxid: expected_accept_pegin_tx_hash
                 .as_bytes()
                 .try_into()
-                .expect("Failed to decode acceptPeginTxHash"),
+                .expect("Failed to decode acceptPeginTxid"),
         };
 
         let data = DataBytes::new(expected_event.encode_log_data().data.to_vec());
@@ -1065,14 +1063,14 @@ mod tests {
         let result = decoder.decode(rsk_log);
         // Now these events are properly handled through SignatureManagerEvents enum
         match result {
-            RskPegManagerEvents::AllOperatorTakeTxHashesAdded(data) => {
+            RskPegManagerEvents::AllOperatorTakeTxidsAdded(data) => {
                 assert_eq!(data.inner, expected_event);
                 assert_eq!(data.block_number, expected_block_num);
                 assert_eq!(data.block_hash, expected_block_hash.into());
                 assert_eq!(data.removed, true);
                 assert_eq!(data.tx_hash, expected_tx_hash);
             }
-            _ => panic!("Expected AllOperatorTakeTxHashesAdded event"),
+            _ => panic!("Expected AllOperatorTakeTxidsAdded event"),
         }
     }
 

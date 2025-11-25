@@ -122,7 +122,7 @@ mod tests {
         mock.expect_invoke_accept_pegin()
             .returning(move |_, _| {
                 let expected_err = PegManagerErrors::PeginAlreadyAccepted(PeginAlreadyAccepted {
-                    btcTxHash: "0x6b8f74fe9c66c9c3a6c3d0b7111d9b6aaac0ea3db1bdbd6a38eb0e7d8b8bba3e"
+                    btcTxid: "0x6b8f74fe9c66c9c3a6c3d0b7111d9b6aaac0ea3db1bdbd6a38eb0e7d8b8bba3e"
                         .parse()
                         .expect("Failed to parse tx hash"),
                 });
