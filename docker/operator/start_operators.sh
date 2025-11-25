@@ -14,11 +14,12 @@ print_help() {
   echo ""
   echo "Required:"
   echo "  --env alphanet           Deploy on Alphanet, a specific operator (requires --op <ID>)"
+  echo "  --env testnet            Deploy on Testnet, a specific operator (requires --op <ID>)"
   echo "  --env local              Deploy locally, all 4 operators"
   echo "  --env regtest            Deploy in regtest, all 4 operators"
   echo ""
   echo "Options:"
-  echo "  --op <ID>                Specify operator ID (1, 2, 3, or 4) - required for alphanet startup"
+  echo "  --op <ID>                Specify operator ID (1, 2, 3, or 4) - required for alphanet/testnet startup"
   echo "  --help                   Display this help message"
   echo "  --tag <TAG>              Set tag for Union Client"
   echo "  --fresh                  Tear down operators (and volumes) before running the command"
@@ -36,6 +37,11 @@ print_help() {
   echo "  Alphanet:"
   echo "    - Runs one operator per host (testnet_op_X where X is from --op)"
   echo "    - Config: bitvmx-client/config/alphanet/client/config/testnet_op_X.yaml"
+  echo "    - Uses host network mode for P2P connectivity across physical machines"
+  echo "    - Project name: union-operator"
+  echo "  Testnet:"
+  echo "    - Runs one operator per host (testnet_op_X where X is from --op)"
+  echo "    - Config: bitvmx-client/config/testnet/client/config/testnet_op_X.yaml"
   echo "    - Uses host network mode for P2P connectivity across physical machines"
   echo "    - Project name: union-operator"
   echo ""
@@ -59,6 +65,11 @@ print_help() {
   echo "  $0 --env alphanet --op 1 --tag latest-alphanet up -d     # Start operator 1 with specific tag"
   echo "  $0 --env alphanet down --volumes                         # Stop operator on this alphanet host"
   echo "  $0 --env alphanet logs -f                                # View logs for operator on this host"
+  echo "  $0 --env testnet --op 1 up -d                            # Start operator 1 in testnet"
+  echo "  $0 --env testnet --op 2 up -d                            # Start operator 2 in testnet"
+  echo "  $0 --env testnet --op 1 --tag latest-testnet up -d       # Start operator 1 with specific tag"
+  echo "  $0 --env testnet down --volumes                          # Stop operator on this testnet host"
+  echo "  $0 --env testnet logs -f                                 # View logs for operator on this host"
   echo ""
   echo "Any additional arguments will be passed directly to docker compose."
   exit 0
@@ -89,6 +100,11 @@ while [[ $# -gt 0 ]]; do
         if [[ -z "$UC_TAG" ]]; then
           UC_TAG="latest-alphanet"
         fi
+      elif [[ "$ENVIRONMENT" == "testnet" ]]; then
+        ENV_FILE="${SCRIPT_DIR}/.env.testnet"
+        if [[ -z "$UC_TAG" ]]; then
+          UC_TAG="latest-testnet"
+        fi
       elif [[ "$ENVIRONMENT" == "local" ]]; then
         ENV_FILE="${SCRIPT_DIR}/.env.local"
         if [[ -z "$UC_TAG" ]]; then
@@ -100,7 +116,7 @@ while [[ $# -gt 0 ]]; do
           UC_TAG="latest-regtest"
         fi
       else
-        echo "Invalid environment. Use 'alphanet', 'local', or 'regtest'"
+        echo "Invalid environment. Use 'alphanet', 'testnet', 'local', or 'regtest'"
         exit 1
       fi
       shift 2
@@ -122,8 +138,15 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$ENVIRONMENT" ]]; then
-  echo "Error: --env flag is required. Use 'alphanet', 'local', or 'regtest'."
+  echo "Error: --env flag is required. Use 'alphanet', 'testnet', 'local', or 'regtest'."
   echo "Run '$0 --help' for usage information."
+  exit 1
+fi
+
+# Validate --fresh flag usage
+if [[ "${FRESH}" == true && "$ENVIRONMENT" != "local" ]]; then
+  echo "Error: --fresh is only allowed with --env local."
+  echo "For alphanet/testnet, manually tear down the operator if needed."
   exit 1
 fi
 
@@ -149,20 +172,20 @@ done
 if [[ ("$ENVIRONMENT" == "local" || "$ENVIRONMENT" == "regtest") && -n "$OPERATOR_ARG" ]]; then
   echo "Error: --op is not allowed in ${ENVIRONMENT} environment. All operators will be deployed."
   exit 1
-elif [[ "$ENVIRONMENT" == "alphanet" && "${IS_STARTUP_COMMAND}" == false && -n "$OPERATOR_ARG" ]]; then
+elif [[ ("$ENVIRONMENT" == "alphanet" || "$ENVIRONMENT" == "testnet") && "${IS_STARTUP_COMMAND}" == false && -n "$OPERATOR_ARG" ]]; then
   echo "Error: --op can only be used with startup commands (up, restart, start, create)."
   echo "For other commands, the script will target the operator on this host automatically."
   exit 1
-elif [[ "$ENVIRONMENT" == "alphanet" && "${IS_STARTUP_COMMAND}" == true && -z "$OPERATOR_ARG" ]]; then
-  echo "Error: --op <ID> is required when using --env alphanet with startup commands (up, restart, start, create)."
+elif [[ ("$ENVIRONMENT" == "alphanet" || "$ENVIRONMENT" == "testnet") && "${IS_STARTUP_COMMAND}" == true && -z "$OPERATOR_ARG" ]]; then
+  echo "Error: --op <ID> is required when using --env ${ENVIRONMENT} with startup commands (up, restart, start, create)."
   echo "Run '$0 --help' for usage information."
   exit 1
 fi
 
 # Set OPERATORS_TO_RUN based on environment
-if [[ "$ENVIRONMENT" == "alphanet" && "${IS_STARTUP_COMMAND}" == true ]]; then
-  # Alphanet startup: use the single operator from --op
-  echo "You are about to start operator ${OPERATOR_ARG} on alphanet."
+if [[ ("$ENVIRONMENT" == "alphanet" || "$ENVIRONMENT" == "testnet") && "${IS_STARTUP_COMMAND}" == true ]]; then
+  # Alphanet/Testnet startup: use the single operator from --op
+  echo "You are about to start operator ${OPERATOR_ARG} on ${ENVIRONMENT}."
   read -p "Is this correct? (yes/no): " confirmation
 
   if [[ "$confirmation" != "yes" ]]; then
@@ -199,7 +222,7 @@ if [[ "${FRESH}" == true ]]; then
       eval "${cmd}"
     done
   else
-    # alphanet always uses union-operator project name
+    # alphanet/testnet always use union-operator project name
     echo "Cleaning operator stack (down --volumes) for project union-operator..."
     cmd="docker compose -p union-operator --env-file ${ENV_FILE} down --volumes"
     echo "Running: ${cmd}"
@@ -278,9 +301,35 @@ run_default_operator() {
   eval "${DOCKER_CMD}"
 }
 
+run_testnet_operators() {
+  # TESTNET ENVIRONMENT: Each operator on separate host (same as alphanet)
+
+  local TESTNET_PROJECT_NAME="-p union-operator"
+  local COMPOSE_FILE_ARG="-f docker-compose.yml -f docker-compose.op_one.yml"
+
+  local CLIENT_OP
+  if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
+    local op_num=${OPERATORS_TO_RUN[0]}
+    CLIENT_OP="testnet_op_${op_num}"
+    echo
+    echo "Starting operator ${op_num} with command:"
+  else
+    # For non-startup commands, CLIENT_OP value doesn't matter but needs to be set for compose file parsing
+    CLIENT_OP="dummy_op"
+    echo
+    echo "Running command on testnet operator:"
+  fi
+
+  local DOCKER_CMD="USER_BITCOIN_WIF=${USER_BITCOIN_WIF} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${TESTNET_PROJECT_NAME} ${COMPOSE_FILE_ARG} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
+  echo "'$(echo "${DOCKER_CMD}" | sed "s/USER_BITCOIN_WIF=[^ ]*/USER_BITCOIN_WIF=******/")'"
+  eval "${DOCKER_CMD}"
+}
+
 # Run operators based on environment
 if [[ "$ENVIRONMENT" == "local" || "$ENVIRONMENT" == "regtest" ]]; then
   run_all_operators
+elif [[ "$ENVIRONMENT" == "testnet" ]]; then
+  run_testnet_operators
 else
   run_default_operator
 fi
