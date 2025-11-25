@@ -223,6 +223,13 @@ fn print_instructions(env: Environment, addresses: &[String]) {
             println!("3 =>    send_to_address {} {}", joined, FUND_AMOUNT);
             println!("4 =>    mine_block");
         }
+        Environment::Regtest | Environment::Alphanet | Environment::Testnet => {
+            println!(
+                "Run the following command in your bitcoin-wallet or wallet tooling for {}:",
+                env.get_name()
+            );
+            println!("  send_to_address {} {}\n", joined, FUND_AMOUNT);
+        }
     }
 }
 
