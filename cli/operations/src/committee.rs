@@ -105,7 +105,7 @@ pub async fn run_committee_setup(
                 stream_id
             );
         }
-        Environment::Alphanet | Environment::Testnet => {
+        Environment::Alphanet | Environment::Testnet | Environment::Regtest => {
             let role = role.ok_or_else(|| {
                 anyhow!(
                     "--role is required when using --env {}",
