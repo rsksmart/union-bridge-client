@@ -1,0 +1,53 @@
+# ═══════════════════════════════════════════════════════
+# Common Configuration
+# ═══════════════════════════════════════════════════════
+
+provider.rootstock.url = "ws://10.1.0.66:4445" # if running in AWS and accessed from AWS
+# url: "ws://node-use2-1.regtest.rskcomputing.net.net:4445/websocket" # if running in AWS and accessed from outside
+bitcoin_network = "regtest"
+
+[[contracts]]
+name = "FakePegManager"
+address = "xxx"
+
+[[contracts]]
+name = "PegManager"
+address = "xxx"
+
+[[contracts]]
+name = "SignatureManager"
+address = "xxx"
+
+[[contracts]]
+name = "CommitteeRegistry"
+address = "xxx"
+
+[[contracts]]
+name = "MemberRegistry"
+address = "xxx"
+
+[[contracts]]
+name = "StreamManager"
+address = "xxx"
+
+[indexer]
+
+storage.path = "/app/db/" # This should match the volume mount in docker-compose
+
+# ═══════════════════════════════════════════════════════
+# Coordinator
+# ═══════════════════════════════════════════════════════
+
+[coordinator]
+storage_path = "/app/db/" # This should match the volume mount in docker-compose
+blocks.host = "block-indexer"
+logs.host = "log-indexer"
+user.host = "user-api"
+
+# ═══════════════════════════════════════════════════════
+# Transaction Dispatcher
+# ═══════════════════════════════════════════════════════
+
+[transaction_dispatcher]
+key_store.user_path = "/keystore/user-key.json" # should match the one configured in key-setup.sh
+key_store.member_path = "/keystore/member-key.json" # should match the one configured in key-setup.sh
