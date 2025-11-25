@@ -726,14 +726,15 @@ where
                 tx_id
             );
             flow.complete_step(StepData::AcceptPeginSpvProof(spv_proof))?;
-        } else {
-            debug!(
-                "SPV proof for tx_id: {} is not related to a pegin flow",
-                tx_id
-            );
         }
 
         Ok(())
+    }
+
+    fn has_flow_waiting_for_accept_pegin_spv(&self, tx_id: &Txid) -> bool {
+        self.pegin_flows
+            .values()
+            .any(|flow| flow.get_accept_pegin_txid() == Some(*tx_id))
     }
 }
 
@@ -773,14 +774,20 @@ where
                         tx_id, spv_proof
                     );
 
-                    // Try to handle as request pegin first
-                    self.handle_spv_proof_for_request_pegin(tx_id, spv_proof.clone())?;
-
-                    // Also check if any flows are waiting for this SPV proof in RequestPeginSpvProof step
-                    self.handle_spv_proof_for_flows_in_request_step(tx_id, spv_proof.clone())?;
-
-                    // Then try to handle as accept pegin
-                    self.handle_spv_proof_for_accept_pegin(tx_id, spv_proof.clone())?;
+                    // Route SPV proof to the appropriate handler based on context
+                    if self.pegin_request_tracker.contains(tx_id) {
+                        // Handle as request pegin SPV proof
+                        self.handle_spv_proof_for_request_pegin(tx_id, spv_proof.clone())?;
+                        self.handle_spv_proof_for_flows_in_request_step(tx_id, spv_proof.clone())?;
+                    } else if self.has_flow_waiting_for_accept_pegin_spv(tx_id) {
+                        // Handle as accept pegin SPV proof
+                        self.handle_spv_proof_for_accept_pegin(tx_id, spv_proof.clone())?;
+                    } else {
+                        debug!(
+                            "SPV proof for tx_id: {} does not match any tracked pegin request or flow",
+                            tx_id
+                        );
+                    }
                 } else {
                     return Err(anyhow!(
                         "Received BitVMX SPVProof event for tx_id: {}, but no SPV proof was included.",

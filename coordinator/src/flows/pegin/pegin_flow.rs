@@ -126,6 +126,7 @@ pub struct FlowContext {
     pub bitvmx_pegin_accepted: Option<PeginAcceptedMessage>,
     pub accept_pegin_spv_proof: Option<BtcTxSPVProof>,
     pub accept_pegin_tx_status: Option<TransactionStatus>,
+    pub pegin_accepted: Option<PeginAccepted>,
 }
 
 /// Serializable state for persistence
@@ -185,6 +186,7 @@ where
                     bitvmx_pegin_accepted: None,
                     accept_pegin_spv_proof: None,
                     accept_pegin_tx_status: None,
+                    pegin_accepted: None,
                 },
             },
             store,
@@ -248,6 +250,7 @@ where
                 );
             }
             Steps::GetCommInfo => {
+                self.migrate_to_official_flow_id()?;
                 self.request_bitvmx_comm_info()?;
             }
             Steps::PreparePeginSetup => {
@@ -263,6 +266,7 @@ where
                 );
             }
             Steps::ConfirmAcceptPeginTransaction => {
+                self.dispatch_transaction()?;
                 info!(
                     "Waiting for transaction confirmations for flow_id: {} and tx_id: {:?}",
                     self.state.flow_id,
@@ -293,6 +297,7 @@ where
                 self.accept_pegin(spv_proof)?;
             }
             Steps::Done => {
+                self.send_pegin_accepted_to_bitvmx()?;
                 info!("PeginFlow {}: Done", self.state.flow_id);
             }
         }
@@ -334,7 +339,7 @@ where
                 Ok(Steps::PeginRequested)
             }
             (Steps::PeginRequested, StepData::PeginRequested(pegin_requested)) => {
-                self.migrate_to_official_flow_id(pegin_requested)?;
+                self.state.ctx.pegin_requested = Some(pegin_requested.clone());
                 Ok(Steps::GetCommInfo)
             }
             (Steps::GetCommInfo, StepData::CommInfo(comm_info)) => {
@@ -346,11 +351,9 @@ where
                 Ok(Steps::AddOperatorTakeHash)
             }
             (Steps::AddOperatorTakeHash, StepData::OperatorTakeHashAdded) => {
-                // Signature flow will be handled externally
                 Ok(Steps::DispatchTransaction)
             }
             (Steps::DispatchTransaction, StepData::DispatchAcceptPeginTransaction) => {
-                self.dispatch_transaction()?;
                 Ok(Steps::ConfirmAcceptPeginTransaction)
             }
             (
@@ -387,7 +390,7 @@ where
                     self.state.flow_id
                 );
                 trace!("PeginAccepted data: {:?}", pegin_accepted);
-                self.send_pegin_accepted_to_bitvmx(pegin_accepted.clone())?;
+                self.state.ctx.pegin_accepted = Some(pegin_accepted.clone());
                 Ok(Steps::Done)
             }
             _ => Err(anyhow!(
@@ -525,7 +528,14 @@ where
         Ok(())
     }
 
-    fn send_pegin_accepted_to_bitvmx(&self, pegin_accepted: PeginAccepted) -> Result<()> {
+    fn send_pegin_accepted_to_bitvmx(&self) -> Result<()> {
+        let pegin_accepted = self
+            .state
+            .ctx
+            .pegin_accepted
+            .as_ref()
+            .ok_or_else(|| anyhow!("PeginAccepted data not available"))?;
+
         debug!(
             "Notifying pegin accepted to BitVMX with flow_id: {}",
             self.state.flow_id
@@ -555,7 +565,14 @@ where
         Ok(())
     }
 
-    fn migrate_to_official_flow_id(&mut self, pegin_requested: &PeginRequested) -> Result<()> {
+    fn migrate_to_official_flow_id(&mut self) -> Result<()> {
+        let pegin_requested = self
+            .state
+            .ctx
+            .pegin_requested
+            .as_ref()
+            .ok_or_else(|| anyhow!("PeginRequested data not available for migration"))?;
+
         // Calculate official flow ID from committee and slot information
         let committee_id: CommitteeId = pegin_requested.committeeId.try_into()?;
         let committee_uuid: Uuid = Uuid::from_u128(*committee_id);
@@ -569,9 +586,8 @@ where
             self.state.flow_id, official_flow_id
         );
 
-        // Update flow context with official ID and PeginRequested data
+        // Update flow context with official ID
         self.state.ctx.official_flow_id = Some(official_flow_id);
-        self.state.ctx.pegin_requested = Some(pegin_requested.clone());
         self.state.flow_id = official_flow_id;
 
         Ok(())
