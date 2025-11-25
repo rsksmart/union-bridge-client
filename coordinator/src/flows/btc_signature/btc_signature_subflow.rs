@@ -29,11 +29,6 @@ pub(crate) trait BtcSignatureSubFlowFactoryApi<BSF: BtcSignatureSubFlowApi> {
     fn create_flow(&self, flow_id: Uuid) -> BSF;
 }
 
-/// ergonomic type alias for tests usage
-#[cfg(test)]
-pub(crate) type MockBtcSigSubFlowFactory =
-    MockBtcSignatureSubFlowFactoryApi<MockBtcSignatureSubFlowApi>;
-
 pub(crate) struct BaseBtcSignatureSubFlow<BSF: BtcSignatureLifecycleApi> {
     lifecycle: BSF,
     is_done: bool,
