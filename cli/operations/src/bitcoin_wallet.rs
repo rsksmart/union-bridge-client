@@ -20,7 +20,7 @@ pub async fn handle_bitcoin_funding(environment: Environment, execute: bool) -> 
     let addresses = match environment {
         Environment::Local => collect_local_addresses().await?,
         Environment::LocalDocker => collect_local_docker_addresses().await?,
-        Environment::Alphanet | Environment::Testnet => {
+        Environment::Alphanet | Environment::Testnet | Environment::Regtest => {
             collect_remote_addresses(environment).await?
         }
     };
@@ -228,19 +228,19 @@ fn print_instructions(env: Environment, addresses: &[String]) {
     println!("Note: See the bitcoin-wallet README for how to start and use the CLI: ../cli/bitcoin-wallet/README.md\n");
 
     match env {
-        Environment::Alphanet | Environment::Testnet => {
-            println!(
-                "Run the following command in your bitcoin-wallet or wallet tooling for {}:",
-                env.get_name()
-            );
-            println!("  send_to_address {} {}\n", joined, FUND_AMOUNT);
-        }
         Environment::LocalDocker | Environment::Local => {
             println!("Run the following commands in the bitcoin-wallet CLI (Regtest):");
             println!("1 =>    clear_db   (if you see a misaligned utxos error)");
             println!("2 =>    mine_utxo 900000000");
             println!("3 =>    send_to_address {} {}", joined, FUND_AMOUNT);
             println!("4 =>    mine_block");
+        }
+        Environment::Regtest | Environment::Alphanet | Environment::Testnet => {
+            println!(
+                "Run the following command in your bitcoin-wallet or wallet tooling for {}:",
+                env.get_name()
+            );
+            println!("  send_to_address {} {}\n", joined, FUND_AMOUNT);
         }
     }
 }

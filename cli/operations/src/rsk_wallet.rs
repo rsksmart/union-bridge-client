@@ -36,11 +36,8 @@ pub async fn handle_operator_funding(env: Environment) -> Result<()> {
         Environment::LocalDocker => {
             fund_local_docker()?;
         }
-        Environment::Alphanet => {
-            print_instructions(Environment::Alphanet)?;
-        }
-        Environment::Testnet => {
-            print_instructions(Environment::Testnet)?;
+        Environment::Alphanet | Environment::Testnet | Environment::Regtest => {
+            print_instructions(env)?;
         }
     }
     Ok(())
