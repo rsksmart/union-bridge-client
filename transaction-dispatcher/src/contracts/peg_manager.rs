@@ -1,4 +1,3 @@
-use crate::contracts::common::send_tx_with_gas_bump;
 use alloy_primitives::{Address, FixedBytes, U256, hex::FromHex};
 use alloy_provider::Provider;
 use alloy_rpc_types::TransactionReceipt;
@@ -9,6 +8,7 @@ use union_contracts::bindings::peg_manager::PegManager::{
 };
 
 use crate::contracts::bitcoin_manager::ParseFieldError;
+use crate::contracts::common::TransactionSender;
 
 use crate::types::BtcTxSPVProofInput;
 
@@ -101,12 +101,14 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         input: BtcTxSPVProof,
         gas_bumps: u8,
     ) -> alloy_contract::Result<TransactionReceipt> {
-        send_tx_with_gas_bump(
-            &self.contract_instance.provider(),
-            || self.contract_instance.requestPegin(input.clone()),
-            gas_bumps,
-        )
-        .await
+        let provider = self.contract_instance.provider();
+        let sender = TransactionSender::new(provider);
+        sender
+            .send_with_gas_bump(
+                || self.contract_instance.requestPegin(input.clone()),
+                gas_bumps,
+            )
+            .await
     }
 
     async fn invoke_accept_pegin(
@@ -114,12 +116,14 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         input: BtcTxSPVProof,
         gas_bumps: u8,
     ) -> alloy_contract::Result<TransactionReceipt> {
-        send_tx_with_gas_bump(
-            &self.contract_instance.provider(),
-            || self.contract_instance.acceptPegin(input.clone()),
-            gas_bumps,
-        )
-        .await
+        let provider = self.contract_instance.provider();
+        let sender = TransactionSender::new(provider);
+        sender
+            .send_with_gas_bump(
+                || self.contract_instance.acceptPegin(input.clone()),
+                gas_bumps,
+            )
+            .await
     }
 
     async fn invoke_request_pegout(
@@ -128,16 +132,18 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         usr_pub_key: FixedBytes<33>,
         gas_bumps: u8,
     ) -> alloy_contract::Result<TransactionReceipt> {
-        send_tx_with_gas_bump(
-            &self.contract_instance.provider(),
-            || {
-                self.contract_instance
-                    .tryPegout(usr_pub_key.into())
-                    .value(U256::from(msg_value))
-            },
-            gas_bumps,
-        )
-        .await
+        let provider = self.contract_instance.provider();
+        let sender = TransactionSender::new(provider);
+        sender
+            .send_with_gas_bump(
+                || {
+                    self.contract_instance
+                        .tryPegout(usr_pub_key.into())
+                        .value(U256::from(msg_value))
+                },
+                gas_bumps,
+            )
+            .await
     }
 
     async fn invoke_register_pegout(
@@ -145,12 +151,14 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         input: BtcTxSPVProof,
         gas_bumps: u8,
     ) -> alloy_contract::Result<TransactionReceipt> {
-        send_tx_with_gas_bump(
-            &self.contract_instance.provider(),
-            || self.contract_instance.registerUserTake(input.clone()),
-            gas_bumps,
-        )
-        .await
+        let provider = self.contract_instance.provider();
+        let sender = TransactionSender::new(provider);
+        sender
+            .send_with_gas_bump(
+                || self.contract_instance.registerUserTake(input.clone()),
+                gas_bumps,
+            )
+            .await
     }
 
     async fn notify_check_fork_completion(
@@ -226,15 +234,17 @@ impl<P: Provider> PegManagerContractApi for FakePegManagerContract<P> {
         pegout_id: &str,
         gas_bumps: u8,
     ) -> alloy_contract::Result<TransactionReceipt> {
-        send_tx_with_gas_bump(
-            &self.contract_instance.provider(),
-            || {
-                self.contract_instance
-                    .checkForkComplete(pegout_id.to_string())
-            },
-            gas_bumps,
-        )
-        .await
+        let provider = self.contract_instance.provider();
+        let sender = TransactionSender::new(provider);
+        sender
+            .send_with_gas_bump(
+                || {
+                    self.contract_instance
+                        .checkForkComplete(pegout_id.to_string())
+                },
+                gas_bumps,
+            )
+            .await
     }
 }
 

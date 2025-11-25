@@ -75,6 +75,8 @@ where
 pub trait RskContractsGatewayApi {
     fn my_address(&self) -> Address;
 
+    fn get_balance(&self) -> impl Future<Output = Result<U256, DomainErrors>>;
+
     fn get_temporary_pegin_address(
         &self,
         input: PeginAddressInput,
@@ -152,7 +154,8 @@ pub trait RskContractsGatewayApi {
 }
 
 #[derive(Clone)]
-pub struct RskContractsGateway<P: Provider> {
+pub struct RskContractsGateway<P: Provider + Clone> {
+    provider: P,
     member_address: Address,
     get_temporary_pegin_address_call: GetTemporaryPeginAddressCall<PegManagerContract<P>>,
     request_pegin_invoke: RequestPeginInvoke<PegManagerContract<P>>,
@@ -234,6 +237,7 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             StreamManagerContract::new(provider.clone(), stream_manager_address.into());
 
         Ok(RskContractsGateway {
+            provider: provider.clone(),
             member_address,
             get_temporary_pegin_address_call: GetTemporaryPeginAddressCall::new(
                 peg_manager_contract.clone(),
@@ -303,9 +307,21 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
     }
 }
 
-impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
+impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     fn my_address(&self) -> Address {
         self.member_address
+    }
+
+    fn get_balance(&self) -> impl Future<Output = Result<U256, DomainErrors>> {
+        async move {
+            self.provider
+                .get_balance(self.member_address.into())
+                .await
+                .map_err(|e| {
+                    error!("Failed to get balance for {}: {}", self.member_address, e);
+                    DomainErrors::InternalServerError(format!("Failed to get balance: {}", e))
+                })
+        }
     }
 
     async fn get_temporary_pegin_address(
@@ -548,6 +564,14 @@ pub enum DomainErrors {
     SignaturesError(String),
     #[error("Missing confirmations on native bridge: {0}")]
     MissingConfirmationsOnNativeBridge(String),
+    #[error("Member already deposited communication data: {0}")]
+    MemberAlreadyDepositedCommunicationData(String),
+    #[error("Member info already deposited: {0}")]
+    MemberInfoAlreadyDeposited(String),
+    #[error("Member already registered for stream: {0}")]
+    MemberAlreadyRegisteredForStream(String),
+    #[error("Invalid slot state: expected {expected}, actual {actual}")]
+    InvalidSlotState { expected: u8, actual: u8 },
 
     // unhandled smart contract errors
     #[error("Unhandled Contract Error: {0}")]

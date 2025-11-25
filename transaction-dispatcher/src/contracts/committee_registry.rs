@@ -1,4 +1,4 @@
-use crate::contracts::common::send_tx_with_gas_bump;
+use crate::contracts::common::TransactionSender;
 use crate::contracts::types::Address;
 use crate::rsk_gateway::DomainErrors;
 use alloy_primitives::U256;
@@ -98,16 +98,18 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
         let stream = denomination.into_underlying();
         let role = role.into_underlying();
 
-        send_tx_with_gas_bump(
-            &self.contract_instance.provider(),
-            || {
-                self.contract_instance
-                    .applyToStream(stream, role, public_keys.clone(), funding_utxo.clone())
-                    .value(value)
-            },
-            gas_bumps,
-        )
-        .await
+        let provider = self.contract_instance.provider();
+        let sender = TransactionSender::new(provider);
+        sender
+            .send_with_gas_bump(
+                || {
+                    self.contract_instance
+                        .applyToStream(stream, role, public_keys.clone(), funding_utxo.clone())
+                        .value(value)
+                },
+                gas_bumps,
+            )
+            .await
     }
 
     async fn call_get_committee(
@@ -126,15 +128,17 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
         communication_data: Vec<CommitteeRegistry::CommunicationData>,
         gas_bumps: u8,
     ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt> {
-        send_tx_with_gas_bump(
-            &self.contract_instance.provider(),
-            || {
-                self.contract_instance
-                    .depositCommunicationData(*committee_id, communication_data.clone())
-            },
-            gas_bumps,
-        )
-        .await
+        let provider = self.contract_instance.provider();
+        let sender = TransactionSender::new(provider);
+        sender
+            .send_with_gas_bump(
+                || {
+                    self.contract_instance
+                        .depositCommunicationData(*committee_id, communication_data.clone())
+                },
+                gas_bumps,
+            )
+            .await
     }
 
     async fn invoke_deposit_aggregated_key(
@@ -143,15 +147,17 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
         aggregated_key: alloy_primitives::Bytes,
         gas_bumps: u8,
     ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt> {
-        send_tx_with_gas_bump(
-            &self.contract_instance.provider(),
-            || {
-                self.contract_instance
-                    .depositAggregatedKey(*committee_id, aggregated_key.clone())
-            },
-            gas_bumps,
-        )
-        .await
+        let provider = self.contract_instance.provider();
+        let sender = TransactionSender::new(provider);
+        sender
+            .send_with_gas_bump(
+                || {
+                    self.contract_instance
+                        .depositAggregatedKey(*committee_id, aggregated_key.clone())
+                },
+                gas_bumps,
+            )
+            .await
     }
 }
 

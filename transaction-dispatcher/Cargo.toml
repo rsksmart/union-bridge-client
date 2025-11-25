@@ -38,3 +38,5 @@ mockall = { workspace = true }
 # TODO(Jira) remove in scope of https://rsklabs.atlassian.net/browse/UB-214
 default = ["types"]
 types = []
+# Opt-in flag to use the legacy pending-tx heartbeat/WS receipt path instead of HTTP polling.
+legacy_ws_receipt = []
