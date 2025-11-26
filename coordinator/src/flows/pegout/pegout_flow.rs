@@ -576,7 +576,7 @@ where
         self.state.step
     }
 
-    pub fn get_state(&self) -> &State {
+    pub fn _get_state(&self) -> &State {
         &self.state
     }
 

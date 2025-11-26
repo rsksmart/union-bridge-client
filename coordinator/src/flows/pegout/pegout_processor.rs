@@ -122,19 +122,10 @@ where
             self.store.load_all_flows(StorePrefix::PegoutFlow)?;
 
         for (id, saved_state) in saved_flows.iter() {
-            let restored_flow = self.restore_flow(id, saved_state).map_err(|e| {
+            self.restore_flow(id, saved_state).map_err(|e| {
                 debug!("Failed to restore flow {id}: {e}");
                 e
             })?;
-
-            info!(
-                "Restored pegout flow {id} at step {:?}",
-                restored_flow.current_step(),
-            );
-            debug!(
-                "Restored flow {id} context: {:?}",
-                restored_flow.get_state()
-            );
         }
 
         if !self.pegout_flows.is_empty() {
@@ -148,7 +139,7 @@ where
     }
 
     // restores a flow from a saved state and return a reference to it
-    fn restore_flow(&mut self, id: &Uuid, saved_state: &State) -> Result<&PegoutFlow<CG, BC, S>> {
+    fn restore_flow(&mut self, id: &Uuid, saved_state: &State) -> Result<()> {
         let flow = PegoutFlow::from_saved_state(
             Rc::clone(&self.contracts_gateway),
             self.rt_sync.clone(),
@@ -156,9 +147,17 @@ where
             saved_state.clone(),
             Rc::clone(&self.store),
         );
-        self.pegout_flows.insert(*id, flow);
+        info!(
+            "Restoring pegout flow {id} at step {:?}",
+            &flow.current_step(),
+        );
+        self.pegout_flows
+            .insert(*id, flow)
+            .ok_or_else(|| anyhow!("Failed to insert flow {id}"))?;
 
-        Ok(self.pegout_flows.get(id).expect("Just inserted flow"))
+        debug!("Restored flow {id}");
+
+        Ok(())
     }
 
     pub fn get_user_take_pid(committee_id: Uuid, slot_index: usize) -> Result<Uuid> {
