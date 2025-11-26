@@ -81,7 +81,7 @@ where
         store: Rc<S>,
     ) -> Self {
         let factory = BtcSignatureSubFlowFactory::new(contracts_gateway.clone(), rt_sync.clone());
-        let mut processor = Self {
+        Self {
             contracts_gateway,
             rt_sync,
             bitvmx_broker,
@@ -93,20 +93,33 @@ where
             signature_flows: HashMap::new(),
             tx_status_scheduler: TickScheduler::new(),
             store,
-        };
+        }
+    }
 
-        processor.restore_flows_from_store();
-        processor
+    pub fn restore_or_new(
+        contracts_gateway: Rc<CG>,
+        rt_sync: RuntimeSync,
+        bitvmx_broker: Rc<BC>,
+        global_context: GlobalContext,
+        store: Rc<S>,
+    ) -> Result<Self> {
+        let mut processor = Self::new(
+            contracts_gateway,
+            rt_sync,
+            bitvmx_broker,
+            global_context,
+            store,
+        );
+        processor.restore_flows_from_store()?;
+        Ok(processor)
     }
 
     // todo(fede) this is probably same code as pegin restore flow
     fn restore_flows_from_store(&mut self) -> Result<()> {
         debug!("Checking for pegout flows to restore from persistence");
 
-        let saved_flows: HashMap<Uuid, State> = self
-            .store
-            .load_all_flows(StorePrefix::PegoutFlow)
-            .expect("Failed to load flows from store");
+        let saved_flows: HashMap<Uuid, State> =
+            self.store.load_all_flows(StorePrefix::PegoutFlow)?;
 
         for (id, saved_state) in saved_flows.iter() {
             let restored_flow = self.restore_flow(id, saved_state).map_err(|e| {
