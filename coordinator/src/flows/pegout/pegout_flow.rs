@@ -62,8 +62,6 @@ pub enum StepData {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlowContext {
-    pub flow_id: Uuid,
-    pub step: Steps,
     pub pegout_requested: PegoutRequested,
     pub my_p2p_address: Option<P2PAddress>,
     pub committee_output: Option<GetCommitteeOutput>,
@@ -76,6 +74,7 @@ pub struct FlowContext {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct State {
     pub flow_id: Uuid,
+    pub step: Steps,
     pub ctx: FlowContext,
 }
 
@@ -112,9 +111,8 @@ where
             bitvmx_broker,
             state: State {
                 flow_id: internal_id,
+                step: Steps::PegoutRequested,
                 ctx: FlowContext {
-                    flow_id: internal_id,
-                    step: Steps::PegoutRequested,
                     pegout_requested: pegout_requested.clone(),
                     my_p2p_address: None,
                     committee_output: None,
@@ -147,15 +145,15 @@ where
     fn persist_state(&self) -> Result<()> {
         debug!(
             "PegoutFlow {}: Persisting state for step: {:?}",
-            self.state.flow_id, self.state.ctx.step
+            self.state.flow_id, self.state.step
         );
         self.store
             .save_flow(StoreKey::PegoutFlow(self.state.flow_id), self.state.clone())
     }
 
     pub fn start_step(&mut self, next_step: Steps) -> Result<()> {
-        let previous_step = self.state.ctx.step;
-        self.state.ctx.step = next_step;
+        let previous_step = self.state.step;
+        self.state.step = next_step;
 
         debug!(
             "PegoutFlow {}: {} -> {}",
@@ -220,7 +218,7 @@ where
 
     /// Complete the current step with data and advance to the next
     pub fn complete_step(&mut self, data: StepData) -> Result<()> {
-        let current_step: Steps = self.state.ctx.step;
+        let current_step: Steps = self.state.step;
 
         info!(
             "PegoutFlow {}: Completing step {} with data: {:?} for flow_id {}",
@@ -567,7 +565,7 @@ where
     }
 
     pub fn is_done(&self) -> bool {
-        self.state.ctx.step == Steps::Done
+        self.state.step == Steps::Done
     }
 
     pub fn flow_id(&self) -> Uuid {
@@ -575,7 +573,7 @@ where
     }
 
     pub fn current_step(&self) -> Steps {
-        self.state.ctx.step
+        self.state.step
     }
 
     pub fn get_state(&self) -> &State {
@@ -583,7 +581,7 @@ where
     }
 
     pub fn pegout_requested(&self) -> &PegoutRequested {
-        &self.state.pegout_requested
+        &self.state.ctx.pegout_requested
     }
 }
 
