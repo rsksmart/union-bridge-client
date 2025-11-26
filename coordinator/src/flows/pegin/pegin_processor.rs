@@ -19,7 +19,6 @@ use crate::{
     },
 };
 
-use alloy_primitives::FixedBytes;
 use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::Txid;
 use common::{
@@ -31,7 +30,7 @@ use common::{
         broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi},
     },
     runtime_sync::RuntimeSync,
-    types::{BlockNumber, CommitteeId, Hash256, RskBlockAndUncles},
+    types::{BlockNumber, CommitteeId, Hash256, RskBlockAndUncles, TxIdParser},
 };
 use log::{debug, error, info, trace, warn};
 use sha2::{Digest, Sha256};
@@ -272,9 +271,7 @@ where
                 let accept_pegin_txid = flow
                     .get_accept_pegin_txid()
                     .ok_or_else(|| anyhow!("acceptPeginTxid not found for flow_id: {}", flow_id))?;
-                let hash_to_sign = Hash256::from(FixedBytes::from(
-                    common::types::TxIdParser::txid_to_fb_32(accept_pegin_txid),
-                ));
+                let hash_to_sign = Hash256::from(TxIdParser::txid_to_fb_32(accept_pegin_txid));
                 let register_input = RegisterSignaturesBitVmxData {
                     hash_to_sign,
                     nonce: pegin_accepted.accept_pegin_nonce.clone(),
