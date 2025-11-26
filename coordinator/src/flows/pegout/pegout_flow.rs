@@ -433,9 +433,12 @@ where
         let take_aggregated_key = Self::build_take_aggregated_key(&committee_output)?;
 
         // Convert fixed-size hashes and ids to Vec<u8>
-        let pegout_signature_hash: Vec<u8> = event.pegoutSignatureHash.as_slice().to_vec();
+        // Note: v0.2.0 contracts merged pegoutSignatureHash and pegoutSignatureMessage into pegoutSignatureData struct
+        let pegout_signature_hash: Vec<u8> =
+            event.pegoutSignatureData.signatureHash.as_slice().to_vec();
+        let pegout_signature_message: Vec<u8> =
+            event.pegoutSignatureData.signatureMessage.as_ref().to_vec();
         let pegout_id: Vec<u8> = event.pegoutId.as_slice().to_vec();
-        let pegout_signature_message: Vec<u8> = event.pegoutSignatureMessage.clone().to_vec();
         let slot_index = event.slotId as usize;
 
         Ok(PegOutRequest {
@@ -540,6 +543,10 @@ where
     /// Get the current step
     pub fn current_step(&self) -> Steps {
         self.state.step
+    }
+
+    pub fn pegout_requested(&self) -> &PegoutRequested {
+        &self.state.pegout_requested
     }
 }
 

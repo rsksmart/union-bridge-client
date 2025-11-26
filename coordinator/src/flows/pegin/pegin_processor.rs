@@ -14,7 +14,7 @@ use crate::{
         pegin::pegin_flow::{PeginFlow, StepData, Steps},
     },
     types::{
-        AllOperatorTakeTxHashesAddedEvent, EventStatus, PeginAcceptedEvent, PeginRequestedEvent,
+        AllOperatorTakeTxidsAddedEvent, EventStatus, PeginAcceptedEvent, PeginRequestedEvent,
         RegisterSignaturesBitVmxData, RskPegManagerEvents, TickScheduler, UserRequests,
     },
 };
@@ -30,7 +30,7 @@ use common::{
         broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi},
     },
     runtime_sync::RuntimeSync,
-    types::{BlockNumber, CommitteeId, RskBlockAndUncles},
+    types::{BlockNumber, CommitteeId, Hash256, RskBlockAndUncles, TxIdParser},
 };
 use log::{debug, error, info, trace, warn};
 use sha2::{Digest, Sha256};
@@ -177,7 +177,7 @@ where
         let flow_opt = self.pegin_flows.values_mut().find(|flow| {
             flow.get_accept_pegin_txid()
                 .map(|txid| common::types::TxIdParser::txid_to_fb_32(txid))
-                == Some(pa.inner.acceptPeginTxHash)
+                == Some(pa.inner.acceptPeginTxid)
         });
 
         if let Some(flow) = flow_opt {
@@ -226,7 +226,7 @@ where
             RskPegManagerEvents::PeginAccepted(pa) => {
                 self.handle_pegin_accepted(pa)?;
             }
-            RskPegManagerEvents::AllOperatorTakeTxHashesAdded(aottah) => {
+            RskPegManagerEvents::AllOperatorTakeTxidsAdded(aottah) => {
                 self.handle_all_operator_take_tx_hashes_added(aottah)?;
             }
             _ => {
@@ -240,18 +240,18 @@ where
 
     fn handle_all_operator_take_tx_hashes_added(
         &mut self,
-        event: &AllOperatorTakeTxHashesAddedEvent,
+        event: &AllOperatorTakeTxidsAddedEvent,
     ) -> Result<()> {
         debug!(
-            "Processing AllOperatorTakeTxHashesAdded: acceptPeginTxHash={}",
-            event.inner.acceptPeginTxHash
+            "Processing AllOperatorTakeTxidsAdded: acceptPeginTxid={}",
+            event.inner.acceptPeginTxid
         );
 
         // Find the flow by accept_pegin_tx_hash
         let flow_opt = self.pegin_flows.values_mut().find(|flow| {
             flow.get_accept_pegin_txid()
                 .map(|txid| common::types::TxIdParser::txid_to_fb_32(txid))
-                == Some(event.inner.acceptPeginTxHash)
+                == Some(event.inner.acceptPeginTxid)
         });
 
         if let Some(flow) = flow_opt {
@@ -266,8 +266,17 @@ where
                         anyhow!("PeginAcceptedMessage not found for flow_id: {}.", flow_id)
                     })?;
 
-                let register_input =
-                    RegisterSignaturesBitVmxData::try_from(pegin_accepted.clone())?;
+                // Note: v0.2.0 contracts - initSignatures is called with acceptPeginTxid (the transaction ID),
+                // not the signatureHash. So we must use acceptPeginTxid for addMemberNonce.
+                let accept_pegin_txid = flow
+                    .get_accept_pegin_txid()
+                    .ok_or_else(|| anyhow!("acceptPeginTxid not found for flow_id: {}", flow_id))?;
+                let hash_to_sign = Hash256::from(TxIdParser::txid_to_fb_32(accept_pegin_txid));
+                let register_input = RegisterSignaturesBitVmxData {
+                    hash_to_sign,
+                    nonce: pegin_accepted.accept_pegin_nonce.clone(),
+                    signature: pegin_accepted.accept_pegin_signature.clone(),
+                };
 
                 let mut btc_sig_subflow = self.btc_sig_subflow_factory.create_flow(flow_id);
                 btc_sig_subflow.start_signature_flow(flow_id, &register_input)?;
@@ -281,8 +290,8 @@ where
             }
         } else {
             debug!(
-                "Received AllOperatorTakeTxHashesAdded: unknown_acceptPeginTxHash={:?}",
-                event.inner.acceptPeginTxHash
+                "Received AllOperatorTakeTxidsAdded: unknown_acceptPeginTxid={:?}",
+                event.inner.acceptPeginTxid
             );
         }
 
@@ -313,13 +322,13 @@ where
     }
 
     fn build_all_operator_take_tx_hashes_added_event_info(
-        event: &AllOperatorTakeTxHashesAddedEvent,
+        event: &AllOperatorTakeTxidsAddedEvent,
     ) -> (String, EventStatus, BlockNumber, RskPegManagerEvents) {
         (
             format!("all-operator-take-tx-hashes-added-{}", event.tx_hash),
             event.removed,
             event.block_number,
-            RskPegManagerEvents::AllOperatorTakeTxHashesAdded(event.clone()),
+            RskPegManagerEvents::AllOperatorTakeTxidsAdded(event.clone()),
         )
     }
 
@@ -774,7 +783,7 @@ where
         let (id, is_removal, block_num, managed_event) = match event {
             RskPegManagerEvents::PeginRequested(e) => Self::build_pegin_requested_event_info(e),
             RskPegManagerEvents::PeginAccepted(e) => Self::build_pegin_accepted_event_info(e),
-            RskPegManagerEvents::AllOperatorTakeTxHashesAdded(e) => {
+            RskPegManagerEvents::AllOperatorTakeTxidsAdded(e) => {
                 Self::build_all_operator_take_tx_hashes_added_event_info(e)
             }
             _ => {

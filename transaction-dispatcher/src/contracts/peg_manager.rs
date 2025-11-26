@@ -345,7 +345,7 @@ mod tests {
     #[test]
     fn test_already_registered_accept_pegin() {
         let expected_err = PegManagerErrors::PeginAlreadyRequested(PeginAlreadyRequested {
-            btcTxHash: "0x123456789abcdef123456789abcdef123456789abcdef123456789abcdef1234"
+            btcTxid: "0x123456789abcdef123456789abcdef123456789abcdef123456789abcdef1234"
                 .parse()
                 .expect("Failed to parse tx hash"),
         });
@@ -414,9 +414,9 @@ mod tests {
     #[test]
     fn test_already_pegin_requested() {
         let expected_err = PegManagerErrors::PeginAlreadyRequested(PeginAlreadyRequested {
-            btcTxHash: "0x987654321abcdef987654321abcdef987654321abcdef987654321abcdef9876"
+            btcTxid: "0x987654321abcdef987654321abcdef987654321abcdef987654321abcdef9876"
                 .parse()
-                .unwrap(),
+                .expect("Failed to parse tx hash"),
         });
 
         let result = generate_contract_revert_error(expected_err);

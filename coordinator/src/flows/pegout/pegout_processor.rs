@@ -23,7 +23,7 @@ use common::msg_broker::bitvmx_types::{
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::types::TxIdParser;
-use common::types::{BlockNumber, CommitteeId, RskBlockAndUncles};
+use common::types::{BlockNumber, CommitteeId, Hash256, RskBlockAndUncles};
 use log::{debug, error, info, trace, warn};
 use sha2::{Digest, Sha256};
 use std::any::type_name_of_val;
@@ -153,7 +153,7 @@ where
         info!("Processing confirmed PegoutRegistered event: {:?}", pr);
         // Find the flow corresponding to this pegout registration using event tx_hash with  flow.state.pegout_registered_tx
         let pegout_registered = pr.inner.clone();
-        let pegout_registered_txid: Txid = TxIdParser::fb_32_to_txid(pegout_registered.txHash);
+        let pegout_registered_txid: Txid = TxIdParser::fb_32_to_txid(pegout_registered.txid);
         let flow_opt = self
             .pegout_flows
             .values_mut()
@@ -449,7 +449,14 @@ where
                         flow.current_step()
                     );
                 }
-                let register_input = RegisterSignaturesBitVmxData::try_from(input.clone())?;
+                // Note: v0.2.0 contracts - initSignatures is called with pegoutSignatureData.txid (the transaction ID),
+                // not user_take_sighash. So we must use the txid from PegoutRequested event.
+                let hash_to_sign = Hash256::from(flow.pegout_requested().pegoutSignatureData.txid);
+                let register_input = RegisterSignaturesBitVmxData {
+                    hash_to_sign,
+                    nonce: input.user_take_nonce.clone(),
+                    signature: input.user_take_signature.clone(),
+                };
                 flow.complete_step(StepData::PegoutAccepted(input))?;
 
                 let mut btc_sig_subflow = self.btc_sig_subflow_factory.create_flow(*flow_id);

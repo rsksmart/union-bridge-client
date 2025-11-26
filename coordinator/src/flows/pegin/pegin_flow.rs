@@ -440,7 +440,7 @@ where
         let accept_pegin_sighash = event.acceptPeginSignatureMessage.to_vec();
         let take_aggregated_key = self.build_take_aggregated_key(committee_output)?;
         let reimbursement_pubkey = self.build_reimbursement_pubkey(event)?;
-        let txid = TxIdParser::fb_32_to_txid(event.requestPeginTxHash);
+        let txid = TxIdParser::fb_32_to_txid(event.requestPeginTxid);
 
         Ok(PeginRequestMessage {
             txid,
