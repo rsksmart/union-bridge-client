@@ -12,8 +12,8 @@ use crate::{
         },
         common::GlobalContext,
         pegin::{
-            get_temp_pegin_pid,
             pegin_flow::{PeginFlow, State, StepData, Steps},
+            utils::get_temp_pegin_pid,
         },
     },
     store::{CoordinatorStoreApi, StoreKey, StorePrefix},
@@ -178,7 +178,7 @@ where
         );
 
         // Get the Bitcoin tx_id to find existing flow
-        let btc_tx_id = TxIdParser::fb_32_to_txid(event.requestPeginTxHash);
+        let btc_tx_id = TxIdParser::fb_32_to_txid(event.requestPeginTxid);
         let temp_flow_id = get_temp_pegin_pid(btc_tx_id);
 
         // Find the existing flow that should have been created from PeginTransactionFound
@@ -232,8 +232,8 @@ where
             flow.complete_step(StepData::PeginAccepted(pa.inner.clone()))?;
         } else {
             return Err(anyhow!(
-                "No matching pegin flow found for PeginAccepted event: acceptPeginTxHash={}. This indicates a missing or corrupted flow state.",
-                pa.inner.acceptPeginTxHash
+                "No matching pegin flow found for PeginAccepted event: acceptPeginTxid={}. This indicates a missing or corrupted flow state.",
+                pa.inner.acceptPeginTxid
             ));
         }
         Ok(())
