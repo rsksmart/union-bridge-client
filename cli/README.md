@@ -12,10 +12,10 @@ Launches one or more Union Bridge clients locally for development and testing.
 # Run all 4 clients
 ./cli-run.sh --features anvil
 
-# Run a single client (can run multiple in parallel)
+# Run a single client
 ./cli-run.sh --id 1 --features anvil
 
-# Run with fresh databases (kills existing services first)
+# Run with fresh databases
 ./cli-run.sh --fresh --features anvil
 ```
 

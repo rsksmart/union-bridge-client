@@ -53,7 +53,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         }
     }
 
-    #[cfg(not(any(feature = "fresh_node", feature = "anvil")))]
+    #[cfg(not(feature = "fresh_node"))]
     fn get_initial_block(&self, provider: &P) -> RskBlock {
         let opt_block = provider
             .get_block_by_hash(self.initial_block_hash)
@@ -70,7 +70,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         })
     }
 
-    #[cfg(any(feature = "fresh_node", feature = "anvil"))]
+    #[cfg(feature = "fresh_node")]
     fn get_initial_block(&self, provider: &P) -> RskBlock {
         provider
             .get_best_block()
