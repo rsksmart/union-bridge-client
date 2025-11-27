@@ -143,16 +143,9 @@ where
                 saved_state.clone(),
                 Rc::clone(&self.store),
             );
+            info!("Restored pegin flow {id} at step {:?}", flow.current_step());
+            debug!("Restored flow {id} context: {:?}", flow.get_state());
             self.pegin_flows.insert(*id, flow);
-            let inserted_flow = self.pegin_flows.get(id).expect("Just inserted flow");
-            info!(
-                "Restored pegin flow {id} at step {:?}",
-                inserted_flow.current_step(),
-            );
-            debug!(
-                "Restored flow {id} context: {:?}",
-                inserted_flow.get_state()
-            );
         }
 
         if !self.pegin_flows.is_empty() {
@@ -248,12 +241,12 @@ where
             .map(|(k, _)| *k)
             .collect();
 
-        for internal_id in &completed {
+        for internal_id in completed {
             debug!("Removing completed flow: {internal_id}");
-            self.pegin_flows.remove(internal_id);
+            self.pegin_flows.remove(&internal_id);
 
             self.store
-                .delete_flow(StoreKey::PeginFlow(*internal_id))
+                .delete_flow(StoreKey::PeginFlow(internal_id))
                 .unwrap_or_else(|e| {
                     error!("Failed to remove completed flow {internal_id} from persistence: {e}")
                 });
