@@ -231,10 +231,10 @@ where
         if let Some(flow) = flow_opt {
             flow.complete_step(StepData::PeginAccepted(pa.inner.clone()))?;
         } else {
-            return Err(anyhow!(
+            bail!(
                 "No matching pegin flow found for PeginAccepted event: acceptPeginTxid={}. This indicates a missing or corrupted flow state.",
                 pa.inner.acceptPeginTxid
-            ));
+            );
         }
         Ok(())
     }
