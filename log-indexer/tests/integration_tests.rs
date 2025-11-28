@@ -35,7 +35,6 @@ const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
 */
 #[test]
 fn test_when_log_indexer_runs_should_store_logs_from_subscription() -> Result<()> {
-    let _ = env_logger::builder().is_test(true).try_init();
     const LOG_INFO_TUPLE_SIZE: u64 = 10;
     const EVENT_SIGNATURE: &str = "Transfer(address,address,uint256)";
     const INIT_BLOCK_HEIGHT: u64 = 1;
@@ -43,6 +42,7 @@ fn test_when_log_indexer_runs_should_store_logs_from_subscription() -> Result<()
     const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 35;
     const LOG_BLOCK_HEIGHT_RANGE: Range<u64> =
         MAX_BLOCK_HEIGHT_SUBSCRIPTION - FILTER_BLOCK_FROM_DEPTH..MAX_BLOCK_HEIGHT_SUBSCRIPTION;
+    let _ = env_logger::builder().is_test(true).try_init();
     let temp_dir = tempdir()?;
     let store_path = temp_dir.path().to_str().unwrap();
     let store = RawLogStore::new(store_path)?;
@@ -70,11 +70,8 @@ fn test_when_log_indexer_runs_should_store_logs_from_subscription() -> Result<()
     );
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
     let addresses: Vec<Address> = generate_fake_addresses(LOG_INFO_TUPLE_SIZE);
-    let log_info_tuples: Vec<LogInfo> = log_info_tuple_generator(
-        LOG_BLOCK_HEIGHT_RANGE,
-        LOG_INFO_TUPLE_SIZE,
-        addresses.clone(),
-    );
+    let log_info_tuples: Vec<LogInfo> =
+        log_info_tuple_generator(&LOG_BLOCK_HEIGHT_RANGE, LOG_INFO_TUPLE_SIZE, &addresses);
     let filter = RskSubscriptionFilter::new(
         addresses.clone(),
         vec![],
@@ -89,8 +86,8 @@ fn test_when_log_indexer_runs_should_store_logs_from_subscription() -> Result<()
     cycle_indexer(
         store,
         mock_rsk_provider,
-        managed_contracts,
-        shutting_down,
+        &managed_contracts,
+        &shutting_down,
         None,
     );
     let store_after: RawLogStore = RawLogStore::new(store_path)?;
@@ -113,7 +110,6 @@ fn test_when_log_indexer_runs_should_store_logs_from_subscription() -> Result<()
 */
 #[test]
 fn test_when_log_before_initial_height_should_not_store_log() -> Result<()> {
-    let _ = env_logger::builder().is_test(true).try_init();
     const LOG_INFO_TUPLE_SIZE: u64 = 10;
     const EVENT_SIGNATURE: &str = "Transfer(address,address,uint256)";
     const INIT_BLOCK_HEIGHT: u64 = 1;
@@ -121,6 +117,7 @@ fn test_when_log_before_initial_height_should_not_store_log() -> Result<()> {
     const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 35;
     const LOG_BLOCK_HEIGHT_RANGE: Range<u64> =
         MAX_BLOCK_HEIGHT_SUBSCRIPTION - FILTER_BLOCK_FROM_DEPTH..MAX_BLOCK_HEIGHT_SUBSCRIPTION;
+    let _ = env_logger::builder().is_test(true).try_init();
     let temp_dir = tempdir()?;
     let store_path = temp_dir.path().to_str().unwrap();
     let store = RawLogStore::new(store_path)?;
@@ -148,11 +145,8 @@ fn test_when_log_before_initial_height_should_not_store_log() -> Result<()> {
     );
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
     let addresses: Vec<Address> = generate_fake_addresses(LOG_INFO_TUPLE_SIZE);
-    let log_info_tuples: Vec<LogInfo> = log_info_tuple_generator(
-        LOG_BLOCK_HEIGHT_RANGE,
-        LOG_INFO_TUPLE_SIZE,
-        addresses.clone(),
-    );
+    let log_info_tuples: Vec<LogInfo> =
+        log_info_tuple_generator(&LOG_BLOCK_HEIGHT_RANGE, LOG_INFO_TUPLE_SIZE, &addresses);
     let filter = RskSubscriptionFilter::new(
         addresses.clone(),
         vec![],
@@ -177,8 +171,8 @@ fn test_when_log_before_initial_height_should_not_store_log() -> Result<()> {
     cycle_indexer(
         store,
         mock_rsk_provider,
-        managed_contracts,
-        shutting_down,
+        &managed_contracts,
+        &shutting_down,
         None,
     );
     let store_after: RawLogStore = RawLogStore::new(store_path)?;
@@ -193,16 +187,17 @@ fn test_when_log_before_initial_height_should_not_store_log() -> Result<()> {
 }
 
 fn log_info_tuple_generator(
-    filter_from_block_height: Range<u64>,
+    filter_from_block_height: &Range<u64>,
     vec_size: u64,
-    addresses: Vec<Address>,
+    addresses: &[Address],
 ) -> Vec<LogInfo> {
-    let mut v = Vec::with_capacity(vec_size as usize);
+    let mut v =
+        Vec::with_capacity(usize::try_from(vec_size).expect("vec_size too large for usize"));
     let mut rng = rand::rng();
     let block_num_range = filter_from_block_height.clone();
     for i in 0..vec_size {
         let block_num = rng.random_range(block_num_range.clone());
-        let address: Address = addresses[i as usize];
+        let address: Address = addresses[usize::try_from(i).expect("index too large for usize")];
         let block_hash = BlockHash::from(H256::random());
         let tx_hash = TxHash::from(H256::random());
         let log_index = rng.random_range(LOG_INDEX_RANGE);
@@ -221,8 +216,8 @@ fn log_info_tuple_generator(
 fn cycle_indexer(
     store: RawLogStore,
     mock_rsk_provider: MockRskProvider,
-    managed_contracts: HashMap<Address, ContractInfo>,
-    shutting_down: ShutdownFlag,
+    managed_contracts: &HashMap<Address, ContractInfo>,
+    shutting_down: &ShutdownFlag,
     msg: Option<&str>,
 ) {
     let indexer = LogIndexer::new(
@@ -231,7 +226,7 @@ fn cycle_indexer(
         BlockHash::try_from(DEFAULT_BLOCK_HASH).unwrap(),
         0,
         0,
-        managed_contracts,
+        managed_contracts.clone(),
         shutting_down.clone(),
     )
     .context("Failed to create LogIndexer")

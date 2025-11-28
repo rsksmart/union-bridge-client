@@ -49,6 +49,11 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
         }
     }
 
+    /// Run the notifier loop
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if there's a failure in the message broker or channel communication
     pub fn run(&mut self) -> Result<()> {
         loop {
             if self.shutdown_flag.is_on() {
@@ -79,7 +84,7 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
                 warn!(
                     "Unexpected request type on Notifier from consumer {consumer_id}, unsubscribing"
                 );
-                self.unsubscribe_consumer_from_all_contracts(&consumer_id);
+                self.unsubscribe_consumer_from_all_contracts(consumer_id);
             }
             None => {
                 trace!("No messages in Notifier's msg_broker");
@@ -119,10 +124,10 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
         }
     }
 
-    fn unsubscribe_consumer_from_all_contracts(&mut self, consumer_id: &u32) {
+    fn unsubscribe_consumer_from_all_contracts(&mut self, consumer_id: u32) {
         info!("Unsubscribing consumer {consumer_id} from all contracts");
         self.contracts_with_consumers.retain(|_, consumers| {
-            consumers.remove(consumer_id);
+            consumers.remove(&consumer_id);
             !consumers.is_empty()
         });
     }
@@ -130,32 +135,33 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
     fn wait_for_log(&mut self, timeout: Duration) -> Result<Option<RskLog>> {
         match self.new_log_channel.recv_timeout(timeout) {
             Ok(log) => {
-                trace!("New log received by notifier {:?}", log);
+                trace!("New log received by notifier {log:?}");
                 Ok(Some(log))
             }
             Err(RecvTimeoutError::Timeout) => {
-                trace!("No new log within {:?} timeout", timeout);
+                trace!("No new log within {timeout:?} timeout");
                 Ok(None)
             }
-            Err(RecvTimeoutError::Disconnected) => match self.shutdown_flag.is_on() {
-                true => Ok(None),
-                false => Err(anyhow!("Indexer channel disconnected")),
-            },
+            Err(RecvTimeoutError::Disconnected) => {
+                if self.shutdown_flag.is_on() {
+                    Ok(None)
+                } else {
+                    Err(anyhow!("Indexer channel disconnected"))
+                }
+            }
         }
     }
 
     fn notify_consumers(&mut self, new_log: RskLog) -> Result<()> {
         let address: Address = new_log.info().address();
 
-        let topics0 = new_log
-            .event()
-            .topics()
-            .first()
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| {
+        let topics0 = new_log.event().topics().first().map_or_else(
+            || {
                 error!("Log has no topics, using NoTopic for selector");
                 "NoTopic".to_string()
-            });
+            },
+            ToString::to_string,
+        );
 
         let selector = format!("{topics0} @ {address}");
 
@@ -217,8 +223,8 @@ mod tests {
             .expect("Failed to join shutdown handle");
 
         if let Err(e) = &result {
-            eprintln!("Error: {:?}", e);
-            panic!("Run failed: {:?}", e);
+            eprintln!("Error: {e:?}");
+            panic!("Run failed: {e:?}");
         }
     }
 
@@ -248,8 +254,8 @@ mod tests {
             .expect("Failed to join shutdown handle");
 
         if let Err(e) = &result {
-            eprintln!("Error: {:?}", e);
-            panic!("Run failed: {:?}", e);
+            eprintln!("Error: {e:?}");
+            panic!("Run failed: {e:?}");
         }
     }
 
@@ -291,8 +297,8 @@ mod tests {
             .expect("Failed to join shutdown handle");
 
         if let Err(e) = &result {
-            eprintln!("Error: {:?}", e);
-            panic!("Run failed: {:?}", e);
+            eprintln!("Error: {e:?}");
+            panic!("Run failed: {e:?}");
         }
     }
 
@@ -349,8 +355,8 @@ mod tests {
             .expect("Failed to join shutdown handle");
 
         if let Err(e) = &result {
-            eprintln!("Error: {:?}", e);
-            panic!("Run failed: {:?}", e);
+            eprintln!("Error: {e:?}");
+            panic!("Run failed: {e:?}");
         }
     }
 
@@ -407,8 +413,8 @@ mod tests {
             .expect("Failed to join shutdown handle");
 
         if let Err(e) = &result {
-            eprintln!("Error: {:?}", e);
-            panic!("Run failed: {:?}", e);
+            eprintln!("Error: {e:?}");
+            panic!("Run failed: {e:?}");
         }
     }
 
