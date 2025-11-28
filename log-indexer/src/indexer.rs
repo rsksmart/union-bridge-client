@@ -24,6 +24,7 @@ pub struct LogIndexer<P: RskProvider, S: LogStore> {
 }
 
 impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new_with_notifier(
         store: S,
         rsk_provider: P,
@@ -105,11 +106,8 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
             return Ok(());
         }
 
-        let contract_addresses: Vec<Address> = self
-            .managed_contracts
-            .iter()
-            .map(|c| c.1.address.clone())
-            .collect();
+        let contract_addresses: Vec<Address> =
+            self.managed_contracts.iter().map(|c| c.1.address).collect();
 
         let last_block_number = self.recover_logs(&contract_addresses)?;
 
@@ -127,9 +125,7 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
 
         let loop_result = self.listen_logs(&mut rsk_log_subscription);
 
-        rsk_log_subscription
-            .unsubscribe()
-            .and_then(|_| loop_result)?;
+        rsk_log_subscription.unsubscribe().and(loop_result)?;
 
         Ok(())
     }
@@ -230,7 +226,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 
     #[cfg(feature = "fresh_node")]
     fn recover_logs(&self, _addrs: &Vec<Address>) -> Result<BlockNumber> {
-        return Ok(BlockNumber::from(self.initial_block_number));
+        Ok(self.initial_block_number)
     }
 
     #[cfg_attr(feature = "fresh_node", allow(dead_code))]
@@ -336,10 +332,10 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                 .set_sync_checkpoint(&new_log)
                 .context("Setting new log checkpoint")?;
 
-            if let Some(channel) = &self.new_log_sender {
-                if let Err(e) = channel.send(new_log) {
-                    error!("Failed to send new block through channel: {:?}", e);
-                }
+            if let Some(channel) = &self.new_log_sender
+                && let Err(e) = channel.send(new_log)
+            {
+                error!("Failed to send new block through channel: {:?}", e);
             }
         }
 
