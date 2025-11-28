@@ -6,6 +6,9 @@ edition = "2024"
 [[bin]]
 name = "check-fork-tester"
 
+[lints]
+workspace = true
+
 [dependencies]
 check-fork = { path = ".." }
 

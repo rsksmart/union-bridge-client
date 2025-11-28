@@ -3,6 +3,9 @@ name = "check-fork-zkp"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [build-dependencies]
 risc0-build = { version = "3.0.4" }
 
