@@ -27,7 +27,7 @@ pub trait ToHexString {
     fn to_hex_string(&self) -> String;
 }
 
-//// Represents a rootstock block hash.
+/// Represents a rootstock block hash.
 ///
 /// This struct ensures type safety when working with block hashes, preventing
 /// accidental misuse of raw `H256` values in places where a `BlockHash` is expected.
@@ -455,6 +455,7 @@ impl Eq for RskBlock {
 }
 
 impl RskBlock {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         number: BlockNumber,
         hash: BlockHash,

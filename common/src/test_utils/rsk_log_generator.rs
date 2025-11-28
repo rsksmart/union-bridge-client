@@ -8,6 +8,12 @@ use sha3::{Digest, Keccak256};
 #[derive(Clone)]
 pub struct FakeLogGenerator {}
 
+impl Default for FakeLogGenerator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FakeLogGenerator {
     pub fn new() -> Self {
         FakeLogGenerator {}
@@ -22,7 +28,7 @@ impl FakeLogGenerator {
 
     pub fn generate_log(&self, event_signature: &str, address: Address) -> RskLog {
         let fake_log_info = LogInfo::new(
-            address.clone(),
+            address,
             BlockHash::from(H256::random()),
             1.into(),
             TxHash::from(H256::random()),

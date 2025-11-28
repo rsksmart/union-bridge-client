@@ -119,7 +119,7 @@ impl BrokerClientApi<ToServer, FromServer> for BrokerClient {
     fn try_recv(&self) -> Result<Option<FromServer>, BrokerError> {
         self.channel.recv()?.map_or(Ok(None), |(data, _id)| {
             serde_json::from_str(&data)
-                .map(|deserialized| Some(deserialized))
+                .map(Some)
                 .map_err(BrokerError::SerializationError)
         })
     }
@@ -249,5 +249,5 @@ fn resolve_ip(name: String, port: u16) -> std::io::Result<IpAddr> {
         .to_socket_addrs()?
         .find(|a| a.is_ipv4()) // pick IPv4 if you need IpAddr::V4
         .map(|a| a.ip())
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "no A record"))
+        .ok_or_else(|| std::io::Error::other("no A record"))
 }

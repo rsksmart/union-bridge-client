@@ -55,7 +55,7 @@ pub trait RskProvider {
         &self,
         from: BlockNumber,
         to: BlockNumber,
-        addrs: &Vec<Address>,
+        addrs: &[Address],
     ) -> Result<Vec<RskLog>>;
     fn disconnect(&self) -> Result<()>;
 }
