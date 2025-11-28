@@ -3,6 +3,9 @@ name = "user-api"
 version = "0.1.0"
 edition = "2021"
 
+[lints.clippy]
+all = "allow" # non-production code, do not require strict linting
+
 [dependencies]
 axum = { workspace = true }
 bitcoin = { workspace = true, features = ["std", "rand-std", "serde"] }
