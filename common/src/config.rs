@@ -218,10 +218,10 @@ mod tests {
 
     fn cleanup_env_vars() {
         unsafe {
-            let _ = remove_var("UB__INDEXER__STORAGE__PATH");
-            let _ = remove_var("UB__INDEXER__CACHE__SIZE");
-            let _ = remove_var("UB__PROVIDER__ROOTSTOCK__URL");
-            let _ = remove_var("UB__BITCOIN_NETWORK");
+            remove_var("UB__INDEXER__STORAGE__PATH");
+            remove_var("UB__INDEXER__CACHE__SIZE");
+            remove_var("UB__PROVIDER__ROOTSTOCK__URL");
+            remove_var("UB__BITCOIN_NETWORK");
         }
     }
 

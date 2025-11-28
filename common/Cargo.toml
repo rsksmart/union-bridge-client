@@ -3,8 +3,8 @@ name = "common"
 version = "0.1.0"
 edition = "2024"
 
-[lints]
-workspace = true
+[lints.clippy]
+all = "deny"
 
 [dependencies]
 alloy-contract = { workspace = true }
