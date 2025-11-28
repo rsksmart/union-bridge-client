@@ -6,8 +6,8 @@ edition = "2024"
 [[bin]]
 name = "check-fork-tester"
 
-[lints.clippy]
-all = "deny"
+[lints]
+workspace = true
 
 [dependencies]
 check-fork = { path = ".." }
