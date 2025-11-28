@@ -3,8 +3,9 @@ name = "check-fork"
 version = "0.1.0"
 edition = "2024"
 
-[lints]
-workspace = true
+[lints.clippy]
+all = "deny"
+pedantic = "deny"
 
 [dependencies]
 primitive-types = { workspace = true }

@@ -55,6 +55,15 @@ impl From<&RskBlock> for Block {
     }
 }
 
+/// Fetches blocks from RSK RPC endpoint.
+///
+/// # Errors
+///
+/// Returns an error if the HTTP request fails, JSON parsing fails, or block deserialization fails.
+///
+/// # Panics
+///
+/// This function may panic if `result.unwrap()` is called on a `None` value when processing block results.
 pub async fn get_blocks(
     start_block_number: u64,
     num_of_blocks: u32,
@@ -65,7 +74,7 @@ pub async fn get_blocks(
     let mut blocks = vec![];
 
     for i in 0..num_of_blocks {
-        let block_number_hex = format!("{:#x}", start_block_number + i as u64);
+        let block_number_hex = format!("{:#x}", start_block_number + u64::from(i));
         let request_body = json!({
             "jsonrpc": "2.0",
             "method": "eth_getBlockByNumber",
@@ -81,7 +90,7 @@ pub async fn get_blocks(
         if error.is_some() {
             println!(
                 "Error fetching block {}: {:?}",
-                start_block_number + i as u64,
+                start_block_number + u64::from(i),
                 response_json
             );
         } else if result.is_some() {
@@ -103,7 +112,7 @@ pub async fn get_blocks(
     // // Write blocks to the output file
     // let serialized_blocks = serde_json::to_string(&blocks)?;
     if has_bridge_event {
-        let result: Vec<Block> = add_bridge_event(&blocks)?;
+        let result: Vec<Block> = add_bridge_event(&blocks);
         Ok(result)
     } else {
         let result: Vec<Block> = blocks.iter().map(Block::from).collect();
@@ -111,8 +120,8 @@ pub async fn get_blocks(
     }
 }
 
-fn add_bridge_event(blocks: &[RskBlock]) -> Result<Vec<Block>, Box<dyn Error>> {
-    Ok(blocks
+fn add_bridge_event(blocks: &[RskBlock]) -> Vec<Block> {
+    blocks
         .iter()
         .enumerate()
         .map(|(i, b)| {
@@ -127,7 +136,7 @@ fn add_bridge_event(blocks: &[RskBlock]) -> Result<Vec<Block>, Box<dyn Error>> {
             }
             input_block
         })
-        .collect())
+        .collect()
 }
 
 fn log_if_superblock(block: &RskBlock) -> Result<(), Box<dyn Error>> {
@@ -146,7 +155,8 @@ fn log_if_superblock(block: &RskBlock) -> Result<(), Box<dyn Error>> {
 
     // if the actual block PoW is lower (i.e., harder) than the SuperBlock threshold, we found a SuperBlock
     if actual_block_pow < superblock_pow {
-        let formatted_time = chrono::DateTime::from_timestamp(block.timestamp as i64, 0)
+        let timestamp_i64 = i64::try_from(block.timestamp).unwrap_or(i64::MAX);
+        let formatted_time = chrono::DateTime::from_timestamp(timestamp_i64, 0)
             .unwrap()
             .format("%Y-%m-%d %H:%M:%S");
 
@@ -159,11 +169,12 @@ fn log_if_superblock(block: &RskBlock) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn parse_u64_to_hex<S>(v: &u64, s: S) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
 {
-    s.serialize_str(&format!("{:#x}", v))
+    s.serialize_str(&format!("{v:#x}"))
 }
 
 fn parse_hex_to_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
