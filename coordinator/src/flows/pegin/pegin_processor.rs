@@ -188,7 +188,8 @@ where
             let official_flow_id = existing_flow.flow_id();
 
             // Move the flow to the new key in our map
-            let flow = self.pegin_flows.remove(&temp_flow_id).unwrap();
+            let flow = self.pegin_flows.remove(&temp_flow_id)
+                .expect("Flow must exist as we just accessed it via get_mut");
             self.pegin_flows.insert(official_flow_id, flow);
 
             // Clean up the old temp entry from storage
