@@ -202,7 +202,7 @@ fn log_info_tuple_generator(
     let block_num_range = filter_from_block_height.clone();
     for i in 0..vec_size {
         let block_num = rng.random_range(block_num_range.clone());
-        let address: Address = addresses[i as usize].clone();
+        let address: Address = addresses[i as usize];
         let block_hash = BlockHash::from(H256::random());
         let tx_hash = TxHash::from(H256::random());
         let log_index = rng.random_range(LOG_INDEX_RANGE);
@@ -224,7 +224,7 @@ fn cycle_indexer(
     managed_contracts: HashMap<Address, ContractInfo>,
     shutting_down: ShutdownFlag,
     msg: Option<&str>,
-) -> () {
+) {
     let indexer = LogIndexer::new(
         store,
         mock_rsk_provider,
@@ -246,13 +246,13 @@ fn assert_logs(
     store: &RawLogStore,
     event_signature: &str,
     log_info_tuples: Vec<LogInfo>,
-) -> () {
+) {
     for log_info in log_info_tuples {
         let expected_log = log_generator.generate_log_with_info(event_signature, log_info);
         let expected_log_key = format!(
             "logs/{}/{}/{}",
-            expected_log.info().address().to_string(),
-            expected_log.info().tx_hash().to_string(),
+            expected_log.info().address(),
+            expected_log.info().tx_hash(),
             expected_log.info().log_index()
         );
         let actual_log = store
@@ -271,12 +271,12 @@ fn assert_log_not_in_store(
     store: &RawLogStore,
     event_signature: &str,
     log_info: LogInfo,
-) -> () {
+) {
     let unexpected_log = log_generator.generate_log_with_info(event_signature, log_info);
     let unexpected_log_key = format!(
         "logs/{}/{}/{}",
-        unexpected_log.info().address().to_string(),
-        unexpected_log.info().tx_hash().to_string(),
+        unexpected_log.info().address(),
+        unexpected_log.info().tx_hash(),
         unexpected_log.info().log_index()
     );
     let actual_log: Option<RskLog> = store.get(&unexpected_log_key).unwrap();

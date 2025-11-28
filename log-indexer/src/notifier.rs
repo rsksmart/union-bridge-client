@@ -90,17 +90,17 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
     }
 
     fn subscribe_consumer_to_contract(&mut self, address: Address, consumer_id: u32) {
-        if let Some(consumers) = self.contracts_with_consumers.get(&address) {
-            if consumers.contains(&consumer_id) {
-                warn!("Consumer {consumer_id} is already subscribed to {address}");
-                return;
-            }
+        if let Some(consumers) = self.contracts_with_consumers.get(&address)
+            && consumers.contains(&consumer_id)
+        {
+            warn!("Consumer {consumer_id} is already subscribed to {address}");
+            return;
         }
 
         info!("New consumer {consumer_id} subscribing to {address}");
         self.contracts_with_consumers
             .entry(address)
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(consumer_id);
     }
 
@@ -150,7 +150,7 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
         let topics0 = new_log
             .event()
             .topics()
-            .get(0)
+            .first()
             .map(|s| s.to_string())
             .unwrap_or_else(|| {
                 error!("Log has no topics, using NoTopic for selector");

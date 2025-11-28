@@ -52,10 +52,12 @@ fn main() -> Result<()> {
         .expect("Failed to create AlloyProvider (unrecoverable)");
 
     let initial_block_hash = BlockHash::try_from(config.indexer.initial_block_hash.as_str())
-        .expect(&format!(
-            "Invalid initial block hash: {}",
-            config.indexer.initial_block_hash
-        ));
+        .unwrap_or_else(|_| {
+            panic!(
+                "Invalid initial block hash: {}",
+                config.indexer.initial_block_hash
+            )
+        });
 
     let (tx, rx): (mpsc::Sender<RskLog>, mpsc::Receiver<RskLog>) = mpsc::channel();
 

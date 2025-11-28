@@ -74,13 +74,13 @@ impl LogStore for RawLogStore {
     fn get_sync_checkpoint(&self) -> Result<Option<RskLog>> {
         let key = &StoreKey::LogSyncCheckpoint.value();
 
-        Ok(self.get(key)?)
+        self.get(key)
     }
 
     fn set_sync_checkpoint(&self, log: &RskLog) -> Result<()> {
         let key = &StoreKey::LogSyncCheckpoint.value();
 
-        Ok(self.set(key, log)?)
+        self.set(key, log)
     }
 }
 
@@ -111,7 +111,7 @@ mod tests {
         let signature = "Transfer(address,address,uint256)";
         let log_generator: FakeLogGenerator = FakeLogGenerator::new();
         let expected_log_info = LogInfo::new(
-            addr1.clone(),
+            addr1,
             BlockHash::from(H256::random()),
             1.into(),
             TxHash::from(H256::random()),
@@ -140,7 +140,7 @@ mod tests {
         let signature = "Transfer(address,address,uint256)";
         let log_generator: FakeLogGenerator = FakeLogGenerator::new();
         let expected_log_info1 = LogInfo::new(
-            addr.clone(),
+            addr,
             BlockHash::from(H256::random()),
             1.into(),
             TxHash::from(H256::random()),
@@ -155,7 +155,7 @@ mod tests {
         )
         .value();
         let expected_log_info2 = LogInfo::new(
-            addr.clone(),
+            addr,
             BlockHash::from(H256::random()),
             2.into(),
             TxHash::from(H256::random()),
@@ -163,7 +163,7 @@ mod tests {
             false,
         );
         let expected_log_info3 = LogInfo::new(
-            addr.clone(),
+            addr,
             BlockHash::from(H256::random()),
             3.into(),
             TxHash::from(H256::random()),
@@ -171,7 +171,7 @@ mod tests {
             false,
         );
         let expected_log_info4 = LogInfo::new(
-            addr.clone(),
+            addr,
             BlockHash::from(H256::random()),
             4.into(),
             TxHash::from(H256::random()),
@@ -198,7 +198,7 @@ mod tests {
         let signature = "Transfer(address,address,uint256)";
         let log_generator: FakeLogGenerator = FakeLogGenerator::new();
         let expected_log_info = LogInfo::new(
-            addr.clone(),
+            addr,
             BlockHash::from(H256::random()),
             1.into(),
             TxHash::from(H256::random()),
