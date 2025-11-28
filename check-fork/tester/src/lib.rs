@@ -106,7 +106,7 @@ pub async fn get_blocks(
         let result: Vec<Block> = add_bridge_event(&blocks)?;
         Ok(result)
     } else {
-        let result: Vec<Block> = blocks.iter().map(|b| Block::from(b)).collect();
+        let result: Vec<Block> = blocks.iter().map(Block::from).collect();
         Ok(result)
     }
 }
@@ -132,7 +132,7 @@ fn add_bridge_event(blocks: &[RskBlock]) -> Result<Vec<Block>, Box<dyn Error>> {
 
 fn log_if_superblock(block: &RskBlock) -> Result<(), Box<dyn Error>> {
     // parse the block's actual PoW (from bitcoinMergedMiningHeader field) to decimal
-    let actual_block_pow = U256::from_big_endian(&block.pow.as_bytes());
+    let actual_block_pow = U256::from_big_endian(block.pow.as_bytes());
 
     // compute the PoW target from difficulty by inversion
     // U256::MAX, the "difficulty 1" target, represents the easiest possible target
@@ -179,7 +179,7 @@ where
     D: Deserializer<'de>,
 {
     let difficulty_hex: &str = Deserialize::deserialize(deserializer)?;
-    let difficulty_dec = U256::from_str_radix(&difficulty_hex, 16).map_err(de::Error::custom)?;
+    let difficulty_dec = U256::from_str_radix(difficulty_hex, 16).map_err(de::Error::custom)?;
 
     Ok(difficulty_dec)
 }
@@ -197,6 +197,6 @@ where
             .expect("Failed to deserialize hash")
             .map_err(de::Error::custom)
     } else {
-        H256::from_str(&hex).map_err(de::Error::custom)
+        H256::from_str(hex).map_err(de::Error::custom)
     }
 }

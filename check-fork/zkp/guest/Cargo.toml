@@ -3,6 +3,9 @@ name = "check-fork-guest"
 version = "0.1.0"
 edition = "2024"
 
+[lints.clippy]
+all = "deny"
+
 [workspace]
 
 [dependencies]

@@ -74,7 +74,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         operator_id: "FAKE_OPERATOR_ID".to_string(), // tmp
         init_block_time: cli_args.cf_init_timestamp,
         init_block_number: cli_args.cf_init_block,
-        required_effort: U256::from(cli_args.cf_required_effort),
+        required_effort: cli_args.cf_required_effort,
         required_num_blocks: cli_args.cf_required_blocks,
         block_list: blocks,
     };
