@@ -120,7 +120,7 @@ mod tests {
             .times(1)
             .returning(|_, _, _| {
                 Err(alloy_contract::Error::TransportError(
-                    alloy_transport::TransportError::local_usage_str("contract error".into()),
+                    alloy_transport::TransportError::local_usage_str("contract error"),
                 ))
             });
 

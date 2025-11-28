@@ -169,7 +169,7 @@ mod tests {
     }
 
     fn get_base_input() -> AcceptPeginInput {
-        let input = AcceptPeginInput {
+        AcceptPeginInput {
             block_hash: "0x0000000000000000000282fa21665766e58eb6cb94e458c3ef6d4af1121e38d9".to_string(),
             btc_tx: BitcoinTransaction {
                 version: 1,
@@ -196,8 +196,7 @@ mod tests {
             merkle_branch_hashes: vec![
                 "0x3fcef4a1ddf759a858190b89ecbd1ff3dffb49704e110b68baf5b5de7021910f".to_string(),
             ],
-        };
-        input
+        }
     }
 
     fn get_fake_receipt(status: bool, hash: &str) -> TransactionReceipt<ReceiptEnvelope<Log>> {

@@ -217,10 +217,7 @@ async fn wait_for_receipt<P: Provider>(
     let start = Instant::now();
     loop {
         if start.elapsed() > max_wait {
-            error!(
-                "Receipt polling timed out after {:?} for tx {:?}",
-                max_wait, tx_hash
-            );
+            error!("Receipt polling timed out after {max_wait:?} for tx {tx_hash:?}",);
             return Err(alloy_contract::Error::TransportError(
                 alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
                     code: ETH_RPC_INTERNAL_ERROR,
@@ -238,7 +235,7 @@ async fn wait_for_receipt<P: Provider>(
         match provider
             .get_transaction_receipt(tx_hash)
             .await
-            .map_err(|e| alloy_contract::Error::TransportError(e.into()))?
+            .map_err(alloy_contract::Error::TransportError)?
         {
             Some(receipt) => return Ok(receipt),
             None => sleep(poll_interval).await,
