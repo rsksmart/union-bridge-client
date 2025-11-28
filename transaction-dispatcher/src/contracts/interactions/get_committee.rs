@@ -128,7 +128,7 @@ mod tests {
         let leader: Address = address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
         let members = vec![CommitteeMember {
             memberAddress: leader,
-            role: 1.into(),
+            role: 1u8,
         }];
         let operator_take_index = U256::from(42u64);
 

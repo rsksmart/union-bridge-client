@@ -63,7 +63,7 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
             &self.contract_instance.provider(),
             || {
                 self.contract_instance
-                    .addMemberNonce(hash_to_sign.clone(), nonce.clone())
+                    .addMemberNonce(hash_to_sign, nonce.clone())
             },
             gas_bumps,
         )
@@ -80,7 +80,7 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
             &self.contract_instance.provider(),
             || {
                 self.contract_instance
-                    .addMemberSignature(hash_to_sign.clone(), signature.clone())
+                    .addMemberSignature(hash_to_sign, signature)
             },
             gas_bumps,
         )
@@ -97,7 +97,7 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
             &self.contract_instance.provider(),
             || {
                 self.contract_instance
-                    .addOperatorTakeTxid(accept_pegin_tx_hash.clone(), take_tx_hash.clone())
+                    .addOperatorTakeTxid(accept_pegin_tx_hash, take_tx_hash)
             },
             gas_bumps,
         )
