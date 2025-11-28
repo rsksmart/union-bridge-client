@@ -28,9 +28,9 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
 
     pub fn setup(
         &self,
-        committee_id_client: CommitteeId,
-        members: Vec<MemberOfCommittee>,
-        p2p_addresses: Vec<P2PAddress>,
+        committee_id_client: &CommitteeId,
+        members: &[MemberOfCommittee],
+        p2p_addresses: &[P2PAddress],
         take_aggr_key: PublicKey,
         dispute_aggr_key: PublicKey,
         my_speedup_funding_utxo: Utxo,
@@ -46,11 +46,11 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
                 .collect(),
             take_aggregated_key: take_aggr_key,
             dispute_aggregated_key: dispute_aggr_key,
-            operator_count: Self::operator_count(&members)?,
+            operator_count: Self::operator_count(members)?,
             packet_size: 10,
         };
 
-        let committee_id = Uuid::from_u128(*committee_id_client);
+        let committee_id = Uuid::from_u128(**committee_id_client);
 
         info!("Setting up BitVMX committee {committee_id}");
 
@@ -105,7 +105,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
             self.send_bitvmx_msg(IncomingBitVMXApiMessages::Setup(
                 protocol_id,
                 PROGRAM_TYPE_DISPUTE_CORE.to_string(),
-                p2p_addresses.clone(),
+                p2p_addresses.to_owned(),
                 NO_LEADER_IDX,
             ));
         }
@@ -114,10 +114,13 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
     }
 
     fn operator_count(members: &[MemberOfCommittee]) -> Result<u32> {
-        Ok(members
-            .iter()
-            .filter(|m| m.role == ParticipantRole::Prover)
-            .count() as u32)
+        u32::try_from(
+            members
+                .iter()
+                .filter(|m| m.role == ParticipantRole::Prover)
+                .count(),
+        )
+        .context("operator count exceeds u32::MAX")
     }
 
     fn send_bitvmx_msg(&self, msg: IncomingBitVMXApiMessages) {
@@ -126,7 +129,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
         let result = self.broker_client.send(BROKER_SERVER_ID, msg);
         if result.is_err() {
             // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132
-            error!("Failed to send msg to BitVMX: {:?}", result);
+            error!("Failed to send msg to BitVMX: {result:?}");
         }
     }
 }

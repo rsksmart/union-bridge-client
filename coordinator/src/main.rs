@@ -98,20 +98,20 @@ fn main() -> Result<()> {
     )?;
 
     let store_path = &format!("{}/coordinator", config.coordinator.storage_path);
-    debug!("Creating coordinator store at: {}", store_path);
+    debug!("Creating coordinator store at: {store_path}");
     let store = CoordinatorStore::new(store_path).context("Failed to create context store")?;
 
     let mut coordinator = Coordinator::new(
-        rt_sync,
+        &rt_sync,
         monitor,
         contracts_gateway,
-        bitvmx_broker,
+        &bitvmx_broker,
         store,
         shutdown_flag.clone(),
         bitcoin_network,
     );
     coordinator.run().inspect_err(|e| {
-        error!("Unrecoverable error running coordinator: {:?}", e);
+        error!("Unrecoverable error running coordinator: {e:?}");
         // signal other threads to shut down
         shutdown_flag.set();
     })?;

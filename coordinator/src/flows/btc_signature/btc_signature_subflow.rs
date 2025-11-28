@@ -39,7 +39,7 @@ impl<CG> BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<CG>>
 where
     CG: RskContractsGatewayApi,
 {
-    pub(crate) fn new(contracts_gateway: Rc<CG>, rt_sync: RuntimeSync, flow_id: Uuid) -> Self {
+    pub(crate) fn new(contracts_gateway: &Rc<CG>, rt_sync: &RuntimeSync, flow_id: Uuid) -> Self {
         let lifecycle =
             BtcSignatureLifeCycle::new(contracts_gateway.clone(), rt_sync.clone(), flow_id);
 
@@ -109,7 +109,7 @@ where
 
     fn delegate_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
         // update blockchain view
-        self.lifecycle.blockchain_view().update(block.clone());
+        self.lifecycle.blockchain_view().update(block);
 
         if !self.lifecycle.blockchain_view().has_observers() {
             debug!("No observers added");
@@ -159,8 +159,8 @@ impl<CG: RskContractsGatewayApi>
 {
     fn create_flow(&self, flow_id: Uuid) -> BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<CG>> {
         BaseBtcSignatureSubFlow::<BtcSignatureLifeCycle<CG>>::new(
-            self.contracts_gateway.clone(),
-            self.rt_sync.clone(),
+            &self.contracts_gateway,
+            &self.rt_sync,
             flow_id,
         )
     }

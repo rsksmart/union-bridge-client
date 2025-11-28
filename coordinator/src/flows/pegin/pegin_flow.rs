@@ -88,7 +88,7 @@ pub enum StepData {
     PeginAccepted(PeginAccepted),
 }
 
-/// Data structure used to send pegin request information to BitVMX
+/// Data structure used to send pegin request information to `BitVMX`
 #[derive(Debug, Clone, Serialize)]
 pub struct PeginRequestMessage {
     pub txid: Txid,
@@ -151,7 +151,7 @@ where
     BC: BitVmxBrokerClientApi,
     S: CoordinatorStoreApi,
 {
-    /// Create a new pegin flow from PeginTransactionFound
+    /// Create a new pegin flow from `PeginTransactionFound`
     pub fn new(
         contracts: Rc<CG>,
         rt_sync: RuntimeSync,
@@ -210,7 +210,7 @@ where
             self.state.flow_id, self.state.ctx.step
         );
         self.store
-            .save_flow(StoreKey::PeginFlow(self.state.flow_id), self.state.clone())
+            .save_flow(&StoreKey::PeginFlow(self.state.flow_id), self.state.clone())
     }
 
     /// Start the next step and log the transition
@@ -304,7 +304,7 @@ where
     }
 
     /// Complete the current step with data and advance to the next
-    pub fn complete_step(&mut self, data: StepData) -> Result<()> {
+    pub fn complete_step(&mut self, data: &StepData) -> Result<()> {
         let current_step = self.state.ctx.step;
 
         info!(
@@ -315,7 +315,7 @@ where
         );
 
         // Process data and determine next state
-        let next_step = self.process_step_data(current_step, &data)?;
+        let next_step = self.process_step_data(current_step, data)?;
 
         // Transition to the next state
         self.start_step(next_step)?;
@@ -359,7 +359,7 @@ where
                     "Transaction confirmed for flow_id: {} and tx_id: {:?}",
                     self.state.flow_id, tx_status.tx_id
                 );
-                trace!("Transaction status data: {:?}", tx_status);
+                trace!("Transaction status data: {tx_status:?}");
                 let expected_tx_id = self
                     .get_accept_pegin_txid()
                     .ok_or_else(|| anyhow!("Expected accept pegin txid not found"))?;
@@ -375,7 +375,7 @@ where
             }
             (Steps::RequestAcceptPeginSpvProof, StepData::AcceptPeginSpvProof(spv_proof)) => {
                 info!("Received SPV proof for flow_id: {}", self.state.flow_id);
-                trace!("SPV Proof data: {:?}", spv_proof);
+                trace!("SPV Proof data: {spv_proof:?}");
                 self.state.ctx.accept_pegin_spv_proof = Some(spv_proof.clone());
                 Ok(Steps::AcceptPegin)
             }
@@ -384,14 +384,12 @@ where
                     "Pegin accepted successfully for flow_id: {}",
                     self.state.flow_id
                 );
-                trace!("PeginAccepted data: {:?}", pegin_accepted);
+                trace!("PeginAccepted data: {pegin_accepted:?}");
                 self.state.ctx.pegin_accepted = Some(pegin_accepted.clone());
                 Ok(Steps::Done)
             }
             _ => Err(anyhow!(
-                "Invalid state transition: {:?} with data {:?}",
-                current_step,
-                data
+                "Invalid state transition: {current_step:?} with data {data:?}"
             )),
         }
     }
@@ -430,7 +428,7 @@ where
             .pegin_requested
             .as_ref()
             .ok_or_else(|| anyhow!("PeginRequested data not available"))?;
-        let pegin_request = self.build_pegin_request_message(pegin_requested, &committee_output)?;
+        let pegin_request = Self::build_pegin_request_message(pegin_requested, &committee_output)?;
 
         let msg = IncomingBitVMXApiMessages::SetVar(
             self.state.flow_id,
@@ -452,15 +450,15 @@ where
         let committee_peer_ids = self.get_committee_peer_ids(committee_id)?;
 
         let p2p_addresses = build_communication_data(
-            self.state
+            &self
+                .state
                 .ctx
                 .my_p2p_address
                 .as_ref()
                 .ok_or_else(|| anyhow!("P2P address not available for setup"))?
-                .address
-                .clone(),
-            committee_addresses,
-            committee_peer_ids,
+                .address,
+            &committee_addresses,
+            &committee_peer_ids,
         )?;
 
         let msg = IncomingBitVMXApiMessages::Setup(
@@ -512,7 +510,7 @@ where
     }
 
     fn accept_pegin(&self, spv_proof: BtcTxSPVProof) -> Result<()> {
-        debug!("Accepting pegin with SPV proof: {:?}", spv_proof);
+        debug!("Accepting pegin with SPV proof: {spv_proof:?}");
 
         let input: RequestPeginInput = spv_proof.into();
 
@@ -552,10 +550,7 @@ where
             .request_pegin_btc_tx_id
             .ok_or_else(|| anyhow!("Bitcoin transaction ID not available"))?;
 
-        info!(
-            "Requesting SPV proof for Bitcoin transaction: {}",
-            btc_tx_id
-        );
+        info!("Requesting SPV proof for Bitcoin transaction: {btc_tx_id}");
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetSPVProof(btc_tx_id))?;
         Ok(())
     }
@@ -573,7 +568,8 @@ where
         let committee_uuid: Uuid = Uuid::from_u128(*committee_id);
         let official_flow_id = get_accept_pegin_pid(
             committee_uuid,
-            pegin_requested.streamPosition.slotId as usize,
+            usize::try_from(pegin_requested.streamPosition.slotId)
+                .map_err(|_| anyhow!("Slot ID too large for usize"))?,
         )?;
 
         info!(
@@ -589,14 +585,13 @@ where
     }
 
     fn build_pegin_request_message(
-        &self,
         event: &PeginRequested,
         committee_output: &GetCommitteeOutput,
     ) -> Result<PeginRequestMessage> {
         debug!("Building PeginRequestMessage for BitVMX from PeginRequested event");
 
         let committee_id = Uuid::from_u128(event.committeeId);
-        let operator_indexes = self.build_operator_indexes(committee_output)?;
+        let operator_indexes = Self::build_operator_indexes(committee_output);
         let slot_index = event.streamPosition.slotId;
 
         let checksum_address = event
@@ -609,8 +604,8 @@ where
             .to_string();
 
         let accept_pegin_sighash = event.acceptPeginSignatureMessage.to_vec();
-        let take_aggregated_key = self.build_take_aggregated_key(committee_output)?;
-        let reimbursement_pubkey = self.build_reimbursement_pubkey(event)?;
+        let take_aggregated_key = Self::build_take_aggregated_key(committee_output)?;
+        let reimbursement_pubkey = Self::build_reimbursement_pubkey(event)?;
         let txid = TxIdParser::fb_32_to_txid(event.requestPeginTxid);
 
         Ok(PeginRequestMessage {
@@ -626,10 +621,7 @@ where
         })
     }
 
-    fn build_operator_indexes(
-        &self,
-        committee_response: &GetCommitteeOutput,
-    ) -> Result<Vec<usize>> {
+    fn build_operator_indexes(committee_response: &GetCommitteeOutput) -> Vec<usize> {
         let operator_role: u8 = crate::types::Role::Prover.into();
         let mut operator_indexes = Vec::new();
 
@@ -639,18 +631,15 @@ where
             }
         }
 
-        Ok(operator_indexes)
+        operator_indexes
     }
 
-    fn build_take_aggregated_key(
-        &self,
-        committee_response: &GetCommitteeOutput,
-    ) -> Result<PublicKey> {
+    fn build_take_aggregated_key(committee_response: &GetCommitteeOutput) -> Result<PublicKey> {
         PublicKey::from_slice(&committee_response.committee.aggregatedKey)
             .context("Failed to parse aggregated public key from committee")
     }
 
-    fn build_reimbursement_pubkey(&self, event: &PeginRequested) -> Result<PublicKey> {
+    fn build_reimbursement_pubkey(event: &PeginRequested) -> Result<PublicKey> {
         let reimbursement_xonly_key =
             XOnlyPublicKey::from_slice(event.requestPeginInfo.btcReimbursementPubKey.as_slice())
                 .context("Failed to parse reimbursement public key from pegin event")?;
@@ -721,7 +710,7 @@ where
                 "Member PeerId: address={}, peer_id={:?}",
                 member.memberAddress, key_str
             );
-            peer_ids.push(PeerId(key_str.to_string()));
+            peer_ids.push(PeerId(key_str.clone()));
         }
 
         Ok(peer_ids)
@@ -792,7 +781,7 @@ where
         &self.state
     }
 
-    /// Get the BitVMX pegin accepted message if available
+    /// Get the `BitVMX` pegin accepted message if available
     pub fn get_bitvmx_pegin_accepted(&self) -> Option<&PeginAcceptedMessage> {
         self.state.ctx.bitvmx_pegin_accepted.as_ref()
     }

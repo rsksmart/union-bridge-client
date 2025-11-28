@@ -43,10 +43,15 @@ pub struct BrokerConfig {
 }
 
 impl Config {
+    /// # Errors
+    /// Returns an error if configuration loading fails.
     pub fn load(env_name: Option<String>) -> Result<Self, ConfigError> {
         CommonConfig::load_config::<Self>(env_name)
     }
 
+    /// # Panics
+    /// Panics if a contract address in the configuration is invalid.
+    #[must_use]
     pub fn get_contract_addresses(&self) -> Vec<Address> {
         self.contracts
             .iter()
@@ -82,6 +87,8 @@ impl Config {
 pub struct Logger {}
 
 impl Logger {
+    /// # Errors
+    /// Returns an error if logger initialization fails.
     pub fn init(logger_file_opt: Option<&String>) -> anyhow::Result<()> {
         CommonConfig::init_logger(logger_file_opt, CARGO_PKG_NAME)
     }

@@ -38,13 +38,13 @@ impl FlowError {
     }
 }
 
-/// Extension trait for Result types to easily convert to FlowError
+/// Extension trait for Result types to easily convert to `FlowError`
 pub trait FlowResultExt<T> {
-    /// Convert any error to a fatal FlowError
+    /// Convert any error to a fatal `FlowError`
     #[allow(unused)]
     fn or_fatal(self) -> Result<T, FlowError>;
 
-    /// Convert any error to a transient FlowError
+    /// Convert any error to a transient `FlowError`
     fn or_transient(self) -> Result<T, FlowError>;
 }
 
