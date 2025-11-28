@@ -17,6 +17,11 @@ pub struct BlockIndexerConfig {
 }
 
 impl Config {
+    /// Load configuration from file
+    ///
+    /// # Errors
+    ///
+    /// Returns `ConfigError` if the configuration file cannot be loaded or parsed
     pub fn load(env_name: Option<String>) -> Result<Self, ConfigError> {
         CommonConfig::load_config::<Self>(env_name)
     }
@@ -25,6 +30,11 @@ impl Config {
 pub struct Logger {}
 
 impl Logger {
+    /// Initialize logger
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the logger configuration file cannot be loaded or parsed
     pub fn init(logger_file_opt: Option<&String>) -> anyhow::Result<()> {
         CommonConfig::init_logger(logger_file_opt, CARGO_PKG_NAME)
     }
@@ -98,7 +108,7 @@ root:
             "test_crate",
         );
 
-        println!("result: {:?}", result);
+        println!("result: {result:?}");
 
         assert!(result.is_ok());
         assert!(Path::new(&format!("{log_file}.log")).exists());

@@ -73,7 +73,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
     }
 
     #[cfg(feature = "fresh_node")]
-    fn get_initial_block(&self, provider: &P) -> RskBlock {
+    fn get_initial_block(provider: &P) -> RskBlock {
         provider
             .get_best_block()
             .expect("Precondition failed: error fetching best block")
@@ -83,7 +83,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         !self.shutdown_flag.is_on()
     }
 
-    fn init_db_if_required(&self, initial_block_node: RskBlock) -> Result<()> {
+    fn init_db_if_required(&self, initial_block_node: &RskBlock) -> Result<()> {
         // always initialize DB if the fresh_node feature is set
 
         #[cfg(not(feature = "fresh_node"))]
@@ -102,7 +102,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         );
 
         // initialize the store with the initial block info
-        self.save_as_best_block(&initial_block_node)
+        self.save_as_best_block(initial_block_node)
             .context("Initialising DB")
     }
 
@@ -152,10 +152,9 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 Err(RskSubscriptionError::ClosedConnection) => {
                     if self.is_running() {
                         bail!("Provider closed unexpectedly!");
-                    } else {
-                        info!("[subscribe_blocks] Shutdown requested, quitting...");
-                        break;
                     }
+                    info!("[subscribe_blocks] Shutdown requested, quitting...");
+                    break;
                 }
                 Err(RskSubscriptionError::Transient(err)) => {
                     error!("[subscribe_blocks] Ignoring problematic block: {err:?}");
@@ -197,7 +196,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                     .process_uncle_blocks(&new_block)
                     .context("On Backward Sync")?;
                 // consumer should be resilient to re-notifications
-                self.notify_block(new_block.clone(), uncles)?;
+                self.notify_block(new_block.clone(), uncles);
                 self.save_as_best_block(&new_block)
                     .context("On Block subscription")?;
             } else if is_reorg {
@@ -228,17 +227,13 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         Ok(())
     }
 
-    fn notify_block(&self, block: RskBlock, uncles: Vec<RskBlock>) -> Result<()> {
+    fn notify_block(&self, block: RskBlock, uncles: Vec<RskBlock>) {
         if let Some(channel) = &self.new_block_sender
             && let Err(e) = channel.send(RskBlockAndUncles::new(block, uncles))
         {
             // TODO(Jira) this should be monitored and analysed - https://rsklabs.atlassian.net/browse/UB-127
-            error!(
-                "[notify_block] Failed to send best block through channel: {:?}",
-                e
-            );
+            error!("[notify_block] Failed to send best block through channel: {e:?}");
         }
-        Ok(())
     }
 
     fn backward_sync(&self, starting_block: &RskBlock) -> Result<()> {
@@ -316,7 +311,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 
                 // notify the consumer about the new chain in ascending order
                 for (block, uncles) in blocks_to_notify.into_iter().rev() {
-                    self.notify_block(block, uncles)?;
+                    self.notify_block(block, uncles);
                 }
 
                 break;
@@ -434,16 +429,14 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
     }
 
     fn get_next_backward_sync_block(&self, block_num: BlockNumber) -> Result<RskBlock> {
-        match self.rsk_provider.get_block_by_number(block_num)? {
-            Some(block) => Ok(block),
-            None => {
-                // this means a reorg just have happened to a lower block num, so we start again from the best block
-                warn!(
-                    "[block_backward_sync] Could not get block {} from provider, retrying from best block",
-                    block_num,
-                );
-                self.rsk_provider.get_best_block()
-            }
+        if let Some(block) = self.rsk_provider.get_block_by_number(block_num)? {
+            Ok(block)
+        } else {
+            // this means a reorg just have happened to a lower block num, so we start again from the best block
+            warn!(
+                "[block_backward_sync] Could not get block {block_num} from provider, retrying from best block"
+            );
+            self.rsk_provider.get_best_block()
         }
     }
 
@@ -471,7 +464,12 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 .get_uncle_by_hash_and_index(nephew_hash, i as u64)
                 .context("Fetching uncle block")?
             {
-                if !new_block.uncles().contains(&uncle.hash()) {
+                if new_block.uncles().contains(&uncle.hash()) {
+                    self.store
+                        .save_block(&uncle)
+                        .context("Saving uncle block")?;
+                    uncle_blocks.push(uncle);
+                } else {
                     warn!(
                         "[block_backward_sync] Received uncle {} is not in nephew {} (#{}) uncles list: {:?}",
                         uncle.hash(),
@@ -479,11 +477,6 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                         nephew_number,
                         new_block.uncles()
                     );
-                } else {
-                    self.store
-                        .save_block(&uncle)
-                        .context("Saving uncle block")?;
-                    uncle_blocks.push(uncle);
                 }
             } else {
                 warn!(
@@ -500,7 +493,12 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 
 impl<P: RskProvider, S: BlockStore> RskIndexer<P, S> for BlockIndexer<P, S> {
     fn run(&self) -> Result<()> {
-        self.init_db_if_required(self.get_initial_block(&self.rsk_provider))?;
+        #[cfg(feature = "fresh_node")]
+        let initial_block = Self::get_initial_block(&self.rsk_provider);
+        #[cfg(not(feature = "fresh_node"))]
+        let initial_block = self.get_initial_block(&self.rsk_provider);
+
+        self.init_db_if_required(&initial_block)?;
 
         #[cfg(not(feature = "fresh_node"))]
         self.startup_backward_sync()?;
