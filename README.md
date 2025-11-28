@@ -570,13 +570,7 @@ act pull_request -s KEY_STORE_FILE=$(cat <path_to_your_keystore_file>) --contain
 To run just Crate Tests, you can use the following command:
 
 ```bash
-act -j crates-tests -s KEY_STORE_FILE=$(cat <path_to_your_keystore_file>) --container-architecture linux/amd64
-```
-
-To run just QA Tests, you can use the following command:
-
-```bash
-act -j qa-tests -s KEY_STORE_FILE=$(cat <path_to_your_keystore_file>) --container-architecture linux/amd64
+act -j test-and-lint -s KEY_STORE_FILE=$(cat <path_to_your_keystore_file>) --container-architecture linux/amd64
 ```
 
 NOTE: Uploading and downloading artifacts is slow locally, but fast on the CI.
