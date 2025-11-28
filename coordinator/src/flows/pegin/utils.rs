@@ -7,7 +7,7 @@ use uuid::Uuid;
 pub fn get_accept_pegin_pid(committee_id: Uuid, slot_index: usize) -> Result<Uuid> {
     let mut hasher = Sha256::new();
     hasher.update(committee_id.as_bytes());
-    hasher.update(&slot_index.to_be_bytes());
+    hasher.update(slot_index.to_be_bytes());
     hasher.update("accept_pegin");
 
     // Get the result as a byte array
