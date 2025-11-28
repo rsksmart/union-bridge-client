@@ -60,7 +60,7 @@ pub fn check_fork(args: &CheckForkArgs) -> Result<U256, &'static str> {
     // 1. validate list size
     //
 
-    validate_block_list(required_num_blocks, &block_list)?;
+    validate_block_list(required_num_blocks, block_list)?;
 
     //
     // 2. validate first block
@@ -85,11 +85,11 @@ pub fn check_fork(args: &CheckForkArgs) -> Result<U256, &'static str> {
         let block = &block_list[i];
         let prev_block = &block_list[i - 1];
 
-        validate_consecutive_block(&block, &prev_block)?;
+        validate_consecutive_block(block, prev_block)?;
         cumulative_effort = accumulate_effort(cumulative_effort, block)?;
 
         for uncle in &block.uncles {
-            validate_uncle(&prev_block, uncle)?;
+            validate_uncle(prev_block, uncle)?;
             cumulative_effort = accumulate_effort(cumulative_effort, uncle)?;
         }
     }
@@ -114,10 +114,7 @@ fn accumulate_effort(cumulative_effort: U256, block: &Block) -> Result<U256, &'s
         .ok_or("Overflow occurred adding block's PoW")
 }
 
-fn validate_block_list(
-    required_num_blocks: u32,
-    block_list: &Vec<Block>,
-) -> Result<(), &'static str> {
+fn validate_block_list(required_num_blocks: u32, block_list: &[Block]) -> Result<(), &'static str> {
     if required_num_blocks < 1 {
         return Err("Invalid number of required blocks");
     }
