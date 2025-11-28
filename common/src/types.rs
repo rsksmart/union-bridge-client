@@ -930,7 +930,7 @@ mod tests {
 
         assert!(block_hash.is_err());
 
-        if let Err(_) = block_hash {
+        if block_hash.is_err() {
             // The error was expected due to invalid hex input
         } else {
             panic!("Expected Error, but got: {:?}", block_hash);
@@ -959,7 +959,7 @@ mod tests {
 
         assert!(pow.is_err());
 
-        if let Err(_) = pow {
+        if pow.is_err() {
             // The error was expected due to invalid hex input
         } else {
             panic!("Expected Error, but got: {:?}", pow);

@@ -49,12 +49,10 @@ impl AlloySubscription<Header> {
             SubscriptionItem::Item(h) => {
                 Ok(BlockHash::try_from(h.hash.to_string().as_str()).expect("valid hash"))
             }
-            _ => {
-                return Err(RskSubscriptionError::Unexpected(anyhow!(
-                    "Wrong Header: {:?}",
-                    header
-                )));
-            }
+            _ => Err(RskSubscriptionError::Unexpected(anyhow!(
+                "Wrong Header: {:?}",
+                header
+            ))),
         }
     }
 
