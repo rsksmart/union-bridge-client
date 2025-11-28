@@ -70,6 +70,9 @@ pub struct ContractConfig {
 }
 
 impl CommonConfig {
+    /// # Errors
+    ///
+    /// Returns an error if the config file cannot be read or parsed.
     pub fn load_config<T: DeserializeOwned>(env: Option<String>) -> Result<T, ConfigError> {
         let env = env.unwrap_or_default();
         let (base_config_path, env_config_path) = Self::config_path_for(&env)?;
@@ -147,19 +150,19 @@ impl CommonConfig {
         ))
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the logger configuration cannot be read or initialized.
     pub fn init_logger(logger_file_opt: Option<&String>, crate_name: &str) -> Result<()> {
         // otherwise, use the default template and tweak it (mostly for local)
         let project_root = Self::project_root();
 
-        let logger_spec = match logger_file_opt {
-            Some(path) => {
-                println!("Using custom logger defined @ {path}");
-                path.to_string()
-            }
-            None => {
-                println!("Using default logger");
-                format!("{project_root}/log4rs.yaml")
-            }
+        let logger_spec = if let Some(path) = logger_file_opt {
+            println!("Using custom logger defined @ {path}");
+            path.clone()
+        } else {
+            println!("Using default logger");
+            format!("{project_root}/log4rs.yaml")
         };
 
         // Read and optionally expand env vars in the template
@@ -194,12 +197,15 @@ impl CommonConfig {
         project_root.to_string()
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the network string is invalid.
     pub fn parse_bitcoin_network(network_str: &str) -> Result<Network> {
         let res = match network_str {
             "bitcoin" | "mainnet" => Network::Bitcoin,
             "testnet" => Network::Testnet,
             "regtest" => Network::Regtest,
-            _ => bail!("Invalid bitcoin network: {}", network_str),
+            _ => bail!("Invalid bitcoin network: {network_str}"),
         };
 
         Ok(res)

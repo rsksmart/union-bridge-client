@@ -1,4 +1,5 @@
-// TODO(jira) https://rsklabs.atlassian.net/browse/ub-176
+#![allow(clippy::pedantic)]
+#![allow(clippy::all)]
 
 use bitcoin::address::NetworkUnchecked;
 use bitcoin::{

@@ -29,6 +29,7 @@ use std::sync::{
 /// # Returns
 ///
 /// A `Vec<RskBlock>` containing three default RSK blocks.
+#[must_use]
 pub fn get_default_rsk_blocks() -> Vec<RskBlock> {
     vec![
         get_first_default_rsk_block(),
@@ -51,6 +52,7 @@ pub fn get_default_rsk_blocks() -> Vec<RskBlock> {
 /// # Links
 /// For more information about this block, see the Rootstock Explorer:
 /// [Rootstock Block 7,234,706](https://explorer.rootstock.io/block/7234706)
+#[must_use]
 pub fn get_first_default_rsk_block() -> RskBlock {
     RskBlock::new(
         7_234_706.into(),
@@ -60,7 +62,7 @@ pub fn get_first_default_rsk_block() -> RskBlock {
         from_hex_to_block_hash(
             "0x2dbe5baab546a1d1a6c443836810c89867efac727a0b58b24de1baeb15467752",
         ),
-        1739358639.into(),
+        1_739_358_639.into(),
         BlockDifficulty::from(U256::from(10_000_000_000_000_000_000_000_u128)), // difficulty (10 ZH)
         BlockDifficulty::from(U256::from(26_000_000_000_000_000_000_000_000_u128)), // total difficulty (26,000 YH)
         from_hex_to_block_pow(
@@ -86,6 +88,7 @@ pub fn get_first_default_rsk_block() -> RskBlock {
 /// # Links
 /// For more information about this block, see the Rootstock Explorer:
 /// [Rootstock Block 7,234,707](https://explorer.rootstock.io/block/7234707)
+#[must_use]
 pub fn get_second_default_rsk_block() -> RskBlock {
     RskBlock::new(
         7_234_707.into(),
@@ -95,7 +98,7 @@ pub fn get_second_default_rsk_block() -> RskBlock {
         from_hex_to_block_hash(
             "0x5d164d93bf09ee215cc67420f24d31b8d86c46ced6e770e8abf69c16bea3a67c",
         ),
-        1739358657.into(),
+        1_739_358_657.into(),
         BlockDifficulty::from(U256::from(10_000_000_000_000_000_000_000_u128)), // difficulty (10 ZH)
         BlockDifficulty::from(U256::from(26_000_000_000_000_000_000_000_000_u128)), // total difficulty (26,000 YH)
         from_hex_to_block_pow(
@@ -119,6 +122,7 @@ pub fn get_second_default_rsk_block() -> RskBlock {
 /// # Links
 /// For more information about this block, see the Rootstock Explorer:
 /// [Rootstock Block 7,234,708](https://explorer.rootstock.io/block/7234708)
+#[must_use]
 pub fn get_third_default_rsk_block() -> RskBlock {
     RskBlock::new(
         7_234_708.into(),
@@ -128,7 +132,7 @@ pub fn get_third_default_rsk_block() -> RskBlock {
         from_hex_to_block_hash(
             "0xb1b77a1d9e6d18f6668a0db6bead24bea4c507fc6779ab211899c008484384ca",
         ),
-        1739358667.into(),
+        1_739_358_667.into(),
         BlockDifficulty::from(U256::from(10_000_000_000_000_000_000_000_u128)), // difficulty (10 ZH)
         BlockDifficulty::from(U256::from(26_000_000_000_000_000_000_000_000_u128)), // total difficulty (26,000 YH)
         from_hex_to_block_pow(
@@ -140,6 +144,7 @@ pub fn get_third_default_rsk_block() -> RskBlock {
     )
 }
 
+#[must_use]
 pub fn event_signature_to_topic(event_signature: &str) -> String {
     let mut hasher = Keccak256::new();
     hasher.update(event_signature.as_bytes());
@@ -162,6 +167,9 @@ pub struct FakeBlockGenerator {
 }
 
 impl FakeBlockGenerator {
+    /// # Panics
+    ///
+    /// Panics if the difficulty string cannot be parsed.
     pub fn new(
         reorg_block_height: Option<BlockNumber>,
         is_reorg: Arc<AtomicBool>,
@@ -174,7 +182,7 @@ impl FakeBlockGenerator {
             difficulty_increment: BlockDifficulty::from(
                 U256::from_dec_str("10000000000000000").unwrap(),
             ),
-            base_timestamp: 1514980800.into(),
+            base_timestamp: 1_514_980_800.into(),
             avg_block_time: 30,
             reorg_block_height,
             is_reorg,
@@ -182,6 +190,7 @@ impl FakeBlockGenerator {
         }
     }
 
+    #[must_use]
     pub fn generate_hash(&self, height: BlockNumber, flavor: &str) -> String {
         let mut hasher = Keccak256::new();
         let bytes = if flavor.is_empty() {
@@ -197,14 +206,15 @@ impl FakeBlockGenerator {
         };
         hasher.update(&bytes);
         let result = hasher.finalize();
-        format!("0x{:064x}", result)
+        format!("0x{result:064x}")
     }
 
     /// Generates a fake RSK block for the given block height.
+    #[must_use]
     pub fn generate_block(
         &self,
         height: BlockNumber,
-        uncle_info: Option<UncleBlockInfo>, // uncle_info is None for regular blocks, Some for uncle blocks
+        uncle_info: Option<&UncleBlockInfo>, // uncle_info is None for regular blocks, Some for uncle blocks
     ) -> Option<RskBlock> {
         let is_reorg = self.is_reorg.load(Ordering::SeqCst);
         let reorged_block = is_reorg && self.reorg_block_height.is_some_and(|h| height > h);
@@ -215,7 +225,7 @@ impl FakeBlockGenerator {
             return None; // do not generate an uncle block if uncle_info.reorg does not match current reorg status
         }
         let parent_hash = self.generate_parent_hash(height, self.reorg_block_height, is_reorg);
-        let block_hash = self.generate_block_hash(height, is_reorg, uncle_info.clone());
+        let block_hash = self.generate_block_hash(height, is_reorg, uncle_info);
         debug!(
             "Generating block {} with hash: {} -- parent hash: {} -- is_reorg: {}{}",
             height,
@@ -225,7 +235,7 @@ impl FakeBlockGenerator {
             if let Some(uncle_info) = &uncle_info {
                 format!(" -- uncle_id: {}", uncle_info.id)
             } else {
-                "".to_string()
+                String::new()
             }
         );
         let uncles_vec = if uncle_info.is_some() {
@@ -287,7 +297,7 @@ impl FakeBlockGenerator {
             let flavor: String = if reorg_block_height.is_some_and(|h| height > h) && is_reorg {
                 "alt".to_string()
             } else {
-                "".to_string()
+                String::new()
             };
             self.generate_hash(height - 1, &flavor)
         };
@@ -298,7 +308,7 @@ impl FakeBlockGenerator {
         &self,
         height: BlockNumber,
         is_reorg: bool,
-        uncle_info: Option<UncleBlockInfo>,
+        uncle_info: Option<&UncleBlockInfo>,
     ) -> BlockHash {
         let reorged_block = is_reorg && self.reorg_block_height.is_some_and(|h| height > h);
         let flavor = if let Some(uncle_info) = uncle_info {
@@ -332,6 +342,7 @@ impl FakeBlockGenerator {
     }
 }
 
+#[must_use]
 pub fn create_block_and_uncles() -> (RskBlock, RskBlock, RskBlock) {
     let block_1_template = get_first_default_rsk_block();
 
@@ -359,6 +370,10 @@ pub fn create_block_and_uncles() -> (RskBlock, RskBlock, RskBlock) {
     (block_1, uncle_1, block_2)
 }
 
+/// # Panics
+///
+/// Panics if the hash cannot be parsed.
+#[must_use]
 pub fn create_block_from_template(
     template: &RskBlock,
     hash: &str,

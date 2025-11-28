@@ -49,6 +49,7 @@ pub trait ToHexString {
 pub struct Hash256(H256);
 
 impl Hash256 {
+    #[must_use]
     pub fn value(self) -> H256 {
         self.0
     }
@@ -127,6 +128,7 @@ pub type LogTopic = Hash256;
 pub struct BlockNumber(u64);
 
 impl BlockNumber {
+    #[must_use]
     pub fn value(&self) -> u64 {
         self.0
     }
@@ -142,7 +144,7 @@ impl TryFrom<&str> for BlockNumber {
     type Error = ParseIntError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let result = str_hex_to_u64(value.to_string())?;
+        let result = str_hex_to_u64(value)?;
 
         Ok(BlockNumber(result))
     }
@@ -199,6 +201,7 @@ impl fmt::Display for BlockNumber {
 pub struct BlockTimestamp(u64);
 
 impl BlockTimestamp {
+    #[must_use]
     pub fn value(self) -> u64 {
         self.0
     }
@@ -248,6 +251,7 @@ impl Sub<u64> for BlockTimestamp {
 pub struct BlockDifficulty(U256);
 
 impl BlockDifficulty {
+    #[must_use]
     pub fn value(self) -> U256 {
         self.0
     }
@@ -312,10 +316,12 @@ impl fmt::Display for BlockDifficulty {
 pub struct BlockPow(H256);
 
 impl BlockPow {
+    #[must_use]
     pub fn value(self) -> H256 {
         self.0
     }
 
+    #[must_use]
     pub fn into_effort(self) -> U256 {
         let pow: U256 = U256::from_big_endian(self.value().as_bytes());
         // compute the effort by inverting the pow
@@ -377,6 +383,7 @@ impl fmt::Display for BlockPow {
 pub struct Address(H160);
 
 impl Address {
+    #[must_use]
     pub fn value(self) -> H160 {
         self.0
     }
@@ -456,6 +463,7 @@ impl Eq for RskBlock {
 
 impl RskBlock {
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn new(
         number: BlockNumber,
         hash: BlockHash,
@@ -478,34 +486,42 @@ impl RskBlock {
         }
     }
 
+    #[must_use]
     pub fn number(&self) -> BlockNumber {
         self.number
     }
 
+    #[must_use]
     pub fn hash(&self) -> BlockHash {
         self.hash
     }
 
+    #[must_use]
     pub fn parent_hash(&self) -> BlockHash {
         self.parent_hash
     }
 
+    #[must_use]
     pub fn timestamp(&self) -> BlockTimestamp {
         self.timestamp
     }
 
+    #[must_use]
     pub fn difficulty(&self) -> BlockDifficulty {
         self.difficulty
     }
 
+    #[must_use]
     pub fn total_difficulty(&self) -> BlockDifficulty {
         self.total_difficulty
     }
 
+    #[must_use]
     pub fn pow(&self) -> BlockPow {
         self.pow
     }
 
+    #[must_use]
     pub fn uncles(&self) -> Vec<BlockHash> {
         self.uncles.clone()
     }
@@ -533,14 +549,17 @@ pub struct RskLog {
 }
 
 impl RskLog {
+    #[must_use]
     pub fn new(info: LogInfo, event: LogEvent) -> Self {
         Self { info, event }
     }
 
+    #[must_use]
     pub fn info(&self) -> &LogInfo {
         &self.info
     }
 
+    #[must_use]
     pub fn event(&self) -> &LogEvent {
         &self.event
     }
@@ -574,6 +593,7 @@ pub struct LogInfo {
 }
 
 impl LogInfo {
+    #[must_use]
     pub fn new(
         address: Address,
         block_hash: BlockHash,
@@ -592,26 +612,32 @@ impl LogInfo {
         }
     }
 
+    #[must_use]
     pub fn address(&self) -> Address {
         self.address
     }
 
+    #[must_use]
     pub fn block_hash(&self) -> BlockHash {
         self.block_hash
     }
 
+    #[must_use]
     pub fn block_number(&self) -> BlockNumber {
         self.block_number
     }
 
+    #[must_use]
     pub fn tx_hash(&self) -> TxHash {
         self.tx_hash
     }
 
+    #[must_use]
     pub fn log_index(&self) -> u64 {
         self.log_index
     }
 
+    #[must_use]
     pub fn removed(&self) -> bool {
         self.removed
     }
@@ -622,19 +648,25 @@ impl LogInfo {
 pub struct DataBytes(pub Vec<u8>);
 
 impl DataBytes {
+    #[must_use]
     pub fn new(data: Vec<u8>) -> Self {
         Self(data)
     }
 
+    #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the hex string cannot be parsed.
     pub fn from_hex_str(s: &str) -> Result<Self, hex::FromHexError> {
         let clean = s.trim_start_matches("0x");
         hex::decode(clean).map(Self)
     }
 
+    #[must_use]
     pub fn to_hex_string(&self) -> String {
         format!("0x{}", hex::encode(&self.0))
     }
@@ -673,14 +705,17 @@ pub struct LogEvent {
 }
 
 impl LogEvent {
+    #[must_use]
     pub fn new(data: DataBytes, topics: Vec<LogTopic>) -> Self {
         Self { data, topics }
     }
 
+    #[must_use]
     pub fn data(&self) -> &DataBytes {
         &self.data
     }
 
+    #[must_use]
     pub fn topics(&self) -> &Vec<LogTopic> {
         &self.topics
     }
@@ -804,6 +839,9 @@ pub struct StreamId(u64);
 
 // contracts store streamId as u64, but only accept u8 on StreamDenomination struct
 impl StreamId {
+    /// # Errors
+    ///
+    /// Returns an error if the value cannot be converted to u8.
     pub fn as_u8(&self) -> Result<u8> {
         let val = *self.clone();
         let result = u8::try_from(val);
@@ -832,7 +870,7 @@ where
     D: Deserializer<'de>,
 {
     let hex: String = Deserialize::deserialize(deserializer)?;
-    str_hex_to_u64(hex).map_err(de::Error::custom)
+    str_hex_to_u64(&hex).map_err(de::Error::custom)
 }
 
 fn parse_hex_to_block_number<'de, D>(deserializer: D) -> Result<BlockNumber, D::Error>
@@ -898,7 +936,7 @@ where
         .collect()
 }
 
-fn str_hex_to_u64(hex: String) -> Result<u64, ParseIntError> {
+fn str_hex_to_u64(hex: &str) -> Result<u64, ParseIntError> {
     u64::from_str_radix(hex.trim_start_matches("0x"), 16)
 }
 
@@ -933,7 +971,7 @@ mod tests {
         if block_hash.is_err() {
             // The error was expected due to invalid hex input
         } else {
-            panic!("Expected Error, but got: {:?}", block_hash);
+            panic!("Expected Error, but got: {block_hash:?}");
         }
     }
 
@@ -962,7 +1000,7 @@ mod tests {
         if pow.is_err() {
             // The error was expected due to invalid hex input
         } else {
-            panic!("Expected Error, but got: {:?}", pow);
+            panic!("Expected Error, but got: {pow:?}");
         }
     }
 
@@ -998,7 +1036,7 @@ mod tests {
     #[test]
     fn test_display_impl() {
         let data = DataBytes(vec![0xca, 0xfe, 0xba, 0xbe]);
-        assert_eq!(format!("{}", data), "0xcafebabe");
+        assert_eq!(format!("{data}"), "0xcafebabe");
     }
 
     #[test]
@@ -1030,10 +1068,12 @@ pub struct RskBlockAndUncles {
 }
 
 impl RskBlockAndUncles {
+    #[must_use]
     pub fn new(block: RskBlock, uncles: Vec<RskBlock>) -> Self {
         Self { block, uncles }
     }
 
+    #[must_use]
     pub fn new_no_uncles(block: RskBlock) -> Self {
         Self {
             block,
@@ -1041,37 +1081,44 @@ impl RskBlockAndUncles {
         }
     }
 
+    #[must_use]
     pub fn hash(&self) -> BlockHash {
         self.block.hash()
     }
 
+    #[must_use]
     pub fn parent(&self) -> BlockHash {
         self.block.parent_hash()
     }
 
+    #[must_use]
     pub fn number(&self) -> BlockNumber {
         self.block.number()
     }
 
+    #[must_use]
     pub fn block(&self) -> &RskBlock {
         &self.block
     }
 
+    #[must_use]
     pub fn uncles(&self) -> &[RskBlock] {
         &self.uncles
     }
 }
 
-/// bitcoin / bitcoin_hashes crates reverse the byte order of Txid when calling from_byte_array, from_slice, etc.
+/// bitcoin / `bitcoin_hashes` crates reverse the byte order of Txid when calling `from_byte_array`, `from_slice`, etc.
 /// this utility struct provides conversion methods to handle that, so no other occurrence of those methods should be used outside this struct
 pub struct TxIdParser;
 impl TxIdParser {
+    #[must_use]
     pub fn fb_32_to_txid(tx_id: FixedBytes<32>) -> Txid {
         let mut bytes: [u8; 32] = tx_id.into();
         bytes.reverse();
         Txid::from_byte_array(bytes)
     }
 
+    #[must_use]
     pub fn txid_to_fb_32(txid: Txid) -> FixedBytes<32> {
         let mut bytes = txid.to_byte_array();
         bytes.reverse();

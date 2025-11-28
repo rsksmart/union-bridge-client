@@ -12,7 +12,13 @@ pub enum BlockNumRef {
 
 #[automock]
 pub trait RskSubscription<T> {
+    /// # Errors
+    ///
+    /// Returns an error if the subscription fails.
     fn next(&mut self) -> Result<T, RskSubscriptionError>;
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe(&self) -> Result<()>;
 }
 
@@ -24,6 +30,7 @@ pub struct RskSubscriptionFilter {
 }
 
 impl RskSubscriptionFilter {
+    #[must_use]
     pub fn new(
         addresses: Vec<Address>,
         topics: Vec<String>,
@@ -45,18 +52,42 @@ pub trait RskProvider {
     type BlockSubscription: RskSubscription<RskBlock>;
     type LogSubscription: RskSubscription<RskLog>;
 
+    /// # Errors
+    ///
+    /// Returns an error if the subscription fails.
     fn subscribe_blocks(&self) -> Result<Self::BlockSubscription>;
+    /// # Errors
+    ///
+    /// Returns an error if the subscription fails.
     fn subscribe_logs(&self, filter: RskSubscriptionFilter) -> Result<Self::LogSubscription>;
+    /// # Errors
+    ///
+    /// Returns an error if the block cannot be retrieved.
     fn get_block_by_hash(&self, hash: BlockHash) -> Result<Option<RskBlock>>;
+    /// # Errors
+    ///
+    /// Returns an error if the block cannot be retrieved.
     fn get_block_by_number(&self, num: BlockNumber) -> Result<Option<RskBlock>>;
+    /// # Errors
+    ///
+    /// Returns an error if the uncle block cannot be retrieved.
     fn get_uncle_by_hash_and_index(&self, hash: BlockHash, index: u64) -> Result<Option<RskBlock>>;
+    /// # Errors
+    ///
+    /// Returns an error if the best block cannot be retrieved.
     fn get_best_block(&self) -> Result<RskBlock>;
+    /// # Errors
+    ///
+    /// Returns an error if the logs cannot be retrieved.
     fn get_logs(
         &self,
         from: BlockNumber,
         to: BlockNumber,
         addrs: &[Address],
     ) -> Result<Vec<RskLog>>;
+    /// # Errors
+    ///
+    /// Returns an error if the disconnect operation fails.
     fn disconnect(&self) -> Result<()>;
 }
 

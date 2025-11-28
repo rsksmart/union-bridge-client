@@ -29,6 +29,9 @@ where
 }
 
 impl AlloyProvider {
+    /// # Errors
+    ///
+    /// Returns an error if the RPC client cannot be built or connected.
     pub fn new(url: &str, shutdown_flag: ShutdownFlag) -> Result<Self> {
         // Set up the sync-runtime
         let rt_sync = RuntimeSync::new().context("On AlloyProvider")?;
@@ -59,6 +62,9 @@ impl AlloyProvider {
         })
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscribe operation fails.
     pub fn unsubscribe(&self, name: &str, subscription_id: B256) -> Result<()> {
         self.inner
             .unsubscribe(subscription_id)
@@ -92,7 +98,7 @@ impl AlloyProvider {
 
     fn parse_logs_provider_response(response: Value) -> Result<Vec<RskLog>> {
         if response.is_null() || !response.is_array() {
-            bail!("Expected array in logs response, got: {:?}", response);
+            bail!("Expected array in logs response, got: {response:?}");
         }
 
         let rpc_logs: Vec<RskRpcLog> =
@@ -103,7 +109,7 @@ impl AlloyProvider {
         Ok(rsk_logs)
     }
 
-    fn run<Fut, Err>(&self, rpc_call: Fut) -> Result<Value>
+    fn run<Fut, Err>(&self, rpc_call: &Fut) -> Result<Value>
     where
         Fut: Future<Output = Result<Value, Err>> + Clone + Send + 'static,
         Err: std::error::Error + Send + Sync + 'static,
@@ -154,7 +160,7 @@ impl RskProvider for AlloyProvider {
             .client()
             .request("eth_getBlockByHash", vec![json!(hash), json!(false)]);
 
-        self.run(rpc_call)
+        self.run(&rpc_call)
             .context(format!("Getting block {hash} from provider"))
             .and_then(Self::parse_block_provider_response)
     }
@@ -167,7 +173,7 @@ impl RskProvider for AlloyProvider {
             .client()
             .request("eth_getBlockByNumber", vec![json!(num_hex), json!(false)]);
 
-        self.run(rpc_call)
+        self.run(&rpc_call)
             .context(format!("Getting block {num} from provider"))
             .and_then(Self::parse_block_provider_response)
     }
@@ -178,7 +184,7 @@ impl RskProvider for AlloyProvider {
             .client()
             .request("eth_getBlockByNumber", vec![json!("latest"), json!(false)]);
 
-        self.run(rpc_call)
+        self.run(&rpc_call)
             .context("Getting block latest from provider")
             .and_then(Self::parse_block_provider_response)
             .context("Getting best block from provider")?
@@ -187,14 +193,14 @@ impl RskProvider for AlloyProvider {
 
     fn get_uncle_by_hash_and_index(&self, hash: BlockHash, index: u64) -> Result<Option<RskBlock>> {
         // Convert index to hexadecimal format
-        let hex_index = format!("{:#x}", index);
+        let hex_index = format!("{index:#x}");
 
         let rpc_call = self.inner.client().request(
             "eth_getUncleByBlockHashAndIndex",
             vec![json!(hash), json!(hex_index)],
         );
 
-        self.run(rpc_call)
+        self.run(&rpc_call)
             .context(format!("Getting block {hash} from provider"))
             .and_then(Self::parse_block_provider_response)
     }
@@ -205,7 +211,7 @@ impl RskProvider for AlloyProvider {
         to: BlockNumber,
         addrs: &[Address],
     ) -> Result<Vec<RskLog>> {
-        let addrs: Vec<String> = addrs.iter().map(|addr| addr.to_hex_string()).collect();
+        let addrs: Vec<String> = addrs.iter().map(ToHexString::to_hex_string).collect();
 
         let params = json!([{
             "fromBlock": from.to_hex_string(),
@@ -215,7 +221,7 @@ impl RskProvider for AlloyProvider {
 
         let rpc_call = self.inner.client().request("eth_getLogs", params);
 
-        self.run(rpc_call)
+        self.run(&rpc_call)
             .context(format!(
                 "Getting logs for addresses [{}] from block {} to {}",
                 addrs.join(", "),
@@ -276,7 +282,7 @@ mod tests {
         )
         .expect("Invalid hex string in JSON");
 
-        assert_eq!(BlockNumber::from(6161807), block.number());
+        assert_eq!(BlockNumber::from(6_161_807), block.number());
         assert_eq!(expected_hash, block.hash());
         assert_eq!(expected_parent, block.parent_hash());
         assert_eq!(1, block.uncles().len());
