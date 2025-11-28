@@ -3,6 +3,7 @@ use anyhow::{Ok, Result};
 use clap::{Parser, Subcommand};
 use std::path::Path;
 
+#[derive(Default)]
 pub struct Cli {}
 
 #[derive(Parser)]
@@ -32,7 +33,7 @@ enum Commands {
 
 impl Cli {
     pub fn new() -> Self {
-        Self {}
+        Self::default()
     }
 
     pub fn run(&self) -> Result<()> {
