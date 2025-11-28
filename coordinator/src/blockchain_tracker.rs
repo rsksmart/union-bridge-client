@@ -88,10 +88,18 @@ impl BlockchainObserver for BlockConfirmations {
 /// into BlockchainView methods during callbacks (`on_block_added`, `on_block_removed`) to avoid
 /// RefCell panics due to reentrancy. Such violations are deterministic programming errors that
 /// will always panic when the violating code path is executed.
+type ObserverMap = HashMap<String, Rc<RefCell<dyn BlockchainObserver>>>;
+
 #[derive(Clone)]
 pub struct BlockchainView {
     blocks: Rc<RefCell<BTreeMap<BlockNumber, RskBlockAndUncles>>>,
-    observers: Rc<RefCell<HashMap<String, Rc<RefCell<dyn BlockchainObserver>>>>>, // Rc<RefCell<...>> is necessary for shared mutable access to trait objects
+    observers: Rc<RefCell<ObserverMap>>, // Rc<RefCell<...>> is necessary for shared mutable access to trait objects
+}
+
+impl Default for BlockchainView {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl BlockchainView {
@@ -134,7 +142,7 @@ impl BlockchainView {
 
     // TODO try to receive a reference to avoid cloning the block
     pub fn update(&self, new_block: RskBlockAndUncles) {
-        let prev_tip = self.get_tip().map(|b| b.clone());
+        let prev_tip = self.get_tip();
 
         let removed_block = self
             .blocks
@@ -150,7 +158,7 @@ impl BlockchainView {
             );
 
             if let Some(prev_tip) = prev_tip {
-                self.validate_consecutive_block(&new_block.block(), prev_tip.block());
+                self.validate_consecutive_block(new_block.block(), prev_tip.block());
             }
 
             self.notify_added_block(&new_block);
@@ -194,7 +202,7 @@ impl BlockchainView {
     }
 
     pub fn get_tip(&self) -> Option<RskBlockAndUncles> {
-        self.blocks.borrow().values().rev().next().cloned()
+        self.blocks.borrow().values().next_back().cloned()
     }
 
     pub fn restart_from(&self, first_block: BlockNumber) {
@@ -254,7 +262,7 @@ impl BlockchainView {
             .expect("BlockchainView observers already borrowed during notify_added_block - reentrancy detected! This violates the BlockchainObserver contract and indicates a programming bug.");
 
         for observer in observers.values() {
-            observer.borrow_mut().on_block_added(&new_block);
+            observer.borrow_mut().on_block_added(new_block);
         }
     }
 

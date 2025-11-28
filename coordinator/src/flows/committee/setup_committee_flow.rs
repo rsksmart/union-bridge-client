@@ -149,8 +149,7 @@ impl FlowContext {
             .as_ref()
             .context("Missing stream_id")?
             .stream_id
-            .clone()
-            .into())
+            .clone())
     }
 
     fn get_committee_id(&self) -> Result<CommitteeId> {
@@ -192,7 +191,7 @@ impl FlowContext {
         self.user_input
             .as_ref()
             .context("Missing User Input in context")
-            .map(|input| input.clone())
+            .cloned()
     }
 
     fn get_my_comm_info(&self) -> Result<P2PAddress> {
@@ -679,7 +678,7 @@ where
         pending_committee: &NewCommitteePendingEvent,
         committee_id: &CommitteeId,
     ) -> Result<bool> {
-        if self.global_context.my_committees().im_member(&committee_id) {
+        if self.global_context.my_committees().im_member(committee_id) {
             bail!("Already part of committee {committee_id}");
         }
 
@@ -716,7 +715,8 @@ where
     }
 
     fn request_bitvmx_member_pub_key(&self, req_id: Uuid) -> Result<()> {
-        Ok(self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetPubKey(req_id, true)))
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetPubKey(req_id, true));
+        Ok(())
     }
 
     fn build_funding_utxo(&self) -> Result<UTXO> {
@@ -951,9 +951,8 @@ where
                 bail!("Invalid member role: {}", cm.role);
             };
 
-            let take_key = self.get_member_keys_by_type(cm.memberAddress.into(), TAKE_KEY_INDEX)?;
-            let dispute_key =
-                self.get_member_keys_by_type(cm.memberAddress.into(), DISPUTE_KEY_INDEX)?;
+            let take_key = self.get_member_keys_by_type(cm.memberAddress, TAKE_KEY_INDEX)?;
+            let dispute_key = self.get_member_keys_by_type(cm.memberAddress, DISPUTE_KEY_INDEX)?;
 
             let contracts_utxo = committee
                 .fundingUTXOs
@@ -983,7 +982,7 @@ where
     BC: BitVmxBrokerClientApi,
     S: CoordinatorStoreApi,
 {
-    fn fail(&mut self) -> () {
+    fn fail(&mut self) {
         error!(
             "Marking flow {} as failed and cleaning up",
             self.state.internal_id
@@ -1647,7 +1646,7 @@ where
             .ctx
             .committee_pending_ev
             .as_ref()
-            .map_or(false, |ev| ev.inner.committeeId == **committee_id)
+            .is_some_and(|ev| ev.inner.committeeId == **committee_id)
     }
 
     fn get_flow_for_bitvmx_response(
@@ -1679,7 +1678,7 @@ where
     /// checks if a pubkey request (either for key generation or signing) matches the given request id
     fn pubkey_request_matches(pubkey_req: &PubKeyReq, req_id: &Uuid) -> bool {
         if let Some((pk_req_id, _, sign_req_id, _)) = pubkey_req {
-            pk_req_id == req_id || sign_req_id.map_or(false, |id| id == *req_id)
+            pk_req_id == req_id || sign_req_id.is_some_and(|id| id == *req_id)
         } else {
             false
         }
@@ -1829,10 +1828,7 @@ where
     }
 
     fn is_flow_for_stream(f: &&mut SetupCommitteeFlow<CG, BC, S>, stream_id: &StreamId) -> bool {
-        f.state
-            .ctx
-            .get_stream_id()
-            .map_or(false, |id| &id == stream_id)
+        f.state.ctx.get_stream_id().is_ok_and(|id| id == *stream_id)
     }
 }
 
@@ -1892,10 +1888,10 @@ where
                 bail!("BitVMX cannot aggregate dispute keys for request {req_id}")
             }
             OutgoingBitVMXApiMessages::SetupCompleted(req_id) => {
-                (req_id, StepData::SetupCompleted(req_id.clone()))
+                (req_id, StepData::SetupCompleted(*req_id))
             }
             OutgoingBitVMXApiMessages::FundsSent(req_id, tx_id) => {
-                (req_id, StepData::FundsSent(tx_id.clone()))
+                (req_id, StepData::FundsSent(*tx_id))
             }
             OutgoingBitVMXApiMessages::WalletError(req_id, tx_id) => {
                 bail!("BitVMX WalletError for request {req_id}, tx {tx_id}")
@@ -1989,7 +1985,8 @@ where
         let confirmed_keys: Vec<_> = self
             .events_confirming
             .iter()
-            .filter_map(|(key, event)| event.is_confirmed().then(|| key.clone()))
+            .filter(|(_, event)| event.is_confirmed())
+            .map(|(key, _)| key.clone())
             .collect();
 
         for key in confirmed_keys {

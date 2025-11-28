@@ -127,8 +127,8 @@ impl GlobalContext {
 /// We need this function because we are temporarily:
 /// - storing PeerId as the communication key on applyToStream
 /// - storing only the address as the communication data on depositCommunicationData
-/// therefore get_communication_data does not bring everything we need, just the address
-/// this was agreed with Fairgate
+///   therefore get_communication_data does not bring everything we need, just the address
+///   this was agreed with Fairgate
 pub fn build_communication_data(
     my_p2p_address: String,
     committee_addresses: Vec<String>,

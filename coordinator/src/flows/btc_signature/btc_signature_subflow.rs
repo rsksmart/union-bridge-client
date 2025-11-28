@@ -268,7 +268,7 @@ mod tests {
 
         let event = RskPegManagerEvents::AllNoncesReady(AllNoncesReadyEvent {
             inner: hash_to_sign,
-            block_number: block_number.clone(),
+            block_number,
             block_hash,
             removed: false,
             tx_hash: TxHash::from(H256::from_low_u64_be(122)),
@@ -310,7 +310,7 @@ mod tests {
 
         let event = RskPegManagerEvents::AllNoncesReady(AllNoncesReadyEvent {
             inner: hash_to_sign,
-            block_number: block_number.clone(),
+            block_number,
             block_hash,
             removed: true,
             tx_hash: TxHash::from(H256::from_low_u64_be(122)),
@@ -350,7 +350,7 @@ mod tests {
 
         let event = RskPegManagerEvents::AllSignaturesReady(AllSignaturesReadyEvent {
             inner: hash_to_sign,
-            block_number: block_number.clone(),
+            block_number,
             block_hash,
             removed: false,
             tx_hash: TxHash::from(H256::from_low_u64_be(122)),
@@ -391,7 +391,7 @@ mod tests {
 
         let event = RskPegManagerEvents::AllSignaturesReady(AllSignaturesReadyEvent {
             inner: hash_to_sign,
-            block_number: block_number.clone(),
+            block_number,
             block_hash,
             removed: true,
             tx_hash: TxHash::from(H256::from_low_u64_be(122)),
@@ -637,7 +637,7 @@ mod tests {
 
         let event = RskPegManagerEvents::AllNoncesReady(AllNoncesReadyEvent {
             inner: hash_to_sign,
-            block_number: block_number.clone(),
+            block_number,
             block_hash,
             removed: false,
             tx_hash: TxHash::from(H256::from_low_u64_be(122)),

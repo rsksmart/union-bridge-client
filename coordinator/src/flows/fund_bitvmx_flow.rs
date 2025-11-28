@@ -56,7 +56,6 @@ where
                     addr.clone()
                         .require_network(self.bitcoin_network)
                         .with_context(|| format!("Unexpected Bitcoin network for {addr:?}"))?
-                        .to_string()
                 );
                 // a webhook to the user app would be sent here
             }

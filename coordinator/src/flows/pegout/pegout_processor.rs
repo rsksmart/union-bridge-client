@@ -161,7 +161,7 @@ where
     pub fn get_user_take_pid(committee_id: Uuid, slot_index: usize) -> Result<Uuid> {
         let mut hasher = Sha256::new();
         hasher.update(committee_id.as_bytes());
-        hasher.update(&slot_index.to_be_bytes());
+        hasher.update(slot_index.to_be_bytes());
         hasher.update("user_take");
 
         // Get the result as a byte array
@@ -328,7 +328,7 @@ where
         for flow_id in &flows_to_dispatch {
             if let Some(flow) = self.pegout_flows.get_mut(flow_id) {
                 flow.complete_step(StepData::DispatchTransaction)?;
-                self.signature_flows.remove(&flow_id);
+                self.signature_flows.remove(flow_id);
             } else {
                 warn!(
                     "Signature flow done for unknown pegout flow_id: {}. Skipping dispatch step",
@@ -345,7 +345,7 @@ where
         flow_id: &Uuid,
         tx_status: TransactionStatus,
     ) -> Result<()> {
-        let flow = match self.pegout_flows.get_mut(&flow_id) {
+        let flow = match self.pegout_flows.get_mut(flow_id) {
             Some(flow) => flow,
             None => {
                 trace!(
@@ -397,7 +397,7 @@ where
                 flow_id
             );
             self.tx_status_scheduler
-                .schedule(flow_id.clone(), BLOCKS_DELAY_FOR_TX_CHECK);
+                .schedule(flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
         }
         Ok(())
     }
@@ -447,7 +447,8 @@ where
         let confirmed_keys: Vec<_> = self
             .events_confirming
             .iter()
-            .filter_map(|(key, event)| event.is_confirmed().then(|| key.clone()))
+            .filter(|(_, event)| event.is_confirmed())
+            .map(|(key, _)| key.clone())
             .collect();
 
         for key in confirmed_keys {
@@ -533,14 +534,13 @@ where
                 let register_input = RegisterSignaturesBitVmxData {
                     hash_to_sign,
                     nonce: input.user_take_nonce.clone(),
-                    signature: input.user_take_signature.clone(),
+                    signature: input.user_take_signature,
                 };
                 flow.complete_step(StepData::PegoutAccepted(input))?;
 
                 let mut btc_sig_subflow = self.btc_sig_subflow_factory.create_flow(*flow_id);
-                btc_sig_subflow.start_signature_flow(flow_id.clone(), &register_input)?;
-                self.signature_flows
-                    .insert(flow_id.clone(), btc_sig_subflow);
+                btc_sig_subflow.start_signature_flow(*flow_id, &register_input)?;
+                self.signature_flows.insert(*flow_id, btc_sig_subflow);
             }
             OutgoingBitVMXApiMessages::SetupCompleted(program_id) => {
                 if self.pegout_flows.contains_key(program_id) {

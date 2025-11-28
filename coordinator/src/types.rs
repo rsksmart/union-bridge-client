@@ -155,7 +155,7 @@ impl EventDecoder {
         warn!(
             "No decoding succeeded for log from {}. topic0: {:?}, tx_hash: {:?}, check if the contract is subscribed to for event decoding in the coordinator",
             log.info().address(),
-            log.event().topics().get(0),
+            log.event().topics().first(),
             log.info().tx_hash()
         );
         RskPegManagerEvents::UnknownEvent
@@ -705,7 +705,7 @@ mod tests {
                 streamId: 42,
                 packetNumber: 33,
                 slotId: 0,
-                pegStatus: 0.into(),
+                pegStatus: 0u8,
             },
             requestPeginInfo: RequestPeginTempInfo {
                 rskDestinationAddress: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
@@ -820,13 +820,7 @@ mod tests {
         let topic = event_signature_to_topic("Transfer(address,address,uint256)");
         let log_event: LogEvent = LogEvent::new(
             DataBytes::from_hex_str("0x1234567890abcdef1234567890abcdef12345678").unwrap(),
-            vec![
-                topic.clone(),
-                topic.clone(),
-                topic.clone(),
-                topic.clone(),
-                topic,
-            ], // 5 topics, invalid
+            vec![topic, topic, topic, topic, topic], // 5 topics, invalid
         );
 
         let log_info = LogInfo::new(
@@ -865,7 +859,7 @@ mod tests {
                 streamId: 42,
                 packetNumber: 33,
                 slotId: 0,
-                pegStatus: 0.into(),
+                pegStatus: 0u8,
             },
             requestPeginInfo: RequestPeginTempInfo {
                 rskDestinationAddress: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
@@ -923,7 +917,7 @@ mod tests {
                 streamId: 42,
                 packetNumber: 33,
                 slotId: 0,
-                pegStatus: 1.into(),
+                pegStatus: 1u8,
             },
             speedUpPubKey: FixedBytes::<32>::from_slice(
                 H256::from_low_u64_be(103991732982).as_bytes(),
@@ -984,7 +978,7 @@ mod tests {
                 assert_eq!(data.inner, Hash256::from(expected_hash_to_sign));
                 assert_eq!(data.block_number, expected_block_num);
                 assert_eq!(data.block_hash, expected_block_hash.into());
-                assert_eq!(data.removed, false);
+                assert!(!data.removed);
                 assert_eq!(data.tx_hash, expected_tx_hash);
             }
             _ => panic!("Expected AllNoncesReady event"),
@@ -1019,7 +1013,7 @@ mod tests {
                 assert_eq!(data.inner, Hash256::from(expected_hash_to_sign));
                 assert_eq!(data.block_number, expected_block_num);
                 assert_eq!(data.block_hash, expected_block_hash.into());
-                assert_eq!(data.removed, true);
+                assert!(data.removed);
                 assert_eq!(data.tx_hash, expected_tx_hash);
             }
             _ => panic!("Expected AllSignaturesReady event"),
@@ -1067,7 +1061,7 @@ mod tests {
                 assert_eq!(data.inner, expected_event);
                 assert_eq!(data.block_number, expected_block_num);
                 assert_eq!(data.block_hash, expected_block_hash.into());
-                assert_eq!(data.removed, true);
+                assert!(data.removed);
                 assert_eq!(data.tx_hash, expected_tx_hash);
             }
             _ => panic!("Expected AllOperatorTakeTxidsAdded event"),

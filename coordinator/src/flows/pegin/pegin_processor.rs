@@ -158,7 +158,7 @@ where
 
     /// Handle PeginRequested event by finding and updating existing flow
     fn create_flow_for_pegin_requested(&mut self, event: &PeginRequested) -> Result<()> {
-        let committee_id: CommitteeId = event.committeeId.try_into()?;
+        let committee_id: CommitteeId = event.committeeId.into();
 
         // Check if we are members of the committee
         if !self.global_context.my_committees().im_member(&committee_id) {
@@ -219,8 +219,7 @@ where
 
         // Find the flow corresponding to this pegin acceptance using accept_pegin_tx_hash
         let flow_opt = self.pegin_flows.values_mut().find(|flow| {
-            flow.get_accept_pegin_txid()
-                .map(|txid| TxIdParser::txid_to_fb_32(txid))
+            flow.get_accept_pegin_txid().map(TxIdParser::txid_to_fb_32)
                 == Some(pa.inner.acceptPeginTxid)
         });
 
@@ -262,7 +261,7 @@ where
 
         match event {
             RskPegManagerEvents::PeginRequested(pr) => {
-                let committee_id = pr.inner.committeeId.try_into()?;
+                let committee_id = pr.inner.committeeId.into();
                 if !self.global_context.my_committees().im_member(&committee_id) {
                     debug!(
                         "Handling PeginRequested event with committee id {}, I am NOT member so I skip",
@@ -299,8 +298,7 @@ where
 
         // Find the flow by accept_pegin_tx_hash
         let flow_opt = self.pegin_flows.values_mut().find(|flow| {
-            flow.get_accept_pegin_txid()
-                .map(|txid| TxIdParser::txid_to_fb_32(txid))
+            flow.get_accept_pegin_txid().map(TxIdParser::txid_to_fb_32)
                 == Some(event.inner.acceptPeginTxid)
         });
 
@@ -324,7 +322,7 @@ where
                 let register_input = RegisterSignaturesBitVmxData {
                     hash_to_sign,
                     nonce: pegin_accepted.accept_pegin_nonce.clone(),
-                    signature: pegin_accepted.accept_pegin_signature.clone(),
+                    signature: pegin_accepted.accept_pegin_signature,
                 };
 
                 let mut btc_sig_subflow = self.btc_sig_subflow_factory.create_flow(flow_id);
@@ -396,7 +394,7 @@ where
         for flow_id in &flows_to_dispatch {
             if let Some(flow) = self.pegin_flows.get_mut(flow_id) {
                 flow.complete_step(StepData::DispatchAcceptPeginTransaction)?;
-                self.signature_flows.remove(&flow_id);
+                self.signature_flows.remove(flow_id);
             } else {
                 warn!(
                     "Signature flow done for unknown pegin flow_id: {}. Skipping dispatch step",
@@ -413,7 +411,7 @@ where
         flow_id: &Uuid,
         tx_status: TransactionStatus,
     ) -> Result<()> {
-        let flow = match self.pegin_flows.get_mut(&flow_id) {
+        let flow = match self.pegin_flows.get_mut(flow_id) {
             Some(flow) => flow,
             None => {
                 trace!(
@@ -466,7 +464,7 @@ where
                 flow_id
             );
             self.tx_status_scheduler
-                .schedule(flow_id.clone(), BLOCKS_DELAY_FOR_TX_CHECK);
+                .schedule(flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
         }
         Ok(())
     }
@@ -576,7 +574,8 @@ where
         let confirmed_keys: Vec<_> = self
             .events_confirming
             .iter()
-            .filter_map(|(key, event)| event.is_confirmed().then(|| key.clone()))
+            .filter(|(_, event)| event.is_confirmed())
+            .map(|(key, _)| key.clone())
             .collect();
 
         for key in confirmed_keys {

@@ -313,7 +313,7 @@ where
     }
 
     fn get_hash_to_sign(&self) -> Option<Hash256> {
-        self.state.data.as_ref().map(|s| s.hash_to_sign.clone())
+        self.state.data.as_ref().map(|s| s.hash_to_sign)
     }
 
     fn blockchain_view(&self) -> &BlockchainView {
@@ -473,7 +473,7 @@ mod tests {
             .expect("failed to send signature to contracts");
 
         // step 4: set signatures ready
-        let signature_start_block = BlockNumber::from(start_block + REQUIRED_CONFIRMATIONS.into());
+        let signature_start_block = start_block + REQUIRED_CONFIRMATIONS.into();
         flow.set_all_signatures_ready(signature_start_block)
             .expect("failed to set signatures ready");
 
@@ -618,7 +618,7 @@ mod tests {
             .expect("failed to complete Nonces step");
 
         // step 3: complete Signatures step
-        let signature_start_block = BlockNumber::from(start_block + REQUIRED_CONFIRMATIONS.into());
+        let signature_start_block = start_block + REQUIRED_CONFIRMATIONS.into();
         complete_signature_step(&mut flow, signature_start_block, &blockchain_view)
             .expect("failed to complete Signatures step");
 
@@ -778,7 +778,7 @@ mod tests {
         );
 
         // step 2: send signatures to contracts
-        let signature_start_block = BlockNumber::from(start_block + REQUIRED_CONFIRMATIONS.into());
+        let signature_start_block = start_block + REQUIRED_CONFIRMATIONS.into();
         complete_signature_step(&mut flow, signature_start_block, &blockchain_view)
             .expect("failed to complete Signatures step");
 
@@ -827,7 +827,6 @@ mod tests {
             .expect_add_member_nonce()
             .times(times)
             .with(function({
-                let expected_hash = expected_hash.clone();
                 let expected_nonce = expected_nonce.clone();
                 move |input: &AddMemberNonceInput| {
                     input.hash_to_sign == expected_hash && input.nonce == expected_nonce
@@ -852,8 +851,7 @@ mod tests {
             .expect_add_member_signature()
             .times(times)
             .with(function({
-                let expected_hash = expected_hash.clone();
-                let expected_signature = expected_signature.clone();
+                let expected_signature = *expected_signature;
                 move |input: &AddMemberSignatureInput| {
                     input.hash_to_sign == expected_hash && input.signature == expected_signature
                 }

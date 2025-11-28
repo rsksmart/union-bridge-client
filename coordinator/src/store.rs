@@ -87,6 +87,7 @@ impl PersistentGlobalContext {
         }
     }
 
+    #[allow(clippy::wrong_self_convention)]
     fn to_memory(self) -> GlobalContext {
         let ctx = GlobalContext::new();
         // restore committees

@@ -36,9 +36,10 @@ const PEGIN_ACCEPTED_VAR_NAME: &str = "PeginAccepted";
 const PROGRAM_TYPE_ACCEPT_PEGIN: &str = "accept_pegin";
 
 /// Steps for the pegin state machine flow
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum Steps {
     // Initial state when Bitcoin pegin transaction is found
+    #[default]
     PeginTransactionFound,
     // Request SPV proof for the pegin request (to call requestPegin)
     RequestPeginSpvProof,
@@ -60,12 +61,6 @@ pub enum Steps {
     AcceptPegin,
     // Final state
     Done,
-}
-
-impl Default for Steps {
-    fn default() -> Self {
-        Steps::PeginTransactionFound
-    }
 }
 
 /// Data passed between steps in the pegin flow
@@ -413,7 +408,7 @@ where
             .pegin_requested
             .as_ref()
             .ok_or_else(|| anyhow!("PeginRequested data not available"))?;
-        let committee_id: CommitteeId = pegin_requested.committeeId.try_into()?;
+        let committee_id: CommitteeId = pegin_requested.committeeId.into();
 
         self.send_pegin_request_to_bitvmx(&committee_id)?;
         self.send_setup_to_bitvmx(&committee_id)?;
@@ -574,7 +569,7 @@ where
             .ok_or_else(|| anyhow!("PeginRequested data not available for migration"))?;
 
         // Calculate official flow ID from committee and slot information
-        let committee_id: CommitteeId = pegin_requested.committeeId.try_into()?;
+        let committee_id: CommitteeId = pegin_requested.committeeId.into();
         let committee_uuid: Uuid = Uuid::from_u128(*committee_id);
         let official_flow_id = get_accept_pegin_pid(
             committee_uuid,
@@ -600,7 +595,7 @@ where
     ) -> Result<PeginRequestMessage> {
         debug!("Building PeginRequestMessage for BitVMX from PeginRequested event");
 
-        let committee_id = Uuid::from_u128(event.committeeId.try_into()?);
+        let committee_id = Uuid::from_u128(event.committeeId);
         let operator_indexes = self.build_operator_indexes(committee_output)?;
         let slot_index = event.streamPosition.slotId;
 

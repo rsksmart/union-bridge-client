@@ -30,8 +30,9 @@ pub const USER_TAKE_TX: &str = "USER_TAKE_TX";
 const PEGOUT_COMPLETED_VAR_NAME: &str = "PEG_OUT_COMPLETED";
 
 /// Steps for the pegout state machine flow
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum Steps {
+    #[default]
     PegoutRequested,
     GetCommInfo,
     PrepareUserTakeSetup,
@@ -43,12 +44,7 @@ pub enum Steps {
     Done,
 }
 
-impl Default for Steps {
-    fn default() -> Self {
-        Steps::PegoutRequested
-    }
-}
-
+/// Data passed between steps in the pegout flow
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum StepData {
     PegoutRequested,
@@ -463,14 +459,12 @@ where
             );
         };
 
-        let take_aggregated_key = Self::build_take_aggregated_key(&committee_output)?;
+        let take_aggregated_key = Self::build_take_aggregated_key(committee_output)?;
 
         // Convert fixed-size hashes and ids to Vec<u8>
         // Note: v0.2.0 contracts merged pegoutSignatureHash and pegoutSignatureMessage into pegoutSignatureData struct
-        let pegout_signature_hash: Vec<u8> =
-            event.pegoutSignatureData.signatureHash.as_slice().to_vec();
-        let pegout_signature_message: Vec<u8> =
-            event.pegoutSignatureData.signatureMessage.as_ref().to_vec();
+        let pegout_signature_hash: Vec<u8> = event.pegoutSignatureData.signatureHash.to_vec();
+        let pegout_signature_message: Vec<u8> = event.pegoutSignatureData.signatureMessage.to_vec();
         let pegout_id: Vec<u8> = event.pegoutId.as_slice().to_vec();
         let slot_index = event.slotId as usize;
 
