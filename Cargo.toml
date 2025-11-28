@@ -3,7 +3,7 @@ resolver = "2"
 members = ["common", "block-indexer", "log-indexer", "transaction-dispatcher", "key-manager", "check-fork", "check-fork/tester", "check-fork/zkp", "coordinator", "user-api"]
 
 [workspace.lints.clippy]
-all = "allow" # move to deny when all crashes are fixed, and remove the [lints] section from each crate's Cargo.toml
+all = "deny"
 
 [workspace.dependencies]
 # alloy-rs-core
