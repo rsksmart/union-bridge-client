@@ -22,7 +22,7 @@ impl<C: SignatureManagerContractApi> AddMemberNonceInvoke<C> {
         &self,
         input: AddMemberNonceInput,
     ) -> Result<AddMemberNonceOutput, DomainErrors> {
-        info!("Init AddMemberNonce for: {:?}", input);
+        info!("Init AddMemberNonce for: {input:?}");
 
         let hash_to_sign = input.hash_to_sign.into();
         let nonce = contracts::types::Bytes::from(input.nonce.serialize());
@@ -32,23 +32,20 @@ impl<C: SignatureManagerContractApi> AddMemberNonceInvoke<C> {
             .add_member_nonce(hash_to_sign, nonce, self.gas_bumps)
             .await?;
 
-        match receipt.status() {
-            true => {
-                info!(
-                    "AddMemberNonce successful at tx {}",
-                    receipt.transaction_hash
-                );
-                Ok(AddMemberNonceOutput {
-                    transaction_hash: receipt.transaction_hash.to_string(),
-                })
-            }
-            false => {
-                error!("AddMemberNonce failed at tx {}", receipt.transaction_hash);
-                Err(DomainErrors::TransactionFailed(format!(
-                    "AddMemberNonce transaction failed with receipt status false at tx {}",
-                    receipt.transaction_hash
-                )))
-            }
+        if receipt.status() {
+            info!(
+                "AddMemberNonce successful at tx {}",
+                receipt.transaction_hash
+            );
+            Ok(AddMemberNonceOutput {
+                transaction_hash: receipt.transaction_hash.to_string(),
+            })
+        } else {
+            error!("AddMemberNonce failed at tx {}", receipt.transaction_hash);
+            Err(DomainErrors::TransactionFailed(format!(
+                "AddMemberNonce transaction failed with receipt status false at tx {}",
+                receipt.transaction_hash
+            )))
         }
     }
 }

@@ -27,10 +27,7 @@ pub struct MemberRegistryContract<P: Provider> {
 
 impl<P: Provider> MemberRegistryContract<P> {
     pub fn new(provider: P, contract_address: Address) -> Self {
-        info!(
-            "Connecting to MemberRegistry Contract @ {}",
-            contract_address
-        );
+        info!("Connecting to MemberRegistry Contract @ {contract_address}");
         let contract_instance = MemberRegistry::new(contract_address, provider);
         MemberRegistryContract { contract_instance }
     }
@@ -53,9 +50,9 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
 
     Some(match decoded_err {
         MemberRegistryErrors::MemberAlreadyRegisteredForStream(e) => {
-            DomainErrors::MemberAlreadyRegisteredForStream(format!("{:?}", e))
+            DomainErrors::MemberAlreadyRegisteredForStream(format!("{e:?}"))
         }
         // Add other specific mappings here as needed
-        _ => DomainErrors::MemberRegistryError(format!("{:?}", decoded_err)),
+        _ => DomainErrors::MemberRegistryError(format!("{decoded_err:?}")),
     })
 }

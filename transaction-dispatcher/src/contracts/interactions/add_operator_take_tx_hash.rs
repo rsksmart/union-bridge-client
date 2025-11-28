@@ -23,7 +23,7 @@ impl<C: SignatureManagerContractApi> AddOperatorTakeTxHashInvoke<C> {
         &self,
         input: AddOperatorTakeTxHashInput,
     ) -> Result<AddOperatorTakeTxHashOutput, DomainErrors> {
-        info!("Init AddOperatorTakeTxHash for: {:?}", input);
+        info!("Init AddOperatorTakeTxHash for: {input:?}");
 
         let accept_pegin_tx_hash = TxIdParser::txid_to_fb_32(input.accept_pegin_tx_hash);
         let take_tx_hash = FixedBytes32::from_slice(input.take_tx_hash.as_slice());
@@ -33,26 +33,23 @@ impl<C: SignatureManagerContractApi> AddOperatorTakeTxHashInvoke<C> {
             .add_operator_take_tx_hash(accept_pegin_tx_hash, take_tx_hash, self.gas_bumps)
             .await?;
 
-        match receipt.status() {
-            true => {
-                info!(
-                    "AddOperatorTakeTxHash successful at tx {}",
-                    receipt.transaction_hash
-                );
-                Ok(AddOperatorTakeTxHashOutput {
-                    transaction_hash: receipt.transaction_hash.to_string(),
-                })
-            }
-            false => {
-                error!(
-                    "AddOperatorTakeTxHash failed at tx {}",
-                    receipt.transaction_hash
-                );
-                Err(DomainErrors::TransactionFailed(format!(
-                    "AddOperatorTakeTxHash transaction failed with receipt status false at tx {}",
-                    receipt.transaction_hash
-                )))
-            }
+        if receipt.status() {
+            info!(
+                "AddOperatorTakeTxHash successful at tx {}",
+                receipt.transaction_hash
+            );
+            Ok(AddOperatorTakeTxHashOutput {
+                transaction_hash: receipt.transaction_hash.to_string(),
+            })
+        } else {
+            error!(
+                "AddOperatorTakeTxHash failed at tx {}",
+                receipt.transaction_hash
+            );
+            Err(DomainErrors::TransactionFailed(format!(
+                "AddOperatorTakeTxHash transaction failed with receipt status false at tx {}",
+                receipt.transaction_hash
+            )))
         }
     }
 }

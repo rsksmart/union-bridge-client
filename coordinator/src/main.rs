@@ -92,7 +92,7 @@ fn main() -> Result<()> {
     let rt_sync = RuntimeSync::new().context("Failed to create runtime sync")?;
 
     let contracts_gateway = transaction_dispatcher::get_contracts_gateway_as_lib_sync_with_role(
-        rt_sync.clone(),
+        &rt_sync,
         tx_dispatcher_config,
         transaction_dispatcher::GatewayRole::Member, // Coordinator uses member role
     )?;

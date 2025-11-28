@@ -177,6 +177,12 @@ pub struct RskContractsGateway<P: Provider> {
 }
 
 impl<P: Provider + Clone> RskContractsGateway<P> {
+    /// Create a new `RskContractsGateway` instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any contract address is missing, invalid, or has no deployed code.
+    #[allow(clippy::too_many_lines)]
     pub async fn new(
         // TODO make provider an Rc so we avoid more expensive cloning
         provider: P,
@@ -210,13 +216,11 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             let code = provider
                 .get_code_at((*address).into())
                 .await
-                .map_err(|e| anyhow!("Failed to get code for contract {}: {}", contract_name, e))?;
+                .map_err(|e| anyhow!("Failed to get code for contract {contract_name}: {e}"))?;
 
             if code.is_empty() {
                 return Err(anyhow!(
-                    "Contract {} at address {} has no deployed code (0x)",
-                    contract_name,
-                    address
+                    "Contract {contract_name} at address {address} has no deployed code (0x)"
                 ));
             }
         }
@@ -303,7 +307,7 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
         contracts
             .get(name)
             .map(|info| info.address)
-            .ok_or_else(|| anyhow!(format!("Address not found for contract: {}", name)))
+            .ok_or_else(|| anyhow!(format!("Address not found for contract: {name}")))
     }
 }
 
@@ -316,7 +320,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
         self.provider
             .get_balance(self.member_address.into())
             .await
-            .map_err(|e| DomainErrors::InternalServerError(format!("Failed to get balance: {}", e)))
+            .map_err(|e| DomainErrors::InternalServerError(format!("Failed to get balance: {e}")))
     }
 
     async fn get_temporary_pegin_address(
@@ -329,7 +333,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
             .run(input)
             .await
             .map_err(|err| {
-                error!("Error on get_temporary_pegin_address_call: {}", err);
+                error!("Error on get_temporary_pegin_address_call: {err}");
                 err
             })
     }
@@ -341,7 +345,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
         info!("Interacting with PegManager#requestPegin",);
 
         self.request_pegin_invoke.run(input).await.map_err(|err| {
-            error!("Error on request_pegin_invoke: {}", err);
+            error!("Error on request_pegin_invoke: {err}");
             err
         })
     }
@@ -353,7 +357,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
         info!("Interacting with PegManager#acceptPegin",);
 
         self.accept_pegin_invoke.run(input).await.map_err(|err| {
-            error!("Error on accept_pegin_invoke: {}", err);
+            error!("Error on accept_pegin_invoke: {err}");
             err
         })
     }
@@ -368,7 +372,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
             .run(input)
             .await
             .map_err(|err| {
-                error!("Error on add_member_nonce_invoke: {}", err);
+                error!("Error on add_member_nonce_invoke: {err}");
                 err
             })
     }
@@ -383,7 +387,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
             .run(input)
             .await
             .map_err(|err| {
-                error!("Error on add_member_signature_invoke: {}", err);
+                error!("Error on add_member_signature_invoke: {err}");
                 err
             })
     }
@@ -398,7 +402,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
             .run(input)
             .await
             .map_err(|err| {
-                error!("Error on add_operator_take_tx_hash_invoke: {}", err);
+                error!("Error on add_operator_take_tx_hash_invoke: {err}");
                 err
             })
     }
@@ -410,7 +414,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
             .run(input)
             .await
             .map_err(|err| {
-                error!("Error on notify_check_fork_completion_invoke: {}", err);
+                error!("Error on notify_check_fork_completion_invoke: {err}");
                 err
             })
     }
@@ -422,7 +426,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
         info!("Interacting with PegManager#tryPegoutRequest",);
 
         self.request_pegout_invoke.run(input).await.map_err(|err| {
-            error!("Error on try_pegout_invoke: {}", err);
+            error!("Error on try_pegout_invoke: {err}");
             err
         })
     }
@@ -434,7 +438,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
         info!("Interacting with PegManager#register_pegout");
 
         self.register_pegout_invoke.run(input).await.map_err(|err| {
-            error!("Error on register_pegout_invoke: {}", err);
+            error!("Error on register_pegout_invoke: {err}");
             err
         })
     }
@@ -449,7 +453,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
             .run(input)
             .await
             .map_err(|err| {
-                error!("Error on get_member_public_keys_call: {}", err);
+                error!("Error on get_member_public_keys_call: {err}");
                 err
             })
     }
@@ -461,7 +465,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
         info!("Interacting with CommitteeRegistry#applyToStream",);
 
         self.apply_to_stream_invoke.run(input).await.map_err(|err| {
-            error!("Error on apply_to_stream_invoke: {}", err);
+            error!("Error on apply_to_stream_invoke: {err}");
             err
         })
     }
@@ -473,7 +477,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
         info!("Interacting with CommitteeRegistry#getCommittee");
 
         self.get_committee_call.run(input).await.map_err(|err| {
-            error!("Error on get_committee_call: {}", err);
+            error!("Error on get_committee_call: {err}");
             err
         })
     }
@@ -488,7 +492,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
             .run(input)
             .await
             .map_err(|err| {
-                error!("Error on get_member_communication_data_call: {}", err);
+                error!("Error on get_member_communication_data_call: {err}");
                 err
             })
     }
@@ -503,7 +507,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
             .run(input)
             .await
             .map_err(|err| {
-                error!("Error on deposit_communication_data_invoke: {}", err);
+                error!("Error on deposit_communication_data_invoke: {err}");
                 err
             })
     }
@@ -518,7 +522,7 @@ impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
             .run(input)
             .await
             .map_err(|err| {
-                error!("Error on deposit_aggregated_key_invoke: {}", err);
+                error!("Error on deposit_aggregated_key_invoke: {err}");
                 err
             })
     }

@@ -22,6 +22,11 @@ pub enum GatewayRole {
     Member,
 }
 
+/// Get a contracts gateway instance.
+///
+/// # Errors
+///
+/// Returns an error if the gateway cannot be instantiated.
 pub async fn get_contracts_gateway<P: Provider + Clone>(
     provider: P,
     config: config::Config,
@@ -37,21 +42,32 @@ pub async fn get_contracts_gateway<P: Provider + Clone>(
     .context("Could not instantiate RskContractsGateway")
 }
 
+/// Get a contracts gateway instance synchronously with a specific role.
+///
+/// # Errors
+///
+/// Returns a `DomainErrors` if the gateway cannot be created.
 pub fn get_contracts_gateway_as_lib_sync_with_role(
-    rt_sync: RuntimeSync,
+    rt_sync: &RuntimeSync,
     config: config::Config,
     role: GatewayRole,
-) -> Result<RskContractsGateway<impl Provider + Clone>, DomainErrors> {
+) -> Result<RskContractsGateway<impl Provider + Clone + 'static>, DomainErrors> {
+    let rt_sync = rt_sync.clone();
     rt_sync.run(create_contracts_gateway_impl_with_role(config, role))
 }
 
+/// Get a contracts gateway instance asynchronously with a specific role.
+///
+/// # Errors
+///
+/// Returns an error if the gateway cannot be created.
 pub async fn get_contracts_gateway_as_lib(
     config: config::Config,
     role: GatewayRole,
 ) -> Result<RskContractsGateway<impl Provider + Clone>> {
     create_contracts_gateway_impl_with_role(config, role)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to create contracts gateway: {}", e))
+        .map_err(|e| anyhow::anyhow!("Failed to create contracts gateway: {e}"))
 }
 
 async fn create_contracts_gateway_impl_with_role(
@@ -75,7 +91,7 @@ async fn create_contracts_gateway_impl_with_role(
     );
 
     let signer = KeyManager::get_signer(key_store_path).map_err(|e| {
-        DomainErrors::InternalServerError(format!("Failed to get {:?} signer: {}", role, e))
+        DomainErrors::InternalServerError(format!("Failed to get {role:?} signer: {e}"))
     })?;
     info!(
         "Got {} signer with address {}",
@@ -99,7 +115,7 @@ async fn create_contracts_gateway_impl_with_role(
         .connect_ws(ws)
         .await
         .map_err(|e| {
-            DomainErrors::InternalServerError(format!("Failed to connect to provider: {}", e))
+            DomainErrors::InternalServerError(format!("Failed to connect to provider: {e}"))
         })?;
 
     info!(
@@ -114,7 +130,7 @@ async fn create_contracts_gateway_impl_with_role(
         signer_address,
     )
     .await
-    .map_err(|e| DomainErrors::InternalServerError(format!("Failed to create gateway: {}", e)))
+    .map_err(|e| DomainErrors::InternalServerError(format!("Failed to create gateway: {e}")))
 }
 
 #[cfg(test)]
@@ -183,7 +199,7 @@ mod tests {
 
         match result {
             Ok(val) => assert_eq!(val, "success"),
-            Err(_) => panic!("Expected Ok result"),
+            Err(e) => panic!("Expected Ok result, got {e:?}"),
         }
     }
 }

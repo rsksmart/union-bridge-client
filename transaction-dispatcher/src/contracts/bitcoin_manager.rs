@@ -42,7 +42,7 @@ impl TryFrom<BitcoinTransaction> for BtcTransaction {
             .map(BtcTxIn::try_from)
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| {
-                error!("Failed to convert BitcoinTransactionIn: {:?}", e);
+                error!("Failed to convert BitcoinTransactionIn: {e:?}");
                 e
             })?;
 
@@ -52,7 +52,7 @@ impl TryFrom<BitcoinTransaction> for BtcTransaction {
             .map(BtcTxOut::try_from)
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| {
-                error!("Failed to convert BitcoinTransactionOut: {:?}", e);
+                error!("Failed to convert BitcoinTransactionOut: {e:?}");
                 e
             })?;
 
@@ -68,13 +68,13 @@ impl TryFrom<BitcoinTransaction> for BtcTransaction {
 pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> {
     let decoded_err = err.as_decoded_interface_error::<BitcoinManagerErrors>();
     decoded_err.map(|e| match e {
-        BitcoinManagerErrors::InvalidAddress(e) => DomainErrors::InvalidAddress(format!("{:?}", e)),
+        BitcoinManagerErrors::InvalidAddress(e) => DomainErrors::InvalidAddress(format!("{e:?}")),
         BitcoinManagerErrors::InvalidPublicKey(e) => {
-            DomainErrors::InvalidPublicKey(format!("{:?}", e))
+            DomainErrors::InvalidPublicKey(format!("{e:?}"))
         }
-        BitcoinManagerErrors::InvalidValue(e) => DomainErrors::InvalidValue(format!("{:?}", e)),
+        BitcoinManagerErrors::InvalidValue(e) => DomainErrors::InvalidValue(format!("{e:?}")),
         // TODO handle more based on needs
-        _ => DomainErrors::UnhandledContractError(format!("{:?}", e)),
+        _ => DomainErrors::UnhandledContractError(format!("{e:?}")),
     })
 }
 
@@ -96,7 +96,7 @@ mod tests {
             expected: alloy_primitives::Bytes::from(vec![0x02, 0x3]),
         });
 
-        let result = generate_contract_revert_error(err_data);
+        let result = generate_contract_revert_error(&err_data);
         matches!(result.into(), DomainErrors::InvalidBtcTxSpvProof(_));
     }
 
@@ -106,7 +106,7 @@ mod tests {
             index: alloy_primitives::Uint::from(1),
         });
 
-        let result = generate_contract_revert_error(err_data);
+        let result = generate_contract_revert_error(&err_data);
         matches!(result.into(), DomainErrors::InvalidBtcTxSpvProof(_));
     }
 
@@ -117,7 +117,7 @@ mod tests {
             expected: alloy_primitives::Uint::from(2),
         });
 
-        let result = generate_contract_revert_error(err_data);
+        let result = generate_contract_revert_error(&err_data);
         matches!(result.into(), DomainErrors::InvalidBtcTxSpvProof(_));
     }
 
@@ -129,7 +129,7 @@ mod tests {
                 .expect("Failed to parse address"),
         });
 
-        let result = generate_contract_revert_error(err_data);
+        let result = generate_contract_revert_error(&err_data);
         matches!(result.into(), DomainErrors::InvalidAddress(_));
     }
 
@@ -141,7 +141,7 @@ mod tests {
                 .unwrap(),
         });
 
-        let result = generate_contract_revert_error(err_data);
+        let result = generate_contract_revert_error(&err_data);
         matches!(result.into(), DomainErrors::InvalidCompressedPubKey(_));
     }
 
@@ -152,7 +152,7 @@ mod tests {
             _value: 2,
         });
 
-        let result = generate_contract_revert_error(err_data);
+        let result = generate_contract_revert_error(&err_data);
         matches!(result.into(), DomainErrors::InvalidValue(_));
     }
 
@@ -163,7 +163,7 @@ mod tests {
             actual: 2,
         });
 
-        let result = generate_contract_revert_error(err_data);
+        let result = generate_contract_revert_error(&err_data);
         matches!(result.into(), DomainErrors::InvalidBtcTxSpvProof(_));
     }
 
@@ -174,7 +174,7 @@ mod tests {
     fn test_unhandled() {
         let err_data = BitcoinManagerErrors::NotInitializing(NotInitializing {});
 
-        let result = generate_contract_revert_error(err_data);
+        let result = generate_contract_revert_error(&err_data);
         matches!(result.into(), DomainErrors::UnhandledContractError(_));
     }
 }
