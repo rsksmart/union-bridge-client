@@ -7,6 +7,7 @@ use bitcoin::{
     PublicKey, Txid,
     secp256k1::{Parity::Even, XOnlyPublicKey},
 };
+use common::msg_broker::bitvmx_types::ParticipantRole;
 use common::{
     msg_broker::{
         bitvmx_types::{
@@ -473,6 +474,11 @@ where
     }
 
     fn add_operator_take_hash(&self) -> Result<()> {
+        if self.get_operator_role()? != ParticipantRole::Prover {
+            info!("Skipping add_operator_take_hash");
+            return Ok(());
+        }
+
         let pegin_accepted = self
             .state
             .ctx
@@ -494,6 +500,36 @@ where
             .run(async { self.contracts.add_operator_take_tx_hash(input).await })?;
 
         Ok(())
+    }
+
+    fn get_operator_role(&self) -> Result<ParticipantRole> {
+        let members = self
+            .state
+            .ctx
+            .committee_output
+            .clone()
+            .unwrap()
+            .committee
+            .members;
+        let addr: alloy_primitives::Address = self.contracts.my_address().into();
+        let role_u256 = members
+            .iter()
+            .find(|e| e.memberAddress == addr)
+            .unwrap()
+            .role;
+
+        let role_u8: u8 = role_u256
+            .try_into()
+            .context("Failed to convert U256 role to u8")?;
+
+        let role = role_u8
+            .try_into()
+            .context("Failed to convert u8 role to ParticipantRole");
+
+        // todo(fede) remove this
+        info!("My role is: {role:?}");
+
+        role
     }
 
     fn dispatch_transaction(&self) -> Result<()> {

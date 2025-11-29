@@ -1,6 +1,7 @@
 #![allow(clippy::pedantic)]
 #![allow(clippy::all)]
 
+use anyhow::bail;
 use bitcoin::address::NetworkUnchecked;
 use bitcoin::{
     Address, Amount, BlockHash, PrivateKey, PublicKey, ScriptBuf, Transaction, Txid, XOnlyPublicKey,
@@ -340,6 +341,35 @@ impl Committee {
 pub enum ParticipantRole {
     Prover,
     Verifier,
+}
+
+impl PartialEq<ParticipantRole> for u8 {
+    fn eq(&self, other: &ParticipantRole) -> bool {
+        let u8_other: u8 = other.into();
+        self.eq(&u8_other)
+    }
+}
+
+impl TryInto<ParticipantRole> for u8 {
+    type Error = anyhow::Error;
+
+    fn try_into(self) -> Result<ParticipantRole, Self::Error> {
+        if self == 1 {
+            return Ok(ParticipantRole::Prover);
+        } else if self == 2 {
+            return Ok(ParticipantRole::Verifier);
+        }
+        bail!("Invalid member role: {}", self)
+    }
+}
+
+impl Into<u8> for &ParticipantRole {
+    fn into(self) -> u8 {
+        if self == &ParticipantRole::Prover {
+            return 1;
+        }
+        2 // Verifier
+    }
 }
 
 /// Data structure received from BitVMX client containing pegin acceptance information.

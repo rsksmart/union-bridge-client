@@ -932,6 +932,7 @@ where
             trace!("Processing member {idx}");
 
             // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: move it to a From trait impl
+            // todo(fede) remove this logic
             let role = if cm.role == 1 {
                 ParticipantRole::Prover
             } else if cm.role == 2 {
