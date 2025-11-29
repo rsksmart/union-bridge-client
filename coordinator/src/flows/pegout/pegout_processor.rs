@@ -151,9 +151,7 @@ where
             "Restoring pegout flow {id} at step {:?}",
             &flow.current_step(),
         );
-        self.pegout_flows
-            .insert(*id, flow)
-            .ok_or_else(|| anyhow!("Failed to insert flow {id}"))?;
+        self.pegout_flows.insert(*id, flow);
 
         debug!("Restored flow {id}");
 
