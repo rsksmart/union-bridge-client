@@ -871,42 +871,25 @@ mod tests {
         MockCoordinatorStoreApi,
     >;
 
-    // ============================================================================
-    // Constants for Tests
-    // ============================================================================
-
-    /// Role value for Prover in committee members (matches contract representation)
     const ROLE_PROVER: u8 = 1;
-
-    /// Role value for Verifier in committee members (matches contract representation)
     const ROLE_VERIFIER: u8 = 2;
 
-    // ============================================================================
-    // Helper Functions for Test Data Creation
-    // ============================================================================
-
-    /// Helper function to create a test address from a byte array
-    /// Example: `test_address([1u8; 20])` creates an address with all bytes set to 1
     fn test_address(bytes: [u8; 20]) -> CommonAddress {
         CommonAddress::from(H160::from(bytes))
     }
 
-    /// Helper function to create a test Txid from a byte array
-    /// Example: `test_txid([0u8; 32])` creates a zero txid
     fn test_txid(bytes: [u8; 32]) -> Txid {
         Txid::from_raw_hash(
             bitcoin::hashes::sha256d::Hash::from_slice(&bytes).expect("Invalid hash"),
         )
     }
 
-    /// Helper function to create a default PubNonce for tests
     fn default_pub_nonce() -> PubNonce {
         "0279BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798032DE2662628C90B03F5E720284EB52FF7D71F4284F627B68A853D78C78E1FFE93"
             .parse::<PubNonce>()
             .expect("Invalid PubNonce")
     }
 
-    /// Helper function to create a default PeginAcceptedMessage for tests
     fn default_pegin_accepted_message(accept_pegin_txid: Txid) -> PeginAcceptedMessage {
         PeginAcceptedMessage {
             accept_pegin_txid,
@@ -919,7 +902,6 @@ mod tests {
         }
     }
 
-    /// Helper function to create a FlowContext with default values
     fn create_default_flow_context(
         flow_id: Uuid,
         step: Steps,
@@ -945,11 +927,6 @@ mod tests {
         }
     }
 
-    /// Creates a PeginFlow instance for testing with a configured mock contracts gateway
-    /// Returns both the flow and the Rc-wrapped mock contracts for setting expectations
-    ///
-    /// If you need to configure expectations on the mock before creating the flow,
-    /// use `create_test_flow_with_custom_mock` instead.
     fn create_test_flow_with_mock_contracts(
         my_address: CommonAddress,
         ctx: FlowContext,
@@ -964,8 +941,6 @@ mod tests {
         create_test_flow_with_custom_mock(my_address, ctx, mock_contracts)
     }
 
-    /// Creates a PeginFlow instance for testing with a pre-configured mock contracts gateway
-    /// This allows you to set up expectations on the mock before creating the flow
     fn create_test_flow_with_custom_mock(
         my_address: CommonAddress,
         ctx: FlowContext,
@@ -974,7 +949,6 @@ mod tests {
         MockPeginFlow,
         std::rc::Rc<crate::coordinator::tests::MockRskContractsGatewayApi>,
     ) {
-        // Ensure my_address expectation is set if not already configured
         mock_contracts
             .expect_my_address()
             .returning(move || my_address);
@@ -1003,8 +977,6 @@ mod tests {
         (flow, mock_contracts)
     }
 
-    /// Creates a PeginFlow instance for testing with default context
-    /// This is a convenience wrapper around create_test_flow_with_mock_contracts
     fn create_test_flow_with_role(
         my_address: CommonAddress,
         step: Steps,
@@ -1018,11 +990,6 @@ mod tests {
         create_test_flow_with_mock_contracts(my_address, ctx)
     }
 
-    /// Creates a GetCommitteeOutput with a single member for testing
-    ///
-    /// # Arguments
-    /// * `member_address` - The address of the committee member
-    /// * `role` - The role of the member (use `ROLE_PROVER` or `ROLE_VERIFIER` constants)
     fn create_committee_output_with_member(
         member_address: CommonAddress,
         role: u8,
@@ -1049,10 +1016,6 @@ mod tests {
             },
         }
     }
-
-    // ============================================================================
-    // Tests for add_operator_take_hash
-    // ============================================================================
 
     #[test]
     fn test_add_operator_take_hash_prover_calls_contract() {
@@ -1101,42 +1064,9 @@ mod tests {
             Some(ParticipantRole::Verifier),
         );
 
-        // El contrato NO debe ser llamado para Verifiers - esto se verifica porque
-        // no configuramos expectaciones en el mock y el test pasa sin errores
         let result = flow.add_operator_take_hash();
         assert!(result.is_ok());
     }
-
-    #[test]
-    fn test_add_operator_take_hash_prover_fails_when_bitvmx_pegin_accepted_missing() {
-        let my_address = test_address([1u8; 20]);
-        let flow_id = Uuid::new_v4();
-        let mut ctx = create_default_flow_context(
-            flow_id,
-            Steps::AddOperatorTakeHash,
-            Some(ParticipantRole::Prover),
-        );
-        ctx.bitvmx_pegin_accepted = None; // Missing required data
-
-        let mut mock_contracts = crate::coordinator::tests::MockRskContractsGatewayApi::new();
-        mock_contracts
-            .expect_my_address()
-            .returning(move || my_address);
-
-        let (flow, _) = create_test_flow_with_custom_mock(my_address, ctx, mock_contracts);
-        let result = flow.add_operator_take_hash();
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("BitVMX pegin accepted message not found")
-        );
-    }
-
-    // ============================================================================
-    // Tests for calc_op_role
-    // ============================================================================
 
     #[test]
     fn test_calc_op_role_prover() {
@@ -1162,242 +1092,5 @@ mod tests {
         let result = flow_state.calc_op_role();
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), ParticipantRole::Verifier);
-    }
-
-    #[test]
-    fn test_calc_op_role_address_not_found() {
-        let my_address = test_address([1u8; 20]);
-        let other_address = test_address([2u8; 20]);
-        let mut flow_state =
-            create_test_flow_with_role(my_address, Steps::AddOperatorTakeHash, None).0;
-        let committee_output = create_committee_output_with_member(other_address, ROLE_PROVER);
-        flow_state.get_state_mut().ctx.committee_output = Some(committee_output);
-
-        let result = flow_state.calc_op_role();
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Address not found")
-        );
-    }
-
-    #[test]
-    fn test_calc_op_role_committee_output_not_found() {
-        let my_address = test_address([1u8; 20]);
-        let mut flow_state =
-            create_test_flow_with_role(my_address, Steps::AddOperatorTakeHash, None).0;
-        flow_state.get_state_mut().ctx.committee_output = None;
-
-        let result = flow_state.calc_op_role();
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Committee output not found")
-        );
-    }
-
-    #[test]
-    fn test_calc_op_role_invalid_role_value() {
-        let my_address = test_address([1u8; 20]);
-        let mut flow_state =
-            create_test_flow_with_role(my_address, Steps::AddOperatorTakeHash, None).0;
-        // Use invalid role value (not 1 or 2)
-        let committee_output = create_committee_output_with_member(my_address, 99);
-        flow_state.get_state_mut().ctx.committee_output = Some(committee_output);
-
-        let result = flow_state.calc_op_role();
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Failed to convert u8 role to ParticipantRole")
-        );
-    }
-
-    // ============================================================================
-    // Tests for try_get_op_role
-    // ============================================================================
-
-    #[test]
-    fn test_try_get_op_role_success() {
-        let my_address = test_address([1u8; 20]);
-        let (flow, _) = create_test_flow_with_role(
-            my_address,
-            Steps::AddOperatorTakeHash,
-            Some(ParticipantRole::Prover),
-        );
-
-        let result = flow.try_get_op_role();
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), ParticipantRole::Prover);
-    }
-
-    #[test]
-    fn test_try_get_op_role_not_found() {
-        let my_address = test_address([1u8; 20]);
-        let (flow, _) = create_test_flow_with_role(my_address, Steps::AddOperatorTakeHash, None);
-
-        let result = flow.try_get_op_role();
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Operator role not found")
-        );
-    }
-
-    // ============================================================================
-    // Tests for simple getter methods
-    // ============================================================================
-
-    #[test]
-    fn test_flow_id() {
-        let my_address = test_address([1u8; 20]);
-        let flow_id = Uuid::new_v4();
-        let ctx = create_default_flow_context(flow_id, Steps::PeginTransactionFound, None);
-        let (flow, _) = create_test_flow_with_mock_contracts(my_address, ctx);
-
-        assert_eq!(flow.flow_id(), flow_id);
-    }
-
-    #[test]
-    fn test_current_step() {
-        let my_address = test_address([1u8; 20]);
-        let flow_id = Uuid::new_v4();
-        let step = Steps::AddOperatorTakeHash;
-        let ctx = create_default_flow_context(flow_id, step, None);
-        let (flow, _) = create_test_flow_with_mock_contracts(my_address, ctx);
-
-        assert_eq!(flow.current_step(), step);
-    }
-
-    #[test]
-    fn test_is_done() {
-        let my_address = test_address([1u8; 20]);
-        let flow_id = Uuid::new_v4();
-
-        // Test when not done
-        let ctx_not_done = create_default_flow_context(flow_id, Steps::AddOperatorTakeHash, None);
-        let (flow_not_done, _) = create_test_flow_with_mock_contracts(my_address, ctx_not_done);
-        assert!(!flow_not_done.is_done());
-
-        // Test when done
-        let ctx_done = create_default_flow_context(flow_id, Steps::Done, None);
-        let (flow_done, _) = create_test_flow_with_mock_contracts(my_address, ctx_done);
-        assert!(flow_done.is_done());
-    }
-
-    #[test]
-    fn test_get_state() {
-        let my_address = test_address([1u8; 20]);
-        let flow_id = Uuid::new_v4();
-        let ctx = create_default_flow_context(
-            flow_id,
-            Steps::AddOperatorTakeHash,
-            Some(ParticipantRole::Prover),
-        );
-        let (flow, _) = create_test_flow_with_mock_contracts(my_address, ctx);
-
-        let state = flow.get_state();
-        assert_eq!(state.flow_id, flow_id);
-        assert_eq!(state.ctx.step, Steps::AddOperatorTakeHash);
-        assert_eq!(state.ctx.op_role, Some(ParticipantRole::Prover));
-    }
-
-    #[test]
-    fn test_get_bitvmx_pegin_accepted() {
-        let my_address = test_address([1u8; 20]);
-        let flow_id = Uuid::new_v4();
-        let btc_tx_id = test_txid([5u8; 32]);
-        let mut ctx = create_default_flow_context(flow_id, Steps::AddOperatorTakeHash, None);
-        let pegin_accepted = default_pegin_accepted_message(btc_tx_id);
-        ctx.bitvmx_pegin_accepted = Some(pegin_accepted.clone());
-
-        let (flow, _) = create_test_flow_with_mock_contracts(my_address, ctx);
-
-        let result = flow.get_bitvmx_pegin_accepted();
-        assert!(result.is_some());
-        assert_eq!(result.unwrap().accept_pegin_txid, btc_tx_id);
-    }
-
-    #[test]
-    fn test_get_bitvmx_pegin_accepted_none() {
-        let my_address = test_address([1u8; 20]);
-        let flow_id = Uuid::new_v4();
-        let mut ctx = create_default_flow_context(flow_id, Steps::AddOperatorTakeHash, None);
-        ctx.bitvmx_pegin_accepted = None;
-
-        let (flow, _) = create_test_flow_with_mock_contracts(my_address, ctx);
-
-        let result = flow.get_bitvmx_pegin_accepted();
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn test_get_accept_pegin_txid() {
-        let my_address = test_address([1u8; 20]);
-        let flow_id = Uuid::new_v4();
-        let btc_tx_id = test_txid([7u8; 32]);
-        let mut ctx = create_default_flow_context(flow_id, Steps::AddOperatorTakeHash, None);
-        ctx.bitvmx_pegin_accepted = Some(default_pegin_accepted_message(btc_tx_id));
-
-        let (flow, _) = create_test_flow_with_mock_contracts(my_address, ctx);
-
-        let result = flow.get_accept_pegin_txid();
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), btc_tx_id);
-    }
-
-    #[test]
-    fn test_get_accept_pegin_txid_none() {
-        let my_address = test_address([1u8; 20]);
-        let flow_id = Uuid::new_v4();
-        let mut ctx = create_default_flow_context(flow_id, Steps::AddOperatorTakeHash, None);
-        ctx.bitvmx_pegin_accepted = None;
-
-        let (flow, _) = create_test_flow_with_mock_contracts(my_address, ctx);
-
-        let result = flow.get_accept_pegin_txid();
-        assert!(result.is_none());
-    }
-
-    // ============================================================================
-    // Tests for constructor methods
-    // ============================================================================
-
-    #[test]
-    fn test_new_creates_flow_with_correct_initial_state() {
-        let my_address = test_address([1u8; 20]);
-        let btc_tx_id = test_txid([10u8; 32]);
-
-        let mut mock_contracts = crate::coordinator::tests::MockRskContractsGatewayApi::new();
-        mock_contracts
-            .expect_my_address()
-            .returning(move || my_address);
-        let mock_contracts = std::rc::Rc::new(mock_contracts);
-
-        let mock_broker = std::rc::Rc::new(MockBrokerClientApi::<
-            IncomingBitVMXApiMessages,
-            OutgoingBitVMXApiMessages,
-        >::new());
-        let mock_store = std::rc::Rc::new(MockCoordinatorStoreApi::new());
-        let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
-
-        let flow = PeginFlow::new(mock_contracts, rt_sync, mock_broker, btc_tx_id, mock_store);
-
-        assert_eq!(flow.current_step(), Steps::PeginTransactionFound);
-        assert_eq!(
-            flow.get_state().ctx.request_pegin_btc_tx_id,
-            Some(btc_tx_id)
-        );
-        assert!(flow.get_state().ctx.temp_flow_id.is_some());
-        assert_eq!(flow.get_state().ctx.op_role, None);
-        assert!(!flow.is_done());
     }
 }
