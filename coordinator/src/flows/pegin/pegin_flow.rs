@@ -424,7 +424,7 @@ where
 
         let committee_output = self.get_committee_output(committee_id.clone())?;
         self.state.ctx.committee_output = Some(committee_output.clone());
-        self.state.ctx.op_role = Some(self.calc_op_role()?); // set pegin-flow op role
+        self.state.ctx.op_role = Some(self.calc_op_role()?);
 
         let pegin_requested = self
             .state
@@ -764,22 +764,21 @@ where
 
     /// Calculates the operator role based on the committee members and its own address
     fn calc_op_role(&self) -> Result<ParticipantRole> {
-        let members = self
-            .state
-            .ctx
-            .committee_output
-            .clone()
-            .unwrap()
-            .committee
-            .members;
+        let Some(get_committee_output) = &self.state.ctx.committee_output else {
+            bail!("Committee output not found");
+        };
+
         let my_addr: alloy_primitives::Address = self.contracts.my_address().into();
-        let role_u8 = members
+        let Some(member) = get_committee_output
+            .committee
+            .members
             .iter()
             .find(|e| e.memberAddress == my_addr)
-            .unwrap()
-            .role as u8;
+        else {
+            bail!("Address not found in committee members");
+        };
 
-        role_u8
+        (member.role as u8)
             .try_into()
             .context("Failed to convert u8 role to ParticipantRole")
     }
