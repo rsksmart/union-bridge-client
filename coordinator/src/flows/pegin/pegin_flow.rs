@@ -444,14 +444,6 @@ where
         Ok(())
     }
 
-    fn try_get_op_role(&self) -> Result<ParticipantRole> {
-        if let Some(role) = &self.state.ctx.op_role {
-            return Ok(role.clone());
-        }
-
-        bail!("Operator role not found in context")
-    }
-
     fn send_setup_to_bitvmx(&mut self, committee_id: &CommitteeId) -> Result<()> {
         debug!(
             "Sending setup to BitVMX with flow_id: {}",
@@ -491,10 +483,7 @@ where
         }
 
         let pegin_accepted = self
-            .state
-            .ctx
-            .bitvmx_pegin_accepted
-            .as_ref()
+            .get_bitvmx_pegin_accepted()
             .ok_or_else(|| anyhow!("BitVMX pegin accepted message not found"))?;
 
         debug!(
@@ -511,28 +500,6 @@ where
             .run(async { self.contracts.add_operator_take_tx_hash(input).await })?;
 
         Ok(())
-    }
-
-    /// Calculates the operator role based on the committee members and its own address
-    fn calc_op_role(&self) -> Result<ParticipantRole> {
-        let members = self
-            .state
-            .ctx
-            .committee_output
-            .clone()
-            .unwrap()
-            .committee
-            .members;
-        let my_addr: alloy_primitives::Address = self.contracts.my_address().into();
-        let role_u8 = members
-            .iter()
-            .find(|e| e.memberAddress == my_addr)
-            .unwrap()
-            .role as u8;
-
-        role_u8
-            .try_into()
-            .context("Failed to convert u8 role to ParticipantRole")
     }
 
     fn dispatch_transaction(&self) -> Result<()> {
@@ -793,6 +760,36 @@ where
             .ok_or_else(|| anyhow!("Expected accept pegin tx_id not found"))?;
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetSPVProof(tx_id))?;
         Ok(())
+    }
+
+    /// Calculates the operator role based on the committee members and its own address
+    fn calc_op_role(&self) -> Result<ParticipantRole> {
+        let members = self
+            .state
+            .ctx
+            .committee_output
+            .clone()
+            .unwrap()
+            .committee
+            .members;
+        let my_addr: alloy_primitives::Address = self.contracts.my_address().into();
+        let role_u8 = members
+            .iter()
+            .find(|e| e.memberAddress == my_addr)
+            .unwrap()
+            .role as u8;
+
+        role_u8
+            .try_into()
+            .context("Failed to convert u8 role to ParticipantRole")
+    }
+
+    fn try_get_op_role(&self) -> Result<ParticipantRole> {
+        if let Some(role) = &self.state.ctx.op_role {
+            return Ok(role.clone());
+        }
+
+        bail!("Operator role not found in context")
     }
 
     pub fn get_accept_pegin_txid(&self) -> Option<Txid> {
