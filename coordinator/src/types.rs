@@ -561,12 +561,6 @@ pub struct Utxo {
     pub value: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Role {
-    Prover,
-    Verifier,
-}
-
 // temporarily omitted for Regtest stage
 // impl TryFrom<Utxo> for UTXO {
 //     type Error = anyhow::Error;
@@ -582,24 +576,6 @@ pub enum Role {
 //         })
 //     }
 // }
-
-impl From<Role> for ParticipantRole {
-    fn from(role: Role) -> Self {
-        match role {
-            Role::Prover => ParticipantRole::Prover,
-            Role::Verifier => ParticipantRole::Verifier,
-        }
-    }
-}
-
-impl From<Role> for u8 {
-    fn from(role: Role) -> Self {
-        match role {
-            Role::Prover => 1,
-            Role::Verifier => 2,
-        }
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemberOfCommittee {

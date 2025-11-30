@@ -660,8 +660,11 @@ where
         })
     }
 
-    fn build_operator_indexes(committee_response: &GetCommitteeOutput) -> Vec<usize> {
-        let operator_role: u8 = crate::types::Role::Prover.into();
+    fn build_operator_indexes(
+        &self,
+        committee_response: &GetCommitteeOutput,
+    ) -> Result<Vec<usize>> {
+        let operator_role: u8 = ParticipantRole::Prover.into();
         let mut operator_indexes = Vec::new();
 
         for (i, member) in committee_response.committee.members.iter().enumerate() {
