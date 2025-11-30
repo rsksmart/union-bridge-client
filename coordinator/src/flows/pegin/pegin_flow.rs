@@ -123,6 +123,7 @@ pub struct FlowContext {
     pub accept_pegin_spv_proof: Option<BtcTxSPVProof>,
     pub accept_pegin_tx_status: Option<TransactionStatus>,
     pub pegin_accepted: Option<PeginAccepted>,
+    pub op_role: Option<ParticipantRole>,
 }
 
 /// Serializable state for persistence
@@ -183,6 +184,7 @@ where
                     accept_pegin_spv_proof: None,
                     accept_pegin_tx_status: None,
                     pegin_accepted: None,
+                    op_role: None,
                 },
             },
             store,
@@ -422,6 +424,7 @@ where
 
         let committee_output = self.get_committee_output(committee_id.clone())?;
         self.state.ctx.committee_output = Some(committee_output.clone());
+        self.state.ctx.op_role = Some(self.calc_op_role()?); // set pegin-flow op role
 
         let pegin_requested = self
             .state
@@ -439,6 +442,14 @@ where
         self.send_bitvmx_msg(msg)?;
 
         Ok(())
+    }
+
+    fn try_get_op_role(&self) -> Result<ParticipantRole> {
+        if let Some(role) = &self.state.ctx.op_role {
+            return Ok(role.clone());
+        }
+
+        bail!("Operator role not found in context")
     }
 
     fn send_setup_to_bitvmx(&mut self, committee_id: &CommitteeId) -> Result<()> {
@@ -474,7 +485,7 @@ where
     }
 
     fn add_operator_take_hash(&self) -> Result<()> {
-        if self.get_operator_role()? != ParticipantRole::Prover {
+        if self.try_get_op_role()? != ParticipantRole::Prover {
             info!("Skipping add_operator_take_hash for verifier");
             return Ok(());
         }
@@ -502,7 +513,8 @@ where
         Ok(())
     }
 
-    fn get_operator_role(&self) -> Result<ParticipantRole> {
+    /// Calculates the operator role based on the committee members and its own address
+    fn calc_op_role(&self) -> Result<ParticipantRole> {
         let members = self
             .state
             .ctx
