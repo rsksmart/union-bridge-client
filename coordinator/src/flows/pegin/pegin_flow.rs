@@ -475,7 +475,7 @@ where
 
     fn add_operator_take_hash(&self) -> Result<()> {
         if self.get_operator_role()? != ParticipantRole::Prover {
-            info!("Skipping add_operator_take_hash");
+            info!("Skipping add_operator_take_hash for verifier");
             return Ok(());
         }
 
@@ -487,7 +487,7 @@ where
             .ok_or_else(|| anyhow!("BitVMX pegin accepted message not found"))?;
 
         debug!(
-            "Adding operator take tx hash for flow_id: {}, accept_pegin_txid: {}",
+            "Adding operator (prover) take tx hash for flow_id: {}, accept_pegin_txid: {}",
             self.state.flow_id, pegin_accepted.accept_pegin_txid
         );
 
@@ -511,25 +511,16 @@ where
             .unwrap()
             .committee
             .members;
-        let addr: alloy_primitives::Address = self.contracts.my_address().into();
-        let role_u256 = members
+        let my_addr: alloy_primitives::Address = self.contracts.my_address().into();
+        let role_u8 = members
             .iter()
-            .find(|e| e.memberAddress == addr)
+            .find(|e| e.memberAddress == my_addr)
             .unwrap()
-            .role;
+            .role as u8;
 
-        let role_u8: u8 = role_u256
+        role_u8
             .try_into()
-            .context("Failed to convert U256 role to u8")?;
-
-        let role = role_u8
-            .try_into()
-            .context("Failed to convert u8 role to ParticipantRole");
-
-        // todo(fede) remove this
-        info!("My role is: {role:?}");
-
-        role
+            .context("Failed to convert u8 role to ParticipantRole")
     }
 
     fn dispatch_transaction(&self) -> Result<()> {

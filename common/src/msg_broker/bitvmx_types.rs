@@ -348,7 +348,6 @@ impl TryInto<ParticipantRole> for u8 {
     type Error = anyhow::Error;
 
     fn try_into(self) -> Result<ParticipantRole, Self::Error> {
-        info!("TryINTO");
         if self == 1 {
             return Ok(ParticipantRole::Prover);
         } else if self == 2 {
