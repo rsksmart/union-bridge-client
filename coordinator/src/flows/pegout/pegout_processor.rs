@@ -10,7 +10,8 @@ use crate::flows::btc_signature::btc_signature_subflow::{
 };
 use crate::flows::common::GlobalContext;
 use crate::flows::pegout::pegout_flow::Steps;
-use crate::flows::pegout::pegout_flow::{PegoutFlow, StepData};
+use crate::flows::pegout::pegout_flow::{PegoutFlow, State, StepData};
+use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix};
 use crate::types::{
     EventStatus, RegisterSignaturesBitVmxData, RskPegManagerEvents, TickScheduler, UserRequests,
 };
@@ -38,41 +39,46 @@ pub const BLOCKS_DELAY_FOR_TX_CHECK: u32 = 20;
 pub const SPV_PROOF_MIN_CONFIRMATIONS: u32 = 1 + 1; // +1 from Contracts, +1 to give time to the Native Bridge to get up to date with Bitcoin Node
 
 /// Processor that manages multiple pegout flow state machines
-pub struct PegoutFlowProcessor<CG, BC, BSF, FactoryBSF>
+pub struct PegoutFlowProcessor<CG, BC, BSF, FactoryBSF, S>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
     BSF: BtcSignatureSubFlowApi,
     FactoryBSF: BtcSignatureSubFlowFactoryApi<BSF>,
+    S: CoordinatorStoreApi,
 {
     contracts_gateway: Rc<CG>,
     rt_sync: RuntimeSync,
     bitvmx_broker: Rc<BC>,
     btc_sig_subflow_factory: FactoryBSF,
-    pegout_flows: HashMap<Uuid, PegoutFlow<CG, BC>>,
+    pegout_flows: HashMap<Uuid, PegoutFlow<CG, BC, S>>,
     signature_flows: HashMap<Uuid, BSF>,
     global_context: GlobalContext,
     blockchain_view: BlockchainView,
     events_confirming: HashMap<String, ConfirmableEventWithData>,
     tx_status_scheduler: TickScheduler<Uuid>,
+    store: Rc<S>,
 }
 
-impl<CG, BC>
+impl<CG, BC, S>
     PegoutFlowProcessor<
         CG,
         BC,
         BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<CG>>,
         BtcSignatureSubFlowFactory<CG>,
+        S,
     >
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
+    S: CoordinatorStoreApi,
 {
     pub fn new(
         contracts_gateway: Rc<CG>,
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
+        store: Rc<S>,
     ) -> Self {
         let factory = BtcSignatureSubFlowFactory::new(contracts_gateway.clone(), rt_sync.clone());
         Self {
@@ -86,7 +92,70 @@ where
             events_confirming: HashMap::new(),
             signature_flows: HashMap::new(),
             tx_status_scheduler: TickScheduler::new(),
+            store,
         }
+    }
+
+    pub fn restore_or_new(
+        contracts_gateway: Rc<CG>,
+        rt_sync: RuntimeSync,
+        bitvmx_broker: Rc<BC>,
+        global_context: GlobalContext,
+        store: Rc<S>,
+    ) -> Result<Self> {
+        let mut processor = Self::new(
+            contracts_gateway,
+            rt_sync,
+            bitvmx_broker,
+            global_context,
+            store,
+        );
+        processor.restore_flows_from_store()?;
+        Ok(processor)
+    }
+
+    // todo(fede) this is probably same code as pegin restore flow
+    fn restore_flows_from_store(&mut self) -> Result<()> {
+        debug!("Checking for pegout flows to restore from persistence");
+
+        let saved_flows: HashMap<Uuid, State> =
+            self.store.load_all_flows(StorePrefix::PegoutFlow)?;
+
+        for (id, saved_state) in saved_flows.iter() {
+            self.restore_flow(id, saved_state).map_err(|e| {
+                debug!("Failed to restore flow {id}: {e}");
+                e
+            })?;
+        }
+
+        if !self.pegout_flows.is_empty() {
+            info!(
+                "Restored {} pegout flows from persistence",
+                self.pegout_flows.len()
+            );
+        }
+
+        Ok(())
+    }
+
+    // restores a flow from a saved state and return a reference to it
+    fn restore_flow(&mut self, id: &Uuid, saved_state: &State) -> Result<()> {
+        let flow = PegoutFlow::from_saved_state(
+            Rc::clone(&self.contracts_gateway),
+            self.rt_sync.clone(),
+            Rc::clone(&self.bitvmx_broker),
+            saved_state.clone(),
+            Rc::clone(&self.store),
+        );
+        info!(
+            "Restoring pegout flow {id} at step {:?}",
+            &flow.current_step(),
+        );
+        self.pegout_flows.insert(*id, flow);
+
+        debug!("Restored flow {id}");
+
+        Ok(())
     }
 
     pub fn get_user_take_pid(committee_id: Uuid, slot_index: usize) -> Result<Uuid> {
@@ -126,11 +195,12 @@ where
         let flow_id = Self::get_user_take_pid(committee_uuid, slot_index)?;
 
         let mut flow = PegoutFlow::new(
-            self.contracts_gateway.clone(),
+            Rc::clone(&self.contracts_gateway),
             self.rt_sync.clone(),
-            self.bitvmx_broker.clone(),
+            Rc::clone(&self.bitvmx_broker),
             flow_id,
             event.clone(),
+            Rc::clone(&self.store),
         );
 
         // Initialize the flow with the PegoutRequested event
@@ -179,9 +249,15 @@ where
             .map(|(k, _)| *k)
             .collect();
 
-        for internal_id in completed {
+        for internal_id in &completed {
             debug!("Removing completed flow: {internal_id}");
-            self.pegout_flows.remove(&internal_id);
+            self.pegout_flows.remove(internal_id);
+
+            self.store
+                .delete_flow(StoreKey::PegoutFlow(*internal_id))
+                .unwrap_or_else(|e| {
+                    error!("Failed to remove completed flow {internal_id} from persistence: {e}")
+                });
         }
     }
 
@@ -398,16 +474,18 @@ where
     }
 }
 
-impl<CG, BC> EventProcessor
+impl<CG, BC, S> EventProcessor
     for PegoutFlowProcessor<
         CG,
         BC,
         BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<CG>>,
         BtcSignatureSubFlowFactory<CG>,
+        S,
     >
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
+    S: CoordinatorStoreApi,
 {
     fn process_user_request(&mut self, _req: &UserRequests) -> Result<()> {
         // Pegout flows are created from RSK events, not from user requests

@@ -1,5 +1,6 @@
 use crate::flows::common::COMM_KEY_INDEX;
 use crate::flows::common::build_communication_data;
+use crate::store::{CoordinatorStoreApi, StoreKey};
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use bitcoin::{PublicKey, Txid};
 use common::msg_broker::bitvmx_types::PegOutAccepted;
@@ -12,6 +13,7 @@ use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::types::CommitteeId;
 use log::{debug, info, trace};
+use serde::{Deserialize, Serialize};
 use std::rc::Rc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::GetCommunicationDataInput;
@@ -28,7 +30,7 @@ pub const USER_TAKE_TX: &str = "USER_TAKE_TX";
 const PEGOUT_COMPLETED_VAR_NAME: &str = "PEG_OUT_COMPLETED";
 
 /// Steps for the pegout state machine flow
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Steps {
     PegoutRequested,
     GetCommInfo,
@@ -47,8 +49,7 @@ impl Default for Steps {
     }
 }
 
-/// Data passed between steps in the pegout flow
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum StepData {
     PegoutRequested,
     CommInfo(P2PAddress),
@@ -59,11 +60,8 @@ pub enum StepData {
     PegoutRegistered(PegoutRegistered),
 }
 
-/// Context for the pegout flow state machine
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlowContext {
-    pub flow_id: Uuid,
-    pub step: Steps,
     pub pegout_requested: PegoutRequested,
     pub my_p2p_address: Option<P2PAddress>,
     pub committee_output: Option<GetCommitteeOutput>,
@@ -73,22 +71,31 @@ pub struct FlowContext {
     pub transaction_status: Option<TransactionStatus>,
 }
 
-/// State machine for handling pegout flow
-pub struct PegoutFlow<CG, BC>
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct State {
+    pub flow_id: Uuid,
+    pub step: Steps,
+    pub ctx: FlowContext,
+}
+
+pub struct PegoutFlow<CG, BC, S>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
+    S: CoordinatorStoreApi,
 {
     contracts: Rc<CG>,
     rt_sync: RuntimeSync,
     bitvmx_broker: Rc<BC>,
-    state: FlowContext,
+    state: State,
+    store: Rc<S>,
 }
 
-impl<CG, BC> PegoutFlow<CG, BC>
+impl<CG, BC, S> PegoutFlow<CG, BC, S>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
+    S: CoordinatorStoreApi,
 {
     pub fn new(
         contracts: Rc<CG>,
@@ -96,26 +103,54 @@ where
         bitvmx_broker: Rc<BC>,
         internal_id: Uuid,
         pegout_requested: PegoutRequested,
+        store: Rc<S>,
     ) -> Self {
         Self {
             contracts,
             rt_sync,
             bitvmx_broker,
-            state: FlowContext {
+            state: State {
                 flow_id: internal_id,
                 step: Steps::PegoutRequested,
-                pegout_requested: pegout_requested.clone(),
-                my_p2p_address: None,
-                committee_output: None,
-                peg_out_accepted: None,
-                pegout_registered_tx: None,
-                spv_proof: None,
-                transaction_status: None,
+                ctx: FlowContext {
+                    pegout_requested: pegout_requested.clone(),
+                    my_p2p_address: None,
+                    committee_output: None,
+                    peg_out_accepted: None,
+                    pegout_registered_tx: None,
+                    spv_proof: None,
+                    transaction_status: None,
+                },
             },
+            store,
         }
     }
 
-    /// Start the next step and log the transition
+    pub fn from_saved_state(
+        contracts: Rc<CG>,
+        rt_sync: RuntimeSync,
+        bitvmx_broker: Rc<BC>,
+        state: State,
+        store: Rc<S>,
+    ) -> Self {
+        Self {
+            contracts,
+            rt_sync,
+            bitvmx_broker,
+            state,
+            store,
+        }
+    }
+
+    fn persist_state(&self) -> Result<()> {
+        debug!(
+            "PegoutFlow {}: Persisting state for step: {:?}",
+            self.state.flow_id, self.state.step
+        );
+        self.store
+            .save_flow(StoreKey::PegoutFlow(self.state.flow_id), self.state.clone())
+    }
+
     pub fn start_step(&mut self, next_step: Steps) -> Result<()> {
         let previous_step = self.state.step;
         self.state.step = next_step;
@@ -127,7 +162,6 @@ where
             format_step(next_step)
         );
 
-        // Execute the entry action for the new state
         match next_step {
             Steps::PegoutRequested => {
                 unreachable!("Init step should not be reached in start_step");
@@ -163,19 +197,22 @@ where
             }
             Steps::RegisterPegout => {
                 info!("Registering pegout for flow_id: {}", self.state.flow_id);
-                let spv_proof = self.state.spv_proof.clone().ok_or_else(|| {
+                let spv_proof = self.state.ctx.spv_proof.clone().ok_or_else(|| {
                     anyhow!(
                         "SPV proof not available for pegout registration - flow_id {}",
                         self.state.flow_id
                     )
                 })?;
                 let output = self.register_pegout(spv_proof.clone())?;
-                self.state.pegout_registered_tx = Some(output.transaction_hash);
+                self.state.ctx.pegout_registered_tx = Some(output.transaction_hash);
             }
             Steps::Done => {
                 info!("PegoutFlow {}: Done", self.state.flow_id);
             }
         }
+
+        self.persist_state()?;
+
         Ok(())
     }
 
@@ -191,25 +228,21 @@ where
             self.state.flow_id
         );
 
-        // Process data and determine next state
         let next_step = self.process_step_data(current_step, &data)?;
-
-        // Transition to the next state
         self.start_step(next_step)?;
 
         Ok(())
     }
 
-    /// Process the current step data and determine the next state
     fn process_step_data(&mut self, current_step: Steps, data: &StepData) -> Result<Steps> {
         match (current_step, data) {
             (Steps::PegoutRequested, StepData::PegoutRequested) => Ok(Steps::GetCommInfo),
             (Steps::GetCommInfo, StepData::CommInfo(comm_info)) => {
-                self.state.my_p2p_address = Some(comm_info.clone());
+                self.state.ctx.my_p2p_address = Some(comm_info.clone());
                 Ok(Steps::PrepareUserTakeSetup)
             }
             (Steps::PrepareUserTakeSetup, StepData::PegoutAccepted(accepted)) => {
-                self.state.peg_out_accepted = Some(accepted.clone());
+                self.state.ctx.peg_out_accepted = Some(accepted.clone());
                 Ok(Steps::DispatchTransaction)
             }
             (Steps::DispatchTransaction, StepData::DispatchTransaction) => {
@@ -231,13 +264,13 @@ where
                     tx_status.tx_id,
                     expected_tx_id
                 );
-                self.state.transaction_status = Some(tx_status.clone());
+                self.state.ctx.transaction_status = Some(tx_status.clone());
                 Ok(Steps::RequestUserTakeSpvProof)
             }
             (Steps::RequestUserTakeSpvProof, StepData::SpvProof(spv_proof)) => {
                 info!("Received SPV proof for flow_id: {}", self.state.flow_id);
                 trace!("SPV Proof data: {:?}", spv_proof);
-                self.state.spv_proof = Some(spv_proof.clone());
+                self.state.ctx.spv_proof = Some(spv_proof.clone());
                 Ok(Steps::RegisterPegout)
             }
             (Steps::RegisterPegout, StepData::PegoutRegistered(pegout_registered)) => {
@@ -263,7 +296,7 @@ where
             "Communicating pegout requested to bitvmx with flow_id: {}",
             self.state.flow_id
         );
-        let committee_id: CommitteeId = self.state.pegout_requested.committeeId.try_into()?;
+        let committee_id: CommitteeId = self.state.ctx.pegout_requested.committeeId.try_into()?;
 
         self.send_pegout_requested_to_bitvmx(&committee_id)?;
         self.send_setup_to_bitvmx(&committee_id)?;
@@ -285,6 +318,7 @@ where
         );
         let committee_peer_ids = self.get_committee_peer_ids(
             self.state
+                .ctx
                 .committee_output
                 .clone()
                 .ok_or_else(|| anyhow!("Committee output not available for setup"))?,
@@ -293,6 +327,7 @@ where
         let committee_addresses = self.get_committee_member_address(committee_id)?;
         let p2p_addresses = build_communication_data(
             self.state
+                .ctx
                 .my_p2p_address
                 .as_ref()
                 .ok_or_else(|| anyhow!("P2P address not available for setup"))?
@@ -371,9 +406,9 @@ where
         );
         let committee_output: GetCommitteeOutput =
             self.get_committee_output(committee_id.clone())?;
-        self.state.committee_output = Some(committee_output.clone());
+        self.state.ctx.committee_output = Some(committee_output.clone());
         let data_to_send: PegOutRequest = self.pegout_requested_to_bitvmx_request(
-            self.state.pegout_requested.clone(),
+            self.state.ctx.pegout_requested.clone(),
             &committee_output,
         )?;
 
@@ -417,9 +452,7 @@ where
 
         let committee_id: Uuid = Uuid::from_u128(event.committeeId.try_into()?);
 
-        // Convert user pubkey bytes to bitcoin::PublicKey
         let user_pubkey = if event.userPubKey.len() == 33 {
-            // Try parsing as compressed public key (33 bytes with prefix)
             debug!("Attempting to parse as compressed public key (33 bytes)");
             PublicKey::from_slice(event.userPubKey.as_ref())
                 .context("Failed to parse user public key as compressed public key")?
@@ -489,6 +522,7 @@ where
 
     pub fn get_user_take_txid(&self) -> Option<Txid> {
         self.state
+            .ctx
             .peg_out_accepted
             .as_ref()
             .map(|accepted| accepted.user_take_txid)
@@ -530,23 +564,24 @@ where
         Ok(())
     }
 
-    /// Check if the flow is completed
     pub fn is_done(&self) -> bool {
         self.state.step == Steps::Done
     }
 
-    /// Get the internal ID of the flow
     pub fn flow_id(&self) -> Uuid {
         self.state.flow_id
     }
 
-    /// Get the current step
     pub fn current_step(&self) -> Steps {
         self.state.step
     }
 
+    pub fn _get_state(&self) -> &State {
+        &self.state
+    }
+
     pub fn pegout_requested(&self) -> &PegoutRequested {
-        &self.state.pegout_requested
+        &self.state.ctx.pegout_requested
     }
 }
 

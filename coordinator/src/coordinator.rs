@@ -45,6 +45,8 @@ pub struct Coordinator<M: MonitorApi, BC: BitVmxBrokerClientApi, S: CoordinatorS
 impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi + 'static>
     Coordinator<M, BC, S>
 {
+    // todo(fede) new methods should be transaparent and any other extra logic should be in a
+    // separate build/factory method
     pub fn new<CG: RskContractsGatewayApi + 'static>(
         rt_sync: RuntimeSync,
         monitor: M,
@@ -90,12 +92,17 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                     global_context.clone(),
                     Rc::clone(&store_rc),
                 )),
-                Box::new(PegoutFlowProcessor::new(
-                    Rc::clone(&contracts_arc),
-                    rt_sync.clone(),
-                    bitvmx_broker.clone(),
-                    global_context.clone(),
-                )),
+                Box::new(
+                    PegoutFlowProcessor::restore_or_new(
+                        contracts_arc.clone(),
+                        rt_sync.clone(),
+                        bitvmx_broker.clone(),
+                        global_context.clone(),
+                        store_rc.clone(),
+                    )
+                    // todo(fede) ideally this method should return a result
+                    .expect("couldn't restore or create pegout flow processor"),
+                ),
                 Box::new(SetupCommitteeProcessor::new(
                     setup_committee_flow_factory,
                     global_context.clone(),
