@@ -12,7 +12,7 @@ workspace = true
 [dependencies]
 check-fork = { path = ".." }
 
-bitcoin = "0.32.4"
+bitcoin = { workspace = true }
 clap = { version = "4.5.30", features = ["derive"] }
 chrono = "0.4.40"
 serde = { version = "1.0", features = ["derive"] }
