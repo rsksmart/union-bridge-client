@@ -103,7 +103,7 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
             .send_with_gas_bump(
                 || {
                     self.contract_instance
-                        .addOperatorTakeTxHash(accept_pegin_tx_hash.clone(), take_tx_hash.clone())
+                        .addOperatorTakeTxid(accept_pegin_tx_hash.clone(), take_tx_hash.clone())
                 },
                 gas_bumps,
             )
@@ -119,7 +119,7 @@ pub(crate) fn decode_error(
 
     let decoded_err = err.as_decoded_interface_error::<SignatureManagerErrors>();
     decoded_err.map(|e| match e {
-        SignatureManagerErrors::AcceptPeginTxHashNotFound(e) => {
+        SignatureManagerErrors::AcceptPeginTxidNotFound(e) => {
             DomainErrors::InvalidValue(format!("{:?}", e))
         }
         SignatureManagerErrors::AddressEmptyCode(e) => {
@@ -140,16 +140,15 @@ mod tests {
     use crate::rsk_gateway::DomainErrors;
     use alloy_primitives::{Address, FixedBytes};
     use union_contracts::bindings::signature_manager::SignatureManager::{
-        AcceptPeginTxHashNotFound, AddressEmptyCode, HashToSignNotFound, SignatureManagerErrors,
+        AcceptPeginTxidNotFound, AddressEmptyCode, HashToSignNotFound, SignatureManagerErrors,
     };
 
     // Test error decoding functions
     #[test]
     fn test_accept_pegin_tx_hash_not_found_error() {
-        let err_data =
-            SignatureManagerErrors::AcceptPeginTxHashNotFound(AcceptPeginTxHashNotFound {
-                acceptPeginTxHash: FixedBytes::<32>::from([1u8; 32]),
-            });
+        let err_data = SignatureManagerErrors::AcceptPeginTxidNotFound(AcceptPeginTxidNotFound {
+            acceptPeginTxid: FixedBytes::<32>::from([1u8; 32]),
+        });
 
         let result = generate_contract_revert_error(err_data);
         let domain_error = decode_error(&result).unwrap();
