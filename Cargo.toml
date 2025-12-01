@@ -4,6 +4,7 @@ members = ["common", "block-indexer", "log-indexer", "transaction-dispatcher", "
 
 [workspace.lints.clippy]
 all = "deny"
+pedantic = "deny"
 
 [workspace.dependencies]
 # alloy-rs-core
