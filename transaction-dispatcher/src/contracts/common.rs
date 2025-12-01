@@ -204,36 +204,8 @@ where
     // Derive the transaction hash without registering a heartbeat/watch
     let tx_hash = *pending_tx.tx_hash();
 
-    // Receipt path can be switched via feature flag:
-    // - default: HTTP-style polling with get_transaction_receipt
-    // - legacy_ws_receipt: use pending_tx.get_receipt (heartbeat/subscription)
-    #[cfg(feature = "legacy_ws_receipt")]
-    {
-        let receipt_result = timeout(timeout_2min(), pending_tx.get_receipt()).await;
-        match receipt_result {
-            Ok(Ok(rec)) => Ok(rec),
-            Ok(Err(e)) => Err(alloy_contract::Error::TransportError(
-                alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
-                    code: ETH_RPC_INTERNAL_ERROR,
-                    message: format!("Failed to get receipt via legacy watch: {:?}", e).into(),
-                    data: None,
-                }),
-            )),
-            Err(_) => Err(alloy_contract::Error::TransportError(
-                alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
-                    code: ETH_RPC_INTERNAL_ERROR,
-                    message: "Receipt timeout (legacy watch)".to_string().into(),
-                    data: None,
-                }),
-            )),
-        }
-    }
-
-    #[cfg(not(feature = "legacy_ws_receipt"))]
-    {
-        // Poll the existing provider for the receipt; no subscriptions created
-        wait_for_receipt(provider, tx_hash, Duration::from_secs(2), timeout_2min()).await
-    }
+    // Poll the existing provider for the receipt; no subscriptions created
+    wait_for_receipt(provider, tx_hash, Duration::from_secs(2), timeout_2min()).await
 }
 
 async fn wait_for_receipt<P: Provider>(
@@ -271,47 +243,6 @@ async fn wait_for_receipt<P: Provider>(
             Some(receipt) => return Ok(receipt),
             None => sleep(poll_interval).await,
         }
-    }
-}
-
-/// Convenience wrapper to bundle sending and receipt polling.
-pub struct TransactionSender<P: Provider> {
-    provider: P,
-}
-
-impl<P: Provider> TransactionSender<P> {
-    pub fn new(provider: P) -> Self {
-        Self { provider }
-    }
-
-    pub async fn send_with_gas_bump<D, F>(
-        &self,
-        build_tx: F,
-        max_attempts: u8,
-    ) -> alloy_contract::Result<TransactionReceipt>
-    where
-        D: SolCall,
-        F: Fn() -> SolCallBuilder<P, D>,
-    {
-        send_tx_with_gas_bump(&self.provider, build_tx, max_attempts).await
-    }
-
-    pub async fn wait_for_receipt(
-        &self,
-        tx_hash: TxHash,
-        poll_interval: Duration,
-        max_wait: Duration,
-    ) -> alloy_contract::Result<TransactionReceipt> {
-        wait_for_receipt(&self.provider, tx_hash, poll_interval, max_wait).await
-    }
-
-    pub async fn estimate_gas_with_timeout<D, F>(&self, build_tx: &F) -> alloy_contract::Result<u64>
-    where
-        P: Provider,
-        D: SolCall,
-        F: Fn() -> SolCallBuilder<P, D>,
-    {
-        estimate_gas_with_timeout::<P, D, F>(build_tx).await
     }
 }
 

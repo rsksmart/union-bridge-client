@@ -2,7 +2,7 @@ use crate::contracts::types::{Address, Bytes, FixedBytes32, TransactionReceiptRe
 use alloy_provider::Provider;
 use log::info;
 
-use crate::contracts::common::TransactionSender;
+use crate::contracts::common::send_tx_with_gas_bump;
 #[cfg(test)]
 use mockall::automock;
 use union_contracts::bindings::signature_manager::SignatureManager;
@@ -59,17 +59,15 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
         nonce: Bytes,
         gas_bumps: u8,
     ) -> TransactionReceiptResult {
-        let provider = self.contract_instance.provider();
-        let sender = TransactionSender::new(provider);
-        sender
-            .send_with_gas_bump(
-                || {
-                    self.contract_instance
-                        .addMemberNonce(hash_to_sign.clone(), nonce.clone())
-                },
-                gas_bumps,
-            )
-            .await
+        send_tx_with_gas_bump(
+            &self.contract_instance.provider(),
+            || {
+                self.contract_instance
+                    .addMemberNonce(hash_to_sign.clone(), nonce.clone())
+            },
+            gas_bumps,
+        )
+        .await
     }
 
     async fn add_member_signature(
@@ -78,17 +76,15 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
         signature: FixedBytes32,
         gas_bumps: u8,
     ) -> TransactionReceiptResult {
-        let provider = self.contract_instance.provider();
-        let sender = TransactionSender::new(provider);
-        sender
-            .send_with_gas_bump(
-                || {
-                    self.contract_instance
-                        .addMemberSignature(hash_to_sign.clone(), signature.clone())
-                },
-                gas_bumps,
-            )
-            .await
+        send_tx_with_gas_bump(
+            &self.contract_instance.provider(),
+            || {
+                self.contract_instance
+                    .addMemberSignature(hash_to_sign.clone(), signature.clone())
+            },
+            gas_bumps,
+        )
+        .await
     }
 
     async fn add_operator_take_tx_hash(
@@ -97,17 +93,15 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
         take_tx_hash: FixedBytes32,
         gas_bumps: u8,
     ) -> TransactionReceiptResult {
-        let provider = self.contract_instance.provider();
-        let sender = TransactionSender::new(provider);
-        sender
-            .send_with_gas_bump(
-                || {
-                    self.contract_instance
-                        .addOperatorTakeTxid(accept_pegin_tx_hash.clone(), take_tx_hash.clone())
-                },
-                gas_bumps,
-            )
-            .await
+        send_tx_with_gas_bump(
+            &self.contract_instance.provider(),
+            || {
+                self.contract_instance
+                    .addOperatorTakeTxid(accept_pegin_tx_hash.clone(), take_tx_hash.clone())
+            },
+            gas_bumps,
+        )
+        .await
     }
 }
 
