@@ -31,7 +31,7 @@ use common::{
             BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages,
             PeginAcceptedMessage, TransactionStatus, VariableTypes,
         },
-        broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi},
+        broker::BitVmxBrokerClientApi,
     },
     runtime_sync::RuntimeSync,
     types::{BlockNumber, CommitteeId, Hash256, RskBlockAndUncles, TxIdParser},
@@ -603,10 +603,7 @@ where
     }
 
     fn subscribe_to_bitvmx_pegin_events(bitvmx_broker: &BC) -> Result<()> {
-        bitvmx_broker.send(
-            BROKER_SERVER_ID,
-            IncomingBitVMXApiMessages::SubscribeToRskPegin(),
-        )?;
+        bitvmx_broker.send(IncomingBitVMXApiMessages::SubscribeToRskPegin())?;
         Ok(())
     }
 
@@ -801,8 +798,8 @@ where
                 }
             }
             // Handle CommInfo from BitVMX
-            OutgoingBitVMXApiMessages::CommInfo(comm_info) => {
-                trace!("Received CommInfo from BitVMX: {:?}", comm_info);
+            OutgoingBitVMXApiMessages::CommInfo(req_id, comm_info) => {
+                trace!("Received CommInfo from BitVMX req_id: {}, comm_info: {:?}", req_id, comm_info);
                 // For any flow in GetCommInfo step, complete the step with the CommInfo
                 for (flow_id, flow) in self.pegin_flows.iter_mut() {
                     if flow.current_step() == Steps::GetCommInfo {

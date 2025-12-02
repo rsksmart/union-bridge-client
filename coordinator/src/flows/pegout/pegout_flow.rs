@@ -8,7 +8,6 @@ use common::msg_broker::bitvmx_types::PegOutRequest;
 use common::msg_broker::bitvmx_types::VariableTypes;
 use common::msg_broker::bitvmx_types::{BtcTxSPVProof, IncomingBitVMXApiMessages, P2PAddress};
 use common::msg_broker::bitvmx_types::{PeerId, TransactionStatus};
-use common::msg_broker::broker::BROKER_SERVER_ID;
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::types::CommitteeId;
@@ -498,12 +497,13 @@ where
             "Requesting bitvmx comm info for flow_id: {}",
             self.state.flow_id
         );
-        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo())
+        let req_id = Uuid::new_v4();
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo(req_id))
     }
 
     fn send_bitvmx_msg(&self, msg: IncomingBitVMXApiMessages) -> Result<()> {
         trace!("Sending message to BitVMX: {msg:?}");
-        self.bitvmx_broker.send(BROKER_SERVER_ID, msg)?;
+        self.bitvmx_broker.send(msg)?;
         Ok(())
     }
 

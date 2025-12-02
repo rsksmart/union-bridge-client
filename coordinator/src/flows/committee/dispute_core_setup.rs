@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::flows::committee::setup_committee_flow::NO_LEADER_IDX;
 use crate::types::MemberOfCommittee;
-use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
+use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::types::CommitteeId;
 use sha2::{Digest, Sha256};
 
@@ -57,7 +57,6 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
         trace!("Committee details: {committee:?}");
 
         self.broker_client.send(
-            BROKER_SERVER_ID,
             IncomingBitVMXApiMessages::SetFundingUtxo(my_speedup_funding_utxo),
         )?;
 
@@ -123,7 +122,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
     fn send_bitvmx_msg(&self, msg: IncomingBitVMXApiMessages) {
         trace!("Sending to BitVMX: {msg:?}");
 
-        let result = self.broker_client.send(BROKER_SERVER_ID, msg);
+        let result = self.broker_client.send(msg);
         if result.is_err() {
             // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132
             error!("Failed to send msg to BitVMX: {:?}", result);

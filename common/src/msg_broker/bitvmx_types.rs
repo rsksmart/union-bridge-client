@@ -16,19 +16,19 @@ type ProgramId = Uuid;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum IncomingBitVMXApiMessages {
-    Ping(),
+    Ping(Uuid),
     SetVar(Uuid, String, VariableTypes),
     SetWitness(Uuid, String, WitnessTypes),
     SetFundingUtxo(Utxo),
     GetVar(Uuid, String),
     GetWitness(Uuid, String),
-    GetCommInfo(),
+    GetCommInfo(Uuid),
     GetTransaction(Uuid, Txid),
     GetTransactionInfoByName(Uuid, String),
     GetHashedMessage(Uuid, String, u32, u32),
     Setup(ProgramId, String, Vec<P2PAddress>, u16),
     SubscribeToTransaction(Uuid, Txid),
-    SubscribeUTXO(),
+    SubscribeUTXO(Uuid),
     SubscribeToRskPegin(),
     GetSPVProof(Txid),
     DispatchTransaction(Uuid, Transaction),
@@ -56,7 +56,7 @@ pub struct SignedPublicKey {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum OutgoingBitVMXApiMessages {
-    Pong(),
+    Pong(Uuid),
     // response for transaction get and dispatch
     Transaction(Uuid, TransactionStatus, Option<String>),
     // Represents when pegin transactions is found
@@ -73,7 +73,7 @@ pub enum OutgoingBitVMXApiMessages {
     TransactionInfo(Uuid, String, Transaction),
     ZKPResult(Uuid, Vec<u8>, Vec<u8>),
     ExecutionResult(/* Add appropriate type */),
-    CommInfo(P2PAddress),
+    CommInfo(Uuid, P2PAddress),
     KeyPair(Uuid, PrivateKey, PublicKey),
     PubKey(Uuid, PublicKey),
     SignedMessage(Uuid, [u8; 32], [u8; 32], u8), // id, signature_r, signature_s, recovery_id

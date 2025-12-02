@@ -40,7 +40,7 @@ tokio = { version = "1.41.1" }
 
 storage-backend = { package = "rust-bitvmx-storage-backend", git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-storage-backend.git", rev = "16a01bfe316266bdac080828e260cd191fcb3cde" }
 union-contracts = { package = "union-bridge-contracts", git = "ssh://git@github.com/temp-rsk/bitvmx-union-bridge-contracts.git", tag = "v0.2.0-alpha" }
-message-broker = { package = "bitvmx-broker", git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-broker.git", rev = "98e9b43bdac2a02d6313767a0f2607b7e8f8da5e" }
+message-broker = { package = "bitvmx-broker", git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-broker.git", branch = "v.0.0.2" }
 
 #dev-dependencies
 tempfile = "3.16.0"

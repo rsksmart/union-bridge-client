@@ -59,8 +59,8 @@ async fn create_contracts_gateway_impl_with_role(
     role: GatewayRole,
 ) -> Result<RskContractsGateway<impl Provider + Clone>, DomainErrors> {
     let key_path = match role {
-        GatewayRole::User => &config.tx_dispatcher_config.key_store.user_path,
-        GatewayRole::Member => &config.tx_dispatcher_config.key_store.member_path,
+        GatewayRole::User => &config.key_store.user_path,
+        GatewayRole::Member => &config.key_store.member_path,
     };
 
     let key_store_path = Path::new(key_path);

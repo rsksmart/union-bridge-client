@@ -1,4 +1,4 @@
-use common::config::{CommonConfig, ContractConfig, ProviderConfig};
+use common::config::{CommonConfig, ContractConfig, KeyStoreConfig, ProviderConfig};
 use common::errors::ConfigError;
 use common::types::{Address, ContractInfo};
 use serde::Deserialize;
@@ -10,20 +10,14 @@ const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub struct Config {
     pub provider: ProviderConfig,
     pub contracts: Vec<ContractConfig>,
+    pub key_store: KeyStoreConfig,
     #[serde(rename = "transaction_dispatcher")]
     pub tx_dispatcher_config: TxDispatcherConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct TxDispatcherConfig {
-    pub key_store: KeyStoreConfig,
     pub transaction: TransactionConfig,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct KeyStoreConfig {
-    pub user_path: String,
-    pub member_path: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -82,34 +76,27 @@ mod tests {
         let config: Config =
             CommonConfig::load_config::<Config>(None).expect("Failed to load config");
 
-        // key store
-        assert!(
-            !config
-                .tx_dispatcher_config
-                .key_store
-                .user_path
-                .contains("{BASE_STORAGE_PATH}")
-        );
+        // key store (now shared at top level)
+        assert!(!config.key_store.user_path.contains("{BASE_STORAGE_PATH}"));
         assert!(
             config
-                .tx_dispatcher_config
                 .key_store
                 .user_path
                 .ends_with("/.union_bridge/keystore/multi-client-1-user")
         );
-        assert!(
-            !config
-                .tx_dispatcher_config
-                .key_store
-                .member_path
-                .contains("{BASE_STORAGE_PATH}")
-        );
+        assert!(!config.key_store.member_path.contains("{BASE_STORAGE_PATH}"));
         assert!(
             config
-                .tx_dispatcher_config
                 .key_store
                 .member_path
                 .ends_with("/.union_bridge/keystore/multi-client-1-member")
+        );
+        assert!(!config.key_store.broker_key_path.contains("{BASE_STORAGE_PATH}"));
+        assert!(
+            config
+                .key_store
+                .broker_key_path
+                .ends_with("/.union_bridge/keystore/broker.key")
         );
         assert_eq!(3, config.transaction().gas_bumps_t1);
     }

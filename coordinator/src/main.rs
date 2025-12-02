@@ -57,27 +57,45 @@ fn main() -> Result<()> {
         TxDispatcherConfig::load(env_name).expect("Failed to load transaction dispatcher config");
 
     let contract_addresses = config.get_contract_addresses();
+    let broker_key_path = &config.key_store.broker_key_path;
 
     let block_broker = BrokerClient::new(
         config.coordinator.blocks.host,
         config.coordinator.blocks.port,
-        config.coordinator.broker.client_id,
-    );
+        String::new(),
+        config.coordinator.broker.client_id as u8,
+        broker_key_path,
+    )
+    .context("Failed to create block broker client")?;
+
     let log_broker = BrokerClient::new(
         config.coordinator.logs.host,
         config.coordinator.logs.port,
-        config.coordinator.broker.client_id,
-    );
+        String::new(),
+        config.coordinator.broker.client_id as u8,
+        broker_key_path,
+    )
+    .context("Failed to create log broker client")?;
+
     let user_broker = BrokerClient::new(
         config.coordinator.user.host,
         config.coordinator.user.port,
-        config.coordinator.broker.client_id,
+        String::new(),
+        config.coordinator.broker.client_id as u8,
+        broker_key_path,
+    )
+    .context("Failed to create user broker client")?;
+
+    let bitvmx_broker = Rc::new(
+        BitVmxBrokerClient::new(
+            config.coordinator.bitvmx.host.clone(),
+            config.coordinator.bitvmx.port,
+            config.coordinator.bitvmx.pubkey_hash.clone(),
+            BITVMX_L2_BROKER_CLIENT_ID,
+            broker_key_path,
+        )
+        .context("Failed to create BitVMX broker client")?,
     );
-    let bitvmx_broker = Rc::new(BitVmxBrokerClient::new(
-        config.coordinator.bitvmx.host,
-        config.coordinator.bitvmx.port,
-        BITVMX_L2_BROKER_CLIENT_ID,
-    ));
 
     let monitor = Monitor::new(
         log_broker,

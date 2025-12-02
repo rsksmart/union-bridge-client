@@ -12,7 +12,7 @@ use common::msg_broker::bitvmx_types::{
     Destination, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, OutputType, P2PAddress,
     PartialUtxo, ParticipantRole, PeerId, SignedPublicKey, Utxo,
 };
-use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
+use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use log::{debug, error, info, trace, warn};
 use serde::{Deserialize, Serialize};
@@ -533,10 +533,11 @@ where
         let req_id = Uuid::new_v4();
         pub_key_req.2 = Some(req_id);
 
-        let result = bitvmx_broker.send(
-            BROKER_SERVER_ID,
-            IncomingBitVMXApiMessages::SignMessage(req_id, hash.to_vec(), *pub_key),
-        );
+        let result = bitvmx_broker.send(IncomingBitVMXApiMessages::SignMessage(
+            req_id,
+            hash.to_vec(),
+            *pub_key,
+        ));
 
         if result.is_err() {
             error!("Failed to send msg to BitVMX: {:?}", result);
@@ -806,7 +807,7 @@ where
     fn send_bitvmx_msg(&self, msg: IncomingBitVMXApiMessages) {
         trace!("Sending message to BitVMX: {msg:?}");
 
-        let result = self.bitvmx_broker.send(BROKER_SERVER_ID, msg);
+        let result = self.bitvmx_broker.send(msg);
         if result.is_err() {
             // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132
             error!("Failed to send msg to BitVMX: {:?}", result);
@@ -850,18 +851,15 @@ where
 
         self.state.ctx.send_funds_req = Some((req_id, None));
 
-        let result = self.bitvmx_broker.send(
-            BROKER_SERVER_ID,
-            IncomingBitVMXApiMessages::SendFunds(
-                req_id,
-                Destination::Batch(vec![
-                    Destination::P2WPKH(public_key, speedup_utxo_val),
-                    Destination::P2WPKH(public_key, funding_utxo_val),
-                    // Destination::P2WPKH(public_key, amounts.advance_funds),
-                ]),
-                Some(fee_rate),
-            ),
-        );
+        let result = self.bitvmx_broker.send(IncomingBitVMXApiMessages::SendFunds(
+            req_id,
+            Destination::Batch(vec![
+                Destination::P2WPKH(public_key, speedup_utxo_val),
+                Destination::P2WPKH(public_key, funding_utxo_val),
+                // Destination::P2WPKH(public_key, amounts.advance_funds),
+            ]),
+            Some(fee_rate),
+        ));
 
         if result.is_err() {
             bail!("Failed to send msg to BitVMX: {:?}", result);
@@ -1196,7 +1194,8 @@ where
     }
 
     fn request_bitvmx_comm_info(&self) {
-        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo());
+        let req_id = Uuid::new_v4();
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo(req_id));
     }
 
     fn request_bitvmx_take_pub_key(&mut self) -> Result<()> {
@@ -1862,8 +1861,8 @@ where
     }
 
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
-        // CommInfo is a special case as it does not have a request ID and uses a different flow getter.
-        if let OutgoingBitVMXApiMessages::CommInfo(comm_info) = event {
+        // CommInfo is a special case as it uses a different flow getter.
+        if let OutgoingBitVMXApiMessages::CommInfo(_req_id, comm_info) = event {
             // we can receive multiple CommInfo events but always for the same member of the
             // committee (the one running the client), but BitVMX will always respond with the
             // same info - so for now we send it to the first flow waiting for it
@@ -1904,7 +1903,7 @@ where
                 bail!("BitVMX WalletNotReady for request {req_id}")
             }
             // events that do not trigger a flow step are handled here.
-            OutgoingBitVMXApiMessages::Pong() => return Ok(()), // ignored
+            OutgoingBitVMXApiMessages::Pong(_) => return Ok(()), // ignored
             _ => {
                 trace!("Ignoring BitVMX event: {}", type_name_of_val(event));
                 return Ok(());

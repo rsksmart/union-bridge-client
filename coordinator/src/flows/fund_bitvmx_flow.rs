@@ -3,7 +3,7 @@ use crate::types::UserRequests;
 use anyhow::{Context, Result};
 use bitcoin::Network;
 use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
-use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
+use common::msg_broker::broker::BitVmxBrokerClientApi;
 use log::{info, trace};
 use std::rc::Rc;
 use uuid::Uuid;
@@ -36,10 +36,8 @@ where
         match event {
             UserRequests::GetBitVMXFundingAddress => {
                 let id = Uuid::new_v4();
-                self.bitvmx_broker.send(
-                    BROKER_SERVER_ID,
-                    IncomingBitVMXApiMessages::GetFundingAddress(id),
-                )?;
+                self.bitvmx_broker
+                    .send(IncomingBitVMXApiMessages::GetFundingAddress(id))?;
             }
             _ => {
                 trace!("FundBitvmxProcessor: Ignoring user request {:?}", event);

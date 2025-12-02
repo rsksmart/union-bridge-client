@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, anyhow};
 use common::constants::indexer::NOTIFIER_CHECK_PERIOD;
-use common::msg_broker::broker::UnionBrokerServerApi;
+use common::msg_broker::broker::{Identifier, UnionBrokerServerApi};
 pub use common::msg_broker::types::{FromServer, ToServer};
 use common::shutdown_flag::ShutdownFlag;
 use common::types::RskBlockAndUncles;
@@ -14,7 +14,7 @@ pub struct Notifier<BS: UnionBrokerServerApi> {
     new_block_channel: mpsc::Receiver<RskBlockAndUncles>,
     msg_broker: BS,
     check_period: Duration,
-    consumers: HashSet<u32>,
+    consumers: HashSet<Identifier>,
     shutdown_flag: ShutdownFlag,
 }
 
@@ -117,7 +117,7 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
         for c_id in &self.consumers {
             trace!("Notifying consumer {c_id} about new block {number} ({hash})");
 
-            self.msg_broker.send(&response, *c_id).context(format!(
+            self.msg_broker.send(&response, c_id).context(format!(
                 "Sending block {} ({}) to consumer {}",
                 number, hash, c_id
             ))?;
@@ -140,8 +140,12 @@ mod tests {
     use std::thread::{JoinHandle, sleep};
 
     struct ClientRequest {
-        id: u32,
+        id: Identifier,
         request: ToServer,
+    }
+
+    fn make_test_identifier(id: u8) -> Identifier {
+        Identifier::new(format!("test_pubkey_hash_{}", id), id)
     }
 
     #[test]
@@ -183,7 +187,7 @@ mod tests {
         let mut mock_broker = MockBrokerServerApi::new();
         mock_broker
             .expect_try_recv()
-            .returning(|| Ok(Some((ToServer::SubscribeBlocks, 1)))); // subscription received
+            .returning(|| Ok(Some((ToServer::SubscribeBlocks, make_test_identifier(1))))); // subscription received
         mock_broker.expect_send().never(); // nothing to send, no blocks received yet
 
         let mut notifier = Notifier::new_for_tests(rx, mock_broker, shutdown_flag.clone());
@@ -204,13 +208,13 @@ mod tests {
 
     #[test]
     fn test_run_new_block_with_uncles() {
-        let client_id = 2;
+        let client_id = make_test_identifier(2);
 
         let (tx, rx) = mpsc::channel();
         let shutdown_flag = ShutdownFlag::init();
 
         let client_requests = vec![ClientRequest {
-            id: client_id,
+            id: client_id.clone(),
             request: ToServer::SubscribeBlocks,
         }];
 
@@ -221,13 +225,13 @@ mod tests {
         expect_try_recv(client_requests, &mut mock_broker_server);
 
         expect_send_block(
-            client_id,
+            &client_id,
             &expected_block_1,
             vec![],
             &mut mock_broker_server,
         );
         expect_send_block(
-            client_id,
+            &client_id,
             &expected_block_2,
             vec![expected_uncle_1.clone()],
             &mut mock_broker_server,
@@ -258,19 +262,19 @@ mod tests {
 
     #[test]
     fn test_run_new_block_received_with_multiple_consumers() {
-        let client_id_1 = 2;
-        let client_id_2 = 3;
+        let client_id_1 = make_test_identifier(2);
+        let client_id_2 = make_test_identifier(3);
 
         let (tx, rx) = mpsc::channel();
         let shutdown_flag = ShutdownFlag::init();
 
         let client_requests = vec![
             ClientRequest {
-                id: client_id_1,
+                id: client_id_1.clone(),
                 request: ToServer::SubscribeBlocks,
             },
             ClientRequest {
-                id: client_id_2,
+                id: client_id_2.clone(),
                 request: ToServer::SubscribeBlocks,
             },
         ];
@@ -283,25 +287,25 @@ mod tests {
         expect_try_recv(client_requests, &mut mock_broker_server);
 
         expect_send_block(
-            client_id_1,
+            &client_id_1,
             &expected_block_1,
             vec![],
             &mut mock_broker_server,
         );
         expect_send_block(
-            client_id_2,
+            &client_id_2,
             &expected_block_1,
             vec![],
             &mut mock_broker_server,
         );
         expect_send_block(
-            client_id_1,
+            &client_id_1,
             &expected_block_2,
             vec![],
             &mut mock_broker_server,
         );
         expect_send_block(
-            client_id_2,
+            &client_id_2,
             &expected_block_2,
             vec![],
             &mut mock_broker_server,
@@ -332,24 +336,24 @@ mod tests {
 
     #[test]
     fn test_run_unsubscribe() {
-        let client_id_1 = 2;
-        let client_id_2 = 3;
+        let client_id_1 = make_test_identifier(2);
+        let client_id_2 = make_test_identifier(3);
 
         let (tx, rx) = mpsc::channel();
         let shutdown_flag = ShutdownFlag::init();
 
         let client_requests = vec![
             ClientRequest {
-                id: client_id_1,
+                id: client_id_1.clone(),
                 request: ToServer::SubscribeBlocks,
             },
             ClientRequest {
-                id: client_id_2,
+                id: client_id_2.clone(),
                 request: ToServer::SubscribeBlocks,
             },
             // should not receive blocks for this address
             ClientRequest {
-                id: client_id_1,
+                id: client_id_1.clone(),
                 request: ToServer::UnsubscribeBlocks,
             },
         ];
@@ -362,13 +366,13 @@ mod tests {
         expect_try_recv(client_requests, &mut mock_broker_server);
 
         expect_send_block(
-            client_id_2,
+            &client_id_2,
             &expected_block_1,
             vec![],
             &mut mock_broker_server,
         );
         expect_send_block(
-            client_id_2,
+            &client_id_2,
             &expected_block_2,
             vec![],
             &mut mock_broker_server,
@@ -414,7 +418,7 @@ mod tests {
     }
 
     fn expect_send_block(
-        dest: u32,
+        dest: &Identifier,
         expected_block: &RskBlock,
         expected_uncles: Vec<RskBlock>,
         mock_broker_server: &mut MockBrokerServerApi<ToServer, FromServer>,
@@ -423,9 +427,11 @@ mod tests {
             .expect_send()
             .withf({
                 let expected_block = expected_block.clone(); // move into closure
-                move |response, consumer_id| match response {
+                let dest = dest.clone();
+                let expected_uncles = expected_uncles.clone();
+                move |msg, dst| match msg {
                     FromServer::Block(bau) => {
-                        *consumer_id == dest
+                        *dst == dest
                             && *bau.block() == expected_block
                             && bau.uncles().iter().all(|u| expected_uncles.contains(u))
                     }
