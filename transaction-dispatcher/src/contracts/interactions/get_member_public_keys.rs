@@ -32,10 +32,10 @@ impl<C: MemberRegistryContractApi> GetMemberPublicKeysCall<C> {
 
         info!("GetMemberPublicKeys successful, retrieved member keys");
 
-        // we store peer_id in communicationPubKey.rsaPublicKey, agreed with Fairgate
-        let peer_id_bytes = &public_keys.communicationPubKey;
-        let peer_id =
-            P2PAddressParser::peer_id_from_member_contracts(peer_id_bytes).map_err(|e| {
+        // we store pubkey_hash in communicationPubKey.rsaPublicKey
+        let pubkey_hash_bytes = &public_keys.communicationPubKey;
+        let pubkey_hash =
+            P2PAddressParser::pubkey_hash_from_member_contracts(pubkey_hash_bytes).map_err(|e| {
                 DomainErrors::InvalidPublicKey(format!(
                     "Failed to convert communication public keys to hex: {e}"
                 ))
@@ -45,7 +45,7 @@ impl<C: MemberRegistryContractApi> GetMemberPublicKeysCall<C> {
             public_keys: vec![
                 format!("0x{:x}", public_keys.takePubKey),
                 format!("0x{:x}", public_keys.covenantPubKey),
-                peer_id,
+                pubkey_hash,
             ],
         })
     }
@@ -68,7 +68,9 @@ mod tests {
             "0x70997970C51812dc3A010C7d01b50e0d17dc79C8".parse().expect("Invalid address");
         let input = GetMemberPublicKeysInput { member_address };
 
-        let encoded_key = P2PAddressParser::peer_id_to_contracts("30820122300d06092a864886f70d01010105000382010f003082010a0282010100b0595a239c455f955ac2617061fadc0f3c532056da4a4ab4111b6581a62143e6c00b3041a00c290232fa65794ea0a55ca5f2ed3310ecbcab06a721d66e99a27e0d1b8a6afd8e395b741fbcf6cb73294eaeff43118f828f0118a4b5fdc95d472bcadaf2bc4d665e535ccd70b8ee5b82624794351a82c9f819d9a53638122228d1800d7d6561ae98183ae53c6cf23964c7eceeae95807db49a164cfbbc1ddc87a975fbe3d43545e8ce1bad2043cfe6a9aa3a7538ebdab8e6b900c94a691c1321d7c2d7f1a1beb3c3ef03686f7805ce938c92c8d5057cb5101cd51c1d97d7d3d4b9f13b7cb28bc5c4c5c9983a3062efc606b9c440021e1d5257d88d9c3ced0ac38f0203010001").unwrap();
+        // SHA-256 hash (64 hex chars = 32 bytes)
+        let test_pubkey_hash = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
+        let encoded_key = P2PAddressParser::pubkey_hash_to_contracts(test_pubkey_hash).unwrap();
         let expected_public_keys = MemberKeys {
             takePubKey: FixedBytes::from([1u8; 32]),
             covenantPubKey: FixedBytes::from([2u8; 32]),
@@ -97,10 +99,7 @@ mod tests {
             output.public_keys[1],
             "0x0202020202020202020202020202020202020202020202020202020202020202"
         );
-        assert_eq!(
-            output.public_keys[2],
-            "30820122300d06092a864886f70d01010105000382010f003082010a0282010100b0595a239c455f955ac2617061fadc0f3c532056da4a4ab4111b6581a62143e6c00b3041a00c290232fa65794ea0a55ca5f2ed3310ecbcab06a721d66e99a27e0d1b8a6afd8e395b741fbcf6cb73294eaeff43118f828f0118a4b5fdc95d472bcadaf2bc4d665e535ccd70b8ee5b82624794351a82c9f819d9a53638122228d1800d7d6561ae98183ae53c6cf23964c7eceeae95807db49a164cfbbc1ddc87a975fbe3d43545e8ce1bad2043cfe6a9aa3a7538ebdab8e6b900c94a691c1321d7c2d7f1a1beb3c3ef03686f7805ce938c92c8d5057cb5101cd51c1d97d7d3d4b9f13b7cb28bc5c4c5c9983a3062efc606b9c440021e1d5257d88d9c3ced0ac38f0203010001"
-        );
+        assert_eq!(output.public_keys[2], test_pubkey_hash);
     }
 
     #[tokio::test]

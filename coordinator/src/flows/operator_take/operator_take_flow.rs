@@ -1,17 +1,14 @@
 use std::rc::Rc;
 
 use anyhow::{Context, Result, anyhow};
-use bitcoin::secp256k1::Parity::Even;
 use bitcoin::secp256k1::XOnlyPublicKey;
 use bitcoin::{PublicKey, Txid};
-use common::msg_broker::bitvmx_types::{
-    AdvanceFundsRequest, BtcTxSPVProof, IncomingBitVMXApiMessages, P2PAddress, ReimbursementResult,
-    TransactionStatus, VariableTypes,
-};
-use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
+use bitcoin::key::Parity::Even;
+use common::msg_broker::bitvmx_types::{AdvanceFundsRequest, BtcTxSPVProof, CommsAddress, IncomingBitVMXApiMessages, ReimbursementResult, TransactionStatus, VariableTypes};
+use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::types::{Address, BlockHash, BlockNumber, CommitteeId, Hash256, TxHash};
-use log::{debug, info};
+use log::{debug, info, trace};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::{
     GetMemberPublicKeysInput, RegisterOperatorTakeOutput, RequestPeginInput,
@@ -47,7 +44,7 @@ pub enum Steps {
 #[derive(Debug, Clone)]
 pub enum StepData {
     OperatorTakeTriggered,
-    CommInfo(P2PAddress),
+    CommInfo(CommsAddress),
     SetupCompleted,
     ReimbursementResult(ReimbursementResult),
     RequestOperatorTakeTx(TransactionStatus),
@@ -136,7 +133,7 @@ pub struct FlowContext {
     pub flow_id: Uuid,
     pub step: Steps,
     pub trigger_data: OperatorTakeTriggerData,
-    pub my_p2p_address: Option<P2PAddress>,
+    pub my_p2p_address: Option<CommsAddress>,
     pub committee_id_uuid: Option<Uuid>,
     pub pegin_program_id: Option<Uuid>,
     pub reimbursement_result: Option<ReimbursementResult>,
@@ -403,7 +400,8 @@ where
     }
 
     fn request_bitvmx_comm_info(&self) -> Result<()> {
-        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo())
+        let req_id = Uuid::new_v4();
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo(req_id))
     }
 
     fn get_operator_take_pubkey(&self) -> Result<PublicKey> {
@@ -449,8 +447,8 @@ where
     }
 
     fn send_bitvmx_msg(&self, msg: IncomingBitVMXApiMessages) -> Result<()> {
-        debug!("AdvanceFundsFlow sending BitVMX message: {msg:?}");
-        self.bitvmx_broker.send(BROKER_SERVER_ID, msg)?;
+        trace!("AdvanceFundsFlow - sending message to BitVMX: {msg:?}");
+        self.bitvmx_broker.send(msg)?;
         Ok(())
     }
 

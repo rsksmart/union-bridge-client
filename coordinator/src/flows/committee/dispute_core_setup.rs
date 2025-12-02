@@ -1,12 +1,11 @@
 use std::rc::Rc;
-
 use anyhow::{Context, Result};
 use bitcoin::PublicKey;
 use common::msg_broker::bitvmx_types::{
-    Committee, DisputeCoreData, IncomingBitVMXApiMessages, MemberData, P2PAddress, ParticipantRole,
-    Utxo, VariableTypes,
+    CommsAddress, Committee, DisputeCoreData, IncomingBitVMXApiMessages, MemberData,
+    ParticipantRole, Utxo, VariableTypes,
 };
-use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
+use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::types::CommitteeId;
 use log::{debug, error, info, trace};
 use sha2::{Digest, Sha256};
@@ -15,7 +14,6 @@ use uuid::Uuid;
 use crate::flows::committee::setup_committee_flow::NO_LEADER_IDX;
 use crate::types::MemberOfCommittee;
 
-const MONITORED_OPERATOR_KEY: &str = "monitored_operator_key";
 const PROGRAM_TYPE_DISPUTE_CORE: &str = "dispute_core";
 
 pub struct DisputeCoreSetup<BC: BitVmxBrokerClientApi> {
@@ -31,10 +29,11 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
         &self,
         committee_id_client: &CommitteeId,
         members: &[MemberOfCommittee],
-        p2p_addresses: &[P2PAddress],
+        p2p_addresses: &[CommsAddress],
         take_aggr_key: PublicKey,
         dispute_aggr_key: PublicKey,
         my_speedup_funding_utxo: Utxo,
+        stream_denomination: u64,
     ) -> Result<Vec<Uuid>> {
         let committee = Committee {
             members: members
@@ -47,8 +46,8 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
                 .collect(),
             take_aggregated_key: take_aggr_key,
             dispute_aggregated_key: dispute_aggr_key,
-            operator_count: Self::operator_count(members)?,
             packet_size: 10,
+            stream_denomination,
         };
 
         let committee_id = Uuid::from_u128(**committee_id_client);
@@ -58,7 +57,6 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
         trace!("Committee details: {committee:?}");
 
         self.broker_client.send(
-            BROKER_SERVER_ID,
             IncomingBitVMXApiMessages::SetFundingUtxo(my_speedup_funding_utxo),
         )?;
 
@@ -86,21 +84,14 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
 
             let dispute_core_data = &DisputeCoreData {
                 committee_id,
-                operator_index: prover.committee_idx,
-                operator_utxo: prover.funding_utxo.clone(),
-                operator_take_pubkey: pubkey,
+                member_index: prover.committee_idx,
+                funding_utxo: prover.funding_utxo.clone(),
             };
 
             self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetVar(
                 protocol_id,
                 DisputeCoreData::name(),
                 VariableTypes::String(serde_json::to_string(dispute_core_data)?),
-            ));
-
-            self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetVar(
-                protocol_id,
-                MONITORED_OPERATOR_KEY.to_string(),
-                VariableTypes::PubKey(pubkey),
             ));
 
             self.send_bitvmx_msg(IncomingBitVMXApiMessages::Setup(
@@ -114,18 +105,13 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
         Ok(protocol_ids)
     }
 
-    fn operator_count(members: &[MemberOfCommittee]) -> Result<u32> {
-        u32::try_from(members.iter().filter(|m| m.role == ParticipantRole::Prover).count())
-            .context("operator count exceeds u32::MAX")
-    }
-
     fn send_bitvmx_msg(&self, msg: IncomingBitVMXApiMessages) {
         trace!("Sending to BitVMX: {msg:?}");
 
-        let result = self.broker_client.send(BROKER_SERVER_ID, msg);
+        let result = self.broker_client.send(msg);
         if result.is_err() {
             // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132
-            error!("Failed to send msg to BitVMX: {result:?}");
+            error!("Failed to send msg to BitVMX: {:?}", result);
         }
     }
 }
@@ -138,7 +124,9 @@ fn get_dispute_core_pid(committee_id: Uuid, pubkey: &PublicKey) -> Result<Uuid> 
 
     // Get the result as a byte array
     let hash = hasher.finalize();
-    let bytes = hash[0..16].try_into().context("UUID slice conversion failed")?;
+    let bytes = hash[0..16]
+        .try_into()
+        .context("UUID slice conversion failed")?;
 
     Ok(Uuid::from_bytes(bytes))
 }

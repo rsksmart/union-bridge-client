@@ -3,7 +3,7 @@ use std::rc::Rc;
 use anyhow::{Context, Result};
 use bitcoin::Network;
 use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
-use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
+use common::msg_broker::broker::BitVmxBrokerClientApi;
 use log::{info, trace};
 use uuid::Uuid;
 
@@ -36,7 +36,7 @@ where
             UserRequests::GetBitVMXFundingAddress => {
                 let id = Uuid::new_v4();
                 self.bitvmx_broker
-                    .send(BROKER_SERVER_ID, IncomingBitVMXApiMessages::GetFundingAddress(id))?;
+                    .send(IncomingBitVMXApiMessages::GetFundingAddress(id))?;
             }
             UserRequests::ApplyToStream(_) => {
                 trace!("FundBitvmxProcessor: Ignoring user request {event:?}");

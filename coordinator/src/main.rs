@@ -1,15 +1,18 @@
 use std::rc::Rc;
-
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
-use common::config::CommonConfig;
-use common::msg_broker::broker::{BITVMX_L2_BROKER_CLIENT_ID, BitVmxBrokerClient, BrokerClient};
-use common::runtime_sync::RuntimeSync;
-use common::shutdown_flag::ShutdownFlag;
-use coordinator::config::{Config, Logger};
-use coordinator::coordinator::Coordinator;
-use coordinator::monitor::Monitor;
+use common::{
+    config::CommonConfig,
+    msg_broker::broker::{BITVMX_L2_BROKER_CLIENT_ID, BitVmxBrokerClient, BrokerClient, Cert},
+    runtime_sync::RuntimeSync,
+    shutdown_flag::ShutdownFlag,
+};
 use coordinator::store::CoordinatorStore;
+use coordinator::{
+    config::{Config, Logger},
+    coordinator::Coordinator,
+    monitor::Monitor,
+};
 use log::{debug, error, info};
 use transaction_dispatcher::config::Config as TxDispatcherConfig;
 
@@ -54,27 +57,53 @@ fn main() -> Result<()> {
         TxDispatcherConfig::load(env_name).expect("Failed to load transaction dispatcher config");
 
     let contract_addresses = config.get_contract_addresses();
+    let broker_key_path = &config.key_store.broker_key_path;
+
+    // Compute the broker server's pubkey_hash from the shared key file.
+    // The indexers (block-indexer, log-indexer) use the same key to derive their identity,
+    // so messages must be addressed to this pubkey_hash for proper routing.
+    let broker_server_pubk_hash = Cert::from_key_file(broker_key_path)
+        .context("Failed to load broker key for pubkey_hash")?
+        .get_pubk_hash()
+        .context("Failed to compute broker pubkey_hash")?;
 
     let block_broker = BrokerClient::new(
         config.coordinator.blocks.host,
         config.coordinator.blocks.port,
-        config.coordinator.broker.client_id,
-    );
+        broker_server_pubk_hash.clone(),
+        config.coordinator.broker.client_id as u8,
+        broker_key_path,
+    )
+    .context("Failed to create block broker client")?;
+
     let log_broker = BrokerClient::new(
         config.coordinator.logs.host,
         config.coordinator.logs.port,
-        config.coordinator.broker.client_id,
-    );
+        broker_server_pubk_hash.clone(),
+        config.coordinator.broker.client_id as u8,
+        broker_key_path,
+    )
+    .context("Failed to create log broker client")?;
+
     let user_broker = BrokerClient::new(
         config.coordinator.user.host,
         config.coordinator.user.port,
-        config.coordinator.broker.client_id,
+        broker_server_pubk_hash,
+        config.coordinator.broker.client_id as u8,
+        broker_key_path,
+    )
+    .context("Failed to create user broker client")?;
+
+    let bitvmx_broker = Rc::new(
+        BitVmxBrokerClient::new(
+            config.coordinator.bitvmx.host.clone(),
+            config.coordinator.bitvmx.port,
+            config.coordinator.bitvmx.pubkey_hash.clone(),
+            BITVMX_L2_BROKER_CLIENT_ID,
+            broker_key_path,
+        )
+        .context("Failed to create BitVMX broker client")?,
     );
-    let bitvmx_broker = Rc::new(BitVmxBrokerClient::new(
-        config.coordinator.bitvmx.host,
-        config.coordinator.bitvmx.port,
-        BITVMX_L2_BROKER_CLIENT_ID,
-    ));
 
     let monitor = Monitor::new(
         log_broker,

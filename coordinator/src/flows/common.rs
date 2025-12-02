@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use anyhow::{Result, bail};
-use common::msg_broker::bitvmx_types::{P2PAddress, ParticipantRole, PeerId, SignedPublicKey};
+use common::msg_broker::bitvmx_types::{CommsAddress, ParticipantRole, PubKeyHash, SignedPublicKey};
 use common::types::CommitteeId;
 use log::info;
 
@@ -121,24 +121,24 @@ impl GlobalContext {
 }
 
 /// We need this function because we are temporarily:
-/// - storing `PeerId` as the communication key on applyToStream
+/// - storing pubkey_hash as the communication key on applyToStream
 /// - storing only the address as the communication data on depositCommunicationData
 ///   therefore `get_communication_data` does not bring everything we need, just the address
 ///   this was agreed with Fairgate
 pub fn build_communication_data(
     my_p2p_address: &str,
-    committee_addresses: &[String],
-    committee_peer_ids: &[PeerId],
-) -> Result<Vec<P2PAddress>> {
-    if committee_addresses.len() != committee_peer_ids.len() {
+    committee_addresses: Vec<String>,
+    committee_pubkey_hashes: Vec<PubKeyHash>,
+) -> Result<Vec<CommsAddress>> {
+    if committee_addresses.len() != committee_pubkey_hashes.len() {
         bail!(
             "Inconsistent committee size: {} vs {}",
             committee_addresses.len(),
-            committee_peer_ids.len()
+            committee_pubkey_hashes.len()
         );
     }
 
-    let mut p2p_addresses = vec![];
+    let mut comms_addresses = vec![];
     for i in 0..committee_addresses.len() {
         let mut addr = committee_addresses[i].clone();
         // contracts require zeroed communication data for my own address on deposit, so we have to tweak it here
@@ -146,12 +146,15 @@ pub fn build_communication_data(
             addr = my_p2p_address.to_string();
         }
 
-        let peer_id = committee_peer_ids[i].clone();
+        let pubkey_hash = committee_pubkey_hashes[i].clone();
 
-        p2p_addresses.push(P2PAddress { address: addr, peer_id });
+        comms_addresses.push(CommsAddress {
+            address: addr.parse().map_err(|e| anyhow::anyhow!("Invalid address: {}", e))?,
+            pubkey_hash,
+        });
     }
 
-    info!("Built communication data: {p2p_addresses:?}");
+    info!("Built communication data: {:?}", comms_addresses);
 
-    Ok(p2p_addresses)
+    Ok(comms_addresses)
 }

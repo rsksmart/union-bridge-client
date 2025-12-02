@@ -1,12 +1,12 @@
 use std::rc::Rc;
-
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use bitcoin::{PublicKey, Txid};
-use common::msg_broker::bitvmx_types::{
-    BtcTxSPVProof, IncomingBitVMXApiMessages, P2PAddress, PeerId, PegOutAccepted, PegOutRequest,
-    TransactionStatus, VariableTypes,
-};
-use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
+use common::msg_broker::broker::{BitVmxBrokerClientApi};
+use common::msg_broker::bitvmx_types::PegOutAccepted;
+use common::msg_broker::bitvmx_types::PegOutRequest;
+use common::msg_broker::bitvmx_types::VariableTypes;
+use common::msg_broker::bitvmx_types::{BtcTxSPVProof, CommsAddress, IncomingBitVMXApiMessages, PubKeyHash};
+use common::msg_broker::bitvmx_types::TransactionStatus;
 use common::runtime_sync::RuntimeSync;
 use common::types::CommitteeId;
 use hex;
@@ -47,7 +47,7 @@ pub enum Steps {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum StepData {
     PegoutRequested,
-    CommInfo(P2PAddress),
+    CommInfo(CommsAddress),
     PegoutAccepted(PegOutAccepted),
     DispatchTransaction,
     TriggerOperatorTakeTimeout, // Timeout expired, trigger operator take
@@ -59,7 +59,7 @@ pub enum StepData {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlowContext {
     pub pegout_requested: PegoutRequested,
-    pub my_p2p_address: Option<P2PAddress>,
+    pub my_p2p_address: Option<CommsAddress>,
     pub committee_output: Option<GetCommitteeOutput>,
     pub peg_out_accepted: Option<PegOutAccepted>,
     pub spv_proof: Option<BtcTxSPVProof>,
@@ -324,8 +324,11 @@ where
         Ok(committee_response)
     }
     fn send_setup_to_bitvmx(&mut self, committee_id: &CommitteeId) -> Result<()> {
-        debug!("Sending setup to bitvmx with flow_id: {}", self.state.flow_id);
-        let committee_peer_ids = self.get_committee_peer_ids(
+        debug!(
+            "Sending setup to bitvmx with flow_id: {}",
+            self.state.flow_id
+        );
+        let committee_pubkey_hashes = self.get_committee_pubkey_hashes(
             self.state
                 .ctx
                 .committee_output
@@ -334,22 +337,22 @@ where
         )?;
 
         let committee_addresses = self.get_committee_member_address(committee_id)?;
-        let p2p_addresses = build_communication_data(
-            &self
-                .state
+        let comms_addresses = build_communication_data(
+            &self.state
                 .ctx
                 .my_p2p_address
                 .as_ref()
                 .ok_or_else(|| anyhow!("P2P address not available for setup"))?
-                .address,
-            &committee_addresses,
-            &committee_peer_ids,
+                .address
+                .to_string(),
+            committee_addresses,
+            committee_pubkey_hashes,
         )?;
 
         let msg = IncomingBitVMXApiMessages::Setup(
             self.state.flow_id,
             PROGRAM_TYPE_USER_TAKE.to_string(),
-            p2p_addresses,
+            comms_addresses,
             0,
         );
         self.send_bitvmx_msg(msg)
@@ -368,7 +371,8 @@ where
             .communication_data
             .into_iter()
             .map(|comm_data| {
-                P2PAddressParser::addr_from_contracts(&comm_data)
+                P2PAddressParser::socket_addr_from_contracts(&comm_data)
+                    .map(|opt_addr| opt_addr.map(|addr| addr.to_string()).unwrap_or_default())
                     .context("Failed to convert communication data to P2P address")
             })
             .collect::<Result<Vec<_>>>()?;
@@ -376,11 +380,11 @@ where
         Ok(committee_addresses)
     }
 
-    fn get_committee_peer_ids(
+    fn get_committee_pubkey_hashes(
         &mut self,
         committee_output: GetCommitteeOutput,
-    ) -> Result<Vec<PeerId>> {
-        let mut peer_ids = Vec::new();
+    ) -> Result<Vec<PubKeyHash>> {
+        let mut pubkey_hashes = Vec::new();
 
         for member in committee_output.committee.members {
             // Get the member's public keys
@@ -396,11 +400,11 @@ where
                 member.memberAddress
             ))?;
 
-            debug!("Member {} PeerId: {:?}", member.memberAddress, key_str);
-            peer_ids.push(PeerId(key_str.clone()));
+            debug!("Member {} pubkey_hash: {:?}", member.memberAddress, key_str);
+            pubkey_hashes.push(key_str.to_string());
         }
 
-        Ok(peer_ids)
+        Ok(pubkey_hashes)
     }
 
     fn send_pegout_requested_to_bitvmx(&mut self, committee_id: &CommitteeId) -> Result<()> {
@@ -484,13 +488,17 @@ where
     }
 
     fn request_bitvmx_comm_info(&self) -> Result<()> {
-        info!("Requesting bitvmx comm info for flow_id: {}", self.state.flow_id);
-        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo())
+        info!(
+            "Requesting bitvmx comm info for flow_id: {}",
+            self.state.flow_id
+        );
+        let req_id = Uuid::new_v4();
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo(req_id))
     }
 
     fn send_bitvmx_msg(&self, msg: IncomingBitVMXApiMessages) -> Result<()> {
         trace!("Sending message to BitVMX: {msg:?}");
-        self.bitvmx_broker.send(BROKER_SERVER_ID, msg)?;
+        self.bitvmx_broker.send(msg)?;
         Ok(())
     }
 
