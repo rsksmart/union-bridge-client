@@ -284,11 +284,32 @@ wait_for_log_with_block_timeout() {
 }
 
 cleanup() {
-    [ -n "${ANVIL_MINE_PID:-}" ] && kill $ANVIL_MINE_PID 2>/dev/null || true
-    [ -n "${BITCOIN_MINE_PID:-}" ] && kill $BITCOIN_MINE_PID 2>/dev/null || true
+    echo ""
+    log "Cleaning up background processes..."
+    # kill background mining processes
+    if [ -n "${ANVIL_MINE_PID:-}" ] && kill -0 "$ANVIL_MINE_PID" 2>/dev/null; then
+        kill -TERM "$ANVIL_MINE_PID" 2>/dev/null || true
+        sleep 0.2
+        kill -9 "$ANVIL_MINE_PID" 2>/dev/null || true
+    fi
+    if [ -n "${BITCOIN_MINE_PID:-}" ] && kill -0 "$BITCOIN_MINE_PID" 2>/dev/null; then
+        kill -TERM "$BITCOIN_MINE_PID" 2>/dev/null || true
+        sleep 0.2
+        kill -9 "$BITCOIN_MINE_PID" 2>/dev/null || true
+    fi
     rm -f /tmp/apply-operators-$$ /tmp/pegout-$$
 }
-trap cleanup EXIT INT TERM
+
+# handle Ctrl+C immediately - kill background processes and exit
+handle_interrupt() {
+    echo ""
+    echo ""
+    warn "Interrupted by user (Ctrl+C)"
+    cleanup
+    exit 130  # standard exit code for SIGINT
+}
+trap handle_interrupt INT TERM
+trap cleanup EXIT
 
 clear
 log "Configuration: stream=$STREAM_ID, rsk=$RSK_ADDRESS, amount=$VALUE, env=$SCRIPT_ENV"
