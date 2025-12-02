@@ -154,9 +154,9 @@ pub trait RskContractsGatewayApi {
 }
 
 #[derive(Clone)]
-pub struct RskContractsGateway<P: Provider> {
-    member_address: Address,
+pub struct RskContractsGateway<P: Provider + Clone> {
     provider: P,
+    member_address: Address,
     get_temporary_pegin_address_call: GetTemporaryPeginAddressCall<PegManagerContract<P>>,
     request_pegin_invoke: RequestPeginInvoke<PegManagerContract<P>>,
     accept_pegin_invoke: AcceptPeginInvoke<PegManagerContract<P>>,
@@ -237,8 +237,8 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             StreamManagerContract::new(provider.clone(), stream_manager_address.into());
 
         Ok(RskContractsGateway {
-            member_address,
             provider: provider.clone(),
+            member_address,
             get_temporary_pegin_address_call: GetTemporaryPeginAddressCall::new(
                 peg_manager_contract.clone(),
             ),
@@ -307,16 +307,21 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
     }
 }
 
-impl<P: Provider> RskContractsGatewayApi for RskContractsGateway<P> {
+impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     fn my_address(&self) -> Address {
         self.member_address
     }
 
-    async fn get_balance(&self) -> Result<U256, DomainErrors> {
-        self.provider
-            .get_balance(self.member_address.into())
-            .await
-            .map_err(|e| DomainErrors::InternalServerError(format!("Failed to get balance: {}", e)))
+    fn get_balance(&self) -> impl Future<Output = Result<U256, DomainErrors>> {
+        async move {
+            self.provider
+                .get_balance(self.member_address.into())
+                .await
+                .map_err(|e| {
+                    error!("Failed to get balance for {}: {}", self.member_address, e);
+                    DomainErrors::InternalServerError(format!("Failed to get balance: {}", e))
+                })
+        }
     }
 
     async fn get_temporary_pegin_address(

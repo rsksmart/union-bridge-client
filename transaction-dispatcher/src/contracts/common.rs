@@ -4,7 +4,7 @@ use crate::contracts::{
 };
 use crate::rsk_gateway::DomainErrors;
 use alloy_contract::{CallBuilder, SolCallBuilder};
-use alloy_primitives::{hex::FromHexError, ruint::ParseError};
+use alloy_primitives::{TxHash, hex::FromHexError, ruint::ParseError};
 use alloy_provider::Provider;
 use alloy_provider::network::ReceiptResponse;
 use alloy_rpc_types::TransactionReceipt;
@@ -15,7 +15,7 @@ use serde_json::Value;
 use std::marker::PhantomData;
 use std::time::{Duration, Instant};
 use thiserror::Error;
-use tokio::time::timeout;
+use tokio::time::{sleep, timeout};
 
 // Gas bumping constants
 const BASE_GAS_HEADROOM_PERCENT: u64 = 120; // 20% base headroom
@@ -93,7 +93,7 @@ where
             gas_limit
         );
 
-        let current_receipt = send_transaction(tx_builder).await?;
+        let current_receipt = send_transaction(provider, tx_builder).await?;
 
         let should_retry = !current_receipt.status()
             && attempt < max_attempts
@@ -179,6 +179,7 @@ async fn check_receipt<P: Provider>(
 }
 
 async fn send_transaction<P, D>(
+    provider: &P,
     tx_builder: CallBuilder<P, PhantomData<D>>,
 ) -> alloy_contract::Result<TransactionReceipt>
 where
@@ -200,34 +201,49 @@ where
         }
     };
 
-    // Get receipt with timeout
-    let receipt_result = timeout(timeout_2min(), pending_tx.get_receipt()).await;
+    // Derive the transaction hash without registering a heartbeat/watch
+    let tx_hash = *pending_tx.tx_hash();
 
-    let current_receipt = match receipt_result {
-        Ok(Ok(rec)) => rec,
-        Ok(Err(e)) => {
-            error!("Failed to get receipt: {:?}", e);
+    // Poll the existing provider for the receipt; no subscriptions created
+    wait_for_receipt(provider, tx_hash, Duration::from_secs(2), timeout_2min()).await
+}
+
+async fn wait_for_receipt<P: Provider>(
+    provider: &P,
+    tx_hash: TxHash,
+    poll_interval: Duration,
+    max_wait: Duration,
+) -> alloy_contract::Result<TransactionReceipt> {
+    let start = Instant::now();
+    loop {
+        if start.elapsed() > max_wait {
+            error!(
+                "Receipt polling timed out after {:?} for tx {:?}",
+                max_wait, tx_hash
+            );
             return Err(alloy_contract::Error::TransportError(
                 alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
                     code: ETH_RPC_INTERNAL_ERROR,
-                    message: format!("Failed to get receipt: {:?}", e).into(),
+                    message: format!(
+                        "Receipt timeout after {}s for tx {:?}",
+                        max_wait.as_secs(),
+                        tx_hash
+                    )
+                    .into(),
                     data: None,
                 }),
             ));
         }
-        Err(_) => {
-            error!("Receipt timeout");
-            return Err(alloy_contract::Error::TransportError(
-                alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
-                    code: ETH_RPC_INTERNAL_ERROR,
-                    message: "Receipt timeout".to_string().into(),
-                    data: None,
-                }),
-            ));
-        }
-    };
 
-    Ok(current_receipt)
+        match provider
+            .get_transaction_receipt(tx_hash)
+            .await
+            .map_err(|e| alloy_contract::Error::TransportError(e.into()))?
+        {
+            Some(receipt) => return Ok(receipt),
+            None => sleep(poll_interval).await,
+        }
+    }
 }
 
 async fn estimate_gas_with_timeout<P, D, F>(build_tx: &F) -> alloy_contract::Result<u64>

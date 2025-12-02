@@ -1,2 +1,2 @@
 pub mod rpc;
-mod sub;
+pub mod sub;
