@@ -634,8 +634,8 @@ where
         trace!("Processing BitVMX event: {event:?}");
 
         match event {
-            OutgoingBitVMXApiMessages::CommInfo(comm_info) => {
-                trace!("Received CommInfo from BitVMX: {comm_info:?}");
+            OutgoingBitVMXApiMessages::CommInfo(req_id, comm_info) => {
+                trace!("Received CommInfo from BitVMX req_id: {req_id}, comm_info: {comm_info:?}");
                 //for any flow in flows having active step GetCommInfo, complete the step with the CommInfo
                 for (flow_id, flow) in &mut self.pegout_flows {
                     if flow.current_step() == Steps::GetCommInfo {

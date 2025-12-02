@@ -1,6 +1,5 @@
 use std::collections::HashMap;
-
-use common::config::{CommonConfig, ContractConfig, IndexerConfig, NotifierConfig, ProviderConfig};
+use common::config::{CommonConfig, ContractConfig, IndexerConfig, KeyStoreConfig, NotifierConfig, ProviderConfig};
 use common::errors::ConfigError;
 use common::types::{Address, ContractInfo};
 use serde::Deserialize;
@@ -12,6 +11,7 @@ pub struct Config {
     pub indexer: IndexerConfig,
     pub provider: ProviderConfig,
     pub contracts: Vec<ContractConfig>,
+    pub key_store: KeyStoreConfig,
     #[serde(rename = "log_indexer")]
     pub log_indexer_config: LogIndexerConfig,
 }

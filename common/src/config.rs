@@ -82,6 +82,17 @@ pub struct ContractConfig {
     pub name: String,
     pub address: String,
 }
+/// Key store configuration shared by all services.
+/// Contains paths to keystores used for transaction signing and broker identity.
+#[derive(Debug, Deserialize, Clone)]
+pub struct KeyStoreConfig {
+    /// Path to user keystore (for user role transactions)
+    pub user_path: String,
+    /// Path to member keystore (for member role transactions)
+    pub member_path: String,
+    /// Path to broker TLS key file (PEM format) for deterministic broker identity
+    pub broker_key_path: String,
+}
 
 impl IndexerConfig {
     /// Resolves the initial block number based on the `start_from` configuration.
@@ -138,6 +149,8 @@ impl IndexerConfig {
         Ok(block)
     }
 }
+
+
 
 impl CommonConfig {
     /// # Errors

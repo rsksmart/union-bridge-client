@@ -529,7 +529,9 @@ where
                     );
                 }
             }
-            OutgoingBitVMXApiMessages::CommInfo(comm_info) => {
+            OutgoingBitVMXApiMessages::CommInfo(req_id, comm_info) => {
+                trace!("Received CommInfo from BitVMX req_id: {req_id}, comm_info: {comm_info:?}");
+                // For any flow in GetCommInfo step, complete the step with the CommInfo
                 for (flow_id, flow) in &mut self.flows {
                     if flow.current_step() == Steps::GetCommInfo {
                         debug!("Advance funds flow {flow_id} received comm info");

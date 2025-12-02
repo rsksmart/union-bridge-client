@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use common::config::{CommonConfig, ContractConfig};
+use common::config::{CommonConfig, ContractConfig, KeyStoreConfig};
 use common::errors::ConfigError;
 use common::types::Address;
 use serde::Deserialize;
@@ -17,6 +17,7 @@ const STREAM_MANAGER_CONTRACT_NAME: &str = "StreamManager";
 pub struct Config {
     pub contracts: Vec<ContractConfig>,
     pub bitcoin_network: String, // loaded from common.yaml
+    pub key_store: KeyStoreConfig,
     #[serde(rename = "coordinator")]
     pub coordinator: CoordinatorConfig,
     /// Bridge flow configuration with sensible defaults
@@ -32,7 +33,7 @@ pub struct CoordinatorConfig {
     pub logs: BrokerConfig,
     pub blocks: BrokerConfig,
     pub user: BrokerConfig,
-    pub bitvmx: BrokerConfig,
+    pub bitvmx: BitVmxBrokerConfig,
     pub broker: BrokerClientConfig,
     pub storage_path: String,
     pub advance_funds: CoordinatorAdvanceFundsConfig,
@@ -53,6 +54,15 @@ pub struct BrokerClientConfig {
 pub struct BrokerConfig {
     pub host: String,
     pub port: u16,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct BitVmxBrokerConfig {
+    pub host: String,
+    pub port: u16,
+    /// The `pubkey_hash` of the bitvmx broker server's message queue.
+    /// This should match the `components.bitvmx.pubkey_hash` in the bitvmx-client config.
+    pub pubkey_hash: String,
 }
 
 // ═══════════════════════════════════════════════════════
@@ -294,6 +304,10 @@ mod tests {
         assert_eq!(30001, config.coordinator.user.port);
         assert_eq!("0.0.0.0", config.coordinator.bitvmx.host);
         assert_eq!(22222, config.coordinator.bitvmx.port);
+        assert_eq!(
+            "1d10fa43ebbf6674d74caa3e9032711ade09d98ea7d20f89459f61152bebda1e",
+            config.coordinator.bitvmx.pubkey_hash
+        );
         assert_eq!(101, config.coordinator.broker.client_id);
         assert!(!config.coordinator.storage_path.contains("{BASE_STORAGE_PATH}"));
         assert!(
