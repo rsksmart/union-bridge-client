@@ -18,11 +18,11 @@ fn test_runtime_sync_propagates_domain_errors_in_real_scenario() {
     // Verify the coordinator can match on the specific error variant
     match result {
         Err(DomainErrors::InvalidAddress(addr)) => {
-            println!("Successfully caught InvalidAddress error: {}", addr);
+            println!("Successfully caught InvalidAddress error: {addr}");
             assert_eq!(addr, "0xInvalidAddress");
         }
-        Err(other) => panic!("Expected InvalidAddress, got: {:?}", other),
-        Ok(_) => panic!("Expected error, got Ok"),
+        Err(other) => panic!("Expected InvalidAddress, got: {other:?}"),
+        Ok(()) => panic!("Expected error, got Ok"),
     }
 }
 
@@ -41,11 +41,12 @@ fn test_runtime_sync_propagates_internal_server_error() {
     // Verify we can extract the detailed error message
     match result {
         Err(DomainErrors::InternalServerError(msg)) => {
-            println!("Successfully caught InternalServerError: {}", msg);
+            println!("Successfully caught InternalServerError: {msg}");
             assert!(msg.contains("Contract PegManager"));
             assert!(msg.contains("no deployed code"));
         }
-        _ => panic!("Expected InternalServerError"),
+        Err(e) => panic!("Expected InternalServerError, got: {e:?}"),
+        Ok(_) => panic!("Expected InternalServerError"),
     }
 }
 
@@ -59,15 +60,15 @@ fn test_runtime_sync_allows_error_conversion_to_anyhow() {
 
     // Convert to anyhow::Error (what coordinator does)
     let anyhow_result: anyhow::Result<()> =
-        result.map_err(|e| anyhow::anyhow!("Transaction failed: {}", e));
+        result.map_err(|e| anyhow::anyhow!("Transaction failed: {e}"));
 
     match anyhow_result {
         Err(e) => {
-            println!("Successfully converted to anyhow::Error: {}", e);
+            println!("Successfully converted to anyhow::Error: {e}");
             assert!(e.to_string().contains("Transaction failed"));
             assert!(e.to_string().contains("Pegin already requested"));
         }
-        Ok(_) => panic!("Expected error"),
+        Ok(()) => panic!("Expected error"),
     }
 }
 
@@ -86,10 +87,10 @@ fn test_multiple_error_types_preserved() {
     ];
 
     for error in errors {
-        let error_clone = format!("{:?}", error);
+        let error_clone = format!("{error:?}");
         let result: Result<(), DomainErrors> = rt_sync.run(async move { Err(error) });
 
-        assert!(result.is_err(), "Expected error for: {}", error_clone);
-        println!("Error type preserved: {}", error_clone);
+        assert!(result.is_err(), "Expected error for: {error_clone}");
+        println!("Error type preserved: {error_clone}");
     }
 }

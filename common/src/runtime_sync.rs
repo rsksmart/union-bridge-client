@@ -13,12 +13,18 @@ pub struct RuntimeSync {
 }
 
 impl RuntimeSync {
+    /// # Errors
+    ///
+    /// Returns an error if the Tokio runtime cannot be created.
     pub fn new() -> Result<Self> {
         // Note: we cannot use Builder::new_current_thread() because Alloy needs multiple to work
         let rt = Runtime::new().context("Failed to create Tokio runtime")?;
         Ok(RuntimeSync { rt: Arc::new(rt) })
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the future execution fails.
     pub fn run<Fut, RetType, Err>(&self, future: Fut) -> Result<RetType, Err>
     where
         Fut: Future<Output = Result<RetType, Err>>,
@@ -42,8 +48,8 @@ mod tests {
     impl fmt::Display for TestError {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self {
-                TestError::CustomError(msg) => write!(f, "CustomError: {}", msg),
-                TestError::AnotherError(code) => write!(f, "AnotherError: {}", code),
+                TestError::CustomError(msg) => write!(f, "CustomError: {msg}"),
+                TestError::AnotherError(code) => write!(f, "AnotherError: {code}"),
             }
         }
     }

@@ -48,6 +48,11 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
         }
     }
 
+    /// Run the notifier loop
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if there's a failure in the message broker or channel communication
     pub fn run(&mut self) -> Result<()> {
         loop {
             if self.shutdown_flag.is_on() {
@@ -95,17 +100,20 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
     fn wait_for_block(&mut self, timeout: Duration) -> Result<Option<RskBlockAndUncles>> {
         match self.new_block_channel.recv_timeout(timeout) {
             Ok(block) => {
-                trace!("New block received by notifier {:?}", block);
+                trace!("New block received by notifier {block:?}");
                 Ok(Some(block))
             }
             Err(RecvTimeoutError::Timeout) => {
-                trace!("No new block within {:?} timeout", timeout);
+                trace!("No new block within {timeout:?} timeout");
                 Ok(None)
             }
-            Err(RecvTimeoutError::Disconnected) => match self.shutdown_flag.is_on() {
-                true => Ok(None),
-                false => Err(anyhow!("Indexer channel disconnected")),
-            },
+            Err(RecvTimeoutError::Disconnected) => {
+                if self.shutdown_flag.is_on() {
+                    Ok(None)
+                } else {
+                    Err(anyhow!("Indexer channel disconnected"))
+                }
+            }
         }
     }
 
@@ -118,8 +126,7 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
             trace!("Notifying consumer {c_id} about new block {number} ({hash})");
 
             self.msg_broker.send(&response, *c_id).context(format!(
-                "Sending block {} ({}) to consumer {}",
-                number, hash, c_id
+                "Sending block {number} ({hash}) to consumer {c_id}"
             ))?;
         }
         Ok(())
@@ -170,8 +177,8 @@ mod tests {
             .expect("Failed to join shutdown handle");
 
         if let Err(e) = &result {
-            eprintln!("Error: {:?}", e);
-            panic!("Run failed: {:?}", e);
+            eprintln!("Error: {e:?}");
+            panic!("Run failed: {e:?}");
         }
     }
 
@@ -197,8 +204,8 @@ mod tests {
             .expect("Failed to join shutdown handle");
 
         if let Err(e) = &result {
-            eprintln!("Error: {:?}", e);
-            panic!("Run failed: {:?}", e);
+            eprintln!("Error: {e:?}");
+            panic!("Run failed: {e:?}");
         }
     }
 
@@ -251,8 +258,8 @@ mod tests {
             .expect("Failed to join shutdown handle");
 
         if let Err(e) = &result {
-            eprintln!("Error: {:?}", e);
-            panic!("Run failed: {:?}", e);
+            eprintln!("Error: {e:?}");
+            panic!("Run failed: {e:?}");
         }
     }
 
@@ -325,8 +332,8 @@ mod tests {
             .expect("Failed to join shutdown handle");
 
         if let Err(e) = &result {
-            eprintln!("Error: {:?}", e);
-            panic!("Run failed: {:?}", e);
+            eprintln!("Error: {e:?}");
+            panic!("Run failed: {e:?}");
         }
     }
 
@@ -392,8 +399,8 @@ mod tests {
             .expect("Failed to join shutdown handle");
 
         if let Err(e) = &result {
-            eprintln!("Error: {:?}", e);
-            panic!("Run failed: {:?}", e);
+            eprintln!("Error: {e:?}");
+            panic!("Run failed: {e:?}");
         }
     }
 

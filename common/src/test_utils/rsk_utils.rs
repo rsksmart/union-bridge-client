@@ -15,9 +15,10 @@ pub struct UncleBlockInfo {
 }
 
 impl UncleBlockInfo {
+    #[must_use]
     pub fn new(height: i32, reorg: bool, uncle_id: &str, index: u64) -> Self {
         Self {
-            height: BlockNumber::from(height as u64),
+            height: BlockNumber::from(u64::try_from(height).unwrap_or(0)),
             reorg,
             id: uncle_id.to_string(),
             index,
@@ -46,6 +47,11 @@ impl UncleBlockInfo {
 ///
 /// let address = generate_fake_address(1);
 /// ```
+///
+/// # Panics
+///
+/// Panics if the address cannot be parsed from the generated hex string.
+#[must_use]
 pub fn generate_fake_address(address_num: u64) -> Address {
     let mut hasher = Keccak256::new();
     let data = address_num.to_le_bytes().to_vec();
@@ -69,11 +75,12 @@ pub fn generate_fake_managed_contracts(addresses: Vec<Address>) -> HashMap<Addre
         .collect()
 }
 
+#[must_use]
 pub fn generate_fake_managed_contract(address: Address) -> (Address, ContractInfo) {
     (
         address,
         ContractInfo {
-            name: format!("contract_{}", address),
+            name: format!("contract_{address}"),
             address,
         },
     )
@@ -84,9 +91,9 @@ pub fn generate_fake_managed_contract(address: Address) -> (Address, ContractInf
 /// # Panics
 ///
 /// This function will panic if the string is not a valid hexadecimal.
-/// ```
+#[must_use]
 pub fn from_hex_to_block_hash(hex: &str) -> BlockHash {
-    BlockHash::try_from(hex).unwrap_or_else(|_| panic!("Invalid hex string: {}", hex))
+    BlockHash::try_from(hex).unwrap_or_else(|_| panic!("Invalid hex string: {hex}"))
 }
 
 /// Converts a Bitcoin merged mining hex string into a `BlockPow`.
@@ -94,7 +101,7 @@ pub fn from_hex_to_block_hash(hex: &str) -> BlockHash {
 /// # Panics
 ///
 /// This function will panic if the string is not a valid hexadecimal.
-/// ```
+#[must_use]
 pub fn from_hex_to_block_pow(hex: &str) -> BlockPow {
-    BlockPow::try_from(hex).unwrap_or_else(|_| panic!("Invalid hex string: {}", hex))
+    BlockPow::try_from(hex).unwrap_or_else(|_| panic!("Invalid hex string: {hex}"))
 }

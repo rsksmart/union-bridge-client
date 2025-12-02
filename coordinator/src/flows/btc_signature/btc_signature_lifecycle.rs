@@ -3,7 +3,7 @@ use crate::config::REQUIRED_CONFIRMATIONS;
 use anyhow::{Context, Result, anyhow, bail};
 use common::runtime_sync::RuntimeSync;
 use common::types::{BlockNumber, Hash256};
-use log::{debug, trace};
+use log::debug;
 use std::rc::Rc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::{AddMemberNonceInput, AddMemberSignatureInput};
@@ -97,7 +97,7 @@ where
     }
 
     /// Modify the confirmation status of the Nonces step.
-    /// - Some(block_number) => start confirming at block_number
+    /// - `Some(block_number)` => start confirming at `block_number`
     /// - None => stop confirming
     fn modify_nonces_confirmation_status(
         &mut self,
@@ -124,7 +124,7 @@ where
     }
 
     /// Modify the confirmation status of the Signatures step.
-    /// - Some(block_number) => start confirming at block_number
+    /// - `Some(block_number)` => start confirming at `block_number`
     /// - None => stop confirming
     fn modify_signatures_confirmation_status(
         &mut self,
@@ -146,8 +146,8 @@ where
         Self::modify_event_confirmation_status(flow_id, block_number, signature_event)
     }
 
-    /// Modify the confirmation status of the received ConfirmableEvent.
-    /// - Some(block_number) => start confirming at block_number
+    /// Modify the confirmation status of the received `ConfirmableEvent`.
+    /// - `Some(block_number)` => start confirming at `block_number`
     /// - None => stop confirming
     fn modify_event_confirmation_status(
         flow_id: Uuid,
@@ -222,11 +222,7 @@ where
         self.state
             .nonce_step
             .as_ref()
-            .map(|step| step.is_confirmed())
-            .unwrap_or_else(|| {
-                trace!("Nonces step not completed: flow_id={}", self.state.flow_id);
-                false
-            })
+            .is_some_and(ConfirmableEvent::is_confirmed)
     }
 
     fn send_signature_to_contracts(&mut self) -> Result<()> {
@@ -247,7 +243,7 @@ where
                 "flow {} has not completed the Nonces step yet",
                 self.state.flow_id
             );
-        };
+        }
 
         if let Some(nonce_step) = &mut self.state.nonce_step {
             nonce_step.stop_confirming()?;
@@ -302,14 +298,7 @@ where
         self.state
             .signature_step
             .as_ref()
-            .map(|step| step.is_confirmed())
-            .unwrap_or_else(|| {
-                trace!(
-                    "Signatures step not completed: flow_id={}",
-                    self.state.flow_id
-                );
-                false
-            })
+            .is_some_and(ConfirmableEvent::is_confirmed)
     }
 
     fn get_hash_to_sign(&self) -> Option<Hash256> {
@@ -361,7 +350,7 @@ mod tests {
         // step 3: add blocks but not enough for confirmation
         for i in 0..(REQUIRED_CONFIRMATIONS - 1) {
             let block = create_test_block(start_block + i.into());
-            blockchain_view.update(block);
+            blockchain_view.update(&block);
         }
 
         // verify not yet confirmed
@@ -375,7 +364,7 @@ mod tests {
         // step 5: add enough blocks to confirm
         for i in 0..REQUIRED_CONFIRMATIONS {
             let block = create_test_block(start_block + i.into());
-            blockchain_view.update(block);
+            blockchain_view.update(&block);
         }
 
         // check that confirmations don't accumulate after unsetting nonces
@@ -392,7 +381,7 @@ mod tests {
         // add enough blocks to reach confirmation for nonces
         for i in 0..REQUIRED_CONFIRMATIONS {
             let block = create_test_block(start_block + i.into());
-            blockchain_view.update(block);
+            blockchain_view.update(&block);
         }
 
         // step 7: verify confirmed after enough blocks
@@ -421,7 +410,7 @@ mod tests {
         // step 3: add blocks but not enough for confirmation
         for i in 0..(REQUIRED_CONFIRMATIONS - 1) {
             let block = create_test_block(start_block + i.into());
-            blockchain_view.update(block);
+            blockchain_view.update(&block);
         }
 
         // verify not yet confirmed
@@ -430,7 +419,7 @@ mod tests {
 
         // step 4: add missing block to confirm
         let block = create_test_block(start_block + (REQUIRED_CONFIRMATIONS - 1).into());
-        blockchain_view.update(block);
+        blockchain_view.update(&block);
 
         // verify confirmed after enough blocks
         let is_confirmed = flow.is_all_nonces_ready_confirmed();
@@ -484,7 +473,7 @@ mod tests {
         // step 5: add blocks but not enough for confirmation
         for i in 0..(REQUIRED_CONFIRMATIONS - 1) {
             let block = create_test_block(signature_start_block + i.into());
-            blockchain_view.update(block);
+            blockchain_view.update(&block);
         }
 
         // verify not yet confirmed
@@ -493,7 +482,7 @@ mod tests {
 
         // step 6: add missing block to confirm
         let block = create_test_block(signature_start_block + (REQUIRED_CONFIRMATIONS - 1).into());
-        blockchain_view.update(block);
+        blockchain_view.update(&block);
 
         // verify confirmed after enough blocks
         let is_confirmed = flow.is_all_signatures_ready_confirmed();
@@ -525,7 +514,7 @@ mod tests {
         // step 4: add blocks but not enough for confirmation
         for i in 0..(REQUIRED_CONFIRMATIONS - 1) {
             let block = create_test_block(start_block + i.into());
-            blockchain_view.update(block);
+            blockchain_view.update(&block);
         }
 
         // verify not yet confirmed
@@ -539,7 +528,7 @@ mod tests {
         // step 6: add enough blocks to confirm
         for i in 0..REQUIRED_CONFIRMATIONS {
             let block = create_test_block(start_block + i.into());
-            blockchain_view.update(block);
+            blockchain_view.update(&block);
         }
 
         // check that confirmations don't accumulate after unsetting signatures
@@ -556,7 +545,7 @@ mod tests {
         // add enough blocks to reach confirmation for signatures
         for i in 0..REQUIRED_CONFIRMATIONS {
             let block = create_test_block(start_block + i.into());
-            blockchain_view.update(block);
+            blockchain_view.update(&block);
         }
 
         // step 8: verify confirmed after enough blocks
@@ -585,7 +574,7 @@ mod tests {
         // step 4: add blocks but not enough for confirmation
         for i in 0..(REQUIRED_CONFIRMATIONS - 1) {
             let block = create_test_block(start_block + i.into());
-            blockchain_view.update(block);
+            blockchain_view.update(&block);
         }
 
         // verify not yet confirmed
@@ -923,7 +912,7 @@ mod tests {
         // add enough blocks for nonce confirmation
         for i in 0..REQUIRED_CONFIRMATIONS {
             let block = create_test_block(start_block + i.into());
-            blockchain_view.update(block);
+            blockchain_view.update(&block);
         }
 
         // verify confirmed after enough blocks
@@ -947,7 +936,7 @@ mod tests {
         // add enough blocks for signature confirmation
         for i in 0..REQUIRED_CONFIRMATIONS {
             let block = create_test_block(start_block + i.into());
-            blockchain_view.update(block);
+            blockchain_view.update(&block);
         }
 
         // verify confirmed after enough blocks

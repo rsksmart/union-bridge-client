@@ -132,10 +132,10 @@ where
 
         let saved_flows: HashMap<Uuid, State> = self
             .store
-            .load_all_flows(StorePrefix::PeginFlow)
+            .load_all_flows(&StorePrefix::PeginFlow)
             .expect("Failed to load flows from store");
 
-        for (id, saved_state) in saved_flows.iter() {
+        for (id, saved_state) in &saved_flows {
             let flow = PeginFlow::from_saved_state(
                 Rc::clone(&self.contracts_gateway),
                 self.rt_sync.clone(),
@@ -156,7 +156,7 @@ where
         }
     }
 
-    /// Handle PeginRequested event by finding and updating existing flow
+    /// Handle `PeginRequested` event by finding and updating existing flow
     fn create_flow_for_pegin_requested(&mut self, event: &PeginRequested) -> Result<()> {
         let committee_id: CommitteeId = event.committeeId.into();
 
@@ -166,8 +166,7 @@ where
             return Ok(());
         }
         debug!(
-            "Handling PeginRequested event with committee id {}, as member I should respond",
-            committee_id
+            "Handling PeginRequested event with committee id {committee_id}, as member I should respond"
         );
 
         // Get the Bitcoin tx_id to find existing flow
@@ -177,12 +176,12 @@ where
         // Find the existing flow that should have been created from PeginTransactionFound
         if let Some(existing_flow) = self.pegin_flows.get_mut(&temp_flow_id) {
             info!(
-                "Found existing pegin flow {} for Bitcoin tx: {}, completing PeginRequested step",
-                temp_flow_id, btc_tx_id
+                "Found existing pegin flow {temp_flow_id} for Bitcoin tx: {btc_tx_id}, completing PeginRequested step"
             );
 
             // Complete the step - this will trigger ID migration inside the flow and persist with new ID
-            existing_flow.complete_step(StepData::PeginRequested(event.clone()))?;
+            let step_data = StepData::PeginRequested(event.clone());
+            existing_flow.complete_step(&step_data)?;
 
             // Get the new official flow ID after migration
             let official_flow_id = existing_flow.flow_id();
@@ -195,27 +194,25 @@ where
             self.pegin_flows.insert(official_flow_id, flow);
 
             // Clean up the old temp entry from storage
-            if let Err(e) = self.store.delete_flow(StoreKey::PeginFlow(temp_flow_id)) {
-                error!("Failed to delete temp flow state {}: {}", temp_flow_id, e);
+            if let Err(e) = self.store.delete_flow(&StoreKey::PeginFlow(temp_flow_id)) {
+                error!("Failed to delete temp flow state {temp_flow_id}: {e}");
             }
 
             info!(
-                "Successfully migrated flow from temp ID {} to official ID {}",
-                temp_flow_id, official_flow_id
+                "Successfully migrated flow from temp ID {temp_flow_id} to official ID {official_flow_id}"
             );
         } else {
             warn!(
-                "No existing temp flow found for Bitcoin tx: {} (temp_id: {}). This should not happen if PeginTransactionFound was processed.",
-                btc_tx_id, temp_flow_id
+                "No existing temp flow found for Bitcoin tx: {btc_tx_id} (temp_id: {temp_flow_id}). This should not happen if PeginTransactionFound was processed."
             );
         }
 
         Ok(())
     }
 
-    /// Handle confirmed PeginAccepted event
+    /// Handle confirmed `PeginAccepted` event
     fn handle_pegin_accepted(&mut self, pa: &PeginAcceptedEvent) -> Result<()> {
-        info!("Processing confirmed PeginAccepted event: {:?}", pa);
+        info!("Processing confirmed PeginAccepted event: {pa:?}");
 
         // Find the flow corresponding to this pegin acceptance using accept_pegin_tx_hash
         let flow_opt = self.pegin_flows.values_mut().find(|flow| {
@@ -224,7 +221,8 @@ where
         });
 
         if let Some(flow) = flow_opt {
-            flow.complete_step(StepData::PeginAccepted(pa.inner.clone()))?;
+            let step_data = StepData::PeginAccepted(pa.inner.clone());
+            flow.complete_step(&step_data)?;
         } else {
             bail!(
                 "No matching pegin flow found for PeginAccepted event: acceptPeginTxid={}. This indicates a missing or corrupted flow state.",
@@ -248,28 +246,27 @@ where
             self.pegin_flows.remove(&internal_id);
 
             self.store
-                .delete_flow(StoreKey::PeginFlow(internal_id))
+                .delete_flow(&StoreKey::PeginFlow(internal_id))
                 .unwrap_or_else(|e| {
-                    error!("Failed to remove completed flow {internal_id} from persistence: {e}")
+                    error!("Failed to remove completed flow {internal_id} from persistence: {e}");
                 });
         }
     }
 
     /// Process confirmed RSK events
     fn process_confirmed_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
-        info!("Processing confirmed RSK event: {:?}", event);
+        info!("Processing confirmed RSK event: {event:?}");
 
         match event {
             RskPegManagerEvents::PeginRequested(pr) => {
                 let committee_id = pr.inner.committeeId.into();
                 if !self.global_context.my_committees().im_member(&committee_id) {
                     debug!(
-                        "Handling PeginRequested event with committee id {}, I am NOT member so I skip",
-                        committee_id
+                        "Handling PeginRequested event with committee id {committee_id}, I am NOT member so I skip"
                     );
                     return Ok(());
                 }
-                info!("Processing confirmed PeginRequested event: {:?}", pr);
+                info!("Processing confirmed PeginRequested event: {pr:?}");
                 self.create_flow_for_pegin_requested(&pr.inner)?;
             }
             RskPegManagerEvents::PeginAccepted(pa) => {
@@ -306,18 +303,20 @@ where
             let flow_id = flow.flow_id();
 
             // Start the BTC signature flow if not already started
-            if !self.signature_flows.contains_key(&flow_id) {
-                info!("Starting BTC signature flow: flow_id={}", flow_id);
+            if self.signature_flows.contains_key(&flow_id) {
+                error!("BTC signature flow already started: flow_id={flow_id}");
+            } else {
+                info!("Starting BTC signature flow: flow_id={flow_id}");
 
                 let pegin_accepted = flow.get_bitvmx_pegin_accepted().ok_or_else(|| {
-                    anyhow!("PeginAcceptedMessage not found for flow_id: {}.", flow_id)
+                    anyhow!("PeginAcceptedMessage not found for flow_id: {flow_id}.")
                 })?;
 
                 // Note: v0.2.0 contracts - initSignatures is called with acceptPeginTxid (the transaction ID),
                 // not the signatureHash. So we must use acceptPeginTxid for addMemberNonce.
                 let accept_pegin_txid = flow
                     .get_accept_pegin_txid()
-                    .ok_or_else(|| anyhow!("acceptPeginTxid not found for flow_id: {}", flow_id))?;
+                    .ok_or_else(|| anyhow!("acceptPeginTxid not found for flow_id: {flow_id}"))?;
                 let hash_to_sign = Hash256::from(TxIdParser::txid_to_fb_32(accept_pegin_txid));
                 let register_input = RegisterSignaturesBitVmxData {
                     hash_to_sign,
@@ -331,9 +330,8 @@ where
                 self.signature_flows.insert(flow_id, btc_sig_subflow);
 
                 // Complete the step to move to the next state
-                flow.complete_step(StepData::OperatorTakeHashAdded)?;
-            } else {
-                error!("BTC signature flow already started: flow_id={}", flow_id);
+                let step_data = StepData::OperatorTakeHashAdded;
+                flow.complete_step(&step_data)?;
             }
         } else {
             debug!(
@@ -345,7 +343,7 @@ where
         Ok(())
     }
 
-    /// Build event info for PeginRequested events
+    /// Build event info for `PeginRequested` events
     fn build_pegin_requested_event_info(
         event: &PeginRequestedEvent,
     ) -> (String, EventStatus, BlockNumber, RskPegManagerEvents) {
@@ -384,7 +382,7 @@ where
         block: &RskBlockAndUncles,
     ) -> Result<()> {
         let mut flows_to_dispatch = Vec::new();
-        for (flow_id, signature_flow) in self.signature_flows.iter_mut() {
+        for (flow_id, signature_flow) in &mut self.signature_flows {
             signature_flow.delegate_block(block)?;
             if signature_flow.is_done() {
                 flows_to_dispatch.push(*flow_id);
@@ -393,12 +391,12 @@ where
 
         for flow_id in &flows_to_dispatch {
             if let Some(flow) = self.pegin_flows.get_mut(flow_id) {
-                flow.complete_step(StepData::DispatchAcceptPeginTransaction)?;
+                let step_data = StepData::DispatchAcceptPeginTransaction;
+                flow.complete_step(&step_data)?;
                 self.signature_flows.remove(flow_id);
             } else {
                 warn!(
-                    "Signature flow done for unknown pegin flow_id: {}. Skipping dispatch step",
-                    flow_id
+                    "Signature flow done for unknown pegin flow_id: {flow_id}. Skipping dispatch step"
                 );
             }
         }
@@ -411,15 +409,9 @@ where
         flow_id: &Uuid,
         tx_status: TransactionStatus,
     ) -> Result<()> {
-        let flow = match self.pegin_flows.get_mut(flow_id) {
-            Some(flow) => flow,
-            None => {
-                trace!(
-                    "Ignoring BitVMX Transaction event for unknown flow_id: {}",
-                    flow_id
-                );
-                return Ok(());
-            }
+        let Some(flow) = self.pegin_flows.get_mut(flow_id) else {
+            trace!("Ignoring BitVMX Transaction event for unknown flow_id: {flow_id}");
+            return Ok(());
         };
 
         let TransactionStatus {
@@ -434,9 +426,7 @@ where
 
         if expected_txid != tx_id {
             return Err(anyhow!(
-                "Pegin state for flow_id: {} does not match received tx_id: {} from tx status message",
-                flow_id,
-                tx_id
+                "Pegin state for flow_id: {flow_id} does not match received tx_id: {tx_id:?} from tx status message"
             ));
         }
 
@@ -450,18 +440,15 @@ where
         }
 
         if confirmations >= MIN_TX_CONFIRMATIONS {
-            debug!(
-                "Transaction confirmed with sufficient confirmations for flow_id: {}",
-                flow_id
-            );
-            flow.complete_step(StepData::AcceptPeginTransactionConfirmed(tx_status))?;
+            debug!("Transaction confirmed with sufficient confirmations for flow_id: {flow_id}");
+            let step_data = StepData::AcceptPeginTransactionConfirmed(tx_status);
+            flow.complete_step(&step_data)?;
             if self.tx_status_scheduler.is_scheduled(&flow_id) {
                 self.tx_status_scheduler.cancel(&flow_id);
             }
         } else {
             debug!(
-                "Transaction not confirmed with sufficient confirmations for flow_id: {}",
-                flow_id
+                "Transaction not confirmed with sufficient confirmations for flow_id: {flow_id}"
             );
             self.tx_status_scheduler
                 .schedule(flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
@@ -490,10 +477,7 @@ where
                     }
                 }
                 None => {
-                    warn!(
-                        "Skipping delayed transaction status request for unknown flow {}",
-                        flow_id
-                    );
+                    warn!("Skipping delayed transaction status request for unknown flow {flow_id}");
                 }
             }
         }
@@ -501,14 +485,14 @@ where
         Ok(())
     }
 
-    fn handle_pegin_retry_tick(&mut self) -> Result<()> {
+    fn handle_pegin_retry_tick(&mut self) {
         if self.pegin_retry_scheduler.is_empty() {
-            return Ok(());
+            return;
         }
 
         let ready = self.pegin_retry_scheduler.tick();
         for block_hash in ready {
-            debug!("(Re)trying request_pegin for block {}", block_hash);
+            debug!("(Re)trying request_pegin for block {block_hash}");
 
             if let Some((spv_proof, attempt)) = self.unconfirmed_pegin_requests.remove(&block_hash)
             {
@@ -523,14 +507,13 @@ where
 
                 match res {
                     Ok(_) => {
-                        info!("Request pegin succeeded on retry for block {}", block_hash);
+                        info!("Request pegin succeeded on retry for block {block_hash}");
                         // Remove from tracking since it succeeded
                         self.pegin_request_tracker.remove(&tx_id);
                     }
                     Err(DomainErrors::MissingConfirmationsOnNativeBridge(_)) => {
                         info!(
-                            "Still missing confirmations on native bridge for block {}, scheduling another retry (attempt {})",
-                            block_hash,
+                            "Still missing confirmations on native bridge for block {block_hash}, scheduling another retry (attempt {})",
                             attempt + 1
                         );
                         // Store for another retry with incremented attempt
@@ -540,25 +523,20 @@ where
                             .schedule(block_hash, BLOCKS_DELAY_FOR_TX_CHECK);
                     }
                     Err(DomainErrors::PeginAlreadyRequested(msg)) => {
-                        info!("Pegin already requested on retry: {}", msg);
+                        info!("Pegin already requested on retry: {msg}");
                         // Remove from tracking since it's already processed
                         self.pegin_request_tracker.remove(&tx_id);
                     }
                     Err(err) => {
-                        error!("Error on retry for request_pegin: {:?}", err);
+                        error!("Error on retry for request_pegin: {err:?}");
                         // Don't retry on other errors
                         self.pegin_request_tracker.remove(&tx_id);
                     }
                 }
             } else {
-                warn!(
-                    "No unconfirmed pegin request found for block: {}",
-                    block_hash
-                );
+                warn!("No unconfirmed pegin request found for block: {block_hash}");
             }
         }
-
-        Ok(())
     }
 
     fn process_block_confirmations(&mut self, block: &RskBlockAndUncles) -> Result<()> {
@@ -567,7 +545,7 @@ where
             return Ok(());
         }
 
-        self.blockchain_view.update(block.clone());
+        self.blockchain_view.update(block);
 
         // process confirmed events while removing them from the hashmap
         // collect the keys of confirmed events first to avoid mutating while iterating
@@ -584,7 +562,7 @@ where
                 trace!("Event data: {:?}", event.get_data());
                 // properly cleanup the observer before processing the event
                 if let Err(e) = event.stop_confirming() {
-                    error!("Failed to stop confirming for event {}: {}", key, e)
+                    error!("Failed to stop confirming for event {key}: {e}");
                 }
                 self.process_confirmed_rsk_event(event.get_data())?;
             }
@@ -623,13 +601,11 @@ where
             Rc::clone(&self.store),
         );
 
-        info!(
-            "Created new pegin flow {} from Bitcoin transaction: {}",
-            temp_flow_id, tx_id
-        );
+        info!("Created new pegin flow {temp_flow_id} from Bitcoin transaction: {tx_id}");
 
         // Advance the flow from PeginTransactionFound to RequestPeginSpvProof
-        flow.complete_step(StepData::PeginTransactionFound)?;
+        let step_data = StepData::PeginTransactionFound;
+        flow.complete_step(&step_data)?;
 
         self.pegin_flows.insert(temp_flow_id, flow);
 
@@ -645,7 +621,7 @@ where
             return Ok(()); // Not a tracked pegin request
         }
 
-        info!("Handling request pegin SPV proof: tx_id={}", tx_id);
+        info!("Handling request pegin SPV proof: tx_id={tx_id}");
 
         // Call requestPegin contract
         let input: transaction_dispatcher::types::RequestPeginInput = spv_proof.clone().into();
@@ -657,7 +633,7 @@ where
             Ok(_) => {
                 // Remove from tracking set after successful processing
                 self.pegin_request_tracker.remove(tx_id);
-                debug!("Removed request_pegin_txid from tracking: tx_id={}", tx_id);
+                debug!("Removed request_pegin_txid from tracking: tx_id={tx_id}");
                 Ok(())
             }
             Err(DomainErrors::MissingConfirmationsOnNativeBridge(_)) => {
@@ -677,10 +653,7 @@ where
             Err(DomainErrors::PeginAlreadyRequested(msg)) => {
                 // This is expected if the same pegin is requested multiple times
                 // We should treat it as a success case
-                info!(
-                    "Pegin already requested for tx_id={}, treating as expected: {}",
-                    tx_id, msg
-                );
+                info!("Pegin already requested for tx_id={tx_id}, treating as expected: {msg}");
                 // Remove from tracking since it's already processed
                 self.pegin_request_tracker.remove(tx_id);
                 Ok(())
@@ -706,7 +679,8 @@ where
                 flow.flow_id(),
                 tx_id
             );
-            flow.complete_step(StepData::RequestPeginSpvProof(spv_proof))?;
+            let step_data = StepData::RequestPeginSpvProof(spv_proof);
+            flow.complete_step(&step_data)?;
         }
 
         Ok(())
@@ -729,7 +703,8 @@ where
                 flow.flow_id(),
                 tx_id
             );
-            flow.complete_step(StepData::AcceptPeginSpvProof(spv_proof))?;
+            let step_data = StepData::AcceptPeginSpvProof(spv_proof);
+            flow.complete_step(&step_data)?;
         }
 
         Ok(())
@@ -761,22 +736,19 @@ where
     }
 
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
-        trace!("Processing BitVMX event: {:?}", event);
+        trace!("Processing BitVMX event: {event:?}");
 
         match event {
             // Handle PeginTransactionFound from BitVMX
             OutgoingBitVMXApiMessages::PeginTransactionFound(tx_id, _tx_status) => {
-                debug!("Received BitVMX PeginTransactionFound: tx_id={}", tx_id);
+                debug!("Received BitVMX PeginTransactionFound: tx_id={tx_id}");
                 self.handle_pegin_transaction_found(*tx_id)?;
             }
             // Handle SPVProof from BitVMX (for both request and accept pegin)
             OutgoingBitVMXApiMessages::SPVProof(tx_id, spv_proof_opt) => {
                 if let Some(spv_proof) = spv_proof_opt {
-                    debug!("Received BitVMX SPVProof: tx_id={}", tx_id);
-                    trace!(
-                        "Received spv_proof_data for tx_id={}: {:?}",
-                        tx_id, spv_proof
-                    );
+                    debug!("Received BitVMX SPVProof: tx_id={tx_id}");
+                    trace!("Received spv_proof_data for tx_id={tx_id}: {spv_proof:?}");
 
                     // Route SPV proof to the appropriate handler based on context
                     if self.pegin_request_tracker.contains(tx_id) {
@@ -788,25 +760,24 @@ where
                         self.handle_spv_proof_for_accept_pegin(tx_id, spv_proof.clone())?;
                     } else {
                         debug!(
-                            "SPV proof for tx_id: {} does not match any tracked pegin request or flow",
-                            tx_id
+                            "SPV proof for tx_id: {tx_id} does not match any tracked pegin request or flow"
                         );
                     }
                 } else {
                     return Err(anyhow!(
-                        "Received BitVMX SPVProof event for tx_id: {}, but no SPV proof was included.",
-                        tx_id
+                        "Received BitVMX SPVProof event for tx_id: {tx_id}, but no SPV proof was included."
                     ));
                 }
             }
             // Handle CommInfo from BitVMX
             OutgoingBitVMXApiMessages::CommInfo(comm_info) => {
-                trace!("Received CommInfo from BitVMX: {:?}", comm_info);
+                trace!("Received CommInfo from BitVMX: {comm_info:?}");
                 // For any flow in GetCommInfo step, complete the step with the CommInfo
-                for (flow_id, flow) in self.pegin_flows.iter_mut() {
+                for (flow_id, flow) in &mut self.pegin_flows {
                     if flow.current_step() == Steps::GetCommInfo {
                         debug!("Completing GetCommInfo step for flow {flow_id}");
-                        flow.complete_step(StepData::CommInfo(comm_info.clone()))?;
+                        let step_data = StepData::CommInfo(comm_info.clone());
+                        flow.complete_step(&step_data)?;
                     }
                 }
             }
@@ -814,16 +785,13 @@ where
             OutgoingBitVMXApiMessages::Variable(flow_id, method, VariableTypes::String(data))
                 if matches!(method.as_str(), PEGIN_ACCEPTED_INPUT_MSG) =>
             {
-                info!(
-                    "Received PeginAccepted variable from BitVMX for flow_id: {}",
-                    flow_id
-                );
-                debug!("PeginAccepted data: {}", data);
+                info!("Received PeginAccepted variable from BitVMX for flow_id: {flow_id}");
+                debug!("PeginAccepted data: {data}");
                 let pegin_accepted: PeginAcceptedMessage = serde_json::from_str(data)?;
                 let flow = self
                     .pegin_flows
                     .get_mut(flow_id)
-                    .ok_or_else(|| anyhow!("Flow not found for flow_id: {}", flow_id))?;
+                    .ok_or_else(|| anyhow!("Flow not found for flow_id: {flow_id}"))?;
 
                 if flow.current_step() != Steps::PreparePeginSetup {
                     return Err(anyhow!(
@@ -834,17 +802,15 @@ where
                     ));
                 }
 
-                flow.complete_step(StepData::BitvmxPeginAccepted(pegin_accepted))?;
+                let step_data = StepData::BitvmxPeginAccepted(pegin_accepted);
+                flow.complete_step(&step_data)?;
             }
             // Handle SetupCompleted from BitVMX
             OutgoingBitVMXApiMessages::SetupCompleted(program_id) => {
                 if self.pegin_flows.contains_key(program_id) {
-                    info!("Pegin setup was completed: flow_id={}", program_id);
+                    info!("Pegin setup was completed: flow_id={program_id}");
                 } else {
-                    trace!(
-                        "Ignoring BitVMX SetupCompleted for unknown program_id: {}",
-                        program_id
-                    );
+                    trace!("Ignoring BitVMX SetupCompleted for unknown program_id: {program_id}");
                 }
             }
             // Handle Transaction status from BitVMX
@@ -852,7 +818,7 @@ where
                 self.handle_transaction_status_received(flow_id, tx_status.clone())?;
             }
             _ => {
-                trace!("Ignoring BitVMX event: {:?}", event);
+                trace!("Ignoring BitVMX event: {event:?}");
             }
         }
 
@@ -863,8 +829,8 @@ where
         match event {
             RskPegManagerEvents::AllNoncesReady(data)
             | RskPegManagerEvents::AllSignaturesReady(data) => {
-                debug!("Handling signature event {:?}", data);
-                for (flow_id, sig_flow) in self.signature_flows.iter_mut() {
+                debug!("Handling signature event {data:?}");
+                for (flow_id, sig_flow) in &mut self.signature_flows {
                     sig_flow.delegate_rsk_event(*flow_id, event)?;
                 }
                 return Ok(());
@@ -892,12 +858,12 @@ where
         };
 
         if is_removal {
-            warn!("Removing pending RSK event: {:?}", event);
+            warn!("Removing pending RSK event: {event:?}");
 
             // properly clean up the observer before removing the event
             if let Some(mut removed_ev) = self.events_confirming.remove(&id) {
                 if let Err(e) = removed_ev.stop_confirming() {
-                    error!("Failed to stop confirming for removed event {id}: {e}")
+                    error!("Failed to stop confirming for removed event {id}: {e}");
                 }
             } else {
                 warn!("Tried to remove non-existing pending event with id {id}");
@@ -928,7 +894,7 @@ where
     fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
         self.process_unhandled_confirmed_sig_flow_events(block)?;
         self.handle_transaction_status_tick()?;
-        self.handle_pegin_retry_tick()?;
+        self.handle_pegin_retry_tick();
         self.process_block_confirmations(block)?;
 
         Ok(())

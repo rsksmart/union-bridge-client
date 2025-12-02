@@ -22,15 +22,14 @@ impl<C: PegManagerContractApi> GetTemporaryPeginAddressCall<C> {
         &self,
         input: PeginAddressInput,
     ) -> Result<PeginAddressOutput, DomainErrors> {
-        info!("Init GetTemporaryPeginAddressCall for: {:?}", input);
+        info!("Init GetTemporaryPeginAddressCall for: {input:?}");
 
         let rootstock_deposit_address: Address = input
             .rootstock_deposit_address
             .parse::<Address>()
             .map_err(|e| {
                 DomainErrors::InvalidAddress(format!(
-                    "Failed to parse rootstock_deposit_address: {}",
-                    e
+                    "Failed to parse rootstock_deposit_address: {e}"
                 ))
             })?;
         let value = input.value;
@@ -39,8 +38,7 @@ impl<C: PegManagerContractApi> GetTemporaryPeginAddressCall<C> {
             .parse::<FixedBytes<32>>()
             .map_err(|e| {
                 DomainErrors::InvalidCompressedPubKey(format!(
-                    "Failed to parse btc_reimbursement_pub_key: {}",
-                    e
+                    "Failed to parse btc_reimbursement_pub_key: {e}"
                 ))
             })?;
 
@@ -53,10 +51,7 @@ impl<C: PegManagerContractApi> GetTemporaryPeginAddressCall<C> {
             )
             .await?;
 
-        info!(
-            "GetTemporaryPeginAddress successful, deposit address: {:?}",
-            address
-        );
+        info!("GetTemporaryPeginAddress successful, deposit address: {address:?}");
 
         Ok(PeginAddressOutput { address })
     }
@@ -160,7 +155,7 @@ mod tests {
                 let expected_err = BitcoinManagerErrors::InvalidAddress(InvalidAddress {
                     _address: Address::default(),
                 });
-                Err(generate_contract_revert_error(expected_err))
+                Err(generate_contract_revert_error(&expected_err))
             })
             .times(1);
 
@@ -214,7 +209,7 @@ mod tests {
                 let expected_err = BitcoinManagerErrors::InvalidPublicKey(InvalidPublicKey {
                     publicKey: FixedBytes::<32>::default(),
                 });
-                Err(generate_contract_revert_error(expected_err))
+                Err(generate_contract_revert_error(&expected_err))
             })
             .times(1);
 

@@ -22,7 +22,7 @@ impl<C: SignatureManagerContractApi> AddMemberSignatureInvoke<C> {
         &self,
         input: AddMemberSignatureInput,
     ) -> Result<AddMemberSignatureOutput, DomainErrors> {
-        info!("Init AddMemberSignature for: {:?}", input);
+        info!("Init AddMemberSignature for: {input:?}");
 
         let hash_to_sign = input.hash_to_sign.into();
         let signature = FixedBytes32::from_slice(&input.signature.serialize());
@@ -32,26 +32,23 @@ impl<C: SignatureManagerContractApi> AddMemberSignatureInvoke<C> {
             .add_member_signature(hash_to_sign, signature, self.gas_bumps)
             .await?;
 
-        match receipt.status() {
-            true => {
-                info!(
-                    "AddMemberSignature successful at tx {}",
-                    receipt.transaction_hash
-                );
-                Ok(AddMemberSignatureOutput {
-                    transaction_hash: receipt.transaction_hash.to_string(),
-                })
-            }
-            false => {
-                error!(
-                    "AddMemberSignature failed at tx {}",
-                    receipt.transaction_hash
-                );
-                Err(DomainErrors::TransactionFailed(format!(
-                    "AddMemberSignature transaction failed with receipt status false at tx {}",
-                    receipt.transaction_hash
-                )))
-            }
+        if receipt.status() {
+            info!(
+                "AddMemberSignature successful at tx {}",
+                receipt.transaction_hash
+            );
+            Ok(AddMemberSignatureOutput {
+                transaction_hash: receipt.transaction_hash.to_string(),
+            })
+        } else {
+            error!(
+                "AddMemberSignature failed at tx {}",
+                receipt.transaction_hash
+            );
+            Err(DomainErrors::TransactionFailed(format!(
+                "AddMemberSignature transaction failed with receipt status false at tx {}",
+                receipt.transaction_hash
+            )))
         }
     }
 }

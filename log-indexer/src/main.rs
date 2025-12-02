@@ -62,7 +62,7 @@ fn main() -> Result<()> {
     let (tx, rx): (mpsc::Sender<RskLog>, mpsc::Receiver<RskLog>) = mpsc::channel();
 
     let store_path = &format!("{}/logs", config.indexer.storage.path);
-    debug!("Creating log store at: {}", store_path);
+    debug!("Creating log store at: {store_path}");
     let store = RawLogStore::new(store_path)?;
 
     let indexer = LogIndexer::new_with_notifier(
@@ -86,14 +86,14 @@ fn main() -> Result<()> {
     let shutdown_flag_notifier = shutdown_flag.clone();
     std::thread::spawn(move || {
         notifier.run().inspect_err(|e| {
-            error!("Unrecoverable error running log notifier: {:?}", e);
+            error!("Unrecoverable error running log notifier: {e:?}");
             // signal other threads to shut down
             shutdown_flag_notifier.set();
         })
     });
 
     indexer.run().inspect_err(|e| {
-        error!("Unrecoverable error running log indexer: {:?}", e);
+        error!("Unrecoverable error running log indexer: {e:?}");
     })?;
 
     info!("Quitting now...");

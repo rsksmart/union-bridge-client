@@ -77,7 +77,7 @@ pub struct PegManagerContract<P: Provider> {
 
 impl<P: Provider> PegManagerContract<P> {
     pub fn new(provider: P, contract_address: Address) -> Self {
-        info!("Connecting to PegManagerContract @ {}", contract_address);
+        info!("Connecting to PegManagerContract @ {contract_address}");
         let contract_instance = PegManager::new(contract_address, provider);
         PegManagerContract { contract_instance }
     }
@@ -170,10 +170,7 @@ pub struct FakePegManagerContract<P: Provider> {
 
 impl<P: Provider> FakePegManagerContract<P> {
     pub fn new(provider: P, contract_address: Address) -> Self {
-        info!(
-            "Connecting to FakePegManagerContract @ {}",
-            contract_address
-        );
+        info!("Connecting to FakePegManagerContract @ {contract_address}");
         let contract_instance = FakePegManager::new(contract_address, provider);
         FakePegManagerContract { contract_instance }
     }
@@ -252,7 +249,7 @@ impl BtcTxSPVProofInput {
             FixedBytes::<32>::from_hex(&self.block_hash).map_err(ParseFieldError::ParseHex)?;
 
         let btc_tx: BtcTransaction = self.btc_tx.try_into().map_err(|e| {
-            error!("Failed to parse BTC transaction: {}", e);
+            error!("Failed to parse BTC transaction: {e}");
             e
         })?;
 
@@ -265,7 +262,7 @@ impl BtcTxSPVProofInput {
             })
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| {
-                error!("Failed to convert merkle_branch_hashes: {:?}", e);
+                error!("Failed to convert merkle_branch_hashes: {e:?}");
                 e
             })?;
 
@@ -282,39 +279,39 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
     let decoded_err = err.as_decoded_interface_error::<PegManagerErrors>();
     decoded_err.map(|e| match e {
         PegManagerErrors::PeginAlreadyAccepted(e) => {
-            DomainErrors::PeginAlreadyAccepted(format!("{:?}", e))
+            DomainErrors::PeginAlreadyAccepted(format!("{e:?}"))
         }
         PegManagerErrors::PeginAlreadyRequested(e) => {
-            DomainErrors::PeginAlreadyRequested(format!("{:?}", e))
+            DomainErrors::PeginAlreadyRequested(format!("{e:?}"))
         }
         PegManagerErrors::IncorrectInputsNumber(e) => {
-            DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
+            DomainErrors::InvalidBtcTxSpvProof(format!("{e:?}"))
         }
         PegManagerErrors::IncorrectOutputsNumber(e) => {
-            DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
+            DomainErrors::InvalidBtcTxSpvProof(format!("{e:?}"))
         }
         PegManagerErrors::InvalidBtcTxVersion(e) => {
-            DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
+            DomainErrors::InvalidBtcTxSpvProof(format!("{e:?}"))
         }
         PegManagerErrors::InvalidLocktime(e) => {
-            DomainErrors::InvalidBtcTxSpvProof(format!("{:?}", e))
+            DomainErrors::InvalidBtcTxSpvProof(format!("{e:?}"))
         }
         PegManagerErrors::InvalidCompressedPubKey(e) => {
-            DomainErrors::InvalidCompressedPubKey(format!("{:?}", e))
+            DomainErrors::InvalidCompressedPubKey(format!("{e:?}"))
         }
         PegManagerErrors::PegoutRequestAmountExceedsUint64Limit(e) => {
-            DomainErrors::PegoutRequestAmountExceedsUint64Limit(format!("{:?}", e))
+            DomainErrors::PegoutRequestAmountExceedsUint64Limit(format!("{e:?}"))
         }
         // Native Bridge Errors
         PegManagerErrors::BridgeBtcBlockNotInBestChain(e) => {
             // we consider this reversible, so we map it to MissingConfirmationsOnNativeBridge
-            DomainErrors::MissingConfirmationsOnNativeBridge(format!("{:?}", e))
+            DomainErrors::MissingConfirmationsOnNativeBridge(format!("{e:?}"))
         }
         PegManagerErrors::BridgeBtcInexistantBlockHash(e) => {
-            DomainErrors::MissingConfirmationsOnNativeBridge(format!("{:?}", e))
+            DomainErrors::MissingConfirmationsOnNativeBridge(format!("{e:?}"))
         }
         PegManagerErrors::NotEnoughConfirmations(e) => {
-            DomainErrors::MissingConfirmationsOnNativeBridge(format!("{:?}", e))
+            DomainErrors::MissingConfirmationsOnNativeBridge(format!("{e:?}"))
         }
         PegManagerErrors::InvalidSlotState(e) => {
             // Extract actual and expected values from the error
@@ -325,7 +322,7 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
             }
         }
         // Unhandled
-        _ => DomainErrors::UnhandledContractError(format!("{:?}", e)),
+        _ => DomainErrors::UnhandledContractError(format!("{e:?}")),
     })
 }
 
@@ -350,7 +347,7 @@ mod tests {
                 .expect("Failed to parse tx hash"),
         });
 
-        let result = generate_contract_revert_error(expected_err);
+        let result = generate_contract_revert_error(&expected_err);
         matches!(result.into(), DomainErrors::PeginAlreadyRequested(_));
     }
 
@@ -361,7 +358,7 @@ mod tests {
             actual: alloy_primitives::U256::from(2),
         });
 
-        let result = generate_contract_revert_error(expected_err);
+        let result = generate_contract_revert_error(&expected_err);
         matches!(result.into(), DomainErrors::InvalidBtcTxSpvProof(_));
     }
 
@@ -374,7 +371,7 @@ mod tests {
                     .expect("Failed to parse block hash"),
             });
 
-        let result = generate_contract_revert_error(expected_err);
+        let result = generate_contract_revert_error(&expected_err);
         matches!(result.into(), DomainErrors::UnhandledContractError(_));
     }
 
@@ -385,7 +382,7 @@ mod tests {
             actual: alloy_primitives::U256::from(3),
         });
 
-        let result = generate_contract_revert_error(expected_err);
+        let result = generate_contract_revert_error(&expected_err);
         matches!(result.into(), DomainErrors::InvalidBtcTxSpvProof(_));
     }
 
@@ -396,7 +393,7 @@ mod tests {
             actual: alloy_primitives::U256::from(2),
         });
 
-        let result = generate_contract_revert_error(expected_err);
+        let result = generate_contract_revert_error(&expected_err);
         matches!(result.into(), DomainErrors::InvalidBtcTxSpvProof(_));
     }
 
@@ -407,7 +404,7 @@ mod tests {
             actual: alloy_primitives::U256::from(2),
         });
 
-        let result = generate_contract_revert_error(expected_err);
+        let result = generate_contract_revert_error(&expected_err);
         matches!(result.into(), DomainErrors::InvalidBtcTxSpvProof(_));
     }
 
@@ -419,7 +416,7 @@ mod tests {
                 .expect("Failed to parse tx hash"),
         });
 
-        let result = generate_contract_revert_error(expected_err);
+        let result = generate_contract_revert_error(&expected_err);
         matches!(result.into(), DomainErrors::PeginAlreadyRequested(_));
     }
 
@@ -432,7 +429,7 @@ mod tests {
             expected: alloy_primitives::Bytes::from(vec![0x02, 0x3]),
         });
 
-        let result = generate_contract_revert_error(expected_err);
+        let result = generate_contract_revert_error(&expected_err);
         matches!(result.into(), DomainErrors::InvalidBtcTxSpvProof(_));
     }
 
@@ -443,7 +440,7 @@ mod tests {
     fn test_unhandled() {
         let expected_err = PegManagerErrors::NotInitializing(NotInitializing {});
 
-        let result = generate_contract_revert_error(expected_err);
+        let result = generate_contract_revert_error(&expected_err);
         matches!(result.into(), DomainErrors::UnhandledContractError(_));
     }
 }

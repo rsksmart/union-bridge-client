@@ -20,31 +20,28 @@ impl<C: PegManagerContractApi> NotifyCheckForkCompleteInvoke<C> {
         &self,
         input: &str, // TODO proper type for input
     ) -> Result<(), DomainErrors> {
-        info!("Init NotifyCheckForkComplete for: {:?}", input);
+        info!("Init NotifyCheckForkComplete for: {input:?}");
 
         let receipt = self
             .contract
             .notify_check_fork_completion(input, self.gas_bumps)
             .await?;
 
-        match receipt.status() {
-            true => {
-                info!(
-                    "NotifyCheckForkComplete successful at tx {}",
-                    receipt.transaction_hash
-                );
-                Ok(())
-            }
-            false => {
-                error!(
-                    "NotifyCheckForkComplete failed at tx {}",
-                    receipt.transaction_hash
-                );
-                Err(DomainErrors::TransactionFailed(format!(
-                    "NotifyCheckForkComplete transaction failed with receipt status false at tx {}",
-                    receipt.transaction_hash
-                )))
-            }
+        if receipt.status() {
+            info!(
+                "NotifyCheckForkComplete successful at tx {}",
+                receipt.transaction_hash
+            );
+            Ok(())
+        } else {
+            error!(
+                "NotifyCheckForkComplete failed at tx {}",
+                receipt.transaction_hash
+            );
+            Err(DomainErrors::TransactionFailed(format!(
+                "NotifyCheckForkComplete transaction failed with receipt status false at tx {}",
+                receipt.transaction_hash
+            )))
         }
     }
 }

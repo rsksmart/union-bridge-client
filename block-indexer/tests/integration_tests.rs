@@ -867,9 +867,7 @@ fn assert_uncle_blocks_in_storage(
 ) -> () {
     for uncle_info in uncle_block_info_vec.iter() {
         let height = uncle_info.height;
-        let block_expected = generator
-            .clone()
-            .generate_block(height, Some(uncle_info.clone()));
+        let block_expected = generator.clone().generate_block(height, Some(uncle_info));
         if let Some(block_expected) = block_expected {
             let block_expected_hash = block_expected.hash();
             let block_actual = store_after

@@ -41,8 +41,8 @@ where
                     IncomingBitVMXApiMessages::GetFundingAddress(id),
                 )?;
             }
-            _ => {
-                trace!("FundBitvmxProcessor: Ignoring user request {:?}", event);
+            UserRequests::ApplyToStream(_) => {
+                trace!("FundBitvmxProcessor: Ignoring user request {event:?}");
             }
         }
         Ok(())
@@ -60,7 +60,7 @@ where
                 // a webhook to the user app would be sent here
             }
             _ => {
-                trace!("FundBitvmxProcessor: Ignoring BitVMX event {:?}", event);
+                trace!("FundBitvmxProcessor: Ignoring BitVMX event {event:?}");
             }
         }
 

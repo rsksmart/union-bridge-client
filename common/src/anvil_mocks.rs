@@ -4,6 +4,10 @@ use crate::types::BlockPow;
 use primitive_types::{H256, U256};
 use std::str::FromStr;
 
+/// # Panics
+///
+/// Panics if the default pow header cannot be parsed.
+#[must_use]
 pub fn get_anvil_block_pow() -> BlockPow {
     // ~= difficulty x 20
     let value =

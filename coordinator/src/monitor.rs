@@ -17,19 +17,42 @@ use mockall::automock;
 
 #[cfg_attr(test, automock)]
 pub trait MonitorApi {
+    /// # Errors
+    /// Returns an error if monitoring is already active or if broker communication fails.
     fn start_event_monitoring(&mut self) -> Result<()>;
+    /// # Errors
+    /// Returns an error if monitoring is already active or if broker communication fails.
     fn start_block_monitoring(&mut self) -> Result<()>;
+    /// # Errors
+    /// Returns an error if monitoring is already active or if broker communication fails.
     fn start_bitvmx_monitoring(&mut self) -> Result<()>;
+    /// # Errors
+    /// Returns an error if monitoring is already active or if broker communication fails.
     fn start_user_monitoring(&mut self) -> Result<()>;
+    /// # Errors
+    /// Returns an error if broker communication fails or if deserialization fails.
     fn try_user_request(&self) -> Result<Option<UserRequests>>;
+    /// # Errors
+    /// Returns an error if broker communication fails or if event decoding fails.
     fn try_rsk_event(&mut self) -> Result<Option<RskPegManagerEvents>>;
+    /// # Errors
+    /// Returns an error if broker communication fails.
     fn try_block(&mut self) -> Result<Option<RskBlockAndUncles>>;
+    /// # Errors
+    /// Returns an error if broker communication fails.
     fn try_bitvmx_event(&mut self) -> Result<Option<OutgoingBitVMXApiMessages>>;
+    /// # Errors
+    /// Returns an error if monitoring is not active or if broker communication fails.
     fn cancel_event_monitoring(&mut self) -> Result<()>;
+    /// # Errors
+    /// Returns an error if monitoring is not active or if broker communication fails.
     fn cancel_block_monitoring(&mut self) -> Result<()>;
+    /// # Errors
+    /// Returns an error if monitoring is not active or if broker communication fails.
     fn cancel_bitvmx_monitoring(&mut self) -> Result<()>;
 }
 
+#[allow(clippy::struct_excessive_bools)]
 pub struct Monitor<UBC, BBC>
 where
     UBC: UnionBrokerClientApi,
@@ -39,6 +62,7 @@ where
     block_broker: UBC,
     user_broker: UBC,
     bitvmx_broker: Rc<BBC>,
+    #[allow(dead_code)] // field kept for potential future use or API compatibility
     event_decoder: EventDecoder,
     peg_manager_addresses: Vec<Address>,
     block_monitoring_active: bool,
@@ -127,6 +151,8 @@ where
     // TODO should all these methods be public?
 
     // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - retries, reconnects, etc
+    /// # Errors
+    /// Returns an error if monitoring is already active or if broker communication fails.
     pub fn start_event_monitoring(&mut self) -> Result<()> {
         if self.log_monitoring_active {
             bail!("Start Log monitoring requested, but it was already active");
@@ -144,7 +170,7 @@ where
                 .send_to_log_broker(ToServer::SubscribeLogs(addr))
                 .context("Broker error on SubscribeLogs")?;
             if !result {
-                bail!("Broker could not deliver SubscribeLogs for {}", addr);
+                bail!("Broker could not deliver SubscribeLogs for {addr}");
             }
         }
 
@@ -153,6 +179,8 @@ where
         Ok(())
     }
 
+    /// # Errors
+    /// Returns an error if monitoring is already active or if broker communication fails.
     pub fn start_block_monitoring(&mut self) -> Result<()> {
         if self.block_monitoring_active {
             bail!("Start Block monitoring requested, but it was already active");
@@ -177,6 +205,8 @@ where
         Ok(())
     }
 
+    /// # Errors
+    /// Returns an error if monitoring is already active or if broker communication fails.
     pub fn start_bitvmx_monitoring(&mut self) -> Result<()> {
         if self.bitvmx_monitoring_active {
             bail!("Start BitVMX monitoring requested, but it was already active");
@@ -189,6 +219,8 @@ where
         Ok(())
     }
 
+    /// # Errors
+    /// Returns an error if monitoring is already active or if broker communication fails.
     pub fn start_user_monitoring(&mut self) -> Result<()> {
         if self.user_monitoring_active {
             bail!("Start User monitoring requested, but it was already active");
@@ -201,6 +233,8 @@ where
         Ok(())
     }
 
+    /// # Errors
+    /// Returns an error if broker communication fails or if event decoding fails.
     pub fn try_event(&mut self) -> Result<Option<RskPegManagerEvents>> {
         if !self.log_monitoring_active {
             bail!("Log monitoring is not active");
@@ -208,14 +242,14 @@ where
 
         match self.log_broker.try_recv()? {
             Some(FromServer::Log(log)) => {
-                trace!("Received new Log {:?}", log);
-                match self.event_decoder.decode(log) {
+                trace!("Received new Log {log:?}");
+                match EventDecoder::decode(&log) {
                     RskPegManagerEvents::UnknownEvent => Ok(None), // Event not recognized or not handled
                     event => Ok(Some(event)),
                 }
             }
             Some(br) => {
-                bail!("Unexpected response type from Log Notifier {:?}", br)
+                bail!("Unexpected response type from Log Notifier {br:?}")
             }
             None => {
                 trace!("No messages from Log broker");
@@ -224,6 +258,8 @@ where
         }
     }
 
+    /// # Errors
+    /// Returns an error if broker communication fails.
     pub fn try_block(&mut self) -> Result<Option<RskBlockAndUncles>> {
         if !self.block_monitoring_active {
             bail!("Block monitoring is not active");
@@ -232,10 +268,10 @@ where
         // TODO(Jira) do not simply fail on broker error, do some retries - https://rsklabs.atlassian.net/browse/UB-132
         match self.block_broker.try_recv()? {
             Some(FromServer::Block(bau)) => {
-                trace!("Received new Block {:?}", bau);
+                trace!("Received new Block {bau:?}");
                 Ok(Some(bau))
             }
-            Some(other) => bail!("Unexpected response type from Block broker: {:?}", other),
+            Some(other) => bail!("Unexpected response type from Block broker: {other:?}"),
             None => {
                 trace!("No messages from Block broker");
                 Ok(None)
@@ -243,32 +279,33 @@ where
         }
     }
 
+    /// # Errors
+    /// Returns an error if broker communication fails.
     pub fn try_bitvmx_event(&mut self) -> Result<Option<OutgoingBitVMXApiMessages>> {
         if !self.bitvmx_monitoring_active {
             bail!("BitVMX monitoring is not active");
         }
 
-        match self.bitvmx_broker.try_recv()? {
-            Some(response) => {
-                match response {
-                    OutgoingBitVMXApiMessages::SignedMessage(uuid, _, _, _) => {
-                        // SignedMessage prints a byte array, which is not very useful
-                        debug!("Received BitVMX response: SignedMessage({uuid}, ...)");
-                    }
-                    _ => {
-                        debug!("Received BitVMX response: {:?}", response);
-                    }
+        if let Some(response) = self.bitvmx_broker.try_recv()? {
+            match response {
+                OutgoingBitVMXApiMessages::SignedMessage(uuid, _, _, _) => {
+                    // SignedMessage prints a byte array, which is not very useful
+                    debug!("Received BitVMX response: SignedMessage({uuid}, ...)");
                 }
+                _ => {
+                    debug!("Received BitVMX response: {response:?}");
+                }
+            }
 
-                Ok(Some(response))
-            }
-            None => {
-                trace!("No messages from BitVMX broker");
-                Ok(None)
-            }
+            Ok(Some(response))
+        } else {
+            trace!("No messages from BitVMX broker");
+            Ok(None)
         }
     }
 
+    /// # Errors
+    /// Returns an error if monitoring is not active or if broker communication fails.
     pub fn cancel_event_monitoring(&mut self) -> Result<()> {
         if !self.log_monitoring_active {
             bail!("Cancel Log monitoring requested, but it was not active");
@@ -283,10 +320,12 @@ where
         Ok(())
     }
 
+    /// # Errors
+    /// Returns an error if monitoring is not active or if broker communication fails.
     pub fn cancel_block_monitoring(&mut self) -> Result<()> {
         if !self.block_monitoring_active {
             bail!("Cancel Block monitoring requested, but it was not active");
-        };
+        }
 
         info!("Cancelling Block monitoring");
 
@@ -299,6 +338,8 @@ where
         Ok(())
     }
 
+    /// # Errors
+    /// Returns an error if monitoring is not active or if broker communication fails.
     pub fn cancel_bitvmx_monitoring(&mut self) -> Result<()> {
         if !self.bitvmx_monitoring_active {
             bail!("Cancel BitVMX monitoring requested, but it was not active");
@@ -309,6 +350,8 @@ where
         Ok(())
     }
 
+    /// # Errors
+    /// Returns an error if broker communication fails or if deserialization fails.
     pub fn try_user_request(&self) -> Result<Option<UserRequests>> {
         match self.user_broker.try_recv()? {
             // TODO(Jira) this should not be needed after https://rsklabs.atlassian.net/browse/UB-213
@@ -319,7 +362,7 @@ where
                         Ok(Some(ur))
                     }
                     Err(e) => {
-                        error!("Failed to deserialize UserRequest request: {}", e);
+                        error!("Failed to deserialize UserRequest request: {e}");
                         Ok(None)
                     }
                 }
@@ -327,7 +370,7 @@ where
             // TODO(Jira) this should not be needed after https://rsklabs.atlassian.net/browse/UB-213
             Some(FromServer::MemberRequest) => Ok(Some(UserRequests::GetBitVMXFundingAddress)),
             Some(br) => {
-                bail!("Unexpected request from User {:?}", br)
+                bail!("Unexpected request from User {br:?}")
             }
             None => {
                 trace!("No messages from User broker");
@@ -346,7 +389,7 @@ where
                     .send_to_log_broker(ToServer::UnsubscribeLogs(addr))
                     .context("Broker error on UnsubscribeLogs")?;
             if !result {
-                bail!("Broker could not deliver UnsubscribeLogs for {}", addr);
+                bail!("Broker could not deliver UnsubscribeLogs for {addr}");
             }
         }
 
@@ -627,10 +670,8 @@ mod tests {
         let log = FakeLogGenerator::new()
             .generate_log("Transfer(address,address,uint256", get_fake_address_1());
 
-        let event_decoder = EventDecoder::new();
-
         // For unknown events, the decoder should return UnknownEvent
-        let decode_result = event_decoder.decode(log.clone());
+        let decode_result = EventDecoder::decode(&log);
         assert_eq!(decode_result, RskPegManagerEvents::UnknownEvent);
 
         let mut log_broker = MockBrokerClientApi::new();

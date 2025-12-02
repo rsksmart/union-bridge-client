@@ -9,9 +9,9 @@ use std::rc::Rc;
 /// Observer trait for blockchain events.
 ///
 /// # Safety
-/// Implementations must NOT call BlockchainView methods during callbacks
-/// (`on_block_added`, `on_block_removed`) to avoid RefCell panics due to reentrancy.
-/// The BlockchainView holds borrows while calling these methods.
+/// Implementations must NOT call `BlockchainView` methods during callbacks
+/// (`on_block_added`, `on_block_removed`) to avoid `RefCell` panics due to reentrancy.
+/// The `BlockchainView` holds borrows while calling these methods.
 pub trait BlockchainObserver {
     fn get_id(&self) -> String;
 
@@ -29,6 +29,7 @@ pub struct BlockConfirmations {
 }
 
 impl BlockConfirmations {
+    #[must_use]
     pub fn new(flow_id: String, init: BlockNumber, req_confirmations: u32) -> Self {
         Self {
             flow_id,
@@ -38,10 +39,12 @@ impl BlockConfirmations {
         }
     }
 
+    #[must_use]
     pub fn is_confirmed(&self) -> bool {
-        self.accum() >= self.required as u64
+        self.accum() >= u64::from(self.required)
     }
 
+    #[must_use]
     pub fn accum(&self) -> u64 {
         if self.last < self.init {
             0
@@ -83,10 +86,10 @@ impl BlockchainObserver for BlockConfirmations {
 
 /// A view of the blockchain that maintains blocks and notifies observers of changes.
 ///
-/// # RefCell Safety
-/// This struct uses RefCell for interior mutability. Observer implementations MUST NOT call back
-/// into BlockchainView methods during callbacks (`on_block_added`, `on_block_removed`) to avoid
-/// RefCell panics due to reentrancy. Such violations are deterministic programming errors that
+/// # `RefCell` Safety
+/// This struct uses `RefCell` for interior mutability. Observer implementations MUST NOT call back
+/// into `BlockchainView` methods during callbacks (`on_block_added`, `on_block_removed`) to avoid
+/// `RefCell` panics due to reentrancy. Such violations are deterministic programming errors that
 /// will always panic when the violating code path is executed.
 type ObserverMap = HashMap<String, Rc<RefCell<dyn BlockchainObserver>>>;
 
@@ -103,6 +106,7 @@ impl Default for BlockchainView {
 }
 
 impl BlockchainView {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             blocks: Rc::new(RefCell::new(BTreeMap::new())),
@@ -110,22 +114,21 @@ impl BlockchainView {
         }
     }
 
+    /// # Panics
+    /// Panics if the observer ID already exists or if observers are already borrowed (reentrancy detected).
     pub fn add_observer(&self, observer: Rc<RefCell<dyn BlockchainObserver>>) {
         let observer_id = observer.borrow().get_id();
 
-        debug!("Adding observer to BlockchainView: {}", observer_id);
+        debug!("Adding observer to BlockchainView: {observer_id}");
 
         // Check for duplicates with defensive borrowing
         {
             let observers = self.observers.try_borrow()
                 .expect("BlockchainView observers already borrowed during add_observer - reentrancy detected! This violates the BlockchainObserver contract and indicates a programming bug.");
-            if observers.contains_key(&observer_id) {
-                // TODO improve error handling, for now just halt for us to realise
-                panic!(
-                    "Observer with id {} already exists in BlockchainView, halting to avoid duplicates",
-                    observer_id
-                );
-            }
+            assert!(
+                !observers.contains_key(&observer_id),
+                "Observer with id {observer_id} already exists in BlockchainView, halting to avoid duplicates"
+            );
         } // Drop the borrow before the mutable borrow
 
         let id = observer.borrow().get_id();
@@ -134,14 +137,19 @@ impl BlockchainView {
             .insert(id, observer);
     }
 
+    /// # Panics
+    /// Panics if observers are already borrowed (reentrancy detected).
     pub fn remove_observer(&self, observer_id: &str) {
         self.observers.try_borrow_mut()
             .expect("BlockchainView observers already borrowed during remove_observer - reentrancy detected! This violates the BlockchainObserver contract and indicates a programming bug.")
             .remove(observer_id);
     }
 
-    // TODO try to receive a reference to avoid cloning the block
-    pub fn update(&self, new_block: RskBlockAndUncles) {
+    /// # Panics
+    /// Panics if blocks are already borrowed or if block validation fails.
+    ///
+    /// TODO try to receive a reference to avoid cloning the block
+    pub fn update(&self, new_block: &RskBlockAndUncles) {
         let prev_tip = self.get_tip();
 
         let removed_block = self
@@ -158,10 +166,10 @@ impl BlockchainView {
             );
 
             if let Some(prev_tip) = prev_tip {
-                self.validate_consecutive_block(new_block.block(), prev_tip.block());
+                Self::validate_consecutive_block(new_block.block(), prev_tip.block());
             }
 
-            self.notify_added_block(&new_block);
+            self.notify_added_block(new_block);
 
             return;
         }
@@ -184,15 +192,16 @@ impl BlockchainView {
 
             // update all visitors of the replacement
             self.notify_removed_block(&removed_block);
-            self.notify_added_block(&new_block);
+            self.notify_added_block(new_block);
 
             return;
         }
 
         // reorg
-        self.rollback_to(new_block, removed_block);
+        self.rollback_to(new_block, &removed_block);
     }
 
+    #[must_use]
     pub fn get_from(&self, number: BlockNumber) -> Vec<RskBlockAndUncles> {
         self.blocks
             .borrow()
@@ -201,6 +210,7 @@ impl BlockchainView {
             .collect()
     }
 
+    #[must_use]
     pub fn get_tip(&self) -> Option<RskBlockAndUncles> {
         self.blocks.borrow().values().next_back().cloned()
     }
@@ -208,7 +218,7 @@ impl BlockchainView {
     pub fn restart_from(&self, first_block: BlockNumber) {
         self.blocks
             .borrow_mut()
-            .retain(|_, b| b.number() >= first_block)
+            .retain(|_, b| b.number() >= first_block);
     }
 
     pub fn clear(&self) {
@@ -216,7 +226,7 @@ impl BlockchainView {
         self.observers.borrow_mut().clear();
     }
 
-    fn rollback_to(&self, new_tip: RskBlockAndUncles, removed_block: RskBlockAndUncles) {
+    fn rollback_to(&self, new_tip: &RskBlockAndUncles, removed_block: &RskBlockAndUncles) {
         debug!(
             "Reorg detected, rolling back BlockchainView to {} ({})",
             new_tip.number(),
@@ -246,8 +256,8 @@ impl BlockchainView {
         }
 
         // notify observers about the new tip
-        self.notify_removed_block(&removed_block);
-        self.notify_added_block(&new_tip);
+        self.notify_removed_block(removed_block);
+        self.notify_added_block(new_tip);
 
         info!(
             "Reorg fixed, rolled back BlockchainView to {} ({})",
@@ -276,46 +286,51 @@ impl BlockchainView {
         }
     }
 
+    #[must_use]
     pub fn has_observers(&self) -> bool {
         !self.observers.borrow().is_empty()
     }
 
     #[cfg(test)]
+    #[must_use]
     pub fn get_at(&self, number: &BlockNumber) -> Option<RskBlockAndUncles> {
         self.blocks.borrow().get(number).cloned()
     }
 
     #[cfg(test)]
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.blocks.borrow().is_empty()
     }
 
     #[cfg(test)]
+    #[must_use]
     pub fn has_observer(&self, id: &str) -> bool {
         self.observers.borrow().contains_key(id)
     }
 
     #[cfg(test)]
+    #[must_use]
     pub fn is_observed(&self) -> bool {
         !self.observers.borrow().is_empty()
     }
 
     #[cfg(test)]
+    #[must_use]
     pub fn len(&self) -> usize {
         self.blocks.borrow().len()
     }
 
-    fn validate_consecutive_block(&self, new_tip: &RskBlock, prev_tip: &RskBlock) {
+    fn validate_consecutive_block(new_tip: &RskBlock, prev_tip: &RskBlock) {
         // validate that blocks are consecutive
-        if new_tip.number() != prev_tip.number() + 1 || new_tip.parent_hash() != prev_tip.hash() {
-            panic!(
-                "Non-consecutive block or parent hash mismatch: block {} after {}, parent_hash: {:?}, expected: {:?}",
-                new_tip.number(),
-                prev_tip.number(),
-                new_tip.parent_hash(),
-                prev_tip.hash()
-            );
-        }
+        assert!(
+            new_tip.number() == prev_tip.number() + 1 && new_tip.parent_hash() == prev_tip.hash(),
+            "Non-consecutive block or parent hash mismatch: block {} after {}, parent_hash: {:?}, expected: {:?}",
+            new_tip.number(),
+            prev_tip.number(),
+            new_tip.parent_hash(),
+            prev_tip.hash()
+        );
     }
 }
 
@@ -349,10 +364,14 @@ impl ConfirmableEventWithData {
         self.confirmation.id.clone()
     }
 
+    /// # Errors
+    /// Returns an error if starting confirmation tracking fails.
     pub fn start_confirming(&mut self, block_number: BlockNumber) -> Result<()> {
         self.confirmation.start_confirming(block_number)
     }
 
+    /// # Errors
+    /// Returns an error if stopping confirmation tracking fails.
     pub fn stop_confirming(&mut self) -> Result<()> {
         self.confirmation.stop_confirming()
     }
@@ -367,6 +386,7 @@ impl ConfirmableEventWithData {
 }
 
 impl ConfirmableEvent {
+    #[must_use]
     pub fn new(id: String, req_confirmations: u32, chain_view: BlockchainView) -> Self {
         ConfirmableEvent {
             id,
@@ -376,9 +396,11 @@ impl ConfirmableEvent {
         }
     }
 
+    /// # Errors
+    /// Returns an error if starting confirmation tracking fails.
     pub fn start_confirming(&mut self, block_number: BlockNumber) -> Result<()> {
         let rc_confirmations = Rc::new(RefCell::new(BlockConfirmations::new(
-            self.id.to_string(),
+            self.id.clone(),
             block_number,
             self.req_confirmations,
         )));
@@ -391,6 +413,8 @@ impl ConfirmableEvent {
         Ok(())
     }
 
+    /// # Errors
+    /// Returns an error if stopping confirmation fails.
     pub fn stop_confirming(&mut self) -> Result<()> {
         if self.confirmations.is_none() {
             warn!(
@@ -405,17 +429,18 @@ impl ConfirmableEvent {
         Ok(())
     }
 
+    #[must_use]
     pub fn is_confirmed(&self) -> bool {
-        self.confirmations
-            .as_ref()
-            .map(|c| c.borrow().is_confirmed())
-            .unwrap_or_else(|| {
+        self.confirmations.as_ref().map_or_else(
+            || {
                 warn!(
                     "Confirmations not set for protocol {} but is_confirmed called",
                     self.id
                 );
                 false
-            })
+            },
+            |c| c.borrow().is_confirmed(),
+        )
     }
 
     fn add_observer(&self, rc_confirmations: Rc<RefCell<BlockConfirmations>>) {
@@ -539,9 +564,9 @@ mod tests_blockchain_view {
         let block_101 = create_test_block(101);
         let block_102 = create_test_block(102);
 
-        chain_view.update(block_100.clone());
-        chain_view.update(block_101.clone());
-        chain_view.update(block_102.clone());
+        chain_view.update(&block_100);
+        chain_view.update(&block_101);
+        chain_view.update(&block_102);
 
         let tracker_ref = tracker.borrow();
         assert_eq!(
@@ -580,15 +605,15 @@ mod tests_blockchain_view {
         let block_101 = create_test_block(101);
         let block_102 = create_test_block(102);
 
-        chain_view.update(block_100.clone());
-        chain_view.update(block_101.clone());
-        chain_view.update(block_102.clone());
+        chain_view.update(&block_100);
+        chain_view.update(&block_101);
+        chain_view.update(&block_102);
 
         tracker.borrow().clear();
 
         // replace block 102 with an alternative
         let alt_block_102 = create_alt_test_block(102);
-        chain_view.update(alt_block_102.clone());
+        chain_view.update(&alt_block_102);
 
         let tracker_ref = tracker.borrow();
         // should see: removed original block 102, added alternative block 102
@@ -634,10 +659,10 @@ mod tests_blockchain_view {
         let block_102 = create_test_block(102);
         let block_103 = create_test_block(103);
 
-        chain_view.update(block_100.clone());
-        chain_view.update(block_101.clone());
-        chain_view.update(block_102.clone());
-        chain_view.update(block_103.clone());
+        chain_view.update(&block_100);
+        chain_view.update(&block_101);
+        chain_view.update(&block_102);
+        chain_view.update(&block_103);
 
         // should have 4 confirmations
         assert_eq!(confirmations.borrow().accum(), 4);
@@ -647,7 +672,7 @@ mod tests_blockchain_view {
 
         // simulate reorg at block 101 (this should rollback blocks 102 and 103)
         let alt_block_101 = create_alt_test_block(101);
-        chain_view.update(alt_block_101.clone());
+        chain_view.update(&alt_block_101);
 
         let tracker_ref = tracker.borrow();
 
@@ -693,15 +718,15 @@ mod tests_blockchain_view {
         let block_100 = create_test_block(100);
         let block_101 = create_test_block(101);
 
-        chain_view.update(block_100.clone());
-        chain_view.update(block_101.clone());
+        chain_view.update(&block_100);
+        chain_view.update(&block_101);
 
         tracker.borrow().clear();
 
         // simulate reorg at block 102
         let alt_block_102 = create_test_block(103);
 
-        chain_view.update(alt_block_102.clone());
+        chain_view.update(&alt_block_102);
     }
 
     #[test]
@@ -715,15 +740,15 @@ mod tests_blockchain_view {
         let block_100 = create_test_block(100);
         let block_101 = create_test_block(101);
 
-        chain_view.update(block_100.clone());
-        chain_view.update(block_101.clone());
+        chain_view.update(&block_100);
+        chain_view.update(&block_101);
 
         tracker.borrow().clear();
 
         // simulate reorg at block 102
         let alt_block_102 = create_alt_test_block(102);
 
-        chain_view.update(alt_block_102.clone());
+        chain_view.update(&alt_block_102);
     }
 
     #[test]
@@ -737,14 +762,14 @@ mod tests_blockchain_view {
         for i in 100..=105 {
             let block = create_test_block(i);
             blocks.push(block.clone());
-            chain_view.update(block);
+            chain_view.update(&block);
         }
 
         tracker.borrow().clear();
 
         // simulate deep reorg back to block 102
         let alt_block_102 = create_alt_test_block(102);
-        chain_view.update(alt_block_102.clone());
+        chain_view.update(&alt_block_102);
 
         let tracker_ref = tracker.borrow();
 
@@ -819,9 +844,9 @@ mod confirmable_event_tests {
 
         // step 3: simulate processing blocks to reach confirmation
         // we need to process req_confirmations number of blocks
-        for i in 0..req_confirmations as u64 {
+        for i in 0..u64::from(req_confirmations) {
             let block = create_test_block(block_number + i);
-            confirmable_event.chain_view.update(block);
+            confirmable_event.chain_view.update(&block);
         }
 
         // step 4: should be confirmed after processing enough blocks
@@ -907,10 +932,10 @@ mod confirmable_event_tests {
 
         // step 1: add enough blocks to reach confirmation
         let mut blocks = Vec::new();
-        for i in 0..req_confirmations as u64 {
+        for i in 0..u64::from(req_confirmations) {
             let block = create_test_block(start_block + i);
             blocks.push(block.clone());
-            confirmable_event.chain_view.update(block);
+            confirmable_event.chain_view.update(&block);
         }
 
         // step 2: should be confirmed after processing enough blocks
@@ -922,7 +947,7 @@ mod confirmable_event_tests {
         // step 3: simulate a reorg by creating an alternative block at position 1
         // this should cause blocks 1 and 2 to be removed, reducing confirmations
         let alt_block_1 = create_alt_test_block(start_block + 1);
-        confirmable_event.chain_view.update(alt_block_1);
+        confirmable_event.chain_view.update(&alt_block_1);
 
         // step 4: should no longer be confirmed due to reduced confirmations
         assert!(
@@ -1013,9 +1038,9 @@ mod confirmable_event_tests {
             .expect("Failed to start confirming");
 
         // step 1: add partial confirmations (not enough to reach confirmation)
-        for i in 0..(req_confirmations - 1) as u64 {
+        for i in 0..u64::from(req_confirmations - 1) {
             let block = create_test_block(block_number + i);
-            confirmable_event.chain_view.update(block);
+            confirmable_event.chain_view.update(&block);
         }
 
         // step 2: should not be confirmed yet (partial confirmations)
@@ -1034,7 +1059,7 @@ mod confirmable_event_tests {
         );
 
         // step 4: restart confirming should succeed
-        let restart_block = block_number + (req_confirmations - 1) as u64;
+        let restart_block = block_number + u64::from(req_confirmations - 1);
         let result = confirmable_event.start_confirming(restart_block);
         assert!(result.is_ok(), "Should be able to restart confirming");
 
@@ -1045,9 +1070,9 @@ mod confirmable_event_tests {
         );
 
         // step 6: add blocks to reach confirmation from restart point (consecutive blocks)
-        for i in 0..req_confirmations as u64 {
+        for i in 0..u64::from(req_confirmations) {
             let block = create_test_block(restart_block + i);
-            confirmable_event.chain_view.update(block);
+            confirmable_event.chain_view.update(&block);
         }
 
         // step 7: should be confirmed after processing enough blocks from restart
@@ -1100,7 +1125,7 @@ mod confirmable_event_tests {
 
         // step 2: add one block to ensure it's confirmed
         let block = create_test_block(block_number);
-        confirmable_event.chain_view.update(block);
+        confirmable_event.chain_view.update(&block);
 
         // step 3: should definitely be confirmed after adding a block
         assert!(

@@ -4,8 +4,17 @@ use std::num::NonZeroUsize;
 use std::sync::RwLock;
 
 pub trait Cache<V> {
+    /// # Errors
+    ///
+    /// Returns an error if the cache operation fails.
     fn get(&self, key: &str) -> Result<Option<V>>;
+    /// # Errors
+    ///
+    /// Returns an error if the cache operation fails.
     fn insert(&self, key: &str, value: &V) -> Result<Option<V>>;
+    /// # Errors
+    ///
+    /// Returns an error if the cache operation fails.
     fn remove(&self, key: &str) -> Result<Option<V>>;
 }
 
@@ -17,6 +26,10 @@ impl<V> LruCache<V>
 where
     V: Clone,
 {
+    /// # Panics
+    ///
+    /// Panics if `max_size` is zero.
+    #[must_use]
     pub fn new(max_size: usize) -> Self {
         LruCache {
             // RwLock needed because LruCacheCrate requires mut access, which we don't want for our methods
@@ -24,27 +37,36 @@ where
         }
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the cache operation fails.
     pub fn get(&self, key: &str) -> Result<Option<V>> {
         let mut cache = self
             .inner
             .write()
-            .map_err(|e| anyhow!("Failed to acquire write lock on cache: {:?}", e))?;
+            .map_err(|e| anyhow!("Failed to acquire write lock on cache: {e:?}"))?;
         Ok(cache.get(key).cloned())
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the cache operation fails.
     pub fn insert(&self, key: &str, value: &V) -> Result<Option<V>> {
         let mut cache = self
             .inner
             .write()
-            .map_err(|e| anyhow!("Failed to acquire write lock on cache: {:?}", e))?;
+            .map_err(|e| anyhow!("Failed to acquire write lock on cache: {e:?}"))?;
         Ok(cache.put(key.to_string(), value.to_owned()))
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the cache operation fails.
     pub fn remove(&self, key: &str) -> Result<Option<V>> {
         let mut write_guard = self
             .inner
             .write()
-            .map_err(|e| anyhow!("Failed to acquire write lock on cache: {:?}", e))?;
+            .map_err(|e| anyhow!("Failed to acquire write lock on cache: {e:?}"))?;
         Ok(write_guard.pop(key))
     }
 }

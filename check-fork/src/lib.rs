@@ -37,6 +37,12 @@ pub struct CheckForkArgs {
     pub block_list: Vec<Block>,
 }
 
+/// Check fork validity and return cumulative `PoW`
+///
+/// # Errors
+///
+/// Returns an error string if the fork validation fails (e.g., insufficient blocks,
+/// invalid block sequence, cumulative `PoW` below threshold, or bridge event mismatch)
 #[allow(dead_code)]
 pub fn check_fork(args: &CheckForkArgs) -> Result<U256, &'static str> {
     let CheckForkArgs {
@@ -119,7 +125,7 @@ fn validate_block_list(required_num_blocks: u32, block_list: &[Block]) -> Result
         return Err("Invalid number of required blocks");
     }
 
-    if (block_list.len() as u32) < required_num_blocks {
+    if block_list.len() < required_num_blocks as usize {
         return Err("Insufficient number of blocks");
     }
 
@@ -144,20 +150,18 @@ fn validate_first_block(
 
     validate_enough_effort_superblock(block, "first")?;
 
-    validate_bridge_event(&block.bridge_event, utxo_id, pegout_id, operator_id)?;
+    validate_bridge_event(block.bridge_event.as_ref(), utxo_id, pegout_id, operator_id)?;
 
     Ok(())
 }
 
 fn validate_bridge_event(
-    bridge_event: &Option<BridgeEvent>,
+    bridge_event: Option<&BridgeEvent>,
     utxo_id: &str,
     pegout_id: &str,
     operator_id: &str,
 ) -> Result<(), &'static str> {
-    let bridge_event = bridge_event
-        .as_ref()
-        .ok_or("First block is missing BridgeEvent")?;
+    let bridge_event = bridge_event.ok_or("First block is missing BridgeEvent")?;
 
     if bridge_event.pegout_id != pegout_id {
         return Err("BridgeEvent does not match pegoutID");

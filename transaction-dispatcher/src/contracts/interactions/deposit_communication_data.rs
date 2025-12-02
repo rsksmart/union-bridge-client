@@ -37,28 +37,20 @@ impl<C: CommitteeRegistryContractApi> DepositCommunicationDataInvoke<C> {
             .await
             .map_err(|e| {
                 DomainErrors::UnhandledContractError(format!(
-                    "Failed to deposit communication data: {}",
-                    e
+                    "Failed to deposit communication data: {e}"
                 ))
             })?;
 
         let transaction_hash = format!("0x{:x}", receipt.transaction_hash);
 
-        match receipt.status() {
-            true => {
-                info!(
-                    "DepositCommunicationData successful at tx {}",
-                    transaction_hash
-                );
-                Ok(DepositCommunicationDataOutput { transaction_hash })
-            }
-            false => {
-                error!("DepositCommunicationData failed at tx {}", transaction_hash);
-                Err(DomainErrors::TransactionFailed(format!(
-                    "DepositCommunicationData transaction failed with receipt status false at tx {}",
-                    transaction_hash
-                )))
-            }
+        if receipt.status() {
+            info!("DepositCommunicationData successful at tx {transaction_hash}");
+            Ok(DepositCommunicationDataOutput { transaction_hash })
+        } else {
+            error!("DepositCommunicationData failed at tx {transaction_hash}");
+            Err(DomainErrors::TransactionFailed(format!(
+                "DepositCommunicationData transaction failed with receipt status false at tx {transaction_hash}"
+            )))
         }
     }
 }

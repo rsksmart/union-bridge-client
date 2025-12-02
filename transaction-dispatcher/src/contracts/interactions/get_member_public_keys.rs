@@ -18,8 +18,8 @@ impl<C: MemberRegistryContractApi> GetMemberPublicKeysCall<C> {
         input: GetMemberPublicKeysInput,
     ) -> Result<GetMemberPublicKeysOutput, DomainErrors> {
         info!(
-            "Init GetMemberPublicKeys for member: {:?}",
-            input.member_address
+            "Init GetMemberPublicKeys for member: {member_address:?}",
+            member_address = input.member_address
         );
 
         let public_keys = self
@@ -28,8 +28,7 @@ impl<C: MemberRegistryContractApi> GetMemberPublicKeysCall<C> {
             .await
             .map_err(|e| {
                 DomainErrors::UnhandledContractError(format!(
-                    "Failed to get member public keys: {}",
-                    e
+                    "Failed to get member public keys: {e}"
                 ))
             })?;
 

@@ -9,11 +9,11 @@ fn main() {
 
     let result = match output {
         Ok(effort) => {
-            println!("Guest output: ACCEPT, check_fork effort: {}", effort);
+            println!("Guest output: ACCEPT, check_fork effort: {effort}");
             0
         }
         Err(e) => {
-            println!("Guest output: REJECT, check_fork error: {}", e);
+            println!("Guest output: REJECT, check_fork error: {e}");
             1
         }
     };

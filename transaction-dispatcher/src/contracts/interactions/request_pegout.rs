@@ -25,18 +25,18 @@ impl<C: PegManagerContractApi> TryPegoutInvoke<C> {
         &self,
         input: RequestPegoutInput,
     ) -> Result<RequestPegoutOutput, DomainErrors> {
-        info!("Init Pegout request for: {:?}", input);
+        info!("Init Pegout request for: {input:?}");
 
         let msg_value = input.amount_in_wei;
 
         let usr_pub_key: FixedBytes<33> =
             input.usr_pub_key.parse::<FixedBytes<33>>().map_err(|e| {
-                DomainErrors::InvalidCompressedPubKey(format!("Failed to parse usr_pub_key: {}", e))
+                DomainErrors::InvalidCompressedPubKey(format!("Failed to parse usr_pub_key: {e}"))
             })?;
 
         debug!(
-            "Calling invoke_request_pegout: value = {}, usr_pub_key = {:?}, gas_bumps = {}",
-            msg_value, usr_pub_key, self.gas_bumps
+            "Calling invoke_request_pegout: value = {msg_value}, usr_pub_key = {usr_pub_key:?}, gas_bumps = {}",
+            self.gas_bumps
         );
 
         let receipt = self
@@ -44,23 +44,20 @@ impl<C: PegManagerContractApi> TryPegoutInvoke<C> {
             .invoke_request_pegout(msg_value, usr_pub_key, self.gas_bumps)
             .await?;
 
-        match receipt.status() {
-            true => {
-                info!(
-                    "Pegout Request successful at tx {}",
-                    receipt.transaction_hash
-                );
-                Ok(RequestPegoutOutput {
-                    transaction_hash: receipt.transaction_hash.to_string(),
-                })
-            }
-            false => {
-                error!("Pegout request failed at tx {}", receipt.transaction_hash);
-                Err(DomainErrors::TransactionFailed(format!(
-                    "RequestPegout transaction failed with receipt status false at tx {}",
-                    receipt.transaction_hash
-                )))
-            }
+        if receipt.status() {
+            info!(
+                "Pegout Request successful at tx {}",
+                receipt.transaction_hash
+            );
+            Ok(RequestPegoutOutput {
+                transaction_hash: receipt.transaction_hash.to_string(),
+            })
+        } else {
+            error!("Pegout request failed at tx {}", receipt.transaction_hash);
+            Err(DomainErrors::TransactionFailed(format!(
+                "RequestPegout transaction failed with receipt status false at tx {}",
+                receipt.transaction_hash
+            )))
         }
     }
 }
@@ -76,7 +73,7 @@ mod tests {
         },
         rsk_gateway::DomainErrors,
     };
-    use alloy_primitives::{Bloom, TxHash};
+    use alloy_primitives::{Address, Bloom, TxHash};
     use alloy_rpc_types::{Log, Receipt, ReceiptEnvelope, ReceiptWithBloom, TransactionReceipt};
     use std::str::FromStr;
 
@@ -149,9 +146,9 @@ mod tests {
         let err = invoke.run(bad_input).await.err().unwrap();
         match err {
             DomainErrors::InvalidCompressedPubKey(msg) => {
-                assert!(msg.contains("Failed to parse usr_pub_key"))
+                assert!(msg.contains("Failed to parse usr_pub_key"));
             }
-            _ => panic!("expected InvalidPublicKey, got {:?}", err),
+            _ => panic!("expected InvalidPublicKey, got {err:?}"),
         }
     }
 
@@ -183,8 +180,8 @@ mod tests {
             effective_gas_price: 0,
             blob_gas_used: None,
             blob_gas_price: None,
-            from: Default::default(),
-            to: Some(Default::default()),
+            from: Address::default(),
+            to: Some(Address::default()),
             contract_address: None,
         }
     }

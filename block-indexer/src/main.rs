@@ -66,7 +66,7 @@ fn main() -> Result<()> {
     ) = mpsc::channel();
 
     let store_path = &format!("{}/blocks", config.indexer.storage.path);
-    debug!("Creating block store at: {}", store_path);
+    debug!("Creating block store at: {store_path}");
     let store = CachedBlockStore::new(store_path, config.indexer.cache.size)?;
 
     let indexer = BlockIndexer::new_with_notifier(
@@ -86,14 +86,14 @@ fn main() -> Result<()> {
     let shutdown_flag_notifier = shutdown_flag.clone();
     std::thread::spawn(move || {
         notifier.run().inspect_err(|e| {
-            error!("Unrecoverable error running block notifier: {:?}", e);
+            error!("Unrecoverable error running block notifier: {e:?}");
             // signal other threads to shut down
             shutdown_flag_notifier.set();
         })
     });
 
     indexer.run().inspect_err(|e| {
-        error!("Unrecoverable error running block indexer: {:?}", e);
+        error!("Unrecoverable error running block indexer: {e:?}");
         // signal other threads to shut down
         shutdown_flag.set();
     })?;

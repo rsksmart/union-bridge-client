@@ -123,7 +123,7 @@ impl From<TxOut> for BitcoinTransactionOut {
 impl From<Transaction> for BitcoinTransaction {
     fn from(tx: Transaction) -> Self {
         BitcoinTransaction {
-            version: tx.version.0 as u32,
+            version: u32::try_from(tx.version.0).expect("Transaction version must fit in u32"),
             lock_time: tx.lock_time.to_consensus_u32(),
             inputs: tx.input.into_iter().map(Into::into).collect(),
             outputs: tx.output.into_iter().map(Into::into).collect(),
@@ -222,7 +222,9 @@ fn bytes_to_fb_array<const N: usize>(bytes: &[u8]) -> Result<[FixedBytes<32>; N]
     }
 
     let mut buf = vec![0u8; cap];
-    let len_be = (bytes.len() as u16).to_be_bytes();
+    let len_be = u16::try_from(bytes.len())
+        .expect("bytes.len() already checked to be <= u16::MAX")
+        .to_be_bytes();
     buf[0..2].copy_from_slice(&len_be);
     buf[2..2 + bytes.len()].copy_from_slice(bytes);
 
@@ -237,7 +239,7 @@ fn bytes_to_fb_array<const N: usize>(bytes: &[u8]) -> Result<[FixedBytes<32>; N]
 /// NOTE: If real payload could end with 0x00 bytes, prefer storing a length header.
 fn fb_array_to_bytes<const N: usize>(arr: &[FixedBytes<32>; N]) -> Result<Vec<u8>> {
     let mut buf = Vec::with_capacity(N * 32);
-    for fb in arr.iter() {
+    for fb in arr {
         buf.extend_from_slice(&fb.0);
     }
     if buf.len() < 2 {
@@ -245,7 +247,7 @@ fn fb_array_to_bytes<const N: usize>(arr: &[FixedBytes<32>; N]) -> Result<Vec<u8
     }
     let len = u16::from_be_bytes([buf[0], buf[1]]) as usize;
     if len > buf.len().saturating_sub(2) {
-        bail!("invalid stored length {}", len);
+        bail!("invalid stored length {len}");
     }
     Ok(buf[2..2 + len].to_vec())
 }
@@ -253,6 +255,11 @@ fn fb_array_to_bytes<const N: usize>(arr: &[FixedBytes<32>; N]) -> Result<Vec<u8
 pub struct P2PAddressParser;
 
 impl P2PAddressParser {
+    /// Convert address string to communication data
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the address cannot be parsed or converted
     pub fn addr_to_contracts(address: &str) -> Result<CommunicationData> {
         let multi_addr: Multiaddr = address.parse()?;
         let multi_addr_bytes = multi_addr.to_vec();
@@ -260,19 +267,34 @@ impl P2PAddressParser {
         Ok(CommunicationData { data })
     }
 
+    /// Convert communication data to address string
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the communication data cannot be converted
     pub fn addr_from_contracts(comm_data: &CommunicationData) -> Result<String> {
         let bytes = fb_array_to_bytes::<8>(&comm_data.data)?;
         let multi_addr = Multiaddr::try_from(bytes)?;
         Ok(multi_addr.to_string())
     }
 
+    /// Convert peer ID string to RSA public key
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the peer ID cannot be decoded or converted
     pub fn peer_id_to_contracts(peer_id: &str) -> Result<RSAPublicKey> {
         let peer_id_hex = hex::decode(peer_id)
-            .with_context(|| format!("Failed to decode peer_id hex: {}", peer_id))?;
+            .with_context(|| format!("Failed to decode peer_id hex: {peer_id}"))?;
         let data = bytes_to_fb_array::<10>(&peer_id_hex)?;
         Ok(RSAPublicKey { rsaPublicKey: data })
     }
 
+    /// Convert member RSA public key to peer ID string
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the communication data cannot be converted
     pub fn peer_id_from_member_contracts(comm_data: &MemberRSAPublicKey) -> Result<String> {
         let bytes = fb_array_to_bytes(&comm_data.rsaPublicKey)?;
         Ok(hex::encode(bytes))

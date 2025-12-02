@@ -24,6 +24,11 @@ pub struct LogIndexer<P: RskProvider, S: LogStore> {
 }
 
 impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
+    /// Create a new `LogIndexer` with a notifier channel
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the initial block cannot be retrieved from the provider
     #[allow(clippy::too_many_arguments)]
     pub fn new_with_notifier(
         store: S,
@@ -49,6 +54,11 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         })
     }
 
+    /// Create a new `LogIndexer`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the initial block cannot be retrieved from the provider
     pub fn new(
         store: S,
         rsk_provider: P,
@@ -113,10 +123,7 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
 
         let filter =
             RskSubscriptionFilter::new(contract_addresses, vec![], Some(last_block_number));
-        info!(
-            "[subscribe_logs] Start subscribe_logs with filter {:?}...",
-            filter
-        );
+        info!("[subscribe_logs] Start subscribe_logs with filter {filter:?}...");
 
         let mut rsk_log_subscription = self
             .rsk_provider
@@ -225,6 +232,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
     }
 
     #[cfg(feature = "fresh_node")]
+    #[allow(clippy::unnecessary_wraps)]
     fn recover_logs(&self, _addrs: &Vec<Address>) -> Result<BlockNumber> {
         Ok(self.initial_block_number)
     }
@@ -272,10 +280,9 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                 Err(RskSubscriptionError::ClosedConnection) => {
                     if self.is_running() {
                         bail!("Provider closed unexpectedly!");
-                    } else {
-                        info!("[subscribe_logs] Shutdown requested, quitting...");
-                        break;
                     }
+                    info!("[subscribe_logs] Shutdown requested, quitting...");
+                    break;
                 }
                 Err(RskSubscriptionError::Transient(err)) => {
                     error!("[subscribe_logs] Ignoring problematic log: {err:?}");
@@ -308,11 +315,10 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                     .event()
                     .topics()
                     .first()
-                    .map(|t| t.to_string())
-                    .unwrap_or("none".to_string()),
+                    .map_or("none".to_string(), ToString::to_string),
                 new_log.info().address(),
             );
-            trace!("[subscribe_logs] Log: {:?}", new_log);
+            trace!("[subscribe_logs] Log: {new_log:?}");
 
             if !self
                 .managed_contracts
@@ -335,7 +341,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
             if let Some(channel) = &self.new_log_sender
                 && let Err(e) = channel.send(new_log)
             {
-                error!("Failed to send new block through channel: {:?}", e);
+                error!("Failed to send new block through channel: {e:?}");
             }
         }
 
@@ -412,7 +418,8 @@ mod tests {
             new_log_sender: None,
             initial_block_number: BlockNumber::from(99),
             sync_batch_size: 10,
-            sync_finality_depth: finality_depth as usize,
+            sync_finality_depth: usize::try_from(finality_depth)
+                .expect("finality_depth must be non-negative and fit in usize"),
             managed_contracts: HashMap::new(),
             shutdown_flag: ShutdownFlag::init(),
         };
@@ -486,7 +493,8 @@ mod tests {
             new_log_sender: None,
             initial_block_number: BlockNumber::from(0), // should be ignored
             sync_batch_size: 10,
-            sync_finality_depth: finality_depth as usize,
+            sync_finality_depth: usize::try_from(finality_depth)
+                .expect("finality_depth must be non-negative and fit in usize"),
             managed_contracts: HashMap::new(),
             shutdown_flag: ShutdownFlag::init(),
         };
