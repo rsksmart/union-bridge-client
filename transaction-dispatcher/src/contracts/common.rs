@@ -87,10 +87,8 @@ where
         let tx_builder = build_tx().gas(gas_limit).gas_price(gas_price);
 
         debug!(
-            "Sending transaction attempt {} with estimated_gas {} and gas_limit {}",
-            attempt + 1,
-            estimated_gas,
-            gas_limit
+            "Sending transaction attempt {} with estimated_gas {estimated_gas} and gas_limit {gas_limit}",
+            attempt + 1
         );
 
         let current_receipt = send_transaction(provider, tx_builder).await?;
@@ -187,18 +185,17 @@ where
     D: SolCall,
 {
     // Send transaction with timeout
-    let pending_tx = match timeout(timeout_1min(), tx_builder.send()).await {
-        Ok(result) => result?,
-        Err(_) => {
-            error!("Transaction send timeout");
-            return Err(alloy_contract::Error::TransportError(
-                alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
-                    code: ETH_RPC_INTERNAL_ERROR,
-                    message: "Transaction send timeout".to_string().into(),
-                    data: None,
-                }),
-            ));
-        }
+    let pending_tx = if let Ok(result) = timeout(timeout_1min(), tx_builder.send()).await {
+        result?
+    } else {
+        error!("Transaction send timeout");
+        return Err(alloy_contract::Error::TransportError(
+            alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
+                code: ETH_RPC_INTERNAL_ERROR,
+                message: "Transaction send timeout".to_string().into(),
+                data: None,
+            }),
+        ));
     };
 
     // Derive the transaction hash without registering a heartbeat/watch
@@ -217,10 +214,7 @@ async fn wait_for_receipt<P: Provider>(
     let start = Instant::now();
     loop {
         if start.elapsed() > max_wait {
-            error!(
-                "Receipt polling timed out after {:?} for tx {:?}",
-                max_wait, tx_hash
-            );
+            error!("Receipt polling timed out after {max_wait:?} for tx {tx_hash:?}",);
             return Err(alloy_contract::Error::TransportError(
                 alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
                     code: ETH_RPC_INTERNAL_ERROR,
@@ -238,7 +232,7 @@ async fn wait_for_receipt<P: Provider>(
         match provider
             .get_transaction_receipt(tx_hash)
             .await
-            .map_err(|e| alloy_contract::Error::TransportError(e.into()))?
+            .map_err(alloy_contract::Error::TransportError)?
         {
             Some(receipt) => return Ok(receipt),
             None => sleep(poll_interval).await,
@@ -256,16 +250,16 @@ where
     match timeout(timeout_dur, build_tx().estimate_gas()).await {
         Ok(Ok(gas)) => Ok(gas),
         Ok(Err(e)) => {
-            error!("Gas estimation failed: {:?}", e);
+            error!("Gas estimation failed: {e:?}");
             Err(e)
         }
         Err(_elapsed) => {
             let timeout_seconds = timeout_dur.as_secs();
-            error!("Gas estimation timeout after {} seconds", timeout_seconds);
+            error!("Gas estimation timeout after {timeout_seconds} seconds");
             Err(alloy_contract::Error::TransportError(
                 alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
                     code: ETH_RPC_TIMEOUT,
-                    message: format!("Gas estimation timeout after {}s", timeout_seconds).into(),
+                    message: format!("Gas estimation timeout after {timeout_seconds}s").into(),
                     data: None,
                 }),
             ))
@@ -277,10 +271,7 @@ fn calculate_gas_limit_with_cap(estimated_gas: u64, attempt: u8) -> alloy_contra
     let gas_limit = bumped_gas(estimated_gas, attempt);
 
     if gas_limit > MAX_GAS_LIMIT {
-        error!(
-            "Gas limit {} exceeds maximum allowed {}",
-            gas_limit, MAX_GAS_LIMIT
-        );
+        error!("Gas limit {gas_limit} exceeds maximum allowed {MAX_GAS_LIMIT}");
         return Err(alloy_contract::Error::TransportError(
             alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
                 code: ETH_RPC_INVALID_PARAMS,
@@ -336,13 +327,11 @@ fn likely_oog(receipt: &TransactionReceipt, gas_limit: u64) -> bool {
 
     if oog_candidate {
         warn!(
-            "Potential OOG detected - Gas used: {}, Gas limit: {}, OOG margin: {} ({}%)",
+            "Potential OOG detected - Gas used: {}, Gas limit: {gas_limit}, OOG margin: {oog_margin} ({}%)",
             receipt.gas_used(),
-            gas_limit,
-            oog_margin,
             OOG_DETECTION_MARGIN_PERCENT
         );
-    };
+    }
 
     oog_candidate
 }
@@ -355,7 +344,7 @@ impl From<alloy_contract::Error> for DomainErrors {
             .or_else(|| signature_manager::decode_error(&err))
             .or_else(|| committee_registry::decode_error(&err))
             .or_else(|| member_registry::decode_error(&err))
-            .unwrap_or_else(|| DomainErrors::NoRevertError(format!("{:?}", err)))
+            .unwrap_or_else(|| DomainErrors::NoRevertError(format!("{err:?}")))
     }
 }
 
@@ -383,7 +372,7 @@ pub mod tests {
             block_hash: None,
             block_number: None,
             gas_used,
-            effective_gas_price: 1000000000,
+            effective_gas_price: 1_000_000_000,
             blob_gas_used: None,
             blob_gas_price: None,
             from: alloy_primitives::Address::from([3u8; 20]),
@@ -395,35 +384,35 @@ pub mod tests {
     #[test]
     fn test_bumped_gas_base_case() {
         // Test base case with no attempts
-        let estimated = 100000u64;
+        let estimated = 100_000_u64;
         let result = bumped_gas(estimated, 0);
 
         // Should be 120% of estimated (base headroom)
-        assert_eq!(result, 120000);
+        assert_eq!(result, 120_000);
     }
 
     #[test]
     fn test_bumped_gas_with_attempts() {
         // Test with 1 attempt (10% bump on top of 20% base)
-        let estimated = 100000u64;
+        let estimated = 100_000_u64;
         let result = bumped_gas(estimated, 1);
 
         // Base: 100000 * 1.20 = 120000
         // Attempt 1: 120000 * 1.10 = 132000
-        assert_eq!(result, 132000);
+        assert_eq!(result, 132_000);
     }
 
     #[test]
     fn test_bumped_gas_multiple_attempts() {
         // Test with 3 attempts
-        let estimated = 100000u64;
+        let estimated = 100_000_u64;
         let result = bumped_gas(estimated, 3);
 
         // Base: 100000 * 1.20 = 120000
         // Attempt 1: 120000 * 1.10 = 132000
         // Attempt 2: 132000 * 1.10 = 145200
         // Attempt 3: 145200 * 1.10 = 159720
-        assert_eq!(result, 159720);
+        assert_eq!(result, 159_720);
     }
 
     #[test]
@@ -448,8 +437,8 @@ pub mod tests {
 
     #[test]
     fn test_likely_oog_success() {
-        let gas_limit = 200000u64;
-        let gas_used = 150000u64; // Well below limit
+        let gas_limit = 200_000_u64;
+        let gas_used = 150_000_u64; // Well below limit
         let receipt = create_fake_receipt(true, gas_used, gas_limit);
 
         let result = likely_oog(&receipt, gas_limit);
@@ -458,8 +447,8 @@ pub mod tests {
 
     #[test]
     fn test_likely_oog_failure() {
-        let gas_limit = 200000u64;
-        let gas_used = 195000u64; // Close to limit (within 5% margin)
+        let gas_limit = 200_000_u64;
+        let gas_used = 195_000_u64; // Close to limit (within 5% margin)
         let receipt = create_fake_receipt(false, gas_used, gas_limit);
 
         let result = likely_oog(&receipt, gas_limit);
@@ -468,7 +457,7 @@ pub mod tests {
 
     #[test]
     fn test_likely_oog_margin_calculation() {
-        let gas_limit = 200000u64;
+        let gas_limit = 200_000_u64;
         let oog_margin = gas_limit / 20; // 5% margin = 10000
         let gas_used = gas_limit - oog_margin + 1; // Just above margin
         let receipt = create_fake_receipt(false, gas_used, gas_limit);
@@ -479,7 +468,7 @@ pub mod tests {
 
     #[test]
     fn test_likely_oog_below_margin() {
-        let gas_limit = 200000u64;
+        let gas_limit = 200_000_u64;
         let oog_margin = gas_limit / 20; // 5% margin = 10000
         let gas_used = gas_limit - oog_margin - 1; // Just below margin
         let receipt = create_fake_receipt(false, gas_used, gas_limit);
@@ -491,8 +480,8 @@ pub mod tests {
     #[test]
     fn test_likely_oog_successful_transaction() {
         // Successful transactions should never be considered OOG
-        let gas_limit = 200000u64;
-        let gas_used = 200000u64; // Used all gas but succeeded
+        let gas_limit = 200_000_u64;
+        let gas_used = 200_000_u64; // Used all gas but succeeded
         let receipt = create_fake_receipt(true, gas_used, gas_limit);
 
         let result = likely_oog(&receipt, gas_limit);
@@ -515,8 +504,7 @@ pub mod tests {
             let result = bumped_gas(estimated, attempts);
             assert_eq!(
                 result, expected,
-                "Failed for estimated={}, attempts={}",
-                estimated, attempts
+                "Failed for estimated={estimated}, attempts={attempts}"
             );
         }
     }
@@ -531,7 +519,7 @@ pub mod tests {
     #[test]
     fn test_edge_case_max_attempts() {
         // Test with maximum u8 attempts
-        let estimated = 100000u64;
+        let estimated = 100_000_u64;
         let result = bumped_gas(estimated, u8::MAX);
 
         // Should not panic and should be >= estimated
@@ -541,7 +529,7 @@ pub mod tests {
     #[test]
     fn test_oog_detection_edge_cases() {
         // Test OOG detection with edge cases
-        let gas_limit = 100000u64;
+        let gas_limit = 100_000_u64;
 
         // Exactly at the margin
         let gas_used = gas_limit - (gas_limit / 20);
@@ -559,20 +547,19 @@ pub mod tests {
         // Test that the gas bumping algorithm produces expected results
         let test_cases = vec![
             // (estimated, attempt, expected)
-            (100000u64, 0u8, 120000u64), // Base case: 20% headroom
-            (100000u64, 1u8, 132000u64), // First retry: 20% + 10% = 32%
-            (100000u64, 2u8, 145200u64), // Second retry: 20% + 10% + 10% = 45.2%
-            (100000u64, 3u8, 159720u64), // Third retry: 20% + 10% + 10% + 10% = 59.72%
-            (50000u64, 0u8, 60000u64),   // Different base amount
-            (50000u64, 1u8, 66000u64),   // Different base amount with retry
+            (100_000_u64, 0u8, 120_000_u64), // Base case: 20% headroom
+            (100_000_u64, 1u8, 132_000_u64), // First retry: 20% + 10% = 32%
+            (100_000_u64, 2u8, 145_200_u64), // Second retry: 20% + 10% + 10% = 45.2%
+            (100_000_u64, 3u8, 159_720_u64), // Third retry: 20% + 10% + 10% + 10% = 59.72%
+            (50000u64, 0u8, 60000u64),       // Different base amount
+            (50000u64, 1u8, 66000u64),       // Different base amount with retry
         ];
 
         for (estimated, attempt, expected) in test_cases {
             let result = bumped_gas(estimated, attempt);
             assert_eq!(
                 result, expected,
-                "Gas bump failed for estimated={}, attempt={}, expected={}, got={}",
-                estimated, attempt, expected, result
+                "Gas bump failed for estimated={estimated}, attempt={attempt}, expected={expected}, got={result}"
             );
         }
     }
@@ -593,10 +580,7 @@ pub mod tests {
             let result = bumped_gas(estimated, attempt);
             assert!(
                 result >= estimated,
-                "Gas bump went below estimated: estimated={}, attempt={}, result={}",
-                estimated,
-                attempt,
-                result
+                "Gas bump went below estimated: estimated={estimated}, attempt={attempt}, result={result}"
             );
         }
     }
@@ -604,7 +588,7 @@ pub mod tests {
     #[test]
     fn test_oog_detection_accuracy() {
         // Test OOG detection accuracy with various scenarios
-        let gas_limit = 200000u64;
+        let gas_limit = 200_000_u64;
         let oog_margin = gas_limit / 20; // 5% margin = 10000
 
         // Test cases: (gas_used, status, expected_oog)
@@ -627,8 +611,7 @@ pub mod tests {
             let result = likely_oog(&receipt, gas_limit);
             assert_eq!(
                 result, expected_oog,
-                "OOG detection failed: gas_used={}, status={}, expected={}, got={}",
-                gas_used, status, expected_oog, result
+                "OOG detection failed: gas_used={gas_used}, status={status}, expected={expected_oog}, got={result}"
             );
         }
     }
@@ -644,10 +627,7 @@ pub mod tests {
             // Should not panic and should be >= estimated
             assert!(
                 result >= large_estimated,
-                "Gas bump overflow protection failed: estimated={}, attempt={}, result={}",
-                large_estimated,
-                attempt,
-                result
+                "Gas bump overflow protection failed: estimated={large_estimated}, attempt={attempt}, result={result}"
             );
         }
     }
@@ -655,7 +635,7 @@ pub mod tests {
     #[test]
     fn test_gas_bump_mathematical_properties() {
         // Test mathematical properties of gas bumping
-        let base_estimated = 100000u64;
+        let base_estimated = 100_000_u64;
 
         // Property 1: Each attempt should increase gas (when not at overflow)
         let mut prev_gas = bumped_gas(base_estimated, 0);
@@ -663,10 +643,7 @@ pub mod tests {
             let current_gas = bumped_gas(base_estimated, attempt);
             assert!(
                 current_gas >= prev_gas,
-                "Gas should not decrease between attempts: attempt={}, prev={}, current={}",
-                attempt,
-                prev_gas,
-                current_gas
+                "Gas should not decrease between attempts: attempt={attempt}, prev={prev_gas}, current={current_gas}"
             );
             prev_gas = current_gas;
         }
@@ -676,17 +653,14 @@ pub mod tests {
             let gas = bumped_gas(base_estimated, attempt);
             assert!(
                 gas >= base_estimated,
-                "Gas should never be below estimated: attempt={}, estimated={}, gas={}",
-                attempt,
-                base_estimated,
-                gas
+                "Gas should never be below estimated: attempt={attempt}, estimated={base_estimated}, gas={gas}"
             );
         }
     }
 
     // Helper function for generating contract revert errors in tests
     pub fn generate_contract_revert_error<T: alloy_sol_types::SolInterface>(
-        input: T,
+        input: &T,
     ) -> alloy_contract::Error {
         use alloy_contract::Error::TransportError;
         use alloy_json_rpc::ErrorPayload;
@@ -695,10 +669,9 @@ pub mod tests {
         const CONTRACT_ERROR_TEMPLATE: &str =
             r#"{"code":3,"message":"execution reverted:","data":"<to_replace>"}"#;
 
-        let error = CONTRACT_ERROR_TEMPLATE.replace(
-            "<to_replace>",
-            &format!("0x{}", hex::encode(input.abi_encode())),
-        );
+        let error_json = input.abi_encode();
+        let error = CONTRACT_ERROR_TEMPLATE
+            .replace("<to_replace>", &format!("0x{}", hex::encode(error_json)));
         let payload = serde_json::from_str::<ErrorPayload>(&error).unwrap();
         TransportError(ErrorResp(payload))
     }

@@ -8,7 +8,7 @@ use message_broker::rpc::sync_server::BrokerSync;
 use mockall::automock;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use std::net::{IpAddr, Ipv4Addr, ToSocketAddrs};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs};
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
@@ -20,14 +20,26 @@ pub const BITVMX_L2_BROKER_CLIENT_ID: u32 = 100; // Should match the ID defined 
 
 #[automock]
 pub trait BrokerServerApi<S: Serialize, C: DeserializeOwned> {
+    /// # Errors
+    ///
+    /// Returns an error if the send operation fails.
     fn send(&self, msg: &C, dst: u32) -> Result<(), BrokerError>;
+    /// # Errors
+    ///
+    /// Returns an error if the receive operation fails.
     fn try_recv(&self) -> Result<Option<(S, u32)>, BrokerError>;
     fn close(&mut self);
 }
 
 #[automock]
 pub trait BrokerClientApi<S: Serialize, C: DeserializeOwned> {
+    /// # Errors
+    ///
+    /// Returns an error if the send operation fails.
     fn send(&self, dest: u32, msg: S) -> Result<bool, BrokerError>;
+    /// # Errors
+    ///
+    /// Returns an error if the receive operation fails.
     fn try_recv(&self) -> Result<Option<C>, BrokerError>;
 }
 
@@ -46,13 +58,14 @@ pub trait UnionBrokerClientApi: BrokerClientApi<ToServer, FromServer> {}
 impl<T> UnionBrokerClientApi for T where T: BrokerClientApi<ToServer, FromServer> {}
 
 impl BrokerServer {
+    #[must_use]
     pub fn new(port: u16) -> Self {
         // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - change to disk storage (broker feature)
 
         debug!("Starting BrokerServer on port {port}");
 
         let broker_storage = Arc::new(Mutex::new(MemStorage::new()));
-        let broker_config = BrokerConfig::new(port, Some(IpAddr::from(Ipv4Addr::new(0, 0, 0, 0))));
+        let broker_config = BrokerConfig::new(port, Some(IpAddr::from(Ipv4Addr::UNSPECIFIED)));
         let broker = BrokerSync::new(&broker_config, broker_storage.clone());
         let broker_channel = LocalChannel::new(BROKER_SERVER_ID, broker_storage.clone());
 
@@ -91,13 +104,17 @@ impl BrokerServerApi<ToServer, FromServer> for BrokerServer {
 
 /// Union-specific broker client implementation
 /// Do not make cloneable, use Arc instead. Reasons:
-/// 1. cloning DualChannel can be considered expensive
-/// 2. automock is not creating a cloneable MockBrokerClientApi
+/// 1. cloning `DualChannel` can be considered expensive
+/// 2. automock is not creating a cloneable `MockBrokerClientApi`
 pub struct BrokerClient {
     channel: DualChannel,
 }
 
 impl BrokerClient {
+    /// # Panics
+    ///
+    /// Panics if the host cannot be resolved to an IP address.
+    #[must_use]
     pub fn new(host: String, port: u16, my_id: u32) -> Self {
         debug!("Starting BrokerClient on {host}:{port} with id {my_id}");
 
@@ -119,7 +136,7 @@ impl BrokerClientApi<ToServer, FromServer> for BrokerClient {
     fn try_recv(&self) -> Result<Option<FromServer>, BrokerError> {
         self.channel.recv()?.map_or(Ok(None), |(data, _id)| {
             serde_json::from_str(&data)
-                .map(|deserialized| Some(deserialized))
+                .map(Some)
                 .map_err(BrokerError::SerializationError)
         })
     }
@@ -152,11 +169,12 @@ pub struct BitVmxBrokerServer {
 }
 
 impl BitVmxBrokerServer {
+    #[must_use]
     pub fn new(port: u16) -> Self {
         debug!("Starting BitVmxBrokerServer on port {port}");
 
         let broker_storage = Arc::new(Mutex::new(MemStorage::new()));
-        let broker_config = BrokerConfig::new(port, Some(IpAddr::from(Ipv4Addr::new(0, 0, 0, 0))));
+        let broker_config = BrokerConfig::new(port, Some(IpAddr::from(Ipv4Addr::UNSPECIFIED)));
         let broker = BrokerSync::new(&broker_config, broker_storage.clone());
         let broker_channel = LocalChannel::new(BROKER_SERVER_ID, broker_storage.clone());
 
@@ -198,13 +216,17 @@ impl BrokerServerApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages> for B
 
 /// BitVMX-specific broker client implementation
 /// Do not make cloneable, use Arc instead. Reasons:
-/// 1. cloning DualChannel can be considered expensive
-/// 2. automock is not creating a cloneable MockBrokerClientApi
+/// 1. cloning `DualChannel` can be considered expensive
+/// 2. automock is not creating a cloneable `MockBrokerClientApi`
 pub struct BitVmxBrokerClient {
     channel: DualChannel,
 }
 
 impl BitVmxBrokerClient {
+    /// # Panics
+    ///
+    /// Panics if the host cannot be resolved to an IP address.
+    #[must_use]
     pub fn new(host: String, port: u16, my_id: u32) -> Self {
         debug!("Starting BitVmxBrokerClient on {host}:{port} with id {my_id}");
 
@@ -247,7 +269,7 @@ fn resolve_ip(name: String, port: u16) -> std::io::Result<IpAddr> {
     // ToSocketAddrs triggers DNS lookup via /etc/resolv.conf inside the container
     (name, port)
         .to_socket_addrs()?
-        .find(|a| a.is_ipv4()) // pick IPv4 if you need IpAddr::V4
+        .find(SocketAddr::is_ipv4) // pick IPv4 if you need IpAddr::V4
         .map(|a| a.ip())
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "no A record"))
+        .ok_or_else(|| std::io::Error::other("no A record"))
 }

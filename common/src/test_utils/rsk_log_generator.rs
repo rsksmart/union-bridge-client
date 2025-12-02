@@ -8,10 +8,18 @@ use sha3::{Digest, Keccak256};
 #[derive(Clone)]
 pub struct FakeLogGenerator {}
 
+impl Default for FakeLogGenerator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FakeLogGenerator {
+    #[must_use]
     pub fn new() -> Self {
         FakeLogGenerator {}
     }
+    #[must_use]
     pub fn generate_log_with_info(&self, event_signature: &str, log_info: LogInfo) -> RskLog {
         let address = log_info.address();
         let topics: Vec<Hash256> = vec![address_to_topic(address)];
@@ -20,9 +28,10 @@ impl FakeLogGenerator {
         RskLog::new(log_info, event)
     }
 
+    #[must_use]
     pub fn generate_log(&self, event_signature: &str, address: Address) -> RskLog {
         let fake_log_info = LogInfo::new(
-            address.clone(),
+            address,
             BlockHash::from(H256::random()),
             1.into(),
             TxHash::from(H256::random()),
@@ -56,6 +65,7 @@ impl FakeLogGenerator {
 /// let topic = event_signature_to_topic("Transfer(address,address,uint256)");
 /// assert_eq!(topic.to_string(), "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef");
 /// ```
+#[must_use]
 pub fn event_signature_to_topic(event_signature: &str) -> LogTopic {
     let mut hasher = Keccak256::new();
     hasher.update(event_signature.as_bytes());
@@ -87,6 +97,7 @@ pub fn event_signature_to_topic(event_signature: &str) -> LogTopic {
 /// let topic = address_to_topic(address);
 /// assert_eq!(topic.to_string(), "0x0000000000000000000000001234567890abcdef1234567890abcdef12345678");
 /// ```
+#[must_use]
 pub fn address_to_topic(address: Address) -> LogTopic {
     LogTopic::from(address.value())
 }

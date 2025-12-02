@@ -63,8 +63,8 @@ impl BlockchainObserver for CheckForkAccumulator {
 
 impl CheckForkAccumulator {
     pub(super) fn new(
-        event: AdvanceFundsEvent,
-        post_advance_funds_blocks: Vec<RskBlockAndUncles>,
+        event: &AdvanceFundsEvent,
+        post_advance_funds_blocks: &[RskBlockAndUncles],
     ) -> Self {
         let check_fork_args = CheckForkArgs {
             // coming from the AdvanceFunds event
@@ -92,9 +92,9 @@ impl CheckForkAccumulator {
         };
 
         // we already received the block that triggered the event, before the event itself
-        post_advance_funds_blocks
-            .iter()
-            .for_each(|b| instance.add_block_to_check_fork(b));
+        for b in post_advance_funds_blocks {
+            instance.add_block_to_check_fork(b);
+        }
 
         instance
     }
@@ -110,7 +110,7 @@ impl CheckForkAccumulator {
     pub fn has_enough_confirmations(&self) -> bool {
         self.confirmations
             .as_ref()
-            .map_or(false, |c| c.is_confirmed())
+            .is_some_and(BlockConfirmations::is_confirmed)
     }
 
     fn is_check_fork_ready(&self) -> bool {
@@ -120,14 +120,14 @@ impl CheckForkAccumulator {
             .iter()
             .flat_map(|b| std::iter::once(b).chain(&b.uncles))
             .map(|b| BlockPow::from(b.pow).into_effort())
-            .fold(U256::zero(), |accum, effort| accum.saturating_add(effort));
+            .fold(U256::zero(), primitive_types::U256::saturating_add);
 
         let pending_effort = self.args.required_effort.saturating_sub(accum_effort);
 
         let pending_blocks = self
             .args
             .required_num_blocks
-            .saturating_sub(self.args.block_list.len() as u32);
+            .saturating_sub(u32::try_from(self.args.block_list.len()).unwrap_or(u32::MAX));
 
         let is_req_effort_achieved = pending_effort == U256::zero();
         let is_req_blocks_achieved = pending_blocks == 0;
@@ -153,7 +153,7 @@ impl CheckForkAccumulator {
 
         // we received the block that triggered the event after the event itself
         if block.hash() == self.advance_funds_block_hash.into() {
-            info!("Setting InitBlock on check_fork_args {:?}", block);
+            info!("Setting InitBlock on check_fork_args {block:?}");
             self.args.init_block_number = block.number().value();
             self.args.init_block_time = block.timestamp().value();
         }
@@ -184,7 +184,7 @@ impl CheckForkAccumulator {
                 pegout_id: self.args.pegout_id.clone(),
                 operator_id: self.args.operator_id.clone(),
             };
-            info!("Setting check_fork_args {:?}", bridge_event);
+            info!("Setting check_fork_args {bridge_event:?}");
             bridge_event
         });
 
@@ -199,7 +199,7 @@ impl CheckForkAccumulator {
                     block.pow().into_effort(),
                 );
                 // convert each uncle to a checkFork Block: they have neither bridge event nor uncles
-                self.rsk_block_to_check_fork_block(uncle, None, vec![])
+                Self::rsk_block_to_check_fork_block(uncle, None, vec![])
             })
             .collect();
 
@@ -211,11 +211,10 @@ impl CheckForkAccumulator {
         );
 
         // create a checkFork Block with bridge_event and uncles if any
-        self.rsk_block_to_check_fork_block(block, bridge_event, uncle_blocks)
+        Self::rsk_block_to_check_fork_block(block, bridge_event, uncle_blocks)
     }
 
     fn rsk_block_to_check_fork_block(
-        &self,
         block: &RskBlock,
         bridge_event: Option<check_fork::BridgeEvent>,
         uncles: Vec<Block>,
@@ -232,12 +231,8 @@ impl CheckForkAccumulator {
         }
     }
 
-    fn new_confirmations(block: &RskBlockAndUncles, pegout_id: &String) -> BlockConfirmations {
-        BlockConfirmations::new(
-            pegout_id.to_string(),
-            block.number(),
-            REQUIRED_CONFIRMATIONS,
-        )
+    fn new_confirmations(block: &RskBlockAndUncles, pegout_id: &str) -> BlockConfirmations {
+        BlockConfirmations::new(pegout_id.to_owned(), block.number(), REQUIRED_CONFIRMATIONS)
     }
 }
 
@@ -249,6 +244,7 @@ mod tests {
     use common::types::{BlockHash, BlockNumber, RskBlockAndUncles, TxHash};
     use primitive_types::H256;
 
+    #[allow(clippy::too_many_arguments)]
     fn create_fake_advance_funds_event(
         pegout_id: &str,
         utxo_id: &str,
@@ -307,7 +303,7 @@ mod tests {
             tx_hash,
         );
 
-        let checker = CheckForkAccumulator::new(event.clone(), vec![]);
+        let checker = CheckForkAccumulator::new(&event, &[]);
 
         assert_eq!(checker.pegout_id(), pegout_id);
         assert_eq!(checker.args.utxo_id, utxo_id);
@@ -322,6 +318,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::similar_names)]
     fn test_new_with_post_advance_funds_blocks() {
         let pegout_id = "pegout_123";
         let utxo_id = "utxo_456";
@@ -349,7 +346,7 @@ mod tests {
         let block2 = create_fake_block_with_uncles(block2_number, U256::from(400), vec![]);
         let post_advance_funds_blocks = vec![block1, block2];
 
-        let checker = CheckForkAccumulator::new(event, post_advance_funds_blocks);
+        let checker = CheckForkAccumulator::new(&event, &post_advance_funds_blocks);
 
         assert_eq!(checker.args.block_list.len(), 2);
         assert_eq!(checker.args.block_list[0].number, block1_number);
@@ -378,7 +375,7 @@ mod tests {
             tx_hash,
         );
 
-        let checker = CheckForkAccumulator::new(event, vec![]);
+        let checker = CheckForkAccumulator::new(&event, &[]);
         assert_eq!(checker.pegout_id(), pegout_id);
     }
 
@@ -404,7 +401,7 @@ mod tests {
             tx_hash,
         );
 
-        let checker = CheckForkAccumulator::new(event, vec![]);
+        let checker = CheckForkAccumulator::new(&event, &[]);
         let args = checker.check_fork_args();
 
         assert_eq!(args.utxo_id, utxo_id);
@@ -436,7 +433,7 @@ mod tests {
             tx_hash,
         );
 
-        let mut checker = CheckForkAccumulator::new(event, vec![]);
+        let mut checker = CheckForkAccumulator::new(&event, &[]);
 
         // add a block
         let block_number = 101;
@@ -474,7 +471,7 @@ mod tests {
             tx_hash,
         );
 
-        let mut checker = CheckForkAccumulator::new(event, vec![]);
+        let mut checker = CheckForkAccumulator::new(&event, &[]);
 
         let advance_funds_block = create_fake_block(
             BlockNumber::from(advance_funds_blockk_number),
@@ -511,7 +508,7 @@ mod tests {
             tx_hash,
         );
 
-        let mut checker = CheckForkAccumulator::new(event, vec![]);
+        let mut checker = CheckForkAccumulator::new(&event, &[]);
 
         let uncle1_number = 200;
         let uncle2_number = 201;
@@ -560,7 +557,7 @@ mod tests {
             tx_hash,
         );
 
-        let mut checker = CheckForkAccumulator::new(event, vec![]);
+        let mut checker = CheckForkAccumulator::new(&event, &[]);
 
         // add a block with low effort
         let test_block_number = 101;
@@ -593,7 +590,7 @@ mod tests {
             tx_hash,
         );
 
-        let mut checker = CheckForkAccumulator::new(event, vec![]);
+        let mut checker = CheckForkAccumulator::new(&event, &[]);
 
         // add a block with sufficient effort but not enough blocks
         let test_block_number = 101;
@@ -604,6 +601,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::similar_names)]
     fn test_is_check_fork_ready_sufficient_effort_and_blocks() {
         let pegout_id = "pegout_123";
         let utxo_id = "utxo_456";
@@ -625,7 +623,7 @@ mod tests {
             tx_hash,
         );
 
-        let mut checker = CheckForkAccumulator::new(event, vec![]);
+        let mut checker = CheckForkAccumulator::new(&event, &[]);
 
         let block1_number = 101;
         let block1_effort = U256::from(300);
@@ -662,7 +660,7 @@ mod tests {
             tx_hash,
         );
 
-        let mut checker = CheckForkAccumulator::new(event, vec![]);
+        let mut checker = CheckForkAccumulator::new(&event, &[]);
 
         // create a block with uncles that contribute to effort
         let uncle1_number = 200;
@@ -687,6 +685,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::similar_names)]
     fn test_update_with_block_after_check_fork_ready() {
         let pegout_id = "pegout_123";
         let utxo_id = "utxo_456";
@@ -708,7 +707,7 @@ mod tests {
             tx_hash,
         );
 
-        let mut checker = CheckForkAccumulator::new(event, vec![]);
+        let mut checker = CheckForkAccumulator::new(&event, &[]);
 
         // add a block to make check fork ready
         let block1_number = 101;
@@ -756,7 +755,7 @@ mod tests {
             tx_hash,
         );
 
-        let mut checker = CheckForkAccumulator::new(event, vec![]);
+        let mut checker = CheckForkAccumulator::new(&event, &[]);
 
         // initially no confirmations
         assert!(!checker.has_enough_confirmations());
@@ -773,7 +772,7 @@ mod tests {
         // add confirmations (assuming REQUIRED_CONFIRMATIONS is reasonable)
         let confirmation_effort = U256::from(100);
         for i in 0..REQUIRED_CONFIRMATIONS {
-            let confirmation_block_number = initial_block_number + 1 + i as u64;
+            let confirmation_block_number = initial_block_number + 1 + u64::from(i);
             let block = create_fake_block_with_uncles(
                 confirmation_block_number,
                 confirmation_effort,
@@ -787,6 +786,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::similar_names)]
     fn test_confirmations_removed_blocks() {
         let pegout_id = "pegout_123";
         let utxo_id = "utxo_456";
@@ -808,7 +808,7 @@ mod tests {
             tx_hash,
         );
 
-        let mut checker = CheckForkAccumulator::new(event, vec![]);
+        let mut checker = CheckForkAccumulator::new(&event, &[]);
 
         // make check fork ready
         let initial_block_number = 101;
@@ -845,6 +845,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::similar_names)]
     fn test_remove_block_from_check_fork() {
         let pegout_id = "pegout_123";
         let utxo_id = "utxo_456";
@@ -866,7 +867,7 @@ mod tests {
             tx_hash,
         );
 
-        let mut checker = CheckForkAccumulator::new(event, vec![]);
+        let mut checker = CheckForkAccumulator::new(&event, &[]);
 
         // add multiple blocks with lower effort so check fork doesn't become ready
         let block1_number = 101;
@@ -922,7 +923,7 @@ mod tests {
             tx_hash,
         );
 
-        let mut checker = CheckForkAccumulator::new(event, vec![]);
+        let mut checker = CheckForkAccumulator::new(&event, &[]);
 
         // add the kickoff block
         let advance_funds_block = create_fake_block(
@@ -965,7 +966,7 @@ mod tests {
             tx_hash,
         );
 
-        let mut checker = CheckForkAccumulator::new(event, vec![]);
+        let mut checker = CheckForkAccumulator::new(&event, &[]);
 
         // add a non-kickoff block
         let non_advance_funds_block_number = 101;

@@ -1,7 +1,7 @@
 use crate::{Block, BridgeEvent, CheckForkArgs, SUPERBLOCK_TIMES_DIFFICULTY, check_fork};
 use primitive_types::{H256, U256};
 
-const DEFAULT_DIFFICULTY: u128 = 5904436352267687415636;
+const DEFAULT_DIFFICULTY: u128 = 5_904_436_352_267_687_415_636;
 const DEFAULT_TIMESTAMP: u64 = 1000;
 const DEFAULT_INIT_BLOCK_NUMBER: u64 = 100;
 const DEFAULT_REQ_NUMBER_OF_BLOCKS: u32 = 2;
@@ -11,10 +11,10 @@ fn succeeds_with_two_blocks_when_all_conditions_met() {
     let mut actual_effort = U256::zero();
 
     let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
-    actual_effort += calculate_effort_from_pow(first_block.pow.clone());
+    actual_effort += calculate_effort_from_pow(first_block.pow);
 
     let second_block = create_child_block(&first_block);
-    actual_effort += calculate_effort_from_pow(second_block.pow.clone());
+    actual_effort += calculate_effort_from_pow(second_block.pow);
 
     let block_list = vec![first_block, second_block];
 
@@ -35,15 +35,15 @@ fn succeeds_with_two_blocks_and_one_uncle_when_all_conditions_met() {
     let mut actual_effort = U256::zero();
 
     let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
-    actual_effort += calculate_effort_from_pow(first_block.pow.clone());
+    actual_effort += calculate_effort_from_pow(first_block.pow);
 
     let second_block_uncle = create_uncle(&first_block);
-    actual_effort += calculate_effort_from_pow(second_block_uncle.pow.clone());
+    actual_effort += calculate_effort_from_pow(second_block_uncle.pow);
 
     let mut second_block = create_child_block(&first_block);
     second_block.uncles = vec![second_block_uncle];
 
-    actual_effort += calculate_effort_from_pow(second_block.pow.clone());
+    actual_effort += calculate_effort_from_pow(second_block.pow);
 
     let block_list = vec![first_block, second_block];
 
@@ -144,15 +144,15 @@ fn fails_when_cumulative_effort_below_expected() {
     let mut actual_effort = U256::zero();
 
     let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
-    actual_effort += calculate_effort_from_pow(first_block.pow.clone());
+    actual_effort += calculate_effort_from_pow(first_block.pow);
 
     let second_block_uncle = create_uncle(&first_block);
-    actual_effort += calculate_effort_from_pow(second_block_uncle.pow.clone());
+    actual_effort += calculate_effort_from_pow(second_block_uncle.pow);
 
     let mut second_block = create_child_block(&first_block);
     second_block.uncles = vec![second_block_uncle];
 
-    actual_effort += calculate_effort_from_pow(second_block.pow.clone());
+    actual_effort += calculate_effort_from_pow(second_block.pow);
 
     let block_list = vec![first_block, second_block];
 
@@ -166,8 +166,7 @@ fn fails_when_cumulative_effort_below_expected() {
     assert_eq!(
         result,
         Err("Cumulative PoW does not meet the required threshold"),
-        "Expected to fail if cumulative PoW is lower than expected: {}",
-        expected_effort
+        "Expected to fail if cumulative PoW is lower than expected: {expected_effort}"
     );
 }
 
@@ -441,7 +440,7 @@ fn fails_when_uncle_difficulty_is_different_from_trunk() {
 }
 
 #[test]
-#[ignore] // TODO: re-enable this check when Superchain is implemented and checked in check_fork (now just logging)
+#[ignore = "TODO: re-enable this check when Superchain is implemented and checked in check_fork (now just logging)"]
 fn fails_when_first_block_pow_is_lower_than_required() {
     let mut first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
     // make pow lower than required
@@ -462,7 +461,7 @@ fn fails_when_first_block_pow_is_lower_than_required() {
 }
 
 #[test]
-#[ignore] // TODO: re-enable this check when Superchain is implemented and checked in check_fork (now just logging)
+#[ignore = "TODO: re-enable this check when Superchain is implemented and checked in check_fork (now just logging)"]
 fn fails_when_consecutive_block_pow_is_lower_than_required() {
     let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
 
@@ -484,7 +483,7 @@ fn fails_when_consecutive_block_pow_is_lower_than_required() {
 }
 
 #[test]
-#[ignore] // TODO: re-enable this check when Superchain is implemented and checked in check_fork (now just logging)
+#[ignore = "TODO: re-enable this check when Superchain is implemented and checked in check_fork (now just logging)"]
 fn fails_when_uncle_block_pow_is_lower_than_required() {
     let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
 
@@ -518,9 +517,9 @@ fn create_base_block(number: u64, bridge_event: bool) -> Block {
         difficulty,
         timestamp: DEFAULT_TIMESTAMP,
         bridge_event: bridge_event.then(|| BridgeEvent {
-            utxo_id: format!("utxo_{}", number),
-            pegout_id: format!("pegout_{}", number),
-            operator_id: format!("operator_{}", number),
+            utxo_id: format!("utxo_{number}"),
+            pegout_id: format!("pegout_{number}"),
+            operator_id: format!("operator_{number}"),
         }),
         uncles: vec![],
         pow: calculate_superblock_effort(U256::from(DEFAULT_DIFFICULTY)), // exact for superblock
@@ -534,7 +533,7 @@ fn create_first_block(number: u64) -> Block {
 fn create_child_block(parent: &Block) -> Block {
     let mut child = create_base_block(parent.number + 1, false);
     child.timestamp = parent.timestamp + 100;
-    child.difficulty = build_valid_consecutive_difficulty(&parent);
+    child.difficulty = build_valid_consecutive_difficulty(parent);
     child.pow = calculate_superblock_effort(child.difficulty);
     child
 }
@@ -627,13 +626,13 @@ impl CheckForkArgsBuilder {
         CheckForkArgs {
             utxo_id: self
                 .utxo_id
-                .unwrap_or_else(|| format!("utxo_{}", DEFAULT_INIT_BLOCK_NUMBER)),
+                .unwrap_or_else(|| format!("utxo_{DEFAULT_INIT_BLOCK_NUMBER}")),
             pegout_id: self
                 .pegout_id
-                .unwrap_or_else(|| format!("pegout_{}", DEFAULT_INIT_BLOCK_NUMBER)),
+                .unwrap_or_else(|| format!("pegout_{DEFAULT_INIT_BLOCK_NUMBER}")),
             operator_id: self
                 .operator_id
-                .unwrap_or_else(|| format!("operator_{}", DEFAULT_INIT_BLOCK_NUMBER)),
+                .unwrap_or_else(|| format!("operator_{DEFAULT_INIT_BLOCK_NUMBER}")),
             init_block_time: self.init_block_time.unwrap_or(DEFAULT_TIMESTAMP),
             init_block_number: self.init_block_number.unwrap_or(DEFAULT_INIT_BLOCK_NUMBER),
             required_effort: self.required_effort.unwrap_or(U256::MAX),

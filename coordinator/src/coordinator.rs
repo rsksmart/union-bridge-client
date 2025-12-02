@@ -47,11 +47,13 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
 {
     // todo(fede) new methods should be transaparent and any other extra logic should be in a
     // separate build/factory method
+    /// # Panics
+    /// Panics if loading context from the database fails.
     pub fn new<CG: RskContractsGatewayApi + 'static>(
-        rt_sync: RuntimeSync,
+        rt_sync: &RuntimeSync,
         monitor: M,
         contracts_gateway: CG,
-        bitvmx_broker: Rc<BC>,
+        bitvmx_broker: &Rc<BC>,
         store: S,
         shutdown_flag: ShutdownFlag,
         bitcoin_network: Network,
@@ -138,6 +140,8 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
         }
     }
 
+    /// # Errors
+    /// Returns an error if the coordinator run loop fails.
     pub fn run(&mut self) -> Result<()> {
         self.monitor
             .start_event_monitoring()
@@ -178,7 +182,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                     // each processor decides if the event is relevant
                     self.processors.iter_mut().for_each(|p| {
                         if let Err(e) = p.process_user_request(&req) {
-                            error!("Error processing User request {:?}: {:?}", req, e);
+                            error!("Error processing User request {req:?}: {e:?}");
                         }
                     });
 
@@ -191,13 +195,13 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                     .try_bitvmx_event()
                     .context("Error getting BitVMX event")?
                 {
-                    self.check_bitvmx_pong(&event).then(|| bitvmx_ping = None);
+                    Self::check_bitvmx_pong(&event).then(|| bitvmx_ping = None);
                     bitvmx_last_msg = Instant::now();
 
                     // each processor decides if the event is relevant
                     self.processors.iter_mut().for_each(|p| {
                         if let Err(e) = p.process_new_bitvmx_event(&event) {
-                            error!("Error processing BitVMX event {:?}: {:?}", event, e);
+                            error!("Error processing BitVMX event {event:?}: {e:?}");
                         }
                     });
 
@@ -216,7 +220,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                     // each processor decides if the event is relevant
                     self.processors.iter_mut().for_each(|p| {
                         if let Err(e) = p.process_new_rsk_event(&event) {
-                            error!("Error processing Union Bridge event {:?}: {:?}", event, e);
+                            error!("Error processing Union Bridge event {event:?}: {e:?}");
                         }
                     });
 
@@ -230,7 +234,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                 if let Some(block) = self.monitor.try_block().context("Error getting block")? {
                     self.processors.iter_mut().for_each(|p| {
                         if let Err(e) = p.process_new_block(&block) {
-                            error!("Error processing block {:?}: {:?}", block, e);
+                            error!("Error processing block {block:?}: {e:?}");
                         }
                     });
 
@@ -239,7 +243,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                 }
 
                 self.store
-                    .save_context(self.global_context.clone())
+                    .save_context(&self.global_context)
                     .context("Storing context in DB")?;
 
                 if !message_received {
@@ -253,7 +257,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
 
         // Final persistence save during shutdown to ensure no state is lost
         self.store
-            .save_context(self.global_context.clone())
+            .save_context(&self.global_context)
             .context("Final context save during shutdown")?;
 
         self.monitor
@@ -272,12 +276,12 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
     }
 
     fn check_bitvmx_liveness(&self, bitvmx_ping: &mut Option<Instant>, bitvmx_last_msg: Instant) {
-        if let Some(ping) = bitvmx_ping {
-            if ping.elapsed() > BITVMX_NOT_RESPONDING_THRESHOLD {
-                // TODO in the future we have to properly handle this situation
-                warn!("BitVMX is not responding");
-                *bitvmx_ping = None;
-            }
+        if let Some(ping) = bitvmx_ping
+            && ping.elapsed() > BITVMX_NOT_RESPONDING_THRESHOLD
+        {
+            // TODO in the future we have to properly handle this situation
+            warn!("BitVMX is not responding");
+            *bitvmx_ping = None;
         }
 
         // send ping if we have not received any message from BitVMX for a while and there is no pending ping
@@ -296,11 +300,11 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
 
         if result.is_err() {
             // TODO we need to handle this situation properly
-            error!("Failed to send Ping to BitVMX: {:?}", result);
+            error!("Failed to send Ping to BitVMX: {result:?}");
         }
     }
 
-    fn check_bitvmx_pong(&mut self, event: &OutgoingBitVMXApiMessages) -> bool {
+    fn check_bitvmx_pong(event: &OutgoingBitVMXApiMessages) -> bool {
         match event {
             OutgoingBitVMXApiMessages::Pong() => {
                 debug!("Received Pong from BitVMX");
@@ -383,7 +387,7 @@ pub(crate) mod tests {
         let event_1 = RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFundsEvent {
             inner: create_fake_request_event("pegout_id_1"),
             block_number: block_1.number(),
-            block_hash: block_1.hash().into(),
+            block_hash: block_1.hash(),
             removed: false,
             tx_hash: TxHash::from(H256::from_low_u64_be(block_1.number().value())),
         });
@@ -391,7 +395,7 @@ pub(crate) mod tests {
         let event_2: RskPegManagerEvents = RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
             inner: create_fake_advance_funds_event("pegout_id_1"),
             block_number: block_2.number(),
-            block_hash: block_2.hash().into(),
+            block_hash: block_2.hash(),
             removed: false,
             tx_hash: TxHash::from(H256::from_low_u64_be(block_2.number().value())),
         });
@@ -493,7 +497,7 @@ pub(crate) mod tests {
         let event_1 = RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFundsEvent {
             inner: create_fake_request_event("pegout_id_1"),
             block_number: block_1.number(),
-            block_hash: block_1.hash().into(),
+            block_hash: block_1.hash(),
             removed: false,
             tx_hash: TxHash::from(H256::from_low_u64_be(block_1.number().value())),
         });

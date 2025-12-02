@@ -26,10 +26,7 @@ pub struct StreamManagerContract<P: Provider> {
 
 impl<P: Provider> StreamManagerContract<P> {
     pub fn new(provider: P, contract_address: Address) -> Self {
-        info!(
-            "Connecting to StreamManager Contract @ {}",
-            contract_address
-        );
+        info!("Connecting to StreamManager Contract @ {contract_address}");
         let contract_instance = StreamManager::new(contract_address, provider);
         StreamManagerContract { contract_instance }
     }
@@ -52,14 +49,14 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
     let decoded_err = err.as_decoded_interface_error::<StreamManagerErrors>();
     decoded_err.map(|e| match e {
         StreamManagerErrors::StreamNotFoundByDenomination(e) => {
-            DomainErrors::StreamNotFoundByDenomination(format!("{:?}", e))
+            DomainErrors::StreamNotFoundByDenomination(format!("{e:?}"))
         }
         StreamManagerErrors::PacketOutOfBound(e) => {
-            DomainErrors::PacketOutOfBound(format!("{:?}", e))
+            DomainErrors::PacketOutOfBound(format!("{e:?}"))
         }
-        StreamManagerErrors::InvalidRole(e) => DomainErrors::InvalidRole(format!("{:?}", e)),
+        StreamManagerErrors::InvalidRole(e) => DomainErrors::InvalidRole(format!("{e:?}")),
         // TODO handle more based on needs
-        _ => DomainErrors::UnhandledContractError(format!("{:?}", e)),
+        _ => DomainErrors::UnhandledContractError(format!("{e:?}")),
     })
 }
 
@@ -78,7 +75,7 @@ mod tests {
                 denomination: alloy_primitives::Uint::from(125),
             });
 
-        let result = generate_contract_revert_error(expected_err);
+        let result = generate_contract_revert_error(&expected_err);
         matches!(result.into(), DomainErrors::StreamNotFoundByDenomination(_));
     }
 
@@ -88,7 +85,7 @@ mod tests {
             packetNumber: alloy_primitives::U256::from(42),
         });
 
-        let result = generate_contract_revert_error(expected_err);
+        let result = generate_contract_revert_error(&expected_err);
         matches!(result.into(), DomainErrors::PacketOutOfBound(_));
     }
 }

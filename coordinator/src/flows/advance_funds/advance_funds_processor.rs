@@ -68,32 +68,28 @@ where
     }
 
     fn start_monitoring_blocks_for_pegout(&mut self, event: RequestAdvanceFundsEvent) {
-        let pegout_id = event.inner.pegout_id.to_string();
+        let pegout_id = event.inner.pegout_id.clone();
 
         if self.request_events.is_empty() {
-            self.first_block_to_process = Some(event.block_number.clone());
+            self.first_block_to_process = Some(event.block_number);
         }
 
-        let updated = self.request_events.insert(pegout_id.to_string(), event);
+        let updated = self.request_events.insert(pegout_id.clone(), event);
         if updated.is_some() {
             // TODO(Jira) this should be monitored and analysed - https://rsklabs.atlassian.net/browse/UB-127
-            error!(
-                "RequestAdvanceFunds for pegout_id {} already exists",
-                pegout_id
-            );
-            return;
+            error!("RequestAdvanceFunds for pegout_id {pegout_id} already exists");
         }
     }
 
-    fn start_pow_accum_for_pegout(&mut self, event2: AdvanceFundsEvent) {
+    fn start_pow_accum_for_pegout(&mut self, event2: &AdvanceFundsEvent) {
         match self.check_fork_accumulator.as_ref() {
-            Some(afc) if &afc.borrow().pegout_id() == &event2.inner.pegout_id => {
+            Some(afc) if afc.borrow().pegout_id() == event2.inner.pegout_id => {
                 warn!("Already monitoring advance funds for {event2:?}");
                 return;
             }
             Some(afc) => {
                 // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
-                error!("A second advance funds was not expected. Closing {:?}", afc);
+                error!("A second advance funds was not expected. Closing {afc:?}");
                 let pegout_id = afc.borrow().pegout_id();
                 self.close_pegout(&pegout_id);
                 return;
@@ -121,7 +117,7 @@ where
             self.chain_view.get_from(event2.block_number);
 
         info!("Init advance funds with {event2:?} and {post_advance_funds_blocks:?}");
-        let new_advance_funds = CheckForkAccumulator::new(event2, post_advance_funds_blocks);
+        let new_advance_funds = CheckForkAccumulator::new(event2, &post_advance_funds_blocks);
         let advance_funds_rc = Rc::new(RefCell::new(new_advance_funds));
         self.chain_view.add_observer(advance_funds_rc.clone());
         self.check_fork_accumulator = Some(advance_funds_rc);
@@ -136,23 +132,20 @@ where
 
         // update first_block_to_process and restart chain_view to the next RequestAdvanceFunds event block
         let next_request_event_block = self.request_events.values().map(|e| e.block_number).min();
-        match next_request_event_block {
-            Some(new_fb) => {
-                self.first_block_to_process = Some(new_fb);
-                self.chain_view.restart_from(new_fb);
-            }
-            None => {
-                info!("No more RequestAdvanceFunds events, clearing block monitoring");
-                self.first_block_to_process = None;
-                self.chain_view.clear();
-            }
+        if let Some(new_fb) = next_request_event_block {
+            self.first_block_to_process = Some(new_fb);
+            self.chain_view.restart_from(new_fb);
+        } else {
+            info!("No more RequestAdvanceFunds events, clearing block monitoring");
+            self.first_block_to_process = None;
+            self.chain_view.clear();
         }
     }
 
     fn stop_pow_accum_for_pegout(&mut self, pegout_id: &String) {
         if let Some(afc) = &self.check_fork_accumulator {
             if &afc.borrow().pegout_id() == pegout_id {
-                info!("Removing active {:?}", afc);
+                info!("Removing active {afc:?}");
                 self.chain_view
                     .remove_observer(afc.borrow().get_id().as_str());
                 self.check_fork_accumulator = None;
@@ -170,12 +163,12 @@ where
 
     fn close_pegout(&mut self, pegout_id: &String) {
         self.stop_pow_accum_for_pegout(pegout_id);
-        self.stop_monitoring_blocks_for_pegout(pegout_id)
+        self.stop_monitoring_blocks_for_pegout(pegout_id);
     }
 
-    fn schedule_check_fork_zkp(&mut self, args: CheckForkArgs) {
+    fn schedule_check_fork_zkp(&mut self, args: &CheckForkArgs) {
         // note: check-fork already validates consecutive blocks, etc.
-        match check_fork(&args) {
+        match check_fork(args) {
             Ok(effort) => {
                 info!(
                     "CheckFork accepted with effort {effort} (pow {:#x}). The elf path is {:?}. The image id is {:?}",
@@ -189,7 +182,7 @@ where
                 let serialized_args = match Self::serialize_guest_input(&args) {
                     Ok(input) => input,
                     Err(e) => {
-                        error!("Error serializing CheckForkArgs: {}", e);
+                        error!("Error serializing CheckForkArgs: {e}");
                         return;
                     }
                 };
@@ -197,7 +190,7 @@ where
                 self.send_zkp_request(serialized_args);
             }
             Err(e) => {
-                error!("CheckFork rejected: {}", e);
+                error!("CheckFork rejected: {e}");
                 // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
                 // TODO(Jira) discuss with architects on error handling - https://rsklabs.atlassian.net/browse/UB-149
             }
@@ -222,32 +215,27 @@ where
             Err(e) => {
                 // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
                 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132
-                error!("Error sending GenerateCheckForkZKP: {:?}", e)
+                error!("Error sending GenerateCheckForkZKP: {e:?}");
             }
         }
     }
 
     fn notify_contracts_advance_funds_complete(&self, pegout_id: &str) {
-        debug!(
-            "Notifying contracts that advance funds for {} are complete",
-            pegout_id
-        );
+        debug!("Notifying contracts that advance funds for {pegout_id} are complete");
 
         let result = self
             .rt_sync
             .run(async { self.contracts.notify_check_fork_completion(pegout_id).await });
         match result {
-            Ok(_) => {
+            Ok(()) => {
                 info!(
-                    "Successfully notified contracts about advance funds completion for {}",
-                    pegout_id
+                    "Successfully notified contracts about advance funds completion for {pegout_id}"
                 );
             }
             Err(e) => {
                 // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
                 error!(
-                    "Error notifying contracts about advance funds completion for {}: {}",
-                    pegout_id, e
+                    "Error notifying contracts about advance funds completion for {pegout_id}: {e}"
                 );
             }
         }
@@ -257,18 +245,17 @@ where
         bincode::serde::encode_to_vec(data, standard()).map_err(|e| {
             // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
             // TODO(Jira) discuss with architects on error handling - https://rsklabs.atlassian.net/browse/UB-149
-            error!("Error serializing guest input: {}", e);
+            error!("Error serializing guest input: {e}");
             e.into()
         })
     }
 
     fn pow_from_effort(effort: U256) -> U256 {
-        let pow = U256::MAX.checked_div(effort).unwrap_or_else(|| {
+        U256::MAX.checked_div(effort).unwrap_or_else(|| {
             // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
             error!("CheckFork accepted with 0 effort",);
             U256::zero()
-        });
-        pow
+        })
     }
 }
 
@@ -280,28 +267,28 @@ where
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         match event {
             RskPegManagerEvents::RequestAdvanceFunds(data) => {
-                if !data.removed {
-                    info!("Handling {:?}, waiting blocks...", data);
-                    self.start_monitoring_blocks_for_pegout(data.clone());
-                } else {
+                if data.removed {
                     info!(
                         "Handling RemoveRequestAdvanceFunds {}...",
                         data.inner.pegout_id
                     );
                     self.stop_monitoring_blocks_for_pegout(&data.inner.pegout_id);
+                } else {
+                    info!("Handling {data:?}, waiting blocks...");
+                    self.start_monitoring_blocks_for_pegout(data.clone());
                 }
             }
             RskPegManagerEvents::AdvanceFunds(data) => {
-                if !data.removed {
-                    info!("Handling {:?}...", data);
-                    self.start_pow_accum_for_pegout(data.clone());
-                } else {
+                if data.removed {
                     info!("Handling RemoveAdvanceFunds {}...", data.inner.pegout_id);
                     self.stop_pow_accum_for_pegout(&data.inner.pegout_id);
+                } else {
+                    info!("Handling {data:?}...");
+                    self.start_pow_accum_for_pegout(data);
                 }
             }
             _ => {
-                info!("Ignoring {:?}...", event);
+                info!("Ignoring {event:?}...");
                 return Ok(()); // ignore unrelated events
             }
         }
@@ -326,7 +313,7 @@ where
             return Ok(());
         }
 
-        self.chain_view.update(block.clone());
+        self.chain_view.update(block);
 
         let Some(afc) = self.check_fork_accumulator.as_mut() else {
             debug!(
@@ -337,17 +324,17 @@ where
         };
 
         if afc.borrow().has_enough_confirmations() {
-            info!("Triggering CheckFork for complete advance funds {:?}", afc);
+            info!("Triggering CheckFork for complete advance funds {afc:?}");
 
             let args = afc.borrow().check_fork_args();
             let pegout_id = afc.borrow().pegout_id();
 
             // TODO(Jira) if this fails, we should not close the pegout and retry it later - https://rsklabs.atlassian.net/browse/UB-132
-            self.schedule_check_fork_zkp(args);
+            self.schedule_check_fork_zkp(&args);
 
             self.notify_contracts_advance_funds_complete(&pegout_id);
 
-            info!("Completing advance funds {}", pegout_id);
+            info!("Completing advance funds {pegout_id}");
             self.stop_monitoring_blocks_for_pegout(&pegout_id);
             self.stop_pow_accum_for_pegout(&pegout_id);
         }
@@ -401,7 +388,7 @@ mod tests {
             original_block.difficulty(),
             original_block.total_difficulty(),
             original_block.pow(),
-            original_block.uncles().to_vec(),
+            original_block.uncles().clone(),
         )
     }
 
@@ -454,11 +441,7 @@ mod tests {
             processor.first_block_to_process,
             Some(request_block.number())
         );
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
 
         let pegout_id_2 = "peg456";
         processor
@@ -475,16 +458,8 @@ mod tests {
             processor.first_block_to_process,
             Some(request_block.number())
         );
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id_2.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
+        assert!(processor.request_events.contains_key(pegout_id_2));
 
         assert!(processor.chain_view.is_empty());
         assert!(!processor.chain_view.is_observed());
@@ -770,6 +745,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn test_process_advance_funds_block_after_event_accumulates_effort_and_closes_advance_funds() {
         let mut bitvmx_broker = MockBrokerClientApi::new();
         expect_zkp_bitvmx(&mut bitvmx_broker);
@@ -847,15 +823,11 @@ mod tests {
             .expect("Should process block");
 
         assert!(processor.check_fork_accumulator.is_some());
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
         assert!(processor.first_block_to_process.is_some());
         assert!(!processor.chain_view.is_empty());
         assert!(processor.chain_view.is_observed());
-        assert!(processor.chain_view.has_observer(&pegout_id.to_string()));
+        assert!(processor.chain_view.has_observer(pegout_id));
 
         let advance_funds_sibling = create_block_from_template(
             advance_funds_block.block(),
@@ -873,17 +845,13 @@ mod tests {
             .expect("Should process block");
 
         assert!(processor.check_fork_accumulator.is_some());
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
 
         // starting in 2 because we already have: the one created after the kickoff event and the one before this loop
         // we stop at -2: range limit exclusive and leaving one confirmation pending
         for i in 2..=required_blocks_plus_confirmations - 2 {
             let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-                advance_funds_block.number() + i as u64,
+                advance_funds_block.number() + u64::from(i),
                 block_effort,
             ));
             processor
@@ -894,18 +862,14 @@ mod tests {
         // confirmations -1, not ready
 
         assert!(processor.check_fork_accumulator.is_some());
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
         assert!(processor.first_block_to_process.is_some());
         assert!(!processor.chain_view.is_empty());
         assert!(processor.chain_view.is_observed());
         assert!(processor.chain_view.has_observer(pegout_id));
 
         let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-            advance_funds_block.number() + required_blocks_plus_confirmations as u64 - 1,
+            advance_funds_block.number() + u64::from(required_blocks_plus_confirmations) - 1,
             block_effort,
         ));
         processor
@@ -922,6 +886,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn test_process_advance_funds_block_before_event_accumulates_effort_and_closes_advance_funds() {
         let mut bitvmx_broker = MockBrokerClientApi::new();
         expect_zkp_bitvmx(&mut bitvmx_broker);
@@ -999,11 +964,7 @@ mod tests {
             .expect("Should have processed kickoff");
 
         assert!(processor.check_fork_accumulator.is_some());
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
         assert!(processor.first_block_to_process.is_some());
         assert!(!processor.chain_view.is_empty());
         assert!(processor.chain_view.is_observed());
@@ -1025,11 +986,7 @@ mod tests {
             .expect("Should process block");
 
         assert!(processor.check_fork_accumulator.is_some());
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
         assert!(processor.first_block_to_process.is_some());
         assert!(!processor.chain_view.is_empty());
         assert!(processor.chain_view.is_observed());
@@ -1039,7 +996,7 @@ mod tests {
         // we stop at -2: range limit exclusive and leaving one confirmation pending
         for i in 2..=required_blocks_plus_confirmations - 2 {
             let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-                advance_funds_block.number() + i as u64,
+                advance_funds_block.number() + u64::from(i),
                 block_effort,
             ));
             processor
@@ -1050,18 +1007,14 @@ mod tests {
         // confirmations -1, not ready
 
         assert!(processor.check_fork_accumulator.is_some());
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
         assert!(processor.first_block_to_process.is_some());
         assert!(!processor.chain_view.is_empty());
         assert!(processor.chain_view.is_observed());
         assert!(processor.chain_view.has_observer(pegout_id));
 
         let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-            advance_funds_block.number() + required_blocks_plus_confirmations as u64 - 1,
+            advance_funds_block.number() + u64::from(required_blocks_plus_confirmations) - 1,
             block_effort,
         ));
         processor
@@ -1114,11 +1067,7 @@ mod tests {
             }))
             .expect("Should have processed kickoff");
 
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
         assert!(processor.chain_view.is_empty());
         assert!(!processor.chain_view.is_observed());
         assert!(processor.check_fork_accumulator.is_none());
@@ -1201,11 +1150,7 @@ mod tests {
             .process_new_block(&advance_funds_block)
             .expect("Should process block");
 
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
         assert!(processor.check_fork_accumulator.is_some());
         assert_eq!(processor.chain_view.len(), 2);
 
@@ -1295,7 +1240,7 @@ mod tests {
         let request_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
         let advance_funds_block =
-            RskBlockAndUncles::new_no_uncles(create_advance_funds_block(&request_block.block()));
+            RskBlockAndUncles::new_no_uncles(create_advance_funds_block(request_block.block()));
 
         let pegout_id = "peg123";
 
@@ -1317,11 +1262,7 @@ mod tests {
             .expect("Should process block");
 
         assert!(processor.check_fork_accumulator.is_none());
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
         assert_eq!(processor.chain_view.len(), 1);
 
         processor
@@ -1329,11 +1270,7 @@ mod tests {
             .expect("Should process block");
 
         assert!(processor.check_fork_accumulator.is_none());
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
         assert_eq!(processor.chain_view.len(), 1);
     }
 
@@ -1370,11 +1307,7 @@ mod tests {
             .process_new_block(&advance_funds_block)
             .expect("Should process block");
 
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
         assert!(processor.check_fork_accumulator.is_none());
         assert_eq!(processor.chain_view.len(), 1);
 
@@ -1382,11 +1315,7 @@ mod tests {
             .process_new_block(&advance_funds_block_2)
             .expect("Should process block");
 
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
         assert!(processor.check_fork_accumulator.is_none());
         assert_eq!(processor.chain_view.len(), 1);
     }
@@ -1433,11 +1362,7 @@ mod tests {
             .expect("Should have processed kickoff");
 
         assert!(processor.check_fork_accumulator.is_some());
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
         assert_eq!(processor.chain_view.len(), 1);
 
         processor
@@ -1451,15 +1376,12 @@ mod tests {
             .expect("Should have processed removal");
 
         assert!(processor.check_fork_accumulator.is_none());
-        assert!(
-            processor
-                .request_events
-                .contains_key(&pegout_id.to_string())
-        );
+        assert!(processor.request_events.contains_key(pegout_id));
         assert_eq!(processor.chain_view.len(), 1);
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn test_process_blocks_handles_reorg_after_kickoff() {
         let mut bitvmx_broker = MockBrokerClientApi::new();
         expect_zkp_bitvmx(&mut bitvmx_broker);
@@ -1580,8 +1502,7 @@ mod tests {
                     .get_at(&expected_block.number())
                     .as_ref(),
                 Some(expected_block),
-                "{} should be present",
-                description
+                "{description} should be present"
             );
         }
 
@@ -1649,9 +1570,10 @@ mod tests {
                 }
 
                 additional_blocks_needed -= 1;
-                if additional_blocks_needed == 0 {
-                    panic!("Advance funds didn't complete after many blocks");
-                }
+                assert!(
+                    additional_blocks_needed != 0,
+                    "Advance funds didn't complete after many blocks"
+                );
             }
 
             // verify advance funds completed successfully after reorg
@@ -1748,8 +1670,7 @@ mod tests {
                     .get_at(&expected_block.number())
                     .as_ref(),
                 Some(expected_block),
-                "{} should be present",
-                description
+                "{description} should be present"
             );
         }
 
@@ -1797,6 +1718,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn test_process_blocks_reorg_during_confirmations_period() {
         let mut bitvmx_broker = MockBrokerClientApi::new();
         bitvmx_broker
@@ -1871,7 +1793,7 @@ mod tests {
         let mut pow_blocks = Vec::new();
         for i in 1..required_blocks {
             let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-                advance_funds_block.number() + i as u64,
+                advance_funds_block.number() + u64::from(i),
                 block_effort,
             ));
             pow_blocks.push(block.clone());
@@ -1885,7 +1807,7 @@ mod tests {
         let partial_confirmations = REQUIRED_CONFIRMATIONS / 2; // Only half the confirmations
         for i in 0..partial_confirmations {
             let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-                advance_funds_block.number() + required_blocks as u64 + i as u64,
+                advance_funds_block.number() + u64::from(required_blocks) + u64::from(i),
                 block_effort,
             ));
             confirmation_blocks.push(block.clone());
@@ -1902,14 +1824,14 @@ mod tests {
 
         // now simulate a reorg during the confirmation period
         // reorg from a point during the confirmation period
-        let reorg_point = advance_funds_block.number() + required_blocks as u64 + 1;
+        let reorg_point = advance_funds_block.number() + u64::from(required_blocks) + 1;
         let higher_effort = block_effort * 2;
 
         // create alternative chain with higher effort that will complete the advance funds
         let mut alternative_blocks = Vec::new();
         for i in 0..required_blocks_plus_confirmations {
             let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-                reorg_point + i as u64,
+                reorg_point + u64::from(i),
                 higher_effort,
             ));
             alternative_blocks.push(block.clone());

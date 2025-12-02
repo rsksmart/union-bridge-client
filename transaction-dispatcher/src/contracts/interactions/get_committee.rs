@@ -26,10 +26,10 @@ impl<C: CommitteeRegistryContractApi> GetCommitteeCall<C> {
             .call_get_committee(input.committee_id)
             .await
             .map_err(|e| {
-                DomainErrors::UnhandledContractError(format!("Failed to get committee: {}", e))
+                DomainErrors::UnhandledContractError(format!("Failed to get committee: {e}"))
             })?;
 
-        info!("GetCommittee successful, found committee: {:?}", committee);
+        info!("GetCommittee successful, found committee: {committee:?}");
 
         Ok(GetCommitteeOutput { committee })
     }
@@ -39,7 +39,7 @@ impl<C: CommitteeRegistryContractApi> GetCommitteeCall<C> {
 mod tests {
     use super::*;
     use crate::contracts::committee_registry::MockCommitteeRegistryContractApi;
-    use alloy_primitives::{Address, U256, address};
+    use alloy_primitives::{Address, U256, Uint, address};
     use mockall::predicate::always;
     use union_contracts::bindings::committee_registry::CommitteeRegistry::{
         Committee, CommitteeMember,
@@ -119,7 +119,7 @@ mod tests {
                     "unexpected error message: {msg}"
                 );
             }
-            other => panic!("unexpected error variant: {:?}", other),
+            other => panic!("unexpected error variant: {other:?}"),
         }
     }
 
@@ -128,7 +128,7 @@ mod tests {
         let leader: Address = address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
         let members = vec![CommitteeMember {
             memberAddress: leader,
-            role: 1.into(),
+            role: 1u8,
         }];
         let operator_take_index = U256::from(42u64);
 
@@ -137,7 +137,7 @@ mod tests {
             members,
             leaderAddress: leader,
             operatorTakeIndex: operator_take_index,
-            createdAt: Default::default(),
+            createdAt: Uint::default(),
             missingData: 0,
             missingCommunicationData: 0,
             isPending: false,

@@ -119,13 +119,10 @@ where
         debug!("Checking for pegout flows to restore from persistence");
 
         let saved_flows: HashMap<Uuid, State> =
-            self.store.load_all_flows(StorePrefix::PegoutFlow)?;
+            self.store.load_all_flows(&StorePrefix::PegoutFlow)?;
 
-        for (id, saved_state) in saved_flows.iter() {
-            self.restore_flow(id, saved_state).map_err(|e| {
-                debug!("Failed to restore flow {id}: {e}");
-                e
-            })?;
+        for (id, saved_state) in &saved_flows {
+            self.restore_flow(id, saved_state);
         }
 
         if !self.pegout_flows.is_empty() {
@@ -139,7 +136,7 @@ where
     }
 
     // restores a flow from a saved state and return a reference to it
-    fn restore_flow(&mut self, id: &Uuid, saved_state: &State) -> Result<()> {
+    fn restore_flow(&mut self, id: &Uuid, saved_state: &State) {
         let flow = PegoutFlow::from_saved_state(
             Rc::clone(&self.contracts_gateway),
             self.rt_sync.clone(),
@@ -154,14 +151,12 @@ where
         self.pegout_flows.insert(*id, flow);
 
         debug!("Restored flow {id}");
-
-        Ok(())
     }
 
     pub fn get_user_take_pid(committee_id: Uuid, slot_index: usize) -> Result<Uuid> {
         let mut hasher = Sha256::new();
         hasher.update(committee_id.as_bytes());
-        hasher.update(&slot_index.to_be_bytes());
+        hasher.update(slot_index.to_be_bytes());
         hasher.update("user_take");
 
         // Get the result as a byte array
@@ -176,7 +171,7 @@ where
         Ok(Uuid::from_bytes(uuid_bytes))
     }
 
-    /// Create a new flow for a PegoutRequested event
+    /// Create a new flow for a `PegoutRequested` event
     pub fn create_flow_for_pegout_requested(&mut self, event: &PegoutRequested) -> Result<()> {
         let committee_id: CommitteeId = event.committeeId.try_into()?;
 
@@ -186,11 +181,11 @@ where
             return Ok(());
         }
         debug!(
-            "Handling PegoutRequested event with committee id {}, as member I should respond",
-            committee_id
+            "Handling PegoutRequested event with committee id {committee_id}, as member I should respond"
         );
 
-        let slot_index = event.slotId as usize;
+        let slot_index = usize::try_from(event.slotId)
+            .map_err(|_| anyhow!("slotId {} too large for usize", event.slotId))?;
         let committee_uuid: Uuid = Uuid::from_u128(event.committeeId.try_into()?);
         let flow_id = Self::get_user_take_pid(committee_uuid, slot_index)?;
 
@@ -199,28 +194,25 @@ where
             self.rt_sync.clone(),
             Rc::clone(&self.bitvmx_broker),
             flow_id,
-            event.clone(),
+            event,
             Rc::clone(&self.store),
         );
 
         // Initialize the flow with the PegoutRequested event
-        flow.complete_step(StepData::PegoutRequested)?;
+        flow.complete_step(&StepData::PegoutRequested)?;
 
         self.pegout_flows.insert(flow_id, flow);
 
-        info!(
-            "Created new pegout flow {} for committee {}",
-            flow_id, committee_id
-        );
+        info!("Created new pegout flow {flow_id} for committee {committee_id}");
         Ok(())
     }
 
-    /// Handle confirmed PegoutRegistered event
+    /// Handle confirmed `PegoutRegistered` event
     fn handle_pegout_registered(
         &mut self,
         pr: &crate::types::EventWithBlock<PegoutRegistered>,
     ) -> Result<()> {
-        info!("Processing confirmed PegoutRegistered event: {:?}", pr);
+        info!("Processing confirmed PegoutRegistered event: {pr:?}");
         // Find the flow corresponding to this pegout registration using event tx_hash with  flow.state.pegout_registered_tx
         let pegout_registered = pr.inner.clone();
         let pegout_registered_txid: Txid = TxIdParser::fb_32_to_txid(pegout_registered.txid);
@@ -230,12 +222,9 @@ where
             .find(|flow| flow.get_user_take_txid() == Some(pegout_registered_txid));
 
         if let Some(flow) = flow_opt {
-            flow.complete_step(StepData::PegoutRegistered(pegout_registered))?;
+            flow.complete_step(&StepData::PegoutRegistered(pegout_registered))?;
         } else {
-            warn!(
-                "No matching pegout flow found for PegoutRegistered event: {:?}",
-                pr
-            );
+            warn!("No matching pegout flow found for PegoutRegistered event: {pr:?}");
         }
         Ok(())
     }
@@ -254,28 +243,27 @@ where
             self.pegout_flows.remove(internal_id);
 
             self.store
-                .delete_flow(StoreKey::PegoutFlow(*internal_id))
+                .delete_flow(&StoreKey::PegoutFlow(*internal_id))
                 .unwrap_or_else(|e| {
-                    error!("Failed to remove completed flow {internal_id} from persistence: {e}")
+                    error!("Failed to remove completed flow {internal_id} from persistence: {e}");
                 });
         }
     }
 
     /// Process confirmed RSK events
     fn process_confirmed_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
-        info!("Processing confirmed RSK event: {:?}", event);
+        info!("Processing confirmed RSK event: {event:?}");
 
         match event {
             RskPegManagerEvents::PegoutRequested(pr) => {
                 let committee_id = pr.inner.committeeId.try_into()?;
                 if !self.global_context.my_committees().im_member(&committee_id) {
                     debug!(
-                        "Handling PegoutRequested event with committee id {}, I am NOT member so I skip",
-                        committee_id
+                        "Handling PegoutRequested event with committee id {committee_id}, I am NOT member so I skip"
                     );
                     return Ok(());
                 }
-                info!("Processing confirmed PegoutRequested event: {:?}", pr);
+                info!("Processing confirmed PegoutRequested event: {pr:?}");
                 self.create_flow_for_pegout_requested(&pr.inner)?;
             }
             RskPegManagerEvents::PegoutRegistered(pr) => {
@@ -290,7 +278,7 @@ where
         Ok(())
     }
 
-    /// Build event info for PegoutRequested events
+    /// Build event info for `PegoutRequested` events
     fn build_pegout_requested_event_info(
         event: &crate::types::EventWithBlock<PegoutRequested>,
     ) -> (String, EventStatus, BlockNumber, RskPegManagerEvents) {
@@ -318,7 +306,7 @@ where
         block: &RskBlockAndUncles,
     ) -> Result<()> {
         let mut flows_to_dispatch = Vec::new();
-        for (flow_id, signature_flow) in self.signature_flows.iter_mut() {
+        for (flow_id, signature_flow) in &mut self.signature_flows {
             signature_flow.delegate_block(block)?;
             if signature_flow.is_done() {
                 flows_to_dispatch.push(*flow_id);
@@ -327,12 +315,11 @@ where
 
         for flow_id in &flows_to_dispatch {
             if let Some(flow) = self.pegout_flows.get_mut(flow_id) {
-                flow.complete_step(StepData::DispatchTransaction)?;
-                self.signature_flows.remove(&flow_id);
+                flow.complete_step(&StepData::DispatchTransaction)?;
+                self.signature_flows.remove(flow_id);
             } else {
                 warn!(
-                    "Signature flow done for unknown pegout flow_id: {}. Skipping dispatch step",
-                    flow_id
+                    "Signature flow done for unknown pegout flow_id: {flow_id}. Skipping dispatch step"
                 );
             }
         }
@@ -345,15 +332,9 @@ where
         flow_id: &Uuid,
         tx_status: TransactionStatus,
     ) -> Result<()> {
-        let flow = match self.pegout_flows.get_mut(&flow_id) {
-            Some(flow) => flow,
-            None => {
-                trace!(
-                    "Ignoring BitVMX Transaction event for unknown flow_id: {}",
-                    flow_id
-                );
-                return Ok(());
-            }
+        let Some(flow) = self.pegout_flows.get_mut(flow_id) else {
+            trace!("Ignoring BitVMX Transaction event for unknown flow_id: {flow_id}");
+            return Ok(());
         };
 
         let TransactionStatus {
@@ -367,9 +348,7 @@ where
             .ok_or_else(|| anyhow!("Expected user take tx_id not found"))?;
         if expected_txid != tx_id {
             bail!(
-                "Pegout state for flow_id: {} does not match received tx_id: {} from tx status message",
-                flow_id,
-                tx_id
+                "Pegout state for flow_id: {flow_id} does not match received tx_id: {tx_id} from tx status message"
             );
         }
 
@@ -383,21 +362,17 @@ where
         }
 
         if confirmations >= SPV_PROOF_MIN_CONFIRMATIONS {
-            debug!(
-                "Transaction confirmed with sufficient confirmations for flow_id: {}",
-                flow_id
-            );
-            flow.complete_step(StepData::TransactionConfirmed(tx_status))?;
+            debug!("Transaction confirmed with sufficient confirmations for flow_id: {flow_id}");
+            flow.complete_step(&StepData::TransactionConfirmed(tx_status))?;
             if self.tx_status_scheduler.is_scheduled(&flow_id) {
                 self.tx_status_scheduler.cancel(&flow_id);
             }
         } else {
             debug!(
-                "Transaction not confirmed with sufficient confirmations for flow_id: {}",
-                flow_id
+                "Transaction not confirmed with sufficient confirmations for flow_id: {flow_id}"
             );
             self.tx_status_scheduler
-                .schedule(flow_id.clone(), BLOCKS_DELAY_FOR_TX_CHECK);
+                .schedule(flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
         }
         Ok(())
     }
@@ -423,10 +398,7 @@ where
                     }
                 }
                 None => {
-                    warn!(
-                        "Skipping delayed transaction status request for unknown flow {}",
-                        flow_id
-                    );
+                    warn!("Skipping delayed transaction status request for unknown flow {flow_id}");
                 }
             }
         }
@@ -440,14 +412,15 @@ where
             return Ok(());
         }
 
-        self.blockchain_view.update(block.clone());
+        self.blockchain_view.update(block);
 
         // process confirmed events while removing them from the hashmap
         // collect the keys of confirmed events first to avoid mutating while iterating
         let confirmed_keys: Vec<_> = self
             .events_confirming
             .iter()
-            .filter_map(|(key, event)| event.is_confirmed().then(|| key.clone()))
+            .filter(|(_, event)| event.is_confirmed())
+            .map(|(key, _)| key.clone())
             .collect();
 
         for key in confirmed_keys {
@@ -456,7 +429,7 @@ where
                 trace!("Event data: {:?}", event.get_data());
                 // properly cleanup the observer before processing the event
                 if let Err(e) = event.stop_confirming() {
-                    error!("Failed to stop confirming for event {}: {}", key, e)
+                    error!("Failed to stop confirming for event {key}: {e}");
                 }
                 self.process_confirmed_rsk_event(event.get_data())?;
             }
@@ -493,32 +466,29 @@ where
     }
 
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
-        trace!("Processing BitVMX event: {:?}", event);
+        trace!("Processing BitVMX event: {event:?}");
 
         match event {
             OutgoingBitVMXApiMessages::CommInfo(comm_info) => {
-                trace!("Received CommInfo from BitVMX: {:?}", comm_info);
+                trace!("Received CommInfo from BitVMX: {comm_info:?}");
                 //for any flow in flows having active step GetCommInfo, complete the step with the CommInfo
-                for (flow_id, flow) in self.pegout_flows.iter_mut() {
+                for (flow_id, flow) in &mut self.pegout_flows {
                     if flow.current_step() == Steps::GetCommInfo {
                         debug!("Completing GetCommInfo step for flow {flow_id}");
-                        flow.complete_step(StepData::CommInfo(comm_info.clone()))?;
+                        flow.complete_step(&StepData::CommInfo(comm_info.clone()))?;
                     }
                 }
             }
             OutgoingBitVMXApiMessages::Variable(flow_id, method, VariableTypes::String(data))
                 if matches!(method.as_str(), PEGOUT_ACCEPTED_NAME) =>
             {
-                info!(
-                    "Received PegOutAccepted variable from BitVMX for flow_id: {}",
-                    flow_id
-                );
-                debug!("PegOutAccepted data: {}", data);
+                info!("Received PegOutAccepted variable from BitVMX for flow_id: {flow_id}");
+                debug!("PegOutAccepted data: {data}");
                 let input: PegOutAccepted = serde_json::from_str::<PegOutAccepted>(data)?;
                 let flow = self
                     .pegout_flows
                     .get_mut(flow_id)
-                    .ok_or_else(|| anyhow!("Flow not found for flow_id: {}", flow_id))?;
+                    .ok_or_else(|| anyhow!("Flow not found for flow_id: {flow_id}"))?;
                 if flow.current_step() != Steps::PrepareUserTakeSetup {
                     bail!(
                         "Mismatch current step for flow {} expected {:?} having {:?}",
@@ -533,43 +503,37 @@ where
                 let register_input = RegisterSignaturesBitVmxData {
                     hash_to_sign,
                     nonce: input.user_take_nonce.clone(),
-                    signature: input.user_take_signature.clone(),
+                    signature: input.user_take_signature,
                 };
-                flow.complete_step(StepData::PegoutAccepted(input))?;
+                flow.complete_step(&StepData::PegoutAccepted(input))?;
 
                 let mut btc_sig_subflow = self.btc_sig_subflow_factory.create_flow(*flow_id);
-                btc_sig_subflow.start_signature_flow(flow_id.clone(), &register_input)?;
-                self.signature_flows
-                    .insert(flow_id.clone(), btc_sig_subflow);
+                btc_sig_subflow.start_signature_flow(*flow_id, &register_input)?;
+                self.signature_flows.insert(*flow_id, btc_sig_subflow);
             }
             OutgoingBitVMXApiMessages::SetupCompleted(program_id) => {
                 if self.pegout_flows.contains_key(program_id) {
-                    info!("Pegout setup was completed: flow_id={}", program_id);
+                    info!("Pegout setup was completed: flow_id={program_id}");
                 } else {
-                    trace!(
-                        "Ignoring BitVMX SetupCompleted for unknown program_id: {}",
-                        program_id
-                    );
+                    trace!("Ignoring BitVMX SetupCompleted for unknown program_id: {program_id}");
                 }
             }
             OutgoingBitVMXApiMessages::SPVProof(tx_id, spv_proof_opt) => {
                 let spv_proof = spv_proof_opt.clone().ok_or_else(|| {
-                    anyhow!("Received SPVProof event for tx_id {} without proof", tx_id)
+                    anyhow!("Received SPVProof event for tx_id {tx_id} without proof")
                 })?;
 
-                let (flow_id, flow) =
-                    match self.pegout_flows.iter_mut().find_map(|(flow_id, flow)| {
+                let Some((flow_id, flow)) =
+                    self.pegout_flows.iter_mut().find_map(|(flow_id, flow)| {
                         (flow.get_user_take_txid() == Some(*tx_id)).then_some((*flow_id, flow))
-                    }) {
-                        Some((flow_id, flow)) => (flow_id, flow),
-                        None => {
-                            debug!(
-                                "Ignoring SPV proof for flow {} while at step {:?}",
-                                "unknown", "unknown"
-                            );
-                            return Ok(());
-                        }
-                    };
+                    })
+                else {
+                    debug!(
+                        "Ignoring SPV proof for flow {} while at step {:?}",
+                        "unknown", "unknown"
+                    );
+                    return Ok(());
+                };
                 if flow.current_step() != Steps::RequestUserTakeSpvProof {
                     bail!(
                         "Mismatch current step for flow {} expected {:?} having {:?}",
@@ -577,15 +541,14 @@ where
                         Steps::RequestUserTakeSpvProof,
                         flow.current_step()
                     );
-                } else {
-                    flow.complete_step(StepData::SpvProof(spv_proof))?;
                 }
+                flow.complete_step(&StepData::SpvProof(spv_proof))?;
             }
             OutgoingBitVMXApiMessages::Transaction(flow_id, tx_status, _tx_opt) => {
                 self.handle_transaction_status_received(flow_id, tx_status.clone())?;
             }
             _ => {
-                trace!("Ignoring BitVMX event: {:?}", event);
+                trace!("Ignoring BitVMX event: {event:?}");
             }
         }
 
@@ -596,8 +559,8 @@ where
         match event {
             RskPegManagerEvents::AllNoncesReady(data)
             | RskPegManagerEvents::AllSignaturesReady(data) => {
-                debug!("Handling signature event {:?}", data);
-                for (flow_id, sig_flow) in self.signature_flows.iter_mut() {
+                debug!("Handling signature event {data:?}");
+                for (flow_id, sig_flow) in &mut self.signature_flows {
                     sig_flow.delegate_rsk_event(*flow_id, event)?;
                 }
                 return Ok(());
@@ -622,12 +585,12 @@ where
         };
 
         if is_removal {
-            warn!("Removing pending RSK event: {:?}", event);
+            warn!("Removing pending RSK event: {event:?}");
 
             // properly clean up the observer before removing the event
             if let Some(mut removed_ev) = self.events_confirming.remove(&id) {
                 if let Err(e) = removed_ev.stop_confirming() {
-                    error!("Failed to stop confirming for removed event {id}: {e}")
+                    error!("Failed to stop confirming for removed event {id}: {e}");
                 }
             } else {
                 warn!("Tried to remove non-existing pending event with id {id}");

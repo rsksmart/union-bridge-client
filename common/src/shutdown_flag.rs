@@ -11,6 +11,10 @@ pub struct ShutdownFlag {
 }
 
 impl ShutdownFlag {
+    /// # Panics
+    ///
+    /// Panics if the signal handlers cannot be registered.
+    #[must_use]
     pub fn init() -> Self {
         let shutdown_flag = ShutdownFlag {
             flag: Arc::new(AtomicBool::new(false)),
@@ -24,6 +28,7 @@ impl ShutdownFlag {
         shutdown_flag
     }
 
+    #[must_use]
     pub fn is_on(&self) -> bool {
         self.flag.load(Ordering::SeqCst)
     }

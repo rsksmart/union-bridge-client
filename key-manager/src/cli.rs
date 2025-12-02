@@ -3,6 +3,7 @@ use anyhow::{Ok, Result};
 use clap::{Parser, Subcommand};
 use std::path::Path;
 
+#[derive(Default)]
 pub struct Cli {}
 
 #[derive(Parser)]
@@ -31,10 +32,20 @@ enum Commands {
 }
 
 impl Cli {
+    #[must_use]
     pub fn new() -> Self {
-        Self {}
+        Self::default()
     }
 
+    /// Run the CLI application
+    ///
+    /// # Panics
+    ///
+    /// Panics if a path cannot be converted to a string (should not happen on valid filesystems)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if key generation or derivation fails
     pub fn run(&self) -> Result<()> {
         let menu = Menu::parse();
 
@@ -45,10 +56,7 @@ impl Cli {
             } => {
                 let path = Path::new(destination);
                 let (file, public_key, address) = KeyManager::generate_key(path, password)?;
-                println!(
-                    "Generated key @ {}, public '{}', address '{}'",
-                    file, public_key, address
-                );
+                println!("Generated key @ {file}, public '{public_key}', address '{address}'");
                 Ok(())
             }
             Commands::DerivePublicData { password, key_file } => {
@@ -56,10 +64,8 @@ impl Cli {
                 let (public_key, address) =
                     KeyManager::derive_public_key_and_address(path, password)?;
                 println!(
-                    "Derived key @ {}, public '{}', address '{}'",
-                    path.to_str().unwrap(),
-                    public_key,
-                    address
+                    "Derived key @ {}, public '{public_key}', address '{address}'",
+                    path.to_str().unwrap()
                 );
                 Ok(())
             }

@@ -32,20 +32,31 @@ pub struct TransactionConfig {
 }
 
 impl Config {
+    /// Load configuration from file
+    ///
+    /// # Errors
+    ///
+    /// Returns `ConfigError` if the configuration file cannot be loaded or parsed
     pub fn load(env_name: Option<String>) -> Result<Self, ConfigError> {
         CommonConfig::load_config::<Config>(env_name)
     }
 
+    /// Load managed contracts from configuration
+    ///
+    /// # Panics
+    ///
+    /// Panics if any contract address in the configuration is invalid
+    #[must_use]
     pub fn load_managed_contracts(&self) -> HashMap<String, ContractInfo> {
         self.contracts
             .iter()
             .map(|c| {
                 let address = Address::try_from(c.address.as_str())
-                    .expect(&format!("Invalid address: {}", c.address));
+                    .unwrap_or_else(|_| panic!("Invalid address: {}", c.address));
                 (
-                    c.name.to_owned(),
+                    c.name.clone(),
                     ContractInfo {
-                        name: c.name.to_owned(),
+                        name: c.name.clone(),
                         address,
                     },
                 )
@@ -57,6 +68,7 @@ impl Config {
     //     &self.tx_dispatcher_config.key_store
     // }
 
+    #[must_use]
     pub fn transaction(&self) -> &TransactionConfig {
         &self.tx_dispatcher_config.transaction
     }
@@ -65,6 +77,11 @@ impl Config {
 pub struct Logger {}
 
 impl Logger {
+    /// Initialize logger
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the logger configuration file cannot be loaded or parsed
     pub fn init(logger_file_opt: Option<&String>) -> anyhow::Result<()> {
         CommonConfig::init_logger(logger_file_opt, CARGO_PKG_NAME)
     }
@@ -165,7 +182,7 @@ root:
             "test_crate",
         );
 
-        println!("result: {:?}", result);
+        println!("result: {result:?}");
 
         assert!(result.is_ok());
         assert!(Path::new(&format!("{log_file}.log")).exists());

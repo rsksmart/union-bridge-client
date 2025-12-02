@@ -23,13 +23,10 @@ impl<C: PegManagerContractApi> RegisterPegoutInvoke<C> {
         &self,
         input: RegisterPegoutInput,
     ) -> Result<RegisterPegoutOutput, DomainErrors> {
-        info!("Init RegisterPegout for: {:?}", input);
+        info!("Init RegisterPegout for: {input:?}");
 
         let parsed_input: BtcTxSPVProof = input.try_into().map_err(|e| {
-            DomainErrors::InvalidBtcTxSpvProof(format!(
-                "Failed to parse RegisterPegoutInput: {}",
-                e
-            ))
+            DomainErrors::InvalidBtcTxSpvProof(format!("Failed to parse RegisterPegoutInput: {e}"))
         })?;
 
         let receipt = self
@@ -37,26 +34,23 @@ impl<C: PegManagerContractApi> RegisterPegoutInvoke<C> {
             .invoke_register_pegout(parsed_input, self.gas_bumps)
             .await?;
 
-        match receipt.status() {
-            true => {
-                info!(
-                    "invoke_register_pegout successful at tx {}",
-                    receipt.transaction_hash
-                );
-                Ok(RegisterPegoutOutput {
-                    transaction_hash: receipt.transaction_hash.to_string(),
-                })
-            }
-            false => {
-                error!(
-                    "invoke_register_pegout failed at tx {}",
-                    receipt.transaction_hash
-                );
-                Err(DomainErrors::TransactionFailed(format!(
-                    "RegisterPegout transaction failed with receipt status false at tx {}",
-                    receipt.transaction_hash
-                )))
-            }
+        if receipt.status() {
+            info!(
+                "invoke_register_pegout successful at tx {}",
+                receipt.transaction_hash
+            );
+            Ok(RegisterPegoutOutput {
+                transaction_hash: receipt.transaction_hash.to_string(),
+            })
+        } else {
+            error!(
+                "invoke_register_pegout failed at tx {}",
+                receipt.transaction_hash
+            );
+            Err(DomainErrors::TransactionFailed(format!(
+                "RegisterPegout transaction failed with receipt status false at tx {}",
+                receipt.transaction_hash
+            )))
         }
     }
 }

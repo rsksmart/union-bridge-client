@@ -9,14 +9,59 @@ use mockall::automock;
 
 #[cfg_attr(test, automock)]
 pub trait BlockStore {
+    /// Get the best block from storage
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the block cannot be retrieved or deserialized from storage
     fn get_best_block(&self) -> Result<Option<RskBlock>>;
+    /// Set the best block in storage
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the block cannot be serialized or saved to storage
     fn set_best_block(&self, value: &RskBlock) -> Result<()>;
+    /// Get the back sync checkpoint block from storage
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the checkpoint cannot be retrieved or deserialized from storage
     fn get_back_sync_checkpoint(&self) -> Result<Option<RskBlock>>;
+    /// Set the back sync checkpoint block in storage
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the checkpoint cannot be serialized or saved to storage
     fn set_back_sync_checkpoint(&self, value: &RskBlock) -> Result<()>;
+    /// Reset the back sync checkpoint in storage
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the checkpoint cannot be deleted from storage
     fn reset_back_sync_checkpoint(&self) -> Result<()>;
+    /// Get a block by hash from storage
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the block cannot be retrieved or deserialized from storage
     fn get_block_by_hash(&self, hash: BlockHash) -> Result<Option<RskBlock>>;
+    /// Save a block to storage
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the block cannot be serialized or saved to storage
     fn save_block(&self, value: &RskBlock) -> Result<()>;
+    /// Get the canonical block at a specific height from storage
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the block cannot be retrieved or deserialized from storage
     fn get_canonical_block(&self, block_height: BlockNumber) -> Result<Option<RskBlock>>;
+    /// Set the canonical block at a specific height in storage
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the block cannot be serialized or saved to storage
     fn set_canonical_block(&self, block: &RskBlock) -> Result<()>;
 }
 
@@ -35,8 +80,8 @@ enum StoreKey {
 impl StoreKey {
     pub(super) fn value(&self) -> String {
         match self {
-            StoreKey::BlockByHash(block_hash) => format!("block/hash/{}", block_hash),
-            StoreKey::BlockByNumber(block_height) => format!("block/height/{}", block_height),
+            StoreKey::BlockByHash(block_hash) => format!("block/hash/{block_hash}"),
+            StoreKey::BlockByNumber(block_height) => format!("block/height/{block_height}"),
             StoreKey::BestBlock => "meta/best_block".to_string(),
             StoreKey::BackSyncCheckpoint => "meta/tmp_back_sync_checkpoint".to_string(),
         }
@@ -49,7 +94,7 @@ impl<C: Cache<RskBlock>> CachedBlockStore<C> {
     }
 
     fn get_from_cache(&self, key: &str) -> Result<Option<RskBlock>> {
-        Ok(self.block_cache.get(key)?)
+        self.block_cache.get(key)
     }
 
     fn get_from_db<T: serde::de::DeserializeOwned>(&self, key: &str) -> Result<Option<T>> {
@@ -83,22 +128,22 @@ impl<C: Cache<RskBlock>> CachedBlockStore<C> {
     fn set_best_block(&self, value: &RskBlock) -> Result<()> {
         let key = &StoreKey::BestBlock.value();
         self.save_to_cache(key, value)?;
-        Ok(self.set_on_db(key, value)?)
+        self.set_on_db(key, value)
     }
 
     fn get_back_sync_checkpoint(&self) -> Result<Option<RskBlock>> {
         let key = &StoreKey::BackSyncCheckpoint.value();
-        Ok(self.get_from_db(key)?)
+        self.get_from_db(key)
     }
 
     fn set_back_sync_checkpoint(&self, value: &RskBlock) -> Result<()> {
         let key = &StoreKey::BackSyncCheckpoint.value();
-        Ok(self.set_on_db(key, value)?)
+        self.set_on_db(key, value)
     }
 
     fn reset_back_sync_checkpoint(&self) -> Result<()> {
         let key = &StoreKey::BackSyncCheckpoint.value();
-        Ok(self.delete_from_db(key)?)
+        self.delete_from_db(key)
     }
 
     fn get_block_by_hash(&self, hash: BlockHash) -> Result<Option<RskBlock>> {
@@ -135,9 +180,8 @@ impl<C: Cache<RskBlock>> CachedBlockStore<C> {
             None => return Ok(None),
         };
 
-        let db_block = match self.get_block_by_hash(block_hash)? {
-            Some(block) => block,
-            None => return Ok(None),
+        let Some(db_block) = self.get_block_by_hash(block_hash)? else {
+            return Ok(None);
         };
 
         self.save_to_cache(&key, &db_block)?;
@@ -148,11 +192,16 @@ impl<C: Cache<RskBlock>> CachedBlockStore<C> {
     fn set_canonical_block(&self, block: &RskBlock) -> Result<()> {
         let key = &StoreKey::BlockByNumber(block.number()).value();
         self.save_to_cache(key, block)?;
-        Ok(self.set_on_db(key, &block.hash().to_string())?)
+        self.set_on_db(key, &block.hash().to_string())
     }
 }
 
 impl CachedBlockStore<LruCache<RskBlock>> {
+    /// Create a new `CachedBlockStore`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the storage backend cannot be initialized
     pub fn new(path: &str, cache_size: usize) -> Result<Self> {
         let config = StorageConfig::new(path.to_string(), None);
         let db = Storage::new(&config)?;
@@ -357,7 +406,7 @@ mod tests {
         let store = create_test_store()?;
         let expected_block = get_first_default_rsk_block();
         let block_hash = expected_block.hash();
-        let cache_key = format!("block/hash/{}", block_hash);
+        let cache_key = format!("block/hash/{block_hash}");
 
         store.save_block(&expected_block)?;
         store.block_cache.remove(&cache_key)?;
@@ -374,7 +423,7 @@ mod tests {
         let store = create_test_store()?;
         let expected_block = get_first_default_rsk_block();
         let block_number = expected_block.number();
-        let cache_key = format!("block/height/{}", block_number);
+        let cache_key = format!("block/height/{block_number}");
 
         store.set_canonical_block(&expected_block)?;
         store.save_block(&expected_block)?;
@@ -392,7 +441,7 @@ mod tests {
         let store = create_test_store()?;
         let expected_block = get_first_default_rsk_block();
         let block_hash = expected_block.hash();
-        let cache_key = format!("block/hash/{}", block_hash);
+        let cache_key = format!("block/hash/{block_hash}");
 
         store.save_block(&expected_block)?;
         store.delete_from_db(&cache_key)?;

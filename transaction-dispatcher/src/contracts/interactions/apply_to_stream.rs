@@ -44,7 +44,7 @@ impl<C: CommitteeRegistryContractApi, S: StreamManagerContractApi, BP: BalancePr
         &self,
         input: ApplyToStreamInput,
     ) -> Result<ApplyToStreamOutput, DomainErrors> {
-        info!("Init ApplyToStream stream: {:?}", input);
+        info!("Init ApplyToStream stream: {input:?}");
 
         let member_balance = self
             .balance_provider
@@ -67,8 +67,7 @@ impl<C: CommitteeRegistryContractApi, S: StreamManagerContractApi, BP: BalancePr
 
         if min_deposit > member_balance {
             error!(
-                "Member has not enough balance to apply to committee. Balance: {}, Minimum: {}",
-                member_balance, min_deposit
+                "Member has not enough balance to apply to committee. Balance: {member_balance}, Minimum: {min_deposit}"
             );
             return Err(DomainErrors::CommitteeError(
                 "Member has not enough balance to apply to committee".to_string(),
@@ -80,12 +79,9 @@ impl<C: CommitteeRegistryContractApi, S: StreamManagerContractApi, BP: BalancePr
             &input.dispute_key,
             &input.peer_id,
         )
-        .map_err(|e| DomainErrors::InvalidPublicKey(format!("Invalid public key: {}", e)))?;
+        .map_err(|e| DomainErrors::InvalidPublicKey(format!("Invalid public key: {e}")))?;
 
-        debug!(
-            "ApplyToStream with derived MemberRegistrationKeys {:?}",
-            public_keys_regs
-        );
+        debug!("ApplyToStream with derived MemberRegistrationKeys {public_keys_regs:?}");
 
         let receipt = self
             .committee_registry
@@ -99,23 +95,20 @@ impl<C: CommitteeRegistryContractApi, S: StreamManagerContractApi, BP: BalancePr
             )
             .await?;
 
-        match receipt.status() {
-            true => {
-                info!(
-                    "ApplyToStream successful at tx {}",
-                    receipt.transaction_hash
-                );
-                Ok(ApplyToStreamOutput {
-                    transaction_hash: receipt.transaction_hash.to_string(),
-                })
-            }
-            false => {
-                error!("ApplyToStream failed at tx {}", receipt.transaction_hash);
-                Err(DomainErrors::TransactionFailed(format!(
-                    "ApplyToStream transaction failed with receipt status false at tx {}",
-                    receipt.transaction_hash
-                )))
-            }
+        if receipt.status() {
+            info!(
+                "ApplyToStream successful at tx {}",
+                receipt.transaction_hash
+            );
+            Ok(ApplyToStreamOutput {
+                transaction_hash: receipt.transaction_hash.to_string(),
+            })
+        } else {
+            error!("ApplyToStream failed at tx {}", receipt.transaction_hash);
+            Err(DomainErrors::TransactionFailed(format!(
+                "ApplyToStream transaction failed with receipt status false at tx {}",
+                receipt.transaction_hash
+            )))
         }
     }
 }

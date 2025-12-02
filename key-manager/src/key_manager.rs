@@ -11,6 +11,15 @@ pub struct KeyManager {
 }
 
 impl KeyManager {
+    /// Generate a new signing key and save it to a keystore file
+    ///
+    /// # Panics
+    ///
+    /// Panics if the file path cannot be converted to a string (should not happen on valid filesystems)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if keystore encryption or file operations fail
     pub fn generate_key(destination: &Path, password: &str) -> Result<(String, String, String)> {
         let signing_key = SigningKey::random(&mut OsRng);
         let verifying_key = VerifyingKey::from(&signing_key);
@@ -38,13 +47,23 @@ impl KeyManager {
     /// This function depends on the `KEY_STORE_PASSWORD` environment variable
     /// to retrieve the password required for decryption. Ensure that this
     /// environment variable is set before calling this function.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the `KEY_STORE_PASSWORD` environment variable is not set,
+    /// or if keystore decryption fails
     pub fn get_signer(location: &Path) -> Result<LocalSigner<SigningKey>> {
         let password = std::env::var("KEY_STORE_PASSWORD")
             .context("KEY_STORE_PASSWORD environment variable not found")?;
         LocalSigner::decrypt_keystore(location, password)
-            .map_err(|e| anyhow!("Failed to decrypt keystore: {}", e))
+            .map_err(|e| anyhow!("Failed to decrypt keystore: {e}"))
     }
 
+    /// Derive public key and address from a keystore file
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if keystore decryption fails or key derivation fails
     pub fn derive_public_key_and_address(
         location: &Path,
         password: &str,

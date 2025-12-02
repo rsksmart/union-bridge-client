@@ -3,6 +3,9 @@ name = "coordinator"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [dependencies]
 check-fork = { path = "../check-fork" }
 common = { path = "../common" }
@@ -23,11 +26,11 @@ primitive-types = { workspace = true }
 hex = { workspace = true }
 serde = { workspace = true }
 storage-backend = { workspace = true }
-sha2 = "0.10.9"
+sha2 = { workspace = true }
 thiserror = { workspace = true }
-tiny-keccak = "2.0.2"
+tiny-keccak = { workspace = true }
 
-uuid = { version = "1.11.0", features = ["v4"] }
+uuid = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }

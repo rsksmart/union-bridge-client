@@ -18,8 +18,9 @@ impl<C: CommitteeRegistryContractApi> GetMemberCommunicationDataCall<C> {
         input: GetCommunicationDataInput,
     ) -> Result<GetCommunicationDataOutput, DomainErrors> {
         info!(
-            "Init GetMemberCommunicationData for stream: {}, member: {:?}",
-            input.committee_id, input.member_address
+            "Init GetMemberCommunicationData for stream: {}, member: {member_address:?}",
+            input.committee_id,
+            member_address = input.member_address
         );
 
         let communication_data = self
@@ -28,16 +29,12 @@ impl<C: CommitteeRegistryContractApi> GetMemberCommunicationDataCall<C> {
             .await
             .map_err(|e| {
                 DomainErrors::UnhandledContractError(format!(
-                    "Failed to get member communication data: {}",
-                    e
+                    "Failed to get member communication data: {e}"
                 ))
             })?;
 
         let count = communication_data.len();
-        info!(
-            "GetMemberCommunicationData successful, received {} communication entries",
-            count
-        );
+        info!("GetMemberCommunicationData successful, received {count} communication entries");
 
         Ok(GetCommunicationDataOutput { communication_data })
     }
@@ -51,16 +48,16 @@ mod tests {
     use crate::types::GetCommunicationDataInput;
     use mockall::predicate::always;
 
+    // Build a fake communication data structure: 2 committee members, each with 2 chunks
+    #[allow(dead_code)]
+    #[derive(Clone)]
+    struct FakeCommunicationData {
+        pub data: Vec<alloy_primitives::FixedBytes<32>>,
+    }
+
     #[tokio::test]
     async fn test_get_member_communication_data_success() {
         let mut mock_instance = MockCommitteeRegistryContractApi::new();
-
-        // Build a fake communication data structure: 2 committee members, each with 2 chunks
-        #[allow(dead_code)]
-        #[derive(Clone)]
-        struct FakeCommunicationData {
-            pub data: Vec<alloy_primitives::FixedBytes<32>>,
-        }
 
         // Since Mock uses the trait return type (Vec<CommitteeRegistry::CommunicationData>),
         // we cannot construct the exact type from bindings here. Instead, we only validate

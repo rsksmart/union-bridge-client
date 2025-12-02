@@ -55,9 +55,7 @@ impl StorePrefix {
 
         ensure!(
             key.starts_with(&expected_prefix),
-            "Key '{}' does not start with expected prefix '{}'",
-            key,
-            expected_prefix
+            "Key '{key}' does not start with expected prefix '{expected_prefix}'"
         );
 
         let uuid_str = &key[expected_prefix.len()..];
@@ -66,7 +64,7 @@ impl StorePrefix {
     }
 }
 
-/// Internal serializable representation of GlobalContext
+/// Internal serializable representation of `GlobalContext`
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct PersistentGlobalContext {
     committees: HashMap<CommitteeId, Role>,
@@ -87,10 +85,10 @@ impl PersistentGlobalContext {
         }
     }
 
-    fn to_memory(self) -> GlobalContext {
+    fn load(self) -> GlobalContext {
         let ctx = GlobalContext::new();
         // restore committees
-        for (id, role) in self.committees.into_iter() {
+        for (id, role) in self.committees {
             ctx.my_committees().add(id, role);
         }
         // restore keys
@@ -114,20 +112,34 @@ use mockall::automock;
 // Minimal trait to allow mocking the coordinator store in tests
 #[cfg_attr(test, automock)]
 pub trait CoordinatorStoreApi {
+    /// # Errors
+    /// Returns an error if storage access fails or if deserialization fails.
     fn load_context(&self) -> Result<Option<GlobalContext>>;
 
-    fn save_context(&self, context: GlobalContext) -> Result<()>;
+    /// # Errors
+    /// Returns an error if storage access fails or if serialization fails.
+    fn save_context(&self, context: &GlobalContext) -> Result<()>;
 
-    fn save_flow<T: Serialize + 'static>(&self, key: StoreKey, flow_state: T) -> Result<()>;
+    /// # Errors
+    /// Returns an error if storage access fails or if serialization fails.
+    fn save_flow<T: Serialize + 'static>(&self, key: &StoreKey, flow_state: T) -> Result<()>;
 
-    fn load_flow<T: for<'de> Deserialize<'de> + 'static>(&self, key: StoreKey)
-    -> Result<Option<T>>;
+    /// # Errors
+    /// Returns an error if storage access fails or if deserialization fails.
+    fn load_flow<T: for<'de> Deserialize<'de> + 'static>(
+        &self,
+        key: &StoreKey,
+    ) -> Result<Option<T>>;
 
-    fn delete_flow(&self, key: StoreKey) -> Result<()>;
+    /// # Errors
+    /// Returns an error if storage access fails.
+    fn delete_flow(&self, key: &StoreKey) -> Result<()>;
 
+    /// # Errors
+    /// Returns an error if storage access fails or if deserialization fails.
     fn load_all_flows<T: for<'de> Deserialize<'de> + 'static>(
         &self,
-        key: StorePrefix,
+        prefix: &StorePrefix,
     ) -> Result<HashMap<Uuid, T>>;
 }
 
@@ -136,6 +148,8 @@ pub struct CoordinatorStore {
 }
 
 impl CoordinatorStore {
+    /// # Errors
+    /// Returns an error if storage initialization fails.
     pub fn new(path: &str) -> Result<Self> {
         let config = StorageConfig::new(path.to_string(), None);
         let db = Storage::new(&config)?;
@@ -154,31 +168,43 @@ impl CoordinatorStore {
         Ok(self.db.delete(key)?)
     }
 
-    pub fn save_context(&self, context: GlobalContext) -> Result<()> {
-        let dto = PersistentGlobalContext::from_memory(&context);
+    /// # Errors
+    /// Returns an error if storage access fails or if serialization fails.
+    pub fn save_context(&self, context: &GlobalContext) -> Result<()> {
+        let dto = PersistentGlobalContext::from_memory(context);
         self.set(&StoreKey::GlobalContext.value(), &dto)
     }
 
+    /// # Errors
+    /// Returns an error if storage access fails or if deserialization fails.
     pub fn load_context(&self) -> Result<Option<GlobalContext>> {
         let maybe: Option<PersistentGlobalContext> = self.get(&StoreKey::GlobalContext.value())?;
-        Ok(maybe.map(|p| p.to_memory()))
+        Ok(maybe.map(PersistentGlobalContext::load))
     }
 
-    pub fn save_flow<T: Serialize>(&self, key: StoreKey, flow_state: T) -> Result<()> {
+    /// # Errors
+    /// Returns an error if storage access fails or if serialization fails.
+    pub fn save_flow<T: Serialize>(&self, key: &StoreKey, flow_state: T) -> Result<()> {
         self.set(&key.value(), &flow_state)
     }
 
-    pub fn load_flow<T: for<'de> Deserialize<'de>>(&self, key: StoreKey) -> Result<Option<T>> {
+    /// # Errors
+    /// Returns an error if storage access fails or if deserialization fails.
+    pub fn load_flow<T: for<'de> Deserialize<'de>>(&self, key: &StoreKey) -> Result<Option<T>> {
         self.get(&key.value())
     }
 
-    pub fn delete_flow(&self, key: StoreKey) -> Result<()> {
+    /// # Errors
+    /// Returns an error if storage access fails.
+    pub fn delete_flow(&self, key: &StoreKey) -> Result<()> {
         self.delete(&key.value())
     }
 
+    /// # Errors
+    /// Returns an error if storage access fails or if deserialization fails.
     pub fn load_all_flows<T: for<'de> Deserialize<'de>>(
         &self,
-        prefix: StorePrefix,
+        prefix: &StorePrefix,
     ) -> Result<HashMap<Uuid, T>> {
         self.db
             // get the keys starting with the prefix
@@ -198,28 +224,28 @@ impl CoordinatorStoreApi for CoordinatorStore {
         self.load_context()
     }
 
-    fn save_context(&self, context: GlobalContext) -> Result<()> {
+    fn save_context(&self, context: &GlobalContext) -> Result<()> {
         self.save_context(context)
     }
 
-    fn save_flow<T: Serialize + 'static>(&self, key: StoreKey, flow_state: T) -> Result<()> {
+    fn save_flow<T: Serialize + 'static>(&self, key: &StoreKey, flow_state: T) -> Result<()> {
         self.save_flow(key, flow_state)
     }
 
     fn load_flow<T: for<'de> Deserialize<'de> + 'static>(
         &self,
-        key: StoreKey,
+        key: &StoreKey,
     ) -> Result<Option<T>> {
         self.load_flow(key)
     }
 
-    fn delete_flow(&self, key: StoreKey) -> Result<()> {
+    fn delete_flow(&self, key: &StoreKey) -> Result<()> {
         self.delete_flow(key)
     }
 
     fn load_all_flows<T: for<'de> Deserialize<'de> + 'static>(
         &self,
-        prefix: StorePrefix,
+        prefix: &StorePrefix,
     ) -> Result<HashMap<Uuid, T>> {
         self.load_all_flows(prefix)
     }

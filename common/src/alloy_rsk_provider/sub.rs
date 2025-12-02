@@ -49,12 +49,9 @@ impl AlloySubscription<Header> {
             SubscriptionItem::Item(h) => {
                 Ok(BlockHash::try_from(h.hash.to_string().as_str()).expect("valid hash"))
             }
-            _ => {
-                return Err(RskSubscriptionError::Unexpected(anyhow!(
-                    "Wrong Header: {:?}",
-                    header
-                )));
-            }
+            SubscriptionItem::Other(_) => Err(RskSubscriptionError::Unexpected(anyhow!(
+                "Wrong Header: {header:?}"
+            ))),
         }
     }
 
@@ -63,16 +60,15 @@ impl AlloySubscription<Header> {
         use serde_json::Value;
 
         let new_block_header_raw = match header {
-            SubscriptionItem::Other(raw_json) => raw_json.get().to_string(),
-            _ => {
+            SubscriptionItem::Item(_) => {
                 return Err(RskSubscriptionError::Unexpected(anyhow!(
-                    "Wrong Header: {:?}",
-                    header
+                    "Expected raw JSON header, got Item variant: {header:?}"
                 )));
             }
+            SubscriptionItem::Other(raw_json) => raw_json.get().to_string(),
         };
 
-        let new_block_header: Value = serde_json::from_str(&*new_block_header_raw)
+        let new_block_header: Value = serde_json::from_str(&new_block_header_raw)
             .context(format!("Error parsing header json: {new_block_header_raw}",))
             .map_err(RskSubscriptionError::Unexpected)?;
         let new_block_hash = new_block_header["hash"].as_str().ok_or_else(|| {
@@ -92,7 +88,7 @@ impl RskSubscription<RskBlock> for AlloySubscription<Header> {
     fn next(&mut self) -> Result<RskBlock, RskSubscriptionError> {
         let header = self.next()?;
 
-        trace!("Received header: {:?}", header);
+        trace!("Received header: {header:?}");
 
         let new_block_hash = Self::get_block_hash(header)?;
 
@@ -169,16 +165,12 @@ impl RskSubscription<RskLog> for AlloySubscription<Log> {
     fn next(&mut self) -> Result<RskLog, RskSubscriptionError> {
         let log = self.next()?;
 
-        trace!("Received log: {:?}", log);
+        trace!("Received log: {log:?}");
 
-        let new_log = match log {
-            SubscriptionItem::Item(log) => log,
-            _ => {
-                return Err(RskSubscriptionError::Unexpected(anyhow!(
-                    "Wrong Log: {:?}",
-                    log
-                )));
-            }
+        let SubscriptionItem::Item(new_log) = log else {
+            return Err(RskSubscriptionError::Unexpected(anyhow!(
+                "Wrong Log: {log:?}"
+            )));
         };
 
         let tx_hash = new_log

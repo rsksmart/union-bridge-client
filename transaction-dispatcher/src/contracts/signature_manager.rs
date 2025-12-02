@@ -43,10 +43,7 @@ pub struct SignatureManagerContract<P: Provider> {
 
 impl<P: Provider> SignatureManagerContract<P> {
     pub fn new(provider: P, contract_address: Address) -> Self {
-        info!(
-            "Connecting to SignatureManager Contract @ {}",
-            contract_address
-        );
+        info!("Connecting to SignatureManager Contract @ {contract_address}");
         let contract_instance = SignatureManager::new(contract_address, provider);
         SignatureManagerContract { contract_instance }
     }
@@ -63,7 +60,7 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
             &self.contract_instance.provider(),
             || {
                 self.contract_instance
-                    .addMemberNonce(hash_to_sign.clone(), nonce.clone())
+                    .addMemberNonce(hash_to_sign, nonce.clone())
             },
             gas_bumps,
         )
@@ -80,7 +77,7 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
             &self.contract_instance.provider(),
             || {
                 self.contract_instance
-                    .addMemberSignature(hash_to_sign.clone(), signature.clone())
+                    .addMemberSignature(hash_to_sign, signature)
             },
             gas_bumps,
         )
@@ -97,7 +94,7 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
             &self.contract_instance.provider(),
             || {
                 self.contract_instance
-                    .addOperatorTakeTxid(accept_pegin_tx_hash.clone(), take_tx_hash.clone())
+                    .addOperatorTakeTxid(accept_pegin_tx_hash, take_tx_hash)
             },
             gas_bumps,
         )
@@ -114,16 +111,16 @@ pub(crate) fn decode_error(
     let decoded_err = err.as_decoded_interface_error::<SignatureManagerErrors>();
     decoded_err.map(|e| match e {
         SignatureManagerErrors::AcceptPeginTxidNotFound(e) => {
-            DomainErrors::InvalidValue(format!("{:?}", e))
+            DomainErrors::InvalidValue(format!("{e:?}"))
         }
         SignatureManagerErrors::AddressEmptyCode(e) => {
-            DomainErrors::InvalidAddress(format!("{:?}", e))
+            DomainErrors::InvalidAddress(format!("{e:?}"))
         }
         SignatureManagerErrors::HashToSignNotFound(e) => {
-            DomainErrors::InvalidValue(format!("{:?}", e))
+            DomainErrors::InvalidValue(format!("{e:?}"))
         }
         // TODO handle more based on needs
-        _ => DomainErrors::UnhandledContractError(format!("{:?}", e)),
+        _ => DomainErrors::UnhandledContractError(format!("{e:?}")),
     })
 }
 
@@ -144,7 +141,7 @@ mod tests {
             acceptPeginTxid: FixedBytes::<32>::from([1u8; 32]),
         });
 
-        let result = generate_contract_revert_error(err_data);
+        let result = generate_contract_revert_error(&err_data);
         let domain_error = decode_error(&result).unwrap();
         assert!(matches!(domain_error, DomainErrors::InvalidValue(_)));
     }
@@ -155,7 +152,7 @@ mod tests {
             target: Address::default(),
         });
 
-        let result = generate_contract_revert_error(err_data);
+        let result = generate_contract_revert_error(&err_data);
         let domain_error = decode_error(&result).unwrap();
         assert!(matches!(domain_error, DomainErrors::InvalidAddress(_)));
     }
@@ -166,7 +163,7 @@ mod tests {
             hashToSign: FixedBytes::<32>::from([7u8; 32]),
         });
 
-        let result = generate_contract_revert_error(err_data);
+        let result = generate_contract_revert_error(&err_data);
         let domain_error = decode_error(&result).unwrap();
         assert!(matches!(domain_error, DomainErrors::InvalidValue(_)));
     }
@@ -181,7 +178,7 @@ mod tests {
                 implementation: Address::default(),
             });
 
-        let result = generate_contract_revert_error(err_data);
+        let result = generate_contract_revert_error(&err_data);
         let domain_error = decode_error(&result).unwrap();
         assert!(matches!(
             domain_error,

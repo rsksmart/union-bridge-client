@@ -56,7 +56,7 @@ struct Args {
 async fn main() -> Result<(), Box<dyn Error>> {
     let cli_args = Args::parse();
 
-    println!("CLI {:?}", cli_args);
+    println!("CLI {cli_args:?}");
 
     let log_super_block = cli_args.operation == "sb";
 
@@ -74,7 +74,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         operator_id: "FAKE_OPERATOR_ID".to_string(), // tmp
         init_block_time: cli_args.cf_init_timestamp,
         init_block_number: cli_args.cf_init_block,
-        required_effort: U256::from(cli_args.cf_required_effort),
+        required_effort: cli_args.cf_required_effort,
         required_num_blocks: cli_args.cf_required_blocks,
         block_list: blocks,
     };
@@ -84,7 +84,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     } else if cli_args.operation == "run" {
         match check_fork::check_fork(&check_fork_args) {
             Ok(_) => println!("Check Fork returned ACCEPT"),
-            Err(e) => println!("Check Fork returned REJECT: {:?}", e),
+            Err(e) => println!("Check Fork returned REJECT: {e:?}"),
         }
     } // for "sb" operation, no need to do anything, get_blocks() already logs the superblocks
 
@@ -103,15 +103,14 @@ fn generate_elf(check_fork_args: &CheckForkArgs) -> Result<(), Box<dyn Error>> {
 
     let duration = start.elapsed();
     println!(
-        "CheckForkArgs serialized to file: {}. Total time: {:?}",
-        check_fork_args_path_str, duration
+        "CheckForkArgs serialized to file: {check_fork_args_path_str}. Total time: {duration:?}"
     );
 
     println!(
         "GetBlocks executed and CheckForkArgs generated. Relevant parameters for the interaction with the ZKVM CLI:"
     );
-    println!("    - input: {}", check_fork_args_path_str);
-    println!("    - elf: {}", CHECK_FORK_GUEST_PATH);
+    println!("    - input: {check_fork_args_path_str}");
+    println!("    - elf: {CHECK_FORK_GUEST_PATH}");
     println!(
         "    - image_id: {}",
         zkvm_cli_serde::serialize_image_id(CHECK_FORK_GUEST_ID)

@@ -4,7 +4,7 @@ fn main() {
     let cli = Cli::new();
 
     if let Err(e) = cli.run() {
-        eprintln!("{:?}", e);
+        eprintln!("{e:?}");
         std::process::exit(1);
     }
 }

@@ -30,8 +30,9 @@ pub const USER_TAKE_TX: &str = "USER_TAKE_TX";
 const PEGOUT_COMPLETED_VAR_NAME: &str = "PEG_OUT_COMPLETED";
 
 /// Steps for the pegout state machine flow
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum Steps {
+    #[default]
     PegoutRequested,
     GetCommInfo,
     PrepareUserTakeSetup,
@@ -43,12 +44,7 @@ pub enum Steps {
     Done,
 }
 
-impl Default for Steps {
-    fn default() -> Self {
-        Steps::PegoutRequested
-    }
-}
-
+/// Data passed between steps in the pegout flow
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum StepData {
     PegoutRequested,
@@ -102,7 +98,7 @@ where
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
         internal_id: Uuid,
-        pegout_requested: PegoutRequested,
+        pegout_requested: &PegoutRequested,
         store: Rc<S>,
     ) -> Self {
         Self {
@@ -147,8 +143,10 @@ where
             "PegoutFlow {}: Persisting state for step: {:?}",
             self.state.flow_id, self.state.step
         );
-        self.store
-            .save_flow(StoreKey::PegoutFlow(self.state.flow_id), self.state.clone())
+        self.store.save_flow(
+            &StoreKey::PegoutFlow(self.state.flow_id),
+            self.state.clone(),
+        )
     }
 
     pub fn start_step(&mut self, next_step: Steps) -> Result<()> {
@@ -217,7 +215,7 @@ where
     }
 
     /// Complete the current step with data and advance to the next
-    pub fn complete_step(&mut self, data: StepData) -> Result<()> {
+    pub fn complete_step(&mut self, data: &StepData) -> Result<()> {
         let current_step: Steps = self.state.step;
 
         info!(
@@ -228,7 +226,10 @@ where
             self.state.flow_id
         );
 
-        let next_step = self.process_step_data(current_step, &data)?;
+        // Process data and determine next state
+        let next_step = self.process_step_data(current_step, data)?;
+
+        // Transition to the next state
         self.start_step(next_step)?;
 
         Ok(())
@@ -254,7 +255,7 @@ where
                     "Transaction confirmed for flow_id: {} and tx_id: {:?}",
                     self.state.flow_id, tx_status.tx_id
                 );
-                trace!("Transaction status data: {:?}", tx_status);
+                trace!("Transaction status data: {tx_status:?}");
                 let expected_tx_id = self
                     .get_user_take_txid()
                     .ok_or_else(|| anyhow!("Expected user take txid not found"))?;
@@ -269,7 +270,7 @@ where
             }
             (Steps::RequestUserTakeSpvProof, StepData::SpvProof(spv_proof)) => {
                 info!("Received SPV proof for flow_id: {}", self.state.flow_id);
-                trace!("SPV Proof data: {:?}", spv_proof);
+                trace!("SPV Proof data: {spv_proof:?}");
                 self.state.ctx.spv_proof = Some(spv_proof.clone());
                 Ok(Steps::RegisterPegout)
             }
@@ -278,14 +279,12 @@ where
                     "Pegout registered successfully for flow_id: {}",
                     self.state.flow_id
                 );
-                trace!("PegoutRegistered data: {:?}", pegout_registered);
-                self.send_pegout_completed_to_bitvmx(pegout_registered.clone())?;
+                trace!("PegoutRegistered data: {pegout_registered:?}");
+                self.send_pegout_completed_to_bitvmx(pegout_registered)?;
                 Ok(Steps::Done)
             }
             _ => Err(anyhow::anyhow!(
-                "Invalid state transition: {:?} with data {:?}",
-                current_step,
-                data
+                "Invalid state transition: {current_step:?} with data {data:?}"
             )),
         }
     }
@@ -326,15 +325,15 @@ where
 
         let committee_addresses = self.get_committee_member_address(committee_id)?;
         let p2p_addresses = build_communication_data(
-            self.state
+            &self
+                .state
                 .ctx
                 .my_p2p_address
                 .as_ref()
                 .ok_or_else(|| anyhow!("P2P address not available for setup"))?
-                .address
-                .clone(),
-            committee_addresses,
-            committee_peer_ids,
+                .address,
+            &committee_addresses,
+            &committee_peer_ids,
         )?;
 
         let msg = IncomingBitVMXApiMessages::Setup(
@@ -393,7 +392,7 @@ where
                 ))?;
 
             debug!("Member {} PeerId: {:?}", member.memberAddress, key_str);
-            peer_ids.push(PeerId(key_str.to_string()));
+            peer_ids.push(PeerId(key_str.clone()));
         }
 
         Ok(peer_ids)
@@ -407,14 +406,14 @@ where
         let committee_output: GetCommitteeOutput =
             self.get_committee_output(committee_id.clone())?;
         self.state.ctx.committee_output = Some(committee_output.clone());
-        let data_to_send: PegOutRequest = self.pegout_requested_to_bitvmx_request(
-            self.state.ctx.pegout_requested.clone(),
+        let data_to_send: PegOutRequest = Self::pegout_requested_to_bitvmx_request(
+            &self.state.ctx.pegout_requested,
             &committee_output,
         )?;
 
         let msg = IncomingBitVMXApiMessages::SetVar(
             self.state.flow_id,
-            PegOutRequest::name().to_string(),
+            PegOutRequest::name().clone(),
             VariableTypes::String(serde_json::to_string(&data_to_send)?),
         );
         self.send_bitvmx_msg(msg)?;
@@ -424,7 +423,7 @@ where
 
     fn send_pegout_completed_to_bitvmx(
         &mut self,
-        pegout_registered: PegoutRegistered,
+        pegout_registered: &PegoutRegistered,
     ) -> Result<()> {
         debug!(
             "Notifying pegout completed to bitvmx with flow_id: {}",
@@ -441,14 +440,10 @@ where
     }
 
     fn pegout_requested_to_bitvmx_request(
-        &self,
-        event: PegoutRequested,
+        event: &PegoutRequested,
         committee_output: &GetCommitteeOutput,
     ) -> Result<PegOutRequest> {
-        debug!(
-            "Preparing PegOutRequest for BitVMX from PegoutRequested event: {:?}",
-            event
-        );
+        debug!("Preparing PegOutRequest for BitVMX from PegoutRequested event: {event:?}");
 
         let committee_id: Uuid = Uuid::from_u128(event.committeeId.try_into()?);
 
@@ -463,16 +458,15 @@ where
             );
         };
 
-        let take_aggregated_key = Self::build_take_aggregated_key(&committee_output)?;
+        let take_aggregated_key = Self::build_take_aggregated_key(committee_output)?;
 
         // Convert fixed-size hashes and ids to Vec<u8>
         // Note: v0.2.0 contracts merged pegoutSignatureHash and pegoutSignatureMessage into pegoutSignatureData struct
-        let pegout_signature_hash: Vec<u8> =
-            event.pegoutSignatureData.signatureHash.as_slice().to_vec();
-        let pegout_signature_message: Vec<u8> =
-            event.pegoutSignatureData.signatureMessage.as_ref().to_vec();
+        let pegout_signature_hash: Vec<u8> = event.pegoutSignatureData.signatureHash.to_vec();
+        let pegout_signature_message: Vec<u8> = event.pegoutSignatureData.signatureMessage.to_vec();
         let pegout_id: Vec<u8> = event.pegoutId.as_slice().to_vec();
-        let slot_index = event.slotId as usize;
+        let slot_index =
+            usize::try_from(event.slotId).map_err(|_| anyhow!("slotId too large for usize"))?;
 
         Ok(PegOutRequest {
             committee_id,

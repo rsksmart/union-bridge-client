@@ -29,28 +29,20 @@ impl<C: CommitteeRegistryContractApi> DepositAggregatedKeysInvoke<C> {
             .await
             .map_err(|e| {
                 DomainErrors::UnhandledContractError(format!(
-                    "failed to deposit aggregated keys: {}",
-                    e
+                    "failed to deposit aggregated keys: {e}"
                 ))
             })?;
 
         let transaction_hash = format!("0x{:x}", receipt.transaction_hash);
 
-        match receipt.status() {
-            true => {
-                info!(
-                    "Deposit Aggregated Key successful at tx {}",
-                    transaction_hash
-                );
-                Ok(DepositAggregatedKeyOutput { transaction_hash })
-            }
-            false => {
-                error!("Deposit Aggregated Key failed at tx {}", transaction_hash);
-                Err(DomainErrors::TransactionFailed(format!(
-                    "DepositAggregatedKey transaction failed with receipt status false at tx {}",
-                    transaction_hash
-                )))
-            }
+        if receipt.status() {
+            info!("Deposit Aggregated Key successful at tx {transaction_hash}");
+            Ok(DepositAggregatedKeyOutput { transaction_hash })
+        } else {
+            error!("Deposit Aggregated Key failed at tx {transaction_hash}");
+            Err(DomainErrors::TransactionFailed(format!(
+                "DepositAggregatedKey transaction failed with receipt status false at tx {transaction_hash}"
+            )))
         }
     }
 }
@@ -120,7 +112,7 @@ mod tests {
             .times(1)
             .returning(|_, _, _| {
                 Err(alloy_contract::Error::TransportError(
-                    alloy_transport::TransportError::local_usage_str("contract error".into()),
+                    alloy_transport::TransportError::local_usage_str("contract error"),
                 ))
             });
 

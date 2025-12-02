@@ -65,10 +65,7 @@ pub struct CommitteeRegistryContract<P: Provider> {
 
 impl<P: Provider> CommitteeRegistryContract<P> {
     pub fn new(provider: P, contract_address: Address) -> Self {
-        info!(
-            "Connecting to CommitteeRegistry Contract @ {}",
-            contract_address
-        );
+        info!("Connecting to CommitteeRegistry Contract @ {contract_address}");
         let contract_instance = CommitteeRegistry::new(contract_address, provider);
         CommitteeRegistryContract { contract_instance }
     }
@@ -160,12 +157,12 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
 
     Some(match decoded_err {
         CommitteeRegistryErrors::MemberAlreadyDepositedCommunicationData(e) => {
-            DomainErrors::MemberAlreadyDepositedCommunicationData(format!("{:?}", e))
+            DomainErrors::MemberAlreadyDepositedCommunicationData(format!("{e:?}"))
         }
         CommitteeRegistryErrors::MemberInfoAlreadyDeposited(e) => {
-            DomainErrors::MemberInfoAlreadyDeposited(format!("{:?}", e))
+            DomainErrors::MemberInfoAlreadyDeposited(format!("{e:?}"))
         }
         // Add other specific mappings here as needed
-        _ => DomainErrors::CommitteeError(format!("{:?}", decoded_err)),
+        _ => DomainErrors::CommitteeError(format!("{decoded_err:?}")),
     })
 }

@@ -19,6 +19,7 @@ pub struct GlobalContext {
 }
 
 #[derive(Default, Debug, Clone)]
+#[allow(clippy::struct_field_names)]
 pub struct MyKeys {
     take_key: Rc<RefCell<Option<SignedPublicKey>>>,
     dispute_key: Rc<RefCell<Option<SignedPublicKey>>>,
@@ -125,14 +126,14 @@ impl GlobalContext {
 }
 
 /// We need this function because we are temporarily:
-/// - storing PeerId as the communication key on applyToStream
+/// - storing `PeerId` as the communication key on applyToStream
 /// - storing only the address as the communication data on depositCommunicationData
-/// therefore get_communication_data does not bring everything we need, just the address
-/// this was agreed with Fairgate
+///   therefore `get_communication_data` does not bring everything we need, just the address
+///   this was agreed with Fairgate
 pub fn build_communication_data(
-    my_p2p_address: String,
-    committee_addresses: Vec<String>,
-    committee_peer_ids: Vec<PeerId>,
+    my_p2p_address: &str,
+    committee_addresses: &[String],
+    committee_peer_ids: &[PeerId],
 ) -> Result<Vec<P2PAddress>> {
     if committee_addresses.len() != committee_peer_ids.len() {
         bail!(
@@ -144,10 +145,10 @@ pub fn build_communication_data(
 
     let mut p2p_addresses = vec![];
     for i in 0..committee_addresses.len() {
-        let mut addr = committee_addresses[i].to_string();
+        let mut addr = committee_addresses[i].clone();
         // contracts require zeroed communication data for my own address on deposit, so we have to tweak it here
         if addr.is_empty() {
-            addr = my_p2p_address.clone();
+            addr = my_p2p_address.to_string();
         }
 
         let peer_id = committee_peer_ids[i].clone();
@@ -158,7 +159,7 @@ pub fn build_communication_data(
         });
     }
 
-    info!("Built communication data: {:?}", p2p_addresses);
+    info!("Built communication data: {p2p_addresses:?}");
 
     Ok(p2p_addresses)
 }

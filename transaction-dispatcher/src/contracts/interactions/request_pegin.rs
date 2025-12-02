@@ -25,10 +25,10 @@ impl<C: PegManagerContractApi> RequestPeginInvoke<C> {
         &self,
         input: RequestPeginInput,
     ) -> Result<RequestPeginOutput, DomainErrors> {
-        info!("Init RequestPeginInvoke for: {:?}", input);
+        info!("Init RequestPeginInvoke for: {input:?}");
 
         let parsed_input: BtcTxSPVProof = input.try_into().map_err(|e| {
-            DomainErrors::InvalidBtcTxSpvProof(format!("Failed to parse RequestPeginInput: {}", e))
+            DomainErrors::InvalidBtcTxSpvProof(format!("Failed to parse RequestPeginInput: {e}"))
         })?;
 
         let receipt = self
@@ -36,20 +36,17 @@ impl<C: PegManagerContractApi> RequestPeginInvoke<C> {
             .invoke_request_pegin(parsed_input, self.gas_bumps)
             .await?;
 
-        match receipt.status() {
-            true => {
-                info!("RequestPegin successful at tx {}", receipt.transaction_hash);
-                Ok(RequestPeginOutput {
-                    transaction_hash: receipt.transaction_hash.to_string(),
-                })
-            }
-            false => {
-                error!("RequestPegin failed at tx {}", receipt.transaction_hash);
-                Err(DomainErrors::TransactionFailed(format!(
-                    "RequestPegin transaction failed with receipt status false at tx {}",
-                    receipt.transaction_hash
-                )))
-            }
+        if receipt.status() {
+            info!("RequestPegin successful at tx {}", receipt.transaction_hash);
+            Ok(RequestPeginOutput {
+                transaction_hash: receipt.transaction_hash.to_string(),
+            })
+        } else {
+            error!("RequestPegin failed at tx {}", receipt.transaction_hash);
+            Err(DomainErrors::TransactionFailed(format!(
+                "RequestPegin transaction failed with receipt status false at tx {}",
+                receipt.transaction_hash
+            )))
         }
     }
 }
@@ -124,7 +121,7 @@ mod tests {
                         .parse()
                         .expect("Failed to parse tx hash"),
                 });
-                Err(generate_contract_revert_error(expected_err))
+                Err(generate_contract_revert_error(&expected_err))
             })
             .times(1);
 
@@ -167,7 +164,7 @@ mod tests {
     }
 
     fn get_base_input() -> RequestPeginInput {
-        let input = RequestPeginInput {
+        RequestPeginInput {
             block_hash: "0x0000000000000000000282fa21665766e58eb6cb94e458c3ef6d4af1121e38d9".to_string(),
             btc_tx: BitcoinTransaction {
                 version: 1,
@@ -175,13 +172,13 @@ mod tests {
                     BitcoinTransactionIn {
                         tx_id: "0x360b81785dc7c2f40627fea364676dbb73e6276683caffd9f906b0e0bd36b3d2".to_string(),
                         v_out: 1694,
-                        sequence: 4294967293,
-                        script_sig: "".to_string(),
+                        sequence: 4_294_967_293,
+                        script_sig: String::new(),
                     },
                 ],
                 outputs: vec![
                     BitcoinTransactionOut {
-                        amount: 100000000,
+                        amount: 100_000_000,
                         script_pub_key: "0x512069d5a1d3da52fcaac436b735f6f75af910d3014f29d6eab4ba248a9786073d1f".to_string(),
                     }, BitcoinTransactionOut {
                         amount: 0,
@@ -194,8 +191,7 @@ mod tests {
             merkle_branch_hashes: vec![
                 "0x3fcef4a1ddf759a858190b89ecbd1ff3dffb49704e110b68baf5b5de7021910f".to_string(),
             ],
-        };
-        input
+        }
     }
 
     fn get_fake_receipt(status: bool, hash: &str) -> TransactionReceipt<ReceiptEnvelope<Log>> {

@@ -10,9 +10,29 @@ use mockall::automock;
 
 #[cfg_attr(test, automock)]
 pub trait LogStore {
+    /// Save a log to storage
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the log cannot be serialized or saved to storage
     fn save_log(&self, log: &RskLog) -> Result<()>;
+    /// Save multiple logs to storage
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any log cannot be serialized or saved to storage
     fn save_logs(&self, logs: &[RskLog]) -> Result<()>;
+    /// Get the sync checkpoint log
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the checkpoint cannot be retrieved or deserialized from storage
     fn get_sync_checkpoint(&self) -> Result<Option<RskLog>>;
+    /// Set the sync checkpoint log
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the checkpoint cannot be serialized or saved to storage
     fn set_sync_checkpoint(&self, log: &RskLog) -> Result<()>;
 }
 
@@ -25,7 +45,7 @@ impl StoreKey {
     pub fn value(&self) -> String {
         match self {
             StoreKey::LogId(address, tx_hash, log_index) => {
-                format!("{}{}/{}/{}", LOG_PREFIX, address, tx_hash, log_index)
+                format!("{LOG_PREFIX}{address}/{tx_hash}/{log_index}")
             }
             StoreKey::LogSyncCheckpoint => "meta/sync_checkpoint".to_string(),
         }
@@ -37,16 +57,31 @@ pub struct RawLogStore {
 }
 
 impl RawLogStore {
+    /// Create a new `RawLogStore`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the storage backend cannot be initialized
     pub fn new(path: &str) -> Result<Self> {
         let config = StorageConfig::new(path.to_string(), None);
         let db = Storage::new(&config)?;
         Ok(Self { db })
     }
 
+    /// Set a value in storage
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the value cannot be serialized or saved to storage
     pub fn set<T: serde::ser::Serialize>(&self, key: &str, value: &T) -> Result<()> {
         Ok(self.db.set(key, value, None)?)
     }
 
+    /// Get a value from storage
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the value cannot be retrieved or deserialized from storage
     pub fn get<T: serde::de::DeserializeOwned>(&self, key: &str) -> Result<Option<T>> {
         Ok(self.db.get(key)?)
     }
@@ -74,13 +109,13 @@ impl LogStore for RawLogStore {
     fn get_sync_checkpoint(&self) -> Result<Option<RskLog>> {
         let key = &StoreKey::LogSyncCheckpoint.value();
 
-        Ok(self.get(key)?)
+        self.get(key)
     }
 
     fn set_sync_checkpoint(&self, log: &RskLog) -> Result<()> {
         let key = &StoreKey::LogSyncCheckpoint.value();
 
-        Ok(self.set(key, log)?)
+        self.set(key, log)
     }
 }
 
@@ -111,7 +146,7 @@ mod tests {
         let signature = "Transfer(address,address,uint256)";
         let log_generator: FakeLogGenerator = FakeLogGenerator::new();
         let expected_log_info = LogInfo::new(
-            addr1.clone(),
+            addr1,
             BlockHash::from(H256::random()),
             1.into(),
             TxHash::from(H256::random()),
@@ -140,7 +175,7 @@ mod tests {
         let signature = "Transfer(address,address,uint256)";
         let log_generator: FakeLogGenerator = FakeLogGenerator::new();
         let expected_log_info1 = LogInfo::new(
-            addr.clone(),
+            addr,
             BlockHash::from(H256::random()),
             1.into(),
             TxHash::from(H256::random()),
@@ -155,7 +190,7 @@ mod tests {
         )
         .value();
         let expected_log_info2 = LogInfo::new(
-            addr.clone(),
+            addr,
             BlockHash::from(H256::random()),
             2.into(),
             TxHash::from(H256::random()),
@@ -163,7 +198,7 @@ mod tests {
             false,
         );
         let expected_log_info3 = LogInfo::new(
-            addr.clone(),
+            addr,
             BlockHash::from(H256::random()),
             3.into(),
             TxHash::from(H256::random()),
@@ -171,7 +206,7 @@ mod tests {
             false,
         );
         let expected_log_info4 = LogInfo::new(
-            addr.clone(),
+            addr,
             BlockHash::from(H256::random()),
             4.into(),
             TxHash::from(H256::random()),
@@ -198,7 +233,7 @@ mod tests {
         let signature = "Transfer(address,address,uint256)";
         let log_generator: FakeLogGenerator = FakeLogGenerator::new();
         let expected_log_info = LogInfo::new(
-            addr.clone(),
+            addr,
             BlockHash::from(H256::random()),
             1.into(),
             TxHash::from(H256::random()),
