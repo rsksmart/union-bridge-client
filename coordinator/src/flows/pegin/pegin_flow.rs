@@ -380,7 +380,7 @@ where
                 Ok(Steps::AcceptPegin)
             }
             (Steps::AcceptPegin, StepData::PeginAccepted(pegin_accepted)) => {
-                info!("PeginFlow {}: Done", self.state.flow_id);
+                info!("PeginFlow Done: {}", self.state.flow_id);
                 trace!("PeginAccepted data: {pegin_accepted:?}");
                 self.state.ctx.pegin_accepted = Some(pegin_accepted.clone());
                 Ok(Steps::Done)

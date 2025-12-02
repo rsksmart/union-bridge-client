@@ -138,11 +138,12 @@ extract_log_timestamp() {
 }
 
 # Helper function to convert timestamp to epoch (macOS and Linux compatible)
+# Returns empty string on failure (caller should handle this explicitly)
 timestamp_to_epoch() {
     local timestamp="$1"
     date -j -f "%Y-%m-%d %H:%M:%S" "$timestamp" +%s 2>/dev/null || \
     date -d "$timestamp" +%s 2>/dev/null || \
-    echo "0"
+    echo ""
 }
 
 # Unified function to find recent log matches
@@ -167,12 +168,112 @@ find_recent_log_match() {
             local log_time=$(timestamp_to_epoch "$log_timestamp")
             
             # check if log is recent (after min_time)
-            if [ "$log_time" -ge "$min_time" ]; then
+            # skip if timestamp parsing failed (empty string)
+            if [ -n "$log_time" ] && [ "$log_time" -ge "$min_time" ]; then
                 echo "$line"
                 break
             fi
         fi
     done | tail -1
+}
+
+# count transactions in blocks from start_height to end_height (excluding coinbase)
+count_transactions_in_blocks() {
+    local start_height=$1
+    local end_height=$2
+    local total_txs=0
+    for ((h=start_height + 1; h<=end_height; h++)); do
+        local stats
+        stats=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword \
+                getblockstats "$h" 2>/dev/null) || continue
+        # Extract "txs" (total tx count including coinbase) - use jq if available, fallback to sed
+        local total_tx_count
+        total_tx_count=$(jq -r '.txs // empty' 2>/dev/null <<<"$stats" || echo "$stats" | tr -d '\n' | sed -E 's/.*"txs"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/')
+        # Subtract 1 to exclude the coinbase
+        if [ -n "$total_tx_count" ] && [ "$total_tx_count" -gt 1 ]; then
+            local non_coinbase_count=$((total_tx_count - 1))
+            total_txs=$((total_txs + non_coinbase_count))
+        fi
+        # If total_tx_count <= 1, there's only coinbase, so we add 0
+    done
+    echo "$total_txs"
+}
+
+# wait for N bitcoin transactions to be created in mined blocks with confirmations
+# start_height: the last block mined before transactions should start appearing
+# expected_count: number of transactions to wait for
+# max_blocks: maximum blocks to wait for transactions to appear
+# confirmations: number of confirmations required (blocks after transaction is mined)
+wait_for_bitcoin_transactions() {
+    local start_height=$1
+    local expected_count=$2
+    local max_blocks=$3
+    local confirmations=$4
+    
+    # target height accounts for finding transactions + getting confirmations
+    local target_height=$((start_height + max_blocks + confirmations))
+    local first_tx_height=0  # block height where transactions were first found
+    
+    log "Waiting for $expected_count Bitcoin transactions in mined blocks (max $max_blocks blocks to find) with $confirmations confirmations..."
+    log "Starting height: $start_height, Max target height: $target_height"
+
+    while true; do
+        local current_height=$(get_current_bitcoin_height)
+        local blocks_mined=$((current_height - start_height))
+        
+        # safeguard
+        if [ $blocks_mined -lt 0 ]; then
+            sleep 1
+            continue
+        fi
+        
+        # count transactions in blocks from start_height+1 to current_height
+        local transactions_found=0
+        if [ $blocks_mined -gt 0 ]; then
+            transactions_found=$(count_transactions_in_blocks $start_height $current_height)
+        fi
+        
+        # track the first block height where we found the expected count of transactions
+        if [ $transactions_found -ge $expected_count ] && [ $first_tx_height -eq 0 ]; then
+            first_tx_height=$current_height
+            log "Found $expected_count transactions at height $first_tx_height, waiting for $confirmations confirmations..."
+        fi
+        
+        # calculate confirmations if we've found transactions
+        local current_confirmations=0
+        if [ $first_tx_height -gt 0 ]; then
+            current_confirmations=$((current_height - first_tx_height))
+        fi
+        
+        if [ $first_tx_height -gt 0 ]; then
+            echo -ne "\r  Blocks mined: $blocks_mined | Transactions: $transactions_found/$expected_count | Confirmations: $current_confirmations/$confirmations  "
+        else
+            echo -ne "\r  Blocks mined: $blocks_mined/$max_blocks | Transactions found: $transactions_found/$expected_count  "
+        fi
+
+        # check if we have enough transactions AND enough confirmations
+        if [ $transactions_found -ge $expected_count ] && [ $first_tx_height -gt 0 ] && [ $current_confirmations -ge $confirmations ]; then
+            echo ""  # newline after the progress display
+            success "$expected_count Bitcoin transactions found with $confirmations confirmations (height: $start_height -> $current_height, tx at $first_tx_height)"
+            return 0
+        fi
+        
+        # Check if we've exceeded the block limit before finding transactions
+        if [ $current_height -ge $target_height ] && [ $first_tx_height -eq 0 ]; then
+            echo ""  # newline after the progress display
+            warn "Only $transactions_found/$expected_count Bitcoin transactions found after $max_blocks blocks (height: $start_height -> $current_height)"
+            return 1
+        fi
+        
+        # Check if we found transactions but didn't get enough confirmations in time
+        if [ $first_tx_height -gt 0 ] && [ $current_height -ge $target_height ]; then
+            echo ""  # newline after the progress display
+            warn "Found $expected_count transactions at height $first_tx_height but only got $current_confirmations/$confirmations confirmations (timeout at height $target_height)"
+            return 1
+        fi
+
+        sleep 0.5
+    done
 }
 
 # wait for N bitcoin blocks to be mined
@@ -353,6 +454,9 @@ BITCOIN_MINE_PID=$!
 sleep 1  # give mining a moment to start
 
 # step 1: fund operator wallets
+# capture block height before funding starts (last block mined before transactions should appear)
+FUND_START_HEIGHT=$(get_current_bitcoin_height)
+
 step "Step 1: Fund Operator Wallets"
 # operator fund with --execute handles BitVMX funding automatically
 # Must pass $SCRIPT_ENV so it knows where to find the BitVMX addresses (local logs vs Docker logs)
@@ -362,11 +466,13 @@ if ! bash cli-operations.sh operator fund --env "$SCRIPT_ENV" --execute; then
     warn "Command failed!"
     exit 1
 fi
+echo ""
+if ! wait_for_bitcoin_transactions "$FUND_START_HEIGHT" 1 6 3; then
+    warn "Failed to detect 1 Bitcoin transaction with 3 confirmations within 6 blocks"
+    exit 1
+fi
+echo ""
 success "Operator wallets funded (including BitVMX)"
-echo ""
-log "Allowing time (blocks) for BitVMX to detect confirmed transactions..."
-wait_for_bitcoin_blocks 6
-echo ""
 
 # step 2: apply operators
 step "Step 2: Apply Operators to Stream"
