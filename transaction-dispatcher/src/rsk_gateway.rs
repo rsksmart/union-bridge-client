@@ -558,18 +558,18 @@ pub enum DomainErrors {
     InvalidRole(String),
     #[error("Error interacting with Committee: {0}")]
     CommitteeError(String),
+    #[error("Member already deposited communication data: {0}")]
+    MemberAlreadyDepositedCommunicationData(String),
+    #[error("Member already registered for stream: {0}")]
+    MemberAlreadyRegisteredForStream(String),
+    #[error("Member info already deposited: {0}")]
+    MemberInfoAlreadyDeposited(String),
     #[error("Error interacting with MemberRegistry: {0}")]
     MemberRegistryError(String),
     #[error("Error collecting signatures: {0}")]
     SignaturesError(String),
     #[error("Missing confirmations on native bridge: {0}")]
     MissingConfirmationsOnNativeBridge(String),
-    #[error("Member already deposited communication data: {0}")]
-    MemberAlreadyDepositedCommunicationData(String),
-    #[error("Member info already deposited: {0}")]
-    MemberInfoAlreadyDeposited(String),
-    #[error("Member already registered for stream: {0}")]
-    MemberAlreadyRegisteredForStream(String),
     #[error("Invalid slot state: expected {expected}, actual {actual}")]
     InvalidSlotState { expected: u8, actual: u8 },
 

@@ -1,3 +1,4 @@
+use crate::contracts::common::send_tx_with_gas_bump;
 use alloy_primitives::{Address, FixedBytes, U256, hex::FromHex};
 use alloy_provider::Provider;
 use alloy_rpc_types::TransactionReceipt;
@@ -8,7 +9,6 @@ use union_contracts::bindings::peg_manager::PegManager::{
 };
 
 use crate::contracts::bitcoin_manager::ParseFieldError;
-use crate::contracts::common::send_tx_with_gas_bump;
 
 use crate::types::BtcTxSPVProofInput;
 
