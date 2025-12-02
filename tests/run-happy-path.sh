@@ -59,6 +59,18 @@ step() {
     echo ""
 }
 
+# get current bitcoin block height
+get_current_bitcoin_height() {
+    local height=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockcount 2>/dev/null || echo "0")
+    height=${height:-0}  # ensure it's set to 0 if empty
+    echo "$height"
+}
+
+# check if bitcoin node is accessible
+check_bitcoin_connectivity() {
+    bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockcount &> /dev/null
+}
+
 # check prerequisites
 if ! command -v cargo &> /dev/null || ! command -v cast &> /dev/null || ! command -v bitcoin-cli &> /dev/null; then
     echo "Error: cargo, cast, and bitcoin-cli required"
@@ -70,7 +82,7 @@ if ! cast rpc eth_chainId --rpc-url http://localhost:8545 &> /dev/null; then
     exit 1
 fi
 
-if ! bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockcount &> /dev/null; then
+if ! check_bitcoin_connectivity; then
     echo "Error: Bitcoin regtest node not accessible"
     echo "Please ensure Bitcoin Core is running with:"
     echo "  bitcoind -regtest -rpcuser=foo -rpcpassword=rpcpassword"
@@ -166,15 +178,13 @@ find_recent_log_match() {
 # wait for N bitcoin blocks to be mined
 wait_for_bitcoin_blocks() {
     local count=$1
-    local start_height=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockcount 2>/dev/null || echo "0")
-    start_height=${start_height:-0}  # ensure it's set to 0 if empty
+    local start_height=$(get_current_bitcoin_height)
     local target_height=$((start_height + count))
 
     log "Waiting for $count Bitcoin blocks to be mined..."
 
     while true; do
-        local current_height=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockcount 2>/dev/null || echo "0")
-        current_height=${current_height:-0}  # ensure it's set to 0 if empty
+        local current_height=$(get_current_bitcoin_height)
         local blocks_mined=$((current_height - start_height))
         # safeguard
         if [ $blocks_mined -lt 0 ]; then
@@ -206,15 +216,13 @@ wait_for_log_with_block_timeout() {
     local TIME_MARGIN=300
     local min_time=$((start_time - TIME_MARGIN))
     
-    local start_height=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockcount 2>/dev/null || echo "0")
-    start_height=${start_height:-0}  # ensure it's set to 0 if empty
+    local start_height=$(get_current_bitcoin_height)
     local target_height=$((start_height + max_blocks))
     
     log "Waiting for log pattern: $pattern (max $max_blocks blocks)..."
     
     while true; do
-        local current_height=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockcount 2>/dev/null || echo "0")
-        current_height=${current_height:-0}  # ensure it's set to 0 if empty
+        local current_height=$(get_current_bitcoin_height)
         local blocks_mined=$((current_height - start_height))
         
         # safeguard
