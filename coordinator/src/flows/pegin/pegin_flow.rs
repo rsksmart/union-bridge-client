@@ -597,7 +597,7 @@ where
         debug!("Building PeginRequestMessage for BitVMX from PeginRequested event");
 
         let committee_id = Uuid::from_u128(event.committeeId);
-        let operator_indexes = Self::build_operator_indexes(committee_output);
+        let operator_indexes = Self::build_operator_indexes(committee_output)?;
         let slot_index = event.streamPosition.slotId;
 
         let checksum_address = event
@@ -627,10 +627,7 @@ where
         })
     }
 
-    fn build_operator_indexes(
-        &self,
-        committee_response: &GetCommitteeOutput,
-    ) -> Result<Vec<usize>> {
+    fn build_operator_indexes(committee_response: &GetCommitteeOutput) -> Result<Vec<usize>> {
         let operator_role: u8 = ParticipantRole::Prover.into();
         let mut operator_indexes = Vec::new();
 
@@ -640,7 +637,7 @@ where
             }
         }
 
-        operator_indexes
+        Ok(operator_indexes)
     }
 
     fn build_take_aggregated_key(committee_response: &GetCommitteeOutput) -> Result<PublicKey> {
@@ -817,6 +814,11 @@ where
     /// Get the state for debugging
     pub fn get_state(&self) -> &State {
         &self.state
+    }
+
+    #[cfg(test)]
+    pub fn get_state_mut(&mut self) -> &mut State {
+        &mut self.state
     }
 
     /// Get the `BitVMX` pegin accepted message if available
