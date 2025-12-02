@@ -3,8 +3,11 @@ resolver = "2"
 members = ["common", "block-indexer", "log-indexer", "transaction-dispatcher", "key-manager", "check-fork", "check-fork/tester", "check-fork/zkp", "coordinator", "user-api"]
 
 [workspace.lints.clippy]
-all = "deny"
-pedantic = "deny"
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+cargo = { level = "deny", priority = -1 }
+multiple-crate-versions = "allow"
+cargo-common-metadata = "allow"
 
 [workspace.dependencies]
 # alloy-rs-core
@@ -37,10 +40,13 @@ musig2 = { version = "0.2.3", features = ["serde", "rand"] }
 primitive-types = { version = "0.13.1", features = ["std", "serde"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-shellexpand = "3.1.1"
 thiserror = "2.0.11"
 tower-http = { version = "0.6.1", features = ["timeout", "trace"] }
 tokio = { version = "1.41.1" }
+serde_yaml = "0.9.33"
+sha2 = "0.10.9"
+tiny-keccak = "2.0.2"
+uuid = { version = "1.11.0", features = ["v4", "serde"] }
 
 storage-backend = { package = "rust-bitvmx-storage-backend", git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-storage-backend.git", rev = "16a01bfe316266bdac080828e260cd191fcb3cde" }
 union-contracts = { package = "union-bridge-contracts", git = "ssh://git@github.com/temp-rsk/bitvmx-union-bridge-contracts.git", tag = "v0.2.0-alpha" }
