@@ -205,7 +205,7 @@ where
                 self.state.ctx.pegout_registered_tx = Some(output.transaction_hash);
             }
             Steps::Done => {
-                info!("PegoutFlow {}: Done", self.state.flow_id);
+                info!("PegoutFlow Done: {}", self.state.flow_id);
             }
         }
 

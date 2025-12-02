@@ -110,6 +110,59 @@ mine_bitcoin() {
     done
 }
 
+# Helper function to extract timestamp from log line
+extract_log_timestamp() {
+    local line="$1"
+    local mode="$2"  # "docker" or "file"
+    
+    if [ "$mode" = "docker" ]; then
+        # Docker logs format: "2025-11-19 20:22:10.394 | 2025-11-19 23:22:10.394 [INFO] ..."
+        # We want the second timestamp (after the pipe)
+        echo "$line" | grep -oE '\| [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}'
+    else
+        # File logs format: "^2025-11-19 23:22:10.394 [INFO] ..."
+        echo "$line" | grep -oE '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}'
+    fi
+}
+
+# Helper function to convert timestamp to epoch (macOS and Linux compatible)
+timestamp_to_epoch() {
+    local timestamp="$1"
+    date -j -f "%Y-%m-%d %H:%M:%S" "$timestamp" +%s 2>/dev/null || \
+    date -d "$timestamp" +%s 2>/dev/null || \
+    echo "0"
+}
+
+# Unified function to find recent log matches
+# Uses pipes to avoid loading entire logs into memory
+find_recent_log_match() {
+    local pattern="$1"
+    local source="$2"
+    local min_time="$3"
+    local mode="${4:-file}"  # default to file mode
+    
+    local log_stream
+    if [ "$mode" = "docker" ]; then
+        log_stream=$(docker compose -p "$source" logs coordinator 2>/dev/null) || return 1
+    else
+        log_stream=$(cat "$source" 2>/dev/null) || return 1
+    fi
+    
+    echo "$log_stream" | grep -E "$pattern" | while read -r line; do
+        local log_timestamp=$(extract_log_timestamp "$line" "$mode")
+        
+        if [ -n "$log_timestamp" ]; then
+            local log_time=$(timestamp_to_epoch "$log_timestamp")
+            
+            # check if log is recent (after min_time)
+            if [ "$log_time" -ge "$min_time" ]; then
+                echo "$line"
+                break
+            fi
+        fi
+    done | tail -1
+}
+
 # wait for N bitcoin blocks to be mined
 wait_for_bitcoin_blocks() {
     local count=$1
@@ -136,9 +189,90 @@ wait_for_bitcoin_blocks() {
             break
         fi
 
-        sleep 1
+        sleep 0.25s
     done
     echo ""
+}
+
+# Wait for a log pattern to appear, with a block-based timeout
+# Usage: wait_for_log_with_block_timeout <pattern> <max_blocks> [start_time]
+# If start_time is provided, only logs after that time (minus margin) are considered
+wait_for_log_with_block_timeout() {
+    local pattern="$1"
+    local max_blocks=$2
+    local start_time="${3:-$(date +%s)}"
+    
+    # allow 5 minutes margin (300 seconds) before start_time for clock differences
+    local TIME_MARGIN=300
+    local min_time=$((start_time - TIME_MARGIN))
+    
+    local start_height=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockcount 2>/dev/null || echo "0")
+    start_height=${start_height:-0}  # ensure it's set to 0 if empty
+    local target_height=$((start_height + max_blocks))
+    
+    log "Waiting for log pattern: $pattern (max $max_blocks blocks)..."
+    
+    while true; do
+        local current_height=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockcount 2>/dev/null || echo "0")
+        current_height=${current_height:-0}  # ensure it's set to 0 if empty
+        local blocks_mined=$((current_height - start_height))
+        
+        # safeguard
+        if [ $blocks_mined -lt 0 ]; then
+            sleep 1
+            continue
+        fi
+        
+        echo -ne "\r  Blocks mined: $blocks_mined/$max_blocks | Checking logs...  "
+        
+        # Check for log pattern in all coordinator logs
+        local found_line=""
+        local found_source=""
+        
+        if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
+            for op_id in 1 2 3 4; do
+                project="op_${op_id}"
+                found_line=$(find_recent_log_match "$pattern" "$project" "$min_time" "docker")
+                if [ -n "$found_line" ]; then
+                    found_source="${project}"
+                    break
+                fi
+            done
+        else
+            shopt -s nullglob
+            for log_file in logs/coordinator-*.log; do
+                [[ -f "$log_file" ]] || continue
+                
+                found_line=$(find_recent_log_match "$pattern" "$log_file" "$min_time" "file")
+                if [ -n "$found_line" ]; then
+                    found_source="$log_file"
+                    break
+                fi
+            done
+        fi
+        
+        if [ -n "$found_line" ]; then
+            echo ""  # newline after the progress display
+            success "Log pattern found after $blocks_mined blocks!"
+            log "Found in: $found_source"
+            echo "$found_line"
+            return 0
+        fi
+        
+        # Check if we've exceeded the block limit
+        if [ $current_height -ge $target_height ]; then
+            echo ""  # newline after the progress display
+            warn "Log pattern not found after $max_blocks blocks (height: $start_height -> $current_height)"
+            if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
+                warn "Check Docker logs manually: docker compose -p op_{1..4} logs coordinator"
+            else
+                warn "Check logs/coordinator-*.log manually"
+            fi
+            return 1
+        fi
+        
+        sleep 1
+    done
 }
 
 cleanup() {
@@ -218,7 +352,11 @@ fi
 rm -f /tmp/apply-operators-$$
 success "Operators applied to stream $STREAM_ID"
 echo ""
-wait_for_bitcoin_blocks 15
+APPLY_START_TIME=$(date +%s)
+if ! wait_for_log_with_block_timeout "CommitteeSetupFlow Done" 15 "$APPLY_START_TIME"; then
+    warn "Committee setup complete log not found within timeout"
+    exit 1
+fi
 echo ""
 
 # step 3: request pegin
@@ -234,7 +372,11 @@ if ! bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -p $PACKET_NUMB
 fi
 success "Pegin transaction created"
 echo ""
-wait_for_bitcoin_blocks 15
+PEGIN_START_TIME=$(date +%s)
+if ! wait_for_log_with_block_timeout "PeginFlow Done" 15 "$PEGIN_START_TIME"; then
+    warn "PeginFlow completion log not found within timeout"
+    exit 1
+fi
 echo ""
 
 # step 4: request pegout
@@ -256,122 +398,18 @@ rm -f /tmp/pegout-$$
 success "Pegout requested"
 echo ""
 
-wait_for_bitcoin_blocks 15
+if ! wait_for_log_with_block_timeout "PegoutFlow Done" 15 "$PEGOUT_START_TIME"; then
+    warn "PegoutFlow completion log not found within timeout"
+    exit 1
+fi
 echo ""
 
 # step 5: verify pegout completion
 step "Step 5: Verify Pegout Completion"
-
-# search for PegoutFlow completion with recent timestamp
-# pattern: "2025-11-12 16:54:39.725 [ INFO] [...] PegoutFlow <uuid>: Done"
-# allow 5 minutes margin (300 seconds) before pegout start for clock differences
-TIME_MARGIN=300
-MIN_TIME=$((PEGOUT_START_TIME - TIME_MARGIN))
-
-# Helper function to extract timestamp from log line
-extract_log_timestamp() {
-    local line="$1"
-    local mode="$2"  # "docker" or "file"
-    
-    if [ "$mode" = "docker" ]; then
-        # Docker logs format: "2025-11-19 20:22:10.394 | 2025-11-19 23:22:10.394 [INFO] ..."
-        # We want the second timestamp (after the pipe)
-        echo "$line" | grep -oE '\| [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}'
-    else
-        # File logs format: "^2025-11-19 23:22:10.394 [INFO] ..."
-        echo "$line" | grep -oE '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}'
-    fi
-}
-
-# Helper function to convert timestamp to epoch (macOS and Linux compatible)
-timestamp_to_epoch() {
-    local timestamp="$1"
-    date -j -f "%Y-%m-%d %H:%M:%S" "$timestamp" +%s 2>/dev/null || \
-    date -d "$timestamp" +%s 2>/dev/null || \
-    echo "0"
-}
-
-# Unified function to find recent log matches
-# Uses pipes to avoid loading entire logs into memory
-find_recent_log_match() {
-    local pattern="$1"
-    local source="$2"
-    local min_time="$3"
-    local mode="${4:-file}"  # default to file mode
-    
-    local log_stream
-    if [ "$mode" = "docker" ]; then
-        log_stream=$(docker compose -p "$source" logs coordinator 2>/dev/null) || return 1
-    else
-        log_stream=$(cat "$source" 2>/dev/null) || return 1
-    fi
-    
-    echo "$log_stream" | grep -E "$pattern" | while read -r line; do
-        local log_timestamp=$(extract_log_timestamp "$line" "$mode")
-        
-        if [ -n "$log_timestamp" ]; then
-            local log_time=$(timestamp_to_epoch "$log_timestamp")
-            
-            # check if log is recent (after min_time)
-            if [ "$log_time" -ge "$min_time" ]; then
-                echo "$line"
-                break
-            fi
-        fi
-    done | tail -1
-}
-
-# Pattern for PegoutFlow completion
-PEGOUT_PATTERN="PegoutFlow [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}: Done"
-
-MATCHING_LINE=""
-MATCHING_SOURCE=""
-
-if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
-    log "Checking Docker logs from all operators for PegoutFlow completion..."
-    echo ""
-
-    for op_id in 1 2 3 4; do
-        project="op_${op_id}"
-        found_line=$(find_recent_log_match "$PEGOUT_PATTERN" "$project" "$MIN_TIME" "docker")
-        if [ -n "$found_line" ]; then
-            MATCHING_LINE="$found_line"
-            MATCHING_SOURCE="${project}"
-            break
-        fi
-    done
-else
-    log "Checking local logs from all operators for PegoutFlow completion..."
-    echo ""
-
-    shopt -s nullglob
-    for log_file in logs/coordinator-*.log; do
-        [[ -f "$log_file" ]] || continue
-
-        found_line=$(find_recent_log_match "$PEGOUT_PATTERN" "$log_file" "$MIN_TIME" "file")
-        if [ -n "$found_line" ]; then
-            MATCHING_LINE="$found_line"
-            MATCHING_SOURCE="$log_file"
-            break
-        fi
-    done
-fi
-
-if [ -n "$MATCHING_LINE" ]; then
-    success "PegoutFlow completed successfully!"
-    echo ""
-    log "Found in: $MATCHING_SOURCE"
-    echo "$MATCHING_LINE"
-    SUCCESS=true
-else
-    warn "PegoutFlow completion not detected in any operator logs"
-    if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
-        warn "Check Docker logs manually: docker compose -p op_{1..4} logs coordinator"
-    else
-        warn "Check logs/coordinator-*.log manually"
-    fi
-    SUCCESS=false
-fi
+# Note: PegoutFlow completion is already checked in the wait_for_log_with_block_timeout call above
+# This step is kept for consistency but the verification already happened
+success "PegoutFlow completion verified"
+SUCCESS=true
 echo ""
 
 step "Complete"

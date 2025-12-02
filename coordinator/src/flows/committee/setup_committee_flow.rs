@@ -1068,10 +1068,7 @@ where
                 self.setup_dispute_core_protocol()?;
             }
             Steps::Done => {
-                info!(
-                    "Committee setup complete for flow {}",
-                    self.state.internal_id
-                );
+                info!("CommitteeSetupFlow Done: {}", self.state.internal_id);
             }
             Steps::Failed => {
                 unreachable!("Failed step should not be reached in start_step");
