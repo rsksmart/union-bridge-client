@@ -9,7 +9,7 @@ use axum::{Extension, Json, Router};
 use bitcoin::secp256k1::rand::rngs::OsRng;
 use bitcoin::secp256k1::SecretKey;
 use bitcoin::{secp256k1, PublicKey, XOnlyPublicKey};
-use common::msg_broker::broker::{BrokerServer, BrokerServerApi};
+use common::msg_broker::broker::{BrokerServer, BrokerServerApi, Identifier};
 use common::msg_broker::types::FromServer;
 use common::shutdown_flag::ShutdownFlag;
 use log::{error, info};
@@ -44,7 +44,7 @@ impl Server {
         listener: TcpListener,
         broker_server: Arc<BrokerServer>,
         shutdown_flag: ShutdownFlag,
-        coordinator_client_id: u32,
+        coordinator_client_id: Identifier,
         user_contracts_gateway: UCG,
         member_contracts_gateway: MCG,
         user_bitcoin_wif: Option<&str>,
@@ -114,12 +114,12 @@ impl Server {
 
     async fn bitvmx_address(
         Extension(broker): Extension<Arc<BrokerServer>>,
-        Extension(destination): Extension<u32>,
+        Extension(destination): Extension<Identifier>,
     ) -> impl IntoResponse {
         info!("Received bitvmx_address for destination: {destination}",);
 
         // TODO(Jira) send a proper type in scope of https://rsklabs.atlassian.net/browse/UB-214
-        let res = broker.send(&FromServer::MemberRequest, destination);
+        let res = broker.send(&FromServer::MemberRequest, &destination);
         match res {
             Ok(_) => (StatusCode::OK, Json(json!({ "result": "ok" }))),
             Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))),
@@ -128,7 +128,7 @@ impl Server {
 
     async fn apply_stream(
         Extension(broker): Extension<Arc<BrokerServer>>,
-        Extension(destination): Extension<u32>,
+        Extension(destination): Extension<Identifier>,
         Json(payload): Json<Value>,
     ) -> impl IntoResponse {
         info!(
@@ -137,7 +137,7 @@ impl Server {
         );
 
         // TODO(Jira) send a proper type instead of Value in scope of https://rsklabs.atlassian.net/browse/UB-214
-        let res = broker.send(&FromServer::UserRequest(payload), destination);
+        let res = broker.send(&FromServer::UserRequest(payload), &destination);
         match res {
             Ok(_) => (StatusCode::OK, Json(json!({ "result": "ok" }))),
             Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))),

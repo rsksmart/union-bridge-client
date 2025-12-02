@@ -1,15 +1,12 @@
 use std::str::FromStr;
-
 use alloy_primitives::FixedBytes;
 use anyhow::Result;
-use common::msg_broker::bitvmx_types::PeerId;
+use common::msg_broker::bitvmx_types::PubKeyHash;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     ECDSAPublicKey, MemberRegistrationKeys, RSAPublicKey,
 };
-
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{CommitteeECDSA, P2PAddressParser};
-
 pub type FixedBytes32 = FixedBytes<32>;
 pub type Bytes = alloy_sol_types::private::Bytes;
 pub type Address = alloy_primitives::Address;
@@ -17,7 +14,7 @@ pub type Address = alloy_primitives::Address;
 pub fn convert_to_member_registration_keys(
     take_key_data: &CommitteeECDSA,
     dispute_key_data: &CommitteeECDSA,
-    peer_id: &PeerId,
+    pubkey_hash: &PubKeyHash,
 ) -> Result<MemberRegistrationKeys, DomainErrors> {
     let take_key = ECDSAPublicKey {
         publicKeyX: crate::contracts::types::FixedBytes32::from_str(&take_key_data.x)
@@ -57,16 +54,15 @@ pub fn convert_to_member_registration_keys(
         },
     };
 
-    let peer_id_str = peer_id.0.as_str();
-    let peer_id_as_rsa = P2PAddressParser::peer_id_to_contracts(peer_id_str).map_err(|_| {
-        DomainErrors::InvalidPublicKey(format!("Cannot parse communication data {peer_id_str}"))
+    let pubkey_hash_as_rsa = P2PAddressParser::pubkey_hash_to_contracts(pubkey_hash).map_err(|_| {
+        DomainErrors::InvalidPublicKey(format!("Cannot parse pubkey_hash: {pubkey_hash}"))
     })?;
 
     Ok(MemberRegistrationKeys {
         takeKey: take_key,
         covenantKey: covenant_key,
         communicationKey: RSAPublicKey {
-            rsaPublicKey: peer_id_as_rsa.rsaPublicKey, // we temporarily store PeerId here, agreed with Fairgate
+            rsaPublicKey: pubkey_hash_as_rsa.rsaPublicKey,
         },
     })
 }

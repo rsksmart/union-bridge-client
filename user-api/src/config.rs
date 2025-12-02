@@ -1,4 +1,4 @@
-use common::config::CommonConfig;
+use common::config::{CommonConfig, KeyStoreConfig};
 use common::errors::ConfigError;
 use serde::Deserialize;
 
@@ -7,6 +7,7 @@ const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 #[derive(Debug, Deserialize)]
 pub struct Config {
     pub bitcoin_network: String,
+    pub key_store: KeyStoreConfig,
     #[serde(rename = "user_api")]
     pub user_api_config: UserApiConfig,
 }

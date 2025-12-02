@@ -473,9 +473,9 @@ fn build_env_for_client(
                 format!("{}/.union_bridge/database/{}", base_storage_path, value)
             } else if base_key == "UB__COORDINATOR__STORAGE_PATH" {
                 format!("{}/.union_bridge/database/{}", base_storage_path, value)
-            } else if base_key == "UB__TRANSACTION_DISPATCHER__KEY_STORE__MEMBER_PATH" {
+            } else if base_key == "UB__KEY_STORE__MEMBER_PATH" {
                 format!("{}/.union_bridge/keystore/{}", base_storage_path, value)
-            } else if base_key == "UB__TRANSACTION_DISPATCHER__KEY_STORE__USER_PATH" {
+            } else if base_key == "UB__KEY_STORE__USER_PATH" {
                 format!("{}/.union_bridge/keystore/{}", base_storage_path, value)
             } else {
                 value.clone()

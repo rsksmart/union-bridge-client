@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
 use common::constants::indexer::NOTIFIER_CHECK_PERIOD;
-use common::msg_broker::broker::UnionBrokerServerApi;
+use common::msg_broker::broker::{Identifier, UnionBrokerServerApi};
 use common::msg_broker::types::{FromServer, ToServer};
 use common::shutdown_flag::ShutdownFlag;
 use common::types::{Address, RskLog};
@@ -15,7 +15,7 @@ use log::{debug, error, info, trace, warn};
 pub struct Notifier<BS: UnionBrokerServerApi> {
     new_log_channel: mpsc::Receiver<RskLog>,
     msg_broker: BS,
-    contracts_with_consumers: HashMap<Address, HashSet<u32>>,
+    contracts_with_consumers: HashMap<Address, HashSet<Identifier>>,
     check_period: Duration,
     shutdown_flag: ShutdownFlag,
 }
@@ -85,7 +85,7 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
                 warn!(
                     "Unexpected request type on Notifier from consumer {consumer_id}, unsubscribing"
                 );
-                self.unsubscribe_consumer_from_all_contracts(consumer_id);
+                self.unsubscribe_consumer_from_all_contracts(&consumer_id);
             }
             None => {
                 trace!("No messages in Notifier's msg_broker");
@@ -95,7 +95,7 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
         Ok(())
     }
 
-    fn subscribe_consumer_to_contract(&mut self, address: Address, consumer_id: u32) {
+    fn subscribe_consumer_to_contract(&mut self, address: Address, consumer_id: Identifier) {
         #[allow(clippy::collapsible_if)]
         if let Some(consumers) = self.contracts_with_consumers.get(&address) {
             if consumers.contains(&consumer_id) {
@@ -108,7 +108,7 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
         self.contracts_with_consumers.entry(address).or_default().insert(consumer_id);
     }
 
-    fn unsubscribe_consumer_from_contract(&mut self, address: Address, consumer_id: u32) {
+    fn unsubscribe_consumer_from_contract(&mut self, address: Address, consumer_id: Identifier) {
         info!("Unsubscribing consumer {consumer_id}");
         if let Entry::Occupied(mut consumer) = self.contracts_with_consumers.entry(address) {
             consumer.get_mut().remove(&consumer_id);
@@ -123,7 +123,7 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
         }
     }
 
-    fn unsubscribe_consumer_from_all_contracts(&mut self, consumer_id: u32) {
+    fn unsubscribe_consumer_from_all_contracts(&mut self, consumer_id: &Identifier) {
         info!("Unsubscribing consumer {consumer_id} from all contracts");
         self.contracts_with_consumers.retain(|_, consumers| {
             consumers.remove(&consumer_id);
@@ -171,7 +171,7 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
                 trace!("Notifying {selector} to consumer {c_id}");
 
                 self.msg_broker
-                    .send(&response, *c_id)
+                    .send(&response, c_id)
                     .context(format!("Sending {selector} to consumer {c_id}"))?;
             }
         } else {
@@ -196,8 +196,12 @@ mod tests {
     use super::*;
 
     struct ClientRequest {
-        id: u32,
+        id: Identifier,
         request: ToServer,
+    }
+
+    fn make_test_identifier(id: u8) -> Identifier {
+        Identifier::new(format!("test_pubkey_hash_{}", id), id)
     }
 
     #[test]
@@ -239,7 +243,7 @@ mod tests {
         let mut mock_broker = MockBrokerServerApi::new();
         mock_broker
             .expect_try_recv()
-            .returning(|| Ok(Some((ToServer::SubscribeLogs(generate_fake_address(2)), 1)))); // subscribe for a different address
+            .returning(|| Ok(Some((ToServer::SubscribeLogs(generate_fake_address(2)), make_test_identifier(1))))); // subscribe for a different address
         mock_broker.expect_send().never(); // nothing to send, no consumers yet for that address
 
         let mut notifier = Notifier::new_for_tests(rx, mock_broker, shutdown_flag.clone());
@@ -258,15 +262,17 @@ mod tests {
 
     #[test]
     fn test_run_new_log_received_with_consumer() {
-        let client_id = 2;
+        let client_id = make_test_identifier(2);
 
         let (tx, rx) = mpsc::channel();
         let shutdown_flag = ShutdownFlag::init();
 
         let address_1 = generate_fake_address(1);
 
-        let client_requests =
-            vec![ClientRequest { id: client_id, request: ToServer::SubscribeLogs(address_1) }];
+        let client_requests = vec![ClientRequest {
+            id: client_id.clone(),
+            request: ToServer::SubscribeLogs(address_1),
+        }];
 
         let expected_log_1 =
             FakeLogGenerator::new().generate_log("Transfer(address,address,uint256)", address_1);
@@ -277,8 +283,8 @@ mod tests {
 
         expect_try_recv_subscribe(client_requests, &mut mock_broker_server);
 
-        expect_send_log(client_id, &expected_log_1, &mut mock_broker_server);
-        expect_send_log(client_id, &expected_log_2, &mut mock_broker_server);
+        expect_send_log(&client_id, &expected_log_1, &mut mock_broker_server);
+        expect_send_log(&client_id, &expected_log_2, &mut mock_broker_server);
 
         let mut notifier = Notifier::new_for_tests(rx, mock_broker_server, shutdown_flag.clone());
 
@@ -297,8 +303,8 @@ mod tests {
 
     #[test]
     fn test_run_new_log_received_with_multiple_consumers() {
-        let client_id_1 = 2;
-        let client_id_2 = 3;
+        let client_id_1 = make_test_identifier(2);
+        let client_id_2 = make_test_identifier(3);
 
         let (tx, rx) = mpsc::channel();
         let shutdown_flag = ShutdownFlag::init();
@@ -307,8 +313,14 @@ mod tests {
         let address_2 = generate_fake_address(2);
 
         let client_requests = vec![
-            ClientRequest { id: client_id_1, request: ToServer::SubscribeLogs(address_1) },
-            ClientRequest { id: client_id_2, request: ToServer::SubscribeLogs(address_1) },
+            ClientRequest {
+                id: client_id_1.clone(),
+                request: ToServer::SubscribeLogs(address_1),
+            },
+            ClientRequest {
+                id: client_id_2.clone(),
+                request: ToServer::SubscribeLogs(address_1),
+            },
         ];
 
         let expected_log_1 =
@@ -322,10 +334,10 @@ mod tests {
 
         expect_try_recv_subscribe(client_requests, &mut mock_broker_server);
 
-        expect_send_log(client_id_1, &expected_log_1, &mut mock_broker_server);
-        expect_send_log(client_id_2, &expected_log_1, &mut mock_broker_server);
-        expect_send_log(client_id_1, &expected_log_2, &mut mock_broker_server);
-        expect_send_log(client_id_2, &expected_log_2, &mut mock_broker_server);
+        expect_send_log(&client_id_1, &expected_log_1, &mut mock_broker_server);
+        expect_send_log(&client_id_2, &expected_log_1, &mut mock_broker_server);
+        expect_send_log(&client_id_1, &expected_log_2, &mut mock_broker_server);
+        expect_send_log(&client_id_2, &expected_log_2, &mut mock_broker_server);
 
         let mut notifier = Notifier::new_for_tests(rx, mock_broker_server, shutdown_flag.clone());
 
@@ -347,8 +359,8 @@ mod tests {
 
     #[test]
     fn test_run_unsubscribe() {
-        let client_id_1 = 2;
-        let client_id_2 = 3;
+        let client_id_1 = make_test_identifier(2);
+        let client_id_2 = make_test_identifier(3);
 
         let (tx, rx) = mpsc::channel();
         let shutdown_flag = ShutdownFlag::init();
@@ -356,10 +368,19 @@ mod tests {
         let address_1 = generate_fake_address(1);
 
         let client_requests = vec![
-            ClientRequest { id: client_id_1, request: ToServer::SubscribeLogs(address_1) },
-            ClientRequest { id: client_id_2, request: ToServer::SubscribeLogs(address_1) },
+            ClientRequest {
+                id: client_id_1.clone(),
+                request: ToServer::SubscribeLogs(address_1),
+            },
+            ClientRequest {
+                id: client_id_2.clone(),
+                request: ToServer::SubscribeLogs(address_1),
+            },
             // should not receive logs for this address
-            ClientRequest { id: client_id_1, request: ToServer::UnsubscribeLogs(address_1) },
+            ClientRequest {
+                id: client_id_1.clone(),
+                request: ToServer::UnsubscribeLogs(address_1),
+            },
         ];
 
         let expected_log_1_for_2 =
@@ -371,8 +392,8 @@ mod tests {
 
         expect_try_recv_subscribe(client_requests, &mut mock_broker_server);
 
-        expect_send_log(client_id_2, &expected_log_1_for_2, &mut mock_broker_server);
-        expect_send_log(client_id_2, &expected_log_2_for_2, &mut mock_broker_server);
+        expect_send_log(&client_id_2, &expected_log_1_for_2, &mut mock_broker_server);
+        expect_send_log(&client_id_2, &expected_log_2_for_2, &mut mock_broker_server);
 
         let mut notifier = Notifier::new_for_tests(rx, mock_broker_server, shutdown_flag.clone());
 
@@ -407,7 +428,7 @@ mod tests {
     }
 
     fn expect_send_log(
-        dest: u32,
+        dest: &Identifier,
         expected_log: &RskLog,
         mock_broker_server: &mut MockBrokerServerApi<ToServer, FromServer>,
     ) {
@@ -415,9 +436,10 @@ mod tests {
             .expect_send()
             .withf({
                 let expected_log = expected_log.clone(); // move into closure
-                move |response, consumer_id| match response {
+                let dest = dest.clone();
+                move |msg, dst| match msg {
                     FromServer::Log(actual_log) => {
-                        *consumer_id == dest && *actual_log == expected_log
+                        *dst == dest && *actual_log == expected_log
                     }
                     _ => false,
                 }

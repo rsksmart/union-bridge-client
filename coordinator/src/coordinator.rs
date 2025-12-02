@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result};
 use bitcoin::Network;
 use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
-use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
+use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::shutdown_flag::ShutdownFlag;
 use log::{debug, error, warn};
@@ -111,6 +111,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                     setup_committee_flow_factory,
                     global_context.clone(),
                     Rc::clone(&store_rc),
+                    bitvmx_broker.as_ref(),
                 )),
                 Box::new(FundBitvmxProcessor::new(bitvmx_broker.clone(), bitcoin_network)),
             ],
@@ -272,9 +273,12 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
     }
 
     fn send_bitvmx_ping(&self) {
-        debug!("Sending Ping to BitVMX");
+        let ping_id = uuid::Uuid::new_v4();
+        debug!("Sending Ping to BitVMX with uuid: {}", ping_id);
 
-        let result = self.bitvmx_broker.send(BROKER_SERVER_ID, IncomingBitVMXApiMessages::Ping());
+        let result = self
+            .bitvmx_broker
+            .send(IncomingBitVMXApiMessages::Ping(ping_id));
 
         if result.is_err() {
             // TODO we need to handle this situation properly
@@ -284,8 +288,8 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
 
     fn check_bitvmx_pong(event: &OutgoingBitVMXApiMessages) -> bool {
         match event {
-            OutgoingBitVMXApiMessages::Pong() => {
-                debug!("Received Pong from BitVMX");
+            OutgoingBitVMXApiMessages::Pong(uuid) => {
+                debug!("Received Pong from BitVMX with uuid: {}", uuid);
                 true
             }
             _ => false,
@@ -305,7 +309,7 @@ pub(crate) mod tests {
     use alloy_primitives::U256;
     use common::mocks::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
     use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
-    use common::msg_broker::broker::{BROKER_SERVER_ID, MockBrokerClientApi};
+    use common::msg_broker::broker::MockBrokerClientApi;
     use common::shutdown_flag::ShutdownFlag;
     use common::test_utils::rsk_block_generator::{
         create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
@@ -313,7 +317,7 @@ pub(crate) mod tests {
     use common::types;
     use common::types::{RskBlockAndUncles, TxHash};
     use mockall::mock;
-    use mockall::predicate::{always, eq, function};
+    use mockall::predicate::{always, function};
     use primitive_types::H256;
     use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
     use transaction_dispatcher::types::{
@@ -370,7 +374,7 @@ pub(crate) mod tests {
             tx_hash: TxHash::from(H256::from_low_u64_be(block_2.number().value())),
         });
 
-        let bitvmx_event = OutgoingBitVMXApiMessages::Pong();
+        let bitvmx_event = OutgoingBitVMXApiMessages::Pong(uuid::Uuid::new_v4());
 
         mock_monitor.expect_start_event_monitoring().return_once(|| Ok(()));
 
@@ -403,16 +407,14 @@ pub(crate) mod tests {
         let shutdown_flag = ShutdownFlag::init();
         handle_shutdown(shutdown_flag.clone());
 
-        let mut bitvmx_broker = MockBrokerClientApi::new();
+        let mut bitvmx_broker =
+            MockBrokerClientApi::<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>::new();
         bitvmx_broker
             .expect_send()
-            .with(
-                eq(BROKER_SERVER_ID),
-                function(|req: &IncomingBitVMXApiMessages| {
-                    matches!(req, IncomingBitVMXApiMessages::Ping())
-                }),
-            )
-            .return_once(|_, _| Ok(true));
+            .with(function(|req: &IncomingBitVMXApiMessages| {
+                matches!(req, IncomingBitVMXApiMessages::Ping(_))
+            }))
+            .return_once(|_| Ok(true));
 
         let mut mock_store = MockCoordinatorStoreApi::new();
         mock_store.expect_save_context().with(always()).returning(|_| Ok(()));
@@ -470,7 +472,7 @@ pub(crate) mod tests {
             &mut mock_monitor,
         );
 
-        let bitvmx_event = OutgoingBitVMXApiMessages::Pong();
+        let bitvmx_event = OutgoingBitVMXApiMessages::Pong(uuid::Uuid::new_v4());
 
         mock_monitor.expect_try_bitvmx_event().returning(move || Ok(Some(bitvmx_event.clone())));
 
@@ -481,16 +483,14 @@ pub(crate) mod tests {
         let shutdown_flag = ShutdownFlag::init();
         handle_shutdown(shutdown_flag.clone());
 
-        let mut bitvmx_broker = MockBrokerClientApi::new();
+        let mut bitvmx_broker =
+            MockBrokerClientApi::<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>::new();
         bitvmx_broker
             .expect_send()
-            .with(
-                eq(BROKER_SERVER_ID),
-                function(|req: &IncomingBitVMXApiMessages| {
-                    matches!(req, IncomingBitVMXApiMessages::Ping())
-                }),
-            )
-            .return_once(|_, _| Ok(true));
+            .with(function(|req: &IncomingBitVMXApiMessages| {
+                matches!(req, IncomingBitVMXApiMessages::Ping(_))
+            }))
+            .return_once(|_| Ok(true));
 
         let mut mock_store = MockCoordinatorStoreApi::new();
         mock_store.expect_save_context().with(always()).returning(|_| Ok(()));
