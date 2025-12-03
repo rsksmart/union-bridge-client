@@ -151,22 +151,24 @@ impl<'a> MockRskProviderHandler<'a> {
                 }
                 if valid_range.contains(&height) {
                     // if a shutdown height is set, the provider will start shutting down at that height
-                    if let Some(shutdown_height) = simul_shutdown_height
-                        && height == shutdown_height
-                    {
-                        shutting_down.set();
-                        info!("Shutdown initiated at block height {height}");
+                    #[allow(clippy::collapsible_if)]
+                    if let Some(shutdown_height) = simul_shutdown_height {
+                        if height == shutdown_height {
+                            shutting_down.set();
+                            info!("Shutdown initiated at block height {height}");
+                        }
                     }
                     // if a reorg has to happen and the height is the reorg height, activate the reorg
-                    if let Some(reorg_happens_at_height) = simul_reorg_happens_at_height
-                        && height == reorg_happens_at_height
-                    {
-                        is_reorg.store(true, Ordering::SeqCst);
-                        info!(
-                            "Reorg initiated at block height {} with hash {}",
-                            height,
-                            generator.generate_hash(height, "alt")
-                        );
+                    #[allow(clippy::collapsible_if)]
+                    if let Some(reorg_happens_at_height) = simul_reorg_happens_at_height {
+                        if height == reorg_happens_at_height {
+                            is_reorg.store(true, Ordering::SeqCst);
+                            info!(
+                                "Reorg initiated at block height {} with hash {}",
+                                height,
+                                generator.generate_hash(height, "alt")
+                            );
+                        }
                     }
                     Ok(Some(generator.generate_block(height, None).unwrap()))
                 } else {
@@ -302,15 +304,16 @@ fn activate_reorg(
     generator: &FakeBlockGenerator,
     is_reorg: &Arc<AtomicBool>,
 ) {
-    if let Some(reorg_happens_at_height) = simul_reorg_happens_at_height
-        && height_subscr_counter == reorg_happens_at_height
-    {
-        is_reorg.store(true, Ordering::SeqCst);
-        info!(
-            "Reorg initiated at block height {} with hash {}",
-            height_subscr_counter,
-            generator.generate_hash(height_subscr_counter, "alt")
-        );
+    #[allow(clippy::collapsible_if)]
+    if let Some(reorg_happens_at_height) = simul_reorg_happens_at_height {
+        if height_subscr_counter == reorg_happens_at_height {
+            is_reorg.store(true, Ordering::SeqCst);
+            info!(
+                "Reorg initiated at block height {} with hash {}",
+                height_subscr_counter,
+                generator.generate_hash(height_subscr_counter, "alt")
+            );
+        }
     }
 }
 fn provide_uncle_block(

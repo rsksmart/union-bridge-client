@@ -597,7 +597,7 @@ where
         debug!("Building PeginRequestMessage for BitVMX from PeginRequested event");
 
         let committee_id = Uuid::from_u128(event.committeeId);
-        let operator_indexes = Self::build_operator_indexes(committee_output)?;
+        let operator_indexes = Self::build_operator_indexes(committee_output);
         let slot_index = event.streamPosition.slotId;
 
         let checksum_address = event
@@ -627,7 +627,7 @@ where
         })
     }
 
-    fn build_operator_indexes(committee_response: &GetCommitteeOutput) -> Result<Vec<usize>> {
+    fn build_operator_indexes(committee_response: &GetCommitteeOutput) -> Vec<usize> {
         let operator_role: u8 = ParticipantRole::Prover.into();
         let mut operator_indexes = Vec::new();
 
@@ -637,7 +637,7 @@ where
             }
         }
 
-        Ok(operator_indexes)
+        operator_indexes
     }
 
     fn build_take_aggregated_key(committee_response: &GetCommitteeOutput) -> Result<PublicKey> {
@@ -775,7 +775,8 @@ where
             bail!("Address not found in committee members");
         };
 
-        (member.role as u8)
+        member
+            .role
             .try_into()
             .context("Failed to convert u8 role to ParticipantRole")
     }
@@ -848,7 +849,7 @@ fn format_step(step: Steps) -> &'static str {
 mod tests {
     use super::*;
     use crate::store::MockCoordinatorStoreApi;
-    use alloy_primitives::U256;
+    use alloy_primitives::{U256, Uint};
     use bitcoin::{Txid, hashes::Hash};
     use common::{
         msg_broker::{
@@ -1008,7 +1009,7 @@ mod tests {
                 }],
                 leaderAddress: AlloyAddress::from_slice(&[0u8; 20]),
                 operatorTakeIndex: U256::from(0),
-                createdAt: Default::default(),
+                createdAt: Uint::default(),
                 missingData: 0,
                 missingCommunicationData: 0,
                 isPending: false,

@@ -931,7 +931,7 @@ where
         for (idx, cm) in committee.members.iter().enumerate() {
             trace!("Processing member {idx}");
 
-            let role = (cm.role as u8).try_into()?;
+            let role = cm.role.try_into()?;
 
             let take_key = self.get_member_keys_by_type(cm.memberAddress, TAKE_KEY_INDEX)?;
             let dispute_key = self.get_member_keys_by_type(cm.memberAddress, DISPUTE_KEY_INDEX)?;
