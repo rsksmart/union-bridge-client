@@ -281,7 +281,7 @@ impl FlowContext {
         let funding_utxo_val = self.get_user_input()?.funding_utxo.value;
         let speedup_utxo_val = self.get_user_input()?.speed_up_utxo.value;
         let advance_funds_utxo_val =
-            self.get_advance_funds_value(self.get_user_input()?.advance_funds.value);
+            calculate_advance_funds_value(self.get_user_input()?.advance_funds.value);
 
         let wpkh = public_key.wpubkey_hash().expect("key is compressed");
         let script_pubkey = ScriptBuf::new_p2wpkh(&wpkh);
@@ -313,10 +313,12 @@ impl FlowContext {
             ),
         })
     }
+}
 
-    fn get_advance_funds_value(&self, advance_funds_user_input: u64) -> u64 {
-        advance_funds_user_input * 12 / 10
-    }
+/// Calculates the advance funds UTXO value with a 20% buffer (12/10 = 1.2x).
+/// This buffer accounts for potential fee variations and ensures sufficient funds.
+fn calculate_advance_funds_value(advance_funds_user_input: u64) -> u64 {
+    advance_funds_user_input * 12 / 10
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -795,7 +797,8 @@ where
 
         let funding_utxo_val = self.state.ctx.get_user_input()?.funding_utxo.value;
         let speedup_utxo_val = self.state.ctx.get_user_input()?.funding_utxo.value;
-        let advance_funds_utxo_val = self.state.ctx.get_user_input()?.advance_funds.value;
+        let advance_funds_utxo_val =
+            calculate_advance_funds_value(self.state.ctx.get_user_input()?.advance_funds.value);
 
         info!("Funding dispute pubkey of {} with: {}", req_id, speedup_utxo_val + funding_utxo_val);
 
