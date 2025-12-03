@@ -83,7 +83,7 @@ impl<C: CommitteeRegistryContractApi, S: StreamManagerContractApi, BP: BalancePr
 
         debug!("ApplyToStream with derived MemberRegistrationKeys {public_keys_regs:?}");
 
-        let receipt = self
+        let tx_hash = self
             .committee_registry
             .invoke_apply_to_stream(
                 stream_denomination.into(),
@@ -95,21 +95,10 @@ impl<C: CommitteeRegistryContractApi, S: StreamManagerContractApi, BP: BalancePr
             )
             .await?;
 
-        if receipt.status() {
-            info!(
-                "ApplyToStream successful at tx {}",
-                receipt.transaction_hash
-            );
-            Ok(ApplyToStreamOutput {
-                transaction_hash: receipt.transaction_hash.to_string(),
-            })
-        } else {
-            error!("ApplyToStream failed at tx {}", receipt.transaction_hash);
-            Err(DomainErrors::TransactionFailed(format!(
-                "ApplyToStream transaction failed with receipt status false at tx {}",
-                receipt.transaction_hash
-            )))
-        }
+        info!("ApplyToStream successful at tx {tx_hash}");
+        Ok(ApplyToStreamOutput {
+            transaction_hash: tx_hash.to_string(),
+        })
     }
 }
 
@@ -123,8 +112,7 @@ mod tests {
     use crate::contracts::types::convert_to_member_registration_keys;
     use crate::rsk_gateway::{DomainErrors, MockBalanceProvider};
     use crate::types::CommitteeECDSA;
-    use alloy_primitives::{Address, Bloom, TxHash, U256};
-    use alloy_rpc_types::{Log, Receipt, ReceiptEnvelope, ReceiptWithBloom, TransactionReceipt};
+    use alloy_primitives::{Address, TxHash, U256};
     use common::msg_broker::bitvmx_types::PeerId;
     use mockall::predicate::eq;
     use std::str::FromStr;
@@ -198,10 +186,10 @@ mod tests {
                 eq(U256::from(100)),
             )
             .returning(|_, _, _, _, _, _| {
-                Ok(get_fake_receipt(
-                    true,
+                Ok(TxHash::from_str(
                     "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-                ))
+                )
+                .expect("Failed to parse tx hash"))
             })
             .times(1);
 
@@ -272,34 +260,6 @@ mod tests {
             assert_eq!(msg, "Member has not enough balance to apply to committee");
         } else {
             panic!("Expected DomainErrors::CommitteeError");
-        }
-    }
-
-    fn get_fake_receipt(status: bool, hash: &str) -> TransactionReceipt<ReceiptEnvelope<Log>> {
-        let receipt = Receipt {
-            status: status.into(),
-            cumulative_gas_used: 21_000,
-            logs: vec![],
-        };
-
-        let envelope = ReceiptEnvelope::Eip1559(ReceiptWithBloom {
-            receipt,
-            logs_bloom: Bloom::ZERO,
-        });
-
-        TransactionReceipt {
-            inner: envelope,
-            transaction_hash: TxHash::from_str(hash).expect("transaction hash is invalid"),
-            transaction_index: Some(0),
-            block_hash: None,
-            block_number: None,
-            gas_used: 21_000,
-            effective_gas_price: 0,
-            blob_gas_used: None,
-            blob_gas_price: None,
-            from: Address::default(),
-            to: Some(Address::default()),
-            contract_address: None,
         }
     }
 

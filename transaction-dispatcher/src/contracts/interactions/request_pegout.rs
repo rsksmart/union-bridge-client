@@ -5,7 +5,7 @@ use crate::{
 };
 use alloy_primitives::FixedBytes;
 use anyhow::Result;
-use log::{debug, error, info};
+use log::{debug, info};
 
 #[derive(Clone)]
 pub struct TryPegoutInvoke<C: PegManagerContractApi> {
@@ -39,26 +39,15 @@ impl<C: PegManagerContractApi> TryPegoutInvoke<C> {
             self.gas_bumps
         );
 
-        let receipt = self
+        let tx_hash = self
             .contract
             .invoke_request_pegout(msg_value, usr_pub_key, self.gas_bumps)
             .await?;
 
-        if receipt.status() {
-            info!(
-                "Pegout Request successful at tx {}",
-                receipt.transaction_hash
-            );
-            Ok(RequestPegoutOutput {
-                transaction_hash: receipt.transaction_hash.to_string(),
-            })
-        } else {
-            error!("Pegout request failed at tx {}", receipt.transaction_hash);
-            Err(DomainErrors::TransactionFailed(format!(
-                "RequestPegout transaction failed with receipt status false at tx {}",
-                receipt.transaction_hash
-            )))
-        }
+        info!("Pegout Request successful at tx {tx_hash}");
+        Ok(RequestPegoutOutput {
+            transaction_hash: tx_hash.to_string(),
+        })
     }
 }
 
@@ -73,8 +62,7 @@ mod tests {
         },
         rsk_gateway::DomainErrors,
     };
-    use alloy_primitives::{Address, Bloom, TxHash};
-    use alloy_rpc_types::{Log, Receipt, ReceiptEnvelope, ReceiptWithBloom, TransactionReceipt};
+    use alloy_primitives::TxHash;
     use std::str::FromStr;
 
     impl TryPegoutInvoke<MockPegManagerContractApi> {
@@ -97,7 +85,10 @@ mod tests {
         let receipt_return = expected.clone();
 
         mock.expect_invoke_request_pegout()
-            .returning(move |_, _, _| Ok(get_fake_receipt(true, &receipt_return.transaction_hash)))
+            .returning(move |_, _, _| {
+                Ok(TxHash::from_str(&receipt_return.transaction_hash)
+                    .expect("Failed to parse tx hash"))
+            })
             .times(1);
 
         let invoke = TryPegoutInvoke::new_for_tests(mock);
@@ -112,23 +103,18 @@ mod tests {
         let mut mock = MockPegManagerContractApi::new();
         let input = get_base_input();
 
-        let expected_tx_hash = "0xdeadbeefdeadbeef000000000000000000000000000000000000000000000000";
-
         mock.expect_invoke_request_pegout()
-            .returning(move |_, _, _| Ok(get_fake_receipt(false, expected_tx_hash)))
+            .returning(move |_, _, _| {
+                Err(alloy_contract::Error::TransportError(
+                    alloy_transport::TransportError::local_usage_str("transaction failed"),
+                ))
+            })
             .times(1);
 
         let invoke = TryPegoutInvoke::new_for_tests(mock);
         let result = invoke.run(input).await;
 
         assert!(result.is_err());
-        match result.unwrap_err() {
-            DomainErrors::TransactionFailed(msg) => {
-                assert!(msg.contains("RequestPegout transaction failed"));
-                assert!(msg.contains(expected_tx_hash));
-            }
-            _ => panic!("Expected TransactionFailed error"),
-        }
     }
 
     #[tokio::test]
@@ -157,32 +143,6 @@ mod tests {
         RequestPegoutInput {
             amount_in_wei: 1_234_567,
             usr_pub_key,
-        }
-    }
-
-    fn get_fake_receipt(status: bool, hash: &str) -> TransactionReceipt<ReceiptEnvelope<Log>> {
-        let receipt = Receipt {
-            status: status.into(),
-            cumulative_gas_used: 21_000,
-            logs: vec![],
-        };
-        let envelope = ReceiptEnvelope::Eip1559(ReceiptWithBloom {
-            receipt,
-            logs_bloom: Bloom::ZERO,
-        });
-        TransactionReceipt {
-            inner: envelope,
-            transaction_hash: TxHash::from_str(hash).expect("invalid tx hash"),
-            transaction_index: Some(0),
-            block_hash: None,
-            block_number: None,
-            gas_used: 21_000,
-            effective_gas_price: 0,
-            blob_gas_used: None,
-            blob_gas_price: None,
-            from: Address::default(),
-            to: Some(Address::default()),
-            contract_address: None,
         }
     }
 }

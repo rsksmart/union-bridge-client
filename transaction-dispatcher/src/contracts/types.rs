@@ -1,7 +1,6 @@
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{CommitteeECDSA, P2PAddressParser};
 use alloy_primitives::FixedBytes;
-use alloy_rpc_types::TransactionReceipt;
 use anyhow::Result;
 use common::msg_broker::bitvmx_types::PeerId;
 use std::str::FromStr;
@@ -11,7 +10,6 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
 
 pub type FixedBytes32 = FixedBytes<32>;
 pub type Bytes = alloy_sol_types::private::Bytes;
-pub type TransactionReceiptResult = alloy_contract::Result<TransactionReceipt>;
 pub type Address = alloy_primitives::Address;
 
 pub fn convert_to_member_registration_keys(

@@ -1,7 +1,7 @@
 use crate::contracts::committee_registry::CommitteeRegistryContractApi;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{DepositCommunicationDataInput, DepositCommunicationDataOutput};
-use log::{error, info};
+use log::info;
 
 #[derive(Clone)]
 pub(crate) struct DepositCommunicationDataInvoke<C: CommitteeRegistryContractApi> {
@@ -27,7 +27,7 @@ impl<C: CommitteeRegistryContractApi> DepositCommunicationDataInvoke<C> {
             input.communication_data.len()
         );
 
-        let receipt = self
+        let tx_hash = self
             .contract
             .invoke_deposit_communication_data(
                 input.committee_id,
@@ -41,17 +41,9 @@ impl<C: CommitteeRegistryContractApi> DepositCommunicationDataInvoke<C> {
                 ))
             })?;
 
-        let transaction_hash = format!("0x{:x}", receipt.transaction_hash);
-
-        if receipt.status() {
-            info!("DepositCommunicationData successful at tx {transaction_hash}");
-            Ok(DepositCommunicationDataOutput { transaction_hash })
-        } else {
-            error!("DepositCommunicationData failed at tx {transaction_hash}");
-            Err(DomainErrors::TransactionFailed(format!(
-                "DepositCommunicationData transaction failed with receipt status false at tx {transaction_hash}"
-            )))
-        }
+        let transaction_hash = format!("0x{tx_hash:x}");
+        info!("DepositCommunicationData successful at tx {transaction_hash}");
+        Ok(DepositCommunicationDataOutput { transaction_hash })
     }
 }
 
@@ -60,7 +52,6 @@ mod tests {
     use super::*;
     use crate::contracts::committee_registry::MockCommitteeRegistryContractApi;
     use alloy_primitives::TxHash;
-    use alloy_rpc_types::{Log, Receipt, ReceiptEnvelope, ReceiptWithBloom, TransactionReceipt};
     use mockall::predicate::always;
     use std::str::FromStr;
 
@@ -70,12 +61,13 @@ mod tests {
 
         // create a mock receipt with a transaction hash
         let expected_tx_hash = "0x0101010101010101010101010101010101010101010101010101010101010101";
-        let receipt = get_fake_receipt(true, expected_tx_hash);
 
         mock_instance
             .expect_invoke_deposit_communication_data()
             .with(always(), always(), always())
-            .returning(move |_, _, _| Ok(receipt.clone()))
+            .returning(move |_, _, _| {
+                Ok(TxHash::from_str(expected_tx_hash).expect("Failed to parse tx hash"))
+            })
             .times(1);
 
         let interaction = DepositCommunicationDataInvoke::new(mock_instance, 3);
@@ -120,34 +112,6 @@ mod tests {
                 assert!(msg.contains("Failed to deposit communication data"));
             }
             _ => panic!("Expected UnhandledContractError"),
-        }
-    }
-
-    fn get_fake_receipt(status: bool, hash: &str) -> TransactionReceipt<ReceiptEnvelope<Log>> {
-        let receipt = Receipt {
-            status: status.into(),
-            cumulative_gas_used: 21_000,
-            logs: vec![],
-        };
-
-        let envelope = ReceiptEnvelope::Eip1559(ReceiptWithBloom {
-            receipt,
-            logs_bloom: alloy_primitives::Bloom::ZERO,
-        });
-
-        TransactionReceipt {
-            inner: envelope,
-            transaction_hash: TxHash::from_str(hash).expect("transaction hash is invalid"),
-            transaction_index: Some(0),
-            block_hash: None,
-            block_number: None,
-            gas_used: 21_000,
-            effective_gas_price: 0,
-            blob_gas_used: None,
-            blob_gas_price: None,
-            from: alloy_primitives::Address::default(),
-            to: Some(alloy_primitives::Address::default()),
-            contract_address: None,
         }
     }
 }

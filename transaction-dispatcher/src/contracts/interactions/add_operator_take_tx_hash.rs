@@ -3,7 +3,7 @@ use crate::contracts::types::FixedBytes32;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{AddOperatorTakeTxHashInput, AddOperatorTakeTxHashOutput};
 use common::types::TxIdParser;
-use log::{error, info};
+use log::info;
 
 #[derive(Clone)]
 pub(crate) struct AddOperatorTakeTxHashInvoke<C: SignatureManagerContractApi> {
@@ -28,28 +28,14 @@ impl<C: SignatureManagerContractApi> AddOperatorTakeTxHashInvoke<C> {
         let accept_pegin_tx_hash = TxIdParser::txid_to_fb_32(input.accept_pegin_tx_hash);
         let take_tx_hash = FixedBytes32::from_slice(input.take_tx_hash.as_slice());
 
-        let receipt = self
+        let tx_hash = self
             .contract
             .add_operator_take_tx_hash(accept_pegin_tx_hash, take_tx_hash, self.gas_bumps)
             .await?;
 
-        if receipt.status() {
-            info!(
-                "AddOperatorTakeTxHash successful at tx {}",
-                receipt.transaction_hash
-            );
-            Ok(AddOperatorTakeTxHashOutput {
-                transaction_hash: receipt.transaction_hash.to_string(),
-            })
-        } else {
-            error!(
-                "AddOperatorTakeTxHash failed at tx {}",
-                receipt.transaction_hash
-            );
-            Err(DomainErrors::TransactionFailed(format!(
-                "AddOperatorTakeTxHash transaction failed with receipt status false at tx {}",
-                receipt.transaction_hash
-            )))
-        }
+        info!("AddOperatorTakeTxHash successful at tx {tx_hash}");
+        Ok(AddOperatorTakeTxHashOutput {
+            transaction_hash: tx_hash.to_string(),
+        })
     }
 }

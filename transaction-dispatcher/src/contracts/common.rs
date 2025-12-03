@@ -36,98 +36,75 @@ pub enum ParseFieldError {
     ParseHex(#[from] FromHexError),
 }
 
-#[derive(Debug, Error)]
-pub enum GasBumpError {
-    #[error("Transaction timeout after {0} seconds")]
-    Timeout(u64),
-
-    #[error("Maximum gas limit exceeded: {0} > {1}")]
-    MaxGasLimitExceeded(u64, u64),
-}
-
 // Enhanced send_tx_with_gas_bump with timeout, error handling, and security improvements
 pub(super) async fn send_tx_with_gas_bump<P, D, F>(
     provider: &P,
     build_tx: F,
     max_attempts: u8,
-) -> alloy_contract::Result<TransactionReceipt>
+) -> alloy_contract::Result<TxHash>
 where
     P: Provider,
     D: SolCall,
     F: Fn() -> SolCallBuilder<P, D>,
 {
-    // Input validation - max_attempts represents retries, so 0 is valid (1 attempt, 0 retries)
-    // No validation needed as max_attempts = 0 means "no retries, just one attempt"
-
     let start_time = Instant::now();
 
-    let mut receipt = None;
-
-    for attempt in 0..=max_attempts {
+    for attempt in 1..=max_attempts {
         // Check timeout
         let timeout_dur = timeout_5min();
         if start_time.elapsed() > timeout_dur {
-            return Err(alloy_contract::Error::TransportError(
-                alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
-                    code: ETH_RPC_INTERNAL_ERROR,
-                    message: GasBumpError::Timeout(timeout_dur.as_secs())
-                        .to_string()
-                        .into(),
-                    data: None,
-                }),
-            ));
+            throw_transport_error(
+                format!(
+                    "Transaction timeout after {} seconds",
+                    timeout_dur.as_secs()
+                )
+                .as_str(),
+            )?;
         }
 
         let estimated_gas = estimate_gas_with_timeout::<P, D, F>(&build_tx).await?;
 
-        let gas_limit = calculate_gas_limit_with_cap(estimated_gas, attempt)?;
+        let bumps = attempt - 1; // attempt - 1 to not increment on the first attempt
+        let gas_limit = calculate_gas_limit_with_cap(estimated_gas, bumps)?;
 
         let gas_price = provider.get_gas_price().await?;
         // let tx_builder = build_tx().gas(gas_limit).gas_price(gas_price).legacy();
         let tx_builder = build_tx().gas(gas_limit).gas_price(gas_price);
 
         debug!(
-            "Sending transaction attempt {} with estimated_gas {estimated_gas} and gas_limit {gas_limit}",
-            attempt + 1
+            "Sending transaction attempt {attempt} with estimated_gas {estimated_gas} and gas_limit {gas_limit}"
         );
 
-        let current_receipt = send_transaction(provider, tx_builder).await?;
-
-        let should_retry = !current_receipt.status()
-            && attempt < max_attempts
-            && likely_oog(&current_receipt, gas_limit);
-
-        if should_retry {
-            warn!(
-                "Transaction failed with OOG, retrying with higher gas. Attempt {}/{}",
-                attempt + 1,
-                max_attempts + 1
-            );
-            continue;
+        let receipt = send_transaction(provider, tx_builder).await?;
+        if receipt.status() {
+            return Ok(receipt.transaction_hash());
         }
 
-        // Store the receipt for return
-        receipt = Some(current_receipt);
+        let should_retry = !receipt.status() && likely_oog(&receipt, gas_limit);
 
-        check_receipt(provider, &mut receipt, attempt).await;
+        if should_retry {
+            warn!("Potential OOG, retrying with higher gas. Attempt {attempt}/{max_attempts}");
+        } else {
+            // if not retriable, check the revert reason by estimating again - this bail on revert
+            estimate_gas_with_timeout::<P, D, F>(&build_tx).await?;
 
-        break;
+            // if not retriable and not reverting, debug the trace and bail as this is unexpected
+            check_receipt(provider, &receipt).await;
+            throw_transport_error("Neither retry, nor revert")?;
+        }
     }
 
-    // Safe unwrap since we know receipt is Some at this point
-    // (we break out of the loop only after assigning it)
-    match receipt {
-        Some(r) => Ok(r),
-        None => Err(alloy_contract::Error::TransportError(
-            alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
-                code: ETH_RPC_INTERNAL_ERROR,
-                message: "No receipt available after transaction attempts"
-                    .to_string()
-                    .into(),
-                data: None,
-            }),
-        )),
-    }
+    throw_transport_error(format!("Attempts ({max_attempts}) elapsed sending transaction").as_str())
+}
+
+fn throw_transport_error(msg: &str) -> alloy_contract::Result<TxHash> {
+    Err(alloy_contract::Error::TransportError(
+        alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
+            code: ETH_RPC_INTERNAL_ERROR,
+            message: msg.to_string().into(),
+            data: None,
+        }),
+    ))
 }
 
 fn timeout_30sec() -> Duration {
@@ -146,34 +123,17 @@ fn timeout_5min() -> Duration {
     Duration::from_secs(300)
 }
 
-async fn check_receipt<P: Provider>(
-    provider: &P,
-    receipt: &mut Option<TransactionReceipt>,
-    attempt: u8,
-) {
-    if let Some(receipt_ref) = receipt {
-        if receipt_ref.status() {
-            debug!(
-                "Transaction succeeded after {} attempts: {:?}",
-                attempt + 1,
-                receipt_ref
-            );
-        } else {
-            // Enhanced error reporting
-            let trace_result = timeout(
-                timeout_30sec(),
-                debug_trace_tx(provider, receipt_ref.transaction_hash().to_string()),
-            )
-            .await;
+async fn check_receipt<P: Provider>(provider: &P, receipt: &TransactionReceipt) {
+    let trace_result = timeout(
+        timeout_30sec(),
+        debug_trace_tx(provider, receipt.transaction_hash().to_string()),
+    )
+    .await;
 
-            error!(
-                "Transaction failed after {} attempts: {:?} - Trace: {:?}",
-                attempt + 1,
-                receipt_ref,
-                trace_result
-            );
-        }
-    }
+    error!(
+        "Transaction {} failed. Trace: {trace_result:?}",
+        receipt.transaction_hash
+    );
 }
 
 async fn send_transaction<P, D>(
@@ -214,7 +174,7 @@ async fn wait_for_receipt<P: Provider>(
     let start = Instant::now();
     loop {
         if start.elapsed() > max_wait {
-            error!("Receipt polling timed out after {max_wait:?} for tx {tx_hash:?}",);
+            error!("Receipt polling timed out after {max_wait:?} for tx {tx_hash:?}");
             return Err(alloy_contract::Error::TransportError(
                 alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
                     code: ETH_RPC_INTERNAL_ERROR,
@@ -275,8 +235,7 @@ fn calculate_gas_limit_with_cap(estimated_gas: u64, attempt: u8) -> alloy_contra
         return Err(alloy_contract::Error::TransportError(
             alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
                 code: ETH_RPC_INVALID_PARAMS,
-                message: GasBumpError::MaxGasLimitExceeded(gas_limit, MAX_GAS_LIMIT)
-                    .to_string()
+                message: format!("Maximum gas limit exceeded: {gas_limit} > {MAX_GAS_LIMIT}")
                     .into(),
                 data: None,
             }),
