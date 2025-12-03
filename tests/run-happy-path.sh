@@ -59,6 +59,18 @@ step() {
     echo ""
 }
 
+# get current bitcoin block height
+get_current_bitcoin_height() {
+    local height=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockcount 2>/dev/null || echo "0")
+    height=${height:-0}  # ensure it's set to 0 if empty
+    echo "$height"
+}
+
+# check if bitcoin node is accessible
+check_bitcoin_connectivity() {
+    bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockcount &> /dev/null
+}
+
 # check prerequisites
 if ! command -v cargo &> /dev/null || ! command -v cast &> /dev/null || ! command -v bitcoin-cli &> /dev/null; then
     echo "Error: cargo, cast, and bitcoin-cli required"
@@ -70,7 +82,7 @@ if ! cast rpc eth_chainId --rpc-url http://localhost:8545 &> /dev/null; then
     exit 1
 fi
 
-if ! bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockcount &> /dev/null; then
+if ! check_bitcoin_connectivity; then
     echo "Error: Bitcoin regtest node not accessible"
     echo "Please ensure Bitcoin Core is running with:"
     echo "  bitcoind -regtest -rpcuser=foo -rpcpassword=rpcpassword"
@@ -110,18 +122,170 @@ mine_bitcoin() {
     done
 }
 
+# Helper function to extract timestamp from log line
+extract_log_timestamp() {
+    local line="$1"
+    local mode="$2"  # "docker" or "file"
+    
+    if [ "$mode" = "docker" ]; then
+        # Docker logs format: "2025-11-19 20:22:10.394 | 2025-11-19 23:22:10.394 [INFO] ..."
+        # We want the second timestamp (after the pipe)
+        echo "$line" | grep -oE '\| [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}'
+    else
+        # File logs format: "^2025-11-19 23:22:10.394 [INFO] ..."
+        echo "$line" | grep -oE '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}'
+    fi
+}
+
+# Helper function to convert timestamp to epoch (macOS and Linux compatible)
+# Returns empty string on failure (caller should handle this explicitly)
+timestamp_to_epoch() {
+    local timestamp="$1"
+    date -j -f "%Y-%m-%d %H:%M:%S" "$timestamp" +%s 2>/dev/null || \
+    date -d "$timestamp" +%s 2>/dev/null || \
+    echo ""
+}
+
+# Unified function to find recent log matches
+# Uses pipes to avoid loading entire logs into memory
+find_recent_log_match() {
+    local pattern="$1"
+    local source="$2"
+    local min_time="$3"
+    local mode="${4:-file}"  # default to file mode
+    
+    local log_stream
+    if [ "$mode" = "docker" ]; then
+        log_stream=$(docker compose -p "$source" logs coordinator 2>/dev/null) || return 1
+    else
+        log_stream=$(cat "$source" 2>/dev/null) || return 1
+    fi
+    
+    echo "$log_stream" | grep -E "$pattern" | while read -r line; do
+        local log_timestamp=$(extract_log_timestamp "$line" "$mode")
+        
+        if [ -n "$log_timestamp" ]; then
+            local log_time=$(timestamp_to_epoch "$log_timestamp")
+            
+            # check if log is recent (after min_time)
+            # skip if timestamp parsing failed (empty string)
+            if [ -n "$log_time" ] && [ "$log_time" -ge "$min_time" ]; then
+                echo "$line"
+                break
+            fi
+        fi
+    done | tail -1
+}
+
+# count transactions in blocks from start_height to end_height (excluding coinbase)
+count_transactions_in_blocks() {
+    local start_height=$1
+    local end_height=$2
+    local total_txs=0
+    for ((h=start_height + 1; h<=end_height; h++)); do
+        local stats
+        stats=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword \
+                getblockstats "$h" 2>/dev/null) || continue
+        # Extract "txs" (total tx count including coinbase) - use jq if available, fallback to sed
+        local total_tx_count
+        total_tx_count=$(jq -r '.txs // empty' 2>/dev/null <<<"$stats" || echo "$stats" | tr -d '\n' | sed -E 's/.*"txs"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/')
+        # Subtract 1 to exclude the coinbase
+        if [ -n "$total_tx_count" ] && [ "$total_tx_count" -gt 1 ]; then
+            local non_coinbase_count=$((total_tx_count - 1))
+            total_txs=$((total_txs + non_coinbase_count))
+        fi
+        # If total_tx_count <= 1, there's only coinbase, so we add 0
+    done
+    echo "$total_txs"
+}
+
+# wait for N bitcoin transactions to be created in mined blocks with confirmations
+# start_height: the last block mined before transactions should start appearing
+# expected_count: number of transactions to wait for
+# max_blocks: maximum blocks to wait for transactions to appear
+# confirmations: number of confirmations required (blocks after transaction is mined)
+wait_for_bitcoin_transactions() {
+    local start_height=$1
+    local expected_count=$2
+    local max_blocks=$3
+    local confirmations=$4
+    
+    # target height accounts for finding transactions + getting confirmations
+    local target_height=$((start_height + max_blocks + confirmations))
+    local first_tx_height=0  # block height where transactions were first found
+    
+    log "Waiting for $expected_count Bitcoin transactions in mined blocks (max $max_blocks blocks to find) with $confirmations confirmations..."
+    log "Starting height: $start_height, Max target height: $target_height"
+
+    while true; do
+        local current_height=$(get_current_bitcoin_height)
+        local blocks_mined=$((current_height - start_height))
+        
+        # safeguard
+        if [ $blocks_mined -lt 0 ]; then
+            sleep 1
+            continue
+        fi
+        
+        # count transactions in blocks from start_height+1 to current_height
+        local transactions_found=0
+        if [ $blocks_mined -gt 0 ]; then
+            transactions_found=$(count_transactions_in_blocks $start_height $current_height)
+        fi
+        
+        # track the first block height where we found the expected count of transactions
+        if [ $transactions_found -ge $expected_count ] && [ $first_tx_height -eq 0 ]; then
+            first_tx_height=$current_height
+            log "Found $expected_count transactions at height $first_tx_height, waiting for $confirmations confirmations..."
+        fi
+        
+        # calculate confirmations if we've found transactions
+        local current_confirmations=0
+        if [ $first_tx_height -gt 0 ]; then
+            current_confirmations=$((current_height - first_tx_height))
+        fi
+        
+        if [ $first_tx_height -gt 0 ]; then
+            echo -ne "\r  Blocks mined: $blocks_mined | Transactions: $transactions_found/$expected_count | Confirmations: $current_confirmations/$confirmations  "
+        else
+            echo -ne "\r  Blocks mined: $blocks_mined/$max_blocks | Transactions found: $transactions_found/$expected_count  "
+        fi
+
+        # check if we have enough transactions AND enough confirmations
+        if [ $transactions_found -ge $expected_count ] && [ $first_tx_height -gt 0 ] && [ $current_confirmations -ge $confirmations ]; then
+            echo ""  # newline after the progress display
+            success "$expected_count Bitcoin transactions found with $confirmations confirmations (height: $start_height -> $current_height, tx at $first_tx_height)"
+            return 0
+        fi
+        
+        # Check if we've exceeded the block limit before finding transactions
+        if [ $current_height -ge $target_height ] && [ $first_tx_height -eq 0 ]; then
+            echo ""  # newline after the progress display
+            warn "Only $transactions_found/$expected_count Bitcoin transactions found after $max_blocks blocks (height: $start_height -> $current_height)"
+            return 1
+        fi
+        
+        # Check if we found transactions but didn't get enough confirmations in time
+        if [ $first_tx_height -gt 0 ] && [ $current_height -ge $target_height ]; then
+            echo ""  # newline after the progress display
+            warn "Found $expected_count transactions at height $first_tx_height but only got $current_confirmations/$confirmations confirmations (timeout at height $target_height)"
+            return 1
+        fi
+
+        sleep 0.5
+    done
+}
+
 # wait for N bitcoin blocks to be mined
 wait_for_bitcoin_blocks() {
     local count=$1
-    local start_height=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockcount 2>/dev/null || echo "0")
-    start_height=${start_height:-0}  # ensure it's set to 0 if empty
+    local start_height=$(get_current_bitcoin_height)
     local target_height=$((start_height + count))
 
     log "Waiting for $count Bitcoin blocks to be mined..."
 
     while true; do
-        local current_height=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockcount 2>/dev/null || echo "0")
-        current_height=${current_height:-0}  # ensure it's set to 0 if empty
+        local current_height=$(get_current_bitcoin_height)
         local blocks_mined=$((current_height - start_height))
         # safeguard
         if [ $blocks_mined -lt 0 ]; then
@@ -136,17 +300,117 @@ wait_for_bitcoin_blocks() {
             break
         fi
 
-        sleep 1
+        sleep 0.25s
     done
     echo ""
 }
 
+# Wait for a log pattern to appear, with a block-based timeout
+# Usage: wait_for_log_with_block_timeout <pattern> <max_blocks> [start_time]
+# If start_time is provided, only logs after that time (minus margin) are considered
+wait_for_log_with_block_timeout() {
+    local pattern="$1"
+    local max_blocks=$2
+    local start_time="${3:-$(date +%s)}"
+    
+    # allow 5 minutes margin (300 seconds) before start_time for clock differences
+    local TIME_MARGIN=300
+    local min_time=$((start_time - TIME_MARGIN))
+    
+    local start_height=$(get_current_bitcoin_height)
+    local target_height=$((start_height + max_blocks))
+    
+    log "Waiting for log pattern: $pattern (max $max_blocks blocks)..."
+    
+    while true; do
+        local current_height=$(get_current_bitcoin_height)
+        local blocks_mined=$((current_height - start_height))
+        
+        # safeguard
+        if [ $blocks_mined -lt 0 ]; then
+            sleep 1
+            continue
+        fi
+        
+        echo -ne "\r  Blocks mined: $blocks_mined/$max_blocks | Checking logs...  "
+        
+        # Check for log pattern in all coordinator logs
+        local found_line=""
+        local found_source=""
+        
+        if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
+            for op_id in 1 2 3 4; do
+                project="op_${op_id}"
+                found_line=$(find_recent_log_match "$pattern" "$project" "$min_time" "docker")
+                if [ -n "$found_line" ]; then
+                    found_source="${project}"
+                    break
+                fi
+            done
+        else
+            shopt -s nullglob
+            for log_file in logs/coordinator-*.log; do
+                [[ -f "$log_file" ]] || continue
+                
+                found_line=$(find_recent_log_match "$pattern" "$log_file" "$min_time" "file")
+                if [ -n "$found_line" ]; then
+                    found_source="$log_file"
+                    break
+                fi
+            done
+        fi
+        
+        if [ -n "$found_line" ]; then
+            echo ""  # newline after the progress display
+            success "Log pattern found after $blocks_mined blocks!"
+            log "Found in: $found_source"
+            echo "$found_line"
+            return 0
+        fi
+        
+        # Check if we've exceeded the block limit
+        if [ $current_height -ge $target_height ]; then
+            echo ""  # newline after the progress display
+            warn "Log pattern not found after $max_blocks blocks (height: $start_height -> $current_height)"
+            if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
+                warn "Check Docker logs manually: docker compose -p op_{1..4} logs coordinator"
+            else
+                warn "Check logs/coordinator-*.log manually"
+            fi
+            return 1
+        fi
+        
+        sleep 1
+    done
+}
+
 cleanup() {
-    [ -n "${ANVIL_MINE_PID:-}" ] && kill $ANVIL_MINE_PID 2>/dev/null || true
-    [ -n "${BITCOIN_MINE_PID:-}" ] && kill $BITCOIN_MINE_PID 2>/dev/null || true
+    echo ""
+    log "Cleaning up background processes..."
+    # kill background mining processes
+    if [ -n "${ANVIL_MINE_PID:-}" ] && kill -0 "$ANVIL_MINE_PID" 2>/dev/null; then
+        kill -TERM "$ANVIL_MINE_PID" 2>/dev/null || true
+        sleep 0.2
+        kill -9 "$ANVIL_MINE_PID" 2>/dev/null || true
+    fi
+    if [ -n "${BITCOIN_MINE_PID:-}" ] && kill -0 "$BITCOIN_MINE_PID" 2>/dev/null; then
+        kill -TERM "$BITCOIN_MINE_PID" 2>/dev/null || true
+        sleep 0.2
+        kill -9 "$BITCOIN_MINE_PID" 2>/dev/null || true
+    fi
     rm -f /tmp/apply-operators-$$ /tmp/pegout-$$
 }
-trap cleanup EXIT INT TERM
+
+# handle Ctrl+C immediately - kill background processes and exit
+handle_interrupt() {
+    echo ""
+    echo ""
+    warn "Interrupted by user (Ctrl+C)"
+    cleanup
+    exit 130  # standard exit code for SIGINT
+}
+trap handle_interrupt INT TERM
+trap cleanup EXIT
 
 clear
 log "Configuration: stream=$STREAM_ID, rsk=$RSK_ADDRESS, amount=$VALUE, env=$SCRIPT_ENV"
@@ -190,6 +454,9 @@ BITCOIN_MINE_PID=$!
 sleep 1  # give mining a moment to start
 
 # step 1: fund operator wallets
+# capture block height before funding starts (last block mined before transactions should appear)
+FUND_START_HEIGHT=$(get_current_bitcoin_height)
+
 step "Step 1: Fund Operator Wallets"
 # operator fund with --execute handles BitVMX funding automatically
 # Must pass $SCRIPT_ENV so it knows where to find the BitVMX addresses (local logs vs Docker logs)
@@ -199,11 +466,13 @@ if ! bash cli-operations.sh operator fund --env "$SCRIPT_ENV" --execute; then
     warn "Command failed!"
     exit 1
 fi
+echo ""
+if ! wait_for_bitcoin_transactions "$FUND_START_HEIGHT" 1 6 3; then
+    warn "Failed to detect 1 Bitcoin transaction with 3 confirmations within 6 blocks"
+    exit 1
+fi
+echo ""
 success "Operator wallets funded (including BitVMX)"
-echo ""
-log "Allowing time (blocks) for BitVMX to detect confirmed transactions..."
-wait_for_bitcoin_blocks 6
-echo ""
 
 # step 2: apply operators
 step "Step 2: Apply Operators to Stream"
@@ -218,7 +487,11 @@ fi
 rm -f /tmp/apply-operators-$$
 success "Operators applied to stream $STREAM_ID"
 echo ""
-wait_for_bitcoin_blocks 15
+APPLY_START_TIME=$(date +%s)
+if ! wait_for_log_with_block_timeout "CommitteeSetupFlow Done" 15 "$APPLY_START_TIME"; then
+    warn "Committee setup complete log not found within timeout"
+    exit 1
+fi
 echo ""
 
 # step 3: request pegin
@@ -234,7 +507,11 @@ if ! bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -p $PACKET_NUMB
 fi
 success "Pegin transaction created"
 echo ""
-wait_for_bitcoin_blocks 15
+PEGIN_START_TIME=$(date +%s)
+if ! wait_for_log_with_block_timeout "PeginFlow Done" 15 "$PEGIN_START_TIME"; then
+    warn "PeginFlow completion log not found within timeout"
+    exit 1
+fi
 echo ""
 
 # step 4: request pegout
@@ -256,122 +533,18 @@ rm -f /tmp/pegout-$$
 success "Pegout requested"
 echo ""
 
-wait_for_bitcoin_blocks 15
+if ! wait_for_log_with_block_timeout "PegoutFlow Done" 15 "$PEGOUT_START_TIME"; then
+    warn "PegoutFlow completion log not found within timeout"
+    exit 1
+fi
 echo ""
 
 # step 5: verify pegout completion
 step "Step 5: Verify Pegout Completion"
-
-# search for PegoutFlow completion with recent timestamp
-# pattern: "2025-11-12 16:54:39.725 [ INFO] [...] PegoutFlow <uuid>: Done"
-# allow 5 minutes margin (300 seconds) before pegout start for clock differences
-TIME_MARGIN=300
-MIN_TIME=$((PEGOUT_START_TIME - TIME_MARGIN))
-
-# Helper function to extract timestamp from log line
-extract_log_timestamp() {
-    local line="$1"
-    local mode="$2"  # "docker" or "file"
-    
-    if [ "$mode" = "docker" ]; then
-        # Docker logs format: "2025-11-19 20:22:10.394 | 2025-11-19 23:22:10.394 [INFO] ..."
-        # We want the second timestamp (after the pipe)
-        echo "$line" | grep -oE '\| [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}'
-    else
-        # File logs format: "^2025-11-19 23:22:10.394 [INFO] ..."
-        echo "$line" | grep -oE '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}'
-    fi
-}
-
-# Helper function to convert timestamp to epoch (macOS and Linux compatible)
-timestamp_to_epoch() {
-    local timestamp="$1"
-    date -j -f "%Y-%m-%d %H:%M:%S" "$timestamp" +%s 2>/dev/null || \
-    date -d "$timestamp" +%s 2>/dev/null || \
-    echo "0"
-}
-
-# Unified function to find recent log matches
-# Uses pipes to avoid loading entire logs into memory
-find_recent_log_match() {
-    local pattern="$1"
-    local source="$2"
-    local min_time="$3"
-    local mode="${4:-file}"  # default to file mode
-    
-    local log_stream
-    if [ "$mode" = "docker" ]; then
-        log_stream=$(docker compose -p "$source" logs coordinator 2>/dev/null) || return 1
-    else
-        log_stream=$(cat "$source" 2>/dev/null) || return 1
-    fi
-    
-    echo "$log_stream" | grep -E "$pattern" | while read -r line; do
-        local log_timestamp=$(extract_log_timestamp "$line" "$mode")
-        
-        if [ -n "$log_timestamp" ]; then
-            local log_time=$(timestamp_to_epoch "$log_timestamp")
-            
-            # check if log is recent (after min_time)
-            if [ "$log_time" -ge "$min_time" ]; then
-                echo "$line"
-                break
-            fi
-        fi
-    done | tail -1
-}
-
-# Pattern for PegoutFlow completion
-PEGOUT_PATTERN="PegoutFlow [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}: Done"
-
-MATCHING_LINE=""
-MATCHING_SOURCE=""
-
-if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
-    log "Checking Docker logs from all operators for PegoutFlow completion..."
-    echo ""
-
-    for op_id in 1 2 3 4; do
-        project="op_${op_id}"
-        found_line=$(find_recent_log_match "$PEGOUT_PATTERN" "$project" "$MIN_TIME" "docker")
-        if [ -n "$found_line" ]; then
-            MATCHING_LINE="$found_line"
-            MATCHING_SOURCE="${project}"
-            break
-        fi
-    done
-else
-    log "Checking local logs from all operators for PegoutFlow completion..."
-    echo ""
-
-    shopt -s nullglob
-    for log_file in logs/coordinator-*.log; do
-        [[ -f "$log_file" ]] || continue
-
-        found_line=$(find_recent_log_match "$PEGOUT_PATTERN" "$log_file" "$MIN_TIME" "file")
-        if [ -n "$found_line" ]; then
-            MATCHING_LINE="$found_line"
-            MATCHING_SOURCE="$log_file"
-            break
-        fi
-    done
-fi
-
-if [ -n "$MATCHING_LINE" ]; then
-    success "PegoutFlow completed successfully!"
-    echo ""
-    log "Found in: $MATCHING_SOURCE"
-    echo "$MATCHING_LINE"
-    SUCCESS=true
-else
-    warn "PegoutFlow completion not detected in any operator logs"
-    if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
-        warn "Check Docker logs manually: docker compose -p op_{1..4} logs coordinator"
-    else
-        warn "Check logs/coordinator-*.log manually"
-    fi
-    SUCCESS=false
-fi
+# Note: PegoutFlow completion is already checked in the wait_for_log_with_block_timeout call above
+# This step is kept for consistency but the verification already happened
+success "PegoutFlow completion verified"
+SUCCESS=true
 echo ""
 
 step "Complete"

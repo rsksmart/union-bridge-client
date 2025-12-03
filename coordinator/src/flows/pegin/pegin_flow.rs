@@ -293,7 +293,7 @@ where
             }
             Steps::Done => {
                 self.send_pegin_accepted_to_bitvmx()?;
-                info!("PeginFlow {}: Done", self.state.flow_id);
+                info!("PeginFlow Done: {}", self.state.flow_id);
             }
         }
 
@@ -380,10 +380,7 @@ where
                 Ok(Steps::AcceptPegin)
             }
             (Steps::AcceptPegin, StepData::PeginAccepted(pegin_accepted)) => {
-                info!(
-                    "Pegin accepted successfully for flow_id: {}",
-                    self.state.flow_id
-                );
+                info!("PeginFlow Done: {}", self.state.flow_id);
                 trace!("PeginAccepted data: {pegin_accepted:?}");
                 self.state.ctx.pegin_accepted = Some(pegin_accepted.clone());
                 Ok(Steps::Done)
