@@ -150,7 +150,6 @@ pub struct FlowContext {
     pub operator_take_tx_id: Option<Txid>,
     pub operator_take_tx_status: Option<TransactionStatus>,
     pub spv_proof: Option<BtcTxSPVProof>,
-    pub operator_take_registered_tx: Option<String>,
 }
 
 pub struct AdvanceFundsFlow<CG, BC>
@@ -193,7 +192,6 @@ where
                 operator_take_tx_id: None,
                 operator_take_tx_status: None,
                 spv_proof: None,
-                operator_take_registered_tx: None,
             },
         })
     }
@@ -272,9 +270,7 @@ where
                     self.state.spv_proof.clone().ok_or_else(|| {
                         anyhow!("SPV proof not available to register operator take")
                     })?;
-                let output: transaction_dispatcher::types::TxSentOutput =
-                    self.register_operator_take(spv_proof)?;
-                self.state.operator_take_registered_tx = Some(output.transaction_hash);
+                self.register_operator_take(spv_proof)?;
             }
             Steps::Done => {
                 info!("AdvanceFundsFlow {}: Done", self.state.flow_id);
@@ -533,10 +529,6 @@ where
     #[allow(dead_code)]
     pub fn trigger_data(&self) -> &OperatorTakeTriggerData {
         &self.state.trigger_data
-    }
-
-    pub fn operator_take_registered_tx(&self) -> Option<&String> {
-        self.state.operator_take_registered_tx.as_ref()
     }
 }
 

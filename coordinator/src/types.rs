@@ -57,7 +57,6 @@ pub enum RskPegManagerEvents {
     NewCommitteeReady(NewCommitteeReadyEvent),
     AllCommunicationDataReady(AllCommunicationDataReadyEvent),
     MemberInfoDeposited(MemberInfoDepositedEvent),
-    //Tood check this ignoredevent
     IgnoredEvent,
     UnknownEvent,
 }

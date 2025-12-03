@@ -254,7 +254,6 @@ where
                 self.dispatch_transaction()?;
                 Ok(Steps::ConfirmUserTakeTransaction)
             }
-            //TODO check steps against new impl
             (Steps::DispatchTransaction, StepData::TriggerOperatorTakeTimeout) => {
                 // Timeout expired, transition to TriggerOperatorTake step
                 info!(

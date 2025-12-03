@@ -608,17 +608,19 @@ where
                     anyhow!("Received SPVProof event for tx_id {tx_id} without proof")
                 })?;
 
-                let Some((flow_id, flow)) =
-                    self.pegout_flows.iter_mut().find_map(|(flow_id, flow)| {
+                let (flow_id, flow) =
+                    match self.pegout_flows.iter_mut().find_map(|(flow_id, flow)| {
                         (flow.get_user_take_txid() == Some(*tx_id)).then_some((*flow_id, flow))
-                    })
-                else {
-                    debug!(
-                        "Ignoring SPV proof for flow {} while at step {:?}",
-                        "unknown", "unknown"
-                    );
-                    return Ok(());
-                };
+                    }) {
+                        Some((flow_id, flow)) => (flow_id, flow),
+                        None => {
+                            trace!(
+                                "Ignoring SPV proof for tx_id {} without matching flow",
+                                tx_id
+                            );
+                            return Ok(());
+                        }
+                    };
                 if flow.current_step() != Steps::RequestUserTakeSpvProof {
                     bail!(
                         "Mismatch current step for flow {} expected {:?} having {:?}",
