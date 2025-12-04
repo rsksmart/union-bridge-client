@@ -86,6 +86,10 @@ struct Cli {
     /// Start with clear databases (removes existing)
     #[arg(long = "fresh", action = ArgAction::SetTrue)]
     fresh: bool,
+
+    /// Kill all existing running services and exit
+    #[arg(long = "kill", action = ArgAction::SetTrue)]
+    kill: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -153,6 +157,13 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
+    // handle kill command - exit early after killing services
+    if cli.kill {
+        detect_and_kill_existing_services()?;
+        println!("Kill command ran, exiting...");
+        return Ok(());
+    }
+
     // validate BASE_STORAGE_PATH is set
     std::env::var("BASE_STORAGE_PATH").context(
         "BASE_STORAGE_PATH environment variable is required (e.g., export BASE_STORAGE_PATH=/Users/username)",
@@ -185,16 +196,24 @@ struct RunConfig {
 }
 
 async fn run_clients(config: RunConfig) -> Result<()> {
-    // detect and kill any running services before starting
-    detect_and_kill_existing_services()?;
-
-    if config.fresh {
-        fresh_cleanup()?;
+    if config.client_id.is_none() {
+        // detect and kill any running services before starting
+        detect_and_kill_existing_services()?;
     }
 
-    let env_file = PathBuf::from("./multiclient.env");
+    if config.fresh {
+        fresh_cleanup(config.client_id)?;
+    }
+
+    // find project root by going up from cargo manifest dir (cli/run) to project root
+    let manifest_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let project_root = manifest_path
+        .parent() // cli
+        .and_then(|p| p.parent()) // project root
+        .ok_or_else(|| anyhow!("Failed to determine project root"))?;
+    let env_file = project_root.join("multiclient.env");
     if !env_file.exists() {
-        bail!("multiclient.env not found in current directory");
+        bail!("multiclient.env not found at {}", env_file.display());
     }
     let env_map = load_env_file(&env_file)
         .with_context(|| format!("Failed to parse {}", env_file.display()))?;
@@ -476,15 +495,24 @@ fn build_env_for_client(
     Ok(envs)
 }
 
-fn fresh_cleanup() -> Result<()> {
+fn fresh_cleanup(client_id: Option<u8>) -> Result<()> {
     let base_storage_path = std::env::var("BASE_STORAGE_PATH")
         .context("BASE_STORAGE_PATH environment variable is required")?;
-    let union_client_db_dir = format!("{}/.union_bridge/database/multi-client", base_storage_path);
 
-    // Remove Union Bridge database directory
-    if Path::new(&union_client_db_dir).exists() {
-        fs::remove_dir_all(&union_client_db_dir)
-            .with_context(|| format!("Failed to remove {}", union_client_db_dir))?;
+    let path_to_clean = if let Some(id) = client_id {
+        // Clean only the specific client's paths
+        format!(
+            "{}/.union_bridge/database/multi-client/{}",
+            base_storage_path, id
+        )
+    } else {
+        // Clean the entire multi-client directory (all clients)
+        format!("{}/.union_bridge/database/multi-client", base_storage_path)
+    };
+
+    if Path::new(&path_to_clean).exists() {
+        fs::remove_dir_all(&path_to_clean)
+            .with_context(|| format!("Failed to remove {}", path_to_clean))?;
     }
 
     Ok(())
