@@ -40,7 +40,7 @@ pub enum ParseFieldError {
 pub(super) async fn send_tx_with_gas_bump<P, D, F>(
     provider: &P,
     build_tx: F,
-    max_attempts: u8,
+    gas_bumps: u8,
 ) -> alloy_contract::Result<TxHash>
 where
     P: Provider,
@@ -48,6 +48,9 @@ where
     F: Fn() -> SolCallBuilder<P, D>,
 {
     let start_time = Instant::now();
+
+    // initial attempt + gas bumps
+    let max_attempts = gas_bumps + 1;
 
     for attempt in 1..=max_attempts {
         // Check timeout
@@ -64,7 +67,8 @@ where
 
         let estimated_gas = estimate_gas_with_timeout::<P, D, F>(&build_tx).await?;
 
-        let bumps = attempt - 1; // attempt - 1 to not increment on the first attempt
+        // attempt - 1 to not increment on the first attempt
+        let bumps = attempt - 1;
         let gas_limit = calculate_gas_limit_with_cap(estimated_gas, bumps)?;
 
         let gas_price = provider.get_gas_price().await?;
@@ -85,16 +89,18 @@ where
         if should_retry {
             warn!("Potential OOG, retrying with higher gas. Attempt {attempt}/{max_attempts}");
         } else {
-            // if not retriable, check the revert reason by estimating again - this bail on revert
+            // if not retriable, check the revert reason by estimating again - this bails on revert
             estimate_gas_with_timeout::<P, D, F>(&build_tx).await?;
 
             // if not retriable and not reverting, debug the trace and bail as this is unexpected
             check_receipt(provider, &receipt).await;
-            throw_transport_error("Neither retry, nor revert")?;
+            throw_transport_error(
+                "Transaction failed but is neither retriable (no OOG) nor reverting (passes gas estimation): unexpected state.",
+            )?;
         }
     }
 
-    throw_transport_error(format!("Attempts ({max_attempts}) elapsed sending transaction").as_str())
+    throw_transport_error(format!("Transaction failed after {max_attempts} attempts").as_str())
 }
 
 fn throw_transport_error(msg: &str) -> alloy_contract::Result<TxHash> {
