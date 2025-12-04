@@ -4,7 +4,7 @@
 # usage: ./cli-run.sh --id 1 --fresh
 #        ./cli-run.sh --features anvil
 #        ./cli-run.sh --help
-#        ./cli-run.sh logs
+#        ./cli-run.sh --logs
 
 set -euo pipefail
 
@@ -12,7 +12,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 # handle logs option
-if [[ "${1:-}" == "logs" ]]; then
+if [[ "${1:-}" == "--logs" ]]; then
   (
     pids=()
 

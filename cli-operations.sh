@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 
 # wrapper script for operations to perform operator and user operations
-# usage: ./operations.sh setup create-rootstock-wallets
-#        ./operations.sh operator fund --env local-docker
-#        ./operations.sh operator apply-stream -s 1 --env alphanet -o 1 -r prover
-#        ./operations.sh user pegin -a 0x1234...cdef -s 100000 -p 7
-#        ./operations.sh user pegout -a 100000
-#        ./operations.sh --help
+# usage: ./cli-operations.sh setup create-rootstock-wallets
+#        ./cli-operations.sh operator fund --env local-docker
+#        ./cli-operations.sh operator apply-stream -s 1 --env alphanet -o 1 -r prover
+#        ./cli-operations.sh user pegin -a 0x1234...cdef -s 100000 -p 7
+#        ./cli-operations.sh user pegout -a 100000
+#        ./cli-operations.sh --help
 
 set -euo pipefail
 
