@@ -17,7 +17,22 @@ Launches one or more Union Bridge clients locally for development and testing.
 
 # Run with fresh databases
 ./cli-run.sh --fresh --features anvil
+
+# View logs from all 4 coordinators
+./cli-run.sh --logs
+
+# Kill all existing running services
+./cli-run.sh --kill
 ```
+
+### Options
+
+- `--help`: Display help message and exit.
+- `--id`, `-i`: Run a single client with the specified ID (1-4). If not provided, runs 4 clients.
+- `--features`, `-f`: Optional features to pass to cargo (e.g. "anvil").
+- `--fresh`: Start with clear databases (removes existing state).
+- `--logs`: View logs from all 4 coordinators in real-time. Exits on Ctrl+C.
+- `--kill`: Kill all existing running services and exit. Cannot be used with other options.
 
 **Features:**
 - Launches multiple services per client (block-indexer, log-indexer, user-api, coordinator)
