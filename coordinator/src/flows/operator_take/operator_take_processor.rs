@@ -129,30 +129,30 @@ where
 
     fn handle_pegout_registered(&mut self, event: &PegoutRegisteredEvent) -> Result<()> {
         let pegout_registered = event.inner.clone();
-        //TODO double check if the committee_id is enough to identify the flow or we need to use the slot_index as well
         let event_committee_id = pegout_registered.committeeId;
+        let event_slot_id = pegout_registered.slotId;
 
-        if let Some(flow) = self
-            .flows
-            .values_mut()
-            .find(|flow| *flow.trigger_data().committee_id == event_committee_id)
-        {
+        if let Some(flow) = self.flows.values_mut().find(|flow| {
+            let trigger = flow.trigger_data();
+            *trigger.committee_id == event_committee_id && trigger.slot_id == event_slot_id
+        }) {
             flow.complete_step(StepData::OperatorTakeRegistered(pegout_registered))?;
         } else {
             trace!(
-                "No advance funds flow found for PegoutRegistered with committee_id {}",
-                event_committee_id
+                "No advance funds flow found for PegoutRegistered with committee_id {} slot_id {}",
+                event_committee_id, event_slot_id
             );
         }
 
         Ok(())
     }
 
-    /// Check if there's an active flow for the given committee_id.
-    fn has_flow_for_committee_id(&self, committee_id: u128) -> bool {
-        self.flows
-            .values()
-            .any(|flow| *flow.trigger_data().committee_id == committee_id)
+    /// Check if there's an active flow for the given committee_id and slot_id.
+    fn has_flow_for_pegout_registered(&self, committee_id: u128, slot_id: u64) -> bool {
+        self.flows.values().any(|flow| {
+            let trigger = flow.trigger_data();
+            *trigger.committee_id == committee_id && trigger.slot_id == slot_id
+        })
     }
 
     fn cleanup_completed_flows(&mut self) {
@@ -525,13 +525,14 @@ where
                 Self::build_operator_take_triggered_event_info(e)
             }
             RskPegManagerEvents::PegoutRegistered(e) => {
-                // Only process PegoutRegistered events that have a matching flow (by committee_id).
+                // Only process PegoutRegistered events that have a matching flow (by committee_id + slot_id).
                 // This filters out events from the regular pegout flow (handled by pegout_processor).
                 let event_committee_id = e.inner.committeeId;
-                if !self.has_flow_for_committee_id(event_committee_id) {
+                let event_slot_id = e.inner.slotId;
+                if !self.has_flow_for_pegout_registered(event_committee_id, event_slot_id) {
                     trace!(
-                        "AdvanceFundsFlowProcessor ignoring PegoutRegistered event for committee_id {} - no matching flow",
-                        event_committee_id
+                        "AdvanceFundsFlowProcessor ignoring PegoutRegistered event for committee_id {} slot_id {} - no matching flow",
+                        event_committee_id, event_slot_id
                     );
                     return Ok(());
                 }

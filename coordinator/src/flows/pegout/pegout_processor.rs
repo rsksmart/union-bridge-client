@@ -1,5 +1,5 @@
 use std::any::type_name_of_val;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -27,7 +27,10 @@ use crate::flows::btc_signature::btc_signature_subflow::{
 use crate::flows::common::GlobalContext;
 use crate::flows::pegout::pegout_flow::{PegoutFlow, State, StepData, Steps};
 use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix};
-use crate::types::{EventStatus, RegisterSignaturesBitVmxData, RskPegManagerEvents, TickScheduler, TimeBasedScheduler, UserRequests};
+use crate::types::{
+    EventStatus, RegisterSignaturesBitVmxData, RskPegManagerEvents, TickScheduler,
+    TimeBasedScheduler, UserRequests,
+};
 
 pub const PEGOUT_ACCEPTED_NAME: &str = "pegout_accepted";
 pub const BLOCKS_DELAY_FOR_TX_CHECK: u32 = 20;
@@ -54,7 +57,7 @@ where
     events_confirming: HashMap<String, ConfirmableEventWithData>,
     tx_status_scheduler: TickScheduler<Uuid>,
     advance_funds_timeout_scheduler: TimeBasedScheduler<Uuid>,
-    flows_pending_timeout: HashMap<Uuid, ()>, // Flows that need timeout scheduled on next block
+    flows_pending_timeout: HashSet<Uuid>, // Flows that need timeout scheduled on next block
     store: Rc<S>,
 }
 
@@ -91,7 +94,7 @@ where
             signature_flows: HashMap::new(),
             tx_status_scheduler: TickScheduler::new(),
             advance_funds_timeout_scheduler: TimeBasedScheduler::new(),
-            flows_pending_timeout: HashMap::new(),
+            flows_pending_timeout: HashSet::new(),
             store,
         }
     }
@@ -439,7 +442,7 @@ where
         }
 
         let current_timestamp = block.block().timestamp().value();
-        let pending_flows: Vec<Uuid> = self.flows_pending_timeout.keys().cloned().collect();
+        let pending_flows: Vec<Uuid> = self.flows_pending_timeout.iter().cloned().collect();
 
         for flow_id in pending_flows {
             if let Some(flow) = self.pegout_flows.get(&flow_id) {
@@ -471,9 +474,7 @@ where
         }
 
         let current_timestamp = block.block().timestamp().value();
-        let expired_flows = self
-            .advance_funds_timeout_scheduler
-            .check_expired(current_timestamp);
+        let expired_flows = self.advance_funds_timeout_scheduler.check_expired(current_timestamp);
 
         for flow_id in expired_flows {
             info!(
@@ -594,7 +595,7 @@ where
                     "Pegout accepted for flow_id: {}, will schedule advance funds timeout on next block",
                     flow_id
                 );
-                self.flows_pending_timeout.insert(*flow_id, ());
+                self.flows_pending_timeout.insert(*flow_id);
             }
             OutgoingBitVMXApiMessages::SetupCompleted(program_id) => {
                 if self.pegout_flows.contains_key(program_id) {
@@ -614,10 +615,7 @@ where
                     }) {
                         Some((flow_id, flow)) => (flow_id, flow),
                         None => {
-                            trace!(
-                                "Ignoring SPV proof for tx_id {} without matching flow",
-                                tx_id
-                            );
+                            trace!("Ignoring SPV proof for tx_id {} without matching flow", tx_id);
                             return Ok(());
                         }
                     };
