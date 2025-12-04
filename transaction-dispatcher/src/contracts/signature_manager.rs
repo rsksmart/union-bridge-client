@@ -1,4 +1,5 @@
-use crate::contracts::types::{Address, Bytes, FixedBytes32, TransactionReceiptResult};
+use crate::contracts::types::{Address, Bytes, FixedBytes32};
+use alloy_primitives::TxHash;
 use alloy_provider::Provider;
 use log::info;
 
@@ -19,21 +20,21 @@ pub trait SignatureManagerContractApi {
         hash_to_sign: FixedBytes32,
         nonce: Bytes,
         gas_bumps: u8,
-    ) -> TransactionReceiptResult;
+    ) -> alloy_contract::Result<TxHash>;
 
     async fn add_member_signature(
         &self,
         hash_to_sign: FixedBytes32,
         signature: FixedBytes32,
         gas_bumps: u8,
-    ) -> TransactionReceiptResult;
+    ) -> alloy_contract::Result<TxHash>;
 
     async fn add_operator_take_tx_hash(
         &self,
         hash_to_sign: FixedBytes32,
         signature: FixedBytes32,
         gas_bumps: u8,
-    ) -> TransactionReceiptResult;
+    ) -> alloy_contract::Result<TxHash>;
 }
 
 #[derive(Clone)]
@@ -55,7 +56,7 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
         hash_to_sign: FixedBytes32,
         nonce: Bytes,
         gas_bumps: u8,
-    ) -> TransactionReceiptResult {
+    ) -> alloy_contract::Result<TxHash> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
             || {
@@ -72,7 +73,7 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
         hash_to_sign: FixedBytes32,
         signature: FixedBytes32,
         gas_bumps: u8,
-    ) -> TransactionReceiptResult {
+    ) -> alloy_contract::Result<TxHash> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
             || {
@@ -89,7 +90,7 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
         accept_pegin_tx_hash: FixedBytes32,
         take_tx_hash: FixedBytes32,
         gas_bumps: u8,
-    ) -> TransactionReceiptResult {
+    ) -> alloy_contract::Result<TxHash> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
             || {

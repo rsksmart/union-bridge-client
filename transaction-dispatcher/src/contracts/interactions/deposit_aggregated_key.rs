@@ -1,7 +1,7 @@
 use crate::contracts::committee_registry::CommitteeRegistryContractApi;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{DepositAggregatedKeyInput, DepositAggregatedKeyOutput};
-use log::{error, info};
+use log::info;
 
 #[derive(Clone)]
 pub(crate) struct DepositAggregatedKeysInvoke<C: CommitteeRegistryContractApi> {
@@ -23,7 +23,7 @@ impl<C: CommitteeRegistryContractApi> DepositAggregatedKeysInvoke<C> {
     ) -> Result<DepositAggregatedKeyOutput, DomainErrors> {
         info!("Init Deposit Aggregated Key for: {}", input.committee_id);
 
-        let receipt = self
+        let tx_hash = self
             .contract
             .invoke_deposit_aggregated_key(input.committee_id, input.aggregated_key, self.gas_bumps)
             .await
@@ -33,17 +33,9 @@ impl<C: CommitteeRegistryContractApi> DepositAggregatedKeysInvoke<C> {
                 ))
             })?;
 
-        let transaction_hash = format!("0x{:x}", receipt.transaction_hash);
-
-        if receipt.status() {
-            info!("Deposit Aggregated Key successful at tx {transaction_hash}");
-            Ok(DepositAggregatedKeyOutput { transaction_hash })
-        } else {
-            error!("Deposit Aggregated Key failed at tx {transaction_hash}");
-            Err(DomainErrors::TransactionFailed(format!(
-                "DepositAggregatedKey transaction failed with receipt status false at tx {transaction_hash}"
-            )))
-        }
+        let transaction_hash = format!("0x{tx_hash:x}");
+        info!("Deposit Aggregated Key successful at tx {transaction_hash}");
+        Ok(DepositAggregatedKeyOutput { transaction_hash })
     }
 }
 
@@ -51,8 +43,7 @@ impl<C: CommitteeRegistryContractApi> DepositAggregatedKeysInvoke<C> {
 mod tests {
     use super::*;
     use crate::contracts::committee_registry::MockCommitteeRegistryContractApi;
-    use alloy_primitives::{Address, TxHash};
-    use alloy_rpc_types::{Log, Receipt, ReceiptEnvelope, ReceiptWithBloom, TransactionReceipt};
+    use alloy_primitives::TxHash;
     use common::types::CommitteeId;
     use mockall::predicate::*;
     use std::str::FromStr;
@@ -65,10 +56,7 @@ mod tests {
         let aggregated_key = alloy_primitives::Bytes::from([1u8; 33].to_vec());
         let gas_bumps = 3u8;
 
-        let expected_receipt = get_fake_receipt(
-            true,
-            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-        );
+        let expected_tx_hash = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
         mock_contract
             .expect_invoke_deposit_aggregated_key()
             .with(
@@ -77,7 +65,9 @@ mod tests {
                 eq(gas_bumps),
             )
             .times(1)
-            .returning(move |_, _, _| Ok(expected_receipt.clone()));
+            .returning(move |_, _, _| {
+                Ok(TxHash::from_str(expected_tx_hash).expect("Failed to parse tx hash"))
+            });
 
         let invoke = DepositAggregatedKeysInvoke::new(mock_contract, gas_bumps);
         let input = DepositAggregatedKeyInput {
@@ -132,34 +122,6 @@ mod tests {
                 assert!(msg.contains("failed to deposit aggregated keys"));
             }
             _ => panic!("expected unhandledcontracterror"),
-        }
-    }
-
-    fn get_fake_receipt(status: bool, hash: &str) -> TransactionReceipt<ReceiptEnvelope<Log>> {
-        let receipt = Receipt {
-            status: status.into(),
-            cumulative_gas_used: 21_000,
-            logs: vec![],
-        };
-
-        let envelope = ReceiptEnvelope::Eip1559(ReceiptWithBloom {
-            receipt,
-            logs_bloom: alloy_primitives::Bloom::ZERO,
-        });
-
-        TransactionReceipt {
-            inner: envelope,
-            transaction_hash: TxHash::from_str(hash).expect("transaction hash is invalid"),
-            transaction_index: Some(0),
-            block_hash: None,
-            block_number: None,
-            gas_used: 21_000,
-            effective_gas_price: 0,
-            blob_gas_used: None,
-            blob_gas_price: None,
-            from: Address::default(),
-            to: Some(Address::default()),
-            contract_address: None,
         }
     }
 }

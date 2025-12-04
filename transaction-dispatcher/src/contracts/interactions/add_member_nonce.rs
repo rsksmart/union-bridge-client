@@ -2,7 +2,7 @@ use crate::contracts;
 use crate::contracts::signature_manager::SignatureManagerContractApi;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{AddMemberNonceInput, AddMemberNonceOutput};
-use log::{error, info};
+use log::info;
 
 #[derive(Clone)]
 pub(crate) struct AddMemberNonceInvoke<C: SignatureManagerContractApi> {
@@ -27,25 +27,14 @@ impl<C: SignatureManagerContractApi> AddMemberNonceInvoke<C> {
         let hash_to_sign = input.hash_to_sign.into();
         let nonce = contracts::types::Bytes::from(input.nonce.serialize());
 
-        let receipt = self
+        let tx_hash = self
             .contract
             .add_member_nonce(hash_to_sign, nonce, self.gas_bumps)
             .await?;
 
-        if receipt.status() {
-            info!(
-                "AddMemberNonce successful at tx {}",
-                receipt.transaction_hash
-            );
-            Ok(AddMemberNonceOutput {
-                transaction_hash: receipt.transaction_hash.to_string(),
-            })
-        } else {
-            error!("AddMemberNonce failed at tx {}", receipt.transaction_hash);
-            Err(DomainErrors::TransactionFailed(format!(
-                "AddMemberNonce transaction failed with receipt status false at tx {}",
-                receipt.transaction_hash
-            )))
-        }
+        info!("AddMemberNonce successful at tx {tx_hash}");
+        Ok(AddMemberNonceOutput {
+            transaction_hash: tx_hash.to_string(),
+        })
     }
 }

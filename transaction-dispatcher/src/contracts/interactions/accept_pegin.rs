@@ -4,7 +4,7 @@ use crate::{
     types::{AcceptPeginInput, AcceptPeginOutput},
 };
 use anyhow::Result;
-use log::{error, info};
+use log::info;
 use union_contracts::bindings::peg_manager::PegManager::BtcTxSPVProof;
 
 #[derive(Clone)]
@@ -31,23 +31,15 @@ impl<C: PegManagerContractApi> AcceptPeginInvoke<C> {
             DomainErrors::InvalidBtcTxSpvProof(format!("Failed to parse AcceptPeginInput: {e}"))
         })?;
 
-        let receipt = self
+        let tx_hash = self
             .contract
             .invoke_accept_pegin(parsed_input, self.gas_bumps)
             .await?;
 
-        if receipt.status() {
-            info!("AcceptPegin successful at tx {}", receipt.transaction_hash);
-            Ok(AcceptPeginOutput {
-                transaction_hash: receipt.transaction_hash.to_string(),
-            })
-        } else {
-            error!("AcceptPegin failed at tx {}", receipt.transaction_hash);
-            Err(DomainErrors::TransactionFailed(format!(
-                "AcceptPegin transaction failed with receipt status false at tx {}",
-                receipt.transaction_hash
-            )))
-        }
+        info!("AcceptPegin successful at tx {tx_hash}");
+        Ok(AcceptPeginOutput {
+            transaction_hash: tx_hash.to_string(),
+        })
     }
 }
 
@@ -62,8 +54,7 @@ mod tests {
         rsk_gateway::DomainErrors,
         types::{BitcoinTransaction, BitcoinTransactionIn, BitcoinTransactionOut},
     };
-    use alloy_primitives::{Address, Bloom, TxHash};
-    use alloy_rpc_types::{Log, Receipt, ReceiptEnvelope, ReceiptWithBloom, TransactionReceipt};
+    use alloy_primitives::TxHash;
     use std::str::FromStr;
     use union_contracts::bindings::peg_manager::PegManager::{
         PegManagerErrors, PeginAlreadyAccepted,
@@ -93,10 +84,8 @@ mod tests {
 
         mock.expect_invoke_accept_pegin()
             .returning(move |_, _| {
-                Ok(get_fake_receipt(
-                    true,
-                    receipt_to_return.transaction_hash.as_str(),
-                ))
+                Ok(TxHash::from_str(&receipt_to_return.transaction_hash)
+                    .expect("Failed to parse tx hash"))
             })
             .times(1);
 
@@ -145,10 +134,12 @@ mod tests {
 
         let input = get_base_input();
 
-        let transaction_hash = "0x4e3f8a2d39c1b872b77e8a5c9a24be8f1d489ea7cf2d38375f18b5b54e7df662";
-
         mock.expect_invoke_accept_pegin()
-            .returning(move |_, _| Ok(get_fake_receipt(false, transaction_hash)))
+            .returning(move |_, _| {
+                Err(alloy_contract::Error::TransportError(
+                    alloy_transport::TransportError::local_usage_str("transaction failed"),
+                ))
+            })
             .times(1);
 
         let invoke = AcceptPeginInvoke::new_for_tests(mock);
@@ -157,11 +148,10 @@ mod tests {
         assert!(result.is_err());
 
         match result.err().unwrap() {
-            DomainErrors::TransactionFailed(msg) => {
-                assert!(msg.contains("AcceptPegin transaction failed"));
-                assert!(msg.contains(transaction_hash));
+            DomainErrors::NoRevertError(msg) => {
+                assert!(msg.contains("transaction failed"));
             }
-            _ => panic!("Expected TransactionFailed error"),
+            _ => panic!("Expected NoRevertError error"),
         }
     }
 
@@ -193,34 +183,6 @@ mod tests {
             merkle_branch_hashes: vec![
                 "0x3fcef4a1ddf759a858190b89ecbd1ff3dffb49704e110b68baf5b5de7021910f".to_string(),
             ],
-        }
-    }
-
-    fn get_fake_receipt(status: bool, hash: &str) -> TransactionReceipt<ReceiptEnvelope<Log>> {
-        let receipt = Receipt {
-            status: status.into(),
-            cumulative_gas_used: 21_000,
-            logs: vec![],
-        };
-
-        let envelope = ReceiptEnvelope::Eip1559(ReceiptWithBloom {
-            receipt,
-            logs_bloom: Bloom::ZERO,
-        });
-
-        TransactionReceipt {
-            inner: envelope,
-            transaction_hash: TxHash::from_str(hash).expect("transaction hash is invalid"),
-            transaction_index: Some(0),
-            block_hash: None,
-            block_number: None,
-            gas_used: 21_000,
-            effective_gas_price: 0,
-            blob_gas_used: None,
-            blob_gas_price: None,
-            from: Address::default(),
-            to: Some(Address::default()),
-            contract_address: None,
         }
     }
 }

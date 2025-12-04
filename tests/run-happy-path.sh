@@ -467,8 +467,8 @@ if ! bash cli-operations.sh operator fund --env "$SCRIPT_ENV" --execute; then
     exit 1
 fi
 echo ""
-if ! wait_for_bitcoin_transactions "$FUND_START_HEIGHT" 1 6 3; then
-    warn "Failed to detect 1 Bitcoin transaction with 3 confirmations within 6 blocks"
+if ! wait_for_bitcoin_transactions "$FUND_START_HEIGHT" 1 15 5; then
+    warn "Failed to detect 1 Bitcoin transaction with 5 confirmations within 15 blocks"
     exit 1
 fi
 echo ""

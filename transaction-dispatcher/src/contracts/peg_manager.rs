@@ -1,7 +1,7 @@
 use crate::contracts::common::send_tx_with_gas_bump;
+use alloy_primitives::TxHash;
 use alloy_primitives::{Address, FixedBytes, U256, hex::FromHex};
 use alloy_provider::Provider;
-use alloy_rpc_types::TransactionReceipt;
 use anyhow::Result;
 use log::{error, info};
 use union_contracts::bindings::peg_manager::PegManager::{
@@ -41,32 +41,32 @@ pub trait PegManagerContractApi {
         &self,
         input: BtcTxSPVProof,
         gas_bumps: u8,
-    ) -> alloy_contract::Result<TransactionReceipt>;
+    ) -> alloy_contract::Result<TxHash>;
 
     async fn invoke_accept_pegin(
         &self,
         input: BtcTxSPVProof,
         gas_bumps: u8,
-    ) -> alloy_contract::Result<TransactionReceipt>;
+    ) -> alloy_contract::Result<TxHash>;
 
     async fn invoke_request_pegout(
         &self,
         msg_value: u64,
         usr_pub_key: FixedBytes<33>,
         gas_bumps: u8,
-    ) -> alloy_contract::Result<TransactionReceipt>;
+    ) -> alloy_contract::Result<TxHash>;
 
     async fn invoke_register_pegout(
         &self,
         input: BtcTxSPVProof,
         gas_bumps: u8,
-    ) -> alloy_contract::Result<TransactionReceipt>;
+    ) -> alloy_contract::Result<TxHash>;
 
     async fn notify_check_fork_completion(
         &self,
         pegout_id: &str,
         gas_bumps: u8,
-    ) -> alloy_contract::Result<TransactionReceipt>;
+    ) -> alloy_contract::Result<TxHash>;
 }
 
 // needed so we can create a PegManagerContractApi trait for tests mocking
@@ -100,7 +100,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         &self,
         input: BtcTxSPVProof,
         gas_bumps: u8,
-    ) -> alloy_contract::Result<TransactionReceipt> {
+    ) -> alloy_contract::Result<TxHash> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
             || self.contract_instance.requestPegin(input.clone()),
@@ -113,7 +113,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         &self,
         input: BtcTxSPVProof,
         gas_bumps: u8,
-    ) -> alloy_contract::Result<TransactionReceipt> {
+    ) -> alloy_contract::Result<TxHash> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
             || self.contract_instance.acceptPegin(input.clone()),
@@ -127,7 +127,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         msg_value: u64,
         usr_pub_key: FixedBytes<33>,
         gas_bumps: u8,
-    ) -> alloy_contract::Result<TransactionReceipt> {
+    ) -> alloy_contract::Result<TxHash> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
             || {
@@ -144,7 +144,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         &self,
         input: BtcTxSPVProof,
         gas_bumps: u8,
-    ) -> alloy_contract::Result<TransactionReceipt> {
+    ) -> alloy_contract::Result<TxHash> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
             || self.contract_instance.registerUserTake(input.clone()),
@@ -157,7 +157,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         &self,
         _pegout_id: &str,
         _gas_bumps: u8,
-    ) -> alloy_contract::Result<TransactionReceipt> {
+    ) -> alloy_contract::Result<TxHash> {
         todo!("NotifyCheckForkComplete is not implemented yet for real PegManager");
     }
 }
@@ -190,7 +190,7 @@ impl<P: Provider> PegManagerContractApi for FakePegManagerContract<P> {
         &self,
         _input: BtcTxSPVProof,
         _gas_bumps: u8,
-    ) -> alloy_contract::Result<TransactionReceipt> {
+    ) -> alloy_contract::Result<TxHash> {
         todo!("Not yet implemented for FakePegManagerContract");
     }
 
@@ -198,7 +198,7 @@ impl<P: Provider> PegManagerContractApi for FakePegManagerContract<P> {
         &self,
         _input: BtcTxSPVProof,
         _gas_bumps: u8,
-    ) -> alloy_contract::Result<TransactionReceipt> {
+    ) -> alloy_contract::Result<TxHash> {
         todo!("Not yet implemented for FakePegManagerContract");
     }
 
@@ -207,14 +207,14 @@ impl<P: Provider> PegManagerContractApi for FakePegManagerContract<P> {
         _msg_value: u64,
         _usr_pub_key: FixedBytes<33>,
         _gas_bumps: u8,
-    ) -> alloy_contract::Result<TransactionReceipt> {
+    ) -> alloy_contract::Result<TxHash> {
         todo!("Not yet implemented for FakePegManagerContract");
     }
     async fn invoke_register_pegout(
         &self,
         _input: BtcTxSPVProof,
         _gas_bumps: u8,
-    ) -> alloy_contract::Result<TransactionReceipt> {
+    ) -> alloy_contract::Result<TxHash> {
         todo!("Not yet implemented for FakePegManagerContract");
     }
 
@@ -222,7 +222,7 @@ impl<P: Provider> PegManagerContractApi for FakePegManagerContract<P> {
         &self,
         pegout_id: &str,
         gas_bumps: u8,
-    ) -> alloy_contract::Result<TransactionReceipt> {
+    ) -> alloy_contract::Result<TxHash> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
             || {

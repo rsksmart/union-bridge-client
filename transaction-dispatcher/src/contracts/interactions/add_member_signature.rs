@@ -2,7 +2,7 @@ use crate::contracts::signature_manager::SignatureManagerContractApi;
 use crate::contracts::types::FixedBytes32;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{AddMemberSignatureInput, AddMemberSignatureOutput};
-use log::{error, info};
+use log::info;
 
 #[derive(Clone)]
 pub(crate) struct AddMemberSignatureInvoke<C: SignatureManagerContractApi> {
@@ -27,28 +27,14 @@ impl<C: SignatureManagerContractApi> AddMemberSignatureInvoke<C> {
         let hash_to_sign = input.hash_to_sign.into();
         let signature = FixedBytes32::from_slice(&input.signature.serialize());
 
-        let receipt = self
+        let tx_hash = self
             .contract
             .add_member_signature(hash_to_sign, signature, self.gas_bumps)
             .await?;
 
-        if receipt.status() {
-            info!(
-                "AddMemberSignature successful at tx {}",
-                receipt.transaction_hash
-            );
-            Ok(AddMemberSignatureOutput {
-                transaction_hash: receipt.transaction_hash.to_string(),
-            })
-        } else {
-            error!(
-                "AddMemberSignature failed at tx {}",
-                receipt.transaction_hash
-            );
-            Err(DomainErrors::TransactionFailed(format!(
-                "AddMemberSignature transaction failed with receipt status false at tx {}",
-                receipt.transaction_hash
-            )))
-        }
+        info!("AddMemberSignature successful at tx {tx_hash}");
+        Ok(AddMemberSignatureOutput {
+            transaction_hash: tx_hash.to_string(),
+        })
     }
 }

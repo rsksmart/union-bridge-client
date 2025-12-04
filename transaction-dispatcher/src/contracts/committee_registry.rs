@@ -1,7 +1,7 @@
 use crate::contracts::common::send_tx_with_gas_bump;
 use crate::contracts::types::Address;
 use crate::rsk_gateway::DomainErrors;
-use alloy_primitives::U256;
+use alloy_primitives::{TxHash, U256};
 use alloy_provider::Provider;
 use log::info;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{self, Committee};
@@ -36,7 +36,7 @@ pub trait CommitteeRegistryContractApi {
         funding_utxo: UTXO,
         gas_bumps: u8,
         value: U256,
-    ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt>;
+    ) -> alloy_contract::Result<TxHash>;
 
     async fn call_get_committee(
         &self,
@@ -48,14 +48,14 @@ pub trait CommitteeRegistryContractApi {
         committee_id: CommitteeId,
         communication_data: Vec<CommitteeRegistry::CommunicationData>,
         gas_bumps: u8,
-    ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt>;
+    ) -> alloy_contract::Result<TxHash>;
 
     async fn invoke_deposit_aggregated_key(
         &self,
         committee_id: CommitteeId,
         aggregated_key: alloy_primitives::Bytes,
         gas_bumps: u8,
-    ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt>;
+    ) -> alloy_contract::Result<TxHash>;
 }
 
 #[derive(Clone)]
@@ -91,7 +91,7 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
         funding_utxo: UTXO,
         gas_bumps: u8,
         value: U256,
-    ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt> {
+    ) -> alloy_contract::Result<TxHash> {
         let stream = denomination.into_underlying();
         let role = role.into_underlying();
 
@@ -122,7 +122,7 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
         committee_id: CommitteeId,
         communication_data: Vec<CommitteeRegistry::CommunicationData>,
         gas_bumps: u8,
-    ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt> {
+    ) -> alloy_contract::Result<TxHash> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
             || {
@@ -139,7 +139,7 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
         committee_id: CommitteeId,
         aggregated_key: alloy_primitives::Bytes,
         gas_bumps: u8,
-    ) -> alloy_contract::Result<alloy_rpc_types::TransactionReceipt> {
+    ) -> alloy_contract::Result<TxHash> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
             || {
