@@ -1,6 +1,5 @@
-use crate::types::Role;
 use anyhow::{Result, bail};
-use common::msg_broker::bitvmx_types::{P2PAddress, PeerId, SignedPublicKey};
+use common::msg_broker::bitvmx_types::{P2PAddress, ParticipantRole, PeerId, SignedPublicKey};
 use common::types::CommitteeId;
 use log::info;
 use std::cell::RefCell;
@@ -68,7 +67,7 @@ impl MyKeys {
 
 #[derive(Debug, Clone)]
 pub struct MyCommittees {
-    committees: Rc<RefCell<HashMap<CommitteeId, Role>>>,
+    committees: Rc<RefCell<HashMap<CommitteeId, ParticipantRole>>>,
 }
 
 impl Default for MyCommittees {
@@ -85,11 +84,11 @@ impl MyCommittees {
     }
 
     // NOTE: &self is enough thanks to RefCell
-    pub fn add(&self, committee_id: CommitteeId, role: Role) {
+    pub fn add(&self, committee_id: CommitteeId, role: ParticipantRole) {
         self.committees.borrow_mut().insert(committee_id, role);
     }
 
-    pub fn all_cloned(&self) -> HashMap<CommitteeId, Role> {
+    pub fn all_cloned(&self) -> HashMap<CommitteeId, ParticipantRole> {
         self.committees.borrow().clone()
     }
 
@@ -103,7 +102,7 @@ impl MyCommittees {
     }
 
     #[allow(unused)]
-    pub fn my_role(&self, committee_id: &CommitteeId) -> Option<Role> {
+    pub fn my_role(&self, committee_id: &CommitteeId) -> Option<ParticipantRole> {
         self.committees.borrow().get(committee_id).cloned()
     }
 }

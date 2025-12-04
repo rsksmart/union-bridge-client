@@ -7,6 +7,7 @@ use bitcoin::{
     PublicKey, Txid,
     secp256k1::{Parity::Even, XOnlyPublicKey},
 };
+use common::msg_broker::bitvmx_types::ParticipantRole;
 use common::{
     msg_broker::{
         bitvmx_types::{
@@ -122,6 +123,7 @@ pub struct FlowContext {
     pub accept_pegin_spv_proof: Option<BtcTxSPVProof>,
     pub accept_pegin_tx_status: Option<TransactionStatus>,
     pub pegin_accepted: Option<PeginAccepted>,
+    pub op_role: Option<ParticipantRole>,
 }
 
 /// Serializable state for persistence
@@ -182,6 +184,7 @@ where
                     accept_pegin_spv_proof: None,
                     accept_pegin_tx_status: None,
                     pegin_accepted: None,
+                    op_role: None,
                 },
             },
             store,
@@ -418,6 +421,7 @@ where
 
         let committee_output = self.get_committee_output(committee_id.clone())?;
         self.state.ctx.committee_output = Some(committee_output.clone());
+        self.state.ctx.op_role = Some(self.calc_op_role()?);
 
         let pegin_requested = self
             .state
@@ -469,16 +473,18 @@ where
         Ok(())
     }
 
-    fn add_operator_take_hash(&self) -> Result<()> {
+    pub(crate) fn add_operator_take_hash(&self) -> Result<()> {
+        if self.try_get_op_role()? != ParticipantRole::Prover {
+            info!("Skipping add_operator_take_hash for verifier");
+            return Ok(());
+        }
+
         let pegin_accepted = self
-            .state
-            .ctx
-            .bitvmx_pegin_accepted
-            .as_ref()
+            .get_bitvmx_pegin_accepted()
             .ok_or_else(|| anyhow!("BitVMX pegin accepted message not found"))?;
 
         debug!(
-            "Adding operator take tx hash for flow_id: {}, accept_pegin_txid: {}",
+            "Adding operator (prover) take tx hash for flow_id: {}, accept_pegin_txid: {}",
             self.state.flow_id, pegin_accepted.accept_pegin_txid
         );
 
@@ -619,7 +625,7 @@ where
     }
 
     fn build_operator_indexes(committee_response: &GetCommitteeOutput) -> Vec<usize> {
-        let operator_role: u8 = crate::types::Role::Prover.into();
+        let operator_role: u8 = ParticipantRole::Prover.into();
         let mut operator_indexes = Vec::new();
 
         for (i, member) in committee_response.committee.members.iter().enumerate() {
@@ -750,6 +756,36 @@ where
         Ok(())
     }
 
+    /// Calculates the operator role based on the committee members and its own address
+    pub fn calc_op_role(&self) -> Result<ParticipantRole> {
+        let Some(get_committee_output) = &self.state.ctx.committee_output else {
+            bail!("Committee output not found");
+        };
+
+        let my_addr: alloy_primitives::Address = self.contracts.my_address().into();
+        let Some(member) = get_committee_output
+            .committee
+            .members
+            .iter()
+            .find(|e| e.memberAddress == my_addr)
+        else {
+            bail!("Address not found in committee members");
+        };
+
+        member
+            .role
+            .try_into()
+            .context("Failed to convert u8 role to ParticipantRole")
+    }
+
+    fn try_get_op_role(&self) -> Result<ParticipantRole> {
+        if let Some(role) = &self.state.ctx.op_role {
+            return Ok(role.clone());
+        }
+
+        bail!("Operator role not found in context")
+    }
+
     pub fn get_accept_pegin_txid(&self) -> Option<Txid> {
         self.state
             .ctx
@@ -778,6 +814,11 @@ where
         &self.state
     }
 
+    #[cfg(test)]
+    pub fn get_state_mut(&mut self) -> &mut State {
+        &mut self.state
+    }
+
     /// Get the `BitVMX` pegin accepted message if available
     pub fn get_bitvmx_pegin_accepted(&self) -> Option<&PeginAcceptedMessage> {
         self.state.ctx.bitvmx_pegin_accepted.as_ref()
@@ -798,5 +839,258 @@ fn format_step(step: Steps) -> &'static str {
         Steps::RequestAcceptPeginSpvProof => "RequestAcceptPeginSpvProof",
         Steps::AcceptPegin => "AcceptPegin",
         Steps::Done => "Done",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::store::MockCoordinatorStoreApi;
+    use alloy_primitives::{U256, Uint};
+    use bitcoin::{Txid, hashes::Hash};
+    use common::{
+        msg_broker::{
+            bitvmx_types::{
+                IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PeginAcceptedMessage,
+            },
+            broker::MockBrokerClientApi,
+        },
+        runtime_sync::RuntimeSync,
+        types::Address as CommonAddress,
+    };
+    use mockall::predicate::*;
+    use musig2::{PubNonce, secp::MaybeScalar};
+    use primitive_types::H160;
+    use transaction_dispatcher::types::GetCommitteeOutput;
+    use union_contracts::bindings::committee_registry::CommitteeRegistry::Committee;
+    use uuid::Uuid;
+
+    type MockPeginFlow = PeginFlow<
+        crate::coordinator::tests::MockRskContractsGatewayApi,
+        MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>,
+        MockCoordinatorStoreApi,
+    >;
+
+    const ROLE_PROVER: u8 = 1;
+    const ROLE_VERIFIER: u8 = 2;
+
+    fn test_address(bytes: [u8; 20]) -> CommonAddress {
+        CommonAddress::from(H160::from(bytes))
+    }
+
+    fn test_txid(bytes: [u8; 32]) -> Txid {
+        Txid::from_raw_hash(
+            bitcoin::hashes::sha256d::Hash::from_slice(&bytes).expect("Invalid hash"),
+        )
+    }
+
+    fn default_pub_nonce() -> PubNonce {
+        "0279BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798032DE2662628C90B03F5E720284EB52FF7D71F4284F627B68A853D78C78E1FFE93"
+            .parse::<PubNonce>()
+            .expect("Invalid PubNonce")
+    }
+
+    fn default_pegin_accepted_message(accept_pegin_txid: Txid) -> PeginAcceptedMessage {
+        PeginAcceptedMessage {
+            accept_pegin_txid,
+            accept_pegin_nonce: default_pub_nonce(),
+            accept_pegin_signature: MaybeScalar::Zero,
+            accept_pegin_sighash: vec![],
+            operator_take_sighash: vec![1, 2, 3, 4],
+            operator_won_sighash: vec![],
+            committee_id: Uuid::new_v4(),
+        }
+    }
+
+    fn create_default_flow_context(
+        flow_id: Uuid,
+        step: Steps,
+        op_role: Option<ParticipantRole>,
+    ) -> FlowContext {
+        let btc_tx_id = Txid::from_raw_hash(bitcoin::hashes::sha256d::Hash::all_zeros());
+        FlowContext {
+            flow_id,
+            step,
+            temp_flow_id: Some(flow_id),
+            official_flow_id: None,
+            request_pegin_btc_tx_id: Some(btc_tx_id),
+            request_pegin_btc_tx_status: None,
+            request_pegin_spv_proof: None,
+            pegin_requested: None,
+            my_p2p_address: None,
+            committee_output: None,
+            bitvmx_pegin_accepted: Some(default_pegin_accepted_message(btc_tx_id)),
+            accept_pegin_spv_proof: None,
+            accept_pegin_tx_status: None,
+            pegin_accepted: None,
+            op_role,
+        }
+    }
+
+    fn create_test_flow_with_mock_contracts(
+        my_address: CommonAddress,
+        ctx: FlowContext,
+    ) -> (
+        MockPeginFlow,
+        std::rc::Rc<crate::coordinator::tests::MockRskContractsGatewayApi>,
+    ) {
+        let mut mock_contracts = crate::coordinator::tests::MockRskContractsGatewayApi::new();
+        mock_contracts
+            .expect_my_address()
+            .returning(move || my_address);
+        create_test_flow_with_custom_mock(my_address, ctx, mock_contracts)
+    }
+
+    fn create_test_flow_with_custom_mock(
+        my_address: CommonAddress,
+        ctx: FlowContext,
+        mut mock_contracts: crate::coordinator::tests::MockRskContractsGatewayApi,
+    ) -> (
+        MockPeginFlow,
+        std::rc::Rc<crate::coordinator::tests::MockRskContractsGatewayApi>,
+    ) {
+        mock_contracts
+            .expect_my_address()
+            .returning(move || my_address);
+        let mock_contracts = std::rc::Rc::new(mock_contracts);
+
+        let mock_broker = std::rc::Rc::new(MockBrokerClientApi::<
+            IncomingBitVMXApiMessages,
+            OutgoingBitVMXApiMessages,
+        >::new());
+        let mock_store = std::rc::Rc::new(MockCoordinatorStoreApi::new());
+        let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
+
+        let state = State {
+            flow_id: ctx.flow_id,
+            ctx,
+        };
+
+        let flow = PeginFlow::from_saved_state(
+            mock_contracts.clone(),
+            rt_sync,
+            mock_broker,
+            state,
+            mock_store,
+        );
+
+        (flow, mock_contracts)
+    }
+
+    fn create_test_flow_with_role(
+        my_address: CommonAddress,
+        step: Steps,
+        op_role: Option<ParticipantRole>,
+    ) -> (
+        MockPeginFlow,
+        std::rc::Rc<crate::coordinator::tests::MockRskContractsGatewayApi>,
+    ) {
+        let flow_id = Uuid::new_v4();
+        let ctx = create_default_flow_context(flow_id, step, op_role);
+        create_test_flow_with_mock_contracts(my_address, ctx)
+    }
+
+    fn create_committee_output_with_member(
+        member_address: CommonAddress,
+        role: u8,
+    ) -> GetCommitteeOutput {
+        use alloy_primitives::Address as AlloyAddress;
+        use union_contracts::bindings::committee_registry::CommitteeRegistry::CommitteeMember;
+        GetCommitteeOutput {
+            committee: Committee {
+                members: vec![CommitteeMember {
+                    memberAddress: AlloyAddress::from_slice(
+                        member_address.value().as_fixed_bytes(),
+                    ),
+                    role,
+                }],
+                leaderAddress: AlloyAddress::from_slice(&[0u8; 20]),
+                operatorTakeIndex: U256::from(0),
+                createdAt: Uint::default(),
+                missingData: 0,
+                missingCommunicationData: 0,
+                isPending: false,
+                streamId: 0,
+                fundingUTXOs: vec![],
+                aggregatedKey: vec![].into(),
+            },
+        }
+    }
+
+    #[test]
+    fn test_add_operator_take_hash_prover_calls_contract() {
+        let my_address = test_address([1u8; 20]);
+        let flow_id = Uuid::new_v4();
+        let btc_tx_id = test_txid([0u8; 32]);
+
+        let mut ctx = create_default_flow_context(
+            flow_id,
+            Steps::AddOperatorTakeHash,
+            Some(ParticipantRole::Prover),
+        );
+        ctx.bitvmx_pegin_accepted = Some(default_pegin_accepted_message(btc_tx_id));
+
+        let mut mock_contracts = crate::coordinator::tests::MockRskContractsGatewayApi::new();
+        mock_contracts
+            .expect_my_address()
+            .returning(move || my_address);
+
+        let expected_input = transaction_dispatcher::types::AddOperatorTakeTxHashInput {
+            accept_pegin_tx_hash: btc_tx_id,
+            take_tx_hash: vec![1, 2, 3, 4],
+        };
+
+        mock_contracts
+            .expect_add_operator_take_tx_hash()
+            .with(eq(expected_input))
+            .times(1)
+            .returning(|_| {
+                Ok(transaction_dispatcher::types::AddOperatorTakeTxHashOutput {
+                    transaction_hash: "test_hash".to_string(),
+                })
+            });
+
+        let (flow, _) = create_test_flow_with_custom_mock(my_address, ctx, mock_contracts);
+        let result = flow.add_operator_take_hash();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_add_operator_take_hash_verifier_skips() {
+        let my_address = test_address([1u8; 20]);
+        let (flow, _) = create_test_flow_with_role(
+            my_address,
+            Steps::AddOperatorTakeHash,
+            Some(ParticipantRole::Verifier),
+        );
+
+        let result = flow.add_operator_take_hash();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_calc_op_role_prover() {
+        let my_address = test_address([1u8; 20]);
+        let mut flow_state =
+            create_test_flow_with_role(my_address, Steps::AddOperatorTakeHash, None).0;
+        let committee_output = create_committee_output_with_member(my_address, ROLE_PROVER);
+        flow_state.get_state_mut().ctx.committee_output = Some(committee_output);
+
+        let result = flow_state.calc_op_role();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), ParticipantRole::Prover);
+    }
+
+    #[test]
+    fn test_calc_op_role_verifier() {
+        let my_address = test_address([1u8; 20]);
+        let mut flow_state =
+            create_test_flow_with_role(my_address, Steps::AddOperatorTakeHash, None).0;
+        let committee_output = create_committee_output_with_member(my_address, ROLE_VERIFIER);
+        flow_state.get_state_mut().ctx.committee_output = Some(committee_output);
+
+        let result = flow_state.calc_op_role();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), ParticipantRole::Verifier);
     }
 }

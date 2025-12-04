@@ -10,7 +10,7 @@ use bitcoin::key::Parity::Even;
 use bitcoin::{Amount, Network, PublicKey, ScriptBuf, Txid, XOnlyPublicKey};
 use common::msg_broker::bitvmx_types::{
     Destination, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, OutputType, P2PAddress,
-    PartialUtxo, ParticipantRole, PeerId, SignedPublicKey, Utxo,
+    PartialUtxo, PeerId, SignedPublicKey, Utxo,
 };
 use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 use common::runtime_sync::RuntimeSync;
@@ -931,14 +931,7 @@ where
         for (idx, cm) in committee.members.iter().enumerate() {
             trace!("Processing member {idx}");
 
-            // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: move it to a From trait impl
-            let role = if cm.role == 1 {
-                ParticipantRole::Prover
-            } else if cm.role == 2 {
-                ParticipantRole::Verifier
-            } else {
-                bail!("Invalid member role: {}", cm.role);
-            };
+            let role = cm.role.try_into()?;
 
             let take_key = self.get_member_keys_by_type(cm.memberAddress, TAKE_KEY_INDEX)?;
             let dispute_key = self.get_member_keys_by_type(cm.memberAddress, DISPUTE_KEY_INDEX)?;

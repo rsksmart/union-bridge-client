@@ -276,12 +276,13 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
     }
 
     fn check_bitvmx_liveness(&self, bitvmx_ping: &mut Option<Instant>, bitvmx_last_msg: Instant) {
-        if let Some(ping) = bitvmx_ping
-            && ping.elapsed() > BITVMX_NOT_RESPONDING_THRESHOLD
-        {
-            // TODO in the future we have to properly handle this situation
-            warn!("BitVMX is not responding");
-            *bitvmx_ping = None;
+        #[allow(clippy::collapsible_if)]
+        if let Some(ping) = bitvmx_ping {
+            if ping.elapsed() > BITVMX_NOT_RESPONDING_THRESHOLD {
+                // TODO in the future we have to properly handle this situation
+                warn!("BitVMX is not responding");
+                *bitvmx_ping = None;
+            }
         }
 
         // send ping if we have not received any message from BitVMX for a while and there is no pending ping

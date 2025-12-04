@@ -6,7 +6,7 @@ use storage_backend::storage_config::StorageConfig;
 use uuid::Uuid;
 
 use crate::flows::common::GlobalContext;
-use crate::types::Role;
+use common::msg_broker::bitvmx_types::ParticipantRole;
 use common::msg_broker::bitvmx_types::SignedPublicKey;
 use common::types::CommitteeId;
 
@@ -67,7 +67,7 @@ impl StorePrefix {
 /// Internal serializable representation of `GlobalContext`
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct PersistentGlobalContext {
-    committees: HashMap<CommitteeId, Role>,
+    committees: HashMap<CommitteeId, ParticipantRole>,
     take_key: Option<SignedPublicKey>,
     dispute_key: Option<SignedPublicKey>,
     comm_key: Option<SignedPublicKey>,
