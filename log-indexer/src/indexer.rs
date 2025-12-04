@@ -338,10 +338,11 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                 .set_sync_checkpoint(&new_log)
                 .context("Setting new log checkpoint")?;
 
-            if let Some(channel) = &self.new_log_sender
-                && let Err(e) = channel.send(new_log)
-            {
-                error!("Failed to send new block through channel: {e:?}");
+            #[allow(clippy::collapsible_if)]
+            if let Some(channel) = &self.new_log_sender {
+                if let Err(e) = channel.send(new_log) {
+                    error!("Failed to send new block through channel: {e:?}");
+                }
             }
         }
 

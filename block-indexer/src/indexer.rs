@@ -228,11 +228,12 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
     }
 
     fn notify_block(&self, block: RskBlock, uncles: Vec<RskBlock>) {
-        if let Some(channel) = &self.new_block_sender
-            && let Err(e) = channel.send(RskBlockAndUncles::new(block, uncles))
-        {
-            // TODO(Jira) this should be monitored and analysed - https://rsklabs.atlassian.net/browse/UB-127
-            error!("[notify_block] Failed to send best block through channel: {e:?}");
+        #[allow(clippy::collapsible_if)]
+        if let Some(channel) = &self.new_block_sender {
+            if let Err(e) = channel.send(RskBlockAndUncles::new(block, uncles)) {
+                // TODO(Jira) this should be monitored and analysed - https://rsklabs.atlassian.net/browse/UB-127
+                error!("[notify_block] Failed to send best block through channel: {e:?}");
+            }
         }
     }
 

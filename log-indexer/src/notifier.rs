@@ -95,11 +95,12 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
     }
 
     fn subscribe_consumer_to_contract(&mut self, address: Address, consumer_id: u32) {
-        if let Some(consumers) = self.contracts_with_consumers.get(&address)
-            && consumers.contains(&consumer_id)
-        {
-            warn!("Consumer {consumer_id} is already subscribed to {address}");
-            return;
+        #[allow(clippy::collapsible_if)]
+        if let Some(consumers) = self.contracts_with_consumers.get(&address) {
+            if consumers.contains(&consumer_id) {
+                warn!("Consumer {consumer_id} is already subscribed to {address}");
+                return;
+            }
         }
 
         info!("New consumer {consumer_id} subscribing to {address}");
