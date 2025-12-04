@@ -33,8 +33,9 @@ pub const SELECTED_OPERATOR_PUBKEY_VAR_PREFIX: &str = "selected_operator_pubkey_
 #[allow(dead_code)]
 pub const ADVANCE_FUNDS_REQUEST_VAR_NAME: &str = "advance_funds_request";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Steps {
+    #[default]
     OperatorTakeTriggered,
     GetCommInfo,
     SetupAdvanceFundsProtocol,
@@ -43,12 +44,6 @@ pub enum Steps {
     RequestOperatorTakeSpvProof,
     RegisterOperatorTake,
     Done,
-}
-
-impl Default for Steps {
-    fn default() -> Self {
-        Steps::OperatorTakeTriggered
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -337,8 +332,7 @@ where
                 Ok(Steps::Done)
             }
             _ => Err(anyhow!(
-                "Invalid state transition from {:?} with provided data",
-                current_step,
+                "Invalid state transition from {current_step:?} with provided data",
             )),
         }
     }
@@ -354,8 +348,7 @@ where
         let committee_id_uuid = Uuid::from_u128(*committee_id);
         self.state.committee_id_uuid = Some(committee_id_uuid);
         debug!(
-            "Publishing selected operator pubkey for committee {} slot {}",
-            committee_id, slot_index
+            "Publishing selected operator pubkey for committee {committee_id} slot {slot_index}",
         );
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetVar(
             committee_id_uuid,
@@ -366,8 +359,7 @@ where
         let my_address = self.contracts.my_address();
         if my_address != operator_address {
             debug!(
-                "Advance funds setup: node {} is not selected operator (selected: {}), finishing flow",
-                my_address, operator_address
+                "Advance funds setup: node {my_address} is not selected operator (selected: {operator_address}), finishing flow",
             );
             self.start_step(Steps::Done)?;
             return Ok(());
@@ -458,7 +450,7 @@ where
             pegout_id,
             //TODO Extracted from the examples. Pending to add config for regtest vs testnet.
             fee: 335,
-            user_pubkey: self.state.trigger_data.user_pubkey.clone(),
+            user_pubkey: self.state.trigger_data.user_pubkey,
             my_take_pubkey: operator_pubkey,
         };
 
@@ -478,7 +470,7 @@ where
     }
 
     fn send_bitvmx_msg(&self, msg: IncomingBitVMXApiMessages) -> Result<()> {
-        debug!("AdvanceFundsFlow sending BitVMX message: {:?}", msg);
+        debug!("AdvanceFundsFlow sending BitVMX message: {msg:?}");
         self.bitvmx_broker.send(BROKER_SERVER_ID, msg)?;
         Ok(())
     }

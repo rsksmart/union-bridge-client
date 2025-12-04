@@ -19,12 +19,11 @@ impl<C: PegManagerContractApi> RegisterOperatorTakeInvoke<C> {
         &self,
         input: RegisterOperatorTakeInput,
     ) -> Result<RegisterOperatorTakeOutput, DomainErrors> {
-        info!("Init RegisterOperatorTake for: {:?}", input);
+        info!("Init RegisterOperatorTake for: {input:?}");
 
         let parsed_input: BtcTxSPVProof = input.try_into().map_err(|e| {
             DomainErrors::InvalidBtcTxSpvProof(format!(
-                "Failed to parse RegisterOperatorTakeInput: {}",
-                e
+                "Failed to parse RegisterOperatorTakeInput: {e}"
             ))
         })?;
 

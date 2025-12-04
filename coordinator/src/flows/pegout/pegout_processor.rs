@@ -306,8 +306,7 @@ where
                 // Cancel advance funds timeout since signatures completed successfully
                 if self.advance_funds_timeout_scheduler.is_scheduled(flow_id) {
                     debug!(
-                        "Cancelling advance funds timeout for flow_id: {} - signatures completed",
-                        flow_id
+                        "Cancelling advance funds timeout for flow_id: {flow_id} - signatures completed",
                     );
                     self.advance_funds_timeout_scheduler.cancel(flow_id);
                 }
@@ -435,14 +434,14 @@ where
         Ok(())
     }
 
-    /// Schedule timeouts for flows that received pegout_accepted but didn't have block timestamp yet
-    fn schedule_pending_timeouts(&mut self, block: &RskBlockAndUncles) -> Result<()> {
+    /// Schedule timeouts for flows that received `pegout_accepted` but didn't have block timestamp yet
+    fn schedule_pending_timeouts(&mut self, block: &RskBlockAndUncles) {
         if self.flows_pending_timeout.is_empty() {
-            return Ok(());
+            return;
         }
 
         let current_timestamp = block.block().timestamp().value();
-        let pending_flows: Vec<Uuid> = self.flows_pending_timeout.iter().cloned().collect();
+        let pending_flows: Vec<Uuid> = self.flows_pending_timeout.iter().copied().collect();
 
         for flow_id in pending_flows {
             if let Some(flow) = self.pegout_flows.get(&flow_id) {
@@ -463,8 +462,6 @@ where
             }
             self.flows_pending_timeout.remove(&flow_id);
         }
-
-        Ok(())
     }
 
     /// Check for expired advance funds timeouts and trigger operator take
@@ -478,8 +475,7 @@ where
 
         for flow_id in expired_flows {
             info!(
-                "Advance funds timeout expired for flow_id: {} at timestamp: {}",
-                flow_id, current_timestamp
+                "Advance funds timeout expired for flow_id: {flow_id} at timestamp: {current_timestamp}",
             );
             self.trigger_operator_take_for_flow(flow_id)?;
         }
@@ -488,12 +484,12 @@ where
     }
 
     /// Trigger operator take for a flow when timeout expires
-    /// This completes the DispatchTransaction step with TriggerOperatorTakeTimeout data
+    /// This completes the `DispatchTransaction` step with `TriggerOperatorTakeTimeout` data
     fn trigger_operator_take_for_flow(&mut self, flow_id: Uuid) -> Result<()> {
         let flow = self
             .pegout_flows
             .get_mut(&flow_id)
-            .ok_or_else(|| anyhow!("Flow not found for flow_id: {}", flow_id))?;
+            .ok_or_else(|| anyhow!("Flow not found for flow_id: {flow_id}"))?;
 
         // Verify flow is still in the expected state
         if flow.current_step() != Steps::DispatchTransaction {
@@ -507,8 +503,7 @@ where
         }
 
         info!(
-            "Timeout expired for flow_id: {}, completing DispatchTransaction step with TriggerOperatorTakeTimeout",
-            flow_id
+            "Timeout expired for flow_id: {flow_id}, completing DispatchTransaction step with TriggerOperatorTakeTimeout",
         );
 
         // Complete the DispatchTransaction step with timeout data
@@ -592,8 +587,7 @@ where
                 // Schedule advance funds timeout: 2 hours from now
                 // We'll schedule it when we process the next block with its timestamp
                 info!(
-                    "Pegout accepted for flow_id: {}, will schedule advance funds timeout on next block",
-                    flow_id
+                    "Pegout accepted for flow_id: {flow_id}, will schedule advance funds timeout on next block",
                 );
                 self.flows_pending_timeout.insert(*flow_id);
             }
@@ -609,16 +603,14 @@ where
                     anyhow!("Received SPVProof event for tx_id {tx_id} without proof")
                 })?;
 
-                let (flow_id, flow) =
-                    match self.pegout_flows.iter_mut().find_map(|(flow_id, flow)| {
+                let Some((flow_id, flow)) =
+                    self.pegout_flows.iter_mut().find_map(|(flow_id, flow)| {
                         (flow.get_user_take_txid() == Some(*tx_id)).then_some((*flow_id, flow))
-                    }) {
-                        Some((flow_id, flow)) => (flow_id, flow),
-                        None => {
-                            trace!("Ignoring SPV proof for tx_id {} without matching flow", tx_id);
-                            return Ok(());
-                        }
-                    };
+                    })
+                else {
+                    trace!("Ignoring SPV proof for tx_id {tx_id} without matching flow");
+                    return Ok(());
+                };
                 if flow.current_step() != Steps::RequestUserTakeSpvProof {
                     bail!(
                         "Mismatch current step for flow {} expected {:?} having {:?}",
@@ -702,7 +694,7 @@ where
 
     fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
         // Schedule pending timeouts for flows that received pegout_accepted
-        self.schedule_pending_timeouts(block)?;
+        self.schedule_pending_timeouts(block);
 
         // Check for expired timeouts
         self.handle_advance_funds_timeout_expired(block)?;

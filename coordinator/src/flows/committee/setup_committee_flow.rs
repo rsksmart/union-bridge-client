@@ -8,7 +8,7 @@ use bitcoin::key::Parity::Even;
 use bitcoin::{Amount, Network, PublicKey, ScriptBuf, Txid, XOnlyPublicKey};
 use common::msg_broker::bitvmx_types::{
     Destination, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, OutputType, P2PAddress,
-    PartialUtxo, PeerId, SignedPublicKey, Utxo, VariableTypes
+    PartialUtxo, PeerId, SignedPublicKey, Utxo, VariableTypes,
 };
 use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 use common::runtime_sync::RuntimeSync;

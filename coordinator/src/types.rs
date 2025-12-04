@@ -587,7 +587,7 @@ impl<K: Eq + Hash + Clone> TimeBasedScheduler<K> {
         let mut expired: Vec<K> = Vec::new();
         let mut to_remove: Vec<K> = Vec::new();
 
-        for (id, expiration_timestamp) in self.pending.iter() {
+        for (id, expiration_timestamp) in &self.pending {
             if current_timestamp >= *expiration_timestamp {
                 expired.push(id.clone());
                 to_remove.push(id.clone());

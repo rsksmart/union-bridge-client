@@ -508,7 +508,7 @@ where
         self.state.ctx.peg_out_accepted.as_ref().map(|accepted| accepted.user_take_txid)
     }
 
-    /// Get the pegout txid from the PegoutRequested event
+    /// Get the pegout txid from the `PegoutRequested` event
     pub fn get_pegout_txid(&self) -> String {
         hex::encode(self.state.ctx.pegout_requested.pegoutSignatureData.txid.as_slice())
     }

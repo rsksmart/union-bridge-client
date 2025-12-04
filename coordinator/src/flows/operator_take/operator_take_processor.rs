@@ -69,7 +69,7 @@ where
     pub fn get_advance_funds_pid(committee_id: Uuid, slot_index: usize) -> Result<Uuid> {
         let mut hasher = Sha256::new();
         hasher.update(committee_id.as_bytes());
-        hasher.update(&slot_index.to_be_bytes());
+        hasher.update(slot_index.to_be_bytes());
         hasher.update("advance_funds");
 
         let hash = hasher.finalize();
@@ -91,10 +91,7 @@ where
         let committee_id = trigger_data.committee_id;
 
         if !self.global_context.my_committees().im_member(&committee_id) {
-            debug!(
-                "Skipping OperatorTakeTriggered for committee {} - not a member",
-                committee_id
-            );
+            debug!("Skipping OperatorTakeTriggered for committee {committee_id} - not a member",);
             return Ok(());
         }
 
@@ -103,8 +100,7 @@ where
 
         if self.flows.contains_key(&flow_id) {
             debug!(
-                "Advance funds flow {} already exists for committee {}, updating trigger data",
-                flow_id, committee_id
+                "Advance funds flow {flow_id} already exists for committee {committee_id}, updating trigger data",
             );
         } else {
             debug!(
@@ -139,15 +135,14 @@ where
             flow.complete_step(StepData::OperatorTakeRegistered(pegout_registered))?;
         } else {
             trace!(
-                "No advance funds flow found for PegoutRegistered with committee_id {} slot_id {}",
-                event_committee_id, event_slot_id
+                "No advance funds flow found for PegoutRegistered with committee_id {event_committee_id} slot_id {event_slot_id}",
             );
         }
 
         Ok(())
     }
 
-    /// Check if there's an active flow for the given committee_id and slot_id.
+    /// Check if there's an active flow for the given `committee_id` and `slot_id`.
     fn has_flow_for_pegout_registered(&self, committee_id: u128, slot_id: u64) -> bool {
         self.flows.values().any(|flow| {
             let trigger = flow.trigger_data();
@@ -164,7 +159,7 @@ where
             .collect();
 
         for flow_id in completed {
-            debug!("Removing completed advance funds flow {}", flow_id);
+            debug!("Removing completed advance funds flow {flow_id}");
             if self.tx_status_scheduler.is_scheduled(&flow_id) {
                 self.tx_status_scheduler.cancel(&flow_id);
             }
@@ -185,10 +180,7 @@ where
                 self.handle_pegout_registered(pegout_registered)?;
             }
             _ => {
-                trace!(
-                    "AdvanceFundsFlowProcessor ignoring confirmed event {:?}",
-                    event
-                );
+                trace!("AdvanceFundsFlowProcessor ignoring confirmed event {event:?}",);
             }
         }
 
@@ -217,26 +209,21 @@ where
             return Ok(());
         }
 
-        self.blockchain_view.update(&block);
+        self.blockchain_view.update(block);
 
         let confirmed_keys: Vec<_> = self
             .events_confirming
             .iter()
-            .filter_map(|(key, event)| event.is_confirmed().then(|| key.clone()))
+            .filter(|(_, event)| event.is_confirmed())
+            .map(|(key, _)| key.clone())
             .collect();
 
         for key in confirmed_keys {
             if let Some(mut event) = self.events_confirming.remove(&key) {
-                debug!(
-                    "Advance funds RSK event confirmed, removing pending {}",
-                    key
-                );
+                debug!("Advance funds RSK event confirmed, removing pending {key}",);
                 trace!("Advance funds event data: {:?}", event.get_data());
                 if let Err(e) = event.stop_confirming() {
-                    warn!(
-                        "Failed to stop confirming advance funds event {}: {}",
-                        key, e
-                    );
+                    warn!("Failed to stop confirming advance funds event {key}: {e}",);
                 }
                 self.process_confirmed_rsk_event(event.get_data())?;
             }
@@ -257,19 +244,13 @@ where
         tx_status: TransactionStatus,
     ) -> Result<()> {
         // Find the flow whose pegin_program_id matches the program_id
-        let (flow_id, flow) = match self
-            .flows
-            .iter_mut()
-            .find(|(_, flow)| flow.state.pegin_program_id == Some(*program_id))
-        {
-            Some((flow_id, flow)) => (*flow_id, flow),
-            None => {
-                trace!(
-                    "Ignoring transaction status for program {} - no matching advance funds flow with this pegin_program_id",
-                    program_id
-                );
-                return Ok(());
-            }
+        let Some((flow_id, flow)) = self.flows.iter_mut().find_map(|(flow_id, flow)| {
+            (flow.state.pegin_program_id == Some(*program_id)).then_some((*flow_id, flow))
+        }) else {
+            trace!(
+                "Ignoring transaction status for program {program_id} - no matching advance funds flow with this pegin_program_id",
+            );
+            return Ok(());
         };
 
         if flow.current_step() != Steps::RequestOperatorTakeTx {
@@ -311,7 +292,7 @@ where
         for flow_id in ready {
             match self.flows.get_mut(&flow_id) {
                 Some(flow) => {
-                    debug!("Handling transaction status tick for flow {}", flow_id);
+                    debug!("Handling transaction status tick for flow {flow_id}");
                     if flow.current_step() == Steps::RequestOperatorTakeTx {
                         flow.request_transaction_status()?;
                     } else {
@@ -324,10 +305,7 @@ where
                     }
                 }
                 None => {
-                    warn!(
-                        "Skipping delayed transaction status request for unknown flow {}",
-                        flow_id
-                    );
+                    warn!("Skipping delayed transaction status request for unknown flow {flow_id}",);
                 }
             }
         }
@@ -336,14 +314,11 @@ where
     }
 
     fn handle_spv_proof(&mut self, tx_id: &bitcoin::Txid, spv_proof: BtcTxSPVProof) -> Result<()> {
-        let (flow_id, flow) = match self.flows.iter_mut().find_map(|(flow_id, flow)| {
+        let Some((flow_id, flow)) = self.flows.iter_mut().find_map(|(flow_id, flow)| {
             (flow.operator_take_tx_id() == Some(*tx_id)).then_some((*flow_id, flow))
-        }) {
-            Some(found) => found,
-            None => {
-                trace!("Ignoring SPV proof for tx {}: no matching flow", tx_id);
-                return Ok(());
-            }
+        }) else {
+            trace!("Ignoring SPV proof for tx {tx_id}: no matching flow");
+            return Ok(());
         };
 
         if flow.current_step() != Steps::RequestOperatorTakeSpvProof {
@@ -433,11 +408,10 @@ where
         match event {
             OutgoingBitVMXApiMessages::SetupCompleted(program_id) => {
                 debug!(
-                    "Advance funds flow processor received SetupCompleted for program_id: {}",
-                    program_id
+                    "Advance funds flow processor received SetupCompleted for program_id: {program_id}",
                 );
                 let mut matched_flow = false;
-                for (flow_id, flow) in self.flows.iter_mut() {
+                for (flow_id, flow) in &mut self.flows {
                     if flow_id == program_id {
                         matched_flow = true;
                         if flow.current_step() == Steps::SetupAdvanceFundsProtocol {
@@ -454,15 +428,14 @@ where
 
                 if !matched_flow {
                     trace!(
-                        "Ignoring SetupCompleted for program {}: no matching advance funds flow",
-                        program_id
+                        "Ignoring SetupCompleted for program {program_id}: no matching advance funds flow",
                     );
                 }
             }
             OutgoingBitVMXApiMessages::CommInfo(comm_info) => {
-                for (flow_id, flow) in self.flows.iter_mut() {
+                for (flow_id, flow) in &mut self.flows {
                     if flow.current_step() == Steps::GetCommInfo {
-                        debug!("Advance funds flow {} received comm info", flow_id);
+                        debug!("Advance funds flow {flow_id} received comm info");
                         flow.complete_step(StepData::CommInfo(comm_info.clone()))?;
                     }
                 }
@@ -479,37 +452,26 @@ where
             }
             OutgoingBitVMXApiMessages::SPVProof(tx_id, None) => {
                 warn!(
-                    "Received SPV proof event for tx {} without proof data in advance funds flow",
-                    tx_id
+                    "Received SPV proof event for tx {tx_id} without proof data in advance funds flow",
                 );
             }
             OutgoingBitVMXApiMessages::Variable(program_id, var_name, var_value) => {
                 if var_name == &ReimbursementResult::name() {
                     if let VariableTypes::String(json_str) = var_value {
                         debug!(
-                            "Advance funds flow processor received reimbursement_result variable from pegin_flow_id: {}",
-                            program_id
+                            "Advance funds flow processor received reimbursement_result variable from pegin_flow_id: {program_id}",
                         );
                         let result: ReimbursementResult = serde_json::from_str(json_str)?;
                         self.handle_reimbursement_result(program_id, &result)?;
                     } else {
-                        warn!(
-                            "Received reimbursement_result with unexpected type: {:?}",
-                            var_value
-                        );
+                        warn!("Received reimbursement_result with unexpected type: {var_value:?}",);
                     }
                 } else {
-                    trace!(
-                        "AdvanceFundsFlowProcessor ignoring Variable with name: {}",
-                        var_name
-                    );
+                    trace!("AdvanceFundsFlowProcessor ignoring Variable with name: {var_name}",);
                 }
             }
             _ => {
-                trace!(
-                    "AdvanceFundsFlowProcessor ignoring BitVMX event {:?}",
-                    event
-                );
+                trace!("AdvanceFundsFlowProcessor ignoring BitVMX event {event:?}",);
             }
         }
         Ok(())
@@ -531,8 +493,7 @@ where
                 let event_slot_id = e.inner.slotId;
                 if !self.has_flow_for_pegout_registered(event_committee_id, event_slot_id) {
                     trace!(
-                        "AdvanceFundsFlowProcessor ignoring PegoutRegistered event for committee_id {} slot_id {} - no matching flow",
-                        event_committee_id, event_slot_id
+                        "AdvanceFundsFlowProcessor ignoring PegoutRegistered event for committee_id {event_committee_id} slot_id {event_slot_id} - no matching flow",
                     );
                     return Ok(());
                 }
@@ -544,30 +505,23 @@ where
                 )
             }
             _ => {
-                trace!("AdvanceFundsFlowProcessor ignoring RSK event {:?}", event);
+                trace!("AdvanceFundsFlowProcessor ignoring RSK event {event:?}");
                 return Ok(());
             }
         };
 
         if is_removal {
-            warn!("Removing pending advance funds event {:?}", event);
+            warn!("Removing pending advance funds event {event:?}");
             if let Some(mut removed_event) = self.events_confirming.remove(&id) {
                 if let Err(e) = removed_event.stop_confirming() {
-                    warn!(
-                        "Failed to stop confirming removed advance funds event {}: {}",
-                        id, e
-                    );
+                    warn!("Failed to stop confirming removed advance funds event {id}: {e}",);
                 }
             } else {
-                warn!(
-                    "Tried to remove non-existing pending advance funds event with id {}",
-                    id
-                );
+                warn!("Tried to remove non-existing pending advance funds event with id {id}",);
             }
         } else {
             debug!(
-                "Adding pending advance funds event {:?}, start confirming at block {}",
-                event, block_num
+                "Adding pending advance funds event {event:?}, start confirming at block {block_num}",
             );
 
             let mut confirmable_event = ConfirmableEventWithData::new(

@@ -459,7 +459,7 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
             .run(input)
             .await
             .map_err(|err| {
-                error!("Error on register_operator_take_invoke: {}", err);
+                error!("Error on register_operator_take_invoke: {err}");
                 err
             })
     }
@@ -474,7 +474,7 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
             .run(input)
             .await
             .map_err(|err| {
-                error!("Error on trigger_operator_take_invoke: {}", err);
+                error!("Error on trigger_operator_take_invoke: {err}");
                 err
             })
     }

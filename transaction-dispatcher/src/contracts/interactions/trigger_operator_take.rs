@@ -22,11 +22,12 @@ impl<C: PegManagerContractApi> TriggerOperatorTakeInvoke<C> {
         &self,
         input: TriggerOperatorTakeInput,
     ) -> Result<TriggerOperatorTakeOutput, DomainErrors> {
-        info!("Init triggerOperatorTake for: {:?}", input);
+        info!("Init triggerOperatorTake for: {input:?}");
 
-        let pegout_txid = input.pegout_txid.parse::<FixedBytes<32>>().map_err(|e| {
-            DomainErrors::InvalidValue(format!("Failed to parse pegout_txid: {}", e))
-        })?;
+        let pegout_txid = input
+            .pegout_txid
+            .parse::<FixedBytes<32>>()
+            .map_err(|e| DomainErrors::InvalidValue(format!("Failed to parse pegout_txid: {e}")))?;
 
         let transaction_hash =
             self.contract.invoke_trigger_operator_take(pegout_txid, self.gas_bumps).await?;
