@@ -56,7 +56,7 @@ where
         // Check timeout
         let timeout_dur = timeout_5min();
         if start_time.elapsed() > timeout_dur {
-            throw_transport_error(
+            new_transport_error(
                 format!(
                     "Transaction timeout after {} seconds",
                     timeout_dur.as_secs()
@@ -94,16 +94,16 @@ where
 
             // if not retriable and not reverting, debug the trace and bail as this is unexpected
             check_receipt(provider, &receipt).await;
-            throw_transport_error(
+            new_transport_error(
                 "Transaction failed but is neither retriable (no OOG) nor reverting (passes gas estimation): unexpected state.",
             )?;
         }
     }
 
-    throw_transport_error(format!("Transaction failed after {max_attempts} attempts").as_str())
+    new_transport_error(format!("Transaction failed after {max_attempts} attempts").as_str())
 }
 
-fn throw_transport_error(msg: &str) -> alloy_contract::Result<TxHash> {
+fn new_transport_error(msg: &str) -> alloy_contract::Result<TxHash> {
     Err(alloy_contract::Error::TransportError(
         alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
             code: ETH_RPC_INTERNAL_ERROR,
