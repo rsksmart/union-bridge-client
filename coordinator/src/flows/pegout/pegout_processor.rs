@@ -13,7 +13,7 @@ use common::types::{BlockNumber, CommitteeId, Hash256, RskBlockAndUncles, TxIdPa
 use log::{debug, error, info, trace, warn};
 use sha2::{Digest, Sha256};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
-use union_contracts::bindings::peg_manager::PegManager::{PegoutRegistered, PegoutRequested};
+use union_contracts::bindings::pegout_manager::PegoutManager::{PegoutRegistered, PegoutRequested};
 use uuid::Uuid;
 
 use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};

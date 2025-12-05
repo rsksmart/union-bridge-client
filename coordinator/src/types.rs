@@ -1,11 +1,8 @@
-use std::collections::HashMap;
-use std::hash::Hash;
-
 use alloy_primitives::{B256, FixedBytes};
 #[cfg(test)]
 use alloy_sol_types::SolEvent;
 use alloy_sol_types::SolEventInterface;
-use anyhow::{Result, anyhow};
+use anyhow::anyhow;
 use bitcoin::PublicKey;
 use common::mocks::fake_contracts::FakePegManager::{
     AdvanceFunds, FakePegManagerEvents, RequestAdvanceFunds,
@@ -17,15 +14,17 @@ use common::types::{Address, BlockHash, BlockNumber, Hash256, RskLog, TxHash};
 use log::{info, trace, warn};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
-use union_contracts::bindings::bitcoin_manager::BitcoinManager::BitcoinManagerEvents;
+use std::collections::HashMap;
+use std::hash::Hash;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     AllCommunicationDataReady, CommitteeRegistryEvents, MemberInfoDeposited, NewCommittee,
     NewPendingCommittee,
 };
-use union_contracts::bindings::member_registry::MemberRegistry::MemberRegistryEvents;
-use union_contracts::bindings::peg_manager::PegManager::{
-    OperatorTakeTriggered, PegManagerEvents, PeginAccepted, PeginRequested, PegoutRegistered,
-    PegoutRequested,
+use union_contracts::bindings::pegin_manager::PeginManager::{
+    PeginAccepted, PeginManagerEvents, PeginRequested,
+};
+use union_contracts::bindings::pegout_manager::PegoutManager::{
+    PegoutManagerEvents, PegoutRegistered, PegoutRequested,
 };
 #[cfg(test)]
 use union_contracts::bindings::signature_manager::SignatureManager::{
@@ -34,9 +33,12 @@ use union_contracts::bindings::signature_manager::SignatureManager::{
 use union_contracts::bindings::signature_manager::SignatureManager::{
     AllOperatorTakeTxidsAdded, SignatureManagerEvents,
 };
-use union_contracts::bindings::stream_manager::StreamManager::StreamManagerEvents;
 
 use crate::user_requests::ApplyToStream;
+use anyhow::Result;
+use union_contracts::bindings::bitcoin_manager::BitcoinManager::BitcoinManagerEvents;
+use union_contracts::bindings::member_registry::MemberRegistry::MemberRegistryEvents;
+use union_contracts::bindings::stream_manager::StreamManager::StreamManagerEvents;
 
 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-183
 
@@ -48,7 +50,6 @@ pub enum RskPegManagerEvents {
     PeginAccepted(PeginAcceptedEvent),
     PegoutRegistered(PegoutRegisteredEvent),
     PegoutRequested(PegoutRequestedEvent),
-    OperatorTakeTriggered(OperatorTakeTriggeredEvent),
     RemoveRegisteredPeginRequest(PeginRequestedEvent),
     AllNoncesReady(AllNoncesReadyEvent),
     AllSignaturesReady(AllSignaturesReadyEvent),
@@ -76,7 +77,6 @@ pub type AllSignaturesReadyEvent = EventWithBlock<Hash256>;
 pub type AllOperatorTakeTxidsAddedEvent = EventWithBlock<AllOperatorTakeTxidsAdded>;
 pub type PegoutRequestedEvent = EventWithBlock<PegoutRequested>;
 pub type PegoutRegisteredEvent = EventWithBlock<PegoutRegistered>;
-pub type OperatorTakeTriggeredEvent = EventWithBlock<OperatorTakeTriggered>;
 pub type NewCommitteePendingEvent = EventWithBlock<NewPendingCommittee>;
 pub type NewCommitteeReadyEvent = EventWithBlock<NewCommittee>;
 pub type AllCommunicationDataReadyEvent = EventWithBlock<AllCommunicationDataReady>;
@@ -108,8 +108,12 @@ impl EventDecoder {
     /// - `RskPegManagerEvents::UnknownEvent` for events that match contract types but have no handler
     /// - Specific event variant for successfully decoded and handled events
     pub fn decode(log: &RskLog) -> RskPegManagerEvents {
-        let parsed_topics: Vec<B256> =
-            log.event().topics().iter().map(|topic| B256::from(*topic)).collect();
+        let parsed_topics: Vec<B256> = log
+            .event()
+            .topics()
+            .iter()
+            .map(|topic| B256::from(*topic))
+            .collect();
 
         // Early validation for malformed logs
         if parsed_topics.is_empty() {
@@ -126,7 +130,11 @@ impl EventDecoder {
             return event;
         }
 
-        if let Some(event) = Self::try_peg_manager_events(log) {
+        if let Some(event) = Self::try_pegin_manager_events(log) {
+            return event;
+        }
+
+        if let Some(event) = Self::try_pegout_manager_events(log) {
             return event;
         }
 
@@ -164,8 +172,12 @@ impl EventDecoder {
     fn extract_log_fields(
         log: &RskLog,
     ) -> (Vec<B256>, Vec<u8>, BlockNumber, BlockHash, bool, TxHash) {
-        let parsed_topics: Vec<B256> =
-            log.event().topics().iter().map(|topic| B256::from(*topic)).collect();
+        let parsed_topics: Vec<B256> = log
+            .event()
+            .topics()
+            .iter()
+            .map(|topic| B256::from(*topic))
+            .collect();
         let data = log.event().data().as_bytes().to_vec();
         let block_num = log.info().block_number();
         let block_hash = log.info().block_hash();
@@ -187,13 +199,26 @@ impl EventDecoder {
         None
     }
 
-    fn try_peg_manager_events(log: &RskLog) -> Option<RskPegManagerEvents> {
+    fn try_pegin_manager_events(log: &RskLog) -> Option<RskPegManagerEvents> {
         let (parsed_topics, data, block_num, block_hash, removed, tx_hash) =
             Self::extract_log_fields(log);
 
-        if let Ok(pm) = PegManagerEvents::decode_raw_log(&parsed_topics, &data) {
-            trace!("Decoded PegManagerEvents: {pm:?}");
-            return Some(Self::convert_peg_manager_event(
+        if let Ok(pm) = PeginManagerEvents::decode_raw_log(&parsed_topics, &data) {
+            trace!("Decoded PeginManagerEvents: {pm:?}");
+            return Some(Self::convert_pegin_manager_event(
+                pm, block_num, block_hash, removed, tx_hash,
+            ));
+        }
+        None
+    }
+
+    fn try_pegout_manager_events(log: &RskLog) -> Option<RskPegManagerEvents> {
+        let (parsed_topics, data, block_num, block_hash, removed, tx_hash) =
+            Self::extract_log_fields(log);
+
+        if let Ok(pm) = PegoutManagerEvents::decode_raw_log(&parsed_topics, &data) {
+            trace!("Decoded PegoutManagerEvents: {pm:?}");
+            return Some(Self::convert_pegout_manager_event(
                 pm, block_num, block_hash, removed, tx_hash,
             ));
         }
@@ -259,15 +284,15 @@ impl EventDecoder {
         None
     }
 
-    fn convert_peg_manager_event(
-        event: PegManagerEvents,
+    fn convert_pegin_manager_event(
+        event: PeginManagerEvents,
         block_num: BlockNumber,
         block_hash: BlockHash,
         removed: bool,
         tx_hash: TxHash,
     ) -> RskPegManagerEvents {
         match event {
-            PegManagerEvents::PeginRequested(inner) => {
+            PeginManagerEvents::PeginRequested(inner) => {
                 RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
                     inner,
                     block_number: block_num,
@@ -276,7 +301,7 @@ impl EventDecoder {
                     tx_hash,
                 })
             }
-            PegManagerEvents::PeginAccepted(inner) => {
+            PeginManagerEvents::PeginAccepted(inner) => {
                 RskPegManagerEvents::PeginAccepted(PeginAcceptedEvent {
                     inner,
                     block_number: block_num,
@@ -285,7 +310,22 @@ impl EventDecoder {
                     tx_hash,
                 })
             }
-            PegManagerEvents::PegoutRegistered(inner) => {
+            _ => {
+                info!("Ignored PeginManager event: {event:?}");
+                RskPegManagerEvents::IgnoredEvent
+            }
+        }
+    }
+
+    fn convert_pegout_manager_event(
+        event: PegoutManagerEvents,
+        block_num: BlockNumber,
+        block_hash: BlockHash,
+        removed: bool,
+        tx_hash: TxHash,
+    ) -> RskPegManagerEvents {
+        match event {
+            PegoutManagerEvents::PegoutRegistered(inner) => {
                 RskPegManagerEvents::PegoutRegistered(PegoutRegisteredEvent {
                     inner,
                     block_number: block_num,
@@ -294,7 +334,7 @@ impl EventDecoder {
                     tx_hash,
                 })
             }
-            PegManagerEvents::PegoutRequested(inner) => {
+            PegoutManagerEvents::PegoutRequested(inner) => {
                 RskPegManagerEvents::PegoutRequested(PegoutRequestedEvent {
                     inner,
                     block_number: block_num,
@@ -303,17 +343,8 @@ impl EventDecoder {
                     tx_hash,
                 })
             }
-            PegManagerEvents::OperatorTakeTriggered(inner) => {
-                RskPegManagerEvents::OperatorTakeTriggered(OperatorTakeTriggeredEvent {
-                    inner,
-                    block_number: block_num,
-                    block_hash,
-                    removed,
-                    tx_hash,
-                })
-            }
             _ => {
-                info!("Ignored PegManager event: {event:?}");
+                info!("Ignored PegoutManager event: {event:?}");
                 RskPegManagerEvents::IgnoredEvent
             }
         }
@@ -514,7 +545,9 @@ pub(crate) struct TickScheduler<K: Eq + Hash + Clone> {
 
 impl<K: Eq + Hash + Clone> TickScheduler<K> {
     pub fn new() -> Self {
-        Self { pending: HashMap::new() }
+        Self {
+            pending: HashMap::new(),
+        }
     }
 
     pub fn schedule(&mut self, id: K, delay_ticks: u32) {
@@ -543,60 +576,6 @@ impl<K: Eq + Hash + Clone> TickScheduler<K> {
             self.pending.remove(id);
         }
         ready
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.pending.is_empty()
-    }
-
-    pub fn clear(&mut self) {
-        self.pending.clear();
-    }
-}
-
-/// Time-based scheduler that uses block timestamps to track expiration times
-pub(crate) struct TimeBasedScheduler<K: Eq + Hash + Clone> {
-    pending: HashMap<K, u64>, // flow_id -> expiration_timestamp (in seconds)
-}
-
-impl<K: Eq + Hash + Clone> TimeBasedScheduler<K> {
-    pub fn new() -> Self {
-        Self { pending: HashMap::new() }
-    }
-
-    /// Schedule a timeout for the given id, expiring after the specified duration in seconds
-    /// from the current block timestamp
-    pub fn schedule(&mut self, id: K, current_timestamp: u64, timeout_seconds: u64) {
-        let expiration_timestamp = current_timestamp + timeout_seconds;
-        self.pending.insert(id, expiration_timestamp);
-    }
-
-    pub fn cancel(&mut self, id: &K) {
-        self.pending.remove(id);
-    }
-
-    pub fn is_scheduled(&self, id: &K) -> bool {
-        self.pending.contains_key(id)
-    }
-
-    /// Check for expired timeouts based on the current block timestamp
-    /// Returns a vector of expired ids
-    pub fn check_expired(&mut self, current_timestamp: u64) -> Vec<K> {
-        let mut expired: Vec<K> = Vec::new();
-        let mut to_remove: Vec<K> = Vec::new();
-
-        for (id, expiration_timestamp) in &self.pending {
-            if current_timestamp >= *expiration_timestamp {
-                expired.push(id.clone());
-                to_remove.push(id.clone());
-            }
-        }
-
-        for id in &to_remove {
-            self.pending.remove(id);
-        }
-
-        expired
     }
 
     pub fn is_empty(&self) -> bool {
@@ -645,6 +624,7 @@ pub struct MemberOfCommittee {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use alloy_primitives::{Address, B256, Bytes, FixedBytes, U256};
     use common::test_utils::rsk_log_generator::{FakeLogGenerator, event_signature_to_topic};
     use common::test_utils::rsk_utils::generate_fake_address;
@@ -653,12 +633,10 @@ mod tests {
     use union_contracts::bindings::committee_registry::CommitteeRegistry::{
         Committee, CommitteeMember,
     };
-    use union_contracts::bindings::peg_manager::PegManager::{
+    use union_contracts::bindings::pegin_manager::PeginManager::{
         PrevoutData, RequestPeginTempInfo, StreamPosition,
     };
     use uuid::Uuid;
-
-    use super::*;
 
     fn create_rsk_log_from_event<T: SolEvent>(
         event: &T,
@@ -667,7 +645,11 @@ mod tests {
         removed: bool,
     ) -> (Hash256, RskLog) {
         let data = DataBytes::new(event.encode_log_data().data.to_vec());
-        let topics = event.encode_topics().iter().map(|t| Hash256::from(B256::from(*t))).collect();
+        let topics = event
+            .encode_topics()
+            .iter()
+            .map(|t| Hash256::from(B256::from(*t)))
+            .collect();
 
         let log_event = LogEvent::new(data, topics);
         let tx_hash = TxHash::from(H256::random());
@@ -686,7 +668,9 @@ mod tests {
     #[test]
     fn test_exhaustive_decoder_with_committee_event() {
         // Create a committee event
-        let expected_event = AllCommunicationDataReady { _committeeId: 12345 };
+        let expected_event = AllCommunicationDataReady {
+            _committeeId: 12345,
+        };
 
         let (_, log) =
             create_rsk_log_from_event(&expected_event, H256::from_low_u64_be(123), 456, false);
@@ -770,8 +754,10 @@ mod tests {
 
     #[test]
     fn test_decode_unknown_event() {
-        let log = FakeLogGenerator::new()
-            .generate_log("Transfer(address,address,uint256)", generate_fake_address(1));
+        let log = FakeLogGenerator::new().generate_log(
+            "Transfer(address,address,uint256)",
+            generate_fake_address(1),
+        );
 
         let result = EventDecoder::decode(&log);
         assert_eq!(result, RskPegManagerEvents::UnknownEvent);
@@ -781,7 +767,9 @@ mod tests {
     fn test_decode_invalid_data() {
         let log_event: LogEvent = LogEvent::new(
             DataBytes::new("fake".as_bytes().to_vec()),
-            vec![event_signature_to_topic("Transfer(address,address,uint256)")],
+            vec![event_signature_to_topic(
+                "Transfer(address,address,uint256)",
+            )],
         );
 
         let log_info = LogInfo::new(
@@ -1035,8 +1023,11 @@ mod tests {
         };
 
         let data = DataBytes::new(expected_event.encode_log_data().data.to_vec());
-        let topics =
-            expected_event.encode_topics().iter().map(|t| Hash256::from(B256::from(*t))).collect();
+        let topics = expected_event
+            .encode_topics()
+            .iter()
+            .map(|t| Hash256::from(B256::from(*t)))
+            .collect();
 
         let log_event = LogEvent::new(data, topics);
         let expected_tx_hash = TxHash::from(H256::random());
@@ -1173,7 +1164,10 @@ mod tests {
             fundingUTXOs: vec![],
         };
 
-        let expected_event = NewPendingCommittee { committeeId: 42, _committee: committee };
+        let expected_event = NewPendingCommittee {
+            committeeId: 42,
+            _committee: committee,
+        };
 
         let removed = false;
         let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(
@@ -1231,7 +1225,10 @@ mod tests {
             fundingUTXOs: vec![],
         };
 
-        let expected_event = NewCommittee { committeeId: 99, _committee: committee };
+        let expected_event = NewCommittee {
+            committeeId: 99,
+            _committee: committee,
+        };
 
         let removed = true;
         let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(
@@ -1260,7 +1257,9 @@ mod tests {
         let expected_block_num = 777;
         let expected_committee_id = 12345;
 
-        let expected_event = AllCommunicationDataReady { _committeeId: expected_committee_id };
+        let expected_event = AllCommunicationDataReady {
+            _committeeId: expected_committee_id,
+        };
 
         let removed = false;
         let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(

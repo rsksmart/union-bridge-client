@@ -18,7 +18,7 @@ use transaction_dispatcher::types::{
     GetCommitteeInput, GetCommitteeOutput, GetCommunicationDataInput, GetMemberPublicKeysInput,
     P2PAddressParser, RequestPeginInput,
 };
-use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
+use union_contracts::bindings::pegin_manager::PeginManager::{PeginAccepted, PeginRequested};
 use uuid::Uuid;
 
 use crate::flows::common::{COMM_KEY_INDEX, build_communication_data};

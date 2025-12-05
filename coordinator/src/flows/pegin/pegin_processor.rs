@@ -13,7 +13,7 @@ use common::runtime_sync::RuntimeSync;
 use common::types::{BlockNumber, CommitteeId, Hash256, RskBlockAndUncles, TxIdParser};
 use log::{debug, error, info, trace, warn};
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
-use union_contracts::bindings::peg_manager::PegManager::PeginRequested;
+use union_contracts::bindings::pegin_manager::PeginManager::PeginRequested;
 use uuid::Uuid;
 
 use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
