@@ -9,7 +9,7 @@ HELP=0
 
 # This is a dummy variable that is used to override the default value of ENV_NAME
 # We don't care about this because it is then overridden by the .env.local/alphanet
-# file when building the docker-image for docker-integrated
+# file when building the docker-image for operator
 export ENV_NAME="dummy-env-name"
 
 show_help() {

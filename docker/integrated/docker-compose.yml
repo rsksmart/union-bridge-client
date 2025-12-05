@@ -21,28 +21,28 @@ services:
   # ================================
   block-indexer:
     extends:
-      file: ../docker/docker-compose.yml
+      file: ../client/docker-compose.yml
       service: block-indexer
     networks:
       - union-network
 
   log-indexer:
     extends:
-      file: ../docker/docker-compose.yml
+      file: ../client/docker-compose.yml
       service: log-indexer
     networks:
       - union-network
 
   user-api:
     extends:
-      file: ../docker/docker-compose.yml
+      file: ../client/docker-compose.yml
       service: user-api
     networks:
       - union-network
 
   coordinator:
     extends:
-      file: ../docker/docker-compose.yml
+      file: ../client/docker-compose.yml
       service: coordinator
     extra_hosts:
       - "host.docker.internal:host-gateway"

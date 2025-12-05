@@ -107,7 +107,7 @@ Before running the Union Bridge Client, you need to install and set up the follo
 
 #### Optional Tools
 
-- **Docker** - For containerized deployment (see [docker/README.md](docker/README.md))
+- **Docker** - For containerized deployment (see [docker/client/README.md](docker/client/README.md))
 - **act** - For running GitHub Actions locally
   ```bash
   brew install act
@@ -360,7 +360,7 @@ The test includes background block mining and comprehensive health checks to det
 
 ### With Docker
 
-Use the `docker-compose` file to run the Union Client. Check the [docker/README.md](docker/README.md) for more
+Use the `docker-compose` file to run the Union Client. Check the [docker/client/README.md](docker/client/README.md) for more
 information on how to build and run the client using Docker.
 
 ### Development/Testing Setup
