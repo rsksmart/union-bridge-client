@@ -5,9 +5,6 @@ use anyhow::Result as AnyhowResult;
 use common::types::{BlockHash, TxHash};
 use log::info;
 
-// re-export for convenience
-use actors_mocking::fake_contracts::FakePegManager;
-use actors_mocking::fake_contracts::FakePegManager::FakePegManagerInstance;
 #[cfg(test)]
 use mockall::automock;
 
@@ -183,40 +180,42 @@ impl<P: Provider> PowpegBridgeContractApi for PowpegBridgeContract<P> {
     }
 }
 
-// needed so we can create a PegManagerContractApi trait for tests mocking
-#[derive(Clone)]
-pub struct FakePowpegBridgeContract<P: Provider> {
-    contract_instance: FakePegManagerInstance<P>,
-}
-
-impl<P: Provider> FakePowpegBridgeContract<P> {
-    pub fn new(provider: P, contract_address: Address) -> Self {
-        info!(
-            "Connecting to FakePegManagerContract @ {}",
-            contract_address
-        );
-        let contract_instance = FakePegManager::new(contract_address, provider);
-        FakePowpegBridgeContract { contract_instance }
-    }
-}
-
-impl<P: Provider> PowpegBridgeContractApi for FakePowpegBridgeContract<P> {
-    async fn call_get_btc_transaction_confirmations(
-        &self,
-        _tx_hash: TxHash,
-        _block_hash: BlockHash,
-        _merkle_branch_path: String,
-        _merkle_branch_hashes: Vec<String>,
-    ) -> alloy_contract::Result<u32> {
-        todo!("Not implemented yet")
-    }
-}
+// // needed so we can create a PegManagerContractApi trait for tests mocking
+// #[derive(Clone)]
+// pub struct FakePowpegBridgeContract<P: Provider> {
+//     contract_instance: FakePowpegBridgeContract<P>,
+// }
+//
+// impl<P: Provider> FakePowpegBridgeContract<P> {
+//     pub fn new(provider: P, contract_address: Address) -> Self {
+//         info!(
+//             "Connecting to FakePegManagerContract @ {}",
+//             contract_address
+//         );
+//         // let contract_instance = FakePegManager::new(contract_address, provider);
+//         let contract_instance = FakePowpegBridgeContract::new(contract_address, provider);
+//         FakePowpegBridgeContract { contract_instance }
+//     }
+// }
+//
+// impl<P: Provider> PowpegBridgeContractApi for FakePowpegBridgeContract<P> {
+//     async fn call_get_btc_transaction_confirmations(
+//         &self,
+//         _tx_hash: TxHash,
+//         _block_hash: BlockHash,
+//         _merkle_branch_path: String,
+//         _merkle_branch_hashes: Vec<String>,
+//     ) -> alloy_contract::Result<u32> {
+//         todo!("Not implemented yet")
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use alloy_primitives::{Address, FixedBytes, I256, U256};
     use common::types::{BlockHash, TxHash};
+    use log::{error, warn};
     use std::str::FromStr;
 
     /// Test the encoding of call data for getBtcTransactionConfirmations
@@ -459,14 +458,14 @@ mod tests {
 
         match result {
             Ok(confirmations) => {
-                println!(
-                    "⚠️  Warning: Got confirmations with non-existent data: {}",
+                warn!(
+                    "Got confirmations with non-existent data: {}",
                     confirmations
                 );
                 // Don't fail - the important part is that we can call the contract
             }
             Err(e) => {
-                println!("✅ Expected error with non-existent block: {:?}", e);
+                error!("Expected error with non-existent block: {:?}", e);
                 let error_msg = format!("{:?}", e);
 
                 // Verify we got a proper Native Bridge error

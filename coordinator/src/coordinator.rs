@@ -1,10 +1,7 @@
 use crate::flows::committee::setup_committee_flow::{
     SetupCommitteeFlowFactory, SetupCommitteeProcessor,
 };
-use crate::{
-    event_processor::{EventProcessor, NativeBridgeVerifier, PeginProcessor},
-    monitor::MonitorApi,
-};
+use crate::{event_processor::EventProcessor, monitor::MonitorApi};
 use anyhow::{Context, Result};
 use bitcoin::Network;
 use common::{
@@ -84,6 +81,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
 
         let native_bridge_verifier = match env_name {
             Some(s) if s.as_str() == "alphanet" => {
+                // todo(fede) validate this log level
                 log::info!("Environment: alphanet → Using Real Native Bridge Verifier");
                 NativeBridgeVerifier::Real {
                     contracts: contracts_arc.clone(),
@@ -91,6 +89,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                 }
             }
             _ => {
+                // todo(fede) validate this log level
                 log::info!(
                     "Environment: {} → Using Dummy Native Bridge Verifier (BitVMX confirmations only)",
                     env_name.as_deref().unwrap_or("NONE")
