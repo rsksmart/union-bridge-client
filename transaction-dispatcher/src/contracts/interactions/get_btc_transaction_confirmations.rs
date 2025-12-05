@@ -29,8 +29,7 @@ impl<C: PowpegBridgeContractApi> GetBtcTransactionConfirmationsCall<C> {
             .await
             .map_err(|e| {
                 DomainErrors::UnhandledContractError(format!(
-                    "Failed to get bitcoin confirmations: {}",
-                    e
+                    "Failed to get bitcoin confirmations: {e}"
                 ))
             })?;
 

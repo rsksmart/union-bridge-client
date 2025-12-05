@@ -350,7 +350,7 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
             .run(input)
             .await
             .map_err(|err| {
-                error!("Error on get_bitcoin_confirmations_call: {}", err);
+                error!("Error on get_bitcoin_confirmations_call: {err}");
                 err
             })
     }

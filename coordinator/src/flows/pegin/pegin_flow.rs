@@ -287,17 +287,17 @@ where
             }
             Steps::AcceptPegin => {
                 info!("Accepting pegin for flow_id: {}", self.state.flow_id);
-                let spv_proof = self
-                    .state
-                    .ctx
-                    .accept_pegin_spv_proof
-                    .clone()
-                    .ok_or_else(|| {
-                        anyhow!(
-                            "SPV proof not available for pegin acceptance - flow_id {}",
-                            self.state.flow_id
-                        )
-                    })?;
+                let spv_proof =
+                    self.state
+                        .ctx
+                        .accept_pegin_spv_proof
+                        .as_ref()
+                        .ok_or_else(|| {
+                            anyhow!(
+                                "SPV proof not available for pegin acceptance - flow_id {}",
+                                self.state.flow_id
+                            )
+                        })?;
                 self.accept_pegin(spv_proof)?;
             }
             Steps::Done => {
@@ -518,7 +518,7 @@ where
         Ok(())
     }
 
-    fn accept_pegin(&self, spv_proof: BtcTxSPVProof) -> Result<()> {
+    fn accept_pegin(&self, spv_proof: &BtcTxSPVProof) -> Result<()> {
         debug!("Accepting pegin with SPV proof: {spv_proof:?}");
 
         let input: RequestPeginInput = spv_proof.clone().into();
@@ -526,7 +526,7 @@ where
         invoke_contract_safe(
             &self.rt_sync,
             "acceptPegin",
-            &spv_proof,
+            spv_proof,
             &self.native_bridge_verifier,
             || async { self.contracts.accept_pegin(input).await },
         )

@@ -7,11 +7,11 @@ where
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = Result<T, DomainErrors>>,
 {
-    debug!("Submitting contract transaction: method={}", method_name);
+    debug!("Submitting contract transaction: method={method_name}");
 
     match rt_sync.run(invoke()) {
         Ok(value) => {
-            debug!("Contract method executed: method={}", method_name);
+            debug!("Contract method executed: method={method_name}");
             Ok(value)
         }
         Err(domain_err) => Err(domain_err),
@@ -78,10 +78,9 @@ where
         match spv_proof.block_hash.parse::<primitive_types::H256>() {
             Ok(h) => h.into(),
             Err(e) => {
-                warn!("Failed to parse block hash: {}", e);
+                warn!("Failed to parse block hash: {e}");
                 return Err(DomainErrors::InvalidBtcTxSpvProof(format!(
-                    "Invalid block hash: {}",
-                    e
+                    "Invalid block hash: {e}"
                 )));
             }
         };
@@ -94,7 +93,7 @@ where
     let merkle_branch_hashes: Vec<String> = spv_proof
         .merkle_branch_hashes
         .iter()
-        .map(|hash| hex::encode(hash))
+        .map(hex::encode)
         .collect();
 
     let input = GetBtcTransactionConfirmationsInput {
@@ -112,14 +111,12 @@ where
             let confirmations = output.confirmations;
             if confirmations >= required_confirmations {
                 debug!(
-                    "Native Bridge verification passed: {}/{} confirmations",
-                    confirmations, required_confirmations
+                    "Native Bridge verification passed: {confirmations}/{required_confirmations} confirmations"
                 );
                 Ok(VerificationStatus::Verified)
             } else {
                 info!(
-                    "Native Bridge has insufficient confirmations: {}/{}, will retry later",
-                    confirmations, required_confirmations
+                    "Native Bridge has insufficient confirmations: {confirmations}/{required_confirmations}, will retry later"
                 );
                 // Insufficient confirmations is NOT an error, it's an expected state
                 Ok(VerificationStatus::InsufficientConfirmations {
@@ -129,7 +126,7 @@ where
             }
         }
         Err(e) => {
-            warn!("Native Bridge query failed: {}", e);
+            warn!("Native Bridge query failed: {e}");
             Err(e)
         }
     }
@@ -149,21 +146,16 @@ where
     Fut: std::future::Future<Output = Result<T, DomainErrors>>,
     CG: RskContractsGatewayApi,
 {
-    debug!(
-        "Verifying Native Bridge confirmations before invoking: method={}",
-        method_name
-    );
+    debug!("Verifying Native Bridge confirmations before invoking: method={method_name}");
 
     match native_bridge_verifier.verify_confirmations(spv_proof, MIN_TX_CONFIRMATIONS)? {
         VerificationStatus::Verified => invoke_contract(rt_sync, method_name, invoke),
         VerificationStatus::InsufficientConfirmations { required, actual } => {
             debug!(
-                "Insufficient Native Bridge confirmations for {}: {}/{} - needs retry",
-                method_name, actual, required
+                "Insufficient Native Bridge confirmations for {method_name}: {actual}/{required} - needs retry"
             );
             Err(DomainErrors::MissingConfirmationsOnNativeBridge(format!(
-                "{}/{} confirmations",
-                actual, required
+                "{actual}/{required} confirmations"
             )))
         }
     }

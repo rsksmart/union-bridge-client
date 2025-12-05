@@ -3,7 +3,7 @@ use alloy_provider::Provider;
 use alloy_transport::TransportError;
 use anyhow::Result as AnyhowResult;
 use common::types::{BlockHash, TxHash};
-use log::info;
+use log::{debug, info, warn};
 
 #[cfg(test)]
 use mockall::automock;
@@ -34,10 +34,7 @@ pub struct PowpegBridgeContract<P: Provider> {
 
 impl<P: Provider> PowpegBridgeContract<P> {
     pub fn new(provider: P, contract_address: Address) -> Self {
-        info!(
-            "Connecting to Native Bridge precompiled contract @ {}",
-            contract_address
-        );
+        info!("Connecting to Native Bridge precompiled contract @ {contract_address}");
         PowpegBridgeContract {
             provider,
             contract_address,
@@ -61,21 +58,19 @@ impl<P: Provider> PowpegBridgeContractApi for PowpegBridgeContract<P> {
             .into_iter()
             .map(|hash| {
                 hash.parse::<FixedBytes<32>>()
-                    .map_err(|e| anyhow::anyhow!("Invalid merkle branch hash: {}", e))
+                    .map_err(|e| anyhow::anyhow!("Invalid merkle branch hash: {e}"))
             })
             .collect();
         let merkle_branch_hashes_fb = merkle_branch_hashes_fb.map_err(|e| {
             alloy_contract::Error::TransportError(TransportError::local_usage_str(&format!(
-                "Invalid merkle branch hash: {}",
-                e
+                "Invalid merkle branch hash: {e}"
             )))
         })?;
 
         // Parse merkle branch path as U256 (uint256 according to RSKIP122)
         let merkle_branch_path_parsed: U256 = merkle_branch_path.parse().map_err(|e| {
             alloy_contract::Error::TransportError(TransportError::local_usage_str(&format!(
-                "Invalid merkle branch path: {}",
-                e
+                "Invalid merkle branch path: {e}"
             )))
         })?;
 
@@ -156,21 +151,20 @@ impl<P: Provider> PowpegBridgeContractApi for PowpegBridgeContract<P> {
             let error_code = i32::try_from(confirmations_i256).unwrap_or(i32::MIN); // Fallback if conversion fails
             return Err(alloy_contract::Error::TransportError(
                 TransportError::local_usage_str(&format!(
-                    "Native Bridge returned error code: {} (see RSKIP122 for error meanings)",
-                    error_code
+                    "Native Bridge returned error code: {error_code} (see RSKIP122 for error meanings)"
                 )),
             ));
         }
 
         // Convert positive I256 to u32
         // First convert to U256 (absolute value), then to u32
-        let confirmations_u256 = U256::try_from(confirmations_i256).map_err(|_| {
+        let confirmations_value = U256::try_from(confirmations_i256).map_err(|_| {
             alloy_contract::Error::TransportError(TransportError::local_usage_str(
                 "Failed to convert I256 to U256",
             ))
         })?;
 
-        let confirmations = u32::try_from(confirmations_u256).map_err(|_| {
+        let confirmations = u32::try_from(confirmations_value).map_err(|_| {
             alloy_contract::Error::TransportError(TransportError::local_usage_str(
                 "Confirmations value exceeds u32 maximum",
             ))
@@ -355,7 +349,7 @@ mod tests {
         // Hardcoded RPC URL for Rootstock testnet
         let rpc_url = "https://public-node.testnet.rsk.co";
 
-        println!("Connecting to RSK node at: {}", rpc_url);
+        info!("Connecting to RSK node at: {rpc_url}");
 
         // Create provider
         let provider = ProviderBuilder::new().on_http(rpc_url.parse().expect("Invalid RPC URL"));
@@ -375,10 +369,7 @@ mod tests {
         let merkle_branch_path = "0".to_string();
         let merkle_branch_hashes = vec![];
 
-        println!(
-            "Calling Native Bridge with tx_hash={:?}, block_hash={:?}",
-            tx_hash, block_hash
-        );
+        debug!("Calling Native Bridge with tx_hash={tx_hash:?}, block_hash={block_hash:?}");
 
         // Call the contract
         let result = contract
@@ -393,25 +384,21 @@ mod tests {
         match result {
             Ok(confirmations) => {
                 // Unexpected success with dummy data - should not happen
-                println!(
-                    "⚠️  Warning: Got confirmations with dummy data: {}",
-                    confirmations
-                );
+                warn!("Got confirmations with dummy data: {confirmations}");
                 // But don't fail the test - the important part is that we can call the contract
             }
             Err(e) => {
-                println!("✅ Expected error with dummy data: {:?}", e);
+                debug!("Expected error with dummy data: {e:?}");
                 // With dummy data, we expect an error
                 // The important part is that we were able to call the contract
                 // and get a proper response (even if it's an error)
-                let error_msg = format!("{:?}", e);
+                let error_msg = format!("{e:?}");
 
                 // Verify we got a proper Native Bridge error (not a transport/network error)
                 assert!(
                     error_msg.contains("Native Bridge returned error code")
                         || error_msg.contains("local usage"),
-                    "Expected Native Bridge error, got: {}",
-                    error_msg
+                    "Expected Native Bridge error, got: {error_msg}"
                 );
             }
         }
@@ -426,7 +413,7 @@ mod tests {
         // Hardcoded RPC URL for Rootstock testnet
         let rpc_url = "https://public-node.testnet.rsk.co";
 
-        println!("Testing Native Bridge with non-existent block");
+        info!("Testing Native Bridge with non-existent block");
 
         // Create provider
         let provider = ProviderBuilder::new().on_http(rpc_url.parse().expect("Invalid RPC URL"));
@@ -441,9 +428,8 @@ mod tests {
         let merkle_branch_path = "999".to_string();
         let merkle_branch_hashes = vec![];
 
-        println!(
-            "Calling Native Bridge with non-existent block: tx_hash={:?}, block_hash={:?}",
-            tx_hash, block_hash
+        debug!(
+            "Calling Native Bridge with non-existent block: tx_hash={tx_hash:?}, block_hash={block_hash:?}"
         );
 
         // Call the contract
@@ -458,15 +444,12 @@ mod tests {
 
         match result {
             Ok(confirmations) => {
-                warn!(
-                    "Got confirmations with non-existent data: {}",
-                    confirmations
-                );
+                warn!("Got confirmations with non-existent data: {confirmations}");
                 // Don't fail - the important part is that we can call the contract
             }
             Err(e) => {
-                error!("Expected error with non-existent block: {:?}", e);
-                let error_msg = format!("{:?}", e);
+                error!("Expected error with non-existent block: {e:?}");
+                let error_msg = format!("{e:?}");
 
                 // Verify we got a proper Native Bridge error
                 // Could be -1 (TX_DOES_NOT_EXIST) or -2 (BLOCK_DOES_NOT_EXIST)
@@ -475,8 +458,7 @@ mod tests {
                     error_msg.contains("Native Bridge returned error code")
                         || error_msg.contains("local usage")
                         || error_msg.contains("Invalid response length"),
-                    "Expected Native Bridge error, got: {}",
-                    error_msg
+                    "Expected Native Bridge error, got: {error_msg}"
                 );
             }
         }
@@ -497,7 +479,10 @@ mod tests {
             let block_hash = BlockHash::from(FixedBytes::from([2u8; 32]));
             let merkle_branch_path = "123".to_string();
             let merkle_branch_hashes: Vec<String> = (0..num_hashes)
-                .map(|i| format!("0x{}", hex::encode([i as u8; 32])))
+                .map(|i| {
+                    let hash_index = u8::try_from(i).expect("hash index fits in u8");
+                    format!("0x{}", hex::encode([hash_index; 32]))
+                })
                 .collect();
 
             let tx_hash_fb: FixedBytes<32> = tx_hash.into();
@@ -539,8 +524,7 @@ mod tests {
             assert_eq!(
                 encoded.len(),
                 expected_size,
-                "Failed for case: {}",
-                description
+                "Failed for case: {description}"
             );
         }
     }

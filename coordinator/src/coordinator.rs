@@ -46,10 +46,10 @@ pub struct Coordinator<M: MonitorApi, BC: BitVmxBrokerClientApi, S: CoordinatorS
 impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi + 'static>
     Coordinator<M, BC, S>
 {
-    // todo(fede) new methods should be transaparent and any other extra logic should be in a
-    // separate build/factory method
     /// # Panics
     /// Panics if loading context from the database fails.
+    // todo(fede) identify if we can refactor/solve the too many argunets issue
+    #[allow(clippy::too_many_arguments)]
     pub fn new<CG: RskContractsGatewayApi + 'static>(
         rt_sync: &RuntimeSync,
         monitor: M,
