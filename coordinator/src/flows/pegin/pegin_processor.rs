@@ -12,6 +12,7 @@ use crate::{
         },
         common::GlobalContext,
         pegin::{
+            native_bridge::{NativeBridgeVerifier, invoke_contract_safe},
             pegin_flow::{PeginFlow, State, StepData, Steps},
             utils::get_temp_pegin_pid,
         },
@@ -74,6 +75,7 @@ where
     unconfirmed_pegin_requests: HashMap<String, (BtcTxSPVProof, i16)>,
     pegin_retry_scheduler: TickScheduler<String>,
     store: Rc<S>,
+    native_bridge_verifier: NativeBridgeVerifier<CG>,
 }
 
 impl<CG, BC, S>
@@ -95,6 +97,7 @@ where
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
         store: Rc<S>,
+        native_bridge_verifier: NativeBridgeVerifier<CG>,
     ) -> Self {
         let factory =
             BtcSignatureSubFlowFactory::new(Rc::clone(&contracts_gateway), rt_sync.clone());
@@ -116,6 +119,7 @@ where
             events_confirming: HashMap::new(),
             signature_flows: HashMap::new(),
             tx_status_scheduler: TickScheduler::new(),
+            native_bridge_verifier,
             pegin_request_tracker: HashSet::new(),
             unconfirmed_pegin_requests: HashMap::new(),
             pegin_retry_scheduler: TickScheduler::new(),
@@ -142,6 +146,16 @@ where
                 Rc::clone(&self.bitvmx_broker),
                 saved_state.clone(),
                 Rc::clone(&self.store),
+                // Clone the verifier - it's an enum so we need to match
+                match &self.native_bridge_verifier {
+                    NativeBridgeVerifier::Real { contracts, rt_sync } => {
+                        NativeBridgeVerifier::Real {
+                            contracts: Rc::clone(contracts),
+                            rt_sync: rt_sync.clone(),
+                        }
+                    }
+                    NativeBridgeVerifier::Dummy => NativeBridgeVerifier::Dummy,
+                },
             );
             info!("Restored pegin flow {id} at step {:?}", flow.current_step());
             debug!("Restored flow {id} context: {:?}", flow.get_state());
@@ -498,12 +512,16 @@ where
             {
                 let tx_id = spv_proof.tx.compute_txid();
 
-                // Call requestPegin contract again
+                // Call requestPegin contract again with Native Bridge verification
                 let input: transaction_dispatcher::types::RequestPeginInput =
                     spv_proof.clone().into();
-                let res = self
-                    .rt_sync
-                    .run(async { self.contracts_gateway.request_pegin(input).await });
+                let res = invoke_contract_safe(
+                    &self.rt_sync,
+                    "requestPegin",
+                    &spv_proof,
+                    &self.native_bridge_verifier,
+                    || async { self.contracts_gateway.request_pegin(input).await },
+                );
 
                 match res {
                     Ok(_) => {
@@ -599,6 +617,14 @@ where
             Rc::clone(&self.bitvmx_broker),
             tx_id,
             Rc::clone(&self.store),
+            // Clone the verifier - it's an enum so we need to match
+            match &self.native_bridge_verifier {
+                NativeBridgeVerifier::Real { contracts, rt_sync } => NativeBridgeVerifier::Real {
+                    contracts: Rc::clone(contracts),
+                    rt_sync: rt_sync.clone(),
+                },
+                NativeBridgeVerifier::Dummy => NativeBridgeVerifier::Dummy,
+            },
         );
 
         info!("Created new pegin flow {temp_flow_id} from Bitcoin transaction: {tx_id}");
@@ -623,11 +649,15 @@ where
 
         info!("Handling request pegin SPV proof: tx_id={tx_id}");
 
-        // Call requestPegin contract
+        // Call requestPegin contract with Native Bridge verification
         let input: transaction_dispatcher::types::RequestPeginInput = spv_proof.clone().into();
-        let res = self
-            .rt_sync
-            .run(async { self.contracts_gateway.request_pegin(input).await });
+        let res = invoke_contract_safe(
+            &self.rt_sync,
+            "requestPegin",
+            &spv_proof,
+            &self.native_bridge_verifier,
+            || async { self.contracts_gateway.request_pegin(input).await },
+        );
 
         match res {
             Ok(_) => {

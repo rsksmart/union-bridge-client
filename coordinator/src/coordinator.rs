@@ -24,6 +24,7 @@ use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use crate::flows::advance_funds::advance_funds_processor::AdvanceFundsProcessor;
 use crate::flows::common::GlobalContext;
 use crate::flows::fund_bitvmx_flow::FundBitvmxProcessor;
+use crate::flows::pegin::native_bridge::NativeBridgeVerifier;
 use crate::flows::pegin::pegin_processor::PeginFlowProcessor;
 use crate::flows::pegout::pegout_processor::PegoutFlowProcessor;
 use crate::store::CoordinatorStoreApi;
@@ -112,6 +113,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                     rt_sync.clone(),
                     bitvmx_broker.clone(),
                     global_context.clone(),
+                    Rc::clone(&store_rc),
                     native_bridge_verifier,
                 )),
                 Box::new(
