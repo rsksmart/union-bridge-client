@@ -255,7 +255,7 @@ mod tests {
         assert_eq!(100, config.indexer.sync.batch_size);
         assert_eq!("ws://127.0.0.1:8545", config.provider.rootstock.url);
         assert_eq!("regtest", config.bitcoin_network);
-        assert_eq!(9, config.contracts.len());
+        assert_eq!(10, config.contracts.len());
         let contract_names: Vec<&String> = config.contracts.iter().map(|c| &c.name).collect();
         let expected_names = vec![
             "TestContractDyn",
@@ -267,6 +267,7 @@ mod tests {
             "CommitteeRegistry",
             "MemberRegistry",
             "StreamManager",
+            "BridgeMock",
         ];
         assert_eq!(expected_names, contract_names);
         assert_eq!(
@@ -278,11 +279,11 @@ mod tests {
             config.contracts[1].address
         );
         assert_eq!(
-            "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+            "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
             config.contracts[2].address
         );
         assert_eq!(
-            "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+            "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
             config.contracts[3].address
         );
         assert_eq!(
@@ -290,7 +291,7 @@ mod tests {
             config.contracts[4].address
         );
         assert_eq!(
-            "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+            "0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1",
             config.contracts[5].address
         );
         assert_eq!(
@@ -302,8 +303,12 @@ mod tests {
             config.contracts[7].address
         );
         assert_eq!(
-            "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+            "0x9A676e781A523b5d0C0e43731313A708CB607508",
             config.contracts[8].address
+        );
+        assert_eq!(
+            "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+            config.contracts[9].address
         );
     }
 
@@ -326,7 +331,7 @@ mod tests {
             config.provider.rootstock.url
         );
         assert_eq!("regtest", config.bitcoin_network);
-        assert_eq!(9, config.contracts.len());
+        assert_eq!(10, config.contracts.len());
     }
 
     #[test]
