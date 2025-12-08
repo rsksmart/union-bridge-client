@@ -2,7 +2,7 @@ use crate::contracts::pegout_manager::PegoutManagerContractApi;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{RegisterPegoutInput, RegisterPegoutOutput};
 use anyhow::Result;
-use log::{error, info};
+use log::info;
 use union_contracts::bindings::pegout_manager::PegoutManager::BtcTxSPVProof;
 
 #[derive(Clone)]
@@ -29,12 +29,11 @@ impl<C: PegoutManagerContractApi> RegisterPegoutInvoke<C> {
             DomainErrors::InvalidBtcTxSpvProof(format!("Failed to parse RegisterPegoutInput: {e}"))
         })?;
 
-        let receipt = self
+        let tx_hash = self
             .contract
             .invoke_register_user_take(parsed_input, self.gas_bumps)
             .await?;
 
-        let tx_hash = receipt.transaction_hash();
         info!("invoke_register_pegout successful at tx {tx_hash}");
         Ok(RegisterPegoutOutput {
             transaction_hash: tx_hash.to_string(),

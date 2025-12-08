@@ -48,4 +48,3 @@ impl<P: Provider> PegManagerContractApi for FakePegManagerContract<P> {
         .await
     }
 }
-

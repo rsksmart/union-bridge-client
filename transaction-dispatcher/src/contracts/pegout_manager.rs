@@ -2,9 +2,8 @@ use crate::contracts::bitcoin_manager::ParseFieldError;
 use crate::contracts::common::send_tx_with_gas_bump;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::BtcTxSPVProofInput;
-use alloy_primitives::{Address, Bytes, FixedBytes, U256, hex::FromHex};
+use alloy_primitives::{Address, Bytes, FixedBytes, TxHash, U256, hex::FromHex};
 use alloy_provider::Provider;
-use alloy_rpc_types::TransactionReceipt;
 use log::{error, info};
 use union_contracts::bindings::pegout_manager::PegoutManager::{
     self, BtcTransaction, BtcTxIn, BtcTxOut, BtcTxSPVProof, PegoutManagerErrors,
@@ -21,13 +20,13 @@ pub trait PegoutManagerContractApi {
         msg_value: u64,
         usr_pub_key: FixedBytes<33>,
         gas_bumps: u8,
-    ) -> alloy_contract::Result<TransactionReceipt>;
+    ) -> alloy_contract::Result<TxHash>;
 
     async fn invoke_register_user_take(
         &self,
         input: BtcTxSPVProof,
         gas_bumps: u8,
-    ) -> alloy_contract::Result<TransactionReceipt>;
+    ) -> alloy_contract::Result<TxHash>;
 }
 
 #[derive(Clone)]
@@ -49,7 +48,7 @@ impl<P: Provider> PegoutManagerContractApi for PegoutManagerContract<P> {
         msg_value: u64,
         usr_pub_key: FixedBytes<33>,
         gas_bumps: u8,
-    ) -> alloy_contract::Result<TransactionReceipt> {
+    ) -> alloy_contract::Result<TxHash> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
             || {
@@ -66,7 +65,7 @@ impl<P: Provider> PegoutManagerContractApi for PegoutManagerContract<P> {
         &self,
         input: BtcTxSPVProof,
         gas_bumps: u8,
-    ) -> alloy_contract::Result<TransactionReceipt> {
+    ) -> alloy_contract::Result<TxHash> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
             || self.contract_instance.registerUserTake(input.clone()),

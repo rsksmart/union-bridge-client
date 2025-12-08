@@ -2,9 +2,8 @@ use crate::contracts::bitcoin_manager::ParseFieldError;
 use crate::contracts::common::send_tx_with_gas_bump;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::BtcTxSPVProofInput;
-use alloy_primitives::{Address, FixedBytes, hex::FromHex};
+use alloy_primitives::{Address, FixedBytes, TxHash, hex::FromHex};
 use alloy_provider::Provider;
-use alloy_rpc_types::TransactionReceipt;
 use anyhow::Result;
 use log::{error, info};
 use union_contracts::bindings::pegin_manager::PeginManager::{
@@ -27,13 +26,13 @@ pub trait PeginManagerContractApi {
         &self,
         input: BtcTxSPVProof,
         gas_bumps: u8,
-    ) -> alloy_contract::Result<TransactionReceipt>;
+    ) -> alloy_contract::Result<TxHash>;
 
     async fn invoke_accept_pegin(
         &self,
         input: BtcTxSPVProof,
         gas_bumps: u8,
-    ) -> alloy_contract::Result<TransactionReceipt>;
+    ) -> alloy_contract::Result<TxHash>;
 }
 
 #[derive(Clone)]
@@ -67,7 +66,7 @@ impl<P: Provider> PeginManagerContractApi for PeginManagerContract<P> {
         &self,
         input: BtcTxSPVProof,
         gas_bumps: u8,
-    ) -> alloy_contract::Result<TransactionReceipt> {
+    ) -> alloy_contract::Result<TxHash> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
             || self.contract_instance.requestPegin(input.clone()),
@@ -80,7 +79,7 @@ impl<P: Provider> PeginManagerContractApi for PeginManagerContract<P> {
         &self,
         input: BtcTxSPVProof,
         gas_bumps: u8,
-    ) -> alloy_contract::Result<TransactionReceipt> {
+    ) -> alloy_contract::Result<TxHash> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
             || self.contract_instance.acceptPegin(input.clone()),

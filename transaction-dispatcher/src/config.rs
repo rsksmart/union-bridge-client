@@ -122,7 +122,7 @@ mod tests {
             CommonConfig::load_config::<Config>(None).expect("Failed to load config");
         let contracts = config.load_managed_contracts();
 
-        assert_eq!(8, contracts.len());
+        assert_eq!(9, contracts.len());
     }
 
     #[test]

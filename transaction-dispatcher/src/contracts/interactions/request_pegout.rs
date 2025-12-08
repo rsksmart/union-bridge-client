@@ -39,12 +39,11 @@ impl<C: PegoutManagerContractApi> TryPegoutInvoke<C> {
             self.gas_bumps
         );
 
-        let receipt = self
+        let tx_hash = self
             .contract
             .invoke_try_pegout(msg_value, usr_pub_key, self.gas_bumps)
             .await?;
 
-        let tx_hash = receipt.transaction_hash();
         info!("Pegout Request successful at tx {tx_hash}");
         Ok(RequestPegoutOutput {
             transaction_hash: tx_hash.to_string(),
@@ -64,7 +63,6 @@ mod tests {
         rsk_gateway::DomainErrors,
     };
     use alloy_primitives::TxHash;
-    use alloy_rpc_types::TransactionReceipt;
     use std::str::FromStr;
 
     impl TryPegoutInvoke<MockPegoutManagerContractApi> {
@@ -87,12 +85,7 @@ mod tests {
         let receipt_return = expected.clone();
 
         mock.expect_invoke_try_pegout()
-            .returning(move |_, _, _| {
-                Ok(create_fake_receipt(
-                    true,
-                    &receipt_return.transaction_hash,
-                ))
-            })
+            .returning(move |_, _, _| Ok(parse_tx_hash(&receipt_return.transaction_hash)))
             .times(1);
 
         let invoke = TryPegoutInvoke::new_for_tests(mock);
@@ -108,17 +101,19 @@ mod tests {
         let input = get_base_input();
 
         let expected_tx_hash = "0xdeadbeefdeadbeef000000000000000000000000000000000000000000000000";
+        let expected = RequestPegoutOutput {
+            transaction_hash: expected_tx_hash.to_string(),
+        };
 
         mock.expect_invoke_try_pegout()
-            .returning(move |_, _, _| {
-                Ok(create_fake_receipt(false, expected_tx_hash))
-            })
+            .returning(move |_, _, _| Ok(parse_tx_hash(expected_tx_hash)))
             .times(1);
 
         let invoke = TryPegoutInvoke::new_for_tests(mock);
         let result = invoke.run(input).await;
 
-        assert!(result.is_err());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), expected);
     }
 
     #[tokio::test]
@@ -150,33 +145,7 @@ mod tests {
         }
     }
 
-    fn create_fake_receipt(status: bool, tx_hash_str: &str) -> TransactionReceipt {
-        use alloy_primitives::{Address, Bloom};
-        use alloy_rpc_types::{Receipt, ReceiptEnvelope, ReceiptWithBloom};
-
-        let tx_hash = TxHash::from_str(tx_hash_str).expect("Failed to parse tx hash");
-        let receipt = Receipt {
-            status: status.into(),
-            cumulative_gas_used: 21_000,
-            logs: vec![],
-        };
-        let envelope = ReceiptEnvelope::Eip1559(ReceiptWithBloom {
-            receipt,
-            logs_bloom: Bloom::ZERO,
-        });
-        TransactionReceipt {
-            inner: envelope,
-            transaction_hash: tx_hash,
-            transaction_index: Some(0),
-            block_hash: None,
-            block_number: None,
-            gas_used: 21_000,
-            effective_gas_price: 1_000_000_000,
-            blob_gas_used: None,
-            blob_gas_price: None,
-            from: Address::from([3u8; 20]),
-            to: Some(Address::from([4u8; 20])),
-            contract_address: None,
-        }
+    fn parse_tx_hash(tx_hash_str: &str) -> TxHash {
+        TxHash::from_str(tx_hash_str).expect("Failed to parse tx hash")
     }
 }

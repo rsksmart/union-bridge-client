@@ -4,7 +4,7 @@ use crate::{
     types::{RequestPeginInput, RequestPeginOutput},
 };
 use anyhow::Result;
-use log::{error, info};
+use log::info;
 use union_contracts::bindings::pegin_manager::PeginManager::BtcTxSPVProof;
 
 #[derive(Clone)]
@@ -31,12 +31,11 @@ impl<C: PeginManagerContractApi> RequestPeginInvoke<C> {
             DomainErrors::InvalidBtcTxSpvProof(format!("Failed to parse RequestPeginInput: {e}"))
         })?;
 
-        let receipt = self
+        let tx_hash = self
             .contract
             .invoke_request_pegin(parsed_input, self.gas_bumps)
             .await?;
 
-        let tx_hash = receipt.transaction_hash();
         info!("RequestPegin successful at tx {tx_hash}");
         Ok(RequestPeginOutput {
             transaction_hash: tx_hash.to_string(),
