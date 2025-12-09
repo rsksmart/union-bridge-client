@@ -1,7 +1,8 @@
+use log::info;
+
 use crate::contracts::committee_registry::CommitteeRegistryContractApi;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{DepositCommunicationDataInput, DepositCommunicationDataOutput};
-use log::info;
 
 #[derive(Clone)]
 pub(crate) struct DepositCommunicationDataInvoke<C: CommitteeRegistryContractApi> {
@@ -11,10 +12,7 @@ pub(crate) struct DepositCommunicationDataInvoke<C: CommitteeRegistryContractApi
 
 impl<C: CommitteeRegistryContractApi> DepositCommunicationDataInvoke<C> {
     pub(crate) fn new(contract: C, gas_bumps: u8) -> Self {
-        DepositCommunicationDataInvoke {
-            contract,
-            gas_bumps,
-        }
+        DepositCommunicationDataInvoke { contract, gas_bumps }
     }
 
     pub(crate) async fn run(
@@ -49,11 +47,13 @@ impl<C: CommitteeRegistryContractApi> DepositCommunicationDataInvoke<C> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::contracts::committee_registry::MockCommitteeRegistryContractApi;
+    use std::str::FromStr;
+
     use alloy_primitives::TxHash;
     use mockall::predicate::always;
-    use std::str::FromStr;
+
+    use super::*;
+    use crate::contracts::committee_registry::MockCommitteeRegistryContractApi;
 
     #[tokio::test]
     async fn test_deposit_communication_data_success() {
@@ -72,10 +72,8 @@ mod tests {
 
         let interaction = DepositCommunicationDataInvoke::new(mock_instance, 3);
 
-        let input = DepositCommunicationDataInput {
-            committee_id: 1.into(),
-            communication_data: vec![],
-        };
+        let input =
+            DepositCommunicationDataInput { committee_id: 1.into(), communication_data: vec![] };
 
         let result = interaction.run(input).await;
         assert!(result.is_ok());
@@ -100,10 +98,8 @@ mod tests {
 
         let interaction = DepositCommunicationDataInvoke::new(mock_instance, 3);
 
-        let input = DepositCommunicationDataInput {
-            committee_id: 1.into(),
-            communication_data: vec![],
-        };
+        let input =
+            DepositCommunicationDataInput { committee_id: 1.into(), communication_data: vec![] };
 
         let result = interaction.run(input).await;
         assert!(result.is_err());

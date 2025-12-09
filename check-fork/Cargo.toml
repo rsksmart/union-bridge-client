@@ -3,9 +3,9 @@ name = "check-fork"
 version = "0.1.0"
 edition = "2024"
 
-[lints]
-workspace = true
-
 [dependencies]
 primitive-types = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+
+[lints]
+workspace = true

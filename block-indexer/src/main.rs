@@ -1,16 +1,17 @@
+use std::sync::mpsc;
+
 use anyhow::Result;
 use block_indexer::config::{Config, Logger};
+use block_indexer::indexer::BlockIndexer;
 use block_indexer::notifier::Notifier;
-use block_indexer::{indexer::BlockIndexer, store::CachedBlockStore};
+use block_indexer::store::CachedBlockStore;
 use clap::{Arg, Command};
+use common::alloy_rsk_provider::rpc::AlloyProvider;
 use common::msg_broker::broker::BrokerServer;
-use common::types::RskBlockAndUncles;
-use common::{
-    alloy_rsk_provider::rpc::AlloyProvider, rsk_indexer::RskIndexer, shutdown_flag::ShutdownFlag,
-    types::BlockHash,
-};
+use common::rsk_indexer::RskIndexer;
+use common::shutdown_flag::ShutdownFlag;
+use common::types::{BlockHash, RskBlockAndUncles};
 use log::{debug, error, info};
-use std::sync::mpsc;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const ENV_CLI_FLAG: &str = "env";
@@ -53,17 +54,12 @@ fn main() -> Result<()> {
 
     let initial_block_hash = BlockHash::try_from(config.indexer.initial_block_hash.as_str())
         .unwrap_or_else(|_| {
-            panic!(
-                "Invalid initial block hash: {}",
-                config.indexer.initial_block_hash
-            )
+            panic!("Invalid initial block hash: {}", config.indexer.initial_block_hash)
         });
 
     // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - think about bounding the channel
-    let (tx, rx): (
-        mpsc::Sender<RskBlockAndUncles>,
-        mpsc::Receiver<RskBlockAndUncles>,
-    ) = mpsc::channel();
+    let (tx, rx): (mpsc::Sender<RskBlockAndUncles>, mpsc::Receiver<RskBlockAndUncles>) =
+        mpsc::channel();
 
     let store_path = &format!("{}/blocks", config.indexer.storage.path);
     debug!("Creating block store at: {store_path}");

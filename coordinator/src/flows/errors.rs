@@ -1,7 +1,6 @@
-use thiserror::Error;
-
 #[cfg(test)]
 use mockall::automock;
+use thiserror::Error;
 
 #[cfg_attr(test, automock)]
 pub trait FailableFlow {
@@ -31,10 +30,7 @@ pub enum FlowError {
 impl FlowError {
     /// Create a transient error without a source
     pub fn transient(message: impl Into<String>) -> Self {
-        FlowError::Transient {
-            message: message.into(),
-            source: None,
-        }
+        FlowError::Transient { message: message.into(), source: None }
     }
 }
 
@@ -71,10 +67,9 @@ where
 impl From<anyhow::Error> for FlowError {
     fn from(err: anyhow::Error) -> Self {
         // try to downcast to FlowError first, otherwise default to Fatal
-        err.downcast::<FlowError>()
-            .unwrap_or_else(|original_err| FlowError::Fatal {
-                message: original_err.to_string(),
-                source: Some(original_err),
-            })
+        err.downcast::<FlowError>().unwrap_or_else(|original_err| FlowError::Fatal {
+            message: original_err.to_string(),
+            source: Some(original_err),
+        })
     }
 }

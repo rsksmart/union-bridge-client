@@ -1,3 +1,7 @@
+use std::error::Error;
+use std::str::FromStr;
+use std::string::ToString;
+
 use bitcoin::blockdata::block::Header;
 use bitcoin::consensus::encode::deserialize as btc_deserialize;
 use check_fork::{Block, BridgeEvent};
@@ -5,9 +9,6 @@ use primitive_types::{H256, U256};
 use reqwest::Client;
 use serde::{Deserialize, Deserializer, Serialize, de};
 use serde_json::{Value, json};
-use std::error::Error;
-use std::str::FromStr;
-use std::string::ToString;
 
 const RSK_RPC_URL: &str = "https://public-node.rsk.co";
 
@@ -15,20 +16,14 @@ const SUPERBLOCK_THRESHOLD_FACTOR: u64 = 20;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct RskBlock {
-    #[serde(
-        deserialize_with = "parse_hex_to_u64",
-        serialize_with = "parse_u64_to_hex"
-    )]
+    #[serde(deserialize_with = "parse_hex_to_u64", serialize_with = "parse_u64_to_hex")]
     number: u64,
     hash: H256,
     #[serde(rename = "parentHash")]
     parent: H256,
     #[serde(deserialize_with = "parse_rsk_difficulty")]
     difficulty: U256,
-    #[serde(
-        deserialize_with = "parse_hex_to_u64",
-        serialize_with = "parse_u64_to_hex"
-    )]
+    #[serde(deserialize_with = "parse_hex_to_u64", serialize_with = "parse_u64_to_hex")]
     timestamp: u64,
     #[serde(
         rename = "bitcoinMergedMiningHeader",
@@ -146,9 +141,8 @@ fn log_if_superblock(block: &RskBlock) -> Result<(), Box<dyn Error>> {
     // compute the PoW target from difficulty by inversion
     // U256::MAX, the "difficulty 1" target, represents the easiest possible target
     // this conversion allows comparing target difficulty with the actual block PoW
-    let target_block_pow = U256::MAX
-        .checked_div(block.difficulty)
-        .ok_or("0 division on log_if_superblock")?;
+    let target_block_pow =
+        U256::MAX.checked_div(block.difficulty).ok_or("0 division on log_if_superblock")?;
 
     // define a superblock as one whose PoW is at least N times harder than the required target
     let superblock_pow = target_block_pow / SUPERBLOCK_THRESHOLD_FACTOR;
@@ -156,9 +150,8 @@ fn log_if_superblock(block: &RskBlock) -> Result<(), Box<dyn Error>> {
     // if the actual block PoW is lower (i.e., harder) than the SuperBlock threshold, we found a SuperBlock
     if actual_block_pow < superblock_pow {
         let timestamp_i64 = i64::try_from(block.timestamp).unwrap_or(i64::MAX);
-        let formatted_time = chrono::DateTime::from_timestamp(timestamp_i64, 0)
-            .unwrap()
-            .format("%Y-%m-%d %H:%M:%S");
+        let formatted_time =
+            chrono::DateTime::from_timestamp(timestamp_i64, 0).unwrap().format("%Y-%m-%d %H:%M:%S");
 
         println!(
             "SuperBlock: {}, pow: {:?}, threshold: 0x{:064x}, time: {}",

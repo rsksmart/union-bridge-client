@@ -1,8 +1,9 @@
+use std::collections::HashMap;
+
 use common::config::{CommonConfig, ContractConfig, ProviderConfig};
 use common::errors::ConfigError;
 use common::types::{Address, ContractInfo};
 use serde::Deserialize;
-use std::collections::HashMap;
 
 const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
@@ -53,13 +54,7 @@ impl Config {
             .map(|c| {
                 let address = Address::try_from(c.address.as_str())
                     .unwrap_or_else(|_| panic!("Invalid address: {}", c.address));
-                (
-                    c.name.clone(),
-                    ContractInfo {
-                        name: c.name.clone(),
-                        address,
-                    },
-                )
+                (c.name.clone(), ContractInfo { name: c.name.clone(), address })
             })
             .collect()
     }
@@ -89,10 +84,12 @@ impl Logger {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::fs;
     use std::path::Path;
+
     use tempfile::TempDir;
+
+    use super::*;
 
     #[test]
     fn test_config_load_when_custom_config_set_should_load_config_successfully() {
@@ -100,13 +97,7 @@ mod tests {
             CommonConfig::load_config::<Config>(None).expect("Failed to load config");
 
         // key store
-        assert!(
-            !config
-                .tx_dispatcher_config
-                .key_store
-                .user_path
-                .contains("{BASE_STORAGE_PATH}")
-        );
+        assert!(!config.tx_dispatcher_config.key_store.user_path.contains("{BASE_STORAGE_PATH}"));
         assert!(
             config
                 .tx_dispatcher_config
@@ -114,13 +105,7 @@ mod tests {
                 .user_path
                 .ends_with("/.union_bridge/keystore/multi-client-1-user")
         );
-        assert!(
-            !config
-                .tx_dispatcher_config
-                .key_store
-                .member_path
-                .contains("{BASE_STORAGE_PATH}")
-        );
+        assert!(!config.tx_dispatcher_config.key_store.member_path.contains("{BASE_STORAGE_PATH}"));
         assert!(
             config
                 .tx_dispatcher_config
@@ -171,9 +156,8 @@ root:
     - rolling_file
 "#;
 
-        let logger_config_content = logger_config_template
-            .to_string()
-            .replace("{TO_REPLACE}", log_file);
+        let logger_config_content =
+            logger_config_template.to_string().replace("{TO_REPLACE}", log_file);
 
         fs::write(&logger_file, logger_config_content).expect("Failed to write logger config");
 

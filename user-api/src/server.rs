@@ -1,7 +1,11 @@
-use crate::bitcoin::User;
+use std::sync::Arc;
+use std::time::Duration;
+
 use anyhow::{Context, Result};
-use axum::routing::post;
-use axum::{http::StatusCode, response::IntoResponse, routing::get, Extension, Json, Router};
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
+use axum::routing::{get, post};
+use axum::{Extension, Json, Router};
 use bitcoin::secp256k1::rand::rngs::OsRng;
 use bitcoin::secp256k1::SecretKey;
 use bitcoin::{secp256k1, PublicKey, XOnlyPublicKey};
@@ -9,15 +13,14 @@ use common::msg_broker::broker::{BrokerServer, BrokerServerApi};
 use common::msg_broker::types::FromServer;
 use common::shutdown_flag::ShutdownFlag;
 use log::{error, info};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::sync::Arc;
-use std::time::Duration;
 use tokio::net::TcpListener;
 use tower_http::timeout::TimeoutLayer;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
-
-use serde::{Deserialize, Serialize};
 use transaction_dispatcher::types::{PeginAddressInput, RequestPegoutInput};
+
+use crate::bitcoin::User;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RequestPeginInput {
@@ -95,11 +98,7 @@ impl Server {
             Extension(coordinator_client_id),
         ));
 
-        Self {
-            listener,
-            app,
-            shutdown_flag,
-        }
+        Self { listener, app, shutdown_flag }
     }
 
     pub async fn start(self) -> Result<()> {
@@ -123,10 +122,7 @@ impl Server {
         let res = broker.send(&FromServer::MemberRequest, destination);
         match res {
             Ok(_) => (StatusCode::OK, Json(json!({ "result": "ok" }))),
-            Err(e) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
-            ),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))),
         }
     }
 
@@ -144,10 +140,7 @@ impl Server {
         let res = broker.send(&FromServer::UserRequest(payload), destination);
         match res {
             Ok(_) => (StatusCode::OK, Json(json!({ "result": "ok" }))),
-            Err(e) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
-            ),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))),
         }
     }
 
@@ -170,10 +163,7 @@ impl Server {
             Ok(data) => (StatusCode::OK, Json(json!(data))),
             Err(e) => {
                 error!("Error requesting pegin: {e}");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({ "error": e.to_string() })),
-                )
+                (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() })))
             }
         }
     }
@@ -189,23 +179,14 @@ impl Server {
         let usr_pub_key = format!("0x{}", user.bitcoin_public_key);
 
         let amount_in_wei = payload.amount_in_wei;
-        info!(
-            "Request pegout -> usr_pub_key: {} amount_in_wei: {}",
-            usr_pub_key, amount_in_wei
-        );
-        let input = RequestPegoutInput {
-            amount_in_wei,
-            usr_pub_key,
-        };
+        info!("Request pegout -> usr_pub_key: {} amount_in_wei: {}", usr_pub_key, amount_in_wei);
+        let input = RequestPegoutInput { amount_in_wei, usr_pub_key };
         let res = contracts.request_pegout(input);
         match res {
             Ok(_tx_sent_output) => (StatusCode::OK, Json(json!({ "result": "ok" }))),
             Err(e) => {
                 error!("Error requesting pegout: {e}");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({ "error": e.to_string() })),
-                )
+                (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() })))
             }
         }
     }
@@ -215,9 +196,6 @@ impl Server {
         let mut rng = OsRng;
         let too_sk = SecretKey::new(&mut rng);
         let too_pk = secp256k1::PublicKey::from_secret_key(&secp, &too_sk);
-        PublicKey {
-            compressed: true,
-            inner: too_pk,
-        }
+        PublicKey { compressed: true, inner: too_pk }
     }
 }

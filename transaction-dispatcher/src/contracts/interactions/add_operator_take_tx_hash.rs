@@ -1,9 +1,10 @@
+use common::types::TxIdParser;
+use log::info;
+
 use crate::contracts::signature_manager::SignatureManagerContractApi;
 use crate::contracts::types::FixedBytes32;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{AddOperatorTakeTxHashInput, AddOperatorTakeTxHashOutput};
-use common::types::TxIdParser;
-use log::info;
 
 #[derive(Clone)]
 pub(crate) struct AddOperatorTakeTxHashInvoke<C: SignatureManagerContractApi> {
@@ -13,10 +14,7 @@ pub(crate) struct AddOperatorTakeTxHashInvoke<C: SignatureManagerContractApi> {
 
 impl<C: SignatureManagerContractApi> AddOperatorTakeTxHashInvoke<C> {
     pub(crate) fn new(contract: C, gas_bumps: u8) -> Self {
-        Self {
-            contract,
-            gas_bumps,
-        }
+        Self { contract, gas_bumps }
     }
 
     pub(crate) async fn run(
@@ -34,8 +32,6 @@ impl<C: SignatureManagerContractApi> AddOperatorTakeTxHashInvoke<C> {
             .await?;
 
         info!("AddOperatorTakeTxHash successful at tx {tx_hash}");
-        Ok(AddOperatorTakeTxHashOutput {
-            transaction_hash: tx_hash.to_string(),
-        })
+        Ok(AddOperatorTakeTxHashOutput { transaction_hash: tx_hash.to_string() })
     }
 }

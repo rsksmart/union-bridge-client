@@ -1,10 +1,11 @@
+use std::path::Path;
+
 use alloy_primitives::hex;
 use alloy_signer::k256::ecdsa::{SigningKey, VerifyingKey};
 use alloy_signer_local::LocalSigner;
 use anyhow::{Context, Result, anyhow};
 use rand::rngs::OsRng;
 use rand::thread_rng;
-use std::path::Path;
 
 pub struct KeyManager {
     // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-86
@@ -85,9 +86,10 @@ impl KeyManager {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::fs;
     use std::path::PathBuf;
+
+    use super::*;
 
     #[test]
     fn test_generate_key() {

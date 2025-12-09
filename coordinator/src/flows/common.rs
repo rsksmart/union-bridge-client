@@ -1,10 +1,11 @@
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+
 use anyhow::{Result, bail};
 use common::msg_broker::bitvmx_types::{P2PAddress, ParticipantRole, PeerId, SignedPublicKey};
 use common::types::CommitteeId;
 use log::info;
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::rc::Rc;
 
 // Key indices for committee member public keys
 pub const TAKE_KEY_INDEX: usize = 0;
@@ -78,9 +79,7 @@ impl Default for MyCommittees {
 
 impl MyCommittees {
     pub fn new() -> Self {
-        Self {
-            committees: Rc::new(RefCell::new(HashMap::new())),
-        }
+        Self { committees: Rc::new(RefCell::new(HashMap::new())) }
     }
 
     // NOTE: &self is enough thanks to RefCell
@@ -109,10 +108,7 @@ impl MyCommittees {
 
 impl GlobalContext {
     pub fn new() -> Self {
-        Self {
-            my_committees: MyCommittees::new(),
-            my_keys: MyKeys::new(),
-        }
+        Self { my_committees: MyCommittees::new(), my_keys: MyKeys::new() }
     }
 
     pub fn my_committees(&self) -> &MyCommittees {
@@ -152,10 +148,7 @@ pub fn build_communication_data(
 
         let peer_id = committee_peer_ids[i].clone();
 
-        p2p_addresses.push(P2PAddress {
-            address: addr,
-            peer_id,
-        });
+        p2p_addresses.push(P2PAddress { address: addr, peer_id });
     }
 
     info!("Built communication data: {p2p_addresses:?}");

@@ -42,11 +42,13 @@ impl Logger {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{CARGO_PKG_NAME, Config};
-    use common::config::CommonConfig;
     use std::fs;
     use std::path::Path;
+
+    use common::config::CommonConfig;
     use tempfile::TempDir;
+
+    use crate::config::{CARGO_PKG_NAME, Config};
 
     #[test]
     fn test_config_load_when_custom_config_set_should_load_config_successfully() {
@@ -55,13 +57,7 @@ mod tests {
 
         assert_eq!(10001, config.block_indexer_config.notifier.port);
         assert!(!config.indexer.storage.path.contains("{BASE_STORAGE_PATH}"));
-        assert!(
-            config
-                .indexer
-                .storage
-                .path
-                .ends_with("/.union_bridge/database/multi-client-1")
-        );
+        assert!(config.indexer.storage.path.ends_with("/.union_bridge/database/multi-client-1"));
         assert_eq!(1000, config.indexer.cache.size);
         assert_eq!("ws://127.0.0.1:8545", config.provider.rootstock.url);
     }
@@ -97,9 +93,8 @@ root:
     - rolling_file
 "#;
 
-        let logger_config_content = logger_config_template
-            .to_string()
-            .replace("{TO_REPLACE}", log_file);
+        let logger_config_content =
+            logger_config_template.to_string().replace("{TO_REPLACE}", log_file);
 
         fs::write(&logger_file, logger_config_content).expect("Failed to write logger config");
 

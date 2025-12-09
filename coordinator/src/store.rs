@@ -1,14 +1,14 @@
-use anyhow::{Result, ensure};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+use anyhow::{Result, ensure};
+use common::msg_broker::bitvmx_types::{ParticipantRole, SignedPublicKey};
+use common::types::CommitteeId;
+use serde::{Deserialize, Serialize};
 use storage_backend::storage::{KeyValueStore, Storage};
 use storage_backend::storage_config::StorageConfig;
 use uuid::Uuid;
 
 use crate::flows::common::GlobalContext;
-use common::msg_broker::bitvmx_types::ParticipantRole;
-use common::msg_broker::bitvmx_types::SignedPublicKey;
-use common::types::CommitteeId;
 
 /// Key used to persist Coordinator data
 pub enum StoreKey {

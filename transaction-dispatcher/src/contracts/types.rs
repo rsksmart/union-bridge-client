@@ -1,12 +1,14 @@
-use crate::rsk_gateway::DomainErrors;
-use crate::types::{CommitteeECDSA, P2PAddressParser};
+use std::str::FromStr;
+
 use alloy_primitives::FixedBytes;
 use anyhow::Result;
 use common::msg_broker::bitvmx_types::PeerId;
-use std::str::FromStr;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     ECDSAPublicKey, MemberRegistrationKeys, RSAPublicKey,
 };
+
+use crate::rsk_gateway::DomainErrors;
+use crate::types::{CommitteeECDSA, P2PAddressParser};
 
 pub type FixedBytes32 = FixedBytes<32>;
 pub type Bytes = alloy_sol_types::private::Bytes;
@@ -29,9 +31,7 @@ pub fn convert_to_member_registration_keys(
         v: match take_key_data.v {
             27 | 28 => take_key_data.v,
             _ => {
-                return Err(DomainErrors::InvalidValue(
-                    "Invalid take key v value".to_string(),
-                ));
+                return Err(DomainErrors::InvalidValue("Invalid take key v value".to_string()));
             }
         },
     };
@@ -52,9 +52,7 @@ pub fn convert_to_member_registration_keys(
         v: match dispute_key_data.v {
             27 | 28 => dispute_key_data.v,
             _ => {
-                return Err(DomainErrors::InvalidValue(
-                    "Invalid covenant key v value".to_string(),
-                ));
+                return Err(DomainErrors::InvalidValue("Invalid covenant key v value".to_string()));
             }
         },
     };

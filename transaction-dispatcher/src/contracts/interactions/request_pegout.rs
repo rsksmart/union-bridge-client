@@ -1,11 +1,10 @@
-use crate::{
-    contracts::peg_manager::PegManagerContractApi,
-    rsk_gateway::DomainErrors,
-    types::{RequestPegoutInput, RequestPegoutOutput},
-};
 use alloy_primitives::FixedBytes;
 use anyhow::Result;
 use log::{debug, info};
+
+use crate::contracts::peg_manager::PegManagerContractApi;
+use crate::rsk_gateway::DomainErrors;
+use crate::types::{RequestPegoutInput, RequestPegoutOutput};
 
 #[derive(Clone)]
 pub struct TryPegoutInvoke<C: PegManagerContractApi> {
@@ -15,10 +14,7 @@ pub struct TryPegoutInvoke<C: PegManagerContractApi> {
 
 impl<C: PegManagerContractApi> TryPegoutInvoke<C> {
     pub fn new(contract: C, gas_bumps: u8) -> Self {
-        Self {
-            contract,
-            gas_bumps,
-        }
+        Self { contract, gas_bumps }
     }
 
     pub async fn run(
@@ -39,38 +35,29 @@ impl<C: PegManagerContractApi> TryPegoutInvoke<C> {
             self.gas_bumps
         );
 
-        let tx_hash = self
-            .contract
-            .invoke_request_pegout(msg_value, usr_pub_key, self.gas_bumps)
-            .await?;
+        let tx_hash =
+            self.contract.invoke_request_pegout(msg_value, usr_pub_key, self.gas_bumps).await?;
 
         info!("Pegout Request successful at tx {tx_hash}");
-        Ok(RequestPegoutOutput {
-            transaction_hash: tx_hash.to_string(),
-        })
+        Ok(RequestPegoutOutput { transaction_hash: tx_hash.to_string() })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        contracts::{
-            interactions::request_pegout::{
-                RequestPegoutInput, RequestPegoutOutput, TryPegoutInvoke,
-            },
-            peg_manager::MockPegManagerContractApi,
-        },
-        rsk_gateway::DomainErrors,
-    };
-    use alloy_primitives::TxHash;
     use std::str::FromStr;
+
+    use alloy_primitives::TxHash;
+
+    use crate::contracts::interactions::request_pegout::{
+        RequestPegoutInput, RequestPegoutOutput, TryPegoutInvoke,
+    };
+    use crate::contracts::peg_manager::MockPegManagerContractApi;
+    use crate::rsk_gateway::DomainErrors;
 
     impl TryPegoutInvoke<MockPegManagerContractApi> {
         fn new_for_tests(contract: MockPegManagerContractApi) -> Self {
-            TryPegoutInvoke {
-                contract,
-                gas_bumps: 3,
-            }
+            TryPegoutInvoke { contract, gas_bumps: 3 }
         }
     }
 
@@ -124,10 +111,8 @@ mod tests {
         mock.expect_invoke_request_pegout().times(0);
 
         let invoke = TryPegoutInvoke::new_for_tests(mock);
-        let bad_input = RequestPegoutInput {
-            amount_in_wei: 1_000,
-            usr_pub_key: "not-a-hex-key".to_string(),
-        };
+        let bad_input =
+            RequestPegoutInput { amount_in_wei: 1_000, usr_pub_key: "not-a-hex-key".to_string() };
 
         let err = invoke.run(bad_input).await.err().unwrap();
         match err {
@@ -140,9 +125,6 @@ mod tests {
 
     fn get_base_input() -> RequestPegoutInput {
         let usr_pub_key = format!("0x{}", "01".repeat(33));
-        RequestPegoutInput {
-            amount_in_wei: 1_234_567,
-            usr_pub_key,
-        }
+        RequestPegoutInput { amount_in_wei: 1_234_567, usr_pub_key }
     }
 }

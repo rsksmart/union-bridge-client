@@ -1,29 +1,26 @@
-use crate::flows::common::COMM_KEY_INDEX;
-use crate::flows::common::build_communication_data;
-use crate::store::{CoordinatorStoreApi, StoreKey};
+use std::rc::Rc;
+
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use bitcoin::{PublicKey, Txid};
-use common::msg_broker::bitvmx_types::PegOutAccepted;
-use common::msg_broker::bitvmx_types::PegOutRequest;
-use common::msg_broker::bitvmx_types::VariableTypes;
-use common::msg_broker::bitvmx_types::{BtcTxSPVProof, IncomingBitVMXApiMessages, P2PAddress};
-use common::msg_broker::bitvmx_types::{PeerId, TransactionStatus};
-use common::msg_broker::broker::BROKER_SERVER_ID;
-use common::msg_broker::broker::BitVmxBrokerClientApi;
+use common::msg_broker::bitvmx_types::{
+    BtcTxSPVProof, IncomingBitVMXApiMessages, P2PAddress, PeerId, PegOutAccepted, PegOutRequest,
+    TransactionStatus, VariableTypes,
+};
+use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 use common::runtime_sync::RuntimeSync;
 use common::types::CommitteeId;
 use log::{debug, info, trace};
 use serde::{Deserialize, Serialize};
-use std::rc::Rc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
-use transaction_dispatcher::types::GetCommunicationDataInput;
-use transaction_dispatcher::types::GetMemberPublicKeysInput;
-use transaction_dispatcher::types::P2PAddressParser;
 use transaction_dispatcher::types::{
-    GetCommitteeInput, GetCommitteeOutput, RegisterPegoutInput, RegisterPegoutOutput,
+    GetCommitteeInput, GetCommitteeOutput, GetCommunicationDataInput, GetMemberPublicKeysInput,
+    P2PAddressParser, RegisterPegoutInput, RegisterPegoutOutput,
 };
 use union_contracts::bindings::peg_manager::PegManager::{PegoutRegistered, PegoutRequested};
 use uuid::Uuid;
+
+use crate::flows::common::{COMM_KEY_INDEX, build_communication_data};
+use crate::store::{CoordinatorStoreApi, StoreKey};
 
 pub const PROGRAM_TYPE_USER_TAKE: &str = "take";
 pub const USER_TAKE_TX: &str = "USER_TAKE_TX";
@@ -129,13 +126,7 @@ where
         state: State,
         store: Rc<S>,
     ) -> Self {
-        Self {
-            contracts,
-            rt_sync,
-            bitvmx_broker,
-            state,
-            store,
-        }
+        Self { contracts, rt_sync, bitvmx_broker, state, store }
     }
 
     fn persist_state(&self) -> Result<()> {
@@ -143,10 +134,7 @@ where
             "PegoutFlow {}: Persisting state for step: {:?}",
             self.state.flow_id, self.state.step
         );
-        self.store.save_flow(
-            &StoreKey::PegoutFlow(self.state.flow_id),
-            self.state.clone(),
-        )
+        self.store.save_flow(&StoreKey::PegoutFlow(self.state.flow_id), self.state.clone())
     }
 
     pub fn start_step(&mut self, next_step: Steps) -> Result<()> {
@@ -275,10 +263,7 @@ where
                 Ok(Steps::RegisterPegout)
             }
             (Steps::RegisterPegout, StepData::PegoutRegistered(pegout_registered)) => {
-                info!(
-                    "Pegout registered successfully for flow_id: {}",
-                    self.state.flow_id
-                );
+                info!("Pegout registered successfully for flow_id: {}", self.state.flow_id);
                 trace!("PegoutRegistered data: {pegout_registered:?}");
                 self.send_pegout_completed_to_bitvmx(pegout_registered)?;
                 Ok(Steps::Done)
@@ -291,10 +276,7 @@ where
 
     //This step will send the setVar and setup to bitvmx in a single step to make bitvmx complete the pegout setup step.
     fn communicate_pegout_requested_to_bitvmx(&mut self) -> Result<()> {
-        info!(
-            "Communicating pegout requested to bitvmx with flow_id: {}",
-            self.state.flow_id
-        );
+        info!("Communicating pegout requested to bitvmx with flow_id: {}", self.state.flow_id);
         let committee_id: CommitteeId = self.state.ctx.pegout_requested.committeeId.try_into()?;
 
         self.send_pegout_requested_to_bitvmx(&committee_id)?;
@@ -304,17 +286,12 @@ where
 
     fn get_committee_output(&mut self, committee_id: CommitteeId) -> Result<GetCommitteeOutput> {
         let committee_response = self.rt_sync.run(async {
-            self.contracts
-                .get_committee(GetCommitteeInput { committee_id })
-                .await
+            self.contracts.get_committee(GetCommitteeInput { committee_id }).await
         })?;
         Ok(committee_response)
     }
     fn send_setup_to_bitvmx(&mut self, committee_id: &CommitteeId) -> Result<()> {
-        debug!(
-            "Sending setup to bitvmx with flow_id: {}",
-            self.state.flow_id
-        );
+        debug!("Sending setup to bitvmx with flow_id: {}", self.state.flow_id);
         let committee_peer_ids = self.get_committee_peer_ids(
             self.state
                 .ctx
@@ -374,22 +351,17 @@ where
 
         for member in committee_output.committee.members {
             // Get the member's public keys
-            let keys_input = GetMemberPublicKeysInput {
-                member_address: member.memberAddress,
-            };
+            let keys_input = GetMemberPublicKeysInput { member_address: member.memberAddress };
 
             let keys_response = self
                 .rt_sync
                 .run(async { self.contracts.get_member_public_keys(keys_input).await })?;
 
             // Get the communication key (at index 2)
-            let key_str = keys_response
-                .public_keys
-                .get(COMM_KEY_INDEX)
-                .context(format!(
-                    "Communication key not found for member {}",
-                    member.memberAddress
-                ))?;
+            let key_str = keys_response.public_keys.get(COMM_KEY_INDEX).context(format!(
+                "Communication key not found for member {}",
+                member.memberAddress
+            ))?;
 
             debug!("Member {} PeerId: {:?}", member.memberAddress, key_str);
             peer_ids.push(PeerId(key_str.clone()));
@@ -399,10 +371,7 @@ where
     }
 
     fn send_pegout_requested_to_bitvmx(&mut self, committee_id: &CommitteeId) -> Result<()> {
-        debug!(
-            "Notifying pegout requested to bitvmx with flow_id: {}",
-            self.state.flow_id
-        );
+        debug!("Notifying pegout requested to bitvmx with flow_id: {}", self.state.flow_id);
         let committee_output: GetCommitteeOutput =
             self.get_committee_output(committee_id.clone())?;
         self.state.ctx.committee_output = Some(committee_output.clone());
@@ -425,10 +394,7 @@ where
         &mut self,
         pegout_registered: &PegoutRegistered,
     ) -> Result<()> {
-        debug!(
-            "Notifying pegout completed to bitvmx with flow_id: {}",
-            self.state.flow_id
-        );
+        debug!("Notifying pegout completed to bitvmx with flow_id: {}", self.state.flow_id);
         let data = serde_json::to_string(&pegout_registered)?;
         let msg = IncomingBitVMXApiMessages::SetVar(
             self.state.flow_id,
@@ -452,10 +418,7 @@ where
             PublicKey::from_slice(event.userPubKey.as_ref())
                 .context("Failed to parse user public key as compressed public key")?
         } else {
-            bail!(
-                "Invalid user public key length: {}, expected 33",
-                event.userPubKey.len()
-            );
+            bail!("Invalid user public key length: {}, expected 33", event.userPubKey.len());
         };
 
         let take_aggregated_key = Self::build_take_aggregated_key(committee_output)?;
@@ -488,10 +451,7 @@ where
     }
 
     fn request_bitvmx_comm_info(&self) -> Result<()> {
-        info!(
-            "Requesting bitvmx comm info for flow_id: {}",
-            self.state.flow_id
-        );
+        info!("Requesting bitvmx comm info for flow_id: {}", self.state.flow_id);
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo())
     }
 
@@ -502,10 +462,7 @@ where
     }
 
     fn dispatch_transaction(&self) -> Result<()> {
-        info!(
-            "Dispatching transaction name {} for flow_id: {}",
-            USER_TAKE_TX, self.state.flow_id
-        );
+        info!("Dispatching transaction name {} for flow_id: {}", USER_TAKE_TX, self.state.flow_id);
         let msg = IncomingBitVMXApiMessages::DispatchTransactionName(
             self.state.flow_id,
             USER_TAKE_TX.to_string(),
@@ -515,11 +472,7 @@ where
     }
 
     pub fn get_user_take_txid(&self) -> Option<Txid> {
-        self.state
-            .ctx
-            .peg_out_accepted
-            .as_ref()
-            .map(|accepted| accepted.user_take_txid)
+        self.state.ctx.peg_out_accepted.as_ref().map(|accepted| accepted.user_take_txid)
     }
 
     fn register_pegout(&self, spv_proof: BtcTxSPVProof) -> Result<RegisterPegoutOutput> {
@@ -543,10 +496,7 @@ where
             "Requesting transaction status for flow_id: {} and tx_id: {:?}",
             self.state.flow_id, tx_id
         );
-        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetTransaction(
-            self.state.flow_id,
-            tx_id,
-        ))?;
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetTransaction(self.state.flow_id, tx_id))?;
         Ok(())
     }
 

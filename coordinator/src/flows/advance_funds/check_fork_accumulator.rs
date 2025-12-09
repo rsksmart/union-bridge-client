@@ -1,11 +1,11 @@
-use crate::blockchain_tracker::{BlockConfirmations, BlockchainObserver};
-use crate::config::REQUIRED_CONFIRMATIONS;
-use crate::types::AdvanceFundsEvent;
 use check_fork::{Block, CheckForkArgs};
 use common::types::{BlockPow, RskBlock, RskBlockAndUncles};
 use log::{debug, info};
-use primitive_types::H256;
-use primitive_types::U256;
+use primitive_types::{H256, U256};
+
+use crate::blockchain_tracker::{BlockConfirmations, BlockchainObserver};
+use crate::config::REQUIRED_CONFIRMATIONS;
+use crate::types::AdvanceFundsEvent;
 
 #[derive(Debug)]
 pub(super) struct CheckForkAccumulator {
@@ -26,37 +26,21 @@ impl BlockchainObserver for CheckForkAccumulator {
             self.confirmations
                 .get_or_insert_with(|| Self::new_confirmations(block, &self.args.pegout_id))
                 .on_block_added(block);
-            debug!(
-                "Adding confirmation with block {} ({})",
-                block.number(),
-                block.hash()
-            );
+            debug!("Adding confirmation with block {} ({})", block.number(), block.hash());
         } else {
             self.add_block_to_check_fork(block);
-            debug!(
-                "CheckFork added block {} ({})",
-                block.number(),
-                block.hash()
-            );
+            debug!("CheckFork added block {} ({})", block.number(), block.hash());
         }
     }
 
     fn on_block_removed(&mut self, block: &RskBlockAndUncles) {
         // we optimistically try to remove the block from both the check_fork_args and confirmations
         self.remove_block_from_check_fork(block.block());
-        debug!(
-            "CheckFork removed block {} ({})",
-            block.number(),
-            block.hash()
-        );
+        debug!("CheckFork removed block {} ({})", block.number(), block.hash());
 
         if let Some(confirmations) = &mut self.confirmations {
             confirmations.on_block_removed(block);
-            debug!(
-                "Removing confirmation with block {} ({})",
-                block.number(),
-                block.hash()
-            );
+            debug!("Removing confirmation with block {} ({})", block.number(), block.hash());
         }
     }
 }
@@ -108,9 +92,7 @@ impl CheckForkAccumulator {
     }
 
     pub fn has_enough_confirmations(&self) -> bool {
-        self.confirmations
-            .as_ref()
-            .is_some_and(BlockConfirmations::is_confirmed)
+        self.confirmations.as_ref().is_some_and(BlockConfirmations::is_confirmed)
     }
 
     fn is_check_fork_ready(&self) -> bool {
@@ -159,20 +141,12 @@ impl CheckForkAccumulator {
         }
 
         // include the block in the list, with uncles if any
-        self.args
-            .block_list
-            .push(self.new_check_fork_block(block_with_uncles));
+        self.args.block_list.push(self.new_check_fork_block(block_with_uncles));
     }
 
     fn remove_block_from_check_fork(&mut self, block: &RskBlock) {
-        info!(
-            "Removing block {} ({}) from checkFork",
-            block.number(),
-            block.hash()
-        );
-        self.args
-            .block_list
-            .retain(|b| b.hash != block.hash().value());
+        info!("Removing block {} ({}) from checkFork", block.number(), block.hash());
+        self.args.block_list.retain(|b| b.hash != block.hash().value());
     }
 
     fn new_check_fork_block(&self, block_with_uncles: &RskBlockAndUncles) -> Block {
@@ -238,11 +212,12 @@ impl CheckForkAccumulator {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::flows::advance_funds::tests::create_fake_block;
     use common::mocks::fake_contracts::FakePegManager::AdvanceFunds;
     use common::types::{BlockHash, BlockNumber, RskBlockAndUncles, TxHash};
     use primitive_types::H256;
+
+    use super::*;
+    use crate::flows::advance_funds::tests::create_fake_block;
 
     #[allow(clippy::too_many_arguments)]
     fn create_fake_advance_funds_event(
@@ -473,10 +448,8 @@ mod tests {
 
         let mut checker = CheckForkAccumulator::new(&event, &[]);
 
-        let advance_funds_block = create_fake_block(
-            BlockNumber::from(advance_funds_blockk_number),
-            U256::from(300),
-        );
+        let advance_funds_block =
+            create_fake_block(BlockNumber::from(advance_funds_blockk_number), U256::from(300));
         let advance_funds_block_with_uncles = RskBlockAndUncles::new(advance_funds_block, vec![]);
 
         checker.on_block_added(&advance_funds_block_with_uncles);
@@ -727,10 +700,7 @@ mod tests {
         assert_eq!(checker.args.block_list.len(), initial_block_count);
         // but confirmations should have been updated
         let expected_confirmations = 1;
-        assert_eq!(
-            checker.confirmations.unwrap().accum(),
-            expected_confirmations
-        );
+        assert_eq!(checker.confirmations.unwrap().accum(), expected_confirmations);
     }
 
     #[test]
@@ -827,17 +797,11 @@ mod tests {
         checker.on_block_added(&block3);
 
         let expected_confirmations = 2;
-        assert_eq!(
-            checker.confirmations.as_ref().unwrap().accum(),
-            expected_confirmations
-        );
+        assert_eq!(checker.confirmations.as_ref().unwrap().accum(), expected_confirmations);
 
         // remove a confirmation
         checker.on_block_removed(&block2);
-        assert_eq!(
-            checker.confirmations.as_ref().unwrap().accum(),
-            expected_confirmations - 1
-        );
+        assert_eq!(checker.confirmations.as_ref().unwrap().accum(), expected_confirmations - 1);
 
         // remove another confirmation
         checker.on_block_removed(&block1);
@@ -926,10 +890,8 @@ mod tests {
         let mut checker = CheckForkAccumulator::new(&event, &[]);
 
         // add the kickoff block
-        let advance_funds_block = create_fake_block(
-            BlockNumber::from(advance_funds_block_number),
-            U256::from(300),
-        );
+        let advance_funds_block =
+            create_fake_block(BlockNumber::from(advance_funds_block_number), U256::from(300));
         let advance_funds_block_with_uncles = RskBlockAndUncles::new(advance_funds_block, vec![]);
 
         checker.on_block_added(&advance_funds_block_with_uncles);

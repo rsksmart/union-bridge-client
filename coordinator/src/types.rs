@@ -1,8 +1,11 @@
+use std::collections::HashMap;
+use std::hash::Hash;
+
 use alloy_primitives::{B256, FixedBytes};
 #[cfg(test)]
 use alloy_sol_types::SolEvent;
 use alloy_sol_types::SolEventInterface;
-use anyhow::anyhow;
+use anyhow::{Result, anyhow};
 use bitcoin::PublicKey;
 use common::mocks::fake_contracts::FakePegManager::{
     AdvanceFunds, FakePegManagerEvents, RequestAdvanceFunds,
@@ -14,12 +17,12 @@ use common::types::{Address, BlockHash, BlockNumber, Hash256, RskLog, TxHash};
 use log::{info, trace, warn};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::hash::Hash;
+use union_contracts::bindings::bitcoin_manager::BitcoinManager::BitcoinManagerEvents;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     AllCommunicationDataReady, CommitteeRegistryEvents, MemberInfoDeposited, NewCommittee,
     NewPendingCommittee,
 };
+use union_contracts::bindings::member_registry::MemberRegistry::MemberRegistryEvents;
 use union_contracts::bindings::peg_manager::PegManager::{
     PegManagerEvents, PeginAccepted, PeginRequested, PegoutRegistered, PegoutRequested,
 };
@@ -30,12 +33,9 @@ use union_contracts::bindings::signature_manager::SignatureManager::{
 use union_contracts::bindings::signature_manager::SignatureManager::{
     AllOperatorTakeTxidsAdded, SignatureManagerEvents,
 };
+use union_contracts::bindings::stream_manager::StreamManager::StreamManagerEvents;
 
 use crate::user_requests::ApplyToStream;
-use anyhow::Result;
-use union_contracts::bindings::bitcoin_manager::BitcoinManager::BitcoinManagerEvents;
-use union_contracts::bindings::member_registry::MemberRegistry::MemberRegistryEvents;
-use union_contracts::bindings::stream_manager::StreamManager::StreamManagerEvents;
 
 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-183
 
@@ -105,12 +105,8 @@ impl EventDecoder {
     /// - `RskPegManagerEvents::UnknownEvent` for events that match contract types but have no handler
     /// - Specific event variant for successfully decoded and handled events
     pub fn decode(log: &RskLog) -> RskPegManagerEvents {
-        let parsed_topics: Vec<B256> = log
-            .event()
-            .topics()
-            .iter()
-            .map(|topic| B256::from(*topic))
-            .collect();
+        let parsed_topics: Vec<B256> =
+            log.event().topics().iter().map(|topic| B256::from(*topic)).collect();
 
         // Early validation for malformed logs
         if parsed_topics.is_empty() {
@@ -165,12 +161,8 @@ impl EventDecoder {
     fn extract_log_fields(
         log: &RskLog,
     ) -> (Vec<B256>, Vec<u8>, BlockNumber, BlockHash, bool, TxHash) {
-        let parsed_topics: Vec<B256> = log
-            .event()
-            .topics()
-            .iter()
-            .map(|topic| B256::from(*topic))
-            .collect();
+        let parsed_topics: Vec<B256> =
+            log.event().topics().iter().map(|topic| B256::from(*topic)).collect();
         let data = log.event().data().as_bytes().to_vec();
         let block_num = log.info().block_number();
         let block_hash = log.info().block_hash();
@@ -510,9 +502,7 @@ pub(crate) struct TickScheduler<K: Eq + Hash + Clone> {
 
 impl<K: Eq + Hash + Clone> TickScheduler<K> {
     pub fn new() -> Self {
-        Self {
-            pending: HashMap::new(),
-        }
+        Self { pending: HashMap::new() }
     }
 
     pub fn schedule(&mut self, id: K, delay_ticks: u32) {
@@ -589,7 +579,6 @@ pub struct MemberOfCommittee {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use alloy_primitives::{Address, B256, Bytes, FixedBytes, U256};
     use common::test_utils::rsk_log_generator::{FakeLogGenerator, event_signature_to_topic};
     use common::test_utils::rsk_utils::generate_fake_address;
@@ -603,6 +592,8 @@ mod tests {
     };
     use uuid::Uuid;
 
+    use super::*;
+
     fn create_rsk_log_from_event<T: SolEvent>(
         event: &T,
         block_hash: H256,
@@ -610,11 +601,7 @@ mod tests {
         removed: bool,
     ) -> (Hash256, RskLog) {
         let data = DataBytes::new(event.encode_log_data().data.to_vec());
-        let topics = event
-            .encode_topics()
-            .iter()
-            .map(|t| Hash256::from(B256::from(*t)))
-            .collect();
+        let topics = event.encode_topics().iter().map(|t| Hash256::from(B256::from(*t))).collect();
 
         let log_event = LogEvent::new(data, topics);
         let tx_hash = TxHash::from(H256::random());
@@ -633,9 +620,7 @@ mod tests {
     #[test]
     fn test_exhaustive_decoder_with_committee_event() {
         // Create a committee event
-        let expected_event = AllCommunicationDataReady {
-            _committeeId: 12345,
-        };
+        let expected_event = AllCommunicationDataReady { _committeeId: 12345 };
 
         let (_, log) =
             create_rsk_log_from_event(&expected_event, H256::from_low_u64_be(123), 456, false);
@@ -719,10 +704,8 @@ mod tests {
 
     #[test]
     fn test_decode_unknown_event() {
-        let log = FakeLogGenerator::new().generate_log(
-            "Transfer(address,address,uint256)",
-            generate_fake_address(1),
-        );
+        let log = FakeLogGenerator::new()
+            .generate_log("Transfer(address,address,uint256)", generate_fake_address(1));
 
         let result = EventDecoder::decode(&log);
         assert_eq!(result, RskPegManagerEvents::UnknownEvent);
@@ -732,9 +715,7 @@ mod tests {
     fn test_decode_invalid_data() {
         let log_event: LogEvent = LogEvent::new(
             DataBytes::new("fake".as_bytes().to_vec()),
-            vec![event_signature_to_topic(
-                "Transfer(address,address,uint256)",
-            )],
+            vec![event_signature_to_topic("Transfer(address,address,uint256)")],
         );
 
         let log_info = LogInfo::new(
@@ -988,11 +969,8 @@ mod tests {
         };
 
         let data = DataBytes::new(expected_event.encode_log_data().data.to_vec());
-        let topics = expected_event
-            .encode_topics()
-            .iter()
-            .map(|t| Hash256::from(B256::from(*t)))
-            .collect();
+        let topics =
+            expected_event.encode_topics().iter().map(|t| Hash256::from(B256::from(*t))).collect();
 
         let log_event = LogEvent::new(data, topics);
         let expected_tx_hash = TxHash::from(H256::random());
@@ -1129,10 +1107,7 @@ mod tests {
             fundingUTXOs: vec![],
         };
 
-        let expected_event = NewPendingCommittee {
-            committeeId: 42,
-            _committee: committee,
-        };
+        let expected_event = NewPendingCommittee { committeeId: 42, _committee: committee };
 
         let removed = false;
         let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(
@@ -1190,10 +1165,7 @@ mod tests {
             fundingUTXOs: vec![],
         };
 
-        let expected_event = NewCommittee {
-            committeeId: 99,
-            _committee: committee,
-        };
+        let expected_event = NewCommittee { committeeId: 99, _committee: committee };
 
         let removed = true;
         let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(
@@ -1222,9 +1194,7 @@ mod tests {
         let expected_block_num = 777;
         let expected_committee_id = 12345;
 
-        let expected_event = AllCommunicationDataReady {
-            _committeeId: expected_committee_id,
-        };
+        let expected_event = AllCommunicationDataReady { _committeeId: expected_committee_id };
 
         let removed = false;
         let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(

@@ -74,7 +74,7 @@ act push --workflows .github/workflows/docker-release.yml --dryrun
 ### Other Workflows
 
 - `tests.yml`: Runs Rust tests on pull requests
-- `clippy.yml`: Runs Clippy linting checks on pull requests
+- `style.yml`: Runs code formatting checks and Clippy linting checks on pull requests
 - `codeql.yml`: Security analysis with CodeQL
 - `check_peer_tested.yml`: Peer testing workflow
 - `semgrep.yml`: Additional security scanning

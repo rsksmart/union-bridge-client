@@ -1,4 +1,12 @@
+use std::collections::HashMap;
+use std::ops::Range;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+
 use anyhow::{Context, Result};
+use common::rsk_indexer::RskIndexer;
+use common::rsk_provider::{MockRskProvider, RskSubscriptionFilter};
+use common::shutdown_flag::ShutdownFlag;
 use common::test_utils::mock_rsk_provider_handler::MockRskProviderHandler;
 use common::test_utils::rsk_block_generator::FakeBlockGenerator;
 use common::test_utils::rsk_log_generator::FakeLogGenerator;
@@ -6,22 +14,12 @@ use common::test_utils::rsk_utils::{
     DEFAULT_BLOCK_HASH, generate_fake_address, generate_fake_addresses,
     generate_fake_managed_contracts,
 };
-use common::types::TxHash;
-use common::{
-    rsk_indexer::RskIndexer,
-    rsk_provider::{MockRskProvider, RskSubscriptionFilter},
-    shutdown_flag::ShutdownFlag,
-    types::{Address, BlockHash, ContractInfo, LogInfo, RskLog},
-};
+use common::types::{Address, BlockHash, ContractInfo, LogInfo, RskLog, TxHash};
 use log::info;
-use log_indexer::{indexer::LogIndexer, store::RawLogStore};
+use log_indexer::indexer::LogIndexer;
+use log_indexer::store::RawLogStore;
 use primitive_types::H256;
 use rand::Rng;
-use std::{
-    collections::HashMap,
-    ops::Range,
-    sync::{Arc, atomic::AtomicBool},
-};
 use tempfile::tempdir;
 
 const LOG_INDEX_RANGE: Range<u64> = 0..20;
@@ -50,9 +48,7 @@ fn test_when_log_indexer_runs_should_store_logs_from_subscription() -> Result<()
     let log_generator = FakeLogGenerator::new();
     let shutting_down = ShutdownFlag::init();
     let mut mock_rsk_provider = MockRskProvider::new();
-    mock_rsk_provider
-        .expect_get_logs()
-        .returning(|_, _, _| Ok(vec![]));
+    mock_rsk_provider.expect_get_logs().returning(|_, _, _| Ok(vec![]));
     let mut mock_rsk_provider_handler = MockRskProviderHandler::new(
         &mut mock_rsk_provider,
         &block_generator,
@@ -83,20 +79,9 @@ fn test_when_log_indexer_runs_should_store_logs_from_subscription() -> Result<()
         log_info_tuples.clone(),
     );
     let managed_contracts = generate_fake_managed_contracts(addresses);
-    cycle_indexer(
-        store,
-        mock_rsk_provider,
-        &managed_contracts,
-        &shutting_down,
-        None,
-    );
+    cycle_indexer(store, mock_rsk_provider, &managed_contracts, &shutting_down, None);
     let store_after: RawLogStore = RawLogStore::new(store_path)?;
-    assert_logs(
-        &log_generator,
-        &store_after,
-        EVENT_SIGNATURE,
-        log_info_tuples,
-    );
+    assert_logs(&log_generator, &store_after, EVENT_SIGNATURE, log_info_tuples);
     Ok(())
 }
 
@@ -125,9 +110,7 @@ fn test_when_log_before_initial_height_should_not_store_log() -> Result<()> {
     let log_generator = FakeLogGenerator::new();
     let shutting_down = ShutdownFlag::init();
     let mut mock_rsk_provider = MockRskProvider::new();
-    mock_rsk_provider
-        .expect_get_logs()
-        .returning(|_, _, _| Ok(vec![]));
+    mock_rsk_provider.expect_get_logs().returning(|_, _, _| Ok(vec![]));
     let mut mock_rsk_provider_handler = MockRskProviderHandler::new(
         &mut mock_rsk_provider,
         &block_generator,
@@ -168,20 +151,9 @@ fn test_when_log_before_initial_height_should_not_store_log() -> Result<()> {
         log_info_tuples_with_bad_log.clone(),
     );
     let managed_contracts = generate_fake_managed_contracts(addresses);
-    cycle_indexer(
-        store,
-        mock_rsk_provider,
-        &managed_contracts,
-        &shutting_down,
-        None,
-    );
+    cycle_indexer(store, mock_rsk_provider, &managed_contracts, &shutting_down, None);
     let store_after: RawLogStore = RawLogStore::new(store_path)?;
-    assert_logs(
-        &log_generator,
-        &store_after,
-        EVENT_SIGNATURE,
-        log_info_tuples,
-    );
+    assert_logs(&log_generator, &store_after, EVENT_SIGNATURE, log_info_tuples);
     assert_log_not_in_store(&log_generator, &store_after, EVENT_SIGNATURE, bad_log_info);
     Ok(())
 }
@@ -201,14 +173,7 @@ fn log_info_tuple_generator(
         let block_hash = BlockHash::from(H256::random());
         let tx_hash = TxHash::from(H256::random());
         let log_index = rng.random_range(LOG_INDEX_RANGE);
-        v.push(LogInfo::new(
-            address,
-            block_hash,
-            block_num.into(),
-            tx_hash,
-            log_index,
-            false,
-        ));
+        v.push(LogInfo::new(address, block_hash, block_num.into(), tx_hash, log_index, false));
     }
     v
 }
@@ -250,14 +215,8 @@ fn assert_logs(
             expected_log.info().tx_hash(),
             expected_log.info().log_index()
         );
-        let actual_log = store
-            .get(&expected_log_key)
-            .unwrap()
-            .expect("Log not found in storage!");
-        assert_eq!(
-            expected_log, actual_log,
-            "Log in storage does not match the expected log"
-        );
+        let actual_log = store.get(&expected_log_key).unwrap().expect("Log not found in storage!");
+        assert_eq!(expected_log, actual_log, "Log in storage does not match the expected log");
     }
 }
 

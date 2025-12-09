@@ -1,17 +1,18 @@
-use crate::blockchain_tracker::{BlockchainView, ConfirmableEvent};
-use crate::config::REQUIRED_CONFIRMATIONS;
+use std::rc::Rc;
+
 use anyhow::{Context, Result, anyhow, bail};
 use common::runtime_sync::RuntimeSync;
 use common::types::{BlockNumber, Hash256};
 use log::debug;
-use std::rc::Rc;
+#[cfg(test)]
+use mockall::automock;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::{AddMemberNonceInput, AddMemberSignatureInput};
 use uuid::Uuid;
 
+use crate::blockchain_tracker::{BlockchainView, ConfirmableEvent};
+use crate::config::REQUIRED_CONFIRMATIONS;
 use crate::types::RegisterSignaturesBitVmxData;
-#[cfg(test)]
-use mockall::automock;
 
 #[cfg_attr(test, automock)]
 pub(crate) trait BtcSignatureLifecycleApi {
@@ -67,12 +68,7 @@ where
             contracts: contracts_gateway,
             rt_sync,
             blockchain_view: BlockchainView::new(),
-            state: State {
-                flow_id,
-                data: None,
-                nonce_step: None,
-                signature_step: None,
-            },
+            state: State { flow_id, data: None, nonce_step: None, signature_step: None },
         }
     }
 
@@ -87,12 +83,7 @@ where
             contracts: contracts_gateway,
             rt_sync,
             blockchain_view,
-            state: State {
-                flow_id,
-                data: None,
-                nonce_step: None,
-                signature_step: None,
-            },
+            state: State { flow_id, data: None, nonce_step: None, signature_step: None },
         }
     }
 
@@ -185,19 +176,12 @@ where
 
         // send the nonce
 
-        let nonce = AddMemberNonceInput {
-            hash_to_sign: data.hash_to_sign,
-            nonce: data.nonce.clone(),
-        };
+        let nonce =
+            AddMemberNonceInput { hash_to_sign: data.hash_to_sign, nonce: data.nonce.clone() };
 
-        self.rt_sync
-            .run(self.contracts.add_member_nonce(nonce.clone()))
-            .with_context(|| {
-                format!(
-                    "Failed to send nonce {nonce:?} for flow {}",
-                    self.state.flow_id
-                )
-            })?;
+        self.rt_sync.run(self.contracts.add_member_nonce(nonce.clone())).with_context(|| {
+            format!("Failed to send nonce {nonce:?} for flow {}", self.state.flow_id)
+        })?;
 
         // move to the Nonces step
         let confirmable = ConfirmableEvent::new(
@@ -219,10 +203,7 @@ where
     }
 
     fn is_all_nonces_ready_confirmed(&self) -> bool {
-        self.state
-            .nonce_step
-            .as_ref()
-            .is_some_and(ConfirmableEvent::is_confirmed)
+        self.state.nonce_step.as_ref().is_some_and(ConfirmableEvent::is_confirmed)
     }
 
     fn send_signature_to_contracts(&mut self) -> Result<()> {
@@ -231,18 +212,12 @@ where
             return Ok(());
         }
 
-        debug!(
-            "Sending signatures to contract: flow_id={}",
-            self.state.flow_id
-        );
+        debug!("Sending signatures to contract: flow_id={}", self.state.flow_id);
 
         // stop confirming nonce step
 
         if !self.is_all_nonces_ready_confirmed() {
-            bail!(
-                "flow {} has not completed the Nonces step yet",
-                self.state.flow_id
-            );
+            bail!("flow {} has not completed the Nonces step yet", self.state.flow_id);
         }
 
         if let Some(nonce_step) = &mut self.state.nonce_step {
@@ -295,10 +270,7 @@ where
     }
 
     fn is_all_signatures_ready_confirmed(&self) -> bool {
-        self.state
-            .signature_step
-            .as_ref()
-            .is_some_and(ConfirmableEvent::is_confirmed)
+        self.state.signature_step.as_ref().is_some_and(ConfirmableEvent::is_confirmed)
     }
 
     fn get_hash_to_sign(&self) -> Option<Hash256> {
@@ -312,9 +284,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::blockchain_tracker::BlockchainView;
-    use crate::coordinator::tests::MockRskContractsGatewayApi;
+    use std::rc::Rc;
 
     use common::runtime_sync::RuntimeSync;
     use common::test_utils::rsk_block_generator::create_block_and_uncles;
@@ -323,11 +293,13 @@ mod tests {
     use musig2::{PartialSignature, PubNonce};
     use primitive_types::H256;
     use serde_json::json;
-    use std::rc::Rc;
-
-    use crate::types::RegisterSignaturesBitVmxData;
     use transaction_dispatcher::types::{AddMemberNonceInput, AddMemberSignatureInput};
     use uuid::Uuid;
+
+    use super::*;
+    use crate::blockchain_tracker::BlockchainView;
+    use crate::coordinator::tests::MockRskContractsGatewayApi;
+    use crate::types::RegisterSignaturesBitVmxData;
 
     #[test]
     fn test_nonce_step_with_unset() {
@@ -335,13 +307,11 @@ mod tests {
             setup_test_flow_with_options(Some(1), None); // only expect nonce calls
 
         // step 1: send nonce (but NOT signature)
-        flow.send_nonce_to_contracts(&signature_input)
-            .expect("failed to send nonce to contracts");
+        flow.send_nonce_to_contracts(&signature_input).expect("failed to send nonce to contracts");
 
         // step 2: set nonces ready
         let start_block = BlockNumber::from(100);
-        flow.set_all_nonces_ready(start_block)
-            .expect("failed to set nonces ready");
+        flow.set_all_nonces_ready(start_block).expect("failed to set nonces ready");
 
         // verify not confirmed initially
         let is_confirmed = flow.is_all_nonces_ready_confirmed();
@@ -369,10 +339,7 @@ mod tests {
 
         // check that confirmations don't accumulate after unsetting nonces
         let is_confirmed = flow.is_all_nonces_ready_confirmed();
-        assert!(
-            !is_confirmed,
-            "confirmations should not accumulate after unsetting nonces"
-        );
+        assert!(!is_confirmed, "confirmations should not accumulate after unsetting nonces");
 
         // step 6: set nonces ready again
         let result = flow.set_all_nonces_ready(start_block);
@@ -395,13 +362,11 @@ mod tests {
             setup_test_flow_with_options(Some(1), None); // only expect nonce calls
 
         // step 1: send nonce (but NOT signature)
-        flow.send_nonce_to_contracts(&signature_input)
-            .expect("failed to send nonce to contracts");
+        flow.send_nonce_to_contracts(&signature_input).expect("failed to send nonce to contracts");
 
         // step 2: set nonces ready
         let start_block = BlockNumber::from(100);
-        flow.set_all_nonces_ready(start_block)
-            .expect("failed to set nonces ready");
+        flow.set_all_nonces_ready(start_block).expect("failed to set nonces ready");
 
         // verify not confirmed initially
         let is_confirmed = flow.is_all_nonces_ready_confirmed();
@@ -434,15 +399,9 @@ mod tests {
         let result = flow.send_signature_to_contracts();
 
         // verify the Nonces step is not complete yet
+        assert!(result.is_err(), "should fail when nonces step is not complete");
         assert!(
-            result.is_err(),
-            "should fail when nonces step is not complete"
-        );
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("has not completed the Nonces step yet"),
+            result.unwrap_err().to_string().contains("has not completed the Nonces step yet"),
             "error should mention flow is not at Nonces step"
         );
     }
@@ -458,8 +417,7 @@ mod tests {
             .expect("failed to complete Nonces step");
 
         // step 3: send signatures to contract
-        flow.send_signature_to_contracts()
-            .expect("failed to send signature to contracts");
+        flow.send_signature_to_contracts().expect("failed to send signature to contracts");
 
         // step 4: set signatures ready
         let signature_start_block = start_block + REQUIRED_CONFIRMATIONS.into();
@@ -500,12 +458,10 @@ mod tests {
             .expect("failed to complete Nonces step");
 
         // step 2: send signatures to contract
-        flow.send_signature_to_contracts()
-            .expect("failed to send signature to contracts");
+        flow.send_signature_to_contracts().expect("failed to send signature to contracts");
 
         // step 3: set signatures ready
-        flow.set_all_signatures_ready(start_block)
-            .expect("failed to set signatures ready");
+        flow.set_all_signatures_ready(start_block).expect("failed to set signatures ready");
 
         // verify not confirmed initially
         let is_confirmed = flow.is_all_signatures_ready_confirmed();
@@ -533,10 +489,7 @@ mod tests {
 
         // check that confirmations don't accumulate after unsetting signatures
         let is_confirmed = flow.is_all_signatures_ready_confirmed();
-        assert!(
-            !is_confirmed,
-            "confirmations should not accumulate after unsetting signatures"
-        );
+        assert!(!is_confirmed, "confirmations should not accumulate after unsetting signatures");
 
         // step 7: set signatures ready again
         let result = flow.set_all_signatures_ready(start_block);
@@ -564,12 +517,10 @@ mod tests {
             .expect("failed to complete Nonces step");
 
         // step 2: send signatures to contract
-        flow.send_signature_to_contracts()
-            .expect("failed to send signature to contracts");
+        flow.send_signature_to_contracts().expect("failed to send signature to contracts");
 
         // step 3: set signatures ready
-        flow.set_all_signatures_ready(start_block)
-            .expect("failed to set signatures ready");
+        flow.set_all_signatures_ready(start_block).expect("failed to set signatures ready");
 
         // step 4: add blocks but not enough for confirmation
         for i in 0..(REQUIRED_CONFIRMATIONS - 1) {
@@ -583,15 +534,9 @@ mod tests {
 
         // step 5: unset nonces ready while in signature step
         let result = flow.unset_all_nonces_ready();
+        assert!(result.is_err(), "should fail when unsetting nonces during signature step");
         assert!(
-            result.is_err(),
-            "should fail when unsetting nonces during signature step"
-        );
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Nonces unset received for flow"),
+            result.unwrap_err().to_string().contains("Nonces unset received for flow"),
             "error should mention nonces unset during signature step"
         );
     }
@@ -611,10 +556,7 @@ mod tests {
         complete_signature_step(&mut flow, signature_start_block, &blockchain_view)
             .expect("failed to complete Signatures step");
 
-        assert!(
-            flow.is_all_signatures_ready_confirmed(),
-            "Signatures should be confirmed"
-        );
+        assert!(flow.is_all_signatures_ready_confirmed(), "Signatures should be confirmed");
     }
 
     #[test]
@@ -625,11 +567,9 @@ mod tests {
         // setup mock contracts gateway to fail on add_member_nonce
         let mut mock_contracts = MockRskContractsGatewayApi::new();
         mock_contracts.expect_add_member_nonce().returning(|_| {
-            Err(
-                transaction_dispatcher::rsk_gateway::DomainErrors::UnhandledContractError(
-                    "Contract nonce call failed".to_string(),
-                ),
-            )
+            Err(transaction_dispatcher::rsk_gateway::DomainErrors::UnhandledContractError(
+                "Contract nonce call failed".to_string(),
+            ))
         });
 
         // set up runtime sync and blockchain view
@@ -646,15 +586,9 @@ mod tests {
 
         // attempt to send nonce to contracts should fail
         let result = flow.send_nonce_to_contracts(&fake_signature_input());
+        assert!(result.is_err(), "should fail when contract nonce call fails");
         assert!(
-            result.is_err(),
-            "should fail when contract nonce call fails"
-        );
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Failed to send nonce"),
+            result.unwrap_err().to_string().contains("Failed to send nonce"),
             "error should mention nonce failure"
         );
     }
@@ -681,31 +615,19 @@ mod tests {
 
         // test 1: try to skip Nonces step and go directly to signature
         let result = flow.send_signature_to_contracts();
-        assert!(
-            result.is_err(),
-            "should fail when trying to send signature before nonce"
-        );
+        assert!(result.is_err(), "should fail when trying to send signature before nonce");
 
         // test 2: try to set nonces ready before sending nonce
         let result = flow.set_all_nonces_ready(BlockNumber::from(100));
-        assert!(
-            result.is_err(),
-            "should fail when trying to set nonces ready before sending"
-        );
+        assert!(result.is_err(), "should fail when trying to set nonces ready before sending");
 
         // test 3: try to set signatures ready before any signature work
         let result = flow.set_all_signatures_ready(BlockNumber::from(100));
-        assert!(
-            result.is_err(),
-            "should fail when trying to set signatures ready too early"
-        );
+        assert!(result.is_err(), "should fail when trying to set signatures ready too early");
 
         // test 4: try to check confirmations before setting ready
         let result = flow.is_all_nonces_ready_confirmed();
-        assert!(
-            !result,
-            "should be false when checking nonce confirmation before setting ready"
-        );
+        assert!(!result, "should be false when checking nonce confirmation before setting ready");
 
         let result = flow.is_all_signatures_ready_confirmed();
         assert!(
@@ -754,15 +676,9 @@ mod tests {
 
         // a second request to send_nonce_to_contracts for the same flow ID should fail
         let result = flow.send_nonce_to_contracts(&signature_input);
+        assert!(result.is_err(), "should fail when calling send_nonce_to_contracts twice");
         assert!(
-            result.is_err(),
-            "should fail when calling send_nonce_to_contracts twice"
-        );
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("already in Nonces step"),
+            result.unwrap_err().to_string().contains("already in Nonces step"),
             "error should mention already in Nonces step"
         );
 
@@ -917,10 +833,7 @@ mod tests {
 
         // verify confirmed after enough blocks
         let is_confirmed = flow.is_all_nonces_ready_confirmed();
-        assert!(
-            is_confirmed,
-            "nonces should not be confirmed before enough blocks"
-        );
+        assert!(is_confirmed, "nonces should not be confirmed before enough blocks");
 
         Ok(())
     }
@@ -941,27 +854,18 @@ mod tests {
 
         // verify confirmed after enough blocks
         let is_confirmed = flow.is_all_signatures_ready_confirmed();
-        assert!(
-            is_confirmed,
-            "signatures should be confirmed after enough blocks"
-        );
+        assert!(is_confirmed, "signatures should be confirmed after enough blocks");
 
         Ok(())
     }
 
     pub(in crate::flows::btc_signature) fn fake_signature_input() -> RegisterSignaturesBitVmxData {
-        let hash_to_sign = "a1b2c3d4e5f60123456789abcdef0123456789abcdef0123456789abcdef0123"
-            .try_into()
-            .unwrap();
+        let hash_to_sign =
+            "a1b2c3d4e5f60123456789abcdef0123456789abcdef0123456789abcdef0123".try_into().unwrap();
         let nonce = "0279BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798032DE2662628C90B03F5E720284EB52FF7D71F4284F627B68A853D78C78E1FFE93".parse::<PubNonce>().unwrap();
-        let signature = "44477400e59c41025e4e18c4de244b90b14554dcdcbfa396ead4659aa6343249"
-            .parse()
-            .unwrap();
+        let signature =
+            "44477400e59c41025e4e18c4de244b90b14554dcdcbfa396ead4659aa6343249".parse().unwrap();
 
-        RegisterSignaturesBitVmxData {
-            hash_to_sign,
-            nonce,
-            signature,
-        }
+        RegisterSignaturesBitVmxData { hash_to_sign, nonce, signature }
     }
 }

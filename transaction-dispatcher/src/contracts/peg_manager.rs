@@ -1,32 +1,26 @@
-use crate::contracts::common::send_tx_with_gas_bump;
-use alloy_primitives::TxHash;
-use alloy_primitives::{Address, FixedBytes, U256, hex::FromHex};
+use alloy_primitives::hex::FromHex;
+use alloy_primitives::{Address, FixedBytes, TxHash, U256};
 use alloy_provider::Provider;
 use anyhow::Result;
+use common::mocks::fake_contracts::FakePegManager;
+use common::mocks::fake_contracts::FakePegManager::FakePegManagerInstance;
 use log::{error, info};
+#[cfg(test)]
+use mockall::automock;
 use union_contracts::bindings::peg_manager::PegManager::{
     self, BtcTransaction, BtcTxSPVProof, PegManagerErrors, PegManagerInstance,
 };
 
 use crate::contracts::bitcoin_manager::ParseFieldError;
-
-use crate::types::BtcTxSPVProofInput;
-
+use crate::contracts::common::send_tx_with_gas_bump;
 // re-export for convenience
 pub(crate) use crate::contracts::interactions::accept_pegin;
-pub(crate) use crate::contracts::interactions::get_temporary_pegin_address;
-pub(crate) use crate::contracts::interactions::notify_check_fork_complete;
-pub(crate) use crate::contracts::interactions::register_pegout;
-pub(crate) use crate::contracts::interactions::request_pegin;
-pub(crate) use crate::contracts::interactions::request_pegout;
-
+pub(crate) use crate::contracts::interactions::{
+    get_temporary_pegin_address, notify_check_fork_complete, register_pegout, request_pegin,
+    request_pegout,
+};
 use crate::rsk_gateway::DomainErrors;
-
-use common::mocks::fake_contracts::FakePegManager;
-use common::mocks::fake_contracts::FakePegManager::FakePegManagerInstance;
-
-#[cfg(test)]
-use mockall::automock;
+use crate::types::BtcTxSPVProofInput;
 
 #[cfg_attr(test, automock)]
 pub trait PegManagerContractApi {
@@ -130,11 +124,7 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
     ) -> alloy_contract::Result<TxHash> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
-            || {
-                self.contract_instance
-                    .tryPegout(usr_pub_key.into())
-                    .value(U256::from(msg_value))
-            },
+            || self.contract_instance.tryPegout(usr_pub_key.into()).value(U256::from(msg_value)),
             gas_bumps,
         )
         .await
@@ -225,10 +215,7 @@ impl<P: Provider> PegManagerContractApi for FakePegManagerContract<P> {
     ) -> alloy_contract::Result<TxHash> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
-            || {
-                self.contract_instance
-                    .checkForkComplete(pegout_id.to_string())
-            },
+            || self.contract_instance.checkForkComplete(pegout_id.to_string()),
             gas_bumps,
         )
         .await
@@ -256,10 +243,7 @@ impl BtcTxSPVProofInput {
         let merkle_branches_hashes = self
             .merkle_branch_hashes
             .into_iter()
-            .map(|hash| {
-                hash.parse::<FixedBytes<32>>()
-                    .map_err(ParseFieldError::ParseHex)
-            })
+            .map(|hash| hash.parse::<FixedBytes<32>>().map_err(ParseFieldError::ParseHex))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| {
                 error!("Failed to convert merkle_branch_hashes: {e:?}");
@@ -316,10 +300,7 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
         PegManagerErrors::InvalidSlotState(e) => {
             // Extract actual and expected values from the error
             // The InvalidSlotState error typically contains actual and expected slot states
-            DomainErrors::InvalidSlotState {
-                expected: e.expected,
-                actual: e.actual,
-            }
+            DomainErrors::InvalidSlotState { expected: e.expected, actual: e.actual }
         }
         // Unhandled
         _ => DomainErrors::UnhandledContractError(format!("{e:?}")),
@@ -328,8 +309,6 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
 
 #[cfg(test)]
 mod tests {
-    use crate::contracts::common::tests::generate_contract_revert_error;
-    use crate::rsk_gateway::DomainErrors;
     use union_contracts::bindings::bitcoin_manager::BitcoinManager::{
         BitcoinManagerErrors, IncorrectOutputScript,
     };
@@ -338,6 +317,9 @@ mod tests {
         InvalidBtcTxVersion, InvalidLocktime, NotInitializing, PegManagerErrors,
         PeginAlreadyRequested,
     };
+
+    use crate::contracts::common::tests::generate_contract_revert_error;
+    use crate::rsk_gateway::DomainErrors;
 
     #[test]
     fn test_already_registered_accept_pegin() {

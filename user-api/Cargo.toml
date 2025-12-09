@@ -3,21 +3,21 @@ name = "user-api"
 version = "0.1.0"
 edition = "2021"
 
-[lints.clippy]
-all = "allow" # non-production code, do not require strict linting
-
 [dependencies]
+anyhow = { workspace = true }
 axum = { workspace = true }
 bitcoin = { workspace = true, features = ["std", "rand-std", "serde"] }
-tower-http = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
-anyhow = { workspace = true }
 clap = { workspace = true }
+common = { path = "../common" }
+hex = "0.4.3"
+log = { workspace = true }
+serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-log = { workspace = true }
-common = { path = "../common" }
+tokio = { workspace = true, features = ["full"] }
+tower-http = { workspace = true }
 transaction-dispatcher = { path = "../transaction-dispatcher", features = ["types"] }
-serde = { version = "1.0.219", features = ["derive"] }
-hex = "0.4.3"
+
+[lints.clippy]
+all = "allow" # non-production code, do not require strict linting
 

@@ -1,0 +1,10 @@
+edition = "2021"
+max_width = 100
+use_small_heuristics = "Max"
+reorder_imports = true
+reorder_modules = true
+
+# requires nightly
+# group imports by crate, module, item
+group_imports = "StdExternalCrate"  # std / external crates / local crates
+imports_granularity = "Module"      # group by crate

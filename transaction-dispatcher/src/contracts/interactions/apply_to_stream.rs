@@ -1,12 +1,12 @@
+use anyhow::Result;
+use log::{debug, error, info};
+use union_contracts::bindings::stream_manager::StreamManager::{Role, StreamDenomination};
+
 use crate::contracts::committee_registry::CommitteeRegistryContractApi;
 use crate::contracts::stream_manager::StreamManagerContractApi;
 use crate::contracts::types::{Address, convert_to_member_registration_keys};
 use crate::rsk_gateway::{BalanceProvider, DomainErrors};
 use crate::types::{ApplyToStreamInput, ApplyToStreamOutput};
-
-use anyhow::Result;
-use log::{debug, error, info};
-use union_contracts::bindings::stream_manager::StreamManager::{Role, StreamDenomination};
 
 #[derive(Clone)]
 pub(crate) struct ApplyToStreamInvoke<
@@ -96,14 +96,20 @@ impl<C: CommitteeRegistryContractApi, S: StreamManagerContractApi, BP: BalancePr
             .await?;
 
         info!("ApplyToStream successful at tx {tx_hash}");
-        Ok(ApplyToStreamOutput {
-            transaction_hash: tx_hash.to_string(),
-        })
+        Ok(ApplyToStreamOutput { transaction_hash: tx_hash.to_string() })
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
+    use alloy_primitives::{Address, TxHash, U256};
+    use common::msg_broker::bitvmx_types::PeerId;
+    use mockall::predicate::eq;
+    use union_contracts::bindings::committee_registry::CommitteeRegistry::UTXO;
+    use union_contracts::bindings::stream_manager::StreamManager::{Role, StreamDenomination};
+
     use crate::contracts::committee_registry::MockCommitteeRegistryContractApi;
     use crate::contracts::interactions::apply_to_stream::{
         ApplyToStreamInput, ApplyToStreamInvoke,
@@ -112,12 +118,6 @@ mod tests {
     use crate::contracts::types::convert_to_member_registration_keys;
     use crate::rsk_gateway::{DomainErrors, MockBalanceProvider};
     use crate::types::CommitteeECDSA;
-    use alloy_primitives::{Address, TxHash, U256};
-    use common::msg_broker::bitvmx_types::PeerId;
-    use mockall::predicate::eq;
-    use std::str::FromStr;
-    use union_contracts::bindings::committee_registry::CommitteeRegistry::UTXO;
-    use union_contracts::bindings::stream_manager::StreamManager::{Role, StreamDenomination};
 
     impl
         ApplyToStreamInvoke<
@@ -160,10 +160,7 @@ mod tests {
         // expect get_minimum_deposit to be called
         mock_stream_manager
             .expect_call_get_minimum_deposit()
-            .with(
-                eq(StreamDenomination::from(stream_denomination)),
-                eq(Role::from(input.role)),
-            )
+            .with(eq(StreamDenomination::from(stream_denomination)), eq(Role::from(input.role)))
             .returning(|_, _| Ok(U256::from(100)))
             .times(1);
 
@@ -194,9 +191,7 @@ mod tests {
             .times(1);
 
         let mut mock_balance_provider = MockBalanceProvider::new();
-        mock_balance_provider
-            .expect_get_balance()
-            .returning(|_| Ok(U256::from(1000))); // enough balance
+        mock_balance_provider.expect_get_balance().returning(|_| Ok(U256::from(1000))); // enough balance
 
         let interaction = ApplyToStreamInvoke::new_for_tests(
             mock_committee_registry,
@@ -233,17 +228,12 @@ mod tests {
         // contracts stores streamId as u64, but only accept u8 on StreamDenomination struct
         mock_stream_manager
             .expect_call_get_minimum_deposit()
-            .with(
-                eq(StreamDenomination::from(stream_denomination)),
-                eq(Role::from(input.role)),
-            )
+            .with(eq(StreamDenomination::from(stream_denomination)), eq(Role::from(input.role)))
             .returning(|_, _| Ok(U256::from(100)))
             .times(1);
 
         let mut mock_balance_provider = MockBalanceProvider::new();
-        mock_balance_provider
-            .expect_get_balance()
-            .returning(|_| Ok(U256::from(50))); // low balance
+        mock_balance_provider.expect_get_balance().returning(|_| Ok(U256::from(50))); // low balance
 
         let interaction = ApplyToStreamInvoke {
             committee_registry: mock_committee_registry,

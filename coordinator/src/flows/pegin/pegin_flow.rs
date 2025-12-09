@@ -1,36 +1,29 @@
-use crate::flows::common::{COMM_KEY_INDEX, build_communication_data};
-use crate::flows::pegin::utils::{get_accept_pegin_pid, get_temp_pegin_pid};
-use crate::store::{CoordinatorStoreApi, StoreKey};
+use std::rc::Rc;
 
 use anyhow::{Context, Result, anyhow, bail};
-use bitcoin::{
-    PublicKey, Txid,
-    secp256k1::{Parity::Even, XOnlyPublicKey},
+use bitcoin::secp256k1::Parity::Even;
+use bitcoin::secp256k1::XOnlyPublicKey;
+use bitcoin::{PublicKey, Txid};
+use common::msg_broker::bitvmx_types::{
+    ACCEPT_PEGIN_TX, BtcTxSPVProof, IncomingBitVMXApiMessages, P2PAddress, ParticipantRole, PeerId,
+    PeginAcceptedMessage, TransactionStatus, VariableTypes,
 };
-use common::msg_broker::bitvmx_types::ParticipantRole;
-use common::{
-    msg_broker::{
-        bitvmx_types::{
-            ACCEPT_PEGIN_TX, BtcTxSPVProof, IncomingBitVMXApiMessages, P2PAddress, PeerId,
-            PeginAcceptedMessage, TransactionStatus, VariableTypes,
-        },
-        broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi},
-    },
-    runtime_sync::RuntimeSync,
-    types::{CommitteeId, TxIdParser},
-};
+use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
+use common::runtime_sync::RuntimeSync;
+use common::types::{CommitteeId, TxIdParser};
 use log::{debug, info, trace};
 use serde::{Deserialize, Serialize};
-use std::rc::Rc;
-use transaction_dispatcher::{
-    rsk_gateway::RskContractsGatewayApi,
-    types::{
-        GetCommitteeInput, GetCommitteeOutput, GetCommunicationDataInput, GetMemberPublicKeysInput,
-        P2PAddressParser, RequestPeginInput,
-    },
+use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
+use transaction_dispatcher::types::{
+    GetCommitteeInput, GetCommitteeOutput, GetCommunicationDataInput, GetMemberPublicKeysInput,
+    P2PAddressParser, RequestPeginInput,
 };
 use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
 use uuid::Uuid;
+
+use crate::flows::common::{COMM_KEY_INDEX, build_communication_data};
+use crate::flows::pegin::utils::{get_accept_pegin_pid, get_temp_pegin_pid};
+use crate::store::{CoordinatorStoreApi, StoreKey};
 
 const PEGIN_REQUEST: &str = "pegin_request";
 const PEGIN_ACCEPTED_VAR_NAME: &str = "PeginAccepted";
@@ -198,13 +191,7 @@ where
         state: State,
         store: Rc<S>,
     ) -> Self {
-        Self {
-            contracts,
-            rt_sync,
-            bitvmx_broker,
-            state,
-            store,
-        }
+        Self { contracts, rt_sync, bitvmx_broker, state, store }
     }
 
     fn persist_state(&self) -> Result<()> {
@@ -212,8 +199,7 @@ where
             "PeginFlow {}: Persisting state for step: {:?}",
             self.state.flow_id, self.state.ctx.step
         );
-        self.store
-            .save_flow(&StoreKey::PeginFlow(self.state.flow_id), self.state.clone())
+        self.store.save_flow(&StoreKey::PeginFlow(self.state.flow_id), self.state.clone())
     }
 
     /// Start the next step and log the transition
@@ -234,18 +220,12 @@ where
                 unreachable!("Init step should not be reached in start_step");
             }
             Steps::RequestPeginSpvProof => {
-                info!(
-                    "Requesting SPV proof for pegin request for flow_id: {}",
-                    self.state.flow_id
-                );
+                info!("Requesting SPV proof for pegin request for flow_id: {}", self.state.flow_id);
                 self.request_pegin_spv_proof()?;
             }
             Steps::PeginRequested => {
                 // This step will be reached after PeginRequested event is confirmed
-                info!(
-                    "PeginRequested event confirmed for flow_id: {}",
-                    self.state.flow_id
-                );
+                info!("PeginRequested event confirmed for flow_id: {}", self.state.flow_id);
             }
             Steps::GetCommInfo => {
                 self.migrate_to_official_flow_id()?;
@@ -281,17 +261,12 @@ where
             }
             Steps::AcceptPegin => {
                 info!("Accepting pegin for flow_id: {}", self.state.flow_id);
-                let spv_proof = self
-                    .state
-                    .ctx
-                    .accept_pegin_spv_proof
-                    .clone()
-                    .ok_or_else(|| {
-                        anyhow!(
-                            "SPV proof not available for pegin acceptance - flow_id {}",
-                            self.state.flow_id
-                        )
-                    })?;
+                let spv_proof = self.state.ctx.accept_pegin_spv_proof.clone().ok_or_else(|| {
+                    anyhow!(
+                        "SPV proof not available for pegin acceptance - flow_id {}",
+                        self.state.flow_id
+                    )
+                })?;
                 self.accept_pegin(spv_proof)?;
             }
             Steps::Done => {
@@ -388,17 +363,12 @@ where
                 self.state.ctx.pegin_accepted = Some(pegin_accepted.clone());
                 Ok(Steps::Done)
             }
-            _ => Err(anyhow!(
-                "Invalid state transition: {current_step:?} with data {data:?}"
-            )),
+            _ => Err(anyhow!("Invalid state transition: {current_step:?} with data {data:?}")),
         }
     }
 
     fn prepare_pegin_setup(&mut self) -> Result<()> {
-        info!(
-            "Preparing pegin setup for BitVMX with flow_id: {}",
-            self.state.flow_id
-        );
+        info!("Preparing pegin setup for BitVMX with flow_id: {}", self.state.flow_id);
 
         let pegin_requested = self
             .state
@@ -414,10 +384,7 @@ where
     }
 
     fn send_pegin_request_to_bitvmx(&mut self, committee_id: &CommitteeId) -> Result<()> {
-        debug!(
-            "Sending pegin request to BitVMX with flow_id: {}",
-            self.state.flow_id
-        );
+        debug!("Sending pegin request to BitVMX with flow_id: {}", self.state.flow_id);
 
         let committee_output = self.get_committee_output(committee_id.clone())?;
         self.state.ctx.committee_output = Some(committee_output.clone());
@@ -442,10 +409,7 @@ where
     }
 
     fn send_setup_to_bitvmx(&mut self, committee_id: &CommitteeId) -> Result<()> {
-        debug!(
-            "Sending setup to BitVMX with flow_id: {}",
-            self.state.flow_id
-        );
+        debug!("Sending setup to BitVMX with flow_id: {}", self.state.flow_id);
 
         let committee_addresses = self.get_committee_addresses(committee_id)?;
         let committee_peer_ids = self.get_committee_peer_ids(committee_id)?;
@@ -493,17 +457,13 @@ where
             take_tx_hash: pegin_accepted.operator_take_sighash.clone(),
         };
 
-        self.rt_sync
-            .run(async { self.contracts.add_operator_take_tx_hash(input).await })?;
+        self.rt_sync.run(async { self.contracts.add_operator_take_tx_hash(input).await })?;
 
         Ok(())
     }
 
     fn dispatch_transaction(&self) -> Result<()> {
-        info!(
-            "Dispatching transaction {} for flow_id: {}",
-            ACCEPT_PEGIN_TX, self.state.flow_id
-        );
+        info!("Dispatching transaction {} for flow_id: {}", ACCEPT_PEGIN_TX, self.state.flow_id);
         let msg = IncomingBitVMXApiMessages::DispatchTransactionName(
             self.state.flow_id,
             ACCEPT_PEGIN_TX.to_string(),
@@ -532,10 +492,7 @@ where
             .as_ref()
             .ok_or_else(|| anyhow!("PeginAccepted data not available"))?;
 
-        debug!(
-            "Notifying pegin accepted to BitVMX with flow_id: {}",
-            self.state.flow_id
-        );
+        debug!("Notifying pegin accepted to BitVMX with flow_id: {}", self.state.flow_id);
         let data = serde_json::to_string(&pegin_accepted)?;
         let msg = IncomingBitVMXApiMessages::SetVar(
             self.state.flow_id,
@@ -597,10 +554,7 @@ where
         let operator_indexes = Self::build_operator_indexes(committee_output);
         let slot_index = event.streamPosition.slotId;
 
-        let checksum_address = event
-            .requestPeginInfo
-            .rskDestinationAddress
-            .to_checksum(None);
+        let checksum_address = event.requestPeginInfo.rskDestinationAddress.to_checksum(None);
         let rootstock_address = checksum_address
             .get(2..)
             .ok_or_else(|| anyhow!("RSK address checksum too short"))?
@@ -652,9 +606,7 @@ where
 
     fn get_committee_output(&mut self, committee_id: CommitteeId) -> Result<GetCommitteeOutput> {
         let committee_response = self.rt_sync.run(async {
-            self.contracts
-                .get_committee(GetCommitteeInput { committee_id })
-                .await
+            self.contracts.get_committee(GetCommitteeInput { committee_id }).await
         })?;
         Ok(committee_response)
     }
@@ -681,38 +633,24 @@ where
     }
 
     fn get_committee_peer_ids(&self, committee_id: &CommitteeId) -> Result<Vec<PeerId>> {
-        let committee_input = GetCommitteeInput {
-            committee_id: committee_id.clone(),
-        };
-        let committee_response = self
-            .rt_sync
-            .run(async { self.contracts.get_committee(committee_input).await })?;
+        let committee_input = GetCommitteeInput { committee_id: committee_id.clone() };
+        let committee_response =
+            self.rt_sync.run(async { self.contracts.get_committee(committee_input).await })?;
 
         let mut peer_ids = Vec::new();
 
         for member in committee_response.committee.members {
-            let keys_input = GetMemberPublicKeysInput {
-                member_address: member.memberAddress,
-            };
+            let keys_input = GetMemberPublicKeysInput { member_address: member.memberAddress };
 
             let keys_response = self
                 .rt_sync
                 .run(async { self.contracts.get_member_public_keys(keys_input).await })?;
 
-            let key_str = keys_response
-                .public_keys
-                .get(COMM_KEY_INDEX)
-                .with_context(|| {
-                    format!(
-                        "Communication key not found for member {}",
-                        member.memberAddress
-                    )
-                })?;
+            let key_str = keys_response.public_keys.get(COMM_KEY_INDEX).with_context(|| {
+                format!("Communication key not found for member {}", member.memberAddress)
+            })?;
 
-            debug!(
-                "Member PeerId: address={}, peer_id={:?}",
-                member.memberAddress, key_str
-            );
+            debug!("Member PeerId: address={}, peer_id={:?}", member.memberAddress, key_str);
             peer_ids.push(PeerId(key_str.clone()));
         }
 
@@ -720,10 +658,7 @@ where
     }
 
     fn request_bitvmx_comm_info(&self) -> Result<()> {
-        info!(
-            "Requesting BitVMX comm info for flow_id: {}",
-            self.state.flow_id
-        );
+        info!("Requesting BitVMX comm info for flow_id: {}", self.state.flow_id);
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo())
     }
 
@@ -741,10 +676,7 @@ where
             "Requesting transaction status for flow_id: {} and tx_id: {:?}",
             self.state.flow_id, tx_id
         );
-        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetTransaction(
-            self.state.flow_id,
-            tx_id,
-        ))?;
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetTransaction(self.state.flow_id, tx_id))?;
         Ok(())
     }
 
@@ -763,19 +695,13 @@ where
         };
 
         let my_addr: alloy_primitives::Address = self.contracts.my_address().into();
-        let Some(member) = get_committee_output
-            .committee
-            .members
-            .iter()
-            .find(|e| e.memberAddress == my_addr)
+        let Some(member) =
+            get_committee_output.committee.members.iter().find(|e| e.memberAddress == my_addr)
         else {
             bail!("Address not found in committee members");
         };
 
-        member
-            .role
-            .try_into()
-            .context("Failed to convert u8 role to ParticipantRole")
+        member.role.try_into().context("Failed to convert u8 role to ParticipantRole")
     }
 
     fn try_get_op_role(&self) -> Result<ParticipantRole> {
@@ -787,11 +713,7 @@ where
     }
 
     pub fn get_accept_pegin_txid(&self) -> Option<Txid> {
-        self.state
-            .ctx
-            .bitvmx_pegin_accepted
-            .as_ref()
-            .map(|accepted| accepted.accept_pegin_txid)
+        self.state.ctx.bitvmx_pegin_accepted.as_ref().map(|accepted| accepted.accept_pegin_txid)
     }
 
     /// Check if the flow is completed
@@ -844,26 +766,25 @@ fn format_step(step: Steps) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::store::MockCoordinatorStoreApi;
     use alloy_primitives::{U256, Uint};
-    use bitcoin::{Txid, hashes::Hash};
-    use common::{
-        msg_broker::{
-            bitvmx_types::{
-                IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PeginAcceptedMessage,
-            },
-            broker::MockBrokerClientApi,
-        },
-        runtime_sync::RuntimeSync,
-        types::Address as CommonAddress,
+    use bitcoin::Txid;
+    use bitcoin::hashes::Hash;
+    use common::msg_broker::bitvmx_types::{
+        IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PeginAcceptedMessage,
     };
+    use common::msg_broker::broker::MockBrokerClientApi;
+    use common::runtime_sync::RuntimeSync;
+    use common::types::Address as CommonAddress;
     use mockall::predicate::*;
-    use musig2::{PubNonce, secp::MaybeScalar};
+    use musig2::PubNonce;
+    use musig2::secp::MaybeScalar;
     use primitive_types::H160;
     use transaction_dispatcher::types::GetCommitteeOutput;
     use union_contracts::bindings::committee_registry::CommitteeRegistry::Committee;
     use uuid::Uuid;
+
+    use super::*;
+    use crate::store::MockCoordinatorStoreApi;
 
     type MockPeginFlow = PeginFlow<
         crate::coordinator::tests::MockRskContractsGatewayApi,
@@ -930,14 +851,9 @@ mod tests {
     fn create_test_flow_with_mock_contracts(
         my_address: CommonAddress,
         ctx: FlowContext,
-    ) -> (
-        MockPeginFlow,
-        std::rc::Rc<crate::coordinator::tests::MockRskContractsGatewayApi>,
-    ) {
+    ) -> (MockPeginFlow, std::rc::Rc<crate::coordinator::tests::MockRskContractsGatewayApi>) {
         let mut mock_contracts = crate::coordinator::tests::MockRskContractsGatewayApi::new();
-        mock_contracts
-            .expect_my_address()
-            .returning(move || my_address);
+        mock_contracts.expect_my_address().returning(move || my_address);
         create_test_flow_with_custom_mock(my_address, ctx, mock_contracts)
     }
 
@@ -945,13 +861,8 @@ mod tests {
         my_address: CommonAddress,
         ctx: FlowContext,
         mut mock_contracts: crate::coordinator::tests::MockRskContractsGatewayApi,
-    ) -> (
-        MockPeginFlow,
-        std::rc::Rc<crate::coordinator::tests::MockRskContractsGatewayApi>,
-    ) {
-        mock_contracts
-            .expect_my_address()
-            .returning(move || my_address);
+    ) -> (MockPeginFlow, std::rc::Rc<crate::coordinator::tests::MockRskContractsGatewayApi>) {
+        mock_contracts.expect_my_address().returning(move || my_address);
         let mock_contracts = std::rc::Rc::new(mock_contracts);
 
         let mock_broker = std::rc::Rc::new(MockBrokerClientApi::<
@@ -961,10 +872,7 @@ mod tests {
         let mock_store = std::rc::Rc::new(MockCoordinatorStoreApi::new());
         let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
 
-        let state = State {
-            flow_id: ctx.flow_id,
-            ctx,
-        };
+        let state = State { flow_id: ctx.flow_id, ctx };
 
         let flow = PeginFlow::from_saved_state(
             mock_contracts.clone(),
@@ -981,10 +889,7 @@ mod tests {
         my_address: CommonAddress,
         step: Steps,
         op_role: Option<ParticipantRole>,
-    ) -> (
-        MockPeginFlow,
-        std::rc::Rc<crate::coordinator::tests::MockRskContractsGatewayApi>,
-    ) {
+    ) -> (MockPeginFlow, std::rc::Rc<crate::coordinator::tests::MockRskContractsGatewayApi>) {
         let flow_id = Uuid::new_v4();
         let ctx = create_default_flow_context(flow_id, step, op_role);
         create_test_flow_with_mock_contracts(my_address, ctx)
@@ -1031,9 +936,7 @@ mod tests {
         ctx.bitvmx_pegin_accepted = Some(default_pegin_accepted_message(btc_tx_id));
 
         let mut mock_contracts = crate::coordinator::tests::MockRskContractsGatewayApi::new();
-        mock_contracts
-            .expect_my_address()
-            .returning(move || my_address);
+        mock_contracts.expect_my_address().returning(move || my_address);
 
         let expected_input = transaction_dispatcher::types::AddOperatorTakeTxHashInput {
             accept_pegin_tx_hash: btc_tx_id,

@@ -1,5 +1,6 @@
 use anyhow::{Context, Result, anyhow};
-use bitcoin::{Txid, hashes::Hash};
+use bitcoin::Txid;
+use bitcoin::hashes::Hash;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
@@ -16,9 +17,8 @@ pub fn get_accept_pegin_pid(committee_id: Uuid, slot_index: usize) -> Result<Uui
         .as_slice()
         .get(..16)
         .ok_or_else(|| anyhow!("SHA256 hash too short for UUID generation"))?;
-    let uuid_bytes: [u8; 16] = slice
-        .try_into()
-        .context("Failed to convert hash slice to UUID bytes")?;
+    let uuid_bytes: [u8; 16] =
+        slice.try_into().context("Failed to convert hash slice to UUID bytes")?;
     Ok(Uuid::from_bytes(uuid_bytes))
 }
 

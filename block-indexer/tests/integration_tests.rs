@@ -1,5 +1,9 @@
 #![cfg(not(feature = "fresh_node"))]
 
+use std::fs;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+
 use anyhow::Result;
 use block_indexer::indexer::BlockIndexer;
 use block_indexer::store::{BlockStore, CachedBlockStore};
@@ -11,8 +15,6 @@ use common::test_utils::mock_rsk_provider_handler::MockRskProviderHandler;
 use common::test_utils::rsk_block_generator::FakeBlockGenerator;
 use common::types::{BlockHash, BlockNumber, RskBlock};
 use log::info;
-use std::fs;
-use std::sync::{Arc, atomic::AtomicBool};
 use tempfile::tempdir;
 const BLOCK_CACHE_SIZE: usize = 100;
 use common::test_utils::rsk_utils::{DEFAULT_BLOCK_HASH, UncleBlockInfo};
@@ -197,10 +199,7 @@ fn test_when_shutdown_happens_during_backwards_sync_and_indexer_restarts_should_
     let shutting_down = ShutdownFlag::init();
     let checkpoint_parent_hash_string = generator
         .clone()
-        .generate_block(
-            BlockNumber::from(BLOCK_HEIGHT_SHUTDOWN_HAPPENS_AT) - 1,
-            None,
-        )
+        .generate_block(BlockNumber::from(BLOCK_HEIGHT_SHUTDOWN_HAPPENS_AT) - 1, None)
         .expect("Failed to generate block")
         .hash()
         .to_string();
@@ -525,11 +524,7 @@ fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription
         INIT_BLOCK_HEIGHT,
         MAX_BLOCK_HEIGHT_SUBSCRIPTION,
     );
-    assert_uncle_block_links(
-        &store_after,
-        INIT_BLOCK_HEIGHT,
-        MAX_BLOCK_HEIGHT_SUBSCRIPTION,
-    );
+    assert_uncle_block_links(&store_after, INIT_BLOCK_HEIGHT, MAX_BLOCK_HEIGHT_SUBSCRIPTION);
     assert_uncle_blocks_in_storage(&generator, &store_after, uncle_block_info_vec.clone());
     Ok(())
 }
@@ -641,11 +636,7 @@ fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complet
         INIT_BLOCK_HEIGHT,
         MAX_BLOCK_HEIGHT_SUBSCRIPTION,
     );
-    assert_uncle_block_links(
-        &store_after,
-        INIT_BLOCK_HEIGHT,
-        MAX_BLOCK_HEIGHT_SUBSCRIPTION,
-    );
+    assert_uncle_block_links(&store_after, INIT_BLOCK_HEIGHT, MAX_BLOCK_HEIGHT_SUBSCRIPTION);
     assert_uncle_blocks_in_storage(&generator, &store_after, uncle_block_info_vec.clone());
     Ok(())
 }
@@ -747,11 +738,7 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_should_complete_
         INIT_BLOCK_HEIGHT,
         MAX_BLOCK_HEIGHT_SUBSCRIPTION,
     );
-    assert_uncle_block_links(
-        &store_after,
-        INIT_BLOCK_HEIGHT,
-        MAX_BLOCK_HEIGHT_SUBSCRIPTION,
-    );
+    assert_uncle_block_links(&store_after, INIT_BLOCK_HEIGHT, MAX_BLOCK_HEIGHT_SUBSCRIPTION);
     assert_uncle_blocks_in_storage(&generator, &store_after, uncle_block_info_vec.clone());
     Ok(())
 }
@@ -778,9 +765,7 @@ fn assert_best_block(
         .get_best_block()
         .unwrap_or_else(|err| panic!("Failed to retrieve best block: {}", err))
         .expect("No best block found after indexer run");
-    let block_expected = generator
-        .generate_block(best_block_height.into(), None)
-        .unwrap();
+    let block_expected = generator.generate_block(best_block_height.into(), None).unwrap();
     assert_eq!(
         block_expected, best_block,
         "Best block in storage does not match the expected best block (height {})",
@@ -797,9 +782,7 @@ fn assert_checkpoint(
         .get_back_sync_checkpoint()
         .unwrap_or_else(|err| panic!("Failed to retrieve checkpoint block: {}", err))
         .expect("No checkpoint block found after indexer run");
-    let block_expected = generator
-        .generate_block(checkpoint_block_height.into(), None)
-        .unwrap();
+    let block_expected = generator.generate_block(checkpoint_block_height.into(), None).unwrap();
     assert_eq!(
         block_expected, checkpoint_block,
         "Checkpoint block in storage does not match the expected checkpoint block (height {})",
@@ -814,17 +797,11 @@ fn assert_canonical_chain(
     end_height: u64,
 ) -> () {
     for height in begin_height..=end_height {
-        let block_expected = generator
-            .clone()
-            .generate_block(height.into(), None)
-            .unwrap();
+        let block_expected = generator.clone().generate_block(height.into(), None).unwrap();
         let block_actual = store_after
             .get_canonical_block(height.into())
             .unwrap_or_else(|err| panic!("Failed to retrieve canonical block: {}", err))
-            .expect(&format!(
-                "No canonical block at height {} found after indexer run",
-                height
-            ));
+            .expect(&format!("No canonical block at height {} found after indexer run", height));
         assert_eq!(
             block_expected, block_actual,
             "Canonical block in storage at height {} does not match the expected block",
@@ -842,10 +819,7 @@ fn assert_uncle_block_links(
         let block_actual = store_after
             .get_canonical_block(height.into())
             .unwrap_or_else(|err| panic!("Failed to retrieve canonical block: {}", err))
-            .expect(&format!(
-                "No canonical block at height {} found after indexer run",
-                height
-            ));
+            .expect(&format!("No canonical block at height {} found after indexer run", height));
         for uncle_hash in block_actual.uncles() {
             let uncle_block_actual = store_after
                 .get_block_by_hash(uncle_hash)

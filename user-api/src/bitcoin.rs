@@ -1,8 +1,6 @@
 use anyhow::{Context, Result};
-use bitcoin::{
-    key::{CompressedPublicKey, Secp256k1},
-    Address as BitcoinAddress, Network, PrivateKey, PublicKey,
-};
+use bitcoin::key::{CompressedPublicKey, Secp256k1};
+use bitcoin::{Address as BitcoinAddress, Network, PrivateKey, PublicKey};
 use common::types::Address;
 use log::info;
 
@@ -46,11 +44,6 @@ impl User {
         info!("{} Bitcoin Address: {:?}", role, bitcoin_address);
         info!("{} RSK Address: {:?}", role, rsk_address);
 
-        Ok(Self {
-            bitcoin_public_key,
-            bitcoin_address,
-            bitcoin_network,
-            rsk_address,
-        })
+        Ok(Self { bitcoin_public_key, bitcoin_address, bitcoin_network, rsk_address })
     }
 }

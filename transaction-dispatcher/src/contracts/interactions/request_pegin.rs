@@ -1,11 +1,10 @@
-use crate::{
-    contracts::peg_manager::PegManagerContractApi,
-    rsk_gateway::DomainErrors,
-    types::{RequestPeginInput, RequestPeginOutput},
-};
 use anyhow::Result;
 use log::info;
 use union_contracts::bindings::peg_manager::PegManager::BtcTxSPVProof;
+
+use crate::contracts::peg_manager::PegManagerContractApi;
+use crate::rsk_gateway::DomainErrors;
+use crate::types::{RequestPeginInput, RequestPeginOutput};
 
 #[derive(Clone)]
 pub(crate) struct RequestPeginInvoke<C: PegManagerContractApi> {
@@ -15,10 +14,7 @@ pub(crate) struct RequestPeginInvoke<C: PegManagerContractApi> {
 
 impl<C: PegManagerContractApi> RequestPeginInvoke<C> {
     pub(crate) fn new(contract: C, gas_bumps: u8) -> Self {
-        RequestPeginInvoke {
-            contract,
-            gas_bumps,
-        }
+        RequestPeginInvoke { contract, gas_bumps }
     }
 
     pub(crate) async fn run(
@@ -31,20 +27,22 @@ impl<C: PegManagerContractApi> RequestPeginInvoke<C> {
             DomainErrors::InvalidBtcTxSpvProof(format!("Failed to parse RequestPeginInput: {e}"))
         })?;
 
-        let tx_hash = self
-            .contract
-            .invoke_request_pegin(parsed_input, self.gas_bumps)
-            .await?;
+        let tx_hash = self.contract.invoke_request_pegin(parsed_input, self.gas_bumps).await?;
 
         info!("RequestPegin successful at tx {tx_hash}");
-        Ok(RequestPeginOutput {
-            transaction_hash: tx_hash.to_string(),
-        })
+        Ok(RequestPeginOutput { transaction_hash: tx_hash.to_string() })
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
+    use alloy_primitives::TxHash;
+    use union_contracts::bindings::peg_manager::PegManager::{
+        PegManagerErrors, PeginAlreadyRequested,
+    };
+
     use crate::contracts::common::tests::generate_contract_revert_error;
     use crate::contracts::interactions::request_pegin::{
         RequestPeginInput, RequestPeginInvoke, RequestPeginOutput,
@@ -52,18 +50,10 @@ mod tests {
     use crate::contracts::peg_manager::MockPegManagerContractApi;
     use crate::rsk_gateway::DomainErrors;
     use crate::types::{BitcoinTransaction, BitcoinTransactionIn, BitcoinTransactionOut};
-    use alloy_primitives::TxHash;
-    use std::str::FromStr;
-    use union_contracts::bindings::peg_manager::PegManager::{
-        PegManagerErrors, PeginAlreadyRequested,
-    };
 
     impl RequestPeginInvoke<MockPegManagerContractApi> {
         pub(crate) fn new_for_tests(contract: MockPegManagerContractApi) -> Self {
-            RequestPeginInvoke {
-                contract,
-                gas_bumps: 3,
-            }
+            RequestPeginInvoke { contract, gas_bumps: 3 }
         }
     }
 
@@ -120,10 +110,7 @@ mod tests {
 
         let result = invoke.run(input).await;
         assert!(result.is_err());
-        matches!(
-            result.err().unwrap(),
-            DomainErrors::PeginAlreadyRequested(_)
-        );
+        matches!(result.err().unwrap(), DomainErrors::PeginAlreadyRequested(_));
     }
 
     #[tokio::test]

@@ -1,5 +1,5 @@
-use crate::rsk_gateway::DomainErrors;
-use crate::rsk_gateway::RskContractsGateway;
+use std::path::Path;
+
 use alloy_provider::network::EthereumWallet;
 use alloy_provider::{Provider, ProviderBuilder, WsConnect};
 use anyhow::{Context, Result};
@@ -7,7 +7,8 @@ use common::runtime_sync::RuntimeSync;
 use common::types::Address;
 use key_manager::key_manager::KeyManager;
 use log::info;
-use std::path::Path;
+
+use crate::rsk_gateway::{DomainErrors, RskContractsGateway};
 
 pub mod config;
 mod contracts;
@@ -135,8 +136,9 @@ async fn create_contracts_gateway_impl_with_role(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use common::runtime_sync::RuntimeSync;
+
+    use super::*;
 
     #[test]
     fn test_get_contracts_gateway_as_lib_sync_returns_domain_errors() {

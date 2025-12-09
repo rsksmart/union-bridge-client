@@ -1,6 +1,8 @@
-use crate::{contracts::peg_manager::PegManagerContractApi, rsk_gateway::DomainErrors};
 use anyhow::Result;
 use log::info;
+
+use crate::contracts::peg_manager::PegManagerContractApi;
+use crate::rsk_gateway::DomainErrors;
 
 #[derive(Clone)]
 pub struct NotifyCheckForkCompleteInvoke<C: PegManagerContractApi> {
@@ -10,10 +12,7 @@ pub struct NotifyCheckForkCompleteInvoke<C: PegManagerContractApi> {
 
 impl<C: PegManagerContractApi> NotifyCheckForkCompleteInvoke<C> {
     pub fn new(contract: C, gas_bumps: u8) -> Self {
-        Self {
-            contract,
-            gas_bumps,
-        }
+        Self { contract, gas_bumps }
     }
 
     pub async fn run(
@@ -22,10 +21,7 @@ impl<C: PegManagerContractApi> NotifyCheckForkCompleteInvoke<C> {
     ) -> Result<(), DomainErrors> {
         info!("Init NotifyCheckForkComplete for: {input:?}");
 
-        let tx_hash = self
-            .contract
-            .notify_check_fork_completion(input, self.gas_bumps)
-            .await?;
+        let tx_hash = self.contract.notify_check_fork_completion(input, self.gas_bumps).await?;
 
         info!("NotifyCheckForkComplete successful at tx {tx_hash}");
         Ok(())

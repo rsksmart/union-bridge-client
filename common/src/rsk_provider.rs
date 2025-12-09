@@ -1,8 +1,8 @@
-use crate::types::{Address, BlockHash, BlockNumber, RskBlock, RskLog};
 use anyhow::Result;
+use mockall::automock;
 use thiserror::Error;
 
-use mockall::automock;
+use crate::types::{Address, BlockHash, BlockNumber, RskBlock, RskLog};
 
 #[derive(Debug)]
 pub enum BlockNumRef {
@@ -36,11 +36,7 @@ impl RskSubscriptionFilter {
         topics: Vec<String>,
         from_block: Option<BlockNumber>,
     ) -> Self {
-        Self {
-            addresses,
-            topics,
-            from_block,
-        }
+        Self { addresses, topics, from_block }
     }
 }
 

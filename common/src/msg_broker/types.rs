@@ -1,6 +1,7 @@
-use crate::types::{Address, RskBlockAndUncles, RskLog};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+use crate::types::{Address, RskBlockAndUncles, RskLog};
 
 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-213
 

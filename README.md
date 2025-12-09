@@ -543,6 +543,22 @@ cargo install rusty-hook
 rusty-hook init
 ```
 
+## Install formatting tools
+
+Install `rustfmt` nightly, as it supports features we use in `rustfmt.toml` like imports reorder and grouping:
+
+```bash
+rustup component add rustfmt --toolchain nightly
+```
+
+Install `cargo-sort` to sort dependencies in `Cargo.toml` files:
+
+```bash
+cargo install cargo-sort
+```
+
+Together with the hooks, these tools will help you keep the codebase clean and consistent on `pre-commit`.
+
 The file [rusty-hook.toml](rusty-hook.toml) will be used for hook configuration.
 
 ### GitHub Actions

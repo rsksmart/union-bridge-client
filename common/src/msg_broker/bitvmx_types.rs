@@ -1,6 +1,8 @@
 #![allow(clippy::pedantic)]
 #![allow(clippy::all)]
 
+use std::collections::HashMap;
+
 use anyhow::bail;
 use bitcoin::address::NetworkUnchecked;
 use bitcoin::{
@@ -9,7 +11,6 @@ use bitcoin::{
 use musig2::PubNonce;
 use musig2::secp::MaybeScalar;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use uuid::Uuid;
 
 pub const ACCEPT_PEGIN_TX: &str = "ACCEPT_PEGIN_TX";
@@ -151,12 +152,7 @@ pub enum VariableTypes {
 
 impl Utxo {
     pub fn new(txid: Txid, vout: u32, amount: u64, pub_key: &PublicKey) -> Self {
-        Utxo {
-            txid,
-            vout,
-            amount,
-            pub_key: *pub_key,
-        }
+        Utxo { txid, vout, amount, pub_key: *pub_key }
     }
 }
 
@@ -329,11 +325,7 @@ impl Committee {
     }
 
     pub fn indexes_map(&self) -> HashMap<PublicKey, usize> {
-        self.members
-            .iter()
-            .enumerate()
-            .map(|(index, member)| (member.take_key, index))
-            .collect()
+        self.members.iter().enumerate().map(|(index, member)| (member.take_key, index)).collect()
     }
 }
 

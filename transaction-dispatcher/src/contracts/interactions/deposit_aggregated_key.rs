@@ -1,7 +1,8 @@
+use log::info;
+
 use crate::contracts::committee_registry::CommitteeRegistryContractApi;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{DepositAggregatedKeyInput, DepositAggregatedKeyOutput};
-use log::info;
 
 #[derive(Clone)]
 pub(crate) struct DepositAggregatedKeysInvoke<C: CommitteeRegistryContractApi> {
@@ -11,10 +12,7 @@ pub(crate) struct DepositAggregatedKeysInvoke<C: CommitteeRegistryContractApi> {
 
 impl<C: CommitteeRegistryContractApi> DepositAggregatedKeysInvoke<C> {
     pub(crate) fn new(contract: C, gas_bumps: u8) -> Self {
-        DepositAggregatedKeysInvoke {
-            contract,
-            gas_bumps,
-        }
+        DepositAggregatedKeysInvoke { contract, gas_bumps }
     }
 
     pub(crate) async fn run(
@@ -41,12 +39,14 @@ impl<C: CommitteeRegistryContractApi> DepositAggregatedKeysInvoke<C> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::contracts::committee_registry::MockCommitteeRegistryContractApi;
+    use std::str::FromStr;
+
     use alloy_primitives::TxHash;
     use common::types::CommitteeId;
     use mockall::predicate::*;
-    use std::str::FromStr;
+
+    use super::*;
+    use crate::contracts::committee_registry::MockCommitteeRegistryContractApi;
 
     #[tokio::test]
     async fn test_deposit_aggregated_key_success() {
@@ -59,21 +59,14 @@ mod tests {
         let expected_tx_hash = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
         mock_contract
             .expect_invoke_deposit_aggregated_key()
-            .with(
-                eq(committee_id.clone()),
-                eq(aggregated_key.clone()),
-                eq(gas_bumps),
-            )
+            .with(eq(committee_id.clone()), eq(aggregated_key.clone()), eq(gas_bumps))
             .times(1)
             .returning(move |_, _, _| {
                 Ok(TxHash::from_str(expected_tx_hash).expect("Failed to parse tx hash"))
             });
 
         let invoke = DepositAggregatedKeysInvoke::new(mock_contract, gas_bumps);
-        let input = DepositAggregatedKeyInput {
-            committee_id,
-            aggregated_key,
-        };
+        let input = DepositAggregatedKeyInput { committee_id, aggregated_key };
 
         // act
         let result = invoke.run(input).await;
@@ -94,11 +87,7 @@ mod tests {
 
         mock_contract
             .expect_invoke_deposit_aggregated_key()
-            .with(
-                eq(committee_id.clone()),
-                eq(aggregated_key.clone()),
-                eq(gas_bumps),
-            )
+            .with(eq(committee_id.clone()), eq(aggregated_key.clone()), eq(gas_bumps))
             .times(1)
             .returning(|_, _, _| {
                 Err(alloy_contract::Error::TransportError(
@@ -107,10 +96,7 @@ mod tests {
             });
 
         let invoke = DepositAggregatedKeysInvoke::new(mock_contract, gas_bumps);
-        let input = DepositAggregatedKeyInput {
-            committee_id,
-            aggregated_key,
-        };
+        let input = DepositAggregatedKeyInput { committee_id, aggregated_key };
 
         // act
         let result = invoke.run(input).await;

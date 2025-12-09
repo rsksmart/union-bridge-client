@@ -1,5 +1,6 @@
-use crate::{Block, BridgeEvent, CheckForkArgs, SUPERBLOCK_TIMES_DIFFICULTY, check_fork};
 use primitive_types::{H256, U256};
+
+use crate::{Block, BridgeEvent, CheckForkArgs, SUPERBLOCK_TIMES_DIFFICULTY, check_fork};
 
 const DEFAULT_DIFFICULTY: u128 = 5_904_436_352_267_687_415_636;
 const DEFAULT_TIMESTAMP: u64 = 1000;
@@ -18,16 +19,10 @@ fn succeeds_with_two_blocks_when_all_conditions_met() {
 
     let block_list = vec![first_block, second_block];
 
-    let args = CheckForkArgsBuilder::new(block_list)
-        .required_effort(actual_effort)
-        .build();
+    let args = CheckForkArgsBuilder::new(block_list).required_effort(actual_effort).build();
     let result = check_fork(&args);
 
-    assert_eq!(
-        result,
-        Ok(actual_effort),
-        "Expected to succeed for valid input"
-    );
+    assert_eq!(result, Ok(actual_effort), "Expected to succeed for valid input");
 }
 
 #[test]
@@ -47,16 +42,10 @@ fn succeeds_with_two_blocks_and_one_uncle_when_all_conditions_met() {
 
     let block_list = vec![first_block, second_block];
 
-    let args = CheckForkArgsBuilder::new(block_list)
-        .required_effort(actual_effort)
-        .build();
+    let args = CheckForkArgsBuilder::new(block_list).required_effort(actual_effort).build();
 
     let result = check_fork(&args);
-    assert_eq!(
-        result,
-        Ok(actual_effort),
-        "Expected to succeed for valid input"
-    );
+    assert_eq!(result, Ok(actual_effort), "Expected to succeed for valid input");
 }
 
 #[test]
@@ -67,9 +56,7 @@ fn fails_when_required_block_number_is_invalid() {
 
     let block_list = vec![first_block, second_block];
 
-    let args = CheckForkArgsBuilder::new(block_list)
-        .required_num_blocks(0)
-        .build();
+    let args = CheckForkArgsBuilder::new(block_list).required_num_blocks(0).build();
 
     let result = check_fork(&args);
     assert_eq!(
@@ -87,9 +74,7 @@ fn fails_when_provided_blocks_are_less_than_required() {
 
     let block_list = vec![first_block, second_block];
 
-    let args = CheckForkArgsBuilder::new(block_list)
-        .required_num_blocks(3)
-        .build();
+    let args = CheckForkArgsBuilder::new(block_list).required_num_blocks(3).build();
 
     let result = check_fork(&args);
     assert_eq!(
@@ -107,9 +92,7 @@ fn fails_when_first_block_timestamp_is_lower_than_min_requested() {
 
     let block_list = vec![first_block, second_block];
 
-    let args = CheckForkArgsBuilder::new(block_list)
-        .init_block_time(1_000_000)
-        .build();
+    let args = CheckForkArgsBuilder::new(block_list).init_block_time(1_000_000).build();
 
     let result = check_fork(&args);
     assert_eq!(
@@ -127,9 +110,7 @@ fn fails_when_first_block_number_is_lower_than_min_requested() {
 
     let block_list = vec![first_block, second_block];
 
-    let args = CheckForkArgsBuilder::new(block_list)
-        .init_block_number(1_000_000)
-        .build();
+    let args = CheckForkArgsBuilder::new(block_list).init_block_number(1_000_000).build();
 
     let result = check_fork(&args);
     assert_eq!(
@@ -158,9 +139,7 @@ fn fails_when_cumulative_effort_below_expected() {
 
     let expected_effort = actual_effort + 1;
 
-    let args = CheckForkArgsBuilder::new(block_list)
-        .required_effort(expected_effort)
-        .build();
+    let args = CheckForkArgsBuilder::new(block_list).required_effort(expected_effort).build();
 
     let result = check_fork(&args);
     assert_eq!(
@@ -258,9 +237,7 @@ fn fails_when_event_has_unexpected_utxo() {
 
     let block_list = vec![first_block, second_block];
 
-    let args = CheckForkArgsBuilder::new(block_list)
-        .event_utxo_id("fake_utxo".to_string())
-        .build();
+    let args = CheckForkArgsBuilder::new(block_list).event_utxo_id("fake_utxo".to_string()).build();
 
     let result = check_fork(&args);
     assert_eq!(
@@ -278,9 +255,8 @@ fn fails_when_event_has_unexpected_pegout_id() {
 
     let block_list = vec![first_block, second_block];
 
-    let args = CheckForkArgsBuilder::new(block_list)
-        .event_pegout_id("fake_pegout".to_string())
-        .build();
+    let args =
+        CheckForkArgsBuilder::new(block_list).event_pegout_id("fake_pegout".to_string()).build();
 
     let result = check_fork(&args);
     assert_eq!(
@@ -315,9 +291,7 @@ fn fails_when_consecutive_block_difficulty_is_lower_than_bounds() {
     let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
 
     let mut second_block = create_child_block(&first_block);
-    second_block.difficulty = first_block
-        .difficulty
-        .saturating_sub(first_block.difficulty / 399);
+    second_block.difficulty = first_block.difficulty.saturating_sub(first_block.difficulty / 399);
     second_block.pow = calculate_superblock_effort(second_block.difficulty);
 
     let block_list = vec![first_block, second_block];
@@ -337,9 +311,7 @@ fn fails_when_consecutive_block_difficulty_is_higher_than_bounds() {
     let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
 
     let mut second_block = create_child_block(&first_block);
-    second_block.difficulty = first_block
-        .difficulty
-        .saturating_add(first_block.difficulty / 399);
+    second_block.difficulty = first_block.difficulty.saturating_add(first_block.difficulty / 399);
     second_block.pow = calculate_superblock_effort(second_block.difficulty);
 
     let block_list = vec![first_block, second_block];
@@ -562,9 +534,7 @@ fn calculate_superblock_effort(difficulty: U256) -> H256 {
 
 fn calculate_effort_from_pow(pow: H256) -> U256 {
     let pow_dec = U256::from_big_endian(pow.as_bytes());
-    U256::MAX
-        .checked_div(pow_dec)
-        .expect("0 division on calculate_effort_from_pow")
+    U256::MAX.checked_div(pow_dec).expect("0 division on calculate_effort_from_pow")
 }
 
 #[derive(Default)]
@@ -581,10 +551,7 @@ struct CheckForkArgsBuilder {
 
 impl CheckForkArgsBuilder {
     fn new(block_list: Vec<Block>) -> Self {
-        CheckForkArgsBuilder {
-            block_list,
-            ..Default::default()
-        }
+        CheckForkArgsBuilder { block_list, ..Default::default() }
     }
 
     fn event_utxo_id(mut self, utxo_id: String) -> Self {
@@ -624,9 +591,7 @@ impl CheckForkArgsBuilder {
 
     fn build(self) -> CheckForkArgs {
         CheckForkArgs {
-            utxo_id: self
-                .utxo_id
-                .unwrap_or_else(|| format!("utxo_{DEFAULT_INIT_BLOCK_NUMBER}")),
+            utxo_id: self.utxo_id.unwrap_or_else(|| format!("utxo_{DEFAULT_INIT_BLOCK_NUMBER}")),
             pegout_id: self
                 .pegout_id
                 .unwrap_or_else(|| format!("pegout_{DEFAULT_INIT_BLOCK_NUMBER}")),
@@ -636,9 +601,7 @@ impl CheckForkArgsBuilder {
             init_block_time: self.init_block_time.unwrap_or(DEFAULT_TIMESTAMP),
             init_block_number: self.init_block_number.unwrap_or(DEFAULT_INIT_BLOCK_NUMBER),
             required_effort: self.required_effort.unwrap_or(U256::MAX),
-            required_num_blocks: self
-                .required_num_blocks
-                .unwrap_or(DEFAULT_REQ_NUMBER_OF_BLOCKS),
+            required_num_blocks: self.required_num_blocks.unwrap_or(DEFAULT_REQ_NUMBER_OF_BLOCKS),
             block_list: self.block_list,
         }
     }

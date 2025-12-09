@@ -1,18 +1,19 @@
+use std::rc::Rc;
+
 use anyhow::{Context, Result};
 use bitcoin::PublicKey;
 use common::msg_broker::bitvmx_types::{
     Committee, DisputeCoreData, IncomingBitVMXApiMessages, MemberData, P2PAddress, ParticipantRole,
     Utxo, VariableTypes,
 };
+use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
+use common::types::CommitteeId;
 use log::{debug, error, info, trace};
-use std::rc::Rc;
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::flows::committee::setup_committee_flow::NO_LEADER_IDX;
 use crate::types::MemberOfCommittee;
-use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
-use common::types::CommitteeId;
-use sha2::{Digest, Sha256};
 
 const MONITORED_OPERATOR_KEY: &str = "monitored_operator_key";
 const PROGRAM_TYPE_DISPUTE_CORE: &str = "dispute_core";
@@ -114,13 +115,8 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
     }
 
     fn operator_count(members: &[MemberOfCommittee]) -> Result<u32> {
-        u32::try_from(
-            members
-                .iter()
-                .filter(|m| m.role == ParticipantRole::Prover)
-                .count(),
-        )
-        .context("operator count exceeds u32::MAX")
+        u32::try_from(members.iter().filter(|m| m.role == ParticipantRole::Prover).count())
+            .context("operator count exceeds u32::MAX")
     }
 
     fn send_bitvmx_msg(&self, msg: IncomingBitVMXApiMessages) {
@@ -142,9 +138,7 @@ fn get_dispute_core_pid(committee_id: Uuid, pubkey: &PublicKey) -> Result<Uuid> 
 
     // Get the result as a byte array
     let hash = hasher.finalize();
-    let bytes = hash[0..16]
-        .try_into()
-        .context("UUID slice conversion failed")?;
+    let bytes = hash[0..16].try_into().context("UUID slice conversion failed")?;
 
     Ok(Uuid::from_bytes(bytes))
 }

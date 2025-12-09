@@ -1,6 +1,5 @@
 use primitive_types::{H256, U256};
-use serde::Deserialize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 // TODO configurable
 pub const SUPERBLOCK_TIMES_DIFFICULTY: u8 = 20;
@@ -115,9 +114,7 @@ pub fn check_fork(args: &CheckForkArgs) -> Result<U256, &'static str> {
 fn accumulate_effort(cumulative_effort: U256, block: &Block) -> Result<U256, &'static str> {
     let effort = calculate_block_effort(block)?;
 
-    cumulative_effort
-        .checked_add(effort)
-        .ok_or("Overflow occurred adding block's PoW")
+    cumulative_effort.checked_add(effort).ok_or("Overflow occurred adding block's PoW")
 }
 
 fn validate_block_list(required_num_blocks: u32, block_list: &[Block]) -> Result<(), &'static str> {
@@ -259,20 +256,14 @@ fn validate_difficulty_in_bounds(block: &Block, prev_block: &Block) -> Result<()
     let upper_bound = prev_block.difficulty.saturating_add(max_delta);
 
     let in_bounds = (lower_bound..=upper_bound).contains(&block.difficulty);
-    if in_bounds {
-        Ok(())
-    } else {
-        Err("Consecutive Block difficulty is out of bounds")
-    }
+    if in_bounds { Ok(()) } else { Err("Consecutive Block difficulty is out of bounds") }
 }
 
 fn calculate_block_effort(block: &Block) -> Result<U256, &'static str> {
     let pow = U256::from_big_endian(block.pow.as_bytes());
     // compute the effort by inverting the pow
     // U256::MAX, the "difficulty 1" target, represents the easiest possible target
-    U256::MAX
-        .checked_div(pow)
-        .ok_or("0 division on calculate_block_effort")
+    U256::MAX.checked_div(pow).ok_or("0 division on calculate_block_effort")
 }
 
 #[cfg(test)]

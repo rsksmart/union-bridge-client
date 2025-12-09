@@ -1,13 +1,5 @@
-use crate::{
-    alloy_rsk_provider::sub::AlloySubscription,
-    rsk_provider::{RskProvider, RskSubscriptionFilter},
-    shutdown_flag::ShutdownFlag,
-    types::{
-        Address, BlockHash, BlockNumber, RskBlock, RskLog, RskRpcBlock, RskRpcLog, ToHexString,
-    },
-};
+use std::future::Future;
 
-use crate::runtime_sync::RuntimeSync;
 use alloy_primitives::B256;
 use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy_rpc_client::RpcClient;
@@ -16,7 +8,14 @@ use alloy_transport::layers::RetryBackoffLayer;
 use anyhow::{Context, Result, bail};
 use log::debug;
 use serde_json::{Value, json};
-use std::future::Future;
+
+use crate::alloy_rsk_provider::sub::AlloySubscription;
+use crate::rsk_provider::{RskProvider, RskSubscriptionFilter};
+use crate::runtime_sync::RuntimeSync;
+use crate::shutdown_flag::ShutdownFlag;
+use crate::types::{
+    Address, BlockHash, BlockNumber, RskBlock, RskLog, RskRpcBlock, RskRpcLog, ToHexString,
+};
 
 #[derive(Clone)]
 pub struct AlloyProvider<T = RootProvider>
@@ -55,11 +54,7 @@ impl AlloyProvider {
         // Synchronously feed that client into ProviderBuilder
         let root_provider = ProviderBuilder::default().connect_client(client);
 
-        Ok(AlloyProvider {
-            inner: root_provider,
-            rt_sync,
-            shutdown_flag,
-        })
+        Ok(AlloyProvider { inner: root_provider, rt_sync, shutdown_flag })
     }
 
     /// # Errors
@@ -78,9 +73,7 @@ impl AlloyProvider {
             provider_clone.unsubscribe(subscription_id).unwrap();
         };
 
-        self.shutdown_flag
-            .clone()
-            .spawn_shutdown_handler(unsubscribe_fn);
+        self.shutdown_flag.clone().spawn_shutdown_handler(unsubscribe_fn);
     }
 
     fn parse_block_provider_response(response: Value) -> Result<Option<RskBlock>> {
@@ -155,10 +148,8 @@ impl RskProvider for AlloyProvider {
     }
 
     fn get_block_by_hash(&self, hash: BlockHash) -> Result<Option<RskBlock>> {
-        let rpc_call = self
-            .inner
-            .client()
-            .request("eth_getBlockByHash", vec![json!(hash), json!(false)]);
+        let rpc_call =
+            self.inner.client().request("eth_getBlockByHash", vec![json!(hash), json!(false)]);
 
         self.run(&rpc_call)
             .context(format!("Getting block {hash} from provider"))
@@ -168,10 +159,8 @@ impl RskProvider for AlloyProvider {
     fn get_block_by_number(&self, num: BlockNumber) -> Result<Option<RskBlock>> {
         let num_hex = format!("{:#x}", num.value());
 
-        let rpc_call = self
-            .inner
-            .client()
-            .request("eth_getBlockByNumber", vec![json!(num_hex), json!(false)]);
+        let rpc_call =
+            self.inner.client().request("eth_getBlockByNumber", vec![json!(num_hex), json!(false)]);
 
         self.run(&rpc_call)
             .context(format!("Getting block {num} from provider"))
@@ -195,10 +184,10 @@ impl RskProvider for AlloyProvider {
         // Convert index to hexadecimal format
         let hex_index = format!("{index:#x}");
 
-        let rpc_call = self.inner.client().request(
-            "eth_getUncleByBlockHashAndIndex",
-            vec![json!(hash), json!(hex_index)],
-        );
+        let rpc_call = self
+            .inner
+            .client()
+            .request("eth_getUncleByBlockHashAndIndex", vec![json!(hash), json!(hex_index)]);
 
         self.run(&rpc_call)
             .context(format!("Getting block {hash} from provider"))
@@ -239,13 +228,12 @@ impl RskProvider for AlloyProvider {
 
 #[cfg(test)]
 mod tests {
-    use crate::types::{DataBytes, LogTopic, TxHash};
-    use crate::{
-        alloy_rsk_provider::rpc::AlloyProvider,
-        types::{Address, BlockHash, BlockNumber},
-    };
-    use serde_json::{Value, json};
     use std::fs;
+
+    use serde_json::{Value, json};
+
+    use crate::alloy_rsk_provider::rpc::AlloyProvider;
+    use crate::types::{Address, BlockHash, BlockNumber, DataBytes, LogTopic, TxHash};
 
     const BLOCK_RESPONSE_FILE_PATH: &str = "tests/resources/block_response.json";
     const LOG_RESPONSE_FILE_PATH: &str = "tests/resources/log_response.json";
@@ -261,24 +249,17 @@ mod tests {
             .expect("JSON data should be valid")
             .expect("JSON data should map to RSK block");
 
-        let expected_hash = BlockHash::try_from(
-            result["hash"]
-                .as_str()
-                .expect("Block hash should be a string"),
-        )
-        .expect("Invalid hex string in JSON");
+        let expected_hash =
+            BlockHash::try_from(result["hash"].as_str().expect("Block hash should be a string"))
+                .expect("Invalid hex string in JSON");
 
         let expected_parent = BlockHash::try_from(
-            result["parentHash"]
-                .as_str()
-                .expect("Parent hash should be a string"),
+            result["parentHash"].as_str().expect("Parent hash should be a string"),
         )
         .expect("Invalid hex string in JSON");
 
         let expected_uncle_hash = BlockHash::try_from(
-            result["uncles"][0]
-                .as_str()
-                .expect("Uncle hash should be a string"),
+            result["uncles"][0].as_str().expect("Uncle hash should be a string"),
         )
         .expect("Invalid hex string in JSON");
 
@@ -359,37 +340,27 @@ mod tests {
             .expect("JSON data should be valid");
 
         let expected_address = Address::try_from(
-            result[0]["address"]
-                .as_str()
-                .expect("Log address should be a string"),
+            result[0]["address"].as_str().expect("Log address should be a string"),
         )
         .expect("Invalid hex string in JSON");
 
         let expected_block_hash = BlockHash::try_from(
-            result[0]["blockHash"]
-                .as_str()
-                .expect("Block hash should be a string"),
+            result[0]["blockHash"].as_str().expect("Block hash should be a string"),
         )
         .expect("Invalid hex string in JSON");
 
         let expected_block_number = BlockNumber::try_from(
-            result[0]["blockNumber"]
-                .as_str()
-                .expect("Block number should be a string"),
+            result[0]["blockNumber"].as_str().expect("Block number should be a string"),
         )
         .expect("Invalid hex string in JSON");
 
         let expected_tx_hash = TxHash::try_from(
-            result[0]["transactionHash"]
-                .as_str()
-                .expect("Transaction hash should be a string"),
+            result[0]["transactionHash"].as_str().expect("Transaction hash should be a string"),
         )
         .expect("Invalid hex string in JSON");
 
         let expected_data = &DataBytes::from_hex_str(
-            result[0]["data"]
-                .as_str()
-                .expect("Log data should be a string"),
+            result[0]["data"].as_str().expect("Log data should be a string"),
         )
         .expect("Failed to parse expected data");
 

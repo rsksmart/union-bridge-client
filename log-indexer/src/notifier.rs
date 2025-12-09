@@ -1,3 +1,9 @@
+use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
+use std::sync::mpsc;
+use std::sync::mpsc::RecvTimeoutError;
+use std::time::Duration;
+
 use anyhow::{Context, Result, anyhow};
 use common::constants::indexer::NOTIFIER_CHECK_PERIOD;
 use common::msg_broker::broker::UnionBrokerServerApi;
@@ -5,11 +11,6 @@ use common::msg_broker::types::{FromServer, ToServer};
 use common::shutdown_flag::ShutdownFlag;
 use common::types::{Address, RskLog};
 use log::{debug, error, info, trace, warn};
-use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
-use std::sync::mpsc;
-use std::sync::mpsc::RecvTimeoutError;
-use std::time::Duration;
 
 pub struct Notifier<BS: UnionBrokerServerApi> {
     new_log_channel: mpsc::Receiver<RskLog>,
@@ -104,10 +105,7 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
         }
 
         info!("New consumer {consumer_id} subscribing to {address}");
-        self.contracts_with_consumers
-            .entry(address)
-            .or_default()
-            .insert(consumer_id);
+        self.contracts_with_consumers.entry(address).or_default().insert(consumer_id);
     }
 
     fn unsubscribe_consumer_from_contract(&mut self, address: Address, consumer_id: u32) {
@@ -186,14 +184,16 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use common::msg_broker::broker::MockBrokerServerApi;
-    use common::test_utils::rsk_log_generator::FakeLogGenerator;
-    use common::test_utils::rsk_utils::generate_fake_address;
     use std::sync::mpsc;
     use std::sync::mpsc::Sender;
     use std::thread;
     use std::thread::{JoinHandle, sleep};
+
+    use common::msg_broker::broker::MockBrokerServerApi;
+    use common::test_utils::rsk_log_generator::FakeLogGenerator;
+    use common::test_utils::rsk_utils::generate_fake_address;
+
+    use super::*;
 
     struct ClientRequest {
         id: u32,
@@ -219,9 +219,7 @@ mod tests {
 
         let result = notifier.run();
 
-        handle_external_events
-            .join()
-            .expect("Failed to join shutdown handle");
+        handle_external_events.join().expect("Failed to join shutdown handle");
 
         if let Err(e) = &result {
             eprintln!("Error: {e:?}");
@@ -250,9 +248,7 @@ mod tests {
 
         let result = notifier.run();
 
-        handle_external_events
-            .join()
-            .expect("Failed to join shutdown handle");
+        handle_external_events.join().expect("Failed to join shutdown handle");
 
         if let Err(e) = &result {
             eprintln!("Error: {e:?}");
@@ -269,10 +265,8 @@ mod tests {
 
         let address_1 = generate_fake_address(1);
 
-        let client_requests = vec![ClientRequest {
-            id: client_id,
-            request: ToServer::SubscribeLogs(address_1),
-        }];
+        let client_requests =
+            vec![ClientRequest { id: client_id, request: ToServer::SubscribeLogs(address_1) }];
 
         let expected_log_1 =
             FakeLogGenerator::new().generate_log("Transfer(address,address,uint256)", address_1);
@@ -293,9 +287,7 @@ mod tests {
 
         let result = notifier.run();
 
-        handle_external_events
-            .join()
-            .expect("Failed to join shutdown handle");
+        handle_external_events.join().expect("Failed to join shutdown handle");
 
         if let Err(e) = &result {
             eprintln!("Error: {e:?}");
@@ -315,14 +307,8 @@ mod tests {
         let address_2 = generate_fake_address(2);
 
         let client_requests = vec![
-            ClientRequest {
-                id: client_id_1,
-                request: ToServer::SubscribeLogs(address_1),
-            },
-            ClientRequest {
-                id: client_id_2,
-                request: ToServer::SubscribeLogs(address_1),
-            },
+            ClientRequest { id: client_id_1, request: ToServer::SubscribeLogs(address_1) },
+            ClientRequest { id: client_id_2, request: ToServer::SubscribeLogs(address_1) },
         ];
 
         let expected_log_1 =
@@ -351,9 +337,7 @@ mod tests {
 
         let result = notifier.run();
 
-        handle_external_events
-            .join()
-            .expect("Failed to join shutdown handle");
+        handle_external_events.join().expect("Failed to join shutdown handle");
 
         if let Err(e) = &result {
             eprintln!("Error: {e:?}");
@@ -372,19 +356,10 @@ mod tests {
         let address_1 = generate_fake_address(1);
 
         let client_requests = vec![
-            ClientRequest {
-                id: client_id_1,
-                request: ToServer::SubscribeLogs(address_1),
-            },
-            ClientRequest {
-                id: client_id_2,
-                request: ToServer::SubscribeLogs(address_1),
-            },
+            ClientRequest { id: client_id_1, request: ToServer::SubscribeLogs(address_1) },
+            ClientRequest { id: client_id_2, request: ToServer::SubscribeLogs(address_1) },
             // should not receive logs for this address
-            ClientRequest {
-                id: client_id_1,
-                request: ToServer::UnsubscribeLogs(address_1),
-            },
+            ClientRequest { id: client_id_1, request: ToServer::UnsubscribeLogs(address_1) },
         ];
 
         let expected_log_1_for_2 =
@@ -409,9 +384,7 @@ mod tests {
 
         let result = notifier.run();
 
-        handle_external_events
-            .join()
-            .expect("Failed to join shutdown handle");
+        handle_external_events.join().expect("Failed to join shutdown handle");
 
         if let Err(e) = &result {
             eprintln!("Error: {e:?}");
@@ -426,10 +399,8 @@ mod tests {
         use std::collections::VecDeque;
 
         mock_broker_server.expect_try_recv().returning_st({
-            let mut responses: VecDeque<_> = client_requests
-                .into_iter()
-                .map(|coa| Ok(Some((coa.request, coa.id))))
-                .collect();
+            let mut responses: VecDeque<_> =
+                client_requests.into_iter().map(|coa| Ok(Some((coa.request, coa.id)))).collect();
 
             move || responses.pop_front().unwrap_or(Ok(None))
         });

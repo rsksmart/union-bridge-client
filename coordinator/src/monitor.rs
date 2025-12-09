@@ -1,19 +1,17 @@
-use crate::types::{EventDecoder, RskPegManagerEvents, UserRequests};
-use anyhow::{Context, Result, bail};
-use common::msg_broker::bitvmx_types::OutgoingBitVMXApiMessages;
-use common::{
-    msg_broker::{
-        broker::BitVmxBrokerClientApi,
-        broker::{BROKER_SERVER_ID, BrokerError, UnionBrokerClientApi},
-        types::{FromServer, ToServer},
-    },
-    types::{Address, RskBlockAndUncles},
-};
-use log::{debug, error, info, trace};
 use std::rc::Rc;
 
+use anyhow::{Context, Result, bail};
+use common::msg_broker::bitvmx_types::OutgoingBitVMXApiMessages;
+use common::msg_broker::broker::{
+    BROKER_SERVER_ID, BitVmxBrokerClientApi, BrokerError, UnionBrokerClientApi,
+};
+use common::msg_broker::types::{FromServer, ToServer};
+use common::types::{Address, RskBlockAndUncles};
+use log::{debug, error, info, trace};
 #[cfg(test)]
 use mockall::automock;
+
+use crate::types::{EventDecoder, RskPegManagerEvents, UserRequests};
 
 #[cfg_attr(test, automock)]
 pub trait MonitorApi {
@@ -412,23 +410,18 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use anyhow::anyhow;
     use common::msg_broker::bitvmx_types::IncomingBitVMXApiMessages;
+    use common::msg_broker::broker::{BROKER_SERVER_ID, MockBrokerClientApi};
+    use common::msg_broker::types::ToServer;
     use common::test_utils::rsk_block_generator::{
-        create_block_from_template, get_first_default_rsk_block, get_second_default_rsk_block,
-        get_third_default_rsk_block,
+        create_block_and_uncles, create_block_from_template, get_first_default_rsk_block,
+        get_second_default_rsk_block, get_third_default_rsk_block,
     };
-    use common::{
-        msg_broker::{
-            broker::{BROKER_SERVER_ID, MockBrokerClientApi},
-            types::ToServer,
-        },
-        test_utils::{
-            rsk_block_generator::create_block_and_uncles, rsk_log_generator::FakeLogGenerator,
-        },
-    };
+    use common::test_utils::rsk_log_generator::FakeLogGenerator;
     use mockall::predicate::*;
+
+    use super::*;
 
     #[test]
     fn test_try_block_handles_wrong_order_blocks() {
@@ -465,18 +458,9 @@ mod tests {
             move || {
                 call_count += 1;
                 match call_count {
-                    1 => Ok(Some(FromServer::Block(RskBlockAndUncles::new(
-                        b3.clone(),
-                        vec![],
-                    )))),
-                    2 => Ok(Some(FromServer::Block(RskBlockAndUncles::new(
-                        b2.clone(),
-                        vec![],
-                    )))),
-                    3 => Ok(Some(FromServer::Block(RskBlockAndUncles::new(
-                        b1.clone(),
-                        vec![],
-                    )))),
+                    1 => Ok(Some(FromServer::Block(RskBlockAndUncles::new(b3.clone(), vec![])))),
+                    2 => Ok(Some(FromServer::Block(RskBlockAndUncles::new(b2.clone(), vec![])))),
+                    3 => Ok(Some(FromServer::Block(RskBlockAndUncles::new(b1.clone(), vec![])))),
                     _ => Ok(None),
                 }
             }
@@ -492,20 +476,11 @@ mod tests {
         monitor.block_monitoring_active = true;
 
         let result1 = monitor.try_block().expect("Failed to receive first block");
-        assert_eq!(
-            result1,
-            Some(RskBlockAndUncles::new(block3.clone(), vec![]))
-        );
+        assert_eq!(result1, Some(RskBlockAndUncles::new(block3.clone(), vec![])));
         let result2 = monitor.try_block().expect("Failed to receive second block");
-        assert_eq!(
-            result2,
-            Some(RskBlockAndUncles::new(block2.clone(), vec![]))
-        );
+        assert_eq!(result2, Some(RskBlockAndUncles::new(block2.clone(), vec![])));
         let result3 = monitor.try_block().expect("Failed to receive third block");
-        assert_eq!(
-            result3,
-            Some(RskBlockAndUncles::new(block1.clone(), vec![]))
-        );
+        assert_eq!(result3, Some(RskBlockAndUncles::new(block1.clone(), vec![])));
 
         assert_eq!(block1.hash(), block2.parent_hash());
         assert_eq!(block2.hash(), block3.parent_hash());
@@ -562,12 +537,7 @@ mod tests {
         );
         let err = monitor.start_event_monitoring();
         assert!(err.is_err());
-        assert!(
-            err.as_ref()
-                .unwrap_err()
-                .to_string()
-                .contains("Broker error on SubscribeLogs")
-        );
+        assert!(err.as_ref().unwrap_err().to_string().contains("Broker error on SubscribeLogs"));
     }
 
     #[test]
@@ -582,12 +552,7 @@ mod tests {
         monitor.log_monitoring_active = true;
         let err = monitor.start_event_monitoring();
         assert!(err.is_err());
-        assert!(
-            err.as_ref()
-                .unwrap_err()
-                .to_string()
-                .contains("already active")
-        );
+        assert!(err.as_ref().unwrap_err().to_string().contains("already active"));
     }
 
     #[test]
@@ -629,12 +594,7 @@ mod tests {
         );
         let err = monitor.start_block_monitoring();
         assert!(err.is_err());
-        assert!(
-            err.as_ref()
-                .unwrap_err()
-                .to_string()
-                .contains("Broker error on SubscribeBlocks")
-        );
+        assert!(err.as_ref().unwrap_err().to_string().contains("Broker error on SubscribeBlocks"));
     }
 
     #[test]
@@ -675,9 +635,7 @@ mod tests {
         assert_eq!(decode_result, RskPegManagerEvents::UnknownEvent);
 
         let mut log_broker = MockBrokerClientApi::new();
-        log_broker
-            .expect_try_recv()
-            .return_once(move || Ok(Some(FromServer::Log(log))));
+        log_broker.expect_try_recv().return_once(move || Ok(Some(FromServer::Log(log))));
 
         let mut monitor = Monitor::new(
             log_broker,
@@ -720,12 +678,7 @@ mod tests {
         block_broker.expect_try_recv().return_once({
             let block = expected_block_1.clone();
             let uncle = expected_uncle_1.clone();
-            move || {
-                Ok(Some(FromServer::Block(RskBlockAndUncles::new(
-                    block,
-                    vec![uncle],
-                ))))
-            }
+            move || Ok(Some(FromServer::Block(RskBlockAndUncles::new(block, vec![uncle]))))
         });
 
         let mut monitor = Monitor::new(
@@ -738,13 +691,7 @@ mod tests {
         monitor.block_monitoring_active = true;
 
         let result = monitor.try_block().expect("Failed to receive block");
-        assert_eq!(
-            result,
-            Some(RskBlockAndUncles::new(
-                expected_block_1,
-                vec![expected_uncle_1]
-            ))
-        );
+        assert_eq!(result, Some(RskBlockAndUncles::new(expected_block_1, vec![expected_uncle_1])));
     }
 
     #[test]
@@ -771,9 +718,7 @@ mod tests {
         let mock_value = value.clone();
         let mut bitvmx_broker =
             MockBrokerClientApi::<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>::new();
-        bitvmx_broker
-            .expect_try_recv()
-            .return_once(move || Ok(Some(mock_value)));
+        bitvmx_broker.expect_try_recv().return_once(move || Ok(Some(mock_value)));
 
         let mut monitor = Monitor::new(
             MockBrokerClientApi::<ToServer, FromServer>::new(),
@@ -784,18 +729,14 @@ mod tests {
         );
         monitor.bitvmx_monitoring_active = true;
 
-        let result = monitor
-            .try_bitvmx_event()
-            .expect("Failed to receive BitVMX event");
+        let result = monitor.try_bitvmx_event().expect("Failed to receive BitVMX event");
         assert!(matches!(result, Some(OutgoingBitVMXApiMessages::Pong())));
     }
 
     #[test]
     fn test_try_bitvmx_event_returns_none() {
         let mut bitvmx_broker = MockBrokerClientApi::new();
-        bitvmx_broker
-            .expect_try_recv()
-            .return_once(move || Ok(None));
+        bitvmx_broker.expect_try_recv().return_once(move || Ok(None));
 
         let mut monitor = Monitor::new(
             MockBrokerClientApi::new(),
@@ -806,9 +747,7 @@ mod tests {
         );
         monitor.bitvmx_monitoring_active = true;
 
-        let result = monitor
-            .try_bitvmx_event()
-            .expect("Failed to receive BitVMX event");
+        let result = monitor.try_bitvmx_event().expect("Failed to receive BitVMX event");
         assert!(result.is_none());
     }
 
