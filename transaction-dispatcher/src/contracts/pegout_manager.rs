@@ -176,8 +176,8 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
             DomainErrors::MissingConfirmationsOnNativeBridge(format!("{e:?}"))
         }
         PegoutManagerErrors::InvalidSlotState(e) => DomainErrors::InvalidSlotState {
-            expected: e.expected.into(),
-            actual: e.actual.into(),
+            expected: e.expected,
+            actual: e.actual,
         },
         // Unhandled
         _ => DomainErrors::UnhandledContractError(format!("{e:?}")),

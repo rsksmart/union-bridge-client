@@ -23,6 +23,6 @@ env_logger = { workspace = true }
 rand = "0.9.0"
 
 [features]
-default = [] # fresh_node can be enabled explicitly when needed
+default = ["fresh_node"] # temporary, for dev convenience
 anvil = ["common/anvil"]
 fresh_node = []
