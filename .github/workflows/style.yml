@@ -1,4 +1,4 @@
-name: Clippy
+name: Style
 
 permissions:
   contents: read
@@ -16,7 +16,7 @@ on:
       - main
 
 jobs:
-  clippy:
+  style:
     runs-on: ubuntu-latest
 
     steps:
@@ -32,7 +32,15 @@ jobs:
           contracts_github_token: ${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}
           cache-build: true
 
-      - name: Clippy Workspace
+      # check code formatting
+      - name: Check Code Formatting
+        run: |
+          rustup component add rustfmt --toolchain nightly
+          cargo install cargo-sort
+          cargo +nightly fmt --check
+          cargo sort --check
+
+      - name: Check Clippy rules
         run: |
           RISC0_SKIP_BUILD=1 cargo clippy --workspace --all-targets --all-features
 
