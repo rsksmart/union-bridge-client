@@ -1,0 +1,17 @@
+# Sort these files
+include = [
+    "Cargo.toml",
+    "crates/*/Cargo.toml"
+]
+
+# keep fields grouped and alphabetized
+group_deps = true
+
+# combine duplicate dependency keys across tables
+combine_duplicates = true
+
+# enforce alphabetical ordering for all keys, not just dependencies
+sort_keys = true
+
+# enforce alphabetical ordering specifically inside dependency tables
+sort_dependencies = true
