@@ -38,7 +38,9 @@ jobs:
           rustup component add rustfmt --toolchain nightly
           cargo install cargo-sort
           cargo +nightly fmt --check
+          cargo +nightly fmt --manifest-path check-fork/zkp/guest/Cargo.toml --check
           cargo sort --check
+          cargo sort --check check-fork/zkp/guest
 
       - name: Check Clippy rules
         run: |
