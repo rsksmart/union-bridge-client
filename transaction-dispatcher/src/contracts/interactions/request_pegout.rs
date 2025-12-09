@@ -96,7 +96,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_run_fail_no_revert() {
+    async fn test_run_success_returns_tx_hash() {
         let mut mock = MockPegoutManagerContractApi::new();
         let input = get_base_input();
 
