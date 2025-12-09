@@ -1,9 +1,8 @@
-use crate::{
-    contracts::committee_registry::CommitteeRegistryContractApi,
-    rsk_gateway::DomainErrors,
-    types::{GetCommitteeInput, GetCommitteeOutput},
-};
 use log::info;
+
+use crate::contracts::committee_registry::CommitteeRegistryContractApi;
+use crate::rsk_gateway::DomainErrors;
+use crate::types::{GetCommitteeInput, GetCommitteeOutput};
 
 #[derive(Clone)]
 pub(crate) struct GetCommitteeCall<C: CommitteeRegistryContractApi> {
@@ -21,11 +20,8 @@ impl<C: CommitteeRegistryContractApi> GetCommitteeCall<C> {
     ) -> Result<GetCommitteeOutput, DomainErrors> {
         info!("Init GetCommittee for committee_id: {}", input.committee_id);
 
-        let committee = self
-            .contract
-            .call_get_committee(input.committee_id)
-            .await
-            .map_err(|e| {
+        let committee =
+            self.contract.call_get_committee(input.committee_id).await.map_err(|e| {
                 DomainErrors::UnhandledContractError(format!("Failed to get committee: {e}"))
             })?;
 
@@ -37,13 +33,14 @@ impl<C: CommitteeRegistryContractApi> GetCommitteeCall<C> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::contracts::committee_registry::MockCommitteeRegistryContractApi;
     use alloy_primitives::{Address, U256, Uint, address};
     use mockall::predicate::always;
     use union_contracts::bindings::committee_registry::CommitteeRegistry::{
         Committee, CommitteeMember,
     };
+
+    use super::*;
+    use crate::contracts::committee_registry::MockCommitteeRegistryContractApi;
 
     #[tokio::test]
     async fn test_get_committee_success() {
@@ -59,26 +56,15 @@ mod tests {
 
         let interaction = GetCommitteeCall::new(mock);
 
-        let input = GetCommitteeInput {
-            committee_id: 123.into(),
-        };
+        let input = GetCommitteeInput { committee_id: 123.into() };
 
         let result = interaction.run(input).await;
         assert!(result.is_ok());
 
         let out = result.unwrap();
-        assert_eq!(
-            out.committee.aggregatedKey,
-            expected_committee.aggregatedKey
-        );
-        assert_eq!(
-            out.committee.leaderAddress,
-            expected_committee.leaderAddress
-        );
-        assert_eq!(
-            out.committee.operatorTakeIndex,
-            expected_committee.operatorTakeIndex
-        );
+        assert_eq!(out.committee.aggregatedKey, expected_committee.aggregatedKey);
+        assert_eq!(out.committee.leaderAddress, expected_committee.leaderAddress);
+        assert_eq!(out.committee.operatorTakeIndex, expected_committee.operatorTakeIndex);
         assert_eq!(out.committee.members.len(), 1);
         assert_eq!(
             out.committee.members[0].memberAddress,
@@ -93,31 +79,26 @@ mod tests {
         mock.expect_call_get_committee()
             .with(always())
             .returning(move |_| {
-                Err(alloy_contract::Error::TransportError(
-                    alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
+                Err(alloy_contract::Error::TransportError(alloy_json_rpc::RpcError::ErrorResp(
+                    alloy_json_rpc::ErrorPayload {
                         code: 3,
                         message: "Contract call failed".to_string().into(),
                         data: None,
-                    }),
-                ))
+                    },
+                )))
             })
             .times(1);
 
         let interaction = GetCommitteeCall::new(mock);
 
-        let input = GetCommitteeInput {
-            committee_id: 456.into(),
-        };
+        let input = GetCommitteeInput { committee_id: 456.into() };
 
         let result = interaction.run(input).await;
         assert!(result.is_err());
 
         match result.err().unwrap() {
             DomainErrors::UnhandledContractError(msg) => {
-                assert!(
-                    msg.contains("Failed to get committee"),
-                    "unexpected error message: {msg}"
-                );
+                assert!(msg.contains("Failed to get committee"), "unexpected error message: {msg}");
             }
             other => panic!("unexpected error variant: {other:?}"),
         }
@@ -126,10 +107,7 @@ mod tests {
     fn sample_committee() -> Committee {
         let aggregated_key = alloy_primitives::Bytes::from([0x11u8; 33].to_vec());
         let leader: Address = address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
-        let members = vec![CommitteeMember {
-            memberAddress: leader,
-            role: 1u8,
-        }];
+        let members = vec![CommitteeMember { memberAddress: leader, role: 1u8 }];
         let operator_take_index = U256::from(42u64);
 
         Committee {

@@ -1,3 +1,13 @@
+use std::cell::RefCell;
+use std::collections::{HashSet, VecDeque};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
+use std::time::Duration;
+
+use anyhow::anyhow;
+use log::info;
+
 use crate::rsk_provider::{
     MockRskProvider, MockRskSubscription, RskSubscriptionError, RskSubscriptionFilter,
 };
@@ -6,19 +16,6 @@ use crate::test_utils::rsk_block_generator::FakeBlockGenerator;
 use crate::test_utils::rsk_log_generator::FakeLogGenerator;
 use crate::test_utils::rsk_utils::{UncleBlockInfo, from_hex_to_block_hash};
 use crate::types::{BlockHash, BlockNumber, LogInfo, RskBlock, RskLog};
-use anyhow::anyhow;
-use log::info;
-use std::cell::RefCell;
-use std::collections::HashSet;
-use std::{
-    collections::VecDeque,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    thread,
-    time::Duration,
-};
 
 pub struct MockRskProviderHandler<'a> {
     provider: &'a mut MockRskProvider,
@@ -253,9 +250,9 @@ impl<'a> MockRskProviderHandler<'a> {
         let tuples = VecDeque::from(log_info_tuples);
         self.provider
             .expect_subscribe_logs()
-            .with(mockall::predicate::function(
-                move |f: &RskSubscriptionFilter| matching_filters(filter.clone(), f),
-            ))
+            .with(mockall::predicate::function(move |f: &RskSubscriptionFilter| {
+                matching_filters(filter.clone(), f)
+            }))
             .returning(move |_| {
                 let mut mock_sub = MockRskSubscription::new();
                 let log_generator = log_generator.clone();
@@ -359,9 +356,7 @@ fn generate_next_rsk_log(
         }
         Ok(log)
     } else {
-        Err(RskSubscriptionError::Unexpected(anyhow!(
-            "No more logs to generate"
-        )))
+        Err(RskSubscriptionError::Unexpected(anyhow!("No more logs to generate")))
     }
 }
 

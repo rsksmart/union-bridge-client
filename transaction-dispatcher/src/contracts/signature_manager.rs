@@ -1,17 +1,16 @@
-use crate::contracts::types::{Address, Bytes, FixedBytes32};
 use alloy_primitives::TxHash;
 use alloy_provider::Provider;
 use log::info;
-
-use crate::contracts::common::send_tx_with_gas_bump;
 #[cfg(test)]
 use mockall::automock;
 use union_contracts::bindings::signature_manager::SignatureManager;
 use union_contracts::bindings::signature_manager::SignatureManager::SignatureManagerInstance;
 
+use crate::contracts::common::send_tx_with_gas_bump;
 pub(crate) use crate::contracts::interactions::add_member_nonce::AddMemberNonceInvoke;
 pub(crate) use crate::contracts::interactions::add_member_signature::AddMemberSignatureInvoke;
 pub(crate) use crate::contracts::interactions::add_operator_take_tx_hash::AddOperatorTakeTxHashInvoke;
+use crate::contracts::types::{Address, Bytes, FixedBytes32};
 
 #[cfg_attr(test, automock)]
 pub trait SignatureManagerContractApi {
@@ -50,6 +49,7 @@ impl<P: Provider> SignatureManagerContract<P> {
     }
 }
 
+#[allow(clippy::struct_field_names)]
 impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
     async fn add_member_nonce(
         &self,
@@ -59,10 +59,7 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
     ) -> alloy_contract::Result<TxHash> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
-            || {
-                self.contract_instance
-                    .addMemberNonce(hash_to_sign, nonce.clone())
-            },
+            || self.contract_instance.addMemberNonce(hash_to_sign, nonce.clone()),
             gas_bumps,
         )
         .await
@@ -76,10 +73,7 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
     ) -> alloy_contract::Result<TxHash> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
-            || {
-                self.contract_instance
-                    .addMemberSignature(hash_to_sign, signature)
-            },
+            || self.contract_instance.addMemberSignature(hash_to_sign, signature),
             gas_bumps,
         )
         .await
@@ -93,10 +87,7 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
     ) -> alloy_contract::Result<TxHash> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
-            || {
-                self.contract_instance
-                    .addOperatorTakeTxid(accept_pegin_tx_hash, take_tx_hash)
-            },
+            || self.contract_instance.addOperatorTakeTxid(accept_pegin_tx_hash, take_tx_hash),
             gas_bumps,
         )
         .await
@@ -106,8 +97,9 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
 pub(crate) fn decode_error(
     err: &alloy_contract::Error,
 ) -> Option<crate::rsk_gateway::DomainErrors> {
-    use crate::rsk_gateway::DomainErrors;
     use union_contracts::bindings::signature_manager::SignatureManager::SignatureManagerErrors;
+
+    use crate::rsk_gateway::DomainErrors;
 
     let decoded_err = err.as_decoded_interface_error::<SignatureManagerErrors>();
     decoded_err.map(|e| match e {
@@ -127,13 +119,14 @@ pub(crate) fn decode_error(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::contracts::common::tests::generate_contract_revert_error;
-    use crate::rsk_gateway::DomainErrors;
     use alloy_primitives::{Address, FixedBytes};
     use union_contracts::bindings::signature_manager::SignatureManager::{
         AcceptPeginTxidNotFound, AddressEmptyCode, HashToSignNotFound, SignatureManagerErrors,
     };
+
+    use super::*;
+    use crate::contracts::common::tests::generate_contract_revert_error;
+    use crate::rsk_gateway::DomainErrors;
 
     // Test error decoding functions
     #[test]
@@ -181,9 +174,6 @@ mod tests {
 
         let result = generate_contract_revert_error(&err_data);
         let domain_error = decode_error(&result).unwrap();
-        assert!(matches!(
-            domain_error,
-            DomainErrors::UnhandledContractError(_)
-        ));
+        assert!(matches!(domain_error, DomainErrors::UnhandledContractError(_)));
     }
 }

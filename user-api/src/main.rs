@@ -1,12 +1,13 @@
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::thread;
+
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
 use common::config::CommonConfig;
 use common::msg_broker::broker::BrokerServer;
 use common::shutdown_flag::ShutdownFlag;
 use log::{error, info};
-use std::net::SocketAddr;
-use std::sync::Arc;
-use std::thread;
 use tokio::net::TcpListener;
 use transaction_dispatcher::config::Config as TxDispatcherConfig;
 use user_api::config::{Config, Logger};
@@ -30,9 +31,8 @@ impl BrokerDropGuard {
 impl Drop for BrokerDropGuard {
     fn drop(&mut self) {
         if let Some(broker) = self.0.take() {
-            let spawn_result = thread::Builder::new()
-                .name("broker-drop".into())
-                .spawn(move || drop(broker));
+            let spawn_result =
+                thread::Builder::new().name("broker-drop".into()).spawn(move || drop(broker));
             if let Err(err) = spawn_result {
                 error!("Failed to spawn broker drop thread: {}", err);
             }
@@ -81,17 +81,13 @@ async fn main() -> Result<()> {
     info!("Broker Server started on {broker_port}");
 
     let http_addr = SocketAddr::from(([0, 0, 0, 0], config.user_api_config.http.port));
-    let listener = TcpListener::bind(http_addr)
-        .await
-        .context("Failed to bind to address")?;
+    let listener = TcpListener::bind(http_addr).await.context("Failed to bind to address")?;
 
     let network = CommonConfig::parse_bitcoin_network(&config.bitcoin_network)
         .context("Failed to parse bitcoin_network")?;
 
     // Get WIF key from environment - required for user endpoints
-    let user_bitcoin_wif = std::env::var("USER_BITCOIN_WIF")
-        .ok()
-        .filter(|s| !s.is_empty());
+    let user_bitcoin_wif = std::env::var("USER_BITCOIN_WIF").ok().filter(|s| !s.is_empty());
 
     if user_bitcoin_wif.is_none() {
         info!("USER_BITCOIN_WIF not set - user endpoints will be disabled");
@@ -116,9 +112,7 @@ async fn main() -> Result<()> {
 
     let server = Server::new(
         listener,
-        broker_drop_guard
-            .clone_arc()
-            .context("failed to clone broker server handle")?,
+        broker_drop_guard.clone_arc().context("failed to clone broker server handle")?,
         shutdown_flag.clone(),
         config.user_api_config.coordinator.broker.client_id,
         user_contracts_gateway,

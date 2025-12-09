@@ -3,26 +3,26 @@ name = "block-indexer"
 version = "0.1.0"
 edition = "2024"
 
-[lints]
-workspace = true
+[features]
+default = ["fresh_node"] # temporary, for dev convenience
+anvil = ["common/anvil"]
+fresh_node = []
 
 [dependencies]
-common = { path = "../common" }
 
 anyhow = { workspace = true }
 clap = { workspace = true }
+common = { path = "../common" }
 log = { workspace = true }
 mockall = { workspace = true }
 serde = { workspace = true }
-storage-backend = { workspace = true }
 serde_json = { workspace = true }
+storage-backend = { workspace = true }
 
 [dev-dependencies]
 env_logger = { workspace = true }
 primitive-types = { workspace = true }
 tempfile = { workspace = true }
 
-[features]
-default = ["fresh_node"] # temporary, for dev convenience
-anvil = ["common/anvil"]
-fresh_node = []
+[lints]
+workspace = true

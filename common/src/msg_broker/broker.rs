@@ -1,5 +1,6 @@
-use crate::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
-use crate::msg_broker::types::{FromServer, ToServer};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs};
+use std::sync::{Arc, Mutex};
+
 use log::debug;
 use message_broker::broker_memstorage::MemStorage;
 use message_broker::channel::channel::{DualChannel, LocalChannel};
@@ -8,9 +9,10 @@ use message_broker::rpc::sync_server::BrokerSync;
 use mockall::automock;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs};
-use std::sync::{Arc, Mutex};
 use thiserror::Error;
+
+use crate::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+use crate::msg_broker::types::{FromServer, ToServer};
 
 // by convention, server is id 1
 pub const BROKER_SERVER_ID: u32 = 1;
@@ -69,20 +71,13 @@ impl BrokerServer {
         let broker = BrokerSync::new(&broker_config, broker_storage.clone());
         let broker_channel = LocalChannel::new(BROKER_SERVER_ID, broker_storage.clone());
 
-        Self {
-            broker,
-            channel: broker_channel,
-        }
+        Self { broker, channel: broker_channel }
     }
 }
 
 impl BrokerServerApi<ToServer, FromServer> for BrokerServer {
     fn try_recv(&self) -> Result<Option<(ToServer, u32)>, BrokerError> {
-        if let Some((msg, sender)) = self
-            .channel
-            .recv()
-            .map_err(BrokerError::BrokerServerError)?
-        {
+        if let Some((msg, sender)) = self.channel.recv().map_err(BrokerError::BrokerServerError)? {
             let req = serde_json::from_str(&msg).map_err(BrokerError::SerializationError)?;
             Ok(Some((req, sender)))
         } else {
@@ -135,9 +130,7 @@ impl BrokerClientApi<ToServer, FromServer> for BrokerClient {
 
     fn try_recv(&self) -> Result<Option<FromServer>, BrokerError> {
         self.channel.recv()?.map_or(Ok(None), |(data, _id)| {
-            serde_json::from_str(&data)
-                .map(Some)
-                .map_err(BrokerError::SerializationError)
+            serde_json::from_str(&data).map(Some).map_err(BrokerError::SerializationError)
         })
     }
 }
@@ -178,20 +171,13 @@ impl BitVmxBrokerServer {
         let broker = BrokerSync::new(&broker_config, broker_storage.clone());
         let broker_channel = LocalChannel::new(BROKER_SERVER_ID, broker_storage.clone());
 
-        Self {
-            broker,
-            channel: broker_channel,
-        }
+        Self { broker, channel: broker_channel }
     }
 }
 
 impl BrokerServerApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages> for BitVmxBrokerServer {
     fn try_recv(&self) -> Result<Option<(IncomingBitVMXApiMessages, u32)>, BrokerError> {
-        if let Some((msg, sender)) = self
-            .channel
-            .recv()
-            .map_err(BrokerError::BrokerServerError)?
-        {
+        if let Some((msg, sender)) = self.channel.recv().map_err(BrokerError::BrokerServerError)? {
             // For BitVMX server, we expect IncomingBitVMXApiMessages directly
             let req = serde_json::from_str::<IncomingBitVMXApiMessages>(&msg)
                 .map_err(BrokerError::SerializationError)?;

@@ -3,37 +3,37 @@ name = "coordinator"
 version = "0.1.0"
 edition = "2024"
 
-[lints]
-workspace = true
+[features]
+anvil = []
 
 [dependencies]
-check-fork = { path = "../check-fork" }
-common = { path = "../common" }
-check-fork-zkp = { path = "../check-fork/zkp" }
-transaction-dispatcher = { path = "../transaction-dispatcher", features = ["types"] }
 
 alloy-primitives = { workspace = true }
 alloy-sol-types = { workspace = true }
 anyhow = { workspace = true }
 bincode = { workspace = true }
 bitcoin = { workspace = true }
+check-fork = { path = "../check-fork" }
+check-fork-zkp = { path = "../check-fork/zkp" }
 clap = { workspace = true }
+common = { path = "../common" }
+hex = { workspace = true }
 log = { workspace = true }
 musig2 = { workspace = true }
-serde_json = { workspace = true }
-union-contracts = { workspace = true }
 primitive-types = { workspace = true }
-hex = { workspace = true }
 serde = { workspace = true }
-storage-backend = { workspace = true }
+serde_json = { workspace = true }
 sha2 = { workspace = true }
+storage-backend = { workspace = true }
 thiserror = { workspace = true }
 tiny-keccak = { workspace = true }
+transaction-dispatcher = { path = "../transaction-dispatcher", features = ["types"] }
+union-contracts = { workspace = true }
 
 uuid = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
 
-[features]
-anvil = []
+[lints]
+workspace = true

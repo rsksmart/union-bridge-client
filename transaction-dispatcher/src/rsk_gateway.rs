@@ -1,15 +1,28 @@
+use std::collections::HashMap;
+use std::error::Error;
+
+use alloy_primitives::U256;
+use alloy_provider::Provider;
+use anyhow::{Result, anyhow};
+use common::types::{Address, ContractInfo};
+use log::{error, info};
+#[cfg(test)]
+use mockall::automock;
+use thiserror::Error;
+
 use crate::config::TransactionConfig;
 use crate::contracts::committee_registry::{
     ApplyToStreamInvoke, CommitteeRegistryContract, DepositAggregatedKeysInvoke,
     DepositCommunicationDataInvoke, GetCommitteeCall, GetMemberCommunicationDataCall,
 };
 use crate::contracts::member_registry::{GetMemberPublicKeysCall, MemberRegistryContract};
-use crate::contracts::peg_manager::{
-    FakePegManagerContract, PegManagerContract, accept_pegin::AcceptPeginInvoke,
-    get_temporary_pegin_address::GetTemporaryPeginAddressCall,
-    notify_check_fork_complete::NotifyCheckForkCompleteInvoke,
-    register_pegout::RegisterPegoutInvoke, request_pegin::RequestPeginInvoke,
-};
+use crate::contracts::peg_manager::accept_pegin::AcceptPeginInvoke;
+use crate::contracts::peg_manager::get_temporary_pegin_address::GetTemporaryPeginAddressCall;
+use crate::contracts::peg_manager::notify_check_fork_complete::NotifyCheckForkCompleteInvoke;
+use crate::contracts::peg_manager::register_pegout::RegisterPegoutInvoke;
+use crate::contracts::peg_manager::request_pegin::RequestPeginInvoke;
+use crate::contracts::peg_manager::request_pegout::TryPegoutInvoke;
+use crate::contracts::peg_manager::{FakePegManagerContract, PegManagerContract};
 use crate::contracts::signature_manager::{
     AddMemberNonceInvoke, AddMemberSignatureInvoke, AddOperatorTakeTxHashInvoke,
     SignatureManagerContract,
@@ -26,19 +39,6 @@ use crate::types::{
     RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
     RequestPegoutOutput,
 };
-use alloy_primitives::U256;
-use alloy_provider::Provider;
-use anyhow::{Result, anyhow};
-use common::types::Address;
-use common::types::ContractInfo;
-use log::{error, info};
-use std::collections::HashMap;
-use std::error::Error;
-use thiserror::Error;
-
-use crate::contracts::peg_manager::request_pegout::TryPegoutInvoke;
-#[cfg(test)]
-use mockall::automock;
 
 /// Must match the contract name in the config file
 const PEG_MANAGER_CONTRACT_NAME: &str = "PegManager";
@@ -66,9 +66,7 @@ where
         &self,
         addr: alloy_primitives::Address,
     ) -> Result<U256, Box<dyn Error + Send + Sync>> {
-        self.get_balance(addr)
-            .await
-            .map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)
+        self.get_balance(addr).await.map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)
     }
 }
 
@@ -329,13 +327,10 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     ) -> Result<PeginAddressOutput, DomainErrors> {
         info!("Interacting with PegManager#getTemporaryPeginAddress",);
 
-        self.get_temporary_pegin_address_call
-            .run(input)
-            .await
-            .map_err(|err| {
-                error!("Error on get_temporary_pegin_address_call: {err}");
-                err
-            })
+        self.get_temporary_pegin_address_call.run(input).await.map_err(|err| {
+            error!("Error on get_temporary_pegin_address_call: {err}");
+            err
+        })
     }
 
     async fn request_pegin(
@@ -368,13 +363,10 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     ) -> Result<AddMemberNonceOutput, DomainErrors> {
         info!("Interacting with SignatureManager#addMemberNonce",);
 
-        self.add_member_nonce_invoke
-            .run(input)
-            .await
-            .map_err(|err| {
-                error!("Error on add_member_nonce_invoke: {err}");
-                err
-            })
+        self.add_member_nonce_invoke.run(input).await.map_err(|err| {
+            error!("Error on add_member_nonce_invoke: {err}");
+            err
+        })
     }
 
     async fn add_member_signature(
@@ -383,13 +375,10 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     ) -> Result<AddMemberSignatureOutput, DomainErrors> {
         info!("Interacting with SignatureManager#addMemberSignature");
 
-        self.add_member_signature_invoke
-            .run(input)
-            .await
-            .map_err(|err| {
-                error!("Error on add_member_signature_invoke: {err}");
-                err
-            })
+        self.add_member_signature_invoke.run(input).await.map_err(|err| {
+            error!("Error on add_member_signature_invoke: {err}");
+            err
+        })
     }
 
     async fn add_operator_take_tx_hash(
@@ -398,25 +387,19 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     ) -> Result<AddMemberNonceOutput, DomainErrors> {
         info!("Interacting with SignatureManager#addOperatorTakeTxHash",);
 
-        self.add_operator_take_tx_hash_invoke
-            .run(input)
-            .await
-            .map_err(|err| {
-                error!("Error on add_operator_take_tx_hash_invoke: {err}");
-                err
-            })
+        self.add_operator_take_tx_hash_invoke.run(input).await.map_err(|err| {
+            error!("Error on add_operator_take_tx_hash_invoke: {err}");
+            err
+        })
     }
 
     async fn notify_check_fork_completion(&self, input: &str) -> Result<(), DomainErrors> {
         info!("Interacting with PegManager#notifyCheckForkCompletion",);
 
-        self.notify_check_fork_completion_invoke
-            .run(input)
-            .await
-            .map_err(|err| {
-                error!("Error on notify_check_fork_completion_invoke: {err}");
-                err
-            })
+        self.notify_check_fork_completion_invoke.run(input).await.map_err(|err| {
+            error!("Error on notify_check_fork_completion_invoke: {err}");
+            err
+        })
     }
 
     async fn request_pegout(
@@ -449,13 +432,10 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     ) -> Result<GetMemberPublicKeysOutput, DomainErrors> {
         info!("Interacting with CommitteeRegistry#getMemberPublicKeys",);
 
-        self.get_member_public_keys_call
-            .run(input)
-            .await
-            .map_err(|err| {
-                error!("Error on get_member_public_keys_call: {err}");
-                err
-            })
+        self.get_member_public_keys_call.run(input).await.map_err(|err| {
+            error!("Error on get_member_public_keys_call: {err}");
+            err
+        })
     }
 
     async fn apply_to_stream(
@@ -488,13 +468,10 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     ) -> Result<GetCommunicationDataOutput, DomainErrors> {
         info!("Interacting with CommitteeRegistry#getMemberCommunicationData",);
 
-        self.get_member_communication_data_call
-            .run(input)
-            .await
-            .map_err(|err| {
-                error!("Error on get_member_communication_data_call: {err}");
-                err
-            })
+        self.get_member_communication_data_call.run(input).await.map_err(|err| {
+            error!("Error on get_member_communication_data_call: {err}");
+            err
+        })
     }
 
     async fn deposit_communication_data(
@@ -503,13 +480,10 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     ) -> Result<DepositCommunicationDataOutput, DomainErrors> {
         info!("Interacting with CommitteeRegistry#depositCommunicationData");
 
-        self.deposit_communication_data_invoke
-            .run(input)
-            .await
-            .map_err(|err| {
-                error!("Error on deposit_communication_data_invoke: {err}");
-                err
-            })
+        self.deposit_communication_data_invoke.run(input).await.map_err(|err| {
+            error!("Error on deposit_communication_data_invoke: {err}");
+            err
+        })
     }
 
     async fn deposit_aggregated_key(
@@ -518,13 +492,10 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     ) -> Result<DepositAggregatedKeyOutput, DomainErrors> {
         info!("Interacting with CommitteeRegistry#depositAggregatedKeys",);
 
-        self.deposit_aggregated_key_invoke
-            .run(input)
-            .await
-            .map_err(|err| {
-                error!("Error on deposit_aggregated_key_invoke: {err}");
-                err
-            })
+        self.deposit_aggregated_key_invoke.run(input).await.map_err(|err| {
+            error!("Error on deposit_aggregated_key_invoke: {err}");
+            err
+        })
     }
 }
 

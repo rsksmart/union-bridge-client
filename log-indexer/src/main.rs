@@ -1,16 +1,17 @@
+use std::sync::mpsc;
+
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
+use common::alloy_rsk_provider::rpc::AlloyProvider;
 use common::msg_broker::broker::BrokerServer;
-use common::types::RskLog;
-use common::{
-    alloy_rsk_provider::rpc::AlloyProvider, rsk_indexer::RskIndexer, shutdown_flag::ShutdownFlag,
-    types::BlockHash,
-};
+use common::rsk_indexer::RskIndexer;
+use common::shutdown_flag::ShutdownFlag;
+use common::types::{BlockHash, RskLog};
 use log::{debug, error, info};
 use log_indexer::config::{Config, Logger};
+use log_indexer::indexer::LogIndexer;
 use log_indexer::notifier::Notifier;
-use log_indexer::{indexer::LogIndexer, store::RawLogStore};
-use std::sync::mpsc;
+use log_indexer::store::RawLogStore;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const ENV_CLI_FLAG: &str = "env";
@@ -53,10 +54,7 @@ fn main() -> Result<()> {
 
     let initial_block_hash = BlockHash::try_from(config.indexer.initial_block_hash.as_str())
         .unwrap_or_else(|_| {
-            panic!(
-                "Invalid initial block hash: {}",
-                config.indexer.initial_block_hash
-            )
+            panic!("Invalid initial block hash: {}", config.indexer.initial_block_hash)
         });
 
     let (tx, rx): (mpsc::Sender<RskLog>, mpsc::Receiver<RskLog>) = mpsc::channel();

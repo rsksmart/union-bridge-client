@@ -1,21 +1,22 @@
+use std::cmp::Ordering;
+use std::fmt;
+use std::num::ParseIntError;
+use std::ops::{Add, Mul, Sub};
+use std::str::FromStr;
+use std::string::ToString;
+
 use alloy_primitives::FixedBytes;
 use anyhow::{Result, bail};
+use bitcoin::Txid;
+use bitcoin::blockdata::block::Header;
+use bitcoin::consensus::encode::deserialize as btc_deserialize;
 use bitcoin::hashes::Hash;
-use bitcoin::{Txid, blockdata::block::Header, consensus::encode::deserialize as btc_deserialize};
 use hex::FromHexError;
 use log::error;
 use musig2::PubNonce;
 use primitive_types::{H160, H256, U256};
 use serde::{Deserialize, Deserializer, Serialize, de};
 use serde_json::Value;
-use std::{
-    cmp::Ordering,
-    fmt,
-    num::ParseIntError,
-    ops::{Add, Mul, Sub},
-    str::FromStr,
-    string::ToString,
-};
 
 /// A trait for types that can be converted into a hexadecimal string.
 ///
@@ -346,9 +347,7 @@ impl TryFrom<&str> for BlockPow {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         let value = value.trim_start_matches("0x");
         let header_bytes = hex::decode(value)?;
-        let header_hash = btc_deserialize::<Header>(&header_bytes)?
-            .block_hash()
-            .to_string();
+        let header_hash = btc_deserialize::<Header>(&header_bytes)?.block_hash().to_string();
         let h256 = H256::from_str(header_hash.as_str())?;
 
         Ok(Self(h256))
@@ -403,9 +402,7 @@ impl From<alloy_primitives::Address> for Address {
 
 impl From<Address> for alloy_primitives::Address {
     fn from(addr: Address) -> Self {
-        Self(*alloy_primitives::Address::from_slice(
-            addr.0.as_fixed_bytes(),
-        ))
+        Self(*alloy_primitives::Address::from_slice(addr.0.as_fixed_bytes()))
     }
 }
 
@@ -474,16 +471,7 @@ impl RskBlock {
         pow: BlockPow,
         uncles: Vec<BlockHash>,
     ) -> Self {
-        RskBlock {
-            number,
-            hash,
-            parent_hash,
-            timestamp,
-            difficulty,
-            total_difficulty,
-            pow,
-            uncles,
-        }
+        RskBlock { number, hash, parent_hash, timestamp, difficulty, total_difficulty, pow, uncles }
     }
 
     #[must_use]
@@ -602,14 +590,7 @@ impl LogInfo {
         log_index: u64,
         removed: bool,
     ) -> Self {
-        Self {
-            address,
-            block_hash,
-            block_number,
-            tx_hash,
-            log_index,
-            removed,
-        }
+        Self { address, block_hash, block_number, tx_hash, log_index, removed }
     }
 
     #[must_use]
@@ -930,10 +911,7 @@ where
 {
     let hex_strings: Vec<Value> = Deserialize::deserialize(deserializer)?;
 
-    hex_strings
-        .into_iter()
-        .map(|v| parse_hex_to_hash256(v).map_err(de::Error::custom))
-        .collect()
+    hex_strings.into_iter().map(|v| parse_hex_to_hash256(v).map_err(de::Error::custom)).collect()
 }
 
 fn str_hex_to_u64(hex: &str) -> Result<u64, ParseIntError> {
@@ -1075,10 +1053,7 @@ impl RskBlockAndUncles {
 
     #[must_use]
     pub fn new_no_uncles(block: RskBlock) -> Self {
-        Self {
-            block,
-            uncles: vec![],
-        }
+        Self { block, uncles: vec![] }
     }
 
     #[must_use]

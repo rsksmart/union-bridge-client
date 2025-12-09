@@ -1,16 +1,14 @@
-use crate::contracts::types::Address;
-use crate::rsk_gateway::DomainErrors;
 use alloy_provider::Provider;
 use log::info;
-use union_contracts::bindings::member_registry::MemberRegistry::{self, MemberKeys};
+#[cfg(test)]
+use mockall::automock;
 use union_contracts::bindings::member_registry::MemberRegistry::{
-    MemberRegistryErrors, MemberRegistryInstance,
+    self, MemberKeys, MemberRegistryErrors, MemberRegistryInstance,
 };
 
 pub(crate) use crate::contracts::interactions::get_member_public_keys::GetMemberPublicKeysCall;
-
-#[cfg(test)]
-use mockall::automock;
+use crate::contracts::types::Address;
+use crate::rsk_gateway::DomainErrors;
 
 #[cfg_attr(test, automock)]
 pub trait MemberRegistryContractApi {
@@ -38,10 +36,7 @@ impl<P: Provider> MemberRegistryContractApi for MemberRegistryContract<P> {
         &self,
         member_address: Address,
     ) -> alloy_contract::Result<MemberKeys> {
-        self.contract_instance
-            .getMemberPublicKeys(member_address)
-            .call()
-            .await
+        self.contract_instance.getMemberPublicKeys(member_address).call().await
     }
 }
 

@@ -1,16 +1,16 @@
-use super::btc_signature_lifecycle::{BtcSignatureLifeCycle, BtcSignatureLifecycleApi};
-use crate::types::{RegisterSignaturesBitVmxData, RskPegManagerEvents};
-use anyhow::{Result, bail};
-use common::types::RskBlockAndUncles;
-
-use common::runtime_sync::RuntimeSync;
-use log::debug;
 use std::rc::Rc;
+
+use anyhow::{Result, bail};
+use common::runtime_sync::RuntimeSync;
+use common::types::RskBlockAndUncles;
+use log::debug;
+#[cfg(test)]
+use mockall::automock;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;
 
-#[cfg(test)]
-use mockall::automock;
+use super::btc_signature_lifecycle::{BtcSignatureLifeCycle, BtcSignatureLifecycleApi};
+use crate::types::{RegisterSignaturesBitVmxData, RskPegManagerEvents};
 
 #[cfg_attr(test, automock)]
 pub(crate) trait BtcSignatureSubFlowApi {
@@ -43,11 +43,7 @@ where
         let lifecycle =
             BtcSignatureLifeCycle::new(contracts_gateway.clone(), rt_sync.clone(), flow_id);
 
-        Self {
-            lifecycle,
-            is_done: false,
-            is_nonces_step_done: false,
-        }
+        Self { lifecycle, is_done: false, is_nonces_step_done: false }
     }
 }
 
@@ -96,8 +92,7 @@ where
                         if event.removed {
                             self.lifecycle.unset_all_signatures_ready()?;
                         } else {
-                            self.lifecycle
-                                .set_all_signatures_ready(event.block_number)?;
+                            self.lifecycle.set_all_signatures_ready(event.block_number)?;
                         }
                     }
                 }
@@ -146,10 +141,7 @@ pub(crate) struct BtcSignatureSubFlowFactory<CG: RskContractsGatewayApi> {
 
 impl<CG: RskContractsGatewayApi> BtcSignatureSubFlowFactory<CG> {
     pub(crate) fn new(contracts_gateway: Rc<CG>, rt_sync: RuntimeSync) -> Self {
-        Self {
-            contracts_gateway,
-            rt_sync,
-        }
+        Self { contracts_gateway, rt_sync }
     }
 }
 
@@ -168,10 +160,6 @@ impl<CG: RskContractsGatewayApi>
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::blockchain_tracker::BlockchainView;
-    use crate::flows::btc_signature::btc_signature_lifecycle::MockBtcSignatureLifecycleApi;
-    use crate::types::{AllNoncesReadyEvent, AllSignaturesReadyEvent};
     use anyhow::anyhow;
     use common::test_utils::rsk_block_generator::create_block_and_uncles;
     use common::types::{BlockNumber, Hash256, RskBlockAndUncles, TxHash};
@@ -179,15 +167,16 @@ mod tests {
     use musig2::PubNonce;
     use primitive_types::H256;
 
+    use super::*;
+    use crate::blockchain_tracker::BlockchainView;
+    use crate::flows::btc_signature::btc_signature_lifecycle::MockBtcSignatureLifecycleApi;
+    use crate::types::{AllNoncesReadyEvent, AllSignaturesReadyEvent};
+
     type MockBtcSignatureSubFlow = BaseBtcSignatureSubFlow<MockBtcSignatureLifecycleApi>;
 
     impl BaseBtcSignatureSubFlow<MockBtcSignatureLifecycleApi> {
         pub(crate) fn new(mock: MockBtcSignatureLifecycleApi) -> Self {
-            Self {
-                lifecycle: mock,
-                is_done: false,
-                is_nonces_step_done: false,
-            }
+            Self { lifecycle: mock, is_done: false, is_nonces_step_done: false }
         }
     }
 
@@ -196,17 +185,12 @@ mod tests {
         // create signature data for the event
         let hash_to_sign = Hash256::from(H256::random());
         let nonce = "0279BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798032DE2662628C90B03F5E720284EB52FF7D71F4284F627B68A853D78C78E1FFE93".parse::<PubNonce>().unwrap();
-        let signature = "44477400e59c41025e4e18c4de244b90b14554dcdcbfa396ead4659aa6343249"
-            .parse()
-            .unwrap();
+        let signature =
+            "44477400e59c41025e4e18c4de244b90b14554dcdcbfa396ead4659aa6343249".parse().unwrap();
 
         let flow_id = Uuid::new_v4();
 
-        let event = RegisterSignaturesBitVmxData {
-            hash_to_sign,
-            nonce: nonce.clone(),
-            signature,
-        };
+        let event = RegisterSignaturesBitVmxData { hash_to_sign, nonce: nonce.clone(), signature };
 
         // setup mock flow to expect nonce being sent to contracts
         let mut mock_flow = MockBtcSignatureLifecycleApi::new();
@@ -217,9 +201,7 @@ mod tests {
             })
             .times(1)
             .returning(|_| Ok(()));
-        mock_flow
-            .expect_blockchain_view()
-            .return_const(BlockchainView::new());
+        mock_flow.expect_blockchain_view().return_const(BlockchainView::new());
 
         mock_flow.expect_flow_id().returning(move || flow_id);
 
@@ -234,18 +216,13 @@ mod tests {
     fn test_start_signature_flow_wrong_flow_id() {
         let hash_to_sign = Hash256::from(H256::random());
         let nonce = "0279BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798032DE2662628C90B03F5E720284EB52FF7D71F4284F627B68A853D78C78E1FFE93".parse::<PubNonce>().unwrap();
-        let signature = "44477400e59c41025e4e18c4de244b90b14554dcdcbfa396ead4659aa6343249"
-            .parse()
-            .unwrap();
+        let signature =
+            "44477400e59c41025e4e18c4de244b90b14554dcdcbfa396ead4659aa6343249".parse().unwrap();
 
         let flow_id = Uuid::new_v4();
         let wrong_flow_id = Uuid::new_v4();
 
-        let event = RegisterSignaturesBitVmxData {
-            hash_to_sign,
-            nonce,
-            signature,
-        };
+        let event = RegisterSignaturesBitVmxData { hash_to_sign, nonce, signature };
 
         let mut mock_flow = MockBtcSignatureLifecycleApi::new();
         mock_flow.expect_flow_id().returning(move || flow_id);
@@ -276,26 +253,18 @@ mod tests {
 
         // setup mock flow to handle the event
         let mut mock_flow = MockBtcSignatureLifecycleApi::new();
-        mock_flow
-            .expect_get_hash_to_sign()
-            .times(1)
-            .returning(move || Some(hash_to_sign));
+        mock_flow.expect_get_hash_to_sign().times(1).returning(move || Some(hash_to_sign));
         mock_flow
             .expect_set_all_nonces_ready()
             .with(eq(block_number))
             .times(1)
             .returning(|_| Ok(()));
-        mock_flow
-            .expect_blockchain_view()
-            .return_const(BlockchainView::new());
+        mock_flow.expect_blockchain_view().return_const(BlockchainView::new());
 
         let mut sub_flow = MockBtcSignatureSubFlow::new(mock_flow);
 
         let flow_id = Uuid::new_v4();
-        sub_flow
-            .lifecycle
-            .expect_flow_id()
-            .returning(move || flow_id);
+        sub_flow.lifecycle.expect_flow_id().returning(move || flow_id);
 
         let result = sub_flow.delegate_rsk_event(flow_id, &event);
 
@@ -317,25 +286,14 @@ mod tests {
         });
 
         let mut mock_flow = MockBtcSignatureLifecycleApi::new();
-        mock_flow
-            .expect_get_hash_to_sign()
-            .times(1)
-            .returning(move || Some(hash_to_sign));
-        mock_flow
-            .expect_unset_all_nonces_ready()
-            .times(1)
-            .returning(|| Ok(()));
-        mock_flow
-            .expect_blockchain_view()
-            .return_const(BlockchainView::new());
+        mock_flow.expect_get_hash_to_sign().times(1).returning(move || Some(hash_to_sign));
+        mock_flow.expect_unset_all_nonces_ready().times(1).returning(|| Ok(()));
+        mock_flow.expect_blockchain_view().return_const(BlockchainView::new());
 
         let mut sub_flow = MockBtcSignatureSubFlow::new(mock_flow);
 
         let flow_id = Uuid::new_v4();
-        sub_flow
-            .lifecycle
-            .expect_flow_id()
-            .returning(move || flow_id);
+        sub_flow.lifecycle.expect_flow_id().returning(move || flow_id);
 
         let result = sub_flow.delegate_rsk_event(flow_id, &event);
 
@@ -357,26 +315,18 @@ mod tests {
         });
 
         let mut mock_flow = MockBtcSignatureLifecycleApi::new();
-        mock_flow
-            .expect_get_hash_to_sign()
-            .times(1)
-            .returning(move || Some(hash_to_sign));
+        mock_flow.expect_get_hash_to_sign().times(1).returning(move || Some(hash_to_sign));
         mock_flow
             .expect_set_all_signatures_ready()
             .with(eq(block_number))
             .times(1)
             .returning(|_| Ok(()));
-        mock_flow
-            .expect_blockchain_view()
-            .return_const(BlockchainView::new());
+        mock_flow.expect_blockchain_view().return_const(BlockchainView::new());
 
         let mut sub_flow = MockBtcSignatureSubFlow::new(mock_flow);
 
         let flow_id = Uuid::new_v4();
-        sub_flow
-            .lifecycle
-            .expect_flow_id()
-            .returning(move || flow_id);
+        sub_flow.lifecycle.expect_flow_id().returning(move || flow_id);
 
         let result = sub_flow.delegate_rsk_event(flow_id, &event);
 
@@ -398,25 +348,14 @@ mod tests {
         });
 
         let mut mock_flow = MockBtcSignatureLifecycleApi::new();
-        mock_flow
-            .expect_get_hash_to_sign()
-            .times(1)
-            .returning(move || Some(hash_to_sign));
-        mock_flow
-            .expect_unset_all_signatures_ready()
-            .times(1)
-            .returning(|| Ok(()));
-        mock_flow
-            .expect_blockchain_view()
-            .return_const(BlockchainView::new());
+        mock_flow.expect_get_hash_to_sign().times(1).returning(move || Some(hash_to_sign));
+        mock_flow.expect_unset_all_signatures_ready().times(1).returning(|| Ok(()));
+        mock_flow.expect_blockchain_view().return_const(BlockchainView::new());
 
         let mut sub_flow = MockBtcSignatureSubFlow::new(mock_flow);
 
         let flow_id = Uuid::new_v4();
-        sub_flow
-            .lifecycle
-            .expect_flow_id()
-            .returning(move || flow_id);
+        sub_flow.lifecycle.expect_flow_id().returning(move || flow_id);
 
         let result = sub_flow.delegate_rsk_event(flow_id, &event);
 
@@ -430,10 +369,7 @@ mod tests {
         let event = RskPegManagerEvents::UnknownEvent;
 
         let flow_id = Uuid::new_v4();
-        sub_flow
-            .lifecycle
-            .expect_flow_id()
-            .returning(move || flow_id);
+        sub_flow.lifecycle.expect_flow_id().returning(move || flow_id);
 
         let result = sub_flow.delegate_rsk_event(flow_id, &event);
 
@@ -480,18 +416,12 @@ mod tests {
             .expect_blockchain_view()
             .times(2) // called twice: once for update, once for has_observers check
             .return_const(view);
-        mock_flow
-            .expect_is_all_nonces_ready_confirmed()
-            .times(1)
-            .returning(|| true);
+        mock_flow.expect_is_all_nonces_ready_confirmed().times(1).returning(|| true);
         mock_flow
             .expect_is_all_signatures_ready_confirmed()
             .times(0) // Won't be called because we return after sending signature
             .returning(|| false);
-        mock_flow
-            .expect_send_signature_to_contracts()
-            .times(1)
-            .returning(|| Ok(()));
+        mock_flow.expect_send_signature_to_contracts().times(1).returning(|| Ok(()));
 
         let mut sub_flow = MockBtcSignatureSubFlow::new(mock_flow);
 
@@ -520,14 +450,8 @@ mod tests {
             .expect_blockchain_view()
             .times(4) // update, has_observers, clear, and is_empty check in test
             .return_const(view);
-        mock_flow
-            .expect_is_all_nonces_ready_confirmed()
-            .times(1)
-            .returning(|| false);
-        mock_flow
-            .expect_is_all_signatures_ready_confirmed()
-            .times(1)
-            .returning(|| true);
+        mock_flow.expect_is_all_nonces_ready_confirmed().times(1).returning(|| false);
+        mock_flow.expect_is_all_signatures_ready_confirmed().times(1).returning(|| true);
 
         let mut sub_flow = MockBtcSignatureSubFlow::new(mock_flow);
 
@@ -562,22 +486,16 @@ mod tests {
             .times(4) // 2 calls per block (update + has_observers), 2 blocks total
             .return_const(view);
 
-        mock_flow
-            .expect_is_all_nonces_ready_confirmed()
-            .times(2)
-            .returning(move || {
-                nonce_confirmed_count += 1;
-                // First call returns false, second call returns true
-                nonce_confirmed_count == 2
-            });
+        mock_flow.expect_is_all_nonces_ready_confirmed().times(2).returning(move || {
+            nonce_confirmed_count += 1;
+            // First call returns false, second call returns true
+            nonce_confirmed_count == 2
+        });
         mock_flow
             .expect_is_all_signatures_ready_confirmed()
             .times(1) // Only called on first block, second block returns after sending signature
             .returning(|| false);
-        mock_flow
-            .expect_send_signature_to_contracts()
-            .times(1)
-            .returning(|| Ok(()));
+        mock_flow.expect_send_signature_to_contracts().times(1).returning(|| Ok(()));
 
         let mut sub_flow = MockBtcSignatureSubFlow::new(mock_flow);
 
@@ -595,17 +513,12 @@ mod tests {
     fn test_start_signature_flow_send_nonce_fails() {
         let hash_to_sign = Hash256::from(H256::random());
         let nonce = "0279BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798032DE2662628C90B03F5E720284EB52FF7D71F4284F627B68A853D78C78E1FFE93".parse::<PubNonce>().unwrap();
-        let signature = "44477400e59c41025e4e18c4de244b90b14554dcdcbfa396ead4659aa6343249"
-            .parse()
-            .unwrap();
+        let signature =
+            "44477400e59c41025e4e18c4de244b90b14554dcdcbfa396ead4659aa6343249".parse().unwrap();
 
         let flow_id = Uuid::new_v4();
 
-        let event = RegisterSignaturesBitVmxData {
-            hash_to_sign,
-            nonce,
-            signature,
-        };
+        let event = RegisterSignaturesBitVmxData { hash_to_sign, nonce, signature };
 
         // setup mock flow to fail when sending nonce
         let mut mock_flow = MockBtcSignatureLifecycleApi::new();
@@ -620,12 +533,7 @@ mod tests {
         let result = sub_flow.start_signature_flow(flow_id, &event);
 
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Contract call failed")
-        );
+        assert!(result.unwrap_err().to_string().contains("Contract call failed"));
     }
 
     #[test]
@@ -645,36 +553,23 @@ mod tests {
 
         // setup mock flow to fail when setting nonces ready
         let mut mock_flow = MockBtcSignatureLifecycleApi::new();
-        mock_flow
-            .expect_get_hash_to_sign()
-            .times(1)
-            .returning(move || Some(hash_to_sign));
+        mock_flow.expect_get_hash_to_sign().times(1).returning(move || Some(hash_to_sign));
         mock_flow
             .expect_set_all_nonces_ready()
             .with(eq(block_number))
             .times(1)
             .returning(|_| Err(anyhow!("Failed to set nonces ready")));
-        mock_flow
-            .expect_blockchain_view()
-            .return_const(BlockchainView::new());
+        mock_flow.expect_blockchain_view().return_const(BlockchainView::new());
 
         let mut sub_flow = MockBtcSignatureSubFlow::new(mock_flow);
 
         let flow_id = Uuid::new_v4();
-        sub_flow
-            .lifecycle
-            .expect_flow_id()
-            .returning(move || flow_id);
+        sub_flow.lifecycle.expect_flow_id().returning(move || flow_id);
 
         let result = sub_flow.delegate_rsk_event(flow_id, &event);
 
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Failed to set nonces ready")
-        );
+        assert!(result.unwrap_err().to_string().contains("Failed to set nonces ready"));
     }
 
     #[test]
@@ -694,16 +589,10 @@ mod tests {
             .expect_blockchain_view()
             .times(2) // update, has_observers - returns after sending signature, doesn't check signatures
             .return_const(view);
-        mock_flow
-            .expect_is_all_nonces_ready_confirmed()
-            .times(1)
-            .returning(|| true);
+        mock_flow.expect_is_all_nonces_ready_confirmed().times(1).returning(|| true);
         // Since nonces are already confirmed and not yet marked as done,
         // it will send signature and return, not checking signature confirmation
-        mock_flow
-            .expect_send_signature_to_contracts()
-            .times(1)
-            .returning(|| Ok(()));
+        mock_flow.expect_send_signature_to_contracts().times(1).returning(|| Ok(()));
 
         let mut sub_flow = MockBtcSignatureSubFlow::new(mock_flow);
 
@@ -731,10 +620,7 @@ mod tests {
             .expect_blockchain_view()
             .times(2) // called twice: once for update, once for has_observers check
             .return_const(view);
-        mock_flow
-            .expect_is_all_nonces_ready_confirmed()
-            .times(1)
-            .returning(|| true);
+        mock_flow.expect_is_all_nonces_ready_confirmed().times(1).returning(|| true);
         mock_flow
             .expect_send_signature_to_contracts()
             .times(1)
@@ -745,11 +631,6 @@ mod tests {
         let result = sub_flow.delegate_block(&block);
 
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Contract call failed")
-        );
+        assert!(result.unwrap_err().to_string().contains("Contract call failed"));
     }
 }

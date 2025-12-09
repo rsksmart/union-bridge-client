@@ -1,10 +1,10 @@
-use check_fork::CheckForkArgs;
+use std::error::Error;
 
+use check_fork::CheckForkArgs;
 use check_fork_tester::get_blocks;
 use clap::Parser;
 use methods::{CHECK_FORK_GUEST_ID, CHECK_FORK_GUEST_PATH};
 use primitive_types::U256;
-use std::error::Error;
 use zkvm_cli_serde::serialize_guest_input;
 
 // use zkvm_host::prove_stark_no_cli;
@@ -111,9 +111,6 @@ fn generate_elf(check_fork_args: &CheckForkArgs) -> Result<(), Box<dyn Error>> {
     );
     println!("    - input: {check_fork_args_path_str}");
     println!("    - elf: {CHECK_FORK_GUEST_PATH}");
-    println!(
-        "    - image_id: {}",
-        zkvm_cli_serde::serialize_image_id(CHECK_FORK_GUEST_ID)
-    );
+    println!("    - image_id: {}", zkvm_cli_serde::serialize_image_id(CHECK_FORK_GUEST_ID));
     Ok(())
 }

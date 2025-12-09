@@ -1,12 +1,12 @@
-use crate::test_utils::rsk_utils::{UncleBlockInfo, from_hex_to_block_hash, from_hex_to_block_pow};
-use crate::types::{BlockDifficulty, BlockHash, BlockNumber, BlockPow, BlockTimestamp, RskBlock};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use log::debug;
 use primitive_types::{H256, U256};
 use sha3::{Digest, Keccak256};
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
+
+use crate::test_utils::rsk_utils::{UncleBlockInfo, from_hex_to_block_hash, from_hex_to_block_pow};
+use crate::types::{BlockDifficulty, BlockHash, BlockNumber, BlockPow, BlockTimestamp, RskBlock};
 
 /// Returns a list of default RSK test blocks.
 ///
@@ -196,13 +196,7 @@ impl FakeBlockGenerator {
         let bytes = if flavor.is_empty() {
             height.value().to_le_bytes().to_vec()
         } else {
-            height
-                .value()
-                .to_le_bytes()
-                .iter()
-                .chain(flavor.as_bytes())
-                .copied()
-                .collect()
+            height.value().to_le_bytes().iter().chain(flavor.as_bytes()).copied().collect()
         };
         hasher.update(&bytes);
         let result = hasher.finalize();
@@ -218,10 +212,7 @@ impl FakeBlockGenerator {
     ) -> Option<RskBlock> {
         let is_reorg = self.is_reorg.load(Ordering::SeqCst);
         let reorged_block = is_reorg && self.reorg_block_height.is_some_and(|h| height > h);
-        if uncle_info
-            .as_ref()
-            .is_some_and(|info| info.reorg != reorged_block)
-        {
+        if uncle_info.as_ref().is_some_and(|info| info.reorg != reorged_block) {
             return None; // do not generate an uncle block if uncle_info.reorg does not match current reorg status
         }
         let parent_hash = self.generate_parent_hash(height, self.reorg_block_height, is_reorg);
@@ -312,11 +303,7 @@ impl FakeBlockGenerator {
     ) -> BlockHash {
         let reorged_block = is_reorg && self.reorg_block_height.is_some_and(|h| height > h);
         let flavor = if let Some(uncle_info) = uncle_info {
-            format!(
-                "uncle_{}{}",
-                if reorged_block { "alt" } else { "" },
-                uncle_info.id
-            )
+            format!("uncle_{}{}", if reorged_block { "alt" } else { "" }, uncle_info.id)
         } else {
             (if reorged_block { "alt" } else { "" }).to_string()
         };

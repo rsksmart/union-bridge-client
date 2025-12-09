@@ -1,14 +1,14 @@
-use crate::contracts::types::Address;
-use crate::rsk_gateway::DomainErrors;
 use alloy_primitives::U256;
 use alloy_provider::Provider;
 use log::info;
+#[cfg(test)]
+use mockall::automock;
 use union_contracts::bindings::stream_manager::StreamManager::{
     self, Role, StreamDenomination, StreamManagerErrors, StreamManagerInstance,
 };
 
-#[cfg(test)]
-use mockall::automock;
+use crate::contracts::types::Address;
+use crate::rsk_gateway::DomainErrors;
 
 #[cfg_attr(test, automock)]
 pub trait StreamManagerContractApi {
@@ -62,11 +62,12 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
 
 #[cfg(test)]
 mod tests {
-    use crate::contracts::common::tests::generate_contract_revert_error;
-    use crate::rsk_gateway::DomainErrors;
     use union_contracts::bindings::stream_manager::StreamManager::{
         PacketOutOfBound, StreamManagerErrors, StreamNotFoundByDenomination,
     };
+
+    use crate::contracts::common::tests::generate_contract_revert_error;
+    use crate::rsk_gateway::DomainErrors;
 
     #[test]
     fn test_stream_not_found_by_denomination() {

@@ -1,24 +1,23 @@
-use crate::contracts::common::send_tx_with_gas_bump;
-use crate::contracts::types::Address;
-use crate::rsk_gateway::DomainErrors;
 use alloy_primitives::{TxHash, U256};
 use alloy_provider::Provider;
+use common::types::CommitteeId;
 use log::info;
-use union_contracts::bindings::committee_registry::CommitteeRegistry::{self, Committee};
+#[cfg(test)]
+use mockall::automock;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
-    CommitteeRegistryErrors, CommitteeRegistryInstance, MemberRegistrationKeys, UTXO,
+    self, Committee, CommitteeRegistryErrors, CommitteeRegistryInstance, MemberRegistrationKeys,
+    UTXO,
 };
 use union_contracts::bindings::stream_manager::StreamManager::{Role, StreamDenomination};
 
+use crate::contracts::common::send_tx_with_gas_bump;
 pub(crate) use crate::contracts::interactions::apply_to_stream::ApplyToStreamInvoke;
 pub(crate) use crate::contracts::interactions::deposit_aggregated_key::DepositAggregatedKeysInvoke;
 pub(crate) use crate::contracts::interactions::deposit_communication_data::DepositCommunicationDataInvoke;
 pub(crate) use crate::contracts::interactions::get_committee::GetCommitteeCall;
 pub(crate) use crate::contracts::interactions::get_member_communication_data::GetMemberCommunicationDataCall;
-use common::types::CommitteeId;
-
-#[cfg(test)]
-use mockall::automock;
+use crate::contracts::types::Address;
+use crate::rsk_gateway::DomainErrors;
 
 #[cfg_attr(test, automock)]
 pub trait CommitteeRegistryContractApi {
@@ -111,10 +110,7 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
         &self,
         committee_id: CommitteeId,
     ) -> alloy_contract::Result<Committee> {
-        self.contract_instance
-            .getCommittee(*committee_id)
-            .call()
-            .await
+        self.contract_instance.getCommittee(*committee_id).call().await
     }
 
     async fn invoke_deposit_communication_data(
@@ -142,10 +138,7 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
     ) -> alloy_contract::Result<TxHash> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
-            || {
-                self.contract_instance
-                    .depositAggregatedKey(*committee_id, aggregated_key.clone())
-            },
+            || self.contract_instance.depositAggregatedKey(*committee_id, aggregated_key.clone()),
             gas_bumps,
         )
         .await

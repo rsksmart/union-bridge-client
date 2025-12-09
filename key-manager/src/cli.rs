@@ -1,7 +1,9 @@
-use crate::key_manager::KeyManager;
+use std::path::Path;
+
 use anyhow::{Ok, Result};
 use clap::{Parser, Subcommand};
-use std::path::Path;
+
+use crate::key_manager::KeyManager;
 
 #[derive(Default)]
 pub struct Cli {}
@@ -50,10 +52,7 @@ impl Cli {
         let menu = Menu::parse();
 
         match &menu.command {
-            Commands::NewKey {
-                password,
-                destination,
-            } => {
+            Commands::NewKey { password, destination } => {
                 let path = Path::new(destination);
                 let (file, public_key, address) = KeyManager::generate_key(path, password)?;
                 println!("Generated key @ {file}, public '{public_key}', address '{address}'");

@@ -1,50 +1,37 @@
-use crate::{
-    blockchain_tracker::{BlockchainView, ConfirmableEventWithData},
-    config::REQUIRED_CONFIRMATIONS,
-    event_processor::EventProcessor,
-    flows::{
-        btc_signature::{
-            btc_signature_lifecycle::BtcSignatureLifeCycle,
-            btc_signature_subflow::{
-                BaseBtcSignatureSubFlow, BtcSignatureSubFlowApi, BtcSignatureSubFlowFactory,
-                BtcSignatureSubFlowFactoryApi,
-            },
-        },
-        common::GlobalContext,
-        pegin::{
-            pegin_flow::{PeginFlow, State, StepData, Steps},
-            utils::get_temp_pegin_pid,
-        },
-    },
-    store::{CoordinatorStoreApi, StoreKey, StorePrefix},
-    types::{
-        AllOperatorTakeTxidsAddedEvent, EventStatus, PeginAcceptedEvent, PeginRequestedEvent,
-        RegisterSignaturesBitVmxData, RskPegManagerEvents, TickScheduler, UserRequests,
-    },
-};
+use std::any::type_name_of_val;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::Txid;
-use common::{
-    msg_broker::{
-        bitvmx_types::{
-            BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages,
-            PeginAcceptedMessage, TransactionStatus, VariableTypes,
-        },
-        broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi},
-    },
-    runtime_sync::RuntimeSync,
-    types::{BlockNumber, CommitteeId, Hash256, RskBlockAndUncles, TxIdParser},
+use common::msg_broker::bitvmx_types::{
+    BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PeginAcceptedMessage,
+    TransactionStatus, VariableTypes,
 };
+use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
+use common::runtime_sync::RuntimeSync;
+use common::types::{BlockNumber, CommitteeId, Hash256, RskBlockAndUncles, TxIdParser};
 use log::{debug, error, info, trace, warn};
-use std::{
-    any::type_name_of_val,
-    collections::{HashMap, HashSet},
-    rc::Rc,
-};
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use union_contracts::bindings::peg_manager::PegManager::PeginRequested;
 use uuid::Uuid;
+
+use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
+use crate::config::REQUIRED_CONFIRMATIONS;
+use crate::event_processor::EventProcessor;
+use crate::flows::btc_signature::btc_signature_lifecycle::BtcSignatureLifeCycle;
+use crate::flows::btc_signature::btc_signature_subflow::{
+    BaseBtcSignatureSubFlow, BtcSignatureSubFlowApi, BtcSignatureSubFlowFactory,
+    BtcSignatureSubFlowFactoryApi,
+};
+use crate::flows::common::GlobalContext;
+use crate::flows::pegin::pegin_flow::{PeginFlow, State, StepData, Steps};
+use crate::flows::pegin::utils::get_temp_pegin_pid;
+use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix};
+use crate::types::{
+    AllOperatorTakeTxidsAddedEvent, EventStatus, PeginAcceptedEvent, PeginRequestedEvent,
+    RegisterSignaturesBitVmxData, RskPegManagerEvents, TickScheduler, UserRequests,
+};
 
 const PEGIN_ACCEPTED_INPUT_MSG: &str = "pegin_accepted";
 pub const MIN_TX_CONFIRMATIONS: u32 = 1 + 1; // +1 from Contracts, +1 to give time to the Native Bridge to get up to date with Bitcoin Node
@@ -149,10 +136,7 @@ where
         }
 
         if !self.pegin_flows.is_empty() {
-            info!(
-                "Restored {} pegin flows from persistence",
-                self.pegin_flows.len()
-            );
+            info!("Restored {} pegin flows from persistence", self.pegin_flows.len());
         }
     }
 
@@ -234,22 +218,16 @@ where
 
     /// Clean up completed flows
     pub fn cleanup_completed_flows(&mut self) {
-        let completed: Vec<_> = self
-            .pegin_flows
-            .iter()
-            .filter(|(_, flow)| flow.is_done())
-            .map(|(k, _)| *k)
-            .collect();
+        let completed: Vec<_> =
+            self.pegin_flows.iter().filter(|(_, flow)| flow.is_done()).map(|(k, _)| *k).collect();
 
         for internal_id in completed {
             debug!("Removing completed flow: {internal_id}");
             self.pegin_flows.remove(&internal_id);
 
-            self.store
-                .delete_flow(&StoreKey::PeginFlow(internal_id))
-                .unwrap_or_else(|e| {
-                    error!("Failed to remove completed flow {internal_id} from persistence: {e}");
-                });
+            self.store.delete_flow(&StoreKey::PeginFlow(internal_id)).unwrap_or_else(|e| {
+                error!("Failed to remove completed flow {internal_id} from persistence: {e}");
+            });
         }
     }
 
@@ -414,11 +392,7 @@ where
             return Ok(());
         };
 
-        let TransactionStatus {
-            tx_id,
-            confirmations,
-            ..
-        } = tx_status;
+        let TransactionStatus { tx_id, confirmations, .. } = tx_status;
         let flow_id = flow.flow_id();
         let expected_txid = flow
             .get_accept_pegin_txid()
@@ -450,8 +424,7 @@ where
             debug!(
                 "Transaction not confirmed with sufficient confirmations for flow_id: {flow_id}"
             );
-            self.tx_status_scheduler
-                .schedule(flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
+            self.tx_status_scheduler.schedule(flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
         }
         Ok(())
     }
@@ -501,9 +474,8 @@ where
                 // Call requestPegin contract again
                 let input: transaction_dispatcher::types::RequestPeginInput =
                     spv_proof.clone().into();
-                let res = self
-                    .rt_sync
-                    .run(async { self.contracts_gateway.request_pegin(input).await });
+                let res =
+                    self.rt_sync.run(async { self.contracts_gateway.request_pegin(input).await });
 
                 match res {
                     Ok(_) => {
@@ -519,8 +491,7 @@ where
                         // Store for another retry with incremented attempt
                         self.unconfirmed_pegin_requests
                             .insert(block_hash.clone(), (spv_proof, attempt + 1));
-                        self.pegin_retry_scheduler
-                            .schedule(block_hash, BLOCKS_DELAY_FOR_TX_CHECK);
+                        self.pegin_retry_scheduler.schedule(block_hash, BLOCKS_DELAY_FOR_TX_CHECK);
                     }
                     Err(DomainErrors::PeginAlreadyRequested(msg)) => {
                         info!("Pegin already requested on retry: {msg}");
@@ -580,10 +551,7 @@ where
     }
 
     fn subscribe_to_bitvmx_pegin_events(bitvmx_broker: &BC) -> Result<()> {
-        bitvmx_broker.send(
-            BROKER_SERVER_ID,
-            IncomingBitVMXApiMessages::SubscribeToRskPegin(),
-        )?;
+        bitvmx_broker.send(BROKER_SERVER_ID, IncomingBitVMXApiMessages::SubscribeToRskPegin())?;
         Ok(())
     }
 
@@ -625,9 +593,7 @@ where
 
         // Call requestPegin contract
         let input: transaction_dispatcher::types::RequestPeginInput = spv_proof.clone().into();
-        let res = self
-            .rt_sync
-            .run(async { self.contracts_gateway.request_pegin(input).await });
+        let res = self.rt_sync.run(async { self.contracts_gateway.request_pegin(input).await });
 
         match res {
             Ok(_) => {
@@ -692,17 +658,11 @@ where
         spv_proof: BtcTxSPVProof,
     ) -> Result<()> {
         // Find state by matching accept_pegin_txid from bitvmx_pegin_accepted
-        let flow_opt = self
-            .pegin_flows
-            .values_mut()
-            .find(|flow| flow.get_accept_pegin_txid() == Some(*tx_id));
+        let flow_opt =
+            self.pegin_flows.values_mut().find(|flow| flow.get_accept_pegin_txid() == Some(*tx_id));
 
         if let Some(flow) = flow_opt {
-            info!(
-                "Handling accept pegin SPV proof: flow_id={}, tx_id={}",
-                flow.flow_id(),
-                tx_id
-            );
+            info!("Handling accept pegin SPV proof: flow_id={}, tx_id={}", flow.flow_id(), tx_id);
             let step_data = StepData::AcceptPeginSpvProof(spv_proof);
             flow.complete_step(&step_data)?;
         }
@@ -711,9 +671,7 @@ where
     }
 
     fn has_flow_waiting_for_accept_pegin_spv(&self, tx_id: &Txid) -> bool {
-        self.pegin_flows
-            .values()
-            .any(|flow| flow.get_accept_pegin_txid() == Some(*tx_id))
+        self.pegin_flows.values().any(|flow| flow.get_accept_pegin_txid() == Some(*tx_id))
     }
 }
 
@@ -878,12 +836,9 @@ where
                 managed_event,
             );
 
-            confirmable_event
-                .start_confirming(block_num)
-                .context("Starting confirming")?;
+            confirmable_event.start_confirming(block_num).context("Starting confirming")?;
 
-            self.events_confirming
-                .insert(confirmable_event.id(), confirmable_event);
+            self.events_confirming.insert(confirmable_event.id(), confirmable_event);
 
             debug!("Waiting for confirmations for {id}");
         }

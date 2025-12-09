@@ -3,12 +3,12 @@ name = "transaction-dispatcher"
 version = "0.1.0"
 edition = "2024"
 
-[lints]
-workspace = true
+[features]
+# TODO(Jira) remove in scope of https://rsklabs.atlassian.net/browse/UB-214
+default = ["types"]
+types = []
 
 [dependencies]
-common = { path = "../common" }
-key-manager = { path = "../key-manager" }
 
 alloy-contract = { workspace = true }
 alloy-json-rpc = { workspace = true }
@@ -19,11 +19,13 @@ alloy-sol-types = { workspace = true, features = ["json"] }
 alloy-transport = { workspace = true }
 anyhow = { workspace = true }
 bitcoin = { workspace = true }
+common = { path = "../common" }
 env_logger = { workspace = true }
 hex = { workspace = true, features = ["serde"] }
+key-manager = { path = "../key-manager" }
 log = { workspace = true }
-musig2 = { workspace = true }
 multiaddr = "0.18.2"
+musig2 = { workspace = true }
 primitive-types = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
@@ -32,10 +34,8 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 union-contracts = { workspace = true }
 
 [dev-dependencies]
-tempfile = { workspace = true }
 mockall = { workspace = true }
+tempfile = { workspace = true }
 
-[features]
-# TODO(Jira) remove in scope of https://rsklabs.atlassian.net/browse/UB-214
-default = ["types"]
-types = []
+[lints]
+workspace = true

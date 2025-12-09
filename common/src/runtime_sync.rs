@@ -1,6 +1,7 @@
-use anyhow::{Context, Result};
 use std::future::Future;
 use std::sync::Arc;
+
+use anyhow::{Context, Result};
 use tokio::runtime::Runtime;
 
 // This struct is a wrapper around tokio::runtime::Runtime that allows for synchronous execution of
@@ -35,8 +36,9 @@ impl RuntimeSync {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::fmt;
+
+    use super::*;
 
     // Custom error type for testing error propagation
     #[derive(Debug, PartialEq)]
@@ -78,10 +80,7 @@ mod tests {
         let result = rt_sync
             .run(async { Err::<i32, TestError>(TestError::CustomError("test error".to_string())) });
 
-        assert_eq!(
-            result,
-            Err(TestError::CustomError("test error".to_string()))
-        );
+        assert_eq!(result, Err(TestError::CustomError("test error".to_string())));
     }
 
     #[test]

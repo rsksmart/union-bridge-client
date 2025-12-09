@@ -1,14 +1,16 @@
-use crate::store::LogStore;
-use anyhow::{Context, Result, bail};
-use common::{
-    rsk_indexer::RskIndexer,
-    rsk_provider::{RskProvider, RskSubscription, RskSubscriptionError, RskSubscriptionFilter},
-    shutdown_flag::ShutdownFlag,
-    types::{Address, BlockHash, BlockNumber, ContractInfo, RskLog},
-};
-use log::{debug, error, info, trace, warn};
 use std::collections::HashMap;
 use std::sync::mpsc;
+
+use anyhow::{Context, Result, bail};
+use common::rsk_indexer::RskIndexer;
+use common::rsk_provider::{
+    RskProvider, RskSubscription, RskSubscriptionError, RskSubscriptionFilter,
+};
+use common::shutdown_flag::ShutdownFlag;
+use common::types::{Address, BlockHash, BlockNumber, ContractInfo, RskLog};
+use log::{debug, error, info, trace, warn};
+
+use crate::store::LogStore;
 
 pub struct LogIndexer<P: RskProvider, S: LogStore> {
     store: S,
@@ -97,10 +99,8 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         rsk_provider: &P,
         _initial_block_hash: BlockHash,
     ) -> Result<BlockNumber> {
-        let initial_block_number = rsk_provider
-            .get_best_block()
-            .context("Failed to get best block")?
-            .number();
+        let initial_block_number =
+            rsk_provider.get_best_block().context("Failed to get best block")?.number();
         Ok(initial_block_number)
     }
 
@@ -125,10 +125,8 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
             RskSubscriptionFilter::new(contract_addresses, vec![], Some(last_block_number));
         info!("[subscribe_logs] Start subscribe_logs with filter {filter:?}...");
 
-        let mut rsk_log_subscription = self
-            .rsk_provider
-            .subscribe_logs(filter)
-            .context("Failed to subscribe to logs")?; // do not retry, this is the application startup
+        let mut rsk_log_subscription =
+            self.rsk_provider.subscribe_logs(filter).context("Failed to subscribe to logs")?; // do not retry, this is the application startup
 
         let loop_result = self.listen_logs(&mut rsk_log_subscription);
 
@@ -192,11 +190,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
             }
 
             let from = start;
-            let to = if start + batch_size < end {
-                start + batch_size
-            } else {
-                end
-            };
+            let to = if start + batch_size < end { start + batch_size } else { end };
 
             debug!("Fetching logs from block {} to {}", from, to);
             let logs = self.rsk_provider.get_logs(from, to, addrs)?;
@@ -311,19 +305,12 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 
             info!(
                 "[subscribe_logs] Processed log {} @ {}",
-                new_log
-                    .event()
-                    .topics()
-                    .first()
-                    .map_or("none".to_string(), ToString::to_string),
+                new_log.event().topics().first().map_or("none".to_string(), ToString::to_string),
                 new_log.info().address(),
             );
             trace!("[subscribe_logs] Log: {new_log:?}");
 
-            if !self
-                .managed_contracts
-                .contains_key(&new_log.info().address())
-            {
+            if !self.managed_contracts.contains_key(&new_log.info().address()) {
                 error!(
                     "[subscribe_logs] Received unmanaged contract log {} [{:?}]",
                     new_log.info().address(),
@@ -334,9 +321,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 
             self.store.save_log(&new_log).context("Saving new log")?;
             // TODO(Jira) avoid double writes for sync checkpoint in log indexer listener: https://rsklabs.atlassian.net/browse/UB-111
-            self.store
-                .set_sync_checkpoint(&new_log)
-                .context("Setting new log checkpoint")?;
+            self.store.set_sync_checkpoint(&new_log).context("Setting new log checkpoint")?;
 
             #[allow(clippy::collapsible_if)]
             if let Some(channel) = &self.new_log_sender {
@@ -352,11 +337,13 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::store::MockLogStore;
-    use common::{rsk_provider::MockRskProvider, types::*};
+    use common::rsk_provider::MockRskProvider;
+    use common::types::*;
     use mockall::predicate::*;
     use primitive_types::{H160, H256, U256};
+
+    use super::*;
+    use crate::store::MockLogStore;
 
     #[test]
     fn recover_logs_when_no_checkpoint_should_start_from_initial_block() {
@@ -381,23 +368,13 @@ mod tests {
         let log_clone_for_store = log_from_initial_block.clone();
         let log_clone_for_provider = log_from_initial_block.clone();
 
-        mock_store
-            .expect_get_sync_checkpoint()
-            .times(1)
-            .returning(|| Ok(None));
+        mock_store.expect_get_sync_checkpoint().times(1).returning(|| Ok(None));
 
-        mock_provider
-            .expect_get_best_block()
-            .times(2)
-            .returning(move || Ok(best_block.clone()));
+        mock_provider.expect_get_best_block().times(2).returning(move || Ok(best_block.clone()));
 
         mock_provider
             .expect_get_logs()
-            .with(
-                eq(initial_block.number() - finality_depth),
-                eq(best_block_number),
-                always(),
-            )
+            .with(eq(initial_block.number() - finality_depth), eq(best_block_number), always())
             .times(1)
             .returning(move |_, _, _| Ok(vec![log_clone_for_provider.clone()]));
 
@@ -461,18 +438,11 @@ mod tests {
             .times(1)
             .returning(move || Ok(Some(dummy_log.clone())));
 
-        mock_provider
-            .expect_get_best_block()
-            .times(2)
-            .returning(move || Ok(best_block.clone()));
+        mock_provider.expect_get_best_block().times(2).returning(move || Ok(best_block.clone()));
 
         mock_provider
             .expect_get_logs()
-            .with(
-                eq(checkpoint_block.number() - finality_depth),
-                eq(best_block_number),
-                always(),
-            )
+            .with(eq(checkpoint_block.number() - finality_depth), eq(best_block_number), always())
             .times(1)
             .returning(move |_, _, _| Ok(vec![log_clone_for_provider.clone()]));
 
@@ -513,31 +483,24 @@ mod tests {
         let mut mock_store = MockLogStore::new();
         let mut mock_provider = MockRskProvider::new();
 
-        mock_store
-            .expect_get_sync_checkpoint()
-            .returning(|| Ok(None));
+        mock_store.expect_get_sync_checkpoint().returning(|| Ok(None));
 
         let first_best = block_with_number(100);
         let second_best = block_with_number(105);
         let second_best_clone = second_best.clone();
 
         let mut call_count = 0;
-        mock_provider
-            .expect_get_best_block()
-            .times(3)
-            .returning(move || {
-                if call_count == 0 {
-                    call_count += 1;
-                    Ok(first_best.clone())
-                } else {
-                    call_count += 1;
-                    Ok(second_best_clone.clone())
-                }
-            });
+        mock_provider.expect_get_best_block().times(3).returning(move || {
+            if call_count == 0 {
+                call_count += 1;
+                Ok(first_best.clone())
+            } else {
+                call_count += 1;
+                Ok(second_best_clone.clone())
+            }
+        });
 
-        mock_provider
-            .expect_get_logs()
-            .returning(|_, _, _| Ok(vec![]));
+        mock_provider.expect_get_logs().returning(|_, _, _| Ok(vec![]));
 
         let indexer = LogIndexer {
             store: mock_store,
@@ -560,9 +523,7 @@ mod tests {
         let mut mock_store = MockLogStore::new();
         let mut mock_provider = MockRskProvider::new();
 
-        mock_store
-            .expect_get_sync_checkpoint()
-            .returning(|| Ok(None));
+        mock_store.expect_get_sync_checkpoint().returning(|| Ok(None));
 
         let mut counter = 100;
         mock_provider.expect_get_best_block().returning(move || {
@@ -570,9 +531,7 @@ mod tests {
             Ok(block_with_number(counter))
         });
 
-        mock_provider
-            .expect_get_logs()
-            .returning(|_, _, _| Ok(vec![]));
+        mock_provider.expect_get_logs().returning(|_, _, _| Ok(vec![]));
 
         let indexer = LogIndexer {
             store: mock_store,
@@ -587,12 +546,7 @@ mod tests {
 
         let result = indexer.recover_logs(&vec![]);
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Failed to recover logs after")
-        );
+        assert!(result.unwrap_err().to_string().contains("Failed to recover logs after"));
     }
 
     fn block_with_number(n: u64) -> RskBlock {

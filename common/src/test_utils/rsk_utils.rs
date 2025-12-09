@@ -1,6 +1,8 @@
-use crate::types::{Address, BlockHash, BlockNumber, BlockPow, ContractInfo};
-use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
+
+use sha3::{Digest, Keccak256};
+
+use crate::types::{Address, BlockHash, BlockNumber, BlockPow, ContractInfo};
 
 pub const DEFAULT_BLOCK_HASH: &str =
     "0x5d164d93bf09ee215cc67420f24d31b8d86c46ced6e770e8abf69c16bea3a67c";
@@ -69,21 +71,12 @@ pub fn generate_fake_addresses(addresses_size: u64) -> Vec<Address> {
 }
 
 pub fn generate_fake_managed_contracts(addresses: Vec<Address>) -> HashMap<Address, ContractInfo> {
-    addresses
-        .into_iter()
-        .map(generate_fake_managed_contract)
-        .collect()
+    addresses.into_iter().map(generate_fake_managed_contract).collect()
 }
 
 #[must_use]
 pub fn generate_fake_managed_contract(address: Address) -> (Address, ContractInfo) {
-    (
-        address,
-        ContractInfo {
-            name: format!("contract_{address}"),
-            address,
-        },
-    )
+    (address, ContractInfo { name: format!("contract_{address}"), address })
 }
 
 /// Converts a hex string into a `BlockHash`.

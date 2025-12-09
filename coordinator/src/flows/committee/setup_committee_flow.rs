@@ -1,9 +1,7 @@
-use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
-use crate::event_processor::EventProcessor;
-use crate::types::{
-    AllCommunicationDataReadyEvent, EventStatus, MemberOfCommittee, NewCommitteePendingEvent,
-    NewCommitteeReadyEvent, RskPegManagerEvents, UserRequests,
-};
+use std::any::type_name_of_val;
+use std::collections::HashMap;
+use std::rc::Rc;
+
 use alloy_primitives::{Address, Bytes, FixedBytes, U256};
 use anyhow::{Context, Result, bail, ensure};
 use bitcoin::key::Parity::Even;
@@ -14,41 +12,40 @@ use common::msg_broker::bitvmx_types::{
 };
 use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 use common::runtime_sync::RuntimeSync;
-use log::{debug, error, info, trace, warn};
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use std::any::type_name_of_val;
-use std::collections::HashMap;
-use std::rc::Rc;
-use tiny_keccak::{Hasher, Keccak};
-use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
-use uuid::Uuid;
-
-use crate::user_requests::ApplyToStream;
-use union_contracts::bindings::committee_registry::CommitteeRegistry::{
-    Committee, CommitteeMember, CommunicationData, UTXO,
-};
-
-use crate::flows::committee::dispute_core_setup::DisputeCoreSetup;
-use crate::flows::common::{
-    COMM_KEY_INDEX, DISPUTE_KEY_INDEX, GlobalContext, TAKE_KEY_INDEX, build_communication_data,
-};
-use crate::flows::errors::{FailableFlow, FlowError, FlowResultExt};
-use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix};
 use common::types;
 use common::types::{BlockNumber, CommitteeId, RskBlockAndUncles, StreamId, TxIdParser};
-
+use log::{debug, error, info, trace, warn};
+#[cfg(test)]
+use mockall::automock;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use tiny_keccak::{Hasher, Keccak};
+use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use transaction_dispatcher::types::{
     ApplyToStreamInput, ApplyToStreamOutput, CommitteeECDSA, DepositAggregatedKeyInput,
     DepositAggregatedKeyOutput, DepositCommunicationDataInput, DepositCommunicationDataOutput,
     GetCommunicationDataInput, GetMemberPublicKeysInput, GetMemberPublicKeysOutput,
     P2PAddressParser,
 };
+use union_contracts::bindings::committee_registry::CommitteeRegistry::{
+    Committee, CommitteeMember, CommunicationData, UTXO,
+};
+use uuid::Uuid;
 
+use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
 use crate::config::REQUIRED_CONFIRMATIONS;
-
-#[cfg(test)]
-use mockall::automock;
+use crate::event_processor::EventProcessor;
+use crate::flows::committee::dispute_core_setup::DisputeCoreSetup;
+use crate::flows::common::{
+    COMM_KEY_INDEX, DISPUTE_KEY_INDEX, GlobalContext, TAKE_KEY_INDEX, build_communication_data,
+};
+use crate::flows::errors::{FailableFlow, FlowError, FlowResultExt};
+use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix};
+use crate::types::{
+    AllCommunicationDataReadyEvent, EventStatus, MemberOfCommittee, NewCommitteePendingEvent,
+    NewCommitteeReadyEvent, RskPegManagerEvents, UserRequests,
+};
+use crate::user_requests::ApplyToStream;
 
 pub(crate) const NO_LEADER_IDX: u16 = 0;
 const MIN_FUNDING_BALANCE: u64 = 20_002_000; // Setup Committee estimated cost
@@ -107,12 +104,7 @@ pub(crate) trait SetupCommitteeFlowFactoryApi<
 }
 
 // TODO improve with structs instead of tuples, using tuples for now for validation
-type PubKeyReq = Option<(
-    Uuid,
-    Option<PublicKey>,
-    Option<Uuid>,
-    Option<SignedPublicKey>,
-)>; // request id key, raw pub key, req id signing, signed pub key
+type PubKeyReq = Option<(Uuid, Option<PublicKey>, Option<Uuid>, Option<SignedPublicKey>)>; // request id key, raw pub key, req id signing, signed pub key
 type AggKeyReq = Option<(Uuid, Option<PublicKey>)>; // request id, response data
 type SetupCoreReq = Vec<(Uuid, CommitteeId, bool)>; // request id, committee id, response data
 type SendFundsReq = Option<(Uuid, Option<Txid>)>; // request id, funding utxo, speedup utxo
@@ -144,12 +136,7 @@ struct FlowContext {
 
 impl FlowContext {
     fn get_stream_id(&self) -> Result<StreamId> {
-        Ok(self
-            .user_input
-            .as_ref()
-            .context("Missing stream_id")?
-            .stream_id
-            .clone())
+        Ok(self.user_input.as_ref().context("Missing stream_id")?.stream_id.clone())
     }
 
     fn get_committee_id(&self) -> Result<CommitteeId> {
@@ -188,17 +175,11 @@ impl FlowContext {
     }
 
     fn get_user_input(&self) -> Result<ApplyToStream> {
-        self.user_input
-            .as_ref()
-            .context("Missing User Input in context")
-            .cloned()
+        self.user_input.as_ref().context("Missing User Input in context").cloned()
     }
 
     fn get_my_comm_info(&self) -> Result<P2PAddress> {
-        let my_comm_info = self
-            .my_comm_info
-            .clone()
-            .context("My Comm Info missing in context")?;
+        let my_comm_info = self.my_comm_info.clone().context("My Comm Info missing in context")?;
 
         Ok(my_comm_info)
     }
@@ -228,9 +209,7 @@ impl FlowContext {
     }
 
     fn get_my_communication_data(&self) -> Result<Vec<P2PAddress>> {
-        self.communication_data_ready_ev
-            .clone()
-            .context("Missing Communication Data in context")
+        self.communication_data_ready_ev.clone().context("Missing Communication Data in context")
     }
 
     fn get_my_take_key(&self, global_context: &GlobalContext) -> Result<SignedPublicKey> {
@@ -464,10 +443,8 @@ where
     S: CoordinatorStoreApi,
 {
     fn persist_state(&self) -> Result<()> {
-        self.store.save_flow(
-            &StoreKey::SetupCommitteeFlow(self.state.internal_id),
-            self.state.clone(),
-        )
+        self.store
+            .save_flow(&StoreKey::SetupCommitteeFlow(self.state.internal_id), self.state.clone())
     }
 
     fn from_saved_state(
@@ -479,15 +456,7 @@ where
         bitcoin_network: Network,
         store: Rc<S>,
     ) -> Self {
-        Self {
-            contracts,
-            rt_sync,
-            bitvmx_broker,
-            state,
-            global_context,
-            bitcoin_network,
-            store,
-        }
+        Self { contracts, rt_sync, bitvmx_broker, state, global_context, bitcoin_network, store }
     }
 
     fn new(
@@ -503,11 +472,7 @@ where
             contracts,
             rt_sync,
             bitvmx_broker,
-            state: State {
-                internal_id,
-                step: Steps::Init,
-                ctx: FlowContext::default(),
-            },
+            state: State { internal_id, step: Steps::Init, ctx: FlowContext::default() },
             global_context,
             bitcoin_network,
             store,
@@ -521,10 +486,7 @@ where
     fn request_bitvmx_key_signing(pub_key_req: &mut PubKeyReq, bitvmx_broker: &BC) -> Result<()> {
         let pub_key_req = pub_key_req.as_mut().context("Missing Public Key request")?;
 
-        let pub_key = pub_key_req
-            .1
-            .as_ref()
-            .context("Missing Sign Public Key request")?;
+        let pub_key = pub_key_req.1.as_ref().context("Missing Sign Public Key request")?;
 
         let hash = create_pubkey_hash(pub_key);
 
@@ -585,10 +547,7 @@ where
                 r.1 = Some(pub_key);
 
                 debug!("Got public key for signing");
-                trace!(
-                    "Key: {}",
-                    hex::encode(pub_key.inner.serialize_uncompressed())
-                );
+                trace!("Key: {}", hex::encode(pub_key.inner.serialize_uncompressed()));
 
                 Ok(())
             }
@@ -751,9 +710,8 @@ where
 
         // TODO revisit this, we are encoding bytes to hex string in the contracts to then decode it back to bytes here
 
-        let key_bytes: FixedBytes<32> = key_str
-            .parse()
-            .context("Failed to parse public key str to FixedBytes<32>")?;
+        let key_bytes: FixedBytes<32> =
+            key_str.parse().context("Failed to parse public key str to FixedBytes<32>")?;
         let x_only_key = XOnlyPublicKey::from_slice(key_bytes.as_slice())
             .context("Failed to parse aggregated public key")?;
 
@@ -784,12 +742,7 @@ where
             public_key: *member_dispute_key,
         };
 
-        Ok((
-            tx_id,
-            utxo.outputIndex,
-            Some(utxo.amount),
-            Some(output_type),
-        ))
+        Ok((tx_id, utxo.outputIndex, Some(utxo.amount), Some(output_type)))
     }
 
     fn send_bitvmx_msg(&self, msg: IncomingBitVMXApiMessages) {
@@ -807,10 +760,7 @@ where
         member_address: Address,
     ) -> Result<GetMemberPublicKeysOutput> {
         self.rt_sync
-            .run(
-                self.contracts
-                    .get_member_public_keys(GetMemberPublicKeysInput { member_address }),
-            )
+            .run(self.contracts.get_member_public_keys(GetMemberPublicKeysInput { member_address }))
             .map_err(|e| anyhow::anyhow!("Failed to get member public keys: {e}"))
     }
 
@@ -822,20 +772,12 @@ where
             DEFAULT_FEE_RATE
         }; // TODO copied from get_fee_rate on BitVMX client
 
-        let public_key = self
-            .state
-            .ctx
-            .get_my_dispute_key(&self.global_context)?
-            .public_key;
+        let public_key = self.state.ctx.get_my_dispute_key(&self.global_context)?.public_key;
 
         let funding_utxo_val = self.state.ctx.get_user_input()?.funding_utxo.value;
         let speedup_utxo_val = self.state.ctx.get_user_input()?.funding_utxo.value;
 
-        info!(
-            "Funding dispute pubkey of {} with: {}",
-            req_id,
-            speedup_utxo_val + funding_utxo_val
-        );
+        info!("Funding dispute pubkey of {} with: {}", req_id, speedup_utxo_val + funding_utxo_val);
 
         self.state.ctx.send_funds_req = Some((req_id, None));
 
@@ -860,11 +802,7 @@ where
     }
 
     fn build_my_communication_data(&self) -> Result<Vec<P2PAddress>> {
-        let committee_id = self
-            .state
-            .ctx
-            .get_committee_id()
-            .context("Get Communication Data")?;
+        let committee_id = self.state.ctx.get_committee_id().context("Get Communication Data")?;
 
         let my_address: Address = self.my_address().into();
         let input = GetCommunicationDataInput {
@@ -873,9 +811,7 @@ where
             committee_id,
         };
 
-        let comm_data = self
-            .rt_sync
-            .run(self.contracts.get_committee_communication_data(input))?;
+        let comm_data = self.rt_sync.run(self.contracts.get_committee_communication_data(input))?;
 
         let committee_addresses = comm_data
             .communication_data
@@ -936,10 +872,8 @@ where
             let take_key = self.get_member_keys_by_type(cm.memberAddress, TAKE_KEY_INDEX)?;
             let dispute_key = self.get_member_keys_by_type(cm.memberAddress, DISPUTE_KEY_INDEX)?;
 
-            let contracts_utxo = committee
-                .fundingUTXOs
-                .get(idx)
-                .context("Missing utxo for committee member")?;
+            let contracts_utxo =
+                committee.fundingUTXOs.get(idx).context("Missing utxo for committee member")?;
 
             let funding_utxo = Self::build_member_funding_utxo(&dispute_key, contracts_utxo)?;
 
@@ -965,10 +899,7 @@ where
     S: CoordinatorStoreApi,
 {
     fn fail(&mut self) {
-        error!(
-            "Marking flow {} as failed and cleaning up",
-            self.state.internal_id
-        );
+        error!("Marking flow {} as failed and cleaning up", self.state.internal_id);
         self.state.step = Steps::Failed;
     }
 }
@@ -1078,10 +1009,7 @@ where
     fn complete_step(&mut self, data: StepData) -> Result<(), FlowError> {
         let current_step = self.state.step;
 
-        debug!(
-            "Completing step {current_step:?} for flow {}",
-            self.state.internal_id
-        );
+        debug!("Completing step {current_step:?} for flow {}", self.state.internal_id);
         trace!("Step data: {data:?}");
 
         trace!("Flow Context: {:?}", self.state.ctx);
@@ -1253,32 +1181,24 @@ where
 
         debug!("Applying to stream {:?}", input.stream_id);
 
-        self.rt_sync
-            .run(self.contracts.apply_to_stream(input))
-            .or_else(|e| match e {
-                DomainErrors::MemberAlreadyRegisteredForStream(_) => {
-                    info!(
-                        "Member already registered for stream {stream_id:?} - treating as success"
-                    );
-                    Ok(ApplyToStreamOutput {
-                        transaction_hash: "already_registered".to_string(),
-                    })
-                }
-                DomainErrors::NoRevertError(e) => {
-                    // insuf. funds candidate
-                    Err(FlowError::transient(e))
-                }
-                _ => Err(anyhow::Error::from(e))?,
-            })?;
+        self.rt_sync.run(self.contracts.apply_to_stream(input)).or_else(|e| match e {
+            DomainErrors::MemberAlreadyRegisteredForStream(_) => {
+                info!("Member already registered for stream {stream_id:?} - treating as success");
+                Ok(ApplyToStreamOutput { transaction_hash: "already_registered".to_string() })
+            }
+            DomainErrors::NoRevertError(e) => {
+                // insuf. funds candidate
+                Err(FlowError::transient(e))
+            }
+            _ => Err(anyhow::Error::from(e))?,
+        })?;
 
         info!("Applied to stream {stream_id:?} successfully");
 
         // once a member is selected, public keys should be the same, so we set them in the
         // global context (reset for convenience as it should be idempotent)
         self.global_context.my_keys().set_take_key(my_take_key);
-        self.global_context
-            .my_keys()
-            .set_dispute_key(my_dispute_key);
+        self.global_context.my_keys().set_dispute_key(my_dispute_key);
         self.global_context
             .my_keys()
             .set_comm_key(self.state.ctx.get_my_comm_key(&self.global_context)?);
@@ -1287,11 +1207,8 @@ where
     }
 
     fn deposit_communication_data(&self) -> Result<DepositCommunicationDataOutput> {
-        let committee_id = self
-            .state
-            .ctx
-            .get_committee_id()
-            .context("Deposit Communication Data")?;
+        let committee_id =
+            self.state.ctx.get_committee_id().context("Deposit Communication Data")?;
 
         let my_p2p_address = self.state.ctx.get_my_comm_info()?;
 
@@ -1308,10 +1225,7 @@ where
             }
         }
 
-        debug!(
-            "Depositing communication data for committee {}",
-            *committee_id
-        );
+        debug!("Depositing communication data for committee {}", *committee_id);
         trace!("Communication data: {communication_data:?}");
 
         let result = self.rt_sync.run(self.contracts.deposit_communication_data(
@@ -1349,9 +1263,7 @@ where
         info!("Selected for committee {committee_id}");
         self.state.ctx.committee_pending_ev = Some(pending_committee);
         let role = self.state.ctx.get_user_input()?.role;
-        self.global_context
-            .my_committees()
-            .add(committee_id.clone(), role);
+        self.global_context.my_committees().add(committee_id.clone(), role);
         Ok(())
     }
 
@@ -1396,11 +1308,8 @@ where
     }
 
     fn deposit_aggregated_key(&self) -> Result<()> {
-        let aggregated_take_key = self
-            .state
-            .ctx
-            .get_aggregated_take_key()
-            .context("Deposit Aggregated Key")?;
+        let aggregated_take_key =
+            self.state.ctx.get_aggregated_take_key().context("Deposit Aggregated Key")?;
 
         let committee_id = self.state.ctx.get_committee_id()?;
 
@@ -1412,29 +1321,23 @@ where
             *committee_id
         );
 
-        let input = DepositAggregatedKeyInput {
-            committee_id: committee_id.clone(),
-            aggregated_key,
-        };
+        let input =
+            DepositAggregatedKeyInput { committee_id: committee_id.clone(), aggregated_key };
 
-        self.rt_sync
-            .run(self.contracts.deposit_aggregated_key(input))
-            .or_else(|e| match e {
-                DomainErrors::MemberInfoAlreadyDeposited(_) => {
-                    info!(
-                        "Member info already deposited for committee {} - treating as success",
-                        *committee_id
-                    );
-                    Ok(DepositAggregatedKeyOutput {
-                        transaction_hash: "already_deposited".to_string(),
-                    })
-                }
-                DomainErrors::NoRevertError(e) => {
-                    // insuf. funds candidate
-                    Err(FlowError::transient(e))
-                }
-                _ => Err(anyhow::Error::from(e))?,
-            })?;
+        self.rt_sync.run(self.contracts.deposit_aggregated_key(input)).or_else(|e| match e {
+            DomainErrors::MemberInfoAlreadyDeposited(_) => {
+                info!(
+                    "Member info already deposited for committee {} - treating as success",
+                    *committee_id
+                );
+                Ok(DepositAggregatedKeyOutput { transaction_hash: "already_deposited".to_string() })
+            }
+            DomainErrors::NoRevertError(e) => {
+                // insuf. funds candidate
+                Err(FlowError::transient(e))
+            }
+            _ => Err(anyhow::Error::from(e))?,
+        })?;
 
         Ok(())
     }
@@ -1456,11 +1359,7 @@ where
             txid: partial_utxo.0,
             vout: partial_utxo.1,
             amount: partial_utxo.2.context("Missing speedup UTXO amount")?,
-            pub_key: self
-                .state
-                .ctx
-                .get_my_dispute_key(&self.global_context)?
-                .public_key,
+            pub_key: self.state.ctx.get_my_dispute_key(&self.global_context)?.public_key,
         };
 
         let p2p_addrs = self.state.ctx.get_my_communication_data()?;
@@ -1477,10 +1376,7 @@ where
         )?;
 
         for pid in protocol_ids {
-            self.state
-                .ctx
-                .setup_core_req
-                .push((pid, committee_id.clone(), false));
+            self.state.ctx.setup_core_req.push((pid, committee_id.clone(), false));
         }
 
         Ok(())
@@ -1537,9 +1433,7 @@ where
             .expect("Failed to load flows from store");
 
         for (id, saved_state) in &saved_flows {
-            let flow = self
-                .flow_factory
-                .create_flow_from_saved_state(saved_state.clone());
+            let flow = self.flow_factory.create_flow_from_saved_state(saved_state.clone());
             self.flows.insert(*id, flow);
             let inserted_flow = self.flows.get(id).expect("Just inserted flow");
             info!(
@@ -1589,9 +1483,7 @@ where
 
     fn get_first_flow_waiting_comm_info(&mut self) -> Option<&mut SetupCommitteeFlow<CG, BC, S>> {
         // CommInfo
-        self.flows
-            .values_mut()
-            .find(|f| f.state.step == Steps::GetMyCommInfo)
+        self.flows.values_mut().find(|f| f.state.step == Steps::GetMyCommInfo)
     }
 
     fn get_flow_for_stream_id(
@@ -1688,19 +1580,11 @@ where
 
     /// checks if an aggregated key request matches the given request id
     fn aggregated_key_request_matches(agg_key_req: &AggKeyReq, req_id: &Uuid) -> bool {
-        if let Some((key_req_id, _)) = agg_key_req {
-            key_req_id == req_id
-        } else {
-            false
-        }
+        if let Some((key_req_id, _)) = agg_key_req { key_req_id == req_id } else { false }
     }
 
     fn fund_bitvmx_request_matches(send_funds_req: &SendFundsReq, req_id: &Uuid) -> bool {
-        if let Some((fund_req_id, _)) = send_funds_req {
-            fund_req_id == req_id
-        } else {
-            false
-        }
+        if let Some((fund_req_id, _)) = send_funds_req { fund_req_id == req_id } else { false }
     }
 
     fn funding_balance_request_matches(
@@ -1958,12 +1842,9 @@ where
                 managed_event,
             );
 
-            confirmable_event
-                .start_confirming(block_num)
-                .context("Starting confirming")?;
+            confirmable_event.start_confirming(block_num).context("Starting confirming")?;
 
-            self.events_confirming
-                .insert(confirmable_event.id(), confirmable_event);
+            self.events_confirming.insert(confirmable_event.id(), confirmable_event);
 
             debug!("Waiting for confirmations for {id}");
         }
@@ -2044,14 +1925,7 @@ where
         bitcoin_network: Network,
         store: Rc<S>,
     ) -> Self {
-        Self {
-            contracts_gateway,
-            rt_sync,
-            bitvmx_broker,
-            global_context,
-            bitcoin_network,
-            store,
-        }
+        Self { contracts_gateway, rt_sync, bitvmx_broker, global_context, bitcoin_network, store }
     }
 }
 
@@ -2089,18 +1963,12 @@ where
 
 fn signed_to_committee_public_key(spk: &SignedPublicKey) -> Result<CommitteeECDSA> {
     let pubkey_bytes = spk.public_key.inner.serialize_uncompressed(); // expect 65 bytes: 0x04 || X(32) || Y(32)
-    ensure!(
-        pubkey_bytes.len() == 65 && pubkey_bytes[0] == 0x04,
-        "invalid uncompressed pubkey"
-    );
+    ensure!(pubkey_bytes.len() == 65 && pubkey_bytes[0] == 0x04, "invalid uncompressed pubkey");
     let (x_coord, y_coord) = pubkey_bytes[1..].split_at(32);
 
     let sig_r = &spk.signature_r;
     let sig_s = &spk.signature_s;
-    ensure!(
-        sig_r.len() == 32 && sig_s.len() == 32,
-        "invalid signature length"
-    );
+    ensure!(sig_r.len() == 32 && sig_s.len() == 32, "invalid signature length");
 
     let recovery_id_value = match spk.recovery_id {
         0 | 1 => 27 + spk.recovery_id,
@@ -2140,12 +2008,7 @@ fn construct_signed_pubkey(
     signature_s: [u8; 32],
     recovery_id: u8,
 ) -> SignedPublicKey {
-    SignedPublicKey {
-        public_key,
-        signature_r,
-        signature_s,
-        recovery_id,
-    }
+    SignedPublicKey { public_key, signature_r, signature_s, recovery_id }
 }
 
 fn print_link(txid: Txid, bitcoin_network: Network) {

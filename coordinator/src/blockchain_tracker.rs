@@ -1,10 +1,12 @@
-use crate::types::RskPegManagerEvents;
-use anyhow::Result;
-use common::types::{BlockNumber, RskBlock, RskBlockAndUncles};
-use log::{debug, info, warn};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
+
+use anyhow::Result;
+use common::types::{BlockNumber, RskBlock, RskBlockAndUncles};
+use log::{debug, info, warn};
+
+use crate::types::RskPegManagerEvents;
 
 /// Observer trait for blockchain events.
 ///
@@ -31,12 +33,7 @@ pub struct BlockConfirmations {
 impl BlockConfirmations {
     #[must_use]
     pub fn new(flow_id: String, init: BlockNumber, req_confirmations: u32) -> Self {
-        Self {
-            flow_id,
-            init,
-            last: init,
-            required: req_confirmations,
-        }
+        Self { flow_id, init, last: init, required: req_confirmations }
     }
 
     #[must_use]
@@ -46,11 +43,7 @@ impl BlockConfirmations {
 
     #[must_use]
     pub fn accum(&self) -> u64 {
-        if self.last < self.init {
-            0
-        } else {
-            self.last.value() - self.init.value() + 1
-        }
+        if self.last < self.init { 0 } else { self.last.value() - self.init.value() + 1 }
     }
 }
 
@@ -152,10 +145,7 @@ impl BlockchainView {
     pub fn update(&self, new_block: &RskBlockAndUncles) {
         let prev_tip = self.get_tip();
 
-        let removed_block = self
-            .blocks
-            .borrow_mut()
-            .insert(new_block.number(), new_block.clone());
+        let removed_block = self.blocks.borrow_mut().insert(new_block.number(), new_block.clone());
 
         // new tip without reorg
         if removed_block.is_none() {
@@ -176,9 +166,8 @@ impl BlockchainView {
 
         let removed_block = removed_block.unwrap();
 
-        let stored_tip = self
-            .get_tip()
-            .expect("There should be a tip block after adding a new block");
+        let stored_tip =
+            self.get_tip().expect("There should be a tip block after adding a new block");
 
         // tip replacement
         if new_block.number() == stored_tip.number() {
@@ -203,11 +192,7 @@ impl BlockchainView {
 
     #[must_use]
     pub fn get_from(&self, number: BlockNumber) -> Vec<RskBlockAndUncles> {
-        self.blocks
-            .borrow()
-            .range(number..)
-            .map(|(_, b)| b.clone())
-            .collect()
+        self.blocks.borrow().range(number..).map(|(_, b)| b.clone()).collect()
     }
 
     #[must_use]
@@ -216,9 +201,7 @@ impl BlockchainView {
     }
 
     pub fn restart_from(&self, first_block: BlockNumber) {
-        self.blocks
-            .borrow_mut()
-            .retain(|_, b| b.number() >= first_block);
+        self.blocks.borrow_mut().retain(|_, b| b.number() >= first_block);
     }
 
     pub fn clear(&self) {
@@ -243,11 +226,7 @@ impl BlockchainView {
         }
 
         for btr in &blocks_to_rollback {
-            debug!(
-                "Rolling back block {} ({}) in BlockchainView",
-                btr.number(),
-                btr.hash()
-            );
+            debug!("Rolling back block {} ({}) in BlockchainView", btr.number(), btr.hash());
 
             self.blocks.borrow_mut().remove(&btr.number());
 
@@ -354,10 +333,7 @@ impl ConfirmableEventWithData {
         chain_view: BlockchainView,
         data: RskPegManagerEvents,
     ) -> Self {
-        Self {
-            confirmation: ConfirmableEvent::new(id, req_confirmations, chain_view),
-            data,
-        }
+        Self { confirmation: ConfirmableEvent::new(id, req_confirmations, chain_view), data }
     }
 
     pub fn id(&self) -> String {
@@ -388,12 +364,7 @@ impl ConfirmableEventWithData {
 impl ConfirmableEvent {
     #[must_use]
     pub fn new(id: String, req_confirmations: u32, chain_view: BlockchainView) -> Self {
-        ConfirmableEvent {
-            id,
-            chain_view,
-            req_confirmations,
-            confirmations: None,
-        }
+        ConfirmableEvent { id, chain_view, req_confirmations, confirmations: None }
     }
 
     /// # Errors
@@ -417,10 +388,7 @@ impl ConfirmableEvent {
     /// Returns an error if stopping confirmation fails.
     pub fn stop_confirming(&mut self) -> Result<()> {
         if self.confirmations.is_none() {
-            warn!(
-                "Confirmations not set for protocol {} but stop_confirming called",
-                self.id
-            );
+            warn!("Confirmations not set for protocol {} but stop_confirming called", self.id);
         }
 
         self.remove_observer();
@@ -433,10 +401,7 @@ impl ConfirmableEvent {
     pub fn is_confirmed(&self) -> bool {
         self.confirmations.as_ref().map_or_else(
             || {
-                warn!(
-                    "Confirmations not set for protocol {} but is_confirmed called",
-                    self.id
-                );
+                warn!("Confirmations not set for protocol {} but is_confirmed called", self.id);
                 false
             },
             |c| c.borrow().is_confirmed(),
@@ -454,10 +419,12 @@ impl ConfirmableEvent {
 
 #[cfg(test)]
 mod tests_blockchain_view {
-    use super::*;
+    use std::ops::Mul;
+
     use common::types::{BlockDifficulty, BlockHash, BlockPow, BlockTimestamp, RskBlock};
     use primitive_types::{H256, U256};
-    use std::ops::Mul;
+
+    use super::*;
 
     // mock observer that tracks all notifications for testing
     #[derive(Debug)]
@@ -577,18 +544,9 @@ mod tests_blockchain_view {
 
         // verify final chain state has correct blocks
         assert_eq!(chain_view.len(), 3);
-        assert_eq!(
-            chain_view.get_at(&BlockNumber::from(100)),
-            Some(block_100.clone())
-        );
-        assert_eq!(
-            chain_view.get_at(&BlockNumber::from(101)),
-            Some(block_101.clone())
-        );
-        assert_eq!(
-            chain_view.get_at(&BlockNumber::from(102)),
-            Some(block_102.clone())
-        );
+        assert_eq!(chain_view.get_at(&BlockNumber::from(100)), Some(block_100.clone()));
+        assert_eq!(chain_view.get_at(&BlockNumber::from(101)), Some(block_101.clone()));
+        assert_eq!(chain_view.get_at(&BlockNumber::from(102)), Some(block_102.clone()));
 
         // verify tip is the last added block
         assert_eq!(chain_view.get_tip(), Some(block_102));
@@ -622,18 +580,9 @@ mod tests_blockchain_view {
 
         // verify final chain state has correct blocks
         assert_eq!(chain_view.len(), 3);
-        assert_eq!(
-            chain_view.get_at(&BlockNumber::from(100)),
-            Some(block_100.clone())
-        );
-        assert_eq!(
-            chain_view.get_at(&BlockNumber::from(101)),
-            Some(block_101.clone())
-        );
-        assert_eq!(
-            chain_view.get_at(&BlockNumber::from(102)),
-            Some(alt_block_102.clone())
-        );
+        assert_eq!(chain_view.get_at(&BlockNumber::from(100)), Some(block_100.clone()));
+        assert_eq!(chain_view.get_at(&BlockNumber::from(101)), Some(block_101.clone()));
+        assert_eq!(chain_view.get_at(&BlockNumber::from(102)), Some(alt_block_102.clone()));
 
         // verify the replacement block is actually different
         assert_ne!(alt_block_102.hash(), block_102.hash()); // different hashes
@@ -686,14 +635,8 @@ mod tests_blockchain_view {
 
         // verify final chain state with actual block values
         assert_eq!(chain_view.len(), 2); // blocks 100 and alt_101
-        assert_eq!(
-            chain_view.get_at(&BlockNumber::from(100)),
-            Some(block_100.clone())
-        );
-        assert_eq!(
-            chain_view.get_at(&BlockNumber::from(101)),
-            Some(alt_block_101.clone())
-        );
+        assert_eq!(chain_view.get_at(&BlockNumber::from(100)), Some(block_100.clone()));
+        assert_eq!(chain_view.get_at(&BlockNumber::from(101)), Some(alt_block_101.clone()));
         assert_eq!(chain_view.get_at(&BlockNumber::from(102)), None);
         assert_eq!(chain_view.get_at(&BlockNumber::from(103)), None);
 
@@ -776,29 +719,15 @@ mod tests_blockchain_view {
         // should remove blocks 105, 104, 103 and add alternative block 102
         assert_eq!(
             tracker_ref.get_removed_blocks(),
-            vec![
-                blocks[5].clone(),
-                blocks[4].clone(),
-                blocks[3].clone(),
-                blocks[2].clone()
-            ]
+            vec![blocks[5].clone(), blocks[4].clone(), blocks[3].clone(), blocks[2].clone()]
         ); // blocks 105, 104, 103
         assert_eq!(tracker_ref.get_added_blocks(), vec![alt_block_102.clone()]);
 
         // verify final chain state with actual block values
         assert_eq!(chain_view.len(), 3); // blocks 100, 101, alt_102
-        assert_eq!(
-            chain_view.get_at(&BlockNumber::from(100)),
-            Some(blocks[0].clone())
-        ); // original block 100
-        assert_eq!(
-            chain_view.get_at(&BlockNumber::from(101)),
-            Some(blocks[1].clone())
-        ); // original block 101
-        assert_eq!(
-            chain_view.get_at(&BlockNumber::from(102)),
-            Some(alt_block_102.clone())
-        ); // alternative block 102
+        assert_eq!(chain_view.get_at(&BlockNumber::from(100)), Some(blocks[0].clone())); // original block 100
+        assert_eq!(chain_view.get_at(&BlockNumber::from(101)), Some(blocks[1].clone())); // original block 101
+        assert_eq!(chain_view.get_at(&BlockNumber::from(102)), Some(alt_block_102.clone())); // alternative block 102
         assert_eq!(chain_view.get_at(&BlockNumber::from(103)), None);
         assert_eq!(chain_view.get_at(&BlockNumber::from(104)), None);
         assert_eq!(chain_view.get_at(&BlockNumber::from(105)), None);
@@ -811,12 +740,14 @@ mod tests_blockchain_view {
 
 #[cfg(test)]
 mod confirmable_event_tests {
-    use crate::blockchain_tracker::{BlockchainView, ConfirmableEvent};
-    use common::test_utils::rsk_block_generator::FakeBlockGenerator;
-    use common::types::{BlockNumber, RskBlockAndUncles};
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
+
+    use common::test_utils::rsk_block_generator::FakeBlockGenerator;
+    use common::types::{BlockNumber, RskBlockAndUncles};
     use uuid::Uuid;
+
+    use crate::blockchain_tracker::{BlockchainView, ConfirmableEvent};
 
     #[test]
     fn test_confirmable_event_happy_path_flow() {
@@ -837,10 +768,7 @@ mod confirmable_event_tests {
         assert!(confirmable_event.chain_view.has_observer(&id));
 
         // step 2: should not be confirmed yet (no blocks processed)
-        assert!(
-            !confirmable_event.is_confirmed(),
-            "Should not be confirmed initially"
-        );
+        assert!(!confirmable_event.is_confirmed(), "Should not be confirmed initially");
 
         // step 3: simulate processing blocks to reach confirmation
         // we need to process req_confirmations number of blocks
@@ -867,16 +795,10 @@ mod confirmable_event_tests {
         let mut confirmable_event = ConfirmableEvent::new(id, req_confirmations, chain_view);
 
         let block_number = BlockNumber::from(100);
-        confirmable_event
-            .start_confirming(block_number)
-            .expect("Failed to start confirming");
+        confirmable_event.start_confirming(block_number).expect("Failed to start confirming");
 
         // step 1: verify observer was added
-        assert!(
-            confirmable_event
-                .chain_view
-                .has_observer(&confirmable_event.id)
-        );
+        assert!(confirmable_event.chain_view.has_observer(&confirmable_event.id));
 
         // step 2: stop_confirming() should succeed and remove observer
         let result = confirmable_event.stop_confirming();
@@ -884,17 +806,12 @@ mod confirmable_event_tests {
 
         // step 3: observer should be removed from the blockchain view
         assert!(
-            !confirmable_event
-                .chain_view
-                .has_observer(&confirmable_event.id),
+            !confirmable_event.chain_view.has_observer(&confirmable_event.id),
             "Observer should be removed from blockchain view after stop_confirming"
         );
 
         // step 4: confirmations should be None after stopping
-        assert!(
-            !confirmable_event.is_confirmed(),
-            "Should not be confirmed after stopping"
-        );
+        assert!(!confirmable_event.is_confirmed(), "Should not be confirmed after stopping");
     }
 
     #[test]
@@ -909,10 +826,7 @@ mod confirmable_event_tests {
 
         // stop_confirming without a start should fail
         let result = confirmable_event.stop_confirming();
-        assert!(
-            result.is_ok(),
-            "stop_confirming() without start should NOT fail"
-        );
+        assert!(result.is_ok(), "stop_confirming() without start should NOT fail");
     }
 
     #[test]
@@ -926,9 +840,7 @@ mod confirmable_event_tests {
         let mut confirmable_event = ConfirmableEvent::new(id, req_confirmations, chain_view);
 
         let start_block = BlockNumber::from(100);
-        confirmable_event
-            .start_confirming(start_block)
-            .expect("Failed to start confirming");
+        confirmable_event.start_confirming(start_block).expect("Failed to start confirming");
 
         // step 1: add enough blocks to reach confirmation
         let mut blocks = Vec::new();
@@ -993,10 +905,7 @@ mod confirmable_event_tests {
         assert!(result.is_ok(), "Second start_confirming() should succeed");
 
         // step 3: should still work properly
-        assert!(
-            !confirmable_event.is_confirmed(),
-            "Should not be confirmed initially"
-        );
+        assert!(!confirmable_event.is_confirmed(), "Should not be confirmed initially");
     }
 
     #[test]
@@ -1009,9 +918,7 @@ mod confirmable_event_tests {
         let mut confirmable_event = ConfirmableEvent::new(id, req_confirmations, chain_view);
 
         let block_number = BlockNumber::from(100);
-        confirmable_event
-            .start_confirming(block_number)
-            .expect("Failed to start confirming");
+        confirmable_event.start_confirming(block_number).expect("Failed to start confirming");
 
         // step 1: first stop_confirming() should succeed
         let result = confirmable_event.stop_confirming();
@@ -1033,9 +940,7 @@ mod confirmable_event_tests {
         let mut confirmable_event = ConfirmableEvent::new(id, req_confirmations, chain_view);
 
         let block_number = BlockNumber::from(100);
-        confirmable_event
-            .start_confirming(block_number)
-            .expect("Failed to start confirming");
+        confirmable_event.start_confirming(block_number).expect("Failed to start confirming");
 
         // step 1: add partial confirmations (not enough to reach confirmation)
         for i in 0..u64::from(req_confirmations - 1) {
@@ -1050,9 +955,7 @@ mod confirmable_event_tests {
         );
 
         // step 3: stop_confirming() - this should reset all confirmations
-        confirmable_event
-            .stop_confirming()
-            .expect("Failed to stop confirming");
+        confirmable_event.stop_confirming().expect("Failed to stop confirming");
         assert!(
             !confirmable_event.is_confirmed(),
             "Should not be confirmed after stopping (confirmations reset)"
@@ -1093,9 +996,7 @@ mod confirmable_event_tests {
         let mut confirmable_event = ConfirmableEvent::new(id, req_confirmations, chain_view);
 
         let block_number = BlockNumber::from(100);
-        confirmable_event
-            .start_confirming(block_number)
-            .expect("Failed to start confirming");
+        confirmable_event.start_confirming(block_number).expect("Failed to start confirming");
 
         // step 1: should be immediately confirmed with zero confirmations required
         assert!(
@@ -1115,9 +1016,7 @@ mod confirmable_event_tests {
         let mut confirmable_event = ConfirmableEvent::new(id, req_confirmations, chain_view);
 
         let block_number = BlockNumber::from(100);
-        confirmable_event
-            .start_confirming(block_number)
-            .expect("Failed to start confirming");
+        confirmable_event.start_confirming(block_number).expect("Failed to start confirming");
 
         // step 1: with 1 confirmation required, it might be immediately confirmed
         // depending on how the blockchain tracker counts confirmations
@@ -1145,22 +1044,16 @@ mod confirmable_event_tests {
         let mut confirmable_event = ConfirmableEvent::new(id, req_confirmations, chain_view);
 
         let block_number = BlockNumber::from(100);
-        confirmable_event
-            .start_confirming(block_number)
-            .expect("Failed to start confirming");
+        confirmable_event.start_confirming(block_number).expect("Failed to start confirming");
 
         // step 1: verify observer was added
         assert!(
-            confirmable_event
-                .chain_view
-                .has_observer(&confirmable_event.id),
+            confirmable_event.chain_view.has_observer(&confirmable_event.id),
             "Observer should be added after start_confirming"
         );
 
         // step 2: stop_confirming()
-        confirmable_event
-            .stop_confirming()
-            .expect("Failed to stop confirming");
+        confirmable_event.stop_confirming().expect("Failed to stop confirming");
 
         // step 3: confirmations should be None (observer reference removed from struct)
         assert!(
@@ -1170,35 +1063,26 @@ mod confirmable_event_tests {
 
         // step 4: observer should be removed from the blockchain view
         assert!(
-            !confirmable_event
-                .chain_view
-                .has_observer(&confirmable_event.id),
+            !confirmable_event.chain_view.has_observer(&confirmable_event.id),
             "Observer should be removed from blockchain view after stop_confirming"
         );
 
         // step 5: is_confirmed should return false and log warning
-        assert!(
-            !confirmable_event.is_confirmed(),
-            "Should not be confirmed after stop_confirming"
-        );
+        assert!(!confirmable_event.is_confirmed(), "Should not be confirmed after stop_confirming");
     }
 
     fn create_test_block(block_number: BlockNumber) -> RskBlockAndUncles {
         let generator = FakeBlockGenerator::new(None, Arc::new(AtomicBool::new(false)), None);
-        let block = generator
-            .generate_block(block_number, None)
-            .expect("Failed to generate test block");
+        let block =
+            generator.generate_block(block_number, None).expect("Failed to generate test block");
 
         RskBlockAndUncles::new_no_uncles(block)
     }
 
     fn create_alt_test_block(block_number: BlockNumber) -> RskBlockAndUncles {
         // create a generator with a reorg flag set to true to generate alternative blocks
-        let generator = FakeBlockGenerator::new(
-            Some(block_number - 1),
-            Arc::new(AtomicBool::new(true)),
-            None,
-        );
+        let generator =
+            FakeBlockGenerator::new(Some(block_number - 1), Arc::new(AtomicBool::new(true)), None);
         let block = generator
             .generate_block(block_number, None)
             .expect("Failed to generate alternative test block");

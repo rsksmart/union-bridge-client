@@ -1,31 +1,27 @@
+use std::ops::Sub;
+use std::rc::Rc;
+use std::thread;
+use std::time::{Duration, Instant};
+
+use anyhow::{Context, Result};
+use bitcoin::Network;
+use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
+use common::runtime_sync::RuntimeSync;
+use common::shutdown_flag::ShutdownFlag;
+use log::{debug, error, warn};
+use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
+
+use crate::event_processor::EventProcessor;
+use crate::flows::advance_funds::advance_funds_processor::AdvanceFundsProcessor;
 use crate::flows::committee::setup_committee_flow::{
     SetupCommitteeFlowFactory, SetupCommitteeProcessor,
 };
-use crate::{event_processor::EventProcessor, monitor::MonitorApi};
-use anyhow::{Context, Result};
-use bitcoin::Network;
-use common::{
-    msg_broker::{
-        bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages},
-        broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi},
-    },
-    runtime_sync::RuntimeSync,
-    shutdown_flag::ShutdownFlag,
-};
-use log::{debug, error, warn};
-use std::{
-    ops::Sub,
-    rc::Rc,
-    thread,
-    time::{Duration, Instant},
-};
-use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
-
-use crate::flows::advance_funds::advance_funds_processor::AdvanceFundsProcessor;
 use crate::flows::common::GlobalContext;
 use crate::flows::fund_bitvmx_flow::FundBitvmxProcessor;
 use crate::flows::pegin::pegin_processor::PeginFlowProcessor;
 use crate::flows::pegout::pegout_processor::PegoutFlowProcessor;
+use crate::monitor::MonitorApi;
 use crate::store::CoordinatorStoreApi;
 
 const CHECK_PERIOD: Duration = Duration::from_secs(1);
@@ -61,10 +57,8 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
         let contracts_arc = Rc::new(contracts_gateway);
         let store_rc = Rc::new(store);
 
-        let global_context = store_rc
-            .load_context()
-            .expect("Failed to load context from DB")
-            .unwrap_or_else(|| {
+        let global_context =
+            store_rc.load_context().expect("Failed to load context from DB").unwrap_or_else(|| {
                 warn!("No context found in DB, starting with empty one");
                 GlobalContext::new()
             });
@@ -110,10 +104,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                     global_context.clone(),
                     Rc::clone(&store_rc),
                 )),
-                Box::new(FundBitvmxProcessor::new(
-                    bitvmx_broker.clone(),
-                    bitcoin_network,
-                )),
+                Box::new(FundBitvmxProcessor::new(bitvmx_broker.clone(), bitcoin_network)),
             ],
             check_period: CHECK_PERIOD,
             shutdown_flag,
@@ -143,21 +134,15 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
     /// # Errors
     /// Returns an error if the coordinator run loop fails.
     pub fn run(&mut self) -> Result<()> {
-        self.monitor
-            .start_event_monitoring()
-            .context("Failed to start event monitoring")?;
+        self.monitor.start_event_monitoring().context("Failed to start event monitoring")?;
 
-        self.monitor
-            .start_block_monitoring()
-            .context("Failed to start block monitoring")?;
+        self.monitor.start_block_monitoring().context("Failed to start block monitoring")?;
 
         self.monitor
             .start_bitvmx_monitoring()
             .context("Failed to start BitVMX event monitoring")?;
 
-        self.monitor
-            .start_user_monitoring()
-            .context("Failed to start User request monitoring")?;
+        self.monitor.start_user_monitoring().context("Failed to start User request monitoring")?;
 
         let mut bitvmx_last_msg = Instant::now().sub(BITVMX_PING_AFTER_SILENCE);
         let mut bitvmx_ping: Option<Instant> = None;
@@ -174,10 +159,8 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
 
                 let mut message_received = false;
 
-                if let Some(req) = self
-                    .monitor
-                    .try_user_request()
-                    .context("Error getting User request")?
+                if let Some(req) =
+                    self.monitor.try_user_request().context("Error getting User request")?
                 {
                     // each processor decides if the event is relevant
                     self.processors.iter_mut().for_each(|p| {
@@ -190,10 +173,8 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                     message_received = true;
                 }
 
-                if let Some(event) = self
-                    .monitor
-                    .try_bitvmx_event()
-                    .context("Error getting BitVMX event")?
+                if let Some(event) =
+                    self.monitor.try_bitvmx_event().context("Error getting BitVMX event")?
                 {
                     Self::check_bitvmx_pong(&event).then(|| bitvmx_ping = None);
                     bitvmx_last_msg = Instant::now();
@@ -212,11 +193,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132
                 //  if block monitor restarted, this is not realising and keeps waiting logs forever
                 //  maybe using persistent storage instead of memory fixes it?
-                if let Some(event) = self
-                    .monitor
-                    .try_rsk_event()
-                    .context("Error getting event")?
-                {
+                if let Some(event) = self.monitor.try_rsk_event().context("Error getting event")? {
                     // each processor decides if the event is relevant
                     self.processors.iter_mut().for_each(|p| {
                         if let Err(e) = p.process_new_rsk_event(&event) {
@@ -242,9 +219,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                     message_received = true;
                 }
 
-                self.store
-                    .save_context(&self.global_context)
-                    .context("Storing context in DB")?;
+                self.store.save_context(&self.global_context).context("Storing context in DB")?;
 
                 if !message_received {
                     thread::sleep(self.check_period);
@@ -264,13 +239,9 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
             .cancel_bitvmx_monitoring()
             .context("Failed to cancel BitVMX event monitoring")?;
 
-        self.monitor
-            .cancel_block_monitoring()
-            .context("Failed to cancel block monitoring")?;
+        self.monitor.cancel_block_monitoring().context("Failed to cancel block monitoring")?;
 
-        self.monitor
-            .cancel_event_monitoring()
-            .context("Failed to cancel event monitoring")?;
+        self.monitor.cancel_event_monitoring().context("Failed to cancel event monitoring")?;
 
         result
     }
@@ -295,9 +266,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
     fn send_bitvmx_ping(&self) {
         debug!("Sending Ping to BitVMX");
 
-        let result = self
-            .bitvmx_broker
-            .send(BROKER_SERVER_ID, IncomingBitVMXApiMessages::Ping());
+        let result = self.bitvmx_broker.send(BROKER_SERVER_ID, IncomingBitVMXApiMessages::Ping());
 
         if result.is_err() {
             // TODO we need to handle this situation properly
@@ -322,34 +291,22 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use crate::event_processor::{EventProcessor, MockEventProcessor};
-    use crate::{
-        coordinator::Coordinator,
-        monitor::MockMonitorApi,
-        store::MockCoordinatorStoreApi,
-        types::{AdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents},
-    };
+    use std::thread::{self, JoinHandle, sleep};
+    use std::time::Duration;
+
     use alloy_primitives::U256;
     use common::mocks::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
-    use common::{
-        msg_broker::{
-            bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages},
-            broker::{BROKER_SERVER_ID, MockBrokerClientApi},
-        },
-        shutdown_flag::ShutdownFlag,
-        test_utils::rsk_block_generator::{
-            create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
-        },
-        types,
-        types::{RskBlockAndUncles, TxHash},
+    use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+    use common::msg_broker::broker::{BROKER_SERVER_ID, MockBrokerClientApi};
+    use common::shutdown_flag::ShutdownFlag;
+    use common::test_utils::rsk_block_generator::{
+        create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
     };
+    use common::types;
+    use common::types::{RskBlockAndUncles, TxHash};
     use mockall::mock;
     use mockall::predicate::{always, eq, function};
     use primitive_types::H256;
-    use std::{
-        thread::{self, JoinHandle, sleep},
-        time::Duration,
-    };
     use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
     use transaction_dispatcher::types::{
         AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
@@ -363,11 +320,14 @@ pub(crate) mod tests {
         RequestPegoutOutput,
     };
 
+    use crate::coordinator::Coordinator;
+    use crate::event_processor::{EventProcessor, MockEventProcessor};
+    use crate::monitor::MockMonitorApi;
+    use crate::store::MockCoordinatorStoreApi;
+    use crate::types::{AdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents};
+
     fn create_fake_request_event(pegout_id: &str) -> RequestAdvanceFunds {
-        RequestAdvanceFunds {
-            pegout_id: pegout_id.to_string(),
-            amount: 1000,
-        }
+        RequestAdvanceFunds { pegout_id: pegout_id.to_string(), amount: 1000 }
     }
 
     fn create_fake_advance_funds_event(pegout_id: &str) -> AdvanceFunds {
@@ -403,39 +363,19 @@ pub(crate) mod tests {
 
         let bitvmx_event = OutgoingBitVMXApiMessages::Pong();
 
-        mock_monitor
-            .expect_start_event_monitoring()
-            .return_once(|| Ok(()));
+        mock_monitor.expect_start_event_monitoring().return_once(|| Ok(()));
 
-        mock_monitor
-            .expect_start_bitvmx_monitoring()
-            .times(..)
-            .returning(|| Ok(()));
+        mock_monitor.expect_start_bitvmx_monitoring().times(..).returning(|| Ok(()));
 
-        mock_monitor
-            .expect_start_block_monitoring()
-            .times(..)
-            .returning(|| Ok(()));
+        mock_monitor.expect_start_block_monitoring().times(..).returning(|| Ok(()));
 
-        mock_monitor
-            .expect_start_user_monitoring()
-            .times(..)
-            .returning(|| Ok(()));
+        mock_monitor.expect_start_user_monitoring().times(..).returning(|| Ok(()));
 
-        mock_monitor
-            .expect_cancel_event_monitoring()
-            .return_once(|| Ok(()))
-            .once();
+        mock_monitor.expect_cancel_event_monitoring().return_once(|| Ok(())).once();
 
-        mock_monitor
-            .expect_cancel_block_monitoring()
-            .return_once(|| Ok(()))
-            .once();
+        mock_monitor.expect_cancel_block_monitoring().return_once(|| Ok(())).once();
 
-        mock_monitor
-            .expect_cancel_bitvmx_monitoring()
-            .return_once(|| Ok(()))
-            .once();
+        mock_monitor.expect_cancel_bitvmx_monitoring().return_once(|| Ok(())).once();
 
         expect_try_rsk_event(vec![event_1, event_2], &mut mock_monitor);
 
@@ -447,14 +387,9 @@ pub(crate) mod tests {
             &mut mock_monitor,
         );
 
-        mock_monitor
-            .expect_try_bitvmx_event()
-            .returning(move || Ok(Some(bitvmx_event.clone())));
+        mock_monitor.expect_try_bitvmx_event().returning(move || Ok(Some(bitvmx_event.clone())));
 
-        mock_monitor
-            .expect_try_user_request()
-            .returning(|| Ok(None))
-            .times(1..);
+        mock_monitor.expect_try_user_request().returning(|| Ok(None)).times(1..);
 
         let shutdown_flag = ShutdownFlag::init();
         handle_shutdown(shutdown_flag.clone());
@@ -471,10 +406,7 @@ pub(crate) mod tests {
             .return_once(|_, _| Ok(true));
 
         let mut mock_store = MockCoordinatorStoreApi::new();
-        mock_store
-            .expect_save_context()
-            .with(always())
-            .returning(|_| Ok(()));
+        mock_store.expect_save_context().with(always()).returning(|_| Ok(()));
 
         let mut coordinator = Coordinator::new_for_tests(
             mock_monitor,
@@ -505,39 +437,19 @@ pub(crate) mod tests {
 
         let event_2 = RskPegManagerEvents::UnknownEvent;
 
-        mock_monitor
-            .expect_start_event_monitoring()
-            .return_once(|| Ok(()));
+        mock_monitor.expect_start_event_monitoring().return_once(|| Ok(()));
 
-        mock_monitor
-            .expect_start_block_monitoring()
-            .times(..)
-            .returning(|| Ok(()));
+        mock_monitor.expect_start_block_monitoring().times(..).returning(|| Ok(()));
 
-        mock_monitor
-            .expect_start_user_monitoring()
-            .times(..)
-            .returning(|| Ok(()));
+        mock_monitor.expect_start_user_monitoring().times(..).returning(|| Ok(()));
 
-        mock_monitor
-            .expect_start_bitvmx_monitoring()
-            .times(..)
-            .returning(|| Ok(()));
+        mock_monitor.expect_start_bitvmx_monitoring().times(..).returning(|| Ok(()));
 
-        mock_monitor
-            .expect_cancel_event_monitoring()
-            .return_once(|| Ok(()))
-            .once();
+        mock_monitor.expect_cancel_event_monitoring().return_once(|| Ok(())).once();
 
-        mock_monitor
-            .expect_cancel_block_monitoring()
-            .return_once(|| Ok(()))
-            .once();
+        mock_monitor.expect_cancel_block_monitoring().return_once(|| Ok(())).once();
 
-        mock_monitor
-            .expect_cancel_bitvmx_monitoring()
-            .return_once(|| Ok(()))
-            .once();
+        mock_monitor.expect_cancel_bitvmx_monitoring().return_once(|| Ok(())).once();
 
         expect_try_rsk_event(vec![event_1, event_2], &mut mock_monitor);
 
@@ -551,18 +463,11 @@ pub(crate) mod tests {
 
         let bitvmx_event = OutgoingBitVMXApiMessages::Pong();
 
-        mock_monitor
-            .expect_try_bitvmx_event()
-            .returning(move || Ok(Some(bitvmx_event.clone())));
+        mock_monitor.expect_try_bitvmx_event().returning(move || Ok(Some(bitvmx_event.clone())));
 
-        mock_monitor
-            .expect_try_bitvmx_event()
-            .returning(move || Ok(None));
+        mock_monitor.expect_try_bitvmx_event().returning(move || Ok(None));
 
-        mock_monitor
-            .expect_try_user_request()
-            .returning(|| Ok(None))
-            .times(1..);
+        mock_monitor.expect_try_user_request().returning(|| Ok(None)).times(1..);
 
         let shutdown_flag = ShutdownFlag::init();
         handle_shutdown(shutdown_flag.clone());
@@ -579,10 +484,7 @@ pub(crate) mod tests {
             .return_once(|_, _| Ok(true));
 
         let mut mock_store = MockCoordinatorStoreApi::new();
-        mock_store
-            .expect_save_context()
-            .with(always())
-            .returning(|_| Ok(()));
+        mock_store.expect_save_context().with(always()).returning(|_| Ok(()));
 
         let mut coordinator = Coordinator::new_for_tests(
             mock_monitor,
@@ -611,10 +513,8 @@ pub(crate) mod tests {
         use std::collections::VecDeque;
 
         monitor.expect_try_rsk_event().returning_st({
-            let mut responses = client_requests
-                .into_iter()
-                .map(|e| Ok(Some(e)))
-                .collect::<VecDeque<_>>();
+            let mut responses =
+                client_requests.into_iter().map(|e| Ok(Some(e))).collect::<VecDeque<_>>();
 
             move || responses.pop_front().unwrap_or(Ok(None))
         });
@@ -624,10 +524,7 @@ pub(crate) mod tests {
         use std::collections::VecDeque;
 
         monitor.expect_try_block().returning_st({
-            let mut responses = blocks
-                .into_iter()
-                .map(|b| Ok(Some(b)))
-                .collect::<VecDeque<_>>();
+            let mut responses = blocks.into_iter().map(|b| Ok(Some(b))).collect::<VecDeque<_>>();
 
             move || responses.pop_front().unwrap_or(Ok(None))
         });
@@ -640,25 +537,13 @@ pub(crate) mod tests {
         expect_processors_ok(&mut mock_pegout_processor);
         expect_processors_ok(&mut mock_get_temp_addr_processor);
 
-        vec![
-            Box::new(mock_pegout_processor),
-            Box::new(mock_get_temp_addr_processor),
-        ]
+        vec![Box::new(mock_pegout_processor), Box::new(mock_get_temp_addr_processor)]
     }
 
     fn expect_processors_ok(mock_pegout_processor: &mut MockEventProcessor) {
-        mock_pegout_processor
-            .expect_process_new_bitvmx_event()
-            .returning(|_| Ok(()))
-            .times(1..);
-        mock_pegout_processor
-            .expect_process_new_block()
-            .returning(|_| Ok(()))
-            .times(1..);
-        mock_pegout_processor
-            .expect_process_new_rsk_event()
-            .returning(|_| Ok(()))
-            .times(1..);
+        mock_pegout_processor.expect_process_new_bitvmx_event().returning(|_| Ok(())).times(1..);
+        mock_pegout_processor.expect_process_new_block().returning(|_| Ok(())).times(1..);
+        mock_pegout_processor.expect_process_new_rsk_event().returning(|_| Ok(())).times(1..);
         mock_pegout_processor.expect_shutdown().return_once(|| ());
     }
 

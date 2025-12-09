@@ -3,10 +3,12 @@ mod check_fork_accumulator;
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use common::types::BlockNumber;
-    use common::types::{BlockDifficulty, BlockHash, BlockPow, BlockTimestamp, RskBlock};
-    use primitive_types::{H256, U256};
     use std::ops::Mul;
+
+    use common::types::{
+        BlockDifficulty, BlockHash, BlockNumber, BlockPow, BlockTimestamp, RskBlock,
+    };
+    use primitive_types::{H256, U256};
 
     pub(crate) fn create_fake_block(number: BlockNumber, effort: U256) -> RskBlock {
         let block_pow_u = U256::MAX.checked_div(effort).expect("0 division");

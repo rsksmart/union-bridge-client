@@ -54,8 +54,9 @@ impl Logger {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use common::config::CommonConfig;
+
+    use super::*;
 
     #[test]
     fn test_load_base_toml_config() {

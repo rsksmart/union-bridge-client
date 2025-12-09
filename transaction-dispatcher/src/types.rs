@@ -1,9 +1,8 @@
 use alloy_primitives::{Address, Bytes, FixedBytes};
 use anyhow::{Context, Result, bail};
 use bitcoin::{Transaction, TxIn, TxOut, Txid};
-use common::msg_broker::bitvmx_types::PeerId;
-use common::types::{CommitteeId, StreamId};
-use common::{msg_broker::bitvmx_types::BtcTxSPVProof, types::Hash256};
+use common::msg_broker::bitvmx_types::{BtcTxSPVProof, PeerId};
+use common::types::{CommitteeId, Hash256, StreamId};
 use multiaddr::Multiaddr;
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
@@ -137,11 +136,7 @@ impl From<BtcTxSPVProof> for RequestPeginInput {
             block_hash: proof.block_hash,
             btc_tx: BitcoinTransaction::from(proof.tx),
             merkle_branch_path: proof.merkle_branch_path,
-            merkle_branch_hashes: proof
-                .merkle_branch_hashes
-                .into_iter()
-                .map(hex::encode)
-                .collect(),
+            merkle_branch_hashes: proof.merkle_branch_hashes.into_iter().map(hex::encode).collect(),
         }
     }
 }
@@ -319,9 +314,7 @@ mod tests {
         );
 
         let encoded = P2PAddressParser::peer_id_to_contracts(&peer.0).unwrap();
-        let member_encoded = MemberRSAPublicKey {
-            rsaPublicKey: encoded.rsaPublicKey,
-        };
+        let member_encoded = MemberRSAPublicKey { rsaPublicKey: encoded.rsaPublicKey };
         let decoded = P2PAddressParser::peer_id_from_member_contracts(&member_encoded).unwrap();
         assert_eq!(decoded, peer.0);
     }
@@ -333,9 +326,7 @@ mod tests {
         );
 
         let encoded = P2PAddressParser::peer_id_to_contracts(&peer.0).unwrap();
-        let member_encoded = MemberRSAPublicKey {
-            rsaPublicKey: encoded.rsaPublicKey,
-        };
+        let member_encoded = MemberRSAPublicKey { rsaPublicKey: encoded.rsaPublicKey };
         let decoded = P2PAddressParser::peer_id_from_member_contracts(&member_encoded).unwrap();
         assert_eq!(decoded, peer.0);
     }

@@ -96,17 +96,15 @@ impl Logger {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::Config;
     use bitcoin::Network;
     use common::config::CommonConfig;
+
+    use crate::config::Config;
 
     #[test]
     fn test_parse_bitcoin_network() -> anyhow::Result<()> {
         let config = CommonConfig::load_config::<Config>(None)?;
-        assert_eq!(
-            Network::Regtest,
-            CommonConfig::parse_bitcoin_network(&config.bitcoin_network)?
-        );
+        assert_eq!(Network::Regtest, CommonConfig::parse_bitcoin_network(&config.bitcoin_network)?);
         Ok(())
     }
 
@@ -124,17 +122,9 @@ mod tests {
         assert_eq!("0.0.0.0", config.coordinator.bitvmx.host);
         assert_eq!(22222, config.coordinator.bitvmx.port);
         assert_eq!(101, config.coordinator.broker.client_id);
+        assert!(!config.coordinator.storage_path.contains("{BASE_STORAGE_PATH}"));
         assert!(
-            !config
-                .coordinator
-                .storage_path
-                .contains("{BASE_STORAGE_PATH}")
-        );
-        assert!(
-            config
-                .coordinator
-                .storage_path
-                .ends_with("/.union_bridge/database/multi-client-1")
+            config.coordinator.storage_path.ends_with("/.union_bridge/database/multi-client-1")
         );
         assert_eq!("regtest", config.bitcoin_network);
         assert_eq!(8, config.contracts.len());

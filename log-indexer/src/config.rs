@@ -1,8 +1,9 @@
+use std::collections::HashMap;
+
 use common::config::{CommonConfig, ContractConfig, IndexerConfig, NotifierConfig, ProviderConfig};
 use common::errors::ConfigError;
 use common::types::{Address, ContractInfo};
 use serde::Deserialize;
-use std::collections::HashMap;
 
 const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
@@ -42,13 +43,7 @@ impl Config {
             .map(|c| {
                 let address = Address::try_from(c.address.as_str())
                     .unwrap_or_else(|_| panic!("Invalid address: {}", c.address));
-                (
-                    address,
-                    ContractInfo {
-                        name: c.name.clone(),
-                        address,
-                    },
-                )
+                (address, ContractInfo { name: c.name.clone(), address })
             })
             .collect()
     }
@@ -69,10 +64,12 @@ impl Logger {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::fs;
     use std::path::Path;
+
     use tempfile::TempDir;
+
+    use super::*;
 
     #[test]
     fn test_config_load_when_stage_config_set_should_load_config_successfully() {
@@ -84,13 +81,7 @@ mod tests {
             config.indexer.initial_block_hash
         );
         assert!(!config.indexer.storage.path.contains("{BASE_STORAGE_PATH}"));
-        assert!(
-            config
-                .indexer
-                .storage
-                .path
-                .ends_with("/.union_bridge/database/multi-client-1")
-        );
+        assert!(config.indexer.storage.path.ends_with("/.union_bridge/database/multi-client-1"));
         assert_eq!(1000, config.indexer.cache.size);
         assert_eq!("ws://127.0.0.1:8545", config.provider.rootstock.url);
         assert_eq!(8, config.contracts.len());
@@ -136,9 +127,8 @@ root:
     - rolling_file
 "#;
 
-        let logger_config_content = logger_config_template
-            .to_string()
-            .replace("{TO_REPLACE}", log_file);
+        let logger_config_content =
+            logger_config_template.to_string().replace("{TO_REPLACE}", log_file);
 
         fs::write(&logger_file, logger_config_content).expect("Failed to write logger config");
 

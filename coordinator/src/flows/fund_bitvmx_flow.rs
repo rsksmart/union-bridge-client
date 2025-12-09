@@ -1,12 +1,14 @@
-use crate::event_processor::EventProcessor;
-use crate::types::UserRequests;
+use std::rc::Rc;
+
 use anyhow::{Context, Result};
 use bitcoin::Network;
 use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
 use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 use log::{info, trace};
-use std::rc::Rc;
 use uuid::Uuid;
+
+use crate::event_processor::EventProcessor;
+use crate::types::UserRequests;
 
 pub(crate) struct FundBitvmxProcessor<BC>
 where
@@ -21,10 +23,7 @@ where
     BC: BitVmxBrokerClientApi,
 {
     pub fn new(bitvmx_broker: Rc<BC>, bitcoin_network: Network) -> Self {
-        Self {
-            bitvmx_broker,
-            bitcoin_network,
-        }
+        Self { bitvmx_broker, bitcoin_network }
     }
 }
 
@@ -36,10 +35,8 @@ where
         match event {
             UserRequests::GetBitVMXFundingAddress => {
                 let id = Uuid::new_v4();
-                self.bitvmx_broker.send(
-                    BROKER_SERVER_ID,
-                    IncomingBitVMXApiMessages::GetFundingAddress(id),
-                )?;
+                self.bitvmx_broker
+                    .send(BROKER_SERVER_ID, IncomingBitVMXApiMessages::GetFundingAddress(id))?;
             }
             UserRequests::ApplyToStream(_) => {
                 trace!("FundBitvmxProcessor: Ignoring user request {event:?}");

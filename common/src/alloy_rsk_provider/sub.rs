@@ -1,3 +1,11 @@
+use alloy_primitives::{Address as AlloyAddress, B256};
+use alloy_pubsub::{Subscription, SubscriptionItem};
+use alloy_rpc_types::{FilterBlockOption, Header, Log, Topic};
+use anyhow::{Context, Result, anyhow};
+use log::trace;
+use serde::de::DeserializeOwned;
+use tokio::sync::broadcast::error::RecvError;
+
 use crate::alloy_rsk_provider::rpc::AlloyProvider;
 use crate::rsk_provider::{
     RskProvider, RskSubscription, RskSubscriptionError, RskSubscriptionFilter,
@@ -6,14 +14,6 @@ use crate::types::{
     Address, BlockHash, BlockNumber, DataBytes, LogEvent, LogInfo, LogTopic, RskBlock, RskLog,
     TxHash,
 };
-use alloy_primitives::{Address as AlloyAddress, B256};
-use alloy_pubsub::{Subscription, SubscriptionItem};
-use alloy_rpc_types::{FilterBlockOption, Header, Log, Topic};
-use anyhow::Result;
-use anyhow::{Context, anyhow};
-use log::trace;
-use serde::de::DeserializeOwned;
-use tokio::sync::broadcast::error::RecvError;
 
 pub struct AlloySubscription<T> {
     subscription: Subscription<T>,
@@ -30,17 +30,13 @@ impl<T: DeserializeOwned> AlloySubscription<T> {
     }
 
     pub(super) fn unsubscribe(&self) -> Result<()> {
-        self.provider
-            .unsubscribe(std::any::type_name::<T>(), *self.subscription.local_id())
+        self.provider.unsubscribe(std::any::type_name::<T>(), *self.subscription.local_id())
     }
 }
 
 impl AlloySubscription<Header> {
     pub(super) fn new(subscription: Subscription<Header>, provider: AlloyProvider) -> Self {
-        AlloySubscription {
-            subscription,
-            provider,
-        }
+        AlloySubscription { subscription, provider }
     }
 
     #[cfg(feature = "anvil")]
@@ -49,9 +45,9 @@ impl AlloySubscription<Header> {
             SubscriptionItem::Item(h) => {
                 Ok(BlockHash::try_from(h.hash.to_string().as_str()).expect("valid hash"))
             }
-            SubscriptionItem::Other(_) => Err(RskSubscriptionError::Unexpected(anyhow!(
-                "Wrong Header: {header:?}"
-            ))),
+            SubscriptionItem::Other(_) => {
+                Err(RskSubscriptionError::Unexpected(anyhow!("Wrong Header: {header:?}")))
+            }
         }
     }
 
@@ -96,9 +92,7 @@ impl RskSubscription<RskBlock> for AlloySubscription<Header> {
         let new_block = self
             .provider
             .get_block_by_hash(new_block_hash)
-            .context(format!(
-                "Error getting block {new_block_hash} from Provider"
-            ))
+            .context(format!("Error getting block {new_block_hash} from Provider"))
             .map_err(RskSubscriptionError::Unexpected)?;
 
         if new_block.is_none() {
@@ -117,10 +111,7 @@ impl RskSubscription<RskBlock> for AlloySubscription<Header> {
 
 impl AlloySubscription<Log> {
     pub(super) fn new(subscription: Subscription<Log>, provider: AlloyProvider) -> Self {
-        AlloySubscription {
-            subscription,
-            provider,
-        }
+        AlloySubscription { subscription, provider }
     }
 
     pub(super) fn build_addresses(filter: &RskSubscriptionFilter) -> Result<Vec<AlloyAddress>> {
@@ -128,9 +119,7 @@ impl AlloySubscription<Log> {
             .addresses
             .iter()
             .map(|addr| {
-                addr.to_string()
-                    .parse::<AlloyAddress>()
-                    .context("Parsing to Address failed")
+                addr.to_string().parse::<AlloyAddress>().context("Parsing to Address failed")
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -168,9 +157,7 @@ impl RskSubscription<RskLog> for AlloySubscription<Log> {
         trace!("Received log: {log:?}");
 
         let SubscriptionItem::Item(new_log) = log else {
-            return Err(RskSubscriptionError::Unexpected(anyhow!(
-                "Wrong Log: {log:?}"
-            )));
+            return Err(RskSubscriptionError::Unexpected(anyhow!("Wrong Log: {log:?}")));
         };
 
         let tx_hash = new_log
@@ -197,23 +184,12 @@ impl RskSubscription<RskLog> for AlloySubscription<Log> {
         let address = Address::try_from(new_log.address().to_string().as_str())
             .map_err(|e| RskSubscriptionError::Unexpected(e.into()))?;
 
-        let log_info = LogInfo::new(
-            address,
-            block_hash,
-            block_number,
-            tx_hash,
-            log_index,
-            new_log.removed,
-        );
+        let log_info =
+            LogInfo::new(address, block_hash, block_number, tx_hash, log_index, new_log.removed);
 
         let event_data = LogEvent::new(
             DataBytes::new(new_log.data().data.to_vec()),
-            new_log
-                .data()
-                .topics()
-                .iter()
-                .map(|t| LogTopic::from(*t))
-                .collect(),
+            new_log.data().topics().iter().map(|t| LogTopic::from(*t)).collect(),
         );
 
         Ok(RskLog::new(log_info, event_data))

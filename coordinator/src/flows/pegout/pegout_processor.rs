@@ -1,38 +1,35 @@
-use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
-use crate::config::REQUIRED_CONFIRMATIONS;
-use crate::event_processor::EventProcessor;
-use crate::flows::btc_signature::btc_signature_lifecycle::BtcSignatureLifeCycle;
-use crate::flows::btc_signature::btc_signature_subflow::{
-    BaseBtcSignatureSubFlow, BtcSignatureSubFlowFactory,
-};
-use crate::flows::btc_signature::btc_signature_subflow::{
-    BtcSignatureSubFlowApi, BtcSignatureSubFlowFactoryApi,
-};
-use crate::flows::common::GlobalContext;
-use crate::flows::pegout::pegout_flow::Steps;
-use crate::flows::pegout::pegout_flow::{PegoutFlow, State, StepData};
-use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix};
-use crate::types::{
-    EventStatus, RegisterSignaturesBitVmxData, RskPegManagerEvents, TickScheduler, UserRequests,
-};
-use anyhow::anyhow;
-use anyhow::{Context, Result, bail};
+use std::any::type_name_of_val;
+use std::collections::HashMap;
+use std::rc::Rc;
+
+use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::Txid;
 use common::msg_broker::bitvmx_types::{
     OutgoingBitVMXApiMessages, PegOutAccepted, TransactionStatus, VariableTypes,
 };
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
-use common::types::TxIdParser;
-use common::types::{BlockNumber, CommitteeId, Hash256, RskBlockAndUncles};
+use common::types::{BlockNumber, CommitteeId, Hash256, RskBlockAndUncles, TxIdParser};
 use log::{debug, error, info, trace, warn};
 use sha2::{Digest, Sha256};
-use std::any::type_name_of_val;
-use std::collections::HashMap;
-use std::rc::Rc;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use union_contracts::bindings::peg_manager::PegManager::{PegoutRegistered, PegoutRequested};
 use uuid::Uuid;
+
+use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
+use crate::config::REQUIRED_CONFIRMATIONS;
+use crate::event_processor::EventProcessor;
+use crate::flows::btc_signature::btc_signature_lifecycle::BtcSignatureLifeCycle;
+use crate::flows::btc_signature::btc_signature_subflow::{
+    BaseBtcSignatureSubFlow, BtcSignatureSubFlowApi, BtcSignatureSubFlowFactory,
+    BtcSignatureSubFlowFactoryApi,
+};
+use crate::flows::common::GlobalContext;
+use crate::flows::pegout::pegout_flow::{PegoutFlow, State, StepData, Steps};
+use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix};
+use crate::types::{
+    EventStatus, RegisterSignaturesBitVmxData, RskPegManagerEvents, TickScheduler, UserRequests,
+};
 
 pub const PEGOUT_ACCEPTED_NAME: &str = "pegout_accepted";
 pub const BLOCKS_DELAY_FOR_TX_CHECK: u32 = 20;
@@ -103,13 +100,8 @@ where
         global_context: GlobalContext,
         store: Rc<S>,
     ) -> Result<Self> {
-        let mut processor = Self::new(
-            contracts_gateway,
-            rt_sync,
-            bitvmx_broker,
-            global_context,
-            store,
-        );
+        let mut processor =
+            Self::new(contracts_gateway, rt_sync, bitvmx_broker, global_context, store);
         processor.restore_flows_from_store()?;
         Ok(processor)
     }
@@ -126,10 +118,7 @@ where
         }
 
         if !self.pegout_flows.is_empty() {
-            info!(
-                "Restored {} pegout flows from persistence",
-                self.pegout_flows.len()
-            );
+            info!("Restored {} pegout flows from persistence", self.pegout_flows.len());
         }
 
         Ok(())
@@ -144,10 +133,7 @@ where
             saved_state.clone(),
             Rc::clone(&self.store),
         );
-        info!(
-            "Restoring pegout flow {id} at step {:?}",
-            &flow.current_step(),
-        );
+        info!("Restoring pegout flow {id} at step {:?}", &flow.current_step(),);
         self.pegout_flows.insert(*id, flow);
 
         debug!("Restored flow {id}");
@@ -165,9 +151,8 @@ where
             .as_slice()
             .get(..16)
             .ok_or_else(|| anyhow!("SHA256 hash too short for UUID generation"))?;
-        let uuid_bytes: [u8; 16] = slice
-            .try_into()
-            .context("Failed to convert hash slice to UUID bytes")?;
+        let uuid_bytes: [u8; 16] =
+            slice.try_into().context("Failed to convert hash slice to UUID bytes")?;
         Ok(Uuid::from_bytes(uuid_bytes))
     }
 
@@ -231,22 +216,16 @@ where
 
     /// Clean up completed flows
     pub fn cleanup_completed_flows(&mut self) {
-        let completed: Vec<_> = self
-            .pegout_flows
-            .iter()
-            .filter(|(_, flow)| flow.is_done())
-            .map(|(k, _)| *k)
-            .collect();
+        let completed: Vec<_> =
+            self.pegout_flows.iter().filter(|(_, flow)| flow.is_done()).map(|(k, _)| *k).collect();
 
         for internal_id in &completed {
             debug!("Removing completed flow: {internal_id}");
             self.pegout_flows.remove(internal_id);
 
-            self.store
-                .delete_flow(&StoreKey::PegoutFlow(*internal_id))
-                .unwrap_or_else(|e| {
-                    error!("Failed to remove completed flow {internal_id} from persistence: {e}");
-                });
+            self.store.delete_flow(&StoreKey::PegoutFlow(*internal_id)).unwrap_or_else(|e| {
+                error!("Failed to remove completed flow {internal_id} from persistence: {e}");
+            });
         }
     }
 
@@ -337,11 +316,7 @@ where
             return Ok(());
         };
 
-        let TransactionStatus {
-            tx_id,
-            confirmations,
-            ..
-        } = tx_status;
+        let TransactionStatus { tx_id, confirmations, .. } = tx_status;
         let flow_id = flow.flow_id();
         let expected_txid = flow
             .get_user_take_txid()
@@ -371,8 +346,7 @@ where
             debug!(
                 "Transaction not confirmed with sufficient confirmations for flow_id: {flow_id}"
             );
-            self.tx_status_scheduler
-                .schedule(flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
+            self.tx_status_scheduler.schedule(flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
         }
         Ok(())
     }
@@ -605,12 +579,9 @@ where
                 managed_event,
             );
 
-            confirmable_event
-                .start_confirming(block_num)
-                .context("Starting confirming")?;
+            confirmable_event.start_confirming(block_num).context("Starting confirming")?;
 
-            self.events_confirming
-                .insert(confirmable_event.id(), confirmable_event);
+            self.events_confirming.insert(confirmable_event.id(), confirmable_event);
 
             debug!("Waiting for confirmations for {id}");
         }

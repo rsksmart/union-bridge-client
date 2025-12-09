@@ -1,5 +1,6 @@
-use common::types::Address;
 use std::sync::Arc;
+
+use common::types::Address;
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use transaction_dispatcher::types::{
     PeginAddressInput, PeginAddressOutput, RequestPegoutInput, RequestPegoutOutput,
@@ -30,9 +31,7 @@ pub struct SyncContractsGateway<T> {
 
 impl<T> SyncContractsGateway<T> {
     pub fn new(gateway: T) -> Self {
-        Self {
-            gateway: Arc::new(gateway),
-        }
+        Self { gateway: Arc::new(gateway) }
     }
 
     pub fn from_arc(gateway: Arc<T>) -> Self {

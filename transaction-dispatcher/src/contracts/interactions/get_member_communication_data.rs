@@ -1,7 +1,8 @@
+use log::info;
+
 use crate::contracts::committee_registry::CommitteeRegistryContractApi;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{GetCommunicationDataInput, GetCommunicationDataOutput};
-use log::info;
 
 #[derive(Clone)]
 pub(crate) struct GetMemberCommunicationDataCall<C: CommitteeRegistryContractApi> {
@@ -42,11 +43,12 @@ impl<C: CommitteeRegistryContractApi> GetMemberCommunicationDataCall<C> {
 
 #[cfg(test)]
 mod tests {
+    use mockall::predicate::always;
+
     use super::GetMemberCommunicationDataCall;
     use crate::contracts::committee_registry::MockCommitteeRegistryContractApi;
     use crate::rsk_gateway::DomainErrors;
     use crate::types::GetCommunicationDataInput;
-    use mockall::predicate::always;
 
     // Build a fake communication data structure: 2 committee members, each with 2 chunks
     #[allow(dead_code)]
@@ -91,13 +93,13 @@ mod tests {
             .expect_call_get_member_communication_data()
             .with(always(), always())
             .returning(move |_, _| {
-                Err(alloy_contract::Error::TransportError(
-                    alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
+                Err(alloy_contract::Error::TransportError(alloy_json_rpc::RpcError::ErrorResp(
+                    alloy_json_rpc::ErrorPayload {
                         code: 3,
                         message: "Contract call failed".to_string().into(),
                         data: None,
-                    }),
-                ))
+                    },
+                )))
             })
             .times(1);
 
@@ -112,10 +114,7 @@ mod tests {
 
         let result = interaction.run(input).await;
         assert!(result.is_err());
-        matches!(
-            result.err().unwrap(),
-            DomainErrors::UnhandledContractError(_)
-        );
+        matches!(result.err().unwrap(), DomainErrors::UnhandledContractError(_));
     }
 
     impl GetMemberCommunicationDataCall<MockCommitteeRegistryContractApi> {

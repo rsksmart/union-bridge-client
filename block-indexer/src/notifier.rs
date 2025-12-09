@@ -1,3 +1,8 @@
+use std::collections::HashSet;
+use std::sync::mpsc;
+use std::sync::mpsc::RecvTimeoutError;
+use std::time::Duration;
+
 use anyhow::{Context, Result, anyhow};
 use common::constants::indexer::NOTIFIER_CHECK_PERIOD;
 use common::msg_broker::broker::UnionBrokerServerApi;
@@ -5,10 +10,6 @@ pub use common::msg_broker::types::{FromServer, ToServer};
 use common::shutdown_flag::ShutdownFlag;
 use common::types::RskBlockAndUncles;
 use log::{info, trace, warn};
-use std::collections::HashSet;
-use std::sync::mpsc;
-use std::sync::mpsc::RecvTimeoutError;
-use std::time::Duration;
 
 pub struct Notifier<BS: UnionBrokerServerApi> {
     new_block_channel: mpsc::Receiver<RskBlockAndUncles>,
@@ -125,9 +126,9 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
         for c_id in &self.consumers {
             trace!("Notifying consumer {c_id} about new block {number} ({hash})");
 
-            self.msg_broker.send(&response, *c_id).context(format!(
-                "Sending block {number} ({hash}) to consumer {c_id}"
-            ))?;
+            self.msg_broker
+                .send(&response, *c_id)
+                .context(format!("Sending block {number} ({hash}) to consumer {c_id}"))?;
         }
         Ok(())
     }
@@ -135,16 +136,18 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::sync::mpsc;
+    use std::sync::mpsc::Sender;
+    use std::thread;
+    use std::thread::{JoinHandle, sleep};
+
     use common::msg_broker::broker::MockBrokerServerApi;
     use common::test_utils::rsk_block_generator::{
         create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
     };
     use common::types::RskBlock;
-    use std::sync::mpsc;
-    use std::sync::mpsc::Sender;
-    use std::thread;
-    use std::thread::{JoinHandle, sleep};
+
+    use super::*;
 
     struct ClientRequest {
         id: u32,
@@ -172,9 +175,7 @@ mod tests {
 
         let result = notifier.run();
 
-        handle_external_events
-            .join()
-            .expect("Failed to join shutdown handle");
+        handle_external_events.join().expect("Failed to join shutdown handle");
 
         if let Err(e) = &result {
             eprintln!("Error: {e:?}");
@@ -188,9 +189,7 @@ mod tests {
         let shutdown_flag = ShutdownFlag::init();
 
         let mut mock_broker = MockBrokerServerApi::new();
-        mock_broker
-            .expect_try_recv()
-            .returning(|| Ok(Some((ToServer::SubscribeBlocks, 1)))); // subscription received
+        mock_broker.expect_try_recv().returning(|| Ok(Some((ToServer::SubscribeBlocks, 1)))); // subscription received
         mock_broker.expect_send().never(); // nothing to send, no blocks received yet
 
         let mut notifier = Notifier::new_for_tests(rx, mock_broker, shutdown_flag.clone());
@@ -199,9 +198,7 @@ mod tests {
 
         let result = notifier.run();
 
-        handle_external_events
-            .join()
-            .expect("Failed to join shutdown handle");
+        handle_external_events.join().expect("Failed to join shutdown handle");
 
         if let Err(e) = &result {
             eprintln!("Error: {e:?}");
@@ -216,10 +213,8 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         let shutdown_flag = ShutdownFlag::init();
 
-        let client_requests = vec![ClientRequest {
-            id: client_id,
-            request: ToServer::SubscribeBlocks,
-        }];
+        let client_requests =
+            vec![ClientRequest { id: client_id, request: ToServer::SubscribeBlocks }];
 
         let (expected_block_1, expected_uncle_1, expected_block_2) = create_block_and_uncles();
 
@@ -227,12 +222,7 @@ mod tests {
 
         expect_try_recv(client_requests, &mut mock_broker_server);
 
-        expect_send_block(
-            client_id,
-            &expected_block_1,
-            vec![],
-            &mut mock_broker_server,
-        );
+        expect_send_block(client_id, &expected_block_1, vec![], &mut mock_broker_server);
         expect_send_block(
             client_id,
             &expected_block_2,
@@ -253,9 +243,7 @@ mod tests {
 
         let result = notifier.run();
 
-        handle_external_events
-            .join()
-            .expect("Failed to join shutdown handle");
+        handle_external_events.join().expect("Failed to join shutdown handle");
 
         if let Err(e) = &result {
             eprintln!("Error: {e:?}");
@@ -272,14 +260,8 @@ mod tests {
         let shutdown_flag = ShutdownFlag::init();
 
         let client_requests = vec![
-            ClientRequest {
-                id: client_id_1,
-                request: ToServer::SubscribeBlocks,
-            },
-            ClientRequest {
-                id: client_id_2,
-                request: ToServer::SubscribeBlocks,
-            },
+            ClientRequest { id: client_id_1, request: ToServer::SubscribeBlocks },
+            ClientRequest { id: client_id_2, request: ToServer::SubscribeBlocks },
         ];
 
         let expected_block_1 = get_first_default_rsk_block();
@@ -289,30 +271,10 @@ mod tests {
 
         expect_try_recv(client_requests, &mut mock_broker_server);
 
-        expect_send_block(
-            client_id_1,
-            &expected_block_1,
-            vec![],
-            &mut mock_broker_server,
-        );
-        expect_send_block(
-            client_id_2,
-            &expected_block_1,
-            vec![],
-            &mut mock_broker_server,
-        );
-        expect_send_block(
-            client_id_1,
-            &expected_block_2,
-            vec![],
-            &mut mock_broker_server,
-        );
-        expect_send_block(
-            client_id_2,
-            &expected_block_2,
-            vec![],
-            &mut mock_broker_server,
-        );
+        expect_send_block(client_id_1, &expected_block_1, vec![], &mut mock_broker_server);
+        expect_send_block(client_id_2, &expected_block_1, vec![], &mut mock_broker_server);
+        expect_send_block(client_id_1, &expected_block_2, vec![], &mut mock_broker_server);
+        expect_send_block(client_id_2, &expected_block_2, vec![], &mut mock_broker_server);
 
         let mut notifier = Notifier::new_for_tests(rx, mock_broker_server, shutdown_flag.clone());
 
@@ -327,9 +289,7 @@ mod tests {
 
         let result = notifier.run();
 
-        handle_external_events
-            .join()
-            .expect("Failed to join shutdown handle");
+        handle_external_events.join().expect("Failed to join shutdown handle");
 
         if let Err(e) = &result {
             eprintln!("Error: {e:?}");
@@ -346,19 +306,10 @@ mod tests {
         let shutdown_flag = ShutdownFlag::init();
 
         let client_requests = vec![
-            ClientRequest {
-                id: client_id_1,
-                request: ToServer::SubscribeBlocks,
-            },
-            ClientRequest {
-                id: client_id_2,
-                request: ToServer::SubscribeBlocks,
-            },
+            ClientRequest { id: client_id_1, request: ToServer::SubscribeBlocks },
+            ClientRequest { id: client_id_2, request: ToServer::SubscribeBlocks },
             // should not receive blocks for this address
-            ClientRequest {
-                id: client_id_1,
-                request: ToServer::UnsubscribeBlocks,
-            },
+            ClientRequest { id: client_id_1, request: ToServer::UnsubscribeBlocks },
         ];
 
         let expected_block_1 = get_first_default_rsk_block();
@@ -368,18 +319,8 @@ mod tests {
 
         expect_try_recv(client_requests, &mut mock_broker_server);
 
-        expect_send_block(
-            client_id_2,
-            &expected_block_1,
-            vec![],
-            &mut mock_broker_server,
-        );
-        expect_send_block(
-            client_id_2,
-            &expected_block_2,
-            vec![],
-            &mut mock_broker_server,
-        );
+        expect_send_block(client_id_2, &expected_block_1, vec![], &mut mock_broker_server);
+        expect_send_block(client_id_2, &expected_block_2, vec![], &mut mock_broker_server);
 
         let mut notifier = Notifier::new_for_tests(rx, mock_broker_server, shutdown_flag.clone());
 
@@ -394,9 +335,7 @@ mod tests {
 
         let result = notifier.run();
 
-        handle_external_events
-            .join()
-            .expect("Failed to join shutdown handle");
+        handle_external_events.join().expect("Failed to join shutdown handle");
 
         if let Err(e) = &result {
             eprintln!("Error: {e:?}");
@@ -411,10 +350,8 @@ mod tests {
         use std::collections::VecDeque;
 
         mock_broker_server.expect_try_recv().returning_st({
-            let mut responses: VecDeque<_> = client_requests
-                .into_iter()
-                .map(|coa| Ok(Some((coa.request, coa.id))))
-                .collect();
+            let mut responses: VecDeque<_> =
+                client_requests.into_iter().map(|coa| Ok(Some((coa.request, coa.id)))).collect();
 
             move || responses.pop_front().unwrap_or(Ok(None))
         });
