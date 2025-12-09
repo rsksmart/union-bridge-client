@@ -107,6 +107,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                     setup_committee_flow_factory,
                     global_context.clone(),
                     Rc::clone(&store_rc),
+                    bitvmx_broker.as_ref(),
                 )),
                 Box::new(FundBitvmxProcessor::new(
                     bitvmx_broker.clone(),

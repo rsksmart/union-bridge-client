@@ -10,7 +10,7 @@ use bitcoin::{
 use common::{
     msg_broker::{
         bitvmx_types::{
-            ACCEPT_PEGIN_TX, BtcTxSPVProof, IncomingBitVMXApiMessages, P2PAddress, PeerId,
+            ACCEPT_PEGIN_TX, BtcTxSPVProof, CommsAddress, IncomingBitVMXApiMessages, PubKeyHash,
             PeginAcceptedMessage, TransactionStatus, VariableTypes,
         },
         broker::BitVmxBrokerClientApi,
@@ -78,7 +78,7 @@ pub enum StepData {
     // Pegin requested
     PeginRequested(PeginRequested),
     // Communication info
-    CommInfo(P2PAddress),
+    CommInfo(CommsAddress),
     // BitVMX pegin accepted
     BitvmxPeginAccepted(PeginAcceptedMessage),
     // Operator take hash added
@@ -121,7 +121,7 @@ pub struct FlowContext {
     pub request_pegin_btc_tx_status: Option<TransactionStatus>,
     pub request_pegin_spv_proof: Option<BtcTxSPVProof>,
     pub pegin_requested: Option<PeginRequested>,
-    pub my_p2p_address: Option<P2PAddress>,
+    pub my_p2p_address: Option<CommsAddress>,
     pub committee_output: Option<GetCommitteeOutput>,
     pub bitvmx_pegin_accepted: Option<PeginAcceptedMessage>,
     pub accept_pegin_spv_proof: Option<BtcTxSPVProof>,
@@ -454,24 +454,24 @@ where
         );
 
         let committee_addresses = self.get_committee_addresses(committee_id)?;
-        let committee_peer_ids = self.get_committee_peer_ids(committee_id)?;
+        let committee_pubkey_hashes = self.get_committee_pubkey_hashes(committee_id)?;
 
-        let p2p_addresses = build_communication_data(
-            self.state
+        let comms_addresses = build_communication_data(
+            &self.state
                 .ctx
                 .my_p2p_address
                 .as_ref()
                 .ok_or_else(|| anyhow!("P2P address not available for setup"))?
                 .address
-                .clone(),
+                .to_string(),
             committee_addresses,
-            committee_peer_ids,
+            committee_pubkey_hashes,
         )?;
 
         let msg = IncomingBitVMXApiMessages::Setup(
             self.state.flow_id,
             PROGRAM_TYPE_ACCEPT_PEGIN.to_string(),
-            p2p_addresses,
+            comms_addresses,
             0, // No leader
         );
         self.send_bitvmx_msg(msg)?;
@@ -693,7 +693,7 @@ where
         Ok(committee_addresses)
     }
 
-    fn get_committee_peer_ids(&self, committee_id: &CommitteeId) -> Result<Vec<PeerId>> {
+    fn get_committee_pubkey_hashes(&self, committee_id: &CommitteeId) -> Result<Vec<PubKeyHash>> {
         let committee_input = GetCommitteeInput {
             committee_id: committee_id.clone(),
         };
@@ -701,7 +701,7 @@ where
             .rt_sync
             .run(async { self.contracts.get_committee(committee_input).await })?;
 
-        let mut peer_ids = Vec::new();
+        let mut pubkey_hashes = Vec::new();
 
         for member in committee_response.committee.members {
             let keys_input = GetMemberPublicKeysInput {
@@ -723,13 +723,13 @@ where
                 })?;
 
             debug!(
-                "Member PeerId: address={}, peer_id={:?}",
+                "Member pubkey_hash: address={}, pubkey_hash={:?}",
                 member.memberAddress, key_str
             );
-            peer_ids.push(PeerId(key_str.to_string()));
+            pubkey_hashes.push(key_str.to_string());
         }
 
-        Ok(peer_ids)
+        Ok(pubkey_hashes)
     }
 
     fn request_bitvmx_comm_info(&self) -> Result<()> {

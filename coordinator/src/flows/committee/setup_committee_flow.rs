@@ -9,8 +9,9 @@ use anyhow::{Context, Result, bail, ensure};
 use bitcoin::key::Parity::Even;
 use bitcoin::{Amount, Network, PublicKey, ScriptBuf, Txid, XOnlyPublicKey};
 use common::msg_broker::bitvmx_types::{
-    Destination, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, OutputType, P2PAddress,
-    PartialUtxo, ParticipantRole, PeerId, SignedPublicKey, Utxo,
+    CommsAddress, Destination, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, OutputType,
+    PartialUtxo, ParticipantRole, PubKeyHash, SignedPublicKey, UnionSettings, Utxo,
+    VariableTypes, GLOBAL_SETTINGS_UUID,
 };
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
@@ -128,7 +129,7 @@ struct FlowContext {
     // stepped
     user_input: Option<ApplyToStream>,
     funding_balance_req: Option<(Uuid, Option<u64>)>, // request id, balance
-    my_comm_info: Option<P2PAddress>,
+    my_comm_info: Option<CommsAddress>,
     my_take_key_req: PubKeyReq,
     my_dispute_key_req: PubKeyReq,
     my_comm_key_req: PubKeyReq,
@@ -138,7 +139,7 @@ struct FlowContext {
     setup_core_req: SetupCoreReq,
     // async
     committee_pending_ev: Option<NewCommitteePendingEvent>,
-    communication_data_ready_ev: Option<Vec<P2PAddress>>,
+    communication_data_ready_ev: Option<Vec<CommsAddress>>,
     committee_ready_req: Option<NewCommitteeReadyEvent>,
 }
 
@@ -195,7 +196,7 @@ impl FlowContext {
             .map(|input| input.clone())
     }
 
-    fn get_my_comm_info(&self) -> Result<P2PAddress> {
+    fn get_my_comm_info(&self) -> Result<CommsAddress> {
         let my_comm_info = self
             .my_comm_info
             .clone()
@@ -228,7 +229,7 @@ impl FlowContext {
         Ok(*dispute_data_pk)
     }
 
-    fn get_my_communication_data(&self) -> Result<Vec<P2PAddress>> {
+    fn get_my_communication_data(&self) -> Result<Vec<CommsAddress>> {
         self.communication_data_ready_ev
             .as_ref()
             .cloned()
@@ -351,7 +352,7 @@ enum StepData {
     // sync or member-dependent steps
     UserRequest(ApplyToStream),
     BitVmxFundingBalance(u64),
-    CommInfo(P2PAddress),
+    CommInfo(CommsAddress),
     PublicKey(PublicKey),
     SignedMessage([u8; 32], [u8; 32], u8), // signature_r, signature_s, recovery_id
     SetupCompleted(Uuid),
@@ -378,10 +379,10 @@ impl StepData {
         }
     }
 
-    fn into_p2p_address(self) -> Result<P2PAddress> {
+    fn into_comms_address(self) -> Result<CommsAddress> {
         match self {
             StepData::CommInfo(addr) => Ok(addr),
-            _ => bail!("Expected P2PAddress data"),
+            _ => bail!("Expected CommsAddress data"),
         }
     }
 
@@ -868,7 +869,7 @@ where
         Ok(())
     }
 
-    fn build_my_communication_data(&self) -> Result<Vec<P2PAddress>> {
+    fn build_my_communication_data(&self) -> Result<Vec<CommsAddress>> {
         let committee_id = self
             .state
             .ctx
@@ -889,15 +890,18 @@ where
         let committee_addresses = comm_data
             .communication_data
             .into_iter()
-            .map(|data| P2PAddressParser::addr_from_contracts(&data))
+            .map(|data| {
+                P2PAddressParser::socket_addr_from_contracts(&data)
+                    .map(|opt_addr| opt_addr.map(|addr| addr.to_string()).unwrap_or_default())
+            })
             .collect::<Result<Vec<_>>>()?;
 
-        let my_p2p_address = self.state.ctx.get_my_comm_info()?.address;
+        let my_p2p_address = self.state.ctx.get_my_comm_info()?.address.to_string();
 
-        // temporarily stored PeerId as the communication key, agreed with Fairgate
-        let committee_peer_ids = self.get_committee_peer_ids()?;
+        // pubkey_hash stored as the communication key
+        let committee_pubkey_hashes = self.get_committee_pubkey_hashes()?;
 
-        build_communication_data(my_p2p_address, committee_addresses, committee_peer_ids)
+        build_communication_data(&my_p2p_address, committee_addresses, committee_pubkey_hashes)
     }
 
     fn get_committee_keys_by_type(&self, key_index: usize) -> Result<Vec<PublicKey>> {
@@ -911,8 +915,8 @@ where
         Ok(committee_pub_keys)
     }
 
-    fn get_committee_peer_ids(&self) -> Result<Vec<PeerId>> {
-        let mut peer_ids = vec![];
+    fn get_committee_pubkey_hashes(&self) -> Result<Vec<PubKeyHash>> {
+        let mut pubkey_hashes = vec![];
 
         for member in self.state.ctx.get_committee_pending_members()? {
             let member_addr = member.memberAddress;
@@ -924,10 +928,10 @@ where
             trace!("Registered member {member_addr}");
 
             // key_str already decoded
-            peer_ids.push(PeerId(key_str.to_string()));
+            pubkey_hashes.push(key_str.to_string());
         }
 
-        Ok(peer_ids)
+        Ok(pubkey_hashes)
     }
 
     fn build_members_of_committee(
@@ -1099,7 +1103,7 @@ where
                 self.start_step(Steps::GetMyCommInfo)?;
             }
             Steps::GetMyCommInfo => {
-                self.state.ctx.my_comm_info = Some(data.into_p2p_address()?);
+                self.state.ctx.my_comm_info = Some(data.into_comms_address()?);
                 if self.global_context.my_keys().is_set() {
                     debug!("My Keys already set, jumping to FundMyBitVmxAccount step");
                     self.start_step(Steps::FundMyBitVmxAccount)?;
@@ -1246,7 +1250,7 @@ where
             role: u8::from(user_input.role),
             take_key: signed_to_committee_public_key(my_take_key.clone())?,
             dispute_key: signed_to_committee_public_key(my_dispute_key.clone())?,
-            peer_id: self.state.ctx.get_my_comm_info()?.peer_id,
+            pubkey_hash: self.state.ctx.get_my_comm_info()?.pubkey_hash,
             funding_utxo: utxo,
         };
 
@@ -1303,7 +1307,7 @@ where
                 // contracts require zeroed communication data for my own address on deposit
                 communication_data.push(CommunicationData::default())
             } else {
-                let data = P2PAddressParser::addr_to_contracts(&my_p2p_address.address)?;
+                let data = P2PAddressParser::socket_addr_to_contracts(&my_p2p_address.address)?;
                 communication_data.push(data);
             }
         }
@@ -1467,6 +1471,8 @@ where
 
         let committee_id = self.state.ctx.get_committee_id()?;
 
+        let stream_id = self.state.ctx.get_stream_id()?;
+
         let protocol_ids = dispute_core.setup(
             committee_id.clone(),
             members,
@@ -1474,6 +1480,7 @@ where
             self.state.ctx.get_aggregated_take_key()?,
             self.state.ctx.get_aggregated_dispute_key()?,
             my_speedup_utxo,
+            *stream_id,
         )?;
 
         for pid in protocol_ids {
@@ -1513,7 +1520,14 @@ where
         flow_factory: FactoryBSF,
         global_context: GlobalContext,
         store: Rc<S>,
+        bitvmx_broker: &BC,
     ) -> Self {
+        // Send global UnionSettings to BitVMX (once at startup)
+        Self::send_union_settings(bitvmx_broker)
+            .expect("Failed to send UnionSettings to BitVMX");
+
+        info!("Successfully sent UnionSettings to BitVMX");
+
         let mut processor = Self {
             flow_factory,
             flows: HashMap::new(),
@@ -1526,6 +1540,19 @@ where
         // Restore flows from store
         processor.restore_flows_from_store();
         processor
+    }
+
+    fn send_union_settings(bitvmx_broker: &BC) -> Result<()> {
+        let settings = UnionSettings::with_defaults();
+        let settings_json = serde_json::to_string(&settings)?;
+
+        bitvmx_broker.send(IncomingBitVMXApiMessages::SetVar(
+            GLOBAL_SETTINGS_UUID,
+            UnionSettings::name(),
+            VariableTypes::String(settings_json),
+        ))?;
+
+        Ok(())
     }
 
     fn restore_flows_from_store(&mut self) {

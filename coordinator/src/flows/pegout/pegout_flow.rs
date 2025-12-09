@@ -6,8 +6,8 @@ use bitcoin::{PublicKey, Txid};
 use common::msg_broker::bitvmx_types::PegOutAccepted;
 use common::msg_broker::bitvmx_types::PegOutRequest;
 use common::msg_broker::bitvmx_types::VariableTypes;
-use common::msg_broker::bitvmx_types::{BtcTxSPVProof, IncomingBitVMXApiMessages, P2PAddress};
-use common::msg_broker::bitvmx_types::{PeerId, TransactionStatus};
+use common::msg_broker::bitvmx_types::{BtcTxSPVProof, CommsAddress, IncomingBitVMXApiMessages, PubKeyHash};
+use common::msg_broker::bitvmx_types::TransactionStatus;
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::types::CommitteeId;
@@ -51,7 +51,7 @@ impl Default for Steps {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum StepData {
     PegoutRequested,
-    CommInfo(P2PAddress),
+    CommInfo(CommsAddress),
     PegoutAccepted(PegOutAccepted),
     DispatchTransaction,
     TransactionConfirmed(TransactionStatus),
@@ -62,7 +62,7 @@ pub enum StepData {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlowContext {
     pub pegout_requested: PegoutRequested,
-    pub my_p2p_address: Option<P2PAddress>,
+    pub my_p2p_address: Option<CommsAddress>,
     pub committee_output: Option<GetCommitteeOutput>,
     pub peg_out_accepted: Option<PegOutAccepted>,
     pub spv_proof: Option<BtcTxSPVProof>,
@@ -315,7 +315,7 @@ where
             "Sending setup to bitvmx with flow_id: {}",
             self.state.flow_id
         );
-        let committee_peer_ids = self.get_committee_peer_ids(
+        let committee_pubkey_hashes = self.get_committee_pubkey_hashes(
             self.state
                 .ctx
                 .committee_output
@@ -324,22 +324,22 @@ where
         )?;
 
         let committee_addresses = self.get_committee_member_address(committee_id)?;
-        let p2p_addresses = build_communication_data(
-            self.state
+        let comms_addresses = build_communication_data(
+            &self.state
                 .ctx
                 .my_p2p_address
                 .as_ref()
                 .ok_or_else(|| anyhow!("P2P address not available for setup"))?
                 .address
-                .clone(),
+                .to_string(),
             committee_addresses,
-            committee_peer_ids,
+            committee_pubkey_hashes,
         )?;
 
         let msg = IncomingBitVMXApiMessages::Setup(
             self.state.flow_id,
             PROGRAM_TYPE_USER_TAKE.to_string(),
-            p2p_addresses,
+            comms_addresses,
             0,
         );
         self.send_bitvmx_msg(msg)
@@ -366,11 +366,11 @@ where
         Ok(committee_addresses)
     }
 
-    fn get_committee_peer_ids(
+    fn get_committee_pubkey_hashes(
         &mut self,
         committee_output: GetCommitteeOutput,
-    ) -> Result<Vec<PeerId>> {
-        let mut peer_ids = Vec::new();
+    ) -> Result<Vec<PubKeyHash>> {
+        let mut pubkey_hashes = Vec::new();
 
         for member in committee_output.committee.members {
             // Get the member's public keys
@@ -391,11 +391,11 @@ where
                     member.memberAddress
                 ))?;
 
-            debug!("Member {} PeerId: {:?}", member.memberAddress, key_str);
-            peer_ids.push(PeerId(key_str.to_string()));
+            debug!("Member {} pubkey_hash: {:?}", member.memberAddress, key_str);
+            pubkey_hashes.push(key_str.to_string());
         }
 
-        Ok(peer_ids)
+        Ok(pubkey_hashes)
     }
 
     fn send_pegout_requested_to_bitvmx(&mut self, committee_id: &CommitteeId) -> Result<()> {

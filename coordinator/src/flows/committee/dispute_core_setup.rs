@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use bitcoin::PublicKey;
 use common::msg_broker::bitvmx_types::{
-    Committee, DisputeCoreData, IncomingBitVMXApiMessages, MemberData, P2PAddress, ParticipantRole,
-    Utxo, VariableTypes,
+    CommsAddress, Committee, DisputeCoreData, IncomingBitVMXApiMessages, MemberData,
+    ParticipantRole, Utxo, VariableTypes,
 };
 use log::{debug, error, info, trace};
 use std::rc::Rc;
@@ -14,7 +14,6 @@ use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::types::CommitteeId;
 use sha2::{Digest, Sha256};
 
-const MONITORED_OPERATOR_KEY: &str = "monitored_operator_key";
 const PROGRAM_TYPE_DISPUTE_CORE: &str = "dispute_core";
 
 pub struct DisputeCoreSetup<BC: BitVmxBrokerClientApi> {
@@ -30,10 +29,11 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
         &self,
         committee_id_client: CommitteeId,
         members: Vec<MemberOfCommittee>,
-        p2p_addresses: Vec<P2PAddress>,
+        p2p_addresses: Vec<CommsAddress>,
         take_aggr_key: PublicKey,
         dispute_aggr_key: PublicKey,
         my_speedup_funding_utxo: Utxo,
+        stream_denomination: u64,
     ) -> Result<Vec<Uuid>> {
         let committee = Committee {
             members: members
@@ -46,8 +46,8 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
                 .collect(),
             take_aggregated_key: take_aggr_key,
             dispute_aggregated_key: dispute_aggr_key,
-            operator_count: Self::operator_count(&members)?,
             packet_size: 10,
+            stream_denomination,
         };
 
         let committee_id = Uuid::from_u128(*committee_id_client);
@@ -84,21 +84,14 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
 
             let dispute_core_data = &DisputeCoreData {
                 committee_id,
-                operator_index: prover.committee_idx,
-                operator_utxo: prover.funding_utxo.clone(),
-                operator_take_pubkey: pubkey,
+                member_index: prover.committee_idx,
+                funding_utxo: prover.funding_utxo.clone(),
             };
 
             self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetVar(
                 protocol_id,
                 DisputeCoreData::name(),
                 VariableTypes::String(serde_json::to_string(dispute_core_data)?),
-            ));
-
-            self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetVar(
-                protocol_id,
-                MONITORED_OPERATOR_KEY.to_string(),
-                VariableTypes::PubKey(pubkey),
             ));
 
             self.send_bitvmx_msg(IncomingBitVMXApiMessages::Setup(
@@ -110,13 +103,6 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
         }
 
         Ok(protocol_ids)
-    }
-
-    fn operator_count(members: &[MemberOfCommittee]) -> Result<u32> {
-        Ok(members
-            .iter()
-            .filter(|m| m.role == ParticipantRole::Prover)
-            .count() as u32)
     }
 
     fn send_bitvmx_msg(&self, msg: IncomingBitVMXApiMessages) {

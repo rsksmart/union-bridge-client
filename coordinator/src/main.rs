@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use clap::{Arg, Command};
 use common::{
     config::CommonConfig,
-    msg_broker::broker::{BITVMX_L2_BROKER_CLIENT_ID, BitVmxBrokerClient, BrokerClient},
+    msg_broker::broker::{BITVMX_L2_BROKER_CLIENT_ID, BitVmxBrokerClient, BrokerClient, Cert},
     runtime_sync::RuntimeSync,
     shutdown_flag::ShutdownFlag,
 };
@@ -59,10 +59,18 @@ fn main() -> Result<()> {
     let contract_addresses = config.get_contract_addresses();
     let broker_key_path = &config.key_store.broker_key_path;
 
+    // Compute the broker server's pubkey_hash from the shared key file.
+    // The indexers (block-indexer, log-indexer) use the same key to derive their identity,
+    // so messages must be addressed to this pubkey_hash for proper routing.
+    let broker_server_pubk_hash = Cert::from_key_file(broker_key_path)
+        .context("Failed to load broker key for pubkey_hash")?
+        .get_pubk_hash()
+        .context("Failed to compute broker pubkey_hash")?;
+
     let block_broker = BrokerClient::new(
         config.coordinator.blocks.host,
         config.coordinator.blocks.port,
-        String::new(),
+        broker_server_pubk_hash.clone(),
         config.coordinator.broker.client_id as u8,
         broker_key_path,
     )
@@ -71,7 +79,7 @@ fn main() -> Result<()> {
     let log_broker = BrokerClient::new(
         config.coordinator.logs.host,
         config.coordinator.logs.port,
-        String::new(),
+        broker_server_pubk_hash.clone(),
         config.coordinator.broker.client_id as u8,
         broker_key_path,
     )
@@ -80,7 +88,7 @@ fn main() -> Result<()> {
     let user_broker = BrokerClient::new(
         config.coordinator.user.host,
         config.coordinator.user.port,
-        String::new(),
+        broker_server_pubk_hash,
         config.coordinator.broker.client_id as u8,
         broker_key_path,
     )

@@ -1,10 +1,11 @@
 use alloy_primitives::{Address, Bytes, FixedBytes};
 use anyhow::{Context, Result, bail};
 use bitcoin::{Transaction, TxIn, TxOut, Txid};
-use common::msg_broker::bitvmx_types::PeerId;
+use common::msg_broker::bitvmx_types::PubKeyHash;
 use common::types::{CommitteeId, StreamId};
 use common::{msg_broker::bitvmx_types::BtcTxSPVProof, types::Hash256};
-use multiaddr::Multiaddr;
+use multiaddr::{Multiaddr, Protocol};
+use std::net::{IpAddr, SocketAddr};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
@@ -162,7 +163,7 @@ pub struct ApplyToStreamInput {
     pub role: u8,
     pub take_key: CommitteeECDSA,
     pub dispute_key: CommitteeECDSA,
-    pub peer_id: PeerId,
+    pub pubkey_hash: PubKeyHash,
     pub funding_utxo: UTXO,
 }
 
@@ -262,20 +263,80 @@ impl P2PAddressParser {
 
     pub fn addr_from_contracts(comm_data: &CommunicationData) -> Result<String> {
         let bytes = fb_array_to_bytes::<8>(&comm_data.data)?;
+        // Empty bytes means no communication data has been deposited yet
+        if bytes.is_empty() {
+            return Ok(String::new());
+        }
         let multi_addr = Multiaddr::try_from(bytes)?;
         Ok(multi_addr.to_string())
     }
 
-    pub fn peer_id_to_contracts(peer_id: &str) -> Result<RSAPublicKey> {
-        let peer_id_hex = hex::decode(peer_id)
-            .with_context(|| format!("Failed to decode peer_id hex: {}", peer_id))?;
-        let data = bytes_to_fb_array::<10>(&peer_id_hex)?;
+    /// Convert a multiaddr string (e.g., "/ip4/192.168.0.1/tcp/8888") to a SocketAddr.
+    /// Supports both IPv4 and IPv6 addresses.
+    pub fn multiaddr_to_socket_addr(multiaddr_str: &str) -> Result<SocketAddr> {
+        let multi_addr: Multiaddr = multiaddr_str
+            .parse()
+            .with_context(|| format!("Failed to parse multiaddr: {}", multiaddr_str))?;
+
+        let mut ip: Option<IpAddr> = None;
+        let mut port: Option<u16> = None;
+
+        for protocol in multi_addr.iter() {
+            match protocol {
+                Protocol::Ip4(addr) => ip = Some(IpAddr::V4(addr)),
+                Protocol::Ip6(addr) => ip = Some(IpAddr::V6(addr)),
+                Protocol::Tcp(p) => port = Some(p),
+                Protocol::Udp(p) => port = Some(p),
+                _ => {}
+            }
+        }
+
+        let ip = ip.with_context(|| format!("No IP address found in multiaddr: {}", multiaddr_str))?;
+        let port = port.with_context(|| format!("No port found in multiaddr: {}", multiaddr_str))?;
+
+        Ok(SocketAddr::new(ip, port))
+    }
+
+    /// Decode communication data from contracts directly to a SocketAddr.
+    /// Returns None if no communication data has been deposited yet (zeroed data).
+    pub fn socket_addr_from_contracts(comm_data: &CommunicationData) -> Result<Option<SocketAddr>> {
+        let multiaddr_str = Self::addr_from_contracts(comm_data)?;
+        if multiaddr_str.is_empty() {
+            return Ok(None);
+        }
+        Self::multiaddr_to_socket_addr(&multiaddr_str).map(Some)
+    }
+
+    /// Convert a SocketAddr to CommunicationData for contract storage.
+    /// Converts the SocketAddr to multiaddr format internally.
+    pub fn socket_addr_to_contracts(addr: &SocketAddr) -> Result<CommunicationData> {
+        let multiaddr_str = match addr {
+            SocketAddr::V4(v4) => format!("/ip4/{}/tcp/{}", v4.ip(), v4.port()),
+            SocketAddr::V6(v6) => format!("/ip6/{}/tcp/{}", v6.ip(), v6.port()),
+        };
+        Self::addr_to_contracts(&multiaddr_str)
+    }
+
+    pub fn pubkey_hash_to_contracts(pubkey_hash: &str) -> Result<RSAPublicKey> {
+        let pubkey_hash_bytes = hex::decode(pubkey_hash)
+            .with_context(|| format!("Failed to decode pubkey_hash hex: {}", pubkey_hash))?;
+        // pubkey_hash is 32 bytes (SHA-256), contracts expect bytes32[10] (320 bytes)
+        // Store the hash in the first slot directly, pad rest with zeros
+        if pubkey_hash_bytes.len() != 32 {
+            bail!(
+                "pubkey_hash must be 32 bytes (SHA-256), got {} bytes",
+                pubkey_hash_bytes.len()
+            );
+        }
+        let mut data: [FixedBytes<32>; 10] = [FixedBytes([0u8; 32]); 10];
+        data[0] = FixedBytes::<32>(pubkey_hash_bytes.try_into().unwrap());
         Ok(RSAPublicKey { rsaPublicKey: data })
     }
 
-    pub fn peer_id_from_member_contracts(comm_data: &MemberRSAPublicKey) -> Result<String> {
-        let bytes = fb_array_to_bytes(&comm_data.rsaPublicKey)?;
-        Ok(hex::encode(bytes))
+    pub fn pubkey_hash_from_member_contracts(comm_data: &MemberRSAPublicKey) -> Result<String> {
+        // Extract only the first 32 bytes (the pubkey_hash), ignore padding
+        let first_slot = comm_data.rsaPublicKey[0];
+        Ok(hex::encode(first_slot.as_slice()))
     }
 }
 
@@ -291,31 +352,16 @@ mod tests {
     }
 
     #[test]
-    fn roundtrip_peer_id() {
-        let peer = PeerId(
-            "30820122300d06092a864886f70d01010105000382010f003082010a0282010100c96872f74e913fbcf2e068d7f508e52dad5a278123ad6546d9735e3f35163e836427ef6ea14ff28d4ca30e7f0d4e251ddf4724668675052d6adb8581550b0adb11f0dcb78a4e9d6ad00f68bf21851d590d88d9fff1d8d7678454f9df4a1daad2f8ebfe69b4ea99160a9e2d43a98cdaaaf380bc4de9f9dec6bedc9351c89c43e4d5d89abbef98664f5d57cdf5c68d93e928203c84fd038fedddac5bbe2b243378141edec442e83c57f0bab437336586f6d6bc01bee222ee8f67dfacb2d94d7a4e406d05446c9f84de055d6175217de19d1005203674b1693f1df2d3dacd11839a782c343c33e86b952740812da624f2ddfd71edf9eb5e9ddf7944b9afc3a08b2f0203010001".to_string(),
-        );
+    fn roundtrip_pubkey_hash() {
+        // SHA-256 hash (64 hex chars = 32 bytes)
+        let pubkey_hash = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2".to_string();
 
-        let encoded = P2PAddressParser::peer_id_to_contracts(&peer.0).unwrap();
+        let encoded = P2PAddressParser::pubkey_hash_to_contracts(&pubkey_hash).unwrap();
         let member_encoded = MemberRSAPublicKey {
             rsaPublicKey: encoded.rsaPublicKey,
         };
-        let decoded = P2PAddressParser::peer_id_from_member_contracts(&member_encoded).unwrap();
-        assert_eq!(decoded, peer.0);
-    }
-
-    #[test]
-    fn roundtrip_peer_id_ending_zero() {
-        let peer = PeerId(
-            "30820122300d06092a864886f70d01010105000382010f003082010a0282010100c96872f74e913fbcf2e068d7f508e52dad5a278123ad6546d9735e3f35163e836427ef6ea14ff28d4ca30e7f0d4e251ddf4724668675052d6adb8581550b0adb11f0dcb78a4e9d6ad00f68bf21851d590d88d9fff1d8d7678454f9df4a1daad2f8ebfe69b4ea99160a9e2d43a98cdaaaf380bc4de9f9dec6bedc9351c89c43e4d5d89abbef98664f5d57cdf5c68d93e928203c84fd038fedddac5bbe2b243378141edec442e83c57f0bab437336586f6d6bc01bee222ee8f67dfacb2d94d7a4e406d05446c9f84de055d6175217de19d1005203674b1693f1df2d3dacd11839a782c343c33e86b952740812da624f2ddfd71edf9eb5e9ddf7944b9afc3a08b2f0203010000".to_string(),
-        );
-
-        let encoded = P2PAddressParser::peer_id_to_contracts(&peer.0).unwrap();
-        let member_encoded = MemberRSAPublicKey {
-            rsaPublicKey: encoded.rsaPublicKey,
-        };
-        let decoded = P2PAddressParser::peer_id_from_member_contracts(&member_encoded).unwrap();
-        assert_eq!(decoded, peer.0);
+        let decoded = P2PAddressParser::pubkey_hash_from_member_contracts(&member_encoded).unwrap();
+        assert_eq!(decoded, pubkey_hash);
     }
 
     #[test]
@@ -335,5 +381,75 @@ mod tests {
     #[test]
     fn roundtrip_addr_ending_zero() {
         roundtrip_p2p_addr_parser("/ip4/127.0.0.1/tcp/1024");
+    }
+
+    #[test]
+    fn multiaddr_to_socket_addr_ipv4_tcp() {
+        let socket = P2PAddressParser::multiaddr_to_socket_addr("/ip4/192.168.0.1/tcp/8888").unwrap();
+        assert_eq!(socket.to_string(), "192.168.0.1:8888");
+    }
+
+    #[test]
+    fn multiaddr_to_socket_addr_ipv6_tcp() {
+        let socket = P2PAddressParser::multiaddr_to_socket_addr("/ip6/::1/tcp/30303").unwrap();
+        assert_eq!(socket.to_string(), "[::1]:30303");
+    }
+
+    #[test]
+    fn multiaddr_to_socket_addr_ipv4_udp() {
+        let socket = P2PAddressParser::multiaddr_to_socket_addr("/ip4/10.0.0.1/udp/12000").unwrap();
+        assert_eq!(socket.to_string(), "10.0.0.1:12000");
+    }
+
+    #[test]
+    fn socket_addr_from_contracts_roundtrip() {
+        let original = "/ip4/192.168.0.1/tcp/8888";
+        let encoded = P2PAddressParser::addr_to_contracts(original).unwrap();
+        let socket = P2PAddressParser::socket_addr_from_contracts(&encoded)
+            .unwrap()
+            .expect("should have socket addr");
+        assert_eq!(socket.to_string(), "192.168.0.1:8888");
+    }
+
+    #[test]
+    fn socket_addr_from_contracts_zeroed_data_returns_none() {
+        // Simulates contract data that hasn't been deposited yet (all zeros)
+        let zeroed_data = CommunicationData {
+            data: [FixedBytes([0u8; 32]); 8],
+        };
+        let result = P2PAddressParser::socket_addr_from_contracts(&zeroed_data).unwrap();
+        assert!(result.is_none(), "zeroed data should return None");
+    }
+
+    #[test]
+    fn addr_from_contracts_zeroed_data_returns_empty_string() {
+        // Simulates contract data that hasn't been deposited yet (all zeros)
+        let zeroed_data = CommunicationData {
+            data: [FixedBytes([0u8; 32]); 8],
+        };
+        let result = P2PAddressParser::addr_from_contracts(&zeroed_data).unwrap();
+        assert!(result.is_empty(), "zeroed data should return empty string");
+    }
+
+    #[test]
+    fn socket_addr_to_contracts_ipv4_roundtrip() {
+        use std::str::FromStr;
+        let addr = SocketAddr::from_str("192.168.0.1:8888").unwrap();
+        let encoded = P2PAddressParser::socket_addr_to_contracts(&addr).unwrap();
+        let decoded = P2PAddressParser::socket_addr_from_contracts(&encoded)
+            .unwrap()
+            .expect("should have socket addr");
+        assert_eq!(decoded, addr);
+    }
+
+    #[test]
+    fn socket_addr_to_contracts_ipv6_roundtrip() {
+        use std::str::FromStr;
+        let addr = SocketAddr::from_str("[::1]:30303").unwrap();
+        let encoded = P2PAddressParser::socket_addr_to_contracts(&addr).unwrap();
+        let decoded = P2PAddressParser::socket_addr_from_contracts(&encoded)
+            .unwrap()
+            .expect("should have socket addr");
+        assert_eq!(decoded, addr);
     }
 }

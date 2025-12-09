@@ -8,6 +8,7 @@ use musig2::PubNonce;
 use musig2::secp::MaybeScalar;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use uuid::Uuid;
 
 pub const ACCEPT_PEGIN_TX: &str = "ACCEPT_PEGIN_TX";
@@ -26,14 +27,14 @@ pub enum IncomingBitVMXApiMessages {
     GetTransaction(Uuid, Txid),
     GetTransactionInfoByName(Uuid, String),
     GetHashedMessage(Uuid, String, u32, u32),
-    Setup(ProgramId, String, Vec<P2PAddress>, u16),
+    Setup(ProgramId, String, Vec<CommsAddress>, u16),
     SubscribeToTransaction(Uuid, Txid),
     SubscribeUTXO(Uuid),
     SubscribeToRskPegin(),
     GetSPVProof(Txid),
     DispatchTransaction(Uuid, Transaction),
     DispatchTransactionName(Uuid, String),
-    SetupKey(Uuid, Vec<P2PAddress>, Option<Vec<PublicKey>>, u16),
+    SetupKey(Uuid, Vec<CommsAddress>, Option<Vec<PublicKey>>, u16),
     GetAggregatedPubkey(Uuid),
     GetKeyPair(Uuid),
     GetPubKey(Uuid, bool),
@@ -73,7 +74,7 @@ pub enum OutgoingBitVMXApiMessages {
     TransactionInfo(Uuid, String, Transaction),
     ZKPResult(Uuid, Vec<u8>, Vec<u8>),
     ExecutionResult(/* Add appropriate type */),
-    CommInfo(Uuid, P2PAddress),
+    CommInfo(Uuid, CommsAddress),
     KeyPair(Uuid, PrivateKey, PublicKey),
     PubKey(Uuid, PublicKey),
     SignedMessage(Uuid, [u8; 32], [u8; 32], u8), // id, signature_r, signature_s, recovery_id
@@ -245,19 +246,12 @@ pub enum SignMode {
     Aggregate,
 }
 
-#[derive(PartialEq, Clone, Serialize, Deserialize, Debug)]
-pub struct P2PAddress {
-    pub address: String,
-    pub peer_id: PeerId,
-}
+pub type PubKeyHash = String;
 
-#[derive(Clone, Hash, Default, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct PeerId(pub String);
-
-impl PeerId {
-    pub fn from_der(public_key_der: Vec<u8>) -> Self {
-        PeerId(hex::encode(public_key_der))
-    }
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Serialize, Deserialize, Debug)]
+pub struct CommsAddress {
+    pub address: SocketAddr,
+    pub pubkey_hash: PubKeyHash,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -317,8 +311,8 @@ pub struct Committee {
     pub members: Vec<MemberData>,
     pub take_aggregated_key: PublicKey,
     pub dispute_aggregated_key: PublicKey,
-    pub operator_count: u32,
     pub packet_size: u32,
+    pub stream_denomination: u64,
 }
 
 impl Committee {
@@ -358,9 +352,8 @@ pub struct PeginAcceptedMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DisputeCoreData {
     pub committee_id: Uuid,
-    pub operator_index: usize,
-    pub operator_utxo: PartialUtxo,
-    pub operator_take_pubkey: PublicKey,
+    pub member_index: usize,
+    pub funding_utxo: PartialUtxo,
 }
 
 impl DisputeCoreData {
@@ -375,4 +368,55 @@ pub enum Destination {
     P2WPKH(PublicKey, u64), // (pubkey, amount in sats)
     Batch(Vec<Destination>),
     P2TR(XOnlyPublicKey, Vec<ProtocolScript>, u64), // (xpubkey, tap_leaves, amount in sats)
+}
+
+/// Global UUID used to store union-wide settings in BitVMX.
+/// This is a fixed UUID derived from the string "UNION_BRIDGE-000".
+pub const GLOBAL_SETTINGS_UUID: Uuid = Uuid::from_bytes(*b"UNION_BRIDGE-000");
+
+/// Per-stream timelock settings for Bitcoin transactions.
+/// These values are in Bitcoin block counts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamSettings {
+    /// Short timelock for quick dispute resolution
+    pub short_timelock: u16,
+    /// Long timelock for extended dispute periods
+    pub long_timelock: u16,
+    /// Timelock for operator won transactions
+    pub op_won_timelock: u16,
+}
+
+impl Default for StreamSettings {
+    fn default() -> Self {
+        Self {
+            short_timelock: 6,
+            long_timelock: 12,
+            op_won_timelock: 18,
+        }
+    }
+}
+
+/// Global union settings mapping stream denominations to their timelock configurations.
+/// Sent to BitVMX before dispute_core setup.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnionSettings {
+    /// Map of stream_denomination -> StreamSettings
+    pub settings: HashMap<u64, StreamSettings>,
+}
+
+impl UnionSettings {
+    pub fn name() -> String {
+        "union_settings".to_string()
+    }
+
+    /// Create default settings with entries for stream denominations.
+    /// Keys are enum indexes matching StreamDenomination in contracts:
+    /// 0 = 0.001 BTC, 1 = 0.01 BTC, 2 = 0.1 BTC, 3 = 1 BTC, 4 = 10 BTC
+    pub fn with_defaults() -> Self {
+        let mut settings = HashMap::new();
+        for i in 0..5u64 {
+            settings.insert(i, StreamSettings::default());
+        }
+        Self { settings }
+    }
 }
