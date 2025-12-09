@@ -171,10 +171,53 @@ first.
 Under the directory specified in the `BASE_STORAGE_PATH` env, run the following command to create the base directory:
 
 ```bash
-mkdir -p .union_bridge
+mkdir -p .union_bridge/keystore
 ```
 
-Note: The `keystore` subdirectory will be created automatically when you create wallets.
+#### Generating the Broker Key
+
+The Union Bridge Client uses TLS for secure communication between components. You need to generate a broker key that
+will be used for deterministic identity in broker communications.
+
+Generate the broker key:
+
+```bash
+openssl genpkey -algorithm RSA -out ${BASE_STORAGE_PATH}/.union_bridge/keystore/broker.key -pkeyopt rsa_keygen_bits:2048
+```
+
+This key is used by:
+- The coordinator to authenticate with the block-indexer, log-indexer, and user-api brokers
+- The coordinator to connect to the BitVMX client broker
+
+**Important**: The broker key determines the client's `pubkey_hash` identity. You'll need this value to configure the
+BitVMX client (see [Configuring BitVMX Client](#configuring-bitvmx-client) below).
+
+#### Configuring BitVMX Client
+
+The BitVMX client needs to know where to send messages back to the Union Bridge Client. You must configure the
+`components.l2.pubkey_hash` in the BitVMX client config files to match your Union Bridge Client's broker identity.
+
+**1. Find your broker's pubkey_hash**
+
+When you start the coordinator, it logs its identity:
+```
+BitVmxBrokerClient identity: pubkey_hash=a4f99c4236e46608bd558ef135df0122535d8dd4db073bc87e4b852a9a0afafd
+```
+
+**2. Update BitVMX client config files**
+
+In your `rust-bitvmx-workspace/rust-bitvmx-client/config/` directory, update the `components.l2.pubkey_hash` in all
+relevant config files (`op_1.yaml`, `op_2.yaml`, `op_3.yaml`, `op_4.yaml`, `development.yaml`, etc.):
+
+```yaml
+components:
+  l2:
+    pubkey_hash: <your-broker-pubkey-hash>  # Must match Union Bridge Client's broker identity
+    id: 0
+```
+
+This ensures that messages from the BitVMX client are correctly routed back to the
+coordinator.
 
 #### Configuring the Committee
 
