@@ -267,6 +267,8 @@ where
             }
             Steps::ConfirmAcceptPeginTransaction => {
                 self.dispatch_transaction()?;
+                // Transaction status will be polled via TickScheduler in the processor
+                // to ensure the transaction has time to be broadcast before querying
                 info!(
                     "Waiting for transaction confirmations for flow_id: {} and tx_id: {:?}",
                     self.state.flow_id,
@@ -685,7 +687,8 @@ where
             .communication_data
             .into_iter()
             .map(|comm_data| {
-                P2PAddressParser::addr_from_contracts(&comm_data)
+                P2PAddressParser::socket_addr_from_contracts(&comm_data)
+                    .map(|opt_addr| opt_addr.map(|addr| addr.to_string()).unwrap_or_default())
                     .context("Failed to convert communication data to P2P address")
             })
             .collect::<Result<Vec<_>>>()?;
