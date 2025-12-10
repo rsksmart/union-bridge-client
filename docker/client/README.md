@@ -10,7 +10,7 @@ By default, the compose will use:
 - the `config/docker` folder for the Union Client config files
     - you can override any configuration value using environment variables prefixed with `UB__` matching the config structure, e.g.
       `UB__COORDINATOR__BLOCKS__HOST=192.168.1.100`
-    - see the main [README.md](../README.md#configuration-overrides) for detailed examples and mapping rules
+    - see the main [README.md](../../README.md#configuration-overrides) for detailed examples and mapping rules
 - the `docker/client/.env` for `docker-compose` file environment variables
 
 ## Build Builder Images
@@ -104,10 +104,6 @@ You can connect to any BitVMX Broker by specifying the host and port:
 ```bash
 BITVMX_HOST=<host> BITVMX_PORT=<port> docker compose -p <project-name> up
 ```
-
-### Configuration Templates
-
-For more advanced multi-client setups, you can use the configuration templates located in `../config/multi-client-template/`. These templates provide pre-configured settings for 4 different clients with unique broker ports and client IDs.
 
 ## Registry Management Scripts
 
