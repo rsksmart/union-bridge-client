@@ -227,7 +227,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 
     #[cfg(feature = "fresh_node")]
     #[allow(clippy::unnecessary_wraps)]
-    fn recover_logs(&self, _addrs: &Vec<Address>) -> Result<BlockNumber> {
+    fn recover_logs(&self, _addrs: &[Address]) -> Result<BlockNumber> {
         Ok(self.initial_block_number)
     }
 
@@ -344,7 +344,7 @@ mod tests {
 
     use super::*;
     use crate::store::MockLogStore;
-
+    const EMPTY_ADDRESSES: Vec<Address> = vec![];
     #[test]
     fn recover_logs_when_no_checkpoint_should_start_from_initial_block() {
         let mut mock_store = MockLogStore::new();
@@ -513,7 +513,7 @@ mod tests {
             shutdown_flag: ShutdownFlag::init(),
         };
 
-        let result = indexer.recover_logs(&vec![]);
+        let result = indexer.recover_logs(&EMPTY_ADDRESSES);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), second_best.number());
     }
@@ -544,7 +544,7 @@ mod tests {
             shutdown_flag: ShutdownFlag::init(),
         };
 
-        let result = indexer.recover_logs(&vec![]);
+        let result = indexer.recover_logs(&EMPTY_ADDRESSES);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Failed to recover logs after"));
     }
