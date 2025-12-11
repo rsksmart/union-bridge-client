@@ -99,7 +99,7 @@ mod tests {
         match err {
             DomainErrors::UnhandledContractError(msg) => {
                 assert!(msg.contains("PegoutTxidNotFound"));
-                assert!(msg.contains(&expected_tx_id));
+                assert!(msg.contains(expected_tx_id));
             }
             _ => panic!("Expected TransactionFailed error"),
         }
