@@ -1,8 +1,8 @@
 use crate::blockchain_tracker::{BlockConfirmations, BlockchainObserver};
 use crate::config::REQUIRED_CONFIRMATIONS;
 use crate::types::AdvanceFundsEvent;
-use check_fork::block_header::Block;
 use check_fork::CheckForkArgs;
+use check_fork::block_header::{Block, RskBlockHeader};
 use common::types::{BlockPow, RskBlock, RskBlockAndUncles};
 use log::{debug, info};
 use primitive_types::{H256, U256};
@@ -153,8 +153,14 @@ impl CheckForkAccumulator {
     }
 
     fn remove_block_from_check_fork(&mut self, block: &RskBlock) {
-        info!("Removing block {} ({}) from checkFork", block.number(), block.hash());
-        self.args.block_list.retain(|b| b.hash != block.hash().value());
+        info!(
+            "Removing block {} ({}) from checkFork",
+            block.number(),
+            block.hash()
+        );
+        self.args
+            .block_list
+            .retain(|b| b.header.hash != block.hash().value());
     }
 
     fn new_check_fork_block(&self, block_with_uncles: &RskBlockAndUncles) -> Block {
@@ -201,15 +207,17 @@ impl CheckForkAccumulator {
         bridge_event: Option<check_fork::BridgeEvent>,
         uncles: Vec<Block>,
     ) -> Block {
+        let header = RskBlockHeader::new_with(
+            block.number().value(),
+            block.difficulty().value(),
+            Some(block.parent_hash().value()),
+            block.timestamp().value(),
+        );
         Block {
-            number: block.number().value(),
-            hash: block.hash().value(),
-            parent: block.parent_hash().value(),
-            difficulty: block.difficulty().value(),
-            timestamp: block.timestamp().value(),
             bridge_event,
             uncles,
             pow: block.pow().value(),
+            header,
         }
     }
 
@@ -336,8 +344,8 @@ mod tests {
             CheckForkAccumulator::new(&event, &post_advance_funds_blocks, REQUIRED_CONFIRMATIONS);
 
         assert_eq!(checker.args.block_list.len(), 2);
-        assert_eq!(checker.args.block_list[0].number, block1_number);
-        assert_eq!(checker.args.block_list[1].number, block2_number);
+        assert_eq!(checker.args.block_list[0].header.number, block1_number);
+        assert_eq!(checker.args.block_list[1].header.number, block2_number);
     }
 
     #[test]
@@ -428,7 +436,7 @@ mod tests {
         checker.on_block_added(&block);
 
         assert_eq!(checker.args.block_list.len(), 1);
-        assert_eq!(checker.args.block_list[0].number, block_number);
+        assert_eq!(checker.args.block_list[0].header.number, block_number);
 
         // remove the block
         checker.on_block_removed(&block);
@@ -514,10 +522,10 @@ mod tests {
 
         assert_eq!(checker.args.block_list.len(), 1);
         let added_block = &checker.args.block_list[0];
-        assert_eq!(added_block.number, main_block_number);
+        assert_eq!(added_block.header.number, main_block_number);
         assert_eq!(added_block.uncles.len(), 2);
-        assert_eq!(added_block.uncles[0].number, uncle1_number);
-        assert_eq!(added_block.uncles[1].number, uncle2_number);
+        assert_eq!(added_block.uncles[0].header.number, uncle1_number);
+        assert_eq!(added_block.uncles[1].header.number, uncle2_number);
     }
 
     #[test]
@@ -870,8 +878,12 @@ mod tests {
         assert_eq!(checker.args.block_list.len(), expected_initial_blocks - 1);
 
         // verify the correct block was removed
-        let remaining_numbers: Vec<u64> =
-            checker.args.block_list.iter().map(|b| b.number).collect();
+        let remaining_numbers: Vec<u64> = checker
+            .args
+            .block_list
+            .iter()
+            .map(|b| b.header.number)
+            .collect();
         assert!(remaining_numbers.contains(&block1_number));
         assert!(!remaining_numbers.contains(&block2_number));
         assert!(remaining_numbers.contains(&block3_number));

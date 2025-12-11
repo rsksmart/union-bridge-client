@@ -11,31 +11,16 @@ use std::fmt;
 
 use crate::BridgeEvent;
 
-// todo(fede) try to unify this struct with types.RskBlock
-// todo(fede) reconsider all the serde anotations
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Block {
-    pub number: u64,
-    pub hash: H256,
-    pub parent: H256,
-    pub difficulty: U256,
-    pub timestamp: u64,
     pub bridge_event: Option<BridgeEvent>,
     #[serde(default)]
     pub uncles: Vec<Block>,
     // alternatively we can receive `bitcoinMergedMiningHeader`, but we would need to include bitcoin crate here, etc.
     pub pow: H256,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct TestCaseBlockHashValidation {
     pub header: RskBlockHeader,
-    #[serde(rename = "expectedHash")]
-    pub expected_hash: String,
 }
 
-// todo(fede) currently we are not taking into account ummRoot field becaue it's always empty and
-// discarded in the rskj rlp encoding
 #[derive(Serialize, Deserialize, Clone)]
 pub struct RskBlockHeader {
     // #[serde(
@@ -107,13 +92,43 @@ pub struct RskBlockHeader {
         deserialize_with = "deserialize_hex_bytes"
     )]
     pub bitcoin_merged_mining_coinbase_transaction: Vec<u8>, // Bitcoin protobuf serialized coinbase tx (compressed)
+    // follwoing fields are goonna be included in the next hardfork (reed)
+    #[serde(skip)]
+    pub _umm_root: [u8; 20], // UMM root (only if block is UMM, must be exactly 20 bytes)
+    #[serde(skip)]
+    pub _version: u8, // Header version
+    #[serde(skip)]
+    pub _tx_execution_sublists_edges: Option<Vec<u16>>, // Edges of transaction execution sublists
+}
 
-                                                             // follwoing fields will be included in the next hardfork (reed)
-                                                             // #[serde(rename = "ummRoot", deserialize_with = "deserialize_allways_empty_vec")]
-                                                             // pub umm_root: [u8; 20], // UMM root (only if block is UMM, must be exactly 20 bytes)
-                                                             // Extension fields (RSKIP-351)
-                                                             // pub version: u8,                                   // Header version
-                                                             // pub tx_execution_sublists_edges: Option<Vec<u16>>, // Edges of transaction execution sublists
+impl Default for RskBlockHeader {
+    fn default() -> Self {
+        Self {
+            number: 0,
+            hash: H256::zero(),
+            parent: H256::zero(),
+            difficulty: U256::zero(),
+            timestamp: 0,
+            uncles_hash: H256::zero(),
+            coinbase: [0u8; 20],
+            state_root: H256::zero(),
+            tx_trie_root: H256::zero(),
+            receipt_trie_root: H256::zero(),
+            logs_bloom: vec![0u8; 256],
+            gas_limit: vec![0u8],
+            gas_used: 0,
+            extra_data: Vec::new(),
+            paid_fees: U256::zero(),
+            minimum_gas_price: Some(U256::zero()),
+            uncle_count: 0,
+            bitcoin_merged_mining_header: vec![0u8; 80],
+            bitcoin_merged_mining_merkle_proof: Vec::new(),
+            bitcoin_merged_mining_coinbase_transaction: Vec::new(),
+            _umm_root: [0u8; 20],
+            _version: 0,
+            _tx_execution_sublists_edges: None,
+        }
+    }
 }
 
 impl fmt::Debug for RskBlockHeader {
@@ -125,7 +140,7 @@ impl fmt::Debug for RskBlockHeader {
 
         write!(
             f,
-            "TmpRskBlockHeader {{ number: {}, hash: {}, parent: {}, diff: {}, ts: {}, uncles_hash: {}, coinbase: 0x{}, state_root: {}, tx_root: {}, receipt_root: {}, logs_bloom: {} bytes, gas_limit: 0x{}, gas_used: {}, extra_data: {} bytes, paid_fees: {}, min_gas_price: {:?}, uncle_count: {}, mm_header: {} bytes, mm_merkle_proof: {} bytes, mm_coinbase: {} bytes }}",
+            "RskBlockHeader {{ number: {}, hash: {}, parent: {}, diff: {}, ts: {}, uncles_hash: {}, coinbase: 0x{}, state_root: {}, tx_root: {}, receipt_root: {}, logs_bloom: {} bytes, gas_limit: 0x{}, gas_used: {}, extra_data: {} bytes, paid_fees: {}, min_gas_price: {:?}, uncle_count: {}, mm_header: {} bytes, mm_merkle_proof: {} bytes, mm_coinbase: {} bytes }}",
             self.number,
             short(&self.hash),
             short(&self.parent),
@@ -151,17 +166,15 @@ impl fmt::Debug for RskBlockHeader {
 }
 
 impl RskBlockHeader {
-    #[must_use]
-    pub fn uncle_count(&self) -> u32 {
-        todo!("this needs to be calculated ")
-    }
-
-    #[must_use]
-    pub fn umm_root(&self) -> Vec<u8> {
-        // RSKJ treats ummRoot as "absent" by using an empty element when the
-        // field is not set (pre-UMM blocks). We mirror that behaviour instead
-        // of injecting 20 zeroed bytes, which changes the RLP.
-        Vec::new()
+    pub fn new_with(number: u64, difficulty: U256, parent: Option<H256>, timestamp: u64) -> Self {
+        let mut header = RskBlockHeader::default();
+        header.number = number;
+        header.difficulty = difficulty;
+        if let Some(parent) = parent {
+            header.parent = parent;
+        }
+        header.timestamp = timestamp;
+        header
     }
 
     pub fn calculate_block_hash(&self) -> Result<H256, &'static str> {
@@ -170,16 +183,17 @@ impl RskBlockHeader {
         hasher.update(&rlp_encoded);
         let block_hash = H256::from_slice(&hasher.finalize());
 
-        println!("Block hash: {block_hash}");
+        // todo(fede) this print it's too verbose, remove it
+        println!("block hash: {block_hash}");
 
         Ok(block_hash)
     }
 
     pub fn encode_rlp(&self) -> Result<Vec<u8>, &'static str> {
-        // todo(fede) do i need to perform any other kind of validation befeore encoding?
         let Some(minimum_gas_price) = self.minimum_gas_price else {
             return Err("minimum_gas_price is None");
         };
+
         let mut encoded_fields: Vec<Vec<u8>> = vec![
             encode_h256("parent", &self.parent),
             encode_h256("uncles_hash", &self.uncles_hash),
@@ -197,7 +211,7 @@ impl RskBlockHeader {
             encode_coin_value("paid_fees", &self.paid_fees),
             encode_signed_coin_value("minimum_gas_price", &minimum_gas_price),
             encode_u32_value("uncle_count", self.uncle_count),
-            encode_bytes("umm_root", &self.umm_root()),
+            encode_bytes("umm_root", &Vec::new()),
         ];
 
         encoded_fields.push(encode_bytes(
@@ -218,14 +232,9 @@ impl RskBlockHeader {
 
         Ok(out)
     }
-
-    fn _get_logs_bloom_field(&self) -> H256 {
-        todo!("wip")
-    }
 }
 
 #[must_use]
-// todo(fede) this fn is unecessary, remove
 pub fn encode_list(rlp_list: Vec<Vec<u8>>) -> Vec<u8> {
     let mut out: Vec<u8> = Vec::new();
     let payload_length: usize = rlp_list.iter().map(Vec::len).sum();
@@ -363,13 +372,6 @@ where
     D: Deserializer<'de>,
 {
     let s: Vec<String> = Deserialize::deserialize(deserializer)?;
-    if s.len() != 1 {
-        return Err(serde::de::Error::custom(format!(
-            "expected 1 element, got {}",
-            s.len()
-        )));
-    }
-
     u32::try_from(s.len()).map_err(serde::de::Error::custom)
 }
 

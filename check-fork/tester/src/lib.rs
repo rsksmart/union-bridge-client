@@ -29,15 +29,10 @@ struct RskBlock {
 impl From<&RskBlock> for Block {
     fn from(rsk_block: &RskBlock) -> Self {
         Block {
-            number: rsk_block.header.number,
-            hash: rsk_block.header.hash,
-            parent: rsk_block.header.parent,
-            difficulty: rsk_block.header.difficulty,
-            timestamp: rsk_block.header.timestamp,
-            // pow: rsk_block.header.pow,
-            pow: H256::from_slice(rsk_block.header.bitcoin_merged_mining_header.as_slice()),
             bridge_event: rsk_block.bridge_event.clone(),
             uncles: rsk_block.uncles.iter().map(Block::from).collect(),
+            pow: H256::from_slice(rsk_block.header.bitcoin_merged_mining_header.as_slice()),
+            header: rsk_block.header.clone(),
         }
     }
 }
