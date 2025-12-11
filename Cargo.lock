@@ -1656,8 +1656,12 @@ dependencies = [
 name = "check-fork"
 version = "0.2.0"
 dependencies = [
+ "alloy-rlp",
+ "hex",
  "primitive-types 0.13.1",
  "serde",
+ "serde_json",
+ "sha3",
 ]
 
 [[package]]

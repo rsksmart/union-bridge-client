@@ -5,7 +5,12 @@ edition = "2024"
 
 [dependencies]
 primitive-types = { workspace = true }
+# dependencies are temporary
 serde = { workspace = true, features = ["derive"] }
+alloy-rlp = "0.3.12"
+sha3 = "0.10.8"
+serde_json = "1.0.104"
+hex.workspace = true
 
 [lints]
 workspace = true
