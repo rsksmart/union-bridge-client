@@ -1,9 +1,11 @@
-use crate::block_header::TmpRskBlockHeader;
-use block_header::Block;
-use primitive_types::{H256, U256};
-use serde::{Deserialize, Serialize};
-
 pub mod block_header;
+
+use block_header::Block;
+use primitive_types::U256;
+use serde::Deserialize;
+use serde::Serialize;
+
+use crate::block_header::RskBlockHeader;
 
 // TODO configurable
 pub const SUPERBLOCK_TIMES_DIFFICULTY: u8 = 20;
@@ -258,7 +260,7 @@ fn calculate_block_effort(block: &Block) -> Result<U256, &'static str> {
     U256::MAX.checked_div(pow).ok_or("0 division on calculate_block_effort")
 }
 
-fn _validate_block_hash(block: &TmpRskBlockHeader) -> Result<(), &'static str> {
+fn _validate_block_hash(block: &RskBlockHeader) -> Result<(), &'static str> {
     let actual_hash = block.calculate_block_hash()?;
     if block.hash != actual_hash {
         return Err("Block hash is not matching");

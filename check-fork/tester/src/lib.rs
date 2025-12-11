@@ -15,6 +15,7 @@ const RSK_RPC_URL: &str = "https://public-node.rsk.co";
 
 const SUPERBLOCK_THRESHOLD_FACTOR: u64 = 20;
 
+// todo(fede) this should contain an RskBlockHeader
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct RskBlock {
     #[serde(deserialize_with = "parse_hex_to_u64", serialize_with = "parse_u64_to_hex")]

@@ -29,7 +29,7 @@ pub struct Block {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TestCaseBlockHashValidation {
-    pub header: TmpRskBlockHeader,
+    pub header: RskBlockHeader,
     #[serde(rename = "expectedHash")]
     pub expected_hash: String,
 }
@@ -37,19 +37,17 @@ pub struct TestCaseBlockHashValidation {
 // todo(fede) currently we are not taking into account ummRoot field becaue it's always empty and
 // discarded in the rskj rlp encoding
 #[derive(Serialize, Deserialize, Clone)]
-pub struct TmpRskBlockHeader {
+pub struct RskBlockHeader {
     #[serde(rename = "number", deserialize_with = "deserialize_hex_u64")]
-    pub number: u64,
-    // #[serde(rename = "blockHash", deserialize_with = "deserialize_hex_h256")]
+    pub number: u64, // Block height (genesis = 0)
     #[serde(skip)]
-    pub hash: H256,
+    pub hash: H256, // Keccak-256 of the encoded header
     #[serde(rename = "parentHash", deserialize_with = "deserialize_hex_h256")]
-    pub parent: H256,
+    pub parent: H256, // Keccak-256 hash of the parent block
     #[serde(rename = "difficulty", deserialize_with = "deserialize_hex_u256")]
-    pub difficulty: U256,
+    pub difficulty: U256, // Target difficulty for this block
     #[serde(rename = "timestamp", deserialize_with = "deserialize_hex_u64")]
-    pub timestamp: u64,
-    // Basic header fields (required for RLP encoding)
+    pub timestamp: u64, // Unix time (seconds) when the block was created
     #[serde(rename = "unclesHash", deserialize_with = "deserialize_hex_h256")]
     pub uncles_hash: H256, // SHA3-256 hash of the uncles list portion
     #[serde(rename = "coinbase", deserialize_with = "deserialize_hex_bytes_20")]
@@ -77,6 +75,7 @@ pub struct TmpRskBlockHeader {
     pub minimum_gas_price: Option<U256>, // Minimum gas price for a tx to be included (Coin, can be null)
     #[serde(rename = "uncleCount", deserialize_with = "deserialize_hex_u32")]
     pub uncle_count: u32, // Number of uncles in the block
+
     // Merged mining fields
     #[serde(
         rename = "bitcoinMergedMiningHeader",
@@ -93,8 +92,8 @@ pub struct TmpRskBlockHeader {
         deserialize_with = "deserialize_hex_bytes"
     )]
     pub bitcoin_merged_mining_coinbase_transaction: Vec<u8>, // Bitcoin protobuf serialized coinbase tx (compressed)
+
     // follwoing fields will be included in the next hardfork (reed)
-    // Optional fields (required if applicable)
     #[serde(rename = "ummRoot", deserialize_with = "deserialize_allways_empty_vec")]
     pub umm_root: [u8; 20], // UMM root (only if block is UMM, must be exactly 20 bytes)
                             // Extension fields (RSKIP-351)
@@ -102,8 +101,7 @@ pub struct TmpRskBlockHeader {
                             // pub tx_execution_sublists_edges: Option<Vec<u16>>, // Edges of transaction execution sublists
 }
 
-// todo(fede) reconsider this
-impl fmt::Debug for TmpRskBlockHeader {
+impl fmt::Debug for RskBlockHeader {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let short = |h: &H256| {
             let hex = hex::encode(h);
@@ -137,7 +135,7 @@ impl fmt::Debug for TmpRskBlockHeader {
     }
 }
 
-impl TmpRskBlockHeader {
+impl RskBlockHeader {
     pub fn calculate_block_hash(&self) -> Result<H256, &'static str> {
         let rlp_encoded: Vec<u8> = self.encode_rlp()?;
         let mut hasher = Keccak256::new();
@@ -240,17 +238,19 @@ fn encode_u32_value(label: &str, value: u32) -> Vec<u8> {
 }
 
 fn encode_coin_value(label: &str, value: &U256) -> Vec<u8> {
-    let bytes = u256_be_coin_bytes(value);
-    let v = alloy_rlp::encode(bytes.as_slice());
+    let v = alloy_rlp::encode(u256_be_coin_bytes(value).as_slice());
     println!("RLP encode {label}: {}", hex::encode(&v));
     v
 }
 
 fn encode_signed_coin_value(label: &str, value: &U256) -> Vec<u8> {
+    // RLP integers are big-endian: 0 -> 0x80, 0x00–0x7f encode as-is,
+    // and if the MSB≥0x80 we prefix 0x00 to keep the value positive
+    // before adding the length prefix.
     let mut bytes = u256_be_coin_bytes(value);
     if bytes.first().is_some_and(|b| *b >= 0x80) {
         let mut prefixed = Vec::with_capacity(bytes.len() + 1);
-        prefixed.push(0);
+        prefixed.push(0); // we add a "0x00" prefix to keep the value positive
         prefixed.extend_from_slice(&bytes);
         bytes = prefixed;
     }
@@ -260,7 +260,11 @@ fn encode_signed_coin_value(label: &str, value: &U256) -> Vec<u8> {
 }
 
 fn u256_be_trimmed(value: &U256) -> Vec<u8> {
-    // value.to_big_endian().to_vec()
+    // positive integers must be represented in big-endian binary form with
+    // no leading zeroes (thus making the integer value zero equivalent to
+    // the empty byte array). Deserialized positive integers with leading
+    // zeroes must be treated as invalid by any higher-order protocol using RLP.
+    // we inherit this from ethereum, if any doubts checkout the ethereum yellow paper.
     let buf = value.to_big_endian();
     let first_non_zero = buf.iter().position(|&b| b != 0).unwrap_or(buf.len());
     match first_non_zero {
@@ -365,8 +369,3 @@ where
     let _ = serde::de::IgnoredAny::deserialize(deserializer)?;
     Ok([0u8; 20])
 }
-
-// todo(fede) this is useless, remove
-// pub fn encode_rlp_hash(hash: &H256) -> Vec<u8> {
-//     alloy_rlp::encode(hash.as_bytes()) // new vec with capacity
-// }
