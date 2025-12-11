@@ -1,11 +1,13 @@
 use primitive_types::U256;
 
+#[must_use]
 pub fn encode_coin_value(label: &str, value: &U256) -> Vec<u8> {
     let v = alloy_rlp::encode(u256_be_coin_bytes(value).as_slice());
     println!("RLP encode {label}: {}", hex::encode(&v));
     v
 }
 
+#[must_use]
 pub fn encode_signed_coin_value(label: &str, value: &U256) -> Vec<u8> {
     // RLP integers are big-endian: 0 -> 0x80, 0x00–0x7f encode as-is,
     // and if the MSB≥0x80 we prefix 0x00 to keep the value positive
@@ -22,6 +24,7 @@ pub fn encode_signed_coin_value(label: &str, value: &U256) -> Vec<u8> {
     v
 }
 
+#[must_use]
 fn u256_be_trimmed(value: &U256) -> Vec<u8> {
     // positive integers must be represented in big-endian binary form with
     // no leading zeroes (thus making the integer value zero equivalent to
@@ -36,6 +39,7 @@ fn u256_be_trimmed(value: &U256) -> Vec<u8> {
     }
 }
 
+#[must_use]
 fn u256_be_coin_bytes(value: &U256) -> Vec<u8> {
     // RSKJ encodes coin values using RLP's empty element for zero amounts,
     // not a single 0x00 byte. Returning an empty vec reproduces the same

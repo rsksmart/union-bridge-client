@@ -85,11 +85,11 @@ pub struct RskBlockHeader {
     pub bitcoin_merged_mining_coinbase_transaction: Vec<u8>, // Bitcoin protobuf serialized coinbase tx (compressed)
     // follwoing fields are goonna be included in the next hardfork (reed)
     #[serde(skip)]
-    pub _umm_root: [u8; 20], // UMM root (only if block is UMM, must be exactly 20 bytes)
+    _umm_root: [u8; 20], // UMM root (only if block is UMM, must be exactly 20 bytes)
     #[serde(skip)]
-    pub _version: u8, // Header version
+    _version: u8, // Header version
     #[serde(skip)]
-    pub _tx_execution_sublists_edges: Option<Vec<u16>>, // Edges of transaction execution sublists
+    _tx_execution_sublists_edges: Option<Vec<u16>>, // Edges of transaction execution sublists
 }
 
 impl Default for RskBlockHeader {
@@ -123,15 +123,15 @@ impl Default for RskBlockHeader {
 }
 
 impl RskBlockHeader {
+    #[must_use]
     pub fn new_with(number: u64, difficulty: U256, parent: Option<H256>, timestamp: u64) -> Self {
-        let mut header = RskBlockHeader::default();
-        header.number = number;
-        header.difficulty = difficulty;
-        if let Some(parent) = parent {
-            header.parent = parent;
+        RskBlockHeader {
+            number,
+            difficulty,
+            parent: parent.unwrap_or_default(),
+            timestamp,
+            ..Default::default()
         }
-        header.timestamp = timestamp;
-        header
     }
 
     pub fn calculate_block_hash(&self) -> Result<H256, &'static str> {
