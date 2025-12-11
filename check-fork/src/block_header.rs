@@ -38,20 +38,29 @@ pub struct TestCaseBlockHashValidation {
 // discarded in the rskj rlp encoding
 #[derive(Serialize, Deserialize, Clone)]
 pub struct RskBlockHeader {
+    // #[serde(
+    //     deserialize_with = "parse_hex_to_u64",
+    //     serialize_with = "parse_u64_to_hex"
+    // )]
     #[serde(rename = "number", deserialize_with = "deserialize_hex_u64")]
     pub number: u64, // Block height (genesis = 0)
     #[serde(skip)]
     pub hash: H256, // Keccak-256 of the encoded header
+    // #[serde(rename = "parentHash")]
     #[serde(rename = "parentHash", deserialize_with = "deserialize_hex_h256")]
     pub parent: H256, // Keccak-256 hash of the parent block
+    // #[serde(rename = "difficulty", deserialize_with = "parse_rsk_difficulty")]
     #[serde(rename = "difficulty", deserialize_with = "deserialize_hex_u256")]
     pub difficulty: U256, // Target difficulty for this block
+    // #[serde(
+    //     rename = "timestamp",
+    //     deserialize_with = "parse_hex_to_u64",
+    //     serialize_with = "parse_u64_to_hex"
+    // )]
     #[serde(rename = "timestamp", deserialize_with = "deserialize_hex_u64")]
     pub timestamp: u64, // Unix time (seconds) when the block was created
-    // #[serde(rename = "unclesHash", deserialize_with = "deserialize_hex_h256")]
     #[serde(rename = "sha3Uncles", deserialize_with = "deserialize_hex_h256")]
     pub uncles_hash: H256, // SHA3-256 hash of the uncles list portion
-    // #[serde(rename = "coinbase", deserialize_with = "deserialize_hex_bytes_20")]
     #[serde(rename = "miner", deserialize_with = "deserialize_hex_bytes_20")]
     pub coinbase: [u8; 20], // 160-bit address (RskAddress) - miner's address
     #[serde(rename = "stateRoot", deserialize_with = "deserialize_hex_h256")]
@@ -75,11 +84,14 @@ pub struct RskBlockHeader {
         deserialize_with = "deserialize_hex_u256_option"
     )]
     pub minimum_gas_price: Option<U256>, // Minimum gas price for a tx to be included (Coin, can be null)
-    // #[serde(rename = "uncleCount", deserialize_with = "deserialize_hex_u32")]
     #[serde(rename = "uncles", deserialize_with = "deserialize_hex_uncle_count")]
     pub uncle_count: u32, // Number of uncles in the block
 
     // Merged mining fields
+    // #[serde(
+    //     rename = "bitcoinMergedMiningHeader",
+    //     deserialize_with = "parse_bitcoin_header_to_pow"
+    // )]
     #[serde(
         rename = "bitcoinMergedMiningHeader",
         deserialize_with = "deserialize_hex_bytes"
@@ -139,10 +151,12 @@ impl fmt::Debug for RskBlockHeader {
 }
 
 impl RskBlockHeader {
+    #[must_use]
     pub fn uncle_count(&self) -> u32 {
         todo!("this needs to be calculated ")
     }
 
+    #[must_use]
     pub fn umm_root(&self) -> Vec<u8> {
         // RSKJ treats ummRoot as "absent" by using an empty element when the
         // field is not set (pre-UMM blocks). We mirror that behaviour instead
@@ -356,7 +370,7 @@ where
         )));
     }
 
-    Ok(s.len() as u32)
+    u32::try_from(s.len()).map_err(serde::de::Error::custom)
 }
 
 pub fn deserialize_hex_bytes_20<'de, D>(deserializer: D) -> Result<[u8; 20], D::Error>

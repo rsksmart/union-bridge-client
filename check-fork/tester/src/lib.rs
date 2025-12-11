@@ -18,28 +18,9 @@ const SUPERBLOCK_THRESHOLD_FACTOR: u64 = 20;
 // todo(fede) this should contain an RskBlockHeader
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct RskBlock {
-    // #[serde(
-    //     deserialize_with = "parse_hex_to_u64",
-    //     serialize_with = "parse_u64_to_hex"
-    // )]
-    // number: u64,
     hash: H256,
     #[serde(flatten)]
     header: RskBlockHeader,
-    // #[serde(rename = "parentHash")]
-    // parent: H256,
-    // #[serde(deserialize_with = "parse_rsk_difficulty")]
-    // difficulty: U256,
-    // #[serde(
-    //     deserialize_with = "parse_hex_to_u64",
-    //     serialize_with = "parse_u64_to_hex"
-    // )]
-    // timestamp: u64,
-    // #[serde(
-    //     rename = "bitcoinMergedMiningHeader",
-    //     deserialize_with = "parse_bitcoin_header_to_pow"
-    // )]
-    // pow: H256,
     bridge_event: Option<BridgeEvent>,
     #[serde(default)]
     uncles: Vec<RskBlock>,
