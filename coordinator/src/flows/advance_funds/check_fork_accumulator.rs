@@ -1,4 +1,8 @@
-use check_fork::{Block, CheckForkArgs};
+use crate::blockchain_tracker::{BlockConfirmations, BlockchainObserver};
+use crate::config::REQUIRED_CONFIRMATIONS;
+use crate::types::AdvanceFundsEvent;
+use check_fork::CheckForkArgs;
+use check_fork::block_header::Block;
 use common::types::{BlockPow, RskBlock, RskBlockAndUncles};
 use log::{debug, info};
 use primitive_types::{H256, U256};

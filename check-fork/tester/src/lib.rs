@@ -4,7 +4,8 @@ use std::string::ToString;
 
 use bitcoin::blockdata::block::Header;
 use bitcoin::consensus::encode::deserialize as btc_deserialize;
-use check_fork::{Block, BridgeEvent};
+use check_fork::BridgeEvent;
+use check_fork::block_header::Block;
 use primitive_types::{H256, U256};
 use reqwest::Client;
 use serde::{Deserialize, Deserializer, Serialize, de};

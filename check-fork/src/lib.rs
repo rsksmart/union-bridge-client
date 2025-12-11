@@ -1,28 +1,12 @@
+use crate::block_header::TmpRskBlockHeader;
+use block_header::Block;
 use primitive_types::{H256, U256};
 use serde::{Deserialize, Serialize};
 
+pub mod block_header;
+
 // TODO configurable
 pub const SUPERBLOCK_TIMES_DIFFICULTY: u8 = 20;
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Block {
-    pub number: u64,
-    pub hash: H256,
-    pub parent: H256,
-    pub difficulty: U256,
-    pub timestamp: u64,
-    pub bridge_event: Option<BridgeEvent>,
-    pub uncles: Vec<Block>,
-    // alternatively we can receive `bitcoinMergedMiningHeader`, but we would need to include bitcoin crate here, etc.
-    pub pow: H256,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct BridgeEvent {
-    pub utxo_id: String,
-    pub pegout_id: String,
-    pub operator_id: String,
-}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CheckForkArgs {
@@ -34,6 +18,13 @@ pub struct CheckForkArgs {
     pub required_effort: U256,
     pub required_num_blocks: u32,
     pub block_list: Vec<Block>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BridgeEvent {
+    pub utxo_id: String,
+    pub pegout_id: String,
+    pub operator_id: String,
 }
 
 /// Check fork validity and return cumulative `PoW`
@@ -62,9 +53,8 @@ pub fn check_fork(args: &CheckForkArgs) -> Result<U256, &'static str> {
     let required_num_blocks = *required_num_blocks;
 
     //
-    // 1. validate list size
+    // 1. basic validations: validate list size
     //
-
     validate_block_list(required_num_blocks, block_list)?;
 
     //
@@ -80,6 +70,7 @@ pub fn check_fork(args: &CheckForkArgs) -> Result<U256, &'static str> {
         pegout_id,
         operator_id,
     )?;
+    // validate_block_hash(first_block)?;
 
     let mut cumulative_effort = accumulate_effort(U256::zero(), first_block)?;
 
@@ -91,6 +82,7 @@ pub fn check_fork(args: &CheckForkArgs) -> Result<U256, &'static str> {
         let prev_block = &block_list[i - 1];
 
         validate_consecutive_block(block, prev_block)?;
+        // validate_block_hash(block)?;
         cumulative_effort = accumulate_effort(cumulative_effort, block)?;
 
         for uncle in &block.uncles {
@@ -264,6 +256,14 @@ fn calculate_block_effort(block: &Block) -> Result<U256, &'static str> {
     // compute the effort by inverting the pow
     // U256::MAX, the "difficulty 1" target, represents the easiest possible target
     U256::MAX.checked_div(pow).ok_or("0 division on calculate_block_effort")
+}
+
+fn _validate_block_hash(block: &TmpRskBlockHeader) -> Result<(), &'static str> {
+    let actual_hash = block.calculate_block_hash()?;
+    if block.hash != actual_hash {
+        return Err("Block hash is not matching");
+    }
+    Ok(())
 }
 
 #[cfg(test)]

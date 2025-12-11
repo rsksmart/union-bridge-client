@@ -1,6 +1,10 @@
-use primitive_types::{H256, U256};
+use std::fs;
 
-use crate::{Block, BridgeEvent, CheckForkArgs, SUPERBLOCK_TIMES_DIFFICULTY, check_fork};
+use crate::{
+    Block, BridgeEvent, CheckForkArgs, SUPERBLOCK_TIMES_DIFFICULTY,
+    block_header::TestCaseBlockHashValidation, check_fork,
+};
+use primitive_types::{H256, U256};
 
 const DEFAULT_DIFFICULTY: u128 = 5_904_436_352_267_687_415_636;
 const DEFAULT_TIMESTAMP: u64 = 1000;
@@ -478,6 +482,26 @@ fn fails_when_uncle_block_pow_is_lower_than_required() {
     );
 }
 
+#[test]
+fn succeed_if_block_hash_eq_expected_hash() {
+    println!("printing");
+    let test_case = serde_json::from_slice::<TestCaseBlockHashValidation>(
+        &fs::read("src/tests/block.json").unwrap(),
+    )
+    .unwrap();
+
+    println!("Rootstock Block: {test_case:?}");
+
+    let hash = test_case.header.calculate_block_hash().unwrap();
+    let vec = hash.as_bytes().to_vec();
+    let hash_str = hex::encode(vec);
+
+    assert_eq!(
+        test_case.expected_hash.get(2..test_case.expected_hash.len()).unwrap(),
+        hash_str.as_str()
+    );
+}
+
 // TODO add more complex tests, ie: with more than 2 blocks, with more uncles, with more real block data, etc.
 
 fn create_base_block(number: u64, bridge_event: bool) -> Block {
@@ -494,7 +518,7 @@ fn create_base_block(number: u64, bridge_event: bool) -> Block {
             operator_id: format!("operator_{number}"),
         }),
         uncles: vec![],
-        pow: calculate_superblock_effort(U256::from(DEFAULT_DIFFICULTY)), // exact for superblock
+        pow: calculate_superblock_effort(U256::from(DEFAULT_DIFFICULTY)),
     }
 }
 
