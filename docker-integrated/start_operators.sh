@@ -6,6 +6,7 @@ UC_TAG=""
 DOCKER_COMPOSE_ARGS=()
 OPERATOR_ARG=""
 ENVIRONMENT=""
+AUTO_CONFIRM=false
 
 # Display help message
 print_help() {
@@ -23,6 +24,7 @@ print_help() {
   echo "                           - Includes confirmation prompt to prevent accidental data loss"
   echo "                           - Clears all operator state and databases"
   echo "                           - Only allowed with --env local"
+  echo "  --yes, -y                Automatic yes to fresh confirmation prompt (use with caution)"
   echo ""
   echo "Environment Details:"
   echo "  Local:"
@@ -47,6 +49,7 @@ print_help() {
   echo "Examples:"
   echo "  $0 --env local up -d                                     # Start all 4 operators locally"
   echo "  $0 --env local --fresh up -d                             # Clean and start all operators locally"
+  echo "  $0 --env local --fresh --yes up -d                       # Clean and start all operators locally, no confirmation prompt"
   echo "  $0 --env local down                                      # Stop all local operators"
   echo "  $0 --env alphanet --op 1 up -d                           # Start operator 1 in alphanet"
   echo "  $0 --env alphanet --op 2 up -d                           # Start operator 2 in alphanet"
@@ -96,6 +99,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --fresh)
       FRESH=true
+      shift
+      ;;
+    --yes|-y)
+      AUTO_CONFIRM=true
       shift
       ;;
     *)
@@ -171,11 +178,12 @@ fi
 # If requested, clean operator stacks regardless of the main command
 if [[ "${FRESH}" == true ]]; then
   echo "WARNING: --fresh will tear down operators and DELETE ALL VOLUMES (including data)."
-  read -p "Are you sure you want to continue? (yes/no): " confirmation
-
-  if [[ "$confirmation" != "yes" ]]; then
-    echo "Aborted."
-    exit 1
+  if [[ "${AUTO_CONFIRM}" != true ]]; then
+    read -p "Are you sure you want to continue? (yes/no): " confirmation
+    if [[ "$confirmation" != "yes" ]]; then
+      echo "Aborted."
+      exit 1
+    fi
   fi
 
   if [[ "$ENVIRONMENT" == "local" ]]; then
