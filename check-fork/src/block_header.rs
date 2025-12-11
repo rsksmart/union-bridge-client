@@ -48,9 +48,11 @@ pub struct RskBlockHeader {
     pub difficulty: U256, // Target difficulty for this block
     #[serde(rename = "timestamp", deserialize_with = "deserialize_hex_u64")]
     pub timestamp: u64, // Unix time (seconds) when the block was created
-    #[serde(rename = "unclesHash", deserialize_with = "deserialize_hex_h256")]
+    // #[serde(rename = "unclesHash", deserialize_with = "deserialize_hex_h256")]
+    #[serde(rename = "sha3Uncles", deserialize_with = "deserialize_hex_h256")]
     pub uncles_hash: H256, // SHA3-256 hash of the uncles list portion
-    #[serde(rename = "coinbase", deserialize_with = "deserialize_hex_bytes_20")]
+    // #[serde(rename = "coinbase", deserialize_with = "deserialize_hex_bytes_20")]
+    #[serde(rename = "miner", deserialize_with = "deserialize_hex_bytes_20")]
     pub coinbase: [u8; 20], // 160-bit address (RskAddress) - miner's address
     #[serde(rename = "stateRoot", deserialize_with = "deserialize_hex_h256")]
     pub state_root: H256, // SHA3-256 hash of the root node of the state trie
@@ -73,7 +75,8 @@ pub struct RskBlockHeader {
         deserialize_with = "deserialize_hex_u256_option"
     )]
     pub minimum_gas_price: Option<U256>, // Minimum gas price for a tx to be included (Coin, can be null)
-    #[serde(rename = "uncleCount", deserialize_with = "deserialize_hex_u32")]
+    // #[serde(rename = "uncleCount", deserialize_with = "deserialize_hex_u32")]
+    #[serde(rename = "uncles", deserialize_with = "deserialize_hex_uncle_count")]
     pub uncle_count: u32, // Number of uncles in the block
 
     // Merged mining fields
@@ -93,12 +96,12 @@ pub struct RskBlockHeader {
     )]
     pub bitcoin_merged_mining_coinbase_transaction: Vec<u8>, // Bitcoin protobuf serialized coinbase tx (compressed)
 
-    // follwoing fields will be included in the next hardfork (reed)
-    #[serde(rename = "ummRoot", deserialize_with = "deserialize_allways_empty_vec")]
-    pub umm_root: [u8; 20], // UMM root (only if block is UMM, must be exactly 20 bytes)
-                            // Extension fields (RSKIP-351)
-                            // pub version: u8,                                   // Header version
-                            // pub tx_execution_sublists_edges: Option<Vec<u16>>, // Edges of transaction execution sublists
+                                                             // follwoing fields will be included in the next hardfork (reed)
+                                                             // #[serde(rename = "ummRoot", deserialize_with = "deserialize_allways_empty_vec")]
+                                                             // pub umm_root: [u8; 20], // UMM root (only if block is UMM, must be exactly 20 bytes)
+                                                             // Extension fields (RSKIP-351)
+                                                             // pub version: u8,                                   // Header version
+                                                             // pub tx_execution_sublists_edges: Option<Vec<u16>>, // Edges of transaction execution sublists
 }
 
 impl fmt::Debug for RskBlockHeader {
@@ -136,6 +139,17 @@ impl fmt::Debug for RskBlockHeader {
 }
 
 impl RskBlockHeader {
+    pub fn uncle_count(&self) -> u32 {
+        todo!("this needs to be calculated ")
+    }
+
+    pub fn umm_root(&self) -> Vec<u8> {
+        // RSKJ treats ummRoot as "absent" by using an empty element when the
+        // field is not set (pre-UMM blocks). We mirror that behaviour instead
+        // of injecting 20 zeroed bytes, which changes the RLP.
+        Vec::new()
+    }
+
     pub fn calculate_block_hash(&self) -> Result<H256, &'static str> {
         let rlp_encoded: Vec<u8> = self.encode_rlp()?;
         let mut hasher = Keccak256::new();
@@ -169,7 +183,7 @@ impl RskBlockHeader {
             encode_coin_value("paid_fees", &self.paid_fees),
             encode_signed_coin_value("minimum_gas_price", &minimum_gas_price),
             encode_u32_value("uncle_count", self.uncle_count),
-            encode_bytes("umm_root", &[]),
+            encode_bytes("umm_root", &self.umm_root()),
         ];
 
         encoded_fields.push(encode_bytes(
@@ -274,8 +288,11 @@ fn u256_be_trimmed(value: &U256) -> Vec<u8> {
 }
 
 fn u256_be_coin_bytes(value: &U256) -> Vec<u8> {
+    // RSKJ encodes coin values using RLP's empty element for zero amounts,
+    // not a single 0x00 byte. Returning an empty vec reproduces the same
+    // `0x80` encoding for zero and trims leading zeroes otherwise.
     if value.is_zero() {
-        return vec![0u8];
+        return Vec::new();
     }
     u256_be_trimmed(value)
 }
@@ -325,6 +342,21 @@ where
     let s: String = Deserialize::deserialize(deserializer)?;
     let s = s.strip_prefix("0x").unwrap_or(&s);
     u32::from_str_radix(s, 16).map_err(serde::de::Error::custom)
+}
+
+pub fn deserialize_hex_uncle_count<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s: Vec<String> = Deserialize::deserialize(deserializer)?;
+    if s.len() != 1 {
+        return Err(serde::de::Error::custom(format!(
+            "expected 1 element, got {}",
+            s.len()
+        )));
+    }
+
+    Ok(s.len() as u32)
 }
 
 pub fn deserialize_hex_bytes_20<'de, D>(deserializer: D) -> Result<[u8; 20], D::Error>

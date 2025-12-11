@@ -484,7 +484,6 @@ fn fails_when_uncle_block_pow_is_lower_than_required() {
 
 #[test]
 fn succeed_if_block_hash_eq_expected_hash() {
-    println!("printing");
     let test_case = serde_json::from_slice::<TestCaseBlockHashValidation>(
         &fs::read("src/tests/block.json").unwrap(),
     )
