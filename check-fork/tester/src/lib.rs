@@ -5,7 +5,7 @@ use std::string::ToString;
 use bitcoin::blockdata::block::Header;
 use bitcoin::consensus::encode::deserialize as btc_deserialize;
 use check_fork::BridgeEvent;
-use check_fork::block_header::Block;
+use check_fork::block_header::{Block, RskBlockHeader};
 use primitive_types::{H256, U256};
 use reqwest::Client;
 use serde::{Deserialize, Deserializer, Serialize, de};
@@ -18,20 +18,28 @@ const SUPERBLOCK_THRESHOLD_FACTOR: u64 = 20;
 // todo(fede) this should contain an RskBlockHeader
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct RskBlock {
-    #[serde(deserialize_with = "parse_hex_to_u64", serialize_with = "parse_u64_to_hex")]
-    number: u64,
+    // #[serde(
+    //     deserialize_with = "parse_hex_to_u64",
+    //     serialize_with = "parse_u64_to_hex"
+    // )]
+    // number: u64,
     hash: H256,
-    #[serde(rename = "parentHash")]
-    parent: H256,
-    #[serde(deserialize_with = "parse_rsk_difficulty")]
-    difficulty: U256,
-    #[serde(deserialize_with = "parse_hex_to_u64", serialize_with = "parse_u64_to_hex")]
-    timestamp: u64,
-    #[serde(
-        rename = "bitcoinMergedMiningHeader",
-        deserialize_with = "parse_bitcoin_header_to_pow"
-    )]
-    pow: H256,
+    #[serde(flatten)]
+    header: RskBlockHeader,
+    // #[serde(rename = "parentHash")]
+    // parent: H256,
+    // #[serde(deserialize_with = "parse_rsk_difficulty")]
+    // difficulty: U256,
+    // #[serde(
+    //     deserialize_with = "parse_hex_to_u64",
+    //     serialize_with = "parse_u64_to_hex"
+    // )]
+    // timestamp: u64,
+    // #[serde(
+    //     rename = "bitcoinMergedMiningHeader",
+    //     deserialize_with = "parse_bitcoin_header_to_pow"
+    // )]
+    // pow: H256,
     bridge_event: Option<BridgeEvent>,
     #[serde(default)]
     uncles: Vec<RskBlock>,
@@ -40,12 +48,13 @@ struct RskBlock {
 impl From<&RskBlock> for Block {
     fn from(rsk_block: &RskBlock) -> Self {
         Block {
-            number: rsk_block.number,
-            hash: rsk_block.hash,
-            parent: rsk_block.parent,
-            difficulty: rsk_block.difficulty,
-            timestamp: rsk_block.timestamp,
-            pow: rsk_block.pow,
+            number: rsk_block.header.number,
+            hash: rsk_block.header.hash,
+            parent: rsk_block.header.parent,
+            difficulty: rsk_block.header.difficulty,
+            timestamp: rsk_block.header.timestamp,
+            // pow: rsk_block.header.pow,
+            pow: H256::from_slice(rsk_block.header.bitcoin_merged_mining_header.as_slice()),
             bridge_event: rsk_block.bridge_event.clone(),
             uncles: rsk_block.uncles.iter().map(Block::from).collect(),
         }
@@ -138,26 +147,32 @@ fn add_bridge_event(blocks: &[RskBlock]) -> Vec<Block> {
 
 fn log_if_superblock(block: &RskBlock) -> Result<(), Box<dyn Error>> {
     // parse the block's actual PoW (from bitcoinMergedMiningHeader field) to decimal
-    let actual_block_pow = U256::from_big_endian(block.pow.as_bytes());
+    let actual_block_pow =
+        U256::from_big_endian(block.header.bitcoin_merged_mining_header.as_slice());
 
     // compute the PoW target from difficulty by inversion
     // U256::MAX, the "difficulty 1" target, represents the easiest possible target
     // this conversion allows comparing target difficulty with the actual block PoW
-    let target_block_pow =
-        U256::MAX.checked_div(block.difficulty).ok_or("0 division on log_if_superblock")?;
+    let target_block_pow = U256::MAX
+        .checked_div(block.header.difficulty)
+        .ok_or("0 division on log_if_superblock")?;
 
     // define a superblock as one whose PoW is at least N times harder than the required target
     let superblock_pow = target_block_pow / SUPERBLOCK_THRESHOLD_FACTOR;
 
     // if the actual block PoW is lower (i.e., harder) than the SuperBlock threshold, we found a SuperBlock
     if actual_block_pow < superblock_pow {
-        let timestamp_i64 = i64::try_from(block.timestamp).unwrap_or(i64::MAX);
-        let formatted_time =
-            chrono::DateTime::from_timestamp(timestamp_i64, 0).unwrap().format("%Y-%m-%d %H:%M:%S");
+        let timestamp_i64 = i64::try_from(block.header.timestamp).unwrap_or(i64::MAX);
+        let formatted_time = chrono::DateTime::from_timestamp(timestamp_i64, 0)
+            .unwrap()
+            .format("%Y-%m-%d %H:%M:%S");
 
         println!(
             "SuperBlock: {}, pow: {:?}, threshold: 0x{:064x}, time: {}",
-            block.number, &block.pow, superblock_pow, formatted_time
+            block.header.number,
+            &block.header.bitcoin_merged_mining_header,
+            superblock_pow,
+            formatted_time
         );
     }
 
