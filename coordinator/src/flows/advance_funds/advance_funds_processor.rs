@@ -357,6 +357,11 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::config::REQUIRED_CONFIRMATIONS;
+    use crate::coordinator::tests::MockRskContractsGatewayApi;
+    use crate::flows::advance_funds::test_utils::{create_fake_block, create_fake_child_block};
+    use crate::types::EventWithBlock;
     use alloy_primitives::U256 as AlloyU256;
     use common::mocks::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
     use common::msg_broker::bitvmx_types::OutgoingBitVMXApiMessages;
@@ -470,12 +475,12 @@ mod tests {
         );
         let request_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
-        let any_block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-            request_block.number() + 1,
+        let any_block = RskBlockAndUncles::new_no_uncles(create_fake_child_block(
+            request_block.block(),
             U256::from(105),
         ));
-        let advance_funds_block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-            any_block.number() + 1,
+        let advance_funds_block = RskBlockAndUncles::new_no_uncles(create_fake_child_block(
+            any_block.block(),
             U256::from(51),
         ));
 
@@ -544,12 +549,12 @@ mod tests {
         );
         let request_block_1 =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
-        let request_block_2 = RskBlockAndUncles::new_no_uncles(create_fake_block(
-            request_block_1.number() + 1,
+        let request_block_2 = RskBlockAndUncles::new_no_uncles(create_fake_child_block(
+            request_block_1.block(),
             U256::from(52),
         ));
-        let advance_funds_block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-            request_block_2.number() + 1,
+        let advance_funds_block = RskBlockAndUncles::new_no_uncles(create_fake_child_block(
+            request_block_2.block(),
             U256::from(51),
         ));
 
@@ -753,8 +758,8 @@ mod tests {
             .expect("0 division");
         let block_effort = U256::from_big_endian(&block_effort.to_be_bytes_vec());
 
-        let advance_funds_block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-            request_block.number() + 1,
+        let advance_funds_block = RskBlockAndUncles::new_no_uncles(create_fake_child_block(
+            request_block.block(),
             block_effort,
         ));
 
@@ -785,7 +790,7 @@ mod tests {
         );
 
         let block_with_uncle = RskBlockAndUncles::new(
-            create_fake_block(advance_funds_block.number() + 1, block_effort),
+            create_fake_child_block(advance_funds_block.block(), block_effort),
             vec![advance_funds_sibling],
         );
         processor.process_new_block(&block_with_uncle).expect("Should process block");
@@ -795,12 +800,16 @@ mod tests {
 
         // starting in 2 because we already have: the one created after the kickoff event and the one before this loop
         // we stop at -2: range limit exclusive and leaving one confirmation pending
-        for i in 2..=required_blocks_plus_confirmations - 2 {
-            let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-                advance_funds_block.number() + u64::from(i),
+        let mut prev_block = block_with_uncle.block().clone();
+        for _ in 2..=required_blocks_plus_confirmations - 2 {
+            let block = RskBlockAndUncles::new_no_uncles(create_fake_child_block(
+                &prev_block,
                 block_effort,
             ));
-            processor.process_new_block(&block).expect("Should process block");
+            prev_block = block.block().clone();
+            processor
+                .process_new_block(&block)
+                .expect("Should process block");
         }
 
         // confirmations -1, not ready
@@ -812,11 +821,11 @@ mod tests {
         assert!(processor.chain_view.is_observed());
         assert!(processor.chain_view.has_observer(pegout_id));
 
-        let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-            advance_funds_block.number() + u64::from(required_blocks_plus_confirmations) - 1,
-            block_effort,
-        ));
-        processor.process_new_block(&block).expect("Should process block");
+        let block =
+            RskBlockAndUncles::new_no_uncles(create_fake_child_block(&prev_block, block_effort));
+        processor
+            .process_new_block(&block)
+            .expect("Should process block");
 
         // now we have enough confirmations
 
@@ -884,8 +893,8 @@ mod tests {
             .expect("0 division");
         let block_effort = U256::from_big_endian(&block_effort.to_be_bytes_vec());
 
-        let advance_funds_block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-            request_block.number() + 1,
+        let advance_funds_block = RskBlockAndUncles::new_no_uncles(create_fake_child_block(
+            request_block.block(),
             block_effort,
         ));
 
@@ -916,7 +925,7 @@ mod tests {
         );
 
         let block_with_uncle = RskBlockAndUncles::new(
-            create_fake_block(advance_funds_block.number() + 1, block_effort),
+            create_fake_child_block(advance_funds_block.block(), block_effort),
             vec![advance_funds_sibling],
         );
         processor.process_new_block(&block_with_uncle).expect("Should process block");
@@ -930,12 +939,16 @@ mod tests {
 
         // starting in 2 because we already have: the one created before the kickoff event and the one before this loop
         // we stop at -2: range limit exclusive and leaving one confirmation pending
-        for i in 2..=required_blocks_plus_confirmations - 2 {
-            let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-                advance_funds_block.number() + u64::from(i),
+        let mut prev_block = block_with_uncle.block().clone();
+        for _ in 2..=required_blocks_plus_confirmations - 2 {
+            let block = RskBlockAndUncles::new_no_uncles(create_fake_child_block(
+                &prev_block,
                 block_effort,
             ));
-            processor.process_new_block(&block).expect("Should process block");
+            prev_block = block.block().clone();
+            processor
+                .process_new_block(&block)
+                .expect("Should process block");
         }
 
         // confirmations -1, not ready
@@ -947,11 +960,11 @@ mod tests {
         assert!(processor.chain_view.is_observed());
         assert!(processor.chain_view.has_observer(pegout_id));
 
-        let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-            advance_funds_block.number() + u64::from(required_blocks_plus_confirmations) - 1,
-            block_effort,
-        ));
-        processor.process_new_block(&block).expect("Should process block");
+        let block =
+            RskBlockAndUncles::new_no_uncles(create_fake_child_block(&prev_block, block_effort));
+        processor
+            .process_new_block(&block)
+            .expect("Should process block");
 
         // now we have enough confirmations
 
@@ -1046,8 +1059,8 @@ mod tests {
 
         let request_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
-        let advance_funds_block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-            request_block.number() + 1,
+        let advance_funds_block = RskBlockAndUncles::new_no_uncles(create_fake_child_block(
+            request_block.block(),
             U256::from(100),
         ));
 
@@ -1102,7 +1115,7 @@ mod tests {
         );
 
         let request_block_1 = create_fake_block(100.into(), U256::from(50));
-        let request_block_2 = create_fake_block(101.into(), U256::from(51));
+        let request_block_2 = create_fake_child_block(&request_block_1, U256::from(51));
 
         let pegout_id_1 = "peg123";
         let pegout_id_2 = "peg456";
@@ -1346,8 +1359,8 @@ mod tests {
             .expect("0 division");
         let block_effort = U256::from_big_endian(&block_effort.to_be_bytes_vec());
 
-        let advance_funds_block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-            request_block.number() + 1,
+        let advance_funds_block = RskBlockAndUncles::new_no_uncles(create_fake_child_block(
+            request_block.block(),
             block_effort,
         ));
 
@@ -1369,11 +1382,13 @@ mod tests {
 
         // build original chain - process several blocks after kickoff
         let mut original_blocks = Vec::new();
-        for i in 1..=4 {
-            let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-                advance_funds_block.number() + i,
+        let mut prev_block = advance_funds_block.block().clone();
+        for _ in 1..=4 {
+            let block = RskBlockAndUncles::new_no_uncles(create_fake_child_block(
+                &prev_block,
                 block_effort,
             ));
+            prev_block = block.block().clone();
             original_blocks.push(block.clone());
             processor.process_new_block(&block).expect("Should process block");
         }
@@ -1391,8 +1406,10 @@ mod tests {
         let higher_effort = block_effort + U256::from(10); // Only slightly higher
 
         // first alternative block (replaces original_blocks[1])
-        let alt_block_1 =
-            RskBlockAndUncles::new_no_uncles(create_fake_block(reorg_point, higher_effort));
+        let alt_block_1 = RskBlockAndUncles::new_no_uncles(create_fake_child_block(
+            original_blocks[0].block(),
+            higher_effort,
+        ));
 
         // process the alternative block - this should trigger reorg detection
         processor.process_new_block(&alt_block_1).expect("Should handle reorg");
@@ -1434,10 +1451,14 @@ mod tests {
         assert!(processor.check_fork_accumulator.is_some());
 
         // continue building the alternative chain
-        let mut alt_blocks = vec![alt_block_1];
-        for i in 1..=5 {
-            let block =
-                RskBlockAndUncles::new_no_uncles(create_fake_block(reorg_point + i, higher_effort));
+        let mut alt_blocks = vec![alt_block_1.clone()];
+        let mut prev_alt_block = alt_block_1.block().clone();
+        for _ in 1..=5 {
+            let block = RskBlockAndUncles::new_no_uncles(create_fake_child_block(
+                &prev_alt_block,
+                higher_effort,
+            ));
+            prev_alt_block = block.block().clone();
             alt_blocks.push(block.clone());
             processor.process_new_block(&block).expect("Should process alternative block");
 
@@ -1459,12 +1480,15 @@ mod tests {
             // advance funds still active - continue with additional blocks until completion
             let mut additional_blocks_needed = 10; // arbitrary limit to prevent infinite loop
 
-            for i in 6..=15 {
-                let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-                    reorg_point + i,
+            for _ in 6..=15 {
+                let block = RskBlockAndUncles::new_no_uncles(create_fake_child_block(
+                    &prev_alt_block,
                     higher_effort,
                 ));
-                processor.process_new_block(&block).expect("Should process additional block");
+                prev_alt_block = block.block().clone();
+                processor
+                    .process_new_block(&block)
+                    .expect("Should process additional block");
 
                 // check if advance funds completed
                 if processor.check_fork_accumulator.is_none() {
@@ -1518,11 +1542,13 @@ mod tests {
 
         // build several blocks after request
         let mut original_blocks = Vec::new();
+        let mut prev_block = request_block.block().clone();
         for i in 1..=5 {
-            let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-                request_block.number() + i,
+            let block = RskBlockAndUncles::new_no_uncles(create_fake_child_block(
+                &prev_block,
                 U256::from(50 + i),
             ));
+            prev_block = block.block().clone();
             original_blocks.push(block.clone());
             processor.process_new_block(&block).expect("Should process block");
         }
@@ -1537,13 +1563,14 @@ mod tests {
 
         // create alternative blocks
         let mut alternative_blocks = Vec::new();
-        for i in 0..=7 {
+        let mut prev_alt_block = request_block.block().clone();
+        for _ in 0..=7 {
             // more blocks than original to ensure higher total difficulty
-            // use a different block number offset to make them truly different
-            let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-                reorg_point + i,
+            let block = RskBlockAndUncles::new_no_uncles(create_fake_child_block(
+                &prev_alt_block,
                 higher_difficulty,
             ));
+            prev_alt_block = block.block().clone();
             alternative_blocks.push(block.clone());
             processor.process_new_block(&block).expect("Should handle deep reorg");
         }
@@ -1660,8 +1687,8 @@ mod tests {
             .expect("0 division");
         let block_effort = U256::from_big_endian(&block_effort.to_be_bytes_vec());
 
-        let advance_funds_block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-            request_block.number() + 1,
+        let advance_funds_block = RskBlockAndUncles::new_no_uncles(create_fake_child_block(
+            request_block.block(),
             block_effort,
         ));
 
@@ -1679,11 +1706,13 @@ mod tests {
 
         // build blocks until we have enough PoW but are still in confirmation period
         let mut pow_blocks = Vec::new();
-        for i in 1..required_blocks {
-            let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-                advance_funds_block.number() + u64::from(i),
+        let mut prev_block = advance_funds_block.block().clone();
+        for _ in 1..required_blocks {
+            let block = RskBlockAndUncles::new_no_uncles(create_fake_child_block(
+                &prev_block,
                 block_effort,
             ));
+            prev_block = block.block().clone();
             pow_blocks.push(block.clone());
             processor.process_new_block(&block).expect("Should process block");
         }
@@ -1691,11 +1720,12 @@ mod tests {
         // add some confirmation blocks but not enough to complete
         let mut confirmation_blocks = Vec::new();
         let partial_confirmations = REQUIRED_CONFIRMATIONS / 2; // Only half the confirmations
-        for i in 0..partial_confirmations {
-            let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-                advance_funds_block.number() + u64::from(required_blocks) + u64::from(i),
+        for _ in 0..partial_confirmations {
+            let block = RskBlockAndUncles::new_no_uncles(create_fake_child_block(
+                &prev_block,
                 block_effort,
             ));
+            prev_block = block.block().clone();
             confirmation_blocks.push(block.clone());
             processor.process_new_block(&block).expect("Should process confirmation block");
         }
@@ -1708,16 +1738,17 @@ mod tests {
 
         // now simulate a reorg during the confirmation period
         // reorg from a point during the confirmation period
-        let reorg_point = advance_funds_block.number() + u64::from(required_blocks) + 1;
         let higher_effort = block_effort * 2;
 
         // create alternative chain with higher effort that will complete the advance funds
         let mut alternative_blocks = Vec::new();
-        for i in 0..required_blocks_plus_confirmations {
-            let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-                reorg_point + u64::from(i),
+        let mut prev_alt_block = pow_blocks.last().unwrap().block().clone();
+        for _ in 0..required_blocks_plus_confirmations {
+            let block = RskBlockAndUncles::new_no_uncles(create_fake_child_block(
+                &prev_alt_block,
                 higher_effort,
             ));
+            prev_alt_block = block.block().clone();
             alternative_blocks.push(block.clone());
             processor.process_new_block(&block).expect("Should handle reorg during confirmation");
         }

@@ -230,6 +230,8 @@ impl CheckForkAccumulator {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::flows::advance_funds::test_utils::create_fake_block;
     use common::mocks::fake_contracts::FakePegManager::AdvanceFunds;
     use common::types::{BlockHash, BlockNumber, RskBlockAndUncles, TxHash};
     use primitive_types::H256;
@@ -453,9 +455,15 @@ mod tests {
         let required_effort = U256::from(1000);
         let required_num_blocks = 3;
         let advance_funds_blockk_number = 100;
-        let advance_funds_block_hash = H256::from_low_u64_be(advance_funds_blockk_number);
         let expected_timestamp = advance_funds_blockk_number * 1000; // timestamp is number * 1000
         let tx_hash = H256::from_low_u64_be(100);
+
+        // create the block first to get the real hash
+        let advance_funds_block = create_fake_block(
+            BlockNumber::from(advance_funds_blockk_number),
+            U256::from(300),
+        );
+        let advance_funds_block_hash = advance_funds_block.hash().value();
 
         let event = create_fake_advance_funds_event(
             pegout_id,
@@ -470,8 +478,6 @@ mod tests {
 
         let mut checker = CheckForkAccumulator::new(&event, &[], REQUIRED_CONFIRMATIONS);
 
-        let advance_funds_block =
-            create_fake_block(BlockNumber::from(advance_funds_blockk_number), U256::from(300));
         let advance_funds_block_with_uncles = RskBlockAndUncles::new(advance_funds_block, vec![]);
 
         checker.on_block_added(&advance_funds_block_with_uncles);
@@ -899,8 +905,14 @@ mod tests {
         let required_effort = U256::from(1000);
         let required_num_blocks = 3;
         let advance_funds_block_number = 100;
-        let advance_funds_hash = H256::from_low_u64_be(advance_funds_block_number);
         let tx_hash = H256::from_low_u64_be(100);
+
+        // create the block first to get the real hash
+        let advance_funds_block = create_fake_block(
+            BlockNumber::from(advance_funds_block_number),
+            U256::from(300),
+        );
+        let advance_funds_hash = advance_funds_block.hash().value();
 
         let event = create_fake_advance_funds_event(
             pegout_id,
@@ -916,8 +928,6 @@ mod tests {
         let mut checker = CheckForkAccumulator::new(&event, &[], REQUIRED_CONFIRMATIONS);
 
         // add the kickoff block
-        let advance_funds_block =
-            create_fake_block(BlockNumber::from(advance_funds_block_number), U256::from(300));
         let advance_funds_block_with_uncles = RskBlockAndUncles::new(advance_funds_block, vec![]);
 
         checker.on_block_added(&advance_funds_block_with_uncles);
@@ -940,8 +950,14 @@ mod tests {
         let required_effort = U256::from(1000);
         let required_num_blocks = 3;
         let advance_funds_block_number = 100;
-        let advance_funds_hash = H256::from_low_u64_be(advance_funds_block_number);
         let tx_hash = H256::from_low_u64_be(100);
+
+        // create the advance_funds block to get its hash
+        let advance_funds_block = create_fake_block(
+            BlockNumber::from(advance_funds_block_number),
+            U256::from(300),
+        );
+        let advance_funds_hash = advance_funds_block.hash().value();
 
         let event = create_fake_advance_funds_event(
             pegout_id,
@@ -956,7 +972,7 @@ mod tests {
 
         let mut checker = CheckForkAccumulator::new(&event, &[], REQUIRED_CONFIRMATIONS);
 
-        // add a non-kickoff block
+        // add a non-kickoff block (different number, different hash)
         let non_advance_funds_block_number = 101;
         let block =
             create_fake_block_with_uncles(non_advance_funds_block_number, U256::from(300), vec![]);
