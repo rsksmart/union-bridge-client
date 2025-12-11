@@ -9,17 +9,8 @@ use sha3::Digest;
 use sha3::Keccak256;
 use std::fmt;
 
-use crate::BridgeEvent;
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Block {
-    pub bridge_event: Option<BridgeEvent>,
-    #[serde(default)]
-    pub uncles: Vec<Block>,
-    // alternatively we can receive `bitcoinMergedMiningHeader`, but we would need to include bitcoin crate here, etc.
-    pub pow: H256,
-    pub header: RskBlockHeader,
-}
+use crate::rlp::encode_coin_value;
+use crate::rlp::encode_signed_coin_value;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct RskBlockHeader {
@@ -131,40 +122,6 @@ impl Default for RskBlockHeader {
     }
 }
 
-impl fmt::Debug for RskBlockHeader {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let short = |h: &H256| {
-            let hex = hex::encode(h);
-            format!("0x{}…{}", &hex[..8], &hex[hex.len().saturating_sub(4)..])
-        };
-
-        write!(
-            f,
-            "RskBlockHeader {{ number: {}, hash: {}, parent: {}, diff: {}, ts: {}, uncles_hash: {}, coinbase: 0x{}, state_root: {}, tx_root: {}, receipt_root: {}, logs_bloom: {} bytes, gas_limit: 0x{}, gas_used: {}, extra_data: {} bytes, paid_fees: {}, min_gas_price: {:?}, uncle_count: {}, mm_header: {} bytes, mm_merkle_proof: {} bytes, mm_coinbase: {} bytes }}",
-            self.number,
-            short(&self.hash),
-            short(&self.parent),
-            self.difficulty,
-            self.timestamp,
-            short(&self.uncles_hash),
-            hex::encode(self.coinbase),
-            short(&self.state_root),
-            short(&self.tx_trie_root),
-            short(&self.receipt_trie_root),
-            self.logs_bloom.len(),
-            hex::encode(&self.gas_limit),
-            self.gas_used,
-            self.extra_data.len(),
-            self.paid_fees,
-            self.minimum_gas_price,
-            self.uncle_count,
-            self.bitcoin_merged_mining_header.len(),
-            self.bitcoin_merged_mining_merkle_proof.len(),
-            self.bitcoin_merged_mining_coinbase_transaction.len()
-        )
-    }
-}
-
 impl RskBlockHeader {
     pub fn new_with(number: u64, difficulty: U256, parent: Option<H256>, timestamp: u64) -> Self {
         let mut header = RskBlockHeader::default();
@@ -194,30 +151,26 @@ impl RskBlockHeader {
             return Err("minimum_gas_price is None");
         };
 
-        let mut encoded_fields: Vec<Vec<u8>> = vec![
-            encode_h256("parent", &self.parent),
-            encode_h256("uncles_hash", &self.uncles_hash),
-            encode_bytes("coinbase", self.coinbase.as_slice()),
-            encode_h256("state_root", &self.state_root),
-            encode_h256("tx_trie_root", &self.tx_trie_root),
-            encode_h256("receipt_trie_root", &self.receipt_trie_root),
-            encode_bytes("logs_bloom", self.logs_bloom.as_slice()),
+        let encoded_fields: Vec<Vec<u8>> = vec![
+            alloy_rlp::encode(self.parent.as_bytes()),
+            alloy_rlp::encode(self.uncles_hash.as_bytes()),
+            alloy_rlp::encode(self.coinbase.as_slice()),
+            alloy_rlp::encode(self.state_root.as_bytes()),
+            alloy_rlp::encode(self.tx_trie_root.as_bytes()),
+            alloy_rlp::encode(self.receipt_trie_root.as_bytes()),
+            alloy_rlp::encode(self.logs_bloom.as_slice()),
             encode_coin_value("difficulty", &self.difficulty),
-            encode_u64_value("number", self.number),
-            encode_bytes("gas_limit", self.gas_limit.as_slice()),
-            encode_u64_value("gas_used", self.gas_used),
-            encode_u64_value("timestamp", self.timestamp),
-            encode_bytes("extra_data", self.extra_data.as_slice()),
+            alloy_rlp::encode(self.number),
+            alloy_rlp::encode(self.gas_limit.as_slice()),
+            alloy_rlp::encode(self.gas_used),
+            alloy_rlp::encode(self.timestamp),
+            alloy_rlp::encode(self.extra_data.as_slice()),
             encode_coin_value("paid_fees", &self.paid_fees),
             encode_signed_coin_value("minimum_gas_price", &minimum_gas_price),
-            encode_u32_value("uncle_count", self.uncle_count),
-            encode_bytes("umm_root", &Vec::new()),
+            alloy_rlp::encode(self.uncle_count),
+            alloy_rlp::encode::<&[u8]>(&[]), // umm_root is always empty (not even present in json-rpc)
+            alloy_rlp::encode(self.bitcoin_merged_mining_header.as_slice()),
         ];
-
-        encoded_fields.push(encode_bytes(
-            "bitcoin_merged_mining_header",
-            self.bitcoin_merged_mining_header.as_slice(),
-        ));
 
         // encoded_fields.push(encode_bytes(
         //     "bitcoin_merged_mining_merkle_proof",
@@ -250,76 +203,6 @@ pub fn encode_list(rlp_list: Vec<Vec<u8>>) -> Vec<u8> {
     out
 }
 
-fn encode_h256(label: &str, value: &H256) -> Vec<u8> {
-    let v = alloy_rlp::encode(value.as_bytes());
-    println!("RLP encode {label}: 0x{}", hex::encode(&v));
-    v
-}
-
-fn encode_bytes(label: &str, value: &[u8]) -> Vec<u8> {
-    let v = alloy_rlp::encode(value);
-    println!("RLP encode {label}: {}", hex::encode(&v));
-    v
-}
-
-fn encode_u64_value(label: &str, value: u64) -> Vec<u8> {
-    let v = alloy_rlp::encode(value);
-    println!("RLP encode {label}: {}", hex::encode(&v));
-    v
-}
-
-fn encode_u32_value(label: &str, value: u32) -> Vec<u8> {
-    let v = alloy_rlp::encode(value);
-    println!("RLP encode {label}: {}", hex::encode(&v));
-    v
-}
-
-fn encode_coin_value(label: &str, value: &U256) -> Vec<u8> {
-    let v = alloy_rlp::encode(u256_be_coin_bytes(value).as_slice());
-    println!("RLP encode {label}: {}", hex::encode(&v));
-    v
-}
-
-fn encode_signed_coin_value(label: &str, value: &U256) -> Vec<u8> {
-    // RLP integers are big-endian: 0 -> 0x80, 0x00–0x7f encode as-is,
-    // and if the MSB≥0x80 we prefix 0x00 to keep the value positive
-    // before adding the length prefix.
-    let mut bytes = u256_be_coin_bytes(value);
-    if bytes.first().is_some_and(|b| *b >= 0x80) {
-        let mut prefixed = Vec::with_capacity(bytes.len() + 1);
-        prefixed.push(0); // we add a "0x00" prefix to keep the value positive
-        prefixed.extend_from_slice(&bytes);
-        bytes = prefixed;
-    }
-    let v = alloy_rlp::encode(bytes.as_slice());
-    println!("RLP encode {label}: {}", hex::encode(&v));
-    v
-}
-
-fn u256_be_trimmed(value: &U256) -> Vec<u8> {
-    // positive integers must be represented in big-endian binary form with
-    // no leading zeroes (thus making the integer value zero equivalent to
-    // the empty byte array). Deserialized positive integers with leading
-    // zeroes must be treated as invalid by any higher-order protocol using RLP.
-    // we inherit this from ethereum, if any doubts checkout the ethereum yellow paper.
-    let buf = value.to_big_endian();
-    let first_non_zero = buf.iter().position(|&b| b != 0).unwrap_or(buf.len());
-    match first_non_zero {
-        idx if idx == buf.len() => Vec::new(),
-        idx => buf[idx..].to_vec(),
-    }
-}
-
-fn u256_be_coin_bytes(value: &U256) -> Vec<u8> {
-    // RSKJ encodes coin values using RLP's empty element for zero amounts,
-    // not a single 0x00 byte. Returning an empty vec reproduces the same
-    // `0x80` encoding for zero and trims leading zeroes otherwise.
-    if value.is_zero() {
-        return Vec::new();
-    }
-    u256_be_trimmed(value)
-}
-
 pub fn deserialize_hex_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
 where
     D: Deserializer<'de>,
@@ -336,7 +219,6 @@ where
     let s: String = Deserialize::deserialize(deserializer)?;
     let s = s.strip_prefix("0x").unwrap_or(&s);
     let bytes = hex::decode(s).map_err(serde::de::Error::custom)?;
-    H256::from_slice(&bytes);
     Ok(H256::from_slice(&bytes))
 }
 
@@ -409,11 +291,36 @@ where
     }
 }
 
-pub fn deserialize_allways_empty_vec<'de, D>(deserializer: D) -> Result<[u8; 20], D::Error>
-where
-    D: Deserializer<'de>,
-{
-    // Consume whatever comes (string, bytes, null, etc.) and ignore it.
-    let _ = serde::de::IgnoredAny::deserialize(deserializer)?;
-    Ok([0u8; 20])
+impl fmt::Debug for RskBlockHeader {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let short = |h: &H256| {
+            let hex = hex::encode(h);
+            format!("0x{}…{}", &hex[..8], &hex[hex.len().saturating_sub(4)..])
+        };
+
+        write!(
+            f,
+            "RskBlockHeader {{ number: {}, hash: {}, parent: {}, diff: {}, ts: {}, uncles_hash: {}, coinbase: 0x{}, state_root: {}, tx_root: {}, receipt_root: {}, logs_bloom: {} bytes, gas_limit: 0x{}, gas_used: {}, extra_data: {} bytes, paid_fees: {}, min_gas_price: {:?}, uncle_count: {}, mm_header: {} bytes, mm_merkle_proof: {} bytes, mm_coinbase: {} bytes }}",
+            self.number,
+            short(&self.hash),
+            short(&self.parent),
+            self.difficulty,
+            self.timestamp,
+            short(&self.uncles_hash),
+            hex::encode(self.coinbase),
+            short(&self.state_root),
+            short(&self.tx_trie_root),
+            short(&self.receipt_trie_root),
+            self.logs_bloom.len(),
+            hex::encode(&self.gas_limit),
+            self.gas_used,
+            self.extra_data.len(),
+            self.paid_fees,
+            self.minimum_gas_price,
+            self.uncle_count,
+            self.bitcoin_merged_mining_header.len(),
+            self.bitcoin_merged_mining_merkle_proof.len(),
+            self.bitcoin_merged_mining_coinbase_transaction.len()
+        )
+    }
 }

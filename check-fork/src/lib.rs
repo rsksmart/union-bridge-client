@@ -1,6 +1,7 @@
 pub mod block_header;
+pub mod rlp;
 
-use block_header::Block;
+use primitive_types::H256;
 use primitive_types::U256;
 use serde::Deserialize;
 use serde::Serialize;
@@ -9,6 +10,16 @@ use crate::block_header::RskBlockHeader;
 
 // TODO configurable
 pub const SUPERBLOCK_TIMES_DIFFICULTY: u8 = 20;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Block {
+    pub bridge_event: Option<BridgeEvent>,
+    #[serde(default)]
+    pub uncles: Vec<Block>,
+    // alternatively we can receive `bitcoinMergedMiningHeader`, but we would need to include bitcoin crate here, etc.
+    pub pow: H256,
+    pub header: RskBlockHeader,
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CheckForkArgs {
