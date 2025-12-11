@@ -1,11 +1,10 @@
-use crate::{
-    contracts::peg_manager::PegManagerContractApi,
-    rsk_gateway::DomainErrors,
-    types::{TriggerOperatorTakeInput, TriggerOperatorTakeOutput},
-};
 use alloy_primitives::FixedBytes;
 use anyhow::Result;
 use log::info;
+
+use crate::contracts::peg_manager::PegManagerContractApi;
+use crate::rsk_gateway::DomainErrors;
+use crate::types::{TriggerOperatorTakeInput, TriggerOperatorTakeOutput};
 
 #[derive(Clone)]
 pub(crate) struct TriggerOperatorTakeInvoke<C: PegManagerContractApi> {
@@ -38,14 +37,16 @@ impl<C: PegManagerContractApi> TriggerOperatorTakeInvoke<C> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::contracts::common::tests::generate_contract_revert_error;
-    use crate::contracts::peg_manager::MockPegManagerContractApi;
-    use alloy_primitives::{FixedBytes, TxHash};
     use std::str::FromStr;
+
+    use alloy_primitives::{FixedBytes, TxHash};
     use union_contracts::bindings::peg_manager::PegManager::{
         PegManagerErrors, PegoutTxidNotFound,
     };
+
+    use super::*;
+    use crate::contracts::common::tests::generate_contract_revert_error;
+    use crate::contracts::peg_manager::MockPegManagerContractApi;
 
     impl TriggerOperatorTakeInvoke<MockPegManagerContractApi> {
         fn new_for_tests(contract: MockPegManagerContractApi) -> Self {

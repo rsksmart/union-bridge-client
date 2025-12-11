@@ -1,3 +1,18 @@
+use std::collections::HashMap;
+use std::rc::Rc;
+
+use anyhow::{Context, Result, anyhow};
+use common::msg_broker::bitvmx_types::{
+    BtcTxSPVProof, OperatorChallengeResult, OutgoingBitVMXApiMessages, ReimbursementResult,
+    TransactionStatus, VariableTypes,
+};
+use common::runtime_sync::RuntimeSync;
+use common::types::RskBlockAndUncles;
+use log::{debug, error, info, trace, warn};
+use sha2::{Digest, Sha256};
+use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
+use uuid::Uuid;
+
 use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
 use crate::config::REQUIRED_CONFIRMATIONS;
 use crate::event_processor::EventProcessor;
@@ -9,19 +24,6 @@ use crate::types::{
     EventStatus, OperatorTakeTriggeredEvent, PegoutRegisteredEvent, RskPegManagerEvents,
     TickScheduler,
 };
-use anyhow::{Context, Result, anyhow};
-use common::msg_broker::bitvmx_types::{
-    BtcTxSPVProof, OperatorChallengeResult, OutgoingBitVMXApiMessages, ReimbursementResult,
-    TransactionStatus, VariableTypes,
-};
-use common::runtime_sync::RuntimeSync;
-use common::types::RskBlockAndUncles;
-use log::{debug, error, info, trace, warn};
-use sha2::{Digest, Sha256};
-use std::collections::HashMap;
-use std::rc::Rc;
-use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
-use uuid::Uuid;
 
 /// Minimum confirmations required before requesting SPV proof for advance funds transactions.
 const ADVANCE_FUNDS_SPV_PROOF_MIN_CONFIRMATIONS: u32 = 1;
@@ -77,9 +79,8 @@ where
             .as_slice()
             .get(..16)
             .ok_or_else(|| anyhow!("SHA256 hash too short for UUID generation"))?;
-        let uuid_bytes: [u8; 16] = slice
-            .try_into()
-            .context("Failed to convert hash slice to UUID bytes")?;
+        let uuid_bytes: [u8; 16] =
+            slice.try_into().context("Failed to convert hash slice to UUID bytes")?;
         Ok(Uuid::from_bytes(uuid_bytes))
     }
 
@@ -151,12 +152,8 @@ where
     }
 
     fn cleanup_completed_flows(&mut self) {
-        let completed: Vec<_> = self
-            .flows
-            .iter()
-            .filter(|(_, flow)| flow.is_done())
-            .map(|(k, _)| *k)
-            .collect();
+        let completed: Vec<_> =
+            self.flows.iter().filter(|(_, flow)| flow.is_done()).map(|(k, _)| *k).collect();
 
         for flow_id in completed {
             debug!("Removing completed advance funds flow {flow_id}");
@@ -190,12 +187,7 @@ where
 
     fn build_operator_take_triggered_event_info(
         event: &OperatorTakeTriggeredEvent,
-    ) -> (
-        String,
-        EventStatus,
-        common::types::BlockNumber,
-        RskPegManagerEvents,
-    ) {
+    ) -> (String, EventStatus, common::types::BlockNumber, RskPegManagerEvents) {
         (
             format!("operator-take-triggered-{}", event.tx_hash),
             event.removed,
@@ -276,8 +268,7 @@ where
                 "Operator take transaction for flow {} has {} confirmations (requires {})",
                 flow_id, tx_status.confirmations, ADVANCE_FUNDS_SPV_PROOF_MIN_CONFIRMATIONS
             );
-            self.tx_status_scheduler
-                .schedule(flow_id, ADVANCE_FUNDS_BLOCKS_DELAY_FOR_TX_CHECK);
+            self.tx_status_scheduler.schedule(flow_id, ADVANCE_FUNDS_BLOCKS_DELAY_FOR_TX_CHECK);
         }
 
         Ok(())
@@ -535,8 +526,7 @@ where
                 .start_confirming(block_num)
                 .context("Starting confirming advance funds event")?;
 
-            self.events_confirming
-                .insert(confirmable_event.id(), confirmable_event);
+            self.events_confirming.insert(confirmable_event.id(), confirmable_event);
         }
 
         Ok(())

@@ -19,12 +19,12 @@ use crate::contracts::member_registry::{GetMemberPublicKeysCall, MemberRegistryC
 use crate::contracts::peg_manager::accept_pegin::AcceptPeginInvoke;
 use crate::contracts::peg_manager::get_temporary_pegin_address::GetTemporaryPeginAddressCall;
 use crate::contracts::peg_manager::notify_check_fork_complete::NotifyCheckForkCompleteInvoke;
+use crate::contracts::peg_manager::register_operator_take::RegisterOperatorTakeInvoke;
 use crate::contracts::peg_manager::register_pegout::RegisterPegoutInvoke;
 use crate::contracts::peg_manager::request_pegin::RequestPeginInvoke;
 use crate::contracts::peg_manager::request_pegout::TryPegoutInvoke;
-use crate::contracts::peg_manager::{FakePegManagerContract, PegManagerContract};
-use crate::contracts::peg_manager::register_operator_take::RegisterOperatorTakeInvoke;
 use crate::contracts::peg_manager::trigger_operator_take::TriggerOperatorTakeInvoke;
+use crate::contracts::peg_manager::{FakePegManagerContract, PegManagerContract};
 use crate::contracts::signature_manager::{
     AddMemberNonceInvoke, AddMemberSignatureInvoke, AddOperatorTakeTxHashInvoke,
     SignatureManagerContract,
@@ -455,13 +455,10 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     ) -> Result<RegisterOperatorTakeOutput, DomainErrors> {
         info!("Interacting with PegManager#registerOperatorTake");
 
-        self.register_operator_take_invoke
-            .run(input)
-            .await
-            .map_err(|err| {
-                error!("Error on register_operator_take_invoke: {err}");
-                err
-            })
+        self.register_operator_take_invoke.run(input).await.map_err(|err| {
+            error!("Error on register_operator_take_invoke: {err}");
+            err
+        })
     }
 
     async fn trigger_operator_take(
@@ -470,13 +467,10 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     ) -> Result<TriggerOperatorTakeOutput, DomainErrors> {
         info!("Interacting with PegManager#triggerOperatorTake");
 
-        self.trigger_operator_take_invoke
-            .run(input)
-            .await
-            .map_err(|err| {
-                error!("Error on trigger_operator_take_invoke: {err}");
-                err
-            })
+        self.trigger_operator_take_invoke.run(input).await.map_err(|err| {
+            error!("Error on trigger_operator_take_invoke: {err}");
+            err
+        })
     }
 
     async fn get_member_public_keys(

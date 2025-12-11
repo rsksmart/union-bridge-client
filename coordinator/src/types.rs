@@ -561,9 +561,7 @@ pub(crate) struct TimeBasedScheduler<K: Eq + Hash + Clone> {
 
 impl<K: Eq + Hash + Clone> TimeBasedScheduler<K> {
     pub fn new() -> Self {
-        Self {
-            pending: HashMap::new(),
-        }
+        Self { pending: HashMap::new() }
     }
 
     /// Schedule a timeout for the given id, expiring after the specified duration in seconds

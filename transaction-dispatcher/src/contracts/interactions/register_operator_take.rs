@@ -1,8 +1,9 @@
+use log::info;
+use union_contracts::bindings::peg_manager::PegManager::BtcTxSPVProof;
+
 use crate::contracts::peg_manager::PegManagerContractApi;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{RegisterOperatorTakeInput, RegisterOperatorTakeOutput};
-use log::info;
-use union_contracts::bindings::peg_manager::PegManager::BtcTxSPVProof;
 
 #[derive(Clone)]
 pub(crate) struct RegisterOperatorTakeInvoke<C: PegManagerContractApi> {

@@ -1,28 +1,26 @@
-use crate::flows::common::TAKE_KEY_INDEX;
-use crate::types::OperatorTakeTriggeredEvent;
-use anyhow::{Context, Result, anyhow};
-use bitcoin::secp256k1::{Parity::Even, XOnlyPublicKey};
-use bitcoin::{PublicKey, Txid};
-use common::{
-    msg_broker::{
-        bitvmx_types::{
-            AdvanceFundsRequest, BtcTxSPVProof, IncomingBitVMXApiMessages, P2PAddress,
-            ReimbursementResult, TransactionStatus, VariableTypes,
-        },
-        broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi},
-    },
-    runtime_sync::RuntimeSync,
-    types::{Address, BlockHash, BlockNumber, CommitteeId, Hash256, TxHash},
-};
-use log::{debug, info};
 use std::rc::Rc;
-use transaction_dispatcher::types::RequestPeginInput;
-use transaction_dispatcher::{
-    rsk_gateway::RskContractsGatewayApi,
-    types::{GetMemberPublicKeysInput, RegisterOperatorTakeOutput},
+
+use anyhow::{Context, Result, anyhow};
+use bitcoin::secp256k1::Parity::Even;
+use bitcoin::secp256k1::XOnlyPublicKey;
+use bitcoin::{PublicKey, Txid};
+use common::msg_broker::bitvmx_types::{
+    AdvanceFundsRequest, BtcTxSPVProof, IncomingBitVMXApiMessages, P2PAddress, ReimbursementResult,
+    TransactionStatus, VariableTypes,
+};
+use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
+use common::runtime_sync::RuntimeSync;
+use common::types::{Address, BlockHash, BlockNumber, CommitteeId, Hash256, TxHash};
+use log::{debug, info};
+use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
+use transaction_dispatcher::types::{
+    GetMemberPublicKeysInput, RegisterOperatorTakeOutput, RequestPeginInput,
 };
 use union_contracts::bindings::peg_manager::PegManager::PegoutRegistered;
 use uuid::Uuid;
+
+use crate::flows::common::TAKE_KEY_INDEX;
+use crate::types::OperatorTakeTriggeredEvent;
 
 #[allow(dead_code)]
 pub const PROGRAM_TYPE_ADVANCE_FUNDS: &str = "advance_funds";
@@ -216,17 +214,11 @@ where
                 self.request_bitvmx_comm_info()?;
             }
             Steps::SetupAdvanceFundsProtocol => {
-                info!(
-                    "Setting up advance funds protocol for flow_id: {}",
-                    self.state.flow_id
-                );
+                info!("Setting up advance funds protocol for flow_id: {}", self.state.flow_id);
                 self.setup_advance_funds_protocol()?;
             }
             Steps::WaitForReimbursementResult => {
-                info!(
-                    "Waiting for reimbursement result for flow_id: {}",
-                    self.state.flow_id
-                );
+                info!("Waiting for reimbursement result for flow_id: {}", self.state.flow_id);
                 // Passive step - waiting for BitVMX to send the reimbursement result
             }
             Steps::RequestOperatorTakeTx => {
@@ -257,10 +249,7 @@ where
                 self.request_spv_proof()?;
             }
             Steps::RegisterOperatorTake => {
-                info!(
-                    "Registering operator take for flow_id: {}",
-                    self.state.flow_id
-                );
+                info!("Registering operator take for flow_id: {}", self.state.flow_id);
                 let spv_proof =
                     self.state.spv_proof.clone().ok_or_else(|| {
                         anyhow!("SPV proof not available to register operator take")
@@ -331,9 +320,7 @@ where
                 );
                 Ok(Steps::Done)
             }
-            _ => Err(anyhow!(
-                "Invalid state transition from {current_step:?} with provided data",
-            )),
+            _ => Err(anyhow!("Invalid state transition from {current_step:?} with provided data",)),
         }
     }
 
@@ -436,13 +423,7 @@ where
     }
 
     fn build_advance_funds_request(&self, operator_pubkey: PublicKey) -> Result<String> {
-        let pegout_id = self
-            .state
-            .trigger_data
-            .pegout_txid
-            .value()
-            .as_bytes()
-            .to_vec();
+        let pegout_id = self.state.trigger_data.pegout_txid.value().as_bytes().to_vec();
 
         let payload: AdvanceFundsRequest = AdvanceFundsRequest {
             committee_id: Uuid::from_u128(*self.state.trigger_data.committee_id),
@@ -459,9 +440,7 @@ where
     }
 
     fn get_member_public_keys(&self, member_address: Address) -> Result<Vec<String>> {
-        let input = GetMemberPublicKeysInput {
-            member_address: member_address.into(),
-        };
+        let input = GetMemberPublicKeysInput { member_address: member_address.into() };
         let response = self
             .rt_sync
             .run(async { self.contracts.get_member_public_keys(input).await })
@@ -481,20 +460,15 @@ where
             .operator_take_tx_id
             .ok_or_else(|| anyhow!("Operator take transaction ID not available"))?;
 
-        let pegin_program_id = self
-            .state
-            .pegin_program_id
-            .ok_or_else(|| anyhow!("Pegin program ID not available"))?;
+        let pegin_program_id =
+            self.state.pegin_program_id.ok_or_else(|| anyhow!("Pegin program ID not available"))?;
 
         info!(
             "Requesting operator take transaction status for flow_id: {} and txid: {}",
             self.state.flow_id, tx_id
         );
 
-        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetTransaction(
-            pegin_program_id,
-            tx_id,
-        ))
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetTransaction(pegin_program_id, tx_id))
     }
 
     #[allow(dead_code)]

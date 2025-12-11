@@ -305,12 +305,7 @@ impl FlowContext {
         Ok(FundingUtxos {
             speedup: (txid, 0, Some(speedup_utxo_val), Some(speedup_ot)),
             protocol_funding: (txid, 1, Some(funding_utxo_val), Some(protocol_funding_ot)),
-            advance_funds: (
-                txid,
-                2,
-                Some(advance_funds_utxo_val),
-                Some(advance_funds_ot),
-            ),
+            advance_funds: (txid, 2, Some(advance_funds_utxo_val), Some(advance_funds_ot)),
         })
     }
 }
