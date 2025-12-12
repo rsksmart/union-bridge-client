@@ -14,29 +14,18 @@ use crate::rlp::encode_signed_coin_value;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct RskBlockHeader {
-    // #[serde(
-    //     deserialize_with = "parse_hex_to_u64",
-    //     serialize_with = "parse_u64_to_hex"
-    // )]
     #[serde(rename = "number", deserialize_with = "deserialize_hex_u64")]
     pub number: u64, // Block height (genesis = 0)
     #[serde(skip)]
     pub hash: H256, // Keccak-256 of the encoded header
-    // #[serde(rename = "parentHash")]
     #[serde(rename = "parentHash", deserialize_with = "deserialize_hex_h256")]
     pub parent: H256, // Keccak-256 hash of the parent block
-    // #[serde(rename = "difficulty", deserialize_with = "parse_rsk_difficulty")]
     #[serde(rename = "difficulty", deserialize_with = "deserialize_hex_u256")]
     pub difficulty: U256, // Target difficulty for this block
-    // #[serde(
-    //     rename = "timestamp",
-    //     deserialize_with = "parse_hex_to_u64",
-    //     serialize_with = "parse_u64_to_hex"
-    // )]
     #[serde(rename = "timestamp", deserialize_with = "deserialize_hex_u64")]
     pub timestamp: u64, // Unix time (seconds) when the block was created
     #[serde(rename = "sha3Uncles", deserialize_with = "deserialize_hex_h256")]
-    pub uncles_hash: H256, // SHA3-256 hash of the uncles list portion
+    pub uncles_hash: H256, // SHA3-256 hash of the uncles list
     #[serde(rename = "miner", deserialize_with = "deserialize_hex_bytes_20")]
     pub coinbase: [u8; 20], // 160-bit address (RskAddress) - miner's address
     #[serde(rename = "stateRoot", deserialize_with = "deserialize_hex_h256")]
@@ -48,7 +37,7 @@ pub struct RskBlockHeader {
     #[serde(rename = "logsBloom", deserialize_with = "deserialize_hex_bytes")]
     pub logs_bloom: Vec<u8>, // Bloom filter for logs (256 bytes) or extension_data if RSKIP-351
     #[serde(rename = "gasLimit", deserialize_with = "deserialize_hex_bytes")]
-    pub gas_limit: Vec<u8>, // Current limit of gas expenditure per block (bytes, not u64)
+    pub gas_limit: Vec<u8>, // Current limit of gas expenditure per block
     #[serde(rename = "gasUsed", deserialize_with = "deserialize_hex_u64")]
     pub gas_used: u64, // Total gas used in transactions in this block
     #[serde(rename = "extraData", deserialize_with = "deserialize_hex_bytes")]
@@ -60,14 +49,8 @@ pub struct RskBlockHeader {
         deserialize_with = "deserialize_hex_u256_option"
     )]
     pub minimum_gas_price: Option<U256>, // Minimum gas price for a tx to be included (Coin, can be null)
-    #[serde(rename = "uncles", deserialize_with = "deserialize_hex_uncle_count")]
-    pub uncle_count: u32, // Number of uncles in the block
-
-    // Merged mining fields
-    // #[serde(
-    //     rename = "bitcoinMergedMiningHeader",
-    //     deserialize_with = "parse_bitcoin_header_to_pow"
-    // )]
+    #[serde(rename = "uncles", deserialize_with = "deserialize_vec_hex_h256")]
+    pub uncles: Vec<H256>, // Hashes of uncle blocks
     #[serde(
         rename = "bitcoinMergedMiningHeader",
         deserialize_with = "deserialize_hex_bytes"
@@ -111,7 +94,7 @@ impl Default for RskBlockHeader {
             extra_data: Vec::new(),
             paid_fees: U256::zero(),
             minimum_gas_price: Some(U256::zero()),
-            uncle_count: 0,
+            uncles: Vec::new(),
             bitcoin_merged_mining_header: vec![0u8; 80],
             bitcoin_merged_mining_merkle_proof: Vec::new(),
             bitcoin_merged_mining_coinbase_transaction: Vec::new(),
@@ -167,7 +150,7 @@ impl RskBlockHeader {
             alloy_rlp::encode(self.extra_data.as_slice()),
             encode_coin_value("paid_fees", &self.paid_fees),
             encode_signed_coin_value("minimum_gas_price", &minimum_gas_price),
-            alloy_rlp::encode(self.uncle_count),
+            alloy_rlp::encode(self.uncles.len()), // uncle_count
             alloy_rlp::encode::<&[u8]>(&[]), // umm_root is always empty (not even present in json-rpc)
             alloy_rlp::encode(self.bitcoin_merged_mining_header.as_slice()),
         ];
@@ -249,12 +232,19 @@ where
     u32::from_str_radix(s, 16).map_err(serde::de::Error::custom)
 }
 
-pub fn deserialize_hex_uncle_count<'de, D>(deserializer: D) -> Result<u32, D::Error>
+pub fn deserialize_vec_hex_h256<'de, D>(deserializer: D) -> Result<Vec<H256>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let s: Vec<String> = Deserialize::deserialize(deserializer)?;
-    u32::try_from(s.len()).map_err(serde::de::Error::custom)
+    let strings: Vec<String> = Deserialize::deserialize(deserializer)?;
+    strings
+        .iter()
+        .map(|s| {
+            let s = s.strip_prefix("0x").unwrap_or(s);
+            let bytes = hex::decode(s).map_err(serde::de::Error::custom)?;
+            Ok(H256::from_slice(&bytes))
+        })
+        .collect()
 }
 
 pub fn deserialize_hex_bytes_20<'de, D>(deserializer: D) -> Result<[u8; 20], D::Error>
@@ -317,7 +307,7 @@ impl fmt::Debug for RskBlockHeader {
             self.extra_data.len(),
             self.paid_fees,
             self.minimum_gas_price,
-            self.uncle_count,
+            self.uncles.len(),
             self.bitcoin_merged_mining_header.len(),
             self.bitcoin_merged_mining_merkle_proof.len(),
             self.bitcoin_merged_mining_coinbase_transaction.len()
