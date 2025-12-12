@@ -384,7 +384,7 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "check-fork"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "primitive-types",
  "serde",
@@ -392,7 +392,7 @@ dependencies = [
 
 [[package]]
 name = "check-fork-guest"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bincode",
  "check-fork",
