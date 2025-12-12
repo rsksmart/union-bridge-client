@@ -1,16 +1,12 @@
-use std::error::Error;
-use std::str::FromStr;
-use std::string::ToString;
-
-use bitcoin::blockdata::block::Header;
-use bitcoin::consensus::encode::deserialize as btc_deserialize;
 use check_fork::BridgeEvent;
 use check_fork::RskBlock;
 use check_fork::block_header::RskBlockHeader;
 use primitive_types::{H256, U256};
 use reqwest::Client;
-use serde::{Deserialize, Deserializer, Serialize, de};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::error::Error;
+use std::string::ToString;
 
 const RSK_RPC_URL: &str = "https://public-node.rsk.co";
 
@@ -153,47 +149,4 @@ fn log_if_superblock(block: &TesterRskBlock) -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
-}
-
-#[allow(clippy::trivially_copy_pass_by_ref)]
-fn parse_u64_to_hex<S>(v: &u64, s: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    s.serialize_str(&format!("{v:#x}"))
-}
-
-fn parse_hex_to_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let hex: &str = Deserialize::deserialize(deserializer)?;
-    u64::from_str_radix(hex.trim_start_matches("0x"), 16).map_err(de::Error::custom)
-}
-
-fn parse_rsk_difficulty<'de, D>(deserializer: D) -> Result<U256, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let difficulty_hex: &str = Deserialize::deserialize(deserializer)?;
-    let difficulty_dec = U256::from_str_radix(difficulty_hex, 16).map_err(de::Error::custom)?;
-
-    Ok(difficulty_dec)
-}
-
-fn parse_bitcoin_header_to_pow<'de, D>(deserializer: D) -> Result<H256, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let hex = <&str>::deserialize(deserializer)?;
-    let bytes = hex::decode(hex.trim_start_matches("0x")).map_err(de::Error::custom)?;
-    // 80-byte → treat as full header, otherwise assume it is already a 32-byte hash
-    if bytes.len() == 80 {
-        btc_deserialize::<Header>(&bytes)
-            .map(|h| H256::from_str(&h.block_hash().to_string()))
-            .expect("Failed to deserialize hash")
-            .map_err(de::Error::custom)
-    } else {
-        H256::from_str(hex).map_err(de::Error::custom)
-    }
 }
