@@ -320,9 +320,7 @@ impl EventDecoder {
             }
             event => {
                 let variant = Self::event_variant_name(&event);
-                debug!(
-                    "Ignored PegManager event ({variant}): block={block_num}, tx={tx_hash}"
-                );
+                debug!("Ignored PegManager event ({variant}): block={block_num}, tx={tx_hash}");
                 RskPegManagerEvents::IgnoredEvent
             }
         }
