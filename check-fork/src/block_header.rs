@@ -48,7 +48,7 @@ pub struct RskBlockHeader {
         rename = "minimumGasPrice",
         deserialize_with = "deserialize_hex_u256_option"
     )]
-    pub minimum_gas_price: Option<U256>, // Minimum gas price for a tx to be included (Coin, can be null)
+    pub minimum_gas_price: Option<U256>, // Minimum gas price for a tx to be included
     #[serde(rename = "uncles", deserialize_with = "deserialize_vec_hex_h256")]
     pub uncles: Vec<H256>, // Hashes of uncle blocks
     #[serde(
@@ -65,7 +65,7 @@ pub struct RskBlockHeader {
         rename = "bitcoinMergedMiningCoinbaseTransaction",
         deserialize_with = "deserialize_hex_bytes"
     )]
-    pub bitcoin_merged_mining_coinbase_transaction: Vec<u8>, // Bitcoin protobuf serialized coinbase tx (compressed)
+    pub bitcoin_merged_mining_coinbase_transaction: Vec<u8>, // Bitcoin serialized coinbase tx
     // the follwoing fields are goonna be included in the next hardfork (reed)
     #[serde(skip)]
     _umm_root: [u8; 20], // UMM root (only if block is UMM, must be exactly 20 bytes)

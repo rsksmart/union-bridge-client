@@ -17,7 +17,7 @@ pub struct RskBlock {
     #[serde(default)]
     pub uncles: Vec<RskBlock>,
     // alternatively we can receive `bitcoinMergedMiningHeader`, but we would need to include bitcoin crate here, etc.
-    pub pow: H256,
+    pub pow: H256, // used to accumulate effort (from check_fork_accumulator)
     pub header: RskBlockHeader,
 }
 
