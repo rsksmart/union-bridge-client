@@ -19,6 +19,11 @@ struct TestCaseBlockHashValidation {
     pub expected_hash: String,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct MiniChainTestCase {
+    pub chain: Vec<TestCaseBlockHashValidation>,
+}
+
 #[test]
 fn succeeds_with_two_blocks_when_all_conditions_met() {
     let mut actual_effort = U256::zero();
@@ -513,6 +518,29 @@ fn succeed_if_block_hash_eq_expected_hash() {
         test_case.expected_hash.get(2..test_case.expected_hash.len()).unwrap(),
         hash_str.as_str()
     );
+}
+
+#[test]
+fn succeed_if_mini_chain_hashes_are_valid() {
+    let test_case = serde_json::from_slice::<MiniChainTestCase>(
+        &fs::read("src/tests/blockhash-mini-chain.json").unwrap(),
+    )
+    .unwrap();
+
+    for (i, block) in test_case.chain.iter().enumerate() {
+        let calculated_hash = block.header.calculate_block_hash().unwrap();
+        let expected_hash = block
+            .expected_hash
+            .strip_prefix("0x")
+            .unwrap_or(&block.expected_hash);
+
+        assert_eq!(
+            hex::encode(calculated_hash.as_bytes()),
+            expected_hash,
+            "Block hash mismatch at index {i} (height {})",
+            block.header.number
+        );
+    }
 }
 
 // TODO add more complex tests, ie: with more than 2 blocks, with more uncles, with more real block data, etc.
