@@ -137,10 +137,8 @@ fn check_receipt<P: Provider>(_provider: &P, receipt: &TransactionReceipt) {
         receipt.transaction_hash, receipt.block_number, receipt.block_hash
     );
 
-    // Debug trace for failure diagnostics (only at DEBUG level to avoid noise)
-    // Note: This requires access to raw RPC calls which may not be available on all Provider implementations
     debug!(
-        "Transaction {} failed - enable DEBUG logging and RPC access for detailed trace",
+        "Transaction {} failed",
         receipt.transaction_hash
     );
 }
