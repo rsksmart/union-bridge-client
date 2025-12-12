@@ -10,6 +10,8 @@ pub(crate) mod get_member_communication_data;
 pub(crate) mod get_member_public_keys;
 pub(crate) mod get_temporary_pegin_address;
 pub(crate) mod notify_check_fork_complete;
+pub(crate) mod register_operator_take;
 pub(crate) mod register_pegout;
 pub(crate) mod request_pegin;
 pub(crate) mod request_pegout;
+pub(crate) mod trigger_operator_take;

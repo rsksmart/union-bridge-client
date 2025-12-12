@@ -61,6 +61,11 @@ pub struct RequestPegoutInput {
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+pub struct TriggerOperatorTakeInput {
+    pub pegout_txid: String,
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct AddMemberNonceInput {
     pub hash_to_sign: Hash256,
     pub nonce: PubNonce,
@@ -89,6 +94,8 @@ pub type AddOperatorTakeTxHashOutput = TxSentOutput;
 pub type RequestPeginOutput = TxSentOutput;
 pub type AcceptPeginOutput = TxSentOutput;
 pub type RegisterPegoutOutput = TxSentOutput;
+pub type RegisterOperatorTakeOutput = TxSentOutput;
+pub type TriggerOperatorTakeOutput = TxSentOutput;
 pub type RequestPegoutOutput = TxSentOutput;
 pub type ApplyToStreamOutput = TxSentOutput;
 pub type DepositCommunicationDataOutput = TxSentOutput;
@@ -98,6 +105,7 @@ pub type RequestPeginInput = BtcTxSPVProofInput;
 pub type RegisterPegInInput = BtcTxSPVProofInput;
 pub type AcceptPeginInput = BtcTxSPVProofInput;
 pub type RegisterPegoutInput = BtcTxSPVProofInput;
+pub type RegisterOperatorTakeInput = BtcTxSPVProofInput;
 
 impl From<TxIn> for BitcoinTransactionIn {
     fn from(input: TxIn) -> Self {

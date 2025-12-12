@@ -24,7 +24,8 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
 };
 use union_contracts::bindings::member_registry::MemberRegistry::MemberRegistryEvents;
 use union_contracts::bindings::peg_manager::PegManager::{
-    PegManagerEvents, PeginAccepted, PeginRequested, PegoutRegistered, PegoutRequested,
+    OperatorTakeTriggered, PegManagerEvents, PeginAccepted, PeginRequested, PegoutRegistered,
+    PegoutRequested,
 };
 #[cfg(test)]
 use union_contracts::bindings::signature_manager::SignatureManager::{
@@ -47,6 +48,7 @@ pub enum RskPegManagerEvents {
     PeginAccepted(PeginAcceptedEvent),
     PegoutRegistered(PegoutRegisteredEvent),
     PegoutRequested(PegoutRequestedEvent),
+    OperatorTakeTriggered(OperatorTakeTriggeredEvent),
     RemoveRegisteredPeginRequest(PeginRequestedEvent),
     AllNoncesReady(AllNoncesReadyEvent),
     AllSignaturesReady(AllSignaturesReadyEvent),
@@ -74,6 +76,7 @@ pub type AllSignaturesReadyEvent = EventWithBlock<Hash256>;
 pub type AllOperatorTakeTxidsAddedEvent = EventWithBlock<AllOperatorTakeTxidsAdded>;
 pub type PegoutRequestedEvent = EventWithBlock<PegoutRequested>;
 pub type PegoutRegisteredEvent = EventWithBlock<PegoutRegistered>;
+pub type OperatorTakeTriggeredEvent = EventWithBlock<OperatorTakeTriggered>;
 pub type NewCommitteePendingEvent = EventWithBlock<NewPendingCommittee>;
 pub type NewCommitteeReadyEvent = EventWithBlock<NewCommittee>;
 pub type AllCommunicationDataReadyEvent = EventWithBlock<AllCommunicationDataReady>;
@@ -293,6 +296,15 @@ impl EventDecoder {
             }
             PegManagerEvents::PegoutRequested(inner) => {
                 RskPegManagerEvents::PegoutRequested(PegoutRequestedEvent {
+                    inner,
+                    block_number: block_num,
+                    block_hash,
+                    removed,
+                    tx_hash,
+                })
+            }
+            PegManagerEvents::OperatorTakeTriggered(inner) => {
+                RskPegManagerEvents::OperatorTakeTriggered(OperatorTakeTriggeredEvent {
                     inner,
                     block_number: block_num,
                     block_hash,
@@ -531,6 +543,60 @@ impl<K: Eq + Hash + Clone> TickScheduler<K> {
             self.pending.remove(id);
         }
         ready
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.pending.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.pending.clear();
+    }
+}
+
+/// Time-based scheduler that uses block timestamps to track expiration times
+pub(crate) struct TimeBasedScheduler<K: Eq + Hash + Clone> {
+    pending: HashMap<K, u64>, // flow_id -> expiration_timestamp (in seconds)
+}
+
+impl<K: Eq + Hash + Clone> TimeBasedScheduler<K> {
+    pub fn new() -> Self {
+        Self { pending: HashMap::new() }
+    }
+
+    /// Schedule a timeout for the given id, expiring after the specified duration in seconds
+    /// from the current block timestamp
+    pub fn schedule(&mut self, id: K, current_timestamp: u64, timeout_seconds: u64) {
+        let expiration_timestamp = current_timestamp + timeout_seconds;
+        self.pending.insert(id, expiration_timestamp);
+    }
+
+    pub fn cancel(&mut self, id: &K) {
+        self.pending.remove(id);
+    }
+
+    pub fn is_scheduled(&self, id: &K) -> bool {
+        self.pending.contains_key(id)
+    }
+
+    /// Check for expired timeouts based on the current block timestamp
+    /// Returns a vector of expired ids
+    pub fn check_expired(&mut self, current_timestamp: u64) -> Vec<K> {
+        let mut expired: Vec<K> = Vec::new();
+        let mut to_remove: Vec<K> = Vec::new();
+
+        for (id, expiration_timestamp) in &self.pending {
+            if current_timestamp >= *expiration_timestamp {
+                expired.push(id.clone());
+                to_remove.push(id.clone());
+            }
+        }
+
+        for id in &to_remove {
+            self.pending.remove(id);
+        }
+
+        expired
     }
 
     pub fn is_empty(&self) -> bool {

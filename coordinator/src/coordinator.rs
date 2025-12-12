@@ -19,6 +19,7 @@ use crate::flows::committee::setup_committee_flow::{
 };
 use crate::flows::common::GlobalContext;
 use crate::flows::fund_bitvmx_flow::FundBitvmxProcessor;
+use crate::flows::operator_take::AdvanceFundsFlowProcessor;
 use crate::flows::pegin::pegin_processor::PeginFlowProcessor;
 use crate::flows::pegout::pegout_processor::PegoutFlowProcessor;
 use crate::monitor::MonitorApi;
@@ -99,6 +100,13 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                     // todo(fede) ideally this method should return a result
                     .expect("couldn't restore or create pegout flow processor"),
                 ),
+                //Operator_take_flow
+                Box::new(AdvanceFundsFlowProcessor::new(
+                    contracts_arc.clone(),
+                    rt_sync.clone(),
+                    bitvmx_broker.clone(),
+                    global_context.clone(),
+                )),
                 Box::new(SetupCommitteeProcessor::new(
                     setup_committee_flow_factory,
                     global_context.clone(),
@@ -315,9 +323,10 @@ pub(crate) mod tests {
         DepositAggregatedKeyInput, DepositAggregatedKeyOutput, DepositCommunicationDataInput,
         DepositCommunicationDataOutput, GetCommitteeInput, GetCommitteeOutput,
         GetCommunicationDataInput, GetCommunicationDataOutput, GetMemberPublicKeysInput,
-        GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterPegoutInput,
+        GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput,
+        RegisterOperatorTakeInput, RegisterOperatorTakeOutput, RegisterPegoutInput,
         RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
-        RequestPegoutOutput,
+        RequestPegoutOutput, TriggerOperatorTakeInput, TriggerOperatorTakeOutput,
     };
 
     use crate::coordinator::Coordinator;
@@ -580,6 +589,16 @@ pub(crate) mod tests {
                 &self,
                 input: RegisterPegoutInput,
             ) -> Result<RegisterPegoutOutput, DomainErrors>;
+
+            async fn register_operator_take(
+                &self,
+                input: RegisterOperatorTakeInput,
+            ) -> Result<RegisterOperatorTakeOutput, DomainErrors>;
+
+            async fn trigger_operator_take(
+                &self,
+                input: TriggerOperatorTakeInput,
+            ) -> Result<TriggerOperatorTakeOutput, DomainErrors>;
 
             async fn add_member_nonce(
                 &self,

@@ -9,7 +9,7 @@ use crate::constants::{ONE_OPERATOR_COMPOSE_PROJECT, OPERATOR_IDS, REMOTE_SSH_US
 use crate::environments::*;
 use crate::utils::{command_to_string, confirm_operation, request_to_string};
 
-const FUND_AMOUNT: &str = "20002000";
+const FUND_AMOUNT: &str = "32002000";
 const LOG_MARKER: &str = "Received BitVMX Funding Address:";
 
 pub async fn handle_bitcoin_funding(environment: Environment, execute: bool) -> Result<()> {

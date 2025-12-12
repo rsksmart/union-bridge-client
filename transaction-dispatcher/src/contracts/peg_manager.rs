@@ -16,8 +16,8 @@ use crate::contracts::common::send_tx_with_gas_bump;
 // re-export for convenience
 pub(crate) use crate::contracts::interactions::accept_pegin;
 pub(crate) use crate::contracts::interactions::{
-    get_temporary_pegin_address, notify_check_fork_complete, register_pegout, request_pegin,
-    request_pegout,
+    get_temporary_pegin_address, notify_check_fork_complete, register_operator_take,
+    register_pegout, request_pegin, request_pegout, trigger_operator_take,
 };
 use crate::rsk_gateway::DomainErrors;
 use crate::types::BtcTxSPVProofInput;
@@ -53,6 +53,18 @@ pub trait PegManagerContractApi {
     async fn invoke_register_pegout(
         &self,
         input: BtcTxSPVProof,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TxHash>;
+
+    async fn invoke_register_operator_take(
+        &self,
+        input: BtcTxSPVProof,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TxHash>;
+
+    async fn invoke_trigger_operator_take(
+        &self,
+        pegout_txid: FixedBytes<32>,
         gas_bumps: u8,
     ) -> alloy_contract::Result<TxHash>;
 
@@ -143,6 +155,32 @@ impl<P: Provider> PegManagerContractApi for PegManagerContract<P> {
         .await
     }
 
+    async fn invoke_register_operator_take(
+        &self,
+        input: BtcTxSPVProof,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TxHash> {
+        send_tx_with_gas_bump(
+            &self.contract_instance.provider(),
+            || self.contract_instance.registerOperatorTake(input.clone()),
+            gas_bumps,
+        )
+        .await
+    }
+
+    async fn invoke_trigger_operator_take(
+        &self,
+        pegout_txid: FixedBytes<32>,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TxHash> {
+        send_tx_with_gas_bump(
+            &self.contract_instance.provider(),
+            || self.contract_instance.triggerOperatorTake(pegout_txid),
+            gas_bumps,
+        )
+        .await
+    }
+
     async fn notify_check_fork_completion(
         &self,
         _pegout_id: &str,
@@ -203,6 +241,22 @@ impl<P: Provider> PegManagerContractApi for FakePegManagerContract<P> {
     async fn invoke_register_pegout(
         &self,
         _input: BtcTxSPVProof,
+        _gas_bumps: u8,
+    ) -> alloy_contract::Result<TxHash> {
+        todo!("Not yet implemented for FakePegManagerContract");
+    }
+
+    async fn invoke_register_operator_take(
+        &self,
+        _input: BtcTxSPVProof,
+        _gas_bumps: u8,
+    ) -> alloy_contract::Result<TxHash> {
+        todo!("Not yet implemented for FakePegManagerContract");
+    }
+
+    async fn invoke_trigger_operator_take(
+        &self,
+        _pegout_txid: FixedBytes<32>,
         _gas_bumps: u8,
     ) -> alloy_contract::Result<TxHash> {
         todo!("Not yet implemented for FakePegManagerContract");

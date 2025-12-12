@@ -9,12 +9,13 @@ use common::msg_broker::bitvmx_types::{
 use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 use common::runtime_sync::RuntimeSync;
 use common::types::CommitteeId;
-use log::{debug, info, trace};
+use hex;
+use log::{debug, info, trace, warn};
 use serde::{Deserialize, Serialize};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::{
     GetCommitteeInput, GetCommitteeOutput, GetCommunicationDataInput, GetMemberPublicKeysInput,
-    P2PAddressParser, RegisterPegoutInput, RegisterPegoutOutput,
+    P2PAddressParser, RegisterPegoutInput, RegisterPegoutOutput, TriggerOperatorTakeInput,
 };
 use union_contracts::bindings::peg_manager::PegManager::{PegoutRegistered, PegoutRequested};
 use uuid::Uuid;
@@ -35,6 +36,7 @@ pub enum Steps {
     PrepareUserTakeSetup,
     //The signature flow is being executed Between these two steps and outside the flow.
     DispatchTransaction,
+    TriggerOperatorTake, // Triggered when timeout expires without signature completion
     ConfirmUserTakeTransaction,
     RequestUserTakeSpvProof,
     RegisterPegout,
@@ -48,6 +50,7 @@ pub enum StepData {
     CommInfo(P2PAddress),
     PegoutAccepted(PegOutAccepted),
     DispatchTransaction,
+    TriggerOperatorTakeTimeout, // Timeout expired, trigger operator take
     TransactionConfirmed(TransactionStatus),
     SpvProof(BtcTxSPVProof),
     PegoutRegistered(PegoutRegistered),
@@ -166,6 +169,18 @@ where
                     self.state.flow_id
                 );
             }
+            Steps::TriggerOperatorTake => {
+                info!(
+                    "Triggering operator take due to timeout for flow_id: {}",
+                    self.state.flow_id
+                );
+                if let Err(err) = self.trigger_operator_take() {
+                    warn!(
+                        "Failed to trigger operator take for flow_id {}: {}. Continuing flow.",
+                        self.state.flow_id, err
+                    );
+                }
+            }
             Steps::ConfirmUserTakeTransaction => {
                 info!(
                     "Waiting for transaction confirmations for flow_id: {} and tx_id: {:?}",
@@ -206,6 +221,7 @@ where
     pub fn complete_step(&mut self, data: &StepData) -> Result<()> {
         let current_step: Steps = self.state.step;
 
+        //TODO we are reaching here with done step with no sense, fix the flow to avoid this
         info!(
             "PegoutFlow {}: Completing step {} with data: {:?} for flow_id {}",
             self.state.flow_id,
@@ -237,6 +253,23 @@ where
             (Steps::DispatchTransaction, StepData::DispatchTransaction) => {
                 self.dispatch_transaction()?;
                 Ok(Steps::ConfirmUserTakeTransaction)
+            }
+            (Steps::DispatchTransaction, StepData::TriggerOperatorTakeTimeout) => {
+                // Timeout expired, transition to TriggerOperatorTake step
+                info!(
+                    "Timeout expired for flow_id: {}, transitioning to TriggerOperatorTake",
+                    self.state.flow_id
+                );
+                Ok(Steps::TriggerOperatorTake)
+            }
+            (Steps::TriggerOperatorTake, StepData::TriggerOperatorTakeTimeout) => {
+                // After trigger_operator_take completes successfully, finish the flow
+                info!(
+                    //TODO improve messagec, heck this as maybe it was not successfull but is part of the flow and should be completed
+                    "Operator take triggered successfully for flow_id: {}, completing flow",
+                    self.state.flow_id
+                );
+                Ok(Steps::Done)
             }
             (Steps::ConfirmUserTakeTransaction, StepData::TransactionConfirmed(tx_status)) => {
                 info!(
@@ -475,6 +508,11 @@ where
         self.state.ctx.peg_out_accepted.as_ref().map(|accepted| accepted.user_take_txid)
     }
 
+    /// Get the pegout txid from the `PegoutRequested` event
+    pub fn get_pegout_txid(&self) -> String {
+        hex::encode(self.state.ctx.pegout_requested.pegoutSignatureData.txid.as_slice())
+    }
+
     fn register_pegout(&self, spv_proof: BtcTxSPVProof) -> Result<RegisterPegoutOutput> {
         let input = RegisterPegoutInput::from(spv_proof);
         let output = self
@@ -527,6 +565,37 @@ where
     pub fn pegout_requested(&self) -> &PegoutRequested {
         &self.state.ctx.pegout_requested
     }
+
+    /// Trigger operator take when timeout expires
+    fn trigger_operator_take(&self) -> Result<()> {
+        let pegout_txid = self.get_pegout_txid();
+
+        info!(
+            "Calling trigger_operator_take for flow_id: {} with pegout_txid: {}",
+            self.state.flow_id, pegout_txid
+        );
+
+        let input = TriggerOperatorTakeInput { pegout_txid };
+
+        let output =
+            match self.rt_sync.run(async { self.contracts.trigger_operator_take(input).await }) {
+                Ok(output) => output,
+                Err(domain_err) => {
+                    anyhow::bail!(
+                        "Failed to trigger operator take for flow_id {}: {:?}",
+                        self.state.flow_id,
+                        domain_err
+                    );
+                }
+            };
+
+        info!(
+            "trigger_operator_take called successfully for flow_id {} with tx hash {}",
+            self.state.flow_id, output.transaction_hash
+        );
+
+        Ok(())
+    }
 }
 
 /// Helper function to format step names
@@ -536,6 +605,7 @@ fn format_step(step: Steps) -> &'static str {
         Steps::GetCommInfo => "GetCommInfo",
         Steps::PrepareUserTakeSetup => "PrepareUserTakeSetup",
         Steps::DispatchTransaction => "DispatchTransaction",
+        Steps::TriggerOperatorTake => "TriggerOperatorTake",
         Steps::ConfirmUserTakeTransaction => "ValidateTransactionStatus",
         Steps::RequestUserTakeSpvProof => "RequestSpvProof",
         Steps::RegisterPegout => "RegisterPegout",
