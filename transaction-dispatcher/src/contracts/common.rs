@@ -95,7 +95,7 @@ where
             estimate_gas_with_timeout::<P, D, F>(&build_tx).await?;
 
             // if not retriable and not reverting, debug the trace and bail as this is unexpected
-            check_receipt(provider, &receipt).await;
+            check_receipt(provider, &receipt);
             new_transport_error(
                 "Transaction failed but is neither retriable (no OOG) nor reverting (passes gas estimation): unexpected state.",
             )?;
@@ -131,7 +131,7 @@ fn timeout_5min() -> Duration {
     Duration::from_secs(300)
 }
 
-async fn check_receipt<P: Provider>(_provider: &P, receipt: &TransactionReceipt) {
+fn check_receipt<P: Provider>(_provider: &P, receipt: &TransactionReceipt) {
     error!(
         "Transaction {} failed: block={:?}, block_hash={:?}",
         receipt.transaction_hash, receipt.block_number, receipt.block_hash
