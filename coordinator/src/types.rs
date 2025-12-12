@@ -320,7 +320,10 @@ impl EventDecoder {
             }
             event => {
                 let variant = Self::event_variant_name(&event);
-                debug!("Ignored PegManager event ({}): block={}, tx={}", variant, block_num, tx_hash);
+                debug!(
+                    "Ignored PegManager event ({}): block={}, tx={}",
+                    variant, block_num, tx_hash
+                );
                 RskPegManagerEvents::IgnoredEvent
             }
         }
@@ -394,30 +397,36 @@ impl EventDecoder {
                     tx_hash,
                 })
             }
-            _event => {
-                info!("Ignored CommitteeRegistry event: block={}, tx={}", block_num, tx_hash);
+            event => {
+                let variant = Self::event_variant_name(&event);
+                debug!(
+                    "Ignored CommitteeRegistry event ({}): block={}, tx={}",
+                    variant, block_num, tx_hash
+                );
                 RskPegManagerEvents::IgnoredEvent
             }
         }
     }
 
     fn convert_member_registry_event(
-        _event: &MemberRegistryEvents,
+        event: &MemberRegistryEvents,
         block_num: BlockNumber,
         tx_hash: TxHash,
     ) -> RskPegManagerEvents {
-        info!("Ignored MemberRegistry event: block={}, tx={}", block_num, tx_hash);
+        let variant = Self::event_variant_name(event);
+        debug!("Ignored MemberRegistry event ({}): block={}, tx={}", variant, block_num, tx_hash);
         RskPegManagerEvents::IgnoredEvent
     }
 
     fn convert_stream_manager_event(
-        _event: &StreamManagerEvents,
+        event: &StreamManagerEvents,
         block_num: BlockNumber,
         tx_hash: TxHash,
     ) -> RskPegManagerEvents {
         // StreamManager events don't have specific handlers yet
         // TODO: Implement proper conversion when event variants are identified
-        info!("Ignored StreamManager event: block={}, tx={}", block_num, tx_hash);
+        let variant = Self::event_variant_name(event);
+        debug!("Ignored StreamManager event ({}): block={}, tx={}", variant, block_num, tx_hash);
         RskPegManagerEvents::IgnoredEvent
     }
 
@@ -456,21 +465,26 @@ impl EventDecoder {
                     tx_hash,
                 })
             }
-            _event => {
-                info!("Ignored SignatureManager event: block={}, tx={}", block_num, tx_hash);
+            event => {
+                let variant = Self::event_variant_name(&event);
+                debug!(
+                    "Ignored SignatureManager event ({}): block={}, tx={}",
+                    variant, block_num, tx_hash
+                );
                 RskPegManagerEvents::IgnoredEvent
             }
         }
     }
 
     fn convert_bitcoin_manager_event(
-        _event: &BitcoinManagerEvents,
+        event: &BitcoinManagerEvents,
         block_num: BlockNumber,
         tx_hash: TxHash,
     ) -> RskPegManagerEvents {
         // BitcoinManager events don't have specific handlers yet
         // TODO: Implement proper conversion when event variants are identified
-        info!("Ignored BitcoinManager event: block={}, tx={}", block_num, tx_hash);
+        let variant = Self::event_variant_name(event);
+        debug!("Ignored BitcoinManager event ({}): block={}, tx={}", variant, block_num, tx_hash);
         RskPegManagerEvents::IgnoredEvent
     }
 }
