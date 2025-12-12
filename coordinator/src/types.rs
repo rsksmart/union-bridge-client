@@ -14,7 +14,7 @@ use common::msg_broker::bitvmx_types::{
     PartialUtxo, ParticipantRole, PegOutAccepted, PeginAcceptedMessage,
 };
 use common::types::{Address, BlockHash, BlockNumber, Hash256, RskLog, TxHash};
-use log::{info, trace, warn};
+use log::{debug, info, trace, warn};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
 use union_contracts::bindings::bitcoin_manager::BitcoinManager::BitcoinManagerEvents;
@@ -98,6 +98,12 @@ pub struct EventDecoder;
 impl EventDecoder {
     pub fn new() -> Self {
         Self
+    }
+
+    /// Extract short variant name from Debug-formatted enum (e.g., "MemberRegistered" from "MemberRegistered(...)")
+    fn event_variant_name(event: &dyn std::fmt::Debug) -> String {
+        let debug_str = format!("{:?}", event);
+        debug_str.split('(').next().unwrap_or("Unknown").to_string()
     }
 
     /// Decodes an RSK log into a `RskPegManagerEvents`.
@@ -312,8 +318,9 @@ impl EventDecoder {
                     tx_hash,
                 })
             }
-            _ => {
-                info!("Ignored PegManager event: {event:?}");
+            event => {
+                let variant = Self::event_variant_name(&event);
+                debug!("Ignored PegManager event ({}): block={}, tx={}", variant, block_num, tx_hash);
                 RskPegManagerEvents::IgnoredEvent
             }
         }
@@ -387,30 +394,30 @@ impl EventDecoder {
                     tx_hash,
                 })
             }
-            _ => {
-                info!("Ignored CommitteeRegistry event: {event:?}");
+            _event => {
+                info!("Ignored CommitteeRegistry event: block={}, tx={}", block_num, tx_hash);
                 RskPegManagerEvents::IgnoredEvent
             }
         }
     }
 
     fn convert_member_registry_event(
-        event: &MemberRegistryEvents,
+        _event: &MemberRegistryEvents,
         block_num: BlockNumber,
         tx_hash: TxHash,
     ) -> RskPegManagerEvents {
-        info!("Ignored MemberRegistry event: {event:?} (block: {block_num}, tx: {tx_hash})");
+        info!("Ignored MemberRegistry event: block={}, tx={}", block_num, tx_hash);
         RskPegManagerEvents::IgnoredEvent
     }
 
     fn convert_stream_manager_event(
-        event: &StreamManagerEvents,
+        _event: &StreamManagerEvents,
         block_num: BlockNumber,
         tx_hash: TxHash,
     ) -> RskPegManagerEvents {
         // StreamManager events don't have specific handlers yet
         // TODO: Implement proper conversion when event variants are identified
-        info!("Ignored StreamManager event: {event:?} (block: {block_num}, tx: {tx_hash})");
+        info!("Ignored StreamManager event: block={}, tx={}", block_num, tx_hash);
         RskPegManagerEvents::IgnoredEvent
     }
 
@@ -449,23 +456,21 @@ impl EventDecoder {
                     tx_hash,
                 })
             }
-            _ => {
-                info!(
-                    "Ignored SignatureManager event: {event:?} (block: {block_num}, tx: {tx_hash})"
-                );
+            _event => {
+                info!("Ignored SignatureManager event: block={}, tx={}", block_num, tx_hash);
                 RskPegManagerEvents::IgnoredEvent
             }
         }
     }
 
     fn convert_bitcoin_manager_event(
-        event: &BitcoinManagerEvents,
+        _event: &BitcoinManagerEvents,
         block_num: BlockNumber,
         tx_hash: TxHash,
     ) -> RskPegManagerEvents {
         // BitcoinManager events don't have specific handlers yet
         // TODO: Implement proper conversion when event variants are identified
-        info!("Ignored BitcoinManager event: {event:?} (block: {block_num}, tx: {tx_hash})");
+        info!("Ignored BitcoinManager event: block={}, tx={}", block_num, tx_hash);
         RskPegManagerEvents::IgnoredEvent
     }
 }

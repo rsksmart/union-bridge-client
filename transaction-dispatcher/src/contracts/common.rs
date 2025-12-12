@@ -9,9 +9,7 @@ use alloy_provider::Provider;
 use alloy_provider::network::ReceiptResponse;
 use alloy_rpc_types::TransactionReceipt;
 use alloy_sol_types::SolCall;
-use alloy_transport::TransportResult;
 use log::{debug, error, warn};
-use serde_json::Value;
 use thiserror::Error;
 use tokio::time::{sleep, timeout};
 
@@ -81,6 +79,10 @@ where
 
         let receipt = send_transaction(provider, tx_builder).await?;
         if receipt.status() {
+            debug!(
+                "Transaction succeeded after {} retries: tx={}, block={:?}, block_hash={:?}",
+                attempt, receipt.transaction_hash, receipt.block_number, receipt.block_hash
+            );
             return Ok(receipt.transaction_hash());
         }
 
@@ -129,12 +131,11 @@ fn timeout_5min() -> Duration {
     Duration::from_secs(300)
 }
 
-async fn check_receipt<P: Provider>(provider: &P, receipt: &TransactionReceipt) {
-    let trace_result =
-        timeout(timeout_30sec(), debug_trace_tx(provider, receipt.transaction_hash().to_string()))
-            .await;
-
-    error!("Transaction {} failed. Trace: {trace_result:?}", receipt.transaction_hash);
+async fn check_receipt<P: Provider>(_provider: &P, receipt: &TransactionReceipt) {
+    error!(
+        "Transaction {} failed: block={:?}, block_hash={:?}",
+        receipt.transaction_hash, receipt.block_number, receipt.block_hash
+    );
 }
 
 async fn send_transaction<P, D>(
@@ -260,15 +261,6 @@ fn bumped_gas(estimated: u64, attempt: u8) -> u64 {
 
     // never go below estimated
     bumped.max(estimated)
-}
-
-async fn debug_trace_tx<P: Provider>(provider: &P, tx_hash: String) -> TransportResult<Value> {
-    let params = serde_json::json!([
-        tx_hash,
-        { "tracer": "callTracer" }
-    ]);
-
-    provider.raw_request("debug_traceTransaction".into(), params).await
 }
 
 // Enhanced OOG detection with configurable margin
