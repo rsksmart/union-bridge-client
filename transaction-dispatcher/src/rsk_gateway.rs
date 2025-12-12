@@ -473,7 +473,7 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: RegisterOperatorTakeInput,
     ) -> Result<RegisterOperatorTakeOutput, DomainErrors> {
-        info!("Interacting with PegManager#registerOperatorTake");
+        trace!("Interacting with PegManager#registerOperatorTake");
 
         self.register_operator_take_invoke.run(input).await.map_err(|err| {
             error!("Error on register_operator_take_invoke: {err}");
@@ -485,7 +485,7 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: TriggerOperatorTakeInput,
     ) -> Result<TriggerOperatorTakeOutput, DomainErrors> {
-        info!("Interacting with PegManager#triggerOperatorTake");
+        trace!("Interacting with PegManager#triggerOperatorTake");
 
         self.trigger_operator_take_invoke.run(input).await.map_err(|err| {
             error!("Error on trigger_operator_take_invoke: {err}");
