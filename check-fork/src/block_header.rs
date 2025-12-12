@@ -66,7 +66,7 @@ pub struct RskBlockHeader {
         deserialize_with = "deserialize_hex_bytes"
     )]
     pub bitcoin_merged_mining_coinbase_transaction: Vec<u8>, // Bitcoin protobuf serialized coinbase tx (compressed)
-    // follwoing fields are goonna be included in the next hardfork (reed)
+    // the follwoing fields are goonna be included in the next hardfork (reed)
     #[serde(skip)]
     _umm_root: [u8; 20], // UMM root (only if block is UMM, must be exactly 20 bytes)
     #[serde(skip)]
@@ -123,9 +123,6 @@ impl RskBlockHeader {
         hasher.update(&rlp_encoded);
         let block_hash = H256::from_slice(&hasher.finalize());
 
-        // todo(fede) this print it's too verbose, remove it
-        println!("block hash: {block_hash}");
-
         Ok(block_hash)
     }
 
@@ -142,27 +139,18 @@ impl RskBlockHeader {
             alloy_rlp::encode(self.tx_trie_root.as_bytes()),
             alloy_rlp::encode(self.receipt_trie_root.as_bytes()),
             alloy_rlp::encode(self.logs_bloom.as_slice()),
-            encode_coin_value("difficulty", &self.difficulty),
+            encode_coin_value(&self.difficulty),
             alloy_rlp::encode(self.number),
             alloy_rlp::encode(self.gas_limit.as_slice()),
             alloy_rlp::encode(self.gas_used),
             alloy_rlp::encode(self.timestamp),
             alloy_rlp::encode(self.extra_data.as_slice()),
-            encode_coin_value("paid_fees", &self.paid_fees),
-            encode_signed_coin_value("minimum_gas_price", &minimum_gas_price),
+            encode_coin_value(&self.paid_fees),
+            encode_signed_coin_value(&minimum_gas_price),
             alloy_rlp::encode(self.uncles.len()), // uncle_count
             alloy_rlp::encode::<&[u8]>(&[]), // umm_root is always empty (not even present in json-rpc)
             alloy_rlp::encode(self.bitcoin_merged_mining_header.as_slice()),
         ];
-
-        // encoded_fields.push(encode_bytes(
-        //     "bitcoin_merged_mining_merkle_proof",
-        //     self.bitcoin_merged_mining_merkle_proof.as_slice(),
-        // ));
-        // encoded_fields.push(encode_bytes(
-        //     "bitcoin_merged_mining_coinbase_transaction",
-        //     self.bitcoin_merged_mining_coinbase_transaction.as_slice(),
-        // ));
 
         let out = encode_list(encoded_fields);
 

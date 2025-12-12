@@ -275,10 +275,11 @@ fn calculate_block_effort(block: &Block) -> Result<U256, &'static str> {
     U256::MAX.checked_div(pow).ok_or("0 division on calculate_block_effort")
 }
 
-fn validate_block_hash(block: &RskBlockHeader) -> Result<(), &'static str> {
-    let actual_hash = block.calculate_block_hash()?;
-    if block.hash != actual_hash {
-        return Err("Block hash is not matching");
+fn validate_block_hash(header: &RskBlockHeader) -> Result<(), &'static str> {
+    let actual_hash = header.calculate_block_hash()?;
+    if header.hash != actual_hash {
+        println!("Block number: {}", header.number);
+        return Err("Block header hash is not matching");
     }
     Ok(())
 }

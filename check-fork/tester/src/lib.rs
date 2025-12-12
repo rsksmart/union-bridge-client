@@ -17,17 +17,17 @@ const RSK_RPC_URL: &str = "https://public-node.rsk.co";
 const SUPERBLOCK_THRESHOLD_FACTOR: u64 = 20;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct RskBlock {
+struct TesterRskBlock {
     hash: H256,
     #[serde(flatten)]
     header: RskBlockHeader,
     bridge_event: Option<BridgeEvent>,
     #[serde(default)]
-    uncles: Vec<RskBlock>,
+    uncles: Vec<TesterRskBlock>,
 }
 
-impl From<&RskBlock> for Block {
-    fn from(rsk_block: &RskBlock) -> Self {
+impl From<&TesterRskBlock> for Block {
+    fn from(rsk_block: &TesterRskBlock) -> Self {
         Block {
             bridge_event: rsk_block.bridge_event.clone(),
             uncles: rsk_block.uncles.iter().map(Block::from).collect(),
@@ -82,7 +82,7 @@ pub async fn get_blocks(
             // remove next three lines when connection with check-fork is done and uncles come in right format
             let mut result = result.unwrap().clone();
             result["uncles"] = serde_json::Value::Array(Vec::new());
-            let block: RskBlock = serde_json::from_str(&result.to_string())?;
+            let block: TesterRskBlock = serde_json::from_str(&result.to_string())?;
             if log_super_block {
                 log_if_superblock(&block)?;
             }
@@ -102,7 +102,7 @@ pub async fn get_blocks(
     }
 }
 
-fn add_bridge_event(blocks: &[RskBlock]) -> Vec<Block> {
+fn add_bridge_event(blocks: &[TesterRskBlock]) -> Vec<Block> {
     blocks
         .iter()
         .enumerate()
@@ -121,7 +121,7 @@ fn add_bridge_event(blocks: &[RskBlock]) -> Vec<Block> {
         .collect()
 }
 
-fn log_if_superblock(block: &RskBlock) -> Result<(), Box<dyn Error>> {
+fn log_if_superblock(block: &TesterRskBlock) -> Result<(), Box<dyn Error>> {
     // parse the block's actual PoW (from bitcoinMergedMiningHeader field) to decimal
     let actual_block_pow =
         U256::from_big_endian(block.header.bitcoin_merged_mining_header.as_slice());

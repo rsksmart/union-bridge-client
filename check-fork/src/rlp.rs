@@ -1,14 +1,12 @@
 use primitive_types::U256;
 
 #[must_use]
-pub fn encode_coin_value(label: &str, value: &U256) -> Vec<u8> {
-    let v = alloy_rlp::encode(u256_be_coin_bytes(value).as_slice());
-    println!("RLP encode {label}: {}", hex::encode(&v));
-    v
+pub fn encode_coin_value(value: &U256) -> Vec<u8> {
+    alloy_rlp::encode(u256_be_coin_bytes(value).as_slice())
 }
 
 #[must_use]
-pub fn encode_signed_coin_value(label: &str, value: &U256) -> Vec<u8> {
+pub fn encode_signed_coin_value(value: &U256) -> Vec<u8> {
     // RLP integers are big-endian: 0 -> 0x80, 0x00–0x7f encode as-is,
     // and if the MSB≥0x80 we prefix 0x00 to keep the value positive
     // before adding the length prefix.
@@ -19,9 +17,7 @@ pub fn encode_signed_coin_value(label: &str, value: &U256) -> Vec<u8> {
         prefixed.extend_from_slice(&bytes);
         bytes = prefixed;
     }
-    let v = alloy_rlp::encode(bytes.as_slice());
-    println!("RLP encode {label}: {}", hex::encode(&v));
-    v
+    alloy_rlp::encode(bytes.as_slice())
 }
 
 #[must_use]
