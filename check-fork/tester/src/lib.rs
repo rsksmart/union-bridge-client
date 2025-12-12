@@ -1,11 +1,14 @@
+use bitcoin::blockdata::block::Header;
+use bitcoin::consensus::encode::deserialize as btc_deserialize;
 use check_fork::BridgeEvent;
 use check_fork::RskBlock;
 use check_fork::block_header::RskBlockHeader;
 use primitive_types::{H256, U256};
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de};
 use serde_json::{Value, json};
 use std::error::Error;
+use std::str::FromStr;
 use std::string::ToString;
 
 const RSK_RPC_URL: &str = "https://public-node.rsk.co";
@@ -20,6 +23,11 @@ struct TesterRskBlock {
     bridge_event: Option<BridgeEvent>,
     #[serde(default)]
     uncles: Vec<TesterRskBlock>,
+    #[serde(
+        rename = "bitcoinMergedMiningHeader",
+        deserialize_with = "parse_bitcoin_header_to_pow"
+    )]
+    pow: H256,
 }
 
 impl From<&TesterRskBlock> for RskBlock {
@@ -27,7 +35,7 @@ impl From<&TesterRskBlock> for RskBlock {
         RskBlock {
             bridge_event: rsk_block.bridge_event.clone(),
             uncles: rsk_block.uncles.iter().map(RskBlock::from).collect(),
-            pow: H256::from_slice(rsk_block.header.bitcoin_merged_mining_header.as_slice()),
+            pow: rsk_block.pow,
             header: rsk_block.header.clone(),
         }
     }
@@ -149,4 +157,21 @@ fn log_if_superblock(block: &TesterRskBlock) -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
+}
+
+fn parse_bitcoin_header_to_pow<'de, D>(deserializer: D) -> Result<H256, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let hex = <&str>::deserialize(deserializer)?;
+    let bytes = hex::decode(hex.trim_start_matches("0x")).map_err(de::Error::custom)?;
+    // 80-byte → treat as full header, otherwise assume it is already a 32-byte hash
+    if bytes.len() == 80 {
+        btc_deserialize::<Header>(&bytes)
+            .map(|h| H256::from_str(&h.block_hash().to_string()))
+            .expect("Failed to deserialize hash")
+            .map_err(de::Error::custom)
+    } else {
+        H256::from_str(hex).map_err(de::Error::custom)
+    }
 }
