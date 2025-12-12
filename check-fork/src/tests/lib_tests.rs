@@ -511,13 +511,8 @@ fn succeed_if_block_hash_eq_expected_hash() {
     println!("Rootstock Block: {test_case:?}");
 
     let hash = test_case.header.calculate_block_hash().unwrap();
-    let vec = hash.as_bytes().to_vec();
-    let hash_str = hex::encode(vec);
 
-    assert_eq!(
-        test_case.expected_hash.get(2..test_case.expected_hash.len()).unwrap(),
-        hash_str.as_str()
-    );
+    assert_eq!(test_case.header.hash, hash);
 }
 
 #[test]
@@ -529,14 +524,9 @@ fn succeed_if_mini_chain_hashes_are_valid() {
 
     for (i, block) in test_case.chain.iter().enumerate() {
         let calculated_hash = block.header.calculate_block_hash().unwrap();
-        let expected_hash = block
-            .expected_hash
-            .strip_prefix("0x")
-            .unwrap_or(&block.expected_hash);
 
         assert_eq!(
-            hex::encode(calculated_hash.as_bytes()),
-            expected_hash,
+            calculated_hash, block.header.hash,
             "Block hash mismatch at index {i} (height {})",
             block.header.number
         );

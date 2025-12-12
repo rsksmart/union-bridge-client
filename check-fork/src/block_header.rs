@@ -16,7 +16,7 @@ use crate::rlp::encode_signed_coin_value;
 pub struct RskBlockHeader {
     #[serde(rename = "number", deserialize_with = "deserialize_hex_u64")]
     pub number: u64, // Block height (genesis = 0)
-    #[serde(skip)]
+    #[serde(rename = "hash", deserialize_with = "deserialize_hex_h256")]
     pub hash: H256, // Keccak-256 of the encoded header
     #[serde(rename = "parentHash", deserialize_with = "deserialize_hex_h256")]
     pub parent: H256, // Keccak-256 hash of the parent block
