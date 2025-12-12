@@ -136,8 +136,6 @@ fn check_receipt<P: Provider>(_provider: &P, receipt: &TransactionReceipt) {
         "Transaction {} failed: block={:?}, block_hash={:?}",
         receipt.transaction_hash, receipt.block_number, receipt.block_hash
     );
-
-    debug!("Transaction {} failed", receipt.transaction_hash);
 }
 
 async fn send_transaction<P, D>(
