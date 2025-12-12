@@ -12,10 +12,10 @@ use crate::block_header::RskBlockHeader;
 pub const SUPERBLOCK_TIMES_DIFFICULTY: u8 = 20;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Block {
+pub struct RskBlock {
     pub bridge_event: Option<BridgeEvent>,
     #[serde(default)]
-    pub uncles: Vec<Block>,
+    pub uncles: Vec<RskBlock>,
     // alternatively we can receive `bitcoinMergedMiningHeader`, but we would need to include bitcoin crate here, etc.
     pub pow: H256,
     pub header: RskBlockHeader,
@@ -30,7 +30,7 @@ pub struct CheckForkArgs {
     pub init_block_number: u64,
     pub required_effort: U256,
     pub required_num_blocks: u32,
-    pub block_list: Vec<Block>,
+    pub block_list: Vec<RskBlock>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -116,13 +116,16 @@ pub fn check_fork(args: &CheckForkArgs) -> Result<U256, &'static str> {
     Ok(cumulative_effort)
 }
 
-fn accumulate_effort(cumulative_effort: U256, block: &Block) -> Result<U256, &'static str> {
+fn accumulate_effort(cumulative_effort: U256, block: &RskBlock) -> Result<U256, &'static str> {
     let effort = calculate_block_effort(block)?;
 
     cumulative_effort.checked_add(effort).ok_or("Overflow occurred adding block's PoW")
 }
 
-fn validate_block_list(required_num_blocks: u32, block_list: &[Block]) -> Result<(), &'static str> {
+fn validate_block_list(
+    required_num_blocks: u32,
+    block_list: &[RskBlock],
+) -> Result<(), &'static str> {
     if required_num_blocks < 1 {
         return Err("Invalid number of required blocks");
     }
@@ -135,7 +138,7 @@ fn validate_block_list(required_num_blocks: u32, block_list: &[Block]) -> Result
 }
 
 fn validate_first_block(
-    block: &Block,
+    block: &RskBlock,
     init_block_time: u64,
     init_block_number: u64,
     utxo_id: &str,
@@ -180,7 +183,7 @@ fn validate_bridge_event(
     Ok(())
 }
 
-fn validate_consecutive_block(block: &Block, prev_block: &Block) -> Result<(), &'static str> {
+fn validate_consecutive_block(block: &RskBlock, prev_block: &RskBlock) -> Result<(), &'static str> {
     if block.bridge_event.is_some() {
         return Err("Only the first block should contain a BridgeEvent");
     }
@@ -207,7 +210,7 @@ fn validate_consecutive_block(block: &Block, prev_block: &Block) -> Result<(), &
     Ok(())
 }
 
-fn validate_uncle(trunk_block: &Block, uncle: &Block) -> Result<(), &'static str> {
+fn validate_uncle(trunk_block: &RskBlock, uncle: &RskBlock) -> Result<(), &'static str> {
     if uncle.header.number != trunk_block.header.number {
         return Err("Uncle's block number does not match trunk block number");
     }
@@ -224,7 +227,10 @@ fn validate_uncle(trunk_block: &Block, uncle: &Block) -> Result<(), &'static str
     Ok(())
 }
 
-fn validate_enough_effort_superblock(block: &Block, _block_type: &str) -> Result<(), &'static str> {
+fn validate_enough_effort_superblock(
+    block: &RskBlock,
+    _block_type: &str,
+) -> Result<(), &'static str> {
     let expected_effort = block.header.difficulty * SUPERBLOCK_TIMES_DIFFICULTY;
     let actual_effort = calculate_block_effort(block)?;
 
@@ -251,7 +257,10 @@ fn validate_enough_effort_superblock(block: &Block, _block_type: &str) -> Result
     Ok(())
 }
 
-fn validate_difficulty_in_bounds(block: &Block, prev_block: &Block) -> Result<(), &'static str> {
+fn validate_difficulty_in_bounds(
+    block: &RskBlock,
+    prev_block: &RskBlock,
+) -> Result<(), &'static str> {
     // check these RSKj lines:
     // - https://github.com/rsksmart/rskj/blob/3cd3401a9c6cfd3dfa63120304d0f26f691ae6e7/rskj-core/src/main/java/co/rsk/core/DifficultyCalculator.java#L64
     // - https://github.com/rsksmart/rskj/blob/master/rskj-core/src/main/java/org/ethereum/config/Constants.java#L150
@@ -268,7 +277,7 @@ fn validate_difficulty_in_bounds(block: &Block, prev_block: &Block) -> Result<()
     }
 }
 
-fn calculate_block_effort(block: &Block) -> Result<U256, &'static str> {
+fn calculate_block_effort(block: &RskBlock) -> Result<U256, &'static str> {
     let pow = U256::from_big_endian(block.pow.as_bytes());
     // compute the effort by inverting the pow
     // U256::MAX, the "difficulty 1" target, represents the easiest possible target

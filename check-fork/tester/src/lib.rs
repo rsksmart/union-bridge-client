@@ -4,8 +4,8 @@ use std::string::ToString;
 
 use bitcoin::blockdata::block::Header;
 use bitcoin::consensus::encode::deserialize as btc_deserialize;
-use check_fork::Block;
 use check_fork::BridgeEvent;
+use check_fork::RskBlock;
 use check_fork::block_header::RskBlockHeader;
 use primitive_types::{H256, U256};
 use reqwest::Client;
@@ -26,11 +26,11 @@ struct TesterRskBlock {
     uncles: Vec<TesterRskBlock>,
 }
 
-impl From<&TesterRskBlock> for Block {
+impl From<&TesterRskBlock> for RskBlock {
     fn from(rsk_block: &TesterRskBlock) -> Self {
-        Block {
+        RskBlock {
             bridge_event: rsk_block.bridge_event.clone(),
-            uncles: rsk_block.uncles.iter().map(Block::from).collect(),
+            uncles: rsk_block.uncles.iter().map(RskBlock::from).collect(),
             pow: H256::from_slice(rsk_block.header.bitcoin_merged_mining_header.as_slice()),
             header: rsk_block.header.clone(),
         }
@@ -51,7 +51,7 @@ pub async fn get_blocks(
     num_of_blocks: u32,
     log_super_block: bool,
     has_bridge_event: bool,
-) -> Result<Vec<Block>, Box<dyn Error>> {
+) -> Result<Vec<RskBlock>, Box<dyn Error>> {
     let client = Client::new();
     let mut blocks = vec![];
 
@@ -94,20 +94,20 @@ pub async fn get_blocks(
     // // Write blocks to the output file
     // let serialized_blocks = serde_json::to_string(&blocks)?;
     if has_bridge_event {
-        let result: Vec<Block> = add_bridge_event(&blocks);
+        let result: Vec<RskBlock> = add_bridge_event(&blocks);
         Ok(result)
     } else {
-        let result: Vec<Block> = blocks.iter().map(Block::from).collect();
+        let result: Vec<RskBlock> = blocks.iter().map(RskBlock::from).collect();
         Ok(result)
     }
 }
 
-fn add_bridge_event(blocks: &[TesterRskBlock]) -> Vec<Block> {
+fn add_bridge_event(blocks: &[TesterRskBlock]) -> Vec<RskBlock> {
     blocks
         .iter()
         .enumerate()
         .map(|(i, b)| {
-            let mut input_block = Block::from(b);
+            let mut input_block = RskBlock::from(b);
             if i == 0 {
                 // TODO(Jira): https://rsklabs.atlassian.net/browse/UB-10
                 input_block.bridge_event = Some(BridgeEvent {

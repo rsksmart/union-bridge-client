@@ -1,8 +1,8 @@
 use std::fs;
 
 use crate::{
-    Block, BridgeEvent, CheckForkArgs, SUPERBLOCK_TIMES_DIFFICULTY, block_header::RskBlockHeader,
-    check_fork,
+    BridgeEvent, CheckForkArgs, RskBlock, SUPERBLOCK_TIMES_DIFFICULTY,
+    block_header::RskBlockHeader, check_fork,
 };
 use primitive_types::{H256, U256};
 use serde::{Deserialize, Serialize};
@@ -545,7 +545,7 @@ fn succeed_if_mini_chain_hashes_are_valid() {
 
 // TODO add more complex tests, ie: with more than 2 blocks, with more uncles, with more real block data, etc.
 
-fn create_base_block(number: u64, bridge_event: bool, parent: Option<H256>) -> Block {
+fn create_base_block(number: u64, bridge_event: bool, parent: Option<H256>) -> RskBlock {
     let difficulty = U256::from(DEFAULT_DIFFICULTY);
     let timestamp = DEFAULT_TIMESTAMP;
     let mut header = RskBlockHeader::new_with(number, difficulty, parent, timestamp);
@@ -553,7 +553,7 @@ fn create_base_block(number: u64, bridge_event: bool, parent: Option<H256>) -> B
         .calculate_block_hash()
         .expect("could not calculate block hash");
 
-    Block {
+    RskBlock {
         // this will be removed
         bridge_event: bridge_event.then(|| BridgeEvent {
             utxo_id: format!("utxo_{number}"),
@@ -566,11 +566,11 @@ fn create_base_block(number: u64, bridge_event: bool, parent: Option<H256>) -> B
     }
 }
 
-fn create_first_block(number: u64) -> Block {
+fn create_first_block(number: u64) -> RskBlock {
     create_base_block(number, true, None)
 }
 
-fn create_child_block(parent: &Block) -> Block {
+fn create_child_block(parent: &RskBlock) -> RskBlock {
     let mut child = create_base_block(parent.header.number + 1, false, Some(parent.header.hash));
     child.header.timestamp = parent.header.timestamp + 100;
     child.header.difficulty = build_valid_consecutive_difficulty(parent);
@@ -583,7 +583,7 @@ fn create_child_block(parent: &Block) -> Block {
     child
 }
 
-fn create_uncle(brother: &Block) -> Block {
+fn create_uncle(brother: &RskBlock) -> RskBlock {
     let mut uncle = create_base_block(brother.header.number, false, Some(brother.header.parent));
     uncle.header.timestamp = brother.header.timestamp + 10;
     uncle.header.difficulty = brother.header.difficulty;
@@ -596,7 +596,7 @@ fn create_uncle(brother: &Block) -> Block {
     uncle
 }
 
-fn build_valid_consecutive_difficulty(first_block: &Block) -> U256 {
+fn build_valid_consecutive_difficulty(first_block: &RskBlock) -> U256 {
     first_block.header.difficulty + first_block.header.difficulty / 400 // limit threshold
 }
 
@@ -624,12 +624,15 @@ struct CheckForkArgsBuilder {
     init_block_number: Option<u64>,
     required_num_blocks: Option<u32>,
     required_effort: Option<U256>,
-    block_list: Vec<Block>,
+    block_list: Vec<RskBlock>,
 }
 
 impl CheckForkArgsBuilder {
-    fn new(block_list: Vec<Block>) -> Self {
-        CheckForkArgsBuilder { block_list, ..Default::default() }
+    fn new(block_list: Vec<RskBlock>) -> Self {
+        CheckForkArgsBuilder {
+            block_list,
+            ..Default::default()
+        }
     }
 
     fn event_utxo_id(mut self, utxo_id: String) -> Self {

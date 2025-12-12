@@ -1,8 +1,8 @@
 use crate::blockchain_tracker::{BlockConfirmations, BlockchainObserver};
 use crate::config::REQUIRED_CONFIRMATIONS;
 use crate::types::AdvanceFundsEvent;
-use check_fork::Block;
 use check_fork::CheckForkArgs;
+use check_fork::RskBlock as CfRskBlock;
 use check_fork::block_header::RskBlockHeader;
 use common::types::{BlockPow, RskBlock, RskBlockAndUncles};
 use log::{debug, info};
@@ -164,7 +164,7 @@ impl CheckForkAccumulator {
             .retain(|b| b.header.hash != block.hash().value());
     }
 
-    fn new_check_fork_block(&self, block_with_uncles: &RskBlockAndUncles) -> Block {
+    fn new_check_fork_block(&self, block_with_uncles: &RskBlockAndUncles) -> CfRskBlock {
         let block = &block_with_uncles.block();
 
         let bridge_event = (block.hash() == self.advance_funds_block_hash.into()).then(|| {
@@ -177,7 +177,7 @@ impl CheckForkAccumulator {
             bridge_event
         });
 
-        let uncle_blocks: Vec<Block> = block_with_uncles
+        let uncle_blocks: Vec<CfRskBlock> = block_with_uncles
             .uncles()
             .iter()
             .map(|uncle| {
@@ -206,8 +206,8 @@ impl CheckForkAccumulator {
     fn rsk_block_to_check_fork_block(
         block: &RskBlock,
         bridge_event: Option<check_fork::BridgeEvent>,
-        uncles: Vec<Block>,
-    ) -> Block {
+        uncles: Vec<CfRskBlock>,
+    ) -> CfRskBlock {
         let mut header = RskBlockHeader::new_with(
             block.number().value(),
             block.difficulty().value(),
@@ -215,7 +215,7 @@ impl CheckForkAccumulator {
             block.timestamp().value(),
         );
         header.hash = block.hash().value();
-        Block {
+        CfRskBlock {
             bridge_event,
             uncles,
             pow: block.pow().value(),

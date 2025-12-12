@@ -131,6 +131,8 @@ impl RskBlockHeader {
             return Err("minimum_gas_price is None");
         };
 
+        println!("uncles: {:?}", self.uncles);
+
         let encoded_fields: Vec<Vec<u8>> = vec![
             alloy_rlp::encode(self.parent.as_bytes()),
             alloy_rlp::encode(self.uncles_hash.as_bytes()),
