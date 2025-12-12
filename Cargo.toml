@@ -13,6 +13,9 @@ members = [
     "user-api",
 ]
 
+[workspace.package]
+version = "0.2.0"
+
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
 pedantic = { level = "deny", priority = -1 }

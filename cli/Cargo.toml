@@ -2,6 +2,9 @@
 resolver = "2"
 members = ["run", "operations", "bitcoin-wallet", "mocks"]
 
+[workspace.package]
+version = "0.2.0"
+
 [workspace.dependencies]
 anyhow = "1.0.94"
 clap = { version = "4.5.30", features = ["derive"] }

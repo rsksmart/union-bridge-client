@@ -1432,7 +1432,7 @@ dependencies = [
 
 [[package]]
 name = "block-indexer"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1654,7 +1654,7 @@ dependencies = [
 
 [[package]]
 name = "check-fork"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "primitive-types 0.13.1",
  "serde",
@@ -1662,7 +1662,7 @@ dependencies = [
 
 [[package]]
 name = "check-fork-tester"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bitcoin",
  "check-fork",
@@ -1680,7 +1680,7 @@ dependencies = [
 
 [[package]]
 name = "check-fork-zkp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "risc0-build",
 ]
@@ -1804,7 +1804,7 @@ checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 
 [[package]]
 name = "common"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "alloy-contract",
  "alloy-primitives",
@@ -1930,7 +1930,7 @@ dependencies = [
 
 [[package]]
 name = "coordinator"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "alloy-primitives",
  "alloy-sol-types",
@@ -3496,7 +3496,7 @@ dependencies = [
 
 [[package]]
 name = "key-manager"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "alloy-primitives",
  "alloy-signer",
@@ -3621,7 +3621,7 @@ dependencies = [
 
 [[package]]
 name = "log-indexer"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -6345,7 +6345,7 @@ dependencies = [
 
 [[package]]
 name = "transaction-dispatcher"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "alloy-contract",
  "alloy-json-rpc",
@@ -6540,7 +6540,7 @@ dependencies = [
 
 [[package]]
 name = "user-api"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "axum",
