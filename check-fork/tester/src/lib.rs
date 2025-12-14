@@ -5,7 +5,7 @@ use check_fork::RskBlock;
 use check_fork::block_header::RskBlockHeader;
 use primitive_types::{H256, U256};
 use reqwest::Client;
-use serde::{Deserialize, Deserializer, Serialize, de};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::error::Error;
 use std::str::FromStr;
@@ -15,33 +15,48 @@ const RSK_RPC_URL: &str = "https://public-node.rsk.co";
 
 const SUPERBLOCK_THRESHOLD_FACTOR: u64 = 20;
 
+// used mainly for deserialization
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct TesterRskBlock {
-    hash: H256,
     #[serde(flatten)]
     header: RskBlockHeader,
     bridge_event: Option<BridgeEvent>,
-    #[serde(default)]
-    uncles: Vec<TesterRskBlock>,
-    #[serde(
-        rename = "bitcoinMergedMiningHeader",
-        deserialize_with = "parse_bitcoin_header_to_pow"
-    )]
-    pow: H256,
+    #[serde(skip)]
+    uncles: Vec<TesterRskBlock>, // this filed should be filled later
 }
 
 impl From<&TesterRskBlock> for RskBlock {
-    fn from(rsk_block: &TesterRskBlock) -> Self {
+    fn from(tester_block: &TesterRskBlock) -> Self {
         RskBlock {
-            bridge_event: rsk_block.bridge_event.clone(),
-            uncles: rsk_block.uncles.iter().map(RskBlock::from).collect(),
-            pow: rsk_block.pow,
-            header: rsk_block.header.clone(),
+            bridge_event: tester_block.bridge_event.clone(),
+            uncles: tester_block.uncles.iter().map(RskBlock::from).collect(),
+            pow: tester_block.pow().expect("pow is not valid"),
+            header: tester_block.header.clone(),
         }
     }
 }
 
-/// Fetches blocks from RSK RPC endpoint.
+impl TesterRskBlock {
+    fn pow(&self) -> Result<H256, Box<dyn Error>> {
+        if self.header.bitcoin_merged_mining_header.len() != 80 {
+            return Err("bitcoin_merged_mining_header is not 80 bytes long".into());
+        }
+        let btc_header: Header = btc_deserialize(&self.header.bitcoin_merged_mining_header)
+            .map_err(|e| {
+                format!(
+                    "Failed to deserialize btc header: {e:?}, data: {:?}",
+                    self.header.bitcoin_merged_mining_header
+                )
+            })?;
+        let hash = H256::from_str(&btc_header.block_hash().to_string())?;
+        Ok(hash)
+    }
+
+    fn add_uncle(&mut self, uncle: TesterRskBlock) {
+        self.uncles.push(uncle);
+    }
+}
+
 ///
 /// # Errors
 ///
@@ -60,50 +75,110 @@ pub async fn get_blocks(
     let mut blocks = vec![];
 
     for i in 0..num_of_blocks {
-        let block_number_hex = format!("{:#x}", start_block_number + u64::from(i));
-        let request_body = json!({
-            "jsonrpc": "2.0",
-            "method": "eth_getBlockByNumber",
-            "params": [block_number_hex, true],
-            "id": 1,
-        });
-
-        let response = client.post(RSK_RPC_URL).json(&request_body).send().await?;
-        let response_json: Value = response.json().await?;
-
-        let error = response_json.get("error");
-        let result = response_json.get("result");
-        if error.is_some() {
-            println!(
-                "Error fetching block {}: {:?}",
-                start_block_number + u64::from(i),
-                response_json
-            );
-        } else if result.is_some() {
-            // originally we had:
-            // let block: RskBlock = serde_json::from_str(&result.unwrap().to_string())?;
-
-            // remove next three lines when connection with check-fork is done and uncles come in right format
-            let mut result = result.unwrap().clone();
-            result["uncles"] = serde_json::Value::Array(Vec::new());
-            let block: TesterRskBlock = serde_json::from_str(&result.to_string())?;
-            if log_super_block {
-                log_if_superblock(&block)?;
-            }
-
-            blocks.push(block);
-        }
+        fetch_block_by_num(start_block_number, log_super_block, &client, &mut blocks, i).await?;
     }
 
     // // Write blocks to the output file
     // let serialized_blocks = serde_json::to_string(&blocks)?;
     if has_bridge_event {
         let result: Vec<RskBlock> = add_bridge_event(&blocks);
-        Ok(result)
-    } else {
-        let result: Vec<RskBlock> = blocks.iter().map(RskBlock::from).collect();
-        Ok(result)
+        return Ok(result);
     }
+
+    let mut blocks_with_uncles = Vec::new();
+    for block in blocks {
+        let uncles_hashes = block.header.uncles.clone();
+        let block_with_uncles = fetch_uncles(&client, uncles_hashes, block).await;
+        blocks_with_uncles.push(block_with_uncles);
+    }
+    let result = blocks_with_uncles.iter().map(RskBlock::from).collect();
+    Ok(result)
+}
+
+async fn fetch_uncles(
+    client: &Client,
+    uncles_hashes: Vec<H256>,
+    mut block: TesterRskBlock,
+) -> TesterRskBlock {
+    for uncle_hash in uncles_hashes {
+        let uncle = fetch_block_by_hash(uncle_hash, client)
+            .await
+            .expect("Failed to fetch uncle");
+        block.add_uncle(uncle);
+    }
+    block.clone()
+}
+
+async fn fetch_block_by_hash(
+    hash: H256,
+    client: &Client,
+) -> Result<TesterRskBlock, Box<dyn Error>> {
+    let hash_hex = format!("0x{:x}", hash);
+    let request_body = json!({
+        "jsonrpc": "2.0",
+        "method": "eth_getBlockByHash",
+        "params": [hash_hex, true],
+        "id": 1,
+    });
+    let response = client.post(RSK_RPC_URL).json(&request_body).send().await?;
+    let response_json: Value = response.json().await?;
+    let error = response_json.get("error");
+    let result = response_json.get("result");
+    if let Some(_) = error {
+        // todo(fede) print error
+        return Err(format!(
+            "Error fetching block by hash {}: {:?}",
+            hash_hex, response_json
+        )
+        .into());
+    }
+    let Some(result) = result else {
+        return Err(format!("No result for block hash {}", hash_hex).into());
+    };
+    let mut result = result.clone();
+    result["uncles"] = serde_json::Value::Array(Vec::new());
+    let block: TesterRskBlock = serde_json::from_str(&result.to_string())?;
+    Ok(block)
+}
+
+async fn fetch_block_by_num(
+    start_block_number: u64,
+    log_super_block: bool,
+    client: &Client,
+    blocks: &mut Vec<TesterRskBlock>,
+    num: u32,
+) -> Result<(), Box<dyn Error>> {
+    let block_number_hex = format!("{:#x}", start_block_number + u64::from(num));
+    let request_body = json!({
+        "jsonrpc": "2.0",
+        "method": "eth_getBlockByNumber",
+        "params": [block_number_hex, true],
+        "id": 1,
+    });
+    let response = client.post(RSK_RPC_URL).json(&request_body).send().await?;
+    let response_json: Value = response.json().await?;
+    let error = response_json.get("error");
+    let result = response_json.get("result");
+    Ok(if error.is_some() {
+        println!(
+            "Error fetching block {}: {:?}",
+            start_block_number + u64::from(num),
+            response_json
+        );
+    } else if result.is_some() {
+        // originally we had:
+        // let block: RskBlock = serde_json::from_str(&result.unwrap().to_string())?;
+
+        // remove next three lines when connection with check-fork is done and uncles come in right format
+        let mut result = result.unwrap().clone();
+        result["uncles"] = serde_json::Value::Array(Vec::new());
+        let block: TesterRskBlock = serde_json::from_str(&result.to_string())?;
+        if log_super_block {
+            log_if_superblock(&block)?;
+        }
+
+        blocks.push(block);
+    })
 }
 
 fn add_bridge_event(blocks: &[TesterRskBlock]) -> Vec<RskBlock> {
@@ -157,21 +232,4 @@ fn log_if_superblock(block: &TesterRskBlock) -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
-}
-
-fn parse_bitcoin_header_to_pow<'de, D>(deserializer: D) -> Result<H256, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let hex = <&str>::deserialize(deserializer)?;
-    let bytes = hex::decode(hex.trim_start_matches("0x")).map_err(de::Error::custom)?;
-    // 80-byte → treat as full header, otherwise assume it is already a 32-byte hash
-    if bytes.len() == 80 {
-        btc_deserialize::<Header>(&bytes)
-            .map(|h| H256::from_str(&h.block_hash().to_string()))
-            .expect("Failed to deserialize hash")
-            .map_err(de::Error::custom)
-    } else {
-        H256::from_str(hex).map_err(de::Error::custom)
-    }
 }

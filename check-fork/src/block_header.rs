@@ -122,7 +122,6 @@ impl RskBlockHeader {
         let mut hasher = Keccak256::new();
         hasher.update(&rlp_encoded);
         let block_hash = H256::from_slice(&hasher.finalize());
-
         Ok(block_hash)
     }
 
@@ -130,9 +129,6 @@ impl RskBlockHeader {
         let Some(minimum_gas_price) = self.minimum_gas_price else {
             return Err("minimum_gas_price is None");
         };
-
-        println!("uncles: {:?}", self.uncles);
-
         let encoded_fields: Vec<Vec<u8>> = vec![
             alloy_rlp::encode(self.parent.as_bytes()),
             alloy_rlp::encode(self.uncles_hash.as_bytes()),
@@ -153,9 +149,7 @@ impl RskBlockHeader {
             alloy_rlp::encode::<&[u8]>(&[]), // umm_root is always empty (not even present in json-rpc)
             alloy_rlp::encode(self.bitcoin_merged_mining_header.as_slice()),
         ];
-
         let out = encode_list(encoded_fields);
-
         Ok(out)
     }
 }
