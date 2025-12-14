@@ -15,7 +15,8 @@ const RSK_RPC_URL: &str = "https://public-node.rsk.co";
 
 const SUPERBLOCK_THRESHOLD_FACTOR: u64 = 20;
 
-// used mainly for deserialization
+// used mainly for deserializationw and also to avoid adding
+// dependencies (bitcoin) to the check_fork crate
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct TesterRskBlock {
     #[serde(flatten)]

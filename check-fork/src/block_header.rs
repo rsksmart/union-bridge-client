@@ -56,16 +56,6 @@ pub struct RskBlockHeader {
         deserialize_with = "deserialize_hex_bytes"
     )]
     pub bitcoin_merged_mining_header: Vec<u8>, // 80-byte Bitcoin block header for merged mining
-    #[serde(
-        rename = "bitcoinMergedMiningMerkleProof",
-        deserialize_with = "deserialize_hex_bytes"
-    )]
-    pub bitcoin_merged_mining_merkle_proof: Vec<u8>, // Bitcoin merkle proof of coinbase tx
-    #[serde(
-        rename = "bitcoinMergedMiningCoinbaseTransaction",
-        deserialize_with = "deserialize_hex_bytes"
-    )]
-    pub bitcoin_merged_mining_coinbase_transaction: Vec<u8>, // Bitcoin serialized coinbase tx
     // the follwoing fields are goonna be included in the next hardfork (reed)
     #[serde(skip)]
     _umm_root: [u8; 20], // UMM root (only if block is UMM, must be exactly 20 bytes)
@@ -96,8 +86,6 @@ impl Default for RskBlockHeader {
             minimum_gas_price: Some(U256::zero()),
             uncles: Vec::new(),
             bitcoin_merged_mining_header: vec![0u8; 80],
-            bitcoin_merged_mining_merkle_proof: Vec::new(),
-            bitcoin_merged_mining_coinbase_transaction: Vec::new(),
             _umm_root: [0u8; 20],
             _version: 0,
             _tx_execution_sublists_edges: None,
@@ -146,11 +134,14 @@ impl RskBlockHeader {
             encode_coin_value(&self.paid_fees),
             encode_signed_coin_value(&minimum_gas_price),
             alloy_rlp::encode(self.uncles.len()), // uncle_count
-            alloy_rlp::encode::<&[u8]>(&[]), // umm_root is always empty (not even present in json-rpc)
+            alloy_rlp::encode::<&[u8]>(&self.umm_root()),
             alloy_rlp::encode(self.bitcoin_merged_mining_header.as_slice()),
         ];
         let out = encode_list(encoded_fields);
         Ok(out)
+    }
+    pub fn umm_root(&self) -> [u8; 20] {
+        [u8::default(); 20] // umm_root is always empty (not even present in json-rpc)
     }
 }
 
@@ -274,7 +265,7 @@ impl fmt::Debug for RskBlockHeader {
 
         write!(
             f,
-            "RskBlockHeader {{ number: {}, hash: {}, parent: {}, diff: {}, ts: {}, uncles_hash: {}, coinbase: 0x{}, state_root: {}, tx_root: {}, receipt_root: {}, logs_bloom: {} bytes, gas_limit: 0x{}, gas_used: {}, extra_data: {} bytes, paid_fees: {}, min_gas_price: {:?}, uncle_count: {}, mm_header: {} bytes, mm_merkle_proof: {} bytes, mm_coinbase: {} bytes }}",
+            "RskBlockHeader {{ number: {}, hash: {}, parent: {}, diff: {}, ts: {}, uncles_hash: {}, coinbase: 0x{}, state_root: {}, tx_root: {}, receipt_root: {}, logs_bloom: {} bytes, gas_limit: 0x{}, gas_used: {}, extra_data: {} bytes, paid_fees: {}, min_gas_price: {:?}, uncle_count: {}, umm_root: {:?}, mm_header: {} bytes }}",
             self.number,
             short(&self.hash),
             short(&self.parent),
@@ -292,9 +283,8 @@ impl fmt::Debug for RskBlockHeader {
             self.paid_fees,
             self.minimum_gas_price,
             self.uncles.len(),
+            self.umm_root(),
             self.bitcoin_merged_mining_header.len(),
-            self.bitcoin_merged_mining_merkle_proof.len(),
-            self.bitcoin_merged_mining_coinbase_transaction.len()
         )
     }
 }
