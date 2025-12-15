@@ -44,7 +44,10 @@ impl<C: CommitteeRegistryContractApi, S: StreamManagerContractApi, BP: BalancePr
         &self,
         input: ApplyToStreamInput,
     ) -> Result<ApplyToStreamOutput, DomainErrors> {
-        info!("Init ApplyToStream stream: {input:?}");
+        info!(
+            "Init ApplyToStream stream_id={:?}, role={}",
+            input.stream_id, input.role
+        );
 
         let member_balance = self
             .balance_provider
@@ -81,7 +84,7 @@ impl<C: CommitteeRegistryContractApi, S: StreamManagerContractApi, BP: BalancePr
         )
         .map_err(|e| DomainErrors::InvalidPublicKey(format!("Invalid public key: {e}")))?;
 
-        debug!("ApplyToStream with derived MemberRegistrationKeys {public_keys_regs:?}");
+        debug!("ApplyToStream derived registration keys for stream_id={:?}", input.stream_id);
 
         let tx_hash = self
             .committee_registry
