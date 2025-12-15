@@ -162,8 +162,6 @@ find_recent_log_match() {
     fi
     
     echo "$log_stream" | grep -E "$pattern" | while read -r line; do
-        echo "Found match, checking timestamp: $line"
-
         local log_timestamp=$(extract_log_timestamp "$line" "$mode")
         
         if [ -n "$log_timestamp" ]; then
@@ -327,8 +325,8 @@ wait_for_log_with_block_timeout() {
         start_time=$(date +%s)
     fi
 
-    # allow 5 minutes margin (300 seconds) before start_time for clock differences
-    local TIME_MARGIN=300
+    # allow 1 minute margin (60 seconds) before start_time for clock differences
+    local TIME_MARGIN=60
     local min_time=$((start_time - TIME_MARGIN))
 
     local start_height=$(get_current_bitcoin_height)
