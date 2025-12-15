@@ -140,8 +140,12 @@ impl RskBlockHeader {
         let out = encode_list(encoded_fields);
         Ok(out)
     }
-    pub fn umm_root(&self) -> [u8; 20] {
-        [u8::default(); 20] // umm_root is always empty (not even present in json-rpc)
+    #[must_use]
+    pub fn umm_root(&self) -> [u8; 0] {
+        {
+            u8::default();
+            [] as [u8; 0]
+        } // umm_root is always empty (not even present in json-rpc)
     }
 }
 
