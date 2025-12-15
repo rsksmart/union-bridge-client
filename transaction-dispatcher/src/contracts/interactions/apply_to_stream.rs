@@ -44,10 +44,7 @@ impl<C: CommitteeRegistryContractApi, S: StreamManagerContractApi, BP: BalancePr
         &self,
         input: ApplyToStreamInput,
     ) -> Result<ApplyToStreamOutput, DomainErrors> {
-        info!(
-            "Init ApplyToStream stream_id={:?}, role={}",
-            input.stream_id, input.role
-        );
+        info!("Init ApplyToStream stream_id={:?}, role={}", input.stream_id, input.role);
 
         let member_balance = self
             .balance_provider
