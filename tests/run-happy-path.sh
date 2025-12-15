@@ -162,6 +162,8 @@ find_recent_log_match() {
     fi
     
     echo "$log_stream" | grep -E "$pattern" | while read -r line; do
+        echo "Found match, checking timestamp: $line"
+
         local log_timestamp=$(extract_log_timestamp "$line" "$mode")
         
         if [ -n "$log_timestamp" ]; then
@@ -306,21 +308,35 @@ wait_for_bitcoin_blocks() {
 }
 
 # Wait for a log pattern to appear, with a block-based timeout
-# Usage: wait_for_log_with_block_timeout <pattern> <max_blocks> [start_time]
-# If start_time is provided, only logs after that time (minus margin) are considered
+# Usage: wait_for_log_with_block_timeout <pattern> <max_blocks>
+# Automatically determines start_time based on mode (docker container time or host time)
 wait_for_log_with_block_timeout() {
     local pattern="$1"
     local max_blocks=$2
-    local start_time="${3:-$(date +%s)}"
-    
+
+    # determine start_time based on mode
+    # for docker mode, use container's time as reference to avoid timezone issues
+    # for file mode, use host time
+    local start_time
+    if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
+        # get time from container (all containers share the same time)
+        start_time=$(docker compose -p "op_1" exec -T coordinator date +%s 2>/dev/null || echo "")
+        # fallback to host time if container time unavailable
+        start_time=${start_time:-$(date +%s)}
+    else
+        start_time=$(date +%s)
+    fi
+
     # allow 5 minutes margin (300 seconds) before start_time for clock differences
     local TIME_MARGIN=300
     local min_time=$((start_time - TIME_MARGIN))
-    
+
     local start_height=$(get_current_bitcoin_height)
     local target_height=$((start_height + max_blocks))
-    
-    log "Waiting for log pattern: $pattern (max $max_blocks blocks)..."
+
+    # Convert min_time to formatted date string
+    local min_time_formatted=$(date -d "@$min_time" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || date -r "$min_time" "+%Y-%m-%d %H:%M:%S")
+    log "Waiting for log pattern: $pattern (max $max_blocks blocks, after $min_time_formatted)..."
     
     while true; do
         local current_height=$(get_current_bitcoin_height)
@@ -487,8 +503,7 @@ fi
 rm -f /tmp/apply-operators-$$
 success "Operators applied to stream $STREAM_ID"
 echo ""
-APPLY_START_TIME=$(date +%s)
-if ! wait_for_log_with_block_timeout "CommitteeSetupFlow Done" 15 "$APPLY_START_TIME"; then
+if ! wait_for_log_with_block_timeout "CommitteeSetupFlow Done" 15; then
     warn "Committee setup complete log not found within timeout"
     exit 1
 fi
@@ -507,8 +522,7 @@ if ! bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -p $PACKET_NUMB
 fi
 success "Pegin transaction created"
 echo ""
-PEGIN_START_TIME=$(date +%s)
-if ! wait_for_log_with_block_timeout "PeginFlow Done" 15 "$PEGIN_START_TIME"; then
+if ! wait_for_log_with_block_timeout "PeginFlow Done" 15; then
     warn "PeginFlow completion log not found within timeout"
     exit 1
 fi
@@ -520,9 +534,6 @@ log "Command: bash cli-operations.sh user pegout -v $VALUE --env $SCRIPT_ENV"
 log "Amount: $VALUE sats"
 echo ""
 
-# capture current time (with margin for clock differences)
-PEGOUT_START_TIME=$(date +%s)
-
 if ! bash cli-operations.sh user pegout -v $VALUE --env "$SCRIPT_ENV" > /tmp/pegout-$$ 2>&1; then
     warn "Command failed! Output:"
     cat /tmp/pegout-$$
@@ -533,7 +544,7 @@ rm -f /tmp/pegout-$$
 success "Pegout requested"
 echo ""
 
-if ! wait_for_log_with_block_timeout "PegoutFlow Done" 15 "$PEGOUT_START_TIME"; then
+if ! wait_for_log_with_block_timeout "PegoutFlow Done" 15; then
     warn "PegoutFlow completion log not found within timeout"
     exit 1
 fi

@@ -92,7 +92,7 @@ ENV RUST_LOG=debug
 ENV RISC0_HOME=/opt/risc0
 
 # copy always even if only needed for one crate, as it's cheap
-COPY docker/entrypoint_sh/key-setup.sh /app/key-setup.sh
+COPY docker/client/entrypoint_sh/key-setup.sh /app/key-setup.sh
 
 LABEL org.opencontainers.image.source=https://github.com/rsksmart/union-bridge-client
 

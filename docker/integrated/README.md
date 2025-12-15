@@ -1,4 +1,4 @@
-# Docker-integrated: BitVMX + Union Bridge Client
+# Operator: BitVMX + Union Bridge Client
 
 This setup provides flexible operator deployment configurations:
 
@@ -23,7 +23,7 @@ Use this script whenever you need to fetch the latest BitVMX compose from upstre
 file. Typical times to run it:
 
 - After a new `FairgateLabs/docker-bitvmx` release to see what's changed.
-- Anytime you want to verify your `docker-integrated/bitvmx-client/docker-compose.yml` is aligned with upstream.
+- Anytime you want to verify your `docker/integrated/bitvmx-client/docker-compose.yml` is aligned with upstream.
 
 Run the script:
 
@@ -40,8 +40,8 @@ Optionally select a specific branch or tag of `FairgateLabs/docker-bitvmx`:
 ```
 
 The script clones `FairgateLabs/docker-bitvmx` at the chosen ref, saves the fetched compose as
-`docker-integrated/bitvmx-client/docker-compose.fetched.yml`, and prints a unified diff against your working
-`docker-integrated/bitvmx-client/docker-compose.yml`. It is safe to re-run at any time.
+`docker/integrated/bitvmx-client/docker-compose.fetched.yml`, and prints a unified diff against your working
+`docker/integrated/bitvmx-client/docker-compose.yml`. It is safe to re-run at any time.
 
 ### 2) Choose your environment
 
@@ -120,7 +120,7 @@ bash start_blockchains.sh --env local --new-contracts-version --fresh up -d
 
 A `USER_BITCOIN_WIF` needs to be exported in the environment. It is the Bitcoin private key (WIF) used by the user-api for user endpoints (pegin/pegout operations).
 You can generate one via the `bitcoin-wallet` with `generate_address`.
-See [bitcoin-wallet README](../cli/bitcoin-wallet/README.md) for more info.
+See [bitcoin-wallet README](../../cli/bitcoin-wallet/README.md) for more info.
 
 Note: The `bitcoin-wallet` component separately uses `MEMBER_BITCOIN_WIF` for member/operator BitVMX operations, but this is not required for starting operators via `start_operators.sh`.
 
@@ -186,7 +186,7 @@ bash operator_scripts/fund_operators_rootstock.sh --env alphanet
 ##### Fund BitVMX Bitcoin accounts
 
 We use the `bitcoin-wallet` crate (CLI) included in this repository to interact with Bitcoin node (funding addresses,
-inspecting UTXOs, etc.). See the [`bitcoin-wallet` README](../cli/bitcoin-wallet/README.md) for how to start and use the
+inspecting UTXOs, etc.). See the [`bitcoin-wallet` README](../../cli/bitcoin-wallet/README.md) for how to start and use the
 CLI.
 
 Use the helper script below to collect addresses and get ready-to-run `bitcoin-wallet` CLI commands. You must pass
@@ -287,7 +287,7 @@ the up command.
 
 ### Bitcoin Wallet issues
 
-See the `bitcoin-wallet` [README](../cli/bitcoin-wallet/README.md) for more info.
+See the `bitcoin-wallet` [README](../../cli/bitcoin-wallet/README.md) for more info.
 
 ### Resource conflicts
 

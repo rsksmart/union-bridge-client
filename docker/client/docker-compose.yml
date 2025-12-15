@@ -7,14 +7,14 @@ services:
     platform: ${PLATFORM}
     image: ghcr.io/rsksmart/union-client-block-indexer:${UC_TAG:-latest}
     build:
-      context: ../
-      dockerfile: docker/Dockerfile
+      context: ../../
+      dockerfile: docker/client/Dockerfile
       args:
         - CRATE=block-indexer
       ssh:
         - default=${SSH_AUTH_SOCK}
     volumes:
-      - ../config/:/app/config/:ro
+      - ../../config/:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - db-blocks:/app/db/blocks
     environment:
@@ -32,14 +32,14 @@ services:
     platform: ${PLATFORM}
     image: ghcr.io/rsksmart/union-client-log-indexer:${UC_TAG:-latest}
     build:
-      context: ../
-      dockerfile: docker/Dockerfile
+      context: ../../
+      dockerfile: docker/client/Dockerfile
       args:
         - CRATE=log-indexer
       ssh:
         - default=${SSH_AUTH_SOCK}
     volumes:
-      - ../config/:/app/config/:ro
+      - ../../config/:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - db-logs:/app/db/logs
     environment:
@@ -57,14 +57,14 @@ services:
     platform: ${PLATFORM}
     image: ghcr.io/rsksmart/union-client-coordinator:${UC_TAG:-latest}
     build:
-      context: ../
-      dockerfile: docker/Dockerfile
+      context: ../../
+      dockerfile: docker/client/Dockerfile
       args:
         - CRATE=coordinator
       ssh:
         - default=${SSH_AUTH_SOCK}
     volumes:
-      - ../config/:/app/config/:ro
+      - ../../config/:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - keystore:/keystore
       - db-coordinator:/app/db/coordinator
@@ -95,14 +95,14 @@ services:
     platform: ${PLATFORM}
     image: ghcr.io/rsksmart/union-client-user-api:${UC_TAG:-latest}
     build:
-      context: ../
-      dockerfile: docker/Dockerfile
+      context: ../../
+      dockerfile: docker/client/Dockerfile
       args:
         - CRATE=user-api
       ssh:
         - default=${SSH_AUTH_SOCK}
     volumes:
-      - ../config/:/app/config/:ro
+      - ../../config/:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - keystore:/keystore
     environment:

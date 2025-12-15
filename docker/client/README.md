@@ -10,8 +10,8 @@ By default, the compose will use:
 - the `config/docker` folder for the Union Client config files
     - you can override any configuration value using environment variables prefixed with `UB__` matching the config structure, e.g.
       `UB__COORDINATOR__BLOCKS__HOST=192.168.1.100`
-    - see the main [README.md](../README.md#configuration-overrides) for detailed examples and mapping rules
-- the `docker/.env` for `docker-compose` file environment variables
+    - see the main [README.md](../../README.md#configuration-overrides) for detailed examples and mapping rules
+- the `docker/client/.env` for `docker-compose` file environment variables
 
 ## Build Builder Images
 
@@ -26,7 +26,7 @@ bash d-build-builder.sh --help
 
 ## Build & Run Services
 
-The docker directory contains several shell scripts to help manage Docker operations for the Union client:
+The docker/client directory contains several shell scripts to help manage Docker operations for the Union client:
 
 ### d-compose-cli.sh - Main Build & Run Script
 
@@ -38,7 +38,7 @@ bash d-compose-cli.sh --help
 ```
 
 ### First time docker setup pre-requisite 
-Inside the docker directory, copy the contents of the `.env.sample` file into a new `.env` file (not to be confused with `.envrc` which the project uses in the root directory). 
+Inside the docker/client directory, copy the contents of the `.env.sample` file into a new `.env` file (not to be confused with `.envrc` which the project uses in the root directory). 
 
 Set a value for the `KEY_STORE_PASSWORD` variable, it doesn't need to be the same as the equivalent var in the `.envrc` of the project's root directory.
 
@@ -82,7 +82,7 @@ If you need more control or want to run clients individually:
 
 **Manual Steps:**
 
-1. Go to `docker` folder
+1. Go to `docker/client` folder
 2. Run individual clients with different BitVMX broker configurations:
    ```bash
    # Client 1
@@ -104,10 +104,6 @@ You can connect to any BitVMX Broker by specifying the host and port:
 ```bash
 BITVMX_HOST=<host> BITVMX_PORT=<port> docker compose -p <project-name> up
 ```
-
-### Configuration Templates
-
-For more advanced multi-client setups, you can use the configuration templates located in `../config/multi-client-template/`. These templates provide pre-configured settings for 4 different clients with unique broker ports and client IDs.
 
 ## Registry Management Scripts
 

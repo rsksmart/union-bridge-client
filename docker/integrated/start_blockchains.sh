@@ -132,7 +132,10 @@ if [[ "${NEW_CONTRACTS_VERSION}" == false && "${IS_UP_COMMAND}" == true && "${RU
 fi
 
 # Finally, run the requested docker compose command
-docker compose -p blockchains --env-file "$ENV_PATH" -f "$COMPOSE_FILE" --profile local "${DOCKER_COMPOSE_ARGS[@]}"
+if ! docker compose -p blockchains --env-file "$ENV_PATH" -f "$COMPOSE_FILE" --profile local "${DOCKER_COMPOSE_ARGS[@]}"; then
+  echo "Error: docker compose command failed"
+  exit 1
+fi
 
 # If using 'up' command after a fresh teardown, create the Bitcoin wallet and deploy contracts
 if [[ "${IS_UP_COMMAND}" == true && "${FRESH}" == true ]]; then
@@ -144,11 +147,17 @@ if [[ "${IS_UP_COMMAND}" == true && "${FRESH}" == true ]]; then
 
   # Create wallet
   echo "Creating wallet 'mainwallet' in ${BITCOIND_CONTAINER}..."
-  docker exec "${BITCOIND_CONTAINER}" bitcoin-cli -regtest -rpcuser="${BITCOIND_USER}" -rpcpassword="${BITCOIND_PASSWORD}" createwallet mainwallet
+  if ! docker exec "${BITCOIND_CONTAINER}" bitcoin-cli -regtest -rpcuser="${BITCOIND_USER}" -rpcpassword="${BITCOIND_PASSWORD}" createwallet mainwallet; then
+    echo "Error: Failed to create wallet 'mainwallet'"
+    exit 1
+  fi
 
   echo
   echo "Restarting ${BITCOIND_CONTAINER} after wallet creation."
-  docker restart "${BITCOIND_CONTAINER}" 1>/dev/null
+  if ! docker restart "${BITCOIND_CONTAINER}" 1>/dev/null; then
+    echo "Error: Failed to restart ${BITCOIND_CONTAINER}"
+    exit 1
+  fi
 fi
 
 echo
