@@ -14,49 +14,25 @@ use crate::rlp::encode_signed_coin_value;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct RskBlockHeader {
-    #[serde(rename = "number", deserialize_with = "deserialize_hex_u64")]
-    pub number: u64, // Block height (genesis = 0)
-    #[serde(rename = "hash", deserialize_with = "deserialize_hex_h256")]
-    pub hash: H256, // Keccak-256 of the encoded header
-    #[serde(rename = "parentHash", deserialize_with = "deserialize_hex_h256")]
-    pub parent: H256, // Keccak-256 hash of the parent block
-    #[serde(rename = "difficulty", deserialize_with = "deserialize_hex_u256")]
-    pub difficulty: U256, // Target difficulty for this block
-    #[serde(rename = "timestamp", deserialize_with = "deserialize_hex_u64")]
-    pub timestamp: u64, // Unix time (seconds) when the block was created
-    #[serde(rename = "sha3Uncles", deserialize_with = "deserialize_hex_h256")]
-    pub uncles_hash: H256, // SHA3-256 hash of the uncles list
-    #[serde(rename = "miner", deserialize_with = "deserialize_hex_bytes_20")]
-    pub coinbase: [u8; 20], // 160-bit address (RskAddress) - miner's address
-    #[serde(rename = "stateRoot", deserialize_with = "deserialize_hex_h256")]
-    pub state_root: H256, // SHA3-256 hash of the root node of the state trie
-    #[serde(rename = "transactionsRoot", deserialize_with = "deserialize_hex_h256")]
+    pub number: u64,                           // Block height (genesis = 0)
+    pub hash: H256,                            // Keccak-256 of the encoded header
+    pub parent: H256,                          // Keccak-256 hash of the parent block
+    pub difficulty: U256,                      // Target difficulty for this block
+    pub timestamp: u64,                        // Unix time (seconds) when the block was created
+    pub uncles_hash: H256,                     // SHA3-256 hash of the uncles list
+    pub coinbase: [u8; 20],                    // 160-bit address (RskAddress) - miner's address
+    pub state_root: H256,                      // SHA3-256 hash of the root node of the state trie
     pub tx_trie_root: H256, // SHA3-256 hash of the root node of the transaction trie
-    #[serde(rename = "receiptsRoot", deserialize_with = "deserialize_hex_h256")]
     pub receipt_trie_root: H256, // SHA3-256 hash of the root node of the receipt trie
-    #[serde(rename = "logsBloom", deserialize_with = "deserialize_hex_bytes")]
-    pub logs_bloom: Vec<u8>, // Bloom filter for logs (256 bytes) or extension_data if RSKIP-351
-    #[serde(rename = "gasLimit", deserialize_with = "deserialize_hex_bytes")]
+    pub logs_bloom: Vec<u8>, // Bloom filter for logs (256 bytes)
     pub gas_limit: Vec<u8>, // Current limit of gas expenditure per block
-    #[serde(rename = "gasUsed", deserialize_with = "deserialize_hex_u64")]
-    pub gas_used: u64, // Total gas used in transactions in this block
-    #[serde(rename = "extraData", deserialize_with = "deserialize_hex_bytes")]
+    pub gas_used: u64,      // Total gas used in transactions in this block
     pub extra_data: Vec<u8>, // Arbitrary byte array (max 32 bytes, except genesis)
-    #[serde(rename = "paidFees", deserialize_with = "deserialize_hex_u256")]
-    pub paid_fees: U256, // Total paid fees in transactions (Coin, RLP encoded)
-    #[serde(
-        rename = "minimumGasPrice",
-        deserialize_with = "deserialize_hex_u256_option"
-    )]
+    pub paid_fees: U256,    // Total paid fees in transactions (Coin, RLP encoded)
     pub minimum_gas_price: Option<U256>, // Minimum gas price for a tx to be included
-    #[serde(rename = "uncles", deserialize_with = "deserialize_vec_hex_h256")]
-    pub uncles: Vec<H256>, // Hashes of uncle blocks
-    #[serde(
-        rename = "bitcoinMergedMiningHeader",
-        deserialize_with = "deserialize_hex_bytes"
-    )]
+    pub uncles: Vec<H256>,  // Hashes of uncle blocks
     pub bitcoin_merged_mining_header: Vec<u8>, // 80-byte Bitcoin block header for merged mining
-    // the follwoing fields are goonna be included in the next hardfork (reed)
+    // the following fields are gonna be included in the next hardfork (reed)
     #[serde(skip)]
     _umm_root: [u8; 20], // UMM root (only if block is UMM, must be exactly 20 bytes)
     #[serde(skip)]

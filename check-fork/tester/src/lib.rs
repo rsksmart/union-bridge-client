@@ -2,7 +2,11 @@ use bitcoin::blockdata::block::Header;
 use bitcoin::consensus::encode::deserialize as btc_deserialize;
 use check_fork::BridgeEvent;
 use check_fork::RskBlock;
-use check_fork::block_header::RskBlockHeader;
+use check_fork::block_header::{
+    RskBlockHeader, deserialize_hex_bytes, deserialize_hex_bytes_20, deserialize_hex_h256,
+    deserialize_hex_u64, deserialize_hex_u256, deserialize_hex_u256_option,
+    deserialize_vec_hex_h256,
+};
 use primitive_types::{H256, U256};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -15,15 +19,92 @@ const RSK_RPC_URL: &str = "https://public-node.rsk.co";
 
 const SUPERBLOCK_THRESHOLD_FACTOR: u64 = 20;
 
-// used mainly for deserializationw and also to avoid adding
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct TesterRskBlockHeader {
+    #[serde(rename = "number", deserialize_with = "deserialize_hex_u64")]
+    pub number: u64,
+    #[serde(rename = "hash", deserialize_with = "deserialize_hex_h256")]
+    pub hash: H256,
+    #[serde(rename = "parentHash", deserialize_with = "deserialize_hex_h256")]
+    pub parent: H256,
+    #[serde(rename = "difficulty", deserialize_with = "deserialize_hex_u256")]
+    pub difficulty: U256,
+    #[serde(rename = "timestamp", deserialize_with = "deserialize_hex_u64")]
+    pub timestamp: u64,
+    #[serde(rename = "sha3Uncles", deserialize_with = "deserialize_hex_h256")]
+    pub uncles_hash: H256,
+    #[serde(rename = "miner", deserialize_with = "deserialize_hex_bytes_20")]
+    pub coinbase: [u8; 20],
+    #[serde(rename = "stateRoot", deserialize_with = "deserialize_hex_h256")]
+    pub state_root: H256,
+    #[serde(rename = "transactionsRoot", deserialize_with = "deserialize_hex_h256")]
+    pub tx_trie_root: H256,
+    #[serde(rename = "receiptsRoot", deserialize_with = "deserialize_hex_h256")]
+    pub receipt_trie_root: H256,
+    #[serde(rename = "logsBloom", deserialize_with = "deserialize_hex_bytes")]
+    pub logs_bloom: Vec<u8>,
+    #[serde(rename = "gasLimit", deserialize_with = "deserialize_hex_bytes")]
+    pub gas_limit: Vec<u8>,
+    #[serde(rename = "gasUsed", deserialize_with = "deserialize_hex_u64")]
+    pub gas_used: u64,
+    #[serde(rename = "extraData", deserialize_with = "deserialize_hex_bytes")]
+    pub extra_data: Vec<u8>,
+    #[serde(rename = "paidFees", deserialize_with = "deserialize_hex_u256")]
+    pub paid_fees: U256,
+    #[serde(
+        rename = "minimumGasPrice",
+        deserialize_with = "deserialize_hex_u256_option"
+    )]
+    pub minimum_gas_price: Option<U256>,
+    #[serde(
+        rename = "uncles",
+        deserialize_with = "deserialize_vec_hex_h256",
+        default
+    )]
+    pub uncles: Vec<H256>,
+    #[serde(
+        rename = "bitcoinMergedMiningHeader",
+        deserialize_with = "deserialize_hex_bytes"
+    )]
+    pub bitcoin_merged_mining_header: Vec<u8>,
+}
+
+impl From<&TesterRskBlockHeader> for RskBlockHeader {
+    fn from(t: &TesterRskBlockHeader) -> Self {
+        let mut header = RskBlockHeader::default();
+        header.number = t.number;
+        header.hash = t.hash;
+        header.parent = t.parent;
+        header.difficulty = t.difficulty;
+        header.timestamp = t.timestamp;
+        header.uncles_hash = t.uncles_hash;
+        header.coinbase = t.coinbase;
+        header.state_root = t.state_root;
+        header.tx_trie_root = t.tx_trie_root;
+        header.receipt_trie_root = t.receipt_trie_root;
+        header.logs_bloom.clone_from(&t.logs_bloom);
+        header.gas_limit.clone_from(&t.gas_limit);
+        header.gas_used = t.gas_used;
+        header.extra_data.clone_from(&t.extra_data);
+        header.paid_fees = t.paid_fees;
+        header.minimum_gas_price = t.minimum_gas_price;
+        header.uncles.clone_from(&t.uncles);
+        header
+            .bitcoin_merged_mining_header
+            .clone_from(&t.bitcoin_merged_mining_header);
+        header
+    }
+}
+
+// used mainly for deserialization and also to avoid adding
 // dependencies (bitcoin) to the check_fork crate
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct TesterRskBlock {
     #[serde(flatten)]
-    header: RskBlockHeader,
+    header: TesterRskBlockHeader,
     bridge_event: Option<BridgeEvent>,
     #[serde(skip)]
-    uncles: Vec<TesterRskBlock>, // this filed should be filled later
+    uncles: Vec<TesterRskBlock>, // this field should be filled later
 }
 
 impl From<&TesterRskBlock> for RskBlock {
@@ -32,7 +113,7 @@ impl From<&TesterRskBlock> for RskBlock {
             bridge_event: tester_block.bridge_event.clone(),
             uncles: tester_block.uncles.iter().map(RskBlock::from).collect(),
             pow: tester_block.pow().expect("pow is not valid"),
-            header: tester_block.header.clone(),
+            header: RskBlockHeader::from(&tester_block.header),
         }
     }
 }
@@ -89,8 +170,8 @@ pub async fn get_blocks(
     let mut blocks_with_uncles = Vec::new();
     for block in blocks {
         let uncles_hashes = block.header.uncles.clone();
-        let block_with_uncles = fetch_uncles(&client, uncles_hashes, block).await;
-        blocks_with_uncles.push(block_with_uncles);
+        let fetched = fetch_uncles(&client, uncles_hashes, block).await;
+        blocks_with_uncles.push(fetched);
     }
     let result = blocks_with_uncles.iter().map(RskBlock::from).collect();
     Ok(result)
@@ -114,7 +195,7 @@ async fn fetch_block_by_hash(
     hash: H256,
     client: &Client,
 ) -> Result<TesterRskBlock, Box<dyn Error>> {
-    let hash_hex = format!("0x{:x}", hash);
+    let hash_hex = format!("0x{hash:x}");
     let request_body = json!({
         "jsonrpc": "2.0",
         "method": "eth_getBlockByHash",
@@ -125,16 +206,12 @@ async fn fetch_block_by_hash(
     let response_json: Value = response.json().await?;
     let error = response_json.get("error");
     let result = response_json.get("result");
-    if let Some(_) = error {
+    if error.is_some() {
         // todo(fede) print error
-        return Err(format!(
-            "Error fetching block by hash {}: {:?}",
-            hash_hex, response_json
-        )
-        .into());
+        return Err(format!("Error fetching block by hash {hash_hex}: {response_json:?}").into());
     }
     let Some(result) = result else {
-        return Err(format!("No result for block hash {}", hash_hex).into());
+        return Err(format!("No result for block hash {hash_hex}").into());
     };
     let mut result = result.clone();
     result["uncles"] = serde_json::Value::Array(Vec::new());
@@ -160,7 +237,7 @@ async fn fetch_block_by_num(
     let response_json: Value = response.json().await?;
     let error = response_json.get("error");
     let result = response_json.get("result");
-    Ok(if error.is_some() {
+    if error.is_some() {
         println!(
             "Error fetching block {}: {:?}",
             start_block_number + u64::from(num),
@@ -179,7 +256,8 @@ async fn fetch_block_by_num(
         }
 
         blocks.push(block);
-    })
+    }
+    Ok(())
 }
 
 fn add_bridge_event(blocks: &[TesterRskBlock]) -> Vec<RskBlock> {

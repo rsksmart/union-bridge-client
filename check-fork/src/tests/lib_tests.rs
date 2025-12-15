@@ -2,7 +2,12 @@ use std::fs;
 
 use crate::{
     BridgeEvent, CheckForkArgs, RskBlock, SUPERBLOCK_TIMES_DIFFICULTY,
-    block_header::RskBlockHeader, check_fork,
+    block_header::{
+        RskBlockHeader, deserialize_hex_bytes, deserialize_hex_bytes_20, deserialize_hex_h256,
+        deserialize_hex_u64, deserialize_hex_u256, deserialize_hex_u256_option,
+        deserialize_vec_hex_h256,
+    },
+    check_fork,
 };
 use primitive_types::{H256, U256};
 use serde::{Deserialize, Serialize};
@@ -12,9 +17,86 @@ const DEFAULT_TIMESTAMP: u64 = 1000;
 const DEFAULT_INIT_BLOCK_NUMBER: u64 = 100;
 const DEFAULT_REQ_NUMBER_OF_BLOCKS: u32 = 2;
 
+/// test-only block header for JSON deserialization (hex strings from test fixtures)
+/// this is temporary, will be removed (with block and minichain tests)
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct TestRskBlockHeader {
+    #[serde(rename = "number", deserialize_with = "deserialize_hex_u64")]
+    pub number: u64,
+    #[serde(rename = "hash", deserialize_with = "deserialize_hex_h256")]
+    pub hash: H256,
+    #[serde(rename = "parentHash", deserialize_with = "deserialize_hex_h256")]
+    pub parent: H256,
+    #[serde(rename = "difficulty", deserialize_with = "deserialize_hex_u256")]
+    pub difficulty: U256,
+    #[serde(rename = "timestamp", deserialize_with = "deserialize_hex_u64")]
+    pub timestamp: u64,
+    #[serde(rename = "sha3Uncles", deserialize_with = "deserialize_hex_h256")]
+    pub uncles_hash: H256,
+    #[serde(rename = "miner", deserialize_with = "deserialize_hex_bytes_20")]
+    pub coinbase: [u8; 20],
+    #[serde(rename = "stateRoot", deserialize_with = "deserialize_hex_h256")]
+    pub state_root: H256,
+    #[serde(rename = "transactionsRoot", deserialize_with = "deserialize_hex_h256")]
+    pub tx_trie_root: H256,
+    #[serde(rename = "receiptsRoot", deserialize_with = "deserialize_hex_h256")]
+    pub receipt_trie_root: H256,
+    #[serde(rename = "logsBloom", deserialize_with = "deserialize_hex_bytes")]
+    pub logs_bloom: Vec<u8>,
+    #[serde(rename = "gasLimit", deserialize_with = "deserialize_hex_bytes")]
+    pub gas_limit: Vec<u8>,
+    #[serde(rename = "gasUsed", deserialize_with = "deserialize_hex_u64")]
+    pub gas_used: u64,
+    #[serde(rename = "extraData", deserialize_with = "deserialize_hex_bytes")]
+    pub extra_data: Vec<u8>,
+    #[serde(rename = "paidFees", deserialize_with = "deserialize_hex_u256")]
+    pub paid_fees: U256,
+    #[serde(
+        rename = "minimumGasPrice",
+        deserialize_with = "deserialize_hex_u256_option"
+    )]
+    pub minimum_gas_price: Option<U256>,
+    #[serde(
+        rename = "uncles",
+        deserialize_with = "deserialize_vec_hex_h256",
+        default
+    )]
+    pub uncles: Vec<H256>,
+    #[serde(
+        rename = "bitcoinMergedMiningHeader",
+        deserialize_with = "deserialize_hex_bytes"
+    )]
+    pub bitcoin_merged_mining_header: Vec<u8>,
+}
+
+impl From<&TestRskBlockHeader> for RskBlockHeader {
+    fn from(t: &TestRskBlockHeader) -> Self {
+        let mut header = RskBlockHeader::default();
+        header.number = t.number;
+        header.hash = t.hash;
+        header.parent = t.parent;
+        header.difficulty = t.difficulty;
+        header.timestamp = t.timestamp;
+        header.uncles_hash = t.uncles_hash;
+        header.coinbase = t.coinbase;
+        header.state_root = t.state_root;
+        header.tx_trie_root = t.tx_trie_root;
+        header.receipt_trie_root = t.receipt_trie_root;
+        header.logs_bloom = t.logs_bloom.clone();
+        header.gas_limit = t.gas_limit.clone();
+        header.gas_used = t.gas_used;
+        header.extra_data = t.extra_data.clone();
+        header.paid_fees = t.paid_fees;
+        header.minimum_gas_price = t.minimum_gas_price;
+        header.uncles = t.uncles.clone();
+        header.bitcoin_merged_mining_header = t.bitcoin_merged_mining_header.clone();
+        header
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct TestCaseBlockHashValidation {
-    pub header: RskBlockHeader,
+    pub header: TestRskBlockHeader,
     #[serde(rename = "expectedHash")]
     pub expected_hash: String,
 }
@@ -510,7 +592,8 @@ fn succeed_if_block_hash_eq_expected_hash() {
 
     println!("Rootstock Block: {test_case:?}");
 
-    let hash = test_case.header.calculate_block_hash().unwrap();
+    let header = RskBlockHeader::from(&test_case.header);
+    let hash = header.calculate_block_hash().unwrap();
 
     assert_eq!(test_case.header.hash, hash);
 }
@@ -523,7 +606,8 @@ fn succeed_if_mini_chain_hashes_are_valid() {
     .unwrap();
 
     for (i, block) in test_case.chain.iter().enumerate() {
-        let calculated_hash = block.header.calculate_block_hash().unwrap();
+        let header = RskBlockHeader::from(&block.header);
+        let calculated_hash = header.calculate_block_hash().unwrap();
 
         assert_eq!(
             calculated_hash, block.header.hash,
