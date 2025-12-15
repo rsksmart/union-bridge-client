@@ -325,13 +325,20 @@ complete flow:
 ```bash
 # Prerequisites:
 # - BitVMX client running
-# - Anvil running (no auto-mining needed, test handles it)
+# - Anvil running
 # - Bitcoin regtest node running with RPC enabled
 # - Contracts deployed
 # - USER_BITCOIN_WIF and MEMBER_BITCOIN_WIF environment variables set
+# - Background mining running (start with: ./cli-run.sh --start-mine)
+
+# Start background mining (in a separate terminal or before running the test)
+./cli-run.sh --start-mine
 
 # Run automated happy path test
 bash tests/run-happy-path.sh
+
+# Stop background mining when done
+./cli-run.sh --stop-mine
 ```
 
 This test will automatically:
@@ -343,7 +350,7 @@ This test will automatically:
 5. Execute a pegout transaction (Rootstock → Bitcoin)
 6. Verify pegout completion in coordinator logs
 
-The test includes background block mining and comprehensive health checks to detect issues early.
+The test includes comprehensive health checks to detect issues early.
 
 #### Troubleshooting
 

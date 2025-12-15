@@ -92,89 +92,47 @@ fi
 echo "All prerequisites met!"
 echo ""
 
-# mining functions
-mine_anvil() {
-    # test first call
-    if ! cast rpc anvil_mine 1 --rpc-url http://localhost:8545 &>/dev/null; then
-        echo -e "${YELLOW}[WARN]${NC} Anvil mining failed - is Anvil running?" >&2
-        return 1
-    fi
-
-    # mine indefinitely
-    while true; do
-        cast rpc anvil_mine 1 --rpc-url http://localhost:8545 &>/dev/null || true
-        sleep 1
-    done
-}
-
-mine_bitcoin() {
-    # get address to mine to (once)
-    local mine_address=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getnewaddress 2>/dev/null)
-    if [ -z "$mine_address" ]; then
-        echo -e "${YELLOW}[WARN]${NC} Failed to get Bitcoin address for mining" >&2
-        return 1
-    fi
-
-    # mine indefinitely
-    while true; do
-        bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword generatetoaddress 1 "$mine_address" &>/dev/null || true
-        sleep 5
-    done
-}
-
-# Helper function to extract timestamp from log line
-extract_log_timestamp() {
-    local line="$1"
-    local mode="$2"  # "docker" or "file"
-    
-    if [ "$mode" = "docker" ]; then
-        # Docker logs format: "2025-11-19 20:22:10.394 | 2025-11-19 23:22:10.394 [INFO] ..."
-        # We want the second timestamp (after the pipe)
-        echo "$line" | grep -oE '\| [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}'
-    else
-        # File logs format: "^2025-11-19 23:22:10.394 [INFO] ..."
-        echo "$line" | grep -oE '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}'
-    fi
-}
-
-# Helper function to convert timestamp to epoch (macOS and Linux compatible)
-# Returns empty string on failure (caller should handle this explicitly)
-timestamp_to_epoch() {
-    local timestamp="$1"
-    date -j -f "%Y-%m-%d %H:%M:%S" "$timestamp" +%s 2>/dev/null || \
-    date -d "$timestamp" +%s 2>/dev/null || \
-    echo ""
-}
-
-# Unified function to find recent log matches
-# Uses pipes to avoid loading entire logs into memory
-find_recent_log_match() {
+# Find recent log match in docker compose logs (all 4 operators)
+# Uses --since flag for efficient filtering
+# Output format: "source:line" or empty if not found
+find_recent_docker_log_match() {
     local pattern="$1"
-    local source="$2"
-    local min_time="$3"
-    local mode="${4:-file}"  # default to file mode
-    
-    local log_stream
-    if [ "$mode" = "docker" ]; then
-        log_stream=$(docker compose -p "$source" logs coordinator 2>/dev/null) || return 1
-    else
-        log_stream=$(cat "$source" 2>/dev/null) || return 1
-    fi
-    
-    echo "$log_stream" | grep -E "$pattern" | while read -r line; do
-        local log_timestamp=$(extract_log_timestamp "$line" "$mode")
-        
-        if [ -n "$log_timestamp" ]; then
-            local log_time=$(timestamp_to_epoch "$log_timestamp")
-            
-            # check if log is recent (after min_time)
-            # skip if timestamp parsing failed (empty string)
-            if [ -n "$log_time" ] && [ "$log_time" -ge "$min_time" ]; then
-                echo "$line"
-                break
-            fi
+
+    for op_id in 1 2 3 4; do
+        local project="op_${op_id}"
+        local line
+        line=$(docker compose -p "$project" logs --since 1m coordinator 2>/dev/null | grep -E "$pattern" | tail -1)
+        if [ -n "$line" ]; then
+            echo "${project}:${line}"
+            return 0
         fi
-    done | tail -1
+    done
+}
+
+# Find recent log match in local log files
+# Uses awk with string comparison (ISO timestamps are lexicographically sortable)
+# Output format: "source:line" or empty if not found
+find_recent_file_log_match() {
+    local pattern="$1"
+
+    # min timestamp as string (1 minute ago)
+    local min_ts
+    min_ts=$(date -v-1M "+%Y-%m-%d %H:%M:%S" 2>/dev/null || date -d "1 minute ago" "+%Y-%m-%d %H:%M:%S")
+
+    shopt -s nullglob
+    for log_file in logs/coordinator-*.log; do
+        [[ -f "$log_file" ]] || continue
+
+        local found_line
+        found_line=$(awk -v pattern="$pattern" -v min_ts="$min_ts" '
+            $0 ~ pattern && substr($0, 1, 19) >= min_ts { print; exit }
+        ' "$log_file")
+
+        if [ -n "$found_line" ]; then
+            echo "${log_file}:${found_line}"
+            return 0
+        fi
+    done
 }
 
 # count transactions in blocks from start_height to end_height (excluding coinbase)
@@ -200,51 +158,50 @@ count_transactions_in_blocks() {
 }
 
 # wait for N bitcoin transactions to be created in mined blocks with confirmations
-# start_height: the last block mined before transactions should start appearing
 # expected_count: number of transactions to wait for
 # max_blocks: maximum blocks to wait for transactions to appear
 # confirmations: number of confirmations required (blocks after transaction is mined)
 wait_for_bitcoin_transactions() {
-    local start_height=$1
-    local expected_count=$2
-    local max_blocks=$3
-    local confirmations=$4
-    
+    local expected_count=$1
+    local max_blocks=$2
+    local confirmations=$3
+    local start_height=$(get_current_bitcoin_height)
+
     # target height accounts for finding transactions + getting confirmations
     local target_height=$((start_height + max_blocks + confirmations))
     local first_tx_height=0  # block height where transactions were first found
-    
+
     log "Waiting for $expected_count Bitcoin transactions in mined blocks (max $max_blocks blocks to find) with $confirmations confirmations..."
     log "Starting height: $start_height, Max target height: $target_height"
 
     while true; do
         local current_height=$(get_current_bitcoin_height)
         local blocks_mined=$((current_height - start_height))
-        
+
         # safeguard
         if [ $blocks_mined -lt 0 ]; then
             sleep 1
             continue
         fi
-        
+
         # count transactions in blocks from start_height+1 to current_height
         local transactions_found=0
         if [ $blocks_mined -gt 0 ]; then
             transactions_found=$(count_transactions_in_blocks $start_height $current_height)
         fi
-        
+
         # track the first block height where we found the expected count of transactions
         if [ $transactions_found -ge $expected_count ] && [ $first_tx_height -eq 0 ]; then
             first_tx_height=$current_height
             log "Found $expected_count transactions at height $first_tx_height, waiting for $confirmations confirmations..."
         fi
-        
+
         # calculate confirmations if we've found transactions
         local current_confirmations=0
         if [ $first_tx_height -gt 0 ]; then
             current_confirmations=$((current_height - first_tx_height))
         fi
-        
+
         if [ $first_tx_height -gt 0 ]; then
             echo -ne "\r  Blocks mined: $blocks_mined | Transactions: $transactions_found/$expected_count | Confirmations: $current_confirmations/$confirmations  "
         else
@@ -257,14 +214,14 @@ wait_for_bitcoin_transactions() {
             success "$expected_count Bitcoin transactions found with $confirmations confirmations (height: $start_height -> $current_height, tx at $first_tx_height)"
             return 0
         fi
-        
+
         # Check if we've exceeded the block limit before finding transactions
         if [ $current_height -ge $target_height ] && [ $first_tx_height -eq 0 ]; then
             echo ""  # newline after the progress display
             warn "Only $transactions_found/$expected_count Bitcoin transactions found after $max_blocks blocks (height: $start_height -> $current_height)"
             return 1
         fi
-        
+
         # Check if we found transactions but didn't get enough confirmations in time
         if [ $first_tx_height -gt 0 ] && [ $current_height -ge $target_height ]; then
             echo ""  # newline after the progress display
@@ -307,81 +264,46 @@ wait_for_bitcoin_blocks() {
 
 # Wait for a log pattern to appear, with a block-based timeout
 # Usage: wait_for_log_with_block_timeout <pattern> <max_blocks>
-# Automatically determines start_time based on mode (docker container time or host time)
 wait_for_log_with_block_timeout() {
     local pattern="$1"
     local max_blocks=$2
 
-    # determine start_time based on mode
-    # for docker mode, use container's time as reference to avoid timezone issues
-    # for file mode, use host time
-    local start_time
-    if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
-        # get time from container (all containers share the same time)
-        start_time=$(docker compose -p "op_1" exec -T coordinator date +%s 2>/dev/null || echo "")
-        # fallback to host time if container time unavailable
-        start_time=${start_time:-$(date +%s)}
-    else
-        start_time=$(date +%s)
-    fi
-
-    # allow 1 minute margin (60 seconds) before start_time for clock differences
-    local TIME_MARGIN=60
-    local min_time=$((start_time - TIME_MARGIN))
-
     local start_height=$(get_current_bitcoin_height)
     local target_height=$((start_height + max_blocks))
 
-    # Convert min_time to formatted date string
-    local min_time_formatted=$(date -d "@$min_time" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || date -r "$min_time" "+%Y-%m-%d %H:%M:%S")
-    log "Waiting for log pattern: $pattern (max $max_blocks blocks, after $min_time_formatted)..."
-    
+    log "Waiting for log pattern: $pattern (max $max_blocks blocks)..."
+
     while true; do
         local current_height=$(get_current_bitcoin_height)
         local blocks_mined=$((current_height - start_height))
-        
+
         # safeguard
         if [ $blocks_mined -lt 0 ]; then
             sleep 1
             continue
         fi
-        
+
         echo -ne "\r  Blocks mined: $blocks_mined/$max_blocks | Checking logs...  "
-        
-        # Check for log pattern in all coordinator logs
-        local found_line=""
-        local found_source=""
-        
+
+        # Check for log pattern in coordinator logs
+        local result=""
         if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
-            for op_id in 1 2 3 4; do
-                project="op_${op_id}"
-                found_line=$(find_recent_log_match "$pattern" "$project" "$min_time" "docker")
-                if [ -n "$found_line" ]; then
-                    found_source="${project}"
-                    break
-                fi
-            done
+            result=$(find_recent_docker_log_match "$pattern")
         else
-            shopt -s nullglob
-            for log_file in logs/coordinator-*.log; do
-                [[ -f "$log_file" ]] || continue
-                
-                found_line=$(find_recent_log_match "$pattern" "$log_file" "$min_time" "file")
-                if [ -n "$found_line" ]; then
-                    found_source="$log_file"
-                    break
-                fi
-            done
+            result=$(find_recent_file_log_match "$pattern")
         fi
-        
-        if [ -n "$found_line" ]; then
+
+        if [ -n "$result" ]; then
+            # parse "source:line" format
+            local found_source="${result%%:*}"
+            local found_line="${result#*:}"
             echo ""  # newline after the progress display
             success "Log pattern found after $blocks_mined blocks!"
             log "Found in: $found_source"
             echo "$found_line"
             return 0
         fi
-        
+
         # Check if we've exceeded the block limit
         if [ $current_height -ge $target_height ]; then
             echo ""  # newline after the progress display
@@ -393,42 +315,19 @@ wait_for_log_with_block_timeout() {
             fi
             return 1
         fi
-        
+
         sleep 1
     done
 }
 
 cleanup() {
-    echo ""
-    log "Cleaning up background processes..."
-    # kill background mining processes
-    if [ -n "${ANVIL_MINE_PID:-}" ] && kill -0 "$ANVIL_MINE_PID" 2>/dev/null; then
-        kill -TERM "$ANVIL_MINE_PID" 2>/dev/null || true
-        sleep 0.2
-        kill -9 "$ANVIL_MINE_PID" 2>/dev/null || true
-    fi
-    if [ -n "${BITCOIN_MINE_PID:-}" ] && kill -0 "$BITCOIN_MINE_PID" 2>/dev/null; then
-        kill -TERM "$BITCOIN_MINE_PID" 2>/dev/null || true
-        sleep 0.2
-        kill -9 "$BITCOIN_MINE_PID" 2>/dev/null || true
-    fi
     rm -f /tmp/apply-operators-$$ /tmp/pegout-$$
 }
-
-# handle Ctrl+C immediately - kill background processes and exit
-handle_interrupt() {
-    echo ""
-    echo ""
-    warn "Interrupted by user (Ctrl+C)"
-    cleanup
-    exit 130  # standard exit code for SIGINT
-}
-trap handle_interrupt INT TERM
 trap cleanup EXIT
 
 clear
 log "Configuration: stream=$STREAM_ID, rsk=$RSK_ADDRESS, amount=$VALUE, env=$SCRIPT_ENV"
-log "Background mining: Anvil (every 1s) | Bitcoin (every 5s) - runs until Ctrl+C"
+log "Prerequisite: Start mining in another terminal with: ./cli-run.sh --start-mine"
 echo ""
 
 # prepare wallets
@@ -458,19 +357,7 @@ fi
 success "Wallets prepared with initial UTXOs"
 echo ""
 
-# start background mining (runs indefinitely)
-mine_anvil &
-ANVIL_MINE_PID=$!
-
-mine_bitcoin &
-BITCOIN_MINE_PID=$!
-
-sleep 1  # give mining a moment to start
-
 # step 1: fund operator wallets
-# capture block height before funding starts (last block mined before transactions should appear)
-FUND_START_HEIGHT=$(get_current_bitcoin_height)
-
 step "Step 1: Fund Operator Wallets"
 # operator fund with --execute handles BitVMX funding automatically
 # Must pass $SCRIPT_ENV so it knows where to find the BitVMX addresses (local logs vs Docker logs)
@@ -481,7 +368,7 @@ if ! bash cli-operations.sh operator fund --env "$SCRIPT_ENV" --execute; then
     exit 1
 fi
 echo ""
-if ! wait_for_bitcoin_transactions "$FUND_START_HEIGHT" 1 15 5; then
+if ! wait_for_bitcoin_transactions 1 15 5; then
     warn "Failed to detect 1 Bitcoin transaction with 5 confirmations within 15 blocks"
     exit 1
 fi
@@ -557,12 +444,6 @@ SUCCESS=true
 echo ""
 
 step "Complete"
-log "Stopping background mining processes..."
-echo ""
-
-# stop mining processes
-[ -n "${ANVIL_MINE_PID:-}" ] && kill $ANVIL_MINE_PID 2>/dev/null || true
-[ -n "${BITCOIN_MINE_PID:-}" ] && kill $BITCOIN_MINE_PID 2>/dev/null || true
 
 if [ "$SUCCESS" = true ]; then
     success "E2E test completed successfully!"
