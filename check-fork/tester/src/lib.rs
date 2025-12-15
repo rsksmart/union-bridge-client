@@ -213,8 +213,6 @@ async fn fetch_block_by_hash(
     let Some(result) = result else {
         return Err(format!("No result for block hash {hash_hex}").into());
     };
-    let mut result = result.clone();
-    result["uncles"] = serde_json::Value::Array(Vec::new());
     let block: TesterRskBlock = serde_json::from_str(&result.to_string())?;
     Ok(block)
 }
@@ -243,18 +241,11 @@ async fn fetch_block_by_num(
             start_block_number + u64::from(num),
             response_json
         );
-    } else if result.is_some() {
-        // originally we had:
-        // let block: RskBlock = serde_json::from_str(&result.unwrap().to_string())?;
-
-        // remove next three lines when connection with check-fork is done and uncles come in right format
-        let mut result = result.unwrap().clone();
-        result["uncles"] = serde_json::Value::Array(Vec::new());
+    } else if let Some(result) = result {
         let block: TesterRskBlock = serde_json::from_str(&result.to_string())?;
         if log_super_block {
             log_if_superblock(&block)?;
         }
-
         blocks.push(block);
     }
     Ok(())
