@@ -37,7 +37,9 @@ impl<C: PegoutManagerContractApi> TriggerOperatorTakeInvoke<C> {
 
 #[cfg(test)]
 mod tests {
-    use alloy_primitives::FixedBytes;
+    use std::str::FromStr;
+
+    use alloy_primitives::{FixedBytes, TxHash};
     use union_contracts::bindings::pegout_manager::PegoutManager::{
         PegoutManagerErrors, PegoutTxidNotFound,
     };
@@ -45,8 +47,6 @@ mod tests {
     use super::*;
     use crate::contracts::common::tests::generate_contract_revert_error;
     use crate::contracts::pegout_manager::MockPegoutManagerContractApi;
-    use alloy_primitives::TxHash;
-    use std::str::FromStr;
 
     impl TriggerOperatorTakeInvoke<MockPegoutManagerContractApi> {
         fn new_for_tests(contract: MockPegoutManagerContractApi) -> Self {

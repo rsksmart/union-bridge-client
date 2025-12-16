@@ -1,4 +1,6 @@
-use crate::errors::ConfigError;
+use std::fs;
+use std::path::Path;
+
 use anyhow::{Context, Result, bail};
 use bitcoin::Network;
 use config;
@@ -7,7 +9,8 @@ use log::trace;
 use log4rs::config::RawConfig;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
-use std::{fs, path::Path};
+
+use crate::errors::ConfigError;
 
 const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 // todo(fede) replace the /new folder with the final folder
@@ -208,10 +211,10 @@ impl CommonConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::env::remove_var;
-    use std::env::set_var;
+    use std::env::{remove_var, set_var};
     use std::sync::Mutex;
+
+    use super::*;
 
     // used to syncs tests that uses UB__ variables
     static TEST_MUTEX: Mutex<()> = Mutex::new(());

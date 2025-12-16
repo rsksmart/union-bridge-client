@@ -1,17 +1,18 @@
-use crate::contracts::bitcoin_manager::ParseFieldError;
-use crate::contracts::common::send_tx_with_gas_bump;
-use crate::rsk_gateway::DomainErrors;
-use crate::types::BtcTxSPVProofInput;
-use alloy_primitives::{Address, Bytes, FixedBytes, TxHash, U256, hex::FromHex};
+use alloy_primitives::hex::FromHex;
+use alloy_primitives::{Address, Bytes, FixedBytes, TxHash, U256};
 use alloy_provider::Provider;
 use log::{error, info};
+#[cfg(test)]
+use mockall::automock;
 use union_contracts::bindings::pegout_manager::PegoutManager::{
     self, BtcTransaction, BtcTxIn, BtcTxOut, BtcTxSPVProof, PegoutManagerErrors,
     PegoutManagerInstance,
 };
 
-#[cfg(test)]
-use mockall::automock;
+use crate::contracts::bitcoin_manager::ParseFieldError;
+use crate::contracts::common::send_tx_with_gas_bump;
+use crate::rsk_gateway::DomainErrors;
+use crate::types::BtcTxSPVProofInput;
 
 #[cfg_attr(test, automock)]
 pub trait PegoutManagerContractApi {

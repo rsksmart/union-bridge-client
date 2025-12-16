@@ -1,15 +1,28 @@
+use std::collections::HashMap;
+use std::error::Error;
+
+use alloy_primitives::U256;
+use alloy_provider::Provider;
+use anyhow::{Result, anyhow};
+use common::types::{Address, ContractInfo};
+use log::{error, info};
+#[cfg(test)]
+use mockall::automock;
+use thiserror::Error;
+
 use crate::config::TransactionConfig;
 use crate::contracts::committee_registry::{
     ApplyToStreamInvoke, CommitteeRegistryContract, DepositAggregatedKeysInvoke,
     DepositCommunicationDataInvoke, GetCommitteeCall, GetMemberCommunicationDataCall,
 };
-use crate::contracts::interactions::{
-    accept_pegin::AcceptPeginInvoke, get_temporary_pegin_address::GetTemporaryPeginAddressCall,
-    notify_check_fork_complete::NotifyCheckForkCompleteInvoke,
-    register_operator_take::RegisterOperatorTakeInvoke, register_pegout::RegisterPegoutInvoke,
-    request_pegin::RequestPeginInvoke, request_pegout::TryPegoutInvoke,
-    trigger_operator_take::TriggerOperatorTakeInvoke,
-};
+use crate::contracts::interactions::accept_pegin::AcceptPeginInvoke;
+use crate::contracts::interactions::get_temporary_pegin_address::GetTemporaryPeginAddressCall;
+use crate::contracts::interactions::notify_check_fork_complete::NotifyCheckForkCompleteInvoke;
+use crate::contracts::interactions::register_operator_take::RegisterOperatorTakeInvoke;
+use crate::contracts::interactions::register_pegout::RegisterPegoutInvoke;
+use crate::contracts::interactions::request_pegin::RequestPeginInvoke;
+use crate::contracts::interactions::request_pegout::TryPegoutInvoke;
+use crate::contracts::interactions::trigger_operator_take::TriggerOperatorTakeInvoke;
 use crate::contracts::member_registry::{GetMemberPublicKeysCall, MemberRegistryContract};
 use crate::contracts::peg_manager::FakePegManagerContract;
 use crate::contracts::pegin_manager::PeginManagerContract;
@@ -31,18 +44,6 @@ use crate::types::{
     RequestPeginOutput, RequestPegoutInput, RequestPegoutOutput, TriggerOperatorTakeInput,
     TriggerOperatorTakeOutput,
 };
-use alloy_primitives::U256;
-use alloy_provider::Provider;
-use anyhow::{Result, anyhow};
-use common::types::Address;
-use common::types::ContractInfo;
-use log::{error, info};
-use std::collections::HashMap;
-use std::error::Error;
-use thiserror::Error;
-
-#[cfg(test)]
-use mockall::automock;
 
 /// Must match the contract name in the config file
 const PEGIN_MANAGER_CONTRACT_NAME: &str = "PeginManager";

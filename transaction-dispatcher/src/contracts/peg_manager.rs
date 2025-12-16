@@ -1,12 +1,12 @@
-use crate::contracts::common::send_tx_with_gas_bump;
 use alloy_primitives::{Address, TxHash};
 use alloy_provider::Provider;
 use common::mocks::fake_contracts::FakePegManager;
 use common::mocks::fake_contracts::FakePegManager::FakePegManagerInstance;
 use log::info;
-
 #[cfg(test)]
 use mockall::automock;
+
+use crate::contracts::common::send_tx_with_gas_bump;
 
 #[cfg_attr(test, automock)]
 pub trait PegManagerContractApi {

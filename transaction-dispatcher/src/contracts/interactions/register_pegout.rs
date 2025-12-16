@@ -1,9 +1,10 @@
-use crate::contracts::pegout_manager::PegoutManagerContractApi;
-use crate::rsk_gateway::DomainErrors;
-use crate::types::{RegisterPegoutInput, RegisterPegoutOutput};
 use anyhow::Result;
 use log::info;
 use union_contracts::bindings::pegout_manager::PegoutManager::BtcTxSPVProof;
+
+use crate::contracts::pegout_manager::PegoutManagerContractApi;
+use crate::rsk_gateway::DomainErrors;
+use crate::types::{RegisterPegoutInput, RegisterPegoutOutput};
 
 #[derive(Clone)]
 pub(crate) struct RegisterPegoutInvoke<C: PegoutManagerContractApi> {

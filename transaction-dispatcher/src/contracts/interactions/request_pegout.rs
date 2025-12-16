@@ -1,11 +1,10 @@
-use crate::{
-    contracts::pegout_manager::PegoutManagerContractApi,
-    rsk_gateway::DomainErrors,
-    types::{RequestPegoutInput, RequestPegoutOutput},
-};
 use alloy_primitives::FixedBytes;
 use anyhow::Result;
 use log::{debug, info};
+
+use crate::contracts::pegout_manager::PegoutManagerContractApi;
+use crate::rsk_gateway::DomainErrors;
+use crate::types::{RequestPegoutInput, RequestPegoutOutput};
 
 #[derive(Clone)]
 pub struct TryPegoutInvoke<C: PegoutManagerContractApi> {
@@ -46,17 +45,15 @@ impl<C: PegoutManagerContractApi> TryPegoutInvoke<C> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        contracts::{
-            interactions::request_pegout::{
-                RequestPegoutInput, RequestPegoutOutput, TryPegoutInvoke,
-            },
-            pegout_manager::MockPegoutManagerContractApi,
-        },
-        rsk_gateway::DomainErrors,
-    };
-    use alloy_primitives::TxHash;
     use std::str::FromStr;
+
+    use alloy_primitives::TxHash;
+
+    use crate::contracts::interactions::request_pegout::{
+        RequestPegoutInput, RequestPegoutOutput, TryPegoutInvoke,
+    };
+    use crate::contracts::pegout_manager::MockPegoutManagerContractApi;
+    use crate::rsk_gateway::DomainErrors;
 
     impl TryPegoutInvoke<MockPegoutManagerContractApi> {
         fn new_for_tests(contract: MockPegoutManagerContractApi) -> Self {

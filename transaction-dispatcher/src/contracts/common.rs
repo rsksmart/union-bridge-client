@@ -1,10 +1,10 @@
-use crate::contracts::{
-    bitcoin_manager, committee_registry, member_registry, pegin_manager, pegout_manager,
-    signature_manager, stream_manager,
-};
-use crate::rsk_gateway::DomainErrors;
+use std::marker::PhantomData;
+use std::time::{Duration, Instant};
+
 use alloy_contract::{CallBuilder, SolCallBuilder};
-use alloy_primitives::{TxHash, hex::FromHexError, ruint::ParseError};
+use alloy_primitives::TxHash;
+use alloy_primitives::hex::FromHexError;
+use alloy_primitives::ruint::ParseError;
 use alloy_provider::Provider;
 use alloy_provider::network::ReceiptResponse;
 use alloy_rpc_types::TransactionReceipt;
@@ -12,10 +12,14 @@ use alloy_sol_types::SolCall;
 use alloy_transport::TransportResult;
 use log::{debug, error, warn};
 use serde_json::Value;
-use std::marker::PhantomData;
-use std::time::{Duration, Instant};
 use thiserror::Error;
 use tokio::time::{sleep, timeout};
+
+use crate::contracts::{
+    bitcoin_manager, committee_registry, member_registry, pegin_manager, pegout_manager,
+    signature_manager, stream_manager,
+};
+use crate::rsk_gateway::DomainErrors;
 
 // Gas bumping constants
 const BASE_GAS_HEADROOM_PERCENT: u64 = 120; // 20% base headroom
@@ -299,9 +303,10 @@ impl From<alloy_contract::Error> for DomainErrors {
 
 #[cfg(test)]
 pub mod tests {
-    use super::*;
     use alloy_primitives::{Bloom, TxHash};
     use alloy_rpc_types::{Receipt, ReceiptEnvelope, ReceiptWithBloom};
+
+    use super::*;
 
     // Helper function to create a fake receipt for testing
     pub(super) fn create_fake_receipt(

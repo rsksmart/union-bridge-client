@@ -1,11 +1,10 @@
-use crate::{
-    contracts::pegin_manager::PeginManagerContractApi,
-    rsk_gateway::DomainErrors,
-    types::{RequestPeginInput, RequestPeginOutput},
-};
 use anyhow::Result;
 use log::info;
 use union_contracts::bindings::pegin_manager::PeginManager::BtcTxSPVProof;
+
+use crate::contracts::pegin_manager::PeginManagerContractApi;
+use crate::rsk_gateway::DomainErrors;
+use crate::types::{RequestPeginInput, RequestPeginOutput};
 
 #[derive(Clone)]
 pub(crate) struct RequestPeginInvoke<C: PeginManagerContractApi> {
@@ -37,6 +36,13 @@ impl<C: PeginManagerContractApi> RequestPeginInvoke<C> {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
+    use alloy_primitives::TxHash;
+    use union_contracts::bindings::pegin_manager::PeginManager::{
+        PeginAlreadyRequested, PeginManagerErrors,
+    };
+
     use crate::contracts::common::tests::generate_contract_revert_error;
     use crate::contracts::interactions::request_pegin::{
         RequestPeginInput, RequestPeginInvoke, RequestPeginOutput,
@@ -44,11 +50,6 @@ mod tests {
     use crate::contracts::pegin_manager::MockPeginManagerContractApi;
     use crate::rsk_gateway::DomainErrors;
     use crate::types::{BitcoinTransaction, BitcoinTransactionIn, BitcoinTransactionOut};
-    use alloy_primitives::TxHash;
-    use std::str::FromStr;
-    use union_contracts::bindings::pegin_manager::PeginManager::{
-        PeginAlreadyRequested, PeginManagerErrors,
-    };
 
     impl RequestPeginInvoke<MockPeginManagerContractApi> {
         pub(crate) fn new_for_tests(contract: MockPeginManagerContractApi) -> Self {

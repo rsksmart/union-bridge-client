@@ -1,8 +1,11 @@
+use std::collections::HashMap;
+use std::hash::Hash;
+
 use alloy_primitives::{B256, FixedBytes};
 #[cfg(test)]
 use alloy_sol_types::SolEvent;
 use alloy_sol_types::SolEventInterface;
-use anyhow::anyhow;
+use anyhow::{Result, anyhow};
 use bitcoin::PublicKey;
 use common::mocks::fake_contracts::FakePegManager::{
     AdvanceFunds, FakePegManagerEvents, RequestAdvanceFunds,
@@ -14,12 +17,12 @@ use common::types::{Address, BlockHash, BlockNumber, Hash256, RskLog, TxHash};
 use log::{info, trace, warn};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::hash::Hash;
+use union_contracts::bindings::bitcoin_manager::BitcoinManager::BitcoinManagerEvents;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     AllCommunicationDataReady, CommitteeRegistryEvents, MemberInfoDeposited, NewCommittee,
     NewPendingCommittee,
 };
+use union_contracts::bindings::member_registry::MemberRegistry::MemberRegistryEvents;
 use union_contracts::bindings::pegin_manager::PeginManager::{
     PeginAccepted, PeginManagerEvents, PeginRequested,
 };
@@ -33,12 +36,9 @@ use union_contracts::bindings::signature_manager::SignatureManager::{
 use union_contracts::bindings::signature_manager::SignatureManager::{
     AllOperatorTakeTxidsAdded, SignatureManagerEvents,
 };
+use union_contracts::bindings::stream_manager::StreamManager::StreamManagerEvents;
 
 use crate::user_requests::ApplyToStream;
-use anyhow::Result;
-use union_contracts::bindings::bitcoin_manager::BitcoinManager::BitcoinManagerEvents;
-use union_contracts::bindings::member_registry::MemberRegistry::MemberRegistryEvents;
-use union_contracts::bindings::stream_manager::StreamManager::StreamManagerEvents;
 
 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-183
 
@@ -627,7 +627,6 @@ pub struct MemberOfCommittee {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use alloy_primitives::{Address, B256, Bytes, FixedBytes, U256};
     use common::test_utils::rsk_log_generator::{FakeLogGenerator, event_signature_to_topic};
     use common::test_utils::rsk_utils::generate_fake_address;
@@ -640,6 +639,8 @@ mod tests {
         PrevoutData, RequestPeginTempInfo, StreamPosition,
     };
     use uuid::Uuid;
+
+    use super::*;
 
     fn create_rsk_log_from_event<T: SolEvent>(
         event: &T,

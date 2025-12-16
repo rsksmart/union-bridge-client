@@ -1,17 +1,18 @@
-use crate::contracts::bitcoin_manager::ParseFieldError;
-use crate::contracts::common::send_tx_with_gas_bump;
-use crate::rsk_gateway::DomainErrors;
-use crate::types::BtcTxSPVProofInput;
-use alloy_primitives::{Address, FixedBytes, TxHash, hex::FromHex};
+use alloy_primitives::hex::FromHex;
+use alloy_primitives::{Address, FixedBytes, TxHash};
 use alloy_provider::Provider;
 use anyhow::Result;
 use log::{error, info};
+#[cfg(test)]
+use mockall::automock;
 use union_contracts::bindings::pegin_manager::PeginManager::{
     self, BtcTransaction, BtcTxSPVProof, PeginManagerErrors, PeginManagerInstance,
 };
 
-#[cfg(test)]
-use mockall::automock;
+use crate::contracts::bitcoin_manager::ParseFieldError;
+use crate::contracts::common::send_tx_with_gas_bump;
+use crate::rsk_gateway::DomainErrors;
+use crate::types::BtcTxSPVProofInput;
 
 #[cfg_attr(test, automock)]
 pub trait PeginManagerContractApi {
