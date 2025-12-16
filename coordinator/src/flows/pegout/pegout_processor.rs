@@ -446,11 +446,12 @@ where
             if let Some(flow) = self.pegout_flows.get(&flow_id) {
                 // Only schedule if flow is still waiting for signatures (not yet dispatched)
                 if flow.current_step() == Steps::DispatchTransaction {
+                    let timeout_ticks = u32::try_from(ADVANCE_FUNDS_TIMEOUT_SECONDS)
+                        .expect("ADVANCE_FUNDS_TIMEOUT_SECONDS should fit in u32");
                     self.advance_funds_timeout_scheduler
-                        .schedule(flow_id, ADVANCE_FUNDS_TIMEOUT_SECONDS as u32);
+                        .schedule(flow_id, timeout_ticks);
                     info!(
-                        "Scheduled advance funds timeout for flow_id: {} (expires in {} blocks)",
-                        flow_id, ADVANCE_FUNDS_TIMEOUT_SECONDS
+                        "Scheduled advance funds timeout for flow_id: {flow_id} (expires in {ADVANCE_FUNDS_TIMEOUT_SECONDS} blocks)"
                     );
                 }
             }
