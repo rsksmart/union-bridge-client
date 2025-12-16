@@ -11,6 +11,8 @@ fn main() {
 
     // 2. Check if we're pushing tags - if so, skip branch name validation
     // When pushing tags, HEAD is typically detached or we can check for tag refs
+    // Note: We intentionally ignore execution errors here (if git is unavailable or command fails)
+    // to proceed to step 3, which checks for detached HEAD state (common when pushing tags)
     let tag_check = Command::new("git")
         .args(["describe", "--tags", "--exact-match", "HEAD"])
         .output();
@@ -24,10 +26,17 @@ fn main() {
     }
 
     // 3. Also check if we're in detached HEAD state (common when pushing tags)
-    let branch_output = Command::new("git")
+    let branch_check = Command::new("git")
         .args(["symbolic-ref", "--short", "HEAD"])
-        .output()
-        .expect("Failed to execute git");
+        .output();
+    
+    let branch_output = match branch_check {
+        Ok(output) => output,
+        Err(e) => {
+            eprintln!("Failed to execute git: {}", e);
+            exit(1);
+        }
+    };
 
     if !branch_output.status.success() {
         // No branch name means we're in detached HEAD state (e.g., pushing a tag)
