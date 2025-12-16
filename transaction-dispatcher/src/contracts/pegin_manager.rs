@@ -11,6 +11,9 @@ use union_contracts::bindings::pegin_manager::PeginManager::{
 
 use crate::contracts::bitcoin_manager::ParseFieldError;
 use crate::contracts::common::send_tx_with_gas_bump;
+pub(crate) use crate::contracts::interactions::accept_pegin::AcceptPeginInvoke;
+pub(crate) use crate::contracts::interactions::get_temporary_pegin_address::GetTemporaryPeginAddressCall;
+pub(crate) use crate::contracts::interactions::request_pegin::RequestPeginInvoke;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::BtcTxSPVProofInput;
 

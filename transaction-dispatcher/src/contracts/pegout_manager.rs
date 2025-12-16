@@ -11,6 +11,10 @@ use union_contracts::bindings::pegout_manager::PegoutManager::{
 
 use crate::contracts::bitcoin_manager::ParseFieldError;
 use crate::contracts::common::send_tx_with_gas_bump;
+pub(crate) use crate::contracts::interactions::register_operator_take::RegisterOperatorTakeInvoke;
+pub(crate) use crate::contracts::interactions::register_pegout::RegisterPegoutInvoke;
+pub(crate) use crate::contracts::interactions::request_pegout::TryPegoutInvoke;
+pub(crate) use crate::contracts::interactions::trigger_operator_take::TriggerOperatorTakeInvoke;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::BtcTxSPVProofInput;
 

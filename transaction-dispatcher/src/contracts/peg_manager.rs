@@ -7,6 +7,7 @@ use log::info;
 use mockall::automock;
 
 use crate::contracts::common::send_tx_with_gas_bump;
+pub(crate) use crate::contracts::interactions::notify_check_fork_complete::NotifyCheckForkCompleteInvoke;
 
 #[cfg_attr(test, automock)]
 pub trait PegManagerContractApi {

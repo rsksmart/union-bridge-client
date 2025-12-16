@@ -1,7 +1,7 @@
 pub(super) mod bitcoin_manager;
 pub(super) mod committee_registry;
 pub(super) mod common;
-pub(crate) mod interactions;
+pub(super) mod interactions;
 pub(super) mod member_registry;
 pub(super) mod peg_manager;
 pub(super) mod pegin_manager;
