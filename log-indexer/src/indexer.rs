@@ -335,7 +335,6 @@ mod tests {
     use super::*;
     use crate::store::MockLogStore;
 
-    #[cfg(not(feature = "fresh_node"))]
     #[test]
     fn recover_logs_when_no_checkpoint_should_start_from_initial_block() {
         let mut mock_store = MockLogStore::new();
@@ -401,7 +400,6 @@ mod tests {
         assert_eq!(result.unwrap(), best_block_number);
     }
 
-    #[cfg(not(feature = "fresh_node"))]
     #[test]
     fn recover_logs_when_checkpoint_exists_should_resume_from_checkpoint_block() {
         let mut mock_store = MockLogStore::new();
@@ -470,7 +468,6 @@ mod tests {
         assert_eq!(result.unwrap(), best_block_number);
     }
 
-    #[cfg(not(feature = "fresh_node"))]
     #[test]
     fn recover_logs_should_continue_if_best_block_changes_after_sync() {
         let mut mock_store = MockLogStore::new();
@@ -511,7 +508,6 @@ mod tests {
         assert_eq!(result.unwrap(), second_best.number());
     }
 
-    #[cfg(not(feature = "fresh_node"))]
     #[test]
     fn recover_logs_should_fail_if_best_block_keeps_changing() {
         let mut mock_store = MockLogStore::new();
