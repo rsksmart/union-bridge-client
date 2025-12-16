@@ -23,6 +23,12 @@ Launches one or more Union Bridge clients locally for development and testing.
 
 # Kill all existing running services
 ./cli-run.sh --kill
+
+# Start background mining (Anvil every 1s, Bitcoin every 5s)
+./cli-run.sh --start-mine
+
+# Stop background mining
+./cli-run.sh --stop-mine
 ```
 
 ### Options
@@ -33,6 +39,8 @@ Launches one or more Union Bridge clients locally for development and testing.
 - `--fresh`: Start with clear databases (removes existing state).
 - `--logs`: View logs from all 4 coordinators in real-time. Exits on Ctrl+C.
 - `--kill`: Kill all existing running services and exit. Cannot be used with other options.
+- `--start-mine`: Start background mining for both Anvil (every 1s) and Bitcoin regtest (every 5s). Runs until stopped.
+- `--stop-mine`: Stop background mining processes started with `--start-mine`.
 
 **Features:**
 - Launches multiple services per client (block-indexer, log-indexer, user-api, coordinator)
