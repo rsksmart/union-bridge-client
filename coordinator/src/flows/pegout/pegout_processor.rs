@@ -435,28 +435,22 @@ where
     }
 
     /// Schedule timeouts for flows that received `pegout_accepted` but didn't have block timestamp yet
-    fn schedule_pending_timeouts(&mut self, block: &RskBlockAndUncles) {
+    fn schedule_pending_timeouts(&mut self, _block: &RskBlockAndUncles) {
         if self.flows_pending_timeout.is_empty() {
             return;
         }
 
-        let current_timestamp = block.block().timestamp().value();
         let pending_flows: Vec<Uuid> = self.flows_pending_timeout.iter().copied().collect();
 
         for flow_id in pending_flows {
             if let Some(flow) = self.pegout_flows.get(&flow_id) {
                 // Only schedule if flow is still waiting for signatures (not yet dispatched)
                 if flow.current_step() == Steps::DispatchTransaction {
-                    self.advance_funds_timeout_scheduler.schedule(
-                        flow_id,
-                        current_timestamp,
-                        ADVANCE_FUNDS_TIMEOUT_SECONDS,
-                    );
+                    self.advance_funds_timeout_scheduler
+                        .schedule(flow_id, ADVANCE_FUNDS_TIMEOUT_SECONDS as u32);
                     info!(
-                        "Scheduled advance funds timeout for flow_id: {} at timestamp: {} (expires at: {})",
-                        flow_id,
-                        current_timestamp,
-                        current_timestamp + ADVANCE_FUNDS_TIMEOUT_SECONDS
+                        "Scheduled advance funds timeout for flow_id: {} (expires in {} blocks)",
+                        flow_id, ADVANCE_FUNDS_TIMEOUT_SECONDS
                     );
                 }
             }
@@ -465,18 +459,15 @@ where
     }
 
     /// Check for expired advance funds timeouts and trigger operator take
-    fn handle_advance_funds_timeout_expired(&mut self, block: &RskBlockAndUncles) -> Result<()> {
+    fn handle_advance_funds_timeout_expired(&mut self, _block: &RskBlockAndUncles) -> Result<()> {
         if self.advance_funds_timeout_scheduler.is_empty() {
             return Ok(());
         }
 
-        let current_timestamp = block.block().timestamp().value();
-        let expired_flows = self.advance_funds_timeout_scheduler.check_expired(current_timestamp);
+        let expired_flows = self.advance_funds_timeout_scheduler.tick();
 
         for flow_id in expired_flows {
-            info!(
-                "Advance funds timeout expired for flow_id: {flow_id} at timestamp: {current_timestamp}",
-            );
+            info!("Advance funds timeout expired for flow_id: {flow_id}",);
             self.trigger_operator_take_for_flow(flow_id)?;
         }
 

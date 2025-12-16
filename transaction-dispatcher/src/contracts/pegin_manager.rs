@@ -109,10 +109,7 @@ fn build_btc_tx_spv_proof(input: BtcTxSPVProofInput) -> Result<BtcTxSPVProof, Pa
     let merkle_branches_hashes = input
         .merkle_branch_hashes
         .into_iter()
-        .map(|hash| {
-            hash.parse::<FixedBytes<32>>()
-                .map_err(ParseFieldError::ParseHex)
-        })
+        .map(|hash| hash.parse::<FixedBytes<32>>().map_err(ParseFieldError::ParseHex))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| {
             error!("Failed to convert merkle_branch_hashes: {e:?}");

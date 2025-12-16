@@ -127,7 +127,7 @@ where
     fn handle_pegout_registered(&mut self, event: &PegoutRegisteredEvent) -> Result<()> {
         let pegout_registered = event.inner.clone();
         let event_committee_id = pegout_registered.committeeId;
-        let event_slot_id = pegout_registered.slotId;
+        let event_slot_id = pegout_registered.streamInfo.slotId;
 
         if let Some(flow) = self.flows.values_mut().find(|flow| {
             let trigger = flow.trigger_data();
@@ -481,7 +481,7 @@ where
                 // Only process PegoutRegistered events that have a matching flow (by committee_id + slot_id).
                 // This filters out events from the regular pegout flow (handled by pegout_processor).
                 let event_committee_id = e.inner.committeeId;
-                let event_slot_id = e.inner.slotId;
+                let event_slot_id = e.inner.streamInfo.slotId;
                 if !self.has_flow_for_pegout_registered(event_committee_id, event_slot_id) {
                     trace!(
                         "AdvanceFundsFlowProcessor ignoring PegoutRegistered event for committee_id {event_committee_id} slot_id {event_slot_id} - no matching flow",

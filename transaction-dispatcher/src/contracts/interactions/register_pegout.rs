@@ -13,10 +13,7 @@ pub(crate) struct RegisterPegoutInvoke<C: PegoutManagerContractApi> {
 
 impl<C: PegoutManagerContractApi> RegisterPegoutInvoke<C> {
     pub(crate) fn new(contract: C, gas_bumps: u8) -> Self {
-        RegisterPegoutInvoke {
-            contract,
-            gas_bumps,
-        }
+        RegisterPegoutInvoke { contract, gas_bumps }
     }
 
     pub(crate) async fn run(
@@ -29,15 +26,10 @@ impl<C: PegoutManagerContractApi> RegisterPegoutInvoke<C> {
             DomainErrors::InvalidBtcTxSpvProof(format!("Failed to parse RegisterPegoutInput: {e}"))
         })?;
 
-        let tx_hash = self
-            .contract
-            .invoke_register_user_take(parsed_input, self.gas_bumps)
-            .await?;
+        let tx_hash = self.contract.invoke_register_user_take(parsed_input, self.gas_bumps).await?;
 
         info!("invoke_register_pegout successful at tx {tx_hash}");
-        Ok(RegisterPegoutOutput {
-            transaction_hash: tx_hash.to_string(),
-        })
+        Ok(RegisterPegoutOutput { transaction_hash: tx_hash.to_string() })
     }
 }
 

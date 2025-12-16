@@ -15,10 +15,7 @@ pub(crate) struct RequestPeginInvoke<C: PeginManagerContractApi> {
 
 impl<C: PeginManagerContractApi> RequestPeginInvoke<C> {
     pub(crate) fn new(contract: C, gas_bumps: u8) -> Self {
-        RequestPeginInvoke {
-            contract,
-            gas_bumps,
-        }
+        RequestPeginInvoke { contract, gas_bumps }
     }
 
     pub(crate) async fn run(
@@ -31,15 +28,10 @@ impl<C: PeginManagerContractApi> RequestPeginInvoke<C> {
             DomainErrors::InvalidBtcTxSpvProof(format!("Failed to parse RequestPeginInput: {e}"))
         })?;
 
-        let tx_hash = self
-            .contract
-            .invoke_request_pegin(parsed_input, self.gas_bumps)
-            .await?;
+        let tx_hash = self.contract.invoke_request_pegin(parsed_input, self.gas_bumps).await?;
 
         info!("RequestPegin successful at tx {tx_hash}");
-        Ok(RequestPeginOutput {
-            transaction_hash: tx_hash.to_string(),
-        })
+        Ok(RequestPeginOutput { transaction_hash: tx_hash.to_string() })
     }
 }
 
@@ -60,10 +52,7 @@ mod tests {
 
     impl RequestPeginInvoke<MockPeginManagerContractApi> {
         pub(crate) fn new_for_tests(contract: MockPeginManagerContractApi) -> Self {
-            RequestPeginInvoke {
-                contract,
-                gas_bumps: 3,
-            }
+            RequestPeginInvoke { contract, gas_bumps: 3 }
         }
     }
 
@@ -122,10 +111,7 @@ mod tests {
 
         let result = invoke.run(input).await;
         assert!(result.is_err());
-        matches!(
-            result.err().unwrap(),
-            DomainErrors::PeginAlreadyRequested(_)
-        );
+        matches!(result.err().unwrap(), DomainErrors::PeginAlreadyRequested(_));
     }
 
     #[tokio::test]

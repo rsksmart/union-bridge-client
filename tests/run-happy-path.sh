@@ -42,11 +42,6 @@ STREAM_ID=0
 RSK_ADDRESS="0x$(openssl rand -hex 20)" # random address each run
 VALUE=100000
 PACKET_NUMBER=0
-# BridgeMock (deterministic anvil address from contracts repo broadcasts)
-BRIDGE_MOCK_ADDRESS="${BRIDGE_MOCK_ADDRESS:-0x5FbDB2315678afecb367f032d93F642f64180aa3}"
-# Default Anvil private key (account[0]); override with BRIDGE_FUNDING_PK if needed
-BRIDGE_FUNDING_PK="${BRIDGE_FUNDING_PK:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
-BRIDGE_FUNDING_VALUE="${BRIDGE_FUNDING_VALUE:-5ether}"
 
 # colors
 GREEN='\033[0;32m'
@@ -74,15 +69,6 @@ get_current_bitcoin_height() {
 # check if bitcoin node is accessible
 check_bitcoin_connectivity() {
     bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockcount &> /dev/null
-}
-
-prefund_bridge_mock() {
-    log "Prefunding BridgeMock at $BRIDGE_MOCK_ADDRESS with $BRIDGE_FUNDING_VALUE"
-    if ! cast send "$BRIDGE_MOCK_ADDRESS" --value "$BRIDGE_FUNDING_VALUE" --rpc-url http://localhost:8545 --private-key "$BRIDGE_FUNDING_PK" &>/dev/null; then
-        warn "Failed to pre-fund BridgeMock (cast send). Check Anvil or credentials."
-        return 1
-    fi
-    success "BridgeMock prefunded"
 }
 
 # check prerequisites
@@ -342,13 +328,6 @@ trap cleanup EXIT
 clear
 log "Configuration: stream=$STREAM_ID, rsk=$RSK_ADDRESS, amount=$VALUE, env=$SCRIPT_ENV"
 log "Prerequisite: Start mining in another terminal with: ./cli-run.sh --start-mine"
-echo ""
-
-# pre-fund BridgeMock (required in v0.2.1-alpha)
-step "Step 0a: Prefund BridgeMock"
-if ! prefund_bridge_mock; then
-    warn "BridgeMock funding failed; flows may revert (BridgeMock: Sending funds failed)"
-fi
 echo ""
 
 # prepare wallets

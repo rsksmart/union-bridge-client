@@ -15,10 +15,7 @@ pub struct TryPegoutInvoke<C: PegoutManagerContractApi> {
 
 impl<C: PegoutManagerContractApi> TryPegoutInvoke<C> {
     pub fn new(contract: C, gas_bumps: u8) -> Self {
-        Self {
-            contract,
-            gas_bumps,
-        }
+        Self { contract, gas_bumps }
     }
 
     pub async fn run(
@@ -39,15 +36,11 @@ impl<C: PegoutManagerContractApi> TryPegoutInvoke<C> {
             self.gas_bumps
         );
 
-        let tx_hash = self
-            .contract
-            .invoke_try_pegout(msg_value, usr_pub_key, self.gas_bumps)
-            .await?;
+        let tx_hash =
+            self.contract.invoke_try_pegout(msg_value, usr_pub_key, self.gas_bumps).await?;
 
         info!("Pegout Request successful at tx {tx_hash}");
-        Ok(RequestPegoutOutput {
-            transaction_hash: tx_hash.to_string(),
-        })
+        Ok(RequestPegoutOutput { transaction_hash: tx_hash.to_string() })
     }
 }
 
@@ -67,10 +60,7 @@ mod tests {
 
     impl TryPegoutInvoke<MockPegoutManagerContractApi> {
         fn new_for_tests(contract: MockPegoutManagerContractApi) -> Self {
-            TryPegoutInvoke {
-                contract,
-                gas_bumps: 3,
-            }
+            TryPegoutInvoke { contract, gas_bumps: 3 }
         }
     }
 
@@ -101,9 +91,7 @@ mod tests {
         let input = get_base_input();
 
         let expected_tx_hash = "0xdeadbeefdeadbeef000000000000000000000000000000000000000000000000";
-        let expected = RequestPegoutOutput {
-            transaction_hash: expected_tx_hash.to_string(),
-        };
+        let expected = RequestPegoutOutput { transaction_hash: expected_tx_hash.to_string() };
 
         mock.expect_invoke_try_pegout()
             .returning(move |_, _, _| Ok(parse_tx_hash(expected_tx_hash)))
@@ -123,10 +111,8 @@ mod tests {
         mock.expect_invoke_try_pegout().times(0);
 
         let invoke = TryPegoutInvoke::new_for_tests(mock);
-        let bad_input = RequestPegoutInput {
-            amount_in_wei: 1_000,
-            usr_pub_key: "not-a-hex-key".to_string(),
-        };
+        let bad_input =
+            RequestPegoutInput { amount_in_wei: 1_000, usr_pub_key: "not-a-hex-key".to_string() };
 
         let err = invoke.run(bad_input).await.err().unwrap();
         match err {
@@ -139,10 +125,7 @@ mod tests {
 
     fn get_base_input() -> RequestPegoutInput {
         let usr_pub_key = format!("0x{}", "01".repeat(33));
-        RequestPegoutInput {
-            amount_in_wei: 1_234_567,
-            usr_pub_key,
-        }
+        RequestPegoutInput { amount_in_wei: 1_234_567, usr_pub_key }
     }
 
     fn parse_tx_hash(tx_hash_str: &str) -> TxHash {

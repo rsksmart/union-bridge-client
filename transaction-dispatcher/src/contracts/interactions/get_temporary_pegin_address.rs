@@ -24,19 +24,15 @@ impl<C: PeginManagerContractApi> GetTemporaryPeginAddressCall<C> {
     ) -> Result<PeginAddressOutput, DomainErrors> {
         info!("Init GetTemporaryPeginAddressCall for: {input:?}");
 
-        let rootstock_deposit_address: Address = input
-            .rootstock_deposit_address
-            .parse::<Address>()
-            .map_err(|e| {
+        let rootstock_deposit_address: Address =
+            input.rootstock_deposit_address.parse::<Address>().map_err(|e| {
                 DomainErrors::InvalidAddress(format!(
                     "Failed to parse rootstock_deposit_address: {e}"
                 ))
             })?;
         let value = input.value;
-        let btc_reimbursement_pub_key: FixedBytes<32> = input
-            .btc_reimbursement_pub_key
-            .parse::<FixedBytes<32>>()
-            .map_err(|e| {
+        let btc_reimbursement_pub_key: FixedBytes<32> =
+            input.btc_reimbursement_pub_key.parse::<FixedBytes<32>>().map_err(|e| {
                 DomainErrors::InvalidCompressedPubKey(format!(
                     "Failed to parse btc_reimbursement_pub_key: {e}"
                 ))
@@ -99,6 +95,7 @@ mod tests {
             bitcoinDepositAddress: expected_deposit_address.clone(),
             packetNumber: 0u64,
             memberDisputeKeys: vec![],
+            availableSlots: 0u64,
         };
 
         mock_instance
@@ -148,11 +145,7 @@ mod tests {
 
         mock_instance
             .expect_call_get_request_pegin_data()
-            .with(
-                always(),
-                eq(VALID_VALUE),
-                eq(VALID_PUB_KEY.parse::<FixedBytes<32>>().unwrap()),
-            )
+            .with(always(), eq(VALID_VALUE), eq(VALID_PUB_KEY.parse::<FixedBytes<32>>().unwrap()))
             .returning(move |_, _, _| {
                 let expected_err = BitcoinManagerErrors::InvalidAddress(InvalidAddress {
                     _address: Address::default(),
@@ -182,10 +175,7 @@ mod tests {
 
         let result = interaction.run(input).await;
         assert!(result.is_err());
-        matches!(
-            result.err().unwrap(),
-            DomainErrors::InvalidCompressedPubKey(_)
-        );
+        matches!(result.err().unwrap(), DomainErrors::InvalidCompressedPubKey(_));
     }
 
     // there are more errors that could be raised by the smart contract, but those are tested either on peg_manager.rs or bitcoin_manager.rs
@@ -202,11 +192,7 @@ mod tests {
 
         mock_instance
             .expect_call_get_request_pegin_data()
-            .with(
-                eq(VALID_ADDRESS.parse::<Address>().unwrap()),
-                eq(VALID_VALUE),
-                always(),
-            )
+            .with(eq(VALID_ADDRESS.parse::<Address>().unwrap()), eq(VALID_VALUE), always())
             .returning(move |_, _, _| {
                 let expected_err = BitcoinManagerErrors::InvalidPublicKey(InvalidPublicKey {
                     publicKey: FixedBytes::<32>::default(),
@@ -219,10 +205,7 @@ mod tests {
 
         let result = call.run(input).await;
         assert!(result.is_err());
-        matches!(
-            result.err().unwrap(),
-            DomainErrors::InvalidCompressedPubKey(_)
-        );
+        matches!(result.err().unwrap(), DomainErrors::InvalidCompressedPubKey(_));
     }
 
     #[allow(unused)]

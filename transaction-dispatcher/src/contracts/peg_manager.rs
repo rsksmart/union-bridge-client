@@ -39,10 +39,7 @@ impl<P: Provider> PegManagerContractApi for FakePegManagerContract<P> {
     ) -> alloy_contract::Result<TxHash> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
-            || {
-                self.contract_instance
-                    .checkForkComplete(pegout_id.to_string())
-            },
+            || self.contract_instance.checkForkComplete(pegout_id.to_string()),
             gas_bumps,
         )
         .await

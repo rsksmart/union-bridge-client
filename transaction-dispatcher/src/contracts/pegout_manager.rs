@@ -27,6 +27,18 @@ pub trait PegoutManagerContractApi {
         input: BtcTxSPVProof,
         gas_bumps: u8,
     ) -> alloy_contract::Result<TxHash>;
+
+    async fn invoke_register_operator_take(
+        &self,
+        input: BtcTxSPVProof,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TxHash>;
+
+    async fn invoke_trigger_operator_take(
+        &self,
+        pegout_txid: FixedBytes<32>,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TxHash>;
 }
 
 #[derive(Clone)]
@@ -51,11 +63,7 @@ impl<P: Provider> PegoutManagerContractApi for PegoutManagerContract<P> {
     ) -> alloy_contract::Result<TxHash> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
-            || {
-                self.contract_instance
-                    .tryPegout(usr_pub_key.into())
-                    .value(U256::from(msg_value))
-            },
+            || self.contract_instance.tryPegout(usr_pub_key.into()).value(U256::from(msg_value)),
             gas_bumps,
         )
         .await
@@ -69,6 +77,32 @@ impl<P: Provider> PegoutManagerContractApi for PegoutManagerContract<P> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
             || self.contract_instance.registerUserTake(input.clone()),
+            gas_bumps,
+        )
+        .await
+    }
+
+    async fn invoke_register_operator_take(
+        &self,
+        input: BtcTxSPVProof,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TxHash> {
+        send_tx_with_gas_bump(
+            &self.contract_instance.provider(),
+            || self.contract_instance.registerOperatorTake(input.clone()),
+            gas_bumps,
+        )
+        .await
+    }
+
+    async fn invoke_trigger_operator_take(
+        &self,
+        pegout_txid: FixedBytes<32>,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TxHash> {
+        send_tx_with_gas_bump(
+            &self.contract_instance.provider(),
+            || self.contract_instance.triggerOperatorTake(pegout_txid),
             gas_bumps,
         )
         .await
@@ -94,12 +128,7 @@ fn build_btc_tx_spv_proof(input: BtcTxSPVProofInput) -> Result<BtcTxSPVProof, Pa
         .map(|i| {
             let txid = i.tx_id.parse().map_err(ParseFieldError::ParseHex)?;
             let script_sig = Bytes::from_hex(i.script_sig).map_err(ParseFieldError::ParseHex)?;
-            Ok(BtcTxIn {
-                txId: txid,
-                vout: i.v_out,
-                sequence: i.sequence,
-                scriptSig: script_sig,
-            })
+            Ok(BtcTxIn { txId: txid, vout: i.v_out, sequence: i.sequence, scriptSig: script_sig })
         })
         .collect::<Result<Vec<BtcTxIn>, ParseFieldError>>()?;
 
@@ -110,10 +139,7 @@ fn build_btc_tx_spv_proof(input: BtcTxSPVProofInput) -> Result<BtcTxSPVProof, Pa
         .map(|o| {
             let script_pub_key =
                 Bytes::from_hex(o.script_pub_key).map_err(ParseFieldError::ParseHex)?;
-            Ok(BtcTxOut {
-                amount: o.amount,
-                scriptPubKey: script_pub_key,
-            })
+            Ok(BtcTxOut { amount: o.amount, scriptPubKey: script_pub_key })
         })
         .collect::<Result<Vec<BtcTxOut>, ParseFieldError>>()?;
 
@@ -127,10 +153,7 @@ fn build_btc_tx_spv_proof(input: BtcTxSPVProofInput) -> Result<BtcTxSPVProof, Pa
     let merkle_branches_hashes = input
         .merkle_branch_hashes
         .into_iter()
-        .map(|hash| {
-            hash.parse::<FixedBytes<32>>()
-                .map_err(ParseFieldError::ParseHex)
-        })
+        .map(|hash| hash.parse::<FixedBytes<32>>().map_err(ParseFieldError::ParseHex))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| {
             error!("Failed to convert merkle_branch_hashes: {e:?}");
@@ -175,10 +198,9 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
         PegoutManagerErrors::NotEnoughConfirmations(e) => {
             DomainErrors::MissingConfirmationsOnNativeBridge(format!("{e:?}"))
         }
-        PegoutManagerErrors::InvalidSlotState(e) => DomainErrors::InvalidSlotState {
-            expected: e.expected,
-            actual: e.actual,
-        },
+        PegoutManagerErrors::InvalidSlotState(e) => {
+            DomainErrors::InvalidSlotState { expected: e.expected, actual: e.actual }
+        }
         // Unhandled
         _ => DomainErrors::UnhandledContractError(format!("{e:?}")),
     })

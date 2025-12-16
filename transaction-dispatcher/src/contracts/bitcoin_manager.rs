@@ -56,12 +56,7 @@ impl TryFrom<BitcoinTransaction> for BtcTransaction {
                 e
             })?;
 
-        Ok(BtcTransaction {
-            version: value.version,
-            inputs,
-            outputs,
-            locktime: value.lock_time,
-        })
+        Ok(BtcTransaction { version: value.version, inputs, outputs, locktime: value.lock_time })
     }
 }
 
@@ -147,10 +142,7 @@ mod tests {
 
     #[test]
     fn test_invalid_value() {
-        let err_data = BitcoinManagerErrors::InvalidValue(InvalidValue {
-            expected: 1,
-            _value: 2,
-        });
+        let err_data = BitcoinManagerErrors::InvalidValue(InvalidValue { expected: 1, _value: 2 });
 
         let result = generate_contract_revert_error(&err_data);
         matches!(result.into(), DomainErrors::InvalidValue(_));

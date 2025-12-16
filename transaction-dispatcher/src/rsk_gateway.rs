@@ -6,8 +6,9 @@ use crate::contracts::committee_registry::{
 use crate::contracts::interactions::{
     accept_pegin::AcceptPeginInvoke, get_temporary_pegin_address::GetTemporaryPeginAddressCall,
     notify_check_fork_complete::NotifyCheckForkCompleteInvoke,
-    register_pegout::RegisterPegoutInvoke, request_pegin::RequestPeginInvoke,
-    request_pegout::TryPegoutInvoke,
+    register_operator_take::RegisterOperatorTakeInvoke, register_pegout::RegisterPegoutInvoke,
+    request_pegin::RequestPeginInvoke, request_pegout::TryPegoutInvoke,
+    trigger_operator_take::TriggerOperatorTakeInvoke,
 };
 use crate::contracts::member_registry::{GetMemberPublicKeysCall, MemberRegistryContract};
 use crate::contracts::peg_manager::FakePegManagerContract;
@@ -25,9 +26,10 @@ use crate::types::{
     DepositAggregatedKeyInput, DepositAggregatedKeyOutput, DepositCommunicationDataInput,
     DepositCommunicationDataOutput, GetCommitteeInput, GetCommitteeOutput,
     GetCommunicationDataInput, GetCommunicationDataOutput, GetMemberPublicKeysInput,
-    GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterPegoutInput,
-    RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
-    RequestPegoutOutput,
+    GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterOperatorTakeInput,
+    RegisterOperatorTakeOutput, RegisterPegoutInput, RegisterPegoutOutput, RequestPeginInput,
+    RequestPeginOutput, RequestPegoutInput, RequestPegoutOutput, TriggerOperatorTakeInput,
+    TriggerOperatorTakeOutput,
 };
 use alloy_primitives::U256;
 use alloy_provider::Provider;
@@ -69,9 +71,7 @@ where
         &self,
         addr: alloy_primitives::Address,
     ) -> Result<U256, Box<dyn Error + Send + Sync>> {
-        self.get_balance(addr)
-            .await
-            .map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)
+        self.get_balance(addr).await.map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)
     }
 }
 
@@ -125,6 +125,16 @@ pub trait RskContractsGatewayApi {
         input: RegisterPegoutInput,
     ) -> impl Future<Output = Result<RegisterPegoutOutput, DomainErrors>>;
 
+    fn register_operator_take(
+        &self,
+        input: RegisterOperatorTakeInput,
+    ) -> impl Future<Output = Result<RegisterOperatorTakeOutput, DomainErrors>>;
+
+    fn trigger_operator_take(
+        &self,
+        input: TriggerOperatorTakeInput,
+    ) -> impl Future<Output = Result<TriggerOperatorTakeOutput, DomainErrors>>;
+
     fn get_member_public_keys(
         &self,
         input: GetMemberPublicKeysInput,
@@ -174,6 +184,8 @@ pub struct RskContractsGateway<P: Provider + Clone> {
         ApplyToStreamInvoke<CommitteeRegistryContract<P>, StreamManagerContract<P>, P>,
     request_pegout_invoke: TryPegoutInvoke<PegoutManagerContract<P>>,
     register_pegout_invoke: RegisterPegoutInvoke<PegoutManagerContract<P>>,
+    register_operator_take_invoke: RegisterOperatorTakeInvoke<PegoutManagerContract<P>>,
+    trigger_operator_take_invoke: TriggerOperatorTakeInvoke<PegoutManagerContract<P>>,
     get_committee_call: GetCommitteeCall<CommitteeRegistryContract<P>>,
     deposit_communication_data_invoke: DepositCommunicationDataInvoke<CommitteeRegistryContract<P>>,
     deposit_aggregated_key_invoke: DepositAggregatedKeysInvoke<CommitteeRegistryContract<P>>,
@@ -275,6 +287,14 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
                 pegout_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
+            register_operator_take_invoke: RegisterOperatorTakeInvoke::new(
+                pegout_manager_contract.clone(),
+                tx_config.gas_bumps_t1,
+            ),
+            trigger_operator_take_invoke: TriggerOperatorTakeInvoke::new(
+                pegout_manager_contract.clone(),
+                tx_config.gas_bumps_t1,
+            ),
             add_member_nonce_invoke: AddMemberNonceInvoke::new(
                 signature_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
@@ -338,13 +358,10 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     ) -> Result<PeginAddressOutput, DomainErrors> {
         info!("Interacting with PeginManager#getRequestPeginData",);
 
-        self.get_temporary_pegin_address_call
-            .run(input)
-            .await
-            .map_err(|err| {
-                error!("Error on get_temporary_pegin_address_call: {err}");
-                err
-            })
+        self.get_temporary_pegin_address_call.run(input).await.map_err(|err| {
+            error!("Error on get_temporary_pegin_address_call: {err}");
+            err
+        })
     }
 
     async fn request_pegin(
@@ -377,13 +394,10 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     ) -> Result<AddMemberNonceOutput, DomainErrors> {
         info!("Interacting with SignatureManager#addMemberNonce",);
 
-        self.add_member_nonce_invoke
-            .run(input)
-            .await
-            .map_err(|err| {
-                error!("Error on add_member_nonce_invoke: {err}");
-                err
-            })
+        self.add_member_nonce_invoke.run(input).await.map_err(|err| {
+            error!("Error on add_member_nonce_invoke: {err}");
+            err
+        })
     }
 
     async fn add_member_signature(
@@ -392,13 +406,10 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     ) -> Result<AddMemberSignatureOutput, DomainErrors> {
         info!("Interacting with SignatureManager#addMemberSignature");
 
-        self.add_member_signature_invoke
-            .run(input)
-            .await
-            .map_err(|err| {
-                error!("Error on add_member_signature_invoke: {err}");
-                err
-            })
+        self.add_member_signature_invoke.run(input).await.map_err(|err| {
+            error!("Error on add_member_signature_invoke: {err}");
+            err
+        })
     }
 
     async fn add_operator_take_tx_hash(
@@ -407,25 +418,19 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     ) -> Result<AddMemberNonceOutput, DomainErrors> {
         info!("Interacting with SignatureManager#addOperatorTakeTxHash",);
 
-        self.add_operator_take_tx_hash_invoke
-            .run(input)
-            .await
-            .map_err(|err| {
-                error!("Error on add_operator_take_tx_hash_invoke: {err}");
-                err
-            })
+        self.add_operator_take_tx_hash_invoke.run(input).await.map_err(|err| {
+            error!("Error on add_operator_take_tx_hash_invoke: {err}");
+            err
+        })
     }
 
     async fn notify_check_fork_completion(&self, input: &str) -> Result<(), DomainErrors> {
         info!("Interacting with FakePegManager#notifyCheckForkCompletion",);
 
-        self.notify_check_fork_completion_invoke
-            .run(input)
-            .await
-            .map_err(|err| {
-                error!("Error on notify_check_fork_completion_invoke: {err}");
-                err
-            })
+        self.notify_check_fork_completion_invoke.run(input).await.map_err(|err| {
+            error!("Error on notify_check_fork_completion_invoke: {err}");
+            err
+        })
     }
 
     async fn request_pegout(
@@ -452,19 +457,40 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         })
     }
 
+    async fn register_operator_take(
+        &self,
+        input: RegisterOperatorTakeInput,
+    ) -> Result<RegisterOperatorTakeOutput, DomainErrors> {
+        info!("Interacting with PegoutManager#registerOperatorTake");
+
+        self.register_operator_take_invoke.run(input).await.map_err(|err| {
+            error!("Error on register_operator_take_invoke: {err}");
+            err
+        })
+    }
+
+    async fn trigger_operator_take(
+        &self,
+        input: TriggerOperatorTakeInput,
+    ) -> Result<TriggerOperatorTakeOutput, DomainErrors> {
+        info!("Interacting with PegoutManager#triggerOperatorTake");
+
+        self.trigger_operator_take_invoke.run(input).await.map_err(|err| {
+            error!("Error on trigger_operator_take_invoke: {err}");
+            err
+        })
+    }
+
     async fn get_member_public_keys(
         &self,
         input: GetMemberPublicKeysInput,
     ) -> Result<GetMemberPublicKeysOutput, DomainErrors> {
         info!("Interacting with CommitteeRegistry#getMemberPublicKeys",);
 
-        self.get_member_public_keys_call
-            .run(input)
-            .await
-            .map_err(|err| {
-                error!("Error on get_member_public_keys_call: {err}");
-                err
-            })
+        self.get_member_public_keys_call.run(input).await.map_err(|err| {
+            error!("Error on get_member_public_keys_call: {err}");
+            err
+        })
     }
 
     async fn apply_to_stream(
@@ -497,13 +523,10 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     ) -> Result<GetCommunicationDataOutput, DomainErrors> {
         info!("Interacting with CommitteeRegistry#getMemberCommunicationData",);
 
-        self.get_member_communication_data_call
-            .run(input)
-            .await
-            .map_err(|err| {
-                error!("Error on get_member_communication_data_call: {err}");
-                err
-            })
+        self.get_member_communication_data_call.run(input).await.map_err(|err| {
+            error!("Error on get_member_communication_data_call: {err}");
+            err
+        })
     }
 
     async fn deposit_communication_data(
@@ -512,13 +535,10 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     ) -> Result<DepositCommunicationDataOutput, DomainErrors> {
         info!("Interacting with CommitteeRegistry#depositCommunicationData");
 
-        self.deposit_communication_data_invoke
-            .run(input)
-            .await
-            .map_err(|err| {
-                error!("Error on deposit_communication_data_invoke: {err}");
-                err
-            })
+        self.deposit_communication_data_invoke.run(input).await.map_err(|err| {
+            error!("Error on deposit_communication_data_invoke: {err}");
+            err
+        })
     }
 
     async fn deposit_aggregated_key(
@@ -527,13 +547,10 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     ) -> Result<DepositAggregatedKeyOutput, DomainErrors> {
         info!("Interacting with CommitteeRegistry#depositAggregatedKeys",);
 
-        self.deposit_aggregated_key_invoke
-            .run(input)
-            .await
-            .map_err(|err| {
-                error!("Error on deposit_aggregated_key_invoke: {err}");
-                err
-            })
+        self.deposit_aggregated_key_invoke.run(input).await.map_err(|err| {
+            error!("Error on deposit_aggregated_key_invoke: {err}");
+            err
+        })
     }
 }
 

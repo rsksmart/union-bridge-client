@@ -57,11 +57,7 @@ where
         let timeout_dur = timeout_5min();
         if start_time.elapsed() > timeout_dur {
             new_transport_error(
-                format!(
-                    "Transaction timeout after {} seconds",
-                    timeout_dur.as_secs()
-                )
-                .as_str(),
+                format!("Transaction timeout after {} seconds", timeout_dur.as_secs()).as_str(),
             )?;
         }
 
@@ -104,13 +100,13 @@ where
 }
 
 fn new_transport_error(msg: &str) -> alloy_contract::Result<TxHash> {
-    Err(alloy_contract::Error::TransportError(
-        alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
+    Err(alloy_contract::Error::TransportError(alloy_json_rpc::RpcError::ErrorResp(
+        alloy_json_rpc::ErrorPayload {
             code: ETH_RPC_INTERNAL_ERROR,
             message: msg.to_string().into(),
             data: None,
-        }),
-    ))
+        },
+    )))
 }
 
 fn timeout_30sec() -> Duration {
@@ -130,16 +126,11 @@ fn timeout_5min() -> Duration {
 }
 
 async fn check_receipt<P: Provider>(provider: &P, receipt: &TransactionReceipt) {
-    let trace_result = timeout(
-        timeout_30sec(),
-        debug_trace_tx(provider, receipt.transaction_hash().to_string()),
-    )
-    .await;
+    let trace_result =
+        timeout(timeout_30sec(), debug_trace_tx(provider, receipt.transaction_hash().to_string()))
+            .await;
 
-    error!(
-        "Transaction {} failed. Trace: {trace_result:?}",
-        receipt.transaction_hash
-    );
+    error!("Transaction {} failed. Trace: {trace_result:?}", receipt.transaction_hash);
 }
 
 async fn send_transaction<P, D>(
@@ -155,13 +146,13 @@ where
         result?
     } else {
         error!("Transaction send timeout");
-        return Err(alloy_contract::Error::TransportError(
-            alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
+        return Err(alloy_contract::Error::TransportError(alloy_json_rpc::RpcError::ErrorResp(
+            alloy_json_rpc::ErrorPayload {
                 code: ETH_RPC_INTERNAL_ERROR,
                 message: "Transaction send timeout".to_string().into(),
                 data: None,
-            }),
-        ));
+            },
+        )));
     };
 
     // Derive the transaction hash without registering a heartbeat/watch
@@ -222,13 +213,13 @@ where
         Err(_elapsed) => {
             let timeout_seconds = timeout_dur.as_secs();
             error!("Gas estimation timeout after {timeout_seconds} seconds");
-            Err(alloy_contract::Error::TransportError(
-                alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
+            Err(alloy_contract::Error::TransportError(alloy_json_rpc::RpcError::ErrorResp(
+                alloy_json_rpc::ErrorPayload {
                     code: ETH_RPC_TIMEOUT,
                     message: format!("Gas estimation timeout after {timeout_seconds}s").into(),
                     data: None,
-                }),
-            ))
+                },
+            )))
         }
     }
 }
@@ -238,14 +229,14 @@ fn calculate_gas_limit_with_cap(estimated_gas: u64, attempt: u8) -> alloy_contra
 
     if gas_limit > MAX_GAS_LIMIT {
         error!("Gas limit {gas_limit} exceeds maximum allowed {MAX_GAS_LIMIT}");
-        return Err(alloy_contract::Error::TransportError(
-            alloy_json_rpc::RpcError::ErrorResp(alloy_json_rpc::ErrorPayload {
+        return Err(alloy_contract::Error::TransportError(alloy_json_rpc::RpcError::ErrorResp(
+            alloy_json_rpc::ErrorPayload {
                 code: ETH_RPC_INVALID_PARAMS,
                 message: format!("Maximum gas limit exceeded: {gas_limit} > {MAX_GAS_LIMIT}")
                     .into(),
                 data: None,
-            }),
-        ));
+            },
+        )));
     }
 
     Ok(gas_limit)
@@ -255,16 +246,12 @@ fn calculate_gas_limit_with_cap(estimated_gas: u64, attempt: u8) -> alloy_contra
 fn bumped_gas(estimated: u64, attempt: u8) -> u64 {
     // Base headroom: 64/63 to undo the 63/64 rule + 10% for proxy prelude and variance
     // = ~1.117. Use 1.20 to be safe and round up.
-    let base = estimated
-        .saturating_mul(BASE_GAS_HEADROOM_PERCENT)
-        .saturating_div(100);
+    let base = estimated.saturating_mul(BASE_GAS_HEADROOM_PERCENT).saturating_div(100);
 
     // Per-attempt bump (compounded)
     let mut bumped = base;
     for _ in 0..attempt {
-        bumped = bumped
-            .saturating_mul(PER_ATTEMPT_BUMP_PERCENT)
-            .saturating_div(100);
+        bumped = bumped.saturating_mul(PER_ATTEMPT_BUMP_PERCENT).saturating_div(100);
     }
 
     // never go below estimated
@@ -277,16 +264,12 @@ async fn debug_trace_tx<P: Provider>(provider: &P, tx_hash: String) -> Transport
         { "tracer": "callTracer" }
     ]);
 
-    provider
-        .raw_request("debug_traceTransaction".into(), params)
-        .await
+    provider.raw_request("debug_traceTransaction".into(), params).await
 }
 
 // Enhanced OOG detection with configurable margin
 fn likely_oog(receipt: &TransactionReceipt, gas_limit: u64) -> bool {
-    let oog_margin = gas_limit
-        .saturating_mul(OOG_DETECTION_MARGIN_PERCENT)
-        .saturating_div(100);
+    let oog_margin = gas_limit.saturating_mul(OOG_DETECTION_MARGIN_PERCENT).saturating_div(100);
     let oog_candidate =
         !receipt.status() && receipt.gas_used() >= gas_limit.saturating_sub(oog_margin);
 
@@ -321,16 +304,15 @@ pub mod tests {
     use alloy_rpc_types::{Receipt, ReceiptEnvelope, ReceiptWithBloom};
 
     // Helper function to create a fake receipt for testing
-    fn create_fake_receipt(status: bool, gas_used: u64, _gas_limit: u64) -> TransactionReceipt {
-        let receipt = Receipt {
-            status: status.into(),
-            cumulative_gas_used: gas_used,
-            logs: vec![],
-        };
-        let envelope = ReceiptEnvelope::Eip1559(ReceiptWithBloom {
-            receipt,
-            logs_bloom: Bloom::ZERO,
-        });
+    pub(super) fn create_fake_receipt(
+        status: bool,
+        gas_used: u64,
+        _gas_limit: u64,
+    ) -> TransactionReceipt {
+        let receipt =
+            Receipt { status: status.into(), cumulative_gas_used: gas_used, logs: vec![] };
+        let envelope =
+            ReceiptEnvelope::Eip1559(ReceiptWithBloom { receipt, logs_bloom: Bloom::ZERO });
         TransactionReceipt {
             inner: envelope,
             transaction_hash: TxHash::from([1u8; 32]),
@@ -468,10 +450,7 @@ pub mod tests {
 
         for (estimated, attempts, expected) in test_cases {
             let result = bumped_gas(estimated, attempts);
-            assert_eq!(
-                result, expected,
-                "Failed for estimated={estimated}, attempts={attempts}"
-            );
+            assert_eq!(result, expected, "Failed for estimated={estimated}, attempts={attempts}");
         }
     }
 
