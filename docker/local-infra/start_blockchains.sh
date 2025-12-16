@@ -2,38 +2,36 @@
 
 # This script manages the local blockchain stack defined in docker-compose.blockchains.yaml
 # It intentionally focuses ONLY on the blockchains stack (bitcoind, anvil, deploy-contracts).
-# Operators should be managed with start_operators.sh.
 
 DOCKER_COMPOSE_ARGS=()
 
 # Resolve script directory (for referencing compose files reliably)
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.blockchains.yaml"
+ENV_PATH="${SCRIPT_DIR}/.env.local"
 
 # Display help message
 print_help() {
   echo "Usage: $0 [OPTIONS] [DOCKER_COMPOSE_ARGS...]"
   echo ""
   echo "Options:"
-  echo "  --help                        Display this help message"
-  echo "  --env <ENV>                   Set environment (local only)"
-  echo "  --fresh                       Tear down local blockchains (and volumes). Can be used standalone or with 'up'"
+  echo "  --help                     Display this help message"
+  echo "  --fresh                    Tear down local blockchains (and volumes). Can be used standalone or with 'up'"
   echo "  --new-contracts-version    Force rebuild of the 'deploy-contracts' image before running"
   echo ""
   echo "Common Docker Compose Arguments can be used, examples:"
-  echo "  up                            Create and start containers"
-  echo "  down                          Stop and remove containers, networks"
-  echo "  ps                            List containers"
-  echo "  logs                          View output from containers"
-  echo "  --force-recreate              Recreate containers even if configuration and image haven't changed"
-  echo "  Note: Building from source is not supported in this script. Only registry images should be used (except 'deploy-contracts' build stage)."
+  echo "  up                         Create and start containers"
+  echo "  down                       Stop and remove containers, networks"
+  echo "  ps                         List containers"
+  echo "  logs                       View output from containers"
+  echo "  --force-recreate           Recreate containers even if configuration and image haven't changed"
   echo ""
   echo "Examples:"
-  echo "  $0 --env local up -d                               # Start local blockchains"
-  echo "  $0 --env local --fresh up -d                       # Clean and start local blockchains"
-  echo "  $0 --env local --new-contracts-version up -d    # Rebuild deploy-contracts image and start"
-  echo "  $0 --env local down                                # Stop blockchains"
-  echo "  $0 --env local ps                                  # Check status"
+  echo "  $0 up -d                            # Start local blockchains"
+  echo "  $0 --fresh up -d                    # Clean and start local blockchains"
+  echo "  $0 --new-contracts-version up -d    # Rebuild deploy-contracts image and start"
+  echo "  $0 down                             # Stop blockchains"
+  echo "  $0 ps                               # Check status"
   echo ""
   echo "Any additional arguments will be passed directly to docker compose."
   exit 0
@@ -47,15 +45,6 @@ while [[ $# -gt 0 ]]; do
   case $1 in
     --help)
       print_help
-      ;;
-    --env)
-      if [[ "$2" == "local" ]]; then
-        ENV_FILE=".env.local"
-      else
-        echo "Invalid environment. Only 'local' is supported"
-        exit 1
-      fi
-      shift 2
       ;;
     --fresh)
       FRESH=true
@@ -72,8 +61,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$ENV_FILE" ]]; then
-  echo "Usage: $0 --env <local> [--fresh] [compose args]"
+# Check env file exists
+if [[ ! -f "$ENV_PATH" ]]; then
+  echo "Error: .env not found at $ENV_PATH"
   exit 1
 fi
 
@@ -84,14 +74,6 @@ for arg in "${DOCKER_COMPOSE_ARGS[@]}"; do
     exit 1
   fi
 done
-
-ENV_PATH="${SCRIPT_DIR}/$ENV_FILE"
-
-# Only the local env has a blockchains stack here. For testnet, we no-op with a message.
-if [[ "$ENV_FILE" != ".env.local" ]]; then
-  echo "No local blockchain stack to manage for '$ENV_FILE'. If you intended to run local blockchains, use --env local."
-  exit 0
-fi
 
 # Check if we're using the 'up' command
 IS_UP_COMMAND=false
@@ -142,8 +124,7 @@ if [[ "${IS_UP_COMMAND}" == true && "${FRESH}" == true ]]; then
   echo "Waiting 5 seconds for bitcoind initialization..."
   sleep 5
 
-  # concrete filename, to avoid SC1090 complain
-  source "${SCRIPT_DIR}/.env.local"
+  source "${ENV_PATH}"
 
   # Create wallet
   echo "Creating wallet 'mainwallet' in ${BITCOIND_CONTAINER}..."

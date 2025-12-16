@@ -23,7 +23,7 @@ Use this script whenever you need to fetch the latest BitVMX compose from upstre
 file. Typical times to run it:
 
 - After a new `FairgateLabs/docker-bitvmx` release to see what's changed.
-- Anytime you want to verify your `docker/integrated/bitvmx-client/docker-compose.yml` is aligned with upstream.
+- Anytime you want to verify your `docker/bitvmx-client/docker-compose.yml` is aligned with upstream.
 
 Run the script:
 
@@ -40,8 +40,8 @@ Optionally select a specific branch or tag of `FairgateLabs/docker-bitvmx`:
 ```
 
 The script clones `FairgateLabs/docker-bitvmx` at the chosen ref, saves the fetched compose as
-`docker/integrated/bitvmx-client/docker-compose.fetched.yml`, and prints a unified diff against your working
-`docker/integrated/bitvmx-client/docker-compose.yml`. It is safe to re-run at any time.
+`docker/bitvmx-client/docker-compose.fetched.yml`, and prints a unified diff against your working
+`docker/bitvmx-client/docker-compose.yml`. It is safe to re-run at any time.
 
 ### 2) Choose your environment
 
@@ -68,33 +68,34 @@ The BitVMX client requires different Docker network configurations depending on 
 
 ### 3) Start local blockchains (LOCAL ONLY)
 
-This repository now provides a dedicated script to manage the local blockchain stack (bitcoind + anvil + contracts
-deploy):
+Use the scripts in `docker/local-infra/` to manage the local blockchain stack (bitcoind + anvil + contracts deploy):
 
-- Script: `start_blockchains.sh`
-- Scope: **LOCAL ONLY**. It manages the local dev stack. It does nothing for alphanet/testnet environments.
+- Script: `docker/local-infra/start_blockchains.sh`
+- Scope: **LOCAL ONLY**. It manages the local dev stack.
 - Operators are started separately with `start_operators.sh`.
-- Note: if running for the first time, use the `--fresh` flag, this will create the bitcoin wallet, see below.
+- Note: if running for the first time, use the `--fresh` flag, this will create the bitcoin wallet.
 
 Examples:
 
 ```bash
+cd docker/local-infra
+
 # Start local blockchains
-bash start_blockchains.sh --env local up -d
+./start_blockchains.sh up -d
 
 # Fresh start: tear down (including volumes) and start again
 # This also recreates the Bitcoin wallet and (re)deploys contracts automatically
-bash start_blockchains.sh --env local --fresh up -d
+./start_blockchains.sh --fresh up -d
 
 # Clean blockchain state only (removes volumes/state)
-bash start_blockchains.sh --env local down --volumes
+./start_blockchains.sh down --volumes
 
 # Stop local blockchains
-bash start_blockchains.sh --env local down
+./start_blockchains.sh down
 
 # Inspect status / logs
-bash start_blockchains.sh --env local ps
-bash start_blockchains.sh --env local logs -f
+./start_blockchains.sh ps
+./start_blockchains.sh logs -f
 ```
 
 About `--fresh`:
@@ -107,13 +108,13 @@ About `--fresh`:
 
 The contracts deployment runs once via the deploy-contracts container and then tears down, it is normal. You can
 inspect its output (eg. to check contract addresses) via Docker Desktop or running the following command:
-`bash start_blockchains.sh --env local logs deploy-contracts`
+`./start_blockchains.sh logs deploy-contracts`
 
 If the contracts code changes (eg. new tag), you must rebuild the `deploy-contracts` image. You can do it with:
 
 ```bash
 # Rebuild the deploy-contracts image and start
-bash start_blockchains.sh --env local --new-contracts-version --fresh up -d
+./start_blockchains.sh --new-contracts-version --fresh up -d
 ```
 
 ### 4) Start or stop operator stacks
@@ -306,7 +307,8 @@ You can run a fresh start of both local blockchains and operators with these ste
 Restart clean blockchains
 
 ```bash
-bash start_blockchains.sh --env local --fresh up -d
+cd docker/local-infra
+./start_blockchains.sh --fresh up -d
 ```
 
 Restart clean operators:

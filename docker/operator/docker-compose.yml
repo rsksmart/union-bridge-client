@@ -13,7 +13,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     extends:
-      file: ./bitvmx-client/docker-compose.yml
+      file: ../bitvmx-client/docker-compose.yml
       service: bitvmx-client
 
   # ================================
@@ -21,28 +21,28 @@ services:
   # ================================
   block-indexer:
     extends:
-      file: ../client/docker-compose.yml
+      file: ../build/docker-compose.yml
       service: block-indexer
     networks:
       - union-network
 
   log-indexer:
     extends:
-      file: ../client/docker-compose.yml
+      file: ../build/docker-compose.yml
       service: log-indexer
     networks:
       - union-network
 
   user-api:
     extends:
-      file: ../client/docker-compose.yml
+      file: ../build/docker-compose.yml
       service: user-api
     networks:
       - union-network
 
   coordinator:
     extends:
-      file: ../client/docker-compose.yml
+      file: ../build/docker-compose.yml
       service: coordinator
     extra_hosts:
       - "host.docker.internal:host-gateway"

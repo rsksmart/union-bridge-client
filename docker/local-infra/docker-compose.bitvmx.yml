@@ -1,0 +1,93 @@
+# 4 BitVMX clients for local development (union-client runs locally with cargo)
+# Usage: docker compose -f docker-compose.bitvmx.yml up -d
+
+services:
+  bitvmx-client-1:
+    extends:
+      file: ../bitvmx-client/docker-compose.yml
+      service: bitvmx-client
+    container_name: bitvmx-client-1
+    platform: linux/amd64
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      CLIENT_OP: op_1
+    ports:
+      - "22222:22222"
+    volumes:
+      - ../bitvmx-client/config/local/client/config:/app/config
+      - ../bitvmx-client/config/local/broker/config:/app/rust-bitvmx-workspace/rust-fakep2p/broker/config
+      - db-bitvmx-1:/tmp
+    networks:
+      bitvmx-shared-network:
+        ipv4_address: 172.20.0.11
+
+  bitvmx-client-2:
+    extends:
+      file: ../bitvmx-client/docker-compose.yml
+      service: bitvmx-client
+    container_name: bitvmx-client-2
+    platform: linux/amd64
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      CLIENT_OP: op_2
+    ports:
+      - "33333:33333"
+    volumes:
+      - ../bitvmx-client/config/local/client/config:/app/config
+      - ../bitvmx-client/config/local/broker/config:/app/rust-bitvmx-workspace/rust-fakep2p/broker/config
+      - db-bitvmx-2:/tmp
+    networks:
+      bitvmx-shared-network:
+        ipv4_address: 172.20.0.12
+
+  bitvmx-client-3:
+    extends:
+      file: ../bitvmx-client/docker-compose.yml
+      service: bitvmx-client
+    container_name: bitvmx-client-3
+    platform: linux/amd64
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      CLIENT_OP: op_3
+    ports:
+      - "44444:44444"
+    volumes:
+      - ../bitvmx-client/config/local/client/config:/app/config
+      - ../bitvmx-client/config/local/broker/config:/app/rust-bitvmx-workspace/rust-fakep2p/broker/config
+      - db-bitvmx-3:/tmp
+    networks:
+      bitvmx-shared-network:
+        ipv4_address: 172.20.0.13
+
+  bitvmx-client-4:
+    extends:
+      file: ../bitvmx-client/docker-compose.yml
+      service: bitvmx-client
+    container_name: bitvmx-client-4
+    platform: linux/amd64
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      CLIENT_OP: op_4
+    ports:
+      - "55554:55554"
+    volumes:
+      - ../bitvmx-client/config/local/client/config:/app/config
+      - ../bitvmx-client/config/local/broker/config:/app/rust-bitvmx-workspace/rust-fakep2p/broker/config
+      - db-bitvmx-4:/tmp
+    networks:
+      bitvmx-shared-network:
+        ipv4_address: 172.20.0.14
+
+networks:
+  bitvmx-shared-network:
+    external: true
+
+volumes:
+  db-bitvmx-1:
+  db-bitvmx-2:
+  db-bitvmx-3:
+  db-bitvmx-4:
