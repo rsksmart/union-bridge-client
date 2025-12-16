@@ -7,6 +7,7 @@
 #        ./cli-run.sh --logs
 #        ./cli-run.sh --start-mine    # start background mining (anvil + bitcoin)
 #        ./cli-run.sh --stop-mine     # stop background mining
+#        ./cli-run.sh --kill          # kill all existing running services and exit
 
 set -euo pipefail
 
@@ -158,6 +159,33 @@ stop_mining() {
         log "Mining stopped"
     fi
 }
+
+# handle --help option
+if [[ "${1:-}" == "--help" ]] || [[ "${1:-}" == "-h" ]]; then
+    echo "Union Bridge Local Client Launcher"
+    echo ""
+    echo "Usage: ./cli-run.sh [OPTIONS]"
+    echo ""
+    echo "Wrapper options (handled by this script):"
+    echo "  --logs              Tail coordinator logs for all 4 clients"
+    echo "  --start-mine        Start background mining (anvil every 1s, bitcoin every 5s)"
+    echo "  --stop-mine         Stop background mining"
+    echo ""
+    echo "Client options (forwarded to Rust CLI):"
+    echo "  -i, --id <ID>       Run a single client with the specified ID (1-4)"
+    echo "  -f, --features <F>  Cargo features to pass (e.g. 'anvil')"
+    echo "  --fresh             Start with clear databases (removes existing)"
+    echo "  --kill              Kill all existing running services and exit"
+    echo "  -h, --help          Print this help message"
+    echo ""
+    echo "Examples:"
+    echo "  ./cli-run.sh                    # Run all 4 clients"
+    echo "  ./cli-run.sh --id 1 --fresh     # Run client 1 with fresh database"
+    echo "  ./cli-run.sh --features anvil   # Run with anvil feature"
+    echo "  ./cli-run.sh --logs             # Tail all coordinator logs"
+    echo "  ./cli-run.sh --start-mine       # Start background mining"
+    exit 0
+fi
 
 # handle --start-mine option
 if [[ "${1:-}" == "--start-mine" ]]; then
