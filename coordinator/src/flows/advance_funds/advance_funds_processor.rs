@@ -1617,7 +1617,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "update this test"]
     #[allow(clippy::too_many_lines)]
     fn test_process_blocks_reorg_during_confirmations_period() {
         let mut bitvmx_broker = MockBrokerClientApi::new();
