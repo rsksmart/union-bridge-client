@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::hash::Hash;
 
 use alloy_primitives::{B256, FixedBytes};
@@ -101,7 +102,7 @@ impl EventDecoder {
     }
 
     /// Extract short variant name from Debug-formatted enum (e.g., `"MemberRegistered"` from `"MemberRegistered(...)"`)
-    fn event_variant_name(event: &dyn std::fmt::Debug) -> String {
+    fn event_variant_name(event: &dyn Debug) -> String {
         let debug_str = format!("{event:?}");
         // split('(') always returns at least one element (the string itself if no '(' is found)
         // so next() will always return Some(&str), making unwrap_or safe here

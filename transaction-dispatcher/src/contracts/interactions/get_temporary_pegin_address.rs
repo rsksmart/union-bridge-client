@@ -1,5 +1,5 @@
 use alloy_primitives::{Address, FixedBytes};
-use log::info;
+use log::debug;
 
 use crate::contracts::peg_manager::PegManagerContractApi;
 use crate::rsk_gateway::DomainErrors;
@@ -21,7 +21,7 @@ impl<C: PegManagerContractApi> GetTemporaryPeginAddressCall<C> {
         &self,
         input: PeginAddressInput,
     ) -> Result<PeginAddressOutput, DomainErrors> {
-        info!("Init GetTemporaryPeginAddressCall for: {input:?}");
+        debug!("Init GetTemporaryPeginAddressCall for: {input:?}");
 
         let rootstock_deposit_address: Address =
             input.rootstock_deposit_address.parse::<Address>().map_err(|e| {
@@ -46,7 +46,7 @@ impl<C: PegManagerContractApi> GetTemporaryPeginAddressCall<C> {
             )
             .await?;
 
-        info!("GetTemporaryPeginAddress successful, deposit address: {address:?}");
+        debug!("GetTemporaryPeginAddress successful, deposit address: {address:?}");
 
         Ok(PeginAddressOutput { address })
     }
