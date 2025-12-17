@@ -103,13 +103,10 @@ impl EventDecoder {
     /// Extract short variant name from Debug-formatted enum (e.g., `"MemberRegistered"` from `"MemberRegistered(...)"`)
     fn event_variant_name(event: &dyn std::fmt::Debug) -> String {
         let debug_str = format!("{event:?}");
-        let variant = debug_str.split('(').next().unwrap();
-        if variant.is_empty() {
-            debug!("event_variant_name: Debug string for event is empty, returning 'UnknownEvent'");
-            "UnknownEvent".to_string()
-        } else {
-            variant.to_string()
-        }
+        // split('(') always returns at least one element (the string itself if no '(' is found)
+        // so next() will always return Some(&str), making unwrap_or safe here
+        let variant = debug_str.split('(').next().unwrap_or("UnknownEvent");
+        variant.to_string()
     }
 
     /// Decodes an RSK log into a `RskPegManagerEvents`.
