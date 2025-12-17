@@ -222,6 +222,10 @@ fn validate_uncle(trunk_block: &RskBlock, uncle: &RskBlock) -> Result<(), &'stat
         return Err("Uncle's difficulty does not match trunk block's difficulty");
     }
 
+    if uncle.header.hash != uncle.header.calculate_block_hash()? {
+        return Err("Uncle's hash does not match uncle's calculated hash");
+    }
+
     validate_enough_effort_superblock(uncle, "uncle")?;
     Ok(())
 }
