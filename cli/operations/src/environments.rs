@@ -51,7 +51,9 @@ impl Environment {
     pub fn rpc_url(&self) -> String {
         match self {
             Environment::Local | Environment::LocalDocker => "http://localhost:8545".to_string(),
-            Environment::Alphanet => "http://node-use1-1.alphanet.rskcomputing.net".to_string(),
+            Environment::Alphanet => {
+                "http://node-use1-1.alphanet.rskcomputing.net:4444".to_string()
+            }
             Environment::Testnet => "TBD".to_string(),
         }
     }
@@ -59,10 +61,9 @@ impl Environment {
     /// returns the bitvmx endpoints for this environment
     pub fn user_api_endpoints(&self) -> Vec<String> {
         match self {
-            Environment::Local | Environment::LocalDocker => LOCAL_USER_API_ENDPOINTS
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            Environment::Local | Environment::LocalDocker => {
+                LOCAL_USER_API_ENDPOINTS.iter().map(|s| s.to_string()).collect()
+            }
 
             Environment::Alphanet => ALPHANET_HOSTS
                 .iter()
@@ -79,12 +80,8 @@ impl Environment {
 
 const DEFAULT_USER_API_PORT: u16 = 40001;
 
-const LOCAL_USER_API_ENDPOINTS: [&'static str; 4] = [
-    "localhost:40001",
-    "localhost:40002",
-    "localhost:40003",
-    "localhost:40004",
-];
+const LOCAL_USER_API_ENDPOINTS: [&'static str; 4] =
+    ["localhost:40001", "localhost:40002", "localhost:40003", "localhost:40004"];
 
 const ALPHANET_HOSTS: [&str; 4] = [
     "union-bridge-use1-1.alphanet.rskcomputing.net",
