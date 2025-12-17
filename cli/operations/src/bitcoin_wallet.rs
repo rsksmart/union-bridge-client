@@ -7,7 +7,7 @@ use tokio::time::sleep;
 
 use crate::constants::{ONE_OPERATOR_COMPOSE_PROJECT, OPERATOR_IDS, REMOTE_SSH_USER};
 use crate::environments::*;
-use crate::utils::{command_to_string, confirm_operation, request_to_string};
+use crate::utils::command_to_string;
 
 const FUND_AMOUNT: &str = "32002000";
 const LOG_MARKER: &str = "Received BitVMX Funding Address:";
@@ -129,26 +129,13 @@ async fn request_bitvmx_address_user_api(environment: Environment) -> Result<()>
 
         let request = client.get(&url).build()?;
 
-        if environment.is_remote() {
-            let description = request_to_string(&request);
-            if !confirm_operation(&description)? {
-                bail!("Operation cancelled by user");
-            }
-        } else {
-            println!("GET {}", url);
-        }
+        println!("GET {}", url);
 
-        let response = client
-            .execute(request)
-            .await
-            .with_context(|| format!("failed to fetch {}", url))?;
+        let response =
+            client.execute(request).await.with_context(|| format!("failed to fetch {}", url))?;
 
         if !response.status().is_success() {
-            bail!(
-                "request to {} failed with status {}",
-                url,
-                response.status()
-            );
+            bail!("request to {} failed with status {}", url, response.status());
         }
 
         let body = response
@@ -164,9 +151,7 @@ async fn request_bitvmx_address_user_api(environment: Environment) -> Result<()>
 }
 
 fn run_command_get_stdout(mut cmd: Command, error_context: &str) -> Result<String> {
-    let output = cmd
-        .output()
-        .with_context(|| format!("failed to run {}", error_context))?;
+    let output = cmd.output().with_context(|| format!("failed to run {}", error_context))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -185,14 +170,10 @@ fn run_docker_compose_logs(project: &str) -> Result<String> {
 
 fn run_ssh_docker_compose_logs(target: &str, project: &str) -> Result<String> {
     let mut cmd = Command::new("ssh");
-    cmd.arg(target)
-        .args(["docker", "compose", "-p", project, "logs"]);
+    cmd.arg(target).args(["docker", "compose", "-p", project, "logs"]);
 
     let cmd_str = command_to_string(&cmd);
-
-    if !confirm_operation(&cmd_str)? {
-        bail!("Operation cancelled by user");
-    }
+    println!("{}", cmd_str);
 
     run_command_get_stdout(cmd, &format!("`{}`", cmd_str))
 }
@@ -203,10 +184,10 @@ fn extract_last_bitvmx_address(log_content: &str) -> Option<String> {
         .filter_map(|line| {
             line.find(LOG_MARKER).map(|idx| {
                 let after = &line[idx + LOG_MARKER.len()..];
-                after.split_whitespace().next().map(|raw| {
-                    raw.trim_matches(|c: char| !c.is_ascii_alphanumeric())
-                        .to_string()
-                })
+                after
+                    .split_whitespace()
+                    .next()
+                    .map(|raw| raw.trim_matches(|c: char| !c.is_ascii_alphanumeric()).to_string())
             })
         })
         .flatten()
@@ -251,19 +232,11 @@ fn execute_wallet_command(addresses: &[String]) -> Result<()> {
 
     // just send to addresses - utxo mining and block mining handled externally
     let mut cmd = Command::new(wallet_script);
-    cmd.arg("member")
-        .arg("send_to_address")
-        .arg(&joined)
-        .arg(FUND_AMOUNT);
+    cmd.arg("member").arg("send_to_address").arg(&joined).arg(FUND_AMOUNT);
 
-    println!(
-        "Running: {} member send_to_address {} {}",
-        wallet_script, joined, FUND_AMOUNT
-    );
+    println!("Running: {} member send_to_address {} {}", wallet_script, joined, FUND_AMOUNT);
 
-    let output = cmd
-        .output()
-        .context("failed to execute cli-bitcoin-wallet.sh")?;
+    let output = cmd.output().context("failed to execute cli-bitcoin-wallet.sh")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

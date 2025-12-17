@@ -10,7 +10,7 @@ use crate::constants::{
     LOCAL_ANVIL_ADDRESS, ONE_OPERATOR_COMPOSE_PROJECT, OPERATOR_IDS, REMOTE_SSH_USER,
 };
 use crate::environments::*;
-use crate::utils::{command_to_string, confirm_operation};
+use crate::utils::command_to_string;
 use crate::validate_1_4;
 
 const MEMBER_LOG_MARKER: &str = "Got member signer with address";
@@ -58,10 +58,7 @@ fn print_wallet_summary(mode: &str, num_wallets: u8) {
     println!("\n=== wallet setup summary ===");
     println!("setup mode: {}", mode);
     println!("number of clients: {}", num_wallets);
-    println!(
-        "total wallets: {} (member + user per client)",
-        num_wallets * 2
-    );
+    println!("total wallets: {} (member + user per client)", num_wallets * 2);
 }
 
 fn create_or_use_keystore(keystore_path: &Path, file_name: &str, password: &str) -> Result<()> {
@@ -75,10 +72,7 @@ fn create_or_use_keystore(keystore_path: &Path, file_name: &str, password: &str)
         return Ok(());
     }
 
-    println!(
-        "[wallet-setup] creating new key at {}...",
-        keystore_path.display()
-    );
+    println!("[wallet-setup] creating new key at {}...", keystore_path.display());
 
     // create directory if it doesn't exist
     fs::create_dir_all(keystore_path)
@@ -90,17 +84,10 @@ fn create_or_use_keystore(keystore_path: &Path, file_name: &str, password: &str)
 
     // rename the generated key to the desired filename
     fs::rename(&generated_path, &full_keystore_path).with_context(|| {
-        format!(
-            "failed to rename {} to {}",
-            generated_path,
-            full_keystore_path.display()
-        )
+        format!("failed to rename {} to {}", generated_path, full_keystore_path.display())
     })?;
 
-    println!(
-        "[wallet-setup] key created successfully at {}",
-        full_keystore_path.display()
-    );
+    println!("[wallet-setup] key created successfully at {}", full_keystore_path.display());
 
     Ok(())
 }
@@ -109,9 +96,8 @@ fn setup_wallets_create(num_wallets: u8, base_storage_path: &str) -> Result<()> 
     let password = std::env::var("KEY_STORE_PASSWORD")
         .context("KEY_STORE_PASSWORD environment variable is required")?;
 
-    let keystore_base_path = PathBuf::from(base_storage_path)
-        .join(".union_bridge")
-        .join("keystore");
+    let keystore_base_path =
+        PathBuf::from(base_storage_path).join(".union_bridge").join("keystore");
 
     println!("[wallet-setup] starting wallet creation...");
 
@@ -217,10 +203,7 @@ fn print_instructions(env: Environment) -> Result<()> {
     let hosts = env.hosts();
     let rpc_url = env.rpc_url();
 
-    println!(
-        "[docker-fund] gathering operator wallets from {} hosts",
-        env_name
-    );
+    println!("[docker-fund] gathering operator wallets from {} hosts", env_name);
     let signers = collect_remote_member_addresses(&hosts)?;
     let unique = unique_addresses(&signers);
     let expected = hosts.len();
@@ -263,11 +246,7 @@ fn collect_local_signers_from_logs(marker: &str) -> Result<Vec<(String, String)>
     let logs_dir = cargo_logs_dir()?;
     let mut signers = Vec::new();
 
-    let log_type = if marker == MEMBER_LOG_MARKER {
-        "coordinator"
-    } else {
-        "user-api"
-    };
+    let log_type = if marker == MEMBER_LOG_MARKER { "coordinator" } else { "user-api" };
 
     for operator_id in OPERATOR_IDS {
         let log_path = logs_dir.join(format!("{}-{}.log", log_type, operator_id));
@@ -302,11 +281,7 @@ fn collect_local_signers_from_logs(marker: &str) -> Result<Vec<(String, String)>
 
 fn collect_local_signers(marker: &str) -> Result<Vec<(String, String)>> {
     let mut signers = Vec::new();
-    let address_type = if marker == MEMBER_LOG_MARKER {
-        "member"
-    } else {
-        "user"
-    };
+    let address_type = if marker == MEMBER_LOG_MARKER { "member" } else { "user" };
 
     for id in OPERATOR_IDS {
         let project = format!("op_{}", id);
@@ -317,11 +292,7 @@ fn collect_local_signers(marker: &str) -> Result<Vec<(String, String)>> {
             .with_context(|| format!("failed to run `docker compose -p {} logs`", &project))?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!(
-                "`docker compose -p {} logs` failed with: {}",
-                &project,
-                stderr.trim()
-            );
+            bail!("`docker compose -p {} logs` failed with: {}", &project, stderr.trim());
         }
         let stdout = String::from_utf8(output.stdout)
             .context("docker compose logs output is not valid utf-8")?;
@@ -347,23 +318,12 @@ fn collect_remote_member_addresses(hosts: &[String]) -> Result<Vec<(String, Stri
         let target = format!("{}@{}", REMOTE_SSH_USER, host);
 
         let mut cmd = Command::new("ssh");
-        cmd.arg(&target).args([
-            "docker",
-            "compose",
-            "-p",
-            ONE_OPERATOR_COMPOSE_PROJECT,
-            "logs",
-        ]);
+        cmd.arg(&target).args(["docker", "compose", "-p", ONE_OPERATOR_COMPOSE_PROJECT, "logs"]);
 
         let cmd_str = command_to_string(&cmd);
+        println!("{}", cmd_str);
 
-        if !confirm_operation(&cmd_str)? {
-            bail!("Operation cancelled by user");
-        }
-
-        let output = cmd
-            .output()
-            .with_context(|| format!("failed to run `{}`", cmd_str))?;
+        let output = cmd.output().with_context(|| format!("failed to run `{}`", cmd_str))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -388,9 +348,8 @@ fn extract_signer_addresses(log_content: &str, marker: &str) -> Vec<String> {
     for line in log_content.lines() {
         if let Some(idx) = line.find(marker) {
             let after_marker = &line[idx + marker.len()..];
-            if let Some(candidate) = after_marker
-                .split_whitespace()
-                .find(|token| token.starts_with("0x"))
+            if let Some(candidate) =
+                after_marker.split_whitespace().find(|token| token.starts_with("0x"))
             {
                 let cleaned = candidate
                     .trim_end_matches(|c: char| c == ',' || c == ';' || c == '.')
