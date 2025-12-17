@@ -3,25 +3,33 @@
 # Bitcoin Wallet Launcher
 # Supports both interactive mode (no command) and command mode (with command)
 #
-# Interactive mode: ./cli-bitcoin-wallet.sh <user|member>
-# Command mode:     ./cli-bitcoin-wallet.sh <user|member> <command> [args...]
+# Interactive mode: ./cli-bitcoin-wallet.sh [network] <user|member>
+# Command mode:     ./cli-bitcoin-wallet.sh [network] <user|member> <command> [args...]
+#
+# Network defaults to regtest if not specified.
 
 set -e
 
-# Check if mode argument is provided
+# Check if at least mode argument is provided
 if [ $# -eq 0 ]; then
-    echo "Usage: $0 <user|member> [command] [args...]"
+    echo "Usage: $0 [regtest|testnet] <user|member> [command] [args...]"
+    echo ""
+    echo "Networks (default: regtest):"
+    echo "  regtest - Local regtest network (for development)"
+    echo "  testnet - Bitcoin testnet network"
     echo ""
     echo "Modes:"
     echo "  user   - Launch wallet in user mode for peg-in/peg-out operations"
     echo "  member - Launch wallet in member mode for BitVMX operations"
     echo ""
     echo "Interactive mode (no command):"
-    echo "  $0 <user|member>"
+    echo "  $0 <user|member>                    # uses regtest"
+    echo "  $0 <network> <user|member>          # explicit network"
     echo "  Opens an interactive prompt where you can type commands"
     echo ""
     echo "Command mode (with command - REGTEST ONLY):"
-    echo "  $0 <user|member> <command> [args...]"
+    echo "  $0 <user|member> <command> [args...]        # uses regtest"
+    echo "  $0 regtest <user|member> <command> [args...]"
     echo "  Executes a single command and exits"
     echo "  NOTE: Command mode is restricted to regtest for safety"
     echo ""
@@ -31,6 +39,11 @@ if [ $# -eq 0 ]; then
     echo "  $0 user send_to_address bcrt1q... 10000"
     echo "  $0 user create_pegin_tx 50000000 1 bcrt1p... 0x1234..."
     echo "  $0 user list_funds"
+    echo ""
+    echo "Interactive mode examples:"
+    echo "  $0 user"
+    echo "  $0 testnet user"
+    echo "  $0 testnet member"
     echo ""
     echo "Available commands:"
     echo "  mine_block                                  - Mine a single block (regtest only)"
@@ -48,8 +61,31 @@ if [ $# -eq 0 ]; then
     exit 1
 fi
 
-MODE="$1"
-shift # Remove mode from arguments
+# Determine if first argument is a network or mode
+# If first arg is user/member, default network to regtest
+case "$1" in
+    "regtest"|"testnet")
+        NETWORK="$1"
+        shift
+        if [ $# -eq 0 ]; then
+            echo "Error: Missing mode argument"
+            echo "Usage: $0 [regtest|testnet] <user|member> [command] [args...]"
+            exit 1
+        fi
+        MODE="$1"
+        shift
+        ;;
+    "user"|"member")
+        NETWORK="regtest"
+        MODE="$1"
+        shift
+        ;;
+    *)
+        echo "Error: Invalid argument '$1'"
+        echo "Expected network (regtest|testnet) or mode (user|member)"
+        exit 1
+        ;;
+esac
 
 # Validate mode and check corresponding environment variable
 case "$MODE" in
@@ -60,19 +96,19 @@ case "$MODE" in
             exit 1
         fi
         if [ $# -eq 0 ]; then
-            echo "Starting bitcoin-wallet in USER mode (interactive)..."
+            echo "Starting bitcoin-wallet in USER mode on $NETWORK (interactive)..."
         else
             # check if another user wallet is already running before executing command
-            if pgrep -f "ub-wallet.*--mode user" > /dev/null 2>&1; then
-                echo "Error: Another USER wallet instance is already running"
+            if pgrep -f "ub-wallet.*--mode user.*--env $NETWORK" > /dev/null 2>&1; then
+                echo "Error: Another USER wallet instance is already running on $NETWORK"
                 echo ""
                 echo "You cannot run commands while an interactive session is open."
                 echo ""
                 echo "Please close the interactive wallet session first (type 'exit' or press Ctrl+D)"
-                echo "Or check for running processes: ps aux | grep 'ub-wallet.*--mode user'"
+                echo "Or check for running processes: ps aux | grep 'ub-wallet.*--mode user.*--env $NETWORK'"
                 exit 1
             fi
-            echo "Executing command in USER mode: $*"
+            echo "Executing command in USER mode on $NETWORK: $*"
         fi
         ;;
     "member")
@@ -82,19 +118,19 @@ case "$MODE" in
             exit 1
         fi
         if [ $# -eq 0 ]; then
-            echo "Starting bitcoin-wallet in MEMBER mode (interactive)..."
+            echo "Starting bitcoin-wallet in MEMBER mode on $NETWORK (interactive)..."
         else
             # check if another member wallet is already running before executing command
-            if pgrep -f "ub-wallet.*--mode member" > /dev/null 2>&1; then
-                echo "Error: Another MEMBER wallet instance is already running"
+            if pgrep -f "ub-wallet.*--mode member.*--env $NETWORK" > /dev/null 2>&1; then
+                echo "Error: Another MEMBER wallet instance is already running on $NETWORK"
                 echo ""
                 echo "You cannot run commands while an interactive session is open."
                 echo ""
                 echo "Please close the interactive wallet session first (type 'exit' or press Ctrl+D)"
-                echo "Or check for running processes: ps aux | grep 'ub-wallet.*--mode member'"
+                echo "Or check for running processes: ps aux | grep 'ub-wallet.*--mode member.*--env $NETWORK'"
                 exit 1
             fi
-            echo "Executing command in MEMBER mode: $*"
+            echo "Executing command in MEMBER mode on $NETWORK: $*"
         fi
         ;;
     *)
@@ -104,7 +140,7 @@ case "$MODE" in
         ;;
 esac
 
-# Launch bitcoin-wallet with the specified mode
+# Launch bitcoin-wallet with the specified network and mode
 # If no additional arguments, opens interactive mode
 # If arguments provided, executes command and exits
 
@@ -112,4 +148,4 @@ esac
 cargo build --release --manifest-path ./cli/bitcoin-wallet/Cargo.toml --quiet
 
 # Run release binary directly (much faster than cargo run)
-exec ./target/release/ub-wallet --mode "$MODE" "$@"
+exec ./target/release/ub-wallet --env "$NETWORK" --mode "$MODE" "$@"
