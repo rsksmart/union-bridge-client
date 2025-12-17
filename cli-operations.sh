@@ -5,7 +5,7 @@
 #        ./cli-operations.sh operator fund --env local-docker
 #        ./cli-operations.sh operator apply-stream -s 1 --env alphanet -o 1 -r prover
 #        ./cli-operations.sh user pegin -a 0x1234...cdef -v 100000 -p 7
-#        ./cli-operations.sh user pegout -a 100000
+#        ./cli-operations.sh user pegout -v 100000
 #        ./cli-operations.sh --help
 
 set -euo pipefail
