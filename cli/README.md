@@ -172,7 +172,7 @@ The CLI workspace is independent from the main Union Bridge workspace, allowing 
 
 ## Docker Integration
 
-When using the `docker/integrated` setup, you can use the `cli-operations.sh` tool to interact with dockerized operators:
+When using the `docker/operator` setup, you can use the `cli-operations.sh` tool to interact with dockerized operators:
 
 ```bash
 # Fund operators running in docker
@@ -182,5 +182,5 @@ When using the `docker/integrated` setup, you can use the `cli-operations.sh` to
 ./cli-operations.sh operator apply-stream --stream-id 1 --env local-docker
 ```
 
-See [docker/integrated/README.md](../docker/integrated/README.md) for more information on docker deployments.
+See [docker/operator/README.md](../docker/operator/README.md) for more information on docker deployments.
 

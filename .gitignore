@@ -15,6 +15,3 @@ config/qa-coordinator
 **/.llmignore
 test_keystore
 *.log
-docker-integrated/docker-bitvmx
-docker-integrated/union-bridge-client
-docker-integrated/logs

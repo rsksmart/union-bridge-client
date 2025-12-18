@@ -229,10 +229,10 @@ run_local_operators() {
   
   local USER_API_PORTS=(40001 40002 40003 40004)
   local BITVMX_PORTS=(22222 33333 44444 55554)
-  # should match docker/integrated/bitvmx-client/config/local/broker/config/peers.yaml
+  # should match docker/bitvmx-client/config/local/broker/config/peers.yaml
   local BITVMX_P2P_HOSTS=("172.20.0.11" "172.20.0.12" "172.20.0.13" "172.20.0.14")
   local CLIENT_OPS=("op_1" "op_2" "op_3" "op_4")
-  local COMPOSE_FILE_ARG="-f docker-compose.yml -f docker-compose.op_all.yml"
+  local COMPOSE_FILE_ARG="-f docker-compose.yml -f docker-compose.all.yml"
 
   for op_num in "${OPERATORS_TO_RUN[@]}"; do
     local i=$((op_num - 1))
@@ -253,7 +253,7 @@ run_alphanet_operators() {
   # ALPHANET ENVIRONMENT: Each operator on separate host
 
   local ALPHANET_PROJECT_NAME="-p union-operator"
-  local COMPOSE_FILE_ARG="-f docker-compose.yml -f docker-compose.op_one.yml"
+  local COMPOSE_FILE_ARG="-f docker-compose.yml -f docker-compose.one.yml"
 
   local CLIENT_OP
   if [[ "${IS_STARTUP_COMMAND}" == true ]]; then

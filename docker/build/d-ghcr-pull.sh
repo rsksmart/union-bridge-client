@@ -68,40 +68,22 @@ if [[ $DRY_RUN -eq 1 ]]; then
   echo "🔍 DRY RUN: Would pull images with tag: $UC_TAG for platform: $PLATFORM"
   echo ""
   echo "Commands that would be executed:"
-  if [[ "$PLATFORM" == "linux/amd64" ]]; then
-    echo "  docker pull ghcr.io/rsksmart/union-client-builder:rust-1.86-v1"
-    echo "  docker pull ghcr.io/rsksmart/union-client-block-indexer:$UC_TAG"
-    echo "  docker pull ghcr.io/rsksmart/union-client-log-indexer:$UC_TAG"
-    echo "  docker pull ghcr.io/rsksmart/union-client-coordinator:$UC_TAG"
-    echo "  docker pull ghcr.io/rsksmart/union-client-user-api:$UC_TAG"
-  else
-    echo "  docker pull ghcr.io/rsksmart/union-client-builder:rust-1.86-v1 --platform $PLATFORM"
-    echo "  docker pull ghcr.io/rsksmart/union-client-block-indexer:$UC_TAG --platform $PLATFORM"
-    echo "  docker pull ghcr.io/rsksmart/union-client-log-indexer:$UC_TAG --platform $PLATFORM"
-    echo "  docker pull ghcr.io/rsksmart/union-client-coordinator:$UC_TAG --platform $PLATFORM"
-    echo "  docker pull ghcr.io/rsksmart/union-client-user-api:$UC_TAG --platform $PLATFORM"
-  fi
+  echo "  docker pull ghcr.io/rsksmart/union-client-builder:rust-1.86-v1 --platform $PLATFORM"
+  echo "  docker pull ghcr.io/rsksmart/union-client-block-indexer:$UC_TAG --platform $PLATFORM"
+  echo "  docker pull ghcr.io/rsksmart/union-client-log-indexer:$UC_TAG --platform $PLATFORM"
+  echo "  docker pull ghcr.io/rsksmart/union-client-coordinator:$UC_TAG --platform $PLATFORM"
+  echo "  docker pull ghcr.io/rsksmart/union-client-user-api:$UC_TAG --platform $PLATFORM"
   echo ""
   echo "✅ Dry run completed - no images were actually pulled"
 else
   echo "📥 Pulling images with tag: $UC_TAG for platform: $PLATFORM"
 
   # order seems to matter (same order as defined in compose file)
-  if [[ "$PLATFORM" == "linux/amd64" ]]; then
-    # Default platform - don't specify platform parameter
-    docker pull ghcr.io/rsksmart/union-client-builder:rust-1.86-v1
-    docker pull ghcr.io/rsksmart/union-client-block-indexer:$UC_TAG
-    docker pull ghcr.io/rsksmart/union-client-log-indexer:$UC_TAG
-    docker pull ghcr.io/rsksmart/union-client-coordinator:$UC_TAG
-    docker pull ghcr.io/rsksmart/union-client-user-api:$UC_TAG
-  else
-    # Custom platform - specify platform parameter
-    docker pull ghcr.io/rsksmart/union-client-builder:rust-1.86-v1 --platform $PLATFORM
-    docker pull ghcr.io/rsksmart/union-client-block-indexer:$UC_TAG --platform $PLATFORM
-    docker pull ghcr.io/rsksmart/union-client-log-indexer:$UC_TAG --platform $PLATFORM
-    docker pull ghcr.io/rsksmart/union-client-coordinator:$UC_TAG --platform $PLATFORM
-    docker pull ghcr.io/rsksmart/union-client-user-api:$UC_TAG --platform $PLATFORM
-  fi
+  docker pull ghcr.io/rsksmart/union-client-builder:rust-1.86-v1 --platform $PLATFORM
+  docker pull ghcr.io/rsksmart/union-client-block-indexer:$UC_TAG --platform $PLATFORM
+  docker pull ghcr.io/rsksmart/union-client-log-indexer:$UC_TAG --platform $PLATFORM
+  docker pull ghcr.io/rsksmart/union-client-coordinator:$UC_TAG --platform $PLATFORM
+  docker pull ghcr.io/rsksmart/union-client-user-api:$UC_TAG --platform $PLATFORM
 
   echo "✅ All images pulled successfully"
 fi

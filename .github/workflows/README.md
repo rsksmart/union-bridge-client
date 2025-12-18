@@ -52,7 +52,7 @@ This directory contains GitHub Actions workflows for the Union Bridge Client pro
 - `ghcr.io/rsksmart/union-client-coordinator:v1.0.0` (AMD64)
 - `ghcr.io/rsksmart/union-client-user-api:v1.0.0` (AMD64)
 
-**Dockerfile**: Uses `docker/client/Dockerfile.github-actions` - a GitHub Actions optimized version that uses HTTPS authentication instead of SSH for private repository access.
+**Dockerfile**: Uses `docker/build/Dockerfile.github-actions` - a GitHub Actions optimized version that uses HTTPS authentication instead of SSH for private repository access.
 
 ### Local Testing
 

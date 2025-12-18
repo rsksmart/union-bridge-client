@@ -8,7 +8,7 @@ services:
     image: ghcr.io/rsksmart/union-client-block-indexer:${UC_TAG:-latest}
     build:
       context: ../../
-      dockerfile: docker/client/Dockerfile
+      dockerfile: docker/build/Dockerfile
       args:
         - CRATE=block-indexer
       ssh:
@@ -33,7 +33,7 @@ services:
     image: ghcr.io/rsksmart/union-client-log-indexer:${UC_TAG:-latest}
     build:
       context: ../../
-      dockerfile: docker/client/Dockerfile
+      dockerfile: docker/build/Dockerfile
       args:
         - CRATE=log-indexer
       ssh:
@@ -58,7 +58,7 @@ services:
     image: ghcr.io/rsksmart/union-client-coordinator:${UC_TAG:-latest}
     build:
       context: ../../
-      dockerfile: docker/client/Dockerfile
+      dockerfile: docker/build/Dockerfile
       args:
         - CRATE=coordinator
       ssh:
@@ -96,7 +96,7 @@ services:
     image: ghcr.io/rsksmart/union-client-user-api:${UC_TAG:-latest}
     build:
       context: ../../
-      dockerfile: docker/client/Dockerfile
+      dockerfile: docker/build/Dockerfile
       args:
         - CRATE=user-api
       ssh:

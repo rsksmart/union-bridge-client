@@ -11,7 +11,7 @@ By default, the compose will use:
     - you can override any configuration value using environment variables prefixed with `UB__` matching the config structure, e.g.
       `UB__COORDINATOR__BLOCKS__HOST=192.168.1.100`
     - see the main [README.md](../../README.md#configuration-overrides) for detailed examples and mapping rules
-- the `docker/client/.env` for `docker-compose` file environment variables
+- the `docker/build/.env` for `docker-compose` file environment variables
 
 ## Build Builder Images
 
@@ -26,7 +26,7 @@ bash d-build-builder.sh --help
 
 ## Build & Run Services
 
-The docker/client directory contains several shell scripts to help manage Docker operations for the Union client:
+The docker/build directory contains several shell scripts to help manage Docker operations for the Union client:
 
 ### d-compose-cli.sh - Main Build & Run Script
 
@@ -38,7 +38,7 @@ bash d-compose-cli.sh --help
 ```
 
 ### First time docker setup pre-requisite 
-Inside the docker/client directory, copy the contents of the `.env.sample` file into a new `.env` file (not to be confused with `.envrc` which the project uses in the root directory). 
+Inside the docker/build directory, copy the contents of the `.env.sample` file into a new `.env` file (not to be confused with `.envrc` which the project uses in the root directory). 
 
 Set a value for the `KEY_STORE_PASSWORD` variable, it doesn't need to be the same as the equivalent var in the `.envrc` of the project's root directory.
 
@@ -82,7 +82,7 @@ If you need more control or want to run clients individually:
 
 **Manual Steps:**
 
-1. Go to `docker/client` folder
+1. Go to `docker/build` folder
 2. Run individual clients with different BitVMX broker configurations:
    ```bash
    # Client 1
