@@ -599,7 +599,7 @@ fn succeed_if_block_hash_eq_expected_hash() {
 }
 
 #[test]
-fn succeed_if_mini_chain_hashes_are_valid() {
+fn succeed_if_minichain_hashes_are_valid() {
     let test_case = serde_json::from_slice::<MiniChainTestCase>(
         &fs::read("src/tests/blockhash-mini-chain.json").unwrap(),
     )
