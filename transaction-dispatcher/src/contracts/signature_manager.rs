@@ -12,6 +12,7 @@ pub(crate) use crate::contracts::interactions::add_member_signature::AddMemberSi
 pub(crate) use crate::contracts::interactions::add_operator_take_tx_hash::AddOperatorTakeTxHashInvoke;
 use crate::contracts::types::{Address, Bytes, FixedBytes32};
 
+#[allow(clippy::struct_field_names)]
 #[cfg_attr(test, automock)]
 pub trait SignatureManagerContractApi {
     async fn add_member_nonce(
