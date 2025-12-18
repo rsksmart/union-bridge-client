@@ -67,10 +67,13 @@ pub async fn create_pegin_tx(
         .filter(|addr| !addr.is_empty())
         .ok_or_else(|| anyhow!("user-api response did not contain a pegin address"))?;
 
+    println!("Requesting pegin: {} sats", value);
+    println!("  Source:      Bitcoin (wallet for the WIF used in user-api)");
+    println!("  Destination: RSK {}", rsk_address);
+    println!();
     println!("Parameters:");
     println!("  Value: {}", value);
     println!("  Packet number: {}", packet_number);
-    println!("  RSK address: {}", rsk_address);
     println!("  Pegin address: {}", pegin_address);
     println!();
 

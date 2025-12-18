@@ -18,7 +18,11 @@
 //!   - alphanet/testnet: requires `--operator-id` (1-4) and `--role` (prover/verifier)
 //!
 //! ## user
-//! pegin and pegout transaction commands
+//! funding, pegin and pegout transaction commands
+//! - `fund`: displays user addresses and funding instructions
+//!   - extracts user RSK addresses from user-api logs
+//!   - prints cast commands to fund RSK addresses
+//!   - prints bitcoin-wallet instructions for funding bitcoin
 //! - `pegin`: initiates a bitcoin → rootstock transfer
 //!   - prints bitcoin-wallet cli command to execute the pegin transaction
 //!   - with `--execute` flag: runs the wallet command programmatically via cli-bitcoin-wallet.sh
@@ -52,6 +56,11 @@
 //! cargo run -- operator apply-stream -s 1 --env alphanet -o 1 -r prover
 //! ```
 //!
+//! fund user wallets (display addresses and instructions):
+//! ```bash
+//! cargo run -- user fund --env local
+//! ```
+//!
 //! request pegin (bitcoin → rootstock):
 //! ```bash
 //! cargo run -- user pegin -a 0x1234...cdef -v 100000 -p 0 --env local
@@ -81,10 +90,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 #[derive(Debug, Parser, Clone)]
-#[command(
-    name = "operations",
-    about = "Union Bridge Operator and User Operations"
-)]
+#[command(name = "operations", about = "Union Bridge Operator and User Operations")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -151,6 +157,12 @@ enum OperatorCommands {
 
 #[derive(Debug, Subcommand, Clone)]
 enum UserCommands {
+    /// Display user addresses and funding instructions
+    Fund {
+        /// Environment to target (local, local-docker, alphanet, testnet)
+        #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local)]
+        env: Environment,
+    },
     /// Request a pegin address and print bitcoin-wallet CLI instructions
     Pegin {
         /// Environment to target (local, local-docker, alphanet, testnet)
@@ -218,23 +230,15 @@ async fn main() -> Result<()> {
                 println!("=== Funding Bitcoin addresses ===");
                 bitcoin_wallet::handle_bitcoin_funding(env, execute).await?;
             }
-            OperatorCommands::ApplyToStream {
-                stream_id,
-                env,
-                operator_id,
-                role,
-            } => {
+            OperatorCommands::ApplyToStream { stream_id, env, operator_id, role } => {
                 committee::run_committee_setup(stream_id, env, operator_id, role).await?;
             }
         },
         Commands::User { command } => match command {
-            UserCommands::Pegin {
-                env,
-                rsk_address,
-                value,
-                packet_number,
-                execute,
-            } => {
+            UserCommands::Fund { env } => {
+                rsk_wallet::handle_user_funding(env)?;
+            }
+            UserCommands::Pegin { env, rsk_address, value, packet_number, execute } => {
                 pegin::create_pegin_tx(env, rsk_address, value, packet_number, execute).await?;
             }
             UserCommands::Pegout { env, value } => {

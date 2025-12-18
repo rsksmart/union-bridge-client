@@ -3,6 +3,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 use crate::environments::Environment;
+use crate::rsk_wallet::get_user_rsk_address;
 use crate::utils::{confirm_operation, request_to_string};
 
 #[derive(Debug, Serialize)]
@@ -25,7 +26,12 @@ fn sats_to_wei(sats: u64) -> u64 {
 pub async fn request_pegout(environment: Environment, value: u64) -> Result<()> {
     let amount_in_wei = sats_to_wei(value);
 
+    let rsk_address = get_user_rsk_address(environment, true)?
+        .unwrap_or_else(|| "<unknown - check user-api logs>".to_string());
+
     println!("Requesting pegout: {} sats ({} wei)", value, amount_in_wei);
+    println!("  Source:      RSK {}", rsk_address);
+    println!("  Destination: Bitcoin (wallet for the WIF used in user-api)");
 
     let user_api_base = environment
         .user_api_endpoints()
@@ -61,10 +67,8 @@ pub async fn request_pegout(environment: Environment, value: u64) -> Result<()> 
         bail!("user-api responded with status {}: {}", status, body);
     }
 
-    let pegout_response: PegoutResponse = response
-        .json()
-        .await
-        .context("Failed to parse user-api response")?;
+    let pegout_response: PegoutResponse =
+        response.json().await.context("Failed to parse user-api response")?;
 
     if let Some(error) = pegout_response.error {
         bail!("Pegout request failed: {}", error);

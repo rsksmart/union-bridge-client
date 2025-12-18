@@ -15,6 +15,8 @@ use crate::validate_1_4;
 
 const MEMBER_LOG_MARKER: &str = "Got member signer with address";
 const USER_LOG_MARKER: &str = "Got user signer with address";
+const USER_RSK_LOG_MARKER: &str = "Connected to Rootstock at";
+const USER_RSK_ADDRESS_MARKER: &str = "as User with address";
 
 /// handles creating local rootstock wallets for multi-client deployments
 pub fn handle_wallet_creation(num_wallets: u8, base_storage_path: Option<&str>) -> Result<()> {
@@ -44,6 +46,201 @@ pub async fn handle_operator_funding(env: Environment) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// displays user addresses and funding instructions
+pub fn handle_user_funding(env: Environment) -> Result<()> {
+    println!("\n=== User Funding Information ===\n");
+
+    // collect user RSK addresses from logs (all operators for funding display)
+    let user_addresses = match env {
+        Environment::Local => collect_user_rsk_addresses_from_cargo_logs(false)?,
+        Environment::LocalDocker => collect_user_rsk_addresses_from_local_docker(false)?,
+        Environment::Alphanet | Environment::Testnet => {
+            collect_user_rsk_addresses_from_remote(env, false)?
+        }
+    };
+
+    // print RSK funding instructions
+    println!("--- Rootstock (RSK) ---");
+    if user_addresses.is_empty() {
+        println!("No user RSK addresses found in logs.");
+        println!("Ensure user-api services are running and have emitted the connection log.\n");
+    } else {
+        println!("User RSK addresses to fund:");
+        for (source, address) in &user_addresses {
+            println!("  {} -> {}", source, address);
+        }
+        println!();
+
+        let rpc_url = env.rpc_url();
+        match env {
+            Environment::Local | Environment::LocalDocker => {
+                println!("Fund using (local anvil):");
+                for (_, address) in &user_addresses {
+                    println!(
+                        "  cast send --rpc-url {} --from {} {} --value 1ether --unlocked",
+                        rpc_url, LOCAL_ANVIL_ADDRESS, address
+                    );
+                }
+            }
+            Environment::Alphanet | Environment::Testnet => {
+                let private_key = prompt_password("Enter Cow Private Key: ")
+                    .context("failed to read private key")?
+                    .trim()
+                    .to_string();
+                println!();
+
+                if private_key.is_empty() {
+                    bail!("private key is required");
+                }
+
+                println!("Fund using:");
+                for (_, address) in &user_addresses {
+                    println!(
+                        "  cast send {} --value 0.25ether --private-key {} --rpc-url {}",
+                        address, private_key, rpc_url
+                    );
+                }
+            }
+        }
+    }
+
+    // print Bitcoin funding instructions
+    println!("\n--- Bitcoin ---");
+    println!("Fund the Bitcoin address derived from the WIF key provided when starting user-api.");
+    println!("Use your bitcoin-wallet CLI:");
+    println!("  send_to_address <user_btc_address> [amount]");
+    println!();
+    println!("Note: Use the address of a Bitcoin private key you control");
+
+    Ok(())
+}
+
+/// returns the first user RSK address found in logs (for the current environment)
+/// when `first_only` is true, only queries operator 1 (used for pegout)
+pub fn get_user_rsk_address(env: Environment, first_only: bool) -> Result<Option<String>> {
+    let addresses = match env {
+        Environment::Local => collect_user_rsk_addresses_from_cargo_logs(first_only)?,
+        Environment::LocalDocker => collect_user_rsk_addresses_from_local_docker(first_only)?,
+        Environment::Alphanet | Environment::Testnet => {
+            collect_user_rsk_addresses_from_remote(env, first_only)?
+        }
+    };
+    Ok(addresses.into_iter().next().map(|(_, addr)| addr))
+}
+
+fn collect_user_rsk_addresses_from_cargo_logs(first_only: bool) -> Result<Vec<(String, String)>> {
+    let logs_dir = cargo_logs_dir()?;
+    let mut addresses = Vec::new();
+
+    let ids: &[u8] = if first_only { &[1] } else { &OPERATOR_IDS };
+    for operator_id in ids {
+        let log_path = logs_dir.join(format!("user-api-{}.log", operator_id));
+        if !log_path.exists() {
+            continue;
+        }
+
+        let contents = fs::read_to_string(&log_path)
+            .with_context(|| format!("failed to read {}", log_path.display()))?;
+
+        if let Some(address) = extract_user_rsk_address(&contents) {
+            addresses.push((format!("user-api-{}", operator_id), address));
+        }
+    }
+
+    Ok(addresses)
+}
+
+fn collect_user_rsk_addresses_from_local_docker(first_only: bool) -> Result<Vec<(String, String)>> {
+    let mut addresses = Vec::new();
+
+    let ids: &[u8] = if first_only { &[1] } else { &OPERATOR_IDS };
+    for id in ids {
+        let project = format!("op_{}", id);
+        let output = Command::new("docker")
+            .args(["compose", "-p", &project, "logs", "user-api"])
+            .output()
+            .with_context(|| {
+                format!("failed to run `docker compose -p {} logs user-api`", &project)
+            })?;
+
+        if !output.status.success() {
+            continue;
+        }
+
+        let stdout = String::from_utf8(output.stdout)
+            .context("docker compose logs output is not valid utf-8")?;
+
+        if let Some(address) = extract_user_rsk_address(&stdout) {
+            addresses.push((project, address));
+        }
+    }
+
+    Ok(addresses)
+}
+
+fn collect_user_rsk_addresses_from_remote(
+    env: Environment,
+    first_only: bool,
+) -> Result<Vec<(String, String)>> {
+    let all_hosts = env.hosts();
+    let hosts: Vec<&String> = if first_only {
+        all_hosts.first().into_iter().collect()
+    } else {
+        all_hosts.iter().collect()
+    };
+    let mut addresses = Vec::new();
+
+    for host in hosts {
+        let target = format!("{}@{}", REMOTE_SSH_USER, host);
+
+        let mut cmd = Command::new("ssh");
+        cmd.arg(&target).args([
+            "docker",
+            "compose",
+            "-p",
+            ONE_OPERATOR_COMPOSE_PROJECT,
+            "logs",
+            "user-api",
+        ]);
+
+        let cmd_str = command_to_string(&cmd);
+        println!("{}", cmd_str);
+
+        let output = cmd.output().with_context(|| format!("failed to run `{}`", cmd_str))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            println!("[user-fund] ssh command failed for {}: {}", host, stderr.trim());
+            continue;
+        }
+
+        let stdout = String::from_utf8(output.stdout).context("ssh output is not valid utf-8")?;
+
+        if let Some(address) = extract_user_rsk_address(&stdout) {
+            addresses.push((host.to_string(), address));
+        } else {
+            println!("[user-fund] no user RSK address found on host {}", host);
+        }
+    }
+
+    Ok(addresses)
+}
+
+fn extract_user_rsk_address(log_content: &str) -> Option<String> {
+    // pattern: "Connected to Rootstock at <url> as User with address <address>"
+    for line in log_content.lines().rev() {
+        if line.contains(USER_RSK_LOG_MARKER) && line.contains(USER_RSK_ADDRESS_MARKER) {
+            if let Some(idx) = line.find(USER_RSK_ADDRESS_MARKER) {
+                let after = &line[idx + USER_RSK_ADDRESS_MARKER.len()..];
+                if let Some(addr) = after.split_whitespace().find(|s| s.starts_with("0x")) {
+                    return Some(addr.trim().to_string());
+                }
+            }
+        }
+    }
+    None
 }
 
 fn require_base_storage_path(base_storage_path: Option<&str>) -> Result<&str> {
