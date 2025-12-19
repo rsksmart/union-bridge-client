@@ -573,33 +573,5 @@ The file [rusty-hook.toml](rusty-hook.toml) will be used for hook configuration.
 
 ### GitHub Actions
 
-To test locally the GitHub Actions, you can use the `act` tool. You need to have Docker installed and running on your
-machine, as `act` uses Docker to run the actions in a local environment.
-
-You can install it via Homebrew:
-
-```bash
-brew install act
-```
-
-**Only the first time you run `act`, or whenever the base image changes**. To do so, run the following command from the
-`.github/act` directory:
-
-Then, copy the `.actrc.sample` to `.actrc` and configure it as needed. This file is used to configure the `act` tool.
-
-To run the same actions as the CI runs on pull requests, you can use the following command:
-
-```bash
-act pull_request -s KEY_STORE_FILE=$(cat <path_to_your_keystore_file>) --container-architecture linux/amd64
-```
-
-To run just Crate Tests, you can use the following command:
-
-```bash
-act -j test-and-lint -s KEY_STORE_FILE=$(cat <path_to_your_keystore_file>) --container-architecture linux/amd64
-```
-
-NOTE: Uploading and downloading artifacts is slow locally, but fast on the CI.
-NOTE: You can add `--reuse` to reuse previous Docker containers to speed up execution by skipping setup and preserving
-cache, filesystem, and environment state.
-NOTE: If you find concurrency errors, try running with `--concurrent-jobs 1` to run the actions sequentially.
+For information about the GitHub Actions workflows in this project, including how to test them locally with `act`, see
+[.github/README.md](.github/README.md).
