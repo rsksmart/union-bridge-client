@@ -34,8 +34,8 @@ use crate::types::{
 };
 
 const PEGIN_ACCEPTED_INPUT_MSG: &str = "pegin_accepted";
-pub const MIN_TX_CONFIRMATIONS: u32 = 1 + 2; // +1 from Contracts, +2 to give time to the Native Bridge to get up to date with Bitcoin Node
-pub const BLOCKS_DELAY_FOR_TX_CHECK: u32 = 2; // to speed up tests in Alphanet, in production could be higher
+pub const MIN_TX_CONFIRMATIONS: u32 = 1 + 1; // +1 from Contracts, +1 to give time to the Native Bridge to get up to date with Bitcoin Node
+pub const BLOCKS_DELAY_FOR_TX_CHECK: u32 = 20;
 
 /// Processor that manages multiple pegin flow state machines
 pub struct PeginFlowProcessor<CG, BC, BSF, FactoryBSF, S>
