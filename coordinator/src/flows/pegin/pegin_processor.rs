@@ -840,7 +840,7 @@ where
 
             self.events_confirming.insert(confirmable_event.id(), confirmable_event);
 
-            debug!("Waiting for confirmations for {id}");
+            debug!("Waiting Rootstock confirmations for {id}");
         }
 
         Ok(())
