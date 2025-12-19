@@ -622,7 +622,13 @@ fn succeed_if_minichain_hashes_are_valid() {
 fn create_base_block(number: u64, bridge_event: bool, parent: Option<H256>) -> RskBlock {
     let difficulty = U256::from(DEFAULT_DIFFICULTY);
     let timestamp = DEFAULT_TIMESTAMP;
-    let mut header = RskBlockHeader::new_with(number, difficulty, parent, timestamp);
+    let mut header = RskBlockHeader {
+        number,
+        difficulty,
+        parent: parent.unwrap_or_default(),
+        timestamp,
+        ..Default::default()
+    };
     header.hash = header
         .calculate_block_hash()
         .expect("could not calculate block hash");

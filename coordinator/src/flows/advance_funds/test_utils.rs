@@ -7,12 +7,13 @@ use std::ops::Mul;
 const FAKE_BLOCK_DIFFICULTY: u64 = 500;
 
 fn calculate_block_hash_with_parent(number: u64, parent: H256) -> H256 {
-    let header = RskBlockHeader::new_with(
+    let header = RskBlockHeader {
         number,
-        U256::from(FAKE_BLOCK_DIFFICULTY),
-        if number == 0 { None } else { Some(parent) },
-        number * 1000,
-    );
+        difficulty: U256::from(FAKE_BLOCK_DIFFICULTY),
+        parent: if number == 0 { H256::zero() } else { parent },
+        timestamp: number * 1000,
+        ..Default::default()
+    };
     header.calculate_block_hash().expect("hash calculation")
 }
 

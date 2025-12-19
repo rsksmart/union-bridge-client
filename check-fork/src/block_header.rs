@@ -34,11 +34,11 @@ pub struct RskBlockHeader {
     pub bitcoin_merged_mining_header: Vec<u8>, // 80-byte Bitcoin block header for merged mining
     // the following fields are gonna be included in the next hardfork (reed)
     #[serde(skip)]
-    _umm_root: [u8; 20], // UMM root (only if block is UMM, must be exactly 20 bytes)
+    pub umm_root: [u8; 20], // UMM root (only if block is UMM, must be exactly 20 bytes)
     #[serde(skip)]
-    _version: u8, // Header version
+    pub version: u8, // Header version
     #[serde(skip)]
-    _tx_execution_sublists_edges: Option<Vec<u16>>, // Edges of transaction execution sublists
+    pub tx_execution_sublists_edges: Option<Vec<u16>>, // Edges of transaction execution sublists
 }
 
 impl Default for RskBlockHeader {
@@ -62,25 +62,14 @@ impl Default for RskBlockHeader {
             minimum_gas_price: Some(U256::zero()),
             uncles: Vec::new(),
             bitcoin_merged_mining_header: vec![0u8; 80],
-            _umm_root: [0u8; 20],
-            _version: 0,
-            _tx_execution_sublists_edges: None,
+            umm_root: [0u8; 20],
+            version: 0,
+            tx_execution_sublists_edges: None,
         }
     }
 }
 
 impl RskBlockHeader {
-    #[must_use]
-    pub fn new_with(number: u64, difficulty: U256, parent: Option<H256>, timestamp: u64) -> Self {
-        RskBlockHeader {
-            number,
-            difficulty,
-            parent: parent.unwrap_or_default(),
-            timestamp,
-            ..Default::default()
-        }
-    }
-
     pub fn calculate_block_hash(&self) -> Result<H256, &'static str> {
         let rlp_encoded: Vec<u8> = self.encode_rlp()?;
         let mut hasher = Keccak256::new();

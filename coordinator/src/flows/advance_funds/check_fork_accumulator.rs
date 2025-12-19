@@ -208,13 +208,14 @@ impl CheckForkAccumulator {
         bridge_event: Option<check_fork::BridgeEvent>,
         uncles: Vec<CfRskBlock>,
     ) -> CfRskBlock {
-        let mut header = RskBlockHeader::new_with(
-            block.number().value(),
-            block.difficulty().value(),
-            Some(block.parent_hash().value()),
-            block.timestamp().value(),
-        );
-        header.hash = block.hash().value();
+        let header = RskBlockHeader {
+            number: block.number().value(),
+            difficulty: block.difficulty().value(),
+            parent: block.parent_hash().value(),
+            timestamp: block.timestamp().value(),
+            hash: block.hash().value(),
+            ..Default::default()
+        };
         CfRskBlock {
             bridge_event,
             uncles,
