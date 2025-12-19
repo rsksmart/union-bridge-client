@@ -246,7 +246,7 @@ where
             Steps::ConfirmAcceptPeginTransaction => {
                 self.dispatch_transaction()?;
                 info!(
-                    "Waiting for transaction confirmations for flow_id: {} and tx_id: {:?}",
+                    "Waiting for AcceptPegin Bitcoin confirmations for flow_id: {} and tx_id: {:?}",
                     self.state.flow_id,
                     self.get_accept_pegin_txid()
                 );

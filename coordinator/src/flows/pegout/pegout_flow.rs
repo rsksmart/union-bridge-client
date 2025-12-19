@@ -183,7 +183,7 @@ where
             }
             Steps::ConfirmUserTakeTransaction => {
                 info!(
-                    "Waiting for transaction confirmations for flow_id: {} and tx_id: {:?}",
+                    "Waiting for UserTake Bitcoin confirmations for flow_id: {} and tx_id: {:?}",
                     self.state.flow_id,
                     self.get_user_take_txid()
                 );
