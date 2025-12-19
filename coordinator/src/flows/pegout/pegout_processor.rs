@@ -358,7 +358,7 @@ where
             }
         } else {
             debug!(
-                "Transaction not confirmed with sufficient confirmations for flow_id: {flow_id}"
+                "Bitcoin transaction {tx_id} missing confirmations ({confirmations}/{SPV_PROOF_MIN_CONFIRMATIONS}) for flow_id {flow_id}, rescheduling"
             );
             self.tx_status_scheduler.schedule(flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
         }
