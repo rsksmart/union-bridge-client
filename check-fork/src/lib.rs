@@ -15,7 +15,6 @@ pub const SUPERBLOCK_TIMES_DIFFICULTY: u8 = 20;
 pub struct RskBlock {
     pub bridge_event: Option<BridgeEvent>,
     pub uncles: Vec<RskBlock>,
-    // alternatively we can receive `bitcoinMergedMiningHeader`, but we would need to include bitcoin crate here, etc.
     pub pow: H256, // used to accumulate effort (from check_fork_accumulator)
     pub header: RskBlockHeader,
 }

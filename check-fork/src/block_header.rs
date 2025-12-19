@@ -24,21 +24,14 @@ pub struct RskBlockHeader {
     pub state_root: H256,                      // SHA3-256 hash of the root node of the state trie
     pub tx_trie_root: H256, // SHA3-256 hash of the root node of the transaction trie
     pub receipt_trie_root: H256, // SHA3-256 hash of the root node of the receipt trie
-    pub logs_bloom: Vec<u8>, // Bloom filter for logs (256 bytes)
-    pub gas_limit: Vec<u8>, // Current limit of gas expenditure per block
-    pub gas_used: u64,      // Total gas used in transactions in this block
-    pub extra_data: Vec<u8>, // Arbitrary byte array (max 32 bytes, except genesis)
-    pub paid_fees: U256,    // Total paid fees in transactions (Coin, RLP encoded)
+    pub extension_data: Vec<u8>, // Data used after REED hardfork (in json-rpc this is the 'logs_bloom' field)
+    pub gas_limit: Vec<u8>,      // Current limit of gas expenditure per block
+    pub gas_used: u64,           // Total gas used in transactions in this block
+    pub extra_data: Vec<u8>,     // Arbitrary byte array (max 32 bytes, except genesis)
+    pub paid_fees: U256,         // Total paid fees in transactions (Coin, RLP encoded)
     pub minimum_gas_price: Option<U256>, // Minimum gas price for a tx to be included
-    pub uncles: Vec<H256>,  // Hashes of uncle blocks
+    pub uncles: Vec<H256>,       // Hashes of uncle blocks
     pub bitcoin_merged_mining_header: Vec<u8>, // 80-byte Bitcoin block header for merged mining
-    // the following fields are gonna be included in the next hardfork (reed)
-    #[serde(skip)]
-    pub umm_root: [u8; 20], // UMM root (only if block is UMM, must be exactly 20 bytes)
-    #[serde(skip)]
-    pub version: u8, // Header version
-    #[serde(skip)]
-    pub tx_execution_sublists_edges: Option<Vec<u16>>, // Edges of transaction execution sublists
 }
 
 impl Default for RskBlockHeader {
@@ -54,7 +47,7 @@ impl Default for RskBlockHeader {
             state_root: H256::zero(),
             tx_trie_root: H256::zero(),
             receipt_trie_root: H256::zero(),
-            logs_bloom: vec![0u8; 256],
+            extension_data: vec![0u8; 256],
             gas_limit: vec![0u8],
             gas_used: 0,
             extra_data: Vec::new(),
@@ -62,9 +55,6 @@ impl Default for RskBlockHeader {
             minimum_gas_price: Some(U256::zero()),
             uncles: Vec::new(),
             bitcoin_merged_mining_header: vec![0u8; 80],
-            umm_root: [0u8; 20],
-            version: 0,
-            tx_execution_sublists_edges: None,
         }
     }
 }
@@ -89,7 +79,7 @@ impl RskBlockHeader {
             alloy_rlp::encode(self.state_root.as_bytes()),
             alloy_rlp::encode(self.tx_trie_root.as_bytes()),
             alloy_rlp::encode(self.receipt_trie_root.as_bytes()),
-            alloy_rlp::encode(self.logs_bloom.as_slice()),
+            alloy_rlp::encode(self.extension_data.as_slice()), // introduced in REED hardfork
             encode_coin_value(&self.difficulty),
             alloy_rlp::encode(self.number),
             alloy_rlp::encode(self.gas_limit.as_slice()),
@@ -99,7 +89,7 @@ impl RskBlockHeader {
             encode_coin_value(&self.paid_fees),
             encode_signed_coin_value(&minimum_gas_price),
             alloy_rlp::encode(self.uncles.len()), // uncle_count
-            alloy_rlp::encode::<&[u8]>(&self.umm_root()),
+            alloy_rlp::encode::<&[u8]>(&self.umm_root()), // this field is present in the header but is always empty
             alloy_rlp::encode(self.bitcoin_merged_mining_header.as_slice()),
         ];
         let out = encode_list(encoded_fields);
@@ -110,7 +100,7 @@ impl RskBlockHeader {
         {
             u8::default();
             [] as [u8; 0]
-        } // umm_root is always empty (not even present in json-rpc)
+        } // umm_root is always empty
     }
 }
 
@@ -245,7 +235,7 @@ impl fmt::Debug for RskBlockHeader {
             short(&self.state_root),
             short(&self.tx_trie_root),
             short(&self.receipt_trie_root),
-            self.logs_bloom.len(),
+            self.extension_data.len(),
             hex::encode(&self.gas_limit),
             self.gas_used,
             self.extra_data.len(),

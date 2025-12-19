@@ -41,8 +41,10 @@ struct TestRskBlockHeader {
     pub tx_trie_root: H256,
     #[serde(rename = "receiptsRoot", deserialize_with = "deserialize_hex_h256")]
     pub receipt_trie_root: H256,
+    // before REED hardfork it's used logs_bloom after REED hardfork we use extension data
+    // but the json-rpc field it's still named as logs_bloom
     #[serde(rename = "logsBloom", deserialize_with = "deserialize_hex_bytes")]
-    pub logs_bloom: Vec<u8>,
+    pub extension_data: Vec<u8>,
     #[serde(rename = "gasLimit", deserialize_with = "deserialize_hex_bytes")]
     pub gas_limit: Vec<u8>,
     #[serde(rename = "gasUsed", deserialize_with = "deserialize_hex_u64")]
@@ -71,26 +73,26 @@ struct TestRskBlockHeader {
 
 impl From<&TestRskBlockHeader> for RskBlockHeader {
     fn from(t: &TestRskBlockHeader) -> Self {
-        let mut header = RskBlockHeader::default();
-        header.number = t.number;
-        header.hash = t.hash;
-        header.parent = t.parent;
-        header.difficulty = t.difficulty;
-        header.timestamp = t.timestamp;
-        header.uncles_hash = t.uncles_hash;
-        header.coinbase = t.coinbase;
-        header.state_root = t.state_root;
-        header.tx_trie_root = t.tx_trie_root;
-        header.receipt_trie_root = t.receipt_trie_root;
-        header.logs_bloom = t.logs_bloom.clone();
-        header.gas_limit = t.gas_limit.clone();
-        header.gas_used = t.gas_used;
-        header.extra_data = t.extra_data.clone();
-        header.paid_fees = t.paid_fees;
-        header.minimum_gas_price = t.minimum_gas_price;
-        header.uncles = t.uncles.clone();
-        header.bitcoin_merged_mining_header = t.bitcoin_merged_mining_header.clone();
-        header
+        RskBlockHeader {
+            number: t.number,
+            hash: t.hash,
+            parent: t.parent,
+            difficulty: t.difficulty,
+            timestamp: t.timestamp,
+            uncles_hash: t.uncles_hash,
+            coinbase: t.coinbase,
+            state_root: t.state_root,
+            tx_trie_root: t.tx_trie_root,
+            receipt_trie_root: t.receipt_trie_root,
+            extension_data: t.extension_data.clone(),
+            gas_limit: t.gas_limit.clone(),
+            gas_used: t.gas_used,
+            extra_data: t.extra_data.clone(),
+            paid_fees: t.paid_fees,
+            minimum_gas_price: t.minimum_gas_price,
+            uncles: t.uncles.clone(),
+            bitcoin_merged_mining_header: t.bitcoin_merged_mining_header.clone(),
+        }
     }
 }
 
