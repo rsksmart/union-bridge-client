@@ -4,6 +4,10 @@ use std::rc::Rc;
 
 use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::Txid;
+use common::msg_broker::bitvmx_types::{
+    BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PeginAcceptedMessage,
+    TransactionStatus, VariableTypes,
+};
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::types::{BlockNumber, CommitteeId, Hash256, RskBlockAndUncles, TxIdParser};
@@ -11,7 +15,7 @@ use log::{debug, error, info, trace, warn};
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use union_contracts::bindings::peg_manager::PegManager::PeginRequested;
 use uuid::Uuid;
-use common::msg_broker::bitvmx_types::{BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PeginAcceptedMessage, TransactionStatus, VariableTypes};
+
 use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
 use crate::config::PeginConfig;
 use crate::event_processor::EventProcessor;

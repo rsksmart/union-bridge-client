@@ -260,18 +260,17 @@ mod tests {
             FakeLogGenerator::new().generate_log("Transfer(address,address,uint256)", address);
 
         let mut mock_broker = MockBrokerServerApi::new();
-        mock_broker
-            .expect_try_recv()
-            .returning(move || Ok(Some((ToServer::SubscribeLogs(subscribed_address), make_test_identifier(1)))));
-        mock_broker.expect_send().never();
-        
+        mock_broker.expect_try_recv().returning(|| {
+            Ok(Some((ToServer::SubscribeLogs(generate_fake_address(2)), make_test_identifier(1))))
+        }); // subscribe for a different address
+        mock_broker.expect_send().never(); // nothing to send, no consumers yet for that address
+
         let mut notifier = Notifier::new_for_tests(
             rx,
             mock_broker,
             monitored(&[address, subscribed_address]),
             shutdown_flag.clone(),
         );
-
         let handle_external_events = handle_external_events(tx, shutdown_flag, vec![expected_log]);
 
         let result = notifier.run();
@@ -342,14 +341,8 @@ mod tests {
         let address_2 = generate_fake_address(2);
 
         let client_requests = vec![
-            ClientRequest {
-                id: client_id_1.clone(),
-                request: ToServer::SubscribeLogs(address_1),
-            },
-            ClientRequest {
-                id: client_id_2.clone(),
-                request: ToServer::SubscribeLogs(address_1),
-            },
+            ClientRequest { id: client_id_1.clone(), request: ToServer::SubscribeLogs(address_1) },
+            ClientRequest { id: client_id_2.clone(), request: ToServer::SubscribeLogs(address_1) },
         ];
 
         let expected_log_1 =
@@ -402,14 +395,8 @@ mod tests {
         let address_1 = generate_fake_address(1);
 
         let client_requests = vec![
-            ClientRequest {
-                id: client_id_1.clone(),
-                request: ToServer::SubscribeLogs(address_1),
-            },
-            ClientRequest {
-                id: client_id_2.clone(),
-                request: ToServer::SubscribeLogs(address_1),
-            },
+            ClientRequest { id: client_id_1.clone(), request: ToServer::SubscribeLogs(address_1) },
+            ClientRequest { id: client_id_2.clone(), request: ToServer::SubscribeLogs(address_1) },
             // should not receive logs for this address
             ClientRequest {
                 id: client_id_1.clone(),
@@ -511,9 +498,7 @@ mod tests {
                 let expected_log = expected_log.clone(); // move into closure
                 let dest = dest.clone();
                 move |msg, dst| match msg {
-                    FromServer::Log(actual_log) => {
-                        *dst == dest && *actual_log == expected_log
-                    }
+                    FromServer::Log(actual_log) => *dst == dest && *actual_log == expected_log,
                     _ => false,
                 }
             })

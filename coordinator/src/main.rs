@@ -1,27 +1,37 @@
 use std::rc::Rc;
+
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
-use common::{
-    config::CommonConfig,
-    msg_broker::broker::{BITVMX_L2_BROKER_CLIENT_ID, BitVmxBrokerClient, BrokerClient, Cert},
-    runtime_sync::RuntimeSync,
-    shutdown_flag::ShutdownFlag,
+use common::config::CommonConfig;
+use common::msg_broker::broker::{
+    BITVMX_L2_BROKER_CLIENT_ID, BitVmxBrokerClient, BrokerClient, Cert,
 };
+use common::runtime_sync::RuntimeSync;
+use common::shutdown_flag::ShutdownFlag;
+use coordinator::config::{Config, Logger};
+use coordinator::coordinator::Coordinator;
+use coordinator::monitor::Monitor;
 use coordinator::store::CoordinatorStore;
-use coordinator::{
-    config::{Config, Logger},
-    coordinator::Coordinator,
-    monitor::Monitor,
-};
 use log::{debug, error, info};
 use transaction_dispatcher::config::Config as TxDispatcherConfig;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const ENV_CLI_FLAG: &str = "env";
 
-#[allow(clippy::too_many_lines)]
-fn main() -> Result<()> {
-    let matches = Command::new("Union Bridge Block Indexer")
+fn create_broker(
+    host: String,
+    port: u16,
+    pubk_hash: String,
+    client_id: u8,
+    key_path: &str,
+    name: &str,
+) -> Result<BrokerClient> {
+    BrokerClient::new(host, port, pubk_hash, client_id, key_path)
+        .context(format!("Failed to create {name} broker client"))
+}
+
+fn parse_cli_args() -> Option<String> {
+    let matches = Command::new("Union Bridge Coordinator")
         .arg(
             Arg::new(LOGGER_CLI_FLAG)
                 .short('l')
@@ -37,66 +47,61 @@ fn main() -> Result<()> {
                 .help("Environment name (e.g., local, alphanet, stage)"),
         )
         .get_matches();
+    Logger::init(matches.get_one::<String>(LOGGER_CLI_FLAG)).expect("Failed to load logger");
+    matches.get_one::<String>(ENV_CLI_FLAG).cloned()
+}
 
-    let logger_cfg_path = matches.get_one::<String>(LOGGER_CLI_FLAG);
-    Logger::init(logger_cfg_path).expect("Failed to load logger");
-
-    let env_name = matches.get_one::<String>(ENV_CLI_FLAG).cloned();
+fn main() -> Result<()> {
+    let env_name = parse_cli_args();
 
     info!(
-        "Loading configuration for environment: {}",
+        "Loading configuration for environment: {}. Env vars with prefix UB__ will override config values",
         env_name.clone().unwrap_or_else(|| "NONE".to_string())
     );
-    info!("Environment variables with prefix UB__ will override config values");
 
     let config: Config = Config::load(env_name.as_deref()).expect("Failed to load config");
 
     let bitcoin_network = CommonConfig::parse_bitcoin_network(&config.bitcoin_network)?;
 
-    // Load transaction dispatcher configuration
-    let tx_dispatcher_config: TxDispatcherConfig = TxDispatcherConfig::load(env_name.clone())
-        .expect("Failed to load transaction dispatcher config");
+    let tx_dispatcher_config: TxDispatcherConfig =
+        TxDispatcherConfig::load(env_name.clone()).expect("Failed to load transaction dispatcher config");
 
     let contract_addresses = config.get_contract_addresses();
     let broker_key_path = &config.key_store.broker_key_path;
 
-    // Compute the broker server's pubkey_hash from the shared key file.
-    // The indexers (block-indexer, log-indexer) use the same key to derive their identity,
-    // so messages must be addressed to this pubkey_hash for proper routing.
     let broker_server_pubk_hash = Cert::from_key_file(broker_key_path)
         .context("Failed to load broker key for pubkey_hash")?
         .get_pubk_hash()
         .context("Failed to compute broker pubkey_hash")?;
 
     let broker_client_id = u8::try_from(config.coordinator.broker.client_id)
-        .context("broker.client_id must fit in u8 (0-255)")?;
+        .context("broker.client_id must fit in u8")?;
 
-    let block_broker = BrokerClient::new(
+    let hash = &broker_server_pubk_hash;
+    let block_broker = create_broker(
         config.coordinator.blocks.host,
         config.coordinator.blocks.port,
-        broker_server_pubk_hash.clone(),
+        hash.clone(),
         broker_client_id,
         broker_key_path,
-    )
-    .context("Failed to create block broker client")?;
-
-    let log_broker = BrokerClient::new(
+        "block",
+    )?;
+    let log_broker = create_broker(
         config.coordinator.logs.host,
         config.coordinator.logs.port,
-        broker_server_pubk_hash.clone(),
+        hash.clone(),
         broker_client_id,
         broker_key_path,
-    )
-    .context("Failed to create log broker client")?;
-
-    let user_broker = BrokerClient::new(
+        "log",
+    )?;
+    let user_broker = create_broker(
         config.coordinator.user.host,
         config.coordinator.user.port,
-        broker_server_pubk_hash,
+        hash.clone(),
         broker_client_id,
         broker_key_path,
-    )
-    .context("Failed to create user broker client")?;
+        "user",
+    )?;
 
     let bitvmx_broker = Rc::new(
         BitVmxBrokerClient::new(
@@ -144,12 +149,10 @@ fn main() -> Result<()> {
         &config.bridge,
     );
     coordinator.run().inspect_err(|e| {
-        error!("Unrecoverable error running coordinator: {e:?}");
-        // signal other threads to shut down
+        error!("Unrecoverable error running coordinator: {e:?}"); // signal other threads to shut down
         shutdown_flag.set();
     })?;
 
     info!("Shutting down!");
-
     Ok(())
 }

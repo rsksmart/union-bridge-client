@@ -1,7 +1,10 @@
+use std::net::{IpAddr, SocketAddr};
+
 use alloy_primitives::{Address, Bytes, FixedBytes};
 use anyhow::{Context, Result, bail};
 use bitcoin::{Transaction, TxIn, TxOut, Txid};
-use std::net::{IpAddr, SocketAddr};
+use common::msg_broker::bitvmx_types::{BtcTxSPVProof, PubKeyHash};
+use common::types::{CommitteeId, Hash256, StreamId};
 use multiaddr::{Multiaddr, Protocol};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
@@ -9,8 +12,6 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     Committee, CommunicationData, RSAPublicKey, UTXO,
 };
 use union_contracts::bindings::member_registry::MemberRegistry::RSAPublicKey as MemberRSAPublicKey;
-use common::msg_broker::bitvmx_types::{BtcTxSPVProof, PubKeyHash};
-use common::types::{CommitteeId, Hash256, StreamId};
 // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-214
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -304,7 +305,7 @@ impl P2PAddressParser {
     ///
     /// # Errors
     ///
-    /// Returns an error if the multiaddr string cannot be parsed or is missing IP/port components.
+    /// Returns an error if the multiaddr string cannot be parsed or lacks IP/port.
     pub fn multiaddr_to_socket_addr(multiaddr_str: &str) -> Result<SocketAddr> {
         let multi_addr: Multiaddr = multiaddr_str
             .parse()
@@ -322,7 +323,8 @@ impl P2PAddressParser {
             }
         }
 
-        let ip = ip.with_context(|| format!("No IP address found in multiaddr: {multiaddr_str}"))?;
+        let ip =
+            ip.with_context(|| format!("No IP address found in multiaddr: {multiaddr_str}"))?;
         let port = port.with_context(|| format!("No port found in multiaddr: {multiaddr_str}"))?;
 
         Ok(SocketAddr::new(ip, port))
@@ -333,7 +335,7 @@ impl P2PAddressParser {
     ///
     /// # Errors
     ///
-    /// Returns an error if the stored multiaddr cannot be decoded or parsed.
+    /// Returns an error if the communication data cannot be decoded.
     pub fn socket_addr_from_contracts(comm_data: &CommunicationData) -> Result<Option<SocketAddr>> {
         let multiaddr_str = Self::addr_from_contracts(comm_data)?;
         if multiaddr_str.is_empty() {
@@ -347,7 +349,7 @@ impl P2PAddressParser {
     ///
     /// # Errors
     ///
-    /// Returns an error if the address cannot be encoded into contract format.
+    /// Returns an error if the address cannot be converted to contract format.
     pub fn socket_addr_to_contracts(addr: &SocketAddr) -> Result<CommunicationData> {
         let multiaddr_str = match addr {
             SocketAddr::V4(v4) => format!("/ip4/{}/tcp/{}", v4.ip(), v4.port()),
@@ -356,23 +358,21 @@ impl P2PAddressParser {
         Self::addr_to_contracts(&multiaddr_str)
     }
 
-    /// # Errors
-    ///
-    /// Returns an error if `pubkey_hash` is not valid hex or is not exactly 32 bytes.
-    ///
     /// # Panics
     ///
-    /// Panics if the decoded bytes cannot be converted to a `[u8; 32]` (unreachable after the length check).
+    /// Panics if the validated 32-byte slice cannot be converted to a fixed array
+    /// (should not happen after length validation).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the hex decoding fails or the hash is not 32 bytes.
     pub fn pubkey_hash_to_contracts(pubkey_hash: &str) -> Result<RSAPublicKey> {
         let pubkey_hash_bytes = hex::decode(pubkey_hash)
             .with_context(|| format!("Failed to decode pubkey_hash hex: {pubkey_hash}"))?;
         // pubkey_hash is 32 bytes (SHA-256), contracts expect bytes32[10] (320 bytes)
         // Store the hash in the first slot directly, pad rest with zeros
         if pubkey_hash_bytes.len() != 32 {
-            bail!(
-                "pubkey_hash must be 32 bytes (SHA-256), got {} bytes",
-                pubkey_hash_bytes.len()
-            );
+            bail!("pubkey_hash must be 32 bytes (SHA-256), got {} bytes", pubkey_hash_bytes.len());
         }
         let mut data: [FixedBytes<32>; 10] = [FixedBytes([0u8; 32]); 10];
         data[0] = FixedBytes::<32>(pubkey_hash_bytes.try_into().unwrap());
@@ -381,7 +381,7 @@ impl P2PAddressParser {
 
     /// # Errors
     ///
-    /// Returns an error if the public key data cannot be decoded.
+    /// This function is infallible but returns Result for API consistency.
     pub fn pubkey_hash_from_member_contracts(comm_data: &MemberRSAPublicKey) -> Result<String> {
         // Extract only the first 32 bytes (the pubkey_hash), ignore padding
         let first_slot = comm_data.rsaPublicKey[0];
@@ -403,12 +403,11 @@ mod tests {
     #[test]
     fn roundtrip_pubkey_hash() {
         // SHA-256 hash (64 hex chars = 32 bytes)
-        let pubkey_hash = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2".to_string();
+        let pubkey_hash =
+            "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2".to_string();
 
         let encoded = P2PAddressParser::pubkey_hash_to_contracts(&pubkey_hash).unwrap();
-        let member_encoded = MemberRSAPublicKey {
-            rsaPublicKey: encoded.rsaPublicKey,
-        };
+        let member_encoded = MemberRSAPublicKey { rsaPublicKey: encoded.rsaPublicKey };
         let decoded = P2PAddressParser::pubkey_hash_from_member_contracts(&member_encoded).unwrap();
         assert_eq!(decoded, pubkey_hash);
     }
@@ -434,7 +433,8 @@ mod tests {
 
     #[test]
     fn multiaddr_to_socket_addr_ipv4_tcp() {
-        let socket = P2PAddressParser::multiaddr_to_socket_addr("/ip4/192.168.0.1/tcp/8888").unwrap();
+        let socket =
+            P2PAddressParser::multiaddr_to_socket_addr("/ip4/192.168.0.1/tcp/8888").unwrap();
         assert_eq!(socket.to_string(), "192.168.0.1:8888");
     }
 
@@ -463,9 +463,7 @@ mod tests {
     #[test]
     fn socket_addr_from_contracts_zeroed_data_returns_none() {
         // Simulates contract data that hasn't been deposited yet (all zeros)
-        let zeroed_data = CommunicationData {
-            data: [FixedBytes([0u8; 32]); 8],
-        };
+        let zeroed_data = CommunicationData { data: [FixedBytes([0u8; 32]); 8] };
         let result = P2PAddressParser::socket_addr_from_contracts(&zeroed_data).unwrap();
         assert!(result.is_none(), "zeroed data should return None");
     }
@@ -473,9 +471,7 @@ mod tests {
     #[test]
     fn addr_from_contracts_zeroed_data_returns_empty_string() {
         // Simulates contract data that hasn't been deposited yet (all zeros)
-        let zeroed_data = CommunicationData {
-            data: [FixedBytes([0u8; 32]); 8],
-        };
+        let zeroed_data = CommunicationData { data: [FixedBytes([0u8; 32]); 8] };
         let result = P2PAddressParser::addr_from_contracts(&zeroed_data).unwrap();
         assert!(result.is_empty(), "zeroed data should return empty string");
     }

@@ -318,9 +318,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
         let ping_id = uuid::Uuid::new_v4();
         debug!("Sending Ping to BitVMX with uuid: {ping_id}");
 
-        let result = self
-            .bitvmx_broker
-            .send(IncomingBitVMXApiMessages::Ping(ping_id));
+        let result = self.bitvmx_broker.send(IncomingBitVMXApiMessages::Ping(ping_id));
 
         if result.is_err() {
             // TODO we need to handle this situation properly

@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use anyhow::{Result, bail};
-use common::msg_broker::bitvmx_types::{CommsAddress, ParticipantRole, PubKeyHash, SignedPublicKey};
+use common::msg_broker::bitvmx_types::{
+    CommsAddress, ParticipantRole, PubKeyHash, SignedPublicKey,
+};
 use common::types::CommitteeId;
 use log::info;
 

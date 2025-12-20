@@ -6,6 +6,11 @@ use alloy_primitives::{Address, Bytes, FixedBytes, U256};
 use anyhow::{Context, Result, bail, ensure};
 use bitcoin::key::Parity::Even;
 use bitcoin::{Amount, Network, PublicKey, ScriptBuf, Txid, XOnlyPublicKey};
+use common::msg_broker::bitvmx_types::{
+    CommsAddress, Destination, GLOBAL_SETTINGS_UUID, IncomingBitVMXApiMessages,
+    OutgoingBitVMXApiMessages, OutputType, PartialUtxo, PubKeyHash, SignedPublicKey, UnionSettings,
+    Utxo, VariableTypes,
+};
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::types;
@@ -27,7 +32,7 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     Committee, CommitteeMember, CommunicationData, UTXO,
 };
 use uuid::Uuid;
-use common::msg_broker::bitvmx_types::{CommsAddress, Destination, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, OutputType, PartialUtxo, PubKeyHash, SignedPublicKey, UnionSettings, Utxo, VariableTypes, GLOBAL_SETTINGS_UUID};
+
 use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
 use crate::config::CommitteeConfig;
 use crate::event_processor::EventProcessor;
@@ -44,7 +49,6 @@ use crate::types::{
     NewCommitteeReadyEvent, RskPegManagerEvents, UserRequests,
 };
 use crate::user_requests::ApplyToStream;
-
 
 pub(crate) const NO_LEADER_IDX: u16 = 0;
 
@@ -207,9 +211,7 @@ impl FlowContext {
     }
 
     fn get_my_communication_data(&self) -> Result<Vec<CommsAddress>> {
-        self.communication_data_ready_ev
-            .clone()
-            .context("Missing Communication Data in context")
+        self.communication_data_ready_ev.clone().context("Missing Communication Data in context")
     }
 
     fn get_my_take_key(&self, global_context: &GlobalContext) -> Result<SignedPublicKey> {
@@ -820,17 +822,15 @@ where
 
         self.state.ctx.send_funds_req = Some((req_id, None));
 
-        let result = self.bitvmx_broker.send(
-            IncomingBitVMXApiMessages::SendFunds(
-                req_id,
-                Destination::Batch(vec![
-                    Destination::P2WPKH(public_key, speedup_utxo_val),
-                    Destination::P2WPKH(public_key, funding_utxo_val),
-                    Destination::P2WPKH(public_key, advance_funds_utxo_val),
-                ]),
-                Some(fee_rate),
-            ),
-        );
+        let result = self.bitvmx_broker.send(IncomingBitVMXApiMessages::SendFunds(
+            req_id,
+            Destination::Batch(vec![
+                Destination::P2WPKH(public_key, speedup_utxo_val),
+                Destination::P2WPKH(public_key, funding_utxo_val),
+                Destination::P2WPKH(public_key, advance_funds_utxo_val),
+            ]),
+            Some(fee_rate),
+        ));
 
         if result.is_err() {
             bail!("Failed to send msg to BitVMX: {result:?}");
