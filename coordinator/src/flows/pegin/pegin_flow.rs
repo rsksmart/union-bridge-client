@@ -1,9 +1,12 @@
 use std::rc::Rc;
 
 use anyhow::{Context, Result, anyhow, bail};
-use bitcoin::{
-    PublicKey, Txid,
-    secp256k1::{Parity::Even, XOnlyPublicKey},
+use bitcoin::secp256k1::Parity::Even;
+use bitcoin::secp256k1::XOnlyPublicKey;
+use bitcoin::{PublicKey, Txid};
+use common::msg_broker::bitvmx_types::{
+    ACCEPT_PEGIN_TX, BtcTxSPVProof, CommsAddress, IncomingBitVMXApiMessages, ParticipantRole,
+    PeginAcceptedMessage, PubKeyHash, TransactionStatus, VariableTypes,
 };
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
@@ -17,7 +20,7 @@ use transaction_dispatcher::types::{
 };
 use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
 use uuid::Uuid;
-use common::msg_broker::bitvmx_types::{BtcTxSPVProof, CommsAddress, IncomingBitVMXApiMessages, ParticipantRole, PeginAcceptedMessage, PubKeyHash, TransactionStatus, VariableTypes, ACCEPT_PEGIN_TX};
+
 use crate::flows::common::{COMM_KEY_INDEX, build_communication_data};
 use crate::flows::pegin::utils::{get_accept_pegin_pid, get_temp_pegin_pid};
 use crate::store::{CoordinatorStoreApi, StoreKey};
@@ -414,15 +417,16 @@ where
         let committee_pubkey_hashes = self.get_committee_pubkey_hashes(committee_id)?;
 
         let comms_addresses = build_communication_data(
-            &self.state
+            &self
+                .state
                 .ctx
                 .my_p2p_address
                 .as_ref()
                 .ok_or_else(|| anyhow!("P2P address not available for setup"))?
                 .address
                 .to_string(),
-            committee_addresses,
-            committee_pubkey_hashes,
+            &committee_addresses,
+            &committee_pubkey_hashes,
         )?;
 
         let msg = IncomingBitVMXApiMessages::Setup(
@@ -633,12 +637,9 @@ where
     }
 
     fn get_committee_pubkey_hashes(&self, committee_id: &CommitteeId) -> Result<Vec<PubKeyHash>> {
-        let committee_input = GetCommitteeInput {
-            committee_id: committee_id.clone(),
-        };
-        let committee_response = self
-            .rt_sync
-            .run(async { self.contracts.get_committee(committee_input).await })?;
+        let committee_input = GetCommitteeInput { committee_id: committee_id.clone() };
+        let committee_response =
+            self.rt_sync.run(async { self.contracts.get_committee(committee_input).await })?;
 
         let mut pubkey_hashes = Vec::new();
 
@@ -664,10 +665,7 @@ where
     }
 
     fn request_bitvmx_comm_info(&self) -> Result<()> {
-        info!(
-            "Requesting BitVMX comm info for flow_id: {}",
-            self.state.flow_id
-        );
+        info!("Requesting BitVMX comm info for flow_id: {}", self.state.flow_id);
         let req_id = Uuid::new_v4();
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo(req_id))
     }

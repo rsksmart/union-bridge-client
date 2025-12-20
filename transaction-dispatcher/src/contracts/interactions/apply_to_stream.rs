@@ -102,6 +102,14 @@ impl<C: CommitteeRegistryContractApi, S: StreamManagerContractApi, BP: BalancePr
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
+    use alloy_primitives::{Address, TxHash, U256};
+    use common::msg_broker::bitvmx_types::PubKeyHash;
+    use mockall::predicate::eq;
+    use union_contracts::bindings::committee_registry::CommitteeRegistry::UTXO;
+    use union_contracts::bindings::stream_manager::StreamManager::{Role, StreamDenomination};
+
     use crate::contracts::committee_registry::MockCommitteeRegistryContractApi;
     use crate::contracts::interactions::apply_to_stream::{
         ApplyToStreamInput, ApplyToStreamInvoke,
@@ -110,12 +118,6 @@ mod tests {
     use crate::contracts::types::convert_to_member_registration_keys;
     use crate::rsk_gateway::{DomainErrors, MockBalanceProvider};
     use crate::types::CommitteeECDSA;
-    use alloy_primitives::{Address, TxHash, U256};
-    use common::msg_broker::bitvmx_types::PubKeyHash;
-    use mockall::predicate::eq;
-    use std::str::FromStr;
-    use union_contracts::bindings::committee_registry::CommitteeRegistry::UTXO;
-    use union_contracts::bindings::stream_manager::StreamManager::{Role, StreamDenomination};
 
     impl
         ApplyToStreamInvoke<

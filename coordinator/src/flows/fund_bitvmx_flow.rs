@@ -35,8 +35,7 @@ where
         match event {
             UserRequests::GetBitVMXFundingAddress => {
                 let id = Uuid::new_v4();
-                self.bitvmx_broker
-                    .send(IncomingBitVMXApiMessages::GetFundingAddress(id))?;
+                self.bitvmx_broker.send(IncomingBitVMXApiMessages::GetFundingAddress(id))?;
             }
             UserRequests::ApplyToStream(_) => {
                 trace!("FundBitvmxProcessor: Ignoring user request {event:?}");

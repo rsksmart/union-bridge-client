@@ -1,12 +1,12 @@
 use std::rc::Rc;
+
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use bitcoin::{PublicKey, Txid};
-use common::msg_broker::broker::{BitVmxBrokerClientApi};
-use common::msg_broker::bitvmx_types::PegOutAccepted;
-use common::msg_broker::bitvmx_types::PegOutRequest;
-use common::msg_broker::bitvmx_types::VariableTypes;
-use common::msg_broker::bitvmx_types::{BtcTxSPVProof, CommsAddress, IncomingBitVMXApiMessages, PubKeyHash};
-use common::msg_broker::bitvmx_types::TransactionStatus;
+use common::msg_broker::bitvmx_types::{
+    BtcTxSPVProof, CommsAddress, IncomingBitVMXApiMessages, PegOutAccepted, PegOutRequest,
+    PubKeyHash, TransactionStatus, VariableTypes,
+};
+use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::types::CommitteeId;
 use hex;
@@ -324,10 +324,7 @@ where
         Ok(committee_response)
     }
     fn send_setup_to_bitvmx(&mut self, committee_id: &CommitteeId) -> Result<()> {
-        debug!(
-            "Sending setup to bitvmx with flow_id: {}",
-            self.state.flow_id
-        );
+        debug!("Sending setup to bitvmx with flow_id: {}", self.state.flow_id);
         let committee_pubkey_hashes = self.get_committee_pubkey_hashes(
             self.state
                 .ctx
@@ -338,15 +335,16 @@ where
 
         let committee_addresses = self.get_committee_member_address(committee_id)?;
         let comms_addresses = build_communication_data(
-            &self.state
+            &self
+                .state
                 .ctx
                 .my_p2p_address
                 .as_ref()
                 .ok_or_else(|| anyhow!("P2P address not available for setup"))?
                 .address
                 .to_string(),
-            committee_addresses,
-            committee_pubkey_hashes,
+            &committee_addresses,
+            &committee_pubkey_hashes,
         )?;
 
         let msg = IncomingBitVMXApiMessages::Setup(
@@ -488,10 +486,7 @@ where
     }
 
     fn request_bitvmx_comm_info(&self) -> Result<()> {
-        info!(
-            "Requesting bitvmx comm info for flow_id: {}",
-            self.state.flow_id
-        );
+        info!("Requesting bitvmx comm info for flow_id: {}", self.state.flow_id);
         let req_id = Uuid::new_v4();
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo(req_id))
     }

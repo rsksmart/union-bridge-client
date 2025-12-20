@@ -1,10 +1,12 @@
 use std::str::FromStr;
+
 use alloy_primitives::FixedBytes;
 use anyhow::Result;
 use common::msg_broker::bitvmx_types::PubKeyHash;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     ECDSAPublicKey, MemberRegistrationKeys, RSAPublicKey,
 };
+
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{CommitteeECDSA, P2PAddressParser};
 pub type FixedBytes32 = FixedBytes<32>;
@@ -54,15 +56,14 @@ pub fn convert_to_member_registration_keys(
         },
     };
 
-    let pubkey_hash_as_rsa = P2PAddressParser::pubkey_hash_to_contracts(pubkey_hash).map_err(|_| {
-        DomainErrors::InvalidPublicKey(format!("Cannot parse pubkey_hash: {pubkey_hash}"))
-    })?;
+    let pubkey_hash_as_rsa =
+        P2PAddressParser::pubkey_hash_to_contracts(pubkey_hash).map_err(|_| {
+            DomainErrors::InvalidPublicKey(format!("Cannot parse pubkey_hash: {pubkey_hash}"))
+        })?;
 
     Ok(MemberRegistrationKeys {
         takeKey: take_key,
         covenantKey: covenant_key,
-        communicationKey: RSAPublicKey {
-            rsaPublicKey: pubkey_hash_as_rsa.rsaPublicKey,
-        },
+        communicationKey: RSAPublicKey { rsaPublicKey: pubkey_hash_as_rsa.rsaPublicKey },
     })
 }

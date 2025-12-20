@@ -196,9 +196,11 @@ where
     fn send_zkp_request(&mut self, serialized_args: Vec<u8>) {
         // TODO clarify with Fairgate what to do with this id, I guess it's for future correlation
         let request_id = Uuid::new_v4();
-        let broker_result = self.bitvmx_broker.send(
-            IncomingBitVMXApiMessages::GenerateZKP(request_id, serialized_args, "TODO".to_string()),
-        );
+        let broker_result = self.bitvmx_broker.send(IncomingBitVMXApiMessages::GenerateZKP(
+            request_id,
+            serialized_args,
+            "TODO".to_string(),
+        ));
 
         match broker_result {
             Ok(true) => info!("Successfully sent GenerateCheckForkZKP"),

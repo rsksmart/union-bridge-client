@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+
 use common::config::{CommonConfig, ContractConfig, KeyStoreConfig, ProviderConfig};
 use common::errors::ConfigError;
 use common::types::{Address, ContractInfo};
@@ -92,25 +93,14 @@ mod tests {
         // key store (now shared at top level)
         assert!(!config.key_store.user_path.contains("{BASE_STORAGE_PATH}"));
         assert!(
-            config
-                .key_store
-                .user_path
-                .ends_with("/.union_bridge/keystore/multi-client-1-user")
+            config.key_store.user_path.ends_with("/.union_bridge/keystore/multi-client-1-user")
         );
         assert!(!config.key_store.member_path.contains("{BASE_STORAGE_PATH}"));
         assert!(
-            config
-                .key_store
-                .member_path
-                .ends_with("/.union_bridge/keystore/multi-client-1-member")
+            config.key_store.member_path.ends_with("/.union_bridge/keystore/multi-client-1-member")
         );
         assert!(!config.key_store.broker_key_path.contains("{BASE_STORAGE_PATH}"));
-        assert!(
-            config
-                .key_store
-                .broker_key_path
-                .ends_with("/.union_bridge/keystore/broker.key")
-        );
+        assert!(config.key_store.broker_key_path.ends_with("/.union_bridge/keystore/broker.key"));
         assert_eq!(3, config.transaction().gas_bumps_t1);
     }
 

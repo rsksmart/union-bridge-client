@@ -274,11 +274,9 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
 
     fn send_bitvmx_ping(&self) {
         let ping_id = uuid::Uuid::new_v4();
-        debug!("Sending Ping to BitVMX with uuid: {}", ping_id);
+        debug!("Sending Ping to BitVMX with uuid: {ping_id}");
 
-        let result = self
-            .bitvmx_broker
-            .send(IncomingBitVMXApiMessages::Ping(ping_id));
+        let result = self.bitvmx_broker.send(IncomingBitVMXApiMessages::Ping(ping_id));
 
         if result.is_err() {
             // TODO we need to handle this situation properly
@@ -289,7 +287,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
     fn check_bitvmx_pong(event: &OutgoingBitVMXApiMessages) -> bool {
         match event {
             OutgoingBitVMXApiMessages::Pong(uuid) => {
-                debug!("Received Pong from BitVMX with uuid: {}", uuid);
+                debug!("Received Pong from BitVMX with uuid: {uuid}");
                 true
             }
             _ => false,

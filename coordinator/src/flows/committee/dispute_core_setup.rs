@@ -1,8 +1,9 @@
 use std::rc::Rc;
+
 use anyhow::{Context, Result};
 use bitcoin::PublicKey;
 use common::msg_broker::bitvmx_types::{
-    CommsAddress, Committee, DisputeCoreData, IncomingBitVMXApiMessages, MemberData,
+    Committee, CommsAddress, DisputeCoreData, IncomingBitVMXApiMessages, MemberData,
     ParticipantRole, Utxo, VariableTypes,
 };
 use common::msg_broker::broker::BitVmxBrokerClientApi;
@@ -25,6 +26,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
         Self { broker_client }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn setup(
         &self,
         committee_id_client: &CommitteeId,
@@ -56,9 +58,8 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
 
         trace!("Committee details: {committee:?}");
 
-        self.broker_client.send(
-            IncomingBitVMXApiMessages::SetFundingUtxo(my_speedup_funding_utxo),
-        )?;
+        self.broker_client
+            .send(IncomingBitVMXApiMessages::SetFundingUtxo(my_speedup_funding_utxo))?;
 
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetVar(
             committee_id,
@@ -111,7 +112,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
         let result = self.broker_client.send(msg);
         if result.is_err() {
             // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132
-            error!("Failed to send msg to BitVMX: {:?}", result);
+            error!("Failed to send msg to BitVMX: {result:?}");
         }
     }
 }
@@ -124,9 +125,7 @@ fn get_dispute_core_pid(committee_id: Uuid, pubkey: &PublicKey) -> Result<Uuid> 
 
     // Get the result as a byte array
     let hash = hasher.finalize();
-    let bytes = hash[0..16]
-        .try_into()
-        .context("UUID slice conversion failed")?;
+    let bytes = hash[0..16].try_into().context("UUID slice conversion failed")?;
 
     Ok(Uuid::from_bytes(bytes))
 }

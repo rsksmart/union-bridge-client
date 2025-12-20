@@ -34,8 +34,8 @@ impl<C: MemberRegistryContractApi> GetMemberPublicKeysCall<C> {
 
         // we store pubkey_hash in communicationPubKey.rsaPublicKey
         let pubkey_hash_bytes = &public_keys.communicationPubKey;
-        let pubkey_hash =
-            P2PAddressParser::pubkey_hash_from_member_contracts(pubkey_hash_bytes).map_err(|e| {
+        let pubkey_hash = P2PAddressParser::pubkey_hash_from_member_contracts(pubkey_hash_bytes)
+            .map_err(|e| {
                 DomainErrors::InvalidPublicKey(format!(
                     "Failed to convert communication public keys to hex: {e}"
                 ))
