@@ -2,9 +2,7 @@ use std::rc::Rc;
 
 use anyhow::{Context, Result, bail};
 use common::msg_broker::bitvmx_types::OutgoingBitVMXApiMessages;
-use common::msg_broker::broker::{
-    BitVmxBrokerClientApi, BrokerError, UnionBrokerClientApi,
-};
+use common::msg_broker::broker::{BitVmxBrokerClientApi, BrokerError, UnionBrokerClientApi};
 use common::msg_broker::types::{FromServer, ToServer};
 use common::types::{Address, RskBlockAndUncles};
 use log::{debug, error, info, trace};
@@ -527,9 +525,9 @@ mod tests {
 
         log_broker
             .expect_send()
-            .with(function(move |req: &ToServer| {
-                matches!(req, ToServer::SubscribeLogs(a) if *a == address_1)
-            }))
+            .with(function(
+                move |req: &ToServer| matches!(req, ToServer::SubscribeLogs(a) if *a == address_1),
+            ))
             .return_once(|_| Err(BrokerError::UnknownError(anyhow!("fake error"))));
 
         let mut monitor = Monitor::new(
@@ -636,9 +634,7 @@ mod tests {
         assert_eq!(decode_result, RskPegManagerEvents::UnknownEvent);
 
         let mut log_broker = UnionMock::new();
-        log_broker
-            .expect_try_recv()
-            .return_once(move || Ok(Some(FromServer::Log(log))));
+        log_broker.expect_try_recv().return_once(move || Ok(Some(FromServer::Log(log))));
 
         let mut monitor = Monitor::new(
             log_broker,
@@ -732,18 +728,14 @@ mod tests {
         );
         monitor.bitvmx_monitoring_active = true;
 
-        let result = monitor
-            .try_bitvmx_event()
-            .expect("Failed to receive BitVMX event");
+        let result = monitor.try_bitvmx_event().expect("Failed to receive BitVMX event");
         assert!(matches!(result, Some(OutgoingBitVMXApiMessages::Pong(_))));
     }
 
     #[test]
     fn test_try_bitvmx_event_returns_none() {
         let mut bitvmx_broker = BitVmxMock::new();
-        bitvmx_broker
-            .expect_try_recv()
-            .return_once(move || Ok(None));
+        bitvmx_broker.expect_try_recv().return_once(move || Ok(None));
 
         let mut monitor = Monitor::new(
             UnionMock::new(),
@@ -833,9 +825,7 @@ mod tests {
     ) {
         block_broker
             .expect_send()
-            .with(function(|req: &ToServer| {
-                matches!(req, ToServer::SubscribeBlocks)
-            }))
+            .with(function(|req: &ToServer| matches!(req, ToServer::SubscribeBlocks)))
             .times(times)
             .returning(|_| Ok(true));
     }
@@ -858,9 +848,7 @@ mod tests {
     ) {
         block_broker
             .expect_send()
-            .with(function(|req: &ToServer| {
-                matches!(req, ToServer::UnsubscribeBlocks)
-            }))
+            .with(function(|req: &ToServer| matches!(req, ToServer::UnsubscribeBlocks)))
             .times(times)
             .returning(|_| Ok(true));
     }

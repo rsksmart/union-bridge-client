@@ -79,7 +79,7 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
                 self.subscribe_consumer_to_contract(event, consumer_id);
             }
             Some((ToServer::UnsubscribeLogs(topic), consumer_id)) => {
-                self.unsubscribe_consumer_from_contract(topic, consumer_id);
+                self.unsubscribe_consumer_from_contract(topic, &consumer_id);
             }
             Some((_, consumer_id)) => {
                 warn!(
@@ -108,10 +108,10 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
         self.contracts_with_consumers.entry(address).or_default().insert(consumer_id);
     }
 
-    fn unsubscribe_consumer_from_contract(&mut self, address: Address, consumer_id: Identifier) {
+    fn unsubscribe_consumer_from_contract(&mut self, address: Address, consumer_id: &Identifier) {
         info!("Unsubscribing consumer {consumer_id}");
         if let Entry::Occupied(mut consumer) = self.contracts_with_consumers.entry(address) {
-            consumer.get_mut().remove(&consumer_id);
+            consumer.get_mut().remove(consumer_id);
             let consumer_contracts = consumer.get();
             if consumer_contracts.is_empty() {
                 consumer.remove_entry();
@@ -126,7 +126,7 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
     fn unsubscribe_consumer_from_all_contracts(&mut self, consumer_id: &Identifier) {
         info!("Unsubscribing consumer {consumer_id} from all contracts");
         self.contracts_with_consumers.retain(|_, consumers| {
-            consumers.remove(&consumer_id);
+            consumers.remove(consumer_id);
             !consumers.is_empty()
         });
     }
@@ -201,7 +201,7 @@ mod tests {
     }
 
     fn make_test_identifier(id: u8) -> Identifier {
-        Identifier::new(format!("test_pubkey_hash_{}", id), id)
+        Identifier::new(format!("test_pubkey_hash_{id}"), id)
     }
 
     #[test]
@@ -241,9 +241,9 @@ mod tests {
             FakeLogGenerator::new().generate_log("Transfer(address,address,uint256)", address);
 
         let mut mock_broker = MockBrokerServerApi::new();
-        mock_broker
-            .expect_try_recv()
-            .returning(|| Ok(Some((ToServer::SubscribeLogs(generate_fake_address(2)), make_test_identifier(1))))); // subscribe for a different address
+        mock_broker.expect_try_recv().returning(|| {
+            Ok(Some((ToServer::SubscribeLogs(generate_fake_address(2)), make_test_identifier(1))))
+        }); // subscribe for a different address
         mock_broker.expect_send().never(); // nothing to send, no consumers yet for that address
 
         let mut notifier = Notifier::new_for_tests(rx, mock_broker, shutdown_flag.clone());
@@ -313,14 +313,8 @@ mod tests {
         let address_2 = generate_fake_address(2);
 
         let client_requests = vec![
-            ClientRequest {
-                id: client_id_1.clone(),
-                request: ToServer::SubscribeLogs(address_1),
-            },
-            ClientRequest {
-                id: client_id_2.clone(),
-                request: ToServer::SubscribeLogs(address_1),
-            },
+            ClientRequest { id: client_id_1.clone(), request: ToServer::SubscribeLogs(address_1) },
+            ClientRequest { id: client_id_2.clone(), request: ToServer::SubscribeLogs(address_1) },
         ];
 
         let expected_log_1 =
@@ -368,14 +362,8 @@ mod tests {
         let address_1 = generate_fake_address(1);
 
         let client_requests = vec![
-            ClientRequest {
-                id: client_id_1.clone(),
-                request: ToServer::SubscribeLogs(address_1),
-            },
-            ClientRequest {
-                id: client_id_2.clone(),
-                request: ToServer::SubscribeLogs(address_1),
-            },
+            ClientRequest { id: client_id_1.clone(), request: ToServer::SubscribeLogs(address_1) },
+            ClientRequest { id: client_id_2.clone(), request: ToServer::SubscribeLogs(address_1) },
             // should not receive logs for this address
             ClientRequest {
                 id: client_id_1.clone(),
@@ -438,9 +426,7 @@ mod tests {
                 let expected_log = expected_log.clone(); // move into closure
                 let dest = dest.clone();
                 move |msg, dst| match msg {
-                    FromServer::Log(actual_log) => {
-                        *dst == dest && *actual_log == expected_log
-                    }
+                    FromServer::Log(actual_log) => *dst == dest && *actual_log == expected_log,
                     _ => false,
                 }
             })

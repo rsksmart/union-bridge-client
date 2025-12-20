@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use anyhow::{Result, bail};
-use common::msg_broker::bitvmx_types::{CommsAddress, ParticipantRole, PubKeyHash, SignedPublicKey};
+use common::msg_broker::bitvmx_types::{
+    CommsAddress, ParticipantRole, PubKeyHash, SignedPublicKey,
+};
 use common::types::CommitteeId;
 use log::info;
 
@@ -121,14 +123,14 @@ impl GlobalContext {
 }
 
 /// We need this function because we are temporarily:
-/// - storing pubkey_hash as the communication key on applyToStream
+/// - storing `pubkey_hash` as the communication key on applyToStream
 /// - storing only the address as the communication data on depositCommunicationData
 ///   therefore `get_communication_data` does not bring everything we need, just the address
 ///   this was agreed with Fairgate
 pub fn build_communication_data(
     my_p2p_address: &str,
-    committee_addresses: Vec<String>,
-    committee_pubkey_hashes: Vec<PubKeyHash>,
+    committee_addresses: &[String],
+    committee_pubkey_hashes: &[PubKeyHash],
 ) -> Result<Vec<CommsAddress>> {
     if committee_addresses.len() != committee_pubkey_hashes.len() {
         bail!(
@@ -149,12 +151,12 @@ pub fn build_communication_data(
         let pubkey_hash = committee_pubkey_hashes[i].clone();
 
         comms_addresses.push(CommsAddress {
-            address: addr.parse().map_err(|e| anyhow::anyhow!("Invalid address: {}", e))?,
+            address: addr.parse().map_err(|e| anyhow::anyhow!("Invalid address: {e}"))?,
             pubkey_hash,
         });
     }
 
-    info!("Built communication data: {:?}", comms_addresses);
+    info!("Built communication data: {comms_addresses:?}");
 
     Ok(comms_addresses)
 }

@@ -47,7 +47,7 @@ pub struct BrokerConfig {
 pub struct BitVmxBrokerConfig {
     pub host: String,
     pub port: u16,
-    /// The pubkey_hash of the bitvmx broker server's message queue.
+    /// The `pubkey_hash` of the bitvmx broker server's message queue.
     /// This should match the `components.bitvmx.pubkey_hash` in the bitvmx-client config.
     pub pubkey_hash: String,
 }

@@ -1,10 +1,13 @@
 use std::rc::Rc;
 
 use anyhow::{Context, Result, anyhow};
+use bitcoin::key::Parity::Even;
 use bitcoin::secp256k1::XOnlyPublicKey;
 use bitcoin::{PublicKey, Txid};
-use bitcoin::key::Parity::Even;
-use common::msg_broker::bitvmx_types::{AdvanceFundsRequest, BtcTxSPVProof, CommsAddress, IncomingBitVMXApiMessages, ReimbursementResult, TransactionStatus, VariableTypes};
+use common::msg_broker::bitvmx_types::{
+    AdvanceFundsRequest, BtcTxSPVProof, CommsAddress, IncomingBitVMXApiMessages,
+    ReimbursementResult, TransactionStatus, VariableTypes,
+};
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::types::{Address, BlockHash, BlockNumber, CommitteeId, Hash256, TxHash};

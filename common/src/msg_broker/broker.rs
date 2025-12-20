@@ -1,22 +1,23 @@
-use crate::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
-use crate::msg_broker::types::{FromServer, ToServer};
+use std::net::{IpAddr, Ipv4Addr, ToSocketAddrs};
+use std::sync::{Arc, Mutex};
+
 use log::debug;
 use message_broker::broker_memstorage::MemStorage;
 use message_broker::channel::channel::{DualChannel, LocalChannel};
-use message_broker::rpc::BrokerConfig;
-use message_broker::rpc::sync_server::BrokerSync;
-use mockall::automock;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
-use std::net::{IpAddr, Ipv4Addr, ToSocketAddrs};
-use std::sync::{Arc, Mutex};
-use thiserror::Error;
-
 // Re-export for convenience - these are used in the public API
 pub use message_broker::identification::allow_list::AllowList;
 pub use message_broker::identification::identifier::Identifier;
 pub use message_broker::identification::routing::RoutingTable;
+use message_broker::rpc::BrokerConfig;
+use message_broker::rpc::sync_server::BrokerSync;
 pub use message_broker::rpc::tls_helper::Cert;
+use mockall::automock;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
+use thiserror::Error;
+
+use crate::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+use crate::msg_broker::types::{FromServer, ToServer};
 
 // by convention, server is id 0 (matching bitvmx broker convention)
 pub const BROKER_SERVER_ID: u8 = 0;
@@ -64,13 +65,16 @@ pub trait UnionBrokerClientApi: BrokerClientApi<ToServer, FromServer> {}
 impl<T> UnionBrokerClientApi for T where T: BrokerClientApi<ToServer, FromServer> {}
 
 impl BrokerServer {
-    /// Create a new BrokerServer in simple/testing mode (allow all connections)
+    /// Create a new `BrokerServer` in simple/testing mode (allow all connections)
     /// Uses a deterministic identity from the provided key file.
     ///
     /// # Arguments
     /// * `port` - Port to listen on
     /// * `key_path` - Path to PEM file containing the private key for deterministic identity
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if certificate loading fails or broker initialization fails.
     pub fn new(port: u16, key_path: &str) -> Result<Self, BrokerError> {
         // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - change to disk storage (broker feature)
         debug!("Starting BrokerServer on port {port}");
@@ -78,33 +82,23 @@ impl BrokerServer {
         let cert = Cert::from_key_file(key_path)?;
         let pubk_hash = cert.get_pubk_hash()?;
 
-        debug!("BrokerServer identity: pubkey_hash={}", pubk_hash);
+        debug!("BrokerServer identity: pubkey_hash={pubk_hash}");
 
         let broker_storage = Arc::new(Mutex::new(MemStorage::new()));
-        let broker_config = BrokerConfig::new(
-            port,
-            Some(IpAddr::from(Ipv4Addr::new(0, 0, 0, 0))),
-            pubk_hash.clone(),
-        );
+        let broker_config =
+            BrokerConfig::new(port, Some(IpAddr::from(Ipv4Addr::UNSPECIFIED)), pubk_hash.clone());
         let broker = BrokerSync::new_simple(&broker_config, broker_storage.clone(), cert)?;
 
         let server_identifier = Identifier::new(pubk_hash, BROKER_SERVER_ID);
         let broker_channel = LocalChannel::new(server_identifier, broker_storage.clone());
 
-        Ok(Self {
-            broker,
-            channel: broker_channel,
-        })
+        Ok(Self { broker, channel: broker_channel })
     }
 }
 
 impl BrokerServerApi<ToServer, FromServer> for BrokerServer {
     fn try_recv(&self) -> Result<Option<(ToServer, Identifier)>, BrokerError> {
-        if let Some((msg, sender)) = self
-            .channel
-            .recv()
-            .map_err(BrokerError::BrokerServerError)?
-        {
+        if let Some((msg, sender)) = self.channel.recv().map_err(BrokerError::BrokerServerError)? {
             let req = serde_json::from_str(&msg).map_err(BrokerError::SerializationError)?;
             Ok(Some((req, sender)))
         } else {
@@ -126,23 +120,31 @@ impl BrokerServerApi<ToServer, FromServer> for BrokerServer {
 
 /// Union-specific broker client implementation
 /// Do not make cloneable, use Arc instead. Reasons:
-/// 1. cloning DualChannel can be considered expensive
-/// 2. automock is not creating a cloneable MockBrokerClientApi
+/// 1. cloning `DualChannel` can be considered expensive
+/// 2. automock is not creating a cloneable `MockBrokerClientApi`
 pub struct BrokerClient {
     channel: DualChannel,
 }
 
 impl BrokerClient {
-    /// Create a new BrokerClient in simple/testing mode with a deterministic pubkey_hash.
-    /// The private key file is used to derive a stable pubkey_hash that other components
+    /// Create a new `BrokerClient` in simple/testing mode with a deterministic `pubkey_hash`.
+    /// The private key file is used to derive a stable `pubkey_hash` that other components
     /// can be configured with.
     ///
     /// # Arguments
     /// * `host` - Host to connect to
     /// * `port` - Port to connect to
-    /// * `server_pubk_hash` - Public key hash of the server (can be empty for allow_all servers)
+    /// * `server_pubk_hash` - Public key hash of the server (can be empty for `allow_all` servers)
     /// * `my_id` - Client ID (u8)
     /// * `key_path` - Path to PEM file containing the private key for deterministic identity
+    ///
+    /// # Panics
+    ///
+    /// Panics if the host cannot be resolved to an IP address.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if certificate loading fails or broker connection fails.
     pub fn new(
         host: String,
         port: u16,
@@ -166,10 +168,7 @@ impl BrokerClient {
             .allow_all();
 
         let my_cert = Cert::from_key_file(key_path)?;
-        let my_identifier = Identifier {
-            pubkey_hash: my_cert.get_pubk_hash()?,
-            id: my_id,
-        };
+        let my_identifier = Identifier { pubkey_hash: my_cert.get_pubk_hash()?, id: my_id };
 
         debug!(
             "BrokerClient identity: pubkey_hash={}, id={}",
@@ -190,16 +189,14 @@ impl BrokerClientApi<ToServer, FromServer> for BrokerClient {
 
     fn try_recv(&self) -> Result<Option<FromServer>, BrokerError> {
         self.channel.recv()?.map_or(Ok(None), |(data, _id)| {
-            serde_json::from_str(&data)
-                .map(|deserialized| Some(deserialized))
-                .map_err(BrokerError::SerializationError)
+            serde_json::from_str(&data).map(Some).map_err(BrokerError::SerializationError)
         })
     }
 }
 
 /// "Alias" for `BrokerServerApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>`
 pub trait BitVmxBrokerServerApi:
-BrokerServerApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>
+    BrokerServerApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>
 {
 }
 impl<T> BitVmxBrokerServerApi for T where
@@ -209,7 +206,7 @@ impl<T> BitVmxBrokerServerApi for T where
 
 /// "Alias" for `BrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>`
 pub trait BitVmxBrokerClientApi:
-BrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>
+    BrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>
 {
 }
 impl<T> BitVmxBrokerClientApi for T where
@@ -224,8 +221,13 @@ pub struct BitVmxBrokerServer {
 }
 
 impl BitVmxBrokerServer {
-    /// Create a new BitVmxBrokerServer with TLS support
-    #[must_use]
+    /// Create a new `BitVmxBrokerServer` with TLS support
+    ///
+    /// # Errors
+    ///
+    /// Returns a `BrokerError` if:
+    /// - The public key hash cannot be extracted from the certificate
+    /// - The underlying `BrokerSync` fails to initialize
     pub fn new(
         port: u16,
         cert: Cert,
@@ -236,36 +238,21 @@ impl BitVmxBrokerServer {
 
         let pubk_hash = cert.get_pubk_hash()?;
         let broker_storage = Arc::new(Mutex::new(MemStorage::new()));
-        let broker_config = BrokerConfig::new(
-            port,
-            Some(IpAddr::from(Ipv4Addr::new(0, 0, 0, 0))),
-            pubk_hash.clone(),
-        );
-        let broker = BrokerSync::new(
-            &broker_config,
-            broker_storage.clone(),
-            cert,
-            allow_list,
-            routing,
-        )?;
+        let broker_config =
+            BrokerConfig::new(port, Some(IpAddr::from(Ipv4Addr::UNSPECIFIED)), pubk_hash.clone());
+        let broker =
+            BrokerSync::new(&broker_config, broker_storage.clone(), cert, allow_list, routing)?;
 
         let server_identifier = Identifier::new(pubk_hash, BROKER_SERVER_ID);
         let broker_channel = LocalChannel::new(server_identifier, broker_storage.clone());
 
-        Ok(Self {
-            broker,
-            channel: broker_channel,
-        })
+        Ok(Self { broker, channel: broker_channel })
     }
 }
 
 impl BrokerServerApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages> for BitVmxBrokerServer {
     fn try_recv(&self) -> Result<Option<(IncomingBitVMXApiMessages, Identifier)>, BrokerError> {
-        if let Some((msg, sender)) = self
-            .channel
-            .recv()
-            .map_err(BrokerError::BrokerServerError)?
-        {
+        if let Some((msg, sender)) = self.channel.recv().map_err(BrokerError::BrokerServerError)? {
             let req = serde_json::from_str::<IncomingBitVMXApiMessages>(&msg)
                 .map_err(BrokerError::SerializationError)?;
 
@@ -287,17 +274,17 @@ impl BrokerServerApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages> for B
     }
 }
 
-/// BitVMX-specific broker client implementation
-/// This client connects to the BitVMX broker server running in bitvmx-client
+/// `BitVMX`-specific broker client implementation
+/// This client connects to the `BitVMX` broker server running in bitvmx-client
 /// Do not make cloneable, use Arc instead. Reasons:
-/// 1. cloning DualChannel can be considered expensive
-/// 2. automock is not creating a cloneable MockBrokerClientApi
+/// 1. cloning `DualChannel` can be considered expensive
+/// 2. automock is not creating a cloneable `MockBrokerClientApi`
 pub struct BitVmxBrokerClient {
     channel: DualChannel,
 }
 
 impl BitVmxBrokerClient {
-    /// Create a new BitVmxBrokerClient with a deterministic identity from a key file.
+    /// Create a new `BitVmxBrokerClient` with a deterministic identity from a key file.
     ///
     /// # Arguments
     /// * `host` - Host to connect to (bitvmx broker server)
@@ -305,6 +292,10 @@ impl BitVmxBrokerClient {
     /// * `server_pubk_hash` - Public key hash of the bitvmx broker server
     /// * `my_id` - Client ID (u8)
     /// * `key_path` - Path to PEM file containing the private key for deterministic identity
+    /// # Panics
+    /// Panics if the host cannot be resolved to an IP address.
+    /// # Errors
+    /// Returns an error if certificate loading fails or broker connection fails.
     pub fn new(
         host: String,
         port: u16,
@@ -370,7 +361,7 @@ fn resolve_ip(name: String, port: u16) -> std::io::Result<IpAddr> {
     // ToSocketAddrs triggers DNS lookup via /etc/resolv.conf inside the container
     (name, port)
         .to_socket_addrs()?
-        .find(|a| a.is_ipv4()) // pick IPv4 if you need IpAddr::V4
+        .find(std::net::SocketAddr::is_ipv4) // pick IPv4 if you need IpAddr::V4
         .map(|a| a.ip())
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "no A record"))
+        .ok_or_else(|| std::io::Error::other("no A record"))
 }

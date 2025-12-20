@@ -1,5 +1,8 @@
 #![allow(clippy::pedantic)]
 #![allow(clippy::all)]
+use std::collections::HashMap;
+use std::net::SocketAddr;
+
 use anyhow::bail;
 use bitcoin::address::NetworkUnchecked;
 use bitcoin::{
@@ -8,8 +11,6 @@ use bitcoin::{
 use musig2::PubNonce;
 use musig2::secp::MaybeScalar;
 use serde::{Deserialize, Serialize};
-use std::net::SocketAddr;
-use std::collections::HashMap;
 use uuid::Uuid;
 
 pub const ACCEPT_PEGIN_TX: &str = "ACCEPT_PEGIN_TX";
@@ -400,7 +401,6 @@ pub enum Destination {
     P2TR(XOnlyPublicKey, Vec<ProtocolScript>, u64), // (xpubkey, tap_leaves, amount in sats)
 }
 
-
 /// Global UUID used to store union-wide settings in BitVMX.
 /// This is a fixed UUID derived from the string "UNION_BRIDGE-000".
 pub const GLOBAL_SETTINGS_UUID: Uuid = Uuid::from_bytes(*b"UNION_BRIDGE-000");
@@ -419,11 +419,7 @@ pub struct StreamSettings {
 
 impl Default for StreamSettings {
     fn default() -> Self {
-        Self {
-            short_timelock: 6,
-            long_timelock: 12,
-            op_won_timelock: 18,
-        }
+        Self { short_timelock: 6, long_timelock: 12, op_won_timelock: 18 }
     }
 }
 
