@@ -12,23 +12,23 @@ address = "0xa85233C63b9Ee964Add6F2cffe00Fd84eb32338f"
 
 [[contracts]]
 name = "PegManager"
-address = "0xAB058E8E6963B62B1E091a452e44a4f5e3C8B879"
+address = "0xBc645C71BF7053623b4fd6B3311acd5D87f1E128"
 
 [[contracts]]
 name = "SignatureManager"
-address = "0x7128826DD95Af75ACdED0CE803DD8Fc0d9819337"
+address = "0x4386466074a1C9752D4618EB91ea231e43a7c0dE"
 
 [[contracts]]
 name = "CommitteeRegistry"
-address = "0x26f97e32B548715d7D7073BD1A34C65F12ca13CC"
+address = "0x2F29b6A19E1A8c460Fb2e23b0AB5359099204330"
 
 [[contracts]]
 name = "MemberRegistry"
-address = "0xc5D96270cE96DF6865d518a9beF3298323881DBC"
+address = "0x2B64c0E0641F563dC367fc99Fe103c00FE06C5a0"
 
 [[contracts]]
 name = "StreamManager"
-address = "0xc4bD69eBDb7AAf864D66ecc33C60Cb9a4F7D2a91"
+address = "0x8CD8A097854B398e9eAE5Ac983E491E04E7e276E"
 
 [indexer]
 
