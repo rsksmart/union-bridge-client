@@ -1,14 +1,11 @@
-use crate::blockchain_tracker::{BlockConfirmations, BlockchainObserver};
-use crate::config::REQUIRED_CONFIRMATIONS;
-use crate::types::AdvanceFundsEvent;
-use check_fork::CheckForkArgs;
-use check_fork::RskBlock as CfRskBlock;
 use check_fork::block_header::RskBlockHeader;
+use check_fork::{CheckForkArgs, RskBlock as CfRskBlock};
 use common::types::{BlockPow, RskBlock, RskBlockAndUncles};
 use log::{debug, info};
 use primitive_types::{H256, U256};
 
 use crate::blockchain_tracker::{BlockConfirmations, BlockchainObserver};
+use crate::config::REQUIRED_CONFIRMATIONS;
 use crate::types::AdvanceFundsEvent;
 
 #[derive(Debug)]
@@ -154,14 +151,8 @@ impl CheckForkAccumulator {
     }
 
     fn remove_block_from_check_fork(&mut self, block: &RskBlock) {
-        info!(
-            "Removing block {} ({}) from checkFork",
-            block.number(),
-            block.hash()
-        );
-        self.args
-            .block_list
-            .retain(|b| b.header.hash != block.hash().value());
+        info!("Removing block {} ({}) from checkFork", block.number(), block.hash());
+        self.args.block_list.retain(|b| b.header.hash != block.hash().value());
     }
 
     fn new_check_fork_block(&self, block_with_uncles: &RskBlockAndUncles) -> CfRskBlock {
@@ -216,12 +207,7 @@ impl CheckForkAccumulator {
             hash: block.hash().value(),
             ..Default::default()
         };
-        CfRskBlock {
-            bridge_event,
-            uncles,
-            pow: block.pow().value(),
-            header,
-        }
+        CfRskBlock { bridge_event, uncles, pow: block.pow().value(), header }
     }
 
     fn new_confirmations(&self, block: &RskBlockAndUncles, pegout_id: &str) -> BlockConfirmations {
@@ -231,14 +217,12 @@ impl CheckForkAccumulator {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::flows::advance_funds::test_utils::create_fake_block;
     use common::mocks::fake_contracts::FakePegManager::AdvanceFunds;
     use common::types::{BlockHash, BlockNumber, RskBlockAndUncles, TxHash};
     use primitive_types::H256;
 
     use super::*;
-    use crate::flows::advance_funds::tests::create_fake_block;
+    use crate::flows::advance_funds::test_utils::create_fake_block;
 
     /// Test constant for required confirmations (matches production default)
     const REQUIRED_CONFIRMATIONS: u32 = 5;
@@ -460,10 +444,8 @@ mod tests {
         let tx_hash = H256::from_low_u64_be(100);
 
         // create the block first to get the real hash
-        let advance_funds_block = create_fake_block(
-            BlockNumber::from(advance_funds_blockk_number),
-            U256::from(300),
-        );
+        let advance_funds_block =
+            create_fake_block(BlockNumber::from(advance_funds_blockk_number), U256::from(300));
         let advance_funds_block_hash = advance_funds_block.hash().value();
 
         let event = create_fake_advance_funds_event(
@@ -887,12 +869,8 @@ mod tests {
         assert_eq!(checker.args.block_list.len(), expected_initial_blocks - 1);
 
         // verify the correct block was removed
-        let remaining_numbers: Vec<u64> = checker
-            .args
-            .block_list
-            .iter()
-            .map(|b| b.header.number)
-            .collect();
+        let remaining_numbers: Vec<u64> =
+            checker.args.block_list.iter().map(|b| b.header.number).collect();
         assert!(remaining_numbers.contains(&block1_number));
         assert!(!remaining_numbers.contains(&block2_number));
         assert!(remaining_numbers.contains(&block3_number));
@@ -909,10 +887,8 @@ mod tests {
         let tx_hash = H256::from_low_u64_be(100);
 
         // create the block first to get the real hash
-        let advance_funds_block = create_fake_block(
-            BlockNumber::from(advance_funds_block_number),
-            U256::from(300),
-        );
+        let advance_funds_block =
+            create_fake_block(BlockNumber::from(advance_funds_block_number), U256::from(300));
         let advance_funds_hash = advance_funds_block.hash().value();
 
         let event = create_fake_advance_funds_event(
@@ -954,10 +930,8 @@ mod tests {
         let tx_hash = H256::from_low_u64_be(100);
 
         // create the advance_funds block to get its hash
-        let advance_funds_block = create_fake_block(
-            BlockNumber::from(advance_funds_block_number),
-            U256::from(300),
-        );
+        let advance_funds_block =
+            create_fake_block(BlockNumber::from(advance_funds_block_number), U256::from(300));
         let advance_funds_hash = advance_funds_block.hash().value();
 
         let event = create_fake_advance_funds_event(

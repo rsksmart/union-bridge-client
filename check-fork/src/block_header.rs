@@ -1,16 +1,12 @@
 #![allow(clippy::missing_errors_doc)]
 
-use primitive_types::H256;
-use primitive_types::U256;
-use serde::Deserialize;
-use serde::Deserializer;
-use serde::Serialize;
-use sha3::Digest;
-use sha3::Keccak256;
 use std::fmt;
 
-use crate::rlp::encode_coin_value;
-use crate::rlp::encode_signed_coin_value;
+use primitive_types::{H256, U256};
+use serde::{Deserialize, Deserializer, Serialize};
+use sha3::{Digest, Keccak256};
+
+use crate::rlp::{encode_coin_value, encode_signed_coin_value};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct RskBlockHeader {
@@ -108,11 +104,7 @@ impl RskBlockHeader {
 pub fn encode_list(rlp_list: Vec<Vec<u8>>) -> Vec<u8> {
     let mut out: Vec<u8> = Vec::new();
     let payload_length: usize = rlp_list.iter().map(Vec::len).sum();
-    alloy_rlp::Header {
-        list: true,
-        payload_length,
-    }
-    .encode(&mut out);
+    alloy_rlp::Header { list: true, payload_length }.encode(&mut out);
     for field in rlp_list {
         out.extend_from_slice(&field);
     }
@@ -189,10 +181,7 @@ where
     let s = s.strip_prefix("0x").unwrap_or(&s);
     let bytes = hex::decode(s).map_err(serde::de::Error::custom)?;
     if bytes.len() != 20 {
-        return Err(serde::de::Error::custom(format!(
-            "expected 20 bytes, got {}",
-            bytes.len()
-        )));
+        return Err(serde::de::Error::custom(format!("expected 20 bytes, got {}", bytes.len())));
     }
     let mut array = [0u8; 20];
     array.copy_from_slice(&bytes);
@@ -207,9 +196,7 @@ where
     match s {
         Some(s) => {
             let s = s.strip_prefix("0x").unwrap_or(&s);
-            U256::from_str_radix(s, 16)
-                .map(Some)
-                .map_err(serde::de::Error::custom)
+            U256::from_str_radix(s, 16).map(Some).map_err(serde::de::Error::custom)
         }
         None => Ok(None),
     }

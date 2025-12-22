@@ -800,9 +800,7 @@ mod tests {
                 advance_funds_block.number() + u64::from(i),
                 block_effort,
             ));
-            processor
-                .process_new_block(&block)
-                .expect("Should process block");
+            processor.process_new_block(&block).expect("Should process block");
         }
 
         // confirmations -1, not ready
@@ -818,9 +816,7 @@ mod tests {
             advance_funds_block.number() + u64::from(required_blocks_plus_confirmations) - 1,
             block_effort,
         ));
-        processor
-            .process_new_block(&block)
-            .expect("Should process block");
+        processor.process_new_block(&block).expect("Should process block");
 
         // now we have enough confirmations
 
@@ -939,9 +935,7 @@ mod tests {
                 advance_funds_block.number() + u64::from(i),
                 block_effort,
             ));
-            processor
-                .process_new_block(&block)
-                .expect("Should process block");
+            processor.process_new_block(&block).expect("Should process block");
         }
 
         // confirmations -1, not ready
@@ -957,9 +951,7 @@ mod tests {
             advance_funds_block.number() + u64::from(required_blocks_plus_confirmations) - 1,
             block_effort,
         ));
-        processor
-            .process_new_block(&block)
-            .expect("Should process block");
+        processor.process_new_block(&block).expect("Should process block");
 
         // now we have enough confirmations
 
@@ -1472,9 +1464,7 @@ mod tests {
                     reorg_point + i,
                     higher_effort,
                 ));
-                processor
-                    .process_new_block(&block)
-                    .expect("Should process additional block");
+                processor.process_new_block(&block).expect("Should process additional block");
 
                 // check if advance funds completed
                 if processor.check_fork_accumulator.is_none() {

@@ -1,78 +1,19 @@
 use std::fs;
 
-use crate::{
-    BridgeEvent, CheckForkArgs, RskBlock, SUPERBLOCK_TIMES_DIFFICULTY,
-    block_header::{
-        RskBlockHeader, deserialize_hex_bytes, deserialize_hex_bytes_20, deserialize_hex_h256,
-        deserialize_hex_u64, deserialize_hex_u256, deserialize_hex_u256_option,
-        deserialize_vec_hex_h256,
-    },
-    check_fork,
-};
+use check_fork_tester::TesterRskBlockHeader;
 use primitive_types::{H256, U256};
 use serde::{Deserialize, Serialize};
+
+use crate::block_header::RskBlockHeader;
+use crate::{BridgeEvent, CheckForkArgs, RskBlock, SUPERBLOCK_TIMES_DIFFICULTY, check_fork};
 
 const DEFAULT_DIFFICULTY: u128 = 5_904_436_352_267_687_415_636;
 const DEFAULT_TIMESTAMP: u64 = 1000;
 const DEFAULT_INIT_BLOCK_NUMBER: u64 = 100;
 const DEFAULT_REQ_NUMBER_OF_BLOCKS: u32 = 2;
 
-/// test-only block header for JSON deserialization (hex strings from test fixtures)
-/// this is temporary, will be removed (with block and minichain tests)
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct TestRskBlockHeader {
-    #[serde(rename = "number", deserialize_with = "deserialize_hex_u64")]
-    pub number: u64,
-    #[serde(rename = "hash", deserialize_with = "deserialize_hex_h256")]
-    pub hash: H256,
-    #[serde(rename = "parentHash", deserialize_with = "deserialize_hex_h256")]
-    pub parent: H256,
-    #[serde(rename = "difficulty", deserialize_with = "deserialize_hex_u256")]
-    pub difficulty: U256,
-    #[serde(rename = "timestamp", deserialize_with = "deserialize_hex_u64")]
-    pub timestamp: u64,
-    #[serde(rename = "sha3Uncles", deserialize_with = "deserialize_hex_h256")]
-    pub uncles_hash: H256,
-    #[serde(rename = "miner", deserialize_with = "deserialize_hex_bytes_20")]
-    pub coinbase: [u8; 20],
-    #[serde(rename = "stateRoot", deserialize_with = "deserialize_hex_h256")]
-    pub state_root: H256,
-    #[serde(rename = "transactionsRoot", deserialize_with = "deserialize_hex_h256")]
-    pub tx_trie_root: H256,
-    #[serde(rename = "receiptsRoot", deserialize_with = "deserialize_hex_h256")]
-    pub receipt_trie_root: H256,
-    // before REED hardfork it's used logs_bloom after REED hardfork we use extension data
-    // but the json-rpc field it's still named as logs_bloom
-    #[serde(rename = "logsBloom", deserialize_with = "deserialize_hex_bytes")]
-    pub extension_data: Vec<u8>,
-    #[serde(rename = "gasLimit", deserialize_with = "deserialize_hex_bytes")]
-    pub gas_limit: Vec<u8>,
-    #[serde(rename = "gasUsed", deserialize_with = "deserialize_hex_u64")]
-    pub gas_used: u64,
-    #[serde(rename = "extraData", deserialize_with = "deserialize_hex_bytes")]
-    pub extra_data: Vec<u8>,
-    #[serde(rename = "paidFees", deserialize_with = "deserialize_hex_u256")]
-    pub paid_fees: U256,
-    #[serde(
-        rename = "minimumGasPrice",
-        deserialize_with = "deserialize_hex_u256_option"
-    )]
-    pub minimum_gas_price: Option<U256>,
-    #[serde(
-        rename = "uncles",
-        deserialize_with = "deserialize_vec_hex_h256",
-        default
-    )]
-    pub uncles: Vec<H256>,
-    #[serde(
-        rename = "bitcoinMergedMiningHeader",
-        deserialize_with = "deserialize_hex_bytes"
-    )]
-    pub bitcoin_merged_mining_header: Vec<u8>,
-}
-
-impl From<&TestRskBlockHeader> for RskBlockHeader {
-    fn from(t: &TestRskBlockHeader) -> Self {
+impl From<&TesterRskBlockHeader> for RskBlockHeader {
+    fn from(t: &TesterRskBlockHeader) -> Self {
         RskBlockHeader {
             number: t.number,
             hash: t.hash,
@@ -98,7 +39,7 @@ impl From<&TestRskBlockHeader> for RskBlockHeader {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct TestCaseBlockHashValidation {
-    pub header: TestRskBlockHeader,
+    pub header: TesterRskBlockHeader,
     #[serde(rename = "expectedHash")]
     pub expected_hash: String,
 }
@@ -392,10 +333,8 @@ fn fails_when_consecutive_block_difficulty_is_lower_than_bounds() {
     let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
 
     let mut second_block = create_child_block(&first_block);
-    second_block.header.difficulty = first_block
-        .header
-        .difficulty
-        .saturating_sub(first_block.header.difficulty / 399);
+    second_block.header.difficulty =
+        first_block.header.difficulty.saturating_sub(first_block.header.difficulty / 399);
     second_block.pow = calculate_superblock_effort(second_block.header.difficulty);
 
     let block_list = vec![first_block, second_block];
@@ -415,10 +354,8 @@ fn fails_when_consecutive_block_difficulty_is_higher_than_bounds() {
     let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
 
     let mut second_block = create_child_block(&first_block);
-    second_block.header.difficulty = first_block
-        .header
-        .difficulty
-        .saturating_add(first_block.header.difficulty / 399);
+    second_block.header.difficulty =
+        first_block.header.difficulty.saturating_add(first_block.header.difficulty / 399);
     second_block.pow = calculate_superblock_effort(second_block.header.difficulty);
 
     let block_list = vec![first_block, second_block];
@@ -631,9 +568,7 @@ fn create_base_block(number: u64, bridge_event: bool, parent: Option<H256>) -> R
         timestamp,
         ..Default::default()
     };
-    header.hash = header
-        .calculate_block_hash()
-        .expect("could not calculate block hash");
+    header.hash = header.calculate_block_hash().expect("could not calculate block hash");
 
     RskBlock {
         // this will be removed
@@ -658,10 +593,8 @@ fn create_child_block(parent: &RskBlock) -> RskBlock {
     child.header.difficulty = build_valid_consecutive_difficulty(parent);
     child.pow = calculate_superblock_effort(child.header.difficulty);
     // we modified the child, we need to recalculate the hash
-    child.header.hash = child
-        .header
-        .calculate_block_hash()
-        .expect("could not calculate block hash");
+    child.header.hash =
+        child.header.calculate_block_hash().expect("could not calculate block hash");
     child
 }
 
@@ -671,10 +604,8 @@ fn create_uncle(brother: &RskBlock) -> RskBlock {
     uncle.header.difficulty = brother.header.difficulty;
     uncle.pow = calculate_superblock_effort(uncle.header.difficulty);
     // we modified the uncle, we need to recalculate the hash
-    uncle.header.hash = uncle
-        .header
-        .calculate_block_hash()
-        .expect("could not calculate block hash");
+    uncle.header.hash =
+        uncle.header.calculate_block_hash().expect("could not calculate block hash");
     uncle
 }
 
@@ -711,10 +642,7 @@ struct CheckForkArgsBuilder {
 
 impl CheckForkArgsBuilder {
     fn new(block_list: Vec<RskBlock>) -> Self {
-        CheckForkArgsBuilder {
-            block_list,
-            ..Default::default()
-        }
+        CheckForkArgsBuilder { block_list, ..Default::default() }
     }
 
     fn event_utxo_id(mut self, utxo_id: String) -> Self {

@@ -4,13 +4,16 @@ version.workspace = true
 edition = "2024"
 
 [dependencies]
+alloy-rlp = "0.3.12"
+hex.workspace = true
 primitive-types = { workspace = true }
 # dependencies are temporary
 serde = { workspace = true, features = ["derive"] }
-alloy-rlp = "0.3.12"
-sha3 = "0.10.8"
 serde_json = "1.0.104"
-hex.workspace = true
+sha3 = "0.10.8"
+
+[dev-dependencies]
+check-fork-tester = { path = "./tester" }
 
 [lints]
 workspace = true

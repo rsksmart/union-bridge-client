@@ -1,8 +1,8 @@
-use check_fork::block_header::RskBlockHeader;
-use common::types::BlockNumber;
-use common::types::{BlockDifficulty, BlockHash, BlockPow, BlockTimestamp, RskBlock};
-use primitive_types::{H256, U256};
 use std::ops::Mul;
+
+use check_fork::block_header::RskBlockHeader;
+use common::types::{BlockDifficulty, BlockHash, BlockNumber, BlockPow, BlockTimestamp, RskBlock};
+use primitive_types::{H256, U256};
 
 const FAKE_BLOCK_DIFFICULTY: u64 = 500;
 
@@ -45,10 +45,8 @@ pub(crate) fn create_fake_block_with_parent(
         None => BlockHash::from(calculate_deterministic_block_hash(number.value() - 1)),
     };
 
-    let block_hash = BlockHash::from(calculate_block_hash_with_parent(
-        number.value(),
-        parent_hash.value(),
-    ));
+    let block_hash =
+        BlockHash::from(calculate_block_hash_with_parent(number.value(), parent_hash.value()));
 
     let timestamp = BlockTimestamp::from(number.value() * 1000);
     let difficulty = BlockDifficulty::from(U256::from(FAKE_BLOCK_DIFFICULTY));

@@ -1,10 +1,8 @@
 pub mod block_header;
 pub mod rlp;
 
-use primitive_types::H256;
-use primitive_types::U256;
-use serde::Deserialize;
-use serde::Serialize;
+use primitive_types::{H256, U256};
+use serde::{Deserialize, Serialize};
 
 use crate::block_header::RskBlockHeader;
 
@@ -272,11 +270,7 @@ fn validate_difficulty_in_bounds(
     let upper_bound = prev_block.header.difficulty.saturating_add(max_delta);
 
     let in_bounds = (lower_bound..=upper_bound).contains(&block.header.difficulty);
-    if in_bounds {
-        Ok(())
-    } else {
-        Err("Consecutive Block difficulty is out of bounds")
-    }
+    if in_bounds { Ok(()) } else { Err("Consecutive Block difficulty is out of bounds") }
 }
 
 fn calculate_block_effort(block: &RskBlock) -> Result<U256, &'static str> {

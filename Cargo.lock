@@ -1657,6 +1657,7 @@ name = "check-fork"
 version = "0.2.0"
 dependencies = [
  "alloy-rlp",
+ "check-fork-tester",
  "hex",
  "primitive-types 0.13.1",
  "serde",

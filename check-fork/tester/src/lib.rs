@@ -1,26 +1,26 @@
+use std::error::Error;
+use std::str::FromStr;
+use std::string::ToString;
+
 use bitcoin::blockdata::block::Header;
 use bitcoin::consensus::encode::deserialize as btc_deserialize;
-use check_fork::BridgeEvent;
-use check_fork::RskBlock;
 use check_fork::block_header::{
     RskBlockHeader, deserialize_hex_bytes, deserialize_hex_bytes_20, deserialize_hex_h256,
     deserialize_hex_u64, deserialize_hex_u256, deserialize_hex_u256_option,
     deserialize_vec_hex_h256,
 };
+use check_fork::{BridgeEvent, RskBlock};
 use primitive_types::{H256, U256};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::error::Error;
-use std::str::FromStr;
-use std::string::ToString;
 
 const RSK_RPC_URL: &str = "https://public-node.rsk.co";
 
 const SUPERBLOCK_THRESHOLD_FACTOR: u64 = 20;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct TesterRskBlockHeader {
+pub struct TesterRskBlockHeader {
     #[serde(rename = "number", deserialize_with = "deserialize_hex_u64")]
     pub number: u64,
     #[serde(rename = "hash", deserialize_with = "deserialize_hex_h256")]
@@ -53,21 +53,11 @@ struct TesterRskBlockHeader {
     pub extra_data: Vec<u8>,
     #[serde(rename = "paidFees", deserialize_with = "deserialize_hex_u256")]
     pub paid_fees: U256,
-    #[serde(
-        rename = "minimumGasPrice",
-        deserialize_with = "deserialize_hex_u256_option"
-    )]
+    #[serde(rename = "minimumGasPrice", deserialize_with = "deserialize_hex_u256_option")]
     pub minimum_gas_price: Option<U256>,
-    #[serde(
-        rename = "uncles",
-        deserialize_with = "deserialize_vec_hex_h256",
-        default
-    )]
+    #[serde(rename = "uncles", deserialize_with = "deserialize_vec_hex_h256", default)]
     pub uncles: Vec<H256>,
-    #[serde(
-        rename = "bitcoinMergedMiningHeader",
-        deserialize_with = "deserialize_hex_bytes"
-    )]
+    #[serde(rename = "bitcoinMergedMiningHeader", deserialize_with = "deserialize_hex_bytes")]
     pub bitcoin_merged_mining_header: Vec<u8>,
 }
 
@@ -99,7 +89,7 @@ impl From<&TesterRskBlockHeader> for RskBlockHeader {
 // used mainly for deserialization and also to avoid adding
 // dependencies (bitcoin) to the check_fork crate
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct TesterRskBlock {
+pub struct TesterRskBlock {
     #[serde(flatten)]
     header: TesterRskBlockHeader,
     bridge_event: Option<BridgeEvent>,
@@ -183,9 +173,7 @@ async fn fetch_uncles(
     mut block: TesterRskBlock,
 ) -> TesterRskBlock {
     for uncle_hash in uncles_hashes {
-        let uncle = fetch_block_by_hash(uncle_hash, client)
-            .await
-            .expect("Failed to fetch uncle");
+        let uncle = fetch_block_by_hash(uncle_hash, client).await.expect("Failed to fetch uncle");
         block.add_uncle(uncle);
     }
     block.clone()
@@ -278,9 +266,8 @@ fn log_if_superblock(block: &TesterRskBlock) -> Result<(), Box<dyn Error>> {
     // compute the PoW target from difficulty by inversion
     // U256::MAX, the "difficulty 1" target, represents the easiest possible target
     // this conversion allows comparing target difficulty with the actual block PoW
-    let target_block_pow = U256::MAX
-        .checked_div(block.header.difficulty)
-        .ok_or("0 division on log_if_superblock")?;
+    let target_block_pow =
+        U256::MAX.checked_div(block.header.difficulty).ok_or("0 division on log_if_superblock")?;
 
     // define a superblock as one whose PoW is at least N times harder than the required target
     let superblock_pow = target_block_pow / SUPERBLOCK_THRESHOLD_FACTOR;
@@ -288,9 +275,8 @@ fn log_if_superblock(block: &TesterRskBlock) -> Result<(), Box<dyn Error>> {
     // if the actual block PoW is lower (i.e., harder) than the SuperBlock threshold, we found a SuperBlock
     if actual_block_pow < superblock_pow {
         let timestamp_i64 = i64::try_from(block.header.timestamp).unwrap_or(i64::MAX);
-        let formatted_time = chrono::DateTime::from_timestamp(timestamp_i64, 0)
-            .unwrap()
-            .format("%Y-%m-%d %H:%M:%S");
+        let formatted_time =
+            chrono::DateTime::from_timestamp(timestamp_i64, 0).unwrap().format("%Y-%m-%d %H:%M:%S");
 
         println!(
             "SuperBlock: {}, pow: {:?}, threshold: 0x{:064x}, time: {}",
