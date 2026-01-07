@@ -14,7 +14,6 @@ use crate::contracts::types::{Address, Bytes, FixedBytes32};
 
 #[allow(clippy::struct_field_names)]
 #[cfg_attr(test, automock)]
-#[allow(clippy::struct_field_names)]
 pub trait SignatureManagerContractApi {
     async fn add_member_nonce(
         &self,
