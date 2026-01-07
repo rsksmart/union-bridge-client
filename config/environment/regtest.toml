@@ -6,29 +6,29 @@ provider.rootstock.url = "ws://10.1.0.66:4445" # if running in AWS and accessed 
 # url: "ws://node-use2-1.regtest.rskcomputing.net.net:4445/websocket" # if running in AWS and accessed from outside
 bitcoin_network = "regtest"
 
-[[contracts]]
-name = "FakePegManager"
-address = "xxx"
+# [[contracts]]
+# name = "FakePegManager"
+# address = "xxx"
 
 [[contracts]]
 name = "PegManager"
-address = "xxx"
+address = "0x55a7dd56b9945349511075ac9387d3bbfdd1cd69"
 
 [[contracts]]
 name = "SignatureManager"
-address = "xxx"
+address = "0x5c12ec3efcbad656c161011fff85208ff1f5b77a"
 
 [[contracts]]
 name = "CommitteeRegistry"
-address = "xxx"
+address = "0x32c26aef4b529edb9af6bf60b089f3cedf6c6fb8"
 
 [[contracts]]
 name = "MemberRegistry"
-address = "xxx"
+address = "0x5b3fc365fd69def5c8fca6d7410a702497f466cf"
 
 [[contracts]]
 name = "StreamManager"
-address = "xxx"
+address = "0x3a380e0900864c102ace2263a2b1bdd7d07ea4b2"
 
 [indexer]
 
