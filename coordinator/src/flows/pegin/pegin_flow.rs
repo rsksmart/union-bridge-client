@@ -658,7 +658,7 @@ where
                 "Member pubkey_hash: address={}, pubkey_hash={:?}",
                 member.memberAddress, key_str
             );
-            pubkey_hashes.push(key_str.to_string());
+            pubkey_hashes.push(key_str.clone());
         }
 
         Ok(pubkey_hashes)
