@@ -9,27 +9,52 @@ fn main() {
         exit(0);
     }
 
-    // 2. Valid prefixes
+    // 2. Check if we're pushing tags - if so, skip branch name validation
+    // When pushing tags, HEAD is typically detached or we can check for tag refs
+    // Note: We intentionally ignore execution errors here (if git is unavailable or command fails)
+    // to proceed to step 3, which checks for detached HEAD state (common when pushing tags)
+    let tag_check = Command::new("git")
+        .args(["describe", "--tags", "--exact-match", "HEAD"])
+        .output();
+    
+    if let Ok(tag_output) = tag_check {
+        if tag_output.status.success() {
+            let tag_name = String::from_utf8_lossy(&tag_output.stdout).trim().to_string();
+            println!("Pushing tag '{}', skipping branch name check", tag_name);
+            exit(0);
+        }
+    }
+
+    // 3. Also check if we're in detached HEAD state (common when pushing tags)
+    let branch_check = Command::new("git")
+        .args(["symbolic-ref", "--short", "HEAD"])
+        .output();
+    
+    let branch_output = match branch_check {
+        Ok(output) => output,
+        Err(e) => {
+            eprintln!("Failed to execute git: {}", e);
+            exit(1);
+        }
+    };
+
+    if !branch_output.status.success() {
+        // No branch name means we're in detached HEAD state (e.g., pushing a tag)
+        // Skip branch name check in this case
+        println!("Detached HEAD detected (likely pushing a tag), skipping branch name check");
+        exit(0);
+    }
+
+    // 4. Valid prefixes
     let valid_prefixes = [
         "feat", "fix", "chore", "docs", "refactor", "test", "style", "perf", "build",
     ];
-
-    // 3. Get current branch name using `git symbolic-ref --short HEAD`
-    let branch_output = Command::new("git")
-        .args(["symbolic-ref", "--short", "HEAD"])
-        .output()
-        .expect("Failed to execute git");
-
-    if !branch_output.status.success() {
-        eprintln!("Failed to get current branch name");
-        exit(1);
-    }
 
     let branch_name = String::from_utf8_lossy(&branch_output.stdout)
         .trim()
         .to_string();
 
-    // 4. Build the pattern and validate
+    // 5. Build the pattern and validate
     let is_valid = valid_prefixes
         .iter()
         .any(|prefix| branch_name.starts_with(&format!("{}/", prefix)));
@@ -44,6 +69,6 @@ fn main() {
         exit(1);
     }
 
-    // 5. All good
+    // 6. All good
     exit(0);
 }

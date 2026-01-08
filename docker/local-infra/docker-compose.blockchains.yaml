@@ -48,7 +48,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
-      - RPC_URL=${ROOTSTOCK_URL}
+      - RPC_URL=${ANVIL_URL}
       - MNEMONIC=${MNEMONIC}
       - DEPLOYER_INDEX=${DEPLOYER_INDEX}
     command:

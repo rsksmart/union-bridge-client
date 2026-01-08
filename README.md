@@ -107,7 +107,7 @@ Before running the Union Bridge Client, you need to install and set up the follo
 
 #### Optional Tools
 
-- **Docker** - For containerized deployment (see [docker/client/README.md](docker/client/README.md))
+- **Docker** - For containerized deployment (see [docker/README.md](docker/README.md))
 - **act** - For running GitHub Actions locally
   ```bash
   brew install act
@@ -410,8 +410,11 @@ The test includes comprehensive health checks to detect issues early.
 
 ### With Docker
 
-Use the `docker-compose` file to run the Union Client. Check the [docker/client/README.md](docker/client/README.md) for more
-information on how to build and run the client using Docker.
+For Docker-based deployments, see [docker/README.md](docker/README.md) which covers:
+
+- **Local development**: Running blockchains + BitVMX in Docker while developing Union Client with cargo
+- **Full operator deployment**: Running everything (BitVMX + Union Client) in Docker
+- **Building images**: Creating and pushing Union Client Docker images
 
 ### Development/Testing Setup
 
@@ -639,7 +642,12 @@ To run just Crate Tests, you can use the following command:
 act -j test-and-lint -s KEY_STORE_FILE=$(cat <path_to_your_keystore_file>) --container-architecture linux/amd64
 ```
 
+For information about the GitHub Actions workflows in this project, including how to test them locally with `act`, see
+[.github/README.md](.github/README.md).
+
 NOTE: Uploading and downloading artifacts is slow locally, but fast on the CI.
+
 NOTE: You can add `--reuse` to reuse previous Docker containers to speed up execution by skipping setup and preserving
 cache, filesystem, and environment state.
+
 NOTE: If you find concurrency errors, try running with `--concurrent-jobs 1` to run the actions sequentially.
