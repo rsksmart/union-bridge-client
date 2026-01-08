@@ -871,7 +871,7 @@ where
             trace!("Registered member {member_addr}");
 
             // key_str already decoded
-            pubkey_hashes.push(key_str.to_string());
+            pubkey_hashes.push(key_str.clone());
         }
 
         Ok(pubkey_hashes)
