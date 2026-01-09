@@ -1,0 +1,52 @@
+# ═══════════════════════════════════════════════════════
+# Common Configuration
+# ═══════════════════════════════════════════════════════
+
+provider.rootstock.url = "" # TODO: Set testnet Rootstock WebSocket URL
+bitcoin_network = "testnet"
+
+[[contracts]]
+name = "FakePegManager"
+address = ""
+
+[[contracts]]
+name = "PegManager"
+address = ""
+
+[[contracts]]
+name = "SignatureManager"
+address = ""
+
+[[contracts]]
+name = "CommitteeRegistry"
+address = ""
+
+[[contracts]]
+name = "MemberRegistry"
+address = ""
+
+[[contracts]]
+name = "StreamManager"
+address = ""
+
+[indexer]
+
+storage.path = "/app/db/" # This should match the volume mount in docker-compose
+
+# ═══════════════════════════════════════════════════════
+# Coordinator
+# ═══════════════════════════════════════════════════════
+
+[coordinator]
+storage_path = "/app/db/" # This should match the volume mount in docker-compose
+blocks.host = "block-indexer"
+logs.host = "log-indexer"
+user.host = "user-api"
+
+# ═══════════════════════════════════════════════════════
+# Transaction Dispatcher
+# ═══════════════════════════════════════════════════════
+
+[transaction_dispatcher]
+key_store.user_path = "/keystore/user-key.json" # should match the one configured in key-setup.sh
+key_store.member_path = "/keystore/member-key.json" # should match the one configured in key-setup.sh
