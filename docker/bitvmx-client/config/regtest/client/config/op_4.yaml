@@ -1,0 +1,42 @@
+bitcoin:
+  network: regtest
+  url: http://foo:rpcpassword@host.docker.internal:18443
+  username: foo
+  password: rpcpassword
+  wallet: test_wallet
+
+key_manager:
+  network: regtest
+  key_derivation_path: m/101/1/0/0/
+
+key_storage:
+  password: secret_password_5
+  path: /tmp/regtest/op_4/keys.db
+
+storage:
+  path: /tmp/regtest/op_4/storage.db
+
+p2p:
+  address: /ip4/172.20.0.14/tcp/61183
+  key: config/keys/op_4.key
+  peer_id_file: peer_id
+  timeout: 5
+
+coordinator:
+  throtthle_bitcoin_updates_until_sync: 0
+  throtthle_bitcoin_updates: 0
+
+broker_storage: 
+  path: /tmp/regtest/op_4/broker.db
+
+broker_port: 55554 
+
+client: 
+  # Number of retries for requests
+  retry: 1
+  # Delay between retries in milliseconds
+  retry_delay: 1000
+
+wallet:
+  db_path: /tmp/regtest/op_4/wallet.db
+  start_height: 0
