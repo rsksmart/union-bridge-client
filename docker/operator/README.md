@@ -45,10 +45,11 @@ The script clones `FairgateLabs/docker-bitvmx` at the chosen ref, saves the fetc
 
 ### 2) Choose your environment
 
-This setup supports two deployment environments:
+This setup supports three deployment environments:
 
 - **Local** (`.env.local`): Development environment that runs all 4 operators on a single host with local Bitcoin and RSK nodes
 - **Alphanet** (`.env.alphanet`): Production-like environment where each host runs a single operator, connecting to the Alphanet testnet
+- **Testnet** (`.env.testnet`): Production-like environment where each host runs a single operator, connecting to the Bitcoin testnet
 
 #### BitVMX Network Modes
 
@@ -60,7 +61,7 @@ The BitVMX client requires different Docker network configurations depending on 
 - Each operator binds to different P2P ports (22222, 33333, 44444, 55554) on the Docker bridge
 - This isolated network allows multiple BitVMX clients to communicate without exposing ports to the host
 
-**Alphanet environment (Host Network)**:
+**Alphanet/Testnet environment (Host Network)**:
 - Uses Docker's host network mode (`network_mode: host`)
 - The BitVMX client binds P2P ports directly to the host's network interfaces
 - Required because BitVMX advertises its P2P address to other operators, and must be reachable at the host's actual IP address
@@ -161,10 +162,29 @@ bash start_operators.sh --op 2 --env alphanet up -d
 Or explicitly specify the tag:
 
 ```bash
-bash start_operators.sh --env local --tag latest-alphanet up -d
+bash start_operators.sh --op 1 --env alphanet --tag latest-alphanet up -d
 ```
 
-#### 4.3) Fund operator accounts (Rootstock and BitVMX Bitcoin accounts)
+#### 4.3) Start testnet:
+
+On testnet, each host runs a single operator. You must specify which operator (1-4) using `--op <ID>`:
+
+```bash
+# Start operator 1 on this host
+bash start_operators.sh --op 1 --env testnet up -d
+
+# Start operator 2 on this host
+bash start_operators.sh --op 2 --env testnet up -d
+
+# And so on for operators 3 and 4...
+
+Or explicitly specify the tag:
+
+```bash
+bash start_operators.sh --op 1 --env testnet --tag latest-testnet up -d
+```
+
+#### 4.4) Fund operator accounts (Rootstock and BitVMX Bitcoin accounts)
 
 After the stacks are up, you can fund the operators' accounts on both Rootstock and Bitcoin (BitVMX internal operator
 accounts).
@@ -228,7 +248,7 @@ Using the `start_operators.sh` script:
 bash start_operators.sh --env local logs -f
 ```
 
-**Alphanet environment:** View logs for the single operator on this host:
+**Alphanet/Testnet environment:** View logs for the single operator on this host:
 
 ```bash
 docker compose -p union-operator logs -f
@@ -237,6 +257,7 @@ docker compose -p union-operator logs -f
 Using the `start_operators.sh` script:
 ```bash
 bash start_operators.sh --env alphanet logs -f
+bash start_operators.sh --env testnet logs -f
 ```
 
 ### 6) Interacting with the user-api
@@ -248,7 +269,7 @@ bash start_operators.sh --env alphanet logs -f
 - `op_3` -> http://localhost:40003
 - `op_4` -> http://localhost:40004
 
-**Alphanet environment:** Each host runs one operator, accessible at:
+**Alphanet/Testnet environment:** Each host runs one operator, accessible at:
 
 - http://localhost:40001 (or your host's IP/domain)
 
@@ -272,12 +293,23 @@ bash operator_scripts/committee_setup.sh --stream-id <STREAM_ID> --env alphanet 
 bash operator_scripts/committee_setup.sh --stream-id <STREAM_ID> --env alphanet --role Verifier
 ```
 
+**Testnet:** Apply the single operator on this host with a specific role:
+
+```bash
+# As Prover
+bash operator_scripts/committee_setup.sh --stream-id <STREAM_ID> --env testnet --role Prover
+
+# As Verifier
+bash operator_scripts/committee_setup.sh --stream-id <STREAM_ID> --env testnet --role Verifier
+```
+
 ## Tags and images
 
-Currently, there are two main tags for the Docker images used in this setup:
+Currently, there are three main tags for the Docker images used in this setup:
 
 - `latest-anvil`: local/dev images aligned with anvil usage.
 - `latest-alphanet`: alphanet images aligned with the Alphanet infra.
+- `latest-testnet`: testnet images aligned with the Testnet infra.
 
 ## Troubleshooting
 
@@ -319,4 +351,7 @@ bash start_operators.sh --env local --fresh up -d
 
 # Alphanet: restart the operator on this host (requires --op for startup)
 bash start_operators.sh --op 1 --env alphanet --fresh up -d
+
+# Testnet: restart the operator on this host (requires --op for startup)
+bash start_operators.sh --op 1 --env testnet --fresh up -d
 ```
