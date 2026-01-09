@@ -55,7 +55,7 @@ impl BlockchainObserver for BlockConfirmations {
     fn on_block_added(&mut self, block: &RskBlockAndUncles) {
         self.last = block.number();
         info!(
-            "New block {} ({}) for {}, increasing confirmations. Status: {}/{}",
+            "New block {} ({}) for {}, increasing Rootstock confirmations. Status: {}/{}",
             block.number(),
             block.hash(),
             self.flow_id,
@@ -67,7 +67,7 @@ impl BlockchainObserver for BlockConfirmations {
     fn on_block_removed(&mut self, block: &RskBlockAndUncles) {
         self.last = block.number();
         info!(
-            "Removed block {} ({}) for {}, reducing confirmations. Status: {}/{}",
+            "Removed block {} ({}) for {}, reducing Rootstock confirmations. Status: {}/{}",
             block.number(),
             block.hash(),
             self.flow_id,

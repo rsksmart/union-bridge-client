@@ -110,10 +110,18 @@ jobs:
           push: true
           tags: ${{ steps.meta-block-indexer.outputs.tags }}
           labels: ${{ steps.meta-block-indexer.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=min
           build-args: |
             CRATE=block-indexer
             FAIRGATE_GITHUB_TOKEN=${{ secrets.FAIRGATE_GITHUB_TOKEN }}
             UNION_CONTRACTS_GITHUB_TOKEN=${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}
+
+      - name: Clean up Docker buildx cache
+        if: always()
+        run: |
+          docker buildx prune -f --filter until=1h
+          df -h
 
       - name: Build and push log-indexer
         uses: docker/build-push-action@v5
@@ -124,10 +132,18 @@ jobs:
           push: true
           tags: ${{ steps.meta-log-indexer.outputs.tags }}
           labels: ${{ steps.meta-log-indexer.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=min
           build-args: |
             CRATE=log-indexer
             FAIRGATE_GITHUB_TOKEN=${{ secrets.FAIRGATE_GITHUB_TOKEN }}
             UNION_CONTRACTS_GITHUB_TOKEN=${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}
+
+      - name: Clean up Docker buildx cache
+        if: always()
+        run: |
+          docker buildx prune -f --filter until=1h
+          df -h
 
       - name: Build and push coordinator
         uses: docker/build-push-action@v5
@@ -138,10 +154,18 @@ jobs:
           push: true
           tags: ${{ steps.meta-coordinator.outputs.tags }}
           labels: ${{ steps.meta-coordinator.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=min
           build-args: |
             CRATE=coordinator
             FAIRGATE_GITHUB_TOKEN=${{ secrets.FAIRGATE_GITHUB_TOKEN }}
             UNION_CONTRACTS_GITHUB_TOKEN=${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}
+
+      - name: Clean up Docker buildx cache
+        if: always()
+        run: |
+          docker buildx prune -f --filter until=1h
+          df -h
 
       - name: Build and push user-api
         uses: docker/build-push-action@v5
@@ -152,7 +176,16 @@ jobs:
           push: true
           tags: ${{ steps.meta-user-api.outputs.tags }}
           labels: ${{ steps.meta-user-api.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=min
           build-args: |
             CRATE=user-api
             FAIRGATE_GITHUB_TOKEN=${{ secrets.FAIRGATE_GITHUB_TOKEN }}
             UNION_CONTRACTS_GITHUB_TOKEN=${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}
+
+      - name: Final cleanup
+        if: always()
+        run: |
+          docker buildx prune -af
+          docker system prune -af --volumes
+          df -h

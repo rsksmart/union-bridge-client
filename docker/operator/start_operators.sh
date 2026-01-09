@@ -119,13 +119,6 @@ if [[ -z "$ENVIRONMENT" ]]; then
   exit 1
 fi
 
-# Validate --fresh flag usage
-if [[ "${FRESH}" == true && "$ENVIRONMENT" != "local" ]]; then
-  echo "Error: --fresh is only allowed with --env local."
-  echo "For alphanet, manually tear down the operator if needed."
-  exit 1
-fi
-
 # Check if build command is being used
 for arg in "${DOCKER_COMPOSE_ARGS[@]}"; do
   if [[ "$arg" == "build" || "$arg" == "--build" || "$arg" == "-b" ]]; then

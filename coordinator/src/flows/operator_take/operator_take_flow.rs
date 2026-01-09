@@ -457,8 +457,10 @@ where
     pub fn request_transaction_status(&self) -> Result<()> {
         let tx_id = self
             .state
-            .operator_take_tx_id
-            .ok_or_else(|| anyhow!("Operator take transaction ID not available"))?;
+            .reimbursement_result
+            .as_ref()
+            .ok_or_else(|| anyhow!("Reimbursement result not available"))?
+            .txid;
 
         let pegin_program_id =
             self.state.pegin_program_id.ok_or_else(|| anyhow!("Pegin program ID not available"))?;

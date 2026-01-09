@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use std::process::Command;
 
 use crate::environments::Environment;
-use crate::utils::{confirm_operation, request_to_string};
 
 #[derive(Debug, Serialize)]
 struct PeginAddressRequest {
@@ -49,17 +48,7 @@ pub async fn create_pegin_tx(
     let client = Client::new();
     let request = client.post(&endpoint).json(&payload).build()?;
 
-    if environment.is_remote() {
-        let description = request_to_string(&request);
-        if !confirm_operation(&description)? {
-            bail!("Operation cancelled by user");
-        }
-    }
-
-    let response = client
-        .execute(request)
-        .await
-        .context("Failed to connect to user-api")?;
+    let response = client.execute(request).await.context("Failed to connect to user-api")?;
 
     let status = response.status();
     if !status.is_success() {
@@ -70,20 +59,21 @@ pub async fn create_pegin_tx(
         bail!("user-api responded with status {}: {}", status, body);
     }
 
-    let pegin_response: PeginAddressResponse = response
-        .json()
-        .await
-        .context("Failed to parse user-api response")?;
+    let pegin_response: PeginAddressResponse =
+        response.json().await.context("Failed to parse user-api response")?;
 
     let pegin_address = pegin_response
         .address
         .filter(|addr| !addr.is_empty())
         .ok_or_else(|| anyhow!("user-api response did not contain a pegin address"))?;
 
+    println!("Requesting pegin: {} sats", value);
+    println!("  Source:      Bitcoin (wallet for the WIF used in user-api)");
+    println!("  Destination: RSK {}", rsk_address);
+    println!();
     println!("Parameters:");
     println!("  Value: {}", value);
     println!("  Packet number: {}", packet_number);
-    println!("  RSK address: {}", rsk_address);
     println!("  Pegin address: {}", pegin_address);
     println!();
 
@@ -94,10 +84,7 @@ pub async fn create_pegin_tx(
     } else {
         println!("Now run the following command in bitcoin-wallet CLI (user mode):");
         println!();
-        println!(
-            "create_pegin_tx {} {} {} {}",
-            value, packet_number, pegin_address, rsk_address
-        );
+        println!("create_pegin_tx {} {} {} {}", value, packet_number, pegin_address, rsk_address);
     }
 
     Ok(())
@@ -124,9 +111,7 @@ fn execute_wallet_command(
         wallet_script, stream_amount, packet_number, pegin_address, rsk_address
     );
 
-    let output = cmd
-        .output()
-        .context("failed to execute cli-bitcoin-wallet.sh")?;
+    let output = cmd.output().context("failed to execute cli-bitcoin-wallet.sh")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

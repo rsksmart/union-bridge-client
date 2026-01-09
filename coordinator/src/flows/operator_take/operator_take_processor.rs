@@ -26,8 +26,8 @@ use crate::types::{
 };
 
 /// Minimum confirmations required before requesting SPV proof for advance funds transactions.
-const ADVANCE_FUNDS_SPV_PROOF_MIN_CONFIRMATIONS: u32 = 1;
-const ADVANCE_FUNDS_BLOCKS_DELAY_FOR_TX_CHECK: u32 = 4;
+const ADVANCE_FUNDS_SPV_PROOF_MIN_CONFIRMATIONS: u32 = 1 + 1; // +1 from Contracts, +1 to give time to the Native Bridge to get up to date with Bitcoin Node
+const ADVANCE_FUNDS_BLOCKS_DELAY_FOR_TX_CHECK: u32 = 20;
 
 pub struct AdvanceFundsFlowProcessor<CG, BC>
 where

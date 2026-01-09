@@ -35,7 +35,7 @@ use crate::types::{
 pub const PEGOUT_ACCEPTED_NAME: &str = "pegout_accepted";
 pub const BLOCKS_DELAY_FOR_TX_CHECK: u32 = 20;
 pub const SPV_PROOF_MIN_CONFIRMATIONS: u32 = 1 + 1; // +1 from Contracts, +1 to give time to the Native Bridge to get up to date with Bitcoin Node
-pub const ADVANCE_FUNDS_TIMEOUT_SECONDS: u64 = 60; // 1 minute for testing, in production should be 2 * 60 * 60 (2 hours)
+pub const ADVANCE_FUNDS_TIMEOUT_SECONDS: u64 = 600; // 10 minutes for testing in Alphanet (30s cadence), in local it could be 30s (1s cadence), in production should be 2 * 60 * 60 (2 hours)
 
 /// Processor that manages multiple pegout flow state machines
 pub struct PegoutFlowProcessor<CG, BC, BSF, FactoryBSF, S>
@@ -358,7 +358,7 @@ where
             }
         } else {
             debug!(
-                "Transaction not confirmed with sufficient confirmations for flow_id: {flow_id}"
+                "Bitcoin transaction {tx_id} missing confirmations ({confirmations}/{SPV_PROOF_MIN_CONFIRMATIONS}) for flow_id {flow_id}, rescheduling"
             );
             self.tx_status_scheduler.schedule(flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
         }
@@ -686,7 +686,7 @@ where
 
             self.events_confirming.insert(confirmable_event.id(), confirmable_event);
 
-            debug!("Waiting for confirmations for {id}");
+            debug!("Waiting Rootstock confirmations for {id}");
         }
 
         Ok(())

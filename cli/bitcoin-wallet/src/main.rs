@@ -107,10 +107,7 @@ fn main() -> Result<()> {
                     Network::Regtest => "regtest",
                 }
             );
-            bail!(
-                "Command mode not allowed on network: {:?}",
-                wallet.network()
-            );
+            bail!("Command mode not allowed on network: {:?}", wallet.network());
         }
 
         let command_line = opts.command.join(" ");
@@ -131,11 +128,7 @@ fn main() -> Result<()> {
         WalletMode::Member => "member",
     };
     let network_name = network_suffix(network);
-    let history_path = &config
-        .db_path
-        .join(mode_name)
-        .join(network_name)
-        .join("cli_history");
+    let history_path = &config.db_path.join(mode_name).join(network_name).join("cli_history");
     let mut editor = setup_editor(history_path)?;
 
     println!(
@@ -201,48 +194,32 @@ struct TxConfirmationInfo {
 }
 
 fn check_transaction_status(wallet: &Wallet, txid: &Txid) -> Result<TxConfirmationInfo> {
-    let client = wallet
-        .rpc_client()
-        .context("RPC client required to check transaction status")?;
+    let client = wallet.rpc_client().context("RPC client required to check transaction status")?;
     let verbose: serde_json::Value = client
         .call("getrawtransaction", &[json!(txid.to_string()), json!(true)])
         .context("failed to fetch transaction details")?;
 
-    let confirmations = verbose
-        .get("confirmations")
-        .and_then(|c| c.as_u64())
-        .unwrap_or(0);
+    let confirmations = verbose.get("confirmations").and_then(|c| c.as_u64()).unwrap_or(0);
 
     let total_value_btc: f64 = verbose
         .get("vout")
         .and_then(|outs| outs.as_array())
         .map(|outs| {
-            outs.iter()
-                .filter_map(|out| out.get("value").and_then(|val| val.as_f64()))
-                .sum()
+            outs.iter().filter_map(|out| out.get("value").and_then(|val| val.as_f64())).sum()
         })
         .unwrap_or(0.0);
 
-    let block_hash = verbose
-        .get("blockhash")
-        .and_then(|h| h.as_str())
-        .map(|s| s.to_string());
+    let block_hash = verbose.get("blockhash").and_then(|h| h.as_str()).map(|s| s.to_string());
 
     let block_height = if let Some(ref hash) = block_hash {
-        let block_json: serde_json::Value = client
-            .call("getblock", &[json!(hash)])
-            .context("failed to fetch block information")?;
+        let block_json: serde_json::Value =
+            client.call("getblock", &[json!(hash)]).context("failed to fetch block information")?;
         block_json.get("height").and_then(|h| h.as_i64())
     } else {
         None
     };
 
-    Ok(TxConfirmationInfo {
-        confirmations,
-        block_hash,
-        block_height,
-        total_value_btc,
-    })
+    Ok(TxConfirmationInfo { confirmations, block_hash, block_height, total_value_btc })
 }
 
 fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
@@ -299,14 +276,9 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
             let address_str = parts.next().context("expected bech32 address")?;
             let address_unchecked: Address<NetworkUnchecked> =
                 Address::from_str(address_str).context("invalid address format")?;
-            let checked = address_unchecked
-                .require_network(wallet.network())
-                .map_err(|_| {
-                    anyhow!(
-                        "address does not match current network {:?}",
-                        wallet.network()
-                    )
-                })?;
+            let checked = address_unchecked.require_network(wallet.network()).map_err(|_| {
+                anyhow!("address does not match current network {:?}", wallet.network())
+            })?;
             wallet.switch_active_address(checked.clone())?;
             println!("Active address set to {checked}");
             Ok(CommandOutcome::Continue)
@@ -361,18 +333,14 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
         "send_to_pubkey" => {
             // Syntax: send_to_pubkey <hex_csv> <satoshis> [count]
             // <hex_csv> is a comma-separated list of compressed public keys in hex (no spaces)
-            let hex_csv = parts
-                .next()
-                .context("expected comma-separated list of public keys (hex)")?;
+            let hex_csv =
+                parts.next().context("expected comma-separated list of public keys (hex)")?;
             let amount_str = parts.next().context("expected amount in satoshis")?;
             let amount: u64 = amount_str.parse().context("invalid amount (satoshis)")?;
             let count = parse_count(parts.next())?;
 
-            let pubkeys: Vec<&str> = hex_csv
-                .split(',')
-                .map(|s| s.trim())
-                .filter(|s| !s.is_empty())
-                .collect();
+            let pubkeys: Vec<&str> =
+                hex_csv.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
             ensure!(
                 !pubkeys.is_empty(),
                 "expected at least one public key (hex) in the comma-separated list"
@@ -398,18 +366,13 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
             // Syntax: send_to_address <addr_csv> <satoshis> [count]
             // <addr_csv> is a comma-separated list of recipient addresses (no spaces)
             // Supports: Bech32 P2WPKH and Base58 P2PKH on the current network
-            let addr_csv = parts
-                .next()
-                .context("expected comma-separated address list")?;
+            let addr_csv = parts.next().context("expected comma-separated address list")?;
             let amount_str = parts.next().context("expected amount in satoshis")?;
             let amount: u64 = amount_str.parse().context("invalid amount (satoshis)")?;
             let count = parse_count(parts.next())?;
 
-            let addresses: Vec<&str> = addr_csv
-                .split(',')
-                .map(|s| s.trim())
-                .filter(|s| !s.is_empty())
-                .collect();
+            let addresses: Vec<&str> =
+                addr_csv.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
             ensure!(
                 !addresses.is_empty(),
                 "expected at least one address in the comma-separated list"
@@ -420,10 +383,7 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
                 let address: Address<NetworkUnchecked> =
                     Address::from_str(address_str).context("invalid address format")?;
                 let checked = address.require_network(wallet.network()).map_err(|_| {
-                    anyhow!(
-                        "address does not match current network {:?}",
-                        wallet.network()
-                    )
+                    anyhow!("address does not match current network {:?}", wallet.network())
                 })?;
                 let script = checked.script_pubkey();
                 if !(script.is_p2wpkh() || script.is_p2pkh()) {
@@ -454,10 +414,7 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
                 .call("getnewaddress", &[json!("miner"), json!("bech32")])
                 .context("failed to obtain mining address")?;
             let blocks: Vec<String> = client
-                .call(
-                    "generatetoaddress",
-                    &[json!(1), json!(miner_address.clone())],
-                )
+                .call("generatetoaddress", &[json!(1), json!(miner_address.clone())])
                 .context("failed to mine block on regtest")?;
             if let Some(hash) = blocks.first() {
                 let block_json: serde_json::Value = client
@@ -510,10 +467,7 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
 
             // Send requested amount to the active address
             let txid_hex: String = client
-                .call(
-                    "sendtoaddress",
-                    &[json!(active_addr.to_string()), json!(send_amount_btc)],
-                )
+                .call("sendtoaddress", &[json!(active_addr.to_string()), json!(send_amount_btc)])
                 .context("failed to fund active address")?;
 
             // Mine one block to confirm the transaction
@@ -579,9 +533,8 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
         "create_pegin_tx" => {
             // Syntax: create_pegin_tx <stream_value> <packet_number> <dest_addr> <rsk_address>
             let stream_value_str = parts.next().context("expected stream value in satoshis")?;
-            let stream_value: u64 = stream_value_str
-                .parse()
-                .context("invalid stream value (satoshis)")?;
+            let stream_value: u64 =
+                stream_value_str.parse().context("invalid stream value (satoshis)")?;
 
             let packet_number_str = parts.next().context("expected packet number")?;
             let packet_number: u64 = packet_number_str.parse().context("invalid packet number")?;
@@ -654,9 +607,8 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
             let new_fee_str = parts.next().context("expected new fee rate (sats/byte)")?;
 
             let txid = Txid::from_str(txid_str).context("invalid txid format")?;
-            let new_sats_per_byte: u64 = new_fee_str
-                .parse()
-                .context("invalid fee rate (must be positive integer)")?;
+            let new_sats_per_byte: u64 =
+                new_fee_str.parse().context("invalid fee rate (must be positive integer)")?;
 
             println!(
                 "Replacing transaction {} with fee rate {} sat/byte...",
@@ -675,10 +627,7 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
             println!(
                 "  fee={} sat (was {} sat)",
                 replacement.fee_sat,
-                wallet
-                    .get_pending_transaction(&txid)
-                    .map(|t| t.fee_sat)
-                    .unwrap_or(0)
+                wallet.get_pending_transaction(&txid).map(|t| t.fee_sat).unwrap_or(0)
             );
             println!("  raw={}", hex);
 
@@ -692,10 +641,9 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
             // broadcast the replacement
             if wallet.rpc_client().is_some() {
                 match wallet.broadcast_transaction(&replacement) {
-                    Ok(txid) => println!(
-                        "  Replacement transaction broadcasted successfully: {}",
-                        txid
-                    ),
+                    Ok(txid) => {
+                        println!("  Replacement transaction broadcasted successfully: {}", txid)
+                    }
                     Err(err) => eprintln!("  Failed to broadcast replacement transaction: {err}"),
                 }
             } else {
@@ -717,16 +665,12 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
                 println!("RPC not configured; block height query requires an RPC node.");
                 return Ok(CommandOutcome::Continue);
             };
-            let height: u64 = client
-                .get_block_count()
-                .context("failed to query block height")?;
+            let height: u64 = client.get_block_count().context("failed to query block height")?;
             println!("{}", height);
             Ok(CommandOutcome::Continue)
         }
 
-        other => Err(anyhow!(
-            "unknown command '{other}'. Type 'help' for a list of commands."
-        )),
+        other => Err(anyhow!("unknown command '{other}'. Type 'help' for a list of commands.")),
     }
 }
 
@@ -866,7 +810,9 @@ fn print_help(sats_per_byte: u64) {
     println!(
         "  switch_address <addr>                 - Make an imported address the active wallet address"
     );
-    println!("  register_utxo <txid> <vout> [sats]    - Register a spendable P2WPKH UTXO");
+    println!(
+        "  register_utxo <txid> <block_hash> <vout> [sats] - Register a spendable P2WPKH UTXO"
+    );
     println!(
         "  list_funds [all]                      - List UTXOs for the active address or every address"
     );
@@ -910,10 +856,7 @@ fn print_help(sats_per_byte: u64) {
 }
 
 fn format_timestamp(timestamp: u64) -> String {
-    match i64::try_from(timestamp)
-        .ok()
-        .and_then(|secs| DateTime::<Utc>::from_timestamp(secs, 0))
-    {
+    match i64::try_from(timestamp).ok().and_then(|secs| DateTime::<Utc>::from_timestamp(secs, 0)) {
         Some(datetime) => datetime.format("%Y-%m-%d %H:%M:%S").to_string(),
         None => timestamp.to_string(),
     }
