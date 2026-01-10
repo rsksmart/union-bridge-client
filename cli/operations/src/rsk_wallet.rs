@@ -53,7 +53,7 @@ pub fn handle_user_funding(env: Environment) -> Result<()> {
     let user_addresses = match env {
         Environment::Local => collect_user_rsk_addresses_from_cargo_logs(false)?,
         Environment::LocalDocker => collect_user_rsk_addresses_from_local_docker(false)?,
-        Environment::Alphanet | Environment::Testnet => {
+        Environment::Alphanet | Environment::Testnet | Environment::Regtest => {
             collect_user_rsk_addresses_from_remote(env, false)?
         }
     };
@@ -81,7 +81,7 @@ pub fn handle_user_funding(env: Environment) -> Result<()> {
                     );
                 }
             }
-            Environment::Alphanet | Environment::Testnet => {
+            Environment::Alphanet | Environment::Testnet | Environment::Regtest => {
                 let private_key = prompt_password("Enter Cow Private Key: ")
                     .context("failed to read private key")?
                     .trim()
@@ -120,7 +120,7 @@ pub fn get_user_rsk_address(env: Environment, first_only: bool) -> Result<Option
     let addresses = match env {
         Environment::Local => collect_user_rsk_addresses_from_cargo_logs(first_only)?,
         Environment::LocalDocker => collect_user_rsk_addresses_from_local_docker(first_only)?,
-        Environment::Alphanet | Environment::Testnet => {
+        Environment::Alphanet | Environment::Testnet | Environment::Regtest => {
             collect_user_rsk_addresses_from_remote(env, first_only)?
         }
     };
