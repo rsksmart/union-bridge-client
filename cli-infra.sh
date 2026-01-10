@@ -9,6 +9,8 @@
 #        ./cli-infra.sh --stop-bitvmx                  # stop bitvmx docker containers only
 #        ./cli-infra.sh --start-mine                   # start background mining (anvil + bitcoin)
 #        ./cli-infra.sh --stop-mine                    # stop background mining
+#        ./cli-infra.sh --start-regtest [--fresh]      # start regtest operators via SSH
+#        ./cli-infra.sh --stop-regtest                 # stop regtest operators via SSH
 
 set -euo pipefail
 
@@ -16,6 +18,11 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 MINE_PID_FILE="/tmp/union-bridge-mining.pids"
+
+# regtest remote config
+REGTEST_HOST="union-bridge-use2-1.regtest.rskcomputing.net"
+REGTEST_USER="ubuntu"
+REGTEST_ROOT="union-bridge-client"
 
 # colors
 GREEN='\033[0;32m'
@@ -199,6 +206,40 @@ stop_all() {
     docker/local-infra/start_blockchains.sh down
 }
 
+start_regtest() {
+    local fresh=false
+    shift # remove --start-regtest
+    if [[ "${1:-}" == "--fresh" ]]; then
+        fresh=true
+    fi
+
+    log "Connecting to regtest: ${REGTEST_HOST}"
+
+    local fresh_args=""
+    if [[ "$fresh" == true ]]; then
+        warn "Fresh mode: databases will be cleared"
+        fresh_args="--fresh --yes"
+    fi
+
+    local remote_cmd="cd ~/${REGTEST_ROOT} && bash docker/operator/start_operators.sh --env regtest ${fresh_args} up -d"
+
+    log "Starting regtest operators..."
+    ssh -A "${REGTEST_USER}@${REGTEST_HOST}" "${remote_cmd}"
+
+    log "Regtest operators started"
+}
+
+stop_regtest() {
+    log "Connecting to regtest: ${REGTEST_HOST}"
+
+    local remote_cmd="cd ~/${REGTEST_ROOT} && bash docker/operator/start_operators.sh --env regtest down"
+
+    log "Stopping regtest operators..."
+    ssh -A "${REGTEST_USER}@${REGTEST_HOST}" "${remote_cmd}"
+
+    log "Regtest operators stopped"
+}
+
 # main command handling
 case "${1:-}" in
     --start)
@@ -225,10 +266,16 @@ case "${1:-}" in
     --stop-mine)
         stop_mining
         ;;
+    --start-regtest)
+        start_regtest "$@"
+        ;;
+    --stop-regtest)
+        stop_regtest
+        ;;
     *)
-        echo "Usage: $0 {--start|--stop|--start-blockchains|--stop-blockchains|--start-bitvmx|--stop-bitvmx|--start-mine|--stop-mine}"
+        echo "Usage: $0 {--start|--stop|--start-blockchains|--stop-blockchains|--start-bitvmx|--stop-bitvmx|--start-mine|--stop-mine|--start-regtest|--stop-regtest}"
         echo ""
-        echo "Docker Infrastructure:"
+        echo "Local Docker Infrastructure:"
         echo "  --start [--fresh]              Start all blockchains + bitvmx + mining"
         echo "  --stop                         Stop mining + bitvmx + blockchains"
         echo "  --start-blockchains [--fresh]  Start blockchains only (anvil + bitcoin)"
@@ -240,8 +287,12 @@ case "${1:-}" in
         echo "  --start-mine                   Start background mining (anvil + bitcoin)"
         echo "  --stop-mine                    Stop background mining"
         echo ""
+        echo "Remote Regtest Infrastructure:"
+        echo "  --start-regtest [--fresh]      Start regtest operators via SSH"
+        echo "  --stop-regtest                 Stop regtest operators via SSH"
+        echo ""
         echo "Options:"
-        echo "  --fresh                        Clean/reset volumes before starting (only valid with start commands)"
+        echo "  --fresh                        Clean/reset volumes before starting"
         exit 1
         ;;
 esac
