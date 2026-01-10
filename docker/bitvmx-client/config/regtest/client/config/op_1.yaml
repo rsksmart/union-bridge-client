@@ -1,13 +1,19 @@
 bitcoin:
   network: regtest
-  url: http://foo:rpcpassword@host.docker.internal:18443
-  username: foo
-  password: rpcpassword
+  url: http://user:pass@10.1.0.107:18332
+  username: user
+  password: pass
   wallet: test_wallet
 
 key_manager:
   network: regtest
   key_derivation_path: m/101/1/0/0/
+
+coordinator_settings:
+  max_feerate_sat_vb: 2
+  monitor_settings:
+    indexer_settings:
+      checkpoint_height: 374288
 
 key_storage:
   password: secret_password_2
@@ -40,5 +46,4 @@ client:
 
 wallet:
   db_path: /tmp/regtest/op_1/wallet.db
-  start_height: 0
-
+  start_height: 374288
