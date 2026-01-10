@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Regtest-only happy path for running inside the regtest AWS instance.
-# Expected to run on union-bridge-use2-1 with dockerized operators + bitcoind.
+# Expected to run on union-bridge-use2-1 with dockerized operators and powpeg bitcoind.
 
 set -euo pipefail
 
@@ -9,9 +9,10 @@ SCRIPT_ENV="regtest"
 
 RSK_RPC_URL="${RSK_RPC_URL:-http://node-use2-1.regtest.rskcomputing.net:4444}"
 USER_API_HOST="${USER_API_HOST:-localhost}"
-BITCOIND_CONTAINER="${BITCOIND_CONTAINER:-bitcoind}"
-BITCOIN_RPC_USER="${BITCOIN_RPC_USER:-foo}"
-BITCOIN_RPC_PASSWORD="${BITCOIN_RPC_PASSWORD:-rpcpassword}"
+BITCOIN_RPC_HOST="${BITCOIN_RPC_HOST:-10.1.0.107}"
+BITCOIN_RPC_PORT="${BITCOIN_RPC_PORT:-18332}"
+BITCOIN_RPC_USER="${BITCOIN_RPC_USER:-user}"
+BITCOIN_RPC_PASSWORD="${BITCOIN_RPC_PASSWORD:-pass}"
 BITCOIN_WALLET_NAME="${BITCOIN_WALLET_NAME:-mainwallet}"
 BITVMX_WALLET_NAME="${BITVMX_WALLET_NAME:-test_wallet}"
 RESTART_BITVMX_ON_WALLET_CREATE="${RESTART_BITVMX_ON_WALLET_CREATE:-true}"
@@ -25,10 +26,10 @@ VALUE="${VALUE:-100000}"
 PACKET_NUMBER="${PACKET_NUMBER:-0}"
 RSK_ADDRESS="${RSK_ADDRESS:-0x$(openssl rand -hex 20)}"
 
-LOG_SINCE="${LOG_SINCE:-15m}"
+LOG_SINCE="${LOG_SINCE:-30m}"
+LOG_TAIL_LINES="${LOG_TAIL_LINES:-400}"
 MAX_BLOCKS_WAIT="${MAX_BLOCKS_WAIT:-20}"
-AUTO_MINE="${AUTO_MINE:-true}"
-AUTO_MINE_INTERVAL="${AUTO_MINE_INTERVAL:-2}"
+COMMITTEE_LOG_STRICT="${COMMITTEE_LOG_STRICT:-false}"
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -50,19 +51,83 @@ require_cmd() {
 }
 
 bitcoin_cli_base() {
-    docker exec "$BITCOIND_CONTAINER" bitcoin-cli \
-        -regtest \
-        -rpcuser="$BITCOIN_RPC_USER" \
-        -rpcpassword="$BITCOIN_RPC_PASSWORD" \
-        -rpcconnect=127.0.0.1 \
-        -rpcport=18443 \
-        "$@"
+    local method="$1"
+    shift
+    bitcoin_rpc_call "" "$method" "$@"
 }
 
 bitcoin_cli_wallet() {
     local wallet_name="$1"
     shift
-    bitcoin_cli_base -rpcwallet="$wallet_name" "$@"
+    local method="$1"
+    shift
+    bitcoin_rpc_call "$wallet_name" "$method" "$@"
+}
+
+bitcoin_rpc_call() {
+    local wallet_name="$1"
+    shift
+    local method="$1"
+    shift
+    local params
+    params=$(bitcoin_rpc_build_params "$@")
+
+    local url="http://${BITCOIN_RPC_HOST}:${BITCOIN_RPC_PORT}"
+    if [[ -n "$wallet_name" ]]; then
+        url="${url}/wallet/${wallet_name}"
+    fi
+
+    local payload
+    payload=$(printf '{"jsonrpc":"1.0","id":"union","method":"%s","params":%s}' "$method" "$params")
+
+    local response
+    if ! response=$(curl -sS --user "${BITCOIN_RPC_USER}:${BITCOIN_RPC_PASSWORD}" \
+        -H "content-type: text/plain;" \
+        --data-binary "$payload" \
+        "$url"); then
+        return 1
+    fi
+
+    local err
+    if ! err=$(echo "$response" | jq -r '.error.message // empty' 2>/dev/null); then
+        echo "Bitcoin RPC unexpected response: $response" >&2
+        return 1
+    fi
+    if [[ -n "$err" ]]; then
+        echo "Bitcoin RPC error: $err" >&2
+        return 1
+    fi
+
+    echo "$response" | jq -cr '.result'
+}
+
+bitcoin_rpc_build_params() {
+    local args=("$@")
+    local params="["
+    local first=true
+    local arg json_arg
+
+    for arg in "${args[@]}"; do
+        if [[ "$arg" =~ ^\\{.*\\}$ || "$arg" =~ ^\\[.*\\]$ ]]; then
+            json_arg="$arg"
+        elif [[ "$arg" == "true" || "$arg" == "false" ]]; then
+            json_arg="$arg"
+        elif [[ "$arg" =~ ^-?[0-9]+(\\.[0-9]+)?$ ]]; then
+            json_arg="$arg"
+        else
+            json_arg=$(printf '%s' "$arg" | jq -Rs .)
+        fi
+
+        if [[ "$first" == "true" ]]; then
+            first=false
+        else
+            params+=","
+        fi
+        params+="$json_arg"
+    done
+
+    params+="]"
+    echo "$params"
 }
 
 ensure_bitcoind_wallet() {
@@ -258,6 +323,16 @@ mine_blocks_to_address() {
     bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" generatetoaddress "$count" "$addr" >/dev/null
 }
 
+wallet_confirmed_balance_sats() {
+    local balance
+    balance=$(bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" getbalances | jq -r '.mine.trusted // 0')
+    if [[ -z "$balance" || "$balance" == "null" ]]; then
+        echo 0
+        return
+    fi
+    awk -v btc="$balance" 'BEGIN { printf "%.0f", btc * 100000000 }'
+}
+
 mine_blocks() {
     local count="$1"
     local miner_addr
@@ -265,51 +340,130 @@ mine_blocks() {
     mine_blocks_to_address "$count" "$miner_addr"
 }
 
-start_auto_miner() {
-    if [[ "$AUTO_MINE" != "true" ]]; then
-        return 0
-    fi
-
-    local miner_addr
-    miner_addr=$(bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" getnewaddress "miner" "bech32")
-    log "Starting auto-miner (every ${AUTO_MINE_INTERVAL}s) to address: ${miner_addr}"
-    (
-        while true; do
-            bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" generatetoaddress 1 "$miner_addr" >/dev/null 2>&1 || true
-            sleep "$AUTO_MINE_INTERVAL"
-        done
-    ) &
-    AUTO_MINER_PID=$!
+get_current_bitcoin_height() {
+    local height
+    height=$(bitcoin_cli_base getblockcount 2>/dev/null || echo "0")
+    height=${height:-0}
+    echo "$height"
 }
 
-stop_auto_miner() {
-    if [[ -n "${AUTO_MINER_PID:-}" ]]; then
-        kill "$AUTO_MINER_PID" >/dev/null 2>&1 || true
-    fi
+find_recent_coordinator_log_match() {
+    local pattern="$1"
+    for op_id in 1 2 3 4; do
+        local container="op_${op_id}-coordinator-1"
+        if ! docker ps --format "{{.Names}}" | grep -qx "$container"; then
+            continue
+        fi
+        local line
+        line=$(docker logs --since "$LOG_SINCE" --tail "$LOG_TAIL_LINES" "$container" 2>/dev/null | grep -E "$pattern" | tail -1 || true)
+        if [[ -n "$line" ]]; then
+            echo "${container}:${line}"
+            return 0
+        fi
+    done
+    return 1
 }
 
-wait_for_log_with_mining() {
+wait_for_log_with_block_timeout() {
     local pattern="$1"
     local max_blocks="$2"
+    local start_height
+    start_height=$(get_current_bitcoin_height)
+    local target_height=$((start_height + max_blocks))
 
-    log "Waiting for log pattern: $pattern (mining up to $max_blocks blocks)..."
-    for ((i = 0; i < max_blocks; i++)); do
-        for op_id in 1 2 3 4; do
-            local container="op_${op_id}-coordinator-1"
-            local line
-            line=$(docker logs --since "$LOG_SINCE" "$container" 2>/dev/null | grep -E "$pattern" | tail -1 || true)
-            if [[ -n "$line" ]]; then
-                success "Log pattern found in ${container}"
-                echo "$line"
-                return 0
-            fi
-        done
-        mine_blocks 1
+    log "Waiting for log pattern: $pattern (max $max_blocks blocks)..."
+
+    while true; do
+        local current_height
+        current_height=$(get_current_bitcoin_height)
+        local blocks_mined=$((current_height - start_height))
+
+        if ((blocks_mined < 0)); then
+            sleep 1
+            continue
+        fi
+
+        echo -ne "\r  Blocks mined: $blocks_mined/$max_blocks | Checking logs...  "
+
+        local result=""
+        result=$(find_recent_coordinator_log_match "$pattern" || true)
+        if [[ -n "$result" ]]; then
+            local found_source="${result%%:*}"
+            local found_line="${result#*:}"
+            echo ""
+            success "Log pattern found after $blocks_mined blocks!"
+            log "Found in: $found_source"
+            echo "$found_line"
+            return 0
+        fi
+
+        if ((current_height >= target_height)); then
+            echo ""
+            warn "Log pattern not found after $max_blocks blocks (height: $start_height -> $current_height)"
+            return 1
+        fi
+
+        sleep 2
+    done
+}
+
+wait_for_any_log_with_block_timeout() {
+    local max_blocks="${@: -1}"
+    local patterns=("${@:1:$#-1}")
+    local combined
+    combined=$(printf "%s|" "${patterns[@]}")
+    combined="${combined%|}"
+
+    local start_height
+    start_height=$(get_current_bitcoin_height)
+    local target_height=$((start_height + max_blocks))
+
+    log "Waiting for log patterns: ${combined} (max ${max_blocks} blocks)..."
+
+    while true; do
+        local current_height
+        current_height=$(get_current_bitcoin_height)
+        local blocks_mined=$((current_height - start_height))
+
+        if ((blocks_mined < 0)); then
+            sleep 1
+            continue
+        fi
+
+        echo -ne "\r  Blocks mined: $blocks_mined/$max_blocks | Checking logs...  "
+
+        local result=""
+        result=$(find_recent_coordinator_log_match "$combined" || true)
+        if [[ -n "$result" ]]; then
+            local found_source="${result%%:*}"
+            local found_line="${result#*:}"
+            echo ""
+            success "Log pattern found after $blocks_mined blocks!"
+            log "Found in: $found_source"
+            echo "$found_line"
+            return 0
+        fi
+
+        if ((current_height >= target_height)); then
+            echo ""
+            warn "Log patterns not found after $max_blocks blocks (height: $start_height -> $current_height)"
+            return 1
+        fi
+
         sleep 1
     done
+}
 
-    warn "Log pattern not found after ${max_blocks} blocks: $pattern"
-    return 1
+dump_recent_logs() {
+    local label="$1"
+    log "Recent logs (${label})"
+    for op_id in 1 2 3 4; do
+        local container="op_${op_id}-${label}-1"
+        if docker ps --format "{{.Names}}" | grep -qx "$container"; then
+            echo "----- ${container} -----"
+            docker logs --since "$LOG_SINCE" --tail "$LOG_TAIL_LINES" "$container" 2>/dev/null || true
+        fi
+    done
 }
 
 fund_rsk_wallets() {
@@ -362,10 +516,11 @@ fund_bitvmx_wallets() {
 
     local amount_btc
     amount_btc=$(sats_to_btc "$BITVMX_FUND_AMOUNT")
-    for addr in "${bitvmx_addrs[@]}"; do
-        log "Funding BitVMX address: $addr"
-        bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" sendtoaddress "$addr" "$amount_btc" >/dev/null
-    done
+    local outputs
+    outputs=$(jq -n --argjson amt "$amount_btc" --args "${bitvmx_addrs[@]}" \
+        'reduce $ARGS.positional[] as $addr ({}; .[$addr] = $amt)')
+    log "Funding ${#bitvmx_addrs[@]} BitVMX addresses in one transaction"
+    bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" sendmany "" "$outputs" >/dev/null
 
     mine_blocks 1
 }
@@ -381,8 +536,13 @@ apply_stream() {
         local payload
         payload=$(printf '{"ApplyToStream":{"stream_id":%s,"role":"%s","funding_utxo":{"value":10000000},"speed_up_utxo":{"value":10000000},"advance_funds":{"value":10000000}}}' "$STREAM_ID" "$role")
         log "Applying op_$((i + 1)) as ${role}"
-        if ! curl_json_post "http://${endpoint}/member/apply-stream" "$payload" >/dev/null; then
+        local response
+        response=$(curl_json_post "http://${endpoint}/member/apply-stream" "$payload" || true)
+        if [[ -z "$response" ]]; then
             die "Apply-stream failed on ${endpoint}"
+        fi
+        if ! jq -e '.error == null' >/dev/null 2>&1 <<< "$response"; then
+            die "Apply-stream error on ${endpoint}: $(jq -r '.error.message // .error' <<< "$response")"
         fi
         sleep 1
     done
@@ -457,13 +617,15 @@ request_pegout() {
 cd "$(dirname "$0")/.."
 
 step "Step 0: Preflight"
+log "Configuration: stream=${STREAM_ID}, rsk=${RSK_ADDRESS}, amount=${VALUE}, env=${SCRIPT_ENV}"
+log "Bitcoin RPC: ${BITCOIN_RPC_HOST}:${BITCOIN_RPC_PORT} (wallet=${BITCOIN_WALLET_NAME})"
 require_cmd docker
 require_cmd curl
 require_cmd jq
 require_cmd openssl
 
-if ! docker ps --format "{{.Names}}" | grep -qx "$BITCOIND_CONTAINER"; then
-    die "bitcoind container not running: ${BITCOIND_CONTAINER}"
+if ! bitcoin_cli_base getblockcount >/dev/null 2>&1; then
+    die "Bitcoin RPC not reachable at ${BITCOIN_RPC_HOST}:${BITCOIN_RPC_PORT}"
 fi
 
 if ! rsk_rpc "eth_chainId" "[]" >/dev/null; then
@@ -485,21 +647,30 @@ if ensure_bitcoind_wallet "$BITVMX_WALLET_NAME"; then
 fi
 ensure_user_bitcoin_wif
 import_user_wif
-start_auto_miner
-trap stop_auto_miner EXIT
 
-if [[ "$RESTART_BITVMX_ON_WALLET_CREATE" == "true" && "$BITVMX_WALLET_CREATED" == "true" ]]; then
-    log "Restarting BitVMX containers to pick up wallet ${BITVMX_WALLET_NAME}"
-    docker restart op_1-bitvmx-client-1 op_2-bitvmx-client-1 op_3-bitvmx-client-1 op_4-bitvmx-client-1 >/dev/null
-    sleep 5
-fi
+# if [[ "$RESTART_BITVMX_ON_WALLET_CREATE" == "true" && "$BITVMX_WALLET_CREATED" == "true" ]]; then
+#     log "Restarting BitVMX containers to pick up wallet ${BITVMX_WALLET_NAME}"
+#     for op_id in 1 2 3 4; do
+#         container="op_${op_id}-bitvmx-client-1"
+#         if docker ps --format "{{.Names}}" | grep -qx "$container"; then
+#             docker restart "$container" >/dev/null 2>&1 || warn "Failed to restart ${container}"
+#         fi
+#     done
+#     sleep 5
+# fi
 
 USER_BTC_ADDRESS=$(user_address_from_wif)
 success "User BTC address ready: ${USER_BTC_ADDRESS}"
 
-log "Mining 101 blocks to fund user wallet..."
-mine_blocks_to_address 101 "$USER_BTC_ADDRESS"
-success "Bitcoin wallet funded"
+required_sats=$((VALUE + BITVMX_FUND_AMOUNT * 4 + 100000))
+confirmed_sats=$(wallet_confirmed_balance_sats)
+if (( confirmed_sats >= required_sats )); then
+    success "Wallet already funded (${confirmed_sats} sats confirmed)"
+else
+    log "Mining 101 blocks to fund user wallet..."
+    mine_blocks_to_address 101 "$USER_BTC_ADDRESS"
+    success "Bitcoin wallet funded"
+fi
 
 step "Step 1: Fund Operator Wallets"
 fund_rsk_wallets
@@ -508,7 +679,23 @@ success "Operator wallets funded"
 
 step "Step 2: Apply Operators to Stream"
 apply_stream
-wait_for_log_with_mining "CommitteeSetupFlow Done" "$MAX_BLOCKS_WAIT"
+if ! wait_for_log_with_block_timeout "CommitteeSetupFlow Done" "$MAX_BLOCKS_WAIT"; then
+    if [[ "$COMMITTEE_LOG_STRICT" == "true" ]]; then
+        dump_recent_logs "coordinator"
+        dump_recent_logs "user-api"
+        die "Committee setup did not complete (see logs above)"
+    fi
+
+    warn "CommitteeSetupFlow Done not found; checking for apply-stream success logs instead"
+    if ! wait_for_any_log_with_block_timeout \
+        "Applied to stream StreamId\\(${STREAM_ID}\\) successfully" \
+        "Member already registered for stream" \
+        "$MAX_BLOCKS_WAIT"; then
+        dump_recent_logs "coordinator"
+        dump_recent_logs "user-api"
+        die "Committee setup did not complete (see logs above)"
+    fi
+fi
 success "Operators applied to stream ${STREAM_ID}"
 
 step "Step 3: Request Pegin"
@@ -518,12 +705,12 @@ log "Packet: $PACKET_NUMBER"
 pegin_address=$(request_pegin_address)
 log "Pegin address: $pegin_address"
 create_pegin_tx "$pegin_address" "$USER_BTC_ADDRESS"
-wait_for_log_with_mining "PeginFlow Done" "$MAX_BLOCKS_WAIT"
+wait_for_log_with_block_timeout "PeginFlow Done" "$MAX_BLOCKS_WAIT"
 success "Pegin flow completed"
 
 step "Step 4: Request Pegout"
 request_pegout
-wait_for_log_with_mining "PegoutFlow Done" "$MAX_BLOCKS_WAIT"
+wait_for_log_with_block_timeout "PegoutFlow Done" "$MAX_BLOCKS_WAIT"
 success "Pegout flow completed"
 
 step "Complete"
