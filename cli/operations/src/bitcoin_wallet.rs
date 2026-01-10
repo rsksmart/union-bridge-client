@@ -230,6 +230,13 @@ fn print_instructions(env: Environment, addresses: &[String]) {
             );
             println!("  send_to_address {} {}\n", joined, FUND_AMOUNT);
         }
+        Environment::LocalDocker | Environment::Local => {
+            println!("Run the following commands in the bitcoin-wallet CLI (Regtest):");
+            println!("1 =>    clear_db   (if you see a misaligned utxos error)");
+            println!("2 =>    mine_utxo 900000000");
+            println!("3 =>    send_to_address {} {}", joined, FUND_AMOUNT);
+            println!("4 =>    mine_block");
+        }
     }
 }
 
