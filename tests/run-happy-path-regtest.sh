@@ -2,8 +2,36 @@
 
 # Regtest-only happy path for running inside the regtest AWS instance.
 # Expected to run on union-bridge-use2-1 with dockerized operators and powpeg bitcoind.
+# Can be executed from local machine - will SSH to regtest instance automatically.
 
 set -euo pipefail
+
+# Remote execution: SSH to regtest instance unless already there
+REGTEST_HOST="union-bridge-use2-1.regtest.rskcomputing.net"
+REGTEST_USER="ubuntu"
+REGTEST_ROOT="union-bridge-client"
+
+if [[ "${REGTEST_REMOTE:-}" != "1" ]]; then
+    echo -e "\033[0;34m[INFO]\033[0m Connecting to regtest instance: ${REGTEST_HOST}"
+    exec ssh -A "${REGTEST_USER}@${REGTEST_HOST}" \
+        "cd ~/${REGTEST_ROOT} && REGTEST_REMOTE=1 bash tests/run-happy-path-regtest.sh"
+fi
+
+# Verify operators are deployed
+check_operators_deployed() {
+    local missing=0
+    for op_id in 1 2 3 4; do
+        if ! docker ps --format "{{.Names}}" | grep -q "op_${op_id}-coordinator-1"; then
+            missing=$((missing + 1))
+        fi
+    done
+    if [[ $missing -gt 0 ]]; then
+        echo -e "\033[1;33m[!]\033[0m Operators not fully deployed ($((4 - missing))/4 running)"
+        echo "    Start them with: ./cli-infra.sh --start-regtest"
+        exit 1
+    fi
+}
+check_operators_deployed
 
 SCRIPT_ENV="regtest"
 
