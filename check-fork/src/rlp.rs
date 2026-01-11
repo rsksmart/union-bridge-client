@@ -29,10 +29,7 @@ fn u256_be_trimmed(value: &U256) -> Vec<u8> {
     // we inherit this from ethereum, if any doubts checkout the ethereum yellow paper.
     let buf = value.to_big_endian();
     let first_non_zero = buf.iter().position(|&b| b != 0).unwrap_or(buf.len());
-    match first_non_zero {
-        idx if idx == buf.len() => Vec::new(),
-        idx => buf[idx..].to_vec(),
-    }
+    buf.get(first_non_zero..).map_or_else(Vec::new, <[u8]>::to_vec)
 }
 
 #[must_use]
