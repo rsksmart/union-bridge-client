@@ -190,7 +190,7 @@ fn validate_consecutive_block(block: &RskBlock, prev_block: &RskBlock) -> Result
     }
 
     // blocks should be consecutive
-    if block.header.number != prev_block.header.number + 1 {
+    if block.header.number != prev_block.header.number.strict_add_signed(1) {
         return Err("Block numbers are not consecutive");
     }
 
@@ -231,7 +231,11 @@ fn validate_enough_effort_superblock(
     block: &RskBlock,
     _block_type: &str,
 ) -> Result<(), &'static str> {
-    let expected_effort = block.header.difficulty * SUPERBLOCK_TIMES_DIFFICULTY;
+    let expected_effort = block
+        .header
+        .difficulty
+        .checked_mul(SUPERBLOCK_TIMES_DIFFICULTY.into())
+        .ok_or("Overflow occurred multiplying difficulty by times")?;
     let actual_effort = calculate_block_effort(block)?;
 
     // dbg!((
