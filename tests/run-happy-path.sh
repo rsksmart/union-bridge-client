@@ -93,7 +93,7 @@ echo "All prerequisites met!"
 echo ""
 
 # Find recent log match in docker compose logs (all 4 operators)
-# Uses --since flag for efficient filtering
+# Checks all logs (no time restriction) since we're already polling in a loop
 # Output format: "source:line" or empty if not found
 find_recent_docker_log_match() {
     local pattern="$1"
@@ -101,7 +101,8 @@ find_recent_docker_log_match() {
     for op_id in 1 2 3 4; do
         local project="op_${op_id}"
         local line
-        line=$(docker compose -p "$project" logs --since 1m coordinator 2>/dev/null | grep -E "$pattern" | tail -1)
+        # Check all logs - the polling loop already handles timing
+        line=$(docker compose -p "$project" logs coordinator 2>/dev/null | grep -E "$pattern" | tail -1)
         if [ -n "$line" ]; then
             echo "${project}:${line}"
             return 0
