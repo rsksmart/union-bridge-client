@@ -13,7 +13,7 @@ coordinator_settings:
   max_feerate_sat_vb: 2
   monitor_settings:
     indexer_settings:
-      checkpoint_height: 374288
+      checkpoint_height: 0
 
 key_storage:
   password: secret_password_3
@@ -31,7 +31,6 @@ p2p:
 coordinator:
   throtthle_bitcoin_updates_until_sync: 0
   throtthle_bitcoin_updates: 0
-#  estimate_fee: 8
 
 broker_storage: 
   path: /tmp/regtest/op_2/broker.db
@@ -46,4 +45,4 @@ client:
 
 wallet:
   db_path: /tmp/regtest/op_2/wallet.db
-  start_height: 374288
+  start_height: 0
