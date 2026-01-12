@@ -136,11 +136,11 @@ bitcoin_rpc_build_params() {
     local arg json_arg
 
     for arg in "${args[@]}"; do
-        if [[ "$arg" =~ ^\\{.*\\}$ || "$arg" =~ ^\\[.*\\]$ ]]; then
+        if [[ "$arg" =~ ^\{.*\}$ || "$arg" =~ ^\[.*\]$ ]]; then
             json_arg="$arg"
         elif [[ "$arg" == "true" || "$arg" == "false" ]]; then
             json_arg="$arg"
-        elif [[ "$arg" =~ ^-?[0-9]+(\\.[0-9]+)?$ ]]; then
+        elif [[ "$arg" =~ ^-?[0-9]+(\.[0-9]+)?$ ]]; then
             json_arg="$arg"
         else
             json_arg=$(printf '%s' "$arg" | jq -Rs .)
@@ -197,7 +197,49 @@ ensure_user_bitcoin_wif() {
 }
 
 import_user_wif() {
-    bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" importprivkey "$USER_BITCOIN_WIF" "user" false >/dev/null 2>&1 || true
+    # First try legacy import (works on legacy/non-descriptor wallets).
+    if bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" importprivkey "$USER_BITCOIN_WIF" "user" false >/dev/null 2>&1; then
+        return 0
+    fi
+
+    # Descriptor wallets need importdescriptors. Import using the *WIF* (not the expanded pubkey)
+    # so the wallet definitely has the private key available for spending.
+    local checksum desc import_req
+    checksum=$(bitcoin_cli_base getdescriptorinfo "wpkh(${USER_BITCOIN_WIF})" | jq -r '.checksum // empty')
+    if [[ -z "$checksum" ]]; then
+        die "Failed to compute descriptor checksum for USER_BITCOIN_WIF"
+    fi
+    desc="wpkh(${USER_BITCOIN_WIF})#${checksum}"
+
+    # Mark it active so the wallet recognizes derived addresses immediately.
+    import_req=$(printf '[{"desc":"%s","timestamp":"now","active":true,"label":"user"}]' "$desc")
+    if ! bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" importdescriptors "$import_req" >/dev/null 2>&1; then
+        die "Failed to import USER_BITCOIN_WIF into descriptor wallet (${BITCOIN_WALLET_NAME})"
+    fi
+}
+
+import_watch_address_into_wallet() {
+    local wallet_name="$1"
+    local addr="$2"
+
+    local checksum desc import_req isrange active
+    checksum=$(bitcoin_cli_base getdescriptorinfo "addr(${addr})" | jq -r '.checksum // empty')
+    if [[ -z "$checksum" ]]; then
+        die "Failed to compute descriptor checksum for addr(${addr})"
+    fi
+    desc="addr(${addr})#${checksum}"
+    isrange=$(bitcoin_cli_base getdescriptorinfo "addr(${addr})" | jq -r '.isrange // false')
+    if [[ "$isrange" == "true" ]]; then
+        active="true"
+    else
+        active="false"
+    fi
+
+    # Non-ranged descriptors (like addr()) must not be active.
+    import_req=$(printf '[{"desc":"%s","timestamp":"now","active":%s,"label":"watch"}]' "$desc" "$active")
+    if ! bitcoin_cli_wallet "$wallet_name" importdescriptors "$import_req" >/dev/null 2>&1; then
+        die "Failed to import watch address into wallet ${wallet_name}: ${addr}"
+    fi
 }
 
 user_descriptor_from_wif() {
@@ -266,6 +308,21 @@ rsk_rpc() {
     curl -sS -H "Content-Type: application/json" --data "$payload" "$RSK_RPC_URL"
 }
 
+rsk_bridge_btc_best_height() {
+    # eth_bridgeState returns an object including btcBlockchainBestChainHeight.
+    # If this stays at 0 while bitcoind advances, the native bridge is not being fed headers
+    # (e.g., powpeg/federator not running or pointing at a different Bitcoin chain).
+    local response height
+    response=$(rsk_rpc "eth_bridgeState" "[]")
+    height=$(echo "$response" | jq -r '.result.btcBlockchainBestChainHeight // 0' 2>/dev/null || echo "0")
+    # Ensure it's a number
+    if [[ ! "$height" =~ ^-?[0-9]+$ ]]; then
+        echo 0
+        return
+    fi
+    echo "$height"
+}
+
 rsk_send_value() {
     local from_addr="$1"
     local to_addr="$2"
@@ -302,6 +359,8 @@ extract_bitvmx_address_from_logs() {
             n = split(line, parts, /[[:space:]]+/)
             for (i = 1; i <= n; i++) {
                 if (parts[i] != "") {
+                    # Remove derivation path suffix like /0, /1 etc.
+                    sub(/\/[0-9]+$/, "", parts[i])
                     gsub(/[^[:alnum:]]/, "", parts[i])
                     print parts[i]
                     break
@@ -545,9 +604,11 @@ fund_bitvmx_wallets() {
     local amount_btc
     amount_btc=$(sats_to_btc "$BITVMX_FUND_AMOUNT")
     local outputs
-    outputs=$(jq -n --argjson amt "$amount_btc" --args "${bitvmx_addrs[@]}" \
-        'reduce $ARGS.positional[] as $addr ({}; .[$addr] = $amt)')
+    outputs=$(printf '%s\n' "${bitvmx_addrs[@]}" | jq -Rsc --argjson amt "$amount_btc" \
+        'split("\n") | map(select(. != "")) | reduce .[] as $addr ({}; .[$addr] = $amt)')
     log "Funding ${#bitvmx_addrs[@]} BitVMX addresses in one transaction"
+    # Set a fixed fee rate for regtest (fallback fee not enabled on node)
+    bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" settxfee 0.0001 >/dev/null 2>&1 || true
     bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" sendmany "" "$outputs" >/dev/null
 
     mine_blocks 1
@@ -614,7 +675,11 @@ create_pegin_tx() {
     local raw
     raw=$(bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" createrawtransaction "[]" "$outputs")
     local funded
-    funded=$(bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" fundrawtransaction "$raw" "{\"changeAddress\":\"$user_address\"}")
+    # Keep output ordering stable for downstream parsers:
+    # - vout[0] = pegin address payment
+    # - vout[1] = OP_RETURN marker
+    # - vout[2] = change (if any)
+    funded=$(bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" fundrawtransaction "$raw" "{\"changeAddress\":\"$user_address\",\"changePosition\":2}")
     local funded_hex
     funded_hex=$(echo "$funded" | jq -r '.hex')
     local signed
@@ -662,6 +727,21 @@ fi
 
 if ! curl -sS "http://${USER_API_HOST}:40001/health" >/dev/null; then
     die "user-api not reachable at http://${USER_API_HOST}:40001/health"
+fi
+
+# Preflight: native bridge must be tracking Bitcoin headers for pegin SPV proofs to be accepted on-chain.
+# Otherwise, PegManager calls will keep failing with MissingConfirmationsOnNativeBridge.
+if [[ "${SKIP_NATIVE_BRIDGE_CHECK:-false}" != "true" ]]; then
+    btc_height=$(get_current_bitcoin_height)
+    bridge_btc_height=$(rsk_bridge_btc_best_height)
+    log "Native Bridge BTC best height: ${bridge_btc_height} (bitcoind height: ${btc_height})"
+    if (( bridge_btc_height <= 0 && btc_height > 1 )); then
+        warn "Native Bridge is not tracking Bitcoin headers (btcBlockchainBestChainHeight=${bridge_btc_height})."
+        warn "This will block peg-in (PegManager will revert with MissingConfirmationsOnNativeBridge)."
+        warn "Fix requires powpeg/federator header relay to be enabled and pointed at the same bitcoind chain."
+        warn "To bypass this check (not recommended), re-run with: SKIP_NATIVE_BRIDGE_CHECK=true"
+        die "Native Bridge not synced with Bitcoin (cannot complete happy path)."
+    fi
 fi
 
 MAIN_WALLET_CREATED=false
@@ -721,6 +801,9 @@ log "Amount: $VALUE sats"
 log "Packet: $PACKET_NUMBER"
 pegin_address=$(request_pegin_address)
 log "Pegin address: $pegin_address"
+# BitVMX emits PeginTransactionFound based on what its bitcoind wallet sees.
+# Import the temporary pegin address into the BitVMX wallet (watch-only) before broadcasting the tx.
+import_watch_address_into_wallet "$BITVMX_WALLET_NAME" "$pegin_address"
 create_pegin_tx "$pegin_address" "$USER_BTC_ADDRESS"
 wait_for_log_with_block_timeout "PeginFlow Done" "$MAX_BLOCKS_WAIT"
 success "Pegin flow completed"

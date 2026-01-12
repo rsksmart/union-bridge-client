@@ -13,7 +13,7 @@ coordinator_settings:
   max_feerate_sat_vb: 2
   monitor_settings:
     indexer_settings:
-      checkpoint_height: 374288
+      checkpoint_height: 0
 
 key_storage:
   password: secret_password_5
@@ -45,4 +45,4 @@ client:
 
 wallet:
   db_path: /tmp/regtest/op_4/wallet.db
-  start_height: 374288
+  start_height: 0
