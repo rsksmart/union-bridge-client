@@ -149,7 +149,8 @@ where
 {
     debug!("Verifying Native Bridge confirmations before invoking: method={method_name}");
 
-    match native_bridge_verifier.verify_confirmations(spv_proof, MIN_TX_CONFIRMATIONS)? {
+    let res = native_bridge_verifier.verify_confirmations(spv_proof, MIN_TX_CONFIRMATIONS)?;
+    match res {
         VerificationStatus::Verified => invoke_contract(rt_sync, method_name, invoke),
         VerificationStatus::InsufficientConfirmations { required, actual } => {
             debug!(
