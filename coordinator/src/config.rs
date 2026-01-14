@@ -79,7 +79,6 @@ impl Config {
             || contract.name == SIGNATURE_CONTRACT_NAME
             || contract.name == COMMITTEE_REGISTRY_CONTRACT_NAME
             || contract.name == MEMBER_REGISTRY_CONTRACT_NAME
-            || contract.name == SIGNATURE_CONTRACT_NAME
             || contract.name == STREAM_MANAGER_CONTRACT_NAME
     }
 }

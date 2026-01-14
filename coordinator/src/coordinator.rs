@@ -54,7 +54,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
         store: S,
         shutdown_flag: ShutdownFlag,
         bitcoin_network: Network,
-        env_name: Option<String>,
+        env_name: Option<&str>,
     ) -> Self {
         let contracts_arc = Rc::new(contracts_gateway);
         let store_rc = Rc::new(store);
@@ -74,21 +74,18 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
             Rc::clone(&store_rc),
         );
 
-        let native_bridge_verifier = match env_name {
-            Some(ref s) if s.as_str() == "alphanet" => {
-                log::info!("Environment: alphanet → Using Real Native Bridge Verifier");
-                NativeBridgeVerifier::Real {
-                    contracts: contracts_arc.clone(),
-                    rt_sync: rt_sync.clone(),
-                }
+        let native_bridge_verifier = if let Some("alphanet") = env_name {
+            log::info!("Environment: alphanet → Using Real Native Bridge Verifier");
+            NativeBridgeVerifier::Real {
+                contracts: contracts_arc.clone(),
+                rt_sync: rt_sync.clone(),
             }
-            _ => {
-                log::info!(
-                    "Environment: {} → Using Dummy Native Bridge Verifier (BitVMX confirmations only)",
-                    env_name.as_deref().unwrap_or("NONE")
-                );
-                NativeBridgeVerifier::Dummy
-            }
+        } else {
+            log::info!(
+                "Environment: {} → Using Dummy Native Bridge Verifier (BitVMX confirmations only)",
+                env_name.unwrap_or("NONE")
+            );
+            NativeBridgeVerifier::Dummy
         };
 
         Self {
