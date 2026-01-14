@@ -34,6 +34,10 @@ address = "0xCceA54bAB6755690595b7D8fAf299bd02c597F46"
 name = "PowpegBridge"
 address = "0x0000000000000000000000000000000001000006"
 
+[[contracts]]
+name = "PowpegBridge"
+address = "0x0000000000000000000000000000000001000006"
+
 [indexer]
 
 storage.path = "/app/db/" # This should match the volume mount in docker-compose
