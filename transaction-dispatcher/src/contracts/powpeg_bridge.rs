@@ -4,12 +4,11 @@ use alloy_transport::TransportError;
 use anyhow::Result as AnyhowResult;
 use common::types::{BlockHash, TxHash};
 use log::info;
+#[cfg(test)]
+use mockall::automock;
 
 // Re-export for convenience
 pub(crate) use crate::contracts::interactions::get_btc_transaction_confirmations;
-
-#[cfg(test)]
-use mockall::automock;
 
 #[cfg_attr(test, automock)]
 pub trait PowpegBridgeContractApi {
@@ -38,10 +37,7 @@ pub struct PowpegBridgeContract<P: Provider> {
 impl<P: Provider> PowpegBridgeContract<P> {
     pub fn new(provider: P, contract_address: Address) -> Self {
         info!("Connecting to Native Bridge precompiled contract @ {contract_address}");
-        PowpegBridgeContract {
-            provider,
-            contract_address,
-        }
+        PowpegBridgeContract { provider, contract_address }
     }
 }
 
@@ -138,9 +134,9 @@ impl<P: Provider> PowpegBridgeContractApi for PowpegBridgeContract<P> {
         // The result.data is Bytes, we need to decode it as I256
         let result_bytes = result.as_ref();
         if result_bytes.len() < 32 {
-            return Err(alloy_contract::Error::TransportError(
-                TransportError::local_usage_str("Invalid response length from Native Bridge"),
-            ));
+            return Err(alloy_contract::Error::TransportError(TransportError::local_usage_str(
+                "Invalid response length from Native Bridge",
+            )));
         }
 
         // Decode I256 from the result (first 32 bytes)
@@ -152,11 +148,11 @@ impl<P: Provider> PowpegBridgeContractApi for PowpegBridgeContract<P> {
         if confirmations_i256.is_negative() {
             // Try to convert to i32 for error code display
             let error_code = i32::try_from(confirmations_i256).unwrap_or(i32::MIN); // Fallback if conversion fails
-            return Err(alloy_contract::Error::TransportError(
-                TransportError::local_usage_str(&format!(
+            return Err(alloy_contract::Error::TransportError(TransportError::local_usage_str(
+                &format!(
                     "Native Bridge returned error code: {error_code} (see RSKIP122 for error meanings)"
-                )),
-            ));
+                ),
+            )));
         }
 
         // Convert positive I256 to u32
@@ -179,11 +175,13 @@ impl<P: Provider> PowpegBridgeContractApi for PowpegBridgeContract<P> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::str::FromStr;
+
     use alloy_primitives::{Address, FixedBytes, I256, U256};
     use common::types::{BlockHash, TxHash};
     use log::{debug, error, warn};
-    use std::str::FromStr;
+
+    use super::*;
 
     /// Test the encoding of call data for getBtcTransactionConfirmations
     #[test]
@@ -192,10 +190,8 @@ mod tests {
         let tx_hash = TxHash::from(FixedBytes::from([1u8; 32]));
         let block_hash = BlockHash::from(FixedBytes::from([2u8; 32]));
         let merkle_branch_path = "123".to_string();
-        let merkle_branch_hashes = vec![
-            format!("0x{}", hex::encode([3u8; 32])),
-            format!("0x{}", hex::encode([4u8; 32])),
-        ];
+        let merkle_branch_hashes =
+            vec![format!("0x{}", hex::encode([3u8; 32])), format!("0x{}", hex::encode([4u8; 32]))];
 
         // Expected selector for getBtcTransactionConfirmations(bytes32,bytes32,uint256,bytes32[])
         let expected_selector = [0x5b, 0x64, 0x45, 0x87];
@@ -494,11 +490,7 @@ mod tests {
             }
 
             let expected_size = 4 + 32 * 4 + 32 + 32 * num_hashes;
-            assert_eq!(
-                encoded.len(),
-                expected_size,
-                "Failed for case: {description}"
-            );
+            assert_eq!(encoded.len(), expected_size, "Failed for case: {description}");
         }
     }
 }

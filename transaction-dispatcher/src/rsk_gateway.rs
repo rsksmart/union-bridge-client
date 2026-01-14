@@ -15,9 +15,7 @@ use crate::contracts::committee_registry::{
     ApplyToStreamInvoke, CommitteeRegistryContract, DepositAggregatedKeysInvoke,
     DepositCommunicationDataInvoke, GetCommitteeCall, GetMemberCommunicationDataCall,
 };
-use crate::contracts::powpeg_bridge::get_btc_transaction_confirmations::GetBtcTransactionConfirmationsCall;
 use crate::contracts::member_registry::{GetMemberPublicKeysCall, MemberRegistryContract};
-use crate::contracts::powpeg_bridge::PowpegBridgeContract;
 use crate::contracts::peg_manager::accept_pegin::AcceptPeginInvoke;
 use crate::contracts::peg_manager::get_temporary_pegin_address::GetTemporaryPeginAddressCall;
 use crate::contracts::peg_manager::notify_check_fork_complete::NotifyCheckForkCompleteInvoke;
@@ -27,6 +25,8 @@ use crate::contracts::peg_manager::request_pegin::RequestPeginInvoke;
 use crate::contracts::peg_manager::request_pegout::TryPegoutInvoke;
 use crate::contracts::peg_manager::trigger_operator_take::TriggerOperatorTakeInvoke;
 use crate::contracts::peg_manager::{FakePegManagerContract, PegManagerContract};
+use crate::contracts::powpeg_bridge::PowpegBridgeContract;
+use crate::contracts::powpeg_bridge::get_btc_transaction_confirmations::GetBtcTransactionConfirmationsCall;
 use crate::contracts::signature_manager::{
     AddMemberNonceInvoke, AddMemberSignatureInvoke, AddOperatorTakeTxHashInvoke,
     SignatureManagerContract,
@@ -367,13 +367,10 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     ) -> Result<GetBtcTransactionConfirmationsOutput, DomainErrors> {
         info!("Interacting with PowpegBridge#getBitcoinConfirmations");
 
-        self.get_btc_confirmations_call
-            .run(input)
-            .await
-            .map_err(|err| {
-                error!("Error on get_bitcoin_confirmations_call: {err}");
-                err
-            })
+        self.get_btc_confirmations_call.run(input).await.map_err(|err| {
+            error!("Error on get_bitcoin_confirmations_call: {err}");
+            err
+        })
     }
 
     async fn get_temporary_pegin_address(

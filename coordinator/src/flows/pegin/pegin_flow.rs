@@ -196,14 +196,7 @@ where
         store: Rc<S>,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
     ) -> Self {
-        Self {
-            contracts,
-            rt_sync,
-            bitvmx_broker,
-            state,
-            store,
-            native_bridge_verifier,
-        }
+        Self { contracts, rt_sync, bitvmx_broker, state, store, native_bridge_verifier }
     }
 
     fn persist_state(&self) -> Result<()> {
@@ -274,16 +267,12 @@ where
             Steps::AcceptPegin => {
                 info!("Accepting pegin for flow_id: {}", self.state.flow_id);
                 let spv_proof =
-                    self.state
-                        .ctx
-                        .accept_pegin_spv_proof
-                        .as_ref()
-                        .ok_or_else(|| {
-                            anyhow!(
-                                "SPV proof not available for pegin acceptance - flow_id {}",
-                                self.state.flow_id
-                            )
-                        })?;
+                    self.state.ctx.accept_pegin_spv_proof.as_ref().ok_or_else(|| {
+                        anyhow!(
+                            "SPV proof not available for pegin acceptance - flow_id {}",
+                            self.state.flow_id
+                        )
+                    })?;
                 self.accept_pegin(spv_proof)?;
             }
             Steps::Done => {

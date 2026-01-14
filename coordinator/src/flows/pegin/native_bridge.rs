@@ -17,17 +17,14 @@ where
         Err(domain_err) => Err(domain_err),
     }
 }
-use common::{
-    msg_broker::bitvmx_types::BtcTxSPVProof,
-    runtime_sync::RuntimeSync,
-    types::{Hash256, TxIdParser},
-};
-use log::{debug, info, warn};
 use std::rc::Rc;
-use transaction_dispatcher::{
-    rsk_gateway::{DomainErrors, RskContractsGatewayApi},
-    types::GetBtcTransactionConfirmationsInput,
-};
+
+use common::msg_broker::bitvmx_types::BtcTxSPVProof;
+use common::runtime_sync::RuntimeSync;
+use common::types::{Hash256, TxIdParser};
+use log::{debug, info, warn};
+use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
+use transaction_dispatcher::types::GetBtcTransactionConfirmationsInput;
 
 pub const MIN_TX_CONFIRMATIONS: u32 = 1 + 1; // +1 from Contracts, +1 to give time to the Native Bridge to get up to date with Bitcoin Node
 
@@ -38,10 +35,7 @@ pub enum VerificationStatus {
 }
 
 pub enum NativeBridgeVerifier<CG: RskContractsGatewayApi> {
-    Real {
-        contracts: Rc<CG>,
-        rt_sync: RuntimeSync,
-    },
+    Real { contracts: Rc<CG>, rt_sync: RuntimeSync },
     Dummy, // used in local/test environments
 }
 
@@ -91,9 +85,7 @@ where
             Ok(h) => h.into(),
             Err(e) => {
                 warn!("Failed to parse block hash: {e}");
-                return Err(DomainErrors::InvalidBtcTxSpvProof(format!(
-                    "Invalid block hash: {e}"
-                )));
+                return Err(DomainErrors::InvalidBtcTxSpvProof(format!("Invalid block hash: {e}")));
             }
         };
 
@@ -102,11 +94,8 @@ where
     let tx_hash: common::types::TxHash =
         Hash256::from(primitive_types::H256::from_slice(tx_hash_fb.as_slice()));
 
-    let merkle_branch_hashes: Vec<String> = spv_proof
-        .merkle_branch_hashes
-        .iter()
-        .map(hex::encode)
-        .collect();
+    let merkle_branch_hashes: Vec<String> =
+        spv_proof.merkle_branch_hashes.iter().map(hex::encode).collect();
 
     let input = GetBtcTransactionConfirmationsInput {
         tx_hash,

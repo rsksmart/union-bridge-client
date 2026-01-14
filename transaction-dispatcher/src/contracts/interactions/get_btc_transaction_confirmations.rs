@@ -1,8 +1,6 @@
-use crate::{
-    contracts::powpeg_bridge::PowpegBridgeContractApi,
-    rsk_gateway::DomainErrors,
-    types::{GetBtcTransactionConfirmationsInput, GetBtcTransactionConfirmationsOutput},
-};
+use crate::contracts::powpeg_bridge::PowpegBridgeContractApi;
+use crate::rsk_gateway::DomainErrors;
+use crate::types::{GetBtcTransactionConfirmationsInput, GetBtcTransactionConfirmationsOutput};
 
 #[derive(Clone)]
 pub struct GetBtcTransactionConfirmationsCall<C: PowpegBridgeContractApi> {
