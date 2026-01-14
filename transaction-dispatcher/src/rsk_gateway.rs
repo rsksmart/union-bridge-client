@@ -15,7 +15,9 @@ use crate::contracts::committee_registry::{
     ApplyToStreamInvoke, CommitteeRegistryContract, DepositAggregatedKeysInvoke,
     DepositCommunicationDataInvoke, GetCommitteeCall, GetMemberCommunicationDataCall,
 };
+use crate::contracts::powpeg_bridge::get_btc_transaction_confirmations::GetBtcTransactionConfirmationsCall;
 use crate::contracts::member_registry::{GetMemberPublicKeysCall, MemberRegistryContract};
+use crate::contracts::powpeg_bridge::PowpegBridgeContract;
 use crate::contracts::peg_manager::accept_pegin::AcceptPeginInvoke;
 use crate::contracts::peg_manager::get_temporary_pegin_address::GetTemporaryPeginAddressCall;
 use crate::contracts::peg_manager::notify_check_fork_complete::NotifyCheckForkCompleteInvoke;
