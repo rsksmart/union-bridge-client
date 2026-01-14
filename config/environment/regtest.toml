@@ -30,6 +30,10 @@ address = "0x9D245A75ea98728Be4b91E9242A2dA911c86d4b5"
 name = "StreamManager"
 address = "0x8CA58Ca4D150B984D0CcFE9AF0EC4ceA83A4e7B0"
 
+[[contracts]]
+name = "PowpegBridge"
+address = "0x0000000000000000000000000000000001000006"
+
 [indexer]
 
 storage.path = "/app/db/" # This should match the volume mount in docker-compose
@@ -39,7 +43,7 @@ storage.path = "/app/db/" # This should match the volume mount in docker-compose
 # ═══════════════════════════════════════════════════════
 
 [coordinator]
-storage_path = "/app/db/" # This should match the volume mount in docker-compose
+storage_path = "/app/db/"     # This should match the volume mount in docker-compose
 blocks.host = "block-indexer"
 logs.host = "log-indexer"
 user.host = "user-api"
@@ -49,5 +53,5 @@ user.host = "user-api"
 # ═══════════════════════════════════════════════════════
 
 [transaction_dispatcher]
-key_store.user_path = "/keystore/user-key.json" # should match the one configured in key-setup.sh
+key_store.user_path = "/keystore/user-key.json"     # should match the one configured in key-setup.sh
 key_store.member_path = "/keystore/member-key.json" # should match the one configured in key-setup.sh
