@@ -22,6 +22,7 @@ use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginReq
 use uuid::Uuid;
 
 use crate::flows::common::{COMM_KEY_INDEX, build_communication_data};
+use crate::flows::pegin::native_bridge::{NativeBridgeVerifier, invoke_contract_safe};
 use crate::flows::pegin::utils::{get_accept_pegin_pid, get_temp_pegin_pid};
 use crate::store::{CoordinatorStoreApi, StoreKey};
 
@@ -138,6 +139,7 @@ where
     bitvmx_broker: Rc<BC>,
     state: State,
     store: Rc<S>,
+    native_bridge_verifier: NativeBridgeVerifier<CG>,
 }
 
 impl<CG, BC, S> PeginFlow<CG, BC, S>
@@ -153,6 +155,7 @@ where
         bitvmx_broker: Rc<BC>,
         btc_tx_id: Txid,
         store: Rc<S>,
+        native_bridge_verifier: NativeBridgeVerifier<CG>,
     ) -> Self {
         let temp_flow_id = get_temp_pegin_pid(btc_tx_id);
 
@@ -181,6 +184,7 @@ where
                 },
             },
             store,
+            native_bridge_verifier,
         }
     }
 
@@ -190,8 +194,16 @@ where
         bitvmx_broker: Rc<BC>,
         state: State,
         store: Rc<S>,
+        native_bridge_verifier: NativeBridgeVerifier<CG>,
     ) -> Self {
-        Self { contracts, rt_sync, bitvmx_broker, state, store }
+        Self {
+            contracts,
+            rt_sync,
+            bitvmx_broker,
+            state,
+            store,
+            native_bridge_verifier,
+        }
     }
 
     fn persist_state(&self) -> Result<()> {
@@ -261,12 +273,17 @@ where
             }
             Steps::AcceptPegin => {
                 info!("Accepting pegin for flow_id: {}", self.state.flow_id);
-                let spv_proof = self.state.ctx.accept_pegin_spv_proof.clone().ok_or_else(|| {
-                    anyhow!(
-                        "SPV proof not available for pegin acceptance - flow_id {}",
-                        self.state.flow_id
-                    )
-                })?;
+                let spv_proof =
+                    self.state
+                        .ctx
+                        .accept_pegin_spv_proof
+                        .as_ref()
+                        .ok_or_else(|| {
+                            anyhow!(
+                                "SPV proof not available for pegin acceptance - flow_id {}",
+                                self.state.flow_id
+                            )
+                        })?;
                 self.accept_pegin(spv_proof)?;
             }
             Steps::Done => {
@@ -472,14 +489,19 @@ where
         Ok(())
     }
 
-    fn accept_pegin(&self, spv_proof: BtcTxSPVProof) -> Result<()> {
+    fn accept_pegin(&self, spv_proof: &BtcTxSPVProof) -> Result<()> {
         debug!("Accepting pegin with SPV proof: {spv_proof:?}");
 
-        let input: RequestPeginInput = spv_proof.into();
+        let input: RequestPeginInput = spv_proof.clone().into();
 
-        self.rt_sync
-            .run(async { self.contracts.accept_pegin(input).await })
-            .context("Failed to accept pegin with provided SPV proof")?;
+        invoke_contract_safe(
+            &self.rt_sync,
+            "acceptPegin",
+            spv_proof,
+            &self.native_bridge_verifier,
+            || async { self.contracts.accept_pegin(input).await },
+        )
+        .context("Failed to accept pegin with provided SPV proof")?;
 
         Ok(())
     }
@@ -880,6 +902,7 @@ mod tests {
             mock_broker,
             state,
             mock_store,
+            NativeBridgeVerifier::Dummy,
         );
 
         (flow, mock_contracts)

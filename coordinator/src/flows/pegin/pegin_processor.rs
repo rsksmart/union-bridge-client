@@ -25,6 +25,7 @@ use crate::flows::btc_signature::btc_signature_subflow::{
     BtcSignatureSubFlowFactoryApi,
 };
 use crate::flows::common::GlobalContext;
+use crate::flows::pegin::native_bridge::NativeBridgeVerifier;
 use crate::flows::pegin::pegin_flow::{PeginFlow, State, StepData, Steps};
 use crate::flows::pegin::utils::get_temp_pegin_pid;
 use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix};
@@ -61,6 +62,7 @@ where
     unconfirmed_pegin_requests: HashMap<String, (BtcTxSPVProof, i16)>,
     pegin_retry_scheduler: TickScheduler<String>,
     store: Rc<S>,
+    native_bridge_verifier: NativeBridgeVerifier<CG>,
 }
 
 impl<CG, BC, S>
@@ -82,6 +84,7 @@ where
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
         store: Rc<S>,
+        native_bridge_verifier: NativeBridgeVerifier<CG>,
     ) -> Self {
         let factory =
             BtcSignatureSubFlowFactory::new(Rc::clone(&contracts_gateway), rt_sync.clone());
@@ -107,6 +110,7 @@ where
             unconfirmed_pegin_requests: HashMap::new(),
             pegin_retry_scheduler: TickScheduler::new(),
             store,
+            native_bridge_verifier,
         };
 
         // Restore flows from store
@@ -129,6 +133,7 @@ where
                 Rc::clone(&self.bitvmx_broker),
                 saved_state.clone(),
                 Rc::clone(&self.store),
+                self.native_bridge_verifier.clone(),
             );
             info!("Restored pegin flow {id} at step {:?}", flow.current_step());
             debug!("Restored flow {id} context: {:?}", flow.get_state());
@@ -567,6 +572,7 @@ where
             Rc::clone(&self.bitvmx_broker),
             tx_id,
             Rc::clone(&self.store),
+            self.native_bridge_verifier.clone(),
         );
 
         info!("Created new pegin flow {temp_flow_id} from Bitcoin transaction: {tx_id}");
