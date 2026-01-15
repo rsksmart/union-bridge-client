@@ -179,8 +179,11 @@ mod tests {
     use std::str::FromStr;
 
     use alloy_primitives::{Address, FixedBytes, I256, U256};
+    use bitcoin::locktime::absolute;
+    use bitcoin::transaction::Version;
+    use bitcoin::{Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness};
     use common::types::{BlockHash, TxHash};
-    use log::{debug, error, warn};
+    use log::{debug, error, info, warn};
 
     use super::*;
 
@@ -495,5 +498,85 @@ mod tests {
             let expected_size = 4 + 32 * 4 + 32 + 32 * num_hashes;
             assert_eq!(encoded.len(), expected_size, "Failed for case: {description}");
         }
+    }
+
+    /// Call Native Bridge precompiled contract with real regtest data.
+    /// TODO: this is an 'integration' test and shouldn't be here.
+    #[tokio::test]
+    #[ignore = "this test can only be used when regtest environment is on"]
+    async fn test_call_native_bridge_regtest_accept_pegin() {
+        use alloy_provider::ProviderBuilder;
+
+        let rpc_url = std::env::var("RSK_NODE_URL")
+            .unwrap_or_else(|_| "http://node-use2-1.regtest.rskcomputing.net:4444".to_string());
+
+        info!("Connecting to RSK node at: {rpc_url}");
+
+        let provider =
+            ProviderBuilder::new().connect_http(rpc_url.parse().expect("Invalid RPC URL"));
+        let native_bridge_addr =
+            Address::from_str(NATIVE_BRIDGE_ADDRESS).expect("Invalid native bridge address");
+        let contract = PowpegBridgeContract::new(provider, native_bridge_addr);
+
+        let prevout_txid =
+            Txid::from_str("add1ba9b6d613813b9fb665d2589cdce5cc480c29a9d9d367357f101a22dc64f")
+                .expect("Invalid prevout txid");
+        let tx = Transaction {
+            version: Version::TWO,
+            lock_time: absolute::LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint { txid: prevout_txid, vout: 0 },
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+                witness: Witness::default(),
+            }],
+            output: vec![
+                TxOut {
+                    value: Amount::from_sat(99_125),
+                    script_pubkey: ScriptBuf::from_bytes(
+                        hex::decode(
+                            "51204d4b6a615c5aff18cbe6f783c5c8108e9f53c076d8835983ab33f92217be0128",
+                        )
+                        .expect("Invalid script_pub_key 0"),
+                    ),
+                },
+                TxOut {
+                    value: Amount::from_sat(540),
+                    script_pubkey: ScriptBuf::from_bytes(
+                        hex::decode("0014c4c2c86fa4c07eb9c5007b196c922e0504a306bc")
+                            .expect("Invalid script_pub_key 1"),
+                    ),
+                },
+            ],
+        };
+
+        let txid = tx.compute_txid();
+        assert_eq!(
+            txid.to_string(),
+            "f7b22177641c0976e7a28a45e79b1bdb067136f2f50f0c7ea2536ca7fe573dfc"
+        );
+
+        let txid_bytes =
+            FixedBytes::<32>::from_slice(&hex::decode(txid.to_string()).expect("Invalid txid hex"));
+        let block_hash_bytes = FixedBytes::<32>::from_slice(
+            &hex::decode("4d490b1e40c3a25ba9c7c14860c716d456ef4ac897ab526f6f2e46ba9a706c89")
+                .expect("Invalid block hash hex"),
+        );
+
+        let merkle_branch_path = "1".to_string();
+        let merkle_branch_hashes =
+            vec!["4c4910bc3d2951fd27eeb8a317964bf1eea72bc0d19c79deb7c94c33bd7ecfa4".to_string()];
+
+        let confirmations = contract
+            .call_get_btc_transaction_confirmations(
+                BlockHash::from(txid_bytes),
+                TxHash::from(block_hash_bytes),
+                merkle_branch_path,
+                merkle_branch_hashes,
+            )
+            .await
+            .expect("Native Bridge call failed");
+
+        assert!(confirmations >= 2, "Expected confirmations >= 2, got {confirmations}");
     }
 }
