@@ -128,7 +128,7 @@ where
     };
 
     // query native bridge
-    match invoke_contract(rt_sync, "getBtcConfirmations", || async {
+    match invoke_contract(rt_sync, "getBtcTransactionConfirmations", || async {
         contracts.get_btc_confirmations(input).await
     }) {
         Ok(output) => {
