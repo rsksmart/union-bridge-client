@@ -16,6 +16,46 @@ cd "$(dirname "$0")"
 
 OPERATIONS_BIN="./target/release/operations"
 
+# Determine environment from UC_ENV or parse from args to load appropriate .env file
+ENV_FROM_ARGS=""
+for arg in "$@"; do
+  if [[ "$arg" == "--env" ]] || [[ "$arg" == "-e" ]]; then
+    ENV_FROM_ARGS="next"
+  elif [[ "$ENV_FROM_ARGS" == "next" ]]; then
+    ENV_FROM_ARGS="$arg"
+    break
+  fi
+done
+
+# Use environment from args if provided, otherwise from UC_ENV
+ENV_TO_LOAD="${ENV_FROM_ARGS:-${UC_ENV:-}}"
+
+# Map environment names to .env file paths
+if [[ -n "$ENV_TO_LOAD" ]]; then
+  case "$ENV_TO_LOAD" in
+    alphanet)
+      ENV_FILE="docker/operator/.env.alphanet"
+      ;;
+    testnet)
+      ENV_FILE="docker/operator/.env.testnet"
+      ;;
+    local|local-docker)
+      ENV_FILE="docker/operator/.env.local"
+      ;;
+    *)
+      # Unknown environment, skip loading .env file
+      ENV_FILE=""
+      ;;
+  esac
+
+  # Source the .env file if it exists to load UC_OPERATOR_ID and UC_OPERATOR_ROLE
+  if [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then
+    set -a
+    source "$ENV_FILE"
+    set +a
+  fi
+fi
+
 # In GitHub Actions (e.g. e2e framework): use existing binary if present (cache hit). Locally: always build so we never run stale code.
 if ! { [ -x "$OPERATIONS_BIN" ] && [ "${GITHUB_ACTIONS:-}" = "true" ]; }; then
   cargo build --release --manifest-path cli/operations/Cargo.toml --quiet

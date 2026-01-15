@@ -28,6 +28,20 @@ export KEY_STORE_PASSWORD="<super-secret-password>"
 export CHECK_FORK_REQUIRED_NUM_BLOCKS=5
 
 ############################################################
+# Deployment and Operations (Multi-host environments)
+############################################################
+# Default environment for start_operators.sh and cli-operations.sh
+# Options: alphanet, testnet, local (for start_operators.sh)
+#          local, local-docker, alphanet, testnet (for cli-operations.sh)
+# This determines which .env.* file is loaded (see docker/operator/.env.* files)
+# export UC_ENV="local"
+
+# Note: UC_TAG, UC_OPERATOR_ID, and UC_OPERATOR_ROLE should be set in
+# the environment-specific .env files (docker/operator/.env.alphanet,
+# docker/operator/.env.testnet, docker/operator/.env.local) rather than here.
+# This allows different values per environment/host.
+
+############################################################
 # Bitcoin
 ############################################################
 # User WIF for peg-in/peg-out operations

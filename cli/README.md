@@ -52,6 +52,35 @@ Launches one or more Union Bridge clients locally for development and testing.
 
 Handles setup, operator operations, and user operations across different environments (local, alphanet, testnet).
 
+### Environment Variables
+
+The following environment variables can be set to simplify multi-host deployments:
+
+- **`UC_ENV`**: Sets the default environment (`local`, `local-docker`, `alphanet`, or `testnet`). Set in `.envrc` at project root. Can be overridden with `--env` flag.
+- **`UC_OPERATOR_ID`**: Sets the default operator ID (1-4) for `apply-stream` command. Set in environment-specific `.env.*` files (`docker/operator/.env.alphanet`, `.env.testnet`, or `.env.local`). Can be overridden with `--operator-id` flag.
+- **`UC_OPERATOR_ROLE`**: Sets the default operator role (`prover` or `verifier`) for `apply-stream` command. Set in environment-specific `.env.*` files. Can be overridden with `--role` flag.
+
+**Example for multi-host deployment:**
+
+```bash
+# In .envrc (project root), set the default environment
+export UC_ENV=alphanet
+
+# In docker/operator/.env.alphanet, set operator-specific values for this host
+export UC_OPERATOR_ID=1
+export UC_OPERATOR_ROLE=prover
+
+# Then you can run commands without specifying these flags each time
+./cli-operations.sh operator apply-stream --stream-id 1
+./cli-operations.sh operator fund
+```
+
+**Why this approach?**
+- `UC_ENV` is in `.envrc` because it's needed to determine which `.env.*` file to load
+- `UC_OPERATOR_ID` and `UC_OPERATOR_ROLE` are in `.env.*` files because they're operator-specific (each host runs one operator in multi-host deployments)
+
+### Usage Examples
+
 ```bash
 ./cli-operations.sh --help
 

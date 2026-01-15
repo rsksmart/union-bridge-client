@@ -2,26 +2,32 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Initialize from environment variables (can be overridden by command line args)
+# Note: UC_TAG is loaded from environment-specific .env files after ENVIRONMENT is determined
 UC_TAG=""
 DOCKER_COMPOSE_ARGS=()
 OPERATOR_ARG=""
-ENVIRONMENT=""
+ENVIRONMENT="${UC_ENV:-}"
 AUTO_CONFIRM=false
 
 # Display help message
 print_help() {
-  echo "Usage: $0 --env <ENV> [--op <ID>] [OPTIONS] [DOCKER_COMPOSE_ARGS...]"
+  echo "Usage: $0 [--env <ENV>] [--op <ID>] [OPTIONS] [DOCKER_COMPOSE_ARGS...]"
   echo ""
   echo "Required:"
   echo "  --env alphanet           Deploy on Alphanet, a specific operator (requires --op <ID>)"
   echo "  --env testnet            Deploy on Testnet, a specific operator (requires --op <ID>)"
   echo "  --env local              Deploy locally, all 4 operators"
+<<<<<<< HEAD
   echo "  --env regtest            Deploy in regtest, all 4 operators"
+=======
+  echo "  (or set UC_ENV environment variable)"
+>>>>>>> 7d1fb12b (feat: impl env enabled client startup)
   echo ""
   echo "Options:"
   echo "  --op <ID>                Specify operator ID (1, 2, 3, or 4) - required for alphanet/testnet startup"
   echo "  --help                   Display this help message"
-  echo "  --tag <TAG>              Set tag for Union Client"
+  echo "  --tag <TAG>              Set tag for Union Client (or set UC_TAG environment variable)"
   echo "  --fresh                  Tear down operators (and volumes) before running the command"
   echo "                           - Includes confirmation prompt to prevent accidental data loss"
   echo "                           - Clears all operator state and databases"
@@ -91,10 +97,12 @@ while [[ $# -gt 0 ]]; do
       ;;
     --tag)
       UC_TAG="$2"
+      # Explicit --tag overrides any UC_TAG from .env file
       shift 2
       ;;
     --env)
       ENVIRONMENT="$2"
+<<<<<<< HEAD
       if [[ "$ENVIRONMENT" == "alphanet" ]]; then
         ENV_FILE="${SCRIPT_DIR}/.env.alphanet"
         if [[ -z "$UC_TAG" ]]; then
@@ -119,6 +127,7 @@ while [[ $# -gt 0 ]]; do
         echo "Invalid environment. Use 'alphanet', 'testnet', 'local', or 'regtest'"
         exit 1
       fi
+      # Clear any default from env var when explicitly provided
       shift 2
       ;;
     --fresh)
@@ -137,9 +146,69 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Use environment variable as default if --env was not provided
 if [[ -z "$ENVIRONMENT" ]]; then
-  echo "Error: --env flag is required. Use 'alphanet', 'testnet', 'local', or 'regtest'."
-  echo "Run '$0 --help' for usage information."
+  if [[ -n "${UC_ENV:-}" ]]; then
+    ENVIRONMENT="${UC_ENV}"
+  else
+    echo "Error: --env flag is required. Use 'alphanet', 'testnet', 'local', or 'regtest'."
+    echo "Alternatively, set UC_ENV environment variable."
+    echo "Run '$0 --help' for usage information."
+    exit 1
+  fi
+fi
+
+# Set ENV_FILE and load environment-specific variables
+if [[ "$ENVIRONMENT" == "alphanet" ]]; then
+  ENV_FILE="${SCRIPT_DIR}/.env.alphanet"
+  # Source the env file to load UC_TAG if set
+  if [[ -f "$ENV_FILE" ]]; then
+    set -a
+    source "$ENV_FILE"
+    set +a
+  fi
+  # Use UC_TAG from env file if not set via --tag flag, otherwise use default
+  if [[ -z "$UC_TAG" ]]; then
+    UC_TAG="latest-alphanet"
+  fi
+elif [[ "$ENVIRONMENT" == "testnet" ]]; then
+  ENV_FILE="${SCRIPT_DIR}/.env.testnet"
+  # Source the env file to load UC_TAG if set
+  if [[ -f "$ENV_FILE" ]]; then
+    set -a
+    source "$ENV_FILE"
+    set +a
+  fi
+  # Use UC_TAG from env file if not set via --tag flag, otherwise use default
+  if [[ -z "$UC_TAG" ]]; then
+    UC_TAG="latest-testnet"
+  fi
+elif [[ "$ENVIRONMENT" == "local" ]]; then
+  ENV_FILE="${SCRIPT_DIR}/.env.local"
+  # Source the env file to load UC_TAG if set
+  if [[ -f "$ENV_FILE" ]]; then
+    set -a
+    source "$ENV_FILE"
+    set +a
+  fi
+  # Use UC_TAG from env file if not set via --tag flag, otherwise use default
+  if [[ -z "$UC_TAG" ]]; then
+    UC_TAG="latest-anvil"
+  fi
+elif [[ "$ENVIRONMENT" == "regtest" ]]; then
+  ENV_FILE="${SCRIPT_DIR}/.env.regtest"
+  # Source the env file to load UC_TAG if set
+  if [[ -f "$ENV_FILE" ]]; then
+    set -a
+    source "$ENV_FILE"
+    set +a
+  fi
+  # Use UC_TAG from env file if not set via --tag flag, otherwise use default
+  if [[ -z "$UC_TAG" ]]; then
+    UC_TAG="latest-regtest"
+  fi
+else
+  echo "Invalid environment. Use 'alphanet', 'testnet', 'local', or 'regtest'"
   exit 1
 fi
 

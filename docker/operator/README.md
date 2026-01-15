@@ -120,6 +120,35 @@ If the contracts code changes (eg. new tag), you must rebuild the `deploy-contra
 
 ### 4) Start or stop operator stacks
 
+#### Environment Variables
+
+The following environment variables can be set to simplify multi-host deployments:
+
+- **`UC_ENV`**: Sets the default environment (`alphanet`, `testnet`, or `local`). Set in `.envrc` at project root. Can be overridden with `--env` flag.
+- **`UC_TAG`**: Sets the default Docker image tag. Set in environment-specific `.env.*` files (`docker/operator/.env.alphanet`, `.env.testnet`, or `.env.local`). Can be overridden with `--tag` flag.
+  - Defaults: `latest-alphanet` (alphanet), `latest-testnet` (testnet), `latest-anvil` (local)
+
+**Example for multi-host deployment:**
+
+```bash
+# In .envrc (project root), set the default environment
+export UC_ENV=alphanet
+
+# In docker/operator/.env.alphanet, set environment-specific values
+export UC_TAG=latest-alphanet
+
+# Then you can run commands without specifying --env and --tag each time
+bash start_operators.sh --op 1 up -d
+bash start_operators.sh --op 1 logs -f
+bash start_operators.sh --op 1 down
+```
+
+**Why this approach?**
+- `UC_ENV` is in `.envrc` because it's needed to determine which `.env.*` file to load
+- `UC_TAG` is in `.env.*` files because it's environment-specific (different values for alphanet vs testnet vs local)
+
+#### Required Environment Variables
+
 A `USER_BITCOIN_WIF` needs to be exported in the environment. It is the Bitcoin private key (WIF) used by the user-api for user endpoints (pegin/pegout operations).
 You can generate one via the `bitcoin-wallet` with `generate_address`.
 See [bitcoin-wallet README](../../cli/bitcoin-wallet/README.md) for more info.
