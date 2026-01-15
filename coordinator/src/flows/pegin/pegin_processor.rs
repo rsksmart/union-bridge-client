@@ -580,45 +580,50 @@ where
 
         let ready_accept = self.accept_pegin_retry_scheduler.tick();
         for flow_id in ready_accept {
-            if let Some(attempt) = self.unconfirmed_accept_pegin.remove(&flow_id) {
-                let flow = match self.pegin_flows.get_mut(&flow_id) {
-                    Some(flow) => flow,
-                    None => {
-                        warn!("No pegin flow found for accept_pegin retry: {flow_id}");
-                        continue;
-                    }
-                };
-
-                if flow.current_step() != Steps::AcceptPegin {
-                    debug!(
-                        "Skipping accept_pegin retry for flow {flow_id} in step {:?}",
-                        flow.current_step()
-                    );
+            let attempt = match self.unconfirmed_accept_pegin.remove(&flow_id) {
+                Some(attempt) => attempt,
+                None => {
+                    warn!("No accept_pegin retry state found for flow {flow_id}");
                     continue;
                 }
+            };
 
-                match flow.start_step(Steps::AcceptPegin) {
-                    Ok(_) => {
-                        info!("Accept pegin succeeded on retry for flow {flow_id}");
-                    }
-                    Err(err) => {
-                        if is_missing_native_bridge_confirmations(&err) {
-                            info!(
-                                "Still missing confirmations on native bridge for flow {flow_id}, scheduling another retry (attempt {})",
-                                attempt + 1
-                            );
-                            let next_attempt = attempt.saturating_add(1);
-                            self.unconfirmed_accept_pegin.insert(flow_id, next_attempt);
-                            self.accept_pegin_retry_scheduler
-                                .schedule(flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
-                        } else {
-                            error!("Error on retry for accept_pegin: {err:?}");
-                        }
-                    }
+            let flow = match self.pegin_flows.get_mut(&flow_id) {
+                Some(flow) => flow,
+                None => {
+                    warn!("No pegin flow found for accept_pegin retry: {flow_id}");
+                    continue;
                 }
-            } else {
-                warn!("No accept_pegin retry state found for flow {flow_id}");
+            };
+
+            if flow.current_step() != Steps::AcceptPegin {
+                debug!(
+                    "Skipping accept_pegin retry for flow {flow_id} in step {:?}",
+                    flow.current_step()
+                );
+                continue;
             }
+
+            let err = match flow.start_step(Steps::AcceptPegin) {
+                Ok(_) => {
+                    info!("Accept pegin succeeded on retry for flow {flow_id}");
+                    continue;
+                }
+                Err(err) => err,
+            };
+
+            if !is_missing_native_bridge_confirmations(&err) {
+                error!("Error on retry for accept_pegin: {err:?}");
+                continue;
+            }
+
+            info!(
+                "Still missing confirmations on native bridge for flow {flow_id}, scheduling another retry (attempt {})",
+                attempt + 1
+            );
+            let next_attempt = attempt.saturating_add(1);
+            self.unconfirmed_accept_pegin.insert(flow_id, next_attempt);
+            self.accept_pegin_retry_scheduler.schedule(flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
         }
     }
 
