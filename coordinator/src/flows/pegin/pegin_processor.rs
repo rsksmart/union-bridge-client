@@ -486,12 +486,10 @@ where
         for block_hash in ready {
             debug!("(Re)trying request_pegin for block {block_hash}");
 
-            let (spv_proof, attempt) = match self.unconfirmed_pegin_requests.remove(&block_hash) {
-                Some(state) => state,
-                None => {
-                    warn!("No unconfirmed pegin request found for block: {block_hash}");
-                    continue;
-                }
+            let Some((spv_proof, attempt)) = self.unconfirmed_pegin_requests.remove(&block_hash)
+            else {
+                warn!("No unconfirmed pegin request found for block: {block_hash}");
+                continue;
             };
 
             let tx_id = spv_proof.tx.compute_txid();
@@ -531,20 +529,14 @@ where
 
         let ready_accept = self.accept_pegin_retry_scheduler.tick();
         for flow_id in ready_accept {
-            let attempt = match self.unconfirmed_accept_pegin.remove(&flow_id) {
-                Some(attempt) => attempt,
-                None => {
-                    warn!("No accept_pegin retry state found for flow {flow_id}");
-                    continue;
-                }
+            let Some(attempt) = self.unconfirmed_accept_pegin.remove(&flow_id) else {
+                warn!("No accept_pegin retry state found for flow {flow_id}");
+                continue;
             };
 
-            let flow = match self.pegin_flows.get_mut(&flow_id) {
-                Some(flow) => flow,
-                None => {
-                    warn!("No pegin flow found for accept_pegin retry: {flow_id}");
-                    continue;
-                }
+            let Some(flow) = self.pegin_flows.get_mut(&flow_id) else {
+                warn!("No pegin flow found for accept_pegin retry: {flow_id}");
+                continue;
             };
 
             if flow.current_step() != Steps::AcceptPegin {
@@ -555,12 +547,9 @@ where
                 continue;
             }
 
-            let err = match flow.start_step(Steps::AcceptPegin) {
-                Ok(_) => {
-                    info!("Accept pegin succeeded on retry for flow {flow_id}");
-                    continue;
-                }
-                Err(err) => err,
+            let Err(err) = flow.start_step(Steps::AcceptPegin) else {
+                info!("Accept pegin succeeded on retry for flow {flow_id}");
+                continue;
             };
 
             if !is_missing_native_bridge_confirmations(&err) {

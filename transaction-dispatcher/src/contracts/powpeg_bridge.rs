@@ -22,6 +22,7 @@ pub trait PowpegBridgeContractApi {
 }
 
 // Native Bridge precompiled contract address (RSKIP122)
+#[cfg(test)]
 const NATIVE_BRIDGE_ADDRESS: &str = "0x0000000000000000000000000000000001000006";
 
 // Function selector for getBtcTransactionConfirmations(bytes32,bytes32,uint256,bytes32[])
@@ -75,7 +76,7 @@ impl<P: Provider> PowpegBridgeContractApi for PowpegBridgeContract<P> {
 
         // Encode the call data manually using Ethereum ABI encoding
         // Function selector: keccak256("getBtcTransactionConfirmations(bytes32,bytes32,uint256,bytes32[])")[0:4]
-        let selector = [0x5b, 0x64, 0x45, 0x87];
+        let selector = GET_BTC_TX_CONFIRMATIONS_SELECTOR;
 
         // ABI encoding: fixed-size types first, then dynamic types
         // Parameters: bytes32 blockHash, bytes32 txId, uint256 merkleBranchPath, bytes32[] merkleBranchHashes
@@ -321,7 +322,8 @@ mod tests {
         info!("Connecting to RSK node at: {rpc_url}");
 
         // Create provider
-        let provider = ProviderBuilder::new().on_http(rpc_url.parse().expect("Invalid RPC URL"));
+        let provider =
+            ProviderBuilder::new().connect_http(rpc_url.parse().expect("Invalid RPC URL"));
 
         // Native Bridge address
         let native_bridge_addr = Address::from_str(NATIVE_BRIDGE_ADDRESS).unwrap();
@@ -385,7 +387,8 @@ mod tests {
         info!("Testing Native Bridge with non-existent block");
 
         // Create provider
-        let provider = ProviderBuilder::new().on_http(rpc_url.parse().expect("Invalid RPC URL"));
+        let provider =
+            ProviderBuilder::new().connect_http(rpc_url.parse().expect("Invalid RPC URL"));
 
         let native_bridge_addr = Address::from_str(NATIVE_BRIDGE_ADDRESS).unwrap();
         let contract = PowpegBridgeContract::new(provider, native_bridge_addr);

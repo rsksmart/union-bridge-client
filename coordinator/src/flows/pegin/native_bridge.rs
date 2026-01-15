@@ -74,13 +74,12 @@ impl<CG: RskContractsGatewayApi> NativeBridgeVerifier<CG> {
 const NATIVE_BRIDGE_ERROR_MARKER: &str = "Native Bridge returned error code:";
 
 fn parse_native_bridge_error_code(err: &DomainErrors) -> Option<i32> {
-    let message = match err {
-        DomainErrors::UnhandledContractError(msg) => msg,
-        _ => return None,
+    let DomainErrors::UnhandledContractError(message) = err else {
+        return None;
     };
 
     let (_, rest) = message.split_once(NATIVE_BRIDGE_ERROR_MARKER)?;
-    let code_str = rest.trim().split_whitespace().next()?;
+    let code_str = rest.split_whitespace().next()?;
     code_str.parse().ok()
 }
 
@@ -151,14 +150,16 @@ where
             }
         }
         Err(e) => {
-            if let Some(code) = parse_native_bridge_error_code(&e) {
-                if let Some(reason) = native_bridge_error_reason(code) {
-                    warn!("Native Bridge returned error code {code}: {reason}. Will retry later");
-                    return Ok(VerificationStatus::InsufficientConfirmations {
-                        required: required_confirmations,
-                        actual: 0,
-                    });
-                }
+            // NOTE: Keep this stable-friendly; Docker builds use stable rustc (no let-chains).
+            // Discuss whether we want to move Docker to nightly if we really need let-chains.
+            if let Some((code, reason)) = parse_native_bridge_error_code(&e)
+                .and_then(|code| native_bridge_error_reason(code).map(|reason| (code, reason)))
+            {
+                warn!("Native Bridge returned error code {code}: {reason}. Will retry later");
+                return Ok(VerificationStatus::InsufficientConfirmations {
+                    required: required_confirmations,
+                    actual: 0,
+                });
             }
 
             warn!("Native Bridge query failed: {e}");
