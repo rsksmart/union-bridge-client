@@ -57,6 +57,9 @@ RSK_ADDRESS="${RSK_ADDRESS:-0x$(openssl rand -hex 20)}"
 LOG_SINCE="${LOG_SINCE:-30m}"
 LOG_TAIL_LINES="${LOG_TAIL_LINES:-400}"
 MAX_BLOCKS_WAIT="${MAX_BLOCKS_WAIT:-30}"
+COMMITTEE_SETUP_MAX_BLOCKS="${COMMITTEE_SETUP_MAX_BLOCKS:-40}"
+PEGIN_MAX_BLOCKS="${PEGIN_MAX_BLOCKS:-40}"
+PEGOUT_MAX_BLOCKS="${PEGOUT_MAX_BLOCKS:-40}"
 COMMITTEE_LOG_STRICT="${COMMITTEE_LOG_STRICT:-false}"
 
 GREEN='\033[0;32m'
@@ -776,7 +779,7 @@ success "Operator wallets funded"
 
 step "Step 2: Apply Operators to Stream"
 apply_stream
-if ! wait_for_log_with_block_timeout "CommitteeSetupFlow Done" "5"; then
+    if ! wait_for_log_with_block_timeout "CommitteeSetupFlow Done" "$COMMITTEE_SETUP_MAX_BLOCKS"; then
     if [[ "$COMMITTEE_LOG_STRICT" == "true" ]]; then
         dump_recent_logs "coordinator"
         dump_recent_logs "user-api"
@@ -787,7 +790,7 @@ if ! wait_for_log_with_block_timeout "CommitteeSetupFlow Done" "5"; then
     if ! wait_for_any_log_with_block_timeout \
         "Applied to stream StreamId\\(${STREAM_ID}\\) successfully" \
         "Member already registered for stream" \
-        "5"; then
+        "$COMMITTEE_SETUP_MAX_BLOCKS"; then
         dump_recent_logs "coordinator"
         dump_recent_logs "user-api"
         die "Committee setup did not complete (see logs above)"
@@ -805,12 +808,12 @@ log "Pegin address: $pegin_address"
 # Import the temporary pegin address into the BitVMX wallet (watch-only) before broadcasting the tx.
 import_watch_address_into_wallet "$BITVMX_WALLET_NAME" "$pegin_address"
 create_pegin_tx "$pegin_address" "$USER_BTC_ADDRESS"
-wait_for_log_with_block_timeout "PeginFlow Done" "30"
+wait_for_log_with_block_timeout "PeginFlow Done" "$PEGIN_MAX_BLOCKS"
 success "Pegin flow completed"
 
 step "Step 4: Request Pegout"
 request_pegout
-wait_for_log_with_block_timeout "PegoutFlow Done" "$MAX_BLOCKS_WAIT"
+wait_for_log_with_block_timeout "PegoutFlow Done" "$PEGOUT_MAX_BLOCKS"
 success "Pegout flow completed"
 
 step "Complete"
