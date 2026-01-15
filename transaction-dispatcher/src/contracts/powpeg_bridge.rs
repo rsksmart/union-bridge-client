@@ -79,15 +79,15 @@ impl<P: Provider> PowpegBridgeContractApi for PowpegBridgeContract<P> {
         let selector = GET_BTC_TX_CONFIRMATIONS_SELECTOR;
 
         // ABI encoding: fixed-size types first, then dynamic types
-        // Parameters: bytes32 blockHash, bytes32 txId, uint256 merkleBranchPath, bytes32[] merkleBranchHashes
+        // Parameters: bytes32 txId, bytes32 blockHash, uint256 merkleBranchPath, bytes32[] merkleBranchHashes
         let mut encoded = Vec::new();
         encoded.extend_from_slice(&selector);
 
-        // Encode block_hash (bytes32) - already 32 bytes, just append
-        encoded.extend_from_slice(block_hash_fb.as_slice());
-
         // Encode tx_id (bytes32) - already 32 bytes, just append
         encoded.extend_from_slice(tx_hash_fb.as_slice());
+
+        // Encode block_hash (bytes32) - already 32 bytes, just append
+        encoded.extend_from_slice(block_hash_fb.as_slice());
 
         // Encode merkle_branch_path (uint256) - convert to 32-byte big-endian
         // U256 in Alloy is Uint<256, 4>, we need to convert it to a 32-byte array
@@ -203,8 +203,8 @@ mod tests {
 
         let mut encoded = Vec::new();
         encoded.extend_from_slice(&expected_selector);
-        encoded.extend_from_slice(block_hash_fb.as_slice());
         encoded.extend_from_slice(tx_hash_fb.as_slice());
+        encoded.extend_from_slice(block_hash_fb.as_slice());
 
         // Encode merkle_branch_path as U256
         let path_u256: U256 = merkle_branch_path.parse().unwrap();
@@ -463,8 +463,8 @@ mod tests {
             let mut encoded = Vec::new();
             let selector = [0x5b, 0x64, 0x45, 0x87];
             encoded.extend_from_slice(&selector);
-            encoded.extend_from_slice(block_hash_fb.as_slice());
             encoded.extend_from_slice(tx_hash_fb.as_slice());
+            encoded.extend_from_slice(block_hash_fb.as_slice());
 
             let path_u256: U256 = merkle_branch_path.parse().unwrap();
             let path_bytes_vec = path_u256.to_be_bytes_vec();
