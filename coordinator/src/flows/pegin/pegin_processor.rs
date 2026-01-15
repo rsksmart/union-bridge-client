@@ -38,6 +38,16 @@ const PEGIN_ACCEPTED_INPUT_MSG: &str = "pegin_accepted";
 pub const MIN_TX_CONFIRMATIONS: u32 = 1 + 1; // +1 from Contracts, +1 to give time to the Native Bridge to get up to date with Bitcoin Node
 pub const BLOCKS_DELAY_FOR_TX_CHECK: u32 = 20;
 
+fn is_missing_native_bridge_confirmations(err: &anyhow::Error) -> bool {
+    err.chain().any(|cause| {
+        if let Some(domain_err) = cause.downcast_ref::<DomainErrors>() {
+            matches!(domain_err, DomainErrors::MissingConfirmationsOnNativeBridge(_))
+        } else {
+            false
+        }
+    })
+}
+
 /// Processor that manages multiple pegin flow state machines
 pub struct PeginFlowProcessor<CG, BC, BSF, FactoryBSF, S>
 where
@@ -61,6 +71,8 @@ where
     // For retry logic when native bridge lacks confirmations
     unconfirmed_pegin_requests: HashMap<String, (BtcTxSPVProof, i16)>,
     pegin_retry_scheduler: TickScheduler<String>,
+    unconfirmed_accept_pegin: HashMap<Uuid, i16>,
+    accept_pegin_retry_scheduler: TickScheduler<Uuid>,
     store: Rc<S>,
     native_bridge_verifier: NativeBridgeVerifier<CG>,
 }
@@ -109,6 +121,8 @@ where
             pegin_request_tracker: HashSet::new(),
             unconfirmed_pegin_requests: HashMap::new(),
             pegin_retry_scheduler: TickScheduler::new(),
+            unconfirmed_accept_pegin: HashMap::new(),
+            accept_pegin_retry_scheduler: TickScheduler::new(),
             store,
             native_bridge_verifier,
         };
@@ -464,7 +478,7 @@ where
     }
 
     fn handle_pegin_retry_tick(&mut self) {
-        if self.pegin_retry_scheduler.is_empty() {
+        if self.pegin_retry_scheduler.is_empty() && self.accept_pegin_retry_scheduler.is_empty() {
             return;
         }
 
@@ -511,6 +525,49 @@ where
                 }
             } else {
                 warn!("No unconfirmed pegin request found for block: {block_hash}");
+            }
+        }
+
+        let ready_accept = self.accept_pegin_retry_scheduler.tick();
+        for flow_id in ready_accept {
+            if let Some(attempt) = self.unconfirmed_accept_pegin.remove(&flow_id) {
+                let flow = match self.pegin_flows.get_mut(&flow_id) {
+                    Some(flow) => flow,
+                    None => {
+                        warn!("No pegin flow found for accept_pegin retry: {flow_id}");
+                        continue;
+                    }
+                };
+
+                if flow.current_step() != Steps::AcceptPegin {
+                    debug!(
+                        "Skipping accept_pegin retry for flow {flow_id} in step {:?}",
+                        flow.current_step()
+                    );
+                    continue;
+                }
+
+                match flow.start_step(Steps::AcceptPegin) {
+                    Ok(_) => {
+                        info!("Accept pegin succeeded on retry for flow {flow_id}");
+                    }
+                    Err(err) => {
+                        if is_missing_native_bridge_confirmations(&err) {
+                            info!(
+                                "Still missing confirmations on native bridge for flow {flow_id}, scheduling another retry (attempt {})",
+                                attempt + 1
+                            );
+                            let next_attempt = attempt.saturating_add(1);
+                            self.unconfirmed_accept_pegin.insert(flow_id, next_attempt);
+                            self.accept_pegin_retry_scheduler
+                                .schedule(flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
+                        } else {
+                            error!("Error on retry for accept_pegin: {err:?}");
+                        }
+                    }
+                }
+            } else {
+                warn!("No accept_pegin retry state found for flow {flow_id}");
             }
         }
     }
@@ -669,8 +726,25 @@ where
 
         if let Some(flow) = flow_opt {
             info!("Handling accept pegin SPV proof: flow_id={}, tx_id={}", flow.flow_id(), tx_id);
+            let flow_id = flow.flow_id();
             let step_data = StepData::AcceptPeginSpvProof(spv_proof);
-            flow.complete_step(&step_data)?;
+            if let Err(err) = flow.complete_step(&step_data) {
+                if is_missing_native_bridge_confirmations(&err) {
+                    let attempt = self
+                        .unconfirmed_accept_pegin
+                        .get(&flow_id)
+                        .copied()
+                        .unwrap_or(0)
+                        .saturating_add(1);
+                    info!(
+                        "Missing confirmations on native bridge for flow {flow_id}, scheduling retry (attempt {attempt})"
+                    );
+                    self.unconfirmed_accept_pegin.insert(flow_id, attempt);
+                    self.accept_pegin_retry_scheduler.schedule(flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
+                    return Ok(());
+                }
+                return Err(err);
+            }
         }
 
         Ok(())
@@ -869,6 +943,8 @@ where
         self.tx_status_scheduler.clear();
         self.pegin_retry_scheduler.clear();
         self.unconfirmed_pegin_requests.clear();
+        self.accept_pegin_retry_scheduler.clear();
+        self.unconfirmed_accept_pegin.clear();
         self.pegin_request_tracker.clear();
         self.signature_flows.clear();
     }

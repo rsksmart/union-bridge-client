@@ -71,6 +71,30 @@ impl<CG: RskContractsGatewayApi> NativeBridgeVerifier<CG> {
     }
 }
 
+const NATIVE_BRIDGE_ERROR_MARKER: &str = "Native Bridge returned error code:";
+
+fn parse_native_bridge_error_code(err: &DomainErrors) -> Option<i32> {
+    let message = match err {
+        DomainErrors::UnhandledContractError(msg) => msg,
+        _ => return None,
+    };
+
+    let (_, rest) = message.split_once(NATIVE_BRIDGE_ERROR_MARKER)?;
+    let code_str = rest.trim().split_whitespace().next()?;
+    code_str.parse().ok()
+}
+
+fn native_bridge_error_reason(code: i32) -> Option<&'static str> {
+    match code {
+        -1 => Some("block hash not found in bridge view"),
+        -2 => Some("block is not in best chain"),
+        -3 => Some("internal inconsistency prevented block lookup"),
+        -4 => Some("block too old to be processed"),
+        -5 => Some("merkle branch does not prove inclusion"),
+        _ => None,
+    }
+}
+
 fn verify_btc_confirmations<CG>(
     spv_proof: &BtcTxSPVProof,
     required_confirmations: u32,
@@ -127,6 +151,16 @@ where
             }
         }
         Err(e) => {
+            if let Some(code) = parse_native_bridge_error_code(&e) {
+                if let Some(reason) = native_bridge_error_reason(code) {
+                    warn!("Native Bridge returned error code {code}: {reason}. Will retry later");
+                    return Ok(VerificationStatus::InsufficientConfirmations {
+                        required: required_confirmations,
+                        actual: 0,
+                    });
+                }
+            }
+
             warn!("Native Bridge query failed: {e}");
             Err(e)
         }
