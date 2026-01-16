@@ -13,7 +13,7 @@ use common::runtime_sync::RuntimeSync;
 use common::types::{CommitteeId, TxIdParser};
 use log::{debug, info, trace};
 use serde::{Deserialize, Serialize};
-use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
+use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use transaction_dispatcher::types::{
     GetCommitteeInput, GetCommitteeOutput, GetCommunicationDataInput, GetMemberPublicKeysInput,
     P2PAddressParser, RequestPeginInput,
@@ -65,6 +65,8 @@ pub enum StepData {
     PeginTransactionFound,
     // SPV proof for request pegin
     RequestPeginSpvProof(BtcTxSPVProof),
+    // Retry request pegin without state transition data
+    RetryRequestPegin,
     // Pegin requested
     PeginRequested(PeginRequested),
     // Communication info
@@ -318,6 +320,18 @@ where
             }
             (Steps::RequestPeginSpvProof, StepData::RequestPeginSpvProof(spv_proof)) => {
                 self.state.ctx.request_pegin_spv_proof = Some(spv_proof.clone());
+                self.request_pegin(spv_proof)?;
+                Ok(Steps::PeginRequested)
+            }
+            (Steps::RequestPeginSpvProof, StepData::RetryRequestPegin) => {
+                let spv_proof =
+                    self.state.ctx.request_pegin_spv_proof.as_ref().ok_or_else(|| {
+                        anyhow!(
+                            "SPV proof not available for pegin request - flow_id {}",
+                            self.state.flow_id
+                        )
+                    })?;
+                self.request_pegin(spv_proof)?;
                 Ok(Steps::PeginRequested)
             }
             (Steps::PeginRequested, StepData::PeginRequested(pegin_requested)) => {
@@ -498,6 +512,29 @@ where
             || async { self.contracts.accept_pegin(input).await },
         )
         .context("Failed to accept pegin with provided SPV proof")?;
+
+        Ok(())
+    }
+
+    fn request_pegin(&self, spv_proof: &BtcTxSPVProof) -> Result<()> {
+        debug!("Requesting pegin with SPV proof: {spv_proof:?}");
+
+        let input: RequestPeginInput = spv_proof.clone().into();
+
+        match invoke_contract_safe(
+            &self.rt_sync,
+            "requestPegin",
+            spv_proof,
+            &self.native_bridge_verifier,
+            || async { self.contracts.request_pegin(input).await },
+        ) {
+            Ok(_) => Ok(()),
+            Err(DomainErrors::PeginAlreadyRequested(msg)) => {
+                info!("Pegin already requested, continuing: {msg}");
+                Ok(())
+            }
+            Err(err) => Err(err).context("Failed to request pegin with provided SPV proof"),
+        }?;
 
         Ok(())
     }
