@@ -608,13 +608,12 @@ where
                 continue;
             }
 
-            info!(
-                "Still missing confirmations on native bridge for flow {flow_id}, scheduling another retry (attempt {})",
-                attempt + 1
-            );
             let next_attempt = attempt.saturating_add(1);
-            self.unconfirmed_accept_pegin.insert(flow_id, next_attempt);
-            self.accept_pegin_retry_scheduler.schedule(flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
+            self.schedule_accept_pegin_retry(
+                flow_id,
+                next_attempt,
+                "Still missing confirmations on native bridge, scheduling another retry",
+            );
         }
     }
 
