@@ -15,11 +15,12 @@ use serde::{Deserialize, Serialize};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::{
     GetCommitteeInput, GetCommitteeOutput, GetCommunicationDataInput, GetMemberPublicKeysInput,
-    P2PAddressParser, RegisterPegoutInput, RegisterPegoutOutput, TriggerOperatorTakeInput,
+    P2PAddressParser, RegisterPegoutInput, TriggerOperatorTakeInput,
 };
 use union_contracts::bindings::peg_manager::PegManager::{PegoutRegistered, PegoutRequested};
 use uuid::Uuid;
 
+use crate::flows::common::native_bridge::{NativeBridgeVerifier, invoke_contract_safe};
 use crate::flows::common::{COMM_KEY_INDEX, build_communication_data};
 use crate::store::{CoordinatorStoreApi, StoreKey};
 
@@ -53,6 +54,8 @@ pub enum StepData {
     TriggerOperatorTakeTimeout, // Timeout expired, trigger operator take
     TransactionConfirmed(TransactionStatus),
     SpvProof(BtcTxSPVProof),
+    /// Retry register pegout without state transition data (for Native Bridge confirmation retries)
+    RetryRegisterPegout,
     PegoutRegistered(PegoutRegistered),
 }
 
@@ -85,6 +88,7 @@ where
     bitvmx_broker: Rc<BC>,
     state: State,
     store: Rc<S>,
+    native_bridge_verifier: NativeBridgeVerifier<CG>,
 }
 
 impl<CG, BC, S> PegoutFlow<CG, BC, S>
@@ -100,6 +104,7 @@ where
         internal_id: Uuid,
         pegout_requested: &PegoutRequested,
         store: Rc<S>,
+        native_bridge_verifier: NativeBridgeVerifier<CG>,
     ) -> Self {
         Self {
             contracts,
@@ -119,6 +124,7 @@ where
                 },
             },
             store,
+            native_bridge_verifier,
         }
     }
 
@@ -128,8 +134,9 @@ where
         bitvmx_broker: Rc<BC>,
         state: State,
         store: Rc<S>,
+        native_bridge_verifier: NativeBridgeVerifier<CG>,
     ) -> Self {
-        Self { contracts, rt_sync, bitvmx_broker, state, store }
+        Self { contracts, rt_sync, bitvmx_broker, state, store, native_bridge_verifier }
     }
 
     fn persist_state(&self) -> Result<()> {
@@ -198,14 +205,13 @@ where
             }
             Steps::RegisterPegout => {
                 info!("Registering pegout for flow_id: {}", self.state.flow_id);
-                let spv_proof = self.state.ctx.spv_proof.clone().ok_or_else(|| {
+                let spv_proof = self.state.ctx.spv_proof.as_ref().ok_or_else(|| {
                     anyhow!(
                         "SPV proof not available for pegout registration - flow_id {}",
                         self.state.flow_id
                     )
                 })?;
-                let output = self.register_pegout(spv_proof.clone())?;
-                self.state.ctx.pegout_registered_tx = Some(output.transaction_hash);
+                self.register_pegout(spv_proof)?;
             }
             Steps::Done => {
                 info!("PegoutFlow Done: {}", self.state.flow_id);
@@ -293,6 +299,10 @@ where
                 info!("Received SPV proof for flow_id: {}", self.state.flow_id);
                 trace!("SPV Proof data: {spv_proof:?}");
                 self.state.ctx.spv_proof = Some(spv_proof.clone());
+                Ok(Steps::RegisterPegout)
+            }
+            (Steps::RegisterPegout, StepData::RetryRegisterPegout) => {
+                info!("Retrying register pegout for flow_id: {}", self.state.flow_id);
                 Ok(Steps::RegisterPegout)
             }
             (Steps::RegisterPegout, StepData::PegoutRegistered(pegout_registered)) => {
@@ -513,17 +523,20 @@ where
         hex::encode(self.state.ctx.pegout_requested.pegoutSignatureData.txid.as_slice())
     }
 
-    fn register_pegout(&self, spv_proof: BtcTxSPVProof) -> Result<RegisterPegoutOutput> {
-        let input = RegisterPegoutInput::from(spv_proof);
-        let output = self
-            .rt_sync
-            .run(async { self.contracts.register_pegout(input).await })
-            .context("Failed to register pegout with provided SPV proof")?;
-        info!(
-            "Pegout registration sent for flow_id {} with tx hash {}",
-            self.state.flow_id, output.transaction_hash
-        );
-        Ok(output)
+    fn register_pegout(&self, spv_proof: &BtcTxSPVProof) -> Result<()> {
+        let input = RegisterPegoutInput::from(spv_proof.clone());
+
+        invoke_contract_safe(
+            &self.rt_sync,
+            "registerPegout",
+            spv_proof,
+            &self.native_bridge_verifier,
+            || async { self.contracts.register_pegout(input).await },
+        )
+        .context("Failed to register pegout with provided SPV proof")?;
+
+        info!("Pegout registration sent for flow_id {}", self.state.flow_id);
+        Ok(())
     }
 
     pub fn request_transaction_status(&self) -> Result<()> {

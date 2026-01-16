@@ -112,7 +112,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                         bitvmx_broker.clone(),
                         global_context.clone(),
                         store_rc.clone(),
-                        native_bridge_verifier,
+                        native_bridge_verifier.clone(),
                     )
                     // todo(fede) ideally this method should return a result
                     .expect("couldn't restore or create pegout flow processor"),
