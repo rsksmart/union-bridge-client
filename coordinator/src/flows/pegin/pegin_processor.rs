@@ -578,8 +578,7 @@ where
             );
         }
 
-        let ready_accept = self.accept_pegin_retry_scheduler.tick();
-        for flow_id in ready_accept {
+        for flow_id in self.accept_pegin_retry_scheduler.tick() {
             let Some(attempt) = self.unconfirmed_accept_pegin.remove(&flow_id) else {
                 warn!("No accept_pegin retry state found for flow {flow_id}");
                 continue;
@@ -598,7 +597,8 @@ where
                 continue;
             }
 
-            let Err(err) = flow.start_step(Steps::AcceptPegin) else {
+            let Err(err) = flow.complete_step(&StepData::RetryAcceptPegin) else {
+                // TODO: verify that the pegin is accepted
                 info!("Accept pegin succeeded on retry for flow {flow_id}");
                 continue;
             };
