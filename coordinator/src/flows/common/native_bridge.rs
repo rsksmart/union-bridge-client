@@ -26,7 +26,7 @@ use log::{debug, info, warn};
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use transaction_dispatcher::types::GetBtcTransactionConfirmationsInput;
 
-pub const MIN_TX_CONFIRMATIONS: u32 = 1 + 1; // +1 from Contracts, +1 to give time to the Native Bridge to get up to date with Bitcoin Node
+pub const MIN_TX_CONFIRMATIONS: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum VerificationStatus {
