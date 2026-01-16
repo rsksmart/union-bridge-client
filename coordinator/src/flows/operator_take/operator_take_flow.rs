@@ -13,13 +13,12 @@ use common::runtime_sync::RuntimeSync;
 use common::types::{Address, BlockHash, BlockNumber, CommitteeId, Hash256, TxHash};
 use log::{debug, info};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
-use transaction_dispatcher::types::{
-    GetMemberPublicKeysInput, RegisterOperatorTakeOutput, RequestPeginInput,
-};
+use transaction_dispatcher::types::{GetMemberPublicKeysInput, RequestPeginInput};
 use union_contracts::bindings::peg_manager::PegManager::PegoutRegistered;
 use uuid::Uuid;
 
 use crate::flows::common::TAKE_KEY_INDEX;
+use crate::flows::common::native_bridge::{NativeBridgeVerifier, invoke_contract_safe};
 use crate::types::OperatorTakeTriggeredEvent;
 
 #[allow(dead_code)]
@@ -52,6 +51,8 @@ pub enum StepData {
     ReimbursementResult(ReimbursementResult),
     RequestOperatorTakeTx(TransactionStatus),
     SpvProof(BtcTxSPVProof),
+    /// Retry register operator take without state transition data (for Native Bridge confirmation retries)
+    RetryRegisterOperatorTake,
     OperatorTakeRegistered(PegoutRegistered),
 }
 
@@ -154,6 +155,7 @@ where
     rt_sync: RuntimeSync,
     bitvmx_broker: Rc<BC>,
     pub(crate) state: FlowContext,
+    native_bridge_verifier: NativeBridgeVerifier<CG>,
 }
 
 impl<CG, BC> AdvanceFundsFlow<CG, BC>
@@ -167,6 +169,7 @@ where
         bitvmx_broker: Rc<BC>,
         flow_id: Uuid,
         event: &OperatorTakeTriggeredEvent,
+        native_bridge_verifier: NativeBridgeVerifier<CG>,
     ) -> Result<Self> {
         let trigger_data = OperatorTakeTriggerData::try_from_event(event)?;
 
@@ -186,6 +189,7 @@ where
                 operator_take_tx_status: None,
                 spv_proof: None,
             },
+            native_bridge_verifier,
         })
     }
 
@@ -251,7 +255,7 @@ where
             Steps::RegisterOperatorTake => {
                 info!("Registering operator take for flow_id: {}", self.state.flow_id);
                 let spv_proof =
-                    self.state.spv_proof.clone().ok_or_else(|| {
+                    self.state.spv_proof.as_ref().ok_or_else(|| {
                         anyhow!("SPV proof not available to register operator take")
                     })?;
                 self.register_operator_take(spv_proof)?;
@@ -311,6 +315,10 @@ where
             }
             (Steps::RequestOperatorTakeSpvProof, StepData::SpvProof(spv_proof)) => {
                 self.state.spv_proof = Some(spv_proof);
+                Ok(Steps::RegisterOperatorTake)
+            }
+            (Steps::RegisterOperatorTake, StepData::RetryRegisterOperatorTake) => {
+                info!("Retrying register operator take for flow_id: {}", self.state.flow_id);
                 Ok(Steps::RegisterOperatorTake)
             }
             (Steps::RegisterOperatorTake, StepData::OperatorTakeRegistered(pegout_registered)) => {
@@ -383,23 +391,20 @@ where
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetSPVProof(tx_id))
     }
 
-    fn register_operator_take(
-        &self,
-        spv_proof: BtcTxSPVProof,
-    ) -> Result<RegisterOperatorTakeOutput> {
-        // let input = RegisterOperatorTakeInput::from(spv_proof);
-        let input: RequestPeginInput = spv_proof.into();
-        let output = self
-            .rt_sync
-            .run(async { self.contracts.register_operator_take(input).await })
-            .context("Failed to register operator take with provided SPV proof")?;
+    fn register_operator_take(&self, spv_proof: &BtcTxSPVProof) -> Result<()> {
+        let input: RequestPeginInput = spv_proof.clone().into();
 
-        info!(
-            "Operator take registration sent for flow_id {} with tx hash {}",
-            self.state.flow_id, output.transaction_hash
-        );
+        invoke_contract_safe(
+            &self.rt_sync,
+            "registerOperatorTake",
+            spv_proof,
+            &self.native_bridge_verifier,
+            || async { self.contracts.register_operator_take(input).await },
+        )
+        .context("Failed to register operator take with provided SPV proof")?;
 
-        Ok(output)
+        info!("Operator take registration sent for flow_id {}", self.state.flow_id);
+        Ok(())
     }
 
     fn request_bitvmx_comm_info(&self) -> Result<()> {
