@@ -25,7 +25,7 @@ use crate::flows::btc_signature::btc_signature_subflow::{
     BtcSignatureSubFlowFactoryApi,
 };
 use crate::flows::common::GlobalContext;
-use crate::flows::pegin::native_bridge::NativeBridgeVerifier;
+use crate::flows::pegin::native_bridge::{NativeBridgeVerifier, invoke_contract_safe};
 use crate::flows::pegin::pegin_flow::{PeginFlow, State, StepData, Steps};
 use crate::flows::pegin::utils::get_temp_pegin_pid;
 use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix};
@@ -501,7 +501,13 @@ where
 
             // Call requestPegin contract again
             let input: transaction_dispatcher::types::RequestPeginInput = spv_proof.clone().into();
-            let res = self.rt_sync.run(async { self.contracts_gateway.request_pegin(input).await });
+            let res = invoke_contract_safe(
+                &self.rt_sync,
+                "requestPegin",
+                &spv_proof,
+                &self.native_bridge_verifier,
+                || async { self.contracts_gateway.request_pegin(input).await },
+            );
 
             match res {
                 Ok(_) => {
@@ -655,7 +661,13 @@ where
 
         // Call requestPegin contract
         let input: transaction_dispatcher::types::RequestPeginInput = spv_proof.clone().into();
-        let res = self.rt_sync.run(async { self.contracts_gateway.request_pegin(input).await });
+        let res = invoke_contract_safe(
+            &self.rt_sync,
+            "requestPegin",
+            &spv_proof,
+            &self.native_bridge_verifier,
+            || async { self.contracts_gateway.request_pegin(input).await },
+        );
 
         match res {
             Ok(_) => {
