@@ -341,8 +341,7 @@ where
 
         if current_step != Steps::RequestOperatorTakeSpvProof {
             warn!(
-                "Advance funds flow {} received SPV proof at unexpected step {:?}",
-                flow_id, current_step
+                "Advance funds flow {flow_id} received SPV proof at unexpected step {current_step:?}"
             );
             return Ok(());
         }

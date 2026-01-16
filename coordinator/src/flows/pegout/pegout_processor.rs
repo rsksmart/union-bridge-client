@@ -616,6 +616,7 @@ where
         Ok(())
     }
 
+    #[allow(clippy::too_many_lines)]
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
         trace!("Processing BitVMX event: {event:?}");
 
