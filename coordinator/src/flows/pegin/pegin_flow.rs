@@ -79,6 +79,8 @@ pub enum StepData {
     AcceptPeginTransactionConfirmed(TransactionStatus),
     // SPV proof for accept pegin
     AcceptPeginSpvProof(BtcTxSPVProof),
+    // Retry accept pegin without state transition
+    RetryAcceptPegin,
     // Pegin accepted
     PeginAccepted(PeginAccepted),
 }
@@ -208,6 +210,7 @@ where
     }
 
     /// Start the next step and log the transition
+    // TODO(UBC-2071): Make start_step non-public and expose explicit transition APIs only.
     pub fn start_step(&mut self, next_step: Steps) -> Result<()> {
         let previous_step = self.state.ctx.step;
         self.state.ctx.step = next_step;
@@ -361,6 +364,10 @@ where
                 info!("Received SPV proof for flow_id: {}", self.state.flow_id);
                 trace!("SPV Proof data: {spv_proof:?}");
                 self.state.ctx.accept_pegin_spv_proof = Some(spv_proof.clone());
+                Ok(Steps::AcceptPegin)
+            }
+            (Steps::AcceptPegin, StepData::RetryAcceptPegin) => {
+                info!("Retrying accept pegin for flow_id: {}", self.state.flow_id);
                 Ok(Steps::AcceptPegin)
             }
             (Steps::AcceptPegin, StepData::PeginAccepted(pegin_accepted)) => {
