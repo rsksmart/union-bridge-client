@@ -477,6 +477,12 @@ where
         Ok(())
     }
 
+    fn schedule_accept_pegin_retry(&mut self, flow_id: Uuid, attempt: i16, reason: &str) {
+        info!("{reason} for flow {flow_id} (attempt {attempt})");
+        self.unconfirmed_accept_pegin.insert(flow_id, attempt);
+        self.accept_pegin_retry_scheduler.schedule(flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
+    }
+
     fn handle_pegin_retry_tick(&mut self) {
         if self.pegin_retry_scheduler.is_empty() && self.accept_pegin_retry_scheduler.is_empty() {
             return;
@@ -556,13 +562,12 @@ where
                 continue;
             }
 
-            info!(
-                "Still missing confirmations on native bridge for flow {flow_id}, scheduling another retry (attempt {})",
-                attempt + 1
-            );
             let next_attempt = attempt.saturating_add(1);
-            self.unconfirmed_accept_pegin.insert(flow_id, next_attempt);
-            self.accept_pegin_retry_scheduler.schedule(flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
+            self.schedule_accept_pegin_retry(
+                flow_id,
+                next_attempt,
+                "Still missing confirmations on native bridge, scheduling another retry",
+            );
         }
     }
 
@@ -730,11 +735,11 @@ where
                         .copied()
                         .unwrap_or(0)
                         .saturating_add(1);
-                    info!(
-                        "Missing confirmations on native bridge for flow {flow_id}, scheduling retry (attempt {attempt})"
+                    self.schedule_accept_pegin_retry(
+                        flow_id,
+                        attempt,
+                        "Missing confirmations on native bridge, scheduling retry",
                     );
-                    self.unconfirmed_accept_pegin.insert(flow_id, attempt);
-                    self.accept_pegin_retry_scheduler.schedule(flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
                     return Ok(());
                 }
                 return Err(err);
