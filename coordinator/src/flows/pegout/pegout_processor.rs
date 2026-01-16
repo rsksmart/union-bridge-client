@@ -5,7 +5,7 @@ use std::rc::Rc;
 use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::Txid;
 use common::msg_broker::bitvmx_types::{
-    OutgoingBitVMXApiMessages, PegOutAccepted, TransactionStatus, VariableTypes,
+    BtcTxSPVProof, OutgoingBitVMXApiMessages, PegOutAccepted, TransactionStatus, VariableTypes,
 };
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
@@ -25,6 +25,7 @@ use crate::flows::btc_signature::btc_signature_subflow::{
     BtcSignatureSubFlowFactoryApi,
 };
 use crate::flows::common::GlobalContext;
+use crate::flows::common::native_bridge::{NativeBridgeVerifier, VerificationStatus};
 use crate::flows::pegout::pegout_flow::{PegoutFlow, State, StepData, Steps};
 use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix};
 use crate::types::{
@@ -59,6 +60,7 @@ where
     advance_funds_timeout_scheduler: TimeBasedScheduler<Uuid>,
     flows_pending_timeout: HashSet<Uuid>, // Flows that need timeout scheduled on next block
     store: Rc<S>,
+    native_bridge_verifier: NativeBridgeVerifier<CG>,
 }
 
 impl<CG, BC, S>
@@ -80,6 +82,7 @@ where
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
         store: Rc<S>,
+        native_bridge_verifier: NativeBridgeVerifier<CG>,
     ) -> Self {
         let factory = BtcSignatureSubFlowFactory::new(contracts_gateway.clone(), rt_sync.clone());
         Self {
@@ -96,6 +99,7 @@ where
             advance_funds_timeout_scheduler: TimeBasedScheduler::new(),
             flows_pending_timeout: HashSet::new(),
             store,
+            native_bridge_verifier,
         }
     }
 
@@ -105,9 +109,16 @@ where
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
         store: Rc<S>,
+        native_bridge_verifier: NativeBridgeVerifier<CG>,
     ) -> Result<Self> {
-        let mut processor =
-            Self::new(contracts_gateway, rt_sync, bitvmx_broker, global_context, store);
+        let mut processor = Self::new(
+            contracts_gateway,
+            rt_sync,
+            bitvmx_broker,
+            global_context,
+            store,
+            native_bridge_verifier,
+        );
         processor.restore_flows_from_store()?;
         Ok(processor)
     }
@@ -518,6 +529,36 @@ where
 
         Ok(())
     }
+
+    /// Verify that the Native Bridge has sufficient confirmations for the SPV proof.
+    /// If insufficient, schedules a retry and returns false.
+    /// If verified, returns true.
+    fn verify_native_bridge_confirmations(
+        &mut self,
+        spv_proof: &BtcTxSPVProof,
+        flow_id: Uuid,
+    ) -> Result<bool> {
+        match self
+            .native_bridge_verifier
+            .verify_confirmations(spv_proof, SPV_PROOF_MIN_CONFIRMATIONS)
+        {
+            Ok(VerificationStatus::Verified) => {
+                debug!("Native Bridge verification passed for flow_id: {flow_id}");
+                Ok(true)
+            }
+            Ok(VerificationStatus::InsufficientConfirmations { required, actual }) => {
+                info!(
+                    "Insufficient Native Bridge confirmations for flow_id: {flow_id} ({actual}/{required}), scheduling retry"
+                );
+                self.tx_status_scheduler.schedule(flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
+                Ok(false)
+            }
+            Err(e) => {
+                warn!("Native Bridge verification failed for flow_id: {flow_id}: {e:?}");
+                Err(anyhow!("Native Bridge verification failed: {e:?}"))
+            }
+        }
+    }
 }
 
 impl<CG, BC, S> EventProcessor
@@ -603,22 +644,41 @@ where
                     anyhow!("Received SPVProof event for tx_id {tx_id} without proof")
                 })?;
 
-                let Some((flow_id, flow)) =
-                    self.pegout_flows.iter_mut().find_map(|(flow_id, flow)| {
-                        (flow.get_user_take_txid() == Some(*tx_id)).then_some((*flow_id, flow))
-                    })
-                else {
+                // First pass: find flow_id and verify step (immutable borrow)
+                let Some(flow_id) = self.pegout_flows.iter().find_map(|(flow_id, flow)| {
+                    (flow.get_user_take_txid() == Some(*tx_id)).then_some(*flow_id)
+                }) else {
                     trace!("Ignoring SPV proof for tx_id {tx_id} without matching flow");
                     return Ok(());
                 };
-                if flow.current_step() != Steps::RequestUserTakeSpvProof {
+
+                // Verify step before proceeding
+                let current_step = self
+                    .pegout_flows
+                    .get(&flow_id)
+                    .map(PegoutFlow::current_step)
+                    .ok_or_else(|| anyhow!("Flow not found for flow_id {flow_id}"))?;
+
+                if current_step != Steps::RequestUserTakeSpvProof {
                     bail!(
                         "Mismatch current step for flow {} expected {:?} having {:?}",
                         flow_id,
                         Steps::RequestUserTakeSpvProof,
-                        flow.current_step()
+                        current_step
                     );
                 }
+
+                // Verify Native Bridge confirmations (mutable borrow of self)
+                if !self.verify_native_bridge_confirmations(&spv_proof, flow_id)? {
+                    // Retry scheduled, don't complete the step yet
+                    return Ok(());
+                }
+
+                // Native Bridge verification passed, complete the step
+                let flow = self
+                    .pegout_flows
+                    .get_mut(&flow_id)
+                    .ok_or_else(|| anyhow!("Flow not found for flow_id {flow_id}"))?;
                 flow.complete_step(&StepData::SpvProof(spv_proof))?;
             }
             OutgoingBitVMXApiMessages::Transaction(flow_id, tx_status, _tx_opt) => {

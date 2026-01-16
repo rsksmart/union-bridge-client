@@ -18,9 +18,9 @@ use crate::flows::committee::setup_committee_flow::{
     SetupCommitteeFlowFactory, SetupCommitteeProcessor,
 };
 use crate::flows::common::GlobalContext;
+use crate::flows::common::native_bridge::NativeBridgeVerifier;
 use crate::flows::fund_bitvmx_flow::FundBitvmxProcessor;
 use crate::flows::operator_take::AdvanceFundsFlowProcessor;
-use crate::flows::pegin::native_bridge::NativeBridgeVerifier;
 use crate::flows::pegin::pegin_processor::PeginFlowProcessor;
 use crate::flows::pegout::pegout_processor::PegoutFlowProcessor;
 use crate::monitor::MonitorApi;
@@ -103,7 +103,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                     bitvmx_broker.clone(),
                     global_context.clone(),
                     Rc::clone(&store_rc),
-                    native_bridge_verifier,
+                    native_bridge_verifier.clone(),
                 )),
                 Box::new(
                     PegoutFlowProcessor::restore_or_new(
@@ -112,6 +112,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                         bitvmx_broker.clone(),
                         global_context.clone(),
                         store_rc.clone(),
+                        native_bridge_verifier,
                     )
                     // todo(fede) ideally this method should return a result
                     .expect("couldn't restore or create pegout flow processor"),
