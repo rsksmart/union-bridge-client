@@ -20,6 +20,7 @@ use crate::flows::committee::setup_committee_flow::{
 use crate::flows::common::GlobalContext;
 use crate::flows::fund_bitvmx_flow::FundBitvmxProcessor;
 use crate::flows::operator_take::AdvanceFundsFlowProcessor;
+use crate::flows::pegin::native_bridge::NativeBridgeVerifier;
 use crate::flows::pegin::pegin_processor::PeginFlowProcessor;
 use crate::flows::pegout::pegout_processor::PegoutFlowProcessor;
 use crate::monitor::MonitorApi;
@@ -42,10 +43,9 @@ pub struct Coordinator<M: MonitorApi, BC: BitVmxBrokerClientApi, S: CoordinatorS
 impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi + 'static>
     Coordinator<M, BC, S>
 {
-    // todo(fede) new methods should be transaparent and any other extra logic should be in a
-    // separate build/factory method
     /// # Panics
     /// Panics if loading context from the database fails.
+    #[allow(clippy::too_many_arguments)]
     pub fn new<CG: RskContractsGatewayApi + 'static>(
         rt_sync: &RuntimeSync,
         monitor: M,
@@ -54,6 +54,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
         store: S,
         shutdown_flag: ShutdownFlag,
         bitcoin_network: Network,
+        env_name: Option<&str>,
     ) -> Self {
         let contracts_arc = Rc::new(contracts_gateway);
         let store_rc = Rc::new(store);
@@ -73,6 +74,20 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
             Rc::clone(&store_rc),
         );
 
+        let native_bridge_verifier = if let Some(env_name @ ("alphanet" | "regtest")) = env_name {
+            log::info!("Environment: {env_name} → Using Real Native Bridge Verifier");
+            NativeBridgeVerifier::Real {
+                contracts: contracts_arc.clone(),
+                rt_sync: rt_sync.clone(),
+            }
+        } else {
+            log::info!(
+                "Environment: {} → Using Dummy Native Bridge Verifier (BitVMX confirmations only)",
+                env_name.unwrap_or("NONE")
+            );
+            NativeBridgeVerifier::Dummy
+        };
+
         Self {
             monitor,
             bitvmx_broker: bitvmx_broker.clone(),
@@ -88,6 +103,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                     bitvmx_broker.clone(),
                     global_context.clone(),
                     Rc::clone(&store_rc),
+                    native_bridge_verifier,
                 )),
                 Box::new(
                     PegoutFlowProcessor::restore_or_new(
@@ -321,7 +337,8 @@ pub(crate) mod tests {
         AddMemberSignatureInput, AddMemberSignatureOutput, AddOperatorTakeTxHashInput,
         AddOperatorTakeTxHashOutput, ApplyToStreamInput, ApplyToStreamOutput,
         DepositAggregatedKeyInput, DepositAggregatedKeyOutput, DepositCommunicationDataInput,
-        DepositCommunicationDataOutput, GetCommitteeInput, GetCommitteeOutput,
+        DepositCommunicationDataOutput, GetBtcTransactionConfirmationsInput,
+        GetBtcTransactionConfirmationsOutput, GetCommitteeInput, GetCommitteeOutput,
         GetCommunicationDataInput, GetCommunicationDataOutput, GetMemberPublicKeysInput,
         GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput,
         RegisterOperatorTakeInput, RegisterOperatorTakeOutput, RegisterPegoutInput,
@@ -648,6 +665,11 @@ pub(crate) mod tests {
                 &self,
                 input: AddOperatorTakeTxHashInput,
             ) -> Result<AddOperatorTakeTxHashOutput, DomainErrors>;
+
+            async fn get_btc_confirmations(
+                &self,
+                input: GetBtcTransactionConfirmationsInput,
+            ) -> Result<GetBtcTransactionConfirmationsOutput, DomainErrors>;
         }
     }
 }

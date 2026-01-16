@@ -20,7 +20,7 @@ pub async fn handle_bitcoin_funding(environment: Environment, execute: bool) -> 
     let addresses = match environment {
         Environment::Local => collect_local_addresses().await?,
         Environment::LocalDocker => collect_local_docker_addresses().await?,
-        Environment::Alphanet | Environment::Testnet => {
+        Environment::Alphanet | Environment::Testnet | Environment::Regtest => {
             collect_remote_addresses(environment).await?
         }
     };
@@ -209,7 +209,7 @@ fn print_instructions(env: Environment, addresses: &[String]) {
     println!("Note: See the bitcoin-wallet README for how to start and use the CLI: ../cli/bitcoin-wallet/README.md\n");
 
     match env {
-        Environment::Alphanet | Environment::Testnet => {
+        Environment::Regtest | Environment::Alphanet | Environment::Testnet => {
             println!(
                 "Run the following command in your bitcoin-wallet or wallet tooling for {}:",
                 env.get_name()

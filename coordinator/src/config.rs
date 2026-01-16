@@ -79,7 +79,6 @@ impl Config {
             || contract.name == SIGNATURE_CONTRACT_NAME
             || contract.name == COMMITTEE_REGISTRY_CONTRACT_NAME
             || contract.name == MEMBER_REGISTRY_CONTRACT_NAME
-            || contract.name == SIGNATURE_CONTRACT_NAME
             || contract.name == STREAM_MANAGER_CONTRACT_NAME
     }
 }
@@ -127,6 +126,6 @@ mod tests {
             config.coordinator.storage_path.ends_with("/.union_bridge/database/multi-client-1")
         );
         assert_eq!("regtest", config.bitcoin_network);
-        assert_eq!(8, config.contracts.len());
+        assert_eq!(9, config.contracts.len());
     }
 }

@@ -15,6 +15,7 @@ print_help() {
   echo "Required:"
   echo "  --env alphanet           Deploy on Alphanet, a specific operator (requires --op <ID>)"
   echo "  --env local              Deploy locally, all 4 operators"
+  echo "  --env regtest            Deploy in regtest, all 4 operators"
   echo ""
   echo "Options:"
   echo "  --op <ID>                Specify operator ID (1, 2, 3, or 4) - required for alphanet startup"
@@ -51,6 +52,8 @@ print_help() {
   echo "  $0 --env local --fresh up -d                             # Clean and start all operators locally"
   echo "  $0 --env local --fresh --yes up -d                       # Clean and start all operators locally, no confirmation prompt"
   echo "  $0 --env local down                                      # Stop all local operators"
+  echo "  $0 --env regtest up -d                                   # Start all 4 operators in regtest mode"
+  echo "  $0 --env regtest down                                    # Stop all regtest operators"
   echo "  $0 --env alphanet --op 1 up -d                           # Start operator 1 in alphanet"
   echo "  $0 --env alphanet --op 2 up -d                           # Start operator 2 in alphanet"
   echo "  $0 --env alphanet --op 1 --tag latest-alphanet up -d     # Start operator 1 with specific tag"
@@ -91,8 +94,13 @@ while [[ $# -gt 0 ]]; do
         if [[ -z "$UC_TAG" ]]; then
           UC_TAG="latest-anvil"
         fi
+      elif [[ "$ENVIRONMENT" == "regtest" ]]; then
+        ENV_FILE="${SCRIPT_DIR}/.env.regtest"
+        if [[ -z "$UC_TAG" ]]; then
+          UC_TAG="latest-regtest"
+        fi
       else
-        echo "Invalid environment. Use 'alphanet' or 'local'"
+        echo "Invalid environment. Use 'alphanet', 'local', or 'regtest'"
         exit 1
       fi
       shift 2
@@ -114,7 +122,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$ENVIRONMENT" ]]; then
-  echo "Error: --env flag is required. Use 'alphanet' or 'local'."
+  echo "Error: --env flag is required. Use 'alphanet', 'local', or 'regtest'."
   echo "Run '$0 --help' for usage information."
   exit 1
 fi
@@ -138,8 +146,8 @@ for arg in "${DOCKER_COMPOSE_ARGS[@]}"; do
 done
 
 # Validate --op flag usage
-if [[ "$ENVIRONMENT" == "local" && -n "$OPERATOR_ARG" ]]; then
-  echo "Error: --op is not allowed in local environment. All operators will be deployed."
+if [[ ("$ENVIRONMENT" == "local" || "$ENVIRONMENT" == "regtest") && -n "$OPERATOR_ARG" ]]; then
+  echo "Error: --op is not allowed in ${ENVIRONMENT} environment. All operators will be deployed."
   exit 1
 elif [[ "$ENVIRONMENT" == "alphanet" && "${IS_STARTUP_COMMAND}" == false && -n "$OPERATOR_ARG" ]]; then
   echo "Error: --op can only be used with startup commands (up, restart, start, create)."
@@ -163,8 +171,8 @@ if [[ "$ENVIRONMENT" == "alphanet" && "${IS_STARTUP_COMMAND}" == true ]]; then
   fi
 
   OPERATORS_TO_RUN=("$OPERATOR_ARG")
-elif [[ "$ENVIRONMENT" == "local" ]]; then
-  # Local: run all operators
+elif [[ "$ENVIRONMENT" == "local" || "$ENVIRONMENT" == "regtest" ]]; then
+  # Local/Regtest: run all operators
   OPERATORS_TO_RUN=(1 2 3 4)
 fi
 
@@ -179,7 +187,7 @@ if [[ "${FRESH}" == true ]]; then
     fi
   fi
 
-  if [[ "$ENVIRONMENT" == "local" ]]; then
+  if [[ "$ENVIRONMENT" == "local" || "$ENVIRONMENT" == "regtest" ]]; then
     echo "Cleaning operator stacks (down --volumes)..."
     for op_num in "${OPERATORS_TO_RUN[@]}"; do
       cmd="docker compose -p op_${op_num} --env-file ${ENV_FILE} down --volumes"
@@ -209,7 +217,7 @@ if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
   fi
 fi
 
-run_local_operators() {
+run_all_operators() {
   # LOCAL ENVIRONMENT: All 4 operators on one host
   # Each operator uses different ports to avoid conflicts
 
@@ -242,7 +250,7 @@ run_local_operators() {
   done
 }
 
-run_alphanet_operators() {
+run_default_operator() {
   # ALPHANET ENVIRONMENT: Each operator on separate host
 
   local ALPHANET_PROJECT_NAME="-p union-operator"
@@ -267,8 +275,8 @@ run_alphanet_operators() {
 }
 
 # Run operators based on environment
-if [[ "$ENVIRONMENT" == "local" ]]; then
-  run_local_operators
+if [[ "$ENVIRONMENT" == "local" || "$ENVIRONMENT" == "regtest" ]]; then
+  run_all_operators
 else
-  run_alphanet_operators
+  run_default_operator
 fi

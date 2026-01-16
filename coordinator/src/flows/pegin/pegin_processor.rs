@@ -25,6 +25,7 @@ use crate::flows::btc_signature::btc_signature_subflow::{
     BtcSignatureSubFlowFactoryApi,
 };
 use crate::flows::common::GlobalContext;
+use crate::flows::pegin::native_bridge::NativeBridgeVerifier;
 use crate::flows::pegin::pegin_flow::{PeginFlow, State, StepData, Steps};
 use crate::flows::pegin::utils::get_temp_pegin_pid;
 use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix};
@@ -36,6 +37,16 @@ use crate::types::{
 const PEGIN_ACCEPTED_INPUT_MSG: &str = "pegin_accepted";
 pub const MIN_TX_CONFIRMATIONS: u32 = 1 + 1; // +1 from Contracts, +1 to give time to the Native Bridge to get up to date with Bitcoin Node
 pub const BLOCKS_DELAY_FOR_TX_CHECK: u32 = 20;
+
+fn is_missing_native_bridge_confirmations(err: &anyhow::Error) -> bool {
+    err.chain().any(|cause| {
+        if let Some(domain_err) = cause.downcast_ref::<DomainErrors>() {
+            matches!(domain_err, DomainErrors::MissingConfirmationsOnNativeBridge(_))
+        } else {
+            false
+        }
+    })
+}
 
 /// Processor that manages multiple pegin flow state machines
 pub struct PeginFlowProcessor<CG, BC, BSF, FactoryBSF, S>
@@ -60,7 +71,10 @@ where
     // For retry logic when native bridge lacks confirmations
     unconfirmed_pegin_requests: HashMap<String, (BtcTxSPVProof, i16)>,
     pegin_retry_scheduler: TickScheduler<String>,
+    unconfirmed_accept_pegin: HashMap<Uuid, i16>,
+    accept_pegin_retry_scheduler: TickScheduler<Uuid>,
     store: Rc<S>,
+    native_bridge_verifier: NativeBridgeVerifier<CG>,
 }
 
 impl<CG, BC, S>
@@ -82,6 +96,7 @@ where
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
         store: Rc<S>,
+        native_bridge_verifier: NativeBridgeVerifier<CG>,
     ) -> Self {
         let factory =
             BtcSignatureSubFlowFactory::new(Rc::clone(&contracts_gateway), rt_sync.clone());
@@ -106,7 +121,10 @@ where
             pegin_request_tracker: HashSet::new(),
             unconfirmed_pegin_requests: HashMap::new(),
             pegin_retry_scheduler: TickScheduler::new(),
+            unconfirmed_accept_pegin: HashMap::new(),
+            accept_pegin_retry_scheduler: TickScheduler::new(),
             store,
+            native_bridge_verifier,
         };
 
         // Restore flows from store
@@ -129,6 +147,7 @@ where
                 Rc::clone(&self.bitvmx_broker),
                 saved_state.clone(),
                 Rc::clone(&self.store),
+                self.native_bridge_verifier.clone(),
             );
             info!("Restored pegin flow {id} at step {:?}", flow.current_step());
             debug!("Restored flow {id} context: {:?}", flow.get_state());
@@ -458,55 +477,105 @@ where
         Ok(())
     }
 
+    fn schedule_request_pegin_retry(
+        &mut self,
+        spv_proof: BtcTxSPVProof,
+        attempt: i16,
+        reason: &str,
+    ) {
+        let block_hash = spv_proof.block_hash.clone();
+        info!("{reason} for block {block_hash} (attempt {attempt})");
+        self.unconfirmed_pegin_requests.insert(block_hash.clone(), (spv_proof, attempt));
+        self.pegin_retry_scheduler.schedule(block_hash, BLOCKS_DELAY_FOR_TX_CHECK);
+    }
+
+    fn schedule_accept_pegin_retry(&mut self, flow_id: Uuid, attempt: i16, reason: &str) {
+        info!("{reason} for flow {flow_id} (attempt {attempt})");
+        self.unconfirmed_accept_pegin.insert(flow_id, attempt);
+        self.accept_pegin_retry_scheduler.schedule(flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
+    }
+
     fn handle_pegin_retry_tick(&mut self) {
-        if self.pegin_retry_scheduler.is_empty() {
+        if self.pegin_retry_scheduler.is_empty() && self.accept_pegin_retry_scheduler.is_empty() {
             return;
         }
 
-        let ready = self.pegin_retry_scheduler.tick();
-        for block_hash in ready {
+        for block_hash in self.pegin_retry_scheduler.tick() {
             debug!("(Re)trying request_pegin for block {block_hash}");
 
-            if let Some((spv_proof, attempt)) = self.unconfirmed_pegin_requests.remove(&block_hash)
-            {
-                let tx_id = spv_proof.tx.compute_txid();
-
-                // Call requestPegin contract again
-                let input: transaction_dispatcher::types::RequestPeginInput =
-                    spv_proof.clone().into();
-                let res =
-                    self.rt_sync.run(async { self.contracts_gateway.request_pegin(input).await });
-
-                match res {
-                    Ok(_) => {
-                        info!("Request pegin succeeded on retry for block {block_hash}");
-                        // Remove from tracking since it succeeded
-                        self.pegin_request_tracker.remove(&tx_id);
-                    }
-                    Err(DomainErrors::MissingConfirmationsOnNativeBridge(_)) => {
-                        info!(
-                            "Still missing confirmations on native bridge for block {block_hash}, scheduling another retry (attempt {})",
-                            attempt + 1
-                        );
-                        // Store for another retry with incremented attempt
-                        self.unconfirmed_pegin_requests
-                            .insert(block_hash.clone(), (spv_proof, attempt + 1));
-                        self.pegin_retry_scheduler.schedule(block_hash, BLOCKS_DELAY_FOR_TX_CHECK);
-                    }
-                    Err(DomainErrors::PeginAlreadyRequested(msg)) => {
-                        info!("Pegin already requested on retry: {msg}");
-                        // Remove from tracking since it's already processed
-                        self.pegin_request_tracker.remove(&tx_id);
-                    }
-                    Err(err) => {
-                        error!("Error on retry for request_pegin: {err:?}");
-                        // Don't retry on other errors
-                        self.pegin_request_tracker.remove(&tx_id);
-                    }
-                }
-            } else {
+            let Some((spv_proof, attempt)) = self.unconfirmed_pegin_requests.remove(&block_hash)
+            else {
                 warn!("No unconfirmed pegin request found for block: {block_hash}");
+                continue;
+            };
+
+            let tx_id = spv_proof.tx.compute_txid();
+            let Some(flow_id) = self.request_pegin_flow_id(&tx_id) else {
+                warn!("No pegin flow found for request_pegin retry: tx_id={tx_id}");
+                continue;
+            };
+
+            let Some(flow) = self.pegin_flows.get_mut(&flow_id) else {
+                warn!("No pegin flow found for request_pegin retry: flow_id={flow_id}");
+                continue;
+            };
+
+            let Err(err) = flow.complete_step(&StepData::RetryRequestPegin) else {
+                info!("Request pegin succeeded on retry for block {block_hash}");
+                self.pegin_request_tracker.remove(&tx_id);
+                continue;
+            };
+
+            if !is_missing_native_bridge_confirmations(&err) {
+                error!("Error on retry for request_pegin: {err:?}");
+                self.pegin_request_tracker.remove(&tx_id);
+                continue;
             }
+
+            let next_attempt = attempt.saturating_add(1);
+            self.schedule_request_pegin_retry(
+                spv_proof,
+                next_attempt,
+                "Still missing confirmations on native bridge, scheduling another retry",
+            );
+        }
+
+        for flow_id in self.accept_pegin_retry_scheduler.tick() {
+            let Some(attempt) = self.unconfirmed_accept_pegin.remove(&flow_id) else {
+                warn!("No accept_pegin retry state found for flow {flow_id}");
+                continue;
+            };
+
+            let Some(flow) = self.pegin_flows.get_mut(&flow_id) else {
+                warn!("No pegin flow found for accept_pegin retry: {flow_id}");
+                continue;
+            };
+
+            if flow.current_step() != Steps::AcceptPegin {
+                debug!(
+                    "Skipping accept_pegin retry for flow {flow_id} in step {:?}",
+                    flow.current_step()
+                );
+                continue;
+            }
+
+            let Err(err) = flow.complete_step(&StepData::RetryAcceptPegin) else {
+                // TODO: verify that the pegin is accepted
+                info!("Accept pegin succeeded on retry for flow {flow_id}");
+                continue;
+            };
+
+            if !is_missing_native_bridge_confirmations(&err) {
+                error!("Error on retry for accept_pegin: {err:?}");
+                continue;
+            }
+
+            let next_attempt = attempt.saturating_add(1);
+            self.schedule_accept_pegin_retry(
+                flow_id,
+                next_attempt,
+                "Still missing confirmations on native bridge, scheduling another retry",
+            );
         }
     }
 
@@ -567,6 +636,7 @@ where
             Rc::clone(&self.bitvmx_broker),
             tx_id,
             Rc::clone(&self.store),
+            self.native_bridge_verifier.clone(),
         );
 
         info!("Created new pegin flow {temp_flow_id} from Bitcoin transaction: {tx_id}");
@@ -580,6 +650,18 @@ where
         Ok(())
     }
 
+    fn request_pegin_flow_id(&self, tx_id: &Txid) -> Option<Uuid> {
+        self.pegin_flows.iter().find_map(|(flow_id, flow)| {
+            if flow.current_step() == Steps::RequestPeginSpvProof
+                && flow.get_state().ctx.request_pegin_btc_tx_id == Some(*tx_id)
+            {
+                Some(*flow_id)
+            } else {
+                None
+            }
+        })
+    }
+
     fn handle_spv_proof_for_request_pegin(
         &mut self,
         tx_id: &Txid,
@@ -591,64 +673,32 @@ where
 
         info!("Handling request pegin SPV proof: tx_id={tx_id}");
 
-        // Call requestPegin contract
-        let input: transaction_dispatcher::types::RequestPeginInput = spv_proof.clone().into();
-        let res = self.rt_sync.run(async { self.contracts_gateway.request_pegin(input).await });
+        let Some(flow_id) = self.request_pegin_flow_id(tx_id) else {
+            warn!("No pegin flow found for request_pegin: tx_id={tx_id}");
+            return Ok(());
+        };
 
-        match res {
-            Ok(_) => {
-                // Remove from tracking set after successful processing
-                self.pegin_request_tracker.remove(tx_id);
-                debug!("Removed request_pegin_txid from tracking: tx_id={tx_id}");
-                Ok(())
-            }
-            Err(DomainErrors::MissingConfirmationsOnNativeBridge(_)) => {
-                info!(
-                    "Missing confirmations on native bridge for block {}, scheduling retry",
-                    spv_proof.block_hash
+        let Some(flow) = self.pegin_flows.get_mut(&flow_id) else {
+            warn!("No pegin flow found for request_pegin: flow_id={flow_id}");
+            return Ok(());
+        };
+
+        let step_data = StepData::RequestPeginSpvProof(spv_proof.clone());
+        if let Err(err) = flow.complete_step(&step_data) {
+            if is_missing_native_bridge_confirmations(&err) {
+                self.schedule_request_pegin_retry(
+                    spv_proof,
+                    1,
+                    "Missing confirmations on native bridge, scheduling retry",
                 );
-                // Store SPV proof for retry and schedule it
-                self.unconfirmed_pegin_requests.insert(
-                    spv_proof.block_hash.clone(),
-                    (spv_proof.clone(), 1), // Start with attempt 1
-                );
-                self.pegin_retry_scheduler
-                    .schedule(spv_proof.block_hash, BLOCKS_DELAY_FOR_TX_CHECK);
-                Ok(())
+                return Ok(());
             }
-            Err(DomainErrors::PeginAlreadyRequested(msg)) => {
-                // This is expected if the same pegin is requested multiple times
-                // We should treat it as a success case
-                info!("Pegin already requested for tx_id={tx_id}, treating as expected: {msg}");
-                // Remove from tracking since it's already processed
-                self.pegin_request_tracker.remove(tx_id);
-                Ok(())
-            }
-            Err(domain_err) => bail!("Error executing 'requestPegin': {domain_err:?}"),
-        }
-    }
 
-    fn handle_spv_proof_for_flows_in_request_step(
-        &mut self,
-        tx_id: &Txid,
-        spv_proof: BtcTxSPVProof,
-    ) -> Result<()> {
-        // Find flows that are waiting for SPV proof for the request step
-        let flow_opt = self.pegin_flows.values_mut().find(|flow| {
-            flow.current_step() == Steps::RequestPeginSpvProof
-                && flow.get_state().ctx.request_pegin_btc_tx_id == Some(*tx_id)
-        });
-
-        if let Some(flow) = flow_opt {
-            info!(
-                "Handling request pegin SPV proof for flow: flow_id={}, tx_id={}",
-                flow.flow_id(),
-                tx_id
-            );
-            let step_data = StepData::RequestPeginSpvProof(spv_proof);
-            flow.complete_step(&step_data)?;
+            return Err(err);
         }
 
+        self.pegin_request_tracker.remove(tx_id);
+        debug!("Removed request_pegin_txid from tracking: tx_id={tx_id}");
         Ok(())
     }
 
@@ -663,8 +713,25 @@ where
 
         if let Some(flow) = flow_opt {
             info!("Handling accept pegin SPV proof: flow_id={}, tx_id={}", flow.flow_id(), tx_id);
+            let flow_id = flow.flow_id();
             let step_data = StepData::AcceptPeginSpvProof(spv_proof);
-            flow.complete_step(&step_data)?;
+            if let Err(err) = flow.complete_step(&step_data) {
+                if is_missing_native_bridge_confirmations(&err) {
+                    let attempt = self
+                        .unconfirmed_accept_pegin
+                        .get(&flow_id)
+                        .copied()
+                        .unwrap_or(0)
+                        .saturating_add(1);
+                    self.schedule_accept_pegin_retry(
+                        flow_id,
+                        attempt,
+                        "Missing confirmations on native bridge, scheduling retry",
+                    );
+                    return Ok(());
+                }
+                return Err(err);
+            }
         }
 
         Ok(())
@@ -712,7 +779,6 @@ where
                     if self.pegin_request_tracker.contains(tx_id) {
                         // Handle as request pegin SPV proof
                         self.handle_spv_proof_for_request_pegin(tx_id, spv_proof.clone())?;
-                        self.handle_spv_proof_for_flows_in_request_step(tx_id, spv_proof.clone())?;
                     } else if self.has_flow_waiting_for_accept_pegin_spv(tx_id) {
                         // Handle as accept pegin SPV proof
                         self.handle_spv_proof_for_accept_pegin(tx_id, spv_proof.clone())?;
@@ -863,6 +929,8 @@ where
         self.tx_status_scheduler.clear();
         self.pegin_retry_scheduler.clear();
         self.unconfirmed_pegin_requests.clear();
+        self.accept_pegin_retry_scheduler.clear();
+        self.unconfirmed_accept_pegin.clear();
         self.pegin_request_tracker.clear();
         self.signature_flows.clear();
     }

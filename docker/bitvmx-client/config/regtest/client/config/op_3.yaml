@@ -1,0 +1,48 @@
+bitcoin:
+  network: regtest
+  url: http://user:pass@10.1.0.107:18332
+  username: user
+  password: pass
+  wallet: test_wallet
+
+key_manager:
+  network: regtest
+  key_derivation_path: m/101/1/0/0/
+
+coordinator_settings:
+  max_feerate_sat_vb: 2
+  monitor_settings:
+    indexer_settings:
+      checkpoint_height: 0
+
+key_storage:
+  password: secret_password_4
+  path: /tmp/regtest/op_3/keys.db
+
+storage:
+  path: /tmp/regtest/op_3/storage.db
+
+p2p:
+  address: /ip4/172.20.0.13/tcp/61182
+  key: config/keys/op_3.key
+  peer_id_file: peer_id
+  timeout: 5
+
+coordinator:
+  throtthle_bitcoin_updates_until_sync: 0
+  throtthle_bitcoin_updates: 0
+
+broker_storage: 
+  path: /tmp/regtest/op_3/broker.db
+
+broker_port: 44444
+
+client: 
+  # Number of retries for requests
+  retry: 1
+  # Delay between retries in milliseconds
+  retry_delay: 1000
+
+wallet:
+  db_path: /tmp/regtest/op_3/wallet.db
+  start_height: 0

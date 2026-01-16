@@ -160,6 +160,19 @@ pub struct GetMemberPublicKeysOutput {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct GetBtcTransactionConfirmationsInput {
+    pub tx_hash: common::types::TxHash,
+    pub block_hash: common::types::BlockHash,
+    pub merkle_branch_path: String,
+    pub merkle_branch_hashes: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetBtcTransactionConfirmationsOutput {
+    pub confirmations: u32,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ApplyToStreamInput {
     pub stream_id: StreamId, // Matches StreamDenomination enum in contracts
     pub role: u8,

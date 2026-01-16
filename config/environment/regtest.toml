@@ -1,0 +1,57 @@
+# ═══════════════════════════════════════════════════════
+# Common Configuration
+# ═══════════════════════════════════════════════════════
+
+provider.rootstock.url = "ws://10.1.0.66:4445" # if running in AWS and accessed from AWS
+# url: "ws://node-use2-1.regtest.rskcomputing.net.net:4445/websocket" # if running in AWS and accessed from outside
+bitcoin_network = "regtest"
+
+[[contracts]]
+name = "FakePegManager"
+address = "0xf73e2e87903Ab0979B7dEcdC54706cA633ABFfCc"
+
+[[contracts]]
+name = "PegManager"
+address = "0x876E6E4970610805e122b0D832D3d5da388D436C"
+
+[[contracts]]
+name = "SignatureManager"
+address = "0xC689FB08B10BE1080c87dC6f8EdcA7Cd20471218"
+
+[[contracts]]
+name = "CommitteeRegistry"
+address = "0x185DA4bbEc7DA24ec252505094E9ba13B1a5f0e6"
+
+[[contracts]]
+name = "MemberRegistry"
+address = "0xaEA017951907dfBa83000333aC98024287142569"
+
+[[contracts]]
+name = "StreamManager"
+address = "0xCceA54bAB6755690595b7D8fAf299bd02c597F46"
+
+[[contracts]]
+name = "PowpegBridge"
+address = "0x0000000000000000000000000000000001000006"
+
+[indexer]
+
+storage.path = "/app/db/" # This should match the volume mount in docker-compose
+
+# ═══════════════════════════════════════════════════════
+# Coordinator
+# ═══════════════════════════════════════════════════════
+
+[coordinator]
+storage_path = "/app/db/"     # This should match the volume mount in docker-compose
+blocks.host = "block-indexer"
+logs.host = "log-indexer"
+user.host = "user-api"
+
+# ═══════════════════════════════════════════════════════
+# Transaction Dispatcher
+# ═══════════════════════════════════════════════════════
+
+[transaction_dispatcher]
+key_store.user_path = "/keystore/user-key.json"     # should match the one configured in key-setup.sh
+key_store.member_path = "/keystore/member-key.json" # should match the one configured in key-setup.sh
