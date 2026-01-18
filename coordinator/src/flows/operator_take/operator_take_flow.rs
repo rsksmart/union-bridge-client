@@ -10,7 +10,7 @@ use common::msg_broker::bitvmx_types::{
 };
 use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
 use common::runtime_sync::RuntimeSync;
-use common::types::{Address, BlockHash, BlockNumber, CommitteeId, Hash256, TxHash};
+use common::types::{Address, CommitteeId, Hash256};
 use log::{debug, info};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::{
@@ -30,6 +30,8 @@ pub const ADVANCE_FUNDS_TX: &str = "ADVANCE_FUNDS_TX";
 pub const SELECTED_OPERATOR_PUBKEY_VAR_PREFIX: &str = "selected_operator_pubkey_";
 #[allow(dead_code)]
 pub const ADVANCE_FUNDS_REQUEST_VAR_NAME: &str = "advance_funds_request";
+// TODO: [UBC-713] Make configurable for regtest vs testnet
+pub const ADVANCE_FUNDS_FEE_SATS: u64 = 335;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Steps {
@@ -55,78 +57,36 @@ pub enum StepData {
     OperatorTakeRegistered(PegoutRegistered),
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct OperatorTakeTriggerData {
     pub pegout_txid: Hash256,
     pub committee_id: CommitteeId,
-    pub stream_id: u64,
-    pub packet_number: u64,
-    pub slot_id: u64,
     pub slot_index: usize,
     pub user_pubkey: PublicKey,
     pub take_operator_address: Address,
-    pub take_operator_pubkey: Vec<u8>,
-    pub created_at: u128,
-    pub operator_take_updated_at: u128,
-    pub updated_at: u128,
-    pub expire_at: u128,
-    pub block_number: BlockNumber,
-    pub block_hash: BlockHash,
-    pub tx_hash: TxHash,
+    //TODO JIRA UBC-784 the contracts are providing the covenant key and bitvmx is expecting the takeKey.
+    //pub take_operator_pubkey: Vec<u8>,
 }
 
 impl OperatorTakeTriggerData {
     pub fn try_from_event(event: &OperatorTakeTriggeredEvent) -> Result<Self> {
         let inner = &event.inner;
         let pegout_txid = Hash256::from(inner.pegoutTxid);
-
         let committee_id = CommitteeId::from(inner.pegoutInfo.committeeId);
-        let stream_id = inner.streamPosition.streamId;
-        let packet_number = inner.streamPosition.packetNumber;
-        let slot_id = inner.streamPosition.slotId;
-        let slot_index = usize::try_from(slot_id)
+        let slot_index = usize::try_from(inner.streamPosition.slotId)
             .context("Failed to convert slot id from event into usize for slot index")?;
-
-        let user_pubkey: PublicKey = PublicKey::from_slice(inner.pegoutInfo.userPubKey.as_ref())?;
-
+        let user_pubkey = PublicKey::from_slice(inner.pegoutInfo.userPubKey.as_ref())?;
         let take_operator_address = Address::from(inner.pegoutInfo.takeOperatorAddress);
-        let take_operator_pubkey = inner.pegoutInfo.takeOperatorPubKey.clone().to_vec();
-        let created_at: u128 = inner
-            .pegoutInfo
-            .createdAt
-            .try_into()
-            .context("Failed to convert createdAt from OperatorTakeTriggered event")?;
-        let operator_take_updated_at: u128 =
-            inner.pegoutInfo.operatorTakeUpdatedAt.try_into().context(
-                "Failed to convert operatorTakeUpdatedAt from OperatorTakeTriggered event",
-            )?;
-        let updated_at: u128 = inner
-            .updatedAt
-            .try_into()
-            .context("Failed to convert updatedAt from OperatorTakeTriggered event")?;
-        let expire_at: u128 = inner
-            .expireAt
-            .try_into()
-            .context("Failed to convert expireAt from OperatorTakeTriggered event")?;
+        //TODO JIRA UBC-784 the contracts are providing the covenant key and bitvmx is expecting the takeKey.
+        //let take_operator_pubkey = inner.pegoutInfo.takeOperatorPubKey.clone().to_vec();
 
         Ok(Self {
             pegout_txid,
             committee_id,
-            stream_id,
-            packet_number,
-            slot_id,
             slot_index,
             user_pubkey,
             take_operator_address,
-            take_operator_pubkey,
-            created_at,
-            operator_take_updated_at,
-            updated_at,
-            expire_at,
-            block_number: event.block_number,
-            block_hash: event.block_hash,
-            tx_hash: event.tx_hash,
+            //take_operator_pubkey,
         })
     }
 }
@@ -421,7 +381,6 @@ where
 
         xonly_to_compressed_pubkey(&key_bytes)
     }
-
     fn build_advance_funds_request(&self, operator_pubkey: PublicKey) -> Result<String> {
         let pegout_id = self.state.trigger_data.pegout_txid.value().as_bytes().to_vec();
 
@@ -429,8 +388,7 @@ where
             committee_id: Uuid::from_u128(*self.state.trigger_data.committee_id),
             slot_index: self.state.trigger_data.slot_index,
             pegout_id,
-            //TODO Extracted from the examples. Pending to add config for regtest vs testnet.
-            fee: 335,
+            fee: ADVANCE_FUNDS_FEE_SATS,
             user_pubkey: self.state.trigger_data.user_pubkey,
             my_take_pubkey: operator_pubkey,
         };

@@ -12,7 +12,7 @@ use common::types::CommitteeId;
 use hex;
 use log::{debug, info, trace, warn};
 use serde::{Deserialize, Serialize};
-use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
+use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use transaction_dispatcher::types::{
     GetCommitteeInput, GetCommitteeOutput, GetCommunicationDataInput, GetMemberPublicKeysInput,
     P2PAddressParser, RegisterPegoutInput, RegisterPegoutOutput, TriggerOperatorTakeInput,
@@ -174,12 +174,7 @@ where
                     "Triggering operator take due to timeout for flow_id: {}",
                     self.state.flow_id
                 );
-                if let Err(err) = self.trigger_operator_take() {
-                    warn!(
-                        "Failed to trigger operator take for flow_id {}: {}. Continuing flow.",
-                        self.state.flow_id, err
-                    );
-                }
+                self.trigger_operator_take()?;
             }
             Steps::ConfirmUserTakeTransaction => {
                 info!(
@@ -221,7 +216,14 @@ where
     pub fn complete_step(&mut self, data: &StepData) -> Result<()> {
         let current_step: Steps = self.state.step;
 
-        //TODO we are reaching here with done step with no sense, fix the flow to avoid this
+        if current_step == Steps::Done {
+            warn!(
+                "PegoutFlow {} already completed. Ignoring step data: {:?}",
+                self.state.flow_id, data
+            );
+            return Ok(());
+        }
+
         info!(
             "PegoutFlow {}: Completing step {} with data: {:?} for flow_id {}",
             self.state.flow_id,
@@ -265,7 +267,7 @@ where
             (Steps::TriggerOperatorTake, StepData::TriggerOperatorTakeTimeout) => {
                 // After trigger_operator_take completes successfully, finish the flow
                 info!(
-                    //TODO improve messagec, heck this as maybe it was not successfull but is part of the flow and should be completed
+                    //TODO improve message, check this as maybe it was not successfull but is part of the flow and should be completed
                     "Operator take triggered successfully for flow_id: {}, completing flow",
                     self.state.flow_id
                 );
@@ -566,7 +568,11 @@ where
         &self.state.ctx.pegout_requested
     }
 
-    /// Trigger operator take when timeout expires
+    /// Trigger operator take when timeout expires.
+    ///
+    /// This method handles the case where another committee member has already
+    /// triggered the operator take (indicated by `OperatorTakeTimeoutNotExpired` error).
+    /// In this case, we log and continue since the operation was already performed.
     fn trigger_operator_take(&self) -> Result<()> {
         let pegout_txid = self.get_pegout_txid();
 
@@ -577,22 +583,25 @@ where
 
         let input = TriggerOperatorTakeInput { pegout_txid };
 
-        let output =
-            match self.rt_sync.run(async { self.contracts.trigger_operator_take(input).await }) {
-                Ok(output) => output,
-                Err(domain_err) => {
-                    anyhow::bail!(
-                        "Failed to trigger operator take for flow_id {}: {:?}",
-                        self.state.flow_id,
-                        domain_err
-                    );
-                }
-            };
-
-        info!(
-            "trigger_operator_take called successfully for flow_id {} with tx hash {}",
-            self.state.flow_id, output.transaction_hash
-        );
+        match self.rt_sync.run(async { self.contracts.trigger_operator_take(input).await }) {
+            Ok(output) => {
+                info!(
+                    "trigger_operator_take called successfully for flow_id {} with tx hash {}",
+                    self.state.flow_id, output.transaction_hash
+                );
+            }
+            Err(DomainErrors::OperatorTakeTimeoutNotExpired(msg)) => {
+                warn!(
+                    "Operator take timeout not expired for flow_id {}: {}. \
+                     This is partially expected if another committee member already triggered it.",
+                    self.state.flow_id, msg
+                );
+            }
+            Err(domain_err) => Err(domain_err).context(format!(
+                "Failed to trigger operator take for flow_id {}",
+                self.state.flow_id
+            ))?,
+        }
 
         Ok(())
     }

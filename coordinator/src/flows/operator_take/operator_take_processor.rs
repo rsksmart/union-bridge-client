@@ -127,11 +127,19 @@ where
     fn handle_pegout_registered(&mut self, event: &PegoutRegisteredEvent) -> Result<()> {
         let pegout_registered = event.inner.clone();
         let event_committee_id = pegout_registered.committeeId;
-        let event_slot_id = pegout_registered.slotId;
+        let event_slot_id = match usize::try_from(pegout_registered.slotId) {
+            Ok(id) => id,
+            Err(err) => {
+                warn!(
+                    "Skipping PegoutRegistered for committee_id {event_committee_id} due to slot_id conversion error: {err}"
+                );
+                return Ok(());
+            }
+        };
 
         if let Some(flow) = self.flows.values_mut().find(|flow| {
             let trigger = flow.trigger_data();
-            *trigger.committee_id == event_committee_id && trigger.slot_id == event_slot_id
+            *trigger.committee_id == event_committee_id && trigger.slot_index == event_slot_id
         }) {
             flow.complete_step(StepData::OperatorTakeRegistered(pegout_registered))?;
         } else {
@@ -144,10 +152,10 @@ where
     }
 
     /// Check if there's an active flow for the given `committee_id` and `slot_id`.
-    fn has_flow_for_pegout_registered(&self, committee_id: u128, slot_id: u64) -> bool {
+    fn has_flow_for_pegout_registered(&self, committee_id: u128, slot_id: usize) -> bool {
         self.flows.values().any(|flow| {
             let trigger = flow.trigger_data();
-            *trigger.committee_id == committee_id && trigger.slot_id == slot_id
+            *trigger.committee_id == committee_id && trigger.slot_index == slot_id
         })
     }
 
@@ -481,7 +489,15 @@ where
                 // Only process PegoutRegistered events that have a matching flow (by committee_id + slot_id).
                 // This filters out events from the regular pegout flow (handled by pegout_processor).
                 let event_committee_id = e.inner.committeeId;
-                let event_slot_id = e.inner.slotId;
+                let event_slot_id = match usize::try_from(e.inner.slotId) {
+                    Ok(id) => id,
+                    Err(err) => {
+                        warn!(
+                            "Ignoring PegoutRegistered event for committee_id {event_committee_id} due to slot_id conversion error: {err}"
+                        );
+                        return Ok(());
+                    }
+                };
                 if !self.has_flow_for_pegout_registered(event_committee_id, event_slot_id) {
                     trace!(
                         "AdvanceFundsFlowProcessor ignoring PegoutRegistered event for committee_id {event_committee_id} slot_id {event_slot_id} - no matching flow",

@@ -356,6 +356,9 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
             // The InvalidSlotState error typically contains actual and expected slot states
             DomainErrors::InvalidSlotState { expected: e.expected, actual: e.actual }
         }
+        PegManagerErrors::OperatorTakeTimeoutNotExpired(e) => {
+            DomainErrors::OperatorTakeTimeoutNotExpired(format!("{e:?}"))
+        }
         // Unhandled
         _ => DomainErrors::UnhandledContractError(format!("{e:?}")),
     })

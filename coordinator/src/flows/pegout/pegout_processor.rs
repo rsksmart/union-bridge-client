@@ -93,7 +93,7 @@ where
             events_confirming: HashMap::new(),
             signature_flows: HashMap::new(),
             tx_status_scheduler: TickScheduler::new(),
-            advance_funds_timeout_scheduler: TimeBasedScheduler::new(),
+            advance_funds_timeout_scheduler: TimeBasedScheduler::new(ADVANCE_FUNDS_TIMEOUT_SECONDS),
             flows_pending_timeout: HashSet::new(),
             store,
         }
@@ -434,29 +434,21 @@ where
         Ok(())
     }
 
-    /// Schedule timeouts for flows that received `pegout_accepted` but didn't have block timestamp yet
-    fn schedule_pending_timeouts(&mut self, block: &RskBlockAndUncles) {
+    /// Schedule timeouts for flows that received `pegout_accepted`.
+    fn schedule_pending_timeouts(&mut self) {
         if self.flows_pending_timeout.is_empty() {
             return;
         }
 
-        let current_timestamp = block.block().timestamp().value();
         let pending_flows: Vec<Uuid> = self.flows_pending_timeout.iter().copied().collect();
 
         for flow_id in pending_flows {
             if let Some(flow) = self.pegout_flows.get(&flow_id) {
                 // Only schedule if flow is still waiting for signatures (not yet dispatched)
                 if flow.current_step() == Steps::DispatchTransaction {
-                    self.advance_funds_timeout_scheduler.schedule(
-                        flow_id,
-                        current_timestamp,
-                        ADVANCE_FUNDS_TIMEOUT_SECONDS,
-                    );
+                    self.advance_funds_timeout_scheduler.schedule(flow_id);
                     info!(
-                        "Scheduled advance funds timeout for flow_id: {} at timestamp: {} (expires at: {})",
-                        flow_id,
-                        current_timestamp,
-                        current_timestamp + ADVANCE_FUNDS_TIMEOUT_SECONDS
+                        "Scheduled advance funds timeout for flow_id: {flow_id} (expires in {ADVANCE_FUNDS_TIMEOUT_SECONDS} seconds)"
                     );
                 }
             }
@@ -464,19 +456,16 @@ where
         }
     }
 
-    /// Check for expired advance funds timeouts and trigger operator take
-    fn handle_advance_funds_timeout_expired(&mut self, block: &RskBlockAndUncles) -> Result<()> {
+    /// Check for expired advance funds timeouts and trigger operator take.
+    fn handle_advance_funds_timeout_expired(&mut self) -> Result<()> {
         if self.advance_funds_timeout_scheduler.is_empty() {
             return Ok(());
         }
 
-        let current_timestamp = block.block().timestamp().value();
-        let expired_flows = self.advance_funds_timeout_scheduler.check_expired(current_timestamp);
+        let expired_flows = self.advance_funds_timeout_scheduler.check_expired();
 
         for flow_id in expired_flows {
-            info!(
-                "Advance funds timeout expired for flow_id: {flow_id} at timestamp: {current_timestamp}",
-            );
+            info!("Advance funds timeout expired for flow_id: {flow_id}");
             self.trigger_operator_take_for_flow(flow_id)?;
         }
 
@@ -608,7 +597,7 @@ where
                         (flow.get_user_take_txid() == Some(*tx_id)).then_some((*flow_id, flow))
                     })
                 else {
-                    trace!("Ignoring SPV proof for tx_id {tx_id} without matching flow");
+                    trace!("Ignoring SPV proof for tx_id {tx_id:?} without matching flow");
                     return Ok(());
                 };
                 if flow.current_step() != Steps::RequestUserTakeSpvProof {
@@ -693,11 +682,13 @@ where
     }
 
     fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
-        // Schedule pending timeouts for flows that received pegout_accepted
-        self.schedule_pending_timeouts(block);
+        // Schedule pending timeouts for flows that received pegout_accepted.
+        // Uses wall-clock time, blocks are only triggers.
+        self.schedule_pending_timeouts();
 
-        // Check for expired timeouts
-        self.handle_advance_funds_timeout_expired(block)?;
+        // Check for expired timeouts using wall-clock time.
+        // Blocks are only triggers to run this check.
+        self.handle_advance_funds_timeout_expired()?;
 
         self.process_unhandled_confirmed_sig_flow_events(block)?;
         self.handle_transaction_status_tick()?;

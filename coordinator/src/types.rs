@@ -554,21 +554,25 @@ impl<K: Eq + Hash + Clone> TickScheduler<K> {
     }
 }
 
-/// Time-based scheduler that uses block timestamps to track expiration times
+/// Time-based scheduler that uses wall-clock time (Instant) to track expiration times.
 pub(crate) struct TimeBasedScheduler<K: Eq + Hash + Clone> {
-    pending: HashMap<K, u64>, // flow_id -> expiration_timestamp (in seconds)
+    pending: HashMap<K, std::time::Instant>, // flow_id -> expiration_instant
+    timeout_duration: std::time::Duration,
 }
 
 impl<K: Eq + Hash + Clone> TimeBasedScheduler<K> {
-    pub fn new() -> Self {
-        Self { pending: HashMap::new() }
+    pub fn new(timeout_seconds: u64) -> Self {
+        Self {
+            pending: HashMap::new(),
+            timeout_duration: std::time::Duration::from_secs(timeout_seconds),
+        }
     }
 
-    /// Schedule a timeout for the given id, expiring after the specified duration in seconds
-    /// from the current block timestamp
-    pub fn schedule(&mut self, id: K, current_timestamp: u64, timeout_seconds: u64) {
-        let expiration_timestamp = current_timestamp + timeout_seconds;
-        self.pending.insert(id, expiration_timestamp);
+    /// Schedule a timeout for the given id, expiring after the configured duration
+    /// from the current wall-clock time
+    pub fn schedule(&mut self, id: K) {
+        let expiration_instant = std::time::Instant::now() + self.timeout_duration;
+        self.pending.insert(id, expiration_instant);
     }
 
     pub fn cancel(&mut self, id: &K) {
@@ -579,14 +583,16 @@ impl<K: Eq + Hash + Clone> TimeBasedScheduler<K> {
         self.pending.contains_key(id)
     }
 
-    /// Check for expired timeouts based on the current block timestamp
-    /// Returns a vector of expired ids
-    pub fn check_expired(&mut self, current_timestamp: u64) -> Vec<K> {
+    /// Check for expired timeouts based on the current wall-clock time.
+    /// Called when a new block is received (blocks act as triggers).
+    /// Returns a vector of expired ids.
+    pub fn check_expired(&mut self) -> Vec<K> {
+        let now = std::time::Instant::now();
         let mut expired: Vec<K> = Vec::new();
         let mut to_remove: Vec<K> = Vec::new();
 
-        for (id, expiration_timestamp) in &self.pending {
-            if current_timestamp >= *expiration_timestamp {
+        for (id, expiration_instant) in &self.pending {
+            if now >= *expiration_instant {
                 expired.push(id.clone());
                 to_remove.push(id.clone());
             }

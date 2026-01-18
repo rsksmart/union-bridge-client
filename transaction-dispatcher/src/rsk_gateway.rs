@@ -618,6 +618,8 @@ pub enum DomainErrors {
     MissingConfirmationsOnNativeBridge(String),
     #[error("Invalid slot state: expected {expected}, actual {actual}")]
     InvalidSlotState { expected: u8, actual: u8 },
+    #[error("Operator take timeout not expired: {0}")]
+    OperatorTakeTimeoutNotExpired(String),
 
     // unhandled smart contract errors
     #[error("Unhandled Contract Error: {0}")]
