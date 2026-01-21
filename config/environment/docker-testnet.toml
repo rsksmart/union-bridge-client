@@ -6,6 +6,10 @@ provider.rootstock.url = "ws://rskj-01.testnet.ub.iovlabs.net:4445/websocket"
 bitcoin_network = "testnet"
 
 [[contracts]]
+name = "FakePegManager"
+address = "0xa85233C63b9Ee964Add6F2cffe00Fd84eb32338f"
+
+[[contracts]]
 name = "PegManager"
 address = "0x03Bc67b36F510dAbe47093979ec3cBE0D33e34c2"
 
