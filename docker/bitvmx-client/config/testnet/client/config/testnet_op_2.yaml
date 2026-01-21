@@ -23,8 +23,8 @@ coordinator_settings:
     indexer_settings:
       checkpoint_height: 4807400
 coordinator:
-  throtthle_bitcoin_updates_until_sync: 1
-  throtthle_bitcoin_updates: 1
+  throttle_bitcoin_updates_until_sync: 1
+  throttle_bitcoin_updates: 1
 broker_storage:
   path: /tmp/op_2/broker.db
 broker_port: 22222
