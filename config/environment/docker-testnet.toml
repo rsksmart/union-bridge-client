@@ -2,7 +2,7 @@
 # Common Configuration
 # ═══════════════════════════════════════════════════════
 
-provider.rootstock.url = "" # TODO: Set testnet Rootstock WebSocket URL
+provider.rootstock.url = "ws://rskj-01.testnet.ub.iovlabs.net:4445/websocket"
 bitcoin_network = "testnet"
 
 [[contracts]]
@@ -11,23 +11,23 @@ address = ""
 
 [[contracts]]
 name = "PegManager"
-address = ""
+address = "0x03Bc67b36F510dAbe47093979ec3cBE0D33e34c2"
 
 [[contracts]]
 name = "SignatureManager"
-address = ""
+address = "0x37178C940BE4376cBEadcFAFA2d6aC5cf6f36046"
 
 [[contracts]]
 name = "CommitteeRegistry"
-address = ""
+address = "0xa572343DdB10fFA608ab05b673c1aF16CfaB5b73"
 
 [[contracts]]
 name = "MemberRegistry"
-address = ""
+address = "0xA2Af1bD9bC037D3Ba10A201C445F122B2482c227"
 
 [[contracts]]
 name = "StreamManager"
-address = ""
+address = "0x08dc2F0694B7067551048e59690Fe611ee46a865"
 
 [indexer]
 
