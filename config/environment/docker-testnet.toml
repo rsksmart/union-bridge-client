@@ -6,6 +6,10 @@ provider.rootstock.url = "ws://10.26.7.106:4445"
 bitcoin_network = "testnet"
 
 [[contracts]]
+name = "FakePegManager"
+address = "0xa85233C63b9Ee964Add6F2cffe00Fd84eb32338f"
+
+[[contracts]]
 name = "PegManager"
 address = "0xa25B3aB9DBdBEEaB4a4d5F8dBC4a2ffA87a97aBc"
 
