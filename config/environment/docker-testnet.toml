@@ -2,7 +2,7 @@
 # Common Configuration
 # ═══════════════════════════════════════════════════════
 
-provider.rootstock.url = "ws://i-08db6fb8eca2d8add.us-east-2.compute.internal:4445"
+provider.rootstock.url = "ws://10.26.7.106:4445"
 bitcoin_network = "testnet"
 
 [[contracts]]
