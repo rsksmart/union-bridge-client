@@ -8,27 +8,27 @@ bitcoin_network = "regtest"
 
 [[contracts]]
 name = "FakePegManager"
-address = "0xf73e2e87903Ab0979B7dEcdC54706cA633ABFfCc"
+address = "0x3FE1523C5202C6584fA4060A9bd3483d501705F1"
 
 [[contracts]]
 name = "PegManager"
-address = "0x876E6E4970610805e122b0D832D3d5da388D436C"
+address = "0xc9cEF7Ad1e1F6f33B93c07400735Cd5C93E05fdD"
 
 [[contracts]]
 name = "SignatureManager"
-address = "0xC689FB08B10BE1080c87dC6f8EdcA7Cd20471218"
+address = "0x6aDa1Ae72750986F003f11e2f9F2b6cB605835e5"
 
 [[contracts]]
 name = "CommitteeRegistry"
-address = "0x185DA4bbEc7DA24ec252505094E9ba13B1a5f0e6"
+address = "0x9A26De2D9Fe622210c7ccE8aa8aFA3946c8e47Ed"
 
 [[contracts]]
 name = "MemberRegistry"
-address = "0xaEA017951907dfBa83000333aC98024287142569"
+address = "0xb5273f3651BB5168A81c58aa0266c22CdD23E21c"
 
 [[contracts]]
 name = "StreamManager"
-address = "0xCceA54bAB6755690595b7D8fAf299bd02c597F46"
+address = "0x621DE1047f04573F5523e8837024340DD3E10015"
 
 [[contracts]]
 name = "PowpegBridge"
