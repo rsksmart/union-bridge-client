@@ -1,6 +1,6 @@
 bitcoin:
   network: testnet
-  url: http://bitcoin:39048j03%40slk@10.1.0.23:18332
+  url: http://bitcoin:39048j03%40slk@i-04b358be1446b015d.us-east-2.compute.internal:18332
   username: ""
   password: ""
   wallet: test_wallet
