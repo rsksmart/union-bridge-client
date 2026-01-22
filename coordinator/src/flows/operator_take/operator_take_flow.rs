@@ -13,8 +13,10 @@ use common::runtime_sync::RuntimeSync;
 use common::types::{Address, BlockHash, BlockNumber, CommitteeId, Hash256, TxHash};
 use log::{debug, info, trace};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
-use transaction_dispatcher::types::{GetMemberPublicKeysInput, RequestPeginInput};
-use union_contracts::bindings::peg_manager::PegManager::PegoutRegistered;
+use transaction_dispatcher::types::{
+    GetMemberPublicKeysInput, RequestPeginInput,
+};
+use union_contracts::bindings::pegout_manager::PegoutManager::PegoutRegistered;
 use uuid::Uuid;
 
 use crate::flows::common::TAKE_KEY_INDEX;
@@ -92,7 +94,7 @@ impl OperatorTakeTriggerData {
         let user_pubkey: PublicKey = PublicKey::from_slice(inner.pegoutInfo.userPubKey.as_ref())?;
 
         let take_operator_address = Address::from(inner.pegoutInfo.takeOperatorAddress);
-        let take_operator_pubkey = inner.pegoutInfo.takeOperatorPubKey.clone().to_vec();
+        let take_operator_pubkey = inner.pegoutInfo.operatorDisputePubKey.as_slice().to_vec();
         let created_at: u128 = inner
             .pegoutInfo
             .createdAt

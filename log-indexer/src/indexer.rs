@@ -135,7 +135,8 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         }
         Ok(())
     }
-
+    
+    #[cfg(not(feature = "fresh_node"))]
     fn recover_logs(&self, addrs: &[Address]) -> Result<BlockNumber> {
         let checkpoint = self.store.get_sync_checkpoint()?;
         let mut start = if let Some(log) = checkpoint {
@@ -186,7 +187,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 
             debug!("Fetching logs from block {from} to {to}");
             let logs = self.rsk_provider.get_logs(from, to, addrs)?;
-            debug!("Fetched {} logs from {} to {}", logs.len(), from, to);
+            debug!("Fetched {} logs from {from} to {to}", logs.len());
 
             self.save_logs_and_checkpoint(&logs)?;
 
@@ -195,10 +196,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                 let new_best_block = self.rsk_provider.get_best_block()?;
                 if end < new_best_block.number() {
                     info!(
-                        "[Attempt {}/{}] New blocks appeared during sync: previous best = {}, current best = {}. Continuing...",
-                        attempt,
-                        max_attempts,
-                        end,
+                        "[Attempt {attempt}/{max_attempts}] New blocks appeared during sync: previous best = {end}, current best = {}. Continuing...",
                         new_best_block.number()
                     );
                     end = new_best_block.number();
@@ -328,7 +326,7 @@ mod tests {
 
     use super::*;
     use crate::store::MockLogStore;
-    const EMPTY_ADDRESSES: Vec<Address> = vec![];
+
     #[test]
     fn recover_logs_when_no_checkpoint_should_start_from_initial_block() {
         let mut mock_store = MockLogStore::new();
@@ -500,7 +498,7 @@ mod tests {
             shutdown_flag: ShutdownFlag::init(),
         };
 
-        let result = indexer.recover_logs(&EMPTY_ADDRESSES);
+        let result = indexer.recover_logs(&[]);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), second_best.number());
     }
@@ -532,7 +530,7 @@ mod tests {
             shutdown_flag: ShutdownFlag::init(),
         };
 
-        let result = indexer.recover_logs(&EMPTY_ADDRESSES);
+        let result = indexer.recover_logs(&[]);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Failed to recover logs after"));
     }

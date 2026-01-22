@@ -1,18 +1,18 @@
 use anyhow::Result;
 use log::info;
-use union_contracts::bindings::peg_manager::PegManager::BtcTxSPVProof;
+use union_contracts::bindings::pegin_manager::PeginManager::BtcTxSPVProof;
 
-use crate::contracts::peg_manager::PegManagerContractApi;
+use crate::contracts::pegin_manager::PeginManagerContractApi;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{RequestPeginInput, RequestPeginOutput};
 
 #[derive(Clone)]
-pub(crate) struct RequestPeginInvoke<C: PegManagerContractApi> {
+pub(crate) struct RequestPeginInvoke<C: PeginManagerContractApi> {
     contract: C,
     gas_bumps: u8,
 }
 
-impl<C: PegManagerContractApi> RequestPeginInvoke<C> {
+impl<C: PeginManagerContractApi> RequestPeginInvoke<C> {
     pub(crate) fn new(contract: C, gas_bumps: u8) -> Self {
         RequestPeginInvoke { contract, gas_bumps }
     }
@@ -39,27 +39,27 @@ mod tests {
     use std::str::FromStr;
 
     use alloy_primitives::TxHash;
-    use union_contracts::bindings::peg_manager::PegManager::{
-        PegManagerErrors, PeginAlreadyRequested,
+    use union_contracts::bindings::pegin_manager::PeginManager::{
+        PeginAlreadyRequested, PeginManagerErrors,
     };
 
     use crate::contracts::common::tests::generate_contract_revert_error;
     use crate::contracts::interactions::request_pegin::{
         RequestPeginInput, RequestPeginInvoke, RequestPeginOutput,
     };
-    use crate::contracts::peg_manager::MockPegManagerContractApi;
+    use crate::contracts::pegin_manager::MockPeginManagerContractApi;
     use crate::rsk_gateway::DomainErrors;
     use crate::types::{BitcoinTransaction, BitcoinTransactionIn, BitcoinTransactionOut};
 
-    impl RequestPeginInvoke<MockPegManagerContractApi> {
-        pub(crate) fn new_for_tests(contract: MockPegManagerContractApi) -> Self {
+    impl RequestPeginInvoke<MockPeginManagerContractApi> {
+        pub(crate) fn new_for_tests(contract: MockPeginManagerContractApi) -> Self {
             RequestPeginInvoke { contract, gas_bumps: 3 }
         }
     }
 
     #[tokio::test]
     async fn test_run_successful() {
-        let mut mock = MockPegManagerContractApi::new();
+        let mut mock = MockPeginManagerContractApi::new();
 
         let input = get_base_input();
 
@@ -89,17 +89,19 @@ mod tests {
     // there are more errors that could be raised by the smart contract, but those are tested either on peg_manager.rs or bitcoin_manager.rs
     #[tokio::test]
     async fn test_run_fail_revert() {
-        let mut mock = MockPegManagerContractApi::new();
+        let mut mock = MockPeginManagerContractApi::new();
 
         let input = get_base_input();
 
         mock.expect_invoke_request_pegin()
             .returning(move |_, _| {
-                let expected_err = PegManagerErrors::PeginAlreadyRequested(PeginAlreadyRequested {
-                    btcTxid: "0x6b8f74fe9c66c9c3a6c3d0b7111d9b6aaac0ea3db1bdbd6a38eb0e7d8b8bba3e"
-                        .parse()
-                        .expect("Failed to parse tx hash"),
-                });
+                let expected_err =
+                    PeginManagerErrors::PeginAlreadyRequested(PeginAlreadyRequested {
+                        btcTxid:
+                            "0x6b8f74fe9c66c9c3a6c3d0b7111d9b6aaac0ea3db1bdbd6a38eb0e7d8b8bba3e"
+                                .parse()
+                                .expect("Failed to parse tx hash"),
+                    });
                 Err(generate_contract_revert_error(&expected_err))
             })
             .times(1);
@@ -115,7 +117,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_run_fail_no_revert() {
-        let mut mock = MockPegManagerContractApi::new();
+        let mut mock = MockPeginManagerContractApi::new();
 
         let input = get_base_input();
 

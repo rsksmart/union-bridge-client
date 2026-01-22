@@ -6,8 +6,8 @@ use common::types::Address;
 use serde::Deserialize;
 
 const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
-const PEG_MANAGER_CONTRACT_NAME: &str = "PegManager";
-const FAKE_PEG_MANAGER_CONTRACT_NAME: &str = "FakePegManager";
+const PEGIN_MANAGER_CONTRACT_NAME: &str = "PeginManager";
+const PEGOUT_MANAGER_CONTRACT_NAME: &str = "PegoutManager";
 const SIGNATURE_CONTRACT_NAME: &str = "SignatureManager";
 const COMMITTEE_REGISTRY_CONTRACT_NAME: &str = "CommitteeRegistry";
 const MEMBER_REGISTRY_CONTRACT_NAME: &str = "MemberRegistry";
@@ -250,10 +250,10 @@ impl Config {
             })
             .collect::<Vec<Address>>()
     }
-
-    fn get_contracts_to_subscribe_to(&self, contract: &ContractConfig) -> bool {
-        contract.name == PEG_MANAGER_CONTRACT_NAME
-            || (contract.name == FAKE_PEG_MANAGER_CONTRACT_NAME && self.subscribe_fake_peg_manager)
+    
+    fn get_contracts_to_subscribe_to(contract: &ContractConfig) -> bool {
+        contract.name == PEGIN_MANAGER_CONTRACT_NAME
+            || contract.name == PEGOUT_MANAGER_CONTRACT_NAME
             || contract.name == SIGNATURE_CONTRACT_NAME
             || contract.name == COMMITTEE_REGISTRY_CONTRACT_NAME
             || contract.name == MEMBER_REGISTRY_CONTRACT_NAME
@@ -319,7 +319,7 @@ mod tests {
         );
         assert_eq!(99_999_999, config.coordinator.advance_funds.max_zkp_status_retries);
         assert_eq!("regtest", config.bitcoin_network);
-        assert_eq!(9, config.contracts.len());
+        assert_eq!(10, config.contracts.len());
     }
 
     #[test]

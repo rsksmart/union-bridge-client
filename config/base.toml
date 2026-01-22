@@ -26,12 +26,20 @@ name = "TestContractCompiled"
 address = "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc"
 
 [[contracts]]
-name = "PegManager"
-address = "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6"
+name = "PeginManager"
+address = "0x610178dA211FEF7D417bC0e6FeD39F05609AD788"
+
+[[contracts]]
+name = "PegoutManager"
+address = "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0"
+
+[[contracts]]
+name = "FakePegManager"
+address = "0xa85233C63b9Ee964Add6F2cffe00Fd84eb32338f"
 
 [[contracts]]
 name = "SignatureManager"
-address = "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0"
+address = "0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1"
 
 [[contracts]]
 name = "CommitteeRegistry"
@@ -42,12 +50,12 @@ name = "MemberRegistry"
 address = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
 
 [[contracts]]
-name = "FakePegManager"
-address = "0xa85233C63b9Ee964Add6F2cffe00Fd84eb32338f"
+name = "StreamManager"
+address = "0x9A676e781A523b5d0C0e43731313A708CB607508"
 
 [[contracts]]
-name = "StreamManager"
-address = "0x610178dA211FEF7D417bC0e6FeD39F05609AD788"
+name = "BridgeMock"
+address = "0x5FbDB2315678afecb367f032d93F642f64180aa3"
 
 [[contracts]]
 name = "NativeBridge"

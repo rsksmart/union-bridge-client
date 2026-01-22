@@ -24,9 +24,11 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     NewPendingCommittee,
 };
 use union_contracts::bindings::member_registry::MemberRegistry::MemberRegistryEvents;
-use union_contracts::bindings::peg_manager::PegManager::{
-    OperatorTakeTriggered, PegManagerEvents, PeginAccepted, PeginRequested, PegoutRegistered,
-    PegoutRequested,
+use union_contracts::bindings::pegin_manager::PeginManager::{
+    PeginAccepted, PeginManagerEvents, PeginRequested,
+};
+use union_contracts::bindings::pegout_manager::PegoutManager::{
+    OperatorTakeTriggered, PegoutManagerEvents, PegoutRegistered, PegoutRequested,
 };
 #[cfg(test)]
 use union_contracts::bindings::signature_manager::SignatureManager::{
@@ -136,7 +138,11 @@ impl EventDecoder {
             return event;
         }
 
-        if let Some(event) = Self::try_peg_manager_events(log) {
+        if let Some(event) = Self::try_pegin_manager_events(log) {
+            return event;
+        }
+
+        if let Some(event) = Self::try_pegout_manager_events(log) {
             return event;
         }
 
@@ -197,13 +203,26 @@ impl EventDecoder {
         None
     }
 
-    fn try_peg_manager_events(log: &RskLog) -> Option<RskPegManagerEvents> {
+    fn try_pegin_manager_events(log: &RskLog) -> Option<RskPegManagerEvents> {
         let (parsed_topics, data, block_num, block_hash, removed, tx_hash) =
             Self::extract_log_fields(log);
 
-        if let Ok(pm) = PegManagerEvents::decode_raw_log(&parsed_topics, &data) {
-            trace!("Decoded PegManagerEvents: {pm:?}");
-            return Some(Self::convert_peg_manager_event(
+        if let Ok(pm) = PeginManagerEvents::decode_raw_log(&parsed_topics, &data) {
+            trace!("Decoded PeginManagerEvents: {pm:?}");
+            return Some(Self::convert_pegin_manager_event(
+                pm, block_num, block_hash, removed, tx_hash,
+            ));
+        }
+        None
+    }
+
+    fn try_pegout_manager_events(log: &RskLog) -> Option<RskPegManagerEvents> {
+        let (parsed_topics, data, block_num, block_hash, removed, tx_hash) =
+            Self::extract_log_fields(log);
+
+        if let Ok(pm) = PegoutManagerEvents::decode_raw_log(&parsed_topics, &data) {
+            trace!("Decoded PegoutManagerEvents: {pm:?}");
+            return Some(Self::convert_pegout_manager_event(
                 pm, block_num, block_hash, removed, tx_hash,
             ));
         }
@@ -269,15 +288,15 @@ impl EventDecoder {
         None
     }
 
-    fn convert_peg_manager_event(
-        event: PegManagerEvents,
+    fn convert_pegin_manager_event(
+        event: PeginManagerEvents,
         block_num: BlockNumber,
         block_hash: BlockHash,
         removed: bool,
         tx_hash: TxHash,
     ) -> RskPegManagerEvents {
         match event {
-            PegManagerEvents::PeginRequested(inner) => {
+            PeginManagerEvents::PeginRequested(inner) => {
                 RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
                     inner,
                     block_number: block_num,
@@ -286,7 +305,7 @@ impl EventDecoder {
                     tx_hash,
                 })
             }
-            PegManagerEvents::PeginAccepted(inner) => {
+            PeginManagerEvents::PeginAccepted(inner) => {
                 RskPegManagerEvents::PeginAccepted(PeginAcceptedEvent {
                     inner,
                     block_number: block_num,
@@ -295,7 +314,23 @@ impl EventDecoder {
                     tx_hash,
                 })
             }
-            PegManagerEvents::PegoutRegistered(inner) => {
+            _ => {
+                let variant = Self::event_variant_name(&event);
+                debug!("Ignored PeginManager event ({variant}): block={block_num}, tx={tx_hash}");
+                RskPegManagerEvents::IgnoredEvent
+            }
+        }
+    }
+
+    fn convert_pegout_manager_event(
+        event: PegoutManagerEvents,
+        block_num: BlockNumber,
+        block_hash: BlockHash,
+        removed: bool,
+        tx_hash: TxHash,
+    ) -> RskPegManagerEvents {
+        match event {
+            PegoutManagerEvents::PegoutRegistered(inner) => {
                 RskPegManagerEvents::PegoutRegistered(PegoutRegisteredEvent {
                     inner,
                     block_number: block_num,
@@ -304,7 +339,7 @@ impl EventDecoder {
                     tx_hash,
                 })
             }
-            PegManagerEvents::PegoutRequested(inner) => {
+            PegoutManagerEvents::PegoutRequested(inner) => {
                 RskPegManagerEvents::PegoutRequested(PegoutRequestedEvent {
                     inner,
                     block_number: block_num,
@@ -313,7 +348,7 @@ impl EventDecoder {
                     tx_hash,
                 })
             }
-            PegManagerEvents::OperatorTakeTriggered(inner) => {
+            PegoutManagerEvents::OperatorTakeTriggered(inner) => {
                 RskPegManagerEvents::OperatorTakeTriggered(OperatorTakeTriggeredEvent {
                     inner,
                     block_number: block_num,
@@ -324,7 +359,7 @@ impl EventDecoder {
             }
             event => {
                 let variant = Self::event_variant_name(&event);
-                debug!("Ignored PegManager event ({variant}): block={block_num}, tx={tx_hash}");
+                debug!("Ignored PegoutManager event ({variant}): block={block_num}, tx={tx_hash}");
                 RskPegManagerEvents::IgnoredEvent
             }
         }
@@ -572,59 +607,7 @@ impl<K: Eq + Hash + Clone> TickScheduler<K> {
     }
 }
 
-/// Time-based scheduler that uses block timestamps to track expiration times
-pub(crate) struct TimeBasedScheduler<K: Eq + Hash + Clone> {
-    pending: HashMap<K, u64>, // flow_id -> expiration_timestamp (in seconds)
-}
-
-impl<K: Eq + Hash + Clone> TimeBasedScheduler<K> {
-    pub fn new() -> Self {
-        Self { pending: HashMap::new() }
-    }
-
-    /// Schedule a timeout for the given id, expiring after the specified duration in seconds
-    /// from the current block timestamp
-    pub fn schedule(&mut self, id: K, current_timestamp: u64, timeout_seconds: u64) {
-        let expiration_timestamp = current_timestamp + timeout_seconds;
-        self.pending.insert(id, expiration_timestamp);
-    }
-
-    pub fn cancel(&mut self, id: &K) {
-        self.pending.remove(id);
-    }
-
-    pub fn is_scheduled(&self, id: &K) -> bool {
-        self.pending.contains_key(id)
-    }
-
-    /// Check for expired timeouts based on the current block timestamp
-    /// Returns a vector of expired ids
-    pub fn check_expired(&mut self, current_timestamp: u64) -> Vec<K> {
-        let mut expired: Vec<K> = Vec::new();
-        let mut to_remove: Vec<K> = Vec::new();
-
-        for (id, expiration_timestamp) in &self.pending {
-            if current_timestamp >= *expiration_timestamp {
-                expired.push(id.clone());
-                to_remove.push(id.clone());
-            }
-        }
-
-        for id in &to_remove {
-            self.pending.remove(id);
-        }
-
-        expired
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.pending.is_empty()
-    }
-
-    pub fn clear(&mut self) {
-        self.pending.clear();
-    }
-}
+pub type TimeBasedScheduler<K> = TickScheduler<K>;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Utxo {
@@ -671,7 +654,7 @@ mod tests {
     use union_contracts::bindings::committee_registry::CommitteeRegistry::{
         Committee, CommitteeMember,
     };
-    use union_contracts::bindings::peg_manager::PegManager::{
+    use union_contracts::bindings::pegin_manager::PeginManager::{
         PrevoutData, RequestPeginTempInfo, StreamPosition,
     };
     use uuid::Uuid;
@@ -933,7 +916,7 @@ mod tests {
         let expected_event = PeginAccepted {
             blockHash: FixedBytes::<32>::from_slice(H256::from_low_u64_be(1).as_bytes()),
             acceptPeginTxid: FixedBytes::<32>::from_slice(H256::from_low_u64_be(2).as_bytes()),
-            peginRequestTxid: FixedBytes::<32>::from_slice(H256::from_low_u64_be(3).as_bytes()),
+            requestPeginTxid: FixedBytes::<32>::from_slice(H256::from_low_u64_be(3).as_bytes()),
             vout: 0,
             streamPosition: StreamPosition {
                 streamId: 42,

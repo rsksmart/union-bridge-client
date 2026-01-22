@@ -33,7 +33,7 @@ fn test_runtime_sync_propagates_internal_server_error() {
     // Simulate what happens when gateway creation fails
     let result: Result<String, DomainErrors> = rt_sync.run(async {
         Err(DomainErrors::InternalServerError(
-            "Failed to create gateway: Contract PegManager at address 0x123 has no deployed code"
+            "Failed to create gateway: Contract PeginManager at address 0x123 has no deployed code"
                 .to_string(),
         ))
     });
@@ -42,7 +42,7 @@ fn test_runtime_sync_propagates_internal_server_error() {
     match result {
         Err(DomainErrors::InternalServerError(msg)) => {
             println!("Successfully caught InternalServerError: {msg}");
-            assert!(msg.contains("Contract PegManager"));
+            assert!(msg.contains("Contract PeginManager"));
             assert!(msg.contains("no deployed code"));
         }
         Err(e) => panic!("Expected InternalServerError, got: {e:?}"),
