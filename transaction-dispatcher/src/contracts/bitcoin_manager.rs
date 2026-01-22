@@ -3,7 +3,7 @@ use std::str::FromStr;
 use alloy_primitives::Bytes;
 use log::error;
 use union_contracts::bindings::bitcoin_manager::BitcoinManager::BitcoinManagerErrors;
-use union_contracts::bindings::peg_manager::PegManager::{BtcTransaction, BtcTxIn, BtcTxOut};
+use union_contracts::bindings::pegin_manager::PeginManager::{BtcTransaction, BtcTxIn, BtcTxOut};
 
 pub(super) use crate::contracts::common::ParseFieldError;
 use crate::rsk_gateway::DomainErrors;

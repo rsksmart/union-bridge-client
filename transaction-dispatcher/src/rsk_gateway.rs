@@ -16,15 +16,14 @@ use crate::contracts::committee_registry::{
     DepositCommunicationDataInvoke, GetCommitteeCall, GetMemberCommunicationDataCall,
 };
 use crate::contracts::member_registry::{GetMemberPublicKeysCall, MemberRegistryContract};
-use crate::contracts::peg_manager::accept_pegin::AcceptPeginInvoke;
-use crate::contracts::peg_manager::get_temporary_pegin_address::GetTemporaryPeginAddressCall;
-use crate::contracts::peg_manager::notify_check_fork_complete::NotifyCheckForkCompleteInvoke;
-use crate::contracts::peg_manager::register_operator_take::RegisterOperatorTakeInvoke;
-use crate::contracts::peg_manager::register_pegout::RegisterPegoutInvoke;
-use crate::contracts::peg_manager::request_pegin::RequestPeginInvoke;
-use crate::contracts::peg_manager::request_pegout::TryPegoutInvoke;
-use crate::contracts::peg_manager::trigger_operator_take::TriggerOperatorTakeInvoke;
-use crate::contracts::peg_manager::{FakePegManagerContract, PegManagerContract};
+use crate::contracts::peg_manager::{FakePegManagerContract, NotifyCheckForkCompleteInvoke};
+use crate::contracts::pegin_manager::{
+    AcceptPeginInvoke, GetTemporaryPeginAddressCall, PeginManagerContract, RequestPeginInvoke,
+};
+use crate::contracts::pegout_manager::{
+    PegoutManagerContract, RegisterOperatorTakeInvoke, RegisterPegoutInvoke,
+    TriggerOperatorTakeInvoke, TryPegoutInvoke,
+};
 use crate::contracts::signature_manager::{
     AddMemberNonceInvoke, AddMemberSignatureInvoke, AddOperatorTakeTxHashInvoke,
     SignatureManagerContract,
@@ -44,7 +43,8 @@ use crate::types::{
 };
 
 /// Must match the contract name in the config file
-const PEG_MANAGER_CONTRACT_NAME: &str = "PegManager";
+const PEGIN_MANAGER_CONTRACT_NAME: &str = "PeginManager";
+const PEGOUT_MANAGER_CONTRACT_NAME: &str = "PegoutManager";
 const FAKE_PEG_MANAGER_CONTRACT_NAME: &str = "FakePegManager";
 const SIGNATURE_MANAGER_CONTRACT_NAME: &str = "SignatureManager";
 const COMMITTEE_REGISTRY_CONTRACT_NAME: &str = "CommitteeRegistry";
@@ -168,9 +168,9 @@ pub trait RskContractsGatewayApi {
 pub struct RskContractsGateway<P: Provider + Clone> {
     provider: P,
     member_address: Address,
-    get_temporary_pegin_address_call: GetTemporaryPeginAddressCall<PegManagerContract<P>>,
-    request_pegin_invoke: RequestPeginInvoke<PegManagerContract<P>>,
-    accept_pegin_invoke: AcceptPeginInvoke<PegManagerContract<P>>,
+    get_temporary_pegin_address_call: GetTemporaryPeginAddressCall<PeginManagerContract<P>>,
+    request_pegin_invoke: RequestPeginInvoke<PeginManagerContract<P>>,
+    accept_pegin_invoke: AcceptPeginInvoke<PeginManagerContract<P>>,
     add_member_nonce_invoke: AddMemberNonceInvoke<SignatureManagerContract<P>>,
     add_member_signature_invoke: AddMemberSignatureInvoke<SignatureManagerContract<P>>,
     add_operator_take_tx_hash_invoke: AddOperatorTakeTxHashInvoke<SignatureManagerContract<P>>,
@@ -180,10 +180,10 @@ pub struct RskContractsGateway<P: Provider + Clone> {
         GetMemberCommunicationDataCall<CommitteeRegistryContract<P>>,
     apply_to_stream_invoke:
         ApplyToStreamInvoke<CommitteeRegistryContract<P>, StreamManagerContract<P>, P>,
-    request_pegout_invoke: TryPegoutInvoke<PegManagerContract<P>>,
-    register_pegout_invoke: RegisterPegoutInvoke<PegManagerContract<P>>,
-    register_operator_take_invoke: RegisterOperatorTakeInvoke<PegManagerContract<P>>,
-    trigger_operator_take_invoke: TriggerOperatorTakeInvoke<PegManagerContract<P>>,
+    request_pegout_invoke: TryPegoutInvoke<PegoutManagerContract<P>>,
+    register_pegout_invoke: RegisterPegoutInvoke<PegoutManagerContract<P>>,
+    register_operator_take_invoke: RegisterOperatorTakeInvoke<PegoutManagerContract<P>>,
+    trigger_operator_take_invoke: TriggerOperatorTakeInvoke<PegoutManagerContract<P>>,
     get_committee_call: GetCommitteeCall<CommitteeRegistryContract<P>>,
     deposit_communication_data_invoke: DepositCommunicationDataInvoke<CommitteeRegistryContract<P>>,
     deposit_aggregated_key_invoke: DepositAggregatedKeysInvoke<CommitteeRegistryContract<P>>,
@@ -203,7 +203,10 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
         tx_config: &TransactionConfig,
         member_address: Address,
     ) -> Result<Self> {
-        let contract_address = Self::load_contract(PEG_MANAGER_CONTRACT_NAME, &managed_contracts)?;
+        let pegin_contract_address =
+            Self::load_contract(PEGIN_MANAGER_CONTRACT_NAME, &managed_contracts)?;
+        let pegout_contract_address =
+            Self::load_contract(PEGOUT_MANAGER_CONTRACT_NAME, &managed_contracts)?;
         let fake_contract_address =
             Self::load_contract(FAKE_PEG_MANAGER_CONTRACT_NAME, &managed_contracts)?;
         let signature_manager_address =
@@ -217,7 +220,8 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
 
         // Validate that all contract addresses have deployed code
         let addresses_to_validate = vec![
-            (PEG_MANAGER_CONTRACT_NAME, contract_address),
+            (PEGIN_MANAGER_CONTRACT_NAME, pegin_contract_address),
+            (PEGOUT_MANAGER_CONTRACT_NAME, pegout_contract_address),
             // intentionally not validating fake peg manager contract
             (SIGNATURE_MANAGER_CONTRACT_NAME, signature_manager_address),
             (COMMITTEE_REGISTRY_CONTRACT_NAME, committee_registry_address),
@@ -240,8 +244,10 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
 
         // TODO make these contracts Rc so we avoid more expensive cloning
 
-        let peg_manager_contract =
-            PegManagerContract::new(provider.clone(), contract_address.into());
+        let pegin_manager_contract =
+            PeginManagerContract::new(provider.clone(), pegin_contract_address.into());
+        let pegout_manager_contract =
+            PegoutManagerContract::new(provider.clone(), pegout_contract_address.into());
         let fake_peg_manager_contract =
             FakePegManagerContract::new(provider.clone(), fake_contract_address.into());
         let signature_manager_contract =
@@ -257,18 +263,18 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             provider: provider.clone(),
             member_address,
             get_temporary_pegin_address_call: GetTemporaryPeginAddressCall::new(
-                peg_manager_contract.clone(),
+                pegin_manager_contract.clone(),
             ),
             request_pegin_invoke: RequestPeginInvoke::new(
-                peg_manager_contract.clone(),
+                pegin_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
             accept_pegin_invoke: AcceptPeginInvoke::new(
-                peg_manager_contract.clone(),
+                pegin_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
             request_pegout_invoke: TryPegoutInvoke::new(
-                peg_manager_contract.clone(),
+                pegout_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
             notify_check_fork_completion_invoke: NotifyCheckForkCompleteInvoke::new(
@@ -276,15 +282,15 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
                 tx_config.gas_bumps_t1,
             ),
             register_pegout_invoke: RegisterPegoutInvoke::new(
-                peg_manager_contract.clone(),
+                pegout_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
             register_operator_take_invoke: RegisterOperatorTakeInvoke::new(
-                peg_manager_contract.clone(),
+                pegout_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
             trigger_operator_take_invoke: TriggerOperatorTakeInvoke::new(
-                peg_manager_contract.clone(),
+                pegout_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
             add_member_nonce_invoke: AddMemberNonceInvoke::new(
@@ -348,7 +354,7 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: PeginAddressInput,
     ) -> Result<PeginAddressOutput, DomainErrors> {
-        info!("Interacting with PegManager#getTemporaryPeginAddress",);
+        info!("Interacting with PeginManager#getRequestPeginData",);
 
         self.get_temporary_pegin_address_call.run(input).await.map_err(|err| {
             error!("Error on get_temporary_pegin_address_call: {err}");
@@ -360,7 +366,7 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: RequestPeginInput,
     ) -> Result<RequestPeginOutput, DomainErrors> {
-        info!("Interacting with PegManager#requestPegin",);
+        info!("Interacting with PeginManager#requestPegin",);
 
         self.request_pegin_invoke.run(input).await.map_err(|err| {
             error!("Error on request_pegin_invoke: {err}");
@@ -372,7 +378,7 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: AcceptPeginInput,
     ) -> Result<AcceptPeginOutput, DomainErrors> {
-        info!("Interacting with PegManager#acceptPegin",);
+        info!("Interacting with PeginManager#acceptPegin",);
 
         self.accept_pegin_invoke.run(input).await.map_err(|err| {
             error!("Error on accept_pegin_invoke: {err}");
@@ -417,7 +423,7 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     }
 
     async fn notify_check_fork_completion(&self, input: &str) -> Result<(), DomainErrors> {
-        info!("Interacting with PegManager#notifyCheckForkCompletion",);
+        info!("Interacting with FakePegManager#notifyCheckForkCompletion",);
 
         self.notify_check_fork_completion_invoke.run(input).await.map_err(|err| {
             error!("Error on notify_check_fork_completion_invoke: {err}");
@@ -429,7 +435,7 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: RequestPegoutInput,
     ) -> Result<RequestPegoutOutput, DomainErrors> {
-        info!("Interacting with PegManager#tryPegoutRequest",);
+        info!("Interacting with PegoutManager#tryPegoutRequest",);
 
         self.request_pegout_invoke.run(input).await.map_err(|err| {
             error!("Error on try_pegout_invoke: {err}");
@@ -441,7 +447,7 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: RegisterPegoutInput,
     ) -> Result<RegisterPegoutOutput, DomainErrors> {
-        info!("Interacting with PegManager#register_pegout");
+        info!("Interacting with PegoutManager#registerUserTake");
 
         self.register_pegout_invoke.run(input).await.map_err(|err| {
             error!("Error on register_pegout_invoke: {err}");
@@ -453,7 +459,7 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: RegisterOperatorTakeInput,
     ) -> Result<RegisterOperatorTakeOutput, DomainErrors> {
-        info!("Interacting with PegManager#registerOperatorTake");
+        info!("Interacting with PegoutManager#registerOperatorTake");
 
         self.register_operator_take_invoke.run(input).await.map_err(|err| {
             error!("Error on register_operator_take_invoke: {err}");
@@ -465,7 +471,7 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: TriggerOperatorTakeInput,
     ) -> Result<TriggerOperatorTakeOutput, DomainErrors> {
-        info!("Interacting with PegManager#triggerOperatorTake");
+        info!("Interacting with PegoutManager#triggerOperatorTake");
 
         self.trigger_operator_take_invoke.run(input).await.map_err(|err| {
             error!("Error on trigger_operator_take_invoke: {err}");

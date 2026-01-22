@@ -138,25 +138,22 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
 
 impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
     #[cfg(not(feature = "fresh_node"))]
-    fn recover_logs(&self, addrs: &Vec<Address>) -> Result<BlockNumber> {
+    fn recover_logs(&self, addrs: &[Address]) -> Result<BlockNumber> {
         let checkpoint = self.store.get_sync_checkpoint()?;
-        let mut start = match checkpoint {
-            Some(log) => {
-                info!(
-                    "Resuming log sync from checkpoint at block {}, tx {}, idx {}",
-                    log.info().block_number(),
-                    log.info().tx_hash(),
-                    log.info().log_index()
-                );
-                log.info().block_number()
-            }
-            None => {
-                info!(
-                    "No sync checkpoint found, starting from initial block {}",
-                    self.initial_block_number
-                );
+        let mut start = if let Some(log) = checkpoint {
+            info!(
+                "Resuming log sync from checkpoint at block {}, tx {}, idx {}",
+                log.info().block_number(),
+                log.info().tx_hash(),
+                log.info().log_index()
+            );
+            log.info().block_number()
+        } else {
+            info!(
+                "No sync checkpoint found, starting from initial block {}",
                 self.initial_block_number
-            }
+            );
+            self.initial_block_number
         };
 
         // This is needed in case there were previously logs saved in
@@ -165,8 +162,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         let original_start = start;
         start = start - finality_depth;
         info!(
-            "Adjusted start block for finality: original = {}, finality_depth = {}, adjusted = {}",
-            original_start, finality_depth, start
+            "Adjusted start block for finality: original = {original_start}, finality_depth = {finality_depth}, adjusted = {start}"
         );
 
         let best_block = self.rsk_provider.get_best_block()?;
@@ -177,24 +173,22 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         let batch_size = self.sync_batch_size as u64;
 
         info!(
-            "[Attempt {}/{}] Starting logs sync from block {} to {} (batch size: {})",
-            attempt, max_attempts, start, end, batch_size
+            "[Attempt {attempt}/{max_attempts}] Starting logs sync from block {start} to {end} (batch size: {batch_size})"
         );
 
         while self.is_running() && start <= end {
             if attempt > max_attempts {
                 bail!(
-                    "Failed to recover logs after {} attempts. Best block kept changing.",
-                    max_attempts
+                    "Failed to recover logs after {max_attempts} attempts. Best block kept changing."
                 );
             }
 
             let from = start;
             let to = if start + batch_size < end { start + batch_size } else { end };
 
-            debug!("Fetching logs from block {} to {}", from, to);
+            debug!("Fetching logs from block {from} to {to}");
             let logs = self.rsk_provider.get_logs(from, to, addrs)?;
-            debug!("Fetched {} logs from {} to {}", logs.len(), from, to);
+            debug!("Fetched {} logs from {from} to {to}", logs.len());
 
             self.save_logs_and_checkpoint(&logs)?;
 
@@ -203,10 +197,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                 let new_best_block = self.rsk_provider.get_best_block()?;
                 if end < new_best_block.number() {
                     info!(
-                        "[Attempt {}/{}] New blocks appeared during sync: previous best = {}, current best = {}. Continuing...",
-                        attempt,
-                        max_attempts,
-                        end,
+                        "[Attempt {attempt}/{max_attempts}] New blocks appeared during sync: previous best = {end}, current best = {}. Continuing...",
                         new_best_block.number()
                     );
                     end = new_best_block.number();
@@ -218,8 +209,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         }
 
         info!(
-            "[Attempt {}/{}] Best block unchanged after sync (block {}). Sync finished.",
-            attempt, max_attempts, end
+            "[Attempt {attempt}/{max_attempts}] Best block unchanged after sync (block {end}). Sync finished."
         );
 
         Ok(end)
@@ -344,7 +334,7 @@ mod tests {
 
     use super::*;
     use crate::store::MockLogStore;
-    const EMPTY_ADDRESSES: Vec<Address> = vec![];
+
     #[test]
     fn recover_logs_when_no_checkpoint_should_start_from_initial_block() {
         let mut mock_store = MockLogStore::new();
@@ -513,7 +503,7 @@ mod tests {
             shutdown_flag: ShutdownFlag::init(),
         };
 
-        let result = indexer.recover_logs(&EMPTY_ADDRESSES);
+        let result = indexer.recover_logs(&[]);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), second_best.number());
     }
@@ -544,7 +534,7 @@ mod tests {
             shutdown_flag: ShutdownFlag::init(),
         };
 
-        let result = indexer.recover_logs(&EMPTY_ADDRESSES);
+        let result = indexer.recover_logs(&[]);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Failed to recover logs after"));
     }

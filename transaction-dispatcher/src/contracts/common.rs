@@ -16,8 +16,8 @@ use thiserror::Error;
 use tokio::time::{sleep, timeout};
 
 use crate::contracts::{
-    bitcoin_manager, committee_registry, member_registry, peg_manager, signature_manager,
-    stream_manager,
+    bitcoin_manager, committee_registry, member_registry, pegin_manager, pegout_manager,
+    signature_manager, stream_manager,
 };
 use crate::rsk_gateway::DomainErrors;
 
@@ -290,7 +290,8 @@ fn likely_oog(receipt: &TransactionReceipt, gas_limit: u64) -> bool {
 
 impl From<alloy_contract::Error> for DomainErrors {
     fn from(err: alloy_contract::Error) -> Self {
-        peg_manager::decode_error(&err)
+        pegin_manager::decode_error(&err)
+            .or_else(|| pegout_manager::decode_error(&err))
             .or_else(|| bitcoin_manager::decode_error(&err))
             .or_else(|| stream_manager::decode_error(&err))
             .or_else(|| signature_manager::decode_error(&err))
@@ -308,7 +309,11 @@ pub mod tests {
     use super::*;
 
     // Helper function to create a fake receipt for testing
-    fn create_fake_receipt(status: bool, gas_used: u64, _gas_limit: u64) -> TransactionReceipt {
+    pub(super) fn create_fake_receipt(
+        status: bool,
+        gas_used: u64,
+        _gas_limit: u64,
+    ) -> TransactionReceipt {
         let receipt =
             Receipt { status: status.into(), cumulative_gas_used: gas_used, logs: vec![] };
         let envelope =

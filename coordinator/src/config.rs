@@ -6,7 +6,8 @@ use serde::Deserialize;
 // TODO this should be event-type-dependent, therefore for now we use a constant - it makes no sense adding it to the config
 pub const REQUIRED_CONFIRMATIONS: u32 = 5;
 const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
-const PEG_MANAGER_CONTRACT_NAME: &str = "PegManager";
+const PEGIN_MANAGER_CONTRACT_NAME: &str = "PeginManager";
+const PEGOUT_MANAGER_CONTRACT_NAME: &str = "PegoutManager";
 const SIGNATURE_CONTRACT_NAME: &str = "SignatureManager";
 const COMMITTEE_REGISTRY_CONTRACT_NAME: &str = "CommitteeRegistry";
 const MEMBER_REGISTRY_CONTRACT_NAME: &str = "MemberRegistry";
@@ -75,7 +76,8 @@ impl Config {
 
     #[cfg(feature = "anvil")]
     fn get_contracts_to_subscribe_to(contract: &ContractConfig) -> bool {
-        contract.name == PEG_MANAGER_CONTRACT_NAME
+        contract.name == PEGIN_MANAGER_CONTRACT_NAME
+            || contract.name == PEGOUT_MANAGER_CONTRACT_NAME
             || contract.name == "FakePegManager"
             || contract.name == SIGNATURE_CONTRACT_NAME
             || contract.name == COMMITTEE_REGISTRY_CONTRACT_NAME
@@ -85,7 +87,8 @@ impl Config {
 
     #[cfg(not(feature = "anvil"))]
     fn get_contracts_to_subscribe_to(contract: &ContractConfig) -> bool {
-        contract.name == PEG_MANAGER_CONTRACT_NAME
+        contract.name == PEGIN_MANAGER_CONTRACT_NAME
+            || contract.name == PEGOUT_MANAGER_CONTRACT_NAME
             || contract.name == SIGNATURE_CONTRACT_NAME
             || contract.name == COMMITTEE_REGISTRY_CONTRACT_NAME
             || contract.name == MEMBER_REGISTRY_CONTRACT_NAME
@@ -141,6 +144,6 @@ mod tests {
             config.coordinator.storage_path.ends_with("/.union_bridge/database/multi-client-1")
         );
         assert_eq!("regtest", config.bitcoin_network);
-        assert_eq!(8, config.contracts.len());
+        assert_eq!(10, config.contracts.len());
     }
 }
