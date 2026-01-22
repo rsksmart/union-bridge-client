@@ -257,7 +257,7 @@ mod tests {
             "MemberRegistry",
             "FakePegManager",
             "StreamManager",
-            "PowpegBridge",
+            "NativeBridge",
         ];
         assert_eq!(expected_names, contract_names);
         assert_eq!("0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761", config.contracts[0].address);

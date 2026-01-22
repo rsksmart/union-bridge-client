@@ -1,13 +1,13 @@
-use crate::contracts::powpeg_bridge::PowpegBridgeContractApi;
+use crate::contracts::native_bridge::NativeBridgeContractApi;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{GetBtcTransactionConfirmationsInput, GetBtcTransactionConfirmationsOutput};
 
 #[derive(Clone)]
-pub struct GetBtcTransactionConfirmationsCall<C: PowpegBridgeContractApi> {
+pub struct GetBtcTransactionConfirmationsCall<C: NativeBridgeContractApi> {
     contract: C,
 }
 
-impl<C: PowpegBridgeContractApi> GetBtcTransactionConfirmationsCall<C> {
+impl<C: NativeBridgeContractApi> GetBtcTransactionConfirmationsCall<C> {
     pub(crate) fn new(contract: C) -> Self {
         Self { contract }
     }

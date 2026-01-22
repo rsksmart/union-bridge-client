@@ -11,7 +11,7 @@ use mockall::automock;
 pub(crate) use crate::contracts::interactions::get_btc_transaction_confirmations;
 
 #[cfg_attr(test, automock)]
-pub trait PowpegBridgeContractApi {
+pub trait NativeBridgeContractApi {
     async fn call_get_btc_transaction_confirmations(
         &self,
         tx_hash: TxHash,
@@ -30,19 +30,19 @@ const NATIVE_BRIDGE_ADDRESS: &str = "0x0000000000000000000000000000000001000006"
 const GET_BTC_TX_CONFIRMATIONS_SELECTOR: [u8; 4] = [0x5b, 0x64, 0x45, 0x87];
 
 #[derive(Clone)]
-pub struct PowpegBridgeContract<P: Provider> {
+pub struct NativeBridgeContract<P: Provider> {
     provider: P,
     contract_address: Address,
 }
 
-impl<P: Provider> PowpegBridgeContract<P> {
+impl<P: Provider> NativeBridgeContract<P> {
     pub fn new(provider: P, contract_address: Address) -> Self {
         info!("Connecting to Native Bridge precompiled contract @ {contract_address}");
-        PowpegBridgeContract { provider, contract_address }
+        NativeBridgeContract { provider, contract_address }
     }
 }
 
-impl<P: Provider> PowpegBridgeContractApi for PowpegBridgeContract<P> {
+impl<P: Provider> NativeBridgeContractApi for NativeBridgeContract<P> {
     async fn call_get_btc_transaction_confirmations(
         &self,
         tx_hash: TxHash,
@@ -332,7 +332,7 @@ mod tests {
         let native_bridge_addr = Address::from_str(NATIVE_BRIDGE_ADDRESS).unwrap();
 
         // Create contract instance
-        let contract = PowpegBridgeContract::new(provider, native_bridge_addr);
+        let contract = NativeBridgeContract::new(provider, native_bridge_addr);
 
         // Test data - These would need to be real Bitcoin transaction data from the network
         // For this example, we'll use dummy data that will likely return an error,
@@ -394,7 +394,7 @@ mod tests {
             ProviderBuilder::new().connect_http(rpc_url.parse().expect("Invalid RPC URL"));
 
         let native_bridge_addr = Address::from_str(NATIVE_BRIDGE_ADDRESS).unwrap();
-        let contract = PowpegBridgeContract::new(provider, native_bridge_addr);
+        let contract = NativeBridgeContract::new(provider, native_bridge_addr);
 
         // Use different dummy data to test another error scenario
         // Using all 0xFF instead of 0x00
@@ -516,7 +516,7 @@ mod tests {
             ProviderBuilder::new().connect_http(rpc_url.parse().expect("Invalid RPC URL"));
         let native_bridge_addr =
             Address::from_str(NATIVE_BRIDGE_ADDRESS).expect("Invalid native bridge address");
-        let contract = PowpegBridgeContract::new(provider, native_bridge_addr);
+        let contract = NativeBridgeContract::new(provider, native_bridge_addr);
 
         let prevout_txid =
             Txid::from_str("add1ba9b6d613813b9fb665d2589cdce5cc480c29a9d9d367357f101a22dc64f")

@@ -16,6 +16,8 @@ use crate::contracts::committee_registry::{
     DepositCommunicationDataInvoke, GetCommitteeCall, GetMemberCommunicationDataCall,
 };
 use crate::contracts::member_registry::{GetMemberPublicKeysCall, MemberRegistryContract};
+use crate::contracts::native_bridge::NativeBridgeContract;
+use crate::contracts::native_bridge::get_btc_transaction_confirmations::GetBtcTransactionConfirmationsCall;
 use crate::contracts::peg_manager::accept_pegin::AcceptPeginInvoke;
 use crate::contracts::peg_manager::get_temporary_pegin_address::GetTemporaryPeginAddressCall;
 use crate::contracts::peg_manager::notify_check_fork_complete::NotifyCheckForkCompleteInvoke;
@@ -25,8 +27,6 @@ use crate::contracts::peg_manager::request_pegin::RequestPeginInvoke;
 use crate::contracts::peg_manager::request_pegout::TryPegoutInvoke;
 use crate::contracts::peg_manager::trigger_operator_take::TriggerOperatorTakeInvoke;
 use crate::contracts::peg_manager::{FakePegManagerContract, PegManagerContract};
-use crate::contracts::powpeg_bridge::PowpegBridgeContract;
-use crate::contracts::powpeg_bridge::get_btc_transaction_confirmations::GetBtcTransactionConfirmationsCall;
 use crate::contracts::signature_manager::{
     AddMemberNonceInvoke, AddMemberSignatureInvoke, AddOperatorTakeTxHashInvoke,
     SignatureManagerContract,
@@ -53,7 +53,7 @@ const SIGNATURE_MANAGER_CONTRACT_NAME: &str = "SignatureManager";
 const COMMITTEE_REGISTRY_CONTRACT_NAME: &str = "CommitteeRegistry";
 const MEMBER_REGISTRY_CONTRACT_NAME: &str = "MemberRegistry";
 const STREAM_MANAGER_CONTRACT_NAME: &str = "StreamManager";
-const POWPEG_BRIDGE_CONTRACT_NAME: &str = "PowpegBridge";
+const NATIVE_BRIDGE_CONTRACT_NAME: &str = "NativeBridge";
 
 #[cfg_attr(test, automock)]
 pub trait BalanceProvider {
@@ -196,7 +196,7 @@ pub struct RskContractsGateway<P: Provider + Clone> {
     get_committee_call: GetCommitteeCall<CommitteeRegistryContract<P>>,
     deposit_communication_data_invoke: DepositCommunicationDataInvoke<CommitteeRegistryContract<P>>,
     deposit_aggregated_key_invoke: DepositAggregatedKeysInvoke<CommitteeRegistryContract<P>>,
-    get_btc_confirmations_call: GetBtcTransactionConfirmationsCall<PowpegBridgeContract<P>>,
+    get_btc_confirmations_call: GetBtcTransactionConfirmationsCall<NativeBridgeContract<P>>,
 }
 
 impl<P: Provider + Clone> RskContractsGateway<P> {
@@ -224,8 +224,8 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             Self::load_contract(MEMBER_REGISTRY_CONTRACT_NAME, &managed_contracts)?;
         let stream_manager_address =
             Self::load_contract(STREAM_MANAGER_CONTRACT_NAME, &managed_contracts)?;
-        let powpeg_bridge_address =
-            Self::load_contract(POWPEG_BRIDGE_CONTRACT_NAME, &managed_contracts)?;
+        let native_bridge_address =
+            Self::load_contract(NATIVE_BRIDGE_CONTRACT_NAME, &managed_contracts)?;
 
         // Validate that all contract addresses have deployed code
         let addresses_to_validate = vec![
@@ -264,8 +264,8 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             MemberRegistryContract::new(provider.clone(), member_registry_address.into());
         let stream_manager_contract =
             StreamManagerContract::new(provider.clone(), stream_manager_address.into());
-        let powpeg_bridge_contract =
-            PowpegBridgeContract::new(provider.clone(), powpeg_bridge_address.into());
+        let native_bridge_contract =
+            NativeBridgeContract::new(provider.clone(), native_bridge_address.into());
 
         Ok(RskContractsGateway {
             provider: provider.clone(),
@@ -336,7 +336,7 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
                 tx_config.gas_bumps_t1,
             ),
             get_btc_confirmations_call: GetBtcTransactionConfirmationsCall::new(
-                powpeg_bridge_contract.clone(),
+                native_bridge_contract.clone(),
             ),
         })
     }
@@ -365,7 +365,7 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: GetBtcTransactionConfirmationsInput,
     ) -> Result<GetBtcTransactionConfirmationsOutput, DomainErrors> {
-        info!("Interacting with PowpegBridge#getBitcoinConfirmations");
+        info!("Interacting with NativeBridge#getBitcoinConfirmations");
 
         self.get_btc_confirmations_call.run(input).await.map_err(|err| {
             error!("Error on get_bitcoin_confirmations_call: {err}");
