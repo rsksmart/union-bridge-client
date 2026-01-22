@@ -74,7 +74,9 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
             Rc::clone(&store_rc),
         );
 
-        let native_bridge_verifier = if let Some(env_name @ ("alphanet" | "regtest")) = env_name {
+        let native_bridge_verifier = if let Some(env_name @ ("alphanet" | "regtest" | "testnet")) =
+            env_name
+        {
             log::info!("Environment: {env_name} → Using Real Native Bridge Verifier");
             NativeBridgeVerifier::Real {
                 contracts: contracts_arc.clone(),
