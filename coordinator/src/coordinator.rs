@@ -18,7 +18,7 @@ use crate::flows::committee::setup_committee_flow::{
     SetupCommitteeFlowFactory, SetupCommitteeProcessor,
 };
 use crate::flows::common::GlobalContext;
-use crate::flows::common::native_bridge::NativeBridgeVerifier;
+use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
 use crate::flows::fund_bitvmx_flow::FundBitvmxProcessor;
 use crate::flows::operator_take::AdvanceFundsFlowProcessor;
 use crate::flows::pegin::pegin_processor::PeginFlowProcessor;

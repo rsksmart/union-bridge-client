@@ -26,7 +26,7 @@ use log::{debug, info, warn};
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use transaction_dispatcher::types::GetBtcTransactionConfirmationsInput;
 
-pub const MIN_TX_CONFIRMATIONS: u32 = 1;
+pub const MIN_TX_CONFIRMATIONS: u32 = 1 + 1;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum VerificationStatus {

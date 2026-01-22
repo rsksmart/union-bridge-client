@@ -18,7 +18,7 @@ use union_contracts::bindings::peg_manager::PegManager::PegoutRegistered;
 use uuid::Uuid;
 
 use crate::flows::common::TAKE_KEY_INDEX;
-use crate::flows::common::native_bridge::{NativeBridgeVerifier, invoke_contract_safe};
+use crate::flows::common::native_bridge_verifier::{NativeBridgeVerifier, invoke_contract_safe};
 use crate::types::OperatorTakeTriggeredEvent;
 
 #[allow(dead_code)]

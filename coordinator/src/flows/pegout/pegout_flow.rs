@@ -20,7 +20,7 @@ use transaction_dispatcher::types::{
 use union_contracts::bindings::peg_manager::PegManager::{PegoutRegistered, PegoutRequested};
 use uuid::Uuid;
 
-use crate::flows::common::native_bridge::{NativeBridgeVerifier, invoke_contract_safe};
+use crate::flows::common::native_bridge_verifier::{NativeBridgeVerifier, invoke_contract_safe};
 use crate::flows::common::{COMM_KEY_INDEX, build_communication_data};
 use crate::store::{CoordinatorStoreApi, StoreKey};
 

@@ -21,7 +21,7 @@ use transaction_dispatcher::types::{
 use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
 use uuid::Uuid;
 
-use crate::flows::common::native_bridge::{NativeBridgeVerifier, invoke_contract_safe};
+use crate::flows::common::native_bridge_verifier::{NativeBridgeVerifier, invoke_contract_safe};
 use crate::flows::common::{COMM_KEY_INDEX, build_communication_data};
 use crate::flows::pegin::utils::{get_accept_pegin_pid, get_temp_pegin_pid};
 use crate::store::{CoordinatorStoreApi, StoreKey};

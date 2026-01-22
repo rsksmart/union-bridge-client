@@ -25,7 +25,7 @@ use crate::flows::btc_signature::btc_signature_subflow::{
     BtcSignatureSubFlowFactoryApi,
 };
 use crate::flows::common::GlobalContext;
-use crate::flows::common::native_bridge::NativeBridgeVerifier;
+use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
 use crate::flows::pegout::pegout_flow::{PegoutFlow, State, StepData, Steps};
 use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix};
 use crate::types::{

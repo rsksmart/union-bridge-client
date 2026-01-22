@@ -17,7 +17,7 @@ use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
 use crate::config::REQUIRED_CONFIRMATIONS;
 use crate::event_processor::EventProcessor;
 use crate::flows::common::GlobalContext;
-use crate::flows::common::native_bridge::NativeBridgeVerifier;
+use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
 use crate::flows::operator_take::operator_take_flow::{
     AdvanceFundsFlow, OperatorTakeTriggerData, StepData, Steps,
 };
