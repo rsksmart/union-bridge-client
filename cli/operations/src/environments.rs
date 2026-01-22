@@ -59,8 +59,10 @@ impl Environment {
         match self {
             Environment::Local | Environment::LocalDocker => "http://localhost:8545".to_string(),
             Environment::Regtest => "http://node-use2-1.regtest.rskcomputing.net".to_string(),
-            Environment::Alphanet => "http://node-use1-1.alphanet.rskcomputing.net".to_string(),
-            Environment::Testnet => "TBD".to_string(),
+            Environment::Alphanet => {
+                "http://node-use1-1.alphanet.rskcomputing.net:4444".to_string()
+            }
+            Environment::Testnet => "http://rskj-01.testnet.ub.iovlabs.net:4444".to_string(),
         }
     }
 
