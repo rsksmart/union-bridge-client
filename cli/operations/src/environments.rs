@@ -107,8 +107,8 @@ const ALPHANET_HOSTS: [&str; 4] = [
 ];
 
 const TESTNET_HOSTS: [&str; 4] = [
-    "union-bridge-use1-1.TBD",
-    "union-bridge-use1-2.TBD",
-    "union-bridge-use1-3.TBD",
-    "union-bridge-use1-4.TBD",
+    "operator-01.testnet.ub.iovlabs.net",
+    "operator-02.testnet.ub.iovlabs.net",
+    "operator-03.testnet.ub.iovlabs.net",
+    "operator-04.testnet.ub.iovlabs.net",
 ];
