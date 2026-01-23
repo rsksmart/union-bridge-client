@@ -28,10 +28,13 @@ address = "0x4752b4a6Cce3368cB4b6eDB8DD1137aa08594c2D"
 [[contracts]]
 name = "StreamManager"
 address = "0x38C5d2e8a3fB87B851ab7b501a317E48fc5bFa7F"
+<<<<<<< HEAD
 
 [[contracts]]
 name = "NativeBridge"
 address = "0x0000000000000000000000000000000001000006"
+=======
+>>>>>>> 11780e5e (chore: update test contract address)
 
 [indexer]
 
