@@ -451,7 +451,7 @@ pub(crate) struct SetupCommitteeFlow<
 
 const REGTEST_FEE_RATE: u64 = 10;
 const DEFAULT_FEE_RATE: u64 = 1;
-pub const ADVANCE_FUNDS_INPUT: &str = "advance_funds_input";
+pub const ADVANCE_FUNDS_INPUT: &str = "ADVANCE_FUNDS_INPUT";
 
 impl<CG, BC, S> SetupCommitteeFlow<CG, BC, S>
 where
