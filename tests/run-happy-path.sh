@@ -60,20 +60,16 @@ step() {
     echo ""
 }
 
-# Bitcoin RPC configuration
-BITCOIN_RPC_URL="http://host.docker.internal:18443/"
-BITCOIN_CLI_ARGS="-regtest -rpcuser=foo -rpcpassword=rpcpassword -rpcconnect=host.docker.internal -rpcport=18443"
-
 # get current bitcoin block height
 get_current_bitcoin_height() {
-    local height=$(bitcoin-cli $BITCOIN_CLI_ARGS getblockcount 2>/dev/null || echo "0")
+    local height=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockcount 2>/dev/null || echo "0")
     height=${height:-0}  # ensure it's set to 0 if empty
     echo "$height"
 }
 
 # check if bitcoin node is accessible
 check_bitcoin_connectivity() {
-    bitcoin-cli $BITCOIN_CLI_ARGS getblockcount &> /dev/null
+    bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockcount &> /dev/null
 }
 
 # derive x-only public key (32 bytes) from USER_BITCOIN_WIF
@@ -84,7 +80,7 @@ user_xonly_pubkey_from_wif() {
         return 1
     fi
     local desc pubkey xonly
-    desc=$(bitcoin-cli $BITCOIN_CLI_ARGS getdescriptorinfo "wpkh(${USER_BITCOIN_WIF})" 2>/dev/null | jq -r '.descriptor')
+    desc=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getdescriptorinfo "wpkh(${USER_BITCOIN_WIF})" 2>/dev/null | jq -r '.descriptor')
     if [[ -z "$desc" || "$desc" == "null" ]]; then
         echo "Error: Failed to derive descriptor from USER_BITCOIN_WIF" >&2
         return 1
@@ -108,7 +104,7 @@ user_compressed_pubkey_from_wif() {
         return 1
     fi
     local desc pubkey
-    desc=$(bitcoin-cli $BITCOIN_CLI_ARGS getdescriptorinfo "wpkh(${USER_BITCOIN_WIF})" 2>/dev/null | jq -r '.descriptor')
+    desc=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getdescriptorinfo "wpkh(${USER_BITCOIN_WIF})" 2>/dev/null | jq -r '.descriptor')
     if [[ -z "$desc" || "$desc" == "null" ]]; then
         echo "Error: Failed to derive descriptor from USER_BITCOIN_WIF" >&2
         return 1
@@ -134,8 +130,9 @@ if ! cast rpc eth_chainId --rpc-url http://localhost:8545 &> /dev/null; then
 fi
 
 if ! check_bitcoin_connectivity; then
-    echo "Error: Bitcoin regtest node not accessible at $BITCOIN_RPC_URL"
-    echo "Please ensure Bitcoin Core is running and accessible"
+    echo "Error: Bitcoin regtest node not accessible"
+    echo "Please ensure Bitcoin Core is running with:"
+    echo "  bitcoind -regtest -rpcuser=foo -rpcpassword=rpcpassword"
     exit 1
 fi
 
@@ -193,7 +190,7 @@ count_transactions_in_blocks() {
     local total_txs=0
     for ((h=start_height + 1; h<=end_height; h++)); do
         local stats
-        stats=$(bitcoin-cli $BITCOIN_CLI_ARGS \
+        stats=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword \
                 getblockstats "$h" 2>/dev/null) || continue
         # Extract "txs" (total tx count including coinbase) - use jq if available, fallback to sed
         local total_tx_count
