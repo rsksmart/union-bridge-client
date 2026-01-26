@@ -150,7 +150,9 @@ impl Server {
         if !is_valid_xonly_pubkey(&payload.btc_reimbursement_pub_key) {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(json!({ "error": "btc_reimbursement_pub_key must be a valid 32-byte hex string with 0x prefix (66 chars total)" })),
+                Json(
+                    json!({ "error": "btc_reimbursement_pub_key must be a valid 32-byte hex string with 0x prefix (66 chars total)" }),
+                ),
             );
         }
 
@@ -173,17 +175,16 @@ impl Server {
 
         // Validate usr_pub_key is provided
         if payload.usr_pub_key.is_empty() {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "error": "usr_pub_key is required" })),
-            );
+            return (StatusCode::BAD_REQUEST, Json(json!({ "error": "usr_pub_key is required" })));
         }
 
         // Validate format: must be 0x + 66 hex chars (33 bytes compressed pubkey)
         if !is_valid_compressed_pubkey(&payload.usr_pub_key) {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(json!({ "error": "usr_pub_key must be a valid 33-byte compressed public key hex string with 0x prefix (68 chars total)" })),
+                Json(
+                    json!({ "error": "usr_pub_key must be a valid 33-byte compressed public key hex string with 0x prefix (68 chars total)" }),
+                ),
             );
         }
 
