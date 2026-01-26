@@ -181,11 +181,17 @@ where
                     "Triggering operator take due to timeout for flow_id: {}",
                     self.state.flow_id
                 );
-                if let Err(err) = self.trigger_operator_take() {
-                    warn!(
-                        "Failed to trigger operator take for flow_id {}: {}. Continuing flow.",
-                        self.state.flow_id, err
-                    );
+                match self.trigger_operator_take() {
+                    Ok(()) => {
+                        info!("PegoutFlow TriggerOperatorTake completed: {}", self.state.flow_id);
+                    }
+                    Err(err) => {
+                        warn!(
+                            "Failed to trigger operator take for flow_id {}: {}. Continuing flow.",
+                            self.state.flow_id, err
+                        );
+                        info!("PegoutFlow TriggerOperatorTake skipped: {}", self.state.flow_id);
+                    }
                 }
             }
             Steps::ConfirmUserTakeTransaction => {
@@ -214,7 +220,9 @@ where
                 self.register_pegout(spv_proof)?;
             }
             Steps::Done => {
-                info!("PegoutFlow Done: {}", self.state.flow_id);
+                if previous_step == Steps::RegisterPegout {
+                    info!("PegoutFlow Done: {}", self.state.flow_id);
+                }
             }
         }
 
@@ -269,10 +277,9 @@ where
                 Ok(Steps::TriggerOperatorTake)
             }
             (Steps::TriggerOperatorTake, StepData::TriggerOperatorTakeTimeout) => {
-                // After trigger_operator_take completes successfully, finish the flow
+                // After TriggerOperatorTake step completes, finish the flow
                 info!(
-                    //TODO improve messagec, heck this as maybe it was not successfull but is part of the flow and should be completed
-                    "Operator take triggered successfully for flow_id: {}, completing flow",
+                    "TriggerOperatorTake step completed for flow_id: {}, completing flow",
                     self.state.flow_id
                 );
                 Ok(Steps::Done)
