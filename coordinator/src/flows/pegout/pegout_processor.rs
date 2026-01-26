@@ -25,6 +25,7 @@ use crate::flows::btc_signature::btc_signature_subflow::{
     BtcSignatureSubFlowFactoryApi,
 };
 use crate::flows::common::GlobalContext;
+use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
 use crate::flows::pegout::pegout_flow::{PegoutFlow, State, StepData, Steps};
 use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix};
 use crate::types::{
@@ -32,9 +33,20 @@ use crate::types::{
     TimeBasedScheduler, UserRequests,
 };
 
+fn is_missing_native_bridge_confirmations(err: &anyhow::Error) -> bool {
+    use transaction_dispatcher::rsk_gateway::DomainErrors;
+    err.chain().any(|cause| {
+        if let Some(domain_err) = cause.downcast_ref::<DomainErrors>() {
+            matches!(domain_err, DomainErrors::MissingConfirmationsOnNativeBridge(_))
+        } else {
+            false
+        }
+    })
+}
+
 pub const PEGOUT_ACCEPTED_NAME: &str = "pegout_accepted";
 pub const BLOCKS_DELAY_FOR_TX_CHECK: u32 = 20;
-pub const SPV_PROOF_MIN_CONFIRMATIONS: u32 = 1 + 1; // +1 from Contracts, +1 to give time to the Native Bridge to get up to date with Bitcoin Node
+pub const SPV_PROOF_MIN_CONFIRMATIONS: u32 = 1;
 pub const ADVANCE_FUNDS_TIMEOUT_SECONDS: u64 = 600; // 10 minutes for testing in Alphanet (30s cadence), in local it could be 30s (1s cadence), in production should be 2 * 60 * 60 (2 hours)
 
 /// Processor that manages multiple pegout flow state machines
@@ -58,7 +70,11 @@ where
     tx_status_scheduler: TickScheduler<Uuid>,
     advance_funds_timeout_scheduler: TimeBasedScheduler<Uuid>,
     flows_pending_timeout: HashSet<Uuid>, // Flows that need timeout scheduled on next block
+    // For retry logic when native bridge lacks confirmations for register_pegout
+    unconfirmed_register_pegout: HashMap<Uuid, i16>,
+    register_pegout_retry_scheduler: TickScheduler<Uuid>,
     store: Rc<S>,
+    native_bridge_verifier: NativeBridgeVerifier<CG>,
 }
 
 impl<CG, BC, S>
@@ -80,6 +96,7 @@ where
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
         store: Rc<S>,
+        native_bridge_verifier: NativeBridgeVerifier<CG>,
     ) -> Self {
         let factory = BtcSignatureSubFlowFactory::new(contracts_gateway.clone(), rt_sync.clone());
         Self {
@@ -95,7 +112,10 @@ where
             tx_status_scheduler: TickScheduler::new(),
             advance_funds_timeout_scheduler: TimeBasedScheduler::new(),
             flows_pending_timeout: HashSet::new(),
+            unconfirmed_register_pegout: HashMap::new(),
+            register_pegout_retry_scheduler: TickScheduler::new(),
             store,
+            native_bridge_verifier,
         }
     }
 
@@ -105,9 +125,16 @@ where
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
         store: Rc<S>,
+        native_bridge_verifier: NativeBridgeVerifier<CG>,
     ) -> Result<Self> {
-        let mut processor =
-            Self::new(contracts_gateway, rt_sync, bitvmx_broker, global_context, store);
+        let mut processor = Self::new(
+            contracts_gateway,
+            rt_sync,
+            bitvmx_broker,
+            global_context,
+            store,
+            native_bridge_verifier,
+        );
         processor.restore_flows_from_store()?;
         Ok(processor)
     }
@@ -138,6 +165,7 @@ where
             Rc::clone(&self.bitvmx_broker),
             saved_state.clone(),
             Rc::clone(&self.store),
+            self.native_bridge_verifier.clone(),
         );
         info!("Restoring pegout flow {id} at step {:?}", &flow.current_step(),);
         self.pegout_flows.insert(*id, flow);
@@ -187,6 +215,7 @@ where
             flow_id,
             event,
             Rc::clone(&self.store),
+            self.native_bridge_verifier.clone(),
         );
 
         // Initialize the flow with the PegoutRequested event
@@ -518,6 +547,55 @@ where
 
         Ok(())
     }
+
+    fn schedule_register_pegout_retry(&mut self, flow_id: Uuid, attempt: i16, reason: &str) {
+        info!("{reason} for flow {flow_id} (attempt {attempt})");
+        self.unconfirmed_register_pegout.insert(flow_id, attempt);
+        self.register_pegout_retry_scheduler.schedule(flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
+    }
+
+    fn handle_register_pegout_retry_tick(&mut self) {
+        if self.register_pegout_retry_scheduler.is_empty() {
+            return;
+        }
+
+        for flow_id in self.register_pegout_retry_scheduler.tick() {
+            let Some(attempt) = self.unconfirmed_register_pegout.remove(&flow_id) else {
+                warn!("No register_pegout retry state found for flow {flow_id}");
+                continue;
+            };
+
+            let Some(flow) = self.pegout_flows.get_mut(&flow_id) else {
+                warn!("No pegout flow found for register_pegout retry: {flow_id}");
+                continue;
+            };
+
+            if flow.current_step() != Steps::RegisterPegout {
+                debug!(
+                    "Skipping register_pegout retry for flow {flow_id} in step {:?}",
+                    flow.current_step()
+                );
+                continue;
+            }
+
+            let Err(err) = flow.complete_step(&StepData::RetryRegisterPegout) else {
+                info!("Register pegout succeeded on retry for flow {flow_id}");
+                continue;
+            };
+
+            if !is_missing_native_bridge_confirmations(&err) {
+                error!("Error on retry for register_pegout: {err:?}");
+                continue;
+            }
+
+            let next_attempt = attempt.saturating_add(1);
+            self.schedule_register_pegout_retry(
+                flow_id,
+                next_attempt,
+                "Still missing confirmations on native bridge, scheduling another retry",
+            );
+        }
+    }
 }
 
 impl<CG, BC, S> EventProcessor
@@ -538,6 +616,7 @@ where
         Ok(())
     }
 
+    #[allow(clippy::too_many_lines)]
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
         trace!("Processing BitVMX event: {event:?}");
 
@@ -603,23 +682,54 @@ where
                     anyhow!("Received SPVProof event for tx_id {tx_id} without proof")
                 })?;
 
-                let Some((flow_id, flow)) =
-                    self.pegout_flows.iter_mut().find_map(|(flow_id, flow)| {
-                        (flow.get_user_take_txid() == Some(*tx_id)).then_some((*flow_id, flow))
-                    })
-                else {
+                // First pass: find flow_id and verify step (immutable borrow)
+                let Some(flow_id) = self.pegout_flows.iter().find_map(|(flow_id, flow)| {
+                    (flow.get_user_take_txid() == Some(*tx_id)).then_some(*flow_id)
+                }) else {
                     trace!("Ignoring SPV proof for tx_id {tx_id} without matching flow");
                     return Ok(());
                 };
-                if flow.current_step() != Steps::RequestUserTakeSpvProof {
+
+                // Verify step before proceeding
+                let current_step = self
+                    .pegout_flows
+                    .get(&flow_id)
+                    .map(PegoutFlow::current_step)
+                    .ok_or_else(|| anyhow!("Flow not found for flow_id {flow_id}"))?;
+
+                if current_step != Steps::RequestUserTakeSpvProof {
                     bail!(
                         "Mismatch current step for flow {} expected {:?} having {:?}",
                         flow_id,
                         Steps::RequestUserTakeSpvProof,
-                        flow.current_step()
+                        current_step
                     );
                 }
-                flow.complete_step(&StepData::SpvProof(spv_proof))?;
+
+                // Complete the step - this will transition to RegisterPegout
+                // which calls invoke_contract_safe to verify Native Bridge confirmations
+                let flow = self
+                    .pegout_flows
+                    .get_mut(&flow_id)
+                    .ok_or_else(|| anyhow!("Flow not found for flow_id {flow_id}"))?;
+
+                if let Err(err) = flow.complete_step(&StepData::SpvProof(spv_proof)) {
+                    if is_missing_native_bridge_confirmations(&err) {
+                        let attempt = self
+                            .unconfirmed_register_pegout
+                            .get(&flow_id)
+                            .copied()
+                            .unwrap_or(0)
+                            .saturating_add(1);
+                        self.schedule_register_pegout_retry(
+                            flow_id,
+                            attempt,
+                            "Missing confirmations on native bridge, scheduling retry",
+                        );
+                        return Ok(());
+                    }
+                    return Err(err);
+                }
             }
             OutgoingBitVMXApiMessages::Transaction(flow_id, tx_status, _tx_opt) => {
                 self.handle_transaction_status_received(flow_id, tx_status.clone())?;
@@ -701,6 +811,7 @@ where
 
         self.process_unhandled_confirmed_sig_flow_events(block)?;
         self.handle_transaction_status_tick()?;
+        self.handle_register_pegout_retry_tick();
         self.process_block_confirmations(block)?;
 
         Ok(())
@@ -715,5 +826,7 @@ where
         self.tx_status_scheduler.clear();
         self.advance_funds_timeout_scheduler.clear();
         self.flows_pending_timeout.clear();
+        self.register_pegout_retry_scheduler.clear();
+        self.unconfirmed_register_pegout.clear();
     }
 }

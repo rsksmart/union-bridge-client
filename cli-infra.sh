@@ -9,7 +9,7 @@
 #        ./cli-infra.sh --stop-bitvmx                  # stop bitvmx docker containers only
 #        ./cli-infra.sh --start-mine                   # start background mining (anvil + bitcoin)
 #        ./cli-infra.sh --stop-mine                    # stop background mining
-#        ./cli-infra.sh --start-regtest [--fresh]      # start regtest operators via SSH
+#        ./cli-infra.sh --start-regtest                # start regtest operators via SSH
 #        ./cli-infra.sh --stop-regtest                 # stop regtest operators via SSH
 
 set -euo pipefail
@@ -288,7 +288,7 @@ case "${1:-}" in
         echo "  --stop-mine                    Stop background mining"
         echo ""
         echo "Remote Regtest Infrastructure:"
-        echo "  --start-regtest [--fresh]      Start regtest operators via SSH"
+        echo "  --start-regtest                Start regtest operators via SSH"
         echo "  --stop-regtest                 Stop regtest operators via SSH"
         echo ""
         echo "Options:"

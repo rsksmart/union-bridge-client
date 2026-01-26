@@ -25,7 +25,7 @@ use crate::flows::btc_signature::btc_signature_subflow::{
     BtcSignatureSubFlowFactoryApi,
 };
 use crate::flows::common::GlobalContext;
-use crate::flows::pegin::native_bridge::NativeBridgeVerifier;
+use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
 use crate::flows::pegin::pegin_flow::{PeginFlow, State, StepData, Steps};
 use crate::flows::pegin::utils::get_temp_pegin_pid;
 use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix};
@@ -35,7 +35,7 @@ use crate::types::{
 };
 
 const PEGIN_ACCEPTED_INPUT_MSG: &str = "pegin_accepted";
-pub const MIN_TX_CONFIRMATIONS: u32 = 1 + 1; // +1 from Contracts, +1 to give time to the Native Bridge to get up to date with Bitcoin Node
+pub const MIN_TX_CONFIRMATIONS: u32 = 1;
 pub const BLOCKS_DELAY_FOR_TX_CHECK: u32 = 20;
 
 fn is_missing_native_bridge_confirmations(err: &anyhow::Error) -> bool {

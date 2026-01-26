@@ -8,30 +8,30 @@ bitcoin_network = "regtest"
 
 [[contracts]]
 name = "FakePegManager"
-address = "0xf73e2e87903Ab0979B7dEcdC54706cA633ABFfCc"
+address = "0x7Cd31D33302B6f5Bc45763487195Ae329a915beB"
 
 [[contracts]]
 name = "PegManager"
-address = "0x876E6E4970610805e122b0D832D3d5da388D436C"
-
-[[contracts]]
-name = "SignatureManager"
-address = "0xC689FB08B10BE1080c87dC6f8EdcA7Cd20471218"
-
-[[contracts]]
-name = "CommitteeRegistry"
-address = "0x185DA4bbEc7DA24ec252505094E9ba13B1a5f0e6"
-
-[[contracts]]
-name = "MemberRegistry"
-address = "0xaEA017951907dfBa83000333aC98024287142569"
-
-[[contracts]]
-name = "StreamManager"
 address = "0xCceA54bAB6755690595b7D8fAf299bd02c597F46"
 
 [[contracts]]
-name = "PowpegBridge"
+name = "SignatureManager"
+address = "0x7B070f39f6bd74De7Fc0678ebd1dee3b4F06853B"
+
+[[contracts]]
+name = "CommitteeRegistry"
+address = "0x09cBe2b2a151A58AAae1E89C2809c2d8E1666f43"
+
+[[contracts]]
+name = "MemberRegistry"
+address = "0x185DA4bbEc7DA24ec252505094E9ba13B1a5f0e6"
+
+[[contracts]]
+name = "StreamManager"
+address = "0xC689FB08B10BE1080c87dC6f8EdcA7Cd20471218"
+
+[[contracts]]
+name = "NativeBridge"
 address = "0x0000000000000000000000000000000001000006"
 
 [indexer]

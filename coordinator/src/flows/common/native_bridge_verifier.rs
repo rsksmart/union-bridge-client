@@ -1,22 +1,3 @@
-fn invoke_contract<Fut, F, T>(
-    rt_sync: &RuntimeSync,
-    method_name: &str,
-    invoke: F,
-) -> Result<T, DomainErrors>
-where
-    F: FnOnce() -> Fut,
-    Fut: std::future::Future<Output = Result<T, DomainErrors>>,
-{
-    debug!("Submitting contract transaction: method={method_name}");
-
-    match rt_sync.run(invoke()) {
-        Ok(value) => {
-            debug!("Contract method executed: method={method_name}");
-            Ok(value)
-        }
-        Err(domain_err) => Err(domain_err),
-    }
-}
 use std::rc::Rc;
 
 use common::msg_broker::bitvmx_types::BtcTxSPVProof;
@@ -26,7 +7,7 @@ use log::{debug, info, warn};
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use transaction_dispatcher::types::GetBtcTransactionConfirmationsInput;
 
-pub const MIN_TX_CONFIRMATIONS: u32 = 1 + 1; // +1 from Contracts, +1 to give time to the Native Bridge to get up to date with Bitcoin Node
+pub const MIN_TX_CONFIRMATIONS: u32 = 1 + 1;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum VerificationStatus {
@@ -199,5 +180,25 @@ where
                 "{actual}/{required} confirmations"
             )))
         }
+    }
+}
+
+fn invoke_contract<Fut, F, T>(
+    rt_sync: &RuntimeSync,
+    method_name: &str,
+    invoke: F,
+) -> Result<T, DomainErrors>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<T, DomainErrors>>,
+{
+    debug!("Submitting contract transaction: method={method_name}");
+
+    match rt_sync.run(invoke()) {
+        Ok(value) => {
+            debug!("Contract method executed: method={method_name}");
+            Ok(value)
+        }
+        Err(domain_err) => Err(domain_err),
     }
 }

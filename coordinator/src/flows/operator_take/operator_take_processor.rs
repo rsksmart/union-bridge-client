@@ -17,6 +17,7 @@ use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
 use crate::config::REQUIRED_CONFIRMATIONS;
 use crate::event_processor::EventProcessor;
 use crate::flows::common::GlobalContext;
+use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
 use crate::flows::operator_take::operator_take_flow::{
     AdvanceFundsFlow, OperatorTakeTriggerData, StepData, Steps,
 };
@@ -25,8 +26,19 @@ use crate::types::{
     TickScheduler,
 };
 
+fn is_missing_native_bridge_confirmations(err: &anyhow::Error) -> bool {
+    use transaction_dispatcher::rsk_gateway::DomainErrors;
+    err.chain().any(|cause| {
+        if let Some(domain_err) = cause.downcast_ref::<DomainErrors>() {
+            matches!(domain_err, DomainErrors::MissingConfirmationsOnNativeBridge(_))
+        } else {
+            false
+        }
+    })
+}
+
 /// Minimum confirmations required before requesting SPV proof for advance funds transactions.
-const ADVANCE_FUNDS_SPV_PROOF_MIN_CONFIRMATIONS: u32 = 1 + 1; // +1 from Contracts, +1 to give time to the Native Bridge to get up to date with Bitcoin Node
+const ADVANCE_FUNDS_SPV_PROOF_MIN_CONFIRMATIONS: u32 = 1;
 const ADVANCE_FUNDS_BLOCKS_DELAY_FOR_TX_CHECK: u32 = 20;
 
 pub struct AdvanceFundsFlowProcessor<CG, BC>
@@ -42,6 +54,10 @@ where
     blockchain_view: BlockchainView,
     events_confirming: HashMap<String, ConfirmableEventWithData>,
     tx_status_scheduler: TickScheduler<Uuid>,
+    // For retry logic when native bridge lacks confirmations for register_operator_take
+    unconfirmed_register_operator_take: HashMap<Uuid, i16>,
+    register_operator_take_retry_scheduler: TickScheduler<Uuid>,
+    native_bridge_verifier: NativeBridgeVerifier<CG>,
 }
 
 impl<CG, BC> AdvanceFundsFlowProcessor<CG, BC>
@@ -54,6 +70,7 @@ where
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
+        native_bridge_verifier: NativeBridgeVerifier<CG>,
     ) -> Self {
         Self {
             contracts_gateway,
@@ -64,6 +81,9 @@ where
             blockchain_view: BlockchainView::new(),
             events_confirming: HashMap::new(),
             tx_status_scheduler: TickScheduler::new(),
+            unconfirmed_register_operator_take: HashMap::new(),
+            register_operator_take_retry_scheduler: TickScheduler::new(),
+            native_bridge_verifier,
         }
     }
 
@@ -116,6 +136,7 @@ where
             self.bitvmx_broker.clone(),
             flow_id,
             event,
+            self.native_bridge_verifier.clone(),
         )?;
 
         flow.complete_step(StepData::OperatorTakeTriggered)?;
@@ -305,24 +326,101 @@ where
     }
 
     fn handle_spv_proof(&mut self, tx_id: &bitcoin::Txid, spv_proof: BtcTxSPVProof) -> Result<()> {
-        let Some((flow_id, flow)) = self.flows.iter_mut().find_map(|(flow_id, flow)| {
-            (flow.operator_take_tx_id() == Some(*tx_id)).then_some((*flow_id, flow))
+        let Some(flow_id) = self.flows.iter().find_map(|(flow_id, flow)| {
+            (flow.operator_take_tx_id() == Some(*tx_id)).then_some(*flow_id)
         }) else {
             trace!("Ignoring SPV proof for tx {tx_id}: no matching flow");
             return Ok(());
         };
 
-        if flow.current_step() != Steps::RequestOperatorTakeSpvProof {
+        let current_step = self
+            .flows
+            .get(&flow_id)
+            .map(AdvanceFundsFlow::current_step)
+            .ok_or_else(|| anyhow!("Flow not found for flow_id {flow_id}"))?;
+
+        if current_step != Steps::RequestOperatorTakeSpvProof {
             warn!(
-                "Advance funds flow {} received SPV proof at unexpected step {:?}",
-                flow_id,
-                flow.current_step()
+                "Advance funds flow {flow_id} received SPV proof at unexpected step {current_step:?}"
             );
             return Ok(());
         }
 
-        flow.complete_step(StepData::SpvProof(spv_proof))?;
+        // Complete the step - this will transition to RegisterOperatorTake
+        // which calls invoke_contract_safe to verify Native Bridge confirmations
+        let flow = self
+            .flows
+            .get_mut(&flow_id)
+            .ok_or_else(|| anyhow!("Flow not found for flow_id {flow_id}"))?;
+
+        if let Err(err) = flow.complete_step(StepData::SpvProof(spv_proof)) {
+            if is_missing_native_bridge_confirmations(&err) {
+                let attempt = self
+                    .unconfirmed_register_operator_take
+                    .get(&flow_id)
+                    .copied()
+                    .unwrap_or(0)
+                    .saturating_add(1);
+                self.schedule_register_operator_take_retry(
+                    flow_id,
+                    attempt,
+                    "Missing confirmations on native bridge, scheduling retry",
+                );
+                return Ok(());
+            }
+            return Err(err);
+        }
         Ok(())
+    }
+
+    fn schedule_register_operator_take_retry(&mut self, flow_id: Uuid, attempt: i16, reason: &str) {
+        info!("{reason} for flow {flow_id} (attempt {attempt})");
+        self.unconfirmed_register_operator_take.insert(flow_id, attempt);
+        self.register_operator_take_retry_scheduler
+            .schedule(flow_id, ADVANCE_FUNDS_BLOCKS_DELAY_FOR_TX_CHECK);
+    }
+
+    fn handle_register_operator_take_retry_tick(&mut self) {
+        if self.register_operator_take_retry_scheduler.is_empty() {
+            return;
+        }
+
+        for flow_id in self.register_operator_take_retry_scheduler.tick() {
+            let Some(attempt) = self.unconfirmed_register_operator_take.remove(&flow_id) else {
+                warn!("No register_operator_take retry state found for flow {flow_id}");
+                continue;
+            };
+
+            let Some(flow) = self.flows.get_mut(&flow_id) else {
+                warn!("No advance funds flow found for register_operator_take retry: {flow_id}");
+                continue;
+            };
+
+            if flow.current_step() != Steps::RegisterOperatorTake {
+                debug!(
+                    "Skipping register_operator_take retry for flow {flow_id} in step {:?}",
+                    flow.current_step()
+                );
+                continue;
+            }
+
+            let Err(err) = flow.complete_step(StepData::RetryRegisterOperatorTake) else {
+                info!("Register operator take succeeded on retry for flow {flow_id}");
+                continue;
+            };
+
+            if !is_missing_native_bridge_confirmations(&err) {
+                error!("Error on retry for register_operator_take: {err:?}");
+                continue;
+            }
+
+            let next_attempt = attempt.saturating_add(1);
+            self.schedule_register_operator_take_retry(
+                flow_id,
+                next_attempt,
+                "Still missing confirmations on native bridge, scheduling another retry",
+            );
+        }
     }
 
     fn handle_reimbursement_result(
@@ -535,6 +633,7 @@ where
     fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
         self.process_block_confirmations(block)?;
         self.handle_transaction_status_tick()?;
+        self.handle_register_operator_take_retry_tick();
         Ok(())
     }
 
@@ -544,5 +643,7 @@ where
         self.events_confirming.clear();
         self.blockchain_view.clear();
         self.tx_status_scheduler.clear();
+        self.register_operator_take_retry_scheduler.clear();
+        self.unconfirmed_register_operator_take.clear();
     }
 }
