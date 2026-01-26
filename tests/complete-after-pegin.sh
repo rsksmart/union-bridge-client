@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 
-# Script to complete all steps after a pegout is executed outside this repo
+# Script to complete all steps after a pegin is executed outside this repo
 #
-# This script assumes a pegout transaction has already been created/executed externally.
+# This script assumes a pegin transaction has already been created/executed externally.
 # It will:
 #   - Start background mining (Anvil and Bitcoin)
-#   - Wait for blocks to allow the pegout flow to process
-#   - Monitor logs for PegoutFlow completion
+#   - Wait for blocks to allow the pegin flow to process
+#   - Monitor logs for PeginFlow completion
 #   - Stop mining when completion is detected
 #
 # prerequisites:
 #   - union bridge clients running (via: cargo run -- run)
 #   - anvil running on localhost:8545
 #   - bitcoin regtest node running with RPC enabled
-#   - A pegout transaction has already been executed externally
+#   - A pegin transaction has already been executed externally
 #
-# usage: bash tests/complete-after-pegout.sh [--env <local|local-docker>] [--wait-blocks <N>]
+# usage: bash tests/complete-after-pegin.sh [--env <local|local-docker>] [--wait-blocks <N>]
 
 set -euo pipefail
 
@@ -71,27 +71,6 @@ step() {
     echo -e "${GREEN}========== $1 ==========${NC}"
     echo ""
 }
-
-# check prerequisites
-if ! command -v cargo &> /dev/null || ! command -v cast &> /dev/null || ! command -v bitcoin-cli &> /dev/null; then
-    echo "Error: cargo, cast, and bitcoin-cli required"
-    exit 1
-fi
-
-if ! cast rpc eth_chainId --rpc-url http://localhost:8545 &> /dev/null; then
-    echo "Error: Anvil not running on localhost:8545"
-    exit 1
-fi
-
-if ! bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockcount &> /dev/null; then
-    echo "Error: Bitcoin regtest node not accessible"
-    echo "Please ensure Bitcoin Core is running with:"
-    echo "  bitcoind -regtest -rpcuser=foo -rpcpassword=rpcpassword"
-    exit 1
-fi
-
-echo "All prerequisites met!"
-echo ""
 
 # mining functions
 mine_anvil() {
@@ -231,10 +210,10 @@ find_recent_log_match() {
     done | tail -1
 }
 
-# Function to check for PegoutFlow completion
-check_pegout_completion() {
+# Function to check for PeginFlow completion
+check_pegin_completion() {
     local min_time=$1
-    local pattern="Pegout registered successfully"
+    local pattern="Pegin accepted successfully"
     local matching_line=""
     local matching_source=""
 
@@ -278,14 +257,14 @@ trap cleanup EXIT INT TERM
 
 clear
 log "Configuration: env=$SCRIPT_ENV, initial_wait_blocks=$INITIAL_WAIT_BLOCKS"
-log "Background mining: Anvil (every 1s) | Bitcoin (every 5s) - runs until pegout completion"
-log "Note: This script assumes a pegout transaction has already been executed externally"
+log "Background mining: Anvil (every 1s) | Bitcoin (every 5s) - runs until pegin completion"
+log "Note: This script assumes a pegin transaction has already been executed externally"
 echo ""
 
 # Capture start time (with margin for clock differences)
-# Use current time minus a margin to catch any recent pegout flows
+# Use current time minus a margin to catch any recent pegin flows
 SCRIPT_START_TIME=$(date +%s)
-TIME_MARGIN=600  # 10 minutes margin to catch pegouts executed just before script start
+TIME_MARGIN=600  # 10 minutes margin to catch pegins executed just before script start
 MIN_TIME=$((SCRIPT_START_TIME - TIME_MARGIN))
 
 # start background mining (runs indefinitely)
@@ -296,19 +275,19 @@ ANVIL_MINE_PID=$!
 mine_bitcoin &
 BITCOIN_MINE_PID=$!
 
-sleep 1  # give mining a moment to start
+sleep 3  # give mining a moment to start
 success "Background mining started"
 echo ""
 
-# wait for initial blocks to allow pegout flow to process
+# wait for initial blocks to allow pegin flow to process
 step "Waiting for Initial Blocks"
-log "Waiting for $INITIAL_WAIT_BLOCKS blocks to allow pegout flow to process..."
+log "Waiting for $INITIAL_WAIT_BLOCKS blocks to allow pegin flow to process..."
 wait_for_bitcoin_blocks $INITIAL_WAIT_BLOCKS
 echo ""
 
-# monitor for pegout completion
-step "Monitoring for PegoutFlow Completion"
-log "Checking logs from all operators for PegoutFlow completion..."
+# monitor for pegin completion
+step "Monitoring for PeginFlow Completion"
+log "Checking logs from all operators for PeginFlow completion..."
 if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
     log "Checking Docker logs from operators op_1 through op_4..."
 else
@@ -323,12 +302,12 @@ ITERATION=0
 FOUND=false
 
 while [ $ITERATION -lt $MAX_ITERATIONS ]; do
-    if check_pegout_completion $MIN_TIME; then
-        result=$(check_pegout_completion $MIN_TIME)
+    if check_pegin_completion $MIN_TIME; then
+        result=$(check_pegin_completion $MIN_TIME)
         matching_source=$(echo "$result" | cut -d'|' -f1)
         matching_line=$(echo "$result" | cut -d'|' -f2-)
         
-        success "PegoutFlow completed successfully!"
+        success "PeginFlow completed successfully!"
         echo ""
         log "Found in: $matching_source"
         echo "$matching_line"
@@ -337,11 +316,6 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
     fi
     
     ITERATION=$((ITERATION + 1))
-    if [ $((ITERATION % 12)) -eq 0 ]; then
-        # Print status every minute (12 * 5 seconds)
-        local elapsed=$((ITERATION * POLL_INTERVAL))
-        log "Still waiting for PegoutFlow completion... (${elapsed}s elapsed)"
-    fi
     
     sleep $POLL_INTERVAL
 done
@@ -351,7 +325,7 @@ echo ""
 if [ "$FOUND" = true ]; then
     SUCCESS=true
 else
-    warn "PegoutFlow completion not detected after waiting $((MAX_ITERATIONS * POLL_INTERVAL)) seconds"
+    warn "PeginFlow completion not detected after waiting $((MAX_ITERATIONS * POLL_INTERVAL)) seconds"
     if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
         warn "Check Docker logs manually: docker compose -p op_{1..4} logs coordinator"
     else
@@ -369,13 +343,9 @@ echo ""
 [ -n "${BITCOIN_MINE_PID:-}" ] && kill $BITCOIN_MINE_PID 2>/dev/null || true
 
 if [ "$SUCCESS" = true ]; then
-    success "Pegout completion verified successfully!"
+    success "Pegin completion verified successfully!"
     exit 0
 else
-    warn "Script completed but PegoutFlow completion was not verified"
+    warn "Script completed but PeginFlow completion was not verified"
     exit 1
 fi
-
-
-
-
