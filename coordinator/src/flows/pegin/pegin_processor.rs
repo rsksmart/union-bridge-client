@@ -577,44 +577,6 @@ where
                 "Still missing confirmations on native bridge, scheduling another retry",
             );
         }
-
-        for flow_id in self.accept_pegin_retry_scheduler.tick() {
-            let Some(attempt) = self.unconfirmed_accept_pegin.remove(&flow_id) else {
-                warn!("No accept_pegin retry state found for flow {flow_id}");
-                continue;
-            };
-
-            let Some(flow) = self.pegin_flows.get_mut(&flow_id) else {
-                warn!("No pegin flow found for accept_pegin retry: {flow_id}");
-                continue;
-            };
-
-            if flow.current_step() != Steps::AcceptPegin {
-                debug!(
-                    "Skipping accept_pegin retry for flow {flow_id} in step {:?}",
-                    flow.current_step()
-                );
-                continue;
-            }
-
-            let Err(err) = flow.complete_step(&StepData::RetryAcceptPegin) else {
-                // TODO: verify that the pegin is accepted
-                info!("Accept pegin succeeded on retry for flow {flow_id}");
-                continue;
-            };
-
-            if !is_missing_native_bridge_confirmations(&err) {
-                error!("Error on retry for accept_pegin: {err:?}");
-                continue;
-            }
-
-            let next_attempt = attempt.saturating_add(1);
-            self.schedule_accept_pegin_retry(
-                flow_id,
-                next_attempt,
-                "Still missing confirmations on native bridge, scheduling another retry",
-            );
-        }
     }
 
     fn process_block_confirmations(&mut self, block: &RskBlockAndUncles) -> Result<()> {
