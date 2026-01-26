@@ -305,7 +305,7 @@ run_testnet_operators() {
   # TESTNET ENVIRONMENT: Each operator on separate host (same as alphanet)
 
   local TESTNET_PROJECT_NAME="-p union-operator"
-  local COMPOSE_FILE_ARG="-f docker-compose.yml -f docker-compose.one.yml"
+  local COMPOSE_FILE_ARG="-f docker-compose.yml -f docker-compose.op_one.yml"
 
   local CLIENT_OP
   if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
