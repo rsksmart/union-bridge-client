@@ -178,6 +178,10 @@ fi
 
 # If requested, clean operator stacks regardless of the main command
 if [[ "${FRESH}" == true ]]; then
+  if [[ "$ENVIRONMENT" == "regtest" ]]; then
+    echo "Error: --fresh is not supported for regtest yet."
+    exit 1
+  fi
   echo "WARNING: --fresh will tear down operators and DELETE ALL VOLUMES (including data)."
   if [[ "${AUTO_CONFIRM}" != true ]]; then
     read -p "Are you sure you want to continue? (yes/no): " confirmation
