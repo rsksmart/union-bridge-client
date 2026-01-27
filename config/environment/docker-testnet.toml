@@ -36,6 +36,10 @@ address = "0x0000000000000000000000000000000001000006"
 =======
 >>>>>>> 11780e5e (chore: update test contract address)
 
+[[contracts]]
+name = "NativeBridge"
+address = "0x0000000000000000000000000000000001000006"
+
 [indexer]
 
 storage.path = "/app/db/" # This should match the volume mount in docker-compose
