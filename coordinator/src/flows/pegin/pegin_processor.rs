@@ -387,10 +387,22 @@ where
         }
 
         for flow_id in &flows_to_dispatch {
+            // Always remove the signature flow when it's done
+            self.signature_flows.remove(flow_id);
+
             if let Some(flow) = self.pegin_flows.get_mut(flow_id) {
+                // Only complete the step if the flow is still waiting for signatures
+                if flow.current_step() != Steps::DispatchTransaction {
+                    warn!(
+                        "Signature flow completed for flow_id: {flow_id} but flow is at step {:?}, expected {:?}. Skipping dispatch step.",
+                        flow.current_step(),
+                        Steps::DispatchTransaction
+                    );
+                    continue;
+                }
+
                 let step_data = StepData::DispatchAcceptPeginTransaction;
                 flow.complete_step(&step_data)?;
-                self.signature_flows.remove(flow_id);
             } else {
                 warn!(
                     "Signature flow done for unknown pegin flow_id: {flow_id}. Skipping dispatch step"
