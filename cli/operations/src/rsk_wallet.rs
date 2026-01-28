@@ -583,14 +583,79 @@ fn cargo_logs_dir() -> Result<PathBuf> {
 
 fn run_cast_send_local(address: &str) -> Result<()> {
     let rpc_url = Environment::Local.rpc_url();
+    
+    // Extensive logging for debugging
+    eprintln!("[DEBUG] =========================================");
+    eprintln!("[DEBUG] run_cast_send_local: Starting funding");
+    eprintln!("[DEBUG] Address: {}", address);
+    eprintln!("[DEBUG] RPC URL: {}", rpc_url);
+    eprintln!("[DEBUG] From address: {}", LOCAL_ANVIL_ADDRESS);
+    
+    // Check if cast is available - try multiple paths
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+    let cast_paths = vec![
+        "cast".to_string(),  // Standard PATH
+        format!("{}/.foundry/bin/cast", home),
+        "/root/.foundry/bin/cast".to_string(),  // Common location in containers
+        "/usr/local/bin/cast".to_string(),
+    ];
+    
+    let mut cast_cmd = None;
+    for path in &cast_paths {
+        let check = Command::new(path)
+            .arg("--version")
+            .output();
+        match check {
+            Ok(output) if output.status.success() => {
+                let version = String::from_utf8_lossy(&output.stdout);
+                eprintln!("[DEBUG] Found cast at: {}", path);
+                eprintln!("[DEBUG] cast version: {}", version.trim());
+                cast_cmd = Some(path.clone());
+                break;
+            }
+            _ => continue,
+        }
+    }
+    
+    let cast_binary = cast_cmd.as_ref().map(|s| s.as_str()).unwrap_or("cast");
+    if cast_cmd.is_none() {
+        eprintln!("[DEBUG] WARNING: cast not found in standard locations, will try 'cast'");
+        eprintln!("[DEBUG] PATH: {:?}", std::env::var("PATH"));
+    }
+    
+    // Try to verify RPC connectivity before sending
+    eprintln!("[DEBUG] Checking RPC connectivity...");
+    let rpc_check = Command::new(cast_binary)
+        .arg("rpc")
+        .arg("eth_blockNumber")
+        .arg("--rpc-url")
+        .arg(&rpc_url)
+        .output();
+    match rpc_check {
+        Ok(output) => {
+            if output.status.success() {
+                let result = String::from_utf8_lossy(&output.stdout);
+                eprintln!("[DEBUG] RPC connectivity OK: {}", result.trim());
+            } else {
+                let err = String::from_utf8_lossy(&output.stderr);
+                eprintln!("[DEBUG] WARNING: RPC check failed: {}", err.trim());
+            }
+        }
+        Err(e) => {
+            eprintln!("[DEBUG] WARNING: RPC check command failed: {}", e);
+        }
+    }
+    
     eprintln!(
-        "  Running: cast send --rpc-url {} --from {} {} --value 1ether --unlocked",
+        "[DEBUG] Executing: cast send --rpc-url {} --from {} {} --value 1ether --unlocked",
         rpc_url, LOCAL_ANVIL_ADDRESS, address
     );
-    let output = Command::new("cast")
+    
+    let start_time = std::time::Instant::now();
+    let output = Command::new(cast_binary)
         .arg("send")
         .arg("--rpc-url")
-        .arg(rpc_url)
+        .arg(&rpc_url)
         .arg("--from")
         .arg(LOCAL_ANVIL_ADDRESS)
         .arg(address)
@@ -598,12 +663,32 @@ fn run_cast_send_local(address: &str) -> Result<()> {
         .arg("1ether")
         .arg("--unlocked")
         .output()
-        .context("failed to execute cast send")?;
+        .context(format!("failed to execute cast send (using: {})", cast_binary))?;
+    
+    let duration = start_time.elapsed();
+    eprintln!("[DEBUG] cast send completed in {:?}", duration);
+    eprintln!("[DEBUG] Exit code: {:?}", output.status.code());
+    
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    
+    eprintln!("[DEBUG] stdout ({} bytes): {}", stdout.len(), stdout);
+    eprintln!("[DEBUG] stderr ({} bytes): {}", stderr.len(), stderr);
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("cast send failed for {}: {}", address, stderr.trim());
+        eprintln!("[DEBUG] cast send FAILED");
+        eprintln!("[DEBUG] =========================================");
+        bail!(
+            "cast send failed for {}: {}\nstdout: {}\nRPC URL: {}\nDuration: {:?}",
+            address,
+            stderr.trim(),
+            stdout.trim(),
+            rpc_url,
+            duration
+        );
     }
 
+    eprintln!("[DEBUG] cast send SUCCESS");
+    eprintln!("[DEBUG] =========================================");
     Ok(())
 }
