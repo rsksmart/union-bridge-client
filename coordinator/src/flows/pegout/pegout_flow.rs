@@ -181,18 +181,15 @@ where
                     "Triggering operator take due to timeout for flow_id: {}",
                     self.state.flow_id
                 );
-                match self.trigger_operator_take() {
-                    Ok(()) => {
-                        info!("PegoutFlow TriggerOperatorTake completed: {}", self.state.flow_id);
-                    }
-                    Err(err) => {
-                        warn!(
-                            "Failed to trigger operator take for flow_id {}: {}. Continuing flow.",
-                            self.state.flow_id, err
-                        );
-                        info!("PegoutFlow TriggerOperatorTake skipped: {}", self.state.flow_id);
-                    }
-                }
+                let Err(err) = self.trigger_operator_take() else {
+                    info!("PegoutFlow TriggerOperatorTake completed: {}", self.state.flow_id);
+                    return Ok(());
+                };
+                warn!(
+                    "Failed to trigger operator take for flow_id {}: {}. Continuing flow.",
+                    self.state.flow_id, err
+                );
+                info!("PegoutFlow TriggerOperatorTake skipped: {}", self.state.flow_id);
             }
             Steps::ConfirmUserTakeTransaction => {
                 info!(
