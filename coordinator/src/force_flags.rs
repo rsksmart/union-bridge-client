@@ -28,9 +28,7 @@ fn is_force_flags_allowed(env_name: Option<&str>) -> bool {
         None => true, // Local development (no --env flag)
         Some(env) => {
             let env_lower = env.to_lowercase();
-            !BLOCKED_ENVIRONMENTS
-                .iter()
-                .any(|&blocked| env_lower.contains(blocked))
+            !BLOCKED_ENVIRONMENTS.iter().any(|&blocked| env_lower.contains(blocked))
         }
     }
 }
@@ -51,10 +49,7 @@ pub fn is_force_advance_enabled(env_name: Option<&str>) -> bool {
         .unwrap_or(false);
 
     if enabled {
-        warn!(
-            "[FORCE_ADVANCE] Force advance funds is ENABLED for environment: {:?}",
-            env_name
-        );
+        warn!("[FORCE_ADVANCE] Force advance funds is ENABLED for environment: {:?}", env_name);
     }
     enabled
 }
@@ -75,10 +70,7 @@ pub fn is_force_dispute_enabled(env_name: Option<&str>) -> bool {
         .unwrap_or(false);
 
     if enabled {
-        warn!(
-            "[FORCE_DISPUTE] Force dispute is ENABLED for environment: {:?}",
-            env_name
-        );
+        warn!("[FORCE_DISPUTE] Force dispute is ENABLED for environment: {:?}", env_name);
     }
     enabled
 }
