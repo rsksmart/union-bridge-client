@@ -2,8 +2,7 @@
 # Common Configuration
 # ═══════════════════════════════════════════════════════
 
-provider.rootstock.url = "ws://10.1.0.53:4445" # if running in AWS and accessed from AWS
-# url: "ws://rskj-01.testnet.ub.iovlabs.net:4445/websocket" # if running in AWS and accessed from outside
+provider.rootstock.url = "ws://10.26.7.106:4445"
 bitcoin_network = "testnet"
 
 [[contracts]]
@@ -12,23 +11,23 @@ address = "0xa85233C63b9Ee964Add6F2cffe00Fd84eb32338f"
 
 [[contracts]]
 name = "PegManager"
-address = "0xE4D1835c12bDb88186929BC9e8DFd831914847C4"
+address = "0xa25B3aB9DBdBEEaB4a4d5F8dBC4a2ffA87a97aBc"
 
 [[contracts]]
 name = "SignatureManager"
-address = "0x9eA8B0f84c5079d13159be3454e1A191459985BF"
+address = "0x537B141C9Fd69a27B064635f694B7D3D50168a41"
 
 [[contracts]]
 name = "CommitteeRegistry"
-address = "0x01bef9d2e307ccE31F1a976E16478f9f0F824A7d"
+address = "0xc1B888265Ebfcd1162797B3BF804FD08D2ccb3Dc"
 
 [[contracts]]
 name = "MemberRegistry"
-address = "0xfE9Bbef10a49426Ca9B1B8d78D7d57B9b4dA4Ca8"
+address = "0x4752b4a6Cce3368cB4b6eDB8DD1137aa08594c2D"
 
 [[contracts]]
 name = "StreamManager"
-address = "0x71260e163CE80566e82B26934Ea98A1C194340d3"
+address = "0x38C5d2e8a3fB87B851ab7b501a317E48fc5bFa7F"
 
 [[contracts]]
 name = "NativeBridge"

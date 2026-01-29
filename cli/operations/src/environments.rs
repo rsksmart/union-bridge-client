@@ -59,8 +59,10 @@ impl Environment {
         match self {
             Environment::Local | Environment::LocalDocker => "http://localhost:8545".to_string(),
             Environment::Regtest => "http://node-use2-1.regtest.rskcomputing.net".to_string(),
-            Environment::Alphanet => "http://node-use1-1.alphanet.rskcomputing.net".to_string(),
-            Environment::Testnet => "TBD".to_string(),
+            Environment::Alphanet => {
+                "http://node-use1-1.alphanet.rskcomputing.net:4444".to_string()
+            }
+            Environment::Testnet => "http://rskj-01.testnet.ub.iovlabs.net:4444".to_string(),
         }
     }
 
@@ -107,8 +109,8 @@ const ALPHANET_HOSTS: [&str; 4] = [
 ];
 
 const TESTNET_HOSTS: [&str; 4] = [
-    "union-bridge-use1-1.TBD",
-    "union-bridge-use1-2.TBD",
-    "union-bridge-use1-3.TBD",
-    "union-bridge-use1-4.TBD",
+    "operator-01.testnet.ub.iovlabs.net",
+    "operator-02.testnet.ub.iovlabs.net",
+    "operator-03.testnet.ub.iovlabs.net",
+    "operator-04.testnet.ub.iovlabs.net",
 ];
