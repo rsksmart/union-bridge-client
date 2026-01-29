@@ -5,7 +5,7 @@ use alloy_primitives::U256;
 use alloy_provider::Provider;
 use anyhow::{Result, anyhow};
 use common::types::{Address, ContractInfo};
-use log::{error, trace};
+use log::{error, info};
 #[cfg(test)]
 use mockall::automock;
 use thiserror::Error;
