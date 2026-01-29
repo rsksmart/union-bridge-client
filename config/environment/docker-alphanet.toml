@@ -12,23 +12,23 @@ address = "0xa85233C63b9Ee964Add6F2cffe00Fd84eb32338f"
 
 [[contracts]]
 name = "PegManager"
-address = "0xE4D1835c12bDb88186929BC9e8DFd831914847C4"
+address = "0x2782121921b9CF592b695FE82c519c7df159d54D"
 
 [[contracts]]
 name = "SignatureManager"
-address = "0x9eA8B0f84c5079d13159be3454e1A191459985BF"
+address = "0xdF21451305f86a726C3044F4265877C6Cf6eCDbb"
 
 [[contracts]]
 name = "CommitteeRegistry"
-address = "0x01bef9d2e307ccE31F1a976E16478f9f0F824A7d"
+address = "0x4a9B37F49D9BFdDFa9417C446B0C4Df8393C7D0F"
 
 [[contracts]]
 name = "MemberRegistry"
-address = "0xfE9Bbef10a49426Ca9B1B8d78D7d57B9b4dA4Ca8"
+address = "0x2a67F33aAc436eB517bD3CCFB7DbE5c867E28e8E"
 
 [[contracts]]
 name = "StreamManager"
-address = "0x71260e163CE80566e82B26934Ea98A1C194340d3"
+address = "0x3192862CBe739D52813a37a3AD470204a7eDe6be"
 
 [[contracts]]
 name = "NativeBridge"
