@@ -56,6 +56,8 @@ where
     native_bridge_verifier: NativeBridgeVerifier<CG>,
     config: AdvanceFundsConfig,
     required_confirmations: u32,
+    // Force flags for testing (only active in non-production environments)
+    force_dispute_enabled: bool,
 }
 
 impl<CG, BC> AdvanceFundsFlowProcessor<CG, BC>
@@ -71,7 +73,10 @@ where
         native_bridge_verifier: NativeBridgeVerifier<CG>,
         config: AdvanceFundsConfig,
         required_confirmations: u32,
+        env_name: Option<String>,
     ) -> Self {
+        let force_dispute_enabled =
+            crate::force_flags::is_force_dispute_enabled(env_name.as_deref());
         Self {
             contracts_gateway,
             rt_sync,
@@ -86,6 +91,7 @@ where
             native_bridge_verifier,
             config,
             required_confirmations,
+            force_dispute_enabled,
         }
     }
 
@@ -440,12 +446,23 @@ where
             result.challenge_result
         );
 
+        // FORCE_DISPUTE: Override challenge result to OperatorWon if enabled
+        let effective_challenge_result = if self.force_dispute_enabled {
+            warn!(
+                "[FORCE_DISPUTE] Overriding challenge result for flow. Original: {:?} -> Forced: OperatorWon",
+                result.challenge_result
+            );
+            OperatorChallengeResult::OperatorWon
+        } else {
+            result.challenge_result.clone()
+        };
+
         let flow_id: Uuid = Self::get_advance_funds_pid(result.committee_id, result.slot_index)?;
 
         if let Some(flow) = self.flows.get_mut(&flow_id) {
             debug!(
                 "Delivering reimbursement result to flow {}: challenge_result = {:?}",
-                flow_id, result.challenge_result
+                flow_id, effective_challenge_result
             );
 
             if flow.committee_id_uuid() != Some(result.committee_id) {
@@ -459,7 +476,7 @@ where
             }
             // Store the pegin program_id in the flow state
 
-            match result.challenge_result {
+            match effective_challenge_result {
                 OperatorChallengeResult::OperatorTake => {
                     info!(
                         "Operator take challenge succeeded for flow {} (committee: {}, slot: {})",

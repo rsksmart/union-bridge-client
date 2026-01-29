@@ -74,6 +74,8 @@ where
     native_bridge_verifier: NativeBridgeVerifier<CG>,
     config: PegoutConfig,
     required_confirmations: u32,
+    // Force flags for testing (only active in non-production environments)
+    force_advance_enabled: bool,
 }
 
 impl<CG, BC, S>
@@ -99,12 +101,15 @@ where
         native_bridge_verifier: NativeBridgeVerifier<CG>,
         config: PegoutConfig,
         required_confirmations: u32,
+        env_name: Option<String>,
     ) -> Self {
         let factory = BtcSignatureSubFlowFactory::new(
             contracts_gateway.clone(),
             rt_sync.clone(),
             required_confirmations,
         );
+        let force_advance_enabled =
+            crate::force_flags::is_force_advance_enabled(env_name.as_deref());
         Self {
             contracts_gateway,
             rt_sync,
@@ -124,6 +129,7 @@ where
             native_bridge_verifier,
             config,
             required_confirmations,
+            force_advance_enabled,
         }
     }
 
@@ -137,6 +143,7 @@ where
         native_bridge_verifier: NativeBridgeVerifier<CG>,
         config: PegoutConfig,
         required_confirmations: u32,
+        env_name: Option<String>,
     ) -> Result<Self> {
         let mut processor = Self::new(
             contracts_gateway,
@@ -147,6 +154,7 @@ where
             native_bridge_verifier,
             config,
             required_confirmations,
+            env_name,
         );
 
         let flow_factory = |saved_state: State| {
@@ -554,6 +562,32 @@ where
         Ok(())
     }
 
+    /// Force trigger operator take for all flows in DispatchTransaction step.
+    /// Only active when FORCE_ADVANCE=true in non-production environments.
+    fn handle_force_advance(&mut self) -> Result<()> {
+        if !self.force_advance_enabled {
+            return Ok(());
+        }
+
+        // Collect flow IDs that are in DispatchTransaction step
+        let flows_to_trigger: Vec<Uuid> = self
+            .pegout_flows
+            .iter()
+            .filter(|(_, flow)| flow.current_step() == Steps::DispatchTransaction)
+            .map(|(id, _)| *id)
+            .collect();
+
+        for flow_id in flows_to_trigger {
+            info!(
+                "[FORCE_ADVANCE] Forcing operator take trigger for flow_id: {} in DispatchTransaction step",
+                flow_id
+            );
+            self.trigger_operator_take_for_flow(flow_id)?;
+        }
+
+        Ok(())
+    }
+
     fn schedule_register_pegout_retry(&mut self, flow_id: Uuid, attempt: i16, reason: &str) {
         info!("{reason} for flow {flow_id} (attempt {attempt})");
         self.unconfirmed_register_pegout.insert(flow_id, attempt);
@@ -812,6 +846,9 @@ where
     fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
         // Schedule pending timeouts for flows that received pegout_accepted
         self.schedule_pending_timeouts(block);
+
+        // FORCE_ADVANCE: Immediately trigger operator take for flows in DispatchTransaction
+        self.handle_force_advance()?;
 
         // Check for expired timeouts
         self.handle_advance_funds_timeout_expired(block)?;

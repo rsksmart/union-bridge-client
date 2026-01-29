@@ -3,6 +3,7 @@ pub mod config;
 pub mod coordinator;
 mod event_processor;
 mod flows;
+pub mod force_flags;
 pub mod monitor;
 pub mod store;
 mod types;
