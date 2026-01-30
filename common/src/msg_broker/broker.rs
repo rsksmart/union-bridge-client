@@ -1,7 +1,7 @@
 use std::net::{IpAddr, Ipv4Addr, ToSocketAddrs};
 use std::sync::{Arc, Mutex};
 
-use log::debug;
+use log::{debug, trace};
 use message_broker::broker_memstorage::MemStorage;
 use message_broker::channel::channel::{DualChannel, LocalChannel};
 // Re-export for convenience - these are used in the public API
@@ -99,6 +99,7 @@ impl BrokerServer {
 impl BrokerServerApi<ToServer, FromServer> for BrokerServer {
     fn try_recv(&self) -> Result<Option<(ToServer, Identifier)>, BrokerError> {
         if let Some((msg, sender)) = self.channel.recv().map_err(BrokerError::BrokerServerError)? {
+            trace!("Received message from BrokerServer: {msg:?} from {sender:?}");
             let req = serde_json::from_str(&msg).map_err(BrokerError::SerializationError)?;
             Ok(Some((req, sender)))
         } else {
@@ -107,6 +108,7 @@ impl BrokerServerApi<ToServer, FromServer> for BrokerServer {
     }
 
     fn send(&self, msg: &FromServer, dst: &Identifier) -> Result<(), BrokerError> {
+        trace!("Sending message to BrokerServer: {msg:?} to {dst:?}");
         self.channel
             .send(dst, serde_json::to_string(&msg)?)
             .map_err(BrokerError::BrokerServerError)?;
@@ -182,6 +184,7 @@ impl BrokerClient {
 
 impl BrokerClientApi<ToServer, FromServer> for BrokerClient {
     fn send(&self, msg: ToServer) -> Result<bool, BrokerError> {
+        trace!("Sending message to BrokerServer: {msg:?}");
         self.channel
             .send_server(serde_json::to_string(&msg)?)
             .map_err(BrokerError::BrokerServerError)
@@ -263,6 +266,7 @@ impl BrokerServerApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages> for B
     }
 
     fn send(&self, msg: &OutgoingBitVMXApiMessages, dst: &Identifier) -> Result<(), BrokerError> {
+        trace!("Sending message to BitVMX: {msg:?} to {dst:?}");
         self.channel
             .send(dst, serde_json::to_string(&msg)?)
             .map_err(BrokerError::BrokerServerError)?;
@@ -332,6 +336,7 @@ impl BitVmxBrokerClient {
 
 impl BrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages> for BitVmxBrokerClient {
     fn send(&self, msg: IncomingBitVMXApiMessages) -> Result<bool, BrokerError> {
+        trace!("Sending message to BitVMX: {msg:?}");
         self.channel
             .send_server(serde_json::to_string(&msg)?)
             .map_err(BrokerError::BrokerServerError)

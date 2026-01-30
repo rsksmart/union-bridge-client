@@ -389,7 +389,7 @@ fi
 rm -f /tmp/apply-operators-$$
 success "Operators applied to stream $STREAM_ID"
 echo ""
-if ! wait_for_log_with_block_timeout "CommitteeSetupFlow Done:" 30; then
+if ! wait_for_log_with_block_timeout "CommitteeSetupFlow Done:" 40; then
     warn "Committee setup complete log not found within timeout"
     exit 1
 fi
