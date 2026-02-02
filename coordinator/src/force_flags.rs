@@ -4,14 +4,14 @@
 //! mechanisms without waiting for normal timeouts or conditions.
 //!
 //! **IMPORTANT**: These flags are ONLY active in non-production environments
-//! (Local, LocalDocker, Regtest). They are automatically disabled in
+//! (Local, `LocalDocker`, Regtest). They are automatically disabled in
 //! Alphanet and Testnet.
 //!
 //! ## Environment Variables
 //!
 //! - `FORCE_ADVANCE=true` - Immediately trigger operator take for pegouts
-//!   in DispatchTransaction step (skips the normal timeout)
-//! - `FORCE_DISPUTE=true` - Override ReimbursementResult to OperatorWon
+//!   in `DispatchTransaction` step (skips the normal timeout)
+//! - `FORCE_DISPUTE=true` - Override `ReimbursementResult` to `OperatorWon`
 //!   (simulates a successful dispute)
 
 use log::warn;
@@ -21,7 +21,7 @@ const BLOCKED_ENVIRONMENTS: [&str; 2] = ["alphanet", "testnet"];
 
 /// Checks if the current environment allows force flags.
 ///
-/// Returns `true` for Local, LocalDocker, and Regtest environments.
+/// Returns `true` for Local, `LocalDocker`, and Regtest environments.
 /// Returns `false` for Alphanet and Testnet (production-like environments).
 fn is_force_flags_allowed(env_name: Option<&str>) -> bool {
     match env_name {
@@ -33,44 +33,42 @@ fn is_force_flags_allowed(env_name: Option<&str>) -> bool {
     }
 }
 
-/// Checks if FORCE_ADVANCE is enabled.
+/// Checks if `FORCE_ADVANCE` is enabled.
 ///
 /// When enabled, pegouts in `DispatchTransaction` step will immediately
 /// trigger operator take instead of waiting for the normal timeout.
 ///
-/// Only works in non-production environments (Local, LocalDocker, Regtest).
+/// Only works in non-production environments (Local, `LocalDocker`, Regtest).
+#[must_use]
 pub fn is_force_advance_enabled(env_name: Option<&str>) -> bool {
     if !is_force_flags_allowed(env_name) {
         return false;
     }
-    let enabled = std::env::var("FORCE_ADVANCE")
-        .ok()
-        .map(|v| v.to_lowercase() == "true" || v == "1")
-        .unwrap_or(false);
+    let enabled =
+        std::env::var("FORCE_ADVANCE").ok().is_some_and(|v| v.to_lowercase() == "true" || v == "1");
 
     if enabled {
-        warn!("[FORCE_ADVANCE] Force advance funds is ENABLED for environment: {:?}", env_name);
+        warn!("[FORCE_ADVANCE] Force advance funds is ENABLED for environment: {env_name:?}");
     }
     enabled
 }
 
-/// Checks if FORCE_DISPUTE is enabled.
+/// Checks if `FORCE_DISPUTE` is enabled.
 ///
-/// When enabled, all ReimbursementResult challenge results will be overridden
+/// When enabled, all `ReimbursementResult` challenge results will be overridden
 /// to `OperatorWon`, simulating a successful dispute.
 ///
-/// Only works in non-production environments (Local, LocalDocker, Regtest).
+/// Only works in non-production environments (Local, `LocalDocker`, Regtest).
+#[must_use]
 pub fn is_force_dispute_enabled(env_name: Option<&str>) -> bool {
     if !is_force_flags_allowed(env_name) {
         return false;
     }
-    let enabled = std::env::var("FORCE_DISPUTE")
-        .ok()
-        .map(|v| v.to_lowercase() == "true" || v == "1")
-        .unwrap_or(false);
+    let enabled =
+        std::env::var("FORCE_DISPUTE").ok().is_some_and(|v| v.to_lowercase() == "true" || v == "1");
 
     if enabled {
-        warn!("[FORCE_DISPUTE] Force dispute is ENABLED for environment: {:?}", env_name);
+        warn!("[FORCE_DISPUTE] Force dispute is ENABLED for environment: {env_name:?}");
     }
     enabled
 }

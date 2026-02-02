@@ -73,10 +73,9 @@ where
         native_bridge_verifier: NativeBridgeVerifier<CG>,
         config: AdvanceFundsConfig,
         required_confirmations: u32,
-        env_name: Option<String>,
+        env_name: Option<&str>,
     ) -> Self {
-        let force_dispute_enabled =
-            crate::force_flags::is_force_dispute_enabled(env_name.as_deref());
+        let force_dispute_enabled = crate::force_flags::is_force_dispute_enabled(env_name);
         Self {
             contracts_gateway,
             rt_sync,
@@ -461,8 +460,7 @@ where
 
         if let Some(flow) = self.flows.get_mut(&flow_id) {
             debug!(
-                "Delivering reimbursement result to flow {}: challenge_result = {:?}",
-                flow_id, effective_challenge_result
+                "Delivering reimbursement result to flow {flow_id}: challenge_result = {effective_challenge_result:?}"
             );
 
             if flow.committee_id_uuid() != Some(result.committee_id) {

@@ -101,15 +101,14 @@ where
         native_bridge_verifier: NativeBridgeVerifier<CG>,
         config: PegoutConfig,
         required_confirmations: u32,
-        env_name: Option<String>,
+        env_name: Option<&str>,
     ) -> Self {
         let factory = BtcSignatureSubFlowFactory::new(
             contracts_gateway.clone(),
             rt_sync.clone(),
             required_confirmations,
         );
-        let force_advance_enabled =
-            crate::force_flags::is_force_advance_enabled(env_name.as_deref());
+        let force_advance_enabled = crate::force_flags::is_force_advance_enabled(env_name);
         Self {
             contracts_gateway,
             rt_sync,
@@ -143,7 +142,7 @@ where
         native_bridge_verifier: NativeBridgeVerifier<CG>,
         config: PegoutConfig,
         required_confirmations: u32,
-        env_name: Option<String>,
+        env_name: Option<&str>,
     ) -> Result<Self> {
         let mut processor = Self::new(
             contracts_gateway,
@@ -562,8 +561,8 @@ where
         Ok(())
     }
 
-    /// Force trigger operator take for all flows in DispatchTransaction step.
-    /// Only active when FORCE_ADVANCE=true in non-production environments.
+    /// Force trigger operator take for all flows in `DispatchTransaction` step.
+    /// Only active when `FORCE_ADVANCE=true` in non-production environments.
     fn handle_force_advance(&mut self) -> Result<()> {
         if !self.force_advance_enabled {
             return Ok(());
@@ -579,8 +578,7 @@ where
 
         for flow_id in flows_to_trigger {
             info!(
-                "[FORCE_ADVANCE] Forcing operator take trigger for flow_id: {} in DispatchTransaction step",
-                flow_id
+                "[FORCE_ADVANCE] Forcing operator take trigger for flow_id: {flow_id} in DispatchTransaction step"
             );
             self.trigger_operator_take_for_flow(flow_id)?;
         }
