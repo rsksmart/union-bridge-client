@@ -10,6 +10,19 @@
 
 set -e
 
+# Return 0 if running in a CI environment, 1 otherwise.
+# Uses well-known env vars set by GitHub Actions, GitLab CI, Travis, CircleCI, Jenkins, Buildkite.
+is_ci_env() {
+  [ "${CI:-false}" = "true" ] && return 0
+  [ -n "${GITHUB_ACTIONS:-}" ] && return 0
+  [ -n "${GITLAB_CI:-}" ] && return 0
+  [ -n "${TRAVIS:-}" ] && return 0
+  [ -n "${CIRCLECI:-}" ] && return 0
+  [ -n "${JENKINS_URL:-}" ] && return 0
+  [ -n "${BUILDKITE:-}" ] && return 0
+  return 1
+}
+
 # Check if at least mode argument is provided
 if [ $# -eq 0 ]; then
     echo "Usage: $0 [regtest|testnet] <user|member> [command] [args...]"
@@ -144,8 +157,13 @@ esac
 # If no additional arguments, opens interactive mode
 # If arguments provided, executes command and exits
 
-# Build release binary (fast if already built, ~1-2s check)
-cargo build --release --manifest-path ./cli/bitcoin-wallet/Cargo.toml --quiet
+WALLET_BIN="./target/release/ub-wallet"
 
-# Run release binary directly (much faster than cargo run)
-exec ./target/release/ub-wallet --env "$NETWORK" --mode "$MODE" "$@"
+if is_ci_env && [ -x "$WALLET_BIN" ]; then
+  # CI: use pre-built binary (workflow builds it once before tests)
+  exec "$WALLET_BIN" --env "$NETWORK" --mode "$MODE" "$@"
+fi
+
+# Local (or CI when binary missing): build then run
+cargo build --release --manifest-path ./cli/bitcoin-wallet/Cargo.toml --quiet
+exec "$WALLET_BIN" --env "$NETWORK" --mode "$MODE" "$@"
