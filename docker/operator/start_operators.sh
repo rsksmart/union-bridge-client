@@ -18,11 +18,8 @@ print_help() {
   echo "  --env alphanet           Deploy on Alphanet, a specific operator (requires --op <ID>)"
   echo "  --env testnet            Deploy on Testnet, a specific operator (requires --op <ID>)"
   echo "  --env local              Deploy locally, all 4 operators"
-<<<<<<< HEAD
   echo "  --env regtest            Deploy in regtest, all 4 operators"
-=======
   echo "  (or set UC_ENV environment variable)"
->>>>>>> 7d1fb12b (feat: impl env enabled client startup)
   echo ""
   echo "Options:"
   echo "  --op <ID>                Specify operator ID (1, 2, 3, or 4) - required for alphanet/testnet startup"
@@ -102,31 +99,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --env)
       ENVIRONMENT="$2"
-<<<<<<< HEAD
-      if [[ "$ENVIRONMENT" == "alphanet" ]]; then
-        ENV_FILE="${SCRIPT_DIR}/.env.alphanet"
-        if [[ -z "$UC_TAG" ]]; then
-          UC_TAG="latest-alphanet"
-        fi
-      elif [[ "$ENVIRONMENT" == "testnet" ]]; then
-        ENV_FILE="${SCRIPT_DIR}/.env.testnet"
-        if [[ -z "$UC_TAG" ]]; then
-          UC_TAG="latest-testnet"
-        fi
-      elif [[ "$ENVIRONMENT" == "local" ]]; then
-        ENV_FILE="${SCRIPT_DIR}/.env.local"
-        if [[ -z "$UC_TAG" ]]; then
-          UC_TAG="latest-anvil"
-        fi
-      elif [[ "$ENVIRONMENT" == "regtest" ]]; then
-        ENV_FILE="${SCRIPT_DIR}/.env.regtest"
-        if [[ -z "$UC_TAG" ]]; then
-          UC_TAG="latest-regtest"
-        fi
-      else
-        echo "Invalid environment. Use 'alphanet', 'testnet', 'local', or 'regtest'"
-        exit 1
-      fi
       # Clear any default from env var when explicitly provided
       shift 2
       ;;
