@@ -144,8 +144,12 @@ esac
 # If no additional arguments, opens interactive mode
 # If arguments provided, executes command and exits
 
-# Build release binary (fast if already built, ~1-2s check)
-cargo build --release --manifest-path ./cli/bitcoin-wallet/Cargo.toml --quiet
-
-# Run release binary directly (much faster than cargo run)
+# In CI (e.g. GitHub Actions), workflow pre-builds the binary; skip build to avoid redundant compile
+# if [ "${CI:-}" = "true" ] && [ -x "./target/release/ub-wallet" ]; then
+  echo "[wallet-cli] CI: using pre-built binary (skip cargo build)" >&2
+# else
+#   echo "[wallet-cli] Starting cargo build --release..." >&2
+#   cargo build --release --manifest-path ./cli/bitcoin-wallet/Cargo.toml --quiet
+#   echo "[wallet-cli] Cargo build finished, exec ub-wallet..." >&2
+# fi
 exec ./target/release/ub-wallet --env "$NETWORK" --mode "$MODE" "$@"

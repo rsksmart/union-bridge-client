@@ -20,13 +20,16 @@ use ub_wallet::config::Config;
 use ub_wallet::wallet::{CreatedTransaction, Wallet, network_suffix};
 
 fn main() -> Result<()> {
+    eprintln!("[ub-wallet] main: parsing opts and loading config...");
     let opts = CliOpts::parse();
     let (config, config_path) = Config::load(&opts)?;
+    eprintln!("[ub-wallet] main: config loaded");
 
     if let Some(path) = config_path.as_ref() {
         println!("Loaded config from {}", path.display());
     }
 
+    eprintln!("[ub-wallet] main: creating wallet from config...");
     let mut wallet = Wallet::from_config(&config).map_err(|err| {
         let err_msg = format!("{:#}", err);
 
@@ -82,9 +85,11 @@ fn main() -> Result<()> {
 
         err
     })?;
+    eprintln!("[ub-wallet] main: wallet ready");
 
     // check if a command was provided for non-interactive execution
     if !opts.command.is_empty() {
+        eprintln!("[ub-wallet] main: command mode, dispatching...");
         // programmatic/command mode is only allowed in regtest for safety
         if wallet.network() != Network::Regtest {
             eprintln!("Error: Command mode is only available on regtest network.");
@@ -521,12 +526,15 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
             }
         }
         "clear_db" => {
+            eprintln!("[ub-wallet] clear_db: checking network...");
             ensure!(
                 wallet.network() == Network::Regtest,
                 "clear_db is only available on regtest (current: {:?})",
                 wallet.network()
             );
+            eprintln!("[ub-wallet] clear_db: calling wallet.clear_db()...");
             wallet.clear_db()?;
+            eprintln!("[ub-wallet] clear_db: done");
             println!("Cleared UTXO database for regtest.");
             Ok(CommandOutcome::Continue)
         }

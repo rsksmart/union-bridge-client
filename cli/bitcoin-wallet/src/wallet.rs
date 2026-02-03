@@ -106,27 +106,33 @@ impl Wallet {
     }
 
     pub fn from_config(config: &Config) -> Result<Self> {
+        eprintln!("[ub-wallet] from_config: creating wallet (new_with_network/new)...");
         let mut wallet = if let Some(network) = config.network {
             Wallet::new_with_network(config.db_path.clone(), network, config.mode.clone())?
         } else {
             Wallet::new(config.db_path.clone(), config.mode.clone())?
         };
+        eprintln!("[ub-wallet] from_config: wallet created");
 
         if let Some(sats_per_byte) = config.sats_per_byte {
             wallet.set_sats_per_byte(sats_per_byte);
         }
 
+        eprintln!("[ub-wallet] from_config: importing private key...");
         let address = wallet.import_private_key(&config.private_key_wif)?;
         wallet.active_address = Some(address.clone());
         wallet.reload_active_utxos()?;
         println!("Loaded private key. Default P2WPKH address: {address}");
+        eprintln!("[ub-wallet] from_config: key loaded, reload_active_utxos done");
 
         if let Some(url) = config.rpc_url.as_deref() {
+            eprintln!("[ub-wallet] from_config: configuring RPC (URL: {url})...");
             wallet.configure_rpc(
                 url,
                 config.rpc_user.as_deref(),
                 config.rpc_password.as_deref(),
             )?;
+            eprintln!("[ub-wallet] from_config: RPC configured");
             println!("RPC client configured (URL: {url}).");
         } else if config.rpc_user.is_some() || config.rpc_password.is_some() {
             bail!("RPC URL must be provided when specifying credentials");
@@ -173,9 +179,13 @@ impl Wallet {
         let from_jsonrpc = jsonrpc::client::Client::with_transport(transport);
         let client = Client::from_jsonrpc(from_jsonrpc);
 
+        eprintln!("[ub-wallet] configure_rpc: calling get_blockchain_info()...");
         match client.get_blockchain_info() {
-            Ok(_) => {}
+            Ok(_) => {
+                eprintln!("[ub-wallet] configure_rpc: get_blockchain_info() ok");
+            }
             Err(e) => {
+                eprintln!("[ub-wallet] configure_rpc: get_blockchain_info() failed: {e}");
                 if self.network == Network::Regtest {
                     println!(
                         "Warning! You are running in regtest mode but no node was found at RPC URL: {}. \
