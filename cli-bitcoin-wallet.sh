@@ -144,8 +144,11 @@ esac
 # If no additional arguments, opens interactive mode
 # If arguments provided, executes command and exits
 
-# Build release binary (fast if already built, ~1-2s check)
-cargo build --release --manifest-path ./cli/bitcoin-wallet/Cargo.toml --quiet
+WALLET_BIN="./target/release/ub-wallet"
 
-# Run release binary directly (much faster than cargo run)
-exec ./target/release/ub-wallet --env "$NETWORK" --mode "$MODE" "$@"
+if [ -x "$WALLET_BIN" ]; then
+  exec "$WALLET_BIN" --env "$NETWORK" --mode "$MODE" "$@"
+fi
+
+cargo build --release --manifest-path ./cli/bitcoin-wallet/Cargo.toml --quiet
+exec "$WALLET_BIN" --env "$NETWORK" --mode "$MODE" "$@"
