@@ -27,10 +27,23 @@ for arg in "$@"; do
   fi
 done
 
+# Try to load UC_ENV from .envrc if not already set and direnv isn't active
+# This ensures UC_ENV is available even when scripts are run from subdirectories
+if [[ -z "${UC_ENV:-}" ]]; then
+  PROJECT_ROOT="$(pwd)"
+  ENVRC_FILE="${PROJECT_ROOT}/.envrc"
+  if [[ -f "$ENVRC_FILE" ]]; then
+    # Source .envrc to get UC_ENV, UC_TAG, UC_OPERATOR_ID, UC_OPERATOR_ROLE (only export statements, safe to source)
+    set -a
+    source "$ENVRC_FILE" 2>/dev/null || true
+    set +a
+  fi
+fi
+
 # Use environment from args if provided, otherwise from UC_ENV
 ENV_TO_LOAD="${ENV_FROM_ARGS:-${UC_ENV:-}}"
 
-# Map environment names to .env file paths
+# Map environment names to .env file paths (for other vars like BITCOIND_URL, ROOTSTOCK_URL, etc.)
 if [[ -n "$ENV_TO_LOAD" ]]; then
   case "$ENV_TO_LOAD" in
     alphanet)
@@ -48,7 +61,8 @@ if [[ -n "$ENV_TO_LOAD" ]]; then
       ;;
   esac
 
-  # Source the .env file if it exists to load UC_OPERATOR_ID and UC_OPERATOR_ROLE
+  # Source the .env file if it exists (for other vars like BITCOIND_URL, ROOTSTOCK_URL, etc.)
+  # UC_TAG, UC_OPERATOR_ID, UC_OPERATOR_ROLE are loaded from .envrc above
   if [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then
     set -a
     source "$ENV_FILE"

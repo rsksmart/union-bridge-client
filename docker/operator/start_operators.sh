@@ -130,52 +130,56 @@ if [[ -z "$ENVIRONMENT" ]]; then
   fi
 fi
 
-# Set ENV_FILE and load environment-specific variables
+# Load UC_TAG, UC_OPERATOR_ID, UC_OPERATOR_ROLE from root .envrc if not already set
+# Try to load from .envrc in project root (parent of docker/operator)
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+ENVRC_FILE="${PROJECT_ROOT}/.envrc"
+if [[ -f "$ENVRC_FILE" ]]; then
+  # Source .envrc to get UC_TAG, UC_OPERATOR_ID, UC_OPERATOR_ROLE (only export statements, safe to source)
+  set -a
+  source "$ENVRC_FILE" 2>/dev/null || true
+  set +a
+fi
+
+# Set ENV_FILE and load environment-specific variables (for other vars like BITCOIND_URL, etc.)
 if [[ "$ENVIRONMENT" == "alphanet" ]]; then
   ENV_FILE="${SCRIPT_DIR}/.env.alphanet"
-  # Source the env file to load UC_TAG if set
   if [[ -f "$ENV_FILE" ]]; then
     set -a
     source "$ENV_FILE"
     set +a
   fi
-  # Use UC_TAG from env file if not set via --tag flag, otherwise use default
+  # Use UC_TAG from .envrc if not set via --tag flag, otherwise use default
   if [[ -z "$UC_TAG" ]]; then
     UC_TAG="latest-alphanet"
   fi
 elif [[ "$ENVIRONMENT" == "testnet" ]]; then
   ENV_FILE="${SCRIPT_DIR}/.env.testnet"
-  # Source the env file to load UC_TAG if set
   if [[ -f "$ENV_FILE" ]]; then
     set -a
     source "$ENV_FILE"
     set +a
   fi
-  # Use UC_TAG from env file if not set via --tag flag, otherwise use default
   if [[ -z "$UC_TAG" ]]; then
     UC_TAG="latest-testnet"
   fi
 elif [[ "$ENVIRONMENT" == "local" ]]; then
   ENV_FILE="${SCRIPT_DIR}/.env.local"
-  # Source the env file to load UC_TAG if set
   if [[ -f "$ENV_FILE" ]]; then
     set -a
     source "$ENV_FILE"
     set +a
   fi
-  # Use UC_TAG from env file if not set via --tag flag, otherwise use default
   if [[ -z "$UC_TAG" ]]; then
     UC_TAG="latest-anvil"
   fi
 elif [[ "$ENVIRONMENT" == "regtest" ]]; then
   ENV_FILE="${SCRIPT_DIR}/.env.regtest"
-  # Source the env file to load UC_TAG if set
   if [[ -f "$ENV_FILE" ]]; then
     set -a
     source "$ENV_FILE"
     set +a
   fi
-  # Use UC_TAG from env file if not set via --tag flag, otherwise use default
   if [[ -z "$UC_TAG" ]]; then
     UC_TAG="latest-regtest"
   fi

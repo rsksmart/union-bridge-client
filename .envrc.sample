@@ -36,10 +36,10 @@ export CHECK_FORK_REQUIRED_NUM_BLOCKS=5
 # This determines which .env.* file is loaded (see docker/operator/.env.* files)
 # export UC_ENV="local"
 
-# Note: UC_TAG, UC_OPERATOR_ID, and UC_OPERATOR_ROLE should be set in
-# the environment-specific .env files (docker/operator/.env.alphanet,
-# docker/operator/.env.testnet, docker/operator/.env.local) rather than here.
-# This allows different values per environment/host.
+# Deployment variables (can be overridden via command-line flags)
+# export UC_TAG="latest-anvil"
+# export UC_OPERATOR_ID=1
+# export UC_OPERATOR_ROLE="prover"
 
 ############################################################
 # Bitcoin

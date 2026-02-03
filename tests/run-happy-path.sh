@@ -13,6 +13,20 @@
 
 set -euo pipefail
 
+# Try to load UC_ENV from .envrc if not already set and direnv isn't active
+# This ensures UC_ENV is available even when scripts are run from subdirectories
+if [[ -z "${UC_ENV:-}" ]]; then
+    # change to project root first to find .envrc
+    cd "$(dirname "$0")/.."
+    ENVRC_FILE="$(pwd)/.envrc"
+    if [[ -f "$ENVRC_FILE" ]]; then
+        # Source .envrc to get UC_ENV (only export statements, safe to source)
+        set -a
+        source "$ENVRC_FILE" 2>/dev/null || true
+        set +a
+    fi
+fi
+
 # Initialize SCRIPT_ENV from UC_ENV if set and valid, otherwise default to "local"
 if [[ -n "${UC_ENV:-}" ]]; then
     if [[ "$UC_ENV" == "local" || "$UC_ENV" == "local-docker" ]]; then
@@ -398,7 +412,7 @@ trap cleanup EXIT
 
 clear
 log "Configuration: stream=$STREAM_ID, rsk=$RSK_ADDRESS, amount=$VALUE, env=$SCRIPT_ENV"
-log "Prerequisite: Start mining in another terminal with: ./cli-run.sh --start-mine"
+log "Prerequisite: Start mining in another terminal with: ./cli-infra.sh --start-mine"
 echo ""
 
 # prepare wallets
