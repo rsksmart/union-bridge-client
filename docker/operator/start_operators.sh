@@ -2,8 +2,19 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Load UC_ENV, UC_TAG, UC_OPERATOR_ID, UC_OPERATOR_ROLE from root .envrc if not already set
+# This ensures these variables are available even when scripts are run from subdirectories
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+ENVRC_FILE="${PROJECT_ROOT}/.envrc"
+if [[ -f "$ENVRC_FILE" ]]; then
+  # Source .envrc to get UC_ENV, UC_TAG, UC_OPERATOR_ID, UC_OPERATOR_ROLE (only export statements, safe to source)
+  set -a
+  source "$ENVRC_FILE" 2>/dev/null || true
+  set +a
+fi
+
 # Initialize from environment variables (can be overridden by command line args)
-# Note: UC_TAG is loaded from environment-specific .env files after ENVIRONMENT is determined
+# Note: UC_TAG is loaded from root .envrc and environment-specific .env files after ENVIRONMENT is determined
 UC_TAG=""
 DOCKER_COMPOSE_ARGS=()
 OPERATOR_ARG=""
@@ -130,18 +141,8 @@ if [[ -z "$ENVIRONMENT" ]]; then
   fi
 fi
 
-# Load UC_TAG, UC_OPERATOR_ID, UC_OPERATOR_ROLE from root .envrc if not already set
-# Try to load from .envrc in project root (parent of docker/operator)
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-ENVRC_FILE="${PROJECT_ROOT}/.envrc"
-if [[ -f "$ENVRC_FILE" ]]; then
-  # Source .envrc to get UC_TAG, UC_OPERATOR_ID, UC_OPERATOR_ROLE (only export statements, safe to source)
-  set -a
-  source "$ENVRC_FILE" 2>/dev/null || true
-  set +a
-fi
-
 # Set ENV_FILE and load environment-specific variables (for other vars like BITCOIND_URL, etc.)
+# UC_TAG, UC_OPERATOR_ID, UC_OPERATOR_ROLE are already loaded from .envrc above
 if [[ "$ENVIRONMENT" == "alphanet" ]]; then
   ENV_FILE="${SCRIPT_DIR}/.env.alphanet"
   if [[ -f "$ENV_FILE" ]]; then

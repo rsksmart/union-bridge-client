@@ -27,17 +27,15 @@ for arg in "$@"; do
   fi
 done
 
-# Try to load UC_ENV from .envrc if not already set and direnv isn't active
-# This ensures UC_ENV is available even when scripts are run from subdirectories
-if [[ -z "${UC_ENV:-}" ]]; then
-  PROJECT_ROOT="$(pwd)"
-  ENVRC_FILE="${PROJECT_ROOT}/.envrc"
-  if [[ -f "$ENVRC_FILE" ]]; then
-    # Source .envrc to get UC_ENV, UC_TAG, UC_OPERATOR_ID, UC_OPERATOR_ROLE (only export statements, safe to source)
-    set -a
-    source "$ENVRC_FILE" 2>/dev/null || true
-    set +a
-  fi
+# Load UC_ENV, UC_TAG, UC_OPERATOR_ID, UC_OPERATOR_ROLE from root .envrc
+# This ensures these variables are available even when scripts are run from subdirectories
+PROJECT_ROOT="$(pwd)"
+ENVRC_FILE="${PROJECT_ROOT}/.envrc"
+if [[ -f "$ENVRC_FILE" ]]; then
+  # Source .envrc to get UC_ENV, UC_TAG, UC_OPERATOR_ID, UC_OPERATOR_ROLE (only export statements, safe to source)
+  set -a
+  source "$ENVRC_FILE" 2>/dev/null || true
+  set +a
 fi
 
 # Use environment from args if provided, otherwise from UC_ENV
