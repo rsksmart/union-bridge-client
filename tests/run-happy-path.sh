@@ -13,10 +13,22 @@
 
 set -euo pipefail
 
-SCRIPT_ENV="local"
+# Initialize SCRIPT_ENV from UC_ENV if set and valid, otherwise default to "local"
+if [[ -n "${UC_ENV:-}" ]]; then
+    if [[ "$UC_ENV" == "local" || "$UC_ENV" == "local-docker" ]]; then
+        SCRIPT_ENV="$UC_ENV"
+    else
+        SCRIPT_ENV="local"
+    fi
+else
+    SCRIPT_ENV="local"
+fi
 
 usage() {
     echo "Usage: $0 [--env <local|local-docker>]"
+    echo ""
+    echo "The script will use UC_ENV environment variable if set to 'local' or 'local-docker'."
+    echo "Use --env flag to override."
     exit 1
 }
 
@@ -27,6 +39,11 @@ while [[ $# -gt 0 ]]; do
         if [[ -z "$SCRIPT_ENV" ]]; then
             usage
         fi
+        # Validate that --env value is either local or local-docker
+        if [[ "$SCRIPT_ENV" != "local" && "$SCRIPT_ENV" != "local-docker" ]]; then
+            echo "Error: --env must be 'local' or 'local-docker'"
+            usage
+        fi
         shift 2
         ;;
     *)
@@ -34,6 +51,12 @@ while [[ $# -gt 0 ]]; do
         ;;
     esac
 done
+
+# Final validation that SCRIPT_ENV is valid
+if [[ "$SCRIPT_ENV" != "local" && "$SCRIPT_ENV" != "local-docker" ]]; then
+    echo "Error: SCRIPT_ENV must be 'local' or 'local-docker'"
+    exit 1
+fi
 
 # change to project root (parent of tests directory)
 cd "$(dirname "$0")/.."
