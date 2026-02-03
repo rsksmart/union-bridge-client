@@ -2,7 +2,7 @@
 
 This setup provides flexible operator deployment configurations:
 
-- **Local environment**: Run all 4 independent operator stacks in parallel (`op_1`..`op_4`) on a single host to simulate a committee, using a shared Docker bridge network for BitVMX P2P communication
+- **Local environment**: Run all 10 independent operator stacks in parallel (`op_1`..`op_10`) on a single host to simulate a committee, using a shared Docker bridge network for BitVMX P2P communication
 - **Alphanet environment**: Run a single operator per host, allowing distributed committee deployment across multiple machines, using host network mode for BitVMX P2P connectivity
 - Each stack includes: BitVMX client + Union Client services (`user-api`, `block-indexer`, `log-indexer`, `coordinator`)
 
@@ -58,7 +58,7 @@ The BitVMX client requires different Docker network configurations depending on 
 **Local environment (Bridge Network)**:
 - Uses a shared Docker bridge network (`bitvmx-network`) for P2P communication between operators
 - All 4 operators run on the same host and communicate through Docker's internal network
-- Each operator binds to different P2P ports (22222, 33333, 44444, 55554) on the Docker bridge
+- Each operator binds to different P2P ports (22222, 33333, 44444, 55555, 66666, 77777, 88888, 99999, 100000, 111111) on the Docker bridge
 - This isolated network allows multiple BitVMX clients to communicate without exposing ports to the host
 
 **Alphanet/Testnet environment (Host Network)**:
@@ -262,13 +262,19 @@ bash start_operators.sh --env alphanet down --volumes
 
 ### 5) Viewing logs per operator project
 
-**Local environment:** You can tail logs per operator project name (`op_1`..`op_4`) using docker compose directly:
+**Local environment:** You can tail logs per operator project name (`op_1`..`op_10`) using docker compose directly:
 
 ```bash
 docker compose -p op_1 logs -f
 docker compose -p op_2 logs -f
 docker compose -p op_3 logs -f
 docker compose -p op_4 logs -f
+docker compose -p op_5 logs -f
+docker compose -p op_6 logs -f
+docker compose -p op_7 logs -f
+docker compose -p op_8 logs -f
+docker compose -p op_9 logs -f
+docker compose -p op_10 logs -f
 ```
 
 Using the `start_operators.sh` script:
@@ -297,6 +303,12 @@ bash start_operators.sh --env testnet logs -f
 - `op_2` -> http://localhost:40002
 - `op_3` -> http://localhost:40003
 - `op_4` -> http://localhost:40004
+- `op_5` -> http://localhost:40005
+- `op_6` -> http://localhost:40006
+- `op_7` -> http://localhost:40007
+- `op_8` -> http://localhost:40008
+- `op_9` -> http://localhost:40009
+- `op_10` -> http://localhost:40010
 
 **Alphanet/Testnet environment:** Each host runs one operator, accessible at:
 
@@ -306,7 +318,7 @@ bash start_operators.sh --env testnet logs -f
 
 Use the `committee_setup.sh` script to apply operators to a stream:
 
-**Local:** Apply all 4 operators (2 Provers, 2 Verifiers):
+**Local:** Apply all 10 operators:
 
 ```bash
 bash operator_scripts/committee_setup.sh --stream-id <STREAM_ID> --env local
@@ -353,7 +365,7 @@ See the `bitcoin-wallet` [README](../../cli/bitcoin-wallet/README.md) for more i
 
 ### Resource conflicts
 
-- **Port conflicts**: ensure ports `40001–40004`, `61180–61183`, and `22222/33333/44444/55554` are free.
+- **Port conflicts**: ensure ports `40001–40010`, `61180–61189`, and `22222/33333/44444/55555/66666/77777/88888/99999/100000/111111` are free.
   export `BITVMX_P2P_HOST` addresses accordingly in `start_operators.sh`.
 - **Healthchecks**: services wait for each other; if something is stuck, try bringing stacks down as mentioned above,
   re-check env files, and start again.
