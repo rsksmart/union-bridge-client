@@ -14,9 +14,16 @@ set -euo pipefail
 # change to script directory to ensure relative paths work
 cd "$(dirname "$0")"
 
+OPERATIONS_BIN="./target/release/operations"
+
+# If binary exists and is executable, use it directly (cache hit in CI)
+if [ -x "$OPERATIONS_BIN" ]; then
+  RUST_BACKTRACE=0 exec "$OPERATIONS_BIN" "$@"
+fi
+
 # Build release binary (fast if already built, ~1-2s check)
 cargo build --release --manifest-path cli/operations/Cargo.toml --quiet
 
 # forward all arguments to operations (using release binary directly)
-RUST_BACKTRACE=0 exec ./target/release/operations "$@"
+RUST_BACKTRACE=0 exec "$OPERATIONS_BIN" "$@"
 
