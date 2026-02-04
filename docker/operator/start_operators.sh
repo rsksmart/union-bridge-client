@@ -89,7 +89,7 @@ print_help() {
   echo "  $0 --env regtest up -d                                   # Start all 4 operators in regtest mode"
   echo "  $0 --env regtest down                                    # Stop all regtest operators"
   echo "  $0 --env alphanet --op 1 up -d                           # Start operator 1 in alphanet"
-  echo "  $0 --env alphanet --op 1 up -d                           # Same, if UC_OPERATOR_ID=1 in .envrc"
+  echo "  $0 --env alphanet up -d                                  # Same, if UC_OPERATOR_ID=1 in .envrc"
   echo "  $0 --env alphanet --op 2 up -d                           # Start operator 2 in alphanet"
   echo "  $0 --env alphanet --op 1 --tag latest-alphanet up -d     # Start operator 1 with specific tag"
   echo "  $0 --env alphanet down --volumes                         # Stop operator on this alphanet host"
