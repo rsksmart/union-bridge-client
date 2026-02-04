@@ -6,9 +6,6 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
-use bitcoin::secp256k1::rand::rngs::OsRng;
-use bitcoin::secp256k1::SecretKey;
-use bitcoin::{secp256k1, PublicKey, XOnlyPublicKey};
 use common::msg_broker::broker::{BrokerServer, BrokerServerApi};
 use common::msg_broker::types::FromServer;
 use common::shutdown_flag::ShutdownFlag;
@@ -20,8 +17,6 @@ use tower_http::timeout::TimeoutLayer;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::{PeginAddressInput, RequestPegoutInput};
 
-use crate::bitcoin::User;
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RequestPeginInput {
     pub stream_amount: u64,
@@ -31,6 +26,7 @@ pub struct RequestPeginInput {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct UserRequestPegoutInput {
     pub amount_in_wei: u64,
+    pub usr_pub_key: String,
 }
 
 pub struct Server {
@@ -47,19 +43,11 @@ impl Server {
         coordinator_client_id: u32,
         user_contracts_gateway: UCG,
         member_contracts_gateway: MCG,
-        user_bitcoin_wif: Option<&str>,
-        network: bitcoin::Network,
     ) -> Self
     where
         UCG: RskContractsGatewayApi + Send + Sync + 'static,
         MCG: RskContractsGatewayApi + Send + Sync + 'static,
     {
-        // Create Bitcoin wallet instance for user endpoints
-        let user_wallet = user_bitcoin_wif.map(|wif| {
-            User::new("User", user_contracts_gateway.my_address(), wif, network)
-                .expect("Failed to create user wallet")
-        });
-
         // Wrap gateways for sync access
         let user_sync_gateway: Arc<dyn crate::sync_contracts_gateway::SyncContractsGatewayApi> =
             Arc::new(crate::sync_contracts_gateway::SyncContractsGateway::new(
@@ -72,16 +60,14 @@ impl Server {
 
         let mut app = Router::new().route("/health", get(Self::health_check));
 
-        // Conditionally add user endpoints if user wallet is available
-        if let Some(user_wallet) = user_wallet {
-            app = app.nest(
-                "/user",
-                Router::new()
-                    .route("/pegin-address", post(Self::pegin_address))
-                    .route("/request-pegout", post(Self::request_pegout))
-                    .layer((Extension(user_sync_gateway.clone()), Extension(user_wallet))),
-            );
-        }
+        // User endpoints - public keys are now provided in request bodies
+        app = app.nest(
+            "/user",
+            Router::new()
+                .route("/pegin-address", post(Self::pegin_address))
+                .route("/request-pegout", post(Self::request_pegout))
+                .layer(Extension(user_sync_gateway.clone())),
+        );
 
         // Member endpoints - no bitcoin wallet needed, only broker communication
         app = app.nest(
@@ -145,18 +131,29 @@ impl Server {
     }
 
     async fn pegin_address(
-        Extension(user): Extension<User>,
         Extension(contracts): Extension<
             Arc<dyn crate::sync_contracts_gateway::SyncContractsGatewayApi>,
         >,
-        Json(mut payload): Json<PeginAddressInput>,
+        Json(payload): Json<PeginAddressInput>,
     ) -> impl IntoResponse {
         info!("Received pegin-address request: {payload:?}");
 
-        // Use our own X-only public key if not provided
+        // Validate btc_reimbursement_pub_key is provided
         if payload.btc_reimbursement_pub_key.is_empty() {
-            let x_only_key = XOnlyPublicKey::from(user.bitcoin_public_key);
-            payload.btc_reimbursement_pub_key = format!("0x{}", x_only_key);
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "btc_reimbursement_pub_key is required" })),
+            );
+        }
+
+        // Validate format: must be 0x + 64 hex chars (32 bytes x-only pubkey)
+        if !is_valid_xonly_pubkey(&payload.btc_reimbursement_pub_key) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(
+                    json!({ "error": "btc_reimbursement_pub_key must be a valid 32-byte hex string with 0x prefix (66 chars total)" }),
+                ),
+            );
         }
 
         match contracts.get_temporary_pegin_address(payload) {
@@ -169,16 +166,30 @@ impl Server {
     }
 
     async fn request_pegout(
-        Extension(user): Extension<User>,
         Extension(contracts): Extension<
             Arc<dyn crate::sync_contracts_gateway::SyncContractsGatewayApi>,
         >,
         Json(payload): Json<UserRequestPegoutInput>,
     ) -> impl IntoResponse {
         info!("Received request_pegout request: {:?}", payload);
-        let usr_pub_key = format!("0x{}", user.bitcoin_public_key);
+
+        // Validate usr_pub_key is provided
+        if payload.usr_pub_key.is_empty() {
+            return (StatusCode::BAD_REQUEST, Json(json!({ "error": "usr_pub_key is required" })));
+        }
+
+        // Validate format: must be 0x + 66 hex chars (33 bytes compressed pubkey)
+        if !is_valid_compressed_pubkey(&payload.usr_pub_key) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(
+                    json!({ "error": "usr_pub_key must be a valid 33-byte compressed public key hex string with 0x prefix (68 chars total)" }),
+                ),
+            );
+        }
 
         let amount_in_wei = payload.amount_in_wei;
+        let usr_pub_key = payload.usr_pub_key;
         info!("Request pegout -> usr_pub_key: {} amount_in_wei: {}", usr_pub_key, amount_in_wei);
         let input = RequestPegoutInput { amount_in_wei, usr_pub_key };
         let res = contracts.request_pegout(input);
@@ -190,12 +201,14 @@ impl Server {
             }
         }
     }
+}
 
-    pub fn get_random_pubkey() -> PublicKey {
-        let secp = secp256k1::Secp256k1::new();
-        let mut rng = OsRng;
-        let too_sk = SecretKey::new(&mut rng);
-        let too_pk = secp256k1::PublicKey::from_secret_key(&secp, &too_sk);
-        PublicKey { compressed: true, inner: too_pk }
-    }
+/// Validates a 32-byte X-only public key with 0x prefix
+fn is_valid_xonly_pubkey(key: &str) -> bool {
+    key.len() == 66 && key.starts_with("0x") && key[2..].chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// Validates a 33-byte compressed public key with 0x prefix
+fn is_valid_compressed_pubkey(key: &str) -> bool {
+    key.len() == 68 && key.starts_with("0x") && key[2..].chars().all(|c| c.is_ascii_hexdigit())
 }

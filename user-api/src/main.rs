@@ -4,7 +4,6 @@ use std::thread;
 
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
-use common::config::CommonConfig;
 use common::msg_broker::broker::BrokerServer;
 use common::shutdown_flag::ShutdownFlag;
 use log::{error, info};
@@ -83,16 +82,6 @@ async fn main() -> Result<()> {
     let http_addr = SocketAddr::from(([0, 0, 0, 0], config.user_api_config.http.port));
     let listener = TcpListener::bind(http_addr).await.context("Failed to bind to address")?;
 
-    let network = CommonConfig::parse_bitcoin_network(&config.bitcoin_network)
-        .context("Failed to parse bitcoin_network")?;
-
-    // Get WIF key from environment - required for user endpoints
-    let user_bitcoin_wif = std::env::var("USER_BITCOIN_WIF").ok().filter(|s| !s.is_empty());
-
-    if user_bitcoin_wif.is_none() {
-        info!("USER_BITCOIN_WIF not set - user endpoints will be disabled");
-    }
-
     // Load transaction dispatcher configuration
     let tx_dispatcher_config: TxDispatcherConfig =
         TxDispatcherConfig::load(env_name).expect("Failed to load transaction dispatcher config");
@@ -117,8 +106,6 @@ async fn main() -> Result<()> {
         config.user_api_config.coordinator.broker.client_id,
         user_contracts_gateway,
         member_contracts_gateway,
-        user_bitcoin_wif.as_deref(),
-        network,
     )
     .await;
 

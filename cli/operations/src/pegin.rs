@@ -22,6 +22,7 @@ pub async fn create_pegin_tx(
     rsk_address: String,
     value: u64,
     packet_number: u64,
+    btc_pub_key: String,
     execute: bool,
 ) -> Result<()> {
     if execute && environment.is_remote() {
@@ -29,12 +30,13 @@ pub async fn create_pegin_tx(
     }
 
     validate_rsk_address(&rsk_address)?;
+    validate_btc_pub_key(&btc_pub_key)?;
     println!("Getting pegin address for {rsk_address}...");
 
     let payload = PeginAddressRequest {
         rootstock_deposit_address: rsk_address.clone(),
         value,
-        btc_reimbursement_pub_key: String::new(),
+        btc_reimbursement_pub_key: btc_pub_key.clone(),
     };
 
     let user_api_base = environment
@@ -68,7 +70,7 @@ pub async fn create_pegin_tx(
         .ok_or_else(|| anyhow!("user-api response did not contain a pegin address"))?;
 
     println!("Requesting pegin: {} sats", value);
-    println!("  Source:      Bitcoin (wallet for the WIF used in user-api)");
+    println!("  Source:      Bitcoin (public key: {})", btc_pub_key);
     println!("  Destination: RSK {}", rsk_address);
     println!();
     println!("Parameters:");
@@ -142,6 +144,23 @@ fn validate_rsk_address(address: &str) -> Result<()> {
 
     if !stripped.chars().all(|c| c.is_ascii_hexdigit()) {
         bail!("RSK address must contain only hexadecimal characters");
+    }
+
+    Ok(())
+}
+
+fn validate_btc_pub_key(key: &str) -> Result<()> {
+    let stripped = key
+        .strip_prefix("0x")
+        .or_else(|| key.strip_prefix("0X"))
+        .ok_or_else(|| anyhow!("BTC public key must start with 0x"))?;
+
+    if stripped.len() != 64 {
+        bail!("BTC public key must be a 32-byte x-only pubkey (64 hex characters after 0x prefix)");
+    }
+
+    if !stripped.chars().all(|c| c.is_ascii_hexdigit()) {
+        bail!("BTC public key must contain only hexadecimal characters");
     }
 
     Ok(())

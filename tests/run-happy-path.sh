@@ -6,7 +6,8 @@
 #   - union bridge clients running (via: cargo run -- run)
 #   - anvil running on localhost:8545
 #   - bitcoin regtest node running with RPC enabled
-#   - USER_BITCOIN_WIF and MEMBER_BITCOIN_WIF environment variables set
+#   - USER_BITCOIN_WIF environment variable set (for bitcoin-wallet operations)
+#   - MEMBER_BITCOIN_WIF environment variable set (for member operations)
 #
 # usage: bash tests/run-happy-path.sh
 
@@ -69,6 +70,52 @@ get_current_bitcoin_height() {
 # check if bitcoin node is accessible
 check_bitcoin_connectivity() {
     bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockcount &> /dev/null
+}
+
+# derive x-only public key (32 bytes) from USER_BITCOIN_WIF
+# returns the key with 0x prefix (66 chars total)
+user_xonly_pubkey_from_wif() {
+    if [[ -z "${USER_BITCOIN_WIF:-}" ]]; then
+        echo "Error: USER_BITCOIN_WIF not set" >&2
+        return 1
+    fi
+    local desc pubkey xonly
+    desc=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getdescriptorinfo "wpkh(${USER_BITCOIN_WIF})" 2>/dev/null | jq -r '.descriptor')
+    if [[ -z "$desc" || "$desc" == "null" ]]; then
+        echo "Error: Failed to derive descriptor from USER_BITCOIN_WIF" >&2
+        return 1
+    fi
+    # Extract pubkey from wpkh(PUBKEY)#checksum format
+    pubkey=$(echo "$desc" | sed -E 's/^wpkh\(([0-9a-fA-F]+)\)#.*/\1/')
+    if [[ ${#pubkey} -ne 66 ]]; then
+        echo "Error: Unexpected pubkey length: ${#pubkey}" >&2
+        return 1
+    fi
+    # Remove first 2 chars (02/03 prefix) to get x-only key
+    xonly="${pubkey:2}"
+    echo "0x${xonly}"
+}
+
+# derive compressed public key (33 bytes) from USER_BITCOIN_WIF
+# returns the key with 0x prefix (68 chars total)
+user_compressed_pubkey_from_wif() {
+    if [[ -z "${USER_BITCOIN_WIF:-}" ]]; then
+        echo "Error: USER_BITCOIN_WIF not set" >&2
+        return 1
+    fi
+    local desc pubkey
+    desc=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getdescriptorinfo "wpkh(${USER_BITCOIN_WIF})" 2>/dev/null | jq -r '.descriptor')
+    if [[ -z "$desc" || "$desc" == "null" ]]; then
+        echo "Error: Failed to derive descriptor from USER_BITCOIN_WIF" >&2
+        return 1
+    fi
+    # Extract pubkey from wpkh(PUBKEY)#checksum format
+    pubkey=$(echo "$desc" | sed -E 's/^wpkh\(([0-9a-fA-F]+)\)#.*/\1/')
+    if [[ ${#pubkey} -ne 66 ]]; then
+        echo "Error: Unexpected pubkey length: ${#pubkey}" >&2
+        return 1
+    fi
+    echo "0x${pubkey}"
 }
 
 # check prerequisites
@@ -397,12 +444,21 @@ echo ""
 
 # step 3: request pegin
 step "Step 3: Request Pegin"
+
+# Derive x-only public key for pegin (32 bytes with 0x prefix)
+USER_XONLY_PUBKEY=$(user_xonly_pubkey_from_wif)
+if [[ -z "$USER_XONLY_PUBKEY" ]]; then
+    warn "Failed to derive user x-only public key from WIF"
+    exit 1
+fi
+
 log "RSK Address: $RSK_ADDRESS"
 log "Amount: $VALUE sats"
 log "Packet: $PACKET_NUMBER"
-log "Command: bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -p $PACKET_NUMBER --env $SCRIPT_ENV --execute"
+log "BTC Pub Key: $USER_XONLY_PUBKEY"
+log "Command: bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -p $PACKET_NUMBER -k $USER_XONLY_PUBKEY --env $SCRIPT_ENV --execute"
 echo ""
-if ! bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -p $PACKET_NUMBER --env "$SCRIPT_ENV" --execute; then
+if ! bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -p $PACKET_NUMBER -k "$USER_XONLY_PUBKEY" --env "$SCRIPT_ENV" --execute; then
     warn "Command failed!"
     exit 1
 fi
@@ -414,13 +470,21 @@ if ! wait_for_log_with_block_timeout "PeginFlow Done" 15; then
 fi
 echo ""
 
-# step 4: request pegout
 step "Step 4: Request Pegout"
-log "Command: bash cli-operations.sh user pegout -v $VALUE --env $SCRIPT_ENV"
+
+# Derive compressed public key for pegout (33 bytes with 0x prefix)
+USER_COMPRESSED_PUBKEY=$(user_compressed_pubkey_from_wif)
+if [[ -z "$USER_COMPRESSED_PUBKEY" ]]; then
+    warn "Failed to derive user compressed public key from WIF"
+    exit 1
+fi
+
+log "Command: bash cli-operations.sh user pegout -v $VALUE -k $USER_COMPRESSED_PUBKEY --env $SCRIPT_ENV"
 log "Amount: $VALUE sats"
+log "USR Pub Key: $USER_COMPRESSED_PUBKEY"
 echo ""
 
-if ! bash cli-operations.sh user pegout -v $VALUE --env "$SCRIPT_ENV" > /tmp/pegout-$$ 2>&1; then
+if ! bash cli-operations.sh user pegout -v $VALUE -k "$USER_COMPRESSED_PUBKEY" --env "$SCRIPT_ENV" > /tmp/pegout-$$ 2>&1; then
     warn "Command failed! Output:"
     cat /tmp/pegout-$$
     rm -f /tmp/pegout-$$

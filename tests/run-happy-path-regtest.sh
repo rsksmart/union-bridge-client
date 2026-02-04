@@ -279,6 +279,16 @@ user_xonly_pubkey_from_wif() {
     echo "$xonly"
 }
 
+user_compressed_pubkey_from_wif() {
+    local desc pubkey
+    desc=$(user_descriptor_from_wif)
+    pubkey=$(echo "$desc" | sed -n 's/^wpkh(\([0-9a-fA-F]\{66\}\)).*/\1/p')
+    if [[ -z "$pubkey" ]]; then
+        die "Failed to extract compressed pubkey from descriptor"
+    fi
+    echo "$pubkey"
+}
+
 sats_to_btc() {
     awk -v sats="$1" 'BEGIN { printf "%.8f", sats / 100000000 }'
 }
@@ -642,8 +652,11 @@ apply_stream() {
 
 request_pegin_address() {
     local endpoint="http://${USER_API_HOST}:40001/user/pegin-address"
+    # Get x-only public key (32 bytes) with 0x prefix
+    local xonly_pubkey
+    xonly_pubkey="0x$(user_xonly_pubkey_from_wif)"
     local payload
-    payload=$(printf '{"rootstock_deposit_address":"%s","value":%s,"btc_reimbursement_pub_key":""}' "$RSK_ADDRESS" "$VALUE")
+    payload=$(printf '{"rootstock_deposit_address":"%s","value":%s,"btc_reimbursement_pub_key":"%s"}' "$RSK_ADDRESS" "$VALUE" "$xonly_pubkey")
     local response
     response=$(curl_json_post "$endpoint" "$payload")
     local addr
@@ -702,8 +715,11 @@ create_pegin_tx() {
 request_pegout() {
     local endpoint="http://${USER_API_HOST}:40001/user/request-pegout"
     local amount_in_wei=$((VALUE * 10000000000))
+    # Get compressed public key (33 bytes) with 0x prefix
+    local compressed_pubkey
+    compressed_pubkey="0x$(user_compressed_pubkey_from_wif)"
     local payload
-    payload=$(printf '{"amount_in_wei":%s}' "$amount_in_wei")
+    payload=$(printf '{"amount_in_wei":%s,"usr_pub_key":"%s"}' "$amount_in_wei" "$compressed_pubkey")
     if ! curl_json_post "$endpoint" "$payload" >/dev/null; then
         die "Pegout request failed"
     fi
