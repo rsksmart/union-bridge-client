@@ -375,6 +375,17 @@ run_testnet_operators() {
   eval "${DOCKER_CMD}"
 }
 
+# Change to script directory to ensure relative paths in docker-compose work correctly
+cd "${SCRIPT_DIR}" || {
+  echo "Error: Failed to change to script directory: ${SCRIPT_DIR}"
+  exit 1
+}
+
+# Set CONFIG_DIR to absolute path for robust volume mounting
+# This ensures the config directory is accessible regardless of where docker-compose is run from
+CONFIG_DIR="${PROJECT_ROOT}/config"
+export CONFIG_DIR
+
 # Run operators based on environment
 if [[ "$ENVIRONMENT" == "local" || "$ENVIRONMENT" == "regtest" ]]; then
   run_all_operators
