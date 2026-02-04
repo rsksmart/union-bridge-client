@@ -122,30 +122,30 @@ If the contracts code changes (eg. new tag), you must rebuild the `deploy-contra
 
 #### Environment Variables
 
-The following environment variables can be set to simplify multi-host deployments:
+The following environment variables can be set in `.envrc` (project root) to simplify multi-host deployments:
 
-- **`UC_ENV`**: Sets the default environment (`alphanet`, `testnet`, or `local`). Set in `.envrc` at project root. Can be overridden with `--env` flag.
-- **`UC_TAG`**: Sets the default Docker image tag. Set in environment-specific `.env.*` files (`docker/operator/.env.alphanet`, `.env.testnet`, or `.env.local`). Can be overridden with `--tag` flag.
-  - Defaults: `latest-alphanet` (alphanet), `latest-testnet` (testnet), `latest-anvil` (local)
+- **`UC_ENV`**: Sets the default environment (`alphanet`, `testnet`, `local`, `local-docker`, or `regtest`). Can be overridden with `--env` flag.
+- **`UC_TAG`**: Sets the default Docker image tag. Can be overridden with `--tag` flag.
+  - Defaults: `latest-alphanet` (alphanet), `latest-testnet` (testnet), `latest-anvil` (local), `latest-regtest` (regtest)
+- **`UC_OPERATOR_ID`**: Sets the default operator ID (1-4). Can be overridden with `--op` flag.
+- **`UC_OPERATOR_ROLE`**: Sets the default operator role (`prover` or `verifier`). Used by `cli-operations.sh`.
 
 **Example for multi-host deployment:**
 
 ```bash
-# In .envrc (project root), set the default environment
+# In .envrc (project root), set default values
 export UC_ENV=alphanet
-
-# In docker/operator/.env.alphanet, set environment-specific values
 export UC_TAG=latest-alphanet
+export UC_OPERATOR_ID=1
+export UC_OPERATOR_ROLE=prover
 
-# Then you can run commands without specifying --env and --tag each time
-bash start_operators.sh --op 1 up -d
-bash start_operators.sh --op 1 logs -f
-bash start_operators.sh --op 1 down
+# Then you can run commands without specifying flags
+bash start_operators.sh up -d
+bash start_operators.sh logs -f
+bash start_operators.sh down
 ```
 
-**Why this approach?**
-- `UC_ENV` is in `.envrc` because it's needed to determine which `.env.*` file to load
-- `UC_TAG` is in `.env.*` files because it's environment-specific (different values for alphanet vs testnet vs local)
+**Note:** Command-line flags (`--env`, `--tag`, `--op`) override `.envrc` values when provided.
 
 #### Required Environment Variables
 
