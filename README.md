@@ -328,7 +328,7 @@ complete flow:
 # - Anvil running
 # - Bitcoin regtest node running with RPC enabled
 # - Contracts deployed
-# - USER_BITCOIN_WIF and MEMBER_BITCOIN_WIF environment variables set
+# - USER_BITCOIN_WIF and MEMBER_BITCOIN_WIF environment variables set (for deriving public keys)
 # - Background mining running (start with: ./cli-run.sh --start-mine)
 
 # Start background mining (in a separate terminal or before running the test)
@@ -346,11 +346,23 @@ This test will automatically:
 1. Prepare wallets (clear databases, mine initial UTXOs)
 2. Fund operator wallets (Bitcoin + Rootstock)
 3. Apply operators to stream
-4. Execute a pegin transaction (Bitcoin → Rootstock)
-5. Execute a pegout transaction (Rootstock → Bitcoin)
+4. Execute a pegin transaction (Bitcoin → Rootstock) with derived x-only public key
+5. Execute a pegout transaction (Rootstock → Bitcoin) with derived compressed public key
 6. Verify pegout completion in coordinator logs
 
 The test includes comprehensive health checks to detect issues early.
+
+> **Note**: The user-api endpoints now require public keys to be passed in the request body instead of deriving them
+> server-side from `USER_BITCOIN_WIF`. The test script automatically derives these keys from `USER_BITCOIN_WIF` using
+> `bitcoin-cli`. For manual testing, you can derive the keys with:
+>
+> ```bash
+> # Derive x-only public key (32 bytes) for pegin - returns 0x + 64 hex chars
+> bitcoin-cli -regtest getdescriptorinfo "wpkh($USER_BITCOIN_WIF)" | jq -r '.descriptor' | sed -E 's/^wpkh\(([0-9a-fA-F]+)\)#.*/0x\1/' | cut -c1-2,5-
+>
+> # Derive compressed public key (33 bytes) for pegout - returns 0x + 66 hex chars
+> bitcoin-cli -regtest getdescriptorinfo "wpkh($USER_BITCOIN_WIF)" | jq -r '.descriptor' | sed -E 's/^wpkh\(([0-9a-fA-F]+)\)#.*/0x\1/'
+> ```
 
 #### Troubleshooting
 
