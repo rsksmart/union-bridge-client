@@ -164,6 +164,19 @@ if [[ "$ENVIRONMENT" == "local-docker" ]]; then
   ENVIRONMENT="local"
 fi
 
+# Function to restore UC_TAG based on precedence: --tag flag > .envrc > .env file > default
+# Args: $1 = default tag value for the environment
+restore_uc_tag() {
+  local default_tag="$1"
+  if [[ "${TAG_EXPLICITLY_PROVIDED}" == true ]]; then
+    UC_TAG="${SAVED_UC_TAG_FROM_FLAG}"
+  elif [[ -n "${SAVED_UC_TAG_FROM_ENVRC}" ]]; then
+    UC_TAG="${SAVED_UC_TAG_FROM_ENVRC}"
+  elif [[ -z "$UC_TAG" ]]; then
+    UC_TAG="${default_tag}"
+  fi
+}
+
 # Set ENV_FILE and load environment-specific variables (for other vars like BITCOIND_URL, etc.)
 # UC_TAG, UC_OPERATOR_ID, UC_OPERATOR_ROLE are already loaded from .envrc above
 # Save UC_TAG values before .env file might overwrite them
@@ -185,14 +198,7 @@ if [[ "$ENVIRONMENT" == "alphanet" ]]; then
     source "$ENV_FILE"
     set +a
   fi
-  # Restore value based on precedence: --tag flag > .envrc > .env file > default
-  if [[ "${TAG_EXPLICITLY_PROVIDED}" == true ]]; then
-    UC_TAG="${SAVED_UC_TAG_FROM_FLAG}"
-  elif [[ -n "${SAVED_UC_TAG_FROM_ENVRC}" ]]; then
-    UC_TAG="${SAVED_UC_TAG_FROM_ENVRC}"
-  elif [[ -z "$UC_TAG" ]]; then
-    UC_TAG="latest-alphanet"
-  fi
+  restore_uc_tag "latest-alphanet"
 elif [[ "$ENVIRONMENT" == "testnet" ]]; then
   ENV_FILE="${SCRIPT_DIR}/.env.testnet"
   if [[ -f "$ENV_FILE" ]]; then
@@ -200,14 +206,7 @@ elif [[ "$ENVIRONMENT" == "testnet" ]]; then
     source "$ENV_FILE"
     set +a
   fi
-  # Restore value based on precedence: --tag flag > .envrc > .env file > default
-  if [[ "${TAG_EXPLICITLY_PROVIDED}" == true ]]; then
-    UC_TAG="${SAVED_UC_TAG_FROM_FLAG}"
-  elif [[ -n "${SAVED_UC_TAG_FROM_ENVRC}" ]]; then
-    UC_TAG="${SAVED_UC_TAG_FROM_ENVRC}"
-  elif [[ -z "$UC_TAG" ]]; then
-    UC_TAG="latest-testnet"
-  fi
+  restore_uc_tag "latest-testnet"
 elif [[ "$ENVIRONMENT" == "local" ]]; then
   ENV_FILE="${SCRIPT_DIR}/.env.local"
   if [[ -f "$ENV_FILE" ]]; then
@@ -215,14 +214,7 @@ elif [[ "$ENVIRONMENT" == "local" ]]; then
     source "$ENV_FILE"
     set +a
   fi
-  # Restore value based on precedence: --tag flag > .envrc > .env file > default
-  if [[ "${TAG_EXPLICITLY_PROVIDED}" == true ]]; then
-    UC_TAG="${SAVED_UC_TAG_FROM_FLAG}"
-  elif [[ -n "${SAVED_UC_TAG_FROM_ENVRC}" ]]; then
-    UC_TAG="${SAVED_UC_TAG_FROM_ENVRC}"
-  elif [[ -z "$UC_TAG" ]]; then
-    UC_TAG="latest-anvil"
-  fi
+  restore_uc_tag "latest-anvil"
 elif [[ "$ENVIRONMENT" == "regtest" ]]; then
   ENV_FILE="${SCRIPT_DIR}/.env.regtest"
   if [[ -f "$ENV_FILE" ]]; then
@@ -230,14 +222,7 @@ elif [[ "$ENVIRONMENT" == "regtest" ]]; then
     source "$ENV_FILE"
     set +a
   fi
-  # Restore value based on precedence: --tag flag > .envrc > .env file > default
-  if [[ "${TAG_EXPLICITLY_PROVIDED}" == true ]]; then
-    UC_TAG="${SAVED_UC_TAG_FROM_FLAG}"
-  elif [[ -n "${SAVED_UC_TAG_FROM_ENVRC}" ]]; then
-    UC_TAG="${SAVED_UC_TAG_FROM_ENVRC}"
-  elif [[ -z "$UC_TAG" ]]; then
-    UC_TAG="latest-regtest"
-  fi
+  restore_uc_tag "latest-regtest"
 else
   echo "Invalid environment. Use 'alphanet', 'testnet', 'local', 'local-docker', or 'regtest'"
   exit 1
@@ -269,9 +254,13 @@ for arg in "${DOCKER_COMPOSE_ARGS[@]}"; do
 done
 
 # Validate --op flag usage
-# For non-startup commands on alphanet/testnet, clear OPERATOR_ARG if it came from .envrc
-# (the script will automatically target the operator on this host)
-if [[ ("$ENVIRONMENT" == "alphanet" || "$ENVIRONMENT" == "testnet") && "${IS_STARTUP_COMMAND}" == false ]]; then
+# Consolidated validation logic for operator ID across all environments
+if [[ ("$ENVIRONMENT" == "local" || "$ENVIRONMENT" == "regtest") && -n "$OPERATOR_ARG" ]]; then
+  echo "Error: --op is not allowed in ${ENVIRONMENT} environment. All operators will be deployed."
+  exit 1
+elif [[ ("$ENVIRONMENT" == "alphanet" || "$ENVIRONMENT" == "testnet") && "${IS_STARTUP_COMMAND}" == false ]]; then
+  # For non-startup commands on alphanet/testnet, clear OPERATOR_ARG if it came from .envrc
+  # (the script will automatically target the operator on this host)
   if [[ "${OP_EXPLICITLY_PROVIDED}" == true ]]; then
     echo "Error: --op can only be used with startup commands (up, restart, start, create)."
     echo "For other commands, the script will target the operator on this host automatically."
@@ -279,11 +268,6 @@ if [[ ("$ENVIRONMENT" == "alphanet" || "$ENVIRONMENT" == "testnet") && "${IS_STA
   fi
   # Clear OPERATOR_ARG for non-startup commands (it came from .envrc, not explicit --op)
   OPERATOR_ARG=""
-fi
-
-if [[ ("$ENVIRONMENT" == "local" || "$ENVIRONMENT" == "regtest") && -n "$OPERATOR_ARG" ]]; then
-  echo "Error: --op is not allowed in ${ENVIRONMENT} environment. All operators will be deployed."
-  exit 1
 elif [[ ("$ENVIRONMENT" == "alphanet" || "$ENVIRONMENT" == "testnet") && "${IS_STARTUP_COMMAND}" == true && -z "$OPERATOR_ARG" ]]; then
   echo "Error: --op <ID> is required when using --env ${ENVIRONMENT} with startup commands (up, restart, start, create)."
   echo "Alternatively, set UC_OPERATOR_ID in .envrc (root directory) to avoid passing the flag."
