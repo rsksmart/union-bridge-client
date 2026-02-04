@@ -38,6 +38,17 @@ if [[ -f "$ENVRC_FILE" ]]; then
   set +a
 fi
 
+# Save UC_OPERATOR_ID and UC_OPERATOR_ROLE from .envrc before .env file might overwrite them
+# Precedence: command-line flags (-o, -r) > UC_OPERATOR_ID/UC_OPERATOR_ROLE from .envrc > .env file values
+SAVED_UC_OPERATOR_ID_FROM_ENVRC=""
+SAVED_UC_OPERATOR_ROLE_FROM_ENVRC=""
+if [[ -n "${UC_OPERATOR_ID:-}" ]]; then
+  SAVED_UC_OPERATOR_ID_FROM_ENVRC="${UC_OPERATOR_ID}"
+fi
+if [[ -n "${UC_OPERATOR_ROLE:-}" ]]; then
+  SAVED_UC_OPERATOR_ROLE_FROM_ENVRC="${UC_OPERATOR_ROLE}"
+fi
+
 # Use environment from args if provided, otherwise from UC_ENV
 ENV_TO_LOAD="${ENV_FROM_ARGS:-${UC_ENV:-}}"
 
@@ -65,6 +76,15 @@ if [[ -n "$ENV_TO_LOAD" ]]; then
     set -a
     source "$ENV_FILE"
     set +a
+    
+    # Restore UC_OPERATOR_ID and UC_OPERATOR_ROLE from .envrc if they were set
+    # (command-line flags will still override these via clap's env variable handling)
+    if [[ -n "${SAVED_UC_OPERATOR_ID_FROM_ENVRC}" ]]; then
+      export UC_OPERATOR_ID="${SAVED_UC_OPERATOR_ID_FROM_ENVRC}"
+    fi
+    if [[ -n "${SAVED_UC_OPERATOR_ROLE_FROM_ENVRC}" ]]; then
+      export UC_OPERATOR_ROLE="${SAVED_UC_OPERATOR_ROLE_FROM_ENVRC}"
+    fi
   fi
 fi
 
