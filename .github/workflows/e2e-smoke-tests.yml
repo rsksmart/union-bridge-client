@@ -49,11 +49,11 @@ jobs:
       - name: Call E2E Framework Workflow
         uses: actions/github-script@v7
         env:
-          E2E_FRAMEWORK_TOKEN: ${{ secrets.E2E_FRAMEWORK_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           # Matches e2e-smoke.yml workflow_dispatch inputs: client_ref, pr_head_sha (contracts_ref sent as '' = use framework defaults)
           CLIENT_REF: ${{ inputs.client_ref || github.event.pull_request.head.sha || github.sha }}
           PR_HEAD_SHA: ${{ inputs.pr_head_sha || github.event.pull_request.head.sha || inputs.client_ref || github.sha }}
         with:
+          github-token: ${{ secrets.E2E_FRAMEWORK_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
             const clientRef = process.env.CLIENT_REF;
             const prHeadSha = process.env.PR_HEAD_SHA;
@@ -65,13 +65,9 @@ jobs:
             }
             console.log(`📍 PR head SHA for status check: ${prHeadSha}`);
 
-            // Use the token to call the workflow (name 'api' to avoid conflict with action-injected 'octokit')
-            const token = process.env.E2E_FRAMEWORK_TOKEN;
-            const api = github.getOctokit(token);
-            
             try {
-              // Call the e2e_framework workflow via workflow_dispatch
-              await api.rest.actions.createWorkflowDispatch({
+              // Call the e2e_framework workflow via workflow_dispatch (octokit uses github-token from action input)
+              await octokit.rest.actions.createWorkflowDispatch({
                 owner: 'rsksmart',
                 repo: 'union_bridge_e2e_framework',
                 workflow_id: 'e2e-smoke.yml',
@@ -89,7 +85,7 @@ jobs:
               // This status check will be required before merge (via branch protection)
               // The e2e_framework workflow will update this status when tests complete
               if (prHeadSha && prHeadSha !== '') {
-                await api.rest.repos.createCommitStatus({
+                await octokit.rest.repos.createCommitStatus({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   sha: prHeadSha,
@@ -104,7 +100,7 @@ jobs:
             } catch (error) {
               console.error('❌ Failed to trigger E2E smoke tests:', error);
               if (prHeadSha && prHeadSha !== '') {
-                await api.rest.repos.createCommitStatus({
+                await octokit.rest.repos.createCommitStatus({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   sha: prHeadSha,
