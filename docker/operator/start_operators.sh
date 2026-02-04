@@ -20,6 +20,8 @@ UC_TAG="${UC_TAG:-}"
 DOCKER_COMPOSE_ARGS=()
 # Track if --op was explicitly provided (vs loaded from .envrc)
 OP_EXPLICITLY_PROVIDED=false
+# Track if --tag was explicitly provided (vs loaded from .envrc or .env file)
+TAG_EXPLICITLY_PROVIDED=false
 # Use UC_OPERATOR_ID from .envrc if available, can be overridden by --op flag
 OPERATOR_ARG="${UC_OPERATOR_ID:-}"
 ENVIRONMENT="${UC_ENV:-}"
@@ -111,6 +113,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --tag)
       UC_TAG="$2"
+      TAG_EXPLICITLY_PROVIDED=true
       # Explicit --tag overrides any UC_TAG from .envrc or .env file
       shift 2
       ;;
@@ -149,6 +152,18 @@ fi
 
 # Set ENV_FILE and load environment-specific variables (for other vars like BITCOIND_URL, etc.)
 # UC_TAG, UC_OPERATOR_ID, UC_OPERATOR_ROLE are already loaded from .envrc above
+# Save UC_TAG values before .env file might overwrite them
+# Precedence: --tag flag > UC_TAG from .envrc > UC_TAG from .env file > default
+SAVED_UC_TAG_FROM_FLAG=""
+SAVED_UC_TAG_FROM_ENVRC=""
+if [[ "${TAG_EXPLICITLY_PROVIDED}" == true ]]; then
+  # Save the --tag flag value
+  SAVED_UC_TAG_FROM_FLAG="${UC_TAG}"
+elif [[ -n "${UC_TAG}" ]]; then
+  # Save UC_TAG from .envrc if it was set (and --tag wasn't provided)
+  SAVED_UC_TAG_FROM_ENVRC="${UC_TAG}"
+fi
+
 if [[ "$ENVIRONMENT" == "alphanet" ]]; then
   ENV_FILE="${SCRIPT_DIR}/.env.alphanet"
   if [[ -f "$ENV_FILE" ]]; then
@@ -156,8 +171,12 @@ if [[ "$ENVIRONMENT" == "alphanet" ]]; then
     source "$ENV_FILE"
     set +a
   fi
-  # Use UC_TAG from .envrc if not set via --tag flag, otherwise use default
-  if [[ -z "$UC_TAG" ]]; then
+  # Restore value based on precedence: --tag flag > .envrc > .env file > default
+  if [[ "${TAG_EXPLICITLY_PROVIDED}" == true ]]; then
+    UC_TAG="${SAVED_UC_TAG_FROM_FLAG}"
+  elif [[ -n "${SAVED_UC_TAG_FROM_ENVRC}" ]]; then
+    UC_TAG="${SAVED_UC_TAG_FROM_ENVRC}"
+  elif [[ -z "$UC_TAG" ]]; then
     UC_TAG="latest-alphanet"
   fi
 elif [[ "$ENVIRONMENT" == "testnet" ]]; then
@@ -167,7 +186,12 @@ elif [[ "$ENVIRONMENT" == "testnet" ]]; then
     source "$ENV_FILE"
     set +a
   fi
-  if [[ -z "$UC_TAG" ]]; then
+  # Restore value based on precedence: --tag flag > .envrc > .env file > default
+  if [[ "${TAG_EXPLICITLY_PROVIDED}" == true ]]; then
+    UC_TAG="${SAVED_UC_TAG_FROM_FLAG}"
+  elif [[ -n "${SAVED_UC_TAG_FROM_ENVRC}" ]]; then
+    UC_TAG="${SAVED_UC_TAG_FROM_ENVRC}"
+  elif [[ -z "$UC_TAG" ]]; then
     UC_TAG="latest-testnet"
   fi
 elif [[ "$ENVIRONMENT" == "local" ]]; then
@@ -177,7 +201,12 @@ elif [[ "$ENVIRONMENT" == "local" ]]; then
     source "$ENV_FILE"
     set +a
   fi
-  if [[ -z "$UC_TAG" ]]; then
+  # Restore value based on precedence: --tag flag > .envrc > .env file > default
+  if [[ "${TAG_EXPLICITLY_PROVIDED}" == true ]]; then
+    UC_TAG="${SAVED_UC_TAG_FROM_FLAG}"
+  elif [[ -n "${SAVED_UC_TAG_FROM_ENVRC}" ]]; then
+    UC_TAG="${SAVED_UC_TAG_FROM_ENVRC}"
+  elif [[ -z "$UC_TAG" ]]; then
     UC_TAG="latest-anvil"
   fi
 elif [[ "$ENVIRONMENT" == "regtest" ]]; then
@@ -187,7 +216,12 @@ elif [[ "$ENVIRONMENT" == "regtest" ]]; then
     source "$ENV_FILE"
     set +a
   fi
-  if [[ -z "$UC_TAG" ]]; then
+  # Restore value based on precedence: --tag flag > .envrc > .env file > default
+  if [[ "${TAG_EXPLICITLY_PROVIDED}" == true ]]; then
+    UC_TAG="${SAVED_UC_TAG_FROM_FLAG}"
+  elif [[ -n "${SAVED_UC_TAG_FROM_ENVRC}" ]]; then
+    UC_TAG="${SAVED_UC_TAG_FROM_ENVRC}"
+  elif [[ -z "$UC_TAG" ]]; then
     UC_TAG="latest-regtest"
   fi
 else
