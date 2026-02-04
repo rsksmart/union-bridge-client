@@ -224,7 +224,6 @@ fn print_instructions(env: Environment, addresses: &[String], amount: u64) {
             println!("1 =>    clear_db   (if you see a misaligned utxos error)");
             println!("2 =>    mine_utxo 900000000");
             println!("3 =>    send_to_address {} {}", joined, amount);
-
             println!("4 =>    mine_block");
         }
     }
