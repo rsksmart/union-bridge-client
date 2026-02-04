@@ -65,13 +65,13 @@ jobs:
             }
             console.log(`📍 PR head SHA for status check: ${prHeadSha}`);
 
-            // Use the token to call the workflow
+            // Use the token to call the workflow (name 'api' to avoid conflict with action-injected 'octokit')
             const token = process.env.E2E_FRAMEWORK_TOKEN;
-            const octokit = github.getOctokit(token);
+            const api = github.getOctokit(token);
             
             try {
               // Call the e2e_framework workflow via workflow_dispatch
-              await octokit.rest.actions.createWorkflowDispatch({
+              await api.rest.actions.createWorkflowDispatch({
                 owner: 'rsksmart',
                 repo: 'union_bridge_e2e_framework',
                 workflow_id: 'e2e-smoke.yml',
@@ -89,7 +89,7 @@ jobs:
               // This status check will be required before merge (via branch protection)
               // The e2e_framework workflow will update this status when tests complete
               if (prHeadSha && prHeadSha !== '') {
-                await octokit.rest.repos.createCommitStatus({
+                await api.rest.repos.createCommitStatus({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   sha: prHeadSha,
@@ -104,7 +104,7 @@ jobs:
             } catch (error) {
               console.error('❌ Failed to trigger E2E smoke tests:', error);
               if (prHeadSha && prHeadSha !== '') {
-                await octokit.rest.repos.createCommitStatus({
+                await api.rest.repos.createCommitStatus({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   sha: prHeadSha,
