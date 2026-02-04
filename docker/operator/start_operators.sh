@@ -35,6 +35,7 @@ print_help() {
   echo "  --env alphanet           Deploy on Alphanet, a specific operator (requires --op <ID>)"
   echo "  --env testnet            Deploy on Testnet, a specific operator (requires --op <ID>)"
   echo "  --env local              Deploy locally, all 4 operators"
+  echo "  --env local-docker       Deploy locally with Docker (same as 'local')"
   echo "  --env regtest            Deploy in regtest, all 4 operators"
   echo "  (or set UC_ENV environment variable)"
   echo ""
@@ -143,11 +144,16 @@ if [[ -z "$ENVIRONMENT" ]]; then
   if [[ -n "${UC_ENV:-}" ]]; then
     ENVIRONMENT="${UC_ENV}"
   else
-    echo "Error: --env flag is required. Use 'alphanet', 'testnet', 'local', or 'regtest'."
+    echo "Error: --env flag is required. Use 'alphanet', 'testnet', 'local', 'local-docker', or 'regtest'."
     echo "Alternatively, set UC_ENV environment variable."
     echo "Run '$0 --help' for usage information."
     exit 1
   fi
+fi
+
+# Map local-docker to local (they use the same configuration)
+if [[ "$ENVIRONMENT" == "local-docker" ]]; then
+  ENVIRONMENT="local"
 fi
 
 # Set ENV_FILE and load environment-specific variables (for other vars like BITCOIND_URL, etc.)
@@ -225,7 +231,7 @@ elif [[ "$ENVIRONMENT" == "regtest" ]]; then
     UC_TAG="latest-regtest"
   fi
 else
-  echo "Invalid environment. Use 'alphanet', 'testnet', 'local', or 'regtest'"
+  echo "Invalid environment. Use 'alphanet', 'testnet', 'local', 'local-docker', or 'regtest'"
   exit 1
 fi
 
