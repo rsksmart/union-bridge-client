@@ -16,8 +16,8 @@ cd "$(dirname "$0")"
 
 OPERATIONS_BIN="./target/release/operations"
 
-# If binary exists and is executable, use it directly (cache hit in CI)
-if [ -x "$OPERATIONS_BIN" ]; then
+# In GitHub Actions (e.g. e2e framework): use existing binary if present (cache hit). Locally: always build so we never run stale code.
+if [ -x "$OPERATIONS_BIN" ] && [ "${GITHUB_ACTIONS:-}" = "true" ]; then
   RUST_BACKTRACE=0 exec "$OPERATIONS_BIN" "$@"
 fi
 

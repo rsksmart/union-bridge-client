@@ -146,7 +146,8 @@ esac
 
 WALLET_BIN="./target/release/ub-wallet"
 
-if [ -x "$WALLET_BIN" ]; then
+# In GitHub Actions (e.g. e2e framework): use existing binary if present (cache hit). Locally: always build so we never run stale code.
+if [ -x "$WALLET_BIN" ] && [ "${GITHUB_ACTIONS:-}" = "true" ]; then
   exec "$WALLET_BIN" --env "$NETWORK" --mode "$MODE" "$@"
 fi
 
