@@ -14,10 +14,12 @@ if [[ -f "$ENVRC_FILE" ]]; then
 fi
 
 # Initialize from environment variables (can be overridden by command line args)
-# Note: UC_TAG is loaded from root .envrc and environment-specific .env files after ENVIRONMENT is determined
-UC_TAG=""
+# Note: UC_TAG, UC_OPERATOR_ID, UC_OPERATOR_ROLE are loaded from root .envrc above
+# Use UC_TAG from .envrc if available, can be overridden by --tag flag
+UC_TAG="${UC_TAG:-}"
 DOCKER_COMPOSE_ARGS=()
-OPERATOR_ARG=""
+# Use UC_OPERATOR_ID from .envrc if available, can be overridden by --op flag
+OPERATOR_ARG="${UC_OPERATOR_ID:-}"
 ENVIRONMENT="${UC_ENV:-}"
 AUTO_CONFIRM=false
 
@@ -101,11 +103,12 @@ while [[ $# -gt 0 ]]; do
         echo "Error: --op must be 1, 2, 3, or 4"
         exit 1
       fi
+      # Explicit --op overrides any UC_OPERATOR_ID from .envrc
       shift 2
       ;;
     --tag)
       UC_TAG="$2"
-      # Explicit --tag overrides any UC_TAG from .env file
+      # Explicit --tag overrides any UC_TAG from .envrc or .env file
       shift 2
       ;;
     --env)
@@ -224,6 +227,7 @@ elif [[ ("$ENVIRONMENT" == "alphanet" || "$ENVIRONMENT" == "testnet") && "${IS_S
   exit 1
 elif [[ ("$ENVIRONMENT" == "alphanet" || "$ENVIRONMENT" == "testnet") && "${IS_STARTUP_COMMAND}" == true && -z "$OPERATOR_ARG" ]]; then
   echo "Error: --op <ID> is required when using --env ${ENVIRONMENT} with startup commands (up, restart, start, create)."
+  echo "Alternatively, set UC_OPERATOR_ID in .envrc or as an environment variable."
   echo "Run '$0 --help' for usage information."
   exit 1
 fi
