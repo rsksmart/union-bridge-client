@@ -18,6 +18,8 @@ fi
 # Use UC_TAG from .envrc if available, can be overridden by --tag flag
 UC_TAG="${UC_TAG:-}"
 DOCKER_COMPOSE_ARGS=()
+# Track if --op was explicitly provided (vs loaded from .envrc)
+OP_EXPLICITLY_PROVIDED=false
 # Use UC_OPERATOR_ID from .envrc if available, can be overridden by --op flag
 OPERATOR_ARG="${UC_OPERATOR_ID:-}"
 ENVIRONMENT="${UC_ENV:-}"
@@ -99,6 +101,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --op)
       OPERATOR_ARG="$2"
+      OP_EXPLICITLY_PROVIDED=true
       if ! [[ "$OPERATOR_ARG" =~ ^[1-4]$ ]]; then
         echo "Error: --op must be 1, 2, 3, or 4"
         exit 1
@@ -218,12 +221,20 @@ for arg in "${DOCKER_COMPOSE_ARGS[@]}"; do
 done
 
 # Validate --op flag usage
+# For non-startup commands on alphanet/testnet, clear OPERATOR_ARG if it came from .envrc
+# (the script will automatically target the operator on this host)
+if [[ ("$ENVIRONMENT" == "alphanet" || "$ENVIRONMENT" == "testnet") && "${IS_STARTUP_COMMAND}" == false ]]; then
+  if [[ "${OP_EXPLICITLY_PROVIDED}" == true ]]; then
+    echo "Error: --op can only be used with startup commands (up, restart, start, create)."
+    echo "For other commands, the script will target the operator on this host automatically."
+    exit 1
+  fi
+  # Clear OPERATOR_ARG for non-startup commands (it came from .envrc, not explicit --op)
+  OPERATOR_ARG=""
+fi
+
 if [[ ("$ENVIRONMENT" == "local" || "$ENVIRONMENT" == "regtest") && -n "$OPERATOR_ARG" ]]; then
   echo "Error: --op is not allowed in ${ENVIRONMENT} environment. All operators will be deployed."
-  exit 1
-elif [[ ("$ENVIRONMENT" == "alphanet" || "$ENVIRONMENT" == "testnet") && "${IS_STARTUP_COMMAND}" == false && -n "$OPERATOR_ARG" ]]; then
-  echo "Error: --op can only be used with startup commands (up, restart, start, create)."
-  echo "For other commands, the script will target the operator on this host automatically."
   exit 1
 elif [[ ("$ENVIRONMENT" == "alphanet" || "$ENVIRONMENT" == "testnet") && "${IS_STARTUP_COMMAND}" == true && -z "$OPERATOR_ARG" ]]; then
   echo "Error: --op <ID> is required when using --env ${ENVIRONMENT} with startup commands (up, restart, start, create)."
@@ -319,7 +330,7 @@ run_all_operators() {
     local BITVMX_P2P_HOST=${BITVMX_P2P_HOSTS[$i]}
     local CLIENT_OP=${CLIENT_OPS[$i]}
 
-    local DOCKER_CMD="USER_BITCOIN_WIF=${USER_BITCOIN_WIF} USER_API_PORT=${USER_API_PORT} BITVMX_PORT=${BITVMX_PORT} BITVMX_P2P_HOST=${BITVMX_P2P_HOST} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${COMPOSE_FILE_ARG} -p op_${op_num} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
+    local DOCKER_CMD="CONFIG_DIR=${CONFIG_DIR} USER_BITCOIN_WIF=${USER_BITCOIN_WIF} USER_API_PORT=${USER_API_PORT} BITVMX_PORT=${BITVMX_PORT} BITVMX_P2P_HOST=${BITVMX_P2P_HOST} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${COMPOSE_FILE_ARG} -p op_${op_num} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
 
     echo
     echo "Starting operator ${op_num} with command: '$(echo "${DOCKER_CMD}" | sed "s/USER_BITCOIN_WIF=[^ ]*/USER_BITCOIN_WIF=******/")'"
@@ -346,7 +357,7 @@ run_default_operator() {
     echo "Running command on alphanet operator:"
   fi
 
-  local DOCKER_CMD="USER_BITCOIN_WIF=${USER_BITCOIN_WIF} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${ALPHANET_PROJECT_NAME} ${COMPOSE_FILE_ARG} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
+  local DOCKER_CMD="CONFIG_DIR=${CONFIG_DIR} USER_BITCOIN_WIF=${USER_BITCOIN_WIF} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${ALPHANET_PROJECT_NAME} ${COMPOSE_FILE_ARG} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
   echo "'$(echo "${DOCKER_CMD}" | sed "s/USER_BITCOIN_WIF=[^ ]*/USER_BITCOIN_WIF=******/")'"
   eval "${DOCKER_CMD}"
 }
@@ -370,7 +381,7 @@ run_testnet_operators() {
     echo "Running command on testnet operator:"
   fi
 
-  local DOCKER_CMD="USER_BITCOIN_WIF=${USER_BITCOIN_WIF} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${TESTNET_PROJECT_NAME} ${COMPOSE_FILE_ARG} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
+  local DOCKER_CMD="CONFIG_DIR=${CONFIG_DIR} USER_BITCOIN_WIF=${USER_BITCOIN_WIF} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${TESTNET_PROJECT_NAME} ${COMPOSE_FILE_ARG} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
   echo "'$(echo "${DOCKER_CMD}" | sed "s/USER_BITCOIN_WIF=[^ ]*/USER_BITCOIN_WIF=******/")'"
   eval "${DOCKER_CMD}"
 }
@@ -385,6 +396,13 @@ cd "${SCRIPT_DIR}" || {
 # This ensures the config directory is accessible regardless of where docker-compose is run from
 CONFIG_DIR="${PROJECT_ROOT}/config"
 export CONFIG_DIR
+
+# Verify CONFIG_DIR exists
+if [[ ! -d "${CONFIG_DIR}" ]]; then
+  echo "Error: Config directory not found: ${CONFIG_DIR}"
+  echo "Please ensure the config directory exists at the project root."
+  exit 1
+fi
 
 # Run operators based on environment
 if [[ "$ENVIRONMENT" == "local" || "$ENVIRONMENT" == "regtest" ]]; then
