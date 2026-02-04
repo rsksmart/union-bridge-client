@@ -32,8 +32,9 @@ print_help() {
   echo "Usage: $0 [--env <ENV>] [--op <ID>] [OPTIONS] [DOCKER_COMPOSE_ARGS...]"
   echo ""
   echo "Required:"
-  echo "  --env <ENV>              Deploy on target environment: alphanet, testnet, local, local-docker, or regtest"
-  echo "                            (Optional if UC_ENV is set in .envrc)". local, local-docker, regtest are deploy 4 operators. alphanet, testnet are deploy 1 operator per host.
+  echo "  --env <ENV>              Target environment: alphanet, testnet, local, local-docker, or regtest"
+  echo "                            (Optional if UC_ENV is set in .envrc). local, local-docker, regtest deploy 4 operators."
+  echo "                            alphanet, testnet deploy 1 operator per host (requires --op <ID>)."
   echo ""
   echo "Options:"
   echo "  --op <ID>                Operator ID (1, 2, 3, or 4) - required for alphanet/testnet startup"
