@@ -127,7 +127,7 @@ The following environment variables can be set in `.envrc` (project root) to sim
 - **`UC_ENV`**: Sets the default environment (`alphanet`, `testnet`, `local`, `local-docker`, or `regtest`). Can be overridden with `--env` flag.
 - **`UC_TAG`**: Sets the default Docker image tag. Can be overridden with `--tag` flag.
   - Defaults: `latest-alphanet` (alphanet), `latest-testnet` (testnet), `latest-anvil` (local), `latest-regtest` (regtest)
-- **`UC_OPERATOR_ID`**: Sets the default operator ID (1-4). Can be overridden with `--op` flag.
+- **`UC_OPERATOR_ID`**: Sets the default operator ID (1-10). Can be overridden with `--op` flag.
 - **`UC_OPERATOR_ROLE`**: Sets the default operator role (`prover` or `verifier`). Used by `cli-operations.sh`.
 
 **Example for multi-host deployment:**
@@ -177,7 +177,7 @@ bash start_operators.sh --env local --tag latest-anvil up -d
 
 #### 4.2) Start alphanet:
 
-On alphanet, each host runs a single operator. You must specify which operator (1-4) using `--op <ID>`:
+On alphanet, each host runs a single operator. You must specify which operator (1-10) using `--op <ID>`:
 
 ```bash
 # Start operator 1 on this host
@@ -186,7 +186,7 @@ bash start_operators.sh --op 1 --env alphanet up -d
 # Start operator 2 on this host
 bash start_operators.sh --op 2 --env alphanet up -d
 
-# And so on for operators 3 and 4...
+# And so on for operators 3 through 10...
 
 Or explicitly specify the tag:
 
@@ -196,7 +196,7 @@ bash start_operators.sh --op 1 --env alphanet --tag latest-alphanet up -d
 
 #### 4.3) Start testnet:
 
-On testnet, each host runs a single operator. You must specify which operator (1-4) using `--op <ID>`:
+On testnet, each host runs a single operator. You must specify which operator (1-10) using `--op <ID>`:
 
 ```bash
 # Start operator 1 on this host

@@ -11,7 +11,7 @@ use crate::constants::{
 };
 use crate::environments::*;
 use crate::utils::command_to_string;
-use crate::validate_1_4;
+use crate::validate_1_10;
 
 const MEMBER_LOG_MARKER: &str = "Got member signer with address";
 const USER_LOG_MARKER: &str = "Got user signer with address";
@@ -21,7 +21,7 @@ const USER_RSK_ADDRESS_MARKER: &str = "as User with address";
 /// handles creating local rootstock wallets for multi-client deployments
 pub fn handle_wallet_creation(num_wallets: u8, base_storage_path: Option<&str>) -> Result<()> {
     let base = require_base_storage_path(base_storage_path)?;
-    validate_1_4(num_wallets, "num-wallets")?;
+    validate_1_10(num_wallets, "num-wallets")?;
 
     setup_wallets_create(num_wallets, base)?;
     print_wallet_summary("create", num_wallets);

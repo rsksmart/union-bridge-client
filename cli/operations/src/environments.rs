@@ -101,11 +101,17 @@ const LOCAL_HOST: &str = "localhost";
 
 const REGTEST_HOST: &str = "union-bridge-use2-1.regtest.rskcomputing.net";
 
-const ALPHANET_HOSTS: [&str; 4] = [
+const ALPHANET_HOSTS: [&str; 10] = [
     "union-bridge-use1-1.alphanet.rskcomputing.net",
     "union-bridge-use1-2.alphanet.rskcomputing.net",
     "union-bridge-use1-3.alphanet.rskcomputing.net",
     "union-bridge-use1-4.alphanet.rskcomputing.net",
+    "union-bridge-use1-5.alphanet.rskcomputing.net",
+    "union-bridge-use1-6.alphanet.rskcomputing.net",
+    "union-bridge-use1-7.alphanet.rskcomputing.net",
+    "union-bridge-use1-8.alphanet.rskcomputing.net",
+    "union-bridge-use1-9.alphanet.rskcomputing.net",
+    "union-bridge-use1-10.alphanet.rskcomputing.net",
 ];
 
 const TESTNET_HOSTS: [&str; 4] = [

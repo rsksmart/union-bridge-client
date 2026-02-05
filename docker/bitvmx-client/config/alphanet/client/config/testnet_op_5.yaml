@@ -13,7 +13,7 @@ key_storage:
 storage:
   path: /tmp/op_5/storage.db
 p2p:
-  address: /ip4/10.1.4.0/tcp/61180
+  address: /ip4/10.1.0.180/tcp/61180
   key: config/keys/op_5.key
   peer_id_file: peer_id
   timeout: 5
@@ -30,6 +30,7 @@ broker_storage:
 broker_port: 22222
 client:
   retry: 1
+  # Delay between retries in milliseconds
   retry_delay: 1000
 
 wallet:

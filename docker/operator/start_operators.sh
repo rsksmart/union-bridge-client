@@ -47,7 +47,7 @@ print_help() {
   echo "                            alphanet, testnet deploy 1 operator per host (requires --op <ID>)."
   echo ""
   echo "Options:"
-  echo "  --op <ID>                Operator ID (1, 2, 3, or 4) - required for alphanet/testnet startup"
+  echo "  --op <ID>                Operator ID (1-10) - required for alphanet/testnet startup"
   echo "                            (Optional if UC_OPERATOR_ID is set in .envrc)"
   echo "  --tag <TAG>              Docker image tag for Union Client"
   echo "                            (Optional if UC_TAG is set in .envrc)"
@@ -123,8 +123,8 @@ while [[ $# -gt 0 ]]; do
     --op)
       OPERATOR_ARG="$2"
       OP_EXPLICITLY_PROVIDED=true
-      if ! [[ "$OPERATOR_ARG" =~ ^[1-4]$ ]]; then
-        echo "Error: --op must be 1, 2, 3, or 4"
+      if ! [[ "$OPERATOR_ARG" =~ ^(10|[1-9])$ ]]; then
+        echo "Error: --op must be between 1 and 10"
         exit 1
       fi
       # Explicit --op overrides any UC_OPERATOR_ID from .envrc
