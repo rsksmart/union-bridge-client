@@ -44,6 +44,8 @@
 //! # copy displayed bitcoin addresses and fund them in bitcoin-wallet cli
 //! # or use --execute to run the wallet commands automatically:
 //! cargo run -- operator fund --env local --execute
+//! # optionally specify a custom funding amount in satoshis (default: 32002000):
+//! cargo run -- operator fund --env local --execute --fund-amount 65000000
 //! ```
 //!
 //! apply operators to stream (local - all 4 operators):
@@ -133,6 +135,10 @@ enum OperatorCommands {
         /// Execute the wallet commands programmatically instead of just printing them
         #[arg(long = "execute", default_value_t = false)]
         execute: bool,
+
+        /// Bitcoin funding amount in satoshis (default: 32002000)
+        #[arg(long = "fund-amount", value_name = "SATOSHIS")]
+        fund_amount: Option<u64>,
     },
     /// Apply operator to a stream for committee setup
     #[command(name = "apply-stream")]
@@ -232,11 +238,11 @@ async fn main() -> Result<()> {
             }
         },
         Commands::Operator { command } => match command {
-            OperatorCommands::Fund { env, execute } => {
+            OperatorCommands::Fund { env, execute, fund_amount } => {
                 println!("\n=== Funding Rootstock wallets ===");
                 rsk_wallet::handle_operator_funding(env).await?;
                 println!("=== Funding Bitcoin addresses ===");
-                bitcoin_wallet::handle_bitcoin_funding(env, execute).await?;
+                bitcoin_wallet::handle_bitcoin_funding(env, execute, fund_amount).await?;
             }
             OperatorCommands::ApplyToStream { stream_id, env, operator_id, role } => {
                 committee::run_committee_setup(stream_id, env, operator_id, role).await?;
