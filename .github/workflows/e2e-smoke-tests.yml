@@ -1,22 +1,5 @@
 name: E2E Smoke Tests
 
-# This workflow triggers E2E smoke tests in the union_bridge_e2e_framework repo
-# It runs when a PR is ready for review or updated, creating a required status check
-# that must pass before the PR can be merged.
-#
-# Architecture:
-# - Client repo (this file): Triggers on PR events, calls e2e_framework workflow
-# - E2E Framework repo: Contains the actual test execution workflow
-# This split allows:
-#   1. Tests to run automatically before PR merge (required status check)
-#   2. E2E framework tests to run independently when needed
-#   3. Clear separation of concerns
-#
-# IMPORTANT: To prevent merges when tests fail:
-# 1. Configure branch protection rules for 'main' branch
-# 2. Require status check 'e2e-smoke-tests' to pass before merging
-# 3. The e2e_framework workflow updates this status check when tests complete
-
 permissions:
   contents: read
   statuses: write
@@ -31,6 +14,14 @@ on:
     inputs:
       client_ref:
         description: 'union-bridge-client ref (branch/tag/sha). PR: head SHA; manual: empty = current commit'
+        type: string
+        default: ''
+      contracts_ref:
+        description: 'Contracts repo ref (branch/tag). Empty = use e2e workflow default'
+        type: string
+        default: ''
+      e2e_ref:
+        description: 'E2E framework repo ref to run (branch/tag). Empty = use main as default'
         type: string
         default: ''
       pr_head_sha:
@@ -49,33 +40,47 @@ jobs:
       - name: Call E2E Framework Workflow
         uses: actions/github-script@v7
         env:
-          # Matches e2e-smoke.yml workflow_dispatch inputs: client_ref, pr_head_sha (contracts_ref sent as '' = use framework defaults)
           CLIENT_REF: ${{ inputs.client_ref || github.event.pull_request.head.sha || github.sha }}
+          CONTRACTS_REF: ${{ inputs.contracts_ref }}
+          E2E_REF: ${{ inputs.e2e_ref }}
           PR_HEAD_SHA: ${{ inputs.pr_head_sha || github.event.pull_request.head.sha || inputs.client_ref || github.sha }}
         with:
           github-token: ${{ secrets.E2E_FRAMEWORK_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
-            const clientRef = process.env.CLIENT_REF;
-            const prHeadSha = process.env.PR_HEAD_SHA;
-            const prNumber = context.payload.pull_request?.number;
-            
+            const pr = context.payload.pull_request;
+            const labels = pr ? (pr.labels || []).map(l => l.name) : [];
+            const labelE2eRef = (labels.find(l => l.startsWith('e2e-ref:'))?.replace(/^e2e-ref:/, '') || '').trim();
+            const labelContractsRef = (labels.find(l => l.startsWith('contracts-ref:'))?.replace(/^contracts-ref:/, '') || '').trim();
+
+            const clientRef = (process.env.CLIENT_REF || '').trim();
+            const contractsRef = (process.env.CONTRACTS_REF || '').trim() || labelContractsRef;
+            const e2eRefInput = (process.env.E2E_REF || '').trim() || labelE2eRef;
+            const prHeadSha = process.env.PR_HEAD_SHA || '';
+            const prNumber = pr?.number;
+
+            const E2E_REF_DEFAULT = 'main';
+            const e2eDispatchRef = e2eRefInput || E2E_REF_DEFAULT;
+
             console.log(`🚀 Triggering E2E smoke tests for client ref: ${clientRef}`);
+            console.log(`📍 E2E framework ref: ${e2eDispatchRef}${e2eRefInput ? (labelE2eRef ? ' (from PR label)' : '') : ' (using default)'}`);
+            if (labelContractsRef) {
+              console.log(`📍 Contracts ref: ${contractsRef} (from PR label)`);
+            }
             if (prNumber) {
               console.log(`📋 PR #${prNumber}`);
             }
             console.log(`📍 PR head SHA for status check: ${prHeadSha}`);
 
             try {
-              // Call the e2e_framework workflow via workflow_dispatch (octokit uses github-token from action input)
               await octokit.rest.actions.createWorkflowDispatch({
                 owner: 'rsksmart',
                 repo: 'union_bridge_e2e_framework',
                 workflow_id: 'e2e-smoke.yml',
-                ref: 'main', // Use main branch of e2e_framework
+                ref: e2eDispatchRef,
                 inputs: {
                   client_ref: clientRef,
-                  contracts_ref: '', // Use default from versions.yml
-                  pr_head_sha: prHeadSha // Pass PR head SHA so e2e_framework can update status check
+                  contracts_ref: contractsRef,
+                  pr_head_sha: prHeadSha
                 }
               });
 
