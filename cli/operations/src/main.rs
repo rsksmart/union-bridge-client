@@ -136,9 +136,14 @@ enum OperatorCommands {
         #[arg(long = "execute", default_value_t = false)]
         execute: bool,
 
-        /// Bitcoin funding amount in satoshis (default: 32002000)
-        #[arg(long = "fund-amount", value_name = "SATOSHIS")]
-        fund_amount: Option<u64>,
+        /// Bitcoin funding amount in satoshis
+        #[arg(
+            long = "fund-amount",
+            value_name = "SATOSHIS",
+            default_value_t = 32_002_000u64,
+            value_parser = clap::value_parser!(u64).range(1..)
+        )]
+        fund_amount: u64,
     },
     /// Apply operator to a stream for committee setup
     #[command(name = "apply-stream")]
