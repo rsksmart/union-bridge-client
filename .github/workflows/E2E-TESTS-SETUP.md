@@ -14,6 +14,8 @@ This workflow triggers E2E smoke tests in `union_bridge_e2e_framework`.
 | **e2e** (which e2e version runs) | PR label `e2e-ref:<ref>` (e.g. `e2e-ref:v0.2.0`). No label = `main`. | Input `e2e_ref`. Empty = `main`. |
 | **contracts** | PR label `contracts-ref:<ref>`. No label = e2e workflow default. | Input `contracts_ref`. Empty = e2e workflow default. |
 
+**When to add `e2e-ref:<ref>`:** If your client branch needs a different e2e version (e.g. it breaks current e2e tests and you have an e2e branch that supports it), add the PR label `e2e-ref:<ref>`. Otherwise the run uses e2e’s `main`. This lets multiple client branches use different e2e refs without changing code.
+
 ## Setup
 
 1. **union-bridge-client:** Secret `E2E_FRAMEWORK_GITHUB_TOKEN` (PAT with `repo` + `workflow`, access to `union_bridge_e2e_framework`). Needed to trigger the e2e workflow (else 404). Already set by QA team.
