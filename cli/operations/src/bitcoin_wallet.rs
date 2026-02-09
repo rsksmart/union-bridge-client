@@ -9,20 +9,16 @@ use crate::constants::{ONE_OPERATOR_COMPOSE_PROJECT, OPERATOR_IDS, REMOTE_SSH_US
 use crate::environments::*;
 use crate::utils::command_to_string;
 
-const DEFAULT_FUND_AMOUNT: u64 = 32002000;
 const LOG_MARKER: &str = "Received BitVMX Funding Address:";
 
 pub async fn handle_bitcoin_funding(
     environment: Environment,
     execute: bool,
-    fund_amount: Option<u64>,
+    amount: u64,
 ) -> Result<()> {
     if execute && environment.is_remote() {
         bail!("--execute flag is only supported for local environments (local/local-docker). For remote environments, please run the wallet commands manually.");
     }
-
-    // Use provided amount or fall back to default
-    let amount = fund_amount.unwrap_or(DEFAULT_FUND_AMOUNT);
 
     let addresses = match environment {
         Environment::Local => collect_local_addresses().await?,
