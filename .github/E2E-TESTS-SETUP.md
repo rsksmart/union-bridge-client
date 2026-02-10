@@ -16,6 +16,8 @@ This workflow triggers E2E smoke tests in `union_bridge_e2e_framework`.
 
 **When to add `e2e-ref:<ref>`:** If your client branch needs a different e2e version (e.g. it breaks current e2e tests and you have an e2e branch that supports it), add the PR label `e2e-ref:<ref>`. Otherwise the run uses e2e’s `main`. This lets multiple client branches use different e2e refs without changing code.
 
+**e2e-ref override and trusted actors:** Only trusted maintainers can use the `e2e-ref` label or the `e2e_ref` manual input. If someone else adds the label or sets the input, the workflow fails with an error and does not run the e2e pipeline. This avoids untrusted contributors from choosing which e2e framework ref (and thus which workflow code) runs in the e2e repo. The allowlist is maintained in the client workflow file (`e2e-smoke-tests.yml`).
+
 ## Setup
 
 1. **union-bridge-client:** Secret `E2E_FRAMEWORK_GITHUB_TOKEN` (PAT with `repo` + `workflow`, access to `union_bridge_e2e_framework`). Needed to trigger the e2e workflow (else 404). Already set by QA team.

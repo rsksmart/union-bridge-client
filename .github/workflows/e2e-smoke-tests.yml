@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       client_ref:
-        description: 'union-bridge-client ref (branch/tag/sha). PR: head SHA; manual: empty = current commit'
+        description: 'union-bridge-client ref (branch/tag/SHA). PR: head SHA; manual: empty = current commit'
         type: string
         default: ''
       contracts_ref:
@@ -59,6 +59,24 @@ jobs:
             const prNumber = pr?.number;
 
             const E2E_REF_DEFAULT = 'main';
+            const TRUSTED_ACTORS = ['illuque', 'apancorb', 'f-javier-aguerri', 'LordCheta', 'asoto-iov', 'fedejinich', 'javicoin'];
+            const actor = context.actor || '';
+            if (e2eRefInput && !TRUSTED_ACTORS.includes(actor)) {
+              const msg = 'Only trusted actors can specify e2e-ref / e2e_ref. Remove the PR label or clear the input.';
+              if (prHeadSha) {
+                await octokit.rest.repos.createCommitStatus({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  sha: prHeadSha,
+                  state: 'error',
+                  target_url: `https://github.com/rsksmart/union_bridge_e2e_framework/actions`,
+                  description: msg,
+                  context: 'e2e-smoke-tests'
+                });
+              }
+              core.setFailed(msg);
+              throw new Error(msg);
+            }
             const e2eDispatchRef = e2eRefInput || E2E_REF_DEFAULT;
 
             console.log(`🚀 Triggering E2E smoke tests for client ref: ${clientRef}`);
