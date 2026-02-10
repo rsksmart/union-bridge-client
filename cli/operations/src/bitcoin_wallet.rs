@@ -9,10 +9,13 @@ use crate::constants::{ONE_OPERATOR_COMPOSE_PROJECT, OPERATOR_IDS, REMOTE_SSH_US
 use crate::environments::*;
 use crate::utils::command_to_string;
 
-const FUND_AMOUNT: &str = "32002000";
 const LOG_MARKER: &str = "Received BitVMX Funding Address:";
 
-pub async fn handle_bitcoin_funding(environment: Environment, execute: bool) -> Result<()> {
+pub async fn handle_bitcoin_funding(
+    environment: Environment,
+    execute: bool,
+    amount: u64,
+) -> Result<()> {
     if execute && environment.is_remote() {
         bail!("--execute flag is only supported for local environments (local/local-docker). For remote environments, please run the wallet commands manually.");
     }
@@ -34,9 +37,9 @@ pub async fn handle_bitcoin_funding(environment: Environment, execute: bool) -> 
     if execute {
         println!("Executing wallet commands programmatically...");
         println!();
-        execute_wallet_command(&addresses)?;
+        execute_wallet_command(&addresses, amount)?;
     } else {
-        print_instructions(environment, &addresses);
+        print_instructions(environment, &addresses, amount);
     }
 
     Ok(())
@@ -204,7 +207,7 @@ fn cargo_logs_dir() -> Result<PathBuf> {
     Ok(project_root.join("logs"))
 }
 
-fn print_instructions(env: Environment, addresses: &[String]) {
+fn print_instructions(env: Environment, addresses: &[String], amount: u64) {
     let joined = addresses.join(",");
     println!("Note: See the bitcoin-wallet README for how to start and use the CLI: ../cli/bitcoin-wallet/README.md\n");
 
@@ -214,41 +217,28 @@ fn print_instructions(env: Environment, addresses: &[String]) {
                 "Run the following command in your bitcoin-wallet or wallet tooling for {}:",
                 env.get_name()
             );
-            println!("  send_to_address {} {}\n", joined, FUND_AMOUNT);
+            println!("  send_to_address {} {}\n", joined, amount);
         }
         Environment::LocalDocker | Environment::Local => {
             println!("Run the following commands in the bitcoin-wallet CLI (Regtest):");
             println!("1 =>    clear_db   (if you see a misaligned utxos error)");
             println!("2 =>    mine_utxo 900000000");
-            println!("3 =>    send_to_address {} {}", joined, FUND_AMOUNT);
-            println!("4 =>    mine_block");
-        }
-        Environment::Regtest | Environment::Alphanet | Environment::Testnet => {
-            println!(
-                "Run the following command in your bitcoin-wallet or wallet tooling for {}:",
-                env.get_name()
-            );
-            println!("  send_to_address {} {}\n", joined, FUND_AMOUNT);
-        }
-        Environment::LocalDocker | Environment::Local => {
-            println!("Run the following commands in the bitcoin-wallet CLI (Regtest):");
-            println!("1 =>    clear_db   (if you see a misaligned utxos error)");
-            println!("2 =>    mine_utxo 900000000");
-            println!("3 =>    send_to_address {} {}", joined, FUND_AMOUNT);
+            println!("3 =>    send_to_address {} {}", joined, amount);
             println!("4 =>    mine_block");
         }
     }
 }
 
-fn execute_wallet_command(addresses: &[String]) -> Result<()> {
+fn execute_wallet_command(addresses: &[String], amount: u64) -> Result<()> {
     let wallet_script = "./cli-bitcoin-wallet.sh";
     let joined = addresses.join(",");
+    let amount_str = amount.to_string();
 
     // just send to addresses - utxo mining and block mining handled externally
     let mut cmd = Command::new(wallet_script);
-    cmd.arg("member").arg("send_to_address").arg(&joined).arg(FUND_AMOUNT);
+    cmd.arg("member").arg("send_to_address").arg(&joined).arg(&amount_str);
 
-    println!("Running: {} member send_to_address {} {}", wallet_script, joined, FUND_AMOUNT);
+    println!("Running: {} member send_to_address {} {}", wallet_script, joined, amount);
 
     let output = cmd.output().context("failed to execute cli-bitcoin-wallet.sh")?;
 
