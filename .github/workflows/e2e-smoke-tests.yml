@@ -108,13 +108,16 @@ jobs:
               // This status check will be required before merge (via branch protection)
               // The e2e_framework workflow will update this status when tests complete
               if (prHeadSha && prHeadSha !== '') {
+                const fullDesc = `E2E smoke tests running for ${clientRef}`;
+                const maxLen = 140;
+                const pendingDesc = fullDesc.length > maxLen ? fullDesc.slice(0, maxLen - 3) + '...' : fullDesc;
                 await octokit.rest.repos.createCommitStatus({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   sha: prHeadSha,
                   state: 'pending',
                   target_url: `https://github.com/rsksmart/union_bridge_e2e_framework/actions`,
-                  description: `E2E smoke tests running for ${clientRef}`,
+                  description: pendingDesc,
                   context: 'e2e-smoke-tests'
                 });
                 console.log(`✅ Status check set to 'pending' on commit ${prHeadSha}`);
