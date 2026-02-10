@@ -592,7 +592,7 @@ fn run_cast_send_local(address: &str) -> Result<()> {
         .arg(LOCAL_ANVIL_ADDRESS)
         .arg(address)
         .arg("--value")
-        .arg("1ether")
+        .arg("2ether")
         .arg("--unlocked")
         .output()
         .context("failed to execute cast send")?;
