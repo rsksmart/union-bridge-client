@@ -34,7 +34,7 @@ jobs:
     name: Trigger E2E Smoke Tests
     runs-on: ubuntu-latest
     # Only run if PR is not a draft (or manual dispatch)
-    if: github.event.pull_request.draft == false || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
 
     steps:
       - name: Call E2E Framework Workflow
