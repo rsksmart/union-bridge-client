@@ -17,12 +17,9 @@ cd "$(dirname "$0")"
 OPERATIONS_BIN="./target/release/operations"
 
 # In GitHub Actions (e.g. e2e framework): use existing binary if present (cache hit). Locally: always build so we never run stale code.
-if [ -x "$OPERATIONS_BIN" ] && [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-  RUST_BACKTRACE=0 exec "$OPERATIONS_BIN" "$@"
+if ! { [ -x "$OPERATIONS_BIN" ] && [ "${GITHUB_ACTIONS:-}" = "true" ]; }; then
+  cargo build --release --manifest-path cli/operations/Cargo.toml --quiet
 fi
-
-# Build release binary (fast if already built, ~1-2s check)
-cargo build --release --manifest-path cli/operations/Cargo.toml --quiet
 
 # forward all arguments to operations (using release binary directly)
 RUST_BACKTRACE=0 exec "$OPERATIONS_BIN" "$@"

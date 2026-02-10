@@ -25,7 +25,7 @@ on:
         type: string
         default: ''
       pr_head_sha:
-        description: 'Commit SHA for status check (e2e-smoke.yml updates it). PR: head SHA; manual: empty = client_ref/github.sha'
+        description: 'Commit SHA for status check (e2e-smoke.yml updates it). PR: head SHA; manual: empty = defaults to client_ref input if provided, otherwise github.sha'
         type: string
         default: ''
 
