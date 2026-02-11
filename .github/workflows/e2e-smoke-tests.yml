@@ -1,0 +1,143 @@
+name: E2E Smoke Tests
+
+permissions:
+  contents: read
+  statuses: write
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - main
+  # Allow manual triggering for testing
+  workflow_dispatch:
+    inputs:
+      client_ref:
+        description: 'union-bridge-client ref (branch/tag/SHA). PR: head SHA; manual: empty = current commit'
+        type: string
+        default: ''
+      contracts_ref:
+        description: 'Contracts repo ref (branch/tag). Empty = use e2e workflow default'
+        type: string
+        default: ''
+      e2e_ref:
+        description: 'E2E framework repo ref to run (branch/tag). Empty = use main as default'
+        type: string
+        default: ''
+      pr_head_sha:
+        description: 'Commit SHA for status check (e2e-smoke.yml updates it). PR: head SHA; manual: empty = commit the workflow is running on (github.sha)'
+        type: string
+        default: ''
+
+jobs:
+  trigger-e2e-tests:
+    name: Trigger E2E Smoke Tests
+    runs-on: ubuntu-latest
+    # Only run if PR is not a draft (or manual dispatch)
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
+
+    steps:
+      - name: Call E2E Framework Workflow
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          CLIENT_REF: ${{ inputs.client_ref || github.event.pull_request.head.sha || github.sha }}
+          CONTRACTS_REF: ${{ inputs.contracts_ref }}
+          E2E_REF: ${{ inputs.e2e_ref }}
+          PR_HEAD_SHA: ${{ inputs.pr_head_sha || github.event.pull_request.head.sha || github.sha }}
+        with:
+          github-token: ${{ secrets.E2E_FRAMEWORK_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          script: |
+            const pr = context.payload.pull_request;
+            const labels = pr ? (pr.labels || []).map(l => l.name) : [];
+            const labelE2eRef = (labels.find(l => l.startsWith('e2e-ref:'))?.replace(/^e2e-ref:/, '') || '').trim();
+            const labelContractsRef = (labels.find(l => l.startsWith('contracts-ref:'))?.replace(/^contracts-ref:/, '') || '').trim();
+
+            const clientRef = (process.env.CLIENT_REF || '').trim();
+            const contractsRef = (process.env.CONTRACTS_REF || '').trim() || labelContractsRef;
+            const e2eRefInput = (process.env.E2E_REF || '').trim() || labelE2eRef;
+            const prHeadSha = process.env.PR_HEAD_SHA || '';
+            const prNumber = pr?.number;
+
+            const E2E_REF_DEFAULT = 'main';
+            const TRUSTED_ACTORS = ['illuque', 'apancorb', 'f-javier-aguerri', 'LordCheta', 'asoto-iov', 'fedejinich', 'javicoin'];
+            const actor = context.actor || '';
+            if (e2eRefInput && !TRUSTED_ACTORS.includes(actor)) {
+              const msg = 'Only trusted actors can specify e2e-ref / e2e_ref. Remove the PR label or clear the input.';
+              if (prHeadSha) {
+                await octokit.rest.repos.createCommitStatus({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  sha: prHeadSha,
+                  state: 'error',
+                  target_url: `https://github.com/rsksmart/union_bridge_e2e_framework/actions`,
+                  description: msg,
+                  context: 'e2e-smoke-tests'
+                });
+              }
+              core.setFailed(msg);
+              throw new Error(msg);
+            }
+            const e2eDispatchRef = e2eRefInput || E2E_REF_DEFAULT;
+
+            console.log(`🚀 Triggering E2E smoke tests for client ref: ${clientRef}`);
+            console.log(`📍 E2E framework ref: ${e2eDispatchRef}${e2eRefInput ? (labelE2eRef ? ' (from PR label)' : '') : ' (using default)'}`);
+            if (labelContractsRef) {
+              console.log(`📍 Contracts ref: ${contractsRef} (from PR label)`);
+            }
+            if (prNumber) {
+              console.log(`📋 PR #${prNumber}`);
+            }
+            console.log(`📍 PR head SHA for status check: ${prHeadSha}`);
+
+            try {
+              await octokit.rest.actions.createWorkflowDispatch({
+                owner: 'rsksmart',
+                repo: 'union_bridge_e2e_framework',
+                workflow_id: 'e2e-smoke.yml',
+                ref: e2eDispatchRef,
+                inputs: {
+                  client_ref: clientRef,
+                  contracts_ref: contractsRef,
+                  pr_head_sha: prHeadSha
+                }
+              });
+
+              console.log('✅ E2E smoke tests triggered successfully');
+              
+              // Create a status check on the PR head commit
+              // This status check will be required before merge (via branch protection)
+              // The e2e_framework workflow will update this status when tests complete
+              if (prHeadSha && prHeadSha !== '') {
+                const fullDesc = `E2E smoke tests running for ${clientRef}`;
+                const maxLen = 140;
+                const pendingDesc = fullDesc.length > maxLen ? fullDesc.slice(0, maxLen - 3) + '...' : fullDesc;
+                await octokit.rest.repos.createCommitStatus({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  sha: prHeadSha,
+                  state: 'pending',
+                  target_url: `https://github.com/rsksmart/union_bridge_e2e_framework/actions`,
+                  description: pendingDesc,
+                  context: 'e2e-smoke-tests'
+                });
+                console.log(`✅ Status check set to 'pending' on commit ${prHeadSha}`);
+                console.log(`📝 Configure branch protection to require 'e2e-smoke-tests' status check`);
+              }
+            } catch (error) {
+              console.error('❌ Failed to trigger E2E smoke tests:', error);
+              if (prHeadSha && prHeadSha !== '') {
+                const fullDesc = `Failed to trigger E2E smoke tests: ${error.message}`;
+                const maxLen = 140;
+                const description = fullDesc.length > maxLen ? fullDesc.slice(0, maxLen - 3) + '...' : fullDesc;
+                await octokit.rest.repos.createCommitStatus({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  sha: prHeadSha,
+                  state: 'error',
+                  target_url: `https://github.com/rsksmart/union_bridge_e2e_framework/actions`,
+                  description,
+                  context: 'e2e-smoke-tests'
+                });
+              }
+              core.setFailed(`Failed to trigger E2E smoke tests: ${error.message}`);
+            }

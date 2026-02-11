@@ -14,9 +14,13 @@ set -euo pipefail
 # change to script directory to ensure relative paths work
 cd "$(dirname "$0")"
 
-# Build release binary (fast if already built, ~1-2s check)
-cargo build --release --manifest-path cli/operations/Cargo.toml --quiet
+OPERATIONS_BIN="./target/release/operations"
+
+# In GitHub Actions (e.g. e2e framework): use existing binary if present (cache hit). Locally: always build so we never run stale code.
+if ! { [ -x "$OPERATIONS_BIN" ] && [ "${GITHUB_ACTIONS:-}" = "true" ]; }; then
+  cargo build --release --manifest-path cli/operations/Cargo.toml --quiet
+fi
 
 # forward all arguments to operations (using release binary directly)
-RUST_BACKTRACE=0 exec ./target/release/operations "$@"
+RUST_BACKTRACE=0 exec "$OPERATIONS_BIN" "$@"
 
