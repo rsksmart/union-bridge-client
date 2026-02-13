@@ -250,11 +250,26 @@ import_user_wif() {
     fi
     desc="wpkh(${USER_BITCOIN_WIF})#${checksum}"
 
-    # Mark it active so the wallet recognizes derived addresses immediately.
-    import_req=$(printf '[{"desc":"%s","timestamp":"now","active":true,"label":"user"}]' "$desc")
+    # Use full-history import on regtest so old faucet UTXOs are visible even after wallet recreation.
+    import_req=$(printf '[{"desc":"%s","timestamp":0,"active":true,"label":"user"}]' "$desc")
     if ! bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" importdescriptors "$import_req" >/dev/null 2>&1; then
         die "Failed to import USER_BITCOIN_WIF into descriptor wallet (${BITCOIN_WALLET_NAME})"
     fi
+}
+
+rescan_user_wif_history() {
+    # Try both legacy and descriptor flows; ignore failures from unsupported wallet types.
+    bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" importprivkey "$USER_BITCOIN_WIF" "user-rescan" true >/dev/null 2>&1 || true
+
+    local checksum desc import_req
+    checksum=$(bitcoin_cli_base getdescriptorinfo "wpkh(${USER_BITCOIN_WIF})" | jq -r '.checksum // empty')
+    if [[ -n "$checksum" ]]; then
+        desc="wpkh(${USER_BITCOIN_WIF})#${checksum}"
+        import_req=$(printf '[{"desc":"%s","timestamp":0,"active":true,"label":"user"}]' "$desc")
+        bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" importdescriptors "$import_req" >/dev/null 2>&1 || true
+    fi
+
+    bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" rescanblockchain 0 >/dev/null 2>&1 || true
 }
 
 import_watch_address_into_wallet() {
@@ -662,7 +677,11 @@ fund_bitvmx_wallets() {
     log "Funding ${#bitvmx_addrs[@]} BitVMX addresses in one transaction"
     # Set a fixed fee rate for regtest (fallback fee not enabled on node)
     bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" settxfee 0.0001 >/dev/null 2>&1 || true
-    bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" sendmany "" "$outputs" >/dev/null
+    if ! bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" sendmany "" "$outputs" >/dev/null 2>&1; then
+        warn "BitVMX funding tx failed (likely insufficient funds); rescanning wallet and retrying once..."
+        rescan_user_wif_history
+        bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" sendmany "" "$outputs" >/dev/null
+    fi
 
     mine_blocks 1
 }
@@ -826,9 +845,26 @@ confirmed_sats=$(wallet_confirmed_balance_sats)
 if (( confirmed_sats >= required_sats )); then
     success "Wallet already funded (${confirmed_sats} sats confirmed)"
 else
-    log "Mining 101 blocks to fund user wallet..."
-    mine_blocks_to_address 101 "$USER_BTC_ADDRESS"
-    success "Bitcoin wallet funded"
+    log "Wallet under target (${confirmed_sats}/${required_sats} sats). Trying rescan/import recovery..."
+    rescan_user_wif_history
+    confirmed_sats=$(wallet_confirmed_balance_sats)
+    if (( confirmed_sats >= required_sats )); then
+        success "Bitcoin wallet funded after rescan (${confirmed_sats} sats confirmed)"
+    else
+        local_shortfall=$((required_sats - confirmed_sats))
+        topup_sats=$((local_shortfall + 100000))
+        topup_btc=$(sats_to_btc "$topup_sats")
+        refill_addr=$(bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" getnewaddress "replenish" "bech32")
+        log "Replenishing ${BITCOIN_WALLET_NAME} from ${BITVMX_WALLET_NAME}: ${topup_sats} sats"
+        bitcoin_cli_wallet "$BITVMX_WALLET_NAME" settxfee "0.00001000" >/dev/null 2>&1 || true
+        bitcoin_cli_wallet "$BITVMX_WALLET_NAME" sendtoaddress "$refill_addr" "$topup_btc" >/dev/null
+        mine_blocks 1
+        confirmed_sats=$(wallet_confirmed_balance_sats)
+        if (( confirmed_sats < required_sats )); then
+            die "Insufficient BTC funds after wallet top-up (have=${confirmed_sats}, need=${required_sats})"
+        fi
+        success "Bitcoin wallet funded (${confirmed_sats} sats confirmed)"
+    fi
 fi
 
 step "Step 1: Fund Operator Wallets"
