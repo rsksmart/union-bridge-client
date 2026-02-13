@@ -45,11 +45,12 @@ The script clones `FairgateLabs/docker-bitvmx` at the chosen ref, saves the fetc
 
 ### 2) Choose your environment
 
-This setup supports three deployment environments:
+This setup supports four deployment environments:
 
 - **Local** (`.env.local`): Development environment that runs up to 10 operators on a single host with local Bitcoin and RSK nodes (default: 4, configurable via `NUM_OPERATORS` in `.env.local` or `--ops` flag)
 - **Alphanet** (`.env.alphanet`): Production-like environment where each host runs a single operator, connecting to the Alphanet testnet
 - **Testnet** (`.env.testnet`): Production-like environment where each host runs a single operator, connecting to the Bitcoin testnet
+- **Regtest** (`.env.regtest`): All 4 operators on one host, connected to shared regtest infrastructure (powpeg + node21)
 
 #### BitVMX Network Modes
 
@@ -256,9 +257,33 @@ Stop and remove everything:
 # Local: stop all operators (no --op flag)
 bash start_operators.sh --env local down --volumes
 
+# Regtest: stop all operators (no --op flag)
+bash start_operators.sh --env regtest down --volumes
+
 # Alphanet: stop the operator on this host (no --op flag for down command)
 bash start_operators.sh --env alphanet down --volumes
 ```
+
+Regtest fresh clean+up is supported:
+
+```bash
+bash start_operators.sh --env regtest --fresh up -d
+```
+
+`start_operators.sh --env regtest` now auto-syncs BitVMX `checkpoint_height` and `wallet.start_height`
+to current Bitcoin height (with timestamped backups) before startup commands, preventing stale-height
+failures after regtest resets.
+
+For full regtest fresh orchestration (wallet funding, contracts deploy, config update, bridge authorization, operators):
+
+```bash
+cd ../../
+./cli-infra.sh --start-regtest --fresh
+```
+
+Note: default behavior runs local orchestration (`docker/operator/regtest_fresh_local.sh`) and performs each step via SSH on the target hosts.
+Set `REGTEST_FRESH_MODE=remote` if you explicitly want the legacy remote-script behavior on `union-bridge-use2-1`.
+By default, wallet funding checks are enabled (`REGTEST_RUN_STEP_B=true`), while expensive checks stay skipped (`REGTEST_RUN_STEP_A=false`, `REGTEST_RUN_STEP_E2_VERIFY=false`).
 
 ### 5) Viewing logs per operator project
 

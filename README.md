@@ -242,6 +242,11 @@ The project includes two CLI tools for local development and operations:
 
 For detailed documentation, usage examples, and command references, see [cli/README.md](cli/README.md).
 
+## Regtest Fresh Environment
+
+For regtest one-command setup (wallet funding + contract deploy + config update + bridge authorization + operators),
+see [docs/regtest-easy-usage.md](docs/regtest-easy-usage.md).
+
 ## Running the Union Client
 
 ### With Scripts
