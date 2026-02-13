@@ -244,8 +244,102 @@ For detailed documentation, usage examples, and command references, see [cli/REA
 
 ## Regtest Fresh Environment
 
-For regtest one-command setup (wallet funding + contract deploy + config update + bridge authorization + operators),
-see [docs/regtest-easy-usage.md](docs/regtest-easy-usage.md).
+This section is the single source of essential information for the AWS regtest instance.
+
+### Regtest Host Map
+
+- `union-bridge-use2-1.regtest.rskcomputing.net`: Union Bridge operator host (`op_1..op_4`)
+- `node-use2-1.regtest.rskcomputing.net`: Rootstock RPC host
+- `powpeg-use2-1.regtest.rskcomputing.net`: Bitcoin RPC host
+
+### Essential Commands
+
+Run from repository root:
+
+```bash
+# Fast path: start operators with existing config/addresses
+./cli-infra.sh --start-regtest
+
+# Full fresh orchestration (rebuild + reconfigure + restart)
+./cli-infra.sh --start-regtest --fresh
+
+# End-to-end regtest validation
+bash tests/run-happy-path-regtest.sh
+```
+
+### What `--start-regtest` Does (Fast Path)
+
+- Connects by SSH to `union-bridge-use2-1` and runs:
+  - `bash docker/operator/start_operators.sh --env regtest up -d`
+- Starts operators using the existing regtest configuration and deployed contract addresses.
+- Does not redeploy contracts, does not re-authorize bridge config, and does not wipe operator volumes.
+
+### What `--start-regtest --fresh` Does
+
+- Uses remote-only orchestration (default: `REGTEST_FRESH_MODE=remote`) by SSHing into `union-bridge-use2-1` and executing:
+  - `/home/ubuntu/regtest-fresh/regtest_fresh.sh`
+- Remote script flow:
+  - wallet funding on powpeg,
+  - contract deployment on node host,
+  - `regtest.toml` update on union host,
+  - PegManager/native bridge consistency check,
+  - native bridge authorization of the new PegManager,
+  - operator restart with `--fresh`.
+- During operator restart, `start_operators.sh --env regtest --fresh` runs `down --volumes` for each operator stack, then starts clean containers.
+- Also auto-syncs BitVMX regtest heights before startup and writes `.bak` files for updated config files.
+
+### Required Secret Inputs (Do Not Commit Values)
+
+Export secret values in your shell or secret manager:
+
+- `REGTEST_DEPLOY_MNEMONIC`
+- `REGTEST_COW_PRIVATE_KEY`
+- `REGTEST_USER_BITCOIN_WIF`
+- `REGTEST_BRIDGE_AUTH_PRIVATE_KEY`
+
+### Quick Validation Checklist
+
+1. Fresh command finishes with `Regtest fresh run completed`.
+2. Happy path finishes with `Regtest happy path completed successfully`.
+3. On union host, `docker ps` shows 4 coordinators:
+
+```bash
+ssh -A ubuntu@union-bridge-use2-1.regtest.rskcomputing.net
+cd ~/union-bridge-client
+docker ps --format '{{.Names}}' | grep -E '^op_[1-4]-coordinator-1$' | wc -l
+```
+
+Expected output: `4`
+
+### Artifacts
+
+Fresh artifacts are written to:
+
+- `$HOME/.union-bridge/regtest-fresh/runs/<timestamp>/`
+- `$HOME/.union-bridge/regtest-fresh/latest` (symlink)
+
+Key files:
+
+- `summary.json`
+- `wallets.log`
+- `deploy.log`
+- `bridge.log`
+- `operators.log`
+
+### Troubleshooting (Quick)
+
+- `missing executable fresh script`: check `REGTEST_FRESH_REMOTE_SCRIPT` and verify `/home/ubuntu/regtest-fresh/regtest_fresh.sh` exists on the instance.
+- `BridgeUnauthorizedCaller(...)`: inspect `bridge.log`.
+- `Contract ... has no deployed code (0x)`: stale addresses, rerun fresh and inspect `deploy.log`.
+- Less than 4 coordinators: inspect `operators.log` and `docker compose -p op_<n> logs -f`.
+- `requestPegin` fails with `NotEnoughConfirmations { actual: 0 }` while external tools show many BTC confirmations:
+  - Usually means PegManager points to a mock bridge (for example `0x6Cd2...`) instead of the native RSK bridge precompile `0x0000000000000000000000000000000001000006`.
+  - Verify the latest fresh output:
+    - `jq -r '.bridge.native_bridge_address, .bridge.peg_manager_bridge' "$HOME/.union-bridge/regtest-fresh/latest/summary.json"`
+    - Both values must be `0x0000000000000000000000000000000001000006`.
+  - Fix:
+    - Run full fresh again (not fast path): `./cli-infra.sh --start-regtest --fresh`.
+    - Re-run: `bash tests/run-happy-path-regtest.sh`.
 
 ## Running the Union Client
 

@@ -281,9 +281,8 @@ cd ../../
 ./cli-infra.sh --start-regtest --fresh
 ```
 
-Note: default behavior runs local orchestration (`docker/operator/regtest_fresh_local.sh`) and performs each step via SSH on the target hosts.
-Set `REGTEST_FRESH_MODE=remote` if you explicitly want the legacy remote-script behavior on `union-bridge-use2-1`.
-By default, wallet funding checks are enabled (`REGTEST_RUN_STEP_B=true`), while expensive checks stay skipped (`REGTEST_RUN_STEP_A=false`, `REGTEST_RUN_STEP_E2_VERIFY=false`).
+`./cli-infra.sh --start-regtest --fresh` is remote-only and executes `/home/ubuntu/regtest-fresh/regtest_fresh.sh` on `union-bridge-use2-1`.
+`REGTEST_FRESH_MODE=local` is unsupported. You can override remote script location with `REGTEST_FRESH_REMOTE_SCRIPT`.
 
 ### 5) Viewing logs per operator project
 
