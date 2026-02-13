@@ -566,26 +566,27 @@ COMMITTEE_REGISTRY_ADDRESS="$(extract_result_value "committee_registry" "$DEPLOY
 MEMBER_REGISTRY_ADDRESS="$(extract_result_value "member_registry" "$DEPLOY_LOG")"
 STREAM_MANAGER_ADDRESS="$(extract_result_value "stream_manager" "$DEPLOY_LOG")"
 
+CONTRACT_UPDATE_PAIRS=(
+  "FakePegManager=${FAKE_PEG_MANAGER_ADDRESS}"
+  "PegManager=${PEG_MANAGER_ADDRESS}"
+  "SignatureManager=${SIGNATURE_MANAGER_ADDRESS}"
+  "CommitteeRegistry=${COMMITTEE_REGISTRY_ADDRESS}"
+  "MemberRegistry=${MEMBER_REGISTRY_ADDRESS}"
+  "StreamManager=${STREAM_MANAGER_ADDRESS}"
+)
+
 log "Step E: backup/update regtest.toml on union host"
 {
-  remote_cmd="bash -s -- \
-    $(shell_quote "$REGTEST_UNION_REPO_ROOT") \
-    $(shell_quote "$FAKE_PEG_MANAGER_ADDRESS") \
-    $(shell_quote "$PEG_MANAGER_ADDRESS") \
-    $(shell_quote "$SIGNATURE_MANAGER_ADDRESS") \
-    $(shell_quote "$COMMITTEE_REGISTRY_ADDRESS") \
-    $(shell_quote "$MEMBER_REGISTRY_ADDRESS") \
-    $(shell_quote "$STREAM_MANAGER_ADDRESS")"
+  remote_cmd_parts=("bash -s --" "$(shell_quote "$REGTEST_UNION_REPO_ROOT")")
+  for contract_pair in "${CONTRACT_UPDATE_PAIRS[@]}"; do
+    remote_cmd_parts+=("$(shell_quote "$contract_pair")")
+  done
+  remote_cmd="${remote_cmd_parts[*]}"
   ssh_exec "$REGTEST_UNION_HOST" "$remote_cmd" <<'EOS'
 set -euo pipefail
 
 union_repo_root="$1"
-fake_peg_manager="$2"
-peg_manager="$3"
-signature_manager="$4"
-committee_registry="$5"
-member_registry="$6"
-stream_manager="$7"
+shift
 
 config_path="${union_repo_root}/config/environment/regtest.toml"
 if [[ ! -f "$config_path" ]]; then
@@ -628,12 +629,15 @@ update_contract_address() {
   mv "$tmp_file" "$config_path"
 }
 
-update_contract_address "FakePegManager" "$fake_peg_manager"
-update_contract_address "PegManager" "$peg_manager"
-update_contract_address "SignatureManager" "$signature_manager"
-update_contract_address "CommitteeRegistry" "$committee_registry"
-update_contract_address "MemberRegistry" "$member_registry"
-update_contract_address "StreamManager" "$stream_manager"
+for contract_pair in "$@"; do
+  contract_name="${contract_pair%%=*}"
+  contract_address="${contract_pair#*=}"
+  if [[ -z "$contract_name" || -z "$contract_address" || "$contract_name" == "$contract_address" ]]; then
+    echo "Invalid contract pair: ${contract_pair}" >&2
+    exit 1
+  fi
+  update_contract_address "$contract_name" "$contract_address"
+done
 
 echo "RESULT regtest_toml=${config_path}"
 echo "RESULT regtest_toml_backup=${backup_path}"
@@ -646,12 +650,11 @@ REGTEST_TOML_BACKUP_PATH="$(extract_result_value "regtest_toml_backup" "$CONFIG_
 log "Step E.2: verify deployed code for updated addresses"
 if is_true "$REGTEST_RUN_STEP_E2_VERIFY"; then
   {
-    assert_code_exists_on_node "fake_peg_manager" "$FAKE_PEG_MANAGER_ADDRESS"
-    assert_code_exists_on_node "peg_manager" "$PEG_MANAGER_ADDRESS"
-    assert_code_exists_on_node "signature_manager" "$SIGNATURE_MANAGER_ADDRESS"
-    assert_code_exists_on_node "committee_registry" "$COMMITTEE_REGISTRY_ADDRESS"
-    assert_code_exists_on_node "member_registry" "$MEMBER_REGISTRY_ADDRESS"
-    assert_code_exists_on_node "stream_manager" "$STREAM_MANAGER_ADDRESS"
+    CODE_VERIFY_LABELS=(fake_peg_manager peg_manager signature_manager committee_registry member_registry stream_manager)
+    CODE_VERIFY_ADDRESSES=("$FAKE_PEG_MANAGER_ADDRESS" "$PEG_MANAGER_ADDRESS" "$SIGNATURE_MANAGER_ADDRESS" "$COMMITTEE_REGISTRY_ADDRESS" "$MEMBER_REGISTRY_ADDRESS" "$STREAM_MANAGER_ADDRESS")
+    for idx in "${!CODE_VERIFY_LABELS[@]}"; do
+      assert_code_exists_on_node "${CODE_VERIFY_LABELS[$idx]}" "${CODE_VERIFY_ADDRESSES[$idx]}"
+    done
   } 2>&1 | tee "$VERIFY_LOG"
 else
   log "Step E.2: skipped (set REGTEST_RUN_STEP_E2_VERIFY=true to enable)"

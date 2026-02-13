@@ -56,27 +56,18 @@ check_operators_deployed() {
 bitcoin_rpc_call() {
     local method="$1"
     local params="$2"
-    local payload
-    payload=$(printf '{"jsonrpc":"1.0","id":"union","method":"%s","params":%s}' "$method" "$params")
-
-    local response
-    response=$(curl -sS --user "${BITCOIN_RPC_USER}:${BITCOIN_RPC_PASSWORD}" \
-        -H "content-type: text/plain;" \
-        --data-binary "$payload" \
-        "http://${BITCOIN_RPC_HOST}:${BITCOIN_RPC_PORT}")
-
-    local err
-    err=$(echo "$response" | jq -r '.error.message // empty' 2>/dev/null || true)
-    if [[ -n "$err" ]]; then
-        echo "Bitcoin RPC error: $err" >&2
-        return 1
-    fi
-
-    echo "$response" | jq -cr '.result'
+    bitcoin_rpc_call_path "" "$method" "$params"
 }
 
 bitcoin_rpc_call_wallet() {
     local wallet_name="$1"
+    local method="$2"
+    local params="$3"
+    bitcoin_rpc_call_path "/wallet/${wallet_name}" "$method" "$params"
+}
+
+bitcoin_rpc_call_path() {
+    local path="$1"
     local method="$2"
     local params="$3"
     local payload
@@ -86,7 +77,7 @@ bitcoin_rpc_call_wallet() {
     response=$(curl -sS --user "${BITCOIN_RPC_USER}:${BITCOIN_RPC_PASSWORD}" \
         -H "content-type: text/plain;" \
         --data-binary "$payload" \
-        "http://${BITCOIN_RPC_HOST}:${BITCOIN_RPC_PORT}/wallet/${wallet_name}")
+        "http://${BITCOIN_RPC_HOST}:${BITCOIN_RPC_PORT}${path}")
 
     local err
     err=$(echo "$response" | jq -r '.error.message // empty' 2>/dev/null || true)
