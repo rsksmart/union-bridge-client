@@ -54,12 +54,7 @@ RUN --mount=type=ssh,id=default mkdir -p .cargo && \
 ARG EXCLUDES="--exclude check-fork --exclude check-fork-zkp --exclude key-manager --exclude mocks"
 # TODO when the zkp feature is re-enabled, use this to build coordinator in an image with amd64 support (required by Risc0 in Macs with M chips) via Dockerfile_coordinator
 # EXCLUDES="--exclude coordinator--exclude check-fork --exclude check-fork-zkp --exclude key-manager --exclude mocks"
-RUN --mount=type=ssh,id=default \
-    if [ -n "$JUST_CRATE" ]; then \
-      cargo build --quiet --release -p "$JUST_CRATE"${FEATURES:+ --features $FEATURES}; \
-    else \
-      cargo build --workspace --quiet --release ${EXCLUDES}${FEATURES:+ --features $FEATURES}; \
-    fi;
+RUN --mount=type=ssh,id=default cargo build --workspace --quiet --release ${EXCLUDES}${JUST_CRATE:+ -p $JUST_CRATE}${FEATURES:+ --features $FEATURES};
 # build key-manager always, even if only a couple of crates require it
 RUN --mount=type=ssh,id=default cargo build --quiet --release -p key-manager
 
