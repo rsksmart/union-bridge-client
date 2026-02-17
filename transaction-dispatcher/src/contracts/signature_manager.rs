@@ -163,7 +163,7 @@ mod tests {
     #[test]
     fn test_txid_to_sign_not_found_error() {
         let err_data = SignatureManagerErrors::TxidToSignNotFound(TxidToSignNotFound {
-            txidToSign: FixedBytes::<32>::from([7u8; 32]),
+            txid: FixedBytes::<32>::from([7u8; 32]),
         });
 
         let result = generate_contract_revert_error(&err_data);
