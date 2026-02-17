@@ -23,6 +23,8 @@ services:
     extends:
       file: ../build/docker-compose.yml
       service: block-indexer
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - union-network
 
@@ -30,6 +32,8 @@ services:
     extends:
       file: ../build/docker-compose.yml
       service: log-indexer
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - union-network
 
@@ -37,6 +41,8 @@ services:
     extends:
       file: ../build/docker-compose.yml
       service: user-api
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - union-network
 
