@@ -68,6 +68,7 @@ RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         ca-certificates \
         procps \
+        openssl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

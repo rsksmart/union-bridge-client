@@ -458,7 +458,7 @@ impl EventDecoder {
         match event {
             SignatureManagerEvents::AllNoncesReady(inner) => {
                 RskPegManagerEvents::AllNoncesReady(AllNoncesReadyEvent {
-                    inner: Hash256::from(inner.hashToSign),
+                    inner: Hash256::from(inner.txid),
                     block_number: block_num,
                     block_hash,
                     removed,
@@ -467,7 +467,7 @@ impl EventDecoder {
             }
             SignatureManagerEvents::AllSignaturesReady(inner) => {
                 RskPegManagerEvents::AllSignaturesReady(AllSignaturesReadyEvent {
-                    inner: Hash256::from(inner.hashToSign),
+                    inner: Hash256::from(inner.txid),
                     block_number: block_num,
                     block_hash,
                     removed,

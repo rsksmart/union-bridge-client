@@ -1,0 +1,180 @@
+use alloy_primitives::hex::FromHex;
+use alloy_primitives::{Address, Bytes, FixedBytes, TxHash};
+use alloy_provider::Provider;
+use log::{error, info};
+#[cfg(test)]
+use mockall::automock;
+use union_contracts::bindings::challenge_manager::ChallengeManager::{
+    self, BtcTxIn, BtcTxOut, BtcTxSPVProof, BtcTransaction, ChallengeManagerErrors,
+    ChallengeManagerInstance, ChallengeTempInfo,
+};
+
+use crate::contracts::bitcoin_manager::ParseFieldError;
+use crate::contracts::common::send_tx_with_gas_bump;
+pub(crate) use crate::contracts::interactions::register_challenge::RegisterChallengeInvoke;
+pub(crate) use crate::contracts::interactions::register_input_revealed::RegisterInputRevealedInvoke;
+use crate::rsk_gateway::DomainErrors;
+use crate::types::BtcTxSPVProofInput;
+
+#[cfg_attr(test, automock)]
+pub trait ChallengeManagerContractApi {
+    async fn invoke_register_challenge(
+        &self,
+        accept_pegin_txid: FixedBytes<32>,
+        challenge: BtcTxSPVProof,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TxHash>;
+
+    async fn invoke_register_input_revealed(
+        &self,
+        accept_pegin_txid: FixedBytes<32>,
+        input_revealed: BtcTxSPVProof,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TxHash>;
+
+    async fn call_get_challenge_temp_info(
+        &self,
+        accept_pegin_txid: FixedBytes<32>,
+    ) -> alloy_contract::Result<ChallengeTempInfo>;
+}
+
+#[derive(Clone)]
+pub struct ChallengeManagerContract<P: Provider> {
+    contract_instance: ChallengeManagerInstance<P>,
+}
+
+impl<P: Provider> ChallengeManagerContract<P> {
+    pub fn new(provider: P, contract_address: Address) -> Self {
+        info!("Connecting to ChallengeManagerContract @ {contract_address}");
+        let contract_instance = ChallengeManager::new(contract_address, provider);
+        ChallengeManagerContract { contract_instance }
+    }
+}
+
+impl<P: Provider> ChallengeManagerContractApi for ChallengeManagerContract<P> {
+    async fn invoke_register_challenge(
+        &self,
+        accept_pegin_txid: FixedBytes<32>,
+        challenge: BtcTxSPVProof,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TxHash> {
+        send_tx_with_gas_bump(
+            &self.contract_instance.provider(),
+            || self.contract_instance.registerChallenge(accept_pegin_txid, challenge.clone()),
+            gas_bumps,
+        )
+        .await
+    }
+
+    async fn invoke_register_input_revealed(
+        &self,
+        accept_pegin_txid: FixedBytes<32>,
+        input_revealed: BtcTxSPVProof,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TxHash> {
+        send_tx_with_gas_bump(
+            &self.contract_instance.provider(),
+            || {
+                self.contract_instance
+                    .registerInputRevealed(accept_pegin_txid, input_revealed.clone())
+            },
+            gas_bumps,
+        )
+        .await
+    }
+
+    async fn call_get_challenge_temp_info(
+        &self,
+        accept_pegin_txid: FixedBytes<32>,
+    ) -> alloy_contract::Result<ChallengeTempInfo> {
+        self.contract_instance.getChallengeTempInfo(accept_pegin_txid).call().await
+    }
+}
+
+impl TryFrom<BtcTxSPVProofInput> for BtcTxSPVProof {
+    type Error = ParseFieldError;
+
+    fn try_from(value: BtcTxSPVProofInput) -> Result<Self, Self::Error> {
+        build_btc_tx_spv_proof(value)
+    }
+}
+
+fn build_btc_tx_spv_proof(input: BtcTxSPVProofInput) -> Result<BtcTxSPVProof, ParseFieldError> {
+    let block_hash =
+        FixedBytes::<32>::from_hex(&input.block_hash).map_err(ParseFieldError::ParseHex)?;
+
+    let inputs = input
+        .btc_tx
+        .inputs
+        .into_iter()
+        .map(|i| {
+            let txid = i.tx_id.parse().map_err(ParseFieldError::ParseHex)?;
+            let script_sig = Bytes::from_hex(i.script_sig).map_err(ParseFieldError::ParseHex)?;
+            Ok(BtcTxIn { txId: txid, vout: i.v_out, sequence: i.sequence, scriptSig: script_sig })
+        })
+        .collect::<Result<Vec<BtcTxIn>, ParseFieldError>>()?;
+
+    let outputs = input
+        .btc_tx
+        .outputs
+        .into_iter()
+        .map(|o| {
+            let script_pub_key =
+                Bytes::from_hex(o.script_pub_key).map_err(ParseFieldError::ParseHex)?;
+            Ok(BtcTxOut { amount: o.amount, scriptPubKey: script_pub_key })
+        })
+        .collect::<Result<Vec<BtcTxOut>, ParseFieldError>>()?;
+
+    let btc_tx = BtcTransaction {
+        version: input.btc_tx.version,
+        inputs,
+        outputs,
+        locktime: input.btc_tx.lock_time,
+    };
+
+    let merkle_branches_hashes = input
+        .merkle_branch_hashes
+        .into_iter()
+        .map(|hash| hash.parse::<FixedBytes<32>>().map_err(ParseFieldError::ParseHex))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| {
+            error!("Failed to convert merkle_branch_hashes: {e:?}");
+            e
+        })?;
+
+    Ok(BtcTxSPVProof {
+        blockHash: block_hash,
+        btcTx: btc_tx,
+        merkleBranchPath: input.merkle_branch_path.parse()?,
+        merkleBranchHashes: merkle_branches_hashes,
+    })
+}
+
+pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> {
+    let decoded_err = err.as_decoded_interface_error::<ChallengeManagerErrors>()?;
+
+    Some(match decoded_err {
+        ChallengeManagerErrors::PeginNotRequested(e) => {
+            DomainErrors::InvalidValue(format!("{e:?}"))
+        }
+        ChallengeManagerErrors::ChallengeTxidNotMatch(e) => {
+            DomainErrors::InvalidValue(format!("{e:?}"))
+        }
+        ChallengeManagerErrors::InvalidChallengeInputCount(e) => {
+            DomainErrors::InvalidValue(format!("{e:?}"))
+        }
+        ChallengeManagerErrors::InvalidRevealedInputCount(e) => {
+            DomainErrors::InvalidValue(format!("{e:?}"))
+        }
+        ChallengeManagerErrors::ReimbursementKickoffTxidNotMatch(e) => {
+            DomainErrors::InvalidValue(format!("{e:?}"))
+        }
+        ChallengeManagerErrors::InvalidPegStatus(e) => {
+            DomainErrors::InvalidValue(format!("{e:?}"))
+        }
+        ChallengeManagerErrors::MemberNotInCommittee(e) => {
+            DomainErrors::InvalidValue(format!("{e:?}"))
+        }
+        _ => DomainErrors::UnhandledContractError(format!("{decoded_err:?}")),
+    })
+}
