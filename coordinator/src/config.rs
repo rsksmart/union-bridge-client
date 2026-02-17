@@ -144,6 +144,6 @@ mod tests {
             config.coordinator.storage_path.ends_with("/.union_bridge/database/multi-client-1")
         );
         assert_eq!("regtest", config.bitcoin_network);
-        assert_eq!(10, config.contracts.len());
+        assert_eq!(12, config.contracts.len());
     }
 }
