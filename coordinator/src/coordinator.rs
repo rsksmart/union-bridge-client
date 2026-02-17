@@ -325,12 +325,12 @@ pub(crate) mod tests {
         DepositAggregatedKeyInput, DepositAggregatedKeyOutput, DepositCommunicationDataInput,
         DepositCommunicationDataOutput, GetCommitteeInput, GetCommitteeOutput,
         GetCommunicationDataInput, GetCommunicationDataOutput, GetMemberPublicKeysInput,
-        GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput,
-        RegisterChallengeInput, RegisterChallengeOutput, RegisterInputRevealedInput,
-        RegisterInputRevealedOutput, RegisterOperatorTakeInput, RegisterOperatorTakeOutput,
-        RegisterOperatorWonInput, RegisterOperatorWonOutput, RegisterPegoutInput,
-        RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
-        RequestPegoutOutput, TriggerOperatorTakeInput, TriggerOperatorTakeOutput,
+        GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterChallengeInput,
+        RegisterChallengeOutput, RegisterInputRevealedInput, RegisterInputRevealedOutput,
+        RegisterOperatorTakeInput, RegisterOperatorTakeOutput, RegisterOperatorWonInput,
+        RegisterOperatorWonOutput, RegisterPegoutInput, RegisterPegoutOutput, RequestPeginInput,
+        RequestPeginOutput, RequestPegoutInput, RequestPegoutOutput, TriggerOperatorTakeInput,
+        TriggerOperatorTakeOutput,
     };
 
     use crate::coordinator::Coordinator;
