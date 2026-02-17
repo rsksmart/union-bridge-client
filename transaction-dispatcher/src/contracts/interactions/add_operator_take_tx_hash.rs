@@ -29,7 +29,12 @@ impl<C: SignatureManagerContractApi> AddOperatorTakeTxHashInvoke<C> {
 
         let tx_hash = self
             .contract
-            .add_operator_take_tx_hash(accept_pegin_tx_hash, take_tx_hash, won_tx_hash, self.gas_bumps)
+            .add_operator_take_tx_hash(
+                accept_pegin_tx_hash,
+                take_tx_hash,
+                won_tx_hash,
+                self.gas_bumps,
+            )
             .await?;
 
         info!("AddOperatorTakeTxHash successful at tx {tx_hash}");

@@ -5,7 +5,7 @@ use log::{error, info};
 #[cfg(test)]
 use mockall::automock;
 use union_contracts::bindings::challenge_manager::ChallengeManager::{
-    self, BtcTxIn, BtcTxOut, BtcTxSPVProof, BtcTransaction, ChallengeManagerErrors,
+    self, BtcTransaction, BtcTxIn, BtcTxOut, BtcTxSPVProof, ChallengeManagerErrors,
     ChallengeManagerInstance, ChallengeTempInfo,
 };
 
@@ -169,9 +169,7 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
         ChallengeManagerErrors::ReimbursementKickoffTxidNotMatch(e) => {
             DomainErrors::InvalidValue(format!("{e:?}"))
         }
-        ChallengeManagerErrors::InvalidPegStatus(e) => {
-            DomainErrors::InvalidValue(format!("{e:?}"))
-        }
+        ChallengeManagerErrors::InvalidPegStatus(e) => DomainErrors::InvalidValue(format!("{e:?}")),
         ChallengeManagerErrors::MemberNotInCommittee(e) => {
             DomainErrors::InvalidValue(format!("{e:?}"))
         }

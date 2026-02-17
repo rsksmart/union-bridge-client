@@ -56,10 +56,7 @@ pub trait CommitteeRegistryContractApi {
         gas_bumps: u8,
     ) -> alloy_contract::Result<TxHash>;
 
-    async fn call_is_whitelisted(
-        &self,
-        address: Address,
-    ) -> alloy_contract::Result<bool>;
+    async fn call_is_whitelisted(&self, address: Address) -> alloy_contract::Result<bool>;
 
     async fn invoke_whitelist_address(
         &self,
@@ -161,10 +158,7 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
         .await
     }
 
-    async fn call_is_whitelisted(
-        &self,
-        address: Address,
-    ) -> alloy_contract::Result<bool> {
+    async fn call_is_whitelisted(&self, address: Address) -> alloy_contract::Result<bool> {
         self.contract_instance.isWhitelisted(address).call().await
     }
 
