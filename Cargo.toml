@@ -66,5 +66,5 @@ thiserror = "2.0.11"
 tiny-keccak = "2.0.2"
 tokio = { version = "1.41.1" }
 tower-http = { version = "0.6.1", features = ["timeout", "trace"] }
-union-contracts = { package = "union-bridge-contracts", git = "ssh://git@github.com/temp-rsk/bitvmx-union-bridge-contracts.git", tag = "v0.2.2-alpha" }
+union-contracts = { package = "union-bridge-contracts", git = "ssh://git@github.com/temp-rsk/bitvmx-union-bridge-contracts.git", tag = "v0.4.0-alpha" }
 uuid = { version = "1.11.0", features = ["v4", "serde"] }

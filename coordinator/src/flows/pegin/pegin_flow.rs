@@ -458,6 +458,8 @@ where
         let input = transaction_dispatcher::types::AddOperatorTakeTxHashInput {
             accept_pegin_tx_hash: pegin_accepted.accept_pegin_txid,
             take_tx_hash: pegin_accepted.operator_take_sighash.clone(),
+            // TODO(UBC-XXX): v0.4.0-alpha added won_tx_hash param - populate from actual flow data
+            won_tx_hash: Vec::new(),
         };
 
         self.rt_sync.run(async { self.contracts.add_operator_take_tx_hash(input).await })?;
@@ -570,7 +572,9 @@ where
 
         Ok(PeginRequestMessage {
             txid,
-            amount: event.prevoutData.value,
+            // TODO(UBC-XXX): v0.4.0-alpha removed prevoutData from PeginRequested event.
+            // Amount must be obtained via a different mechanism (e.g., reading the BTC tx or a contract call).
+            amount: 0,
             accept_pegin_sighash,
             take_aggregated_key,
             operator_indexes,
@@ -949,6 +953,7 @@ mod tests {
         let expected_input = transaction_dispatcher::types::AddOperatorTakeTxHashInput {
             accept_pegin_tx_hash: btc_tx_id,
             take_tx_hash: vec![1, 2, 3, 4],
+            won_tx_hash: Vec::new(),
         };
 
         mock_contracts

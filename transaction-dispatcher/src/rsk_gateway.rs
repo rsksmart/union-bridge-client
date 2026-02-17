@@ -11,18 +11,23 @@ use mockall::automock;
 use thiserror::Error;
 
 use crate::config::TransactionConfig;
+use crate::contracts::challenge_manager::{
+    ChallengeManagerContract, RegisterChallengeInvoke, RegisterInputRevealedInvoke,
+};
 use crate::contracts::committee_registry::{
     ApplyToStreamInvoke, CommitteeRegistryContract, DepositAggregatedKeysInvoke,
     DepositCommunicationDataInvoke, GetCommitteeCall, GetMemberCommunicationDataCall,
 };
 use crate::contracts::member_registry::{GetMemberPublicKeysCall, MemberRegistryContract};
+use crate::contracts::native_bridge::NativeBridgeContract;
+use crate::contracts::native_bridge::get_btc_transaction_confirmations::GetBtcTransactionConfirmationsCall;
 use crate::contracts::peg_manager::{FakePegManagerContract, NotifyCheckForkCompleteInvoke};
 use crate::contracts::pegin_manager::{
     AcceptPeginInvoke, GetTemporaryPeginAddressCall, PeginManagerContract, RequestPeginInvoke,
 };
 use crate::contracts::pegout_manager::{
-    PegoutManagerContract, RegisterOperatorTakeInvoke, RegisterPegoutInvoke,
-    TriggerOperatorTakeInvoke, TryPegoutInvoke,
+    PegoutManagerContract, RegisterOperatorTakeInvoke, RegisterOperatorWonInvoke,
+    RegisterPegoutInvoke, TriggerOperatorTakeInvoke, TryPegoutInvoke,
 };
 use crate::contracts::signature_manager::{
     AddMemberNonceInvoke, AddMemberSignatureInvoke, AddOperatorTakeTxHashInvoke,
@@ -36,8 +41,10 @@ use crate::types::{
     DepositAggregatedKeyInput, DepositAggregatedKeyOutput, DepositCommunicationDataInput,
     DepositCommunicationDataOutput, GetCommitteeInput, GetCommitteeOutput,
     GetCommunicationDataInput, GetCommunicationDataOutput, GetMemberPublicKeysInput,
-    GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterOperatorTakeInput,
-    RegisterOperatorTakeOutput, RegisterPegoutInput, RegisterPegoutOutput, RequestPeginInput,
+    GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterChallengeInput,
+    RegisterChallengeOutput, RegisterInputRevealedInput, RegisterInputRevealedOutput,
+    RegisterOperatorTakeInput, RegisterOperatorTakeOutput, RegisterOperatorWonInput,
+    RegisterOperatorWonOutput, RegisterPegoutInput, RegisterPegoutOutput, RequestPeginInput,
     RequestPeginOutput, RequestPegoutInput, RequestPegoutOutput, TriggerOperatorTakeInput,
     TriggerOperatorTakeOutput,
 };
@@ -50,6 +57,8 @@ const SIGNATURE_MANAGER_CONTRACT_NAME: &str = "SignatureManager";
 const COMMITTEE_REGISTRY_CONTRACT_NAME: &str = "CommitteeRegistry";
 const MEMBER_REGISTRY_CONTRACT_NAME: &str = "MemberRegistry";
 const STREAM_MANAGER_CONTRACT_NAME: &str = "StreamManager";
+const NATIVE_BRIDGE_CONTRACT_NAME: &str = "NativeBridge";
+const CHALLENGE_MANAGER_CONTRACT_NAME: &str = "ChallengeManager";
 
 #[cfg_attr(test, automock)]
 pub trait BalanceProvider {
@@ -162,6 +171,21 @@ pub trait RskContractsGatewayApi {
         &self,
         input: DepositAggregatedKeyInput,
     ) -> impl Future<Output = Result<DepositAggregatedKeyOutput, DomainErrors>>;
+
+    fn register_challenge(
+        &self,
+        input: RegisterChallengeInput,
+    ) -> impl Future<Output = Result<RegisterChallengeOutput, DomainErrors>>;
+
+    fn register_input_revealed(
+        &self,
+        input: RegisterInputRevealedInput,
+    ) -> impl Future<Output = Result<RegisterInputRevealedOutput, DomainErrors>>;
+
+    fn register_operator_won(
+        &self,
+        input: RegisterOperatorWonInput,
+    ) -> impl Future<Output = Result<RegisterOperatorWonOutput, DomainErrors>>;
 }
 
 #[derive(Clone)]
@@ -184,6 +208,9 @@ pub struct RskContractsGateway<P: Provider + Clone> {
     register_pegout_invoke: RegisterPegoutInvoke<PegoutManagerContract<P>>,
     register_operator_take_invoke: RegisterOperatorTakeInvoke<PegoutManagerContract<P>>,
     trigger_operator_take_invoke: TriggerOperatorTakeInvoke<PegoutManagerContract<P>>,
+    register_operator_won_invoke: RegisterOperatorWonInvoke<PegoutManagerContract<P>>,
+    register_challenge_invoke: RegisterChallengeInvoke<ChallengeManagerContract<P>>,
+    register_input_revealed_invoke: RegisterInputRevealedInvoke<ChallengeManagerContract<P>>,
     get_committee_call: GetCommitteeCall<CommitteeRegistryContract<P>>,
     deposit_communication_data_invoke: DepositCommunicationDataInvoke<CommitteeRegistryContract<P>>,
     deposit_aggregated_key_invoke: DepositAggregatedKeysInvoke<CommitteeRegistryContract<P>>,
@@ -217,6 +244,10 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             Self::load_contract(MEMBER_REGISTRY_CONTRACT_NAME, &managed_contracts)?;
         let stream_manager_address =
             Self::load_contract(STREAM_MANAGER_CONTRACT_NAME, &managed_contracts)?;
+        let native_bridge_address =
+            Self::load_contract(NATIVE_BRIDGE_CONTRACT_NAME, &managed_contracts)?;
+        let challenge_manager_address =
+            Self::load_contract(CHALLENGE_MANAGER_CONTRACT_NAME, &managed_contracts)?;
 
         // Validate that all contract addresses have deployed code
         let addresses_to_validate = vec![
@@ -227,6 +258,7 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             (COMMITTEE_REGISTRY_CONTRACT_NAME, committee_registry_address),
             (MEMBER_REGISTRY_CONTRACT_NAME, member_registry_address),
             (STREAM_MANAGER_CONTRACT_NAME, stream_manager_address),
+            (CHALLENGE_MANAGER_CONTRACT_NAME, challenge_manager_address),
         ];
 
         for (contract_name, address) in &addresses_to_validate {
@@ -258,6 +290,10 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             MemberRegistryContract::new(provider.clone(), member_registry_address.into());
         let stream_manager_contract =
             StreamManagerContract::new(provider.clone(), stream_manager_address.into());
+        let native_bridge_contract =
+            NativeBridgeContract::new(provider.clone(), native_bridge_address.into());
+        let challenge_manager_contract =
+            ChallengeManagerContract::new(provider.clone(), challenge_manager_address.into());
 
         Ok(RskContractsGateway {
             provider: provider.clone(),
@@ -291,6 +327,18 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             ),
             trigger_operator_take_invoke: TriggerOperatorTakeInvoke::new(
                 pegout_manager_contract.clone(),
+                tx_config.gas_bumps_t1,
+            ),
+            register_operator_won_invoke: RegisterOperatorWonInvoke::new(
+                pegout_manager_contract.clone(),
+                tx_config.gas_bumps_t1,
+            ),
+            register_challenge_invoke: RegisterChallengeInvoke::new(
+                challenge_manager_contract.clone(),
+                tx_config.gas_bumps_t1,
+            ),
+            register_input_revealed_invoke: RegisterInputRevealedInvoke::new(
+                challenge_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
             add_member_nonce_invoke: AddMemberNonceInvoke::new(
@@ -547,6 +595,36 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
 
         self.deposit_aggregated_key_invoke.run(input).await.map_err(|err| {
             error!("Error on deposit_aggregated_key_invoke: {err}");
+            err
+        })
+    }
+
+    async fn register_challenge(
+        &self,
+        input: RegisterChallengeInput,
+    ) -> Result<RegisterChallengeOutput, DomainErrors> {
+        self.register_challenge_invoke.run(input).await.map_err(|err| {
+            error!("Error on register_challenge_invoke: {err}");
+            err
+        })
+    }
+
+    async fn register_input_revealed(
+        &self,
+        input: RegisterInputRevealedInput,
+    ) -> Result<RegisterInputRevealedOutput, DomainErrors> {
+        self.register_input_revealed_invoke.run(input).await.map_err(|err| {
+            error!("Error on register_input_revealed_invoke: {err}");
+            err
+        })
+    }
+
+    async fn register_operator_won(
+        &self,
+        input: RegisterOperatorWonInput,
+    ) -> Result<RegisterOperatorWonOutput, DomainErrors> {
+        self.register_operator_won_invoke.run(input).await.map_err(|err| {
+            error!("Error on register_operator_won_invoke: {err}");
             err
         })
     }
