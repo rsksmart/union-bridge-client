@@ -938,10 +938,7 @@ mod tests {
         let expected_hash_to_sign = H256::from_low_u64_be(789);
 
         let expected_event = AllNoncesReady {
-            txid: expected_hash_to_sign
-                .as_bytes()
-                .try_into()
-                .expect("Failed to decode txid"),
+            txid: expected_hash_to_sign.as_bytes().try_into().expect("Failed to decode txid"),
         };
 
         let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(
@@ -972,10 +969,7 @@ mod tests {
         let expected_hash_to_sign = H256::from_low_u64_be(1111);
 
         let expected_event = AllSignaturesReady {
-            txid: expected_hash_to_sign
-                .as_bytes()
-                .try_into()
-                .expect("Failed to decode txid"),
+            txid: expected_hash_to_sign.as_bytes().try_into().expect("Failed to decode txid"),
         };
 
         let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(
