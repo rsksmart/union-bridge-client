@@ -475,7 +475,7 @@ impl EventDecoder {
         match event {
             SignatureManagerEvents::AllNoncesReady(inner) => {
                 RskPegManagerEvents::AllNoncesReady(AllNoncesReadyEvent {
-                    inner: Hash256::from(inner.hashToSign),
+                    inner: Hash256::from(inner.txid),
                     block_number: block_num,
                     block_hash,
                     removed,
@@ -484,7 +484,7 @@ impl EventDecoder {
             }
             SignatureManagerEvents::AllSignaturesReady(inner) => {
                 RskPegManagerEvents::AllSignaturesReady(AllSignaturesReadyEvent {
-                    inner: Hash256::from(inner.hashToSign),
+                    inner: Hash256::from(inner.txid),
                     block_number: block_num,
                     block_hash,
                     removed,
@@ -655,7 +655,7 @@ mod tests {
         Committee, CommitteeMember,
     };
     use union_contracts::bindings::pegin_manager::PeginManager::{
-        PrevoutData, RequestPeginTempInfo, StreamPosition,
+        RequestPeginTempInfo, StreamPosition,
     };
     use uuid::Uuid;
 
@@ -716,7 +716,6 @@ mod tests {
                 .as_bytes()
                 .try_into()
                 .expect("Failed to decode acceptPeginTxid"),
-            vout: 1,
             streamPosition: StreamPosition {
                 streamId: 42,
                 packetNumber: 33,
@@ -735,10 +734,9 @@ mod tests {
                     .as_bytes()
                     .try_into()
                     .expect("Failed to decode hash"),
-            },
-            prevoutData: PrevoutData {
-                value: 1000,
-                scriptPubKey: alloy_primitives::Bytes::from("0x1234567890abcdef"),
+                btcBlockNumber: alloy_primitives::I256::ZERO,
+                userReimbursementTxid: FixedBytes::<32>::ZERO,
+                rejectPeginTxid: FixedBytes::<32>::ZERO,
             },
             acceptPeginSignatureMessage: alloy_primitives::Bytes::from("0xabcdef0123456789"),
         };
@@ -860,7 +858,6 @@ mod tests {
                 .as_bytes()
                 .try_into()
                 .expect("Failed to decode acceptPeginTxid"),
-            vout: 1,
             streamPosition: StreamPosition {
                 streamId: 42,
                 packetNumber: 33,
@@ -879,10 +876,9 @@ mod tests {
                     .as_bytes()
                     .try_into()
                     .expect("Failed to decode hash"),
-            },
-            prevoutData: PrevoutData {
-                value: 1000,
-                scriptPubKey: alloy_primitives::Bytes::from("0x1234567890abcdef"),
+                btcBlockNumber: alloy_primitives::I256::ZERO,
+                userReimbursementTxid: FixedBytes::<32>::ZERO,
+                rejectPeginTxid: FixedBytes::<32>::ZERO,
             },
             acceptPeginSignatureMessage: alloy_primitives::Bytes::from("0xabcdef0123456789"),
         };
@@ -961,10 +957,7 @@ mod tests {
         let expected_hash_to_sign = H256::from_low_u64_be(789);
 
         let expected_event = AllNoncesReady {
-            hashToSign: expected_hash_to_sign
-                .as_bytes()
-                .try_into()
-                .expect("Failed to decode hashToSign"),
+            txid: expected_hash_to_sign.as_bytes().try_into().expect("Failed to decode txid"),
         };
 
         let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(
@@ -995,10 +988,7 @@ mod tests {
         let expected_hash_to_sign = H256::from_low_u64_be(1111);
 
         let expected_event = AllSignaturesReady {
-            hashToSign: expected_hash_to_sign
-                .as_bytes()
-                .try_into()
-                .expect("Failed to decode hashToSign"),
+            txid: expected_hash_to_sign.as_bytes().try_into().expect("Failed to decode txid"),
         };
 
         let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(

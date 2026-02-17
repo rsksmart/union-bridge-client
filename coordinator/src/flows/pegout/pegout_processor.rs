@@ -488,13 +488,15 @@ where
                         ticks
                     } else {
                         warn!(
-                            "ADVANCE_FUNDS_TIMEOUT_SECONDS ({}) exceeds u32::MAX, using u32::MAX instead",self.config.advance_funds_timeout_secs
+                            "ADVANCE_FUNDS_TIMEOUT_SECONDS ({}) exceeds u32::MAX, using u32::MAX instead",
+                            self.config.advance_funds_timeout_secs
                         );
                         u32::MAX
                     };
                     self.advance_funds_timeout_scheduler.schedule(flow_id, timeout_ticks);
                     info!(
-                        "Scheduled advance funds timeout for flow_id: {flow_id} (expires in {} blocks),",self.config.advance_funds_timeout_secs
+                        "Scheduled advance funds timeout for flow_id: {flow_id} (expires in {} blocks),",
+                        self.config.advance_funds_timeout_secs
                     );
                 }
             }
@@ -865,19 +867,18 @@ where
 
 #[cfg(test)]
 mod tests {
-    use alloy_primitives::{Bytes, FixedBytes, U256 as AlloyU256};
-    use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
-    use common::msg_broker::broker::MockBrokerClientApi;
-    use primitive_types::U256 as RskU256;
-    use union_contracts::bindings::peg_manager::PegManager::{
-        BitcoinSignatureData, BtcTransaction, PegoutRequested,
-    };
-
     use super::*;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
     use crate::flows::advance_funds::test_utils::create_fake_block;
     use crate::flows::pegout::pegout_flow::FlowContext;
     use crate::store::MockCoordinatorStoreApi;
+    use alloy_primitives::{Bytes, FixedBytes, U256 as AlloyU256};
+    use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+    use common::msg_broker::broker::MockBrokerClientApi;
+    use primitive_types::U256 as RskU256;
+    use union_contracts::bindings::pegout_manager::PegoutManager::{
+        BitcoinSignatureData, BtcTransaction,
+    };
 
     type MockBitVmxBroker =
         MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
@@ -983,7 +984,6 @@ mod tests {
             packetNumber: 0,
             slotId: 0,
             amount: 100_000,
-            pegoutId: FixedBytes::default(),
         }
     }
 

@@ -13,9 +13,7 @@ use common::runtime_sync::RuntimeSync;
 use common::types::{Address, BlockHash, BlockNumber, CommitteeId, Hash256, TxHash};
 use log::{debug, info, trace};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
-use transaction_dispatcher::types::{
-    GetMemberPublicKeysInput, RequestPeginInput,
-};
+use transaction_dispatcher::types::{GetMemberPublicKeysInput, RequestPeginInput};
 use union_contracts::bindings::pegout_manager::PegoutManager::PegoutRegistered;
 use uuid::Uuid;
 

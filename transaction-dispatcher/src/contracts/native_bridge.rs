@@ -7,9 +7,6 @@ use log::info;
 #[cfg(test)]
 use mockall::automock;
 
-// Re-export for convenience
-pub(crate) use crate::contracts::interactions::get_btc_transaction_confirmations;
-
 #[cfg_attr(test, automock)]
 pub trait NativeBridgeContractApi {
     async fn call_get_btc_transaction_confirmations(

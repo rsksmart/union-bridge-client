@@ -69,7 +69,7 @@ fn main() -> Result<()> {
         managed_contracts,
         shutdown_flag.clone(),
     )
-        .context("Failed to create LogIndexer")?;
+    .context("Failed to create LogIndexer")?;
 
     let mut notifier = Notifier::new(
         rx,
@@ -77,7 +77,7 @@ fn main() -> Result<()> {
             config.log_indexer_config.notifier.port,
             &config.key_store.broker_key_path,
         )
-            .expect("Failed to create BrokerServer"),
+        .expect("Failed to create BrokerServer"),
         monitored_addresses,
         shutdown_flag.clone(),
     );

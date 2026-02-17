@@ -448,10 +448,11 @@ mod tests {
         let unmonitored_address = generate_fake_address(2);
         let expected_log = FakeLogGenerator::new()
             .generate_log("Transfer(address,address,uint256)", unmonitored_address);
+
         let mut mock_broker = MockBrokerServerApi::new();
-        mock_broker
-            .expect_try_recv()
-            .returning(move || Ok(Some((ToServer::SubscribeLogs(unmonitored_address), make_test_identifier(1)))));
+        mock_broker.expect_try_recv().returning(move || {
+            Ok(Some((ToServer::SubscribeLogs(unmonitored_address), make_test_identifier(1))))
+        });
         mock_broker.expect_send().never();
 
         let mut notifier = Notifier::new_for_tests(

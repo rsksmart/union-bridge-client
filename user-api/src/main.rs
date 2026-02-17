@@ -105,9 +105,9 @@ async fn main() -> Result<()> {
     // Derive the coordinator's pubkey_hash from the shared broker key file.
     // Since all services use the same broker.key, they share the same pubkey_hash.
     let broker_cert = Cert::from_key_file(broker_key_path)
-        .expect("Failed to load broker key file for identifier");
+        .context("Failed to load broker key file for identifier")?;
     let coordinator_pubkey_hash =
-        broker_cert.get_pubk_hash().expect("Failed to get pubkey_hash from broker cert");
+        broker_cert.get_pubk_hash().context("Failed to get pubkey_hash from broker cert")?;
 
     let coordinator_client_id = Identifier::new(
         coordinator_pubkey_hash,

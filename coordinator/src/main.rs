@@ -63,8 +63,8 @@ fn main() -> Result<()> {
 
     let bitcoin_network = CommonConfig::parse_bitcoin_network(&config.bitcoin_network)?;
 
-    let tx_dispatcher_config: TxDispatcherConfig =
-        TxDispatcherConfig::load(env_name.clone()).expect("Failed to load transaction dispatcher config");
+    let tx_dispatcher_config: TxDispatcherConfig = TxDispatcherConfig::load(env_name.clone())
+        .expect("Failed to load transaction dispatcher config");
 
     let contract_addresses = config.get_contract_addresses();
     let broker_key_path = &config.key_store.broker_key_path;

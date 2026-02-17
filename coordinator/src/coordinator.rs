@@ -15,9 +15,8 @@ use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use crate::config::{BridgeConfig, CoordinatorAdvanceFundsConfig};
 use crate::event_processor::EventProcessor;
 use crate::flows::advance_funds::advance_funds_processor::AdvanceFundsProcessor;
-use crate::flows::committee::setup_committee_flow::{
-    SetupCommitteeFlowFactory, SetupCommitteeProcessor,
-};
+use crate::flows::committee::setup_committee_flow::SetupCommitteeFlowFactory;
+use crate::flows::committee::setup_committee_processor::SetupCommitteeProcessor;
 use crate::flows::common::GlobalContext;
 use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
 use crate::flows::fund_bitvmx_flow::FundBitvmxProcessor;
@@ -368,10 +367,12 @@ pub(crate) mod tests {
         DepositCommunicationDataOutput, GetBtcTransactionConfirmationsInput,
         GetBtcTransactionConfirmationsOutput, GetCommitteeInput, GetCommitteeOutput,
         GetCommunicationDataInput, GetCommunicationDataOutput, GetMemberPublicKeysInput,
-        GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput,
-        RegisterOperatorTakeInput, RegisterOperatorTakeOutput, RegisterPegoutInput,
-        RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
-        RequestPegoutOutput, TriggerOperatorTakeInput, TriggerOperatorTakeOutput,
+        GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterChallengeInput,
+        RegisterChallengeOutput, RegisterInputRevealedInput, RegisterInputRevealedOutput,
+        RegisterOperatorTakeInput, RegisterOperatorTakeOutput, RegisterOperatorWonInput,
+        RegisterOperatorWonOutput, RegisterPegoutInput, RegisterPegoutOutput, RequestPeginInput,
+        RequestPeginOutput, RequestPegoutInput, RequestPegoutOutput, TriggerOperatorTakeInput,
+        TriggerOperatorTakeOutput,
     };
 
     use crate::coordinator::Coordinator;
@@ -694,6 +695,21 @@ pub(crate) mod tests {
                 &self,
                 input: GetBtcTransactionConfirmationsInput,
             ) -> Result<GetBtcTransactionConfirmationsOutput, DomainErrors>;
+
+            async fn register_challenge(
+                &self,
+                input: RegisterChallengeInput,
+            ) -> Result<RegisterChallengeOutput, DomainErrors>;
+
+            async fn register_input_revealed(
+                &self,
+                input: RegisterInputRevealedInput,
+            ) -> Result<RegisterInputRevealedOutput, DomainErrors>;
+
+            async fn register_operator_won(
+                &self,
+                input: RegisterOperatorWonInput,
+            ) -> Result<RegisterOperatorWonOutput, DomainErrors>;
         }
     }
 }

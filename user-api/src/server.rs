@@ -6,6 +6,9 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
+use bitcoin::secp256k1::rand::rngs::OsRng;
+use bitcoin::secp256k1::{Secp256k1, SecretKey};
+use bitcoin::PublicKey;
 use common::msg_broker::broker::{BrokerServer, BrokerServerApi, Identifier};
 use common::msg_broker::types::FromServer;
 use common::shutdown_flag::ShutdownFlag;
@@ -200,6 +203,14 @@ impl Server {
                 (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() })))
             }
         }
+    }
+
+    pub fn get_random_pubkey() -> PublicKey {
+        let secp = Secp256k1::new();
+        let mut rng = OsRng;
+        let too_sk = SecretKey::new(&mut rng);
+        let too_pk = bitcoin::secp256k1::PublicKey::from_secret_key(&secp, &too_sk);
+        PublicKey { compressed: true, inner: too_pk }
     }
 }
 

@@ -12,6 +12,7 @@ use union_contracts::bindings::pegout_manager::PegoutManager::{
 use crate::contracts::bitcoin_manager::ParseFieldError;
 use crate::contracts::common::send_tx_with_gas_bump;
 pub(crate) use crate::contracts::interactions::register_operator_take::RegisterOperatorTakeInvoke;
+pub(crate) use crate::contracts::interactions::register_operator_won::RegisterOperatorWonInvoke;
 pub(crate) use crate::contracts::interactions::register_pegout::RegisterPegoutInvoke;
 pub(crate) use crate::contracts::interactions::request_pegout::TryPegoutInvoke;
 pub(crate) use crate::contracts::interactions::trigger_operator_take::TriggerOperatorTakeInvoke;
@@ -42,6 +43,12 @@ pub trait PegoutManagerContractApi {
     async fn invoke_trigger_operator_take(
         &self,
         pegout_txid: FixedBytes<32>,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TxHash>;
+
+    async fn invoke_register_operator_won(
+        &self,
+        input: BtcTxSPVProof,
         gas_bumps: u8,
     ) -> alloy_contract::Result<TxHash>;
 }
@@ -108,6 +115,19 @@ impl<P: Provider> PegoutManagerContractApi for PegoutManagerContract<P> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
             || self.contract_instance.triggerOperatorTake(pegout_txid),
+            gas_bumps,
+        )
+        .await
+    }
+
+    async fn invoke_register_operator_won(
+        &self,
+        input: BtcTxSPVProof,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TxHash> {
+        send_tx_with_gas_bump(
+            &self.contract_instance.provider(),
+            || self.contract_instance.registerOperatorWon(input.clone()),
             gas_bumps,
         )
         .await
@@ -193,15 +213,6 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
         }
         PegoutManagerErrors::InvalidLocktime(e) => {
             DomainErrors::InvalidBtcTxSpvProof(format!("{e:?}"))
-        }
-        PegoutManagerErrors::BridgeBtcBlockNotInBestChain(e) => {
-            DomainErrors::MissingConfirmationsOnNativeBridge(format!("{e:?}"))
-        }
-        PegoutManagerErrors::BridgeBtcInexistantBlockHash(e) => {
-            DomainErrors::MissingConfirmationsOnNativeBridge(format!("{e:?}"))
-        }
-        PegoutManagerErrors::NotEnoughConfirmations(e) => {
-            DomainErrors::MissingConfirmationsOnNativeBridge(format!("{e:?}"))
         }
         PegoutManagerErrors::InvalidSlotState(e) => {
             DomainErrors::InvalidSlotState { expected: e.expected, actual: e.actual }

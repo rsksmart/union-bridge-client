@@ -1,4 +1,5 @@
 pub(super) mod bitcoin_manager;
+pub(super) mod challenge_manager;
 pub(super) mod committee_registry;
 pub(super) mod common;
 pub(super) mod interactions;

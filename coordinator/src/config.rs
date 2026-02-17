@@ -243,7 +243,7 @@ impl Config {
     pub fn get_contract_addresses(&self) -> Vec<Address> {
         self.contracts
             .iter()
-            .filter(|contract| self.get_contracts_to_subscribe_to(contract))
+            .filter(|contract| Self::get_contracts_to_subscribe_to(contract))
             .map(|contract| contract.address.clone())
             .map(|address| {
                 Address::try_from(address.as_str()).expect("Invalid contract address on config")
@@ -319,7 +319,7 @@ mod tests {
         );
         assert_eq!(99_999_999, config.coordinator.advance_funds.max_zkp_status_retries);
         assert_eq!("regtest", config.bitcoin_network);
-        assert_eq!(10, config.contracts.len());
+        assert_eq!(11, config.contracts.len());
     }
 
     #[test]

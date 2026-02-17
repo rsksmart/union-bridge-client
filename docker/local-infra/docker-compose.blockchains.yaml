@@ -25,7 +25,8 @@ services:
 
   # Starts the anvil client
   anvil:
-    image: ghcr.io/foundry-rs/foundry:v1.2.3
+    image: ghcr.io/foundry-rs/foundry:v1.5.1
+    platform: linux/amd64
     container_name: anvil
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -41,7 +42,7 @@ services:
 
   # Deploy smart contracts
   deploy-contracts:
-    image: ${CONTRACTS_IMAGE_BASE}:${CONTRACTS_IMAGE_TAG:-local-build}
+    platform: linux/amd64
     build:
       context: ${CONTRACTS_CONTEXT_PATH}
       dockerfile: ${CONTRACTS_DOCKERFILE}
@@ -49,7 +50,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
-      - RPC_URL=${ANVIL_URL}
+      - RPC_URL=${ANVIL_RPC_URL}
       - MNEMONIC=${MNEMONIC}
       - DEPLOYER_INDEX=${DEPLOYER_INDEX}
     command:
