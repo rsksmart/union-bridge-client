@@ -4,6 +4,7 @@ use std::thread;
 
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
+use common::config::CommonConfig;
 use common::msg_broker::broker::{BrokerServer, Cert, Identifier};
 use common::shutdown_flag::ShutdownFlag;
 use log::{error, info};

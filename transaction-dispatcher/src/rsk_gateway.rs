@@ -19,8 +19,6 @@ use crate::contracts::committee_registry::{
     DepositCommunicationDataInvoke, GetCommitteeCall, GetMemberCommunicationDataCall,
 };
 use crate::contracts::member_registry::{GetMemberPublicKeysCall, MemberRegistryContract};
-use crate::contracts::native_bridge::NativeBridgeContract;
-use crate::contracts::native_bridge::get_btc_transaction_confirmations::GetBtcTransactionConfirmationsCall;
 use crate::contracts::peg_manager::{FakePegManagerContract, NotifyCheckForkCompleteInvoke};
 use crate::contracts::pegin_manager::{
     AcceptPeginInvoke, GetTemporaryPeginAddressCall, PeginManagerContract, RequestPeginInvoke,
@@ -57,7 +55,6 @@ const SIGNATURE_MANAGER_CONTRACT_NAME: &str = "SignatureManager";
 const COMMITTEE_REGISTRY_CONTRACT_NAME: &str = "CommitteeRegistry";
 const MEMBER_REGISTRY_CONTRACT_NAME: &str = "MemberRegistry";
 const STREAM_MANAGER_CONTRACT_NAME: &str = "StreamManager";
-const NATIVE_BRIDGE_CONTRACT_NAME: &str = "NativeBridge";
 const CHALLENGE_MANAGER_CONTRACT_NAME: &str = "ChallengeManager";
 
 #[cfg_attr(test, automock)]
@@ -244,8 +241,6 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             Self::load_contract(MEMBER_REGISTRY_CONTRACT_NAME, &managed_contracts)?;
         let stream_manager_address =
             Self::load_contract(STREAM_MANAGER_CONTRACT_NAME, &managed_contracts)?;
-        let native_bridge_address =
-            Self::load_contract(NATIVE_BRIDGE_CONTRACT_NAME, &managed_contracts)?;
         let challenge_manager_address =
             Self::load_contract(CHALLENGE_MANAGER_CONTRACT_NAME, &managed_contracts)?;
 
@@ -290,8 +285,6 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             MemberRegistryContract::new(provider.clone(), member_registry_address.into());
         let stream_manager_contract =
             StreamManagerContract::new(provider.clone(), stream_manager_address.into());
-        let native_bridge_contract =
-            NativeBridgeContract::new(provider.clone(), native_bridge_address.into());
         let challenge_manager_contract =
             ChallengeManagerContract::new(provider.clone(), challenge_manager_address.into());
 

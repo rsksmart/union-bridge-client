@@ -649,11 +649,6 @@ pub(crate) mod tests {
                 input: AddOperatorTakeTxHashInput,
             ) -> Result<AddOperatorTakeTxHashOutput, DomainErrors>;
 
-            async fn get_btc_confirmations(
-                &self,
-                input: GetBtcTransactionConfirmationsInput,
-            ) -> Result<GetBtcTransactionConfirmationsOutput, DomainErrors>;
-
             async fn register_challenge(
                 &self,
                 input: RegisterChallengeInput,
