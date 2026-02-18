@@ -258,7 +258,7 @@ mod tests {
         assert_eq!(100, config.indexer.sync.batch_size);
         assert_eq!("ws://127.0.0.1:8545", config.provider.rootstock.url);
         assert_eq!("regtest", config.bitcoin_network);
-        assert_eq!(12, config.contracts.len());
+        assert_eq!(11, config.contracts.len());
         let contract_names: Vec<&String> = config.contracts.iter().map(|c| &c.name).collect();
         let expected_names = vec![
             "TestContractDyn",
@@ -272,7 +272,6 @@ mod tests {
             "StreamManager",
             "BridgeMock",
             "ChallengeManager",
-            "NativeBridge",
         ];
         assert_eq!(expected_names, contract_names);
         assert_eq!("0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761", config.contracts[0].address);
@@ -286,7 +285,6 @@ mod tests {
         assert_eq!("0x0165878A594ca255338adfa4d48449f69242Eb8F", config.contracts[8].address);
         assert_eq!("0x5FbDB2315678afecb367f032d93F642f64180aa3", config.contracts[9].address);
         assert_eq!("0x59b670e9fA9D0A427751Af201D676719a970857b", config.contracts[10].address);
-        assert_eq!("0x0000000000000000000000000000000001000006", config.contracts[11].address);
     }
 
     #[test]
@@ -305,7 +303,7 @@ mod tests {
         assert_eq!(1000, config.indexer.cache.size);
         assert_eq!("ws://host.docker.internal:8545", config.provider.rootstock.url);
         assert_eq!("regtest", config.bitcoin_network);
-        assert_eq!(12, config.contracts.len());
+        assert_eq!(11, config.contracts.len());
     }
 
     #[test]
