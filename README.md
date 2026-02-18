@@ -264,6 +264,13 @@ Command summary:
 - `--start-regtest`: starts operators with existing deployed addresses/config.
 - `--start-regtest --fresh`: runs full remote fresh orchestration and clean operator restart.
 
+Important: if you change branch on the regtest host (`~/union-bridge-client`), rebuild images tagged as `latest-regtest` before starting operators:
+
+```bash
+cd docker/build
+bash d-compose-cli.sh build --tag=latest-regtest --no-cache
+```
+
 For full instance details (hosts, env vars, artifacts, validation, troubleshooting), see:
 - [`regtest-instance/README.md`](regtest-instance/README.md)
 
