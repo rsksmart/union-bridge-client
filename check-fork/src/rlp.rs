@@ -12,7 +12,8 @@ pub fn encode_signed_coin_value(value: &U256) -> Vec<u8> {
     // before adding the length prefix.
     let mut bytes = u256_be_coin_bytes(value);
     if bytes.first().is_some_and(|b| *b >= 0x80) {
-        let mut prefixed = Vec::with_capacity(bytes.len().strict_add_signed(1));
+        let mut prefixed =
+            Vec::with_capacity(bytes.len().checked_add(1).expect("prefixed coin value overflow"));
         prefixed.push(0); // we add a "0x00" prefix to keep the value positive
         prefixed.extend_from_slice(&bytes);
         bytes = prefixed;

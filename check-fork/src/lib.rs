@@ -190,7 +190,13 @@ fn validate_consecutive_block(block: &RskBlock, prev_block: &RskBlock) -> Result
     }
 
     // blocks should be consecutive
-    if block.header.number != prev_block.header.number.strict_add_signed(1) {
+    let expected_next_number = prev_block
+        .header
+        .number
+        .checked_add(1)
+        .ok_or("Overflow incrementing previous block number")?;
+
+    if block.header.number != expected_next_number {
         return Err("Block numbers are not consecutive");
     }
 
