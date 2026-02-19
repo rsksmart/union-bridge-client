@@ -138,10 +138,7 @@ pub struct PeginConfig {
 
 impl Default for PeginConfig {
     fn default() -> Self {
-        Self {
-            min_tx_confirmations: 1,
-            blocks_delay_for_tx_check: 20,
-        }
+        Self { min_tx_confirmations: 1, blocks_delay_for_tx_check: 20 }
     }
 }
 
@@ -187,10 +184,7 @@ pub struct AdvanceFundsConfig {
 
 impl Default for AdvanceFundsConfig {
     fn default() -> Self {
-        Self {
-            spv_proof_min_confirmations: 1,
-            blocks_delay_for_tx_check: 20,
-        }
+        Self { spv_proof_min_confirmations: 1, blocks_delay_for_tx_check: 20 }
     }
 }
 

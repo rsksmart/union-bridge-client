@@ -580,7 +580,8 @@ where
     fn schedule_register_pegout_retry(&mut self, flow_id: Uuid, attempt: i16, reason: &str) {
         info!("{reason} for flow {flow_id} (attempt {attempt})");
         self.unconfirmed_register_pegout.insert(flow_id, attempt);
-        self.register_pegout_retry_scheduler.schedule(flow_id, self.config.blocks_delay_for_tx_check);
+        self.register_pegout_retry_scheduler
+            .schedule(flow_id, self.config.blocks_delay_for_tx_check);
     }
 
     fn handle_register_pegout_retry_tick(&mut self) {

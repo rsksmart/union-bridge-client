@@ -145,7 +145,9 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                 Box::new(FundBitvmxProcessor::new(bitvmx_broker.clone(), bitcoin_network)),
             ],
             check_period: bridge_config.coordinator.check_period(),
-            bitvmx_not_responding_threshold: bridge_config.coordinator.bitvmx_not_responding_threshold(),
+            bitvmx_not_responding_threshold: bridge_config
+                .coordinator
+                .bitvmx_not_responding_threshold(),
             bitvmx_ping_after_silence: bridge_config.coordinator.bitvmx_ping_after_silence(),
             shutdown_flag,
             store: store_rc,

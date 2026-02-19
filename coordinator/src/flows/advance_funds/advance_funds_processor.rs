@@ -126,8 +126,11 @@ where
             self.chain_view.get_from(event2.block_number);
 
         info!("Init advance funds with {event2:?} and {post_advance_funds_blocks:?}");
-        let new_advance_funds =
-            CheckForkAccumulator::new(event2, &post_advance_funds_blocks, self.required_confirmations);
+        let new_advance_funds = CheckForkAccumulator::new(
+            event2,
+            &post_advance_funds_blocks,
+            self.required_confirmations,
+        );
         let advance_funds_rc = Rc::new(RefCell::new(new_advance_funds));
         self.chain_view.add_observer(advance_funds_rc.clone());
         self.check_fork_accumulator = Some(advance_funds_rc);
@@ -703,8 +706,11 @@ mod tests {
         let mut rsk_gateway = MockRskContractsGatewayApi::new();
         expect_notify_check_fork(&mut rsk_gateway, pegout_id);
 
-        let mut processor =
-            AdvanceFundsProcessor::new_for_test(Rc::new(rsk_gateway), Rc::new(bitvmx_broker), REQUIRED_CONFIRMATIONS);
+        let mut processor = AdvanceFundsProcessor::new_for_test(
+            Rc::new(rsk_gateway),
+            Rc::new(bitvmx_broker),
+            REQUIRED_CONFIRMATIONS,
+        );
 
         let request_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
@@ -831,8 +837,11 @@ mod tests {
         let mut rsk_gateway = MockRskContractsGatewayApi::new();
         expect_notify_check_fork(&mut rsk_gateway, pegout_id);
 
-        let mut processor =
-            AdvanceFundsProcessor::new_for_test(Rc::new(rsk_gateway), Rc::new(bitvmx_broker), REQUIRED_CONFIRMATIONS);
+        let mut processor = AdvanceFundsProcessor::new_for_test(
+            Rc::new(rsk_gateway),
+            Rc::new(bitvmx_broker),
+            REQUIRED_CONFIRMATIONS,
+        );
 
         let request_block =
             RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
@@ -1300,8 +1309,11 @@ mod tests {
         let mut rsk_gateway = MockRskContractsGatewayApi::new();
         expect_notify_check_fork(&mut rsk_gateway, pegout_id);
 
-        let mut processor =
-            AdvanceFundsProcessor::new_for_test(Rc::new(rsk_gateway), Rc::new(bitvmx_broker), REQUIRED_CONFIRMATIONS);
+        let mut processor = AdvanceFundsProcessor::new_for_test(
+            Rc::new(rsk_gateway),
+            Rc::new(bitvmx_broker),
+            REQUIRED_CONFIRMATIONS,
+        );
 
         // create initial request block
         let request_block =
@@ -1613,8 +1625,11 @@ mod tests {
         let mut rsk_gateway = MockRskContractsGatewayApi::new();
         expect_notify_check_fork(&mut rsk_gateway, pegout_id);
 
-        let mut processor =
-            AdvanceFundsProcessor::new_for_test(Rc::new(rsk_gateway), Rc::new(bitvmx_broker), REQUIRED_CONFIRMATIONS);
+        let mut processor = AdvanceFundsProcessor::new_for_test(
+            Rc::new(rsk_gateway),
+            Rc::new(bitvmx_broker),
+            REQUIRED_CONFIRMATIONS,
+        );
 
         // set up request and kickoff like previous tests
         let request_block =

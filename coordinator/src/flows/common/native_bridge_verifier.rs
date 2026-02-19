@@ -21,11 +21,13 @@ pub enum NativeBridgeVerifier<CG: RskContractsGatewayApi> {
 impl<CG: RskContractsGatewayApi> Clone for NativeBridgeVerifier<CG> {
     fn clone(&self) -> Self {
         match self {
-            NativeBridgeVerifier::Real { contracts, rt_sync, min_tx_confirmations } => NativeBridgeVerifier::Real {
-                contracts: Rc::clone(contracts),
-                rt_sync: rt_sync.clone(),
-                min_tx_confirmations: *min_tx_confirmations,
-            },
+            NativeBridgeVerifier::Real { contracts, rt_sync, min_tx_confirmations } => {
+                NativeBridgeVerifier::Real {
+                    contracts: Rc::clone(contracts),
+                    rt_sync: rt_sync.clone(),
+                    min_tx_confirmations: *min_tx_confirmations,
+                }
+            }
             NativeBridgeVerifier::Dummy => NativeBridgeVerifier::Dummy,
         }
     }

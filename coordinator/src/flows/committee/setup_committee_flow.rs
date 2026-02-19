@@ -472,7 +472,16 @@ where
         store: Rc<S>,
         config: CommitteeConfig,
     ) -> Self {
-        Self { contracts, rt_sync, bitvmx_broker, state, global_context, bitcoin_network, store, config }
+        Self {
+            contracts,
+            rt_sync,
+            bitvmx_broker,
+            state,
+            global_context,
+            bitcoin_network,
+            store,
+            config,
+        }
     }
 
     fn new(
@@ -1965,7 +1974,15 @@ where
         store: Rc<S>,
         config: CommitteeConfig,
     ) -> Self {
-        Self { contracts_gateway, rt_sync, bitvmx_broker, global_context, bitcoin_network, store, config }
+        Self {
+            contracts_gateway,
+            rt_sync,
+            bitvmx_broker,
+            global_context,
+            bitcoin_network,
+            store,
+            config,
+        }
     }
 }
 

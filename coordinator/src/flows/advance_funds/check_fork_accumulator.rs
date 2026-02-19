@@ -24,7 +24,8 @@ impl BlockchainObserver for CheckForkAccumulator {
         if self.is_check_fork_ready() {
             // creates it if it doesn't exist
             if self.confirmations.is_none() {
-                self.confirmations = Some(self.new_confirmations(block, &self.args.pegout_id.clone()));
+                self.confirmations =
+                    Some(self.new_confirmations(block, &self.args.pegout_id.clone()));
             }
             self.confirmations.as_mut().unwrap().on_block_added(block);
             debug!("Adding confirmation with block {} ({})", block.number(), block.hash());
@@ -327,7 +328,8 @@ mod tests {
         let block2 = create_fake_block_with_uncles(block2_number, U256::from(400), vec![]);
         let post_advance_funds_blocks = vec![block1, block2];
 
-        let checker = CheckForkAccumulator::new(&event, &post_advance_funds_blocks, REQUIRED_CONFIRMATIONS);
+        let checker =
+            CheckForkAccumulator::new(&event, &post_advance_funds_blocks, REQUIRED_CONFIRMATIONS);
 
         assert_eq!(checker.args.block_list.len(), 2);
         assert_eq!(checker.args.block_list[0].number, block1_number);
