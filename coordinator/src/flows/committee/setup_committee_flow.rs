@@ -33,7 +33,7 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
 use uuid::Uuid;
 
 use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
-use crate::config::REQUIRED_CONFIRMATIONS;
+use crate::config::CommitteeConfig;
 use crate::event_processor::EventProcessor;
 use crate::flows::committee::dispute_core_setup::DisputeCoreSetup;
 use crate::flows::common::{
@@ -48,8 +48,6 @@ use crate::types::{
 use crate::user_requests::ApplyToStream;
 
 pub(crate) const NO_LEADER_IDX: u16 = 0;
-const MIN_FUNDING_BALANCE: u64 = 20_002_000; // Setup Committee estimated cost
-const MIN_RSK_BALANCE: u64 = 100_000 * 10_000_000_000 + 500_000; // min stream (sats) to wei + fees, hardcoded for now
 
 #[cfg_attr(test, automock)]
 trait SetupCommitteeFlowApi {
@@ -446,6 +444,7 @@ pub(crate) struct SetupCommitteeFlow<
     global_context: GlobalContext,
     bitcoin_network: Network,
     store: Rc<S>,
+    config: CommitteeConfig,
 }
 
 const REGTEST_FEE_RATE: u64 = 10;
@@ -471,8 +470,9 @@ where
         state: State,
         bitcoin_network: Network,
         store: Rc<S>,
+        config: CommitteeConfig,
     ) -> Self {
-        Self { contracts, rt_sync, bitvmx_broker, state, global_context, bitcoin_network, store }
+        Self { contracts, rt_sync, bitvmx_broker, state, global_context, bitcoin_network, store, config }
     }
 
     fn new(
@@ -483,6 +483,7 @@ where
         internal_id: Uuid,
         bitcoin_network: Network,
         store: Rc<S>,
+        config: CommitteeConfig,
     ) -> Self {
         Self {
             contracts,
@@ -492,6 +493,7 @@ where
             global_context,
             bitcoin_network,
             store,
+            config,
         }
     }
 
@@ -532,8 +534,9 @@ where
             .context("Funding balance request missing in context")?;
         r.1 = Some(balance);
 
-        if balance < MIN_FUNDING_BALANCE {
-            bail!("Insufficient funding balance: {balance} < {MIN_FUNDING_BALANCE}")
+        let min_funding_balance = self.config.min_funding_balance;
+        if balance < min_funding_balance {
+            bail!("Insufficient funding balance: {balance} < {min_funding_balance}")
         }
 
         debug!("Funding balance check passed: {balance}");
@@ -548,9 +551,10 @@ where
 
         let balance_wei = self.rt_sync.run(self.contracts.get_balance())?;
 
+        let min_rsk_balance = self.config.min_rsk_balance;
         // convert wei to a u64 (this is safe for reasonable balance values)
-        if balance_wei < U256::from(MIN_RSK_BALANCE) {
-            bail!("Insufficient RSK balance: {balance_wei} < {MIN_RSK_BALANCE}")
+        if balance_wei < U256::from(min_rsk_balance) {
+            bail!("Insufficient RSK balance: {balance_wei} < {min_rsk_balance}")
         }
 
         Ok(())
@@ -1427,6 +1431,7 @@ where
     blockchain_view: BlockchainView,
     events_confirming: HashMap<String, ConfirmableEventWithData>,
     store: Rc<S>,
+    required_confirmations: u32,
 }
 
 impl<CG, BC, FactoryBSF, S> SetupCommitteeProcessor<CG, BC, FactoryBSF, S>
@@ -1440,6 +1445,7 @@ where
         flow_factory: FactoryBSF,
         global_context: GlobalContext,
         store: Rc<S>,
+        required_confirmations: u32,
     ) -> Self {
         let mut processor = Self {
             flow_factory,
@@ -1448,6 +1454,7 @@ where
             events_confirming: HashMap::new(),
             blockchain_view: BlockchainView::new(),
             store,
+            required_confirmations,
         };
 
         // Restore flows from store
@@ -1831,7 +1838,7 @@ where
 
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         // useful for testing purposes
-        if REQUIRED_CONFIRMATIONS == 0 {
+        if self.required_confirmations == 0 {
             self.process_confirmed_rsk_event(event);
             return Ok(());
         }
@@ -1868,7 +1875,7 @@ where
 
             let mut confirmable_event = ConfirmableEventWithData::new(
                 id.clone(),
-                REQUIRED_CONFIRMATIONS,
+                self.required_confirmations,
                 self.blockchain_view.clone(),
                 managed_event,
             );
@@ -1940,6 +1947,7 @@ where
     global_context: GlobalContext,
     bitcoin_network: Network,
     store: Rc<S>,
+    config: CommitteeConfig,
 }
 
 impl<CG, BC, S> SetupCommitteeFlowFactory<CG, BC, S>
@@ -1955,8 +1963,9 @@ where
         global_context: GlobalContext,
         bitcoin_network: Network,
         store: Rc<S>,
+        config: CommitteeConfig,
     ) -> Self {
-        Self { contracts_gateway, rt_sync, bitvmx_broker, global_context, bitcoin_network, store }
+        Self { contracts_gateway, rt_sync, bitvmx_broker, global_context, bitcoin_network, store, config }
     }
 }
 
@@ -1976,6 +1985,7 @@ where
             internal_id,
             self.bitcoin_network,
             self.store.clone(),
+            self.config.clone(),
         )
     }
 
@@ -1988,6 +1998,7 @@ where
             saved_state,
             self.bitcoin_network,
             self.store.clone(),
+            self.config.clone(),
         )
     }
 }

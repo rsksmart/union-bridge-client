@@ -11,7 +11,6 @@ use transaction_dispatcher::types::{AddMemberNonceInput, AddMemberSignatureInput
 use uuid::Uuid;
 
 use crate::blockchain_tracker::{BlockchainView, ConfirmableEvent};
-use crate::config::REQUIRED_CONFIRMATIONS;
 use crate::types::RegisterSignaturesBitVmxData;
 
 #[cfg_attr(test, automock)]
@@ -53,6 +52,7 @@ pub(crate) struct BtcSignatureLifeCycle<CG: RskContractsGatewayApi> {
     rt_sync: RuntimeSync,
     blockchain_view: BlockchainView,
     state: State,
+    required_confirmations: u32,
 }
 
 impl<CG> BtcSignatureLifeCycle<CG>
@@ -63,12 +63,14 @@ where
         contracts_gateway: Rc<CG>,
         rt_sync: RuntimeSync,
         flow_id: Uuid,
+        required_confirmations: u32,
     ) -> Self {
         BtcSignatureLifeCycle {
             contracts: contracts_gateway,
             rt_sync,
             blockchain_view: BlockchainView::new(),
             state: State { flow_id, data: None, nonce_step: None, signature_step: None },
+            required_confirmations,
         }
     }
 
@@ -78,12 +80,14 @@ where
         rt_sync: RuntimeSync,
         blockchain_view: BlockchainView,
         flow_id: Uuid,
+        required_confirmations: u32,
     ) -> Self {
         BtcSignatureLifeCycle {
             contracts: contracts_gateway,
             rt_sync,
             blockchain_view,
             state: State { flow_id, data: None, nonce_step: None, signature_step: None },
+            required_confirmations,
         }
     }
 
@@ -186,7 +190,7 @@ where
         // move to the Nonces step
         let confirmable = ConfirmableEvent::new(
             self.state.flow_id.to_string(),
-            REQUIRED_CONFIRMATIONS,
+            self.required_confirmations,
             self.blockchain_view.clone(),
         );
         self.state.nonce_step = Some(confirmable);
@@ -252,7 +256,7 @@ where
 
         let confirmable = ConfirmableEvent::new(
             self.state.flow_id.to_string(),
-            REQUIRED_CONFIRMATIONS,
+            self.required_confirmations,
             self.blockchain_view.clone(),
         );
 
@@ -300,6 +304,9 @@ mod tests {
     use crate::blockchain_tracker::BlockchainView;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
     use crate::types::RegisterSignaturesBitVmxData;
+
+    /// Test constant for required confirmations (matches production default)
+    const REQUIRED_CONFIRMATIONS: u32 = 5;
 
     #[test]
     fn test_nonce_step_with_unset() {
@@ -582,6 +589,7 @@ mod tests {
             rt_sync,
             blockchain_view,
             flow_id,
+            REQUIRED_CONFIRMATIONS,
         );
 
         // attempt to send nonce to contracts should fail
@@ -611,6 +619,7 @@ mod tests {
             rt_sync,
             blockchain_view,
             flow_id,
+            REQUIRED_CONFIRMATIONS,
         );
 
         // test 1: try to skip Nonces step and go directly to signature
@@ -667,6 +676,7 @@ mod tests {
             rt_sync,
             blockchain_view.clone(),
             flow_id,
+            REQUIRED_CONFIRMATIONS,
         );
 
         // step 1: send nonce to contracts
@@ -811,6 +821,7 @@ mod tests {
             rt_sync,
             blockchain_view.clone(),
             flow_id,
+            REQUIRED_CONFIRMATIONS,
         );
 
         (signature_input, flow, blockchain_view)
