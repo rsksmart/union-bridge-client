@@ -89,6 +89,7 @@ where
     BC: BitVmxBrokerClientApi,
     S: CoordinatorStoreApi,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         contracts_gateway: Rc<CG>,
         rt_sync: RuntimeSync,
@@ -126,6 +127,7 @@ where
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn restore_or_new(
         contracts_gateway: Rc<CG>,
         rt_sync: RuntimeSync,

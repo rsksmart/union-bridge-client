@@ -462,6 +462,7 @@ where
             .save_flow(&StoreKey::SetupCommitteeFlow(self.state.internal_id), self.state.clone())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn from_saved_state(
         contracts: Rc<CG>,
         rt_sync: RuntimeSync,
@@ -484,6 +485,7 @@ where
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn new(
         contracts: Rc<CG>,
         rt_sync: RuntimeSync,

@@ -90,6 +90,7 @@ where
     BC: BitVmxBrokerClientApi,
     S: CoordinatorStoreApi + 'static,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         contracts_gateway: Rc<CG>,
         rt_sync: RuntimeSync,

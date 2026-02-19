@@ -51,7 +51,7 @@ pub struct BrokerConfig {
 
 /// Top-level bridge configuration composing all flow-specific configs.
 /// Loaded from TOML with serde, using 3-tier hierarchy: base.toml -> env.toml -> UB__ env vars.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct BridgeConfig {
     /// Global coordinator settings
@@ -68,19 +68,6 @@ pub struct BridgeConfig {
     pub native_bridge: NativeBridgeConfig,
 }
 
-impl Default for BridgeConfig {
-    fn default() -> Self {
-        Self {
-            coordinator: CoordinatorFlowConfig::default(),
-            pegin: PeginConfig::default(),
-            pegout: PegoutConfig::default(),
-            advance_funds: AdvanceFundsConfig::default(),
-            committee: CommitteeConfig::default(),
-            native_bridge: NativeBridgeConfig::default(),
-        }
-    }
-}
-
 /// Coordinator-level flow configuration
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
@@ -89,9 +76,9 @@ pub struct CoordinatorFlowConfig {
     pub required_confirmations: u32,
     /// Period between coordinator check cycles in seconds (default: 1)
     pub check_period_secs: u64,
-    /// Threshold in seconds before considering BitVMX not responding (default: 30)
+    /// Threshold in seconds before considering `BitVMX` not responding (default: 30)
     pub bitvmx_not_responding_threshold_secs: u64,
-    /// Seconds of silence before sending a ping to BitVMX (default: 15)
+    /// Seconds of silence before sending a ping to `BitVMX` (default: 15)
     pub bitvmx_ping_after_silence_secs: u64,
 }
 
@@ -107,19 +94,19 @@ impl Default for CoordinatorFlowConfig {
 }
 
 impl CoordinatorFlowConfig {
-    /// Returns check_period as Duration
+    /// Returns `check_period` as Duration
     #[must_use]
     pub fn check_period(&self) -> Duration {
         Duration::from_secs(self.check_period_secs)
     }
 
-    /// Returns bitvmx_not_responding_threshold as Duration
+    /// Returns `bitvmx_not_responding_threshold` as Duration
     #[must_use]
     pub fn bitvmx_not_responding_threshold(&self) -> Duration {
         Duration::from_secs(self.bitvmx_not_responding_threshold_secs)
     }
 
-    /// Returns bitvmx_ping_after_silence as Duration
+    /// Returns `bitvmx_ping_after_silence` as Duration
     #[must_use]
     pub fn bitvmx_ping_after_silence(&self) -> Duration {
         Duration::from_secs(self.bitvmx_ping_after_silence_secs)
@@ -165,7 +152,7 @@ impl Default for PegoutConfig {
 }
 
 impl PegoutConfig {
-    /// Returns advance_funds_timeout as Duration
+    /// Returns `advance_funds_timeout` as Duration
     #[must_use]
     pub fn advance_funds_timeout(&self) -> Duration {
         Duration::from_secs(self.advance_funds_timeout_secs)
@@ -192,9 +179,9 @@ impl Default for AdvanceFundsConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct CommitteeConfig {
-    /// Minimum BitVMX funding balance in satoshis (default: 20_002_000)
+    /// Minimum `BitVMX` funding balance in satoshis (default: `20_002_000`)
     pub min_funding_balance: u64,
-    /// Minimum RSK balance in wei (default: 1_000_000_000_500_000 = ~1 RBTC + fees)
+    /// Minimum RSK balance in wei (default: `1_000_000_000_500_000` = ~1 RBTC + fees)
     pub min_rsk_balance: u64,
 }
 
