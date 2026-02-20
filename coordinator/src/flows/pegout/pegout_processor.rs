@@ -862,3 +862,158 @@ where
         self.unconfirmed_register_pegout.clear();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use alloy_primitives::{Bytes, FixedBytes, U256 as AlloyU256};
+    use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+    use common::msg_broker::broker::MockBrokerClientApi;
+    use primitive_types::U256 as RskU256;
+    use union_contracts::bindings::peg_manager::PegManager::{
+        BitcoinSignatureData, BtcTransaction, PegoutRequested,
+    };
+
+    use super::*;
+    use crate::coordinator::tests::MockRskContractsGatewayApi;
+    use crate::flows::advance_funds::tests::create_fake_block;
+    use crate::flows::pegout::pegout_flow::FlowContext;
+    use crate::store::MockCoordinatorStoreApi;
+
+    type MockBitVmxBroker =
+        MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
+
+    type TestBtcSigSubFlow = BaseBtcSignatureSubFlow<
+        crate::flows::btc_signature::btc_signature_lifecycle::BtcSignatureLifeCycle<
+            MockRskContractsGatewayApi,
+        >,
+    >;
+
+    type TestBtcSigFactory =
+        crate::flows::btc_signature::btc_signature_subflow::BtcSignatureSubFlowFactory<
+            MockRskContractsGatewayApi,
+        >;
+
+    type TestProcessor = PegoutFlowProcessor<
+        MockRskContractsGatewayApi,
+        MockBitVmxBroker,
+        TestBtcSigSubFlow,
+        TestBtcSigFactory,
+        MockCoordinatorStoreApi,
+    >;
+
+    type TestPegoutFlow =
+        PegoutFlow<MockRskContractsGatewayApi, MockBitVmxBroker, MockCoordinatorStoreApi>;
+
+    struct TestHarness {
+        processor: TestProcessor,
+        contracts: Rc<MockRskContractsGatewayApi>,
+        broker: Rc<MockBitVmxBroker>,
+        store: Rc<MockCoordinatorStoreApi>,
+        rt_sync: RuntimeSync,
+    }
+
+    impl TestHarness {
+        fn new() -> Self {
+            let contracts = Rc::new(MockRskContractsGatewayApi::new());
+            let broker = Rc::new(MockBitVmxBroker::new());
+            let store = Rc::new(MockCoordinatorStoreApi::new());
+            let rt_sync = RuntimeSync::new().unwrap();
+
+            let processor = PegoutFlowProcessor::new(
+                contracts.clone(),
+                rt_sync.clone(),
+                broker.clone(),
+                GlobalContext::new(),
+                store.clone(),
+                NativeBridgeVerifier::Dummy,
+            );
+
+            Self { processor, contracts, broker, store, rt_sync }
+        }
+
+        fn create_flow_at_done(&self, flow_id: Uuid) -> TestPegoutFlow {
+            let state = State {
+                flow_id,
+                step: Steps::Done,
+                ctx: FlowContext {
+                    pegout_requested: create_fake_pegout_requested(),
+                    my_p2p_address: None,
+                    committee_output: None,
+                    peg_out_accepted: None,
+                    pegout_registered_tx: None,
+                    spv_proof: None,
+                    transaction_status: None,
+                },
+            };
+
+            PegoutFlow::from_saved_state(
+                self.contracts.clone(),
+                self.rt_sync.clone(),
+                self.broker.clone(),
+                state,
+                self.store.clone(),
+                NativeBridgeVerifier::Dummy,
+            )
+        }
+
+        fn create_completed_sig_flow(&self, flow_id: Uuid) -> TestBtcSigSubFlow {
+            BaseBtcSignatureSubFlow::new_completed_for_test(&self.contracts, &self.rt_sync, flow_id)
+        }
+    }
+
+    fn create_fake_pegout_requested() -> PegoutRequested {
+        PegoutRequested {
+            userPubKey: Bytes::from(vec![0x03; 33]),
+            committeeId: AlloyU256::from(1u64),
+            pegoutSignatureData: BitcoinSignatureData {
+                tx: BtcTransaction { version: 2, inputs: vec![], outputs: vec![], locktime: 0 },
+                txid: FixedBytes::default(),
+                signatureHash: FixedBytes::default(),
+                signatureMessage: Bytes::default(),
+            },
+            streamId: 0,
+            packetNumber: 0,
+            slotId: 0,
+            amount: 100_000,
+            pegoutId: FixedBytes::default(),
+        }
+    }
+
+    /// Regression test for the bug where a signature flow completing after
+    /// the advance-funds timeout caused "Invalid state transition: Done with
+    /// data `DispatchTransaction`".
+    ///
+    /// Timeline of the bug:
+    ///   1. Pegout flow reaches `DispatchTransaction` (waiting for BTC signatures)
+    ///   2. Timeout fires -> flow moves to `TriggerOperatorTake` -> Done
+    ///   3. Signature flow completes (5/5 confirmations)
+    ///   4. Processor tries `flow.complete_step(DispatchTransaction)` on a Done flow -> crash
+    ///
+    /// The fix (9b681821) adds a guard: skip the `complete_step` call if the
+    /// flow is no longer at `DispatchTransaction`.
+    #[test]
+    fn test_signature_completion_after_timeout_does_not_crash() {
+        let mut harness = TestHarness::new();
+        let flow_id = Uuid::new_v4();
+
+        let pegout_flow = harness.create_flow_at_done(flow_id);
+        harness.processor.pegout_flows.insert(flow_id, pegout_flow);
+        let signature_flow = harness.create_completed_sig_flow(flow_id);
+        harness.processor.signature_flows.insert(flow_id, signature_flow);
+
+        let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
+            BlockNumber::from(100),
+            RskU256::from(50),
+        ));
+
+        let result = harness.processor.process_unhandled_confirmed_sig_flow_events(&block);
+        assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
+        assert_eq!(harness.processor.pegout_flows[&flow_id].current_step(), Steps::Done);
+        assert!(!harness.processor.signature_flows.contains_key(&flow_id));
+
+        // Idempotency: a second pass must also succeed and not reintroduce state
+        let result = harness.processor.process_unhandled_confirmed_sig_flow_events(&block);
+        assert!(result.is_ok(), "second call expected Ok, got: {:?}", result.err());
+        assert!(!harness.processor.signature_flows.contains_key(&flow_id));
+    }
+}

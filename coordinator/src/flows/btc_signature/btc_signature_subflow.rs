@@ -54,6 +54,17 @@ where
 
         Self { lifecycle, is_done: false, is_nonces_step_done: false }
     }
+
+    #[cfg(test)]
+    pub(crate) fn new_completed_for_test(
+        contracts_gateway: &Rc<CG>,
+        rt_sync: &RuntimeSync,
+        flow_id: Uuid,
+    ) -> Self {
+        let lifecycle =
+            BtcSignatureLifeCycle::new(contracts_gateway.clone(), rt_sync.clone(), flow_id);
+        Self { lifecycle, is_done: true, is_nonces_step_done: true }
+    }
 }
 
 impl<BSF> BtcSignatureSubFlowApi for BaseBtcSignatureSubFlow<BSF>
