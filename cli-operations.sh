@@ -24,18 +24,27 @@ for arg in "$@"; do
   elif [[ "$ENV_FROM_ARGS" == "next" ]]; then
     ENV_FROM_ARGS="$arg"
     break
+  elif [[ "$arg" == --env=* ]]; then
+    ENV_FROM_ARGS="${arg#--env=}"
+    break
+  elif [[ "$arg" == -e=* ]]; then
+    ENV_FROM_ARGS="${arg#-e=}"
+    break
   fi
 done
 
-# Load UC_ENV, UC_TAG, UC_OPERATOR_ID, UC_OPERATOR_ROLE from root .envrc
-# This ensures these variables are available even when scripts are run from subdirectories
+# Parse UC_* variables from root .envrc if not already set in the environment.
+# Only reads `export UC_...=` lines — does not execute arbitrary shell code.
 PROJECT_ROOT="$(pwd)"
 ENVRC_FILE="${PROJECT_ROOT}/.envrc"
 if [[ -f "$ENVRC_FILE" ]]; then
-  # Source .envrc to get UC_ENV, UC_TAG, UC_OPERATOR_ID, UC_OPERATOR_ROLE (only export statements, safe to source)
-  set -a
-  source "$ENVRC_FILE" 2>/dev/null || true
-  set +a
+  while IFS='=' read -r key value; do
+    key=$(echo "$key" | xargs)
+    value=$(echo "$value" | sed 's/^["'\''"]//;s/["'\''"]$//')
+    if [[ -z "${!key:-}" ]]; then
+      export "$key=$value"
+    fi
+  done < <(grep -E '^\s*export\s+UC_[A-Z_]+=' "$ENVRC_FILE" | sed 's/^\s*export\s*//')
 fi
 
 # Save UC_OPERATOR_ID and UC_OPERATOR_ROLE from .envrc before .env file might overwrite them

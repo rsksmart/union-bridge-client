@@ -2,15 +2,24 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Load UC_ENV, UC_TAG, UC_OPERATOR_ID, UC_OPERATOR_ROLE from root .envrc if not already set
-# This ensures these variables are available even when scripts are run from subdirectories
+# Change to script directory early so all docker compose calls find the correct compose files
+cd "${SCRIPT_DIR}" || {
+  echo "Error: Failed to change to script directory: ${SCRIPT_DIR}"
+  exit 1
+}
+
+# Parse UC_* variables from root .envrc if not already set in the environment.
+# Only reads `export UC_...=` lines — does not execute arbitrary shell code.
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 ENVRC_FILE="${PROJECT_ROOT}/.envrc"
 if [[ -f "$ENVRC_FILE" ]]; then
-  # Source .envrc to get UC_ENV, UC_TAG, UC_OPERATOR_ID, UC_OPERATOR_ROLE (only export statements, safe to source)
-  set -a
-  source "$ENVRC_FILE" 2>/dev/null || true
-  set +a
+  while IFS='=' read -r key value; do
+    key=$(echo "$key" | xargs)
+    value=$(echo "$value" | sed 's/^["'\''"]//;s/["'\''"]$//')
+    if [[ -z "${!key:-}" ]]; then
+      export "$key=$value"
+    fi
+  done < <(grep -E '^\s*export\s+UC_[A-Z_]+=' "$ENVRC_FILE" | sed 's/^\s*export\s*//')
 fi
 
 # Initialize from environment variables (can be overridden by command line args)
@@ -31,9 +40,10 @@ AUTO_CONFIRM=false
 print_help() {
   echo "Usage: $0 [--env <ENV>] [--op <ID>] [OPTIONS] [DOCKER_COMPOSE_ARGS...]"
   echo ""
-  echo "Required:"
+  echo "Environment:"
   echo "  --env <ENV>              Target environment: alphanet, testnet, local, local-docker, or regtest"
-  echo "                            (Optional if UC_ENV is set in .envrc). local, local-docker, regtest deploy 4 operators."
+  echo "                            Falls back to UC_ENV from .envrc if not provided."
+  echo "                            local, local-docker, regtest deploy 4 operators."
   echo "                            alphanet, testnet deploy 1 operator per host (requires --op <ID>)."
   echo ""
   echo "Options:"
@@ -416,12 +426,6 @@ run_testnet_operators() {
   local DOCKER_CMD="CONFIG_DIR=${CONFIG_DIR} USER_BITCOIN_WIF=${USER_BITCOIN_WIF} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${TESTNET_PROJECT_NAME} ${COMPOSE_FILE_ARG} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
   echo "'$(echo "${DOCKER_CMD}" | sed "s/USER_BITCOIN_WIF=[^ ]*/USER_BITCOIN_WIF=******/")'"
   eval "${DOCKER_CMD}"
-}
-
-# Change to script directory to ensure relative paths in docker-compose work correctly
-cd "${SCRIPT_DIR}" || {
-  echo "Error: Failed to change to script directory: ${SCRIPT_DIR}"
-  exit 1
 }
 
 # Set CONFIG_DIR to absolute path for robust volume mounting

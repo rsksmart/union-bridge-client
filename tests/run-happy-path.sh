@@ -20,10 +20,14 @@ if [[ -z "${UC_ENV:-}" ]]; then
     cd "$(dirname "$0")/.."
     ENVRC_FILE="$(pwd)/.envrc"
     if [[ -f "$ENVRC_FILE" ]]; then
-        # Source .envrc to get UC_ENV (only export statements, safe to source)
-        set -a
-        source "$ENVRC_FILE" 2>/dev/null || true
-        set +a
+        # Parse only UC_ENV from .envrc — does not execute arbitrary shell code
+        _uc_env_line=$(grep -E '^\s*export\s+UC_ENV=' "$ENVRC_FILE" | tail -1 | sed 's/^\s*export\s*//')
+        if [[ -n "$_uc_env_line" ]]; then
+            UC_ENV="${_uc_env_line#UC_ENV=}"
+            UC_ENV=$(echo "$UC_ENV" | sed 's/^["'\''"]//;s/["'\''"]$//')
+            export UC_ENV
+        fi
+        unset _uc_env_line
     fi
 fi
 
