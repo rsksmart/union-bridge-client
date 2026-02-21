@@ -13,10 +13,40 @@
 
 set -euo pipefail
 
-SCRIPT_ENV="local"
+# Try to load UC_ENV from .envrc if not already set and direnv isn't active
+# This ensures UC_ENV is available even when scripts are run from subdirectories
+if [[ -z "${UC_ENV:-}" ]]; then
+    # change to project root first to find .envrc
+    cd "$(dirname "$0")/.."
+    ENVRC_FILE="$(pwd)/.envrc"
+    if [[ -f "$ENVRC_FILE" ]]; then
+        # Parse only UC_ENV from .envrc — does not execute arbitrary shell code
+        _uc_env_line=$(grep -E '^\s*export\s+UC_ENV=' "$ENVRC_FILE" | tail -1 | sed 's/^\s*export\s*//')
+        if [[ -n "$_uc_env_line" ]]; then
+            UC_ENV="${_uc_env_line#UC_ENV=}"
+            UC_ENV=$(echo "$UC_ENV" | sed 's/^["'\''"]//;s/["'\''"]$//')
+            export UC_ENV
+        fi
+        unset _uc_env_line
+    fi
+fi
+
+# Initialize SCRIPT_ENV from UC_ENV if set and valid, otherwise default to "local"
+if [[ -n "${UC_ENV:-}" ]]; then
+    if [[ "$UC_ENV" == "local" || "$UC_ENV" == "local-docker" ]]; then
+        SCRIPT_ENV="$UC_ENV"
+    else
+        SCRIPT_ENV="local"
+    fi
+else
+    SCRIPT_ENV="local"
+fi
 
 usage() {
     echo "Usage: $0 [--env <local|local-docker>]"
+    echo ""
+    echo "The script will use UC_ENV environment variable if set to 'local' or 'local-docker'."
+    echo "Use --env flag to override."
     exit 1
 }
 
@@ -27,6 +57,11 @@ while [[ $# -gt 0 ]]; do
         if [[ -z "$SCRIPT_ENV" ]]; then
             usage
         fi
+        # Validate that --env value is either local or local-docker
+        if [[ "$SCRIPT_ENV" != "local" && "$SCRIPT_ENV" != "local-docker" ]]; then
+            echo "Error: --env must be 'local' or 'local-docker'"
+            usage
+        fi
         shift 2
         ;;
     *)
@@ -34,6 +69,12 @@ while [[ $# -gt 0 ]]; do
         ;;
     esac
 done
+
+# Final validation that SCRIPT_ENV is valid
+if [[ "$SCRIPT_ENV" != "local" && "$SCRIPT_ENV" != "local-docker" ]]; then
+    echo "Error: SCRIPT_ENV must be 'local' or 'local-docker'"
+    exit 1
+fi
 
 # change to project root (parent of tests directory)
 cd "$(dirname "$0")/.."
@@ -375,7 +416,7 @@ trap cleanup EXIT
 
 clear
 log "Configuration: stream=$STREAM_ID, rsk=$RSK_ADDRESS, amount=$VALUE, env=$SCRIPT_ENV"
-log "Prerequisite: Start mining in another terminal with: ./cli-run.sh --start-mine"
+log "Prerequisite: Start mining in another terminal with: ./cli-infra.sh --start-mine"
 echo ""
 
 # prepare wallets

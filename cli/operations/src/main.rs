@@ -129,7 +129,7 @@ enum OperatorCommands {
     /// Fund operators
     Fund {
         /// Environment to target (local, local-docker, alphanet, testnet)
-        #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local)]
+        #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local, env = "UC_ENV")]
         env: Environment,
 
         /// Execute the wallet commands programmatically instead of just printing them
@@ -153,15 +153,15 @@ enum OperatorCommands {
         stream_id: u64,
 
         /// Target environment (local, alphanet, testnet)
-        #[arg(short = 'e', long = "env", value_enum, default_value_t = Environment::Local)]
+        #[arg(short = 'e', long = "env", value_enum, default_value_t = Environment::Local, env = "UC_ENV")]
         env: Environment,
 
         /// Operator ID (1-4) when applying on alphanet or testnet
-        #[arg(short = 'o', long = "operator-id", value_name = "OPERATOR_ID")]
+        #[arg(short = 'o', long = "operator-id", value_name = "OPERATOR_ID", env = "UC_OPERATOR_ID")]
         operator_id: Option<u8>,
 
         /// Operator role when applying on alphanet or testnet
-        #[arg(short = 'r', long = "role", value_enum)]
+        #[arg(short = 'r', long = "role", value_enum, env = "UC_OPERATOR_ROLE")]
         role: Option<CommitteeRole>,
     },
 }
@@ -171,13 +171,13 @@ enum UserCommands {
     /// Display user addresses and funding instructions
     Fund {
         /// Environment to target (local, local-docker, alphanet, testnet)
-        #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local)]
+        #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local, env = "UC_ENV")]
         env: Environment,
     },
     /// Request a pegin address and print bitcoin-wallet CLI instructions
     Pegin {
         /// Environment to target (local, local-docker, alphanet, testnet)
-        #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local)]
+        #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local, env = "UC_ENV")]
         env: Environment,
 
         /// Rootstock deposit address
@@ -208,7 +208,7 @@ enum UserCommands {
     /// Request a pegout (withdraw from Rootstock to Bitcoin)
     Pegout {
         /// Environment to target (local, local-docker, alphanet, testnet)
-        #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local)]
+        #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local, env = "UC_ENV")]
         env: Environment,
 
         /// Value in satoshis

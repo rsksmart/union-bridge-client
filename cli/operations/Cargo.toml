@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = { workspace = true }
-clap = { workspace = true }
+clap = { workspace = true, features = ["env"] }
 key-manager = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }

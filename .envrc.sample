@@ -28,6 +28,18 @@ export KEY_STORE_PASSWORD="<super-secret-password>"
 export CHECK_FORK_REQUIRED_NUM_BLOCKS=5
 
 ############################################################
+# Deployment and Operations (Multi-host environments)
+############################################################
+# Default environment for start_operators.sh and cli-operations.sh
+# Options: local, local-docker, regtest, alphanet, testnet (for start_operators.sh)
+#          local, local-docker, alphanet, testnet (for cli-operations.sh)
+# export UC_ENV="local"
+# Deployment variables (can be overridden via command-line flags)
+# export UC_TAG="latest-anvil"
+# export UC_OPERATOR_ID=1
+# export UC_OPERATOR_ROLE="prover"
+
+############################################################
 # Bitcoin
 ############################################################
 # User WIF for peg-in/peg-out operations

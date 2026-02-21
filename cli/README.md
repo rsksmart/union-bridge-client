@@ -52,6 +52,33 @@ Launches one or more Union Bridge clients locally for development and testing.
 
 Handles setup, operator operations, and user operations across different environments (local, alphanet, testnet).
 
+### Environment Variables
+
+The following environment variables can be set to simplify multi-host deployments:
+
+- **`UC_ENV`**: Sets the default environment (`local`, `local-docker`, `alphanet`, or `testnet`). Can be overridden with `--env` flag.
+- **`UC_OPERATOR_ID`**: Sets the default operator ID (1-4) for `apply-stream` command. Can be overridden with `--operator-id` flag.
+- **`UC_OPERATOR_ROLE`**: Sets the default operator role (`prover` or `verifier`) for `apply-stream` command. Can be overridden with `--role` flag.
+
+All three can be set in `.envrc` at the project root. The `.env.*` files (`docker/operator/.env.alphanet`, `.env.testnet`, `.env.local`) use docker-compose `--env-file` format (no `export` keyword).
+
+**Example for multi-host deployment:**
+
+```bash
+# In .envrc (project root), set all UC_* variables
+export UC_ENV="alphanet"
+export UC_OPERATOR_ID=1
+export UC_OPERATOR_ROLE="prover"
+
+# Then you can run commands without specifying these flags each time
+./cli-operations.sh operator apply-stream --stream-id 1
+./cli-operations.sh operator fund
+```
+
+**Precedence:** command-line flags > environment variables > `.envrc` values.
+
+### Usage Examples
+
 ```bash
 ./cli-operations.sh --help
 
