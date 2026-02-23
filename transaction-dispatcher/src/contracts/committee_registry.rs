@@ -16,6 +16,7 @@ pub(crate) use crate::contracts::interactions::deposit_aggregated_key::DepositAg
 pub(crate) use crate::contracts::interactions::deposit_communication_data::DepositCommunicationDataInvoke;
 pub(crate) use crate::contracts::interactions::get_committee::GetCommitteeCall;
 pub(crate) use crate::contracts::interactions::get_member_communication_data::GetMemberCommunicationDataCall;
+pub(crate) use crate::contracts::interactions::is_whitelisted::IsWhitelistedCall;
 use crate::contracts::types::Address;
 use crate::rsk_gateway::DomainErrors;
 
