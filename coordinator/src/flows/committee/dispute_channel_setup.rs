@@ -18,6 +18,7 @@ use crate::flows::committee::setup_committee_flow::{CommitteeData, NO_LEADER_IDX
 use crate::types::MemberOfCommittee;
 
 const DRP_TIMELOCK_BLOCKS: u16 = 15; // TODO: move to config?
+//Check about this
 const DRP_PROGRAM_DEFINITION: &str = "../BitVMX-CPU/docker-riscv32/riscv32/build/hello-world.yaml"; // TODO: move to config?
 
 #[derive(Clone, Copy)]
@@ -91,7 +92,6 @@ impl<BC: BitVmxBrokerClientApi> DisputeChannelSetup<BC> {
     }
 
     /// Requests `DisputeCore` variables and creates the corresponding setup request.
-    /// This ensures both operations happen atomically - if requests are sent, the request struct is created.
     fn request_and_create_setup_request(
         &self,
         dispute_core_pid: Uuid,
@@ -159,7 +159,6 @@ impl<BC: BitVmxBrokerClientApi> DisputeChannelSetup<BC> {
                 "Requesting DisputeCore data for member {partner_index} with pid {dispute_core_pid}"
             );
 
-            // This ensures requests are sent before adding to list - atomic operation
             let partner_request =
                 self.request_and_create_setup_request(dispute_core_pid, partner_index)?;
             requests.push(partner_request);

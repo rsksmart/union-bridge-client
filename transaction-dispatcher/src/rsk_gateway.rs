@@ -17,6 +17,7 @@ use crate::contracts::challenge_manager::{
 use crate::contracts::committee_registry::{
     ApplyToStreamInvoke, CommitteeRegistryContract, DepositAggregatedKeysInvoke,
     DepositCommunicationDataInvoke, GetCommitteeCall, GetMemberCommunicationDataCall,
+    IsWhitelistedCall,
 };
 use crate::contracts::interactions::get_btc_transaction_confirmations::GetBtcTransactionConfirmationsCall;
 use crate::contracts::member_registry::{GetMemberPublicKeysCall, MemberRegistryContract};
@@ -192,6 +193,8 @@ pub trait RskContractsGatewayApi {
         &self,
         input: RegisterOperatorWonInput,
     ) -> impl Future<Output = Result<RegisterOperatorWonOutput, DomainErrors>>;
+
+    fn is_whitelisted(&self) -> impl Future<Output = Result<bool, DomainErrors>>;
 }
 
 #[derive(Clone)]
@@ -220,6 +223,7 @@ pub struct RskContractsGateway<P: Provider + Clone> {
     get_committee_call: GetCommitteeCall<CommitteeRegistryContract<P>>,
     deposit_communication_data_invoke: DepositCommunicationDataInvoke<CommitteeRegistryContract<P>>,
     deposit_aggregated_key_invoke: DepositAggregatedKeysInvoke<CommitteeRegistryContract<P>>,
+    is_whitelisted_call: IsWhitelistedCall<CommitteeRegistryContract<P>>,
     get_btc_confirmations_call: GetBtcTransactionConfirmationsCall<NativeBridgeContract<P>>,
 }
 
@@ -385,6 +389,7 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             get_btc_confirmations_call: GetBtcTransactionConfirmationsCall::new(
                 native_bridge_contract.clone(),
             ),
+            is_whitelisted_call: IsWhitelistedCall::new(committee_registry_contract.clone()),
         })
     }
 
@@ -547,6 +552,8 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: GetMemberPublicKeysInput,
     ) -> Result<GetMemberPublicKeysOutput, DomainErrors> {
+        info!("Interacting with CommitteeRegistry#getMemberPublicKeys",);
+
         self.get_member_public_keys_call.run(input).await.map_err(|err| {
             error!("Error on get_member_public_keys_call: {err}");
             err
@@ -557,6 +564,8 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: ApplyToStreamInput,
     ) -> Result<ApplyToStreamOutput, DomainErrors> {
+        info!("Interacting with CommitteeRegistry#applyToStream",);
+
         self.apply_to_stream_invoke.run(input).await.map_err(|err| {
             error!("Error on apply_to_stream_invoke: {err}");
             err
@@ -629,6 +638,15 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     ) -> Result<RegisterOperatorWonOutput, DomainErrors> {
         self.register_operator_won_invoke.run(input).await.map_err(|err| {
             error!("Error on register_operator_won_invoke: {err}");
+            err
+        })
+    }
+
+    async fn is_whitelisted(&self) -> Result<bool, DomainErrors> {
+        info!("Checking whitelist status for member address: {}", self.member_address);
+
+        self.is_whitelisted_call.run(self.member_address.into()).await.map_err(|err| {
+            error!("Error on is_whitelisted_call: {err}");
             err
         })
     }

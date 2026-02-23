@@ -18,6 +18,117 @@ const USER_LOG_MARKER: &str = "Got user signer with address";
 const USER_RSK_LOG_MARKER: &str = "Connected to Rootstock at";
 const USER_RSK_ADDRESS_MARKER: &str = "as User with address";
 
+/// whitelists member RSK addresses on the CommitteeRegistry contract.
+/// collects member signer addresses from coordinator logs, then calls
+/// `whitelistAddresses(address[])` via `cast send`.
+pub fn handle_whitelist(
+    env: Environment,
+    contract_address: &str,
+    private_key: Option<&str>,
+) -> Result<()> {
+    println!("\n=== Whitelisting member addresses ===\n");
+
+    let member_signers = match env {
+        Environment::Local => collect_local_signers_from_logs(MEMBER_LOG_MARKER)?,
+        Environment::LocalDocker => collect_local_signers(MEMBER_LOG_MARKER)?,
+        Environment::Alphanet | Environment::Testnet => {
+            collect_remote_member_addresses(&env.hosts())?
+        }
+    };
+
+    let unique = unique_addresses(&member_signers);
+    let expected = OPERATOR_IDS.len();
+    if unique.len() < expected {
+        bail!(
+            "expected {} member RSK address(es) but found {}. ensure all operator services are running and have emitted signer addresses.",
+            expected,
+            unique.len()
+        );
+    }
+
+    println!("Member addresses to whitelist:");
+    for addr in &unique {
+        println!("  {}", addr);
+    }
+    println!();
+
+    let addr_array = format!("[{}]", unique.join(","));
+    let rpc_url = env.rpc_url();
+
+    match env {
+        Environment::Local | Environment::LocalDocker => {
+            let from_address = private_key.unwrap_or(LOCAL_ANVIL_ADDRESS);
+            println!(
+                "Running: cast send --rpc-url {} --from {} {} \"whitelistAddresses(address[])\" \"{}\" --unlocked",
+                rpc_url, from_address, contract_address, addr_array
+            );
+
+            let output = Command::new("cast")
+                .arg("send")
+                .arg("--rpc-url")
+                .arg(&rpc_url)
+                .arg("--from")
+                .arg(from_address)
+                .arg(contract_address)
+                .arg("whitelistAddresses(address[])")
+                .arg(&addr_array)
+                .arg("--unlocked")
+                .output()
+                .context("failed to execute cast send for whitelistAddresses")?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                bail!("whitelistAddresses transaction failed: {}", stderr.trim());
+            }
+
+            println!("{}", String::from_utf8_lossy(&output.stdout));
+        }
+        Environment::Alphanet | Environment::Testnet => {
+            let key = match private_key {
+                Some(k) => k.to_string(),
+                None => {
+                    let prompted = prompt_password("Enter Whitelister Private Key: ")
+                        .context("failed to read private key")?
+                        .trim()
+                        .to_string();
+                    if prompted.is_empty() {
+                        bail!("private key is required for remote environments");
+                    }
+                    prompted
+                }
+            };
+
+            println!(
+                "Running: cast send {} \"whitelistAddresses(address[])\" \"{}\" --private-key <REDACTED> --rpc-url {}",
+                contract_address, addr_array, rpc_url
+            );
+
+            let output = Command::new("cast")
+                .arg("send")
+                .arg(contract_address)
+                .arg("whitelistAddresses(address[])")
+                .arg(&addr_array)
+                .arg("--private-key")
+                .arg(&key)
+                .arg("--rpc-url")
+                .arg(&rpc_url)
+                .output()
+                .context("failed to execute cast send for whitelistAddresses")?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                bail!("whitelistAddresses transaction failed: {}", stderr.trim());
+            }
+
+            println!("{}", String::from_utf8_lossy(&output.stdout));
+        }
+    }
+
+    println!("Done. Whitelisted {} member addresses on CommitteeRegistry.", unique.len());
+
+    Ok(())
+}
+
 /// handles creating local rootstock wallets for multi-client deployments
 pub fn handle_wallet_creation(num_wallets: u8, base_storage_path: Option<&str>) -> Result<()> {
     let base = require_base_storage_path(base_storage_path)?;

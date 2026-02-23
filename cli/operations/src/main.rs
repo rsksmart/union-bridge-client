@@ -147,6 +147,21 @@ enum OperatorCommands {
         )]
         fund_amount: u64,
     },
+    /// Whitelist member addresses on the CommitteeRegistry contract
+    Whitelist {
+        /// Environment to target (local, local-docker, alphanet, testnet)
+        #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local)]
+        env: Environment,
+
+        /// CommitteeRegistry contract address
+        #[arg(long = "contract-address", value_name = "ADDRESS")]
+        contract_address: String,
+
+        /// Private key or address of the whitelister account.
+        /// Local: defaults to anvil account 0 (--from, unlocked). Remote: prompted if not provided.
+        #[arg(long = "private-key", value_name = "KEY")]
+        private_key: Option<String>,
+    },
     /// Apply operator to a stream for committee setup
     #[command(name = "apply-stream")]
     ApplyToStream {
@@ -265,6 +280,9 @@ async fn main() -> Result<()> {
                 rsk_wallet::handle_operator_funding(env).await?;
                 println!("=== Funding Bitcoin addresses ===");
                 bitcoin_wallet::handle_bitcoin_funding(env, execute, fund_amount).await?;
+            }
+            OperatorCommands::Whitelist { env, contract_address, private_key } => {
+                rsk_wallet::handle_whitelist(env, &contract_address, private_key.as_deref())?;
             }
             OperatorCommands::ApplyToStream { stream_id, env, operator_id, role } => {
                 committee::run_committee_setup(stream_id, env, operator_id, role).await?;

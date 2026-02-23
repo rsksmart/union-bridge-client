@@ -97,6 +97,8 @@ fi
 STREAM_ID=0
 RSK_ADDRESS="0x$(openssl rand -hex 20)" # random address each run
 VALUE=100000
+PACKET_NUMBER=0
+COMMITTEE_REGISTRY_ADDRESS="0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82"
 
 # colors
 GREEN='\033[0;32m'
@@ -477,8 +479,20 @@ fi
 echo ""
 success "Operator wallets funded (including BitVMX)"
 
-# step 2: apply operators
-step "Step 2: Apply Operators to Stream"
+# step 2: whitelist member addresses on CommitteeRegistry
+step "Step 2: Whitelist Member Addresses"
+log "Command: bash cli-operations.sh operator whitelist --env $SCRIPT_ENV --contract-address $COMMITTEE_REGISTRY_ADDRESS"
+echo ""
+if ! bash cli-operations.sh operator whitelist --env "$SCRIPT_ENV" \
+    --contract-address "$COMMITTEE_REGISTRY_ADDRESS"; then
+    warn "Whitelist command failed!"
+    exit 1
+fi
+success "Member addresses whitelisted"
+echo ""
+
+# step 3: apply operators
+step "Step 3: Apply Operators to Stream"
 log "Command: bash cli-operations.sh operator apply-stream -s $STREAM_ID --env $SCRIPT_ENV"
 echo ""
 if ! bash cli-operations.sh operator apply-stream -s $STREAM_ID --env "$SCRIPT_ENV" > /tmp/apply-operators-$$ 2>&1; then
@@ -496,8 +510,8 @@ if ! wait_for_log_with_block_timeout "CommitteeSetupFlow Done:" 40; then
 fi
 echo ""
 
-# step 3: request pegin
-step "Step 3: Request Pegin"
+# step 4: request pegin
+step "Step 4: Request Pegin"
 
 # Derive x-only public key for pegin (32 bytes with 0x prefix)
 USER_XONLY_PUBKEY=$(user_xonly_pubkey_from_wif)
@@ -524,7 +538,8 @@ if ! wait_for_log_with_block_timeout "PeginFlow Done" 15; then
 fi
 echo ""
 
-step "Step 4: Request Pegout"
+# step 5: request pegout
+step "Step 5: Request Pegout"
 
 # Derive compressed public key for pegout (33 bytes with 0x prefix)
 USER_COMPRESSED_PUBKEY=$(user_compressed_pubkey_from_wif)
@@ -554,8 +569,8 @@ if ! wait_for_log_with_block_timeout "PegoutFlow Done" 15; then
 fi
 echo ""
 
-# step 5: verify pegout completion
-step "Step 5: Verify Pegout Completion"
+# step 6: verify pegout completion
+step "Step 6: Verify Pegout Completion"
 # Note: PegoutFlow completion is already checked in the wait_for_log_with_block_timeout call above
 # This step is kept for consistency but the verification already happened
 success "PegoutFlow completion verified"

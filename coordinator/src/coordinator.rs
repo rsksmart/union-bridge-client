@@ -710,6 +710,8 @@ pub(crate) mod tests {
                 &self,
                 input: RegisterOperatorWonInput,
             ) -> Result<RegisterOperatorWonOutput, DomainErrors>;
+
+            async fn is_whitelisted(&self) -> Result<bool, DomainErrors>;
         }
     }
 }
