@@ -8,12 +8,23 @@ use bitcoin::address::NetworkUnchecked;
 use bitcoin::{
     Address, Amount, BlockHash, PrivateKey, PublicKey, ScriptBuf, Transaction, Txid, XOnlyPublicKey,
 };
+pub use bitvmx_emulator::decision::challenge::{ForceChallenge, ForceCondition};
+pub use bitvmx_emulator::executor::utils::{
+    FailConfiguration, FailExecute, FailOpcode, FailRead, FailReads, FailSelectionBits, FailWrite,
+};
 use musig2::PubNonce;
 use musig2::secp::MaybeScalar;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub const ACCEPT_PEGIN_TX: &str = "ACCEPT_PEGIN_TX";
+
+// DisputeChannel related constants and types
+pub const OP_COSIGN_UTXOS: &str = "OP_COSIGN_UTXOS";
+pub const WT_INIT_CHALLENGE_UTXOS: &str = "WT_INIT_CHALLENGE_UTXOS";
+pub const PROGRAM_TYPE_DISPUTE_CHANNEL: &str = "dispute_channel";
+pub const ADVANCE_FUNDS_INPUT: &str = "ADVANCE_FUNDS_INPUT";
+pub const PROGRAM_TYPE_DRP: &str = "drp";
 
 type ProgramId = Uuid;
 
@@ -204,11 +215,25 @@ pub enum OutputType {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum StackItem {
+    /// Schnorr signature (64 bytes +1 if non-default sighash).
+    SchnorrSig { non_default_sighash: bool },
+    /// DER-encoded ECDSA signature (use 73B worst case) +1 if non-default sighash.
+    EcdsaSig { non_default_sighash: bool },
+    /// Winternitz signature (size depends on the key type).
+    WinternitzSig { size: usize },
+    /// Raw item of a known length (e.g., pubkeys, data pushes).
+    Raw { size: usize },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProtocolScript {
     script: ScriptBuf,
     keys: HashMap<String, ScriptKey>,
     verifying_key: Option<PublicKey>,
     sign_mode: SignMode,
+    #[serde(default)]
+    items: Vec<StackItem>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -249,6 +274,51 @@ pub type PubKeyHash = String;
 pub struct CommsAddress {
     pub address: SocketAddr,
     pub pubkey_hash: PubKeyHash,
+}
+
+/// Custom serde for `HashMap<CommsAddress, PublicKey>`.
+/// Needed because serde only supports `String` keys in JSON maps,
+/// so we serialize `CommsAddress` to/from its JSON string representation.
+pub mod comms_address_map_serde {
+    use std::collections::HashMap;
+
+    use anyhow::Context;
+    use bitcoin::PublicKey;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    use super::CommsAddress;
+
+    pub fn serialize<S>(
+        value: &HashMap<CommsAddress, PublicKey>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut mapped: HashMap<String, PublicKey> = HashMap::with_capacity(value.len());
+        for (addr, key) in value {
+            let addr_key = serde_json::to_string(addr).map_err(serde::ser::Error::custom)?;
+            mapped.insert(addr_key, *key);
+        }
+        mapped.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(
+        deserializer: D,
+    ) -> Result<HashMap<CommsAddress, PublicKey>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let mapped: HashMap<String, PublicKey> = HashMap::deserialize(deserializer)?;
+        let mut out = HashMap::with_capacity(mapped.len());
+        for (addr_key, key) in mapped {
+            let addr: CommsAddress = serde_json::from_str(&addr_key)
+                .with_context(|| format!("Invalid CommsAddress key: {addr_key}"))
+                .map_err(serde::de::Error::custom)?;
+            out.insert(addr, key);
+        }
+        Ok(out)
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -415,11 +485,31 @@ pub struct StreamSettings {
     pub long_timelock: u16,
     /// Timelock for operator won transactions
     pub op_won_timelock: u16,
+    /// Timelock for claim gate
+    pub claim_gate_timelock: u16,
+    /// Timelock for input not revealed
+    pub input_not_revealed_timelock: u16,
+    /// Timelock for operator no cosign
+    pub op_no_cosign_timelock: u16,
+    /// Timelock for watchtower no challenge
+    pub wt_no_challenge_timelock: u16,
+    /// Timelock for request pegin
+    pub request_pegin_timelock: u16,
 }
 
+//TODO https://rsklabs.atlassian.net/browse/UBC-809 Review this default values
 impl Default for StreamSettings {
     fn default() -> Self {
-        Self { short_timelock: 6, long_timelock: 12, op_won_timelock: 18 }
+        Self {
+            short_timelock: 6,
+            long_timelock: 12,
+            op_won_timelock: 150,
+            claim_gate_timelock: 6,
+            input_not_revealed_timelock: 8,
+            op_no_cosign_timelock: 12,
+            wt_no_challenge_timelock: 12,
+            request_pegin_timelock: 12,
+        }
     }
 }
 
@@ -466,4 +556,12 @@ impl ReimbursementResult {
     pub fn name() -> String {
         "reimbursement_result".to_string()
     }
+}
+
+/// Holds the UTXOs required for a watchtower to initiate a challenge.
+/// These are provided by the DisputeCore protocol.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WtInitChallengeUtxos {
+    pub wt_stopper: PartialUtxo,
+    pub op_stopper: PartialUtxo,
 }

@@ -8,6 +8,7 @@
 .vscode/*
 .DS_Store
 .idea
+.cursor
 config/qa-coordinator
 **/logs/*
 **/.db

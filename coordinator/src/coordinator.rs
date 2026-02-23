@@ -14,9 +14,8 @@ use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 
 use crate::event_processor::EventProcessor;
 use crate::flows::advance_funds::advance_funds_processor::AdvanceFundsProcessor;
-use crate::flows::committee::setup_committee_flow::{
-    SetupCommitteeFlowFactory, SetupCommitteeProcessor,
-};
+use crate::flows::committee::setup_committee_flow::SetupCommitteeFlowFactory;
+use crate::flows::committee::setup_committee_processor::SetupCommitteeProcessor;
 use crate::flows::common::GlobalContext;
 use crate::flows::fund_bitvmx_flow::FundBitvmxProcessor;
 use crate::flows::operator_take::AdvanceFundsFlowProcessor;

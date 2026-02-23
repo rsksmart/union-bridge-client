@@ -1083,6 +1083,7 @@ pub fn network_suffix(network: Network) -> &'static str {
         Network::Testnet4 => "testnet4",
         Network::Signet => "signet",
         Network::Regtest => "regtest",
+        _ => "unknown",
     }
 }
 

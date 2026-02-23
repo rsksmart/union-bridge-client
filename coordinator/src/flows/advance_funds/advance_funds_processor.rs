@@ -282,7 +282,7 @@ where
                 }
             }
             _ => {
-                info!("Ignoring {event:?}...");
+                trace!("Ignoring {event:?}...");
                 return Ok(()); // ignore unrelated events
             }
         }
