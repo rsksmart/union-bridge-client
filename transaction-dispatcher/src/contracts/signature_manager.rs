@@ -31,8 +31,9 @@ pub trait SignatureManagerContractApi {
 
     async fn add_operator_take_tx_hash(
         &self,
-        hash_to_sign: FixedBytes32,
-        signature: FixedBytes32,
+        accept_pegin_tx_hash: FixedBytes32,
+        take_tx_hash: FixedBytes32,
+        won_tx_hash: FixedBytes32,
         gas_bumps: u8,
     ) -> alloy_contract::Result<TxHash>;
 }
@@ -84,11 +85,18 @@ impl<P: Provider> SignatureManagerContractApi for SignatureManagerContract<P> {
         &self,
         accept_pegin_tx_hash: FixedBytes32,
         take_tx_hash: FixedBytes32,
+        won_tx_hash: FixedBytes32,
         gas_bumps: u8,
     ) -> alloy_contract::Result<TxHash> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
-            || self.contract_instance.addOperatorTakeTxid(accept_pegin_tx_hash, take_tx_hash),
+            || {
+                self.contract_instance.addOperatorTakeTxids(
+                    accept_pegin_tx_hash,
+                    take_tx_hash,
+                    won_tx_hash,
+                )
+            },
             gas_bumps,
         )
         .await
@@ -110,7 +118,7 @@ pub(crate) fn decode_error(
         SignatureManagerErrors::AddressEmptyCode(e) => {
             DomainErrors::InvalidAddress(format!("{e:?}"))
         }
-        SignatureManagerErrors::HashToSignNotFound(e) => {
+        SignatureManagerErrors::TxidToSignNotFound(e) => {
             DomainErrors::InvalidValue(format!("{e:?}"))
         }
         // TODO handle more based on needs
@@ -122,7 +130,7 @@ pub(crate) fn decode_error(
 mod tests {
     use alloy_primitives::{Address, FixedBytes};
     use union_contracts::bindings::signature_manager::SignatureManager::{
-        AcceptPeginTxidNotFound, AddressEmptyCode, HashToSignNotFound, SignatureManagerErrors,
+        AcceptPeginTxidNotFound, AddressEmptyCode, SignatureManagerErrors, TxidToSignNotFound,
     };
 
     use super::*;
@@ -153,9 +161,9 @@ mod tests {
     }
 
     #[test]
-    fn test_hash_to_sign_not_found_error() {
-        let err_data = SignatureManagerErrors::HashToSignNotFound(HashToSignNotFound {
-            hashToSign: FixedBytes::<32>::from([7u8; 32]),
+    fn test_txid_to_sign_not_found_error() {
+        let err_data = SignatureManagerErrors::TxidToSignNotFound(TxidToSignNotFound {
+            txid: FixedBytes::<32>::from([7u8; 32]),
         });
 
         let result = generate_contract_revert_error(&err_data);

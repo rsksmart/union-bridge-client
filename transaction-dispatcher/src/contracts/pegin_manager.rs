@@ -146,15 +146,6 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
         PeginManagerErrors::InvalidLocktime(e) => {
             DomainErrors::InvalidBtcTxSpvProof(format!("{e:?}"))
         }
-        PeginManagerErrors::BridgeBtcBlockNotInBestChain(e) => {
-            DomainErrors::MissingConfirmationsOnNativeBridge(format!("{e:?}"))
-        }
-        PeginManagerErrors::BridgeBtcInexistantBlockHash(e) => {
-            DomainErrors::MissingConfirmationsOnNativeBridge(format!("{e:?}"))
-        }
-        PeginManagerErrors::NotEnoughConfirmations(e) => {
-            DomainErrors::MissingConfirmationsOnNativeBridge(format!("{e:?}"))
-        }
         // Unhandled
         _ => DomainErrors::UnhandledContractError(format!("{e:?}")),
     })

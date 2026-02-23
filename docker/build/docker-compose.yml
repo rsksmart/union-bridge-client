@@ -17,6 +17,7 @@ services:
       - ../../config/:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - db-blocks:/app/db/blocks
+      - keystore:/keystore
     environment:
       - ENV_NAME=${ENV_NAME:-dummy-env-name}
     restart: no
@@ -26,7 +27,8 @@ services:
       retries: 3
       start_period: 10s
       test: ["CMD", "pgrep", "-f", "block-indexer"] # TODO improve with health endpoint
-    entrypoint: ["sh", "-c", "/app/block-indexer --env $ENV_NAME"]
+    entrypoint: ["sh", "/app/key-setup.sh"]
+    command: ["sh", "-c", "/app/block-indexer --env $ENV_NAME"]
 
   log-indexer:
     platform: ${PLATFORM}
@@ -42,6 +44,7 @@ services:
       - ../../config/:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - db-logs:/app/db/logs
+      - keystore:/keystore
     environment:
       - ENV_NAME=${ENV_NAME:-dummy-env-name}
     restart: no
@@ -51,7 +54,8 @@ services:
       retries: 3
       start_period: 10s
       test: ["CMD", "pgrep", "-f", "log-indexer"] # TODO improve with health endpoint
-    entrypoint: ["sh", "-c", "/app/log-indexer --env $ENV_NAME"]
+    entrypoint: ["sh", "/app/key-setup.sh"]
+    command: ["sh", "-c", "/app/log-indexer --env $ENV_NAME"]
 
   coordinator:
     platform: ${PLATFORM}

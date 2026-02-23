@@ -325,10 +325,12 @@ pub(crate) mod tests {
         DepositAggregatedKeyInput, DepositAggregatedKeyOutput, DepositCommunicationDataInput,
         DepositCommunicationDataOutput, GetCommitteeInput, GetCommitteeOutput,
         GetCommunicationDataInput, GetCommunicationDataOutput, GetMemberPublicKeysInput,
-        GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput,
-        RegisterOperatorTakeInput, RegisterOperatorTakeOutput, RegisterPegoutInput,
-        RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
-        RequestPegoutOutput, TriggerOperatorTakeInput, TriggerOperatorTakeOutput,
+        GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterChallengeInput,
+        RegisterChallengeOutput, RegisterInputRevealedInput, RegisterInputRevealedOutput,
+        RegisterOperatorTakeInput, RegisterOperatorTakeOutput, RegisterOperatorWonInput,
+        RegisterOperatorWonOutput, RegisterPegoutInput, RegisterPegoutOutput, RequestPeginInput,
+        RequestPeginOutput, RequestPegoutInput, RequestPegoutOutput, TriggerOperatorTakeInput,
+        TriggerOperatorTakeOutput,
     };
 
     use crate::coordinator::Coordinator;
@@ -646,6 +648,21 @@ pub(crate) mod tests {
                 &self,
                 input: AddOperatorTakeTxHashInput,
             ) -> Result<AddOperatorTakeTxHashOutput, DomainErrors>;
+
+            async fn register_challenge(
+                &self,
+                input: RegisterChallengeInput,
+            ) -> Result<RegisterChallengeOutput, DomainErrors>;
+
+            async fn register_input_revealed(
+                &self,
+                input: RegisterInputRevealedInput,
+            ) -> Result<RegisterInputRevealedOutput, DomainErrors>;
+
+            async fn register_operator_won(
+                &self,
+                input: RegisterOperatorWonInput,
+            ) -> Result<RegisterOperatorWonOutput, DomainErrors>;
         }
     }
 }

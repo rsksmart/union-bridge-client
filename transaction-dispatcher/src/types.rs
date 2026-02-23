@@ -83,6 +83,7 @@ pub struct AddMemberSignatureInput {
 pub struct AddOperatorTakeTxHashInput {
     pub accept_pegin_tx_hash: Txid,
     pub take_tx_hash: Vec<u8>,
+    pub won_tx_hash: Vec<u8>,
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
@@ -102,12 +103,28 @@ pub type RequestPegoutOutput = TxSentOutput;
 pub type ApplyToStreamOutput = TxSentOutput;
 pub type DepositCommunicationDataOutput = TxSentOutput;
 pub type DepositAggregatedKeyOutput = TxSentOutput;
+pub type RegisterChallengeOutput = TxSentOutput;
+pub type RegisterInputRevealedOutput = TxSentOutput;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RegisterChallengeInput {
+    pub accept_pegin_txid: FixedBytes<32>,
+    pub challenge_spv_proof: BtcTxSPVProofInput,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RegisterInputRevealedInput {
+    pub accept_pegin_txid: FixedBytes<32>,
+    pub input_revealed_spv_proof: BtcTxSPVProofInput,
+}
 
 pub type RequestPeginInput = BtcTxSPVProofInput;
 pub type RegisterPegInInput = BtcTxSPVProofInput;
 pub type AcceptPeginInput = BtcTxSPVProofInput;
 pub type RegisterPegoutInput = BtcTxSPVProofInput;
 pub type RegisterOperatorTakeInput = BtcTxSPVProofInput;
+pub type RegisterOperatorWonInput = BtcTxSPVProofInput;
+pub type RegisterOperatorWonOutput = TxSentOutput;
 
 impl From<TxIn> for BitcoinTransactionIn {
     fn from(input: TxIn) -> Self {

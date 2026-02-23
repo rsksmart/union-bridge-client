@@ -462,7 +462,9 @@ where
         // Note: v0.2.0 contracts merged pegoutSignatureHash and pegoutSignatureMessage into pegoutSignatureData struct
         let pegout_signature_hash: Vec<u8> = event.pegoutSignatureData.signatureHash.to_vec();
         let pegout_signature_message: Vec<u8> = event.pegoutSignatureData.signatureMessage.to_vec();
-        let pegout_id: Vec<u8> = event.pegoutId.as_slice().to_vec();
+        // TODO(UBC-827): v0.4.0-alpha removed pegoutId from PegoutRequested event.
+        // Determine how pegout_id should be derived in the new contract version.
+        let pegout_id: Vec<u8> = Vec::new();
         let slot_index =
             usize::try_from(event.slotId).map_err(|_| anyhow!("slotId too large for usize"))?;
 
