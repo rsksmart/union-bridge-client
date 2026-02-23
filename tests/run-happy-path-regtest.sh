@@ -17,16 +17,52 @@ if [[ "${REGTEST_REMOTE:-}" != "1" ]]; then
         "cd ~/${REGTEST_ROOT} && REGTEST_REMOTE=1 bash tests/run-happy-path-regtest.sh"
 fi
 
+# Load NUM_OPERATORS: --ops flag > .env.regtest > default (4)
+NUM_OPERATORS=""
+_remaining_args=()
+for arg in "$@"; do
+    if [[ "$_prev_arg" == "--ops" ]]; then
+        NUM_OPERATORS="$arg"
+        _prev_arg=""
+        continue
+    fi
+    if [[ "$arg" == "--ops" ]]; then
+        _prev_arg="--ops"
+        continue
+    fi
+    _remaining_args+=("$arg")
+done
+unset _prev_arg
+set -- "${_remaining_args[@]}"
+unset _remaining_args
+
+if [[ -z "$NUM_OPERATORS" ]]; then
+    _env_file="docker/operator/.env.regtest"
+    if [[ -f "$_env_file" ]]; then
+        _num=$(grep -E '^\s*NUM_OPERATORS=' "$_env_file" | tail -1 | cut -d= -f2 | tr -d ' "'\''')
+        if [[ -n "$_num" ]] && [[ "$_num" =~ ^[0-9]+$ ]] && [[ "$_num" -ge 1 ]] && [[ "$_num" -le 10 ]]; then
+            NUM_OPERATORS="$_num"
+        fi
+    fi
+    unset _env_file _num
+fi
+NUM_OPERATORS="${NUM_OPERATORS:-4}"
+
+if ! [[ "$NUM_OPERATORS" =~ ^(10|[1-9])$ ]]; then
+    echo "Error: --ops must be between 1 and 10"
+    exit 1
+fi
+
 # Verify operators are deployed
 check_operators_deployed() {
     local missing=0
-    for op_id in 1 2 3 4; do
+    for op_id in $(seq 1 "$NUM_OPERATORS"); do
         if ! docker ps --format "{{.Names}}" | grep -q "op_${op_id}-coordinator-1"; then
             missing=$((missing + 1))
         fi
     done
     if [[ $missing -gt 0 ]]; then
-        echo -e "\033[1;33m[!]\033[0m Operators not fully deployed ($((4 - missing))/4 running)"
+        echo -e "\033[1;33m[!]\033[0m Operators not fully deployed ($(($NUM_OPERATORS - missing))/$NUM_OPERATORS running)"
         echo "    Start them with: ./cli-infra.sh --start-regtest"
         exit 1
     fi
@@ -387,7 +423,7 @@ collect_rsk_addresses() {
     local marker="$1"
     local container_suffix="$2"
     local all=""
-    for op_id in 1 2 3 4; do
+    for op_id in $(seq 1 "$NUM_OPERATORS"); do
         local container="op_${op_id}-${container_suffix}-1"
         local logs
         logs=$(docker logs "$container" 2>/dev/null || true)
@@ -399,7 +435,7 @@ collect_rsk_addresses() {
 
 collect_bitvmx_addresses() {
     local addresses=()
-    for op_id in 1 2 3 4; do
+    for op_id in $(seq 1 "$NUM_OPERATORS"); do
         local container="op_${op_id}-coordinator-1"
         local logs
         logs=$(docker logs --since "$LOG_SINCE" "$container" 2>/dev/null || true)
@@ -414,7 +450,11 @@ collect_bitvmx_addresses() {
 
 user_api_endpoints() {
     local host="$USER_API_HOST"
-    echo "${host}:40001 ${host}:40002 ${host}:40003 ${host}:40004"
+    local ports=""
+    for i in $(seq 1 "$NUM_OPERATORS"); do
+        ports+="${host}:$((40000 + i)) "
+    done
+    echo "$ports"
 }
 
 mine_blocks_to_address() {
@@ -449,7 +489,7 @@ get_current_bitcoin_height() {
 
 find_recent_coordinator_log_match() {
     local pattern="$1"
-    for op_id in 1 2 3 4; do
+    for op_id in $(seq 1 "$NUM_OPERATORS"); do
         local container="op_${op_id}-coordinator-1"
         if ! docker ps --format "{{.Names}}" | grep -qx "$container"; then
             continue
@@ -557,7 +597,7 @@ wait_for_any_log_with_block_timeout() {
 dump_recent_logs() {
     local label="$1"
     log "Recent logs (${label})"
-    for op_id in 1 2 3 4; do
+    for op_id in $(seq 1 "$NUM_OPERATORS"); do
         local container="op_${op_id}-${label}-1"
         if docker ps --format "{{.Names}}" | grep -qx "$container"; then
             echo "----- ${container} -----"
@@ -573,8 +613,8 @@ fund_rsk_wallets() {
     mapfile -t member_addrs < <(collect_rsk_addresses "$member_marker" "coordinator")
     mapfile -t user_addrs < <(collect_rsk_addresses "$user_marker" "user-api")
 
-    if [[ "${#member_addrs[@]}" -lt 4 || "${#user_addrs[@]}" -lt 4 ]]; then
-        die "Missing RSK addresses (member=${#member_addrs[@]}, user=${#user_addrs[@]})"
+    if [[ "${#member_addrs[@]}" -lt "$NUM_OPERATORS" || "${#user_addrs[@]}" -lt "$NUM_OPERATORS" ]]; then
+        die "Missing RSK addresses (member=${#member_addrs[@]}, user=${#user_addrs[@]}, expected=${NUM_OPERATORS})"
     fi
 
     local funder
@@ -610,8 +650,8 @@ fund_bitvmx_wallets() {
     sleep 5
 
     mapfile -t bitvmx_addrs < <(collect_bitvmx_addresses)
-    if [[ "${#bitvmx_addrs[@]}" -lt 4 ]]; then
-        die "Missing BitVMX funding addresses (found ${#bitvmx_addrs[@]})"
+    if [[ "${#bitvmx_addrs[@]}" -lt "$NUM_OPERATORS" ]]; then
+        die "Missing BitVMX funding addresses (found ${#bitvmx_addrs[@]}, expected=${NUM_OPERATORS})"
     fi
 
     local amount_btc
@@ -630,7 +670,10 @@ fund_bitvmx_wallets() {
 apply_stream() {
     local endpoints
     endpoints=($(user_api_endpoints))
-    local roles=("Prover" "Verifier" "Prover" "Verifier")
+    local roles=()
+    for i in $(seq 1 "$NUM_OPERATORS"); do
+        if (( i % 2 == 1 )); then roles+=("Prover"); else roles+=("Verifier"); fi
+    done
 
     for i in "${!endpoints[@]}"; do
         local endpoint="${endpoints[$i]}"
@@ -778,7 +821,7 @@ import_user_wif
 USER_BTC_ADDRESS=$(user_address_from_wif)
 success "User BTC address ready: ${USER_BTC_ADDRESS}"
 
-required_sats=$((VALUE + BITVMX_FUND_AMOUNT * 4 + 100000))
+required_sats=$((VALUE + BITVMX_FUND_AMOUNT * NUM_OPERATORS + 100000))
 confirmed_sats=$(wallet_confirmed_balance_sats)
 if (( confirmed_sats >= required_sats )); then
     success "Wallet already funded (${confirmed_sats} sats confirmed)"
