@@ -153,6 +153,7 @@ fn build_btc_tx_spv_proof(input: BtcTxSPVProofInput) -> Result<BtcTxSPVProof, Pa
 pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> {
     let decoded_err = err.as_decoded_interface_error::<ChallengeManagerErrors>()?;
 
+    // TODO: UBC-826 map to specific domain error variants instead of generic InvalidValue
     Some(match decoded_err {
         ChallengeManagerErrors::PeginNotRequested(e) => {
             DomainErrors::InvalidValue(format!("{e:?}"))

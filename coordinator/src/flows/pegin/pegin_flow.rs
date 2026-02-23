@@ -458,7 +458,7 @@ where
         let input = transaction_dispatcher::types::AddOperatorTakeTxHashInput {
             accept_pegin_tx_hash: pegin_accepted.accept_pegin_txid,
             take_tx_hash: pegin_accepted.operator_take_sighash.clone(),
-            // TODO(UBC-XXX): v0.4.0-alpha added won_tx_hash param - populate from actual flow data
+            // TODO(UBC-827): v0.4.0-alpha added won_tx_hash param - populate from actual flow data
             won_tx_hash: Vec::new(),
         };
 
@@ -572,7 +572,7 @@ where
 
         Ok(PeginRequestMessage {
             txid,
-            // TODO(UBC-XXX): v0.4.0-alpha removed prevoutData from PeginRequested event.
+            // TODO(UBC-827): v0.4.0-alpha removed prevoutData from PeginRequested event.
             // Amount must be obtained via a different mechanism (e.g., reading the BTC tx or a contract call).
             amount: 0,
             accept_pegin_sighash,
