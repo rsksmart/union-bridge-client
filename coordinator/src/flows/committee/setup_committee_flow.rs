@@ -1728,6 +1728,15 @@ where
     }
 
     fn apply_to_stream(&self) -> Result<()> {
+        let my_address: Address = self.my_address().into();
+        let is_whitelisted = self.rt_sync.run(self.contracts.is_whitelisted())?;
+        if !is_whitelisted {
+            bail!(
+                "Member address {my_address} is not whitelisted in the CommitteeRegistry contract"
+            );
+        }
+        info!("Whitelist check passed for address {my_address}");
+
         let utxo = self.build_funding_utxo()?;
 
         let stream_id = self.ctx().get_stream_id()?;

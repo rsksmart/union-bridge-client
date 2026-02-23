@@ -17,6 +17,7 @@ use crate::contracts::challenge_manager::{
 use crate::contracts::committee_registry::{
     ApplyToStreamInvoke, CommitteeRegistryContract, DepositAggregatedKeysInvoke,
     DepositCommunicationDataInvoke, GetCommitteeCall, GetMemberCommunicationDataCall,
+    IsWhitelistedCall,
 };
 use crate::contracts::member_registry::{GetMemberPublicKeysCall, MemberRegistryContract};
 use crate::contracts::peg_manager::{FakePegManagerContract, NotifyCheckForkCompleteInvoke};
@@ -183,6 +184,8 @@ pub trait RskContractsGatewayApi {
         &self,
         input: RegisterOperatorWonInput,
     ) -> impl Future<Output = Result<RegisterOperatorWonOutput, DomainErrors>>;
+
+    fn is_whitelisted(&self) -> impl Future<Output = Result<bool, DomainErrors>>;
 }
 
 #[derive(Clone)]
@@ -211,6 +214,7 @@ pub struct RskContractsGateway<P: Provider + Clone> {
     get_committee_call: GetCommitteeCall<CommitteeRegistryContract<P>>,
     deposit_communication_data_invoke: DepositCommunicationDataInvoke<CommitteeRegistryContract<P>>,
     deposit_aggregated_key_invoke: DepositAggregatedKeysInvoke<CommitteeRegistryContract<P>>,
+    is_whitelisted_call: IsWhitelistedCall<CommitteeRegistryContract<P>>,
 }
 
 impl<P: Provider + Clone> RskContractsGateway<P> {
@@ -368,6 +372,7 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
                 committee_registry_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
+            is_whitelisted_call: IsWhitelistedCall::new(committee_registry_contract.clone()),
         })
     }
 
@@ -618,6 +623,15 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     ) -> Result<RegisterOperatorWonOutput, DomainErrors> {
         self.register_operator_won_invoke.run(input).await.map_err(|err| {
             error!("Error on register_operator_won_invoke: {err}");
+            err
+        })
+    }
+
+    async fn is_whitelisted(&self) -> Result<bool, DomainErrors> {
+        info!("Checking whitelist status for member address: {}", self.member_address);
+
+        self.is_whitelisted_call.run(self.member_address.into()).await.map_err(|err| {
+            error!("Error on is_whitelisted_call: {err}");
             err
         })
     }
