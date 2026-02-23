@@ -295,8 +295,9 @@ mod tests {
                     && var_name == ADVANCE_FUNDS_INPUT
                 {
                     order_clone.lock().unwrap().push("ADVANCE_FUNDS_INPUT".to_string());
+                    return true;
                 }
-                true
+                false
             })
             .times(1)
             .returning(|_| Ok(true));
@@ -308,8 +309,9 @@ mod tests {
             .withf(move |msg: &IncomingBitVMXApiMessages| {
                 if matches!(msg, IncomingBitVMXApiMessages::SetFundingUtxo(_)) {
                     order_clone.lock().unwrap().push("SetFundingUtxo".to_string());
+                    return true;
                 }
-                true
+                false
             })
             .times(1)
             .returning(|_| Ok(true));
@@ -323,8 +325,9 @@ mod tests {
                     && *var_name == Committee::name()
                 {
                     order_clone.lock().unwrap().push("Committee".to_string());
+                    return true;
                 }
-                true
+                false
             })
             .times(1)
             .returning(|_| Ok(true));
@@ -543,8 +546,9 @@ mod tests {
                     && *var_name == Committee::name()
                 {
                     *capture_clone.lock().unwrap() = Some(json.clone());
+                    return true;
                 }
-                true
+                false
             })
             .times(1)
             .returning(|_| Ok(true));
@@ -615,11 +619,13 @@ mod tests {
                 if let IncomingBitVMXApiMessages::SetVar(_, var_name, VariableTypes::String(json)) =
                     msg
                     && *var_name == DisputeCoreData::name()
-                    && let Ok(data) = serde_json::from_str::<DisputeCoreData>(json)
                 {
-                    capture_clone.lock().unwrap().push(data.member_index);
+                    if let Ok(data) = serde_json::from_str::<DisputeCoreData>(json) {
+                        capture_clone.lock().unwrap().push(data.member_index);
+                    }
+                    return true;
                 }
-                true
+                false
             })
             .times(2) // One per member
             .returning(|_| Ok(true));
@@ -725,11 +731,13 @@ mod tests {
                 if let IncomingBitVMXApiMessages::SetVar(_, var_name, VariableTypes::String(json)) =
                     msg
                     && *var_name == Committee::name()
-                    && let Ok(committee) = serde_json::from_str::<Committee>(json)
                 {
-                    *capture_clone.lock().unwrap() = Some(committee.stream_denomination);
+                    if let Ok(committee) = serde_json::from_str::<Committee>(json) {
+                        *capture_clone.lock().unwrap() = Some(committee.stream_denomination);
+                    }
+                    return true;
                 }
-                true
+                false
             })
             .times(1)
             .returning(|_| Ok(true));

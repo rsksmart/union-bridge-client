@@ -77,10 +77,15 @@ async fn main() -> Result<()> {
     let shutdown_flag = ShutdownFlag::init();
 
     let broker_port = config.user_api_config.notifier.port;
-    let broker_key_path = &config.key_store.broker_key_path;
-    let broker_drop_guard = BrokerDropGuard::new(Arc::new(
-        BrokerServer::new(broker_port, broker_key_path).expect("Failed to create BrokerServer"),
-    ));
+    let broker_key_path = config.key_store.broker_key_path.clone();
+
+    let broker_server =
+        tokio::task::spawn_blocking(move || BrokerServer::new(broker_port, &broker_key_path))
+            .await
+            .context("Failed to spawn blocking task")?
+            .context("Failed to create BrokerServer")?;
+
+    let broker_drop_guard = BrokerDropGuard::new(Arc::new(broker_server));
     info!("Broker Server started on {broker_port}");
 
     let http_addr = SocketAddr::from(([0, 0, 0, 0], config.user_api_config.http.port));
@@ -115,7 +120,7 @@ async fn main() -> Result<()> {
 
     // Derive the coordinator's pubkey_hash from the shared broker key file.
     // Since all services use the same broker.key, they share the same pubkey_hash.
-    let broker_cert = Cert::from_key_file(broker_key_path)
+    let broker_cert = Cert::from_key_file(&config.key_store.broker_key_path)
         .context("Failed to load broker key file for identifier")?;
     let coordinator_pubkey_hash =
         broker_cert.get_pubk_hash().context("Failed to get pubkey_hash from broker cert")?;
