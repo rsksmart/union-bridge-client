@@ -2,6 +2,10 @@
 # INTEGRATED DOCKER COMPOSE: BitVMX + Union Bridge Client
 #####################################################################################################################################
 
+x-host-gateway: &host-gateway
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+
 services:
   # ================================
   # BitVMX Services
@@ -10,8 +14,7 @@ services:
     platform: linux/amd64
     # environment:
       # RUST_LOG: debug
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    <<: *host-gateway
     extends:
       file: ../bitvmx-client/docker-compose.yml
       service: bitvmx-client
@@ -23,8 +26,7 @@ services:
     extends:
       file: ../build/docker-compose.yml
       service: block-indexer
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    <<: *host-gateway
     volumes:
       - ${CONFIG_DIR:-../../config}:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
@@ -36,8 +38,7 @@ services:
     extends:
       file: ../build/docker-compose.yml
       service: log-indexer
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    <<: *host-gateway
     volumes:
       - ${CONFIG_DIR:-../../config}:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
@@ -49,8 +50,7 @@ services:
     extends:
       file: ../build/docker-compose.yml
       service: user-api
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    <<: *host-gateway
     volumes:
       - ${CONFIG_DIR:-../../config}:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
@@ -69,8 +69,7 @@ services:
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - keystore:/keystore
       - db-coordinator:/app/db/coordinator
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    <<: *host-gateway
     depends_on:
       bitvmx-client:
         condition: service_healthy
