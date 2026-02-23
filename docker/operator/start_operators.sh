@@ -27,6 +27,8 @@ fi
 # Use UC_TAG from .envrc if available, can be overridden by --tag flag
 UC_TAG="${UC_TAG:-}"
 DOCKER_COMPOSE_ARGS=()
+NUM_OPERATORS=""
+OPS_EXPLICITLY_PROVIDED=false
 # Track if --op was explicitly provided (vs loaded from .envrc)
 OP_EXPLICITLY_PROVIDED=false
 # Track if --tag was explicitly provided (vs loaded from .envrc or .env file)
@@ -43,12 +45,13 @@ print_help() {
   echo "Environment:"
   echo "  --env <ENV>              Target environment: alphanet, testnet, local, local-docker, or regtest"
   echo "                            Falls back to UC_ENV from .envrc if not provided."
-  echo "                            local, local-docker, regtest deploy 4 operators."
+  echo "                            local, local-docker, regtest deploy 4 operators by default (see --ops)."
   echo "                            alphanet, testnet deploy 1 operator per host (requires --op <ID>)."
   echo ""
   echo "Options:"
   echo "  --op <ID>                Operator ID (1-10) - required for alphanet/testnet startup"
   echo "                            (Optional if UC_OPERATOR_ID is set in .envrc)"
+  echo "  --ops <N>                Number of operators to start (1-10) for local/regtest (default: 4)"
   echo "  --tag <TAG>              Docker image tag for Union Client"
   echo "                            (Optional if UC_TAG is set in .envrc)"
   echo "  --help                   Display this help message"
@@ -60,7 +63,7 @@ print_help() {
   echo ""
   echo "Environment Details:"
   echo "  Local:"
-  echo "    - Runs all 4 operators on one host (op_1, op_2, op_3, op_4)"
+  echo "    - Runs operators on one host (default: 4, up to 10 with --ops)"
   echo "    - Config: bitvmx-client/config/local/client/config/op_X.yaml"
   echo "    - Uses bridge network (bitvmx-shared-network) for P2P communication"
   echo "    - Project name: op_1, op_2, op_3 & op_4"
@@ -91,12 +94,14 @@ print_help() {
   echo "  Command-line flags override .envrc values if provided."
   echo ""
   echo "Examples:"
-  echo "  $0 --env local up -d                                     # Start all 4 operators locally"
-  echo "  $0 up -d                                                  # Same, if UC_ENV=local in .envrc"
-  echo "  $0 --env local --fresh up -d                             # Clean and start all operators locally"
-  echo "  $0 --env local --fresh --yes up -d                       # Clean and start all operators locally, no confirmation prompt"
+  echo "  $0 --env local up -d                                     # Start 4 operators locally (default)"
+  echo "  $0 --env local --ops 10 up -d                            # Start all 10 operators locally"
+  echo "  $0 up -d                                                  # Same as above, if UC_ENV=local in .envrc"
+  echo "  $0 --env local --fresh up -d                             # Clean and start operators locally"
+  echo "  $0 --env local --fresh --yes up -d                       # Clean and start operators locally, no confirmation prompt"
   echo "  $0 --env local down                                      # Stop all local operators"
-  echo "  $0 --env regtest up -d                                   # Start all 4 operators in regtest mode"
+  echo "  $0 --env regtest up -d                                   # Start 4 operators in regtest mode (default)"
+  echo "  $0 --env regtest --ops 6 up -d                           # Start 6 operators in regtest mode"
   echo "  $0 --env regtest down                                    # Stop all regtest operators"
   echo "  $0 --env alphanet --op 1 up -d                           # Start operator 1 in alphanet"
   echo "  $0 --env alphanet up -d                                  # Same, if UC_OPERATOR_ID=1 in .envrc"
@@ -128,6 +133,15 @@ while [[ $# -gt 0 ]]; do
         exit 1
       fi
       # Explicit --op overrides any UC_OPERATOR_ID from .envrc
+      shift 2
+      ;;
+    --ops)
+      NUM_OPERATORS="$2"
+      OPS_EXPLICITLY_PROVIDED=true
+      if ! [[ "$NUM_OPERATORS" =~ ^(10|[1-9])$ ]]; then
+        echo "Error: --ops must be between 1 and 10"
+        exit 1
+      fi
       shift 2
       ;;
     --tag)
@@ -200,6 +214,8 @@ elif [[ -n "${UC_TAG}" ]]; then
   # Save UC_TAG from .envrc if it was set (and --tag wasn't provided)
   SAVED_UC_TAG_FROM_ENVRC="${UC_TAG}"
 fi
+# Save --ops value before .env file might overwrite NUM_OPERATORS
+SAVED_NUM_OPERATORS="${NUM_OPERATORS}"
 
 if [[ "$ENVIRONMENT" == "alphanet" ]]; then
   ENV_FILE="${SCRIPT_DIR}/.env.alphanet"
@@ -235,6 +251,17 @@ elif [[ "$ENVIRONMENT" == "regtest" ]]; then
   restore_uc_tag "latest-regtest"
 else
   echo "Invalid environment. Use 'alphanet', 'testnet', 'local', 'local-docker', or 'regtest'"
+  exit 1
+fi
+
+# Restore --ops flag value if it was explicitly provided (overrides .env file)
+if [[ "${OPS_EXPLICITLY_PROVIDED}" == true ]]; then
+  NUM_OPERATORS="${SAVED_NUM_OPERATORS}"
+fi
+
+# Validate --ops flag usage
+if [[ -n "$NUM_OPERATORS" && "$ENVIRONMENT" != "local" && "$ENVIRONMENT" != "regtest" ]]; then
+  echo "Error: --ops is only allowed with --env local or --env regtest."
   exit 1
 fi
 
@@ -298,8 +325,8 @@ if [[ ("$ENVIRONMENT" == "alphanet" || "$ENVIRONMENT" == "testnet") && "${IS_STA
 
   OPERATORS_TO_RUN=("$OPERATOR_ARG")
 elif [[ "$ENVIRONMENT" == "local" || "$ENVIRONMENT" == "regtest" ]]; then
-  # Local/Regtest: run all operators
-  OPERATORS_TO_RUN=(1 2 3 4)
+  # Local/Regtest: default to 4 operators, overridable with --ops
+  OPERATORS_TO_RUN=($(seq 1 "${NUM_OPERATORS:-4}"))
 fi
 
 # If requested, clean operator stacks regardless of the main command
@@ -348,7 +375,7 @@ if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
 fi
 
 run_all_operators() {
-  # LOCAL ENVIRONMENT: All 4 operators on one host
+  # LOCAL/REGTEST ENVIRONMENT: Multiple operators on one host (default 4, up to 10)
   # Each operator uses different ports to avoid conflicts
 
   # Create shared network for P2P communication between operators if missing
@@ -358,11 +385,11 @@ run_all_operators() {
     docker network create --driver bridge --subnet=172.20.0.0/16 $NETWORK_NAME
   fi
   
-  local USER_API_PORTS=(40001 40002 40003 40004)
-  local BITVMX_PORTS=(22222 33333 44444 55554)
+  local USER_API_PORTS=(40001 40002 40003 40004 40005 40006 40007 40008 40009 40010)
+  local BITVMX_PORTS=(22222 33333 44444 55554 55555 55556 55557 55558 55559 55560)
   # should match docker/bitvmx-client/config/local/broker/config/peers.yaml
-  local BITVMX_P2P_HOSTS=("172.20.0.11" "172.20.0.12" "172.20.0.13" "172.20.0.14")
-  local CLIENT_OPS=("op_1" "op_2" "op_3" "op_4")
+  local BITVMX_P2P_HOSTS=("172.20.0.11" "172.20.0.12" "172.20.0.13" "172.20.0.14" "172.20.0.15" "172.20.0.16" "172.20.0.17" "172.20.0.18" "172.20.0.19" "172.20.0.20")
+  local CLIENT_OPS=("op_1" "op_2" "op_3" "op_4" "op_5" "op_6" "op_7" "op_8" "op_9" "op_10")
   local COMPOSE_FILE_ARG="-f docker-compose.yml -f docker-compose.all.yml"
 
   for op_num in "${OPERATORS_TO_RUN[@]}"; do

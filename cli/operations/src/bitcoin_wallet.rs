@@ -5,7 +5,7 @@ use std::process::Command;
 use std::time::Duration;
 use tokio::time::sleep;
 
-use crate::constants::{ONE_OPERATOR_COMPOSE_PROJECT, OPERATOR_IDS, REMOTE_SSH_USER};
+use crate::constants::{ONE_OPERATOR_COMPOSE_PROJECT, REMOTE_SSH_USER, operator_ids};
 use crate::environments::*;
 use crate::utils::command_to_string;
 
@@ -51,7 +51,7 @@ async fn collect_local_addresses() -> Result<Vec<String>> {
     let logs_dir = cargo_logs_dir()?;
     let mut addresses = Vec::new();
 
-    for operator_id in OPERATOR_IDS {
+    for operator_id in operator_ids() {
         let log_path = logs_dir.join(format!("coordinator-{}.log", operator_id));
         if !log_path.exists() {
             bail!(
@@ -79,7 +79,7 @@ async fn collect_local_addresses() -> Result<Vec<String>> {
 async fn collect_local_docker_addresses() -> Result<Vec<String>> {
     request_bitvmx_address_user_api(Environment::LocalDocker).await?;
 
-    let projects: Vec<String> = OPERATOR_IDS.iter().map(|id| format!("op_{}", id)).collect();
+    let projects: Vec<String> = operator_ids().iter().map(|id| format!("op_{}", id)).collect();
     collect_addresses_from_logs(projects, |project| run_docker_compose_logs(project))
 }
 

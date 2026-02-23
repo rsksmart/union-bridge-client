@@ -86,7 +86,7 @@ mod rsk_wallet;
 mod utils;
 
 use crate::committee::CommitteeRole;
-use crate::constants::OPERATOR_IDS;
+use crate::constants::operator_ids;
 use crate::environments::Environment;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -244,7 +244,7 @@ async fn main() -> Result<()> {
             SetupCommands::CreateRootstockWallets => {
                 let base_storage_path = std::env::var("BASE_STORAGE_PATH").ok();
                 rsk_wallet::handle_wallet_creation(
-                    OPERATOR_IDS.len() as u8,
+                    operator_ids().len() as u8,
                     base_storage_path.as_deref(),
                 )?;
             }

@@ -30,7 +30,7 @@ coordinator:
 broker_storage: 
   path: /tmp/regtest/op_7/broker.db
 
-broker_port: 88888
+broker_port: 55557
 
 client: 
   # Number of retries for requests

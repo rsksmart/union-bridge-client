@@ -1,5 +1,15 @@
-// default operator IDs for local deployments
-pub const OPERATOR_IDS: [u8; 4] = [1, 2, 3, 4];
+// default operator IDs for local deployments (overridable via NUM_OPERATORS env var)
+pub const DEFAULT_NUM_OPERATORS: u8 = 4;
+pub const MAX_OPERATORS: u8 = 10;
+
+pub fn operator_ids() -> Vec<u8> {
+    let count = std::env::var("NUM_OPERATORS")
+        .ok()
+        .and_then(|v| v.parse::<u8>().ok())
+        .unwrap_or(DEFAULT_NUM_OPERATORS)
+        .min(MAX_OPERATORS);
+    (1..=count).collect()
+}
 
 // project name for one-operator deployments
 pub const ONE_OPERATOR_COMPOSE_PROJECT: &str = "union-operator";

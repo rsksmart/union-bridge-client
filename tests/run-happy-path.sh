@@ -79,6 +79,17 @@ fi
 # change to project root (parent of tests directory)
 cd "$(dirname "$0")/.."
 
+# Load NUM_OPERATORS from .env.local (default: 4)
+NUM_OPERATORS=4
+_env_local="docker/operator/.env.local"
+if [[ -f "$_env_local" ]]; then
+    _num=$(grep -E '^\s*NUM_OPERATORS=' "$_env_local" | tail -1 | cut -d= -f2 | tr -d ' "'\''')
+    if [[ -n "$_num" ]] && [[ "$_num" =~ ^[0-9]+$ ]] && [[ "$_num" -ge 1 ]] && [[ "$_num" -le 10 ]]; then
+        NUM_OPERATORS="$_num"
+    fi
+fi
+unset _env_local _num
+
 # hardcoded configuration
 STREAM_ID=0
 RSK_ADDRESS="0x$(openssl rand -hex 20)" # random address each run
@@ -180,13 +191,13 @@ fi
 echo "All prerequisites met!"
 echo ""
 
-# Find recent log match in docker compose logs (all 4 operators)
+# Find recent log match in docker compose logs (all operators)
 # Checks all logs (no time restriction) since we're already polling in a loop
 # Output format: "source:line" or empty if not found
 find_recent_docker_log_match() {
     local pattern="$1"
 
-    for op_id in 1 2 3 4; do
+    for op_id in $(seq 1 "$NUM_OPERATORS"); do
         local project="op_${op_id}"
         local line
         # Check all logs - the polling loop already handles timing
@@ -398,7 +409,7 @@ wait_for_log_with_block_timeout() {
             echo ""  # newline after the progress display
             warn "Log pattern not found after $max_blocks blocks (height: $start_height -> $current_height)"
             if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
-                warn "Check Docker logs manually: docker compose -p op_{1..4} logs coordinator"
+                warn "Check Docker logs manually: docker compose -p op_{1..$NUM_OPERATORS} logs coordinator"
             else
                 warn "Check logs/coordinator-*.log manually"
             fi
