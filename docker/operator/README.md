@@ -47,7 +47,7 @@ The script clones `FairgateLabs/docker-bitvmx` at the chosen ref, saves the fetc
 
 This setup supports three deployment environments:
 
-- **Local** (`.env.local`): Development environment that runs all 4 operators on a single host with local Bitcoin and RSK nodes
+- **Local** (`.env.local`): Development environment that runs up to 10 operators on a single host with local Bitcoin and RSK nodes (default: 4, configurable via `NUM_OPERATORS` in `.env.local` or `--ops` flag)
 - **Alphanet** (`.env.alphanet`): Production-like environment where each host runs a single operator, connecting to the Alphanet testnet
 - **Testnet** (`.env.testnet`): Production-like environment where each host runs a single operator, connecting to the Bitcoin testnet
 
@@ -57,8 +57,8 @@ The BitVMX client requires different Docker network configurations depending on 
 
 **Local environment (Bridge Network)**:
 - Uses a shared Docker bridge network (`bitvmx-network`) for P2P communication between operators
-- All 4 operators run on the same host and communicate through Docker's internal network
-- Each operator binds to different P2P ports (22222, 33333, 44444, 55555, 66666, 77777, 88888, 99999, 100000, 111111) on the Docker bridge
+- All operators run on the same host and communicate through Docker's internal network
+- Each operator binds to a unique P2P port on the Docker bridge
 - This isolated network allows multiple BitVMX clients to communicate without exposing ports to the host
 
 **Alphanet/Testnet environment (Host Network)**:
@@ -163,7 +163,7 @@ bash start_operators.sh --help
 
 #### 4.1) Start local/dev (local bitcoind + anvil) using published images:
 
-Start all 4 operators (no `--op` flag for local):
+Start operators (no `--op` flag for local, uses `NUM_OPERATORS` from `.env.local` or `--ops` flag):
 
 ```bash
 bash start_operators.sh --env local up -d
@@ -365,7 +365,7 @@ See the `bitcoin-wallet` [README](../../cli/bitcoin-wallet/README.md) for more i
 
 ### Resource conflicts
 
-- **Port conflicts**: ensure ports `40001–40010`, `61180–61189`, and `22222/33333/44444/55555/66666/77777/88888/99999/100000/111111` are free.
+- **Port conflicts**: ensure ports `40001–40010`, `61180–61189`, and `22222/33333/44444/55554/55555–55560` are free.
   export `BITVMX_P2P_HOST` addresses accordingly in `start_operators.sh`.
 - **Healthchecks**: services wait for each other; if something is stuck, try bringing stacks down as mentioned above,
   re-check env files, and start again.
