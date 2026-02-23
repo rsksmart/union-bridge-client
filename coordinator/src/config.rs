@@ -187,11 +187,7 @@ pub struct CommitteeConfig {
 
 impl Default for CommitteeConfig {
     fn default() -> Self {
-        Self {
-            min_funding_balance: 20_002_000,
-            // 100_000 * 10_000_000_000 + 500_000 = 1_000_000_000_500_000
-            min_rsk_balance: 100_000 * 10_000_000_000 + 500_000,
-        }
+        Self { min_funding_balance: 20_002_000, min_rsk_balance: 1_000_000_000_500_000 }
     }
 }
 
@@ -326,7 +322,7 @@ mod tests {
 
         // Committee defaults (was MIN_FUNDING_BALANCE = 20_002_000, MIN_RSK_BALANCE = 100_000 * 10^10 + 500_000)
         assert_eq!(config.committee.min_funding_balance, 20_002_000);
-        assert_eq!(config.committee.min_rsk_balance, 100_000 * 10_000_000_000 + 500_000);
+        assert_eq!(config.committee.min_rsk_balance, 1_000_000_000_500_000);
 
         // Native bridge defaults (was MIN_TX_CONFIRMATIONS = 2)
         assert_eq!(config.native_bridge.min_tx_confirmations, 2);
