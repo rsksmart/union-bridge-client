@@ -1,4 +1,4 @@
-use log::info;
+use log::{debug, info};
 use union_contracts::bindings::pegout_manager::PegoutManager::BtcTxSPVProof;
 
 use crate::contracts::pegout_manager::PegoutManagerContractApi;
@@ -31,7 +31,7 @@ impl<C: PegoutManagerContractApi> RegisterOperatorWonInvoke<C> {
         let tx_hash =
             self.contract.invoke_register_operator_won(parsed_input, self.gas_bumps).await?;
 
-        info!("RegisterOperatorWon successful at tx {tx_hash}");
+        debug!("RegisterOperatorWon successful at tx {tx_hash}");
         Ok(RegisterOperatorWonOutput { transaction_hash: tx_hash.to_string() })
     }
 }

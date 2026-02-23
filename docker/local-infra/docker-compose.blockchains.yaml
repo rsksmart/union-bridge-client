@@ -50,7 +50,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
-      - RPC_URL=http://anvil:8545
+      - RPC_URL=${ANVIL_RPC_URL}
       - MNEMONIC=${MNEMONIC}
       - DEPLOYER_INDEX=${DEPLOYER_INDEX}
     command:
