@@ -2,7 +2,7 @@
 
 This setup provides flexible operator deployment configurations:
 
-- **Local environment**: Run all 4 independent operator stacks in parallel (`op_1`..`op_4`) on a single host to simulate a committee, using a shared Docker bridge network for BitVMX P2P communication
+- **Local environment**: Run all 10 independent operator stacks in parallel (`op_1`..`op_10`) on a single host to simulate a committee, using a shared Docker bridge network for BitVMX P2P communication
 - **Alphanet environment**: Run a single operator per host, allowing distributed committee deployment across multiple machines, using host network mode for BitVMX P2P connectivity
 - Each stack includes: BitVMX client + Union Client services (`user-api`, `block-indexer`, `log-indexer`, `coordinator`)
 
@@ -47,7 +47,7 @@ The script clones `FairgateLabs/docker-bitvmx` at the chosen ref, saves the fetc
 
 This setup supports three deployment environments:
 
-- **Local** (`.env.local`): Development environment that runs all 4 operators on a single host with local Bitcoin and RSK nodes
+- **Local** (`.env.local`): Development environment that runs up to 10 operators on a single host with local Bitcoin and RSK nodes (default: 4, configurable via `NUM_OPERATORS` in `.env.local` or `--ops` flag)
 - **Alphanet** (`.env.alphanet`): Production-like environment where each host runs a single operator, connecting to the Alphanet testnet
 - **Testnet** (`.env.testnet`): Production-like environment where each host runs a single operator, connecting to the Bitcoin testnet
 
@@ -57,8 +57,8 @@ The BitVMX client requires different Docker network configurations depending on 
 
 **Local environment (Bridge Network)**:
 - Uses a shared Docker bridge network (`bitvmx-network`) for P2P communication between operators
-- All 4 operators run on the same host and communicate through Docker's internal network
-- Each operator binds to different P2P ports (22222, 33333, 44444, 55554) on the Docker bridge
+- All operators run on the same host and communicate through Docker's internal network
+- Each operator binds to a unique P2P port on the Docker bridge
 - This isolated network allows multiple BitVMX clients to communicate without exposing ports to the host
 
 **Alphanet/Testnet environment (Host Network)**:
@@ -127,7 +127,7 @@ The following environment variables can be set in `.envrc` (project root) to sim
 - **`UC_ENV`**: Sets the default environment (`alphanet`, `testnet`, `local`, `local-docker`, or `regtest`). Can be overridden with `--env` flag.
 - **`UC_TAG`**: Sets the default Docker image tag. Can be overridden with `--tag` flag.
   - Defaults: `latest-alphanet` (alphanet), `latest-testnet` (testnet), `latest-anvil` (local), `latest-regtest` (regtest)
-- **`UC_OPERATOR_ID`**: Sets the default operator ID (1-4). Can be overridden with `--op` flag.
+- **`UC_OPERATOR_ID`**: Sets the default operator ID (1-10). Can be overridden with `--op` flag.
 - **`UC_OPERATOR_ROLE`**: Sets the default operator role (`prover` or `verifier`). Used by `cli-operations.sh`.
 
 **Example for multi-host deployment:**
@@ -163,7 +163,7 @@ bash start_operators.sh --help
 
 #### 4.1) Start local/dev (local bitcoind + anvil) using published images:
 
-Start all 4 operators (no `--op` flag for local):
+Start operators (no `--op` flag for local, uses `NUM_OPERATORS` from `.env.local` or `--ops` flag):
 
 ```bash
 bash start_operators.sh --env local up -d
@@ -177,7 +177,7 @@ bash start_operators.sh --env local --tag latest-anvil up -d
 
 #### 4.2) Start alphanet:
 
-On alphanet, each host runs a single operator. You must specify which operator (1-4) using `--op <ID>`:
+On alphanet, each host runs a single operator. You must specify which operator (1-10) using `--op <ID>`:
 
 ```bash
 # Start operator 1 on this host
@@ -186,7 +186,7 @@ bash start_operators.sh --op 1 --env alphanet up -d
 # Start operator 2 on this host
 bash start_operators.sh --op 2 --env alphanet up -d
 
-# And so on for operators 3 and 4...
+# And so on for operators 3 through 10...
 
 Or explicitly specify the tag:
 
@@ -196,7 +196,7 @@ bash start_operators.sh --op 1 --env alphanet --tag latest-alphanet up -d
 
 #### 4.3) Start testnet:
 
-On testnet, each host runs a single operator. You must specify which operator (1-4) using `--op <ID>`:
+On testnet, each host runs a single operator. You must specify which operator (1-10) using `--op <ID>`:
 
 ```bash
 # Start operator 1 on this host
@@ -262,13 +262,19 @@ bash start_operators.sh --env alphanet down --volumes
 
 ### 5) Viewing logs per operator project
 
-**Local environment:** You can tail logs per operator project name (`op_1`..`op_4`) using docker compose directly:
+**Local environment:** You can tail logs per operator project name (`op_1`..`op_10`) using docker compose directly:
 
 ```bash
 docker compose -p op_1 logs -f
 docker compose -p op_2 logs -f
 docker compose -p op_3 logs -f
 docker compose -p op_4 logs -f
+docker compose -p op_5 logs -f
+docker compose -p op_6 logs -f
+docker compose -p op_7 logs -f
+docker compose -p op_8 logs -f
+docker compose -p op_9 logs -f
+docker compose -p op_10 logs -f
 ```
 
 Using the `start_operators.sh` script:
@@ -297,6 +303,12 @@ bash start_operators.sh --env testnet logs -f
 - `op_2` -> http://localhost:40002
 - `op_3` -> http://localhost:40003
 - `op_4` -> http://localhost:40004
+- `op_5` -> http://localhost:40005
+- `op_6` -> http://localhost:40006
+- `op_7` -> http://localhost:40007
+- `op_8` -> http://localhost:40008
+- `op_9` -> http://localhost:40009
+- `op_10` -> http://localhost:40010
 
 **Alphanet/Testnet environment:** Each host runs one operator, accessible at:
 
@@ -306,7 +318,7 @@ bash start_operators.sh --env testnet logs -f
 
 Use the `committee_setup.sh` script to apply operators to a stream:
 
-**Local:** Apply all 4 operators (2 Provers, 2 Verifiers):
+**Local:** Apply all 10 operators:
 
 ```bash
 bash operator_scripts/committee_setup.sh --stream-id <STREAM_ID> --env local
@@ -353,7 +365,7 @@ See the `bitcoin-wallet` [README](../../cli/bitcoin-wallet/README.md) for more i
 
 ### Resource conflicts
 
-- **Port conflicts**: ensure ports `40001–40004`, `61180–61183`, and `22222/33333/44444/55554` are free.
+- **Port conflicts**: ensure ports `40001–40010`, `61180–61189`, and `22222/33333/44444/55554/55555–55560` are free.
   export `BITVMX_P2P_HOST` addresses accordingly in `start_operators.sh`.
 - **Healthchecks**: services wait for each other; if something is stuck, try bringing stacks down as mentioned above,
   re-check env files, and start again.

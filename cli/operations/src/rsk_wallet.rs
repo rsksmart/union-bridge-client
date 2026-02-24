@@ -7,11 +7,11 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::constants::{
-    LOCAL_ANVIL_ADDRESS, ONE_OPERATOR_COMPOSE_PROJECT, OPERATOR_IDS, REMOTE_SSH_USER,
+    LOCAL_ANVIL_ADDRESS, ONE_OPERATOR_COMPOSE_PROJECT, REMOTE_SSH_USER, operator_ids,
 };
 use crate::environments::*;
 use crate::utils::command_to_string;
-use crate::validate_1_4;
+use crate::validate_1_10;
 
 const MEMBER_LOG_MARKER: &str = "Got member signer with address";
 const USER_LOG_MARKER: &str = "Got user signer with address";
@@ -21,7 +21,7 @@ const USER_RSK_ADDRESS_MARKER: &str = "as User with address";
 /// handles creating local rootstock wallets for multi-client deployments
 pub fn handle_wallet_creation(num_wallets: u8, base_storage_path: Option<&str>) -> Result<()> {
     let base = require_base_storage_path(base_storage_path)?;
-    validate_1_4(num_wallets, "num-wallets")?;
+    validate_1_10(num_wallets, "num-wallets")?;
 
     setup_wallets_create(num_wallets, base)?;
     print_wallet_summary("create", num_wallets);
@@ -131,7 +131,8 @@ fn collect_user_rsk_addresses_from_cargo_logs(first_only: bool) -> Result<Vec<(S
     let logs_dir = cargo_logs_dir()?;
     let mut addresses = Vec::new();
 
-    let ids: &[u8] = if first_only { &[1] } else { &OPERATOR_IDS };
+    let all_ids = operator_ids();
+    let ids: &[u8] = if first_only { &[1] } else { &all_ids };
     for operator_id in ids {
         let log_path = logs_dir.join(format!("user-api-{}.log", operator_id));
         if !log_path.exists() {
@@ -152,7 +153,8 @@ fn collect_user_rsk_addresses_from_cargo_logs(first_only: bool) -> Result<Vec<(S
 fn collect_user_rsk_addresses_from_local_docker(first_only: bool) -> Result<Vec<(String, String)>> {
     let mut addresses = Vec::new();
 
-    let ids: &[u8] = if first_only { &[1] } else { &OPERATOR_IDS };
+    let all_ids = operator_ids();
+    let ids: &[u8] = if first_only { &[1] } else { &all_ids };
     for id in ids {
         let project = format!("op_{}", id);
         let output = Command::new("docker")
@@ -315,7 +317,7 @@ fn fund_local() -> Result<()> {
     println!("[cargo-fund] funding operator wallets via local anvil");
     let member_signers = collect_local_signers_from_logs(MEMBER_LOG_MARKER)?;
     let unique_members = unique_addresses(&member_signers);
-    let expected = OPERATOR_IDS.len();
+    let expected = operator_ids().len();
     if unique_members.len() < expected {
         bail!(
             "expected {} member RSK address(es) but found {}. ensure all required operator services are running and have emitted signer addresses.",
@@ -355,7 +357,7 @@ fn fund_local_docker() -> Result<()> {
     println!("[docker-fund] funding operator wallets via local anvil");
     let member_signers = collect_local_signers(MEMBER_LOG_MARKER)?;
     let unique_members = unique_addresses(&member_signers);
-    let expected = OPERATOR_IDS.len();
+    let expected = operator_ids().len();
     if unique_members.len() < expected {
         bail!(
             "expected {} member RSK address(es) but found {}. ensure all required operator stacks are running and have emitted signer addresses.",
@@ -442,7 +444,7 @@ fn collect_local_signers_from_logs(marker: &str) -> Result<Vec<(String, String)>
 
     let log_type = if marker == MEMBER_LOG_MARKER { "coordinator" } else { "user-api" };
 
-    for operator_id in OPERATOR_IDS {
+    for operator_id in operator_ids() {
         let log_path = logs_dir.join(format!("{}-{}.log", log_type, operator_id));
         if !log_path.exists() {
             bail!(
@@ -477,7 +479,7 @@ fn collect_local_signers(marker: &str) -> Result<Vec<(String, String)>> {
     let mut signers = Vec::new();
     let address_type = if marker == MEMBER_LOG_MARKER { "member" } else { "user" };
 
-    for id in OPERATOR_IDS {
+    for id in operator_ids() {
         let project = format!("op_{}", id);
         eprintln!("[docker-fund] running: docker compose -p {} logs", &project);
         let output = Command::new("docker")

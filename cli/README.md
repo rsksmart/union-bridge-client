@@ -57,7 +57,7 @@ Handles setup, operator operations, and user operations across different environ
 The following environment variables can be set to simplify multi-host deployments:
 
 - **`UC_ENV`**: Sets the default environment (`local`, `local-docker`, `alphanet`, or `testnet`). Can be overridden with `--env` flag.
-- **`UC_OPERATOR_ID`**: Sets the default operator ID (1-4) for `apply-stream` command. Can be overridden with `--operator-id` flag.
+- **`UC_OPERATOR_ID`**: Sets the default operator ID (1-10) for `apply-stream` command. Can be overridden with `--operator-id` flag.
 - **`UC_OPERATOR_ROLE`**: Sets the default operator role (`prover` or `verifier`) for `apply-stream` command. Can be overridden with `--role` flag.
 
 All three can be set in `.envrc` at the project root. The `.env.*` files (`docker/operator/.env.alphanet`, `.env.testnet`, `.env.local`) use docker-compose `--env-file` format (no `export` keyword).

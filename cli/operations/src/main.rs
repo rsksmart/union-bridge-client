@@ -15,7 +15,7 @@
 //!   - automatically funds rootstock addresses via anvil (local) or faucet (testnet/alphanet)
 //! - `apply-stream`: registers operator(s) to a stream for committee participation
 //!   - local: applies all 4 operators automatically
-//!   - alphanet/testnet: requires `--operator-id` (1-4) and `--role` (prover/verifier)
+//!   - alphanet/testnet: requires `--operator-id` (1-10) and `--role` (prover/verifier)
 //!
 //! ## user
 //! funding, pegin and pegout transaction commands
@@ -86,7 +86,7 @@ mod rsk_wallet;
 mod utils;
 
 use crate::committee::CommitteeRole;
-use crate::constants::OPERATOR_IDS;
+use crate::constants::operator_ids;
 use crate::environments::Environment;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -156,7 +156,7 @@ enum OperatorCommands {
         #[arg(short = 'e', long = "env", value_enum, default_value_t = Environment::Local, env = "UC_ENV")]
         env: Environment,
 
-        /// Operator ID (1-4) when applying on alphanet or testnet
+        /// Operator ID (1-10) when applying on alphanet or testnet
         #[arg(short = 'o', long = "operator-id", value_name = "OPERATOR_ID", env = "UC_OPERATOR_ID")]
         operator_id: Option<u8>,
 
@@ -228,6 +228,13 @@ fn validate_1_4(value: u8, name: &str) -> Result<()> {
     Ok(())
 }
 
+fn validate_1_10(value: u8, name: &str) -> Result<()> {
+    if !(1..=10).contains(&value) {
+        anyhow::bail!("{} must be between 1 and 10", name);
+    }
+    Ok(())
+}
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -237,7 +244,7 @@ async fn main() -> Result<()> {
             SetupCommands::CreateRootstockWallets => {
                 let base_storage_path = std::env::var("BASE_STORAGE_PATH").ok();
                 rsk_wallet::handle_wallet_creation(
-                    OPERATOR_IDS.len() as u8,
+                    operator_ids().len() as u8,
                     base_storage_path.as_deref(),
                 )?;
             }

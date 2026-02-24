@@ -1,3 +1,4 @@
+use crate::constants::operator_ids;
 use clap::ValueEnum;
 
 /// unified environment enum for all cli commands
@@ -46,7 +47,7 @@ impl Environment {
             Environment::Testnet => TESTNET_HOSTS.iter().map(|&s| s.to_string()).collect(),
             Environment::Regtest => {
                 // same host for each member (each user api port)
-                USER_API_PORTS.iter().map(|_| REGTEST_HOST.to_string()).collect()
+                operator_ids().iter().map(|_| REGTEST_HOST.to_string()).collect()
             }
             Environment::Local | Environment::LocalDocker => {
                 unreachable!("hosts() only called for remote environments")
@@ -68,44 +69,54 @@ impl Environment {
 
     /// returns the bitvmx endpoints for this environment
     pub fn user_api_endpoints(&self) -> Vec<String> {
+        let ports = user_api_ports();
         match self {
-            Environment::Local | Environment::LocalDocker => USER_API_PORTS
+            Environment::Local | Environment::LocalDocker => ports
                 .iter()
-                // same host, different port
                 .map(|port| format!("{}:{}", LOCAL_HOST, port))
                 .collect(),
 
-            Environment::Regtest => USER_API_PORTS
+            Environment::Regtest => ports
                 .iter()
-                // same host, different port
                 .map(|port| format!("{}:{}", REGTEST_HOST, port))
                 .collect(),
             Environment::Alphanet => ALPHANET_HOSTS
                 .iter()
-                // different host, same port
-                .map(|host| format!("{}:{}", host, USER_API_PORTS[0]))
+                .map(|host| format!("{}:{}", host, BASE_USER_API_PORT))
                 .collect(),
 
             Environment::Testnet => TESTNET_HOSTS
                 .iter()
-                // different host, same port
-                .map(|host| format!("{}:{}", host, USER_API_PORTS[0]))
+                .map(|host| format!("{}:{}", host, BASE_USER_API_PORT))
                 .collect(),
         }
     }
 }
 
-const USER_API_PORTS: [u16; 4] = [40001, 40002, 40003, 40004];
+const BASE_USER_API_PORT: u16 = 40001;
+
+fn user_api_ports() -> Vec<u16> {
+    operator_ids()
+        .iter()
+        .map(|&id| BASE_USER_API_PORT + (id as u16) - 1)
+        .collect()
+}
 
 const LOCAL_HOST: &str = "localhost";
 
 const REGTEST_HOST: &str = "union-bridge-use2-1.regtest.rskcomputing.net";
 
-const ALPHANET_HOSTS: [&str; 4] = [
+const ALPHANET_HOSTS: [&str; 10] = [
     "union-bridge-use1-1.alphanet.rskcomputing.net",
     "union-bridge-use1-2.alphanet.rskcomputing.net",
     "union-bridge-use1-3.alphanet.rskcomputing.net",
     "union-bridge-use1-4.alphanet.rskcomputing.net",
+    "union-bridge-use1-5.alphanet.rskcomputing.net",
+    "union-bridge-use1-6.alphanet.rskcomputing.net",
+    "union-bridge-use1-7.alphanet.rskcomputing.net",
+    "union-bridge-use1-8.alphanet.rskcomputing.net",
+    "union-bridge-use1-9.alphanet.rskcomputing.net",
+    "union-bridge-use1-10.alphanet.rskcomputing.net",
 ];
 
 const TESTNET_HOSTS: [&str; 4] = [

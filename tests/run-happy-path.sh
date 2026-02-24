@@ -43,13 +43,14 @@ else
 fi
 
 usage() {
-    echo "Usage: $0 [--env <local|local-docker>]"
+    echo "Usage: $0 [--env <local|local-docker>] [--ops <1-10>]"
     echo ""
-    echo "The script will use UC_ENV environment variable if set to 'local' or 'local-docker'."
-    echo "Use --env flag to override."
+    echo "  --env    Environment: local or local-docker (default: from UC_ENV or local)"
+    echo "  --ops    Number of operators (1-10, default: from .env.local or 4)"
     exit 1
 }
 
+OPS_FROM_FLAG=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
     --env)
@@ -57,10 +58,17 @@ while [[ $# -gt 0 ]]; do
         if [[ -z "$SCRIPT_ENV" ]]; then
             usage
         fi
-        # Validate that --env value is either local or local-docker
         if [[ "$SCRIPT_ENV" != "local" && "$SCRIPT_ENV" != "local-docker" ]]; then
             echo "Error: --env must be 'local' or 'local-docker'"
             usage
+        fi
+        shift 2
+        ;;
+    --ops)
+        OPS_FROM_FLAG="${2:-}"
+        if [[ -z "$OPS_FROM_FLAG" ]] || ! [[ "$OPS_FROM_FLAG" =~ ^(10|[1-9])$ ]]; then
+            echo "Error: --ops must be between 1 and 10"
+            exit 1
         fi
         shift 2
         ;;
@@ -78,6 +86,21 @@ fi
 
 # change to project root (parent of tests directory)
 cd "$(dirname "$0")/.."
+
+# Load NUM_OPERATORS: --ops flag > .env.local > default (4)
+if [[ -n "$OPS_FROM_FLAG" ]]; then
+    NUM_OPERATORS="$OPS_FROM_FLAG"
+else
+    NUM_OPERATORS=4
+    _env_local="docker/operator/.env.local"
+    if [[ -f "$_env_local" ]]; then
+        _num=$(grep -E '^\s*NUM_OPERATORS=' "$_env_local" | tail -1 | cut -d= -f2 | tr -d ' "'\''')
+        if [[ -n "$_num" ]] && [[ "$_num" =~ ^[0-9]+$ ]] && [[ "$_num" -ge 1 ]] && [[ "$_num" -le 10 ]]; then
+            NUM_OPERATORS="$_num"
+        fi
+    fi
+    unset _env_local _num
+fi
 
 # hardcoded configuration
 STREAM_ID=0
@@ -180,13 +203,13 @@ fi
 echo "All prerequisites met!"
 echo ""
 
-# Find recent log match in docker compose logs (all 4 operators)
+# Find recent log match in docker compose logs (all operators)
 # Checks all logs (no time restriction) since we're already polling in a loop
 # Output format: "source:line" or empty if not found
 find_recent_docker_log_match() {
     local pattern="$1"
 
-    for op_id in 1 2 3 4; do
+    for op_id in $(seq 1 "$NUM_OPERATORS"); do
         local project="op_${op_id}"
         local line
         # Check all logs - the polling loop already handles timing
@@ -398,7 +421,7 @@ wait_for_log_with_block_timeout() {
             echo ""  # newline after the progress display
             warn "Log pattern not found after $max_blocks blocks (height: $start_height -> $current_height)"
             if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
-                warn "Check Docker logs manually: docker compose -p op_{1..4} logs coordinator"
+                warn "Check Docker logs manually: docker compose -p op_{1..$NUM_OPERATORS} logs coordinator"
             else
                 warn "Check logs/coordinator-*.log manually"
             fi

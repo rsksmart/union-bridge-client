@@ -10,7 +10,7 @@ use tokio::time::sleep;
 
 use crate::environments::Environment;
 use crate::utils::{confirm_operation, request_to_string};
-use crate::validate_1_4;
+use crate::validate_1_10;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
 #[value(rename_all = "lowercase")]
@@ -120,7 +120,7 @@ pub async fn run_committee_setup(
                 )
             })?;
 
-            validate_1_4(op_id, "operator-id")?;
+            validate_1_10(op_id, "operator-id")?;
 
             let endpoint = endpoints
                 .get((op_id - 1) as usize)
