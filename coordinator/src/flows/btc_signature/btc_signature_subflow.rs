@@ -39,9 +39,18 @@ impl<CG> BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<CG>>
 where
     CG: RskContractsGatewayApi,
 {
-    pub(crate) fn new(contracts_gateway: &Rc<CG>, rt_sync: &RuntimeSync, flow_id: Uuid) -> Self {
-        let lifecycle =
-            BtcSignatureLifeCycle::new(contracts_gateway.clone(), rt_sync.clone(), flow_id);
+    pub(crate) fn new(
+        contracts_gateway: &Rc<CG>,
+        rt_sync: &RuntimeSync,
+        flow_id: Uuid,
+        required_confirmations: u32,
+    ) -> Self {
+        let lifecycle = BtcSignatureLifeCycle::new(
+            contracts_gateway.clone(),
+            rt_sync.clone(),
+            flow_id,
+            required_confirmations,
+        );
 
         Self { lifecycle, is_done: false, is_nonces_step_done: false }
     }
@@ -137,11 +146,16 @@ where
 pub(crate) struct BtcSignatureSubFlowFactory<CG: RskContractsGatewayApi> {
     contracts_gateway: Rc<CG>,
     rt_sync: RuntimeSync,
+    required_confirmations: u32,
 }
 
 impl<CG: RskContractsGatewayApi> BtcSignatureSubFlowFactory<CG> {
-    pub(crate) fn new(contracts_gateway: Rc<CG>, rt_sync: RuntimeSync) -> Self {
-        Self { contracts_gateway, rt_sync }
+    pub(crate) fn new(
+        contracts_gateway: Rc<CG>,
+        rt_sync: RuntimeSync,
+        required_confirmations: u32,
+    ) -> Self {
+        Self { contracts_gateway, rt_sync, required_confirmations }
     }
 }
 
@@ -154,6 +168,7 @@ impl<CG: RskContractsGatewayApi>
             &self.contracts_gateway,
             &self.rt_sync,
             flow_id,
+            self.required_confirmations,
         )
     }
 }

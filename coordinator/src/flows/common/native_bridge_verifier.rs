@@ -7,8 +7,6 @@ use log::{debug, info, warn};
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use transaction_dispatcher::types::GetBtcTransactionConfirmationsInput;
 
-pub const MIN_TX_CONFIRMATIONS: u32 = 1 + 1;
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum VerificationStatus {
     Verified,
@@ -16,18 +14,31 @@ pub enum VerificationStatus {
 }
 
 pub enum NativeBridgeVerifier<CG: RskContractsGatewayApi> {
-    Real { contracts: Rc<CG>, rt_sync: RuntimeSync },
+    Real { contracts: Rc<CG>, rt_sync: RuntimeSync, min_tx_confirmations: u32 },
     Dummy, // used in local/test environments
 }
 
 impl<CG: RskContractsGatewayApi> Clone for NativeBridgeVerifier<CG> {
     fn clone(&self) -> Self {
         match self {
-            NativeBridgeVerifier::Real { contracts, rt_sync } => NativeBridgeVerifier::Real {
-                contracts: Rc::clone(contracts),
-                rt_sync: rt_sync.clone(),
-            },
+            NativeBridgeVerifier::Real { contracts, rt_sync, min_tx_confirmations } => {
+                NativeBridgeVerifier::Real {
+                    contracts: Rc::clone(contracts),
+                    rt_sync: rt_sync.clone(),
+                    min_tx_confirmations: *min_tx_confirmations,
+                }
+            }
             NativeBridgeVerifier::Dummy => NativeBridgeVerifier::Dummy,
+        }
+    }
+}
+
+impl<CG: RskContractsGatewayApi> NativeBridgeVerifier<CG> {
+    /// Returns the minimum TX confirmations required for this verifier
+    pub fn min_tx_confirmations(&self) -> u32 {
+        match self {
+            NativeBridgeVerifier::Real { min_tx_confirmations, .. } => *min_tx_confirmations,
+            NativeBridgeVerifier::Dummy => 0, // Dummy verifier doesn't check confirmations
         }
     }
 }
@@ -39,7 +50,7 @@ impl<CG: RskContractsGatewayApi> NativeBridgeVerifier<CG> {
         required_confirmations: u32,
     ) -> Result<VerificationStatus, DomainErrors> {
         match self {
-            NativeBridgeVerifier::Real { contracts, rt_sync } => {
+            NativeBridgeVerifier::Real { contracts, rt_sync, .. } => {
                 verify_btc_confirmations(spv_proof, required_confirmations, contracts, rt_sync)
             }
             NativeBridgeVerifier::Dummy => {
@@ -165,7 +176,8 @@ where
 {
     debug!("Verifying Native Bridge confirmations before invoking contract");
 
-    let res = native_bridge_verifier.verify_confirmations(spv_proof, MIN_TX_CONFIRMATIONS)?;
+    let min_tx_confirmations = native_bridge_verifier.min_tx_confirmations();
+    let res = native_bridge_verifier.verify_confirmations(spv_proof, min_tx_confirmations)?;
 
     match res {
         VerificationStatus::Verified => {

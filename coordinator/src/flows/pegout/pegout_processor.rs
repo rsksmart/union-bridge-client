@@ -17,7 +17,7 @@ use union_contracts::bindings::peg_manager::PegManager::{PegoutRegistered, Pegou
 use uuid::Uuid;
 
 use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
-use crate::config::REQUIRED_CONFIRMATIONS;
+use crate::config::PegoutConfig;
 use crate::event_processor::EventProcessor;
 use crate::flows::btc_signature::btc_signature_lifecycle::BtcSignatureLifeCycle;
 use crate::flows::btc_signature::btc_signature_subflow::{
@@ -45,9 +45,6 @@ fn is_missing_native_bridge_confirmations(err: &anyhow::Error) -> bool {
 }
 
 pub const PEGOUT_ACCEPTED_NAME: &str = "pegout_accepted";
-pub const BLOCKS_DELAY_FOR_TX_CHECK: u32 = 20;
-pub const SPV_PROOF_MIN_CONFIRMATIONS: u32 = 1;
-pub const ADVANCE_FUNDS_TIMEOUT_SECONDS: u64 = 600; // 10 minutes for testing in Alphanet (30s cadence), in local it could be 30s (1s cadence), in production should be 2 * 60 * 60 (2 hours)
 
 /// Processor that manages multiple pegout flow state machines
 pub struct PegoutFlowProcessor<CG, BC, BSF, FactoryBSF, S>
@@ -75,6 +72,8 @@ where
     register_pegout_retry_scheduler: TickScheduler<Uuid>,
     store: Rc<S>,
     native_bridge_verifier: NativeBridgeVerifier<CG>,
+    config: PegoutConfig,
+    required_confirmations: u32,
 }
 
 impl<CG, BC, S>
@@ -90,6 +89,7 @@ where
     BC: BitVmxBrokerClientApi,
     S: CoordinatorStoreApi,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         contracts_gateway: Rc<CG>,
         rt_sync: RuntimeSync,
@@ -97,8 +97,14 @@ where
         global_context: GlobalContext,
         store: Rc<S>,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
+        config: PegoutConfig,
+        required_confirmations: u32,
     ) -> Self {
-        let factory = BtcSignatureSubFlowFactory::new(contracts_gateway.clone(), rt_sync.clone());
+        let factory = BtcSignatureSubFlowFactory::new(
+            contracts_gateway.clone(),
+            rt_sync.clone(),
+            required_confirmations,
+        );
         Self {
             contracts_gateway,
             rt_sync,
@@ -116,9 +122,12 @@ where
             register_pegout_retry_scheduler: TickScheduler::new(),
             store,
             native_bridge_verifier,
+            config,
+            required_confirmations,
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn restore_or_new(
         contracts_gateway: Rc<CG>,
         rt_sync: RuntimeSync,
@@ -126,6 +135,8 @@ where
         global_context: GlobalContext,
         store: Rc<S>,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
+        config: PegoutConfig,
+        required_confirmations: u32,
     ) -> Result<Self> {
         let mut processor = Self::new(
             contracts_gateway,
@@ -134,6 +145,8 @@ where
             global_context,
             store,
             native_bridge_verifier,
+            config,
+            required_confirmations,
         );
         processor.restore_flows_from_store()?;
         Ok(processor)
@@ -391,17 +404,18 @@ where
             );
         }
 
-        if confirmations >= SPV_PROOF_MIN_CONFIRMATIONS {
+        if confirmations >= self.config.spv_proof_min_confirmations {
             debug!("Transaction confirmed with sufficient confirmations for flow_id: {flow_id}");
             flow.complete_step(&StepData::TransactionConfirmed(tx_status))?;
             if self.tx_status_scheduler.is_scheduled(&flow_id) {
                 self.tx_status_scheduler.cancel(&flow_id);
             }
         } else {
+            let min_conf = self.config.spv_proof_min_confirmations;
             debug!(
-                "Bitcoin transaction {tx_id} missing confirmations ({confirmations}/{SPV_PROOF_MIN_CONFIRMATIONS}) for flow_id {flow_id}, rescheduling"
+                "Bitcoin transaction {tx_id} missing confirmations ({confirmations}/{min_conf}) for flow_id {flow_id}, rescheduling"
             );
-            self.tx_status_scheduler.schedule(flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
+            self.tx_status_scheduler.schedule(flow_id, self.config.blocks_delay_for_tx_check);
         }
         Ok(())
     }
@@ -491,13 +505,13 @@ where
                     self.advance_funds_timeout_scheduler.schedule(
                         flow_id,
                         current_timestamp,
-                        ADVANCE_FUNDS_TIMEOUT_SECONDS,
+                        self.config.advance_funds_timeout_secs,
                     );
                     info!(
                         "Scheduled advance funds timeout for flow_id: {} at timestamp: {} (expires at: {})",
                         flow_id,
                         current_timestamp,
-                        current_timestamp + ADVANCE_FUNDS_TIMEOUT_SECONDS
+                        current_timestamp + self.config.advance_funds_timeout_secs
                     );
                 }
             }
@@ -568,7 +582,8 @@ where
     fn schedule_register_pegout_retry(&mut self, flow_id: Uuid, attempt: i16, reason: &str) {
         info!("{reason} for flow {flow_id} (attempt {attempt})");
         self.unconfirmed_register_pegout.insert(flow_id, attempt);
-        self.register_pegout_retry_scheduler.schedule(flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
+        self.register_pegout_retry_scheduler
+            .schedule(flow_id, self.config.blocks_delay_for_tx_check);
     }
 
     fn handle_register_pegout_retry_tick(&mut self) {
@@ -775,7 +790,7 @@ where
         }
 
         // useful for testing purposes
-        if REQUIRED_CONFIRMATIONS == 0 {
+        if self.required_confirmations == 0 {
             return self.process_confirmed_rsk_event(event);
         }
 
@@ -804,7 +819,7 @@ where
 
             let mut confirmable_event = ConfirmableEventWithData::new(
                 id.clone(),
-                REQUIRED_CONFIRMATIONS,
+                self.required_confirmations,
                 self.blockchain_view.clone(),
                 managed_event,
             );

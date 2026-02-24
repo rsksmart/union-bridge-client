@@ -107,6 +107,7 @@ fn main() -> Result<()> {
         shutdown_flag.clone(),
         bitcoin_network,
         env_name.as_deref(),
+        &config.bridge,
     );
     coordinator.run().inspect_err(|e| {
         error!("Unrecoverable error running coordinator: {e:?}");

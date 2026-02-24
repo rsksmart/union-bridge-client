@@ -12,6 +12,7 @@ use common::shutdown_flag::ShutdownFlag;
 use log::{debug, error, warn};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 
+use crate::config::BridgeConfig;
 use crate::event_processor::EventProcessor;
 use crate::flows::advance_funds::advance_funds_processor::AdvanceFundsProcessor;
 use crate::flows::committee::setup_committee_flow::{
@@ -26,15 +27,13 @@ use crate::flows::pegout::pegout_processor::PegoutFlowProcessor;
 use crate::monitor::MonitorApi;
 use crate::store::CoordinatorStoreApi;
 
-const CHECK_PERIOD: Duration = Duration::from_secs(1);
-const BITVMX_NOT_RESPONDING_THRESHOLD: Duration = Duration::from_secs(30);
-const BITVMX_PING_AFTER_SILENCE: Duration = Duration::from_secs(15);
-
 pub struct Coordinator<M: MonitorApi, BC: BitVmxBrokerClientApi, S: CoordinatorStoreApi> {
     monitor: M,
     bitvmx_broker: Rc<BC>,
     processors: Vec<Box<dyn EventProcessor>>,
     check_period: Duration,
+    bitvmx_not_responding_threshold: Duration,
+    bitvmx_ping_after_silence: Duration,
     store: Rc<S>,
     global_context: GlobalContext,
     shutdown_flag: ShutdownFlag,
@@ -55,6 +54,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
         shutdown_flag: ShutdownFlag,
         bitcoin_network: Network,
         env_name: Option<&str>,
+        bridge_config: &BridgeConfig,
     ) -> Self {
         let contracts_arc = Rc::new(contracts_gateway);
         let store_rc = Rc::new(store);
@@ -72,6 +72,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
             global_context.clone(),
             bitcoin_network,
             Rc::clone(&store_rc),
+            bridge_config.committee.clone(),
         );
 
         let native_bridge_verifier = if let Some(env_name @ ("alphanet" | "regtest" | "testnet")) =
@@ -81,6 +82,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
             NativeBridgeVerifier::Real {
                 contracts: contracts_arc.clone(),
                 rt_sync: rt_sync.clone(),
+                min_tx_confirmations: bridge_config.native_bridge.min_tx_confirmations,
             }
         } else {
             log::info!(
@@ -98,6 +100,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                     rt_sync.clone(),
                     Rc::clone(&contracts_arc),
                     bitvmx_broker.clone(),
+                    bridge_config.coordinator.required_confirmations,
                 )),
                 Box::new(PeginFlowProcessor::new(
                     Rc::clone(&contracts_arc),
@@ -106,6 +109,8 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                     global_context.clone(),
                     Rc::clone(&store_rc),
                     native_bridge_verifier.clone(),
+                    bridge_config.pegin.clone(),
+                    bridge_config.coordinator.required_confirmations,
                 )),
                 Box::new(
                     PegoutFlowProcessor::restore_or_new(
@@ -115,6 +120,8 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                         global_context.clone(),
                         store_rc.clone(),
                         native_bridge_verifier.clone(),
+                        bridge_config.pegout.clone(),
+                        bridge_config.coordinator.required_confirmations,
                     )
                     // todo(fede) ideally this method should return a result
                     .expect("couldn't restore or create pegout flow processor"),
@@ -126,15 +133,22 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                     bitvmx_broker.clone(),
                     global_context.clone(),
                     native_bridge_verifier,
+                    bridge_config.advance_funds.clone(),
+                    bridge_config.coordinator.required_confirmations,
                 )),
                 Box::new(SetupCommitteeProcessor::new(
                     setup_committee_flow_factory,
                     global_context.clone(),
                     Rc::clone(&store_rc),
+                    bridge_config.coordinator.required_confirmations,
                 )),
                 Box::new(FundBitvmxProcessor::new(bitvmx_broker.clone(), bitcoin_network)),
             ],
-            check_period: CHECK_PERIOD,
+            check_period: bridge_config.coordinator.check_period(),
+            bitvmx_not_responding_threshold: bridge_config
+                .coordinator
+                .bitvmx_not_responding_threshold(),
+            bitvmx_ping_after_silence: bridge_config.coordinator.bitvmx_ping_after_silence(),
             shutdown_flag,
             store: store_rc,
             global_context: global_context.clone(),
@@ -153,6 +167,8 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
             bitvmx_broker: Rc::new(bitvmx_broker),
             processors,
             check_period: Duration::from_millis(1),
+            bitvmx_not_responding_threshold: Duration::from_secs(30),
+            bitvmx_ping_after_silence: Duration::from_secs(15),
             store: Rc::new(store),
             global_context: GlobalContext::new(),
             shutdown_flag,
@@ -172,7 +188,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
 
         self.monitor.start_user_monitoring().context("Failed to start User request monitoring")?;
 
-        let mut bitvmx_last_msg = Instant::now().sub(BITVMX_PING_AFTER_SILENCE);
+        let mut bitvmx_last_msg = Instant::now().sub(self.bitvmx_ping_after_silence);
         let mut bitvmx_ping: Option<Instant> = None;
 
         // TODO we will need to think what happens if we accumulate messages of a certain type
@@ -277,7 +293,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
     fn check_bitvmx_liveness(&self, bitvmx_ping: &mut Option<Instant>, bitvmx_last_msg: Instant) {
         #[allow(clippy::collapsible_if)]
         if let Some(ping) = bitvmx_ping {
-            if ping.elapsed() > BITVMX_NOT_RESPONDING_THRESHOLD {
+            if ping.elapsed() > self.bitvmx_not_responding_threshold {
                 // TODO in the future we have to properly handle this situation
                 warn!("BitVMX is not responding");
                 *bitvmx_ping = None;
@@ -285,7 +301,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
         }
 
         // send ping if we have not received any message from BitVMX for a while and there is no pending ping
-        if bitvmx_last_msg.elapsed() > BITVMX_PING_AFTER_SILENCE && bitvmx_ping.is_none() {
+        if bitvmx_last_msg.elapsed() > self.bitvmx_ping_after_silence && bitvmx_ping.is_none() {
             self.send_bitvmx_ping();
             *bitvmx_ping = Some(Instant::now());
         }

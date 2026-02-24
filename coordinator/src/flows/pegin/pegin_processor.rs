@@ -17,7 +17,7 @@ use union_contracts::bindings::peg_manager::PegManager::PeginRequested;
 use uuid::Uuid;
 
 use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
-use crate::config::REQUIRED_CONFIRMATIONS;
+use crate::config::PeginConfig;
 use crate::event_processor::EventProcessor;
 use crate::flows::btc_signature::btc_signature_lifecycle::BtcSignatureLifeCycle;
 use crate::flows::btc_signature::btc_signature_subflow::{
@@ -35,8 +35,6 @@ use crate::types::{
 };
 
 const PEGIN_ACCEPTED_INPUT_MSG: &str = "pegin_accepted";
-pub const MIN_TX_CONFIRMATIONS: u32 = 1;
-pub const BLOCKS_DELAY_FOR_TX_CHECK: u32 = 20;
 
 fn is_missing_native_bridge_confirmations(err: &anyhow::Error) -> bool {
     err.chain().any(|cause| {
@@ -75,6 +73,8 @@ where
     accept_pegin_retry_scheduler: TickScheduler<Uuid>,
     store: Rc<S>,
     native_bridge_verifier: NativeBridgeVerifier<CG>,
+    config: PeginConfig,
+    required_confirmations: u32,
 }
 
 impl<CG, BC, S>
@@ -90,6 +90,7 @@ where
     BC: BitVmxBrokerClientApi,
     S: CoordinatorStoreApi + 'static,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         contracts_gateway: Rc<CG>,
         rt_sync: RuntimeSync,
@@ -97,9 +98,14 @@ where
         global_context: GlobalContext,
         store: Rc<S>,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
+        config: PeginConfig,
+        required_confirmations: u32,
     ) -> Self {
-        let factory =
-            BtcSignatureSubFlowFactory::new(Rc::clone(&contracts_gateway), rt_sync.clone());
+        let factory = BtcSignatureSubFlowFactory::new(
+            Rc::clone(&contracts_gateway),
+            rt_sync.clone(),
+            required_confirmations,
+        );
 
         // Subscribe to BitVMX pegin events
         Self::subscribe_to_bitvmx_pegin_events(&bitvmx_broker)
@@ -125,6 +131,8 @@ where
             accept_pegin_retry_scheduler: TickScheduler::new(),
             store,
             native_bridge_verifier,
+            config,
+            required_confirmations,
         };
 
         // Restore flows from store
@@ -444,7 +452,7 @@ where
             ));
         }
 
-        if confirmations >= MIN_TX_CONFIRMATIONS {
+        if confirmations >= self.config.min_tx_confirmations {
             debug!("Transaction confirmed with sufficient confirmations for flow_id: {flow_id}");
             let step_data = StepData::AcceptPeginTransactionConfirmed(tx_status);
             flow.complete_step(&step_data)?;
@@ -452,10 +460,11 @@ where
                 self.tx_status_scheduler.cancel(&flow_id);
             }
         } else {
+            let min_conf = self.config.min_tx_confirmations;
             debug!(
-                "Bitcoin transaction {tx_id} missing confirmations ({confirmations}/{MIN_TX_CONFIRMATIONS}) for flow_id {flow_id}, rescheduling"
+                "Bitcoin transaction {tx_id} missing confirmations ({confirmations}/{min_conf}) for flow_id {flow_id}, rescheduling"
             );
-            self.tx_status_scheduler.schedule(flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
+            self.tx_status_scheduler.schedule(flow_id, self.config.blocks_delay_for_tx_check);
         }
         Ok(())
     }
@@ -498,13 +507,13 @@ where
         let block_hash = spv_proof.block_hash.clone();
         info!("{reason} for block {block_hash} (attempt {attempt})");
         self.unconfirmed_pegin_requests.insert(block_hash.clone(), (spv_proof, attempt));
-        self.pegin_retry_scheduler.schedule(block_hash, BLOCKS_DELAY_FOR_TX_CHECK);
+        self.pegin_retry_scheduler.schedule(block_hash, self.config.blocks_delay_for_tx_check);
     }
 
     fn schedule_accept_pegin_retry(&mut self, flow_id: Uuid, attempt: i16, reason: &str) {
         info!("{reason} for flow {flow_id} (attempt {attempt})");
         self.unconfirmed_accept_pegin.insert(flow_id, attempt);
-        self.accept_pegin_retry_scheduler.schedule(flow_id, BLOCKS_DELAY_FOR_TX_CHECK);
+        self.accept_pegin_retry_scheduler.schedule(flow_id, self.config.blocks_delay_for_tx_check);
     }
 
     fn handle_pegin_retry_tick(&mut self) {
@@ -877,7 +886,7 @@ where
         }
 
         // useful for testing purposes
-        if REQUIRED_CONFIRMATIONS == 0 {
+        if self.required_confirmations == 0 {
             return self.process_confirmed_rsk_event(event);
         }
 
@@ -909,7 +918,7 @@ where
 
             let mut confirmable_event = ConfirmableEventWithData::new(
                 id.clone(),
-                REQUIRED_CONFIRMATIONS,
+                self.required_confirmations,
                 self.blockchain_view.clone(),
                 managed_event,
             );

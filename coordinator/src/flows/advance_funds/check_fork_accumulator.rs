@@ -4,7 +4,6 @@ use log::{debug, info};
 use primitive_types::{H256, U256};
 
 use crate::blockchain_tracker::{BlockConfirmations, BlockchainObserver};
-use crate::config::REQUIRED_CONFIRMATIONS;
 use crate::types::AdvanceFundsEvent;
 
 #[derive(Debug)]
@@ -12,6 +11,7 @@ pub(super) struct CheckForkAccumulator {
     advance_funds_block_hash: H256,
     args: CheckForkArgs,
     confirmations: Option<BlockConfirmations>,
+    required_confirmations: u32,
 }
 
 impl BlockchainObserver for CheckForkAccumulator {
@@ -23,9 +23,11 @@ impl BlockchainObserver for CheckForkAccumulator {
         // we only collect confirmations if CheckFork is ready
         if self.is_check_fork_ready() {
             // creates it if it doesn't exist
-            self.confirmations
-                .get_or_insert_with(|| Self::new_confirmations(block, &self.args.pegout_id))
-                .on_block_added(block);
+            if self.confirmations.is_none() {
+                self.confirmations =
+                    Some(self.new_confirmations(block, &self.args.pegout_id.clone()));
+            }
+            self.confirmations.as_mut().unwrap().on_block_added(block);
             debug!("Adding confirmation with block {} ({})", block.number(), block.hash());
         } else {
             self.add_block_to_check_fork(block);
@@ -49,6 +51,7 @@ impl CheckForkAccumulator {
     pub(super) fn new(
         event: &AdvanceFundsEvent,
         post_advance_funds_blocks: &[RskBlockAndUncles],
+        required_confirmations: u32,
     ) -> Self {
         let check_fork_args = CheckForkArgs {
             // coming from the AdvanceFunds event
@@ -73,6 +76,7 @@ impl CheckForkAccumulator {
             advance_funds_block_hash: event.block_hash.value(),
             args: check_fork_args,
             confirmations: None,
+            required_confirmations,
         };
 
         // we already received the block that triggered the event, before the event itself
@@ -205,8 +209,8 @@ impl CheckForkAccumulator {
         }
     }
 
-    fn new_confirmations(block: &RskBlockAndUncles, pegout_id: &str) -> BlockConfirmations {
-        BlockConfirmations::new(pegout_id.to_owned(), block.number(), REQUIRED_CONFIRMATIONS)
+    fn new_confirmations(&self, block: &RskBlockAndUncles, pegout_id: &str) -> BlockConfirmations {
+        BlockConfirmations::new(pegout_id.to_owned(), block.number(), self.required_confirmations)
     }
 }
 
@@ -218,6 +222,9 @@ mod tests {
 
     use super::*;
     use crate::flows::advance_funds::tests::create_fake_block;
+
+    /// Test constant for required confirmations (matches production default)
+    const REQUIRED_CONFIRMATIONS: u32 = 5;
 
     #[allow(clippy::too_many_arguments)]
     fn create_fake_advance_funds_event(
@@ -278,7 +285,7 @@ mod tests {
             tx_hash,
         );
 
-        let checker = CheckForkAccumulator::new(&event, &[]);
+        let checker = CheckForkAccumulator::new(&event, &[], REQUIRED_CONFIRMATIONS);
 
         assert_eq!(checker.pegout_id(), pegout_id);
         assert_eq!(checker.args.utxo_id, utxo_id);
@@ -321,7 +328,8 @@ mod tests {
         let block2 = create_fake_block_with_uncles(block2_number, U256::from(400), vec![]);
         let post_advance_funds_blocks = vec![block1, block2];
 
-        let checker = CheckForkAccumulator::new(&event, &post_advance_funds_blocks);
+        let checker =
+            CheckForkAccumulator::new(&event, &post_advance_funds_blocks, REQUIRED_CONFIRMATIONS);
 
         assert_eq!(checker.args.block_list.len(), 2);
         assert_eq!(checker.args.block_list[0].number, block1_number);
@@ -350,7 +358,7 @@ mod tests {
             tx_hash,
         );
 
-        let checker = CheckForkAccumulator::new(&event, &[]);
+        let checker = CheckForkAccumulator::new(&event, &[], REQUIRED_CONFIRMATIONS);
         assert_eq!(checker.pegout_id(), pegout_id);
     }
 
@@ -376,7 +384,7 @@ mod tests {
             tx_hash,
         );
 
-        let checker = CheckForkAccumulator::new(&event, &[]);
+        let checker = CheckForkAccumulator::new(&event, &[], REQUIRED_CONFIRMATIONS);
         let args = checker.check_fork_args();
 
         assert_eq!(args.utxo_id, utxo_id);
@@ -408,7 +416,7 @@ mod tests {
             tx_hash,
         );
 
-        let mut checker = CheckForkAccumulator::new(&event, &[]);
+        let mut checker = CheckForkAccumulator::new(&event, &[], REQUIRED_CONFIRMATIONS);
 
         // add a block
         let block_number = 101;
@@ -446,7 +454,7 @@ mod tests {
             tx_hash,
         );
 
-        let mut checker = CheckForkAccumulator::new(&event, &[]);
+        let mut checker = CheckForkAccumulator::new(&event, &[], REQUIRED_CONFIRMATIONS);
 
         let advance_funds_block =
             create_fake_block(BlockNumber::from(advance_funds_blockk_number), U256::from(300));
@@ -481,7 +489,7 @@ mod tests {
             tx_hash,
         );
 
-        let mut checker = CheckForkAccumulator::new(&event, &[]);
+        let mut checker = CheckForkAccumulator::new(&event, &[], REQUIRED_CONFIRMATIONS);
 
         let uncle1_number = 200;
         let uncle2_number = 201;
@@ -530,7 +538,7 @@ mod tests {
             tx_hash,
         );
 
-        let mut checker = CheckForkAccumulator::new(&event, &[]);
+        let mut checker = CheckForkAccumulator::new(&event, &[], REQUIRED_CONFIRMATIONS);
 
         // add a block with low effort
         let test_block_number = 101;
@@ -563,7 +571,7 @@ mod tests {
             tx_hash,
         );
 
-        let mut checker = CheckForkAccumulator::new(&event, &[]);
+        let mut checker = CheckForkAccumulator::new(&event, &[], REQUIRED_CONFIRMATIONS);
 
         // add a block with sufficient effort but not enough blocks
         let test_block_number = 101;
@@ -596,7 +604,7 @@ mod tests {
             tx_hash,
         );
 
-        let mut checker = CheckForkAccumulator::new(&event, &[]);
+        let mut checker = CheckForkAccumulator::new(&event, &[], REQUIRED_CONFIRMATIONS);
 
         let block1_number = 101;
         let block1_effort = U256::from(300);
@@ -633,7 +641,7 @@ mod tests {
             tx_hash,
         );
 
-        let mut checker = CheckForkAccumulator::new(&event, &[]);
+        let mut checker = CheckForkAccumulator::new(&event, &[], REQUIRED_CONFIRMATIONS);
 
         // create a block with uncles that contribute to effort
         let uncle1_number = 200;
@@ -680,7 +688,7 @@ mod tests {
             tx_hash,
         );
 
-        let mut checker = CheckForkAccumulator::new(&event, &[]);
+        let mut checker = CheckForkAccumulator::new(&event, &[], REQUIRED_CONFIRMATIONS);
 
         // add a block to make check fork ready
         let block1_number = 101;
@@ -725,7 +733,7 @@ mod tests {
             tx_hash,
         );
 
-        let mut checker = CheckForkAccumulator::new(&event, &[]);
+        let mut checker = CheckForkAccumulator::new(&event, &[], REQUIRED_CONFIRMATIONS);
 
         // initially no confirmations
         assert!(!checker.has_enough_confirmations());
@@ -778,7 +786,7 @@ mod tests {
             tx_hash,
         );
 
-        let mut checker = CheckForkAccumulator::new(&event, &[]);
+        let mut checker = CheckForkAccumulator::new(&event, &[], REQUIRED_CONFIRMATIONS);
 
         // make check fork ready
         let initial_block_number = 101;
@@ -831,7 +839,7 @@ mod tests {
             tx_hash,
         );
 
-        let mut checker = CheckForkAccumulator::new(&event, &[]);
+        let mut checker = CheckForkAccumulator::new(&event, &[], REQUIRED_CONFIRMATIONS);
 
         // add multiple blocks with lower effort so check fork doesn't become ready
         let block1_number = 101;
@@ -887,7 +895,7 @@ mod tests {
             tx_hash,
         );
 
-        let mut checker = CheckForkAccumulator::new(&event, &[]);
+        let mut checker = CheckForkAccumulator::new(&event, &[], REQUIRED_CONFIRMATIONS);
 
         // add the kickoff block
         let advance_funds_block =
@@ -928,7 +936,7 @@ mod tests {
             tx_hash,
         );
 
-        let mut checker = CheckForkAccumulator::new(&event, &[]);
+        let mut checker = CheckForkAccumulator::new(&event, &[], REQUIRED_CONFIRMATIONS);
 
         // add a non-kickoff block
         let non_advance_funds_block_number = 101;

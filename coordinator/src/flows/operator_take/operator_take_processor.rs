@@ -14,7 +14,7 @@ use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;
 
 use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
-use crate::config::REQUIRED_CONFIRMATIONS;
+use crate::config::AdvanceFundsConfig;
 use crate::event_processor::EventProcessor;
 use crate::flows::common::GlobalContext;
 use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
@@ -37,10 +37,6 @@ fn is_missing_native_bridge_confirmations(err: &anyhow::Error) -> bool {
     })
 }
 
-/// Minimum confirmations required before requesting SPV proof for advance funds transactions.
-const ADVANCE_FUNDS_SPV_PROOF_MIN_CONFIRMATIONS: u32 = 1;
-const ADVANCE_FUNDS_BLOCKS_DELAY_FOR_TX_CHECK: u32 = 20;
-
 pub struct AdvanceFundsFlowProcessor<CG, BC>
 where
     CG: RskContractsGatewayApi,
@@ -58,6 +54,8 @@ where
     unconfirmed_register_operator_take: HashMap<Uuid, i16>,
     register_operator_take_retry_scheduler: TickScheduler<Uuid>,
     native_bridge_verifier: NativeBridgeVerifier<CG>,
+    config: AdvanceFundsConfig,
+    required_confirmations: u32,
 }
 
 impl<CG, BC> AdvanceFundsFlowProcessor<CG, BC>
@@ -71,6 +69,8 @@ where
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
+        config: AdvanceFundsConfig,
+        required_confirmations: u32,
     ) -> Self {
         Self {
             contracts_gateway,
@@ -84,6 +84,8 @@ where
             unconfirmed_register_operator_take: HashMap::new(),
             register_operator_take_retry_scheduler: TickScheduler::new(),
             native_bridge_verifier,
+            config,
+            required_confirmations,
         }
     }
 
@@ -275,7 +277,7 @@ where
             return Ok(());
         }
 
-        if tx_status.confirmations >= ADVANCE_FUNDS_SPV_PROOF_MIN_CONFIRMATIONS {
+        if tx_status.confirmations >= self.config.spv_proof_min_confirmations {
             debug!(
                 "Operator take transaction confirmed for flow {} with {} confirmations",
                 flow_id, tx_status.confirmations
@@ -285,11 +287,12 @@ where
             }
             flow.complete_step(StepData::RequestOperatorTakeTx(tx_status))?;
         } else {
+            let min_conf = self.config.spv_proof_min_confirmations;
             debug!(
                 "Operator take transaction for flow {} has {} confirmations (requires {})",
-                flow_id, tx_status.confirmations, ADVANCE_FUNDS_SPV_PROOF_MIN_CONFIRMATIONS
+                flow_id, tx_status.confirmations, min_conf
             );
-            self.tx_status_scheduler.schedule(flow_id, ADVANCE_FUNDS_BLOCKS_DELAY_FOR_TX_CHECK);
+            self.tx_status_scheduler.schedule(flow_id, self.config.blocks_delay_for_tx_check);
         }
 
         Ok(())
@@ -377,7 +380,7 @@ where
         info!("{reason} for flow {flow_id} (attempt {attempt})");
         self.unconfirmed_register_operator_take.insert(flow_id, attempt);
         self.register_operator_take_retry_scheduler
-            .schedule(flow_id, ADVANCE_FUNDS_BLOCKS_DELAY_FOR_TX_CHECK);
+            .schedule(flow_id, self.config.blocks_delay_for_tx_check);
     }
 
     fn handle_register_operator_take_retry_tick(&mut self) {
@@ -567,7 +570,7 @@ where
     }
 
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
-        if REQUIRED_CONFIRMATIONS == 0 {
+        if self.required_confirmations == 0 {
             return self.process_confirmed_rsk_event(event);
         }
 
@@ -615,7 +618,7 @@ where
 
             let mut confirmable_event = ConfirmableEventWithData::new(
                 id.clone(),
-                REQUIRED_CONFIRMATIONS,
+                self.required_confirmations,
                 self.blockchain_view.clone(),
                 managed_event,
             );
