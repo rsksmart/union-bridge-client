@@ -41,6 +41,7 @@ services:
 
   # Deploy smart contracts
   deploy-contracts:
+    image: ghcr.io/temp-rsk/deploy-contracts:${CONTRACTS_IMAGE_TAG:-local-build}
     build:
       context: ${CONTRACTS_CONTEXT_PATH}
       dockerfile: ${CONTRACTS_DOCKERFILE}
