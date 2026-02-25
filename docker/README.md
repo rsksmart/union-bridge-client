@@ -39,6 +39,10 @@ Local development dependencies. Use this when running Union Client locally with 
 - `start_blockchains.sh` - Starts bitcoind (regtest) + anvil + deploys contracts
 - `start_bitvmx.sh` - Starts 4 BitVMX client instances
 
+**Contracts version:** By default, `start_blockchains.sh` uses the contracts version from `Cargo.toml` (pulls from
+registry; if the image digest changed, runs a fresh deploy automatically). Override with `--contracts-tag local-build`
+to build from a local contracts checkout (no auto-fresh; use `--fresh` for clean deploy when contracts change).
+
 **Typical workflow:**
 
 ```bash
