@@ -153,27 +153,131 @@ fn build_btc_tx_spv_proof(input: BtcTxSPVProofInput) -> Result<BtcTxSPVProof, Pa
 pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> {
     let decoded_err = err.as_decoded_interface_error::<ChallengeManagerErrors>()?;
 
-    // TODO: UBC-826 map to specific domain error variants instead of generic InvalidValue
     Some(match decoded_err {
         ChallengeManagerErrors::PeginNotRequested(e) => {
-            DomainErrors::InvalidValue(format!("{e:?}"))
+            DomainErrors::PeginNotRequested(format!("{e:?}"))
         }
         ChallengeManagerErrors::ChallengeTxidNotMatch(e) => {
-            DomainErrors::InvalidValue(format!("{e:?}"))
+            DomainErrors::ChallengeTxidNotMatch(format!("{e:?}"))
         }
         ChallengeManagerErrors::InvalidChallengeInputCount(e) => {
-            DomainErrors::InvalidValue(format!("{e:?}"))
+            DomainErrors::InvalidChallengeInputCount(format!("{e:?}"))
         }
         ChallengeManagerErrors::InvalidRevealedInputCount(e) => {
-            DomainErrors::InvalidValue(format!("{e:?}"))
+            DomainErrors::InvalidRevealedInputCount(format!("{e:?}"))
         }
         ChallengeManagerErrors::ReimbursementKickoffTxidNotMatch(e) => {
-            DomainErrors::InvalidValue(format!("{e:?}"))
+            DomainErrors::ReimbursementKickoffTxidNotMatch(format!("{e:?}"))
         }
-        ChallengeManagerErrors::InvalidPegStatus(e) => DomainErrors::InvalidValue(format!("{e:?}")),
+        ChallengeManagerErrors::InvalidPegStatus(e) => {
+            DomainErrors::InvalidPegStatus(format!("{e:?}"))
+        }
         ChallengeManagerErrors::MemberNotInCommittee(e) => {
-            DomainErrors::InvalidValue(format!("{e:?}"))
+            DomainErrors::MemberNotInCommittee(format!("{e:?}"))
         }
         _ => DomainErrors::UnhandledContractError(format!("{decoded_err:?}")),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use alloy_primitives::{Address, FixedBytes};
+    use union_contracts::bindings::challenge_manager::ChallengeManager::{
+        ChallengeTxidNotMatch, ChallengeManagerErrors, InvalidChallengeInputCount,
+        InvalidPegStatus, InvalidRevealedInputCount, MemberNotInCommittee, PeginNotRequested,
+        ReimbursementKickoffTxidNotMatch,
+    };
+
+    use super::*;
+    use crate::contracts::common::tests::generate_contract_revert_error;
+
+    #[test]
+    fn test_pegin_not_requested_error() {
+        let err_data = ChallengeManagerErrors::PeginNotRequested(PeginNotRequested {
+            btcTxid: FixedBytes::<32>::from([1u8; 32]),
+        });
+        let result = generate_contract_revert_error(&err_data);
+        let domain_error = decode_error(&result).unwrap();
+        assert!(matches!(domain_error, DomainErrors::PeginNotRequested(_)));
+    }
+
+    #[test]
+    fn test_challenge_txid_not_match_error() {
+        let err_data = ChallengeManagerErrors::ChallengeTxidNotMatch(ChallengeTxidNotMatch {
+            actual: FixedBytes::<32>::from([1u8; 32]),
+            expected: FixedBytes::<32>::from([2u8; 32]),
+        });
+        let result = generate_contract_revert_error(&err_data);
+        let domain_error = decode_error(&result).unwrap();
+        assert!(matches!(domain_error, DomainErrors::ChallengeTxidNotMatch(_)));
+    }
+
+    #[test]
+    fn test_invalid_challenge_input_count_error() {
+        let err_data =
+            ChallengeManagerErrors::InvalidChallengeInputCount(InvalidChallengeInputCount {
+                actual: alloy_primitives::U256::from(1),
+                expected: alloy_primitives::U256::from(2),
+            });
+        let result = generate_contract_revert_error(&err_data);
+        let domain_error = decode_error(&result).unwrap();
+        assert!(matches!(domain_error, DomainErrors::InvalidChallengeInputCount(_)));
+    }
+
+    #[test]
+    fn test_invalid_revealed_input_count_error() {
+        let err_data =
+            ChallengeManagerErrors::InvalidRevealedInputCount(InvalidRevealedInputCount {
+                actual: alloy_primitives::U256::from(3),
+                expected: alloy_primitives::U256::from(4),
+            });
+        let result = generate_contract_revert_error(&err_data);
+        let domain_error = decode_error(&result).unwrap();
+        assert!(matches!(domain_error, DomainErrors::InvalidRevealedInputCount(_)));
+    }
+
+    #[test]
+    fn test_reimbursement_kickoff_txid_not_match_error() {
+        let err_data = ChallengeManagerErrors::ReimbursementKickoffTxidNotMatch(
+            ReimbursementKickoffTxidNotMatch {
+                actual: FixedBytes::<32>::from([3u8; 32]),
+                expected: FixedBytes::<32>::from([4u8; 32]),
+            },
+        );
+        let result = generate_contract_revert_error(&err_data);
+        let domain_error = decode_error(&result).unwrap();
+        assert!(matches!(domain_error, DomainErrors::ReimbursementKickoffTxidNotMatch(_)));
+    }
+
+    #[test]
+    fn test_invalid_peg_status_error() {
+        let err_data = ChallengeManagerErrors::InvalidPegStatus(InvalidPegStatus { actual: 0 });
+        let result = generate_contract_revert_error(&err_data);
+        let domain_error = decode_error(&result).unwrap();
+        assert!(matches!(domain_error, DomainErrors::InvalidPegStatus(_)));
+    }
+
+    #[test]
+    fn test_member_not_in_committee_error() {
+        let err_data = ChallengeManagerErrors::MemberNotInCommittee(MemberNotInCommittee {
+            committeeId: 1u128,
+            memberAddress: Address::default(),
+        });
+        let result = generate_contract_revert_error(&err_data);
+        let domain_error = decode_error(&result).unwrap();
+        assert!(matches!(domain_error, DomainErrors::MemberNotInCommittee(_)));
+    }
+
+    #[test]
+    fn test_unhandled_error() {
+        use union_contracts::bindings::challenge_manager::ChallengeManager::ERC1967InvalidImplementation;
+
+        let err_data =
+            ChallengeManagerErrors::ERC1967InvalidImplementation(ERC1967InvalidImplementation {
+                implementation: Address::default(),
+            });
+        let result = generate_contract_revert_error(&err_data);
+        let domain_error = decode_error(&result).unwrap();
+        assert!(matches!(domain_error, DomainErrors::UnhandledContractError(_)));
+    }
 }
