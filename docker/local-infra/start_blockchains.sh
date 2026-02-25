@@ -10,6 +10,9 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.blockchains.yaml"
 ENV_PATH="${SCRIPT_DIR}/.env.local"
 
+# Contracts image: ghcr.io/temp-rsk/deploy-contracts (tag from CONTRACTS_IMAGE_TAG)
+CONTRACTS_IMAGE_BASE="ghcr.io/temp-rsk/deploy-contracts"
+
 # Display help message
 print_help() {
   echo "Usage: $0 [OPTIONS] [DOCKER_COMPOSE_ARGS...]"
@@ -17,7 +20,9 @@ print_help() {
   echo "Options:"
   echo "  --help                     Display this help message"
   echo "  --fresh                    Tear down local blockchains (and volumes). Can be used standalone or with 'up'"
-  echo "  --new-contracts-version    Force rebuild of the 'deploy-contracts' image before running"
+  echo "  --contracts-tag TAG        Use deploy-contracts image tag (e.g. v0.2.0-alpha.1 or local-build)"
+  echo "                             Default: from .env.local CONTRACTS_IMAGE_TAG, or local-build"
+  echo "  --new-contracts-version   Force rebuild of the 'deploy-contracts' image before running"
   echo ""
   echo "Common Docker Compose Arguments can be used, examples:"
   echo "  up                         Create and start containers"
@@ -29,6 +34,7 @@ print_help() {
   echo "Examples:"
   echo "  $0 up -d                            # Start local blockchains"
   echo "  $0 --fresh up -d                    # Clean and start local blockchains"
+  echo "  $0 --contracts-tag v0.2.0-alpha.1 up -d   # Use registry image (must exist locally)"
   echo "  $0 --new-contracts-version up -d    # Rebuild deploy-contracts image and start"
   echo "  $0 down                             # Stop blockchains"
   echo "  $0 ps                               # Check status"
@@ -39,6 +45,7 @@ print_help() {
 
 FRESH=false
 NEW_CONTRACTS_VERSION=false
+CONTRACTS_TAG_ARG=""
 
 # Parse args
 while [[ $# -gt 0 ]]; do
@@ -49,6 +56,14 @@ while [[ $# -gt 0 ]]; do
     --fresh)
       FRESH=true
       shift
+      ;;
+    --contracts-tag)
+      if [[ $# -lt 2 ]]; then
+        echo "Error: --contracts-tag requires a value (e.g. v0.2.0-alpha.1 or local-build)"
+        exit 1
+      fi
+      CONTRACTS_TAG_ARG="$2"
+      shift 2
       ;;
     --new-contracts-version)
       NEW_CONTRACTS_VERSION=true
@@ -67,6 +82,19 @@ if [[ ! -f "$ENV_PATH" ]]; then
   exit 1
 fi
 
+# Resolve CONTRACTS_IMAGE_TAG: --new-contracts-version forces local-build; else --contracts-tag; else .env.local; else local-build
+if [[ "${NEW_CONTRACTS_VERSION}" == true ]]; then
+  CONTRACTS_IMAGE_TAG="local-build"
+elif [[ -n "$CONTRACTS_TAG_ARG" ]]; then
+  CONTRACTS_IMAGE_TAG="$CONTRACTS_TAG_ARG"
+else
+  CONTRACTS_IMAGE_TAG=$(grep -E "^CONTRACTS_IMAGE_TAG=" "$ENV_PATH" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  if [[ -z "$CONTRACTS_IMAGE_TAG" ]]; then
+    CONTRACTS_IMAGE_TAG="local-build"
+  fi
+fi
+export CONTRACTS_IMAGE_TAG
+
 # Disallow builds (except the deploy-contracts service that is defined with build in compose)
 for arg in "${DOCKER_COMPOSE_ARGS[@]}"; do
   if [[ "$arg" == "build" || "$arg" == "--build" || "$arg" == "-b" ]]; then
@@ -84,7 +112,17 @@ for arg in "${DOCKER_COMPOSE_ARGS[@]}"; do
   fi
 done
 
-echo "IS_UP_COMMAND: ${IS_UP_COMMAND} | FRESH: ${FRESH} | NEW_CONTRACTS_VERSION: ${NEW_CONTRACTS_VERSION}"
+echo "IS_UP_COMMAND: ${IS_UP_COMMAND} | FRESH: ${FRESH} | NEW_CONTRACTS_VERSION: ${NEW_CONTRACTS_VERSION} | CONTRACTS_IMAGE_TAG: ${CONTRACTS_IMAGE_TAG}"
+
+# Guard: when using a registry tag (not local-build), image must exist — no silent build fallback
+if [[ "${IS_UP_COMMAND}" == true && "${CONTRACTS_IMAGE_TAG}" != "local-build" ]]; then
+  CONTRACTS_IMAGE="${CONTRACTS_IMAGE_BASE}:${CONTRACTS_IMAGE_TAG}"
+  if ! docker image inspect "$CONTRACTS_IMAGE" >/dev/null 2>&1; then
+    echo "Error: Contracts image '$CONTRACTS_IMAGE' not found."
+    echo "Pull it first (e.g. docker pull $CONTRACTS_IMAGE) or use --contracts-tag local-build to build from source."
+    exit 1
+  fi
+fi
 
 # If requested, clean local blockchains regardless of the main command
 if [[ "${FRESH}" == true ]]; then
@@ -100,8 +138,9 @@ if [[ "${NEW_CONTRACTS_VERSION}" == true ]]; then
   cmd="docker compose -p blockchains --env-file \"$ENV_PATH\" -f \"$COMPOSE_FILE\" down || true"
   echo "Running: $cmd"
   eval "$cmd"
-  echo "Removing blockchains-deploy-contracts image"
-  docker rmi blockchains-deploy-contracts
+  CONTRACTS_IMAGE="${CONTRACTS_IMAGE_BASE}:local-build"
+  echo "Removing ${CONTRACTS_IMAGE} image"
+  docker rmi "${CONTRACTS_IMAGE}" 2>/dev/null || true
 fi
 
 BITCOIND_CONTAINER="bitcoind"
