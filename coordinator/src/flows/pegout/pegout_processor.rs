@@ -27,7 +27,7 @@ use crate::flows::btc_signature::btc_signature_subflow::{
 use crate::flows::common::GlobalContext;
 use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
 use crate::flows::pegout::pegout_flow::{PegoutFlow, State, StepData, Steps};
-use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix};
+use crate::store::{CoordinatorStoreApi, StorePrefix, cleanup_completed_flows, restore_flows};
 use crate::types::{
     EventStatus, RegisterSignaturesBitVmxData, RskPegManagerEvents, TickScheduler,
     TimeBasedScheduler, UserRequests,
@@ -133,7 +133,7 @@ where
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
-        store: Rc<S>,
+        store: &Rc<S>,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
         config: PegoutConfig,
         required_confirmations: u32,
@@ -143,47 +143,27 @@ where
             rt_sync,
             bitvmx_broker,
             global_context,
-            store,
+            Rc::clone(store),
             native_bridge_verifier,
             config,
             required_confirmations,
         );
-        processor.restore_flows_from_store()?;
+
+        let flow_factory = |saved_state: State| {
+            PegoutFlow::from_saved_state(
+                Rc::clone(&processor.contracts_gateway),
+                processor.rt_sync.clone(),
+                Rc::clone(&processor.bitvmx_broker),
+                saved_state,
+                Rc::clone(&processor.store),
+                processor.native_bridge_verifier.clone(),
+            )
+        };
+
+        processor.pegout_flows =
+            restore_flows(store.as_ref(), StorePrefix::PegoutFlow, flow_factory)?;
+
         Ok(processor)
-    }
-
-    // todo(fede) this is probably same code as pegin restore flow
-    fn restore_flows_from_store(&mut self) -> Result<()> {
-        debug!("Checking for pegout flows to restore from persistence");
-
-        let saved_flows: HashMap<Uuid, State> =
-            self.store.load_all_flows(&StorePrefix::PegoutFlow)?;
-
-        for (id, saved_state) in &saved_flows {
-            self.restore_flow(id, saved_state);
-        }
-
-        if !self.pegout_flows.is_empty() {
-            info!("Restored {} pegout flows from persistence", self.pegout_flows.len());
-        }
-
-        Ok(())
-    }
-
-    // restores a flow from a saved state and return a reference to it
-    fn restore_flow(&mut self, id: &Uuid, saved_state: &State) {
-        let flow = PegoutFlow::from_saved_state(
-            Rc::clone(&self.contracts_gateway),
-            self.rt_sync.clone(),
-            Rc::clone(&self.bitvmx_broker),
-            saved_state.clone(),
-            Rc::clone(&self.store),
-            self.native_bridge_verifier.clone(),
-        );
-        info!("Restoring pegout flow {id} at step {:?}", &flow.current_step(),);
-        self.pegout_flows.insert(*id, flow);
-
-        debug!("Restored flow {id}");
     }
 
     pub fn get_user_take_pid(committee_id: Uuid, slot_index: usize) -> Result<Uuid> {
@@ -262,21 +242,6 @@ where
         Ok(())
     }
 
-    /// Clean up completed flows
-    pub fn cleanup_completed_flows(&mut self) {
-        let completed: Vec<_> =
-            self.pegout_flows.iter().filter(|(_, flow)| flow.is_done()).map(|(k, _)| *k).collect();
-
-        for internal_id in &completed {
-            debug!("Removing completed flow: {internal_id}");
-            self.pegout_flows.remove(internal_id);
-
-            self.store.delete_flow(&StoreKey::PegoutFlow(*internal_id)).unwrap_or_else(|e| {
-                error!("Failed to remove completed flow {internal_id} from persistence: {e}");
-            });
-        }
-    }
-
     /// Process confirmed RSK events
     fn process_confirmed_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         info!("Processing confirmed RSK event: {event:?}");
@@ -301,7 +266,12 @@ where
             }
         }
 
-        self.cleanup_completed_flows();
+        cleanup_completed_flows(
+            self.store.as_ref(),
+            StorePrefix::PegoutFlow,
+            &mut self.pegout_flows,
+            PegoutFlow::is_done,
+        );
         Ok(())
     }
 
@@ -484,7 +454,12 @@ where
         }
 
         // blocks allow periodic cleanup of completed flows, we can improve it with a cleanup task if needed
-        self.cleanup_completed_flows();
+        cleanup_completed_flows(
+            self.store.as_ref(),
+            StorePrefix::PegoutFlow,
+            &mut self.pegout_flows,
+            PegoutFlow::is_done,
+        );
 
         Ok(())
     }

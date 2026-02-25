@@ -40,7 +40,9 @@ use crate::flows::common::{
     COMM_KEY_INDEX, DISPUTE_KEY_INDEX, GlobalContext, TAKE_KEY_INDEX, build_communication_data,
 };
 use crate::flows::errors::{FailableFlow, FlowError, FlowResultExt};
-use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix};
+use crate::store::{
+    CoordinatorStoreApi, StoreKey, StorePrefix, cleanup_completed_flows, restore_flows,
+};
 use crate::types::{
     AllCommunicationDataReadyEvent, EventStatus, MemberOfCommittee, NewCommitteePendingEvent,
     NewCommitteeReadyEvent, RskPegManagerEvents, UserRequests,
@@ -457,6 +459,10 @@ where
     BC: BitVmxBrokerClientApi,
     S: CoordinatorStoreApi,
 {
+    pub fn is_done(&self) -> bool {
+        self.state.step == Steps::Done || self.state.step == Steps::Failed
+    }
+
     fn persist_state(&self) -> Result<()> {
         self.store
             .save_flow(&StoreKey::SetupCommitteeFlow(self.state.internal_id), self.state.clone())
@@ -1455,7 +1461,7 @@ where
     pub(crate) fn new(
         flow_factory: FactoryBSF,
         global_context: GlobalContext,
-        store: Rc<S>,
+        store: &Rc<S>,
         required_confirmations: u32,
     ) -> Self {
         let mut processor = Self {
@@ -1464,38 +1470,18 @@ where
             global_context,
             events_confirming: HashMap::new(),
             blockchain_view: BlockchainView::new(),
-            store,
+            store: Rc::clone(store),
             required_confirmations,
         };
 
         // Restore flows from store
-        processor.restore_flows_from_store();
+        let flow_factory =
+            |saved_state: State| processor.flow_factory.create_flow_from_saved_state(saved_state);
+
+        processor.flows =
+            restore_flows(store.as_ref(), StorePrefix::SetupCommitteeFlow, flow_factory)
+                .expect("Failed to load flows from store");
         processor
-    }
-
-    fn restore_flows_from_store(&mut self) {
-        debug!("Checking for committee setup flows to restore from persistence");
-
-        let saved_flows: HashMap<Uuid, State> = self
-            .store
-            .load_all_flows(&StorePrefix::SetupCommitteeFlow)
-            .expect("Failed to load flows from store");
-
-        for (id, saved_state) in &saved_flows {
-            let flow = self.flow_factory.create_flow_from_saved_state(saved_state.clone());
-            self.flows.insert(*id, flow);
-            let inserted_flow = self.flows.get(id).expect("Just inserted flow");
-            info!(
-                "Restored flow {id} at step {:?} for stream_id {:?}",
-                inserted_flow.state.step,
-                inserted_flow.state.ctx.get_stream_id()
-            );
-            debug!("Restored flow {id} context: {:?}", inserted_flow.state.ctx);
-        }
-
-        if !self.flows.is_empty() {
-            info!("Restored {} flows from persistence", self.flows.len());
-        }
     }
 }
 
@@ -1740,24 +1726,6 @@ where
         )
     }
 
-    fn close_completed_flows(&mut self) {
-        let completed: Vec<_> = self
-            .flows
-            .iter()
-            .filter(|(_, flow)| flow.state.step == Steps::Done || flow.state.step == Steps::Failed)
-            .map(|(k, _)| *k)
-            .collect();
-
-        for key in &completed {
-            debug!("Removing flow: {key:?}");
-            self.flows.remove(key);
-
-            self.store
-                .delete_flow(&StoreKey::SetupCommitteeFlow(*key))
-                .unwrap_or_else(|e| error!("Failed to remove flow {key} from persistence: {e}"));
-        }
-    }
-
     fn is_flow_for_stream(f: &&mut SetupCommitteeFlow<CG, BC, S>, stream_id: &StreamId) -> bool {
         f.state.ctx.get_stream_id().is_ok_and(|id| id == *stream_id)
     }
@@ -1936,7 +1904,12 @@ where
         }
 
         // blocks allow periodic cleanup of completed flows, we can improve it with a cleanup task if needed
-        self.close_completed_flows();
+        cleanup_completed_flows(
+            self.store.as_ref(),
+            StorePrefix::SetupCommitteeFlow,
+            &mut self.flows,
+            SetupCommitteeFlow::is_done,
+        );
 
         Ok(())
     }
@@ -1997,26 +1970,26 @@ where
 {
     fn create_flow(&self, internal_id: Uuid) -> SetupCommitteeFlow<CG, BC, S> {
         SetupCommitteeFlow::new(
-            self.contracts_gateway.clone(),
+            Rc::clone(&self.contracts_gateway),
             self.rt_sync.clone(),
-            self.bitvmx_broker.clone(),
+            Rc::clone(&self.bitvmx_broker),
             self.global_context.clone(),
             internal_id,
             self.bitcoin_network,
-            self.store.clone(),
+            Rc::clone(&self.store),
             self.config.clone(),
         )
     }
 
     fn create_flow_from_saved_state(&self, saved_state: State) -> SetupCommitteeFlow<CG, BC, S> {
         SetupCommitteeFlow::from_saved_state(
-            self.contracts_gateway.clone(),
+            Rc::clone(&self.contracts_gateway),
             self.rt_sync.clone(),
-            self.bitvmx_broker.clone(),
+            Rc::clone(&self.bitvmx_broker),
             self.global_context.clone(),
             saved_state,
             self.bitcoin_network,
-            self.store.clone(),
+            Rc::clone(&self.store),
             self.config.clone(),
         )
     }
