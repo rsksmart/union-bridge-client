@@ -665,7 +665,6 @@ mod tests {
     type BitVmxMock = MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
     /// Test constant for required confirmations (matches production default)
     const REQUIRED_CONFIRMATIONS: u32 = 5;
-    type TestProcessor = AdvanceFundsProcessor<MockRskContractsGatewayApi, BitVmxMock>;
 
     fn create_fake_request_event(pegout_id: &str) -> RequestAdvanceFunds {
         RequestAdvanceFunds { pegout_id: pegout_id.to_string(), amount: 1000 }
@@ -903,7 +902,7 @@ mod tests {
 
     #[test]
     fn test_process_new_event_advance_funds_advance_funds_creates_advance_funds_when_two_requests_exist()
-     {
+    {
         let mut processor = AdvanceFundsProcessor::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(BitVmxMock::new()),

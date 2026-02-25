@@ -1,65 +1,36 @@
 #!/usr/bin/env bash
 
-# happy path e2e test - fully automated local flow (no manual intervention)
+# operator take path e2e test - automated local flow
+#
+# this test exercises the operator take path by:
+#   1. running the normal pegin flow with auto-mining
+#   2. stopping mining after pegin completes
+#   3. requesting pegout with mining stopped, then manually mining RSK blocks
+#   4. waiting for the PegOutAccepted message from BitVMX
 #
 # prerequisites:
 #   - union bridge clients running (via: cargo run -- run)
 #   - anvil running on localhost:8545
 #   - bitcoin regtest node running with RPC enabled
-#   - USER_BITCOIN_WIF environment variable set (for bitcoin-wallet operations)
-#   - MEMBER_BITCOIN_WIF environment variable set (for member operations)
+#   - USER_BITCOIN_WIF and MEMBER_BITCOIN_WIF environment variables set
 #
-# usage: bash tests/run-happy-path.sh
+# usage: bash tests/run-operator-take-path.sh
 
 set -euo pipefail
 
-# Load environment from root .envrc (only if direnv hasn't already loaded it)
-if [[ -z "${DIRENV_DIR:-}" ]]; then
-    cd "$(dirname "$0")/.."
-    ENVRC_FILE="$(pwd)/.envrc"
-    if [[ -f "$ENVRC_FILE" ]]; then
-        source "$ENVRC_FILE"
-    fi
-fi
-
-# Initialize SCRIPT_ENV from UC_ENV if set and valid, otherwise default to "local"
-if [[ -n "${UC_ENV:-}" ]]; then
-    if [[ "$UC_ENV" == "local" || "$UC_ENV" == "local-docker" ]]; then
-        SCRIPT_ENV="$UC_ENV"
-    else
-        SCRIPT_ENV="local"
-    fi
-else
-    SCRIPT_ENV="local"
-fi
+SCRIPT_ENV="local"
 
 usage() {
-    echo "Usage: $0 [--env <local|local-docker>] [--ops <1-10>]"
-    echo ""
-    echo "  --env    Environment: local or local-docker (default: from UC_ENV or local)"
-    echo "  --ops    Number of operators (1-10, default: from .env.local or 4)"
+    echo "Usage: $0 [--env <local|local-docker>]"
     exit 1
 }
 
-OPS_FROM_FLAG=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
     --env)
         SCRIPT_ENV="${2:-}"
         if [[ -z "$SCRIPT_ENV" ]]; then
             usage
-        fi
-        if [[ "$SCRIPT_ENV" != "local" && "$SCRIPT_ENV" != "local-docker" ]]; then
-            echo "Error: --env must be 'local' or 'local-docker'"
-            usage
-        fi
-        shift 2
-        ;;
-    --ops)
-        OPS_FROM_FLAG="${2:-}"
-        if [[ -z "$OPS_FROM_FLAG" ]] || ! [[ "$OPS_FROM_FLAG" =~ ^(10|[1-9])$ ]]; then
-            echo "Error: --ops must be between 1 and 10"
-            exit 1
         fi
         shift 2
         ;;
@@ -69,29 +40,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Final validation that SCRIPT_ENV is valid
-if [[ "$SCRIPT_ENV" != "local" && "$SCRIPT_ENV" != "local-docker" ]]; then
-    echo "Error: SCRIPT_ENV must be 'local' or 'local-docker'"
-    exit 1
-fi
-
 # change to project root (parent of tests directory)
 cd "$(dirname "$0")/.."
-
-# Load NUM_OPERATORS: --ops flag > .env.local > default (4)
-if [[ -n "$OPS_FROM_FLAG" ]]; then
-    NUM_OPERATORS="$OPS_FROM_FLAG"
-else
-    NUM_OPERATORS=4
-    _env_local="docker/operator/.env.local"
-    if [[ -f "$_env_local" ]]; then
-        _num=$(grep -E '^\s*NUM_OPERATORS=' "$_env_local" | tail -1 | cut -d= -f2 | tr -d ' "'\''')
-        if [[ -n "$_num" ]] && [[ "$_num" =~ ^[0-9]+$ ]] && [[ "$_num" -ge 1 ]] && [[ "$_num" -le 10 ]]; then
-            NUM_OPERATORS="$_num"
-        fi
-    fi
-    unset _env_local _num
-fi
 
 # hardcoded configuration
 STREAM_ID=0
@@ -127,52 +77,6 @@ check_bitcoin_connectivity() {
     bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockcount &> /dev/null
 }
 
-# derive x-only public key (32 bytes) from USER_BITCOIN_WIF
-# returns the key with 0x prefix (66 chars total)
-user_xonly_pubkey_from_wif() {
-    if [[ -z "${USER_BITCOIN_WIF:-}" ]]; then
-        echo "Error: USER_BITCOIN_WIF not set" >&2
-        return 1
-    fi
-    local desc pubkey xonly
-    desc=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getdescriptorinfo "wpkh(${USER_BITCOIN_WIF})" 2>/dev/null | jq -r '.descriptor')
-    if [[ -z "$desc" || "$desc" == "null" ]]; then
-        echo "Error: Failed to derive descriptor from USER_BITCOIN_WIF" >&2
-        return 1
-    fi
-    # Extract pubkey from wpkh(PUBKEY)#checksum format
-    pubkey=$(echo "$desc" | sed -E 's/^wpkh\(([0-9a-fA-F]+)\)#.*/\1/')
-    if [[ ${#pubkey} -ne 66 ]]; then
-        echo "Error: Unexpected pubkey length: ${#pubkey}" >&2
-        return 1
-    fi
-    # Remove first 2 chars (02/03 prefix) to get x-only key
-    xonly="${pubkey:2}"
-    echo "0x${xonly}"
-}
-
-# derive compressed public key (33 bytes) from USER_BITCOIN_WIF
-# returns the key with 0x prefix (68 chars total)
-user_compressed_pubkey_from_wif() {
-    if [[ -z "${USER_BITCOIN_WIF:-}" ]]; then
-        echo "Error: USER_BITCOIN_WIF not set" >&2
-        return 1
-    fi
-    local desc pubkey
-    desc=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getdescriptorinfo "wpkh(${USER_BITCOIN_WIF})" 2>/dev/null | jq -r '.descriptor')
-    if [[ -z "$desc" || "$desc" == "null" ]]; then
-        echo "Error: Failed to derive descriptor from USER_BITCOIN_WIF" >&2
-        return 1
-    fi
-    # Extract pubkey from wpkh(PUBKEY)#checksum format
-    pubkey=$(echo "$desc" | sed -E 's/^wpkh\(([0-9a-fA-F]+)\)#.*/\1/')
-    if [[ ${#pubkey} -ne 66 ]]; then
-        echo "Error: Unexpected pubkey length: ${#pubkey}" >&2
-        return 1
-    fi
-    echo "0x${pubkey}"
-}
-
 # check prerequisites
 if ! command -v cargo &> /dev/null || ! command -v cast &> /dev/null || ! command -v bitcoin-cli &> /dev/null; then
     echo "Error: cargo, cast, and bitcoin-cli required"
@@ -194,13 +98,13 @@ fi
 echo "All prerequisites met!"
 echo ""
 
-# Find recent log match in docker compose logs (all operators)
+# Find recent log match in docker compose logs (all 4 operators)
 # Checks all logs (no time restriction) since we're already polling in a loop
 # Output format: "source:line" or empty if not found
 find_recent_docker_log_match() {
     local pattern="$1"
 
-    for op_id in $(seq 1 "$NUM_OPERATORS"); do
+    for op_id in 1 2 3 4; do
         local project="op_${op_id}"
         local line
         # Check all logs - the polling loop already handles timing
@@ -412,7 +316,7 @@ wait_for_log_with_block_timeout() {
             echo ""  # newline after the progress display
             warn "Log pattern not found after $max_blocks blocks (height: $start_height -> $current_height)"
             if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
-                warn "Check Docker logs manually: docker compose -p op_{1..$NUM_OPERATORS} logs coordinator"
+                warn "Check Docker logs manually: docker compose -p op_{1..4} logs coordinator"
             else
                 warn "Check logs/coordinator-*.log manually"
             fi
@@ -426,7 +330,7 @@ wait_for_log_with_block_timeout() {
 wait_for_log_in_all_operators() {
     local pattern="$1"
     local max_blocks=$2
-    local operator_count=${3:-$NUM_OPERATORS}
+    local operator_count=${3:-4}
 
     local start_height=$(get_current_bitcoin_height)
     local target_height=$((start_height + max_blocks))
@@ -503,14 +407,61 @@ wait_for_log_in_all_operators() {
     done
 }
 
+# Wait for a log pattern to appear, with a time-based timeout (seconds).
+# Useful when mining is stopped and block-based timeouts don't progress.
+wait_for_log_with_time_timeout() {
+    local pattern="$1"
+    local timeout_secs=$2
+    local start_time=$(date +%s)
+
+    log "Waiting for log pattern: $pattern (max ${timeout_secs}s)..."
+
+    while true; do
+        local elapsed=$(( $(date +%s) - start_time ))
+
+        echo -ne "\r  Elapsed: ${elapsed}s/${timeout_secs}s | Checking logs...  "
+
+        local result=""
+        if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
+            result=$(find_recent_docker_log_match "$pattern")
+        else
+            result=$(find_recent_file_log_match "$pattern")
+        fi
+
+        if [ -n "$result" ]; then
+            local found_source="${result%%:*}"
+            local found_line="${result#*:}"
+            echo ""
+            success "Log pattern found after ${elapsed}s!"
+            log "Found in: $found_source"
+            echo "$found_line"
+            return 0
+        fi
+
+        if [ $elapsed -ge $timeout_secs ]; then
+            echo ""
+            warn "Log pattern not found after ${timeout_secs}s"
+            if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
+                warn "Check Docker logs manually: docker compose -p op_{1..4} logs coordinator"
+            else
+                warn "Check logs/coordinator-*.log manually"
+            fi
+            return 1
+        fi
+
+        sleep 1
+    done
+}
+
 cleanup() {
+    bash cli-infra.sh --stop-mine 2>/dev/null || true
     rm -f /tmp/apply-operators-$$ /tmp/pegout-$$
 }
 trap cleanup EXIT
 
 clear
 log "Configuration: stream=$STREAM_ID, rsk=$RSK_ADDRESS, amount=$VALUE, env=$SCRIPT_ENV"
-log "Prerequisite: Start mining in another terminal with: ./cli-infra.sh --start-mine"
+log "Mining will be managed automatically by this script"
 echo ""
 
 # prepare wallets
@@ -538,6 +489,16 @@ if ! bash cli-bitcoin-wallet.sh member mine_utxo 900000000; then
 fi
 
 success "Wallets prepared with initial UTXOs"
+echo ""
+
+# start auto-mining for the pegin flow
+bash cli-infra.sh --stop-mine 2>/dev/null || true
+log "Starting auto-mining..."
+if ! bash cli-infra.sh --start-mine; then
+    warn "Failed to start mining"
+    exit 1
+fi
+success "Auto-mining started"
 echo ""
 
 # step 1: fund operator wallets
@@ -583,7 +544,7 @@ fi
 rm -f /tmp/apply-operators-$$
 success "Operators applied to stream $STREAM_ID"
 echo ""
-if ! wait_for_log_in_all_operators "CommitteeSetupFlow Done:" 50; then
+if ! wait_for_log_in_all_operators "CommitteeSetupFlow Done:" 60; then
     warn "Committee setup not completed by all operators within timeout"
     exit 1
 fi
@@ -591,20 +552,11 @@ echo ""
 
 # step 4: request pegin
 step "Step 4: Request Pegin"
-
-# Derive x-only public key for pegin (32 bytes with 0x prefix)
-USER_XONLY_PUBKEY=$(user_xonly_pubkey_from_wif)
-if [[ -z "$USER_XONLY_PUBKEY" ]]; then
-    warn "Failed to derive user x-only public key from WIF"
-    exit 1
-fi
-
 log "RSK Address: $RSK_ADDRESS"
 log "Amount: $VALUE sats"
-log "BTC Pub Key: $USER_XONLY_PUBKEY"
-log "Command: bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -k $USER_XONLY_PUBKEY --env $SCRIPT_ENV --execute"
+log "Command: bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE --env $SCRIPT_ENV --execute"
 echo ""
-if ! bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -k "$USER_XONLY_PUBKEY" --env "$SCRIPT_ENV" --execute; then
+if ! bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE --env "$SCRIPT_ENV" --execute; then
     warn "Command failed!"
     exit 1
 fi
@@ -616,22 +568,22 @@ if ! wait_for_log_with_block_timeout "PeginFlow Done" 15; then
 fi
 echo ""
 
-# step 5: request pegout
-step "Step 5: Request Pegout"
-
-# Derive compressed public key for pegout (33 bytes with 0x prefix)
-USER_COMPRESSED_PUBKEY=$(user_compressed_pubkey_from_wif)
-if [[ -z "$USER_COMPRESSED_PUBKEY" ]]; then
-    warn "Failed to derive user compressed public key from WIF"
+# stop auto-mining before pegout
+log "Stopping auto-mining..."
+if ! bash cli-infra.sh --stop-mine; then
+    warn "Failed to stop mining"
     exit 1
 fi
-
-log "Command: bash cli-operations.sh user pegout -v $VALUE -k $USER_COMPRESSED_PUBKEY --env $SCRIPT_ENV"
-log "Amount: $VALUE sats"
-log "USR Pub Key: $USER_COMPRESSED_PUBKEY"
+success "Auto-mining stopped"
 echo ""
 
-if ! bash cli-operations.sh user pegout -v $VALUE -k "$USER_COMPRESSED_PUBKEY" --env "$SCRIPT_ENV" > /tmp/pegout-$$ 2>&1; then
+# step 5: request pegout (with mining stopped)
+step "Step 5: Request Pegout (mining stopped)"
+log "Command: bash cli-operations.sh user pegout -v $VALUE --env $SCRIPT_ENV"
+log "Amount: $VALUE sats"
+echo ""
+
+if ! bash cli-operations.sh user pegout -v $VALUE --env "$SCRIPT_ENV" > /tmp/pegout-$$ 2>&1; then
     warn "Command failed! Output:"
     cat /tmp/pegout-$$
     rm -f /tmp/pegout-$$
@@ -641,25 +593,74 @@ rm -f /tmp/pegout-$$
 success "Pegout requested"
 echo ""
 
-if ! wait_for_log_with_block_timeout "PegoutFlow Done" 15; then
-    warn "PegoutFlow completion log not found within timeout"
+# step 6: mine RSK blocks manually
+step "Step 6: Mine RSK blocks manually"
+log "Mining 4 RSK blocks with 1s interval..."
+for i in 1 2 3 4; do
+    cast rpc anvil_mine 1 --rpc-url http://localhost:8545 > /dev/null 2>&1
+    success "RSK block $i/4 mined"
+    if [ $i -lt 4 ]; then
+        sleep 1
+    fi
+done
+echo ""
+success "4 RSK blocks mined"
+echo ""
+
+# step 7: wait for PegOutAccepted from BitVMX
+step "Step 7: Wait for PegOutAccepted"
+log "Waiting for 'Received PegOutAccepted variable from BitVMX' in logs..."
+echo ""
+
+if ! wait_for_log_with_time_timeout "Received PegOutAccepted variable from BitVMX" 120; then
+    warn "PegOutAccepted log not found within timeout"
     exit 1
 fi
 echo ""
 
-# step 6: verify pegout completion
-step "Step 6: Verify Pegout Completion"
-# Note: PegoutFlow completion is already checked in the wait_for_log_with_block_timeout call above
-# This step is kept for consistency but the verification already happened
-success "PegoutFlow completion verified"
-SUCCESS=true
+# step 8: kill one bitvmx operator (op_4)
+step "Step 8: Kill BitVMX operator 4"
+BITVMX_PID=$(ps -eo pid,args | grep '[b]itvmx-client op_4' | awk '{print $1}')
+if [ -z "$BITVMX_PID" ]; then
+    warn "Could not find bitvmx-client op_4 process"
+    exit 1
+fi
+log "Killing bitvmx-client op_4 (PID: $BITVMX_PID)..."
+kill -9 "$BITVMX_PID"
+success "bitvmx-client op_4 killed (PID: $BITVMX_PID)"
+
+REMAINING=$(ps -eo pid,args | grep '[b]itvmx-client op_' | wc -l | tr -d ' ')
+if [ "$REMAINING" -ne 3 ]; then
+    warn "Expected 3 bitvmx-client operators running, found $REMAINING"
+    exit 1
+fi
+success "Verified: $REMAINING bitvmx-client operators still running"
 echo ""
+
+# restart auto-mining
+bash cli-infra.sh --stop-mine 2>/dev/null || true
+log "Restarting auto-mining..."
+if ! bash cli-infra.sh --start-mine; then
+    warn "Failed to restart mining"
+    exit 1
+fi
+success "Auto-mining restarted"
+echo ""
+
+
+# step 9: wait for RegisterOperatorTake completion
+step "Step 9: Wait for RegisterOperatorTake completion"
+log "The operator take process is now running with 3 BitVMX operators (op_4 was killed)."
+log "Waiting for 'RegisterOperatorTake -> Done' in logs..."
+echo ""
+
+if ! wait_for_log_with_time_timeout "RegisterOperatorTake -> Done" 240; then
+    warn "RegisterOperatorTake -> Done log not found within timeout"
+    exit 1
+fi
+success "RegisterOperatorTake completed successfully"
+echo ""
+
 
 step "Complete"
-
-if [ "$SUCCESS" = true ]; then
-    success "E2E test completed successfully!"
-else
-    warn "E2E test completed with warnings - PegoutFlow completion not verified"
-    exit 1
-fi
+success "E2E operator take path test completed successfully!"

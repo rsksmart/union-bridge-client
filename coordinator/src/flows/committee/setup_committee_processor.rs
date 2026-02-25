@@ -92,7 +92,7 @@ where
 
         bitvmx_broker.send(IncomingBitVMXApiMessages::SetVar(
             GLOBAL_SETTINGS_UUID,
-            UnionSettings::name(),
+            UnionSettings::name().to_string(),
             VariableTypes::String(settings_json),
         ))?;
 

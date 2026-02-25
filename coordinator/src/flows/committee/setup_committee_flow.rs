@@ -486,6 +486,7 @@ pub(crate) struct SetupCommitteeFlow<
     bitcoin_network: Network,
     store: Rc<S>,
     config: CommitteeConfig,
+    drp_program_definition: String,
 }
 
 const REGTEST_FEE_RATE: u64 = 10;
@@ -537,6 +538,7 @@ where
         bitcoin_network: Network,
         store: Rc<S>,
         config: CommitteeConfig,
+        drp_program_definition: String,
     ) -> Self {
         Self {
             contracts,
@@ -547,6 +549,7 @@ where
             bitcoin_network,
             store,
             config,
+            drp_program_definition,
         }
     }
 
@@ -560,6 +563,7 @@ where
         bitcoin_network: Network,
         store: Rc<S>,
         config: CommitteeConfig,
+        drp_program_definition: String,
     ) -> Self {
         Self {
             contracts,
@@ -570,6 +574,7 @@ where
             bitcoin_network,
             store,
             config,
+            drp_program_definition,
         }
     }
 
@@ -943,7 +948,7 @@ where
     }
 
     fn request_bitvmx_member_pub_key(&self, req_id: Uuid) {
-        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetPubKey(req_id, true));
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetEvenPubKey(req_id));
     }
 
     fn build_funding_utxo(&self) -> Result<UTXO> {
@@ -1371,7 +1376,10 @@ where
             .position(|m| m.address == my_address)
             .context("My address not found in committee members")?;
 
-        let dispute_channel_setup = DisputeChannelSetup::new(self.bitvmx_broker.clone());
+        let dispute_channel_setup = DisputeChannelSetup::new(
+            self.bitvmx_broker.clone(),
+            self.drp_program_definition.clone(),
+        );
 
         let protocol_ids = dispute_channel_setup.complete_setup(
             committee_data,
@@ -2138,7 +2146,10 @@ where
             .position(|m| m.address == my_address)
             .context("My address not found in committee members")?;
 
-        let dispute_channel_setup = DisputeChannelSetup::new(self.bitvmx_broker.clone());
+        let dispute_channel_setup = DisputeChannelSetup::new(
+            self.bitvmx_broker.clone(),
+            self.drp_program_definition.clone(),
+        );
 
         let requests = dispute_channel_setup.request_dispute_core_var(committee_data, my_index)?;
 
@@ -2161,6 +2172,7 @@ where
     bitcoin_network: Network,
     store: Rc<S>,
     config: CommitteeConfig,
+    drp_program_definition: String,
 }
 
 impl<CG, BC, S> SetupCommitteeFlowFactory<CG, BC, S>
@@ -2177,6 +2189,7 @@ where
         bitcoin_network: Network,
         store: Rc<S>,
         config: CommitteeConfig,
+        drp_program_definition: String,
     ) -> Self {
         Self {
             contracts_gateway,
@@ -2186,6 +2199,7 @@ where
             bitcoin_network,
             store,
             config,
+            drp_program_definition,
         }
     }
 }
@@ -2207,6 +2221,7 @@ where
             self.bitcoin_network,
             Rc::clone(&self.store),
             self.config.clone(),
+            self.drp_program_definition.clone(),
         )
     }
 
@@ -2220,6 +2235,7 @@ where
             self.bitcoin_network,
             Rc::clone(&self.store),
             self.config.clone(),
+            self.drp_program_definition.clone(),
         )
     }
 }
@@ -2492,6 +2508,7 @@ mod tests {
             Network::Regtest,
             Rc::new(MockCoordinatorStoreApi::new()),
             CommitteeConfig::default(),
+            "test.yaml".to_string(),
         )
     }
 
@@ -2807,6 +2824,7 @@ mod tests {
             Network::Regtest,
             Rc::new(MockCoordinatorStoreApi::new()),
             CommitteeConfig::default(),
+            "test.yaml".to_string(),
         );
 
         let internal_id = Uuid::new_v4();

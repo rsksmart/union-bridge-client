@@ -43,6 +43,7 @@ pub struct CoordinatorConfig {
 pub struct CoordinatorAdvanceFundsConfig {
     pub check_fork_guest_elf_path: String,
     pub max_zkp_status_retries: u32,
+    pub drp_program_definition: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -316,6 +317,10 @@ mod tests {
         assert_eq!(
             "/app/config/check-fork-guest.bin",
             config.coordinator.advance_funds.check_fork_guest_elf_path
+        );
+        assert_eq!(
+            "../BitVMX-CPU/docker-riscv32/riscv32/build/hello-world.yaml",
+            config.coordinator.drp_program_definition
         );
         assert_eq!(99_999_999, config.coordinator.advance_funds.max_zkp_status_retries);
         assert_eq!("regtest", config.bitcoin_network);

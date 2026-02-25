@@ -219,6 +219,36 @@ components:
 This ensures that messages from the BitVMX client are correctly routed back to the
 coordinator.
 
+#### DRP Program Files
+
+Before running the committee setup, you must make the DRP program files accessible to the BitVMX client. These files
+define the program that BitVMX will execute during the dispute resolution protocol.
+
+The repository ships sample files under `tests/`:
+
+| File | Description |
+|---|---|
+| `tests/hello-world.elf` | RISC-V ELF binary executed by the BitVMX CPU |
+| `tests/hello-world.yaml` | Program definition consumed by the BitVMX client |
+
+**Steps:**
+
+1. Copy (or symlink) both files to a path that is accessible by the BitVMX client process.
+2. Set the path to the `.yaml` file in the coordinator configuration:
+
+   ```toml
+   # config/base.toml  (or your environment override file)
+   [coordinator]
+   drp_program_definition = "/path/accessible/by/bitvmx/hello-world.yaml"
+   ```
+
+   Alternatively, export the corresponding environment variable:
+
+   ```bash
+   export UB__COORDINATOR__DRP_PROGRAM_DEFINITION="/path/accessible/by/bitvmx/hello-world.yaml"
+   ```
+
+
 #### Configuring the Committee
 
 You will need to tweak the committee size and requirements according to the committee you want to run. For example, to

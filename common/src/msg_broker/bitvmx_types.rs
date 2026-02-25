@@ -50,6 +50,7 @@ pub enum IncomingBitVMXApiMessages {
     SetupKey(Uuid, Vec<CommsAddress>, Option<Vec<PublicKey>>, u16),
     GetAggregatedPubkey(Uuid),
     GetKeyPair(Uuid),
+    GetEvenPubKey(Uuid),
     GetPubKey(Uuid, bool),
     SignMessage(Uuid, Vec<u8>, PublicKey), // id, payload_to_sign, public_key_to_use
     GenerateZKP(Uuid, Vec<u8>, String),
@@ -339,22 +340,20 @@ pub struct PegOutAccepted {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+
 pub struct PegOutRequest {
     pub committee_id: Uuid,
-    pub stream_id: u64,
-    pub packet_number: u64,
     pub slot_index: usize,
     pub amount: u64,
     pub pegout_id: Vec<u8>,
-    pub pegout_signature_hash: Vec<u8>,
-    pub pegout_signature_message: Vec<u8>,
     pub user_pubkey: PublicKey,
+    pub pegout_sighash: Vec<u8>,
     pub take_aggregated_key: PublicKey,
 }
 
 impl PegOutRequest {
-    pub fn name() -> String {
-        "pegout_request".to_string()
+    pub fn name() -> &'static str {
+        "pegout_request"
     }
 }
 
@@ -369,8 +368,47 @@ pub struct AdvanceFundsRequest {
 }
 
 impl AdvanceFundsRequest {
-    pub fn name() -> String {
-        "advance_funds_request".to_string()
+    pub fn name() -> &'static str {
+        "advance_funds_request"
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FundsAdvanceSPV {
+    pub txid: Txid,
+    pub committee_id: Uuid,
+    pub slot_index: usize,
+    pub pegout_id: Vec<u8>,
+    pub spv_proof: BtcTxSPVProof,
+}
+
+impl FundsAdvanceSPV {
+    pub fn name() -> &'static str {
+        "funds_advance_spv"
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum UnionTxType {
+    ReimbursementKickoff,
+    OperatorTake,
+    OperatorWon,
+    Challenge,
+    RevealInput,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnionSPVNotification {
+    pub txid: Txid,
+    pub committee_id: Uuid,
+    pub slot_index: usize,
+    pub spv_proof: Option<BtcTxSPVProof>,
+    pub tx_type: UnionTxType,
+}
+
+impl UnionSPVNotification {
+    pub fn name() -> &'static str {
+        "union_spv_notification"
     }
 }
 
@@ -399,8 +437,8 @@ pub struct Committee {
 }
 
 impl Committee {
-    pub fn name() -> String {
-        "committee".to_string()
+    pub fn name() -> &'static str {
+        "committee"
     }
 
     pub fn indexes_map(&self) -> HashMap<PublicKey, usize> {
@@ -446,8 +484,8 @@ pub struct PeginAcceptedMessage {
     pub accept_pegin_sighash: Vec<u8>,
     pub accept_pegin_nonce: PubNonce,
     pub accept_pegin_signature: MaybeScalar,
-    pub operator_take_sighash: Option<Vec<u8>>,
-    pub operator_won_sighash: Option<Vec<u8>>,
+    pub operator_take_txid: Option<Txid>,
+    pub operator_won_txid: Option<Txid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -458,8 +496,8 @@ pub struct DisputeCoreData {
 }
 
 impl DisputeCoreData {
-    pub fn name() -> String {
-        "dispute_core_data".to_string()
+    pub fn name() -> &'static str {
+        "dispute_core_data"
     }
 }
 
@@ -522,8 +560,8 @@ pub struct UnionSettings {
 }
 
 impl UnionSettings {
-    pub fn name() -> String {
-        "union_settings".to_string()
+    pub fn name() -> &'static str {
+        "union_settings"
     }
 
     /// Create default settings with entries for stream denominations.
@@ -553,8 +591,8 @@ pub struct ReimbursementResult {
 }
 
 impl ReimbursementResult {
-    pub fn name() -> String {
-        "reimbursement_result".to_string()
+    pub fn name() -> &'static str {
+        "reimbursement_result"
     }
 }
 

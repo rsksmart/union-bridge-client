@@ -432,7 +432,7 @@ where
 
         let msg = IncomingBitVMXApiMessages::SetVar(
             self.state.flow_id,
-            PegOutRequest::name().clone(),
+            PegOutRequest::name().to_string(),
             VariableTypes::String(serde_json::to_string(&data_to_send)?),
         );
         self.send_bitvmx_msg(msg)?;
@@ -475,24 +475,22 @@ where
 
         // Convert fixed-size hashes and ids to Vec<u8>
         // Note: v0.2.0 contracts merged pegoutSignatureHash and pegoutSignatureMessage into pegoutSignatureData struct
-        let pegout_signature_hash: Vec<u8> = event.pegoutSignatureData.signatureHash.to_vec();
-        let pegout_signature_message: Vec<u8> = event.pegoutSignatureData.signatureMessage.to_vec();
+        //TODO verify if this is the correct field to use
+        let pegout_sighash: Vec<u8> = event.pegoutSignatureData.signatureHash.to_vec();
         // TODO(UBC-827): v0.4.0-alpha removed pegoutId from PegoutRequested event.
         // Determine how pegout_id should be derived in the new contract version.
-        let pegout_id: Vec<u8> = Vec::new();
+        let pegout_id: Vec<u8> = event.pegoutSignatureData.txid.to_vec();
+
         let slot_index =
             usize::try_from(event.slotId).map_err(|_| anyhow!("slotId too large for usize"))?;
 
         Ok(PegOutRequest {
             committee_id,
-            stream_id: event.streamId,
-            packet_number: event.packetNumber,
             slot_index,
             amount: event.amount,
             pegout_id,
-            pegout_signature_hash,
-            pegout_signature_message,
             user_pubkey,
+            pegout_sighash,
             take_aggregated_key,
         })
     }

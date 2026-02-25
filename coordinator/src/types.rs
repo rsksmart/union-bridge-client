@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::fmt::Debug;
 use std::hash::Hash;
+use std::fmt::Debug;
 
 use alloy_primitives::{B256, FixedBytes};
 #[cfg(test)]
@@ -28,7 +28,8 @@ use union_contracts::bindings::pegin_manager::PeginManager::{
     PeginAccepted, PeginManagerEvents, PeginRequested,
 };
 use union_contracts::bindings::pegout_manager::PegoutManager::{
-    OperatorTakeTriggered, PegoutManagerEvents, PegoutRegistered, PegoutRequested,
+    AdvanceFundsRegistered, OperatorTakeTriggered, PegoutManagerEvents, PegoutRegistered,
+    PegoutRequested, ReimbursementKickoffRegistered,
 };
 #[cfg(test)]
 use union_contracts::bindings::signature_manager::SignatureManager::{
@@ -52,6 +53,8 @@ pub enum RskPegManagerEvents {
     PegoutRegistered(PegoutRegisteredEvent),
     PegoutRequested(PegoutRequestedEvent),
     OperatorTakeTriggered(OperatorTakeTriggeredEvent),
+    AdvanceFundsRegistered(AdvanceFundsRegisteredEvent),
+    ReimbursementKickoffRegistered(ReimbursementKickoffRegisteredEvent),
     RemoveRegisteredPeginRequest(PeginRequestedEvent),
     AllNoncesReady(AllNoncesReadyEvent),
     AllSignaturesReady(AllSignaturesReadyEvent),
@@ -80,6 +83,8 @@ pub type AllOperatorTakeTxidsAddedEvent = EventWithBlock<AllOperatorTakeTxidsAdd
 pub type PegoutRequestedEvent = EventWithBlock<PegoutRequested>;
 pub type PegoutRegisteredEvent = EventWithBlock<PegoutRegistered>;
 pub type OperatorTakeTriggeredEvent = EventWithBlock<OperatorTakeTriggered>;
+pub type AdvanceFundsRegisteredEvent = EventWithBlock<AdvanceFundsRegistered>;
+pub type ReimbursementKickoffRegisteredEvent = EventWithBlock<ReimbursementKickoffRegistered>;
 pub type NewCommitteePendingEvent = EventWithBlock<NewPendingCommittee>;
 pub type NewCommitteeReadyEvent = EventWithBlock<NewCommittee>;
 pub type AllCommunicationDataReadyEvent = EventWithBlock<AllCommunicationDataReady>;
@@ -356,6 +361,26 @@ impl EventDecoder {
                     removed,
                     tx_hash,
                 })
+            }
+            PegoutManagerEvents::AdvanceFundsRegistered(inner) => {
+                RskPegManagerEvents::AdvanceFundsRegistered(AdvanceFundsRegisteredEvent {
+                    inner,
+                    block_number: block_num,
+                    block_hash,
+                    removed,
+                    tx_hash,
+                })
+            }
+            PegoutManagerEvents::ReimbursementKickoffRegistered(inner) => {
+                RskPegManagerEvents::ReimbursementKickoffRegistered(
+                    ReimbursementKickoffRegisteredEvent {
+                        inner,
+                        block_number: block_num,
+                        block_hash,
+                        removed,
+                        tx_hash,
+                    },
+                )
             }
             event => {
                 let variant = Self::event_variant_name(&event);

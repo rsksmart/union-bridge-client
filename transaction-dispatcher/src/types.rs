@@ -84,8 +84,8 @@ pub struct AddMemberSignatureInput {
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct AddOperatorTakeTxHashInput {
     pub accept_pegin_tx_hash: Txid,
-    pub take_tx_hash: Vec<u8>,
-    pub won_tx_hash: Vec<u8>,
+    pub take_tx_hash: Txid,
+    pub won_tx_hash: Txid,
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
@@ -127,6 +127,32 @@ pub type RegisterPegoutInput = BtcTxSPVProofInput;
 pub type RegisterOperatorTakeInput = BtcTxSPVProofInput;
 pub type RegisterOperatorWonInput = BtcTxSPVProofInput;
 pub type RegisterOperatorWonOutput = TxSentOutput;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RegisterAdvanceFundsInput {
+    pub accept_pegin_txid: FixedBytes<32>,
+    pub advance_funds_spv_proof: BtcTxSPVProofInput,
+}
+
+pub type RegisterAdvanceFundsOutput = TxSentOutput;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetAcceptPeginTxidInput {
+    pub pegout_txid: FixedBytes<32>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetAcceptPeginTxidOutput {
+    pub accept_pegin_txid: FixedBytes<32>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RegisterReimbursementKickoffInput {
+    pub accept_pegin_txid: FixedBytes<32>,
+    pub kickoff_spv_proof: BtcTxSPVProofInput,
+}
+
+pub type RegisterReimbursementKickoffOutput = TxSentOutput;
 
 impl From<TxIn> for BitcoinTransactionIn {
     fn from(input: TxIn) -> Self {
