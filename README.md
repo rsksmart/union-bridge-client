@@ -265,7 +265,18 @@ Funds both Bitcoin addresses and Rootstock wallets for all operators.
 ./cli-operations.sh operator fund
 ```
 
-**3. Apply to Stream (committee setup)**
+**3. Whitelist Member Addresses**
+
+Before operators can apply to a stream, their member addresses must be whitelisted on the `CommitteeRegistry` contract.
+This is required by the contract to control which addresses are allowed to participate in committees.
+
+```bash
+./cli-operations.sh operator whitelist --contract-address <COMMITTEE_REGISTRY_ADDRESS>
+```
+
+The `CommitteeRegistry` contract address can be found in `config/base.toml` under the `CommitteeRegistry` entry.
+
+**4. Apply to Stream (committee setup)**
 
 Applies all 4 operators to a stream to form the committee. The clients must be running before executing this command.
 
@@ -353,10 +364,13 @@ bash ./shell/script/deploy/deploy-local.sh
 ./cli-operations.sh setup create-rootstock-wallets
 ./cli-operations.sh operator fund
 
-# 5. Run the 4 clients
+# 5. Whitelist member addresses (uses CommitteeRegistry address from config/base.toml)
+./cli-operations.sh operator whitelist --contract-address <COMMITTEE_REGISTRY_ADDRESS>
+
+# 6. Run the 4 clients
 ./cli-run.sh --fresh
 
-# 6. Apply operators to stream (requires clients to be running)
+# 7. Apply operators to stream (requires clients to be running)
 ./cli-operations.sh operator apply-stream -s 0
 ```
 
@@ -388,10 +402,11 @@ This test will automatically:
 
 1. Prepare wallets (clear databases, mine initial UTXOs)
 2. Fund operator wallets (Bitcoin + Rootstock)
-3. Apply operators to stream
-4. Execute a pegin transaction (Bitcoin → Rootstock)
-5. Execute a pegout transaction (Rootstock → Bitcoin)
-6. Verify pegout completion in coordinator logs
+3. Whitelist member addresses on CommitteeRegistry
+4. Apply operators to stream
+5. Execute a pegin transaction (Bitcoin → Rootstock)
+6. Execute a pegout transaction (Rootstock → Bitcoin)
+7. Verify pegout completion in coordinator logs
 
 The test includes comprehensive health checks to detect issues early.
 
