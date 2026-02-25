@@ -29,6 +29,7 @@ use bitcoin::{
 use bitcoincore_rpc::{Client, RpcApi, jsonrpc};
 
 pub const DEFAULT_SATS_PER_BYTE: u64 = 5;
+pub const DEFAULT_ENABLER_AMOUNT: u64 = 1_080;
 const P2WPKH_DUST_LIMIT_SATS: u64 = 330;
 
 #[derive(Debug, Clone)]
@@ -69,6 +70,7 @@ pub struct Wallet {
     rpc_client: Option<Client>,
     pending_transactions: HashMap<Txid, CreatedTransaction>,
     pending_tx_store: PendingTransactionStore,
+    enabler_amount: u64,
 }
 
 impl Wallet {
@@ -102,6 +104,7 @@ impl Wallet {
             rpc_client: None,
             pending_transactions,
             pending_tx_store,
+            enabler_amount: DEFAULT_ENABLER_AMOUNT,
         })
     }
 
@@ -114,6 +117,10 @@ impl Wallet {
 
         if let Some(sats_per_byte) = config.sats_per_byte {
             wallet.set_sats_per_byte(sats_per_byte);
+        }
+
+        if let Some(enabler_amount) = config.enabler_amount {
+            wallet.enabler_amount = enabler_amount;
         }
 
         let address = wallet.import_private_key(&config.private_key_wif)?;
@@ -937,18 +944,17 @@ impl Wallet {
         packet_number: u64,
         tmp_addr: String,
         rsk_address_hex: String,
+        enabler_script_pubkey_hex: String,
     ) -> Result<CreatedTransaction> {
         let private_key = self.require_active_private_key()?;
         let pubkey = private_key.public_key(&self.secp);
 
-        // Parse the destination address
         let dest_addr: Address<NetworkUnchecked> =
             Address::from_str(&tmp_addr).context("invalid destination address")?;
         let checked_addr = dest_addr
             .require_network(self.network)
             .context("destination address network mismatch")?;
 
-        // Parse RSK address (20 bytes)
         let rsk_address_clean = rsk_address_hex.trim_start_matches("0x");
         let rsk_address_bytes =
             Vec::<u8>::from_hex(rsk_address_clean).context("invalid RSK address hex")?;
@@ -961,28 +967,33 @@ impl Wallet {
         let mut rsk_address = [0u8; 20];
         rsk_address.copy_from_slice(&rsk_address_bytes);
 
-        // Derive the reimbursement X-only public key from wallet's own key
         let (reimbursement_xpk, _) = pubkey.inner.x_only_public_key();
 
-        // Create OP_RETURN data
         let op_return_data =
             Self::create_pegin_op_return_data(packet_number, rsk_address, reimbursement_xpk)?;
 
-        // Build outputs for pegin transaction
+        let enabler_clean = enabler_script_pubkey_hex.trim_start_matches("0x");
+        let enabler_script_bytes =
+            Vec::<u8>::from_hex(enabler_clean).context("invalid enabler scriptPubKey hex")?;
+        let enabler_script = ScriptBuf::from_bytes(enabler_script_bytes);
+
+        let total_value = stream_value + self.enabler_amount;
         let outputs = vec![
-            // Taproot output
             TxOut {
                 value: Amount::from_sat(stream_value),
                 script_pubkey: checked_addr.script_pubkey(),
             },
-            // OP_RETURN output
             TxOut {
                 value: Amount::from_sat(0),
                 script_pubkey: Self::create_op_return_script(op_return_data)?,
             },
+            TxOut {
+                value: Amount::from_sat(self.enabler_amount),
+                script_pubkey: enabler_script,
+            },
         ];
 
-        self.build_transaction_with_outputs(outputs, stream_value)
+        self.build_transaction_with_outputs(outputs, total_value)
     }
 
     fn create_pegin_op_return_data(

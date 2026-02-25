@@ -532,7 +532,7 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
             Ok(CommandOutcome::Continue)
         }
         "create_pegin_tx" => {
-            // Syntax: create_pegin_tx <stream_value> <packet_number> <dest_addr> <rsk_address>
+            // Syntax: create_pegin_tx <stream_value> <packet_number> <dest_addr> <rsk_address> <enabler_script_pubkey>
             let stream_value_str = parts.next().context("expected stream value in satoshis")?;
             let stream_value: u64 =
                 stream_value_str.parse().context("invalid stream value (satoshis)")?;
@@ -542,13 +542,14 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
 
             let dest_addr = parts.next().context("expected destination address")?;
             let rsk_address = parts.next().context("expected RSK address (hex)")?;
+            let enabler_script_pubkey = parts.next().context("expected enabler scriptPubKey (hex)")?;
 
-            // Create the pegin transaction
             let created = wallet.create_pegin_transaction(
                 stream_value,
                 packet_number,
                 dest_addr.to_string(),
                 rsk_address.to_string(),
+                enabler_script_pubkey.to_string(),
             )?;
 
             // Display transaction details
