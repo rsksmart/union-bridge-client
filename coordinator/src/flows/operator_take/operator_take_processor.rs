@@ -65,6 +65,7 @@ where
     CG: RskContractsGatewayApi,
     BC: common::msg_broker::broker::BitVmxBrokerClientApi,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         contracts_gateway: Rc<CG>,
         rt_sync: RuntimeSync,
