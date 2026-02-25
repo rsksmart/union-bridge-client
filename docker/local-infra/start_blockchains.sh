@@ -26,7 +26,7 @@ print_help() {
   echo "  Default: derived from Cargo.toml (union-contracts tag) — pulls from ghcr.io/temp-rsk/deploy-contracts"
   echo "  Override: --contracts-tag only"
   echo "    ${CONTRACTS_TAG_LOCAL_BUILD}  → build from CONTRACTS_CONTEXT_PATH (e.g. for contract development); use --fresh for clean deploy when contracts change"
-  echo "    <tag>       → use that registry tag (always pulls; if digest changed, runs fresh)"
+  echo "    <tag>       → use that registry tag (always pulls; if digest or tag changed, runs fresh)"
   echo ""
   echo "Common Docker Compose Arguments can be used, examples:"
   echo "  up                         Create and start containers"
@@ -145,6 +145,16 @@ if [[ "${IS_UP_COMMAND}" == true && "${CONTRACTS_IMAGE_TAG}" != "${CONTRACTS_TAG
   DIGEST_AFTER=$(docker image inspect --format '{{index .RepoDigests 0}}' "$CONTRACTS_IMAGE" 2>/dev/null || true)
   if [[ -n "$DIGEST_BEFORE" && -n "$DIGEST_AFTER" && "$DIGEST_BEFORE" != "$DIGEST_AFTER" ]]; then
     echo "Contracts image digest changed; forcing fresh deploy (down --volumes before up)"
+    FRESH=true
+  fi
+fi
+
+# When switching contracts tag: force fresh deploy so new contracts deploy to clean chain
+if [[ "${IS_UP_COMMAND}" == true ]]; then
+  CURRENT_IMAGE=$(docker inspect deploy-contracts --format '{{.Config.Image}}' 2>/dev/null || true)
+  EXPECTED_IMAGE="${CONTRACTS_IMAGE_BASE}:${CONTRACTS_IMAGE_TAG}"
+  if [[ -n "$CURRENT_IMAGE" && "$CURRENT_IMAGE" != "$EXPECTED_IMAGE" ]]; then
+    echo "Contracts tag changed ($CURRENT_IMAGE -> $EXPECTED_IMAGE); forcing fresh deploy"
     FRESH=true
   fi
 fi
