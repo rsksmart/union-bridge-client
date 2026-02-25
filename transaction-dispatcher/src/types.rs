@@ -46,6 +46,8 @@ pub struct PeginAddressInput {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct PeginAddressOutput {
     pub address: String,
+    pub packet_number: u64,
+    pub enabler_script_pubkey: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

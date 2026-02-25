@@ -201,7 +201,8 @@ pub trait RskContractsGatewayApi {
 pub struct RskContractsGateway<P: Provider + Clone> {
     provider: P,
     member_address: Address,
-    get_temporary_pegin_address_call: GetTemporaryPeginAddressCall<PeginManagerContract<P>>,
+    get_temporary_pegin_address_call:
+        GetTemporaryPeginAddressCall<PeginManagerContract<P>, StreamManagerContract<P>>,
     request_pegin_invoke: RequestPeginInvoke<PeginManagerContract<P>>,
     accept_pegin_invoke: AcceptPeginInvoke<PeginManagerContract<P>>,
     add_member_nonce_invoke: AddMemberNonceInvoke<SignatureManagerContract<P>>,
@@ -311,6 +312,7 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             member_address,
             get_temporary_pegin_address_call: GetTemporaryPeginAddressCall::new(
                 pegin_manager_contract.clone(),
+                stream_manager_contract.clone(),
             ),
             request_pegin_invoke: RequestPeginInvoke::new(
                 pegin_manager_contract.clone(),

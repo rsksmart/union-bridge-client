@@ -183,7 +183,7 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
 mod tests {
     use alloy_primitives::{Address, FixedBytes};
     use union_contracts::bindings::challenge_manager::ChallengeManager::{
-        ChallengeTxidNotMatch, ChallengeManagerErrors, InvalidChallengeInputCount,
+        ChallengeManagerErrors, ChallengeTxidNotMatch, InvalidChallengeInputCount,
         InvalidPegStatus, InvalidRevealedInputCount, MemberNotInCommittee, PeginNotRequested,
         ReimbursementKickoffTxidNotMatch,
     };

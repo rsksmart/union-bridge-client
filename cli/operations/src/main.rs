@@ -210,18 +210,6 @@ enum UserCommands {
         #[arg(short = 'v', long = "value", value_name = "VALUE")]
         value: u64,
 
-        /// Stream ID to query for the packet number (default: 0)
-        #[arg(short = 's', long = "stream-id", value_name = "STREAM_ID", default_value_t = 0u64)]
-        stream_id: u64,
-
-        /// Packet number override. If omitted, auto-calculated from the StreamManager contract.
-        #[arg(short = 'p', long = "packet-number", value_name = "PACKET_NUMBER")]
-        packet_number: Option<u64>,
-
-        /// StreamManager contract address override. If omitted, uses the default for the environment.
-        #[arg(long = "stream-manager-address", value_name = "ADDRESS")]
-        stream_manager_address: Option<String>,
-
         /// Bitcoin public key for reimbursement (32-byte x-only pubkey with 0x prefix)
         #[arg(short = 'k', long = "btc-pub-key", value_name = "BTC_PUB_KEY")]
         btc_pub_key: String,
@@ -292,27 +280,8 @@ async fn main() -> Result<()> {
             UserCommands::Fund { env } => {
                 rsk_wallet::handle_user_funding(env)?;
             }
-            UserCommands::Pegin {
-                env,
-                rsk_address,
-                value,
-                stream_id,
-                packet_number,
-                stream_manager_address,
-                btc_pub_key,
-                execute,
-            } => {
-                pegin::create_pegin_tx(
-                    env,
-                    rsk_address,
-                    value,
-                    stream_id,
-                    packet_number,
-                    stream_manager_address,
-                    btc_pub_key,
-                    execute,
-                )
-                .await?;
+            UserCommands::Pegin { env, rsk_address, value, btc_pub_key, execute } => {
+                pegin::create_pegin_tx(env, rsk_address, value, btc_pub_key, execute).await?;
             }
             UserCommands::Pegout { env, value, usr_pub_key } => {
                 pegout::request_pegout(env, value, usr_pub_key).await?;

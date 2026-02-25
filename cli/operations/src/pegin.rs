@@ -16,6 +16,8 @@ struct PeginAddressRequest {
 #[derive(Debug, Deserialize)]
 struct PeginAddressResponse {
     address: Option<String>,
+    packet_number: Option<u64>,
+    enabler_script_pubkey: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -109,9 +111,6 @@ pub async fn create_pegin_tx(
     environment: Environment,
     rsk_address: String,
     value: u64,
-    stream_id: u64,
-    packet_number: Option<u64>,
-    stream_manager_address: Option<String>,
     btc_pub_key: String,
     execute: bool,
 ) -> Result<()> {
@@ -121,32 +120,7 @@ pub async fn create_pegin_tx(
 
     validate_rsk_address(&rsk_address)?;
     validate_btc_pub_key(&btc_pub_key)?;
-
-    let client = Client::new();
-
-    // Resolve StreamManager address: use provided override or environment default
-    let sm_address =
-        stream_manager_address.as_deref().unwrap_or(environment.stream_manager_address());
-
-    // Resolve packet number: use provided value or auto-fetch from StreamManager
-    let packet_number = match packet_number {
-        Some(n) => {
-            println!("Using provided packet number: {}", n);
-            n
-        }
-        None => {
-            println!(
-                "Fetching packet number from StreamManager {} (stream_id={})...",
-                sm_address, stream_id
-            );
-            let n =
-                fetch_packet_number(&client, &environment.rpc_url(), sm_address, stream_id).await?;
-            println!("Auto-calculated packet number: {}", n);
-            n
-        }
-    };
-
-    println!("Getting pegin address for {rsk_address}...");
+    println!("Getting pegin data for {rsk_address}...");
 
     let payload = PeginAddressRequest {
         rootstock_deposit_address: rsk_address.clone(),
@@ -162,6 +136,7 @@ pub async fn create_pegin_tx(
 
     let endpoint = format!("http://{}/user/pegin-address", user_api_base);
 
+    let client = Client::new();
     let request = client.post(&endpoint).json(&payload).build()?;
 
     let response = client.execute(request).await.context("Failed to connect to user-api")?;
@@ -183,6 +158,15 @@ pub async fn create_pegin_tx(
         .filter(|addr| !addr.is_empty())
         .ok_or_else(|| anyhow!("user-api response did not contain a pegin address"))?;
 
+    let packet_number = pegin_response
+        .packet_number
+        .ok_or_else(|| anyhow!("user-api response did not contain a packet_number"))?;
+
+    let enabler_script_pubkey = pegin_response
+        .enabler_script_pubkey
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| anyhow!("user-api response did not contain enabler_script_pubkey"))?;
+
     println!("Requesting pegin: {} sats", value);
     println!("  Source:      Bitcoin (public key: {})", btc_pub_key);
     println!("  Destination: RSK {}", rsk_address);
@@ -191,16 +175,20 @@ pub async fn create_pegin_tx(
     println!("  Value: {}", value);
     println!("  Packet number: {}", packet_number);
     println!("  Pegin address: {}", pegin_address);
+    println!("  Enabler script: {}", enabler_script_pubkey);
     println!();
 
     if execute {
         println!("Executing wallet command programmatically...");
         println!();
-        execute_wallet_command(value, packet_number, &pegin_address, &rsk_address)?;
+        execute_wallet_command(value, packet_number, &pegin_address, &rsk_address, &enabler_script_pubkey)?;
     } else {
         println!("Now run the following command in bitcoin-wallet CLI (user mode):");
         println!();
-        println!("create_pegin_tx {} {} {} {}", value, packet_number, pegin_address, rsk_address);
+        println!(
+            "create_pegin_tx {} {} {} {} {}",
+            value, packet_number, pegin_address, rsk_address, enabler_script_pubkey
+        );
     }
 
     Ok(())
@@ -211,6 +199,7 @@ fn execute_wallet_command(
     packet_number: u64,
     pegin_address: &str,
     rsk_address: &str,
+    enabler_script_pubkey: &str,
 ) -> Result<()> {
     let wallet_script = "./cli-bitcoin-wallet.sh";
 
@@ -220,11 +209,12 @@ fn execute_wallet_command(
         .arg(stream_amount.to_string())
         .arg(packet_number.to_string())
         .arg(pegin_address)
-        .arg(rsk_address);
+        .arg(rsk_address)
+        .arg(enabler_script_pubkey);
 
     println!(
-        "Running: {} user create_pegin_tx {} {} {} {}",
-        wallet_script, stream_amount, packet_number, pegin_address, rsk_address
+        "Running: {} user create_pegin_tx {} {} {} {} {}",
+        wallet_script, stream_amount, packet_number, pegin_address, rsk_address, enabler_script_pubkey
     );
 
     let output = cmd.output().context("failed to execute cli-bitcoin-wallet.sh")?;

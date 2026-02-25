@@ -20,6 +20,7 @@ pub struct Config {
     pub rpc_url: Option<String>,
     pub rpc_user: Option<String>,
     pub rpc_password: Option<String>,
+    pub enabler_amount: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -32,6 +33,7 @@ struct FileConfig {
     rpc_user: Option<String>,
     rpc_password: Option<String>,
     db_path: Option<PathBuf>,
+    enabler_amount: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -94,6 +96,7 @@ impl Config {
         let rpc_url = cli.rpc_url.clone().or(file_config.rpc_url.take());
         let rpc_user = cli.rpc_user.clone().or(file_config.rpc_user.take());
         let rpc_password = cli.rpc_password.clone().or(file_config.rpc_password.take());
+        let enabler_amount = cli.enabler_amount.or(file_config.enabler_amount);
 
         // Enforce RPC configuration must be provided (via config or env mapped by clap)
         if rpc_url.is_none() || rpc_user.is_none() || rpc_password.is_none() {
@@ -111,6 +114,7 @@ impl Config {
             rpc_url,
             rpc_user,
             rpc_password,
+            enabler_amount,
         };
 
         Ok((config, config_path))
