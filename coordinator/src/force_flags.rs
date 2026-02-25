@@ -7,17 +7,41 @@
 //! (Local, `LocalDocker`, Regtest). They are automatically disabled in
 //! Alphanet and Testnet.
 //!
-//! ## Environment Variables
+//! ## Activation Methods
 //!
-//! - `FORCE_ADVANCE=true` - Immediately trigger operator take for pegouts
-//!   in `DispatchTransaction` step (skips the normal timeout)
-//! - `FORCE_DISPUTE=true` - Override `ReimbursementResult` to `OperatorWon`
-//!   (simulates a successful dispute)
+//! Flags can be enabled via **file** (hot-reloadable) or **environment variable**:
+//!
+//! ### File-based (recommended for testing - hot-reloadable)
+//!
+//! - `touch /tmp/FORCE_ADVANCE` - Enable advance funds trigger
+//! - `touch /tmp/FORCE_DISPUTE` - Enable dispute override
+//! - `rm /tmp/FORCE_ADVANCE` - Disable (delete the file)
+//!
+//! ### Environment Variables (set at startup)
+//!
+//! - `FORCE_ADVANCE=true` - Enable advance funds trigger
+//! - `FORCE_DISPUTE=true` - Enable dispute override
+//!
+//! ## Flag Behavior
+//!
+//! - `FORCE_ADVANCE` - Skips dispatching the pegout transaction in `DispatchTransaction`
+//!   step, simulating operator misbehavior. This naturally triggers the advance funds
+//!   mechanism via timeout.
+//! - `FORCE_DISPUTE` - Overrides `ReimbursementResult` to `OperatorWon`, simulating
+//!   a successful dispute.
+
+use std::path::Path;
 
 use log::warn;
 
 /// Environments where force flags are BLOCKED (production-like)
 const BLOCKED_ENVIRONMENTS: [&str; 2] = ["alphanet", "testnet"];
+
+/// File path for hot-reloadable `FORCE_ADVANCE` flag
+const FORCE_ADVANCE_FILE: &str = "/tmp/FORCE_ADVANCE";
+
+/// File path for hot-reloadable `FORCE_DISPUTE` flag
+const FORCE_DISPUTE_FILE: &str = "/tmp/FORCE_DISPUTE";
 
 /// Checks if the current environment allows force flags.
 ///
@@ -35,8 +59,11 @@ fn is_force_flags_allowed(env_name: Option<&str>) -> bool {
 
 /// Checks if `FORCE_ADVANCE` is enabled.
 ///
-/// When enabled, pegouts in `DispatchTransaction` step will immediately
-/// trigger operator take instead of waiting for the normal timeout.
+/// When enabled, pegouts in `DispatchTransaction` step will skip dispatching
+/// the transaction, simulating operator misbehavior. This naturally triggers
+/// the advance funds mechanism via timeout.
+///
+/// Checks file first (hot-reloadable), then falls back to environment variable.
 ///
 /// Only works in non-production environments (Local, `LocalDocker`, Regtest).
 #[must_use]
@@ -44,8 +71,12 @@ pub fn is_force_advance_enabled(env_name: Option<&str>) -> bool {
     if !is_force_flags_allowed(env_name) {
         return false;
     }
-    let enabled =
-        std::env::var("FORCE_ADVANCE").ok().is_some_and(|v| v.to_lowercase() == "true" || v == "1");
+
+    // Check file first (hot-reloadable), then env var
+    let enabled = Path::new(FORCE_ADVANCE_FILE).exists()
+        || std::env::var("FORCE_ADVANCE")
+            .ok()
+            .is_some_and(|v| v.to_lowercase() == "true" || v == "1");
 
     if enabled {
         warn!("[FORCE_ADVANCE] Force advance funds is ENABLED for environment: {env_name:?}");
@@ -58,14 +89,20 @@ pub fn is_force_advance_enabled(env_name: Option<&str>) -> bool {
 /// When enabled, all `ReimbursementResult` challenge results will be overridden
 /// to `OperatorWon`, simulating a successful dispute.
 ///
+/// Checks file first (hot-reloadable), then falls back to environment variable.
+///
 /// Only works in non-production environments (Local, `LocalDocker`, Regtest).
 #[must_use]
 pub fn is_force_dispute_enabled(env_name: Option<&str>) -> bool {
     if !is_force_flags_allowed(env_name) {
         return false;
     }
-    let enabled =
-        std::env::var("FORCE_DISPUTE").ok().is_some_and(|v| v.to_lowercase() == "true" || v == "1");
+
+    // Check file first (hot-reloadable), then env var
+    let enabled = Path::new(FORCE_DISPUTE_FILE).exists()
+        || std::env::var("FORCE_DISPUTE")
+            .ok()
+            .is_some_and(|v| v.to_lowercase() == "true" || v == "1");
 
     if enabled {
         warn!("[FORCE_DISPUTE] Force dispute is ENABLED for environment: {env_name:?}");
@@ -74,6 +111,10 @@ pub fn is_force_dispute_enabled(env_name: Option<&str>) -> bool {
 }
 
 #[cfg(test)]
+// Allow unsafe blocks for env var manipulation in tests.
+// SAFETY: Tests using set_var/remove_var must run with --test-threads=1
+// to avoid race conditions. This is documented in the test comments.
+#[allow(unsafe_code)]
 mod tests {
     use super::*;
 

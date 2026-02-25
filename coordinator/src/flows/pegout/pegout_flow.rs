@@ -89,6 +89,7 @@ where
     state: State,
     store: Rc<S>,
     native_bridge_verifier: NativeBridgeVerifier<CG>,
+    env_name: Option<String>,
 }
 
 impl<CG, BC, S> PegoutFlow<CG, BC, S>
@@ -97,6 +98,7 @@ where
     BC: BitVmxBrokerClientApi,
     S: CoordinatorStoreApi,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         contracts: Rc<CG>,
         rt_sync: RuntimeSync,
@@ -105,6 +107,7 @@ where
         pegout_requested: &PegoutRequested,
         store: Rc<S>,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
+        env_name: Option<String>,
     ) -> Self {
         Self {
             contracts,
@@ -125,9 +128,11 @@ where
             },
             store,
             native_bridge_verifier,
+            env_name,
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn from_saved_state(
         contracts: Rc<CG>,
         rt_sync: RuntimeSync,
@@ -135,8 +140,9 @@ where
         state: State,
         store: Rc<S>,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
+        env_name: Option<String>,
     ) -> Self {
-        Self { contracts, rt_sync, bitvmx_broker, state, store, native_bridge_verifier }
+        Self { contracts, rt_sync, bitvmx_broker, state, store, native_bridge_verifier, env_name }
     }
 
     fn persist_state(&self) -> Result<()> {
@@ -262,7 +268,16 @@ where
                 Ok(Steps::DispatchTransaction)
             }
             (Steps::DispatchTransaction, StepData::DispatchTransaction) => {
-                self.dispatch_transaction()?;
+                if crate::force_flags::is_force_advance_enabled(self.env_name.as_deref()) {
+                    // FORCE_ADVANCE: Skip dispatching transaction to simulate operator misbehavior.
+                    // This will naturally trigger the advance funds mechanism via timeout.
+                    warn!(
+                        "[FORCE_ADVANCE] Skipping dispatch_transaction for flow_id: {} to trigger advance funds",
+                        self.state.flow_id
+                    );
+                } else {
+                    self.dispatch_transaction()?;
+                }
                 Ok(Steps::ConfirmUserTakeTransaction)
             }
             (Steps::DispatchTransaction, StepData::TriggerOperatorTakeTimeout) => {
