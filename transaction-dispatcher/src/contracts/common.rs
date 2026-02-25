@@ -16,8 +16,8 @@ use thiserror::Error;
 use tokio::time::{sleep, timeout};
 
 use crate::contracts::{
-    bitcoin_manager, committee_registry, member_registry, pegin_manager, pegout_manager,
-    signature_manager, stream_manager,
+    bitcoin_manager, challenge_manager, committee_registry, member_registry, pegin_manager,
+    pegout_manager, signature_manager, stream_manager,
 };
 use crate::rsk_gateway::DomainErrors;
 
@@ -297,6 +297,7 @@ impl From<alloy_contract::Error> for DomainErrors {
             .or_else(|| signature_manager::decode_error(&err))
             .or_else(|| committee_registry::decode_error(&err))
             .or_else(|| member_registry::decode_error(&err))
+            .or_else(|| challenge_manager::decode_error(&err))
             .unwrap_or_else(|| DomainErrors::NoRevertError(format!("{err:?}")))
     }
 }
