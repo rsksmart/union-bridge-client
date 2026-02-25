@@ -335,11 +335,18 @@ where
                 flow.complete_step(&StepData::DispatchTransaction)?;
 
                 // Cancel advance funds timeout since signatures completed successfully
+                // BUT: If FORCE_ADVANCE is enabled, keep the timeout to trigger advance funds
                 if self.advance_funds_timeout_scheduler.is_scheduled(flow_id) {
-                    debug!(
-                        "Cancelling advance funds timeout for flow_id: {flow_id} - signatures completed",
-                    );
-                    self.advance_funds_timeout_scheduler.cancel(flow_id);
+                    if crate::force_flags::is_force_advance_enabled(self.env_name.as_deref()) {
+                        warn!(
+                            "[FORCE_ADVANCE] Keeping advance funds timeout for flow_id: {flow_id} despite signatures completed",
+                        );
+                    } else {
+                        debug!(
+                            "Cancelling advance funds timeout for flow_id: {flow_id} - signatures completed",
+                        );
+                        self.advance_funds_timeout_scheduler.cancel(flow_id);
+                    }
                 }
             } else {
                 warn!(

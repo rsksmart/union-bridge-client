@@ -270,15 +270,16 @@ where
             (Steps::DispatchTransaction, StepData::DispatchTransaction) => {
                 if crate::force_flags::is_force_advance_enabled(self.env_name.as_deref()) {
                     // FORCE_ADVANCE: Skip dispatching transaction to simulate operator misbehavior.
-                    // This will naturally trigger the advance funds mechanism via timeout.
+                    // Stay at DispatchTransaction step so the timeout can trigger TriggerOperatorTake.
                     warn!(
-                        "[FORCE_ADVANCE] Skipping dispatch_transaction for flow_id: {} to trigger advance funds",
+                        "[FORCE_ADVANCE] Skipping dispatch_transaction for flow_id: {} - staying at DispatchTransaction to wait for timeout",
                         self.state.flow_id
                     );
+                    Ok(Steps::DispatchTransaction)
                 } else {
                     self.dispatch_transaction()?;
+                    Ok(Steps::ConfirmUserTakeTransaction)
                 }
-                Ok(Steps::ConfirmUserTakeTransaction)
             }
             (Steps::DispatchTransaction, StepData::TriggerOperatorTakeTimeout) => {
                 // Timeout expired, transition to TriggerOperatorTake step
