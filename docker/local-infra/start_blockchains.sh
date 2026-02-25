@@ -21,7 +21,7 @@ print_help() {
   echo "  --help                     Display this help message"
   echo "  --fresh                    Tear down local blockchains (and volumes). Can be used standalone or with 'up'"
   echo "  --contracts-tag TAG        Use deploy-contracts image tag (e.g. v0.2.0-alpha.1 or local-build)"
-  echo "                             Default: from .env.local CONTRACTS_IMAGE_TAG, or local-build"
+  echo "                             Default: CONTRACTS_IMAGE_TAG env var, or .env.local, or local-build"
   echo "  --new-contracts-version   Force rebuild of the 'deploy-contracts' image before running"
   echo ""
   echo "Common Docker Compose Arguments can be used, examples:"
@@ -82,8 +82,10 @@ if [[ ! -f "$ENV_PATH" ]]; then
   exit 1
 fi
 
-# Resolve CONTRACTS_IMAGE_TAG: --new-contracts-version forces local-build; else --contracts-tag; else .env.local; else local-build
-if [[ "${NEW_CONTRACTS_VERSION}" == true ]]; then
+# Resolve CONTRACTS_IMAGE_TAG: env var > --new-contracts-version > --contracts-tag > .env.local > default
+if [[ -n "${CONTRACTS_IMAGE_TAG:-}" ]]; then
+  : # already set from environment
+elif [[ "${NEW_CONTRACTS_VERSION}" == true ]]; then
   CONTRACTS_IMAGE_TAG="local-build"
 elif [[ -n "$CONTRACTS_TAG_ARG" ]]; then
   CONTRACTS_IMAGE_TAG="$CONTRACTS_TAG_ARG"
