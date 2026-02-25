@@ -41,7 +41,6 @@ cd "$(dirname "$0")/.."
 STREAM_ID=0
 RSK_ADDRESS="0x$(openssl rand -hex 20)" # random address each run
 VALUE=100000
-PACKET_NUMBER=0
 COMMITTEE_REGISTRY_ADDRESS="0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82"
 
 # colors
@@ -322,6 +321,86 @@ wait_for_log_with_block_timeout() {
     done
 }
 
+wait_for_log_in_all_operators() {
+    local pattern="$1"
+    local max_blocks=$2
+    local operator_count=${3:-4}
+
+    local start_height=$(get_current_bitcoin_height)
+    local target_height=$((start_height + max_blocks))
+
+    log "Waiting for log pattern in all $operator_count operators: $pattern (max $max_blocks blocks)..."
+
+    declare -A found_operators=()
+
+    while true; do
+        local current_height=$(get_current_bitcoin_height)
+        local blocks_mined=$((current_height - start_height))
+
+        if [ $blocks_mined -lt 0 ]; then
+            sleep 1
+            continue
+        fi
+
+        local found_count="${#found_operators[@]}"
+        echo -ne "\r  Blocks mined: $blocks_mined/$max_blocks | Operators matched: $found_count/$operator_count  "
+
+        if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
+            for op_id in $(seq 1 $operator_count); do
+                [[ -n "${found_operators[$op_id]:-}" ]] && continue
+                local project="op_${op_id}"
+                local line
+                line=$(docker compose -p "$project" logs coordinator 2>/dev/null | grep -E "$pattern" | tail -1)
+                if [ -n "$line" ]; then
+                    found_operators[$op_id]="$line"
+                    echo ""
+                    success "Pattern found in $project"
+                    echo "  $line"
+                fi
+            done
+        else
+            local min_ts
+            min_ts=$(date -v-1M "+%Y-%m-%d %H:%M:%S" 2>/dev/null || date -d "1 minute ago" "+%Y-%m-%d %H:%M:%S")
+
+            for op_id in $(seq 1 $operator_count); do
+                [[ -n "${found_operators[$op_id]:-}" ]] && continue
+                local log_file="logs/coordinator-${op_id}.log"
+                [[ -f "$log_file" ]] || continue
+                local found_line
+                found_line=$(awk -v pattern="$pattern" -v min_ts="$min_ts" '
+                    $0 ~ pattern && substr($0, 1, 19) >= min_ts { print; exit }
+                ' "$log_file")
+                if [ -n "$found_line" ]; then
+                    found_operators[$op_id]="$found_line"
+                    echo ""
+                    success "Pattern found in coordinator-${op_id}"
+                    echo "  $found_line"
+                fi
+            done
+        fi
+
+        if [ ${#found_operators[@]} -ge $operator_count ]; then
+            echo ""
+            success "Log pattern found in all $operator_count operators after $blocks_mined blocks!"
+            return 0
+        fi
+
+        if [ $current_height -ge $target_height ]; then
+            echo ""
+            warn "Log pattern not found in all operators after $max_blocks blocks (height: $start_height -> $current_height)"
+            warn "Missing operators:"
+            for op_id in $(seq 1 $operator_count); do
+                if [[ -z "${found_operators[$op_id]:-}" ]]; then
+                    warn "  - operator $op_id"
+                fi
+            done
+            return 1
+        fi
+
+        sleep 1
+    done
+}
+
 cleanup() {
     rm -f /tmp/apply-operators-$$ /tmp/pegout-$$
 }
@@ -402,8 +481,8 @@ fi
 rm -f /tmp/apply-operators-$$
 success "Operators applied to stream $STREAM_ID"
 echo ""
-if ! wait_for_log_with_block_timeout "CommitteeSetupFlow Done:" 40; then
-    warn "Committee setup complete log not found within timeout"
+if ! wait_for_log_in_all_operators "CommitteeSetupFlow Done:" 60; then
+    warn "Committee setup not completed by all operators within timeout"
     exit 1
 fi
 echo ""
@@ -412,10 +491,9 @@ echo ""
 step "Step 4: Request Pegin"
 log "RSK Address: $RSK_ADDRESS"
 log "Amount: $VALUE sats"
-log "Packet: $PACKET_NUMBER"
-log "Command: bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -p $PACKET_NUMBER --env $SCRIPT_ENV --execute"
+log "Command: bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE --env $SCRIPT_ENV --execute"
 echo ""
-if ! bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -p $PACKET_NUMBER --env "$SCRIPT_ENV" --execute; then
+if ! bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE --env "$SCRIPT_ENV" --execute; then
     warn "Command failed!"
     exit 1
 fi

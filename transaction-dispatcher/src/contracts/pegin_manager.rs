@@ -17,6 +17,14 @@ pub(crate) use crate::contracts::interactions::request_pegin::RequestPeginInvoke
 use crate::rsk_gateway::DomainErrors;
 use crate::types::BtcTxSPVProofInput;
 
+#[derive(Clone, Debug)]
+pub struct RequestPeginData {
+    pub bitcoin_deposit_address: String,
+    pub packet_number: u64,
+    pub _member_dispute_keys: Vec<FixedBytes<32>>,
+    pub _available_slots: u64,
+}
+
 #[cfg_attr(test, automock)]
 pub trait PeginManagerContractApi {
     async fn call_get_request_pegin_data(
@@ -24,7 +32,7 @@ pub trait PeginManagerContractApi {
         rootstock_deposit_address: Address,
         value: u64,
         btc_reimbursement_pub_key: FixedBytes<32>,
-    ) -> alloy_contract::Result<String>;
+    ) -> alloy_contract::Result<RequestPeginData>;
 
     async fn invoke_request_pegin(
         &self,
@@ -58,12 +66,17 @@ impl<P: Provider> PeginManagerContractApi for PeginManagerContract<P> {
         rootstock_deposit_address: Address,
         value: u64,
         btc_reimbursement_pub_key: FixedBytes<32>,
-    ) -> alloy_contract::Result<String> {
+    ) -> alloy_contract::Result<RequestPeginData> {
         self.contract_instance
             .getRequestPeginData(rootstock_deposit_address, value, btc_reimbursement_pub_key)
             .call()
             .await
-            .map(|res| res.bitcoinDepositAddress)
+            .map(|res| RequestPeginData {
+                bitcoin_deposit_address: res.bitcoinDepositAddress,
+                packet_number: res.packetNumber,
+                _member_dispute_keys: res.memberDisputeKeys,
+                _available_slots: res.availableSlots,
+            })
     }
 
     async fn invoke_request_pegin(

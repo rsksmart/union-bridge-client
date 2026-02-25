@@ -398,7 +398,9 @@ where
             .pegin_requested
             .as_ref()
             .ok_or_else(|| anyhow!("PeginRequested data not available"))?;
-        let pegin_request = Self::build_pegin_request_message(pegin_requested, &committee_output)?;
+        let amount = self.extract_pegin_amount()?;
+        let pegin_request =
+            Self::build_pegin_request_message(pegin_requested, &committee_output, amount)?;
 
         let msg = IncomingBitVMXApiMessages::SetVar(
             self.state.flow_id,
@@ -455,11 +457,18 @@ where
             self.state.flow_id, pegin_accepted.accept_pegin_txid
         );
 
+        let take_tx_hash = pegin_accepted.operator_take_sighash.clone().ok_or_else(|| {
+            anyhow!("operator_take_sighash missing for prover in PegInAcceptedMessage")
+        })?;
+
+        let won_tx_hash = pegin_accepted.operator_won_sighash.clone().ok_or_else(|| {
+            anyhow!("operator_won_sighash missing for prover in PegInAcceptedMessage")
+        })?;
+
         let input = transaction_dispatcher::types::AddOperatorTakeTxHashInput {
             accept_pegin_tx_hash: pegin_accepted.accept_pegin_txid,
-            take_tx_hash: pegin_accepted.operator_take_sighash.clone(),
-            // TODO(UBC-827): v0.4.0-alpha added won_tx_hash param - populate from actual flow data
-            won_tx_hash: Vec::new(),
+            take_tx_hash,
+            won_tx_hash,
         };
 
         self.rt_sync.run(async { self.contracts.add_operator_take_tx_hash(input).await })?;
@@ -508,6 +517,22 @@ where
         self.send_bitvmx_msg(msg)
     }
 
+    fn extract_pegin_amount(&self) -> Result<u64> {
+        let spv_proof = self
+            .state
+            .ctx
+            .request_pegin_spv_proof
+            .as_ref()
+            .ok_or_else(|| anyhow!("Request pegin SPV proof not available"))?;
+
+        spv_proof
+            .tx
+            .output
+            .first()
+            .map(|o| o.value.to_sat())
+            .ok_or_else(|| anyhow!("Request pegin BTC transaction has no outputs"))
+    }
+
     fn request_pegin_spv_proof(&self) -> Result<()> {
         let btc_tx_id = self
             .state
@@ -552,6 +577,7 @@ where
     fn build_pegin_request_message(
         event: &PeginRequested,
         committee_output: &GetCommitteeOutput,
+        amount: u64,
     ) -> Result<PeginRequestMessage> {
         debug!("Building PeginRequestMessage for BitVMX from PeginRequested event");
 
@@ -572,9 +598,7 @@ where
 
         Ok(PeginRequestMessage {
             txid,
-            // TODO(UBC-827): v0.4.0-alpha removed prevoutData from PeginRequested event.
-            // Amount must be obtained via a different mechanism (e.g., reading the BTC tx or a contract call).
-            amount: 0,
+            amount,
             accept_pegin_sighash,
             take_aggregated_key,
             operator_indexes,
@@ -829,8 +853,8 @@ mod tests {
             accept_pegin_nonce: default_pub_nonce(),
             accept_pegin_signature: MaybeScalar::Zero,
             accept_pegin_sighash: vec![],
-            operator_take_sighash: vec![1, 2, 3, 4],
-            operator_won_sighash: vec![],
+            operator_take_sighash: Some(vec![1, 2, 3, 4]),
+            operator_won_sighash: Some(vec![]),
             committee_id: Uuid::new_v4(),
         }
     }

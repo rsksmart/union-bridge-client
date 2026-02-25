@@ -51,6 +51,8 @@ pub struct CliOpts {
     pub rpc_user: Option<String>,
     #[arg(long, env = "WALLET_RPC_PASSWORD", value_name = "PASS")]
     pub rpc_password: Option<String>,
+    #[arg(long, env = "WALLET_ENABLER_AMOUNT", value_name = "SATS")]
+    pub enabler_amount: Option<u64>,
     /// Command to execute in non-interactive mode (e.g., "mine_block", "send_to_address <addr> <amount>")
     #[arg(trailing_var_arg = true)]
     pub command: Vec<String>,
@@ -66,6 +68,7 @@ impl Default for CliOpts {
             rpc_url: None,
             rpc_user: None,
             rpc_password: None,
+            enabler_amount: None,
             command: Vec::new(),
         }
     }

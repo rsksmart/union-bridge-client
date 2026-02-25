@@ -192,15 +192,6 @@ enum UserCommands {
         #[arg(short = 'v', long = "value", value_name = "VALUE")]
         value: u64,
 
-        /// Packet number used when creating the pegin transaction
-        #[arg(
-            short = 'p',
-            long = "packet-number",
-            value_name = "PACKET_NUMBER",
-            default_value_t = 0u64
-        )]
-        packet_number: u64,
-
         /// Execute the wallet command programmatically instead of just printing it
         #[arg(long = "execute", default_value_t = false)]
         execute: bool,
@@ -256,8 +247,8 @@ async fn main() -> Result<()> {
             UserCommands::Fund { env } => {
                 rsk_wallet::handle_user_funding(env)?;
             }
-            UserCommands::Pegin { env, rsk_address, value, packet_number, execute } => {
-                pegin::create_pegin_tx(env, rsk_address, value, packet_number, execute).await?;
+            UserCommands::Pegin { env, rsk_address, value, execute } => {
+                pegin::create_pegin_tx(env, rsk_address, value, execute).await?;
             }
             UserCommands::Pegout { env, value } => {
                 pegout::request_pegout(env, value).await?;
