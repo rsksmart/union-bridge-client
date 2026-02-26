@@ -5,7 +5,6 @@ use log::{debug, info};
 use primitive_types::{H256, U256};
 
 use crate::blockchain_tracker::{BlockConfirmations, BlockchainObserver};
-use crate::config::REQUIRED_CONFIRMATIONS;
 use crate::types::AdvanceFundsEvent;
 
 #[derive(Debug)]

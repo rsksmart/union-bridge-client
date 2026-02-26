@@ -183,7 +183,6 @@ fn validate_consecutive_block(block: &RskBlock, prev_block: &RskBlock) -> Result
     if block.bridge_event.is_some() {
         return Err("Only the first block should contain a BridgeEvent");
     }
-
     // block timestamp should be greater than previous one
     if block.header.timestamp <= prev_block.header.timestamp {
         return Err("Block Timestamp is not increasing");
@@ -199,14 +198,11 @@ fn validate_consecutive_block(block: &RskBlock, prev_block: &RskBlock) -> Result
     if block.header.number != expected_next_number {
         return Err("Block numbers are not consecutive");
     }
-
     // previous should be the parent of current one
     if block.header.parent != prev_block.header.hash {
         return Err("Invalid parent linkage between blocks");
     }
-
     validate_enough_effort_superblock(block, "consecutive")?;
-
     validate_difficulty_in_bounds(block, prev_block)?;
 
     Ok(())
@@ -225,11 +221,9 @@ fn validate_uncle(trunk_block: &RskBlock, uncle: &RskBlock) -> Result<(), &'stat
         return Err("Uncle's difficulty does not match trunk block's difficulty");
     }
 
-    if uncle.header.hash != uncle.header.calculate_block_hash()? {
-        return Err("Uncle's hash does not match uncle's calculated hash");
-    }
-
+    validate_block_hash(&uncle.header)?;
     validate_enough_effort_superblock(uncle, "uncle")?;
+
     Ok(())
 }
 
