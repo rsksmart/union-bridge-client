@@ -681,6 +681,28 @@ pub enum DomainErrors {
     #[error("Invalid slot state: expected {expected}, actual {actual}")]
     InvalidSlotState { expected: u8, actual: u8 },
 
+    // ChallengeManager errors
+    #[error("Pegin not requested: {0}")]
+    PeginNotRequested(String),
+    #[error("Challenge txid mismatch: {0}")]
+    ChallengeTxidNotMatch(String),
+    #[error("Invalid challenge input count: {0}")]
+    InvalidChallengeInputCount(String),
+    #[error("Invalid revealed input count: {0}")]
+    InvalidRevealedInputCount(String),
+    #[error("Reimbursement kickoff txid mismatch: {0}")]
+    ReimbursementKickoffTxidNotMatch(String),
+    #[error("Invalid peg status: {0}")]
+    InvalidPegStatus(String),
+    #[error("Member not in committee: {0}")]
+    MemberNotInCommittee(String),
+
+    // SignatureManager errors
+    #[error("Accept pegin txid not found: {0}")]
+    AcceptPeginTxidNotFound(String),
+    #[error("Txid to sign not found: {0}")]
+    TxidToSignNotFound(String),
+
     // unhandled smart contract errors
     #[error("Unhandled Contract Error: {0}")]
     UnhandledContractError(String),

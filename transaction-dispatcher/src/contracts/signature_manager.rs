@@ -113,15 +113,14 @@ pub(crate) fn decode_error(
     let decoded_err = err.as_decoded_interface_error::<SignatureManagerErrors>();
     decoded_err.map(|e| match e {
         SignatureManagerErrors::AcceptPeginTxidNotFound(e) => {
-            DomainErrors::InvalidValue(format!("{e:?}"))
+            DomainErrors::AcceptPeginTxidNotFound(format!("{e:?}"))
         }
         SignatureManagerErrors::AddressEmptyCode(e) => {
             DomainErrors::InvalidAddress(format!("{e:?}"))
         }
         SignatureManagerErrors::TxidToSignNotFound(e) => {
-            DomainErrors::InvalidValue(format!("{e:?}"))
+            DomainErrors::TxidToSignNotFound(format!("{e:?}"))
         }
-        // TODO handle more based on needs
         _ => DomainErrors::UnhandledContractError(format!("{e:?}")),
     })
 }
@@ -146,7 +145,7 @@ mod tests {
 
         let result = generate_contract_revert_error(&err_data);
         let domain_error = decode_error(&result).unwrap();
-        assert!(matches!(domain_error, DomainErrors::InvalidValue(_)));
+        assert!(matches!(domain_error, DomainErrors::AcceptPeginTxidNotFound(_)));
     }
 
     #[test]
@@ -168,7 +167,7 @@ mod tests {
 
         let result = generate_contract_revert_error(&err_data);
         let domain_error = decode_error(&result).unwrap();
-        assert!(matches!(domain_error, DomainErrors::InvalidValue(_)));
+        assert!(matches!(domain_error, DomainErrors::TxidToSignNotFound(_)));
     }
 
     // Test unhandled error mapping
