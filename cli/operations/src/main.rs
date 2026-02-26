@@ -26,7 +26,8 @@
 //! - `pegin`: initiates a bitcoin → rootstock transfer
 //!   - prints bitcoin-wallet cli command to execute the pegin transaction
 //!   - with `--execute` flag: runs the wallet command programmatically via cli-bitcoin-wallet.sh
-//!   - requires: rootstock address, value in satoshis, packet number
+//!   - requires: rootstock address, value in satoshis
+//!   - packet number is auto-calculated from StreamManager contract (can be overridden with -p)
 //! - `pegout`: initiates a rootstock → bitcoin withdrawal
 //!   - executes the pegout request on the rootstock side
 //!   - requires: value in satoshis
@@ -188,14 +189,13 @@ enum UserCommands {
         #[arg(short = 'v', long = "value", value_name = "VALUE")]
         value: u64,
 
-        /// Packet number used when creating the pegin transaction
-        #[arg(
-            short = 'p',
-            long = "packet-number",
-            value_name = "PACKET_NUMBER",
-            default_value_t = 0u64
-        )]
-        packet_number: u64,
+        /// Stream ID to query for the packet number (default: 0)
+        #[arg(short = 's', long = "stream-id", value_name = "STREAM_ID", default_value_t = 0u64)]
+        stream_id: u64,
+
+        /// Packet number override. If omitted, auto-calculated from the StreamManager contract.
+        #[arg(short = 'p', long = "packet-number", value_name = "PACKET_NUMBER")]
+        packet_number: Option<u64>,
 
         /// Bitcoin public key for reimbursement (32-byte x-only pubkey with 0x prefix)
         #[arg(short = 'k', long = "btc-pub-key", value_name = "BTC_PUB_KEY")]
@@ -264,8 +264,8 @@ async fn main() -> Result<()> {
             UserCommands::Fund { env } => {
                 rsk_wallet::handle_user_funding(env)?;
             }
-            UserCommands::Pegin { env, rsk_address, value, packet_number, btc_pub_key, execute } => {
-                pegin::create_pegin_tx(env, rsk_address, value, packet_number, btc_pub_key, execute).await?;
+            UserCommands::Pegin { env, rsk_address, value, stream_id, packet_number, btc_pub_key, execute } => {
+                pegin::create_pegin_tx(env, rsk_address, value, stream_id, packet_number, btc_pub_key, execute).await?;
             }
             UserCommands::Pegout { env, value, usr_pub_key } => {
                 pegout::request_pegout(env, value, usr_pub_key).await?;
