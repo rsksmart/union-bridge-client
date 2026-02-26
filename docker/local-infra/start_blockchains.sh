@@ -98,6 +98,10 @@ else
     echo "Error: Could not extract union-contracts tag from $CARGO_TOML" >&2
     exit 1
   fi
+  # Map git tag to image tag when they differ (e.g. v0.2.0-alpha -> v0.2.0-alpha.1)
+  case "$CONTRACTS_IMAGE_TAG" in
+    v0.2.0-alpha) CONTRACTS_IMAGE_TAG="v0.2.0-alpha.1" ;;
+  esac
 fi
 export CONTRACTS_IMAGE_TAG
 
@@ -128,19 +132,21 @@ if [[ "${IS_UP_COMMAND}" == true && "${CONTRACTS_IMAGE_TAG}" == "${CONTRACTS_TAG
   DOCKER_COMPOSE_ARGS=("${NEW_ARGS[@]}")
 fi
 
-# When using a registry tag (not ${CONTRACTS_TAG_LOCAL_BUILD}): always pull, compare digest, set FRESH if changed
+# When using a registry tag (not ${CONTRACTS_TAG_LOCAL_BUILD}): pull if not present locally, compare digest, set FRESH if changed
 if [[ "${IS_UP_COMMAND}" == true && "${CONTRACTS_IMAGE_TAG}" != "${CONTRACTS_TAG_LOCAL_BUILD}" ]]; then
   CONTRACTS_IMAGE="${CONTRACTS_IMAGE_BASE}:${CONTRACTS_IMAGE_TAG}"
   DIGEST_BEFORE=""
   if docker image inspect "$CONTRACTS_IMAGE" >/dev/null 2>&1; then
     DIGEST_BEFORE=$(docker image inspect --format '{{index .RepoDigests 0}}' "$CONTRACTS_IMAGE" 2>/dev/null || true)
-  fi
-  echo "Pulling contracts image '$CONTRACTS_IMAGE'..."
-  if ! docker pull "$CONTRACTS_IMAGE"; then
-    echo "Error: Failed to pull contracts image '$CONTRACTS_IMAGE'."
-    echo "  The image may not exist in the registry for this tag."
-    echo "  To build from source instead, use --contracts-tag ${CONTRACTS_TAG_LOCAL_BUILD}"
-    exit 1
+    echo "Contracts image '$CONTRACTS_IMAGE' already present locally, skipping pull"
+  else
+    echo "Pulling contracts image '$CONTRACTS_IMAGE'..."
+    if ! docker pull "$CONTRACTS_IMAGE"; then
+      echo "Error: Failed to pull contracts image '$CONTRACTS_IMAGE'."
+      echo "  The image may not exist in the registry for this tag."
+      echo "  To build from source instead, use --contracts-tag ${CONTRACTS_TAG_LOCAL_BUILD}"
+      exit 1
+    fi
   fi
   DIGEST_AFTER=$(docker image inspect --format '{{index .RepoDigests 0}}' "$CONTRACTS_IMAGE" 2>/dev/null || true)
   if [[ -n "$DIGEST_BEFORE" && -n "$DIGEST_AFTER" && "$DIGEST_BEFORE" != "$DIGEST_AFTER" ]]; then

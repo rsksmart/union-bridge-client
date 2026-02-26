@@ -16,10 +16,6 @@ on:
         description: 'union-bridge-client ref (branch/tag/SHA). PR: head SHA; manual: empty = current commit'
         type: string
         default: ''
-      contracts_ref:
-        description: 'Contracts repo ref (branch/tag). Empty = use e2e workflow default'
-        type: string
-        default: ''
       e2e_ref:
         description: 'E2E framework repo ref to run (branch/tag). Empty = use main as default'
         type: string
@@ -41,7 +37,6 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
           CLIENT_REF: ${{ inputs.client_ref || github.event.pull_request.head.sha || github.sha }}
-          CONTRACTS_REF: ${{ inputs.contracts_ref }}
           E2E_REF: ${{ inputs.e2e_ref }}
           PR_HEAD_SHA: ${{ inputs.pr_head_sha || github.event.pull_request.head.sha || github.sha }}
         with:
@@ -50,10 +45,8 @@ jobs:
             const pr = context.payload.pull_request;
             const labels = pr ? (pr.labels || []).map(l => l.name) : [];
             const labelE2eRef = (labels.find(l => l.startsWith('e2e-ref:'))?.replace(/^e2e-ref:/, '') || '').trim();
-            const labelContractsRef = (labels.find(l => l.startsWith('contracts-ref:'))?.replace(/^contracts-ref:/, '') || '').trim();
 
             const clientRef = (process.env.CLIENT_REF || '').trim();
-            const contractsRef = (process.env.CONTRACTS_REF || '').trim() || labelContractsRef;
             const e2eRefInput = (process.env.E2E_REF || '').trim() || labelE2eRef;
             const prHeadSha = process.env.PR_HEAD_SHA || '';
             const prNumber = pr?.number;
@@ -81,9 +74,6 @@ jobs:
 
             console.log(`🚀 Triggering E2E smoke tests for client ref: ${clientRef}`);
             console.log(`📍 E2E framework ref: ${e2eDispatchRef}${e2eRefInput ? (labelE2eRef ? ' (from PR label)' : '') : ' (using default)'}`);
-            if (labelContractsRef) {
-              console.log(`📍 Contracts ref: ${contractsRef} (from PR label)`);
-            }
             if (prNumber) {
               console.log(`📋 PR #${prNumber}`);
             }
@@ -97,7 +87,6 @@ jobs:
                 ref: e2eDispatchRef,
                 inputs: {
                   client_ref: clientRef,
-                  contracts_ref: contractsRef,
                   pr_head_sha: prHeadSha
                 }
               });

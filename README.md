@@ -130,7 +130,7 @@ Before running the Union Bridge Client, you need to install and set up the follo
 
 2. **BitVMX Union Bridge Contracts** - Smart contracts for the Union Bridge protocol
    ```bash
-   git clone git@github.com:rsksmart/bitvmx-union-bridge-contracts.git
+   git clone git@github.com:temp-rsk/bitvmx-union-bridge-contracts.git
    ```
 
    Then follow its `README.md` for an initial setup.
@@ -618,4 +618,4 @@ The file [rusty-hook.toml](rusty-hook.toml) will be used for hook configuration.
 ### GitHub Actions
 
 For information about the GitHub Actions workflows in this project, including how to test them locally with `act`, see
-[.github/README.md](.github/README.md).
+[.github/WORKFLOWS.md](.github/WORKFLOWS.md).
