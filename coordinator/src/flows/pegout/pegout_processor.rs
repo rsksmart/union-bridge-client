@@ -215,7 +215,6 @@ where
             event,
             Rc::clone(&self.store),
             self.native_bridge_verifier.clone(),
-            self.env_name.clone(),
         );
 
         // Initialize the flow with the PegoutRequested event
@@ -332,21 +331,24 @@ where
                     continue;
                 }
 
+                // FORCE_ADVANCE: Skip dispatch step so the flow stays at DispatchTransaction
+                // and the advance funds timeout triggers naturally
+                if crate::force_flags::is_force_advance_enabled(self.env_name.as_deref()) {
+                    warn!(
+                        "[FORCE_ADVANCE] Skipping dispatch step for flow_id: {flow_id} - \
+                         flow stays at DispatchTransaction, timeout will trigger advance funds",
+                    );
+                    continue;
+                }
+
                 flow.complete_step(&StepData::DispatchTransaction)?;
 
                 // Cancel advance funds timeout since signatures completed successfully
-                // BUT: If FORCE_ADVANCE is enabled, keep the timeout to trigger advance funds
                 if self.advance_funds_timeout_scheduler.is_scheduled(flow_id) {
-                    if crate::force_flags::is_force_advance_enabled(self.env_name.as_deref()) {
-                        warn!(
-                            "[FORCE_ADVANCE] Keeping advance funds timeout for flow_id: {flow_id} despite signatures completed",
-                        );
-                    } else {
-                        debug!(
-                            "Cancelling advance funds timeout for flow_id: {flow_id} - signatures completed",
-                        );
-                        self.advance_funds_timeout_scheduler.cancel(flow_id);
-                    }
+                    debug!(
+                        "Cancelling advance funds timeout for flow_id: {flow_id} - signatures completed",
+                    );
+                    self.advance_funds_timeout_scheduler.cancel(flow_id);
                 }
             } else {
                 warn!(
