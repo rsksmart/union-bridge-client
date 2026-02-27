@@ -926,6 +926,8 @@ mod tests {
                 GlobalContext::new(),
                 store.clone(),
                 NativeBridgeVerifier::Dummy,
+                PegoutConfig::default(),
+                5, // required_confirmations for tests
             );
 
             Self { processor, contracts, broker, store, rt_sync }
@@ -957,7 +959,12 @@ mod tests {
         }
 
         fn create_completed_sig_flow(&self, flow_id: Uuid) -> TestBtcSigSubFlow {
-            BaseBtcSignatureSubFlow::new_completed_for_test(&self.contracts, &self.rt_sync, flow_id)
+            BaseBtcSignatureSubFlow::new_completed_for_test(
+                &self.contracts,
+                &self.rt_sync,
+                flow_id,
+                5, // required_confirmations for tests
+            )
         }
     }
 

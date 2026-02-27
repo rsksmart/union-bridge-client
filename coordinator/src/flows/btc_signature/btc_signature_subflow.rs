@@ -60,9 +60,14 @@ where
         contracts_gateway: &Rc<CG>,
         rt_sync: &RuntimeSync,
         flow_id: Uuid,
+        required_confirmations: u32,
     ) -> Self {
-        let lifecycle =
-            BtcSignatureLifeCycle::new(contracts_gateway.clone(), rt_sync.clone(), flow_id);
+        let lifecycle = BtcSignatureLifeCycle::new(
+            contracts_gateway.clone(),
+            rt_sync.clone(),
+            flow_id,
+            required_confirmations,
+        );
         Self { lifecycle, is_done: true, is_nonces_step_done: true }
     }
 }
