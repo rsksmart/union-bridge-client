@@ -200,11 +200,24 @@ impl CheckForkAccumulator {
     ) -> CfRskBlock {
         let header = RskBlockHeader {
             number: block.number().value(),
-            difficulty: block.difficulty().value(),
-            parent: block.parent_hash().value(),
-            timestamp: block.timestamp().value(),
             hash: block.hash().value(),
-            ..Default::default()
+            parent: block.parent_hash().value(),
+            difficulty: block.difficulty().value(),
+            timestamp: block.timestamp().value(),
+            uncles_hash: block.uncles_hash().value(),
+            coinbase: *block.miner().value().as_fixed_bytes(),
+            state_root: block.state_root().value(),
+            tx_trie_root: block.transactions_root().value(),
+            receipt_trie_root: block.receipts_root().value(),
+            extension_data: block.logs_bloom().as_bytes().to_vec(),
+            gas_limit: block.gas_limit().as_bytes().to_vec(),
+            gas_used: block.gas_used(),
+            extra_data: block.extra_data().as_bytes().to_vec(),
+            paid_fees: block.paid_fees(),
+            minimum_gas_price: block.minimum_gas_price(),
+            uncles: block.uncles().into_iter().map(common::types::Hash256::value).collect(),
+            rsk_pte_edges: block.rsk_pte_edges().map(<[u16]>::to_vec),
+            bitcoin_merged_mining_header: block.bitcoin_merged_mining_header().as_bytes().to_vec(),
         };
         CfRskBlock { bridge_event, uncles, pow: block.pow().value(), header }
     }

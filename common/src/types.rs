@@ -466,7 +466,7 @@ pub struct RskBlock {
     #[serde(default = "default_merged_mining_header_bytes")]
     bitcoin_merged_mining_header: DataBytes,
     #[serde(default)]
-    rsk_pte_edges: Vec<u16>,
+    rsk_pte_edges: Option<Vec<u16>>,
 }
 
 impl std::hash::Hash for RskBlock {
@@ -519,7 +519,7 @@ impl RskBlock {
             paid_fees: U256::zero(),
             minimum_gas_price: Some(U256::zero()),
             bitcoin_merged_mining_header: DataBytes(vec![0u8; 80]),
-            rsk_pte_edges: Vec::new(),
+            rsk_pte_edges: None,
         }
     }
 
@@ -624,8 +624,8 @@ impl RskBlock {
     }
 
     #[must_use]
-    pub fn rsk_pte_edges(&self) -> &[u16] {
-        &self.rsk_pte_edges
+    pub fn rsk_pte_edges(&self) -> Option<&[u16]> {
+        self.rsk_pte_edges.as_deref()
     }
 }
 
@@ -940,7 +940,7 @@ pub struct RskRpcBlock {
     uncles: Vec<BlockHash>,
 
     #[serde(default, rename = "rskPteEdges", deserialize_with = "parse_optional_u16_vec")]
-    rsk_pte_edges: Vec<u16>,
+    rsk_pte_edges: Option<Vec<u16>>,
 }
 
 fn default_zero_u256() -> U256 {
@@ -1167,11 +1167,11 @@ where
         .collect()
 }
 
-fn parse_optional_u16_vec<'de, D>(deserializer: D) -> Result<Vec<u16>, D::Error>
+fn parse_optional_u16_vec<'de, D>(deserializer: D) -> Result<Option<Vec<u16>>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    Ok(Option::<Vec<u16>>::deserialize(deserializer)?.unwrap_or_default())
+    Option::<Vec<u16>>::deserialize(deserializer)
 }
 
 fn str_hex_to_u64(hex: &str) -> Result<u64, ParseIntError> {

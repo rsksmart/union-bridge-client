@@ -41,8 +41,8 @@ pub struct TesterRskBlockHeader {
     pub tx_trie_root: H256,
     #[serde(rename = "receiptsRoot", deserialize_with = "deserialize_hex_h256")]
     pub receipt_trie_root: H256,
-    // before REED hardfork it's used logs_bloom after REED hardfork we use extension data
-    // but the json-rpc field it's still named as logs_bloom
+    // This is the json-rpc logsBloom field.
+    // check-fork derives the compressed v1 extension data from it when hashing headers.
     #[serde(rename = "logsBloom", deserialize_with = "deserialize_hex_bytes")]
     pub extension_data: Vec<u8>,
     #[serde(rename = "gasLimit", deserialize_with = "deserialize_hex_bytes")]
@@ -55,6 +55,8 @@ pub struct TesterRskBlockHeader {
     pub paid_fees: U256,
     #[serde(rename = "minimumGasPrice", deserialize_with = "deserialize_hex_u256_option")]
     pub minimum_gas_price: Option<U256>,
+    #[serde(rename = "rskPteEdges", default, deserialize_with = "deserialize_optional_u16_vec")]
+    pub rsk_pte_edges: Option<Vec<u16>>,
     #[serde(rename = "uncles", deserialize_with = "deserialize_vec_hex_h256", default)]
     pub uncles: Vec<H256>,
     #[serde(rename = "bitcoinMergedMiningHeader", deserialize_with = "deserialize_hex_bytes")]
@@ -81,6 +83,7 @@ impl From<&TesterRskBlockHeader> for RskBlockHeader {
             paid_fees: t.paid_fees,
             minimum_gas_price: t.minimum_gas_price,
             uncles: t.uncles.clone(),
+            rsk_pte_edges: t.rsk_pte_edges.clone(),
             bitcoin_merged_mining_header: t.bitcoin_merged_mining_header.clone(),
         }
     }
@@ -95,6 +98,13 @@ pub struct TesterRskBlock {
     bridge_event: Option<BridgeEvent>,
     #[serde(skip)]
     uncles: Vec<TesterRskBlock>, // this field should be filled later
+}
+
+fn deserialize_optional_u16_vec<'de, D>(deserializer: D) -> Result<Option<Vec<u16>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<Vec<u16>>::deserialize(deserializer)
 }
 
 impl From<&TesterRskBlock> for RskBlock {

@@ -6,7 +6,9 @@ use primitive_types::{H256, U256};
 use serde::{Deserialize, Deserializer, Serialize};
 use sha3::{Digest, Keccak256};
 
-use crate::rlp::{encode_coin_value, encode_signed_coin_value};
+use crate::rlp::{encode_coin_value, encode_signed_coin_value_as_byte};
+
+const RSK_HEADER_EXTENSION_TYPE_V1: u8 = 1_u8;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct RskBlockHeader {
@@ -20,13 +22,14 @@ pub struct RskBlockHeader {
     pub state_root: H256,                      // SHA3-256 hash of the root node of the state trie
     pub tx_trie_root: H256, // SHA3-256 hash of the root node of the transaction trie
     pub receipt_trie_root: H256, // SHA3-256 hash of the root node of the receipt trie
-    pub extension_data: Vec<u8>, // Data used after REED hardfork (in json-rpc this is the 'logs_bloom' field)
-    pub gas_limit: Vec<u8>,      // Current limit of gas expenditure per block
-    pub gas_used: u64,           // Total gas used in transactions in this block
-    pub extra_data: Vec<u8>,     // Arbitrary byte array (max 32 bytes, except genesis)
-    pub paid_fees: U256,         // Total paid fees in transactions (Coin, RLP encoded)
+    pub extension_data: Vec<u8>, // RPC logsBloom bytes (expanded format only)
+    pub gas_limit: Vec<u8>, // Current limit of gas expenditure per block
+    pub gas_used: u64,      // Total gas used in transactions in this block
+    pub extra_data: Vec<u8>, // Arbitrary byte array (max 32 bytes, except genesis)
+    pub paid_fees: U256,    // Total paid fees in transactions (Coin, RLP encoded)
     pub minimum_gas_price: Option<U256>, // Minimum gas price for a tx to be included
-    pub uncles: Vec<H256>,       // Hashes of uncle blocks
+    pub uncles: Vec<H256>,  // Hashes of uncle blocks
+    pub rsk_pte_edges: Option<Vec<u16>>, // None: omit field in hash input, Some([]): include empty field
     pub bitcoin_merged_mining_header: Vec<u8>, // 80-byte Bitcoin block header for merged mining
 }
 
@@ -50,6 +53,7 @@ impl Default for RskBlockHeader {
             paid_fees: U256::zero(),
             minimum_gas_price: Some(U256::zero()),
             uncles: Vec::new(),
+            rsk_pte_edges: None,
             bitcoin_merged_mining_header: vec![0u8; 80],
         }
     }
@@ -68,6 +72,15 @@ impl RskBlockHeader {
         let Some(minimum_gas_price) = self.minimum_gas_price else {
             return Err("minimum_gas_price is None");
         };
+
+        // TODO: remove this when REED810 is activated in mainnet
+        // logs bloom will be replaced by exten
+        let extension_field = if self.rsk_pte_edges.is_some() {
+            self.compressed_extension_data_v1()?
+        } else {
+            self.logs_bloom_v0()?.to_vec()
+        };
+
         let encoded_fields: Vec<Vec<u8>> = vec![
             alloy_rlp::encode(self.parent.as_bytes()),
             alloy_rlp::encode(self.uncles_hash.as_bytes()),
@@ -75,7 +88,7 @@ impl RskBlockHeader {
             alloy_rlp::encode(self.state_root.as_bytes()),
             alloy_rlp::encode(self.tx_trie_root.as_bytes()),
             alloy_rlp::encode(self.receipt_trie_root.as_bytes()),
-            alloy_rlp::encode(self.extension_data.as_slice()), // introduced in REED hardfork
+            alloy_rlp::encode(extension_field.as_slice()),
             encode_coin_value(&self.difficulty),
             alloy_rlp::encode(self.number),
             alloy_rlp::encode(self.gas_limit.as_slice()),
@@ -83,7 +96,7 @@ impl RskBlockHeader {
             alloy_rlp::encode(self.timestamp),
             alloy_rlp::encode(self.extra_data.as_slice()),
             encode_coin_value(&self.paid_fees),
-            encode_signed_coin_value(&minimum_gas_price),
+            encode_signed_coin_value_as_byte(&minimum_gas_price),
             alloy_rlp::encode(self.uncles.len()), // uncle_count
             alloy_rlp::encode::<&[u8]>(&self.umm_root()), // this field is present in the header but is always empty
             alloy_rlp::encode(self.bitcoin_merged_mining_header.as_slice()),
@@ -91,6 +104,37 @@ impl RskBlockHeader {
         let out = encode_list(encoded_fields);
         Ok(out)
     }
+
+    fn logs_bloom_v0(&self) -> Result<&[u8], &'static str> {
+        if self.extension_data.len() != 256 {
+            return Err("unsupported extension_data format: expected RPC logsBloom (256 bytes)");
+        }
+        Ok(self.extension_data.as_slice())
+    }
+
+    fn compressed_extension_data_v1(&self) -> Result<Vec<u8>, &'static str> {
+        let logs_bloom = self.logs_bloom_v0()?;
+
+        let logs_bloom_hash = Keccak256::digest(logs_bloom);
+        let mut extension_for_hash_fields = vec![alloy_rlp::encode(logs_bloom_hash.as_slice())];
+
+        if let Some(edges) = &self.rsk_pte_edges {
+            let mut edges_little_endian = Vec::with_capacity(edges.len().saturating_mul(2));
+            for edge in edges {
+                edges_little_endian.extend_from_slice(&edge.to_le_bytes());
+            }
+            extension_for_hash_fields.push(alloy_rlp::encode(edges_little_endian.as_slice()));
+        }
+
+        let extension_for_hash = encode_list(extension_for_hash_fields);
+        let extension_hash = Keccak256::digest(&extension_for_hash);
+
+        Ok(encode_list(vec![
+            alloy_rlp::encode(RSK_HEADER_EXTENSION_TYPE_V1),
+            alloy_rlp::encode(extension_hash.as_slice()),
+        ]))
+    }
+
     #[must_use]
     pub fn umm_root(&self) -> [u8; 0] {
         {
@@ -222,7 +266,7 @@ impl fmt::Debug for RskBlockHeader {
 
         write!(
             f,
-            "RskBlockHeader {{ number: {}, hash: {}, parent: {}, diff: {}, ts: {}, uncles_hash: {}, coinbase: 0x{}, state_root: {}, tx_root: {}, receipt_root: {}, logs_bloom: {} bytes, gas_limit: 0x{}, gas_used: {}, extra_data: {} bytes, paid_fees: {}, min_gas_price: {:?}, uncle_count: {}, umm_root: {:?}, mm_header: {} bytes }}",
+            "RskBlockHeader {{ number: {}, hash: {}, parent: {}, diff: {}, ts: {}, uncles_hash: {}, coinbase: 0x{}, state_root: {}, tx_root: {}, receipt_root: {}, extension_data: {} bytes, rsk_pte_edges: {:?}, gas_limit: 0x{}, gas_used: {}, extra_data: {} bytes, paid_fees: {}, min_gas_price: {:?}, uncle_count: {}, umm_root: {:?}, mm_header: {} bytes }}",
             self.number,
             short(&self.hash),
             short(&self.parent),
@@ -234,6 +278,7 @@ impl fmt::Debug for RskBlockHeader {
             short(&self.tx_trie_root),
             short(&self.receipt_trie_root),
             self.extension_data.len(),
+            &self.rsk_pte_edges,
             hex::encode(&self.gas_limit),
             self.gas_used,
             self.extra_data.len(),

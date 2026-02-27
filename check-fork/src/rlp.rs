@@ -21,6 +21,16 @@ pub fn encode_signed_coin_value(value: &U256) -> Vec<u8> {
 }
 
 #[must_use]
+pub fn encode_signed_coin_value_as_byte(value: &U256) -> Vec<u8> {
+    if value.is_zero() {
+        // REED headers encode minimumGasPrice zero as signed-byte [0x00].
+        return alloy_rlp::encode([0u8].as_slice());
+    }
+
+    encode_signed_coin_value(value)
+}
+
+#[must_use]
 fn u256_be_trimmed(value: &U256) -> Vec<u8> {
     // positive integers must be represented in big-endian binary form with
     // no leading zeroes (thus making the integer value zero equivalent to

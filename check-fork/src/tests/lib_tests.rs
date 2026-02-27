@@ -1,10 +1,11 @@
 use std::fs;
+use std::str::FromStr;
 
 use check_fork_tester::TesterRskBlockHeader;
 use primitive_types::{H256, U256};
 use serde::{Deserialize, Serialize};
 
-use crate::block_header::RskBlockHeader;
+use crate::block_header::{RskBlockHeader, encode_list};
 use crate::{BridgeEvent, CheckForkArgs, RskBlock, SUPERBLOCK_TIMES_DIFFICULTY, check_fork};
 
 const DEFAULT_DIFFICULTY: u128 = 5_904_436_352_267_687_415_636;
@@ -32,6 +33,7 @@ impl From<&TesterRskBlockHeader> for RskBlockHeader {
             paid_fees: t.paid_fees,
             minimum_gas_price: t.minimum_gas_price,
             uncles: t.uncles.clone(),
+            rsk_pte_edges: t.rsk_pte_edges.clone(),
             bitcoin_merged_mining_header: t.bitcoin_merged_mining_header.clone(),
         }
     }
@@ -45,7 +47,7 @@ struct TestCaseBlockHashValidation {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-struct MiniChainTestCase {
+struct TestCaseMiniChainHashValidation {
     pub chain: Vec<TestCaseBlockHashValidation>,
 }
 
@@ -525,35 +527,40 @@ fn fails_when_uncle_block_pow_is_lower_than_required() {
 #[test]
 fn succeed_if_block_hash_eq_expected_hash() {
     let test_case = serde_json::from_slice::<TestCaseBlockHashValidation>(
-        &fs::read("src/tests/block.json").unwrap(),
+        &fs::read("src/tests/block-regtest-min-gas-price-zero.json").unwrap(),
     )
     .unwrap();
 
-    println!("Rootstock Block: {test_case:?}");
-
     let header = RskBlockHeader::from(&test_case.header);
     let hash = header.calculate_block_hash().unwrap();
+    let expected_hash = H256::from_str(&test_case.expected_hash).unwrap();
 
+    assert_eq!(expected_hash, hash);
     assert_eq!(test_case.header.hash, hash);
 }
 
 #[test]
 fn succeed_if_minichain_hashes_are_valid() {
-    let test_case = serde_json::from_slice::<MiniChainTestCase>(
-        &fs::read("src/tests/blockhash-mini-chain.json").unwrap(),
-    )
-    .unwrap();
+    assert_minichain_hashes_are_valid_from_fixture("src/tests/blockhash-mini-chain.json");
+}
 
-    for (i, block) in test_case.chain.iter().enumerate() {
-        let header = RskBlockHeader::from(&block.header);
-        let calculated_hash = header.calculate_block_hash().unwrap();
+#[test]
+fn succeed_if_testnet_minichain_hashes_are_valid() {
+    assert_minichain_hashes_are_valid_from_fixture("src/tests/blockhash-mini-chain-testnet.json");
+}
 
-        assert_eq!(
-            calculated_hash, block.header.hash,
-            "Block hash mismatch at index {i} (height {})",
-            block.header.number
-        );
-    }
+#[test]
+fn fails_if_extension_data_is_precompressed_v1() {
+    let mut header = create_first_block(DEFAULT_INIT_BLOCK_NUMBER).header;
+    let precompressed_extension_data =
+        encode_list(vec![alloy_rlp::encode(1_u8), alloy_rlp::encode([0_u8; 32].as_slice())]);
+    header.extension_data = precompressed_extension_data;
+
+    let err = header.calculate_block_hash().expect_err(
+        "precompressed extension_data should fail because check-fork expects expanded RPC logsBloom",
+    );
+
+    assert_eq!(err, "unsupported extension_data format: expected RPC logsBloom (256 bytes)");
 }
 
 // TODO add more complex tests, ie: with more than 2 blocks, with more uncles, with more real block data, etc.
@@ -626,6 +633,29 @@ fn calculate_superblock_effort(difficulty: U256) -> H256 {
 fn calculate_effort_from_pow(pow: H256) -> U256 {
     let pow_dec = U256::from_big_endian(pow.as_bytes());
     U256::MAX.checked_div(pow_dec).expect("0 division on calculate_effort_from_pow")
+}
+
+fn assert_minichain_hashes_are_valid_from_fixture(path: &str) {
+    let test_cases =
+        serde_json::from_slice::<TestCaseMiniChainHashValidation>(&fs::read(path).unwrap())
+            .unwrap();
+
+    for (i, block) in test_cases.chain.iter().enumerate() {
+        let header = RskBlockHeader::from(&block.header);
+        let calculated_hash = header.calculate_block_hash().unwrap();
+        let expected_hash = H256::from_str(&block.expected_hash).unwrap();
+
+        assert_eq!(
+            calculated_hash, header.hash,
+            "Block hash mismatch at index {i} (height {})",
+            header.number
+        );
+        assert_eq!(
+            calculated_hash, expected_hash,
+            "Block hash mismatch with expectedHash at index {i} (height {})",
+            header.number
+        );
+    }
 }
 
 #[derive(Default)]
