@@ -41,7 +41,7 @@ Local development dependencies. Use this when running Union Client locally with 
 
 **Contracts version:** By default, `start_blockchains.sh` uses the contracts version from `Cargo.toml` (pulls from
 registry; if the image digest changed, runs a fresh deploy automatically). Override with `--contracts-tag local-build`
-to build from a local contracts checkout (no auto-fresh; use `--fresh` for clean deploy when contracts change).
+to build from a local contracts checkout (no digest-based auto-fresh; use `--fresh` when local contracts change).
 
 **Typical workflow:**
 

@@ -23,8 +23,8 @@ print_help() {
   echo "  --contracts-tag TAG         Override contracts image tag (e.g. v0.2.0-alpha.1 or ${CONTRACTS_TAG_LOCAL_BUILD})"
   echo ""
   echo "Contracts image:"
-  echo "  Default: derived from Cargo.toml (union-contracts tag) — pulls from ghcr.io/temp-rsk/deploy-contracts"
-  echo "  Override: --contracts-tag only"
+  echo "  Default: derived from Cargo.toml (union-contracts tag) — pulls from ${CONTRACTS_IMAGE_BASE}"
+  echo "  Override: use --contracts-tag flag"
   echo "    ${CONTRACTS_TAG_LOCAL_BUILD}  → build from CONTRACTS_CONTEXT_PATH (e.g. for contract development); use --fresh for clean deploy when contracts change"
   echo "    <tag>       → use that registry tag (always pulls; if digest or tag changed, runs fresh)"
   echo ""
@@ -61,8 +61,8 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --contracts-tag)
-      if [[ $# -lt 2 ]]; then
-        echo "Error: --contracts-tag requires a value (e.g. v0.2.0-alpha.1 or ${CONTRACTS_TAG_LOCAL_BUILD})"
+      if [[ $# -lt 2 || -z "${2:-}" ]]; then
+        echo "Error: --contracts-tag requires a non-empty value (e.g. v0.2.0-alpha.1 or ${CONTRACTS_TAG_LOCAL_BUILD})"
         exit 1
       fi
       CONTRACTS_TAG_ARG="$2"
@@ -95,7 +95,8 @@ else
   # Extract union-contracts tag (must be on a single line in Cargo.toml)
   CONTRACTS_IMAGE_TAG=$(sed -n 's/.*union-contracts.*tag[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$CARGO_TOML" | head -1)
   if [[ -z "$CONTRACTS_IMAGE_TAG" ]]; then
-    echo "Error: Could not extract union-contracts tag from $CARGO_TOML" >&2
+    echo "Error: Could not extract union-contracts tag from $CARGO_TOML." >&2
+    echo "       Expected format: union-contracts = { ..., tag = \"<version>\", ... } on a single line." >&2
     exit 1
   fi
   # Map git tag to image tag when they differ (e.g. v0.2.0-alpha -> v0.2.0-alpha.1)
@@ -103,12 +104,13 @@ else
     v0.2.0-alpha) CONTRACTS_IMAGE_TAG="v0.2.0-alpha.1" ;;
   esac
 fi
+export CONTRACTS_IMAGE_BASE
 export CONTRACTS_IMAGE_TAG
 
 # Disallow user-provided --build (script injects it when using ${CONTRACTS_TAG_LOCAL_BUILD})
 for arg in "${DOCKER_COMPOSE_ARGS[@]}"; do
   if [[ "$arg" == "build" || "$arg" == "--build" || "$arg" == "-b" ]]; then
-    echo "Error: Building arbitrary images from source is not supported with this script."
+    echo "Error: --build flag is not supported. Use --contracts-tag ${CONTRACTS_TAG_LOCAL_BUILD} to build from source."
     exit 1
   fi
 done
@@ -132,25 +134,26 @@ if [[ "${IS_UP_COMMAND}" == true && "${CONTRACTS_IMAGE_TAG}" == "${CONTRACTS_TAG
   DOCKER_COMPOSE_ARGS=("${NEW_ARGS[@]}")
 fi
 
-# When using a registry tag (not ${CONTRACTS_TAG_LOCAL_BUILD}): pull if not present locally, compare digest, set FRESH if changed
+# When using a registry tag (not ${CONTRACTS_TAG_LOCAL_BUILD}): always pull, compare digest, set FRESH if changed
 if [[ "${IS_UP_COMMAND}" == true && "${CONTRACTS_IMAGE_TAG}" != "${CONTRACTS_TAG_LOCAL_BUILD}" ]]; then
   CONTRACTS_IMAGE="${CONTRACTS_IMAGE_BASE}:${CONTRACTS_IMAGE_TAG}"
   DIGEST_BEFORE=""
   if docker image inspect "$CONTRACTS_IMAGE" >/dev/null 2>&1; then
     DIGEST_BEFORE=$(docker image inspect --format '{{index .RepoDigests 0}}' "$CONTRACTS_IMAGE" 2>/dev/null || true)
-    echo "Contracts image '$CONTRACTS_IMAGE' already present locally, skipping pull"
-  else
-    echo "Pulling contracts image '$CONTRACTS_IMAGE'..."
-    if ! docker pull "$CONTRACTS_IMAGE"; then
-      echo "Error: Failed to pull contracts image '$CONTRACTS_IMAGE'."
-      echo "  The image may not exist in the registry for this tag."
-      echo "  To build from source instead, use --contracts-tag ${CONTRACTS_TAG_LOCAL_BUILD}"
-      exit 1
-    fi
+  fi
+  echo "Pulling contracts image '$CONTRACTS_IMAGE'..."
+  if ! docker pull "$CONTRACTS_IMAGE"; then
+    echo "Error: Failed to pull contracts image '$CONTRACTS_IMAGE'."
+    echo "  The image may not exist in the registry for this tag."
+    echo "  To build from source instead, use --contracts-tag ${CONTRACTS_TAG_LOCAL_BUILD}"
+    exit 1
   fi
   DIGEST_AFTER=$(docker image inspect --format '{{index .RepoDigests 0}}' "$CONTRACTS_IMAGE" 2>/dev/null || true)
   if [[ -n "$DIGEST_BEFORE" && -n "$DIGEST_AFTER" && "$DIGEST_BEFORE" != "$DIGEST_AFTER" ]]; then
     echo "Contracts image digest changed; forcing fresh deploy (down --volumes before up)"
+    FRESH=true
+  elif [[ -z "$DIGEST_BEFORE" && -n "$DIGEST_AFTER" ]]; then
+    echo "Local image had no registry digest (likely built locally); forcing fresh deploy after pull"
     FRESH=true
   fi
 fi
