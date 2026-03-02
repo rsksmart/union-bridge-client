@@ -230,6 +230,7 @@ impl RskProvider for AlloyProvider {
 mod tests {
     use std::fs;
 
+    use primitive_types::U256;
     use serde_json::{Value, json};
 
     use crate::alloy_rsk_provider::rpc::AlloyProvider;
@@ -262,12 +263,18 @@ mod tests {
             result["uncles"][0].as_str().expect("Uncle hash should be a string"),
         )
         .expect("Invalid hex string in JSON");
+        let expected_sha3_uncles_hash = BlockHash::try_from(
+            result["sha3Uncles"].as_str().expect("Uncles hash should be a string"),
+        )
+        .expect("Invalid hex string in JSON");
 
         assert_eq!(BlockNumber::from(6_161_807), block.number());
         assert_eq!(expected_hash, block.hash());
         assert_eq!(expected_parent, block.parent_hash());
         assert_eq!(1, block.uncles().len());
         assert_eq!(expected_uncle_hash, block.uncles()[0]);
+        assert_eq!(expected_sha3_uncles_hash, block.uncles_hash());
+        assert_eq!(80, block.bitcoin_merged_mining_header().as_bytes().len());
     }
 
     #[test]
@@ -283,6 +290,38 @@ mod tests {
             .expect("JSON data should be valid");
 
         assert!(block.is_none());
+    }
+
+    #[test]
+    fn test_parse_provider_block_response_when_new_rsk_fields_are_missing_should_use_defaults() {
+        let data =
+            fs::read_to_string(BLOCK_RESPONSE_FILE_PATH).expect("JSON data should be present");
+        let mut response: Value = serde_json::from_str(&data).expect("Failed to parse JSON");
+
+        let result = response["result"].as_object_mut().expect("Result should be an object");
+        result.remove("paidFees");
+        result.remove("minimumGasPrice");
+
+        let block = AlloyProvider::parse_block_provider_response(response["result"].clone())
+            .expect("JSON data should be valid")
+            .expect("JSON data should map to RSK block");
+
+        assert_eq!(block.paid_fees(), U256::zero());
+        assert_eq!(block.minimum_gas_price(), Some(U256::zero()));
+    }
+
+    #[test]
+    fn test_parse_provider_block_response_when_gas_limit_is_odd_length_quantity_should_parse() {
+        let data =
+            fs::read_to_string(BLOCK_RESPONSE_FILE_PATH).expect("JSON data should be present");
+        let mut response: Value = serde_json::from_str(&data).expect("Failed to parse JSON");
+        response["result"]["gasLimit"] = json!("0xabc");
+
+        let block = AlloyProvider::parse_block_provider_response(response["result"].clone())
+            .expect("JSON data should be valid")
+            .expect("JSON data should map to RSK block");
+
+        assert_eq!(block.gas_limit().as_bytes(), [0x0a, 0xbc]);
     }
 
     #[test]

@@ -16,7 +16,6 @@ use log::error;
 use musig2::PubNonce;
 use primitive_types::{H160, H256, U256};
 use serde::{Deserialize, Deserializer, Serialize, de};
-use serde_json::Value;
 
 /// A trait for types that can be converted into a hexadecimal string.
 ///
@@ -440,6 +439,34 @@ pub struct RskBlock {
     total_difficulty: BlockDifficulty,
     pow: BlockPow,
     uncles: Vec<BlockHash>,
+    // Keep serde defaults for new header fields so non-RSK/local providers and old serialized
+    // snapshots do not fail to deserialize while we still run mixed environments.
+    #[serde(default)]
+    uncles_hash: BlockHash,
+    #[serde(default)]
+    miner: Address,
+    #[serde(default)]
+    state_root: BlockHash,
+    #[serde(default)]
+    transactions_root: BlockHash,
+    #[serde(default)]
+    receipts_root: BlockHash,
+    #[serde(default = "default_logs_bloom_bytes")]
+    logs_bloom: DataBytes,
+    #[serde(default = "default_gas_limit_bytes")]
+    gas_limit: DataBytes,
+    #[serde(default)]
+    gas_used: u64,
+    #[serde(default = "default_empty_data_bytes")]
+    extra_data: DataBytes,
+    #[serde(default = "default_zero_u256")]
+    paid_fees: U256,
+    #[serde(default = "default_minimum_gas_price")]
+    minimum_gas_price: Option<U256>,
+    #[serde(default = "default_merged_mining_header_bytes")]
+    bitcoin_merged_mining_header: DataBytes,
+    #[serde(default)]
+    rsk_pte_edges: Option<Vec<u16>>,
 }
 
 impl std::hash::Hash for RskBlock {
@@ -471,7 +498,29 @@ impl RskBlock {
         pow: BlockPow,
         uncles: Vec<BlockHash>,
     ) -> Self {
-        RskBlock { number, hash, parent_hash, timestamp, difficulty, total_difficulty, pow, uncles }
+        RskBlock {
+            number,
+            hash,
+            parent_hash,
+            timestamp,
+            difficulty,
+            total_difficulty,
+            pow,
+            uncles,
+            uncles_hash: BlockHash::from(H256::zero()),
+            miner: Address::from(H160::zero()),
+            state_root: BlockHash::from(H256::zero()),
+            transactions_root: BlockHash::from(H256::zero()),
+            receipts_root: BlockHash::from(H256::zero()),
+            logs_bloom: DataBytes(vec![0u8; 256]),
+            gas_limit: DataBytes(vec![0u8]),
+            gas_used: 0,
+            extra_data: DataBytes::new(Vec::new()),
+            paid_fees: U256::zero(),
+            minimum_gas_price: Some(U256::zero()),
+            bitcoin_merged_mining_header: DataBytes(vec![0u8; 80]),
+            rsk_pte_edges: None,
+        }
     }
 
     #[must_use]
@@ -513,20 +562,121 @@ impl RskBlock {
     pub fn uncles(&self) -> Vec<BlockHash> {
         self.uncles.clone()
     }
+
+    #[must_use]
+    pub fn uncles_hash(&self) -> BlockHash {
+        self.uncles_hash
+    }
+
+    #[must_use]
+    pub fn miner(&self) -> Address {
+        self.miner
+    }
+
+    #[must_use]
+    pub fn state_root(&self) -> BlockHash {
+        self.state_root
+    }
+
+    #[must_use]
+    pub fn transactions_root(&self) -> BlockHash {
+        self.transactions_root
+    }
+
+    #[must_use]
+    pub fn receipts_root(&self) -> BlockHash {
+        self.receipts_root
+    }
+
+    #[must_use]
+    pub fn logs_bloom(&self) -> &DataBytes {
+        &self.logs_bloom
+    }
+
+    #[must_use]
+    pub fn gas_limit(&self) -> &DataBytes {
+        &self.gas_limit
+    }
+
+    #[must_use]
+    pub fn gas_used(&self) -> u64 {
+        self.gas_used
+    }
+
+    #[must_use]
+    pub fn extra_data(&self) -> &DataBytes {
+        &self.extra_data
+    }
+
+    #[must_use]
+    pub fn paid_fees(&self) -> U256 {
+        self.paid_fees
+    }
+
+    #[must_use]
+    pub fn minimum_gas_price(&self) -> Option<U256> {
+        self.minimum_gas_price
+    }
+
+    #[must_use]
+    pub fn bitcoin_merged_mining_header(&self) -> &DataBytes {
+        &self.bitcoin_merged_mining_header
+    }
+
+    #[must_use]
+    pub fn rsk_pte_edges(&self) -> Option<&[u16]> {
+        self.rsk_pte_edges.as_deref()
+    }
 }
 
 impl From<RskRpcBlock> for RskBlock {
     fn from(rpc_block: RskRpcBlock) -> Self {
-        Self::new(
-            rpc_block.number,
-            rpc_block.hash,
-            rpc_block.parent_hash,
-            rpc_block.timestamp,
-            rpc_block.difficulty,
-            rpc_block.total_difficulty,
-            rpc_block.pow,
-            rpc_block.uncles,
-        )
+        let RskRpcBlock {
+            number,
+            hash,
+            parent_hash,
+            timestamp,
+            difficulty,
+            total_difficulty,
+            uncles_hash,
+            miner,
+            state_root,
+            transactions_root,
+            receipts_root,
+            logs_bloom,
+            gas_limit,
+            gas_used,
+            extra_data,
+            paid_fees,
+            minimum_gas_price,
+            bitcoin_merged_mining,
+            rsk_pte_edges,
+            uncles,
+        } = rpc_block;
+
+        RskBlock {
+            number,
+            hash,
+            parent_hash,
+            timestamp,
+            difficulty,
+            total_difficulty,
+            pow: bitcoin_merged_mining.pow,
+            uncles,
+            uncles_hash,
+            miner,
+            state_root,
+            transactions_root,
+            receipts_root,
+            logs_bloom,
+            gas_limit,
+            gas_used,
+            extra_data,
+            paid_fees,
+            minimum_gas_price,
+            bitcoin_merged_mining_header: bitcoin_merged_mining.header,
+            rsk_pte_edges,
+        }
     }
 }
 
@@ -728,31 +878,109 @@ pub struct RskRpcBlock {
     #[serde(deserialize_with = "parse_rsk_difficulty", rename = "totalDifficulty")]
     total_difficulty: BlockDifficulty,
 
+    #[serde(rename = "sha3Uncles", deserialize_with = "parse_hex_to_hash256")]
+    uncles_hash: BlockHash,
+
+    #[serde(rename = "miner", deserialize_with = "parse_hex_to_address")]
+    miner: Address,
+
+    #[serde(rename = "stateRoot", deserialize_with = "parse_hex_to_hash256")]
+    state_root: BlockHash,
+
+    #[serde(rename = "transactionsRoot", deserialize_with = "parse_hex_to_hash256")]
+    transactions_root: BlockHash,
+
+    #[serde(rename = "receiptsRoot", deserialize_with = "parse_hex_to_hash256")]
+    receipts_root: BlockHash,
+
+    #[serde(rename = "logsBloom", deserialize_with = "parse_hex_to_data_bytes")]
+    logs_bloom: DataBytes,
+
+    #[serde(rename = "gasLimit", deserialize_with = "parse_hex_quantity_to_data_bytes")]
+    gas_limit: DataBytes,
+
+    #[serde(rename = "gasUsed", deserialize_with = "parse_hex_to_u64")]
+    gas_used: u64,
+
+    #[serde(rename = "extraData", deserialize_with = "parse_hex_to_data_bytes")]
+    extra_data: DataBytes,
+
+    #[serde(
+        default = "default_zero_u256",
+        rename = "paidFees",
+        deserialize_with = "parse_hex_to_u256"
+    )]
+    paid_fees: U256,
+
+    #[serde(
+        default = "default_minimum_gas_price",
+        rename = "minimumGasPrice",
+        deserialize_with = "parse_optional_hex_to_u256"
+    )]
+    minimum_gas_price: Option<U256>,
+
     #[cfg_attr(
         not(feature = "anvil"),
         serde(
             rename = "bitcoinMergedMiningHeader",
-            deserialize_with = "parse_bitcoin_header_to_pow"
+            deserialize_with = "parse_bitcoin_merged_mining_data"
         )
     )]
     #[cfg_attr(
         feature = "anvil",
         serde(
-            default = "default_pow_header",
+            default = "default_bitcoin_merged_mining_data",
             rename = "bitcoinMergedMiningHeader",
-            deserialize_with = "parse_bitcoin_header_to_pow"
+            deserialize_with = "parse_bitcoin_merged_mining_data"
         )
     )]
-    pow: BlockPow,
+    bitcoin_merged_mining: RskRpcBitcoinMergedMining,
 
     #[serde(deserialize_with = "parse_hash256_vec")]
     uncles: Vec<BlockHash>,
+
+    #[serde(default, rename = "rskPteEdges", deserialize_with = "parse_optional_u16_vec")]
+    rsk_pte_edges: Option<Vec<u16>>,
+}
+
+fn default_zero_u256() -> U256 {
+    U256::zero()
+}
+
+#[allow(clippy::unnecessary_wraps)] // serde default for Option<U256> requires an Option-returning fn
+fn default_minimum_gas_price() -> Option<U256> {
+    Some(U256::zero())
+}
+
+fn default_logs_bloom_bytes() -> DataBytes {
+    DataBytes(vec![0u8; 256])
+}
+
+fn default_gas_limit_bytes() -> DataBytes {
+    DataBytes(vec![0u8])
+}
+
+fn default_empty_data_bytes() -> DataBytes {
+    DataBytes::new(Vec::new())
+}
+
+fn default_merged_mining_header_bytes() -> DataBytes {
+    DataBytes(vec![0u8; 80])
 }
 
 #[cfg(feature = "anvil")]
-fn default_pow_header() -> BlockPow {
+fn default_bitcoin_merged_mining_data() -> RskRpcBitcoinMergedMining {
     use crate::anvil_mocks::get_anvil_block_pow;
-    get_anvil_block_pow()
+    RskRpcBitcoinMergedMining {
+        header: default_merged_mining_header_bytes(),
+        pow: get_anvil_block_pow(),
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct RskRpcBitcoinMergedMining {
+    header: DataBytes,
+    pow: BlockPow,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -891,27 +1119,59 @@ where
     D: Deserializer<'de>,
 {
     let difficulty_hex: String = Deserialize::deserialize(deserializer)?;
-    let difficulty_dec = U256::from_str_radix(&difficulty_hex, 16).map_err(de::Error::custom)?;
+    let difficulty_dec = U256::from_str_radix(difficulty_hex.trim_start_matches("0x"), 16)
+        .map_err(de::Error::custom)?;
 
     Ok(BlockDifficulty::from(difficulty_dec))
 }
 
-fn parse_bitcoin_header_to_pow<'de, D>(deserializer: D) -> Result<BlockPow, D::Error>
+fn parse_hex_to_u256<'de, D>(deserializer: D) -> Result<U256, D::Error>
 where
     D: Deserializer<'de>,
 {
     let hex: String = Deserialize::deserialize(deserializer)?;
+    U256::from_str_radix(hex.trim_start_matches("0x"), 16).map_err(de::Error::custom)
+}
 
-    BlockPow::try_from(hex.as_str()).map_err(de::Error::custom)
+fn parse_optional_hex_to_u256<'de, D>(deserializer: D) -> Result<Option<U256>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let hex: Option<String> = Option::deserialize(deserializer)?;
+    hex.map(|v| U256::from_str_radix(v.trim_start_matches("0x"), 16).map_err(de::Error::custom))
+        .transpose()
+}
+
+fn parse_bitcoin_merged_mining_data<'de, D>(
+    deserializer: D,
+) -> Result<RskRpcBitcoinMergedMining, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let hex: String = Deserialize::deserialize(deserializer)?;
+    let header = DataBytes::from_hex_str(hex.as_str()).map_err(de::Error::custom)?;
+    let pow = BlockPow::try_from(hex.as_str()).map_err(de::Error::custom)?;
+
+    Ok(RskRpcBitcoinMergedMining { header, pow })
 }
 
 fn parse_hash256_vec<'de, D>(deserializer: D) -> Result<Vec<Hash256>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let hex_strings: Vec<Value> = Deserialize::deserialize(deserializer)?;
+    let hex_strings: Vec<String> = Deserialize::deserialize(deserializer)?;
 
-    hex_strings.into_iter().map(|v| parse_hex_to_hash256(v).map_err(de::Error::custom)).collect()
+    hex_strings
+        .into_iter()
+        .map(|hex| Hash256::try_from(hex.as_str()).map_err(de::Error::custom))
+        .collect()
+}
+
+fn parse_optional_u16_vec<'de, D>(deserializer: D) -> Result<Option<Vec<u16>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<Vec<u16>>::deserialize(deserializer)
 }
 
 fn str_hex_to_u64(hex: &str) -> Result<u64, ParseIntError> {
@@ -925,6 +1185,20 @@ where
     let hex: String = Deserialize::deserialize(deserializer)?;
 
     DataBytes::from_hex_str(hex.as_str()).map_err(de::Error::custom)
+}
+
+fn parse_hex_quantity_to_data_bytes<'de, D>(deserializer: D) -> Result<DataBytes, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let hex: String = Deserialize::deserialize(deserializer)?;
+    let clean = hex.trim_start_matches("0x");
+    let normalized = if clean.is_empty() { "0" } else { clean };
+
+    let padded =
+        if normalized.len() % 2 == 0 { normalized.to_string() } else { format!("0{normalized}") };
+
+    hex::decode(padded).map(DataBytes).map_err(de::Error::custom)
 }
 
 #[cfg(test)]

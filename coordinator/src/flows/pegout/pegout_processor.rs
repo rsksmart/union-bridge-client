@@ -850,7 +850,7 @@ mod tests {
 
     use super::*;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
-    use crate::flows::advance_funds::tests::create_fake_block;
+    use crate::flows::advance_funds::test_utils::create_fake_block;
     use crate::flows::pegout::pegout_flow::FlowContext;
     use crate::store::MockCoordinatorStoreApi;
 
