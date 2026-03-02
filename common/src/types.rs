@@ -896,7 +896,7 @@ pub struct RskRpcBlock {
     #[serde(rename = "logsBloom", deserialize_with = "parse_hex_to_data_bytes")]
     logs_bloom: DataBytes,
 
-    #[serde(rename = "gasLimit", deserialize_with = "parse_hex_to_data_bytes")]
+    #[serde(rename = "gasLimit", deserialize_with = "parse_hex_quantity_to_data_bytes")]
     gas_limit: DataBytes,
 
     #[serde(rename = "gasUsed", deserialize_with = "parse_hex_to_u64")]
@@ -1185,6 +1185,20 @@ where
     let hex: String = Deserialize::deserialize(deserializer)?;
 
     DataBytes::from_hex_str(hex.as_str()).map_err(de::Error::custom)
+}
+
+fn parse_hex_quantity_to_data_bytes<'de, D>(deserializer: D) -> Result<DataBytes, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let hex: String = Deserialize::deserialize(deserializer)?;
+    let clean = hex.trim_start_matches("0x");
+    let normalized = if clean.is_empty() { "0" } else { clean };
+
+    let padded =
+        if normalized.len() % 2 == 0 { normalized.to_string() } else { format!("0{normalized}") };
+
+    hex::decode(padded).map(DataBytes).map_err(de::Error::custom)
 }
 
 #[cfg(test)]

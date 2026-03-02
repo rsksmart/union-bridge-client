@@ -311,6 +311,20 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_provider_block_response_when_gas_limit_is_odd_length_quantity_should_parse() {
+        let data =
+            fs::read_to_string(BLOCK_RESPONSE_FILE_PATH).expect("JSON data should be present");
+        let mut response: Value = serde_json::from_str(&data).expect("Failed to parse JSON");
+        response["result"]["gasLimit"] = json!("0xabc");
+
+        let block = AlloyProvider::parse_block_provider_response(response["result"].clone())
+            .expect("JSON data should be valid")
+            .expect("JSON data should map to RSK block");
+
+        assert_eq!(block.gas_limit().as_bytes(), [0x0a, 0xbc]);
+    }
+
+    #[test]
     fn test_parse_provider_block_response_when_given_invalid_type_in_data_should_return_error() {
         let data =
             fs::read_to_string(BLOCK_RESPONSE_FILE_PATH).expect("JSON data should be present");
