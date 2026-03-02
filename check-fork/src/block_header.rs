@@ -172,7 +172,7 @@ where
     let s: String = Deserialize::deserialize(deserializer)?;
     let s = s.strip_prefix("0x").unwrap_or(&s);
     let bytes = hex::decode(s).map_err(serde::de::Error::custom)?;
-    from_bytes_vec_to_h256(bytes)
+    from_bytes_vec_to_h256(&bytes)
 }
 
 pub fn deserialize_hex_bytes<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
@@ -212,12 +212,12 @@ where
         .map(|s| {
             let s = s.strip_prefix("0x").unwrap_or(s);
             let bytes = hex::decode(s).map_err(serde::de::Error::custom)?;
-            from_bytes_vec_to_h256(bytes)
+            from_bytes_vec_to_h256(&bytes)
         })
         .collect()
 }
 
-fn from_bytes_vec_to_h256<E>(bytes: Vec<u8>) -> Result<H256, E>
+fn from_bytes_vec_to_h256<E>(bytes: &[u8]) -> Result<H256, E>
 where
     E: serde::de::Error,
 {
@@ -225,7 +225,7 @@ where
         return Err(serde::de::Error::custom(format!("Expected 32 bytes, got {}", bytes.len())));
     }
 
-    Ok(H256::from_slice(&bytes))
+    Ok(H256::from_slice(bytes))
 }
 
 pub fn deserialize_hex_bytes_20<'de, D>(deserializer: D) -> Result<[u8; 20], D::Error>
