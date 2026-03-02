@@ -9,6 +9,7 @@ use sha3::{Digest, Keccak256};
 use crate::rlp::{encode_coin_value, encode_signed_coin_value_as_byte};
 
 const RSK_HEADER_EXTENSION_TYPE_V1: u8 = 1_u8;
+const MAX_RSK_PTE_EDGES: usize = 0; // for the moment is better to keep zero because parallel tx is not fully activated
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct RskBlockHeader {
@@ -119,7 +120,14 @@ impl RskBlockHeader {
         let mut extension_for_hash_fields = vec![alloy_rlp::encode(logs_bloom_hash.as_slice())];
 
         if let Some(edges) = &self.rsk_pte_edges {
-            let mut edges_little_endian = Vec::with_capacity(edges.len().saturating_mul(2));
+            let edge_bytes_len = edges
+                .len()
+                .checked_mul(std::mem::size_of::<u16>())
+                .ok_or("rsk_pte_edges byte length overflow")?;
+            if edge_bytes_len > MAX_RSK_PTE_EDGES {
+                return Err("rsk_pte_edges exceeds maximum allowed length");
+            }
+            let mut edges_little_endian = Vec::with_capacity(edge_bytes_len);
             for edge in edges {
                 edges_little_endian.extend_from_slice(&edge.to_le_bytes());
             }
