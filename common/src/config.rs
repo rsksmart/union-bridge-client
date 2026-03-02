@@ -3,8 +3,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use bitcoin::Network;
-use config;
-use config::{Environment, Source};
+use config::{self, Environment, Source};
 use log::trace;
 use log4rs::config::RawConfig;
 use serde::Deserialize;
