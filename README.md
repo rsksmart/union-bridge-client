@@ -242,6 +242,38 @@ The project includes two CLI tools for local development and operations:
 
 For detailed documentation, usage examples, and command references, see [cli/README.md](cli/README.md).
 
+## AWS Regtest (Essentials)
+
+Access to regtest requires SSH credentials for:
+- `ubuntu@union-bridge-use2-1.regtest.rskcomputing.net`
+
+Run from repository root:
+
+```bash
+# Fast path: start operators with existing config/addresses
+./cli-infra.sh --start-regtest
+
+# Full fresh orchestration (rebuild + reconfigure + restart)
+./cli-infra.sh --start-regtest --fresh
+
+# End-to-end regtest validation
+bash tests/run-happy-path-regtest.sh
+```
+
+Command summary:
+- `--start-regtest`: starts operators with existing deployed addresses/config.
+- `--start-regtest --fresh`: runs full remote fresh orchestration and clean operator restart.
+
+Important: if you change branch on the regtest host (`~/union-bridge-client`), rebuild images tagged as `latest-regtest` before starting operators:
+
+```bash
+cd docker/build
+bash d-compose-cli.sh build --tag=latest-regtest --no-cache
+```
+
+For full instance details (hosts, env vars, artifacts, validation, troubleshooting), see:
+- [`regtest-instance/README.md`](regtest-instance/README.md)
+
 ## Running the Union Client
 
 ### With Scripts
