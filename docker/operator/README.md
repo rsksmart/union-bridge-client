@@ -112,11 +112,15 @@ The contracts deployment runs once via the deploy-contracts container and then t
 inspect its output (eg. to check contract addresses) via Docker Desktop or running the following command:
 `./start_blockchains.sh logs deploy-contracts`
 
-If the contracts code changes (eg. new tag), you must rebuild the `deploy-contracts` image. You can do it with:
+**Contracts version:** By default, `start_blockchains.sh` uses the contracts version from `Cargo.toml` (union-contracts
+tag) and pulls the deploy-contracts image from the registry. To build from a local contracts checkout instead, use
+`--contracts-tag local-build`.
+
+If the contracts code changes (e.g. new tag) and you use `local-build`, run a clean deploy:
 
 ```bash
-# Rebuild the deploy-contracts image and start
-./start_blockchains.sh --new-contracts-version --fresh up -d
+# Clean deploy with local contracts
+./start_blockchains.sh --fresh --contracts-tag local-build up -d
 ```
 
 ### 4) Start or stop operator stacks
