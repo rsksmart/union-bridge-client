@@ -691,8 +691,7 @@ where
                         });
 
                 if !skip_signatures {
-                    let mut btc_sig_subflow =
-                        self.btc_sig_subflow_factory.create_flow(*flow_id);
+                    let mut btc_sig_subflow = self.btc_sig_subflow_factory.create_flow(*flow_id);
                     btc_sig_subflow.start_signature_flow(*flow_id, &register_input)?;
                     self.signature_flows.insert(*flow_id, btc_sig_subflow);
                 }

@@ -87,7 +87,9 @@ pub fn get_force_advance_address(env_name: Option<&str>) -> Option<String> {
         });
 
     if let Some(ref addr) = address {
-        warn!("[FORCE_ADVANCE] Force advance funds targeting address {addr} in environment: {env_name:?}");
+        warn!(
+            "[FORCE_ADVANCE] Force advance funds targeting address {addr} in environment: {env_name:?}"
+        );
     }
     address
 }
@@ -220,10 +222,7 @@ mod tests {
         // with environment variables. set_var/remove_var are unsafe in multi-threaded contexts.
         unsafe {
             std::env::set_var("FORCE_ADVANCE", "0xDEADBEEF");
-            assert_eq!(
-                get_force_advance_address(Some("local")).as_deref(),
-                Some("0xDEADBEEF")
-            );
+            assert_eq!(get_force_advance_address(Some("local")).as_deref(), Some("0xDEADBEEF"));
 
             // Empty string should return None
             std::env::set_var("FORCE_ADVANCE", "");
@@ -235,10 +234,7 @@ mod tests {
 
             // Address with whitespace should be trimmed
             std::env::set_var("FORCE_ADVANCE", "  0xABC123  ");
-            assert_eq!(
-                get_force_advance_address(Some("local")).as_deref(),
-                Some("0xABC123")
-            );
+            assert_eq!(get_force_advance_address(Some("local")).as_deref(), Some("0xABC123"));
 
             // Clean up
             std::env::remove_var("FORCE_ADVANCE");
