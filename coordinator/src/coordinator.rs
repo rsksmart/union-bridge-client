@@ -101,6 +101,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                 Rc::clone(&contracts_arc),
                 bitvmx_broker.clone(),
                 bridge_config.coordinator.required_confirmations,
+                advance_funds_config,
             )));
         } else {
             log::info!("AdvanceFunds/checkfork processor disabled by config");
