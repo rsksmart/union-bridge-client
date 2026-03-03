@@ -929,6 +929,7 @@ mod tests {
                 NativeBridgeVerifier::Dummy,
                 PegoutConfig::default(),
                 5, // required_confirmations for tests
+                None,
             );
 
             Self { processor, contracts, broker, store, rt_sync }
