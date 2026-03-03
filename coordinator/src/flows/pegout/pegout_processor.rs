@@ -331,16 +331,6 @@ where
                     continue;
                 }
 
-                // FORCE_ADVANCE: Skip dispatch step so the flow stays at DispatchTransaction
-                // and the advance funds timeout triggers naturally
-                if crate::force_flags::is_force_advance_enabled(self.env_name.as_deref()) {
-                    warn!(
-                        "[FORCE_ADVANCE] Skipping dispatch step for flow_id: {flow_id} - \
-                         flow stays at DispatchTransaction, timeout will trigger advance funds",
-                    );
-                    continue;
-                }
-
                 flow.complete_step(&StepData::DispatchTransaction)?;
 
                 // Cancel advance funds timeout since signatures completed successfully
@@ -682,9 +672,30 @@ where
                 };
                 flow.complete_step(&StepData::PegoutAccepted(input))?;
 
-                let mut btc_sig_subflow = self.btc_sig_subflow_factory.create_flow(*flow_id);
-                btc_sig_subflow.start_signature_flow(*flow_id, &register_input)?;
-                self.signature_flows.insert(*flow_id, btc_sig_subflow);
+                // FORCE_ADVANCE: If this operator's address matches the targeted address,
+                // skip the signature sub-flow so signatures never complete and the
+                // advance funds timeout triggers naturally.
+                let skip_signatures =
+                    crate::force_flags::get_force_advance_address(self.env_name.as_deref())
+                        .is_some_and(|force_addr| {
+                            let my_addr = self.contracts_gateway.my_address();
+                            let matches = format!("{my_addr}").to_lowercase()
+                                == force_addr.trim().to_lowercase();
+                            if matches {
+                                warn!(
+                                    "[FORCE_ADVANCE] Skipping signature flow for flow_id: {flow_id} - \
+                                     operator {my_addr} will not sign, timeout will trigger advance funds",
+                                );
+                            }
+                            matches
+                        });
+
+                if !skip_signatures {
+                    let mut btc_sig_subflow =
+                        self.btc_sig_subflow_factory.create_flow(*flow_id);
+                    btc_sig_subflow.start_signature_flow(*flow_id, &register_input)?;
+                    self.signature_flows.insert(*flow_id, btc_sig_subflow);
+                }
 
                 // Schedule advance funds timeout: 2 hours from now
                 // We'll schedule it when we process the next block with its timestamp

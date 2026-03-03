@@ -13,20 +13,20 @@
 //!
 //! ### File-based (recommended for testing - hot-reloadable)
 //!
-//! - `touch /tmp/FORCE_ADVANCE` - Enable advance funds trigger
+//! - `echo "0xOPERATOR_ADDRESS" > /tmp/FORCE_ADVANCE` - Target operator skips signatures
 //! - `touch /tmp/FORCE_DISPUTE` - Enable dispute override
 //! - `rm /tmp/FORCE_ADVANCE` - Disable (delete the file)
 //!
 //! ### Environment Variables (set at startup)
 //!
-//! - `FORCE_ADVANCE=true` - Enable advance funds trigger
+//! - `FORCE_ADVANCE=0xOPERATOR_ADDRESS` - Target operator skips signatures
 //! - `FORCE_DISPUTE=true` - Enable dispute override
 //!
 //! ## Flag Behavior
 //!
-//! - `FORCE_ADVANCE` - Skips dispatching the pegout transaction in `DispatchTransaction`
-//!   step, simulating operator misbehavior. This naturally triggers the advance funds
-//!   mechanism via timeout.
+//! - `FORCE_ADVANCE` - Contains a Rootstock address. The targeted operator skips the
+//!   signature sub-flow, simulating operator misbehavior. Since signatures never complete,
+//!   the advance funds timeout triggers naturally.
 //! - `FORCE_DISPUTE` - Overrides `ReimbursementResult` to `OperatorWon`, simulating
 //!   a successful dispute.
 
@@ -57,31 +57,39 @@ fn is_force_flags_allowed(env_name: Option<&str>) -> bool {
     }
 }
 
-/// Checks if `FORCE_ADVANCE` is enabled.
+/// Returns the Rootstock address targeted by `FORCE_ADVANCE`, if set.
 ///
-/// When enabled, pegouts in `DispatchTransaction` step will skip dispatching
-/// the transaction, simulating operator misbehavior. This naturally triggers
-/// the advance funds mechanism via timeout.
+/// When set, the targeted operator skips the signature sub-flow, simulating
+/// operator misbehavior. Since signatures never complete, the advance funds
+/// timeout triggers naturally.
+///
+/// The value should be a Rootstock address (e.g. `0x1234...`).
 ///
 /// Checks file first (hot-reloadable), then falls back to environment variable.
 ///
 /// Only works in non-production environments (Local, `LocalDocker`, Regtest).
 #[must_use]
-pub fn is_force_advance_enabled(env_name: Option<&str>) -> bool {
+pub fn get_force_advance_address(env_name: Option<&str>) -> Option<String> {
     if !is_force_flags_allowed(env_name) {
-        return false;
+        return None;
     }
 
     // Check file first (hot-reloadable), then env var
-    let enabled = Path::new(FORCE_ADVANCE_FILE).exists()
-        || std::env::var("FORCE_ADVANCE")
-            .ok()
-            .is_some_and(|v| v.to_lowercase() == "true" || v == "1");
+    let address = std::fs::read_to_string(FORCE_ADVANCE_FILE)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            std::env::var("FORCE_ADVANCE")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        });
 
-    if enabled {
-        warn!("[FORCE_ADVANCE] Force advance funds is ENABLED for environment: {env_name:?}");
+    if let Some(ref addr) = address {
+        warn!("[FORCE_ADVANCE] Force advance funds targeting address {addr} in environment: {env_name:?}");
     }
-    enabled
+    address
 }
 
 /// Checks if `FORCE_DISPUTE` is enabled.
@@ -154,19 +162,25 @@ mod tests {
             // Clear any existing env var
             std::env::remove_var("FORCE_ADVANCE");
 
-            // Without env var set, should return false
-            assert!(!is_force_advance_enabled(None));
-            assert!(!is_force_advance_enabled(Some("local")));
+            // Without env var set, should return None
+            assert!(get_force_advance_address(None).is_none());
+            assert!(get_force_advance_address(Some("local")).is_none());
 
-            // With env var set to true in local, should return true
-            std::env::set_var("FORCE_ADVANCE", "true");
-            assert!(is_force_advance_enabled(None));
-            assert!(is_force_advance_enabled(Some("local")));
-            assert!(is_force_advance_enabled(Some("regtest")));
+            // With env var set to an address in local, should return Some(address)
+            std::env::set_var("FORCE_ADVANCE", "0xABCDEF1234567890");
+            assert_eq!(get_force_advance_address(None).as_deref(), Some("0xABCDEF1234567890"));
+            assert_eq!(
+                get_force_advance_address(Some("local")).as_deref(),
+                Some("0xABCDEF1234567890")
+            );
+            assert_eq!(
+                get_force_advance_address(Some("regtest")).as_deref(),
+                Some("0xABCDEF1234567890")
+            );
 
-            // With env var set to true in production, should return false
-            assert!(!is_force_advance_enabled(Some("alphanet")));
-            assert!(!is_force_advance_enabled(Some("testnet")));
+            // In production, should return None regardless
+            assert!(get_force_advance_address(Some("alphanet")).is_none());
+            assert!(get_force_advance_address(Some("testnet")).is_none());
 
             // Clean up
             std::env::remove_var("FORCE_ADVANCE");
@@ -201,24 +215,30 @@ mod tests {
     }
 
     #[test]
-    fn test_force_flags_accept_various_true_values() {
+    fn test_force_advance_returns_address_value() {
         // SAFETY: These tests must run with --test-threads=1 to avoid race conditions
         // with environment variables. set_var/remove_var are unsafe in multi-threaded contexts.
         unsafe {
-            std::env::set_var("FORCE_ADVANCE", "true");
-            assert!(is_force_advance_enabled(Some("local")));
+            std::env::set_var("FORCE_ADVANCE", "0xDEADBEEF");
+            assert_eq!(
+                get_force_advance_address(Some("local")).as_deref(),
+                Some("0xDEADBEEF")
+            );
 
-            std::env::set_var("FORCE_ADVANCE", "TRUE");
-            assert!(is_force_advance_enabled(Some("local")));
+            // Empty string should return None
+            std::env::set_var("FORCE_ADVANCE", "");
+            assert!(get_force_advance_address(Some("local")).is_none());
 
-            std::env::set_var("FORCE_ADVANCE", "1");
-            assert!(is_force_advance_enabled(Some("local")));
+            // Whitespace-only should return None
+            std::env::set_var("FORCE_ADVANCE", "  ");
+            assert!(get_force_advance_address(Some("local")).is_none());
 
-            std::env::set_var("FORCE_ADVANCE", "false");
-            assert!(!is_force_advance_enabled(Some("local")));
-
-            std::env::set_var("FORCE_ADVANCE", "0");
-            assert!(!is_force_advance_enabled(Some("local")));
+            // Address with whitespace should be trimmed
+            std::env::set_var("FORCE_ADVANCE", "  0xABC123  ");
+            assert_eq!(
+                get_force_advance_address(Some("local")).as_deref(),
+                Some("0xABC123")
+            );
 
             // Clean up
             std::env::remove_var("FORCE_ADVANCE");
