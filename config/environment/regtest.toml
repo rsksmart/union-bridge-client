@@ -48,9 +48,6 @@ blocks.host = "block-indexer"
 logs.host = "log-indexer"
 user.host = "user-api"
 
-[coordinator.advance_funds]
-enabled = true
-
 # ═══════════════════════════════════════════════════════
 # Transaction Dispatcher
 # ═══════════════════════════════════════════════════════

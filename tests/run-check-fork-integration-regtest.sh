@@ -17,6 +17,7 @@ CHECKFORK_ACCEPT_PROOF_NOT_READY="${CHECKFORK_ACCEPT_PROOF_NOT_READY:-true}"
 HAPPYPATH_COMMITTEE_SETUP_MAX_BLOCKS="${HAPPYPATH_COMMITTEE_SETUP_MAX_BLOCKS:-}"
 HAPPYPATH_PEGIN_MAX_BLOCKS="${HAPPYPATH_PEGIN_MAX_BLOCKS:-}"
 HAPPYPATH_PEGOUT_MAX_BLOCKS="${HAPPYPATH_PEGOUT_MAX_BLOCKS:-}"
+CHECKFORK_EXECUTOR_OPERATOR_ID="${CHECKFORK_EXECUTOR_OPERATOR_ID:-1}"
 
 BITCOIN_RPC_HOST="${BITCOIN_RPC_HOST:-10.1.0.107}"
 BITCOIN_RPC_PORT="${BITCOIN_RPC_PORT:-18332}"
@@ -24,6 +25,11 @@ BITCOIN_RPC_USER="${BITCOIN_RPC_USER:-user}"
 BITCOIN_RPC_PASSWORD="${BITCOIN_RPC_PASSWORD:-pass}"
 BITCOIN_WALLET_NAME="${BITCOIN_WALLET_NAME:-mainwallet}"
 CHECKFORK_AUTO_MINE="${CHECKFORK_AUTO_MINE:-true}"
+RSK_RPC_URL="${RSK_RPC_URL:-http://node-use2-1.regtest.rskcomputing.net:4444}"
+CHECKFORK_MOCK_RPC_URL="${CHECKFORK_MOCK_RPC_URL:-ws://node-use2-1.regtest.rskcomputing.net:4445}"
+CHECKFORK_MOCK_PRIVATE_KEY="${CHECKFORK_MOCK_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
+CHECKFORK_REQUIRED_NUM_BLOCKS="${CHECKFORK_REQUIRED_NUM_BLOCKS:-5}"
+CHECKFORK_RSK_BLOCKS_AFTER_ADVANCE="${CHECKFORK_RSK_BLOCKS_AFTER_ADVANCE:-}"
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -34,11 +40,15 @@ log() { echo -e "${BLUE}[INFO]${NC} $1"; }
 success() { echo -e "${GREEN}[OK]${NC} $1"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 die() { echo "Error: $1" >&2; exit 1; }
+require_cmd() { command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"; }
+
+export PATH="${HOME}/.cargo/bin:${HOME}/.foundry/bin:${PATH}"
+STOPPED_BITVMX_CLIENTS=()
 
 if [[ "${REGTEST_REMOTE:-}" != "1" ]]; then
     log "Connecting to regtest instance: ${REGTEST_HOST}"
     exec ssh -A "${REGTEST_USER}@${REGTEST_HOST}" \
-        "cd ~/${REGTEST_ROOT} && REGTEST_REMOTE=1 CHECKFORK_DISPATCH_MAX_BLOCKS='${CHECKFORK_DISPATCH_MAX_BLOCKS}' CHECKFORK_PROOF_MAX_BLOCKS='${CHECKFORK_PROOF_MAX_BLOCKS}' CHECKFORK_LOG_SINCE='${CHECKFORK_LOG_SINCE}' CHECKFORK_LOG_TAIL_LINES='${CHECKFORK_LOG_TAIL_LINES}' CHECKFORK_ACCEPT_PROOF_NOT_READY='${CHECKFORK_ACCEPT_PROOF_NOT_READY}' HAPPYPATH_COMMITTEE_SETUP_MAX_BLOCKS='${HAPPYPATH_COMMITTEE_SETUP_MAX_BLOCKS}' HAPPYPATH_PEGIN_MAX_BLOCKS='${HAPPYPATH_PEGIN_MAX_BLOCKS}' HAPPYPATH_PEGOUT_MAX_BLOCKS='${HAPPYPATH_PEGOUT_MAX_BLOCKS}' BITCOIN_RPC_HOST='${BITCOIN_RPC_HOST}' BITCOIN_RPC_PORT='${BITCOIN_RPC_PORT}' BITCOIN_RPC_USER='${BITCOIN_RPC_USER}' BITCOIN_RPC_PASSWORD='${BITCOIN_RPC_PASSWORD}' BITCOIN_WALLET_NAME='${BITCOIN_WALLET_NAME}' CHECKFORK_AUTO_MINE='${CHECKFORK_AUTO_MINE}' bash tests/run-check-fork-integration-regtest.sh"
+        "cd ~/${REGTEST_ROOT} && REGTEST_REMOTE=1 CHECKFORK_DISPATCH_MAX_BLOCKS='${CHECKFORK_DISPATCH_MAX_BLOCKS}' CHECKFORK_PROOF_MAX_BLOCKS='${CHECKFORK_PROOF_MAX_BLOCKS}' CHECKFORK_LOG_SINCE='${CHECKFORK_LOG_SINCE}' CHECKFORK_LOG_TAIL_LINES='${CHECKFORK_LOG_TAIL_LINES}' CHECKFORK_ACCEPT_PROOF_NOT_READY='${CHECKFORK_ACCEPT_PROOF_NOT_READY}' HAPPYPATH_COMMITTEE_SETUP_MAX_BLOCKS='${HAPPYPATH_COMMITTEE_SETUP_MAX_BLOCKS}' HAPPYPATH_PEGIN_MAX_BLOCKS='${HAPPYPATH_PEGIN_MAX_BLOCKS}' HAPPYPATH_PEGOUT_MAX_BLOCKS='${HAPPYPATH_PEGOUT_MAX_BLOCKS}' CHECKFORK_EXECUTOR_OPERATOR_ID='${CHECKFORK_EXECUTOR_OPERATOR_ID}' BITCOIN_RPC_HOST='${BITCOIN_RPC_HOST}' BITCOIN_RPC_PORT='${BITCOIN_RPC_PORT}' BITCOIN_RPC_USER='${BITCOIN_RPC_USER}' BITCOIN_RPC_PASSWORD='${BITCOIN_RPC_PASSWORD}' BITCOIN_WALLET_NAME='${BITCOIN_WALLET_NAME}' CHECKFORK_AUTO_MINE='${CHECKFORK_AUTO_MINE}' RSK_RPC_URL='${RSK_RPC_URL}' CHECKFORK_MOCK_RPC_URL='${CHECKFORK_MOCK_RPC_URL}' CHECKFORK_MOCK_PRIVATE_KEY='${CHECKFORK_MOCK_PRIVATE_KEY}' CHECKFORK_REQUIRED_NUM_BLOCKS='${CHECKFORK_REQUIRED_NUM_BLOCKS}' CHECKFORK_RSK_BLOCKS_AFTER_ADVANCE='${CHECKFORK_RSK_BLOCKS_AFTER_ADVANCE}' bash tests/run-check-fork-integration-regtest.sh"
 fi
 
 check_operators_deployed() {
@@ -96,6 +106,153 @@ bitcoin_rpc_call_wallet() {
     fi
 
     echo "$response" | jq -cr '.result'
+}
+
+get_contract_address() {
+    local contract_name="$1"
+    awk -v contract_name="$contract_name" '
+        /^\[\[contracts\]\]$/ { target=0 }
+        $0 == "name = \"" contract_name "\"" { target=1; next }
+        target && $0 ~ /^address = / {
+            gsub(/"/, "", $3)
+            print $3
+            exit
+        }
+    ' config/environment/regtest.toml
+}
+
+rsk_rpc_call() {
+    local method="$1"
+    local params="$2"
+    local payload
+    payload=$(printf '{"jsonrpc":"2.0","method":"%s","params":%s,"id":1}' "$method" "$params")
+    curl -sS -H "Content-Type: application/json" --data "$payload" "$RSK_RPC_URL"
+}
+
+wait_for_rsk_tx_receipt() {
+    local tx_hash="$1"
+    local attempts="${2:-30}"
+    local i
+
+    for ((i = 0; i < attempts; i++)); do
+        local response status
+        response=$(rsk_rpc_call "eth_getTransactionReceipt" "[\"${tx_hash}\"]")
+        status=$(echo "$response" | jq -r '.result.status // empty')
+        if [[ "$status" == "0x1" ]]; then
+            return 0
+        fi
+        if [[ "$status" == "0x0" ]]; then
+            die "RSK contract tx reverted: ${tx_hash}"
+        fi
+        sleep 1
+    done
+
+    die "Timeout waiting RSK tx receipt: ${tx_hash}"
+}
+
+emit_fake_peg_manager_tx() {
+    local fake_address="$1"
+    local signature="$2"
+    shift 2
+
+    local data
+    data=$(cast calldata "$signature" "$@")
+
+    local from_addr
+    from_addr=$(rsk_rpc_call "eth_accounts" "[]" | jq -r '.result[0] // empty')
+    [[ -n "$from_addr" && "$from_addr" != "null" ]] || die "Failed to get unlocked RSK account"
+
+    local response tx_hash err
+    response=$(rsk_rpc_call \
+        "eth_sendTransaction" \
+        "[{\"from\":\"${from_addr}\",\"to\":\"${fake_address}\",\"data\":\"${data}\",\"gas\":\"0x493e0\",\"gasPrice\":\"0x0\"}]")
+    err=$(echo "$response" | jq -r '.error.message // empty')
+    if [[ -n "$err" ]]; then
+        die "RSK contract tx failed: $err"
+    fi
+
+    tx_hash=$(echo "$response" | jq -r '.result // empty')
+    [[ -n "$tx_hash" && "$tx_hash" != "null" ]] || die "RSK contract tx did not return a hash"
+
+    wait_for_rsk_tx_receipt "$tx_hash"
+}
+
+emit_followup_rsk_blocks() {
+    local fake_address="$1"
+    local pegout_id="$2"
+    local required_num_blocks="${CHECKFORK_REQUIRED_NUM_BLOCKS}"
+    local followup_blocks="${CHECKFORK_RSK_BLOCKS_AFTER_ADVANCE:-$((required_num_blocks + 2))}"
+    local i
+
+    for i in $(seq 1 "$followup_blocks"); do
+        emit_fake_peg_manager_tx "$fake_address" "checkForkComplete(string)" "noop_${pegout_id}_${i}"
+        sleep 1
+    done
+}
+
+restore_restricted_bitvmx_clients() {
+    local container
+    for container in "${STOPPED_BITVMX_CLIENTS[@]}"; do
+        if docker ps -a --format "{{.Names}}" | grep -qx "$container"; then
+            log "Restoring ${container}"
+            docker start "$container" >/dev/null || true
+        fi
+    done
+}
+
+restrict_checkfork_prover_to_operator() {
+    local executor_id="${CHECKFORK_EXECUTOR_OPERATOR_ID}"
+    local op_id
+
+    log "Keeping only op_${executor_id} bitvmx-client active for CheckFork proving"
+    for op_id in 1 2 3 4; do
+        local container="op_${op_id}-bitvmx-client-1"
+        if [[ "$op_id" == "$executor_id" ]]; then
+            continue
+        fi
+        if docker ps --format "{{.Names}}" | grep -qx "$container"; then
+            docker stop "$container" >/dev/null
+            STOPPED_BITVMX_CLIENTS+=("$container")
+        fi
+    done
+}
+
+trigger_advance_funds_mock_events() {
+    require_cmd cargo
+    require_cmd cast
+    require_cmd curl
+    require_cmd jq
+
+    local fake_peg_manager_address
+    fake_peg_manager_address=$(get_contract_address "FakePegManager")
+    local peg_manager_address
+    peg_manager_address=$(get_contract_address "PegManager")
+
+    [[ -n "$fake_peg_manager_address" ]] || die "FakePegManager address not found in config/environment/regtest.toml"
+    [[ -n "$peg_manager_address" ]] || die "PegManager address not found in config/environment/regtest.toml"
+    [[ "${fake_peg_manager_address,,}" != "${peg_manager_address,,}" ]] \
+        || die "FakePegManager must differ from PegManager on regtest"
+
+    local mock_pegout_id
+    mock_pegout_id="checkfork_$(date -u +%Y%m%dT%H%M%SZ)"
+    log "Triggering RequestAdvanceFunds/AdvanceFunds via cli/mocks for pegout_id=${mock_pegout_id}"
+
+    local mock_cli_output
+    mock_cli_output=$(
+        printf 'raf %s\nkaf %s\nexit\n' "$mock_pegout_id" "$mock_pegout_id" |
+            MOCKS_PRIVATE_KEY="${CHECKFORK_MOCK_PRIVATE_KEY}" \
+                FAKE_PEG_MANAGER_ADDRESS="${fake_peg_manager_address}" \
+                CHECK_FORK_REQUIRED_NUM_BLOCKS="${CHECKFORK_REQUIRED_NUM_BLOCKS}" \
+                cargo run --manifest-path cli/mocks/Cargo.toml -- \
+                    --rpc-url "${CHECKFORK_MOCK_RPC_URL}" \
+                    --no-deploy 2>&1
+    ) || {
+        echo "$mock_cli_output"
+        die "cli/mocks failed while emitting RequestAdvanceFunds/AdvanceFunds"
+    }
+
+    echo "$mock_cli_output"
+    emit_followup_rsk_blocks "$fake_peg_manager_address" "$mock_pegout_id"
 }
 
 maybe_mine_one_block() {
@@ -269,6 +426,7 @@ wait_for_checkfork_proof_state() {
 }
 
 check_operators_deployed
+trap restore_restricted_bitvmx_clients EXIT
 
 log "Running regtest happy path to trigger advance_funds/checkfork"
 if ! LOG_SINCE="$CHECKFORK_LOG_SINCE" REGTEST_REMOTE=1 COMMITTEE_SETUP_MAX_BLOCKS="$HAPPYPATH_COMMITTEE_SETUP_MAX_BLOCKS" PEGIN_MAX_BLOCKS="$HAPPYPATH_PEGIN_MAX_BLOCKS" PEGOUT_MAX_BLOCKS="$HAPPYPATH_PEGOUT_MAX_BLOCKS" bash tests/run-happy-path-regtest.sh; then
@@ -276,6 +434,9 @@ if ! LOG_SINCE="$CHECKFORK_LOG_SINCE" REGTEST_REMOTE=1 COMMITTEE_SETUP_MAX_BLOCK
     dump_recent_logs "bitvmx-client"
     die "run-happy-path-regtest.sh failed"
 fi
+
+restrict_checkfork_prover_to_operator
+trigger_advance_funds_mock_events
 
 if ! dispatch_line=$(wait_for_log_match_with_block_timeout "coordinator" "event=checkfork_zkp_dispatched" "$CHECKFORK_DISPATCH_MAX_BLOCKS"); then
     dump_recent_logs "coordinator"

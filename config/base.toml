@@ -71,7 +71,6 @@ broker.client_id = 101
 storage_path = "/{BASE_STORAGE_PATH}/.union_bridge/database/multi-client-1"
 
 [coordinator.advance_funds]
-enabled = false
 check_fork_guest_elf_path = "/app/config/check-fork-guest.bin"
 max_zkp_status_retries = 30
 

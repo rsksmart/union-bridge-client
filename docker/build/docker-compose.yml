@@ -75,8 +75,8 @@ services:
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
       - BITCOIN_NETWORK=${BITCOIN_NETWORK:-dummy-bitcoin-network}
       - ENV_NAME=${ENV_NAME:-dummy-env-name}
-      - UB_CHECK_FORK_GUEST_ELF_PATH=${UB_CHECK_FORK_GUEST_ELF_PATH:-}
-      - UB_CHECK_FORK_MAX_ZKP_STATUS_RETRIES=${UB_CHECK_FORK_MAX_ZKP_STATUS_RETRIES:-}
+      - UB__coordinator__advance_funds__check_fork_guest_elf_path=${UB__coordinator__advance_funds__check_fork_guest_elf_path:-}
+      - UB__coordinator__advance_funds__max_zkp_status_retries=${UB__coordinator__advance_funds__max_zkp_status_retries:-}
     healthcheck:
       interval: 30s
       timeout: 10s

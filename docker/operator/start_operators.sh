@@ -438,7 +438,7 @@ sync_regtest_bitvmx_heights() {
 }
 
 resolve_regtest_check_fork_elf_path() {
-  local configured_path="${UB_CHECK_FORK_GUEST_ELF_PATH:-}"
+  local configured_path="${UB__coordinator__advance_funds__check_fork_guest_elf_path:-}"
   local default_path
   default_path="$(cd "${SCRIPT_DIR}/.." && pwd)/bitvmx-client/config/regtest/client/config/check-fork-guest.bin"
 
@@ -491,7 +491,7 @@ run_all_operators() {
     local extra_env=""
 
     if [[ "${ENVIRONMENT}" == "regtest" ]]; then
-      extra_env="UB_CHECK_FORK_GUEST_ELF_PATH=${regtest_check_fork_elf_path}"
+      extra_env="UB__coordinator__advance_funds__check_fork_guest_elf_path=${regtest_check_fork_elf_path}"
     fi
 
     local DOCKER_CMD="CONFIG_DIR=${CONFIG_DIR} USER_BITCOIN_WIF=${USER_BITCOIN_WIF} USER_API_PORT=${USER_API_PORT} BITVMX_PORT=${BITVMX_PORT} BITVMX_P2P_HOST=${BITVMX_P2P_HOST} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} ${extra_env:+${extra_env} }docker compose ${COMPOSE_FILE_ARG} -p op_${op_num} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"

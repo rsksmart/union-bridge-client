@@ -45,7 +45,7 @@ fn main() -> Result<()> {
     );
     info!("Environment variables with prefix UB__ will override config values");
 
-    let config: Config = Config::load(env_name.clone()).expect("Failed to load config");
+    let config: Config = Config::load(env_name.as_deref()).expect("Failed to load config");
 
     let bitcoin_network = CommonConfig::parse_bitcoin_network(&config.bitcoin_network)?;
 

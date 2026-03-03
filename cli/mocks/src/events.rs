@@ -1,10 +1,9 @@
 use alloy_eips::BlockNumberOrTag;
-use alloy_primitives::U256;
+use alloy_primitives::{Address, U256};
 use alloy_provider::Provider;
 use anyhow::{Context, Result, anyhow};
 use common::mocks::fake_contracts::FakePegManager;
 use common::mocks::fake_contracts::FakePegManager::FakePegManagerInstance;
-use common::types::BlockPow;
 use std::env;
 use std::time::SystemTime;
 
@@ -14,43 +13,57 @@ pub struct Executor<P: Provider> {
 }
 
 impl<P: Provider + Clone> Executor<P> {
-    pub async fn new(provider: P, provider_url: &str) -> Result<Self> {
-        println!("Deploying FakePegManager to {}...", provider_url);
+    pub async fn new(
+        provider: P,
+        provider_url: &str,
+        fake_peg_manager_address: Option<Address>,
+        no_deploy: bool,
+    ) -> Result<Self> {
+        let fake_peg_manager = if no_deploy {
+            let address = fake_peg_manager_address.ok_or_else(|| {
+                anyhow!(
+                    "--no-deploy requires --fake-peg-manager-address (or FAKE_PEG_MANAGER_ADDRESS env)"
+                )
+            })?;
+            println!("Attaching to FakePegManager at {} on {} (no deploy)", address, provider_url);
+            FakePegManager::new(address, provider.clone())
+        } else if let Some(address) = fake_peg_manager_address {
+            println!("Attaching to existing FakePegManager at {} on {}", address, provider_url);
+            FakePegManager::new(address, provider.clone())
+        } else {
+            println!("Deploying FakePegManager to {}...", provider_url);
+            // deploy FakePegManager: must go after real PegManager deployment to not affect generated addresses
+            let deployed = FakePegManager::deploy(provider.clone())
+                .await
+                .context("Cannot deploy FakePegManager")?;
+            println!("FakePegManager deployed at {}", deployed.address());
+            deployed
+        };
 
-        // deploy FakePegManager: must go after real PegManager deployment to not affect generated addresses
-        let fake_peg_manager = FakePegManager::deploy(provider.clone())
-            .await
-            .context("Cannot deploy FakePegManager")?;
-
-        println!("FakePegManager deployed at {}", fake_peg_manager.address());
-
-        Ok(Self {
-            provider,
-            fake_peg_manager,
-        })
+        Ok(Self { provider, fake_peg_manager })
     }
 
-    pub async fn request_advance_funds(&self) -> Result<()> {
-        // naive way to generate a different pegout id each time
-        let naive_id = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)?
-            .as_secs();
-
-        let pegout_id = format!("pegout_{naive_id}");
+    pub async fn request_advance_funds(&self, pegout_id: Option<String>) -> Result<()> {
+        let pegout_id = match pegout_id {
+            Some(pegout_id) => pegout_id,
+            None => {
+                // naive way to generate a different pegout id each time
+                let naive_id = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?.as_secs();
+                format!("pegout_{naive_id}")
+            }
+        };
 
         let receipt = self
             .fake_peg_manager
             .requestAdvanceFunds(pegout_id.to_string(), 1000)
+            .gas_price(0u128)
             .send()
             .await?
             .get_receipt()
             .await?;
 
         if receipt.status() {
-            println!(
-                "Transaction succeeded: {:?}, pegout_id: {}",
-                receipt, pegout_id
-            );
+            println!("Transaction succeeded: {:?}, pegout_id: {}", receipt, pegout_id);
             Ok(())
         } else {
             eprintln!("Transaction failed: {:?}", receipt);
@@ -70,12 +83,7 @@ impl<P: Provider + Clone> Executor<P> {
             .and_then(|s| s.parse::<u32>().ok())
             .unwrap_or(5);
 
-        // required_num_blocks - 1 to complete req pow before req blocks
-        let blocks_to_fill_effort = U256::from_be_slice(&(required_num_blocks - 1).to_be_bytes());
-        let effort_alloy = U256::from_be_slice(&Self::get_effort().into_effort().to_big_endian());
-        let required_effort = effort_alloy
-            .checked_mul(blocks_to_fill_effort)
-            .expect("required_effort should not overflow");
+        let required_effort = Self::default_required_effort(required_num_blocks);
 
         let utxo_id = format!("utxo_{}", bb.header.number);
         let operator_id = format!("operator_{}", bb.header.number);
@@ -89,16 +97,14 @@ impl<P: Provider + Clone> Executor<P> {
                 required_effort,
                 required_num_blocks,
             )
+            .gas_price(0u128)
             .send()
             .await?
             .get_receipt()
             .await?;
 
         if receipt.status() {
-            println!(
-                "Transaction succeeded: {:?}, pegout_id: {}",
-                receipt, pegout_id
-            );
+            println!("Transaction succeeded: {:?}, pegout_id: {}", receipt, pegout_id);
             Ok(())
         } else {
             eprintln!("Transaction failed: {:?}", receipt);
@@ -107,13 +113,18 @@ impl<P: Provider + Clone> Executor<P> {
     }
 
     #[cfg(feature = "anvil")]
-    fn get_effort() -> BlockPow {
+    fn default_required_effort(required_num_blocks: u32) -> U256 {
         use common::anvil_mocks::get_anvil_block_pow;
-        get_anvil_block_pow()
+        let blocks_to_fill_effort = U256::from(required_num_blocks.saturating_sub(1));
+        let effort_alloy =
+            U256::from_be_slice(&get_anvil_block_pow().into_effort().to_big_endian());
+        effort_alloy
+            .checked_mul(blocks_to_fill_effort)
+            .expect("required_effort should not overflow")
     }
 
     #[cfg(not(feature = "anvil"))]
-    fn get_effort() -> BlockPow {
-        panic!("This crate should be used with 'anvil' feature enabled");
+    fn default_required_effort(required_num_blocks: u32) -> U256 {
+        U256::from(required_num_blocks.saturating_sub(1))
     }
 }

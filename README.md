@@ -424,9 +424,22 @@ will:
 
 #### Mocking Advance Funds Events via FakePegManager
 
-If you run it right after the real contracts deployment (on a clean _anvil_ instance), the correct address should be
-already set in the config. Otherwise, check the `FakePegManager deployed at 0x...` message printed in the terminal to
-get the address of the deployed contract and configure it accordingly (under `FakePegManager` entry).
+By default (`deploy` mode), the CLI deploys `FakePegManager` against local anvil.
+
+For regtest, use `attach` mode (`--no-deploy`) and pass the predeployed address:
+
+```bash
+./cli-mocking.sh \
+  --rpc-url ws://node-use2-1.regtest.rskcomputing.net:4445 \
+  --fake-peg-manager-address 0x... \
+  --no-deploy
+```
+
+You can also provide values through env vars:
+
+- `MOCKS_PRIVATE_KEY`
+- `FAKE_PEG_MANAGER_ADDRESS`
+- `CHECK_FORK_REQUIRED_NUM_BLOCKS` (optional, defaults to `5`)
 
 You will have the following commands available:
 

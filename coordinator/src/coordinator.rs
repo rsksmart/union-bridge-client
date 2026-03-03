@@ -93,63 +93,58 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
             NativeBridgeVerifier::Dummy
         };
 
-        let mut processors: Vec<Box<dyn EventProcessor>> = Vec::new();
-
-        if advance_funds_config.enabled {
-            processors.push(Box::new(AdvanceFundsProcessor::new(
+        let processors: Vec<Box<dyn EventProcessor>> = vec![
+            Box::new(AdvanceFundsProcessor::new(
                 rt_sync.clone(),
                 Rc::clone(&contracts_arc),
                 bitvmx_broker.clone(),
                 bridge_config.coordinator.required_confirmations,
                 advance_funds_config,
-            )));
-        } else {
-            log::info!("AdvanceFunds/checkfork processor disabled by config");
-        }
-
-        processors.push(Box::new(PeginFlowProcessor::new(
-            Rc::clone(&contracts_arc),
-            rt_sync.clone(),
-            bitvmx_broker.clone(),
-            global_context.clone(),
-            &store_rc,
-            native_bridge_verifier.clone(),
-            bridge_config.pegin.clone(),
-            bridge_config.coordinator.required_confirmations,
-        )));
-        processors.push(Box::new(
-            PegoutFlowProcessor::restore_or_new(
-                contracts_arc.clone(),
+            )),
+            Box::new(PeginFlowProcessor::new(
+                Rc::clone(&contracts_arc),
                 rt_sync.clone(),
                 bitvmx_broker.clone(),
                 global_context.clone(),
                 &store_rc,
                 native_bridge_verifier.clone(),
-                bridge_config.pegout.clone(),
+                bridge_config.pegin.clone(),
+                bridge_config.coordinator.required_confirmations,
+            )),
+            Box::new(
+                PegoutFlowProcessor::restore_or_new(
+                    contracts_arc.clone(),
+                    rt_sync.clone(),
+                    bitvmx_broker.clone(),
+                    global_context.clone(),
+                    &store_rc,
+                    native_bridge_verifier.clone(),
+                    bridge_config.pegout.clone(),
+                    bridge_config.coordinator.required_confirmations,
+                    env_name,
+                )
+                // todo(fede) ideally this method should return a result
+                .expect("couldn't restore or create pegout flow processor"),
+            ),
+            //Operator_take_flow
+            Box::new(AdvanceFundsFlowProcessor::new(
+                contracts_arc.clone(),
+                rt_sync.clone(),
+                bitvmx_broker.clone(),
+                global_context.clone(),
+                native_bridge_verifier,
+                bridge_config.advance_funds.clone(),
                 bridge_config.coordinator.required_confirmations,
                 env_name,
-            )
-            // todo(fede) ideally this method should return a result
-            .expect("couldn't restore or create pegout flow processor"),
-        ));
-        //Operator_take_flow
-        processors.push(Box::new(AdvanceFundsFlowProcessor::new(
-            contracts_arc.clone(),
-            rt_sync.clone(),
-            bitvmx_broker.clone(),
-            global_context.clone(),
-            native_bridge_verifier,
-            bridge_config.advance_funds.clone(),
-            bridge_config.coordinator.required_confirmations,
-            env_name,
-        )));
-        processors.push(Box::new(SetupCommitteeProcessor::new(
-            setup_committee_flow_factory,
-            global_context.clone(),
-            &store_rc,
-            bridge_config.coordinator.required_confirmations,
-        )));
-        processors.push(Box::new(FundBitvmxProcessor::new(bitvmx_broker.clone(), bitcoin_network)));
+            )),
+            Box::new(SetupCommitteeProcessor::new(
+                setup_committee_flow_factory,
+                global_context.clone(),
+                &store_rc,
+                bridge_config.coordinator.required_confirmations,
+            )),
+            Box::new(FundBitvmxProcessor::new(bitvmx_broker.clone(), bitcoin_network)),
+        ];
 
         Self {
             monitor,
