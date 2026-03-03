@@ -1007,6 +1007,7 @@ mod tests {
         let mut processor = AdvanceFundsProcessor::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(bitvmx_broker),
+            REQUIRED_CONFIRMATIONS,
         );
 
         processor.pending_zkp = Some(PendingCheckForkZkp {
