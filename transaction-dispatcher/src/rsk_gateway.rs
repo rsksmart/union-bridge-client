@@ -25,8 +25,9 @@ use crate::contracts::pegin_manager::{
     AcceptPeginInvoke, GetTemporaryPeginAddressCall, PeginManagerContract, RequestPeginInvoke,
 };
 use crate::contracts::pegout_manager::{
-    PegoutManagerContract, RegisterOperatorTakeInvoke, RegisterOperatorWonInvoke,
-    RegisterPegoutInvoke, TriggerOperatorTakeInvoke, TryPegoutInvoke,
+    GetAcceptPeginTxidCall, PegoutManagerContract, RegisterAdvanceFundsInvoke,
+    RegisterOperatorTakeInvoke, RegisterOperatorWonInvoke, RegisterPegoutInvoke,
+    RegisterReimbursementKickoffInvoke, TriggerOperatorTakeInvoke, TryPegoutInvoke,
 };
 use crate::contracts::signature_manager::{
     AddMemberNonceInvoke, AddMemberSignatureInvoke, AddOperatorTakeTxHashInvoke,
@@ -38,12 +39,14 @@ use crate::types::{
     AddMemberSignatureInput, AddMemberSignatureOutput, AddOperatorTakeTxHashInput,
     AddOperatorTakeTxHashOutput, ApplyToStreamInput, ApplyToStreamOutput,
     DepositAggregatedKeyInput, DepositAggregatedKeyOutput, DepositCommunicationDataInput,
-    DepositCommunicationDataOutput, GetCommitteeInput, GetCommitteeOutput,
-    GetCommunicationDataInput, GetCommunicationDataOutput, GetMemberPublicKeysInput,
-    GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterChallengeInput,
+    DepositCommunicationDataOutput, GetAcceptPeginTxidInput, GetAcceptPeginTxidOutput,
+    GetCommitteeInput, GetCommitteeOutput, GetCommunicationDataInput, GetCommunicationDataOutput,
+    GetMemberPublicKeysInput, GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput,
+    RegisterAdvanceFundsInput, RegisterAdvanceFundsOutput, RegisterChallengeInput,
     RegisterChallengeOutput, RegisterInputRevealedInput, RegisterInputRevealedOutput,
     RegisterOperatorTakeInput, RegisterOperatorTakeOutput, RegisterOperatorWonInput,
-    RegisterOperatorWonOutput, RegisterPegoutInput, RegisterPegoutOutput, RequestPeginInput,
+    RegisterOperatorWonOutput, RegisterPegoutInput, RegisterPegoutOutput,
+    RegisterReimbursementKickoffInput, RegisterReimbursementKickoffOutput, RequestPeginInput,
     RequestPeginOutput, RequestPegoutInput, RequestPegoutOutput, TriggerOperatorTakeInput,
     TriggerOperatorTakeOutput,
 };
@@ -185,6 +188,21 @@ pub trait RskContractsGatewayApi {
         input: RegisterOperatorWonInput,
     ) -> impl Future<Output = Result<RegisterOperatorWonOutput, DomainErrors>>;
 
+    fn register_advance_funds(
+        &self,
+        input: RegisterAdvanceFundsInput,
+    ) -> impl Future<Output = Result<RegisterAdvanceFundsOutput, DomainErrors>>;
+
+    fn get_accept_pegin_txid(
+        &self,
+        input: GetAcceptPeginTxidInput,
+    ) -> impl Future<Output = Result<GetAcceptPeginTxidOutput, DomainErrors>>;
+
+    fn register_reimbursement_kickoff(
+        &self,
+        input: RegisterReimbursementKickoffInput,
+    ) -> impl Future<Output = Result<RegisterReimbursementKickoffOutput, DomainErrors>>;
+
     fn is_whitelisted(&self) -> impl Future<Output = Result<bool, DomainErrors>>;
 }
 
@@ -210,6 +228,10 @@ pub struct RskContractsGateway<P: Provider + Clone> {
     register_operator_take_invoke: RegisterOperatorTakeInvoke<PegoutManagerContract<P>>,
     trigger_operator_take_invoke: TriggerOperatorTakeInvoke<PegoutManagerContract<P>>,
     register_operator_won_invoke: RegisterOperatorWonInvoke<PegoutManagerContract<P>>,
+    register_advance_funds_invoke: RegisterAdvanceFundsInvoke<PegoutManagerContract<P>>,
+    register_reimbursement_kickoff_invoke:
+        RegisterReimbursementKickoffInvoke<PegoutManagerContract<P>>,
+    get_accept_pegin_txid_call: GetAcceptPeginTxidCall<PegoutManagerContract<P>>,
     register_challenge_invoke: RegisterChallengeInvoke<ChallengeManagerContract<P>>,
     register_input_revealed_invoke: RegisterInputRevealedInvoke<ChallengeManagerContract<P>>,
     get_committee_call: GetCommitteeCall<CommitteeRegistryContract<P>>,
@@ -331,6 +353,17 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             register_operator_won_invoke: RegisterOperatorWonInvoke::new(
                 pegout_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
+            ),
+            register_advance_funds_invoke: RegisterAdvanceFundsInvoke::new(
+                pegout_manager_contract.clone(),
+                tx_config.gas_bumps_t1,
+            ),
+            register_reimbursement_kickoff_invoke: RegisterReimbursementKickoffInvoke::new(
+                pegout_manager_contract.clone(),
+                tx_config.gas_bumps_t1,
+            ),
+            get_accept_pegin_txid_call: GetAcceptPeginTxidCall::new(
+                pegout_manager_contract.clone(),
             ),
             register_challenge_invoke: RegisterChallengeInvoke::new(
                 challenge_manager_contract.clone(),
@@ -625,6 +658,42 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     ) -> Result<RegisterOperatorWonOutput, DomainErrors> {
         self.register_operator_won_invoke.run(input).await.map_err(|err| {
             error!("Error on register_operator_won_invoke: {err}");
+            err
+        })
+    }
+
+    async fn register_advance_funds(
+        &self,
+        input: RegisterAdvanceFundsInput,
+    ) -> Result<RegisterAdvanceFundsOutput, DomainErrors> {
+        info!("Interacting with PegoutManager#registerAdvanceFunds");
+
+        self.register_advance_funds_invoke.run(input).await.map_err(|err| {
+            error!("Error on register_advance_funds_invoke: {err}");
+            err
+        })
+    }
+
+    async fn get_accept_pegin_txid(
+        &self,
+        input: GetAcceptPeginTxidInput,
+    ) -> Result<GetAcceptPeginTxidOutput, DomainErrors> {
+        info!("Interacting with PegoutManager#getAcceptPeginTxid");
+
+        self.get_accept_pegin_txid_call.run(input).await.map_err(|err| {
+            error!("Error on get_accept_pegin_txid_call: {err}");
+            err
+        })
+    }
+
+    async fn register_reimbursement_kickoff(
+        &self,
+        input: RegisterReimbursementKickoffInput,
+    ) -> Result<RegisterReimbursementKickoffOutput, DomainErrors> {
+        info!("Interacting with PegoutManager#registerReimbursementKickoff");
+
+        self.register_reimbursement_kickoff_invoke.run(input).await.map_err(|err| {
+            error!("Error on register_reimbursement_kickoff_invoke: {err}");
             err
         })
     }

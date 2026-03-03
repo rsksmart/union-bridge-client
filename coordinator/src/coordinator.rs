@@ -322,13 +322,16 @@ pub(crate) mod tests {
         AddMemberSignatureInput, AddMemberSignatureOutput, AddOperatorTakeTxHashInput,
         AddOperatorTakeTxHashOutput, ApplyToStreamInput, ApplyToStreamOutput,
         DepositAggregatedKeyInput, DepositAggregatedKeyOutput, DepositCommunicationDataInput,
-        DepositCommunicationDataOutput, GetCommitteeInput, GetCommitteeOutput,
-        GetCommunicationDataInput, GetCommunicationDataOutput, GetMemberPublicKeysInput,
-        GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterChallengeInput,
-        RegisterChallengeOutput, RegisterInputRevealedInput, RegisterInputRevealedOutput,
-        RegisterOperatorTakeInput, RegisterOperatorTakeOutput, RegisterOperatorWonInput,
-        RegisterOperatorWonOutput, RegisterPegoutInput, RegisterPegoutOutput, RequestPeginInput,
-        RequestPeginOutput, RequestPegoutInput, RequestPegoutOutput, TriggerOperatorTakeInput,
+        DepositCommunicationDataOutput, GetAcceptPeginTxidInput, GetAcceptPeginTxidOutput,
+        GetCommitteeInput, GetCommitteeOutput, GetCommunicationDataInput,
+        GetCommunicationDataOutput, GetMemberPublicKeysInput, GetMemberPublicKeysOutput,
+        PeginAddressInput, PeginAddressOutput, RegisterAdvanceFundsInput,
+        RegisterAdvanceFundsOutput, RegisterChallengeInput, RegisterChallengeOutput,
+        RegisterInputRevealedInput, RegisterInputRevealedOutput, RegisterOperatorTakeInput,
+        RegisterOperatorTakeOutput, RegisterOperatorWonInput, RegisterOperatorWonOutput,
+        RegisterPegoutInput, RegisterPegoutOutput, RegisterReimbursementKickoffInput,
+        RegisterReimbursementKickoffOutput, RequestPeginInput, RequestPeginOutput,
+        RequestPegoutInput, RequestPegoutOutput, TriggerOperatorTakeInput,
         TriggerOperatorTakeOutput,
     };
 
@@ -662,6 +665,21 @@ pub(crate) mod tests {
                 &self,
                 input: RegisterOperatorWonInput,
             ) -> Result<RegisterOperatorWonOutput, DomainErrors>;
+
+            async fn register_advance_funds(
+                &self,
+                input: RegisterAdvanceFundsInput,
+            ) -> Result<RegisterAdvanceFundsOutput, DomainErrors>;
+
+            async fn get_accept_pegin_txid(
+                &self,
+                input: GetAcceptPeginTxidInput,
+            ) -> Result<GetAcceptPeginTxidOutput, DomainErrors>;
+
+            async fn register_reimbursement_kickoff(
+                &self,
+                input: RegisterReimbursementKickoffInput,
+            ) -> Result<RegisterReimbursementKickoffOutput, DomainErrors>;
 
             async fn is_whitelisted(&self) -> Result<bool, DomainErrors>;
         }

@@ -417,7 +417,7 @@ where
 
         let msg = IncomingBitVMXApiMessages::SetVar(
             self.state.flow_id,
-            PegOutRequest::name().clone(),
+            PegOutRequest::name().to_string(),
             VariableTypes::String(serde_json::to_string(&data_to_send)?),
         );
         self.send_bitvmx_msg(msg)?;

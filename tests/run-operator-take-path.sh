@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 
-# happy path e2e test - fully automated local flow (no manual intervention)
+# operator take path e2e test - automated local flow
+#
+# this test exercises the operator take path by:
+#   1. running the normal pegin flow with auto-mining
+#   2. stopping mining after pegin completes
+#   3. requesting pegout with mining stopped, then manually mining RSK blocks
+#   4. waiting for the PegOutAccepted message from BitVMX
 #
 # prerequisites:
 #   - union bridge clients running (via: cargo run -- run)
@@ -8,7 +14,7 @@
 #   - bitcoin regtest node running with RPC enabled
 #   - USER_BITCOIN_WIF and MEMBER_BITCOIN_WIF environment variables set
 #
-# usage: bash tests/run-happy-path.sh
+# usage: bash tests/run-operator-take-path.sh
 
 set -euo pipefail
 
@@ -401,14 +407,61 @@ wait_for_log_in_all_operators() {
     done
 }
 
+# Wait for a log pattern to appear, with a time-based timeout (seconds).
+# Useful when mining is stopped and block-based timeouts don't progress.
+wait_for_log_with_time_timeout() {
+    local pattern="$1"
+    local timeout_secs=$2
+    local start_time=$(date +%s)
+
+    log "Waiting for log pattern: $pattern (max ${timeout_secs}s)..."
+
+    while true; do
+        local elapsed=$(( $(date +%s) - start_time ))
+
+        echo -ne "\r  Elapsed: ${elapsed}s/${timeout_secs}s | Checking logs...  "
+
+        local result=""
+        if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
+            result=$(find_recent_docker_log_match "$pattern")
+        else
+            result=$(find_recent_file_log_match "$pattern")
+        fi
+
+        if [ -n "$result" ]; then
+            local found_source="${result%%:*}"
+            local found_line="${result#*:}"
+            echo ""
+            success "Log pattern found after ${elapsed}s!"
+            log "Found in: $found_source"
+            echo "$found_line"
+            return 0
+        fi
+
+        if [ $elapsed -ge $timeout_secs ]; then
+            echo ""
+            warn "Log pattern not found after ${timeout_secs}s"
+            if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
+                warn "Check Docker logs manually: docker compose -p op_{1..4} logs coordinator"
+            else
+                warn "Check logs/coordinator-*.log manually"
+            fi
+            return 1
+        fi
+
+        sleep 1
+    done
+}
+
 cleanup() {
+    bash cli-infra.sh --stop-mine 2>/dev/null || true
     rm -f /tmp/apply-operators-$$ /tmp/pegout-$$
 }
 trap cleanup EXIT
 
 clear
 log "Configuration: stream=$STREAM_ID, rsk=$RSK_ADDRESS, amount=$VALUE, env=$SCRIPT_ENV"
-log "Prerequisite: Start mining in another terminal with: ./cli-run.sh --start-mine"
+log "Mining will be managed automatically by this script"
 echo ""
 
 # prepare wallets
@@ -436,6 +489,16 @@ if ! bash cli-bitcoin-wallet.sh member mine_utxo 900000000; then
 fi
 
 success "Wallets prepared with initial UTXOs"
+echo ""
+
+# start auto-mining for the pegin flow
+bash cli-infra.sh --stop-mine 2>/dev/null || true
+log "Starting auto-mining..."
+if ! bash cli-infra.sh --start-mine; then
+    warn "Failed to start mining"
+    exit 1
+fi
+success "Auto-mining started"
 echo ""
 
 # step 1: fund operator wallets
@@ -481,7 +544,7 @@ fi
 rm -f /tmp/apply-operators-$$
 success "Operators applied to stream $STREAM_ID"
 echo ""
-if ! wait_for_log_in_all_operators "CommitteeSetupFlow Done:" 50; then
+if ! wait_for_log_in_all_operators "CommitteeSetupFlow Done:" 60; then
     warn "Committee setup not completed by all operators within timeout"
     exit 1
 fi
@@ -505,8 +568,17 @@ if ! wait_for_log_with_block_timeout "PeginFlow Done" 15; then
 fi
 echo ""
 
-# step 5: request pegout
-step "Step 5: Request Pegout"
+# stop auto-mining before pegout
+log "Stopping auto-mining..."
+if ! bash cli-infra.sh --stop-mine; then
+    warn "Failed to stop mining"
+    exit 1
+fi
+success "Auto-mining stopped"
+echo ""
+
+# step 5: request pegout (with mining stopped)
+step "Step 5: Request Pegout (mining stopped)"
 log "Command: bash cli-operations.sh user pegout -v $VALUE --env $SCRIPT_ENV"
 log "Amount: $VALUE sats"
 echo ""
@@ -521,25 +593,74 @@ rm -f /tmp/pegout-$$
 success "Pegout requested"
 echo ""
 
-if ! wait_for_log_with_block_timeout "PegoutFlow Done" 15; then
-    warn "PegoutFlow completion log not found within timeout"
+# step 6: mine RSK blocks manually
+step "Step 6: Mine RSK blocks manually"
+log "Mining 4 RSK blocks with 1s interval..."
+for i in 1 2 3 4; do
+    cast rpc anvil_mine 1 --rpc-url http://localhost:8545 > /dev/null 2>&1
+    success "RSK block $i/4 mined"
+    if [ $i -lt 4 ]; then
+        sleep 1
+    fi
+done
+echo ""
+success "4 RSK blocks mined"
+echo ""
+
+# step 7: wait for PegOutAccepted from BitVMX
+step "Step 7: Wait for PegOutAccepted"
+log "Waiting for 'Received PegOutAccepted variable from BitVMX' in logs..."
+echo ""
+
+if ! wait_for_log_with_time_timeout "Received PegOutAccepted variable from BitVMX" 120; then
+    warn "PegOutAccepted log not found within timeout"
     exit 1
 fi
 echo ""
 
-# step 6: verify pegout completion
-step "Step 6: Verify Pegout Completion"
-# Note: PegoutFlow completion is already checked in the wait_for_log_with_block_timeout call above
-# This step is kept for consistency but the verification already happened
-success "PegoutFlow completion verified"
-SUCCESS=true
+# step 8: kill one bitvmx operator (op_4)
+step "Step 8: Kill BitVMX operator 4"
+BITVMX_PID=$(ps -eo pid,args | grep '[b]itvmx-client op_4' | awk '{print $1}')
+if [ -z "$BITVMX_PID" ]; then
+    warn "Could not find bitvmx-client op_4 process"
+    exit 1
+fi
+log "Killing bitvmx-client op_4 (PID: $BITVMX_PID)..."
+kill -9 "$BITVMX_PID"
+success "bitvmx-client op_4 killed (PID: $BITVMX_PID)"
+
+REMAINING=$(ps -eo pid,args | grep '[b]itvmx-client op_' | wc -l | tr -d ' ')
+if [ "$REMAINING" -ne 3 ]; then
+    warn "Expected 3 bitvmx-client operators running, found $REMAINING"
+    exit 1
+fi
+success "Verified: $REMAINING bitvmx-client operators still running"
 echo ""
+
+# restart auto-mining
+bash cli-infra.sh --stop-mine 2>/dev/null || true
+log "Restarting auto-mining..."
+if ! bash cli-infra.sh --start-mine; then
+    warn "Failed to restart mining"
+    exit 1
+fi
+success "Auto-mining restarted"
+echo ""
+
+
+# step 9: wait for RegisterOperatorTake completion
+step "Step 9: Wait for RegisterOperatorTake completion"
+log "The operator take process is now running with 3 BitVMX operators (op_4 was killed)."
+log "Waiting for 'RegisterOperatorTake -> Done' in logs..."
+echo ""
+
+if ! wait_for_log_with_time_timeout "RegisterOperatorTake -> Done" 240; then
+    warn "RegisterOperatorTake -> Done log not found within timeout"
+    exit 1
+fi
+success "RegisterOperatorTake completed successfully"
+echo ""
+
 
 step "Complete"
-
-if [ "$SUCCESS" = true ]; then
-    success "E2E test completed successfully!"
-else
-    warn "E2E test completed with warnings - PegoutFlow completion not verified"
-    exit 1
-fi
+success "E2E operator take path test completed successfully!"
