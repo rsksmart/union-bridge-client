@@ -5,6 +5,9 @@ use common::errors::ConfigError;
 use common::types::Address;
 use serde::Deserialize;
 
+pub const DEFAULT_CHECK_FORK_GUEST_ELF_PATH: &str = "/app/config/check-fork-guest.bin";
+pub const DEFAULT_MAX_ZKP_STATUS_RETRIES: u32 = 30;
+pub const DEFAULT_ADVANCE_FUNDS_ENABLED: bool = false;
 const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 const PEG_MANAGER_CONTRACT_NAME: &str = "PegManager";
 const SIGNATURE_CONTRACT_NAME: &str = "SignatureManager";
@@ -23,7 +26,7 @@ pub struct Config {
     pub bridge: BridgeConfig,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(rename = "coordinator")]
 pub struct CoordinatorConfig {
     pub logs: BrokerConfig,
@@ -32,14 +35,48 @@ pub struct CoordinatorConfig {
     pub bitvmx: BrokerConfig,
     pub broker: BrokerClientConfig,
     pub storage_path: String,
+    #[serde(default)]
+    pub advance_funds: CoordinatorAdvanceFundsConfig,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
+pub struct CoordinatorAdvanceFundsConfig {
+    #[serde(default = "default_advance_funds_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_check_fork_guest_elf_path")]
+    pub check_fork_guest_elf_path: String,
+    #[serde(default = "default_max_zkp_status_retries")]
+    pub max_zkp_status_retries: u32,
+}
+
+impl Default for CoordinatorAdvanceFundsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_advance_funds_enabled(),
+            check_fork_guest_elf_path: default_check_fork_guest_elf_path(),
+            max_zkp_status_retries: default_max_zkp_status_retries(),
+        }
+    }
+}
+
+const fn default_advance_funds_enabled() -> bool {
+    DEFAULT_ADVANCE_FUNDS_ENABLED
+}
+
+fn default_check_fork_guest_elf_path() -> String {
+    DEFAULT_CHECK_FORK_GUEST_ELF_PATH.to_string()
+}
+
+const fn default_max_zkp_status_retries() -> u32 {
+    DEFAULT_MAX_ZKP_STATUS_RETRIES
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct BrokerClientConfig {
     pub client_id: u32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct BrokerConfig {
     pub host: String,
     pub port: u16,
@@ -266,7 +303,11 @@ mod tests {
     use bitcoin::Network;
     use common::config::CommonConfig;
 
-    use crate::config::{BridgeConfig, Config, CoordinatorFlowConfig};
+    use crate::config::{
+        BridgeConfig, Config, CoordinatorFlowConfig, DEFAULT_ADVANCE_FUNDS_ENABLED,
+        DEFAULT_CHECK_FORK_GUEST_ELF_PATH,
+        DEFAULT_MAX_ZKP_STATUS_RETRIES,
+    };
 
     #[test]
     fn test_parse_bitcoin_network() -> anyhow::Result<()> {
@@ -292,6 +333,15 @@ mod tests {
         assert!(!config.coordinator.storage_path.contains("{BASE_STORAGE_PATH}"));
         assert!(
             config.coordinator.storage_path.ends_with("/.union_bridge/database/multi-client-1")
+        );
+        assert_eq!(DEFAULT_ADVANCE_FUNDS_ENABLED, config.coordinator.advance_funds.enabled);
+        assert_eq!(
+            DEFAULT_CHECK_FORK_GUEST_ELF_PATH,
+            config.coordinator.advance_funds.check_fork_guest_elf_path
+        );
+        assert_eq!(
+            DEFAULT_MAX_ZKP_STATUS_RETRIES,
+            config.coordinator.advance_funds.max_zkp_status_retries
         );
         assert_eq!("regtest", config.bitcoin_network);
         assert_eq!(9, config.contracts.len());
@@ -345,5 +395,13 @@ mod tests {
         assert_eq!(config.bridge.coordinator.required_confirmations, 5);
         assert_eq!(config.bridge.pegin.min_tx_confirmations, 1);
         assert_eq!(config.bridge.pegout.spv_proof_min_confirmations, 1);
+    }
+
+    #[test]
+    fn test_load_regtest_enables_advance_funds() {
+        let config: Config = CommonConfig::load_config::<Config>(Some("regtest".to_string()))
+            .expect("Failed to load regtest config");
+
+        assert!(config.coordinator.advance_funds.enabled);
     }
 }
