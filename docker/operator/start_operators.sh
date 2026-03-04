@@ -8,22 +8,14 @@ cd "${SCRIPT_DIR}" || {
   exit 1
 }
 
-# Parse UC_* variables from root .envrc if not already set in the environment.
-# Only reads `export UC_...=` lines — does not execute arbitrary shell code.
+# Load environment from root .envrc (only if direnv hasn't already loaded it)
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 ENVRC_FILE="${PROJECT_ROOT}/.envrc"
-if [[ -f "$ENVRC_FILE" ]]; then
-  while IFS='=' read -r key value; do
-    key=$(echo "$key" | xargs)
-    value=$(echo "$value" | sed 's/^["'\''"]//;s/["'\''"]$//')
-    if [[ -z "${!key:-}" ]]; then
-      export "$key=$value"
-    fi
-  done < <(grep -E '^\s*export\s+UC_[A-Z_]+=' "$ENVRC_FILE" | sed 's/^\s*export\s*//')
+if [[ -z "${DIRENV_DIR:-}" && -f "$ENVRC_FILE" ]]; then
+  source "$ENVRC_FILE"
 fi
 
 # Initialize from environment variables (can be overridden by command line args)
-# Note: UC_TAG, UC_OPERATOR_ID, UC_OPERATOR_ROLE are loaded from root .envrc above
 # Use UC_TAG from .envrc if available, can be overridden by --tag flag
 UC_TAG="${UC_TAG:-}"
 DOCKER_COMPOSE_ARGS=()
@@ -211,9 +203,8 @@ restore_uc_tag() {
 }
 
 # Set ENV_FILE and load environment-specific variables (for other vars like BITCOIND_URL, etc.)
-# UC_TAG, UC_OPERATOR_ID, UC_OPERATOR_ROLE are already loaded from .envrc above
 # Save UC_TAG values before .env file might overwrite them
-# Precedence: --tag flag > UC_TAG from .envrc > UC_TAG from .env file > default
+# Precedence: --tag flag > .envrc value > .env file value > default
 SAVED_UC_TAG_FROM_FLAG=""
 SAVED_UC_TAG_FROM_ENVRC=""
 if [[ "${TAG_EXPLICITLY_PROVIDED}" == true ]]; then
@@ -559,15 +550,20 @@ run_testnet_operators() {
   eval "${DOCKER_CMD}"
 }
 
-# Set CONFIG_DIR to absolute path for robust volume mounting
-# This ensures the config directory is accessible regardless of where docker-compose is run from
+# Set CONFIG_DIR and LOGGER_PATH to absolute paths for robust volume mounting
+# This ensures paths are correct regardless of where docker-compose is run from
 CONFIG_DIR="${PROJECT_ROOT}/config"
+LOGGER_PATH="${PROJECT_ROOT}/docker/build/log4rs.yaml"
 export CONFIG_DIR
+export LOGGER_PATH
 
-# Verify CONFIG_DIR exists
 if [[ ! -d "${CONFIG_DIR}" ]]; then
   echo "Error: Config directory not found: ${CONFIG_DIR}"
   echo "Please ensure the config directory exists at the project root."
+  exit 1
+fi
+if [[ ! -f "${LOGGER_PATH}" ]]; then
+  echo "Error: Logger config not found: ${LOGGER_PATH}"
   exit 1
 fi
 
