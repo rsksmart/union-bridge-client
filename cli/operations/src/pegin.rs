@@ -1,7 +1,8 @@
+use std::process::Command;
+
 use anyhow::{anyhow, bail, Context, Result};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::process::Command;
 
 use crate::environments::Environment;
 
@@ -58,13 +59,7 @@ async fn fetch_packet_number(
     let rpc_request = JsonRpcRequest {
         jsonrpc: "2.0",
         method: "eth_call",
-        params: (
-            EthCallParams {
-                to: stream_manager_address.to_string(),
-                data,
-            },
-            "latest",
-        ),
+        params: (EthCallParams { to: stream_manager_address.to_string(), data }, "latest"),
         id: 1,
     };
 
@@ -75,16 +70,11 @@ async fn fetch_packet_number(
         .await
         .context("Failed to connect to RPC endpoint for packet number query")?;
 
-    let rpc_response: JsonRpcResponse = response
-        .json()
-        .await
-        .context("Failed to parse RPC response for packet number query")?;
+    let rpc_response: JsonRpcResponse =
+        response.json().await.context("Failed to parse RPC response for packet number query")?;
 
     if let Some(err) = rpc_response.error {
-        bail!(
-            "RPC error querying packet number: {}",
-            err.message
-        );
+        bail!("RPC error querying packet number: {}", err.message);
     }
 
     let result_hex = rpc_response
@@ -109,18 +99,19 @@ async fn fetch_packet_number(
     }
 
     let pointer_hex = &hex[field_start..field_end];
-    let packet_number =
-        u64::from_str_radix(pointer_hex.trim_start_matches('0'), 16).unwrap_or(0);
+    let packet_number = u64::from_str_radix(pointer_hex.trim_start_matches('0'), 16).unwrap_or(0);
 
     Ok(packet_number)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn create_pegin_tx(
     environment: Environment,
     rsk_address: String,
     value: u64,
     stream_id: u64,
     packet_number: Option<u64>,
+    stream_manager_address: Option<String>,
     btc_pub_key: String,
     execute: bool,
 ) -> Result<()> {
@@ -133,6 +124,10 @@ pub async fn create_pegin_tx(
 
     let client = Client::new();
 
+    // Resolve StreamManager address: use provided override or environment default
+    let sm_address =
+        stream_manager_address.as_deref().unwrap_or(environment.stream_manager_address());
+
     // Resolve packet number: use provided value or auto-fetch from StreamManager
     let packet_number = match packet_number {
         Some(n) => {
@@ -141,16 +136,11 @@ pub async fn create_pegin_tx(
         }
         None => {
             println!(
-                "Fetching packet number from StreamManager (stream_id={})...",
-                stream_id
+                "Fetching packet number from StreamManager {} (stream_id={})...",
+                sm_address, stream_id
             );
-            let n = fetch_packet_number(
-                &client,
-                &environment.rpc_url(),
-                environment.stream_manager_address(),
-                stream_id,
-            )
-            .await?;
+            let n =
+                fetch_packet_number(&client, &environment.rpc_url(), sm_address, stream_id).await?;
             println!("Auto-calculated packet number: {}", n);
             n
         }
