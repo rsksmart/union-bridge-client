@@ -63,6 +63,9 @@ fn main() -> Result<()> {
     debug!("Creating log store at: {store_path}");
     let store = RawLogStore::new(store_path)?;
 
+    let managed_contracts = config.load_managed_contracts();
+    let monitored_addresses = managed_contracts.keys().copied().collect();
+
     let indexer = LogIndexer::new_with_notifier(
         store,
         alloy_provider,
@@ -70,7 +73,7 @@ fn main() -> Result<()> {
         initial_block_hash,
         config.indexer.sync.batch_size,
         config.indexer.sync.finality_depth,
-        config.load_managed_contracts(),
+        managed_contracts,
         shutdown_flag.clone(),
     )
     .context("Failed to create LogIndexer")?;
@@ -78,6 +81,7 @@ fn main() -> Result<()> {
     let mut notifier = Notifier::new(
         rx,
         BrokerServer::new(config.log_indexer_config.notifier.port),
+        monitored_addresses,
         shutdown_flag.clone(),
     );
 

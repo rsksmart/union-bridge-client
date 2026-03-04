@@ -15,6 +15,7 @@ use log::{debug, error, info, trace, warn};
 pub struct Notifier<BS: UnionBrokerServerApi> {
     new_log_channel: mpsc::Receiver<RskLog>,
     msg_broker: BS,
+    monitored_contracts: HashSet<Address>,
     contracts_with_consumers: HashMap<Address, HashSet<u32>>,
     check_period: Duration,
     shutdown_flag: ShutdownFlag,
@@ -24,11 +25,13 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
     pub fn new(
         indexer_receiver: mpsc::Receiver<RskLog>,
         msg_broker: BS,
+        monitored_contracts: HashSet<Address>,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
         Self {
             new_log_channel: indexer_receiver,
             msg_broker,
+            monitored_contracts,
             contracts_with_consumers: HashMap::new(),
             check_period: NOTIFIER_CHECK_PERIOD,
             shutdown_flag,
@@ -39,11 +42,13 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
     pub fn new_for_tests(
         indexer_receiver: mpsc::Receiver<RskLog>,
         msg_broker: BS,
+        monitored_contracts: HashSet<Address>,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
         Self {
             new_log_channel: indexer_receiver,
             msg_broker,
+            monitored_contracts,
             check_period: Duration::from_millis(1),
             contracts_with_consumers: HashMap::new(),
             shutdown_flag,
@@ -96,6 +101,14 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
     }
 
     fn subscribe_consumer_to_contract(&mut self, address: Address, consumer_id: u32) {
+        if !self.monitored_contracts.contains(&address) {
+            warn!(
+                "Consumer {consumer_id} tried to subscribe to {address}, \
+                 but it is not monitored by the indexer. Ignoring."
+            );
+            return;
+        }
+
         #[allow(clippy::collapsible_if)]
         if let Some(consumers) = self.contracts_with_consumers.get(&address) {
             if consumers.contains(&consumer_id) {
@@ -200,6 +213,10 @@ mod tests {
         request: ToServer,
     }
 
+    fn monitored(addresses: &[Address]) -> HashSet<Address> {
+        addresses.iter().copied().collect()
+    }
+
     #[test]
     fn test_run_new_log_received_no_consumers() {
         let (tx, rx) = mpsc::channel();
@@ -213,7 +230,8 @@ mod tests {
         mock_broker.expect_try_recv().returning(|| Ok(None)); // no subscription message
         mock_broker.expect_send().never(); // nothing to send, no consumers yet
 
-        let mut notifier = Notifier::new_for_tests(rx, mock_broker, shutdown_flag.clone());
+        let mut notifier =
+            Notifier::new_for_tests(rx, mock_broker, monitored(&[address]), shutdown_flag.clone());
 
         let handle_external_events = handle_external_events(tx, shutdown_flag, vec![expected_log]);
 
@@ -233,16 +251,22 @@ mod tests {
         let shutdown_flag = ShutdownFlag::init();
 
         let address = generate_fake_address(1);
+        let subscribed_address = generate_fake_address(2);
         let expected_log =
             FakeLogGenerator::new().generate_log("Transfer(address,address,uint256)", address);
 
         let mut mock_broker = MockBrokerServerApi::new();
         mock_broker
             .expect_try_recv()
-            .returning(|| Ok(Some((ToServer::SubscribeLogs(generate_fake_address(2)), 1)))); // subscribe for a different address
-        mock_broker.expect_send().never(); // nothing to send, no consumers yet for that address
+            .returning(move || Ok(Some((ToServer::SubscribeLogs(subscribed_address), 1))));
+        mock_broker.expect_send().never();
 
-        let mut notifier = Notifier::new_for_tests(rx, mock_broker, shutdown_flag.clone());
+        let mut notifier = Notifier::new_for_tests(
+            rx,
+            mock_broker,
+            monitored(&[address, subscribed_address]),
+            shutdown_flag.clone(),
+        );
 
         let handle_external_events = handle_external_events(tx, shutdown_flag, vec![expected_log]);
 
@@ -280,7 +304,12 @@ mod tests {
         expect_send_log(client_id, &expected_log_1, &mut mock_broker_server);
         expect_send_log(client_id, &expected_log_2, &mut mock_broker_server);
 
-        let mut notifier = Notifier::new_for_tests(rx, mock_broker_server, shutdown_flag.clone());
+        let mut notifier = Notifier::new_for_tests(
+            rx,
+            mock_broker_server,
+            monitored(&[address_1]),
+            shutdown_flag.clone(),
+        );
 
         let handle_external_events =
             handle_external_events(tx, shutdown_flag, vec![expected_log_1, expected_log_2]);
@@ -327,7 +356,12 @@ mod tests {
         expect_send_log(client_id_1, &expected_log_2, &mut mock_broker_server);
         expect_send_log(client_id_2, &expected_log_2, &mut mock_broker_server);
 
-        let mut notifier = Notifier::new_for_tests(rx, mock_broker_server, shutdown_flag.clone());
+        let mut notifier = Notifier::new_for_tests(
+            rx,
+            mock_broker_server,
+            monitored(&[address_1]),
+            shutdown_flag.clone(),
+        );
 
         let handle_external_events = handle_external_events(
             tx,
@@ -374,13 +408,53 @@ mod tests {
         expect_send_log(client_id_2, &expected_log_1_for_2, &mut mock_broker_server);
         expect_send_log(client_id_2, &expected_log_2_for_2, &mut mock_broker_server);
 
-        let mut notifier = Notifier::new_for_tests(rx, mock_broker_server, shutdown_flag.clone());
+        let mut notifier = Notifier::new_for_tests(
+            rx,
+            mock_broker_server,
+            monitored(&[address_1]),
+            shutdown_flag.clone(),
+        );
 
         let handle_external_events = handle_external_events(
             tx,
             shutdown_flag,
             vec![expected_log_1_for_2, expected_log_2_for_2],
         );
+
+        let result = notifier.run();
+
+        handle_external_events.join().expect("Failed to join shutdown handle");
+
+        if let Err(e) = &result {
+            eprintln!("Error: {e:?}");
+            panic!("Run failed: {e:?}");
+        }
+    }
+
+    #[test]
+    fn test_subscribe_to_unmonitored_contract_is_rejected() {
+        let (tx, rx) = mpsc::channel();
+        let shutdown_flag = ShutdownFlag::init();
+
+        let monitored_address = generate_fake_address(1);
+        let unmonitored_address = generate_fake_address(2);
+        let expected_log = FakeLogGenerator::new()
+            .generate_log("Transfer(address,address,uint256)", unmonitored_address);
+
+        let mut mock_broker = MockBrokerServerApi::new();
+        mock_broker
+            .expect_try_recv()
+            .returning(move || Ok(Some((ToServer::SubscribeLogs(unmonitored_address), 1))));
+        mock_broker.expect_send().never();
+
+        let mut notifier = Notifier::new_for_tests(
+            rx,
+            mock_broker,
+            monitored(&[monitored_address]),
+            shutdown_flag.clone(),
+        );
+
+        let handle_external_events = handle_external_events(tx, shutdown_flag, vec![expected_log]);
 
         let result = notifier.run();
 
