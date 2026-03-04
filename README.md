@@ -130,7 +130,7 @@ Before running the Union Bridge Client, you need to install and set up the follo
 
 2. **BitVMX Union Bridge Contracts** - Smart contracts for the Union Bridge protocol
    ```bash
-   git clone git@github.com:rsksmart/bitvmx-union-bridge-contracts.git
+   git clone git@github.com:temp-rsk/bitvmx-union-bridge-contracts.git
    ```
 
    Then follow its `README.md` for an initial setup.
@@ -241,6 +241,38 @@ The project includes two CLI tools for local development and operations:
 - **`cli-operations.sh`**: Operations toolkit for setup, operator, and user operations
 
 For detailed documentation, usage examples, and command references, see [cli/README.md](cli/README.md).
+
+## AWS Regtest (Essentials)
+
+Access to regtest requires SSH credentials for:
+- `ubuntu@union-bridge-use2-1.regtest.rskcomputing.net`
+
+Run from repository root:
+
+```bash
+# Fast path: start operators with existing config/addresses
+./cli-infra.sh --start-regtest
+
+# Full fresh orchestration (rebuild + reconfigure + restart)
+./cli-infra.sh --start-regtest --fresh
+
+# End-to-end regtest validation
+bash tests/run-happy-path-regtest.sh
+```
+
+Command summary:
+- `--start-regtest`: starts operators with existing deployed addresses/config.
+- `--start-regtest --fresh`: runs full remote fresh orchestration and clean operator restart.
+
+Important: if you change branch on the regtest host (`~/union-bridge-client`), rebuild images tagged as `latest-regtest` before starting operators:
+
+```bash
+cd docker/build
+bash d-compose-cli.sh build --tag=latest-regtest --no-cache
+```
+
+For full instance details (hosts, env vars, artifacts, validation, troubleshooting), see:
+- [`regtest-instance/README.md`](regtest-instance/README.md)
 
 ## Running the Union Client
 
@@ -586,4 +618,4 @@ The file [rusty-hook.toml](rusty-hook.toml) will be used for hook configuration.
 ### GitHub Actions
 
 For information about the GitHub Actions workflows in this project, including how to test them locally with `act`, see
-[.github/README.md](.github/README.md).
+[.github/WORKFLOWS.md](.github/WORKFLOWS.md).

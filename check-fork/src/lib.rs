@@ -1,27 +1,20 @@
+pub mod block_header;
+pub mod rlp;
+
 use primitive_types::{H256, U256};
 use serde::{Deserialize, Serialize};
+
+use crate::block_header::RskBlockHeader;
 
 // TODO configurable
 pub const SUPERBLOCK_TIMES_DIFFICULTY: u8 = 20;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Block {
-    pub number: u64,
-    pub hash: H256,
-    pub parent: H256,
-    pub difficulty: U256,
-    pub timestamp: u64,
+pub struct RskBlock {
     pub bridge_event: Option<BridgeEvent>,
-    pub uncles: Vec<Block>,
-    // alternatively we can receive `bitcoinMergedMiningHeader`, but we would need to include bitcoin crate here, etc.
-    pub pow: H256,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct BridgeEvent {
-    pub utxo_id: String,
-    pub pegout_id: String,
-    pub operator_id: String,
+    pub uncles: Vec<RskBlock>,
+    pub pow: H256, // used to accumulate effort (from check_fork_accumulator)
+    pub header: RskBlockHeader,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -33,7 +26,14 @@ pub struct CheckForkArgs {
     pub init_block_number: u64,
     pub required_effort: U256,
     pub required_num_blocks: u32,
-    pub block_list: Vec<Block>,
+    pub block_list: Vec<RskBlock>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BridgeEvent {
+    pub utxo_id: String,
+    pub pegout_id: String,
+    pub operator_id: String,
 }
 
 /// Check fork validity and return cumulative `PoW`
@@ -62,9 +62,8 @@ pub fn check_fork(args: &CheckForkArgs) -> Result<U256, &'static str> {
     let required_num_blocks = *required_num_blocks;
 
     //
-    // 1. validate list size
+    // 1. basic validations: validate list size
     //
-
     validate_block_list(required_num_blocks, block_list)?;
 
     //
@@ -80,6 +79,7 @@ pub fn check_fork(args: &CheckForkArgs) -> Result<U256, &'static str> {
         pegout_id,
         operator_id,
     )?;
+    validate_block_hash(&first_block.header)?;
 
     let mut cumulative_effort = accumulate_effort(U256::zero(), first_block)?;
 
@@ -91,6 +91,7 @@ pub fn check_fork(args: &CheckForkArgs) -> Result<U256, &'static str> {
         let prev_block = &block_list[i - 1];
 
         validate_consecutive_block(block, prev_block)?;
+        validate_block_hash(&block.header)?;
         cumulative_effort = accumulate_effort(cumulative_effort, block)?;
 
         for uncle in &block.uncles {
@@ -111,13 +112,16 @@ pub fn check_fork(args: &CheckForkArgs) -> Result<U256, &'static str> {
     Ok(cumulative_effort)
 }
 
-fn accumulate_effort(cumulative_effort: U256, block: &Block) -> Result<U256, &'static str> {
+fn accumulate_effort(cumulative_effort: U256, block: &RskBlock) -> Result<U256, &'static str> {
     let effort = calculate_block_effort(block)?;
 
     cumulative_effort.checked_add(effort).ok_or("Overflow occurred adding block's PoW")
 }
 
-fn validate_block_list(required_num_blocks: u32, block_list: &[Block]) -> Result<(), &'static str> {
+fn validate_block_list(
+    required_num_blocks: u32,
+    block_list: &[RskBlock],
+) -> Result<(), &'static str> {
     if required_num_blocks < 1 {
         return Err("Invalid number of required blocks");
     }
@@ -130,18 +134,18 @@ fn validate_block_list(required_num_blocks: u32, block_list: &[Block]) -> Result
 }
 
 fn validate_first_block(
-    block: &Block,
+    block: &RskBlock,
     init_block_time: u64,
     init_block_number: u64,
     utxo_id: &str,
     pegout_id: &str,
     operator_id: &str,
 ) -> Result<(), &'static str> {
-    if block.timestamp < init_block_time {
+    if block.header.timestamp < init_block_time {
         return Err("First block timestamp lower than expected");
     }
 
-    if block.number < init_block_number {
+    if block.header.number < init_block_number {
         return Err("First block number lower than expected");
     }
 
@@ -175,52 +179,63 @@ fn validate_bridge_event(
     Ok(())
 }
 
-fn validate_consecutive_block(block: &Block, prev_block: &Block) -> Result<(), &'static str> {
+fn validate_consecutive_block(block: &RskBlock, prev_block: &RskBlock) -> Result<(), &'static str> {
     if block.bridge_event.is_some() {
         return Err("Only the first block should contain a BridgeEvent");
     }
-
     // block timestamp should be greater than previous one
-    if block.timestamp <= prev_block.timestamp {
+    if block.header.timestamp <= prev_block.header.timestamp {
         return Err("Block Timestamp is not increasing");
     }
 
     // blocks should be consecutive
-    if block.number != prev_block.number + 1 {
+    let expected_next_number = prev_block
+        .header
+        .number
+        .checked_add(1)
+        .ok_or("Overflow incrementing previous block number")?;
+
+    if block.header.number != expected_next_number {
         return Err("Block numbers are not consecutive");
     }
-
     // previous should be the parent of current one
-    if block.parent != prev_block.hash {
+    if block.header.parent != prev_block.header.hash {
         return Err("Invalid parent linkage between blocks");
     }
-
     validate_enough_effort_superblock(block, "consecutive")?;
-
     validate_difficulty_in_bounds(block, prev_block)?;
 
     Ok(())
 }
 
-fn validate_uncle(trunk_block: &Block, uncle: &Block) -> Result<(), &'static str> {
-    if uncle.number != trunk_block.number {
+fn validate_uncle(trunk_block: &RskBlock, uncle: &RskBlock) -> Result<(), &'static str> {
+    if uncle.header.number != trunk_block.header.number {
         return Err("Uncle's block number does not match trunk block number");
     }
 
-    if uncle.parent != trunk_block.parent {
+    if uncle.header.parent != trunk_block.header.parent {
         return Err("Uncle's parent does not match trunk block's parent");
     }
 
-    if uncle.difficulty != trunk_block.difficulty {
+    if uncle.header.difficulty != trunk_block.header.difficulty {
         return Err("Uncle's difficulty does not match trunk block's difficulty");
     }
 
+    validate_block_hash(&uncle.header)?;
     validate_enough_effort_superblock(uncle, "uncle")?;
+
     Ok(())
 }
 
-fn validate_enough_effort_superblock(block: &Block, _block_type: &str) -> Result<(), &'static str> {
-    let expected_effort = block.difficulty * SUPERBLOCK_TIMES_DIFFICULTY;
+fn validate_enough_effort_superblock(
+    block: &RskBlock,
+    _block_type: &str,
+) -> Result<(), &'static str> {
+    let expected_effort = block
+        .header
+        .difficulty
+        .checked_mul(SUPERBLOCK_TIMES_DIFFICULTY.into())
+        .ok_or("Overflow occurred multiplying difficulty by times")?;
     let actual_effort = calculate_block_effort(block)?;
 
     // dbg!((
@@ -246,24 +261,36 @@ fn validate_enough_effort_superblock(block: &Block, _block_type: &str) -> Result
     Ok(())
 }
 
-fn validate_difficulty_in_bounds(block: &Block, prev_block: &Block) -> Result<(), &'static str> {
+fn validate_difficulty_in_bounds(
+    block: &RskBlock,
+    prev_block: &RskBlock,
+) -> Result<(), &'static str> {
     // check these RSKj lines:
     // - https://github.com/rsksmart/rskj/blob/3cd3401a9c6cfd3dfa63120304d0f26f691ae6e7/rskj-core/src/main/java/co/rsk/core/DifficultyCalculator.java#L64
     // - https://github.com/rsksmart/rskj/blob/master/rskj-core/src/main/java/org/ethereum/config/Constants.java#L150
-    let max_delta = prev_block.difficulty / 400;
+    let max_delta = prev_block.header.difficulty / 400;
 
-    let lower_bound = prev_block.difficulty.saturating_sub(max_delta);
-    let upper_bound = prev_block.difficulty.saturating_add(max_delta);
+    let lower_bound = prev_block.header.difficulty.saturating_sub(max_delta);
+    let upper_bound = prev_block.header.difficulty.saturating_add(max_delta);
 
-    let in_bounds = (lower_bound..=upper_bound).contains(&block.difficulty);
+    let in_bounds = (lower_bound..=upper_bound).contains(&block.header.difficulty);
     if in_bounds { Ok(()) } else { Err("Consecutive Block difficulty is out of bounds") }
 }
 
-fn calculate_block_effort(block: &Block) -> Result<U256, &'static str> {
+fn calculate_block_effort(block: &RskBlock) -> Result<U256, &'static str> {
     let pow = U256::from_big_endian(block.pow.as_bytes());
     // compute the effort by inverting the pow
     // U256::MAX, the "difficulty 1" target, represents the easiest possible target
     U256::MAX.checked_div(pow).ok_or("0 division on calculate_block_effort")
+}
+
+fn validate_block_hash(header: &RskBlockHeader) -> Result<(), &'static str> {
+    let actual_hash = header.calculate_block_hash()?;
+    if header.hash != actual_hash {
+        println!("Block number: {}", header.number);
+        return Err("Block header hash is not matching");
+    }
+    Ok(())
 }
 
 #[cfg(test)]

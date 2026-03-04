@@ -9,7 +9,8 @@
 #        ./cli-infra.sh --stop-bitvmx                  # stop bitvmx docker containers only
 #        ./cli-infra.sh --start-mine                   # start background mining (anvil + bitcoin)
 #        ./cli-infra.sh --stop-mine                    # stop background mining
-#        ./cli-infra.sh --start-regtest                # start regtest operators via SSH
+#        ./cli-infra.sh --start-regtest                # start regtest operators via SSH (fast path)
+#        ./cli-infra.sh --start-regtest --fresh        # run full fresh orchestration on regtest instance (remote-only)
 #        ./cli-infra.sh --stop-regtest                 # stop regtest operators via SSH
 
 set -euo pipefail
@@ -23,6 +24,8 @@ MINE_PID_FILE="/tmp/union-bridge-mining.pids"
 REGTEST_HOST="union-bridge-use2-1.regtest.rskcomputing.net"
 REGTEST_USER="ubuntu"
 REGTEST_ROOT="union-bridge-client"
+REGTEST_FRESH_REMOTE_SCRIPT="${REGTEST_FRESH_REMOTE_SCRIPT:-/home/${REGTEST_USER}/regtest-fresh/regtest_fresh.sh}"
+REGTEST_FRESH_MODE="${REGTEST_FRESH_MODE:-remote}"
 
 # colors
 GREEN='\033[0;32m'
@@ -209,19 +212,42 @@ stop_all() {
 start_regtest() {
     local fresh=false
     shift # remove --start-regtest
-    if [[ "${1:-}" == "--fresh" ]]; then
-        fresh=true
-    fi
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --fresh)
+                fresh=true
+                ;;
+            *)
+                warn "Unknown option for --start-regtest: $1"
+                exit 1
+                ;;
+        esac
+        shift
+    done
 
     log "Connecting to regtest: ${REGTEST_HOST}"
-
-    local fresh_args=""
     if [[ "$fresh" == true ]]; then
-        warn "Fresh mode: databases will be cleared"
-        fresh_args="--fresh --yes"
+        if [[ "${REGTEST_FRESH_MODE}" == "local" ]]; then
+            echo "Error: REGTEST_FRESH_MODE=local is no longer supported." >&2
+            echo "Use remote mode (default): ./cli-infra.sh --start-regtest --fresh" >&2
+            echo "Optional override: REGTEST_FRESH_MODE=remote ./cli-infra.sh --start-regtest --fresh" >&2
+            exit 1
+        fi
+
+        if [[ "${REGTEST_FRESH_MODE}" != "remote" ]]; then
+            echo "Error: unknown REGTEST_FRESH_MODE='${REGTEST_FRESH_MODE}'. Expected 'remote'." >&2
+            exit 1
+        fi
+
+        warn "Fresh mode (remote-only): running script ${REGTEST_FRESH_REMOTE_SCRIPT} on ${REGTEST_HOST}"
+        local remote_cmd="set -euo pipefail; if [[ ! -x '${REGTEST_FRESH_REMOTE_SCRIPT}' ]]; then echo 'Error: missing executable fresh script at ${REGTEST_FRESH_REMOTE_SCRIPT}' >&2; exit 1; fi; bash '${REGTEST_FRESH_REMOTE_SCRIPT}'"
+        ssh -A "${REGTEST_USER}@${REGTEST_HOST}" "${remote_cmd}"
+        log "Remote regtest fresh orchestration completed"
+        return 0
     fi
 
-    local remote_cmd="cd ~/${REGTEST_ROOT} && bash docker/operator/start_operators.sh --env regtest ${fresh_args} up -d"
+    local remote_cmd="cd ~/${REGTEST_ROOT} && bash docker/operator/start_operators.sh --env regtest up -d"
 
     log "Starting regtest operators..."
     ssh -A "${REGTEST_USER}@${REGTEST_HOST}" "${remote_cmd}"
@@ -288,8 +314,13 @@ case "${1:-}" in
         echo "  --stop-mine                    Stop background mining"
         echo ""
         echo "Remote Regtest Infrastructure:"
-        echo "  --start-regtest                Start regtest operators via SSH"
+        echo "  --start-regtest                Start regtest operators via SSH (fast path)"
+        echo "  --start-regtest --fresh        Run full fresh orchestration on regtest instance (remote-only)"
         echo "  --stop-regtest                 Stop regtest operators via SSH"
+        echo ""
+        echo "Regtest Fresh Modes:"
+        echo "  REGTEST_FRESH_MODE             remote (default). local is unsupported."
+        echo "  REGTEST_FRESH_REMOTE_SCRIPT    Remote fresh script path (default: ${REGTEST_FRESH_REMOTE_SCRIPT})"
         echo ""
         echo "Options:"
         echo "  --fresh                        Clean/reset volumes before starting"

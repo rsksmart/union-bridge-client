@@ -27,7 +27,7 @@ use crate::flows::btc_signature::btc_signature_subflow::{
 use crate::flows::common::GlobalContext;
 use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
 use crate::flows::pegout::pegout_flow::{PegoutFlow, State, StepData, Steps};
-use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix};
+use crate::store::{CoordinatorStoreApi, StorePrefix, cleanup_completed_flows, restore_flows};
 use crate::types::{
     EventStatus, RegisterSignaturesBitVmxData, RskPegManagerEvents, TickScheduler,
     TimeBasedScheduler, UserRequests,
@@ -133,7 +133,7 @@ where
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
-        store: Rc<S>,
+        store: &Rc<S>,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
         config: PegoutConfig,
         required_confirmations: u32,
@@ -143,47 +143,27 @@ where
             rt_sync,
             bitvmx_broker,
             global_context,
-            store,
+            Rc::clone(store),
             native_bridge_verifier,
             config,
             required_confirmations,
         );
-        processor.restore_flows_from_store()?;
+
+        let flow_factory = |saved_state: State| {
+            PegoutFlow::from_saved_state(
+                Rc::clone(&processor.contracts_gateway),
+                processor.rt_sync.clone(),
+                Rc::clone(&processor.bitvmx_broker),
+                saved_state,
+                Rc::clone(&processor.store),
+                processor.native_bridge_verifier.clone(),
+            )
+        };
+
+        processor.pegout_flows =
+            restore_flows(store.as_ref(), StorePrefix::PegoutFlow, flow_factory)?;
+
         Ok(processor)
-    }
-
-    // todo(fede) this is probably same code as pegin restore flow
-    fn restore_flows_from_store(&mut self) -> Result<()> {
-        debug!("Checking for pegout flows to restore from persistence");
-
-        let saved_flows: HashMap<Uuid, State> =
-            self.store.load_all_flows(&StorePrefix::PegoutFlow)?;
-
-        for (id, saved_state) in &saved_flows {
-            self.restore_flow(id, saved_state);
-        }
-
-        if !self.pegout_flows.is_empty() {
-            info!("Restored {} pegout flows from persistence", self.pegout_flows.len());
-        }
-
-        Ok(())
-    }
-
-    // restores a flow from a saved state and return a reference to it
-    fn restore_flow(&mut self, id: &Uuid, saved_state: &State) {
-        let flow = PegoutFlow::from_saved_state(
-            Rc::clone(&self.contracts_gateway),
-            self.rt_sync.clone(),
-            Rc::clone(&self.bitvmx_broker),
-            saved_state.clone(),
-            Rc::clone(&self.store),
-            self.native_bridge_verifier.clone(),
-        );
-        info!("Restoring pegout flow {id} at step {:?}", &flow.current_step(),);
-        self.pegout_flows.insert(*id, flow);
-
-        debug!("Restored flow {id}");
     }
 
     pub fn get_user_take_pid(committee_id: Uuid, slot_index: usize) -> Result<Uuid> {
@@ -262,21 +242,6 @@ where
         Ok(())
     }
 
-    /// Clean up completed flows
-    pub fn cleanup_completed_flows(&mut self) {
-        let completed: Vec<_> =
-            self.pegout_flows.iter().filter(|(_, flow)| flow.is_done()).map(|(k, _)| *k).collect();
-
-        for internal_id in &completed {
-            debug!("Removing completed flow: {internal_id}");
-            self.pegout_flows.remove(internal_id);
-
-            self.store.delete_flow(&StoreKey::PegoutFlow(*internal_id)).unwrap_or_else(|e| {
-                error!("Failed to remove completed flow {internal_id} from persistence: {e}");
-            });
-        }
-    }
-
     /// Process confirmed RSK events
     fn process_confirmed_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         info!("Processing confirmed RSK event: {event:?}");
@@ -301,7 +266,12 @@ where
             }
         }
 
-        self.cleanup_completed_flows();
+        cleanup_completed_flows(
+            self.store.as_ref(),
+            StorePrefix::PegoutFlow,
+            &mut self.pegout_flows,
+            PegoutFlow::is_done,
+        );
         Ok(())
     }
 
@@ -484,7 +454,12 @@ where
         }
 
         // blocks allow periodic cleanup of completed flows, we can improve it with a cleanup task if needed
-        self.cleanup_completed_flows();
+        cleanup_completed_flows(
+            self.store.as_ref(),
+            StorePrefix::PegoutFlow,
+            &mut self.pegout_flows,
+            PegoutFlow::is_done,
+        );
 
         Ok(())
     }
@@ -860,5 +835,167 @@ where
         self.flows_pending_timeout.clear();
         self.register_pegout_retry_scheduler.clear();
         self.unconfirmed_register_pegout.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloy_primitives::{Bytes, FixedBytes, U256 as AlloyU256};
+    use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+    use common::msg_broker::broker::MockBrokerClientApi;
+    use primitive_types::U256 as RskU256;
+    use union_contracts::bindings::peg_manager::PegManager::{
+        BitcoinSignatureData, BtcTransaction, PegoutRequested,
+    };
+
+    use super::*;
+    use crate::coordinator::tests::MockRskContractsGatewayApi;
+    use crate::flows::advance_funds::test_utils::create_fake_block;
+    use crate::flows::pegout::pegout_flow::FlowContext;
+    use crate::store::MockCoordinatorStoreApi;
+
+    type MockBitVmxBroker =
+        MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
+
+    type TestBtcSigSubFlow = BaseBtcSignatureSubFlow<
+        crate::flows::btc_signature::btc_signature_lifecycle::BtcSignatureLifeCycle<
+            MockRskContractsGatewayApi,
+        >,
+    >;
+
+    type TestBtcSigFactory =
+        crate::flows::btc_signature::btc_signature_subflow::BtcSignatureSubFlowFactory<
+            MockRskContractsGatewayApi,
+        >;
+
+    type TestProcessor = PegoutFlowProcessor<
+        MockRskContractsGatewayApi,
+        MockBitVmxBroker,
+        TestBtcSigSubFlow,
+        TestBtcSigFactory,
+        MockCoordinatorStoreApi,
+    >;
+
+    type TestPegoutFlow =
+        PegoutFlow<MockRskContractsGatewayApi, MockBitVmxBroker, MockCoordinatorStoreApi>;
+
+    struct TestHarness {
+        processor: TestProcessor,
+        contracts: Rc<MockRskContractsGatewayApi>,
+        broker: Rc<MockBitVmxBroker>,
+        store: Rc<MockCoordinatorStoreApi>,
+        rt_sync: RuntimeSync,
+    }
+
+    impl TestHarness {
+        fn new() -> Self {
+            let contracts = Rc::new(MockRskContractsGatewayApi::new());
+            let broker = Rc::new(MockBitVmxBroker::new());
+            let store = Rc::new(MockCoordinatorStoreApi::new());
+            let rt_sync = RuntimeSync::new().unwrap();
+
+            let processor = PegoutFlowProcessor::new(
+                contracts.clone(),
+                rt_sync.clone(),
+                broker.clone(),
+                GlobalContext::new(),
+                store.clone(),
+                NativeBridgeVerifier::Dummy,
+                PegoutConfig::default(),
+                5, // required_confirmations for tests
+            );
+
+            Self { processor, contracts, broker, store, rt_sync }
+        }
+
+        fn create_flow_at_done(&self, flow_id: Uuid) -> TestPegoutFlow {
+            let state = State {
+                flow_id,
+                step: Steps::Done,
+                ctx: FlowContext {
+                    pegout_requested: create_fake_pegout_requested(),
+                    my_p2p_address: None,
+                    committee_output: None,
+                    peg_out_accepted: None,
+                    pegout_registered_tx: None,
+                    spv_proof: None,
+                    transaction_status: None,
+                },
+            };
+
+            PegoutFlow::from_saved_state(
+                self.contracts.clone(),
+                self.rt_sync.clone(),
+                self.broker.clone(),
+                state,
+                self.store.clone(),
+                NativeBridgeVerifier::Dummy,
+            )
+        }
+
+        fn create_completed_sig_flow(&self, flow_id: Uuid) -> TestBtcSigSubFlow {
+            BaseBtcSignatureSubFlow::new_completed_for_test(
+                &self.contracts,
+                &self.rt_sync,
+                flow_id,
+                5, // required_confirmations for tests
+            )
+        }
+    }
+
+    fn create_fake_pegout_requested() -> PegoutRequested {
+        PegoutRequested {
+            userPubKey: Bytes::from(vec![0x03; 33]),
+            committeeId: AlloyU256::from(1u64),
+            pegoutSignatureData: BitcoinSignatureData {
+                tx: BtcTransaction { version: 2, inputs: vec![], outputs: vec![], locktime: 0 },
+                txid: FixedBytes::default(),
+                signatureHash: FixedBytes::default(),
+                signatureMessage: Bytes::default(),
+            },
+            streamId: 0,
+            packetNumber: 0,
+            slotId: 0,
+            amount: 100_000,
+            pegoutId: FixedBytes::default(),
+        }
+    }
+
+    /// Regression test for the bug where a signature flow completing after
+    /// the advance-funds timeout caused "Invalid state transition: Done with
+    /// data `DispatchTransaction`".
+    ///
+    /// Timeline of the bug:
+    ///   1. Pegout flow reaches `DispatchTransaction` (waiting for BTC signatures)
+    ///   2. Timeout fires -> flow moves to `TriggerOperatorTake` -> Done
+    ///   3. Signature flow completes (5/5 confirmations)
+    ///   4. Processor tries `flow.complete_step(DispatchTransaction)` on a Done flow -> crash
+    ///
+    /// The fix (9b681821) adds a guard: skip the `complete_step` call if the
+    /// flow is no longer at `DispatchTransaction`.
+    #[test]
+    fn test_signature_completion_after_timeout_does_not_crash() {
+        let mut harness = TestHarness::new();
+        let flow_id = Uuid::new_v4();
+
+        let pegout_flow = harness.create_flow_at_done(flow_id);
+        harness.processor.pegout_flows.insert(flow_id, pegout_flow);
+        let signature_flow = harness.create_completed_sig_flow(flow_id);
+        harness.processor.signature_flows.insert(flow_id, signature_flow);
+
+        let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
+            BlockNumber::from(100),
+            RskU256::from(50),
+        ));
+
+        let result = harness.processor.process_unhandled_confirmed_sig_flow_events(&block);
+        assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
+        assert_eq!(harness.processor.pegout_flows[&flow_id].current_step(), Steps::Done);
+        assert!(!harness.processor.signature_flows.contains_key(&flow_id));
+
+        // Idempotency: a second pass must also succeed and not reintroduce state
+        let result = harness.processor.process_unhandled_confirmed_sig_flow_events(&block);
+        assert!(result.is_ok(), "second call expected Ok, got: {:?}", result.err());
+        assert!(!harness.processor.signature_flows.contains_key(&flow_id));
     }
 }

@@ -45,11 +45,12 @@ The script clones `FairgateLabs/docker-bitvmx` at the chosen ref, saves the fetc
 
 ### 2) Choose your environment
 
-This setup supports three deployment environments:
+This setup supports four deployment environments:
 
 - **Local** (`.env.local`): Development environment that runs up to 10 operators on a single host with local Bitcoin and RSK nodes (default: 4, configurable via `NUM_OPERATORS` in `.env.local` or `--ops` flag)
 - **Alphanet** (`.env.alphanet`): Production-like environment where each host runs a single operator, connecting to the Alphanet testnet
 - **Testnet** (`.env.testnet`): Production-like environment where each host runs a single operator, connecting to the Bitcoin testnet
+- **Regtest** (`.env.regtest`): All 4 operators on one host, connected to shared regtest infrastructure (powpeg + node21)
 
 #### BitVMX Network Modes
 
@@ -111,11 +112,15 @@ The contracts deployment runs once via the deploy-contracts container and then t
 inspect its output (eg. to check contract addresses) via Docker Desktop or running the following command:
 `./start_blockchains.sh logs deploy-contracts`
 
-If the contracts code changes (eg. new tag), you must rebuild the `deploy-contracts` image. You can do it with:
+**Contracts version:** By default, `start_blockchains.sh` uses the contracts version from `Cargo.toml` (union-contracts
+tag) and pulls the deploy-contracts image from the registry. To build from a local contracts checkout instead, use
+`--contracts-tag local-build`.
+
+If the contracts code changes (e.g. new tag) and you use `local-build`, run a clean deploy:
 
 ```bash
-# Rebuild the deploy-contracts image and start
-./start_blockchains.sh --new-contracts-version --fresh up -d
+# Clean deploy with local contracts
+./start_blockchains.sh --fresh --contracts-tag local-build up -d
 ```
 
 ### 4) Start or stop operator stacks
@@ -256,9 +261,32 @@ Stop and remove everything:
 # Local: stop all operators (no --op flag)
 bash start_operators.sh --env local down --volumes
 
+# Regtest: stop all operators (no --op flag)
+bash start_operators.sh --env regtest down --volumes
+
 # Alphanet: stop the operator on this host (no --op flag for down command)
 bash start_operators.sh --env alphanet down --volumes
 ```
+
+Regtest fresh clean+up is supported:
+
+```bash
+bash start_operators.sh --env regtest --fresh up -d
+```
+
+`start_operators.sh --env regtest` now auto-syncs BitVMX `checkpoint_height` and `wallet.start_height`
+to current Bitcoin height (with timestamped backups) before startup commands, preventing stale-height
+failures after regtest resets.
+
+For full regtest fresh orchestration (wallet funding, contracts deploy, config update, bridge authorization, operators):
+
+```bash
+cd ../../
+./cli-infra.sh --start-regtest --fresh
+```
+
+`./cli-infra.sh --start-regtest --fresh` is remote-only and executes `/home/ubuntu/regtest-fresh/regtest_fresh.sh` on `union-bridge-use2-1`.
+`REGTEST_FRESH_MODE=local` is unsupported. You can override remote script location with `REGTEST_FRESH_REMOTE_SCRIPT`.
 
 ### 5) Viewing logs per operator project
 

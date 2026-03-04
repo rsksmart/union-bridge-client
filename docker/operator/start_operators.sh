@@ -37,6 +37,7 @@ TAG_EXPLICITLY_PROVIDED=false
 OPERATOR_ARG="${UC_OPERATOR_ID:-}"
 ENVIRONMENT="${UC_ENV:-}"
 AUTO_CONFIRM=false
+FRESH=false
 
 # Display help message
 print_help() {
@@ -56,9 +57,11 @@ print_help() {
   echo "                            (Optional if UC_TAG is set in .envrc)"
   echo "  --help                   Display this help message"
   echo "  --fresh                  Tear down operators (and volumes) before running the command"
-  echo "                           - Includes confirmation prompt to prevent accidental data loss"
+  echo "                           - Includes confirmation prompt to prevent accidental data loss in local"
+  echo "                           - No confirmation prompt in regtest"
+  echo "                           - In regtest startup, auto-syncs BitVMX checkpoint/start heights to current BTC height"
   echo "                           - Clears all operator state and databases"
-  echo "                           - Only allowed with --env local"
+  echo "                           - Only allowed with --env local or --env regtest"
   echo "  --yes, -y                Automatic yes to fresh confirmation prompt (use with caution)"
   echo ""
   echo "Environment Details:"
@@ -77,6 +80,11 @@ print_help() {
   echo "    - Config: bitvmx-client/config/testnet/client/config/testnet_op_X.yaml"
   echo "    - Uses host network mode for P2P connectivity across physical machines"
   echo "    - Project name: union-operator"
+  echo "  Regtest:"
+  echo "    - Runs all 4 operators on one host (op_1, op_2, op_3, op_4)"
+  echo "    - Config: bitvmx-client/config/regtest/client/config/op_X.yaml"
+  echo "    - Uses bridge network (bitvmx-shared-network) for P2P communication"
+  echo "    - Project name: op_1, op_2, op_3 & op_4"
   echo ""
   echo "Common Docker Compose Arguments can be used. Examples:"
   echo "  up                       Create and start containers"
@@ -100,8 +108,9 @@ print_help() {
   echo "  $0 --env local --fresh up -d                             # Clean and start operators locally"
   echo "  $0 --env local --fresh --yes up -d                       # Clean and start operators locally, no confirmation prompt"
   echo "  $0 --env local down                                      # Stop all local operators"
-  echo "  $0 --env regtest up -d                                   # Start 4 operators in regtest mode (default)"
+  echo "  $0 --env regtest up -d                                   # Start all 4 operators in regtest mode"
   echo "  $0 --env regtest --ops 6 up -d                           # Start 6 operators in regtest mode"
+  echo "  $0 --env regtest --fresh up -d                           # Clean and start all operators in regtest mode"
   echo "  $0 --env regtest down                                    # Stop all regtest operators"
   echo "  $0 --env alphanet --op 1 up -d                           # Start operator 1 in alphanet"
   echo "  $0 --env alphanet up -d                                  # Same, if UC_OPERATOR_ID=1 in .envrc"
@@ -266,8 +275,8 @@ if [[ -n "$NUM_OPERATORS" && "$ENVIRONMENT" != "local" && "$ENVIRONMENT" != "reg
 fi
 
 # Validate --fresh flag usage
-if [[ "${FRESH}" == true && "$ENVIRONMENT" != "local" ]]; then
-  echo "Error: --fresh is only allowed with --env local."
+if [[ "${FRESH}" == true && "$ENVIRONMENT" != "local" && "$ENVIRONMENT" != "regtest" ]]; then
+  echo "Error: --fresh is only allowed with --env local or --env regtest."
   echo "For alphanet/testnet, manually tear down the operator if needed."
   exit 1
 fi
@@ -331,17 +340,15 @@ fi
 
 # If requested, clean operator stacks regardless of the main command
 if [[ "${FRESH}" == true ]]; then
-  if [[ "$ENVIRONMENT" == "regtest" ]]; then
-    echo "Error: --fresh is not supported for regtest yet."
-    exit 1
-  fi
   echo "WARNING: --fresh will tear down operators and DELETE ALL VOLUMES (including data)."
-  if [[ "${AUTO_CONFIRM}" != true ]]; then
+  if [[ "$ENVIRONMENT" == "local" && "${AUTO_CONFIRM}" != true ]]; then
     read -p "Are you sure you want to continue? (yes/no): " confirmation
     if [[ "$confirmation" != "yes" ]]; then
       echo "Aborted."
       exit 1
     fi
+  elif [[ "$ENVIRONMENT" == "regtest" ]]; then
+    echo "Regtest fresh mode enabled: continuing without confirmation prompt."
   fi
 
   if [[ "$ENVIRONMENT" == "local" || "$ENVIRONMENT" == "regtest" ]]; then
@@ -374,6 +381,92 @@ if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
   fi
 fi
 
+sync_regtest_bitvmx_heights() {
+  local cfg_dir="${SCRIPT_DIR}/../bitvmx-client/config/regtest/client/config"
+  local sample_cfg="${cfg_dir}/op_1.yaml"
+  local height_delta="${REGTEST_BITVMX_HEIGHT_DELTA:-10}"
+  local rpc_payload='{"jsonrpc":"1.0","id":"ub","method":"getblockcount","params":[]}'
+
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "Error: curl is required to auto-sync regtest checkpoint/start heights."
+    exit 1
+  fi
+
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "Error: jq is required to auto-sync regtest checkpoint/start heights."
+    exit 1
+  fi
+
+  if [[ ! -f "${sample_cfg}" ]]; then
+    echo "Error: missing regtest BitVMX config file: ${sample_cfg}"
+    exit 1
+  fi
+
+  local bitcoin_rpc_url
+  bitcoin_rpc_url="$(
+    awk '/^[[:space:]]*url:[[:space:]]*/ {print $2; exit}' "${sample_cfg}" | tr -d "\"'"
+  )"
+  if [[ -z "${bitcoin_rpc_url}" ]]; then
+    echo "Error: could not parse Bitcoin RPC URL from ${sample_cfg}"
+    exit 1
+  fi
+
+  local rpc_response block_height start_height timestamp
+  rpc_response="$(
+    curl -sS --max-time 10 -H 'content-type:text/plain' \
+      --data-binary "${rpc_payload}" \
+      "${bitcoin_rpc_url}"
+  )"
+  block_height="$(echo "${rpc_response}" | jq -r '.result // empty')"
+  if ! [[ "${block_height}" =~ ^[0-9]+$ ]]; then
+    echo "Error: failed to read Bitcoin block height from ${bitcoin_rpc_url}. Response: ${rpc_response}"
+    exit 1
+  fi
+
+  start_height=$((block_height - height_delta))
+  if ((start_height < 1)); then
+    start_height=1
+  fi
+
+  timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  for op_num in "${OPERATORS_TO_RUN[@]}"; do
+    local cfg_file backup_file
+    cfg_file="${cfg_dir}/op_${op_num}.yaml"
+    backup_file="${cfg_file}.${timestamp}.bak"
+
+    if [[ ! -f "${cfg_file}" ]]; then
+      echo "Error: missing operator config file: ${cfg_file}"
+      exit 1
+    fi
+
+    cp "${cfg_file}" "${backup_file}"
+    UB_START_HEIGHT="${start_height}" perl -0777 -i -pe 's/(checkpoint_height:\s*)\d+/$1$ENV{UB_START_HEIGHT}/g; s/(start_height:\s*)\d+/$1$ENV{UB_START_HEIGHT}/g' "${cfg_file}"
+  done
+
+  echo "Regtest BitVMX heights synchronized: btc_height=${block_height}, start_height=${start_height}, delta=${height_delta}."
+}
+
+resolve_regtest_check_fork_elf_path() {
+  local configured_path="${UB_CHECK_FORK_GUEST_ELF_PATH:-}"
+  local default_path
+  default_path="$(cd "${SCRIPT_DIR}/.." && pwd)/bitvmx-client/config/regtest/client/config/check-fork-guest.bin"
+
+  if [[ -z "${configured_path}" || "${configured_path}" == "/app/config/check-fork-guest.bin" ]]; then
+    configured_path="${default_path}"
+  fi
+
+  if [[ ! -f "${configured_path}" ]]; then
+    echo "Error: missing CheckFork guest ELF for regtest dispatcher at ${configured_path}"
+    exit 1
+  fi
+
+  echo "${configured_path}"
+}
+
+if [[ "${ENVIRONMENT}" == "regtest" && "${IS_STARTUP_COMMAND}" == true ]]; then
+  sync_regtest_bitvmx_heights
+fi
+
 run_all_operators() {
   # LOCAL/REGTEST ENVIRONMENT: Multiple operators on one host (default 4, up to 10)
   # Each operator uses different ports to avoid conflicts
@@ -391,6 +484,12 @@ run_all_operators() {
   local BITVMX_P2P_HOSTS=("172.20.0.11" "172.20.0.12" "172.20.0.13" "172.20.0.14" "172.20.0.15" "172.20.0.16" "172.20.0.17" "172.20.0.18" "172.20.0.19" "172.20.0.20")
   local CLIENT_OPS=("op_1" "op_2" "op_3" "op_4" "op_5" "op_6" "op_7" "op_8" "op_9" "op_10")
   local COMPOSE_FILE_ARG="-f docker-compose.yml -f docker-compose.all.yml"
+  local regtest_check_fork_elf_path=""
+
+  if [[ "${ENVIRONMENT}" == "regtest" ]]; then
+    regtest_check_fork_elf_path="$(resolve_regtest_check_fork_elf_path)"
+    echo "Using regtest CheckFork guest ELF path for host dispatcher: ${regtest_check_fork_elf_path}"
+  fi
 
   for op_num in "${OPERATORS_TO_RUN[@]}"; do
     local i=$((op_num - 1))
@@ -398,8 +497,13 @@ run_all_operators() {
     local BITVMX_PORT=${BITVMX_PORTS[$i]}
     local BITVMX_P2P_HOST=${BITVMX_P2P_HOSTS[$i]}
     local CLIENT_OP=${CLIENT_OPS[$i]}
+    local extra_env=""
 
-    local DOCKER_CMD="CONFIG_DIR=${CONFIG_DIR} USER_BITCOIN_WIF=${USER_BITCOIN_WIF} USER_API_PORT=${USER_API_PORT} BITVMX_PORT=${BITVMX_PORT} BITVMX_P2P_HOST=${BITVMX_P2P_HOST} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${COMPOSE_FILE_ARG} -p op_${op_num} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
+    if [[ "${ENVIRONMENT}" == "regtest" ]]; then
+      extra_env="UB_CHECK_FORK_GUEST_ELF_PATH=${regtest_check_fork_elf_path}"
+    fi
+
+    local DOCKER_CMD="CONFIG_DIR=${CONFIG_DIR} USER_BITCOIN_WIF=${USER_BITCOIN_WIF} USER_API_PORT=${USER_API_PORT} BITVMX_PORT=${BITVMX_PORT} BITVMX_P2P_HOST=${BITVMX_P2P_HOST} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} ${extra_env:+${extra_env} }docker compose ${COMPOSE_FILE_ARG} -p op_${op_num} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
 
     echo
     echo "Starting operator ${op_num} with command: '$(echo "${DOCKER_CMD}" | sed "s/USER_BITCOIN_WIF=[^ ]*/USER_BITCOIN_WIF=******/")'"

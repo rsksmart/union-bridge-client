@@ -368,7 +368,7 @@ mod tests {
 
     use super::*;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
-    use crate::flows::advance_funds::tests::create_fake_block;
+    use crate::flows::advance_funds::test_utils::create_fake_block;
     use crate::types::EventWithBlock;
 
     /// Test constant for required confirmations (matches production default)

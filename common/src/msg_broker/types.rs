@@ -19,6 +19,7 @@ pub enum ToServer {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[allow(clippy::large_enum_variant)] // Block payload is intentionally larger than other broker messages
 pub enum FromServer {
     // Indexers
     Block(RskBlockAndUncles),
