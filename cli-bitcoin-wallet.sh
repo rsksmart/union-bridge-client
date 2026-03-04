@@ -55,9 +55,8 @@ if [ $# -eq 0 ]; then
     echo "  block_height                               - Get current blockchain height"
     echo "  ... and all other wallet commands"
     echo ""
-    echo "Required environment variables:"
-    echo "  For user mode:   USER_BITCOIN_WIF"
-    echo "  For member mode: MEMBER_BITCOIN_WIF"
+    echo "Optional environment variables:"
+    echo "  USER_BITCOIN_WIF / MEMBER_BITCOIN_WIF (if unset, start in first-time setup mode)"
     exit 1
 fi
 
@@ -87,14 +86,9 @@ case "$1" in
         ;;
 esac
 
-# Validate mode and check corresponding environment variable
+# Validate mode
 case "$MODE" in
     "user")
-        if [ -z "${USER_BITCOIN_WIF:-}" ]; then
-            echo "Error: USER_BITCOIN_WIF environment variable is not set"
-            echo "Please set USER_BITCOIN_WIF to your user Bitcoin WIF private key"
-            exit 1
-        fi
         if [ $# -eq 0 ]; then
             echo "Starting bitcoin-wallet in USER mode on $NETWORK (interactive)..."
         else
@@ -112,11 +106,6 @@ case "$MODE" in
         fi
         ;;
     "member")
-        if [ -z "${MEMBER_BITCOIN_WIF:-}" ]; then
-            echo "Error: MEMBER_BITCOIN_WIF environment variable is not set"
-            echo "Please set MEMBER_BITCOIN_WIF to your member Bitcoin WIF private key"
-            exit 1
-        fi
         if [ $# -eq 0 ]; then
             echo "Starting bitcoin-wallet in MEMBER mode on $NETWORK (interactive)..."
         else
