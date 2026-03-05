@@ -106,7 +106,6 @@ fi
 STREAM_ID=0
 RSK_ADDRESS="0x$(openssl rand -hex 20)" # random address each run
 VALUE=100000
-PACKET_NUMBER=0
 
 # colors
 GREEN='\033[0;32m'
@@ -518,11 +517,11 @@ fi
 
 log "RSK Address: $RSK_ADDRESS"
 log "Amount: $VALUE sats"
-log "Packet: $PACKET_NUMBER"
+log "Stream ID: $STREAM_ID"
 log "BTC Pub Key: $USER_XONLY_PUBKEY"
-log "Command: bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -p $PACKET_NUMBER -k $USER_XONLY_PUBKEY --env $SCRIPT_ENV --execute"
+log "Command: bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -s $STREAM_ID -k $USER_XONLY_PUBKEY --env $SCRIPT_ENV --execute"
 echo ""
-if ! bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -p $PACKET_NUMBER -k "$USER_XONLY_PUBKEY" --env "$SCRIPT_ENV" --execute; then
+if ! bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -s $STREAM_ID -k "$USER_XONLY_PUBKEY" --env "$SCRIPT_ENV" --execute; then
     warn "Command failed!"
     exit 1
 fi
