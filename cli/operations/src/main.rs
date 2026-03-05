@@ -26,7 +26,8 @@
 //! - `pegin`: initiates a bitcoin → rootstock transfer
 //!   - prints bitcoin-wallet cli command to execute the pegin transaction
 //!   - with `--execute` flag: runs the wallet command programmatically via cli-bitcoin-wallet.sh
-//!   - requires: rootstock address, value in satoshis, packet number
+//!   - requires: rootstock address, value in satoshis
+//!   - packet number is auto-calculated from StreamManager contract (can be overridden with -p)
 //! - `pegout`: initiates a rootstock → bitcoin withdrawal
 //!   - executes the pegout request on the rootstock side
 //!   - requires: value in satoshis
@@ -85,11 +86,12 @@ mod pegout;
 mod rsk_wallet;
 mod utils;
 
+use anyhow::Result;
+use clap::{Parser, Subcommand};
+
 use crate::committee::CommitteeRole;
 use crate::constants::operator_ids;
 use crate::environments::Environment;
-use anyhow::Result;
-use clap::{Parser, Subcommand};
 
 #[derive(Debug, Parser, Clone)]
 #[command(name = "operations", about = "Union Bridge Operator and User Operations")]
@@ -157,7 +159,12 @@ enum OperatorCommands {
         env: Environment,
 
         /// Operator ID (1-10) when applying on alphanet or testnet
-        #[arg(short = 'o', long = "operator-id", value_name = "OPERATOR_ID", env = "UC_OPERATOR_ID")]
+        #[arg(
+            short = 'o',
+            long = "operator-id",
+            value_name = "OPERATOR_ID",
+            env = "UC_OPERATOR_ID"
+        )]
         operator_id: Option<u8>,
 
         /// Operator role when applying on alphanet or testnet
@@ -188,14 +195,17 @@ enum UserCommands {
         #[arg(short = 'v', long = "value", value_name = "VALUE")]
         value: u64,
 
-        /// Packet number used when creating the pegin transaction
-        #[arg(
-            short = 'p',
-            long = "packet-number",
-            value_name = "PACKET_NUMBER",
-            default_value_t = 0u64
-        )]
-        packet_number: u64,
+        /// Stream ID to query for the packet number (default: 0)
+        #[arg(short = 's', long = "stream-id", value_name = "STREAM_ID", default_value_t = 0u64)]
+        stream_id: u64,
+
+        /// Packet number override. If omitted, auto-calculated from the StreamManager contract.
+        #[arg(short = 'p', long = "packet-number", value_name = "PACKET_NUMBER")]
+        packet_number: Option<u64>,
+
+        /// StreamManager contract address override. If omitted, uses the default for the environment.
+        #[arg(long = "stream-manager-address", value_name = "ADDRESS")]
+        stream_manager_address: Option<String>,
 
         /// Bitcoin public key for reimbursement (32-byte x-only pubkey with 0x prefix)
         #[arg(short = 'k', long = "btc-pub-key", value_name = "BTC_PUB_KEY")]
@@ -264,8 +274,27 @@ async fn main() -> Result<()> {
             UserCommands::Fund { env } => {
                 rsk_wallet::handle_user_funding(env)?;
             }
-            UserCommands::Pegin { env, rsk_address, value, packet_number, btc_pub_key, execute } => {
-                pegin::create_pegin_tx(env, rsk_address, value, packet_number, btc_pub_key, execute).await?;
+            UserCommands::Pegin {
+                env,
+                rsk_address,
+                value,
+                stream_id,
+                packet_number,
+                stream_manager_address,
+                btc_pub_key,
+                execute,
+            } => {
+                pegin::create_pegin_tx(
+                    env,
+                    rsk_address,
+                    value,
+                    stream_id,
+                    packet_number,
+                    stream_manager_address,
+                    btc_pub_key,
+                    execute,
+                )
+                .await?;
             }
             UserCommands::Pegout { env, value, usr_pub_key } => {
                 pegout::request_pegout(env, value, usr_pub_key).await?;

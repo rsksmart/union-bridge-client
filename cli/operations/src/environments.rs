@@ -67,6 +67,18 @@ impl Environment {
         }
     }
 
+    /// returns the StreamManager contract address for this environment
+    pub fn stream_manager_address(&self) -> &str {
+        match self {
+            Environment::Local | Environment::LocalDocker => {
+                "0x610178dA211FEF7D417bC0e6FeD39F05609AD788"
+            }
+            Environment::Regtest => "0xC689FB08B10BE1080c87dC6f8EdcA7Cd20471218",
+            Environment::Alphanet => "0x71260e163CE80566e82B26934Ea98A1C194340d3",
+            Environment::Testnet => "0x38C5d2e8a3fB87B851ab7b501a317E48fc5bFa7F",
+        }
+    }
+
     /// returns the bitvmx endpoints for this environment
     pub fn user_api_endpoints(&self) -> Vec<String> {
         let ports = user_api_ports();
