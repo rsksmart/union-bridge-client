@@ -1,6 +1,6 @@
 services:
   bitvmx-client:
-    image: ghcr.io/fairgatelabs/rust-bitvmx-workspace/bitvmx-client:v0.1.4-alpha
+    image: ghcr.io/fairgatelabs/rust-bitvmx-workspace/bitvmx-client:0.5.1
     # container_name: bitvmx-client-container
     restart: unless-stopped
     entrypoint: [ "./run.sh" ]
@@ -16,7 +16,6 @@ services:
       start_period: 10s
     volumes:
       - ./config/${ENVIRONMENT}/client/config:/app/config
-      - ./config/${ENVIRONMENT}/broker/config:/app/rust-bitvmx-workspace/rust-fakep2p/broker/config
       - db-bitvmx:/tmp
 
 volumes:
