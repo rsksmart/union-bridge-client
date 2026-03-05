@@ -1,5 +1,3 @@
-#![cfg(not(feature = "fresh_node"))]
-
 use std::fs;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -31,11 +29,11 @@ And the storage should reflect the expected canonical chain containing blocks fr
 */
 #[test]
 fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription() -> Result<()> {
-    let _ = env_logger::builder().is_test(true).try_init();
     const INIT_BLOCK_HEIGHT: u64 = 1;
     const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
     const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
     const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
+    let _ = env_logger::builder().is_test(true).try_init();
     let temp_dir = tempdir()?;
     let store_path = temp_dir.path().join("blocks");
     fs::create_dir_all(&store_path)?;
@@ -62,7 +60,7 @@ fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
     mock_rsk_provider_handler.set_provider_expect_get_block_by_number(None, None);
     mock_rsk_provider_handler.set_provider_expect_subscribe_blocks(None);
-    cycle_indexer(store, mock_rsk_provider, shutting_down, None);
+    cycle_indexer(store, mock_rsk_provider, &shutting_down, None);
     let store_after: CachedBlockStore<LruCache<RskBlock>> =
         CachedBlockStore::new(store_path, BLOCK_CACHE_SIZE)?;
     assert_best_block(&generator, &store_after, MAX_BLOCK_HEIGHT_SUBSCRIPTION);
@@ -87,10 +85,10 @@ And the storage should reflect the expected canonical chain containing blocks fr
 */
 #[test]
 fn test_when_shutdown_happens_during_backwards_sync_should_set_checkpoint() -> Result<()> {
-    let _ = env_logger::builder().is_test(true).try_init();
     const INIT_BLOCK_HEIGHT: u64 = 1;
     const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
     const BLOCK_HEIGHT_SHUTDOWN_HAPPENS_AT: u64 = 10;
+    let _ = env_logger::builder().is_test(true).try_init();
     let temp_dir = tempdir()?;
     let store_path = temp_dir.path().join("blocks");
     fs::create_dir_all(&store_path)?;
@@ -119,7 +117,7 @@ fn test_when_shutdown_happens_during_backwards_sync_should_set_checkpoint() -> R
         None,
         Some(BLOCK_HEIGHT_SHUTDOWN_HAPPENS_AT.into()),
     );
-    cycle_indexer(store, mock_rsk_provider, shutting_down, None);
+    cycle_indexer(store, mock_rsk_provider, &shutting_down, None);
     let store_after: CachedBlockStore<LruCache<RskBlock>> =
         CachedBlockStore::new(store_path, BLOCK_CACHE_SIZE)?;
     assert_checkpoint(&generator, &store_after, BLOCK_HEIGHT_SHUTDOWN_HAPPENS_AT);
@@ -149,12 +147,12 @@ And the storage should reflect the expected canonical chain containing blocks fr
 #[test]
 fn test_when_shutdown_happens_during_backwards_sync_and_indexer_restarts_should_complete_sync()
 -> Result<()> {
-    let _ = env_logger::builder().is_test(true).try_init();
     const INIT_BLOCK_HEIGHT: u64 = 1;
     const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
     const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
     const BLOCK_HEIGHT_SHUTDOWN_HAPPENS_AT: u64 = 10;
     const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
+    let _ = env_logger::builder().is_test(true).try_init();
     let temp_dir = tempdir()?;
     let store_path = temp_dir.path().join("blocks");
     fs::create_dir_all(&store_path)?;
@@ -188,7 +186,7 @@ fn test_when_shutdown_happens_during_backwards_sync_and_indexer_restarts_should_
     cycle_indexer(
         store,
         mock_rsk_provider,
-        shutting_down,
+        &shutting_down,
         Some("Phase 1 (backward sync up to checkpoint) completed successfully."),
     );
 
@@ -225,7 +223,7 @@ fn test_when_shutdown_happens_during_backwards_sync_and_indexer_restarts_should_
     cycle_indexer(
         store,
         mock_rsk_provider,
-        shutting_down,
+        &shutting_down,
         Some("Phase 2 (checkpoint recovery and subscription) completed successfully."),
     );
 
@@ -260,13 +258,13 @@ And the storage should reflect the expected canonical chain containing blocks fr
 #[test]
 fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complete_sync()
 -> Result<()> {
-    let _ = env_logger::builder().is_test(true).try_init();
     const INIT_BLOCK_HEIGHT: u64 = 1;
     const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
     const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
     const REORG_BLOCK_HEIGHT: u64 = 10;
     const REORG_HAPPENS_AT_HEIGHT: u64 = 15;
     const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
+    let _ = env_logger::builder().is_test(true).try_init();
     let temp_dir = tempdir()?;
     let store_path = temp_dir.path().join("blocks");
     fs::create_dir_all(&store_path)?;
@@ -296,7 +294,7 @@ fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complet
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_number(Some(REORG_HAPPENS_AT_HEIGHT.into()), None);
     mock_rsk_provider_handler.set_provider_expect_subscribe_blocks(None);
-    cycle_indexer(store, mock_rsk_provider, shutting_down, None);
+    cycle_indexer(store, mock_rsk_provider, &shutting_down, None);
     let store_after: CachedBlockStore<LruCache<RskBlock>> =
         CachedBlockStore::new(store_path, BLOCK_CACHE_SIZE)?;
     assert_best_block(&generator, &store_after, MAX_BLOCK_HEIGHT_SUBSCRIPTION);
@@ -323,13 +321,13 @@ And the storage should reflect the expected canonical chain containing blocks fr
 #[test]
 fn test_when_monitor_runs_and_reorg_happens_during_subscription_should_complete_sync() -> Result<()>
 {
-    let _ = env_logger::builder().is_test(true).try_init();
     const INIT_BLOCK_HEIGHT: u64 = 1;
     const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
     const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
     const REORG_BLOCK_HEIGHT: u64 = 25;
     const REORG_HAPPENS_AT_HEIGHT: u64 = 30;
     const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
+    let _ = env_logger::builder().is_test(true).try_init();
     let temp_dir = tempdir()?;
     let store_path = temp_dir.path().join("blocks");
     fs::create_dir_all(&store_path)?;
@@ -360,7 +358,7 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_should_complete_
         .set_provider_expect_get_block_by_number(Some(REORG_HAPPENS_AT_HEIGHT.into()), None);
     mock_rsk_provider_handler
         .set_provider_expect_subscribe_blocks(Some(REORG_HAPPENS_AT_HEIGHT.into()));
-    cycle_indexer(store, mock_rsk_provider, shutting_down, None);
+    cycle_indexer(store, mock_rsk_provider, &shutting_down, None);
     let store_after: CachedBlockStore<LruCache<RskBlock>> =
         CachedBlockStore::new(store_path, BLOCK_CACHE_SIZE)?;
     assert_best_block(&generator, &store_after, MAX_BLOCK_HEIGHT_SUBSCRIPTION);
@@ -387,13 +385,13 @@ And the storage should reflect the expected canonical chain containing blocks fr
 #[test]
 fn test_when_monitor_runs_and_reorg_happens_during_subscription_from_early_block_should_complete_sync()
 -> Result<()> {
-    let _ = env_logger::builder().is_test(true).try_init();
     const INIT_BLOCK_HEIGHT: u64 = 1;
     const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
     const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
     const REORG_BLOCK_HEIGHT: u64 = 10;
     const REORG_HAPPENS_AT_HEIGHT: u64 = 30;
     const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
+    let _ = env_logger::builder().is_test(true).try_init();
     let temp_dir = tempdir()?;
     let store_path = temp_dir.path().join("blocks");
     fs::create_dir_all(&store_path)?;
@@ -424,7 +422,7 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_from_early_block
         .set_provider_expect_get_block_by_number(Some(REORG_HAPPENS_AT_HEIGHT.into()), None);
     mock_rsk_provider_handler
         .set_provider_expect_subscribe_blocks(Some(REORG_HAPPENS_AT_HEIGHT.into()));
-    cycle_indexer(store, mock_rsk_provider, shutting_down, None);
+    cycle_indexer(store, mock_rsk_provider, &shutting_down, None);
     let store_after: CachedBlockStore<LruCache<RskBlock>> =
         CachedBlockStore::new(store_path, BLOCK_CACHE_SIZE)?;
     assert_best_block(&generator, &store_after, MAX_BLOCK_HEIGHT_SUBSCRIPTION);
@@ -470,6 +468,10 @@ And the storage should contain these uncle blocks
 #[test]
 fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription_with_uncles()
 -> Result<()> {
+    const INIT_BLOCK_HEIGHT: u64 = 1;
+    const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
+    const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
+    const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
     let _ = env_logger::builder().is_test(true).try_init();
     let uncle_block_info_vec: Vec<UncleBlockInfo> = vec![
         UncleBlockInfo::new(5, false, "uD.A", 0),
@@ -479,10 +481,6 @@ fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription
         UncleBlockInfo::new(22, false, "uP.B", 1),
         UncleBlockInfo::new(28, false, "uS.A", 0),
     ];
-    const INIT_BLOCK_HEIGHT: u64 = 1;
-    const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
-    const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
-    const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
     let temp_dir = tempdir()?;
     let store_path = temp_dir.path().join("blocks");
     fs::create_dir_all(&store_path)?;
@@ -514,7 +512,7 @@ fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
     mock_rsk_provider_handler.set_provider_expect_get_block_by_number(None, None);
     mock_rsk_provider_handler.set_provider_expect_subscribe_blocks(None);
-    cycle_indexer(store, mock_rsk_provider, shutting_down, None);
+    cycle_indexer(store, mock_rsk_provider, &shutting_down, None);
     let store_after: CachedBlockStore<LruCache<RskBlock>> =
         CachedBlockStore::new(store_path, BLOCK_CACHE_SIZE)?;
     assert_best_block(&generator, &store_after, MAX_BLOCK_HEIGHT_SUBSCRIPTION);
@@ -525,7 +523,7 @@ fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription
         MAX_BLOCK_HEIGHT_SUBSCRIPTION,
     );
     assert_uncle_block_links(&store_after, INIT_BLOCK_HEIGHT, MAX_BLOCK_HEIGHT_SUBSCRIPTION);
-    assert_uncle_blocks_in_storage(&generator, &store_after, uncle_block_info_vec.clone());
+    assert_uncle_blocks_in_storage(&generator, &store_after, &uncle_block_info_vec);
     Ok(())
 }
 
@@ -570,6 +568,12 @@ And the storage should contain these uncle blocks
 #[test]
 fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complete_sync_with_uncles()
 -> Result<()> {
+    const INIT_BLOCK_HEIGHT: u64 = 1;
+    const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
+    const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
+    const REORG_BLOCK_HEIGHT: u64 = 10;
+    const REORG_HAPPENS_AT_HEIGHT: u64 = 15;
+    const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
     let _ = env_logger::builder().is_test(true).try_init();
     let uncle_block_info_vec: Vec<UncleBlockInfo> = vec![
         UncleBlockInfo::new(5, false, "uD.A", 0),
@@ -586,12 +590,6 @@ fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complet
         UncleBlockInfo::new(23, true, "uPP.A", 0),
         UncleBlockInfo::new(33, true, "uT.A", 0),
     ];
-    const INIT_BLOCK_HEIGHT: u64 = 1;
-    const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
-    const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
-    const REORG_BLOCK_HEIGHT: u64 = 10;
-    const REORG_HAPPENS_AT_HEIGHT: u64 = 15;
-    const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
 
     let temp_dir = tempdir()?;
     let store_path = temp_dir.path().join("blocks");
@@ -626,7 +624,7 @@ fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complet
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_number(Some(REORG_HAPPENS_AT_HEIGHT.into()), None);
     mock_rsk_provider_handler.set_provider_expect_subscribe_blocks(None);
-    cycle_indexer(store, mock_rsk_provider, shutting_down, None);
+    cycle_indexer(store, mock_rsk_provider, &shutting_down, None);
     let store_after: CachedBlockStore<LruCache<RskBlock>> =
         CachedBlockStore::new(store_path, BLOCK_CACHE_SIZE)?;
     assert_best_block(&generator, &store_after, MAX_BLOCK_HEIGHT_SUBSCRIPTION);
@@ -637,7 +635,7 @@ fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complet
         MAX_BLOCK_HEIGHT_SUBSCRIPTION,
     );
     assert_uncle_block_links(&store_after, INIT_BLOCK_HEIGHT, MAX_BLOCK_HEIGHT_SUBSCRIPTION);
-    assert_uncle_blocks_in_storage(&generator, &store_after, uncle_block_info_vec.clone());
+    assert_uncle_blocks_in_storage(&generator, &store_after, &uncle_block_info_vec);
     Ok(())
 }
 
@@ -677,6 +675,12 @@ And the storage should contain these uncle blocks
 #[test]
 fn test_when_monitor_runs_and_reorg_happens_during_subscription_should_complete_sync_with_uncles()
 -> Result<()> {
+    const INIT_BLOCK_HEIGHT: u64 = 1;
+    const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
+    const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
+    const REORG_BLOCK_HEIGHT: u64 = 25;
+    const REORG_HAPPENS_AT_HEIGHT: u64 = 30;
+    const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
     let _ = env_logger::builder().is_test(true).try_init();
     let uncle_block_info_vec: Vec<UncleBlockInfo> = vec![
         UncleBlockInfo::new(23, false, "uP.A", 0),
@@ -687,13 +691,6 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_should_complete_
         UncleBlockInfo::new(29, true, "uT.A", 0),
         UncleBlockInfo::new(38, true, "uZ.A", 0),
     ];
-
-    const INIT_BLOCK_HEIGHT: u64 = 1;
-    const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
-    const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
-    const REORG_BLOCK_HEIGHT: u64 = 25;
-    const REORG_HAPPENS_AT_HEIGHT: u64 = 30;
-    const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
     let temp_dir = tempdir()?;
     let store_path = temp_dir.path().join("blocks");
     fs::create_dir_all(&store_path)?;
@@ -728,7 +725,7 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_should_complete_
         .set_provider_expect_get_block_by_number(Some(REORG_HAPPENS_AT_HEIGHT.into()), None);
     mock_rsk_provider_handler
         .set_provider_expect_subscribe_blocks(Some(REORG_HAPPENS_AT_HEIGHT.into()));
-    cycle_indexer(store, mock_rsk_provider, shutting_down, None);
+    cycle_indexer(store, mock_rsk_provider, &shutting_down, None);
     let store_after: CachedBlockStore<LruCache<RskBlock>> =
         CachedBlockStore::new(store_path, BLOCK_CACHE_SIZE)?;
     assert_best_block(&generator, &store_after, MAX_BLOCK_HEIGHT_SUBSCRIPTION);
@@ -739,16 +736,16 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_should_complete_
         MAX_BLOCK_HEIGHT_SUBSCRIPTION,
     );
     assert_uncle_block_links(&store_after, INIT_BLOCK_HEIGHT, MAX_BLOCK_HEIGHT_SUBSCRIPTION);
-    assert_uncle_blocks_in_storage(&generator, &store_after, uncle_block_info_vec.clone());
+    assert_uncle_blocks_in_storage(&generator, &store_after, &uncle_block_info_vec);
     Ok(())
 }
 
 fn cycle_indexer(
     store: CachedBlockStore<LruCache<RskBlock>>,
     mock_rsk_provider: MockRskProvider,
-    shutting_down: ShutdownFlag,
+    shutting_down: &ShutdownFlag,
     msg: Option<&str>,
-) -> () {
+) {
     let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH).expect("Invalid hex string");
     let indexer = BlockIndexer::new(store, mock_rsk_provider, block_hash, shutting_down.clone());
     let _ = indexer.run();
@@ -760,16 +757,15 @@ fn assert_best_block(
     generator: &FakeBlockGenerator,
     store_after: &CachedBlockStore<LruCache<RskBlock>>,
     best_block_height: u64,
-) -> () {
+) {
     let best_block = store_after
         .get_best_block()
-        .unwrap_or_else(|err| panic!("Failed to retrieve best block: {}", err))
+        .unwrap_or_else(|err| panic!("Failed to retrieve best block: {err}"))
         .expect("No best block found after indexer run");
     let block_expected = generator.generate_block(best_block_height.into(), None).unwrap();
     assert_eq!(
         block_expected, best_block,
-        "Best block in storage does not match the expected best block (height {})",
-        best_block_height
+        "Best block in storage does not match the expected best block (height {best_block_height})"
     );
 }
 
@@ -777,16 +773,15 @@ fn assert_checkpoint(
     generator: &FakeBlockGenerator,
     store_after: &CachedBlockStore<LruCache<RskBlock>>,
     checkpoint_block_height: u64,
-) -> () {
+) {
     let checkpoint_block = store_after
         .get_back_sync_checkpoint()
-        .unwrap_or_else(|err| panic!("Failed to retrieve checkpoint block: {}", err))
+        .unwrap_or_else(|err| panic!("Failed to retrieve checkpoint block: {err}"))
         .expect("No checkpoint block found after indexer run");
     let block_expected = generator.generate_block(checkpoint_block_height.into(), None).unwrap();
     assert_eq!(
         block_expected, checkpoint_block,
-        "Checkpoint block in storage does not match the expected checkpoint block (height {})",
-        checkpoint_block_height
+        "Checkpoint block in storage does not match the expected checkpoint block (height {checkpoint_block_height})"
     );
 }
 
@@ -795,17 +790,18 @@ fn assert_canonical_chain(
     store_after: &CachedBlockStore<LruCache<RskBlock>>,
     begin_height: u64,
     end_height: u64,
-) -> () {
+) {
     for height in begin_height..=end_height {
         let block_expected = generator.clone().generate_block(height.into(), None).unwrap();
         let block_actual = store_after
             .get_canonical_block(height.into())
-            .unwrap_or_else(|err| panic!("Failed to retrieve canonical block: {}", err))
-            .expect(&format!("No canonical block at height {} found after indexer run", height));
+            .unwrap_or_else(|err| panic!("Failed to retrieve canonical block: {err}"))
+            .unwrap_or_else(|| {
+                panic!("No canonical block at height {height} found after indexer run")
+            });
         assert_eq!(
             block_expected, block_actual,
-            "Canonical block in storage at height {} does not match the expected block",
-            height
+            "Canonical block in storage at height {height} does not match the expected block"
         );
     }
 }
@@ -814,21 +810,21 @@ fn assert_uncle_block_links(
     store_after: &CachedBlockStore<LruCache<RskBlock>>,
     begin_height: u64,
     end_height: u64,
-) -> () {
+) {
     for height in begin_height..=end_height {
         let block_actual = store_after
             .get_canonical_block(height.into())
-            .unwrap_or_else(|err| panic!("Failed to retrieve canonical block: {}", err))
-            .expect(&format!("No canonical block at height {} found after indexer run", height));
+            .unwrap_or_else(|err| panic!("Failed to retrieve canonical block: {err}"))
+            .unwrap_or_else(|| {
+                panic!("No canonical block at height {height} found after indexer run")
+            });
         for uncle_hash in block_actual.uncles() {
             let uncle_block_actual = store_after
                 .get_block_by_hash(uncle_hash)
-                .unwrap_or_else(|err| panic!("Failed to retrieve uncle block: {}", err));
+                .unwrap_or_else(|err| panic!("Failed to retrieve uncle block: {err}"));
             assert!(
                 uncle_block_actual.is_some(),
-                "No uncle block with hash {} for block at height {} found after indexer run",
-                uncle_hash,
-                height
+                "No uncle block with hash {uncle_hash} for block at height {height} found after indexer run"
             );
         }
     }
@@ -837,24 +833,24 @@ fn assert_uncle_block_links(
 fn assert_uncle_blocks_in_storage(
     generator: &FakeBlockGenerator,
     store_after: &CachedBlockStore<LruCache<RskBlock>>,
-    uncle_block_info_vec: Vec<UncleBlockInfo>,
-) -> () {
-    for uncle_info in uncle_block_info_vec.iter() {
+    uncle_block_info_vec: &[UncleBlockInfo],
+) {
+    for uncle_info in uncle_block_info_vec {
         let height = uncle_info.height;
         let block_expected = generator.clone().generate_block(height, Some(uncle_info));
         if let Some(block_expected) = block_expected {
             let block_expected_hash = block_expected.hash();
             let block_actual = store_after
                 .get_block_by_hash(block_expected.hash())
-                .unwrap_or_else(|err| panic!("Failed to retrieve uncle block: {}", err))
-                .expect(&format!(
-                    "No uncle block with hash {} for block at height {} found after indexer run",
-                    block_expected_hash, height
-                ));
+                .unwrap_or_else(|err| panic!("Failed to retrieve uncle block: {err}"))
+                .unwrap_or_else(|| {
+                    panic!(
+                        "No uncle block with hash {block_expected_hash} for block at height {height} found after indexer run"
+                    )
+                });
             assert_eq!(
                 block_expected, block_actual,
-                "Uncle block in storage with hash {} does not match the expected uncle block",
-                block_expected_hash
+                "Uncle block in storage with hash {block_expected_hash} does not match the expected uncle block"
             );
         }
     }

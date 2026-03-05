@@ -45,7 +45,7 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
-    use common::config::CommonConfig;
+    use common::config::{CommonConfig, IndexerStartFrom};
     use tempfile::TempDir;
 
     use crate::config::{CARGO_PKG_NAME, Config};
@@ -56,6 +56,7 @@ mod tests {
             CommonConfig::load_config::<Config>(None).expect("Failed to load config");
 
         assert_eq!(10001, config.block_indexer_config.notifier.port);
+        assert_eq!(IndexerStartFrom::Hash, config.indexer.start_from);
         assert!(!config.indexer.storage.path.contains("{BASE_STORAGE_PATH}"));
         assert!(config.indexer.storage.path.ends_with("/.union_bridge/database/multi-client-1"));
         assert_eq!(1000, config.indexer.cache.size);

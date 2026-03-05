@@ -27,10 +27,20 @@ pub struct CommonConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct IndexerConfig {
-    pub initial_block_hash: String,
+    #[serde(default)]
+    pub start_from: IndexerStartFrom,
+    pub initial_block_hash: Option<String>,
     pub sync: SyncConfig,
     pub storage: StorageConfig,
     pub cache: CacheConfig,
+}
+
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum IndexerStartFrom {
+    #[default]
+    Hash,
+    Best,
 }
 
 #[derive(Debug, Deserialize)]
@@ -235,9 +245,10 @@ mod tests {
             CommonConfig::load_config::<CommonConfig>(None).expect("Failed to load base config");
 
         assert_eq!(
-            "0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c",
-            config.indexer.initial_block_hash
+            Some("0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c"),
+            config.indexer.initial_block_hash.as_deref()
         );
+        assert_eq!(IndexerStartFrom::Hash, config.indexer.start_from);
         assert!(!config.indexer.storage.path.contains("{BASE_STORAGE_PATH}"));
         assert!(config.indexer.storage.path.ends_with("/.union_bridge/database/multi-client-1"));
         assert_eq!(1000, config.indexer.cache.size);
@@ -279,9 +290,10 @@ mod tests {
                 .expect("Failed to load config with docker-local environment");
 
         assert_eq!(
-            "0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c",
-            config.indexer.initial_block_hash
+            Some("0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c"),
+            config.indexer.initial_block_hash.as_deref()
         );
+        assert_eq!(IndexerStartFrom::Best, config.indexer.start_from);
         assert_eq!("/app/db/", config.indexer.storage.path); // override
         assert_eq!(1000, config.indexer.cache.size);
         assert_eq!("ws://host.docker.internal:8545", config.provider.rootstock.url);
@@ -304,9 +316,10 @@ mod tests {
             .expect("Failed to load config with environment variables");
 
         assert_eq!(
-            "0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c",
-            config.indexer.initial_block_hash
+            Some("0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c"),
+            config.indexer.initial_block_hash.as_deref()
         );
+        assert_eq!(IndexerStartFrom::Hash, config.indexer.start_from);
 
         // override
         assert_eq!("/test/env/path", config.indexer.storage.path);

@@ -52,7 +52,6 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         }
     }
 
-    #[cfg(not(feature = "fresh_node"))]
     fn get_initial_block(&self, provider: &P) -> RskBlock {
         let opt_block = provider.get_block_by_hash(self.initial_block_hash).unwrap_or_else(|_| {
             panic!(
@@ -66,25 +65,15 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         })
     }
 
-    #[cfg(feature = "fresh_node")]
-    fn get_initial_block(provider: &P) -> RskBlock {
-        provider.get_best_block().expect("Precondition failed: error fetching best block")
-    }
-
     fn is_running(&self) -> bool {
         !self.shutdown_flag.is_on()
     }
 
     fn init_db_if_required(&self, initial_block_node: &RskBlock) -> Result<()> {
-        // always initialize DB if the fresh_node feature is set
-
-        #[cfg(not(feature = "fresh_node"))]
-        {
-            let best_block: Option<RskBlock> =
-                self.store.get_best_block().context("Initialising DB")?;
-            if best_block.is_some() {
-                return Ok(());
-            }
+        let best_block: Option<RskBlock> =
+            self.store.get_best_block().context("Initialising DB")?;
+        if best_block.is_some() {
+            return Ok(());
         }
 
         info!(
@@ -97,7 +86,6 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         self.save_as_best_block(initial_block_node).context("Initialising DB")
     }
 
-    #[cfg(not(feature = "fresh_node"))]
     fn startup_backward_sync(&self) -> Result<()> {
         // In case of an interrupted backward_sync, a back_sync_checkpoint will be created.
         // If it is still canonical when we restart the application, we will run:
@@ -317,7 +305,6 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         Ok(())
     }
 
-    #[cfg(not(feature = "fresh_node"))]
     fn resume_pending_backward_sync(&self) -> Result<()> {
         if let Some(checkpoint) =
             self.store.get_back_sync_checkpoint().context("Resuming Pending Backward Sync")?
@@ -343,7 +330,6 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         Ok(())
     }
 
-    #[cfg(not(feature = "fresh_node"))]
     fn full_sync_backward_syncs(&self) -> Result<()> {
         let max_attempts = 10;
         for i in 1..max_attempts {
@@ -356,17 +342,19 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 if is_full_sync {
                     debug!("[startup_backward_sync] No more rounds needed",);
                     return Ok(());
-                } else if !self.is_running() {
-                    return Ok(());
-                } else {
-                    info!("[startup_backward_sync] Running from tip round-{}", i);
-                    self.backward_sync(&provider_best_block)
-                        .context("On Full Sync Backward Sync rounds")?;
                 }
+
+                if !self.is_running() {
+                    return Ok(());
+                }
+
+                info!("[startup_backward_sync] Running from tip round-{i}");
+                self.backward_sync(&provider_best_block)
+                    .context("On Full Sync Backward Sync rounds")?;
             }
         }
 
-        bail!("Could not catch up to the tip after {} rounds", max_attempts)
+        bail!("Could not catch up to the tip after {max_attempts} rounds")
     }
 
     fn save_as_canonical(&self, canonical_block: &RskBlock) -> Result<()> {
@@ -446,14 +434,10 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 
 impl<P: RskProvider, S: BlockStore> RskIndexer<P, S> for BlockIndexer<P, S> {
     fn run(&self) -> Result<()> {
-        #[cfg(feature = "fresh_node")]
-        let initial_block = Self::get_initial_block(&self.rsk_provider);
-        #[cfg(not(feature = "fresh_node"))]
         let initial_block = self.get_initial_block(&self.rsk_provider);
 
         self.init_db_if_required(&initial_block)?;
 
-        #[cfg(not(feature = "fresh_node"))]
         self.startup_backward_sync()?;
 
         self.start_block_subscription()
@@ -610,7 +594,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "fresh_node"))]
     #[should_panic(expected = "Precondition failed: initial block")]
     fn panics_when_initial_block_hash_not_found() {
         // Given a random hash that the provider won't find...
