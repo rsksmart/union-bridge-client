@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::mpsc;
 
 use anyhow::{Context, Result, bail};
+use common::config::{IndexerConfig, IndexerStartFrom};
 use common::rsk_indexer::RskIndexer;
 use common::rsk_provider::{
     RskProvider, RskSubscription, RskSubscriptionError, RskSubscriptionFilter,
@@ -16,6 +17,7 @@ pub struct LogIndexer<P: RskProvider, S: LogStore> {
     store: S,
     rsk_provider: P,
     new_log_sender: Option<mpsc::Sender<RskLog>>,
+    start_from: IndexerStartFrom,
     initial_block_number: BlockNumber,
     sync_batch_size: usize,
     sync_finality_depth: usize,
@@ -29,26 +31,25 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
     /// # Errors
     ///
     /// Returns an error if the initial block cannot be retrieved from the provider
-    #[allow(clippy::too_many_arguments)]
     pub fn new_with_notifier(
         store: S,
         rsk_provider: P,
         new_log_sender: mpsc::Sender<RskLog>,
-        initial_block_hash: BlockHash,
-        sync_batch_size: usize,
-        sync_finality_depth: usize,
+        indexer_config: &IndexerConfig,
         managed_contracts: HashMap<Address, ContractInfo>,
         shutdown_flag: ShutdownFlag,
     ) -> Result<Self> {
+        let initial_block_hash = indexer_config.resolve_initial_block_hash(&rsk_provider)?;
         let initial_block_number = Self::check_initial_block(&rsk_provider, initial_block_hash)?;
 
         Ok(Self {
             store,
             rsk_provider,
             new_log_sender: Some(new_log_sender),
+            start_from: indexer_config.start_from,
             initial_block_number,
-            sync_batch_size,
-            sync_finality_depth,
+            sync_batch_size: indexer_config.sync.batch_size,
+            sync_finality_depth: indexer_config.sync.finality_depth,
             managed_contracts,
             shutdown_flag,
         })
@@ -62,21 +63,21 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
     pub fn new(
         store: S,
         rsk_provider: P,
-        initial_block_hash: BlockHash,
-        sync_batch_size: usize,
-        sync_finality_depth: usize,
+        indexer_config: &IndexerConfig,
         managed_contracts: HashMap<Address, ContractInfo>,
         shutdown_flag: ShutdownFlag,
     ) -> Result<Self> {
+        let initial_block_hash = indexer_config.resolve_initial_block_hash(&rsk_provider)?;
         let initial_block_number = Self::check_initial_block(&rsk_provider, initial_block_hash)?;
 
         Ok(Self {
             store,
             rsk_provider,
             new_log_sender: None,
+            start_from: indexer_config.start_from,
             initial_block_number,
-            sync_batch_size,
-            sync_finality_depth,
+            sync_batch_size: indexer_config.sync.batch_size,
+            sync_finality_depth: indexer_config.sync.finality_depth,
             managed_contracts,
             shutdown_flag,
         })
@@ -106,7 +107,17 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
         let contract_addresses: Vec<Address> =
             self.managed_contracts.iter().map(|c| c.1.address).collect();
 
-        let last_block_number = self.recover_logs(&contract_addresses)?;
+        let last_block_number = match self.start_from {
+            IndexerStartFrom::Best => {
+                info!("[run] start_from='best': skipping historical log recovery");
+                self.warn_if_filled_db()?;
+                self.initial_block_number
+            }
+            IndexerStartFrom::Hash => {
+                info!("[run] start_from='hash': recovering historical logs");
+                self.recover_logs(&contract_addresses)?
+            }
+        };
 
         let filter =
             RskSubscriptionFilter::new(contract_addresses, vec![], Some(last_block_number));
@@ -124,6 +135,18 @@ impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
 }
 
 impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
+    fn warn_if_filled_db(&self) -> Result<()> {
+        if let Some(checkpoint) = self.store.get_sync_checkpoint()? {
+            warn!(
+                "[subscribe_logs] Existing sync checkpoint found at block {}, tx {}, idx {}; start_from='best' ignores previous DB sync state and skips historical recovery",
+                checkpoint.info().block_number(),
+                checkpoint.info().tx_hash(),
+                checkpoint.info().log_index(),
+            );
+        }
+        Ok(())
+    }
+
     fn recover_logs(&self, addrs: &[Address]) -> Result<BlockNumber> {
         let checkpoint = self.store.get_sync_checkpoint()?;
         let mut start = if let Some(log) = checkpoint {
@@ -309,7 +332,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 
 #[cfg(test)]
 mod tests {
-    use common::rsk_provider::MockRskProvider;
+    use common::rsk_provider::{MockRskProvider, MockRskSubscription, RskSubscriptionError};
     use common::types::*;
     use mockall::predicate::*;
     use primitive_types::{H160, H256, U256};
@@ -366,6 +389,7 @@ mod tests {
             store: mock_store,
             rsk_provider: mock_provider,
             new_log_sender: None,
+            start_from: IndexerStartFrom::Hash,
             initial_block_number: BlockNumber::from(99),
             sync_batch_size: 10,
             sync_finality_depth: usize::try_from(finality_depth)
@@ -434,6 +458,7 @@ mod tests {
             store: mock_store,
             rsk_provider: mock_provider,
             new_log_sender: None,
+            start_from: IndexerStartFrom::Hash,
             initial_block_number: BlockNumber::from(0), // should be ignored
             sync_batch_size: 10,
             sync_finality_depth: usize::try_from(finality_depth)
@@ -478,6 +503,7 @@ mod tests {
             store: mock_store,
             rsk_provider: mock_provider,
             new_log_sender: None,
+            start_from: IndexerStartFrom::Hash,
             initial_block_number: BlockNumber::from(80),
             sync_batch_size: 10,
             sync_finality_depth: 0,
@@ -509,6 +535,7 @@ mod tests {
             store: mock_store,
             rsk_provider: mock_provider,
             new_log_sender: None,
+            start_from: IndexerStartFrom::Hash,
             initial_block_number: BlockNumber::from(80),
             sync_batch_size: 10,
             sync_finality_depth: 0,
@@ -541,6 +568,7 @@ mod tests {
             store: mock_store,
             rsk_provider: mock_provider,
             new_log_sender: None,
+            start_from: IndexerStartFrom::Hash,
             initial_block_number: BlockNumber::from(2),
             sync_batch_size: 10,
             sync_finality_depth: 10,
@@ -552,6 +580,45 @@ mod tests {
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), BlockNumber::from(2));
+    }
+
+    #[test]
+    fn run_with_start_from_best_skips_historical_recovery() {
+        let mut mock_store = MockLogStore::new();
+        mock_store.expect_get_sync_checkpoint().times(1).returning(|| Ok(None));
+
+        let mut mock_subscription = MockRskSubscription::new();
+        let shutdown_flag = ShutdownFlag::init();
+        let shutdown_for_next = shutdown_flag.clone();
+        mock_subscription.expect_next().times(1).returning(move || {
+            shutdown_for_next.set();
+            Err(RskSubscriptionError::ClosedConnection)
+        });
+        mock_subscription.expect_unsubscribe().times(1).returning(|| Ok(()));
+
+        let mut mock_provider = MockRskProvider::new();
+        mock_provider.expect_get_best_block().never();
+        mock_provider.expect_get_logs().never();
+        mock_provider
+            .expect_subscribe_logs()
+            .withf(|filter| filter.from_block == Some(BlockNumber::from(100)))
+            .times(1)
+            .return_once(move |_| Ok(mock_subscription));
+
+        let indexer = LogIndexer {
+            store: mock_store,
+            rsk_provider: mock_provider,
+            new_log_sender: None,
+            start_from: IndexerStartFrom::Best,
+            initial_block_number: BlockNumber::from(100),
+            sync_batch_size: 10,
+            sync_finality_depth: 1,
+            managed_contracts: HashMap::new(),
+            shutdown_flag,
+        };
+
+        let result = indexer.run();
+        assert!(result.is_ok());
     }
 
     fn block_with_number(n: u64) -> RskBlock {

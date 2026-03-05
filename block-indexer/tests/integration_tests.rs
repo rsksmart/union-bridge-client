@@ -6,6 +6,7 @@ use anyhow::Result;
 use block_indexer::indexer::BlockIndexer;
 use block_indexer::store::{BlockStore, CachedBlockStore};
 use common::cache::LruCache;
+use common::config::IndexerStartFrom;
 use common::rsk_indexer::RskIndexer;
 use common::rsk_provider::MockRskProvider;
 use common::shutdown_flag::ShutdownFlag;
@@ -747,7 +748,13 @@ fn cycle_indexer(
     msg: Option<&str>,
 ) {
     let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH).expect("Invalid hex string");
-    let indexer = BlockIndexer::new(store, mock_rsk_provider, block_hash, shutting_down.clone());
+    let indexer = BlockIndexer::new(
+        store,
+        mock_rsk_provider,
+        IndexerStartFrom::Hash,
+        block_hash,
+        shutting_down.clone(),
+    );
     let _ = indexer.run();
     info!("{}", msg.unwrap_or("Indexer run completed successfully."));
     drop(indexer);

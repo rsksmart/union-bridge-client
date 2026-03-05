@@ -4,12 +4,14 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use bitcoin::Network;
 use config::{self, Environment, Source};
-use log::trace;
+use log::{info, trace};
 use log4rs::config::RawConfig;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
 use crate::errors::ConfigError;
+use crate::rsk_provider::RskProvider;
+use crate::types::BlockHash;
 
 const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 // todo(fede) replace the /new folder with the final folder
@@ -79,6 +81,39 @@ pub struct ContractConfig {
     // TODO(Jira-RethinkContractHandling) convert into a map
     pub name: String,
     pub address: String,
+}
+
+impl IndexerConfig {
+    /// # Panics
+    ///
+    /// Panics when `start_from = "hash"` and the initial hash is missing or invalid.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `start_from = "best"` and the provider call fails.
+    pub fn resolve_initial_block_hash<P: RskProvider>(&self, provider: &P) -> Result<BlockHash> {
+        match self.start_from {
+            IndexerStartFrom::Hash => {
+                let initial_block_hash_str =
+                    self.initial_block_hash.as_deref().unwrap_or_else(|| {
+                        panic!(
+                            "Missing indexer.initial_block_hash when indexer.start_from is 'hash'"
+                        )
+                    });
+
+                Ok(BlockHash::try_from(initial_block_hash_str).unwrap_or_else(|_| {
+                    panic!("Invalid initial block hash: {initial_block_hash_str}")
+                }))
+            }
+            IndexerStartFrom::Best => {
+                info!("Indexer start_from is 'best': using current provider best block");
+                Ok(provider
+                    .get_best_block()
+                    .context("Failed to get best block for start_from='best'")?
+                    .hash())
+            }
+        }
+    }
 }
 
 impl CommonConfig {

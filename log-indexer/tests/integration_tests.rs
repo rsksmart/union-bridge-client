@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use anyhow::{Context, Result};
+use common::config::{IndexerConfig, IndexerStartFrom};
 use common::rsk_indexer::RskIndexer;
 use common::rsk_provider::{MockRskProvider, RskSubscriptionFilter};
 use common::shutdown_flag::ShutdownFlag;
@@ -185,12 +186,18 @@ fn cycle_indexer(
     shutting_down: &ShutdownFlag,
     msg: Option<&str>,
 ) {
+    let indexer_config = IndexerConfig {
+        start_from: IndexerStartFrom::Hash,
+        initial_block_hash: Some(DEFAULT_BLOCK_HASH.to_string()),
+        sync: common::config::SyncConfig { finality_depth: 0, batch_size: 0 },
+        storage: common::config::StorageConfig { path: String::new() },
+        cache: common::config::CacheConfig { size: 0 },
+    };
+
     let indexer = LogIndexer::new(
         store,
         mock_rsk_provider,
-        BlockHash::try_from(DEFAULT_BLOCK_HASH).unwrap(),
-        0,
-        0,
+        &indexer_config,
         managed_contracts.clone(),
         shutting_down.clone(),
     )

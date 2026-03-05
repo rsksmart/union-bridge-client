@@ -1,6 +1,7 @@
 use std::sync::mpsc;
 
 use anyhow::{Context, Result, bail};
+use common::config::{IndexerConfig, IndexerStartFrom};
 use common::rsk_indexer::RskIndexer;
 use common::rsk_provider::{RskProvider, RskSubscription, RskSubscriptionError};
 use common::shutdown_flag::ShutdownFlag;
@@ -13,6 +14,7 @@ pub struct BlockIndexer<P: RskProvider, S: BlockStore> {
     store: S,
     rsk_provider: P,
     new_block_sender: Option<mpsc::Sender<RskBlockAndUncles>>,
+    start_from: IndexerStartFrom,
     initial_block_hash: BlockHash,
     shutdown_flag: ShutdownFlag,
 }
@@ -21,25 +23,34 @@ pub struct BlockIndexer<P: RskProvider, S: BlockStore> {
 // TODO(Jira) allow changing the initial_block_hash on a running instance: https://rsklabs.atlassian.net/browse/UB-32
 
 impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
+    /// Create a new `BlockIndexer` with a notifier channel
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `start_from = "best"` and best block retrieval fails
     pub fn new_with_notifier(
         store: S,
         provider: P,
         new_block_sender: mpsc::Sender<RskBlockAndUncles>,
-        initial_block_hash: BlockHash,
+        indexer_config: &IndexerConfig,
         shutdown_flag: ShutdownFlag,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        let initial_block_hash = indexer_config.resolve_initial_block_hash(&provider)?;
+
+        Ok(Self {
             store,
             rsk_provider: provider,
             new_block_sender: Some(new_block_sender),
+            start_from: indexer_config.start_from,
             initial_block_hash,
             shutdown_flag,
-        }
+        })
     }
 
     pub fn new(
         store: S,
         provider: P,
+        start_from: IndexerStartFrom,
         initial_block_hash: BlockHash,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
@@ -47,6 +58,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
             store,
             rsk_provider: provider,
             new_block_sender: None,
+            start_from,
             initial_block_hash,
             shutdown_flag,
         }
@@ -100,6 +112,17 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         // eth_subscribe for catch up. So we run many backward_syncs until we get close to the tip.
         self.full_sync_backward_syncs()?;
 
+        Ok(())
+    }
+
+    fn warn_if_filled_db(&self) -> Result<()> {
+        if let Some(db_best_block) = self.store.get_best_block().context("Checking DB state")? {
+            warn!(
+                "[initialize_for_best] Existing best block {} ({}) found in DB; start_from='best' ignores previous DB sync state and resets local tip to provider best",
+                db_best_block.number(),
+                db_best_block.hash(),
+            );
+        }
         Ok(())
     }
 
@@ -436,9 +459,18 @@ impl<P: RskProvider, S: BlockStore> RskIndexer<P, S> for BlockIndexer<P, S> {
     fn run(&self) -> Result<()> {
         let initial_block = self.get_initial_block(&self.rsk_provider);
 
-        self.init_db_if_required(&initial_block)?;
-
-        self.startup_backward_sync()?;
+        match self.start_from {
+            IndexerStartFrom::Best => {
+                info!("[run] start_from='best': skipping startup backward sync");
+                self.warn_if_filled_db()?;
+                self.save_as_best_block(&initial_block).context("Initialising DB for best")?;
+            }
+            IndexerStartFrom::Hash => {
+                info!("[run] start_from='hash': running startup backward sync");
+                self.init_db_if_required(&initial_block)?;
+                self.startup_backward_sync()?;
+            }
+        }
 
         self.start_block_subscription()
     }
@@ -470,6 +502,7 @@ mod tests {
             rsk_provider: provider,
             new_block_sender: None,
             store,
+            start_from: IndexerStartFrom::Hash,
             initial_block_hash: block.parent_hash(),
             shutdown_flag: ShutdownFlag::init(),
         };
@@ -509,6 +542,7 @@ mod tests {
             rsk_provider: provider,
             new_block_sender: None,
             store,
+            start_from: IndexerStartFrom::Hash,
             initial_block_hash: block_with_uncle.parent_hash(),
             shutdown_flag: ShutdownFlag::init(),
         };
@@ -548,6 +582,7 @@ mod tests {
             rsk_provider: provider,
             new_block_sender: None,
             store,
+            start_from: IndexerStartFrom::Hash,
             initial_block_hash: block_with_missing.parent_hash(),
             shutdown_flag: ShutdownFlag::init(),
         };
@@ -586,6 +621,7 @@ mod tests {
             rsk_provider: provider,
             new_block_sender: None,
             store,
+            start_from: IndexerStartFrom::Hash,
             initial_block_hash: block_with_uncle.parent_hash(),
             shutdown_flag: ShutdownFlag::init(),
         };
@@ -605,9 +641,54 @@ mod tests {
         provider.expect_get_block_by_hash().with(eq(missing_hash)).times(1).returning(|_| Ok(None));
 
         // When we call the constructor, it should panic on the missing hash
-        let idx =
-            BlockIndexer::new(MockBlockStore::new(), provider, missing_hash, ShutdownFlag::init());
+        let idx = BlockIndexer::new(
+            MockBlockStore::new(),
+            provider,
+            IndexerStartFrom::Hash,
+            missing_hash,
+            ShutdownFlag::init(),
+        );
 
         idx.run().expect("Should panic, not regular error");
+    }
+
+    #[test]
+    fn run_with_start_from_best_skips_startup_backward_sync() {
+        let initial_block = get_second_default_rsk_block();
+        let initial_hash = initial_block.hash();
+        let db_best_block = get_first_default_rsk_block();
+
+        let mut provider = MockRskProvider::new();
+        provider
+            .expect_get_block_by_hash()
+            .with(eq(initial_hash))
+            .times(1)
+            .returning(move |_| Ok(Some(initial_block.clone())));
+        provider.expect_get_best_block().never();
+        provider.expect_get_block_by_number().never();
+
+        let mut store = MockBlockStore::new();
+        store.expect_get_best_block().times(1).returning(move || Ok(Some(db_best_block.clone())));
+        store.expect_get_back_sync_checkpoint().never();
+        store.expect_get_canonical_block().never();
+        store.expect_set_back_sync_checkpoint().never();
+        store.expect_save_block().times(1).returning(|_| Ok(()));
+        store.expect_set_canonical_block().times(1).returning(|_| Ok(()));
+        store.expect_set_best_block().times(1).returning(|_| Ok(()));
+
+        let shutdown_flag = ShutdownFlag::init();
+        shutdown_flag.set();
+
+        let idx = BlockIndexer {
+            rsk_provider: provider,
+            new_block_sender: None,
+            store,
+            start_from: IndexerStartFrom::Best,
+            initial_block_hash: initial_hash,
+            shutdown_flag,
+        };
+
+        let result = idx.run();
+        assert!(result.is_ok());
     }
 }
