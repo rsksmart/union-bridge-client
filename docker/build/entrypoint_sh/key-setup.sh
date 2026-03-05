@@ -5,15 +5,23 @@ set -e
 mkdir -p /keystore
 
 BROKER_KEY_PATH="/keystore/broker.key"
+BROKER_LOCK_PATH="/keystore/.broker-key.lock"
 
-# Generate broker key if not exists (needed by all services)
-if [ ! -f "${BROKER_KEY_PATH}" ]; then
-  echo "[key-setup] Generating broker key."
-  openssl genpkey -algorithm RSA -out "${BROKER_KEY_PATH}" -pkeyopt rsa_keygen_bits:2048 2>/dev/null
-  echo "[key-setup] Broker key created at ${BROKER_KEY_PATH}"
-else
-  echo "[key-setup] Broker key already exists at ${BROKER_KEY_PATH}"
-fi
+# Generate broker key if not exists (needed by all services).
+# Multiple containers share /keystore and start concurrently, so we
+# serialize with flock to prevent concurrent overwrites of broker.key.
+flock -x "${BROKER_LOCK_PATH}" sh -c "
+  if [ ! -f '${BROKER_KEY_PATH}' ]; then
+    echo '[key-setup] Generating broker key.'
+    openssl genpkey -algorithm RSA -out '${BROKER_KEY_PATH}' -pkeyopt rsa_keygen_bits:2048 2>/dev/null
+    echo '[key-setup] Broker key created at ${BROKER_KEY_PATH}'
+  else
+    echo '[key-setup] Broker key already exists at ${BROKER_KEY_PATH}'
+  fi
+  # Broker pubkey hash = SHA256(public key DER), hex.
+  # Used by bitvmx-client entrypoint to patch components.l2/components.bitvmx pubkey_hash.
+  openssl pkey -in '${BROKER_KEY_PATH}' -pubout -outform DER 2>/dev/null | openssl dgst -sha256 -binary | od -A n -v -t x1 | tr -d ' \n' > /keystore/broker.pubkey_hash
+"
 
 # User and member keys require KEY_STORE_PASSWORD (only needed by user-api and coordinator)
 if [ -n "${KEY_STORE_PASSWORD:-}" ]; then

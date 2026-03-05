@@ -542,7 +542,7 @@ where
             drp_program_definition,
         }
     }
-    
+
     #[allow(clippy::too_many_arguments)]
     fn new(
         contracts: Rc<CG>,
