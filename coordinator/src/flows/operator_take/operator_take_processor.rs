@@ -121,12 +121,7 @@ where
         }
     }
 
-    fn schedule_register_advance_funds_retry(
-        &mut self,
-        flow_id: Uuid,
-        attempt: i16,
-        reason: &str,
-    ) {
+    fn schedule_register_advance_funds_retry(&mut self, flow_id: Uuid, attempt: i16, reason: &str) {
         info!("{reason} for flow {flow_id} (attempt {attempt})");
         self.unconfirmed_register_advance_funds.insert(flow_id, attempt);
         self.register_advance_funds_retry_scheduler
@@ -193,12 +188,9 @@ where
         }
 
         for flow_id in self.register_reimbursement_kickoff_retry_scheduler.tick() {
-            let Some(attempt) =
-                self.unconfirmed_register_reimbursement_kickoff.remove(&flow_id)
+            let Some(attempt) = self.unconfirmed_register_reimbursement_kickoff.remove(&flow_id)
             else {
-                warn!(
-                    "No register_reimbursement_kickoff retry state found for flow {flow_id}"
-                );
+                warn!("No register_reimbursement_kickoff retry state found for flow {flow_id}");
                 continue;
             };
 
@@ -217,18 +209,13 @@ where
                 continue;
             }
 
-            let Err(err) = flow.complete_step(StepData::RetryRegisterReimbursementKickoff)
-            else {
-                info!(
-                    "Register reimbursement kickoff succeeded on retry for flow {flow_id}"
-                );
+            let Err(err) = flow.complete_step(StepData::RetryRegisterReimbursementKickoff) else {
+                info!("Register reimbursement kickoff succeeded on retry for flow {flow_id}");
                 continue;
             };
 
             if !is_missing_native_bridge_confirmations(&err) {
-                error!(
-                    "Error on retry for register_reimbursement_kickoff: {err:?}"
-                );
+                error!("Error on retry for register_reimbursement_kickoff: {err:?}");
                 continue;
             }
 
@@ -618,10 +605,9 @@ where
             return Ok(());
         };
 
-        let spv_proof = notification
-            .spv_proof
-            .clone()
-            .ok_or_else(|| anyhow!("ReimbursementKickoff SPV notification missing spv_proof data"))?;
+        let spv_proof = notification.spv_proof.clone().ok_or_else(|| {
+            anyhow!("ReimbursementKickoff SPV notification missing spv_proof data")
+        })?;
 
         let needs_retry = if flow.current_step() == Steps::WaitForReimbursementKickoffSpv {
             match flow.complete_step(StepData::ReimbursementKickoffSPV(spv_proof)) {

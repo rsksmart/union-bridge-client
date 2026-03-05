@@ -54,7 +54,7 @@ services:
       - MNEMONIC=${MNEMONIC}
       - DEPLOYER_INDEX=${DEPLOYER_INDEX}
     command:
-      - bash shell/script/deploy/deploy-local.sh
+      - "sed -i \"s|LOCAL_RPC=.*|LOCAL_RPC=$$RPC_URL|\" .env && bash shell/script/deploy/deploy-local.sh"
     depends_on:
       anvil:
         condition: service_healthy

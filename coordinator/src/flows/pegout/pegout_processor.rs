@@ -867,11 +867,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::coordinator::tests::MockRskContractsGatewayApi;
-    use crate::flows::advance_funds::test_utils::create_fake_block;
-    use crate::flows::pegout::pegout_flow::FlowContext;
-    use crate::store::MockCoordinatorStoreApi;
     use alloy_primitives::{Bytes, FixedBytes, U256 as AlloyU256};
     use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
     use common::msg_broker::broker::MockBrokerClientApi;
@@ -879,6 +874,12 @@ mod tests {
     use union_contracts::bindings::pegout_manager::PegoutManager::{
         BitcoinSignatureData, BtcTransaction,
     };
+
+    use super::*;
+    use crate::coordinator::tests::MockRskContractsGatewayApi;
+    use crate::flows::advance_funds::test_utils::create_fake_block;
+    use crate::flows::pegout::pegout_flow::FlowContext;
+    use crate::store::MockCoordinatorStoreApi;
 
     type MockBitVmxBroker =
         MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
