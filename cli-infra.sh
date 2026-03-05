@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
 # wrapper script for infrastructure management
-# usage: ./cli-infra.sh --start [--fresh]              # start all docker infra (blockchains + bitvmx) + mining
+# usage: ./cli-infra.sh --start [--fresh] [--contracts-tag TAG]  # start all docker infra (blockchains + bitvmx) + mining
 #        ./cli-infra.sh --stop                         # stop mining + all docker infra
-#        ./cli-infra.sh --start-blockchains [--fresh]  # start blockchains docker containers only
+#        ./cli-infra.sh --start-blockchains [--fresh] [--contracts-tag TAG]  # start blockchains docker containers only
 #        ./cli-infra.sh --stop-blockchains             # stop blockchains docker containers only
 #        ./cli-infra.sh --start-bitvmx [--fresh]       # start bitvmx docker containers only
 #        ./cli-infra.sh --stop-bitvmx                  # stop bitvmx docker containers only
@@ -175,6 +175,17 @@ stop_mining() {
 
 start_blockchains() {
     shift # remove --start-blockchains from args
+    # Validate --contracts-tag has a non-empty value (avoid passing "up" as value)
+    local args=("$@")
+    local i
+    for (( i = 0; i < ${#args[@]}; i++ )); do
+        if [[ "${args[i]}" == "--contracts-tag" ]]; then
+            if [[ $(( i + 1 )) -ge ${#args[@]} || -z "${args[i+1]:-}" ]]; then
+                echo "Error: --contracts-tag requires a non-empty value (e.g. local-build or v0.2.0-alpha.1)" >&2
+                exit 1
+            fi
+        fi
+    done
     docker/local-infra/start_blockchains.sh "$@" up -d
 }
 
@@ -193,8 +204,33 @@ stop_bitvmx() {
 
 start_all() {
     shift # remove --start from args
-    docker/local-infra/start_blockchains.sh "$@" up -d
-    docker/local-infra/start_bitvmx.sh "$@" up -d
+    local -a BLOCKCHAINS_OPTS=()
+    local -a BITVMX_OPTS=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --fresh)
+                BLOCKCHAINS_OPTS+=(--fresh)
+                BITVMX_OPTS+=(--fresh)
+                shift
+                ;;
+            --contracts-tag)
+                if [[ $# -lt 2 || -z "${2:-}" ]]; then
+                    echo "Error: --contracts-tag requires a non-empty value (e.g. local-build or v0.2.0-alpha.1)" >&2
+                    exit 1
+                fi
+                BLOCKCHAINS_OPTS+=(--contracts-tag "$2")
+                shift 2
+                ;;
+            *)
+                # Pass through other args (e.g. --force-recreate) to both scripts
+                BLOCKCHAINS_OPTS+=("$1")
+                BITVMX_OPTS+=("$1")
+                shift
+                ;;
+        esac
+    done
+    docker/local-infra/start_blockchains.sh "${BLOCKCHAINS_OPTS[@]}" up -d
+    docker/local-infra/start_bitvmx.sh "${BITVMX_OPTS[@]}" up -d
 
     log "Starting mining..."
     start_mining
@@ -302,9 +338,9 @@ case "${1:-}" in
         echo "Usage: $0 {--start|--stop|--start-blockchains|--stop-blockchains|--start-bitvmx|--stop-bitvmx|--start-mine|--stop-mine|--start-regtest|--stop-regtest}"
         echo ""
         echo "Local Docker Infrastructure:"
-        echo "  --start [--fresh]              Start all blockchains + bitvmx + mining"
+        echo "  --start [--fresh] [--contracts-tag TAG]              Start all blockchains + bitvmx + mining"
         echo "  --stop                         Stop mining + bitvmx + blockchains"
-        echo "  --start-blockchains [--fresh]  Start blockchains only (anvil + bitcoin)"
+        echo "  --start-blockchains [--fresh] [--contracts-tag TAG]  Start blockchains only (anvil + bitcoin)"
         echo "  --stop-blockchains             Stop blockchains only"
         echo "  --start-bitvmx [--fresh]       Start bitvmx only"
         echo "  --stop-bitvmx                  Stop bitvmx only"
@@ -324,6 +360,7 @@ case "${1:-}" in
         echo ""
         echo "Options:"
         echo "  --fresh                        Clean/reset volumes before starting"
+        echo "  --contracts-tag TAG             Contracts image tag (only for blockchains; e.g. local-build or v0.2.0-alpha.1)"
         exit 1
         ;;
 esac
