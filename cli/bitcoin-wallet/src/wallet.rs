@@ -9,7 +9,7 @@ use crate::bitcoin::utils::fetch_utxo_amount;
 use crate::config::Config;
 use crate::pending_tx_store::PendingTransactionStore;
 use crate::utxo_store::{UtxoState, UtxoStore};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::absolute;
 use bitcoin::address::{Address, NetworkUnchecked};
 use bitcoin::blockdata::transaction::{Sequence, Version};
@@ -26,7 +26,7 @@ use bitcoin::sighash::{EcdsaSighashType, SighashCache};
 use bitcoin::{
     Amount, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness, XOnlyPublicKey,
 };
-use bitcoincore_rpc::{jsonrpc, Client, RpcApi};
+use bitcoincore_rpc::{Client, RpcApi, jsonrpc};
 
 pub const DEFAULT_SATS_PER_BYTE: u64 = 5;
 const P2WPKH_DUST_LIMIT_SATS: u64 = 330;
@@ -123,7 +123,7 @@ impl Wallet {
             println!("Loaded private key. Default P2WPKH address: {address}");
         } else {
             println!(
-                "No private key configured. First-time setup mode is active; run generate_address or import_private_key."
+                "No private key configured. First-time setup mode is active; run generate_address or import_private_key and set it as USER_BITCOIN_WIF or MEMBER_BITCOIN_WIF env vars (check README.md)"
             );
         }
 
@@ -374,7 +374,7 @@ impl Wallet {
                 OutPoint::new(original_txid, (original.transaction.output.len() - 1) as u32);
             // remove from database
             let _ = self.utxo_store.remove(&old_change_outpoint); // ignore error if not found
-                                                                  // remove from in-memory list
+            // remove from in-memory list
             self.utxos.retain(|u| u.outpoint != old_change_outpoint);
         }
 
