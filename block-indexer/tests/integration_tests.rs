@@ -6,7 +6,7 @@ use anyhow::Result;
 use block_indexer::indexer::BlockIndexer;
 use block_indexer::store::{BlockStore, CachedBlockStore};
 use common::cache::LruCache;
-use common::config::IndexerStartFrom;
+use common::config::{IndexerConfig, IndexerStartFrom};
 use common::rsk_indexer::RskIndexer;
 use common::rsk_provider::MockRskProvider;
 use common::shutdown_flag::ShutdownFlag;
@@ -16,7 +16,7 @@ use common::types::{BlockHash, BlockNumber, RskBlock};
 use log::info;
 use tempfile::tempdir;
 const BLOCK_CACHE_SIZE: usize = 100;
-use common::test_utils::rsk_utils::{DEFAULT_BLOCK_HASH, UncleBlockInfo};
+use common::test_utils::rsk_utils::UncleBlockInfo;
 
 /*
 Scenario: happy path
@@ -55,13 +55,16 @@ fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription
         DELAY_BETWEEN_BLOCKS_SUBSCRIPTION,
         None,
     );
-    let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH)?;
+    let block_hash = generator
+        .generate_block(INIT_BLOCK_HEIGHT.into(), None)
+        .expect("Failed to generate initial block")
+        .hash();
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_hash(block_hash, INIT_BLOCK_HEIGHT.into());
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
     mock_rsk_provider_handler.set_provider_expect_get_block_by_number(None, None);
     mock_rsk_provider_handler.set_provider_expect_subscribe_blocks(None);
-    cycle_indexer(store, mock_rsk_provider, &shutting_down, None);
+    cycle_indexer(store, mock_rsk_provider, &shutting_down, block_hash, None);
     let store_after: CachedBlockStore<LruCache<RskBlock>> =
         CachedBlockStore::new(store_path, BLOCK_CACHE_SIZE)?;
     assert_best_block(&generator, &store_after, MAX_BLOCK_HEIGHT_SUBSCRIPTION);
@@ -110,7 +113,10 @@ fn test_when_shutdown_happens_during_backwards_sync_should_set_checkpoint() -> R
         0,
         None,
     );
-    let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH)?;
+    let block_hash = generator
+        .generate_block(INIT_BLOCK_HEIGHT.into(), None)
+        .expect("Failed to generate initial block")
+        .hash();
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_hash(block_hash, INIT_BLOCK_HEIGHT.into());
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
@@ -118,7 +124,7 @@ fn test_when_shutdown_happens_during_backwards_sync_should_set_checkpoint() -> R
         None,
         Some(BLOCK_HEIGHT_SHUTDOWN_HAPPENS_AT.into()),
     );
-    cycle_indexer(store, mock_rsk_provider, &shutting_down, None);
+    cycle_indexer(store, mock_rsk_provider, &shutting_down, block_hash, None);
     let store_after: CachedBlockStore<LruCache<RskBlock>> =
         CachedBlockStore::new(store_path, BLOCK_CACHE_SIZE)?;
     assert_checkpoint(&generator, &store_after, BLOCK_HEIGHT_SHUTDOWN_HAPPENS_AT);
@@ -176,7 +182,10 @@ fn test_when_shutdown_happens_during_backwards_sync_and_indexer_restarts_should_
         DELAY_BETWEEN_BLOCKS_SUBSCRIPTION,
         None,
     );
-    let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH)?;
+    let block_hash = generator
+        .generate_block(INIT_BLOCK_HEIGHT.into(), None)
+        .expect("Failed to generate initial block")
+        .hash();
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_hash(block_hash, INIT_BLOCK_HEIGHT.into());
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
@@ -188,6 +197,7 @@ fn test_when_shutdown_happens_during_backwards_sync_and_indexer_restarts_should_
         store,
         mock_rsk_provider,
         &shutting_down,
+        block_hash,
         Some("Phase 1 (backward sync up to checkpoint) completed successfully."),
     );
 
@@ -225,6 +235,7 @@ fn test_when_shutdown_happens_during_backwards_sync_and_indexer_restarts_should_
         store,
         mock_rsk_provider,
         &shutting_down,
+        block_hash,
         Some("Phase 2 (checkpoint recovery and subscription) completed successfully."),
     );
 
@@ -288,14 +299,17 @@ fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complet
         DELAY_BETWEEN_BLOCKS_SUBSCRIPTION,
         None,
     );
-    let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH)?;
+    let block_hash = generator
+        .generate_block(INIT_BLOCK_HEIGHT.into(), None)
+        .expect("Failed to generate initial block")
+        .hash();
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_hash(block_hash, INIT_BLOCK_HEIGHT.into());
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_number(Some(REORG_HAPPENS_AT_HEIGHT.into()), None);
     mock_rsk_provider_handler.set_provider_expect_subscribe_blocks(None);
-    cycle_indexer(store, mock_rsk_provider, &shutting_down, None);
+    cycle_indexer(store, mock_rsk_provider, &shutting_down, block_hash, None);
     let store_after: CachedBlockStore<LruCache<RskBlock>> =
         CachedBlockStore::new(store_path, BLOCK_CACHE_SIZE)?;
     assert_best_block(&generator, &store_after, MAX_BLOCK_HEIGHT_SUBSCRIPTION);
@@ -351,7 +365,10 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_should_complete_
         DELAY_BETWEEN_BLOCKS_SUBSCRIPTION,
         None,
     );
-    let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH)?;
+    let block_hash = generator
+        .generate_block(INIT_BLOCK_HEIGHT.into(), None)
+        .expect("Failed to generate initial block")
+        .hash();
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_hash(block_hash, INIT_BLOCK_HEIGHT.into());
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
@@ -359,7 +376,7 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_should_complete_
         .set_provider_expect_get_block_by_number(Some(REORG_HAPPENS_AT_HEIGHT.into()), None);
     mock_rsk_provider_handler
         .set_provider_expect_subscribe_blocks(Some(REORG_HAPPENS_AT_HEIGHT.into()));
-    cycle_indexer(store, mock_rsk_provider, &shutting_down, None);
+    cycle_indexer(store, mock_rsk_provider, &shutting_down, block_hash, None);
     let store_after: CachedBlockStore<LruCache<RskBlock>> =
         CachedBlockStore::new(store_path, BLOCK_CACHE_SIZE)?;
     assert_best_block(&generator, &store_after, MAX_BLOCK_HEIGHT_SUBSCRIPTION);
@@ -415,7 +432,10 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_from_early_block
         DELAY_BETWEEN_BLOCKS_SUBSCRIPTION,
         None,
     );
-    let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH)?;
+    let block_hash = generator
+        .generate_block(INIT_BLOCK_HEIGHT.into(), None)
+        .expect("Failed to generate initial block")
+        .hash();
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_hash(block_hash, INIT_BLOCK_HEIGHT.into());
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
@@ -423,7 +443,7 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_from_early_block
         .set_provider_expect_get_block_by_number(Some(REORG_HAPPENS_AT_HEIGHT.into()), None);
     mock_rsk_provider_handler
         .set_provider_expect_subscribe_blocks(Some(REORG_HAPPENS_AT_HEIGHT.into()));
-    cycle_indexer(store, mock_rsk_provider, &shutting_down, None);
+    cycle_indexer(store, mock_rsk_provider, &shutting_down, block_hash, None);
     let store_after: CachedBlockStore<LruCache<RskBlock>> =
         CachedBlockStore::new(store_path, BLOCK_CACHE_SIZE)?;
     assert_best_block(&generator, &store_after, MAX_BLOCK_HEIGHT_SUBSCRIPTION);
@@ -506,14 +526,17 @@ fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription
         DELAY_BETWEEN_BLOCKS_SUBSCRIPTION,
         Some(uncle_block_info_vec.clone()),
     );
-    let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH)?;
+    let block_hash = generator
+        .generate_block(INIT_BLOCK_HEIGHT.into(), None)
+        .expect("Failed to generate initial block")
+        .hash();
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_hash(block_hash, INIT_BLOCK_HEIGHT.into());
     mock_rsk_provider_handler.set_provider_expect_get_uncle_by_hash_and_index();
     mock_rsk_provider_handler.set_provider_expect_get_best_block();
     mock_rsk_provider_handler.set_provider_expect_get_block_by_number(None, None);
     mock_rsk_provider_handler.set_provider_expect_subscribe_blocks(None);
-    cycle_indexer(store, mock_rsk_provider, &shutting_down, None);
+    cycle_indexer(store, mock_rsk_provider, &shutting_down, block_hash, None);
     let store_after: CachedBlockStore<LruCache<RskBlock>> =
         CachedBlockStore::new(store_path, BLOCK_CACHE_SIZE)?;
     assert_best_block(&generator, &store_after, MAX_BLOCK_HEIGHT_SUBSCRIPTION);
@@ -617,7 +640,10 @@ fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complet
         DELAY_BETWEEN_BLOCKS_SUBSCRIPTION,
         Some(uncle_block_info_vec.clone()),
     );
-    let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH)?;
+    let block_hash = generator
+        .generate_block(INIT_BLOCK_HEIGHT.into(), None)
+        .expect("Failed to generate initial block")
+        .hash();
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_hash(block_hash, INIT_BLOCK_HEIGHT.into());
     mock_rsk_provider_handler.set_provider_expect_get_uncle_by_hash_and_index();
@@ -625,7 +651,7 @@ fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complet
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_number(Some(REORG_HAPPENS_AT_HEIGHT.into()), None);
     mock_rsk_provider_handler.set_provider_expect_subscribe_blocks(None);
-    cycle_indexer(store, mock_rsk_provider, &shutting_down, None);
+    cycle_indexer(store, mock_rsk_provider, &shutting_down, block_hash, None);
     let store_after: CachedBlockStore<LruCache<RskBlock>> =
         CachedBlockStore::new(store_path, BLOCK_CACHE_SIZE)?;
     assert_best_block(&generator, &store_after, MAX_BLOCK_HEIGHT_SUBSCRIPTION);
@@ -717,7 +743,10 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_should_complete_
         DELAY_BETWEEN_BLOCKS_SUBSCRIPTION,
         Some(uncle_block_info_vec.clone()),
     );
-    let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH)?;
+    let block_hash = generator
+        .generate_block(INIT_BLOCK_HEIGHT.into(), None)
+        .expect("Failed to generate initial block")
+        .hash();
     mock_rsk_provider_handler
         .set_provider_expect_get_block_by_hash(block_hash, INIT_BLOCK_HEIGHT.into());
     mock_rsk_provider_handler.set_provider_expect_get_uncle_by_hash_and_index();
@@ -726,7 +755,7 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_should_complete_
         .set_provider_expect_get_block_by_number(Some(REORG_HAPPENS_AT_HEIGHT.into()), None);
     mock_rsk_provider_handler
         .set_provider_expect_subscribe_blocks(Some(REORG_HAPPENS_AT_HEIGHT.into()));
-    cycle_indexer(store, mock_rsk_provider, &shutting_down, None);
+    cycle_indexer(store, mock_rsk_provider, &shutting_down, block_hash, None);
     let store_after: CachedBlockStore<LruCache<RskBlock>> =
         CachedBlockStore::new(store_path, BLOCK_CACHE_SIZE)?;
     assert_best_block(&generator, &store_after, MAX_BLOCK_HEIGHT_SUBSCRIPTION);
@@ -745,16 +774,19 @@ fn cycle_indexer(
     store: CachedBlockStore<LruCache<RskBlock>>,
     mock_rsk_provider: MockRskProvider,
     shutting_down: &ShutdownFlag,
+    initial_block_hash: BlockHash,
     msg: Option<&str>,
 ) {
-    let block_hash = BlockHash::try_from(DEFAULT_BLOCK_HASH).expect("Invalid hex string");
-    let indexer = BlockIndexer::new(
-        store,
-        mock_rsk_provider,
-        IndexerStartFrom::Hash,
-        block_hash,
-        shutting_down.clone(),
-    );
+    let indexer_config = IndexerConfig {
+        start_from: IndexerStartFrom::Hash,
+        initial_block_hash: Some(initial_block_hash.to_string()),
+        sync: common::config::SyncConfig { finality_depth: 0, batch_size: 0 },
+        storage: common::config::StorageConfig { path: String::new() },
+        cache: common::config::CacheConfig { size: 0 },
+    };
+    let indexer =
+        BlockIndexer::new(store, mock_rsk_provider, &indexer_config, shutting_down.clone())
+            .expect("Failed to create BlockIndexer");
     let _ = indexer.run();
     info!("{}", msg.unwrap_or("Indexer run completed successfully."));
     drop(indexer);

@@ -35,33 +35,39 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         indexer_config: &IndexerConfig,
         shutdown_flag: ShutdownFlag,
     ) -> Result<Self> {
-        let initial_block_hash = indexer_config.resolve_initial_block_hash(&provider)?;
+        let initial_block = indexer_config.resolve_initial_block(&provider)?;
 
         Ok(Self {
             store,
             rsk_provider: provider,
             new_block_sender: Some(new_block_sender),
             start_from: indexer_config.start_from,
-            initial_block_hash,
+            initial_block_hash: initial_block.hash(),
             shutdown_flag,
         })
     }
 
+    /// Create a new `BlockIndexer`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the initial block cannot be resolved from configuration/provider.
     pub fn new(
         store: S,
         provider: P,
-        start_from: IndexerStartFrom,
-        initial_block_hash: BlockHash,
+        indexer_config: &IndexerConfig,
         shutdown_flag: ShutdownFlag,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        let initial_block = indexer_config.resolve_initial_block(&provider)?;
+
+        Ok(Self {
             store,
             rsk_provider: provider,
             new_block_sender: None,
-            start_from,
-            initial_block_hash,
+            start_from: indexer_config.start_from,
+            initial_block_hash: initial_block.hash(),
             shutdown_flag,
-        }
+        })
     }
 
     fn get_initial_block(&self, provider: &P) -> RskBlock {
@@ -630,26 +636,35 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Precondition failed: initial block")]
-    fn panics_when_initial_block_hash_not_found() {
+    fn returns_err_when_initial_block_hash_not_found() {
         // Given a random hash that the provider won't find...
         use primitive_types::H256;
         let missing_hash = BlockHash::from(H256::random());
+        let indexer_config = IndexerConfig {
+            start_from: IndexerStartFrom::Hash,
+            initial_block_hash: Some(missing_hash.to_string()),
+            sync: common::config::SyncConfig { finality_depth: 0, batch_size: 0 },
+            storage: common::config::StorageConfig { path: String::new() },
+            cache: common::config::CacheConfig { size: 0 },
+        };
 
         // Provider that returns Ok(None) for our missing hash
         let mut provider = MockRskProvider::new();
         provider.expect_get_block_by_hash().with(eq(missing_hash)).times(1).returning(|_| Ok(None));
 
-        // When we call the constructor, it should panic on the missing hash
-        let idx = BlockIndexer::new(
+        let result = BlockIndexer::new(
             MockBlockStore::new(),
             provider,
-            IndexerStartFrom::Hash,
-            missing_hash,
+            &indexer_config,
             ShutdownFlag::init(),
         );
 
-        idx.run().expect("Should panic, not regular error");
+        match result {
+            Ok(_) => {
+                panic!("Expected constructor to fail when initial hash is missing on provider")
+            }
+            Err(err) => assert_eq!("Initial block not found on provider", err.to_string()),
+        }
     }
 
     #[test]

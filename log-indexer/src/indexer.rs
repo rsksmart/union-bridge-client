@@ -8,7 +8,7 @@ use common::rsk_provider::{
     RskProvider, RskSubscription, RskSubscriptionError, RskSubscriptionFilter,
 };
 use common::shutdown_flag::ShutdownFlag;
-use common::types::{Address, BlockHash, BlockNumber, ContractInfo, RskLog};
+use common::types::{Address, BlockNumber, ContractInfo, RskLog};
 use log::{debug, error, info, trace, warn};
 
 use crate::store::LogStore;
@@ -39,15 +39,14 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         managed_contracts: HashMap<Address, ContractInfo>,
         shutdown_flag: ShutdownFlag,
     ) -> Result<Self> {
-        let initial_block_hash = indexer_config.resolve_initial_block_hash(&rsk_provider)?;
-        let initial_block_number = Self::check_initial_block(&rsk_provider, initial_block_hash)?;
+        let initial_block = indexer_config.resolve_initial_block(&rsk_provider)?;
 
         Ok(Self {
             store,
             rsk_provider,
             new_log_sender: Some(new_log_sender),
             start_from: indexer_config.start_from,
-            initial_block_number,
+            initial_block_number: initial_block.number(),
             sync_batch_size: indexer_config.sync.batch_size,
             sync_finality_depth: indexer_config.sync.finality_depth,
             managed_contracts,
@@ -67,29 +66,19 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         managed_contracts: HashMap<Address, ContractInfo>,
         shutdown_flag: ShutdownFlag,
     ) -> Result<Self> {
-        let initial_block_hash = indexer_config.resolve_initial_block_hash(&rsk_provider)?;
-        let initial_block_number = Self::check_initial_block(&rsk_provider, initial_block_hash)?;
+        let initial_block = indexer_config.resolve_initial_block(&rsk_provider)?;
 
         Ok(Self {
             store,
             rsk_provider,
             new_log_sender: None,
             start_from: indexer_config.start_from,
-            initial_block_number,
+            initial_block_number: initial_block.number(),
             sync_batch_size: indexer_config.sync.batch_size,
             sync_finality_depth: indexer_config.sync.finality_depth,
             managed_contracts,
             shutdown_flag,
         })
-    }
-
-    fn check_initial_block(rsk_provider: &P, initial_block_hash: BlockHash) -> Result<BlockNumber> {
-        let initial_block_number = rsk_provider
-            .get_block_by_hash(initial_block_hash)
-            .context("Failed to get initial block by hash")?
-            .context("Initial block not found on provider")?
-            .number();
-        Ok(initial_block_number)
     }
 
     fn is_running(&self) -> bool {
