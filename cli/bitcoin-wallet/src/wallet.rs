@@ -116,10 +116,12 @@ impl Wallet {
             wallet.set_sats_per_byte(sats_per_byte);
         }
 
-        let address = wallet.import_private_key(&config.private_key_wif)?;
-        wallet.active_address = Some(address.clone());
-        wallet.reload_active_utxos()?;
-        println!("Loaded private key. Default P2WPKH address: {address}");
+        if let Some(ref wif) = config.private_key_wif {
+            let address = wallet.import_private_key(wif)?;
+            wallet.active_address = Some(address.clone());
+            wallet.reload_active_utxos()?;
+            println!("Loaded private key. Default P2WPKH address: {address}");
+        }
 
         if let Some(url) = config.rpc_url.as_deref() {
             wallet.configure_rpc(
@@ -1057,19 +1059,13 @@ fn open_pending_tx_store(
 }
 
 fn utxo_db_path(root: &Path, network: Network, mode: &crate::cli::WalletMode) -> PathBuf {
-    let mode_name = match mode {
-        crate::cli::WalletMode::User => "user",
-        crate::cli::WalletMode::Member => "member",
-    };
+    let mode_name = mode.to_string();
     let network_name = network_suffix(network);
     root.join(mode_name).join(network_name).join("utxo_db")
 }
 
 fn pending_tx_db_path(root: &Path, network: Network, mode: &crate::cli::WalletMode) -> PathBuf {
-    let mode_name = match mode {
-        crate::cli::WalletMode::User => "user",
-        crate::cli::WalletMode::Member => "member",
-    };
+    let mode_name = mode.to_string();
     let network_name = network_suffix(network);
     root.join(mode_name)
         .join(network_name)

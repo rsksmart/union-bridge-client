@@ -39,21 +39,13 @@ fn main() -> Result<()> {
         if is_lock_error {
             let network = config.network.unwrap_or(Network::Regtest);
             let network_suffix_str = network_suffix(network);
-            let mode_name = match config.mode {
-                WalletMode::User => "user",
-                WalletMode::Member => "member",
-            };
-            let utxo_db_path = config.db_path.join(mode_name).join(network_suffix_str).join("utxo_db");
-            let pending_tx_db_path = config.db_path.join(mode_name).join(network_suffix_str).join("pending_tx_db");
+            let mode_name = config.mode.to_string();
+            let utxo_db_path = config.db_path.join(&mode_name).join(network_suffix_str).join("utxo_db");
+            let pending_tx_db_path = config.db_path.join(&mode_name).join(network_suffix_str).join("pending_tx_db");
 
             eprintln!("Error: Cannot open wallet - database is locked by another process.");
             eprintln!();
-            eprintln!("This means another wallet instance ({} mode) is currently running.",
-                      match config.mode {
-                          WalletMode::User => "user",
-                          WalletMode::Member => "member",
-                      }
-            );
+            eprintln!("This means another wallet instance ({} mode) is currently running.", mode_name);
             eprintln!();
             eprintln!("Common causes:");
             eprintln!("  1. Wallet is open in interactive mode in another terminal");
@@ -64,12 +56,7 @@ fn main() -> Result<()> {
             eprintln!("  1. Close any interactive wallet sessions (type 'exit' or press Ctrl+D)");
             eprintln!("  2. Wait for running commands to complete");
             eprintln!("  3. Check for zombie processes:");
-            eprintln!("     ps aux | grep 'ub-wallet.*--mode {}'",
-                      match config.mode {
-                          WalletMode::User => "user",
-                          WalletMode::Member => "member",
-                      }
-            );
+            eprintln!("     ps aux | grep 'ub-wallet.*--mode {}'", mode_name);
             eprintln!("  4. If nothing is running, remove stale LOCK files:");
             eprintln!("     rm -f {}/LOCK", utxo_db_path.display());
             eprintln!("     rm -f {}/LOCK", pending_tx_db_path.display());
@@ -95,10 +82,7 @@ fn main() -> Result<()> {
             eprintln!("For testnet/mainnet operations, please use interactive mode:");
             eprintln!(
                 "  ./cli-bitcoin-wallet.sh {} --env {}",
-                match config.mode {
-                    WalletMode::User => "user",
-                    WalletMode::Member => "member",
-                },
+                config.mode,
                 match wallet.network() {
                     Network::Bitcoin => "bitcoin",
                     Network::Testnet => "testnet",
@@ -123,12 +107,9 @@ fn main() -> Result<()> {
     // interactive mode
     // store history file in mode/network directory
     let network = config.network.unwrap_or(Network::Regtest);
-    let mode_name = match config.mode {
-        WalletMode::User => "user",
-        WalletMode::Member => "member",
-    };
+    let mode_name = config.mode.to_string();
     let network_name = network_suffix(network);
-    let history_path = &config.db_path.join(mode_name).join(network_name).join("cli_history");
+    let history_path = &config.db_path.join(&mode_name).join(network_name).join("cli_history");
     let mut editor = setup_editor(history_path)?;
 
     println!(
