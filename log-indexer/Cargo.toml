@@ -4,9 +4,8 @@ version.workspace = true
 edition = "2024"
 
 [features]
-default = ["fresh_node"] # temporary, for dev convenience
+default = []
 anvil = ["common/anvil"]
-fresh_node = []
 
 [dependencies]
 

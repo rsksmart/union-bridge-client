@@ -1,6 +1,6 @@
 use std::sync::mpsc;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use block_indexer::config::{Config, Logger};
 use block_indexer::indexer::BlockIndexer;
 use block_indexer::notifier::Notifier;
@@ -10,7 +10,7 @@ use common::alloy_rsk_provider::rpc::AlloyProvider;
 use common::msg_broker::broker::BrokerServer;
 use common::rsk_indexer::RskIndexer;
 use common::shutdown_flag::ShutdownFlag;
-use common::types::{BlockHash, RskBlockAndUncles};
+use common::types::RskBlockAndUncles;
 use log::{debug, error, info};
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
@@ -52,11 +52,6 @@ fn main() -> Result<()> {
     let alloy_provider = AlloyProvider::new(&config.provider.rootstock.url, shutdown_flag.clone())
         .expect("Failed to create AlloyProvider (unrecoverable)");
 
-    let initial_block_hash = BlockHash::try_from(config.indexer.initial_block_hash.as_str())
-        .unwrap_or_else(|_| {
-            panic!("Invalid initial block hash: {}", config.indexer.initial_block_hash)
-        });
-
     // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - think about bounding the channel
     let (tx, rx): (mpsc::Sender<RskBlockAndUncles>, mpsc::Receiver<RskBlockAndUncles>) =
         mpsc::channel();
@@ -69,9 +64,10 @@ fn main() -> Result<()> {
         store,
         alloy_provider,
         tx,
-        initial_block_hash,
+        &config.indexer,
         shutdown_flag.clone(),
-    );
+    )
+    .context("Failed to create BlockIndexer")?;
 
     let mut notifier = Notifier::new(
         rx,

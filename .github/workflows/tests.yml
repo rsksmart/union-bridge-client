@@ -32,6 +32,10 @@ jobs:
           contracts_github_token: ${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}
           cache-build: true
 
-      - name: Test
+      - name: Test Prod
         run: |
-          RUN_MODE=ci cargo test --no-default-features --locked
+          cargo test --workspace --all-targets --locked
+
+      - name: Test Features
+        run: |
+          cargo test --workspace --all-targets --all-features --locked

@@ -4,12 +4,14 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use bitcoin::Network;
 use config::{self, Environment, Source};
-use log::trace;
+use log::{info, trace};
 use log4rs::config::RawConfig;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
 use crate::errors::ConfigError;
+use crate::rsk_provider::RskProvider;
+use crate::types::{BlockHash, RskBlock};
 
 const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 // todo(fede) replace the /new folder with the final folder
@@ -27,10 +29,20 @@ pub struct CommonConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct IndexerConfig {
-    pub initial_block_hash: String,
+    #[serde(default)]
+    pub start_from: IndexerStartFrom,
+    pub initial_block_hash: Option<String>,
     pub sync: SyncConfig,
     pub storage: StorageConfig,
     pub cache: CacheConfig,
+}
+
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum IndexerStartFrom {
+    #[default]
+    Hash,
+    Best,
 }
 
 #[derive(Debug, Deserialize)]
@@ -69,6 +81,62 @@ pub struct ContractConfig {
     // TODO(Jira-RethinkContractHandling) convert into a map
     pub name: String,
     pub address: String,
+}
+
+impl IndexerConfig {
+    /// Resolves the initial block number based on the `start_from` configuration.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `start_from = "hash"` and `initial_block_hash` is missing or cannot be parsed
+    /// as a valid block hash.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when:
+    /// - `start_from = "hash"` and the provider fails to retrieve the block by hash, or the block
+    ///   is not found on the provider.
+    /// - `start_from = "best"` and the provider fails to retrieve the current best block.
+    pub fn resolve_initial_block<P: RskProvider>(&self, provider: &P) -> Result<RskBlock> {
+        let block = match self.start_from {
+            IndexerStartFrom::Hash => {
+                let hash_from_cfg = self.initial_block_hash.as_deref().context(
+                    "Missing indexer.initial_block_hash when indexer.start_from is 'hash'",
+                )?;
+
+                let initial_block_hash = BlockHash::try_from(hash_from_cfg)
+                    .with_context(|| format!("Invalid initial block hash: {hash_from_cfg}"))?;
+
+                let block_by_hash = provider
+                    .get_block_by_hash(initial_block_hash)
+                    .context("Failed to get initial block by hash")?
+                    .context("Initial block not found on provider")?;
+
+                info!(
+                    "Indexer start_from 'hash': using initial block {} ({})",
+                    block_by_hash.hash(),
+                    block_by_hash.number()
+                );
+
+                block_by_hash
+            }
+            IndexerStartFrom::Best => {
+                let best_block = provider
+                    .get_best_block()
+                    .context("Failed to get best block for start_from='best'")?;
+
+                info!(
+                    "Indexer start_from 'best': using best block {} ({})",
+                    best_block.hash(),
+                    best_block.number()
+                );
+
+                best_block
+            }
+        };
+
+        Ok(block)
+    }
 }
 
 impl CommonConfig {
@@ -235,9 +303,10 @@ mod tests {
             CommonConfig::load_config::<CommonConfig>(None).expect("Failed to load base config");
 
         assert_eq!(
-            "0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c",
-            config.indexer.initial_block_hash
+            Some("0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c"),
+            config.indexer.initial_block_hash.as_deref()
         );
+        assert_eq!(IndexerStartFrom::Hash, config.indexer.start_from);
         assert!(!config.indexer.storage.path.contains("{BASE_STORAGE_PATH}"));
         assert!(config.indexer.storage.path.ends_with("/.union_bridge/database/multi-client-1"));
         assert_eq!(1000, config.indexer.cache.size);
@@ -279,9 +348,10 @@ mod tests {
                 .expect("Failed to load config with docker-local environment");
 
         assert_eq!(
-            "0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c",
-            config.indexer.initial_block_hash
+            Some("0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c"),
+            config.indexer.initial_block_hash.as_deref()
         );
+        assert_eq!(IndexerStartFrom::Best, config.indexer.start_from);
         assert_eq!("/app/db/", config.indexer.storage.path); // override
         assert_eq!(1000, config.indexer.cache.size);
         assert_eq!("ws://host.docker.internal:8545", config.provider.rootstock.url);
@@ -304,9 +374,10 @@ mod tests {
             .expect("Failed to load config with environment variables");
 
         assert_eq!(
-            "0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c",
-            config.indexer.initial_block_hash
+            Some("0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c"),
+            config.indexer.initial_block_hash.as_deref()
         );
+        assert_eq!(IndexerStartFrom::Hash, config.indexer.start_from);
 
         // override
         assert_eq!("/test/env/path", config.indexer.storage.path);

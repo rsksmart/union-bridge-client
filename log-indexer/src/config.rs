@@ -67,6 +67,7 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
+    use common::config::IndexerStartFrom;
     use tempfile::TempDir;
 
     use super::*;
@@ -77,9 +78,10 @@ mod tests {
             CommonConfig::load_config::<Config>(None).expect("Failed to load config");
 
         assert_eq!(
-            "0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c",
-            config.indexer.initial_block_hash
+            Some("0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c"),
+            config.indexer.initial_block_hash.as_deref()
         );
+        assert_eq!(IndexerStartFrom::Hash, config.indexer.start_from);
         assert!(!config.indexer.storage.path.contains("{BASE_STORAGE_PATH}"));
         assert!(config.indexer.storage.path.ends_with("/.union_bridge/database/multi-client-1"));
         assert_eq!(1000, config.indexer.cache.size);

@@ -6,7 +6,7 @@ use common::alloy_rsk_provider::rpc::AlloyProvider;
 use common::msg_broker::broker::BrokerServer;
 use common::rsk_indexer::RskIndexer;
 use common::shutdown_flag::ShutdownFlag;
-use common::types::{BlockHash, RskLog};
+use common::types::RskLog;
 use log::{debug, error, info};
 use log_indexer::config::{Config, Logger};
 use log_indexer::indexer::LogIndexer;
@@ -52,11 +52,6 @@ fn main() -> Result<()> {
     let alloy_provider = AlloyProvider::new(&config.provider.rootstock.url, shutdown_flag.clone())
         .expect("Failed to create AlloyProvider (unrecoverable)");
 
-    let initial_block_hash = BlockHash::try_from(config.indexer.initial_block_hash.as_str())
-        .unwrap_or_else(|_| {
-            panic!("Invalid initial block hash: {}", config.indexer.initial_block_hash)
-        });
-
     let (tx, rx): (mpsc::Sender<RskLog>, mpsc::Receiver<RskLog>) = mpsc::channel();
 
     let store_path = &format!("{}/logs", config.indexer.storage.path);
@@ -70,9 +65,7 @@ fn main() -> Result<()> {
         store,
         alloy_provider,
         tx,
-        initial_block_hash,
-        config.indexer.sync.batch_size,
-        config.indexer.sync.finality_depth,
+        &config.indexer,
         managed_contracts,
         shutdown_flag.clone(),
     )

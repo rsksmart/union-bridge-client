@@ -7,6 +7,8 @@ provider.rootstock.url = "ws://host.docker.internal:8545"
 # url: "ws://rskj-01.testnet.ub.iovlabs.net:4445/websocket" # if connecting to an external node
 [indexer]
 
+# Override base: start from current tip; initial_block_hash from base is ignored in this env.
+start_from = "best"
 storage.path = "/app/db/" # This should match the volume mount in docker-compose
 
 # ═══════════════════════════════════════════════════════
