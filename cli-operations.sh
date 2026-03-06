@@ -33,22 +33,15 @@ for arg in "$@"; do
   fi
 done
 
-# Parse UC_* variables from root .envrc if not already set in the environment.
-# Only reads `export UC_...=` lines — does not execute arbitrary shell code.
+# Load environment from root .envrc (only if direnv hasn't already loaded it)
 PROJECT_ROOT="$(pwd)"
 ENVRC_FILE="${PROJECT_ROOT}/.envrc"
-if [[ -f "$ENVRC_FILE" ]]; then
-  while IFS='=' read -r key value; do
-    key=$(echo "$key" | xargs)
-    value=$(echo "$value" | sed 's/^["'\''"]//;s/["'\''"]$//')
-    if [[ -z "${!key:-}" ]]; then
-      export "$key=$value"
-    fi
-  done < <(grep -E '^\s*export\s+UC_[A-Z_]+=' "$ENVRC_FILE" | sed 's/^\s*export\s*//')
+if [[ -z "${DIRENV_DIR:-}" && -f "$ENVRC_FILE" ]]; then
+  source "$ENVRC_FILE"
 fi
 
-# Save UC_OPERATOR_ID and UC_OPERATOR_ROLE from .envrc before .env file might overwrite them
-# Precedence: command-line flags (-o, -r) > UC_OPERATOR_ID/UC_OPERATOR_ROLE from .envrc > .env file values
+# Save UC_OPERATOR_ID and UC_OPERATOR_ROLE before .env file might overwrite them
+# Precedence: command-line flags (-o, -r) > .envrc values > .env file values
 SAVED_UC_OPERATOR_ID_FROM_ENVRC=""
 SAVED_UC_OPERATOR_ROLE_FROM_ENVRC=""
 if [[ -n "${UC_OPERATOR_ID:-}" ]]; then
@@ -80,14 +73,12 @@ if [[ -n "$ENV_TO_LOAD" ]]; then
   esac
 
   # Source the .env file if it exists (for other vars like BITCOIND_URL, ROOTSTOCK_URL, etc.)
-  # UC_TAG, UC_OPERATOR_ID, UC_OPERATOR_ROLE are loaded from .envrc above
   if [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then
     set -a
     source "$ENV_FILE"
     set +a
     
-    # Restore UC_OPERATOR_ID and UC_OPERATOR_ROLE from .envrc if they were set
-    # (command-line flags will still override these via clap's env variable handling)
+    # Restore UC_OPERATOR_ID and UC_OPERATOR_ROLE if they were set before .env load
     if [[ -n "${SAVED_UC_OPERATOR_ID_FROM_ENVRC}" ]]; then
       export UC_OPERATOR_ID="${SAVED_UC_OPERATOR_ID_FROM_ENVRC}"
     fi

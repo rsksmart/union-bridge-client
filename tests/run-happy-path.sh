@@ -13,21 +13,12 @@
 
 set -euo pipefail
 
-# Try to load UC_ENV from .envrc if not already set and direnv isn't active
-# This ensures UC_ENV is available even when scripts are run from subdirectories
-if [[ -z "${UC_ENV:-}" ]]; then
-    # change to project root first to find .envrc
+# Load environment from root .envrc (only if direnv hasn't already loaded it)
+if [[ -z "${DIRENV_DIR:-}" ]]; then
     cd "$(dirname "$0")/.."
     ENVRC_FILE="$(pwd)/.envrc"
     if [[ -f "$ENVRC_FILE" ]]; then
-        # Parse only UC_ENV from .envrc — does not execute arbitrary shell code
-        _uc_env_line=$(grep -E '^\s*export\s+UC_ENV=' "$ENVRC_FILE" | tail -1 | sed 's/^\s*export\s*//')
-        if [[ -n "$_uc_env_line" ]]; then
-            UC_ENV="${_uc_env_line#UC_ENV=}"
-            UC_ENV=$(echo "$UC_ENV" | sed 's/^["'\''"]//;s/["'\''"]$//')
-            export UC_ENV
-        fi
-        unset _uc_env_line
+        source "$ENVRC_FILE"
     fi
 fi
 
