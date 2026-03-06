@@ -127,6 +127,18 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn test_run_fail_parse() {
+        let mock = MockPegManagerContractApi::new();
+        let mut input = get_base_input();
+        input.block_hash = "not_valid_hex".to_string();
+
+        let invoke = RegisterPegoutInvoke::new_for_tests(mock);
+        let result = invoke.run(input).await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), DomainErrors::InvalidBtcTxSpvProof(_)));
+    }
+
     fn get_base_input() -> RegisterPegoutInput {
         RegisterPegoutInput {
             block_hash: "0x0000000000000000000282fa21665766e58eb6cb94e458c3ef6d4af1121e38d9"
