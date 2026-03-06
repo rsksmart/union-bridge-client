@@ -563,6 +563,29 @@ fn fails_if_extension_data_is_precompressed_v1() {
     assert_eq!(err, "unsupported extension_data format: expected RPC logsBloom (256 bytes)");
 }
 
+#[test]
+fn succeeds_with_three_blocks_when_all_conditions_met() {
+    let mut actual_effort = U256::zero();
+
+    let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
+    actual_effort += calculate_effort_from_pow(first_block.pow);
+
+    let second_block = create_child_block(&first_block);
+    actual_effort += calculate_effort_from_pow(second_block.pow);
+
+    let third_block = create_child_block(&second_block);
+    actual_effort += calculate_effort_from_pow(third_block.pow);
+
+    let block_list = vec![first_block, second_block, third_block];
+
+    let args = CheckForkArgsBuilder::new(block_list)
+        .required_num_blocks(3)
+        .required_effort(actual_effort)
+        .build();
+    let result = check_fork(&args);
+    assert_eq!(result, Ok(actual_effort));
+}
+
 fn create_base_block(number: u64, bridge_event: bool, parent: Option<H256>) -> RskBlock {
     let difficulty = U256::from(DEFAULT_DIFFICULTY);
     let timestamp = DEFAULT_TIMESTAMP;
