@@ -2,7 +2,6 @@ name: "CodeQL Config"
 
 # exclude directories from analysis
 paths-ignore:
-  - 'actors-mocking/**'
   - 'cli/**'
   - 'bitcoin-wallet/**'
   - 'user-api/**'
