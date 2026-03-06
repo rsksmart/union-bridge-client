@@ -51,3 +51,44 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
         _ => DomainErrors::MemberRegistryError(format!("{decoded_err:?}")),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use union_contracts::bindings::member_registry::MemberRegistry::{
+        MemberAlreadyRegisteredForStream, MemberRegistryErrors,
+    };
+
+    use super::*;
+    use crate::contracts::common::tests::generate_contract_revert_error;
+    use crate::rsk_gateway::DomainErrors;
+
+    #[test]
+    fn test_member_already_registered_for_stream_error() {
+        let err_data = MemberRegistryErrors::MemberAlreadyRegisteredForStream(
+            MemberAlreadyRegisteredForStream {
+                memberAddress: alloy_primitives::Address::default(),
+                requestedStream: 1,
+                requestedRole: 1,
+                currentRole: 0,
+            },
+        );
+
+        let result = generate_contract_revert_error(&err_data);
+        let domain_error = decode_error(&result).unwrap();
+        assert!(matches!(domain_error, DomainErrors::MemberAlreadyRegisteredForStream(_)));
+    }
+
+    #[test]
+    fn test_unhandled_error_maps_to_member_registry_error() {
+        use union_contracts::bindings::member_registry::MemberRegistry::ERC1967InvalidImplementation;
+
+        let err_data =
+            MemberRegistryErrors::ERC1967InvalidImplementation(ERC1967InvalidImplementation {
+                implementation: alloy_primitives::Address::default(),
+            });
+
+        let result = generate_contract_revert_error(&err_data);
+        let domain_error = decode_error(&result).unwrap();
+        assert!(matches!(domain_error, DomainErrors::MemberRegistryError(_)));
+    }
+}
