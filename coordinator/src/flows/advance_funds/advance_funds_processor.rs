@@ -242,7 +242,15 @@ where
                     }
                 };
 
-                self.send_zkp_request(pegout_id, serialized_args, block_number, &elf_path)
+                let dispatched =
+                    self.send_zkp_request(pegout_id, serialized_args, block_number, &elf_path);
+                if !dispatched {
+                    error!(
+                        "event=checkfork_zkp_dispatch_failed_closing_flow pegout_id={pegout_id}"
+                    );
+                    self.close_pegout(&pegout_id.to_string());
+                }
+                dispatched
             }
             Err(e) => {
                 error!("CheckFork rejected: {e}");
@@ -689,6 +697,80 @@ mod tests {
         }
     }
 
+    fn create_processor_reaching_checkfork_dispatch(
+        bitvmx_broker: TestBroker,
+        pegout_id: &str,
+    ) -> (TestProcessor, BlockNumber, U256) {
+        let mut processor = AdvanceFundsProcessor::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(bitvmx_broker),
+            REQUIRED_CONFIRMATIONS,
+        );
+
+        let request_block =
+            RskBlockAndUncles::new_no_uncles(create_fake_block(100.into(), U256::from(50)));
+        let request_event = create_fake_request_event(pegout_id);
+        processor
+            .process_new_rsk_event(&RskPegManagerEvents::RequestAdvanceFunds(
+                RequestAdvanceFundsEvent {
+                    inner: request_event,
+                    block_number: request_block.number(),
+                    block_hash: request_block.hash(),
+                    removed: false,
+                    tx_hash: TxHash::from(H256::from_low_u64_be(100)),
+                },
+            ))
+            .expect("Should have processed request");
+        processor.process_new_block(&request_block).expect("Should process request block");
+
+        let advance_funds_event = create_fake_advance_funds_event(pegout_id);
+        let block_effort = advance_funds_event
+            .required_effort
+            .checked_div(AlloyU256::from(advance_funds_event.required_num_blocks))
+            .expect("0 division");
+        let block_effort = U256::from_big_endian(&block_effort.to_be_bytes_vec());
+
+        let advance_funds_block = RskBlockAndUncles::new_no_uncles(create_fake_block(
+            request_block.number() + 1,
+            block_effort,
+        ));
+        processor
+            .process_new_rsk_event(&RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
+                inner: advance_funds_event,
+                block_number: advance_funds_block.number(),
+                block_hash: advance_funds_block.hash(),
+                removed: false,
+                tx_hash: TxHash::from(H256::from_low_u64_be(123)),
+            }))
+            .expect("Should have processed advance funds");
+        processor
+            .process_new_block(&advance_funds_block)
+            .expect("Should process advance funds block");
+
+        (processor, advance_funds_block.number() + 1, block_effort)
+    }
+
+    fn process_until_checkfork_dispatch_attempt_finishes(
+        processor: &mut TestProcessor,
+        start_block_number: BlockNumber,
+        block_effort: U256,
+    ) {
+        let mut next_block_number = start_block_number;
+        for _ in 0..10 {
+            let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
+                next_block_number,
+                block_effort,
+            ));
+            processor.process_new_block(&block).expect("Should process block");
+            if processor.check_fork_accumulator.is_none() {
+                return;
+            }
+            next_block_number = next_block_number + 1;
+        }
+
+        panic!("CheckFork dispatch attempt should have completed within extra confirmation blocks");
+    }
+
     #[test]
     fn test_new_processor_initial_state_is_clear() {
         let processor = AdvanceFundsProcessor::new_for_test(
@@ -1026,6 +1108,88 @@ mod tests {
         assert_eq!(pending.stage, PendingCheckForkZkpStage::WaitingZkpResult);
         assert_eq!(pending.retry_count, 0);
         assert!(pending.last_retry_block.is_none());
+    }
+
+    #[test]
+    fn test_generate_zkp_broker_false_closes_flow_without_retrying() {
+        let pegout_id = "peg123";
+        let mut bitvmx_broker = MockBrokerClientApi::new();
+        bitvmx_broker
+            .expect_send()
+            .with(
+                eq(BROKER_SERVER_ID),
+                function(|req: &IncomingBitVMXApiMessages| {
+                    matches!(req, IncomingBitVMXApiMessages::GenerateZKP(_, _, _))
+                }),
+            )
+            .times(1)
+            .return_once(|_, _| Ok(false));
+
+        let (mut processor, start_block_number, block_effort) =
+            create_processor_reaching_checkfork_dispatch(bitvmx_broker, pegout_id);
+
+        process_until_checkfork_dispatch_attempt_finishes(
+            &mut processor,
+            start_block_number,
+            block_effort,
+        );
+
+        assert!(processor.check_fork_accumulator.is_none());
+        assert!(processor.pending_zkp.is_none());
+        assert!(processor.request_events.is_empty());
+        assert!(processor.first_block_to_process.is_none());
+        assert!(processor.chain_view.is_empty());
+        assert!(!processor.chain_view.is_observed());
+
+        let extra_block = RskBlockAndUncles::new_no_uncles(create_fake_block(
+            start_block_number + 20,
+            block_effort,
+        ));
+        processor.process_new_block(&extra_block).expect("Should ignore extra block after close");
+        assert!(processor.check_fork_accumulator.is_none());
+        assert!(processor.pending_zkp.is_none());
+    }
+
+    #[test]
+    fn test_generate_zkp_broker_error_closes_flow_without_retrying() {
+        let pegout_id = "peg123";
+        let mut bitvmx_broker = MockBrokerClientApi::new();
+        bitvmx_broker
+            .expect_send()
+            .with(
+                eq(BROKER_SERVER_ID),
+                function(|req: &IncomingBitVMXApiMessages| {
+                    matches!(req, IncomingBitVMXApiMessages::GenerateZKP(_, _, _))
+                }),
+            )
+            .times(1)
+            .return_once(|_, _| {
+                Err(common::msg_broker::broker::BrokerError::UnknownError(anyhow::anyhow!("boom")))
+            });
+
+        let (mut processor, start_block_number, block_effort) =
+            create_processor_reaching_checkfork_dispatch(bitvmx_broker, pegout_id);
+
+        process_until_checkfork_dispatch_attempt_finishes(
+            &mut processor,
+            start_block_number,
+            block_effort,
+        );
+
+        assert!(processor.check_fork_accumulator.is_none());
+        assert!(processor.pending_zkp.is_none());
+        assert!(processor.request_events.is_empty());
+        assert!(processor.first_block_to_process.is_none());
+        assert!(processor.chain_view.is_empty());
+        assert!(!processor.chain_view.is_observed());
+
+        let extra_block = RskBlockAndUncles::new_no_uncles(create_fake_block(
+            start_block_number + 20,
+            block_effort,
+        ));
+        processor.process_new_block(&extra_block).expect("Should ignore extra block after close");
+        assert!(processor.check_fork_accumulator.is_none());
+        assert!(processor.pending_zkp.is_none());
     }
 
     #[test]
