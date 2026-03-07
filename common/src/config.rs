@@ -360,6 +360,24 @@ mod tests {
     }
 
     #[test]
+    fn test_regtest_environment_overrides() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+
+        let config: CommonConfig =
+            CommonConfig::load_config::<CommonConfig>(Some("regtest".to_string()))
+                .expect("Failed to load config with regtest environment");
+
+        assert_eq!(
+            Some("0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c"),
+            config.indexer.initial_block_hash.as_deref()
+        );
+        assert_eq!(IndexerStartFrom::Best, config.indexer.start_from);
+        assert_eq!("/app/db/", config.indexer.storage.path);
+        assert_eq!("ws://10.1.0.66:4445", config.provider.rootstock.url);
+        assert_eq!("regtest", config.bitcoin_network);
+    }
+
+    #[test]
     fn test_environment_variables_override_config_files() {
         let _guard = TEST_MUTEX.lock().unwrap();
 
