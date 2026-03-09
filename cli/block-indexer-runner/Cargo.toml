@@ -1,0 +1,16 @@
+[package]
+name = "block-indexer-runner"
+version.workspace = true
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+
+block-indexer = { path = "../../block-indexer" }
+common = { path = "../../common" }
+log = "0.4"
+
+[features]
+default = []
+anvil = ["common/anvil", "block-indexer/anvil"]

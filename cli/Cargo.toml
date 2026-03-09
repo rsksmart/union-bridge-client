@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["run", "operations", "bitcoin-wallet", "mocks"]
+members = ["run", "operations", "bitcoin-wallet", "mocks", "block-indexer-validator", "block-indexer-runner"]
 
 [workspace.package]
 version = "0.2.0"

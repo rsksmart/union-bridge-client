@@ -1,0 +1,15 @@
+[package]
+name = "block-indexer-validator"
+version.workspace = true
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+
+block-indexer = { path = "../../block-indexer" }
+common = { path = "../../common" }
+
+[features]
+default = []
+anvil = ["common/anvil", "block-indexer/anvil"]
