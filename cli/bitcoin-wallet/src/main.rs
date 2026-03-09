@@ -95,7 +95,7 @@ fn main() -> Result<()> {
         }
 
         let command_line = opts.command.join(" ");
-        return match handle_command(&mut wallet, &command_line) {
+        return match handle_command(&mut wallet, &command_line, &config.mode) {
             Ok(_) => Ok(()),
             Err(err) => {
                 eprintln!("Error: {:#}", err);
@@ -136,7 +136,7 @@ fn main() -> Result<()> {
 
                 let _ = editor.add_history_entry(history_entry.as_ref());
 
-                match handle_command(&mut wallet, trimmed) {
+                match handle_command(&mut wallet, trimmed, &config.mode) {
                     Ok(CommandOutcome::Continue) => {}
                     Ok(CommandOutcome::Exit) => break,
                     Err(err) => eprintln!("Error: {:#}", err),
@@ -203,13 +203,24 @@ fn check_transaction_status(wallet: &Wallet, txid: &Txid) -> Result<TxConfirmati
     Ok(TxConfirmationInfo { confirmations, block_hash, block_height, total_value_btc })
 }
 
-fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
+fn require_operational_mode(mode: &WalletMode, cmd: &str) -> Result<()> {
+    if matches!(mode, WalletMode::Default) {
+        bail!(
+            "Command '{}' is not available in default mode. \
+             Please add your WIF as an environment variable and run with --mode user or --mode member.",
+            cmd
+        );
+    }
+    Ok(())
+}
+
+fn handle_command(wallet: &mut Wallet, line: &str, mode: &WalletMode) -> Result<CommandOutcome> {
     let mut parts = line.split_whitespace();
     let command = parts.next().unwrap();
 
     match command {
         "help" => {
-            print_help(wallet.sats_per_byte());
+            print_help(wallet.sats_per_byte(), mode);
             Ok(CommandOutcome::Continue)
         }
         "exit" | "quit" => Ok(CommandOutcome::Exit),
@@ -254,6 +265,7 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
             Ok(CommandOutcome::Continue)
         }
         "switch_address" => {
+            require_operational_mode(mode, command)?;
             let address_str = parts.next().context("expected bech32 address")?;
             let address_unchecked: Address<NetworkUnchecked> =
                 Address::from_str(address_str).context("invalid address format")?;
@@ -265,6 +277,7 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
             Ok(CommandOutcome::Continue)
         }
         "register_utxo" => {
+            require_operational_mode(mode, command)?;
             if wallet.active_address().is_none() {
                 bail!("import or switch to an address before registering UTXOs");
             }
@@ -312,6 +325,7 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
             Ok(CommandOutcome::Continue)
         }
         "send_to_pubkey" => {
+            require_operational_mode(mode, command)?;
             // Syntax: send_to_pubkey <hex_csv> <satoshis> [count]
             // <hex_csv> is a comma-separated list of compressed public keys in hex (no spaces)
             let hex_csv =
@@ -344,6 +358,7 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
             Ok(CommandOutcome::Continue)
         }
         "send_to_address" => {
+            require_operational_mode(mode, command)?;
             // Syntax: send_to_address <addr_csv> <satoshis> [count]
             // <addr_csv> is a comma-separated list of recipient addresses (no spaces)
             // Supports: Bech32 P2WPKH and Base58 P2PKH on the current network
@@ -380,6 +395,7 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
             Ok(CommandOutcome::Continue)
         }
         "mine_block" => {
+            require_operational_mode(mode, command)?;
             ensure!(
                 wallet.network() == Network::Regtest,
                 "mine_block is only available on regtest (current: {:?})",
@@ -412,6 +428,7 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
             Ok(CommandOutcome::Continue)
         }
         "mine_utxo" => {
+            require_operational_mode(mode, command)?;
             ensure!(
                 wallet.network() == Network::Regtest,
                 "mine_utxo is only available on regtest (current: {:?})",
@@ -502,6 +519,7 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
             }
         }
         "clear_db" => {
+            require_operational_mode(mode, command)?;
             ensure!(
                 wallet.network() == Network::Regtest,
                 "clear_db is only available on regtest (current: {:?})",
@@ -512,6 +530,7 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
             Ok(CommandOutcome::Continue)
         }
         "create_pegin_tx" => {
+            require_operational_mode(mode, command)?;
             // Syntax: create_pegin_tx <stream_value> <packet_number> <dest_addr> <rsk_address>
             let stream_value_str = parts.next().context("expected stream value in satoshis")?;
             let stream_value: u64 =
@@ -563,6 +582,7 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
             Ok(CommandOutcome::Continue)
         }
         "list_pending" => {
+            require_operational_mode(mode, command)?;
             let pending = wallet.pending_transaction_ids();
             if pending.is_empty() {
                 println!("No pending transactions.");
@@ -584,6 +604,7 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
             Ok(CommandOutcome::Continue)
         }
         "replace_tx" => {
+            require_operational_mode(mode, command)?;
             let txid_str = parts.next().context("expected txid")?;
             let new_fee_str = parts.next().context("expected new fee rate (sats/byte)")?;
 
@@ -634,6 +655,7 @@ fn handle_command(wallet: &mut Wallet, line: &str) -> Result<CommandOutcome> {
             Ok(CommandOutcome::Continue)
         }
         "confirm_tx" => {
+            require_operational_mode(mode, command)?;
             let txid_str = parts.next().context("expected txid")?;
             let txid = Txid::from_str(txid_str).context("invalid txid format")?;
 
@@ -777,7 +799,9 @@ fn maybe_broadcast(wallet: &mut Wallet, txs: &[CreatedTransaction]) -> Result<()
     Ok(())
 }
 
-fn print_help(sats_per_byte: u64) {
+fn print_help(sats_per_byte: u64, mode: &WalletMode) {
+    let is_default = matches!(mode, WalletMode::Default);
+
     println!("Available commands:");
     println!("  help                                  - Show this message");
     println!("  exit | quit                           - Leave the wallet");
@@ -789,49 +813,55 @@ fn print_help(sats_per_byte: u64) {
     );
     println!("  list_addresses                        - Show imported wallet addresses");
     println!(
-        "  switch_address <addr>                 - Make an imported address the active wallet address"
-    );
-    println!(
-        "  register_utxo <txid> <block_hash> <vout> [sats] - Register a spendable P2WPKH UTXO"
-    );
-    println!(
         "  list_funds [all]                      - List UTXOs for the active address or every address"
-    );
-    println!(
-        "  send_to_pubkey <hex_csv> <sats> [count]   - <hex_csv> is comma-separated compressed pubkeys (hex); create a single tx paying <sats> to each; repeat the whole tx by count (default 1)"
-    );
-    println!(
-        "  send_to_address <addr_csv> <sats> [count] - <addr_csv> is comma-separated addresses (P2WPKH bech32 or P2PKH base58); create a single tx paying <sats> to each; repeat the whole tx by count (default 1)"
-    );
-    println!("  mine_block                            - Regtest only: mine a single block via RPC");
-    println!(
-        "  mine_utxo [sats]                      - Regtest only: mine and fund the active address with given amount (default 21000000 sat), then register the UTXO"
     );
     println!(
         "  tx_status <txid>                      - Query node for a tx: mined?, confirmations, block hash/height, total outputs"
     );
     println!(
-        "  clear_db                              - Regtest only: clear the UTXO database for the current network"
-    );
-    println!(
-        "  create_pegin_tx <value> <packet> <addr> <rsk>  - Create RSK pegin transaction (value in sats, packet number, dest address, RSK address hex)"
-    );
-    println!();
-    println!("RBF (Replace-By-Fee) commands:");
-    println!(
-        "  list_pending                          - Show all pending (unconfirmed) transactions"
-    );
-    println!(
-        "  replace_tx <txid> <new_sats/byte>     - Replace pending transaction with higher fee"
-    );
-    println!(
-        "  confirm_tx <txid>                     - Manually confirm a pending transaction (after on-chain confirmation)"
-    );
-    println!();
-    println!("Blockchain queries:");
-    println!(
         "  block_height                          - Get current blockchain height from RPC node"
     );
+
+    if is_default {
+        println!();
+        println!("To access operational and signing commands, add your WIF as an environment");
+        println!("variable and run with --mode user or --mode member.");
+    } else {
+        println!(
+            "  switch_address <addr>                 - Make an imported address the active wallet address"
+        );
+        println!(
+            "  register_utxo <txid> <block_hash> <vout> [sats] - Register a spendable P2WPKH UTXO"
+        );
+        println!(
+            "  send_to_pubkey <hex_csv> <sats> [count]   - <hex_csv> is comma-separated compressed pubkeys (hex); create a single tx paying <sats> to each; repeat the whole tx by count (default 1)"
+        );
+        println!(
+            "  send_to_address <addr_csv> <sats> [count] - <addr_csv> is comma-separated addresses (P2WPKH bech32 or P2PKH base58); create a single tx paying <sats> to each; repeat the whole tx by count (default 1)"
+        );
+        println!("  mine_block                            - Regtest only: mine a single block via RPC");
+        println!(
+            "  mine_utxo [sats]                      - Regtest only: mine and fund the active address with given amount (default 21000000 sat), then register the UTXO"
+        );
+        println!(
+            "  clear_db                              - Regtest only: clear the UTXO database for the current network"
+        );
+        println!(
+            "  create_pegin_tx <value> <packet> <addr> <rsk>  - Create RSK pegin transaction (value in sats, packet number, dest address, RSK address hex)"
+        );
+        println!();
+        println!("RBF (Replace-By-Fee) commands:");
+        println!(
+            "  list_pending                          - Show all pending (unconfirmed) transactions"
+        );
+        println!(
+            "  replace_tx <txid> <new_sats/byte>     - Replace pending transaction with higher fee"
+        );
+        println!(
+            "  confirm_tx <txid>                     - Manually confirm a pending transaction (after on-chain confirmation)"
+        );
+    }
+
     println!();
     println!("Fees target {sats_per_byte} sat per virtual byte.");
 }
