@@ -507,8 +507,8 @@ mod tests {
     async fn test_call_native_bridge_regtest_accept_pegin() {
         use alloy_provider::ProviderBuilder;
 
-        let rpc_url = std::env::var("RSK_NODE_URL")
-            .unwrap_or_else(|_| "http://localhost:4444".to_string());
+        let rpc_url =
+            std::env::var("RSK_NODE_URL").unwrap_or_else(|_| "http://localhost:4444".to_string());
 
         info!("Connecting to RSK node at: {rpc_url}");
 
