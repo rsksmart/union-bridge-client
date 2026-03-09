@@ -841,9 +841,12 @@ where
 #[cfg(test)]
 mod tests {
     use alloy_primitives::{Bytes, FixedBytes, U256 as AlloyU256};
-    use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+    use common::msg_broker::bitvmx_types::{
+        IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, ParticipantRole,
+    };
     use common::msg_broker::broker::MockBrokerClientApi;
     use primitive_types::U256 as RskU256;
+    use transaction_dispatcher::types::TriggerOperatorTakeOutput;
     use union_contracts::bindings::peg_manager::PegManager::{
         BitcoinSignatureData, BtcTransaction, PegoutRequested,
     };
@@ -889,9 +892,24 @@ mod tests {
 
     impl TestHarness {
         fn new() -> Self {
-            let contracts = Rc::new(MockRskContractsGatewayApi::new());
-            let broker = Rc::new(MockBitVmxBroker::new());
-            let store = Rc::new(MockCoordinatorStoreApi::new());
+            Self::with_mocks(|_| {}, |_| {}, |_| {})
+        }
+
+        fn with_mocks(
+            contracts_fn: impl FnOnce(&mut MockRskContractsGatewayApi),
+            broker_fn: impl FnOnce(&mut MockBitVmxBroker),
+            store_fn: impl FnOnce(&mut MockCoordinatorStoreApi),
+        ) -> Self {
+            let mut contracts = MockRskContractsGatewayApi::new();
+            contracts_fn(&mut contracts);
+            let mut broker = MockBitVmxBroker::new();
+            broker_fn(&mut broker);
+            let mut store = MockCoordinatorStoreApi::new();
+            store_fn(&mut store);
+
+            let contracts = Rc::new(contracts);
+            let broker = Rc::new(broker);
+            let store = Rc::new(store);
             let rt_sync = RuntimeSync::new().unwrap();
 
             let processor = PegoutFlowProcessor::new(
@@ -902,16 +920,32 @@ mod tests {
                 store.clone(),
                 NativeBridgeVerifier::Dummy,
                 PegoutConfig::default(),
-                5, // required_confirmations for tests
+                0,
             );
 
             Self { processor, contracts, broker, store, rt_sync }
         }
 
-        fn create_flow_at_done(&self, flow_id: Uuid) -> TestPegoutFlow {
+        fn permissive() -> Self {
+            Self::with_mocks(
+                |contracts| {
+                    contracts.expect_trigger_operator_take().returning(|_| {
+                        Ok(TriggerOperatorTakeOutput { transaction_hash: "0xtest".into() })
+                    });
+                },
+                |broker| {
+                    broker.expect_send().returning(|_, _| Ok(true));
+                },
+                |store| {
+                    store.expect_save_flow::<State>().returning(|_, _| Ok(()));
+                },
+            )
+        }
+
+        fn create_flow_at_step(&self, flow_id: Uuid, step: Steps) -> TestPegoutFlow {
             let state = State {
                 flow_id,
-                step: Steps::Done,
+                step,
                 ctx: FlowContext {
                     pegout_requested: create_fake_pegout_requested(),
                     my_p2p_address: None,
@@ -933,12 +967,16 @@ mod tests {
             )
         }
 
+        fn create_flow_at_done(&self, flow_id: Uuid) -> TestPegoutFlow {
+            self.create_flow_at_step(flow_id, Steps::Done)
+        }
+
         fn create_completed_sig_flow(&self, flow_id: Uuid) -> TestBtcSigSubFlow {
             BaseBtcSignatureSubFlow::new_completed_for_test(
                 &self.contracts,
                 &self.rt_sync,
                 flow_id,
-                5, // required_confirmations for tests
+                5,
             )
         }
     }
@@ -959,6 +997,75 @@ mod tests {
             amount: 100_000,
             pegoutId: FixedBytes::default(),
         }
+    }
+
+    /// Any change to the hash inputs (salt, field order, encoding) in
+    /// `get_user_take_pid` would silently break flow persistence.
+    #[test]
+    fn test_get_user_take_pid_golden_value() {
+        let pid = TestProcessor::get_user_take_pid(Uuid::from_u128(1), 0).unwrap();
+        assert_eq!(pid.to_string(), "7671269b-b34e-9362-0ffe-d5afe950be2f");
+    }
+
+    #[test]
+    fn test_create_flow_for_member_initializes_at_get_comm_info() {
+        let mut harness = TestHarness::permissive();
+
+        let event = create_fake_pegout_requested();
+        let committee_id: CommitteeId = event.committeeId.try_into().unwrap();
+        harness
+            .processor
+            .global_context
+            .my_committees()
+            .add(committee_id, ParticipantRole::Verifier);
+
+        let result = harness.processor.create_flow_for_pegout_requested(&event);
+
+        assert!(result.is_ok(), "Flow creation should succeed: {:?}", result.err());
+        assert_eq!(harness.processor.pegout_flows.len(), 1);
+
+        let flow = harness.processor.pegout_flows.values().next().unwrap();
+        assert_eq!(flow.current_step(), Steps::GetCommInfo);
+    }
+
+    #[test]
+    fn test_signature_completion_cancels_timeout() {
+        let mut harness = TestHarness::permissive();
+
+        let flow_id = Uuid::new_v4();
+        let flow = harness.create_flow_at_step(flow_id, Steps::DispatchTransaction);
+        harness.processor.pegout_flows.insert(flow_id, flow);
+
+        let signature_flow = harness.create_completed_sig_flow(flow_id);
+        harness.processor.signature_flows.insert(flow_id, signature_flow);
+
+        harness.processor.advance_funds_timeout_scheduler.schedule(flow_id, 1000, 600);
+
+        let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
+            BlockNumber::from(100),
+            RskU256::from(50),
+        ));
+
+        harness.processor.process_unhandled_confirmed_sig_flow_events(&block).unwrap();
+
+        assert!(
+            !harness.processor.advance_funds_timeout_scheduler.is_scheduled(&flow_id),
+            "Timeout should be cancelled after signature completion"
+        );
+    }
+
+    #[test]
+    fn test_trigger_operator_take_transitions_to_done() {
+        let mut harness = TestHarness::permissive();
+
+        let flow_id = Uuid::new_v4();
+        let flow = harness.create_flow_at_step(flow_id, Steps::DispatchTransaction);
+        harness.processor.pegout_flows.insert(flow_id, flow);
+
+        let result = harness.processor.trigger_operator_take_for_flow(flow_id);
+
+        assert!(result.is_ok(), "Trigger operator take should succeed: {:?}", result.err());
+        assert_eq!(harness.processor.pegout_flows[&flow_id].current_step(), Steps::Done);
     }
 
     /// Regression test for the bug where a signature flow completing after
