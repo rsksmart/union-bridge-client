@@ -21,7 +21,7 @@ cd "$(dirname "$0")"
 MINE_PID_FILE="/tmp/union-bridge-mining.pids"
 
 # regtest remote config
-REGTEST_HOST="union-bridge-use2-1.regtest.rskcomputing.net"
+REGTEST_HOST="${REGTEST_HOST:-union-bridge-use2-1.regtest.rskcomputing.net}"
 REGTEST_USER="ubuntu"
 REGTEST_ROOT="union-bridge-client"
 REGTEST_FRESH_REMOTE_SCRIPT="${REGTEST_FRESH_REMOTE_SCRIPT:-/home/${REGTEST_USER}/regtest-fresh/regtest_fresh.sh}"

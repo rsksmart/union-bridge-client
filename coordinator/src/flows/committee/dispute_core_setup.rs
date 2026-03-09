@@ -124,7 +124,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
 
         let result = self.broker_client.send(BROKER_SERVER_ID, msg);
         if result.is_err() {
-            // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132
+            // TODO(Jira) UB-132
             error!("Failed to send msg to BitVMX: {result:?}");
         }
     }

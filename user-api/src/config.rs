@@ -25,7 +25,7 @@ pub struct CoordinatorConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct BrokerConfig {
-    pub client_id: u32, // TODO(Jira) for now just one client ID until we unify the brokers in scope of https://rsklabs.atlassian.net/browse/UB-215
+    pub client_id: u32, // TODO(Jira) for now just one client ID until we unify the brokers in scope of UB-215
 }
 
 #[derive(Debug, Deserialize)]

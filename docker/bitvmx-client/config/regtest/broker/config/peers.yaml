@@ -1,39 +1,39 @@
 - key: op_1.pem
   broker_id: 1
-  address: /ip4/172.20.0.11/tcp/61180
+  address: /ip4/<OPERATOR_1_IP>/tcp/61180
 
 - key: op_2.pem
   broker_id: 2
-  address: /ip4/172.20.0.12/tcp/61181
+  address: /ip4/<OPERATOR_2_IP>/tcp/61181
 
 - key: op_3.pem
   broker_id: 3
-  address: /ip4/172.20.0.13/tcp/61182
+  address: /ip4/<OPERATOR_3_IP>/tcp/61182
 
 - key: op_4.pem
   broker_id: 4
-  address: /ip4/172.20.0.14/tcp/61183
+  address: /ip4/<OPERATOR_4_IP>/tcp/61183
 
 - key: op_5.pem
   broker_id: 5
-  address: /ip4/172.20.0.15/tcp/61184
+  address: /ip4/<OPERATOR_5_IP>/tcp/61184
 
 - key: op_6.pem
   broker_id: 6
-  address: /ip4/172.20.0.16/tcp/61185
+  address: /ip4/<OPERATOR_6_IP>/tcp/61185
 
 - key: op_7.pem
   broker_id: 7
-  address: /ip4/172.20.0.17/tcp/61186
+  address: /ip4/<OPERATOR_7_IP>/tcp/61186
 
 - key: op_8.pem
   broker_id: 8
-  address: /ip4/172.20.0.18/tcp/61187
+  address: /ip4/<OPERATOR_8_IP>/tcp/61187
 
 - key: op_9.pem
   broker_id: 9
-  address: /ip4/172.20.0.19/tcp/61188
+  address: /ip4/<OPERATOR_9_IP>/tcp/61188
 
 - key: op_10.pem
   broker_id: 10
-  address: /ip4/172.20.0.20/tcp/61189
+  address: /ip4/<OPERATOR_10_IP>/tcp/61189

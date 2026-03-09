@@ -787,7 +787,7 @@ where
 
         let result = self.bitvmx_broker.send(BROKER_SERVER_ID, msg);
         if result.is_err() {
-            // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132
+            // TODO(Jira) UB-132
             error!("Failed to send msg to BitVMX: {result:?}");
         }
     }
@@ -860,7 +860,7 @@ where
 
         let my_p2p_address = self.state.ctx.get_my_comm_info()?.address;
 
-        // temporarily stored PeerId as the communication key, agreed with Fairgate
+        // PeerId is temporarily stored as the communication key
         let committee_peer_ids = self.get_committee_peer_ids()?;
 
         build_communication_data(&my_p2p_address, &committee_addresses, &committee_peer_ids)
@@ -902,7 +902,7 @@ where
     ) -> Result<Vec<MemberOfCommittee>> {
         let mut member_of_committee = vec![];
 
-        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: rethink how we store the committee member data in the context, we can unify it in a MemberOfCommittee struct and reduce the number of ctx_xxx methods
+        // TODO(Jira) UB-256: rethink how we store the committee member data in the context, we can unify it in a MemberOfCommittee struct and reduce the number of ctx_xxx methods
         for (idx, cm) in committee.members.iter().enumerate() {
             trace!("Processing member {idx}");
 
@@ -1526,7 +1526,7 @@ where
         stream_id: &StreamId,
         expected_step: Steps,
     ) -> Option<&mut SetupCommitteeFlow<CG, BC, S>> {
-        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: optimize this search by keeping convenient map of stream_id -> internal_id or alike
+        // TODO(Jira) UB-256: optimize this search by keeping convenient map of stream_id -> internal_id or alike
 
         self.flows.values_mut().find(|f| {
             let is_in_expected_step = f.state.step == expected_step;
@@ -1540,7 +1540,7 @@ where
         committee_id: &CommitteeId,
         expected_step: Steps,
     ) -> Option<&mut SetupCommitteeFlow<CG, BC, S>> {
-        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: optimize this search by keeping convenient map of committee_id -> internal_id or alike
+        // TODO(Jira) UB-256: optimize this search by keeping convenient map of committee_id -> internal_id or alike
 
         if !self.global_context.my_committees().im_member(committee_id) {
             debug!("Skipping committee {committee_id} - not mine");
@@ -1580,7 +1580,7 @@ where
         &mut self,
         req_id: &Uuid,
     ) -> Option<&mut SetupCommitteeFlow<CG, BC, S>> {
-        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-256: super naive approach implemented here for now, find within the different flows and their step datas one with the received req_id
+        // TODO(Jira) UB-256: super naive approach implemented here for now, find within the different flows and their step datas one with the received req_id
         // an alternative could be storing all the requests (ids) for which the flow is waiting response
         // in a same array - but I find this super risky, as it will only work if a) we NEVER send 2
         // "concurrent request-id-depending" messages to BitVMX and b) BitVMX guarantees order in request/response;

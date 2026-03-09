@@ -116,6 +116,7 @@ fn user_api_ports() -> Vec<u16> {
 
 const LOCAL_HOST: &str = "localhost";
 
+// TODO(UBC-851) make remote hosts configurable via env vars or config
 const REGTEST_HOST: &str = "union-bridge-use2-1.regtest.rskcomputing.net";
 
 const ALPHANET_HOSTS: [&str; 10] = [

@@ -1,4 +1,7 @@
 **/.env
+**/.env.*
+!**/.env.sample
+!**/.env.example
 **/.envrc
 **/.actrc
 **/app.log*
@@ -16,3 +19,19 @@ config/qa-coordinator
 test_keystore
 *.log
 docs/
+
+# Private keys and certificates
+**/*.key
+**/*.pem
+**/*.cert
+**/*.p12
+**/*.pfx
+
+# Keystore and secrets
+**/config/keys/
+
+# Docker volumes
+**/volumes/
+
+# Fetched comparison files
+**/docker-compose.fetched.yml

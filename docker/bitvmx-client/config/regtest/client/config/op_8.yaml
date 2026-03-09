@@ -1,8 +1,8 @@
 bitcoin:
   network: regtest
-  url: http://foo:rpcpassword@host.docker.internal:18443
-  username: foo
-  password: rpcpassword
+  url: http://<BITCOIN_USER>:<BITCOIN_PASSWORD>@<BITCOIND_HOST>:18332
+  username: <BITCOIN_USER>
+  password: <BITCOIN_PASSWORD>
   wallet: test_wallet
 
 key_manager:
@@ -10,14 +10,14 @@ key_manager:
   key_derivation_path: m/101/1/0/0/
 
 key_storage:
-  password: secret_password_9
+  password: <KEY_STORAGE_PASSWORD>
   path: /tmp/regtest/op_8/keys.db
 
 storage:
   path: /tmp/regtest/op_8/storage.db
 
 p2p:
-  address: /ip4/172.20.0.18/tcp/61187
+  address: /ip4/<OPERATOR_8_IP>/tcp/61187
   key: config/keys/op_8.key
   peer_id_file: peer_id
   timeout: 5

@@ -508,7 +508,7 @@ mod tests {
         use alloy_provider::ProviderBuilder;
 
         let rpc_url = std::env::var("RSK_NODE_URL")
-            .unwrap_or_else(|_| "http://node-use2-1.regtest.rskcomputing.net:4444".to_string());
+            .unwrap_or_else(|_| "http://localhost:4444".to_string());
 
         info!("Connecting to RSK node at: {rpc_url}");
 

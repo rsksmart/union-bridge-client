@@ -2,7 +2,8 @@
 # Common Configuration
 # ═══════════════════════════════════════════════════════
 
-provider.rootstock.url = "ws://10.26.7.106:4445"
+# Override via env: UB__PROVIDER__ROOTSTOCK__URL
+provider.rootstock.url = "ws://<RSK_NODE_HOST>:4445"
 bitcoin_network = "testnet"
 
 [[contracts]]

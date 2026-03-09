@@ -2,8 +2,8 @@
 # Common Configuration
 # ═══════════════════════════════════════════════════════
 
-provider.rootstock.url = "ws://10.1.0.53:4445" # if running in AWS and accessed from AWS
-# url: "ws://rskj-01.testnet.ub.iovlabs.net:4445/websocket" # if running in AWS and accessed from outside
+# Override via env: UB__PROVIDER__ROOTSTOCK__URL
+provider.rootstock.url = "ws://<RSK_NODE_HOST>:4445"
 bitcoin_network = "testnet"
 
 [[contracts]]

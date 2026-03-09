@@ -1,11 +1,11 @@
 # required for actions/download-artifact@v4 to work locally
---artifact-server-path /Users/illuque/.union_bridge/act_artifacts
+--artifact-server-path <path_to_your_act_artifacts>
 # required for Risc0 toolchain to work locally
 --container-architecture linux/amd64
 
-# needed for now to access Fairgate private repositories used as dependencies
--s FAIRGATE_GITHUB_TOKEN=<ask_your_colleagues>
--s UNION_CONTRACTS_GITHUB_TOKEN=<ask_your_colleagues>
+# needed for access to private repositories used as dependencies
+-s FAIRGATE_GITHUB_TOKEN=<your_github_token>
+-s UNION_CONTRACTS_GITHUB_TOKEN=<your_github_token>
 
 # needed for transaction-dispatcher
 -s KEY_STORE_PASSWORD=<key_password>

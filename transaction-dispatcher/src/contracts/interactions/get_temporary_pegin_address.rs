@@ -5,7 +5,7 @@ use crate::contracts::peg_manager::PegManagerContractApi;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{PeginAddressInput, PeginAddressOutput};
 
-// TODO(Jira): generate Try_From for the input struct like in the other cases - https://rsklabs.atlassian.net/browse/UB-108
+// TODO(Jira): generate Try_From for the input struct like in the other cases - UB-108
 
 #[derive(Clone)]
 pub(crate) struct GetTemporaryPeginAddressCall<C: PegManagerContractApi> {

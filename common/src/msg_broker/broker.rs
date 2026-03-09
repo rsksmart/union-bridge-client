@@ -18,7 +18,7 @@ use crate::msg_broker::types::{FromServer, ToServer};
 pub const BROKER_SERVER_ID: u32 = 1;
 pub const BITVMX_L2_BROKER_CLIENT_ID: u32 = 100; // Should match the ID defined in the BitVMX Client
 
-// TODO(Jira) https://rsklabs.atlassian.net/browse/UB-213
+// TODO(Jira) UB-213
 
 #[automock]
 pub trait BrokerServerApi<S: Serialize, C: DeserializeOwned> {
@@ -62,7 +62,7 @@ impl<T> UnionBrokerClientApi for T where T: BrokerClientApi<ToServer, FromServer
 impl BrokerServer {
     #[must_use]
     pub fn new(port: u16) -> Self {
-        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - change to disk storage (broker feature)
+        // TODO(Jira) UB-132 - change to disk storage (broker feature)
 
         debug!("Starting BrokerServer on port {port}");
 

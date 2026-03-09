@@ -19,8 +19,8 @@ pub struct BlockIndexer<P: RskProvider, S: BlockStore> {
     shutdown_flag: ShutdownFlag,
 }
 
-// TODO(Jira) review this file and take care of transactionality on storage saving: https://rsklabs.atlassian.net/browse/UB-11
-// TODO(Jira) allow changing the initial_block_hash on a running instance: https://rsklabs.atlassian.net/browse/UB-32
+// TODO(Jira) review this file and take care of transactionality on storage saving: UB-11
+// TODO(Jira) allow changing the initial_block_hash on a running instance: UB-32
 
 impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
     /// Create a new `BlockIndexer` with a notifier channel
@@ -177,7 +177,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 }
             };
 
-            // TODO(Jira) do batched writes in backward sync: https://rsklabs.atlassian.net/browse/UB-24
+            // TODO(Jira) do batched writes in backward sync: UB-24
 
             // no need to keep track of it between iters as it is cached and can be re-fetched
             let local_best_block = self
@@ -229,7 +229,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         #[allow(clippy::collapsible_if)]
         if let Some(channel) = &self.new_block_sender {
             if let Err(e) = channel.send(RskBlockAndUncles::new(block, uncles)) {
-                // TODO(Jira) this should be monitored and analysed - https://rsklabs.atlassian.net/browse/UB-127
+                // TODO(Jira) this should be monitored and analysed - UB-127
                 error!("[notify_block] Failed to send best block through channel: {e:?}");
             }
         }
@@ -241,7 +241,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
             return Ok(());
         }
 
-        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - think if it is feasible to send new-block notifications on backward sync or if it's better to provide a mechanism to requests past blocks in such situation when complete
+        // TODO(Jira) UB-132 - think if it is feasible to send new-block notifications on backward sync or if it's better to provide a mechanism to requests past blocks in such situation when complete
 
         let store_best_block = self
             .store

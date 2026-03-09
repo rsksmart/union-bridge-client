@@ -32,7 +32,7 @@ impl<C: MemberRegistryContractApi> GetMemberPublicKeysCall<C> {
 
         info!("GetMemberPublicKeys successful, retrieved member keys");
 
-        // we store peer_id in communicationPubKey.rsaPublicKey, agreed with Fairgate
+        // peer_id is stored in communicationPubKey.rsaPublicKey
         let peer_id_bytes = &public_keys.communicationPubKey;
         let peer_id =
             P2PAddressParser::peer_id_from_member_contracts(peer_id_bytes).map_err(|e| {

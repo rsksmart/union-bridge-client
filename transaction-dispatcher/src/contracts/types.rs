@@ -66,7 +66,7 @@ pub fn convert_to_member_registration_keys(
         takeKey: take_key,
         covenantKey: covenant_key,
         communicationKey: RSAPublicKey {
-            rsaPublicKey: peer_id_as_rsa.rsaPublicKey, // we temporarily store PeerId here, agreed with Fairgate
+            rsaPublicKey: peer_id_as_rsa.rsaPublicKey, // PeerId is temporarily stored here
         },
     })
 }

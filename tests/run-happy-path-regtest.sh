@@ -7,7 +7,7 @@
 set -euo pipefail
 
 # Remote execution: SSH to regtest instance unless already there
-REGTEST_HOST="union-bridge-use2-1.regtest.rskcomputing.net"
+REGTEST_HOST="${REGTEST_HOST:-union-bridge-use2-1.regtest.rskcomputing.net}"
 REGTEST_USER="ubuntu"
 REGTEST_ROOT="union-bridge-client"
 
