@@ -45,6 +45,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
     // separate build/factory method
     /// # Panics
     /// Panics if loading context from the database fails.
+    #[allow(clippy::too_many_arguments)]
     pub fn new<CG: RskContractsGatewayApi + 'static>(
         rt_sync: &RuntimeSync,
         monitor: M,
@@ -53,6 +54,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
         store: S,
         shutdown_flag: ShutdownFlag,
         bitcoin_network: Network,
+        drp_program_definition: String,
     ) -> Self {
         let contracts_arc = Rc::new(contracts_gateway);
         let store_rc = Rc::new(store);
@@ -70,6 +72,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
             global_context.clone(),
             bitcoin_network,
             Rc::clone(&store_rc),
+            drp_program_definition,
         );
 
         Self {

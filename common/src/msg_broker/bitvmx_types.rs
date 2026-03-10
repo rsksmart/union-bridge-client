@@ -50,6 +50,7 @@ pub enum IncomingBitVMXApiMessages {
     SetupKey(Uuid, Vec<CommsAddress>, Option<Vec<PublicKey>>, u16),
     GetAggregatedPubkey(Uuid),
     GetKeyPair(Uuid),
+    GetEvenPubKey(Uuid),
     GetPubKey(Uuid, bool),
     SignMessage(Uuid, Vec<u8>, PublicKey), // id, payload_to_sign, public_key_to_use
     GenerateZKP(Uuid, Vec<u8>, String),

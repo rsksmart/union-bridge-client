@@ -18,8 +18,6 @@ use crate::flows::committee::setup_committee_flow::{CommitteeData, NO_LEADER_IDX
 use crate::types::MemberOfCommittee;
 
 const DRP_TIMELOCK_BLOCKS: u16 = 15; // TODO: move to config?
-//Check about this
-const DRP_PROGRAM_DEFINITION: &str = "../BitVMX-CPU/docker-riscv32/riscv32/build/hello-world.yaml"; // TODO: move to config?
 
 #[derive(Clone, Copy)]
 struct OperatorSetupParams<'a> {
@@ -62,11 +60,12 @@ struct SetupOneInput<'a> {
 /// Manages the setup of `DisputeChannel` protocols between operators and watchtowers.
 pub struct DisputeChannelSetup<BC: BitVmxBrokerClientApi> {
     broker_client: Rc<BC>,
+    drp_program_definition: String,
 }
 
 impl<BC: BitVmxBrokerClientApi> DisputeChannelSetup<BC> {
-    pub fn new(broker_client: Rc<BC>) -> Self {
-        Self { broker_client }
+    pub fn new(broker_client: Rc<BC>, drp_program_definition: String) -> Self {
+        Self { broker_client, drp_program_definition }
     }
 
     /// Requests both `DisputeCore` variables (`OP_COSIGN_UTXOS` and `WT_INIT_CHALLENGE_UTXOS`) for a given PID.
@@ -405,7 +404,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeChannelSetup<BC> {
             verifier_actions: vec![(i.wt_stopper, vec![1])], // Consume leaf 1
             verifier_enablers: vec![],
             timelock_blocks: DRP_TIMELOCK_BLOCKS,
-            program_definition: DRP_PROGRAM_DEFINITION.to_string(),
+            program_definition: self.drp_program_definition.clone(),
             fail_force_config: Some(dispute_config),
             notify_protocol: vec![("dispute_core".to_string(), dispute_core_pid)],
             auto_dispatch_input: Some(0),
@@ -583,7 +582,7 @@ mod tests {
             IncomingBitVMXApiMessages,
             OutgoingBitVMXApiMessages,
         >::new());
-        let _setup = DisputeChannelSetup::new(mock_broker);
+        let _setup = DisputeChannelSetup::new(mock_broker, "test.yaml".to_string());
         // Just verify it doesn't panic by constructing the instance.
     }
 
@@ -593,7 +592,7 @@ mod tests {
             IncomingBitVMXApiMessages,
             OutgoingBitVMXApiMessages,
         >::new());
-        let setup = DisputeChannelSetup::new(mock_broker);
+        let setup = DisputeChannelSetup::new(mock_broker, "test.yaml".to_string());
 
         let members = vec![
             test_member(0, ParticipantRole::Prover),
@@ -620,7 +619,7 @@ mod tests {
             .times(2) // OP_COSIGN_UTXOS and WT_INIT_CHALLENGE_UTXOS
             .returning(|_| Ok(true));
 
-        let setup = DisputeChannelSetup::new(Rc::new(mock_broker));
+        let setup = DisputeChannelSetup::new(Rc::new(mock_broker), "test.yaml".to_string());
 
         let members = vec![test_member(0, ParticipantRole::Prover)];
         let committee_data = test_committee_data(members);
@@ -644,7 +643,7 @@ mod tests {
             .times(2) // Only my own (verifier doesn't request other verifiers)
             .returning(|_| Ok(true));
 
-        let setup = DisputeChannelSetup::new(Rc::new(mock_broker));
+        let setup = DisputeChannelSetup::new(Rc::new(mock_broker), "test.yaml".to_string());
 
         let members = vec![
             test_member(0, ParticipantRole::Verifier),
@@ -672,7 +671,7 @@ mod tests {
             .times(4)
             .returning(|_| Ok(true));
 
-        let setup = DisputeChannelSetup::new(Rc::new(mock_broker));
+        let setup = DisputeChannelSetup::new(Rc::new(mock_broker), "test.yaml".to_string());
 
         let members =
             vec![test_member(0, ParticipantRole::Prover), test_member(1, ParticipantRole::Prover)];
@@ -692,7 +691,7 @@ mod tests {
             IncomingBitVMXApiMessages,
             OutgoingBitVMXApiMessages,
         >::new());
-        let setup = DisputeChannelSetup::new(mock_broker);
+        let setup = DisputeChannelSetup::new(mock_broker, "test.yaml".to_string());
 
         let members = vec![test_member(0, ParticipantRole::Prover)];
         let committee_data = test_committee_data(members);
@@ -724,7 +723,7 @@ mod tests {
             IncomingBitVMXApiMessages,
             OutgoingBitVMXApiMessages,
         >::new());
-        let setup = DisputeChannelSetup::new(mock_broker);
+        let setup = DisputeChannelSetup::new(mock_broker, "test.yaml".to_string());
 
         let members = vec![test_member(0, ParticipantRole::Prover)];
         let committee_data = test_committee_data(members);
@@ -749,7 +748,7 @@ mod tests {
             IncomingBitVMXApiMessages,
             OutgoingBitVMXApiMessages,
         >::new());
-        let setup = DisputeChannelSetup::new(mock_broker);
+        let setup = DisputeChannelSetup::new(mock_broker, "test.yaml".to_string());
 
         let members = vec![test_member(0, ParticipantRole::Prover)];
         let committee_data = test_committee_data(members);
@@ -779,7 +778,7 @@ mod tests {
             IncomingBitVMXApiMessages,
             OutgoingBitVMXApiMessages,
         >::new());
-        let setup = DisputeChannelSetup::new(mock_broker);
+        let setup = DisputeChannelSetup::new(mock_broker, "test.yaml".to_string());
 
         let members = vec![test_member(0, ParticipantRole::Prover)];
         let committee_data = test_committee_data(members);
@@ -809,7 +808,7 @@ mod tests {
             IncomingBitVMXApiMessages,
             OutgoingBitVMXApiMessages,
         >::new());
-        let setup = DisputeChannelSetup::new(mock_broker);
+        let setup = DisputeChannelSetup::new(mock_broker, "test.yaml".to_string());
 
         let members =
             vec![test_member(0, ParticipantRole::Prover), test_member(1, ParticipantRole::Prover)];
@@ -840,7 +839,7 @@ mod tests {
             IncomingBitVMXApiMessages,
             OutgoingBitVMXApiMessages,
         >::new());
-        let setup = DisputeChannelSetup::new(mock_broker);
+        let setup = DisputeChannelSetup::new(mock_broker, "test.yaml".to_string());
 
         let members = vec![
             test_member(0, ParticipantRole::Verifier),
@@ -929,7 +928,7 @@ mod tests {
             .times(2)
             .returning(|_| Ok(true));
 
-        let setup = DisputeChannelSetup::new(Rc::new(mock_broker));
+        let setup = DisputeChannelSetup::new(Rc::new(mock_broker), "test.yaml".to_string());
 
         let members = vec![test_member(0, ParticipantRole::Prover)];
         let committee_data = test_committee_data(members);
@@ -970,7 +969,7 @@ mod tests {
         // setup_one sends 2 messages per call, so 4 total for 2 calls
         mock_broker.expect_send().times(4).returning(|_| Ok(true));
 
-        let setup = DisputeChannelSetup::new(Rc::new(mock_broker));
+        let setup = DisputeChannelSetup::new(Rc::new(mock_broker), "test.yaml".to_string());
 
         let members = vec![test_member(0, ParticipantRole::Prover)];
         let committee_data = test_committee_data(members);
@@ -1024,7 +1023,7 @@ mod tests {
         // setup_one sends 2 messages per call, so 4 total for 2 calls
         mock_broker.expect_send().times(4).returning(|_| Ok(true));
 
-        let setup = DisputeChannelSetup::new(Rc::new(mock_broker));
+        let setup = DisputeChannelSetup::new(Rc::new(mock_broker), "test.yaml".to_string());
 
         let members = vec![test_member(0, ParticipantRole::Prover)];
         let committee_data = test_committee_data(members);

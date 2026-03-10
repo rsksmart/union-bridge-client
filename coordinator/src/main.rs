@@ -144,6 +144,7 @@ fn main() -> Result<()> {
         store,
         shutdown_flag.clone(),
         bitcoin_network,
+        config.coordinator.drp_program_definition,
     );
     coordinator.run().inspect_err(|e| {
         error!("Unrecoverable error running coordinator: {e:?}"); // signal other threads to shut down
