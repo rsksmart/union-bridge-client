@@ -938,3 +938,245 @@ where
         self.signature_flows.clear();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use alloy_primitives::{Bytes, FixedBytes};
+    use bitcoin::Txid;
+    use bitcoin::hashes::Hash;
+    use common::msg_broker::bitvmx_types::{
+        IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, ParticipantRole,
+    };
+    use common::msg_broker::broker::MockBrokerClientApi;
+    use common::runtime_sync::RuntimeSync;
+    use common::types::TxIdParser;
+    use union_contracts::bindings::peg_manager::PegManager::{
+        PeginRequested, PrevoutData, RequestPeginTempInfo, StreamPosition,
+    };
+    use uuid::Uuid;
+
+    use super::*;
+    use crate::coordinator::tests::MockRskContractsGatewayApi;
+    use crate::flows::pegin::pegin_flow::FlowContext;
+    use crate::flows::pegin::utils::get_accept_pegin_pid;
+    use crate::store::MockCoordinatorStoreApi;
+
+    type MockBitVmxBroker =
+        MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
+
+    type TestBtcSigSubFlow = BaseBtcSignatureSubFlow<
+        crate::flows::btc_signature::btc_signature_lifecycle::BtcSignatureLifeCycle<
+            MockRskContractsGatewayApi,
+        >,
+    >;
+
+    type TestBtcSigFactory =
+        crate::flows::btc_signature::btc_signature_subflow::BtcSignatureSubFlowFactory<
+            MockRskContractsGatewayApi,
+        >;
+
+    type TestProcessor = PeginFlowProcessor<
+        MockRskContractsGatewayApi,
+        MockBitVmxBroker,
+        TestBtcSigSubFlow,
+        TestBtcSigFactory,
+        MockCoordinatorStoreApi,
+    >;
+
+    type TestPeginFlow =
+        PeginFlow<MockRskContractsGatewayApi, MockBitVmxBroker, MockCoordinatorStoreApi>;
+
+    struct TestHarness {
+        processor: TestProcessor,
+        contracts: Rc<MockRskContractsGatewayApi>,
+        broker: Rc<MockBitVmxBroker>,
+        store: Rc<MockCoordinatorStoreApi>,
+        rt_sync: RuntimeSync,
+    }
+
+    impl TestHarness {
+        fn with_mocks(
+            contracts_fn: impl FnOnce(&mut MockRskContractsGatewayApi),
+            broker_fn: impl FnOnce(&mut MockBitVmxBroker),
+            store_fn: impl FnOnce(&mut MockCoordinatorStoreApi),
+        ) -> Self {
+            let mut contracts = MockRskContractsGatewayApi::new();
+            contracts_fn(&mut contracts);
+            let mut broker = MockBitVmxBroker::new();
+            broker_fn(&mut broker);
+            let mut store = MockCoordinatorStoreApi::new();
+            store_fn(&mut store);
+
+            let contracts = Rc::new(contracts);
+            let broker = Rc::new(broker);
+            let store = Rc::new(store);
+            let rt_sync = RuntimeSync::new().unwrap();
+
+            let factory =
+                BtcSignatureSubFlowFactory::new(Rc::clone(&contracts), rt_sync.clone(), 0);
+
+            let processor = PeginFlowProcessor {
+                contracts_gateway: Rc::clone(&contracts),
+                rt_sync: rt_sync.clone(),
+                bitvmx_broker: Rc::clone(&broker),
+                btc_sig_subflow_factory: factory,
+                pegin_flows: HashMap::new(),
+                signature_flows: HashMap::new(),
+                global_context: GlobalContext::new(),
+                blockchain_view: BlockchainView::new(),
+                events_confirming: HashMap::new(),
+                tx_status_scheduler: TickScheduler::new(),
+                pegin_request_tracker: HashSet::new(),
+                unconfirmed_pegin_requests: HashMap::new(),
+                pegin_retry_scheduler: TickScheduler::new(),
+                unconfirmed_accept_pegin: HashMap::new(),
+                accept_pegin_retry_scheduler: TickScheduler::new(),
+                store: Rc::clone(&store),
+                native_bridge_verifier: NativeBridgeVerifier::Dummy,
+                config: PeginConfig::default(),
+                required_confirmations: 0,
+            };
+
+            Self { processor, contracts, broker, store, rt_sync }
+        }
+
+        fn permissive() -> Self {
+            Self::with_mocks(
+                |_| {},
+                |broker| {
+                    broker.expect_send().returning(|_, _| Ok(true));
+                },
+                |store| {
+                    store.expect_save_flow::<State>().returning(|_, _| Ok(()));
+                    store.expect_delete_flow().returning(|_| Ok(()));
+                },
+            )
+        }
+
+        fn create_flow_at_step(&self, flow_id: Uuid, step: Steps) -> TestPeginFlow {
+            let state = State {
+                flow_id,
+                ctx: FlowContext {
+                    flow_id,
+                    step,
+                    temp_flow_id: Some(flow_id),
+                    official_flow_id: None,
+                    request_pegin_btc_tx_id: None,
+                    request_pegin_btc_tx_status: None,
+                    request_pegin_spv_proof: None,
+                    pegin_requested: None,
+                    my_p2p_address: None,
+                    committee_output: None,
+                    bitvmx_pegin_accepted: None,
+                    accept_pegin_spv_proof: None,
+                    accept_pegin_tx_status: None,
+                    pegin_accepted: None,
+                    op_role: None,
+                },
+            };
+
+            PeginFlow::from_saved_state(
+                Rc::clone(&self.contracts),
+                self.rt_sync.clone(),
+                Rc::clone(&self.broker),
+                state,
+                Rc::clone(&self.store),
+                NativeBridgeVerifier::Dummy,
+            )
+        }
+    }
+
+    fn create_fake_pegin_requested(txid: Txid) -> PeginRequested {
+        PeginRequested {
+            committeeId: 1u128,
+            requestPeginTxid: TxIdParser::txid_to_fb_32(txid),
+            acceptPeginTxid: FixedBytes::default(),
+            vout: 0,
+            streamPosition: StreamPosition {
+                streamId: 0,
+                packetNumber: 0,
+                slotId: 0,
+                pegStatus: 0u8,
+            },
+            requestPeginInfo: RequestPeginTempInfo {
+                rskDestinationAddress: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
+                    .parse()
+                    .unwrap(),
+                btcReimbursementPubKey: FixedBytes::default(),
+                acceptPeginSignatureHash: FixedBytes::default(),
+            },
+            prevoutData: PrevoutData { value: 100_000, scriptPubKey: Bytes::default() },
+            acceptPeginSignatureMessage: Bytes::default(),
+        }
+    }
+
+    /// Any change to the hash inputs (salt, field order, encoding) in
+    /// `get_temp_pegin_pid` would silently break flow persistence.
+    #[test]
+    fn test_get_temp_pegin_pid_golden_value() {
+        let txid = Txid::from_byte_array([0u8; 32]);
+        let pid = get_temp_pegin_pid(txid);
+        assert_eq!(pid.to_string(), "ab48f4e9-3e34-b563-ba26-a500d2e071d6");
+    }
+
+    /// Any change to the hash inputs (salt, field order, encoding) in
+    /// `get_accept_pegin_pid` would silently break flow persistence.
+    #[test]
+    fn test_get_accept_pegin_pid_golden_value() {
+        let pid = get_accept_pegin_pid(Uuid::from_u128(1), 0).unwrap();
+        assert_eq!(pid.to_string(), "6db5f7f6-edc7-2a2a-768b-69beb09195f1");
+    }
+
+    #[test]
+    fn test_handle_pegin_transaction_found_creates_flow() {
+        let mut harness = TestHarness::permissive();
+
+        let txid = Txid::from_byte_array([0u8; 32]);
+        let result = harness.processor.handle_pegin_transaction_found(txid);
+
+        assert!(result.is_ok(), "Flow creation should succeed: {:?}", result.err());
+
+        let temp_flow_id = get_temp_pegin_pid(txid);
+        assert!(harness.processor.pegin_request_tracker.contains(&txid));
+        assert_eq!(harness.processor.pegin_flows.len(), 1);
+        assert!(harness.processor.pegin_flows.contains_key(&temp_flow_id));
+
+        let flow = &harness.processor.pegin_flows[&temp_flow_id];
+        assert_eq!(flow.current_step(), Steps::RequestPeginSpvProof);
+    }
+
+    #[test]
+    fn test_flow_id_migration_on_pegin_requested() {
+        let mut harness = TestHarness::permissive();
+
+        let txid = Txid::from_byte_array([0u8; 32]);
+        let temp_flow_id = get_temp_pegin_pid(txid);
+
+        let mut flow = harness.create_flow_at_step(temp_flow_id, Steps::PeginRequested);
+        flow.get_state_mut().ctx.request_pegin_btc_tx_id = Some(txid);
+        harness.processor.pegin_flows.insert(temp_flow_id, flow);
+
+        let event = create_fake_pegin_requested(txid);
+        let committee_id: CommitteeId = event.committeeId.into();
+        harness
+            .processor
+            .global_context
+            .my_committees()
+            .add(committee_id, ParticipantRole::Verifier);
+
+        let result = harness.processor.create_flow_for_pegin_requested(&event);
+
+        assert!(result.is_ok(), "Flow migration should succeed: {:?}", result.err());
+        assert!(
+            !harness.processor.pegin_flows.contains_key(&temp_flow_id),
+            "Flow should no longer exist under temp ID"
+        );
+        assert_eq!(harness.processor.pegin_flows.len(), 1);
+
+        let expected_official_id = get_accept_pegin_pid(Uuid::from_u128(1), 0).unwrap();
+        assert!(harness.processor.pegin_flows.contains_key(&expected_official_id));
+
+        let flow = &harness.processor.pegin_flows[&expected_official_id];
+        assert_eq!(flow.current_step(), Steps::GetCommInfo);
+    }
+}
