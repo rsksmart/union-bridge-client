@@ -16,7 +16,7 @@ pub struct Config {
     pub sats_per_byte: Option<u64>,
     pub network: Option<Network>,
     pub mode: WalletMode,
-    pub private_key_wif: String,
+    pub private_key_wif: Option<String>,
     pub rpc_url: Option<String>,
     pub rpc_user: Option<String>,
     pub rpc_password: Option<String>,
@@ -66,17 +66,30 @@ impl Config {
         };
 
         // Load the appropriate WIF based on mode
-        let wif_env_var = match cli.mode {
-            WalletMode::User => "USER_BITCOIN_WIF",
-            WalletMode::Member => "MEMBER_BITCOIN_WIF",
+        let private_key_wif = match cli.mode {
+            WalletMode::Default => {
+                // In default mode, WIF is optional — user can generate or import later
+                env::var("USER_BITCOIN_WIF")
+                    .or_else(|_| env::var("MEMBER_BITCOIN_WIF"))
+                    .ok()
+                    .or_else(|| file_config.private_key_wif.take())
+            }
+            WalletMode::User | WalletMode::Member => {
+                let wif_env_var = match cli.mode {
+                    WalletMode::User => "USER_BITCOIN_WIF",
+                    WalletMode::Member => "MEMBER_BITCOIN_WIF",
+                    _ => unreachable!(),
+                };
+                Some(
+                    env::var(wif_env_var)
+                        .or_else(|_| file_config.private_key_wif.take().ok_or_else(|| anyhow!("Not found in config")))
+                        .with_context(|| format!(
+                            "Private key WIF is required: set {} environment variable or define private_key_wif in config file",
+                            wif_env_var
+                        ))?
+                )
+            }
         };
-
-        let private_key_wif = env::var(wif_env_var)
-            .or_else(|_| file_config.private_key_wif.take().ok_or_else(|| anyhow!("Not found in config")))
-            .with_context(|| format!(
-                "Private key WIF is required: set {} environment variable or define private_key_wif in config file",
-                wif_env_var
-            ))?;
 
         let rpc_url = cli.rpc_url.clone().or(file_config.rpc_url.take());
         let rpc_user = cli.rpc_user.clone().or(file_config.rpc_user.take());

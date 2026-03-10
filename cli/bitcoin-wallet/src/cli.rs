@@ -13,6 +13,7 @@ use rustyline::{Context as RustyContext, Editor, Helper, Result as RustyResult};
 
 #[derive(Debug, Clone, ValueEnum, PartialEq)]
 pub enum WalletMode {
+    Default,
     User,
     Member,
 }
@@ -20,6 +21,7 @@ pub enum WalletMode {
 impl std::fmt::Display for WalletMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            WalletMode::Default => write!(f, "default"),
             WalletMode::User => write!(f, "user"),
             WalletMode::Member => write!(f, "member"),
         }
@@ -28,15 +30,15 @@ impl std::fmt::Display for WalletMode {
 
 impl Default for WalletMode {
     fn default() -> Self {
-        WalletMode::User
+        WalletMode::Default
     }
 }
 
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about = "Simple P2WPKH wallet CLI", long_about = None)]
 pub struct CliOpts {
-    /// Wallet mode: user for peg-in/peg-out operations, member for BitVMX operations
-    #[arg(long, value_enum)]
+    /// Wallet mode: default (no WIF required), user for peg-in/peg-out, member for BitVMX
+    #[arg(long, value_enum, default_value = "default")]
     pub mode: WalletMode,
     // Environment name (without path), e.g. "testnet" will load config/testnet.toml
     #[arg(long = "env", value_name = "NAME", default_value = "regtest")]

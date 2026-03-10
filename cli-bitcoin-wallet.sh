@@ -10,85 +10,47 @@
 
 set -e
 
-# Check if at least mode argument is provided
+# If no arguments, default to default mode on regtest
 if [ $# -eq 0 ]; then
-    echo "Usage: $0 [regtest|testnet] <user|member> [command] [args...]"
-    echo ""
-    echo "Networks (default: regtest):"
-    echo "  regtest - Local regtest network (for development)"
-    echo "  testnet - Bitcoin testnet network"
-    echo ""
-    echo "Modes:"
-    echo "  user   - Launch wallet in user mode for peg-in/peg-out operations"
-    echo "  member - Launch wallet in member mode for BitVMX operations"
-    echo ""
-    echo "Interactive mode (no command):"
-    echo "  $0 <user|member>                    # uses regtest"
-    echo "  $0 <network> <user|member>          # explicit network"
-    echo "  Opens an interactive prompt where you can type commands"
-    echo ""
-    echo "Command mode (with command - REGTEST ONLY):"
-    echo "  $0 <user|member> <command> [args...]        # uses regtest"
-    echo "  $0 regtest <user|member> <command> [args...]"
-    echo "  Executes a single command and exits"
-    echo "  NOTE: Command mode is restricted to regtest for safety"
-    echo ""
-    echo "Command mode examples:"
-    echo "  $0 user mine_block"
-    echo "  $0 user mine_utxo 50000000"
-    echo "  $0 user send_to_address bcrt1q... 10000"
-    echo "  $0 user create_pegin_tx 50000000 1 bcrt1p... 0x1234..."
-    echo "  $0 user list_funds"
-    echo ""
-    echo "Interactive mode examples:"
-    echo "  $0 user"
-    echo "  $0 testnet user"
-    echo "  $0 testnet member"
-    echo ""
-    echo "Available commands:"
-    echo "  mine_block                                  - Mine a single block (regtest only)"
-    echo "  mine_utxo [sats]                           - Mine and fund active address"
-    echo "  send_to_address <addr_csv> <sats> [count]  - Send to addresses"
-    echo "  create_pegin_tx <value> <packet> <addr> <rsk> - Create RSK pegin transaction"
-    echo "  list_funds [all]                           - List available UTXOs"
-    echo "  tx_status <txid>                           - Check transaction status"
-    echo "  block_height                               - Get current blockchain height"
-    echo "  ... and all other wallet commands"
-    echo ""
-    echo "Required environment variables:"
-    echo "  For user mode:   USER_BITCOIN_WIF"
-    echo "  For member mode: MEMBER_BITCOIN_WIF"
-    exit 1
+    NETWORK="regtest"
+    MODE="default"
 fi
 
-# Determine if first argument is a network or mode
-# If first arg is user/member, default network to regtest
+# Determine if first argument is a network or mode (skip parsing if already set by no-args default)
+if [ -z "${MODE:-}" ]; then
 case "$1" in
     "regtest"|"testnet")
         NETWORK="$1"
         shift
         if [ $# -eq 0 ]; then
-            echo "Error: Missing mode argument"
-            echo "Usage: $0 [regtest|testnet] <user|member> [command] [args...]"
-            exit 1
+            MODE="default"
+        else
+            MODE="$1"
+            shift
         fi
-        MODE="$1"
-        shift
         ;;
-    "user"|"member")
+    "default"|"user"|"member")
         NETWORK="regtest"
         MODE="$1"
         shift
         ;;
     *)
         echo "Error: Invalid argument '$1'"
-        echo "Expected network (regtest|testnet) or mode (user|member)"
+        echo "Expected network (regtest|testnet) or mode (default|user|member)"
         exit 1
         ;;
 esac
+fi
 
 # Validate mode and check corresponding environment variable
 case "$MODE" in
+    "default")
+        if [ $# -eq 0 ]; then
+            echo "Starting bitcoin-wallet in DEFAULT mode on $NETWORK (interactive)..."
+        else
+            echo "Executing command in DEFAULT mode on $NETWORK: $*"
+        fi
+        ;;
     "user")
         if [ -z "${USER_BITCOIN_WIF:-}" ]; then
             echo "Error: USER_BITCOIN_WIF environment variable is not set"
@@ -135,7 +97,7 @@ case "$MODE" in
         ;;
     *)
         echo "Error: Invalid mode '$MODE'"
-        echo "Valid modes are: user, member"
+        echo "Valid modes are: default, user, member"
         exit 1
         ;;
 esac
