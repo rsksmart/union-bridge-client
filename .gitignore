@@ -2,6 +2,7 @@
 **/.env.*
 !**/.env.sample
 !**/.env.example
+!docker/local-infra/.env.local
 **/.envrc
 **/.actrc
 **/app.log*
