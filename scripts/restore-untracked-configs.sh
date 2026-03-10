@@ -29,29 +29,34 @@ FAILED=0
 
 restore_file() {
   local filepath="$1"
-  local commit="$2"
 
   if [[ -f "$filepath" ]]; then
     SKIPPED=$((SKIPPED + 1))
     return
   fi
 
-  if ! git show "${commit}^:${filepath}" > /dev/null 2>&1; then
-    # Try the commit itself (file may have been added and removed in the same commit)
-    if ! git show "${commit}:${filepath}" > /dev/null 2>&1; then
-      echo "  WARN: could not extract $filepath"
-      FAILED=$((FAILED + 1))
-      return
-    fi
-    mkdir -p "$(dirname "$filepath")"
-    git show "${commit}:${filepath}" > "$filepath"
-  else
-    mkdir -p "$(dirname "$filepath")"
-    git show "${commit}^:${filepath}" > "$filepath"
-  fi
+  # Walk through all commits that touched this file (newest first) and pick the
+  # last version that contains real values (no angle-bracket placeholders).
+  local found=""
+  while IFS= read -r rev; do
+    local content
+    content=$(git show "${rev}:${filepath}" 2>/dev/null) || continue
 
-  echo "  restored: $filepath"
-  RESTORED=$((RESTORED + 1))
+    if ! echo "$content" | grep -qE '<[A-Z0-9_]{3,}>'; then
+      mkdir -p "$(dirname "$filepath")"
+      echo "$content" > "$filepath"
+      found=1
+      break
+    fi
+  done < <(git log --all --format=%H -- "$filepath")
+
+  if [[ -n "$found" ]]; then
+    echo "  restored: $filepath"
+    RESTORED=$((RESTORED + 1))
+  else
+    echo "  WARN: no clean version found for $filepath"
+    FAILED=$((FAILED + 1))
+  fi
 }
 
 echo "Restoring untracked config files from git history..."
@@ -61,32 +66,24 @@ for env in "${ENVS_TO_RESTORE[@]}"; do
   echo "[$env]"
 
   # Discover all files that were ever deleted under this environment's bitvmx config
-  while IFS= read -r line; do
-    [[ -z "$line" ]] && continue
-    commit=$(echo "$line" | cut -d' ' -f1)
-    filepath=$(echo "$line" | cut -d' ' -f2-)
-    restore_file "$filepath" "$commit"
-  done < <(git log --all --diff-filter=D --format="%H" --name-only -- \
-    "docker/bitvmx-client/config/${env}/" | \
-    awk '/^[0-9a-f]{40}$/{commit=$0; next} NF{print commit, $0}')
+  while IFS= read -r filepath; do
+    [[ -z "$filepath" ]] && continue
+    restore_file "$filepath"
+  done < <(git log --all --diff-filter=D --name-only --format="" -- \
+    "docker/bitvmx-client/config/${env}/" | sort -u)
 
   # Operator .env file for this environment
-  env_commit=$(git log --all -1 --diff-filter=D --format=%H -- "docker/operator/.env.${env}" 2>/dev/null || true)
-  if [[ -n "$env_commit" ]]; then
-    restore_file "docker/operator/.env.${env}" "$env_commit"
-  fi
+  restore_file "docker/operator/.env.${env}"
 
   echo ""
 done
 
 # Docker-level .env files
 echo "[docker]"
-for env_file in docker/.env.testnet docker/.env.alphanet docker/.env.regtest; do
-  env_commit=$(git log --all -1 --diff-filter=D --format=%H -- "$env_file" 2>/dev/null || true)
-  if [[ -n "$env_commit" ]]; then
-    restore_file "$env_file" "$env_commit"
-  fi
-done
+while IFS= read -r env_file; do
+  [[ -z "$env_file" ]] && continue
+  restore_file "$env_file"
+done < <(git log --all --diff-filter=D --name-only --format="" -- 'docker/.env.*' | sort -u)
 echo ""
 
 echo "Done: ${RESTORED} restored, ${SKIPPED} already existed (skipped), ${FAILED} failed."
