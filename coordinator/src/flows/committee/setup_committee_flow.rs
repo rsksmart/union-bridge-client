@@ -2057,3 +2057,99 @@ fn print_link(txid: Txid, bitcoin_network: Network) {
     };
     info!("View transaction at: {url}");
 }
+
+#[cfg(test)]
+mod tests {
+    use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+    use common::msg_broker::broker::MockBrokerClientApi;
+    use common::types::CommitteeId;
+
+    use super::*;
+    use crate::coordinator::tests::MockRskContractsGatewayApi;
+    use crate::store::MockCoordinatorStoreApi;
+
+    type MockBitVmxBroker =
+        MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
+
+    type TestFlow =
+        SetupCommitteeFlow<MockRskContractsGatewayApi, MockBitVmxBroker, MockCoordinatorStoreApi>;
+
+    type TestProcessor = SetupCommitteeProcessor<
+        MockRskContractsGatewayApi,
+        MockBitVmxBroker,
+        MockSetupCommitteeFlowFactoryApi<
+            MockRskContractsGatewayApi,
+            MockBitVmxBroker,
+            MockCoordinatorStoreApi,
+        >,
+        MockCoordinatorStoreApi,
+    >;
+
+    // -- close_setup_core_req tests --
+
+    #[test]
+    fn test_close_setup_core_req_all_completed_terminates_loop() {
+        let proto_a = Uuid::from_u128(1);
+        let proto_b = Uuid::from_u128(2);
+        let committee_id = CommitteeId::from(42u128);
+        let mut req = vec![(proto_a, committee_id.clone(), false), (proto_b, committee_id, false)];
+
+        TestFlow::close_setup_core_req(&mut req, StepData::SetupCompleted(proto_a)).unwrap();
+        let still_pending =
+            TestFlow::close_setup_core_req(&mut req, StepData::SetupCompleted(proto_b)).unwrap();
+
+        assert!(!still_pending, "loop should terminate when all protocols are completed");
+    }
+
+    #[test]
+    fn test_close_setup_core_req_partial_completion_continues_loop() {
+        let proto_a = Uuid::from_u128(1);
+        let proto_b = Uuid::from_u128(2);
+        let committee_id = CommitteeId::from(42u128);
+        let mut req = vec![(proto_a, committee_id.clone(), false), (proto_b, committee_id, false)];
+
+        let still_pending =
+            TestFlow::close_setup_core_req(&mut req, StepData::SetupCompleted(proto_a)).unwrap();
+
+        assert!(still_pending, "loop should continue when protocols are still pending");
+    }
+
+    // -- setup_core_request_matches tests --
+
+    #[test]
+    fn test_setup_core_request_matches_correct_committee() {
+        let proto_id = Uuid::from_u128(10);
+        let committee_id = CommitteeId::from(42u128);
+        let req: SetupCoreReq = vec![(proto_id, committee_id.clone(), false)];
+
+        let result = TestProcessor::setup_core_request_matches(&req, &proto_id, &Ok(committee_id));
+
+        assert!(result);
+    }
+
+    #[test]
+    fn test_setup_core_request_matches_wrong_committee_rejects() {
+        let proto_id = Uuid::from_u128(10);
+        let committee_id = CommitteeId::from(42u128);
+        let wrong_committee = CommitteeId::from(99u128);
+        let req: SetupCoreReq = vec![(proto_id, committee_id, false)];
+
+        let result =
+            TestProcessor::setup_core_request_matches(&req, &proto_id, &Ok(wrong_committee));
+
+        assert!(!result, "should reject when protocol ID matches but committee ID differs");
+    }
+
+    #[test]
+    fn test_setup_core_request_matches_no_protocol_match() {
+        let proto_id = Uuid::from_u128(10);
+        let unknown_id = Uuid::from_u128(999);
+        let committee_id = CommitteeId::from(42u128);
+        let req: SetupCoreReq = vec![(proto_id, committee_id.clone(), false)];
+
+        let result =
+            TestProcessor::setup_core_request_matches(&req, &unknown_id, &Ok(committee_id));
+
+        assert!(!result, "should return false when no protocol ID matches");
+    }
+}

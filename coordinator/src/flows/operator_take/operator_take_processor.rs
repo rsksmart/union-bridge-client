@@ -650,3 +650,24 @@ where
         self.unconfirmed_register_operator_take.clear();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+    use common::msg_broker::broker::MockBrokerClientApi;
+
+    use super::*;
+    use crate::coordinator::tests::MockRskContractsGatewayApi;
+
+    type MockBitVmxBroker =
+        MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
+
+    type TestProcessor = AdvanceFundsFlowProcessor<MockRskContractsGatewayApi, MockBitVmxBroker>;
+
+    #[test]
+    fn test_get_advance_funds_pid_golden_value() {
+        let committee_id = Uuid::from_u128(1);
+        let pid = TestProcessor::get_advance_funds_pid(committee_id, 0).unwrap();
+        assert_eq!(pid.to_string(), "15b4cbd2-cbd7-3f7a-a62e-2067e942efe8");
+    }
+}
