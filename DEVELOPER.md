@@ -18,6 +18,18 @@ Before running the Union Bridge Client for the first time:
 git clone git@github.com:rsksmart/union-bridge-client.git
 ```
 
+### Restore Untracked Config Files
+
+Environment-specific config files (keys, certs, operator YAMLs, `.env` files) are not tracked
+by git. After cloning or pulling a branch that removed them, restore them from git history:
+
+```bash
+bash scripts/restore-untracked-configs.sh
+```
+
+This is idempotent -- files that already exist on disk are skipped. You can also target specific
+environments: `bash scripts/restore-untracked-configs.sh testnet`.
+
 ### Tooling
 
 #### Required Tools
