@@ -19,6 +19,7 @@ services:
       - db-blocks:/app/db/blocks
     environment:
       - ENV_NAME=${ENV_NAME:-dummy-env-name}
+      - UB__PROVIDER__ROOTSTOCK__URL=${UB__PROVIDER__ROOTSTOCK__URL:-}
     restart: no
     healthcheck:
       interval: 30s
@@ -44,6 +45,7 @@ services:
       - db-logs:/app/db/logs
     environment:
       - ENV_NAME=${ENV_NAME:-dummy-env-name}
+      - UB__PROVIDER__ROOTSTOCK__URL=${UB__PROVIDER__ROOTSTOCK__URL:-}
     restart: no
     healthcheck:
       interval: 30s
@@ -72,6 +74,7 @@ services:
     environment:
       - UB__coordinator__bitvmx__host=${BITVMX_HOST:-dummy-bitvmx-host}
       - UB__coordinator__bitvmx__port=${BITVMX_PORT:-dummy-bitvmx-port}
+      - UB__PROVIDER__ROOTSTOCK__URL=${UB__PROVIDER__ROOTSTOCK__URL:-}
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
       - BITCOIN_NETWORK=${BITCOIN_NETWORK:-dummy-bitcoin-network}
       - ENV_NAME=${ENV_NAME:-dummy-env-name}
@@ -108,6 +111,7 @@ services:
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - keystore:/keystore
     environment:
+      - UB__PROVIDER__ROOTSTOCK__URL=${UB__PROVIDER__ROOTSTOCK__URL:-}
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
       - ENV_NAME=${ENV_NAME:-dummy-env-name}
       - USER_BITCOIN_WIF=${USER_BITCOIN_WIF:-}
