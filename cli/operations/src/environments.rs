@@ -43,11 +43,11 @@ impl Environment {
     /// returns the remote hosts for remote environments (Alphanet, Testnet, Regtest)
     pub fn hosts(&self) -> Vec<String> {
         match self {
-            Environment::Alphanet => ALPHANET_HOSTS.iter().map(|&s| s.to_string()).collect(),
-            Environment::Testnet => TESTNET_HOSTS.iter().map(|&s| s.to_string()).collect(),
+            Environment::Alphanet => alphanet_hosts(),
+            Environment::Testnet => testnet_hosts(),
             Environment::Regtest => {
-                // same host for each member (each user api port)
-                operator_ids().iter().map(|_| REGTEST_HOST.to_string()).collect()
+                let host = regtest_host();
+                operator_ids().iter().map(|_| host.clone()).collect()
             }
             Environment::Local | Environment::LocalDocker => {
                 unreachable!("hosts() only called for remote environments")
@@ -58,28 +58,33 @@ impl Environment {
     /// returns the RPC URL for this environment
     pub fn rpc_url(&self) -> String {
         match self {
-            Environment::Local | Environment::LocalDocker => "http://localhost:8545".to_string(),
-            Environment::Regtest => "http://node-use2-1.regtest.rskcomputing.net".to_string(),
-            Environment::Alphanet => {
-                "http://node-use1-1.alphanet.rskcomputing.net:4444".to_string()
-            }
-            Environment::Testnet => "http://rskj-01.testnet.ub.iovlabs.net:4444".to_string(),
-        }
-    }
-
-    /// returns the StreamManager contract address for this environment
-    pub fn stream_manager_address(&self) -> &str {
-        match self {
             Environment::Local | Environment::LocalDocker => {
-                "0x610178dA211FEF7D417bC0e6FeD39F05609AD788"
+                env_or("UC_LOCAL_RPC_URL", "http://localhost:8545")
             }
-            Environment::Regtest => "0xC689FB08B10BE1080c87dC6f8EdcA7Cd20471218",
-            Environment::Alphanet => "0x71260e163CE80566e82B26934Ea98A1C194340d3",
-            Environment::Testnet => "0x38C5d2e8a3fB87B851ab7b501a317E48fc5bFa7F",
+            Environment::Regtest => env_or("UC_REGTEST_RPC_URL", "<REGTEST_RPC_URL>"),
+            Environment::Alphanet => env_or("UC_ALPHANET_RPC_URL", "<ALPHANET_RPC_URL>"),
+            Environment::Testnet => env_or("UC_TESTNET_RPC_URL", "<TESTNET_RPC_URL>"),
         }
     }
 
-    /// returns the bitvmx endpoints for this environment
+    /// returns the `StreamManager` contract address for this environment
+    pub fn stream_manager_address(&self) -> String {
+        match self {
+            Environment::Local | Environment::LocalDocker => env_or(
+                "UC_LOCAL_STREAM_MANAGER",
+                "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+            ),
+            Environment::Regtest => env_or("UC_REGTEST_STREAM_MANAGER", "<STREAM_MANAGER_ADDRESS>"),
+            Environment::Alphanet => {
+                env_or("UC_ALPHANET_STREAM_MANAGER", "<STREAM_MANAGER_ADDRESS>")
+            }
+            Environment::Testnet => {
+                env_or("UC_TESTNET_STREAM_MANAGER", "<STREAM_MANAGER_ADDRESS>")
+            }
+        }
+    }
+
+    /// returns the user-api endpoints for this environment
     pub fn user_api_endpoints(&self) -> Vec<String> {
         let ports = user_api_ports();
         match self {
@@ -88,21 +93,35 @@ impl Environment {
                 .map(|port| format!("{}:{}", LOCAL_HOST, port))
                 .collect(),
 
-            Environment::Regtest => ports
-                .iter()
-                .map(|port| format!("{}:{}", REGTEST_HOST, port))
-                .collect(),
-            Environment::Alphanet => ALPHANET_HOSTS
-                .iter()
-                .map(|host| format!("{}:{}", host, BASE_USER_API_PORT))
+            Environment::Regtest => {
+                let host = regtest_host();
+                ports
+                    .iter()
+                    .map(|port| format!("{host}:{port}"))
+                    .collect()
+            }
+            Environment::Alphanet => alphanet_hosts()
+                .into_iter()
+                .map(|host| format!("{host}:{BASE_USER_API_PORT}"))
                 .collect(),
 
-            Environment::Testnet => TESTNET_HOSTS
-                .iter()
-                .map(|host| format!("{}:{}", host, BASE_USER_API_PORT))
+            Environment::Testnet => testnet_hosts()
+                .into_iter()
+                .map(|host| format!("{host}:{BASE_USER_API_PORT}"))
                 .collect(),
         }
     }
+}
+
+fn env_or(key: &str, default: &str) -> String {
+    std::env::var(key).unwrap_or_else(|_| default.to_string())
+}
+
+fn csv_env_or(key: &str, defaults: &[&str]) -> Vec<String> {
+    std::env::var(key).map_or_else(
+        |_| defaults.iter().map(|&s| s.to_string()).collect(),
+        |val| val.split(',').map(|s| s.trim().to_string()).collect(),
+    )
 }
 
 const BASE_USER_API_PORT: u16 = 40001;
@@ -116,25 +135,30 @@ fn user_api_ports() -> Vec<u16> {
 
 const LOCAL_HOST: &str = "localhost";
 
-// TODO(UBC-851) make remote hosts configurable via env vars or config
-const REGTEST_HOST: &str = "union-bridge-use2-1.regtest.rskcomputing.net";
+fn regtest_host() -> String {
+    env_or("UC_REGTEST_HOST", "<REGTEST_HOST>")
+}
 
-const ALPHANET_HOSTS: [&str; 10] = [
-    "union-bridge-use1-1.alphanet.rskcomputing.net",
-    "union-bridge-use1-2.alphanet.rskcomputing.net",
-    "union-bridge-use1-3.alphanet.rskcomputing.net",
-    "union-bridge-use1-4.alphanet.rskcomputing.net",
-    "union-bridge-use1-5.alphanet.rskcomputing.net",
-    "union-bridge-use1-6.alphanet.rskcomputing.net",
-    "union-bridge-use1-7.alphanet.rskcomputing.net",
-    "union-bridge-use1-8.alphanet.rskcomputing.net",
-    "union-bridge-use1-9.alphanet.rskcomputing.net",
-    "union-bridge-use1-10.alphanet.rskcomputing.net",
-];
+fn alphanet_hosts() -> Vec<String> {
+    csv_env_or("UC_ALPHANET_HOSTS", &[
+        "<ALPHANET_HOST_1>",
+        "<ALPHANET_HOST_2>",
+        "<ALPHANET_HOST_3>",
+        "<ALPHANET_HOST_4>",
+        "<ALPHANET_HOST_5>",
+        "<ALPHANET_HOST_6>",
+        "<ALPHANET_HOST_7>",
+        "<ALPHANET_HOST_8>",
+        "<ALPHANET_HOST_9>",
+        "<ALPHANET_HOST_10>",
+    ])
+}
 
-const TESTNET_HOSTS: [&str; 4] = [
-    "operator-01.testnet.ub.iovlabs.net",
-    "operator-02.testnet.ub.iovlabs.net",
-    "operator-03.testnet.ub.iovlabs.net",
-    "operator-04.testnet.ub.iovlabs.net",
-];
+fn testnet_hosts() -> Vec<String> {
+    csv_env_or("UC_TESTNET_HOSTS", &[
+        "<TESTNET_HOST_1>",
+        "<TESTNET_HOST_2>",
+        "<TESTNET_HOST_3>",
+        "<TESTNET_HOST_4>",
+    ])
+}

@@ -35,3 +35,8 @@ docs/
 
 # Fetched comparison files
 **/docker-compose.fetched.yml
+
+# BitVMX client configs for remote environments (contain deployment-specific secrets)
+docker/bitvmx-client/config/testnet/
+docker/bitvmx-client/config/alphanet/
+docker/bitvmx-client/config/regtest/

@@ -125,8 +125,8 @@ pub async fn create_pegin_tx(
     let client = Client::new();
 
     // Resolve StreamManager address: use provided override or environment default
-    let sm_address =
-        stream_manager_address.as_deref().unwrap_or(environment.stream_manager_address());
+    let env_default = environment.stream_manager_address();
+    let sm_address = stream_manager_address.as_deref().unwrap_or(&env_default);
 
     // Resolve packet number: use provided value or auto-fetch from StreamManager
     let packet_number = match packet_number {
