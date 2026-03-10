@@ -437,6 +437,37 @@ You will have the following commands available:
 
 (check cli help for more info)
 
+#### Force Flags for Testing
+
+The coordinator supports force flags to trigger specific behaviors during testing. These flags are **only active in
+non-production environments** (Local, LocalDocker, Regtest) and are automatically disabled in Alphanet and Testnet.
+
+| Flag | Description |
+|------|-------------|
+| `FORCE_ADVANCE` | Contains a Rootstock address. The targeted operator skips the signature sub-flow, simulating operator misbehavior. Since signatures never complete, the advance funds timeout triggers naturally. |
+| `FORCE_DISPUTE` | Overrides the `ReimbursementResult` challenge result to `OperatorWon`, simulating a successful dispute. |
+
+**Activation methods:**
+
+1. **File-based (recommended - hot-reloadable):**
+   ```bash
+   # Enable flags
+   echo "0xOPERATOR_ADDRESS" > /tmp/FORCE_ADVANCE
+   touch /tmp/FORCE_DISPUTE
+
+   # Disable flags (remove files)
+   rm /tmp/FORCE_ADVANCE
+   rm /tmp/FORCE_DISPUTE
+   ```
+
+2. **Environment variables (set at startup):**
+   ```bash
+   FORCE_ADVANCE=0xOPERATOR_ADDRESS FORCE_DISPUTE=true ./cli-run.sh
+   ```
+
+**Hot-reloading:** The file-based approach allows QA to toggle flags while the coordinator is running. New flows will
+immediately pick up the change without restarting the application.
+
 ### Individual Crates using Cargo
 
 Alternatively, you can run every crate individually. Check the `cli/run/src/main.rs` file for the cargo commands used to

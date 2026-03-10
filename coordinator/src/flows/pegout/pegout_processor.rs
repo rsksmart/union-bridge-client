@@ -74,6 +74,8 @@ where
     native_bridge_verifier: NativeBridgeVerifier<CG>,
     config: PegoutConfig,
     required_confirmations: u32,
+    // Environment name for force flags (only active in non-production environments)
+    env_name: Option<String>,
 }
 
 impl<CG, BC, S>
@@ -99,6 +101,7 @@ where
         native_bridge_verifier: NativeBridgeVerifier<CG>,
         config: PegoutConfig,
         required_confirmations: u32,
+        env_name: Option<&str>,
     ) -> Self {
         let factory = BtcSignatureSubFlowFactory::new(
             contracts_gateway.clone(),
@@ -124,6 +127,7 @@ where
             native_bridge_verifier,
             config,
             required_confirmations,
+            env_name: env_name.map(String::from),
         }
     }
 
@@ -137,6 +141,7 @@ where
         native_bridge_verifier: NativeBridgeVerifier<CG>,
         config: PegoutConfig,
         required_confirmations: u32,
+        env_name: Option<&str>,
     ) -> Result<Self> {
         let mut processor = Self::new(
             contracts_gateway,
@@ -147,6 +152,7 @@ where
             native_bridge_verifier,
             config,
             required_confirmations,
+            env_name,
         );
 
         let flow_factory = |saved_state: State| {
@@ -666,9 +672,29 @@ where
                 };
                 flow.complete_step(&StepData::PegoutAccepted(input))?;
 
-                let mut btc_sig_subflow = self.btc_sig_subflow_factory.create_flow(*flow_id);
-                btc_sig_subflow.start_signature_flow(*flow_id, &register_input)?;
-                self.signature_flows.insert(*flow_id, btc_sig_subflow);
+                // FORCE_ADVANCE: If this operator's address matches the targeted address,
+                // skip the signature sub-flow so signatures never complete and the
+                // advance funds timeout triggers naturally.
+                let skip_signatures =
+                    crate::force_flags::get_force_advance_address(self.env_name.as_deref())
+                        .is_some_and(|force_addr| {
+                            let my_addr = self.contracts_gateway.my_address();
+                            let matches = format!("{my_addr}").to_lowercase()
+                                == force_addr.trim().to_lowercase();
+                            if matches {
+                                warn!(
+                                    "[FORCE_ADVANCE] Skipping signature flow for flow_id: {flow_id} - \
+                                     operator {my_addr} will not sign, timeout will trigger advance funds",
+                                );
+                            }
+                            matches
+                        });
+
+                if !skip_signatures {
+                    let mut btc_sig_subflow = self.btc_sig_subflow_factory.create_flow(*flow_id);
+                    btc_sig_subflow.start_signature_flow(*flow_id, &register_input)?;
+                    self.signature_flows.insert(*flow_id, btc_sig_subflow);
+                }
 
                 // Schedule advance funds timeout: 2 hours from now
                 // We'll schedule it when we process the next block with its timestamp
@@ -903,6 +929,7 @@ mod tests {
                 NativeBridgeVerifier::Dummy,
                 PegoutConfig::default(),
                 5, // required_confirmations for tests
+                None,
             );
 
             Self { processor, contracts, broker, store, rt_sync }

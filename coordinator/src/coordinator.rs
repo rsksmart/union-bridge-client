@@ -122,6 +122,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                         native_bridge_verifier.clone(),
                         bridge_config.pegout.clone(),
                         bridge_config.coordinator.required_confirmations,
+                        env_name,
                     )
                     // todo(fede) ideally this method should return a result
                     .expect("couldn't restore or create pegout flow processor"),
@@ -135,6 +136,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                     native_bridge_verifier,
                     bridge_config.advance_funds.clone(),
                     bridge_config.coordinator.required_confirmations,
+                    env_name,
                 )),
                 Box::new(SetupCommitteeProcessor::new(
                     setup_committee_flow_factory,

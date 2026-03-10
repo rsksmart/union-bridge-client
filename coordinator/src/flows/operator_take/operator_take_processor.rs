@@ -56,6 +56,8 @@ where
     native_bridge_verifier: NativeBridgeVerifier<CG>,
     config: AdvanceFundsConfig,
     required_confirmations: u32,
+    // Environment name for force flags (only active in non-production environments)
+    env_name: Option<String>,
 }
 
 impl<CG, BC> AdvanceFundsFlowProcessor<CG, BC>
@@ -63,6 +65,7 @@ where
     CG: RskContractsGatewayApi,
     BC: common::msg_broker::broker::BitVmxBrokerClientApi,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         contracts_gateway: Rc<CG>,
         rt_sync: RuntimeSync,
@@ -71,6 +74,7 @@ where
         native_bridge_verifier: NativeBridgeVerifier<CG>,
         config: AdvanceFundsConfig,
         required_confirmations: u32,
+        env_name: Option<&str>,
     ) -> Self {
         Self {
             contracts_gateway,
@@ -86,6 +90,7 @@ where
             native_bridge_verifier,
             config,
             required_confirmations,
+            env_name: env_name.map(String::from),
         }
     }
 
@@ -444,8 +449,8 @@ where
 
         if let Some(flow) = self.flows.get_mut(&flow_id) {
             debug!(
-                "Delivering reimbursement result to flow {}: challenge_result = {:?}",
-                flow_id, result.challenge_result
+                "Delivering reimbursement result to flow {flow_id}: challenge_result = {:?}",
+                result.challenge_result
             );
 
             if flow.committee_id_uuid() != Some(result.committee_id) {
@@ -553,7 +558,17 @@ where
                         debug!(
                             "Advance funds flow processor received reimbursement_result variable from pegin_flow_id: {program_id}",
                         );
-                        let result: ReimbursementResult = serde_json::from_str(json_str)?;
+                        let mut result: ReimbursementResult = serde_json::from_str(json_str)?;
+
+                        // FORCE_DISPUTE: Override challenge result to OperatorWon if enabled
+                        if crate::force_flags::is_force_dispute_enabled(self.env_name.as_deref()) {
+                            warn!(
+                                "[FORCE_DISPUTE] Overriding challenge result. Original: {:?} -> Forced: OperatorWon",
+                                result.challenge_result
+                            );
+                            result.challenge_result = OperatorChallengeResult::OperatorWon;
+                        }
+
                         self.handle_reimbursement_result(program_id, &result)?;
                     } else {
                         warn!("Received reimbursement_result with unexpected type: {var_value:?}",);
