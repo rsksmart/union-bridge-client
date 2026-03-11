@@ -11,7 +11,7 @@ anvil = []
 alloy-primitives = { workspace = true }
 alloy-sol-types = { workspace = true }
 anyhow = { workspace = true }
-bincode1 = { package = "bincode", version = "1.3.3" }
+bincode = { package = "bincode", version = "1.3.3" }
 bitcoin = { workspace = true }
 check-fork = { path = "../check-fork" }
 clap = { workspace = true }

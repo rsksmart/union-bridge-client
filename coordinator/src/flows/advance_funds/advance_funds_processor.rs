@@ -525,7 +525,7 @@ where
     }
 
     fn serialize_guest_input<S: serde::Serialize>(data: &S) -> Result<Vec<u8>> {
-        bincode1::serialize(data).map_err(|e| {
+        bincode::serialize(data).map_err(|e| {
             // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
             // TODO(Jira) discuss with architects on error handling - https://rsklabs.atlassian.net/browse/UB-149
             error!("Error serializing guest input: {e}");
