@@ -58,18 +58,6 @@ pub trait CommitteeRegistryContractApi {
     ) -> alloy_contract::Result<TxHash>;
 
     async fn call_is_whitelisted(&self, address: Address) -> alloy_contract::Result<bool>;
-
-    async fn invoke_whitelist_address(
-        &self,
-        address: Address,
-        gas_bumps: u8,
-    ) -> alloy_contract::Result<TxHash>;
-
-    async fn invoke_whitelist_addresses(
-        &self,
-        addresses: Vec<Address>,
-        gas_bumps: u8,
-    ) -> alloy_contract::Result<TxHash>;
 }
 
 #[derive(Clone)]
@@ -161,32 +149,6 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
 
     async fn call_is_whitelisted(&self, address: Address) -> alloy_contract::Result<bool> {
         self.contract_instance.isWhitelisted(address).call().await
-    }
-
-    async fn invoke_whitelist_address(
-        &self,
-        address: Address,
-        gas_bumps: u8,
-    ) -> alloy_contract::Result<TxHash> {
-        send_tx_with_gas_bump(
-            &self.contract_instance.provider(),
-            || self.contract_instance.whitelistAddress(address),
-            gas_bumps,
-        )
-        .await
-    }
-
-    async fn invoke_whitelist_addresses(
-        &self,
-        addresses: Vec<Address>,
-        gas_bumps: u8,
-    ) -> alloy_contract::Result<TxHash> {
-        send_tx_with_gas_bump(
-            &self.contract_instance.provider(),
-            || self.contract_instance.whitelistAddresses(addresses.clone()),
-            gas_bumps,
-        )
-        .await
     }
 }
 

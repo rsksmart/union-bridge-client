@@ -283,13 +283,32 @@ where
         }
 
         if let Some(response) = self.bitvmx_broker.try_recv()? {
-            match response {
+            match &response {
                 OutgoingBitVMXApiMessages::SignedMessage(uuid, _, _, _) => {
-                    // SignedMessage prints a byte array, which is not very useful
-                    debug!("Received BitVMX response: SignedMessage({uuid}, ...)");
+                    debug!("Received BitVMX message: SignedMessage({uuid}, ...)");
+                    trace!("Received BitVMX message (full): {response:?}");
+                }
+                OutgoingBitVMXApiMessages::Transaction(program_id, tx_status, label) => {
+                    debug!(
+                        "Received BitVMX message: Transaction(program_id: {}, tx_id: {}, confirmations: {}, status: {:?}, label: {:?})",
+                        program_id,
+                        tx_status.tx_id,
+                        tx_status.confirmations,
+                        tx_status.status,
+                        label
+                    );
+                    trace!("Received BitVMX message (full): {response:?}");
+                }
+                OutgoingBitVMXApiMessages::SPVProof(tx_id, proof) => {
+                    debug!(
+                        "Received BitVMX message: SPVProof(tx_id: {}, has_proof: {})",
+                        tx_id,
+                        proof.is_some()
+                    );
+                    trace!("Received BitVMX message (full): {response:?}");
                 }
                 _ => {
-                    debug!("Received BitVMX response: {response:?}");
+                    debug!("Received BitVMX message: {response:?}");
                 }
             }
 

@@ -482,6 +482,7 @@ pub(crate) struct SetupCommitteeFlow<
     global_context: GlobalContext,
     bitcoin_network: Network,
     store: Rc<S>,
+    drp_program_definition: String,
 }
 
 const REGTEST_FEE_RATE: u64 = 10;
@@ -519,6 +520,7 @@ where
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn from_saved_state(
         contracts: Rc<CG>,
         rt_sync: RuntimeSync,
@@ -527,10 +529,21 @@ where
         state: State,
         bitcoin_network: Network,
         store: Rc<S>,
+        drp_program_definition: String,
     ) -> Self {
-        Self { contracts, rt_sync, bitvmx_broker, state, global_context, bitcoin_network, store }
+        Self {
+            contracts,
+            rt_sync,
+            bitvmx_broker,
+            state,
+            global_context,
+            bitcoin_network,
+            store,
+            drp_program_definition,
+        }
     }
-
+    
+    #[allow(clippy::too_many_arguments)]
     fn new(
         contracts: Rc<CG>,
         rt_sync: RuntimeSync,
@@ -539,6 +552,7 @@ where
         internal_id: Uuid,
         bitcoin_network: Network,
         store: Rc<S>,
+        drp_program_definition: String,
     ) -> Self {
         Self {
             contracts,
@@ -548,6 +562,7 @@ where
             global_context,
             bitcoin_network,
             store,
+            drp_program_definition,
         }
     }
 
@@ -919,7 +934,7 @@ where
     }
 
     fn request_bitvmx_member_pub_key(&self, req_id: Uuid) {
-        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetPubKey(req_id, true));
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetEvenPubKey(req_id));
     }
 
     fn build_funding_utxo(&self) -> Result<UTXO> {
@@ -1347,7 +1362,10 @@ where
             .position(|m| m.address == my_address)
             .context("My address not found in committee members")?;
 
-        let dispute_channel_setup = DisputeChannelSetup::new(self.bitvmx_broker.clone());
+        let dispute_channel_setup = DisputeChannelSetup::new(
+            self.bitvmx_broker.clone(),
+            self.drp_program_definition.clone(),
+        );
 
         let protocol_ids = dispute_channel_setup.complete_setup(
             committee_data,
@@ -2114,7 +2132,10 @@ where
             .position(|m| m.address == my_address)
             .context("My address not found in committee members")?;
 
-        let dispute_channel_setup = DisputeChannelSetup::new(self.bitvmx_broker.clone());
+        let dispute_channel_setup = DisputeChannelSetup::new(
+            self.bitvmx_broker.clone(),
+            self.drp_program_definition.clone(),
+        );
 
         let requests = dispute_channel_setup.request_dispute_core_var(committee_data, my_index)?;
 
@@ -2136,6 +2157,7 @@ where
     global_context: GlobalContext,
     bitcoin_network: Network,
     store: Rc<S>,
+    drp_program_definition: String,
 }
 
 impl<CG, BC, S> SetupCommitteeFlowFactory<CG, BC, S>
@@ -2151,8 +2173,17 @@ where
         global_context: GlobalContext,
         bitcoin_network: Network,
         store: Rc<S>,
+        drp_program_definition: String,
     ) -> Self {
-        Self { contracts_gateway, rt_sync, bitvmx_broker, global_context, bitcoin_network, store }
+        Self {
+            contracts_gateway,
+            rt_sync,
+            bitvmx_broker,
+            global_context,
+            bitcoin_network,
+            store,
+            drp_program_definition,
+        }
     }
 }
 
@@ -2172,6 +2203,7 @@ where
             internal_id,
             self.bitcoin_network,
             self.store.clone(),
+            self.drp_program_definition.clone(),
         )
     }
 
@@ -2184,6 +2216,7 @@ where
             saved_state,
             self.bitcoin_network,
             self.store.clone(),
+            self.drp_program_definition.clone(),
         )
     }
 }
@@ -2455,6 +2488,7 @@ mod tests {
             Uuid::new_v4(),
             Network::Regtest,
             Rc::new(MockCoordinatorStoreApi::new()),
+            "test.yaml".to_string(),
         )
     }
 
@@ -2769,6 +2803,7 @@ mod tests {
             GlobalContext::new(),
             Network::Regtest,
             Rc::new(MockCoordinatorStoreApi::new()),
+            "test.yaml".to_string(),
         );
 
         let internal_id = Uuid::new_v4();

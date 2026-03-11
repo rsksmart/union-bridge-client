@@ -2,7 +2,6 @@ use common::types::TxIdParser;
 use log::info;
 
 use crate::contracts::signature_manager::SignatureManagerContractApi;
-use crate::contracts::types::FixedBytes32;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{AddOperatorTakeTxHashInput, AddOperatorTakeTxHashOutput};
 
@@ -24,8 +23,8 @@ impl<C: SignatureManagerContractApi> AddOperatorTakeTxHashInvoke<C> {
         info!("Init AddOperatorTakeTxHash for: {input:?}");
 
         let accept_pegin_tx_hash = TxIdParser::txid_to_fb_32(input.accept_pegin_tx_hash);
-        let take_tx_hash = FixedBytes32::from_slice(input.take_tx_hash.as_slice());
-        let won_tx_hash = FixedBytes32::from_slice(input.won_tx_hash.as_slice());
+        let take_tx_hash = TxIdParser::txid_to_fb_32(input.take_tx_hash);
+        let won_tx_hash = TxIdParser::txid_to_fb_32(input.won_tx_hash);
 
         let tx_hash = self
             .contract

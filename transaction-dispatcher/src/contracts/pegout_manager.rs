@@ -11,9 +11,12 @@ use union_contracts::bindings::pegout_manager::PegoutManager::{
 
 use crate::contracts::bitcoin_manager::ParseFieldError;
 use crate::contracts::common::send_tx_with_gas_bump;
+pub(crate) use crate::contracts::interactions::get_accept_pegin_txid::GetAcceptPeginTxidCall;
+pub(crate) use crate::contracts::interactions::register_advance_funds::RegisterAdvanceFundsInvoke;
 pub(crate) use crate::contracts::interactions::register_operator_take::RegisterOperatorTakeInvoke;
 pub(crate) use crate::contracts::interactions::register_operator_won::RegisterOperatorWonInvoke;
 pub(crate) use crate::contracts::interactions::register_pegout::RegisterPegoutInvoke;
+pub(crate) use crate::contracts::interactions::register_reimbursement_kickoff::RegisterReimbursementKickoffInvoke;
 pub(crate) use crate::contracts::interactions::request_pegout::TryPegoutInvoke;
 pub(crate) use crate::contracts::interactions::trigger_operator_take::TriggerOperatorTakeInvoke;
 use crate::rsk_gateway::DomainErrors;
@@ -51,6 +54,25 @@ pub trait PegoutManagerContractApi {
         input: BtcTxSPVProof,
         gas_bumps: u8,
     ) -> alloy_contract::Result<TxHash>;
+
+    async fn invoke_register_advance_funds(
+        &self,
+        accept_pegin_txid: FixedBytes<32>,
+        input: BtcTxSPVProof,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TxHash>;
+
+    async fn invoke_register_reimbursement_kickoff(
+        &self,
+        accept_pegin_txid: FixedBytes<32>,
+        input: BtcTxSPVProof,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TxHash>;
+
+    async fn call_get_accept_pegin_txid(
+        &self,
+        pegout_txid: FixedBytes<32>,
+    ) -> alloy_contract::Result<FixedBytes<32>>;
 }
 
 #[derive(Clone)]
@@ -131,6 +153,44 @@ impl<P: Provider> PegoutManagerContractApi for PegoutManagerContract<P> {
             gas_bumps,
         )
         .await
+    }
+
+    async fn invoke_register_advance_funds(
+        &self,
+        accept_pegin_txid: FixedBytes<32>,
+        input: BtcTxSPVProof,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TxHash> {
+        send_tx_with_gas_bump(
+            &self.contract_instance.provider(),
+            || self.contract_instance.registerAdvanceFunds(accept_pegin_txid, input.clone()),
+            gas_bumps,
+        )
+        .await
+    }
+
+    async fn invoke_register_reimbursement_kickoff(
+        &self,
+        accept_pegin_txid: FixedBytes<32>,
+        input: BtcTxSPVProof,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TxHash> {
+        send_tx_with_gas_bump(
+            &self.contract_instance.provider(),
+            || {
+                self.contract_instance
+                    .registerReimbursementKickoff(accept_pegin_txid, input.clone())
+            },
+            gas_bumps,
+        )
+        .await
+    }
+
+    async fn call_get_accept_pegin_txid(
+        &self,
+        pegout_txid: FixedBytes<32>,
+    ) -> alloy_contract::Result<FixedBytes<32>> {
+        self.contract_instance.getAcceptPeginTxid(pegout_txid).call().await
     }
 }
 
