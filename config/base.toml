@@ -72,7 +72,7 @@ storage_path = "/{BASE_STORAGE_PATH}/.union_bridge/database/multi-client-1"
 
 [coordinator.advance_funds]
 check_fork_guest_elf_path = "/app/config/check-fork-guest.bin"
-max_zkp_status_retries = 30
+max_zkp_status_retries = 99999999
 
 # ═══════════════════════════════════════════════════════
 # Bridge Flow Configuration

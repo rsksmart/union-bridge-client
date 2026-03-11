@@ -50,6 +50,9 @@ blocks.host = "block-indexer"
 logs.host = "log-indexer"
 user.host = "user-api"
 
+[coordinator.advance_funds]
+max_zkp_status_retries = 0
+
 # ═══════════════════════════════════════════════════════
 # Transaction Dispatcher
 # ═══════════════════════════════════════════════════════

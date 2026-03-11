@@ -297,7 +297,6 @@ mod tests {
 
     use crate::config::{
         BridgeConfig, Config, CoordinatorFlowConfig, DEFAULT_CHECK_FORK_GUEST_ELF_PATH,
-        DEFAULT_MAX_ZKP_STATUS_RETRIES,
     };
 
     #[test]
@@ -328,10 +327,7 @@ mod tests {
             DEFAULT_CHECK_FORK_GUEST_ELF_PATH,
             config.coordinator.advance_funds.check_fork_guest_elf_path
         );
-        assert_eq!(
-            DEFAULT_MAX_ZKP_STATUS_RETRIES,
-            config.coordinator.advance_funds.max_zkp_status_retries
-        );
+        assert_eq!(99_999_999, config.coordinator.advance_funds.max_zkp_status_retries);
         assert_eq!("regtest", config.bitcoin_network);
         assert_eq!(9, config.contracts.len());
     }
