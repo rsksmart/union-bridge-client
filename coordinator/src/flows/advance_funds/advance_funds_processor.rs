@@ -88,7 +88,6 @@ where
         bitvmx_broker: Rc<BC>,
         required_confirmations: u32,
     ) -> Self {
-        let config = CoordinatorAdvanceFundsConfig::default();
         Self {
             rt_sync: RuntimeSync::new().unwrap(),
             contracts,
@@ -97,8 +96,8 @@ where
             request_events: HashMap::new(),
             check_fork_accumulator: None,
             pending_zkp: None,
-            check_fork_guest_elf_path: config.check_fork_guest_elf_path,
-            max_zkp_status_retries: config.max_zkp_status_retries,
+            check_fork_guest_elf_path: String::new(),
+            max_zkp_status_retries: 1,
             chain_view: BlockchainView::new(),
             required_confirmations,
         }

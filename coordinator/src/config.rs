@@ -5,8 +5,6 @@ use common::errors::ConfigError;
 use common::types::Address;
 use serde::Deserialize;
 
-pub const DEFAULT_CHECK_FORK_GUEST_ELF_PATH: &str = "/app/config/check-fork-guest.bin";
-pub const DEFAULT_MAX_ZKP_STATUS_RETRIES: u32 = 30;
 const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 const PEG_MANAGER_CONTRACT_NAME: &str = "PegManager";
 const FAKE_PEG_MANAGER_CONTRACT_NAME: &str = "FakePegManager";
@@ -37,33 +35,13 @@ pub struct CoordinatorConfig {
     pub bitvmx: BrokerConfig,
     pub broker: BrokerClientConfig,
     pub storage_path: String,
-    #[serde(default)]
     pub advance_funds: CoordinatorAdvanceFundsConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct CoordinatorAdvanceFundsConfig {
-    #[serde(default = "default_check_fork_guest_elf_path")]
     pub check_fork_guest_elf_path: String,
-    #[serde(default = "default_max_zkp_status_retries")]
     pub max_zkp_status_retries: u32,
-}
-
-impl Default for CoordinatorAdvanceFundsConfig {
-    fn default() -> Self {
-        Self {
-            check_fork_guest_elf_path: default_check_fork_guest_elf_path(),
-            max_zkp_status_retries: default_max_zkp_status_retries(),
-        }
-    }
-}
-
-fn default_check_fork_guest_elf_path() -> String {
-    DEFAULT_CHECK_FORK_GUEST_ELF_PATH.to_string()
-}
-
-const fn default_max_zkp_status_retries() -> u32 {
-    DEFAULT_MAX_ZKP_STATUS_RETRIES
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -295,9 +273,7 @@ mod tests {
     use common::config::CommonConfig;
     use common::types::Address;
 
-    use crate::config::{
-        BridgeConfig, Config, CoordinatorFlowConfig, DEFAULT_CHECK_FORK_GUEST_ELF_PATH,
-    };
+    use crate::config::{BridgeConfig, Config, CoordinatorFlowConfig};
 
     #[test]
     fn test_parse_bitcoin_network() -> anyhow::Result<()> {
@@ -324,7 +300,7 @@ mod tests {
             config.coordinator.storage_path.ends_with("/.union_bridge/database/multi-client-1")
         );
         assert_eq!(
-            DEFAULT_CHECK_FORK_GUEST_ELF_PATH,
+            "/app/config/check-fork-guest.bin",
             config.coordinator.advance_funds.check_fork_guest_elf_path
         );
         assert_eq!(99_999_999, config.coordinator.advance_funds.max_zkp_status_retries);
@@ -416,6 +392,7 @@ mod tests {
 
         let subscribed_addresses = config.get_contract_addresses();
         assert!(subscribed_addresses.contains(&fake_address));
+        assert_eq!(0, config.coordinator.advance_funds.max_zkp_status_retries);
     }
 
     #[test]
