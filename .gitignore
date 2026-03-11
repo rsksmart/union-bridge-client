@@ -41,3 +41,7 @@ docs/
 docker/bitvmx-client/config/testnet/
 docker/bitvmx-client/config/alphanet/
 docker/bitvmx-client/config/regtest/
+
+# Environment-specific wallet configs that don't belong in the tracked local/ folder
+docker/bitvmx-client/config/local/client/config/wallet_testnet.yaml
+docker/bitvmx-client/config/local/client/config/wallet_regtest.yaml
