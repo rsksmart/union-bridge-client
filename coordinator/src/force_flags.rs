@@ -171,10 +171,7 @@ mod tests {
 
             // With env var set to an address in local, should return Some(address)
             std::env::set_var("FORCE_ADVANCE", "0xABCDEF1234567890");
-            assert_eq!(
-                get_force_advance_address(None).as_deref(),
-                Some("0xABCDEF1234567890")
-            );
+            assert_eq!(get_force_advance_address(None).as_deref(), Some("0xABCDEF1234567890"));
             assert_eq!(
                 get_force_advance_address(Some("local")).as_deref(),
                 Some("0xABCDEF1234567890")
@@ -190,10 +187,7 @@ mod tests {
 
             // Specific address value
             std::env::set_var("FORCE_ADVANCE", "0xDEADBEEF");
-            assert_eq!(
-                get_force_advance_address(Some("local")).as_deref(),
-                Some("0xDEADBEEF")
-            );
+            assert_eq!(get_force_advance_address(Some("local")).as_deref(), Some("0xDEADBEEF"));
 
             // Empty string should return None
             std::env::set_var("FORCE_ADVANCE", "");
@@ -205,10 +199,7 @@ mod tests {
 
             // Address with whitespace should be trimmed
             std::env::set_var("FORCE_ADVANCE", "  0xABC123  ");
-            assert_eq!(
-                get_force_advance_address(Some("local")).as_deref(),
-                Some("0xABC123")
-            );
+            assert_eq!(get_force_advance_address(Some("local")).as_deref(), Some("0xABC123"));
 
             std::env::remove_var("FORCE_ADVANCE");
         }
