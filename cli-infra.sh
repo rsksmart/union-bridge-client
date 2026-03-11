@@ -20,8 +20,14 @@ cd "$(dirname "$0")"
 
 MINE_PID_FILE="/tmp/union-bridge-mining.pids"
 
-# regtest remote config
-REGTEST_HOST="${REGTEST_HOST:-union-bridge-use2-1.regtest.rskcomputing.net}"
+# Load environment-specific config if available (provides REGTEST_HOST, etc.)
+_env_file="docker/operator/.env.regtest"
+if [[ -f "$_env_file" ]]; then
+  set -a; source "$_env_file"; set +a
+fi
+unset _env_file
+
+# regtest remote config (REGTEST_HOST sourced from .env.regtest above or exported)
 REGTEST_USER="ubuntu"
 REGTEST_ROOT="union-bridge-client"
 REGTEST_FRESH_REMOTE_SCRIPT="${REGTEST_FRESH_REMOTE_SCRIPT:-/home/${REGTEST_USER}/regtest-fresh/regtest_fresh.sh}"
@@ -245,7 +251,16 @@ stop_all() {
     docker/local-infra/start_blockchains.sh down
 }
 
+require_regtest_host() {
+    if [[ -z "${REGTEST_HOST:-}" ]]; then
+        echo "Error: REGTEST_HOST not set. Define it in docker/operator/.env.regtest or export it." >&2
+        echo "See docker/operator/.env.sample for reference." >&2
+        exit 1
+    fi
+}
+
 start_regtest() {
+    require_regtest_host
     local fresh=false
     shift # remove --start-regtest
 
@@ -292,6 +307,7 @@ start_regtest() {
 }
 
 stop_regtest() {
+    require_regtest_host
     log "Connecting to regtest: ${REGTEST_HOST}"
 
     local remote_cmd="cd ~/${REGTEST_ROOT} && bash docker/operator/start_operators.sh --env regtest down"

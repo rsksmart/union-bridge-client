@@ -6,8 +6,19 @@
 
 set -euo pipefail
 
+# Load environment-specific config if available (provides REGTEST_HOST, RSK_RPC_URL, etc.)
+_env_file="docker/operator/.env.regtest"
+if [[ -f "$_env_file" ]]; then
+  set -a; source "$_env_file"; set +a
+fi
+unset _env_file
+
 # Remote execution: SSH to regtest instance unless already there
-REGTEST_HOST="${REGTEST_HOST:-union-bridge-use2-1.regtest.rskcomputing.net}"
+if [[ -z "${REGTEST_HOST:-}" ]]; then
+    echo "Error: REGTEST_HOST not set. Define it in docker/operator/.env.regtest or export it." >&2
+    echo "See docker/operator/.env.sample for reference." >&2
+    exit 1
+fi
 REGTEST_USER="ubuntu"
 REGTEST_ROOT="union-bridge-client"
 
@@ -71,9 +82,15 @@ check_operators_deployed
 
 SCRIPT_ENV="regtest"
 
-RSK_RPC_URL="${RSK_RPC_URL:-http://node-use2-1.regtest.rskcomputing.net:4444}"
+if [[ -z "${RSK_RPC_URL:-}" ]]; then
+    echo "Error: RSK_RPC_URL not set. Define it in docker/operator/.env.regtest or export it." >&2
+    exit 1
+fi
+if [[ -z "${BITCOIN_RPC_HOST:-}" ]]; then
+    echo "Error: BITCOIN_RPC_HOST not set. Define it in docker/operator/.env.regtest or export it." >&2
+    exit 1
+fi
 USER_API_HOST="${USER_API_HOST:-localhost}"
-BITCOIN_RPC_HOST="${BITCOIN_RPC_HOST:-10.1.0.107}"
 BITCOIN_RPC_PORT="${BITCOIN_RPC_PORT:-18332}"
 BITCOIN_RPC_USER="${BITCOIN_RPC_USER:-user}"
 BITCOIN_RPC_PASSWORD="${BITCOIN_RPC_PASSWORD:-pass}"
