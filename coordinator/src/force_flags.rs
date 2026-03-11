@@ -156,12 +156,13 @@ mod tests {
         assert!(!is_force_flags_allowed(Some("TESTNET")));
     }
 
+    // All FORCE_ADVANCE env-var tests are combined into a single test to prevent
+    // race conditions -- parallel tests sharing a process-global env var will conflict.
     #[test]
-    fn test_force_advance_respects_env_safety() {
-        // SAFETY: These tests must run with --test-threads=1 to avoid race conditions
-        // with environment variables. set_var/remove_var are unsafe in multi-threaded contexts.
+    fn test_force_advance_env_var() {
+        // SAFETY: set_var/remove_var are unsafe in multi-threaded contexts.
+        // Consolidating into one test avoids the race without requiring --test-threads=1.
         unsafe {
-            // Clear any existing env var
             std::env::remove_var("FORCE_ADVANCE");
 
             // Without env var set, should return None
@@ -170,7 +171,10 @@ mod tests {
 
             // With env var set to an address in local, should return Some(address)
             std::env::set_var("FORCE_ADVANCE", "0xABCDEF1234567890");
-            assert_eq!(get_force_advance_address(None).as_deref(), Some("0xABCDEF1234567890"));
+            assert_eq!(
+                get_force_advance_address(None).as_deref(),
+                Some("0xABCDEF1234567890")
+            );
             assert_eq!(
                 get_force_advance_address(Some("local")).as_deref(),
                 Some("0xABCDEF1234567890")
@@ -184,17 +188,37 @@ mod tests {
             assert!(get_force_advance_address(Some("alphanet")).is_none());
             assert!(get_force_advance_address(Some("testnet")).is_none());
 
-            // Clean up
+            // Specific address value
+            std::env::set_var("FORCE_ADVANCE", "0xDEADBEEF");
+            assert_eq!(
+                get_force_advance_address(Some("local")).as_deref(),
+                Some("0xDEADBEEF")
+            );
+
+            // Empty string should return None
+            std::env::set_var("FORCE_ADVANCE", "");
+            assert!(get_force_advance_address(Some("local")).is_none());
+
+            // Whitespace-only should return None
+            std::env::set_var("FORCE_ADVANCE", "  ");
+            assert!(get_force_advance_address(Some("local")).is_none());
+
+            // Address with whitespace should be trimmed
+            std::env::set_var("FORCE_ADVANCE", "  0xABC123  ");
+            assert_eq!(
+                get_force_advance_address(Some("local")).as_deref(),
+                Some("0xABC123")
+            );
+
             std::env::remove_var("FORCE_ADVANCE");
         }
     }
 
     #[test]
-    fn test_force_dispute_respects_env_safety() {
-        // SAFETY: These tests must run with --test-threads=1 to avoid race conditions
-        // with environment variables. set_var/remove_var are unsafe in multi-threaded contexts.
+    fn test_force_dispute_env_var() {
+        // SAFETY: set_var/remove_var are unsafe in multi-threaded contexts.
+        // Consolidating into one test avoids the race without requiring --test-threads=1.
         unsafe {
-            // Clear any existing env var
             std::env::remove_var("FORCE_DISPUTE");
 
             // Without env var set, should return false
@@ -211,33 +235,7 @@ mod tests {
             assert!(!is_force_dispute_enabled(Some("alphanet")));
             assert!(!is_force_dispute_enabled(Some("testnet")));
 
-            // Clean up
             std::env::remove_var("FORCE_DISPUTE");
-        }
-    }
-
-    #[test]
-    fn test_force_advance_returns_address_value() {
-        // SAFETY: These tests must run with --test-threads=1 to avoid race conditions
-        // with environment variables. set_var/remove_var are unsafe in multi-threaded contexts.
-        unsafe {
-            std::env::set_var("FORCE_ADVANCE", "0xDEADBEEF");
-            assert_eq!(get_force_advance_address(Some("local")).as_deref(), Some("0xDEADBEEF"));
-
-            // Empty string should return None
-            std::env::set_var("FORCE_ADVANCE", "");
-            assert!(get_force_advance_address(Some("local")).is_none());
-
-            // Whitespace-only should return None
-            std::env::set_var("FORCE_ADVANCE", "  ");
-            assert!(get_force_advance_address(Some("local")).is_none());
-
-            // Address with whitespace should be trimmed
-            std::env::set_var("FORCE_ADVANCE", "  0xABC123  ");
-            assert_eq!(get_force_advance_address(Some("local")).as_deref(), Some("0xABC123"));
-
-            // Clean up
-            std::env::remove_var("FORCE_ADVANCE");
         }
     }
 }
