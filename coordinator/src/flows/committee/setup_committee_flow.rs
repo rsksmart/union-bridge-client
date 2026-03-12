@@ -32,24 +32,20 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
 };
 use uuid::Uuid;
 
+use crate::config::CommitteeConfig;
 use crate::flows::committee::common::{get_dispute_core_pid, get_dispute_pair_aggregated_key_pid};
 use crate::flows::committee::dispute_channel_setup::{
     DisputeChannelSetup, DisputeChannelSetupRequest,
 };
-use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
-use crate::config::CommitteeConfig;
-use crate::event_processor::EventProcessor;
 use crate::flows::committee::dispute_core_setup::{AggregatedKeys, DisputeCoreSetup};
 use crate::flows::common::{
     COMM_KEY_INDEX, DISPUTE_KEY_INDEX, GlobalContext, TAKE_KEY_INDEX, build_communication_data,
 };
 use crate::flows::errors::{FailableFlow, FlowError, FlowResultExt};
-use crate::store::{
-    CoordinatorStoreApi, StoreKey, StorePrefix, cleanup_completed_flows, restore_flows,
-};
+use crate::store::{CoordinatorStoreApi, StoreKey};
 use crate::types::{
-    AllCommunicationDataReadyEvent, EventStatus, MemberOfCommittee, NewCommitteePendingEvent,
-    NewCommitteeReadyEvent, RskPegManagerEvents, UserRequests,
+    AllCommunicationDataReadyEvent, MemberOfCommittee, NewCommitteePendingEvent,
+    NewCommitteeReadyEvent,
 };
 use crate::user_requests::ApplyToStream;
 
@@ -486,7 +482,6 @@ pub(crate) struct SetupCommitteeFlow<
     bitcoin_network: Network,
     store: Rc<S>,
     config: CommitteeConfig,
-    drp_program_definition: String,
 }
 
 const REGTEST_FEE_RATE: u64 = 10;
@@ -538,7 +533,6 @@ where
         bitcoin_network: Network,
         store: Rc<S>,
         config: CommitteeConfig,
-        drp_program_definition: String,
     ) -> Self {
         Self {
             contracts,
@@ -549,7 +543,6 @@ where
             bitcoin_network,
             store,
             config,
-            drp_program_definition,
         }
     }
 
@@ -563,7 +556,6 @@ where
         bitcoin_network: Network,
         store: Rc<S>,
         config: CommitteeConfig,
-        drp_program_definition: String,
     ) -> Self {
         Self {
             contracts,
@@ -574,7 +566,6 @@ where
             bitcoin_network,
             store,
             config,
-            drp_program_definition,
         }
     }
 
@@ -586,10 +577,6 @@ where
 
     pub(crate) fn current_step(&self) -> Steps {
         self.state.step
-    }
-
-    pub(crate) fn stream_id(&self) -> Result<StreamId> {
-        self.state.ctx.get_stream_id()
     }
 
     /// Returns true if this flow is waiting for a `BitVMX` response with the given request id.
@@ -1378,7 +1365,7 @@ where
 
         let dispute_channel_setup = DisputeChannelSetup::new(
             self.bitvmx_broker.clone(),
-            self.drp_program_definition.clone(),
+            self.config.drp_program_definition.clone(),
         );
 
         let protocol_ids = dispute_channel_setup.complete_setup(
@@ -2148,7 +2135,7 @@ where
 
         let dispute_channel_setup = DisputeChannelSetup::new(
             self.bitvmx_broker.clone(),
-            self.drp_program_definition.clone(),
+            self.config.drp_program_definition.clone(),
         );
 
         let requests = dispute_channel_setup.request_dispute_core_var(committee_data, my_index)?;
@@ -2172,7 +2159,6 @@ where
     bitcoin_network: Network,
     store: Rc<S>,
     config: CommitteeConfig,
-    drp_program_definition: String,
 }
 
 impl<CG, BC, S> SetupCommitteeFlowFactory<CG, BC, S>
@@ -2181,6 +2167,7 @@ where
     BC: BitVmxBrokerClientApi,
     S: CoordinatorStoreApi,
 {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         contracts_gateway: Rc<CG>,
         rt_sync: RuntimeSync,
@@ -2189,7 +2176,6 @@ where
         bitcoin_network: Network,
         store: Rc<S>,
         config: CommitteeConfig,
-        drp_program_definition: String,
     ) -> Self {
         Self {
             contracts_gateway,
@@ -2199,7 +2185,6 @@ where
             bitcoin_network,
             store,
             config,
-            drp_program_definition,
         }
     }
 }
@@ -2221,7 +2206,6 @@ where
             self.bitcoin_network,
             Rc::clone(&self.store),
             self.config.clone(),
-            self.drp_program_definition.clone(),
         )
     }
 
@@ -2235,7 +2219,6 @@ where
             self.bitcoin_network,
             Rc::clone(&self.store),
             self.config.clone(),
-            self.drp_program_definition.clone(),
         )
     }
 }
@@ -2508,7 +2491,6 @@ mod tests {
             Network::Regtest,
             Rc::new(MockCoordinatorStoreApi::new()),
             CommitteeConfig::default(),
-            "test.yaml".to_string(),
         )
     }
 
@@ -2824,7 +2806,6 @@ mod tests {
             Network::Regtest,
             Rc::new(MockCoordinatorStoreApi::new()),
             CommitteeConfig::default(),
-            "test.yaml".to_string(),
         );
 
         let internal_id = Uuid::new_v4();

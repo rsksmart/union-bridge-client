@@ -147,7 +147,6 @@ fn main() -> Result<()> {
         bitcoin_network,
         env_name.as_deref(),
         &config.bridge,
-        config.coordinator.drp_program_definition,
     );
     coordinator.run().inspect_err(|e| {
         error!("Unrecoverable error running coordinator: {e:?}"); // signal other threads to shut down

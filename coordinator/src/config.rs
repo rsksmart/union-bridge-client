@@ -204,11 +204,17 @@ pub struct CommitteeConfig {
     pub min_funding_balance: u64,
     /// Minimum RSK balance in wei (default: `1_000_000_000_500_000` = ~1 RBTC + fees)
     pub min_rsk_balance: u64,
+    /// Path to the DRP program definition YAML file
+    pub drp_program_definition: String,
 }
 
 impl Default for CommitteeConfig {
     fn default() -> Self {
-        Self { min_funding_balance: 20_002_000, min_rsk_balance: 1_000_000_000_500_000 }
+        Self {
+            min_funding_balance: 20_002_000,
+            min_rsk_balance: 1_000_000_000_500_000,
+            drp_program_definition: String::new(),
+        }
     }
 }
 
@@ -251,7 +257,7 @@ impl Config {
             })
             .collect::<Vec<Address>>()
     }
-    
+
     fn get_contracts_to_subscribe_to(contract: &ContractConfig) -> bool {
         contract.name == PEGIN_MANAGER_CONTRACT_NAME
             || contract.name == PEGOUT_MANAGER_CONTRACT_NAME
@@ -320,7 +326,7 @@ mod tests {
         );
         assert_eq!(
             "../BitVMX-CPU/docker-riscv32/riscv32/build/hello-world.yaml",
-            config.coordinator.drp_program_definition
+            config.bridge.committee.drp_program_definition
         );
         assert_eq!(99_999_999, config.coordinator.advance_funds.max_zkp_status_retries);
         assert_eq!("regtest", config.bitcoin_network);

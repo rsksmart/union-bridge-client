@@ -13,11 +13,14 @@ use common::runtime_sync::RuntimeSync;
 use common::types::{Address, CommitteeId, Hash256};
 use log::{debug, info, trace};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
-use transaction_dispatcher::types::{GetMemberPublicKeysInput, RegisterAdvanceFundsInput, RegisterOperatorTakeOutput, RequestPeginInput};
+use transaction_dispatcher::types::{
+    GetMemberPublicKeysInput, RegisterAdvanceFundsInput, RequestPeginInput,
+};
 use union_contracts::bindings::pegout_manager::PegoutManager::PegoutRegistered;
 use uuid::Uuid;
 
 use crate::flows::common::TAKE_KEY_INDEX;
+use crate::flows::common::native_bridge_verifier::{NativeBridgeVerifier, invoke_contract_safe};
 use crate::types::OperatorTakeTriggeredEvent;
 
 pub const PROGRAM_TYPE_ADVANCE_FUNDS: &str = "advance_funds";
@@ -50,6 +53,10 @@ pub enum StepData {
     ReimbursementKickoffConfirmed,
     OperatorTakeSPV(BtcTxSPVProof),
     OperatorTakeRegistered(PegoutRegistered),
+    /// Retry variants for Native Bridge confirmation retries (no state transition)
+    RetryRegisterAdvanceFunds,
+    RetryRegisterReimbursementKickoff,
+    RetryRegisterOperatorTake,
 }
 
 #[derive(Debug, Clone)]
@@ -107,6 +114,7 @@ where
     contracts: Rc<CG>,
     rt_sync: RuntimeSync,
     bitvmx_broker: Rc<BC>,
+    native_bridge_verifier: NativeBridgeVerifier<CG>,
     pub(crate) state: FlowContext,
 }
 
@@ -119,6 +127,7 @@ where
         contracts: Rc<CG>,
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
+        native_bridge_verifier: NativeBridgeVerifier<CG>,
         flow_id: Uuid,
         event: &OperatorTakeTriggeredEvent,
     ) -> Result<Self> {
@@ -128,6 +137,7 @@ where
             contracts,
             rt_sync,
             bitvmx_broker,
+            native_bridge_verifier,
             state: FlowContext {
                 flow_id,
                 step: Steps::OperatorTakeTriggered,
@@ -153,6 +163,7 @@ where
             contracts,
             rt_sync: RuntimeSync::new().expect("Failed to create runtime sync for test flow"),
             bitvmx_broker,
+            native_bridge_verifier: NativeBridgeVerifier::Dummy,
             state: FlowContext {
                 flow_id,
                 step,
@@ -214,9 +225,9 @@ where
                 let spv = self
                     .state
                     .advance_funds_spv
-                    .clone()
+                    .as_ref()
                     .ok_or_else(|| anyhow!("Advance funds SPV data not available"))?;
-                self.register_advance_funds(spv.spv_proof)?;
+                self.register_advance_funds(&spv.spv_proof.clone())?;
                 info!(
                     "Advance funds registered, waiting for on-chain confirmation for flow_id: {}",
                     self.state.flow_id
@@ -241,9 +252,10 @@ where
                 let spv_proof = self
                     .state
                     .reimbursement_kickoff_spv
-                    .clone()
-                    .ok_or_else(|| anyhow!("Reimbursement kickoff SPV not available"))?;
-                self.register_reimbursement_kickoff(spv_proof)?;
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("Reimbursement kickoff SPV not available"))?
+                    .clone();
+                self.register_reimbursement_kickoff(&spv_proof)?;
                 info!(
                     "Reimbursement kickoff registered, waiting for on-chain confirmation for flow_id: {}",
                     self.state.flow_id
@@ -268,7 +280,7 @@ where
                 let spv_proof = self
                     .state
                     .operator_take_spv
-                    .clone()
+                    .as_ref()
                     .ok_or_else(|| anyhow!("Operator take SPV not available"))?;
                 self.register_operator_take(spv_proof)?;
             }
@@ -316,6 +328,10 @@ where
                 self.state.advance_funds_spv = Some(spv_data);
                 Ok(Steps::RegisterAdvanceFunds)
             }
+            (Steps::RegisterAdvanceFunds, StepData::RetryRegisterAdvanceFunds) => {
+                info!("Retrying register advance funds for flow_id: {}", self.state.flow_id);
+                Ok(Steps::RegisterAdvanceFunds)
+            }
             (Steps::RegisterAdvanceFunds, StepData::AdvanceFundsConfirmed) => {
                 Ok(Steps::WaitForReimbursementKickoffSpv)
             }
@@ -327,12 +343,23 @@ where
                 self.state.reimbursement_kickoff_spv = Some(spv_proof);
                 Ok(Steps::RegisterReimbursementKickoff)
             }
+            (Steps::RegisterReimbursementKickoff, StepData::RetryRegisterReimbursementKickoff) => {
+                info!(
+                    "Retrying register reimbursement kickoff for flow_id: {}",
+                    self.state.flow_id
+                );
+                Ok(Steps::RegisterReimbursementKickoff)
+            }
             (Steps::RegisterReimbursementKickoff, StepData::ReimbursementKickoffConfirmed) => {
                 Ok(Steps::WaitForOperatorTakeSpv)
             }
             (Steps::WaitForOperatorTakeSpv, StepData::OperatorTakeSPV(spv_proof)) => {
                 info!("Operator take SPV received for flow_id {}", self.state.flow_id);
                 self.state.operator_take_spv = Some(spv_proof);
+                Ok(Steps::RegisterOperatorTake)
+            }
+            (Steps::RegisterOperatorTake, StepData::RetryRegisterOperatorTake) => {
+                info!("Retrying register operator take for flow_id: {}", self.state.flow_id);
                 Ok(Steps::RegisterOperatorTake)
             }
             (Steps::RegisterOperatorTake, StepData::OperatorTakeRegistered(pegout_registered)) => {
@@ -395,22 +422,23 @@ where
         ))
     }
 
-    fn register_operator_take(
-        &self,
-        spv_proof: BtcTxSPVProof,
-    ) -> Result<RegisterOperatorTakeOutput> {
-        let input: RequestPeginInput = spv_proof.into();
-        let output = self
-            .rt_sync
-            .run(async { self.contracts.register_operator_take(input).await })
-            .context("Failed to register operator take with provided SPV proof")?;
+    fn register_operator_take(&self, spv_proof: &BtcTxSPVProof) -> Result<()> {
+        let input: RequestPeginInput = spv_proof.clone().into();
+        let output = invoke_contract_safe(
+            &self.rt_sync,
+            "registerOperatorTake",
+            spv_proof,
+            &self.native_bridge_verifier,
+            || async { self.contracts.register_operator_take(input).await },
+        )
+        .context("Failed to register operator take with provided SPV proof")?;
 
         info!(
             "Operator take registration sent for flow_id {} with tx hash {}",
             self.state.flow_id, output.transaction_hash
         );
 
-        Ok(output)
+        Ok(())
     }
 
     fn resolve_accept_pegin_txid(&mut self) -> Result<alloy_primitives::FixedBytes<32>> {
@@ -429,18 +457,24 @@ where
         Ok(output.accept_pegin_txid)
     }
 
-    fn register_advance_funds(&mut self, spv_proof: BtcTxSPVProof) -> Result<()> {
-        let input: RequestPeginInput = spv_proof.into();
+    fn register_advance_funds(&mut self, spv_proof: &BtcTxSPVProof) -> Result<()> {
+        let input: RequestPeginInput = spv_proof.clone().into();
         let accept_pegin_txid = self.resolve_accept_pegin_txid()?;
 
-        let register_advance_funds_input =
+        let register_input =
             RegisterAdvanceFundsInput { accept_pegin_txid, advance_funds_spv_proof: input };
-        let output: transaction_dispatcher::types::TxSentOutput = self
-            .rt_sync
-            .run(async {
-                self.contracts.register_advance_funds(register_advance_funds_input).await
-            })
-            .context("Failed to register advance funds SPV proof")?;
+
+        // Clone Rc fields to avoid conflicting borrows in the async closure
+        // while `&mut self` is still in scope from resolve_accept_pegin_txid.
+        let contracts = Rc::clone(&self.contracts);
+        let output = invoke_contract_safe(
+            &self.rt_sync,
+            "registerAdvanceFunds",
+            spv_proof,
+            &self.native_bridge_verifier,
+            || async move { contracts.register_advance_funds(register_input).await },
+        )
+        .context("Failed to register advance funds SPV proof")?;
 
         info!(
             "Advance funds registration sent for flow_id {} with tx hash {}",
@@ -450,18 +484,26 @@ where
         Ok(())
     }
 
-    fn register_reimbursement_kickoff(&mut self, spv_proof: BtcTxSPVProof) -> Result<()> {
-        let input: RequestPeginInput = spv_proof.into();
+    fn register_reimbursement_kickoff(&mut self, spv_proof: &BtcTxSPVProof) -> Result<()> {
+        let input: RequestPeginInput = spv_proof.clone().into();
         let accept_pegin_txid = self.resolve_accept_pegin_txid()?;
 
         let register_input = transaction_dispatcher::types::RegisterReimbursementKickoffInput {
             accept_pegin_txid,
             kickoff_spv_proof: input,
         };
-        let output: transaction_dispatcher::types::TxSentOutput = self
-            .rt_sync
-            .run(async { self.contracts.register_reimbursement_kickoff(register_input).await })
-            .context("Failed to register reimbursement kickoff SPV proof")?;
+
+        // Clone Rc fields to avoid conflicting borrows in the async closure
+        // while `&mut self` is still in scope from resolve_accept_pegin_txid.
+        let contracts = Rc::clone(&self.contracts);
+        let output = invoke_contract_safe(
+            &self.rt_sync,
+            "registerReimbursementKickoff",
+            spv_proof,
+            &self.native_bridge_verifier,
+            || async move { contracts.register_reimbursement_kickoff(register_input).await },
+        )
+        .context("Failed to register reimbursement kickoff SPV proof")?;
 
         info!(
             "Reimbursement kickoff registration sent for flow_id {} with tx hash {}",

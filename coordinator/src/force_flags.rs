@@ -111,8 +111,8 @@ pub fn is_force_dispute_enabled(env_name: Option<&str>) -> bool {
     // Check file first (hot-reloadable), then env var
     let enabled = Path::new(FORCE_DISPUTE_FILE).exists()
         || std::env::var("FORCE_DISPUTE")
-            .ok()
-            .is_some_and(|v| v.to_lowercase() == "true" || v == "1");
+        .ok()
+        .is_some_and(|v| v.to_lowercase() == "true" || v == "1");
 
     if enabled {
         warn!("[FORCE_DISPUTE] Force dispute is ENABLED for environment: {env_name:?}");

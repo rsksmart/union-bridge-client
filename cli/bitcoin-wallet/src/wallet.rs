@@ -119,10 +119,13 @@ impl Wallet {
             wallet.enabler_amount = enabler_amount;
         }
 
-        let address = wallet.import_private_key(&config.private_key_wif)?;
-        wallet.active_address = Some(address.clone());
-        wallet.reload_active_utxos()?;
-        println!("Loaded private key. Default P2WPKH address: {address}");
+
+        if let Some(ref wif) = config.private_key_wif {
+            let address = wallet.import_private_key(wif)?;
+            wallet.active_address = Some(address.clone());
+            wallet.reload_active_utxos()?;
+            println!("Loaded private key. Default P2WPKH address: {address}");
+        }
 
         if let Some(url) = config.rpc_url.as_deref() {
             wallet.configure_rpc(

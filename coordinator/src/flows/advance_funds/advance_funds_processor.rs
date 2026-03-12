@@ -663,6 +663,8 @@ mod tests {
     use crate::types::EventWithBlock;
 
     type BitVmxMock = MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
+    type TestProcessor = AdvanceFundsProcessor<MockRskContractsGatewayApi, BitVmxMock>;
+
     /// Test constant for required confirmations (matches production default)
     const REQUIRED_CONFIRMATIONS: u32 = 5;
 
@@ -902,7 +904,7 @@ mod tests {
 
     #[test]
     fn test_process_new_event_advance_funds_advance_funds_creates_advance_funds_when_two_requests_exist()
-    {
+     {
         let mut processor = AdvanceFundsProcessor::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(BitVmxMock::new()),

@@ -55,7 +55,6 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
         bitcoin_network: Network,
         env_name: Option<&str>,
         bridge_config: &BridgeConfig,
-        drp_program_definition: String,
     ) -> Self {
         let contracts_arc = Rc::new(contracts_gateway);
         let store_rc = Rc::new(store);
@@ -74,7 +73,6 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
             bitcoin_network,
             Rc::clone(&store_rc),
             bridge_config.committee.clone(),
-            drp_program_definition,
         );
 
         let native_bridge_verifier = if let Some(env_name @ ("alphanet" | "regtest" | "testnet")) =
@@ -133,10 +131,9 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                 rt_sync.clone(),
                 bitvmx_broker.clone(),
                 global_context.clone(),
-                native_bridge_verifier,
-                bridge_config.advance_funds.clone(),
                 bridge_config.coordinator.required_confirmations,
-                env_name,
+                native_bridge_verifier.clone(),
+                bridge_config.advance_funds.clone(),
             )),
             Box::new(SetupCommitteeProcessor::new(
                 setup_committee_flow_factory,
@@ -366,16 +363,17 @@ pub(crate) mod tests {
         AddMemberSignatureInput, AddMemberSignatureOutput, AddOperatorTakeTxHashInput,
         AddOperatorTakeTxHashOutput, ApplyToStreamInput, ApplyToStreamOutput,
         DepositAggregatedKeyInput, DepositAggregatedKeyOutput, DepositCommunicationDataInput,
-        DepositCommunicationDataOutput, GetBtcTransactionConfirmationsInput,
-        GetBtcTransactionConfirmationsOutput, GetCommitteeInput, GetCommitteeOutput,
-        GetCommunicationDataInput, GetCommunicationDataOutput, GetMemberPublicKeysInput,
-        GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterChallengeInput,
-        RegisterAdvanceFundsInput, RegisterAdvanceFundsOutput, GetAcceptPeginTxidInput, GetAcceptPeginTxidOutput,
-        RegisterReimbursementKickoffInput, RegisterReimbursementKickoffOutput,
-        RegisterChallengeOutput, RegisterInputRevealedInput, RegisterInputRevealedOutput,
-        RegisterOperatorTakeInput, RegisterOperatorTakeOutput, RegisterOperatorWonInput,
-        RegisterOperatorWonOutput, RegisterPegoutInput, RegisterPegoutOutput, RequestPeginInput,
-        RequestPeginOutput, RequestPegoutInput, RequestPegoutOutput, TriggerOperatorTakeInput,
+        DepositCommunicationDataOutput, GetAcceptPeginTxidInput, GetAcceptPeginTxidOutput,
+        GetBtcTransactionConfirmationsInput, GetBtcTransactionConfirmationsOutput,
+        GetCommitteeInput, GetCommitteeOutput, GetCommunicationDataInput,
+        GetCommunicationDataOutput, GetMemberPublicKeysInput, GetMemberPublicKeysOutput,
+        PeginAddressInput, PeginAddressOutput, RegisterAdvanceFundsInput,
+        RegisterAdvanceFundsOutput, RegisterChallengeInput, RegisterChallengeOutput,
+        RegisterInputRevealedInput, RegisterInputRevealedOutput, RegisterOperatorTakeInput,
+        RegisterOperatorTakeOutput, RegisterOperatorWonInput, RegisterOperatorWonOutput,
+        RegisterPegoutInput, RegisterPegoutOutput, RegisterReimbursementKickoffInput,
+        RegisterReimbursementKickoffOutput, RequestPeginInput, RequestPeginOutput,
+        RequestPegoutInput, RequestPegoutOutput, TriggerOperatorTakeInput,
         TriggerOperatorTakeOutput,
     };
 

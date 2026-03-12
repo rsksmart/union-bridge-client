@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::hash::Hash;
 use std::fmt::Debug;
+use std::hash::Hash;
 
 use alloy_primitives::{B256, FixedBytes};
 #[cfg(test)]

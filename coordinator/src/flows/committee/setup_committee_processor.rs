@@ -26,7 +26,7 @@ use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
 use crate::event_processor::EventProcessor;
 use crate::flows::common::GlobalContext;
 use crate::flows::errors::{FailableFlow, FlowError};
-use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix, cleanup_completed_flows, restore_flows};
+use crate::store::{CoordinatorStoreApi, StorePrefix, cleanup_completed_flows, restore_flows};
 use crate::types::{
     AllCommunicationDataReadyEvent, EventStatus, NewCommitteePendingEvent, NewCommitteeReadyEvent,
     RskPegManagerEvents, UserRequests,

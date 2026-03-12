@@ -31,13 +31,13 @@ pub fn handle_whitelist(
     let member_signers = match env {
         Environment::Local => collect_local_signers_from_logs(MEMBER_LOG_MARKER)?,
         Environment::LocalDocker => collect_local_signers(MEMBER_LOG_MARKER)?,
-        Environment::Alphanet | Environment::Testnet => {
+        Environment::Alphanet | Environment::Testnet | Environment::Regtest => {
             collect_remote_member_addresses(&env.hosts())?
         }
     };
 
     let unique = unique_addresses(&member_signers);
-    let expected = OPERATOR_IDS.len();
+    let expected = operator_ids().len();
     if unique.len() < expected {
         bail!(
             "expected {} member RSK address(es) but found {}. ensure all operator services are running and have emitted signer addresses.",
@@ -83,7 +83,7 @@ pub fn handle_whitelist(
 
             println!("{}", String::from_utf8_lossy(&output.stdout));
         }
-        Environment::Alphanet | Environment::Testnet => {
+        Environment::Alphanet | Environment::Testnet | Environment::Regtest => {
             let key = match private_key {
                 Some(k) => k.to_string(),
                 None => {

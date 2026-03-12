@@ -90,7 +90,6 @@ bitvmx.port = 22222
 bitvmx.pubkey_hash = "1d10fa43ebbf6674d74caa3e9032711ade09d98ea7d20f89459f61152bebda1e"
 broker.client_id = 101
 storage_path = "/{BASE_STORAGE_PATH}/.union_bridge/database/multi-client-1"
-drp_program_definition = "../BitVMX-CPU/docker-riscv32/riscv32/build/hello-world.yaml"
 
 [coordinator.advance_funds]
 check_fork_guest_elf_path = "/app/config/check-fork-guest.bin"
@@ -123,7 +122,7 @@ blocks_delay_for_tx_check = 20
 spv_proof_min_confirmations = 1
 # Timeout for advance funds before triggering operator take (seconds)
 # Alphanet: 600 (10 min), Local: 30 (1 sec cadence), Production: 7200 (2 hours)
-advance_funds_timeout_secs = 600
+advance_funds_timeout_secs = 30
 
 [bridge.advance_funds]
 # Minimum SPV proof confirmations for operator take
@@ -136,6 +135,8 @@ blocks_delay_for_tx_check = 20
 min_funding_balance = 20002000
 # Minimum RSK balance (wei) - approx 1 RBTC + fees
 min_rsk_balance = 1000000000500000
+# Path to the DRP program definition YAML file
+drp_program_definition = "../BitVMX-CPU/docker-riscv32/riscv32/build/hello-world.yaml"
 
 [bridge.native_bridge]
 # Minimum confirmations from native bridge

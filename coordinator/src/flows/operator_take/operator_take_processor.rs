@@ -7,22 +7,34 @@ use common::msg_broker::bitvmx_types::{
 };
 use common::runtime_sync::RuntimeSync;
 use common::types::{Hash256, RskBlockAndUncles};
-use log::{debug, info, trace, warn};
+use log::{debug, error, info, trace, warn};
 use primitive_types::H256;
 use sha2::{Digest, Sha256};
-use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
+use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use uuid::Uuid;
 
 use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
 use crate::config::AdvanceFundsConfig;
 use crate::event_processor::EventProcessor;
 use crate::flows::common::GlobalContext;
+use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
 use crate::flows::operator_take::operator_take_flow::{
     AdvanceFundsFlow, OperatorTakeTriggerData, StepData, Steps,
 };
 use crate::types::{
     EventStatus, OperatorTakeTriggeredEvent, PegoutRegisteredEvent, RskPegManagerEvents,
+    TickScheduler,
 };
+
+fn is_missing_native_bridge_confirmations(err: &anyhow::Error) -> bool {
+    err.chain().any(|cause| {
+        if let Some(domain_err) = cause.downcast_ref::<DomainErrors>() {
+            matches!(domain_err, DomainErrors::MissingConfirmationsOnNativeBridge(_))
+        } else {
+            false
+        }
+    })
+}
 
 pub struct AdvanceFundsFlowProcessor<CG, BC>
 where
@@ -37,6 +49,15 @@ where
     blockchain_view: BlockchainView,
     events_confirming: HashMap<String, ConfirmableEventWithData>,
     required_confirmations: u32,
+    native_bridge_verifier: NativeBridgeVerifier<CG>,
+    // For retry logic when native bridge lacks confirmations
+    unconfirmed_register_advance_funds: HashMap<Uuid, i16>,
+    register_advance_funds_retry_scheduler: TickScheduler<Uuid>,
+    unconfirmed_register_reimbursement_kickoff: HashMap<Uuid, i16>,
+    register_reimbursement_kickoff_retry_scheduler: TickScheduler<Uuid>,
+    unconfirmed_register_operator_take: HashMap<Uuid, i16>,
+    register_operator_take_retry_scheduler: TickScheduler<Uuid>,
+    config: AdvanceFundsConfig,
 }
 
 impl<CG, BC> AdvanceFundsFlowProcessor<CG, BC>
@@ -50,7 +71,9 @@ where
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
-        required_confirmations: u32,
+        required_confirmations: u32,    
+        native_bridge_verifier: NativeBridgeVerifier<CG>,
+        config: AdvanceFundsConfig,
     ) -> Self {
         Self {
             contracts_gateway,
@@ -61,6 +84,14 @@ where
             blockchain_view: BlockchainView::new(),
             events_confirming: HashMap::new(),
             required_confirmations,
+            native_bridge_verifier,
+            unconfirmed_register_advance_funds: HashMap::new(),
+            register_advance_funds_retry_scheduler: TickScheduler::new(),
+            unconfirmed_register_reimbursement_kickoff: HashMap::new(),
+            register_reimbursement_kickoff_retry_scheduler: TickScheduler::new(),
+            unconfirmed_register_operator_take: HashMap::new(),
+            register_operator_take_retry_scheduler: TickScheduler::new(),
+            config,
         }
     }
 
@@ -79,6 +110,183 @@ where
             blockchain_view: BlockchainView::new(),
             events_confirming: HashMap::new(),
             required_confirmations: 5,
+            native_bridge_verifier: NativeBridgeVerifier::Dummy,
+            unconfirmed_register_advance_funds: HashMap::new(),
+            register_advance_funds_retry_scheduler: TickScheduler::new(),
+            unconfirmed_register_reimbursement_kickoff: HashMap::new(),
+            register_reimbursement_kickoff_retry_scheduler: TickScheduler::new(),
+            unconfirmed_register_operator_take: HashMap::new(),
+            register_operator_take_retry_scheduler: TickScheduler::new(),
+            config: AdvanceFundsConfig::default(),
+        }
+    }
+
+    fn schedule_register_advance_funds_retry(
+        &mut self,
+        flow_id: Uuid,
+        attempt: i16,
+        reason: &str,
+    ) {
+        info!("{reason} for flow {flow_id} (attempt {attempt})");
+        self.unconfirmed_register_advance_funds.insert(flow_id, attempt);
+        self.register_advance_funds_retry_scheduler
+            .schedule(flow_id, self.config.blocks_delay_for_tx_check);
+    }
+
+    fn handle_register_advance_funds_retry_tick(&mut self) {
+        if self.register_advance_funds_retry_scheduler.is_empty() {
+            return;
+        }
+
+        for flow_id in self.register_advance_funds_retry_scheduler.tick() {
+            let Some(attempt) = self.unconfirmed_register_advance_funds.remove(&flow_id) else {
+                warn!("No register_advance_funds retry state found for flow {flow_id}");
+                continue;
+            };
+
+            let Some(flow) = self.flows.get_mut(&flow_id) else {
+                warn!("No advance funds flow found for register_advance_funds retry: {flow_id}");
+                continue;
+            };
+
+            if flow.current_step() != Steps::RegisterAdvanceFunds {
+                debug!(
+                    "Skipping register_advance_funds retry for flow {flow_id} in step {:?}",
+                    flow.current_step()
+                );
+                continue;
+            }
+
+            let Err(err) = flow.complete_step(StepData::RetryRegisterAdvanceFunds) else {
+                info!("Register advance funds succeeded on retry for flow {flow_id}");
+                continue;
+            };
+
+            if !is_missing_native_bridge_confirmations(&err) {
+                error!("Error on retry for register_advance_funds: {err:?}");
+                continue;
+            }
+
+            self.schedule_register_advance_funds_retry(
+                flow_id,
+                attempt.saturating_add(1),
+                "Still missing confirmations on native bridge, scheduling another retry",
+            );
+        }
+    }
+
+    fn schedule_register_reimbursement_kickoff_retry(
+        &mut self,
+        flow_id: Uuid,
+        attempt: i16,
+        reason: &str,
+    ) {
+        info!("{reason} for flow {flow_id} (attempt {attempt})");
+        self.unconfirmed_register_reimbursement_kickoff.insert(flow_id, attempt);
+        self.register_reimbursement_kickoff_retry_scheduler
+            .schedule(flow_id, self.config.blocks_delay_for_tx_check);
+    }
+
+    fn handle_register_reimbursement_kickoff_retry_tick(&mut self) {
+        if self.register_reimbursement_kickoff_retry_scheduler.is_empty() {
+            return;
+        }
+
+        for flow_id in self.register_reimbursement_kickoff_retry_scheduler.tick() {
+            let Some(attempt) =
+                self.unconfirmed_register_reimbursement_kickoff.remove(&flow_id)
+            else {
+                warn!(
+                    "No register_reimbursement_kickoff retry state found for flow {flow_id}"
+                );
+                continue;
+            };
+
+            let Some(flow) = self.flows.get_mut(&flow_id) else {
+                warn!(
+                    "No advance funds flow found for register_reimbursement_kickoff retry: {flow_id}"
+                );
+                continue;
+            };
+
+            if flow.current_step() != Steps::RegisterReimbursementKickoff {
+                debug!(
+                    "Skipping register_reimbursement_kickoff retry for flow {flow_id} in step {:?}",
+                    flow.current_step()
+                );
+                continue;
+            }
+
+            let Err(err) = flow.complete_step(StepData::RetryRegisterReimbursementKickoff)
+            else {
+                info!(
+                    "Register reimbursement kickoff succeeded on retry for flow {flow_id}"
+                );
+                continue;
+            };
+
+            if !is_missing_native_bridge_confirmations(&err) {
+                error!(
+                    "Error on retry for register_reimbursement_kickoff: {err:?}"
+                );
+                continue;
+            }
+
+            self.schedule_register_reimbursement_kickoff_retry(
+                flow_id,
+                attempt.saturating_add(1),
+                "Still missing confirmations on native bridge, scheduling another retry",
+            );
+        }
+    }
+
+    fn schedule_register_operator_take_retry(&mut self, flow_id: Uuid, attempt: i16, reason: &str) {
+        info!("{reason} for flow {flow_id} (attempt {attempt})");
+        self.unconfirmed_register_operator_take.insert(flow_id, attempt);
+        self.register_operator_take_retry_scheduler
+            .schedule(flow_id, self.config.blocks_delay_for_tx_check);
+    }
+
+    fn handle_register_operator_take_retry_tick(&mut self) {
+        if self.register_operator_take_retry_scheduler.is_empty() {
+            return;
+        }
+
+        for flow_id in self.register_operator_take_retry_scheduler.tick() {
+            let Some(attempt) = self.unconfirmed_register_operator_take.remove(&flow_id) else {
+                warn!("No register_operator_take retry state found for flow {flow_id}");
+                continue;
+            };
+
+            let Some(flow) = self.flows.get_mut(&flow_id) else {
+                warn!("No advance funds flow found for register_operator_take retry: {flow_id}");
+                continue;
+            };
+
+            if flow.current_step() != Steps::RegisterOperatorTake {
+                debug!(
+                    "Skipping register_operator_take retry for flow {flow_id} in step {:?}",
+                    flow.current_step()
+                );
+                continue;
+            }
+
+            let Err(err) = flow.complete_step(StepData::RetryRegisterOperatorTake) else {
+                info!("Register operator take succeeded on retry for flow {flow_id}");
+                continue;
+            };
+
+            if !is_missing_native_bridge_confirmations(&err) {
+                error!("Error on retry for register_operator_take: {err:?}");
+                continue;
+            }
+
+            let next_attempt = attempt.saturating_add(1);
+            self.schedule_register_operator_take_retry(
+                flow_id,
+                next_attempt,
+                "Still missing confirmations on native bridge, scheduling another retry",
+            );
         }
     }
 
@@ -129,6 +337,7 @@ where
             self.contracts_gateway.clone(),
             self.rt_sync.clone(),
             self.bitvmx_broker.clone(),
+            self.native_bridge_verifier.clone(),
             flow_id,
             event,
         )?;
@@ -302,12 +511,15 @@ where
         };
         let pegout_id: Hash256 = Hash256::from(H256::from(pegout_id_bytes));
 
-        let Some((flow_id, flow)) =
+        let Some((flow_id_ref, flow)) =
             self.flows.iter_mut().find(|(_, flow)| flow.trigger_data().pegout_id == pegout_id)
         else {
             trace!("Ignoring funds_advance_spv for pegout_id {pegout_id} - no matching flow");
             return Ok(());
         };
+
+        // Copy flow_id early so we can use it after the `flow` borrow ends.
+        let flow_id = *flow_id_ref;
 
         if flow.committee_id_uuid() != spv_data.committee_id {
             warn!(
@@ -326,8 +538,13 @@ where
             );
         }
 
-        if flow.current_step() == Steps::WaitForAdvanceFundsSPV {
-            flow.complete_step(StepData::AdvanceFundsSPV(spv_data.clone()))?;
+        // Capture whether a retry is needed; resolve before calling &mut self methods.
+        let needs_retry = if flow.current_step() == Steps::WaitForAdvanceFundsSPV {
+            match flow.complete_step(StepData::AdvanceFundsSPV(spv_data.clone())) {
+                Ok(()) => false,
+                Err(err) if is_missing_native_bridge_confirmations(&err) => true,
+                Err(err) => return Err(err),
+            }
         } else if flow.current_step() == Steps::SetupAdvanceFundsProtocol {
             info!(
                 "Flow {} not yet at WaitForAdvanceFundsSPV (current: {:?}), buffering SPV",
@@ -335,11 +552,28 @@ where
                 flow.current_step()
             );
             flow.state.advance_funds_spv = Some(spv_data.clone());
+            false
         } else {
             warn!(
                 "Advance funds flow {} received funds_advance_spv at unexpected step {:?}",
                 flow_id,
                 flow.current_step()
+            );
+            false
+        };
+        // `flow` borrow ends here — safe to call &mut self methods below.
+
+        if needs_retry {
+            let attempt = self
+                .unconfirmed_register_advance_funds
+                .get(&flow_id)
+                .copied()
+                .unwrap_or(0)
+                .saturating_add(1);
+            self.schedule_register_advance_funds_retry(
+                flow_id,
+                attempt,
+                "Missing confirmations on native bridge, scheduling retry",
             );
         }
 
@@ -349,78 +583,10 @@ where
     fn handle_union_spv_notification(&mut self, notification: &UnionSPVNotification) -> Result<()> {
         match notification.tx_type {
             UnionTxType::ReimbursementKickoff => {
-                info!(
-                    "Received ReimbursementKickoff SPV notification - committee_id: {}, slot_index: {}, txid: {}",
-                    notification.committee_id, notification.slot_index, notification.txid
-                );
-
-                let flow_id = Self::get_advance_funds_pid(
-                    notification.committee_id,
-                    notification.slot_index,
-                )?;
-
-                let Some(flow) = self.flows.get_mut(&flow_id) else {
-                    trace!(
-                        "Ignoring ReimbursementKickoff SPV for committee {} slot {} - no matching flow",
-                        notification.committee_id, notification.slot_index
-                    );
-                    return Ok(());
-                };
-
-                let spv_proof = notification.spv_proof.clone().ok_or_else(|| {
-                    anyhow!("ReimbursementKickoff SPV notification missing spv_proof data")
-                })?;
-
-                if flow.current_step() == Steps::WaitForReimbursementKickoffSpv {
-                    flow.complete_step(StepData::ReimbursementKickoffSPV(spv_proof))?;
-                } else if flow.current_step() == Steps::RegisterAdvanceFunds {
-                    info!(
-                        "Flow {} not yet at WaitForReimbursementKickoffSpv (current: {:?}), buffering SPV",
-                        flow_id,
-                        flow.current_step()
-                    );
-                    flow.state.reimbursement_kickoff_spv = Some(spv_proof);
-                } else {
-                    warn!(
-                        "Flow {} received ReimbursementKickoff SPV at unexpected step {:?}",
-                        flow_id,
-                        flow.current_step()
-                    );
-                }
+                self.handle_reimbursement_kickoff_spv_notification(notification)?;
             }
             UnionTxType::OperatorTake => {
-                info!(
-                    "Received OperatorTake SPV notification - committee_id: {}, slot_index: {}, txid: {}",
-                    notification.committee_id, notification.slot_index, notification.txid
-                );
-
-                let flow_id = Self::get_advance_funds_pid(
-                    notification.committee_id,
-                    notification.slot_index,
-                )?;
-
-                let Some(flow) = self.flows.get_mut(&flow_id) else {
-                    debug!(
-                        "Ignoring OperatorTake SPV for committee {} slot {} - no matching flow",
-                        notification.committee_id, notification.slot_index
-                    );
-                    return Ok(());
-                };
-
-                let spv_proof = notification.spv_proof.clone().ok_or_else(|| {
-                    anyhow!("OperatorTake SPV notification missing spv_proof data")
-                })?;
-
-                if flow.current_step() == Steps::WaitForOperatorTakeSpv {
-                    flow.complete_step(StepData::OperatorTakeSPV(spv_proof))?;
-                } else {
-                    info!(
-                        "Flow {} not yet at WaitForOperatorTakeSpv (current: {:?}), buffering SPV",
-                        flow_id,
-                        flow.current_step()
-                    );
-                    flow.state.operator_take_spv = Some(spv_proof);
-                }
+                self.handle_operator_take_spv_notification(notification)?;
             }
             _ => {
                 trace!(
@@ -428,6 +594,130 @@ where
                     notification.tx_type
                 );
             }
+        }
+        Ok(())
+    }
+
+    fn handle_reimbursement_kickoff_spv_notification(
+        &mut self,
+        notification: &UnionSPVNotification,
+    ) -> Result<()> {
+        info!(
+            "Received ReimbursementKickoff SPV notification - committee_id: {}, slot_index: {}, txid: {}",
+            notification.committee_id, notification.slot_index, notification.txid
+        );
+
+        let flow_id =
+            Self::get_advance_funds_pid(notification.committee_id, notification.slot_index)?;
+
+        let Some(flow) = self.flows.get_mut(&flow_id) else {
+            trace!(
+                "Ignoring ReimbursementKickoff SPV for committee {} slot {} - no matching flow",
+                notification.committee_id, notification.slot_index
+            );
+            return Ok(());
+        };
+
+        let spv_proof = notification
+            .spv_proof
+            .clone()
+            .ok_or_else(|| anyhow!("ReimbursementKickoff SPV notification missing spv_proof data"))?;
+
+        let needs_retry = if flow.current_step() == Steps::WaitForReimbursementKickoffSpv {
+            match flow.complete_step(StepData::ReimbursementKickoffSPV(spv_proof)) {
+                Ok(()) => false,
+                Err(err) if is_missing_native_bridge_confirmations(&err) => true,
+                Err(err) => return Err(err),
+            }
+        } else if flow.current_step() == Steps::RegisterAdvanceFunds {
+            info!(
+                "Flow {} not yet at WaitForReimbursementKickoffSpv (current: {:?}), buffering SPV",
+                flow_id,
+                flow.current_step()
+            );
+            flow.state.reimbursement_kickoff_spv = Some(spv_proof);
+            false
+        } else {
+            warn!(
+                "Flow {} received ReimbursementKickoff SPV at unexpected step {:?}",
+                flow_id,
+                flow.current_step()
+            );
+            false
+        };
+        // `flow` borrow ends here — safe to call &mut self methods below.
+
+        if needs_retry {
+            let attempt = self
+                .unconfirmed_register_reimbursement_kickoff
+                .get(&flow_id)
+                .copied()
+                .unwrap_or(0)
+                .saturating_add(1);
+            self.schedule_register_reimbursement_kickoff_retry(
+                flow_id,
+                attempt,
+                "Missing confirmations on native bridge, scheduling retry",
+            );
+        }
+
+        Ok(())
+    }
+
+    fn handle_operator_take_spv_notification(
+        &mut self,
+        notification: &UnionSPVNotification,
+    ) -> Result<()> {
+        info!(
+            "Received OperatorTake SPV notification - committee_id: {}, slot_index: {}, txid: {}",
+            notification.committee_id, notification.slot_index, notification.txid
+        );
+
+        let flow_id =
+            Self::get_advance_funds_pid(notification.committee_id, notification.slot_index)?;
+
+        let Some(flow) = self.flows.get_mut(&flow_id) else {
+            debug!(
+                "Ignoring OperatorTake SPV for committee {} slot {} - no matching flow",
+                notification.committee_id, notification.slot_index
+            );
+            return Ok(());
+        };
+
+        let spv_proof = notification
+            .spv_proof
+            .clone()
+            .ok_or_else(|| anyhow!("OperatorTake SPV notification missing spv_proof data"))?;
+
+        let needs_retry = if flow.current_step() == Steps::WaitForOperatorTakeSpv {
+            match flow.complete_step(StepData::OperatorTakeSPV(spv_proof)) {
+                Ok(()) => false,
+                Err(err) if is_missing_native_bridge_confirmations(&err) => true,
+                Err(err) => return Err(err),
+            }
+        } else {
+            info!(
+                "Flow {} not yet at WaitForOperatorTakeSpv (current: {:?}), buffering SPV",
+                flow_id,
+                flow.current_step()
+            );
+            flow.state.operator_take_spv = Some(spv_proof);
+            false
+        };
+        // `flow` borrow ends here — safe to call &mut self methods below.
+
+        if needs_retry {
+            let attempt = self
+                .unconfirmed_register_operator_take
+                .get(&flow_id)
+                .copied()
+                .unwrap_or(0)
+                .saturating_add(1);
+            self.schedule_register_operator_take_retry(
+                flow_id,
+                attempt,
+                "Missing confirmations on native bridge, scheduling retry",
+            );
         }
 
         Ok(())
@@ -603,6 +893,9 @@ where
 
     fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
         self.process_block_confirmations(block)?;
+        self.handle_register_advance_funds_retry_tick();
+        self.handle_register_reimbursement_kickoff_retry_tick();
+        self.handle_register_operator_take_retry_tick();
         Ok(())
     }
 
@@ -611,6 +904,12 @@ where
         self.flows.clear();
         self.events_confirming.clear();
         self.blockchain_view.clear();
+        self.register_advance_funds_retry_scheduler.clear();
+        self.unconfirmed_register_advance_funds.clear();
+        self.register_reimbursement_kickoff_retry_scheduler.clear();
+        self.unconfirmed_register_reimbursement_kickoff.clear();
+        self.register_operator_take_retry_scheduler.clear();
+        self.unconfirmed_register_operator_take.clear();
     }
 }
 
@@ -646,7 +945,7 @@ mod tests {
             user_pubkey: PublicKey::from_str(
                 "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
             )
-                .expect("valid test pubkey"),
+            .expect("valid test pubkey"),
             take_operator_address: Address::from(H160::from_low_u64_be(33)),
         }
     }
