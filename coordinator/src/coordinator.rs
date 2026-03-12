@@ -12,7 +12,7 @@ use common::shutdown_flag::ShutdownFlag;
 use log::{debug, error, warn};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 
-use crate::config::BridgeConfig;
+use crate::config::{BridgeConfig, CoordinatorAdvanceFundsConfig};
 use crate::event_processor::EventProcessor;
 use crate::flows::advance_funds::advance_funds_processor::AdvanceFundsProcessor;
 use crate::flows::committee::setup_committee_flow::{
@@ -50,6 +50,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
         monitor: M,
         contracts_gateway: CG,
         bitvmx_broker: &Rc<BC>,
+        advance_funds_config: CoordinatorAdvanceFundsConfig,
         store: S,
         shutdown_flag: ShutdownFlag,
         bitcoin_network: Network,
@@ -92,60 +93,63 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
             NativeBridgeVerifier::Dummy
         };
 
-        Self {
-            monitor,
-            bitvmx_broker: bitvmx_broker.clone(),
-            processors: vec![
-                Box::new(AdvanceFundsProcessor::new(
-                    rt_sync.clone(),
-                    Rc::clone(&contracts_arc),
-                    bitvmx_broker.clone(),
-                    bridge_config.coordinator.required_confirmations,
-                )),
-                Box::new(PeginFlowProcessor::new(
-                    Rc::clone(&contracts_arc),
+        let processors: Vec<Box<dyn EventProcessor>> = vec![
+            Box::new(AdvanceFundsProcessor::new(
+                rt_sync.clone(),
+                Rc::clone(&contracts_arc),
+                bitvmx_broker.clone(),
+                bridge_config.coordinator.required_confirmations,
+                advance_funds_config,
+            )),
+            Box::new(PeginFlowProcessor::new(
+                Rc::clone(&contracts_arc),
+                rt_sync.clone(),
+                bitvmx_broker.clone(),
+                global_context.clone(),
+                &store_rc,
+                native_bridge_verifier.clone(),
+                bridge_config.pegin.clone(),
+                bridge_config.coordinator.required_confirmations,
+            )),
+            Box::new(
+                PegoutFlowProcessor::restore_or_new(
+                    contracts_arc.clone(),
                     rt_sync.clone(),
                     bitvmx_broker.clone(),
                     global_context.clone(),
                     &store_rc,
                     native_bridge_verifier.clone(),
-                    bridge_config.pegin.clone(),
-                    bridge_config.coordinator.required_confirmations,
-                )),
-                Box::new(
-                    PegoutFlowProcessor::restore_or_new(
-                        contracts_arc.clone(),
-                        rt_sync.clone(),
-                        bitvmx_broker.clone(),
-                        global_context.clone(),
-                        &store_rc,
-                        native_bridge_verifier.clone(),
-                        bridge_config.pegout.clone(),
-                        bridge_config.coordinator.required_confirmations,
-                        env_name,
-                    )
-                    // todo(fede) ideally this method should return a result
-                    .expect("couldn't restore or create pegout flow processor"),
-                ),
-                //Operator_take_flow
-                Box::new(AdvanceFundsFlowProcessor::new(
-                    contracts_arc.clone(),
-                    rt_sync.clone(),
-                    bitvmx_broker.clone(),
-                    global_context.clone(),
-                    native_bridge_verifier,
-                    bridge_config.advance_funds.clone(),
+                    bridge_config.pegout.clone(),
                     bridge_config.coordinator.required_confirmations,
                     env_name,
-                )),
-                Box::new(SetupCommitteeProcessor::new(
-                    setup_committee_flow_factory,
-                    global_context.clone(),
-                    &store_rc,
-                    bridge_config.coordinator.required_confirmations,
-                )),
-                Box::new(FundBitvmxProcessor::new(bitvmx_broker.clone(), bitcoin_network)),
-            ],
+                )
+                // todo(fede) ideally this method should return a result
+                .expect("couldn't restore or create pegout flow processor"),
+            ),
+            //Operator_take_flow
+            Box::new(AdvanceFundsFlowProcessor::new(
+                contracts_arc.clone(),
+                rt_sync.clone(),
+                bitvmx_broker.clone(),
+                global_context.clone(),
+                native_bridge_verifier,
+                bridge_config.advance_funds.clone(),
+                bridge_config.coordinator.required_confirmations,
+                env_name,
+            )),
+            Box::new(SetupCommitteeProcessor::new(
+                setup_committee_flow_factory,
+                global_context.clone(),
+                &store_rc,
+                bridge_config.coordinator.required_confirmations,
+            )),
+            Box::new(FundBitvmxProcessor::new(bitvmx_broker.clone(), bitcoin_network)),
+        ];
+
+        Self {
+            monitor,
+            bitvmx_broker: bitvmx_broker.clone(),
+            processors,
             check_period: bridge_config.coordinator.check_period(),
             bitvmx_not_responding_threshold: bridge_config
                 .coordinator

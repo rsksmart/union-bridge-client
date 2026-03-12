@@ -122,14 +122,35 @@ pub fn is_force_dispute_enabled(env_name: Option<&str>) -> bool {
 
 #[cfg(test)]
 // Allow unsafe blocks for env var manipulation in tests.
-// SAFETY: Tests using set_var/remove_var must run with --test-threads=1
-// to avoid race conditions. This is documented in the test comments.
+// SAFETY: Tests serialize process-global env/file mutations with a mutex.
 #[allow(unsafe_code)]
 mod tests {
+    use std::sync::{LazyLock, Mutex, MutexGuard};
+
     use super::*;
+
+    static FORCE_FLAGS_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+    fn lock_force_flags_test_state() -> MutexGuard<'static, ()> {
+        FORCE_FLAGS_TEST_LOCK.lock().expect("force flags test lock poisoned")
+    }
+
+    fn clear_force_flags_state() {
+        // SAFETY: Test state is serialized through FORCE_FLAGS_TEST_LOCK,
+        // so mutating process environment here is safe.
+        unsafe {
+            std::env::remove_var("FORCE_ADVANCE");
+            std::env::remove_var("FORCE_DISPUTE");
+        }
+        let _ = std::fs::remove_file(FORCE_ADVANCE_FILE);
+        let _ = std::fs::remove_file(FORCE_DISPUTE_FILE);
+    }
 
     #[test]
     fn test_force_flags_allowed_local_environments() {
+        let _guard = lock_force_flags_test_state();
+        clear_force_flags_state();
+
         // Local (no env) should allow force flags
         assert!(is_force_flags_allowed(None));
 
@@ -146,6 +167,9 @@ mod tests {
 
     #[test]
     fn test_force_flags_blocked_production_environments() {
+        let _guard = lock_force_flags_test_state();
+        clear_force_flags_state();
+
         // Alphanet should block force flags
         assert!(!is_force_flags_allowed(Some("alphanet")));
         assert!(!is_force_flags_allowed(Some("ALPHANET")));
@@ -158,11 +182,11 @@ mod tests {
 
     #[test]
     fn test_force_advance_respects_env_safety() {
-        // SAFETY: These tests must run with --test-threads=1 to avoid race conditions
-        // with environment variables. set_var/remove_var are unsafe in multi-threaded contexts.
+        let _guard = lock_force_flags_test_state();
+
+        // SAFETY: Access to process-global env vars is serialized via FORCE_FLAGS_TEST_LOCK.
         unsafe {
-            // Clear any existing env var
-            std::env::remove_var("FORCE_ADVANCE");
+            clear_force_flags_state();
 
             // Without env var set, should return None
             assert!(get_force_advance_address(None).is_none());
@@ -185,17 +209,17 @@ mod tests {
             assert!(get_force_advance_address(Some("testnet")).is_none());
 
             // Clean up
-            std::env::remove_var("FORCE_ADVANCE");
+            clear_force_flags_state();
         }
     }
 
     #[test]
     fn test_force_dispute_respects_env_safety() {
-        // SAFETY: These tests must run with --test-threads=1 to avoid race conditions
-        // with environment variables. set_var/remove_var are unsafe in multi-threaded contexts.
+        let _guard = lock_force_flags_test_state();
+
+        // SAFETY: Access to process-global env vars is serialized via FORCE_FLAGS_TEST_LOCK.
         unsafe {
-            // Clear any existing env var
-            std::env::remove_var("FORCE_DISPUTE");
+            clear_force_flags_state();
 
             // Without env var set, should return false
             assert!(!is_force_dispute_enabled(None));
@@ -212,15 +236,18 @@ mod tests {
             assert!(!is_force_dispute_enabled(Some("testnet")));
 
             // Clean up
-            std::env::remove_var("FORCE_DISPUTE");
+            clear_force_flags_state();
         }
     }
 
     #[test]
     fn test_force_advance_returns_address_value() {
-        // SAFETY: These tests must run with --test-threads=1 to avoid race conditions
-        // with environment variables. set_var/remove_var are unsafe in multi-threaded contexts.
+        let _guard = lock_force_flags_test_state();
+
+        // SAFETY: Access to process-global env vars is serialized via FORCE_FLAGS_TEST_LOCK.
         unsafe {
+            clear_force_flags_state();
+
             std::env::set_var("FORCE_ADVANCE", "0xDEADBEEF");
             assert_eq!(get_force_advance_address(Some("local")).as_deref(), Some("0xDEADBEEF"));
 
@@ -237,7 +264,7 @@ mod tests {
             assert_eq!(get_force_advance_address(Some("local")).as_deref(), Some("0xABC123"));
 
             // Clean up
-            std::env::remove_var("FORCE_ADVANCE");
+            clear_force_flags_state();
         }
     }
 }

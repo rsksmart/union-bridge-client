@@ -36,6 +36,8 @@ address = "0x0000000000000000000000000000000001000006"
 
 [indexer]
 
+# Override base: start from current tip; initial_block_hash from base is ignored in this env.
+start_from = "best"
 storage.path = "/app/db/" # This should match the volume mount in docker-compose
 
 # ═══════════════════════════════════════════════════════
@@ -47,6 +49,9 @@ storage_path = "/app/db/"     # This should match the volume mount in docker-com
 blocks.host = "block-indexer"
 logs.host = "log-indexer"
 user.host = "user-api"
+
+[coordinator.advance_funds]
+max_zkp_status_retries = 0
 
 # ═══════════════════════════════════════════════════════
 # Transaction Dispatcher
