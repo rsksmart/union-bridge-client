@@ -43,6 +43,13 @@ RSK_ADDRESS="0x$(openssl rand -hex 20)" # random address each run
 VALUE=100000
 COMMITTEE_REGISTRY_ADDRESS="0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82"
 
+# Dockerized BitVMX setup is slower and can take longer to emit the final
+# committee completion marker in all operators.
+COMMITTEE_SETUP_MAX_BLOCKS=50
+if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
+    COMMITTEE_SETUP_MAX_BLOCKS=70
+fi
+
 # colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -481,7 +488,7 @@ fi
 rm -f /tmp/apply-operators-$$
 success "Operators applied to stream $STREAM_ID"
 echo ""
-if ! wait_for_log_in_all_operators "CommitteeSetupFlow Done:" 50; then
+if ! wait_for_log_in_all_operators "CommitteeSetupFlow Done:" "$COMMITTEE_SETUP_MAX_BLOCKS"; then
     warn "Committee setup not completed by all operators within timeout"
     exit 1
 fi
