@@ -16,7 +16,6 @@ services:
       - "22222:22222"
     volumes:
       - ../bitvmx-client/config/local/client/config:/app/config
-      - ../bitvmx-client/config/local/broker/config:/app/rust-bitvmx-workspace/rust-fakep2p/broker/config
       - db-bitvmx-1:/tmp
     networks:
       bitvmx-shared-network:
@@ -36,7 +35,6 @@ services:
       - "33333:33333"
     volumes:
       - ../bitvmx-client/config/local/client/config:/app/config
-      - ../bitvmx-client/config/local/broker/config:/app/rust-bitvmx-workspace/rust-fakep2p/broker/config
       - db-bitvmx-2:/tmp
     networks:
       bitvmx-shared-network:
@@ -56,7 +54,6 @@ services:
       - "44444:44444"
     volumes:
       - ../bitvmx-client/config/local/client/config:/app/config
-      - ../bitvmx-client/config/local/broker/config:/app/rust-bitvmx-workspace/rust-fakep2p/broker/config
       - db-bitvmx-3:/tmp
     networks:
       bitvmx-shared-network:
@@ -76,7 +73,6 @@ services:
       - "55554:55554"
     volumes:
       - ../bitvmx-client/config/local/client/config:/app/config
-      - ../bitvmx-client/config/local/broker/config:/app/rust-bitvmx-workspace/rust-fakep2p/broker/config
       - db-bitvmx-4:/tmp
     networks:
       bitvmx-shared-network:
