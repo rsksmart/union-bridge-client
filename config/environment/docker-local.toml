@@ -19,6 +19,7 @@ storage_path = "/app/db/" # This should match the volume mount in docker-compose
 blocks.host = "block-indexer"
 logs.host = "log-indexer"
 user.host = "user-api"
+drp_program_definition = "/app/drp/hello-world.yaml"
 
 # ═══════════════════════════════════════════════════════
 # Key Store (top-level, shared by all services)

@@ -18,6 +18,9 @@ flock -x "${BROKER_LOCK_PATH}" sh -c "
   else
     echo '[key-setup] Broker key already exists at ${BROKER_KEY_PATH}'
   fi
+  # Broker pubkey hash = SHA256(public key DER), hex.
+  # Used by bitvmx-client entrypoint to patch components.l2/components.bitvmx pubkey_hash.
+  openssl pkey -in '${BROKER_KEY_PATH}' -pubout -outform DER 2>/dev/null | openssl dgst -sha256 -binary | od -A n -v -t x1 | tr -d ' \n' > /keystore/broker.pubkey_hash
 "
 
 # User and member keys require KEY_STORE_PASSWORD (only needed by user-api and coordinator)

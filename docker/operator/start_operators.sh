@@ -7,6 +7,55 @@ DOCKER_COMPOSE_ARGS=()
 OPERATOR_ARG=""
 ENVIRONMENT=""
 AUTO_CONFIRM=false
+export BASE_STORAGE_PATH="${BASE_STORAGE_PATH:-$HOME}"
+
+# Ensure broker key exists in host storage and compute broker pubkey hash.
+# Uses ${BASE_STORAGE_PATH}/.union_bridge/keystore/broker.key (defaults BASE_STORAGE_PATH to $HOME).
+bootstrap_broker_keystore() {
+  export BASE_STORAGE_PATH="${BASE_STORAGE_PATH:-$HOME}"
+  local keystore_dir="${BASE_STORAGE_PATH}/.union_bridge/keystore"
+  local broker_key_path="${keystore_dir}/broker.key"
+  local broker_hash_path="${keystore_dir}/broker.pubkey_hash"
+
+  mkdir -p "${keystore_dir}"
+
+  if [[ ! -f "${broker_key_path}" ]]; then
+    echo "Broker key not found at ${broker_key_path}. Generating..."
+    openssl genpkey -algorithm RSA -out "${broker_key_path}" -pkeyopt rsa_keygen_bits:2048 2>/dev/null
+    chmod 600 "${broker_key_path}" || true
+  fi
+
+  openssl pkey -in "${broker_key_path}" -pubout -outform DER 2>/dev/null \
+    | openssl dgst -sha256 -binary \
+    | od -A n -v -t x1 | tr -d ' \n' > "${broker_hash_path}"
+
+  echo "Using broker key: ${broker_key_path}"
+  echo "Computed broker pubkey hash at: ${broker_hash_path}"
+}
+
+get_bootstrapped_broker_pubkey_hash() {
+  local broker_hash_path="${BASE_STORAGE_PATH}/.union_bridge/keystore/broker.pubkey_hash"
+  if [[ ! -f "${broker_hash_path}" ]]; then
+    echo "Error: broker pubkey hash not found at ${broker_hash_path}" >&2
+    exit 1
+  fi
+  tr -d ' \n' < "${broker_hash_path}"
+}
+
+# Copy externally managed broker.key and broker.pubkey_hash into the docker-compose
+# project keystore volume so each project can keep independent user/member keys.
+sync_broker_key_to_project_volume() {
+  local project_name="$1"
+  local host_keystore="${BASE_STORAGE_PATH}/.union_bridge/keystore"
+  local volume_name="${project_name}_keystore"
+
+  docker volume create "${volume_name}" >/dev/null
+  docker run --rm \
+    -v "${volume_name}:/keystore" \
+    -v "${host_keystore}:/host-keystore:ro" \
+    alpine:3.20 \
+    sh -c "cp /host-keystore/broker.key /keystore/broker.key && cp /host-keystore/broker.pubkey_hash /keystore/broker.pubkey_hash"
+}
 
 # Display help message
 print_help() {
@@ -196,6 +245,8 @@ if [[ "${FRESH}" == true ]]; then
 fi
 
 if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
+  bootstrap_broker_keystore
+
   # Prompt for USER_BITCOIN_WIF if running startup commands if not present on env
   if [[ -z "${USER_BITCOIN_WIF}" ]]; then
     echo "Please enter USER_BITCOIN_WIF (input will be hidden):"
@@ -234,7 +285,14 @@ run_local_operators() {
     local BITVMX_P2P_HOST=${BITVMX_P2P_HOSTS[$i]}
     local CLIENT_OP=${CLIENT_OPS[$i]}
 
-    local DOCKER_CMD="USER_BITCOIN_WIF=${USER_BITCOIN_WIF} USER_API_PORT=${USER_API_PORT} BITVMX_PORT=${BITVMX_PORT} BITVMX_P2P_HOST=${BITVMX_P2P_HOST} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${COMPOSE_FILE_ARG} -p op_${op_num} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
+    if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
+      sync_broker_key_to_project_volume "op_${op_num}"
+    fi
+
+    local BROKER_PUBKEY_HASH
+    BROKER_PUBKEY_HASH="$(get_bootstrapped_broker_pubkey_hash)"
+
+    local DOCKER_CMD="BASE_STORAGE_PATH=${BASE_STORAGE_PATH} BROKER_PUBKEY_HASH=${BROKER_PUBKEY_HASH} USER_BITCOIN_WIF=${USER_BITCOIN_WIF} USER_API_PORT=${USER_API_PORT} BITVMX_PORT=${BITVMX_PORT} BITVMX_P2P_HOST=${BITVMX_P2P_HOST} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${COMPOSE_FILE_ARG} -p op_${op_num} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
 
     echo
     echo "Starting operator ${op_num} with command: '$(echo "${DOCKER_CMD}" | sed "s/USER_BITCOIN_WIF=[^ ]*/USER_BITCOIN_WIF=******/")'"
@@ -261,7 +319,14 @@ run_alphanet_operators() {
     echo "Running command on alphanet operator:"
   fi
 
-  local DOCKER_CMD="USER_BITCOIN_WIF=${USER_BITCOIN_WIF} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${ALPHANET_PROJECT_NAME} ${COMPOSE_FILE_ARG} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
+  if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
+    sync_broker_key_to_project_volume "union-operator"
+  fi
+
+  local BROKER_PUBKEY_HASH
+  BROKER_PUBKEY_HASH="$(get_bootstrapped_broker_pubkey_hash)"
+
+  local DOCKER_CMD="BASE_STORAGE_PATH=${BASE_STORAGE_PATH} BROKER_PUBKEY_HASH=${BROKER_PUBKEY_HASH} USER_BITCOIN_WIF=${USER_BITCOIN_WIF} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${ALPHANET_PROJECT_NAME} ${COMPOSE_FILE_ARG} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
   echo "'$(echo "${DOCKER_CMD}" | sed "s/USER_BITCOIN_WIF=[^ ]*/USER_BITCOIN_WIF=******/")'"
   eval "${DOCKER_CMD}"
 }
