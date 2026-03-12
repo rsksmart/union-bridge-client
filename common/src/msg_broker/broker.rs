@@ -72,7 +72,8 @@ impl BrokerServer {
         let storage = Storage::new(&storage_config).map_err(|e| {
             BrokerError::UnknownError(anyhow::anyhow!("Failed to create broker storage: {e}"))
         })?;
-        let broker_storage = Arc::new(Mutex::new(BrokerStorage::new(Arc::new(Mutex::new(storage)))));
+        let broker_storage =
+            Arc::new(Mutex::new(BrokerStorage::new(Arc::new(Mutex::new(storage)))));
         let broker_config = BrokerConfig::new(port, Some(IpAddr::from(Ipv4Addr::UNSPECIFIED)));
         let broker = BrokerSync::new(&broker_config, broker_storage.clone());
         let broker_channel = LocalChannel::new(BROKER_SERVER_ID, broker_storage.clone());
@@ -176,9 +177,12 @@ impl BitVmxBrokerServer {
 
         let storage_config = StorageConfig::new(format!("{storage_path}/bitvmx_broker"), None);
         let storage = Storage::new(&storage_config).map_err(|e| {
-            BrokerError::UnknownError(anyhow::anyhow!("Failed to create bitvmx broker storage: {e}"))
+            BrokerError::UnknownError(anyhow::anyhow!(
+                "Failed to create bitvmx broker storage: {e}"
+            ))
         })?;
-        let broker_storage = Arc::new(Mutex::new(BrokerStorage::new(Arc::new(Mutex::new(storage)))));
+        let broker_storage =
+            Arc::new(Mutex::new(BrokerStorage::new(Arc::new(Mutex::new(storage)))));
         let broker_config = BrokerConfig::new(port, Some(IpAddr::from(Ipv4Addr::UNSPECIFIED)));
         let broker = BrokerSync::new(&broker_config, broker_storage.clone());
         let broker_channel = LocalChannel::new(BROKER_SERVER_ID, broker_storage.clone());
