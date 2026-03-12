@@ -87,7 +87,6 @@ bitvmx.port = 22222
 bitvmx.pubkey_hash = "1d10fa43ebbf6674d74caa3e9032711ade09d98ea7d20f89459f61152bebda1e"
 broker.client_id = 101
 storage_path = "/{BASE_STORAGE_PATH}/.union_bridge/database/multi-client-1"
-drp_program_definition = "../BitVMX-CPU/docker-riscv32/riscv32/build/hello-world.yaml"
 
 # ═══════════════════════════════════════════════════════
 # Block Indexer

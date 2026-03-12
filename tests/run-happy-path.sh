@@ -481,7 +481,7 @@ fi
 rm -f /tmp/apply-operators-$$
 success "Operators applied to stream $STREAM_ID"
 echo ""
-if ! wait_for_log_in_all_operators "CommitteeSetupFlow Done:" 50; then
+if ! wait_for_log_in_all_operators "CommitteeSetupFlow Done:" 60; then
     warn "Committee setup not completed by all operators within timeout"
     exit 1
 fi

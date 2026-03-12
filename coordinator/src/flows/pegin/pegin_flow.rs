@@ -457,12 +457,12 @@ where
             self.state.flow_id, pegin_accepted.accept_pegin_txid
         );
 
-        let take_tx_hash = pegin_accepted.operator_take_txid.ok_or_else(|| {
-            anyhow!("operator_take_txid missing for prover in PeginAcceptedMessage")
+        let take_tx_hash = pegin_accepted.operator_take_sighash.clone().ok_or_else(|| {
+            anyhow!("operator_take_sighash missing for prover in PegInAcceptedMessage")
         })?;
 
-        let won_tx_hash = pegin_accepted.operator_won_txid.ok_or_else(|| {
-            anyhow!("operator_won_txid missing for prover in PeginAcceptedMessage")
+        let won_tx_hash = pegin_accepted.operator_won_sighash.clone().ok_or_else(|| {
+            anyhow!("operator_won_sighash missing for prover in PegInAcceptedMessage")
         })?;
 
         let input = transaction_dispatcher::types::AddOperatorTakeTxHashInput {
@@ -853,8 +853,8 @@ mod tests {
             accept_pegin_nonce: default_pub_nonce(),
             accept_pegin_signature: MaybeScalar::Zero,
             accept_pegin_sighash: vec![],
-            operator_take_txid: Some(test_txid([1u8; 32])),
-            operator_won_txid: Some(test_txid([2u8; 32])),
+            operator_take_sighash: Some(vec![1, 2, 3, 4]),
+            operator_won_sighash: Some(vec![]),
             committee_id: Uuid::new_v4(),
         }
     }
@@ -976,8 +976,8 @@ mod tests {
 
         let expected_input = transaction_dispatcher::types::AddOperatorTakeTxHashInput {
             accept_pegin_tx_hash: btc_tx_id,
-            take_tx_hash: test_txid([1u8; 32]),
-            won_tx_hash: test_txid([2u8; 32]),
+            take_tx_hash: vec![1, 2, 3, 4],
+            won_tx_hash: Vec::new(),
         };
 
         mock_contracts

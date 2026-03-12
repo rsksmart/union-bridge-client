@@ -45,7 +45,6 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
     // separate build/factory method
     /// # Panics
     /// Panics if loading context from the database fails.
-    #[allow(clippy::too_many_arguments)]
     pub fn new<CG: RskContractsGatewayApi + 'static>(
         rt_sync: &RuntimeSync,
         monitor: M,
@@ -54,7 +53,6 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
         store: S,
         shutdown_flag: ShutdownFlag,
         bitcoin_network: Network,
-        drp_program_definition: String,
     ) -> Self {
         let contracts_arc = Rc::new(contracts_gateway);
         let store_rc = Rc::new(store);
@@ -72,7 +70,6 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
             global_context.clone(),
             bitcoin_network,
             Rc::clone(&store_rc),
-            drp_program_definition,
         );
 
         Self {
@@ -325,16 +322,13 @@ pub(crate) mod tests {
         AddMemberSignatureInput, AddMemberSignatureOutput, AddOperatorTakeTxHashInput,
         AddOperatorTakeTxHashOutput, ApplyToStreamInput, ApplyToStreamOutput,
         DepositAggregatedKeyInput, DepositAggregatedKeyOutput, DepositCommunicationDataInput,
-        DepositCommunicationDataOutput, GetAcceptPeginTxidInput, GetAcceptPeginTxidOutput,
-        GetCommitteeInput, GetCommitteeOutput, GetCommunicationDataInput,
-        GetCommunicationDataOutput, GetMemberPublicKeysInput, GetMemberPublicKeysOutput,
-        PeginAddressInput, PeginAddressOutput, RegisterAdvanceFundsInput,
-        RegisterAdvanceFundsOutput, RegisterChallengeInput, RegisterChallengeOutput,
-        RegisterInputRevealedInput, RegisterInputRevealedOutput, RegisterOperatorTakeInput,
-        RegisterOperatorTakeOutput, RegisterOperatorWonInput, RegisterOperatorWonOutput,
-        RegisterPegoutInput, RegisterPegoutOutput, RegisterReimbursementKickoffInput,
-        RegisterReimbursementKickoffOutput, RequestPeginInput, RequestPeginOutput,
-        RequestPegoutInput, RequestPegoutOutput, TriggerOperatorTakeInput,
+        DepositCommunicationDataOutput, GetCommitteeInput, GetCommitteeOutput,
+        GetCommunicationDataInput, GetCommunicationDataOutput, GetMemberPublicKeysInput,
+        GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterChallengeInput,
+        RegisterChallengeOutput, RegisterInputRevealedInput, RegisterInputRevealedOutput,
+        RegisterOperatorTakeInput, RegisterOperatorTakeOutput, RegisterOperatorWonInput,
+        RegisterOperatorWonOutput, RegisterPegoutInput, RegisterPegoutOutput, RequestPeginInput,
+        RequestPeginOutput, RequestPegoutInput, RequestPegoutOutput, TriggerOperatorTakeInput,
         TriggerOperatorTakeOutput,
     };
 
@@ -668,21 +662,6 @@ pub(crate) mod tests {
                 &self,
                 input: RegisterOperatorWonInput,
             ) -> Result<RegisterOperatorWonOutput, DomainErrors>;
-
-            async fn register_advance_funds(
-                &self,
-                input: RegisterAdvanceFundsInput,
-            ) -> Result<RegisterAdvanceFundsOutput, DomainErrors>;
-
-            async fn get_accept_pegin_txid(
-                &self,
-                input: GetAcceptPeginTxidInput,
-            ) -> Result<GetAcceptPeginTxidOutput, DomainErrors>;
-
-            async fn register_reimbursement_kickoff(
-                &self,
-                input: RegisterReimbursementKickoffInput,
-            ) -> Result<RegisterReimbursementKickoffOutput, DomainErrors>;
 
             async fn is_whitelisted(&self) -> Result<bool, DomainErrors>;
         }

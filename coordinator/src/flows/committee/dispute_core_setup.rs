@@ -87,7 +87,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
             self.broker_client.as_ref(),
             IncomingBitVMXApiMessages::SetVar(
                 committee_id,
-                Committee::name().to_string(),
+                Committee::name(),
                 VariableTypes::String(committee_json),
             ),
         )
@@ -114,7 +114,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
                 self.broker_client.as_ref(),
                 IncomingBitVMXApiMessages::SetVar(
                     protocol_id,
-                    DisputeCoreData::name().to_string(),
+                    DisputeCoreData::name(),
                     VariableTypes::String(dispute_core_json),
                 ),
             )

@@ -31,7 +31,6 @@ pub struct CoordinatorConfig {
     pub bitvmx: BitVmxBrokerConfig,
     pub broker: BrokerClientConfig,
     pub storage_path: String,
-    pub drp_program_definition: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -143,10 +142,6 @@ mod tests {
         assert!(!config.coordinator.storage_path.contains("{BASE_STORAGE_PATH}"));
         assert!(
             config.coordinator.storage_path.ends_with("/.union_bridge/database/multi-client-1")
-        );
-        assert_eq!(
-            "../BitVMX-CPU/docker-riscv32/riscv32/build/hello-world.yaml",
-            config.coordinator.drp_program_definition
         );
         assert_eq!("regtest", config.bitcoin_network);
         assert_eq!(11, config.contracts.len());
