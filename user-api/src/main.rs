@@ -76,7 +76,11 @@ async fn main() -> Result<()> {
     let shutdown_flag = ShutdownFlag::init();
 
     let broker_port = config.user_api_config.notifier.port;
-    let broker_drop_guard = BrokerDropGuard::new(Arc::new(BrokerServer::new(broker_port)));
+    let broker_storage_path = &config.user_api_config.notifier.broker_storage_path;
+    let broker_drop_guard = BrokerDropGuard::new(Arc::new(
+        BrokerServer::new(broker_port, broker_storage_path)
+            .context("Failed to create user-api broker server")?,
+    ));
     info!("Broker Server started on {broker_port}");
 
     let http_addr = SocketAddr::from(([0, 0, 0, 0], config.user_api_config.http.port));

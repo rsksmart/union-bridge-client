@@ -71,7 +71,11 @@ fn main() -> Result<()> {
 
     let mut notifier = Notifier::new(
         rx,
-        BrokerServer::new(config.block_indexer_config.notifier.port),
+        BrokerServer::new(
+            config.block_indexer_config.notifier.port,
+            &config.block_indexer_config.notifier.broker_storage_path,
+        )
+        .context("Failed to create block indexer broker server")?,
         shutdown_flag.clone(),
     );
 

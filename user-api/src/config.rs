@@ -31,6 +31,7 @@ pub struct BrokerConfig {
 #[derive(Debug, Deserialize)]
 pub struct NotifierConfig {
     pub port: u16,
+    pub broker_storage_path: String,
 }
 
 #[derive(Debug, Deserialize)]

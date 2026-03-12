@@ -2,13 +2,15 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs};
 use std::sync::{Arc, Mutex};
 
 use log::debug;
-use message_broker::broker_memstorage::MemStorage;
+use message_broker::broker_storage::BrokerStorage;
 use message_broker::channel::channel::{DualChannel, LocalChannel};
 use message_broker::rpc::BrokerConfig;
 use message_broker::rpc::sync_server::BrokerSync;
 use mockall::automock;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use storage_backend::storage::Storage;
+use storage_backend::storage_config::StorageConfig;
 use thiserror::Error;
 
 use crate::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
@@ -48,7 +50,7 @@ pub trait BrokerClientApi<S: Serialize, C: DeserializeOwned> {
 /// Union-specific broker server implementation
 pub struct BrokerServer {
     broker: BrokerSync,
-    channel: LocalChannel<MemStorage>,
+    channel: LocalChannel<BrokerStorage>,
 }
 
 /// "Alias" for `BrokerServerApi<ToServer, FromServer>`
@@ -60,18 +62,22 @@ pub trait UnionBrokerClientApi: BrokerClientApi<ToServer, FromServer> {}
 impl<T> UnionBrokerClientApi for T where T: BrokerClientApi<ToServer, FromServer> {}
 
 impl BrokerServer {
-    #[must_use]
-    pub fn new(port: u16) -> Self {
-        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - change to disk storage (broker feature)
+    /// # Errors
+    ///
+    /// Returns an error if the storage backend cannot be initialized.
+    pub fn new(port: u16, storage_path: &str) -> Result<Self, BrokerError> {
+        debug!("Starting BrokerServer on port {port} with disk storage at {storage_path}");
 
-        debug!("Starting BrokerServer on port {port}");
-
-        let broker_storage = Arc::new(Mutex::new(MemStorage::new()));
+        let storage_config = StorageConfig::new(format!("{storage_path}/broker"), None);
+        let storage = Storage::new(&storage_config).map_err(|e| {
+            BrokerError::UnknownError(anyhow::anyhow!("Failed to create broker storage: {e}"))
+        })?;
+        let broker_storage = Arc::new(Mutex::new(BrokerStorage::new(Arc::new(Mutex::new(storage)))));
         let broker_config = BrokerConfig::new(port, Some(IpAddr::from(Ipv4Addr::UNSPECIFIED)));
         let broker = BrokerSync::new(&broker_config, broker_storage.clone());
         let broker_channel = LocalChannel::new(BROKER_SERVER_ID, broker_storage.clone());
 
-        Self { broker, channel: broker_channel }
+        Ok(Self { broker, channel: broker_channel })
     }
 }
 
@@ -158,20 +164,26 @@ impl<T> BitVmxBrokerClientApi for T where
 /// BitVMX-specific broker server implementation
 pub struct BitVmxBrokerServer {
     broker: BrokerSync,
-    channel: LocalChannel<MemStorage>,
+    channel: LocalChannel<BrokerStorage>,
 }
 
 impl BitVmxBrokerServer {
-    #[must_use]
-    pub fn new(port: u16) -> Self {
-        debug!("Starting BitVmxBrokerServer on port {port}");
+    /// # Errors
+    ///
+    /// Returns an error if the storage backend cannot be initialized.
+    pub fn new(port: u16, storage_path: &str) -> Result<Self, BrokerError> {
+        debug!("Starting BitVmxBrokerServer on port {port} with disk storage at {storage_path}");
 
-        let broker_storage = Arc::new(Mutex::new(MemStorage::new()));
+        let storage_config = StorageConfig::new(format!("{storage_path}/bitvmx_broker"), None);
+        let storage = Storage::new(&storage_config).map_err(|e| {
+            BrokerError::UnknownError(anyhow::anyhow!("Failed to create bitvmx broker storage: {e}"))
+        })?;
+        let broker_storage = Arc::new(Mutex::new(BrokerStorage::new(Arc::new(Mutex::new(storage)))));
         let broker_config = BrokerConfig::new(port, Some(IpAddr::from(Ipv4Addr::UNSPECIFIED)));
         let broker = BrokerSync::new(&broker_config, broker_storage.clone());
         let broker_channel = LocalChannel::new(BROKER_SERVER_ID, broker_storage.clone());
 
-        Self { broker, channel: broker_channel }
+        Ok(Self { broker, channel: broker_channel })
     }
 }
 
