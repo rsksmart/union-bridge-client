@@ -234,13 +234,6 @@ enum UserCommands {
     },
 }
 
-fn validate_1_4(value: u8, name: &str) -> Result<()> {
-    if !(1..=4).contains(&value) {
-        anyhow::bail!("{} must be between 1 and 4", name);
-    }
-    Ok(())
-}
-
 fn validate_1_10(value: u8, name: &str) -> Result<()> {
     if !(1..=10).contains(&value) {
         anyhow::bail!("{} must be between 1 and 10", name);
