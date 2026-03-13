@@ -71,7 +71,7 @@ where
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
-        required_confirmations: u32,    
+        required_confirmations: u32,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
         config: AdvanceFundsConfig,
     ) -> Self {

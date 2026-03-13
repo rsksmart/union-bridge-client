@@ -546,7 +546,6 @@ non-production environments** (Local, LocalDocker, Regtest) and are automaticall
 | Flag | Description |
 |------|-------------|
 | `FORCE_ADVANCE` | Contains a Rootstock address. The targeted operator skips the signature sub-flow, simulating operator misbehavior. Since signatures never complete, the advance funds timeout triggers naturally. |
-| `FORCE_DISPUTE` | Overrides the `ReimbursementResult` challenge result to `OperatorWon`, simulating a successful dispute. |
 
 **Activation methods:**
 
@@ -554,16 +553,14 @@ non-production environments** (Local, LocalDocker, Regtest) and are automaticall
    ```bash
    # Enable flags
    echo "0xOPERATOR_ADDRESS" > /tmp/FORCE_ADVANCE
-   touch /tmp/FORCE_DISPUTE
 
    # Disable flags (remove files)
    rm /tmp/FORCE_ADVANCE
-   rm /tmp/FORCE_DISPUTE
    ```
 
 2. **Environment variables (set at startup):**
    ```bash
-   FORCE_ADVANCE=0xOPERATOR_ADDRESS FORCE_DISPUTE=true ./cli-run.sh
+   FORCE_ADVANCE=0xOPERATOR_ADDRESS ./cli-run.sh
    ```
 
 **Hot-reloading:** The file-based approach allows QA to toggle flags while the coordinator is running. New flows will

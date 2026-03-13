@@ -470,33 +470,28 @@ where
         Ok(())
     }
 
-    /// Schedule timeouts for flows that received `pegout_accepted` but didn't have block timestamp yet
-    fn schedule_pending_timeouts(&mut self, _block: &RskBlockAndUncles) {
+    fn schedule_pending_timeouts(&mut self, block: &RskBlockAndUncles) {
         if self.flows_pending_timeout.is_empty() {
             return;
         }
 
+        let current_timestamp = block.block().timestamp().value();
         let pending_flows: Vec<Uuid> = self.flows_pending_timeout.iter().copied().collect();
 
         for flow_id in pending_flows {
             if let Some(flow) = self.pegout_flows.get(&flow_id) {
                 // Only schedule if flow is still waiting for signatures (not yet dispatched)
                 if flow.current_step() == Steps::DispatchTransaction {
-                    let timeout_ticks = if let Ok(ticks) =
-                        u32::try_from(self.config.advance_funds_timeout_secs)
-                    {
-                        ticks
-                    } else {
-                        warn!(
-                            "ADVANCE_FUNDS_TIMEOUT_SECONDS ({}) exceeds u32::MAX, using u32::MAX instead",
-                            self.config.advance_funds_timeout_secs
-                        );
-                        u32::MAX
-                    };
-                    self.advance_funds_timeout_scheduler.schedule(flow_id, timeout_ticks);
+                    self.advance_funds_timeout_scheduler.schedule(
+                        flow_id,
+                        current_timestamp,
+                        self.config.advance_funds_timeout_secs,
+                    );
                     info!(
-                        "Scheduled advance funds timeout for flow_id: {flow_id} (expires in {} blocks),",
-                        self.config.advance_funds_timeout_secs
+                        "Scheduled advance funds timeout for flow_id: {} at timestamp: {} (expires at: {})",
+                        flow_id,
+                        current_timestamp,
+                        current_timestamp + self.config.advance_funds_timeout_secs
                     );
                 }
             }
@@ -505,15 +500,18 @@ where
     }
 
     /// Check for expired advance funds timeouts and trigger operator take
-    fn handle_advance_funds_timeout_expired(&mut self, _block: &RskBlockAndUncles) -> Result<()> {
+    fn handle_advance_funds_timeout_expired(&mut self, block: &RskBlockAndUncles) -> Result<()> {
         if self.advance_funds_timeout_scheduler.is_empty() {
             return Ok(());
         }
 
-        let expired_flows = self.advance_funds_timeout_scheduler.tick();
+        let current_timestamp = block.block().timestamp().value();
+        let expired_flows = self.advance_funds_timeout_scheduler.check_expired(current_timestamp);
 
         for flow_id in expired_flows {
-            info!("Advance funds timeout expired for flow_id: {flow_id}",);
+            info!(
+                "Advance funds timeout expired for flow_id: {flow_id} at timestamp: {current_timestamp}",
+            );
             self.trigger_operator_take_for_flow(flow_id)?;
         }
 

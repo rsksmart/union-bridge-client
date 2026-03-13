@@ -11,8 +11,12 @@ name = "FakePegManager"
 address = "0x7Cd31D33302B6f5Bc45763487195Ae329a915beB"
 
 [[contracts]]
-name = "PegManager"
-address = "0xCceA54bAB6755690595b7D8fAf299bd02c597F46"
+name = "PeginManager"
+address = "0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE"
+
+[[contracts]]
+name = "PegoutManager"
+address = "0x3Aa5ebB10DC797CAC828524e59A333d0A371443c"
 
 [[contracts]]
 name = "SignatureManager"
@@ -29,6 +33,10 @@ address = "0x185DA4bbEc7DA24ec252505094E9ba13B1a5f0e6"
 [[contracts]]
 name = "StreamManager"
 address = "0xC689FB08B10BE1080c87dC6f8EdcA7Cd20471218"
+
+[[contracts]]
+name = "ChallengeManager"
+address = "0x59b670e9fA9D0A427751Af201D676719a970857b"
 
 [[contracts]]
 name = "NativeBridge"

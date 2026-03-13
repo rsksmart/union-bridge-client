@@ -4,8 +4,8 @@ use std::rc::Rc;
 
 use anyhow::Result;
 use check_fork::{CheckForkArgs, check_fork};
-use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::types::{BlockNumber, RskBlockAndUncles};
 use log::{debug, error, info, trace, warn};
@@ -268,13 +268,11 @@ where
         elf_path: &str,
     ) -> bool {
         let request_id = Uuid::new_v4();
-        let broker_result = self.bitvmx_broker.send(
-            IncomingBitVMXApiMessages::GenerateZKP(
-                request_id,
-                serialized_args,
-                elf_path.to_string(),
-            ),
-        );
+        let broker_result = self.bitvmx_broker.send(IncomingBitVMXApiMessages::GenerateZKP(
+            request_id,
+            serialized_args,
+            elf_path.to_string(),
+        ));
 
         match broker_result {
             Ok(true) => {
@@ -307,10 +305,7 @@ where
     }
 
     fn send_proof_ready_request(&self, request_id: Uuid, pegout_id: &str) -> bool {
-        match self
-            .bitvmx_broker
-            .send(IncomingBitVMXApiMessages::ProofReady(request_id))
-        {
+        match self.bitvmx_broker.send(IncomingBitVMXApiMessages::ProofReady(request_id)) {
             Ok(true) => {
                 info!(
                     "event=checkfork_proof_status_requested request_type=ProofReady pegout_id={pegout_id} request_id={request_id}"
@@ -333,9 +328,7 @@ where
     }
 
     fn send_get_zkp_execution_result_request(&self, request_id: Uuid, pegout_id: &str) -> bool {
-        match self
-            .bitvmx_broker
-            .send(IncomingBitVMXApiMessages::GetZKPExecutionResult(request_id))
+        match self.bitvmx_broker.send(IncomingBitVMXApiMessages::GetZKPExecutionResult(request_id))
         {
             Ok(true) => {
                 info!(
@@ -1073,14 +1066,12 @@ mod tests {
         bitvmx_broker
             .expect_send()
             .times(1)
-            .with(
-                function(move |req: &IncomingBitVMXApiMessages| {
-                    matches!(
-                        req,
-                        IncomingBitVMXApiMessages::GetZKPExecutionResult(id) if *id == request_id
-                    )
-                }),
-            )
+            .with(function(move |req: &IncomingBitVMXApiMessages| {
+                matches!(
+                    req,
+                    IncomingBitVMXApiMessages::GetZKPExecutionResult(id) if *id == request_id
+                )
+            }))
             .return_once(|_| Ok(true));
 
         let mut processor = AdvanceFundsProcessor::new_for_test(
@@ -1113,11 +1104,9 @@ mod tests {
         let mut bitvmx_broker = MockBrokerClientApi::new();
         bitvmx_broker
             .expect_send()
-            .with(
-                function(|req: &IncomingBitVMXApiMessages| {
-                    matches!(req, IncomingBitVMXApiMessages::GenerateZKP(_, _, _))
-                }),
-            )
+            .with(function(|req: &IncomingBitVMXApiMessages| {
+                matches!(req, IncomingBitVMXApiMessages::GenerateZKP(_, _, _))
+            }))
             .times(1)
             .return_once(|_| Ok(false));
 
@@ -1152,11 +1141,9 @@ mod tests {
         let mut bitvmx_broker = MockBrokerClientApi::new();
         bitvmx_broker
             .expect_send()
-            .with(
-                function(|req: &IncomingBitVMXApiMessages| {
-                    matches!(req, IncomingBitVMXApiMessages::GenerateZKP(_, _, _))
-                }),
-            )
+            .with(function(|req: &IncomingBitVMXApiMessages| {
+                matches!(req, IncomingBitVMXApiMessages::GenerateZKP(_, _, _))
+            }))
             .times(1)
             .return_once(|_| {
                 Err(common::msg_broker::broker::BrokerError::UnknownError(anyhow::anyhow!("boom")))
@@ -2237,21 +2224,17 @@ mod tests {
     ) {
         bitvmx_broker
             .expect_send()
-            .with(
-                function(|req: &IncomingBitVMXApiMessages| {
-                    matches!(req, IncomingBitVMXApiMessages::GenerateZKP(_, _, _))
-                }),
-            )
+            .with(function(|req: &IncomingBitVMXApiMessages| {
+                matches!(req, IncomingBitVMXApiMessages::GenerateZKP(_, _, _))
+            }))
             .times(1)
             .return_once(|_| Ok(true));
 
         bitvmx_broker
             .expect_send()
-            .with(
-                function(|req: &IncomingBitVMXApiMessages| {
-                    matches!(req, IncomingBitVMXApiMessages::ProofReady(_))
-                }),
-            )
+            .with(function(|req: &IncomingBitVMXApiMessages| {
+                matches!(req, IncomingBitVMXApiMessages::ProofReady(_))
+            }))
             .times(1)
             .return_once(|_| Ok(true));
     }

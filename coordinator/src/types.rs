@@ -632,8 +632,59 @@ impl<K: Eq + Hash + Clone> TickScheduler<K> {
     }
 }
 
-pub type TimeBasedScheduler<K> = TickScheduler<K>;
+/// Time-based scheduler that uses block timestamps to track expiration times
+pub(crate) struct TimeBasedScheduler<K: Eq + Hash + Clone> {
+    pending: HashMap<K, u64>, // flow_id -> expiration_timestamp (in seconds)
+}
 
+impl<K: Eq + Hash + Clone> TimeBasedScheduler<K> {
+    pub fn new() -> Self {
+        Self { pending: HashMap::new() }
+    }
+
+    /// Schedule a timeout for the given id, expiring after the specified duration in seconds
+    /// from the current block timestamp
+    pub fn schedule(&mut self, id: K, current_timestamp: u64, timeout_seconds: u64) {
+        let expiration_timestamp = current_timestamp + timeout_seconds;
+        self.pending.insert(id, expiration_timestamp);
+    }
+
+    pub fn cancel(&mut self, id: &K) {
+        self.pending.remove(id);
+    }
+
+    pub fn is_scheduled(&self, id: &K) -> bool {
+        self.pending.contains_key(id)
+    }
+
+    /// Check for expired timeouts based on the current block timestamp
+    /// Returns a vector of expired ids
+    pub fn check_expired(&mut self, current_timestamp: u64) -> Vec<K> {
+        let mut expired: Vec<K> = Vec::new();
+        let mut to_remove: Vec<K> = Vec::new();
+
+        for (id, expiration_timestamp) in &self.pending {
+            if current_timestamp >= *expiration_timestamp {
+                expired.push(id.clone());
+                to_remove.push(id.clone());
+            }
+        }
+
+        for id in &to_remove {
+            self.pending.remove(id);
+        }
+
+        expired
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.pending.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.pending.clear();
+    }
+}
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Utxo {
     // temporarily omitted for Regtest stage
