@@ -3,20 +3,20 @@ use std::path::PathBuf;
 
 use check_fork::{CheckForkArgs, check_fork};
 use check_fork_tester::{
-    apply_a2_base_event, calculate_total_effort, get_blocks, parse_operator_id_hex,
-    write_a2_artifacts,
+    apply_base_event_fixture, calculate_total_effort, get_blocks, write_check_fork_artifacts,
 };
 use clap::Parser;
 use methods::{CHECK_FORK_GUEST_ID, CHECK_FORK_GUEST_PATH};
 use primitive_types::U256;
 use zkvm_cli_serde::{serialize_guest_input, serialize_image_id};
 
-const DEFAULT_VERSION: u8 = 1;
-const DEFAULT_SEQ_ID: u32 = 1;
-const DEFAULT_RAND: u32 = 0xA2C0_FFEE;
-const DEFAULT_STREAM_ID: u32 = 1;
-const DEFAULT_PACKET_ID: u32 = 1;
-const DEFAULT_UTXO_ID: u32 = 4;
+const MOCK_CHECK_FORK_VERSION: u8 = 1;
+const MOCK_CHECK_FORK_SEQ_ID: u32 = 1;
+const MOCK_CHECK_FORK_RAND: u32 = 0xA2C0_FFEE;
+const MOCK_CHECK_FORK_STREAM_ID: u32 = 1;
+const MOCK_CHECK_FORK_PACKET_ID: u32 = 1;
+const MOCK_CHECK_FORK_UTXO_ID: u32 = 4;
+const MOCK_CHECK_FORK_OPERATOR_ID: [u8; 32] = [0x11; 32];
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -58,30 +58,6 @@ struct Args {
     // Initial timestamp
     #[arg(short = 't', long = "cf-init-timestamp", default_value_t = 1_701_129_600)]
     cf_init_timestamp: u64,
-
-    #[arg(long = "cf-version", default_value_t = DEFAULT_VERSION)]
-    cf_version: u8,
-
-    #[arg(long = "cf-seq-id", default_value_t = DEFAULT_SEQ_ID)]
-    cf_seq_id: u32,
-
-    #[arg(long = "cf-rand", default_value_t = DEFAULT_RAND, value_parser = parse_u32_hex_or_dec)]
-    cf_rand: u32,
-
-    #[arg(long = "cf-stream-id", default_value_t = DEFAULT_STREAM_ID)]
-    cf_stream_id: u32,
-
-    #[arg(long = "cf-packet-id", default_value_t = DEFAULT_PACKET_ID)]
-    cf_packet_id: u32,
-
-    #[arg(long = "cf-utxo-id", default_value_t = DEFAULT_UTXO_ID)]
-    cf_utxo_id: u32,
-
-    #[arg(
-        long = "cf-operator-id-hex",
-        default_value = "1111111111111111111111111111111111111111111111111111111111111111"
-    )]
-    cf_operator_id_hex: String,
 }
 
 #[tokio::main]
@@ -94,18 +70,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
-    let operator_id = parse_operator_id_hex(&cli_args.cf_operator_id_hex)?;
     let mut blocks =
         get_blocks(cli_args.fetch_start_block, cli_args.fetch_block_count, false).await?;
 
     let mut check_fork_args = CheckForkArgs {
-        version: cli_args.cf_version,
-        seq_id: cli_args.cf_seq_id,
-        rand: cli_args.cf_rand,
-        stream_id: cli_args.cf_stream_id,
-        packet_id: cli_args.cf_packet_id,
-        utxo_id: cli_args.cf_utxo_id,
-        operator_id,
+        version: MOCK_CHECK_FORK_VERSION,
+        seq_id: MOCK_CHECK_FORK_SEQ_ID,
+        rand: MOCK_CHECK_FORK_RAND,
+        stream_id: MOCK_CHECK_FORK_STREAM_ID,
+        packet_id: MOCK_CHECK_FORK_PACKET_ID,
+        utxo_id: MOCK_CHECK_FORK_UTXO_ID,
+        operator_id: MOCK_CHECK_FORK_OPERATOR_ID,
         init_block_time: cli_args.cf_init_timestamp,
         init_block_number: cli_args.cf_init_block,
         required_effort: U256::zero(),
@@ -114,14 +89,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     let pegout_id = check_fork::compute_pegout_id(&check_fork_args);
-    apply_a2_base_event(&mut blocks, pegout_id)?;
+    apply_base_event_fixture(&mut blocks, pegout_id)?;
     check_fork_args.block_list = blocks;
     check_fork_args.required_effort = match cli_args.cf_required_effort {
         Some(value) => value,
         None => calculate_total_effort(&check_fork_args.block_list)?,
     };
 
-    write_a2_artifacts(&cli_args.output_dir, &check_fork_args)?;
+    write_check_fork_artifacts(&cli_args.output_dir, &check_fork_args)?;
 
     if cli_args.operation == "elf" {
         generate_elf(&check_fork_args, &cli_args.output_dir)?;
@@ -156,15 +131,6 @@ fn generate_elf(
 
     Ok(())
 }
-
-fn parse_u32_hex_or_dec(value: &str) -> Result<u32, String> {
-    if let Some(stripped) = value.strip_prefix("0x") {
-        u32::from_str_radix(stripped, 16).map_err(|err| err.to_string())
-    } else {
-        value.parse::<u32>().map_err(|err| err.to_string())
-    }
-}
-
 fn parse_u256_dec(value: &str) -> Result<U256, String> {
     value.parse::<U256>().map_err(|err| err.to_string())
 }

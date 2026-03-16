@@ -92,8 +92,6 @@ impl From<&TesterRskBlockHeader> for RskBlockHeader {
     }
 }
 
-// Used mainly for deserialization and also to avoid adding
-// bitcoin-specific RPC dependencies to the `check-fork` crate.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TesterRskBlock {
     #[serde(flatten)]
@@ -139,12 +137,18 @@ impl TesterRskBlock {
     }
 }
 
+/// Fetches a consecutive block window from the configured RSK RPC endpoint.
+///
+/// # Errors
+///
+/// Returns an error if the HTTP client cannot be created, if any requested block
+/// or uncle cannot be fetched, or if the returned payload cannot be parsed into
+/// the expected block representation.
 pub async fn get_blocks(
     start_block_number: u64,
     num_of_blocks: u32,
     log_super_block: bool,
 ) -> Result<Vec<RskBlock>, Box<dyn Error>> {
-    // Disable system proxy autodetection: on macOS runners this can panic before the RPC call.
     let client = Client::builder().no_proxy().build()?;
     let mut blocks = vec![];
 
@@ -162,43 +166,43 @@ pub async fn get_blocks(
     Ok(blocks_with_uncles.iter().map(RskBlock::from).collect())
 }
 
-pub fn parse_operator_id_hex(value: &str) -> Result<[u8; 32], Box<dyn Error>> {
-    let trimmed = value.strip_prefix("0x").unwrap_or(value);
-    let bytes = hex::decode(trimmed)?;
-    if bytes.len() != 32 {
-        return Err(format!("operator_id must be exactly 32 bytes, got {}", bytes.len()).into());
-    }
-
-    let mut operator_id = [0u8; 32];
-    operator_id.copy_from_slice(&bytes);
-    Ok(operator_id)
-}
-
-pub fn apply_a2_base_event(blocks: &mut [RskBlock], pegout_id: H256) -> Result<(), Box<dyn Error>> {
+/// Applies the temporary check-fork base-event fixture to a block slice.
+///
+/// # Errors
+///
+/// Returns an error when fewer than two blocks are provided, because check-fork
+/// requires at least a two-block window.
+pub fn apply_base_event_fixture(
+    blocks: &mut [RskBlock],
+    pegout_id: H256,
+) -> Result<(), Box<dyn Error>> {
     if blocks.len() < 2 {
-        return Err("A2 requires at least two blocks".into());
+        return Err("Check-fork requires at least two blocks".into());
     }
 
     for block in blocks.iter_mut() {
         block.uncles.clear();
     }
 
-    for index in 0..blocks.len() {
+    for (index, block) in blocks.iter_mut().enumerate() {
         if index >= 2 {
-            blocks[index].header.version = 2;
-            blocks[index].header.base_event = Some(pegout_id.as_bytes().to_vec());
-            blocks[index].header.parent = blocks[index - 1].header.hash;
-            blocks[index].header.hash =
-                blocks[index].header.calculate_block_hash().map_err(std::io::Error::other)?;
+            block.header.version = 2;
+            block.header.base_event = Some(pegout_id.as_bytes().to_vec());
         } else {
-            blocks[index].header.version = 1;
-            blocks[index].header.base_event = None;
+            block.header.version = 1;
+            block.header.base_event = None;
         }
     }
 
     Ok(())
 }
 
+/// Sums trunk and uncle effort for the provided check-fork block window.
+///
+/// # Errors
+///
+/// Returns an error if any block or uncle contains an invalid merged-mining
+/// header and its effort cannot be derived.
 pub fn calculate_total_effort(blocks: &[RskBlock]) -> Result<U256, Box<dyn Error>> {
     let mut total = U256::zero();
     for block in blocks {
@@ -210,7 +214,16 @@ pub fn calculate_total_effort(blocks: &[RskBlock]) -> Result<U256, Box<dyn Error
     Ok(total)
 }
 
-pub fn write_a2_artifacts(output_dir: &Path, args: &CheckForkArgs) -> Result<(), Box<dyn Error>> {
+/// Writes the derived check-fork fixture artifacts for external verification.
+///
+/// # Errors
+///
+/// Returns an error if the output directory cannot be created or if any artifact
+/// file cannot be written.
+pub fn write_check_fork_artifacts(
+    output_dir: &Path,
+    args: &CheckForkArgs,
+) -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(output_dir)?;
 
     let pegout_id = compute_pegout_id(args);
@@ -294,16 +307,12 @@ async fn fetch_block_by_num(
 }
 
 fn log_if_superblock(block: &TesterRskBlock) -> Result<(), Box<dyn Error>> {
-    // Parse the block's actual PoW from `bitcoinMergedMiningHeader`.
     let actual_block_pow =
         U256::from_big_endian(block.header.bitcoin_merged_mining_header.as_slice());
-    // Compute the PoW target from difficulty by inversion. `difficulty 1` maps to `U256::MAX`.
     let target_block_pow =
         U256::MAX.checked_div(block.header.difficulty).ok_or("0 division on log_if_superblock")?;
-    // Define a superblock as one whose PoW is at least N times harder than the required target.
     let superblock_pow = target_block_pow / SUPERBLOCK_THRESHOLD_FACTOR;
 
-    // If the actual block PoW is lower (i.e. harder) than the superblock threshold, we found one.
     if actual_block_pow < superblock_pow {
         let timestamp_i64 = i64::try_from(block.header.timestamp).unwrap_or(i64::MAX);
         let formatted_time =
