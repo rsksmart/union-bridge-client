@@ -1,16 +1,15 @@
-use anyhow::{Context, Result, bail};
-use clap::Parser;
-use log::{error, info};
-
+use anyhow::{bail, Context, Result};
 use block_indexer::config::{Config, Logger};
 use block_indexer::indexer::BlockIndexer;
 use block_indexer::store::CachedBlockStore;
+use clap::Parser;
 use common::alloy_rsk_provider::rpc::AlloyProvider;
 use common::config::IndexerStartFrom;
 use common::rsk_indexer::RskIndexer;
 use common::rsk_provider::RskProvider;
 use common::shutdown_flag::ShutdownFlag;
 use common::types::BlockNumber;
+use log::{error, info};
 
 #[derive(Parser)]
 #[command(
@@ -68,13 +67,14 @@ fn main() -> Result<()> {
     if let Some(finality) = args.finality {
         let best = provider.get_best_block().context("Failed to get best block")?;
         let target_height = best.number().value().saturating_sub(finality);
-        let block = provider
-            .get_block_by_number(BlockNumber::from(target_height))?
-            .with_context(|| format!("Block at height {target_height} not found (best={}, finality={finality})", best.number()))?;
-        println!(
-            "Resolved -f {finality}: height={target_height}, hash={}",
-            block.hash()
-        );
+        let block =
+            provider.get_block_by_number(BlockNumber::from(target_height))?.with_context(|| {
+                format!(
+                    "Block at height {target_height} not found (best={}, finality={finality})",
+                    best.number()
+                )
+            })?;
+        println!("Resolved -f {finality}: height={target_height}, hash={}", block.hash());
         config.indexer.initial_block_hash = Some(block.hash().to_string());
     } else if let Some(height) = args.block_height {
         let block = provider

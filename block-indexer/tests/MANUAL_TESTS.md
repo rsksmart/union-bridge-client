@@ -9,7 +9,7 @@ production RSK-specific parsing paths.
 ## Prerequisites
 
 - A running RSK node (preferred) or Anvil instance
-- The `block-indexer-runner` CLI tool (in `cli/block-indexer-runner`) — it handles config
+- The `block-indexer-runner` CLI tool (in `tests/block-indexer-runner`) — it handles config
 loading, storage isolation, and initial block hash resolution automatically.
 - Config values can also be overridden via environment variables with the `UB__` prefix
 (e.g., `UB__PROVIDER__ROOTSTOCK__URL=ws://...`).
@@ -17,8 +17,8 @@ loading, storage isolation, and initial block hash resolution automatically.
 
 ### Runner CLI
 
-> **All `cargo run` commands below must be run from the `cli/` directory** (i.e. `union-bridge-client/cli/`),
-> since `block-indexer-runner` and `block-indexer-validator` belong to the `cli/` sub-workspace.
+> **All `cargo run` commands below must be run from the repository root** (i.e. `union-bridge-client/`),
+> since `block-indexer-runner` and `block-indexer-validator` are workspace members in the root `Cargo.toml`.
 
 ```bash
 # Start 100 blocks behind current best, tag the run "soak"
@@ -40,7 +40,7 @@ Storage is automatically isolated under `/tmp/manual-tests/<tag>/database`.
 
 ## Validation
 
-The `block-indexer-validator` tool (in `cli/block-indexer-validator`) checks:
+The `block-indexer-validator` tool (in `tests/block-indexer-validator`) checks:
 
 - **Best block** exists in the store
 - **No leftover checkpoint** (backward sync completed)

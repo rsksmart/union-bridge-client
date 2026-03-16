@@ -9,6 +9,8 @@ members = [
     "coordinator",
     "key-manager",
     "log-indexer",
+    "tests/block-indexer-runner",
+    "tests/block-indexer-validator",
     "transaction-dispatcher",
     "user-api",
 ]

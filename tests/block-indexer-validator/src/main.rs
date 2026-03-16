@@ -1,7 +1,6 @@
-use anyhow::{Context, Result, bail};
-use clap::Parser;
-
+use anyhow::{bail, Context, Result};
 use block_indexer::store::{BlockStore, CachedBlockStore};
+use clap::Parser;
 use common::alloy_rsk_provider::rpc::AlloyProvider;
 use common::cache::LruCache;
 use common::rsk_provider::RskProvider;
@@ -9,7 +8,10 @@ use common::shutdown_flag::ShutdownFlag;
 use common::types::{BlockNumber, RskBlock};
 
 #[derive(Parser)]
-#[command(name = "block-indexer-validator", about = "Validate block-indexer storage after manual test runs")]
+#[command(
+    name = "block-indexer-validator",
+    about = "Validate block-indexer storage after manual test runs"
+)]
 struct Args {
     /// Path to the block store directory (the "blocks" subdirectory inside storage.path)
     #[arg(short = 's', long)]
@@ -31,15 +33,10 @@ fn main() -> Result<()> {
         CachedBlockStore::new(&args.storage_path, args.cache_size)
             .context("Failed to open block store")?;
 
-    let best_block = store
-        .get_best_block()?
-        .context("No best block in store — is the store empty?")?;
+    let best_block =
+        store.get_best_block()?.context("No best block in store — is the store empty?")?;
 
-    println!(
-        "Store best block: height={}, hash={}",
-        best_block.number(),
-        best_block.hash()
-    );
+    println!("Store best block: height={}, hash={}", best_block.number(), best_block.hash());
 
     let has_checkpoint = check_checkpoint(&store)?;
     let chain_length = walk_chain(&store, &best_block)?;
@@ -50,7 +47,9 @@ fn main() -> Result<()> {
     }
 
     if has_checkpoint {
-        println!("\nAll chain checks passed, but backward sync is incomplete (checkpoint remains).");
+        println!(
+            "\nAll chain checks passed, but backward sync is incomplete (checkpoint remains)."
+        );
     } else {
         println!("\nAll checks passed.");
     }
@@ -100,7 +99,8 @@ fn walk_chain(store: &CachedBlockStore<LruCache<RskBlock>>, best_block: &RskBloc
         let parent_hash = current.parent_hash();
         match store.get_block_by_hash(parent_hash)? {
             Some(parent) => {
-                let expected_height = height.value()
+                let expected_height = height
+                    .value()
                     .checked_sub(1)
                     .map(BlockNumber::from)
                     .context("Block at height 0 has a parent in store — unexpected")?;
@@ -146,7 +146,9 @@ fn compare_with_provider(url: &str, store_best: &RskBlock) -> Result<()> {
         println!("Store is {diff} blocks behind provider (expected if indexer was stopped)");
     } else if store_best.number() > provider_best.number() {
         let diff = store_best.number().value() - provider_best.number().value();
-        println!("WARNING: Store is {diff} blocks ahead of provider — possibly connected to a different or syncing node");
+        println!(
+            "WARNING: Store is {diff} blocks ahead of provider — possibly connected to a different or syncing node"
+        );
     }
 
     let provider_block_at_store_height = provider
